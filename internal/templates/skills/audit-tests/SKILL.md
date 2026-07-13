@@ -7,91 +7,54 @@ description: >-
 
 # audit-tests
 
-Audit the health of the existing test suite and directly address clear
-negative-value or mechanical findings. Use `/boost-coverage` when the primary
-goal is to add tests to reach a coverage target, and `/clean-and-fix-code` for
-tests added in the current uncommitted diff.
+Audit tests and fix clear negative-value or mechanical problems. Use
+`/boost-coverage` for coverage targets and `/clean-and-fix-code` for tests added
+in the current diff.
 
-## Scope and inputs
+## Scope
 
-- Default scope is every repository test file.
-- Accept explicit paths, modules, or discovered test-tier filters; an optional
-  maximum reported-finding count; and whether coverage evidence may be
-  gathered. The count limits report size, not the evidence pass or declared
-  scope coverage.
-- Derive test tiers from repository configuration and conventions. Do not
-  invent unit, integration, end-to-end, or other categories the repository
-  does not use.
-- If conventions are too ambiguous for a trustworthy classification, report
-  the limitation and ask only if it blocks the requested audit.
+- Default to all tests; accept paths, modules, repository-defined tiers,
+  coverage permission, and a report limit that does not reduce coverage.
+- Derive tiers from repository configuration. If ambiguous, audit concrete
+  tests without tiers and report the limitation.
 
-## Required artifact
+Write `.agent-layer/tmp/audit-tests.<run-id>.report.md`, using
+`YYYYMMDD-HHMMSS-<short-rand>` for `run-id`.
 
-Write `.agent-layer/tmp/audit-tests.<run-id>.report.md`, where `run-id` is
-`YYYYMMDD-HHMMSS-<short-rand>`.
+## Contract
 
-## Finding and edit contract
-
-- Findings must identify concrete tests, behavior, and evidence. Coverage
-  percentage alone is not a quality finding.
-- Delete tests that are clearly tautological, self-confirming, dead,
-  rubber-stamp, or duplicative. Preserve the strongest behavioral coverage.
-- Strengthen an assertion or correct a misleading name or classification only
-  when the change is mechanical and the intended behavior is established.
-- Do not delete a partially valuable test or change production code for
-  testability without a user decision.
-- Do not replace removed false coverage with another test unless a meaningful
-  behavior gap and expected contract are already clear.
-- Do not turn framework conventions or style preferences into findings.
+- Findings identify concrete tests, behavior, and evidence; coverage percentage
+  alone is not a finding.
+- Delete tautological, self-confirming, dead, rubber-stamp, or duplicate tests,
+  preserving the strongest behavioral coverage.
+- Make mechanical assertion, naming, tier, helper, and fixture repairs when the
+  intended behavior is established.
+- Do not delete partially valuable tests or change production for testability
+  without a user decision. Replace false coverage only for a clear behavior
+  contract.
+- Ignore framework conventions and style preferences that do not affect value.
 
 ## Workflow
 
-### 1. Establish the test contract
-
 Read COMMANDS.md before selecting commands. Identify the test runner,
-configuration, directory and naming conventions, fixtures, helpers, and
-repository-defined tiers. Build a grouped inventory sufficient to account for
-the scope; do not produce per-file rationale when a directory or convention
-establishes the classification.
+configuration, conventions, fixtures, helpers, and tiers. Inventory the scope.
+For large scopes, parallelize non-overlapping read-only investigations; the
+owning agent validates candidates, reconciles gaps/duplication, and edits.
 
-### 2. Run one test-suite audit pass
-
-Audit a compact scope directly. For a context-heavy scope, give coherent,
-non-overlapping test tiers or subsystems to fresh investigators and run
-independent groups concurrently when useful. Each returns compact candidates
-with concrete tests, behavior, and evidence; the owning agent validates them,
-reconciles duplication and gaps, and makes every edit. Do not split work merely
-to add agents.
-
-Review the scope through complementary concerns:
+Review:
 
 - duplicate scenarios, setup, assertions, helpers, and fixtures
-- tautological, self-confirming, rubber-stamp, fragile, dead, or misleading
-  tests
-- tests placed in the wrong repository-defined tier
-- unexpected I/O, network access, sleeps, or other tier violations
-- material behavioral gaps in error handling, boundaries, component
-  interaction, or critical user workflows
+- false, fragile, dead, misleading, or misplaced tests
+- unexpected I/O, network, sleeps, or other tier violations
+- material gaps in failures, boundaries, interactions, or critical workflows
 
-Account for material gaps across the declared scope, but do not require a
-ceremonial no-findings statement for every tier or subsystem. Do not require
-tiers that the repository does not define.
+Use coverage when documented and useful, reusing results until edits invalidate
+them. Apply safe deletions, consolidation, and mechanical fixes. Leave
+judgment-dependent work untouched; recommend `/boost-coverage` for material
+missing behavior.
 
-Run coverage at most once as audit evidence when it is documented, available,
-and useful. It informs gap analysis but does not replace behavioral review.
-
-### 3. Address safe findings directly
-
-Apply all clear deletions, consolidations, and mechanical corrections in one
-repair stage. Leave judgment-dependent changes untouched and record the
-decision required. Recommend `/boost-coverage` for material missing behavior
-that belongs in a dedicated coverage implementation, but do not launch it.
-
-If files changed, run one credible repository-defined verification lane that
-covers the edits. A failure is concrete evidence: directly repair an in-scope
-mistake or return the blocker; do not start another audit round.
-
-### 4. Report and yield
+If files changed, run a credible repository lane covering them. Diagnose and
+repair in-scope failures, then rerun invalidated checks.
 
 The report contains:
 
@@ -103,9 +66,7 @@ The report contains:
 6. `## Decisions Needed`
 7. `## Verification`
 
-Finding outcomes are `fixed`, `needs-user-decision`, or
-`recommend-boost-coverage`. Use `None` for empty sections.
-
-Return the report path, fixes, residual findings, and verification outcome after
-the declared scope receives one evidence pass and changed tests pass one
-credible verification lane.
+Outcomes are `fixed`, `needs-user-decision`, or `recommend-boost-coverage`; use
+`None` for empty sections. Finish after full evidence coverage, terminal finding
+outcomes, and a passing lane for changed tests. Return the report path, fixes,
+residuals, and verification.

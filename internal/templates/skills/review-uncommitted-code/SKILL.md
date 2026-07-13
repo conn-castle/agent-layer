@@ -8,55 +8,40 @@ description: >-
 
 # review-uncommitted-code
 
-Review a concrete target and write a findings report without modifying reviewed
-files.
+Review a target and report material findings without edits.
 
 ## Target and artifact
 
-Use the user's explicit target, then requested proactive hotspots, otherwise all
-staged, unstaged, and untracked changes. Review the last commit only when asked.
-For hotspots, select bounded targets using concrete signals such as churn,
+Use the explicit target, then requested hotspots, otherwise all working-tree
+changes. Review the last commit only when asked. Choose hotspots from churn,
 complexity, weak coverage, scaffolding, reliability boundaries, or contract
-drift. Stop for the smallest scope decision only when no credible target exists.
+drift; if none is credible, return `no-findings` with evidence.
 
-Write `.agent-layer/tmp/review-uncommitted-code.<run-id>.report.md`. During
-synthesis read `assets/finding-verdict-classification.md`; it is the sole
-verdict rubric, not another review stage.
+Write `.agent-layer/tmp/review-uncommitted-code.<run-id>.report.md` with run ID
+`YYYYMMDD-HHMMSS-<short-rand>`. Apply
+`assets/finding-verdict-classification.md` during synthesis as the sole verdict
+rubric.
 
 ## Review contract
 
-- Review concrete code, tests, diffs, and observable contracts, not hypothetical
-  alternatives.
-- Give one reviewer the complete target and relevant concerns. If this context
-  authored or materially changed the target, use one fresh built-in reviewer
-  with the target and authoritative contract, not the author's rationale.
-  Otherwise review directly.
-- Do not split one diff for perspectives, consensus, or convergence.
-- Treat reviewer output as candidates until validated against current evidence.
-- Report only material correctness, safety, scope, reliability, performance,
-  test-integrity, or maintainability findings. Omit style, speculation,
-  unsupported claims, duplicates, and unrelated known issues.
+- If this context authored or materially changed the target, give one fresh
+  built-in reviewer the complete target and contract. Otherwise review directly.
+  Recover or replace unusable results, then review directly if needed.
+- Do not split one diff for perspectives or consensus.
+- Validate candidates against current code, tests, diffs, and contracts. Report
+  only material findings.
 
 ## Workflow
 
-### 1. Review
-
-Record target, mode, and hotspot evidence. Read the minimum surrounding code,
-tests, docs, and memory needed to establish intent, then cover relevant:
+Record target, mode, and hotspot evidence. Read enough surrounding code, tests,
+docs, and memory to establish intent, then cover relevant:
 
 - correctness, error handling, boundary inputs, and failure modes
 - ownership, interfaces, coupling, and unnecessary complexity
 - tests, docs, performance, concurrency, data safety, and operability
 
-### 2. Synthesize and report
-
-Validate candidates against the current tree, merge duplicates, and apply the
-verdict rubric. Each survivor includes title, severity, confidence,
-location, scope, `Accept` or `Defer`, evidence, impact, and recommendation.
-
-`Accept` is current, in scope, and actionable without a new user decision.
-`Defer` requires a genuine user decision or unavailable evidence; a scope
-boundary alone is not a user decision.
+Merge duplicates and apply the rubric. Findings include title, severity,
+confidence, location, scope, verdict, evidence, impact, and recommendation.
 
 Write:
 
@@ -64,11 +49,11 @@ Write:
 2. `## Recommended Accept`
 3. `## Recommended Defer`
 
-Use `None` for empty groups and one readiness verdict:
+Use `None` for empty groups and exactly one readiness verdict:
 
 - `proceed`: no accepted fix or blocking defer remains
 - `proceed-after-fixes`: accepted findings remain
 - `revise-first`: a genuine decision or evidence gap blocks safe use
 
-Return the report and readiness after covering the target with current evidence.
-Do not edit the target or add another reviewer for confidence.
+Finish after covering the target with current evidence. Return report path and
+readiness without editing the target.

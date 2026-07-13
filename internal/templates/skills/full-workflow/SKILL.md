@@ -7,138 +7,77 @@ description: >-
 
 # full-workflow
 
-Run the delivery workflow as the root-owned state machine. Dispatch only bounded
-leaf judgment; do not dispatch a workflow coordinator or relay another agent's
-checkpoints.
+Own a delivery from clarified intent through a merged pull request. Delegate
+bounded work when useful, but keep workflow state and user checkpoints in the
+owning context.
 
-## Required inputs
+## Inputs
 
-- the user's requested work
-- `implementer`: one dispatch target for the implementation leaf
-- `code_reviewer`: one semantic code-review dispatch target
-- `fixer`: one dispatch target for bounded repair leaves
-- `plan_reviewers`: exactly three dispatch target specifications
+Require the user's requested work. Optional dispatch targets are `implementer`,
+`code_reviewer`, `fixer`, and `plan_reviewers`; use built-in agents or local work
+when they are absent or unusable.
 
-Require these inputs before side effects. Do not infer roles or target lists.
+Invoking this workflow authorizes the normal branch, commit, push, and PR writes
+needed by `/ship-pr`. Merging still requires `/ship-pr`'s exact authorization
+gate.
 
-## Delivery context
+## Delivery boundary
 
-Before issue selection or planning:
+Resolve the repository root, remote default branch, current branch, and working
+tree from local Git or GitHub evidence. Use the current checkout and default
+base unless the user requested another base or an isolated worktree. Preserve
+unrelated work with explicit diff boundaries and path- or hunk-specific staging;
+block only when overlapping work cannot be separated safely.
 
-1. Resolve the repository identity and remote default branch from authoritative
-   local Git or GitHub evidence. Use that default branch unless the user
-   explicitly requested a stacked or non-default pull request. Ask only when
-   authoritative evidence cannot identify the default.
-2. Use the current resolved repository-root checkout by default. Create and use
-   a linked Git worktree only when the user explicitly requests worktree
-   isolation. Before mutation, record the active checkout's branch, head, tree,
-   staged diff, unstaged diff, and deterministic untracked state covering each
-   path, file kind, and content. Preserve this initial inventory as the boundary
-   between delivery changes and unrelated user work.
-3. When shipping requires a topic branch, create one unique workflow-owned
-   topic branch in the active checkout. Do not change branches while the
-   checkout has state that Git cannot carry safely. Stop only when attempted
-   path-specific staging and exact diff boundaries still cannot separate
-   delivery changes from unrelated user work, and name the overlapping paths.
-4. Write `.agent-layer/tmp/full-workflow.<run-id>.manifest.json` atomically and
-   validate it against `assets/facts-manifest.schema.json` before forwarding.
-   This is the sole cross-stage state packet. Record repository/base/current
-   checkout facts, exact commit and tree identifiers, artifact paths and hashes,
-   selected issue source hashes, command/timestamp/exit/output evidence,
-   provider capability facts, and phase events.
-5. Reject manifest keys or values that encode recommendations, risk labels,
-   readiness, confidence, materiality, verdicts, summaries, or prior reviewer
-   conclusions. Pass primary artifacts and mechanically verifiable facts only.
-6. Serialize every working-tree mutator. Before reusing evidence or starting a
-   mutator, compare the current head, tree, staged-diff hash, unstaged-diff
-   hash, and untracked-state hash with the recorded boundary or latest evidence.
-   Any changed value invalidates affected evidence and must be reconciled and
-   recorded before work continues.
+For multi-issue work, select live, compatible items from the authorized set.
+Already-fixed or tracker-only cleanup does not count, but do not impose a
+minimum batch size. Keep required memory-file alignment in the delivery.
 
-For an explicitly requested linked worktree, record its path and workflow
-ownership in a factual JSON artifact referenced by the manifest's `artifacts`
-array with `kind: explicit_worktree_facts`; `repository.root` remains the
-canonical checkout location.
-
-## Scope admission
-
-For a requested multi-issue workflow, evaluate candidates against the delivery
-base before planning. Already-fixed entries and tracker-only cleanup do not
-count. Require at least two live, compatible, substantive issues. Reselect only
-within the authorized issue set; if fewer than two remain, stop before planning
-and report the scope collapse. Keep required ISSUES.md, BACKLOG.md, ROADMAP.md,
-and other aligned memory changes in the delivery diff through shipping.
+Treat delegated reports as evidence. Validate them against the artifacts and
+tree, preserve valid work, and recover, replace, or locally finish incomplete
+bounded tasks.
 
 ## Workflow
 
-### 1. Align and plan locally
+### 1. Align and plan
 
 Write `.agent-layer/tmp/full-workflow.<run-id>.spec.md` with objective, scope,
-non-goals, material decisions, constraints, acceptance criteria, shipping
-expectations, and unresolved user decisions. Resolve repository facts directly.
-Ask only about genuine alternatives with materially different behavior,
-architecture, scope, risk, cost, or irreversible effects.
+non-goals, constraints, acceptance criteria, shipping expectations, settled
+decisions, and any remaining user-owned choice. Resolve factual unknowns before
+planning, then run `/plan-work` with the spec and optional reviewers. Continue
+with its implementation-ready artifacts; validate any reported user blocker
+against repository escalation rules.
 
-Run `/plan-work` locally with the spec and `plan_reviewers`. Consume its returned
-artifact paths and continue only when its status is `implementation-ready`. For
-`blocked-for-user-decision`, ask its named question and resume the same planning
-stage with the answer. Missing artifacts or any other result block delivery.
+### 2. Implement and establish evidence
 
-### 2. Implement and establish focused evidence
-
-Dispatch `implementer` once with `/implement-plan` and the complete reviewed
-artifacts. Continue only when its report says ready for verification and no
-required planned work remains. Ask a named user question and resume this phase
-when that is the reported blocker; stop on a missing report or any other
-blocker. Before semantic review, choose deterministic checks proportionate to
-the changed scope, consequential risks, repository guidance, and evidence
-needed to avoid wasting review. Do not use time budgets, historical durations,
-mandatory tiers, or a universal full-lane rule.
-
-Record each command, start/end timestamp, exit status, retained output path and
-hash, and exact head/tree fingerprint. When focused equivalents do not exist,
-use judgment about whether broader validation belongs here or at shipping.
+Run `/implement-plan` with the complete reviewed artifacts. Reconcile the
+result with the plan and finish remaining in-scope work. Choose deterministic
+checks from repository guidance, changed scope, and consequential risk; record
+the commands, results, and tree they cover.
 
 ### 3. Review, verify, and repair
 
-After the deterministic gate passes, start `/verify-work` as a fresh built-in
-subagent and dispatch `code_reviewer` once with `/review-uncommitted-code`, the
-delivery diff boundary, and the authoritative contract, both against the same
-exact head. Run them concurrently when the host supports a background leaf and
-give each only primary artifacts, not the other's findings. Accumulate all
-supported failures, validate and deduplicate them, then send one bounded repair
-package to `fixer` only when confirmed open work exists. Accept review readiness
-`proceed` or `proceed-after-fixes`. For `revise-first`, ask its named question
-and resume this phase with the answer, or stop on unavailable evidence. Accept
-verification `complete`, or `complete-with-follow-up` only when the follow-up is
-outside the contract; treat `incomplete` items as repair candidates. Stop on a
-failed leaf or missing report.
+After focused checks pass, run `/verify-work` and
+`/review-uncommitted-code` against the same delivery tree, concurrently when
+useful. Give each the authoritative contract, not the other's conclusions.
+Validate and deduplicate supported findings.
 
-Give `fixer` the authoritative artifacts, delivery boundary, open findings,
-current evidence, required checks, and a unique
-`.agent-layer/tmp/full-workflow.<run-id>.repair.<repair-id>.report.md`. Require
-finding dispositions, focused checks, and the final fingerprint. Ask any named
-user question and resume this phase; stop on a failed or missing repair report.
+Repair compatible open findings in one bounded batch. Record dispositions and
+rerun checks or contract verification invalidated by the repair. Repeat a full
+semantic review only when the repair materially changed design, architecture,
+or contract scope. Continue until verification is complete and every in-scope
+finding is resolved or rejected with evidence; ask the user only for a genuine
+substantive decision with no safe in-scope resolution.
 
-After mutation, invalidate evidence by changed files and contracts. Rerun
-affected focused checks and one targeted contract verification. Repeat a full
-semantic review, through a fresh `code_reviewer` dispatch, only when repair
-changed production design, architecture, or contract scope. Stop only when a
-confirmed in-scope finding remains open with no newly evidenced repair path.
+### 4. Ship
 
-### 4. Ship through the canonical contract
+Continue locally with `/ship-pr`, passing the delivery boundary, authoritative
+artifacts, current tree, review and verification evidence, finding dispositions,
+and remaining obligations. Return its exact merge-authorization request when
+required, then resume only with the user's answer.
 
-Continue with `/ship-pr` locally. Pass the delivery boundary, authoritative
-artifacts, current tree fingerprint, review and verification reports, finding
-ledger, check evidence, remaining shipping obligations, and initial checkout
-inventory. Include the explicit worktree facts artifact when one exists.
-Consume its merge-authorization, merged, or blocker result without
-reimplementing its procedure.
-Return an authorization request to the user and resume the same `/ship-pr`
-continuation only with the exact answer; stop on a blocker.
+## Completion
 
-## Completion contract
-
-Complete means the final tree satisfies the approved artifacts and `/ship-pr`
-has returned a merged result with verified cleanup. Return artifact paths,
-factual manifest path, `/ship-pr` result, and any concrete blocker.
+Complete only when the approved contract is satisfied and `/ship-pr` reports a
+merged PR with verified cleanup. Return the artifact paths, shipping result, or
+a concrete blocker and smallest required decision.

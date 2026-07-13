@@ -8,59 +8,45 @@ description: >-
 
 # simplify-codebase
 
-Remove one coherent source of complexity. Success deletes or collapses a named
-concept rather than polishing syntax.
+Remove a coherent source of internal complexity. Success deletes or collapses
+a named concept rather than polishing syntax.
 
 ## Scope and useful-change gate
 
-Default to repository source excluding generated, vendored, and build output;
-accept paths, filters, dead-code inclusion, and assessment-only mode. Use
+Accept paths, filters, dead-code inclusion, and assessment-only mode; otherwise
+inspect repository source, excluding generated, vendored, and build output. Use
 `/clean-and-fix-code` for current-diff cleanup. Write
 `.agent-layer/tmp/simplify-codebase.<run-id>.report.md`.
 
-Apply only a change that removes a named concept—dead code, obsolete branch or
-option, needless wrapper/abstraction, duplicate workflow, or incoherent
-boundary—and materially reduces API/state surface, recurring confusion, defect
-risk, or a coherent family of related burden. Local renames, syntax swaps,
-isolated helper deletion, and tiny cleanup are report-only.
+A qualifying change removes dead code, an obsolete option, needless
+indirection, duplication, or an incoherent boundary and materially reduces API
+or state surface, confusion, defect risk, or maintenance burden. Renames,
+syntax swaps, and tiny cleanups are report-only.
 
-Preserve behavior, output, data shape, and stable external APIs. Update every
-caller, test, document, and reference when changing an internal contract. Ask
-before changing external contracts; choosing materially different architecture,
-ownership, data, or migration paths; deleting uncertain test behavior; or
-proceeding without credible verification. Mixed liveness evidence from
-reflection, registration, strings, or external references blocks deletion.
+Preserve behavior, data shape, and stable external APIs. Update affected
+callers, tests, documentation, and references. Reject candidates requiring an
+unapproved contract, architecture, ownership, data, or migration decision.
+Mixed liveness evidence from reflection, registration, string-based lookup, or
+external references blocks deletion. Uncertain liveness requires more evidence
+for that candidate, not a stop to the whole assessment.
 
 ## Workflow
 
-### 1. Assess once
-
-Read COMMANDS.md, identify contracts and a verification path, and create the
-report. For broad/context-heavy scope, use one fresh scout to return candidates
-with the named complexity, boundaries, behavior, payoff, risk, and verification;
-assess a narrow scope directly.
-
-Inspect only enough evidence to select the strongest material candidate or
-prove none qualifies. Record its current complexity, concept removed, simpler
-shape, payoff, risk, verification, and `apply` or `report-only` verdict. Consider
-`keep`, `split`, or `merge` for a large file only when relevant. Return
-report-only when nothing clears the gate.
-
-### 2. Apply and verify
-
-Implement the strongest candidate or tightly related set. Prefer deletion,
-removing obsolete parameters/modes, collapsing indirection, and unifying true
-duplication. Do not hide complexity behind a new abstraction, add internal
-compatibility shims without an external need, or widen into features and
-unrelated fixes.
-
-Run one risk-proportional repository verification lane and confirm the concept
-was removed rather than moved. Repair a concrete in-scope failure and rerun its
-invalidated evidence. If credibility cannot be restored, undo only this skill's
-changes and report the blocker.
+1. Read COMMANDS.md and relevant contracts. Inspect enough evidence to select a
+   material candidate or establish that none qualifies. Delegate broad discovery
+   when useful and validate its evidence.
+2. Record the named complexity, boundaries, simpler form, payoff, risk,
+   verification path, and `apply` or `report-only` verdict.
+3. Implement the strongest candidate or related set, preferring deletion,
+   collapsed indirection, removed obsolete modes, and unified duplication. Do
+   not move complexity into a new abstraction or widen scope.
+4. Run proportionate verification and confirm the concept was removed, not
+   moved. Repair in-scope failures and rerun invalidated evidence. If behavior
+   preservation cannot be proven, revert only this skill's changes, record the
+   rejection, and continue with another qualified candidate when available.
 
 ## Completion contract
 
-Report scope, candidate, changes, verification, decisions, and `applied`,
-`report-only`, or `blocked-user-decision`. Applied work must remove a named
-concept, update affected contracts, and preserve unapproved external behavior.
+Report `applied`, `report-only`, or `blocked-user-decision`, including scope,
+candidate, concept removed, changes, verification, decisions, report path, and
+residual risk. Applied work must preserve all unapproved external behavior.

@@ -1,76 +1,55 @@
 ---
 name: fix-issues
 description: >-
-  Resolve a selected ISSUES.md set through one reviewed plan, bounded
-  implementation packages, one concrete-work review, and one verification pass.
+  Resolve a selected ISSUES.md set through a reviewed plan, bounded
+  implementation packages, concrete-work review, and verification.
 ---
 
 # fix-issues
 
-Resolve the selected issue set as one workflow. Packages organize mutations;
-they do not create separate planning, review, or verification cycles.
+Resolve a selected ISSUES.md set through one coherent plan and delivery.
 
-## Inputs and disposition
+## Inputs and dispositions
 
-Accept issue IDs, maximum count, scope filter, or plan-only mode; otherwise
-select every open issue. Require `plan_reviewers`. Keep scope to selected issues
-and direct prerequisites. Write
-`.agent-layer/tmp/fix-issues.<run-id>.report.md`.
+Accept issue IDs, a maximum count, a scope filter, optional plan reviewers, or
+plan-only mode; otherwise select every open issue. Limit work to selected issues
+and prerequisites. Delegate bounded work when useful, validate results against
+the latest tree, and serialize mutations. Do not stage, commit, or push.
 
-Use one fresh triage subagent, fresh package implementers when useful, and one
-fresh final verifier. Serialize all mutations. Do not stage, commit, or push.
+Write `.agent-layer/tmp/fix-issues.<run-id>.report.md`.
 
-Every selected issue ends as:
+Every selected issue must end as:
 
 - `fixed`: resolved with evidence and removed from ISSUES.md
-- `reclassified`: end-user capability moved to BACKLOG.md
-- `deferred`: valid but blocked by a genuine scope or user decision; unchanged
-- `rejected`: evidence proves it invalid or already resolved; remove it
+- `reclassified`: moved to BACKLOG.md because it is an end-user capability
+- `deferred`: valid but blocked by an external or contract constraint or user
+  decision
+- `rejected`: disproven or already resolved, and removed from ISSUES.md
 
-Do not defer clear fixes because they are inconvenient or multi-file.
+Agent failure, inconvenience, or multi-file scope is not grounds for deferral.
 
 ## Workflow
 
-### 1. Triage and plan once
-
-Read ISSUES.md and relevant ROADMAP.md, DECISIONS.md, COMMANDS.md, and code. The
-triage subagent validates entries, proposes reclassifications, merges duplicate
-obligations without losing IDs, groups ordered packages, and identifies genuine
-user decisions. Do not edit ledgers until verification. Return `no-work` when
-nothing remains.
-
-Run `/plan-work` once for the complete selected set and package map with
-`plan_reviewers`; continue only with `implementation-ready`. In plan-only mode,
-return the reviewed artifacts here.
-
-### 2. Implement all packages
-
-Execute packages once in dependency order against the latest tree. Give each
-implementer the shared artifacts, bounded issues, and disposition contract.
-Require a failing reproducer for defects when feasible; debt and refactors may
-use established contract evidence. Resolve routine details without asking and
-do not silently drop selected work.
-
-After all packages, run `/clean-and-fix-code` once when meaningful cleanup scope
-exists.
-
-### 3. Review, verify, and update ledgers
-
-Run `/review-uncommitted-code` once over the issue changes and direct boundaries;
-validate and fix every `Recommended Accept` finding with focused evidence.
-
-Run `/verify-work` once in a fresh subagent using the selected issues and plan
-as the contract and review repairs as supplemental obligations. Directly repair
-material in-scope findings without another plan, review, or verification pass.
-Then apply every disposition to ISSUES.md or BACKLOG.md. When no broader
-orchestrator owns closeout, use the current verification evidence and update
-only documentation or memory made stale by the resolved issues. Read each
-memory file's format, merge duplicates, and record only non-obvious durable
-decisions. Do not add another verification or review stage.
+1. Read ISSUES.md and relevant repository context. Validate entries, merge
+   duplicate obligations without losing IDs, identify reclassifications and
+   user decisions, and group dependency-ordered packages. Return `no-work` when
+   nothing valid remains.
+2. Run `/plan-work` once for the complete selected set and package map. In
+   plan-only mode, return the reviewed artifacts without changing ledgers.
+3. Implement every package against the latest tree. Use a failing reproducer
+   for defects when feasible and established contract evidence for debt or
+   refactors. Resolve routine details from repository evidence and do not drop
+   work silently. Run `/clean-and-fix-code` when meaningful cleanup exists.
+4. Run `/review-uncommitted-code` over the delivery and affected boundaries,
+   repairing accepted findings. Run `/verify-work` against the issues and plan;
+   repair material gaps and refresh invalidated evidence.
+5. After verification, apply every disposition to ISSUES.md or BACKLOG.md using
+   their formats. Update documentation or memory made stale by the work, merging
+   duplicates and retaining only durable non-obvious decisions.
 
 ## Completion contract
 
-Report selected issues and packages, plan artifacts, every terminal disposition,
-fixes and ledger changes, review and verification evidence, blockers, and
-residual risk. The run is complete only when every selected issue is accounted
-for.
+Report the selected issues, packages, plan artifacts, disposition of every
+issue, changes, ledger updates, review and verification evidence, blockers, and
+residual risk. The workflow is complete only when every selected issue is
+accounted for.

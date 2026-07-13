@@ -7,81 +7,45 @@ description: >-
 
 # fix-ci
 
-Diagnose and repair an observed PR CI failure locally. The caller owns commits,
-pushes, and remote observation.
+Diagnose and repair an observed pull-request CI failure locally. The caller
+owns commits, pushes, remote reruns, and GitHub communication.
 
-## Inputs
+## Inputs and artifacts
 
-Accept an optional PR number/URL, CI run ID, or caller evidence; otherwise use
-the current branch's open PR.
-
-Use `run-id = YYYYMMDD-HHMMSS-<short-rand>` and store downloaded artifacts under
-`.agent-layer/tmp/ci-artifacts/<run-id>`. Write the report to
-`.agent-layer/tmp/fix-ci.<run-id>.report.md`.
-
-## Rules
-
-- Use failed logs and available artifacts together as the diagnostic source of
-  truth.
-- Build a credible local red reproducer before keeping a code fix.
-- Treat a CI-only mismatch as a reproducibility defect and reproduce the
-  material environment difference locally.
-- Make the minimum root-cause fix directly, regardless of complexity.
-- Do not weaken, skip, disable, or remove tests or checks, lower coverage, or
-  include unrelated warnings and refactors.
-- Stop before a fix that requires a user-owned behavior, architecture, scope,
-  risk, or cost decision.
-- Never stage, commit, push, or post to GitHub.
+Accept a pull request, CI run ID, or supplied evidence; otherwise use the
+current branch's open pull request. Store downloaded artifacts under
+`.agent-layer/tmp/ci-artifacts/<run-id>` and write
+`.agent-layer/tmp/fix-ci.<run-id>.report.md`, using
+`YYYYMMDD-HHMMSS-<short-rand>` for `run-id`.
 
 ## Workflow
 
-### 1. Diagnose
+1. Identify failing required checks from logs and artifacts. Compare workflow
+   configuration and the CI environment with COMMANDS.md. Preserve run IDs,
+   commands, exit status, useful output, and material environment differences.
+2. Reproduce the failure locally with the failing command or closest documented
+   equivalent. If it passes, reproduce the relevant CI-only difference rather
+   than guessing.
+3. Make the smallest root-cause repair, including directly required tests,
+   configuration, documentation, or memory. Prove red-to-green behavior, run
+   CI-equivalent affected checks, and inspect the diff.
 
-Identify the failing required checks. Read failed logs, download diagnostic
-artifacts, inspect relevant workflow configuration, and compare the CI
-environment with the documented local command in `COMMANDS.md`.
+Never weaken checks, lower thresholds, or include unrelated cleanup. When an
+equivalent failure recurs, revise the causal model and gather discriminating
+evidence rather than repeating a strategy; continue only when new evidence
+supports a safe repair, and otherwise stop with `repeated-failure`. Consult
+authoritative tooling or dependency documentation when local evidence is
+insufficient.
 
-Preserve the check, run ID, command, exit status, relevant output or artifact,
-suspected location, and material environment differences.
-
-### 2. Reproduce locally
-
-Run the failing command or closest documented equivalent. If it passes locally,
-build a focused reproduction of the material CI difference.
-
-If evidence identifies an infrastructure or external-service failure, or no
-credible local reproducer can be built and no safe patch is justified, keep no
-speculative change and return `remote-retry-needed`. Preserve the evidence the
-caller needs to rerun the failed remote checks without changing the tree.
-
-Use `blocked` instead when required evidence or credentials are unavailable, a
-user-owned decision is required, or no supported remote retry path can be
-identified for the caller.
-
-### 3. Fix directly
-
-Repair the root cause in the current working tree, including directly required
-tests, documentation, configuration, or memory updates. Demonstrate the local
-reproducer changing from red to green, then run the CI-equivalent checks for the
-affected path and inspect the resulting diff.
-
-If an evidence-equivalent local failure recurs, do not repeat the same repair
-strategy. Revisit the causal model and add focused instrumentation or another
-discriminating diagnostic when useful. Continue only when new evidence supports
-a safe repair; otherwise stop with `repeated-failure`.
-
-### 4. Report
-
-Report failure evidence, reproducer, repair, verification, changed files,
-residual risk, and one status:
-
-- `ready-to-publish`
-- `remote-retry-needed`
-- `blocked`
-- `repeated-failure`
+If evidence proves an infrastructure or external failure, or no safe patch has
+a credible reproducer, keep no speculative change and return
+`remote-retry-needed` with rerun identifiers. Use `blocked` only for missing
+required evidence or credentials, an unresolved contract, or a user decision.
 
 ## Completion contract
 
-Return the report, changes, red-to-green evidence, checks, material diagnostics,
-status, and remote-retry identifiers. Confirm no staging, commit, push, or
+Report `ready-to-publish`, `remote-retry-needed`, `repeated-failure`, or
+`blocked`, including the
+failure evidence, reproducer, changes, red-to-green and affected-check results,
+remote retry identifiers, and residual risk. Confirm no stage, commit, push, or
 GitHub write occurred.

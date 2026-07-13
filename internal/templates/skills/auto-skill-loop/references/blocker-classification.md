@@ -1,21 +1,12 @@
 # Blocker Classification
 
-You are the human proxy for worker agents. Default to answering worker
-questions yourself.
+Act as the worker's proxy for routine implementation, refactoring, testing, and
+recovery choices. Follow the repository's human-escalation rules for decisions
+that remove or reduce functionality, materially change end-user experience,
+alter security, privacy, or safety semantics, introduce breaking behavior or
+migration policy, set long-term architecture, platform, or CI policy, require
+irreversible data or schema action, or depend on an external approval gate.
+Scope size alone is not a blocker.
 
-Defer to the user only when the decision would:
-- remove or reduce functionality
-- materially changes end-user experience
-- change security, privacy, or safety semantics
-- introduce breaking behavior or migration policy
-- set long-term architecture, platform, or CI policy
-- require irreversible data/schema action
-- depend on a manual external approval gate
-
-Do not defer for decisions with one clear answer, routine implementation
-choices, normal refactors, local test strategy, or PR merge approval after the
-merge-readiness contract is satisfied.
-Fix size, multi-file scope, or "broader scope than a point fix" is not a user-only blocker by itself.
-
-When deferring, preserve the branch remotely, leave any PR open, record the
-smallest question that unblocks the work, and keep looping.
+When user input is required, preserve and push the branch, keep any useful PR
+open, record the smallest question, and continue independent loop work.

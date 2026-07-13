@@ -7,20 +7,17 @@ description: >-
 
 # address-pr-comments
 
-Resolve every PR comment and keep decisions, edits, evidence, and reply drafts
-in one durable ledger.
+Resolve pull-request comments through one durable ledger.
 
-## Inputs and boundaries
+## Inputs
 
-Accept an optional PR number/URL, existing ledger, comment IDs, caller-provided
-comments, or prioritization guidance. Otherwise use the current branch's PR.
-Create `.agent-layer/tmp/address-pr-comments-<pr-number>-ledger.md` when needed.
+Accept a PR number/URL, ledger, comment IDs, comments, or priorities; default to
+the current branch's PR. Create
+`.agent-layer/tmp/address-pr-comments-<pr-number>-ledger.md` when needed. Never
+stage, commit, push, post, or call reply APIs; return uncommitted fixes and the
+ledger.
 
-Do not stage, commit, push, post replies, call reply APIs, or mark a reply posted
-without fresh GitHub evidence. Leave fixes uncommitted and return the ledger on
-every exit.
-
-## Ledger
+## Ledger contract
 
 Create one row per conversation comment, inline comment, or review body using
 `conversation:<id-or-url>`, `review:<id>`, or `review-body:<id>`:
@@ -28,47 +25,35 @@ Create one row per conversation comment, inline comment, or review body using
 | Comment key | Location | Decision | State | Reply URL or ID | Reply audit | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 
-Decisions are `fix`, `disagree`, `defer`, or `excluded`. Notes hold the draft
-reply or evidence, fix, checks, or tracking location. Agent verdict replies are
-evidence for their parent unless they request new work.
+Decisions are `fix`, `disagree`, `defer`, or `excluded`. Notes hold evidence,
+fix/check results, trackers, and reply drafts. A verdict reply supports its
+parent unless it adds a request.
 
-This skill may set `fixed_uncommitted`, `ready_to_reply`,
-`blocked_user_decision`, or `excluded`; the publisher may set
-`reply_posted_pending_audit` or `complete`. Use `not-run`, `pass`, or the audit
-failure in `Reply audit`. A non-excluded row is complete only when fresh GitHub
-data supplies its reply ID/URL, audit is `pass`, and any claimed fix or tracker
-exists. Exclusions require a reason.
+Local states are `fixed_uncommitted`, `ready_to_reply`,
+`blocked_user_decision`, or `excluded`; publishing may later set
+`reply_posted_pending_audit` or `complete`. Completion requires fresh reply
+evidence, a passing audit, and every claimed fix/tracker. `Reply audit` is
+`not-run`, `pass`, or a failure reason. Explain exclusions.
 
 ## Workflow
 
-### 1. Gather and decide
+Fetch every comment type, merge stable keys, and reconcile replies from fresh
+GitHub data. Exclude only status/CI messages, factual statements, and verdicts
+without new requests. Stop if all rows are complete.
 
-Fetch all comment types, merge by stable key, and reconcile posted replies from
-fresh GitHub data. Exclude only status/CI messages, pure factual statements, and
-verdict replies with no new request. Return immediately if all rows are complete.
-
-Validate each comment against the current tree and choose:
+Validate each remaining comment against the current tree:
 
 - `fix`: correct, beneficial, and in PR scope
 - `disagree`: unsupported, harmful, or not beneficial
 - `defer`: worthwhile new feature, pre-existing issue, or unrelated refactor
 
-Do not disagree to avoid work or defer a defect introduced by this PR. Ask only
-when evidence leaves a material behavior, architecture, scope, risk, or cost
-choice.
+Never disagree to avoid work or defer a defect introduced by the PR. Continue
+independent work before escalating under repository rules.
 
-### 2. Implement fixes
-
-Repair every `fix` root cause, grouping tightly coupled comments. Make directly
-required code, test, docs, and memory edits and run focused checks. Do not route
-complexity through planning or verification skills; complexity alone is not a
-user decision.
-
-For `defer`, record a local tracker. Prepare but do not externally create an
-issue without authorization. Preserve caller-owned reply and audit state unless
-fresh GitHub evidence invalidates it.
-
-### 3. Draft replies and return
+Repair accepted root causes and required tests/docs/memory; group coupled work
+and run focused checks. Track deferrals locally, without external issue creation
+unless authorized. Preserve caller-owned reply/audit state unless fresh evidence
+supersedes it.
 
 Prepare one reply per non-excluded, unblocked row:
 
@@ -76,5 +61,6 @@ Prepare one reply per non-excluded, unblocked row:
 - **No change — `<reason>`.** Give evidence.
 - **Deferred — tracked in `<location>`.** Explain the boundary.
 
-Return the ledger, decision counts, fixes and checks, trackers, replies needed,
-and any genuine user blocker. Confirm no publishing operation occurred.
+Finish when every row has a supported decision and local terminal state. Return
+the ledger, counts, fixes/checks, trackers, pending replies, blockers, and
+confirmation that nothing was published.

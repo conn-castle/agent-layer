@@ -8,101 +8,58 @@ description: >-
 
 # improve-codebase
 
-Cover the full declared scope once and fix every validated material finding not
-blocked by a genuine user decision or concrete failure. Packages organize
-repairs; they do not narrow discovery.
+Cover the declared scope once, repair every validated material finding that is
+not genuinely blocked, and verify the combined result.
 
 ## Scope and artifacts
 
-Accept paths, subsystems, audit lenses, exclusions, and report-only mode;
-otherwise cover the whole repository. Exclude generated, vendored, and build
-output unless included explicitly.
+Accept paths, audit lenses, exclusions, and report-only mode; otherwise cover
+the repository. Exclude generated, vendored, and build output. Consider
+correctness, safety, security, lifecycle, concurrency, tests, ownership,
+interfaces, dependencies, errors, documentation, and maintainability as
+relevant.
 
-Examine relevant correctness, safety, security, concurrency, cancellation,
-input, test, ownership, interface, dependency, duplication, error, docs, and
-maintainability risks. Cover meaningful components and boundaries without
-per-file ceremony or arbitrary finding quotas.
+Write `.agent-layer/tmp/improve-codebase.<run-id>.report.md`, with delegated
+evidence under the same prefix. Do not stage, commit, or push.
 
-Write the master report to
-`.agent-layer/tmp/improve-codebase.<run-id>.report.md` and delegated evidence
-under the same prefix as `investigation-<index>-<slug>`, `cross-cutting`, and
-`repair-<index>-<slug>` reports.
+## Finding standard
 
-## Ownership
-
-- One fresh scout maps the scope into coherent, non-overlapping investigation
-  groups and cross-cutting questions.
-- Fresh read-only investigators cover each group; run independent groups
-  concurrently when useful. Do not duplicate artifacts or concerns for
-  consensus.
-- One fresh cross-cutting investigator examines the complete map and reports
-  for relationships no isolated group can establish.
-- The owning agent validates findings, maintains the ledger, orders all
-  mutations, and may use fresh fixers for context-heavy repair packages.
-- `/review-uncommitted-code` owns the single final code review. Keep mutations
-  sequential and leave changes uncommitted and unpushed.
-
-## Finding contract
-
-Classify findings as `local`, `cross-boundary`, or `architectural`. Accept only
-current, evidence-backed problems with material impact on correctness, safety,
-reliability, performance, test integrity, architecture, or maintenance cost.
-Merge duplicates under their shared root cause and omit stylistic, speculative,
-unsupported, and immaterial candidates.
-
-Fix every accepted in-scope finding, including required tests, docs, and memory.
-Ask only when evidence leaves materially different behavior, architecture,
-scope, risk, cost, migration, or external-contract choices. Difficulty or
-breadth alone is not a user decision.
+Accept only current, evidence-backed problems with material impact on behavior,
+safety, reliability, performance, test integrity, architecture, or maintenance
+cost. Classify them as `local`, `cross-boundary`, or `architectural`; merge
+duplicates under their root cause. Omit stylistic, speculative, unsupported,
+and immaterial candidates.
 
 ## Workflow
 
-### 1. Map and investigate once
+1. Read COMMANDS.md and authoritative context. Map meaningful components,
+   boundaries, ownership, state, dependencies, and cross-cutting questions.
+   Delegate non-overlapping investigations when useful; validate their coverage
+   and evidence.
+2. Examine the complete map for cross-cutting relationships — ownership,
+   dependency, data flow, protocol, lifecycle, security, reliability, error
+   handling, tests, documentation — that no isolated investigation can
+   establish. Build a ledger of each accepted finding's evidence, impact, root
+   cause, repair boundary, required updates, and verification. Return
+   `no-material-findings` if empty, or the ledger without mutation in
+   report-only mode.
+3. Group findings into dependency-aware packages and apply them sequentially.
+   Repair root causes and required tests, documentation, and memory; run focused
+   checks and mark each `fixed`, `invalid-with-evidence`, or blocked by a named
+   constraint. Continue independent work when safe.
+4. Run `/review-uncommitted-code` once over the delivery and affected
+   boundaries, repairing accepted findings. Run risk-proportional verification
+   over the final tree and ledger. Concrete failures return to repair; confidence
+   alone does not restart discovery or review.
 
-Read COMMANDS.md and relevant authoritative context. The scout records
-components, ownership, interfaces, state and dependency boundaries, constraints,
-groups, and cross-cutting questions. Validate that the map covers the declared
-scope.
-
-Give each investigator its group, constraints, and report path. Require exact
-locations, affected behavior or boundary, impact, smallest repair shape, and
-coverage accounted for. Then have the cross-cutting investigator examine the
-complete evidence for ownership, dependency, data flow, protocol, lifecycle,
-security, reliability, error, test, and documentation relationships.
-
-### 2. Synthesize the master ledger
-
-Validate candidates against the current tree and record for each survivor:
-
-- stable ID, category, severity, scope, evidence, and impact
-- root cause, repair boundary, required updates, and verification
-- any genuine user decision or concrete blocker
-
-Return `no-material-findings` after recording scope coverage when none survive;
-in report-only mode return the ledger. Otherwise group every accepted finding
-into dependency-ordered repair packages.
-
-### 3. Repair all accepted findings
-
-Execute packages sequentially against the latest tree, directly or through one
-fresh fixer per context-heavy package. Each package repairs root causes, updates
-required tests/docs/memory, runs focused checks, and records each assigned
-finding as `fixed`, `invalid-with-evidence`, `blocked-user-decision`, or
-`blocked-concrete-failure`. Continue independent packages when safe.
-
-### 4. Review and verify once
-
-When changes exist, run `/review-uncommitted-code` once over the combined work
-and affected boundaries; validate and fix `Recommended Accept` findings with
-focused evidence. Do not start another broad review.
-
-Run one risk-proportional final verification over the final tree and repaired
-ledger. A failed check may return to its responsible repair and rerun invalidated
-evidence; confidence alone may not restart investigation or review.
+Delegated-agent failure is recoverable through local evidence or replacement.
+Escalate only for external or authoritative-contract constraints, unsafe user
+state overlap, or genuine user decisions. Difficulty or breadth alone is not a
+user decision.
 
 ## Completion contract
 
-Report scope and boundary coverage, delegated evidence, the material ledger,
-repairs, final review, verification, decisions, blockers, and residual risk.
-Use one outcome: `improved`, `report-only`, `no-material-findings`,
-`blocked-user-decision`, or `blocked-concrete-failure`.
+Report `improved`, `report-only`, `no-material-findings`,
+`blocked-user-decision`, or `blocked-concrete-failure`. Include scope and
+boundary coverage, evidence sources, the finding ledger, repairs, review,
+verification, blockers, report path, and residual risk.

@@ -7,80 +7,51 @@ description: >-
 
 # fully-implement-plan
 
-Run implementation, code review, contract verification, and required repairs
-as a root-owned local procedure. Dispatch only the required bounded leaves. Do
-not open a PR or run an unrelated full lane.
+Implement an artifact contract, review and verify the delivery, and repair
+material findings. Leave shipping and unrelated full-lane checks to callers.
 
-## Inputs and artifact
+## Inputs and boundaries
 
-Require exact plan, task, and context artifact paths plus `implementer`,
-`code_reviewer`, and `fixer` dispatch roles. Do not infer them. Write
-`.agent-layer/tmp/fully-implement-plan.<run-id>.report.md`.
+Require exact plan, task, and context artifact paths. Accept optional
+implementer, reviewer, and fixer roles; otherwise work locally or delegate as
+useful. Treat artifacts as the contract and validate delegated evidence against
+the latest tree.
 
-Dispatch external roles through `/agent-dispatch`. Treat the supplied artifacts
-as the contract and delegated reports as evidence. Serialize mutations against
-the latest tree and stop on a failed delegation or missing required verdict.
-Keep a findings and evidence ledger in the workflow report, tied to the contract
-version and covered tree.
+Write `.agent-layer/tmp/fully-implement-plan.<run-id>.report.md` and track its
+contract obligations, findings, and evidence. Serialize mutations; do not
+stage, commit, weaken checks, or destructively rewrite user changes.
 
-Continue through reversible in-scope repairs and non-destructive checks. Ask
-only for external writes not already authorized, destructive actions,
-substantive product/architecture choices, or material scope expansion. Do not
-stage, commit, weaken checks, or destructively rewrite changes.
-
-Before semantic review, choose deterministic checks proportionate to changed
-scope, consequential risks, repository guidance, and the evidence needed to
-avoid wasting review. Do not use time budgets, historical duration rules,
-universal cutoffs, or mandatory tiers. The full lane normally remains a final
-shipping-head obligation, but may run here when it is the sensible evidence.
+Recover, replace, or complete incomplete delegated work. Agent failure alone is
+not a reason to escalate.
 
 ## Workflow
 
-### 1. Implement
+1. Run `/implement-plan` with the supplied artifacts. Record its report,
+   deviations, checks, remaining work, and readiness.
+2. Run checks proportionate to changed scope and risk. Use focused checks by
+   default and the documented full lane when it is the credible evidence.
+3. Against the same tree, run independent `/verify-work` and
+   `/review-uncommitted-code` passes, concurrently when practical. Treat
+   `complete-with-follow-up` as complete only for out-of-contract follow-up.
+4. Validate and deduplicate findings. Mark each `open`, `resolved`,
+   `invalid-with-evidence`, or `blocked`. Repair open in-scope findings,
+   including required tests, documentation, and memory.
+5. Rerun invalidated checks and targeted contract verification after changes.
+   Repeat semantic review only when a repair changed design, architecture, or
+   contract scope.
 
-Dispatch `implementer` with `/implement-plan` and the artifacts. Record its
-report, deviations, checks, remaining work, and readiness.
-
-### 2. Establish completion evidence
-
-After the focused deterministic gate passes, start `/verify-work` in a fresh
-built-in subagent and dispatch `code_reviewer` once with
-`/review-uncommitted-code`, the delivery diff boundary, and the contract
-artifacts, both against the same exact head. Run them concurrently when the
-host supports a background leaf; neither may see the other's findings. Let
-independent safe checks complete so all failures can be accumulated before
-repair. Record each report, reviewed head, findings, evidence, shipping
-obligations, and verdict. Treat
-`complete-with-follow-up` as complete only when all follow-up is outside the
-contract.
-
-### 3. Reconcile findings and evidence
-
-Validate and deduplicate accepted review findings and material verification
-findings against the contract and current tree. Record each as `open`,
-`resolved`, `invalid-with-evidence`, or `blocked`. Do not dispatch `fixer` when
-no confirmed finding remains open. If no genuine user decision blocks repair,
-dispatch `fixer` with the original artifacts, current evidence, open findings,
-required checks, and a unique
-`.agent-layer/tmp/fully-implement-plan.<run-id>.repair.<repair-id>.report.md`.
-
-The fixer owns that repair set and returns finding dispositions, focused checks,
-and a final diff assessment. The orchestrator validates its evidence and owns
-the durable ledger and completion verdict.
-
-After mutation, identify evidence invalidated by changed files and contracts.
-Rerun affected focused checks and one targeted contract verification. Repeat a
-full independent semantic review, through a fresh `code_reviewer` dispatch,
-only when the repair changed production design, architecture, or contract
-scope. Dispatch another repair set only for
-newly evidenced open findings; do not repeat unchanged work for confidence.
+Continue through safe in-scope repairs. Return `blocked` only when recovery is
+exhausted and the remaining constraint is external, missing authoritative
+contract input, unsafe overlap with user work, or a genuine user decision.
 
 ## Completion contract
 
-Report inputs, implementation, review, verification, repairs, final evidence,
-shipping obligations, and residual risk. Return:
+Return:
 
-- `complete`: current evidence verifies the final tree against the contract and
-  every confirmed in-scope finding is resolved or invalid with evidence
-- `complete-with-follow-up`: only explicit out-of-contract work remains
-- `blocked`: name the concrete failure or genuine user decision
+- `complete` when the final tree satisfies the contract and all confirmed
+  in-scope findings are resolved or disproven with evidence
+- `complete-with-follow-up` when only explicit out-of-contract work remains
+- `blocked` for a named unresolved constraint
+
+Include artifact paths, implementation and deviations, final checks, review,
+verification, repairs, shipping obligations, report path, and residual risk.

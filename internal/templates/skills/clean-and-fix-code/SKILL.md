@@ -8,96 +8,46 @@ description: >-
 
 # clean-and-fix-code
 
-Use only for uncommitted working-tree changes. Run each stage once, directly
-address accepted findings, and stop.
+Clean, review, and repair the current uncommitted delivery.
 
 ## Scope
 
-The default target is the combined uncommitted working tree:
-
-- staged diff from `git diff --cached`
-- unstaged diff from `git diff`
-- untracked files from `git ls-files --others --exclude-standard`
-
-Do not sweep old commits, unrelated known issues, or the whole repository unless
-explicitly asked. If the target is empty, report `no-findings` with zero counts
-and no review report instead of reviewing history.
+The default target is staged, unstaged, and untracked changes. Explicit scope
+must intersect that target. Do not expand into committed history, unrelated
+issues, or a repository-wide sweep. If the target is empty, return
+`no-findings`.
 
 ## Workflow
 
-### 1. Inspect and clean once
+1. Inspect the combined working-tree diff. Apply each relevant checklist once:
+   - `assets/prune-uncommitted-tests.md` for changed tests
+   - `assets/simplify-uncommitted-code.md` for changed production code
+2. If changes remain, run `/review-uncommitted-code` once over the complete
+   target. Recover or replace an unusable review instead of treating agent
+   failure as a development blocker.
+3. Validate every `Recommended Accept` finding against the current tree, repair
+   its root cause, make directly required test, documentation, or memory edits,
+   and run credible affected checks. Apply mutations sequentially against the
+   latest tree.
 
-Own the cleanup directly. Read and apply each applicable checklist once:
+Do not promote `Recommended Defer` findings into scope. Defer an accepted
+finding only when it depends on a genuine user decision or lacks a safe
+evidence-backed repair; continue independent work.
 
-- `assets/prune-uncommitted-tests.md` when tests or test cases changed
-- `assets/simplify-uncommitted-code.md` when production code changed
-
-Do not delegate these checks to separate cleanup agents. Apply supported
-removals and simplifications sequentially against the latest tree, record what
-changed, then re-evaluate the target. If cleanup empties the target, skip review
-and finish with `completed`.
-
-### 2. Review once
-
-Run `/review-uncommitted-code` directly against staged, unstaged, and untracked
-changes as one target. Use its Finding Gate below. Do not launch another review
-round after repairs.
-
-### 3. Address accepted findings directly
-
-For each accepted finding or tightly coupled finding group:
-
-1. Validate the finding against the current working tree and repository
-   evidence.
-2. Diagnose and repair the root cause within the bounded target.
-3. Make directly required test, documentation, or memory edits.
-4. Run the narrowest credible affected checks.
-5. Inspect the resulting diff against the accepted finding.
-
-Apply fixes sequentially against the latest working tree. Resolve routine repair
-and verification details directly. Stop only when a required choice materially
-affects behavior, architecture, scope, risk, or cost, or when a concrete failure
-prevents safe repair.
-
-## Finding Gate
-
-Use `/review-uncommitted-code` findings as follows:
-
-- Fix only `### Recommended Accept` findings.
-- If `### Recommended Accept` is `None`, finish with `completed` when a
-  cleanup pre-pass materially changed the target; otherwise finish with
-  `no-findings`.
-- Do not promote `Recommended Defer` findings into repair scope. Report their
-  count and the genuine user-owned decision or missing evidence for each.
-- If an accepted repair depends on a user-owned decision recorded under
-  `Recommended Defer`, stop and name that decision.
-
-## Guardrails
-
-- Do not call `/plan-work`, `/implement-plan`, or `/verify-work` from this skill.
-- Do not stage, commit, discard, or destructively rewrite changes unless the
-  user explicitly asks.
-- Keep repairs within the uncommitted target plus directly required supporting
-  edits.
-- Do not parallelize mutations against shared working-tree state.
-- Do not repeat cleanup, review, or repair for convergence or confidence. A
-  focused check of a repaired finding is evidence, not another review pass.
+Do not call planning, implementation, or final-verification workflows from this
+skill. Do not stage, commit, discard, or destructively rewrite changes without
+explicit authorization. Avoid repeating broad cleanup or review for confidence;
+rerun focused evidence invalidated by a repair.
 
 ## Completion contract
 
-Report:
+Return:
 
-- `outcome`: `no-findings`, `completed`, or `blocked`, with any blocker or
-  residual risk
-- outcome basis: use `completed` when a cleanup pre-pass or accepted repair
-  materially changed the target; use `no-findings` only when neither did
-- cleanup pre-pass outcomes, or `not applicable`
-- `/review-uncommitted-code` report path, `not run — empty target`, or `not run
-  — target emptied by cleanup pre-passes`
-- accepted and deferred counts
-- `resolved_findings`: each fixed finding with title, severity, and files; use an
-  empty list when none were fixed
-- focused check evidence and the final diff assessment for each fixed finding
+- `completed` when cleanup or accepted repairs changed the target
+- `no-findings` when neither did
+- `blocked` when a concrete unresolved constraint prevents a safe result
 
-Callers may pass `resolved_findings` to final verification as supplemental
-obligations. Do not create a second obligations list.
+Include the cleanup outcomes, review report path when run, accepted and
+deferred counts, resolved findings with affected files, checks, and residual
+risk. This findings list is the supplemental obligation list for callers; do
+not create another one.

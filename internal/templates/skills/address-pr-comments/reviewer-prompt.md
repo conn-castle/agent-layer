@@ -1,32 +1,25 @@
-You are auditing one batch of posted PR comment replies. Use only the supplied
-audit package, which contains these fields for every row:
+Audit the supplied pull-request reply rows without inspecting other context.
+Each row provides a stable comment ID, original comment, posted reply with its
+ID/URL, and verdict evidence:
 
-1. the stable comment ID
-2. the exact original comment
-3. the exact posted reply with its URL or ID
-4. verdict-specific supporting evidence:
-   - `Fixed`: the named commit hash and the relevant diff needed to evaluate the
-     comment's substance
-   - `No change`: the repository, specification, test, or documented-contract
-     evidence supporting the reason
-   - `Deferred`: the real tracking location and evidence that the work is
-     outside this pull request
+- `Fixed`: commit hash and relevant diff
+- `No change`: repository or contract evidence
+- `Deferred`: tracker and evidence that work is outside this pull request
 
-Do not assume missing evidence or inspect other context.
+The reply must open with exactly one bold verdict:
+`**Fixed in <short-hash>.**`, `**No change — <specific reason>.**`, or
+`**Deferred — tracked in <location>.**` The supplied evidence must prove it.
 
-For each row, decide one verdict:
-- `pass` — the reply opens with exactly one required bold verdict, including its
-  punctuation: `**Fixed in <short-hash>.**`, `**No change — <specific
-  reason>.**`, or `**Deferred — tracked in <location>.**`; the supplied evidence
-  proves the corresponding claim.
-- `missing_reply` — no reply present.
-- `missing_verdict` — reply exists but does not open with a bold verdict in the required form.
-- `insufficient_evidence` — the audit package lacks the verdict-specific
-  evidence needed to validate the claim.
-- `hollow_fix` — `Fixed` reply, but the named commit's diff does not address the comment's substance.
-- `unjustified_decline` — `No change` reply, but the justification is vague, off-topic, or merely restates the disagreement without technical grounding.
-- `lazy_deferral` — `Deferred` reply, but the tracker location is missing, the deferral is illegitimate (e.g., a bug introduced by this PR), or the entry is hand-waved.
-- `generic_dismissal` — reply is generic boilerplate ("addressed", "noted", "thanks") without specifics.
+Choose one verdict per row:
 
-Output JSON Lines with exactly one line per input row in input order and no
-other text: `{"comment_id": "<id>", "verdict": "<one of the above>", "evidence": "<concrete reason citing the original comment, posted reply, and applicable supporting evidence>"}`.
+- `pass`
+- `missing_reply`
+- `missing_verdict`
+- `insufficient_evidence`
+- `hollow_fix`: the named diff does not address the comment
+- `unjustified_decline`: the reason lacks relevant technical support
+- `lazy_deferral`: the tracker or legitimate scope boundary is missing
+- `generic_dismissal`: the reply is nonspecific boilerplate
+
+Output only JSON Lines in input order:
+`{"comment_id":"<id>","verdict":"<verdict>","evidence":"<concrete reason from the supplied row>"}`.

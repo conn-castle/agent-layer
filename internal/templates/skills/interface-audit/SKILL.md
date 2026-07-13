@@ -9,91 +9,47 @@ description: >-
 
 # interface-audit
 
-Audit product interfaces as component boundaries and produce one evidence-backed
-report. Do not implement the recommendation.
+Produce one evidence-backed audit of product interface boundaries. Do not
+implement or launch planning.
 
 ## Inputs and references
 
-- Fresh audit: no option.
-- Update audit: `--update`, optionally with an explicit report path.
-- No other flags are supported. Ask which mode to use if extra flags make the
-  request ambiguous.
+Run a fresh audit by default. `--update [report-path]` refreshes an existing
+report. Read [`report-structure.md`](references/report-structure.md); for an
+update also read [`update-workflow.md`](references/update-workflow.md).
 
-Read [`references/report-structure.md`](references/report-structure.md) before
-creating or editing a report. With `--update`, also read
-[`references/update-workflow.md`](references/update-workflow.md); it owns report
-selection, update boundaries, and source evidence.
-
-## Fresh-run isolation
-
-A fresh audit uses only current code, tests, docs, command output, and user
-instructions. Do not inspect or reuse prior audits, cleanup analyses, or agent
-outputs. If the user wants prior evidence incorporated, use update mode.
+A fresh audit uses only current code, tests, docs, command output, and evidence
+created for this run. Do not inspect prior audit artifacts unless the user asks
+for an update.
 
 ## Evidence contract
 
-- Treat each scored row as a concrete component boundary, not a vague area.
-- Verify names and numeric claims before recording them. Use `partial` when an
-  exact count would cost more than it contributes.
-- Tie complexity, over-engineering, debt, and confidence scores to current
-  observable evidence.
-- Preserve row identifiers during updates; retired identifiers are not reused.
-- Prefer current code and tests over stale documentation.
+- Score concrete component boundaries, not vague subsystems.
+- Verify names and numeric claims; use `partial` when exact measurement adds
+  little value.
+- Ground complexity, over-engineering, debt, confidence, and recommendations in
+  current evidence. Current code and tests outrank stale documentation.
+- Preserve row identifiers during updates and never reuse retired identifiers.
 - Protect discovered product requirements unless the user approves a behavior
-  change.
-- Do not preserve a prior score when current evidence no longer supports it.
+  change. Do not preserve stale scores for continuity.
 
 ## Workflow
 
-### 1. Establish mode and artifact
+1. Establish fresh or update mode, repository baseline, report path, and scope.
+2. Trace the interface chain, contracts, ownership, state, tests, failure modes,
+   and meaningful cleanup opportunities. Investigate directly unless coherent,
+   independent boundary groups benefit from read-only parallel investigation.
+3. Calibrate neighboring rows, update the report, and select the highest-value
+   coherent improvement. Revisit only evidence gaps or inconsistencies. If no
+   candidate justifies its cost, record `no-material-improvement`.
+4. For a material candidate, decide whether it requires broad ownership,
+   protocol, data-model, cross-language, or user-workflow redesign. Recommend
+   that architecture only when a smaller interface improvement is insufficient;
+   otherwise recommend the smallest coherent improvement. State any behavior
+   change and require approval before it enters a plan. Include exact
+   `/plan-work` input as a handoff, but do not run it.
 
-Read the applicable references and establish the repository baseline. For a
-fresh audit, create the required report. For an update, select and update only
-the report established by the update workflow.
-
-### 2. Run one interface evidence pass
-
-Discover the interface chain, contracts, ownership, state, tests, failure modes,
-and material cleanup opportunities. Investigate a compact scope directly. For
-a context-heavy scope, give coherent, non-overlapping boundary groups to fresh
-read-only investigators and run independent groups concurrently when useful.
-Each returns compact row evidence; the main agent calibrates the report. Do not
-duplicate rows across investigators.
-
-### 3. Calibrate and synthesize once
-
-The main agent resolves evidence, calibrates scores across neighboring rows,
-updates the required report sections, and identifies the highest-value coherent
-improvement. Revisit a row only when its cited evidence is missing or
-internally inconsistent, not to seek additional confidence.
-
-If no candidate would materially reduce complexity, over-engineering, or debt,
-record `no-material-improvement` and yield without manufacturing a proposed
-change.
-
-### 4. Final recommendation gate
-
-Skip this gate only when Stage 3 recorded `no-material-improvement`.
-
-Decide whether the highest-value finding requires major architecture: broad
-ownership changes, protocol redesign, data-model changes, cross-language
-contract replacement, or a substantial user-workflow change.
-
-- If yes, propose the architectural item and explain why a smaller interface
-  improvement is insufficient.
-- Otherwise propose the smallest coherent improvement that materially reduces
-  complexity, over-engineering, or debt.
-- State any behavior change and require explicit approval before planning it.
-- Stop after asking whether to run `/plan-work` for that item or select a
-  different item.
-
-## Guardrails
-
-- Do not edit production code, tests, docs, or memory files.
-- Do not widen beyond product interfaces or create parallel reports.
-- Do not score from intuition when evidence is available.
-- Do not run `/plan-work` from this skill.
-
-Return the report path and either the final recommendation gate or
-`no-material-improvement`; every material score and recommendation must cite
-current evidence.
+Do not edit production code, tests, docs, or memory files, widen beyond product
+interfaces, or create parallel reports. Return the report path and either the
+recommendation or `no-material-improvement`, with current evidence for every
+material score and conclusion.

@@ -2,21 +2,16 @@
 
 Use when `worker_skill=fix-issues`.
 
-Dispatch the implementer with `/fix-issues`. Instruct it to pick 1-5 coherent
-`ISSUES.md` items for one batch, excluding items already recorded as
-user-blocked unless the user has since answered them.
+Run `/fix-issues` through the configured implementer, a built-in agent, or local
+work. Select a coherent group of live ISSUES.md items, excluding recorded
+user-blocked items until the user answers them.
 
-The implementer must return:
-- selected issue IDs/titles
-- fixed, deferred, rejected, or reclassified disposition for each selected item
-- questions or checkpoints, if any
-- changed files and line stats
-- verification run and result
-- remaining safe next candidates
+Reconcile the result with the current tree. Preserve at least:
 
-The normal PR gate applies. A batch may ship below the gate only for a
-high-severity fix or the final autonomous tail.
+- selected items and each terminal disposition
+- changed files and verification evidence
+- user-only decisions and safe next candidates
 
-Resolved issues must be removed from `ISSUES.md`.
-Deferred issues must not be annotated in `ISSUES.md`; record the deferral only
-in worker output, run artifacts, or the auto-skill-loop ledger.
+Remove resolved items from ISSUES.md. Record deferrals in the run state or
+worker artifact, not as annotations in ISSUES.md. Ship when the batch is a
+coherent review unit, including a small high-severity fix or final tail.

@@ -1,45 +1,32 @@
 # Finding Verdict Classification
 
-Use this rubric once while synthesizing `/review-uncommitted-code` candidates.
-It does not create a separate classifier or review pass.
+Apply this rubric while synthesizing `/review-uncommitted-code`; it is not a
+separate review pass.
 
 ## Evidence gate
 
-Before reporting a candidate:
-
-1. Locate and inspect its cited evidence in the current tree.
-2. Confirm the concern exists in the reviewed state and scope.
-3. Confirm it materially affects correctness, safety, scope, reliability,
-   performance, test integrity, or meaningful maintainability.
-4. Merge it with any duplicate candidate.
-5. Determine whether resolving it requires a user-owned decision.
-
-Discard candidates that are unsupported, merely stylistic, speculative,
-out-of-scope, unrelated known issues, or based on stale evidence. They are not
-findings and do not need report entries.
+Inspect cited current-tree evidence, confirm the concern is in scope and
+material, merge duplicates, and determine whether resolution needs a user-owned
+decision. Discard unsupported, stylistic, speculative, stale, out-of-scope, or
+unrelated candidates.
 
 ## Verdicts
 
-Assign exactly one verdict to every reported finding:
+Assign exactly one verdict:
 
-- `Accept`: valid now, supported by concrete evidence, within reviewed scope,
-  and actionable without a new user decision.
-- `Defer`: valid, but blocked by a genuine user-owned decision or information
-  that cannot be established during this review.
+- `Accept`: current, evidenced, in scope, and actionable without a new user
+  decision.
+- `Defer`: valid but blocked by a genuine user decision or information still
+  unavailable after reasonable investigation.
 
-Do not defer merely because a fix is broad, and do not accept a finding merely
-because several reviewers agree. Evidence settles the verdict.
-
-A scope boundary alone is not a user-owned decision. Ask only when resolution
-requires an external write, a destructive action, a substantive product or
-architecture choice, or material expansion beyond the requested scope. Do not
-ask before a reversible local repair that uniquely restores the declared base
-and contract.
+A scope boundary alone is not a user-owned decision. Escalate only for an
+external write, a destructive action, a substantive product or architecture
+choice, or material expansion beyond the requested scope, per the repository's
+human-escalation rules. Breadth and reviewer agreement do not determine the
+verdict; evidence does.
 
 ## Reporting rules
 
-- Preserve the strongest evidence when merging duplicates.
-- Explain every non-accepted verdict concretely.
-- Make Critical or High severity proportional to demonstrated impact.
-- Findings remain recommendations; the caller that owns edits makes the final
-  resolution after validating current state.
+Preserve the strongest evidence when merging. Explain every `Defer`, calibrate
+severity to demonstrated impact, and leave final resolution to the caller that
+owns edits.

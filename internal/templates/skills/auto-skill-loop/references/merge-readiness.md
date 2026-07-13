@@ -1,17 +1,13 @@
 # Merge Readiness
 
-The user's standing merge authorization applies only after this readiness check
-passes.
+Standing merge authorization applies only after the owning agent confirms:
 
-Before merging, perform this readiness check yourself and do not dispatch or use subagents.
-- PR is open, mergeable, and conflict-free
-- latest pushed commit has green CI and required local verification
-- all actionable comments are addressed or correctly declined
-- no simple in-scope issue is deferred
-- no manual approval gate is pending
-- the PR is substantive or matches a PR-gate exception
+- the PR is open, mergeable, and conflict-free
+- required CI and local verification pass on the latest head
+- actionable feedback is resolved and eligible replies are posted
+- no simple in-scope repair or manual approval remains
+- the PR is a coherent delivery
 
-If readiness fails, either dispatch the shipper role to continue `/ship-pr` or
-leave the PR open and start a new attempt.
-
-When readiness passes, merge using `/ship-pr`'s merge mechanics.
+Do not delegate this decision. If readiness fails, continue `/ship-pr` or leave
+the PR open and start another attempt. When it passes, merge using `/ship-pr`'s
+fresh-gate and cleanup mechanics.

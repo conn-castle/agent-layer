@@ -8,59 +8,49 @@ description: >-
 
 # auto-skill-loop
 
-Orchestrate external workers through `/agent-dispatch`; do not implement or ship
-code in this context.
+Run repeated improvement batches with minimal steering. Use external workers
+when configured; otherwise use built-in agents or work locally. Worker output is
+evidence: recover valid work from incomplete results and replace or finish a
+failed bounded task without treating agent failure as a user blocker.
 
-## Inputs and references
+## Inputs
 
-Require `worker_skill` (`/fix-issues` or `/improve-codebase`), `implementer`,
-`shipper`, and standing merge authorization. `/fix-issues` also requires
-`plan_reviewers` passed unchanged.
+Require:
 
-Read only the selected worker reference:
+- `worker_skill`: `/fix-issues` or `/improve-codebase`
+- standing authorization to merge pull requests that pass this workflow's gates
 
-- `/fix-issues`: [references/fix-issues-loop.md](references/fix-issues-loop.md)
-- `/improve-codebase`:
-  [references/improve-codebase-loop.md](references/improve-codebase-loop.md)
+Optional dispatch targets are `implementer`, `shipper`, and `plan_reviewers`.
+Read the selected worker reference, plus
+[`blocker-classification.md`](references/blocker-classification.md). Read
+[`merge-readiness.md`](references/merge-readiness.md) before merging.
 
-Read [references/blocker-classification.md](references/blocker-classification.md)
-for blocker candidates and [references/merge-readiness.md](references/merge-readiness.md)
-when a PR reaches final review or merge.
+## Durable state
 
-## State
+Maintain `.agent-layer/tmp/auto-skill-loop.<run-id>.state.md` at every branch,
+push, PR, blocker, and merge boundary. Keep only what is needed to resume:
+current step, roles, branches and PRs, completed scope, recently touched areas,
+verification, unresolved gates, and the next action. Link other artifacts.
 
-Maintain `.agent-layer/tmp/auto-skill-loop.<run-id>.state.md` before and after
-dispatches, branch changes, pushes, PR actions, blockers, and merges. Record
-only resumable state: current step, roles, branches/PRs, completed scope, recent
-paths, unresolved gates, and verification evidence. Link delegated artifacts
-rather than copying them. Keep worker deferrals out of ISSUES.md.
-
-If context compacts, preserve this skill, the ledger, completed delegations,
-unresolved gates, and next step.
+Preserve this state through context compaction. Keep worker-only deferrals out
+of ISSUES.md.
 
 ## Loop
 
 1. Start each attempt from a clean primary branch. Never stash or discard work;
-   commit and push an attempt before leaving it.
-2. Create or reuse one batch branch and dispatch the implementer with the
-   selected worker skill plus ledger context. Workers leave changes uncommitted
-   and unpushed.
-3. Resolve routine worker checkpoints as the authorized proxy. For a genuine
-   user-only decision, preserve the branch and open PR, record the blocker,
-   return to primary, and start another attempt.
-4. Continue the same batch until the PR gate is met, then dispatch the shipper
-   with `/ship-pr` through its green open-PR endpoint. Do not delegate merging.
-5. Apply the merge-readiness contract. Leave externally gated PRs open and move
-   to another attempt. Merge ready PRs under standing authorization.
-6. Continue until interrupted or autonomous work is exhausted; ship the final
-   small tail even when it misses the normal gate.
+   commit and push recoverable attempt work before leaving its branch.
+2. Create or reuse one batch branch and run the selected worker contract.
+   Resolve routine choices autonomously and keep compatible work in the batch.
+3. When a genuine user-only decision blocks part of the work, preserve and push
+   the branch, open or retain its PR when useful, record the smallest question,
+   then continue with independent work.
+4. Ship a coherent, reviewable batch through `/ship-pr`. Do not wait for an
+   arbitrary issue, file, or line-count threshold; small high-value fixes and a
+   final tail are valid batches.
+5. Apply merge readiness yourself. Leave externally gated PRs open; merge ready
+   PRs under the standing authorization using `/ship-pr` mechanics.
+6. Continue until interrupted or no safe, useful autonomous work remains.
 
-## PR gate and guardrails
-
-Ship when work fixes at least 3 issues, touches 5 meaningful files, changes 500
-meaningful lines, fixes one high-severity security/data-loss/release/correctness
-issue, or is the final autonomous tail. Ignore generated and mechanical churn
-unless it is the substance.
-
-Never delete blocked branches or PRs, weaken checks or skills, treat churn as
-progress, or leave the primary checkout dirty between attempts.
+Never delegate merge authorization, delete blocked branches or PRs, weaken
+checks or skills, count churn as progress, or leave the primary checkout dirty
+between attempts.

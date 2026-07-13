@@ -7,73 +7,37 @@ description: >-
 
 # implement-plan
 
-Implement the supplied artifact contract and return completed work or a concrete
-blocker. Final verification is separate.
+Implement the supplied artifact contract and return work ready for separate
+verification, or a concrete blocker.
 
-## Required inputs
+## Inputs and boundaries
 
-- plan artifact path
-- task artifact path
-- context artifact path
+Require exact plan, task, and context artifact paths. Do not discover or select
+artifacts from `.agent-layer/tmp/`. Confirm each path before reporting it
+missing. Write `.agent-layer/tmp/implement-plan.<run-id>.report.md`, using
+`YYYYMMDD-HHMMSS-<short-rand>` for `run-id`.
 
-Require exact paths. Do not discover or select artifacts from
-`.agent-layer/tmp/`. Stop if an artifact is missing or unreadable.
-
-Write `.agent-layer/tmp/implement-plan.<run-id>.report.md` using
-`run-id = YYYYMMDD-HHMMSS-<short-rand>`.
-
-## Rules
-
-- Keep scope within the plan and task list.
-- Resolve routine implementation details directly from the artifacts and
-  repository evidence.
-- Include planned documentation and memory updates. Do not defer them silently.
-- Run risk-proportional checks: focused by default, or the documented full lane
-  when the contract or change risk warrants it and the lane supports the tree.
-  Do not run broad checks only for confidence.
-- Do not add unrelated cleanup, a new planning cycle, or a review layer.
+Keep scope within the artifacts, including required documentation and memory
+updates. Resolve routine details from repository evidence. Do not add unrelated
+cleanup, another planning cycle, or a review layer.
 
 ## Workflow
 
-### 1. Preflight
+1. Read the artifacts, confirm one objective and scope, and inspect named entry
+   points. Resolve ambiguity from repository evidence; ask only for a genuine
+   user decision.
+2. Implement every task with localized changes, reordering or splitting work
+   when needed for the same scope. Record plan adjustments as `equivalent` or
+   `narrower`; get approval before materially broader work.
+3. Run proportionate checks, using the documented full lane when risk or the
+   contract warrants it. Address concrete in-scope failures.
 
-Read the context, plan, and task artifacts. Confirm they describe the same
-objective and scope, then inspect the named implementation entry points.
-
-If a material ambiguity cannot be settled from repository evidence, identify
-the user-owned decision before editing. Otherwise, proceed without another
-readiness ceremony.
-
-### 2. Implement
-
-Execute the task list with localized, explainable changes. Split or reorder a
-task when needed to implement the same scope safely, and record the adjustment.
-
-When new information invalidates part of the plan, choose the smallest safe
-response:
-
-- continue and record an `equivalent` or `narrower` deviation
-- stop for a user decision before a `broader` deviation
-- report a concrete implementation blocker when work cannot continue
-
-### 3. Report
-
-Write a concise report with:
-
-1. `## Status`
-   - state whether the work is ready for verification or name the concrete
-     blocker
-2. `## Deviations`
-   - record `equivalent`, `narrower`, and approved `broader` deviations with
-     brief reasons; use `None` when there were none
-3. `## Implementation Checks`
-   - list task-local checks and results; use `None` when none ran
-4. `## Remaining Work`
-   - list incomplete planned work or deferred required updates with reasons;
-     use `None` when nothing remains
+Stop with `blocked` only when planned work cannot safely continue without
+missing authoritative input, unsafe overlap, or a user-owned decision.
 
 ## Completion contract
 
-Return the report path, completed scope, checks, deviations, remaining work,
-and readiness or a blocker after accounting for every plan item and required
-docs/memory update. Do not narrate changes already clear from the diff.
+Report the artifact paths, completed scope, checks and results, deviations,
+remaining work, changed files, and readiness for verification or the concrete
+blocker. Account for every plan item and required documentation or memory
+update; avoid narrating details already clear from the diff.
