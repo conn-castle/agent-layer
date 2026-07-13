@@ -20,6 +20,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients/codex"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/run"
+	"github.com/conn-castle/agent-layer/internal/version"
 )
 
 const (
@@ -103,22 +104,43 @@ func providerVersion(path string, agent string) (string, error) {
 	return match[1], nil
 }
 
+// providerVersionCompatibility is the canonical compatibility comparison
+// shared by capability reporting (buildTargetOptions) and execution gating
+// (requireSupportedVersion). An installed version equal to the tested pin is
+// compatible with no warning; a newer semantic version is compatible with a
+// single warning naming both versions; an older or non-semantic version
+// returns an error. The agent must exist in supportedProviderVersions.
+func providerVersionCompatibility(agent string, installed string) (string, error) {
+	tested := supportedProviderVersions[agent]
+	comparison, err := version.Compare(installed, tested)
+	if err != nil {
+		return "", fmt.Errorf("%s reported version %q, which is not a semantic version; the Agent Dispatch tested version is %s", agent, installed, tested)
+	}
+	switch {
+	case comparison < 0:
+		return "", fmt.Errorf("%s version %s is older than the Agent Dispatch tested version %s and is not supported; install the tested version or update Agent Layer after compatibility evidence is available", agent, installed, tested)
+	case comparison > 0:
+		return fmt.Sprintf("warning: %s version %s is newer than the Agent Dispatch tested version %s; attempting dispatch optimistically", agent, installed, tested), nil
+	default:
+		return "", nil
+	}
+}
+
 func requireSupportedVersion(path string, agent string, lookup func(string, string) (string, error)) (string, error) {
 	if lookup == nil {
 		lookup = providerVersion
 	}
-	version, err := lookup(path, agent)
+	installed, err := lookup(path, agent)
 	if err != nil {
 		return "", exitError(ExitUnavailable, fmt.Sprintf("cannot verify %s version before dispatch: %v", agent, err))
 	}
-	expected, ok := supportedProviderVersions[agent]
-	if !ok {
+	if _, ok := supportedProviderVersions[agent]; !ok {
 		return "", exitError(ExitUsage, fmt.Sprintf("unsupported dispatch provider %q", agent))
 	}
-	if version != expected {
-		return "", exitError(ExitUnavailable, fmt.Sprintf("%s version %s is not supported for Agent Dispatch; supported version is %s. Install the supported version or update Agent Layer after compatibility evidence is available.", agent, version, expected))
+	if _, compatErr := providerVersionCompatibility(agent, installed); compatErr != nil {
+		return "", exitError(ExitUnavailable, compatErr.Error())
 	}
-	return version, nil
+	return installed, nil
 }
 
 func buildProviderCommand(
@@ -393,12 +415,12 @@ func antigravitySessionID(logPath string) (string, error) {
 }
 
 func compatibleTargetVersion(path string, target targetMeta, lookup func(string, string) (string, error)) (targetMeta, string, error) {
-	version, err := requireSupportedVersion(path, target.Name, lookup)
+	installed, err := requireSupportedVersion(path, target.Name, lookup)
 	if err != nil {
 		return targetMeta{}, "", err
 	}
 	target.Binary = path
-	return target, version, nil
+	return target, installed, nil
 }
 
 func dispatchEnvironment(base []string, project *config.ProjectConfig, dispatchRun *dispatchRun, depth int, target string) []string {

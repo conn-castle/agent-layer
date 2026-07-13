@@ -213,6 +213,18 @@ func executeDispatch(request dispatchExecution) error {
 	if err := writeIdentity(request.Stderr, session.Name, request.Target.Name, request.Mode, session.State == sessionStateDurable); err != nil {
 		return wrapExitError(ExitTargetFailure, "write dispatch identity", err)
 	}
+	// The version passed the gate in requireSupportedVersion (or came from the
+	// capability cache, whose entries also passed it), so a comparison error
+	// here means corrupted state and must fail loud.
+	warning, compatErr := providerVersionCompatibility(request.Target.Name, request.Version)
+	if compatErr != nil {
+		return exitError(ExitUnavailable, compatErr.Error())
+	}
+	if warning != "" {
+		if _, err := fmt.Fprintln(request.Stderr, warning); err != nil {
+			return wrapExitError(ExitTargetFailure, "write dispatch compatibility warning", err)
+		}
+	}
 
 	persist := func(id string) error {
 		if request.Mode == dispatchModeResume && id != session.ProviderSessionID {

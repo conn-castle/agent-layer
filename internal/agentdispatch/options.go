@@ -47,12 +47,16 @@ type TargetCapabilities struct {
 }
 
 // TargetOption describes one target's installed/configured capability facts.
+// CompatibilityWarning is set when the installed version is newer than the
+// tested version: the target stays supported and dispatchable, and the
+// warning names both versions.
 type TargetOption struct {
 	Agent                 string             `json:"agent"`
 	Enabled               bool               `json:"enabled"`
 	Installed             bool               `json:"installed"`
 	InstalledVersion      string             `json:"installed_version,omitempty"`
 	SupportedVersion      string             `json:"supported_version"`
+	CompatibilityWarning  string             `json:"compatibility_warning,omitempty"`
 	Capabilities          TargetCapabilities `json:"capabilities"`
 	RandomEligible        bool               `json:"random_eligible"`
 	RandomExclusionReason *string            `json:"random_exclusion_reason,omitempty"`
@@ -132,6 +136,11 @@ func WriteOptions(req OptionsRequest) error {
 				return err
 			}
 		}
+		if target.CompatibilityWarning != "" {
+			if _, err := fmt.Fprintf(stdout, "  %s\n", target.CompatibilityWarning); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -156,6 +165,7 @@ func buildTargetOptions(cfg config.Config, caller string, callerKnown bool, disc
 		enabled := targetEnabled(cfg, target.Name)
 		version := ""
 		versionOK := false
+		versionWarning := ""
 		if installed {
 			path, _ := discovery.LookPath(target.Binary)
 			readVersion := lookup
@@ -163,7 +173,11 @@ func buildTargetOptions(cfg config.Config, caller string, callerKnown bool, disc
 				readVersion = providerVersion
 			}
 			version, installedErr = readVersion(path, target.Name)
-			versionOK = installedErr == nil && version == supportedProviderVersions[target.Name]
+			if installedErr == nil {
+				warning, compatErr := providerVersionCompatibility(target.Name, version)
+				versionOK = compatErr == nil
+				versionWarning = warning
+			}
 		}
 		fresh := CapabilityOption{Supported: enabled && installed && versionOK}
 		if !fresh.Supported {
@@ -203,6 +217,7 @@ func buildTargetOptions(cfg config.Config, caller string, callerKnown bool, disc
 			Installed:             installed,
 			InstalledVersion:      version,
 			SupportedVersion:      supportedProviderVersions[target.Name],
+			CompatibilityWarning:  versionWarning,
 			Capabilities:          TargetCapabilities{Fresh: fresh, Resume: resume, Inspect: inspect},
 			RandomEligible:        randomEligible,
 			RandomExclusionReason: exclusion,

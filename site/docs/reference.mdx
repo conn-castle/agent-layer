@@ -675,9 +675,10 @@ terminal. `inspect` reports read-only transport facts, `history` derives turns
 from immutable records, `cancel` targets an exact owned process group, and `delete`
 removes only the Agent Layer mapping. Use `al dispatch options --json` for
 installed version and separate fresh/resume/inspect capability facts. The
-initial exact compatibility set is Claude Code 2.1.207, Codex CLI 0.144.1, and
-Antigravity 1.1.1. See `docs/AGENT-DISPATCH.md` in the repository for the full
-v0.13 contract.
+tested compatibility set is Claude Code 2.1.207, Codex CLI 0.144.1, and
+Antigravity 1.1.1; newer installed versions dispatch with a compatibility
+warning, while older or unreadable versions fail before launch. See
+`docs/AGENT-DISPATCH.md` in the repository for the full v0.13 contract.
 
 **Exit codes**
 

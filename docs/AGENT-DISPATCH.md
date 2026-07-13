@@ -127,7 +127,10 @@ removes only an inactive Agent Layer name mapping.
 ## Provider compatibility and limits
 
 `al dispatch options --json` is authoritative for installed versions and
-fresh/resume/inspect capability. An unmatched version fails before launch.
+fresh/resume/inspect capability. A version older than the tested version, or
+one that cannot be read or parsed, fails before launch. A newer version stays
+dispatchable and emits one compatibility warning (naming the installed and
+tested versions) on stderr and in the options report.
 
 Prompts from standard input are capped at 10 MiB. Antigravity currently has a
 100 KiB prompt cap because its print mode accepts only an argument. Terminal
