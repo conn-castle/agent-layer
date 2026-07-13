@@ -20,7 +20,7 @@ repos:
         name: gofmt + goimports
         entry: make fmt
         language: system
-        files: \\.go$
+        files: \.go$
         pass_filenames: false
       - id: go-mod-tidy-check
         name: go mod tidy check
