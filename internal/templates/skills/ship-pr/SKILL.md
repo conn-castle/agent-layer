@@ -27,8 +27,10 @@ working-tree mutations and batch known repairs.
   and review proceed. Rerun only for changed coverage, failure reproduction,
   environment diagnosis, or missing/invalid evidence. Reuse evidence only for
   its exact tree fingerprint.
-- When a required check mutates the tree, commit the resulting batch and rerun
-  only invalidated checks before publishing that head.
+- When a required check mutates the tree, re-resolve the delivery boundary,
+  stage only delivery and repair paths, commit the resulting batch, and rerun
+  only invalidated checks before publishing that head. Stop when generated
+  changes overlap unrelated work.
 - Never close out with failed checks, local changes, conflicts, unprocessed
   feedback, unposted eligible replies, or failed reply audits.
 - Merge only after explicit authorization for the exact PR and a fresh gate
@@ -105,9 +107,11 @@ cover. Acquire only missing or invalidated evidence before the required final
 lane.
 
 Refresh remote state before committing and add newly arrived work to the same
-batch. When local changes exist, commit the accumulated repair batch, then run
-the focused or full checks appropriate for that head. Do not publish a head
-before its required evidence passes.
+batch. When local changes exist, re-resolve the delivery boundary, stage only
+delivery and repair paths, and commit the accumulated repair batch, then run
+the focused or full checks appropriate for that head; stop when repair changes
+overlap unrelated work. Do not publish a head before its required evidence
+passes.
 
 For `remote-retry-needed` without local changes, use the repository-supported
 failed-check rerun. Do not push empty commits. If the same failure returns,

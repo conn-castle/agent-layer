@@ -126,8 +126,9 @@ agent-role input is relevant.
 /plan-work(plan_reviewers)
 ```
 
-Use parentheses when the current agent calls a skill directly and passes
-agent-role inputs.
+Add parentheses to any call form that passes agent-role inputs into the
+skill. A skill name with no prefix, as shown here, means the current agent
+calls the skill directly.
 
 ```text
 dispatch(implementer) -> /fully-implement-plan(implementer, code_reviewer, fixer)

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "version": "0.13.0",
-  "generated_at_utc": "2026-07-13T20:19:09Z",
+  "generated_at_utc": "2026-07-13T20:39:58Z",
   "files": [
     {
       "path": ".agent-layer/commands.allow",
@@ -233,7 +233,7 @@
     },
     {
       "path": ".agent-layer/skills/ship-pr/SKILL.md",
-      "full_hash_normalized": "1d7b78a93f63ed61124b6a3f423f556e80b213b245460ec38360634af32a301c"
+      "full_hash_normalized": "fd904ade897578812137929dec84a9faad8cccf83e260310904ff688b1cf6f12"
     },
     {
       "path": ".agent-layer/skills/ship-pr/assets/pr-body-template.md",
