@@ -89,8 +89,15 @@ func BuildOptions(req OptionsRequest) (*OptionsResponse, error) {
 		return nil, exitError(ExitConfig, err.Error())
 	}
 	caller, callerKnown := knownCallerFromEnv(env)
+	versionLookup := req.VersionLookup
+	if versionLookup == nil {
+		versionLookup = func(path string, agent string) (string, error) {
+			_, version, lookupErr := compatibleTargetVersionCached(root, path, targetMeta{Name: agent}, nil)
+			return version, lookupErr
+		}
+	}
 	response := &OptionsResponse{Caller: CallerInfo{Known: callerKnown, Agent: caller}, Random: RandomInfo{Pool: []string{}, ExcludesCaller: callerKnown}}
-	response.Targets = buildTargetOptions(project.Config, caller, callerKnown, agentoptions.DiscoveryRequest{Env: env, LookPath: lookPath, Live: true}, req.VersionLookup)
+	response.Targets = buildTargetOptions(project.Config, caller, callerKnown, agentoptions.DiscoveryRequest{Env: env, LookPath: lookPath, Live: true}, versionLookup)
 	for _, target := range response.Targets {
 		if target.RandomEligible {
 			response.Random.Pool = append(response.Random.Pool, target.Agent)

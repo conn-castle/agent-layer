@@ -7,8 +7,11 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 func defaultProviderCommandFactory(name string, args ...string) *exec.Cmd {
@@ -21,6 +24,25 @@ func prepareProviderProcessGroup(cmd *exec.Cmd) {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
 	cmd.SysProcAttr.Setpgid = true
+}
+
+func processStartIdentity(pid int) string {
+	if pid <= 0 {
+		return ""
+	}
+	if data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil {
+		fields := strings.Fields(string(data))
+		if len(fields) > 21 {
+			return "proc:" + fields[21]
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "ps", "-o", "lstart=", "-p", strconv.Itoa(pid)).Output() // #nosec G204 -- pid is an Agent Layer-owned integer.
+	if err != nil {
+		return ""
+	}
+	return "ps:" + strings.TrimSpace(string(out))
 }
 
 func signalProviderProcess(cmd *exec.Cmd, sig os.Signal) {

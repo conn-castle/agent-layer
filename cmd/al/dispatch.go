@@ -48,8 +48,73 @@ func newDispatchCmd() *cobra.Command {
 	cmd.Flags().StringVar(&model, "model", "", messages.DispatchModelFlag)
 	cmd.Flags().StringVar(&reasoningEffort, "reasoning-effort", "", messages.DispatchReasoningEffortFlag)
 	cmd.Flags().StringVar(&skill, "skill", "", messages.DispatchSkillFlag)
-	cmd.AddCommand(newDispatchOptionsCmd(), newDispatchResumeCmd(), newDispatchInspectCmd(), newDispatchListCmd(), newDispatchDeleteCmd())
+	cmd.AddCommand(newDispatchOptionsCmd(), newDispatchResumeCmd(), newDispatchFanoutCmd(), newDispatchInspectCmd(), newDispatchHistoryCmd(), newDispatchCancelCmd(), newDispatchListCmd(), newDispatchDeleteCmd())
 	return cmd
+}
+
+func newDispatchFanoutCmd() *cobra.Command {
+	var targets []string
+	var skill string
+	cmd := &cobra.Command{
+		Use:          "fanout [prompt...] --target agent=<provider>[,model=<model>][,reasoning=<effort>] --target ...",
+		Short:        "Send one shared prompt and skill to two or more targets concurrently",
+		Args:         cobra.ArbitraryArgs,
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveRepoRoot()
+			if err != nil {
+				return err
+			}
+			parsed := make([]agentdispatch.FanoutTarget, 0, len(targets))
+			for _, value := range targets {
+				target, parseErr := agentdispatch.ParseFanoutTarget(value)
+				if parseErr != nil {
+					return dispatchCommandError(cmd, parseErr)
+				}
+				parsed = append(parsed, target)
+			}
+			quiet, _ := cmd.Flags().GetBool("quiet")
+			return dispatchCommandError(cmd, agentdispatch.Fanout(agentdispatch.FanoutOptions{
+				Root: root, Targets: parsed, Skill: skill, PromptArgs: args,
+				Stdin: cmd.InOrStdin(), ReadStdin: stdinIsPiped(cmd.InOrStdin()),
+				Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr(), Env: os.Environ(), Quiet: quiet,
+			}))
+		},
+	}
+	cmd.Flags().StringArrayVar(&targets, "target", nil, "Self-contained target: agent=<provider>[,model=<model>][,reasoning=<effort>]")
+	cmd.Flags().StringVar(&skill, "skill", "", messages.DispatchSkillFlag)
+	return cmd
+}
+
+func newDispatchHistoryCmd() *cobra.Command {
+	var emitJSON bool
+	cmd := &cobra.Command{
+		Use: "history <name>", Short: "Show retained immutable turns for a dispatch conversation",
+		Args: cobra.ExactArgs(1), SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveRepoRoot()
+			if err != nil {
+				return err
+			}
+			return dispatchCommandError(cmd, agentdispatch.History(agentdispatch.HistoryRequest{Root: root, Name: args[0], Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr(), JSON: emitJSON}))
+		},
+	}
+	cmd.Flags().BoolVar(&emitJSON, "json", false, messages.DispatchOptionsJSONFlag)
+	return cmd
+}
+
+func newDispatchCancelCmd() *cobra.Command {
+	return &cobra.Command{
+		Use: "cancel <name-or-run-or-fanout-id>", Short: "Cancel exact active Agent Dispatch work",
+		Args: cobra.ExactArgs(1), SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveRepoRoot()
+			if err != nil {
+				return err
+			}
+			return dispatchCommandError(cmd, agentdispatch.Cancel(agentdispatch.CancelRequest{Root: root, ID: args[0]}))
+		},
+	}
 }
 
 func newDispatchResumeCmd() *cobra.Command {

@@ -1,9 +1,10 @@
-You are auditing one posted PR comment reply. Use only the supplied audit
-package:
+You are auditing one batch of posted PR comment replies. Use only the supplied
+audit package, which contains these fields for every row:
 
-1. the exact original comment
-2. the exact posted reply with its URL or ID
-3. verdict-specific supporting evidence:
+1. the stable comment ID
+2. the exact original comment
+3. the exact posted reply with its URL or ID
+4. verdict-specific supporting evidence:
    - `Fixed`: the named commit hash and the relevant diff needed to evaluate the
      comment's substance
    - `No change`: the repository, specification, test, or documented-contract
@@ -13,7 +14,7 @@ package:
 
 Do not assume missing evidence or inspect other context.
 
-For this triple, decide one verdict:
+For each row, decide one verdict:
 - `pass` — the reply opens with exactly one required bold verdict, including its
   punctuation: `**Fixed in <short-hash>.**`, `**No change — <specific
   reason>.**`, or `**Deferred — tracked in <location>.**`; the supplied evidence
@@ -27,4 +28,5 @@ For this triple, decide one verdict:
 - `lazy_deferral` — `Deferred` reply, but the tracker location is missing, the deferral is illegitimate (e.g., a bug introduced by this PR), or the entry is hand-waved.
 - `generic_dismissal` — reply is generic boilerplate ("addressed", "noted", "thanks") without specifics.
 
-Output one JSON line: `{"comment_id": "<id>", "verdict": "<one of the above>", "evidence": "<concrete reason citing the original comment, posted reply, and applicable supporting evidence>"}`.
+Output JSON Lines with exactly one line per input row in input order and no
+other text: `{"comment_id": "<id>", "verdict": "<one of the above>", "evidence": "<concrete reason citing the original comment, posted reply, and applicable supporting evidence>"}`.

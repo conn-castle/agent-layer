@@ -397,7 +397,7 @@ func TestRunClaudeSkillPromptAndCommandConstruction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
-	if stdout.String() != "claude ok" {
+	if stdout.String() != "ok" {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 	assertFileContains(t, logPath, "ARG_0=--print")

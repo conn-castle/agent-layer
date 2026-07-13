@@ -7,8 +7,9 @@ description: >-
 
 # fully-implement-plan
 
-Coordinate implementation, code review, contract verification, and required
-repairs. Do not open a PR or run an unrelated full-repository lane.
+Run implementation, code review, contract verification, and required repairs
+as a root-owned local procedure. External dispatch is limited to the bounded
+implementer and fixer leaves. Do not open a PR or run an unrelated full lane.
 
 ## Inputs and artifact
 
@@ -27,10 +28,11 @@ only for external writes not already authorized, destructive actions,
 substantive product/architecture choices, or material scope expansion. Do not
 stage, commit, weaken checks, or destructively rewrite changes.
 
-Run risk-appropriate checks, including the full lane when it supports the
-uncommitted tree. When an exact required lane is clean-revision-only, run its
-independently runnable substantive components and pass the exact lane to
-`/ship-pr` as a shipping obligation.
+Before semantic review, choose deterministic checks proportionate to changed
+scope, consequential risks, repository guidance, and the evidence needed to
+avoid wasting review. Do not use time budgets, historical duration rules,
+universal cutoffs, or mandatory tiers. The full lane normally remains a final
+shipping-head obligation, but may run here when it is the sensible evidence.
 
 ## Workflow
 
@@ -41,13 +43,11 @@ report, deviations, checks, remaining work, and readiness.
 
 ### 2. Establish completion evidence
 
-Run `/review-uncommitted-code` in a fresh built-in subagent against the complete
-change. Record its report, readiness, and accepted or deferred findings.
-
-Then run `/verify-work` in another fresh built-in subagent against the
-original artifacts. Pass accepted review findings as supplemental obligations
-and any clean-revision-only lane as a shipping obligation. Record its verdict,
-material findings, evidence, shipping obligations, and next step. Treat
+After the focused deterministic gate passes, start
+`/review-uncommitted-code` and `/verify-work` concurrently in fresh built-in
+subagents against the same exact head. Let independent safe checks complete so
+all failures can be accumulated before repair. Record each report, reviewed
+head, findings, evidence, shipping obligations, and verdict. Treat
 `complete-with-follow-up` as complete only when all follow-up is outside the
 contract.
 
@@ -65,13 +65,13 @@ The fixer owns that repair set and returns finding dispositions, focused checks,
 and a final diff assessment. The orchestrator validates its evidence and owns
 the durable ledger and completion verdict.
 
-After a mutation, reassess the findings ledger and evidence invalidated by the
-changed tree. Run focused checks for the affected behavior and reacquire review
-or contract coverage only where the mutation invalidated it. Dispatch another
-repair set when confirmed open findings remain and evidence supports a safe
-repair; do not repeat unchanged work for confidence. On an evidence-equivalent
-failure, revise the causal model or instrument it. Stop when no safe in-scope
-repair remains or a genuine user decision is required.
+After mutation, identify evidence invalidated by changed files and contracts.
+Rerun affected focused checks and one targeted contract verification. Repeat a
+full independent semantic review only when the repair changed production
+design, architecture, or contract scope. Dispatch another repair set only for
+newly evidenced open findings; do not repeat unchanged work for confidence.
+Record phase timings and flag a quality stage over twice initial implementation
+for investigation without weakening gates.
 
 ## Completion contract
 

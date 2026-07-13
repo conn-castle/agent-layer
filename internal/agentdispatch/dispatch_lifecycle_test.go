@@ -54,7 +54,7 @@ func TestRunUsesConfiguredDefaultAndHonorsQuietOutput(t *testing.T) {
 	}
 }
 
-func TestExecuteDispatchDoesNotKeepFreshMappingAfterFailure(t *testing.T) {
+func TestExecuteDispatchPreservesFailedFreshRunForRecoveryHistory(t *testing.T) {
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], "fresh")
 	if err != nil {
@@ -67,14 +67,18 @@ func TestExecuteDispatchDoesNotKeepFreshMappingAfterFailure(t *testing.T) {
 	project := &config.ProjectConfig{Root: root, Config: dispatchTestConfig(AgentCodex)}
 	err = finishDispatchFailure(dispatchExecution{Root: root, Project: project, Run: run, Session: session, Mode: "fresh"}, exitError(ExitTargetFailure, "failed"))
 	requireDispatchExitCode(t, err, ExitTargetFailure)
-	if _, err := loadSession(root, session.Name); err == nil {
-		t.Fatal("failed fresh run retained its pending mapping")
+	retained, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatalf("failed fresh run lost its history mapping: %v", err)
+	}
+	if retained.ActiveRunID != "" || retained.RunID != run.Record.ID {
+		t.Fatalf("failed fresh mapping = %#v", retained)
 	}
 	record, err := loadRunRecord(root, run.Record.ID)
 	if err != nil {
 		t.Fatalf("load failed record: %v", err)
 	}
-	if record.State != "failed" || record.TerminalReason != "failed" {
+	if record.State != dispatchStateFailed || record.RecoveryState != recoveryAcceptanceUnknown || record.TerminalReason != "failed" {
 		t.Fatalf("failed record = %#v", record)
 	}
 }

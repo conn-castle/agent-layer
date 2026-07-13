@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Layer factual workflow manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["run_id", "repository", "artifacts", "commands", "events"],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "default_base_ref", "base_commit", "worktree_path", "topic_branch", "head_commit", "tree"],
+      "properties": {
+        "root": { "type": "string" },
+        "remote": { "type": "string" },
+        "default_base_ref": { "type": "string" },
+        "base_commit": { "type": "string" },
+        "worktree_path": { "type": "string" },
+        "topic_branch": { "type": "string" },
+        "head_commit": { "type": "string" },
+        "tree": { "type": "string" }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": { "type": "string" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "kind": { "type": "string" }
+        }
+      }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "source_sha256"],
+        "properties": {
+          "id": { "type": "string" },
+          "source_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "started_at", "completed_at", "exit_status", "head_commit", "tree", "output_path", "output_sha256"],
+        "properties": {
+          "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+          "started_at": { "type": "string", "format": "date-time" },
+          "completed_at": { "type": "string", "format": "date-time" },
+          "exit_status": { "type": "integer" },
+          "head_commit": { "type": "string" },
+          "tree": { "type": "string" },
+          "output_path": { "type": "string" },
+          "output_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "providers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["agent", "binary_path", "binary_identity", "version"],
+        "properties": {
+          "agent": { "type": "string" },
+          "binary_path": { "type": "string" },
+          "binary_identity": { "type": "string" },
+          "version": { "type": "string" },
+          "capabilities_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["phase", "kind", "at"],
+        "properties": {
+          "phase": { "type": "string" },
+          "kind": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" },
+          "head_commit": { "type": "string" },
+          "tree": { "type": "string" },
+          "run_id": { "type": "string" }
+        }
+      }
+    }
+  }
+}

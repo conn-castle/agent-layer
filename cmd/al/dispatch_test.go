@@ -97,6 +97,16 @@ func TestDispatchOptionsHelpWiresLongMessage(t *testing.T) {
 	}
 }
 
+func TestDispatchLifecycleSubcommandsAreWired(t *testing.T) {
+	cmd := newDispatchCmd()
+	for _, name := range []string{"fanout", "history", "cancel"} {
+		child, _, err := cmd.Find([]string{name})
+		if err != nil || child == cmd || child.Name() != name {
+			t.Fatalf("dispatch subcommand %q was not wired: child=%v err=%v", name, child, err)
+		}
+	}
+}
+
 func TestDispatchOptionsJSONInvalidConfigNoStdout(t *testing.T) {
 	clearDispatchEnv(t)
 	root := t.TempDir()

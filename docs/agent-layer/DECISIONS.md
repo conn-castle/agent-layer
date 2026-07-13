@@ -177,10 +177,10 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: A single source of truth avoids per-agent hook drift while preserving user-owned provider hooks and shared config.
     Tradeoffs: The default sound command is macOS-specific, and the chime signals lifecycle stop only; Codex needs marked shared-config ownership while Antigravity needs a dedicated plugin directory.
 
-- Decision 2026-07-09 dispatch-depth-three: Preserve three intentional dispatch boundaries
-    Decision: Default `dispatch.max_depth` to `3`; keep the skill-call-tree subagent warning limit at `2`.
-    Reason: Shipping workflows intentionally nest shipper, fixer, and plan-reviewer dispatch roles. Replacing the shipper with a built-in subagent created deeper subagent chains and weakened context boundaries.
-    Tradeoffs: Any depth-2 agent may launch a depth-3 dispatch, but depth-3 agents remain blocked from dispatching again.
+- Decision 2026-07-13 dispatch-depth-three: Custom nesting depth three; built-in workflows are leaf-only
+    Decision: Keep `dispatch.max_depth = 3` for intentional custom workflows, while built-in workflows use only root-to-leaf external dispatch and keep orchestration in the root/native state machine.
+    Reason: Custom workflows legitimately need bounded nesting, but nested shipper/fixer/reviewer relay agents caused polling, duplicated evidence, and ambiguous lifecycle ownership.
+    Tradeoffs: Custom depth-2 agents may still launch a depth-3 dispatch; built-in workflows lose relay conversations and must keep durable checkpoints in root-owned factual state.
 
 - Decision 2026-07-10 antigravity-settings-overlay-preserve: Antigravity settings.json is overlay-patched, never delete-on-absent
     Decision: WriteAntigravitySettings overlays Agent Layer's projected keys (model, permissions.allow, agent_specific — all from buildAntigravitySettings, the single managed-path source) onto the user's native .agy/antigravity-cli/settings.json and preserves every native key it does not produce; a managed key absent from config is left in place, not deleted. Empty/whitespace files are treated as missing, the existing file mode is preserved (new files 0o600), and malformed/non-object/shape-conflict native state fails loud before any write. Native content is parsed as strict JSON.

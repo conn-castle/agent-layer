@@ -342,6 +342,9 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al sync` | Regenerate client configs without launching a client. |
 | `al <client>` | Sync and launch a client (agy/claude/codex/copilot/vscode). |
 | `al dispatch` | Run a supported headless target (`codex`, `claude`, `antigravity`, or `random`) from an Agent Layer-launched caller. |
+| `al dispatch fanout` | Send one shared prompt and optional skill to two or more self-contained target specifications, wait for all children, and emit one manifest. |
+| `al dispatch history <name>` | Show retained immutable turns for one friendly conversation name. |
+| `al dispatch cancel <id>` | Cancel an exact active run, conversation, or fanout process group. |
 | `al dispatch options --json` | Print the stable Agent Dispatch target/options contract for scripts. |
 | `al probe agy` | Run the Antigravity capability probe and print JSON. |
 | `al doctor` | Validate configuration and probe enabled MCP servers. |
@@ -644,10 +647,14 @@ al vscode --no-sync -- --reuse-window
 
 ```bash
 al dispatch --agent codex "Review this plan."
-al dispatch --agent random --skill review-plan "Review this plan."
+al dispatch --agent random --skill review-uncommitted-code "Review the current working tree."
 cat prompt.md | al dispatch --agent claude
 al dispatch resume tiny-round-capacitor "Review the revision."
+cat prompt.md | al dispatch fanout \
+  --target 'agent=codex' --target 'agent=claude'
 al dispatch inspect tiny-round-capacitor --json
+al dispatch history tiny-round-capacitor --json
+al dispatch cancel <name-or-run-or-fanout-id>
 al dispatch list
 al dispatch delete tiny-round-capacitor
 ```
@@ -661,7 +668,10 @@ Each ordinary call creates a new provider conversation. Only `resume <name>`
 continues a conversation, using an exact durable mapping; prompt, role, target,
 and artifact paths never infer reuse. Dispatch writes one identity line to
 standard error and replays only a semantically completed final answer to
-standard output. `inspect` reports read-only transport facts, while `delete`
+standard output. `fanout` is a synchronous shared-prompt operation that stores
+independent child results and emits one aggregate manifest after every child is
+terminal. `inspect` reports read-only transport facts, `history` derives turns
+from immutable records, `cancel` targets an exact owned process group, and `delete`
 removes only the Agent Layer mapping. Use `al dispatch options --json` for
 installed version and separate fresh/resume/inspect capability facts. The
 initial exact compatibility set is Claude Code 2.1.207, Codex CLI 0.144.1, and

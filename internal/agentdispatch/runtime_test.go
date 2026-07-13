@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const runtimeSessionID = "11111111-1111-4111-8111-111111111111"
@@ -31,7 +32,10 @@ func TestSessionLifecycleIsExplicitAndInspectable(t *testing.T) {
 	if err := persistSession(root, session); err != nil {
 		t.Fatalf("persist session: %v", err)
 	}
-	run.Record.State = "completed"
+	now := time.Now().UTC()
+	run.Record.State = dispatchStateCompleted
+	run.Record.RecoveryState = recoveryResumeRequired
+	run.Record.CompletedAt = &now
 	run.Record.ProviderSessionID = runtimeSessionID
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		t.Fatalf("complete record: %v", err)
