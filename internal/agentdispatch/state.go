@@ -41,6 +41,7 @@ const (
 	recoveryAcceptanceUnknown = "acceptance_unknown"
 	recoveryNotResumable      = "not_resumable"
 	sessionStateDurable       = "durable"
+	sessionStatePending       = "pending"
 )
 
 var errDispatchRunNotFound = errors.New("dispatch run record not found")
@@ -224,7 +225,7 @@ func reserveSession(root string, run *dispatchRun) (Session, error) {
 			return Session{}, err
 		}
 		now := time.Now().UTC()
-		session := Session{Name: name, Agent: run.Record.Agent, CreatedAt: now, LastUsedAt: now, State: "pending", RunID: run.Record.ID, ActiveRunID: run.Record.ID}
+		session := Session{Name: name, Agent: run.Record.Agent, CreatedAt: now, LastUsedAt: now, State: sessionStatePending, RunID: run.Record.ID, ActiveRunID: run.Record.ID}
 		file, openErr := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- name is generated from fixed vocabularies.
 		if errors.Is(openErr, fs.ErrExist) {
 			continue
@@ -313,7 +314,7 @@ func downgradeUnstartedSession(root string, name string, runID string) error {
 			return nil
 		}
 		session.ProviderSessionID = ""
-		session.State = "pending"
+		session.State = sessionStatePending
 		if err := writeJSONAtomic(path, session); err != nil {
 			return wrapExitError(ExitConfig, "downgrade unstarted dispatch mapping", err)
 		}
