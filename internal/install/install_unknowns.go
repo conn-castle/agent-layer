@@ -311,6 +311,7 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 	add(filepath.Join(root, ".agent-layer", "templates", "docs"))
 	add(filepath.Join(root, ".agent-layer", "state"))
 	add(filepath.Join(root, ".agent-layer", "state", "managed-baseline.json"))
+	stateDir := filepath.Join(root, ".agent-layer", "state")
 	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
 	add(snapshotDir)
 	add(filepath.Join(root, ".agent-layer", "tmp"))
@@ -380,7 +381,10 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 		return nil, err
 	}
 
-	if err := inst.addExistingKnownPaths(snapshotDir, add); err != nil {
+	// State is Agent Layer-owned runtime data. Upgrade must never classify
+	// durable dispatch mappings (or future state consumers) as deletable
+	// unknown files; their owning packages define their own retention policy.
+	if err := inst.addExistingKnownPaths(stateDir, add); err != nil {
 		return nil, err
 	}
 

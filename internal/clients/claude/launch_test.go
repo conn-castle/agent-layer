@@ -49,6 +49,41 @@ func TestLaunchClaudeExecHandoff(t *testing.T) {
 	}
 }
 
+func TestLaunchClaudeDoesNotApplyDispatchBackgroundWaitCeiling(t *testing.T) {
+	const backgroundWaitCeilingEnv = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
+	root := t.TempDir()
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{},
+			},
+		},
+		Root: root,
+	}
+
+	for _, tt := range []struct {
+		name string
+		env  []string
+	}{
+		{name: "does not inject absent value"},
+		{name: "does not replace caller value", env: []string{backgroundWaitCeilingEnv + "=600000"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			claudePath := writeResolvableClaude(t)
+			call := testutil.CaptureExec(t, &execFunc, nil)
+			env := append([]string{"PATH=" + filepath.Dir(claudePath)}, tt.env...)
+
+			if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+				t.Fatalf("Launch error: %v", err)
+			}
+			call.AssertCalled(t, claudePath, []string{"claude"})
+			if !reflect.DeepEqual(call.Env, env) {
+				t.Fatalf("interactive environment changed: got %#v want %#v", call.Env, env)
+			}
+		})
+	}
+}
+
 func TestLaunchClaudeExecError(t *testing.T) {
 	root := t.TempDir()
 	writeResolvableClaude(t)

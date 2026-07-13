@@ -1,165 +1,90 @@
 ---
 name: full-workflow
 description: >-
-  Orchestrate a full feature workflow from questions and spec alignment through
-  plan, multi-agent plan review, implementation, and PR shipping.
+  Align a feature specification, produce a reviewed plan, complete the local
+  work, and ship the pull request.
 ---
 
 # full-workflow
 
-Parent orchestration skill. Own question, spec, and spec-gate alignment; after
-that, delegate each stage to its dedicated skill.
+Align one feature specification, plan it, and ship it.
 
 ## Required inputs
 
-Fail before side effects unless all are present:
-- `planner`: dispatch agent role
-- `implementer`: dispatch agent role
-- `shipper`: dispatch agent role
-- `review_agents`: one or more dispatch agent roles
 - the user's requested work
+- `planner`: dispatch agent role for `/plan-work`
+- `shipper`: dispatch agent role for `/ship-plan`
+- `implementer`: dispatch agent role
+- `fixer`: dispatch agent role
+- `plan_reviewers`: one or more dispatch agent roles
 
-Dispatch agent roles may be terse (`codex xhigh`, `claude opus xhigh`,
-`antigravity`). Infer the agent only when unambiguous. Before dispatching, follow
-`agent-dispatch`, inspect live options, and fail if a requested override is
-unsupported.
+Require every input before side effects. Do not infer roles or reviewer lists.
 
-Example invocation:
-
-```text
-/full-workflow
-planner is codex xhigh
-implementer is codex high
-shipper is claude opus xhigh
-review_agents are codex high, opus xhigh, antigravity
-```
-
-## Required artifacts
-
-Use one shared `run-id = YYYYMMDD-HHMMSS-<short-rand>` for this workflow:
-- `.agent-layer/tmp/full-workflow.<run-id>.state.md`
-- `.agent-layer/tmp/full-workflow.<run-id>.spec.md`
-
-Create both before writing. Record delegated artifact paths in the state file as
-they appear.
+Write `.agent-layer/tmp/full-workflow.<run-id>.spec.md`.
 
 ## Rules
 
-- Treat the question and spec phases as user discussion, not automation.
-  Planning starts only after explicit final spec approval.
-- Assume the user will not read artifact files. Keep every question, decision,
-  spec summary, and approval request self-contained in chat.
-- Use initial questions only to learn enough for a first draft. Put unresolved
-  gaps in the spec, then resolve them with the user one at a time.
-- Ask only for decisions affecting end-user-facing behavior, architecture, scope,
-  sequencing, risk, cost, or shipping; include options, tradeoffs, and a
-  recommendation when useful.
-- Separate facts from choices: repo reading may resolve facts, constraints, and
-  existing behavior; inferred or recommended choices stay open until approved.
-- After the spec gate, do not perform child-stage work yourself. Use the planner
-  for `plan-work`, review agents for `multi-agent-plan-review`, implementer for
-  `implement-plan`, and shipper for `ship-pr`.
-- Treat child returns as intermediate; continue orchestration after each return.
-- Ask again if later evidence would materially change the aligned spec.
-- Never replace a missing role with the current agent, widen scope beyond the
-  spec, or guess alternate dispatch options after failure.
-- `ship-pr` keeps its own merge authorization gate unless the user grants a
-  separate policy.
+- Dispatch external roles through `/agent-dispatch`.
+- Keep user questions, summaries, and approvals in chat; artifacts must not be
+  the only presentation of a user-owned decision.
+- Resolve repository facts and routine implementation details without asking
+  the user.
+- Ask only when multiple viable choices materially affect behavior,
+  architecture, scope, risk, cost, or shipping.
+- Treat the aligned spec as the workflow contract. Do not widen it silently.
+- If a child skill fails or omits its required artifact or verdict, stop and
+  report the concrete blocker.
 
 ## Workflow
 
-### Phase 1: Initialize state
+### 1. Align the specification
 
-1. Validate required inputs.
-2. Record dispatch agent roles, the original request, and current phase in the
-   state file.
+Read enough repository context to distinguish facts from choices. Write a
+concise spec with objective, scope/non-goals, material decisions, constraints,
+acceptance criteria, shipping expectations, and unresolved decisions; omit
+ceremonial empty sections.
 
-### Phase 2: Initial questions
+When the request is to complete a roadmap phase, read ROADMAP.md first. Use the
+named phase or the first incomplete phase, and include every unchecked task,
+exit criterion, and direct prerequisite. Include necessary ROADMAP.md, memory,
+and documentation closeout in the contract. If repository evidence shows the
+phase is already complete, update only stale project truth and return the
+evidence instead of planning or creating an empty pull request.
 
-Clarify only enough to write the first draft:
-- read focused repo context for facts
-- record facts separately from user decisions
-- ask the smallest blocking question when the request is too ambiguous to draft
+Ask only the questions required to resolve user-owned decisions. Record each
+answer in the spec and resolve routine gaps directly from evidence.
 
-Proceed when a useful draft can capture remaining gaps.
+Present one alignment summary and continue when evidence settles the contract.
+Wait only for a requested checkpoint or genuine material choice; apply routine
+corrections without repeating alignment.
 
-### Phase 3: Draft spec
+### 2. Plan
 
-Write a draft spec with these sections:
-1. `# Objective`
-2. `## Scope`
-3. `## Non-goals`
-4. `## User-Confirmed Decisions`
-5. `## Constraints`
-6. `## Acceptance Criteria`
-7. `## Shipping Expectations`
-8. `## Open Questions`
+Dispatch `planner` with `/plan-work`, the aligned spec path, and
+`plan_reviewers`. Require the plan, task, context, and review report paths with
+`implementation-ready` status.
 
-Only put decisions in `User-Confirmed Decisions` when the user already answered
-them or the original request explicitly fixed them. Put inferred or recommended
-choices in `Open Questions`.
+If planning uncovers a user-owned decision, relay the exact question, record the
+answer in the spec, and let the planning stage update the affected artifacts.
+Do not restart spec alignment or plan review unless the changed contract
+invalidates that completed work.
 
-`Open Questions` is the iteration queue.
+### 3. Implement and ship
 
-### Phase 4: Spec iteration
+Dispatch `shipper` with `/ship-plan`, the reviewed artifact paths,
+`implementer`, and `fixer`. Relay child checkpoints, including merge
+authorization. Resume by passing the exact `ship-plan` checkpoint and the
+user's exact answer back to the shipper; do not restart completed phases unless
+reconciliation invalidates them.
 
-While the iteration queue is not empty:
-- ask exactly one open question
-- update the spec and state after the answer
-- repeat
+### 4. Report
 
-### Phase 5: Spec gate
+Return the spec, plan, task, context, and review report paths together with the
+`/ship-plan` final handoff.
 
-Summarize the draft spec in chat:
-- what will change
-- what will not change
-- the acceptance criteria
-- important constraints and decisions
+## Completion contract
 
-Ask for approval or corrections, then stop. If the user changes the spec, update
-it and return to Phase 4 when questions or decisions remain.
-
-### Phase 6: Plan
-
-Dispatch the planner role with the `plan-work` skill. The prompt must include:
-- the spec path
-- the state path
-- the user's original request
-- instruction to produce the standard plan/task/context artifact set
-
-Record the returned artifact paths in the state file.
-
-### Phase 7: Cross-agent plan review
-
-Use `multi-agent-plan-review` with:
-- `review_agents`: the review agent dispatch roles
-- the plan/task/context artifact paths
-- the spec path as the review contract
-
-Record the final review report path and the reviewed artifact paths.
-
-### Phase 8: Implement
-
-Dispatch the implementer role with the `implement-plan` skill and the reviewed
-plan/task/context artifact paths. If implementation discovers a spec-level
-change, return to the earliest affected phase instead of continuing on stale
-alignment.
-
-### Phase 9: Ship
-
-Dispatch the shipper role with the `ship-pr` skill. Stop at any `ship-pr` human
-checkpoint, including merge authorization.
-
-## Definition of done
-
-- Required dispatch agent roles were present and normalized before dispatch.
-- The spec gate completed before planning.
-- `plan-work`, `multi-agent-plan-review`, `implement-plan`, and `ship-pr` were
-  invoked through the requested dispatch agent roles.
-- Final status and artifact paths are recorded in the state file.
-
-## Final handoff
-
-Report the spec, plan/task/context, review report, implementation report, and PR
-paths or URLs. State whether the PR is open, green, merged, or blocked at a
-human checkpoint.
+The workflow is complete when the aligned spec is represented by an
+implementation-ready plan and `/ship-plan` returns its terminal result. Report
+all artifact paths, pull request status when available, and any blocker or
+remaining user decision.

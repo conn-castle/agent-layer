@@ -22,6 +22,13 @@ allowed-tools: Bash(al:*) Bash(cat:*)
 - Before choosing a target, run `al dispatch options --json` against the current
   project. Use its separate `fresh`, `resume`, and `inspect` capability facts;
   never rely on a former `dispatch_capable` or streaming field.
+- Resolve a requested role from that live metadata to one exact target plus
+  optional full model and reasoning-effort values. Accept shorthand only when
+  it has one unambiguous interpretation; otherwise ask.
+- Treat the selected target's non-empty `model.configured` value and exact
+  `model.suggestions` entries as the complete allowlist for an explicit
+  `--model` override. When no model is requested, omit `--model` and use the
+  reported configured default.
 - Start ordinary work with `al dispatch --agent <target> ...`. Ordinary calls
   always create a fresh provider conversation.
 - Continue work only with `al dispatch resume <name> ...`, where `<name>` is
@@ -38,7 +45,9 @@ allowed-tools: Bash(al:*) Bash(cat:*)
 ## Workflow
 
 1. Validate the requested target and optional skill from current metadata.
-2. Build a focused prompt without unrelated history or biasing context.
+2. Verify any requested skill exists in the current project's Agent Layer skill
+   source, then build a focused prompt without unrelated history or biasing
+   context.
 3. Launch one fresh `al dispatch` invocation in a background-capable terminal
    and yield. Preserve its printed identity name with the task state.
 4. Wait for its terminal notification. Do not poll, send empty input, inspect
@@ -73,8 +82,11 @@ allowed-tools: Bash(al:*) Bash(cat:*)
 ## Definition of done
 
 - Current capability metadata informed intentional target selection.
+- Target selection and skill delivery, when used, were intentional and reported.
 - The original invocation reached a terminal result without polling or
   partial-work inspection.
 - Any explicit resume used its exact durable name.
 - Created caller artifacts are reported, required output is verified, and
   failures or unresolved ambiguity are reported explicitly.
+- Any side effects from target work were inspected and verified through the
+  current task's normal checks.

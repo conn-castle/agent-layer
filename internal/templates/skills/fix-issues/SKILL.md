@@ -1,207 +1,76 @@
 ---
 name: fix-issues
 description: >-
-  Fix open `ISSUES.md` items: plan a batch, implement, audit, verify, and keep
-  the ledger current. Use `debug-issue` for one unexplained symptom or
-  `resolve-findings` for review reports.
+  Resolve a selected ISSUES.md set through one reviewed plan, bounded
+  implementation packages, one concrete-work review, and one verification pass.
 ---
 
 # fix-issues
 
-This is the issue-ledger maintenance workflow.
-It should:
-- fix all open issues by default
-- organize them into coherent execution batches
-- plan the work explicitly
-- stop only when scope or behavior is not clear enough to proceed safely
-- implement, audit, verify, and close each batch until all issues are resolved
+Resolve the selected issue set as one workflow. Packages organize mutations;
+they do not create separate planning, review, or verification cycles.
 
-## Defaults
+## Inputs and disposition
 
-- Default mode is plan-first unless the surrounding request clearly includes execution and the selected issue batch is unambiguous.
-- Default issue set is all open issues in `ISSUES.md`. Narrow the set only when the user explicitly specifies issue IDs, a count, or a scope limit.
-- When the full set is large, organize issues into coherent execution batches (by shared area, shared prerequisites, or clean verification boundary) and work through all batches sequentially.
-- Default file-touch budget is reviewable per batch, not exhaustive.
-- Default verification depth is the fastest credible repo-defined check, escalating when risk warrants it.
+Accept issue IDs, maximum count, scope filter, or plan-only mode; otherwise
+select every open issue. Require `plan_reviewers`. Keep scope to selected issues
+and direct prerequisites. Write
+`.agent-layer/tmp/fix-issues.<run-id>.report.md`.
 
-## Required artifacts
+Use one fresh triage subagent, fresh package implementers when useful, and one
+fresh final verifier. Serialize all mutations. Do not stage, commit, or push.
 
-Use one shared `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
+Every selected issue ends as:
 
-Create:
-- `.agent-layer/tmp/fix-issues.<run-id>.report.md`
+- `fixed`: resolved with evidence and removed from ISSUES.md
+- `reclassified`: end-user capability moved to BACKLOG.md
+- `deferred`: valid but blocked by a genuine scope or user decision; unchanged
+- `rejected`: evidence proves it invalid or already resolved; remove it
 
-Create files with `touch` before writing.
-Record delegated `plan-work` and `multi-agent-plan-review` artifact paths in the
-report as they appear.
+Do not defer clear fixes because they are inconvenient or multi-file.
 
-## Inputs
+## Workflow
 
-Accept any combination of:
-- an issue count or explicit issue identifiers
-- whether this run is plan-only or allowed to execute after readiness gating
-- a verification depth preference
-- a scope preference such as targeted or all-selected
-- `review_agents`: one or more dispatch agent roles for `multi-agent-plan-review`
+### 1. Triage and plan once
 
-Fail before side effects unless `review_agents` is present. They may be terse (`codex high`, `claude opus xhigh`,
-`antigravity`). Infer the agent only when unambiguous.
+Read ISSUES.md and relevant ROADMAP.md, DECISIONS.md, COMMANDS.md, and code. The
+triage subagent validates entries, proposes reclassifications, merges duplicate
+obligations without losing IDs, groups ordered packages, and identifies genuine
+user decisions. Do not edit ledgers until verification. Return `no-work` when
+nothing remains.
 
-## Multi-agent pattern
+Run `/plan-work` once for the complete selected set and package map with
+`plan_reviewers`; continue only with `implementation-ready`. In plan-only mode,
+return the reviewed artifacts here.
 
-Recommended roles:
-1. `Issue triage lead`: selects the issue batch.
-2. `Planner`: invokes `plan-work` for the selected issue batch.
-3. `Plan review agents`: handled through `multi-agent-plan-review`.
-4. `Execution gatekeeper`: decides whether the current batch should `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`.
-5. `Implementer`: owns the code changes.
-6. `Auditor`: reviews touched areas for regressions and missed fixes.
-7. `Verifier`: runs the repo-defined checks.
-8. `Reporter`: writes the final resolution report.
+### 2. Implement all packages
 
-## Context Discipline
+Execute packages once in dependency order against the latest tree. Give each
+implementer the shared artifacts, bounded issues, and disposition contract.
+Require a failing reproducer for defects when feasible; debt and refactors may
+use established contract evidence. Resolve routine details without asking and
+do not silently drop selected work.
 
-You are the orchestrator. Do not do the child/subagent work yourself. Your job is to preserve your context to make strategic decisions, ensure each child skill or subagent follows its assigned contract, reconcile their outputs, enforce this workflow's gates, and continue the parent workflow after every child return.
+After all packages, run `/clean-and-fix-code` once when meaningful cleanup scope
+exists.
 
-## Global constraints
+### 3. Review, verify, and update ledgers
 
-- Keep scope to the selected issue batch plus directly blocking prerequisites.
-- Do not invent missing issue details; treat ambiguous issues as blockers to clarify.
-- Keep changes reviewable and aligned with repo conventions.
-- Remove resolved issues from `ISSUES.md`; log newly discovered out-of-scope problems instead of silently expanding scope.
-- If new evidence invalidates the plan, jump back to the earliest affected phase instead of continuing on stale assumptions.
-- Treat readiness gating as an internal execution decision, not as a reason to ask the user unless a human checkpoint is actually triggered.
+Run `/review-uncommitted-code` once over the issue changes and direct boundaries;
+validate and fix every `Recommended Accept` finding with focused evidence.
 
-## Human checkpoints
+Run `/verify-work` once in a fresh subagent using the selected issues and plan
+as the contract and review repairs as supplemental obligations. Directly repair
+material in-scope findings without another plan, review, or verification pass.
+Then apply every disposition to ISSUES.md or BACKLOG.md. When no broader
+orchestrator owns closeout, use the current verification evidence and update
+only documentation or memory made stale by the resolved issues. Read each
+memory file's format, merge duplicates, and record only non-obvious durable
+decisions. Do not add another verification or review stage.
 
-- Required: ask when fixing a selected issue would require a breaking change, broad architectural refactor, or materially larger scope.
-- Required: ask when issue wording and repo evidence still leave the intended fix ambiguous after planning and gating.
-- Stay autonomous while planning, gating, implementing, auditing, and verifying a clear issue batch.
+## Completion contract
 
-## Issue workflow
-
-### Phase 0: Preflight (Issue triage lead)
-
-1. Confirm baseline with:
-   - `git status --porcelain`
-   - `git diff --stat`
-2. Read, in order, when they exist:
-   - `ISSUES.md`
-   - `ROADMAP.md`
-   - `DECISIONS.md`
-   - `COMMANDS.md`
-   - `README.md`
-
-### Phase 1: Select and batch all issues (Issue triage lead)
-
-1. If the user specified issue IDs or a count, use that as the issue set.
-2. Otherwise select all open issues from `ISSUES.md`.
-3. For each issue, decide whether it is actually an issue or a misplaced backlog feature:
-   - If an issue describes a new end-user-visible capability rather than a bug, defect, debt, or risk, move it to `BACKLOG.md` and remove it from `ISSUES.md`.
-   - Record every reclassification in the report.
-4. Organize the remaining issue set into coherent execution batches by:
-   - shared area or module
-   - shared prerequisite work
-   - clean verification boundary
-5. Order the batches so that prerequisite fixes land first.
-6. State the full issue set, any reclassifications, the batch breakdown, and the execution order before proceeding.
-
-### Phase 2: Draft the plan and task list (Planner)
-
-Use the `plan-work` skill for the current issue batch. Pass the selected issues,
-excluded issues, rollback or recovery notes, and parent report path; do not
-duplicate `plan-work` artifact instructions here.
-
-### Phase 3: Review the current issue batch plan (Plan review agents)
-
-Use `multi-agent-plan-review` with:
-- `review_agents`: the review agent dispatch roles
-- the plan, task, and context artifact paths returned by `plan-work`
-
-If final readiness is `blocked-for-user-decision`, ask the smallest question
-that unblocks the plan. Continue only when final readiness is
-`implementation-ready`.
-
-### Phase 4: Gate the current issue batch (Execution gatekeeper + Reporter)
-
-After writing and reviewing the artifacts:
-1. echo the plan, task, and context paths
-2. summarize the selected issues, proposed approach, biggest risk, and verification plan
-3. choose exactly one verdict:
-
-- `proceed` (batch ready to implement): continue to Phase 5.
-- `revise` (plan or task list needs updates): repeat from Phase 2.
-- `escalate` (human checkpoint required): ask the smallest question that unblocks a trustworthy fix.
-- `rewrite-because-out-of-scope` (batch too broad): rewrite to the largest still-in-scope subset, record deferred issues in the run artifacts/report, and return to the earliest affected phase.
-
-### Phase 5: Implement the current batch (Implementer)
-
-1. Fix the selected issues in plan order.
-2. For defect-oriented issues, write or identify a failing test that reproduces the defect before fixing it, when feasible. For pure debt or refactor issues, verify against existing checks instead.
-3. Keep diffs narrow and explainable.
-4. If a selected issue proves materially broader than planned, hand it back to the execution gatekeeper instead of freelancing.
-
-If the touched scope accumulates obvious local complexity or dead scaffolding that can be fixed without broadening scope:
-- use the `simplify-new-code` skill
-- then continue to Phase 6
-
-### Phase 6: Audit the touched area (Auditor)
-
-Review:
-- whether each selected issue is actually resolved
-- nearby regression risks
-- standards alignment
-- whether any new out-of-scope issue should be logged
-
-Fix small in-scope follow-on problems immediately.
-Log larger out-of-scope problems instead of expanding the batch.
-
-### Phase 7: Verify and close the current batch (Verifier + Reporter)
-
-1. Run the best repo-defined verification command for the selected risk level.
-2. Remove resolved issues from `ISSUES.md`.
-3. Add any genuinely new out-of-scope issue entries.
-4. Update the report at `.agent-layer/tmp/fix-issues.<run-id>.report.md` with the batch results.
-
-### Phase 8: Advance to the next batch or close the run (Issue triage lead + Reporter)
-
-If unprocessed batches remain:
-1. Select the next batch from Phase 1's ordering.
-2. Return to Phase 2 to plan the next batch.
-
-If all batches are complete:
-1. Finalize `.agent-layer/tmp/fix-issues.<run-id>.report.md` with:
-   - all issues fixed (by batch)
-   - issues reclassified and moved to `BACKLOG.md`
-   - issues deferred or rejected
-   - delegated `plan-work` and `multi-agent-plan-review` artifact paths
-   - verification performed
-   - remaining follow-up
-
-When no broader orchestrator already owns closeout, use the `finish-task` skill here.
-If it reveals incomplete issue resolution or stale memory/docs, jump back to the earliest affected phase.
-
-## Guardrails
-
-- Do not convert this into a general cleanup pass.
-- Do not leave issue dispositions implicit.
-- Do not weaken checks or lower thresholds to “finish” an issue batch.
-- Do not close issues that were only partially addressed.
-- Do not treat `rewrite-because-out-of-scope` as permission to silently drop selected issues; record the deferrals explicitly in the run artifacts/report, not in `ISSUES.md`.
-- Do not stop after the first batch if unprocessed batches remain.
-
-## Definition of done
-
-- The parent report exists at `.agent-layer/tmp/fix-issues.<run-id>.report.md` and lists every selected issue with a disposition of fixed, deferred, rejected, or reclassified.
-- Every implemented batch used `plan-work`, and the returned plan/task/context artifacts went through `multi-agent-plan-review` and reached `implementation-ready` before the execution gate proceeded.
-- Every resolved issue is removed from `ISSUES.md`; reclassified items moved to `BACKLOG.md`; newly discovered out-of-scope issues are logged as fresh `ISSUES.md` entries.
-- Deferred selected issues are not annotated in `ISSUES.md`; they remain as open issues unless separately reclassified or resolved.
-- The repo-defined verification command ran at least once per batch and its result is recorded in the report.
-- The run processed every selected batch in order — no early stop with unprocessed batches, unless a human checkpoint blocked progress and the report names it.
-
-## Final handoff
-
-After writing the report:
-1. Echo the parent report path and delegated artifact paths.
-2. Summarize the resolved issues and any deferred ones.
-3. State the verification outcome clearly.
+Report selected issues and packages, plan artifacts, every terminal disposition,
+fixes and ledger changes, review and verification evidence, blockers, and
+residual risk. The run is complete only when every selected issue is accounted
+for.

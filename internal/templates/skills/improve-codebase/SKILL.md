@@ -1,250 +1,108 @@
 ---
 name: improve-codebase
 description: >-
-  Run a deep autonomous quality sweep of the whole codebase or named
-  subsystems: survey, split into reviewable chunks, run multi-lens reviews, fix
-  findings iteratively, and delegate to cleanup/test skills as needed.
+  Run one wide, evidence-led quality sweep over a repository or named scope,
+  repair material local and cross-cutting findings, review the concrete work,
+  and verify the result.
 ---
 
 # improve-codebase
 
-This is the whole-repository audit and improvement orchestrator.
-It should run a systematic survey that:
-- decomposes the codebase into reviewable chunks by module/package/subsystem
-- audits each chunk with parallel multi-lens review agents
-- runs cross-cutting reviews (architecture, consistency, security)
-- fixes accepted findings iteratively
-- delegates to complementary skills where they add value
-- populates `ISSUES.md` with anything deferred
-- reports each chunk's findings and fixes to the user
+Cover the full declared scope once and fix every validated material finding not
+blocked by a genuine user decision or concrete failure. Packages organize
+repairs; they do not narrow discovery.
 
-Use this for deep codebase-wide sweeps; use `audit-and-fix-uncommitted-changes` when the target is working-tree diffs only.
+## Scope and artifacts
 
-## Scope default
+Accept paths, subsystems, audit lenses, exclusions, and report-only mode;
+otherwise cover the whole repository. Exclude generated, vendored, and build
+output unless included explicitly.
 
-Default scope:
-- the entire repository source tree
-- all production code, tests, docs, and configuration
-- excluding generated files, vendor directories, and build artifacts
+Examine relevant correctness, safety, security, concurrency, cancellation,
+input, test, ownership, interface, dependency, duplication, error, docs, and
+maintainability risks. Cover meaningful components and boundaries without
+per-file ceremony or arbitrary finding quotas.
 
-The user can narrow scope with:
-- explicit paths or directories
-- file-type filters (e.g., "only Go files", "only tests")
-- subsystem names
-- specific audit lenses (e.g., "security only", "architecture only")
+Write the master report to
+`.agent-layer/tmp/improve-codebase.<run-id>.report.md` and delegated evidence
+under the same prefix as `investigation-<index>-<slug>`, `cross-cutting`, and
+`repair-<index>-<slug>` reports.
 
-## Inputs
+## Ownership
 
-Accept any combination of:
-- explicit paths or subsystem names
-- audit lens filters (all, correctness, architecture, security, quality, coverage)
-- a chunk iteration cap
-- a findings-per-chunk severity threshold for stopping early
-- whether to run complementary skills (simplify-codebase, boost-coverage, fix-issues)
-- whether to operate in report-only mode (no fixes)
+- One fresh scout maps the scope into coherent, non-overlapping investigation
+  groups and cross-cutting questions.
+- Fresh read-only investigators cover each group; run independent groups
+  concurrently when useful. Do not duplicate artifacts or concerns for
+  consensus.
+- One fresh cross-cutting investigator examines the complete map and reports
+  for relationships no isolated group can establish.
+- The owning agent validates findings, maintains the ledger, orders all
+  mutations, and may use fresh fixers for context-heavy repair packages.
+- `/review-uncommitted-code` owns the single final code review. Keep mutations
+  sequential and leave changes uncommitted and unpushed.
 
-## Required artifacts
+## Finding contract
 
-Use one shared `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
+Classify findings as `local`, `cross-boundary`, or `architectural`. Accept only
+current, evidence-backed problems with material impact on correctness, safety,
+reliability, performance, test integrity, architecture, or maintenance cost.
+Merge duplicates under their shared root cause and omit stylistic, speculative,
+unsupported, and immaterial candidates.
 
-Always create:
-- `.agent-layer/tmp/improve-codebase.<run-id>.report.md`
+Fix every accepted in-scope finding, including required tests, docs, and memory.
+Ask only when evidence leaves materially different behavior, architecture,
+scope, risk, cost, migration, or external-contract choices. Difficulty or
+breadth alone is not a user decision.
 
-Create the file with `touch` before writing.
+## Workflow
 
-The master report is the human-readable ledger and the single place to preserve orchestrator state.
+### 1. Map and investigate once
 
-Delegated skill outputs are handled one way:
-- Use `review-scope` report artifacts as findings input to `resolve-findings`.
-- Copy `resolve-findings`, `simplify-codebase`, `boost-coverage`, `audit-tests`, and `fix-issues` outcomes from their final handoffs into the master report.
-- Do not require, open, echo, or cross-reference child report artifacts from `resolve-findings`, `simplify-codebase`, `boost-coverage`, `audit-tests`, or `fix-issues`.
+Read COMMANDS.md and relevant authoritative context. The scout records
+components, ownership, interfaces, state and dependency boundaries, constraints,
+groups, and cross-cutting questions. Validate that the map covers the declared
+scope.
 
-## Required behavior
+Give each investigator its group, constraints, and report path. Require exact
+locations, affected behavior or boundary, impact, smallest repair shape, and
+coverage accounted for. Then have the cross-cutting investigator examine the
+complete evidence for ownership, dependency, data flow, protocol, lifecycle,
+security, reliability, error, test, and documentation relationships.
 
-At minimum, use:
-- a survey scout that maps the repository structure
-- parallel audit review agents with different lenses per chunk
-- a findings resolver/fixer
-- a cross-cutting reviewer for architecture and consistency
-- a synthesizer that maintains the master report
+### 2. Synthesize the master ledger
 
-Prefer the dedicated skills that already exist:
-- `review-scope` for per-chunk auditing
-- `resolve-findings` for triaging and fixing findings
-- `simplify-codebase` when complexity warrants it
-- `boost-coverage` when test gaps are significant
-- `audit-tests` when test suite quality, redundancy, or organization is concerning
-- `fix-issues` when existing `ISSUES.md` entries overlap with findings
+Validate candidates against the current tree and record for each survivor:
 
-## Context Discipline
+- stable ID, category, severity, scope, evidence, and impact
+- root cause, repair boundary, required updates, and verification
+- any genuine user decision or concrete blocker
 
-You are the orchestrator. Do not do the child/subagent work yourself. Your job is to preserve your context to make strategic decisions, ensure each child skill or subagent follows its assigned contract, reconcile their outputs, enforce this workflow's gates, and continue the parent workflow after every child return.
+Return `no-material-findings` after recording scope coverage when none survive;
+in report-only mode return the ledger. Otherwise group every accepted finding
+into dependency-ordered repair packages.
 
-When compaction is needed, retain this section verbatim and also preserve: current phase, active artifact paths, selected scope, pending gate verdict, child skills/subagents already run, their outcomes, unresolved blockers, and the next exact step.
+### 3. Repair all accepted findings
 
-## Global constraints
+Execute packages sequentially against the latest tree, directly or through one
+fresh fixer per context-heavy package. Each package repairs root causes, updates
+required tests/docs/memory, runs focused checks, and records each assigned
+finding as `fixed`, `invalid-with-evidence`, `blocked-user-decision`, or
+`blocked-concrete-failure`. Continue independent packages when safe.
 
-- Treat the codebase as the target, not working-tree diffs.
-- Do not attempt to review every line of every file. Prioritize by risk, complexity, and staleness.
-- Fix all accepted findings regardless of severity.
-- Do not stage, commit, or discard changes unless the user explicitly asks.
-- Keep each chunk review focused and reviewable.
-- If a fix changes the relevant surface area materially, re-audit that chunk.
-- Log deferred findings to `ISSUES.md` instead of silently dropping them.
-- Do not weaken tests, lower thresholds, or skip checks to clear findings.
+### 4. Review and verify once
 
-## Human checkpoints
+When changes exist, run `/review-uncommitted-code` once over the combined work
+and affected boundaries; validate and fix `Recommended Accept` findings with
+focused evidence. Do not start another broad review.
 
-- Required: ask when the repository is too large to audit meaningfully in one session and the user has not scoped it down.
-- Required: ask when an accepted finding requires a breaking change, broad architectural refactor, or end-user-visible behavior change.
-- Required: ask when a finding cannot be verified with available code, tests, or docs.
-- Required: ask before any destructive or irreversible action.
-- Stay autonomous during normal survey, audit, fix, and re-audit cycles when findings and fixes are clear.
+Run one risk-proportional final verification over the final tree and repaired
+ledger. A failed check may return to its responsible repair and rerun invalidated
+evidence; confidence alone may not restart investigation or review.
 
-## Orchestration loop
+## Completion contract
 
-### Phase 0: Preflight (Repo scout)
-
-1. Confirm baseline with:
-   - `git status --porcelain`
-   - `git diff --stat`
-2. Read in this order when they exist:
-   - `COMMANDS.md`
-   - `README.md`
-   - `DECISIONS.md`
-   - `ISSUES.md`
-   - `ROADMAP.md`
-3. Identify the repository structure:
-   - top-level directories and their purposes
-   - language(s) and framework(s) in use
-   - test locations and conventions
-   - generated or vendored paths to exclude
-4. Note existing known issues from `ISSUES.md` to avoid reporting them as novel findings.
-
-### Phase 1: Survey and decompose (Survey scout)
-
-1. Map the repository into reviewable chunks by:
-   - package, module, or directory boundaries
-   - functional subsystem (e.g., "config loading", "sync engine", "CLI commands")
-   - test suites as their own review targets when relevant
-2. Prioritize chunks by:
-   - complexity signals (file size, function count, nesting depth)
-   - recent change frequency (`git log --since="3 months ago" --name-only`)
-   - test coverage gaps when coverage data is available
-   - presence of TODO/FIXME/HACK markers
-   - proximity to data boundaries, security surfaces, or reliability-critical paths
-3. State the chunk list, priority order, and rationale in the master report.
-4. If the total scope is clearly too large for one session, propose the highest-value subset and ask before proceeding.
-
-### Phase 2: Audit chunk N (Audit review agents)
-
-Use the `review-scope` skill on the current chunk with proactive hotspot mode.
-
-The `review-scope` lenses cover correctness, architecture, and quality. For this orchestrator, also assess:
-- **Security**: input validation gaps, injection risks, credential handling
-- **Consistency**: naming conventions, error patterns, style drift across the codebase
-
-Copy the high-signal findings summary into the master report under `## Chunk N: <name> Findings`.
-
-### Phase 3: Fix chunk N findings and re-audit (Fixers + Auditors)
-
-Use the `resolve-findings` skill on the chunk N review report.
-
-Fix every accepted finding regardless of severity. For findings that cannot be fixed in scope:
-- log them to `ISSUES.md` with the severity, location, and next step
-- mark them as deferred in the master report
-
-Copy the fix summary into the master report under `## Chunk N: <name> Fixes`.
-
-If a fix exposes obvious local complexity:
-- use the `simplify-codebase` skill on the affected area
-
-After fixes are applied, run one explicit re-audit pass on the chunk using a **fresh-context reviewer subagent**, not a continuation of the fixer's context. The reviewer sees only the post-fix chunk and originating findings, never the fix narrative.
-
-Pass the contents of [`reviewer-prompt.md`](reviewer-prompt.md) to the reviewer subagent verbatim — do not paraphrase, summarize, or modify the rubric.
-
-Inputs the reviewer receives alongside the prompt:
-- The post-fix content of every file in the chunk.
-- The originating findings list (titles, severities, locations only).
-- Nothing else. No fixer narrative, no `resolve-findings` report, no chat history, no "we decided to ___" rationalizations.
-
-Loop rules:
-- If the fresh-context re-audit returns new Critical or High findings, fix them and re-invoke the reviewer (fresh context again, fresh inputs each time).
-- Stop the per-chunk loop when the fresh-context re-audit returns no Critical or High findings.
-- If the loop does not converge after 3 iterations, escalate to the user.
-
-### Phase 4: Cross-cutting review (Architecture reviewer)
-
-After all chunks have been individually audited, run a cross-cutting review covering:
-- **Architectural consistency**: do modules respect their boundaries? Are there layering violations?
-- **Pattern consistency**: are similar problems solved differently in different places?
-- **Error handling patterns**: consistent approach across the codebase?
-- **Naming and convention drift**: inconsistencies that accumulated over time?
-- **Dependency health**: outdated, duplicated, or unnecessary dependencies?
-- **Documentation alignment**: do README, memory files, and inline docs match the actual code?
-
-Record cross-cutting findings in the master report under `## Cross-Cutting Findings`.
-
-Fix accepted cross-cutting findings using the same resolve-findings workflow.
-
-### Phase 5: Complementary skill delegation (Orchestrator)
-
-Delegate to complementary skills only when the audit surfaces systemic issues in their domain: `boost-coverage` for significant test gaps, `audit-tests` for widespread redundancy/misclassification, `simplify-codebase` for significant complexity, `fix-issues` for overlapping `ISSUES.md` entries. Skip delegation when no meaningful gaps exist.
-
-Record delegation outcomes in the master report under `## Complementary Skill Results`.
-
-### Phase 6: Close the run (Reporter)
-
-When all chunks and cross-cutting reviews are complete, add `## Final Summary`
-with chunks audited, finding counts by severity, fixes vs. deferrals,
-complementary skill outcomes, and overall health. Add `## Residual Risk` for
-any systemic concerns that remain.
-
-## Required master report structure
-
-Write `.agent-layer/tmp/improve-codebase.<run-id>.report.md` with:
-
-1. `# Codebase Improvement Summary`
-2. `## Repository Overview`
-3. `## Chunk Map and Priority Order`
-4. For each chunk:
-   - `## Chunk N: <name> Findings`
-   - `## Chunk N: <name> Fixes`
-5. `## Cross-Cutting Findings`
-6. `## Cross-Cutting Fixes`
-7. `## Complementary Skill Results`
-8. `## Final Summary`
-9. `## Residual Risk`
-
-## Minimal status protocol
-
-At each major stage, echo the master report path, current chunk when relevant,
-and current stage: preflight, survey/decompose, audit/fix chunk N,
-cross-cutting review, delegation, or closeout.
-
-## Guardrails
-
-- Do not silently skip chunks that were in the plan.
-- Do not expand a chunk review into unrelated areas.
-- Do not treat the cross-cutting review as optional.
-- Do not claim a clean codebase without evidence from the audit rounds.
-- Do not modify unrelated code just because it is nearby.
-- Keep each chunk review grounded in concrete reviewed code, review-scope findings, and observed verification.
-
-## Definition of done
-
-- The master report exists at `.agent-layer/tmp/improve-codebase.<run-id>.report.md` with every required section, including one `## Chunk N: <name> Findings` + `## Chunk N: <name> Fixes` pair per chunk in the plan and a populated `## Cross-Cutting Findings` section.
-- Every chunk in the planned chunk map was audited (no silent skips); per-chunk re-audit loops used a fresh-context reviewer subagent (not the fixer's context) and ended with no new Critical or High findings or with an explicit 3-iteration escalation recorded.
-- Every deferred finding has a matching entry in `ISSUES.md` cited by the master report.
-- The `## Final Summary` states overall codebase health with evidence, and `## Residual Risk` names any systemic concerns that remain.
-
-## Final handoff
-
-After the run, present the results to the user in chat:
-
-1. Echo the master report path.
-2. State total chunks audited, total findings, and fixes applied.
-3. Present a **Key findings and fixes** table sorted by Chunk (primary) then Severity (secondary).
-4. Below the table, list deferred findings with their `ISSUES.md` entry references.
-5. State the overall codebase health assessment.
-6. List any complementary skills that were invoked and their outcomes.
+Report scope and boundary coverage, delegated evidence, the material ledger,
+repairs, final review, verification, decisions, blockers, and residual risk.
+Use one outcome: `improved`, `report-only`, `no-material-findings`,
+`blocked-user-decision`, or `blocked-concrete-failure`.

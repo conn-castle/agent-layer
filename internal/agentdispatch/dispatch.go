@@ -24,6 +24,9 @@ func Run(opts RunOptions) error {
 	if err != nil {
 		return err
 	}
+	if err := pruneExpiredSessions(opts.Root, time.Now()); err != nil {
+		return err
+	}
 	if err := checkDispatchDepth(project.Config, depth); err != nil {
 		return err
 	}
@@ -74,6 +77,9 @@ func Run(opts RunOptions) error {
 func Resume(opts ResumeOptions) error {
 	project, stderr, env, depth, err := loadDispatchProject(opts.Root, opts.Stderr, opts.Env)
 	if err != nil {
+		return err
+	}
+	if err := pruneExpiredSessions(opts.Root, time.Now()); err != nil {
 		return err
 	}
 	if err := checkDispatchDepth(project.Config, depth); err != nil {

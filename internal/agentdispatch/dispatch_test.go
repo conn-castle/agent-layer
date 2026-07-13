@@ -124,7 +124,7 @@ func TestRunBlocksNestedDispatchAtDepthOne(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 1})
 	err := Run(RunOptions{
 		Root: root,
-		Env:  []string{clients.EnvDispatchActive + "=1"},
+		Env:  []string{clients.EnvDispatchActive + "=3"},
 	})
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != ExitNested {
@@ -133,6 +133,34 @@ func TestRunBlocksNestedDispatchAtDepthOne(t *testing.T) {
 	if !strings.Contains(exitErr.Error(), "built-in subagent tool") {
 		t.Fatalf("expected nested-dispatch error to mention the built-in subagent tool, got %q", exitErr.Error())
 	}
+}
+
+func TestRunAllowsNestedDispatchWithinDefaultDepth(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	binDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "codex.log")
+	writeDispatchStub(t, binDir, "codex", `printf '{"type":"agent_message","message":"codex ok"}\n'`)
+	var stdout bytes.Buffer
+	err := Run(RunOptions{
+		Root:       root,
+		Agent:      AgentCodex,
+		PromptArgs: []string{"Review"},
+		Env: []string{
+			"PATH=" + testPath(binDir),
+			clients.EnvDispatchActive + "=2",
+			"AL_TEST_LOG=" + logPath,
+		},
+		Stdout:   &stdout,
+		Stderr:   &bytes.Buffer{},
+		LookPath: mockLookPath(binDir),
+	})
+	if err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if stdout.String() != "codex ok" {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	assertFileContains(t, logPath, clients.EnvDispatchActive+"=3")
 }
 
 func TestRunAllowsNestedDispatchWithinConfiguredDepth(t *testing.T) {
@@ -378,6 +406,7 @@ func TestRunClaudeSkillPromptAndCommandConstruction(t *testing.T) {
 	assertFileContains(t, logPath, "ARG_9=--effort")
 	assertFileContains(t, logPath, "ARG_10=high")
 	assertFileContains(t, logPath, "CLAUDE_CONFIG_DIR="+filepath.Join(root, ".claude-config"))
+	assertFileContains(t, logPath, "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0")
 	assertFileContains(t, promptPath, "/review-plan\nReview")
 }
 
@@ -589,7 +618,7 @@ fi
     echo "ARG_${i}=${arg}"
     i=$((i + 1))
   done
-  env | grep -E '^(AL_|CODEX_HOME|CLAUDE_CONFIG_DIR|AGY_CLI)' | sort || true
+  env | grep -E '^(AL_|CODEX_HOME|CLAUDE_CONFIG_DIR|CLAUDE_CODE_|AGY_CLI)' | sort || true
 } >> "$AL_TEST_LOG"
 if [ -n "${AL_TEST_PROMPT:-}" ]; then
   cat > "$AL_TEST_PROMPT"

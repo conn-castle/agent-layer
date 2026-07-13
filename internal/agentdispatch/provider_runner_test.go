@@ -73,6 +73,94 @@ func TestProviderCommandsUseExactProviderContracts(t *testing.T) {
 	}
 }
 
+func TestClaudeDispatchPrintBackgroundWaitCeilingIsAuthoritative(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	project, stderr, env, depth, err := loadDispatchProject(root, io.Discard, []string{})
+	if err != nil {
+		t.Fatalf("load project: %v", err)
+	}
+	if stderr != io.Discard || len(env) != 0 || depth != 0 {
+		t.Fatalf("unexpected dispatch context: stderr=%T env=%v depth=%d", stderr, env, depth)
+	}
+	claudeTarget, ok := lookupTarget(AgentClaude)
+	if !ok {
+		t.Fatal("Claude target missing from registry")
+	}
+
+	tests := []struct {
+		name          string
+		mode          string
+		baseEnv       []string
+		projectValue  string
+		inputKeyCount int
+	}{
+		{
+			name:          "fresh replaces project value",
+			mode:          dispatchModeFresh,
+			projectValue:  "600000",
+			inputKeyCount: 1,
+		},
+		{
+			name:          "resume replaces duplicate caller values",
+			mode:          dispatchModeResume,
+			baseEnv:       []string{claudePrintBackgroundWaitCeilingEnv + "=600000", claudePrintBackgroundWaitCeilingEnv + "=1"},
+			projectValue:  "900000",
+			inputKeyCount: 2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			project.Env = map[string]string{claudePrintBackgroundWaitCeilingEnv: tt.projectValue}
+			run, err := newDispatchRun(root, AgentClaude, supportedProviderVersions[AgentClaude], tt.mode)
+			if err != nil {
+				t.Fatalf("new dispatch run: %v", err)
+			}
+			childEnv := dispatchEnvironment(tt.baseEnv, project, run, 1, AgentClaude)
+			if got := len(envValues(childEnv, claudePrintBackgroundWaitCeilingEnv)); got != tt.inputKeyCount {
+				t.Fatalf("dispatch environment %q entries = %d, want %d: %#v", claudePrintBackgroundWaitCeilingEnv, got, tt.inputKeyCount, childEnv)
+			}
+			command, err := buildProviderCommand(claudeTarget, project, childEnv, []byte("prompt"), "", "", tt.mode, runtimeSessionID, run, io.Discard)
+			if err != nil {
+				t.Fatalf("build Claude command: %v", err)
+			}
+			if values := envValues(command.Env, claudePrintBackgroundWaitCeilingEnv); len(values) != 1 || values[0] != claudePrintBackgroundWaitCeilingValue {
+				t.Fatalf("Claude environment %q entries = %#v, want exactly [%q]", claudePrintBackgroundWaitCeilingEnv, values, claudePrintBackgroundWaitCeilingValue)
+			}
+		})
+	}
+
+	for _, agent := range []string{AgentCodex, AgentAntigravity} {
+		t.Run(agent+" does not receive Claude override", func(t *testing.T) {
+			target, ok := lookupTarget(agent)
+			if !ok {
+				t.Fatalf("%s target missing from registry", agent)
+			}
+			run, err := newDispatchRun(root, agent, supportedProviderVersions[agent], dispatchModeFresh)
+			if err != nil {
+				t.Fatalf("new dispatch run: %v", err)
+			}
+			command, err := buildProviderCommand(target, project, []string{"KEEP=1"}, []byte("prompt"), "", "", dispatchModeFresh, "", run, io.Discard)
+			if err != nil {
+				t.Fatalf("build %s command: %v", agent, err)
+			}
+			if values := envValues(command.Env, claudePrintBackgroundWaitCeilingEnv); len(values) != 0 {
+				t.Fatalf("%s environment unexpectedly includes %q: %#v", agent, claudePrintBackgroundWaitCeilingEnv, values)
+			}
+		})
+	}
+}
+
+func envValues(env []string, key string) []string {
+	prefix := key + "="
+	values := make([]string, 0, 1)
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			values = append(values, strings.TrimPrefix(entry, prefix))
+		}
+	}
+	return values
+}
+
 func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 	claudeEvents, err := reduceStructuredEvent(AgentClaude, runtimeSessionID, []byte(`{"type":"result","session_id":"22222222-2222-4222-8222-222222222222","is_error":false}`))
 	if err != nil || len(claudeEvents) != 1 || claudeEvents[0].Kind != eventFailure {

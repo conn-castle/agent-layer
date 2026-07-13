@@ -1,151 +1,150 @@
 # Skill Audit
 
-This document describes how to audit skill documents for instruction-following quality. When asked to audit skills, treat this document as the workflow specification.
+Use this procedure to audit shipped skill templates for instruction-following
+quality. Use reviewer judgment and cite the affected text; do not require
+runtime traces, research, or empirical proof. Do not edit skills unless the
+caller also requests fixes.
 
-## Purpose
+## Scope
 
-Evaluate the embedded template skill sources and produce a ranked health report. This audit covers two shipped template trees, not repo-local active skills under `.agent-layer/skills/`:
+Audit both shipped source trees:
 
-- **General (workflow) skills** under `internal/templates/skills/*/SKILL.md` — scored against the research-backed criteria in `docs/SKILL-DESIGN.md` (the "Audit criteria" section below).
-- **CLI skills** under `internal/templates/skills-catalog/*/SKILL.md` — skills that teach agents to drive an installed command line interface. They are scored against the CLI-specific rules in `docs/CLI-SKILL-DESIGN.md` (the "CLI skill criteria" section below). The line-count and constraint thresholds in this document apply to general skills only; CLI skills are deliberately lean routers and are evaluated on routing, live-help usage, and safety instead.
+- General skills: `internal/templates/skills/*/SKILL.md`
+- CLI skills: `internal/templates/skills-catalog/*/SKILL.md`
 
-## When to use
+Do not substitute generated or repo-local copies. Read referenced resources
+only to verify an interface or ownership claim.
 
-- After creating or significantly modifying skills
-- As part of a periodic quality sweep
-- Before a release that includes skill changes
+## Sources of truth
 
-## Audit criteria
+- `docs/SKILL-DESIGN.md`: portable general-skill rubric
+- `docs/CLI-SKILL-DESIGN.md`: CLI-skill rubric
+- `site/docs/skills-approach.mdx`: Agent Layer architecture and instruction
+  ownership
+- Audited child skill: internal procedure
+- Audited parent skill: child inputs, accepted result, and response to failure
+  or required user input
 
-For each general (workflow) skill, measure and evaluate:
+Do not copy the design-guide rubrics into the audit report. Cite the applicable
+rule and explain the skill-specific problem.
 
-1. **Line count** — Target: 150-300 lines. Flag any skill over 250 as worth reviewing. Over 300 is a hard concern.
-2. **Constraint count** — Estimate discrete instructions/constraints. Target: under 50. Over 50 is a concern.
-3. **Conditional branching** — Count "if mode X / if mode Y" patterns that switch behavior. Each conditional adds constraint interference risk (ComplexBench 2024). Zero is ideal.
-4. **Single responsibility** — Does the skill do ONE thing? Or does it serve multiple purposes via mode switching?
-5. **Primacy effect** — Are the most critical constraints in the first 20% of the document? LLMs show universal primacy bias — later instructions are more likely to be dropped.
-6. **Sub-skill delegation** — Does the skill delegate to existing sub-skills where appropriate, or re-implement their logic inline?
-7. **Human checkpoints** — Are they specific ("ask when X happens") or vague ("ask when uncertain")? Vague checkpoints cause either always-ask or never-ask behavior.
-8. **Guardrails** — Are they specific to this skill's failure modes, or generic boilerplate?
-9. **Verbosity** — Are there sections that could be shorter without losing clarity? Report templates, examples, and philosophy sections are common sources of bloat.
-10. **Description quality** — Does the frontmatter description clearly distinguish this skill from related skills?
+## Audit rules
 
-## CLI skill criteria
+- Treat semantically equivalent wording as duplication. Before recommending
+  deletion, name the retained owner; without one, deletion is behavior loss.
+- Preserve parent/child boundary contracts without repeating child steps,
+  rationale, or internal safeguards.
+- When execution can pause, require an exact step or phase to resume.
+- Do not report wording preferences that do not affect routing, behavior,
+  safety, verification, or maintenance.
 
-CLI skills are routers to an installed command line interface, not reference manuals, so they are evaluated against the **Review Checklist** in `docs/CLI-SKILL-DESIGN.md`, which is the authoritative rubric — consult it for the complete pass/fail list and the Anti-Patterns table. For each CLI skill, evaluate:
+## General-skill checklist
 
-1. **Description routing** — Does the frontmatter description name the CLI, its task domain, trigger conditions in user language, and at least one nearby non-goal? A weak description is an activation bug, not a polish issue.
-2. **Lean body** — Is the body a workflow and safety contract rather than a copied manual? Flag copied flag lists, full subcommand references, and version-sensitive examples.
-3. **Live help** — Does the body tell the agent to run live `<cli> --help` (and subcommand help) and treat installed help as the source of truth for syntax?
-4. **Explicit setup failure** — If the CLI is missing, unauthenticated, or outside the expected environment, does the skill stop and report rather than silently install, authenticate, or fall back to another tool or MCP server?
-5. **Read-only before writes and human checkpoints** — Are destructive, deploy, publish, payment, or external-write operations gated behind dry-run/preview or a human checkpoint?
-6. **Secret hygiene** — Are secrets kept out of command arguments, examples, and artifacts?
-7. **Untrusted output** — Does the skill treat CLI output as untrusted data rather than instructions?
-8. **No duplicated references** — Is command reference material absent from system instructions, `SKILL.md`, and `references/` (live help is the single source of truth)?
+- **Routing and responsibility**: The description distinguishes adjacent skills;
+  the body has one job and one primary output.
+- **Inputs and defaults**: Required inputs are explicit and fail before side
+  effects; missing paths, roles, or defaults are not invented.
+- **Instruction ownership**: Each rule, failure response, output field, and
+  approval requirement has one owner.
+- **Composition**: Root skills do not call other skills. Workflows state child
+  boundaries without copying child procedures.
+- **Orchestrator context**: A workflow preserves enough context to validate
+  inputs, reconcile child results, apply gates, and produce its final handoff.
+- **Child calls**: Each call shows exact arguments, artifact sources, accepted
+  results, and handling for failure, missing output, or required user input.
+- **User interaction**: Each required question or approval names its trigger,
+  requested response, and resume location; the normal path continues without
+  asking.
+- **Structure**: Critical rules appear early. Steps or phases are addressable
+  wherever execution can pause and resume.
+- **Guardrails and economy**: Guardrails target this skill's failure modes.
+  Remove text that does not change behavior.
+- **Completion and handoff**: Completion criteria are observable outcomes, not
+  repeated steps; the final handoff contains only fields the caller needs.
 
 ## Audit workflow
 
-### Phase 1: Gather all skills
+### Step 1: Inventory and classify
 
-1. List all template skill source files from both trees:
-   - General (workflow) skills: `internal/templates/skills/*/SKILL.md`
-   - CLI skills: `internal/templates/skills-catalog/*/SKILL.md`
-2. Read each one. Note which tree each skill belongs to — it determines which criteria apply.
-3. Read `docs/SKILL-DESIGN.md` as the criteria reference for general skills, and `docs/CLI-SKILL-DESIGN.md` for CLI skills.
+1. List every `SKILL.md` in both source trees.
+2. Classify each general skill as a root skill or workflow skill using
+   `skills-approach.mdx`.
+3. Record exact line count and estimate discrete instructions.
+4. Record mode switches separately from ordinary workflow conditions. An
+   `if mode X` branch changes the job; `if verification fails` protects one job.
 
-### Phase 2: Measure each skill
+Use `SKILL-DESIGN.md` heuristics to select long or dense skills for closer
+review. Do not reward shortness or recommend filler.
 
-For **general (workflow) skills**, record:
-- Line count (exact)
-- Estimated constraint count
-- Number of conditional branches (with descriptions)
-- Single responsibility assessment (Strong / Weak / Violated)
-- Primacy assessment (Strong / Adequate / Weak)
-- Delegation assessment (Good / Adequate / Inline duplication)
-- Checkpoint specificity (Specific / Mostly specific / Vague)
-- Guardrail specificity (Specific / Generic)
-- Verbosity assessment (Lean / Adequate / Verbose)
-- Description quality (Good / Adequate / Poor)
+### Step 2: Apply the authoritative rubric
 
-For **CLI skills**, record (line/constraint thresholds do not apply):
-- Line count (exact) — CLI skills should be lean; flag bodies that copy CLI help into the skill
-- Description routing (Good / Adequate / Poor) — names CLI, domain, triggers, non-goal
-- Live-help instruction (Present / Missing)
-- Setup-failure handling (Present / Missing / Silent fallback)
-- Safety gates for side effects (Present / Missing / N/A)
-- Secret hygiene and untrusted-output handling (OK / Issue)
-- Duplicated command reference (None / Found)
+Apply the checklist above and the source assigned in `Sources of truth`. Apply
+the `CLI-SKILL-DESIGN.md` review checklist to CLI skills. Inspect repository
+paths, resources, current skill names, and child contracts when they resolve a
+factual question; absence of external proof does not block a finding.
 
-### Phase 3: Identify issues
+### Step 3: Build an instruction-ownership map
 
-For each skill, list specific issues with:
-- **Severity**: High / Medium / Low
-- **Location**: line numbers or section name
-- **Issue**: what is wrong
-- **Recommendation**: specific fix
+For every safety-critical or workflow-controlling instruction, record:
 
-Use these severity guidelines for general skills:
-- **High**: Exceeds hard thresholds (>300 lines, >50 constraints), has multiple conditional branches, or violates single responsibility
-- **Medium**: Near thresholds (250-300 lines, 40-50 constraints), has one conditional branch, vague checkpoints, or inline duplication of sub-skill logic
-- **Low**: Verbose sections, minor duplication, inconsistencies with other skills
+| Instruction | Authoritative owner | Other occurrences | Verdict |
+| --- | --- | --- | --- |
 
-For CLI skills:
-- **High**: Weak or ambiguous description (activation bug), copied CLI manual or full flag lists in the body, silent fallback or silent install/auth on missing setup, or secrets passed on the command line
-- **Medium**: Missing live-help instruction, missing setup-failure handling, or missing safety gates for side-effecting operations
-- **Low**: Minor verbosity, weak help-probe labeling, or small description overlap with a neighboring skill
+Use these verdicts:
 
-### Phase 4: Produce the health report
+- `single-owner`: stated once in the correct place
+- `boundary-reference`: repeated only as a necessary caller/callee contract
+- `duplicate`: another occurrence adds no behavior
+- `conflict`: occurrences require different behavior
+- `missing-owner`: required behavior is implied but never stated
 
-Output a ranked table of **general (workflow) skills** sorted by instruction-followability (best to worst):
+Check within each skill and across parent/child skills, especially Rules,
+workflow, Guardrails, Definition of done, and Final handoff.
 
-```
-| Rank | Skill | Lines | Constraints | Cond. Branches | Verdict |
-|------|-------|-------|-------------|----------------|---------|
-```
+### Step 4: Validate composition and interfaces
 
-Verdict categories:
-- **Excellent**: Under 150 lines, under 35 constraints, no conditional branches, strong single responsibility
-- **Good**: Under 250 lines, under 45 constraints, at most 1 conditional branch
-- **Needs work**: 250-300 lines, or 45-50 constraints, or 2+ conditional branches
-- **Needs split**: Over 300 lines, or over 50 constraints, or single responsibility violated
-- **Needs trim**: Under the constraint threshold but over the line threshold due to verbosity
+Verify that root skills do not call other skills. For each workflow call, verify
+the current child name, required inputs, accepted result, caller boundary, and
+failure or user-response handling. Confirm that every referenced role, asset,
+script, and path exists.
 
-Then output a companion table of **CLI skills** (the line/constraint thresholds above do not apply):
+### Step 5: Rank findings by impact
 
-```
-| Rank | CLI Skill | Lines | Description | Live Help | Setup Failure | Verdict |
-|------|-----------|-------|-------------|-----------|---------------|---------|
+Use these severities:
+
+- **Critical**: permits unauthorized, destructive, security-sensitive, or wrong-
+  target action.
+- **High**: breaks activation, the primary output contract, a source-of-truth
+  boundary, or required user control.
+- **Medium**: duplicates child logic, conflicts across sections, hides a critical
+  instruction, or leaves failure/resume behavior ambiguous.
+- **Low**: localized verbosity or imprecision with a concrete maintenance or
+  instruction-following cost.
+
+For each finding, report the skill and section, violated rule, affected text,
+reasoning, smallest correction, and resulting instruction owner.
+
+### Step 6: Produce the report
+
+Start with one inventory, not a subjective ranking:
+
+```text
+| Skill | Kind | Lines | Instructions (est.) | Mode switches | Findings |
+|-------|------|-------|---------------------|---------------|----------|
 ```
 
-CLI verdict categories:
-- **Excellent**: Lean body, strong routing description, live-help instruction present, explicit setup-failure handling, no duplicated reference material
-- **Good**: Minor gaps (slightly verbose body or a help probe that reads like syntax) but routing, live help, and setup failure are all sound
-- **Needs work**: Missing live-help instruction, missing setup-failure handling, or a weak description
-- **Needs rewrite**: Copied manual, silent fallback or install, secrets in commands, or a description that fails activation tests
+Then report:
 
-After the tables, list:
-1. **High-priority issues** across all skills, grouped by theme
-2. **Cross-cutting observations** (patterns that affect multiple skills)
-3. **Strengths** worth preserving across the skill set
+1. Critical and High findings
+2. Medium and Low findings
+3. The instruction-ownership map from Step 3
+4. Strengths worth preserving
 
-### Phase 5: Log deferred work
+Use `pass` only when the applicable rubric has no unresolved finding. Never
+derive status from a count.
 
-For any High-severity issue that is not being fixed immediately:
-- Add it to `docs/agent-layer/ISSUES.md` with the standard entry format
-- Reference `docs/SKILL-DESIGN.md` (general skills) or `docs/CLI-SKILL-DESIGN.md` (CLI skills) in the Notes field
+### Step 7: Preserve deferred work
 
-## Scoring thresholds reference
-
-These thresholds apply to general (workflow) skills. CLI skills are evaluated against the Review Checklist in `docs/CLI-SKILL-DESIGN.md`, not these thresholds.
-
-| Metric | Green | Yellow | Red |
-|--------|-------|--------|-----|
-| Lines | < 150 | 150-300 | > 300 |
-| Constraints | < 35 | 35-50 | > 50 |
-| Conditional branches | 0 | 1 | 2+ |
-| Single responsibility | Strong | Adequate | Violated |
-
-These thresholds are derived from the research in `docs/SKILL-DESIGN.md`:
-- Line/token thresholds from "Same Task, More Tokens" (ACL 2024) and "Context Length Alone Hurts" (2025)
-- Constraint thresholds from IFScale (2025)
-- Conditional branching risk from ComplexBench (2024)
+Add unfixed Critical or High findings to `docs/agent-layer/ISSUES.md` using its
+current format. Cite the owning design rule and the audited skill path. Do not
+create an issue for a metric alone.

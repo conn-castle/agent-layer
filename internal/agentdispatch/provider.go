@@ -38,6 +38,10 @@ const (
 	// AntigravityPrintTimeout keeps a headless dispatch alive long enough for
 	// a normal agent turn while the runner remains responsible for cancellation.
 	AntigravityPrintTimeout = "24h"
+	// claudePrintBackgroundWaitCeilingEnv keeps headless Claude dispatches alive
+	// for Claude-managed background work; interactive Claude launches do not use it.
+	claudePrintBackgroundWaitCeilingEnv   = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
+	claudePrintBackgroundWaitCeilingValue = "0"
 )
 
 var versionPattern = regexp.MustCompile(`\b(?:v)?(\d+\.\d+\.\d+)\b`)
@@ -162,6 +166,8 @@ func buildProviderCommand(
 		}
 		command.Args = args
 		command.Env = claude.ConfigureEnvironment(project.Root, env, project.Config.Agents.Claude, diagnostics)
+		command.Env = clients.UnsetEnv(command.Env, claudePrintBackgroundWaitCeilingEnv)
+		command.Env = clients.SetEnv(command.Env, claudePrintBackgroundWaitCeilingEnv, claudePrintBackgroundWaitCeilingValue)
 		command.SessionID = sessionID
 		command.Structured = true
 	case AgentCodex:

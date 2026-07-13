@@ -45,6 +45,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Next step: Confirm the format from a primary source (official spec or an observed real file); if JSONC, add tolerant parsing for this client instead of strict JSON.
     Notes: Verification gap recorded in decision antigravity-settings-overlay-preserve (2026-07-10).
 
+- Issue 2026-07-05 root-skill-release-migration: Next release needs migration and manifest for root-skill template changes
+    Priority: Medium. Area: internal/templates/migrations, internal/templates/manifests, release workflow
+    Description: Current templates rename `.agent-layer/skills/verify-against-plan/` to `.agent-layer/skills/verify-work/`, rename audit-and-fix roots to `.agent-layer/skills/clean-and-fix-code/`, retire root `prune-new-tests` / `simplify-new-code` skills into `prune-uncommitted-tests` / `simplify-uncommitted-code` clean-and-fix assets, remove the redundant `loop-clean-and-fix`, `finish-task`, and `complete-current-phase` wrappers, add `run-and-fix-all-checks`, remove `repair-checks`, and remove root `resolve-findings`, but historical manifests are immutable and the next release version has not been chosen.
+    Next step: When the next release version is selected, add the required skill migration entry and generate the matching template ownership manifest.
+    Notes: Do not edit already-tagged manifest files such as `0.12.1.json`.
+
 - Issue 2026-07-02 lint-ci-local-goconst-false-negative-darwin: `make lint-ci-local` misses goconst violations on macOS
     Priority: Medium. Area: Makefile (`lint-ci-local`) / CI-parity lint tooling; COMMANDS.md guidance
     Description: `make lint-ci-local` runs golangci-lint with GOOS=linux GOARCH=amd64 on a darwin host; cross-GOOS package loading drops the package's `_test.go` files from the analyzed fileset, so goconst's per-package string-occurrence counts fall below the threshold and real violations do not fire. This caused a false negative during PR #128: local `make dev` and `make lint-ci-local` both passed, but CI's `verify` (`make ci` -> `make lint`) failed on `goconst` in internal/sync/codex_config_merge.go. The documented "CI-parity" command is not faithful for occurrence-counting linters.
@@ -55,19 +61,13 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Priority: Low. Area: internal/sync/codex_config_merge.go (`insertRootLine` / `setPath` fresh-insert path)
     Description: When a managed root scalar (e.g. `model`) is absent and gets inserted just before the first table header via `insertRootLine`, a `# comment` that documented that first table ends up above the newly inserted scalar (separated by a blank), so it reads as documenting the scalar. In-place updates of existing managed keys are unaffected (they now preserve position and inline comments); only the first-time fresh insert of a root scalar in front of a commented first table is affected. No data loss; valid TOML.
     Next step: Decide placement policy for fresh root-scalar inserts relative to a first table's leading comment block (insert above the comment block, or leave as-is), then implement; this is a formatting/UX tradeoff, not a correctness bug.
-    Notes: Deferred from resolve-findings 20260702 (F4). The inline-comment-drop half of F4 was fixed via in-place `setPath`.
+    Notes: Deferred from review resolution 20260702 (F4). The inline-comment-drop half of F4 was fixed via in-place `setPath`.
 
 - Issue 2026-07-02 codex-feature-toggles-cli-only-in-wizard: Codex feature toggles (statusline/apps/browser) not offered to VS Code-only repos
     Priority: Low. Area: internal/wizard/wizard.go (Codex prompt block)
     Description: PR #127 unified the Codex `local_config_dir` prompt so it appears when `agents.codex` (CLI) OR `agents.vscode` (Codex VS Code extension) is enabled, mirroring Claude. The Codex feature toggles (statusline, apps, browser) were deliberately left gated on `agents.codex` (CLI) only. If the Codex VS Code extension reads these from `.codex/config.toml` (it does when CODEX_HOME=<repo>/.codex is set), a VS Code-only repo cannot configure statusline/apps/browser via the wizard, unlike the Claude side which offers its shared feature toggles whenever either surface is enabled.
     Next step: Determine which Codex feature toggles actually apply to the Codex VS Code extension, then move those under the combined `AgentCodex || AgentVSCode` gate (mirroring Claude's shared-feature block); keep any CLI-only features gated on `AgentCodex`.
     Notes: Deferred from PR #127 to keep that PR scoped to the flagged `local_config_dir` gap. Per-feature applicability to the extension is a product question, not a mechanical move.
-
-- Issue 2026-06-29 dispatch-claude-print-bg-ceiling: Claude print-mode background-task ceiling can end long dispatches without findings
-    Priority: Medium. Area: internal/agentdispatch/providers/claude (`al dispatch` Claude path)
-    Description: Agent Layer's Claude dispatch path uses `claude --print --output-format stream-json --verbose --include-partial-messages` to preserve structured streaming output. In current Claude Code print mode, if the main turn is otherwise done/input is closed while Claude-managed background tasks/subagents are still running, Claude Code can terminate after 600s with stderr `Background tasks still running after 600s; terminating. Set CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 to wait indefinitely.` This is not an Agent Layer subprocess timeout; Agent Layer starts Claude and waits on the child process.
-    Next step: Reproduce and triage the Claude-target dispatch failure mode with a long-running/open-ended Claude Opus/xhigh target that launches Claude-managed background research/subagent work; capture stdout/stderr, elapsed time, and whether findings are lost.
-    Notes: Reported locally with Claude Code 2.1.195; installed Claude binary contained `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`, the stderr text above, and a default 600000 ms ceiling. User-visible failure: `al dispatch` can return after roughly 10 minutes without the expected findings even though the target-managed background work was still active.
 
 - Issue 2026-06-23 mcp-commandcontext-kill-path-untested: No test exercises the exec.CommandContext kill-on-timeout path for stdio MCP discovery
     Priority: Low. Area: internal/warnings/mcp_connector.go (`ConnectAndDiscover` stdio branch), internal/warnings/mcp_test.go
@@ -112,10 +112,16 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Notes: Deferred per "breaking dep bumps need confirmation". Not a defect; a coordinated upgrade-planning task.
 
 - Issue 2026-06-23 completion-windows-build-tag-misleading: `//go:build !windows` on cmd/al/completion.go implies Windows support the project cannot provide
-    Priority: Low. Area: cmd/al and internal dispatch packages (platform story)
-    Description: completion.go carries `//go:build !windows`, but the project as a whole is unbuildable on Windows: internal/versiondispatch depends on `unix.Flock`/`unix.LOCK_EX`, internal/agentdispatch uses Unix flock and process-signal liveness APIs, and platform.go calls `newCompletionCmd()` unconditionally with no Windows variant. The tag therefore signals partial Windows support that does not exist. Latent inconsistency, not a runtime defect on supported (Unix) platforms.
-    Next step: Human to decide the platform story. If Windows is never intended: remove the misleading `!windows` tag from completion.go. If Windows is intended: the larger correct fix is to add Windows variants for version dispatch, Agent Dispatch locking/process liveness, and CLI platform wiring. Either direction is a deliberate decision, not a mechanical edit.
+    Priority: Low. Area: cmd/al (completion.go build constraint; platform story)
+    Description: completion.go carries `//go:build !windows`, but the project as a whole is unbuildable on Windows (internal/dispatch depends on `unix.Flock`/`unix.LOCK_EX` with no Windows fallback), and platform.go calls `newCompletionCmd()` unconditionally with no Windows variant. The tag therefore signals partial Windows support that does not exist and would leave platform.go referencing an undefined symbol on a Windows build. Latent inconsistency, not a runtime defect on supported (Unix) platforms.
+    Next step: Human to decide the platform story. If Windows is never intended: remove the misleading `!windows` tag from completion.go. If Windows is intended: the larger correct fix is to add Windows variants for dispatch/platform (the opposite, much bigger change). Either direction is a deliberate decision, not a mechanical edit.
     Notes: Deferred because it is a project-direction (Windows support) judgment call with two opposite valid resolutions.
+
+- Issue 2026-06-23 dispatch-lock-wait-vs-download-timeout: Dispatch lock wait timeout equals download timeout, so a waiter can fail while the holder is still legitimately downloading
+    Priority: Low. Area: internal/dispatch (lock.go `lockWaitTimeout`, cache.go `defaultDownloadTimeout`)
+    Description: `withFileLock` holds the exclusive lock for the entire binary download+verify closure. A concurrent `al` invocation waits up to `lockWaitTimeout` (30s) and then fails with a lock-timeout error. The holder's own download is bounded by `defaultDownloadTimeout` (also 30s), so under a genuinely slow cold-cache download a second process can spuriously fail with a lock timeout exactly as the holder is still making valid progress. Real cross-process robustness edge, only in the cold-cache concurrent-invocation window; not a correctness bug.
+    Next step: Make `lockWaitTimeout` comfortably exceed the worst-case download timeout (e.g. derive it from `downloadTimeoutWithSystem` plus headroom) so a waiter never gives up before the holder's own download deadline resolves the contention.
+    Notes: Deferred because the timeout values are a deliberate "waiters fail rather than pile up" tuning choice; bumping the wait timeout is a judgment call on contention behavior, not a clear-cut win.
 
 - Issue 2026-06-22 secret-in-url-precision-recall: Secret-in-URL detection precision vs recall tradeoff (needs human decision)
     Priority: Medium. Area: internal/warnings/policy.go (`looksLikeSecretQueryKey` and helpers)
@@ -123,14 +129,20 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Next step: Human to choose: (A) keep substring matching + add an explicit exclusion list of known-benign keys (preserves recall, surgical); (B) word-segment matching PLUS camelCase boundary splitting (fixes most false positives, restores camelCase recall, still misses fully-glued lowercase like `authtoken`); (C) accept the recall loss and ship pure word-segment matching.
     Notes: Recommendation: Option B is strongest if pursued, but this needs the maintainer's call because it changes a security control's detection semantics.
 
+- Issue 2026-06-22 semver-parse-compare-dispatch-divergent-variant: dispatch's bespoke parseSemver diverges from the shared version helper
+    Priority: Low. Area: version/dispatch
+    Description: The byte-identical `compareSemver`/`parseSemver` copies in install and update were consolidated into `internal/version` (`version.Compare`/`version.Parse`). `internal/dispatch/dispatch.go` still has its own `parseSemver` returning `(int,int,int,bool)` that skips `version.Normalize` (no `v`-prefix strip, no error) — its only caller normalizes first, so not a live bug, just divergence from the now-canonical helper.
+    Next step: Route dispatch through `version.Parse`/`version.Compare`. Human decision needed: whether dispatch adopts the error-returning shape, and where the shared error-message constants belong (the consolidated helper still references `messages.UpdateInvalidVersion*`; a neutral `messages.Version*` home is the cleaner end state).
+    Notes: Single-source-of-truth drift; not a runtime defect. Deferred pending the shape/constants decision.
+
 - Issue 2026-06-22 fs-os-abstraction-four-patterns: OS/filesystem testability seam implemented four different ways across packages
     Priority: Low. Area: architecture/cross-cutting
     Description: install, sync, dispatch, launchers each define a `System` interface + `RealSystem` os-passthrough (install/sync overlap on 7 of 11 methods, each re-implemented); config uses both `fs.FS` injection AND a `var osReadFileFunc` function-pointer seam in the same package; doctor/wizard/update/clients use ad-hoc function-pointer vars. Same problem (testable OS access) solved four ways.
     Next step: Decide and document one standard seam style, or extract a shared `internal/osfs` (or expand `internal/fsutil`) that install/sync/launchers embed; at minimum have config pick one of its two internal seams.
     Notes: Genuine architectural tradeoff with multiple defensible options; not a defect. Broad change touching deprioritized install/sync — needs a human decision.
 
-- Issue 2026-05-23 dispatch-antigravity-argv-prompt-cap: Antigravity dispatch has a lower prompt cap because `agy` has no stdin/prompt-file path
+- Issue 2026-05-23 dispatch-antigravity-argv-prompt-cap: Antigravity dispatch still caps prompt size because `agy` has no stdin/prompt-file path
     Priority: Low. Area: providers/antigravity
-    Description: `internal/agentdispatch/provider.go` passes an Antigravity prompt as one argv element after `--print` because `agy` exposes no stdin or prompt-file path. Dispatch rejects prompts over `AntigravityPromptMaxBytes` (100 KiB) with typed `ExitUsage`; Claude and Codex use the shared 10 MiB stdin-prompt limit instead. The provider-specific lower cap remains until upstream offers a safe non-argv prompt transport.
+    Description: `internal/agentdispatch/adapters.go` `runAntigravity` must pass the prompt as a single argv element after `--print` (Antigravity exposes no stdin or prompt-file path). The opaque-failure defect is fixed: a pre-flight guard now rejects prompts over `AntigravityPromptMaxBytes` with a typed `ExitUsage` error and an actionable message (tested by `TestRunAntigravityRejectsOversizePrompt`). The residual limitation is the cap itself — Claude/Codex accept unbounded prompts on stdin, Antigravity does not.
     Next step: When upstream `agy --print` gains a stdin or `--prompt-file` path, switch to it and remove the size cap.
     Notes: Upstream `agy --help` as of 2026-05-22 shows no stdin/prompt-file path; deferred pending upstream CLI support. No code change available until then.

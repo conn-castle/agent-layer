@@ -1,133 +1,83 @@
 ---
 name: schedule-backlog
 description: >-
-  Map BACKLOG.md items into roadmap phases, checking issue/decision impacts and
-  pausing before roadmap edits. Use when scheduling backlog work or reshaping
-  the roadmap; use `plan-work` for one implementation plan.
+  Map BACKLOG.md items into roadmap phases, checking issue and decision impacts
+  and stopping for user-owned prioritization before ambiguous roadmap edits.
+  Do not use for implementation planning.
 ---
 
 # schedule-backlog
 
-This is a backlog-scheduling workflow, not an implementation workflow.
-Default behavior is proposal-first:
-- evaluate a coherent backlog slice
-- map it into roadmap phases
-- summarize the proposal before mutating `ROADMAP.md`, `BACKLOG.md`, or `ISSUES.md`
+Produce one coherent roadmap proposal from backlog evidence. Apply it only when
+the user has authorized the resulting prioritization and sequencing.
 
-## Defaults
+## Scope and inputs
 
 - Default mode is proposal-only.
-- Default proposal size is small to medium and reviewable.
-- Prefer existing incomplete phases when they fit the work cleanly.
-- Do not renumber completed phases.
+- Accept a focus area, phase, or text query; a proposal size; a maximum number
+  of new phases; whether issue impacts are included; and whether an already
+  clear proposal should be applied.
+- Prefer a small or medium coherent slice and existing incomplete phases when
+  they fit.
+- Never renumber completed phases.
 
-## Inputs
+## Evidence and decision contract
 
-Accept any combination of:
-- a focus area, phase number, or text query
-- a proposal size
-- a maximum number of new phases
-- whether issue-impact notes should be included
-- whether approved changes should later be applied
+- Read ROADMAP.md, DECISIONS.md, BACKLOG.md, ISSUES.md, and README.md as needed,
+  in that priority order.
+- Do not invent requirements or implement scheduled work.
+- Keep engineering-only defects and refactors in ISSUES.md unless the roadmap
+  genuinely needs an engineering phase.
+- Sequencing and prioritization that materially change committed direction are
+  user-owned decisions. Routine placement within an already established
+  direction is not.
 
-## Multi-agent pattern
+## Workflow
 
-Recommended roles:
-1. `Standards reader`: extracts roadmap and decision constraints.
-2. `Backlog triage lead`: selects candidate backlog items.
-3. `Issue cross-checker`: identifies issue prerequisites or obsoletions.
-4. `Roadmap integrator`: drafts the phase proposal.
-5. `Reporter`: writes the proposal and approval guidance.
+### 1. Select one backlog slice
 
-## Global constraints
+Respect the user's focus. Otherwise select a reviewable, cohesive subset using
+current roadmap alignment, stated priority, dependencies, and shared outcome.
+Identify duplicates and items that belong in ISSUES.md.
 
-- Do not implement backlog items in this workflow.
-- Do not invent requirements that are not in `BACKLOG.md`, `ROADMAP.md`, `ISSUES.md`, `DECISIONS.md`, or `README.md`.
-- Keep the proposal reviewable and coherent.
-- Treat non-end-user-visible engineering work as issue-ledger material unless the roadmap explicitly needs a separate engineering phase.
+### 2. Cross-check constraints once
 
-## Human checkpoints
+For each proposed group, identify prerequisite issues, issues the work would
+obsolete, relevant decisions, and roadmap sequencing constraints.
 
-- Required: ask when a proposed placement would require renumbering a completed phase or making a non-obvious sequencing tradeoff.
-- Optional: ask after the proposal only when the requested apply step would commit to a non-obvious prioritization or sequencing choice.
-- Stay autonomous while reading, triaging, and drafting the proposal itself.
+### 3. Draft one proposal
 
-## Roadmap workflow
+For every suggestion, provide:
 
-### Phase 0: Preflight (Standards reader)
+- target existing phase or proposed new phase
+- included backlog items and grouping rationale
+- prerequisites and issue impacts
+- for a new phase: placement, goal, high-level tasks, and exit criteria
 
-1. Read, in order, when they exist:
-   - `ROADMAP.md`
-   - `DECISIONS.md`
-   - `BACKLOG.md`
-   - `ISSUES.md`
-   - `README.md`
+Present alternatives only where a substantive user-owned tradeoff actually
+exists. Include pros, cons, and a recommendation for each such choice.
 
-### Phase 1: Select the backlog slice (Backlog triage lead)
+### 4. Apply or yield
 
-1. Respect any user focus first.
-2. Otherwise choose a reviewable subset using:
-   - roadmap alignment
-   - priority
-   - cohesion
-   - dependency clarity
-3. Separate any misclassified engineering-only items that belong in `ISSUES.md`, not the roadmap.
+- In proposal-only mode, return the proposal and stop for approval.
+- If the request already authorizes a clear, low-ambiguity application, update
+  ROADMAP.md, BACKLOG.md, and ISSUES.md once so each item has one canonical
+  location.
+- If application would choose a non-obvious priority or sequence, stop for the
+  smallest user decision before editing.
 
-### Phase 2: Cross-check issue and decision impacts (Issue cross-checker)
+## Final summary
 
-For each candidate group, identify:
-- prerequisite issues
-- issues that would likely become obsolete
-- decisions or roadmap constraints that affect scheduling
-
-### Phase 3: Draft the proposal (Roadmap integrator)
-
-For each suggestion, provide:
-- target phase or new phase proposal
-- included backlog items
-- why the grouping fits
-- prerequisites
-- issue impacts
-
-If a new phase is needed, include:
-- preferred placement
-- goal
-- high-level tasks
-- exit criteria
-
-### Phase 4: Draft the proposal summary (Reporter)
-
-The proposal summary must contain:
+Return:
 
 1. `# Roadmap Update Summary`
-   - current roadmap shape
-   - backlog slice reviewed
-   - short recommendation summary
-2. `## Suggestions`
-   - labeled `A`, `B`, `C`, ...
-3. `## Backlog Hygiene Notes`
-   - duplicates or misclassified items
-4. `## Open Questions`
-   - only when a sequencing decision truly needs the user
-5. `## Approval Options`
-   - how the user can approve, reject, or modify each suggestion
+2. `## Proposal`
+3. `## Backlog Hygiene`
+4. `## Decisions Needed`
+5. `## Applied Changes` or `## Approval Needed`
 
-## Guardrails
+Use `None` for empty sections.
 
-- Do not schedule a huge backlog sweep in one proposal.
-- Do not bury prerequisites or sequencing risk.
-- Do not mutate roadmap files in the same step as drafting the proposal unless the request already includes applying a clear, low-ambiguity proposal.
-- Do not present engineering refactors as end-user-visible roadmap work unless the roadmap truly needs them there.
-
-## Definition of done
-
-- The proposal summary includes every required section (`Summary`, `Suggestions`, `Backlog Hygiene Notes`, `Open Questions`, `Approval Options`).
-- `ROADMAP.md`, `BACKLOG.md`, and `ISSUES.md` were not mutated in this run unless the user's request explicitly included an apply step with a clear, low-ambiguity proposal.
-- Each proposal entry names its target phase (existing or new), included backlog items, grouping rationale, prerequisites, and issue impacts.
-- Misclassified engineering-only items are flagged in `Backlog Hygiene Notes` rather than silently included in a roadmap phase.
-
-## Final handoff
-
-After drafting the proposal:
-1. Summarize the best proposal options.
-2. Tell the user how to approve, reject, or modify each suggestion.
+Return the proposal or applied outcome after one coherent slice is evaluated
+against roadmap, issue, and decision evidence. Name placement, rationale,
+prerequisites, issue impacts, and any prioritization decision still required.

@@ -1,104 +1,86 @@
 # Interface Audit Update Workflow
 
-Use this file only when `interface-audit` is invoked with `--update`.
+Update one existing report in place from a complete incremental evidence set,
+then stop with the inputs needed for a final recommendation.
 
-Update one report in place, then return to the parent skill's final
-recommendation gate.
+## Select the report
 
-## Select The Report
+Use an explicit report path when supplied; stop if that path does not exist.
+Otherwise select the newest matching interface-audit report under
+`.agent-layer/tmp` using deterministic local ordering. If no report exists,
+stop and ask whether to run a fresh audit. Do not create a parallel update
+report.
 
-If the user supplied an explicit report path, use that path. If it does not
-exist, stop and report that the requested update target is missing.
+Read the selected report before editing so its identifiers, requirements,
+scope, and structure remain coherent.
 
-If no path was supplied, select the newest report with:
+## Establish the evidence boundary
 
-```bash
-find .agent-layer/tmp -maxdepth 1 -type f -name 'interface-audit.[0-9]*.md' -print | LC_ALL=C sort -r | head -n 1
-```
+Require a valid `Last updated UTC:` value and recorded baseline commit. Use the
+full timestamp for pull-request metadata and the commit for repository-history
+coverage. If either is missing, malformed, or unavailable, do not perform a
+partial update. Report the missing boundary and recommend a fresh audit; ask
+only if the user must choose between that fresh audit and an explicitly limited
+update.
 
-If the command returns no path, stop. Tell the user no existing interface audit
-report was found and ask whether to run a fresh `interface-audit`.
+Enumerate both:
 
-Before editing, read enough of the selected report to preserve its structure.
-Do not create a parallel update report.
+- local working-tree changes that affect existing or potential interface rows
+- repository changes from the recorded commit through the current audited
+  commit
+- the complete set of merged pull requests strictly after the full update
+  boundary
 
-## Establish Update Boundary
+Use change history to locate affected interfaces; current code, tests, and
+contracts remain authoritative for the report body. Label uncommitted evidence
+as local changes and ignore unrelated local changes except for the metadata
+summary.
 
-Read `Last updated UTC:` from metadata. This is the update boundary.
+If the selected report recorded a dirty working tree at its prior boundary,
+require enough recorded path or source evidence to identify what that report
+observed. When the prior uncommitted state cannot be reconstructed well enough
+to detect later removal or replacement, complete incremental coverage is not
+established; stop before editing and recommend a fresh audit rather than
+preserving potentially stale rows.
 
-If `Last updated UTC:` is missing or malformed, stop. Tell the user the report
-does not have a reliable update boundary and recommend running a fresh audit.
+Choose repository and GitHub commands from the available tooling rather than
+requiring one command sequence. Detect pagination, result limits, and truncated
+responses; never treat a capped result as the complete history. If merged
+pull-request evidence cannot be retrieved or the full interval cannot be
+enumerated, stop before editing and report the exact evidence failure. A local
+history substitute is acceptable only when it can establish the complete
+interval and the report does not require unavailable pull-request metadata;
+otherwise ask whether to run a fresh audit or explicitly accept a limited
+update.
 
-Record the current UTC timestamp. Use it as the new `Last updated UTC:` only
-after the report has actually been updated.
+Do not impose an arbitrary pull-request count cutoff or inspect every pull
+request at equal depth. First collect the complete interval's identifiers,
+timestamps, and changed paths. Inspect bodies, diffs, tests, and current files
+only where they can affect interface boundaries, scores, product requirements,
+or the proposed next specification. For a large interval, aggregate affected
+paths and refresh the corresponding interface chain against the current tree.
+If complete coverage is not credible within update mode, do not silently cap
+the interval; stop and recommend a fresh audit.
 
-## Inspect Local Changes
+## Update the report
 
-Run read-only local checks:
+Use `report-structure.md` as the artifact contract. Refresh metadata, every
+affected row, relevant neighboring rows needed for score calibration, the
+interface map and supporting sections, the proposed next specification, and
+the update log. Preserve stable row identifiers and retire rather than reuse
+removed identifiers. The report body describes current code; concise historical
+context and merged pull-request numbers belong in the update log.
 
-```bash
-git status --porcelain
-git diff --stat
-git diff --name-only
-```
+Set `Last updated UTC:` only after the complete update succeeds. Do not advance
+the boundary after a partial or blocked update. An explicitly authorized
+limited update must name the uncovered evidence, remain marked incomplete, and
+leave the prior boundary unchanged.
 
-If local changes touch files that affect existing or potential interface rows,
-inspect the relevant diffs. Treat the dirty working tree as current repository
-state, but label uncommitted evidence as local changes in the report update log.
+Before handoff, re-read changed claims against current evidence and confirm the
+report remains internally calibrated. Do not continue into planning or
+implementation.
 
-Ignore unrelated local changes except for the brief working-tree summary in
-metadata.
-
-## Inspect Recently Merged PRs
-
-Use GitHub CLI to query candidate merged PRs from the date portion of
-`Last updated UTC:`:
-
-```bash
-gh pr list --state merged --search 'merged:>=<LAST_UPDATED_DATE>' --limit 100 --json number,title,mergedAt,url,headRefName,baseRefName,author
-```
-
-Replace `<LAST_UPDATED_DATE>` with the report's `YYYY-MM-DD`. Then filter JSON
-to PRs whose `mergedAt` is strictly after the full `Last updated UTC:`. Do not
-rely on date-only search as the final boundary.
-
-If `gh` is unavailable or PR data cannot be retrieved, stop and report the exact
-failure. Do not infer merged PR context from local git history unless the user
-explicitly approves a local-git-only update.
-
-Count the filtered PRs:
-- If 0-10 PRs are found, inspect all of them.
-- If more than 10 PRs are found, stop before editing. Warn the user with the
-  count, explain that the update would be capped at 10 PRs, and recommend
-  rerunning a fresh interface audit instead of updating the old report. Ask
-  whether they want a fresh audit or an update capped to the 10 most recent PRs.
-- If the candidate query returns exactly 100 PRs, treat the count as truncated,
-  stop, and recommend a fresh audit unless the user explicitly approves a capped
-  update.
-
-For each inspected PR:
-
-```bash
-gh pr view <number> --json number,title,body,mergedAt,url,files,commits
-gh pr diff <number> --name-only
-```
-
-Read changed files only where they affect interface boundaries, score evidence,
-tests, product requirements, or the proposed next spec.
-
-## Update The Report
-
-Update the selected report in place using `report-structure.md` as the contract.
-Refresh metadata, changed rows, affected supporting sections, the proposed next
-spec, and the update log. The report body describes current code; historical
-change notes belong only in the update log.
-
-## Required Post-Update Checks
-
-Before final handoff, re-read each changed row against current evidence and
-confirm the changed claims satisfy the parent skill's audit rules.
-
-## Final Step
-
-Do not continue into planning or implementation. Complete the final
-recommendation gate from the parent skill.
+Return the updated report path, material rows or sections changed, the
+highest-value remaining issue, whether major architecture appears necessary,
+the smallest coherent next improvement, and any behavior change. Return
+`no-material-improvement` when no candidate justifies its cost.

@@ -141,6 +141,9 @@ func inspectionFromRecord(record RunRecord) Inspection {
 // List writes all current name-keyed reservations and durable conversations.
 func List(request ListRequest) error {
 	stdout := writerOrDiscard(request.Stdout)
+	if err := pruneExpiredSessions(request.Root, time.Now()); err != nil {
+		return err
+	}
 	sessions, err := listSessions(request.Root)
 	if err != nil {
 		return err

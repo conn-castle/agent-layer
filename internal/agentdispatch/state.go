@@ -22,6 +22,9 @@ import (
 const (
 	dispatchStateDir = "dispatch"
 	dispatchRunFile  = "dispatch.json"
+	// dispatchSessionRetention bounds durable name mappings while leaving
+	// provider-owned conversations and diagnostic run evidence untouched.
+	dispatchSessionRetention = 30 * 24 * time.Hour
 )
 
 var errDispatchRunNotFound = errors.New("dispatch run record not found")
@@ -263,6 +266,69 @@ func loadSession(root string, name string) (Session, error) {
 		return Session{}, exitError(ExitConfig, fmt.Sprintf("dispatch session %q is invalid", name))
 	}
 	return session, nil
+}
+
+// pruneExpiredSessions removes inactive, valid mappings whose last use is
+// older than the retention window. Corrupt mappings are preserved so normal
+// list/inspect diagnostics can report them instead of silently erasing state.
+func pruneExpiredSessions(root string, now time.Time) error {
+	entries, err := os.ReadDir(dispatchStatePath(root))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return wrapExitError(ExitConfig, "list dispatch sessions for retention", err)
+	}
+	cutoff := now.UTC().Add(-dispatchSessionRetention)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		name := strings.TrimSuffix(entry.Name(), ".json")
+		if !validDispatchName(name) {
+			continue
+		}
+		if err := pruneExpiredSession(root, name, cutoff); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func pruneExpiredSession(root string, name string, cutoff time.Time) error {
+	return withSessionLock(root, name, func() error {
+		session, err := loadSession(root, name)
+		if err != nil {
+			// Retention must not hide or erase corrupt state.
+			return err
+		}
+		lastUsed := session.LastUsedAt
+		if lastUsed.IsZero() {
+			lastUsed = session.CreatedAt
+		}
+		if lastUsed.IsZero() || !lastUsed.Before(cutoff) || dispatchSessionActive(root, session) {
+			return nil
+		}
+		path, err := sessionPath(root, name)
+		if err != nil {
+			return err
+		}
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return wrapExitError(ExitConfig, "prune expired dispatch mapping", err)
+		}
+		return nil
+	})
+}
+
+func dispatchSessionActive(root string, session Session) bool {
+	if session.RunID == "" {
+		return false
+	}
+	record, err := loadRunRecord(root, session.RunID)
+	if err != nil {
+		return false
+	}
+	return record.State == dispatchStateRunning && processAlive(record.PID) == processStatusAlive
 }
 
 func withSessionLock(root string, name string, fn func() error) error {

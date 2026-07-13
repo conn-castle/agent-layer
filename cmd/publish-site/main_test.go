@@ -150,6 +150,9 @@ func TestNormalizeVersionsJSON(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(docsDir, "doc.mdx"), []byte("x"), 0o600); err != nil {
 			t.Fatalf("write docs file for %s: %v", v, err)
 		}
+		if err := os.WriteFile(filepath.Join(docsDir, "old-only.mdx"), []byte("x"), 0o600); err != nil {
+			t.Fatalf("write old-only docs file for %s: %v", v, err)
+		}
 
 		sidebarsDir := filepath.Join(repo, "versioned_sidebars")
 		if err := os.MkdirAll(sidebarsDir, 0o700); err != nil {
@@ -158,6 +161,13 @@ func TestNormalizeVersionsJSON(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(sidebarsDir, "version-"+v+"-sidebars.json"), []byte("{}"), 0o600); err != nil {
 			t.Fatalf("write sidebar for %s: %v", v, err)
 		}
+	}
+	latestDocs := filepath.Join(repo, "docs")
+	if err := os.MkdirAll(latestDocs, 0o700); err != nil {
+		t.Fatalf("mkdir latest docs: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(latestDocs, "doc.mdx"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write latest docs file: %v", err)
 	}
 
 	if err := normalizeVersionsJSON(repo); err != nil {
@@ -192,6 +202,35 @@ func TestNormalizeVersionsJSON(t *testing.T) {
 		}
 		if _, err := os.Stat(filepath.Join(repo, "versioned_sidebars", "version-"+v+"-sidebars.json")); err != nil {
 			t.Fatalf("expected retained sidebar artifact for %s: %v", v, err)
+		}
+	}
+
+	manifestData, err := os.ReadFile(filepath.Join(repo, redirectManifestName)) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read redirect manifest: %v", err)
+	}
+	var redirects []redirectManifestEntry
+	if err := json.Unmarshal(manifestData, &redirects); err != nil {
+		t.Fatalf("unmarshal redirect manifest: %v", err)
+	}
+	wantRedirects := map[string]string{
+		"/docs/0.6.0/doc":      "/docs/doc",
+		"/docs/0.6.0/old-only": "/docs/",
+		"/docs/0.8.0/doc":      "/docs/doc",
+		"/docs/0.8.0/old-only": "/docs/",
+		"/docs/0.8.1/doc":      "/docs/doc",
+		"/docs/0.8.1/old-only": "/docs/",
+		"/docs/0.8.2/doc":      "/docs/doc",
+		"/docs/0.8.2/old-only": "/docs/",
+		"/docs/0.8.3/doc":      "/docs/doc",
+		"/docs/0.8.3/old-only": "/docs/",
+	}
+	if len(redirects) != len(wantRedirects) {
+		t.Fatalf("got %d redirects, want %d: %#v", len(redirects), len(wantRedirects), redirects)
+	}
+	for _, redirect := range redirects {
+		if got, ok := wantRedirects[redirect.From]; !ok || got != redirect.To {
+			t.Fatalf("unexpected redirect entry: %#v", redirect)
 		}
 	}
 }
@@ -313,6 +352,13 @@ func TestNormalizeVersionsJSON_Idempotent(t *testing.T) {
 
 func TestPruneDroppedVersionArtifacts_RemoveSidebarError(t *testing.T) {
 	repo := t.TempDir()
+	docsDir := filepath.Join(repo, "versioned_docs", "version-1.2.3")
+	if err := os.MkdirAll(docsDir, 0o700); err != nil {
+		t.Fatalf("mkdir docs dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(docsDir, "doc.mdx"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write docs file: %v", err)
+	}
 	sidebarPath := filepath.Join(repo, "versioned_sidebars", "version-1.2.3-sidebars.json")
 	if err := os.MkdirAll(sidebarPath, 0o700); err != nil {
 		t.Fatalf("mkdir sidebar path as directory: %v", err)
@@ -323,6 +369,103 @@ func TestPruneDroppedVersionArtifacts_RemoveSidebarError(t *testing.T) {
 
 	if err := pruneDroppedVersionArtifacts(repo, []string{"1.2.3"}); err == nil {
 		t.Fatal("expected remove sidebar error when sidebar path is a directory")
+	}
+}
+
+func TestDocSlugStopsAtWhitespaceDelimitedFrontMatterFence(t *testing.T) {
+	data := []byte("---\ntitle: Guide\n--- \nslug: body-only-value\n")
+
+	if got := docSlug("guide.mdx", data); got != "guide" {
+		t.Fatalf("docSlug read body slug after front matter: got %q want %q", got, "guide")
+	}
+}
+
+func TestPruneDroppedVersionArtifacts_RecordsRedirectsBeforeDeleting(t *testing.T) {
+	repo := t.TempDir()
+	latestDocs := filepath.Join(repo, "docs", "nested")
+	if err := os.MkdirAll(latestDocs, 0o700); err != nil {
+		t.Fatalf("mkdir latest docs: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "docs", "intro.mdx"), []byte("---\nslug: /\n---\n"), 0o600); err != nil {
+		t.Fatalf("write latest index slug: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "docs", "nested", "keep.mdx"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write latest nested doc: %v", err)
+	}
+
+	droppedDocs := filepath.Join(repo, "versioned_docs", "version-1.2.3", "nested")
+	if err := os.MkdirAll(droppedDocs, 0o700); err != nil {
+		t.Fatalf("mkdir dropped docs: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "versioned_docs", "version-1.2.3", "intro.mdx"), []byte("---\nslug: /\n---\n"), 0o600); err != nil {
+		t.Fatalf("write dropped index slug: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "versioned_docs", "version-1.2.3", "nested", "keep.mdx"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write dropped nested doc: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "versioned_docs", "version-1.2.3", "gone.mdx"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write dropped removed doc: %v", err)
+	}
+
+	if err := pruneDroppedVersionArtifacts(repo, []string{"1.2.3"}); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(repo, "versioned_docs", "version-1.2.3")); !os.IsNotExist(err) {
+		t.Fatalf("expected dropped docs removed")
+	}
+
+	manifestData, err := os.ReadFile(filepath.Join(repo, redirectManifestName)) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	var got []redirectManifestEntry
+	if err := json.Unmarshal(manifestData, &got); err != nil {
+		t.Fatalf("unmarshal manifest: %v", err)
+	}
+	want := []redirectManifestEntry{
+		{From: "/docs/1.2.3/", To: "/docs/"},
+		{From: "/docs/1.2.3/gone", To: "/docs/"},
+		{From: "/docs/1.2.3/nested/keep", To: "/docs/nested/keep"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got redirects %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("redirect %d = %#v, want %#v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestPruneDroppedVersionArtifacts_ManifestWriteErrorSkipsPrune(t *testing.T) {
+	repo := t.TempDir()
+	droppedDocs := filepath.Join(repo, "versioned_docs", "version-1.2.3")
+	if err := os.MkdirAll(droppedDocs, 0o700); err != nil {
+		t.Fatalf("mkdir dropped docs: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(droppedDocs, "doc.mdx"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write dropped doc: %v", err)
+	}
+
+	sidebarPath := filepath.Join(repo, "versioned_sidebars", "version-1.2.3-sidebars.json")
+	if err := os.MkdirAll(filepath.Dir(sidebarPath), 0o700); err != nil {
+		t.Fatalf("mkdir sidebars dir: %v", err)
+	}
+	if err := os.WriteFile(sidebarPath, []byte("{}"), 0o600); err != nil {
+		t.Fatalf("write sidebar: %v", err)
+	}
+
+	withWriteFileError(t, filepath.Join(repo, redirectManifestName), os.ErrPermission)
+	if err := pruneDroppedVersionArtifacts(repo, []string{"1.2.3"}); err == nil || !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("expected manifest write error, got %v", err)
+	}
+
+	if _, err := os.Stat(droppedDocs); err != nil {
+		t.Fatalf("expected dropped docs to remain when manifest write fails, stat err=%v", err)
+	}
+	if _, err := os.Stat(sidebarPath); err != nil {
+		t.Fatalf("expected dropped sidebar to remain when manifest write fails, stat err=%v", err)
 	}
 }
 

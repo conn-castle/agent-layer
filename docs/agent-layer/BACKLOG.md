@@ -169,7 +169,7 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 - Backlog 2026-03-06 audit-security-skill: Add a security audit skill
     Priority: Medium. Area: skills
     Description: A skill that scans for dependency CVEs, code-level vulnerabilities (OWASP patterns), secrets/credentials in code, and insecure configurations, then produces a findings report.
-    Acceptance criteria: Skill produces actionable findings report with severity levels; integrates with resolve-findings for remediation workflow.
+    Acceptance criteria: Skill produces an actionable findings report with severity levels and recommended verdict groups that downstream fix workflows can consume.
     Notes: Should leverage available tools (dependency audit commands, grep-based pattern matching) rather than requiring external scanners.
 
 - Backlog 2026-03-01 remove-skill-migrations-v010: Remove one-off skill migration code by v0.10.0

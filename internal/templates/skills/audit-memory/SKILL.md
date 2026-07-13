@@ -8,186 +8,100 @@ description: >-
 
 # audit-memory
 
-Audit and fix the agent memory files. Default behavior is audit-and-fix:
-- audit all 6 memory files for structural and content health
-- fix mechanical issues (stale entries, format violations, misplaced items, superseded decision chains)
-- ask before judgment calls (is this issue actually fixed? is this decision still relevant?)
+Audit the authoritative memory files once, directly fix evidence-backed
+problems, and report only material unresolved findings.
 
-## Defaults
+## Scope and inputs
 
-- Default scope is all 6 memory files: ISSUES.md, BACKLOG.md, ROADMAP.md, DECISIONS.md, COMMANDS.md, CONTEXT.md.
-- Default mode is audit-and-fix for mechanical corrections.
-- Validate content against the repository (code, tests, docs) to detect staleness and drift.
-- DECISIONS.md receives focused scrutiny for bloat and consolidation opportunities.
-- Optimize for current and future constraints, not historical completeness.
-- Do not audit repo documentation (README, docs/, etc.) — use `audit-documentation` for that.
-
-## Inputs
-
-Accept any combination of:
-- explicit memory file names to audit (subset of the 6)
-- whether to run audit-only (no fixes)
-- whether to include repo documentation cross-checks
-- a maximum finding count
+- Default scope is ISSUES.md, BACKLOG.md, ROADMAP.md, DECISIONS.md,
+  COMMANDS.md, and CONTEXT.md.
+- Accept an explicit subset, audit-only mode, optional repository-documentation
+  cross-checks, and a maximum reported-finding count. The count limits report
+  size, not the evidence pass or declared scope coverage.
+- Do not create a missing memory file. Report it and follow repository policy.
+- Do not modify source code, tests, or repository documentation.
 
 ## Required artifact
 
-Write the audit report to:
-- `.agent-layer/tmp/audit-memory.<run-id>.report.md`
+Write `.agent-layer/tmp/audit-memory.<run-id>.report.md`, where `run-id` is
+`YYYYMMDD-HHMMSS-<short-rand>`.
 
-Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
-Create the file with `touch` before writing.
+## Agent boundary
 
-## Multi-agent pattern
+Use one fresh built-in investigator to examine all in-scope memory files
+together and return a compact, evidence-backed candidate ledger. Do not split
+files among agents. The owning agent validates candidates, makes every edit,
+and identifies genuine user decisions.
 
-Recommended roles:
-1. `Structure auditor`: checks format compliance, markers, and entry templates for each file.
-2. `Content auditor`: checks staleness, misplacement, and deduplication within each file.
-3. `Decisions auditor`: focused audit of DECISIONS.md for bloat, superseded chains, and entries now obvious from code.
-4. `Cross-file auditor`: checks consistency across the 6 memory files and between memory files and repo state.
-5. `Fixer`: applies accepted mechanical corrections.
-6. `Reporter`: writes the final report.
+## Evidence and decision contract
 
-## Global constraints
+- Read each in-scope file's own purpose, format, and insertion-marker rules
+  before editing it.
+- Validate staleness against current repository evidence. Do not remove or mark
+  an entry complete based on inference alone.
+- Apply clear format, deduplication, placement, staleness, and supersession
+  fixes directly.
+- Ask only when repository evidence cannot settle whether information remains
+  true or future-guiding, or when an external-state claim cannot be verified.
+- Preserve future-guiding constraints and tradeoffs. Historical completeness is
+  not a reason to retain an entry.
 
-- Validate claims against the actual repository (search code, check file existence, verify commands).
-- Do not guess whether an issue is fixed — verify against the code or ask.
-- Do not remove entries without evidence (code search, file existence check, or user confirmation).
-- Do not modify repo documentation, source code, or test files in this workflow.
-- Prefer consolidating entries over removing them when the underlying information still constrains future work.
-- Treat DECISIONS.md consolidation as a first-class audit task, not an afterthought.
+## Workflow
 
-## Human checkpoints
+### 1. Establish current memory state
 
-- Required: ask when staleness evidence is ambiguous (e.g., an issue might be partially fixed).
-- Required: ask when a DECISIONS.md entry removal or consolidation would lose unique tradeoff information that still needs to guide future work.
-- Required: ask when a memory file entry references external state that cannot be verified from the repository.
-- Stay autonomous for clear mechanical fixes: format corrections, obvious duplicates, entries that are definitively stale by code evidence, and straightforward misplacements.
+Give the investigator the in-scope memory files and the minimum repository
+questions needed to evaluate them. Record missing files, then validate the
+returned candidate ledger against the cited evidence before changing a memory
+file.
 
-## Audit workflow
+### 2. Run one memory audit pass
 
-### Phase 0: Preflight
+Check complementary concerns in the same pass:
 
-1. Read all 6 memory files. Record which exist and which are absent.
-2. Read `README.md` for project context.
-3. If no memory files exist, stop and report that explicitly.
+- required sections, markers, and entry formats
+- stale, completed, duplicate, or misplaced ISSUES.md and BACKLOG.md entries
+- ROADMAP.md status and references against completed work
+- COMMANDS.md commands against current scripts and tooling definitions
+- CONTEXT.md facts against current repository state and other memory files
+- contradictions and duplication across all in-scope files
+- DECISIONS.md entries that are superseded, duplicated, now self-evident, or no
+  longer constrain future work
 
-### Phase 1: Structural audit (Structure auditor)
+When DECISIONS.md has become large enough to obscure current guidance, assess
+it as a coherent set and consolidate superseded or duplicated chains. Record
+individual classifications only for entries that require consolidation,
+removal, or a user decision. Group related decisions where that makes the
+current constraint clearer; do not reorganize entries merely to satisfy an
+arbitrary count or taxonomy.
 
-For each memory file, check:
-- Presence of the expected sections and markers (`<!-- ENTRIES START -->`, `<!-- PHASES START -->`)
-- Entry format compliance against the file's documented template
-- Consistent indentation and spacing between entries
-- Proper use of entry IDs (date format, short identifier)
+### 3. Address findings directly
 
-### Phase 2: Content audit per file (Content auditor)
+- Fix clear format violations and duplicates.
+- Remove entries proven stale or complete.
+- Move misplaced entries without duplicating them when both source and
+  destination files are in scope; otherwise report the placement finding.
+- Consolidate superseded decisions while retaining only future-guiding
+  rationale.
+- Update roadmap status only when code, docs, or tests provide sufficient
+  evidence.
+- Leave ambiguous findings unchanged and record the exact user decision needed.
 
-**ISSUES.md:**
-- For each issue, search the codebase to determine if it has been fixed
-- Check whether any entry is actually a feature request (belongs in BACKLOG.md)
-- Check for near-duplicate entries
+Audit-only mode records the same outcomes without editing.
 
-**BACKLOG.md:**
-- Check whether any item has already been implemented (search code, check for related changes)
-- Check whether any item has been scheduled into ROADMAP.md (should be removed from BACKLOG.md)
-- Check whether any entry is actually a bug or tech debt (belongs in ISSUES.md)
-- Check for near-duplicate entries
+### 4. Report and yield
 
-**ROADMAP.md:**
-- Check whether completed phases are properly marked with the completed format
-- Check whether tasks in incomplete phases have actually been completed
-- Check for orphaned references to issues or backlog items that no longer exist
+The report contains:
 
-**DECISIONS.md** (receives focused scrutiny):
-- Critical: Count total entries. When the log has more than 25 entries, classify every entry as `keep`, `consolidate`, `remove`, or `defer`.
-- Critical: For each decision entry, record evidence checked, whether it still constrains future work, whether the rationale is future-guiding or merely historical, and the recommended action.
-- High: Group decisions by subsystem or decision axis (upgrade, skills, reasoning effort, MCP, docs/site, wizard, launchers, config) before pruning.
-- High: Identify superseded chains and sequential refinements; prefer one current-state decision over a chain of historical decisions.
-- High: Identify entries that are now self-evident from code, tests, README, site docs, COMMANDS.md, CONTEXT.md, or newer decisions.
-- Medium: Identify entries that record completed implementation mechanics, routine best-practice adherence, or release history rather than non-obvious future constraints.
-- Medium: Remove or consolidate entries whose only remaining value is historical rationale. Unique rationale alone is not enough to keep an entry.
+1. `# Memory Audit Summary` — files and verdict
+2. `## Fixes Applied` — grouped by file
+3. `## Material Findings` — evidence and affected file
+4. `## Decisions Needed` — the smallest unresolved questions
+5. `## Residual Risk`
 
-**COMMANDS.md:**
-- Verify each command is still valid (check referenced files, scripts, and tool availability)
-- Check for duplicate or near-duplicate entries
-- Check for commands that reference removed files or scripts
+Use `None` for empty sections. Do not inventory unaffected entries or add new
+memory entries merely to record this audit.
 
-**CONTEXT.md:**
-- Check for facts that are outdated or contradicted by current code
-- Check for information that duplicates other memory files
-- Check for entries that belong in a more specific memory file
-
-### Phase 3: Cross-file consistency (Cross-file auditor)
-
-Check for:
-- Issues referenced in ROADMAP.md that don't exist in ISSUES.md
-- Backlog items scheduled in ROADMAP.md but still present in BACKLOG.md
-- Decisions that contradict current roadmap direction or completed work
-- Commands that reference workflows no longer described in documentation
-- CONTEXT.md entries that duplicate or contradict DECISIONS.md
-
-### Phase 4: Fix accepted findings (Fixer)
-
-For findings with clear mechanical fixes:
-1. Remove definitively stale entries (backed by code evidence)
-2. Move misplaced entries to the correct file (features from ISSUES.md to BACKLOG.md and vice versa)
-3. Fix format violations (indentation, spacing, missing fields)
-4. Consolidate superseded DECISIONS.md chains and subsystem clusters: keep the current constraint, fold only future-guiding tradeoff context into it, and remove historical entries
-5. Remove obvious duplicates (keep the more complete version)
-6. Remove DECISIONS.md entries whose current behavior is recoverable from code/docs and whose rationale no longer guides future work
-7. Update phase/task status in ROADMAP.md when evidence is clear
-8. Remove BACKLOG.md entries that are already scheduled in ROADMAP.md
-
-For findings requiring judgment:
-- Present the finding and evidence at a human checkpoint
-- Record the question and defer if the user is unavailable
-
-When running in audit-only mode, skip all fixes and report recommendations instead.
-
-### Phase 5: Write the report (Reporter)
-
-## Required report structure
-
-Write `.agent-layer/tmp/audit-memory.<run-id>.report.md` with:
-
-1. `# Memory Audit Summary`
-   - files audited
-   - short outcome summary
-   - DECISIONS.md entry count (before and after if fixes were applied)
-2. `## Structural Findings`
-3. `## Content Findings`
-   - organized by file
-   - DECISIONS.md findings in a dedicated subsection
-4. `## Cross-File Findings`
-5. `## Fixes Applied`
-   - what was changed and why
-6. `## Deferred Findings`
-   - findings that required user judgment and were skipped
-7. `## Recommendations`
-   - remaining actions the user should consider
-
-## Guardrails
-
-- Do not turn memory file cleanup into a policy change.
-- Do not remove DECISIONS.md entries that still contain unique tradeoff information needed for future decisions, even if the decision itself is now embodied in code.
-- Do not keep DECISIONS.md entries solely because they contain unique historical rationale; the rationale must still guide future work.
-- Do not widen the audit into a code audit or documentation audit (point to `audit-documentation` for repo docs).
-- Do not add new memory entries during the audit (that would conflict with the audit's own findings).
-- Do not consolidate DECISIONS.md entries in a way that loses the reason or tradeoff information.
-- Do not modify files outside of the 6 memory files.
-
-## Definition of done
-
-- The report exists at `.agent-layer/tmp/audit-memory.<run-id>.report.md` with the required sections (`Summary`, `Structural Findings`, `Content Findings`, `Cross-File Findings`, `Fixes Applied`, `Deferred Findings`, `Recommendations`).
-- The report states the DECISIONS.md entry count before and after.
-- If DECISIONS.md has more than 25 entries, every decision entry is classified as `keep`, `consolidate`, `remove`, or `defer`; otherwise every flagged decision entry has a recommendation.
-- Only the 6 memory files were modified; no source code, tests, or repo documentation was touched.
-- Every deferred finding records the specific question that blocked a mechanical fix.
-
-## Final handoff
-
-After writing the report:
-1. Echo the report path.
-2. Summarize the highest-value findings, especially DECISIONS.md bloat status.
-3. State what was fixed, what was deferred, and what needs user input.
-4. If repo documentation issues were noticed during the audit, recommend running `audit-documentation`.
+Return the report path and outcome after every in-scope file receives one
+structural, content, and cross-file pass and each finding is fixed, preserved
+for a stated decision, or recorded in audit-only mode.

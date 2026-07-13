@@ -2,153 +2,95 @@
 name: audit-documentation
 description: >-
   Audit Markdown docs for static accuracy and cross-document consistency
-  against the repo, fixing what is safe. Excludes memory files by default; use
-  `audit-memory` for those.
+  against the repo, fixing what is safe. Excludes memory files by default.
 ---
 
 # audit-documentation
 
-Audit documentation and fix inaccuracies. Do not freelance into code or policy changes.
+Audit documentation once against current repository evidence, directly fix
+safe inaccuracies, and report material gaps. Do not expand into code or policy
+changes.
 
-## Defaults
+## Scope and inputs
 
-- Default scope is all tracked `*.md` files unless the user gives paths or a diff-based scope.
-- Exclude agent memory files (ISSUES.md, BACKLOG.md, ROADMAP.md, DECISIONS.md, COMMANDS.md, CONTEXT.md) from the default scope. Use the `audit-memory` skill for those.
-- Validate claims statically against the repository. Do not treat unexecuted commands as verified runtime behavior.
-- When docs and code differ, decide which side describes the better behavior based on repo evidence, project rules, safety, and maintainability.
-- Prioritize findings that would mislead a developer, operator, or future agent.
+- Use user-supplied Markdown paths, directories, or diff scope when provided.
+- Otherwise audit all tracked `*.md` files.
+- Exclude ISSUES.md, BACKLOG.md, ROADMAP.md, DECISIONS.md, COMMANDS.md, and
+  CONTEXT.md. Use `/audit-memory` when the user requests memory files.
+- Accept an optional maximum reported-finding count. It limits report size, not
+  the evidence pass or declared scope coverage.
+- If no Markdown files are in scope, report `no-findings` and stop.
 
-## Inputs
+## Evidence and edit contract
 
-Accept any combination of:
-- explicit Markdown paths or directories
-- a git ref or range for changed-doc scope
-- a maximum finding count
-- whether to include short excerpts
+- Validate claims statically against repository files, configuration, symbols,
+  scripts, and documented contracts. Do not present an unexecuted command as
+  verified runtime behavior.
+- Prioritize claims that could materially mislead a developer, operator, or
+  future agent: commands, paths, configuration keys, interfaces,
+  architecture, and workflow rules.
+- Apply the smallest correction that makes generally aligned documentation
+  accurate and complete.
+- When implemented behavior is clearly authoritative or better than the stale
+  documentation, update the documentation.
+- When the documentation describes a better intended behavior than the code,
+  leave both unchanged and report the code gap.
+- When evidence cannot decide product intent, leave the content unchanged and
+  ask the user for the smallest decision that resolves it. Additional reviewer
+  agreement is not a substitute for evidence.
+- Do not edit source code, tests, or memory files in this workflow.
 
-## Multi-agent pattern
+## Workflow
 
-Recommended roles:
-1. `Doc inventory`: selects Markdown files in scope.
-2. `Claim validator`: extracts commands, paths, config keys, and architecture claims.
-3. `Consistency reviewer`: checks contradictions and drift across documents.
-4. `Fixer`: applies mechanical corrections.
-5. `Reporter`: summarizes findings and fixes.
+### 1. Establish the audit target
 
-## Global constraints
+Record the exact files in scope and read enough surrounding repository evidence
+to understand their actionable claims.
 
-- Keep this workflow static. Do not run product code or infer runtime behavior from docs alone.
-- Keep findings tied to concrete evidence: file, section, and check performed.
-- Prefer the smallest credible correction over broad documentation rewrites.
-- Do not edit code in this workflow. When code should change to match better documented behavior, surface that as a human decision.
+### 2. Run one documentation audit pass
 
-## Drift resolution policy
+Audit a compact scope directly. For a context-heavy scope, give coherent,
+non-overlapping document groups to fresh read-only investigators and run
+independent groups concurrently when useful. Each returns compact candidates
+with exact claims and evidence; the owning agent validates them, resolves
+cross-document conflicts, and makes all edits. Do not split work merely to add
+agents.
 
-When docs and code differ:
-- If docs and code are generally aligned but the docs are incomplete, outdated, or imprecise, update the docs in place to accurately describe the implemented behavior.
-- If the implemented behavior is better than the documented behavior, update the docs in place without asking.
-- If the documented behavior is better than the implemented behavior, leave docs and code unchanged and surface the code gap to the user.
-- If evidence does not clearly show whether docs or code should win, use a subagent to adjudicate. If it cannot, leave the content unchanged and ask for a decision.
+In one pass, check:
 
-## Human checkpoints
+- referenced commands, paths, configuration keys, and interface names
+- architecture and workflow claims against current code and configuration
+- contradictions, renamed concepts, and drift across in-scope documents
+- templates or examples that disagree with their canonical source
 
-- Required: ask before choosing between plausible product behaviors or when code should change to match better docs.
-- Optional: ask when the requested scope is ambiguous enough that the audit target itself is unclear.
-- Stay autonomous for doc corrections that make docs accurate and complete when the repo evidence shows the docs are stale, incomplete, or imprecise.
-- If the docs appear to describe intended/better behavior than the implementation, surface the code gap instead of editing the docs.
+Mark claims that cannot be established statically as unverified instead of
+guessing. Ignore wording preferences unless they affect correctness or use.
 
-## Audit workflow
+### 3. Address findings directly
 
-### Phase 0: Preflight (Doc inventory)
+- Fix evidence-backed documentation inaccuracies in place.
+- Report code gaps and user-owned intent decisions without editing either side.
+- Do not log findings to memory files or launch another audit.
 
-1. Determine the document scope:
-   - explicit user paths first
-   - otherwise tracked `*.md` files
-   - otherwise changed Markdown files when the user asked for diff-based scope
-2. Record the actual scope that will be audited.
-3. If no Markdown files are in scope, stop and report that explicitly.
+### 4. Report and yield
 
-### Phase 1: Extract claims (Claim validator)
+For each material finding, record:
 
-From each document in scope, extract only actionable claims such as:
-- runnable commands
-- file and directory paths
-- environment variables and config keys
-- API, CLI, or interface names
-- architecture or workflow rules
+- title and severity
+- type: command | path | config | interface | architecture | cross-doc
+- exact file and section
+- evidence checked and why it matters
+- outcome: `fixed` | `code-gap` | `needs-user-decision`
 
-### Phase 2: Validate claims against the repo (Claim validator)
+The final summary contains:
 
-Use static checks only:
-- file existence
-- command definition presence in repo docs/tooling
-- targeted symbol or term searches
-- current memory file formats and markers
-
-If a claim cannot be validated statically, mark that limitation explicitly instead of guessing.
-
-### Phase 3: Check cross-document consistency (Consistency reviewer)
-
-Look for:
-- contradictory commands or workflows
-- renamed files or paths that drifted
-- docs that conflict with project rules or memory formats
-- template docs that no longer match canonical docs
-
-### Phase 4: Fix findings (Fixer)
-
-1. Apply doc corrections immediately when docs are incomplete, outdated, imprecise, or when the implemented behavior is better than the documented behavior.
-2. Surface cases where docs describe better behavior than the code implements; do not rewrite those docs to match weaker code.
-3. Ask before changing docs when the evidence is ambiguous or the correction would choose product intent.
-4. Report findings that cannot be safely fixed in docs; do not log them to memory files in this workflow.
-
-### Phase 5: Summarize findings and fixes (Reporter)
-
-Each finding must include:
-- `Title`
-- `Severity`: High | Medium | Low
-- `Type`: command | path | config | interface | architecture | cross-doc
-- `Location`: exact file and section
-- `Evidence`
-- `Why it matters`
-- `What was done`: fixed | logged to ISSUES.md | needs human decision
-
-## Final summary structure
-
-The final summary must contain:
-
-1. `# Documentation Audit Summary`
-   - audited scope
-   - documents scanned
-   - short outcome summary
+1. `# Documentation Audit Summary` — scope and verdict
 2. `## Fixes Applied`
-   - what was changed and where
-3. `## Findings Requiring Human Decision`
-   - ambiguous corrections and cases where code should change to match better docs — present options, not just the problem
-4. `## Open Questions`
-   - only when unresolved ambiguity blocks confidence
-5. `## Strengths`
-   - concise list of docs that are accurate or well-aligned
+3. `## Code Gaps`
+4. `## Decisions Needed`
 
-## Guardrails
+Use `None` for empty sections. Mention accurate areas only when that context is
+useful; do not create a ceremonial strengths inventory.
 
-- Do not turn wording preferences into findings unless they materially affect correctness or usability.
-- Do not invent policy changes while fixing stale docs.
-- Do not widen a doc audit into a code audit.
-- If memory file issues are found during the audit, note them and recommend `audit-memory` rather than auditing memory files in this workflow.
-
-## Definition of done
-
-- The final summary includes the required sections (`Summary`, `Fixes Applied`, `Findings Requiring Human Decision`, and `Strengths`).
-- Every finding in the final summary names its file, section, check performed, and `What was done` verdict (fixed / logged to ISSUES.md / needs human decision).
-- Mechanical corrections are applied in-place; no meaning-changing edits were made without a human checkpoint.
-- Incomplete, outdated, or imprecise docs are updated in-place when they are generally aligned with the implementation.
-- Docs-code drift is fixed in-place when the implemented behavior is better than the documented behavior.
-- Cases where docs describe better behavior than the code are surfaced to the user without editing docs or code.
-- Memory files (ISSUES, BACKLOG, ROADMAP, DECISIONS, COMMANDS, CONTEXT) were not modified by this run.
-
-## Final handoff
-
-After the audit:
-1. Summarize fixes applied and any findings that need human decision.
-2. If memory file issues were noticed, recommend running `audit-memory`.
+Return the summary, decisions, and blockers after every in-scope document has
+one evidence pass and each material finding has a terminal outcome.

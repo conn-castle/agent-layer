@@ -16,7 +16,7 @@ A skill is a Markdown file (`SKILL.md`) with YAML frontmatter that lives in a na
 
 ```
 skills/
-  debug-issue/
+  debug-and-fix-issue/
     SKILL.md
   ship-pr/
     SKILL.md
@@ -58,7 +58,7 @@ The recommended section order is informed by research on how language models pro
 
 The skill standard defines the format. Agent Layer builds on it with:
 
-- **A workflow-bundle library of 28 skills** covering planning, implementation, review, debugging, PR lifecycle, auditing, and codebase improvement — available when the workflow bundle is installed through the wizard and refreshed through upgrade flows for repos that already have it.
+- **A workflow-bundle library of 24 skills** covering planning, implementation, review, debugging, PR lifecycle, auditing, and codebase improvement — available when the workflow bundle is installed through the wizard and refreshed through upgrade flows for repos that already have it.
 - **Client projection** — Skills are authored once under `.agent-layer/skills/` and projected during `al sync` to `.agents/skills/` for shared-skill clients and `.claude/skills/` for Claude Code.
 - **Memory integration** — Skills read from and write to project memory files (`ISSUES.md`, `BACKLOG.md`, `ROADMAP.md`, `DECISIONS.md`, `COMMANDS.md`, `CONTEXT.md`), keeping project context durable across sessions.
 - **Artifact conventions** — Skills produce structured output files under `.agent-layer/tmp/` using a standard naming convention (`<skill-name>.<run-id>.<type>.md`). Planning workflows produce a trio of artifacts — a plan, a task list, and a context file — so that any agent can pick up the work cold without re-discovering what the planner already found.
@@ -76,7 +76,7 @@ Spend time up front writing out your roadmap, phase definitions, and requirement
 
 Once planning artifacts exist, use the top-level orchestrator skills to drive development. These skills handle the full lifecycle internally, delegating to supporting skills as needed:
 
-- **`complete-current-phase`** — Point it at a roadmap phase and it handles planning, implementation, verification, auditing, and cleanup loops until the phase is complete. This is the primary workflow for roadmap-driven development.
+- **`full-workflow`** — Give it a feature or roadmap phase and it aligns the contract, plans, implements, verifies, and ships the pull request.
 - **`ship-pr`** — Audits uncommitted changes, commits, pushes, creates the PR, monitors CI (fixing failures), waits for review comments, addresses every one, and confirms CI passes.
 - **`improve-codebase`** — Deep autonomous codebase audit that decomposes the repo into reviewable chunks, runs parallel multi-lens reviews, fixes findings iteratively, and delegates to complementary skills.
 - **`fix-issues`** — Works through `ISSUES.md` by organizing open issues into coherent batches, planning, implementing, auditing, and keeping the issue ledger current.
@@ -88,19 +88,19 @@ You rarely need to invoke the supporting skills directly. The orchestrators hand
 Skills activate implicitly or explicitly:
 
 **Implicit** — Describe what you want and the agent matches the right skill:
-- "Drive Phase 3 to completion" → `complete-current-phase`
+- "Drive Phase 3 to completion" → `full-workflow`
 - "Ship this as a PR" → `ship-pr`
-- "Debug why the test is flaking" → `debug-issue`
+- "Debug why the test is flaking" → `debug-and-fix-issue`
 
 **Explicit** — Name the skill directly:
-- "Use `complete-current-phase` for Phase 3"
+- "Use `full-workflow` to complete Phase 3"
 - "Run `improve-codebase` on the auth module"
 
 Skills accept flexible inputs: plain-language descriptions, file paths, constraints like "diagnosis only," or references to roadmap phases and prior artifacts. Everything has sensible defaults, so you can invoke with just a request.
 
 ## Built-in skill library
 
-The Agent Layer workflow bundle includes 28 skills. They are organized here by how you typically use them. Agent Layer also ships optional CLI catalog skills for installed tools; those are listed separately below.
+The Agent Layer workflow bundle includes 24 skills. They are organized here by how you typically use them. Agent Layer also ships optional CLI catalog skills for installed tools; those are listed separately below.
 
 ### Orchestrator skills
 
@@ -108,11 +108,11 @@ These are the top-level workflows you invoke directly. They delegate to supporti
 
 | Skill | What it does |
 | --- | --- |
-| `complete-current-phase` | Drives a roadmap phase through planning, implementation, verification, auditing, and cleanup loops until the phase is complete. The primary orchestrator for roadmap execution. |
-| `full-workflow` | Orchestrates a feature workflow from questions and spec alignment through planning, multi-agent plan review, implementation, and PR shipping. |
+| `full-workflow` | Orchestrates a feature or roadmap phase from specification alignment through planning, review, implementation, verification, and PR shipping. |
+| `fully-implement-plan` | Implements a provided plan through cleanup, verification, and full local checks without opening or shipping a PR. |
 | `auto-skill-loop` | Runs an explicitly authorized autonomous loop for `fix-issues` or `improve-codebase`, dispatching workers, preserving blocked work, and shipping ready PRs until interrupted or exhausted. |
-| `ship-pr` | Full PR lifecycle: audits uncommitted changes, commits, pushes, creates the PR, monitors CI (fixing failures), waits for review comments, addresses every one, and confirms CI passes. Delegates to `audit-and-fix-uncommitted-changes`, `fix-ci`, and `address-pr-comments`. |
-| `improve-codebase` | Deep autonomous codebase audit: decomposes the repo into reviewable chunks, runs parallel multi-lens reviews, fixes findings iteratively, and delegates to complementary skills. |
+| `ship-pr` | Owns commits, pushes, PR creation, concurrent local checks and remote monitoring, batched repairs, audited replies, and the merge-authorization gate. |
+| `improve-codebase` | Runs one broad evidence-led sweep, repairs validated local and cross-cutting findings, reviews the combined work once, and verifies the result. |
 | `fix-issues` | Works through `ISSUES.md`: organizes open issues into coherent batches, plans, implements, audits, and keeps the issue ledger current. |
 
 ### Primary skills
@@ -121,9 +121,9 @@ These are commonly invoked directly for specific tasks that do not need a full o
 
 | Skill | What it does |
 | --- | --- |
-| `plan-work` | Produces a plan, task list, and context file for a requested change — scoped tightly enough for a fresh agent to execute without guessing. The context file captures key file paths, current state, and constraints so the implementing agent can orient immediately. |
-| `implement-plan` | Picks up a plan/task/context set and executes it. Reads the context file first to orient, then works through the task list while keeping changes aligned to the plan. Verifies code, tests, docs, and memory before closing. |
-| `debug-issue` | Investigation-first debugging: reproduces the bug, narrows the cause systematically, writes a failing test, fixes the root cause, and verifies. Refuses to guess — requires evidence at every step. |
+| `write-plan` | Produces a plan, task list, and context file for a requested change — scoped tightly enough for a fresh agent to execute without guessing. The context file captures key file paths, current state, and constraints so the implementing agent can orient immediately. |
+| `implement-plan` | Picks up a plan/task/context set and executes it. Reads the context file first to orient, then works through the task list while keeping changes aligned to the plan, running task-local checks and recording deviations or follow-up. |
+| `debug-and-fix-issue` | Investigation-first debugging and fixing: reproduces the bug, narrows the cause systematically, writes a failing test, then delegates planning, implementation, cleanup, and verification. Refuses to guess — requires evidence at every step. |
 | `schedule-backlog` | Proposes reviewable updates by mapping backlog items into roadmap phases, cross-checking impacts, and using human checkpoints before editing memory files. |
 
 ### Supporting skills
@@ -134,29 +134,25 @@ These are used by orchestrators or available for fine-grained control when you n
 
 | Skill | What it does |
 | --- | --- |
-| `review-scope` | Reviews files, directories, diffs, or uncommitted changes. Produces a findings report covering correctness, gaps, risks, architecture, tests, docs, performance, and maintainability. |
+| `review-uncommitted-code` | Reviews files, directories, diffs, or uncommitted changes. Produces a findings report covering correctness, gaps, risks, architecture, tests, docs, performance, and maintainability. |
 | `review-plan` | Pre-execution review of a plan and its artifacts. Identifies scope gaps, sequencing problems, missing context, and weak verification before code is written. |
-| `multi-agent-plan-review` | Reviews and repairs a plan/task/context artifact set with dispatched review agents until the plan is implementation-ready. |
-| `verify-against-plan` | Post-implementation completeness check. Compares what was actually built against what the plan promised, reporting gaps, regressions, missing tests or docs, and scope drift. |
-| `resolve-findings` | Triages review findings, verifies each independently, implements accepted fixes, and records why findings were rejected, deferred, or resolved. |
+| `verify-work` | Post-implementation completeness check. Compares what was actually built against the plan or request, reporting gaps, regressions, missing verification or docs, working-code evidence, and scope drift. |
 
 **Quality and maintenance**
 
 | Skill | What it does |
 | --- | --- |
 | `simplify-codebase` | Codebase-wide complexity reduction: removes dead code, simplifies overly complex functions, and splits files that mix unrelated responsibilities. Operates on the whole repository or explicit paths, not the uncommitted diff. |
-| `simplify-new-code` | Diff-scoped scope-creep removal: scans the current uncommitted diff for agent-added speculative flexibility, premature abstractions, dead branches, impossible-case error handling, defensive scaffolding, clever patterns, and half-finished work, and auto-applies simplifications while preserving requested behavior. Uses a fresh-context reviewer subagent so the implementer's narrative cannot rationalize the cleanup. |
-| `prune-new-tests` | Burden-of-proof pruning of tests added in the current uncommitted diff: each added test must defend its existence with a concrete production-code mutation that would flip its assertion or it is auto-deleted. Surviving coverage gaps are reported, never backfilled with false coverage. Uses a fresh-context reviewer subagent. |
-| `boost-coverage` | Raises test coverage iteratively by discovering the repo's coverage commands, selecting low-coverage files, and adding tests until thresholds are met. |
-| `repair-checks` | Runs the repo's documented checks in order, fixes failures in scope, and repeats until passing or a real blocker emerges. |
+| `clean-and-fix-code` | Single working-tree cleanup/fix pass. Runs diff-scoped test pruning and new-code simplification as internal assets, reviews the current uncommitted diff, and fixes accepted findings once. |
+| `boost-coverage` | Raises coverage to an explicit or repository target with one coherent behavior-focused test batch and one final measurement. |
+| `run-and-fix-all-checks` | Runs the repository's complete documented check lane, repairs observed root causes directly, and repeats only on concrete failure evidence. |
 
 **PR and CI lifecycle**
 
 | Skill | What it does |
 | --- | --- |
-| `fix-ci` | CI failure repair for PRs. Diagnoses failures, fixes issues, audits changes, commits, pushes, and re-checks until CI passes. |
-| `address-pr-comments` | Implements fixes for agreed PR feedback, replies to every comment with justification, audits substantive changes when warranted, and commits/pushes. |
-| `audit-and-fix-uncommitted-changes` | Working-tree audit and fix orchestrator. Runs iterative review/fix loops until convergence, with round-by-round severity reporting. Used as a pre-commit quality gate. |
+| `fix-ci` | Diagnoses an observed PR check failure, reproduces and repairs it locally, and returns uncommitted changes and evidence to the shipping caller. |
+| `address-pr-comments` | Evaluates PR feedback, implements accepted fixes locally, and prepares evidence-backed reply drafts without committing, pushing, or posting. |
 
 **Auditing**
 
@@ -166,12 +162,6 @@ These are used by orchestrators or available for fine-grained control when you n
 | `audit-tests` | Test suite health audit: discovers conventions, classifies tests by tier, identifies redundancy, quality gaps, and coverage gaps — without modifying tests. |
 | `audit-memory` | Audits agent memory files for structure compliance, staleness, misplacement, and consistency. |
 | `interface-audit` | Audits product interfaces as component boundaries, scores complexity and debt, and produces interface cleanup recommendations without implementing changes. |
-
-**Task management**
-
-| Skill | What it does |
-| --- | --- |
-| `finish-task` | Task closeout: checks plan alignment, updates project memory files, runs verification, and summarizes outcomes after implementation is complete. |
 
 ### Optional CLI catalog skills
 

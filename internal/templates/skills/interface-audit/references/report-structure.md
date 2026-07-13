@@ -1,6 +1,6 @@
 # Interface Audit Report Structure
 
-Artifact shape for `interface-audit` reports. Execution rules live in
+Artifact shape for `/interface-audit` reports. Execution rules live in
 `SKILL.md`.
 
 ## Report Filename
@@ -25,15 +25,13 @@ One-line purpose statement.
 - `Last updated UTC:`
 - `Repository:`
 - `Commit:`
-- `Working tree:` clean or dirty, with brief status
+- `Working tree:` clean or dirty; when dirty, include changed paths or another
+  compact source reference sufficient for a later update to identify the local
+  state this report observed
 - `Scope:`
-- `Source evidence:` code, tests, docs, subagent reviews, PRs for updates
+- `Source evidence:` code, tests, docs, investigator evidence, PRs for updates
 
 `Last updated UTC` is the update boundary.
-
-### `## Intent And Rules`
-
-Concise copy of relevant audit invariants from `SKILL.md`.
 
 ### `## Product Requirements`
 
@@ -85,7 +83,7 @@ Columns:
 - `Complexity`, `Over-Eng`, `Debt`: integers 1-5.
 - `Avg`: one decimal place.
 - `Confidence`: High, Medium, or Low.
-- `Evidence`: terse references to files, tests, docs, or reviewer pass.
+- `Evidence`: terse references to files, tests, docs, or investigator evidence.
 
 ### `## Row Details`
 
@@ -111,6 +109,9 @@ Optional; use only when needed to defend the score.
 
 ### `## Improvement Candidates`
 
+Use `None — no material improvement` when no candidate justifies its cost.
+Otherwise include:
+
 - affected row ids
 - expected score movement or qualitative benefit
 - whether it requires behavior change
@@ -118,6 +119,9 @@ Optional; use only when needed to defend the score.
 - why it is or is not the highest-value next item
 
 ### `## Proposed Next Spec`
+
+Use `None — no material improvement` when the evidence pass found no change
+whose benefit justifies its cost. Otherwise include:
 
 - `Title:`
 - `Type:` major architecture or interface improvement

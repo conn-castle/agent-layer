@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestStateRejectsMalformedMappingsAndRecords(t *testing.T) {
@@ -81,6 +82,53 @@ func TestReservationDoesNotOverwriteCollidingName(t *testing.T) {
 	data, err := os.ReadFile(collision) // #nosec G304 -- collision is a test-controlled path inside t.TempDir.
 	if err != nil || string(data) != original {
 		t.Fatalf("collision changed: %q, %v", data, err)
+	}
+}
+
+func TestDispatchSessionRetentionPrunesOnlyExpiredInactiveMappings(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	old := now.Add(-dispatchSessionRetention - time.Hour)
+
+	expired := Session{Name: "tiny-round-capacitor", Agent: AgentCodex, State: "durable", ProviderSessionID: runtimeSessionID, CreatedAt: old, LastUsedAt: old}
+	current := Session{Name: "small-bright-resistor", Agent: AgentClaude, State: "durable", ProviderSessionID: runtimeSessionID, CreatedAt: old, LastUsedAt: now.Add(-time.Hour)}
+	active := Session{Name: "large-steady-relay", Agent: AgentCodex, State: "durable", ProviderSessionID: runtimeSessionID, CreatedAt: old, LastUsedAt: old, RunID: runtimeSessionID}
+	for _, session := range []Session{expired, current, active} {
+		if err := persistSession(root, session); err != nil {
+			t.Fatalf("persist %s: %v", session.Name, err)
+		}
+	}
+	runDir := filepath.Join(dispatchRunPath(root), runtimeSessionID)
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatalf("create active run: %v", err)
+	}
+	if err := writeJSONAtomic(filepath.Join(runDir, dispatchRunFile), RunRecord{ID: runtimeSessionID, State: dispatchStateRunning, PID: os.Getpid()}); err != nil {
+		t.Fatalf("write active run: %v", err)
+	}
+	if err := pruneExpiredSessions(root, now); err != nil {
+		t.Fatalf("pruneExpiredSessions: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dispatchStatePath(root), expired.Name+".json")); !os.IsNotExist(err) {
+		t.Fatalf("expired inactive mapping remains: %v", err)
+	}
+	for _, path := range []string{
+		filepath.Join(dispatchStatePath(root), current.Name+".json"),
+		filepath.Join(dispatchStatePath(root), active.Name+".json"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("retention removed preserved mapping %s: %v", path, err)
+		}
+	}
+
+	corruptPath := filepath.Join(dispatchStatePath(root), "short-curved-diode.json")
+	if err := os.WriteFile(corruptPath, []byte("not-json"), 0o600); err != nil {
+		t.Fatalf("write corrupt mapping: %v", err)
+	}
+	if err := pruneExpiredSessions(root, now); err == nil {
+		t.Fatal("retention hid a corrupt mapping")
+	}
+	if _, err := os.Stat(corruptPath); err != nil {
+		t.Fatalf("retention removed corrupt mapping: %v", err)
 	}
 }
 

@@ -1,0 +1,2477 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Skill Call Tree</title>
+  <style>
+    :root {
+      --bg: #f7f5ee;
+      --panel: #fffdf8;
+      --ink: #24211d;
+      --muted: #706a60;
+      --line: #d8d1c2;
+      --line-strong: #bcb2a0;
+      --logic: #4b3215;
+      --caller: #9a5a00;
+      --agent: #be185d;
+      --skill: #2563eb;
+      --asset: #0f766e;
+      --task: #5c556b;
+      --input: #5c556b;
+      --warn: #b91c1c;
+      --control: #f3efe5;
+      --control-hover: #e8e0d1;
+      --shadow: 0 1px 2px rgba(36, 33, 29, 0.08), 0 8px 24px rgba(36, 33, 29, 0.06);
+      color-scheme: light;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    button,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: minmax(420px, 1fr) minmax(380px, 45vw);
+      gap: 14px;
+      height: 100vh;
+      padding: 14px;
+    }
+
+    .pane {
+      min-width: 0;
+      min-height: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .viewer,
+    .editor {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 48px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      background: #fbf8f0;
+    }
+
+    .bar h1,
+    .bar h2 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+
+    .bar .spacer {
+      flex: 1;
+    }
+
+    .info-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      min-width: 28px;
+      height: 28px;
+      min-height: 28px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .info-button:hover {
+      background: var(--control-hover);
+      color: var(--ink);
+    }
+
+    .info-button::before {
+      content: "";
+      width: 17px;
+      height: 17px;
+      background: currentColor;
+      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 16v-4'/%3E%3Cpath d='M12 8h.01'/%3E%3C/svg%3E") center / contain no-repeat;
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 16v-4'/%3E%3Cpath d='M12 8h.01'/%3E%3C/svg%3E") center / contain no-repeat;
+    }
+
+    .tips-dialog {
+      width: min(560px, calc(100vw - 36px));
+      max-height: min(78vh, 680px);
+      padding: 0;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: #fffdf8;
+      color: var(--ink);
+      box-shadow: 0 22px 70px rgba(36, 33, 29, 0.28);
+    }
+
+    .tips-dialog::backdrop {
+      background: rgba(36, 33, 29, 0.34);
+    }
+
+    .warning-dialog {
+      width: min(820px, calc(100vw - 36px));
+    }
+
+    .tips-shell {
+      display: flex;
+      flex-direction: column;
+      max-height: min(78vh, 680px);
+    }
+
+    .tips-header {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 52px;
+      padding: 10px 12px 10px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #fbf8f0;
+    }
+
+    .tips-header h3 {
+      flex: 1;
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.3;
+    }
+
+    .tips-copy {
+      width: 32px;
+      min-width: 32px;
+      height: 32px;
+      min-height: 32px;
+      padding: 0;
+      color: var(--muted);
+    }
+
+    .tips-copy::before {
+      content: "";
+      display: block;
+      width: 16px;
+      height: 16px;
+      margin: auto;
+      background: currentColor;
+      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='14' height='14' x='8' y='8' rx='2' ry='2'/%3E%3Cpath d='M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'/%3E%3C/svg%3E") center / contain no-repeat;
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='14' height='14' x='8' y='8' rx='2' ry='2'/%3E%3Cpath d='M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'/%3E%3C/svg%3E") center / contain no-repeat;
+    }
+
+    .tips-copy.copied {
+      color: var(--asset);
+    }
+
+    .tips-body {
+      overflow: auto;
+      padding: 14px 18px 16px;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .tips-body ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .tips-body li + li {
+      margin-top: 7px;
+    }
+
+    .tips-body code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 11px;
+      color: var(--skill);
+    }
+
+    .warning-list {
+      display: grid;
+      gap: 12px;
+      margin: 0;
+    }
+
+    .warning-item {
+      display: grid;
+      gap: 7px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .warning-item:last-child {
+      border-bottom: 0;
+    }
+
+    .warning-rule {
+      color: var(--warn);
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    .warning-path {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 5px 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .warning-caller {
+      display: grid;
+      gap: 5px;
+    }
+
+    .warning-caller-label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .warning-step {
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: #f6efe5;
+      color: var(--ink);
+    }
+
+    .warning-path-arrow {
+      color: var(--muted);
+    }
+
+    .warning-empty {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .tips-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 48px;
+      padding: 8px 12px 10px 16px;
+      border-top: 1px solid var(--line);
+      background: #fbf8f0;
+    }
+
+    .copy-status {
+      color: var(--muted);
+      font-size: 12px;
+      min-width: 0;
+    }
+
+    .field {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    select,
+    button {
+      min-height: 32px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: var(--control);
+      color: var(--ink);
+    }
+
+    select {
+      max-width: 220px;
+      padding: 0 30px 0 9px;
+    }
+
+    button {
+      padding: 0 10px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: var(--control-hover);
+    }
+
+    .history-button,
+    .line-eye,
+    .tree-eye {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+
+    .history-button {
+      width: 30px;
+      min-width: 30px;
+      color: var(--muted);
+    }
+
+    .history-button::before,
+    .line-eye::before,
+    .tree-eye::before {
+      content: "";
+      display: block;
+      background: currentColor;
+      mask-position: center;
+      mask-repeat: no-repeat;
+      mask-size: contain;
+      -webkit-mask-position: center;
+      -webkit-mask-repeat: no-repeat;
+      -webkit-mask-size: contain;
+    }
+
+    .history-back::before {
+      width: 16px;
+      height: 16px;
+      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m15 18-6-6 6-6'/%3E%3C/svg%3E");
+      -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m15 18-6-6 6-6'/%3E%3C/svg%3E");
+    }
+
+    .history-forward::before {
+      width: 16px;
+      height: 16px;
+      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E");
+      -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E");
+    }
+
+    .history-button:disabled {
+      cursor: default;
+      opacity: 0.35;
+    }
+
+    .history-button:disabled:hover {
+      background: var(--control);
+    }
+
+    .history-status {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .tree {
+      min-height: 0;
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 14px 16px 28px 34px;
+    }
+
+    .empty,
+    .error {
+      margin: 0;
+      padding: 10px 12px;
+      border-radius: 6px;
+      background: #f8eee9;
+      color: var(--warn);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+
+    .node {
+      margin: 2px 0;
+    }
+
+    .node-row {
+      display: flex;
+      align-items: center;
+      position: relative;
+      min-height: 28px;
+      gap: 6px;
+      border-radius: 5px;
+      padding: 3px 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    details > .node-row {
+      cursor: pointer;
+      list-style: none;
+    }
+
+    details > .node-row::-webkit-details-marker {
+      display: none;
+    }
+
+    details > .node-row:hover {
+      background: #f4efe5;
+    }
+
+    .node-row.depth-warning,
+    details:not([open]) > .node-row.collapsed-depth-warning {
+      --row-warning-bg: rgba(185, 28, 28, 0.075);
+    }
+
+    details > .node-row.depth-warning:hover,
+    details:not([open]) > .node-row.collapsed-depth-warning:hover,
+    .node-row.depth-warning:hover {
+      --row-warning-bg: rgba(185, 28, 28, 0.11);
+    }
+
+    .node-row.depth-warning::before,
+    details:not([open]) > .node-row.collapsed-depth-warning::before {
+      content: "";
+      position: absolute;
+      inset: 0 -10000px;
+      z-index: 0;
+      background: var(--row-warning-bg);
+      pointer-events: none;
+    }
+
+    .node-row > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .depth-warning-icon {
+      display: block;
+      position: absolute;
+      left: -24px;
+      top: 50%;
+      width: 16px;
+      height: 16px;
+      transform: translateY(-50%);
+      background: var(--warn);
+      border: 0;
+      padding: 0;
+      min-width: 16px;
+      min-height: 16px;
+      cursor: help;
+      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m15 9-6 6'/%3E%3Cpath d='m9 9 6 6'/%3E%3C/svg%3E") center / contain no-repeat;
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m15 9-6 6'/%3E%3Cpath d='m9 9 6 6'/%3E%3C/svg%3E") center / contain no-repeat;
+    }
+
+    .depth-warning-icon:hover {
+      background: #991b1b;
+    }
+
+    .collapsed-depth-warning-icon {
+      display: none;
+    }
+
+    details:not([open]) > .node-row .collapsed-depth-warning-icon {
+      display: block;
+    }
+
+    .twisty {
+      width: 18px;
+      height: 18px;
+      flex: 0 0 18px;
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .collapsible-node > .node-row .twisty {
+      border-radius: 5px;
+    }
+
+    .collapsible-node > .node-row .twisty::before {
+      content: "";
+      width: 13px;
+      height: 13px;
+      background: currentColor;
+      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+      transition: transform 120ms ease;
+    }
+
+    details[open] > .node-row .twisty::before {
+      transform: rotate(90deg);
+    }
+
+    .static-node > .node-row .twisty::before {
+      content: "";
+      width: 4px;
+      height: 4px;
+      border-radius: 999px;
+      background: #000;
+    }
+
+    .line {
+      display: inline-flex;
+      flex-wrap: wrap;
+      column-gap: 0;
+      row-gap: 2px;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .tree-eye {
+      width: 20px;
+      min-width: 20px;
+      height: 20px;
+      min-height: 20px;
+      flex: 0 0 20px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--muted);
+      margin-left: 2px;
+      cursor: pointer;
+    }
+
+    .tree-eye:hover {
+      background: rgba(36, 33, 29, 0.08);
+      color: var(--ink);
+    }
+
+    .tree-eye::before {
+      width: 15px;
+      height: 15px;
+      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E");
+      -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E");
+    }
+
+    .children {
+      margin-left: 15px;
+      padding-left: 20px;
+      border-left: 1px solid var(--line);
+    }
+
+    .logic-token {
+      color: var(--logic);
+      font-weight: 700;
+    }
+
+    .caller-token {
+      color: var(--caller);
+      font-weight: 700;
+    }
+
+    .agent-token {
+      color: var(--agent);
+      font-weight: 700;
+    }
+
+    .caller-arrow {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 17px;
+      height: 17px;
+      margin: 0 7px;
+      color: var(--caller);
+      line-height: 1;
+    }
+
+    .caller-arrow svg {
+      display: block;
+      width: 15px;
+      height: 15px;
+      stroke: currentColor;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+    }
+
+    .skill-token {
+      color: var(--skill);
+      font-weight: 700;
+    }
+
+    .asset-token {
+      color: var(--asset);
+      font-weight: 700;
+    }
+
+    .task-token {
+      color: var(--task);
+      font-weight: 600;
+    }
+
+    .input-token {
+      color: var(--input);
+    }
+
+    .condition-token {
+      color: var(--input);
+    }
+
+    .logic-space {
+      display: inline-block;
+      width: 1.3ch;
+      flex: 0 0 1.3ch;
+    }
+
+    .punct {
+      color: var(--muted);
+    }
+
+    .argument-separator {
+      margin-right: 0.45ch;
+    }
+
+    .note {
+      color: var(--muted);
+      font-style: italic;
+      margin-left: 8px;
+    }
+
+    .warning {
+      color: var(--warn);
+      font-weight: 700;
+      margin-left: 8px;
+    }
+
+    .editor-shell {
+      position: relative;
+      min-height: 0;
+      flex: 1;
+      background: #1f211f;
+      overflow: hidden;
+    }
+
+    .spec {
+      display: block;
+      height: 100%;
+      width: 100%;
+      resize: none;
+      border: 0;
+      border-radius: 0;
+      outline: none;
+      padding: 14px 54px 14px 14px;
+      background: #1f211f;
+      color: #f6f1e8;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      tab-size: 2;
+      white-space: pre;
+      overflow: auto;
+    }
+
+    .skill-line-actions {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .editor-line-warning-highlight {
+      position: absolute;
+      left: 0;
+      right: 0;
+      background: rgba(185, 28, 28, 0.16);
+      pointer-events: none;
+    }
+
+    .editor-warning-icon {
+      position: absolute;
+      width: 18px;
+      min-width: 18px;
+      height: 18px;
+      min-height: 18px;
+      border: 0;
+      padding: 0;
+      background: var(--warn);
+      cursor: help;
+      pointer-events: auto;
+      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m15 9-6 6'/%3E%3Cpath d='m9 9 6 6'/%3E%3C/svg%3E") center / contain no-repeat;
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m15 9-6 6'/%3E%3Cpath d='m9 9 6 6'/%3E%3C/svg%3E") center / contain no-repeat;
+    }
+
+    .editor-warning-icon:hover {
+      background: #991b1b;
+    }
+
+    .line-eye {
+      position: absolute;
+      width: 20px;
+      min-width: 20px;
+      height: 20px;
+      min-height: 20px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: #abb5aa;
+      cursor: pointer;
+      pointer-events: auto;
+    }
+
+    .line-eye:hover {
+      background: rgba(255, 255, 255, 0.11);
+      color: #f6f1e8;
+    }
+
+    .line-eye::before {
+      width: 15px;
+      height: 15px;
+      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E");
+      -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E");
+    }
+
+    .status {
+      min-height: 24px;
+      padding: 4px 10px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      background: #fbf8f0;
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    @media (max-width: 920px) {
+      .app {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(360px, 1fr) minmax(320px, 1fr);
+        height: auto;
+        min-height: 100vh;
+      }
+
+      .bar {
+        flex-wrap: wrap;
+      }
+
+      .bar .spacer {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="pane viewer" aria-label="Rendered skill call tree">
+      <div class="bar">
+        <h1>Skill Call Tree</h1>
+        <button id="historyBack" class="history-button history-back" type="button" title="Back" aria-label="Previous root"></button>
+        <button id="historyForward" class="history-button history-forward" type="button" title="Forward" aria-label="Next root"></button>
+        <span id="historyStatus" class="history-status" aria-live="polite"></span>
+        <label class="field" for="rootSelect">Root
+          <select id="rootSelect"></select>
+        </label>
+        <label class="field" for="depthSelect">Depth
+          <select id="depthSelect">
+            <option value="4">4</option>
+            <option value="6">6</option>
+            <option value="8">8</option>
+            <option value="12">12</option>
+            <option value="Infinity" selected>Infinite</option>
+          </select>
+        </label>
+        <span class="spacer"></span>
+        <button id="expandAll" type="button">Expand</button>
+        <button id="collapseAll" type="button">Collapse</button>
+      </div>
+      <div id="tree" class="tree" aria-live="polite"></div>
+      <div id="status" class="status"></div>
+    </section>
+
+    <section class="pane editor" aria-label="Flat skill spec YAML">
+      <div class="bar">
+        <h2>YAML Spec</h2>
+        <button id="tipsOpen" class="info-button" type="button" title="YAML authoring tips" aria-label="YAML authoring tips"></button>
+        <span class="spacer"></span>
+        <button id="renderButton" type="button">Render</button>
+        <button id="resetButton" type="button">Reset</button>
+      </div>
+      <div class="editor-shell">
+        <textarea id="specInput" class="spec" spellcheck="false" wrap="off" aria-label="Flat skill spec YAML"></textarea>
+        <div id="skillLineActions" class="skill-line-actions"></div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="tipsDialog" class="tips-dialog" aria-labelledby="tipsTitle">
+    <div class="tips-shell">
+      <div class="tips-header">
+        <h3 id="tipsTitle">YAML Authoring Tips</h3>
+        <button id="tipsCopy" class="tips-copy" type="button" title="Copy as Markdown" aria-label="Copy tips as Markdown"></button>
+      </div>
+      <div class="tips-body">
+        <ul id="tipsList"></ul>
+      </div>
+      <form class="tips-footer" method="dialog">
+        <span id="tipsCopyStatus" class="copy-status" aria-live="polite"></span>
+        <button type="submit">Close</button>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="warningDialog" class="tips-dialog warning-dialog" aria-labelledby="warningTitle">
+    <div class="tips-shell">
+      <div class="tips-header">
+        <h3 id="warningTitle">Caller Depth Warning</h3>
+      </div>
+      <div class="tips-body">
+        <div id="warningList" class="warning-list"></div>
+      </div>
+      <form class="tips-footer" method="dialog">
+        <span id="warningSummary" class="copy-status" aria-live="polite"></span>
+        <button type="submit">Close</button>
+      </form>
+    </div>
+  </dialog>
+
+  <script>
+    const defaultYaml = String.raw`address-pr-comments:
+  calls:
+    - task: gather, reconcile, and evaluate every pull request comment in one ledger with reply and audit state
+    - if: review comments have accepted in-scope fixes
+      calls:
+        - task: directly address every accepted fix with focused evidence
+    - exit: return the updated ledger and local-change status
+audit-documentation:
+  calls:
+    - if: documentation scope is broad or context-heavy
+      calls:
+        - task: form enough coherent groups for independent coverage without overloading investigator context or creating redundant fan-out
+        - for: document_group, concurrent when wall-clock benefit warrants the agent cost
+          calls:
+            - task: return evidence-backed documentation candidates
+              caller: subagent
+    - if: documentation scope is compact
+      calls:
+        - task: audit it directly
+    - task: synthesize one evidence pass and directly apply safe documentation fixes
+    - if: repository evidence cannot settle product intent
+      calls:
+        - exit: return the smallest user-owned decision without editing either side
+    - exit: report fixes, code gaps, and decisions, then yield
+audit-memory:
+  calls:
+    - task: investigate all memory files together and return a compact cross-file candidate ledger
+      caller: subagent
+    - task: validate one structural, content, and cross-file audit pass
+    - if: audit-only mode
+      calls:
+        - task: record evidence-backed outcomes without editing memory files
+    - if: edit mode
+      calls:
+        - task: directly apply evidence-backed memory fixes
+    - task: write the report
+    - exit: return fixes and user-owned decisions, then yield
+audit-tests:
+  calls:
+    - task: establish repository test conventions
+    - if: test scope is broad or context-heavy
+      calls:
+        - task: form enough coherent non-overlapping groups for independent coverage without overloading investigator context
+        - for: test_group, concurrent when wall-clock benefit warrants the agent cost
+          calls:
+            - task: return evidence-backed test candidates
+              caller: subagent
+    - if: test scope is compact
+      calls:
+        - task: audit it directly
+    - task: synthesize one suite-health audit pass
+    - task: directly apply safe test cleanup findings
+    - if: test files changed
+      calls:
+        - task: run one credible verification lane
+    - exit: report material findings, gaps, and verification, then yield
+auto-skill-loop:
+  inputs: [implementer, shipper]
+  calls:
+    - while: autonomous work remains
+      calls:
+        - task: start from a clean primary branch attempt and update the loop ledger
+        - if: worker_skill is /fix-issues
+          calls:
+            - skill: fix-issues
+              inputs: [plan_reviewers]
+              caller: dispatch(implementer)
+        - if: worker_skill is /improve-codebase
+          calls:
+            - skill: improve-codebase
+              caller: dispatch(implementer)
+        - task: keep worker changes uncommitted and unpushed for blocked-branch preservation or ship-pr delivery
+        - if: worker returns a user-only blocker
+          calls:
+            - task: commit and push the blocked branch, record the blocker, and checkout the primary branch
+            - break: start a fresh autonomous attempt
+        - if: PR gate is not met
+          calls:
+            - break: continue worker dispatch on the current uncommitted batch branch
+        - if: PR gate is met
+          calls:
+            - skill: ship-pr
+              caller: dispatch(shipper)
+        - if: final readiness review finds a manual gate
+          calls:
+            - task: leave the PR open, record the gate, and checkout the primary branch
+            - break: start a fresh autonomous attempt
+        - if: shipper returns a green open PR and no manual gate blocks merge
+          calls:
+            - task: merge ready PR under standing authorization
+        - break: start the next autonomous attempt
+boost-coverage:
+  calls:
+    - if: coverage-contract discovery is context-heavy
+      calls:
+        - task: return a compact coverage-contract evidence map
+          caller: subagent
+    - task: establish the coverage contract, target, and baseline
+    - if: coverage contract or target is ambiguous, or required tooling is missing
+      calls:
+        - exit: return the concrete evidence or tooling blocker, or the smallest genuinely user-owned decision
+    - if: declared target is already satisfied
+      calls:
+        - exit: report already-satisfied without editing
+    - task: select one coherent behavior-focused test batch
+    - if: implementation benefits materially from context protection or independence
+      calls:
+        - task: implement the coherent test batch
+          caller: subagent
+    - if: implementation is compact in the owning context
+      calls:
+        - task: implement the coherent test batch directly
+    - task: measure final coverage once and directly address only a concrete actionable miss
+    - exit: report target-met or the concrete blocker, then yield
+clean-and-fix-code:
+  calls:
+    - if: uncommitted diff includes changed tests
+      calls:
+        - asset: clean-and-fix-code/assets/prune-uncommitted-tests
+    - if: uncommitted diff includes changed production code
+      calls:
+        - asset: clean-and-fix-code/assets/simplify-uncommitted-code
+    - if: cleanup pre-passes leave an uncommitted target
+      calls:
+        - skill: review-uncommitted-code
+        - if: review report has Recommended Accept findings
+          calls:
+            - task: validate and directly repair accepted findings with focused checks
+debug-and-fix-issue:
+  inputs: [plan_reviewers, implementer, fixer]
+  calls:
+    - if: diagnostic commands, observations, and state are transferable
+      calls:
+        - task: reproduce, narrow, diagnose, and capture a failing test when feasible
+          caller: subagent
+    - if: diagnosis depends on live non-transferable state
+      calls:
+        - task: investigate in the current context and record why delegation was unsafe
+    - if: direct repair path
+      calls:
+        - task: repair the proven root cause
+          caller: dispatch(implementer)
+        - skill: clean-and-fix-code
+          caller: dispatch(fixer)
+        - skill: verify-work
+          caller: subagent
+        - if: direct-path verification has material in-scope findings
+          calls:
+            - task: directly address every verified finding with focused evidence
+              caller: dispatch(implementer)
+    - if: significant planned repair path
+      calls:
+        - skill: plan-work
+          inputs: [plan_reviewers]
+        - skill: fully-implement-plan
+          inputs: [implementer, fixer]
+    - if: diagnosis-only mode and no broader orchestrator owns closeout
+      calls:
+        - task: update ISSUES.md when required and yield without another verification stage
+fix-ci:
+  calls:
+    - task: gather CI evidence and establish a credible local reproducer
+    - if: failure is external or lacks a credible reproducer and no safe patch is justified
+      calls:
+        - exit: return remote-retry-needed with failed-check evidence
+    - while: credible local reproducer fails and new diagnostic evidence supports a safe repair
+      calls:
+        - task: directly repair the root cause and verify it locally
+        - if: an evidence-equivalent failure recurs
+          calls:
+            - task: revisit the causal model and add focused instrumentation or another discriminating diagnostic
+    - if: failure requires a user-owned decision, lacks required evidence, or persists without new diagnostic evidence
+      calls:
+        - exit: return blocked or repeated-failure evidence
+    - exit: return uncommitted repair changes and evidence to the caller
+fix-issues:
+  inputs: [plan_reviewers]
+  calls:
+    - task: validate, classify, and batch the selected issue set once
+      caller: subagent
+    - if: no open selected issue remains
+      calls:
+        - exit: report no-work without planning
+    - skill: plan-work
+      inputs: [plan_reviewers]
+    - for: package in planned_issue_packages, serializing every working-tree mutation against the latest tree
+      calls:
+        - task: implement the bounded issue package
+          caller: subagent
+    - if: combined work has meaningful cleanup scope
+      calls:
+        - skill: clean-and-fix-code
+    - skill: review-uncommitted-code
+    - if: review has Recommended Accept findings
+      calls:
+        - task: directly address accepted findings with focused evidence
+    - skill: verify-work
+      caller: subagent
+    - task: apply every issue disposition to the canonical ledger
+    - if: no broader orchestrator owns closeout
+      calls:
+        - task: update only documentation and memory made stale by the resolved issues
+full-workflow:
+  inputs: [planner, plan_reviewers, implementer, fixer, shipper]
+  calls:
+    - task: validate roles, align the spec, and resolve user-owned decisions
+    - if: the request targets a roadmap phase
+      calls:
+        - task: include the named or first incomplete phase, every remaining task and exit criterion, direct prerequisites, and project-truth closeout
+        - if: repository evidence shows the phase is already complete
+          calls:
+            - exit: update only stale project truth and report the evidence without creating an empty pull request
+    - if: the user or caller explicitly requires an approval checkpoint and it is not yet satisfied
+      calls:
+        - exit: present the alignment summary for approval before planning
+    - if: the spec is aligned, no user-owned decision remains, and any explicit approval checkpoint is satisfied
+      calls:
+        - skill: plan-work
+          inputs: [plan_reviewers]
+          caller: dispatch(planner)
+        - skill: ship-plan
+          inputs: [implementer, fixer]
+          caller: dispatch(shipper)
+fully-implement-plan:
+  inputs: [implementer, fixer]
+  calls:
+    - skill: implement-plan
+      caller: dispatch(implementer)
+    - skill: clean-and-fix-code
+      caller: dispatch(fixer)
+    - skill: verify-work
+      caller: subagent
+    - if: verification has material in-scope findings
+      calls:
+        - if: a repair requires a user-owned decision
+          calls:
+            - exit: stop for the smallest user decision
+        - task: directly address every verification finding with focused evidence
+          caller: dispatch(implementer)
+    - task: write the fully-implement-plan report
+implement-plan:
+  calls:
+    - task: implement ordered scope and report deviations, blockers, and verification readiness
+    - if: implementation requires a user-owned decision
+      calls:
+        - exit: stop for the smallest user decision
+improve-codebase:
+  calls:
+    - task: map the entire declared scope into subsystem, component, and boundary groups
+      caller: subagent
+    - task: form enough non-overlapping investigator groups for credible independent coverage without redundant fan-out
+    - if: the scope forms one compact coherent investigation group
+      calls:
+        - task: investigate assigned local and boundary risks and return material evidence
+          caller: subagent
+    - if: multiple substantial independent groups justify concurrent execution
+      calls:
+        - for: investigation_group in the justified group set, starting independent work before waiting
+          calls:
+            - task: investigate assigned local and boundary risks and return material evidence
+              caller: subagent
+    - if: separate groups remain but concurrent fan-out is not worth its cost
+      calls:
+        - for: investigation_group in the justified group set, running one at a time
+          calls:
+            - task: investigate assigned local and boundary risks and return material evidence
+              caller: subagent
+    - task: inspect the full scope map, all reports, and cited boundary evidence for cross-cutting and architectural findings
+      caller: subagent
+    - task: validate and merge local, cross-boundary, and architectural findings into one master ledger
+    - if: no material finding survives full-scope synthesis
+      calls:
+        - exit: report no-material-findings
+    - if: report-only mode
+      calls:
+        - exit: return the full validated finding ledger without editing
+    - for: repair_package in dependency-ordered accepted findings, serializing all mutations
+      calls:
+        - if: package is context-heavy
+          calls:
+            - task: repair every assigned root cause and return focused evidence
+              caller: subagent
+        - if: package is narrow
+          calls:
+            - task: repair every assigned root cause and return focused evidence
+    - if: fixes were made
+      calls:
+        - skill: review-uncommitted-code
+        - if: concrete-work review has Recommended Accept findings
+          calls:
+            - task: directly address each accepted finding with focused evidence
+        - task: run one combined risk-proportional verification stage over the final tree
+        - if: final verification exposes a concrete in-scope failure
+          calls:
+            - task: repair the responsible root cause and rerun only invalidated evidence
+    - exit: return scope coverage, the complete finding ledger, repairs, evidence, and blockers
+interface-audit:
+  calls:
+    - asset: interface-audit/references/report-structure
+    - if: running in update mode
+      calls:
+        - asset: interface-audit/references/update-workflow
+        - if: update timestamp, baseline commit, prior dirty-tree evidence, or complete change history cannot be established
+          calls:
+            - exit: stop before editing and report the evidence blocker or smallest fresh-versus-limited audit decision
+        - task: enumerate the complete baseline-commit, local, and merged-PR change interval, detecting truncation
+        - task: identify affected interface chains and refresh them against current repository evidence
+    - if: interface scope is broad or context-heavy
+      calls:
+        - task: form enough coherent boundary groups for independent coverage without overloading investigator context
+        - for: boundary_group, concurrent when wall-clock benefit warrants the agent cost
+          calls:
+            - task: return compact row evidence without editing or calibrating the report
+              caller: subagent
+    - if: interface scope is compact
+      calls:
+        - task: investigate it directly
+    - task: synthesize one interface evidence pass across distinct boundaries
+    - task: calibrate scores once
+    - if: no candidate materially justifies its cost
+      calls:
+        - exit: record no-material-improvement and yield without manufacturing a change
+    - task: return the final recommendation gate
+plan-work:
+  inputs: [plan_reviewers]
+  calls:
+    - if: planning requires broad or cross-subsystem repository investigation
+      calls:
+        - task: return a compact evidence map for the planning questions
+          caller: subagent
+    - asset: plan-work/assets/write-plan
+    - if: write-plan returns revise with a concrete evidence-backed gap
+      calls:
+        - task: apply the cited corrections as one focused artifact revision and resolve any remaining concrete self-check gap
+    - skill: review-plan
+      inputs: [plan_reviewers]
+    - if: review returns blocked-for-user-decision
+      calls:
+        - task: ask the named question, then resume synthesis and update the artifacts and final report without redispatching reviewers
+    - task: return reviewed artifact paths and the readiness verdict
+review-plan:
+  inputs: [plan_reviewers]
+  calls:
+    - for: plan_reviewer in plan_reviewers
+      calls:
+        - asset: review-plan/assets/agent-review-prompt
+          caller: dispatch(plan_reviewer)
+        - for: contract-scope, architecture-implementation, and verification-operational perspectives
+          calls:
+            - task: fresh subagent started by the dispatched reviewer independently inspects the complete artifact set and returns material evidence
+              caller: subagent
+        - task: validate and synthesize the independent perspectives into one child report
+          caller: dispatch(plan_reviewer)
+    - task: synthesize evidence and revise accepted findings
+    - if: a genuine user-owned decision remains
+      calls:
+        - task: record blocked-for-user-decision, ask the smallest question, then resume synthesis and update the artifacts without redispatching reviewers
+    - task: report readiness
+review-uncommitted-code:
+  calls:
+    - task: establish one concrete review target and its authoritative evidence
+    - if: scope is non-trivial
+      calls:
+        - for: correctness, architecture, and quality-operability perspectives
+          calls:
+            - task: independently review the concrete target once
+              caller: subagent
+    - if: scope is narrow and the current context authored or materially changed the target
+      calls:
+        - task: independently review the target through the most relevant perspective
+          caller: subagent
+    - if: scope is narrow and the current context did not author or materially change the target
+      calls:
+        - task: review the target directly
+    - asset: review-uncommitted-code/assets/finding-verdict-classification
+    - task: validate and synthesize material findings once, write the report, and yield
+run-and-fix-all-checks:
+  calls:
+    - task: resolve and run the full documented check lane from COMMANDS.md
+    - while: full check lane has an actionable local failure
+      calls:
+        - task: preserve failure evidence, directly repair the root cause, and rerun the lane
+        - if: an evidence-equivalent failure recurs
+          calls:
+            - task: revisit the causal model and add focused instrumentation or another discriminating diagnostic
+        - if: failure is external, requires a user-owned decision, or persists without new diagnostic evidence
+          calls:
+            - exit: report the concrete blocker
+schedule-backlog:
+  calls:
+    - task: select one coherent backlog slice, cross-check constraints, and draft the proposal
+    - if: a clear low-ambiguity application is already authorized
+      calls:
+        - task: update roadmap and ledgers once
+    - if: prioritization or sequencing requires a user-owned choice
+      calls:
+        - exit: return the proposal and smallest approval decision
+    - exit: return the proposal or applied roadmap outcome and yield
+ship-plan:
+  inputs: [implementer, fixer]
+  calls:
+    - skill: fully-implement-plan
+      inputs: [implementer, fixer]
+    - skill: ship-pr
+ship-pr:
+  calls:
+    - task: publish the initial head, create or reuse the PR, and initialize one comment ledger
+    - while: current pushed head has not satisfied every closeout gate
+      calls:
+        - task: start monitor-pr.sh and queue remote actions while any local CI owns mutations
+        - if: exact pushed tree lacks current passing full-lane evidence
+          calls:
+            - skill: run-and-fix-all-checks
+              caller: subagent
+        - if: new or incomplete review feedback exists
+          calls:
+            - skill: address-pr-comments
+              caller: subagent
+        - if: remote CI failed and pending local repairs do not already address it
+          calls:
+            - skill: fix-ci
+              caller: subagent
+        - if: fix-ci returns remote-retry-needed for a failure not yet retried on this head
+          calls:
+            - task: rerun only the failed remote checks and restart monitoring without pushing
+            - break: restart observation for the current head
+        - if: fix-ci returns blocked, repeated-failure, or an exhausted remote retry
+          calls:
+            - exit: report the concrete CI blocker
+        - if: the current head has a mechanically resolvable merge conflict
+          calls:
+            - task: resolve the conflict into the current repair batch
+        - if: the repair batch has local changes
+          calls:
+            - if: current tree is not covered by the latest passing full-lane evidence
+              calls:
+                - skill: run-and-fix-all-checks
+                  caller: subagent
+            - task: commit the combined batch once, push once, publish eligible replies, and refresh the ledger
+            - for: posted_reply in newly posted ledger replies, starting all audits before waiting
+              calls:
+                - asset: address-pr-comments/reviewer-prompt
+                  caller: subagent
+            - break: restart observation for the new pushed head
+        - if: no local changes remain and ledger replies are eligible
+          calls:
+            - task: publish every eligible reply separately and refresh the ledger
+            - for: posted_reply in newly posted ledger replies, starting all audits before waiting
+              calls:
+                - asset: address-pr-comments/reviewer-prompt
+                  caller: subagent
+            - break: run another monitor cycle after the replies
+        - if: monitor is ready after the minimum window, local and remote checks are green, final refresh found no feedback, and every ledger row passed reply audit
+          calls:
+            - exit: stop and request authorization to merge the exact PR
+    - if: user authorizes the exact PR merge
+      calls:
+        - task: merge and clean up
+        - exit: report merge outcome and branch cleanup
+simplify-codebase:
+  calls:
+    - if: candidate discovery is repository-wide or context-heavy
+      calls:
+        - task: return a compact evidence-backed simplification candidate map
+          caller: subagent
+    - task: validate enough evidence once to choose the strongest material candidate
+    - if: no candidate clears the useful-change contract
+      calls:
+        - exit: write a report-only simplification outcome
+    - task: apply one coherent simplification and verify the removed concept once
+    - exit: return the terminal simplification verdict and yield
+verify-work:
+  calls:
+    - asset: verify-work/contract-verification-rubric
+    - task: compare the contract to the final tree, gather sufficient evidence, and report the verdict
+`;
+
+    function skillList(spec) {
+      if (Array.isArray(spec)) {
+        return spec;
+      }
+      return [];
+    }
+
+    function logicKinds() {
+      return new Set(["if", "while", "for"]);
+    }
+
+    function terminalKinds() {
+      return new Set(["break", "exit"]);
+    }
+
+    function callKinds() {
+      return new Set(["skill", "asset", "task", "if", "while", "for", "break", "exit"]);
+    }
+
+    function parseInlineValue(value, lineNumber) {
+      const trimmed = value.trim();
+      if (trimmed === "") {
+        return "";
+      }
+      if (trimmed === "[]") {
+        return [];
+      }
+      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+        const inner = trimmed.slice(1, -1).trim();
+        if (!inner) {
+          return [];
+        }
+        return inner.split(",").map((item) => item.trim()).filter(Boolean);
+      }
+      if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+          (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+        return trimmed.slice(1, -1);
+      }
+      if (trimmed.includes("\t")) {
+        throw new Error(`Line ${lineNumber}: tabs are not supported in this YAML subset`);
+      }
+      return trimmed;
+    }
+
+    function parsePair(content, lineNumber) {
+      const colonIndex = content.indexOf(":");
+      if (colonIndex < 0) {
+        throw new Error(`Line ${lineNumber}: expected "key: value"`);
+      }
+      const key = content.slice(0, colonIndex).trim();
+      const value = content.slice(colonIndex + 1);
+      if (!key) {
+        throw new Error(`Line ${lineNumber}: missing key before ":"`);
+      }
+      return [key, parseInlineValue(value, lineNumber)];
+    }
+
+    function parseCaller(value, lineNumber) {
+      if (value === "" || value === undefined || value === null) {
+        return undefined;
+      }
+      const text = String(value).trim();
+      if (text === "subagent") {
+        return {type: "subagent"};
+      }
+      const dispatchMatch = text.match(/^dispatch\(([^)]+)\)$/);
+      if (dispatchMatch) {
+        return {type: "dispatch", agent: dispatchMatch[1].trim()};
+      }
+      throw new Error(`Line ${lineNumber}: caller must be "subagent" or "dispatch(agent)"`);
+    }
+
+    function makeCall(key, value, lineNumber) {
+      if (!callKinds().has(key)) {
+        throw new Error(`Line ${lineNumber}: expected "skill:", "asset:", "task:", "if:", "while:", "for:", "break:", or "exit:"`);
+      }
+      const call = {kind: key, target: value, _lineNumber: lineNumber};
+      if (logicKinds().has(key)) {
+        call.calls = [];
+      }
+      return call;
+    }
+
+    function assignCallField(target, key, value, lineNumber) {
+      if (key === "caller") {
+        target.caller = parseCaller(value, lineNumber);
+        target._callerLineNumber = lineNumber;
+        return;
+      }
+      if (key === "inputs" || key === "note") {
+        target[key] = value;
+        return;
+      }
+      if (["if", "while", "for"].includes(key)) {
+        throw new Error(`Line ${lineNumber}: use "- ${key}: ${value}" with nested "calls:" instead of "${key}:" as a call field`);
+      }
+      if (callKinds().has(key)) {
+        throw new Error(`Line ${lineNumber}: nested call targets must be listed under "calls:"`);
+      }
+      target[key] = value;
+    }
+
+    function parseYamlSpec(text) {
+      const spec = [];
+      const lines = [];
+
+      text.split(/\r?\n/).forEach((line, index) => {
+        const lineNumber = index + 1;
+        if (/^\s*$/.test(line) || /^\s*#/.test(line)) {
+          return;
+        }
+        if (line.includes("\t")) {
+          throw new Error(`Line ${lineNumber}: tabs are not supported in this YAML subset`);
+        }
+        const indent = line.match(/^ */)[0].length;
+        const content = line.trim();
+        lines.push({indent, content, lineNumber});
+      });
+
+      function parseCallList(startIndex, listIndent) {
+        const calls = [];
+        let index = startIndex;
+
+        while (index < lines.length) {
+          const item = lines[index];
+          if (item.indent < listIndent) {
+            break;
+          }
+          if (item.indent > listIndent) {
+            throw new Error(`Line ${item.lineNumber}: unsupported indentation level ${item.indent}`);
+          }
+          if (!item.content.startsWith("- ")) {
+            throw new Error(`Line ${item.lineNumber}: expected a call list item`);
+          }
+
+          const rest = item.content.slice(2).trim();
+          if (!rest) {
+            throw new Error(`Line ${item.lineNumber}: call list item must name a call target`);
+          }
+          const [key, value] = parsePair(rest, item.lineNumber);
+          const call = makeCall(key, value, item.lineNumber);
+          index += 1;
+
+          while (index < lines.length) {
+            const field = lines[index];
+            if (field.indent <= listIndent) {
+              break;
+            }
+            if (field.indent !== listIndent + 2) {
+              throw new Error(`Line ${field.lineNumber}: unsupported indentation level ${field.indent}`);
+            }
+            if (field.content.startsWith("- ")) {
+              throw new Error(`Line ${field.lineNumber}: nested list items must be under a "calls:" field`);
+            }
+
+            const [fieldKey, fieldValue] = parsePair(field.content, field.lineNumber);
+            if (fieldKey === "calls") {
+              if (Array.isArray(fieldValue)) {
+                call.calls = [];
+                index += 1;
+                continue;
+              }
+              if (fieldValue !== "") {
+                throw new Error(`Line ${field.lineNumber}: "calls:" must be empty or []`);
+              }
+              const parsed = parseCallList(index + 1, listIndent + 4);
+              call.calls = parsed.calls;
+              index = parsed.index;
+              continue;
+            }
+
+            assignCallField(call, fieldKey, fieldValue, field.lineNumber);
+            index += 1;
+          }
+
+          calls.push(call);
+        }
+
+        return {calls, index};
+      }
+
+      let index = 0;
+      while (index < lines.length) {
+        const line = lines[index];
+        if (line.indent !== 0) {
+          throw new Error(`Line ${line.lineNumber}: skill definitions must start at column 1`);
+        }
+
+        const [key, value] = parsePair(line.content, line.lineNumber);
+        if (key === "defaultRoot" || key === "skills") {
+          throw new Error(`Line ${line.lineNumber}: "${key}" is not supported; use top-level skill-name keys`);
+        }
+        if (value !== "") {
+          throw new Error(`Line ${line.lineNumber}: skill names must be mapping keys with no inline value`);
+        }
+        const currentSkill = {id: key, calls: [], _lineNumber: line.lineNumber};
+        spec.push(currentSkill);
+        index += 1;
+
+        while (index < lines.length && lines[index].indent > 0) {
+          const field = lines[index];
+          if (field.indent !== 2) {
+            throw new Error(`Line ${field.lineNumber}: unsupported indentation level ${field.indent}`);
+          }
+          if (field.content.startsWith("- ")) {
+            throw new Error(`Line ${field.lineNumber}: expected a skill field such as "inputs:" or "calls:"`);
+          }
+
+          const [fieldKey, fieldValue] = parsePair(field.content, field.lineNumber);
+          if (fieldKey === "calls") {
+            if (Array.isArray(fieldValue)) {
+              currentSkill.calls = [];
+              index += 1;
+              continue;
+            }
+            if (fieldValue !== "") {
+              throw new Error(`Line ${field.lineNumber}: "calls:" must be empty or []`);
+            }
+            const parsed = parseCallList(index + 1, 4);
+            currentSkill.calls = parsed.calls;
+            index = parsed.index;
+            continue;
+          }
+
+          currentSkill[fieldKey] = fieldValue;
+          index += 1;
+        }
+      }
+
+      function validateCall(call, skillId) {
+        if (!callKinds().has(call.kind) || call.target === undefined || call.target === "") {
+          throw new Error(`Skill "${skillId}" has a call without a valid target`);
+        }
+        if (logicKinds().has(call.kind) && !Array.isArray(call.calls)) {
+          call.calls = [];
+        }
+        if (terminalKinds().has(call.kind) && Array.isArray(call.calls) && call.calls.length > 0) {
+          throw new Error(`Skill "${skillId}" has a "${call.kind}" statement with nested calls`);
+        }
+        if (Array.isArray(call.calls)) {
+          call.calls.forEach((child) => validateCall(child, skillId));
+        }
+      }
+
+      for (const skill of spec) {
+        if (!skill.id) {
+          throw new Error("Every skill entry must use a skill-name mapping key");
+        }
+        if (!Array.isArray(skill.calls)) {
+          skill.calls = [];
+        }
+        skill.calls.forEach((call) => validateCall(call, skill.id));
+      }
+
+      return spec;
+    }
+
+    const specInput = document.getElementById("specInput");
+    const rootSelect = document.getElementById("rootSelect");
+    const depthSelect = document.getElementById("depthSelect");
+    const tree = document.getElementById("tree");
+    const status = document.getElementById("status");
+    const renderButton = document.getElementById("renderButton");
+    const resetButton = document.getElementById("resetButton");
+    const expandAllButton = document.getElementById("expandAll");
+    const collapseAllButton = document.getElementById("collapseAll");
+    const historyBackButton = document.getElementById("historyBack");
+    const historyForwardButton = document.getElementById("historyForward");
+    const historyStatus = document.getElementById("historyStatus");
+    const skillLineActions = document.getElementById("skillLineActions");
+    const tipsOpenButton = document.getElementById("tipsOpen");
+    const tipsDialog = document.getElementById("tipsDialog");
+    const tipsCopyButton = document.getElementById("tipsCopy");
+    const tipsList = document.getElementById("tipsList");
+    const tipsCopyStatus = document.getElementById("tipsCopyStatus");
+    const warningDialog = document.getElementById("warningDialog");
+    const warningList = document.getElementById("warningList");
+    const warningSummary = document.getElementById("warningSummary");
+
+    const yamlAuthoringTips = [
+      "Use flat top-level entries like `ship-pr:`. Do not add wrapper fields such as `skills:` or `defaultRoot:`.",
+      "Use `skill:` for skills, `asset:` for bundled prompts or assets, `task:` for local orchestration work, and `break:` or `exit:` for terminal control flow.",
+      "Put `if:`, `while:`, and `for:` at the list-item level with their body under nested `calls:`.",
+      "Focus on meaningful delegation shape, not every mechanical instruction. At one `calls:` level, prefer one coarse direct `task:` row.",
+      "When a source skill gates a child call, the rendered YAML can assume that call is ready. Put failure evidence and the direct repair under the same meaningful branch instead of rendering separate readiness checks.",
+      "Use a reusable orchestration skill only when it owns a stable artifact and handoff contract. Do not introduce a plan/implement/verify sequence around a direct repair.",
+      "Use `caller: subagent` for built-in fresh-context subagents and `caller: dispatch(agent_name)` for named dispatch agents. Use `inputs:` only for agent-role inputs, ordered as `plan_reviewers`, `implementer`, `fixer`, then `shipper` when present.",
+      "Use readable conditions and loop labels. Group repeated sibling guards into one branch, then show the meaningful calls inside it."
+    ];
+
+    let rootHistory = [];
+    let rootHistoryIndex = -1;
+    let actionFrame = 0;
+    let editorMeasure = null;
+    let editorLineWarnings = new Map();
+    const maxDispatchDepth = 3;
+    const maxSubagentDepth = 2;
+
+    function makeElement(tag, className, text) {
+      const element = document.createElement(tag);
+      if (className) {
+        element.className = className;
+      }
+      if (text !== undefined) {
+        element.textContent = text;
+      }
+      return element;
+    }
+
+    function parseWarningMessage(warning) {
+      const text = String(warning);
+      const match = text.match(/: (Dispatch|Subagent) depth /);
+      if (!match) {
+        return {path: text, callerChain: "", rule: ""};
+      }
+      const prefix = text.slice(0, match.index);
+      const callerMarker = ": Caller chain ";
+      const callerIndex = prefix.lastIndexOf(callerMarker);
+      if (callerIndex >= 0) {
+        return {
+          path: prefix.slice(0, callerIndex),
+          callerChain: prefix.slice(callerIndex + callerMarker.length),
+          rule: text.slice(match.index + 2)
+        };
+      }
+      return {
+        path: prefix,
+        callerChain: "",
+        rule: text.slice(match.index + 2)
+      };
+    }
+
+    function appendWarningPath(parent, path) {
+      const parts = String(path).split(/\s+->\s+/).filter(Boolean);
+      parent.setAttribute("aria-label", parts.join(" -> "));
+      parts.forEach((part, index) => {
+        if (index > 0) {
+          parent.appendChild(makeElement("span", "warning-path-arrow", "->"));
+        }
+        parent.appendChild(makeElement("span", "warning-step", part));
+      });
+    }
+
+    function showWarningDialog(warnings) {
+      const unique = uniqueWarnings(warnings);
+      warningList.innerHTML = "";
+      warningSummary.textContent = unique.length === 1
+        ? "1 failed path"
+        : `${unique.length} failed paths`;
+
+      if (unique.length === 0) {
+        warningList.appendChild(makeElement("p", "warning-empty", "No caller-depth warning details are available."));
+      }
+
+      for (const warning of unique) {
+        const parsed = parseWarningMessage(warning);
+        const item = makeElement("div", "warning-item");
+        const path = makeElement("div", "warning-path");
+        appendWarningPath(path, parsed.path);
+        item.appendChild(path);
+        if (parsed.callerChain) {
+          const caller = makeElement("div", "warning-caller");
+          caller.appendChild(makeElement("div", "warning-caller-label", "Caller chain"));
+          const callerPath = makeElement("div", "warning-path");
+          appendWarningPath(callerPath, parsed.callerChain);
+          caller.appendChild(callerPath);
+          item.appendChild(caller);
+        }
+        if (parsed.rule) {
+          item.appendChild(makeElement("div", "warning-rule", parsed.rule));
+        }
+        warningList.appendChild(item);
+      }
+
+      if (typeof warningDialog.showModal === "function") {
+        warningDialog.showModal();
+      } else {
+        warningDialog.setAttribute("open", "");
+      }
+    }
+
+    function makeWarningButton(className, warnings) {
+      const unique = uniqueWarnings(warnings);
+      const button = makeElement("button", className);
+      button.type = "button";
+      button.title = "Show caller-depth warning";
+      button.setAttribute("aria-label", "Show caller-depth warning");
+      button.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        showWarningDialog(unique);
+      });
+      return button;
+    }
+
+    function appendInlineMarkdown(parent, text) {
+      const parts = String(text).split(/(`[^`]+`)/g);
+      for (const part of parts) {
+        if (!part) {
+          continue;
+        }
+        if (part.startsWith("`") && part.endsWith("`")) {
+          parent.appendChild(makeElement("code", "", part.slice(1, -1)));
+        } else {
+          parent.appendChild(document.createTextNode(part));
+        }
+      }
+    }
+
+    function renderYamlTips() {
+      tipsList.innerHTML = "";
+      for (const tip of yamlAuthoringTips) {
+        const item = document.createElement("li");
+        appendInlineMarkdown(item, tip);
+        tipsList.appendChild(item);
+      }
+    }
+
+    function tipsMarkdown() {
+      return `# YAML Authoring Tips\n\n${yamlAuthoringTips.map((tip) => `- ${tip}`).join("\n")}\n`;
+    }
+
+    function copyTextFallback(text) {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.top = "-1000px";
+      textarea.style.left = "-1000px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        if (!document.execCommand("copy")) {
+          throw new Error("copy command was rejected");
+        }
+      } finally {
+        textarea.remove();
+      }
+    }
+
+    async function copyTipsMarkdown() {
+      const markdown = tipsMarkdown();
+      tipsCopyStatus.textContent = "";
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(markdown);
+        } else {
+          copyTextFallback(markdown);
+        }
+        tipsCopyButton.classList.add("copied");
+        tipsCopyStatus.textContent = "Copied Markdown.";
+        window.setTimeout(() => {
+          tipsCopyButton.classList.remove("copied");
+        }, 1400);
+      } catch (error) {
+        console.warn("Unable to copy YAML tips", error);
+        tipsCopyStatus.textContent = "Copy failed.";
+      }
+    }
+
+    function makeRootEyeButton(skill, className, afterSelect) {
+      const button = makeElement("button", className);
+      button.type = "button";
+      button.title = `View /${skill}`;
+      button.setAttribute("aria-label", `View /${skill} as root`);
+      button.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        renderSpec({root: skill});
+        if (afterSelect) {
+          afterSelect();
+        }
+      });
+      return button;
+    }
+
+    function updateHistoryControls() {
+      historyBackButton.disabled = rootHistoryIndex <= 0;
+      historyForwardButton.disabled = rootHistoryIndex < 0 || rootHistoryIndex >= rootHistory.length - 1;
+      historyStatus.textContent = rootHistory.length > 0
+        ? `History ${rootHistoryIndex + 1} / ${rootHistory.length}`
+        : "";
+    }
+
+    function recordRootHistory(root) {
+      if (!root) {
+        updateHistoryControls();
+        return;
+      }
+      if (rootHistory[rootHistoryIndex] === root) {
+        updateHistoryControls();
+        return;
+      }
+      if (rootHistoryIndex < rootHistory.length - 1) {
+        rootHistory = rootHistory.slice(0, rootHistoryIndex + 1);
+      }
+      rootHistory.push(root);
+      rootHistoryIndex = rootHistory.length - 1;
+      updateHistoryControls();
+    }
+
+    function navigateRootHistory(delta) {
+      const nextIndex = rootHistoryIndex + delta;
+      if (nextIndex < 0 || nextIndex >= rootHistory.length) {
+        return;
+      }
+      rootHistoryIndex = nextIndex;
+      renderSpec({root: rootHistory[rootHistoryIndex], recordHistory: false});
+    }
+
+    function skillTargetsByLine(text) {
+      const lines = text.split(/\r?\n/);
+      const targets = [];
+
+      lines.forEach((line, lineIndex) => {
+        const match = line.match(/^([A-Za-z0-9][A-Za-z0-9_-]*):\s*(?:#.*)?$/);
+        if (match) {
+          targets.push({lineIndex, skill: match[1], line});
+        }
+      });
+
+      return targets;
+    }
+
+    function editorMetrics() {
+      const computed = window.getComputedStyle(specInput);
+      if (!editorMeasure) {
+        editorMeasure = document.createElement("span");
+        editorMeasure.style.position = "absolute";
+        editorMeasure.style.visibility = "hidden";
+        editorMeasure.style.whiteSpace = "pre";
+        editorMeasure.style.pointerEvents = "none";
+        document.body.appendChild(editorMeasure);
+      }
+      editorMeasure.style.font = computed.font;
+      editorMeasure.style.letterSpacing = computed.letterSpacing;
+      editorMeasure.textContent = "0000000000";
+
+      const fontSize = Number.parseFloat(computed.fontSize) || 12;
+      return {
+        lineHeight: Number.parseFloat(computed.lineHeight) || fontSize * 1.5,
+        paddingTop: Number.parseFloat(computed.paddingTop) || 0,
+        paddingRight: Number.parseFloat(computed.paddingRight) || 0,
+        paddingLeft: Number.parseFloat(computed.paddingLeft) || 0,
+        charWidth: editorMeasure.getBoundingClientRect().width / 10 || fontSize * 0.6
+      };
+    }
+
+    function visualColumn(line) {
+      let column = 0;
+      for (const character of line) {
+        column += character === "\t" ? 2 : 1;
+      }
+      return column;
+    }
+
+    function updateSkillLineActions() {
+      skillLineActions.innerHTML = "";
+      const metrics = editorMetrics();
+      const iconSize = 20;
+      const warningIconSize = 18;
+      const maxLeft = specInput.clientWidth - metrics.paddingRight - iconSize - 6;
+      const targets = skillTargetsByLine(specInput.value);
+
+      for (const [lineNumber, warnings] of editorLineWarnings.entries()) {
+        const lineIndex = lineNumber - 1;
+        const lineTop = metrics.paddingTop
+          + lineIndex * metrics.lineHeight
+          - specInput.scrollTop;
+        if (lineTop > specInput.clientHeight || lineTop + metrics.lineHeight < 0) {
+          continue;
+        }
+
+        const warningText = uniqueWarnings(warnings).join("\n");
+        const highlight = makeElement("div", "editor-line-warning-highlight");
+        highlight.style.top = `${lineTop}px`;
+        highlight.style.height = `${metrics.lineHeight}px`;
+        highlight.title = warningText;
+        skillLineActions.appendChild(highlight);
+
+        const icon = makeWarningButton("editor-warning-icon", warnings);
+        icon.style.top = `${lineTop + (metrics.lineHeight - warningIconSize) / 2}px`;
+        icon.style.right = "9px";
+        skillLineActions.appendChild(icon);
+      }
+
+      for (const target of targets) {
+        const top = metrics.paddingTop
+          + target.lineIndex * metrics.lineHeight
+          - specInput.scrollTop
+          + (metrics.lineHeight - iconSize) / 2;
+        if (top < -iconSize || top > specInput.clientHeight) {
+          continue;
+        }
+
+        const rawLeft = metrics.paddingLeft
+          + visualColumn(target.line) * metrics.charWidth
+          - specInput.scrollLeft
+          + 8;
+        const left = Math.max(4, Math.min(rawLeft, maxLeft));
+        const button = makeRootEyeButton(target.skill, "line-eye", () => specInput.focus());
+        button.style.top = `${top}px`;
+        button.style.left = `${left}px`;
+        skillLineActions.appendChild(button);
+      }
+    }
+
+    function scheduleSkillLineActions() {
+      if (actionFrame) {
+        window.cancelAnimationFrame(actionFrame);
+      }
+      actionFrame = window.requestAnimationFrame(() => {
+        actionFrame = 0;
+        updateSkillLineActions();
+      });
+    }
+
+    function buildSkillMap(spec) {
+      const map = new Map();
+      for (const skill of skillList(spec)) {
+        if (skill && skill.id) {
+          map.set(skill.id, {...skill, calls: Array.isArray(skill.calls) ? skill.calls : []});
+        }
+      }
+      return map;
+    }
+
+    function initialCallerState() {
+      return {dispatch: 0, subagent: 0, dispatchFrames: [], subagentFrames: [], callerFrames: []};
+    }
+
+    function callerFrame(call) {
+      if (!call.caller || !call.caller.type) {
+        return null;
+      }
+      return {
+        type: call.caller.type,
+        lineNumber: callerDepthWarningLine(call),
+        label: callTargetLabel(call)
+      };
+    }
+
+    function nextCallerState(currentState, call) {
+      const state = currentState || initialCallerState();
+      const frame = callerFrame(call);
+      if (!frame) {
+        return {
+          dispatch: state.dispatch,
+          subagent: state.subagent,
+          dispatchFrames: state.dispatchFrames.slice(),
+          subagentFrames: state.subagentFrames.slice(),
+          callerFrames: state.callerFrames.slice()
+        };
+      }
+      if (frame.type === "dispatch") {
+        return {
+          dispatch: state.dispatch + 1,
+          subagent: 0,
+          dispatchFrames: state.dispatchFrames.concat(frame),
+          subagentFrames: [],
+          callerFrames: state.callerFrames.concat(frame)
+        };
+      }
+      if (frame.type === "subagent") {
+        return {
+          dispatch: state.dispatch,
+          subagent: state.subagent + 1,
+          dispatchFrames: state.dispatchFrames.slice(),
+          subagentFrames: state.subagentFrames.concat(frame),
+          callerFrames: state.callerFrames.concat(frame)
+        };
+      }
+      return state;
+    }
+
+    function callerChainLabel(frames) {
+      return (frames || [])
+        .map((frame) => `${frame.type}(${frame.label})`)
+        .join(" -> ");
+    }
+
+    function callerDepthChainWarnings(state, context, call) {
+      const warnings = [];
+      const callerType = call.caller && call.caller.type;
+      const callerChain = callerChainLabel(state.callerFrames);
+      const callerChainClause = callerChain ? `: Caller chain ${callerChain}` : "";
+      if (callerType === "dispatch" && state.dispatch > maxDispatchDepth) {
+        warnings.push({
+          message: `${context}${callerChainClause}: Dispatch depth ${state.dispatch} exceeds the limit of ${maxDispatchDepth}. Dispatch depth increments through subagent calls.`,
+          frames: state.dispatchFrames
+        });
+      }
+      if (callerType === "subagent" && state.subagent > maxSubagentDepth) {
+        warnings.push({
+          message: `${context}${callerChainClause}: Subagent depth ${state.subagent} exceeds the limit of ${maxSubagentDepth}. Subagent depth resets on dispatch.`,
+          frames: state.subagentFrames
+        });
+      }
+      return warnings;
+    }
+
+    function uniqueWarnings(warnings) {
+      return Array.from(new Set((warnings || []).filter(Boolean)));
+    }
+
+    function nodeDepthWarnings(node) {
+      return Array.isArray(node._depthWarnings) ? node._depthWarnings : [];
+    }
+
+    function nodeLineWarnings(node) {
+      return node._lineWarnings instanceof Map ? node._lineWarnings : new Map();
+    }
+
+    function appendDepthWarningIcon(row, warnings, className = "") {
+      const warningIcon = makeWarningButton(`depth-warning-icon${className ? ` ${className}` : ""}`, warnings);
+      row.appendChild(warningIcon);
+    }
+
+    function positionTreeWarningIcons() {
+      const treeRect = tree.getBoundingClientRect();
+      const gutterLeft = treeRect.left + 10;
+      for (const icon of tree.querySelectorAll(".depth-warning-icon")) {
+        const row = icon.closest(".node-row");
+        if (!row) {
+          continue;
+        }
+        const rowRect = row.getBoundingClientRect();
+        icon.style.left = `${Math.round(gutterLeft - rowRect.left)}px`;
+      }
+    }
+
+    function mergeLineWarningMaps(...maps) {
+      const merged = new Map();
+      for (const map of maps) {
+        if (!(map instanceof Map)) {
+          continue;
+        }
+        for (const [lineNumber, warnings] of map.entries()) {
+          for (const warning of warnings) {
+            addLineWarning(merged, lineNumber, warning);
+          }
+        }
+      }
+      return new Map(
+        Array.from(merged.entries()).map(([lineNumber, warnings]) => [lineNumber, Array.from(warnings)])
+      );
+    }
+
+    function lineWarningsToList(map) {
+      return uniqueWarnings(Array.from(map.values()).flat());
+    }
+
+    function lineWarningsFromChains(chainWarnings) {
+      const warningsByLine = new Map();
+      for (const warning of chainWarnings) {
+        for (const frame of warning.frames) {
+          addLineWarning(warningsByLine, frame.lineNumber, warning.message);
+        }
+      }
+      return new Map(
+        Array.from(warningsByLine.entries()).map(([lineNumber, warnings]) => [lineNumber, Array.from(warnings)])
+      );
+    }
+
+    function callerDepthWarningLine(call) {
+      return call._callerLineNumber || call._lineNumber || 0;
+    }
+
+    function callTargetLabel(call) {
+      if (call.kind === "skill") {
+        return `/${call.target}`;
+      }
+      if (call.kind === "asset") {
+        return `.${call.target}`;
+      }
+      return call.target || call.kind;
+    }
+
+    function addLineWarning(warningsByLine, lineNumber, message) {
+      if (!lineNumber) {
+        return;
+      }
+      if (!warningsByLine.has(lineNumber)) {
+        warningsByLine.set(lineNumber, new Set());
+      }
+      warningsByLine.get(lineNumber).add(message);
+    }
+
+    function collectCallerDepthWarnings(spec, skillMap) {
+      const warningsByLine = new Map();
+
+      function addChainWarnings(chainWarnings) {
+        for (const warning of chainWarnings) {
+          for (const frame of warning.frames) {
+            addLineWarning(warningsByLine, frame.lineNumber, warning.message);
+          }
+        }
+      }
+
+      function scanCalls(calls, callerState, path) {
+        for (const call of Array.isArray(calls) ? calls : []) {
+          if (logicKinds().has(call.kind)) {
+            scanCalls(call.calls, callerState, path);
+            continue;
+          }
+          if (terminalKinds().has(call.kind)) {
+            continue;
+          }
+
+          const nextState = nextCallerState(callerState, call);
+          const context = `/${path.join(" -> /")} -> ${callTargetLabel(call)}`;
+          addChainWarnings(callerDepthChainWarnings(nextState, context, call));
+
+          if (call.kind === "skill" && call.target && skillMap.has(call.target) && !path.includes(call.target)) {
+            const childSkill = skillMap.get(call.target);
+            scanCalls(childSkill.calls, nextState, path.concat(call.target));
+          }
+        }
+      }
+
+      for (const skill of skillList(spec)) {
+        if (skill && skill.id) {
+          scanCalls(skill.calls, initialCallerState(), [skill.id]);
+        }
+      }
+
+      return new Map(
+        Array.from(warningsByLine.entries()).map(([lineNumber, warnings]) => [lineNumber, Array.from(warnings)])
+      );
+    }
+
+    function renderInputs(parent, inputs) {
+      if (!Array.isArray(inputs) || inputs.length === 0) {
+        return;
+      }
+      parent.appendChild(makeElement("span", "punct", "("));
+      inputs.forEach((input, index) => {
+        if (index > 0) {
+          parent.appendChild(makeElement("span", "punct argument-separator", ","));
+        }
+        parent.appendChild(makeElement("span", "agent-token", input));
+      });
+      parent.appendChild(makeElement("span", "punct", ")"));
+    }
+
+    function renderCallerArrow(parent) {
+      const arrow = makeElement("span", "caller-arrow");
+      arrow.setAttribute("aria-label", "calls");
+      arrow.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13"></path><path d="M13 6l6 6-6 6"></path></svg>';
+      parent.appendChild(arrow);
+    }
+
+    function renderCaller(parent, caller) {
+      if (!caller || !caller.type) {
+        return;
+      }
+      if (caller.type === "dispatch") {
+        parent.appendChild(makeElement("span", "caller-token", "dispatch"));
+        parent.appendChild(makeElement("span", "punct", "("));
+        parent.appendChild(makeElement("span", "agent-token", caller.agent || "agent"));
+        parent.appendChild(makeElement("span", "punct", ")"));
+        renderCallerArrow(parent);
+        return;
+      }
+      if (caller.type === "subagent") {
+        parent.appendChild(makeElement("span", "caller-token", "subagent"));
+        renderCallerArrow(parent);
+      }
+    }
+
+    function callLine(call, skillMap) {
+      const line = makeElement("span", "line");
+      renderCaller(line, call.caller);
+
+      if (call.kind === "asset") {
+        line.appendChild(makeElement("span", "asset-token", `.${call.target}`));
+      } else if (call.kind === "task") {
+        line.appendChild(makeElement("span", "task-token", call.target || "unnamed task"));
+      } else {
+        const target = call.target || call.id || "unknown-skill";
+        line.appendChild(makeElement("span", "skill-token", `/${target}`));
+        const inputs = Array.isArray(call.inputs) ? call.inputs : [];
+        renderInputs(line, inputs);
+        if (!skillMap.has(target)) {
+          line.appendChild(makeElement("span", "warning", "missing definition"));
+        }
+      }
+
+      if (call.note) {
+        line.appendChild(makeElement("span", "note", call.note));
+      }
+
+      return line;
+    }
+
+    function logicLine(keyword, label, hasBody = true) {
+      const line = makeElement("span", "line");
+      line.appendChild(makeElement("span", "logic-token", keyword));
+      line.appendChild(makeElement("span", "logic-space", " "));
+      const text = String(label || "");
+      if (keyword === "for") {
+        const match = text.match(/^([A-Za-z_][A-Za-z0-9_]*)\s+in\s+(.+)$/);
+        if (match) {
+          const expression = makeElement("span", "condition-token");
+          expression.appendChild(makeElement("span", "agent-token", match[1]));
+          expression.appendChild(makeElement("span", "punct", " in "));
+          expression.appendChild(makeElement("span", "agent-token", match[2]));
+          if (hasBody) {
+            expression.appendChild(makeElement("span", "punct", ":"));
+          }
+          line.appendChild(expression);
+          return line;
+        }
+      }
+      line.appendChild(makeElement("span", "condition-token", hasBody ? `${text}:` : text));
+      return line;
+    }
+
+    function renderNode(line, children, depth, collapsible, rootTarget, rowWarnings = [], aggregateWarnings = rowWarnings, lineWarnings = new Map()) {
+      const node = makeElement(collapsible ? "details" : "div", `node ${collapsible ? "collapsible-node" : "static-node"}`);
+      const aggregate = uniqueWarnings(aggregateWarnings);
+      node._depthWarnings = aggregate;
+      node._lineWarnings = lineWarnings;
+      if (collapsible) {
+        node.open = depth < 3;
+      }
+      const row = makeElement(collapsible ? "summary" : "div", "node-row");
+      const warnings = uniqueWarnings(rowWarnings);
+      if (warnings.length > 0) {
+        row.classList.add("depth-warning");
+        appendDepthWarningIcon(row, warnings);
+      } else if (collapsible && aggregate.length > 0) {
+        row.classList.add("collapsed-depth-warning");
+        appendDepthWarningIcon(row, aggregate, "collapsed-depth-warning-icon");
+      }
+      row.appendChild(makeElement("span", "twisty"));
+      row.appendChild(line);
+      if (rootTarget) {
+        row.appendChild(makeRootEyeButton(rootTarget, "tree-eye"));
+      }
+      node.appendChild(row);
+      if (children.length > 0) {
+        const childContainer = makeElement("div", "children");
+        for (const child of children) {
+          childContainer.appendChild(child);
+        }
+        node.appendChild(childContainer);
+      }
+      return node;
+    }
+
+    function renderCall(call, skillMap, path, depth, maxDepth, callerState = initialCallerState()) {
+      if (logicKinds().has(call.kind)) {
+        const children = [];
+        const nestedWarnings = [];
+        const nestedLineWarnings = [];
+        for (const childCall of Array.isArray(call.calls) ? call.calls : []) {
+          const child = renderCall(childCall, skillMap, path, depth + 1, maxDepth, callerState);
+          nestedWarnings.push(...nodeDepthWarnings(child));
+          nestedLineWarnings.push(nodeLineWarnings(child));
+          children.push(child);
+        }
+        const combinedLineWarnings = mergeLineWarningMaps(...nestedLineWarnings);
+        return renderNode(
+          logicLine(call.kind, call.target, true),
+          children,
+          depth,
+          false,
+          "",
+          [],
+          nestedWarnings,
+          combinedLineWarnings
+        );
+      }
+
+      if (terminalKinds().has(call.kind)) {
+        return renderNode(logicLine(call.kind, call.target, false), [], depth, false);
+      }
+
+      const nextState = nextCallerState(callerState, call);
+      const context = `/${path.join(" -> /")} -> ${callTargetLabel(call)}`;
+      const selfLineWarnings = lineWarningsFromChains(callerDepthChainWarnings(nextState, context, call));
+      const children = [];
+      const nestedWarnings = [];
+      const nestedLineWarnings = [];
+      let collapsible = false;
+      if (call.kind === "skill" && call.target && skillMap.has(call.target)) {
+        const target = call.target;
+        const childSkill = skillMap.get(target);
+        if (path.includes(target)) {
+          children.push(renderNode(makeElement("span", "note", `recursive reference to /${target} omitted`), [], depth + 1, false));
+        } else if (depth >= maxDepth) {
+          children.push(renderNode(makeElement("span", "note", `max depth reached for /${target}`), [], depth + 1, false));
+        } else if (childSkill.calls.length > 0) {
+          collapsible = true;
+          for (const childCall of childSkill.calls) {
+            const child = renderCall(childCall, skillMap, path.concat(target), depth + 1, maxDepth, nextState);
+            nestedWarnings.push(...nodeDepthWarnings(child));
+            nestedLineWarnings.push(nodeLineWarnings(child));
+            children.push(child);
+          }
+        }
+      }
+
+      const rootTarget = call.kind === "skill" && call.target && skillMap.has(call.target)
+        ? call.target
+        : "";
+      const combinedLineWarnings = mergeLineWarningMaps(selfLineWarnings, ...nestedLineWarnings);
+      const rowWarnings = combinedLineWarnings.get(callerDepthWarningLine(call)) || [];
+      const aggregateWarnings = uniqueWarnings(lineWarningsToList(selfLineWarnings).concat(nestedWarnings));
+      return renderNode(
+        callLine(call, skillMap),
+        children,
+        depth,
+        collapsible && children.length > 0,
+        rootTarget,
+        rowWarnings,
+        aggregateWarnings,
+        combinedLineWarnings
+      );
+    }
+
+    function renderSpec(options = {}) {
+      let spec;
+      try {
+        spec = parseYamlSpec(specInput.value);
+      } catch (error) {
+        editorLineWarnings = new Map();
+        tree.innerHTML = "";
+        tree.appendChild(makeElement("pre", "error", error.message));
+        status.textContent = "Invalid YAML";
+        scheduleSkillLineActions();
+        return;
+      }
+
+      const skillMap = buildSkillMap(spec);
+      editorLineWarnings = collectCallerDepthWarnings(spec, skillMap);
+      const previousRoot = options.root || rootSelect.value;
+      const skillIds = Array.from(skillMap.keys());
+      rootSelect.replaceChildren(...skillIds.map((id) => {
+        const option = document.createElement("option");
+        option.value = id;
+        option.textContent = `/${id}`;
+        return option;
+      }));
+
+      const requestedRoot = previousRoot && skillMap.has(previousRoot)
+        ? previousRoot
+        : skillMap.has("ship-pr")
+          ? "ship-pr"
+          : skillIds[skillIds.length - 1];
+      if (requestedRoot) {
+        rootSelect.value = requestedRoot;
+      }
+
+      tree.innerHTML = "";
+      if (!requestedRoot) {
+        tree.appendChild(makeElement("p", "empty", "No skills found."));
+        status.textContent = "No skills";
+        updateHistoryControls();
+        scheduleSkillLineActions();
+        return;
+      }
+
+      if (options.recordHistory === false) {
+        updateHistoryControls();
+      } else {
+        recordRootHistory(requestedRoot);
+      }
+
+      const rootSkill = skillMap.get(requestedRoot);
+      const maxDepth = Number(depthSelect.value) || 8;
+      const rootCall = {
+        kind: "skill",
+        target: requestedRoot,
+        inputs: Array.isArray(rootSkill.inputs) ? rootSkill.inputs : []
+      };
+      tree.appendChild(renderCall(rootCall, skillMap, [], 0, maxDepth));
+      positionTreeWarningIcons();
+      const warningCount = Array.from(editorLineWarnings.values()).reduce((count, warnings) => count + warnings.length, 0);
+      status.textContent = warningCount > 0
+        ? `${skillIds.length} skills loaded · ${warningCount} caller-depth warnings`
+        : `${skillIds.length} skills loaded`;
+      scheduleSkillLineActions();
+    }
+
+    function setAllDetails(open) {
+      for (const detail of tree.querySelectorAll("details")) {
+        detail.open = open;
+      }
+      positionTreeWarningIcons();
+    }
+
+    let renderTimer = 0;
+    function scheduleRender() {
+      window.clearTimeout(renderTimer);
+      renderTimer = window.setTimeout(renderSpec, 250);
+    }
+
+    renderYamlTips();
+    specInput.value = defaultYaml;
+    tipsOpenButton.addEventListener("click", () => {
+      tipsCopyStatus.textContent = "";
+      if (typeof tipsDialog.showModal === "function") {
+        tipsDialog.showModal();
+      } else {
+        tipsDialog.setAttribute("open", "");
+      }
+    });
+    tipsDialog.addEventListener("click", (event) => {
+      if (event.target === tipsDialog) {
+        tipsDialog.close();
+      }
+    });
+    tipsDialog.addEventListener("close", () => {
+      tipsCopyButton.classList.remove("copied");
+    });
+    warningDialog.addEventListener("click", (event) => {
+      if (event.target === warningDialog) {
+        warningDialog.close();
+      }
+    });
+    tipsCopyButton.addEventListener("click", copyTipsMarkdown);
+    renderButton.addEventListener("click", () => renderSpec());
+    resetButton.addEventListener("click", () => {
+      specInput.value = defaultYaml;
+      rootSelect.value = "";
+      rootHistory = [];
+      rootHistoryIndex = -1;
+      renderSpec();
+    });
+    expandAllButton.addEventListener("click", () => setAllDetails(true));
+    collapseAllButton.addEventListener("click", () => setAllDetails(false));
+    historyBackButton.addEventListener("click", () => navigateRootHistory(-1));
+    historyForwardButton.addEventListener("click", () => navigateRootHistory(1));
+    rootSelect.addEventListener("change", () => renderSpec({root: rootSelect.value}));
+    depthSelect.addEventListener("change", () => renderSpec({recordHistory: false}));
+    specInput.addEventListener("input", () => {
+      scheduleRender();
+      scheduleSkillLineActions();
+    });
+    specInput.addEventListener("scroll", scheduleSkillLineActions);
+    window.addEventListener("resize", () => {
+      scheduleSkillLineActions();
+      positionTreeWarningIcons();
+    });
+    renderSpec();
+  </script>
+</body>
+</html>

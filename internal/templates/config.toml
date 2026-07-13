@@ -10,7 +10,7 @@ mode = "all"
 
 [dispatch]
 # Maximum dispatch depth, including the initial `al dispatch` call.
-# 1 means a dispatched target cannot call `al dispatch` again.
+# 3 allows two nested `al dispatch` calls.
 max_depth = 3
 
 [notifications]
