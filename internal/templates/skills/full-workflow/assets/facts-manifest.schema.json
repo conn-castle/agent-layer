@@ -9,16 +9,31 @@
     "repository": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["root", "default_base_ref", "base_commit", "worktree_path", "topic_branch", "head_commit", "tree"],
+      "required": ["root", "default_base_ref", "base_commit", "initial_state", "head_commit", "tree", "staged_diff_sha256", "unstaged_diff_sha256", "untracked_state_sha256"],
       "properties": {
         "root": { "type": "string" },
         "remote": { "type": "string" },
         "default_base_ref": { "type": "string" },
         "base_commit": { "type": "string" },
-        "worktree_path": { "type": "string" },
         "topic_branch": { "type": "string" },
         "head_commit": { "type": "string" },
-        "tree": { "type": "string" }
+        "tree": { "type": "string" },
+        "staged_diff_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "unstaged_diff_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "untracked_state_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "initial_state": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["branch", "head_commit", "tree", "staged_diff_sha256", "unstaged_diff_sha256", "untracked_state_sha256"],
+          "properties": {
+            "branch": { "type": "string" },
+            "head_commit": { "type": "string" },
+            "tree": { "type": "string" },
+            "staged_diff_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "unstaged_diff_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "untracked_state_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        }
       }
     },
     "artifacts": {

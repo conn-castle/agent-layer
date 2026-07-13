@@ -13,9 +13,15 @@ diagnostic blocker, then repair the proven root cause.
 ## Inputs and boundaries
 
 Require a testable symptom. Fix mode also requires `implementer` and `fixer`
-dispatch roles; require `plan_reviewers` only for the planned repair path.
+dispatch roles; require `plan_reviewers` and `code_reviewer` only for the
+planned repair path.
 Accept reproduction evidence, suspect paths, regression range, and
 diagnosis-only mode.
+
+Before mutation, record the current head plus staged, unstaged, and untracked
+state. Use it to isolate the repair diff from pre-existing work with
+path-specific boundaries; stop only when an attempted isolation still leaves
+repair and pre-existing changes in the same files, and name those paths.
 
 Write `.agent-layer/tmp/debug-and-fix-issue.<run-id>.report.md`; direct repair
 also writes the same prefix with `.direct-repair.report.md`.
@@ -65,9 +71,14 @@ only for a genuine material choice.
 For `direct`, dispatch `implementer` with the report, request, root cause,
 failing test, and repair-report path. Require the root-cause fix, green test,
 required updates, and focused checks. Dispatch `fixer` once with
-`/clean-and-fix-code`, then run `/verify-work` once in a fresh subagent against
-the original request. If incomplete, validate and dispatch `implementer` once
-for material in-scope findings; do not rerun cleanup or verification.
+`/clean-and-fix-code`, the exact repair diff boundary, and the pre-mutation
+inventory. Continue only on `completed` or `no-findings`; stop on `blocked`.
+Then run `/verify-work` once in a fresh subagent against the original request.
+If incomplete, validate and dispatch `implementer` once for material in-scope
+findings. When that dispatch mutates the tree, run one final targeted
+`/verify-work` against the original request and accepted findings; do not rerun
+cleanup or review. Return `fixed` only for a final `complete` verdict or
+`complete-with-follow-up` whose follow-up is outside the contract.
 
 For `planned`, run `/plan-work` once from the debug report and then
 `/fully-implement-plan` once with its artifacts and roles. When root cause is

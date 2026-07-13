@@ -166,9 +166,17 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 	if err != nil || len(claudeEvents) != 1 || claudeEvents[0].Kind != eventFailure {
 		t.Fatalf("Claude events = %#v, %v", claudeEvents, err)
 	}
-	codexEvents, err := reduceStructuredEvent(AgentCodex, "", []byte(`{"item":{"type":"agent_message","text":"final answer"}}`))
+	codexEvents, err := reduceStructuredEvent(AgentCodex, "", []byte(`{"type":"item.completed","item":{"type":"agent_message","text":"final answer"}}`))
 	if err != nil || len(codexEvents) != 1 || codexEvents[0].Answer != "final answer" {
 		t.Fatalf("Codex events = %#v, %v", codexEvents, err)
+	}
+	progressEvents, err := reduceStructuredEvent(AgentCodex, "", []byte(`{"type":"item.completed","item":{"type":"command_execution","command":"pwd"}}`))
+	if err != nil || len(progressEvents) != 1 || progressEvents[0].Kind != eventProgress || progressEvents[0].Activity != "item.completed" {
+		t.Fatalf("Codex non-agent item.completed events = %#v, %v", progressEvents, err)
+	}
+	flatEvents, err := reduceStructuredEvent(AgentCodex, "", []byte(`{"type":"agent_message","message":"compatible answer"}`))
+	if err != nil || len(flatEvents) != 1 || flatEvents[0].Answer != "compatible answer" {
+		t.Fatalf("Codex flat compatibility events = %#v, %v", flatEvents, err)
 	}
 	var raw bytes.Buffer
 	if err := readStructuredEvents(strings.NewReader("not-json\n"), &raw, AgentCodex, "", func(providerEvent) error { return nil }); err == nil {

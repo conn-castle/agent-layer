@@ -111,9 +111,9 @@ Use this notation when describing how workflow skills call other skills,
 dispatch named agents, or launch built-in subagents.
 
 Parentheses show only agent-role inputs passed into the call, such as
-`implementer`, `fixer`, or `plan_reviewers`. Do not include ordinary file
-paths, artifacts, issue numbers, or prose task inputs unless they are essential
-to the explanation.
+`implementer`, `code_reviewer`, `fixer`, or `plan_reviewers`. Do not include
+ordinary file paths, artifacts, issue numbers, or prose task inputs unless they
+are essential to the explanation.
 
 ```text
 /skill-name
@@ -130,7 +130,7 @@ Use parentheses when the current agent calls a skill directly and passes
 agent-role inputs.
 
 ```text
-dispatch(implementer) -> /fully-implement-plan(plan_reviewers, implementer, fixer)
+dispatch(implementer) -> /fully-implement-plan(implementer, code_reviewer, fixer)
 ```
 
 Use `dispatch(agent_name) ->` when a named dispatch role launches the skill.

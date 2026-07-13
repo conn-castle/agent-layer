@@ -78,6 +78,8 @@ const (
 	eventProgress = "progress"
 	eventComplete = "complete"
 	eventFailure  = "failure"
+
+	codexAgentMessageType = "agent_message"
 )
 
 var supportedProviderVersions = map[string]string{
@@ -301,7 +303,6 @@ func reduceClaudeEvent(expected string, value map[string]any) ([]providerEvent, 
 }
 
 func reduceCodexEvent(value map[string]any) ([]providerEvent, error) {
-	events := make([]providerEvent, 0, 2)
 	eventType, _ := value["type"].(string)
 	switch eventType {
 	case "thread.started":
@@ -321,22 +322,23 @@ func reduceCodexEvent(value map[string]any) ([]providerEvent, error) {
 			reason = "Codex reported a terminal failure"
 		}
 		return []providerEvent{{Kind: eventFailure, Reason: reason}}, nil
-	case "agent_message":
+	case codexAgentMessageType:
 		if answer, ok := firstStringV013(value, "message", "text"); ok {
 			return []providerEvent{{Kind: eventAnswer, Answer: answer}}, nil
+		}
+	case "item.completed":
+		if item, ok := mapValueV013(value, "item"); ok {
+			if itemType, _ := item["type"].(string); itemType == codexAgentMessageType {
+				if answer, found := firstStringV013(item, "message", "text"); found {
+					return []providerEvent{{Kind: eventAnswer, Answer: answer}}, nil
+				}
+			}
 		}
 	}
 	if eventType != "" {
 		return []providerEvent{{Kind: eventProgress, Activity: eventType}}, nil
 	}
-	if item, ok := mapValueV013(value, "item"); ok && item != nil {
-		if itemType, _ := item["type"].(string); itemType == "agent_message" {
-			if answer, ok := firstStringV013(item, "message", "text"); ok {
-				events = append(events, providerEvent{Kind: eventAnswer, Answer: answer})
-			}
-		}
-	}
-	return events, nil
+	return nil, nil
 }
 
 func readStructuredEvents(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, consume func(providerEvent) error) error {

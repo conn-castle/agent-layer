@@ -13,20 +13,23 @@ or an implementation workflow. Do not require plan/task/context artifacts when
 the authoritative contract is available from the explicit user request or
 another user-designated source.
 
-This is a root-owned procedure, not a relay skill. Run review, verification,
-repair, and `/ship-pr` locally. Never dispatch another coordinator. Invoking
-this skill authorizes the staging, commits, push, and pull-request operations
+This is a root-owned procedure, not a relay skill. Run it locally and dispatch
+only its bounded review leaf; never dispatch another coordinator. Invoking this
+skill authorizes the staging, commits, push, and pull-request operations
 normally required by `/ship-pr`; merge still requires explicit authorization
 for the exact ready pull request.
 
 ## Required inputs and artifacts
 
-Require both:
+Require all of:
 
 - a concrete delivery target: the current working tree, a named file/directory
   scope, a commit range, or unpublished commits on the current branch
 - an authoritative contract: the explicit user request/scope, exact artifacts
   named by the user, or another user-designated source
+- `code_reviewer`: one semantic code-review target whose provider differs from
+  the root session and, when known, the delivery's author; do not infer or
+  accept a target that lacks this required diversity
 
 Do not discover planning artifacts from `.agent-layer/tmp/`. Existing reports,
 commit messages, issue bodies, and pull-request descriptions are supporting
@@ -43,12 +46,14 @@ shipping handoff, and final outcome.
 
 ### 1. Establish the delivery boundary
 
-Resolve the repository root, default base, branch/upstream, worktrees, staged,
-unstaged, untracked, and unpublished-commit state. Map the intended delivery to
-the authoritative contract and identify unrelated user work without modifying
-it. Do not silently include unrelated changes, rewrite user commits, or create
-an empty delivery. Stop when the delivery cannot be isolated safely or when
-the contract and diff materially disagree.
+Resolve the current repository-root checkout, default base, branch/upstream,
+staged, unstaged, untracked, and unpublished-commit state. Use this checkout
+unless the user explicitly requests a linked worktree. Map the intended
+delivery to the authoritative contract and identify unrelated user work without
+modifying it. Do not silently include unrelated changes, rewrite user commits,
+or create an empty delivery. Stop only when attempted path-specific isolation
+still cannot separate the delivery from unrelated work, or the contract and
+diff materially disagree; name the exact paths or disagreement.
 
 Read repository guidance and select deterministic checks proportionate to the
 changed scope, consequential risks, and evidence needed before semantic review.
@@ -59,14 +64,17 @@ failures before mutation.
 
 ### 2. Review and verify concurrently
 
-After the deterministic gate can support meaningful review, start
-`/review-uncommitted-code` and `/verify-work` concurrently in fresh built-in
-subagents against the same exact tree fingerprint:
+After the deterministic gate can support meaningful review, run these
+independent leaves against the same exact tree fingerprint, concurrently when
+the host supports a background leaf:
 
-- give `/review-uncommitted-code` the complete delivery target and authoritative
-  contract
-- give `/verify-work` the explicit contract/scope and any supplemental shipping
-  obligations; do not ask it to discover temporary artifacts
+- dispatch `code_reviewer` once with `/review-uncommitted-code`, the complete
+  delivery target, and authoritative contract
+- start `/verify-work` in a fresh built-in subagent with the explicit
+  contract/scope and any supplemental shipping obligations
+
+Neither leaf may see the other's findings. Do not ask `/verify-work` to discover
+temporary artifacts.
 
 Let both read-only stages finish. Validate every candidate against the current
 tree, deduplicate overlap, and maintain one disposition ledger with `open`,
@@ -83,8 +91,9 @@ scope, or data semantics that require a user decision.
 
 After mutation, determine which evidence was invalidated by the changed files
 and contracts. Rerun affected focused checks and one targeted contract
-verification. Repeat a full independent semantic review only when the repair
-changed production design, architecture, or contract scope. Continue only when
+verification. Repeat a full independent semantic review, through a fresh
+`code_reviewer` dispatch, only when the repair changed production design,
+architecture, or contract scope. Continue only when
 every in-scope finding is resolved or invalid with evidence and verification
 reports `complete` or `complete-with-follow-up` whose follow-up is outside the
 delivery contract.
@@ -94,13 +103,10 @@ delivery contract.
 Continue with `/ship-pr` as the local root-owned shipping procedure. Pass the
 delivery boundary, authoritative contract, current tree fingerprint, review and
 verification reports, finding ledger, check evidence, and remaining shipping
-obligations. Do not re-run current evidence for confidence; let `/ship-pr`
-acquire the full-lane and remote evidence required for the pushed head.
-
-Retain `/ship-pr`'s comment, continuous-integration, monitoring, repair-batch,
-and atomic merge-continuation contracts. If pull-request feedback or checks
-mutate the delivery, update this skill's ledger with the resulting evidence and
-outcome. Do not merge without `/ship-pr`'s explicit authorization gate.
+obligations. Consume only its merge-authorization, merged, or blocker result.
+If shipping mutates the delivery, update this skill's ledger with the resulting
+evidence and outcome. Return its authorization request to the user and resume
+this phase only with the exact answer; stop on a blocker.
 
 ## Completion contract
 

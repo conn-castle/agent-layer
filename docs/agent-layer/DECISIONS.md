@@ -186,3 +186,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Keep `dispatch.max_depth = 3` for intentional custom workflows, while built-in workflows use only root-to-leaf external dispatch and keep orchestration in the root/native state machine.
     Reason: Custom workflows legitimately need bounded nesting, but nested shipper/fixer/reviewer relay agents caused polling, duplicated evidence, and ambiguous lifecycle ownership.
     Tradeoffs: Custom depth-2 agents may still launch a depth-3 dispatch; built-in workflows lose relay conversations and must keep durable checkpoints in root-owned factual state.
+
+- Decision 2026-07-13 code-reviewer-dispatch-role: Semantic code review is a required `code_reviewer` dispatch leaf
+    Decision: `full-workflow`, `fully-implement-plan`, `review-and-ship`, and the planned path of `debug-and-fix-issue` require a `code_reviewer` dispatch target and run `/review-uncommitted-code` through it; `/verify-work` stays a built-in fresh subagent. Lighter fix-inline shapes (`fix-issues`, `improve-codebase`, `clean-and-fix-code`) keep the built-in reviewer.
+    Reason: Cross-provider reviewer diversity against the implementer and root session is a deliberate quality property, not an accident of target configuration; code review is a bounded non-interactive leaf, the shape dispatch is reserved for.
+    Tradeoffs: Callers must supply one more dispatch target and pay dispatch latency per review cycle; verify-work intentionally stays same-model built-in, so contract verification does not gain provider diversity.

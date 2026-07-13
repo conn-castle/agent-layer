@@ -18,8 +18,9 @@ lint, typecheck, coverage, build, documentation, or pre-commit checks.
 
 Prefer one canonical command when it covers the lane. Otherwise use the
 documented command sequence. If the repository does not define the lane clearly,
-inspect its tooling only enough to resolve the ambiguity; stop if no
-authoritative lane can be determined.
+inspect its tooling only enough to resolve the ambiguity; stop only when
+inspection cannot determine an authoritative lane, and report the candidates
+considered.
 
 ## Output artifacts
 
@@ -71,8 +72,9 @@ another repair pass; a desire for more confidence is not.
 If an evidence-equivalent failure recurs, do not repeat the same repair
 strategy. Revisit the causal model and add focused instrumentation or another
 discriminating diagnostic when useful. Continue only when new evidence supports
-a safe repair; otherwise stop with `repeated-failure`. Stop with `blocked` when
-the failure is external or cannot be repaired safely within scope.
+a safe repair; otherwise stop with `repeated-failure`. Stop with `blocked` only
+when the failure is external or its repair requires an out-of-scope or
+user-owned change.
 
 ### 4. Report
 

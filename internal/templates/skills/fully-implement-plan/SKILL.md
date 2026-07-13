@@ -8,13 +8,15 @@ description: >-
 # fully-implement-plan
 
 Run implementation, code review, contract verification, and required repairs
-as a root-owned local procedure. External dispatch is limited to the bounded
-implementer and fixer leaves. Do not open a PR or run an unrelated full lane.
+as a root-owned local procedure. Dispatch only the required bounded leaves. Do
+not open a PR or run an unrelated full lane.
 
 ## Inputs and artifact
 
-Require exact plan, task, and context artifact paths plus `implementer` and
-`fixer` dispatch roles. Do not infer them. Write
+Require exact plan, task, and context artifact paths plus `implementer`,
+`code_reviewer`, and `fixer` dispatch roles. Do not infer them. Require the
+`code_reviewer` provider to differ from both `implementer` and the root session;
+reject a target that does not satisfy this diversity. Write
 `.agent-layer/tmp/fully-implement-plan.<run-id>.report.md`.
 
 Dispatch external roles through `/agent-dispatch`. Treat the supplied artifacts
@@ -43,11 +45,14 @@ report, deviations, checks, remaining work, and readiness.
 
 ### 2. Establish completion evidence
 
-After the focused deterministic gate passes, start
-`/review-uncommitted-code` and `/verify-work` concurrently in fresh built-in
-subagents against the same exact head. Let independent safe checks complete so
-all failures can be accumulated before repair. Record each report, reviewed
-head, findings, evidence, shipping obligations, and verdict. Treat
+After the focused deterministic gate passes, start `/verify-work` in a fresh
+built-in subagent and dispatch `code_reviewer` once with
+`/review-uncommitted-code`, the delivery diff boundary, and the contract
+artifacts, both against the same exact head. Run them concurrently when the
+host supports a background leaf; neither may see the other's findings. Let
+independent safe checks complete so all failures can be accumulated before
+repair. Record each report, reviewed head, findings, evidence, shipping
+obligations, and verdict. Treat
 `complete-with-follow-up` as complete only when all follow-up is outside the
 contract.
 
@@ -67,11 +72,10 @@ the durable ledger and completion verdict.
 
 After mutation, identify evidence invalidated by changed files and contracts.
 Rerun affected focused checks and one targeted contract verification. Repeat a
-full independent semantic review only when the repair changed production
-design, architecture, or contract scope. Dispatch another repair set only for
+full independent semantic review, through a fresh `code_reviewer` dispatch,
+only when the repair changed production design, architecture, or contract
+scope. Dispatch another repair set only for
 newly evidenced open findings; do not repeat unchanged work for confidence.
-Record phase timings and flag a quality stage over twice initial implementation
-for investigation without weakening gates.
 
 ## Completion contract
 
