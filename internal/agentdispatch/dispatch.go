@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -42,7 +43,11 @@ func Run(opts RunOptions) error {
 	if err := prepareProjection(project, opts.Root, stderr, opts.Quiet); err != nil {
 		return err
 	}
-	if err := validateSkillProjection(project.Root, target, opts.Skill); err != nil {
+	projectionRoot, err := prepareTargetProjection(project, opts.Root, opts.WorkDir, target)
+	if err != nil {
+		return err
+	}
+	if err := validateSkillProjection(projectionRoot, target, opts.Skill); err != nil {
 		return err
 	}
 	run, err := newDispatchRun(opts.Root, target.Name, version, dispatchModeFresh)
@@ -62,6 +67,7 @@ func Run(opts RunOptions) error {
 	}
 	return launchExecution(dispatchExecution{
 		Root:          opts.Root,
+		WorkDir:       opts.WorkDir,
 		Project:       project,
 		Target:        target,
 		Version:       version,
@@ -150,15 +156,20 @@ func Resume(opts ResumeOptions) error {
 		_ = writeRunRecord(run.Dir, &run.Record)
 		return err
 	}
-	preflightRequest := dispatchExecution{Root: opts.Root, Project: project, Target: target, Version: version, Mode: dispatchModeResume, Run: run, Session: session}
+	preflightRequest := dispatchExecution{Root: opts.Root, WorkDir: opts.WorkDir, Project: project, Target: target, Version: version, Mode: dispatchModeResume, Run: run, Session: session}
 	if err := prepareProjection(project, opts.Root, stderr, opts.Quiet); err != nil {
 		return finishDispatchFailure(preflightRequest, &preStartFailure{err: err})
 	}
-	if err := validateSkillProjection(project.Root, target, opts.Skill); err != nil {
+	projectionRoot, err := prepareTargetProjection(project, opts.Root, opts.WorkDir, target)
+	if err != nil {
+		return finishDispatchFailure(preflightRequest, &preStartFailure{err: err})
+	}
+	if err := validateSkillProjection(projectionRoot, target, opts.Skill); err != nil {
 		return finishDispatchFailure(preflightRequest, &preStartFailure{err: err})
 	}
 	return launchExecution(dispatchExecution{
 		Root:          opts.Root,
+		WorkDir:       opts.WorkDir,
 		Project:       project,
 		Target:        target,
 		Version:       version,
@@ -178,6 +189,7 @@ func Resume(opts ResumeOptions) error {
 
 type dispatchExecution struct {
 	Root          string
+	WorkDir       string
 	Project       *config.ProjectConfig
 	Target        targetMeta
 	Version       string
@@ -265,6 +277,7 @@ func executeDispatch(request dispatchExecution) error {
 		if err != nil {
 			return finishDispatchFailure(request, &preStartFailure{err: err})
 		}
+		command.WorkDir = request.WorkDir
 		request.Run.Record.ProviderLogPath = command.LogPath
 		request.Run.Record.Model = command.Model
 		request.Run.Record.ReasoningEffort = command.Effort
@@ -481,6 +494,31 @@ func prepareProjection(project *config.ProjectConfig, root string, stderr io.Wri
 		}
 	}
 	return nil
+}
+
+// prepareTargetProjection makes the configured skills visible from the
+// provider launch directory. Dispatch state and the canonical generated
+// projection remain rooted at root; a distinct working directory receives a
+// derived target-specific projection so native skill references resolve there.
+func prepareTargetProjection(project *config.ProjectConfig, root string, workingDir string, target targetMeta) (string, error) {
+	projectionRoot := workingDir
+	if projectionRoot == "" {
+		projectionRoot = root
+	}
+	if filepath.Clean(projectionRoot) == filepath.Clean(root) {
+		return projectionRoot, nil
+	}
+
+	var err error
+	if target.SharedSkillProject {
+		err = sync.WriteAgentSkills(sync.RealSystem{}, projectionRoot, project.Skills)
+	} else {
+		err = sync.WriteClaudeSkills(sync.RealSystem{}, projectionRoot, project.Skills)
+	}
+	if err != nil {
+		return "", syncRunExitError(err)
+	}
+	return projectionRoot, nil
 }
 
 func syncRunExitError(err error) *ExitError {

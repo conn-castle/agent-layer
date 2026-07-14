@@ -48,10 +48,11 @@ transition, active or preserved branches and PRs, pending reconciliation,
 unresolved human gates, and the next action. After compaction, reread this skill,
 reconstruct authoritative state, and continue.
 
-Give a fresh dispatch only its role, selected mode, current source access, the
-selected work, and the smallest context needed to avoid duplication. Prior work
-never extends the selected scope. Link authoritative artifacts instead of
-copying old plans, diffs, or narratives into a fresh context.
+Write every fresh-dispatch prompt as a self-contained task. State what the
+subagent must do, the authoritative files
+or links it should inspect, and any required output format. Do not include
+internal role names or a narrative of the parent agent's workflow. Include prior
+results only when they are necessary task inputs.
 
 ## Loop
 
@@ -59,17 +60,17 @@ copying old plans, diffs, or narratives into a fresh context.
    authoritative sources and the loop notes. Dispatch `rote_worker` once to
    recover delivery state and initialize source bookkeeping unless the selected
    mode assigns substantive initialization to `planner`.
-2. Dispatch `planner` fresh to select the next coherent work. Do not broaden it
-   during execution.
+2. Dispatch `planner` fresh to select the next coherent work.
 3. Dispatch `planner` fresh with the selected work and the complete
    `references/blocker-classification.md` contract to classify any decision.
    A single safe answer remains agent-owned. Record a genuinely human-owned
    decision under the blocker rules and immediately select independent work.
-4. Dispatch `rote_worker` to prepare or reuse one clean workflow-owned delivery
+4. Dispatch `rote_worker` to prepare or reuse one workflow-owned delivery
    branch, then execute the mode. If work is blocked, preserve useful changes on
-   that branch or PR, note what must change before retrying it, restore a clean
-   primary or new delivery branch, and select independent work. Retry failures
-   only while new evidence supports safe progress.
+   that branch or PR and note what must change before retrying it. Continue
+   compatible independent work on the same delivery branch. Use a separate
+   branch or worktree when the user explicitly requests isolation or when
+   evidence shows unsafe overlap or incompatible delivery topology.
 5. Accumulate mutually compatible, completed work on that branch before
    opening a PR. Never open one until the delivery contains at least three
    resolved source items, 500 added-plus-deleted changed lines, or 10 changed
@@ -96,8 +97,12 @@ copying old plans, diffs, or narratives into a fresh context.
 
 Do not impose iteration, time, source-size, or batch-count limits. Continue
 until a complete current pass finds no substantive autonomous work, the user
-interrupts, or authoritative state cannot be recovered safely.
+interrupts, or the blocker contract requires human input and no independent
+work remains.
 A blocker ends only that work; select independent work instead. Ask accumulated
 human questions only after a full pass finds no independent work. Report why
 the loop ended, the smallest remaining questions, and any preserved branch or
-PR. Never infer exhaustion from a partial pass or abandon preserved work.
+PR. When evidence shows every safe retry and reroute path is exhausted, record
+the item as still blocked, preserve useful work, and select independently; retry
+it only after its condition changes. Never infer exhaustion from a partial pass
+or abandon preserved work.

@@ -250,14 +250,18 @@ func removeSkillResourceNode(sys System, path string, info os.FileInfo) error {
 	return nil
 }
 
-// writeAgentSkills generates shared Agent Skills in .agents/skills/<name>/SKILL.md.
-func writeAgentSkills(sys System, root string, commands []config.Skill) error {
+// WriteAgentSkills generates shared Agent Skills in .agents/skills/<name>/SKILL.md.
+// sys performs filesystem operations, root is the projection root, and commands
+// supplies the canonical loaded skills. It returns the first reconciliation error.
+func WriteAgentSkills(sys System, root string, commands []config.Skill) error {
 	skillsDir := filepath.Join(root, ".agents", "skills")
 	return writeSkillFiles(sys, skillsDir, commands, buildAgentSkill)
 }
 
-// writeClaudeSkills generates Claude Code skill files in .claude/skills/<name>/SKILL.md.
-func writeClaudeSkills(sys System, root string, commands []config.Skill) error {
+// WriteClaudeSkills generates Claude Code skill files in .claude/skills/<name>/SKILL.md.
+// sys performs filesystem operations, root is the projection root, and commands
+// supplies the canonical loaded skills. It returns the first reconciliation error.
+func WriteClaudeSkills(sys System, root string, commands []config.Skill) error {
 	skillsDir := filepath.Join(root, ".claude", "skills")
 	return writeSkillFiles(sys, skillsDir, commands, buildClaudeSkill)
 }

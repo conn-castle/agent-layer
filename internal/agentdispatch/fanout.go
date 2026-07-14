@@ -131,7 +131,11 @@ func Fanout(opts FanoutOptions) error {
 		if promptErr != nil {
 			return promptErr
 		}
-		if err := validateSkillProjection(project.Root, target, opts.Skill); err != nil {
+		projectionRoot, projectionErr := prepareTargetProjection(project, opts.Root, opts.WorkDir, target)
+		if projectionErr != nil {
+			return projectionErr
+		}
+		if err := validateSkillProjection(projectionRoot, target, opts.Skill); err != nil {
 			return err
 		}
 		candidates = append(candidates, fanoutCandidate{spec: spec, target: target, version: version, prompt: prompt})
@@ -162,7 +166,7 @@ func Fanout(opts FanoutOptions) error {
 			return reserveErr
 		}
 		prepared = append(prepared, preparedFanoutChild{target: candidate.spec, request: dispatchExecution{
-			Root: opts.Root, Project: project, Target: candidate.target, Version: candidate.version,
+			Root: opts.Root, WorkDir: opts.WorkDir, Project: project, Target: candidate.target, Version: candidate.version,
 			Prompt: candidate.prompt, Mode: dispatchModeFresh, Run: run, Session: session,
 			Stdout: io.Discard, Stderr: stderr, Env: env, Depth: depth + 1,
 			Model: candidate.spec.Model, Effort: candidate.spec.ReasoningEffort, Skill: opts.Skill, NewCommand: opts.NewCommand,
