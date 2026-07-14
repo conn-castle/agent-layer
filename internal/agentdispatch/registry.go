@@ -35,7 +35,7 @@ func targetRegistry() []targetMeta {
 		},
 		{
 			Name:        AgentClaude,
-			Binary:      "claude",
+			Binary:      AgentClaude,
 			SkillPrefix: "/",
 			AnswerText:  answerTextPartial,
 			Progress:    progressPartial,

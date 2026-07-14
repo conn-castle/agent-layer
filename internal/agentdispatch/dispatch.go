@@ -395,7 +395,7 @@ func writeIdentity(stderr io.Writer, name string, agent string, mode string, dur
 	if stderr == nil {
 		return nil
 	}
-	line := fmt.Sprintf("[%s] %s · %s", name, agent, map[string]string{dispatchModeFresh: "fresh", dispatchModeResume: "resumed"}[mode])
+	line := fmt.Sprintf("[%s] %s · %s", name, agent, map[string]string{dispatchModeFresh: dispatchModeFresh, dispatchModeResume: "resumed"}[mode])
 	if durable {
 		line += " · durable"
 	}

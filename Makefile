@@ -5,6 +5,7 @@ SHELL := /usr/bin/env bash
 
 ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 TOOL_BIN ?= $(ROOT_DIR)/.tools/bin
+GOLANGCI_LINT_VERSION := v2.12.2
 GO_CACHE ?= $(ROOT_DIR)/.cache/go-build
 GO_MOD_CACHE ?= $(ROOT_DIR)/.cache/go-mod
 
@@ -59,11 +60,9 @@ $(TOOL_BIN)/goimports: go.mod go.sum
 	  if [[ -z "$$version" ]]; then echo "Failed to resolve golang.org/x/tools version from go.mod" >&2; exit 1; fi; \
 	  GOBIN="$(TOOL_BIN)" GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go install "golang.org/x/tools/cmd/goimports@$$version"
 
-$(TOOL_BIN)/golangci-lint: go.mod go.sum
+$(TOOL_BIN)/golangci-lint: Makefile
 	@mkdir -p "$(TOOL_BIN)" "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@version="$$(go list -m -f '{{.Version}}' github.com/golangci/golangci-lint/v2)"; \
-	  if [[ -z "$$version" ]]; then echo "Failed to resolve golangci-lint version from go.mod" >&2; exit 1; fi; \
-	  GOBIN="$(TOOL_BIN)" GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$$version"
+	@GOBIN="$(TOOL_BIN)" GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)"
 
 $(TOOL_BIN)/gotestsum: go.mod go.sum
 	@mkdir -p "$(TOOL_BIN)" "$(GO_CACHE)" "$(GO_MOD_CACHE)"
@@ -94,13 +93,17 @@ lint: check-golangci-lint ## Run golangci-lint
 	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/golangci-lint" run ./...
 
 .PHONY: lint-ci-local
-lint-ci-local: check-golangci-lint ## Run golangci-lint with fresh caches and Linux target settings
+lint-ci-local: check-golangci-lint ## Run fresh-cache Linux-targeted and native-host lint
 	@tmp_root="$$(mktemp -d "$${TMPDIR:-/tmp}/agent-layer-lint-ci-local.XXXXXX")"; \
 	  trap 'chmod -R u+w "$$tmp_root" 2>/dev/null || true; rm -rf "$$tmp_root"' EXIT; \
 	  mkdir -p "$$tmp_root/go-build" "$$tmp_root/go-mod" "$$tmp_root/golangci-lint"; \
 	  GOCACHE="$$tmp_root/go-build" GOMODCACHE="$$tmp_root/go-mod" go mod download; \
 	  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 	    GOCACHE="$$tmp_root/go-build" \
+	    GOMODCACHE="$$tmp_root/go-mod" \
+	    GOLANGCI_LINT_CACHE="$$tmp_root/golangci-lint" \
+	    "$(TOOL_BIN)/golangci-lint" run ./...; \
+	  GOCACHE="$$tmp_root/go-build" \
 	    GOMODCACHE="$$tmp_root/go-mod" \
 	    GOLANGCI_LINT_CACHE="$$tmp_root/golangci-lint" \
 	    "$(TOOL_BIN)/golangci-lint" run ./...

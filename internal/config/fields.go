@@ -88,7 +88,7 @@ var (
 // Order matches the wizard UI flow (approval → agents → models).
 var fields = []FieldDef{
 	{
-		Key:      "approvals.mode",
+		Key:      approvalsModeKey,
 		Type:     FieldEnum,
 		Required: true,
 		Options: []FieldOption{
@@ -109,7 +109,7 @@ var fields = []FieldDef{
 		Options:     antigravityModelOptions,
 	},
 	{
-		Key:     "agents.antigravity.dispatch.default_agent",
+		Key:     antigravityDefaultAgentKey,
 		Type:    FieldEnum,
 		Options: dispatchDefaultAgentOptions(),
 	},
@@ -127,7 +127,7 @@ var fields = []FieldDef{
 		Options:     claudeReasoningEffortOptions,
 	},
 	{
-		Key:     "agents.claude.dispatch.default_agent",
+		Key:     claudeDefaultAgentKey,
 		Type:    FieldEnum,
 		Options: dispatchDefaultAgentOptions(),
 	},
@@ -149,7 +149,7 @@ var fields = []FieldDef{
 		Options:     codexReasoningEffortOptions,
 	},
 	{
-		Key:     "agents.codex.dispatch.default_agent",
+		Key:     codexDefaultAgentKey,
 		Type:    FieldEnum,
 		Options: dispatchDefaultAgentOptions(),
 	},
@@ -177,10 +177,10 @@ func fieldOptions(values ...string) []FieldOption {
 
 func dispatchDefaultAgentOptions() []FieldOption {
 	return []FieldOption{
-		{Value: "random"},
-		{Value: "codex"},
-		{Value: "claude"},
-		{Value: "antigravity"},
+		{Value: agentRandom},
+		{Value: agentCodex},
+		{Value: agentClaude},
+		{Value: agentAntigravity},
 	}
 }
 

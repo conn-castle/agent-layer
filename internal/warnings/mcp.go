@@ -43,7 +43,7 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 	// 1. Identify enabled servers
 	enabledServers, err := projection.ResolveEnabledMCPServers(cfg.Config.MCP.Servers, cfg.Env)
 	if err != nil {
-		subject := "mcp.servers"
+		subject := mcpServersKey
 		var resolveErr *projection.MCPServerResolveError
 		if errors.As(err, &resolveErr) && resolveErr.ServerID != "" {
 			subject = resolveErr.ServerID
@@ -70,7 +70,7 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 	if thresholds.MCPServerThreshold != nil && len(enabledServers) > *thresholds.MCPServerThreshold {
 		warnings = append(warnings, Warning{
 			Code:              CodeMCPTooManyServers,
-			Subject:           "mcp.servers",
+			Subject:           mcpServersKey,
 			Message:           fmt.Sprintf(messages.WarningsTooManyServersFmt, *thresholds.MCPServerThreshold, len(enabledServers), *thresholds.MCPServerThreshold),
 			Fix:               messages.WarningsTooManyServersFix,
 			Source:            SourceInternal,

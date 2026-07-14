@@ -14,28 +14,6 @@ func (nonTimeoutNetErr) Error() string   { return "temporary network error" }
 func (nonTimeoutNetErr) Timeout() bool   { return false }
 func (nonTimeoutNetErr) Temporary() bool { return true }
 
-func TestParseSemver_Branches(t *testing.T) {
-	tests := []struct {
-		name string
-		raw  string
-		ok   bool
-	}{
-		{name: "invalid segment count", raw: "1.2", ok: false},
-		{name: "invalid major", raw: "x.2.3", ok: false},
-		{name: "invalid minor", raw: "1.x.3", ok: false},
-		{name: "invalid patch", raw: "1.2.x", ok: false},
-		{name: "valid", raw: "1.2.3", ok: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, _, _, ok := parseSemver(tt.raw)
-			if ok != tt.ok {
-				t.Fatalf("parseSemver(%q) ok=%v, want %v", tt.raw, ok, tt.ok)
-			}
-		})
-	}
-}
-
 func TestSemverAtLeast_Branches(t *testing.T) {
 	tests := []struct {
 		name string

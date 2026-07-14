@@ -28,14 +28,14 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	}
 	args = append(args, passArgs...)
 
-	path, err := exec.LookPath("copilot")
+	path, err := exec.LookPath(executableName)
 	if err != nil {
-		return fmt.Errorf(messages.ClientsExecLookupErrorFmt, "copilot", err)
+		return fmt.Errorf(messages.ClientsExecLookupErrorFmt, executableName, err)
 	}
 
-	argv := append([]string{"copilot"}, args...)
+	argv := append([]string{executableName}, args...)
 	if err := execFunc(path, argv, env); err != nil {
-		return fmt.Errorf(messages.ClientsExecHandoffErrorFmt, "copilot", err)
+		return fmt.Errorf(messages.ClientsExecHandoffErrorFmt, executableName, err)
 	}
 	return nil
 }

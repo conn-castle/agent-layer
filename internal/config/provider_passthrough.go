@@ -26,7 +26,7 @@ const (
 	CodexFeaturePluginsKey = "plugins"
 )
 
-var codexBrowserFeatureKeys = []string{"browser_use", "in_app_browser", "computer_use"}
+var codexBrowserFeatureKeys = []string{browserUseFeatureKey, "in_app_browser", "computer_use"}
 
 // CodexManagedTopLevelKeys returns top-level .codex/config.toml keys managed by
 // Agent Layer. The returned slice is caller-owned.

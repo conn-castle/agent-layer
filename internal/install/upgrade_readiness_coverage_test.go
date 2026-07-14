@@ -115,7 +115,7 @@ func TestBuildUpgradeReadinessChecks_DisabledArtifactErrorPropagates(t *testing.
 	if updated == string(cfg) {
 		t.Fatal("failed to disable claude in config")
 	}
-	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil { // #nosec G703 -- configPath is rooted in the test's temporary repository.
 		t.Fatalf("write config: %v", err)
 	}
 

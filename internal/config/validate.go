@@ -15,7 +15,7 @@ const (
 
 // isValidApprovalMode checks the value against the config field catalog.
 func isValidApprovalMode(mode string) bool {
-	field, ok := LookupField("approvals.mode")
+	field, ok := LookupField(approvalsModeKey)
 	if !ok {
 		return false
 	}
@@ -32,11 +32,11 @@ func isValidApprovalMode(mode string) bool {
 // .mcp.json with Claude CLI, so "claude" covers both.
 // See Decision p12-unified-vscode-launcher.
 var validClients = map[string]struct{}{
-	"antigravity": {},
-	"claude":      {},
-	"vscode":      {},
-	"codex":       {},
-	"copilot":     {},
+	agentAntigravity: {},
+	agentClaude:      {},
+	"vscode":         {},
+	agentCodex:       {},
+	"copilot":        {},
 }
 
 var validHTTPTransports = map[string]struct{}{
@@ -75,16 +75,16 @@ func (c *Config) Validate(path string) error {
 	if c.Agents.CopilotCLI.Enabled == nil {
 		return fmt.Errorf(messages.ConfigCopilotCLIEnabledRequiredFmt, path)
 	}
-	if err := validateDispatchDefault(path, "agents.antigravity.dispatch.default_agent", c.Agents.Antigravity.Dispatch.DefaultAgent); err != nil {
+	if err := validateDispatchDefault(path, antigravityDefaultAgentKey, c.Agents.Antigravity.Dispatch.DefaultAgent); err != nil {
 		return err
 	}
 	if err := validateAntigravityModelSource(path, c.Agents.Antigravity); err != nil {
 		return err
 	}
-	if err := validateDispatchDefault(path, "agents.claude.dispatch.default_agent", c.Agents.Claude.Dispatch.DefaultAgent); err != nil {
+	if err := validateDispatchDefault(path, claudeDefaultAgentKey, c.Agents.Claude.Dispatch.DefaultAgent); err != nil {
 		return err
 	}
-	if err := validateDispatchDefault(path, "agents.codex.dispatch.default_agent", c.Agents.Codex.Dispatch.DefaultAgent); err != nil {
+	if err := validateDispatchDefault(path, codexDefaultAgentKey, c.Agents.Codex.Dispatch.DefaultAgent); err != nil {
 		return err
 	}
 	if strings.TrimSpace(c.Agents.CopilotCLI.ReasoningEffort) != "" {
@@ -111,7 +111,7 @@ func (c *Config) Validate(path string) error {
 		if server.ID == "" {
 			return fmt.Errorf(messages.ConfigMcpServerIDRequiredFmt, path, i)
 		}
-		if server.ID == "agent-layer" {
+		if server.ID == agentLayerServerID {
 			return fmt.Errorf(messages.ConfigMcpServerIDReservedFmt, path, i)
 		}
 		if firstIndex, ok := seenServerIDs[server.ID]; ok {

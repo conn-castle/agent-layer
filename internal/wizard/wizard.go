@@ -353,18 +353,18 @@ func readCodexBrowserDisabled(agentSpecific map[string]any) bool {
 // readClaudeEnvFalse reports whether agent_specific.env[key] is the string
 // "false" (settings.json env values are JSON strings, not booleans).
 func readClaudeEnvFalse(agentSpecific map[string]any, key string) bool {
-	env, ok := agentSpecific["env"].(map[string]any)
+	env, ok := agentSpecific[envKey].(map[string]any)
 	if !ok {
 		return false
 	}
 	value, ok := env[key].(string)
-	return ok && value == "false"
+	return ok && value == falseValue
 }
 
 // readClaudeAutoMemoryDisabled reports whether agent_specific.autoMemoryEnabled
 // is the boolean false.
 func readClaudeAutoMemoryDisabled(agentSpecific map[string]any) bool {
-	enabled, ok := agentSpecific["autoMemoryEnabled"].(bool)
+	enabled, ok := agentSpecific[autoMemoryEnabledKey].(bool)
 	return ok && !enabled
 }
 
@@ -942,7 +942,7 @@ func promptSecrets(root string, ui UI, choices *Choices) error {
 				switch strings.ToLower(normalized) {
 				case "cancel":
 					return errWizardCancelled
-				case "skip":
+				case skipChoice:
 					choices.EnabledMCPServers[server.ID] = false
 					choices.DisabledMCPServers[server.ID] = true
 					disableServer = true

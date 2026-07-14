@@ -27,7 +27,7 @@ func injectMCPCatalogIntoSeed(t *testing.T, root string) {
 		t.Fatalf("read mcp-catalog.toml: %v", err)
 	}
 	combined := strings.TrimRight(string(existing), "\n") + "\n\n" + string(catalog)
-	if err := os.WriteFile(configPath, []byte(combined), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(combined), 0o600); err != nil { // #nosec G703 -- configPath is rooted in the test's temporary repository.
 		t.Fatalf("write seeded config with catalog: %v", err)
 	}
 }
@@ -72,7 +72,7 @@ func TestBuildUpgradeReadinessChecks_UnrecognizedConfigKeys(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 	cfg = append(cfg, []byte("\n[unknown_section]\nvalue = true\n")...)
-	if err := os.WriteFile(configPath, cfg, 0o600); err != nil {
+	if err := os.WriteFile(configPath, cfg, 0o600); err != nil { // #nosec G703 -- configPath is rooted in the test's temporary repository.
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -162,7 +162,7 @@ func TestBuildUpgradeReadinessChecks_FloatingDependenciesEnabledOnly(t *testing.
 	if !strings.Contains(updated, floatingPlaywrightPackage) {
 		t.Fatal("failed to set floating playwright dependency in test config")
 	}
-	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil { // #nosec G703 -- configPath is rooted in the test's temporary repository.
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -198,7 +198,7 @@ func TestBuildUpgradeReadinessChecks_DisabledAgentArtifacts(t *testing.T) {
 	} else if !strings.Contains(updated, "[agents.antigravity]\nenabled = false") {
 		t.Fatal("seeded config is missing agents.antigravity.enabled")
 	}
-	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil { // #nosec G703 -- configPath is rooted in the test's temporary repository.
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -249,7 +249,7 @@ func TestBuildUpgradeReadinessChecks_UnresolvedConfigPlaceholders(t *testing.T) 
 	if updated == string(cfg) {
 		t.Fatal("failed to enable context7 in test config")
 	}
-	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil { // #nosec G703 -- configPath is rooted in the test's temporary repository.
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -285,7 +285,7 @@ func TestBuildUpgradeReadinessChecks_ProcessEnvOverridesDotenv_UsesSystemLookupE
 	if updated == string(cfg) {
 		t.Fatal("failed to enable context7 in test config")
 	}
-	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil { // #nosec G703 -- configPath is rooted in the test's temporary repository.
 		t.Fatalf("write config: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(root, ".agent-layer", ".env"), []byte("AL_CONTEXT7_API_KEY=from-file\n"), 0o600); err != nil {
@@ -326,7 +326,7 @@ func TestBuildUpgradeReadinessChecks_IgnoredEmptyDotenvAssignments_UsesSystemLoo
 	if updated == string(cfg) {
 		t.Fatal("failed to enable context7 in test config")
 	}
-	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil { // #nosec G703 -- configPath is rooted in the test's temporary repository.
 		t.Fatalf("write config: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(root, ".agent-layer", ".env"), []byte("AL_CONTEXT7_API_KEY=\n"), 0o600); err != nil {
@@ -373,7 +373,7 @@ func TestBuildUpgradeReadinessChecks_PathExpansionAnomalies(t *testing.T) {
 		"command = \"npx\"\n" +
 		"args = [\"-y\", \"@modelcontextprotocol/server-filesystem@2026.1.14\", \"${AL_REPO_ROOT}/missing-readiness-dir\"]\n"
 	updated := strings.TrimRight(string(cfg), "\n") + "\n" + serverBlock
-	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil { // #nosec G703 -- configPath is rooted in the test's temporary repository.
 		t.Fatalf("write config: %v", err)
 	}
 

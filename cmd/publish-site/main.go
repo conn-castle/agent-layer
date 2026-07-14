@@ -233,7 +233,7 @@ func validateRepoBRoot(repoB string) error {
 	}
 
 	// Must look like a Docusaurus repo root.
-	required := []string{"package.json", "docusaurus.config.js", "sidebars.js", "src"}
+	required := []string{packageJSONFile, docusaurusConfigFile, sidebarsFile, "src"}
 	for _, f := range required {
 		path := filepath.Join(repoB, f)
 		if _, err := osStatFunc(path); err != nil {

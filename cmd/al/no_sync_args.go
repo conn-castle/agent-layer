@@ -54,7 +54,7 @@ func splitNoSyncArgs(args []string) (bool, bool, []string, error) {
 			passArgs = append(passArgs, args[i+1:]...)
 			break
 		}
-		if arg == "--no-sync" {
+		if arg == noSyncFlag {
 			noSync = true
 			continue
 		}

@@ -66,7 +66,7 @@ func replaceDispatchConfigText(t *testing.T, root string, old string, replacemen
 	if updated == string(data) {
 		t.Fatalf("config did not contain %q", old)
 	}
-	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil { // #nosec G306 -- test-owned config.
+	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil { // #nosec G306 G703 -- configPath is rooted in the test's temporary repository.
 		t.Fatalf("write config: %v", err)
 	}
 }

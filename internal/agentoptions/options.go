@@ -53,7 +53,7 @@ var providers = map[string]map[Kind]fieldProvider{
 			live: antigravityModelOptions,
 		},
 	},
-	"claude": {
+	agentClaude: {
 		KindModel: {
 			key: config.ClaudeModelFieldKey,
 			configured: func(cfg config.Config) string {
@@ -67,7 +67,7 @@ var providers = map[string]map[Kind]fieldProvider{
 			},
 		},
 	},
-	"codex": {
+	agentCodex: {
 		KindModel: {
 			key: config.CodexModelFieldKey,
 			configured: func(cfg config.Config) string {
@@ -81,7 +81,7 @@ var providers = map[string]map[Kind]fieldProvider{
 			},
 		},
 	},
-	"copilot_cli": {
+	agentCopilotCLI: {
 		KindModel: {
 			key: config.CopilotCLIModelFieldKey,
 			configured: func(cfg config.Config) string {

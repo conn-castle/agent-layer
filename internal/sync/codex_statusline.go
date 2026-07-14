@@ -39,25 +39,25 @@ func codexAgentSpecificForOutput(sys System, root string, codex config.CodexConf
 }
 
 func codexAgentSpecificDefinesStatusLine(agentSpecific map[string]any) bool {
-	tui, ok := agentSpecific["tui"].(map[string]any)
+	tui, ok := agentSpecific[codexTUIKey].(map[string]any)
 	if !ok {
 		return false
 	}
-	_, ok = tui["status_line"]
+	_, ok = tui[codexStatusLineKey]
 	return ok
 }
 
 func injectCodexStatusLine(agentSpecific map[string]any, statusLine []string) error {
 	tui := make(map[string]any)
-	if existing, ok := agentSpecific["tui"]; ok {
+	if existing, ok := agentSpecific[codexTUIKey]; ok {
 		existingTUI, ok := existing.(map[string]any)
 		if !ok {
 			return fmt.Errorf(messages.SyncCodexStatuslineTUITableConflict)
 		}
 		tui = existingTUI
 	}
-	tui["status_line"] = statusLine
-	agentSpecific["tui"] = tui
+	tui[codexStatusLineKey] = statusLine
+	agentSpecific[codexTUIKey] = tui
 	return nil
 }
 
@@ -78,7 +78,7 @@ func parseCodexStatuslineSource(data []byte, source string) ([]string, error) {
 	if err := toml.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf(messages.SyncCodexStatuslineInvalidTOMLFmt, source, err)
 	}
-	tuiValue, ok := raw["tui"]
+	tuiValue, ok := raw[codexTUIKey]
 	if !ok {
 		return nil, fmt.Errorf(messages.SyncCodexStatuslineStatusLineMissingFmt, source)
 	}
@@ -90,7 +90,7 @@ func parseCodexStatuslineSource(data []byte, source string) ([]string, error) {
 	if !ok {
 		return nil, fmt.Errorf(messages.SyncCodexStatuslineOnlyStatusLineFmt, source)
 	}
-	statusLineValue, ok := tui["status_line"]
+	statusLineValue, ok := tui[codexStatusLineKey]
 	if !ok {
 		return nil, fmt.Errorf(messages.SyncCodexStatuslineStatusLineMissingFmt, source)
 	}

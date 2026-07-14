@@ -348,6 +348,49 @@ x = 1
 	}
 }
 
+func TestCodexTomlEditor_RootInsertPreservesFirstTableLeadingComments(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "attached comment block",
+			input: "# hooks settings\n# kept with the table\n[hooks]\nx = 1\n",
+			want:  "model = \"gpt-5\"\n# hooks settings\n# kept with the table\n[hooks]\nx = 1\n",
+		},
+		{
+			name:  "blank-separated preamble",
+			input: "# file preamble\n\n# hooks settings\n# kept with the table\n[hooks]\nx = 1\n",
+			want:  "# file preamble\n\nmodel = \"gpt-5\"\n# hooks settings\n# kept with the table\n[hooks]\nx = 1\n",
+		},
+		{
+			name:  "no table terminal comment",
+			input: "# terminal comment",
+			want:  "# terminal comment\n\nmodel = \"gpt-5\"\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			editor := newCodexTomlEditor(tt.input)
+
+			editor.setPath([]string{config.CodexModelKey}, `"gpt-5"`)
+			out := editor.render()
+
+			if out != tt.want {
+				t.Fatalf("unexpected root insertion:\nwant:\n%s\ngot:\n%s", tt.want, out)
+			}
+			parsed := parseCodexConfig(t, out)
+			if parsed[config.CodexModelKey] != "gpt-5" {
+				t.Fatalf("expected model set as a real root key, got %#v\n%s", parsed[config.CodexModelKey], out)
+			}
+		})
+	}
+}
+
 // ensureTable locates or creates a managed table; it must not match a header-
 // looking line inside a multiline string when adding a nested key.
 func TestCodexTomlEditor_EnsureTableSkipsMultilineStringHeaders(t *testing.T) {

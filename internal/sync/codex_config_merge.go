@@ -24,10 +24,10 @@ var codexManagedRootScalarKeys = []string{
 }
 
 const (
-	codexHooksKey           = "hooks"
 	codexStopKey            = "Stop"
 	codexHooksStopPath      = "hooks.Stop"
 	codexHooksStopHooksPath = "hooks.Stop.hooks"
+	codexTUIKey             = "tui"
 )
 
 type codexManagedConfig struct {
@@ -93,7 +93,7 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 	}
 
 	for _, key := range config.CodexKnownManagedFeatureKeys() {
-		pathParts := []string{"features", key}
+		pathParts := []string{codexFeaturesKey, key}
 		if value, ok := valueAtPath(managedMap, pathParts); ok {
 			literal, err := tomlLiteral(value)
 			if err != nil {
@@ -105,7 +105,7 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 		editor.removePath(pathParts)
 	}
 
-	statuslinePath := []string{"tui", "status_line"}
+	statuslinePath := []string{codexTUIKey, codexStatusLineKey}
 	if value, ok := valueAtPath(managedMap, statuslinePath); ok {
 		literal, err := tomlLiteral(value)
 		if err != nil {
@@ -187,14 +187,14 @@ func cleanCodexChimeHook(sys System, root string) error {
 }
 
 func validateCodexExistingShapes(path string, existing map[string]any, managed map[string]any, trustedRoot string) error {
-	for _, managedPath := range [][]string{{"features"}, {"tui"}, {"projects"}} {
+	for _, managedPath := range [][]string{{codexFeaturesKey}, {codexTUIKey}, {codexProjectsKey}} {
 		if value, ok := valueAtPath(existing, managedPath); ok {
 			if _, table := value.(map[string]any); !table {
 				return fmt.Errorf(messages.SyncCodexExistingConfigShapeConflictFmt, path, strings.Join(managedPath, "."))
 			}
 		}
 	}
-	if value, ok := valueAtPath(existing, []string{"projects", trustedRoot}); ok {
+	if value, ok := valueAtPath(existing, []string{codexProjectsKey, trustedRoot}); ok {
 		if _, table := value.(map[string]any); !table {
 			return fmt.Errorf(messages.SyncCodexExistingConfigShapeConflictFmt, path, "projects."+tomlpatch.FormatKey(trustedRoot))
 		}
@@ -348,8 +348,8 @@ func (e *codexTomlEditor) applyCodexChimeHook(path string, enabled bool) (bool, 
 	if err := e.expandCodexStopAssignment(path); err != nil {
 		return false, err
 	}
-	if e.rootInlineTableExists(codexHooksKey) {
-		return false, fmt.Errorf(messages.SyncCodexExistingConfigShapeConflictFmt, path, codexHooksKey)
+	if e.rootInlineTableExists(hooksKey) {
+		return false, fmt.Errorf(messages.SyncCodexExistingConfigShapeConflictFmt, path, hooksKey)
 	}
 	var builder strings.Builder
 	appendCodexChimeBlock(&builder)
@@ -364,7 +364,7 @@ func (e *codexTomlEditor) expandCodexStopAssignment(path string) error {
 	var assignment assignmentInfo
 	var found bool
 	e.walkAssignments(func(info assignmentInfo) {
-		if slices.Equal(info.fullPath, []string{codexHooksKey, codexStopKey}) {
+		if slices.Equal(info.fullPath, []string{hooksKey, codexStopKey}) {
 			assignment = info
 			found = true
 		}
@@ -391,7 +391,7 @@ func (e *codexTomlEditor) expandCodexStopAssignment(path string) error {
 		lines = append(lines, "[["+codexHooksStopPath+"]]")
 		entryKeys := make([]string, 0, len(entryMap))
 		for key := range entryMap {
-			if key != codexHooksKey {
+			if key != hooksKey {
 				entryKeys = append(entryKeys, key)
 			}
 		}
@@ -399,13 +399,13 @@ func (e *codexTomlEditor) expandCodexStopAssignment(path string) error {
 		for _, key := range entryKeys {
 			lines = append(lines, tomlpatch.FormatKey(key)+" = "+formatInlineValue(entryMap[key]))
 		}
-		if hooksValue, ok := entryMap[codexHooksKey]; ok {
+		if hooksValue, ok := entryMap[hooksKey]; ok {
 			hooks, ok := hooksValue.([]any)
 			if !ok {
 				return fmt.Errorf(messages.SyncCodexExistingConfigShapeConflictFmt, path, codexHooksStopHooksPath)
 			}
 			if len(hooks) == 0 {
-				lines = append(lines, codexHooksKey+" = []")
+				lines = append(lines, hooksKey+" = []")
 				continue
 			}
 			for _, hook := range hooks {
@@ -502,7 +502,7 @@ func (e *codexTomlEditor) codexChimeRegionRemovalRanges(marker lineRange) ([]lin
 		if !header.parsed {
 			return nil, false
 		}
-		if !header.isArray || !slices.Equal(header.path, []string{"hooks", "Stop"}) {
+		if !header.isArray || !slices.Equal(header.path, []string{hooksKey, codexStopKey}) {
 			continue
 		}
 		if removedChimeGroup {
@@ -520,7 +520,7 @@ func (e *codexTomlEditor) codexChimeRegionRemovalRanges(marker lineRange) ([]lin
 			if !next.parsed {
 				return nil, false
 			}
-			if slices.Equal(next.path, []string{"hooks", "Stop"}) || !pathHasPrefix(next.path, []string{"hooks", "Stop"}) {
+			if slices.Equal(next.path, []string{hooksKey, codexStopKey}) || !pathHasPrefix(next.path, []string{hooksKey, codexStopKey}) {
 				groupEnd = next.index - 1
 				break
 			}
@@ -557,7 +557,7 @@ func (e *codexTomlEditor) unmarkedCodexChimeStopGroupRanges() []lineRange {
 	headers := e.headerLines()
 	var ranges []lineRange
 	for i, header := range headers {
-		if !header.parsed || !header.isArray || !slices.Equal(header.path, []string{"hooks", "Stop"}) {
+		if !header.parsed || !header.isArray || !slices.Equal(header.path, []string{hooksKey, codexStopKey}) {
 			continue
 		}
 		end := len(e.lines)
@@ -567,7 +567,7 @@ func (e *codexTomlEditor) unmarkedCodexChimeStopGroupRanges() []lineRange {
 				end = next.index
 				break
 			}
-			if slices.Equal(next.path, []string{"hooks", "Stop"}) || !pathHasPrefix(next.path, []string{"hooks", "Stop"}) {
+			if slices.Equal(next.path, []string{hooksKey, codexStopKey}) || !pathHasPrefix(next.path, []string{hooksKey, codexStopKey}) {
 				end = next.index
 				break
 			}
@@ -586,11 +586,11 @@ func (e *codexTomlEditor) codexStopGroupIsExactChimeOnly(r lineRange) bool {
 	if err := toml.Unmarshal([]byte(fragment), &parsed); err != nil {
 		return false
 	}
-	hooks, ok := parsed["hooks"].(map[string]any)
+	hooks, ok := parsed[hooksKey].(map[string]any)
 	if !ok || len(hooks) != 1 {
 		return false
 	}
-	stop, ok := hooks["Stop"].([]any)
+	stop, ok := hooks[codexStopKey].([]any)
 	if !ok || len(stop) != 1 {
 		return false
 	}
@@ -598,7 +598,7 @@ func (e *codexTomlEditor) codexStopGroupIsExactChimeOnly(r lineRange) bool {
 	if !ok || len(stopEntry) != 1 {
 		return false
 	}
-	stopHooks, ok := stopEntry["hooks"].([]any)
+	stopHooks, ok := stopEntry[hooksKey].([]any)
 	if !ok || len(stopHooks) != 1 {
 		return false
 	}
@@ -607,6 +607,11 @@ func (e *codexTomlEditor) codexStopGroupIsExactChimeOnly(r lineRange) bool {
 
 func (e *codexTomlEditor) insertRootLine(line string) {
 	insertAt := e.firstTableIndex()
+	if insertAt < len(e.lines) {
+		for insertAt > 0 && strings.HasPrefix(strings.TrimSpace(e.lines[insertAt-1]), "#") {
+			insertAt--
+		}
+	}
 	if insertAt > 0 && strings.TrimSpace(e.lines[insertAt-1]) != "" {
 		e.lines = append(e.lines[:insertAt], append([]string{"", line}, e.lines[insertAt:]...)...)
 		return
@@ -916,10 +921,10 @@ func codexPathHandledElsewhere(path []string) bool {
 	switch path[0] {
 	case config.CodexProjectsKey, config.CodexMCPServersKey:
 		return true
-	case "features":
+	case codexFeaturesKey:
 		return slices.Contains(config.CodexKnownManagedFeatureKeys(), path[1])
-	case "tui":
-		return path[1] == "status_line"
+	case codexTUIKey:
+		return path[1] == codexStatusLineKey
 	default:
 		return false
 	}

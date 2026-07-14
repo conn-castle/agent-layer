@@ -27,7 +27,7 @@ func Normalize(raw string) (string, error) {
 
 // IsDev reports whether the version string represents a dev build.
 func IsDev(raw string) bool {
-	return strings.TrimSpace(raw) == "dev"
+	return strings.TrimSpace(raw) == developmentVersion
 }
 
 // Compare compares two semantic versions in X.Y.Z form (a leading "v" is

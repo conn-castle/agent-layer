@@ -72,7 +72,7 @@ var mcpAllowedEnvKeys = map[string]struct{}{
 	"LANG":       {},
 	"LC_ALL":     {},
 	"LC_CTYPE":   {},
-	"PATH":       {},
+	pathEnvKey:   {},
 	"SHELL":      {},
 	"SYSTEMROOT": {},
 	"TERM":       {},

@@ -88,19 +88,19 @@ func fromSharedDocument(doc tomlpatch.Document) tomlDocument {
 }
 
 var preferredWizardSectionOrder = []string{
-	"approvals",
-	"agents.antigravity",
-	"agents.claude",
-	"agents.claude_vscode",
-	"agents.codex",
+	approvalsSection,
+	antigravitySection,
+	claudeSection,
+	claudeVSCodeSection,
+	codexSection,
 	"agents.vscode",
 	"agents.copilot_cli",
-	"mcp",
-	"warnings",
+	mcpSection,
+	warningsSection,
 }
 
 var legacySectionAliases = map[string]string{
-	"agents.claude-vscode": "agents.claude_vscode",
+	"agents.claude-vscode": claudeVSCodeSection,
 }
 
 // PatchConfig applies wizard choices to TOML config content.
@@ -166,7 +166,7 @@ func assembleCanonicalConfig(currentDoc tomlDocument, templateDoc tomlDocument, 
 	removeWarnings := choices.WarningsEnabledTouched && !choices.WarningsEnabled
 
 	for _, name := range orderedWizardSections(templateDoc.order) {
-		if name == "warnings" && removeWarnings {
+		if name == warningsSection && removeWarnings {
 			continue
 		}
 		block := selectSectionBlock(currentDoc.sections[name], templateDoc.sections[name])
@@ -177,13 +177,13 @@ func assembleCanonicalConfig(currentDoc tomlDocument, templateDoc tomlDocument, 
 		applySectionUpdates(name, updated, templateDoc.sections[name], choices)
 		appendBlock(&output, updated.lines)
 
-		if name == "agents.codex" {
+		if name == codexSection {
 			for _, block := range codexAgentSpecificSectionBlocks(currentDoc.sections, templateDoc.sections) {
 				appendBlock(&output, block.lines)
 			}
 		}
 
-		if name == "mcp" {
+		if name == mcpSection {
 			serverBlocks, err := buildMCPServerBlocks(currentDoc, catalogDoc, choices)
 			if err != nil {
 				return nil, err
@@ -251,18 +251,18 @@ func selectSectionBlock(current *tomlBlock, template *tomlBlock) *tomlBlock {
 // name identifies the section; templateBlock provides canonical formatting for inserted keys.
 func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock, choices *Choices) {
 	switch name {
-	case "approvals":
+	case approvalsSection:
 		if choices.ApprovalModeTouched {
 			setKeyValue(block, templateBlock, "mode", formatTomlValue(choices.ApprovalMode), "")
 		}
-	case "agents.antigravity":
+	case antigravitySection:
 		if choices.EnabledAgentsTouched {
 			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentAntigravity]), "")
 		}
 		if choices.AntigravityModelTouched && (!choices.EnabledAgentsTouched || choices.EnabledAgents[AgentAntigravity]) {
 			setOptionalKeyValue(block, templateBlock, "model", choices.AntigravityModel, "enabled")
 		}
-	case "agents.claude":
+	case claudeSection:
 		if choices.EnabledAgentsTouched {
 			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentClaude]), "")
 		}
@@ -289,11 +289,11 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 		if choices.ClaudeStatuslineTouched {
 			setKeyValue(block, templateBlock, "statusline", formatTomlValue(choices.ClaudeStatusline), "disable_question_tool")
 		}
-	case "agents.claude_vscode":
+	case claudeVSCodeSection:
 		if choices.EnabledAgentsTouched {
 			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentClaudeVSCode]), "")
 		}
-	case "agents.codex":
+	case codexSection:
 		if choices.EnabledAgentsTouched {
 			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentCodex]), "")
 		}
@@ -332,7 +332,7 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 		if choices.CopilotCLIModelTouched {
 			setOptionalKeyValue(block, templateBlock, "model", choices.CopilotCLIModel, "enabled")
 		}
-	case "warnings":
+	case warningsSection:
 		if choices.WarningsEnabledTouched && choices.WarningsEnabled {
 			setKeyValue(block, templateBlock, "instruction_token_threshold", formatTomlValue(choices.InstructionTokenThreshold), "")
 			setKeyValue(block, templateBlock, "mcp_server_threshold", formatTomlValue(choices.MCPServerThreshold), "instruction_token_threshold")
@@ -353,7 +353,7 @@ type mcpBlock struct {
 var stdioIncompatibleKeys = []string{"headers", "url", "http_transport"}
 
 // httpIncompatibleKeys are TOML keys that are not valid for http transport MCP servers.
-var httpIncompatibleKeys = []string{"command", "args", "env"}
+var httpIncompatibleKeys = []string{"command", "args", envKey}
 
 // buildMCPServerBlocks returns ordered MCP server blocks using catalog order for defaults.
 // currentDoc supplies existing blocks; catalogDoc provides default-shaped catalog blocks;
@@ -365,8 +365,8 @@ var httpIncompatibleKeys = []string{"command", "args", "env"}
 // catalog only when the user selected (enabled) it; an unselected missing default stays absent.
 // User-defined non-catalog blocks follow the same never-delete rule (see the trailing loop).
 func buildMCPServerBlocks(currentDoc tomlDocument, catalogDoc tomlDocument, choices *Choices) ([]tomlBlock, error) {
-	currentBlocks := parseMCPBlocks(currentDoc.arrays["mcp.servers"])
-	catalogBlocks := parseMCPBlocks(catalogDoc.arrays["mcp.servers"])
+	currentBlocks := parseMCPBlocks(currentDoc.arrays[mcpServersSection])
+	catalogBlocks := parseMCPBlocks(catalogDoc.arrays[mcpServersSection])
 
 	currentByID := make(map[string]mcpBlock, len(currentBlocks))
 	for _, block := range currentBlocks {
@@ -426,7 +426,7 @@ func buildMCPServerBlocks(currentDoc tomlDocument, catalogDoc tomlDocument, choi
 				continue
 			}
 		}
-		tb := tomlBlock{name: "mcp.servers", lines: cloneLines(block.lines)}
+		tb := tomlBlock{name: mcpServersSection, lines: cloneLines(block.lines)}
 		// Honor the custom-server keep/disable decision. Unlike catalog defaults,
 		// a custom server has no template to restore from, so disabling sets
 		// enabled = false rather than pruning the block. Untouched configs pass
@@ -495,11 +495,11 @@ func removeKeyFromBlock(block *tomlBlock, key string) {
 // updateMCPEnabled applies the enabled toggle to a server block when requested.
 // block holds the current server text; templateBlock provides canonical formatting; id identifies the server.
 func updateMCPEnabled(block mcpBlock, templateBlock mcpBlock, choices *Choices, id string) tomlBlock {
-	updated := tomlBlock{name: "mcp.servers", lines: cloneLines(block.lines)}
+	updated := tomlBlock{name: mcpServersSection, lines: cloneLines(block.lines)}
 	if choices.EnabledMCPServersTouched {
 		tpl := (*tomlBlock)(nil)
 		if len(templateBlock.lines) > 0 {
-			tpl = &tomlBlock{name: "mcp.servers", lines: cloneLines(templateBlock.lines)}
+			tpl = &tomlBlock{name: mcpServersSection, lines: cloneLines(templateBlock.lines)}
 		}
 		setKeyValue(&updated, tpl, "enabled", formatTomlValue(choices.EnabledMCPServers[id]), "id")
 	}
@@ -848,7 +848,7 @@ func claudeEnvKey(envKey string) claudeAgentSpecificKey {
 		leafKey:         envKey,
 		parentDotted:    "env." + envKey,
 		claudeDotted:    "agent_specific.env." + envKey,
-		value:           formatTomlValue("false"),
+		value:           formatTomlValue(falseValue),
 	}
 }
 
@@ -873,8 +873,8 @@ func applyClaudeAgentSpecificUpdate(doc *tomlDocument, choices *Choices) {
 	if choices.ClaudeDisableMemoryTouched {
 		writeClaudeAgentSpecificKey(doc, claudeAgentSpecificKey{
 			expandedSection: claudeAgentSpecificSection,
-			leafKey:         "autoMemoryEnabled",
-			parentDotted:    "autoMemoryEnabled",
+			leafKey:         autoMemoryEnabledKey,
+			parentDotted:    autoMemoryEnabledKey,
 			claudeDotted:    "agent_specific.autoMemoryEnabled",
 			value:           formatTomlValue(false),
 		}, choices.ClaudeDisableMemory)
@@ -1129,7 +1129,7 @@ func codexAgentSpecificSectionBlocks(sections map[string]*tomlBlock, templateSec
 func extraArrayBlocks(arrays map[string][]*tomlBlock) []*tomlBlock {
 	extra := make([]*tomlBlock, 0)
 	for name, blocks := range arrays {
-		if name == "mcp.servers" {
+		if name == mcpServersSection {
 			continue
 		}
 		for _, block := range blocks {

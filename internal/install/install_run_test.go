@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -446,10 +447,11 @@ func TestListManagedDiffs_ReportsGitignoreBlockHash(t *testing.T) {
 	expected := []string{
 		filepath.Join(".agent-layer", "gitignore.block"),
 	}
-	for i, diff := range diffs {
-		if diff != expected[i] {
-			t.Fatalf("unexpected diffs: %v", diffs)
-		}
+	if len(diffs) != len(expected) {
+		t.Fatalf("unexpected diffs: %v", diffs)
+	}
+	if !slices.Equal(diffs, expected) {
+		t.Fatalf("unexpected diffs: %v", diffs)
 	}
 }
 

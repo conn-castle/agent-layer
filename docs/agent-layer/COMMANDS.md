@@ -33,7 +33,7 @@ Notes: <optional constraints or tips>
 ```
 Run from: repo root  
 Prerequisites: Go 1.26.0+, Make  
-Notes: Uses versions pinned in `go.mod`. Installs tools into `.tools/bin`.
+Notes: Installs tools into `.tools/bin`. Go package tools are pinned in `go.mod`; golangci-lint is pinned separately in `Makefile` so its dependencies cannot change the application module graph.
 
 - Install pinned Go tooling (goimports, golangci-lint, gotestsum, deadcode) only
 ```bash
@@ -84,13 +84,13 @@ make lint
 Run from: repo root  
 Prerequisites: `make tools` has been run
 
-- Run no-Docker CI-parity golangci-lint
+- Run complementary Linux-targeted and native-host golangci-lint
 ```bash
 make lint-ci-local
 ```
 Run from: repo root
 Prerequisites: `make tools` has been run; network access may be needed for a fresh module download
-Notes: Uses disposable `GOCACHE`, `GOMODCACHE`, and `GOLANGCI_LINT_CACHE` with `GOOS=linux GOARCH=amd64 CGO_ENABLED=0`. Closer to CI than `make lint` without requiring Docker.
+Notes: Uses disposable `GOCACHE`, `GOMODCACHE`, and `GOLANGCI_LINT_CACHE` for both a `GOOS=linux GOARCH=amd64 CGO_ENABLED=0` pass and a native-host pass. The Linux-targeted pass preserves cross-target coverage; the native pass catches host package-loading differences, including test-file contributions to occurrence-counting linters. Together they improve local detection but do not reproduce the complete Ubuntu runner image, tools, or environment.
 
 - Run dead code analysis across all packages (test-aware default)
 ```bash

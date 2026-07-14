@@ -41,7 +41,7 @@ func BuildEnv(base []string, projectEnv map[string]string, runInfo *run.Info) []
 func BuildEnvForAgent(base []string, projectEnv map[string]string, runInfo *run.Info, agentName string) []string {
 	env := UnsetEnv(BuildEnv(base, projectEnv, runInfo), EnvDispatchCallerAgent)
 	switch agentName {
-	case "antigravity", "claude", "codex":
+	case agentAntigravity, agentClaude, agentCodex:
 		return SetEnv(env, EnvDispatchCallerAgent, agentName)
 	default:
 		return env

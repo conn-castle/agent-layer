@@ -99,7 +99,7 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 	chimeEnabled := config.NotificationsChimeEnabled(project.Config)
 	if err := ensureNoLegacyAgentSpecificChime(
 		"agents.codex.agent_specific.hooks",
-		project.Config.Agents.Codex.AgentSpecific["hooks"],
+		project.Config.Agents.Codex.AgentSpecific[hooksKey],
 		agentLayerCodexChimeCommand,
 	); err != nil {
 		return codexManagedConfig{}, err
@@ -256,7 +256,7 @@ func appendCodexChimeBlock(builder *strings.Builder) {
 }
 
 func codexAgentSpecificDefinesProject(agentSpecific map[string]any, repoRoot string) (bool, error) {
-	projects, ok := agentSpecific["projects"]
+	projects, ok := agentSpecific[codexProjectsKey]
 	if !ok {
 		return false, nil
 	}

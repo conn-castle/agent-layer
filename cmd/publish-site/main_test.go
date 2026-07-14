@@ -1612,7 +1612,7 @@ func TestRun(t *testing.T) {
 
 	origArgs := append([]string{}, os.Args...)
 	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		cmd := exec.CommandContext(ctx, origArgs[0], append([]string{"-test.run=TestHelperProcess", "--"}, append([]string{name}, args...)...)...)
+		cmd := exec.CommandContext(ctx, origArgs[0], append([]string{"-test.run=TestHelperProcess", "--"}, append([]string{name}, args...)...)...) // #nosec G702 -- the test replaces the runner with its own binary and test-owned helper arguments.
 		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
 		return cmd
 	}

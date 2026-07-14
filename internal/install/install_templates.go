@@ -39,7 +39,7 @@ func IsUserOwnedInstructionFile(path string) bool {
 func (inst templateManager) managedTemplateFiles() []templateFile {
 	root := inst.root
 	return []templateFile{
-		{filepath.Join(root, ".agent-layer", "commands.allow"), "commands.allow", 0o644},
+		{filepath.Join(root, ".agent-layer", commandsAllowName), commandsAllowName, 0o644},
 		{filepath.Join(root, ".agent-layer", templateGitignoreBlock), templateGitignoreBlock, 0o644},
 	}
 }
@@ -50,7 +50,7 @@ func (inst templateManager) managedTemplateFiles() []templateFile {
 func (inst templateManager) userOwnedSeedFiles() []templateFile {
 	root := inst.root
 	return []templateFile{
-		{filepath.Join(root, ".agent-layer", "config.toml"), "config.toml", 0o644},
+		{filepath.Join(root, ".agent-layer", configFileName), configFileName, 0o644},
 		{filepath.Join(root, ".agent-layer", ".env"), "env", 0o600},
 	}
 }
@@ -100,9 +100,9 @@ func (inst templateManager) userOwnedStatuslineSourceFiles() []templateFile {
 func (inst templateManager) managedTemplateDirs() []templateDir {
 	root := inst.root
 	return []templateDir{
-		{"instructions", filepath.Join(root, ".agent-layer", "instructions")},
+		{instructionsDirName, filepath.Join(root, ".agent-layer", instructionsDirName)},
 		{"skills", filepath.Join(root, ".agent-layer", "skills")},
-		{"docs/agent-layer", filepath.Join(root, ".agent-layer", "templates", "docs")},
+		{docsAgentLayerDir, filepath.Join(root, ".agent-layer", "templates", "docs")},
 	}
 }
 
@@ -110,7 +110,7 @@ func (inst templateManager) managedTemplateDirs() []templateDir {
 func (inst templateManager) memoryTemplateDirs() []templateDir {
 	root := inst.root
 	return []templateDir{
-		{"docs/agent-layer", filepath.Join(root, "docs", "agent-layer")},
+		{docsAgentLayerDir, filepath.Join(root, "docs", "agent-layer")},
 	}
 }
 
