@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/conn-castle/agent-layer/internal/skillfrontmatter"
 )
 
 var (
@@ -138,10 +141,13 @@ func ParseSkillSource(path string) (ParsedSkill, error) {
 		return ParsedSkill{}, fmt.Errorf("skill source %s has unterminated YAML frontmatter", path)
 	}
 
-	frontmatter, err := parseFrontMatter(strings.Join(fmLines, "\n"))
+	doc, err := skillfrontmatter.Parse(strings.Join(fmLines, "\n"))
 	if err != nil {
 		return ParsedSkill{}, fmt.Errorf("parse frontmatter for %s: %w", path, err)
 	}
+	keys := make([]string, 0, len(doc.Keys))
+	keys = append(keys, doc.Keys...)
+	sort.Strings(keys)
 
 	name, format := canonicalNameForPath(path)
 	return ParsedSkill{
@@ -149,11 +155,22 @@ func ParseSkillSource(path string) (ParsedSkill, error) {
 		CanonicalName:   name,
 		SourceFormat:    format,
 		LineCount:       lineCount,
-		FrontMatterKeys: frontmatter.keys,
-		Name:            frontmatter.name,
-		Description:     frontmatter.description,
-		Compatibility:   frontmatter.compatibility,
+		FrontMatterKeys: keys,
+		Name:            presentFieldValue(doc.Name),
+		Description:     presentFieldValue(doc.Description),
+		Compatibility:   presentFieldValue(doc.Compatibility),
 	}, nil
+}
+
+// presentFieldValue maps a structural field to the validator policy view:
+// absent and present-null fields are both nil, so null values keep raising
+// the existing missing-field findings.
+func presentFieldValue(field skillfrontmatter.Field) *string {
+	if field.State != skillfrontmatter.FieldValue {
+		return nil
+	}
+	value := field.Value
+	return &value
 }
 
 // ValidateMetadata validates frontmatter-level skill requirements.
