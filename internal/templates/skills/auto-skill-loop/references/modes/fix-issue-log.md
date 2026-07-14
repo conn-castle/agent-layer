@@ -27,8 +27,10 @@ order.
 ## Execute
 
 Use the common plan execution for established work. For an unexplained testable
-symptom, dispatch `/debug-and-fix-issue` with the caller's unchanged applicable
-targets, then run only the common review, repair, or verification stages still
+symptom, dispatch `/debug-and-fix-issue` with the caller's `implementer` target
+for both its `implementer` and `fixer` roles, plus the unchanged
+`plan_reviewers` and `code_reviewer` targets when its planned path requires
+them. Then run only the common review, repair, or verification stages still
 missing for the final tree.
 
 Include each verified ISSUES.md removal, BACKLOG.md reclassification, rejection,

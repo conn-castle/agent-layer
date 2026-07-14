@@ -11,8 +11,8 @@ Require the common plan roles.
 
 ## Initialize
 
-Dispatch `mode_worker` to run one fresh `/interface-audit` and retain that report
-for the run. Do not load prior audits.
+Dispatch `planner` to run one fresh `/interface-audit` and retain that report for
+the run. Do not load prior audits.
 
 ## Select
 
@@ -26,7 +26,7 @@ Run the common plan execution on the selected recommendation.
 
 ## Reconcile
 
-After each merge, dispatch `mode_worker` to run `/interface-audit --update` on
+After each merge, dispatch `planner` fresh to run `/interface-audit --update` on
 the same report. Preserve open or blocked work and continue with current
 evidence.
 

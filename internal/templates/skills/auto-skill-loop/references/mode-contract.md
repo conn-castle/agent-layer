@@ -19,13 +19,14 @@ complete current pass.
 For a plan-based mode, dispatch `planner` to run `/plan-work`, passing the
 caller's exactly three `plan_reviewers` targets unchanged; `/plan-work` owns all
 `/review-plan` dispatch. Dispatch `implementer` with `/implement-plan`, then
-dispatch `code_reviewer` with `/review-uncommitted-code` and `verifier` with
-`/verify-work` against the same implemented tree. Dispatch `mode_worker` to
-validate and deduplicate both result sets, then dispatch `fixer` with the
-combined accepted in-scope repairs. Rerun only invalidated checks and
-verification; repeat semantic review only when a repair materially changes the
-reviewed design or contract surface. Final verification always covers the final
-tree. Pass every role target unchanged.
+dispatch `code_reviewer` fresh with `/review-uncommitted-code` and again in a
+separate fresh context with `/verify-work` against the same implemented tree.
+Dispatch `planner` fresh to validate and deduplicate both result sets, then
+dispatch `implementer` fresh with the combined accepted in-scope repairs. Rerun
+only invalidated checks and verification; repeat semantic review only when a
+repair materially changes the reviewed design or contract surface. Final
+verification always covers the final tree. Pass every target unchanged under
+the fixed role mapping in `SKILL.md`.
 
 ## Continuation
 
