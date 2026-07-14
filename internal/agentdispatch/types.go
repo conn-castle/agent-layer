@@ -75,6 +75,7 @@ func wrapExitError(code int, message string, err error) *ExitError {
 // RunOptions configures a single dispatch run.
 type RunOptions struct {
 	Root            string
+	WorkDir         string
 	Agent           string
 	Model           string
 	ReasoningEffort string
@@ -97,6 +98,7 @@ type RunOptions struct {
 // ResumeOptions configures one explicit continuation of a durable session.
 type ResumeOptions struct {
 	Root          string
+	WorkDir       string
 	Name          string
 	Skill         string
 	PromptArgs    []string
@@ -151,6 +153,7 @@ type FanoutTarget struct {
 // FanoutOptions configures one synchronous shared-prompt fanout.
 type FanoutOptions struct {
 	Root          string
+	WorkDir       string
 	Targets       []FanoutTarget
 	Skill         string
 	PromptArgs    []string

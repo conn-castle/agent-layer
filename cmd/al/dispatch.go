@@ -23,13 +23,14 @@ func newDispatchCmd() *cobra.Command {
 		Long:         messages.DispatchLong,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := resolveRepoRoot()
+			root, workingDir, err := resolveRepoRootAndWorkingDir()
 			if err != nil {
 				return err
 			}
 			quiet, _ := cmd.Flags().GetBool("quiet")
 			return dispatchCommandError(cmd, agentdispatch.Run(agentdispatch.RunOptions{
 				Root:            root,
+				WorkDir:         workingDir,
 				Agent:           agent,
 				Model:           model,
 				ReasoningEffort: reasoningEffort,
@@ -61,7 +62,7 @@ func newDispatchFanoutCmd() *cobra.Command {
 		Args:         cobra.ArbitraryArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := resolveRepoRoot()
+			root, workingDir, err := resolveRepoRootAndWorkingDir()
 			if err != nil {
 				return err
 			}
@@ -75,7 +76,7 @@ func newDispatchFanoutCmd() *cobra.Command {
 			}
 			quiet, _ := cmd.Flags().GetBool("quiet")
 			return dispatchCommandError(cmd, agentdispatch.Fanout(agentdispatch.FanoutOptions{
-				Root: root, Targets: parsed, Skill: skill, PromptArgs: args,
+				Root: root, WorkDir: workingDir, Targets: parsed, Skill: skill, PromptArgs: args,
 				Stdin: cmd.InOrStdin(), ReadStdin: stdinIsPiped(cmd.InOrStdin()),
 				Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr(), Env: os.Environ(), Quiet: quiet,
 			}))
@@ -126,13 +127,14 @@ func newDispatchResumeCmd() *cobra.Command {
 		Args:         cobra.MinimumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := resolveRepoRoot()
+			root, workingDir, err := resolveRepoRootAndWorkingDir()
 			if err != nil {
 				return err
 			}
 			quiet, _ := cmd.Flags().GetBool("quiet")
 			return dispatchCommandError(cmd, agentdispatch.Resume(agentdispatch.ResumeOptions{
 				Root:       root,
+				WorkDir:    workingDir,
 				Name:       args[0],
 				Skill:      skill,
 				PromptArgs: args[1:],

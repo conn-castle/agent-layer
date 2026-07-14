@@ -15,18 +15,26 @@ var (
 
 // resolveRepoRoot returns the repo root that contains .agent-layer or fails if missing.
 func resolveRepoRoot() (string, error) {
+	repoRoot, _, err := resolveRepoRootAndWorkingDir()
+	return repoRoot, err
+}
+
+// resolveRepoRootAndWorkingDir returns the Agent Layer configuration root and
+// the caller's actual working directory. They differ when a linked worktree
+// uses an ancestor checkout's .agent-layer configuration.
+func resolveRepoRootAndWorkingDir() (repoRoot string, workingDir string, err error) {
 	cwd, err := getwd()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	repoRoot, found, err := findAgentLayerRoot(cwd)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if !found {
-		return "", fmt.Errorf(messages.RootMissingAgentLayer)
+		return "", "", fmt.Errorf(messages.RootMissingAgentLayer)
 	}
-	return repoRoot, nil
+	return repoRoot, cwd, nil
 }
 
 // resolveInitRoot finds the candidate root for initialization and returns it alongside the absolute cwd.

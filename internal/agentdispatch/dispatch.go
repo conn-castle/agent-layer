@@ -62,6 +62,7 @@ func Run(opts RunOptions) error {
 	}
 	return launchExecution(dispatchExecution{
 		Root:          opts.Root,
+		WorkDir:       opts.WorkDir,
 		Project:       project,
 		Target:        target,
 		Version:       version,
@@ -150,7 +151,7 @@ func Resume(opts ResumeOptions) error {
 		_ = writeRunRecord(run.Dir, &run.Record)
 		return err
 	}
-	preflightRequest := dispatchExecution{Root: opts.Root, Project: project, Target: target, Version: version, Mode: dispatchModeResume, Run: run, Session: session}
+	preflightRequest := dispatchExecution{Root: opts.Root, WorkDir: opts.WorkDir, Project: project, Target: target, Version: version, Mode: dispatchModeResume, Run: run, Session: session}
 	if err := prepareProjection(project, opts.Root, stderr, opts.Quiet); err != nil {
 		return finishDispatchFailure(preflightRequest, &preStartFailure{err: err})
 	}
@@ -159,6 +160,7 @@ func Resume(opts ResumeOptions) error {
 	}
 	return launchExecution(dispatchExecution{
 		Root:          opts.Root,
+		WorkDir:       opts.WorkDir,
 		Project:       project,
 		Target:        target,
 		Version:       version,
@@ -178,6 +180,7 @@ func Resume(opts ResumeOptions) error {
 
 type dispatchExecution struct {
 	Root          string
+	WorkDir       string
 	Project       *config.ProjectConfig
 	Target        targetMeta
 	Version       string
@@ -265,6 +268,7 @@ func executeDispatch(request dispatchExecution) error {
 		if err != nil {
 			return finishDispatchFailure(request, &preStartFailure{err: err})
 		}
+		command.WorkDir = request.WorkDir
 		request.Run.Record.ProviderLogPath = command.LogPath
 		request.Run.Record.Model = command.Model
 		request.Run.Record.ReasoningEffort = command.Effort

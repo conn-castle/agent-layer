@@ -163,10 +163,14 @@ Built-in workflows use external dispatch only for bounded leaf judgment, such
 as plan review, implementation, bounded repair, and semantic code review
 through the `code_reviewer` role. Root orchestration owns transitions,
 verification coordination, shipping, and merge authorization. Dispatch always
-runs in the current resolved repository-root checkout; built-in workflows
-create a linked Git worktree only when the user explicitly requests worktree
-isolation. The global maximum dispatch depth remains three for intentional
-custom workflows; built-in workflows are root-to-leaf.
+loads configuration and durable state from the resolved Agent Layer root while
+running providers in the caller's actual working directory. This distinction
+keeps linked-worktree dispatches in the requested checkout even when they share
+an ancestor checkout's `.agent-layer` configuration. Built-in workflows create
+a linked Git worktree only when the user explicitly requests isolation or
+repository evidence shows unsafe overlap or incompatible delivery topology.
+The global maximum dispatch depth remains three for intentional custom
+workflows; built-in workflows are root-to-leaf.
 
 Plan review uses one shared-prompt fanout to three equivalent external
 reviewers. Each independently chooses 1–4 fresh built-in review subagents,

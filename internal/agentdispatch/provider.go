@@ -57,6 +57,7 @@ type providerCommand struct {
 	Path       string
 	Args       []string
 	Env        []string
+	WorkDir    string
 	Plain      bool
 	SessionID  string
 	LogPath    string

@@ -54,6 +54,32 @@ printf '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\
 	}
 }
 
+func TestRunLaunchesProviderInSuppliedWorkingDirectory(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	workingDir := t.TempDir()
+	binDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "codex.log")
+	writeDispatchStub(t, binDir, "codex", `printf 'PWD=%s\n' "$PWD" >> "$AL_TEST_LOG"
+printf '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\n'`)
+
+	if err := Run(RunOptions{
+		Root:       root,
+		WorkDir:    workingDir,
+		Agent:      AgentCodex,
+		PromptArgs: []string{"work in caller checkout"},
+		Env:        []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath},
+		LookPath:   mockLookPath(binDir),
+	}); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+
+	resolvedWorkingDir, err := filepath.EvalSymlinks(workingDir)
+	if err != nil {
+		t.Fatalf("resolve working directory: %v", err)
+	}
+	assertFileContains(t, logPath, "PWD="+resolvedWorkingDir)
+}
+
 func TestBuildOptionsJSONShapeAndRandomExclusion(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{AntigravityModel: "Gemini 3.1 Pro (High)"})
 	options, err := BuildOptions(OptionsRequest{

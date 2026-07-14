@@ -26,12 +26,16 @@ order.
 
 ## Execute
 
-Use the common plan execution for established work. For an unexplained testable
-symptom, dispatch `/debug-and-fix-issue` with the caller's `implementer` target
-for both its `implementer` and `fixer` roles, plus the unchanged
-`plan_reviewers` and `code_reviewer` targets when its planned path requires
-them. Then run only the common review, repair, or verification stages still
-missing for the final tree.
+Use direct repair execution for established, decision-ready work with concrete
+acceptance behavior and a localized boundary. Use common plan execution when
+the work does not meet that contract.
+
+Keep executing the selected objective when an approach, check, tool, or
+delegation fails: diagnose it, repair it, or reroute between the direct and
+planned paths. Do not turn execution difficulty or broader-than-expected work
+into a new stop condition. Only a human-input condition defined by
+`blocker-classification.md` can pause the item; preserve it and continue
+independent eligible work until the complete pass reaches the human question.
 
 Include each verified ISSUES.md removal, BACKLOG.md reclassification, rejection,
 or still-blocked disposition in the delivery. Leave blocked entries canonical

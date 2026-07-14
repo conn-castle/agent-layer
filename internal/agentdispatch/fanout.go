@@ -162,7 +162,7 @@ func Fanout(opts FanoutOptions) error {
 			return reserveErr
 		}
 		prepared = append(prepared, preparedFanoutChild{target: candidate.spec, request: dispatchExecution{
-			Root: opts.Root, Project: project, Target: candidate.target, Version: candidate.version,
+			Root: opts.Root, WorkDir: opts.WorkDir, Project: project, Target: candidate.target, Version: candidate.version,
 			Prompt: candidate.prompt, Mode: dispatchModeFresh, Run: run, Session: session,
 			Stdout: io.Discard, Stderr: stderr, Env: env, Depth: depth + 1,
 			Model: candidate.spec.Model, Effort: candidate.spec.ReasoningEffort, Skill: opts.Skill, NewCommand: opts.NewCommand,

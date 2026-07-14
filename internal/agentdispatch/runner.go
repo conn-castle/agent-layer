@@ -112,7 +112,10 @@ func executeProvider(
 	}
 
 	cmd := newCommand(command.Path, command.Args...)
-	cmd.Dir = root
+	cmd.Dir = command.WorkDir
+	if cmd.Dir == "" {
+		cmd.Dir = root
+	}
 	cmd.Env = command.Env
 	if command.Plain {
 		cmd.Stdin = nil
