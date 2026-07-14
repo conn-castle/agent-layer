@@ -283,6 +283,10 @@ func writeManagedBaselineState(root string, sys System, state managedBaselineSta
 }
 
 func buildCurrentTemplateManifest(inst *installer, generatedAt time.Time) (templateManifest, error) {
+	baselineVersion, err := resolveBaselineVersion(inst)
+	if err != nil {
+		return templateManifest{}, err
+	}
 	entries, err := inst.templates().currentTemplateEntries()
 	if err != nil {
 		return templateManifest{}, err
@@ -314,7 +318,7 @@ func buildCurrentTemplateManifest(inst *installer, generatedAt time.Time) (templ
 
 	return templateManifest{
 		SchemaVersion: templateManifestSchemaVersion,
-		Version:       resolveBaselineVersion(inst),
+		Version:       baselineVersion,
 		GeneratedAt:   generatedAt.UTC().Format(time.RFC3339),
 		Files:         files,
 		Metadata: map[string]any{
@@ -323,22 +327,28 @@ func buildCurrentTemplateManifest(inst *installer, generatedAt time.Time) (templ
 	}, nil
 }
 
-func resolveBaselineVersion(inst *installer) string {
+// resolveBaselineVersion resolves the baseline version label for the current
+// template manifest. A missing installer, absent pin file, or empty pin keeps
+// the documented "unknown" label; a non-empty malformed pin fails loudly.
+func resolveBaselineVersion(inst *installer) (string, error) {
 	if inst == nil {
-		return baselineVersionUnknown
+		return baselineVersionUnknown, nil
 	}
-	if strings.TrimSpace(inst.pinVersion) != "" {
-		return inst.pinVersion
-	}
-	path := filepath.Join(inst.root, ".agent-layer", "al.version")
-	data, err := inst.sys.ReadFile(path)
-	if err == nil {
-		normalized, normErr := version.Normalize(strings.TrimSpace(string(data)))
-		if normErr == nil {
-			return normalized
+	if trimmed := strings.TrimSpace(inst.pinVersion); trimmed != "" {
+		normalized, err := version.Normalize(trimmed)
+		if err != nil {
+			return "", fmt.Errorf(messages.InstallInvalidPinVersionFmt, err)
 		}
+		return normalized, nil
 	}
-	return baselineVersionUnknown
+	pinned, err := readCurrentPinVersion(inst.root, inst.sys)
+	if err != nil {
+		return "", err
+	}
+	if pinned == "" {
+		return baselineVersionUnknown, nil
+	}
+	return pinned, nil
 }
 
 func baselineFileEntriesFromManifest(manifest templateManifest) []manifestFileEntry {

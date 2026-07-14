@@ -10,10 +10,10 @@ import (
 	"sort"
 	"strings"
 
-	yaml "go.yaml.in/yaml/v3"
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/skillfrontmatter"
 )
 
 // utf8BOM is the UTF-8 byte-order-mark trimmed from skill and instruction file
@@ -22,11 +22,6 @@ var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 
 // osReadFileFunc is a test seam over os.ReadFile used by LoadSkills.
 var osReadFileFunc = os.ReadFile
-
-const (
-	yamlTagStr  = "!!str"
-	yamlTagNull = "!!null"
-)
 
 const (
 	skillScannerInitialBufferSize = 64 * 1024
@@ -50,16 +45,6 @@ type parsedSkill struct {
 	allowedTools  string
 	body          string
 	name          string
-}
-
-type skillFrontMatter struct {
-	Name          *string           `yaml:"name"`
-	Description   *string           `yaml:"description"`
-	License       *string           `yaml:"license"`
-	Compatibility *string           `yaml:"compatibility"`
-	Metadata      map[string]string `yaml:"metadata"`
-	AllowedTools  *string           `yaml:"allowed-tools"`
-	NameMultiline bool
 }
 
 type skillSource struct {
@@ -232,17 +217,17 @@ func parseSkill(content string) (parsedSkill, error) {
 		return parsedSkill{}, fmt.Errorf(messages.ConfigSkillFailedReadContentFmt, err)
 	}
 
-	frontMatter, err := parseSkillFrontMatter(fmLines)
+	doc, err := skillfrontmatter.Parse(strings.Join(fmLines, "\n"))
+	if err != nil {
+		return parsedSkill{}, wrapFrontMatterError(err)
+	}
+
+	description, err := parseSkillDescription(skillFieldValue(doc.Description))
 	if err != nil {
 		return parsedSkill{}, err
 	}
 
-	description, err := parseSkillDescription(frontMatter.Description)
-	if err != nil {
-		return parsedSkill{}, err
-	}
-
-	name, err := parseSkillName(frontMatter.Name, frontMatter.NameMultiline)
+	name, err := parseSkillName(skillFieldValue(doc.Name), doc.Name.Multiline)
 	if err != nil {
 		return parsedSkill{}, err
 	}
@@ -251,91 +236,45 @@ func parseSkill(content string) (parsedSkill, error) {
 	body = strings.TrimRight(body, "\n")
 	return parsedSkill{
 		description:   description,
-		license:       normalizeOptionalSkillValue(frontMatter.License),
-		compatibility: normalizeOptionalSkillValue(frontMatter.Compatibility),
-		metadata:      normalizeSkillMetadata(frontMatter.Metadata),
-		allowedTools:  normalizeOptionalSkillValue(frontMatter.AllowedTools),
+		license:       normalizeOptionalSkillValue(skillFieldValue(doc.License)),
+		compatibility: normalizeOptionalSkillValue(skillFieldValue(doc.Compatibility)),
+		metadata:      normalizeSkillMetadata(doc.Metadata),
+		allowedTools:  normalizeOptionalSkillValue(skillFieldValue(doc.AllowedTools)),
 		body:          body,
 		name:          name,
 	}, nil
 }
 
-func parseSkillFrontMatter(lines []string) (skillFrontMatter, error) {
-	var frontMatter skillFrontMatter
-	frontMatterContent := strings.Join(lines, "\n")
-	if strings.TrimSpace(frontMatterContent) == "" {
-		return frontMatter, nil
-	}
-
-	var root yaml.Node
-	if err := yaml.Unmarshal([]byte(frontMatterContent), &root); err != nil {
-		var typeErr *yaml.TypeError
-		if errors.As(err, &typeErr) {
-			return skillFrontMatter{}, fmt.Errorf(messages.ConfigSkillInvalidFrontMatterTypeFmt, strings.Join(typeErr.Errors, "; "))
-		}
-		return skillFrontMatter{}, fmt.Errorf(messages.ConfigSkillInvalidFrontMatterFmt, err)
-	}
-
-	if len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
-		return skillFrontMatter{}, fmt.Errorf(messages.ConfigSkillInvalidFrontMatterTypeFmt, "front matter must be a mapping")
-	}
-
-	mapping := root.Content[0]
-	seen := make(map[string]bool)
-	for i := 0; i+1 < len(mapping.Content); i += 2 {
-		keyNode := mapping.Content[i]
-		valueNode := mapping.Content[i+1]
-		key := strings.TrimSpace(keyNode.Value)
-
-		if key != "" && seen[key] {
-			return skillFrontMatter{}, fmt.Errorf(messages.ConfigSkillDuplicateKeyFmt, key)
-		}
-		seen[key] = true
-
-		switch key {
-		case "name":
-			value, err := parseFrontMatterStringField("name", valueNode)
-			if err != nil {
-				return skillFrontMatter{}, err
-			}
-			frontMatter.Name = &value
-			frontMatter.NameMultiline = valueNode.Style == yaml.LiteralStyle || valueNode.Style == yaml.FoldedStyle
-		case "description":
-			value, err := parseFrontMatterStringField("description", valueNode)
-			if err != nil {
-				return skillFrontMatter{}, err
-			}
-			frontMatter.Description = &value
-		case "license":
-			value, err := parseFrontMatterStringField("license", valueNode)
-			if err != nil {
-				return skillFrontMatter{}, err
-			}
-			frontMatter.License = &value
-		case "compatibility":
-			value, err := parseFrontMatterStringField("compatibility", valueNode)
-			if err != nil {
-				return skillFrontMatter{}, err
-			}
-			frontMatter.Compatibility = &value
-		case "allowed-tools":
-			value, err := parseFrontMatterStringField("allowed-tools", valueNode)
-			if err != nil {
-				return skillFrontMatter{}, err
-			}
-			frontMatter.AllowedTools = &value
-		case "metadata":
-			metadata, err := parseFrontMatterMetadata(valueNode)
-			if err != nil {
-				return skillFrontMatter{}, err
-			}
-			frontMatter.Metadata = metadata
+// wrapFrontMatterError converts a structural front-matter parse failure into
+// the config package's existing error message conventions.
+func wrapFrontMatterError(err error) error {
+	var parseErr *skillfrontmatter.Error
+	if errors.As(err, &parseErr) {
+		switch parseErr.Kind {
+		case skillfrontmatter.KindDuplicateKey:
+			return fmt.Errorf(messages.ConfigSkillDuplicateKeyFmt, parseErr.Key)
+		case skillfrontmatter.KindSyntax:
+			return fmt.Errorf(messages.ConfigSkillInvalidFrontMatterFmt, parseErr)
 		default:
-			// Unknown fields are intentionally tolerated at parse time.
+			return fmt.Errorf(messages.ConfigSkillInvalidFrontMatterTypeFmt, parseErr.Detail)
 		}
 	}
+	return fmt.Errorf(messages.ConfigSkillInvalidFrontMatterFmt, err)
+}
 
-	return frontMatter, nil
+// skillFieldValue maps a structural field to the config policy view: absent
+// fields are nil, while present-null fields behave like present empty values.
+func skillFieldValue(field skillfrontmatter.Field) *string {
+	switch field.State {
+	case skillfrontmatter.FieldNull:
+		empty := ""
+		return &empty
+	case skillfrontmatter.FieldValue:
+		value := field.Value
+		return &value
+	default:
+		return nil
+	}
 }
 
 func parseSkillDescription(description *string) (string, error) {
@@ -388,45 +327,4 @@ func normalizeSkillMetadata(metadata map[string]string) map[string]string {
 		normalized[key] = value
 	}
 	return normalized
-}
-
-func parseFrontMatterStringField(field string, node *yaml.Node) (string, error) {
-	if node.Kind != yaml.ScalarNode {
-		return "", fmt.Errorf(messages.ConfigSkillInvalidFrontMatterTypeFmt, fmt.Sprintf("%s must be a string", field))
-	}
-	if node.Tag != "" && node.Tag != yamlTagStr && node.Tag != yamlTagNull {
-		return "", fmt.Errorf(messages.ConfigSkillInvalidFrontMatterTypeFmt, fmt.Sprintf("%s must be a string", field))
-	}
-	if node.Tag == yamlTagNull {
-		return "", nil
-	}
-	return node.Value, nil
-}
-
-func parseFrontMatterMetadata(node *yaml.Node) (map[string]string, error) {
-	if node.Kind == yaml.ScalarNode && node.Tag == yamlTagNull {
-		return nil, nil
-	}
-	if node.Kind != yaml.MappingNode {
-		return nil, fmt.Errorf(messages.ConfigSkillInvalidFrontMatterTypeFmt, "metadata must be a string map")
-	}
-
-	metadata := make(map[string]string, len(node.Content)/2)
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		keyNode := node.Content[i]
-		valueNode := node.Content[i+1]
-		if keyNode.Kind != yaml.ScalarNode || (keyNode.Tag != "" && keyNode.Tag != yamlTagStr) {
-			return nil, fmt.Errorf(messages.ConfigSkillInvalidFrontMatterTypeFmt, "metadata keys must be strings")
-		}
-		if valueNode.Kind != yaml.ScalarNode || (valueNode.Tag != "" && valueNode.Tag != yamlTagStr) {
-			return nil, fmt.Errorf(messages.ConfigSkillInvalidFrontMatterTypeFmt, "metadata values must be strings")
-		}
-		// Reject duplicate metadata keys for parity with top-level front-matter
-		// keys, which fail loudly. Otherwise a duplicate silently last-value-wins.
-		if _, exists := metadata[keyNode.Value]; exists {
-			return nil, fmt.Errorf(messages.ConfigSkillDuplicateKeyFmt, keyNode.Value)
-		}
-		metadata[keyNode.Value] = valueNode.Value
-	}
-	return metadata, nil
 }

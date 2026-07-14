@@ -5,7 +5,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
@@ -398,33 +400,69 @@ func TestWriteManagedBaselineState_MkdirAndWriteErrors(t *testing.T) {
 }
 
 func TestResolveBaselineVersion_Cases(t *testing.T) {
-	if got := resolveBaselineVersion(nil); got != baselineVersionUnknown {
-		t.Fatalf("resolveBaselineVersion(nil) = %q, want unknown", got)
+	if got, err := resolveBaselineVersion(nil); err != nil || got != baselineVersionUnknown {
+		t.Fatalf("resolveBaselineVersion(nil) = %q, %v; want unknown, nil", got, err)
 	}
 
 	root := t.TempDir()
 	inst := &installer{root: root, sys: RealSystem{}, pinVersion: "1.2.3"}
-	if got := resolveBaselineVersion(inst); got != "1.2.3" {
-		t.Fatalf("resolveBaselineVersion(pin) = %q, want 1.2.3", got)
+	if got, err := resolveBaselineVersion(inst); err != nil || got != "1.2.3" {
+		t.Fatalf("resolveBaselineVersion(pin) = %q, %v; want 1.2.3, nil", got, err)
+	}
+
+	inst.pinVersion = "dev"
+	if _, err := resolveBaselineVersion(inst); err == nil || !strings.Contains(err.Error(), "invalid pin version") {
+		t.Fatalf("resolveBaselineVersion(invalid explicit pin) error = %v, want invalid pin version", err)
+	}
+	inst.pinVersion = ""
+
+	// No pin file at all keeps the documented unknown label.
+	if got, err := resolveBaselineVersion(inst); err != nil || got != baselineVersionUnknown {
+		t.Fatalf("resolveBaselineVersion(no file) = %q, %v; want unknown, nil", got, err)
 	}
 
 	versionPath := filepath.Join(root, ".agent-layer", "al.version")
 	if err := os.MkdirAll(filepath.Dir(versionPath), 0o700); err != nil {
 		t.Fatalf("mkdir version dir: %v", err)
 	}
+
+	// An empty pin file is a valid no-version state, not an error.
+	if err := os.WriteFile(versionPath, []byte("  \n"), 0o600); err != nil {
+		t.Fatalf("write empty version: %v", err)
+	}
+	if got, err := resolveBaselineVersion(inst); err != nil || got != baselineVersionUnknown {
+		t.Fatalf("resolveBaselineVersion(empty file) = %q, %v; want unknown, nil", got, err)
+	}
+
 	if err := os.WriteFile(versionPath, []byte("v0.7.0\n"), 0o600); err != nil {
 		t.Fatalf("write version: %v", err)
 	}
-	inst.pinVersion = ""
-	if got := resolveBaselineVersion(inst); got != "0.7.0" {
-		t.Fatalf("resolveBaselineVersion(file) = %q, want 0.7.0", got)
+	if got, err := resolveBaselineVersion(inst); err != nil || got != "0.7.0" {
+		t.Fatalf("resolveBaselineVersion(file) = %q, %v; want 0.7.0, nil", got, err)
 	}
 
+	// A non-empty malformed pin must fail loudly instead of collapsing to
+	// the unknown label.
 	if err := os.WriteFile(versionPath, []byte("dev\n"), 0o600); err != nil {
 		t.Fatalf("write invalid version: %v", err)
 	}
-	if got := resolveBaselineVersion(inst); got != baselineVersionUnknown {
-		t.Fatalf("resolveBaselineVersion(invalid) = %q, want unknown", got)
+	if _, err := resolveBaselineVersion(inst); err == nil || !strings.Contains(err.Error(), "invalid pin version") {
+		t.Fatalf("resolveBaselineVersion(invalid) error = %v, want invalid pin version", err)
+	}
+}
+
+func TestBuildCurrentTemplateManifest_MalformedPinFails(t *testing.T) {
+	root := t.TempDir()
+	versionPath := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(versionPath), 0o700); err != nil {
+		t.Fatalf("mkdir version dir: %v", err)
+	}
+	if err := os.WriteFile(versionPath, []byte("not-a-version\n"), 0o600); err != nil {
+		t.Fatalf("write invalid version: %v", err)
+	}
+	inst := &installer{root: root, sys: RealSystem{}}
+	if _, err := buildCurrentTemplateManifest(inst, time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "invalid pin version") {
+		t.Fatalf("buildCurrentTemplateManifest error = %v, want invalid pin version", err)
 	}
 }
 

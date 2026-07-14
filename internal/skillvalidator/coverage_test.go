@@ -7,151 +7,91 @@ import (
 	"testing"
 )
 
-func TestParseFrontMatter_EmptyContent(t *testing.T) {
-	fm, err := parseFrontMatter("")
+func writeSkillFixture(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "alpha.md")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write skill fixture: %v", err)
+	}
+	return path
+}
+
+func TestParseSkillSource_EmptyFrontMatterSection(t *testing.T) {
+	parsed, err := ParseSkillSource(writeSkillFixture(t, "---\n---\nBody.\n"))
 	if err != nil {
-		t.Fatalf("parseFrontMatter empty: %v", err)
+		t.Fatalf("ParseSkillSource: %v", err)
 	}
-	if len(fm.keys) != 0 {
-		t.Fatalf("expected 0 keys, got %d", len(fm.keys))
+	if len(parsed.FrontMatterKeys) != 0 {
+		t.Fatalf("expected 0 keys, got %v", parsed.FrontMatterKeys)
 	}
-}
-
-func TestParseFrontMatter_WhitespaceOnly(t *testing.T) {
-	fm, err := parseFrontMatter("   \n  \t  \n")
-	if err != nil {
-		t.Fatalf("parseFrontMatter whitespace: %v", err)
-	}
-	if len(fm.keys) != 0 {
-		t.Fatalf("expected 0 keys, got %d", len(fm.keys))
+	if parsed.Name != nil || parsed.Description != nil {
+		t.Fatalf("expected nil fields for empty front matter, got %#v", parsed)
 	}
 }
 
-func TestParseFrontMatter_InvalidYAML(t *testing.T) {
-	_, err := parseFrontMatter("{{invalid yaml")
-	if err == nil {
-		t.Fatal("expected YAML parse error")
-	}
-}
-
-func TestParseFrontMatter_NonMappingYAML(t *testing.T) {
-	_, err := parseFrontMatter("- item1\n- item2\n")
-	if err == nil || !strings.Contains(err.Error(), "must be a YAML mapping") {
+func TestParseSkillSource_NonMappingFrontMatterRejected(t *testing.T) {
+	_, err := ParseSkillSource(writeSkillFixture(t, "---\n- item1\n- item2\n---\nBody.\n"))
+	if err == nil || !strings.Contains(err.Error(), "must be a mapping") {
 		t.Fatalf("expected mapping error, got %v", err)
 	}
 }
 
-func TestParseFrontMatter_EmptyKeySkipped(t *testing.T) {
-	// YAML with an empty key (null key resolves to "")
-	fm, err := parseFrontMatter("name: alpha\n")
+func TestParseSkillSource_KeysSortedAcrossAllFields(t *testing.T) {
+	content := "---\nname: alpha\nlicense: MIT\nallowed-tools: bash\nmetadata:\n  k: v\ndescription: test\n---\nBody.\n"
+	parsed, err := ParseSkillSource(writeSkillFixture(t, content))
 	if err != nil {
-		t.Fatalf("parseFrontMatter: %v", err)
+		t.Fatalf("ParseSkillSource: %v", err)
 	}
-	if fm.name == nil || *fm.name != "alpha" {
-		t.Fatalf("expected name=alpha, got %v", fm.name)
+	want := []string{"allowed-tools", "description", "license", "metadata", "name"}
+	if len(parsed.FrontMatterKeys) != len(want) {
+		t.Fatalf("keys = %v, want %v", parsed.FrontMatterKeys, want)
 	}
-}
-
-func TestParseFrontMatter_MetadataValid(t *testing.T) {
-	fm, err := parseFrontMatter("name: test\nmetadata:\n  key1: val1\n  key2: val2\n")
-	if err != nil {
-		t.Fatalf("parseFrontMatter with metadata: %v", err)
-	}
-	if fm.name == nil || *fm.name != "test" {
-		t.Fatalf("expected name=test, got %v", fm.name)
-	}
-}
-
-func TestParseFrontMatter_MetadataNull(t *testing.T) {
-	fm, err := parseFrontMatter("name: test\nmetadata: null\n")
-	if err != nil {
-		t.Fatalf("parseFrontMatter with null metadata: %v", err)
-	}
-	if fm.name == nil || *fm.name != "test" {
-		t.Fatalf("expected name=test, got %v", fm.name)
-	}
-}
-
-func TestParseFrontMatter_MetadataNotMapping(t *testing.T) {
-	_, err := parseFrontMatter("name: test\nmetadata: scalar\n")
-	if err == nil || !strings.Contains(err.Error(), "must be a mapping") {
-		t.Fatalf("expected metadata mapping error, got %v", err)
-	}
-}
-
-func TestParseFrontMatter_MetadataNonStringKey(t *testing.T) {
-	_, err := parseFrontMatter("name: test\nmetadata:\n  123: val\n")
-	if err == nil || !strings.Contains(err.Error(), "must have string keys") {
-		t.Fatalf("expected metadata string key error, got %v", err)
-	}
-}
-
-func TestParseFrontMatter_MetadataNonStringValue(t *testing.T) {
-	_, err := parseFrontMatter("name: test\nmetadata:\n  key:\n    - nested\n")
-	if err == nil || !strings.Contains(err.Error(), "must have string values") {
-		t.Fatalf("expected metadata string value error, got %v", err)
-	}
-}
-
-func TestParseFrontMatter_LicenseField(t *testing.T) {
-	fm, err := parseFrontMatter("name: test\nlicense: MIT\n")
-	if err != nil {
-		t.Fatalf("parseFrontMatter with license: %v", err)
-	}
-	found := false
-	for _, k := range fm.keys {
-		if k == "license" {
-			found = true
+	for i, key := range want {
+		if parsed.FrontMatterKeys[i] != key {
+			t.Fatalf("keys = %v, want %v", parsed.FrontMatterKeys, want)
 		}
 	}
-	if !found {
-		t.Fatal("expected license in keys")
-	}
 }
 
-func TestParseFrontMatter_AllowedToolsField(t *testing.T) {
-	fm, err := parseFrontMatter("name: test\nallowed-tools: bash\n")
-	if err != nil {
-		t.Fatalf("parseFrontMatter with allowed-tools: %v", err)
+func TestParseSkillSource_MalformedMetadataRejected(t *testing.T) {
+	cases := []string{
+		"---\nname: alpha\nmetadata: scalar\n---\nBody.\n",
+		"---\nname: alpha\nmetadata:\n  123: val\n---\nBody.\n",
+		"---\nname: alpha\nmetadata:\n  key:\n    - nested\n---\nBody.\n",
 	}
-	found := false
-	for _, k := range fm.keys {
-		if k == "allowed-tools" {
-			found = true
+	for _, content := range cases {
+		_, err := ParseSkillSource(writeSkillFixture(t, content))
+		if err == nil || !strings.Contains(err.Error(), "metadata") {
+			t.Fatalf("expected metadata error for %q, got %v", content, err)
 		}
 	}
-	if !found {
-		t.Fatal("expected allowed-tools in keys")
+}
+
+func TestParseSkillSource_NonStringScalarFieldRejected(t *testing.T) {
+	_, err := ParseSkillSource(writeSkillFixture(t, "---\nname: 42\ndescription: test\n---\nBody.\n"))
+	if err == nil || !strings.Contains(err.Error(), "must be a string") {
+		t.Fatalf("expected string-type error for integer name, got %v", err)
 	}
 }
 
-func TestParseFrontMatter_LicenseNonScalar(t *testing.T) {
-	_, err := parseFrontMatter("name: test\nlicense:\n  - item\n")
-	if err == nil || !strings.Contains(err.Error(), "must be a string scalar") {
-		t.Fatalf("expected license scalar error, got %v", err)
+func TestParseSkillSource_DuplicateMetadataKeyRejected(t *testing.T) {
+	// Doctor now fails loudly on duplicate metadata keys, matching config
+	// loading, instead of silently tolerating last-value-wins.
+	_, err := ParseSkillSource(writeSkillFixture(t, "---\nname: alpha\nmetadata:\n  owner: a\n  owner: b\n---\nBody.\n"))
+	if err == nil || !strings.Contains(err.Error(), "duplicate key") {
+		t.Fatalf("expected duplicate metadata key error, got %v", err)
 	}
 }
 
-func TestParseFrontMatter_DescriptionError(t *testing.T) {
-	_, err := parseFrontMatter("description:\n  - item\n")
-	if err == nil || !strings.Contains(err.Error(), "must be a string scalar") {
-		t.Fatalf("expected description scalar error, got %v", err)
+func TestParseSkillSource_MultilineNameStillParsed(t *testing.T) {
+	// Doctor keeps its policy of accepting block-scalar names at parse time;
+	// only config loading rejects multiline names.
+	parsed, err := ParseSkillSource(writeSkillFixture(t, "---\nname: |-\n  alpha\ndescription: test\n---\nBody.\n"))
+	if err != nil {
+		t.Fatalf("ParseSkillSource: %v", err)
 	}
-}
-
-func TestParseFrontMatter_CompatibilityError(t *testing.T) {
-	_, err := parseFrontMatter("compatibility:\n  - item\n")
-	if err == nil || !strings.Contains(err.Error(), "must be a string scalar") {
-		t.Fatalf("expected compatibility scalar error, got %v", err)
-	}
-}
-
-func TestParseScalarString_NonStringTag(t *testing.T) {
-	// Exercise the tag != yamlTagStr branch via a frontmatter with an integer value
-	_, err := parseFrontMatter("name: 42\n")
-	// 42 parses as !!int tag, which should fail parseScalarString
-	if err == nil || !strings.Contains(err.Error(), "must be a string scalar") {
-		t.Fatalf("expected string scalar error for integer, got %v", err)
+	if parsed.Name == nil || *parsed.Name != "alpha" {
+		t.Fatalf("expected name=alpha for multiline scalar, got %#v", parsed.Name)
 	}
 }
 
@@ -280,17 +220,9 @@ func TestParseSkillSource_UTF8BOMStripped(t *testing.T) {
 	}
 }
 
-func TestParseFrontMatter_DuplicateKeysReturnError(t *testing.T) {
-	_, err := parseFrontMatter("name: first\nname: second\ndescription: test\n")
+func TestParseSkillSource_DuplicateTopLevelKeyRejected(t *testing.T) {
+	_, err := ParseSkillSource(writeSkillFixture(t, "---\nname: first\nname: second\ndescription: test\n---\nBody.\n"))
 	if err == nil || !strings.Contains(err.Error(), "duplicate key") {
 		t.Fatalf("expected duplicate key error, got %v", err)
-	}
-}
-
-func TestEnsureMetadataMap_NonStringKeyTag(t *testing.T) {
-	// Test through parseFrontMatter with boolean key
-	_, err := parseFrontMatter("metadata:\n  true: val\n")
-	if err == nil || !strings.Contains(err.Error(), "string keys") {
-		t.Fatalf("expected string key error, got %v", err)
 	}
 }
