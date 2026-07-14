@@ -246,11 +246,11 @@ func copyFixtureRepo(src string, dest string) error {
 		if info.IsDir() {
 			return os.MkdirAll(target, info.Mode())
 		}
-		data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
+		data, err := os.ReadFile(path) // #nosec G304 G122 -- path comes from walking the test-owned source tree.
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(target, data, info.Mode())
+		return os.WriteFile(target, data, info.Mode()) // #nosec G703 -- target is joined beneath the test-owned destination tree.
 	})
 }
 
