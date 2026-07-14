@@ -80,7 +80,7 @@ enabled = true
 [agents.codex]
 enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model setting and the client uses its default.
-# model = "gpt-5.3-codex"
+# model = "gpt-5.6-sol"
 # reasoning_effort is optional; when omitted, the client uses its default.
 # reasoning_effort = "xhigh" # codex only
 # local_config_dir sets CODEX_HOME=<repo>/.codex for per-repo auth, sessions,

@@ -155,7 +155,7 @@ func TestLookupField_DispatchMaxDepth(t *testing.T) {
 
 func TestFieldOptionValues_ClaudeModelCatalog(t *testing.T) {
 	values := FieldOptionValues(ClaudeModelFieldKey)
-	want := []string{"default", "sonnet", "opus", "haiku", "fable", "sonnet[1m]", "opus[1m]", "opusplan"}
+	want := []string{"default", "best", "fable", "sonnet", "opus", "haiku", "sonnet[1m]", "opus[1m]", "opusplan"}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
 	}
@@ -207,11 +207,10 @@ func TestFieldOptionValues_CodexModelCatalog(t *testing.T) {
 		"gpt-5.6-sol",
 		"gpt-5.6-terra",
 		"gpt-5.6-luna",
+		"gpt-5.5",
 		"gpt-5.4",
+		"gpt-5.4-mini",
 		"gpt-5.3-codex-spark",
-		"gpt-5.3-codex",
-		"gpt-5.2",
-		"gpt-5.2-mini",
 	}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
@@ -260,7 +259,7 @@ func TestFieldOptionValues_DispatchDefaultAgentCatalog(t *testing.T) {
 
 func TestFieldOptionValues_CopilotCliModelCatalog(t *testing.T) {
 	values := FieldOptionValues(CopilotCLIModelFieldKey)
-	want := []string{"claude-opus-4.6", "claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.4", "gpt-5.3-codex", "gemini-3-pro"}
+	want := []string{"auto", "claude-sonnet-4.6", "gpt-5.4", "claude-haiku-4.5", "gpt-5.3-codex", "gemini-3.1-pro-preview", "gemini-3.5-flash", "mai-code-1-flash"}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
 	}
