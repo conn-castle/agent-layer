@@ -8,11 +8,11 @@ import (
 )
 
 func injectClaudeChimeHook(settings map[string]any) error {
-	existingHooks, present := settings["hooks"]
+	existingHooks, present := settings[hooksKey]
 	var hooks map[string]any
 	if !present {
 		hooks = make(map[string]any)
-		settings["hooks"] = hooks
+		settings[hooksKey] = hooks
 	} else {
 		var ok bool
 		hooks, ok = existingHooks.(map[string]any)
@@ -20,12 +20,12 @@ func injectClaudeChimeHook(settings map[string]any) error {
 			return fmt.Errorf(messages.SyncChimeKeyTableConflictFmt, "agents.claude.agent_specific.hooks")
 		}
 	}
-	switch hooks["Stop"].(type) {
+	switch hooks[stopHookKey].(type) {
 	case nil, []any:
 	default:
 		return fmt.Errorf(messages.SyncChimeListConflictFmt, "agents.claude.agent_specific.hooks.Stop")
 	}
-	hooks["Stop"] = appendClaudeChimeStopHook(hooks["Stop"])
+	hooks[stopHookKey] = appendClaudeChimeStopHook(hooks[stopHookKey])
 	return nil
 }
 
@@ -39,7 +39,7 @@ func appendClaudeChimeStopHook(existing any) []any {
 			if !ok {
 				continue
 			}
-			handlers, ok := group["hooks"].([]any)
+			handlers, ok := group[hooksKey].([]any)
 			if !ok {
 				continue
 			}
@@ -51,7 +51,7 @@ func appendClaudeChimeStopHook(existing any) []any {
 		}
 	}
 	return append(out, map[string]any{
-		"hooks": []any{chimeHandler(agentLayerClaudeChimeCommand)},
+		hooksKey: []any{chimeHandler(agentLayerClaudeChimeCommand)},
 	})
 }
 
@@ -96,7 +96,7 @@ func cleanClaudeChimeHook(sys System, root string) error {
 }
 
 func removeClaudeChimeHook(settings map[string]any) (bool, error) {
-	hooksValue, ok := settings["hooks"]
+	hooksValue, ok := settings[hooksKey]
 	if !ok {
 		return false, nil
 	}
@@ -104,7 +104,7 @@ func removeClaudeChimeHook(settings map[string]any) (bool, error) {
 	if !ok {
 		return false, fmt.Errorf(messages.SyncChimeKeyTableConflictFmt, ".claude/settings.json hooks")
 	}
-	stopValue, ok := hooks["Stop"]
+	stopValue, ok := hooks[stopHookKey]
 	if !ok {
 		return false, nil
 	}
@@ -122,7 +122,7 @@ func removeClaudeChimeHook(settings map[string]any) (bool, error) {
 			filteredStop = append(filteredStop, entry)
 			continue
 		}
-		handlersValue, ok := group["hooks"]
+		handlersValue, ok := group[hooksKey]
 		if !ok {
 			filteredStop = append(filteredStop, entry)
 			continue
@@ -143,19 +143,19 @@ func removeClaudeChimeHook(settings map[string]any) (bool, error) {
 			changed = true
 			continue
 		}
-		group["hooks"] = filteredHandlers
+		group[hooksKey] = filteredHandlers
 		filteredStop = append(filteredStop, group)
 	}
 	if !changed {
 		return false, nil
 	}
 	if len(filteredStop) == 0 {
-		delete(hooks, "Stop")
+		delete(hooks, stopHookKey)
 	} else {
-		hooks["Stop"] = filteredStop
+		hooks[stopHookKey] = filteredStop
 	}
 	if len(hooks) == 0 {
-		delete(settings, "hooks")
+		delete(settings, hooksKey)
 	}
 	return true, nil
 }

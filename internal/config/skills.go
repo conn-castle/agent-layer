@@ -130,9 +130,9 @@ func loadDirectorySkill(byName map[string]skillSource, root string, dirName stri
 			continue
 		}
 		switch entry.name {
-		case "SKILL.md":
+		case skillManifestName:
 			hasCanonical = true
-		case "skill.md":
+		case lowercaseSkillManifestName:
 			hasFallback = true
 		}
 	}
@@ -140,9 +140,9 @@ func loadDirectorySkill(byName map[string]skillSource, root string, dirName stri
 	skillPath := ""
 	switch {
 	case hasCanonical:
-		skillPath = filepath.Join(skillDirPath, "SKILL.md")
+		skillPath = filepath.Join(skillDirPath, skillManifestName)
 	case hasFallback:
-		skillPath = filepath.Join(skillDirPath, "skill.md")
+		skillPath = filepath.Join(skillDirPath, lowercaseSkillManifestName)
 	default:
 		return fmt.Errorf(messages.ConfigSkillDirEmptyFmt, skillDirPath)
 	}

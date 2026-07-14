@@ -207,10 +207,10 @@ type LegacySkillProjection struct {
 // It is the single source of truth consumed by both the sync cleanup helper
 // and the upgrade-readiness check.
 var LegacySkillProjections = []LegacySkillProjection{
-	{Dir: []string{".codex", "skills"}, Suffix: "SKILL.md"},
-	{Dir: []string{".agent", "skills"}, Suffix: "SKILL.md"},
-	{Dir: []string{".gemini", "skills"}, Suffix: "SKILL.md"},
-	{Dir: []string{".github", "skills"}, Suffix: "SKILL.md"},
+	{Dir: []string{".codex", skillsDirName}, Suffix: skillManifestName},
+	{Dir: []string{".agent", skillsDirName}, Suffix: skillManifestName},
+	{Dir: []string{".gemini", skillsDirName}, Suffix: skillManifestName},
+	{Dir: []string{".github", skillsDirName}, Suffix: skillManifestName},
 	{Dir: []string{".vscode", "prompts"}, Suffix: ".prompt.md"},
 }
 

@@ -126,13 +126,13 @@ func platformStrings() (string, string, error) {
 
 func checkPlatform(osName, arch string) (string, string, error) {
 	switch osName {
-	case "darwin", "linux":
+	case osDarwin, osLinux:
 	default:
 		return "", "", fmt.Errorf(messages.DispatchUnsupportedOSFmt, osName)
 	}
 
 	switch arch {
-	case "amd64", "arm64":
+	case archAMD64, archARM64:
 	default:
 		return "", "", fmt.Errorf(messages.DispatchUnsupportedArchFmt, arch)
 	}

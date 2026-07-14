@@ -47,8 +47,8 @@ const (
 )
 
 var memoryEntriesPaths = map[string]struct{}{
-	"docs/agent-layer/ISSUES.md":    {},
-	"docs/agent-layer/BACKLOG.md":   {},
+	issuesPath:                      {},
+	backlogPath:                     {},
 	"docs/agent-layer/DECISIONS.md": {},
 	"docs/agent-layer/COMMANDS.md":  {},
 	"docs/agent-layer/CONTEXT.md":   {},
@@ -89,7 +89,7 @@ func ownershipPolicyForPath(relPath string) string {
 	if relPath == commandsAllowRelPath {
 		return ownershipPolicyAllowlist
 	}
-	if relPath == "docs/agent-layer/ROADMAP.md" {
+	if relPath == roadmapPath {
 		return ownershipPolicyMemoryRoadmap
 	}
 	if _, ok := memoryEntriesPaths[relPath]; ok {

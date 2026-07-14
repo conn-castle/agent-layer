@@ -98,12 +98,12 @@ type ParsedSkill struct {
 
 // allowedFrontMatterFields is the strict validator allowlist for skill frontmatter fields.
 var allowedFrontMatterFields = map[string]struct{}{
-	"name":          {},
-	"description":   {},
-	"license":       {},
-	"compatibility": {},
-	"metadata":      {},
-	"allowed-tools": {},
+	fieldName:        {},
+	fieldDescription: {},
+	"license":        {},
+	"compatibility":  {},
+	"metadata":       {},
+	"allowed-tools":  {},
 }
 
 // ParseSkillSource reads and parses a skill source file into validator input.

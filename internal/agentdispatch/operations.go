@@ -92,7 +92,7 @@ func Inspect(request InspectionRequest) error {
 	}
 	conversation := inspection.ProviderConversation
 	if conversation == "" {
-		conversation = "pending"
+		conversation = dispatchStatePending
 	}
 	if _, err := fmt.Fprintf(stdout, "Provider conversation: %s\n", conversation); err != nil {
 		return err

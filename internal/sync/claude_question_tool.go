@@ -123,17 +123,17 @@ func appendAskUserQuestionHook(existing any) []any {
 	if values, ok := existing.([]any); ok {
 		out = append(out, values...)
 		for _, entry := range values {
-			if m, ok := entry.(map[string]any); ok && m["matcher"] == askUserQuestionTool {
+			if m, ok := entry.(map[string]any); ok && m[matcherKey] == askUserQuestionTool {
 				return out
 			}
 		}
 	}
 	return append(out, map[string]any{
-		"matcher": askUserQuestionTool,
-		"hooks": []any{
+		matcherKey: askUserQuestionTool,
+		hooksKey: []any{
 			map[string]any{
-				"type":    "command",
-				"command": askUserQuestionHookCommand,
+				chimeHandlerTypeKey:    chimeHandlerCommandType,
+				chimeHandlerCommandKey: askUserQuestionHookCommand,
 			},
 		},
 	})

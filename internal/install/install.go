@@ -194,7 +194,7 @@ func (inst upgradeOrchestrator) runUpgradeTransaction(snapshot *upgradeSnapshot)
 		// covers a source this step wrote).
 		{name: "writeStatuslineSources", run: inst.writeStatuslineSources, rollbackTargets: inst.writeStatuslineSourcesTargetPaths},
 		{name: "updateGitignore", run: inst.updateGitignore, rollbackTargets: inst.updateGitignoreTargetPaths},
-		{name: "writeVSCodeLaunchers", run: inst.writeVSCodeLaunchers, rollbackTargets: inst.writeVSCodeLaunchersTargetPaths},
+		{name: stepWriteVSCodeLaunchers, run: inst.writeVSCodeLaunchers, rollbackTargets: inst.writeVSCodeLaunchersTargetPaths},
 		{name: "handleUnknowns", run: inst.handleUnknowns, rollbackTargets: inst.handleUnknownsTargetPaths},
 	}
 	completedTargets := make(map[string]struct{})
@@ -278,7 +278,7 @@ func (inst upgradeOrchestrator) ensureBaseDirs() error {
 	root := inst.root
 	sys := inst.sys
 	dirs := []string{
-		filepath.Join(root, ".agent-layer", "instructions"),
+		filepath.Join(root, ".agent-layer", instructionsDirName),
 		filepath.Join(root, ".agent-layer", "skills"),
 		filepath.Join(root, ".agent-layer", "tmp", "runs"),
 	}

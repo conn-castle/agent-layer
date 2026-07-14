@@ -129,29 +129,11 @@ func supportsQuietFlag(rawVersion string) bool {
 }
 
 func semverAtLeast(versionA string, versionB string) bool {
-	aMajor, aMinor, aPatch, ok := parseSemver(versionA)
-	if !ok {
-		return false
-	}
-	bMajor, bMinor, bPatch, ok := parseSemver(versionB)
-	if !ok {
-		return false
-	}
-	if aMajor != bMajor {
-		return aMajor > bMajor
-	}
-	if aMinor != bMinor {
-		return aMinor > bMinor
-	}
-	return aPatch >= bPatch
-}
-
-func parseSemver(raw string) (int, int, int, bool) {
-	parts, err := version.Parse(raw)
+	comparison, err := version.Compare(versionA, versionB)
 	if err != nil {
-		return 0, 0, 0, false
+		return false
 	}
-	return parts[0], parts[1], parts[2], true
+	return comparison >= 0
 }
 
 func stripQuietFlags(args []string) []string {
@@ -165,7 +147,7 @@ func stripQuietFlags(args []string) []string {
 			stripped = append(stripped, args[i:]...)
 			break
 		}
-		if arg == "--quiet" || arg == "-q" || strings.HasPrefix(arg, "--quiet=") {
+		if arg == quietFlag || arg == "-q" || strings.HasPrefix(arg, "--quiet=") {
 			continue
 		}
 		stripped = append(stripped, arg)

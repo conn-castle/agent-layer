@@ -63,18 +63,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Next step: Confirm the format from a primary source (official spec or an observed real file); if JSONC, add tolerant parsing for this client instead of strict JSON.
     Notes: Verification gap recorded in decision antigravity-settings-overlay-preserve (2026-07-10).
 
-- Issue 2026-07-02 lint-ci-local-goconst-false-negative-darwin: `make lint-ci-local` misses goconst violations on macOS
-    Priority: Medium. Area: Makefile (`lint-ci-local`) / CI-parity lint tooling; COMMANDS.md guidance
-    Description: `make lint-ci-local` runs golangci-lint with GOOS=linux GOARCH=amd64 on a darwin host; cross-GOOS package loading drops the package's `_test.go` files from the analyzed fileset, so goconst's per-package string-occurrence counts fall below the threshold and real violations do not fire. This caused a false negative during PR #128: local `make dev` and `make lint-ci-local` both passed, but CI's `verify` (`make ci` -> `make lint`) failed on `goconst` in internal/sync/codex_config_merge.go. The documented "CI-parity" command is not faithful for occurrence-counting linters.
-    Next step: Run lint on native/containerized linux for true parity, or document that native `golangci-lint run ./...` (or `--enable-only=goconst ./<pkg>/...`) is the faithful local reproducer and update the `lint-ci-local` note in COMMANDS.md accordingly.
-    Notes: Discovered during ship-pr of PR #128; native goconst-only run reproduces CI's exact diagnostic. Cost a failed CI cycle before the parity gap was understood.
-
-- Issue 2026-07-02 codex-merge-root-scalar-leading-comment: Seeding a managed root scalar before the first table can detach that table's leading comment
-    Priority: Low. Area: internal/sync/codex_config_merge.go (`insertRootLine` / `setPath` fresh-insert path)
-    Description: When a managed root scalar (e.g. `model`) is absent and gets inserted just before the first table header via `insertRootLine`, a `# comment` that documented that first table ends up above the newly inserted scalar (separated by a blank), so it reads as documenting the scalar. In-place updates of existing managed keys are unaffected (they now preserve position and inline comments); only the first-time fresh insert of a root scalar in front of a commented first table is affected. No data loss; valid TOML.
-    Next step: Decide placement policy for fresh root-scalar inserts relative to a first table's leading comment block (insert above the comment block, or leave as-is), then implement; this is a formatting/UX tradeoff, not a correctness bug.
-    Notes: Deferred from review resolution 20260702 (F4). The inline-comment-drop half of F4 was fixed via in-place `setPath`.
-
 - Issue 2026-07-02 codex-feature-toggles-cli-only-in-wizard: Codex feature toggles (statusline/apps/browser) not offered to VS Code-only repos
     Priority: Low. Area: internal/wizard/wizard.go (Codex prompt block)
     Description: PR #127 unified the Codex `local_config_dir` prompt so it appears when `agents.codex` (CLI) OR `agents.vscode` (Codex VS Code extension) is enabled, mirroring Claude. The Codex feature toggles (statusline, apps, browser) were deliberately left gated on `agents.codex` (CLI) only. If the Codex VS Code extension reads these from `.codex/config.toml` (it does when CODEX_HOME=<repo>/.codex is set), a VS Code-only repo cannot configure statusline/apps/browser via the wizard, unlike the Claude side which offers its shared feature toggles whenever either surface is enabled.
@@ -105,11 +93,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Next step: Human to decide whether to make the noise-suppression heuristic pair equivalent +/- lines ACROSS context lines within a hunk (restores collapse, but cross-context pairing could mask a genuine move+edit), or keep go-udiff pinned at v0.3.1. Option A (cross-context pairing) is the path to adopt v0.4.x; it changes a user-facing diff heuristic's semantics, so it is a deliberate call, not a mechanical edit.
     Notes: Deferred because the fix changes user-facing diff-preview behavior (a heuristic tradeoff), not a mechanical bump. All other dep currency work shipped this iteration.
 
-- Issue 2026-06-23 dep-major-bumps-charm-huh-bubbles: Major-version bumps available for charmbracelet/huh and charmbracelet/bubbles (and a blocked golangci-lint bump)
-    Priority: Low. Area: go.mod direct deps (charmbracelet/huh, charmbracelet/bubbles, golangci-lint/v2)
-    Description: `go list -m -u all` shows charmbracelet/huh v0.8.0 -> v1.0.0 and charmbracelet/bubbles (pinned pseudo-version) -> v1.0.0 — both MAJOR bumps with breaking APIs in the bubbletea/huh v1 line (the v2 charm stack reworks lipgloss/x-ansi). Per CLAUDE.md, major/breaking bumps need confirmation + compatibility work and were NOT applied. Separately, golangci-lint/v2 v2.10.1 -> v2.12.2 was attempted but REVERTED: v2.12.2 pulls charm.land/lipgloss/v2 which forces charmbracelet/x/ansi v0.11.7 module-wide, and x/ansi v0.11.7 breaks the pinned x/cellbuf v0.0.13 used by our huh/bubbletea (the `ansi.Style` Italic/Underline/SlowBlink API changed). The golangci-lint bump is therefore coupled to the charm v1/v2 migration and cannot land independently.
-    Next step: Human to schedule a charmbracelet stack migration (huh/bubbles/bubbletea v1 -> the unified charm v2 line) as one coordinated change; the golangci-lint bump can ride along once x/ansi can move to v0.11.x without breaking cellbuf. Until then keep huh/bubbles/golangci-lint pinned.
-    Notes: Deferred per "breaking dep bumps need confirmation". Not a defect; a coordinated upgrade-planning task.
+- Issue 2026-06-23 dep-major-bumps-charm-huh-bubbles: Major-version bumps available for charmbracelet/huh and charmbracelet/bubbles
+    Priority: Low. Area: go.mod direct dependencies (charmbracelet/huh, charmbracelet/bubbles)
+    Description: `go list -m -u all` showed charmbracelet/huh v0.8.0 -> v1.0.0 and charmbracelet/bubbles (pinned pseudo-version) -> v1.0.0 — both major bumps with breaking APIs in the bubbletea/huh v1 line. The previously coupled golangci-lint upgrade is resolved by installing that tool outside the application module graph.
+    Next step: Human to schedule the charmbracelet stack migration as one coordinated compatibility change.
+    Notes: Deferred per "breaking dependency bumps need confirmation"; not a defect.
 
 - Issue 2026-06-23 completion-windows-build-tag-misleading: `//go:build !windows` on cmd/al/completion.go implies Windows support the project cannot provide
     Priority: Low. Area: cmd/al (completion.go build constraint; platform story)
@@ -122,12 +110,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: Status quo (retained): secret-bearing query-param keys are matched by SUBSTRING — good recall (flags camelCase keys like `accessToken`/`authToken`/`apiToken`/`clientSecret` because e.g. "token" is a substring) but FALSE POSITIVES on benign keys containing a secret word (`?author=`, `?authority=`, `?tokenizer=`, `?passwordless=`), which currently fail `al sync` with a CRITICAL `POLICY_SECRET_IN_URL` finding. The obvious fix (word-segment matching) removes those false positives but REGRESSES recall: glued/camelCase secret keys (`accessToken`, `authtoken`, `clientSecret`) would no longer be flagged — a genuine security precision/recall tradeoff, not a clear win. An /improve-codebase rewrite of this logic was reverted pending this decision.
     Next step: Human to choose: (A) keep substring matching + add an explicit exclusion list of known-benign keys (preserves recall, surgical); (B) word-segment matching PLUS camelCase boundary splitting (fixes most false positives, restores camelCase recall, still misses fully-glued lowercase like `authtoken`); (C) accept the recall loss and ship pure word-segment matching.
     Notes: Recommendation: Option B is strongest if pursued, but this needs the maintainer's call because it changes a security control's detection semantics.
-
-- Issue 2026-06-22 semver-parse-compare-dispatch-divergent-variant: versiondispatch duplicates semantic-version comparison logic
-    Priority: Low. Area: internal/versiondispatch/dispatch.go (`semverAtLeast`)
-    Description: Semantic-version parsing is consolidated (`versiondispatch.parseSemver` delegates to `version.Parse`), but `semverAtLeast` still hand-rolls major/minor/patch comparison instead of using `version.Compare` — single-source-of-truth drift in the comparison half only, not a runtime defect.
-    Next step: Route `semverAtLeast` through `version.Compare` (compare normalized versions, return `>= 0`) and drop the bespoke comparison.
-    Notes: The parsing half of the original issue was already consolidated; only the comparison duplication remains.
 
 - Issue 2026-06-22 fs-os-abstraction-four-patterns: OS/filesystem testability seam implemented four different ways across packages
     Priority: Low. Area: architecture/cross-cutting

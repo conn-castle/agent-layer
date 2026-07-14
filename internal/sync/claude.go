@@ -52,7 +52,7 @@ func buildClaudeSettings(root string, project *config.ProjectConfig) (map[string
 	// not valid in settings.json, so it is excluded here. Trim to match the
 	// warning-helper's canonical form so " max " is treated as "max".
 	effort := strings.TrimSpace(project.Config.Agents.Claude.ReasoningEffort)
-	if effort != "" && effort != "max" {
+	if effort != "" && effort != maxEffort {
 		settings["effortLevel"] = effort
 	}
 
@@ -61,14 +61,14 @@ func buildClaudeSettings(root string, project *config.ProjectConfig) (map[string
 	// by writeClaudeStatusline before settings are written in the same sync.
 	if config.ClaudeStatuslineEnabled(project.Config.Agents.Claude) {
 		settings["statusLine"] = map[string]any{
-			"type":    "command",
-			"command": "bash " + shellSingleQuote(claudeStatuslinePath(root)),
+			chimeHandlerTypeKey:    chimeHandlerCommandType,
+			chimeHandlerCommandKey: "bash " + shellSingleQuote(claudeStatuslinePath(root)),
 		}
 	}
 
 	if err := ensureNoLegacyAgentSpecificChime(
 		"agents.claude.agent_specific.hooks",
-		project.Config.Agents.Claude.AgentSpecific["hooks"],
+		project.Config.Agents.Claude.AgentSpecific[hooksKey],
 		agentLayerClaudeChimeCommand,
 	); err != nil {
 		return nil, err

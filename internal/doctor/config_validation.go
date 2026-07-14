@@ -113,7 +113,7 @@ func allConfigUnknownKeysNeedUpgrade(details []configUnknownKeyDetail) bool {
 }
 
 func configUnknownKeyNeedsUpgrade(path string) bool {
-	return path == "agents.gemini" ||
+	return path == legacyGeminiSection ||
 		strings.HasPrefix(path, "agents.gemini.") ||
 		strings.HasPrefix(path, "agents.gemini[")
 }
@@ -182,7 +182,7 @@ func buildSchema(t reflect.Type) *configSchemaNode {
 
 // derefType strips pointer indirection to reach the base type.
 func derefType(t reflect.Type) reflect.Type {
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	return t

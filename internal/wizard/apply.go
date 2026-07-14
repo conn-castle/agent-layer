@@ -146,6 +146,7 @@ func writeBackup(path string, data []byte, perm os.FileMode) (bool, error) {
 	if err != nil && !os.IsNotExist(err) {
 		return false, err
 	}
+	// #nosec G703 -- callers provide backup paths derived from the validated project config paths.
 	if err := os.WriteFile(path, data, perm); err != nil {
 		return false, err
 	}

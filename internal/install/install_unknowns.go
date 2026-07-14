@@ -305,7 +305,7 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 
 	root := inst.root
 	add(filepath.Join(root, ".agent-layer"))
-	add(filepath.Join(root, ".agent-layer", "instructions"))
+	add(filepath.Join(root, ".agent-layer", instructionsDirName))
 	add(filepath.Join(root, ".agent-layer", "skills"))
 	add(filepath.Join(root, ".agent-layer", "templates"))
 	add(filepath.Join(root, ".agent-layer", "templates", "docs"))
@@ -359,7 +359,7 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 		})
 	}
 
-	if err := addTemplatePaths("instructions", filepath.Join(root, ".agent-layer", "instructions")); err != nil {
+	if err := addTemplatePaths(instructionsDirName, filepath.Join(root, ".agent-layer", instructionsDirName)); err != nil {
 		return nil, err
 	}
 	if err := addTemplatePaths("skills", filepath.Join(root, ".agent-layer", "skills")); err != nil {
@@ -371,13 +371,13 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 	if err := addTemplatePaths("skills-catalog", filepath.Join(root, ".agent-layer", "skills")); err != nil {
 		return nil, err
 	}
-	if err := addTemplatePaths("docs/agent-layer", filepath.Join(root, ".agent-layer", "templates", "docs")); err != nil {
+	if err := addTemplatePaths(docsAgentLayerDir, filepath.Join(root, ".agent-layer", "templates", "docs")); err != nil {
 		return nil, err
 	}
 
 	// docs/agent-layer/ output directory (memory files written outside .agent-layer).
 	add(filepath.Join(root, "docs", "agent-layer"))
-	if err := addTemplatePaths("docs/agent-layer", filepath.Join(root, "docs", "agent-layer")); err != nil {
+	if err := addTemplatePaths(docsAgentLayerDir, filepath.Join(root, "docs", "agent-layer")); err != nil {
 		return nil, err
 	}
 

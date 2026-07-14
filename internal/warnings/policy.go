@@ -156,10 +156,10 @@ func claudeAgentSpecificOverrideWarning(agentSpecific map[string]any) *Warning {
 	if _, ok := agentSpecific["effortLevel"]; ok {
 		keys = append(keys, "effortLevel")
 	}
-	if permissions, ok := agentSpecific["permissions"]; ok {
+	if permissions, ok := agentSpecific[permissionsKey]; ok {
 		permissionsMap, mapOK := permissions.(map[string]any)
 		if !mapOK {
-			keys = append(keys, "permissions")
+			keys = append(keys, permissionsKey)
 		} else if _, ok := permissionsMap["allow"]; ok {
 			keys = append(keys, "permissions.allow")
 		}
@@ -188,10 +188,10 @@ func antigravityAgentSpecificOverrideWarning(agentSpecific map[string]any) *Warn
 		return nil
 	}
 	overriddenKey := ""
-	if permissions, ok := agentSpecific["permissions"]; ok {
+	if permissions, ok := agentSpecific[permissionsKey]; ok {
 		permissionsMap, mapOK := permissions.(map[string]any)
 		if !mapOK {
-			overriddenKey = "permissions"
+			overriddenKey = permissionsKey
 		} else if _, ok := permissionsMap["allow"]; ok {
 			overriddenKey = "permissions.allow"
 		}

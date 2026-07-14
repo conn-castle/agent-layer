@@ -21,6 +21,8 @@ const (
 	chimeHandlerCommandKey            = "command"
 	chimeHandlerCommandType           = "command" //nolint:goconst // The type value is independent from the same-named field key.
 	chimeHandlerTimeoutKey            = "timeout"
+	hooksKey                          = "hooks"
+	stopHookKey                       = "Stop"
 )
 
 func legacyChimeCommandVariants(command string) map[string]struct{} {

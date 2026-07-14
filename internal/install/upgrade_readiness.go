@@ -51,7 +51,7 @@ func readinessErr(action string, path string, err error) error {
 }
 
 func buildUpgradeReadinessChecks(inst *installer) ([]UpgradeReadinessCheck, error) {
-	configPath := filepath.Join(inst.root, ".agent-layer", "config.toml")
+	configPath := filepath.Join(inst.root, ".agent-layer", configFileName)
 	configInfo, err := inst.sys.Stat(configPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -559,7 +559,7 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 	launcherPaths := launchers.VSCodePaths(inst.root)
 	rules := []disabledAgentArtifactRule{
 		{
-			agent:   "antigravity",
+			agent:   agentAntigravity,
 			enabled: cfg.Agents.Antigravity.Enabled,
 			files: []disabledArtifactFileSpec{
 				{
@@ -571,7 +571,7 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 		// .mcp.json and .claude/settings.json are generated when either agents.claude
 		// or agents.claude_vscode is enabled.
 		{
-			agent:   "claude",
+			agent:   agentClaude,
 			enabled: combinedBoolOr(cfg.Agents.Claude.Enabled, cfg.Agents.ClaudeVSCode.Enabled),
 			files: []disabledArtifactFileSpec{
 				{path: filepath.Join(inst.root, ".mcp.json"), evidence: hasAgentLayerMCPSignature},

@@ -34,7 +34,7 @@ func StatuslineSourceTemplates() []StatuslineSourceTemplate {
 	return []StatuslineSourceTemplate{
 		{
 			RelPath:       claudeStatuslineSourceRelPath,
-			TemplatePath:  "claude-statusline.sh",
+			TemplatePath:  claudeStatuslineTemplate,
 			LegacyRelPath: ".agent-layer/statusline.sh",
 			Perm:          0o755,
 		},
@@ -47,7 +47,7 @@ func StatuslineSourceTemplates() []StatuslineSourceTemplate {
 }
 
 func (inst *installer) writeStatuslineSources() error {
-	cfg, err := config.LoadConfigLenient(filepath.Join(inst.root, ".agent-layer", "config.toml"))
+	cfg, err := config.LoadConfigLenient(filepath.Join(inst.root, ".agent-layer", configFileName))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -177,7 +177,7 @@ func (inst *installer) writeStatuslineSourcesTargetPaths() []string {
 }
 
 func (inst *installer) planStatuslineSourceChanges(plan migrationPlan) ([]upgradeChangeWithTemplate, []upgradeChangeWithTemplate, error) {
-	cfg, err := config.LoadConfigLenient(filepath.Join(inst.root, ".agent-layer", "config.toml"))
+	cfg, err := config.LoadConfigLenient(filepath.Join(inst.root, ".agent-layer", configFileName))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil, nil
@@ -277,7 +277,7 @@ func statuslineSourceEnabledAfterMigrations(cfg *config.Config, relPath string, 
 			return *cfg.Agents.Claude.Statusline
 		}
 	case codexStatuslineSourceRelPath:
-		key = "agents.codex.statusline"
+		key = codexStatuslineKey
 		if cfg.Agents.Codex.Statusline != nil {
 			return *cfg.Agents.Codex.Statusline
 		}
@@ -285,7 +285,7 @@ func statuslineSourceEnabledAfterMigrations(cfg *config.Config, relPath string, 
 		return false
 	}
 	for _, migration := range plan.configMigrations {
-		if migration.Key == key && migration.From == "(unset)" {
+		if migration.Key == key && migration.From == unsetValue {
 			return migration.To == "true"
 		}
 	}

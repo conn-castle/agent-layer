@@ -108,7 +108,7 @@ func buildVSCodeSettings(project *config.ProjectConfig) (*vscodeSettings, error)
 func buildVSCodeAgentSkillsLocations() OrderedMap[bool] {
 	return OrderedMap[bool]{
 		".agents/skills":    true,
-		".github/skills":    false,
+		githubSkillsDir:     false,
 		".claude/skills":    false,
 		"~/.copilot/skills": true,
 		"~/.claude/skills":  true,

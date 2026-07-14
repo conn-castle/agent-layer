@@ -37,7 +37,7 @@ func selectedStatuslineSourceFiles(choices *Choices) []install.StatuslineSourceT
 	files := make([]install.StatuslineSourceTemplate, 0, 2)
 	for _, source := range install.StatuslineSourceTemplates() {
 		switch source.RelPath {
-		case ".agent-layer/claude-statusline.sh":
+		case claudeStatuslinePath:
 			if choices.ClaudeStatusline && claudeToggleVisible(choices) {
 				files = append(files, source)
 			}

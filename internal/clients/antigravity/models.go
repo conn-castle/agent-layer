@@ -41,7 +41,7 @@ func liveModelOptions(req ModelOptionsRequest) ([]string, error) {
 	if lookPath == nil {
 		lookPath = exec.LookPath
 	}
-	binary, err := lookPath("agy")
+	binary, err := lookPath(executableName)
 	if err != nil {
 		return nil, err
 	}

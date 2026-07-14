@@ -376,12 +376,12 @@ func hasLegacyGeminiMCPClient(data []byte) bool {
 	if err != nil {
 		return false
 	}
-	changed, err := replaceStringAtMigrationValuePath(cfg, parts, "gemini", "antigravity")
+	changed, err := replaceStringAtMigrationValuePath(cfg, parts, "gemini", agentAntigravity)
 	return err == nil && changed
 }
 
 func (inst *installer) shouldSkipConditionalMigration(op upgradeMigrationOperation, resolution sourceVersionResolution) (bool, string, error) {
-	if op.ID != "a-delete-old-agents-antigravity" {
+	if op.ID != deleteOldAntigravityAgentsOpID {
 		return false, "", nil
 	}
 	if resolution.origin != UpgradeMigrationSourceUnknown && strings.TrimSpace(inst.pinVersion) != "" {
@@ -1307,7 +1307,7 @@ func configMigrationFromOperation(op upgradeMigrationOperation) (ConfigKeyMigrat
 		if to == "" {
 			to = "null"
 		}
-		return ConfigKeyMigration{Key: op.Key, From: "(unset)", To: to}, true
+		return ConfigKeyMigration{Key: op.Key, From: unsetValue, To: to}, true
 	default:
 		return ConfigKeyMigration{}, false
 	}
@@ -1414,7 +1414,7 @@ func (inst *installer) inferSourceVersionFromLatestSnapshot() (string, error) {
 			continue
 		}
 		for _, entry := range snapshot.Entries {
-			if entry.Path != ".agent-layer/al.version" || entry.Kind != upgradeSnapshotEntryKindFile {
+			if entry.Path != pinVersionRelPath || entry.Kind != upgradeSnapshotEntryKindFile {
 				continue
 			}
 			decoded, decodeErr := base64.StdEncoding.DecodeString(entry.ContentBase64)

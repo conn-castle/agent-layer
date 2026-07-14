@@ -1032,23 +1032,23 @@ func writeHighlightedSummaryLine(out io.Writer, highlight bool, format string, a
 
 func readinessSummary(check install.UpgradeReadinessCheck) string {
 	switch check.ID {
-	case "unrecognized_config_keys":
+	case issueUnrecognizedConfigKeys:
 		return messages.UpgradeReadinessUnrecognizedKeys
-	case "unresolved_config_placeholders":
+	case issueUnresolvedConfigPlaceholders:
 		return messages.UpgradeReadinessUnresolvedPlaceholder
-	case "process_env_overrides_dotenv":
+	case issueProcessEnvOverridesDotenv:
 		return messages.UpgradeReadinessProcessEnvOverrides
-	case "ignored_empty_dotenv_assignments":
+	case issueIgnoredEmptyDotenvAssignments:
 		return messages.UpgradeReadinessEmptyDotenv
-	case "path_expansion_anomalies":
+	case issuePathExpansionAnomalies:
 		return messages.UpgradeReadinessPathExpansion
-	case "vscode_no_sync_outputs_stale":
+	case issueVSCodeNoSyncOutputsStale:
 		return messages.UpgradeReadinessVSCodeStale
-	case "floating_external_dependency_specs":
+	case issueFloatingExternalDependencySpecs:
 		return messages.UpgradeReadinessFloatingDeps
-	case "stale_disabled_agent_artifacts":
+	case issueStaleDisabledAgentArtifacts:
 		return messages.UpgradeReadinessStaleDisabledAgents
-	case "missing_required_config_fields":
+	case issueMissingRequiredConfigFields:
 		return messages.UpgradeReadinessMissingRequiredFields
 	default:
 		return check.Summary
@@ -1057,23 +1057,23 @@ func readinessSummary(check install.UpgradeReadinessCheck) string {
 
 func readinessAction(id string) string {
 	switch id {
-	case "unrecognized_config_keys":
+	case issueUnrecognizedConfigKeys:
 		return messages.UpgradeReadinessActionUnrecognizedKeys
-	case "unresolved_config_placeholders":
+	case issueUnresolvedConfigPlaceholders:
 		return messages.UpgradeReadinessActionUnresolvedPlaceholder
-	case "process_env_overrides_dotenv":
+	case issueProcessEnvOverridesDotenv:
 		return messages.UpgradeReadinessActionProcessEnvOverrides
-	case "ignored_empty_dotenv_assignments":
+	case issueIgnoredEmptyDotenvAssignments:
 		return messages.UpgradeReadinessActionEmptyDotenv
-	case "path_expansion_anomalies":
+	case issuePathExpansionAnomalies:
 		return messages.UpgradeReadinessActionPathExpansion
-	case "vscode_no_sync_outputs_stale":
+	case issueVSCodeNoSyncOutputsStale:
 		return messages.UpgradeReadinessActionVSCodeStale
-	case "floating_external_dependency_specs":
+	case issueFloatingExternalDependencySpecs:
 		return messages.UpgradeReadinessActionFloatingDeps
-	case "stale_disabled_agent_artifacts":
+	case issueStaleDisabledAgentArtifacts:
 		return messages.UpgradeReadinessActionStaleDisabledAgents
-	case "missing_required_config_fields":
+	case issueMissingRequiredConfigFields:
 		return messages.UpgradeReadinessActionMissingRequiredFields
 	default:
 		return ""

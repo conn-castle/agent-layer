@@ -126,7 +126,7 @@ func HasLegacyAntigravityAgentSpecificModel(data []byte) bool {
 	if !ok {
 		return false
 	}
-	antigravity, ok := agents["antigravity"].(map[string]any)
+	antigravity, ok := agents[agentAntigravity].(map[string]any)
 	if !ok {
 		return false
 	}

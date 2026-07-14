@@ -20,8 +20,8 @@ var executeFunc = execute
 // Version, Commit, and BuildDate are overridden at build time.
 var (
 	Version   = "dev"
-	Commit    = "unknown"
-	BuildDate = "unknown"
+	Commit    = unknownVersion
+	BuildDate = unknownVersion
 )
 
 func main() {
@@ -108,7 +108,7 @@ func shouldBypassDispatch(args []string) bool {
 		return false
 	}
 	command := firstCommandArg(args[1:])
-	return command == "init" || command == "upgrade"
+	return command == commandInit || command == commandUpgrade
 }
 
 // firstCommandArg extracts the first non-flag token from root command arguments.
@@ -181,10 +181,10 @@ func isQuiet(args []string, cwd string) bool {
 // versionString formats Version with optional commit and build date metadata.
 func versionString() string {
 	meta := []string{}
-	if Commit != "" && Commit != "unknown" {
+	if Commit != "" && Commit != unknownVersion {
 		meta = append(meta, fmt.Sprintf(messages.VersionCommitFmt, Commit))
 	}
-	if BuildDate != "" && BuildDate != "unknown" {
+	if BuildDate != "" && BuildDate != unknownVersion {
 		meta = append(meta, fmt.Sprintf(messages.VersionBuildFmt, BuildDate))
 	}
 	if len(meta) == 0 {

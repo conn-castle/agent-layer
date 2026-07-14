@@ -82,6 +82,26 @@ linters:
         linters:
           - gosec
         text: G204
+      # This test replaces the command runner with the current test binary and
+      # forwards only test-owned arguments to its helper-process entry point.
+      - path: cmd/publish-site/main_test\.go$
+        linters:
+          - gosec
+        text: G702
+      # These helpers write only paths derived from t.TempDir-owned repository roots.
+      - path: internal/agentdispatch/test_helpers_test\.go$
+        linters:
+          - gosec
+        text: G703
+      - path: internal/install/upgrade_readiness.*_test\.go$
+        linters:
+          - gosec
+        text: G703
+      # The fixture copier walks and writes only within two test-owned temporary trees.
+      - path: internal/sync/sync_test\.go$
+        linters:
+          - gosec
+        text: G122|G703
       # gocritic if-else chains in tests
       - path: _test\.go$
         linters:

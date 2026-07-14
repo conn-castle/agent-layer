@@ -39,14 +39,14 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 
 	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Claude, os.Stderr)
 
-	path, err := exec.LookPath("claude")
+	path, err := exec.LookPath(executableName)
 	if err != nil {
-		return fmt.Errorf(messages.ClientsExecLookupErrorFmt, "claude", err)
+		return fmt.Errorf(messages.ClientsExecLookupErrorFmt, executableName, err)
 	}
 
-	argv := append([]string{"claude"}, args...)
+	argv := append([]string{executableName}, args...)
 	if err := execFunc(path, argv, env); err != nil {
-		return fmt.Errorf(messages.ClientsExecHandoffErrorFmt, "claude", err)
+		return fmt.Errorf(messages.ClientsExecHandoffErrorFmt, executableName, err)
 	}
 	return nil
 }

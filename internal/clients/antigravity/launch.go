@@ -29,7 +29,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	// Preflight `agy` discovery BEFORE creating `.agy/` so a missing-binary
 	// failure does not pollute the user's repo with a stray directory
 	// (Round 2 F-B2-5).
-	agyPath, err := lookPathFunc("agy")
+	agyPath, err := lookPathFunc(executableName)
 	if err != nil {
 		return fmt.Errorf(messages.ClientsAntigravityBinaryNotFoundFmt, err)
 	}
@@ -40,7 +40,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	args = append(args, passArgs...)
 	env = ConfigureEnvironment(env)
 
-	argv := append([]string{"agy"}, args...)
+	argv := append([]string{executableName}, args...)
 	if err := execFunc(agyPath, argv, env); err != nil {
 		return fmt.Errorf(messages.ClientsExecHandoffErrorFmt, "antigravity", err)
 	}
