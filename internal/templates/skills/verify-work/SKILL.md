@@ -26,8 +26,9 @@ Write `.agent-layer/tmp/verify-work.<run-id>.report.md`, using
 
 ## Rules
 
-- Apply `contract-verification-rubric.md` to the current tree and touched files
-  with evidence proportional to behavior and risk.
+- Apply `references/contract-verification-rubric.md`
+  to the current tree and touched files with evidence proportional to behavior
+  and risk.
 - Reuse command evidence only when its command, result, covered state, and
   relevance remain known.
 - Report only material completion, behavior, safety, scope, docs, or memory gaps.

@@ -897,40 +897,70 @@ audit-tests:
         - task: run one credible verification lane
     - exit: report material findings, gaps, and verification, then yield
 auto-skill-loop:
-  inputs: [implementer, shipper]
+  inputs: [mode, mode_worker, decision_reviewer, shipper, ci_fixer, merge_reviewer, planner, exactly three plan_reviewers, implementer, code_reviewer, fixer, verifier, standing merge authorization]
   calls:
-    - while: autonomous work remains
+    - task: validate distinct caller-supplied targets and reconstruct interrupted delivery or reconciliation from authoritative sources and brief loop notes
+    - if: the mode/configuration is not initialized
       calls:
-        - task: start from a clean primary branch attempt and update the loop ledger
-        - if: worker_skill is /fix-issues
+        - task: adaptively initialize sources without expanding a large source into plans
+          caller: dispatch(mode_worker)
+    - while: substantive autonomous work remains and the user has not stopped the run
+      calls:
+        - task: select the next coherent independent work without broadening it
+          caller: dispatch(mode_worker)
+        - if: a complete pass finds no selectable work
           calls:
-            - skill: fix-issues
-              inputs: [plan_reviewers]
-              caller: dispatch(implementer)
-        - if: worker_skill is /improve-codebase
+            - exit: report exhaustion or the smallest accumulated questions
+        - task: review the selected work against the complete blocker-classification reference
+          caller: dispatch(decision_reviewer)
+        - task: prepare or reuse one compatible workflow-owned delivery branch
+          caller: dispatch(shipper)
+        - task: execute the selected work through its mode guidance
+          caller: dispatch(mode_worker or mode-required roles)
+        - if: authority or repository state cannot be recovered safely
           calls:
-            - skill: improve-codebase
-              caller: dispatch(implementer)
-        - task: keep worker changes uncommitted and unpushed for blocked-branch preservation or ship-pr delivery
-        - if: worker returns a user-only blocker
+            - exit: stop immediately with the unsafe authority failure
+        - if: execution fails with a supported retry path
           calls:
-            - task: commit and push the blocked branch, record the blocker, and checkout the primary branch
-            - break: start a fresh autonomous attempt
-        - if: PR gate is not met
+            - task: retry only while new evidence supports safe progress
+        - if: the selected work is blocked
           calls:
-            - break: continue worker dispatch on the current uncommitted batch branch
-        - if: PR gate is met
+            - task: preserve useful work on its branch or PR, note what would unblock it, and restore a clean primary or new delivery branch
+              caller: dispatch(shipper)
+            - break: select other work without interrupting the user
+        - if: a compatible batch reaches 3 resolved source items, 500 changed lines, or 10 changed files
           calls:
             - skill: ship-pr
-              caller: dispatch(shipper)
-        - if: final readiness review finds a manual gate
+              caller: dispatch(shipper with exact unchanged ci_fixer instructions)
+            - while: the exact PR and head lack a fresh merge-review ready verdict
+              calls:
+                - task: review exact-head merge readiness
+                  caller: dispatch(merge_reviewer)
+                - if: review returns simple in-scope repair findings
+                  calls:
+                    - task: apply the accepted repair set
+                      caller: dispatch(fixer)
+                    - task: publish and re-establish all shipping gates
+                      caller: resume(shipper)
+                    - break: dispatch a fresh merge review for the new exact head
+                - if: review finds a genuine manual or external gate
+                  calls:
+                    - task: preserve the open PR and continue independent work
+                    - break: select other work
+            - if: merge review returns ready for the exact current head
+              calls:
+                - task: issue one single-use authorization from standing loop authority for this freshly reviewed exact PR and head
+                - task: merge with the matching single-use authorization
+                  caller: resume(shipper)
+        - if: the source is exhausted below every shipping threshold
           calls:
-            - task: leave the PR open, record the gate, and checkout the primary branch
-            - break: start a fresh autonomous attempt
-        - if: shipper returns a green open PR and no manual gate blocks merge
+            - task: preserve and report the branch without opening a PR
+        - if: delivery remains externally gated
           calls:
-            - task: merge ready PR under standing authorization
-        - break: start the next autonomous attempt
+            - task: preserve the open PR and continue independent work
+        - task: reconcile the actual delivery or preservation result
+          caller: dispatch(mode_worker)
+        - break: start the next fresh selection
 boost-coverage:
   calls:
     - if: coverage-contract discovery is context-heavy
@@ -958,10 +988,10 @@ clean-and-fix-code:
   calls:
     - if: uncommitted diff includes changed tests
       calls:
-        - asset: clean-and-fix-code/assets/prune-uncommitted-tests
+        - reference: clean-and-fix-code/references/prune-uncommitted-tests
     - if: uncommitted diff includes changed production code
       calls:
-        - asset: clean-and-fix-code/assets/simplify-uncommitted-code
+        - reference: clean-and-fix-code/references/simplify-uncommitted-code
     - if: cleanup pre-passes leave an uncommitted target
       calls:
         - skill: review-uncommitted-code
@@ -1017,40 +1047,10 @@ fix-ci:
       calls:
         - exit: return blocked or repeated-failure evidence
     - exit: return uncommitted repair changes and evidence to the caller
-fix-issues:
-  inputs: [plan_reviewers]
-  calls:
-    - task: validate, classify, and batch the selected issue set once
-      caller: subagent
-    - if: no open selected issue remains
-      calls:
-        - exit: report no-work without planning
-    - skill: plan-work
-      inputs: [plan_reviewers]
-    - for: package in planned_issue_packages, serializing every working-tree mutation against the latest tree
-      calls:
-        - task: implement the bounded issue package
-          caller: subagent
-    - if: combined work has meaningful cleanup scope
-      calls:
-        - skill: clean-and-fix-code
-    - skill: review-uncommitted-code
-    - if: review has Recommended Accept findings
-      calls:
-        - task: directly address accepted findings with focused evidence
-    - skill: verify-work
-      caller: subagent
-    - task: apply every issue disposition to the canonical ledger
-    - if: no broader orchestrator owns closeout
-      calls:
-        - task: update only documentation and memory made stale by the resolved issues
 full-workflow:
   inputs: [plan_reviewers, implementer, code_reviewer, fixer]
   calls:
-    - task: resolve the default base, inventory the current checkout, and create the facts-only manifest
-    - if: a requested multi-issue batch has fewer than two live compatible substantive issues
-      calls:
-        - exit: report scope collapse before planning
+    - task: resolve the default base, inventory the current checkout, and isolate the delivery boundary
     - task: align the specification
     - skill: plan-work
       inputs: [exactly three plan_reviewers]
@@ -1147,10 +1147,10 @@ improve-codebase:
     - exit: return scope coverage, the complete finding ledger, repairs, evidence, and blockers
 interface-audit:
   calls:
-    - asset: interface-audit/references/report-structure
+    - reference: interface-audit/references/report-structure
     - if: running in update mode
       calls:
-        - asset: interface-audit/references/update-workflow
+        - reference: interface-audit/references/update-workflow
         - if: update timestamp, baseline commit, prior dirty-tree evidence, or complete change history cannot be established
           calls:
             - exit: stop before editing and report the evidence blocker or smallest fresh-versus-limited audit decision
@@ -1179,7 +1179,7 @@ plan-work:
       calls:
         - task: return a compact evidence map for the planning questions
           caller: subagent
-    - asset: plan-work/assets/write-plan
+    - reference: plan-work/references/write-plan
     - if: write-plan returns revise with a concrete evidence-backed gap
       calls:
         - task: apply the cited corrections as one focused artifact revision and resolve any remaining concrete self-check gap
@@ -1210,7 +1210,7 @@ review-plan:
   calls:
     - for: plan_reviewer in plan_reviewers
       calls:
-        - asset: agent-review-prompt
+        - reference: review-plan/references/agent-review-prompt
           caller: dispatch(plan_reviewer)
     - task: synthesize evidence and revise accepted findings
     - if: a genuine user-owned decision remains
@@ -1233,7 +1233,7 @@ review-uncommitted-code:
     - if: scope is narrow and the current context did not author or materially change the target
       calls:
         - task: review the target directly
-    - asset: review-uncommitted-code/assets/finding-verdict-classification
+    - reference: review-uncommitted-code/references/finding-verdict-classification
     - task: validate and synthesize material findings once, write the report, and yield
 run-and-fix-all-checks:
   calls:
@@ -1308,7 +1308,7 @@ ship-pr:
         - if: monitor is ready after the minimum window, local and remote checks are green, final refresh found no feedback, and every ledger row passed reply audit
           calls:
             - exit: stop and request authorization to merge the exact PR
-    - if: user authorizes the exact PR merge
+    - if: user authorization or a matching exact-head auto-loop single-use authorization is present
       calls:
         - task: merge and clean up
         - exit: report merge outcome and branch cleanup
@@ -1326,7 +1326,7 @@ simplify-codebase:
     - exit: return the terminal simplification verdict and yield
 verify-work:
   calls:
-    - asset: verify-work/contract-verification-rubric
+    - reference: verify-work/references/contract-verification-rubric
     - task: compare the contract to the final tree, gather sufficient evidence, and report the verdict
 `;
 
@@ -1346,7 +1346,7 @@ verify-work:
     }
 
     function callKinds() {
-      return new Set(["skill", "asset", "task", "if", "while", "for", "break", "exit"]);
+      return new Set(["skill", "reference", "asset", "task", "if", "while", "for", "break", "exit"]);
     }
 
     function parseInlineValue(value, lineNumber) {
@@ -1404,7 +1404,7 @@ verify-work:
 
     function makeCall(key, value, lineNumber) {
       if (!callKinds().has(key)) {
-        throw new Error(`Line ${lineNumber}: expected "skill:", "asset:", "task:", "if:", "while:", "for:", "break:", or "exit:"`);
+        throw new Error(`Line ${lineNumber}: expected "skill:", "reference:", "asset:", "task:", "if:", "while:", "for:", "break:", or "exit:"`);
       }
       const call = {kind: key, target: value, _lineNumber: lineNumber};
       if (logicKinds().has(key)) {
@@ -1611,7 +1611,7 @@ verify-work:
 
     const yamlAuthoringTips = [
       "Use flat top-level entries like `ship-pr:`. Do not add wrapper fields such as `skills:` or `defaultRoot:`.",
-      "Use `skill:` for skills, `asset:` for bundled prompts or assets, `task:` for local orchestration work, and `break:` or `exit:` for terminal control flow.",
+      "Use `skill:` for skills, `reference:` for loaded instructions, `asset:` for output resources, `task:` for local orchestration work, and `break:` or `exit:` for terminal control flow.",
       "Put `if:`, `while:`, and `for:` at the list-item level with their body under nested `calls:`.",
       "Focus on meaningful delegation shape, not every mechanical instruction. At one `calls:` level, prefer one coarse direct `task:` row.",
       "When a source skill gates a child call, the rendered YAML can assume that call is ready. Put failure evidence and the direct repair under the same meaningful branch instead of rendering separate readiness checks.",
@@ -2110,7 +2110,7 @@ verify-work:
       if (call.kind === "skill") {
         return `/${call.target}`;
       }
-      if (call.kind === "asset") {
+      if (call.kind === "asset" || call.kind === "reference") {
         return `.${call.target}`;
       }
       return call.target || call.kind;
@@ -2212,7 +2212,7 @@ verify-work:
       const line = makeElement("span", "line");
       renderCaller(line, call.caller);
 
-      if (call.kind === "asset") {
+      if (call.kind === "asset" || call.kind === "reference") {
         line.appendChild(makeElement("span", "asset-token", `.${call.target}`));
       } else if (call.kind === "task") {
         line.appendChild(makeElement("span", "task-token", call.target || "unnamed task"));

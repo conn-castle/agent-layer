@@ -23,7 +23,7 @@ the required reviewers, return a missing-input blocker and create nothing.
    implementation. For broad cross-system work, bounded scouts may map entry
    points, contracts, dependencies, and unresolved facts; the planner validates
    consequential evidence and owns the result.
-2. Follow [`assets/write-plan.md`](assets/write-plan.md) with the original source
+2. Follow `references/write-plan.md` with the original source
    and gathered evidence. Correct evidence-backed gaps within this stage. Ask
    the user only when a substantive choice cannot be resolved under repository
    escalation rules.

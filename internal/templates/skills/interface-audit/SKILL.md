@@ -15,8 +15,8 @@ implement or launch planning.
 ## Inputs and references
 
 Run a fresh audit by default. `--update [report-path]` refreshes an existing
-report. Read [`report-structure.md`](references/report-structure.md); for an
-update also read [`update-workflow.md`](references/update-workflow.md).
+report. Read `references/report-structure.md`; for an update also read
+`references/update-workflow.md`.
 
 A fresh audit uses only current code, tests, docs, command output, and evidence
 created for this run. Do not inspect prior audit artifacts unless the user asks

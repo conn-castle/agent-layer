@@ -2768,6 +2768,128 @@ func TestListMigrationManifestVersions(t *testing.T) {
 	}
 }
 
+func TestV013SkillMigrationsRenameWholeDirectoriesWithoutUnsafeDeletion(t *testing.T) {
+	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.13.0")
+	if err != nil {
+		t.Fatalf("load 0.13.0 migration manifest: %v", err)
+	}
+
+	wantRenames := map[string]string{
+		".agent-layer/skills/audit-and-fix-uncommitted-changes": ".agent-layer/skills/clean-and-fix-code",
+		".agent-layer/skills/debug-issue":                       ".agent-layer/skills/debug-and-fix-issue",
+		".agent-layer/skills/review-scope":                      ".agent-layer/skills/review-uncommitted-code",
+		".agent-layer/skills/verify-against-plan":               ".agent-layer/skills/verify-work",
+	}
+	for _, op := range manifest.Operations {
+		switch op.Kind {
+		case upgradeMigrationKindRenameFile:
+			wantTo, ok := wantRenames[op.From]
+			if !ok {
+				continue
+			}
+			if op.To != wantTo {
+				t.Fatalf("rename %q target = %q, want %q", op.From, op.To, wantTo)
+			}
+			delete(wantRenames, op.From)
+		case upgradeMigrationKindDeleteFile, upgradeMigrationKindDeleteGeneratedArtifact:
+			if strings.HasPrefix(op.Path, ".agent-layer/skills/") {
+				t.Errorf("unsafe automatic skill deletion in 0.13 migration: %#v", op)
+			}
+		}
+	}
+
+	if len(wantRenames) != 0 {
+		t.Fatalf("missing whole-directory skill renames: %v", wantRenames)
+	}
+}
+
+func TestMigration_0_13_0_PreservesCustomizedInstructionResources(t *testing.T) {
+	root := t.TempDir()
+	resources := []struct {
+		seedPath     string
+		obsoletePath string
+		finalPath    string
+		operationID  string
+		content      string
+	}{
+		{
+			seedPath:     ".agent-layer/skills/audit-and-fix-uncommitted-changes/assets/prune-uncommitted-tests.md",
+			obsoletePath: ".agent-layer/skills/clean-and-fix-code/assets/prune-uncommitted-tests.md",
+			finalPath:    ".agent-layer/skills/clean-and-fix-code/references/prune-uncommitted-tests.md",
+			operationID:  "a1-move-prune-uncommitted-tests-to-references",
+			content:      "custom prune instructions\n",
+		},
+		{
+			seedPath:     ".agent-layer/skills/audit-and-fix-uncommitted-changes/assets/simplify-uncommitted-code.md",
+			obsoletePath: ".agent-layer/skills/clean-and-fix-code/assets/simplify-uncommitted-code.md",
+			finalPath:    ".agent-layer/skills/clean-and-fix-code/references/simplify-uncommitted-code.md",
+			operationID:  "a2-move-simplify-uncommitted-code-to-references",
+			content:      "custom simplify instructions\n",
+		},
+		{
+			seedPath:     ".agent-layer/skills/review-scope/assets/finding-verdict-classification.md",
+			obsoletePath: ".agent-layer/skills/review-uncommitted-code/assets/finding-verdict-classification.md",
+			finalPath:    ".agent-layer/skills/review-uncommitted-code/references/finding-verdict-classification.md",
+			operationID:  "c1-move-finding-verdict-classification-to-references",
+			content:      "custom finding verdict instructions\n",
+		},
+		{
+			seedPath:     ".agent-layer/skills/verify-against-plan/contract-verification-rubric.md",
+			obsoletePath: ".agent-layer/skills/verify-work/contract-verification-rubric.md",
+			finalPath:    ".agent-layer/skills/verify-work/references/contract-verification-rubric.md",
+			operationID:  "e-move-verify-work-rubric-to-references",
+			content:      "custom verification rubric\n",
+		},
+	}
+
+	pinPath := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
+		t.Fatalf("mkdir pin directory: %v", err)
+	}
+	if err := os.WriteFile(pinPath, []byte("0.12.3\n"), 0o600); err != nil {
+		t.Fatalf("write source pin: %v", err)
+	}
+	for _, resource := range resources {
+		seedPath := filepath.Join(root, filepath.FromSlash(resource.seedPath))
+		if err := os.MkdirAll(filepath.Dir(seedPath), 0o700); err != nil {
+			t.Fatalf("mkdir resource directory for %s: %v", resource.seedPath, err)
+		}
+		if err := os.WriteFile(seedPath, []byte(resource.content), 0o600); err != nil {
+			t.Fatalf("write customized resource %s: %v", resource.seedPath, err)
+		}
+	}
+
+	var warn bytes.Buffer
+	inst := &installer{root: root, pinVersion: "0.13.0", sys: RealSystem{}, warnWriter: &warn}
+	if err := inst.prepareUpgradeMigrations(); err != nil {
+		t.Fatalf("prepare 0.13.0 migrations: %v", err)
+	}
+	if err := inst.runMigrations(); err != nil {
+		t.Fatalf("run 0.13.0 migrations: %v", err)
+	}
+
+	for _, resource := range resources {
+		finalPath := filepath.Join(root, filepath.FromSlash(resource.finalPath))
+		got, err := os.ReadFile(finalPath) // #nosec G304 -- all paths are test-owned fixtures.
+		if err != nil {
+			t.Fatalf("read migrated resource %s: %v", resource.finalPath, err)
+		}
+		if string(got) != resource.content {
+			t.Fatalf("migrated resource %s content = %q, want %q", resource.finalPath, got, resource.content)
+		}
+		for _, obsolete := range []string{resource.seedPath, resource.obsoletePath} {
+			obsoletePath := filepath.Join(root, filepath.FromSlash(obsolete))
+			if _, err := os.Stat(obsoletePath); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("obsolete resource %s still exists, stat err = %v", obsolete, err)
+			}
+		}
+		entry, ok := migrationReportEntryByID(inst.migrationReport.Entries, resource.operationID)
+		if !ok || entry.Status != UpgradeMigrationStatusApplied {
+			t.Fatalf("migration %s entry = %#v, present = %v; want applied", resource.operationID, entry, ok)
+		}
+	}
+}
+
 func TestCollectMigrationChain(t *testing.T) {
 	withMigrationManifestChainOverride(t, map[string]string{
 		"0.6.0": `{"schema_version":1,"target_version":"0.6.0","min_prior_version":"0.5.0","operations":[]}`,

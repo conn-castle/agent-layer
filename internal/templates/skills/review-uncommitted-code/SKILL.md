@@ -19,7 +19,7 @@ drift; if none is credible, return `no-findings` with evidence.
 
 Write `.agent-layer/tmp/review-uncommitted-code.<run-id>.report.md` with run ID
 `YYYYMMDD-HHMMSS-<short-rand>`. Apply
-`assets/finding-verdict-classification.md` during synthesis as the sole verdict
+`references/finding-verdict-classification.md` during synthesis as the sole verdict
 rubric.
 
 ## Review contract

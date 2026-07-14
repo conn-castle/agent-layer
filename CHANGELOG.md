@@ -25,6 +25,19 @@ continuation and factual inspection instead of streaming provider traffic.
   removed from the public JSON contract. Use separate capability facts instead.
 - Version-binary handoff moved from `internal/dispatch` to
   `internal/versiondispatch` to distinguish it from Agent Dispatch.
+- `auto-skill-loop` now provides `fix-issue-log`, `implement-backlog`,
+  `improve-interfaces`, and `improve-codebase` modes plus repository-added mode
+  files. It selects adaptive fresh work, preserves local blockers,
+  batches and ships centrally, keeps `/ship-pr` isolated in its shipper
+  dispatch, independently gates exact-head merge authorization, and reconciles
+  each result without preplanning the full source.
+- Instruction-only assets now live under their owning skills' `references/`
+  directories; output and machine-readable resources remain under `assets/`.
+
+### Removed
+- Retired the standalone `fix-issues` skill after preserving its explicit
+  filters, batching, dispositions, and one-delivery behavior in the
+  `fix-issue-log` mode.
 
 ### Fixed
 - Dispatch now waits for provider completion evidence and terminates failed

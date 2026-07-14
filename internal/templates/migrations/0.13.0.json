@@ -6,94 +6,66 @@
     {
       "id": "a-rename-audit-and-fix-to-clean-and-fix-code",
       "kind": "rename_file",
-      "from": ".agent-layer/skills/audit-and-fix-uncommitted-changes/SKILL.md",
-      "to": ".agent-layer/skills/clean-and-fix-code/SKILL.md",
-      "rationale": "Rename the managed uncommitted-change cleanup root skill to clean-and-fix-code.",
+      "from": ".agent-layer/skills/audit-and-fix-uncommitted-changes",
+      "to": ".agent-layer/skills/clean-and-fix-code",
+      "rationale": "Rename the managed uncommitted-change cleanup skill directory and all of its resources.",
+      "source_agnostic": true
+    },
+    {
+      "id": "a1-move-prune-uncommitted-tests-to-references",
+      "kind": "rename_file",
+      "from": ".agent-layer/skills/clean-and-fix-code/assets/prune-uncommitted-tests.md",
+      "to": ".agent-layer/skills/clean-and-fix-code/references/prune-uncommitted-tests.md",
+      "rationale": "Preserve the cleanup test-review instructions while moving instruction-only resources under references.",
+      "source_agnostic": true
+    },
+    {
+      "id": "a2-move-simplify-uncommitted-code-to-references",
+      "kind": "rename_file",
+      "from": ".agent-layer/skills/clean-and-fix-code/assets/simplify-uncommitted-code.md",
+      "to": ".agent-layer/skills/clean-and-fix-code/references/simplify-uncommitted-code.md",
+      "rationale": "Preserve the cleanup simplification instructions while moving instruction-only resources under references.",
       "source_agnostic": true
     },
     {
       "id": "b-rename-debug-issue",
       "kind": "rename_file",
-      "from": ".agent-layer/skills/debug-issue/SKILL.md",
-      "to": ".agent-layer/skills/debug-and-fix-issue/SKILL.md",
-      "rationale": "Rename the managed issue-debugging workflow to debug-and-fix-issue.",
+      "from": ".agent-layer/skills/debug-issue",
+      "to": ".agent-layer/skills/debug-and-fix-issue",
+      "rationale": "Rename the managed issue-debugging skill directory and all of its resources.",
       "source_agnostic": true
     },
     {
       "id": "c-rename-review-scope",
       "kind": "rename_file",
-      "from": ".agent-layer/skills/review-scope/SKILL.md",
-      "to": ".agent-layer/skills/review-uncommitted-code/SKILL.md",
-      "rationale": "Rename the managed concrete-code review root skill.",
+      "from": ".agent-layer/skills/review-scope",
+      "to": ".agent-layer/skills/review-uncommitted-code",
+      "rationale": "Rename the managed concrete-code review skill directory and all of its resources.",
+      "source_agnostic": true
+    },
+    {
+      "id": "c1-move-finding-verdict-classification-to-references",
+      "kind": "rename_file",
+      "from": ".agent-layer/skills/review-uncommitted-code/assets/finding-verdict-classification.md",
+      "to": ".agent-layer/skills/review-uncommitted-code/references/finding-verdict-classification.md",
+      "rationale": "Preserve the review verdict instructions while moving instruction-only resources under references.",
       "source_agnostic": true
     },
     {
       "id": "d-rename-verify-against-plan",
       "kind": "rename_file",
-      "from": ".agent-layer/skills/verify-against-plan/SKILL.md",
-      "to": ".agent-layer/skills/verify-work/SKILL.md",
-      "rationale": "Rename the managed plan-verification root skill to verify-work.",
+      "from": ".agent-layer/skills/verify-against-plan",
+      "to": ".agent-layer/skills/verify-work",
+      "rationale": "Rename the managed verification skill directory and all of its resources.",
       "source_agnostic": true
     },
     {
-      "id": "e-delete-retired-root-skills",
-      "kind": "delete_generated_artifact",
-      "path": ".agent-layer/skills/complete-current-phase/SKILL.md",
-      "rationale": "Remove the retired generated complete-current-phase wrapper."
-    },
-    {
-      "id": "f-delete-retired-finish-task",
-      "kind": "delete_generated_artifact",
-      "path": ".agent-layer/skills/finish-task/SKILL.md",
-      "rationale": "Remove the retired generated finish-task wrapper."
-    },
-    {
-      "id": "g-delete-retired-multi-agent-plan-review",
-      "kind": "delete_generated_artifact",
-      "path": ".agent-layer/skills/multi-agent-plan-review/SKILL.md",
-      "rationale": "Remove the retired generated multi-agent-plan-review wrapper."
-    },
-    {
-      "id": "h-delete-retired-prune-new-tests",
-      "kind": "delete_generated_artifact",
-      "path": ".agent-layer/skills/prune-new-tests/SKILL.md",
-      "rationale": "Retire the root prune-new-tests skill; its workflow now belongs to clean-and-fix-code."
-    },
-    {
-      "id": "i-delete-retired-prune-new-tests-prompt",
-      "kind": "delete_generated_artifact",
-      "path": ".agent-layer/skills/prune-new-tests/reviewer-prompt.md",
-      "rationale": "Remove the retired prune-new-tests root-skill prompt."
-    },
-    {
-      "id": "j-delete-retired-repair-checks",
-      "kind": "delete_generated_artifact",
-      "path": ".agent-layer/skills/repair-checks/SKILL.md",
-      "rationale": "Remove the retired generated repair-checks wrapper."
-    },
-    {
-      "id": "k-delete-retired-resolve-findings",
-      "kind": "delete_generated_artifact",
-      "path": ".agent-layer/skills/resolve-findings/SKILL.md",
-      "rationale": "Remove the retired generated resolve-findings wrapper."
-    },
-    {
-      "id": "l-delete-retired-simplify-new-code",
-      "kind": "delete_generated_artifact",
-      "path": ".agent-layer/skills/simplify-new-code/SKILL.md",
-      "rationale": "Retire the root simplify-new-code skill; its workflow now belongs to clean-and-fix-code."
-    },
-    {
-      "id": "m-delete-retired-simplify-new-code-prompt",
-      "kind": "delete_generated_artifact",
-      "path": ".agent-layer/skills/simplify-new-code/reviewer-prompt.md",
-      "rationale": "Remove the retired simplify-new-code root-skill prompt."
-    },
-    {
-      "id": "n-delete-retired-verify-against-plan-prompt",
-      "kind": "delete_generated_artifact",
-      "path": ".agent-layer/skills/verify-against-plan/reviewer-prompt.md",
-      "rationale": "Remove the retired verify-against-plan root-skill prompt after the skill rename."
+      "id": "e-move-verify-work-rubric-to-references",
+      "kind": "rename_file",
+      "from": ".agent-layer/skills/verify-work/contract-verification-rubric.md",
+      "to": ".agent-layer/skills/verify-work/references/contract-verification-rubric.md",
+      "rationale": "Preserve the managed verification rubric while moving instruction-only resources under references.",
+      "source_agnostic": true
     }
   ]
 }

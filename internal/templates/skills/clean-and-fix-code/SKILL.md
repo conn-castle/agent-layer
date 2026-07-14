@@ -20,8 +20,8 @@ issues, or a repository-wide sweep. If the target is empty, return
 ## Workflow
 
 1. Inspect the combined working-tree diff. Apply each relevant checklist once:
-   - `assets/prune-uncommitted-tests.md` for changed tests
-   - `assets/simplify-uncommitted-code.md` for changed production code
+   - `references/prune-uncommitted-tests.md` for changed tests
+   - `references/simplify-uncommitted-code.md` for changed production code
 2. If changes remain, run `/review-uncommitted-code` once over the complete
    target. Recover or replace an unusable review instead of treating agent
    failure as a development blocker.

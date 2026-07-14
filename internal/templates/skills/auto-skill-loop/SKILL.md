@@ -1,63 +1,100 @@
 ---
 name: auto-skill-loop
 description: >-
-  Run an explicitly authorized autonomous loop for tracked-issue remediation or
-  broad improvement: preserve blocked branches, ship and merge ready PRs, and
-  continue until interrupted or work is exhausted.
+  Run a named autonomous mode until no substantive autonomous work remains or
+  the user stops it, preserving blocked work and centrally shipping ready
+  deliveries.
 ---
 
 # auto-skill-loop
 
-Run repeated improvement batches with minimal steering. Orchestrate the required
-external workers through `/agent-dispatch`; do not implement or ship code in
-this context. Worker output is evidence: recover valid work from incomplete
-results without treating agent failure as a user blocker.
+You are the orchestrator, not a worker. Preserve your context so the loop can
+keep running: choose the next transition, handle human escalation, and keep
+dispatched agents on track. Delegate bounded work and retain only what you need
+to direct it.
 
 ## Inputs
 
-Require:
+Require a `mode` matching one file under `references/modes/`, standing merge
+authorization for deliveries that pass this workflow's gates, and these
+caller-supplied dispatch targets:
 
-- `worker_skill`: `/fix-issues` or `/improve-codebase`
-- `implementer`: one explicit, self-contained dispatch target specification
-- `shipper`: one explicit, self-contained dispatch target specification
-- standing authorization to merge pull requests that pass this workflow's gates
+- all modes: `mode_worker`, `decision_reviewer`, `shipper`, `ci_fixer`,
+  `merge_reviewer`, and `fixer`
+- plan-based modes: `planner`, exactly three `plan_reviewers`, `implementer`,
+  `code_reviewer`, and `verifier`
+- any additional roles declared by a custom mode
 
-`/fix-issues` also requires exactly three self-contained `plan_reviewers` target
-specifications, passed unchanged. Before any side effect, show the user the
-exact role-to-target mapping and every plan-reviewer target specification. Ask
-for any missing target; do not infer roles or target specifications.
+A target is the caller's exact self-contained agent, model, and reasoning
+specification. Before any side effect, validate and show the role-to-target
+mapping. Pass each target unchanged; never infer, substitute, merge, or reuse a
+target across roles or reviewer slots.
 
-Read the selected worker reference, plus
-[`blocker-classification.md`](references/blocker-classification.md). Read
-[`merge-readiness.md`](references/merge-readiness.md) before merging.
+Accept source filters, item IDs, and `stop_after=one-delivery`. Read
+`references/mode-contract.md`, the selected mode,
+`references/blocker-classification.md`, and `references/merge-readiness.md`.
+Reject malformed modes and unsafe paths. Repository-added named mode files are
+additive and cannot weaken the central rules.
 
-## Durable state
+## Context and isolation
 
-Maintain `.agent-layer/tmp/auto-skill-loop.<run-id>.state.md` at every branch,
-push, PR, blocker, and merge boundary. Keep only what is needed to resume:
-current step, roles, branches and PRs, completed scope, recently touched areas,
-verification, unresolved gates, and the next action. Link other artifacts.
+Git, pull requests, and source systems are authoritative. Keep brief loop notes
+under `.agent-layer/tmp/` only for what they do not show: progress through the
+current source pass, work already covered or set aside in that pass, what would
+unblock it, pending reconciliation, the current branch or PR, and the next
+transition. Revalidate the notes against authoritative sources when resuming.
 
-Preserve this state through context compaction. Keep worker-only deferrals out
-of ISSUES.md.
+Before compaction, retain the caller's loop invocation verbatim, the current
+transition, active or preserved branches and PRs, pending reconciliation,
+unresolved human gates, and the next action. After compaction, reread this skill,
+reconstruct authoritative state, and continue.
+
+Give a fresh dispatch only its role, selected mode, current source access, the
+selected work, and the smallest context needed to avoid duplication. Prior work
+never extends the selected scope. Link authoritative artifacts instead of
+copying old plans, diffs, or narratives into a fresh context.
 
 ## Loop
 
-1. Start each attempt from a clean primary branch. Never stash or discard work;
-   commit and push recoverable attempt work before leaving its branch.
-2. Create or reuse one batch branch and dispatch `implementer` with the selected
-   worker contract and ledger context. Resolve routine choices autonomously and
-   keep compatible work in the batch.
-3. When a genuine user-only decision blocks part of the work, preserve and push
-   the branch, open or retain its PR when useful, record the smallest question,
-   then continue with independent work.
-4. Dispatch `shipper` with `/ship-pr` for a coherent, reviewable batch. Do not
-   wait for an arbitrary issue, file, or line-count threshold; small high-value
-   fixes and a final tail are valid batches. Do not delegate merging.
-5. Apply merge readiness yourself. Leave externally gated PRs open; merge ready
-   PRs under the standing authorization using `/ship-pr` mechanics.
-6. Continue until interrupted or no safe, useful autonomous work remains.
+1. Reconstruct any interrupted delivery or pending reconciliation from
+   authoritative sources and the loop notes. Dispatch `mode_worker` once to
+   initialize the selected mode.
+2. Dispatch `mode_worker` fresh to select the next coherent work. Do not broaden
+   it during execution.
+3. Dispatch `decision_reviewer` with the selected work and the complete
+   `references/blocker-classification.md` contract. A single safe answer remains
+   agent-owned. Record a genuinely human-owned decision under the blocker rules
+   and immediately select independent work.
+4. Dispatch `shipper` to prepare or reuse one clean workflow-owned delivery
+   branch, then execute the mode. If work is blocked, preserve useful changes on
+   that branch or PR, note what must change before retrying it, restore a clean
+   primary or new delivery branch, and select independent work. Retry failures
+   only while new evidence supports safe progress.
+5. Accumulate mutually compatible, completed work on that branch before
+   opening a PR. Never open one until the delivery contains at least three
+   resolved source items, 500 added-plus-deleted changed lines, or 10 changed
+   files. If the source is exhausted below all three thresholds, preserve the
+   branch and report it without opening a PR.
+6. Only after a threshold is met, dispatch `shipper` to run `/ship-pr`, passing
+   instructions to use the caller's exact unchanged `ci_fixer` target for any
+   `/fix-ci` work. Keep `/ship-pr` entirely inside that dispatch. It returns its
+   normal exact-PR/head merge-authorization request to this orchestrator.
+7. Before merge, dispatch `merge_reviewer` for the exact PR and head. Route
+   simple in-scope repair findings to `fixer`, resume the same `shipper` to
+   publish and re-establish all gates, then dispatch a fresh merge review for
+   the new exact head. A genuine manual or external gate preserves the PR and
+   returns the loop to independent selection.
+8. When `merge_reviewer` returns `ready`, use the user's standing loop
+   authorization to resume the same `shipper` with normal single-use
+   authorization for that exact PR and head. Any head change invalidates it.
+9. Dispatch `mode_worker` fresh to reconcile the actual merged, open, or
+   preserved result with its authoritative source, then select again. With
+   `stop_after=one-delivery`, stop only after reconciliation.
 
-Never delegate merge authorization, delete blocked branches or PRs, weaken
-checks or skills, count churn as progress, or leave the primary checkout dirty
-between attempts.
+Do not impose iteration, time, source-size, or batch-count limits. Continue
+until a complete current pass finds no substantive autonomous work, the user
+interrupts, or authoritative state cannot be recovered safely.
+A blocker ends only that work; select independent work instead. Ask accumulated
+human questions only after a full pass finds no independent work. Report why
+the loop ended, the smallest remaining questions, and any preserved branch or
+PR. Never infer exhaustion from a partial pass or abandon preserved work.

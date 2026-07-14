@@ -30,7 +30,7 @@ Write `.agent-layer/tmp/review-plan.<run-id>.report.md` with run ID
 ## Independence contract
 
 Every reviewer receives complete, equivalent copies of
-`assets/agent-review-prompt.md`, plan, task, context, and optional spec. Only
+`references/agent-review-prompt.md`, plan, task, context, and optional spec. Only
 provider mechanics, target, and run identity may differ. Never share reviewer
 outputs or synthesis between reviewers.
 
@@ -41,7 +41,7 @@ prompt; do not assign complementary coverage.
 
 Run the three independent reviews concurrently through dispatch fanout.
 Each reviewer must make and report its own adaptive 1–4 built-in-subagent
-decision under `assets/agent-review-prompt.md`.
+decision under `references/agent-review-prompt.md`.
 Retry an unusable result only through its same supplied target; do not replace a
 required reviewer with an unspecified or inferred target.
 

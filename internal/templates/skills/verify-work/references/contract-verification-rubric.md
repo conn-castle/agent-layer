@@ -1,3 +1,5 @@
+# Contract Verification Rubric
+
 Check whether completed work delivers the agreed contract. Use only:
 
 1. Fresh plan/task/context files or the explicit request as the contract.

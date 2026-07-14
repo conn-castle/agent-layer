@@ -1,12 +1,15 @@
-# Blocker Classification
+# Human Decisions and Recoverable Blockers
 
-Act as the worker's proxy for routine implementation, refactoring, testing, and
-recovery choices. Follow the repository's human-escalation rules for decisions
-that remove or reduce functionality, materially change end-user experience,
-alter security, privacy, or safety semantics, introduce breaking behavior or
-migration policy, set long-term architecture, platform, or CI policy, require
-irreversible data or schema action, or depend on an external approval gate.
-Scope size alone is not a blocker.
+Human input is required only when evidence leaves multiple viable choices and
+the choice affects functionality, user experience, product scope or priority,
+long-term architecture, platform or continuous-integration policy, security,
+privacy, safety, compatibility, migration, or a public contract. It is also
+required for destructive or irreversible action, an unauthorized external
+write, credential, or approval, and authority reserved by the user or repo.
 
-When user input is required, preserve and push the branch, keep any useful PR
-open, record the smallest question, and continue independent loop work.
+Facts, work ordering, one safe answer, breadth, agent or tool failure, and one
+inaccessible or blocked item are not human decisions. Preserve useful work on
+its branch or PR, note the unmet condition and when to reconsider it, and
+continue independent selection. Ask the smallest remaining questions only
+after a complete pass finds no independent work, or when the user asks for
+status.

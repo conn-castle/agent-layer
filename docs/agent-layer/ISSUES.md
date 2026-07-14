@@ -63,12 +63,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Next step: Confirm the format from a primary source (official spec or an observed real file); if JSONC, add tolerant parsing for this client instead of strict JSON.
     Notes: Verification gap recorded in decision antigravity-settings-overlay-preserve (2026-07-10).
 
-- Issue 2026-07-05 root-skill-release-migration: Next release needs migration and manifest for root-skill template changes
-    Priority: Medium. Area: internal/templates/migrations, internal/templates/manifests, release workflow
-    Description: Current templates rename `.agent-layer/skills/verify-against-plan/` to `.agent-layer/skills/verify-work/`, rename audit-and-fix roots to `.agent-layer/skills/clean-and-fix-code/`, retire root `prune-new-tests` / `simplify-new-code` skills into `prune-uncommitted-tests` / `simplify-uncommitted-code` clean-and-fix assets, remove the redundant `loop-clean-and-fix`, `finish-task`, and `complete-current-phase` wrappers, add `run-and-fix-all-checks`, remove `repair-checks`, and remove root `resolve-findings`, but historical manifests are immutable and the next release version has not been chosen.
-    Next step: When the next release version is selected, add the required skill migration entry and generate the matching template ownership manifest.
-    Notes: Do not edit already-tagged manifest files such as `0.12.1.json`.
-
 - Issue 2026-07-02 lint-ci-local-goconst-false-negative-darwin: `make lint-ci-local` misses goconst violations on macOS
     Priority: Medium. Area: Makefile (`lint-ci-local`) / CI-parity lint tooling; COMMANDS.md guidance
     Description: `make lint-ci-local` runs golangci-lint with GOOS=linux GOARCH=amd64 on a darwin host; cross-GOOS package loading drops the package's `_test.go` files from the analyzed fileset, so goconst's per-package string-occurrence counts fall below the threshold and real violations do not fire. This caused a false negative during PR #128: local `make dev` and `make lint-ci-local` both passed, but CI's `verify` (`make ci` -> `make lint`) failed on `goconst` in internal/sync/codex_config_merge.go. The documented "CI-parity" command is not faithful for occurrence-counting linters.

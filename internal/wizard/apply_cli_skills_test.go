@@ -104,9 +104,9 @@ func TestComputeSkillsChangeSet_WorkflowBundleNoDoesNotPrune(t *testing.T) {
 func TestComputeSkillsChangeSet_WorkflowBundleInstallOnlyMissing(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
-	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "review-uncommitted-code", "assets"), 0o750))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "review-uncommitted-code", "references"), 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "skills", "review-uncommitted-code", "SKILL.md"), []byte("custom skill"), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "skills", "review-uncommitted-code", "assets", "finding-verdict-classification.md"), []byte("custom asset"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "skills", "review-uncommitted-code", "references", "finding-verdict-classification.md"), []byte("custom reference"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), []byte("custom rules"), 0o600))
 
 	choices := NewChoices()

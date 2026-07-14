@@ -150,12 +150,11 @@ for plan_reviewer in plan_reviewers:
     dispatch(plan_reviewer) -> .agent-review-prompt
 ```
 
-Use a leading dot for bundled prompts or assets instead of skills. The example
-above means each named plan reviewer is dispatched once to follow the
-`agent-review-prompt` asset directly. Their findings are
-synthesized within the same review stage; agreement among reviewers is not an
-independent form of evidence. If the asset receives no agent-role inputs, leave
-the parentheses off.
+Use a leading dot for bundled resources instead of skills. The example means
+each named plan reviewer follows the `agent-review-prompt` reference directly.
+Their findings are synthesized within the same review stage; agreement among
+reviewers is not an independent form of evidence. Leave the parentheses off
+when the resource has no agent-role inputs.
 
 ```text
 subagent -> task: row-level verification
@@ -251,12 +250,12 @@ Workflow boundaries include:
   planning, implementation, concrete-work review, verification, closeout, and
   pull request shipping. Each stage yields its result before the workflow
   advances.
-- `improve-codebase` decomposes broad quality work into reviewable chunks,
-  gives each chunk complementary review, implementation, verification, and
-  cleanup stages, and repeats work only after a concrete failure.
-- `fix-issues` works through `ISSUES.md` by batching, planning, implementing,
-  verifying, and keeping the ledger current without adding review layers merely
-  for confidence.
+- `improve-codebase` covers one declared scope, repairs validated findings, and
+  reviews and verifies the combined result.
+- `auto-skill-loop` adaptively selects the next coherent work from a named mode,
+  delegates each bounded step, centrally batches and ships ready deliveries,
+  reconciles authoritative sources, and moves past local blockers until
+  substantive autonomous work is exhausted or the user stops it.
 
 ## Contract expectations
 

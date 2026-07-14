@@ -19,10 +19,9 @@ and monitoring concurrently when useful, and batch compatible repairs.
 ## Delivery and state
 
 - Use the repository default base unless the user specifies another. Derive the
-  title from the delivery and fill
-  [`assets/pr-body-template.md`](assets/pr-body-template.md), removing placeholders
-  and unused sections. Write `.agent-layer/tmp/ship-pr-body.<run-id>.md` and use
-  it as the PR body file.
+  title from the delivery and fill `assets/pr-body-template.md`, removing
+  placeholders and unused sections. Write
+  `.agent-layer/tmp/ship-pr-body.<run-id>.md` and use it as the PR body file.
 - Maintain `.agent-layer/tmp/ship-pr-comments-<pr-number>.md` as the comment
   ledger and `.agent-layer/tmp/ship-pr-monitor-<pr-number>.json` as monitor state.
 - Bind check and review evidence to the exact tree or pushed head it covers.
