@@ -83,8 +83,9 @@ active children and preserves completed evidence.
 Friendly mappings under `.agent-layer/state/dispatch/` are lookup keys, not
 history. Immutable run records under `.agent-layer/tmp/runs/<uuid>/` are the
 canonical turn history and link a turn to its name, predecessor, provider
-conversation, parent, and fanout group when applicable. `history` derives its
-ordered output from these records rather than a second mutable history file.
+conversation, resolved model/reasoning configuration, selected skill, parent,
+and fanout group when applicable. `history` derives its ordered output from
+these records rather than a second mutable history file.
 
 Run records expose:
 
@@ -93,6 +94,7 @@ Run records expose:
 - recovery state: `retry_safe`, `resume_required`,
   `acceptance_unknown`, or `not_resumable`
 - factual last semantic activity time and kind
+- resolved model, reasoning effort, and selected skill when present
 - process identifier, process group, and operating-system start identity
 - exact private result and diagnostic paths
 
@@ -167,7 +169,11 @@ isolation. The global maximum dispatch depth remains three for intentional
 custom workflows; built-in workflows are root-to-leaf.
 
 Plan review uses one shared-prompt fanout to three equivalent external
-reviewers. Each follows the leaf review asset directly and returns one
-complete-plan report without launching another agent or workflow. Only primary
-artifacts and mechanically verifiable facts cross independent stages; reviewer
-conclusions do not.
+reviewers. Each independently chooses 1–4 fresh built-in review subagents,
+states the count, rationale, and distinct full-plan framings in its report, and
+synthesizes them into one complete-plan review. Small routine plans use one;
+additional perspectives require concrete breadth, uncertainty, or risk, and a
+consequential architecture change requires an architecture framing. These
+provider-native subagents may not call Agent Dispatch or another workflow. Only
+primary artifacts and mechanically verifiable facts cross independent stages;
+reviewer conclusions do not.

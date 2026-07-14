@@ -67,6 +67,9 @@ type RunRecord struct {
 	Name                 string     `json:"name"`
 	Agent                string     `json:"agent"`
 	ProviderVersion      string     `json:"provider_version"`
+	Model                string     `json:"model,omitempty"`
+	ReasoningEffort      string     `json:"reasoning_effort,omitempty"`
+	Skill                string     `json:"skill,omitempty"`
 	Mode                 string     `json:"mode"`
 	State                string     `json:"state"`
 	RecoveryState        string     `json:"recovery_state"`
@@ -158,12 +161,18 @@ func newDispatchRun(root string, agent string, version string, mode string) (*di
 		AnswerPath:      filepath.Join(dir, "answer.txt"),
 		StdoutPath:      filepath.Join(dir, "provider.stdout"),
 		StderrPath:      filepath.Join(dir, "provider.stderr"),
-		EventsPath:      filepath.Join(dir, "provider.events"),
+	}
+	if providerProducesStructuredEvents(agent) {
+		record.EventsPath = filepath.Join(dir, "provider.events")
 	}
 	if err := writeRunRecord(dir, &record); err != nil {
 		return nil, err
 	}
 	return &dispatchRun{Record: record, Dir: dir}, nil
+}
+
+func providerProducesStructuredEvents(agent string) bool {
+	return agent == AgentClaude || agent == AgentCodex
 }
 
 func newUUID() (string, error) {

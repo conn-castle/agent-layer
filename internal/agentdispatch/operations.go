@@ -17,6 +17,9 @@ type Inspection struct {
 	ID                   string     `json:"id"`
 	Name                 string     `json:"name"`
 	Agent                string     `json:"agent"`
+	Model                string     `json:"model,omitempty"`
+	ReasoningEffort      string     `json:"reasoning_effort,omitempty"`
+	Skill                string     `json:"skill,omitempty"`
 	State                string     `json:"state"`
 	RecoveryState        string     `json:"recovery_state"`
 	Mode                 string     `json:"mode"`
@@ -55,8 +58,26 @@ func Inspect(request InspectionRequest) error {
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(inspection)
 	}
-	_, err = fmt.Fprintf(stdout, "Dispatch: %s\nAgent: %s\nMode: %s\nState: %s\nRecovery: %s\nProcess: %s\nAttempt: %d\nStarted: %s\n", inspection.Name, inspection.Agent, inspection.Mode, inspection.State, inspection.RecoveryState, inspection.Process, inspection.Attempt, inspection.StartedAt.Format(time.RFC3339))
+	_, err = fmt.Fprintf(stdout, "Dispatch: %s\nAgent: %s\n", inspection.Name, inspection.Agent)
 	if err != nil {
+		return err
+	}
+	if inspection.Model != "" {
+		if _, err := fmt.Fprintf(stdout, "Model: %s\n", inspection.Model); err != nil {
+			return err
+		}
+	}
+	if inspection.ReasoningEffort != "" {
+		if _, err := fmt.Fprintf(stdout, "Reasoning effort: %s\n", inspection.ReasoningEffort); err != nil {
+			return err
+		}
+	}
+	if inspection.Skill != "" {
+		if _, err := fmt.Fprintf(stdout, "Skill: %s\n", inspection.Skill); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(stdout, "Mode: %s\nState: %s\nRecovery: %s\nProcess: %s\nAttempt: %d\nStarted: %s\n", inspection.Mode, inspection.State, inspection.RecoveryState, inspection.Process, inspection.Attempt, inspection.StartedAt.Format(time.RFC3339)); err != nil {
 		return err
 	}
 	if inspection.LastOutputAt != nil {
@@ -134,6 +155,9 @@ func inspectionFromRecord(record RunRecord) Inspection {
 		ID:                   record.ID,
 		Name:                 record.Name,
 		Agent:                record.Agent,
+		Model:                record.Model,
+		ReasoningEffort:      record.ReasoningEffort,
+		Skill:                record.Skill,
 		State:                record.State,
 		RecoveryState:        record.RecoveryState,
 		Mode:                 record.Mode,

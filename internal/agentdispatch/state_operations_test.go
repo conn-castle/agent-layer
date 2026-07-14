@@ -85,6 +85,32 @@ func TestReservationDoesNotOverwriteCollidingName(t *testing.T) {
 	}
 }
 
+func TestNewDispatchRunAdvertisesOnlyApplicableEventArtifact(t *testing.T) {
+	root := t.TempDir()
+	structured, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new structured run: %v", err)
+	}
+	if structured.Record.EventsPath != filepath.Join(structured.Dir, "provider.events") {
+		t.Fatalf("structured events path = %q", structured.Record.EventsPath)
+	}
+
+	plain, err := newDispatchRun(root, AgentAntigravity, supportedProviderVersions[AgentAntigravity], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new plain run: %v", err)
+	}
+	if plain.Record.EventsPath != "" {
+		t.Fatalf("plain provider advertised events path %q", plain.Record.EventsPath)
+	}
+	data, err := os.ReadFile(filepath.Join(plain.Dir, dispatchRunFile)) // #nosec G304 -- test-owned run path.
+	if err != nil {
+		t.Fatalf("read plain run record: %v", err)
+	}
+	if strings.Contains(string(data), `"events_path"`) {
+		t.Fatalf("plain run record advertised an events artifact: %s", data)
+	}
+}
+
 func TestDispatchSessionRetentionPrunesOnlyExpiredInactiveMappings(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)

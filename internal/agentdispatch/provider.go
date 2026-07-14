@@ -63,6 +63,8 @@ type providerCommand struct {
 	Provider   string
 	RunMode    string
 	Structured bool
+	Model      string
+	Effort     string
 }
 
 type providerEvent struct {
@@ -187,6 +189,8 @@ func buildProviderCommand(
 		if resolvedEffort != "" {
 			args = append(args, "--effort", resolvedEffort)
 		}
+		command.Model = resolvedModel
+		command.Effort = resolvedEffort
 		if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
 			args = append(args, "--dangerously-skip-permissions")
 		}
@@ -219,6 +223,8 @@ func buildProviderCommand(
 		if resolvedEffort != "" {
 			args = append(args, "-c", "model_reasoning_effort="+resolvedEffort)
 		}
+		command.Model = resolvedModel
+		command.Effort = resolvedEffort
 		if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
 			if !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexApprovalPolicyKey) {
 				args = append(args, "-c", "approval_policy=never")
@@ -252,11 +258,14 @@ func buildProviderCommand(
 			return providerCommand{}, wrapExitError(ExitConfig, "close Antigravity dispatch log", closeErr)
 		}
 		args = append(args, "--log-file", logPath)
-		if value := strings.TrimSpace(model); value != "" {
-			args = append(args, "--model", value)
-		} else if value := strings.TrimSpace(project.Config.Agents.Antigravity.Model); value != "" {
-			args = append(args, "--model", value)
+		resolvedModel := strings.TrimSpace(model)
+		if resolvedModel == "" {
+			resolvedModel = strings.TrimSpace(project.Config.Agents.Antigravity.Model)
 		}
+		if resolvedModel != "" {
+			args = append(args, "--model", resolvedModel)
+		}
+		command.Model = resolvedModel
 		if mode == dispatchModeResume {
 			args = append(args, "--conversation", sessionID)
 		}

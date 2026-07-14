@@ -148,6 +148,7 @@ func Fanout(opts FanoutOptions) error {
 			return runErr
 		}
 		run.Record.FanoutGroupID = groupID
+		run.Record.Skill = strings.TrimSpace(opts.Skill)
 		if parent, ok := clients.GetEnv(env, "AL_RUN_ID"); ok {
 			run.Record.ParentRunID = parent
 		}
@@ -164,7 +165,7 @@ func Fanout(opts FanoutOptions) error {
 			Root: opts.Root, Project: project, Target: candidate.target, Version: candidate.version,
 			Prompt: candidate.prompt, Mode: dispatchModeFresh, Run: run, Session: session,
 			Stdout: io.Discard, Stderr: stderr, Env: env, Depth: depth + 1,
-			Model: candidate.spec.Model, Effort: candidate.spec.ReasoningEffort, NewCommand: opts.NewCommand,
+			Model: candidate.spec.Model, Effort: candidate.spec.ReasoningEffort, Skill: opts.Skill, NewCommand: opts.NewCommand,
 			VersionLookup: opts.VersionLookup,
 		}})
 	}

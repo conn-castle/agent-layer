@@ -446,6 +446,21 @@ func TestRunClaudeSkillPromptAndCommandConstruction(t *testing.T) {
 	assertFileContains(t, logPath, "CLAUDE_CONFIG_DIR="+filepath.Join(root, ".claude-config"))
 	assertFileContains(t, logPath, "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0")
 	assertFileContains(t, promptPath, "/review-plan\nReview")
+	sessions, err := listSessions(root)
+	if err != nil || len(sessions) != 1 {
+		t.Fatalf("list sessions = %#v, %v", sessions, err)
+	}
+	record, err := loadRunRecord(root, sessions[0].RunID)
+	if err != nil {
+		t.Fatalf("load run record: %v", err)
+	}
+	if record.Model != "opus" || record.ReasoningEffort != "high" || record.Skill != "review-plan" {
+		t.Fatalf("run execution configuration = %#v", record)
+	}
+	inspection := inspectionFromRecord(record)
+	if inspection.Model != record.Model || inspection.ReasoningEffort != record.ReasoningEffort || inspection.Skill != record.Skill {
+		t.Fatalf("inspection execution configuration = %#v", inspection)
+	}
 }
 
 func TestRunAntigravityCommandConstruction(t *testing.T) {

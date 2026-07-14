@@ -49,6 +49,7 @@ func Run(opts RunOptions) error {
 	if err != nil {
 		return err
 	}
+	run.Record.Skill = strings.TrimSpace(opts.Skill)
 	if parent, ok := clients.GetEnv(env, "AL_RUN_ID"); ok {
 		run.Record.ParentRunID = parent
 		if err := writeRunRecord(run.Dir, &run.Record); err != nil {
@@ -74,6 +75,7 @@ func Run(opts RunOptions) error {
 		Depth:         depth + 1,
 		Model:         opts.Model,
 		Effort:        opts.ReasoningEffort,
+		Skill:         opts.Skill,
 		NewCommand:    opts.NewCommand,
 		VersionLookup: opts.VersionLookup,
 	}).await()
@@ -129,6 +131,7 @@ func Resume(opts ResumeOptions) error {
 	if err != nil {
 		return err
 	}
+	run.Record.Skill = strings.TrimSpace(opts.Skill)
 	if parent, ok := clients.GetEnv(env, "AL_RUN_ID"); ok {
 		run.Record.ParentRunID = parent
 	}
@@ -167,6 +170,7 @@ func Resume(opts ResumeOptions) error {
 		Stderr:        stderr,
 		Env:           env,
 		Depth:         depth + 1,
+		Skill:         opts.Skill,
 		NewCommand:    opts.NewCommand,
 		VersionLookup: opts.VersionLookup,
 	}).await()
@@ -187,6 +191,7 @@ type dispatchExecution struct {
 	Depth         int
 	Model         string
 	Effort        string
+	Skill         string
 	NewCommand    CommandFactory
 	VersionLookup func(path string, agent string) (string, error)
 }
@@ -261,6 +266,9 @@ func executeDispatch(request dispatchExecution) error {
 			return finishDispatchFailure(request, &preStartFailure{err: err})
 		}
 		request.Run.Record.ProviderLogPath = command.LogPath
+		request.Run.Record.Model = command.Model
+		request.Run.Record.ReasoningEffort = command.Effort
+		request.Run.Record.Skill = strings.TrimSpace(request.Skill)
 		if err := writeRunRecord(request.Run.Dir, &request.Run.Record); err != nil {
 			return finishDispatchFailure(request, err)
 		}
