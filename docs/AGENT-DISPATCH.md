@@ -166,7 +166,9 @@ verification coordination, shipping, and merge authorization. Dispatch always
 loads configuration and durable state from the resolved Agent Layer root while
 running providers in the caller's actual working directory. This distinction
 keeps linked-worktree dispatches in the requested checkout even when they share
-an ancestor checkout's `.agent-layer` configuration. Built-in workflows create
+an ancestor checkout's `.agent-layer` configuration. A configured target's
+skill projections are refreshed in that working directory, while their
+canonical sources remain under the Agent Layer root. Built-in workflows create
 a linked Git worktree only when the user explicitly requests isolation or
 repository evidence shows unsafe overlap or incompatible delivery topology.
 The global maximum dispatch depth remains three for intentional custom

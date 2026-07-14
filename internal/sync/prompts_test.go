@@ -143,7 +143,7 @@ func TestWriteAgentSkillsError(t *testing.T) {
 	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	err := writeAgentSkills(RealSystem{}, file, nil)
+	err := WriteAgentSkills(RealSystem{}, file, nil)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -159,7 +159,7 @@ func TestWriteAgentSkillsWriteError(t *testing.T) {
 		},
 	}
 	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	if err := writeAgentSkills(sys, root, cmds); err == nil {
+	if err := WriteAgentSkills(sys, root, cmds); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -177,7 +177,7 @@ func TestWriteAgentSkillsMkdirSkillDirError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(skillsDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	err := writeAgentSkills(RealSystem{}, root, cmds)
+	err := WriteAgentSkills(RealSystem{}, root, cmds)
 	if err == nil {
 		t.Fatalf("expected error for skill dir removal/creation failure")
 	}
@@ -201,8 +201,8 @@ func TestWriteClaudeSkills(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	if err := writeClaudeSkills(RealSystem{}, root, cmds); err != nil {
-		t.Fatalf("writeClaudeSkills error: %v", err)
+	if err := WriteClaudeSkills(RealSystem{}, root, cmds); err != nil {
+		t.Fatalf("WriteClaudeSkills error: %v", err)
 	}
 	path := filepath.Join(root, ".claude", "skills", "alpha", "SKILL.md")
 	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
@@ -218,8 +218,8 @@ func TestWriteAgentSkills(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	cmds := []config.Skill{{Name: "beta", Description: "desc", Body: "Body"}}
-	if err := writeAgentSkills(RealSystem{}, root, cmds); err != nil {
-		t.Fatalf("writeAgentSkills error: %v", err)
+	if err := WriteAgentSkills(RealSystem{}, root, cmds); err != nil {
+		t.Fatalf("WriteAgentSkills error: %v", err)
 	}
 	path := filepath.Join(root, ".agents", "skills", "beta", "SKILL.md")
 	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
@@ -235,8 +235,8 @@ func TestWriteAgentSkillsRefreshKeepsSkillReadable(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	if err := writeAgentSkills(RealSystem{}, root, cmds); err != nil {
-		t.Fatalf("initial writeAgentSkills error: %v", err)
+	if err := WriteAgentSkills(RealSystem{}, root, cmds); err != nil {
+		t.Fatalf("initial WriteAgentSkills error: %v", err)
 	}
 
 	skillDir := filepath.Join(root, ".agents", "skills", "alpha")
@@ -267,8 +267,8 @@ func TestWriteAgentSkillsRefreshKeepsSkillReadable(t *testing.T) {
 		},
 	}
 
-	if err := writeAgentSkills(sys, root, cmds); err != nil {
-		t.Fatalf("refresh writeAgentSkills error: %v", err)
+	if err := WriteAgentSkills(sys, root, cmds); err != nil {
+		t.Fatalf("refresh WriteAgentSkills error: %v", err)
 	}
 	if readerErr != nil {
 		t.Fatalf("existing SKILL.md became unreadable during refresh: %v", readerErr)
@@ -298,8 +298,8 @@ func TestWriteAgentSkillsReplacesPreexistingSkillDirectorySymlink(t *testing.T) 
 	}
 
 	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	if err := writeAgentSkills(RealSystem{}, root, cmds); err != nil {
-		t.Fatalf("writeAgentSkills error: %v", err)
+	if err := WriteAgentSkills(RealSystem{}, root, cmds); err != nil {
+		t.Fatalf("WriteAgentSkills error: %v", err)
 	}
 
 	info, err := os.Lstat(skillDir)
@@ -592,7 +592,7 @@ func TestWriteClaudeSkillsError(t *testing.T) {
 	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	err := writeClaudeSkills(RealSystem{}, file, nil)
+	err := WriteClaudeSkills(RealSystem{}, file, nil)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -608,7 +608,7 @@ func TestWriteClaudeSkillsWriteError(t *testing.T) {
 		},
 	}
 	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	if err := writeClaudeSkills(sys, root, cmds); err == nil {
+	if err := WriteClaudeSkills(sys, root, cmds); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -635,8 +635,8 @@ func TestWriteClaudeSkillsWithSubdirectory(t *testing.T) {
 		Body:        "Deploy body",
 		SourceDir:   srcDir,
 	}}
-	if err := writeClaudeSkills(RealSystem{}, root, cmds); err != nil {
-		t.Fatalf("writeClaudeSkills error: %v", err)
+	if err := WriteClaudeSkills(RealSystem{}, root, cmds); err != nil {
+		t.Fatalf("WriteClaudeSkills error: %v", err)
 	}
 
 	// Verify SKILL.md was written (by the builder, not copied from source).
@@ -686,8 +686,8 @@ func TestWriteClaudeSkillsStaleSubFileCleanup(t *testing.T) {
 		Body:        "Body",
 		SourceDir:   srcDir1,
 	}}
-	if err := writeClaudeSkills(RealSystem{}, root, cmds1); err != nil {
-		t.Fatalf("first writeClaudeSkills error: %v", err)
+	if err := WriteClaudeSkills(RealSystem{}, root, cmds1); err != nil {
+		t.Fatalf("first WriteClaudeSkills error: %v", err)
 	}
 
 	// Verify old.sh exists after first sync.
@@ -711,8 +711,8 @@ func TestWriteClaudeSkillsStaleSubFileCleanup(t *testing.T) {
 		Body:        "Body",
 		SourceDir:   srcDir2,
 	}}
-	if err := writeClaudeSkills(RealSystem{}, root, cmds2); err != nil {
-		t.Fatalf("second writeClaudeSkills error: %v", err)
+	if err := WriteClaudeSkills(RealSystem{}, root, cmds2); err != nil {
+		t.Fatalf("second WriteClaudeSkills error: %v", err)
 	}
 
 	// Verify old.sh is removed (stale sub-file cleanup).
@@ -753,8 +753,8 @@ func TestWriteClaudeSkillsReconcilesResourceTree(t *testing.T) {
 	refresh := func(sourceDir string) {
 		t.Helper()
 		cmd.SourceDir = sourceDir
-		if err := writeClaudeSkills(RealSystem{}, root, []config.Skill{cmd}); err != nil {
-			t.Fatalf("writeClaudeSkills refresh error: %v", err)
+		if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{cmd}); err != nil {
+			t.Fatalf("WriteClaudeSkills refresh error: %v", err)
 		}
 		assertCanonicalSkillEntrypoint(t, root, filepath.Join(".claude", "skills"), cmd.Name)
 	}
@@ -808,8 +808,8 @@ func TestWriteClaudeSkillsReconcilesResourceTypeTransitions(t *testing.T) {
 	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body", SourceDir: srcDir}
 	refresh := func() {
 		t.Helper()
-		if err := writeClaudeSkills(RealSystem{}, root, []config.Skill{cmd}); err != nil {
-			t.Fatalf("writeClaudeSkills refresh error: %v", err)
+		if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{cmd}); err != nil {
+			t.Fatalf("WriteClaudeSkills refresh error: %v", err)
 		}
 		assertCanonicalSkillEntrypoint(t, root, filepath.Join(".claude", "skills"), cmd.Name)
 	}
@@ -1275,7 +1275,7 @@ func TestWriteSkillFiles_PathTraversalRejected(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	cmds := []config.Skill{{Name: "../escape", Description: "desc", Body: "Body"}}
-	err := writeClaudeSkills(RealSystem{}, root, cmds)
+	err := WriteClaudeSkills(RealSystem{}, root, cmds)
 	if err == nil {
 		t.Fatalf("expected error for path traversal in skill name")
 	}

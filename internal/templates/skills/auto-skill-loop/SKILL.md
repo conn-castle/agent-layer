@@ -69,8 +69,8 @@ results only when they are necessary task inputs.
    branch, then execute the mode. If work is blocked, preserve useful changes on
    that branch or PR and note what must change before retrying it. Continue
    compatible independent work on the same delivery branch. Use a separate
-   branch or worktree only when evidence shows unsafe overlap or incompatible
-   delivery topology.
+   branch or worktree when the user explicitly requests isolation or when
+   evidence shows unsafe overlap or incompatible delivery topology.
 5. Accumulate mutually compatible, completed work on that branch before
    opening a PR. Never open one until the delivery contains at least three
    resolved source items, 500 added-plus-deleted changed lines, or 10 changed
@@ -102,4 +102,7 @@ work remains.
 A blocker ends only that work; select independent work instead. Ask accumulated
 human questions only after a full pass finds no independent work. Report why
 the loop ended, the smallest remaining questions, and any preserved branch or
-PR. Never infer exhaustion from a partial pass or abandon preserved work.
+PR. When evidence shows every safe retry and reroute path is exhausted, record
+the item as still blocked, preserve useful work, and select independently; retry
+it only after its condition changes. Never infer exhaustion from a partial pass
+or abandon preserved work.

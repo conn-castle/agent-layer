@@ -72,7 +72,7 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 	}
 
 	if config.SharedAgentSkillsEnabled(agents) {
-		steps = append(steps, func() error { return writeAgentSkills(sys, root, project.Skills) })
+		steps = append(steps, func() error { return WriteAgentSkills(sys, root, project.Skills) })
 	} else {
 		steps = append(steps, func() error { return cleanSharedAgentSkills(sys, root) })
 	}
@@ -123,7 +123,7 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 			func() error { return writeClaudeStatusline(sys, root, project) },
 			func() error { return writeClaudeSettings(sys, root, project) },
 			func() error { return writeMCPConfig(sys, root, project) },
-			func() error { return writeClaudeSkills(sys, root, project.Skills) },
+			func() error { return WriteClaudeSkills(sys, root, project.Skills) },
 		)
 	} else {
 		steps = append(steps, func() error { return cleanClaudeChimeHook(sys, root) })

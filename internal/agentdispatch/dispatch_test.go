@@ -54,7 +54,7 @@ printf '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\
 	}
 }
 
-func TestRunLaunchesProviderInSuppliedWorkingDirectory(t *testing.T) {
+func TestRunLaunchesProviderWithSkillsInSuppliedWorkingDirectory(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	workingDir := t.TempDir()
 	binDir := t.TempDir()
@@ -66,6 +66,7 @@ printf '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\
 		Root:       root,
 		WorkDir:    workingDir,
 		Agent:      AgentCodex,
+		Skill:      "review-plan",
 		PromptArgs: []string{"work in caller checkout"},
 		Env:        []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath},
 		LookPath:   mockLookPath(binDir),
@@ -78,6 +79,9 @@ printf '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\
 		t.Fatalf("resolve working directory: %v", err)
 	}
 	assertFileContains(t, logPath, "PWD="+resolvedWorkingDir)
+	if _, err := os.Stat(filepath.Join(workingDir, ".agents", "skills", "review-plan", "SKILL.md")); err != nil {
+		t.Fatalf("stat working-directory skill projection: %v", err)
+	}
 }
 
 func TestBuildOptionsJSONShapeAndRandomExclusion(t *testing.T) {

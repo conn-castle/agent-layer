@@ -36,6 +36,9 @@ planned paths. Do not turn execution difficulty or broader-than-expected work
 into a new stop condition. Only a human-input condition defined by
 `blocker-classification.md` can pause the item; preserve it and continue
 independent eligible work until the complete pass reaches the human question.
+If evidence shows every safe retry and reroute path is exhausted, preserve
+useful work, record the item as still blocked, and revisit it only after its
+condition changes.
 
 Include each verified ISSUES.md removal, BACKLOG.md reclassification, rejection,
 or still-blocked disposition in the delivery. Leave blocked entries canonical

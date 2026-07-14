@@ -131,7 +131,11 @@ func Fanout(opts FanoutOptions) error {
 		if promptErr != nil {
 			return promptErr
 		}
-		if err := validateSkillProjection(project.Root, target, opts.Skill); err != nil {
+		projectionRoot, projectionErr := prepareTargetProjection(project, opts.Root, opts.WorkDir, target)
+		if projectionErr != nil {
+			return projectionErr
+		}
+		if err := validateSkillProjection(projectionRoot, target, opts.Skill); err != nil {
 			return err
 		}
 		candidates = append(candidates, fanoutCandidate{spec: spec, target: target, version: version, prompt: prompt})
