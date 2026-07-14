@@ -12,11 +12,15 @@ readiness.
 
 ## Required inputs
 
-Require plan, task, and context artifact paths; accept an optional specification.
+Require:
 
-Accept self-contained `plan_reviewers` targets; otherwise use fresh built-in
-reviewers. Scale the number of independent reviews to scope and risk, using at
-least one and at most five. Missing artifacts block review.
+- exactly three `plan_reviewers` as self-contained dispatch target specifications
+- plan, task, and context artifact paths
+- an optional specification artifact path
+
+Before dispatch, show every exact reviewer target to the user and ask for any
+missing target; do not infer target specifications. Missing artifacts or a
+reviewer count other than exactly three block review.
 
 ## Output artifact
 
@@ -35,9 +39,9 @@ outputs or synthesis between reviewers.
 Read all artifacts and confirm objective/scope alignment. Build one shared
 prompt; do not assign complementary coverage.
 
-Run independent reviews concurrently, using dispatch fanout for external
-targets.
-Resume or replace unusable read-only results while preserving independence.
+Run the three independent reviews concurrently through dispatch fanout.
+Retry an unusable result only through its same supplied target; do not replace a
+required reviewer with an unspecified or inferred target.
 
 Validate candidates against artifacts and repository evidence. Merge duplicates
 and retain material correctness, safety, scope, implementability, verification,

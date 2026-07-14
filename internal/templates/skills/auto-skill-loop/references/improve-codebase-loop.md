@@ -2,9 +2,10 @@
 
 Use when `worker_skill=improve-codebase`.
 
-Run `/improve-codebase` through the configured implementer, built-in agents, or
-local work. Supply recent branches and PRs, touched areas, completed scope and
-lenses, blockers, and evidence needed to avoid repeating work.
+Dispatch the required `implementer` target with `/improve-codebase`. Do not
+substitute built-in agents, local work, or an unspecified worker. Supply recent
+branches and PRs, touched areas, completed scope and lenses, blockers, and
+evidence needed to avoid repeating work.
 
 Choose useful lenses from current evidence, such as correctness, security,
 data loss, concurrency, cancellation, input robustness, test integrity,

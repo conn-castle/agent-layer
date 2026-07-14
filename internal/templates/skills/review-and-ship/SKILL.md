@@ -22,15 +22,18 @@ Require:
 - a delivery target: working tree, named paths, commit range, or unpublished
   current-branch commits
 - an authoritative contract: the explicit request or user-designated source
+- `code_reviewer`: one explicit, self-contained semantic-review dispatch target
 
-`code_reviewer` is optional; use a built-in reviewer or local work if needed.
-Do not infer intent from temporary artifacts. Supporting reports, commits,
-issues, and PR text are not authoritative unless the user says so.
+Before any side effect, show the user the exact `code_reviewer` target and ask
+for it when missing; do not infer the role or target specification. Do not infer
+intent from temporary artifacts. Supporting reports, commits, issues, and PR
+text are not authoritative unless the user says so.
 
 Maintain `.agent-layer/tmp/review-and-ship.<run-id>.report.md` with the contract,
 delivery boundary and tree, checks, review and verification evidence, finding
 dispositions, repairs, shipping handoff, and outcome. Reconcile delegated output
-with the current tree and recover usable work from incomplete agents.
+with the current tree, preserve usable evidence, and stop on a missing required
+review verdict rather than substituting local work or an unspecified agent.
 
 ## Workflow
 
@@ -48,20 +51,20 @@ mutation.
 
 ### 2. Review and verify
 
-Run `/review-uncommitted-code` and `/verify-work` against the same exact tree,
-concurrently when useful. Give both the complete delivery and authoritative
-contract, but not each other's findings. Validate and deduplicate results in one
-ledger: open, resolved, rejected with evidence, deferred outside contract, or
-blocked.
+Dispatch `code_reviewer` with `/review-uncommitted-code` and run `/verify-work`
+in a fresh built-in subagent against the same exact tree, concurrently when
+useful. Give both the complete delivery and authoritative contract, but not each
+other's findings. Validate and deduplicate results in one ledger: open,
+resolved, rejected with evidence, deferred outside contract, or blocked.
 
 ### 3. Repair
 
 If supported findings remain, repair compatible items in one bounded batch.
 Continue independent repairs before asking about a genuine substantive choice.
 Rerun checks and contract evidence invalidated by changed files. Repeat full
-semantic review only when the repair changed design, architecture, or contract
-scope. Shipping requires complete verification and no unresolved in-scope
-finding.
+semantic review through a new dispatch to the supplied `code_reviewer` target
+only when the repair changed design, architecture, or contract scope. Shipping
+requires complete verification and no unresolved in-scope finding.
 
 ### 4. Ship
 

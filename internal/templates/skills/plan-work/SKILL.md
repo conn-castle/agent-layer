@@ -10,9 +10,11 @@ Create a reviewed, implementation-ready plan, task list, and context artifact.
 
 ## Inputs
 
-Require a task source or user request. `plan_reviewers` is optional; pass it to
-`/review-plan` when supplied. Without a task source, return a missing-input
-blocker and create nothing.
+Require a task source or user request and exactly three self-contained
+`plan_reviewers` target specifications to pass to `/review-plan`. Before
+creating artifacts, show the user every exact reviewer target and ask for any
+missing target; do not infer target specifications. Without a task source or
+the required reviewers, return a missing-input blocker and create nothing.
 
 ## Workflow
 
@@ -26,7 +28,7 @@ blocker and create nothing.
    the user only when a substantive choice cannot be resolved under repository
    escalation rules.
 3. Run `/review-plan` with the plan, task, context, optional source/spec, and
-   optional reviewers. Use the revised artifacts it returns. Reuse still-valid
+   `plan_reviewers`. Use the revised artifacts it returns. Reuse still-valid
    evidence and resolve routine review uncertainty autonomously.
 
 Do not edit implementation code or invent missing facts.

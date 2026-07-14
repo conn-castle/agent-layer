@@ -11,10 +11,13 @@ Resolve a selected ISSUES.md set through one coherent plan and delivery.
 
 ## Inputs and dispositions
 
-Accept issue IDs, a maximum count, a scope filter, optional plan reviewers, or
-plan-only mode; otherwise select every open issue. Limit work to selected issues
-and prerequisites. Delegate bounded work when useful, validate results against
-the latest tree, and serialize mutations. Do not stage, commit, or push.
+Accept issue IDs, a maximum count, a scope filter, or plan-only mode; otherwise
+select every open issue. Require exactly three self-contained `plan_reviewers`
+target specifications. Before side effects, show those exact targets to the
+user and ask for any missing target; do not infer target specifications. Limit
+work to selected issues and prerequisites. Delegate bounded work when useful,
+validate results against the latest tree, and serialize mutations. Do not stage,
+commit, or push.
 
 Write `.agent-layer/tmp/fix-issues.<run-id>.report.md`.
 
@@ -34,8 +37,9 @@ Agent failure, inconvenience, or multi-file scope is not grounds for deferral.
    duplicate obligations without losing IDs, identify reclassifications and
    user decisions, and group dependency-ordered packages. Return `no-work` when
    nothing valid remains.
-2. Run `/plan-work` once for the complete selected set and package map. In
-   plan-only mode, return the reviewed artifacts without changing ledgers.
+2. Run `/plan-work` once for the complete selected set and package map, passing
+   `plan_reviewers` unchanged. In plan-only mode, return the reviewed artifacts
+   without changing ledgers.
 3. Implement every package against the latest tree. Use a failing reproducer
    for defects when feasible and established contract evidence for debt or
    refactors. Resolve routine details from repository evidence and do not drop

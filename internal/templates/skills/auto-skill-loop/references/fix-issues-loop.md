@@ -2,9 +2,9 @@
 
 Use when `worker_skill=fix-issues`.
 
-Run `/fix-issues` through the configured implementer, a built-in agent, or local
-work. Select a coherent group of live ISSUES.md items, excluding recorded
-user-blocked items until the user answers them.
+Dispatch the required `implementer` target with `/fix-issues`. Select a coherent
+group of live ISSUES.md items, excluding recorded user-blocked items until the
+user answers them. Do not substitute a built-in, local, or unspecified worker.
 
 Reconcile the result with the current tree. Preserve at least:
 

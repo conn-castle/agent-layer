@@ -12,9 +12,16 @@ an explicit diagnostic blocker.
 
 ## Inputs and boundaries
 
-Require a symptom. Accept reproduction evidence, suspect paths, regression
-range, diagnosis-only mode, and optional dispatch roles. Delegate when useful
-and validate returned evidence against the tree.
+Require a testable symptom. Fix mode also requires explicit, self-contained
+`implementer` and `fixer` dispatch target specifications; the planned repair
+path additionally requires exactly three `plan_reviewers` target specifications
+and one `code_reviewer` target specification. Accept reproduction evidence,
+suspect paths, a regression range, and diagnosis-only mode.
+
+Before fix-mode side effects, show the user the exact role-to-target mapping and
+every plan-reviewer target specification. Ask for any missing target; do not
+infer roles or target specifications. Dispatch external roles through
+`/agent-dispatch` and validate their evidence against the current tree.
 
 Before editing, record the head and working-tree state. Isolate the repair with
 path or hunk boundaries where work overlaps; stop only if it cannot be separated
@@ -38,12 +45,16 @@ destructively rewrite changes.
    automated test is impossible, preserve equivalent diagnostic evidence and
    explain why. In diagnosis-only mode, update ISSUES.md when appropriate and
    stop here.
-4. Repair directly when the cause, desired behavior, boundary, and checks are
-   clear. Use `/plan-work` then `/fully-implement-plan` only for substantive
-   architecture, behavior, migration, or risk changes. Unknown causes justify
-   instrumentation, not speculative fixes.
+4. Use the direct path when the cause, desired behavior, boundary, and checks
+   are clear: dispatch `implementer` with the diagnosis and failing test, then
+   dispatch `fixer` with `/clean-and-fix-code` over the repair boundary. Use the
+   planned path only for substantive architecture, behavior, migration, or risk
+   changes: run `/plan-work` with `plan_reviewers`, then
+   `/fully-implement-plan` with `implementer`, `code_reviewer`, and `fixer`.
+   Unknown causes justify instrumentation, not speculative fixes.
 5. Prove red-to-green behavior, run affected checks, and verify the original
-   symptom. Repair material in-scope findings before declaring success.
+   symptom. For material in-scope verification gaps on the direct path,
+   redispatch `implementer` with those findings before final verification.
 
 Reject retries, sleeps, inflated timeouts, broad catches, silenced errors,
 ignored validation, or weakened assertions unless evidence establishes them as
