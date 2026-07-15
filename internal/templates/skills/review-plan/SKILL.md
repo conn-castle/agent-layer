@@ -19,9 +19,10 @@ Require:
 - plan, task, and context artifact paths
 - an optional specification artifact path
 
-Before dispatch, show every exact reviewer target to the user and ask for any
-missing target; do not infer target specifications. Missing artifacts block
-review, as does an empty reviewer list.
+Resolve each supplied reviewer request through `/agent-dispatch`'s live
+metadata. When it matches exactly one dispatchable target/model configuration,
+use that match without asking for confirmation. Missing artifacts block review,
+as does an empty reviewer list.
 
 ## Output artifact
 

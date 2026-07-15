@@ -12,10 +12,11 @@ Create a reviewed, implementation-ready plan, task list, and context artifact.
 ## Inputs
 
 Require a task source or user request and one or more self-contained
-`plan_reviewers` target specifications to pass to `/review-plan`. Before
-creating artifacts, show the user every exact reviewer target and ask for any
-missing target; do not infer target specifications. Without a task source or at
-least one reviewer, return a missing-input blocker and create nothing.
+`plan_reviewers` target specifications to pass to `/review-plan`. Resolve each
+supplied reviewer request through `/agent-dispatch`'s live metadata. When it
+matches exactly one dispatchable target/model configuration, use that match
+without asking for confirmation. Without a task source or at least one reviewer,
+return a missing-input blocker and create nothing.
 
 ## Workflow
 
