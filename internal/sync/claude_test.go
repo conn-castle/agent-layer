@@ -1094,6 +1094,13 @@ func TestCleanClaudeChimeHookRemovesOnlyManagedHandler(t *testing.T) {
 			t.Fatalf("expected %q preserved, got:\n%s", want, updated)
 		}
 	}
+	info, err := os.Stat(settingsPath)
+	if err != nil {
+		t.Fatalf("stat cleaned settings: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("cleaned settings mode = %04o, want preserved 0600", got)
+	}
 }
 
 func TestCleanClaudeChimeHookRejectsSymlinkSettingsDir(t *testing.T) {

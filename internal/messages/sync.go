@@ -35,6 +35,7 @@ const (
 	SyncChimeListConflictFmt                        = "%s must be a list to merge the managed notifications chime hook; remove or fix that override, or set notifications.chime = false"
 	SyncChimePathConflictFmt                        = "%s must be a real file inside the repository while cleaning Agent Layer chime hooks"
 	SyncCodexChimeMarkerConflictFmt                 = "%s: Agent Layer-managed Codex chime hook markers are incomplete or ambiguous; remove the marked chime block before running al sync"
+	SyncCodexChimeOwnershipConflictFmt              = "%s contains an augmented or ambiguous Agent Layer chime hook; remove that hook before running al sync"
 	SyncAntigravityChimePluginConflictFmt           = "%s already exists and is not the Agent Layer-managed chime plugin; remove or rename it before running al sync"
 	SyncClaudeStatuslineSourceMissingFmt            = "agents.claude.statusline is true but %s is missing; run `al wizard` to create the source file, run interactive `al upgrade` to review statusline sources, or create the file manually"
 	SyncCodexStatuslineSourceMissingFmt             = "agents.codex.statusline is true but %s is missing; run `al wizard` to create the source file, run interactive `al upgrade` to review statusline sources, or create the file manually"

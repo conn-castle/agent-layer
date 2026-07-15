@@ -145,28 +145,28 @@ func numericEquals(value any, want int) bool {
 // both its parent directory and the file itself are real in-repo filesystem
 // entries. Missing paths are reported as not existing so cleanup remains
 // idempotent for disabled providers.
-func existingChimeCleanupTarget(sys System, root string, dirName string, fileName string) (string, bool, error) {
+func existingChimeCleanupTarget(sys System, root string, dirName string, fileName string) (string, os.FileMode, bool, error) {
 	dir := filepath.Join(root, dirName)
 	path := filepath.Join(dir, fileName)
 	dirInfo, err := sys.Lstat(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return path, false, nil
+			return path, 0, false, nil
 		}
-		return path, false, fmt.Errorf(messages.InstallFailedStatFmt, dir, err)
+		return path, 0, false, fmt.Errorf(messages.InstallFailedStatFmt, dir, err)
 	}
 	if dirInfo.Mode()&os.ModeSymlink != 0 || !dirInfo.IsDir() {
-		return path, false, fmt.Errorf(messages.SyncChimePathConflictFmt, dir)
+		return path, 0, false, fmt.Errorf(messages.SyncChimePathConflictFmt, dir)
 	}
 	fileInfo, err := sys.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return path, false, nil
+			return path, 0, false, nil
 		}
-		return path, false, fmt.Errorf(messages.InstallFailedStatFmt, path, err)
+		return path, 0, false, fmt.Errorf(messages.InstallFailedStatFmt, path, err)
 	}
 	if fileInfo.Mode()&os.ModeSymlink != 0 || !fileInfo.Mode().IsRegular() {
-		return path, false, fmt.Errorf(messages.SyncChimePathConflictFmt, path)
+		return path, 0, false, fmt.Errorf(messages.SyncChimePathConflictFmt, path)
 	}
-	return path, true, nil
+	return path, fileInfo.Mode().Perm(), true, nil
 }

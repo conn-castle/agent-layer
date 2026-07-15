@@ -153,7 +153,7 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 // .codex/config.toml. It is used when Codex is disabled, so the normal Codex
 // config merge path will not run.
 func cleanCodexChimeHook(sys System, root string) error {
-	path, exists, err := existingChimeCleanupTarget(sys, root, ".codex", "config.toml")
+	path, mode, exists, err := existingChimeCleanupTarget(sys, root, ".codex", "config.toml")
 	if err != nil {
 		return err
 	}
@@ -180,7 +180,7 @@ func cleanCodexChimeHook(sys System, root string) error {
 	if err := toml.Unmarshal([]byte(out), &renderCheck); err != nil {
 		return fmt.Errorf("merged Codex config is invalid TOML: %w", err)
 	}
-	if err := sys.WriteFileAtomic(path, []byte(out), 0o600); err != nil {
+	if err := sys.WriteFileAtomic(path, []byte(out), mode); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
 	return nil
@@ -445,7 +445,30 @@ func (e *codexTomlEditor) removeCodexChimeHook(path string) (bool, error) {
 		e.removeRanges(unmarked)
 		changed = true
 	}
+	if err := e.rejectAmbiguousCodexChimeHook(path); err != nil {
+		return false, err
+	}
 	return changed, nil
+}
+
+func (e *codexTomlEditor) rejectAmbiguousCodexChimeHook(path string) error {
+	content := e.render()
+	if !strings.Contains(content, "al hook chime codex") &&
+		!strings.Contains(content, "/usr/bin/afplay /System/Library/Sounds/Blow.aiff") {
+		return nil
+	}
+	var parsed map[string]any
+	if err := toml.Unmarshal([]byte(content), &parsed); err != nil {
+		return fmt.Errorf(messages.SyncCodexExistingConfigInvalidFmt, path, err)
+	}
+	hooks, ok := parsed[hooksKey]
+	if !ok {
+		return nil
+	}
+	if containsExactChimeCommand(hooks, managedChimeCommandVariants(agentLayerCodexChimeCommand)) {
+		return fmt.Errorf(messages.SyncCodexChimeOwnershipConflictFmt, path)
+	}
+	return nil
 }
 
 func (e *codexTomlEditor) managedCodexChimeRegions(path string) ([]lineRange, error) {

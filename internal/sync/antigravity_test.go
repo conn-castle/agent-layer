@@ -1188,6 +1188,53 @@ func TestWriteAntigravityChimePluginRejectsSymlinkPluginDir(t *testing.T) {
 	}
 }
 
+func TestAntigravityChimePluginRejectsSymlinkedManagedManifests(t *testing.T) {
+	t.Parallel()
+	for _, action := range []string{"write", "clean"} {
+		t.Run(action, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			dir := antigravityChimePluginDir(root)
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				t.Fatalf("mkdir plugin dir: %v", err)
+			}
+			outside := t.TempDir()
+			for _, file := range antigravityChimePluginFiles() {
+				target := filepath.Join(outside, file.name)
+				if err := os.WriteFile(target, file.data, 0o600); err != nil {
+					t.Fatalf("write outside %s: %v", file.name, err)
+				}
+				if err := os.Symlink(target, filepath.Join(dir, file.name)); err != nil {
+					t.Fatalf("symlink %s: %v", file.name, err)
+				}
+			}
+
+			var err error
+			if action == "write" {
+				enabled := true
+				project := &config.ProjectConfig{Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}}}
+				err = writeAntigravityChimePlugin(RealSystem{}, root, project)
+			} else {
+				err = cleanAntigravityChimePlugin(RealSystem{}, root)
+			}
+			if err == nil || !strings.Contains(err.Error(), "not the Agent Layer-managed chime plugin") {
+				t.Fatalf("%s error = %v, want ownership conflict", action, err)
+			}
+			for _, file := range antigravityChimePluginFiles() {
+				link := filepath.Join(dir, file.name)
+				info, statErr := os.Lstat(link)
+				if statErr != nil || info.Mode()&os.ModeSymlink == 0 {
+					t.Fatalf("%s must preserve symlink %s, info=%v err=%v", action, file.name, info, statErr)
+				}
+				target := filepath.Join(outside, file.name)
+				if got := readFileForTest(t, target); got != string(file.data) {
+					t.Fatalf("%s changed outside %s: %q", action, file.name, got)
+				}
+			}
+		})
+	}
+}
+
 func TestWriteAntigravityChimePluginRejectsNonDirectoryPluginPath(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -1327,6 +1374,39 @@ func TestWriteAntigravityChimePluginWriteErrorReportsTarget(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(antigravityChimePluginDir(root), "plugin.json")); !os.IsNotExist(err) {
 		t.Fatalf("failed plugin write should not leave plugin.json, lstat err=%v", err)
+	}
+}
+
+func TestWriteAntigravityChimePluginSecondWriteFailureRollsBackFreshPlugin(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
+	}
+	writeErr := errors.New("hooks write denied")
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		WriteFileAtomicFunc: func(filename string, data []byte, perm os.FileMode) error {
+			if filepath.Base(filename) == "hooks.json" {
+				if err := (RealSystem{}).WriteFileAtomic(filename, data, perm); err != nil {
+					return err
+				}
+				return writeErr
+			}
+			return RealSystem{}.WriteFileAtomic(filename, data, perm)
+		},
+	}
+
+	err := writeAntigravityChimePlugin(sys, root, project)
+	if !errors.Is(err, writeErr) {
+		t.Fatalf("writeAntigravityChimePlugin error = %v, want hooks write failure", err)
+	}
+	if _, err := os.Lstat(antigravityChimePluginDir(root)); !os.IsNotExist(err) {
+		t.Fatalf("fresh partial plugin must be rolled back, lstat err=%v", err)
+	}
+	if err := writeAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
+		t.Fatalf("retry after rolled-back write failure: %v", err)
 	}
 }
 
