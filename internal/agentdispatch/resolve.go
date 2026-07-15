@@ -56,13 +56,19 @@ func chooseRandomTarget(cfg config.Config, root string, caller string, callerKno
 	}
 	pool := make([]string, 0, len(targetRegistry()))
 	discovered := make(map[string]targetDiscovery, len(targetRegistry()))
-	discoverVersion := func(path string, target targetMeta) (string, string, error) {
-		_, installed, err := compatibleTargetVersionCached(root, path, target, versionLookup)
-		if err != nil {
-			return "", "", err
+	discoverVersion := rawTargetVersionDiscovery(versionLookup)
+	if versionLookup == nil {
+		discoverVersion = func(path string, target targetMeta) (string, string, error) {
+			_, installed, err := compatibleTargetVersionCached(root, path, target, nil)
+			if err != nil {
+				// Unsupported versions are intentionally absent from the cache.
+				// Read them raw so random exclusion still reports the installed
+				// version and canonical compatibility reason.
+				return rawTargetVersionDiscovery(nil)(path, target)
+			}
+			warning, err := providerVersionCompatibility(target.Name, installed)
+			return installed, warning, err
 		}
-		warning, err := providerVersionCompatibility(target.Name, installed)
-		return installed, warning, err
 	}
 	for _, target := range targetRegistry() {
 		if callerKnown && target.Name == caller {

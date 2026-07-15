@@ -182,6 +182,10 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 	if err != nil || len(failureEvents) != 1 || failureEvents[0].Kind != eventFailure || failureEvents[0].Reason != "model quota exhausted" {
 		t.Fatalf("Codex nested failure events = %#v, %v", failureEvents, err)
 	}
+	stringFailureEvents, err := reduceStructuredEvent(AgentCodex, "", []byte(`{"type":"error","error":"quota exhausted"}`))
+	if err != nil || len(stringFailureEvents) != 1 || stringFailureEvents[0].Kind != eventFailure || stringFailureEvents[0].Reason != "quota exhausted" {
+		t.Fatalf("Codex string failure events = %#v, %v", stringFailureEvents, err)
+	}
 	var raw bytes.Buffer
 	if err := readStructuredEvents(strings.NewReader("not-json\n"), &raw, AgentCodex, "", func(providerEvent) error { return nil }); err == nil {
 		t.Fatal("invalid provider JSON was accepted")

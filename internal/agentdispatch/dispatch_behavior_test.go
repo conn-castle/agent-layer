@@ -241,6 +241,23 @@ func TestRandomEligibilitySkipsIncompatibleProvidersBeforeChoice(t *testing.T) {
 	}
 }
 
+func TestRandomDiscoveryPreservesUnsupportedVersionFacts(t *testing.T) {
+	cfg := dispatchTestConfig(AgentCodex)
+	target, ok := lookupTarget(AgentCodex)
+	if !ok {
+		t.Fatal("codex target missing")
+	}
+	wantReason := "unsupported provider version; install " + supportedProviderVersions[AgentCodex]
+	for _, installed := range []string{"0.0.1", "not-semver"} {
+		facts := discoverTarget(cfg, target, "", false, alwaysFound, rawTargetVersionDiscovery(func(string, string) (string, error) {
+			return installed, nil
+		}))
+		if facts.RandomEligible || facts.InstalledVersion != installed || facts.Fresh.Reason != wantReason || facts.RandomExclusionReason != wantReason {
+			t.Fatalf("random discovery for version %q lost compatibility facts: %#v", installed, facts)
+		}
+	}
+}
+
 func TestBuildOptionsResolvesEachProviderBinaryOnce(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	lookups := map[string]int{}

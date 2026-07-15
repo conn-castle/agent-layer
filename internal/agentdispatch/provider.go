@@ -349,7 +349,7 @@ func reduceCodexEvent(value map[string]any) ([]providerEvent, error) {
 	case "turn.completed":
 		return []providerEvent{{Kind: eventComplete}}, nil
 	case "turn.failed", "turn.aborted", "error":
-		reason, _ := firstStringV013(value, "message", "reason")
+		reason, _ := firstStringV013(value, "message", "reason", "error")
 		if reason == "" {
 			if details, ok := mapValueV013(value, "error"); ok {
 				reason, _ = firstStringV013(details, "message", "reason")
