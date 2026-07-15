@@ -41,6 +41,10 @@ mode = "all"
 # 3 allows two nested `al dispatch` calls.
 max_depth = 3
 
+[notifications]
+# Best-effort system chime for filtered top-level completion events.
+chime = false
+
 [agents.antigravity]
 enabled = true
 # Optional default when Antigravity calls `al dispatch` without --agent.
@@ -137,6 +141,7 @@ Agent-specific passthrough keys in `agents.codex.agent_specific` or `agents.clau
 | --- | --- |
 | `[approvals]` | auto-approval policy for commands and MCP tools |
 | `[dispatch]` | Agent Dispatch nesting depth limit (`max_depth`) |
+| `[notifications]` | filtered, best-effort local completion chime (`chime`) |
 | `[agents.*]` | enablement and model selection per client |
 | `[[mcp.servers]]` | external MCP server definitions |
 | `[warnings]` | optional thresholds for token and server limits, plus sync update warnings |
@@ -144,6 +149,14 @@ Agent-specific passthrough keys in `agents.codex.agent_specific` or `agents.clau
 ### Approvals
 
 `[approvals]` controls auto-approval behavior.
+
+### Notifications
+
+`notifications.chime = true` projects one project-shareable Agent Layer `Stop` handler into each enabled Claude, Codex, and Antigravity client. It does not write global provider settings and does not require Codex `notify` or `agents.codex.local_config_dir`.
+
+The handler chimes for a main Claude turn only when no continuation, background task, or scheduled wakeup remains; for Codex only on the initial stop where `stop_hook_active` is false; and for Antigravity only when the client is fully idle after a normal, error-free model stop. Invalid event metadata stays silent. Hook or sound failures fail open so notifications cannot block or continue an agent.
+
+Codex matching hooks run concurrently. Its first `Stop` can therefore chime before another hook requests continuation; later continuation stops are suppressed, but this project-shareable hook cannot guarantee exact semantic task completion. On macOS the handler uses `/usr/bin/afplay` with the system Blow sound. On Linux it uses `canberra-gtk-play --id=complete` when that command is available on `PATH`; Agent Layer bundles no sound asset, and a missing command fails open with a diagnostic. Other operating systems are unsupported.
 
 ### Agents
 

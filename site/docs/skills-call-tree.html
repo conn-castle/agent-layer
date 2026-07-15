@@ -1189,22 +1189,6 @@ plan-work:
       calls:
         - task: ask the named question, then resume synthesis and update the artifacts and final report without redispatching reviewers
     - task: return reviewed artifact paths and the readiness verdict
-review-and-ship:
-  inputs: [code_reviewer]
-  calls:
-    - task: establish the authoritative contract and isolate the intended delivery
-    - task: run proportional deterministic checks against one exact tree
-    - parallel:
-      - skill: review-uncommitted-code
-        caller: dispatch(code_reviewer)
-      - skill: verify-work
-        caller: subagent
-    - if: accumulated supported findings require repair
-      calls:
-        - task: apply one bounded root-owned repair batch
-        - task: rerun invalidated focused checks and targeted contract verification
-    - skill: ship-pr
-    - exit: return merge authorization, verified merge cleanup, or the concrete blocker
 review-plan:
   inputs: [plan_reviewers]
   calls:

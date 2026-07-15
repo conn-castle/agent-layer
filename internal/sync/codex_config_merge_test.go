@@ -2,6 +2,7 @@ package sync
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -800,6 +801,37 @@ timeout = 5
 		t.Fatalf("expected managed marker after migration, got:\n%s", merged)
 	}
 	assertValidTOML(t, merged)
+}
+
+func TestWriteCodexConfig_ChimeMigratesLegacyDirectSoundGroups(t *testing.T) {
+	t.Parallel()
+	for _, marked := range []bool{false, true} {
+		name := "unmarked"
+		if marked {
+			name = "marked"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			group := fmt.Sprintf("[[hooks.Stop]]\n[[hooks.Stop.hooks]]\ntype = \"command\"\ncommand = %q\ntimeout = 5\n", legacyAgentLayerCodexChimeCommand)
+			if marked {
+				group = codexChimeBeginMarker + "\n" + group + codexChimeEndMarker + "\n"
+			}
+			writeExistingCodexConfig(t, root, codexPartialHeader+"\n"+group)
+			enabled := true
+			project := &config.ProjectConfig{Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}}, Env: map[string]string{}}
+			if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+				t.Fatalf("writeCodexConfig: %v", err)
+			}
+			merged := readCodexConfig(t, root)
+			if strings.Contains(merged, "/usr/bin/afplay") || !strings.Contains(merged, "al hook chime codex") {
+				t.Fatalf("legacy command was not migrated:\n%s", merged)
+			}
+			if strings.Count(merged, codexChimeBeginMarker) != 1 {
+				t.Fatalf("expected one managed region:\n%s", merged)
+			}
+		})
+	}
 }
 
 func TestWriteCodexConfig_ChimePreservesHookTrustStateInsideManagedMarkers(t *testing.T) {

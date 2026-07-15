@@ -602,7 +602,7 @@ func (e *codexTomlEditor) codexStopGroupIsExactChimeOnly(r lineRange) bool {
 	if !ok || len(stopHooks) != 1 {
 		return false
 	}
-	return chimeHandlerMatchesAny(stopHooks[0], legacyChimeCommandVariants(agentLayerCodexChimeCommand))
+	return chimeHandlerMatchesAny(stopHooks[0], managedChimeCommandVariants(agentLayerCodexChimeCommand))
 }
 
 func (e *codexTomlEditor) insertRootLine(line string) {

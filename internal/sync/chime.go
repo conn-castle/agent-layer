@@ -10,19 +10,22 @@ import (
 )
 
 const (
-	agentLayerChimeMarker             = "agent-layer-chime"
-	agentLayerClaudeChimeCommand      = "/usr/bin/afplay /System/Library/Sounds/Blow.aiff >/dev/null 2>&1 & # agent-layer-chime"
-	agentLayerCodexChimeCommand       = `/usr/bin/afplay /System/Library/Sounds/Blow.aiff >/dev/null 2>&1 & printf '{"continue":true}\n' # agent-layer-chime`
-	agentLayerAntigravityChimeCommand = `/usr/bin/afplay /System/Library/Sounds/Blow.aiff >/dev/null 2>&1 & printf '{"decision":"allow"}\n' # agent-layer-chime`
-	agentLayerChimeTimeout            = 5
-	codexChimeBeginMarker             = "# BEGIN Agent Layer-managed chime hook. Source: .agent-layer/config.toml [notifications].chime."
-	codexChimeEndMarker               = "# END Agent Layer-managed chime hook."
-	chimeHandlerTypeKey               = "type"
-	chimeHandlerCommandKey            = "command"
-	chimeHandlerCommandType           = "command" //nolint:goconst // The type value is independent from the same-named field key.
-	chimeHandlerTimeoutKey            = "timeout"
-	hooksKey                          = "hooks"
-	stopHookKey                       = "Stop"
+	agentLayerChimeMarker                   = "agent-layer-chime"
+	agentLayerClaudeChimeCommand            = `al hook chime claude || { echo 'agent-layer chime handler unavailable' >&2; true; } # agent-layer-chime`
+	agentLayerCodexChimeCommand             = `al hook chime codex || { printf 'agent-layer chime handler unavailable\n' >&2; printf '{}\n'; } # agent-layer-chime`
+	agentLayerAntigravityChimeCommand       = `al hook chime antigravity || { printf 'agent-layer chime handler unavailable\n' >&2; printf '{"decision":"allow"}\n'; } # agent-layer-chime`
+	legacyAgentLayerClaudeChimeCommand      = "/usr/bin/afplay /System/Library/Sounds/Blow.aiff >/dev/null 2>&1 & # agent-layer-chime"
+	legacyAgentLayerCodexChimeCommand       = `/usr/bin/afplay /System/Library/Sounds/Blow.aiff >/dev/null 2>&1 & printf '{"continue":true}\n' # agent-layer-chime`
+	legacyAgentLayerAntigravityChimeCommand = `/usr/bin/afplay /System/Library/Sounds/Blow.aiff >/dev/null 2>&1 & printf '{"decision":"allow"}\n' # agent-layer-chime`
+	agentLayerChimeTimeout                  = 5
+	codexChimeBeginMarker                   = "# BEGIN Agent Layer-managed chime hook. Source: .agent-layer/config.toml [notifications].chime."
+	codexChimeEndMarker                     = "# END Agent Layer-managed chime hook."
+	chimeHandlerTypeKey                     = "type"
+	chimeHandlerCommandKey                  = "command"
+	chimeHandlerCommandType                 = "command" //nolint:goconst // The type value is independent from the same-named field key.
+	chimeHandlerTimeoutKey                  = "timeout"
+	hooksKey                                = "hooks"
+	stopHookKey                             = "Stop"
 )
 
 func legacyChimeCommandVariants(command string) map[string]struct{} {
@@ -33,11 +36,30 @@ func legacyChimeCommandVariants(command string) map[string]struct{} {
 	return variants
 }
 
+func managedChimeCommandVariants(command string) map[string]struct{} {
+	commands := []string{command}
+	switch command {
+	case agentLayerClaudeChimeCommand:
+		commands = append(commands, legacyAgentLayerClaudeChimeCommand)
+	case agentLayerCodexChimeCommand:
+		commands = append(commands, legacyAgentLayerCodexChimeCommand)
+	case agentLayerAntigravityChimeCommand:
+		commands = append(commands, legacyAgentLayerAntigravityChimeCommand)
+	}
+	variants := make(map[string]struct{}, len(commands)*2)
+	for _, candidate := range commands {
+		for variant := range legacyChimeCommandVariants(candidate) {
+			variants[variant] = struct{}{}
+		}
+	}
+	return variants
+}
+
 func ensureNoLegacyAgentSpecificChime(path string, hooks any, command string) error {
 	if hooks == nil {
 		return nil
 	}
-	if containsExactChimeCommand(hooks, legacyChimeCommandVariants(command)) {
+	if containsExactChimeCommand(hooks, managedChimeCommandVariants(command)) {
 		return fmt.Errorf(messages.SyncLegacyAgentSpecificChimeFmt, path)
 	}
 	return nil
@@ -69,7 +91,7 @@ func containsExactChimeCommand(value any, commands map[string]struct{}) bool {
 }
 
 func containsChimeCommandText(content string, command string) bool {
-	for variant := range legacyChimeCommandVariants(command) {
+	for variant := range managedChimeCommandVariants(command) {
 		if strings.Contains(content, variant) {
 			return true
 		}
