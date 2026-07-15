@@ -424,14 +424,19 @@ func readStructuredEvents(reader io.Reader, rawWriter io.Writer, agent string, e
 	}
 }
 
+// antigravitySessionID extracts one consistent conversation ID from a run log.
 func antigravitySessionID(logPath string) (string, error) {
-	data, err := os.ReadFile(logPath) // #nosec G304 -- path is created in this run's private directory.
+	file, err := os.Open(logPath) // #nosec G304 -- path is created in this run's private directory.
 	if err != nil {
 		return "", err
 	}
+	defer func() { _ = file.Close() }()
+
 	found := ""
-	for _, line := range strings.Split(string(data), "\n") {
-		candidate := strings.TrimSpace(line)
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), maxCaptureBytes)
+	for scanner.Scan() {
+		candidate := strings.TrimSpace(scanner.Text())
 		if match := antigravityLogPrefix.FindStringSubmatch(candidate); len(match) == 2 {
 			candidate = match[1]
 		}
@@ -448,6 +453,9 @@ func antigravitySessionID(logPath string) (string, error) {
 			return "", fmt.Errorf("antigravity dispatch log reported conflicting conversation IDs %s and %s", found, id)
 		}
 		found = id
+	}
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("read Antigravity dispatch log: %w", err)
 	}
 	return found, nil
 }

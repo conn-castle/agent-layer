@@ -273,6 +273,13 @@ func TestAntigravityLogIDIsStrictAndVersionGateFailsLoudly(t *testing.T) {
 	if id, err := antigravitySessionID(logPath); err == nil || id != "" {
 		t.Fatalf("conflicting Antigravity IDs = %q, %v", id, err)
 	}
+	longDiagnostic := strings.Repeat("x", 128*1024)
+	if err := os.WriteFile(logPath, []byte(longDiagnostic+"\nCreated conversation AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA\n"), 0o600); err != nil {
+		t.Fatalf("write long diagnostic log: %v", err)
+	}
+	if id, err := antigravitySessionID(logPath); err != nil || id != "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" {
+		t.Fatalf("long diagnostic log ID = %q, %v", id, err)
+	}
 	_, err = requireSupportedVersion("ignored", AgentCodex, func(string, string) (string, error) { return "0.1.0", nil })
 	requireDispatchExitCode(t, err, ExitUnavailable)
 }
