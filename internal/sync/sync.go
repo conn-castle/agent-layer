@@ -132,7 +132,7 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 	codexEnabled := config.IsAgentEnabled(agents.Codex.Enabled)
 	if codexEnabled || vscodeEnabled {
 		steps = append(steps,
-			func() error { return writeCodexConfigWithStatusline(sys, root, project, codexEnabled) },
+			func() error { return writeCodexConfigWithCLISettings(sys, root, project, codexEnabled) },
 		)
 	}
 	if codexEnabled {

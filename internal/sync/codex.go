@@ -41,13 +41,13 @@ const codexPartialHeader = `# PARTIALLY GENERATED FILE - MAY CONTAIN SECRETS
 
 // writeCodexConfig patches Agent Layer-owned entries in .codex/config.toml.
 func writeCodexConfig(sys System, root string, project *config.ProjectConfig) error {
-	return writeCodexConfigWithStatusline(sys, root, project, true)
+	return writeCodexConfigWithCLISettings(sys, root, project, true)
 }
 
-// writeCodexConfigWithStatusline projects shared Codex configuration while
-// allowing callers to exclude the terminal-only statusline for IDE-only use.
-func writeCodexConfigWithStatusline(sys System, root string, project *config.ProjectConfig, includeStatusline bool) error {
-	managed, err := buildCodexManagedConfigWithSystem(sys, root, project, includeStatusline)
+// writeCodexConfigWithCLISettings projects shared Codex configuration while
+// allowing callers to exclude terminal-only settings for IDE-only use.
+func writeCodexConfigWithCLISettings(sys System, root string, project *config.ProjectConfig, includeCLISettings bool) error {
+	managed, err := buildCodexManagedConfigWithSystem(sys, root, project, includeCLISettings)
 	if err != nil {
 		return err
 	}
@@ -96,7 +96,7 @@ func buildCodexConfigWithSystem(sys System, root string, project *config.Project
 	return managed.Content, nil
 }
 
-func buildCodexManagedConfigWithSystem(sys System, root string, project *config.ProjectConfig, includeStatusline bool) (codexManagedConfig, error) {
+func buildCodexManagedConfigWithSystem(sys System, root string, project *config.ProjectConfig, includeCLISettings bool) (codexManagedConfig, error) {
 	trustedRoot, err := codexTrustedProjectRoot(root)
 	if err != nil {
 		return codexManagedConfig{}, err
@@ -111,7 +111,7 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		return codexManagedConfig{}, err
 	}
 
-	agentSpecific, _, err := codexAgentSpecificForOutput(sys, root, project.Config.Agents.Codex, includeStatusline)
+	agentSpecific, _, err := codexAgentSpecificForOutput(sys, root, project.Config.Agents.Codex, includeCLISettings)
 	if err != nil {
 		return codexManagedConfig{}, err
 	}
@@ -119,11 +119,13 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 	var builder strings.Builder
 	builder.WriteString(codexPartialHeader)
 
-	if project.Config.Agents.Codex.Model != "" && !config.HasProviderPassthroughKey(agentSpecific, config.CodexModelKey) {
-		fmt.Fprintf(&builder, "model = %q\n", project.Config.Agents.Codex.Model)
-	}
-	if project.Config.Agents.Codex.ReasoningEffort != "" && !config.HasProviderPassthroughKey(agentSpecific, config.CodexReasoningEffortKey) {
-		fmt.Fprintf(&builder, "model_reasoning_effort = %q\n", project.Config.Agents.Codex.ReasoningEffort)
+	if includeCLISettings {
+		if project.Config.Agents.Codex.Model != "" && !config.HasProviderPassthroughKey(agentSpecific, config.CodexModelKey) {
+			fmt.Fprintf(&builder, "model = %q\n", project.Config.Agents.Codex.Model)
+		}
+		if project.Config.Agents.Codex.ReasoningEffort != "" && !config.HasProviderPassthroughKey(agentSpecific, config.CodexReasoningEffortKey) {
+			fmt.Fprintf(&builder, "model_reasoning_effort = %q\n", project.Config.Agents.Codex.ReasoningEffort)
+		}
 	}
 	if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
 		if !config.HasProviderPassthroughKey(agentSpecific, config.CodexApprovalPolicyKey) {

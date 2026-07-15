@@ -177,6 +177,8 @@ func TestRunWithProject_ProjectsCodexRuntimeFeaturesForVSCodeOnly(t *testing.T) 
 	enabled := true
 	disabled := false
 	project.Config.Agents.Codex.Enabled = &disabled
+	project.Config.Agents.Codex.Model = "cli-only-model"
+	project.Config.Agents.Codex.ReasoningEffort = "high"
 	project.Config.Agents.Codex.Statusline = &enabled
 	project.Config.Agents.Codex.AgentSpecific = map[string]any{
 		"features": map[string]any{
@@ -215,6 +217,11 @@ func TestRunWithProject_ProjectsCodexRuntimeFeaturesForVSCodeOnly(t *testing.T) 
 	if tui, exists := parsed["tui"]; exists {
 		if tuiMap, table := tui.(map[string]any); !table || tuiMap["status_line"] != nil {
 			t.Fatalf("did not expect CLI-only statusline in VS Code Codex config: %#v", tui)
+		}
+	}
+	for _, key := range []string{config.CodexModelKey, config.CodexReasoningEffortKey} {
+		if value, exists := parsed[key]; exists {
+			t.Fatalf("did not expect CLI-only %s in VS Code Codex config: %#v", key, value)
 		}
 	}
 }
