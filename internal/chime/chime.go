@@ -58,6 +58,7 @@ func (SystemSoundRunner) Play() error {
 	return startAndReapSound(cmd)
 }
 
+// startAndReapSound starts a sound process and waits for it asynchronously.
 func startAndReapSound(process soundProcess) error {
 	if err := process.Start(); err != nil {
 		return fmt.Errorf("start notification sound: %w", err)
@@ -98,6 +99,7 @@ type antigravityEvent struct {
 
 type nonNullArray []any
 
+// UnmarshalJSON decodes an array while rejecting an explicit JSON null.
 func (a *nonNullArray) UnmarshalJSON(data []byte) error {
 	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
 		return errors.New("must be an array, not null")
@@ -115,6 +117,7 @@ type optionalNonNullString struct {
 	value   string
 }
 
+// UnmarshalJSON decodes a present string while rejecting an explicit JSON null.
 func (s *optionalNonNullString) UnmarshalJSON(data []byte) error {
 	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
 		return errors.New("must be a string, not null")

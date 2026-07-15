@@ -61,6 +61,8 @@ func writeAntigravityChimePlugin(sys System, root string, project *config.Projec
 	return nil
 }
 
+// rollbackNewAntigravityChimePlugin removes only files proven to be written by
+// the failed invocation, preserving ambiguous filesystem state for resolution.
 func rollbackNewAntigravityChimePlugin(sys System, dir string, written []antigravityChimePluginFile) error {
 	var rollbackErrs []error
 	for i := len(written) - 1; i >= 0; i-- {

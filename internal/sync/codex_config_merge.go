@@ -451,6 +451,8 @@ func (e *codexTomlEditor) removeCodexChimeHook(path string) (bool, error) {
 	return changed, nil
 }
 
+// rejectAmbiguousCodexChimeHook reports remaining exact chime commands that
+// cannot be proven to belong to an Agent Layer-managed hook region.
 func (e *codexTomlEditor) rejectAmbiguousCodexChimeHook(path string) error {
 	content := e.render()
 	if !strings.Contains(content, "al hook chime codex") &&
