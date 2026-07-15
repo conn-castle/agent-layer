@@ -188,6 +188,10 @@ func TestRunWithProject_ProjectsCodexRuntimeFeaturesForVSCodeOnly(t *testing.T) 
 			"in_app_browser": false,
 			"computer_use":   false,
 		},
+		"tui": map[string]any{
+			"status_line": []any{"stale-cli-statusline"},
+			"theme":       "shared-setting",
+		},
 	}
 	project.Config.Agents.VSCode.Enabled = &enabled
 
@@ -214,10 +218,12 @@ func TestRunWithProject_ProjectsCodexRuntimeFeaturesForVSCodeOnly(t *testing.T) 
 			t.Fatalf("expected features.%s = %v, got %#v", key, want, got)
 		}
 	}
-	if tui, exists := parsed["tui"]; exists {
-		if tuiMap, table := tui.(map[string]any); !table || tuiMap["status_line"] != nil {
-			t.Fatalf("did not expect CLI-only statusline in VS Code Codex config: %#v", tui)
-		}
+	tui, ok := parsed["tui"].(map[string]any)
+	if !ok || tui["theme"] != "shared-setting" {
+		t.Fatalf("expected unrelated tui setting preserved in VS Code Codex config: %#v", parsed["tui"])
+	}
+	if value, exists := tui["status_line"]; exists {
+		t.Fatalf("did not expect CLI-only statusline in VS Code Codex config: %#v", value)
 	}
 	for _, key := range []string{config.CodexModelKey, config.CodexReasoningEffortKey} {
 		if value, exists := parsed[key]; exists {

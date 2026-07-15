@@ -13,12 +13,16 @@ import (
 
 const codexStatuslineSourceName = "codex-statusline.toml"
 
-func codexAgentSpecificForOutput(sys System, root string, codex config.CodexConfig, includeStatusline bool) (map[string]any, bool, error) {
+func codexAgentSpecificForOutput(sys System, root string, codex config.CodexConfig, includeCLISettings bool) (map[string]any, bool, error) {
 	var agentSpecific map[string]any
 	if len(codex.AgentSpecific) > 0 {
 		agentSpecific = cloneAgentSpecificValue(codex.AgentSpecific).(map[string]any)
 	}
-	if !includeStatusline || !config.CodexStatuslineEnabled(codex) {
+	if !includeCLISettings {
+		removeCodexStatusLine(agentSpecific)
+		return agentSpecific, false, nil
+	}
+	if !config.CodexStatuslineEnabled(codex) {
 		return agentSpecific, false, nil
 	}
 	if codexAgentSpecificDefinesStatusLine(codex.AgentSpecific) {
@@ -36,6 +40,19 @@ func codexAgentSpecificForOutput(sys System, root string, codex config.CodexConf
 		return nil, false, err
 	}
 	return agentSpecific, true, nil
+}
+
+// removeCodexStatusLine removes only the terminal-only status line while
+// preserving unrelated user-provided tui settings in a shared IDE projection.
+func removeCodexStatusLine(agentSpecific map[string]any) {
+	tui, ok := agentSpecific[codexTUIKey].(map[string]any)
+	if !ok {
+		return
+	}
+	delete(tui, codexStatusLineKey)
+	if len(tui) == 0 {
+		delete(agentSpecific, codexTUIKey)
+	}
 }
 
 func codexAgentSpecificDefinesStatusLine(agentSpecific map[string]any) bool {
