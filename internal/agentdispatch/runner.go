@@ -336,16 +336,17 @@ func executeProvider(
 }
 
 func antigravityTimeoutReported(stderrPath string, logPath string) (bool, error) {
+	timedOut := false
 	for _, path := range []string{stderrPath, logPath} {
 		data, err := os.ReadFile(path) // #nosec G304 -- paths are in the active isolated run.
 		if err != nil {
 			return false, fmt.Errorf("read %s: %w", path, err)
 		}
 		if bytes.Contains(data, []byte("Error: timeout waiting for response")) {
-			return true, nil
+			timedOut = true
 		}
 	}
-	return false, nil
+	return timedOut, nil
 }
 
 func replayAnswer(path string, stdout io.Writer) error {

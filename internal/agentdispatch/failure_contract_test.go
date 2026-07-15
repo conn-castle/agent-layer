@@ -130,6 +130,12 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 	if timedOut, readErr := antigravityTimeoutReported(timeoutRun.Record.StderrPath, filepath.Join(root, "missing-log")); readErr == nil || timedOut {
 		t.Fatalf("missing Antigravity diagnostics = timedOut %t, error %v", timedOut, readErr)
 	}
+	if err := os.WriteFile(timeoutRun.Record.StderrPath, []byte("Error: timeout waiting for response\n"), 0o600); err != nil {
+		t.Fatalf("write timeout stderr: %v", err)
+	}
+	if timedOut, readErr := antigravityTimeoutReported(timeoutRun.Record.StderrPath, filepath.Join(root, "missing-log")); readErr == nil || timedOut {
+		t.Fatalf("timeout stderr with missing Antigravity log = timedOut %t, error %v", timedOut, readErr)
+	}
 
 	if err := replayAnswer(filepath.Join(root, "missing-answer"), io.Discard); err == nil {
 		t.Fatal("replayAnswer accepted a missing capture")
