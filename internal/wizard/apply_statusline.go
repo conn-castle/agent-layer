@@ -42,7 +42,7 @@ func selectedStatuslineSourceFiles(choices *Choices) []install.StatuslineSourceT
 				files = append(files, source)
 			}
 		case ".agent-layer/codex-statusline.toml":
-			if choices.CodexStatusline && codexToggleVisible(choices) {
+			if choices.CodexStatusline && codexStatuslineToggleVisible(choices) {
 				files = append(files, source)
 			}
 		}

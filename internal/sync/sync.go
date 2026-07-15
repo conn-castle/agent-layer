@@ -129,12 +129,15 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 		steps = append(steps, func() error { return cleanClaudeChimeHook(sys, root) })
 	}
 
-	if config.IsAgentEnabled(agents.Codex.Enabled) {
+	codexEnabled := config.IsAgentEnabled(agents.Codex.Enabled)
+	if codexEnabled || vscodeEnabled {
 		steps = append(steps,
-			func() error { return writeCodexConfig(sys, root, project) },
-			func() error { return writeCodexRules(sys, root, project) },
+			func() error { return writeCodexConfigWithStatusline(sys, root, project, codexEnabled) },
 		)
-	} else {
+	}
+	if codexEnabled {
+		steps = append(steps, func() error { return writeCodexRules(sys, root, project) })
+	} else if !vscodeEnabled {
 		steps = append(steps, func() error { return cleanCodexChimeHook(sys, root) })
 	}
 

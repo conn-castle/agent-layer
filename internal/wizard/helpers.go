@@ -28,14 +28,14 @@ func buildSummary(c *Choices) string {
 	if c.CodexLocalConfigDirTouched && c.CodexLocalConfigDir {
 		sb.WriteString(messages.WizardSummaryCodexLocalConfigDir)
 	}
-	if c.CodexAppsTouched && codexToggleVisible(c) {
+	if c.CodexAppsTouched && codexRuntimeToggleVisible(c) {
 		if c.CodexApps {
 			sb.WriteString(messages.WizardSummaryCodexAppsEnabled)
 		} else {
 			sb.WriteString(messages.WizardSummaryCodexAppsDisabled)
 		}
 	}
-	if c.CodexPluginsTouched && codexToggleVisible(c) {
+	if c.CodexPluginsTouched && codexRuntimeToggleVisible(c) {
 		if c.CodexPlugins {
 			sb.WriteString(messages.WizardSummaryCodexPluginsEnabled)
 		} else {
@@ -49,7 +49,7 @@ func buildSummary(c *Choices) string {
 			sb.WriteString(messages.WizardSummaryClaudeStatuslineDisabled)
 		}
 	}
-	if c.CodexStatuslineTouched && codexToggleVisible(c) {
+	if c.CodexStatuslineTouched && codexStatuslineToggleVisible(c) {
 		if c.CodexStatusline {
 			sb.WriteString(messages.WizardSummaryCodexStatuslineEnabled)
 		} else {
@@ -58,7 +58,7 @@ func buildSummary(c *Choices) string {
 	}
 	// Disable toggles print a line only when the feature is actually disabled;
 	// leaving a toggle off keeps the client default and reports nothing.
-	if c.CodexDisableBrowserTouched && codexToggleVisible(c) && c.CodexDisableBrowser {
+	if c.CodexDisableBrowserTouched && codexRuntimeToggleVisible(c) && c.CodexDisableBrowser {
 		sb.WriteString(messages.WizardSummaryCodexBrowserDisabled)
 	}
 	if c.ClaudeDisableIDEReadingTouched && claudeToggleVisible(c) && c.ClaudeDisableIDEReading {
@@ -154,9 +154,17 @@ func writeGitTrackingSummaryLine(sb *strings.Builder, label string, tracked bool
 	fmt.Fprintf(sb, messages.WizardSummaryGitIgnoredFmt, label)
 }
 
-// codexToggleVisible reports whether a Codex per-feature toggle applies to the
-// current selection: the agent step was either untouched or left Codex enabled.
-func codexToggleVisible(c *Choices) bool {
+// codexRuntimeToggleVisible reports whether a Codex runtime feature toggle
+// applies: the agent step was either untouched or left the Codex CLI or VS Code
+// extension enabled. Both surfaces read the shared .codex/config.toml.
+func codexRuntimeToggleVisible(c *Choices) bool {
+	return !c.EnabledAgentsTouched || c.EnabledAgents[AgentCodex] || c.EnabledAgents[AgentVSCode]
+}
+
+// codexStatuslineToggleVisible reports whether the terminal-only Codex
+// statusline toggle applies: the agent step was either untouched or left the
+// Codex CLI enabled.
+func codexStatuslineToggleVisible(c *Choices) bool {
 	return !c.EnabledAgentsTouched || c.EnabledAgents[AgentCodex]
 }
 

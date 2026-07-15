@@ -13,12 +13,12 @@ import (
 
 const codexStatuslineSourceName = "codex-statusline.toml"
 
-func codexAgentSpecificForOutput(sys System, root string, codex config.CodexConfig) (map[string]any, bool, error) {
+func codexAgentSpecificForOutput(sys System, root string, codex config.CodexConfig, includeStatusline bool) (map[string]any, bool, error) {
 	var agentSpecific map[string]any
 	if len(codex.AgentSpecific) > 0 {
 		agentSpecific = cloneAgentSpecificValue(codex.AgentSpecific).(map[string]any)
 	}
-	if !config.CodexStatuslineEnabled(codex) {
+	if !includeStatusline || !config.CodexStatuslineEnabled(codex) {
 		return agentSpecific, false, nil
 	}
 	if codexAgentSpecificDefinesStatusLine(codex.AgentSpecific) {

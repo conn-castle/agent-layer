@@ -41,7 +41,13 @@ const codexPartialHeader = `# PARTIALLY GENERATED FILE - MAY CONTAIN SECRETS
 
 // writeCodexConfig patches Agent Layer-owned entries in .codex/config.toml.
 func writeCodexConfig(sys System, root string, project *config.ProjectConfig) error {
-	managed, err := buildCodexManagedConfigWithSystem(sys, root, project)
+	return writeCodexConfigWithStatusline(sys, root, project, true)
+}
+
+// writeCodexConfigWithStatusline projects shared Codex configuration while
+// allowing callers to exclude the terminal-only statusline for IDE-only use.
+func writeCodexConfigWithStatusline(sys System, root string, project *config.ProjectConfig, includeStatusline bool) error {
+	managed, err := buildCodexManagedConfigWithSystem(sys, root, project, includeStatusline)
 	if err != nil {
 		return err
 	}
@@ -83,14 +89,14 @@ func writeCodexRules(sys System, root string, project *config.ProjectConfig) err
 
 //nolint:unparam // Kept aligned with buildCodexManagedConfigWithSystem so tests can exercise source reads through System.
 func buildCodexConfigWithSystem(sys System, root string, project *config.ProjectConfig) (string, error) {
-	managed, err := buildCodexManagedConfigWithSystem(sys, root, project)
+	managed, err := buildCodexManagedConfigWithSystem(sys, root, project, true)
 	if err != nil {
 		return "", err
 	}
 	return managed.Content, nil
 }
 
-func buildCodexManagedConfigWithSystem(sys System, root string, project *config.ProjectConfig) (codexManagedConfig, error) {
+func buildCodexManagedConfigWithSystem(sys System, root string, project *config.ProjectConfig, includeStatusline bool) (codexManagedConfig, error) {
 	trustedRoot, err := codexTrustedProjectRoot(root)
 	if err != nil {
 		return codexManagedConfig{}, err
@@ -105,7 +111,7 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		return codexManagedConfig{}, err
 	}
 
-	agentSpecific, _, err := codexAgentSpecificForOutput(sys, root, project.Config.Agents.Codex)
+	agentSpecific, _, err := codexAgentSpecificForOutput(sys, root, project.Config.Agents.Codex, includeStatusline)
 	if err != nil {
 		return codexManagedConfig{}, err
 	}

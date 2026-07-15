@@ -172,6 +172,53 @@ func TestRunWithProject_ProjectsNotificationsChimeForEnabledProviders(t *testing
 	}
 }
 
+func TestRunWithProject_ProjectsCodexRuntimeFeaturesForVSCodeOnly(t *testing.T) {
+	root, project := loadSyncFixtureProject(t)
+	enabled := true
+	disabled := false
+	project.Config.Agents.Codex.Enabled = &disabled
+	project.Config.Agents.Codex.Statusline = &enabled
+	project.Config.Agents.Codex.AgentSpecific = map[string]any{
+		"features": map[string]any{
+			"apps":           true,
+			"plugins":        false,
+			"browser_use":    false,
+			"in_app_browser": false,
+			"computer_use":   false,
+		},
+	}
+	project.Config.Agents.VSCode.Enabled = &enabled
+
+	if err := os.Remove(filepath.Join(root, ".agent-layer", codexStatuslineSourceName)); err != nil {
+		t.Fatalf("remove CLI-only statusline source: %v", err)
+	}
+	if _, err := RunWithProject(RealSystem{}, root, project); err != nil {
+		t.Fatalf("RunWithProject: %v", err)
+	}
+
+	parsed := parseCodexConfig(t, readFileForTest(t, filepath.Join(root, ".codex", "config.toml")))
+	features, ok := parsed["features"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected generated Codex features table, got %#v", parsed["features"])
+	}
+	for key, want := range map[string]bool{
+		"apps":           true,
+		"plugins":        false,
+		"browser_use":    false,
+		"in_app_browser": false,
+		"computer_use":   false,
+	} {
+		if got, exists := features[key]; !exists || got != want {
+			t.Fatalf("expected features.%s = %v, got %#v", key, want, got)
+		}
+	}
+	if tui, exists := parsed["tui"]; exists {
+		if tuiMap, table := tui.(map[string]any); !table || tuiMap["status_line"] != nil {
+			t.Fatalf("did not expect CLI-only statusline in VS Code Codex config: %#v", tui)
+		}
+	}
+}
+
 func TestRunWithProject_CleansNotificationsChimeWhenProvidersDisabled(t *testing.T) {
 	root, project := loadSyncFixtureProject(t)
 	disabled := false
