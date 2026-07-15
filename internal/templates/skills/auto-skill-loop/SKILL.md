@@ -16,7 +16,7 @@ to direct it.
 
 ## Inputs
 
-Require a `mode` matching one file under `references/modes/`, standing merge
+Require a `mode` matching `references/modes/<mode>.md`, standing merge
 authorization for deliveries that pass this workflow's gates, and these
 caller-supplied dispatch targets:
 
@@ -31,23 +31,17 @@ fresh context. Each supplied plan-reviewer target is a separate dispatch, and
 multiple entries may use the same caller-chosen target.
 
 Accept source filters, item IDs, and `stop_after=one-delivery`. Read
-`references/mode-contract.md`, the selected mode,
+`references/mode-contract.md`, `references/modes/<mode>.md`,
 `references/blocker-classification.md`, and `references/merge-readiness.md`.
 Reject malformed modes and unsafe paths. Repository-added named mode files are
 additive and cannot weaken the central rules.
 
 ## Context and isolation
 
-Git, pull requests, and source systems are authoritative. Keep brief loop notes
-under `.agent-layer/tmp/` only for what they do not show: progress through the
-current source pass, work already covered or set aside in that pass, what would
-unblock it, pending reconciliation, the current branch or PR, and the next
-transition. Revalidate the notes against authoritative sources when resuming.
-
-Before compaction, retain the caller's loop invocation verbatim, the current
-transition, active or preserved branches and PRs, pending reconciliation,
-unresolved human gates, and the next action. After compaction, reread this skill,
-reconstruct authoritative state, and continue.
+Before compaction, retain the caller's loop invocation verbatim and the current
+invocation's transition, active or preserved branches and PRs, pending
+reconciliation, unresolved human gates, and next action. After compaction,
+reread this skill and continue the same invocation from that retained context.
 
 Write every fresh-dispatch prompt as a self-contained task. State what the
 subagent must do, the authoritative files
@@ -57,11 +51,8 @@ results only when they are necessary task inputs.
 
 ## Loop
 
-1. Reconstruct any interrupted delivery or pending reconciliation from
-   authoritative sources and the loop notes. Dispatch `rote_worker` once to
-   recover delivery state and initialize source bookkeeping unless the selected
-   mode assigns substantive initialization to `planner`.
-2. Dispatch `planner` fresh to select the next coherent work.
+1. Follow `Initialize` in `references/modes/<mode>.md`.
+2. Dispatch `planner` fresh to follow that file's `Select` instructions.
 3. Dispatch `planner` fresh with the selected work and the complete
    `references/blocker-classification.md` contract to classify any decision.
    A single safe answer remains agent-owned. Record a genuinely human-owned
