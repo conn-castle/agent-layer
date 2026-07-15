@@ -1,6 +1,7 @@
 ---
 name: address-pr-comments
 description: >-
+  Explicit-only.
   Evaluate feedback on an open pull request, implement accepted fixes, prepare
   replies, and return an updated ledger without committing, pushing, or posting.
 ---

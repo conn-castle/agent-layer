@@ -1,6 +1,7 @@
 ---
 name: implement-plan
 description: >-
+  Explicit-only.
   Apply an explicit plan/task/context artifact set and report the resulting
   implementation, deviations, and remaining work.
 ---

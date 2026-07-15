@@ -48,6 +48,10 @@ explicitly labeled as an authoring heuristic.
   trigger. The Agent Skills specification permits up to 1,024 characters
   [ref 1]. This guide recommends a more conservative 512-character internal
   budget so descriptions stay useful in large catalogs.
+- Prefix a skill description with the exact sentence `Explicit-only.` when the
+  skill must activate only after the user names it or an active skill directs
+  the agent to use it by name. Leave descriptions unmarked when task matching
+  should be allowed to activate the skill automatically.
 - `name` must be 1-64 characters, lowercase alphanumeric and hyphens only, no
   leading/trailing/consecutive hyphens [ref 1].
 
@@ -109,6 +113,9 @@ trigger conditions [ref 8]. This maps directly to skill activation: the
   share semantic territory with adjacent skills.
 
 Authoring guidance:
+- Choose the invocation policy first. An `Explicit-only.` description is a
+  routing prohibition, not a weak trigger: task similarity alone must never
+  activate it.
 - Write the `description` for routing, not marketing. State the job, likely
   trigger phrases, and nearby non-goals.
 - Keep descriptions concise enough to survive catalog truncation. This guide
@@ -664,6 +671,8 @@ Practical ordering rule:
 ## Authoring checklist
 
 Before considering a skill done, verify that:
+- The description either begins with the exact `Explicit-only.` marker or is
+  intentionally eligible for automatic activation.
 - The `description` clearly says **what** the skill does and **when** it should
   trigger, and names at least one adjacent non-goal when a sibling skill could
   be confused for it.

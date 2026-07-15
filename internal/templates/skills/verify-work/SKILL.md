@@ -1,6 +1,7 @@
 ---
 name: verify-work
 description: >-
+  Explicit-only.
   Verify completed work against its authoritative contract and report coverage,
   working-code evidence, material gaps, and the completion verdict.
 ---

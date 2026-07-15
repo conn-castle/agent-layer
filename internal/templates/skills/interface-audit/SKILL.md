@@ -1,6 +1,7 @@
 ---
 name: interface-audit
 description: >-
+  Explicit-only.
   Audit product interfaces as component boundaries, score complexity,
   over-engineering, and debt, maintain .agent-layer/tmp interface-audit reports,
   and finish at the final recommendation gate. Use for fresh interface cleanup

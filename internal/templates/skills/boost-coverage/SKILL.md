@@ -1,6 +1,7 @@
 ---
 name: boost-coverage
 description: >-
+  Explicit-only.
   Raise coverage to an explicit or repository-required target with coherent
   behavior-focused tests and authoritative coverage evidence. Do not use for
   full-suite cleanup or pruning tests added in the current diff.

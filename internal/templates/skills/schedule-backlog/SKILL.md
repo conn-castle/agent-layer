@@ -1,6 +1,7 @@
 ---
 name: schedule-backlog
 description: >-
+  Explicit-only.
   Map BACKLOG.md items into roadmap phases, checking issue and decision impacts
   and surfacing user-owned prioritization without making ambiguous roadmap
   edits.

@@ -1,6 +1,7 @@
 ---
 name: full-workflow
 description: >-
+  Explicit-only.
   Align a feature specification, produce a reviewed plan, complete the local
   work, and ship the pull request.
 ---
@@ -19,7 +20,7 @@ Require:
 - `implementer`: one explicit, self-contained dispatch target for implementation
 - `code_reviewer`: one explicit, self-contained semantic-review dispatch target
 - `fixer`: one explicit, self-contained dispatch target for bounded repairs
-- `plan_reviewers`: exactly three self-contained dispatch target specifications
+- `plan_reviewers`: one or more self-contained dispatch target specifications
 
 Before any side effect, show the user the exact role-to-target mapping and every
 plan-reviewer target specification. Ask for any missing target; do not infer

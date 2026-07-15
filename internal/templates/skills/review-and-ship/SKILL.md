@@ -1,6 +1,7 @@
 ---
 name: review-and-ship
 description: >-
+  Explicit-only.
   Review and verify an existing local delivery, repair accepted findings, and
   ship it as a pull request without requiring implementation-plan artifacts.
 ---

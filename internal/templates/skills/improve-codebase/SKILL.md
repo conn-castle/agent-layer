@@ -1,6 +1,7 @@
 ---
 name: improve-codebase
 description: >-
+  Explicit-only.
   Run one wide, evidence-led quality sweep over a repository or named scope,
   repair material local and cross-cutting findings, review the concrete work,
   and verify the result.

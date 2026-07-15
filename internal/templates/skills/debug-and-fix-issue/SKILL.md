@@ -1,6 +1,7 @@
 ---
 name: debug-and-fix-issue
 description: >-
+  Explicit-only.
   Reproduce an unexplained bug, prove its root cause, capture a failing test or
   diagnostic blocker, then make a proportional repair and verify it.
 ---
@@ -14,7 +15,7 @@ an explicit diagnostic blocker.
 
 Require a testable symptom. Fix mode also requires explicit, self-contained
 `implementer` and `fixer` dispatch target specifications; the planned repair
-path additionally requires exactly three `plan_reviewers` target specifications
+path additionally requires one or more `plan_reviewers` target specifications
 and one `code_reviewer` target specification. Accept reproduction evidence,
 suspect paths, a regression range, and diagnosis-only mode.
 

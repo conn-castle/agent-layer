@@ -1,6 +1,7 @@
 ---
 name: run-and-fix-all-checks
 description: >-
+  Explicit-only.
   Run the repository's full documented check lane, directly repair observed
   failures, and repeat only until the lane passes or a concrete blocker remains.
 ---

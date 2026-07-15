@@ -1,6 +1,7 @@
 ---
 name: plan-work
 description: >-
+  Explicit-only.
   Produce and review an implementation-ready plan from a task source.
 ---
 
@@ -10,11 +11,11 @@ Create a reviewed, implementation-ready plan, task list, and context artifact.
 
 ## Inputs
 
-Require a task source or user request and exactly three self-contained
+Require a task source or user request and one or more self-contained
 `plan_reviewers` target specifications to pass to `/review-plan`. Before
 creating artifacts, show the user every exact reviewer target and ask for any
-missing target; do not infer target specifications. Without a task source or
-the required reviewers, return a missing-input blocker and create nothing.
+missing target; do not infer target specifications. Without a task source or at
+least one reviewer, return a missing-input blocker and create nothing.
 
 ## Workflow
 

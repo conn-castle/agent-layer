@@ -1,6 +1,7 @@
 ---
 name: fix-ci
 description: >-
+  Explicit-only.
   Diagnose and directly repair failing checks on an open pull request, verify
   the repair locally, and return uncommitted changes and evidence to the caller.
 ---

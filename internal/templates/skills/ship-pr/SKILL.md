@@ -1,6 +1,7 @@
 ---
 name: ship-pr
 description: >-
+  Explicit-only.
   Batch local repairs, ship one pull request, observe CI and review feedback,
   reply to every eligible comment, and request merge authorization before
   merging and cleaning up.

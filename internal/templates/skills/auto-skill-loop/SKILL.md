@@ -1,6 +1,7 @@
 ---
 name: auto-skill-loop
 description: >-
+  Explicit-only.
   Run a named autonomous mode until no substantive autonomous work remains or
   the user stops it, preserving blocked work and centrally shipping ready
   deliveries.
@@ -20,14 +21,14 @@ authorization for deliveries that pass this workflow's gates, and these
 caller-supplied dispatch targets:
 
 - all modes: `planner`, `implementer`, `code_reviewer`, and `rote_worker`
-- plan-based modes: exactly three `plan_reviewers`
+- plan-based modes: one or more `plan_reviewers`
 - any additional roles declared by a custom mode
 
 A target is the caller's exact self-contained agent, model, and reasoning
 specification. Before any side effect, validate and show every required target.
 Pass targets unchanged; never infer or substitute them. Start each role in a
-fresh context. The three plan-reviewer slots are separate dispatches but may use
-the same caller-chosen target.
+fresh context. Each supplied plan-reviewer target is a separate dispatch, and
+multiple entries may use the same caller-chosen target.
 
 Accept source filters, item IDs, and `stop_after=one-delivery`. Read
 `references/mode-contract.md`, the selected mode,

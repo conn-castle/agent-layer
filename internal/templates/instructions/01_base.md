@@ -6,6 +6,7 @@
 3. **Code defensively:** In production code, check returned errors and verify required conditions when the code can reasonably do so. Validate inputs, API responses, persisted data, and invariants before depending on them. Fail through normal production error paths with actionable messages, not checks that can be compiled out or disabled.
 4. **Instrument before guessing on repeated failure:** When the same failure survives repeated fixes, stop guessing. Add logging or instrumentation to capture the actual runtime state, run it, and diagnose from that evidence rather than inference.
 5. **Goal-Driven Execution:** Always define success criteria, even if not explicitly provided to you. Loop until verified. Strong success criteria let you loop independently.
+6. **Skill invocation policy:** Skills whose descriptions begin with `Explicit-only.` must not be selected automatically based on task similarity. Use these skills only when the user explicitly names that skill or an active skill explicitly directs you to use that skill by name.
 
 ## Response Style
 Write clear, concise responses that give the user enough context to act.

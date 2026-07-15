@@ -1,6 +1,7 @@
 ---
 name: clean-and-fix-code
 description: >-
+  Explicit-only.
   Run one cleanup and repair pass over uncommitted working-tree changes: prune
   test changes, simplify production changes, review the diff, and directly fix
   accepted findings.

@@ -1,6 +1,7 @@
 ---
 name: simplify-codebase
 description: >-
+  Explicit-only.
   Remove material internal complexity such as dead code, obsolete options,
   needless indirection, duplicate workflows, or misplaced boundaries while
   preserving external behavior.

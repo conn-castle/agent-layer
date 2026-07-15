@@ -1,6 +1,7 @@
 ---
 name: fully-implement-plan
 description: >-
+  Explicit-only.
   Implement supplied plan/task/context artifacts, review the changes, verify
   the contract, and repair material findings.
 ---

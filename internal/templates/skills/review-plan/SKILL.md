@@ -1,6 +1,7 @@
 ---
 name: review-plan
 description: >-
+  Explicit-only.
   Review and repair a plan/task/context artifact set with independent evidence,
   then report implementation readiness.
 ---
@@ -14,13 +15,13 @@ readiness.
 
 Require:
 
-- exactly three `plan_reviewers` as self-contained dispatch target specifications
+- one or more `plan_reviewers` as self-contained dispatch target specifications
 - plan, task, and context artifact paths
 - an optional specification artifact path
 
 Before dispatch, show every exact reviewer target to the user and ask for any
-missing target; do not infer target specifications. Missing artifacts or a
-reviewer count other than exactly three block review.
+missing target; do not infer target specifications. Missing artifacts block
+review, as does an empty reviewer list.
 
 ## Output artifact
 
@@ -39,7 +40,7 @@ outputs or synthesis between reviewers.
 Read all artifacts and confirm objective/scope alignment. Build one shared
 prompt; do not assign complementary coverage.
 
-Run the three independent reviews concurrently through dispatch fanout.
+Run all supplied independent reviews concurrently through dispatch fanout.
 Each reviewer must make and report its own adaptive 1–4 built-in-subagent
 decision under `references/agent-review-prompt.md`.
 Retry an unusable result only through its same supplied target; do not replace a

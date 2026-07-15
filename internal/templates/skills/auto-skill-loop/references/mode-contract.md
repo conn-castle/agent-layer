@@ -36,8 +36,8 @@ selection until the blocking condition changes.
 ## Common plan execution
 
 For a plan-based mode, dispatch `planner` to run `/plan-work`, passing the
-caller's exactly three `plan_reviewers` targets unchanged; `/plan-work` owns all
-`/review-plan` dispatch. Dispatch `implementer` with `/implement-plan`, then
+caller's complete non-empty `plan_reviewers` list unchanged; `/plan-work` owns
+all `/review-plan` dispatch. Dispatch `implementer` with `/implement-plan`, then
 dispatch `code_reviewer` fresh with `/review-uncommitted-code` and again in a
 separate fresh context with `/verify-work` against the same implemented tree.
 Dispatch `planner` fresh to validate and deduplicate both result sets, then

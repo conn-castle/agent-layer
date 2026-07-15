@@ -1,6 +1,7 @@
 ---
 name: audit-documentation
 description: >-
+  Explicit-only.
   Audit Markdown docs for static accuracy and cross-document consistency
   against the repo, fixing what is safe. Excludes memory files by default.
 ---

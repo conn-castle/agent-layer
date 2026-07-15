@@ -1,6 +1,7 @@
 ---
 name: review-uncommitted-code
 description: >-
+  Explicit-only.
   Report-only review of a concrete file, directory, diff, range, working tree,
   or proactive hotspot for material correctness, risk, architecture, test,
   documentation, performance, reliability, and maintainability findings.
