@@ -807,23 +807,32 @@ func TestCleanCodexChimeHookRejectsSymlinkConfigFile(t *testing.T) {
 	}
 }
 
-func TestCleanCodexChimeHookIgnoresMalformedConfigWithoutChime(t *testing.T) {
+func TestCleanCodexChimeHookIgnoresMalformedConfigWithoutActiveChime(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
-	configPath := filepath.Join(root, ".codex", "config.toml")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
-		t.Fatalf("mkdir .codex: %v", err)
+	testCases := map[string]string{
+		"no chime":        `model = [`,
+		"commented chime": "# command = \"al hook chime codex\"\nmodel = [",
+		"string chime":    "note = \"al hook chime codex\"\nmodel = [",
 	}
-	content := `model = [`
-	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	for name, content := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			configPath := filepath.Join(root, ".codex", "config.toml")
+			if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+				t.Fatalf("mkdir .codex: %v", err)
+			}
+			if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+				t.Fatalf("write config: %v", err)
+			}
 
-	if err := cleanCodexChimeHook(RealSystem{}, root); err != nil {
-		t.Fatalf("cleanCodexChimeHook should ignore malformed no-chime config: %v", err)
-	}
-	if got := readFileForTest(t, configPath); got != content {
-		t.Fatalf("expected malformed no-chime config untouched, got:\n%s", got)
+			if err := cleanCodexChimeHook(RealSystem{}, root); err != nil {
+				t.Fatalf("cleanCodexChimeHook should ignore malformed config without an active chime hook: %v", err)
+			}
+			if got := readFileForTest(t, configPath); got != content {
+				t.Fatalf("expected malformed config untouched, got:\n%s", got)
+			}
+		})
 	}
 }
 

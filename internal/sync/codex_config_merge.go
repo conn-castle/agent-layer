@@ -454,11 +454,10 @@ func (e *codexTomlEditor) removeCodexChimeHook(path string) (bool, error) {
 // rejectAmbiguousCodexChimeHook reports remaining exact chime commands that
 // cannot be proven to belong to an Agent Layer-managed hook region.
 func (e *codexTomlEditor) rejectAmbiguousCodexChimeHook(path string) error {
-	content := e.render()
-	if !strings.Contains(content, "al hook chime codex") &&
-		!strings.Contains(content, "/usr/bin/afplay /System/Library/Sounds/Blow.aiff") {
+	if !e.containsActiveCodexChimeCommand() {
 		return nil
 	}
+	content := e.render()
 	var parsed map[string]any
 	if err := toml.Unmarshal([]byte(content), &parsed); err != nil {
 		return fmt.Errorf(messages.SyncCodexExistingConfigInvalidFmt, path, err)
@@ -471,6 +470,29 @@ func (e *codexTomlEditor) rejectAmbiguousCodexChimeHook(path string) error {
 		return fmt.Errorf(messages.SyncCodexChimeOwnershipConflictFmt, path)
 	}
 	return nil
+}
+
+// containsActiveCodexChimeCommand finds an uncommented command assignment
+// whose complete string value is an Agent Layer-managed Codex chime command.
+func (e *codexTomlEditor) containsActiveCodexChimeCommand() bool {
+	commands := managedChimeCommandVariants(agentLayerCodexChimeCommand)
+	found := false
+	tomlpatch.WalkLinesOutsideMultiline(e.lines, func(_ int, line string, state tomlpatch.StringState) tomlpatch.LineWalkResult {
+		_, literal, ok := tomlpatch.ParseKeyValueWithState(line, chimeHandlerCommandKey, state)
+		if !ok {
+			return tomlpatch.LineWalkResult{}
+		}
+		command, err := strconv.Unquote(literal)
+		if err != nil {
+			return tomlpatch.LineWalkResult{}
+		}
+		if _, ok := commands[command]; ok {
+			found = true
+			return tomlpatch.LineWalkResult{Stop: true}
+		}
+		return tomlpatch.LineWalkResult{}
+	})
+	return found
 }
 
 func (e *codexTomlEditor) managedCodexChimeRegions(path string) ([]lineRange, error) {
