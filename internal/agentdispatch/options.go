@@ -3,6 +3,7 @@ package agentdispatch
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -73,6 +74,19 @@ type FieldOption struct {
 	AllowCustom       bool     `json:"allow_custom"`
 }
 
+type targetDiscovery struct {
+	Target                targetMeta
+	Enabled               bool
+	Installed             bool
+	InstalledVersion      string
+	CompatibilityWarning  string
+	Fresh                 CapabilityOption
+	RandomEligible        bool
+	RandomExclusionReason string
+}
+
+type targetVersionDiscovery func(string, targetMeta) (string, string, error)
+
 // BuildOptions loads strict project config and reports each operation's exact
 // availability for the installed provider version.
 func BuildOptions(req OptionsRequest) (*OptionsResponse, error) {
@@ -128,7 +142,7 @@ func WriteOptions(req OptionsRequest) error {
 		return err
 	}
 	for _, target := range options.Targets {
-		if _, err := fmt.Fprintf(stdout, "- %s enabled=%t installed=%t version=%s fresh=%t resume=%t inspect=%t\n", target.Agent, target.Enabled, target.Installed, displayVersion(target.InstalledVersion), target.Capabilities.Fresh.Supported, target.Capabilities.Resume.Supported, target.Capabilities.Inspect.Supported); err != nil {
+		if _, err := fmt.Fprintf(stdout, "- %s enabled=%t installed=%t installed_version=%s supported_version=%s fresh=%t resume=%t inspect=%t random_eligible=%t\n", target.Agent, target.Enabled, target.Installed, displayVersion(target.InstalledVersion), target.SupportedVersion, target.Capabilities.Fresh.Supported, target.Capabilities.Resume.Supported, target.Capabilities.Inspect.Supported, target.RandomEligible); err != nil {
 			return err
 		}
 		if target.Capabilities.Fresh.Reason != "" {
@@ -141,8 +155,27 @@ func WriteOptions(req OptionsRequest) error {
 				return err
 			}
 		}
+		if target.RandomExclusionReason != nil {
+			if _, err := fmt.Fprintf(stdout, "  random: excluded (%s)\n", *target.RandomExclusionReason); err != nil {
+				return err
+			}
+		}
+		if err := writeFieldOption(stdout, "model", target.Model); err != nil {
+			return err
+		}
+		if err := writeFieldOption(stdout, "reasoning_effort", target.ReasoningEffort); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(stdout, "Random pool: %s (excludes_caller=%t empty=%t)\n", strings.Join(options.Random.Pool, ","), options.Random.ExcludesCaller, options.Random.Empty); err != nil {
+		return err
 	}
 	return nil
+}
+
+func writeFieldOption(stdout io.Writer, name string, option FieldOption) error {
+	_, err := fmt.Fprintf(stdout, "  %s: override_supported=%t configured=%q allow_custom=%t suggestions=%q\n", name, option.OverrideSupported, option.Configured, option.AllowCustom, option.Suggestions)
+	return err
 }
 
 func displayVersion(value string) string {
@@ -160,66 +193,38 @@ func buildTargetOptions(cfg config.Config, caller string, callerKnown bool, disc
 	targets := targetRegistry()
 	result := make([]TargetOption, 0, len(targets))
 	for _, target := range targets {
-		_, installedErr := discovery.LookPath(target.Binary)
-		installed := installedErr == nil
-		enabled := targetEnabled(cfg, target.Name)
-		version := ""
-		versionOK := false
-		versionWarning := ""
-		if installed {
-			path, _ := discovery.LookPath(target.Binary)
-			readVersion := lookup
-			if readVersion == nil {
-				readVersion = providerVersion
-			}
-			version, installedErr = readVersion(path, target.Name)
-			if installedErr == nil {
-				warning, compatErr := providerVersionCompatibility(target.Name, version)
-				versionOK = compatErr == nil
-				versionWarning = warning
-			}
-		}
-		fresh := CapabilityOption{Supported: enabled && installed && versionOK}
-		if !fresh.Supported {
-			switch {
-			case !enabled:
-				fresh.Reason = "disabled in config"
-			case !installed:
-				fresh.Reason = "provider binary not found"
-			case installedErr != nil:
-				fresh.Reason = "provider version could not be verified"
-			default:
-				fresh.Reason = "unsupported provider version; install " + supportedProviderVersions[target.Name]
-			}
-		}
-		resume := fresh
+		facts := discoverTarget(cfg, target, caller, callerKnown, discovery.LookPath, rawTargetVersionDiscovery(lookup))
+		resume := facts.Fresh
 		inspect := CapabilityOption{Supported: true}
-		randomEligible := fresh.Supported && (!callerKnown || target.Name != caller)
 		var exclusion *string
-		if !randomEligible {
-			reason := fresh.Reason
-			if callerKnown && target.Name == caller {
-				reason = "caller"
-			}
-			exclusion = &reason
+		if facts.RandomExclusionReason != "" {
+			exclusion = &facts.RandomExclusionReason
 		}
 		reasons := []string{}
-		if !fresh.Supported {
-			reasons = append(reasons, fresh.Reason)
+		if !facts.Fresh.Supported {
+			reasons = append(reasons, facts.Fresh.Reason)
 		}
 		fieldDiscovery := discovery
-		if !fresh.Supported {
+		if !facts.Fresh.Supported {
 			fieldDiscovery.Live = false
+		} else {
+			resolvedPath := facts.Target.Binary
+			fieldDiscovery.LookPath = func(binary string) (string, error) {
+				if binary == target.Binary {
+					return resolvedPath, nil
+				}
+				return discovery.LookPath(binary)
+			}
 		}
 		result = append(result, TargetOption{
 			Agent:                 target.Name,
-			Enabled:               enabled,
-			Installed:             installed,
-			InstalledVersion:      version,
+			Enabled:               facts.Enabled,
+			Installed:             facts.Installed,
+			InstalledVersion:      facts.InstalledVersion,
 			SupportedVersion:      supportedProviderVersions[target.Name],
-			CompatibilityWarning:  versionWarning,
-			Capabilities:          TargetCapabilities{Fresh: fresh, Resume: resume, Inspect: inspect},
-			RandomEligible:        randomEligible,
+			CompatibilityWarning:  facts.CompatibilityWarning,
+			Capabilities:          TargetCapabilities{Fresh: facts.Fresh, Resume: resume, Inspect: inspect},
+			RandomEligible:        facts.RandomEligible,
 			RandomExclusionReason: exclusion,
 			Model:                 fieldOptionWithDiscovery(cfg, target, agentoptions.KindModel, fieldDiscovery),
 			ReasoningEffort:       fieldOptionWithDiscovery(cfg, target, agentoptions.KindReasoningEffort, fieldDiscovery),
@@ -227,6 +232,56 @@ func buildTargetOptions(cfg config.Config, caller string, callerKnown bool, disc
 		})
 	}
 	return result
+}
+
+func rawTargetVersionDiscovery(lookup func(string, string) (string, error)) targetVersionDiscovery {
+	return func(path string, target targetMeta) (string, string, error) {
+		readVersion := lookup
+		if readVersion == nil {
+			readVersion = providerVersion
+		}
+		installed, err := readVersion(path, target.Name)
+		if err != nil {
+			return "", "", err
+		}
+		warning, err := providerVersionCompatibility(target.Name, installed)
+		return installed, warning, err
+	}
+}
+
+func discoverTarget(cfg config.Config, target targetMeta, caller string, callerKnown bool, lookPath func(string) (string, error), discoverVersion targetVersionDiscovery) targetDiscovery {
+	facts := targetDiscovery{Target: target, Enabled: targetEnabled(cfg, target.Name)}
+	path, pathErr := lookPath(target.Binary)
+	var versionErr error
+	if pathErr == nil {
+		facts.Installed = true
+		facts.Target.Binary = path
+		version, warning, err := discoverVersion(path, target)
+		facts.InstalledVersion = version
+		facts.CompatibilityWarning = warning
+		versionErr = err
+	}
+	facts.Fresh.Supported = facts.Enabled && facts.Installed && versionErr == nil
+	if !facts.Fresh.Supported {
+		switch {
+		case !facts.Enabled:
+			facts.Fresh.Reason = "disabled in config"
+		case !facts.Installed:
+			facts.Fresh.Reason = "provider binary not found"
+		case facts.InstalledVersion == "":
+			facts.Fresh.Reason = "provider version could not be verified"
+		default:
+			facts.Fresh.Reason = "unsupported provider version; install " + supportedProviderVersions[target.Name]
+		}
+	}
+	facts.RandomEligible = facts.Fresh.Supported && (!callerKnown || target.Name != caller)
+	if !facts.RandomEligible {
+		facts.RandomExclusionReason = facts.Fresh.Reason
+		if callerKnown && target.Name == caller {
+			facts.RandomExclusionReason = "caller"
+		}
+	}
+	return facts
 }
 
 func fieldOptionWithDiscovery(cfg config.Config, target targetMeta, kind agentoptions.Kind, discovery agentoptions.DiscoveryRequest) FieldOption {

@@ -136,3 +136,83 @@ func TestProviderProcessErrorsNameTheCorrectLifecyclePhase(t *testing.T) {
 		t.Fatalf("wait error = %q", waitErr)
 	}
 }
+
+func TestTerminalCommitKeepsAnswerRunAndClaimCoherent(t *testing.T) {
+	newRunning := func(t *testing.T) (string, *dispatchRun, Session) {
+		t.Helper()
+		root := t.TempDir()
+		run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+		if err != nil {
+			t.Fatalf("new run: %v", err)
+		}
+		session, err := reserveSession(root, run)
+		if err != nil {
+			t.Fatalf("reserve session: %v", err)
+		}
+		run.Record.State = dispatchStateRunning
+		run.Record.RecoveryState = recoveryAcceptanceUnknown
+		if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+			t.Fatalf("start run: %v", err)
+		}
+		return root, run, session
+	}
+
+	t.Run("answer write failure terminalizes without publication", func(t *testing.T) {
+		root, run, session := newRunning(t)
+		blockedParent := filepath.Join(root, "not-a-directory")
+		if err := os.WriteFile(blockedParent, []byte("blocked"), 0o600); err != nil {
+			t.Fatalf("write blocking file: %v", err)
+		}
+		run.Record.AnswerPath = filepath.Join(blockedParent, "answer.txt")
+		err := completeDispatchSuccess(dispatchExecution{Root: root, Run: run, Session: session, Stderr: io.Discard}, executionResult{Answer: "validated"}, session)
+		requireDispatchExitCode(t, err, ExitConfig)
+		record, loadErr := loadRunRecord(root, run.Record.ID)
+		if loadErr != nil || record.State != dispatchStateFailed {
+			t.Fatalf("failed answer publication record = %#v, %v", record, loadErr)
+		}
+	})
+
+	t.Run("completed record conflict retracts answer and releases claim", func(t *testing.T) {
+		root, run, session := newRunning(t)
+		current, err := loadRunRecord(root, run.Record.ID)
+		if err != nil {
+			t.Fatalf("load current run: %v", err)
+		}
+		now := time.Now().UTC()
+		current.State = dispatchStateCancelled
+		current.CompletedAt = &now
+		if err := writeRunRecord(run.Dir, &current); err != nil {
+			t.Fatalf("cancel current run: %v", err)
+		}
+		err = completeDispatchSuccess(dispatchExecution{Root: root, Run: run, Session: session, Stderr: io.Discard}, executionResult{Answer: "validated"}, session)
+		requireDispatchExitCode(t, err, ExitTargetFailure)
+		if _, statErr := os.Stat(run.Record.AnswerPath); !os.IsNotExist(statErr) {
+			t.Fatalf("terminal record conflict retained published answer: %v", statErr)
+		}
+		retained, loadErr := loadSession(root, session.Name)
+		if loadErr != nil || retained.ActiveRunID != "" {
+			t.Fatalf("terminal record conflict retained claim = %#v, %v", retained, loadErr)
+		}
+	})
+
+	t.Run("claim cleanup failure preserves durable success", func(t *testing.T) {
+		root, run, session := newRunning(t)
+		mappingPath, err := sessionPath(root, session.Name)
+		if err != nil {
+			t.Fatalf("session path: %v", err)
+		}
+		if err := os.WriteFile(mappingPath, []byte("not-json"), 0o600); err != nil {
+			t.Fatalf("corrupt test mapping: %v", err)
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		err = completeDispatchSuccess(dispatchExecution{Root: root, Run: run, Session: session, Stdout: &stdout, Stderr: &stderr}, executionResult{Answer: "validated"}, session)
+		if err != nil {
+			t.Fatalf("claim cleanup changed completed outcome: %v", err)
+		}
+		record, loadErr := loadRunRecord(root, run.Record.ID)
+		if loadErr != nil || record.State != dispatchStateCompleted || stdout.String() != "validated" || stderr.Len() == 0 {
+			t.Fatalf("claim cleanup result record=%#v stdout=%q stderr=%q err=%v", record, stdout.String(), stderr.String(), loadErr)
+		}
+	})
+}

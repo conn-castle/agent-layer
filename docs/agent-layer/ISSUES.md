@@ -27,6 +27,30 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-07-15 dispatch-run-record-write-mutates-before-publish: Failed record writes can poison subsequent terminalization
+    Priority: High. Area: internal/agentdispatch/state.go writeRunRecord
+    Description: writeRunRecord increments the caller-owned Revision and replaces UpdatedAt before writeJSONAtomic succeeds; after an I/O failure, the in-memory record no longer matches durable state, so a subsequent failure write can be rejected as concurrent and leave the record nonterminal.
+    Next step: Mutate a copy, publish it atomically, and update the caller-owned record only after the durable write succeeds; add an injected write-failure regression covering the terminal failure path.
+    Notes: Deferred because durable state/history repairs were explicitly excluded from PR #151 merge-readiness scope.
+
+- Issue 2026-07-15 dispatch-random-override-filter-policy: Random selection can choose a provider that rejects a requested override
+    Priority: Medium. Area: internal/agentdispatch random resolution and fresh preflight
+    Description: Random eligibility considers enabled, installed, compatible, and caller facts, while requested model and reasoning support are validated only after a target is chosen; dispatch can therefore fail on the chosen provider even when another eligible pool member supports the override.
+    Next step: Decide whether random pools should be filtered by requested override support or preserve provider-only eligibility and fail after selection, then encode the chosen public policy in focused selection tests.
+    Notes: Deferred because filtering semantics are a public-policy choice outside PR #151's classified production repairs.
+
+- Issue 2026-07-15 dispatch-provider-sigterm-no-escalation: Provider shutdown can hang after cancellation or internal failure
+    Priority: High. Area: internal/agentdispatch runner and runtime helpers
+    Description: Dispatch sends SIGTERM after caller signals, cancellation, reducer failure, or capture failure, but a provider or descendant that ignores SIGTERM can keep the pipes and Wait blocked indefinitely while the owned process group remains alive.
+    Next step: Choose whether shutdown escalates to SIGKILL after a fixed grace period or remains indefinitely graceful/user-driven, then encode the policy in one process-group terminator.
+    Notes: Requires a user-owned cancellation/cleanup policy; do not weaken process identity or group ownership checks.
+
+- Issue 2026-07-15 dispatch-antigravity-log-runtime-unbounded: Antigravity log can exceed the capture budget while the provider runs
+    Priority: High. Area: internal/agentdispatch provider execution and Antigravity diagnostics
+    Description: stdout/stderr/events are write-bounded, but agy writes its log directly for up to 24 hours; the runner checks size only after exit, so a faulty provider can consume unbounded disk and the rejected oversized artifact remains over the 64 MiB retained-data contract.
+    Next step: Choose a supported bounded-write mechanism for the provider-owned log (for example a validated FIFO capture) without adding polling or constraining unrelated provider file writes.
+    Notes: Post-exit truncation does not prevent runtime disk exhaustion; shell-level file-size limits affect unrelated provider outputs.
+
 - Issue 2026-07-13 corrupt-run-record-blocks-delete-cancel: A corrupt run record leaves its mapping undeletable and uncancellable
     Priority: Low. Area: internal/agentdispatch/operations.go (Delete, Cancel) + state.go retention
     Description: Delete and Cancel deliberately fail loud on a corrupt referenced run record (tested behavior consistent with the retention stance of never hiding corrupt evidence), so the only recovery is manual removal of the run directory; history already skips-and-warns, but the mapping stays blocked and retention never expires nonterminal corrupt records.

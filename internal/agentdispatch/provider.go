@@ -349,7 +349,12 @@ func reduceCodexEvent(value map[string]any) ([]providerEvent, error) {
 	case "turn.completed":
 		return []providerEvent{{Kind: eventComplete}}, nil
 	case "turn.failed", "turn.aborted", "error":
-		reason, _ := firstStringV013(value, "message", "error", "reason")
+		reason, _ := firstStringV013(value, "message", "reason", "error")
+		if reason == "" {
+			if details, ok := mapValueV013(value, "error"); ok {
+				reason, _ = firstStringV013(details, "message", "reason")
+			}
+		}
 		if reason == "" {
 			reason = "Codex reported a terminal failure"
 		}
@@ -374,54 +379,85 @@ func reduceCodexEvent(value map[string]any) ([]providerEvent, error) {
 }
 
 func readStructuredEvents(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, consume func(providerEvent) error) error {
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 64*1024), maxStructuredEventBytes)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if _, err := rawWriter.Write(line); err != nil {
-			return err
-		}
-		if _, err := rawWriter.Write([]byte{'\n'}); err != nil {
-			return err
-		}
-		trimmed := bytes.TrimSpace(line)
-		if len(trimmed) == 0 {
-			continue
-		}
-		events, err := reduceStructuredEvent(agent, expectedSession, trimmed)
-		if err != nil {
-			return err
-		}
-		for _, event := range events {
-			if err := consume(event); err != nil {
+	buffered := bufio.NewReaderSize(reader, 64*1024)
+	line := make([]byte, 0, 64*1024)
+	for {
+		fragment, readErr := buffered.ReadSlice('\n')
+		if len(fragment) > 0 {
+			if _, err := rawWriter.Write(fragment); err != nil {
 				return err
 			}
+			line = append(line, fragment...)
+			contentBytes := len(line)
+			if line[contentBytes-1] == '\n' {
+				contentBytes--
+			}
+			if contentBytes > maxStructuredEventBytes {
+				return fmt.Errorf("read %s structured event: event exceeded %d byte limit", agent, maxStructuredEventBytes)
+			}
+		}
+		if readErr == bufio.ErrBufferFull {
+			continue
+		}
+		if readErr != nil && readErr != io.EOF {
+			return fmt.Errorf("read %s structured event (maximum %d bytes): %w", agent, maxStructuredEventBytes, readErr)
+		}
+		if len(line) == 0 && readErr == io.EOF {
+			return nil
+		}
+		trimmed := bytes.TrimSpace(line)
+		if len(trimmed) > 0 {
+			events, err := reduceStructuredEvent(agent, expectedSession, trimmed)
+			if err != nil {
+				return err
+			}
+			for _, event := range events {
+				if err := consume(event); err != nil {
+					return err
+				}
+			}
+		}
+		line = line[:0]
+		if readErr == io.EOF {
+			return nil
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("read %s structured event (maximum %d bytes): %w", agent, maxStructuredEventBytes, err)
-	}
-	return nil
 }
 
+// antigravitySessionID extracts one consistent conversation ID from a run log.
 func antigravitySessionID(logPath string) (string, error) {
-	data, err := os.ReadFile(logPath) // #nosec G304 -- path is created in this run's private directory.
+	file, err := os.Open(logPath) // #nosec G304 -- path is created in this run's private directory.
 	if err != nil {
 		return "", err
 	}
-	for _, line := range strings.Split(string(data), "\n") {
-		candidate := strings.TrimSpace(line)
+	defer func() { _ = file.Close() }()
+
+	found := ""
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), maxCaptureBytes)
+	for scanner.Scan() {
+		candidate := strings.TrimSpace(scanner.Text())
 		if match := antigravityLogPrefix.FindStringSubmatch(candidate); len(match) == 2 {
 			candidate = match[1]
 		}
+		var id string
 		if match := antigravityCreatedConversation.FindStringSubmatch(candidate); len(match) == 2 {
-			return strings.ToLower(match[1]), nil
+			id = strings.ToLower(match[1])
+		} else if match := antigravityPrintConversation.FindStringSubmatch(candidate); len(match) == 2 {
+			id = strings.ToLower(match[1])
 		}
-		if match := antigravityPrintConversation.FindStringSubmatch(candidate); len(match) == 2 {
-			return strings.ToLower(match[1]), nil
+		if id == "" {
+			continue
 		}
+		if found != "" && found != id {
+			return "", fmt.Errorf("antigravity dispatch log reported conflicting conversation IDs %s and %s", found, id)
+		}
+		found = id
 	}
-	return "", nil
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("read Antigravity dispatch log: %w", err)
+	}
+	return found, nil
 }
 
 func compatibleTargetVersion(path string, target targetMeta, lookup func(string, string) (string, error)) (targetMeta, string, error) {
