@@ -60,6 +60,7 @@ func TestHandleRejectsMalformedOrIncompleteEvents(t *testing.T) {
 	t.Parallel()
 	tests := []struct{ name, provider, input, errorPart string }{
 		{"malformed", ProviderClaude, `{`, "decode"},
+		{"oversized", ProviderClaude, `{"hook_event_name":"Stop","stop_hook_active":false,"padding":"` + strings.Repeat("x", maxHookEventBytes) + `"}`, "decode"},
 		{"trailing object", ProviderCodex, `{"hook_event_name":"Stop","stop_hook_active":false} {}`, "trailing JSON"},
 		{"trailing garbage", ProviderCodex, `{"hook_event_name":"Stop","stop_hook_active":false} x`, "trailing"},
 		{"non-object", ProviderClaude, `[]`, "JSON object"},

@@ -22,6 +22,7 @@ const (
 	codexResponse        = "{}\n"
 	antigravityResponse  = "{\"decision\":\"allow\"}\n"
 	operatingSystemLinux = "linux"
+	maxHookEventBytes    = 32 * 1024
 )
 
 // SoundRunner starts the configured notification sound.
@@ -52,9 +53,7 @@ func (SystemSoundRunner) Play() error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start notification sound: %w", err)
 	}
-	if err := cmd.Process.Release(); err != nil {
-		return fmt.Errorf("release notification sound process: %w", err)
-	}
+	go func() { _ = cmd.Wait() }()
 	return nil
 }
 
@@ -110,7 +109,7 @@ func Handle(provider string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 
 func decision(provider string, stdin io.Reader) (bool, string, error) {
 	var raw json.RawMessage
-	decoder := json.NewDecoder(stdin)
+	decoder := json.NewDecoder(io.LimitReader(stdin, maxHookEventBytes))
 	if err := decoder.Decode(&raw); err != nil {
 		return false, "", fmt.Errorf("agent-layer chime: decode %s hook event: %w", provider, err)
 	}
