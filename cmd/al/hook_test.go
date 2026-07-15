@@ -48,3 +48,12 @@ func TestHookChimeCommandWiresStreams(t *testing.T) {
 		t.Fatalf("plays=%d stdout=%q stderr=%q", plays, stdout.String(), stderr.String())
 	}
 }
+
+func TestHookChimeCommandPropagatesHandlerErrors(t *testing.T) {
+	cmd := newHookChimeCmd()
+	cmd.SetArgs([]string{"unsupported"})
+	cmd.SetIn(strings.NewReader(`{}`))
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "unsupported provider") {
+		t.Fatalf("Execute error = %v, want unsupported provider", err)
+	}
+}

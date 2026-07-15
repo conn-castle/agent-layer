@@ -934,9 +934,10 @@ func TestAppendClaudeChimeStopHookDedupesExactHandler(t *testing.T) {
 	}
 }
 
-func TestAppendClaudeChimeStopHookMigratesLegacyHandler(t *testing.T) {
+func TestAppendClaudeChimeStopHookMigratesLegacyAndDedupesCurrentHandlers(t *testing.T) {
 	t.Parallel()
 	existing := []any{
+		map[string]any{"hooks": []any{chimeHandler(agentLayerClaudeChimeCommand)}},
 		map[string]any{"hooks": []any{chimeHandler(legacyAgentLayerClaudeChimeCommand)}},
 		map[string]any{"hooks": []any{map[string]any{"type": "command", "command": "echo user", "timeout": 3}}},
 	}

@@ -32,22 +32,6 @@ func injectClaudeChimeHook(settings map[string]any) error {
 func appendClaudeChimeStopHook(existing any) []any {
 	var out []any
 	if values, ok := existing.([]any); ok {
-		currentCommands := legacyChimeCommandVariants(agentLayerClaudeChimeCommand)
-		for _, entry := range values {
-			group, ok := entry.(map[string]any)
-			if !ok {
-				continue
-			}
-			handlers, ok := group[hooksKey].([]any)
-			if !ok {
-				continue
-			}
-			for _, handler := range handlers {
-				if chimeHandlerMatchesAny(handler, currentCommands) {
-					return append(out, values...)
-				}
-			}
-		}
 		managedCommands := managedChimeCommandVariants(agentLayerClaudeChimeCommand)
 		for _, entry := range values {
 			group, ok := entry.(map[string]any)
