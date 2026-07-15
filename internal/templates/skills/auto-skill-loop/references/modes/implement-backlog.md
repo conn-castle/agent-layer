@@ -11,8 +11,6 @@ Require the common plan roles.
 ## Initialize
 
 Read both files' formats and only the decisions needed to interpret candidates.
-Inspect all live entries when useful; otherwise continue through their native
-order and note where the next selection should resume.
 
 ## Select
 

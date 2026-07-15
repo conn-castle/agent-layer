@@ -11,10 +11,8 @@ Require the common plan roles.
 
 ## Initialize
 
-Read ISSUES.md's format and insertion marker. Inspect the whole ledger when
-useful; otherwise continue through its native order and note where the next
-selection should resume. Skip and report malformed entries without blocking
-valid work.
+Read ISSUES.md's format and insertion marker. Skip and report malformed entries
+without blocking valid work.
 
 ## Select
 
