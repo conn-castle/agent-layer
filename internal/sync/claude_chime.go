@@ -66,7 +66,7 @@ func appendClaudeChimeStopHook(existing any) []any {
 // .claude/settings.json. It is used when both Claude surfaces are disabled, so
 // the normal settings regeneration path will not run.
 func cleanClaudeChimeHook(sys System, root string) error {
-	path, exists, err := existingChimeCleanupTarget(sys, root, ".claude", "settings.json")
+	path, mode, exists, err := existingChimeCleanupTarget(sys, root, ".claude", "settings.json")
 	if err != nil {
 		return err
 	}
@@ -96,7 +96,7 @@ func cleanClaudeChimeHook(sys System, root string) error {
 		return fmt.Errorf(messages.SyncMarshalClaudeSettingsFailedFmt, err)
 	}
 	out = append(out, '\n')
-	if err := sys.WriteFileAtomic(path, out, 0o644); err != nil {
+	if err := sys.WriteFileAtomic(path, out, mode); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
 	return nil

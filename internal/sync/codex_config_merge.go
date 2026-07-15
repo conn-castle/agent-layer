@@ -153,7 +153,7 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 // .codex/config.toml. It is used when Codex is disabled, so the normal Codex
 // config merge path will not run.
 func cleanCodexChimeHook(sys System, root string) error {
-	path, exists, err := existingChimeCleanupTarget(sys, root, ".codex", "config.toml")
+	path, mode, exists, err := existingChimeCleanupTarget(sys, root, ".codex", "config.toml")
 	if err != nil {
 		return err
 	}
@@ -180,7 +180,7 @@ func cleanCodexChimeHook(sys System, root string) error {
 	if err := toml.Unmarshal([]byte(out), &renderCheck); err != nil {
 		return fmt.Errorf("merged Codex config is invalid TOML: %w", err)
 	}
-	if err := sys.WriteFileAtomic(path, []byte(out), 0o600); err != nil {
+	if err := sys.WriteFileAtomic(path, []byte(out), mode); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
 	return nil
@@ -445,7 +445,54 @@ func (e *codexTomlEditor) removeCodexChimeHook(path string) (bool, error) {
 		e.removeRanges(unmarked)
 		changed = true
 	}
+	if err := e.rejectAmbiguousCodexChimeHook(path); err != nil {
+		return false, err
+	}
 	return changed, nil
+}
+
+// rejectAmbiguousCodexChimeHook reports remaining exact chime commands that
+// cannot be proven to belong to an Agent Layer-managed hook region.
+func (e *codexTomlEditor) rejectAmbiguousCodexChimeHook(path string) error {
+	if !e.containsActiveCodexChimeCommand() {
+		return nil
+	}
+	content := e.render()
+	var parsed map[string]any
+	if err := toml.Unmarshal([]byte(content), &parsed); err != nil {
+		return fmt.Errorf(messages.SyncCodexExistingConfigInvalidFmt, path, err)
+	}
+	hooks, ok := parsed[hooksKey]
+	if !ok {
+		return nil
+	}
+	if containsExactChimeCommand(hooks, managedChimeCommandVariants(agentLayerCodexChimeCommand)) {
+		return fmt.Errorf(messages.SyncCodexChimeOwnershipConflictFmt, path)
+	}
+	return nil
+}
+
+// containsActiveCodexChimeCommand finds an uncommented command assignment
+// whose complete string value is an Agent Layer-managed Codex chime command.
+func (e *codexTomlEditor) containsActiveCodexChimeCommand() bool {
+	commands := managedChimeCommandVariants(agentLayerCodexChimeCommand)
+	found := false
+	tomlpatch.WalkLinesOutsideMultiline(e.lines, func(_ int, line string, state tomlpatch.StringState) tomlpatch.LineWalkResult {
+		_, literal, ok := tomlpatch.ParseKeyValueWithState(line, chimeHandlerCommandKey, state)
+		if !ok {
+			return tomlpatch.LineWalkResult{}
+		}
+		command, err := strconv.Unquote(literal)
+		if err != nil {
+			return tomlpatch.LineWalkResult{}
+		}
+		if _, ok := commands[command]; ok {
+			found = true
+			return tomlpatch.LineWalkResult{Stop: true}
+		}
+		return tomlpatch.LineWalkResult{}
+	})
+	return found
 }
 
 func (e *codexTomlEditor) managedCodexChimeRegions(path string) ([]lineRange, error) {

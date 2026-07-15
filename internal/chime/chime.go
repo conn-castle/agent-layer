@@ -39,6 +39,11 @@ func (f SoundRunnerFunc) Play() error { return f() }
 // SystemSoundRunner starts the supported system notification sound asynchronously.
 type SystemSoundRunner struct{}
 
+type soundProcess interface {
+	Start() error
+	Wait() error
+}
+
 // Play selects the operating system sound command, discards its standard
 // streams, and releases it without waiting.
 func (SystemSoundRunner) Play() error {
@@ -50,10 +55,15 @@ func (SystemSoundRunner) Play() error {
 	cmd.Stdin = nil
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
-	if err := cmd.Start(); err != nil {
+	return startAndReapSound(cmd)
+}
+
+// startAndReapSound starts a sound process and waits for it asynchronously.
+func startAndReapSound(process soundProcess) error {
+	if err := process.Start(); err != nil {
 		return fmt.Errorf("start notification sound: %w", err)
 	}
-	go func() { _ = cmd.Wait() }()
+	go func() { _ = process.Wait() }()
 	return nil
 }
 
@@ -75,16 +85,48 @@ func systemSoundCommand(goos string, lookPath func(string) (string, error)) (str
 }
 
 type stopEvent struct {
-	HookEventName   string `json:"hook_event_name"`
-	StopHookActive  *bool  `json:"stop_hook_active"`
-	BackgroundTasks []any  `json:"background_tasks"`
-	SessionCrons    []any  `json:"session_crons"`
+	HookEventName   string       `json:"hook_event_name"`
+	StopHookActive  *bool        `json:"stop_hook_active"`
+	BackgroundTasks nonNullArray `json:"background_tasks"`
+	SessionCrons    nonNullArray `json:"session_crons"`
 }
 
 type antigravityEvent struct {
-	FullyIdle         *bool   `json:"fullyIdle"`
-	TerminationReason *string `json:"terminationReason"`
-	Error             *string `json:"error"`
+	FullyIdle         *bool                 `json:"fullyIdle"`
+	TerminationReason *string               `json:"terminationReason"`
+	Error             optionalNonNullString `json:"error"`
+}
+
+type nonNullArray []any
+
+// UnmarshalJSON decodes an array while rejecting an explicit JSON null.
+func (a *nonNullArray) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return errors.New("must be an array, not null")
+	}
+	var values []any
+	if err := json.Unmarshal(data, &values); err != nil {
+		return err
+	}
+	*a = values
+	return nil
+}
+
+type optionalNonNullString struct {
+	present bool
+	value   string
+}
+
+// UnmarshalJSON decodes a present string while rejecting an explicit JSON null.
+func (s *optionalNonNullString) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return errors.New("must be a string, not null")
+	}
+	if err := json.Unmarshal(data, &s.value); err != nil {
+		return err
+	}
+	s.present = true
+	return nil
 }
 
 // Handle validates one provider hook event, optionally starts a sound, and emits
@@ -108,8 +150,15 @@ func Handle(provider string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 }
 
 func decision(provider string, stdin io.Reader) (bool, string, error) {
+	data, err := io.ReadAll(io.LimitReader(stdin, maxHookEventBytes+1))
+	if err != nil {
+		return false, "", fmt.Errorf("agent-layer chime: read %s hook event: %w", provider, err)
+	}
+	if len(data) > maxHookEventBytes {
+		return false, "", fmt.Errorf("agent-layer chime: %s hook event exceeds %d bytes", provider, maxHookEventBytes)
+	}
 	var raw json.RawMessage
-	decoder := json.NewDecoder(io.LimitReader(stdin, maxHookEventBytes))
+	decoder := json.NewDecoder(bytes.NewReader(data))
 	if err := decoder.Decode(&raw); err != nil {
 		return false, "", fmt.Errorf("agent-layer chime: decode %s hook event: %w", provider, err)
 	}
@@ -155,7 +204,7 @@ func decision(provider string, stdin io.Reader) (bool, string, error) {
 		if event.TerminationReason == nil {
 			return false, "", errors.New("agent-layer chime: antigravity terminationReason must be a string")
 		}
-		hasError := event.Error != nil && *event.Error != ""
+		hasError := event.Error.present && event.Error.value != ""
 		return *event.FullyIdle && *event.TerminationReason == "model_stop" && !hasError, antigravityResponse, nil
 	default:
 		return false, "", fmt.Errorf("agent-layer chime: unsupported provider %q", provider)

@@ -693,6 +693,10 @@ command = "echo user"
 timeout = 2
 
 `+codexChimeBlockForTest())
+	configPath := filepath.Join(root, ".codex", "config.toml")
+	if err := os.Chmod(configPath, 0o400); err != nil {
+		t.Fatalf("chmod existing config: %v", err)
+	}
 
 	if err := cleanCodexChimeHook(RealSystem{}, root); err != nil {
 		t.Fatalf("cleanCodexChimeHook: %v", err)
@@ -705,6 +709,57 @@ timeout = 2
 		t.Fatalf("expected user Stop hook preserved, got:\n%s", merged)
 	}
 	assertValidTOML(t, merged)
+	info, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatalf("stat cleaned config: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o400 {
+		t.Fatalf("cleaned config mode = %04o, want preserved 0400", got)
+	}
+}
+
+func TestCodexChimeRejectsAugmentedMatchingHookWithoutMutation(t *testing.T) {
+	t.Parallel()
+	augmented := codexPartialHeader + fmt.Sprintf(`
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = %q
+timeout = 5
+description = "user-owned"
+`, agentLayerCodexChimeCommand)
+
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("write enabled=%t", enabled), func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			writeExistingCodexConfig(t, root, augmented)
+			project := &config.ProjectConfig{
+				Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
+				Env:    map[string]string{},
+			}
+			err := writeCodexConfig(RealSystem{}, root, project)
+			if err == nil || !strings.Contains(err.Error(), "augmented or ambiguous") {
+				t.Fatalf("writeCodexConfig error = %v, want ownership ambiguity", err)
+			}
+			if got := readCodexConfig(t, root); got != augmented {
+				t.Fatalf("ambiguous config must remain unchanged, got:\n%s", got)
+			}
+		})
+	}
+
+	t.Run("disabled-provider cleanup", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		writeExistingCodexConfig(t, root, augmented)
+		err := cleanCodexChimeHook(RealSystem{}, root)
+		if err == nil || !strings.Contains(err.Error(), "augmented or ambiguous") {
+			t.Fatalf("cleanCodexChimeHook error = %v, want ownership ambiguity", err)
+		}
+		if got := readCodexConfig(t, root); got != augmented {
+			t.Fatalf("ambiguous config must remain unchanged, got:\n%s", got)
+		}
+	})
 }
 
 func TestCleanCodexChimeHookRejectsSymlinkConfigDir(t *testing.T) {
@@ -752,23 +807,32 @@ func TestCleanCodexChimeHookRejectsSymlinkConfigFile(t *testing.T) {
 	}
 }
 
-func TestCleanCodexChimeHookIgnoresMalformedConfigWithoutChime(t *testing.T) {
+func TestCleanCodexChimeHookIgnoresMalformedConfigWithoutActiveChime(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
-	configPath := filepath.Join(root, ".codex", "config.toml")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
-		t.Fatalf("mkdir .codex: %v", err)
+	testCases := map[string]string{
+		"no chime":        `model = [`,
+		"commented chime": "# command = \"al hook chime codex\"\nmodel = [",
+		"string chime":    "note = \"al hook chime codex\"\nmodel = [",
 	}
-	content := `model = [`
-	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	for name, content := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			configPath := filepath.Join(root, ".codex", "config.toml")
+			if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+				t.Fatalf("mkdir .codex: %v", err)
+			}
+			if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+				t.Fatalf("write config: %v", err)
+			}
 
-	if err := cleanCodexChimeHook(RealSystem{}, root); err != nil {
-		t.Fatalf("cleanCodexChimeHook should ignore malformed no-chime config: %v", err)
-	}
-	if got := readFileForTest(t, configPath); got != content {
-		t.Fatalf("expected malformed no-chime config untouched, got:\n%s", got)
+			if err := cleanCodexChimeHook(RealSystem{}, root); err != nil {
+				t.Fatalf("cleanCodexChimeHook should ignore malformed config without an active chime hook: %v", err)
+			}
+			if got := readFileForTest(t, configPath); got != content {
+				t.Fatalf("expected malformed config untouched, got:\n%s", got)
+			}
+		})
 	}
 }
 
