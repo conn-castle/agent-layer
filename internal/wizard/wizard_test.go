@@ -386,7 +386,15 @@ func TestPromptModels_SetsDisableToggles(t *testing.T) {
 	ui := &MockUI{
 		SelectFunc:  func(string, []string, *string) error { return nil },
 		ConfirmFunc: func(string, *bool) error { return nil },
-		MultiSelectFunc: func(title string, _ []string, selected *[]string) error {
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+			if title == messages.WizardCodexFeaturesTitle {
+				assert.ElementsMatch(t, []string{
+					messages.WizardCodexFeatureStatuslineLabel,
+					messages.WizardCodexFeatureAppsLabel,
+					messages.WizardCodexFeaturePluginsLabel,
+					messages.WizardCodexFeatureBrowserLabel,
+				}, options)
+			}
 			if featureTitles[title] {
 				*selected = []string{} // check nothing = disable every feature
 			}
@@ -492,16 +500,21 @@ func TestPromptEnabledAgents_ResetsDisableToggles(t *testing.T) {
 	assert.False(t, choices.CodexLocalConfigDirTouched)
 }
 
-// TestPromptEnabledAgents_VSCodeOnlyPreservesCodexLocalConfigDir pins the reset
-// gating: enabling only the Codex VS Code extension (agents.vscode) must NOT
-// clear a CodexLocalConfigDir choice, because the extension consumes CODEX_HOME
-// too (via `al vscode`). Under the old `!AgentCodex` reset this value would be
-// wiped, defaulting the confirm to "no" and silently disabling an existing
-// repo-local Codex home for a VS Code-only repo.
-func TestPromptEnabledAgents_VSCodeOnlyPreservesCodexLocalConfigDir(t *testing.T) {
+// TestPromptEnabledAgents_VSCodeOnlyPreservesCodexRuntimeChoices pins reset
+// behavior: the VS Code extension consumes CODEX_HOME and shared runtime
+// features, but cannot use the terminal-only Codex statusline.
+func TestPromptEnabledAgents_VSCodeOnlyPreservesCodexRuntimeChoices(t *testing.T) {
 	choices := NewChoices()
 	choices.CodexLocalConfigDir = true
 	choices.CodexLocalConfigDirTouched = true
+	choices.CodexApps = true
+	choices.CodexAppsTouched = true
+	choices.CodexPlugins = true
+	choices.CodexPluginsTouched = true
+	choices.CodexDisableBrowser = true
+	choices.CodexDisableBrowserTouched = true
+	choices.CodexStatusline = true
+	choices.CodexStatuslineTouched = true
 
 	ui := &MockUI{
 		MultiSelectFunc: func(_ string, _ []string, selected *[]string) error {
@@ -516,6 +529,14 @@ func TestPromptEnabledAgents_VSCodeOnlyPreservesCodexLocalConfigDir(t *testing.T
 
 	assert.True(t, choices.CodexLocalConfigDir, "VSCode consumes CODEX_HOME, so its local_config_dir choice must survive")
 	assert.True(t, choices.CodexLocalConfigDirTouched)
+	assert.True(t, choices.CodexApps)
+	assert.True(t, choices.CodexAppsTouched)
+	assert.True(t, choices.CodexPlugins)
+	assert.True(t, choices.CodexPluginsTouched)
+	assert.True(t, choices.CodexDisableBrowser)
+	assert.True(t, choices.CodexDisableBrowserTouched)
+	assert.False(t, choices.CodexStatusline)
+	assert.False(t, choices.CodexStatuslineTouched)
 }
 
 // TestPatchConfig_EndToEndDisableToggles confirms the prompt choices flow

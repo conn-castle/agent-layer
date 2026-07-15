@@ -107,4 +107,11 @@ const (
 		"\n  Built-in apps (GitHub, Gmail, etc.): Codex's built-in app integrations add extra tools to every session." +
 		"\n  Plugins and plugin skills: Codex plugins can add skills, app integrations, and MCP servers to sessions." +
 		"\n  Browser / computer-use: these tools let Codex drive a browser and control the screen."
+	// WizardCodexRuntimeFeaturesTitle labels the VS Code-only Codex feature
+	// multi-select. These runtime settings share .codex/config.toml with the
+	// Codex CLI; the terminal-only statusline is intentionally excluded.
+	WizardCodexRuntimeFeaturesTitle = "Codex runtime features (checked = keep enabled; uncheck to disable)" +
+		"\n  Built-in apps (GitHub, Gmail, etc.): Codex's built-in app integrations add extra tools to every session." +
+		"\n  Plugins and plugin skills: Codex plugins can add skills, app integrations, and MCP servers to sessions." +
+		"\n  Browser / computer-use: these tools let Codex drive a browser and control the screen."
 )

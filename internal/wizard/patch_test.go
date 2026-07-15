@@ -2059,6 +2059,54 @@ enabled = true
 	assert.NotContains(t, out, "apps = false")
 }
 
+func TestPatchConfig_CodexRuntimeTogglesApplyUnderVSCodeOnly(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = false
+
+[agents.vscode]
+enabled = true
+`
+	choices := NewChoices()
+	choices.EnabledAgentsTouched = true
+	choices.EnabledAgents[AgentVSCode] = true
+	choices.CodexAppsTouched = true
+	choices.CodexApps = true
+	choices.CodexPluginsTouched = true
+	choices.CodexPlugins = false
+	choices.CodexDisableBrowserTouched = true
+	choices.CodexDisableBrowser = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "apps = true")
+	assert.Contains(t, out, "plugins = false")
+	assert.Contains(t, out, "browser_use = false")
+}
+
+func TestPatchConfig_CodexStatuslineSkippedUnderVSCodeOnly(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = false
+
+[agents.vscode]
+enabled = true
+`
+	choices := NewChoices()
+	choices.EnabledAgentsTouched = true
+	choices.EnabledAgents[AgentVSCode] = true
+	choices.CodexStatuslineTouched = true
+	choices.CodexStatusline = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	block, exists := parseTomlDocument(out).sections[codexSection]
+	require.True(t, exists)
+	assert.False(t, hasUncommentedKeyLine(block.lines, "statusline"))
+}
+
 func TestPatchConfig_CodexAppsUntouchedPreservesExistingValue(t *testing.T) {
 	content := `
 [agents.codex]

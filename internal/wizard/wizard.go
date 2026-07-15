@@ -632,14 +632,14 @@ func promptEnabledAgents(ui UI, choices *Choices) error {
 		// neither is enabled.
 		choices.CodexLocalConfigDir = false
 		choices.CodexLocalConfigDirTouched = false
-	}
-	if !choices.EnabledAgents[AgentCodex] {
 		choices.CodexApps = false
 		choices.CodexAppsTouched = false
 		choices.CodexPlugins = false
 		choices.CodexPluginsTouched = false
 		choices.CodexDisableBrowser = false
 		choices.CodexDisableBrowserTouched = false
+	}
+	if !choices.EnabledAgents[AgentCodex] {
 		choices.CodexStatusline = false
 		choices.CodexStatuslineTouched = false
 	}
@@ -749,9 +749,20 @@ func promptModels(ui UI, choices *Choices, optionCache *wizardOptionDiscoveryCac
 		// Codex per-feature toggles as one multi-select. Built-in apps store
 		// enabled-sense (true = apps on); browser/computer-use stores disable-sense
 		// like the Claude fields. Both are inverted at the prompt boundary so the
-		// checkbox always means "keep enabled". Intentionally left CLI-gated for now.
+		// checkbox always means "keep enabled".
 		if err := promptFeatureToggles(ui, messages.WizardCodexFeaturesTitle, []featureToggle{
 			{label: messages.WizardCodexFeatureStatuslineLabel, field: &choices.CodexStatusline, touched: &choices.CodexStatuslineTouched, enabledSense: true},
+			{label: messages.WizardCodexFeatureAppsLabel, field: &choices.CodexApps, touched: &choices.CodexAppsTouched, enabledSense: true},
+			{label: messages.WizardCodexFeaturePluginsLabel, field: &choices.CodexPlugins, touched: &choices.CodexPluginsTouched, enabledSense: true},
+			{label: messages.WizardCodexFeatureBrowserLabel, field: &choices.CodexDisableBrowser, touched: &choices.CodexDisableBrowserTouched},
+		}); err != nil {
+			return err
+		}
+	} else if choices.EnabledAgents[AgentVSCode] {
+		// The VS Code extension reads the same .codex/config.toml runtime
+		// features as the CLI. Statusline is terminal UI configuration, so it
+		// remains exclusive to the CLI prompt above.
+		if err := promptFeatureToggles(ui, messages.WizardCodexRuntimeFeaturesTitle, []featureToggle{
 			{label: messages.WizardCodexFeatureAppsLabel, field: &choices.CodexApps, touched: &choices.CodexAppsTouched, enabledSense: true},
 			{label: messages.WizardCodexFeaturePluginsLabel, field: &choices.CodexPlugins, touched: &choices.CodexPluginsTouched, enabledSense: true},
 			{label: messages.WizardCodexFeatureBrowserLabel, field: &choices.CodexDisableBrowser, touched: &choices.CodexDisableBrowserTouched},

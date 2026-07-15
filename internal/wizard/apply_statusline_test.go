@@ -54,6 +54,18 @@ func TestComputeStatuslineSourceChangeSet_VisibilityExistingAndErrors(t *testing
 		assert.Empty(t, changes.sourcesToCreate)
 	})
 
+	t.Run("excludes Codex statusline for VS Code-only", func(t *testing.T) {
+		choices := NewChoices()
+		choices.EnabledAgentsTouched = true
+		choices.EnabledAgents[AgentVSCode] = true
+		choices.CodexStatusline = true
+		choices.CodexStatuslineTouched = true
+
+		changes, err := computeStatuslineSourceChangeSet(t.TempDir(), choices)
+		require.NoError(t, err)
+		assert.Empty(t, changes.sourcesToCreate)
+	})
+
 	t.Run("enabled existing config seeds missing source without retoggle", func(t *testing.T) {
 		root := t.TempDir()
 		choices := NewChoices()

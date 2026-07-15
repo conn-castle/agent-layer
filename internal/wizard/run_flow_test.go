@@ -549,13 +549,11 @@ enabled = false
 	assert.Contains(t, string(data), "local_config_dir = true")
 }
 
-// TestRun_CodexVSCodeOnlyLocalConfigDir drives the full wizard with only the
-// Codex VS Code extension (agents.vscode) enabled and the Codex CLI disabled.
-// Because `al vscode` sets CODEX_HOME from agents.codex.local_config_dir, the
-// wizard must still present the Codex local_config_dir confirm and persist the
-// choice. Against the old single-AgentCodex prompt gating the confirm never
-// rendered and no local_config_dir line was written, so this fails.
-func TestRun_CodexVSCodeOnlyLocalConfigDir(t *testing.T) {
+// TestRun_CodexVSCodeOnlyConfiguresSharedRuntimeFeatures drives the full wizard
+// with only the Codex VS Code extension (agents.vscode) enabled. The extension
+// must configure its shared CODEX_HOME and runtime feature settings through
+// agents.codex, without surfacing the CLI-only terminal statusline.
+func TestRun_CodexVSCodeOnlyConfiguresSharedRuntimeFeatures(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
@@ -580,6 +578,7 @@ enabled = false
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	sawCodexLocalConfigDirPrompt := false
+	sawCodexRuntimeFeaturesPrompt := false
 	var summaryBody string
 	ui := &MockUI{
 		NoteFunc: func(title, body string) error {
@@ -599,6 +598,16 @@ enabled = false
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
 			if title == messages.WizardEnableAgentsTitle {
 				*selected = []string{AgentVSCode}
+			}
+			if title == messages.WizardCodexRuntimeFeaturesTitle {
+				sawCodexRuntimeFeaturesPrompt = true
+				assert.ElementsMatch(t, []string{
+					messages.WizardCodexFeatureAppsLabel,
+					messages.WizardCodexFeaturePluginsLabel,
+					messages.WizardCodexFeatureBrowserLabel,
+				}, options)
+				assert.NotContains(t, options, messages.WizardCodexFeatureStatuslineLabel)
+				*selected = []string{messages.WizardCodexFeatureAppsLabel}
 			}
 			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{}
@@ -623,16 +632,27 @@ enabled = false
 	require.NoError(t, err)
 
 	assert.True(t, sawCodexLocalConfigDirPrompt, "enabling only the Codex VS Code extension must still prompt for local_config_dir")
+	assert.True(t, sawCodexRuntimeFeaturesPrompt, "VS Code-only repos must be offered the shared Codex runtime feature toggles")
 
 	// The pre-apply confirmation summary the user reviews must report the enabled
-	// setting. codexToggleVisible is CLI-only, so gating the summary line on it
-	// would silently omit "Codex local home: enabled" for a VS Code-only repo even
-	// though local_config_dir = true is written below.
+	// setting even though the Codex CLI is off, because local_config_dir = true
+	// is written for the VS Code extension below.
 	assert.Contains(t, summaryBody, messages.WizardSummaryCodexLocalConfigDir,
 		"VS Code-only Codex local home must be shown in the confirmation summary")
+	assert.Contains(t, summaryBody, messages.WizardSummaryCodexAppsEnabled)
+	assert.Contains(t, summaryBody, messages.WizardSummaryCodexPluginsDisabled)
+	assert.Contains(t, summaryBody, messages.WizardSummaryCodexBrowserDisabled)
+	assert.NotContains(t, summaryBody, messages.WizardSummaryCodexStatuslineEnabled)
+	assert.NotContains(t, summaryBody, messages.WizardSummaryCodexStatuslineDisabled)
 
 	data, _ := os.ReadFile(filepath.Join(configDir, "config.toml"))
 	assert.Contains(t, string(data), "local_config_dir = true")
+	assert.Contains(t, string(data), "apps = true")
+	assert.Contains(t, string(data), "plugins = false")
+	assert.Contains(t, string(data), "browser_use = false")
+	codexBlock, exists := parseTomlDocument(string(data)).sections[codexSection]
+	require.True(t, exists)
+	assert.False(t, hasUncommentedKeyLine(codexBlock.lines, "statusline"))
 }
 
 // TestPromptModels_FeatureTogglesPreSelectAndRoundTrip proves the checkbox->
@@ -644,6 +664,7 @@ func TestPromptModels_FeatureTogglesPreSelectAndRoundTrip(t *testing.T) {
 	choices := NewChoices()
 	choices.EnabledAgents[AgentClaude] = true
 	choices.EnabledAgents[AgentCodex] = true
+	choices.EnabledAgents[AgentVSCode] = true
 
 	// Mixed starting state: IDE reading and connectors disabled (so unchecked);
 	// memory and AskUserQuestion enabled (so checked). Apps enabled (checked);
@@ -659,13 +680,15 @@ func TestPromptModels_FeatureTogglesPreSelectAndRoundTrip(t *testing.T) {
 	// Capture the labels pre-selected for each group, then echo them back
 	// unchanged (a no-edit re-run).
 	preSelected := map[string][]string{}
+	featureOptions := map[string][]string{}
 	ui := &MockUI{
 		SelectFunc: func(string, []string, *string) error { return nil },
-		MultiSelectFunc: func(title string, _ []string, selected *[]string) error {
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
 			if title == messages.WizardClaudeFeaturesTitle || title == messages.WizardCodexFeaturesTitle {
 				captured := make([]string, len(*selected))
 				copy(captured, *selected)
 				preSelected[title] = captured
+				featureOptions[title] = append([]string(nil), options...)
 			}
 			return nil // leave *selected untouched = no edits
 		},
@@ -685,6 +708,13 @@ func TestPromptModels_FeatureTogglesPreSelectAndRoundTrip(t *testing.T) {
 		[]string{messages.WizardCodexFeatureAppsLabel, messages.WizardCodexFeaturePluginsLabel},
 		preSelected[messages.WizardCodexFeaturesTitle],
 		"only enabled Codex features should be pre-checked")
+	assert.ElementsMatch(t, []string{
+		messages.WizardCodexFeatureStatuslineLabel,
+		messages.WizardCodexFeatureAppsLabel,
+		messages.WizardCodexFeaturePluginsLabel,
+		messages.WizardCodexFeatureBrowserLabel,
+	}, featureOptions[messages.WizardCodexFeaturesTitle],
+		"combined Codex CLI and VS Code selections must retain the full CLI feature prompt")
 
 	// Round-trip: echoing the pre-selection back unchanged leaves every
 	// disable-sense field at its original value.
@@ -734,14 +764,10 @@ func TestPromptModels_CodexDisabledRendersNoCodexMultiSelect(t *testing.T) {
 	assert.False(t, choices.CodexDisableBrowserTouched)
 }
 
-// TestPromptModels_VSCodeOnlyPromptsCodexLocalConfigDir pins the prompt gating
-// fix. With only the Codex VS Code extension (agents.vscode) enabled and the
-// Codex CLI off, promptModels must present the local_config_dir confirm (it sets
-// CODEX_HOME for the extension via `al vscode`) while the CLI-only Codex model,
-// reasoning, and feature prompts stay hidden. Against the old single-AgentCodex
-// gating the confirm never rendered, so CodexLocalConfigDirTouched stays false
-// and this fails.
-func TestPromptModels_VSCodeOnlyPromptsCodexLocalConfigDir(t *testing.T) {
+// TestPromptModels_VSCodeOnlyPromptsCodexRuntimeFeatures pins the split prompt
+// gates: VS Code-only uses the shared runtime feature prompt but cannot select
+// the CLI-only Codex statusline, model, or reasoning settings.
+func TestPromptModels_VSCodeOnlyPromptsCodexRuntimeFeatures(t *testing.T) {
 	choices := NewChoices()
 	choices.EnabledAgents[AgentVSCode] = true // Codex VS Code extension only; CLI off
 
@@ -757,9 +783,15 @@ func TestPromptModels_VSCodeOnlyPromptsCodexLocalConfigDir(t *testing.T) {
 			}
 			return nil
 		},
-		MultiSelectFunc: func(title string, _ []string, _ *[]string) error {
-			if title == messages.WizardCodexFeaturesTitle {
+		MultiSelectFunc: func(title string, options []string, _ *[]string) error {
+			if title == messages.WizardCodexRuntimeFeaturesTitle {
 				sawCodexFeatures = true
+				assert.ElementsMatch(t, []string{
+					messages.WizardCodexFeatureAppsLabel,
+					messages.WizardCodexFeaturePluginsLabel,
+					messages.WizardCodexFeatureBrowserLabel,
+				}, options)
+				assert.NotContains(t, options, messages.WizardCodexFeatureStatuslineLabel)
 			}
 			return nil
 		},
@@ -782,9 +814,11 @@ func TestPromptModels_VSCodeOnlyPromptsCodexLocalConfigDir(t *testing.T) {
 
 	assert.False(t, sawCodexModel, "Codex model prompt is CLI-gated and must not render for VS Code-only repos")
 	assert.False(t, sawCodexReasoning, "Codex reasoning prompt is CLI-gated and must not render for VS Code-only repos")
-	assert.False(t, sawCodexFeatures, "Codex feature toggles are CLI-gated and must not render for VS Code-only repos")
+	assert.True(t, sawCodexFeatures, "shared Codex runtime feature toggles must render for VS Code-only repos")
 	assert.False(t, choices.CodexModelTouched)
 	assert.False(t, choices.CodexReasoningTouched)
-	assert.False(t, choices.CodexAppsTouched)
-	assert.False(t, choices.CodexDisableBrowserTouched)
+	assert.True(t, choices.CodexAppsTouched)
+	assert.True(t, choices.CodexPluginsTouched)
+	assert.True(t, choices.CodexDisableBrowserTouched)
+	assert.False(t, choices.CodexStatuslineTouched)
 }

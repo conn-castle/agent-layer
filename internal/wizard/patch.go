@@ -310,7 +310,7 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 				setCommentedKeyLine(block, templateBlock, "local_config_dir", "reasoning_effort")
 			}
 		}
-		if choices.CodexStatuslineTouched {
+		if choices.CodexStatuslineTouched && codexStatuslineToggleVisible(choices) {
 			// Anchor statusline after local_config_dir when that line exists,
 			// otherwise fall back to reasoning_effort (the pre-local_config_dir
 			// anchor). This keeps statusline in place instead of reordering it to
@@ -683,7 +683,7 @@ func applyCodexPluginsUpdate(doc *tomlDocument, choices *Choices) error {
 }
 
 func applyCodexBooleanFeatureUpdate(doc *tomlDocument, choices *Choices, key string, enabled, defaultEnabled bool) error {
-	if choices.EnabledAgentsTouched && !choices.EnabledAgents[AgentCodex] {
+	if !codexRuntimeToggleVisible(choices) {
 		return nil
 	}
 	if block, exists := doc.sections[codexFeaturesSection]; exists {
@@ -740,7 +740,7 @@ func applyCodexBrowserUpdate(doc *tomlDocument, choices *Choices) error {
 	if !choices.CodexDisableBrowserTouched {
 		return nil
 	}
-	if choices.EnabledAgentsTouched && !choices.EnabledAgents[AgentCodex] {
+	if !codexRuntimeToggleVisible(choices) {
 		return nil
 	}
 	if block, exists := doc.sections[codexFeaturesSection]; exists {

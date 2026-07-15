@@ -59,7 +59,7 @@ type Choices struct {
 
 	// CodexDisableBrowser disables Codex browser/computer-use features
 	// (browser_use/in_app_browser/computer_use = false). Disable-intent like the
-	// Claude toggles above; gated on Codex enabled.
+	// Claude toggles above; gated on Codex CLI or Codex VS Code enabled.
 	CodexDisableBrowser        bool
 	CodexDisableBrowserTouched bool
 
