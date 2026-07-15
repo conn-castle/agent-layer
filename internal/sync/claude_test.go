@@ -934,6 +934,27 @@ func TestAppendClaudeChimeStopHookDedupesExactHandler(t *testing.T) {
 	}
 }
 
+func TestAppendClaudeChimeStopHookMigratesLegacyHandler(t *testing.T) {
+	t.Parallel()
+	existing := []any{
+		map[string]any{"hooks": []any{chimeHandler(legacyAgentLayerClaudeChimeCommand)}},
+		map[string]any{"hooks": []any{map[string]any{"type": "command", "command": "echo user", "timeout": 3}}},
+	}
+	settings := map[string]any{"hooks": map[string]any{"Stop": existing}}
+	if err := injectClaudeChimeHook(settings); err != nil {
+		t.Fatalf("injectClaudeChimeHook: %v", err)
+	}
+	if got := claudeStopChimeHookCount(settings); got != 1 {
+		t.Fatalf("expected one current chime handler, got %d (%#v)", got, settings)
+	}
+	if containsExactChimeCommand(settings, legacyChimeCommandVariants(legacyAgentLayerClaudeChimeCommand)) {
+		t.Fatalf("legacy direct-sound handler survived migration: %#v", settings)
+	}
+	if !containsExactChimeCommand(settings, map[string]struct{}{"echo user": {}}) {
+		t.Fatalf("user handler was not preserved: %#v", settings)
+	}
+}
+
 func TestBuildClaudeSettings_ChimeMalformedOverrideFailsLoud(t *testing.T) {
 	t.Parallel()
 	enabled := true

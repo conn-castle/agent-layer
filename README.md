@@ -339,9 +339,9 @@ Example:
 mode = "all"
 
 [notifications]
-# Optional local chime when supported providers fire their Stop lifecycle hook.
-# Absent or false disables it. The default command uses macOS afplay.
-# This is a lifecycle signal, not proof that the turn was correct.
+# Optional best-effort local chime for filtered top-level completion events.
+# Absent or false disables it. The handler uses a native system sound command.
+# Codex Stop hooks cannot prove semantic task completion; see Notifications below.
 chime = false
 
 [agents.antigravity]
@@ -457,9 +457,11 @@ mcp_schema_tokens_server_threshold = 20000
 
 #### Notifications (`[notifications]`)
 
-Set `chime = true` to project a local turn-stop chime into enabled Claude, Codex, and Antigravity clients. The generated hooks use each provider's native `Stop` lifecycle event. `Stop` means the provider says the assistant turn stopped; it is not a correctness or task-completion signal.
+Set `chime = true` to project one Agent Layer-owned, project-shareable `Stop` handler into enabled Claude, Codex, and Antigravity clients. The handler chimes only for a main Claude turn with no continuation, background task, or scheduled wakeup; an initial Codex turn stop with no active continuation; or an idle, normal, error-free Antigravity stop. Malformed events stay silent. Existing user hook groups remain alongside the managed handler.
 
-The managed command uses macOS `/usr/bin/afplay` with the system Blow sound. On non-macOS systems, leave the setting disabled until platform-specific sound support is added. Codex project hooks also require trusted project config and enabled hooks. Claude hooks can be disabled by `--bare`, `--safe-mode`, or policy settings. Codex and Antigravity hook commands must print valid JSON, which Agent Layer's managed commands do. Gemini CLI is not projected because Antigravity is Agent Layer's supported Google client.
+This is best-effort notification, not proof of correctness or semantic task completion. Codex runs matching hooks concurrently, so its initial `Stop` can chime before another hook requests continuation; filtering later `stop_hook_active` events prevents repeat chimes but cannot eliminate every early first chime. No global provider settings, Codex `notify`, or repo-local `CODEX_HOME` mode are required.
+
+`al hook chime` uses macOS `/usr/bin/afplay` with the system Blow sound. On Linux it uses `canberra-gtk-play --id=complete` when that command is available on `PATH`; no sound asset is bundled, and Linux systems without the command remain silent with a diagnostic. Generated commands invoke the installed `al` on `PATH` and fail open with each provider's valid allow response, so a missing handler or sound failure cannot alter agent control flow. Other operating systems are unsupported. Codex project hooks still require trusted project config and enabled hooks; Claude hooks can be disabled by `--bare`, `--safe-mode`, or policy settings. Gemini CLI is not projected because Antigravity is Agent Layer's supported Google client.
 
 #### Built-in placeholders
 

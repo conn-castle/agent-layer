@@ -80,6 +80,14 @@ type antigravityChimePluginFile struct {
 }
 
 func antigravityChimePluginFiles() []antigravityChimePluginFile {
+	return antigravityChimePluginFilesForCommand(agentLayerAntigravityChimeCommand)
+}
+
+func legacyAntigravityChimePluginFiles() []antigravityChimePluginFile {
+	return antigravityChimePluginFilesForCommand(legacyAgentLayerAntigravityChimeCommand)
+}
+
+func antigravityChimePluginFilesForCommand(command string) []antigravityChimePluginFile {
 	return []antigravityChimePluginFile{
 		{name: "plugin.json", data: []byte(fmt.Sprintf("{\n  \"name\": %q\n}\n", antigravityChimePluginName))},
 		{name: "hooks.json", data: []byte(fmt.Sprintf(
@@ -88,7 +96,7 @@ func antigravityChimePluginFiles() []antigravityChimePluginFile {
 			chimeHandlerTypeKey,
 			chimeHandlerCommandType,
 			chimeHandlerCommandKey,
-			agentLayerAntigravityChimeCommand,
+			command,
 			chimeHandlerTimeoutKey,
 			agentLayerChimeTimeout,
 		))},
@@ -96,16 +104,6 @@ func antigravityChimePluginFiles() []antigravityChimePluginFile {
 }
 
 func antigravityChimePluginIsManaged(sys System, dir string) error {
-	for _, file := range antigravityChimePluginFiles() {
-		path := filepath.Join(dir, file.name)
-		data, err := sys.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf(messages.SyncAntigravityChimePluginConflictFmt, dir)
-		}
-		if string(data) != string(file.data) {
-			return fmt.Errorf(messages.SyncAntigravityChimePluginConflictFmt, dir)
-		}
-	}
 	entries, err := sys.ReadDir(dir)
 	if err != nil {
 		return fmt.Errorf(messages.SyncReadFailedFmt, dir, err)
@@ -113,7 +111,20 @@ func antigravityChimePluginIsManaged(sys System, dir string) error {
 	if len(entries) != len(antigravityChimePluginFiles()) {
 		return fmt.Errorf(messages.SyncAntigravityChimePluginConflictFmt, dir)
 	}
-	return nil
+	for _, files := range [][]antigravityChimePluginFile{antigravityChimePluginFiles(), legacyAntigravityChimePluginFiles()} {
+		matched := true
+		for _, file := range files {
+			data, readErr := sys.ReadFile(filepath.Join(dir, file.name))
+			if readErr != nil || string(data) != string(file.data) {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return nil
+		}
+	}
+	return fmt.Errorf(messages.SyncAntigravityChimePluginConflictFmt, dir)
 }
 
 func ensureAntigravityChimePathContained(sys System, root string, target string) error {

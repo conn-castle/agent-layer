@@ -32,8 +32,7 @@ func injectClaudeChimeHook(settings map[string]any) error {
 func appendClaudeChimeStopHook(existing any) []any {
 	var out []any
 	if values, ok := existing.([]any); ok {
-		out = append(out, values...)
-		commands := map[string]struct{}{agentLayerClaudeChimeCommand: {}}
+		currentCommands := legacyChimeCommandVariants(agentLayerClaudeChimeCommand)
 		for _, entry := range values {
 			group, ok := entry.(map[string]any)
 			if !ok {
@@ -44,10 +43,34 @@ func appendClaudeChimeStopHook(existing any) []any {
 				continue
 			}
 			for _, handler := range handlers {
-				if chimeHandlerMatchesAny(handler, commands) {
-					return out
+				if chimeHandlerMatchesAny(handler, currentCommands) {
+					return append(out, values...)
 				}
 			}
+		}
+		managedCommands := managedChimeCommandVariants(agentLayerClaudeChimeCommand)
+		for _, entry := range values {
+			group, ok := entry.(map[string]any)
+			if !ok {
+				out = append(out, entry)
+				continue
+			}
+			handlers, ok := group[hooksKey].([]any)
+			if !ok {
+				out = append(out, entry)
+				continue
+			}
+			filtered := make([]any, 0, len(handlers))
+			for _, handler := range handlers {
+				if !chimeHandlerMatchesAny(handler, managedCommands) {
+					filtered = append(filtered, handler)
+				}
+			}
+			if len(filtered) == 0 && len(group) == 1 {
+				continue
+			}
+			group[hooksKey] = filtered
+			out = append(out, group)
 		}
 	}
 	return append(out, map[string]any{
@@ -113,7 +136,7 @@ func removeClaudeChimeHook(settings map[string]any) (bool, error) {
 		return false, fmt.Errorf(messages.SyncChimeListConflictFmt, ".claude/settings.json hooks.Stop")
 	}
 
-	commands := legacyChimeCommandVariants(agentLayerClaudeChimeCommand)
+	commands := managedChimeCommandVariants(agentLayerClaudeChimeCommand)
 	changed := false
 	filteredStop := make([]any, 0, len(stopEntries))
 	for _, entry := range stopEntries {

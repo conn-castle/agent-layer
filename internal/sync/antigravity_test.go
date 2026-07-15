@@ -866,6 +866,49 @@ func TestCleanAntigravityChimePluginRemovesOnlyManagedPlugin(t *testing.T) {
 	}
 }
 
+func TestWriteAntigravityChimePluginMigratesLegacyArtifactSet(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	dir := antigravityChimePluginDir(root)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir plugin: %v", err)
+	}
+	for _, file := range legacyAntigravityChimePluginFiles() {
+		if err := os.WriteFile(filepath.Join(dir, file.name), file.data, 0o600); err != nil {
+			t.Fatalf("write legacy %s: %v", file.name, err)
+		}
+	}
+	enabled := true
+	project := &config.ProjectConfig{Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}}}
+	if err := writeAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeAntigravityChimePlugin: %v", err)
+	}
+	hooks := readFileForTest(t, filepath.Join(dir, "hooks.json"))
+	if strings.Contains(hooks, "/usr/bin/afplay") || !strings.Contains(hooks, "al hook chime antigravity") {
+		t.Fatalf("legacy plugin was not migrated:\n%s", hooks)
+	}
+}
+
+func TestCleanAntigravityChimePluginRemovesLegacyArtifactSet(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	dir := antigravityChimePluginDir(root)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir plugin: %v", err)
+	}
+	for _, file := range legacyAntigravityChimePluginFiles() {
+		if err := os.WriteFile(filepath.Join(dir, file.name), file.data, 0o600); err != nil {
+			t.Fatalf("write legacy %s: %v", file.name, err)
+		}
+	}
+	if err := cleanAntigravityChimePlugin(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanAntigravityChimePlugin: %v", err)
+	}
+	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
+		t.Fatalf("expected legacy plugin removed, lstat err=%v", err)
+	}
+}
+
 func TestWriteAntigravityChimePluginDisabledCleansManagedPlugin(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

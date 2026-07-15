@@ -33,6 +33,7 @@ func newRootCmd() *cobra.Command {
 		newInitCmd(),
 		newUpgradeCmd(),
 		newSyncCmd(),
+		newHookCmd(),
 		newMcpPromptsCmd(),
 		newProbeCmd(),
 		newDispatchCmd(),
