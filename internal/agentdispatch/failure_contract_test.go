@@ -78,7 +78,11 @@ func TestWriteOptionsRendersCurrentContractAndPropagatesWriterFailure(t *testing
 	if err != nil {
 		t.Fatalf("WriteOptions text: %v", err)
 	}
-	if !strings.Contains(text.String(), "fresh=false resume=false inspect=true") {
+	if !strings.Contains(text.String(), "fresh=false resume=false inspect=true random_eligible=false") ||
+		!strings.Contains(text.String(), "random: excluded (provider binary not found)") ||
+		!strings.Contains(text.String(), "model: override_supported=true") ||
+		!strings.Contains(text.String(), "reasoning_effort: override_supported=") ||
+		!strings.Contains(text.String(), "Random pool:  (excludes_caller=false empty=true)") {
 		t.Fatalf("options text = %q", text.String())
 	}
 	err = WriteOptions(OptionsRequest{Root: root, Env: []string{}, Stdout: failingWriter{}, LookPath: func(string) (string, error) { return "", exec.ErrNotFound }})
@@ -123,6 +127,9 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 	}
 	_, err = executeProvider(providerCommand{Path: "/bin/sh", Args: []string{"-c", `printf answer`}, Env: os.Environ(), Provider: AgentAntigravity, Plain: true, LogPath: timeoutLog}, nil, timeoutRun, root, nil, func(string) error { return nil })
 	requireDispatchExitCode(t, err, ExitTargetFailure)
+	if timedOut, readErr := antigravityTimeoutReported(timeoutRun.Record.StderrPath, filepath.Join(root, "missing-log")); readErr == nil || timedOut {
+		t.Fatalf("missing Antigravity diagnostics = timedOut %t, error %v", timedOut, readErr)
+	}
 
 	if err := replayAnswer(filepath.Join(root, "missing-answer"), io.Discard); err == nil {
 		t.Fatal("replayAnswer accepted a missing capture")

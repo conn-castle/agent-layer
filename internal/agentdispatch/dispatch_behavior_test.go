@@ -183,7 +183,8 @@ func TestNewerProviderVersionDispatchWarnsOnStderrOnly(t *testing.T) {
 
 func TestTargetResolutionEnforcesEligibility(t *testing.T) {
 	cfg := dispatchTestConfig(AgentCodex, AgentClaude)
-	resolved, err := resolveTarget(cfg, RunOptions{LookPath: alwaysFound, ChooseRandom: chooseOnly(AgentClaude)}, AgentCodex, true)
+	versionLookup := func(_ string, agent string) (string, error) { return supportedProviderVersions[agent], nil }
+	resolved, err := resolveTarget(cfg, RunOptions{LookPath: alwaysFound, VersionLookup: versionLookup, ChooseRandom: chooseOnly(AgentClaude)}, AgentCodex, true)
 	if err != nil {
 		t.Fatalf("resolve random target: %v", err)
 	}
@@ -192,19 +193,76 @@ func TestTargetResolutionEnforcesEligibility(t *testing.T) {
 	}
 	_, err = resolveTarget(cfg, RunOptions{Agent: "unknown"}, "", false)
 	requireDispatchExitCode(t, err, ExitUsage)
-	_, err = chooseRandomTarget(cfg, AgentCodex, true, alwaysFound, chooseOnly(AgentCodex))
+	_, err = chooseRandomTarget(cfg, "", AgentCodex, true, alwaysFound, versionLookup, chooseOnly(AgentCodex))
 	requireDispatchExitCode(t, err, ExitTargetFailure)
-	_, err = chooseRandomTarget(cfg, "", false, func(string) (string, error) {
+	_, err = chooseRandomTarget(cfg, "", "", false, func(string) (string, error) {
 		return "", exec.ErrNotFound
-	}, nil)
+	}, versionLookup, nil)
 	requireDispatchExitCode(t, err, ExitUnavailable)
 	chooserErr := errors.New("random source failed")
-	_, err = chooseRandomTarget(cfg, "", false, alwaysFound, func([]string) (string, error) {
+	_, err = chooseRandomTarget(cfg, "", "", false, alwaysFound, versionLookup, func([]string) (string, error) {
 		return "", chooserErr
 	})
 	requireDispatchExitCode(t, err, ExitTargetFailure)
 	if !errors.Is(err, chooserErr) {
 		t.Fatalf("chooser error was not preserved: %v", err)
+	}
+}
+
+func TestRandomEligibilitySkipsIncompatibleProvidersBeforeChoice(t *testing.T) {
+	cfg := dispatchTestConfig(AgentCodex, AgentClaude, AgentAntigravity)
+	lookups := map[string]int{}
+	versionLookup := func(_ string, agent string) (string, error) {
+		lookups[agent]++
+		if agent == AgentCodex {
+			return "0.0.1", nil
+		}
+		if agent == AgentAntigravity {
+			return "", errors.New("unreadable version")
+		}
+		return "999.0.0", nil
+	}
+	selected, err := chooseRandomTarget(cfg, "", "", false, alwaysFound, versionLookup, func(pool []string) (string, error) {
+		if got := strings.Join(pool, ","); got != AgentClaude {
+			return "", fmt.Errorf("pool = %q, want %q", got, AgentClaude)
+		}
+		return AgentClaude, nil
+	})
+	if err != nil {
+		t.Fatalf("chooseRandomTarget: %v", err)
+	}
+	if selected.Target.Name != AgentClaude || selected.InstalledVersion != "999.0.0" {
+		t.Fatalf("selected target = %#v", selected)
+	}
+	for _, agent := range []string{AgentCodex, AgentClaude, AgentAntigravity} {
+		if lookups[agent] != 1 {
+			t.Fatalf("version lookups[%s] = %d, want 1", agent, lookups[agent])
+		}
+	}
+}
+
+func TestBuildOptionsResolvesEachProviderBinaryOnce(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	lookups := map[string]int{}
+	_, err := BuildOptions(OptionsRequest{
+		Root: root,
+		Env:  []string{},
+		LookPath: func(binary string) (string, error) {
+			lookups[binary]++
+			return "/mock/" + binary, nil
+		},
+		VersionLookup: func(_ string, agent string) (string, error) {
+			return supportedProviderVersions[agent], nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildOptions: %v", err)
+	}
+	for _, target := range targetRegistry() {
+		binary := target.Binary
+		if lookups[binary] != 1 {
+			t.Fatalf("LookPath(%q) calls = %d, want 1", binary, lookups[binary])
+		}
 	}
 }
 

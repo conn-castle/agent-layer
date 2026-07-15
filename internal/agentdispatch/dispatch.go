@@ -36,7 +36,7 @@ func Run(opts RunOptions) error {
 	if err != nil {
 		return err
 	}
-	target, version, prompt, err := prepareFresh(project, resolved.Target, opts)
+	target, version, prompt, err := prepareFresh(project, resolved, opts)
 	if err != nil {
 		return err
 	}
@@ -322,24 +322,38 @@ func executeDispatch(request dispatchExecution) error {
 				request.Run.Record.ProviderLogPath = ""
 			}
 		}
-		now := time.Now().UTC()
-		request.Run.Record.State = dispatchStateCompleted
-		if result.NotResumable {
-			request.Run.Record.RecoveryState = recoveryNotResumable
-		} else {
-			request.Run.Record.RecoveryState = recoveryResumeRequired
-		}
-		request.Run.Record.CompletedAt = &now
-		request.Run.Record.ProviderSessionID = session.ProviderSessionID
-		if err := writeRunRecord(request.Run.Dir, &request.Run.Record); err != nil {
-			return err
-		}
-		if err := releaseConversation(request.Root, session.Name, request.Run.Record.ID); err != nil {
-			return err
-		}
-		return replayAnswer(request.Run.Record.AnswerPath, request.Stdout)
+		return completeDispatchSuccess(request, result, session)
 	}
 	return finishDispatchFailure(request, exitError(ExitTargetFailure, "dispatch retry exhausted"))
+}
+
+func completeDispatchSuccess(request dispatchExecution, result executionResult, session Session) error {
+	if err := writeBytesAtomic(request.Run.Record.AnswerPath, []byte(result.Answer), 0o600); err != nil {
+		return finishDispatchFailure(request, wrapExitError(ExitConfig, "publish dispatch terminal answer", err))
+	}
+	now := time.Now().UTC()
+	request.Run.Record.State = dispatchStateCompleted
+	if result.NotResumable {
+		request.Run.Record.RecoveryState = recoveryNotResumable
+	} else {
+		request.Run.Record.RecoveryState = recoveryResumeRequired
+	}
+	request.Run.Record.CompletedAt = &now
+	request.Run.Record.ProviderSessionID = session.ProviderSessionID
+	if err := writeRunRecord(request.Run.Dir, &request.Run.Record); err != nil {
+		cause := err
+		if removeErr := os.Remove(request.Run.Record.AnswerPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			cause = wrapExitError(ExitConfig, "retract dispatch answer after terminal record failure", errors.Join(err, removeErr))
+		}
+		return finishDispatchFailure(request, cause)
+	}
+	if err := releaseConversation(request.Root, session.Name, request.Run.Record.ID); err != nil {
+		// The completed run record is authoritative and claimConversation can
+		// replace a stale claim that points at a terminal run. Surface cleanup
+		// failure without turning a completed provider turn into a failed child.
+		_, _ = fmt.Fprintf(request.Stderr, "warning: dispatch run %s completed but active claim cleanup failed: %v\n", request.Run.Record.ID, err)
+	}
+	return replayAnswer(request.Run.Record.AnswerPath, request.Stdout)
 }
 
 func finishDispatchFailure(request dispatchExecution, cause error) error {
@@ -442,7 +456,8 @@ func checkDispatchDepth(cfg config.Config, depth int) error {
 	return nil
 }
 
-func prepareFresh(project *config.ProjectConfig, target targetMeta, opts RunOptions) (targetMeta, string, []byte, error) {
+func prepareFresh(project *config.ProjectConfig, resolved resolution, opts RunOptions) (targetMeta, string, []byte, error) {
+	target := resolved.Target
 	if strings.TrimSpace(opts.Model) != "" && !agentoptions.Supports(target.Name, agentoptions.KindModel) {
 		return targetMeta{}, "", nil, exitError(ExitUsage, fmt.Sprintf("%s does not support --model", target.Name))
 	}
@@ -452,17 +467,20 @@ func prepareFresh(project *config.ProjectConfig, target targetMeta, opts RunOpti
 	if !targetEnabled(project.Config, target.Name) {
 		return targetMeta{}, "", nil, exitError(ExitConfig, fmt.Sprintf("`al dispatch` target %s is disabled in config", target.Name))
 	}
-	lookPath := opts.LookPath
-	if lookPath == nil {
-		lookPath = exec.LookPath
-	}
-	path, err := lookPath(target.Binary)
-	if err != nil {
-		return targetMeta{}, "", nil, exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target.Name, target.Binary))
-	}
-	target, version, err := compatibleTargetVersionCached(project.Root, path, target, opts.VersionLookup)
-	if err != nil {
-		return targetMeta{}, "", nil, err
+	version := resolved.Version
+	if version == "" {
+		lookPath := opts.LookPath
+		if lookPath == nil {
+			lookPath = exec.LookPath
+		}
+		path, err := lookPath(target.Binary)
+		if err != nil {
+			return targetMeta{}, "", nil, exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target.Name, target.Binary))
+		}
+		target, version, err = compatibleTargetVersionCached(project.Root, path, target, opts.VersionLookup)
+		if err != nil {
+			return targetMeta{}, "", nil, err
+		}
 	}
 	promptText, err := ResolvePrompt(opts.PromptArgs, opts.Stdin, opts.ReadStdin)
 	if err != nil {

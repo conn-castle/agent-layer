@@ -324,6 +324,12 @@ func TestRunRandomExcludesCallerAndExecutesCodex(t *testing.T) {
 	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
+	pathLookups := map[string]int{}
+	versionLookups := map[string]int{}
+	lookPath := mockLookPath(binDir)
+	codexTarget, _ := lookupTarget(AgentCodex)
+	claudeTarget, _ := lookupTarget(AgentClaude)
+	antigravityTarget, _ := lookupTarget(AgentAntigravity)
 	err := Run(RunOptions{
 		Root:       root,
 		Agent:      AgentRandom,
@@ -331,7 +337,14 @@ func TestRunRandomExcludesCallerAndExecutesCodex(t *testing.T) {
 		Env:        env,
 		Stdout:     &stdout,
 		Stderr:     &stderr,
-		LookPath:   mockLookPath(binDir),
+		LookPath: func(binary string) (string, error) {
+			pathLookups[binary]++
+			return lookPath(binary)
+		},
+		VersionLookup: func(_ string, agent string) (string, error) {
+			versionLookups[agent]++
+			return supportedProviderVersions[agent], nil
+		},
 		ChooseRandom: func(pool []string) (string, error) {
 			if strings.Join(pool, ",") != "codex,antigravity" {
 				return "", fmt.Errorf("pool = %v", pool)
@@ -344,6 +357,12 @@ func TestRunRandomExcludesCallerAndExecutesCodex(t *testing.T) {
 	}
 	if stdout.String() != "codex ok" {
 		t.Fatalf("stdout = %q", stdout.String())
+	}
+	if pathLookups[codexTarget.Binary] != 1 || pathLookups[antigravityTarget.Binary] != 1 || pathLookups[claudeTarget.Binary] != 0 {
+		t.Fatalf("random preflight path lookups = %#v, want one per non-caller candidate", pathLookups)
+	}
+	if versionLookups[AgentCodex] != 1 || versionLookups[AgentAntigravity] != 1 || versionLookups[AgentClaude] != 0 {
+		t.Fatalf("random preflight version lookups = %#v, want one per installed non-caller candidate", versionLookups)
 	}
 	if !strings.Contains(stderr.String(), "] codex · fresh") {
 		t.Fatalf("expected dispatch identity, got %q", stderr.String())

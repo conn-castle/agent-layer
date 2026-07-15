@@ -12,8 +12,9 @@ import (
 )
 
 type resolution struct {
-	Target targetMeta
-	Notice string
+	Target  targetMeta
+	Version string
+	Notice  string
 }
 
 func resolveTarget(cfg config.Config, req RunOptions, caller string, callerKnown bool) (resolution, error) {
@@ -28,14 +29,14 @@ func resolveTarget(cfg config.Config, req RunOptions, caller string, callerKnown
 		requested = dispatchDefaultForCaller(cfg, caller)
 	}
 	if requested == AgentRandom {
-		selected, err := chooseRandomTarget(cfg, caller, callerKnown, req.LookPath, req.ChooseRandom)
+		selected, err := chooseRandomTarget(cfg, req.Root, caller, callerKnown, req.LookPath, req.VersionLookup, req.ChooseRandom)
 		if err != nil {
 			return resolution{}, err
 		}
-		target, _ := lookupTarget(selected)
 		return resolution{
-			Target: target,
-			Notice: fmt.Sprintf(messages.DispatchTargetRandomFmt, selected),
+			Target:  selected.Target,
+			Version: selected.InstalledVersion,
+			Notice:  fmt.Sprintf(messages.DispatchTargetRandomFmt, selected.Target.Name),
 		}, nil
 	}
 	target, ok := lookupTarget(requested)
@@ -49,11 +50,20 @@ func resolveTarget(cfg config.Config, req RunOptions, caller string, callerKnown
 	return resolved, nil
 }
 
-func chooseRandomTarget(cfg config.Config, caller string, callerKnown bool, lookPath func(string) (string, error), chooser RandomChooser) (string, error) {
+func chooseRandomTarget(cfg config.Config, root string, caller string, callerKnown bool, lookPath func(string) (string, error), versionLookup func(string, string) (string, error), chooser RandomChooser) (targetDiscovery, error) {
 	if lookPath == nil {
 		lookPath = exec.LookPath
 	}
-	var pool []string
+	pool := make([]string, 0, len(targetRegistry()))
+	discovered := make(map[string]targetDiscovery, len(targetRegistry()))
+	discoverVersion := func(path string, target targetMeta) (string, string, error) {
+		_, installed, err := compatibleTargetVersionCached(root, path, target, versionLookup)
+		if err != nil {
+			return "", "", err
+		}
+		warning, err := providerVersionCompatibility(target.Name, installed)
+		return installed, warning, err
+	}
 	for _, target := range targetRegistry() {
 		if callerKnown && target.Name == caller {
 			continue
@@ -61,25 +71,26 @@ func chooseRandomTarget(cfg config.Config, caller string, callerKnown bool, look
 		if !targetEnabled(cfg, target.Name) {
 			continue
 		}
-		if _, err := lookPath(target.Binary); err != nil {
-			continue
+		facts := discoverTarget(cfg, target, caller, callerKnown, lookPath, discoverVersion)
+		if facts.RandomEligible {
+			pool = append(pool, target.Name)
+			discovered[target.Name] = facts
 		}
-		pool = append(pool, target.Name)
 	}
 	if len(pool) == 0 {
-		return "", exitError(ExitUnavailable, messages.DispatchEmptyRandomPool)
+		return targetDiscovery{}, exitError(ExitUnavailable, messages.DispatchEmptyRandomPool)
 	}
 	if chooser == nil {
 		chooser = defaultRandomChooser
 	}
 	selected, err := chooser(pool)
 	if err != nil {
-		return "", wrapExitError(ExitTargetFailure, fmt.Sprintf(messages.DispatchInternalErrorFmt, err), err)
+		return targetDiscovery{}, wrapExitError(ExitTargetFailure, fmt.Sprintf(messages.DispatchInternalErrorFmt, err), err)
 	}
 	normalized := normalizeAgent(selected)
 	if _, ok := lookupTarget(normalized); !ok {
 		invalidErr := fmt.Errorf("random chooser returned invalid target %q", selected)
-		return "", wrapExitError(ExitTargetFailure, fmt.Sprintf(messages.DispatchInternalErrorFmt, invalidErr), invalidErr)
+		return targetDiscovery{}, wrapExitError(ExitTargetFailure, fmt.Sprintf(messages.DispatchInternalErrorFmt, invalidErr), invalidErr)
 	}
 	// A custom chooser must stay inside the pool the resolver computed so
 	// it can't bypass caller-exclusion or availability constraints by
@@ -93,9 +104,9 @@ func chooseRandomTarget(cfg config.Config, caller string, callerKnown bool, look
 	}
 	if !inPool {
 		ineligibleErr := fmt.Errorf("random chooser returned target %q which is not in the eligible pool", selected)
-		return "", wrapExitError(ExitTargetFailure, fmt.Sprintf(messages.DispatchInternalErrorFmt, ineligibleErr), ineligibleErr)
+		return targetDiscovery{}, wrapExitError(ExitTargetFailure, fmt.Sprintf(messages.DispatchInternalErrorFmt, ineligibleErr), ineligibleErr)
 	}
-	return normalized, nil
+	return discovered[normalized], nil
 }
 
 func defaultRandomChooser(pool []string) (string, error) {

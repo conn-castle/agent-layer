@@ -27,6 +27,18 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-07-15 dispatch-provider-sigterm-no-escalation: Provider shutdown can hang after cancellation or internal failure
+    Priority: High. Area: internal/agentdispatch runner and runtime helpers
+    Description: Dispatch sends SIGTERM after caller signals, cancellation, reducer failure, or capture failure, but a provider or descendant that ignores SIGTERM can keep the pipes and Wait blocked indefinitely while the owned process group remains alive.
+    Next step: Choose whether shutdown escalates to SIGKILL after a fixed grace period or remains indefinitely graceful/user-driven, then encode the policy in one process-group terminator.
+    Notes: Requires a user-owned cancellation/cleanup policy; do not weaken process identity or group ownership checks.
+
+- Issue 2026-07-15 dispatch-antigravity-log-runtime-unbounded: Antigravity log can exceed the capture budget while the provider runs
+    Priority: High. Area: internal/agentdispatch provider execution and Antigravity diagnostics
+    Description: stdout/stderr/events are write-bounded, but agy writes its log directly for up to 24 hours; the runner checks size only after exit, so a faulty provider can consume unbounded disk and the rejected oversized artifact remains over the 64 MiB retained-data contract.
+    Next step: Choose a supported bounded-write mechanism for the provider-owned log (for example a validated FIFO capture) without adding polling or constraining unrelated provider file writes.
+    Notes: Post-exit truncation does not prevent runtime disk exhaustion; shell-level file-size limits affect unrelated provider outputs.
+
 - Issue 2026-07-13 corrupt-run-record-blocks-delete-cancel: A corrupt run record leaves its mapping undeletable and uncancellable
     Priority: Low. Area: internal/agentdispatch/operations.go (Delete, Cancel) + state.go retention
     Description: Delete and Cancel deliberately fail loud on a corrupt referenced run record (tested behavior consistent with the retention stance of never hiding corrupt evidence), so the only recovery is manual removal of the run directory; history already skips-and-warns, but the mapping stays blocked and retention never expires nonterminal corrupt records.

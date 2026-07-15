@@ -78,6 +78,7 @@ type executionResult struct {
 	Complete     bool
 	AnswerSeen   bool
 	NotResumable bool
+	Answer       string
 }
 
 func executeProvider(
@@ -312,8 +313,14 @@ func executeProvider(
 			return executionResult{}, exitError(ExitTargetFailure, fmt.Sprintf("Antigravity provider log exceeded the remaining %d byte dispatch capture budget", remaining))
 		}
 	}
-	if command.Provider == AgentAntigravity && antigravityTimeoutReported(run.Record.StderrPath, command.LogPath) {
-		return executionResult{}, exitError(ExitTargetFailure, "antigravity reported terminal failure: Error: timeout waiting for response")
+	if command.Provider == AgentAntigravity {
+		timedOut, err := antigravityTimeoutReported(run.Record.StderrPath, command.LogPath)
+		if err != nil {
+			return executionResult{}, wrapExitError(ExitTargetFailure, "inspect Antigravity terminal diagnostics", err)
+		}
+		if timedOut {
+			return executionResult{}, exitError(ExitTargetFailure, "antigravity reported terminal failure: Error: timeout waiting for response")
+		}
 	}
 	if command.Structured && (!result.Complete || !result.AnswerSeen || result.SessionID == "") {
 		return executionResult{}, exitError(ExitTargetFailure, fmt.Sprintf("%s dispatch completed without required terminal result, session ID, and final answer", command.Provider))
@@ -324,23 +331,21 @@ func executeProvider(
 	resultMu.Lock()
 	terminalAnswer := answerCandidate
 	resultMu.Unlock()
-	if err := writeBytesAtomic(run.Record.AnswerPath, []byte(terminalAnswer), 0o600); err != nil {
-		return executionResult{}, wrapExitError(ExitConfig, "publish dispatch terminal answer", err)
-	}
+	result.Answer = terminalAnswer
 	return result, nil
 }
 
-func antigravityTimeoutReported(stderrPath string, logPath string) bool {
+func antigravityTimeoutReported(stderrPath string, logPath string) (bool, error) {
 	for _, path := range []string{stderrPath, logPath} {
 		data, err := os.ReadFile(path) // #nosec G304 -- paths are in the active isolated run.
 		if err != nil {
-			continue
+			return false, fmt.Errorf("read %s: %w", path, err)
 		}
 		if bytes.Contains(data, []byte("Error: timeout waiting for response")) {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 func replayAnswer(path string, stdout io.Writer) error {

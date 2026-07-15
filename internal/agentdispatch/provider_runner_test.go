@@ -178,6 +178,10 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 	if err != nil || len(flatEvents) != 1 || flatEvents[0].Answer != "compatible answer" {
 		t.Fatalf("Codex flat compatibility events = %#v, %v", flatEvents, err)
 	}
+	failureEvents, err := reduceStructuredEvent(AgentCodex, "", []byte(`{"type":"turn.failed","error":{"message":"model quota exhausted"}}`))
+	if err != nil || len(failureEvents) != 1 || failureEvents[0].Kind != eventFailure || failureEvents[0].Reason != "model quota exhausted" {
+		t.Fatalf("Codex nested failure events = %#v, %v", failureEvents, err)
+	}
 	var raw bytes.Buffer
 	if err := readStructuredEvents(strings.NewReader("not-json\n"), &raw, AgentCodex, "", func(providerEvent) error { return nil }); err == nil {
 		t.Fatal("invalid provider JSON was accepted")
@@ -191,6 +195,14 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 	}
 	if raw.String() != "\n  \n" {
 		t.Fatalf("blank raw evidence = %q", raw.String())
+	}
+	raw.Reset()
+	oversized := bytes.Repeat([]byte("x"), maxStructuredEventBytes+1)
+	if err := readStructuredEvents(bytes.NewReader(oversized), &raw, AgentCodex, "", func(providerEvent) error { return nil }); err == nil {
+		t.Fatal("oversized provider event was accepted")
+	}
+	if !bytes.Equal(raw.Bytes(), oversized) {
+		t.Fatalf("oversized raw evidence retained %d bytes, want %d", raw.Len(), len(oversized))
 	}
 }
 
@@ -214,6 +226,12 @@ func TestRunnerBuffersOnlyCompletedAnswer(t *testing.T) {
 	})
 	if err != nil || !result.Complete || !result.AnswerSeen || persisted != runtimeSessionID {
 		t.Fatalf("success result=%#v err=%v persisted=%q", result, err, persisted)
+	}
+	if result.Answer != "answer" {
+		t.Fatalf("terminal answer candidate = %q", result.Answer)
+	}
+	if _, statErr := os.Stat(successfulRun.Record.AnswerPath); !os.IsNotExist(statErr) {
+		t.Fatalf("runner published answer before provider-specific terminal validation: %v", statErr)
 	}
 
 	incompleteRun, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], "fresh")
@@ -246,6 +264,14 @@ func TestAntigravityLogIDIsStrictAndVersionGateFailsLoudly(t *testing.T) {
 	id, err := antigravitySessionID(logPath)
 	if err != nil || id != "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" {
 		t.Fatalf("Antigravity ID = %q, %v", id, err)
+	}
+	conflicting := "Created conversation AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA\n" +
+		"Print mode: conversation=BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB, sending message\n"
+	if err := os.WriteFile(logPath, []byte(conflicting), 0o600); err != nil {
+		t.Fatalf("write conflicting log: %v", err)
+	}
+	if id, err := antigravitySessionID(logPath); err == nil || id != "" {
+		t.Fatalf("conflicting Antigravity IDs = %q, %v", id, err)
 	}
 	_, err = requireSupportedVersion("ignored", AgentCodex, func(string, string) (string, error) { return "0.1.0", nil })
 	requireDispatchExitCode(t, err, ExitUnavailable)
