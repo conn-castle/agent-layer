@@ -269,15 +269,26 @@ func captureProcessStderr(t *testing.T, fn func()) string {
 		_ = reader.Close()
 		_ = writer.Close()
 	}()
+	readDone := make(chan struct {
+		captured []byte
+		err      error
+	}, 1)
+	go func() {
+		captured, readErr := io.ReadAll(reader)
+		readDone <- struct {
+			captured []byte
+			err      error
+		}{captured: captured, err: readErr}
+	}()
 
 	fn()
+	os.Stderr = original
 	if err := writer.Close(); err != nil {
 		t.Fatalf("close stderr writer: %v", err)
 	}
-	os.Stderr = original
-	captured, err := io.ReadAll(reader)
-	if err != nil {
-		t.Fatalf("read process stderr: %v", err)
+	result := <-readDone
+	if result.err != nil {
+		t.Fatalf("read process stderr: %v", result.err)
 	}
-	return string(captured)
+	return string(result.captured)
 }

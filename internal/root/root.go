@@ -17,11 +17,22 @@ const (
 // FindAgentLayerRoot walks upward from start until it finds a directory containing .agent-layer/.
 // It returns the root path, whether it was found, and any error encountered.
 func FindAgentLayerRoot(start string) (string, bool, error) {
-	resolved, err := resolveStartPath(start)
+	logical, physical, err := resolveStartPaths(start)
 	if err != nil {
 		return "", false, err
 	}
-	return findAgentLayerRoot(resolved)
+	for _, candidate := range distinctStartPaths(logical, physical) {
+		root, found, err := findAgentLayerRoot(candidate)
+		if err != nil || !found {
+			if err != nil {
+				return "", false, err
+			}
+			continue
+		}
+		resolved, err := resolveFoundRoot(start, root)
+		return resolved, true, err
+	}
+	return "", false, nil
 }
 
 func findAgentLayerRoot(start string) (string, bool, error) {
@@ -50,48 +61,81 @@ func findAgentLayerRoot(start string) (string, bool, error) {
 // FindRepoRoot returns the repo root for initialization.
 // It prefers an existing .agent-layer directory, then a .git directory or file, and falls back to start.
 func FindRepoRoot(start string) (string, error) {
-	resolved, err := resolveStartPath(start)
+	logical, physical, err := resolveStartPaths(start)
 	if err != nil {
 		return "", err
 	}
+	starts := distinctStartPaths(logical, physical)
 
-	if root, found, err := findAgentLayerRoot(resolved); err != nil {
-		return "", err
-	} else if found {
-		return root, nil
+	for _, candidate := range starts {
+		root, found, err := findAgentLayerRoot(candidate)
+		if err != nil {
+			return "", err
+		}
+		if found {
+			return resolveFoundRoot(start, root)
+		}
 	}
 
-	dir := resolved
+	for _, candidate := range starts {
+		root, found, err := findGitRoot(candidate)
+		if err != nil {
+			return "", err
+		}
+		if found {
+			return resolveFoundRoot(start, root)
+		}
+	}
+	return physical, nil
+}
+
+func findGitRoot(start string) (string, bool, error) {
+	dir := start
 	for {
 		candidate := filepath.Join(dir, gitDir)
 		info, err := os.Stat(candidate)
 		if err == nil {
 			if info.IsDir() || info.Mode().IsRegular() {
-				return dir, nil
+				return dir, true, nil
 			}
-			return "", fmt.Errorf(messages.RootPathNotDirOrFileFmt, candidate)
+			return "", false, fmt.Errorf(messages.RootPathNotDirOrFileFmt, candidate)
 		}
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return "", fmt.Errorf(messages.RootCheckPathFmt, candidate, err)
+			return "", false, fmt.Errorf(messages.RootCheckPathFmt, candidate, err)
 		}
 
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return resolved, nil
+			return "", false, nil
 		}
 		dir = parent
 	}
 }
 
-func resolveStartPath(start string) (string, error) {
+func resolveStartPaths(start string) (string, string, error) {
 	if start == "" {
-		return "", fmt.Errorf(messages.RootStartPathRequired)
+		return "", "", fmt.Errorf(messages.RootStartPathRequired)
 	}
 	abs, err := filepath.Abs(start)
 	if err != nil {
-		return "", fmt.Errorf(messages.RootResolvePathFmt, start, err)
+		return "", "", fmt.Errorf(messages.RootResolvePathFmt, start, err)
 	}
 	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", "", fmt.Errorf(messages.RootResolvePathFmt, start, err)
+	}
+	return abs, resolved, nil
+}
+
+func distinctStartPaths(logical string, physical string) []string {
+	if logical == physical {
+		return []string{logical}
+	}
+	return []string{logical, physical}
+}
+
+func resolveFoundRoot(start string, root string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return "", fmt.Errorf(messages.RootResolvePathFmt, start, err)
 	}

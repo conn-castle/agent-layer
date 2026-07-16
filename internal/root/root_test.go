@@ -62,6 +62,29 @@ func TestFindAgentLayerRootResolvesSymlinkedDescendant(t *testing.T) {
 	}
 }
 
+func TestFindAgentLayerRootPreservesLogicalAncestorOfSymlinkedSubdirectory(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repo, ".agent-layer"), 0o700); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	target := t.TempDir()
+	linkedSubdirectory := filepath.Join(repo, "service")
+	if err := os.Symlink(target, linkedSubdirectory); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	got, found, err := FindAgentLayerRoot(linkedSubdirectory)
+	if err != nil {
+		t.Fatalf("FindAgentLayerRoot error: %v", err)
+	}
+	if !found {
+		t.Fatal("expected logical repository root above symlinked subdirectory")
+	}
+	if want := resolvedTestPath(t, repo); got != want {
+		t.Fatalf("expected logical ancestor root %s, got %s", want, got)
+	}
+}
+
 func TestFindAgentLayerRootMissing(t *testing.T) {
 	root := t.TempDir()
 	got, found, err := FindAgentLayerRoot(root)
@@ -150,6 +173,26 @@ func TestFindRepoRootResolvesSymlinkedDescendant(t *testing.T) {
 	want := resolvedTestPath(t, repo)
 	if got != want {
 		t.Fatalf("expected real Git root %s, got %s", want, got)
+	}
+}
+
+func TestFindRepoRootPreservesLogicalGitAncestorOfSymlinkedSubdirectory(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repo, ".git"), 0o700); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	target := t.TempDir()
+	linkedSubdirectory := filepath.Join(repo, "service")
+	if err := os.Symlink(target, linkedSubdirectory); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	got, err := FindRepoRoot(linkedSubdirectory)
+	if err != nil {
+		t.Fatalf("FindRepoRoot error: %v", err)
+	}
+	if want := resolvedTestPath(t, repo); got != want {
+		t.Fatalf("expected logical Git ancestor %s, got %s", want, got)
 	}
 }
 
