@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -25,7 +28,9 @@ var (
 )
 
 func main() {
-	runMain(os.Args, os.Stdout, os.Stderr, os.Exit)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	runMain(ctx, os.Args, os.Stdout, os.Stderr, os.Exit)
 }
 
 // SilentExitError reports an exit code without emitting error output.
@@ -38,7 +43,7 @@ func (e SilentExitError) Error() string {
 }
 
 // execute runs the CLI command with the provided args and output writers.
-func execute(args []string, stdout io.Writer, stderr io.Writer) error {
+func execute(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
 	cmd := newRootCmd()
 	cmd.Version = versionString()
 	cmd.SetVersionTemplate(messages.VersionTemplate)
@@ -47,11 +52,11 @@ func execute(args []string, stdout io.Writer, stderr io.Writer) error {
 	}
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
-	return cmd.Execute()
+	return cmd.ExecuteContext(ctx)
 }
 
 // runMain handles version dispatch and executes the CLI, exiting on fatal errors.
-func runMain(args []string, stdout io.Writer, stderr io.Writer, exit func(int)) {
+func runMain(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer, exit func(int)) {
 	cwd, err := getwd()
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
@@ -68,7 +73,7 @@ func runMain(args []string, stdout io.Writer, stderr io.Writer, exit func(int)) 
 			return
 		}
 	}
-	if handleRunError(executeFunc(args, stdout, stderr), stderr, exit, false) {
+	if handleRunError(executeFunc(ctx, args, stdout, stderr), stderr, exit, false) {
 		return
 	}
 }

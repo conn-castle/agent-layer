@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/testutil"
@@ -255,6 +257,47 @@ func TestUpgradePrefetchCmd_DevBuildRequiresVersion(t *testing.T) {
 	}
 	if err.Error() != messages.UpgradePrefetchVersionRequired {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestUpgradeLeafCommands_RejectPositionalArgsBeforeRunE(t *testing.T) {
+	tests := []struct {
+		name string
+		cmd  func() *cobra.Command
+	}{
+		{
+			name: "plan",
+			cmd: func() *cobra.Command {
+				diffLines := install.DefaultDiffMaxLines
+				return newUpgradePlanCmd(&diffLines)
+			},
+		},
+		{
+			name: "repair-gitignore-block",
+			cmd:  newUpgradeRepairGitignoreBlockCmd,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := tt.cmd()
+			runECalled := false
+			cmd.RunE = func(*cobra.Command, []string) error {
+				runECalled = true
+				return errors.New("RunE executed")
+			}
+			cmd.SetArgs([]string{"unexpected"})
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+
+			err := cmd.Execute()
+			if err == nil || !strings.Contains(err.Error(), `unknown command "unexpected"`) {
+				t.Fatalf("Execute() error = %v, want Cobra positional argument error", err)
+			}
+			if runECalled {
+				t.Fatal("RunE executed after positional argument validation failed")
+			}
+		})
 	}
 }
 

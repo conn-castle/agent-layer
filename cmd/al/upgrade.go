@@ -181,6 +181,7 @@ func newUpgradeRepairGitignoreBlockCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   messages.UpgradeRepairGitignoreUse,
 		Short: messages.UpgradeRepairGitignoreShort,
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {
@@ -600,6 +601,7 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   messages.UpgradePlanUse,
 		Short: messages.UpgradePlanShort,
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if diffLines == nil {
 				return fmt.Errorf(messages.UpgradeDiffLinesInvalidFmt, 0)
