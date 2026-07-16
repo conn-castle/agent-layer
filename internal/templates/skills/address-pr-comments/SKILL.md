@@ -13,28 +13,26 @@ Resolve pull-request comments through one durable ledger.
 ## Inputs
 
 Accept a PR number/URL, ledger, comment IDs, comments, or priorities; default to
-the current branch's PR. Create
-`.agent-layer/tmp/address-pr-comments-<pr-number>-ledger.md` when needed. Never
-stage, commit, push, post, or call reply APIs; return uncommitted fixes and the
-ledger.
+the current branch's PR. Use
+`.agent-layer/tmp/ship-pr-comments-<pr-number>.md` when no ledger is supplied.
+Never create a second ledger for the same PR. Never stage, commit, push, post,
+or call reply APIs; return uncommitted fixes and the ledger.
 
 ## Ledger contract
 
-Create one row per conversation comment, inline comment, or review body using
-`conversation:<id-or-url>`, `review:<id>`, or `review-body:<id>`:
+Keep one row per conversation comment, inline comment, or review body using a
+stable comment ID or URL:
 
-| Comment key | Location | Decision | State | Reply URL or ID | Reply audit | Notes |
-| --- | --- | --- | --- | --- | --- | --- |
+| Comment | Decision | Notes | Reply | Status |
+| --- | --- | --- | --- | --- |
 
-Decisions are `fix`, `disagree`, `defer`, or `excluded`. Notes hold evidence,
-fix/check results, trackers, and reply drafts. A verdict reply supports its
-parent unless it adds a request.
-
-Local states are `fixed_uncommitted`, `ready_to_reply`,
-`blocked_user_decision`, or `excluded`; publishing may later set
-`reply_posted_pending_audit` or `complete`. Completion requires fresh reply
-evidence, a passing audit, and every claimed fix/tracker. `Reply audit` is
-`not-run`, `pass`, or a failure reason. Explain exclusions.
+Use decisions `fix`, `disagree`, `defer`, or `excluded`. Keep each row
+self-supporting: in `Notes`, briefly record the reason for the decision and any
+relevant change, check result, tracker, or exclusion reason. Keep the proposed
+reply—or the posted reply URL or ID—in `Reply`. Do not copy full analysis or
+command output into the ledger. Use plain status text to show what remains, such
+as `fixing`, `ready to reply`, `blocked`, `complete`, or `excluded`. Mark a row
+`complete` only after fresh GitHub data confirms its supported reply.
 
 ## Workflow
 
@@ -53,7 +51,7 @@ independent work before escalating under repository rules.
 
 Repair accepted root causes and required tests/docs/memory; group coupled work
 and run focused checks. Track deferrals locally, without external issue creation
-unless authorized. Preserve caller-owned reply/audit state unless fresh evidence
+unless authorized. Preserve caller-owned reply status unless fresh evidence
 supersedes it.
 
 Prepare one reply per non-excluded, unblocked row:
@@ -62,6 +60,6 @@ Prepare one reply per non-excluded, unblocked row:
 - **No change — `<reason>`.** Give evidence.
 - **Deferred — tracked in `<location>`.** Explain the boundary.
 
-Finish when every row has a supported decision and local terminal state. Return
-the ledger, counts, fixes/checks, trackers, pending replies, blockers, and
-confirmation that nothing was published.
+Finish when every row has a supported disposition and no unblocked local work
+remains. Return the ledger, counts, fixes/checks, trackers, pending replies,
+blockers, and confirmation that nothing was published.

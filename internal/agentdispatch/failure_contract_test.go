@@ -136,6 +136,18 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 	if timedOut, readErr := antigravityTimeoutReported(timeoutRun.Record.StderrPath, filepath.Join(root, "missing-log")); readErr == nil || timedOut {
 		t.Fatalf("timeout stderr with missing Antigravity log = timedOut %t, error %v", timedOut, readErr)
 	}
+	boundaryLog := filepath.Join(root, "boundary-timeout.log")
+	boundaryStderr := filepath.Join(root, "boundary-stderr.log")
+	boundaryDiagnostic := strings.Repeat("x", 64*1024-10) + "Error: timeout waiting for response"
+	if err := os.WriteFile(boundaryStderr, nil, 0o600); err != nil {
+		t.Fatalf("write boundary stderr: %v", err)
+	}
+	if err := os.WriteFile(boundaryLog, []byte(boundaryDiagnostic), 0o600); err != nil {
+		t.Fatalf("write boundary timeout log: %v", err)
+	}
+	if timedOut, readErr := antigravityTimeoutReported(boundaryStderr, boundaryLog); readErr != nil || !timedOut {
+		t.Fatalf("boundary-spanning Antigravity timeout = timedOut %t, error %v", timedOut, readErr)
+	}
 
 	if err := replayAnswer(filepath.Join(root, "missing-answer"), io.Discard); err == nil {
 		t.Fatal("replayAnswer accepted a missing capture")
@@ -144,27 +156,20 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 	}
 }
 
-func TestCaptureLimitsPreventPartialPublication(t *testing.T) {
-	budget := &captureBudget{max: 3}
-	if err := budget.reserve(2); err != nil {
-		t.Fatalf("reserve within budget: %v", err)
-	}
-	if err := budget.reserve(2); err == nil {
-		t.Fatal("aggregate capture budget accepted overflow")
-	}
-
+func TestCaptureWriterPreservesProviderOutput(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "answer")
-	writer, err := newLimitedWriter(path, 3, nil)
+	writer, err := newCaptureWriter(path)
 	if err != nil {
 		t.Fatalf("new writer: %v", err)
 	}
-	if _, err := writer.Write([]byte("abc")); err != nil {
-		t.Fatalf("write within limit: %v", err)
-	}
-	if _, err := writer.Write([]byte("x")); err == nil {
-		t.Fatal("answer capture accepted overflow")
+	if _, err := writer.Write([]byte("provider output")); err != nil {
+		t.Fatalf("write capture: %v", err)
 	}
 	if err := writer.Close(); err != nil {
 		t.Fatalf("close writer: %v", err)
+	}
+	data, err := os.ReadFile(path) // #nosec G304 -- test-owned path.
+	if err != nil || string(data) != "provider output" {
+		t.Fatalf("capture = %q, %v", data, err)
 	}
 }

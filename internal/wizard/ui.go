@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/huh"
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/terminal"
@@ -88,7 +88,7 @@ func wizardKeyMap() *huh.KeyMap {
 // hintField wraps a huh.Field so that the Prev ("esc"/"back") and Next
 // ("ctrl+c"/"exit") hint bindings remain visible in the help bar.
 //
-// huh's UpdateFieldPositions (called on every KeyMsg and during NewForm)
+// huh's UpdateFieldPositions (called on every KeyPressMsg and during NewForm)
 // calls WithPosition on each field, which disables Prev for the first field
 // and Next for the last field.  Since every wizard form has a single field,
 // both are always disabled.  This wrapper intercepts WithPosition and
@@ -100,7 +100,7 @@ type hintField struct {
 
 // Update delegates to the inner field and re-wraps so the wrapper stays in
 // the group's field list (group.Update stores the returned tea.Model).
-func (f *hintField) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (f *hintField) Update(msg tea.Msg) (huh.Model, tea.Cmd) {
 	model, cmd := f.Field.Update(msg)
 	if field, ok := model.(huh.Field); ok {
 		f.Field = field
@@ -122,8 +122,8 @@ func (f *hintField) WithPosition(p huh.FieldPosition) huh.Field {
 //     external SIGINT) to QuitMsg so bubbletea takes the graceful shutdown
 //     path and the renderer properly clears the form output.
 //
-// In raw mode (normal bubbletea operation), keyboard Ctrl+C arrives as
-// tea.KeyMsg{Type: KeyCtrlC} — NOT as an OS signal. The KeyMsg fires
+// In raw mode (normal bubbletea operation), keyboard Ctrl+C arrives as a
+// tea.KeyPressMsg with the Ctrl modifier — NOT as an OS signal. The key message fires
 // before InterruptMsg, so the flag is already set when the abort completes.
 // Esc produces KeyEscape (no flag set), so the abort maps to back.
 //
@@ -133,7 +133,7 @@ func (f *hintField) WithPosition(p huh.FieldPosition) huh.Field {
 // session is not a realistic scenario.
 func (ui *HuhUI) formFilter() func(tea.Model, tea.Msg) tea.Msg {
 	return func(_ tea.Model, msg tea.Msg) tea.Msg {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.Type == tea.KeyCtrlC {
+		if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.Code == 'c' && keyMsg.Mod == tea.ModCtrl {
 			ui.ctrlCAbort = true
 		}
 		if _, ok := msg.(tea.InterruptMsg); ok {
@@ -154,7 +154,6 @@ func (ui *HuhUI) runForm(form *huh.Form) error {
 	form.WithKeyMap(wizardKeyMap())
 	form.WithProgramOptions(
 		tea.WithOutput(os.Stderr),
-		tea.WithReportFocus(),
 		tea.WithFilter(ui.formFilter()),
 	)
 

@@ -2,7 +2,6 @@ package agentdispatch
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -24,15 +23,13 @@ import (
 )
 
 const (
-	maxStructuredEventBytes = 1024 * 1024
-	maxAnswerBytes          = 16 * 1024 * 1024
-	maxCaptureBytes         = 64 * 1024 * 1024
-	dispatchModeFresh       = "fresh"
-	dispatchModeResume      = "resume"
-	statusUnknown           = "unknown"
-	processStatusAlive      = "alive"
-	processStatusDead       = "dead"
-	providerVersionTimeout  = 10 * time.Second
+	dispatchModeFresh      = "fresh"
+	dispatchModeResume     = "resume"
+	statusUnknown          = "unknown"
+	processStatusAlive     = "alive"
+	processStatusDead      = "dead"
+	providerVersionTimeout = 10 * time.Second
+	maxRetainedAnswerBytes = 256 * 1024 * 1024
 	// AntigravityPromptMaxBytes retains headroom below common ARG_MAX limits
 	// because Antigravity accepts print-mode prompts only as an argument.
 	AntigravityPromptMaxBytes = 100 * 1024
@@ -43,6 +40,7 @@ const (
 	// for Claude-managed background work; interactive Claude launches do not use it.
 	claudePrintBackgroundWaitCeilingEnv   = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
 	claudePrintBackgroundWaitCeilingValue = "0"
+	truncatedAnswerNotice                 = "\n\n[Agent Layer truncated this final answer after retaining 256 MiB. Resume the conversation and ask the agent to summarize the final answer in another turn.]\n"
 )
 
 var versionPattern = regexp.MustCompile(`\b(?:v)?(\d+\.\d+\.\d+)\b`)
@@ -83,7 +81,9 @@ const (
 	eventComplete = "complete"
 	eventFailure  = "failure"
 
-	codexAgentMessageType = "agent_message"
+	codexAgentMessageType  = "agent_message"
+	codexItemCompletedType = "item.completed"
+	invalidStructuredEvent = "invalid_structured_event"
 )
 
 var supportedProviderVersions = map[string]string{
@@ -302,12 +302,12 @@ func reduceClaudeEvent(expected string, value map[string]any) ([]providerEvent, 
 	if text, ok := claudeTextDeltaV013(value); ok && text != "" {
 		events = append(events, providerEvent{Kind: eventProgress, Activity: "text_delta"})
 	}
-	eventType, _ := value["type"].(string)
-	if eventType != "result" {
+	eventType, _ := value[jsonTypeKey].(string)
+	if eventType != jsonResultKey {
 		if len(events) == 0 && eventType != "" {
 			activity := eventType
 			if nested, ok := mapValueV013(value, "event"); ok {
-				if nestedType, _ := nested["type"].(string); nestedType != "" {
+				if nestedType, _ := nested[jsonTypeKey].(string); nestedType != "" {
 					activity = nestedType
 				}
 			}
@@ -316,7 +316,7 @@ func reduceClaudeEvent(expected string, value map[string]any) ([]providerEvent, 
 		return events, nil
 	}
 	if claudeResultIsErrorV013(value) {
-		reason, _ := value["result"].(string)
+		reason, _ := value[jsonResultKey].(string)
 		if reason == "" {
 			reason = "Claude reported a terminal failure"
 		}
@@ -326,7 +326,7 @@ func reduceClaudeEvent(expected string, value map[string]any) ([]providerEvent, 
 	if id == "" || id != expected {
 		return append(events, providerEvent{Kind: eventFailure, Reason: "Claude terminal result did not return the caller-assigned session ID"}), nil
 	}
-	answer, _ := value["result"].(string)
+	answer, _ := value[jsonResultKey].(string)
 	if answer == "" {
 		return append(events, providerEvent{Kind: eventFailure, Reason: "Claude terminal result did not contain a final answer"}), nil
 	}
@@ -335,7 +335,7 @@ func reduceClaudeEvent(expected string, value map[string]any) ([]providerEvent, 
 }
 
 func reduceCodexEvent(value map[string]any) ([]providerEvent, error) {
-	eventType, _ := value["type"].(string)
+	eventType, _ := value[jsonTypeKey].(string)
 	switch eventType {
 	case "thread.started":
 		id, _ := firstStringV013(value, "thread_id", "threadId", "id")
@@ -348,11 +348,11 @@ func reduceCodexEvent(value map[string]any) ([]providerEvent, error) {
 		return []providerEvent{{Kind: eventSession, SessionID: id}}, nil
 	case "turn.completed":
 		return []providerEvent{{Kind: eventComplete}}, nil
-	case "turn.failed", "turn.aborted", "error":
-		reason, _ := firstStringV013(value, "message", "reason", "error")
+	case "turn.failed", "turn.aborted", jsonErrorKey:
+		reason, _ := firstStringV013(value, jsonMessageKey, jsonReasonKey, jsonErrorKey)
 		if reason == "" {
-			if details, ok := mapValueV013(value, "error"); ok {
-				reason, _ = firstStringV013(details, "message", "reason")
+			if details, ok := mapValueV013(value, jsonErrorKey); ok {
+				reason, _ = firstStringV013(details, jsonMessageKey, jsonReasonKey)
 			}
 		}
 		if reason == "" {
@@ -360,13 +360,13 @@ func reduceCodexEvent(value map[string]any) ([]providerEvent, error) {
 		}
 		return []providerEvent{{Kind: eventFailure, Reason: reason}}, nil
 	case codexAgentMessageType:
-		if answer, ok := firstStringV013(value, "message", "text"); ok {
+		if answer, ok := firstStringV013(value, jsonMessageKey, jsonTextKey); ok {
 			return []providerEvent{{Kind: eventAnswer, Answer: answer}}, nil
 		}
-	case "item.completed":
+	case codexItemCompletedType:
 		if item, ok := mapValueV013(value, "item"); ok {
-			if itemType, _ := item["type"].(string); itemType == codexAgentMessageType {
-				if answer, found := firstStringV013(item, "message", "text"); found {
+			if itemType, _ := item[jsonTypeKey].(string); itemType == codexAgentMessageType {
+				if answer, found := firstStringV013(item, jsonMessageKey, jsonTextKey); found {
 					return []providerEvent{{Kind: eventAnswer, Answer: answer}}, nil
 				}
 			}
@@ -379,47 +379,65 @@ func reduceCodexEvent(value map[string]any) ([]providerEvent, error) {
 }
 
 func readStructuredEvents(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, consume func(providerEvent) error) error {
-	buffered := bufio.NewReaderSize(reader, 64*1024)
-	line := make([]byte, 0, 64*1024)
+	source := bufio.NewReaderSize(io.TeeReader(reader, rawWriter), structuredJSONBufferBytes)
+	parser := newSelectiveJSONReader()
 	for {
-		fragment, readErr := buffered.ReadSlice('\n')
-		if len(fragment) > 0 {
-			if _, err := rawWriter.Write(fragment); err != nil {
-				return err
+		line := &structuredJSONLineReader{source: source}
+		parser.reset(line)
+		value, err := parser.next()
+		if err == io.EOF {
+			if line.sourceErr != nil {
+				return line.sourceErr
 			}
-			line = append(line, fragment...)
-			contentBytes := len(line)
-			if line[contentBytes-1] == '\n' {
-				contentBytes--
+			if line.sourceEOF {
+				return nil
 			}
-			if contentBytes > maxStructuredEventBytes {
-				return fmt.Errorf("read %s structured event: event exceeded %d byte limit", agent, maxStructuredEventBytes)
-			}
-		}
-		if readErr == bufio.ErrBufferFull {
 			continue
 		}
-		if readErr != nil && readErr != io.EOF {
-			return fmt.Errorf("read %s structured event (maximum %d bytes): %w", agent, maxStructuredEventBytes, readErr)
+		if err != nil {
+			if discardErr := parser.discard(); discardErr != nil && discardErr != io.EOF {
+				return fmt.Errorf("read %s structured event after parse failure: %w", agent, discardErr)
+			}
+			if line.sourceErr != nil {
+				return line.sourceErr
+			}
+			if consumeErr := consume(providerEvent{Kind: eventProgress, Activity: invalidStructuredEvent, Reason: err.Error()}); consumeErr != nil {
+				return consumeErr
+			}
+			if line.sourceEOF {
+				return nil
+			}
+			continue
 		}
-		if len(line) == 0 && readErr == io.EOF {
-			return nil
+		trailing, trailingErr := parser.next()
+		if trailingErr != io.EOF {
+			if trailingErr == nil {
+				trailingErr = fmt.Errorf("structured JSONL record contains multiple values: %#v", trailing)
+			}
+			if discardErr := parser.discard(); discardErr != nil && discardErr != io.EOF {
+				return discardErr
+			}
+			if consumeErr := consume(providerEvent{Kind: eventProgress, Activity: invalidStructuredEvent, Reason: trailingErr.Error()}); consumeErr != nil {
+				return consumeErr
+			}
+			continue
 		}
-		trimmed := bytes.TrimSpace(line)
-		if len(trimmed) > 0 {
-			events, err := reduceStructuredEvent(agent, expectedSession, trimmed)
-			if err != nil {
+		var events []providerEvent
+		switch agent {
+		case AgentClaude:
+			events, err = reduceClaudeEvent(expectedSession, value)
+		case AgentCodex:
+			events, err = reduceCodexEvent(value)
+		default:
+			err = fmt.Errorf("unsupported structured dispatch provider %q", agent)
+		}
+		if err != nil {
+			return err
+		}
+		for _, event := range events {
+			if err := consume(event); err != nil {
 				return err
 			}
-			for _, event := range events {
-				if err := consume(event); err != nil {
-					return err
-				}
-			}
-		}
-		line = line[:0]
-		if readErr == io.EOF {
-			return nil
 		}
 	}
 }
@@ -433,10 +451,16 @@ func antigravitySessionID(logPath string) (string, error) {
 	defer func() { _ = file.Close() }()
 
 	found := ""
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), maxCaptureBytes)
-	for scanner.Scan() {
-		candidate := strings.TrimSpace(scanner.Text())
+	reader := bufio.NewReaderSize(file, 64*1024)
+	for {
+		line, readErr := readDiagnosticLine(reader, 4*1024)
+		if readErr != nil && readErr != io.EOF {
+			return "", fmt.Errorf("read Antigravity dispatch log: %w", readErr)
+		}
+		if line == "" && readErr == io.EOF {
+			break
+		}
+		candidate := strings.TrimSpace(line)
 		if match := antigravityLogPrefix.FindStringSubmatch(candidate); len(match) == 2 {
 			candidate = match[1]
 		}
@@ -453,11 +477,38 @@ func antigravitySessionID(logPath string) (string, error) {
 			return "", fmt.Errorf("antigravity dispatch log reported conflicting conversation IDs %s and %s", found, id)
 		}
 		found = id
-	}
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("read Antigravity dispatch log: %w", err)
+		if readErr == io.EOF {
+			break
+		}
 	}
 	return found, nil
+}
+
+// readDiagnosticLine retains only a small prefix while consuming the complete
+// line. Conversation markers are short; oversized diagnostics are reduced to
+// their prefix without constraining the provider log itself.
+func readDiagnosticLine(reader *bufio.Reader, retainBytes int) (string, error) {
+	line := make([]byte, 0, retainBytes)
+	truncated := false
+	for {
+		fragment, err := reader.ReadSlice('\n')
+		if !truncated {
+			remaining := retainBytes - len(line)
+			if len(fragment) <= remaining {
+				line = append(line, fragment...)
+			} else {
+				truncated = true
+				line = append(line, fragment[:remaining]...)
+			}
+		}
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if truncated {
+			return string(line), err
+		}
+		return string(line), err
+	}
 }
 
 func compatibleTargetVersion(path string, target targetMeta, lookup func(string, string) (string, error)) (targetMeta, string, error) {

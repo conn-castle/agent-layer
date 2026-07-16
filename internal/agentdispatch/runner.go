@@ -12,51 +12,59 @@ import (
 	"time"
 )
 
-type captureBudget struct {
+type captureWriter struct {
+	file *os.File
 	mu   sync.Mutex
-	used int64
-	max  int64
 }
 
-func (b *captureBudget) reserve(size int) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if int64(size) > b.max-b.used {
-		return fmt.Errorf("dispatch provider capture exceeded %d byte limit", b.max)
+// answerPrefixBuffer retains a bounded answer prefix while reporting complete
+// writes so the provider's full stdout continues streaming to raw evidence.
+type answerPrefixBuffer struct {
+	buffer    bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func (w *answerPrefixBuffer) Write(data []byte) (int, error) {
+	received := len(data)
+	limit := w.limit
+	if limit <= 0 {
+		limit = maxRetainedAnswerBytes
 	}
-	b.used += int64(size)
-	return nil
+	remaining := limit - w.buffer.Len()
+	if remaining > 0 {
+		_, _ = w.buffer.Write(data[:min(remaining, received)])
+	}
+	if received > remaining {
+		w.truncated = true
+	}
+	return received, nil
 }
 
-type limitedWriter struct {
-	file    *os.File
-	limit   int64
-	written int64
-	budget  *captureBudget
-	mu      sync.Mutex
+func (w *answerPrefixBuffer) String() string {
+	retained := w.buffer.Bytes()
+	if w.truncated {
+		retained = retained[:validUTF8PrefixLength(retained)]
+	}
+	answer := string(retained)
+	if w.truncated {
+		answer += truncatedAnswerNotice
+	}
+	return answer
 }
 
-func newLimitedWriter(path string, limit int64, budget *captureBudget) (*limitedWriter, error) {
+func newCaptureWriter(path string) (*captureWriter, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 -- path is in an isolated dispatch run directory.
 	if err != nil {
 		return nil, err
 	}
-	return &limitedWriter{file: file, limit: limit, budget: budget}, nil
+	return &captureWriter{file: file}, nil
 }
 
-func (w *limitedWriter) Write(data []byte) (int, error) {
+func (w *captureWriter) Write(data []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if int64(len(data)) > w.limit-w.written {
-		return 0, fmt.Errorf("dispatch output exceeded %d byte limit", w.limit)
-	}
-	if w.budget != nil {
-		if err := w.budget.reserve(len(data)); err != nil {
-			return 0, err
-		}
-	}
 	n, err := w.file.Write(data)
-	w.written += int64(n)
 	if err != nil {
 		return n, err
 	}
@@ -66,7 +74,7 @@ func (w *limitedWriter) Write(data []byte) (int, error) {
 	return n, nil
 }
 
-func (w *limitedWriter) Close() error {
+func (w *captureWriter) Close() error {
 	if w == nil || w.file == nil {
 		return nil
 	}
@@ -92,20 +100,19 @@ func executeProvider(
 	if newCommand == nil {
 		newCommand = defaultProviderCommandFactory
 	}
-	budget := &captureBudget{max: maxCaptureBytes}
-	providerStdout, err := newLimitedWriter(run.Record.StdoutPath, maxCaptureBytes, budget)
+	providerStdout, err := newCaptureWriter(run.Record.StdoutPath)
 	if err != nil {
 		return executionResult{}, wrapExitError(ExitConfig, "create dispatch stdout capture", err)
 	}
 	defer func() { _ = providerStdout.Close() }()
-	providerStderr, err := newLimitedWriter(run.Record.StderrPath, maxCaptureBytes, budget)
+	providerStderr, err := newCaptureWriter(run.Record.StderrPath)
 	if err != nil {
 		return executionResult{}, wrapExitError(ExitConfig, "create dispatch stderr capture", err)
 	}
 	defer func() { _ = providerStderr.Close() }()
-	var events *limitedWriter
+	var events *captureWriter
 	if command.Structured {
-		events, err = newLimitedWriter(run.Record.EventsPath, maxCaptureBytes, budget)
+		events, err = newCaptureWriter(run.Record.EventsPath)
 		if err != nil {
 			return executionResult{}, wrapExitError(ExitConfig, "create dispatch event capture", err)
 		}
@@ -204,10 +211,6 @@ func executeProvider(
 				return err
 			}
 		case eventAnswer:
-			if len(event.Answer) > maxAnswerBytes {
-				semanticErr = fmt.Errorf("dispatch final answer exceeded %d byte limit", maxAnswerBytes)
-				return semanticErr
-			}
 			answerCandidate = event.Answer
 			result.AnswerSeen = true
 			run.Record.LastOutputAt = &now
@@ -232,20 +235,16 @@ func executeProvider(
 	stderrErr := make(chan error, 1)
 	go func() {
 		if command.Plain {
-			var candidate bytes.Buffer
+			var candidate answerPrefixBuffer
 			_, err := io.Copy(io.MultiWriter(providerStdout, &candidate), stdoutPipe)
 			if err == nil {
 				resultMu.Lock()
-				if candidate.Len() > maxAnswerBytes {
-					err = fmt.Errorf("dispatch final answer exceeded %d byte limit", maxAnswerBytes)
-				} else {
-					answerCandidate = candidate.String()
-					result.AnswerSeen = candidate.Len() > 0
-					now := time.Now().UTC()
-					run.Record.LastOutputAt = &now
-					run.Record.LastActivityAt = &now
-					run.Record.LastActivityKind = "answer_candidate"
-				}
+				answerCandidate = candidate.String()
+				result.AnswerSeen = candidate.buffer.Len() > 0
+				now := time.Now().UTC()
+				run.Record.LastOutputAt = &now
+				run.Record.LastActivityAt = &now
+				run.Record.LastActivityKind = "answer_candidate"
 				resultMu.Unlock()
 			}
 			if err != nil {
@@ -301,18 +300,6 @@ func executeProvider(
 	if waitErr != nil {
 		return executionResult{}, providerWaitError(command.Provider, waitErr)
 	}
-	if command.LogPath != "" {
-		info, err := os.Stat(command.LogPath)
-		if err != nil {
-			return executionResult{}, wrapExitError(ExitTargetFailure, "stat Antigravity provider log", err)
-		}
-		budget.mu.Lock()
-		remaining := budget.max - budget.used
-		budget.mu.Unlock()
-		if info.Size() > remaining {
-			return executionResult{}, exitError(ExitTargetFailure, fmt.Sprintf("Antigravity provider log exceeded the remaining %d byte dispatch capture budget", remaining))
-		}
-	}
 	if command.Provider == AgentAntigravity {
 		timedOut, err := antigravityTimeoutReported(run.Record.StderrPath, command.LogPath)
 		if err != nil {
@@ -337,16 +324,47 @@ func executeProvider(
 
 func antigravityTimeoutReported(stderrPath string, logPath string) (bool, error) {
 	timedOut := false
+	marker := []byte("Error: timeout waiting for response")
 	for _, path := range []string{stderrPath, logPath} {
-		data, err := os.ReadFile(path) // #nosec G304 -- paths are in the active isolated run.
+		found, err := fileContains(path, marker)
 		if err != nil {
 			return false, fmt.Errorf("read %s: %w", path, err)
 		}
-		if bytes.Contains(data, []byte("Error: timeout waiting for response")) {
+		if found {
 			timedOut = true
 		}
 	}
 	return timedOut, nil
+}
+
+func fileContains(path string, marker []byte) (bool, error) {
+	if len(marker) == 0 {
+		return true, nil
+	}
+	file, err := os.Open(path) // #nosec G304 -- paths are in the active isolated run.
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = file.Close() }()
+
+	const chunkBytes = 64 * 1024
+	buffer := make([]byte, chunkBytes+len(marker)-1)
+	retained := 0
+	for {
+		read, readErr := file.Read(buffer[retained:])
+		available := retained + read
+		if bytes.Contains(buffer[:available], marker) {
+			return true, nil
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				return false, nil
+			}
+			return false, readErr
+		}
+		retained = min(available, len(marker)-1)
+		copy(buffer[:retained], buffer[available-retained:available])
+	}
 }
 
 func replayAnswer(path string, stdout io.Writer) error {

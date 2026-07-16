@@ -27,7 +27,7 @@ func targetRegistry() []targetMeta {
 	return []targetMeta{
 		{
 			Name:               AgentCodex,
-			Binary:             "codex",
+			Binary:             AgentCodex,
 			SkillPrefix:        "$",
 			SharedSkillProject: true,
 			AnswerText:         answerTextFinal,

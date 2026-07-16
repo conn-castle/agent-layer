@@ -12,9 +12,8 @@ require `plan_reviewers` or the common plan flow.
 
 ## Initialize
 
-Dispatch `planner` to identify repository-native scopes and relevant quality
-lenses incrementally, noting enough progress to cover all of them before
-declaring exhaustion.
+Identify repository-native scopes and relevant quality lenses incrementally,
+noting enough progress to cover all of them before declaring exhaustion.
 
 ## Select
 

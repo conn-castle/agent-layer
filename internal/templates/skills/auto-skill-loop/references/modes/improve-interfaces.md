@@ -11,8 +11,8 @@ Require the common plan roles.
 
 ## Initialize
 
-Dispatch `planner` to run one fresh `/interface-audit` and retain that report for
-the run. Do not load prior audits.
+Run one fresh `/interface-audit` and retain that report for the run. Do not load
+prior audits.
 
 ## Select
 

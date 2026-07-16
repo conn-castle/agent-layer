@@ -191,6 +191,9 @@ func (inst *installer) pinVersionDiffPreview(relPath string, ownership Ownership
 // before truncation so callers can show accurate stats even when the diff
 // body itself is shortened).
 func renderTruncatedUnifiedDiff(fromName string, toName string, fromContent string, toContent string, maxLines int) (string, bool, int, int) {
+	if equivalentNormalizedLineMultisets(fromContent, toContent) {
+		return "", false, 0, 0
+	}
 	limit := normalizeDiffMaxLines(maxLines)
 	diff := normalizeUnifiedDiffPreview(udiff.Unified(fromName, toName, fromContent, toContent))
 	lines := splitDiffLines(diff)
@@ -204,6 +207,24 @@ func renderTruncatedUnifiedDiff(fromName string, toName string, fromContent stri
 		fmt.Sprintf("... (truncated to %d lines; rerun with %s <n> to see more)", limit, diffLineCapFlagName),
 	)
 	return ensureTrailingNewline(strings.Join(truncated, "\n")), true, added, removed
+}
+
+// equivalentNormalizedLineMultisets reports whether two complete files differ
+// only by line order or trailing horizontal whitespace. Counts are retained so
+// duplicate lines cannot make a real addition or removal disappear.
+func equivalentNormalizedLineMultisets(left string, right string) bool {
+	counts := make(map[string]int)
+	for _, line := range strings.Split(left, "\n") {
+		counts[normalizeComparableDiffPayload(line)]++
+	}
+	for _, line := range strings.Split(right, "\n") {
+		key := normalizeComparableDiffPayload(line)
+		counts[key]--
+		if counts[key] == 0 {
+			delete(counts, key)
+		}
+	}
+	return len(counts) == 0
 }
 
 // countDiffLineStats counts unified-diff added (`+`) and removed (`-`) body

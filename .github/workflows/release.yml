@@ -55,6 +55,8 @@ jobs:
           key: e2e-binaries-${{ runner.os }}-${{ runner.arch }}
       - name: Install pinned tools
         run: make tools
+      - name: Install pinned release tools
+        run: make release-tools
       - name: CI checks
         run: make ci
         env:
@@ -71,6 +73,8 @@ jobs:
         run: |
           set -euo pipefail
           make release-dist AL_VERSION="${GITHUB_REF_NAME}" DIST_DIR=dist
+      - name: Scan release binaries for known vulnerable symbols
+        run: make release-vuln-check DIST_DIR=dist
       - name: Notarize darwin binaries
         env:
           NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_API_KEY_ID }}

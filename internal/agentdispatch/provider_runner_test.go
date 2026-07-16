@@ -1,10 +1,12 @@
 package agentdispatch
 
 import (
+	"bufio"
 	"bytes"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -178,6 +180,10 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 	if err != nil || len(flatEvents) != 1 || flatEvents[0].Answer != "compatible answer" {
 		t.Fatalf("Codex flat compatibility events = %#v, %v", flatEvents, err)
 	}
+	escapedSlashEvents, err := reduceStructuredEvent(AgentCodex, "", []byte(`{"type":"agent_message","message":"https:\/\/example.com\/answer"}`))
+	if err != nil || len(escapedSlashEvents) != 1 || escapedSlashEvents[0].Answer != "https://example.com/answer" {
+		t.Fatalf("Codex escaped-slash events = %#v, %v", escapedSlashEvents, err)
+	}
 	failureEvents, err := reduceStructuredEvent(AgentCodex, "", []byte(`{"type":"turn.failed","error":{"message":"model quota exhausted"}}`))
 	if err != nil || len(failureEvents) != 1 || failureEvents[0].Kind != eventFailure || failureEvents[0].Reason != "model quota exhausted" {
 		t.Fatalf("Codex nested failure events = %#v, %v", failureEvents, err)
@@ -187,10 +193,18 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 		t.Fatalf("Codex string failure events = %#v, %v", stringFailureEvents, err)
 	}
 	var raw bytes.Buffer
-	if err := readStructuredEvents(strings.NewReader("not-json\n"), &raw, AgentCodex, "", func(providerEvent) error { return nil }); err == nil {
-		t.Fatal("invalid provider JSON was accepted")
+	var recovered []providerEvent
+	invalidThenValid := "not-json\n" + `{"type":"turn.completed"}` + "\n"
+	if err := readStructuredEvents(strings.NewReader(invalidThenValid), &raw, AgentCodex, "", func(event providerEvent) error {
+		recovered = append(recovered, event)
+		return nil
+	}); err != nil {
+		t.Fatalf("invalid provider JSON prevented later record recovery: %v", err)
 	}
-	if raw.String() != "not-json\n" {
+	if len(recovered) != 2 || recovered[0].Kind != eventProgress || recovered[0].Activity != "invalid_structured_event" || recovered[1].Kind != eventComplete {
+		t.Fatalf("recovered events = %#v", recovered)
+	}
+	if raw.String() != invalidThenValid {
 		t.Fatalf("raw evidence = %q", raw.String())
 	}
 	raw.Reset()
@@ -201,13 +215,114 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 		t.Fatalf("blank raw evidence = %q", raw.String())
 	}
 	raw.Reset()
-	oversized := bytes.Repeat([]byte("x"), maxStructuredEventBytes+1)
-	if err := readStructuredEvents(bytes.NewReader(oversized), &raw, AgentCodex, "", func(providerEvent) error { return nil }); err == nil {
-		t.Fatal("oversized provider event was accepted")
+	const skippedOutputBytes = 482 * 1024 * 1024
+	largeEvent := io.MultiReader(
+		strings.NewReader(`{"type":"item.completed","item":{"type":"command_execution","aggregated_output":"`),
+		io.LimitReader(repeatingByteReader('x'), skippedOutputBytes),
+		strings.NewReader(`"}}`+"\n"),
+	)
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	var largeEvents []providerEvent
+	retainedBytes := int64(0)
+	if err := readStructuredEvents(largeEvent, countingWriter{count: &retainedBytes}, AgentCodex, "", func(event providerEvent) error {
+		largeEvents = append(largeEvents, event)
+		return nil
+	}); err != nil {
+		t.Fatalf("large valid provider event failed: %v", err)
 	}
-	if !bytes.Equal(raw.Bytes(), oversized) {
-		t.Fatalf("oversized raw evidence retained %d bytes, want %d", raw.Len(), len(oversized))
+	runtime.ReadMemStats(&after)
+	if len(largeEvents) != 1 || largeEvents[0].Kind != eventProgress || largeEvents[0].Activity != codexItemCompletedType {
+		t.Fatalf("large provider events = %#v", largeEvents)
 	}
+	wantRetained := int64(skippedOutputBytes + len(`{"type":"item.completed","item":{"type":"command_execution","aggregated_output":"`+`"}}`+"\n"))
+	if retainedBytes != wantRetained {
+		t.Fatalf("large raw evidence retained %d bytes, want %d", retainedBytes, wantRetained)
+	}
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 32*1024*1024 {
+		t.Fatalf("parsing %d skipped bytes allocated %d bytes; memory use must not scale with command output", skippedOutputBytes, allocated)
+	}
+}
+
+func TestReadDiagnosticLineRetainsOversizedLinePrefix(t *testing.T) {
+	reader := bufio.NewReaderSize(strings.NewReader("conversation-marker-and-noise\nnext\n"), 8)
+	line, err := readDiagnosticLine(reader, len("conversation-marker"))
+	if err != nil || line != "conversation-marker" {
+		t.Fatalf("oversized diagnostic prefix = %q, %v", line, err)
+	}
+	next, err := readDiagnosticLine(reader, 32)
+	if err != nil || next != "next\n" {
+		t.Fatalf("diagnostic after oversized line = %q, %v", next, err)
+	}
+}
+
+func TestSelectiveJSONReaderTruncatesRetainedAnswerAndConsumesRecord(t *testing.T) {
+	parser := newSelectiveJSONReader()
+	parser.retainedStringBytes = 8
+	parser.reset(strings.NewReader(`{"type":"agent_message","message":"abcdefghijk","ignored":"complete"}`))
+	value, err := parser.next()
+	if err != nil {
+		t.Fatalf("parse oversized retained answer: %v", err)
+	}
+	events, err := reduceCodexEvent(value)
+	if err != nil || len(events) != 1 || events[0].Answer != "abcdefgh"+truncatedAnswerNotice {
+		t.Fatalf("truncated structured answer events = %#v, %v", events, err)
+	}
+	if _, err := parser.next(); err != io.EOF {
+		t.Fatalf("parser did not consume complete oversized record: %v", err)
+	}
+}
+
+func TestAnswerPrefixBufferTruncatesWithoutShortWrite(t *testing.T) {
+	buffer := answerPrefixBuffer{limit: 8}
+	written, err := buffer.Write([]byte("abcdefghijk"))
+	if err != nil || written != len("abcdefghijk") {
+		t.Fatalf("answer prefix write = %d, %v", written, err)
+	}
+	if got := buffer.String(); got != "abcdefgh"+truncatedAnswerNotice {
+		t.Fatalf("truncated plain answer = %q", got)
+	}
+}
+
+func TestRetainedAnswerTruncationDropsIncompleteUTF8Rune(t *testing.T) {
+	parser := newSelectiveJSONReader()
+	parser.retainedStringBytes = 1
+	parser.reset(strings.NewReader(`{"type":"agent_message","message":"éx"}`))
+	value, err := parser.next()
+	if err != nil {
+		t.Fatalf("parse UTF-8 answer at boundary: %v", err)
+	}
+	events, err := reduceCodexEvent(value)
+	if err != nil || len(events) != 1 || events[0].Answer != truncatedAnswerNotice {
+		t.Fatalf("UTF-8 structured truncation events = %#v, %v", events, err)
+	}
+
+	buffer := answerPrefixBuffer{limit: 1}
+	if _, err := buffer.Write([]byte("éx")); err != nil {
+		t.Fatalf("write UTF-8 plain answer: %v", err)
+	}
+	if got := buffer.String(); got != truncatedAnswerNotice {
+		t.Fatalf("UTF-8 plain truncation = %q", got)
+	}
+}
+
+type repeatingByteReader byte
+
+func (r repeatingByteReader) Read(data []byte) (int, error) {
+	for i := range data {
+		data[i] = byte(r)
+	}
+	return len(data), nil
+}
+
+type countingWriter struct {
+	count *int64
+}
+
+func (w countingWriter) Write(data []byte) (int, error) {
+	*w.count += int64(len(data))
+	return len(data), nil
 }
 
 func TestRunnerBuffersOnlyCompletedAnswer(t *testing.T) {
