@@ -29,6 +29,7 @@ const (
 	processStatusAlive     = "alive"
 	processStatusDead      = "dead"
 	providerVersionTimeout = 10 * time.Second
+	maxRetainedAnswerBytes = 256 * 1024 * 1024
 	// AntigravityPromptMaxBytes retains headroom below common ARG_MAX limits
 	// because Antigravity accepts print-mode prompts only as an argument.
 	AntigravityPromptMaxBytes = 100 * 1024
@@ -39,6 +40,7 @@ const (
 	// for Claude-managed background work; interactive Claude launches do not use it.
 	claudePrintBackgroundWaitCeilingEnv   = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
 	claudePrintBackgroundWaitCeilingValue = "0"
+	truncatedAnswerNotice                 = "\n\n[Agent Layer truncated this final answer after retaining 256 MiB. Resume the conversation and ask the agent to summarize the final answer in another turn.]\n"
 )
 
 var versionPattern = regexp.MustCompile(`\b(?:v)?(\d+\.\d+\.\d+)\b`)
@@ -301,7 +303,7 @@ func reduceClaudeEvent(expected string, value map[string]any) ([]providerEvent, 
 		events = append(events, providerEvent{Kind: eventProgress, Activity: "text_delta"})
 	}
 	eventType, _ := value[jsonTypeKey].(string)
-	if eventType != "result" {
+	if eventType != jsonResultKey {
 		if len(events) == 0 && eventType != "" {
 			activity := eventType
 			if nested, ok := mapValueV013(value, "event"); ok {
@@ -314,7 +316,7 @@ func reduceClaudeEvent(expected string, value map[string]any) ([]providerEvent, 
 		return events, nil
 	}
 	if claudeResultIsErrorV013(value) {
-		reason, _ := value["result"].(string)
+		reason, _ := value[jsonResultKey].(string)
 		if reason == "" {
 			reason = "Claude reported a terminal failure"
 		}
@@ -324,7 +326,7 @@ func reduceClaudeEvent(expected string, value map[string]any) ([]providerEvent, 
 	if id == "" || id != expected {
 		return append(events, providerEvent{Kind: eventFailure, Reason: "Claude terminal result did not return the caller-assigned session ID"}), nil
 	}
-	answer, _ := value["result"].(string)
+	answer, _ := value[jsonResultKey].(string)
 	if answer == "" {
 		return append(events, providerEvent{Kind: eventFailure, Reason: "Claude terminal result did not contain a final answer"}), nil
 	}
@@ -347,10 +349,10 @@ func reduceCodexEvent(value map[string]any) ([]providerEvent, error) {
 	case "turn.completed":
 		return []providerEvent{{Kind: eventComplete}}, nil
 	case "turn.failed", "turn.aborted", jsonErrorKey:
-		reason, _ := firstStringV013(value, jsonMessageKey, "reason", jsonErrorKey)
+		reason, _ := firstStringV013(value, jsonMessageKey, jsonReasonKey, jsonErrorKey)
 		if reason == "" {
 			if details, ok := mapValueV013(value, jsonErrorKey); ok {
-				reason, _ = firstStringV013(details, jsonMessageKey, "reason")
+				reason, _ = firstStringV013(details, jsonMessageKey, jsonReasonKey)
 			}
 		}
 		if reason == "" {
@@ -378,9 +380,10 @@ func reduceCodexEvent(value map[string]any) ([]providerEvent, error) {
 
 func readStructuredEvents(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, consume func(providerEvent) error) error {
 	source := bufio.NewReaderSize(io.TeeReader(reader, rawWriter), structuredJSONBufferBytes)
+	parser := newSelectiveJSONReader()
 	for {
 		line := &structuredJSONLineReader{source: source}
-		parser := newSelectiveJSONReader(line)
+		parser.reset(line)
 		value, err := parser.next()
 		if err == io.EOF {
 			if line.sourceErr != nil {
@@ -482,8 +485,8 @@ func antigravitySessionID(logPath string) (string, error) {
 }
 
 // readDiagnosticLine retains only a small prefix while consuming the complete
-// line. Conversation markers are short; oversized unrelated diagnostics are
-// skipped without constraining the provider log itself.
+// line. Conversation markers are short; oversized diagnostics are reduced to
+// their prefix without constraining the provider log itself.
 func readDiagnosticLine(reader *bufio.Reader, retainBytes int) (string, error) {
 	line := make([]byte, 0, retainBytes)
 	truncated := false
@@ -495,14 +498,14 @@ func readDiagnosticLine(reader *bufio.Reader, retainBytes int) (string, error) {
 				line = append(line, fragment...)
 			} else {
 				truncated = true
-				line = line[:0]
+				line = append(line, fragment[:remaining]...)
 			}
 		}
 		if err == bufio.ErrBufferFull {
 			continue
 		}
 		if truncated {
-			return "", err
+			return string(line), err
 		}
 		return string(line), err
 	}

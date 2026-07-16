@@ -140,7 +140,11 @@ stdout, stderr, reduced events, and diagnostics have no Agent Layer retention
 budget; they stream directly to run evidence files, and structured events are
 reduced without buffering unrelated command output. Malformed JSONL records
 remain in raw evidence and produce an `invalid_structured_event` reduced-event
-marker; later valid records are still processed.
+marker; later valid records are still processed. The final answer retained for
+return to the caller is capped at 256 MiB. Larger answers succeed with an
+explicit truncation notice directing the caller to resume the conversation and
+ask the agent to summarize; the complete provider output remains in raw run
+evidence.
 
 Dispatch performs at most one automatic retry and only for a proven pre-start
 failure. After a provider might have accepted work it preserves known

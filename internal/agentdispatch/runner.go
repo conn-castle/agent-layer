@@ -17,6 +17,42 @@ type captureWriter struct {
 	mu   sync.Mutex
 }
 
+// answerPrefixBuffer retains a bounded answer prefix while reporting complete
+// writes so the provider's full stdout continues streaming to raw evidence.
+type answerPrefixBuffer struct {
+	buffer    bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func (w *answerPrefixBuffer) Write(data []byte) (int, error) {
+	received := len(data)
+	limit := w.limit
+	if limit <= 0 {
+		limit = maxRetainedAnswerBytes
+	}
+	remaining := limit - w.buffer.Len()
+	if remaining > 0 {
+		_, _ = w.buffer.Write(data[:min(remaining, received)])
+	}
+	if received > remaining {
+		w.truncated = true
+	}
+	return received, nil
+}
+
+func (w *answerPrefixBuffer) String() string {
+	retained := w.buffer.Bytes()
+	if w.truncated {
+		retained = retained[:validUTF8PrefixLength(retained)]
+	}
+	answer := string(retained)
+	if w.truncated {
+		answer += truncatedAnswerNotice
+	}
+	return answer
+}
+
 func newCaptureWriter(path string) (*captureWriter, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 -- path is in an isolated dispatch run directory.
 	if err != nil {
@@ -199,12 +235,12 @@ func executeProvider(
 	stderrErr := make(chan error, 1)
 	go func() {
 		if command.Plain {
-			var candidate bytes.Buffer
+			var candidate answerPrefixBuffer
 			_, err := io.Copy(io.MultiWriter(providerStdout, &candidate), stdoutPipe)
 			if err == nil {
 				resultMu.Lock()
 				answerCandidate = candidate.String()
-				result.AnswerSeen = candidate.Len() > 0
+				result.AnswerSeen = candidate.buffer.Len() > 0
 				now := time.Now().UTC()
 				run.Record.LastOutputAt = &now
 				run.Record.LastActivityAt = &now
@@ -288,16 +324,47 @@ func executeProvider(
 
 func antigravityTimeoutReported(stderrPath string, logPath string) (bool, error) {
 	timedOut := false
+	marker := []byte("Error: timeout waiting for response")
 	for _, path := range []string{stderrPath, logPath} {
-		data, err := os.ReadFile(path) // #nosec G304 -- paths are in the active isolated run.
+		found, err := fileContains(path, marker)
 		if err != nil {
 			return false, fmt.Errorf("read %s: %w", path, err)
 		}
-		if bytes.Contains(data, []byte("Error: timeout waiting for response")) {
+		if found {
 			timedOut = true
 		}
 	}
 	return timedOut, nil
+}
+
+func fileContains(path string, marker []byte) (bool, error) {
+	if len(marker) == 0 {
+		return true, nil
+	}
+	file, err := os.Open(path) // #nosec G304 -- paths are in the active isolated run.
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = file.Close() }()
+
+	const chunkBytes = 64 * 1024
+	buffer := make([]byte, chunkBytes+len(marker)-1)
+	retained := 0
+	for {
+		read, readErr := file.Read(buffer[retained:])
+		available := retained + read
+		if bytes.Contains(buffer[:available], marker) {
+			return true, nil
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				return false, nil
+			}
+			return false, readErr
+		}
+		retained = min(available, len(marker)-1)
+		copy(buffer[:retained], buffer[available-retained:available])
+	}
 }
 
 func replayAnswer(path string, stdout io.Writer) error {

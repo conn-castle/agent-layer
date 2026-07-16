@@ -136,6 +136,14 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 	if timedOut, readErr := antigravityTimeoutReported(timeoutRun.Record.StderrPath, filepath.Join(root, "missing-log")); readErr == nil || timedOut {
 		t.Fatalf("timeout stderr with missing Antigravity log = timedOut %t, error %v", timedOut, readErr)
 	}
+	boundaryLog := filepath.Join(root, "boundary-timeout.log")
+	boundaryDiagnostic := strings.Repeat("x", 64*1024-10) + "Error: timeout waiting for response"
+	if err := os.WriteFile(boundaryLog, []byte(boundaryDiagnostic), 0o600); err != nil {
+		t.Fatalf("write boundary timeout log: %v", err)
+	}
+	if timedOut, readErr := antigravityTimeoutReported(timeoutRun.Record.StderrPath, boundaryLog); readErr != nil || !timedOut {
+		t.Fatalf("boundary-spanning Antigravity timeout = timedOut %t, error %v", timedOut, readErr)
+	}
 
 	if err := replayAnswer(filepath.Join(root, "missing-answer"), io.Discard); err == nil {
 		t.Fatal("replayAnswer accepted a missing capture")

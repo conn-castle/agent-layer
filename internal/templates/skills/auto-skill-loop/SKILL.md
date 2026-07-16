@@ -81,8 +81,9 @@ every selection.
    lines, or 10 changed files. Count resolved items from verified delivery
    dispositions. Measure changed lines and files against the delivery's intended
    base, excluding unrelated work. Below all thresholds, return to selection
-   unless a complete pass found no autonomous work; then preserve the branch and
-   proceed to step 9 without opening a PR.
+   unless a complete pass found no autonomous work; then dispatch `rote_worker`
+   to reconcile the preserved branch with its authoritative source and terminate
+   without opening a PR.
 6. Only when a threshold is met, dispatch `rote_worker` to run `/ship-pr`,
    passing the `implementer` target for any `/fix-ci` work. Keep `/ship-pr`
    entirely inside that dispatch. On its normal path, it returns a
@@ -97,8 +98,9 @@ every selection.
    standing loop authorization to resume the same `rote_worker` with normal
    single-use authorization for that exact PR and head. Any head change
    invalidates the authorization; return to step 7 for fresh review.
-9. Dispatch `rote_worker` to reconcile the actual merged, open, or preserved
-   result with its authoritative source, then select again. With
+9. Except for the exhausted sub-threshold case terminated in step 5, dispatch
+   `rote_worker` to reconcile the actual merged, open, or preserved result with
+   its authoritative source, then select again. With
    `stop_after=one-delivery`, stop only after reconciliation.
 
 Do not impose iteration, time, source-size, or batch-count limits. Continue

@@ -229,7 +229,7 @@ release-dist: test-release ## Build release artifacts (cross-compile)
 	@AL_VERSION="$(AL_VERSION)" DIST_DIR="$(DIST_DIR)" ./scripts/build-release.sh
 
 .PHONY: release-vuln-check
-release-vuln-check: check-govulncheck ## Scan every release executable for reachable vulnerabilities (set DIST_DIR=dist)
+release-vuln-check: check-govulncheck ## Scan every release executable for known vulnerable symbols (set DIST_DIR=dist)
 	@for binary in $(RELEASE_BINARIES); do \
 	  path="$(DIST_DIR)/$$binary"; \
 	  if [[ ! -f "$$path" ]]; then echo "Release binary not found: $$path" >&2; exit 1; fi; \

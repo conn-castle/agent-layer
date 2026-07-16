@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"unicode/utf8"
 )
 
 const (
@@ -16,6 +17,8 @@ const (
 	jsonErrorKey              = "error"
 	jsonFalseLiteral          = "false"
 	jsonMessageKey            = "message"
+	jsonReasonKey             = "reason"
+	jsonResultKey             = "result"
 	jsonTextKey               = "text"
 	jsonTypeKey               = "type"
 )
@@ -24,7 +27,8 @@ const (
 // set of fields used by Agent Dispatch. Unselected strings are scanned without
 // buffering their contents, so command output does not determine memory use.
 type selectiveJSONReader struct {
-	reader *bufio.Reader
+	reader              *bufio.Reader
+	retainedStringBytes int
 }
 
 // structuredJSONLineReader exposes one JSONL record at a time without
@@ -68,8 +72,15 @@ func (r *structuredJSONLineReader) Read(data []byte) (int, error) {
 	return len(data), nil
 }
 
-func newSelectiveJSONReader(reader io.Reader) *selectiveJSONReader {
-	return &selectiveJSONReader{reader: bufio.NewReaderSize(reader, structuredJSONBufferBytes)}
+func newSelectiveJSONReader() *selectiveJSONReader {
+	return &selectiveJSONReader{
+		reader:              bufio.NewReaderSize(bytes.NewReader(nil), structuredJSONBufferBytes),
+		retainedStringBytes: maxRetainedAnswerBytes,
+	}
+}
+
+func (p *selectiveJSONReader) reset(reader io.Reader) {
+	p.reader.Reset(reader)
 }
 
 func (p *selectiveJSONReader) discard() error {
@@ -195,14 +206,21 @@ func (p *selectiveJSONReader) readValue(result map[string]any, path []string, de
 	case '"':
 		keep := retainedStructuredPath(path)
 		limit := 0
+		truncatable := false
 		if keep {
-			limit = -1
+			limit, truncatable = p.retainedStructuredStringLimit(path)
 		}
-		value, _, err := p.readString(limit)
+		value, complete, err := p.readString(limit)
 		if err != nil {
 			return err
 		}
 		if keep {
+			if !complete {
+				if !truncatable {
+					return fmt.Errorf("structured event metadata exceeded %d bytes", limit)
+				}
+				value += truncatedAnswerNotice
+			}
 			setStructuredPath(result, path, value)
 		}
 		return nil
@@ -232,12 +250,25 @@ func (p *selectiveJSONReader) readValue(result map[string]any, path []string, de
 	}
 }
 
+// retainedStructuredStringLimit returns the byte ceiling and whether the field
+// may be returned with the explicit final-answer truncation notice.
+func (p *selectiveJSONReader) retainedStructuredStringLimit(path []string) (int, bool) {
+	key := path[len(path)-1]
+	switch key {
+	case jsonResultKey, jsonMessageKey, jsonTextKey, jsonReasonKey, jsonErrorKey:
+		return p.retainedStringBytes, true
+	default:
+		return structuredJSONKeyBytes, false
+	}
+}
+
 func (p *selectiveJSONReader) readString(limit int) (string, bool, error) {
 	var encoded bytes.Buffer
 	complete := limit != 0
 	if complete {
 		encoded.WriteByte('"')
 	}
+	safeLength := encoded.Len()
 	escaped := false
 	for {
 		value, err := p.reader.ReadByte()
@@ -247,15 +278,31 @@ func (p *selectiveJSONReader) readString(limit int) (string, bool, error) {
 		if !escaped && value < 0x20 {
 			return "", false, fmt.Errorf("structured event string contains an unescaped control character")
 		}
+		if !escaped && value == '"' {
+			if limit == 0 {
+				return "", false, nil
+			}
+			if !complete {
+				safeLength = 1 + validUTF8PrefixLength(encoded.Bytes()[1:safeLength])
+				encoded.Truncate(safeLength)
+			}
+			encoded.WriteByte('"')
+			decoded, decodeErr := strconv.Unquote(encoded.String())
+			if decodeErr != nil {
+				return "", false, fmt.Errorf("decode structured event string: %w", decodeErr)
+			}
+			return decoded, complete, nil
+		}
 		if complete {
-			if limit < 0 || encoded.Len() < limit+2 {
+			if encoded.Len()-1 < limit {
 				encoded.WriteByte(value)
 			} else {
 				complete = false
 			}
 		}
 		if escaped {
-			if value == 'u' {
+			switch {
+			case value == 'u':
 				for range 4 {
 					hex, readErr := p.reader.ReadByte()
 					if readErr != nil {
@@ -265,15 +312,21 @@ func (p *selectiveJSONReader) readString(limit int) (string, bool, error) {
 						return "", false, fmt.Errorf("structured event string contains an invalid unicode escape")
 					}
 					if complete {
-						if limit < 0 || encoded.Len() < limit+2 {
+						if encoded.Len()-1 < limit {
 							encoded.WriteByte(hex)
 						} else {
 							complete = false
 						}
 					}
 				}
-			} else if !bytes.ContainsRune([]byte(`"\\/bfnrt`), rune(value)) {
+			case value == '/' && complete:
+				encoded.Truncate(encoded.Len() - 2)
+				encoded.WriteByte('/')
+			case !bytes.ContainsRune([]byte(`"\\/bfnrt`), rune(value)):
 				return "", false, fmt.Errorf("structured event string contains an invalid escape")
+			}
+			if complete {
+				safeLength = encoded.Len()
 			}
 			escaped = false
 			continue
@@ -282,17 +335,24 @@ func (p *selectiveJSONReader) readString(limit int) (string, bool, error) {
 			escaped = true
 			continue
 		}
-		if value == '"' {
-			if !complete {
-				return "", false, nil
-			}
-			decoded, err := strconv.Unquote(encoded.String())
-			if err != nil {
-				return "", false, fmt.Errorf("decode structured event string: %w", err)
-			}
-			return decoded, true, nil
+		if complete {
+			safeLength = encoded.Len()
 		}
 	}
+}
+
+// validUTF8PrefixLength removes at most one incomplete trailing UTF-8 rune
+// while preserving earlier bytes, which remain subject to normal JSON parsing.
+func validUTF8PrefixLength(data []byte) int {
+	if utf8.Valid(data) {
+		return len(data)
+	}
+	for removed := 1; removed < utf8.UTFMax && removed <= len(data); removed++ {
+		if utf8.Valid(data[:len(data)-removed]) {
+			return len(data) - removed
+		}
+	}
+	return len(data)
 }
 
 func (p *selectiveJSONReader) readLiteral(remainder string) error {
@@ -351,16 +411,20 @@ func (p *selectiveJSONReader) readNonSpace() (byte, error) {
 	}
 }
 
+// retainedStructuredPath is the allowlist for fields consumed by the Claude
+// and Codex reducers in provider.go and event_helpers.go. Reducer contract
+// samples in TestStructuredEventsRejectChangedProviderContracts exercise this
+// parser boundary so a missing retained path fails with a behavior-level test.
 func retainedStructuredPath(path []string) bool {
 	if len(path) == 1 {
 		switch path[0] {
-		case jsonTypeKey, "thread_id", "threadId", "id", jsonMessageKey, jsonTextKey, "reason", jsonErrorKey, "result", "session_id", "sessionId", "is_error", "subtype":
+		case jsonTypeKey, "thread_id", "threadId", "id", jsonMessageKey, jsonTextKey, jsonReasonKey, jsonErrorKey, jsonResultKey, "session_id", "sessionId", "is_error", "subtype":
 			return true
 		}
 	}
 	if len(path) == 2 {
 		return (path[0] == "event" && path[1] == jsonTypeKey) ||
-			(path[0] == jsonErrorKey && (path[1] == jsonMessageKey || path[1] == "reason")) ||
+			(path[0] == jsonErrorKey && (path[1] == jsonMessageKey || path[1] == jsonReasonKey)) ||
 			(path[0] == "item" && (path[1] == jsonTypeKey || path[1] == jsonMessageKey || path[1] == jsonTextKey)) ||
 			(path[0] == "delta" && (path[1] == jsonTypeKey || path[1] == jsonTextKey))
 	}

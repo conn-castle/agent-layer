@@ -127,11 +127,12 @@ func TestFormFilter_CtrlCKeySetsCancelFlag(t *testing.T) {
 	ui := &HuhUI{}
 	filter := ui.formFilter()
 
-	msg := filter(nil, tea.KeyPressMsg(tea.Key{Code: 'c', Mod: tea.ModCtrl}))
+	keyMsg := tea.KeyPressMsg(tea.Key{Code: 'c', Mod: tea.ModCtrl})
+	msg := filter(nil, keyMsg)
 
 	assert.True(t, ui.ctrlCAbort, "Ctrl+C key should set ctrlCAbort flag")
-	// KeyMsg should pass through unchanged.
-	assert.IsType(t, tea.KeyPressMsg{}, msg)
+	// KeyPressMsg should pass through unchanged.
+	assert.Equal(t, keyMsg, msg)
 }
 
 func TestFormFilter_InterruptMsgConvertsToQuitMsg(t *testing.T) {
