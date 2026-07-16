@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -10,14 +11,16 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/conn-castle/agent-layer/internal/probe/antigravity"
 	"github.com/conn-castle/agent-layer/internal/testutil"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 func TestMainVersion(t *testing.T) {
 	var out bytes.Buffer
-	if err := execute([]string{"al", "--version"}, &out, &out); err != nil {
+	if err := execute(context.Background(), []string{"al", "--version"}, &out, &out); err != nil {
 		t.Fatalf("execute error: %v", err)
 	}
 	if !strings.Contains(out.String(), Version) {
@@ -34,7 +37,7 @@ func TestRunMainSuccess(t *testing.T) {
 
 	var out bytes.Buffer
 	called := false
-	runMain([]string{"al", "--version"}, &out, &out, func(code int) {
+	runMain(context.Background(), []string{"al", "--version"}, &out, &out, func(code int) {
 		called = true
 	})
 	if called {
@@ -51,7 +54,7 @@ func TestRunMainError(t *testing.T) {
 
 	var out bytes.Buffer
 	code := 0
-	runMain([]string{"al", "unknown"}, &out, &out, func(exitCode int) {
+	runMain(context.Background(), []string{"al", "unknown"}, &out, &out, func(exitCode int) {
 		code = exitCode
 	})
 	if code != 1 {
@@ -82,7 +85,7 @@ func TestRunMain_GetwdError(t *testing.T) {
 
 	var out bytes.Buffer
 	var code int
-	runMain([]string{"al"}, &out, &out, func(c int) { code = c })
+	runMain(context.Background(), []string{"al"}, &out, &out, func(c int) { code = c })
 
 	if code != 1 {
 		t.Errorf("expected exit 1, got %d", code)
@@ -101,7 +104,7 @@ func TestRunMain_DispatchError(t *testing.T) {
 
 	var out bytes.Buffer
 	var code int
-	runMain([]string{"al"}, &out, &out, func(c int) { code = c })
+	runMain(context.Background(), []string{"al"}, &out, &out, func(c int) { code = c })
 
 	if code != 1 {
 		t.Errorf("expected exit 1, got %d", code)
@@ -120,7 +123,7 @@ func TestRunMain_Dispatched(t *testing.T) {
 
 	var out bytes.Buffer
 	var code int
-	runMain([]string{"al"}, &out, &out, func(c int) { code = c })
+	runMain(context.Background(), []string{"al"}, &out, &out, func(c int) { code = c })
 
 	if code != 0 {
 		t.Errorf("expected exit 0 (default), got %d (called exit?)", code)
@@ -142,7 +145,7 @@ func TestRunMain_InitBypassesDispatch(t *testing.T) {
 
 	var out bytes.Buffer
 	exitCode := -1
-	runMain([]string{"al", "init", "--help"}, &out, &out, func(code int) {
+	runMain(context.Background(), []string{"al", "init", "--help"}, &out, &out, func(code int) {
 		exitCode = code
 	})
 
@@ -165,7 +168,7 @@ func TestRunMain_UpgradeBypassesDispatch(t *testing.T) {
 
 	var out bytes.Buffer
 	exitCode := -1
-	runMain([]string{"al", "upgrade", "--help"}, &out, &out, func(code int) {
+	runMain(context.Background(), []string{"al", "upgrade", "--help"}, &out, &out, func(code int) {
 		exitCode = code
 	})
 
@@ -260,7 +263,7 @@ func TestRunMain_QuietDispatchUsesDiscard(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	runMain([]string{"al", "--quiet", "--version"}, &out, &out, func(int) {})
+	runMain(context.Background(), []string{"al", "--quiet", "--version"}, &out, &out, func(int) {})
 	if !gotDiscard {
 		t.Fatalf("expected dispatch stderr to be io.Discard")
 	}
@@ -275,7 +278,7 @@ func TestRunMain_SilentExitError(t *testing.T) {
 
 	var out bytes.Buffer
 	exitCode := 0
-	runMain([]string{"al"}, &out, &out, func(code int) { exitCode = code })
+	runMain(context.Background(), []string{"al"}, &out, &out, func(code int) { exitCode = code })
 	if exitCode != 3 {
 		t.Fatalf("expected exit 3, got %d", exitCode)
 	}
@@ -293,7 +296,7 @@ func TestRunMain_DispatchWrappedExitErrorPropagatesCode(t *testing.T) {
 
 	var out bytes.Buffer
 	exitCode := 0
-	runMain([]string{"al"}, &out, &out, func(code int) { exitCode = code })
+	runMain(context.Background(), []string{"al"}, &out, &out, func(code int) { exitCode = code })
 	if exitCode != 42 {
 		t.Fatalf("expected exit 42, got %d", exitCode)
 	}
@@ -310,19 +313,71 @@ func TestRunMain_ExecuteWrappedExitErrorPropagatesCode(t *testing.T) {
 	t.Cleanup(func() { maybeExecFunc = origMaybeExec })
 
 	origExecute := executeFunc
-	executeFunc = func(args []string, stdout io.Writer, stderr io.Writer) error {
+	executeFunc = func(context.Context, []string, io.Writer, io.Writer) error {
 		return fmt.Errorf("execute failed: %w", wrappedExitError(t, 43))
 	}
 	t.Cleanup(func() { executeFunc = origExecute })
 
 	var out bytes.Buffer
 	exitCode := 0
-	runMain([]string{"al"}, &out, &out, func(code int) { exitCode = code })
+	runMain(context.Background(), []string{"al"}, &out, &out, func(code int) { exitCode = code })
 	if exitCode != 43 {
 		t.Fatalf("expected exit 43, got %d", exitCode)
 	}
 	if !strings.Contains(out.String(), "execute failed:") {
 		t.Fatalf("expected wrapped error output, got %q", out.String())
+	}
+}
+
+func TestRunMainCancellationReachesContextAwareCommand(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	originalGetwd := getwd
+	getwd = func() (string, error) { return root, nil }
+	t.Cleanup(func() { getwd = originalGetwd })
+
+	originalMaybeExec := maybeExecFunc
+	maybeExecFunc = func([]string, string, string, io.Writer, func(int)) error { return nil }
+	t.Cleanup(func() { maybeExecFunc = originalMaybeExec })
+
+	started := make(chan struct{})
+	originalProbe := runAntigravityProbe
+	runAntigravityProbe = func(ctx context.Context, _ string) (*antigravity.Result, error) {
+		close(started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	t.Cleanup(func() { runAntigravityProbe = originalProbe })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var out bytes.Buffer
+	exitCode := 0
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runMain(ctx, []string{"al", "probe", "agy"}, &out, &out, func(code int) { exitCode = code })
+	}()
+
+	select {
+	case <-started:
+		cancel()
+	case <-time.After(5 * time.Second):
+		t.Fatal("probe did not start")
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("canceled command did not return")
+	}
+
+	if exitCode != 1 {
+		t.Fatalf("exit code = %d, want 1", exitCode)
+	}
+	if got := out.String(); got != context.Canceled.Error()+"\n" {
+		t.Fatalf("diagnostic = %q, want one cancellation diagnostic", got)
 	}
 }
 

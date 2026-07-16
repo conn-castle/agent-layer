@@ -30,6 +30,7 @@ func newDoctorCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   messages.DoctorUse,
 		Short: messages.DoctorShort,
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			quiet, _ := cmd.Flags().GetBool("quiet")

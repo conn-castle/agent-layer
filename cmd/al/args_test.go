@@ -86,6 +86,7 @@ func TestNoArgsCommandsRejectExtraArgs(t *testing.T) {
 	}{
 		{name: "sync", cmd: newSyncCmd, args: []string{"unexpected"}},
 		{name: "init", cmd: newInitCmd, args: []string{"unexpected"}},
+		{name: "doctor", cmd: newDoctorCmd, args: []string{"unexpected"}},
 		{name: "probe antigravity", cmd: newProbeAntigravityCmd, args: []string{"unexpected"}},
 	}
 
