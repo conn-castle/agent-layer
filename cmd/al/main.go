@@ -29,8 +29,12 @@ var (
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	runMain(ctx, os.Args, os.Stdout, os.Stderr, os.Exit)
+	restoreSignals := context.AfterFunc(ctx, stop)
+	exitCode := 0
+	runMain(ctx, os.Args, os.Stdout, os.Stderr, func(code int) { exitCode = code })
+	restoreSignals()
+	stop()
+	os.Exit(exitCode)
 }
 
 // SilentExitError reports an exit code without emitting error output.
