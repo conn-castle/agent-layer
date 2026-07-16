@@ -15,6 +15,7 @@ COVERAGE_THRESHOLD ?= 90.0
 
 AL_VERSION ?= dev
 DIST_DIR ?= dist
+RELEASE_BINARIES := al-darwin-arm64 al-darwin-amd64 al-linux-arm64 al-linux-amd64
 
 .PHONY: help
 help: ## Show available targets
@@ -22,6 +23,9 @@ help: ## Show available targets
 
 .PHONY: tools
 tools: $(TOOL_BIN)/goimports $(TOOL_BIN)/golangci-lint $(TOOL_BIN)/gotestsum $(TOOL_BIN)/deadcode ## Install pinned Go tools into $(TOOL_BIN)
+
+.PHONY: release-tools
+release-tools: $(TOOL_BIN)/govulncheck ## Install pinned release-only Go tools into $(TOOL_BIN)
 
 .PHONY: check-goimports
 check-goimports: ## Fail if goimports is missing
@@ -51,6 +55,13 @@ check-deadcode: ## Fail if deadcode is missing
 	  exit 1; \
 	fi
 
+.PHONY: check-govulncheck
+check-govulncheck: ## Fail if govulncheck is missing
+	@if [[ ! -x "$(TOOL_BIN)/govulncheck" ]]; then \
+	  echo "govulncheck not found at $(TOOL_BIN)/govulncheck. Run: make release-tools" >&2; \
+	  exit 1; \
+	fi
+
 .PHONY: check-tools
 check-tools: check-goimports check-golangci-lint check-gotestsum check-deadcode ## Fail if any required tool is missing
 
@@ -75,6 +86,12 @@ $(TOOL_BIN)/deadcode: go.mod go.sum
 	@version="$$(go list -m -f '{{.Version}}' golang.org/x/tools)"; \
 	  if [[ -z "$$version" ]]; then echo "Failed to resolve golang.org/x/tools version from go.mod" >&2; exit 1; fi; \
 	  GOBIN="$(TOOL_BIN)" GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go install "golang.org/x/tools/cmd/deadcode@$$version"
+
+$(TOOL_BIN)/govulncheck: go.mod go.sum
+	@mkdir -p "$(TOOL_BIN)" "$(GO_CACHE)" "$(GO_MOD_CACHE)"
+	@version="$$(go list -m -f '{{.Version}}' golang.org/x/vuln)"; \
+	  if [[ -z "$$version" ]]; then echo "Failed to resolve golang.org/x/vuln version from go.mod" >&2; exit 1; fi; \
+	  GOBIN="$(TOOL_BIN)" GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go install "golang.org/x/vuln/cmd/govulncheck@$$version"
 
 .PHONY: fmt
 fmt: check-goimports ## Format Go files (gofmt + goimports)
@@ -210,6 +227,16 @@ release-preflight: ci test-release ## Validate release readiness (set RELEASE_TA
 .PHONY: release-dist
 release-dist: test-release ## Build release artifacts (cross-compile)
 	@AL_VERSION="$(AL_VERSION)" DIST_DIR="$(DIST_DIR)" ./scripts/build-release.sh
+
+.PHONY: release-vuln-check
+release-vuln-check: check-govulncheck ## Scan every release executable for reachable vulnerabilities (set DIST_DIR=dist)
+	@for binary in $(RELEASE_BINARIES); do \
+	  path="$(DIST_DIR)/$$binary"; \
+	  if [[ ! -f "$$path" ]]; then echo "Release binary not found: $$path" >&2; exit 1; fi; \
+	done
+	@for binary in $(RELEASE_BINARIES); do \
+	  "$(TOOL_BIN)/govulncheck" -mode=binary "$(DIST_DIR)/$$binary" || exit $$?; \
+	done
 
 .PHONY: setup
 setup: ## Run one-time setup for this clone

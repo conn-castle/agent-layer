@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/huh"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -18,9 +18,9 @@ import (
 // through Bubble Tea input parsing, and returns the classified result.
 //
 // This validates the full chain: raw byte → bubbletea input parser →
-// tea.KeyMsg → formFilter → huh Quit binding → CancelCmd → InterruptMsg →
+// tea.KeyPressMsg → formFilter → huh Quit binding → CancelCmd → InterruptMsg →
 // formFilter conversion → ErrUserAborted → ctrlCAbort classification.
-func runFormInPTY(t *testing.T, keyBytes []byte) error {
+func runFormInPTY(t *testing.T, keyBytes []byte) (string, error) {
 	t.Helper()
 
 	inputR, inputW := io.Pipe()
@@ -72,23 +72,29 @@ func runFormInPTY(t *testing.T, keyBytes []byte) error {
 
 	select {
 	case r := <-ch:
-		return r.err
+		return val, r.err
 	case <-time.After(5 * time.Second):
 		t.Fatal("form did not exit within timeout")
-		return nil
+		return "", nil
 	}
 }
 
 func TestPTY_EscProducesWizardBack(t *testing.T) {
 	// Esc = 0x1b. bubbletea's input parser waits ~100ms for follow-up bytes;
 	// with none, it classifies the lone byte as standalone Esc (KeyEscape).
-	err := runFormInPTY(t, []byte{0x1b})
+	_, err := runFormInPTY(t, []byte{0x1b})
 	assert.ErrorIs(t, err, errWizardBack)
 }
 
 func TestPTY_CtrlCProducesWizardCancelled(t *testing.T) {
 	// Ctrl+C = 0x03. The slave is pre-set to raw mode so the kernel passes
-	// this byte through (ISIG cleared); bubbletea reads it as KeyCtrlC.
-	err := runFormInPTY(t, []byte{0x03})
+	// this byte through (ISIG cleared); bubbletea reads it as Ctrl+C.
+	_, err := runFormInPTY(t, []byte{0x03})
 	assert.ErrorIs(t, err, errWizardCancelled)
+}
+
+func TestPTY_InputProducesValue(t *testing.T) {
+	value, err := runFormInPTY(t, []byte("typed value\r"))
+	assert.NoError(t, err)
+	assert.Equal(t, "typed value", value)
 }

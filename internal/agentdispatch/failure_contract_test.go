@@ -144,27 +144,20 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 	}
 }
 
-func TestCaptureLimitsPreventPartialPublication(t *testing.T) {
-	budget := &captureBudget{max: 3}
-	if err := budget.reserve(2); err != nil {
-		t.Fatalf("reserve within budget: %v", err)
-	}
-	if err := budget.reserve(2); err == nil {
-		t.Fatal("aggregate capture budget accepted overflow")
-	}
-
+func TestCaptureWriterPreservesProviderOutput(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "answer")
-	writer, err := newLimitedWriter(path, 3, nil)
+	writer, err := newCaptureWriter(path)
 	if err != nil {
 		t.Fatalf("new writer: %v", err)
 	}
-	if _, err := writer.Write([]byte("abc")); err != nil {
-		t.Fatalf("write within limit: %v", err)
-	}
-	if _, err := writer.Write([]byte("x")); err == nil {
-		t.Fatal("answer capture accepted overflow")
+	if _, err := writer.Write([]byte("provider output")); err != nil {
+		t.Fatalf("write capture: %v", err)
 	}
 	if err := writer.Close(); err != nil {
 		t.Fatalf("close writer: %v", err)
+	}
+	data, err := os.ReadFile(path) // #nosec G304 -- test-owned path.
+	if err != nil || string(data) != "provider output" {
+		t.Fatalf("capture = %q, %v", data, err)
 	}
 }

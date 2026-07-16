@@ -258,6 +258,40 @@ func TestRandomDiscoveryPreservesUnsupportedVersionFacts(t *testing.T) {
 	}
 }
 
+func TestRandomResolutionCachesCompatibleProviderVersions(t *testing.T) {
+	root := t.TempDir()
+	binDir := t.TempDir()
+	callPath := filepath.Join(t.TempDir(), "version-calls")
+	codexPath := filepath.Join(binDir, "codex")
+	script := "#!/bin/sh\nprintf '%s\\n' " + supportedProviderVersions[AgentCodex] + "\nprintf 'called\\n' >> " + callPath + "\n"
+	if err := os.WriteFile(codexPath, []byte(script), 0o700); err != nil { // #nosec G306 -- test provider must be executable.
+		t.Fatal(err)
+	}
+	cfg := dispatchTestConfig(AgentCodex)
+	lookPath := func(binary string) (string, error) {
+		if binary == "codex" {
+			return codexPath, nil
+		}
+		return "", exec.ErrNotFound
+	}
+	for range 2 {
+		selected, err := chooseRandomTarget(cfg, root, "", false, lookPath, nil, chooseOnly(AgentCodex))
+		if err != nil {
+			t.Fatalf("choose random target: %v", err)
+		}
+		if selected.Target.Name != AgentCodex || selected.InstalledVersion != supportedProviderVersions[AgentCodex] {
+			t.Fatalf("selected target = %#v", selected)
+		}
+	}
+	data, err := os.ReadFile(callPath) // #nosec G304 -- test-owned path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls := strings.Count(string(data), "called"); calls != 1 {
+		t.Fatalf("compatible random resolution ran provider version discovery %d times, want 1 cached lookup", calls)
+	}
+}
+
 func TestBuildOptionsResolvesEachProviderBinaryOnce(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	lookups := map[string]int{}

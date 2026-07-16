@@ -229,6 +229,22 @@ The release workflow runs this target on macOS before importing signing credenti
 
 ### Release
 
+- Install the pinned release vulnerability scanner
+```bash
+make release-tools
+```
+Run from: repo root
+Prerequisites: Go 1.26.0+, network access
+Notes: Installs the `govulncheck` version pinned in `go.mod` into `.tools/bin`. This tool is release-only and is not installed by `make tools`.
+
+- Scan all four built release executables for reachable vulnerabilities
+```bash
+make release-vuln-check DIST_DIR=dist
+```
+Run from: repo root
+Prerequisites: `make release-tools`, all four release binaries in `DIST_DIR`, network access to the Go vulnerability database
+Notes: Uses `govulncheck -mode=binary` and fails on a missing binary, reachable vulnerability, scanner failure, or database failure. The tag-triggered release workflow enforces this after build and before notarization or publication; ordinary CI does not run it.
+
 - Generate an embedded template ownership manifest for a release version
 ```bash
 ./scripts/generate-template-manifest.sh --tag vX.Y.Z

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -187,10 +188,18 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 		t.Fatalf("Codex string failure events = %#v, %v", stringFailureEvents, err)
 	}
 	var raw bytes.Buffer
-	if err := readStructuredEvents(strings.NewReader("not-json\n"), &raw, AgentCodex, "", func(providerEvent) error { return nil }); err == nil {
-		t.Fatal("invalid provider JSON was accepted")
+	var recovered []providerEvent
+	invalidThenValid := "not-json\n" + `{"type":"turn.completed"}` + "\n"
+	if err := readStructuredEvents(strings.NewReader(invalidThenValid), &raw, AgentCodex, "", func(event providerEvent) error {
+		recovered = append(recovered, event)
+		return nil
+	}); err != nil {
+		t.Fatalf("invalid provider JSON prevented later record recovery: %v", err)
 	}
-	if raw.String() != "not-json\n" {
+	if len(recovered) != 2 || recovered[0].Kind != eventProgress || recovered[0].Activity != "invalid_structured_event" || recovered[1].Kind != eventComplete {
+		t.Fatalf("recovered events = %#v", recovered)
+	}
+	if raw.String() != invalidThenValid {
 		t.Fatalf("raw evidence = %q", raw.String())
 	}
 	raw.Reset()
@@ -201,13 +210,52 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 		t.Fatalf("blank raw evidence = %q", raw.String())
 	}
 	raw.Reset()
-	oversized := bytes.Repeat([]byte("x"), maxStructuredEventBytes+1)
-	if err := readStructuredEvents(bytes.NewReader(oversized), &raw, AgentCodex, "", func(providerEvent) error { return nil }); err == nil {
-		t.Fatal("oversized provider event was accepted")
+	const skippedOutputBytes = 482 * 1024 * 1024
+	largeEvent := io.MultiReader(
+		strings.NewReader(`{"type":"item.completed","item":{"type":"command_execution","aggregated_output":"`),
+		io.LimitReader(repeatingByteReader('x'), skippedOutputBytes),
+		strings.NewReader(`"}}`+"\n"),
+	)
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	var largeEvents []providerEvent
+	retainedBytes := int64(0)
+	if err := readStructuredEvents(largeEvent, countingWriter{count: &retainedBytes}, AgentCodex, "", func(event providerEvent) error {
+		largeEvents = append(largeEvents, event)
+		return nil
+	}); err != nil {
+		t.Fatalf("large valid provider event failed: %v", err)
 	}
-	if !bytes.Equal(raw.Bytes(), oversized) {
-		t.Fatalf("oversized raw evidence retained %d bytes, want %d", raw.Len(), len(oversized))
+	runtime.ReadMemStats(&after)
+	if len(largeEvents) != 1 || largeEvents[0].Kind != eventProgress || largeEvents[0].Activity != codexItemCompletedType {
+		t.Fatalf("large provider events = %#v", largeEvents)
 	}
+	wantRetained := int64(skippedOutputBytes + len(`{"type":"item.completed","item":{"type":"command_execution","aggregated_output":"`+`"}}`+"\n"))
+	if retainedBytes != wantRetained {
+		t.Fatalf("large raw evidence retained %d bytes, want %d", retainedBytes, wantRetained)
+	}
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 32*1024*1024 {
+		t.Fatalf("parsing %d skipped bytes allocated %d bytes; memory use must not scale with command output", skippedOutputBytes, allocated)
+	}
+}
+
+type repeatingByteReader byte
+
+func (r repeatingByteReader) Read(data []byte) (int, error) {
+	for i := range data {
+		data[i] = byte(r)
+	}
+	return len(data), nil
+}
+
+type countingWriter struct {
+	count *int64
+}
+
+func (w countingWriter) Write(data []byte) (int, error) {
+	*w.count += int64(len(data))
+	return len(data), nil
 }
 
 func TestRunnerBuffersOnlyCompletedAnswer(t *testing.T) {

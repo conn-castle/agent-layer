@@ -135,9 +135,12 @@ dispatchable and emits one compatibility warning (naming the installed and
 tested versions) on stderr and in the options report.
 
 Prompts from standard input are capped at 10 MiB. Antigravity currently has a
-100 KiB prompt cap because its print mode accepts only an argument. Terminal
-answers are capped at 16 MiB and retained provider data at 64 MiB. Inputs and
-outputs are rejected rather than truncated.
+100 KiB prompt cap because its print mode accepts only an argument. Provider
+stdout, stderr, reduced events, and diagnostics have no Agent Layer retention
+budget; they stream directly to run evidence files, and structured events are
+reduced without buffering unrelated command output. Malformed JSONL records
+remain in raw evidence and produce an `invalid_structured_event` reduced-event
+marker; later valid records are still processed.
 
 Dispatch performs at most one automatic retry and only for a proven pre-start
 failure. After a provider might have accepted work it preserves known

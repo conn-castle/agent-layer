@@ -3,8 +3,8 @@ package wizard
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/huh"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -127,11 +127,11 @@ func TestFormFilter_CtrlCKeySetsCancelFlag(t *testing.T) {
 	ui := &HuhUI{}
 	filter := ui.formFilter()
 
-	msg := filter(nil, tea.KeyMsg{Type: tea.KeyCtrlC})
+	msg := filter(nil, tea.KeyPressMsg(tea.Key{Code: 'c', Mod: tea.ModCtrl}))
 
 	assert.True(t, ui.ctrlCAbort, "Ctrl+C key should set ctrlCAbort flag")
 	// KeyMsg should pass through unchanged.
-	assert.IsType(t, tea.KeyMsg{}, msg)
+	assert.IsType(t, tea.KeyPressMsg{}, msg)
 }
 
 func TestFormFilter_InterruptMsgConvertsToQuitMsg(t *testing.T) {

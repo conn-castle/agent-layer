@@ -109,6 +109,73 @@ run_codesign_requirement_test() {
   fi
 }
 
+run_release_vulnerability_gate_test() {
+  section "Release Vulnerability Gate Test"
+
+  local vuln_dist="$tmp_dir/vuln-dist"
+  local vuln_tools="$tmp_dir/vuln-tools"
+  local vuln_log="$tmp_dir/vuln-scans.log"
+  local expected=(al-darwin-arm64 al-darwin-amd64 al-linux-arm64 al-linux-amd64)
+  mkdir -p "$vuln_dist" "$vuln_tools"
+  for binary in "${expected[@]}"; do
+    touch "$vuln_dist/$binary"
+  done
+
+  cat > "$vuln_tools/govulncheck" << 'MOCK_GOVULNCHECK'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${FAKE_GOVULNCHECK_LOG:?}"
+binary="${*: -1}"
+if [[ -n "${FAKE_GOVULNCHECK_FAIL_ON:-}" && "$(basename "$binary")" == "$FAKE_GOVULNCHECK_FAIL_ON" ]]; then
+  exit 1
+fi
+MOCK_GOVULNCHECK
+  chmod +x "$vuln_tools/govulncheck"
+
+  if FAKE_GOVULNCHECK_LOG="$vuln_log" make --no-print-directory -C "$ROOT_DIR" \
+      release-vuln-check TOOL_BIN="$vuln_tools" DIST_DIR="$vuln_dist"; then
+    pass "release-vuln-check succeeds when all four binary scans succeed"
+  else
+    fail "release-vuln-check failed with a complete clean binary set"
+  fi
+
+  local scan_count
+  scan_count=$(wc -l < "$vuln_log" | tr -d ' ')
+  if [[ "$scan_count" -eq 4 ]]; then
+    pass "release-vuln-check invokes exactly four scans"
+  else
+    fail "release-vuln-check invoked $scan_count scans, expected 4"
+  fi
+  for binary in "${expected[@]}"; do
+    if grep -Fxq -- "-mode=binary $vuln_dist/$binary" "$vuln_log"; then
+      pass "release-vuln-check scans $binary in binary mode"
+    else
+      fail "release-vuln-check did not scan $binary in binary mode"
+    fi
+  done
+
+  rm "$vuln_dist/al-linux-amd64"
+  : > "$vuln_log"
+  if FAKE_GOVULNCHECK_LOG="$vuln_log" make --no-print-directory -C "$ROOT_DIR" \
+      release-vuln-check TOOL_BIN="$vuln_tools" DIST_DIR="$vuln_dist" > "$tmp_dir/vuln-missing.log" 2>&1; then
+    fail "release-vuln-check should fail when a release binary is missing"
+  elif [[ -s "$vuln_log" ]]; then
+    fail "release-vuln-check scanned an incomplete binary set"
+  else
+    pass "release-vuln-check fails before scanning an incomplete binary set"
+  fi
+
+  touch "$vuln_dist/al-linux-amd64"
+  : > "$vuln_log"
+  if FAKE_GOVULNCHECK_LOG="$vuln_log" FAKE_GOVULNCHECK_FAIL_ON=al-darwin-amd64 \
+      make --no-print-directory -C "$ROOT_DIR" release-vuln-check TOOL_BIN="$vuln_tools" DIST_DIR="$vuln_dist" \
+      > "$tmp_dir/vuln-failure.log" 2>&1; then
+    fail "release-vuln-check should propagate scanner failures"
+  else
+    pass "release-vuln-check propagates scanner failures"
+  fi
+}
+
 run_build_invocation_details() {
   section "Build Invocation Details"
 

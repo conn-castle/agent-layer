@@ -77,6 +77,59 @@ func TestRenderTruncatedUnifiedDiff_CollapsesEquivalentMovedLines(t *testing.T) 
 	}
 }
 
+func TestRenderTruncatedUnifiedDiff_ReorderWithEditRemainsVisible(t *testing.T) {
+	from := "alpha\nbeta\ngamma\n"
+	to := "gamma\nalpha\nbeta edited\n"
+
+	diff, truncated, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
+	if truncated {
+		t.Fatal("did not expect truncation")
+	}
+	if diff == "" || added == 0 || removed == 0 {
+		t.Fatalf("reorder plus edit was hidden: diff=%q stats=(+%d, -%d)", diff, added, removed)
+	}
+}
+
+func TestRenderTruncatedUnifiedDiff_ReorderWithAdditionRemainsVisible(t *testing.T) {
+	from := "alpha\nbeta\n"
+	to := "beta\nalpha\ngamma\n"
+
+	diff, _, added, _ := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
+	if diff == "" || added == 0 {
+		t.Fatalf("reorder plus addition was hidden: diff=%q added=%d", diff, added)
+	}
+}
+
+func TestRenderTruncatedUnifiedDiff_DuplicateMultiplicityMismatchRemainsVisible(t *testing.T) {
+	from := "alpha\nalpha\nbeta\n"
+	to := "beta\nalpha\n"
+
+	diff, _, _, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
+	if diff == "" || removed == 0 {
+		t.Fatalf("duplicate removal was hidden: diff=%q removed=%d", diff, removed)
+	}
+}
+
+func TestRenderTruncatedUnifiedDiff_EquivalentDuplicatesInDifferentOrderAreSuppressed(t *testing.T) {
+	from := "alpha\nbeta\nalpha\n"
+	to := "alpha\nalpha\nbeta\n"
+
+	diff, truncated, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
+	if diff != "" || truncated || added != 0 || removed != 0 {
+		t.Fatalf("equivalent duplicate reorder was visible: diff=%q truncated=%t stats=(+%d, -%d)", diff, truncated, added, removed)
+	}
+}
+
+func TestRenderTruncatedUnifiedDiff_ReorderNormalizesTrailingHorizontalWhitespace(t *testing.T) {
+	from := "alpha  \nbeta\t\n"
+	to := "beta\nalpha\n"
+
+	diff, truncated, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
+	if diff != "" || truncated || added != 0 || removed != 0 {
+		t.Fatalf("normalized reorder was visible: diff=%q truncated=%t stats=(+%d, -%d)", diff, truncated, added, removed)
+	}
+}
+
 func TestCountDiffLineStats(t *testing.T) {
 	lines := []string{
 		"--- a.txt",

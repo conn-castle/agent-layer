@@ -45,9 +45,10 @@ run_workflow_consistency_tests() {
     fail "workflow-consistency: stable tag validation must run before publish release"
   fi
 
-  local import_cert_line build_release_line notarize_line upload_line ci_checks_line
+  local import_cert_line build_release_line vuln_scan_line notarize_line upload_line ci_checks_line
   import_cert_line=$(grep -n 'name: Import Developer ID cert' "$release_workflow" | head -n1 | cut -d: -f1 || true)
   build_release_line=$(grep -n 'name: Build release artifacts' "$release_workflow" | head -n1 | cut -d: -f1 || true)
+  vuln_scan_line=$(grep -n 'name: Scan release binaries for reachable vulnerabilities' "$release_workflow" | head -n1 | cut -d: -f1 || true)
   notarize_line=$(grep -n 'name: Notarize darwin binaries' "$release_workflow" | head -n1 | cut -d: -f1 || true)
   upload_line=$(grep -n 'name: Upload dist artifacts for downstream jobs' "$release_workflow" | head -n1 | cut -d: -f1 || true)
   ci_checks_line=$(grep -n 'name: CI checks' "$release_workflow" | head -n1 | cut -d: -f1 || true)
@@ -75,6 +76,21 @@ run_workflow_consistency_tests() {
     pass "workflow-consistency: notarization runs after build and before artifact upload"
   else
     fail "workflow-consistency: notarization must run after build and before artifact upload"
+  fi
+
+  if [[ -n "$vuln_scan_line" && -n "$build_release_line" && -n "$notarize_line" && -n "$upload_line" && -n "$publish_release_line" && \
+        "$build_release_line" -lt "$vuln_scan_line" && "$vuln_scan_line" -lt "$notarize_line" && \
+        "$vuln_scan_line" -lt "$upload_line" && "$vuln_scan_line" -lt "$publish_release_line" ]] && \
+     grep -q 'make release-vuln-check DIST_DIR=dist' "$release_workflow"; then
+    pass "workflow-consistency: vulnerability scan gates every release publication path"
+  else
+    fail "workflow-consistency: vulnerability scan must run after build and before notarization, upload, and publish"
+  fi
+
+  if grep -q 'make release-tools' "$release_workflow" && ! grep -q 'release-vuln-check' "$ci_workflow"; then
+    pass "workflow-consistency: release tools are installed only for the release lane"
+  else
+    fail "workflow-consistency: release must install its scanner and ordinary CI must not invoke it"
   fi
 
   if grep -q 'Apple-Actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466' "$release_workflow" && \
