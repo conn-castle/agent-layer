@@ -32,9 +32,9 @@ func newNoSyncLaunchCmd(
 				return err
 			}
 			if noSync {
-				return clients.RunNoSync(root, agentName, enabledFn, launchFn, quiet, passArgs)
+				return clients.RunNoSyncWithStderr(root, agentName, enabledFn, launchFn, quiet, passArgs, cmd.ErrOrStderr())
 			}
-			return clients.Run(cmd.Context(), root, agentName, enabledFn, launchFn, quiet, passArgs, Version)
+			return clients.RunWithStderr(cmd.Context(), root, agentName, enabledFn, launchFn, quiet, passArgs, Version, cmd.ErrOrStderr())
 		},
 	}
 

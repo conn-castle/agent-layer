@@ -32,7 +32,7 @@ func newAntigravityCmd() *cobra.Command {
 }
 
 func runAntigravity(cmd *cobra.Command, root string, quiet bool, passArgs []string) error {
-	return clients.Run(cmd.Context(), root, "antigravity", func(cfg *config.Config) *bool {
+	return clients.RunWithStderr(cmd.Context(), root, "antigravity", func(cfg *config.Config) *bool {
 		return cfg.Agents.Antigravity.Enabled
-	}, antigravity.Launch, quiet, passArgs, Version)
+	}, antigravity.Launch, quiet, passArgs, Version, cmd.ErrOrStderr())
 }

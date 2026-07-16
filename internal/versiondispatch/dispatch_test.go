@@ -1047,3 +1047,39 @@ func TestMaybeExec_UsesProvidedStderr(t *testing.T) {
 		t.Fatalf("expected version source output, got %q", stderr.String())
 	}
 }
+
+func TestMaybeExec_UsesPinFromRealRootOfSymlinkedDescendant(t *testing.T) {
+	repo := t.TempDir()
+	agentLayerDir := filepath.Join(repo, ".agent-layer")
+	if err := os.Mkdir(agentLayerDir, 0o700); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(agentLayerDir, "al.version"), []byte("1.0.0\n"), 0o600); err != nil {
+		t.Fatalf("write pin: %v", err)
+	}
+	descendant := filepath.Join(repo, "packages", "service")
+	if err := os.MkdirAll(descendant, 0o700); err != nil {
+		t.Fatalf("mkdir descendant: %v", err)
+	}
+
+	logicalParent := t.TempDir()
+	linkedRepo := filepath.Join(logicalParent, "linked-repo")
+	if err := os.Symlink(repo, linkedRepo); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	var stderr bytes.Buffer
+	err := MaybeExec(
+		[]string{"al"},
+		"1.0.0",
+		filepath.Join(linkedRepo, "packages", "service"),
+		&stderr,
+		func(int) {},
+	)
+	if err != nil {
+		t.Fatalf("MaybeExec error: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "(pin)") {
+		t.Fatalf("expected repository pin to be resolved through symlinked descendant, got %q", stderr.String())
+	}
+}
