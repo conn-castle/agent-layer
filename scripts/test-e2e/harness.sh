@@ -66,7 +66,7 @@ setup_scenario_dir() {
   local dir
   dir="$(mktemp -d "$E2E_TMP_ROOT/scenario-XXXXXX")"
   mkdir -p "$dir/.git"
-  echo "$dir"
+  (cd "$dir" && pwd -P)
 }
 
 # cleanup_scenario_dir <dir> — remove a scenario directory.

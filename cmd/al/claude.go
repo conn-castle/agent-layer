@@ -23,9 +23,9 @@ func newClaudeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return clients.Run(cmd.Context(), root, "claude", func(cfg *config.Config) *bool {
+			return clients.RunWithStderr(cmd.Context(), root, "claude", func(cfg *config.Config) *bool {
 				return cfg.Agents.Claude.Enabled
-			}, claude.Launch, quiet, passArgs, Version)
+			}, claude.Launch, quiet, passArgs, Version, cmd.ErrOrStderr())
 		},
 	}
 

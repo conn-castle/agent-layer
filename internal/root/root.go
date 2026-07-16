@@ -17,15 +17,15 @@ const (
 // FindAgentLayerRoot walks upward from start until it finds a directory containing .agent-layer/.
 // It returns the root path, whether it was found, and any error encountered.
 func FindAgentLayerRoot(start string) (string, bool, error) {
-	if start == "" {
-		return "", false, fmt.Errorf(messages.RootStartPathRequired)
-	}
-	abs, err := filepath.Abs(start)
+	resolved, err := resolveStartPath(start)
 	if err != nil {
-		return "", false, fmt.Errorf(messages.RootResolvePathFmt, start, err)
+		return "", false, err
 	}
+	return findAgentLayerRoot(resolved)
+}
 
-	dir := abs
+func findAgentLayerRoot(start string) (string, bool, error) {
+	dir := start
 	for {
 		candidate := filepath.Join(dir, agentLayerDir)
 		info, err := os.Stat(candidate)
@@ -50,21 +50,18 @@ func FindAgentLayerRoot(start string) (string, bool, error) {
 // FindRepoRoot returns the repo root for initialization.
 // It prefers an existing .agent-layer directory, then a .git directory or file, and falls back to start.
 func FindRepoRoot(start string) (string, error) {
-	if start == "" {
-		return "", fmt.Errorf(messages.RootStartPathRequired)
-	}
-	abs, err := filepath.Abs(start)
+	resolved, err := resolveStartPath(start)
 	if err != nil {
-		return "", fmt.Errorf(messages.RootResolvePathFmt, start, err)
+		return "", err
 	}
 
-	if root, found, err := FindAgentLayerRoot(abs); err != nil {
+	if root, found, err := findAgentLayerRoot(resolved); err != nil {
 		return "", err
 	} else if found {
 		return root, nil
 	}
 
-	dir := abs
+	dir := resolved
 	for {
 		candidate := filepath.Join(dir, gitDir)
 		info, err := os.Stat(candidate)
@@ -80,8 +77,23 @@ func FindRepoRoot(start string) (string, error) {
 
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return abs, nil
+			return resolved, nil
 		}
 		dir = parent
 	}
+}
+
+func resolveStartPath(start string) (string, error) {
+	if start == "" {
+		return "", fmt.Errorf(messages.RootStartPathRequired)
+	}
+	abs, err := filepath.Abs(start)
+	if err != nil {
+		return "", fmt.Errorf(messages.RootResolvePathFmt, start, err)
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", fmt.Errorf(messages.RootResolvePathFmt, start, err)
+	}
+	return resolved, nil
 }

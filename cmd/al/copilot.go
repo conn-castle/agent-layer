@@ -23,9 +23,9 @@ func newCopilotCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return clients.Run(cmd.Context(), root, "copilot", func(cfg *config.Config) *bool {
+			return clients.RunWithStderr(cmd.Context(), root, "copilot", func(cfg *config.Config) *bool {
 				return cfg.Agents.CopilotCLI.Enabled
-			}, copilotcli.Launch, quiet, passArgs, Version)
+			}, copilotcli.Launch, quiet, passArgs, Version, cmd.ErrOrStderr())
 		},
 	}
 

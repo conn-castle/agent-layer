@@ -23,9 +23,9 @@ func newCodexCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return clients.Run(cmd.Context(), root, "codex", func(cfg *config.Config) *bool {
+			return clients.RunWithStderr(cmd.Context(), root, "codex", func(cfg *config.Config) *bool {
 				return cfg.Agents.Codex.Enabled
-			}, codex.Launch, quiet, passArgs, Version)
+			}, codex.Launch, quiet, passArgs, Version, cmd.ErrOrStderr())
 		},
 	}
 

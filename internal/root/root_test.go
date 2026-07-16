@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -25,8 +26,39 @@ func TestFindAgentLayerRootFound(t *testing.T) {
 	if !found {
 		t.Fatalf("expected root to be found")
 	}
-	if got != root {
-		t.Fatalf("expected root %s, got %s", root, got)
+	want := resolvedTestPath(t, root)
+	if got != want {
+		t.Fatalf("expected root %s, got %s", want, got)
+	}
+}
+
+func TestFindAgentLayerRootResolvesSymlinkedDescendant(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repo, ".agent-layer"), 0o700); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	descendant := filepath.Join(repo, "packages", "service")
+	if err := os.MkdirAll(descendant, 0o700); err != nil {
+		t.Fatalf("mkdir descendant: %v", err)
+	}
+
+	logicalParent := t.TempDir()
+	linkedRepo := filepath.Join(logicalParent, "linked-repo")
+	if err := os.Symlink(repo, linkedRepo); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+	logicalDescendant := filepath.Join(linkedRepo, "packages", "service")
+
+	got, found, err := FindAgentLayerRoot(logicalDescendant)
+	if err != nil {
+		t.Fatalf("FindAgentLayerRoot error: %v", err)
+	}
+	if !found {
+		t.Fatal("expected root to be found through symlinked descendant")
+	}
+	want := resolvedTestPath(t, repo)
+	if got != want {
+		t.Fatalf("expected real root %s, got %s", want, got)
 	}
 }
 
@@ -69,8 +101,9 @@ func TestFindRepoRootPrefersAgentLayer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRepoRoot error: %v", err)
 	}
-	if got != root {
-		t.Fatalf("expected root %s, got %s", root, got)
+	want := resolvedTestPath(t, root)
+	if got != want {
+		t.Fatalf("expected root %s, got %s", want, got)
 	}
 }
 
@@ -88,8 +121,35 @@ func TestFindRepoRootUsesGit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRepoRoot error: %v", err)
 	}
-	if got != root {
-		t.Fatalf("expected root %s, got %s", root, got)
+	want := resolvedTestPath(t, root)
+	if got != want {
+		t.Fatalf("expected root %s, got %s", want, got)
+	}
+}
+
+func TestFindRepoRootResolvesSymlinkedDescendant(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repo, ".git"), 0o700); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	descendant := filepath.Join(repo, "packages", "service")
+	if err := os.MkdirAll(descendant, 0o700); err != nil {
+		t.Fatalf("mkdir descendant: %v", err)
+	}
+
+	logicalParent := t.TempDir()
+	linkedRepo := filepath.Join(logicalParent, "linked-repo")
+	if err := os.Symlink(repo, linkedRepo); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	got, err := FindRepoRoot(filepath.Join(linkedRepo, "packages", "service"))
+	if err != nil {
+		t.Fatalf("FindRepoRoot error: %v", err)
+	}
+	want := resolvedTestPath(t, repo)
+	if got != want {
+		t.Fatalf("expected real Git root %s, got %s", want, got)
 	}
 }
 
@@ -99,8 +159,9 @@ func TestFindRepoRootFallsBackToStart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRepoRoot error: %v", err)
 	}
-	if got != root {
-		t.Fatalf("expected root %s, got %s", root, got)
+	want := resolvedTestPath(t, root)
+	if got != want {
+		t.Fatalf("expected root %s, got %s", want, got)
 	}
 }
 
@@ -110,6 +171,46 @@ func TestFindRootsRequireStartPath(t *testing.T) {
 	}
 	if _, err := FindRepoRoot(""); err == nil {
 		t.Fatal("expected FindRepoRoot to reject empty start")
+	}
+}
+
+func TestFindRootsRejectBrokenSymlinkStart(t *testing.T) {
+	parent := t.TempDir()
+	broken := filepath.Join(parent, "broken")
+	if err := os.Symlink(filepath.Join(parent, "missing-target"), broken); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		find func() error
+	}{
+		{
+			name: "agent layer root",
+			find: func() error {
+				_, _, err := FindAgentLayerRoot(broken)
+				return err
+			},
+		},
+		{
+			name: "repository root",
+			find: func() error {
+				_, err := FindRepoRoot(broken)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.find()
+			if err == nil {
+				t.Fatal("expected broken symlink to fail")
+			}
+			if !strings.Contains(err.Error(), "resolve path ") || !strings.Contains(err.Error(), broken) {
+				t.Fatalf("expected actionable path-resolution error for %s, got %v", broken, err)
+			}
+		})
 	}
 }
 
@@ -124,8 +225,9 @@ func TestFindRepoRootUsesGitFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRepoRoot error: %v", err)
 	}
-	if got != root {
-		t.Fatalf("expected root %s, got %s", root, got)
+	want := resolvedTestPath(t, root)
+	if got != want {
+		t.Fatalf("expected root %s, got %s", want, got)
 	}
 }
 
@@ -143,4 +245,13 @@ func TestFindRepoRootGitSpecialFileErrors(t *testing.T) {
 	if _, err := FindRepoRoot(root); err == nil {
 		t.Fatal("expected error when .git is neither directory nor regular file")
 	}
+}
+
+func resolvedTestPath(t *testing.T, path string) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatalf("resolve test path %s: %v", path, err)
+	}
+	return resolved
 }
