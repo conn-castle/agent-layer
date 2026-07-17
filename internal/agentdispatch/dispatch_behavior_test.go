@@ -268,7 +268,7 @@ func TestRandomResolutionRejectsEmptyOverridePoolBeforeSelection(t *testing.T) {
 
 	first := requireDispatchExitError(t, resolve(), ExitUsage)
 	second := requireDispatchExitError(t, resolve(), ExitUsage)
-	want := "no agents eligible for `al dispatch --agent random` support all requested overrides (--model and --reasoning-effort); remove unsupported overrides or select an explicit compatible agent"
+	want := "no agents eligible for `al dispatch --agent random` to support all requested overrides (--model and --reasoning-effort); remove unsupported overrides or select an explicit compatible agent"
 	if first.Message != want || second.Message != want {
 		t.Fatalf("empty compatible pool errors = %q and %q, want %q", first.Message, second.Message, want)
 	}
