@@ -141,6 +141,7 @@ func (group ownedProviderProcessGroup) terminate(grace time.Duration) error {
 				select {
 				case <-ticker.C:
 					if providerProcessGroupDead(group.pgid) {
+						proofTimer.Stop()
 						return nil
 					}
 				case <-proofTimer.C:
