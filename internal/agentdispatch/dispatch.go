@@ -182,6 +182,9 @@ func resume(opts ResumeOptions, writeRejectedRunRecord func(string, *RunRecord) 
 		Stderr:        stderr,
 		Env:           env,
 		Depth:         depth + 1,
+		Model:         session.Model,
+		Effort:        session.ReasoningEffort,
+		TargetPinned:  session.TargetPinned,
 		Skill:         opts.Skill,
 		NewCommand:    opts.NewCommand,
 		VersionLookup: opts.VersionLookup,
@@ -220,6 +223,7 @@ type dispatchExecution struct {
 	Depth         int
 	Model         string
 	Effort        string
+	TargetPinned  bool
 	Skill         string
 	NewCommand    CommandFactory
 	VersionLookup func(path string, agent string) (string, error)
@@ -290,9 +294,17 @@ func executeDispatch(request dispatchExecution) error {
 			}
 		}
 		childEnv := dispatchEnvironment(request.Env, request.Project, request.Run, request.Depth, request.Target.Name)
-		command, err := buildProviderCommand(request.Target, request.Project, childEnv, request.Prompt, request.Model, request.Effort, request.Mode, session.ProviderSessionID, request.Run, request.Stderr)
+		command, err := buildProviderCommand(request.Target, request.Project, childEnv, request.Prompt, request.Model, request.Effort, request.TargetPinned, request.Mode, session.ProviderSessionID, request.Run, request.Stderr)
 		if err != nil {
 			return finishDispatchFailure(request, &preStartFailure{err: err})
+		}
+		session.Model = command.Model
+		session.ReasoningEffort = command.Effort
+		if session.State == sessionStateDurable {
+			session.TargetPinned = true
+			if err := persistSession(request.Root, session); err != nil {
+				return finishDispatchFailure(request, &preStartFailure{err: err})
+			}
 		}
 		command.WorkDir = request.WorkDir
 		request.Run.Record.ProviderLogPath = command.LogPath

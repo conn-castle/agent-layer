@@ -4,10 +4,13 @@ SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
 ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+GIT_COMMON_DIR := $(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+CACHE_ROOT ?= $(if $(GIT_COMMON_DIR),$(abspath $(GIT_COMMON_DIR)/../.cache),$(ROOT_DIR)/.cache)
 TOOL_BIN ?= $(ROOT_DIR)/.tools/bin
 GOLANGCI_LINT_VERSION := v2.12.2
-GO_CACHE ?= $(ROOT_DIR)/.cache/go-build
-GO_MOD_CACHE ?= $(ROOT_DIR)/.cache/go-mod
+GO_CACHE ?= $(CACHE_ROOT)/go-build
+GO_MOD_CACHE ?= $(CACHE_ROOT)/go-mod
+GOLANGCI_LINT_CACHE ?= $(ROOT_DIR)/.cache/golangci-lint
 
 GO_FILES_FIND_CMD := find . -type f -name '*.go' -not -path './.tools/*' -not -path './.cache/*' -not -path './.claude/*' -not -path './.codex/*' -not -path './.gemini/*' -not -path './.agy/*' -not -path './.antigravitycli/*' -not -path './.agents/*' -not -path './.agent-layer/*' -not -path './tmp/*'
 
@@ -107,7 +110,8 @@ fmt-check: check-goimports ## Check Go formatting (gofmt + goimports)
 
 .PHONY: lint
 lint: check-golangci-lint ## Run golangci-lint
-	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/golangci-lint" run ./...
+	@mkdir -p "$(GOLANGCI_LINT_CACHE)"
+	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE)" "$(TOOL_BIN)/golangci-lint" run ./...
 
 .PHONY: lint-ci-local
 lint-ci-local: check-golangci-lint ## Run fresh-cache Linux-targeted and native-host lint
@@ -157,8 +161,16 @@ tidy: ## Run go mod tidy
 .PHONY: tidy-check
 tidy-check: ## Verify go.mod/go.sum are tidy
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go mod tidy
-	@git diff --exit-code
+	@tmp_mod="$$(mktemp)" && tmp_sum="$$(mktemp)" && \
+	  cp go.mod "$$tmp_mod" && cp go.sum "$$tmp_sum" && \
+	  trap 'cp "$$tmp_mod" go.mod 2>/dev/null || true; cp "$$tmp_sum" go.sum 2>/dev/null || true; rm -f "$$tmp_mod" "$$tmp_sum"' EXIT && \
+	  GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go mod tidy && \
+	  if ! cmp -s "$$tmp_mod" go.mod || ! cmp -s "$$tmp_sum" go.sum; then \
+	    echo "go mod tidy changed go.mod or go.sum" >&2; \
+	    diff -u "$$tmp_mod" go.mod >&2 || true; \
+	    diff -u "$$tmp_sum" go.sum >&2 || true; \
+	    exit 1; \
+	  fi
 
 .PHONY: coverage
 coverage: check-gotestsum ## Enforce coverage threshold (>= $(COVERAGE_THRESHOLD)) and write coverage.out

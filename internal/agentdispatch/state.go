@@ -52,6 +52,9 @@ var errDispatchRunNotFound = errors.New("dispatch run record not found")
 type Session struct {
 	Name              string    `json:"name"`
 	Agent             string    `json:"agent"`
+	Model             string    `json:"model,omitempty"`
+	ReasoningEffort   string    `json:"reasoning_effort,omitempty"`
+	TargetPinned      bool      `json:"target_pinned,omitempty"`
 	ProviderSessionID string    `json:"provider_session_id,omitempty"`
 	CreatedAt         time.Time `json:"created_at"`
 	LastUsedAt        time.Time `json:"last_used_at"`

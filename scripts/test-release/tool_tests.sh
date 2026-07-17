@@ -10,7 +10,9 @@ run_go_tool_tests_extractchecksum() {
   if [[ ! -f "$ROOT_DIR/$extract_tool/main.go" ]]; then
     fail "extractchecksum tool not found"
   else
-    if (cd "$ROOT_DIR" && go build -tags tools -o "$extract_bin" "$extract_tool"); then
+    # These test-only binaries do not consume VCS metadata. Disabling stamping
+    # also keeps the lane valid in linked worktrees nested below another Git root.
+    if (cd "$ROOT_DIR" && go build -buildvcs=false -tags tools -o "$extract_bin" "$extract_tool"); then
       pass "extractchecksum tool built"
     else
       fail "extractchecksum tool build failed"
@@ -110,7 +112,7 @@ run_go_tool_tests_updateformula() {
   if [[ ! -f "$ROOT_DIR/$update_tool/main.go" ]]; then
     fail "updateformula tool not found"
   else
-    if (cd "$ROOT_DIR" && go build -tags tools -o "$update_bin" "$update_tool"); then
+    if (cd "$ROOT_DIR" && go build -buildvcs=false -tags tools -o "$update_bin" "$update_tool"); then
       pass "updateformula tool built"
     else
       fail "updateformula tool build failed"
