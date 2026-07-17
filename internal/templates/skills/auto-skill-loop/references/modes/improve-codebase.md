@@ -13,7 +13,7 @@ require `plan_reviewers` or the common plan flow.
 ## Initialize
 
 Map repository-native components, cross-cutting boundaries, and relevant quality
-lenses incrementally. Rank them using concrete risk signals such as data,
+lenses incrementally. Prioritize them using concrete risk signals such as data,
 security, or reliability criticality; complex state or ownership; recurring
 failures; concentrated change or staleness; and weak tests or verification.
 Retain enough progress to cover all of them before declaring exhaustion.

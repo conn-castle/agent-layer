@@ -80,6 +80,66 @@ func TestFreshCodexThenResumeUsesOnlyDurableMapping(t *testing.T) {
 	}
 }
 
+func TestClaudeResumeKeepsFreshTargetAfterConfigurationChanges(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{ClaudeModel: "configured-model", ClaudeReasoningEffort: "medium"})
+	binDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "claude.log")
+	writeDispatchStub(t, binDir, "claude", "")
+	env := []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath}
+
+	var stderr bytes.Buffer
+	if err := Run(RunOptions{
+		Root:            root,
+		Agent:           AgentClaude,
+		Model:           "fable",
+		ReasoningEffort: "medium",
+		PromptArgs:      []string{"fresh"},
+		Env:             env,
+		Stderr:          &stderr,
+		LookPath:        mockLookPath(binDir),
+	}); err != nil {
+		t.Fatalf("fresh Claude Run: %v", err)
+	}
+	name := identityName(t, stderr.String())
+	session, err := loadSession(root, name)
+	if err != nil {
+		t.Fatalf("load Claude session: %v", err)
+	}
+	if session.Model != "fable" || session.ReasoningEffort != "medium" {
+		t.Fatalf("fresh target metadata = %#v", session)
+	}
+
+	configPath := filepath.Join(root, ".agent-layer", "config.toml")
+	configData, err := os.ReadFile(configPath) // #nosec G304 -- path is inside the test-owned temporary repository.
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	changedConfig := strings.ReplaceAll(string(configData), `model = "configured-model"`, `model = "opus"`)
+	changedConfig = strings.ReplaceAll(changedConfig, `reasoning_effort = "medium"`, `reasoning_effort = "high"`)
+	if err := os.WriteFile(configPath, []byte(changedConfig), 0o600); err != nil { // #nosec G703 -- path is inside the test-owned temporary repository.
+		t.Fatalf("change config: %v", err)
+	}
+	if err := os.WriteFile(logPath, nil, 0o600); err != nil {
+		t.Fatalf("reset provider log: %v", err)
+	}
+
+	if err := Resume(ResumeOptions{
+		Root:       root,
+		Name:       name,
+		PromptArgs: []string{"resume"},
+		Env:        env,
+		LookPath:   mockLookPath(binDir),
+	}); err != nil {
+		t.Fatalf("Resume Claude: %v", err)
+	}
+	assertFileContains(t, logPath, "ARG_7=--model")
+	assertFileContains(t, logPath, "ARG_8=fable")
+	assertFileContains(t, logPath, "ARG_9=--effort")
+	assertFileContains(t, logPath, "ARG_10=medium")
+	assertFileDoesNotContain(t, logPath, "opus")
+	assertFileDoesNotContain(t, logPath, "high")
+}
+
 func identityName(t *testing.T, stderr string) string {
 	t.Helper()
 	trimmed := strings.TrimSpace(stderr)
