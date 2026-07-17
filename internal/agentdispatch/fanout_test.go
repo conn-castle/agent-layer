@@ -489,6 +489,47 @@ func TestFanoutRecoversDurableEvidenceAfterFinalManifestWriteFailure(t *testing.
 	}
 }
 
+func TestFanoutPreservesCompletedManifestAfterReadBackFailure(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	command := func(string, ...string) *exec.Cmd {
+		return exec.Command("/bin/sh", "-c", `cat >/dev/null; printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n{"type":"agent_message","message":"done"}\n{"type":"turn.completed"}\n'`) // #nosec G204 -- fixed test command.
+	}
+
+	injectedErr := errors.New("injected terminal manifest read-back failure")
+	coordinatorState := defaultFanoutCoordinatorState()
+	coordinatorState.loadManifest = func(root string, id string) (FanoutManifest, error) {
+		manifest, err := loadFanoutManifest(root, id)
+		if err == nil && manifest.State == dispatchStateCompleted {
+			return FanoutManifest{}, injectedErr
+		}
+		return manifest, err
+	}
+
+	err := fanout(FanoutOptions{
+		Root: root, Targets: []FanoutTarget{{Agent: AgentCodex}, {Agent: AgentCodex}}, PromptArgs: []string{"shared"}, Env: []string{},
+		LookPath: alwaysFound, VersionLookup: func(_ string, agent string) (string, error) { return supportedProviderVersions[agent], nil },
+		NewCommand: command,
+	}, coordinatorState)
+	if !errors.Is(err, injectedErr) {
+		t.Fatalf("Fanout error = %v, want terminal read-back failure", err)
+	}
+
+	manifestEntries, err := os.ReadDir(fanoutStateRoot(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifestEntries) != 1 {
+		t.Fatalf("manifest count = %d, want 1", len(manifestEntries))
+	}
+	manifest, err := loadFanoutManifest(root, manifestEntries[0].Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.State != dispatchStateCompleted || manifest.CompletedAt == nil || manifest.Error != "" {
+		t.Fatalf("read-back failure mutated durable completed evidence: %#v", manifest)
+	}
+}
+
 func TestConcurrentResumeRejectsSecondOwnerWithActiveRun(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)

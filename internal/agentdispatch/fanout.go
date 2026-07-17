@@ -286,12 +286,9 @@ func coordinateFanout(root string, manifest FanoutManifest, handles []executionH
 	}
 	published, err := state.loadManifest(root, manifest.ID)
 	if err != nil {
-		recordCoordinatorError(err)
-		if manifest.State != dispatchStateCancelled {
-			manifest.State = dispatchStateFailed
-		}
-		_ = state.writeManifest(root, manifest)
-		return coordinatorErr
+		// The terminal manifest was already published successfully. A read-back
+		// failure must be surfaced without replacing that durable evidence.
+		return err
 	}
 	manifest = published
 	encoder := json.NewEncoder(stdout)

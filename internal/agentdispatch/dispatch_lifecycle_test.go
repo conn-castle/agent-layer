@@ -164,7 +164,7 @@ func TestFailedRunRecordPublicationPreservesCallerRevisionForFailureFinalization
 	}
 }
 
-func TestPreLaunchCancellationIsReleasedOnlyByOwningExecution(t *testing.T) {
+func TestPreLaunchCancellationAllowsSafeReplacementWithoutProcessIdentity(t *testing.T) {
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 	if err != nil {
@@ -188,17 +188,12 @@ func TestPreLaunchCancellationIsReleasedOnlyByOwningExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := claimConversation(root, session.Name, replacement.Record.ID); err == nil {
-		t.Fatal("pre-launch cancellation allowed a replacement before owner finalization")
-	} else {
-		requireDispatchExitCode(t, err, ExitUnavailable)
-	}
-	blocked, err := loadSession(root, session.Name)
+	replaced, err := claimConversation(root, session.Name, replacement.Record.ID)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("replace never-launched cancelled claim: %v", err)
 	}
-	if blocked != claimed {
-		t.Fatalf("blocked pre-launch replacement mutated mapping: before = %#v, after = %#v", claimed, blocked)
+	if replaced.ActiveRunID != replacement.Record.ID || replaced.RunID != replacement.Record.ID {
+		t.Fatalf("replacement claim was not published: %#v", replaced)
 	}
 
 	var launches atomic.Int32
@@ -219,16 +214,60 @@ func TestPreLaunchCancellationIsReleasedOnlyByOwningExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if finalized.ActiveRunID != "" {
-		t.Fatalf("owning execution did not release pre-launch cancellation: %#v", finalized)
+	if finalized.ActiveRunID != replacement.Record.ID || finalized.RunID != replacement.Record.ID {
+		t.Fatalf("old owner finalization released replacement claim: %#v", finalized)
 	}
-	replaced, err := claimConversation(root, session.Name, replacement.Record.ID)
-	if err != nil {
-		t.Fatalf("claim after owning pre-launch finalization: %v", err)
+}
+
+func TestNeverLaunchedCancelledClaimRecoveryOperations(t *testing.T) {
+	setup := func(t *testing.T) (string, *dispatchRun, Session) {
+		t.Helper()
+		root := t.TempDir()
+		run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+		if err != nil {
+			t.Fatalf("new run: %v", err)
+		}
+		session, err := reserveSession(root, run)
+		if err != nil {
+			t.Fatalf("reserve session: %v", err)
+		}
+		if err := Cancel(CancelRequest{Root: root, ID: run.Record.ID}); err != nil {
+			t.Fatalf("cancel pending run: %v", err)
+		}
+		return root, run, session
 	}
-	if replaced.ActiveRunID != replacement.Record.ID || replaced.RunID != replacement.Record.ID {
-		t.Fatalf("replacement claim was not published after owner finalization: %#v", replaced)
-	}
+
+	t.Run("orphan reconciliation releases stale claim", func(t *testing.T) {
+		root, run, session := setup(t)
+		record, err := loadRunRecord(root, run.Record.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := reconcileOrphan(root, record); err != nil {
+			t.Fatalf("reconcile cancelled run: %v", err)
+		}
+		reconciled, err := loadSession(root, session.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if reconciled.ActiveRunID != "" {
+			t.Fatalf("reconciliation retained never-launched claim: %#v", reconciled)
+		}
+	})
+
+	t.Run("delete removes stale mapping", func(t *testing.T) {
+		root, _, session := setup(t)
+		if err := Delete(root, session.Name); err != nil {
+			t.Fatalf("delete never-launched cancelled mapping: %v", err)
+		}
+		path, err := sessionPath(root, session.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("deleted mapping remains: %v", err)
+		}
+	})
 }
 
 func TestCancellationRevisionRaceIsFinalizedByOwningExecution(t *testing.T) {

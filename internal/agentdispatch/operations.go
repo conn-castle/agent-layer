@@ -184,8 +184,9 @@ func reconcileOrphan(root string, record RunRecord) (RunRecord, error) {
 	if record.State == dispatchStateCancelled {
 		// Cancellation is terminal user-visible evidence, but the active claim
 		// remains owned until the execution releases it or the recorded wrapper
-		// is provably dead. Inspection may perform that conservative recovery.
-		if processOwnership(record) != ownershipDead {
+		// never acquired process identity or is provably dead. Inspection may
+		// perform that conservative recovery.
+		if !cancelledClaimReleasable(record) {
 			return record, nil
 		}
 		if err := releaseConversation(root, record.Name, record.ID); err != nil {

@@ -367,14 +367,22 @@ func terminalDispatchState(state string) bool {
 
 // activeClaimBlocksReplacement distinguishes terminal execution evidence from
 // completed ownership. Cancellation is published before a live provider has
-// necessarily stopped, so only conservative process evidence can recover an
+// necessarily stopped, so only a record that never acquired process identity
+// or conservative proof that the recorded process is dead can recover an
 // abandoned cancelled claim. Other terminal states are written by the owning
 // execution after provider termination or a proven pre-start failure.
 func activeClaimBlocksReplacement(record RunRecord) bool {
 	if record.State == dispatchStateCancelled {
-		return processOwnership(record) != ownershipDead
+		return !cancelledClaimReleasable(record)
 	}
 	return !terminalDispatchState(record.State)
+}
+
+func cancelledClaimReleasable(record RunRecord) bool {
+	if record.PID == 0 && record.ProcessGroupID == 0 && record.ProcessStartIdentity == "" {
+		return true
+	}
+	return processOwnership(record) == ownershipDead
 }
 
 // sessionOwnerRunID resolves the explicit active claim and the compatibility

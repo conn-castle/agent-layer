@@ -119,7 +119,9 @@ func TestDispatchSessionRetentionPrunesOnlyExpiredInactiveMappings(t *testing.T)
 	expired := Session{Name: "tiny-round-capacitor", Agent: AgentCodex, State: "durable", ProviderSessionID: runtimeSessionID, CreatedAt: old, LastUsedAt: old}
 	current := Session{Name: "small-bright-resistor", Agent: AgentClaude, State: "durable", ProviderSessionID: runtimeSessionID, CreatedAt: old, LastUsedAt: now.Add(-time.Hour)}
 	active := Session{Name: "large-steady-relay", Agent: AgentCodex, State: "durable", ProviderSessionID: runtimeSessionID, CreatedAt: old, LastUsedAt: old, RunID: runtimeSessionID}
-	for _, session := range []Session{expired, current, active} {
+	cancelledRunID := "22222222-2222-4222-8222-222222222222"
+	cancelled := Session{Name: "short-curved-diode", Agent: AgentCodex, State: "durable", ProviderSessionID: runtimeSessionID, CreatedAt: old, LastUsedAt: old, RunID: cancelledRunID}
+	for _, session := range []Session{expired, current, active, cancelled} {
 		if err := persistSession(root, session); err != nil {
 			t.Fatalf("persist %s: %v", session.Name, err)
 		}
@@ -131,11 +133,21 @@ func TestDispatchSessionRetentionPrunesOnlyExpiredInactiveMappings(t *testing.T)
 	if err := writeJSONAtomic(filepath.Join(runDir, dispatchRunFile), RunRecord{ID: runtimeSessionID, State: dispatchStateRunning, RecoveryState: recoveryAcceptanceUnknown, PID: os.Getpid(), ProcessStartIdentity: processStartIdentity(os.Getpid())}); err != nil {
 		t.Fatalf("write active run: %v", err)
 	}
+	cancelledRunDir := filepath.Join(dispatchRunPath(root), cancelledRunID)
+	if err := os.MkdirAll(cancelledRunDir, 0o700); err != nil {
+		t.Fatalf("create cancelled run: %v", err)
+	}
+	if err := writeJSONAtomic(filepath.Join(cancelledRunDir, dispatchRunFile), RunRecord{ID: cancelledRunID, State: dispatchStateCancelled, RecoveryState: recoveryAcceptanceUnknown, CompletedAt: &old}); err != nil {
+		t.Fatalf("write cancelled run: %v", err)
+	}
 	if err := pruneExpiredSessions(root, now); err != nil {
 		t.Fatalf("pruneExpiredSessions: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dispatchStatePath(root), expired.Name+".json")); !os.IsNotExist(err) {
 		t.Fatalf("expired inactive mapping remains: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dispatchStatePath(root), cancelled.Name+".json")); !os.IsNotExist(err) {
+		t.Fatalf("expired never-launched cancelled mapping remains: %v", err)
 	}
 	for _, path := range []string{
 		filepath.Join(dispatchStatePath(root), current.Name+".json"),
@@ -146,7 +158,7 @@ func TestDispatchSessionRetentionPrunesOnlyExpiredInactiveMappings(t *testing.T)
 		}
 	}
 
-	corruptPath := filepath.Join(dispatchStatePath(root), "short-curved-diode.json")
+	corruptPath := filepath.Join(dispatchStatePath(root), "calm-amber-switch.json")
 	if err := os.WriteFile(corruptPath, []byte("not-json"), 0o600); err != nil {
 		t.Fatalf("write corrupt mapping: %v", err)
 	}
