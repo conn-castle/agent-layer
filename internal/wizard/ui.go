@@ -200,11 +200,10 @@ func (ui *HuhUI) MultiSelect(title string, options []string, selected *[]string)
 	return ui.runForm(huh.NewForm(
 		huh.NewGroup(
 			newHintField(huh.NewMultiSelect[string]().
-				Title(title).
 				Filterable(false).
 				Options(opts...).
 				Value(selected)),
-		),
+		).Title(title),
 	))
 }
 

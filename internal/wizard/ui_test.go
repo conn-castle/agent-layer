@@ -1,13 +1,41 @@
 package wizard
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
+
+func TestHuhUI_MultiSelectLongTitleRendersOptions(t *testing.T) {
+	options := []string{
+		messages.WizardClaudeFeatureStatuslineLabel,
+		messages.WizardClaudeFeatureIDEReadingLabel,
+		messages.WizardClaudeFeatureMemoryLabel,
+		messages.WizardClaudeFeatureConnectorsLabel,
+		messages.WizardClaudeFeatureQuestionToolLabel,
+	}
+	selected := append([]string(nil), options...)
+	ui := &HuhUI{isTerminal: func() bool { return true }}
+	origRunForm := runFormFunc
+	t.Cleanup(func() { runFormFunc = origRunForm })
+	runFormFunc = func(form *huh.Form) error {
+		_, _ = form.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+		view := form.View()
+		for _, option := range options {
+			assert.GreaterOrEqual(t, strings.Count(view, option), 2,
+				"%q must appear in both the explanation and a selectable row", option)
+		}
+		return nil
+	}
+
+	require.NoError(t, ui.MultiSelect(messages.WizardClaudeFeaturesTitle, options, &selected))
+}
 
 func TestNewHuhUI(t *testing.T) {
 	ui := NewHuhUI()
