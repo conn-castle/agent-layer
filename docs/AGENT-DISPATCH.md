@@ -76,7 +76,10 @@ Each fanout child has its own friendly name, immutable run record, and result
 path. Early child results are persisted immediately. Failure does not cancel
 unrelated children: fanout waits until all are terminal, emits complete
 per-child evidence, then exits nonzero. Cancelling a fanout affects only its
-active children and preserves completed evidence.
+active children and preserves completed evidence. If aggregate reconciliation
+fails after launch, fanout still drains every child to normal terminalization
+and claim release, preserves cancellation as the authoritative aggregate state,
+records the first coordinator error when possible, and only then returns it.
 
 ## Canonical state and concurrency
 
@@ -107,11 +110,14 @@ A per-conversation active claim spans the entire provider execution. A second
 simultaneous resume fails nonzero with the active run handle. It launches no
 provider, queues no prompt, and does not mutate provider conversation state.
 Unrelated conversations and fresh calls remain concurrent; no global lock is
-held while a provider runs.
+held while a provider runs. Publishing `cancelled` does not release the claim:
+the owning execution releases it only after provider termination, or recovery
+replaces it when recorded process-identity evidence proves the owner dead.
 
 `cancel` signals only the exact recorded live process group after verifying
-its process-start identity. A fanout cancellation iterates only nonterminal
-children.
+its process-start identity and retains the claim while that process group may
+still run. A fanout cancellation iterates only nonterminal children and applies
+the same ownership boundary independently to every child.
 
 ## Retention
 

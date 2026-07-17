@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFreshCodexThenResumeUsesOnlyDurableMapping(t *testing.T) {
@@ -158,6 +159,13 @@ func TestAntigravityResumeWithoutParsedIDRetainsDurableMapping(t *testing.T) {
 	session.ProviderSessionID = runtimeSessionID
 	session.State = "durable"
 	session.ActiveRunID = ""
+	completed := time.Now().UTC()
+	run.Record.State = dispatchStateCompleted
+	run.Record.RecoveryState = recoveryResumeRequired
+	run.Record.CompletedAt = &completed
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		t.Fatalf("complete prior run: %v", err)
+	}
 	if err := persistSession(root, session); err != nil {
 		t.Fatalf("persist session: %v", err)
 	}

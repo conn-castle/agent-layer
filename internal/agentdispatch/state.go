@@ -281,10 +281,11 @@ func claimConversation(root string, name string, runID string) (Session, error) 
 		if err := readJSON(path, &session); err != nil {
 			return wrapExitError(ExitConfig, "read dispatch mapping for active claim", err)
 		}
-		if session.ActiveRunID != "" && session.ActiveRunID != runID {
-			active, loadErr := loadRunRecord(root, session.ActiveRunID)
-			if loadErr == nil && !terminalDispatchState(active.State) {
-				return exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q is already active in run %s", name, session.ActiveRunID))
+		ownerRunID := sessionOwnerRunID(session)
+		if ownerRunID != "" && ownerRunID != runID {
+			active, loadErr := loadRunRecord(root, ownerRunID)
+			if loadErr == nil && activeClaimBlocksReplacement(active) {
+				return exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q is already active in run %s", name, ownerRunID))
 			}
 			if loadErr != nil && !errors.Is(loadErr, errDispatchRunNotFound) {
 				return loadErr
@@ -359,6 +360,27 @@ func terminalDispatchState(state string) bool {
 	default:
 		return false
 	}
+}
+
+// activeClaimBlocksReplacement distinguishes terminal execution evidence from
+// completed ownership. Cancellation is published before a live provider has
+// necessarily stopped, so only conservative process evidence can recover an
+// abandoned cancelled claim. Other terminal states are written by the owning
+// execution after provider termination or a proven pre-start failure.
+func activeClaimBlocksReplacement(record RunRecord) bool {
+	if record.State == dispatchStateCancelled {
+		return processOwnership(record) != ownershipDead
+	}
+	return !terminalDispatchState(record.State)
+}
+
+// sessionOwnerRunID resolves the explicit active claim and the compatibility
+// representation used before ActiveRunID existed.
+func sessionOwnerRunID(session Session) string {
+	if session.ActiveRunID != "" {
+		return session.ActiveRunID
+	}
+	return session.RunID
 }
 
 func deleteSession(root string, name string) error {
@@ -512,14 +534,17 @@ func pruneExpiredSession(root string, name string, cutoff time.Time) error {
 }
 
 func dispatchSessionActive(root string, session Session) bool {
-	if session.RunID == "" {
+	activeRunID := sessionOwnerRunID(session)
+	if activeRunID == "" {
 		return false
 	}
-	record, err := loadRunRecord(root, session.RunID)
+	record, err := loadRunRecord(root, activeRunID)
 	if err != nil {
-		return false
+		// Retention must not erase a mapping when its active claim cannot be
+		// interpreted conservatively. Explicit operations surface the error.
+		return true
 	}
-	return record.State == dispatchStateRunning && processOwned(record)
+	return activeClaimBlocksReplacement(record)
 }
 
 func withSessionLock(root string, name string, fn func() error) error {
@@ -549,10 +574,19 @@ func withSessionLock(root string, name string, fn func() error) error {
 }
 
 func writeRunRecord(dir string, record *RunRecord) error {
+	return writeRunRecordWithPublisher(dir, record, writeJSONAtomic)
+}
+
+// writeRunRecordWithPublisher publishes the next record revision without
+// advancing caller-owned concurrency state until publication succeeds.
+func writeRunRecordWithPublisher(dir string, record *RunRecord, publish func(string, any) error) error {
 	if record == nil {
 		return exitError(ExitConfig, "write nil dispatch run record")
 	}
-	if err := validateRunRecord(*record); err != nil {
+	next := *record
+	next.Revision++
+	next.UpdatedAt = time.Now().UTC()
+	if err := validateRunRecord(next); err != nil {
 		return err
 	}
 	return withRunLock(dir, func() error {
@@ -562,17 +596,17 @@ func writeRunRecord(dir string, record *RunRecord) error {
 			if current.Revision != record.Revision {
 				return exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s changed concurrently (expected revision %d, active revision %d)", record.ID, record.Revision, current.Revision))
 			}
-			if terminalDispatchState(current.State) && !terminalDispatchState(record.State) {
+			if terminalDispatchState(current.State) && !terminalDispatchState(next.State) {
 				return exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s is already terminal (%s)", record.ID, current.State))
 			}
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return wrapExitError(ExitConfig, "read dispatch run record before update", err)
 		}
-		record.Revision++
-		record.UpdatedAt = time.Now().UTC()
-		if err := writeJSONAtomic(path, record); err != nil {
+		if err := publish(path, next); err != nil {
 			return wrapExitError(ExitConfig, "write dispatch run record", err)
 		}
+		record.Revision = next.Revision
+		record.UpdatedAt = next.UpdatedAt
 		return nil
 	})
 }

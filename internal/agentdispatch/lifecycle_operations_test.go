@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -166,7 +167,7 @@ func TestRetentionRemovesOnlyExpiredUnreferencedTerminalEvidence(t *testing.T) {
 	}
 }
 
-func TestCancelSignalsExactOwnedProcessGroup(t *testing.T) {
+func TestCancelRetainsClaimUntilOwnedProcessIsProvablyDead(t *testing.T) {
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 	if err != nil {
@@ -176,12 +177,20 @@ func TestCancelSignalsExactOwnedProcessGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("/bin/sh", "-c", "sleep 30") // #nosec G204 -- fixed test process.
+	readyPath := filepath.Join(t.TempDir(), "sigterm-handler-ready")
+	cmd := exec.Command("/bin/sh", "-c", `trap '' TERM; touch "$1"; while :; do sleep 1; done`, "sh", readyPath) // #nosec G204 -- test-owned path passed as a positional argument.
 	prepareProviderProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+	waitForFanoutTestPath(t, readyPath)
+	stopped := false
+	defer func() {
+		if !stopped {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			_ = cmd.Wait()
+		}
+	}()
 	run.Record.State = dispatchStateRunning
 	run.Record.PID = cmd.Process.Pid
 	run.Record.ProcessGroupID = cmd.Process.Pid
@@ -203,8 +212,42 @@ func TestCancelSignalsExactOwnedProcessGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if retained.ActiveRunID != "" {
-		t.Fatalf("cancel retained active claim: %#v", retained)
+	if retained.ActiveRunID != run.Record.ID || !processOwned(record) {
+		t.Fatalf("cancel released a claim while its owned process remained live: session = %#v, record = %#v", retained, record)
+	}
+	replacement, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeBlockedClaim := retained
+	if _, err := claimConversation(root, session.Name, replacement.Record.ID); err == nil {
+		t.Fatal("cancelled live owner was replaced")
+	} else {
+		requireDispatchExitCode(t, err, ExitUnavailable)
+	}
+	afterBlockedClaim, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterBlockedClaim != beforeBlockedClaim {
+		t.Fatalf("blocked replacement mutated conversation mapping: before = %#v, after = %#v", beforeBlockedClaim, afterBlockedClaim)
+	}
+	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+		t.Fatalf("stop test process group: %v", err)
+	}
+	if err := cmd.Wait(); err == nil {
+		t.Fatal("SIGKILLed test process exited successfully")
+	}
+	stopped = true
+	if _, err := claimConversation(root, session.Name, replacement.Record.ID); err != nil {
+		t.Fatalf("replace cancelled claim after conservative dead-owner proof: %v", err)
+	}
+	recovered, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.ActiveRunID != replacement.Record.ID || recovered.RunID != replacement.Record.ID {
+		t.Fatalf("dead-owner recovery did not publish replacement claim: %#v", recovered)
 	}
 	if _, err := os.Stat(filepath.Join(run.Dir, dispatchRunFile)); err != nil {
 		t.Fatalf("cancel removed evidence: %v", err)

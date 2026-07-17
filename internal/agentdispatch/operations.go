@@ -181,6 +181,18 @@ func inspectionFromRecord(record RunRecord) Inspection {
 }
 
 func reconcileOrphan(root string, record RunRecord) (RunRecord, error) {
+	if record.State == dispatchStateCancelled {
+		// Cancellation is terminal user-visible evidence, but the active claim
+		// remains owned until the execution releases it or the recorded wrapper
+		// is provably dead. Inspection may perform that conservative recovery.
+		if processOwnership(record) != ownershipDead {
+			return record, nil
+		}
+		if err := releaseConversation(root, record.Name, record.ID); err != nil {
+			return RunRecord{}, err
+		}
+		return record, nil
+	}
 	if record.State != dispatchStateRunning {
 		return record, nil
 	}
@@ -316,7 +328,10 @@ func Cancel(request CancelRequest) error {
 	if err := writeRunRecord(filepathForRun(request.Root, record.ID), &record); err != nil {
 		return err
 	}
-	return releaseConversation(request.Root, record.Name, record.ID)
+	// The owning execution releases the claim after its provider wait path has
+	// stopped. Cancel returning only records intent and sends SIGTERM; neither
+	// action proves that the execution no longer owns the conversation.
+	return nil
 }
 
 func cancelFanout(root string, id string) error {
@@ -398,12 +413,12 @@ func Delete(root string, name string) error {
 	if err != nil {
 		return err
 	}
-	if session.RunID != "" {
-		record, recordErr := loadRunRecord(root, session.RunID)
+	if ownerRunID := sessionOwnerRunID(session); ownerRunID != "" {
+		record, recordErr := loadRunRecord(root, ownerRunID)
 		if recordErr != nil && !errors.Is(recordErr, errDispatchRunNotFound) {
 			return recordErr
 		}
-		if recordErr == nil && (record.State == dispatchStatePending || record.State == dispatchStateStarting || (record.State == dispatchStateRunning && processOwnership(record) != ownershipDead)) {
+		if recordErr == nil && activeClaimBlocksReplacement(record) {
 			return exitError(ExitUnavailable, fmt.Sprintf("dispatch session %q is active; inspect it or wait for terminal completion before deleting the mapping", name))
 		}
 	}

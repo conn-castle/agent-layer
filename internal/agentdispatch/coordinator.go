@@ -17,3 +17,23 @@ func launchExecution(request dispatchExecution) executionHandle {
 }
 
 func (handle executionHandle) await() error { return <-handle.done }
+
+// drainExecutionHandles waits for every launched execution and reports each
+// completion in arrival order. Consumers may encounter reconciliation errors,
+// but those errors must not shorten the lifetime of any launched execution.
+func drainExecutionHandles(handles []executionHandle, consume func(index int, handle executionHandle, err error)) {
+	type indexedResult struct {
+		index int
+		err   error
+	}
+	results := make(chan indexedResult, len(handles))
+	for index, handle := range handles {
+		go func(index int, handle executionHandle) {
+			results <- indexedResult{index: index, err: handle.await()}
+		}(index, handle)
+	}
+	for range handles {
+		completed := <-results
+		consume(completed.index, handles[completed.index], completed.err)
+	}
+}

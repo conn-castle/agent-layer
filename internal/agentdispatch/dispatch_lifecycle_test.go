@@ -2,10 +2,13 @@ package agentdispatch
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/clients"
@@ -111,6 +114,100 @@ func TestFailureFinalizationReleasesClaimWhenTerminalWriteFails(t *testing.T) {
 	}
 }
 
+func TestFailedRunRecordPublicationPreservesCallerRevisionForFailureFinalization(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	session, err := reserveSession(root, run)
+	if err != nil {
+		t.Fatalf("reserve session: %v", err)
+	}
+	durableBefore, err := loadRunRecord(root, run.Record.ID)
+	if err != nil {
+		t.Fatalf("load durable record before injected failure: %v", err)
+	}
+
+	run.Record.State = dispatchStateStarting
+	publicationErr := errors.New("injected run-record publication failure")
+	err = writeRunRecordWithPublisher(run.Dir, &run.Record, func(string, any) error {
+		return publicationErr
+	})
+	if !errors.Is(err, publicationErr) {
+		t.Fatalf("writeRunRecordWithPublisher error = %v, want injected failure", err)
+	}
+	if run.Record.Revision != durableBefore.Revision || !run.Record.UpdatedAt.Equal(durableBefore.UpdatedAt) {
+		t.Fatalf("failed publication advanced caller state: caller revision/time = %d/%s, durable = %d/%s", run.Record.Revision, run.Record.UpdatedAt, durableBefore.Revision, durableBefore.UpdatedAt)
+	}
+	durableAfter, err := loadRunRecord(root, run.Record.ID)
+	if err != nil {
+		t.Fatalf("load durable record after injected failure: %v", err)
+	}
+	if durableAfter.Revision != run.Record.Revision || !durableAfter.UpdatedAt.Equal(run.Record.UpdatedAt) {
+		t.Fatalf("caller and durable state diverged after failed publication: caller = %#v, durable = %#v", run.Record, durableAfter)
+	}
+
+	project := &config.ProjectConfig{Root: root, Config: dispatchTestConfig(AgentCodex)}
+	cause := exitError(ExitTargetFailure, "provider failed after publication error")
+	err = finishDispatchFailure(dispatchExecution{Root: root, Project: project, Run: run, Session: session, Mode: dispatchModeFresh}, cause)
+	requireDispatchExitCode(t, err, ExitTargetFailure)
+	terminal, err := loadRunRecord(root, run.Record.ID)
+	if err != nil {
+		t.Fatalf("load terminal record: %v", err)
+	}
+	if terminal.State != dispatchStateFailed || terminal.CompletedAt == nil || terminal.TerminalReason != cause.Error() {
+		t.Fatalf("failure finalization did not persist canonical terminal history: %#v", terminal)
+	}
+	if terminal.Revision != durableBefore.Revision+1 || run.Record.Revision != terminal.Revision || !run.Record.UpdatedAt.Equal(terminal.UpdatedAt) {
+		t.Fatalf("terminal caller/durable state mismatch: caller = %#v, durable = %#v", run.Record, terminal)
+	}
+}
+
+func TestPreLaunchCancellationIsReleasedOnlyByOwningExecution(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	session, err := reserveSession(root, run)
+	if err != nil {
+		t.Fatalf("reserve session: %v", err)
+	}
+	if err := Cancel(CancelRequest{Root: root, ID: run.Record.ID}); err != nil {
+		t.Fatalf("Cancel pending run: %v", err)
+	}
+	claimed, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.ActiveRunID != run.Record.ID {
+		t.Fatalf("pre-launch cancellation released before its owner ran: %#v", claimed)
+	}
+
+	var launches atomic.Int32
+	project := &config.ProjectConfig{Root: root, Config: dispatchTestConfig(AgentCodex)}
+	err = launchExecution(dispatchExecution{
+		Root: root, Project: project, Target: targetMeta{Name: AgentCodex},
+		Run: run, Session: session, Mode: dispatchModeFresh,
+		NewCommand: func(string, ...string) *exec.Cmd {
+			launches.Add(1)
+			return exec.Command("/bin/sh", "-c", "exit 0") // #nosec G204 -- fixed test command must remain unlaunched.
+		},
+	}).await()
+	requireDispatchExitCode(t, err, ExitTargetFailure)
+	if launches.Load() != 0 {
+		t.Fatalf("provider launches after pre-launch cancellation = %d, want 0", launches.Load())
+	}
+	finalized, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finalized.ActiveRunID != "" {
+		t.Fatalf("owning execution did not release pre-launch cancellation: %#v", finalized)
+	}
+}
+
 func TestDeleteProtectsRunningRecordWithUnprovableOwnership(t *testing.T) {
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
@@ -128,10 +225,36 @@ func TestDeleteProtectsRunningRecordWithUnprovableOwnership(t *testing.T) {
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		t.Fatal(err)
 	}
+	// Compatibility mappings created before explicit active claims use RunID
+	// as their only owner reference.
+	session.ActiveRunID = ""
+	if err := persistSession(root, session); err != nil {
+		t.Fatal(err)
+	}
 	if err := Delete(root, session.Name); err == nil {
 		t.Fatal("Delete removed a mapping whose run may still be live")
 	} else {
 		requireDispatchExitCode(t, err, ExitUnavailable)
+	}
+	beforeClaim, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := claimConversation(root, session.Name, replacement.Record.ID); err == nil {
+		t.Fatal("replacement bypassed compatibility owner evidence")
+	} else {
+		requireDispatchExitCode(t, err, ExitUnavailable)
+	}
+	afterClaim, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterClaim != beforeClaim {
+		t.Fatalf("blocked compatibility claim mutated mapping: before = %#v, after = %#v", beforeClaim, afterClaim)
 	}
 }
 

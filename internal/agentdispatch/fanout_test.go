@@ -3,11 +3,13 @@ package agentdispatch
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -214,6 +216,279 @@ func TestFanoutPartialFailurePreservesCompleteTerminalEvidence(t *testing.T) {
 	}
 }
 
+func TestFanoutCancellationRetainsEachLiveChildClaim(t *testing.T) {
+	root := t.TempDir()
+	manifestID, err := newUUID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := FanoutManifest{ID: manifestID, State: dispatchStateRunning, CreatedAt: time.Now().UTC()}
+	type liveChild struct {
+		run     *dispatchRun
+		session Session
+		cmd     *exec.Cmd
+	}
+	children := make([]liveChild, 0, 2)
+	defer func() {
+		for _, child := range children {
+			if processAlive(child.cmd.Process.Pid) == processStatusAlive {
+				_ = syscall.Kill(-child.cmd.Process.Pid, syscall.SIGKILL)
+				_ = child.cmd.Wait()
+			}
+		}
+	}()
+	for index := 0; index < 2; index++ {
+		run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+		if err != nil {
+			t.Fatal(err)
+		}
+		session, err := reserveSession(root, run)
+		if err != nil {
+			t.Fatal(err)
+		}
+		readyPath := filepath.Join(t.TempDir(), "ready")
+		cmd := exec.Command("/bin/sh", "-c", `trap '' TERM; touch "$1"; while :; do sleep 1; done`, "sh", readyPath) // #nosec G204 -- test-owned path passed as a positional argument.
+		prepareProviderProcessGroup(cmd)
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		waitForFanoutTestPath(t, readyPath)
+		run.Record.State = dispatchStateRunning
+		run.Record.RecoveryState = recoveryAcceptanceUnknown
+		run.Record.PID = cmd.Process.Pid
+		run.Record.ProcessGroupID = cmd.Process.Pid
+		run.Record.ProcessStartIdentity = processStartIdentity(cmd.Process.Pid)
+		if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+			t.Fatal(err)
+		}
+		manifest.Children = append(manifest.Children, FanoutChild{RunID: run.Record.ID, Name: session.Name, Status: dispatchStateRunning})
+		children = append(children, liveChild{run: run, session: session, cmd: cmd})
+	}
+	if err := writeFanoutManifest(root, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if err := cancelFanout(root, manifest.ID); err != nil {
+		t.Fatalf("cancelFanout: %v", err)
+	}
+	terminalManifest, err := loadFanoutManifest(root, manifest.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if terminalManifest.State != dispatchStateCancelled || terminalManifest.CompletedAt == nil {
+		t.Fatalf("cancelled fanout manifest = %#v", terminalManifest)
+	}
+	for _, child := range children {
+		record, err := loadRunRecord(root, child.run.Record.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		retained, err := loadSession(root, child.session.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if record.State != dispatchStateCancelled || !processOwned(record) || retained.ActiveRunID != record.ID {
+			t.Fatalf("fanout cancellation released a live child owner: record = %#v, session = %#v", record, retained)
+		}
+	}
+}
+
+func TestFanoutManifestWritePreservesCancelledChildEvidence(t *testing.T) {
+	root := t.TempDir()
+	id, err := newUUID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	children := []FanoutChild{
+		{RunID: "11111111-1111-4111-8111-111111111111", Name: "small-bright-resistor", Status: dispatchStateCancelled},
+		{RunID: "22222222-2222-4222-8222-222222222222", Name: "large-steady-relay", Status: dispatchStateCancelled},
+	}
+	if err := writeFanoutManifest(root, FanoutManifest{ID: id, State: dispatchStateCancelled, CreatedAt: now, CompletedAt: &now, Children: children}); err != nil {
+		t.Fatal(err)
+	}
+	stale := FanoutManifest{ID: id, State: dispatchStateCancelled, CreatedAt: now, CompletedAt: &now, Children: append([]FanoutChild(nil), children...)}
+	stale.Children[0].Status = dispatchStateFailed
+	stale.Children[0].Error = "owning execution returned"
+	stale.Children[1].Status = dispatchStatePending
+	if err := writeFanoutManifest(root, stale); err != nil {
+		t.Fatal(err)
+	}
+	published, err := loadFanoutManifest(root, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if published.Children[0].Status != dispatchStateFailed || published.Children[1].Status != dispatchStateCancelled {
+		t.Fatalf("stale coordinator write regressed terminal child evidence: %#v", published.Children)
+	}
+}
+
+func TestFanoutDrainsChildrenAfterPostLaunchCoordinatorFailure(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	gatePath := filepath.Join(t.TempDir(), "coordinator-failed")
+	siblingDonePath := filepath.Join(t.TempDir(), "sibling-done")
+	var calls atomic.Int32
+	command := func(string, ...string) *exec.Cmd {
+		if calls.Add(1) == 1 {
+			return exec.Command("/bin/sh", "-c", `cat >/dev/null; printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n{"type":"agent_message","message":"first"}\n{"type":"turn.completed"}\n'`) // #nosec G204 -- fixed test command.
+		}
+		return exec.Command("/bin/sh", "-c", `cat >/dev/null; while [ ! -f "$1" ]; do sleep 0.01; done; touch "$2"; printf '{"type":"thread.started","thread_id":"22222222-2222-4222-8222-222222222222"}\n{"type":"agent_message","message":"second"}\n{"type":"turn.completed"}\n'`, "sh", gatePath, siblingDonePath) // #nosec G204 -- test-owned paths passed as positional arguments.
+	}
+
+	injectedErr := errors.New("injected post-launch coordinator load failure")
+	coordinatorState := defaultFanoutCoordinatorState()
+	var coordinatorLoads atomic.Int32
+	coordinatorState.loadRunRecord = func(root string, id string) (RunRecord, error) {
+		if coordinatorLoads.Add(1) == 1 {
+			if _, err := os.Stat(siblingDonePath); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("delayed sibling completed before injected coordinator failure: %v", err)
+			}
+			if err := os.WriteFile(gatePath, []byte("failed"), 0o600); err != nil {
+				t.Fatalf("release delayed sibling: %v", err)
+			}
+			return RunRecord{}, injectedErr
+		}
+		return loadRunRecord(root, id)
+	}
+
+	err := fanout(FanoutOptions{
+		Root: root, Targets: []FanoutTarget{{Agent: AgentCodex}, {Agent: AgentCodex}},
+		PromptArgs: []string{"shared"}, Env: []string{}, LookPath: alwaysFound,
+		VersionLookup: func(_ string, agent string) (string, error) { return supportedProviderVersions[agent], nil },
+		NewCommand:    command,
+	}, coordinatorState)
+	if !errors.Is(err, injectedErr) {
+		t.Fatalf("Fanout error = %v, want original coordinator failure", err)
+	}
+	if _, err := os.Stat(siblingDonePath); err != nil {
+		t.Fatalf("Fanout returned before delayed sibling completed: %v", err)
+	}
+
+	runEntries, err := os.ReadDir(dispatchRunPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runEntries) != 2 {
+		t.Fatalf("run count = %d, want 2", len(runEntries))
+	}
+	for _, entry := range runEntries {
+		record, err := loadRunRecord(root, entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !terminalDispatchState(record.State) || record.CompletedAt == nil {
+			t.Fatalf("child did not terminalize: %#v", record)
+		}
+		if processOwned(record) {
+			t.Fatalf("provider remains active after Fanout returned: %#v", record)
+		}
+		session, err := loadSession(root, record.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if session.ActiveRunID != "" {
+			t.Fatalf("child claim remains active: %#v", session)
+		}
+	}
+
+	manifestEntries, err := os.ReadDir(fanoutStateRoot(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifestEntries) != 1 {
+		t.Fatalf("manifest count = %d, want 1", len(manifestEntries))
+	}
+	manifest, err := loadFanoutManifest(root, manifestEntries[0].Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.State != dispatchStateFailed || manifest.Error != injectedErr.Error() || manifest.CompletedAt == nil {
+		t.Fatalf("aggregate coordinator failure evidence = %#v", manifest)
+	}
+	for _, child := range manifest.Children {
+		if child.Status != dispatchStateCompleted {
+			t.Fatalf("aggregate omitted terminal child evidence: %#v", manifest.Children)
+		}
+	}
+}
+
+func TestFanoutRecoversDurableEvidenceAfterFinalManifestWriteFailure(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	var calls atomic.Int32
+	command := func(string, ...string) *exec.Cmd {
+		if calls.Add(1) == 1 {
+			return exec.Command("/bin/sh", "-c", `cat >/dev/null; printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n{"type":"agent_message","message":"first"}\n{"type":"turn.completed"}\n'`) // #nosec G204 -- fixed test command.
+		}
+		return exec.Command("/bin/sh", "-c", `cat >/dev/null; printf '{"type":"thread.started","thread_id":"22222222-2222-4222-8222-222222222222"}\n{"type":"agent_message","message":"second"}\n{"type":"turn.completed"}\n'`) // #nosec G204 -- fixed test command.
+	}
+
+	injectedErr := errors.New("injected final manifest publication failure")
+	coordinatorState := defaultFanoutCoordinatorState()
+	var failedTerminalWrite atomic.Bool
+	coordinatorState.writeManifest = func(root string, manifest FanoutManifest) error {
+		if manifest.CompletedAt != nil && manifest.State == dispatchStateCompleted && failedTerminalWrite.CompareAndSwap(false, true) {
+			return injectedErr
+		}
+		return writeFanoutManifest(root, manifest)
+	}
+
+	err := fanout(FanoutOptions{
+		Root: root, Targets: []FanoutTarget{{Agent: AgentCodex}, {Agent: AgentCodex}},
+		PromptArgs: []string{"shared"}, Env: []string{}, LookPath: alwaysFound,
+		VersionLookup: func(_ string, agent string) (string, error) { return supportedProviderVersions[agent], nil },
+		NewCommand:    command,
+	}, coordinatorState)
+	if !errors.Is(err, injectedErr) {
+		t.Fatalf("Fanout error = %v, want original final publication failure", err)
+	}
+	if !failedTerminalWrite.Load() {
+		t.Fatal("terminal manifest write was not injected")
+	}
+
+	runEntries, err := os.ReadDir(dispatchRunPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runEntries) != 2 {
+		t.Fatalf("run count = %d, want 2", len(runEntries))
+	}
+	for _, entry := range runEntries {
+		record, err := loadRunRecord(root, entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if record.State != dispatchStateCompleted || record.CompletedAt == nil || processOwned(record) {
+			t.Fatalf("child lifecycle evidence = %#v", record)
+		}
+		session, err := loadSession(root, record.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if session.ActiveRunID != "" {
+			t.Fatalf("child claim remains active: %#v", session)
+		}
+	}
+
+	manifestEntries, err := os.ReadDir(fanoutStateRoot(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifestEntries) != 1 {
+		t.Fatalf("manifest count = %d, want 1", len(manifestEntries))
+	}
+	manifest, err := loadFanoutManifest(root, manifestEntries[0].Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.State != dispatchStateFailed || manifest.Error != injectedErr.Error() || manifest.CompletedAt == nil {
+		t.Fatalf("recovered aggregate evidence = %#v", manifest)
+	}
+	for _, child := range manifest.Children {
+		if child.Status != dispatchStateCompleted {
+			t.Fatalf("recovered aggregate omitted terminal child evidence: %#v", manifest.Children)
+		}
+	}
+}
+
 func TestConcurrentResumeRejectsSecondOwnerWithActiveRun(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
@@ -227,36 +502,112 @@ func TestConcurrentResumeRejectsSecondOwnerWithActiveRun(t *testing.T) {
 	session.State = "durable"
 	session.ProviderSessionID = runtimeSessionID
 	session.ActiveRunID = ""
+	completed := time.Now().UTC()
+	run.Record.State = dispatchStateCompleted
+	run.Record.RecoveryState = recoveryResumeRequired
+	run.Record.CompletedAt = &completed
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		t.Fatal(err)
+	}
 	if err := persistSession(root, session); err != nil {
 		t.Fatal(err)
 	}
 
-	started := make(chan struct{})
+	startedPath := filepath.Join(t.TempDir(), "provider-started")
+	releasePath := filepath.Join(t.TempDir(), "release-provider")
 	var launches atomic.Int32
 	command := func(string, ...string) *exec.Cmd {
 		if launches.Add(1) == 1 {
-			close(started)
-			return exec.Command("/bin/sh", "-c", `cat >/dev/null; sleep 2; printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n{"type":"agent_message","message":"done"}\n{"type":"turn.completed"}\n'`) // #nosec G204 -- fixed test command.
+			return exec.Command("/bin/sh", "-c", `trap 'while [ ! -f "$1" ]; do sleep 0.01; done; exit 0' TERM; touch "$2"; while :; do sleep 1; done`, "sh", releasePath, startedPath) // #nosec G204 -- test-owned paths passed as positional arguments.
 		}
-		return exec.Command("/bin/sh", "-c", `cat >/dev/null; printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n{"type":"agent_message","message":"unexpected"}\n{"type":"turn.completed"}\n'`) // #nosec G204 -- fixed test command.
+		return exec.Command("/bin/sh", "-c", `cat >/dev/null; printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n{"type":"agent_message","message":"resumed"}\n{"type":"turn.completed"}\n'`) // #nosec G204 -- fixed test command.
 	}
 	firstDone := make(chan error, 1)
 	go func() {
 		firstDone <- Resume(ResumeOptions{Root: root, Name: session.Name, PromptArgs: []string{"one"}, Env: []string{}, LookPath: alwaysFound, VersionLookup: func(_ string, agent string) (string, error) { return supportedProviderVersions[agent], nil }, NewCommand: command})
 	}()
-	select {
-	case <-started:
-	case <-time.After(2 * time.Second):
-		t.Fatal("first resume did not launch")
+	waitForFanoutTestPath(t, startedPath)
+	active, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForFanoutRunState(t, root, active.ActiveRunID, dispatchStateRunning)
+	if err := Cancel(CancelRequest{Root: root, ID: active.ActiveRunID}); err != nil {
+		t.Fatalf("Cancel first resume: %v", err)
+	}
+	cancelledOwner, err := loadRunRecord(root, active.ActiveRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cancelledOwner.State != dispatchStateCancelled || !processOwned(cancelledOwner) {
+		t.Fatalf("cancel did not preserve live owner evidence: %#v", cancelledOwner)
+	}
+	afterCancel, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterCancel.ActiveRunID != active.ActiveRunID {
+		t.Fatalf("cancel released the live owner claim: %#v", afterCancel)
 	}
 	err = Resume(ResumeOptions{Root: root, Name: session.Name, PromptArgs: []string{"two"}, Env: []string{}, LookPath: alwaysFound, VersionLookup: func(_ string, agent string) (string, error) { return supportedProviderVersions[agent], nil }, NewCommand: command})
 	if err == nil || !strings.Contains(err.Error(), "already active in run") {
 		t.Fatalf("second resume error = %v", err)
 	}
-	if err := <-firstDone; err != nil {
-		t.Fatalf("first resume: %v", err)
+	blocked, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocked != afterCancel {
+		t.Fatalf("blocked resume mutated conversation mapping: before = %#v, after = %#v", afterCancel, blocked)
 	}
 	if launches.Load() != 1 {
 		t.Fatalf("provider launches = %d, want 1", launches.Load())
 	}
+	if err := os.WriteFile(releasePath, []byte("release"), 0o600); err != nil {
+		t.Fatalf("release cancelled provider: %v", err)
+	}
+	requireDispatchExitCode(t, <-firstDone, ExitTargetFailure)
+	finalized, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finalized.ActiveRunID != "" {
+		t.Fatalf("owning execution did not release after provider termination: %#v", finalized)
+	}
+	if err := Resume(ResumeOptions{Root: root, Name: session.Name, PromptArgs: []string{"three"}, Env: []string{}, LookPath: alwaysFound, VersionLookup: func(_ string, agent string) (string, error) { return supportedProviderVersions[agent], nil }, NewCommand: command}); err != nil {
+		t.Fatalf("resume after owning finalization: %v", err)
+	}
+	if launches.Load() != 2 {
+		t.Fatalf("provider launches after finalization = %d, want 2", launches.Load())
+	}
+}
+
+func waitForFanoutTestPath(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		} else if !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("inspect test path %s: %v", path, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for test path %s", path)
+}
+
+func waitForFanoutRunState(t *testing.T, root string, runID string, state string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		record, err := loadRunRecord(root, runID)
+		if err != nil {
+			t.Fatalf("load run %s while waiting for %s: %v", runID, state, err)
+		}
+		if record.State == state {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for run %s to reach %s", runID, state)
 }
