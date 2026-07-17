@@ -35,6 +35,21 @@ type FanoutManifest struct {
 	CreatedAt   time.Time     `json:"created_at"`
 	CompletedAt *time.Time    `json:"completed_at,omitempty"`
 	Children    []FanoutChild `json:"children"`
+	Error       string        `json:"error,omitempty"`
+}
+
+type fanoutCoordinatorState struct {
+	loadRunRecord func(root string, id string) (RunRecord, error)
+	loadManifest  func(root string, id string) (FanoutManifest, error)
+	writeManifest func(root string, manifest FanoutManifest) error
+}
+
+func defaultFanoutCoordinatorState() fanoutCoordinatorState {
+	return fanoutCoordinatorState{
+		loadRunRecord: loadRunRecord,
+		loadManifest:  loadFanoutManifest,
+		writeManifest: writeFanoutManifest,
+	}
 }
 
 type preparedFanoutChild struct {
@@ -83,6 +98,10 @@ func ParseFanoutTarget(value string) (FanoutTarget, error) {
 // Fanout sends one shared prompt and skill to two or more independently
 // recorded targets, waits for all children, then emits one aggregate manifest.
 func Fanout(opts FanoutOptions) error {
+	return fanout(opts, defaultFanoutCoordinatorState())
+}
+
+func fanout(opts FanoutOptions, coordinatorState fanoutCoordinatorState) error {
 	if len(opts.Targets) < 2 {
 		return exitError(ExitUsage, "dispatch fanout requires at least two --target specifications")
 	}
@@ -185,40 +204,65 @@ func Fanout(opts FanoutOptions) error {
 	for index := range prepared {
 		handles[index] = launchExecution(prepared[index].request)
 	}
-	type childResult struct {
-		index int
-		err   error
-	}
-	results := make(chan childResult, len(handles))
-	for index, handle := range handles {
-		go func(index int, handle executionHandle) { results <- childResult{index: index, err: handle.await()} }(index, handle)
-	}
+	return coordinateFanout(opts.Root, manifest, handles, writerOrDiscard(opts.Stdout), coordinatorState)
+}
+
+// coordinateFanout drains every launched execution before returning, even
+// when coordinator state cannot be reconciled. The first coordinator failure
+// remains the caller-visible cause while later work contributes best-effort
+// terminal aggregate evidence.
+func coordinateFanout(root string, manifest FanoutManifest, handles []executionHandle, stdout io.Writer, state fanoutCoordinatorState) error {
 	failed := false
-	for range handles {
-		completed := <-results
-		index := completed.index
-		handle := handles[index]
-		childErr := completed.err
-		record, loadErr := loadRunRecord(opts.Root, handle.runID)
+	var coordinatorErr error
+	recordCoordinatorError := func(cause error) {
+		failed = true
+		if coordinatorErr == nil {
+			coordinatorErr = cause
+			manifest.Error = cause.Error()
+		}
+	}
+	observeCancellation := func() {
+		current, err := state.loadManifest(root, manifest.ID)
+		if err != nil {
+			recordCoordinatorError(err)
+			return
+		}
+		if current.State == dispatchStateCancelled {
+			manifest.State = current.State
+			manifest.CompletedAt = current.CompletedAt
+		}
+	}
+	reconcileChild := func(index int, handle executionHandle) {
+		record, loadErr := state.loadRunRecord(root, handle.runID)
 		if loadErr != nil {
-			finalizeFanoutFailure(opts.Root, &manifest, index, loadErr)
-			return loadErr
+			recordCoordinatorError(loadErr)
+			return
 		}
-		currentManifest, manifestErr := loadFanoutManifest(opts.Root, groupID)
-		if manifestErr != nil {
-			finalizeFanoutFailure(opts.Root, &manifest, index, manifestErr)
-			return manifestErr
-		}
-		manifest = currentManifest
 		manifest.Children[index].Status = record.State
+		if terminalDispatchState(record.State) && record.State != dispatchStateCompleted && manifest.Children[index].Error == "" {
+			manifest.Children[index].Error = record.TerminalReason
+		}
+	}
+
+	drainExecutionHandles(handles, func(index int, handle executionHandle, childErr error) {
 		if childErr != nil {
 			failed = true
 			manifest.Children[index].Error = childErr.Error()
 		}
-		if err := writeFanoutManifest(opts.Root, manifest); err != nil {
-			return err
+		reconcileChild(index, handle)
+		observeCancellation()
+		if err := state.writeManifest(root, manifest); err != nil {
+			recordCoordinatorError(err)
 		}
+	})
+
+	// A transient state failure may have prevented an earlier child update.
+	// Re-read every terminal record after all handles are drained so the final
+	// aggregate is as complete as durable child evidence allows.
+	for index, handle := range handles {
+		reconcileChild(index, handle)
 	}
+	observeCancellation()
 	now := time.Now().UTC()
 	if manifest.State != dispatchStateCancelled {
 		manifest.CompletedAt = &now
@@ -227,30 +271,35 @@ func Fanout(opts FanoutOptions) error {
 			manifest.State = dispatchStateFailed
 		}
 	}
-	if err := writeFanoutManifest(opts.Root, manifest); err != nil {
+	if err := state.writeManifest(root, manifest); err != nil {
+		recordCoordinatorError(err)
+		if manifest.State != dispatchStateCancelled {
+			manifest.State = dispatchStateFailed
+		}
+		// The failed publication happened before the aggregate error was
+		// recorded. Make one recovery attempt with complete terminal evidence;
+		// the first publication error remains the caller-visible cause.
+		_ = state.writeManifest(root, manifest)
+	}
+	if coordinatorErr != nil {
+		return coordinatorErr
+	}
+	published, err := state.loadManifest(root, manifest.ID)
+	if err != nil {
+		// The terminal manifest was already published successfully. A read-back
+		// failure must be surfaced without replacing that durable evidence.
 		return err
 	}
-	encoder := json.NewEncoder(writerOrDiscard(opts.Stdout))
+	manifest = published
+	encoder := json.NewEncoder(stdout)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(manifest); err != nil {
 		return wrapExitError(ExitTargetFailure, "write fanout manifest", err)
 	}
 	if failed {
-		return exitError(ExitTargetFailure, fmt.Sprintf("dispatch fanout %s completed with one or more failed children", groupID))
+		return exitError(ExitTargetFailure, fmt.Sprintf("dispatch fanout %s completed with one or more failed children", manifest.ID))
 	}
 	return nil
-}
-
-// finalizeFanoutFailure terminalizes the aggregate manifest when the wait
-// loop itself cannot read child or manifest state, so an aborted fanout does
-// not stay running forever and escape retention. The write is best-effort;
-// the original cause is what the caller returns.
-func finalizeFanoutFailure(root string, manifest *FanoutManifest, index int, cause error) {
-	now := time.Now().UTC()
-	manifest.Children[index].Error = cause.Error()
-	manifest.State = dispatchStateFailed
-	manifest.CompletedAt = &now
-	_ = writeFanoutManifest(root, *manifest)
 }
 
 func fanoutStateRoot(root string) string {
@@ -297,9 +346,26 @@ func writeFanoutManifest(root string, manifest FanoutManifest) error {
 	}
 	defer func() { _ = unix.Flock(int(lock.Fd()), unix.LOCK_UN) }() //nolint:gosec // supported Unix descriptor.
 	var current FanoutManifest
-	if err := readJSON(path, &current); err == nil && current.State == dispatchStateCancelled && manifest.State != dispatchStateCancelled {
+	readErr := readJSON(path, &current)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return wrapExitError(ExitConfig, "read fanout manifest before update", readErr)
+	}
+	if readErr == nil && current.State == dispatchStateCancelled {
 		manifest.State = dispatchStateCancelled
 		manifest.CompletedAt = current.CompletedAt
+		terminalChildren := make(map[string]FanoutChild, len(current.Children))
+		for _, child := range current.Children {
+			if terminalDispatchState(child.Status) {
+				terminalChildren[child.RunID] = child
+			}
+		}
+		for index := range manifest.Children {
+			child := &manifest.Children[index]
+			if terminal, ok := terminalChildren[child.RunID]; ok && !terminalDispatchState(child.Status) {
+				child.Status = terminal.Status
+				child.Error = terminal.Error
+			}
+		}
 	}
 	return writeJSONAtomic(path, manifest)
 }

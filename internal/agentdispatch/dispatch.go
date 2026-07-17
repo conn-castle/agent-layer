@@ -213,7 +213,7 @@ func executeDispatch(request dispatchExecution) error {
 		return exitError(ExitConfig, "dispatch execution was not initialized")
 	}
 	if current, err := loadRunRecord(request.Root, request.Run.Record.ID); err == nil && current.State == dispatchStateCancelled {
-		return exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled before launch", request.Run.Record.ID))
+		return finishDispatchCancellation(request)
 	}
 	session := request.Session
 	if request.Mode == dispatchModeFresh && request.Target.Name == AgentClaude {
@@ -260,7 +260,7 @@ func executeDispatch(request dispatchExecution) error {
 		request.Run.Record.State = dispatchStateStarting
 		request.Run.Record.RecoveryState = recoveryRetrySafe
 		if err := writeRunRecord(request.Run.Dir, &request.Run.Record); err != nil {
-			return err
+			return finishDispatchFailure(request, err)
 		}
 		if request.Mode == dispatchModeFresh && request.Target.Name == AgentClaude && attempt == 2 {
 			id, err := newUUID()
@@ -358,8 +358,7 @@ func completeDispatchSuccess(request dispatchExecution, result executionResult, 
 
 func finishDispatchFailure(request dispatchExecution, cause error) error {
 	if current, err := loadRunRecord(request.Root, request.Run.Record.ID); err == nil && current.State == dispatchStateCancelled {
-		_ = releaseConversation(request.Root, request.Session.Name, request.Run.Record.ID)
-		return exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled", request.Run.Record.ID))
+		return finishDispatchCancellation(request)
 	}
 	now := time.Now().UTC()
 	request.Run.Record.State = dispatchStateFailed
@@ -391,6 +390,17 @@ func finishDispatchFailure(request dispatchExecution, cause error) error {
 		}
 	}
 	return cause
+}
+
+// finishDispatchCancellation is called only by the owning execution after no
+// provider was launched or the provider wait path returned. That ownership
+// boundary, rather than publication of the cancelled state, releases the
+// conversation for another execution.
+func finishDispatchCancellation(request dispatchExecution) error {
+	if err := releaseConversation(request.Root, request.Session.Name, request.Run.Record.ID); err != nil {
+		return err
+	}
+	return exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled", request.Run.Record.ID))
 }
 
 func isSafePreStartFailure(err error) bool {
