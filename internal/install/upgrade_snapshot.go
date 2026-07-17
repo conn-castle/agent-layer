@@ -52,13 +52,14 @@ type upgradeSnapshotEntry struct {
 }
 
 type upgradeSnapshot struct {
-	SchemaVersion int                    `json:"schema_version"`
-	SnapshotID    string                 `json:"snapshot_id"`
-	CreatedAtUTC  string                 `json:"created_at_utc"`
-	Status        upgradeSnapshotStatus  `json:"status"`
-	FailureStep   string                 `json:"failure_step,omitempty"`
-	FailureError  string                 `json:"failure_error,omitempty"`
-	Entries       []upgradeSnapshotEntry `json:"entries"`
+	SchemaVersion   int                    `json:"schema_version"`
+	SnapshotID      string                 `json:"snapshot_id"`
+	CreatedAtUTC    string                 `json:"created_at_utc"`
+	Status          upgradeSnapshotStatus  `json:"status"`
+	FailureStep     string                 `json:"failure_step,omitempty"`
+	FailureError    string                 `json:"failure_error,omitempty"`
+	RollbackTargets []string               `json:"rollback_targets,omitempty"`
+	Entries         []upgradeSnapshotEntry `json:"entries"`
 }
 
 type upgradeSnapshotFile struct {
@@ -341,8 +342,16 @@ func readUpgradeSnapshotIfValid(path string, sys System) (upgradeSnapshot, bool)
 	return snapshot, true
 }
 
-func (inst *installer) rollbackUpgradeSnapshot(snapshot upgradeSnapshot, targets []string) error {
-	return rollbackUpgradeSnapshotState(inst.root, inst.sys, snapshot, targets)
+func (inst *installer) rollbackUpgradeSnapshot(snapshot *upgradeSnapshot, targets []string) error {
+	rollbackTargets, err := rollbackTargetRelativePaths(inst.root, targets)
+	if err != nil {
+		return err
+	}
+	snapshot.RollbackTargets = rollbackTargets
+	if err := inst.writeUpgradeSnapshot(*snapshot, false); err != nil {
+		return fmt.Errorf("persist rollback targets before rollback: %w", err)
+	}
+	return rollbackUpgradeSnapshotState(inst.root, inst.sys, *snapshot, targets)
 }
 
 func (inst *installer) captureUpgradeSnapshotEntries() ([]upgradeSnapshotEntry, error) {

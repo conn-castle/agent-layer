@@ -83,6 +83,8 @@ What it does not mean:
 - **Rollback does not restore tmp.** `al upgrade rollback <snapshot-id>` will not recreate any tmp file deleted during the upgrade. If you need to keep an in-progress agent artifact across an upgrade, copy it out of `.agent-layer/tmp/` first.
 - **Tmp deletion is gated.** Interactive deletion requires a destructive double-confirm. Non-interactive deletion requires the dedicated `--apply-tmp-deletions` flag — `--apply-deletions` alone never touches tmp content. The interactive "delete all unknowns?" prompt is similarly scoped: it deletes everything **except** tmp, and the grouped tmp prompt always fires separately.
 
+If automatic or manual rollback fails, the snapshot is recorded with status `rollback_failed` and remains available for recovery. Resolve the reported filesystem error, then retry `al upgrade rollback <snapshot-id>`. Every retry resets the snapshot's scoped targets before restoring them, so a failure that restored only some entries can safely converge on the captured state. After a successful retry, the snapshot keeps its prior failure details as recovery evidence and is marked `manually_rolled_back`.
+
 For full mechanics see [Ephemeral artifacts under .agent-layer/tmp/](./reference#ephemeral-artifacts-under-agent-layertmp) in the reference guide.
 
 ## Migration rules by release

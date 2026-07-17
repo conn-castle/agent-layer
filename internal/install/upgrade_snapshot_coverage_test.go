@@ -16,6 +16,14 @@ type readFailOnSecondReadSystem struct {
 	readCount int
 }
 
+func (s *readFailOnSecondReadSystem) Chmod(name string, mode os.FileMode) error {
+	return s.base.Chmod(name, mode)
+}
+
+func (s *readFailOnSecondReadSystem) EvalSymlinks(path string) (string, error) {
+	return s.base.EvalSymlinks(path)
+}
+
 func (s *readFailOnSecondReadSystem) Stat(name string) (os.FileInfo, error) {
 	return s.base.Stat(name)
 }
@@ -82,6 +90,14 @@ type customLstatSystem struct {
 	base   System
 	target string
 	mode   os.FileMode
+}
+
+func (s *customLstatSystem) Chmod(name string, mode os.FileMode) error {
+	return s.base.Chmod(name, mode)
+}
+
+func (s *customLstatSystem) EvalSymlinks(path string) (string, error) {
+	return s.base.EvalSymlinks(path)
 }
 
 func (s *customLstatSystem) Stat(name string) (os.FileInfo, error) {

@@ -21,6 +21,7 @@ type faultSystem struct {
 	readlinkErrs map[string]error
 	walkErrs     map[string]error
 	mkdirErrs    map[string]error
+	chmodErrs    map[string]error
 	removeErrs   map[string]error
 	renameErrs   map[string]error
 	symlinkErrs  map[string]error
@@ -37,12 +38,24 @@ func newFaultSystem(base System) *faultSystem {
 		readlinkErrs: map[string]error{},
 		walkErrs:     map[string]error{},
 		mkdirErrs:    map[string]error{},
+		chmodErrs:    map[string]error{},
 		removeErrs:   map[string]error{},
 		renameErrs:   map[string]error{},
 		symlinkErrs:  map[string]error{},
 		writeErrs:    map[string]error{},
 		lookupEnvs:   map[string]*string{},
 	}
+}
+
+func (f *faultSystem) Chmod(name string, mode os.FileMode) error {
+	if err, ok := f.chmodErrs[normalizePath(name)]; ok {
+		return err
+	}
+	return f.base.Chmod(name, mode)
+}
+
+func (f *faultSystem) EvalSymlinks(path string) (string, error) {
+	return f.base.EvalSymlinks(path)
 }
 
 func normalizePath(path string) string {

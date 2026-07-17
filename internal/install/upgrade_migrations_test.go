@@ -2136,6 +2136,14 @@ type recordWriteSystem struct {
 	writes []string
 }
 
+func (r *recordWriteSystem) Chmod(name string, mode os.FileMode) error {
+	return r.base.Chmod(name, mode)
+}
+
+func (r *recordWriteSystem) EvalSymlinks(path string) (string, error) {
+	return r.base.EvalSymlinks(path)
+}
+
 func (r *recordWriteSystem) Lstat(name string) (os.FileInfo, error) {
 	return r.base.Lstat(name)
 }

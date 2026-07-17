@@ -138,7 +138,7 @@ func TestRunWithOverwrite_RollbackSucceededSnapshotWriteFailure_Propagates(t *te
 
 	sys := &snapshotWriteFailOnNthSystem{
 		base:     RealSystem{},
-		failOn:   2,
+		failOn:   3,
 		failErr:  errors.New("snapshot write boom"),
 		failRoot: root,
 	}
@@ -168,7 +168,7 @@ func TestRunWithOverwrite_RollbackFailedSnapshotWriteFailure_Propagates(t *testi
 
 	sys := &snapshotWriteFailOnNthSystem{
 		base:     base,
-		failOn:   2,
+		failOn:   3,
 		failErr:  errors.New("snapshot write boom"),
 		failRoot: root,
 	}
@@ -286,6 +286,14 @@ type snapshotWriteFailOnNthSystem struct {
 	failErr  error
 	failRoot string
 	writes   int
+}
+
+func (s *snapshotWriteFailOnNthSystem) Chmod(name string, mode os.FileMode) error {
+	return s.base.Chmod(name, mode)
+}
+
+func (s *snapshotWriteFailOnNthSystem) EvalSymlinks(path string) (string, error) {
+	return s.base.EvalSymlinks(path)
 }
 
 func (s *snapshotWriteFailOnNthSystem) Stat(name string) (os.FileInfo, error) {
