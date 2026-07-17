@@ -13,6 +13,7 @@ import (
 // parallel-safe unit tests without shared global state. Other packages (dispatch,
 // sync) define their own System interfaces with operations specific to their needs.
 type System interface {
+	Chmod(name string, mode os.FileMode) error
 	Lstat(name string) (os.FileInfo, error)
 	Stat(name string) (os.FileInfo, error)
 	ReadFile(name string) ([]byte, error)
@@ -28,6 +29,11 @@ type System interface {
 
 // RealSystem implements System using the OS filesystem.
 type RealSystem struct{}
+
+// Chmod changes the mode of the named file or directory.
+func (RealSystem) Chmod(name string, mode os.FileMode) error {
+	return os.Chmod(name, mode)
+}
 
 // Lstat returns a FileInfo describing the named file without following symlinks.
 func (RealSystem) Lstat(name string) (os.FileInfo, error) {

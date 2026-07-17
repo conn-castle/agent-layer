@@ -223,6 +223,41 @@ func TestRunWithOverwrite_SnapshotMarksRollbackFailed(t *testing.T) {
 	if snapshot.Status != upgradeSnapshotStatusRollbackFailed {
 		t.Fatalf("snapshot status = %q, want %q", snapshot.Status, upgradeSnapshotStatusRollbackFailed)
 	}
+	if !strings.Contains(snapshot.FailureError, "write failure") || !strings.Contains(snapshot.FailureError, "rollback remove failure") {
+		t.Fatalf("snapshot failure_error = %q, want upgrade and rollback failures", snapshot.FailureError)
+	}
+	failureStep := snapshot.FailureStep
+	failureError := snapshot.FailureError
+	unrelatedPath := launchers.VSCodePaths(root).Command
+	unrelatedContent := []byte("post-failure user edit\n")
+	if err := os.MkdirAll(filepath.Dir(unrelatedPath), 0o700); err != nil {
+		t.Fatalf("mkdir unrelated path parent: %v", err)
+	}
+	if err := os.WriteFile(unrelatedPath, unrelatedContent, 0o600); err != nil {
+		t.Fatalf("write unrelated post-failure change: %v", err)
+	}
+	for _, target := range snapshot.RollbackTargets {
+		if target == ".agent-layer/open-vscode.command" {
+			t.Fatalf("automatic rollback scope unexpectedly includes later launcher step target %q", target)
+		}
+	}
+	if err := RollbackUpgradeSnapshot(root, snapshot.SnapshotID, RollbackUpgradeSnapshotOptions{System: RealSystem{}}); err != nil {
+		t.Fatalf("retry automatic rollback failure: %v", err)
+	}
+	restored := latestSnapshot(t, root)
+	if restored.Status != upgradeSnapshotStatusManuallyRolledBack {
+		t.Fatalf("retried snapshot status = %q, want %q", restored.Status, upgradeSnapshotStatusManuallyRolledBack)
+	}
+	if restored.FailureStep != failureStep || restored.FailureError != failureError {
+		t.Fatalf("retry discarded automatic failure evidence: before=(%q, %q) after=(%q, %q)", failureStep, failureError, restored.FailureStep, restored.FailureError)
+	}
+	gotUnrelated, err := os.ReadFile(unrelatedPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read unrelated post-failure change: %v", err)
+	}
+	if !bytes.Equal(gotUnrelated, unrelatedContent) {
+		t.Fatalf("retry overwrote unrelated post-failure change: got %q, want %q", gotUnrelated, unrelatedContent)
+	}
 }
 
 func TestRunWithOverwrite_RollbackScopesToExecutedStepTargets(t *testing.T) {
@@ -404,7 +439,7 @@ func TestRollbackUpgradeSnapshot_RejectsNonRollbackableStatuses(t *testing.T) {
 	inst := &installer{root: root, sys: RealSystem{}}
 	statuses := []upgradeSnapshotStatus{
 		upgradeSnapshotStatusAutoRolledBack,
-		upgradeSnapshotStatusRollbackFailed,
+		upgradeSnapshotStatusManuallyRolledBack,
 	}
 	for idx, status := range statuses {
 		snapshot := upgradeSnapshot{
@@ -535,6 +570,45 @@ func TestRollbackTargetsFromSnapshotEntries_DedupesPaths(t *testing.T) {
 	}
 }
 
+func TestRollbackUpgradeSnapshot_RestoresNonCanonicalEntryPath(t *testing.T) {
+	root := t.TempDir()
+	versionPath := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(versionPath), 0o700); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	if err := os.WriteFile(versionPath, []byte("new\n"), 0o600); err != nil {
+		t.Fatalf("write current version: %v", err)
+	}
+	perm := uint32(0o644)
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "non-canonical-entry",
+		CreatedAtUTC:  time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC).Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+		Entries: []upgradeSnapshotEntry{{
+			Path:          ".agent-layer/./al.version",
+			Kind:          upgradeSnapshotEntryKindFile,
+			Perm:          &perm,
+			ContentBase64: base64.StdEncoding.EncodeToString([]byte("old\n")),
+		}},
+	}
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.writeUpgradeSnapshot(snapshot, false); err != nil {
+		t.Fatalf("write snapshot: %v", err)
+	}
+
+	if err := RollbackUpgradeSnapshot(root, snapshot.SnapshotID, RollbackUpgradeSnapshotOptions{System: RealSystem{}}); err != nil {
+		t.Fatalf("rollback non-canonical entry: %v", err)
+	}
+	got, err := os.ReadFile(versionPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read restored version: %v", err)
+	}
+	if string(got) != "old\n" {
+		t.Fatalf("restored version = %q, want old snapshot content", got)
+	}
+}
+
 func TestRollbackTargetsFromSnapshotEntries_InvalidPath(t *testing.T) {
 	root := t.TempDir()
 	_, err := rollbackTargetsFromSnapshotEntries(root, []upgradeSnapshotEntry{
@@ -661,9 +735,9 @@ func TestRollbackUpgradeSnapshotState_VersionEntryPathError(t *testing.T) {
 	}
 }
 
-func TestRollbackUpgradeSnapshotState_RemoveErrorFallbackRelativePath(t *testing.T) {
-	root := string([]byte{0})
-	target := filepath.Join(t.TempDir(), "target.txt")
+func TestRollbackUpgradeSnapshotState_RemoveErrorReportsRelativePath(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target.txt")
 	snapshot := upgradeSnapshot{
 		SchemaVersion: upgradeSnapshotSchemaVersion,
 		SnapshotID:    "remove-error-fallback",
@@ -678,8 +752,34 @@ func TestRollbackUpgradeSnapshotState_RemoveErrorFallbackRelativePath(t *testing
 	if err == nil {
 		t.Fatal("expected remove error")
 	}
-	if !strings.Contains(err.Error(), "reset path") || !strings.Contains(err.Error(), target) {
-		t.Fatalf("expected fallback target path in error, got %v", err)
+	if !strings.Contains(err.Error(), "reset path target.txt") {
+		t.Fatalf("expected relative target path in error, got %v", err)
+	}
+}
+
+func TestRollbackUpgradeSnapshotState_RejectsOutsideTargetBeforeMutation(t *testing.T) {
+	root := t.TempDir()
+	outsideTarget := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outsideTarget, []byte("preserve\n"), 0o600); err != nil {
+		t.Fatalf("write outside target: %v", err)
+	}
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "outside-target",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+	}
+
+	err := rollbackUpgradeSnapshotState(root, RealSystem{}, snapshot, []string{outsideTarget})
+	if err == nil || !strings.Contains(err.Error(), "outside repo root") {
+		t.Fatalf("outside target error = %v, want containment rejection", err)
+	}
+	content, readErr := os.ReadFile(outsideTarget) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if readErr != nil {
+		t.Fatalf("read preserved outside target: %v", readErr)
+	}
+	if string(content) != "preserve\n" {
+		t.Fatalf("outside target changed to %q", content)
 	}
 }
 
@@ -820,6 +920,64 @@ func TestRestoreUpgradeSnapshotEntriesAtRoot_RestoresSymlinkEntries(t *testing.T
 	}
 }
 
+func TestRestoreUpgradeSnapshotEntriesAtRoot_RestoresDescendantsBeforeDirectoryModes(t *testing.T) {
+	root := t.TempDir()
+	parentPath := filepath.Join(root, "captured")
+	childPath := filepath.Join(parentPath, "nested")
+	t.Cleanup(func() {
+		_ = os.Chmod(parentPath, 0o700) // #nosec G302 -- test restores owner traversal/write access for TempDir cleanup.
+		_ = os.Chmod(childPath, 0o700)  // #nosec G302 -- test restores owner traversal/write access for TempDir cleanup.
+	})
+
+	parentPerm := uint32(0o600)
+	childPerm := uint32(0o500)
+	filePerm := uint32(0o400)
+	entries := []upgradeSnapshotEntry{
+		// The non-canonical parent path must be sorted by its resolved depth;
+		// counting separators in the raw value would apply its final mode first.
+		{Path: "captured/./.", Kind: upgradeSnapshotEntryKindDir, Perm: &parentPerm},
+		{Path: "captured/nested", Kind: upgradeSnapshotEntryKindDir, Perm: &childPerm},
+		{
+			Path:          "captured/nested/original.txt",
+			Kind:          upgradeSnapshotEntryKindFile,
+			Perm:          &filePerm,
+			ContentBase64: base64.StdEncoding.EncodeToString([]byte("original\n")),
+		},
+	}
+
+	if err := restoreUpgradeSnapshotEntriesAtRoot(root, RealSystem{}, entries); err != nil {
+		t.Fatalf("restore entries with restrictive directory modes: %v", err)
+	}
+	parentInfo, err := os.Stat(parentPath)
+	if err != nil {
+		t.Fatalf("stat restored parent: %v", err)
+	}
+	if got := parentInfo.Mode().Perm(); got != os.FileMode(parentPerm) {
+		t.Fatalf("parent mode = %o, want %o", got, parentPerm)
+	}
+
+	// The parent intentionally has no execute bit after restore. Reopen it only
+	// after verifying its final mode so the descendant content and modes can be
+	// inspected and the temporary restore mode cannot hide a missed final chmod.
+	if err := os.Chmod(parentPath, 0o700); err != nil { // #nosec G302 -- test restores owner traversal for descendant assertions.
+		t.Fatalf("make restored parent traversable for assertions: %v", err)
+	}
+	childInfo, err := os.Stat(childPath)
+	if err != nil {
+		t.Fatalf("stat restored child: %v", err)
+	}
+	if got := childInfo.Mode().Perm(); got != os.FileMode(childPerm) {
+		t.Fatalf("child mode = %o, want %o", got, childPerm)
+	}
+	content, err := os.ReadFile(filepath.Join(childPath, "original.txt")) // #nosec G304 -- path is test-controlled.
+	if err != nil {
+		t.Fatalf("read restored descendant: %v", err)
+	}
+	if string(content) != "original\n" {
+		t.Fatalf("restored descendant = %q, want original content", content)
+	}
+}
+
 func TestRollbackUpgradeSnapshot_MalformedSnapshotFailsLoudly(t *testing.T) {
 	root := t.TempDir()
 	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
@@ -896,6 +1054,231 @@ func TestRollbackUpgradeSnapshot_FailureMarksSnapshotRollbackFailed(t *testing.T
 	}
 	if !strings.Contains(updated.FailureError, "restore write failed") {
 		t.Fatalf("updated failure_error = %q, want restore failure detail", updated.FailureError)
+	}
+}
+
+func TestRollbackUpgradeSnapshot_RetriesPartialRestoreFailure(t *testing.T) {
+	root := t.TempDir()
+	docsDir := filepath.Join(root, "docs", "agent-layer")
+	if err := os.MkdirAll(docsDir, 0o700); err != nil {
+		t.Fatalf("mkdir docs: %v", err)
+	}
+	firstPath := filepath.Join(docsDir, "A.md")
+	secondPath := filepath.Join(docsDir, "B.md")
+	for path, content := range map[string]string{
+		firstPath:  "new first\n",
+		secondPath: "new second\n",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("write current file %s: %v", path, err)
+		}
+	}
+
+	perm := uint32(0o644)
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "retry-partial-restore",
+		CreatedAtUTC:  time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC).Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+		Entries: []upgradeSnapshotEntry{
+			{
+				Path:          "docs/agent-layer/A.md",
+				Kind:          upgradeSnapshotEntryKindFile,
+				Perm:          &perm,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("old first\n")),
+			},
+			{
+				Path:          "docs/agent-layer/B.md",
+				Kind:          upgradeSnapshotEntryKindFile,
+				Perm:          &perm,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("old second\n")),
+			},
+		},
+	}
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.writeUpgradeSnapshot(snapshot, false); err != nil {
+		t.Fatalf("write snapshot: %v", err)
+	}
+
+	faults := &writeFailOnceSystem{
+		base:     RealSystem{},
+		failPath: secondPath,
+		err:      errors.New("restore second file failed"),
+	}
+	if err := RollbackUpgradeSnapshot(root, snapshot.SnapshotID, RollbackUpgradeSnapshotOptions{System: faults}); err == nil {
+		t.Fatal("expected first rollback attempt to fail")
+	}
+	firstRestored, err := os.ReadFile(firstPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read file restored before failure: %v", err)
+	}
+	if string(firstRestored) != "old first\n" {
+		t.Fatalf("first file after partial restore = %q, want old snapshot content", firstRestored)
+	}
+	if _, err := os.Stat(secondPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("second file should remain absent after restore failure, stat err = %v", err)
+	}
+
+	snapshotPath := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath), snapshot.SnapshotID+".json")
+	failedSnapshot, err := readUpgradeSnapshot(snapshotPath, RealSystem{})
+	if err != nil {
+		t.Fatalf("read failed snapshot: %v", err)
+	}
+	if failedSnapshot.Status != upgradeSnapshotStatusRollbackFailed {
+		t.Fatalf("failed snapshot status = %q, want %q", failedSnapshot.Status, upgradeSnapshotStatusRollbackFailed)
+	}
+	if err := os.WriteFile(firstPath, []byte("corrupted after failure\n"), 0o600); err != nil {
+		t.Fatalf("corrupt partially restored file: %v", err)
+	}
+
+	retryFaults := &writeFailOnceSystem{
+		base:     RealSystem{},
+		failPath: secondPath,
+		err:      errors.New("retry restore failed"),
+	}
+	if err := RollbackUpgradeSnapshot(root, snapshot.SnapshotID, RollbackUpgradeSnapshotOptions{System: retryFaults}); err == nil {
+		t.Fatal("expected second rollback attempt to fail")
+	}
+	retriedFailure, err := readUpgradeSnapshot(snapshotPath, RealSystem{})
+	if err != nil {
+		t.Fatalf("read snapshot after failed retry: %v", err)
+	}
+	if retriedFailure.FailureStep != failedSnapshot.FailureStep || !strings.Contains(retriedFailure.FailureError, failedSnapshot.FailureError) || !strings.Contains(retriedFailure.FailureError, "retry restore failed") {
+		t.Fatalf("failed retry discarded failure evidence: before=(%q, %q) after=(%q, %q)", failedSnapshot.FailureStep, failedSnapshot.FailureError, retriedFailure.FailureStep, retriedFailure.FailureError)
+	}
+	firstRestored, err = os.ReadFile(firstPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read first file after failed retry: %v", err)
+	}
+	if string(firstRestored) != "old first\n" {
+		t.Fatalf("failed retry did not reset partially restored file: got %q", firstRestored)
+	}
+
+	if err := RollbackUpgradeSnapshot(root, snapshot.SnapshotID, RollbackUpgradeSnapshotOptions{System: RealSystem{}}); err != nil {
+		t.Fatalf("retry rollback_failed snapshot: %v", err)
+	}
+	for path, want := range map[string]string{
+		firstPath:  "old first\n",
+		secondPath: "old second\n",
+	} {
+		got, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
+		if err != nil {
+			t.Fatalf("read restored file %s: %v", path, err)
+		}
+		if string(got) != want {
+			t.Fatalf("restored file %s = %q, want %q", path, got, want)
+		}
+	}
+
+	restoredSnapshot, err := readUpgradeSnapshot(snapshotPath, RealSystem{})
+	if err != nil {
+		t.Fatalf("read retried snapshot: %v", err)
+	}
+	if restoredSnapshot.Status != upgradeSnapshotStatusManuallyRolledBack {
+		t.Fatalf("retried snapshot status = %q, want %q", restoredSnapshot.Status, upgradeSnapshotStatusManuallyRolledBack)
+	}
+	if restoredSnapshot.FailureStep != retriedFailure.FailureStep || restoredSnapshot.FailureError != retriedFailure.FailureError {
+		t.Fatalf("successful retry discarded failure evidence: before=(%q, %q) after=(%q, %q)", retriedFailure.FailureStep, retriedFailure.FailureError, restoredSnapshot.FailureStep, restoredSnapshot.FailureError)
+	}
+}
+
+func TestRollbackUpgradeSnapshot_RetriesDirectoryModeFailure(t *testing.T) {
+	root := t.TempDir()
+	dirPath := filepath.Join(root, "captured")
+	childPath := filepath.Join(dirPath, "nested")
+	filePath := filepath.Join(childPath, "original.txt")
+	if err := os.MkdirAll(childPath, 0o700); err != nil {
+		t.Fatalf("mkdir current directory: %v", err)
+	}
+	if err := os.WriteFile(filePath, []byte("current\n"), 0o600); err != nil {
+		t.Fatalf("write current file: %v", err)
+	}
+
+	dirPerm := uint32(0o500)
+	childPerm := uint32(0o500)
+	filePerm := uint32(0o400)
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "retry-directory-mode",
+		CreatedAtUTC:  time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC).Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+		Entries: []upgradeSnapshotEntry{
+			{Path: "captured", Kind: upgradeSnapshotEntryKindDir, Perm: &dirPerm},
+			{Path: "captured/nested", Kind: upgradeSnapshotEntryKindDir, Perm: &childPerm},
+			{
+				Path:          "captured/nested/original.txt",
+				Kind:          upgradeSnapshotEntryKindFile,
+				Perm:          &filePerm,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("original\n")),
+			},
+		},
+	}
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.writeUpgradeSnapshot(snapshot, false); err != nil {
+		t.Fatalf("write snapshot: %v", err)
+	}
+
+	modeFailure := errors.New("apply captured directory mode failed")
+	faults := &chmodFailOnceSystem{
+		System:   RealSystem{},
+		failPath: dirPath,
+		failMode: os.FileMode(dirPerm),
+		err:      modeFailure,
+	}
+	if err := RollbackUpgradeSnapshot(root, snapshot.SnapshotID, RollbackUpgradeSnapshotOptions{System: faults}); err == nil || !strings.Contains(err.Error(), modeFailure.Error()) {
+		t.Fatalf("first rollback error = %v, want directory mode failure", err)
+	}
+
+	snapshotPath := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath), snapshot.SnapshotID+".json")
+	failedSnapshot, err := readUpgradeSnapshot(snapshotPath, RealSystem{})
+	if err != nil {
+		t.Fatalf("read failed snapshot: %v", err)
+	}
+	if failedSnapshot.Status != upgradeSnapshotStatusRollbackFailed ||
+		failedSnapshot.FailureStep != manualRollbackFailureStep ||
+		!strings.Contains(failedSnapshot.FailureError, modeFailure.Error()) {
+		t.Fatalf("failed snapshot evidence = (%q, %q, %q)", failedSnapshot.Status, failedSnapshot.FailureStep, failedSnapshot.FailureError)
+	}
+
+	if err := RollbackUpgradeSnapshot(root, snapshot.SnapshotID, RollbackUpgradeSnapshotOptions{System: RealSystem{}}); err != nil {
+		t.Fatalf("retry rollback_failed snapshot: %v", err)
+	}
+	restoredSnapshot, err := readUpgradeSnapshot(snapshotPath, RealSystem{})
+	if err != nil {
+		t.Fatalf("read restored snapshot: %v", err)
+	}
+	if restoredSnapshot.Status != upgradeSnapshotStatusManuallyRolledBack {
+		t.Fatalf("retry status = %q, want %q", restoredSnapshot.Status, upgradeSnapshotStatusManuallyRolledBack)
+	}
+	if restoredSnapshot.FailureStep != failedSnapshot.FailureStep || restoredSnapshot.FailureError != failedSnapshot.FailureError {
+		t.Fatalf("retry discarded original failure evidence: before=(%q, %q) after=(%q, %q)", failedSnapshot.FailureStep, failedSnapshot.FailureError, restoredSnapshot.FailureStep, restoredSnapshot.FailureError)
+	}
+	dirInfo, err := os.Stat(dirPath)
+	if err != nil {
+		t.Fatalf("stat restored directory: %v", err)
+	}
+	if got := dirInfo.Mode().Perm(); got != os.FileMode(dirPerm) {
+		t.Fatalf("restored directory mode = %o, want %o", got, dirPerm)
+	}
+	childInfo, err := os.Stat(childPath)
+	if err != nil {
+		t.Fatalf("stat restored child directory: %v", err)
+	}
+	if got := childInfo.Mode().Perm(); got != os.FileMode(childPerm) {
+		t.Fatalf("restored child directory mode = %o, want %o", got, childPerm)
+	}
+	content, err := os.ReadFile(filePath) // #nosec G304 -- path is test-controlled.
+	if err != nil {
+		t.Fatalf("read restored file: %v", err)
+	}
+	if string(content) != "original\n" {
+		t.Fatalf("restored file = %q, want original content", content)
+	}
+	if err := os.Chmod(dirPath, 0o700); err != nil { // #nosec G302 -- test restores owner write access for TempDir cleanup.
+		t.Fatalf("make restored directory writable for cleanup: %v", err)
+	}
+	if err := os.Chmod(childPath, 0o700); err != nil { // #nosec G302 -- test restores owner write access for TempDir cleanup.
+		t.Fatalf("make restored child directory writable for cleanup: %v", err)
 	}
 }
 
@@ -1909,6 +2292,26 @@ type writeFailOnceSystem struct {
 	fired    bool
 }
 
+type chmodFailOnceSystem struct {
+	System
+	failPath string
+	failMode os.FileMode
+	err      error
+	fired    bool
+}
+
+func (s *chmodFailOnceSystem) Chmod(name string, mode os.FileMode) error {
+	if !s.fired && normalizePath(name) == normalizePath(s.failPath) && mode.Perm() == s.failMode.Perm() {
+		s.fired = true
+		return s.err
+	}
+	return s.System.Chmod(name, mode)
+}
+
+func (s *writeFailOnceSystem) Chmod(name string, mode os.FileMode) error {
+	return s.base.Chmod(name, mode)
+}
+
 func (s *writeFailOnceSystem) Stat(name string) (os.FileInfo, error) {
 	return s.base.Stat(name)
 }
@@ -1959,6 +2362,10 @@ func (s *writeFailOnceSystem) WriteFileAtomic(filename string, data []byte, perm
 
 type walkCallbackErrSystem struct {
 	base System
+}
+
+func (s walkCallbackErrSystem) Chmod(name string, mode os.FileMode) error {
+	return s.base.Chmod(name, mode)
 }
 
 func (s walkCallbackErrSystem) Stat(name string) (os.FileInfo, error) {

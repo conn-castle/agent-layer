@@ -50,18 +50,30 @@ func RollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 	if err != nil {
 		return err
 	}
-	if snapshot.Status != upgradeSnapshotStatusApplied && snapshot.Status != upgradeSnapshotStatusCreated {
+	if snapshot.Status != upgradeSnapshotStatusApplied &&
+		snapshot.Status != upgradeSnapshotStatusCreated &&
+		snapshot.Status != upgradeSnapshotStatusRollbackFailed {
 		return fmt.Errorf(messages.InstallUpgradeRollbackSnapshotNotRollbackableFmt, snapshotID, snapshot.Status)
 	}
 
-	targets, err := rollbackTargetsFromSnapshotEntries(root, snapshot.Entries)
+	targets, err := rollbackTargetsForSnapshot(root, snapshot)
 	if err != nil {
 		return err
 	}
+	if len(snapshot.RollbackTargets) == 0 {
+		snapshot.RollbackTargets, err = rollbackTargetRelativePaths(root, targets)
+		if err != nil {
+			return err
+		}
+	}
 	if err := rollbackUpgradeSnapshotState(root, sys, snapshot, targets); err != nil {
+		if snapshot.Status == upgradeSnapshotStatusRollbackFailed && strings.TrimSpace(snapshot.FailureError) != "" {
+			snapshot.FailureError = fmt.Sprintf("%s; retry rollback failed: %v", snapshot.FailureError, err)
+		} else {
+			snapshot.FailureStep = manualRollbackFailureStep
+			snapshot.FailureError = err.Error()
+		}
 		snapshot.Status = upgradeSnapshotStatusRollbackFailed
-		snapshot.FailureStep = manualRollbackFailureStep
-		snapshot.FailureError = err.Error()
 		if writeErr := writeUpgradeSnapshotFile(snapshotPath, snapshot, sys); writeErr != nil {
 			return fmt.Errorf("rollback snapshot %s failed: %w; failed to persist rollback_failed state: %v", snapshotID, err, writeErr)
 		}
@@ -73,6 +85,42 @@ func RollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 		return fmt.Errorf("rollback snapshot %s succeeded but failed to persist manually_rolled_back state: %w", snapshotID, err)
 	}
 	return nil
+}
+
+func rollbackTargetsForSnapshot(root string, snapshot upgradeSnapshot) ([]string, error) {
+	if snapshot.Status == upgradeSnapshotStatusRollbackFailed && len(snapshot.RollbackTargets) > 0 {
+		return rollbackTargetsFromRelativePaths(root, snapshot.RollbackTargets)
+	}
+	return rollbackTargetsFromSnapshotEntries(root, snapshot.Entries)
+}
+
+func rollbackTargetsFromRelativePaths(root string, relPaths []string) ([]string, error) {
+	paths := make([]string, 0, len(relPaths))
+	for _, relPath := range relPaths {
+		path, err := snapshotEntryAbsPath(root, relPath)
+		if err != nil {
+			return nil, fmt.Errorf("invalid rollback target: %w", err)
+		}
+		paths = append(paths, path)
+	}
+	return uniqueNormalizedPaths(paths), nil
+}
+
+func rollbackTargetRelativePaths(root string, targets []string) ([]string, error) {
+	relPaths := make([]string, 0, len(targets))
+	for _, target := range uniqueNormalizedPaths(targets) {
+		rel, err := filepath.Rel(root, target)
+		if err != nil {
+			return nil, fmt.Errorf("resolve rollback target %s relative to repo root: %w", target, err)
+		}
+		rel = filepath.Clean(rel)
+		if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return nil, fmt.Errorf("rollback target %s resolves outside repo root", target)
+		}
+		relPaths = append(relPaths, normalizeRelPath(rel))
+	}
+	sort.Strings(relPaths)
+	return relPaths, nil
 }
 
 func rollbackTargetsFromSnapshotEntries(root string, entries []upgradeSnapshotEntry) ([]string, error) {
@@ -119,6 +167,28 @@ func rollbackUpgradeSnapshotState(root string, sys System, snapshot upgradeSnaps
 	if len(scopedTargets) == 0 {
 		return nil
 	}
+	targetRelPaths, err := rollbackTargetRelativePaths(root, scopedTargets)
+	if err != nil {
+		return err
+	}
+
+	filteredEntries := make([]upgradeSnapshotEntry, 0, len(snapshot.Entries))
+	for _, entry := range snapshot.Entries {
+		entryRel := normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path)))
+		include := false
+		for _, targetRel := range targetRelPaths {
+			if entryRel == targetRel || strings.HasPrefix(entryRel, targetRel+"/") {
+				include = true
+				break
+			}
+		}
+		if include {
+			filteredEntries = append(filteredEntries, entry)
+		}
+	}
+	if err := makeRollbackDirectoriesWritable(root, sys, filteredEntries); err != nil {
+		return err
+	}
 	sort.Slice(scopedTargets, func(i, j int) bool {
 		leftRel, leftDepth := rollbackTargetRelativeDepth(root, scopedTargets[i])
 		rightRel, rightDepth := rollbackTargetRelativeDepth(root, scopedTargets[j])
@@ -137,29 +207,46 @@ func rollbackUpgradeSnapshotState(root string, sys System, snapshot upgradeSnaps
 		}
 	}
 
-	targetRelPaths := make([]string, 0, len(scopedTargets))
-	for _, t := range scopedTargets {
-		rel, err := filepath.Rel(root, t)
-		if err == nil {
-			targetRelPaths = append(targetRelPaths, normalizeRelPath(rel))
-		}
-	}
-
-	filteredEntries := make([]upgradeSnapshotEntry, 0, len(snapshot.Entries))
-	for _, entry := range snapshot.Entries {
-		include := false
-		for _, targetRel := range targetRelPaths {
-			if entry.Path == targetRel || strings.HasPrefix(entry.Path, targetRel+"/") {
-				include = true
-				break
-			}
-		}
-		if include {
-			filteredEntries = append(filteredEntries, entry)
-		}
-	}
-
 	return restoreUpgradeSnapshotEntriesAtRoot(root, sys, filteredEntries)
+}
+
+func makeRollbackDirectoriesWritable(root string, sys System, entries []upgradeSnapshotEntry) error {
+	dirs := make([]upgradeSnapshotEntry, 0)
+	for _, entry := range entries {
+		if entry.Kind == upgradeSnapshotEntryKindDir {
+			dirs = append(dirs, entry)
+		}
+	}
+	sort.Slice(dirs, func(i, j int) bool {
+		leftRel := normalizeRelPath(filepath.Clean(filepath.FromSlash(dirs[i].Path)))
+		rightRel := normalizeRelPath(filepath.Clean(filepath.FromSlash(dirs[j].Path)))
+		leftDepth := strings.Count(leftRel, "/")
+		rightDepth := strings.Count(rightRel, "/")
+		if leftDepth == rightDepth {
+			return leftRel < rightRel
+		}
+		return leftDepth < rightDepth
+	})
+	for _, entry := range dirs {
+		absPath, err := snapshotEntryAbsPath(root, entry.Path)
+		if err != nil {
+			return err
+		}
+		info, err := sys.Lstat(absPath)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("inspect directory %s before rollback reset: %w", entry.Path, err)
+		}
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+		if err := sys.Chmod(absPath, info.Mode().Perm()|0o700); err != nil {
+			return fmt.Errorf("make directory %s writable for rollback reset: %w", entry.Path, err)
+		}
+	}
+	return nil
 }
 
 func ensureVersionRollbackTarget(root string, entries []upgradeSnapshotEntry, targets []string) ([]string, error) {
@@ -199,11 +286,17 @@ func restoreUpgradeSnapshotEntriesAtRoot(root string, sys System, entries []upgr
 			continue
 		}
 	}
+	directorySortKey := func(entry upgradeSnapshotEntry) (string, int) {
+		rel := normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path)))
+		return rel, strings.Count(rel, "/")
+	}
 	sort.Slice(dirs, func(i, j int) bool {
-		if strings.Count(dirs[i].Path, "/") == strings.Count(dirs[j].Path, "/") {
-			return dirs[i].Path < dirs[j].Path
+		leftRel, leftDepth := directorySortKey(dirs[i])
+		rightRel, rightDepth := directorySortKey(dirs[j])
+		if leftDepth == rightDepth {
+			return leftRel < rightRel
 		}
-		return strings.Count(dirs[i].Path, "/") < strings.Count(dirs[j].Path, "/")
+		return leftDepth < rightDepth
 	})
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].Path < files[j].Path
@@ -217,8 +310,15 @@ func restoreUpgradeSnapshotEntriesAtRoot(root string, sys System, entries []upgr
 		if err != nil {
 			return err
 		}
-		if err := sys.MkdirAll(absPath, permFromSnapshot(entry.Perm, 0o755)); err != nil {
+		temporaryMode := permFromSnapshot(entry.Perm, 0o755) | 0o700
+		if err := sys.MkdirAll(absPath, temporaryMode); err != nil {
 			return fmt.Errorf("restore directory %s: %w", entry.Path, err)
+		}
+		// MkdirAll preserves an existing directory's mode. Explicitly make every
+		// captured directory traversable and owner-writable so a retry can repair
+		// descendants even when an earlier attempt already applied a read-only mode.
+		if err := sys.Chmod(absPath, temporaryMode); err != nil {
+			return fmt.Errorf("make directory %s writable for restore: %w", entry.Path, err)
 		}
 	}
 	for _, entry := range files {
@@ -254,6 +354,19 @@ func restoreUpgradeSnapshotEntriesAtRoot(root string, sys System, entries []upgr
 		_ = sys.RemoveAll(absPath)
 		if err := sys.Symlink(entry.LinkTarget, absPath); err != nil {
 			return fmt.Errorf(messages.InstallFailedRestoreSymlinkFmt, entry.Path, err)
+		}
+	}
+	// Apply final directory modes only after every descendant is restored. The
+	// reverse of the shallow-first ordering above is deepest-first, which avoids
+	// making a parent non-traversable before its children have their final modes.
+	for i := len(dirs) - 1; i >= 0; i-- {
+		entry := dirs[i]
+		absPath, err := snapshotEntryAbsPath(root, entry.Path)
+		if err != nil {
+			return err
+		}
+		if err := sys.Chmod(absPath, permFromSnapshot(entry.Perm, 0o755)); err != nil {
+			return fmt.Errorf("restore directory mode %s: %w", entry.Path, err)
 		}
 	}
 	return nil

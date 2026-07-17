@@ -288,6 +288,10 @@ type snapshotWriteFailOnNthSystem struct {
 	writes   int
 }
 
+func (s *snapshotWriteFailOnNthSystem) Chmod(name string, mode os.FileMode) error {
+	return s.base.Chmod(name, mode)
+}
+
 func (s *snapshotWriteFailOnNthSystem) Stat(name string) (os.FileInfo, error) {
 	return s.base.Stat(name)
 }

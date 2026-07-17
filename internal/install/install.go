@@ -206,9 +206,10 @@ func (inst upgradeOrchestrator) runUpgradeTransaction(snapshot *upgradeSnapshot)
 			snapshot.FailureError = err.Error()
 
 			rollbackTargets := mergeRollbackTargets(completedTargets, currentStepTargets)
-			rollbackErr := inst.rollbackUpgradeSnapshot(*snapshot, rollbackTargets)
+			rollbackErr := inst.rollbackUpgradeSnapshot(snapshot, rollbackTargets)
 			if rollbackErr != nil {
 				snapshot.Status = upgradeSnapshotStatusRollbackFailed
+				snapshot.FailureError = fmt.Sprintf("upgrade failed: %v; rollback failed: %v", err, rollbackErr)
 				if writeErr := inst.writeUpgradeSnapshot(*snapshot, false); writeErr != nil {
 					return fmt.Errorf("upgrade step %s failed: %w; rollback failed: %v; failed to write snapshot state: %v", step.name, err, rollbackErr, writeErr)
 				}
