@@ -208,6 +208,62 @@ func TestPreLaunchCancellationIsReleasedOnlyByOwningExecution(t *testing.T) {
 	}
 }
 
+func TestCancellationRevisionRaceIsFinalizedByOwningExecution(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	session, err := reserveSession(root, run)
+	if err != nil {
+		t.Fatalf("reserve session: %v", err)
+	}
+
+	var cancelErr error
+	var cancelled atomic.Bool
+	var launches atomic.Int32
+	project := &config.ProjectConfig{Root: root, Config: dispatchTestConfig(AgentCodex)}
+	err = launchExecution(dispatchExecution{
+		Root: root, Project: project, Target: targetMeta{Name: AgentCodex},
+		Version: supportedProviderVersions[AgentCodex], Run: run, Session: session, Mode: dispatchModeFresh,
+		Stderr: dispatchTestWriter(func(data []byte) (int, error) {
+			if cancelled.CompareAndSwap(false, true) {
+				cancelErr = Cancel(CancelRequest{Root: root, ID: run.Record.ID})
+			}
+			return len(data), nil
+		}),
+		NewCommand: func(string, ...string) *exec.Cmd {
+			launches.Add(1)
+			return exec.Command("/bin/sh", "-c", "exit 0") // #nosec G204 -- fixed test command must remain unlaunched.
+		},
+	}).await()
+	if cancelErr != nil {
+		t.Fatalf("Cancel during identity publication: %v", cancelErr)
+	}
+	requireDispatchExitCode(t, err, ExitTargetFailure)
+	if launches.Load() != 0 {
+		t.Fatalf("provider launches after cancellation revision race = %d, want 0", launches.Load())
+	}
+	finalized, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finalized.ActiveRunID != "" {
+		t.Fatalf("cancellation revision race left the owner claim stuck: %#v", finalized)
+	}
+	record, err := loadRunRecord(root, run.Record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.State != dispatchStateCancelled {
+		t.Fatalf("cancellation revision race lost terminal evidence: %#v", record)
+	}
+}
+
+type dispatchTestWriter func([]byte) (int, error)
+
+func (write dispatchTestWriter) Write(data []byte) (int, error) { return write(data) }
+
 func TestDeleteProtectsRunningRecordWithUnprovableOwnership(t *testing.T) {
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)

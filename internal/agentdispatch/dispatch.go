@@ -260,7 +260,7 @@ func executeDispatch(request dispatchExecution) error {
 		request.Run.Record.State = dispatchStateStarting
 		request.Run.Record.RecoveryState = recoveryRetrySafe
 		if err := writeRunRecord(request.Run.Dir, &request.Run.Record); err != nil {
-			return err
+			return finishDispatchFailure(request, err)
 		}
 		if request.Mode == dispatchModeFresh && request.Target.Name == AgentClaude && attempt == 2 {
 			id, err := newUUID()
