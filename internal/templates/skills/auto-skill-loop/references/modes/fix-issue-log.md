@@ -20,7 +20,10 @@ Honor a caller-supplied issue-count range or cap as a constraint, not a target.
 Otherwise select the smallest coherent independently executable group; one issue
 is valid. Add issues only when shared cause, outcome, or verification makes them
 one reviewable repair. Prefer prerequisites and material impact, then source
-order.
+order. Treat human-decision wording, proposed alternatives, next steps, and
+notes in an issue as historical evidence rather than an authoritative blocker.
+Refresh them against the current tree, accepted decisions, requested scope, and
+the blocker contract before excluding the issue from autonomous work.
 
 ## Execute
 

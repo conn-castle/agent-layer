@@ -28,13 +28,23 @@ var (
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	os.Exit(runWithSignalContext(os.Args, os.Stdout, os.Stderr, signal.NotifyContext))
+}
+
+// runWithSignalContext executes the CLI with a root context canceled by process signals.
+func runWithSignalContext(
+	args []string,
+	stdout io.Writer,
+	stderr io.Writer,
+	notifyContext func(context.Context, ...os.Signal) (context.Context, context.CancelFunc),
+) int {
+	ctx, stop := notifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	restoreSignals := context.AfterFunc(ctx, stop)
 	exitCode := 0
-	runMain(ctx, os.Args, os.Stdout, os.Stderr, func(code int) { exitCode = code })
+	runMain(ctx, args, stdout, stderr, func(code int) { exitCode = code })
 	restoreSignals()
 	stop()
-	os.Exit(exitCode)
+	return exitCode
 }
 
 // SilentExitError reports an exit code without emitting error output.

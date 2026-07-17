@@ -8,8 +8,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -65,17 +68,72 @@ func TestRunMainError(t *testing.T) {
 	}
 }
 
-func TestMainCallsExecute(t *testing.T) {
-	originalArgs := os.Args
-	defer func() { os.Args = originalArgs }()
-	orig := maybeExecFunc
-	defer func() { maybeExecFunc = orig }()
-	maybeExecFunc = func(args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
-		return nil
-	}
+func TestRunWithSignalContextCancelsAndRestoresSignals(t *testing.T) {
+	originalMaybeExec := maybeExecFunc
+	maybeExecFunc = func([]string, string, string, io.Writer, func(int)) error { return nil }
+	t.Cleanup(func() { maybeExecFunc = originalMaybeExec })
 
-	os.Args = []string{"al", "--version"}
-	main()
+	tests := []struct {
+		name string
+		sig  os.Signal
+	}{
+		{name: "interrupt", sig: os.Interrupt},
+		{name: "termination", sig: syscall.SIGTERM},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			originalExecute := executeFunc
+			started := make(chan struct{})
+			executeFunc = func(ctx context.Context, _ []string, _ io.Writer, _ io.Writer) error {
+				close(started)
+				<-ctx.Done()
+				return ctx.Err()
+			}
+			t.Cleanup(func() { executeFunc = originalExecute })
+
+			stopped := make(chan struct{})
+			notifyContext := func(parent context.Context, signals ...os.Signal) (context.Context, context.CancelFunc) {
+				ctx, stop := signal.NotifyContext(parent, signals...)
+				var once sync.Once
+				return ctx, func() {
+					stop()
+					once.Do(func() { close(stopped) })
+				}
+			}
+
+			var out bytes.Buffer
+			done := make(chan int, 1)
+			go func() {
+				done <- runWithSignalContext([]string{"al"}, &out, &out, notifyContext)
+			}()
+
+			select {
+			case <-started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("command did not start")
+			}
+			if err := syscall.Kill(os.Getpid(), tt.sig.(syscall.Signal)); err != nil {
+				t.Fatalf("send %s: %v", tt.name, err)
+			}
+
+			select {
+			case exitCode := <-done:
+				if exitCode != 1 {
+					t.Fatalf("exit code = %d, want 1", exitCode)
+				}
+				select {
+				case <-stopped:
+				default:
+					t.Fatal("signal handlers were not restored before returning")
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("signal-canceled command did not return")
+			}
+			if got := out.String(); got != context.Canceled.Error()+"\n" {
+				t.Fatalf("diagnostic = %q, want one cancellation diagnostic", got)
+			}
+		})
+	}
 }
 
 func TestRunMain_GetwdError(t *testing.T) {

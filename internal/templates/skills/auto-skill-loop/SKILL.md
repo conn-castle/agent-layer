@@ -65,13 +65,15 @@ every selection.
 2. If selection proved exhaustion, proceed to step 5 when a delivery is in
    progress; otherwise follow the termination rules below.
 3. For any other selection result, dispatch `planner` with that result and the
-   complete `references/blocker-classification.md` contract to classify any
-   decision. A single safe answer remains agent-owned. Record a genuinely
-   human-owned decision under the blocker rules. After classification,
-   autonomous selected work continues to step 4 and an individually blocked
-   candidate returns to selection. A blocked-only complete pass proceeds to
-   step 5 when a delivery is in progress and otherwise follows the termination
-   rules below.
+   complete `references/blocker-classification.md` contract. Require one answer
+   for each candidate: whether it requires human input, the current evidence,
+   and either the surviving unresolved alternatives or the concrete safe next
+   action. Do not accept the source's classification without validating it. A
+   single safe answer remains agent-owned. Record a genuinely human-owned
+   decision under the blocker rules. After classification, autonomous selected
+   work continues to step 4 and an individually blocked candidate returns to
+   selection. A blocked-only complete pass proceeds to step 5 when a delivery
+   is in progress and otherwise follows the termination rules below.
 4. For autonomous selected work, dispatch `rote_worker` to prepare or reuse one
    workflow-owned delivery branch, then execute the mode. Use a separate branch
    or worktree when the user explicitly requests isolation or when evidence
