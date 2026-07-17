@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -89,6 +88,25 @@ type executionResult struct {
 	Answer       string
 }
 
+// unprovenProviderTerminationError marks a provider failure whose process
+// group may still be live. Failure finalization must preserve the active claim
+// and nonterminal run evidence until a later cancellation or recovery proves
+// that ownership is dead.
+type unprovenProviderTerminationError struct{ err error }
+
+func (e *unprovenProviderTerminationError) Error() string { return e.err.Error() }
+func (e *unprovenProviderTerminationError) Unwrap() error { return e.err }
+
+// newUnprovenProviderTerminationError preserves the primary provider exit
+// classification while adding the failed group-death proof. The returned type
+// tells dispatch finalization to retain the active claim and run evidence.
+func newUnprovenProviderTerminationError(primary error, message string, proofErr error) *unprovenProviderTerminationError {
+	return &unprovenProviderTerminationError{err: errors.Join(
+		primary,
+		wrapExitError(ExitTargetFailure, message, proofErr),
+	)}
+}
+
 func executeProvider(
 	command providerCommand,
 	prompt []byte,
@@ -145,6 +163,23 @@ func executeProvider(
 	run.Record.PID = cmd.Process.Pid
 	run.Record.ProcessGroupID = cmd.Process.Pid
 	run.Record.ProcessStartIdentity = processStartIdentity(cmd.Process.Pid)
+	termination, err := newStartedProviderTermination(cmd, run.Record, providerTerminationGrace)
+	if err != nil {
+		// The exec.Cmd is direct proof that this leader is ours, but without a
+		// durable start identity Agent Layer must not signal its process group.
+		// Kill only the directly owned leader and fail before publishing running
+		// state or accepting provider output.
+		killErr := cmd.Process.Kill()
+		waitErr := cmd.Wait()
+		if !providerProcessGroupDead(run.Record.ProcessGroupID) {
+			return executionResult{}, newUnprovenProviderTerminationError(
+				wrapExitError(ExitTargetFailure, "verify dispatch provider process-group ownership", err),
+				"verify dispatch provider process-group ownership and prove group death",
+				errors.Join(killErr, waitErr),
+			)
+		}
+		return executionResult{}, wrapExitError(ExitTargetFailure, "verify dispatch provider process-group ownership", err)
+	}
 	run.Record.State = dispatchStateRunning
 	run.Record.RecoveryState = recoveryAcceptanceUnknown
 	started := time.Now().UTC()
@@ -161,13 +196,21 @@ func executeProvider(
 			_, _ = io.Copy(io.Discard, stderrPipe)
 			close(stderrDrained)
 		}()
-		signalProviderProcess(cmd, syscall.SIGTERM)
-		_ = cmd.Wait()
+		termination.request()
 		<-stdoutDrained
 		<-stderrDrained
-		return executionResult{}, err
+		_ = cmd.Wait()
+		terminationErr := termination.providerStopped()
+		if terminationErr != nil {
+			return executionResult{}, newUnprovenProviderTerminationError(
+				err,
+				"terminate dispatch provider process group after running-state publication failure",
+				terminationErr,
+			)
+		}
+		return executionResult{}, errors.Join(err, terminationErr)
 	}
-	caughtSignal, stopForwarder := installProviderSignalForwarder(cmd)
+	caughtSignal, stopForwarder := installProviderSignalForwarder(termination.request)
 	defer stopForwarder()
 
 	var result executionResult
@@ -183,7 +226,7 @@ func executeProvider(
 			semanticErr = err
 		}
 		resultMu.Unlock()
-		signalProviderProcess(cmd, syscall.SIGTERM)
+		termination.request()
 	}
 	consume := func(event providerEvent) error {
 		resultMu.Lock()
@@ -279,26 +322,33 @@ func executeProvider(
 	streamResult := <-streamErr
 	stderrResult := <-stderrErr
 	waitErr := cmd.Wait()
-	if signal := caughtSignal(); signal != nil {
-		if signal == os.Interrupt {
-			return executionResult{}, exitError(ExitSigint, fmt.Sprintf("%s interrupted by signal SIGINT", command.Provider))
-		}
-		return executionResult{}, exitError(ExitSigterm, fmt.Sprintf("%s interrupted by signal SIGTERM", command.Provider))
-	}
-	if streamResult != nil {
-		return executionResult{}, wrapExitError(ExitTargetFailure, fmt.Sprintf("capture dispatch provider output: %v", streamResult), streamResult)
-	}
-	if stderrResult != nil {
-		return executionResult{}, wrapExitError(ExitTargetFailure, fmt.Sprintf("capture dispatch provider diagnostics: %v", stderrResult), stderrResult)
-	}
+	terminationErr := termination.providerStopped()
+	signal := caughtSignal()
 	resultMu.Lock()
 	currentSemanticErr := semanticErr
 	resultMu.Unlock()
-	if currentSemanticErr != nil {
-		return executionResult{}, exitError(ExitTargetFailure, fmt.Sprintf("%s dispatch did not complete: %v", command.Provider, currentSemanticErr))
+	var primaryErr error
+	switch {
+	case signal != nil:
+		if signal == os.Interrupt {
+			primaryErr = exitError(ExitSigint, fmt.Sprintf("%s interrupted by signal SIGINT", command.Provider))
+		} else {
+			primaryErr = exitError(ExitSigterm, fmt.Sprintf("%s interrupted by signal SIGTERM", command.Provider))
+		}
+	case streamResult != nil:
+		primaryErr = wrapExitError(ExitTargetFailure, fmt.Sprintf("capture dispatch provider output: %v", streamResult), streamResult)
+	case stderrResult != nil:
+		primaryErr = wrapExitError(ExitTargetFailure, fmt.Sprintf("capture dispatch provider diagnostics: %v", stderrResult), stderrResult)
+	case currentSemanticErr != nil:
+		primaryErr = exitError(ExitTargetFailure, fmt.Sprintf("%s dispatch did not complete: %v", command.Provider, currentSemanticErr))
+	case waitErr != nil:
+		primaryErr = providerWaitError(command.Provider, waitErr)
 	}
-	if waitErr != nil {
-		return executionResult{}, providerWaitError(command.Provider, waitErr)
+	if terminationErr != nil {
+		return executionResult{}, newUnprovenProviderTerminationError(primaryErr, "terminate dispatch provider process group", terminationErr)
+	}
+	if primaryErr != nil {
+		return executionResult{}, primaryErr
 	}
 	if command.Provider == AgentAntigravity {
 		timedOut, err := antigravityTimeoutReported(run.Record.StderrPath, command.LogPath)

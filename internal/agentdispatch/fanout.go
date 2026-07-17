@@ -39,16 +39,20 @@ type FanoutManifest struct {
 }
 
 type fanoutCoordinatorState struct {
-	loadRunRecord func(root string, id string) (RunRecord, error)
-	loadManifest  func(root string, id string) (FanoutManifest, error)
-	writeManifest func(root string, manifest FanoutManifest) error
+	loadRunRecord          func(root string, id string) (RunRecord, error)
+	loadManifest           func(root string, id string) (FanoutManifest, error)
+	writeManifest          func(root string, manifest FanoutManifest) error
+	writePreparedRunRecord func(dir string, record *RunRecord) error
+	reserveSession         func(root string, run *dispatchRun) (Session, error)
 }
 
 func defaultFanoutCoordinatorState() fanoutCoordinatorState {
 	return fanoutCoordinatorState{
-		loadRunRecord: loadRunRecord,
-		loadManifest:  loadFanoutManifest,
-		writeManifest: writeFanoutManifest,
+		loadRunRecord:          loadRunRecord,
+		loadManifest:           loadFanoutManifest,
+		writeManifest:          writeFanoutManifest,
+		writePreparedRunRecord: writeRunRecord,
+		reserveSession:         reserveSession,
 	}
 }
 
@@ -167,7 +171,7 @@ func fanout(opts FanoutOptions, coordinatorState fanoutCoordinatorState) error {
 	for _, candidate := range candidates {
 		run, runErr := newDispatchRun(opts.Root, candidate.target.Name, candidate.version, dispatchModeFresh)
 		if runErr != nil {
-			failPreparedFanoutChildren(opts.Root, prepared, stderr, runErr)
+			failPreparedFanoutChildren(opts.Root, prepared, stderr, runErr, coordinatorState.writePreparedRunRecord)
 			return runErr
 		}
 		run.Record.FanoutGroupID = groupID
@@ -175,13 +179,14 @@ func fanout(opts FanoutOptions, coordinatorState fanoutCoordinatorState) error {
 		if parent, ok := clients.GetEnv(env, "AL_RUN_ID"); ok {
 			run.Record.ParentRunID = parent
 		}
-		if err := writeRunRecord(run.Dir, &run.Record); err != nil {
-			failPreparedFanoutChildren(opts.Root, prepared, stderr, err)
+		if err := coordinatorState.writePreparedRunRecord(run.Dir, &run.Record); err != nil {
+			failPreparedFanoutChildren(opts.Root, prepared, stderr, err, coordinatorState.writePreparedRunRecord)
 			return err
 		}
-		session, reserveErr := reserveSession(opts.Root, run)
+		session, reserveErr := coordinatorState.reserveSession(opts.Root, run)
 		if reserveErr != nil {
-			failPreparedFanoutChildren(opts.Root, prepared, stderr, reserveErr)
+			current := preparedFanoutChild{request: dispatchExecution{Root: opts.Root, Run: run, Session: Session{Name: run.Record.Name}}}
+			failPreparedFanoutChildren(opts.Root, append(prepared, current), stderr, reserveErr, coordinatorState.writePreparedRunRecord)
 			return reserveErr
 		}
 		prepared = append(prepared, preparedFanoutChild{target: candidate.spec, request: dispatchExecution{
@@ -197,7 +202,7 @@ func fanout(opts FanoutOptions, coordinatorState fanoutCoordinatorState) error {
 		manifest.Children[index] = FanoutChild{RunID: prepared[index].request.Run.Record.ID, Name: prepared[index].request.Session.Name, Target: prepared[index].target, Status: dispatchStatePending, ResultPath: prepared[index].request.Run.Record.AnswerPath}
 	}
 	if err := writeFanoutManifest(opts.Root, manifest); err != nil {
-		failPreparedFanoutChildren(opts.Root, prepared, stderr, err)
+		failPreparedFanoutChildren(opts.Root, prepared, stderr, err, coordinatorState.writePreparedRunRecord)
 		return err
 	}
 	handles := make([]executionHandle, len(prepared))
@@ -313,7 +318,7 @@ func fanoutPath(root string, id string) string {
 // failPreparedFanoutChildren finalizes children that were recorded and
 // reserved but never launched, so a preparation failure does not leave
 // pending runs whose claims only a per-run cancel could release.
-func failPreparedFanoutChildren(root string, prepared []preparedFanoutChild, stderr io.Writer, cause error) {
+func failPreparedFanoutChildren(root string, prepared []preparedFanoutChild, stderr io.Writer, cause error, publishRunRecord func(string, *RunRecord) error) {
 	for _, child := range prepared {
 		record := child.request.Run.Record
 		now := time.Now().UTC()
@@ -321,8 +326,10 @@ func failPreparedFanoutChildren(root string, prepared []preparedFanoutChild, std
 		record.RecoveryState = recoveryRetrySafe
 		record.CompletedAt = &now
 		record.TerminalReason = fmt.Sprintf("fanout preparation failed before launch: %v", cause)
-		if err := writeRunRecord(child.request.Run.Dir, &record); err != nil {
+		if err := publishRunRecord(child.request.Run.Dir, &record); err != nil {
 			_, _ = fmt.Fprintf(stderr, "warning: could not finalize prepared fanout child %s: %v\n", record.ID, err)
+		}
+		if child.request.Session.Name == "" {
 			continue
 		}
 		if err := releaseConversation(root, child.request.Session.Name, record.ID); err != nil {

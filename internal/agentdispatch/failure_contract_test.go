@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestResumeRejectsPendingDisabledAndUnavailableMappings(t *testing.T) {
@@ -110,15 +111,39 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 	}
 
 	failedRun := newRun(t)
+	terminationTestDeadline := 3 * providerTerminationGrace
+	failedStarted := time.Now()
 	_, err = executeProvider(providerCommand{
 		Path:       "/bin/sh",
-		Args:       []string{"-c", `printf '{"type":"turn.failed","message":"provider refused"}\n'`},
+		Args:       []string{"-c", `trap '' TERM; printf '{"type":"turn.failed","message":"provider refused"}\n'; while :; do sleep 1; done`},
 		Env:        os.Environ(),
 		Provider:   AgentCodex,
 		SessionID:  runtimeSessionID,
 		Structured: true,
 	}, nil, failedRun, root, nil, func(string) error { return nil })
 	requireDispatchExitCode(t, err, ExitTargetFailure)
+	if elapsed := time.Since(failedStarted); elapsed > terminationTestDeadline {
+		t.Fatalf("reducer failure waited %s for a SIGTERM-ignoring provider", elapsed)
+	}
+
+	publicationRun := newRun(t)
+	publicationStarted := time.Now()
+	_, err = executeProvider(providerCommand{
+		Path: "/bin/sh", Env: os.Environ(), Provider: AgentAntigravity, Plain: true,
+	}, nil, publicationRun, root, func(string, ...string) *exec.Cmd {
+		current, loadErr := loadRunRecord(root, publicationRun.Record.ID)
+		if loadErr != nil {
+			t.Fatal(loadErr)
+		}
+		if writeErr := writeRunRecord(publicationRun.Dir, &current); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+		return exec.Command("/bin/sh", "-c", `trap '' TERM; while :; do sleep 1; done`) // #nosec G204 -- fixed test-only shell command.
+	}, func(string) error { return nil })
+	requireDispatchExitCode(t, err, ExitUnavailable)
+	if elapsed := time.Since(publicationStarted); elapsed > terminationTestDeadline {
+		t.Fatalf("running-state publication failure waited %s for a SIGTERM-ignoring provider", elapsed)
+	}
 
 	timeoutRun := newRun(t)
 	timeoutLog := filepath.Join(timeoutRun.Dir, "antigravity.log")

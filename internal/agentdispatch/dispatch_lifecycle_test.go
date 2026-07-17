@@ -29,6 +29,68 @@ func TestResumeValidatesVersionPromptAndSkillBeforeLaunch(t *testing.T) {
 	requireDispatchExitCode(t, err, ExitConfig)
 }
 
+func TestRejectedResumeExposesTerminalPublicationFailure(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	active, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active.Record.Name = "short-bright-transistor"
+	if err := writeRunRecord(active.Dir, &active.Record); err != nil {
+		t.Fatal(err)
+	}
+	session := Session{
+		Name: active.Record.Name, Agent: AgentCodex, State: sessionStateDurable,
+		ProviderSessionID: runtimeSessionID, RunID: active.Record.ID,
+		ActiveRunID: active.Record.ID, ActiveClaimKnown: true,
+	}
+	if err := persistSession(root, session); err != nil {
+		t.Fatal(err)
+	}
+
+	publicationErr := errors.New("injected rejected-resume publication failure")
+	var launches atomic.Int32
+	err = resume(ResumeOptions{
+		Root: root, Name: session.Name, PromptArgs: []string{"resume"}, Env: []string{},
+		LookPath: alwaysFound,
+		VersionLookup: func(_ string, agent string) (string, error) {
+			return supportedProviderVersions[agent], nil
+		},
+		NewCommand: func(string, ...string) *exec.Cmd {
+			launches.Add(1)
+			return exec.Command("/bin/sh", "-c", "exit 0") // #nosec G204 -- fixed test command must remain unlaunched.
+		},
+	}, func(string, *RunRecord) error {
+		return publicationErr
+	})
+	requireDispatchExitCode(t, err, ExitConfig)
+	if !errors.Is(err, publicationErr) || !strings.Contains(err.Error(), "already active in run "+active.Record.ID) {
+		t.Fatalf("Resume error = %v, want claim rejection and publication failure", err)
+	}
+	if launches.Load() != 0 {
+		t.Fatalf("provider launches = %d, want 0", launches.Load())
+	}
+	retained, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retained != session {
+		t.Fatalf("publication failure mutated active mapping: before = %#v, after = %#v", session, retained)
+	}
+	records, warnings, err := listRunRecords(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 0 || len(records) != 2 {
+		t.Fatalf("run evidence = %#v, warnings = %#v", records, warnings)
+	}
+	for _, record := range records {
+		if record.ID != active.Record.ID && record.State != dispatchStatePending {
+			t.Fatalf("failed terminal publication changed attempted record: %#v", record)
+		}
+	}
+}
+
 func TestRunUsesConfiguredDefaultAndHonorsQuietOutput(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	replaceDispatchConfigText(t, root, "instruction_token_threshold = 50000", "instruction_token_threshold = 1")
@@ -84,6 +146,41 @@ func TestExecuteDispatchPreservesFailedFreshRunForRecoveryHistory(t *testing.T) 
 	}
 	if record.State != dispatchStateFailed || record.RecoveryState != recoveryAcceptanceUnknown || record.TerminalReason != "failed" {
 		t.Fatalf("failed record = %#v", record)
+	}
+}
+
+func TestUnprovenProviderTerminationRetainsRunAndActiveClaim(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := reserveSession(root, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.Record.State = dispatchStateRunning
+	run.Record.RecoveryState = recoveryAcceptanceUnknown
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		t.Fatal(err)
+	}
+	cause := &unprovenProviderTerminationError{err: exitError(ExitTargetFailure, "provider process group death was not proven")}
+	if err := finishDispatchFailure(dispatchExecution{Root: root, Run: run, Session: session, Mode: dispatchModeFresh}, cause); !errors.Is(err, cause) {
+		t.Fatalf("finishDispatchFailure error = %v, want unproven termination failure", err)
+	}
+	retained, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retained.ActiveRunID != run.Record.ID {
+		t.Fatalf("unproven termination released active claim: %#v", retained)
+	}
+	durable, err := loadRunRecord(root, run.Record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if durable.State != dispatchStateRunning || durable.CompletedAt != nil || durable.TerminalReason != "" {
+		t.Fatalf("unproven termination terminalized run evidence: %#v", durable)
 	}
 }
 

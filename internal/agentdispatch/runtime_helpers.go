@@ -60,19 +60,173 @@ func procStatStartTime(content string) string {
 	return fields[19]
 }
 
-func signalProviderProcess(cmd *exec.Cmd, sig os.Signal) {
-	if cmd == nil || cmd.Process == nil {
-		return
-	}
-	if syscallSig, ok := sig.(syscall.Signal); ok {
-		if err := syscall.Kill(-cmd.Process.Pid, syscallSig); err == nil {
-			return
-		}
-	}
-	_ = cmd.Process.Signal(sig)
+const (
+	providerTerminationGrace        = time.Second
+	providerTerminationPollInterval = 10 * time.Millisecond
+)
+
+type ownedProviderProcessGroup struct {
+	pid   int
+	pgid  int
+	start string
 }
 
-func installProviderSignalForwarder(cmd *exec.Cmd) (caught func() os.Signal, stop func()) {
+// verifiedProviderProcessGroup returns a process-group capability only when
+// the live leader still has the start identity and process group recorded by
+// Agent Layer. Once verified, the capability remains safe to use if the leader
+// exits during the grace period because its descendants keep that process
+// group ID reserved until they also exit.
+func verifiedProviderProcessGroup(record RunRecord) (ownedProviderProcessGroup, error) {
+	if record.PID <= 0 || record.ProcessGroupID <= 0 || record.ProcessStartIdentity == "" {
+		return ownedProviderProcessGroup{}, errors.New("provider process group has incomplete ownership identity")
+	}
+	group := ownedProviderProcessGroup{pid: record.PID, pgid: record.ProcessGroupID, start: record.ProcessStartIdentity}
+	if err := group.verifyLiveIdentity(); err != nil {
+		return ownedProviderProcessGroup{}, err
+	}
+	return group, nil
+}
+
+func (group ownedProviderProcessGroup) verifyLiveIdentity() error {
+	if current := processStartIdentity(group.pid); current == "" || current != group.start {
+		return errors.New("provider process group ownership identity no longer matches")
+	}
+	pgid, err := syscall.Getpgid(group.pid)
+	if err != nil {
+		return fmt.Errorf("read provider process group: %w", err)
+	}
+	if pgid != group.pgid || pgid != group.pid {
+		return fmt.Errorf("provider process group mismatch: pid %d, recorded group %d, live group %d", group.pid, group.pgid, pgid)
+	}
+	return nil
+}
+
+func providerProcessGroupDead(pgid int) bool {
+	if pgid <= 0 {
+		return true
+	}
+	return errors.Is(syscall.Kill(-pgid, 0), syscall.ESRCH)
+}
+
+// terminate sends SIGTERM to one verified Agent Layer-owned process group,
+// escalates to SIGKILL after the bounded grace period, and returns only after
+// group death is proven or a second bounded proof window expires.
+func (group ownedProviderProcessGroup) terminate(grace time.Duration) error {
+	if err := syscall.Kill(-group.pgid, syscall.SIGTERM); err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return nil
+		}
+		return fmt.Errorf("send SIGTERM to provider process group: %w", err)
+	}
+	if grace <= 0 {
+		grace = providerTerminationGrace
+	}
+	timer := time.NewTimer(grace)
+	ticker := time.NewTicker(providerTerminationPollInterval)
+	defer timer.Stop()
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if providerProcessGroupDead(group.pgid) {
+				return nil
+			}
+		case <-timer.C:
+			if err := syscall.Kill(-group.pgid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+				return fmt.Errorf("send SIGKILL to provider process group after %s grace: %w", grace, err)
+			}
+			proofTimer := time.NewTimer(grace)
+			defer proofTimer.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					if providerProcessGroupDead(group.pgid) {
+						proofTimer.Stop()
+						return nil
+					}
+				case <-proofTimer.C:
+					return fmt.Errorf("provider process group %d remained live %s after SIGKILL", group.pgid, grace)
+				}
+			}
+		}
+	}
+}
+
+func (group ownedProviderProcessGroup) terminateReverified(grace time.Duration) error {
+	if err := group.verifyLiveIdentity(); err != nil {
+		return err
+	}
+	return group.terminate(grace)
+}
+
+type providerTermination struct {
+	group     ownedProviderProcessGroup
+	grace     time.Duration
+	done      chan error
+	mu        sync.Mutex
+	requested bool
+	completed bool
+}
+
+// newStartedProviderTermination latches process-group ownership after cmd.Start
+// only when a durable process-start identity was captured. Once captured, a
+// later ESRCH is safe for a short-lived provider that exited during setup.
+func newStartedProviderTermination(cmd *exec.Cmd, record RunRecord, grace time.Duration) (*providerTermination, error) {
+	if cmd == nil || cmd.Process == nil || cmd.Process.Pid != record.PID || record.PID <= 0 || record.ProcessGroupID != record.PID {
+		return nil, errors.New("started provider command does not match recorded process group")
+	}
+	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
+		return nil, errors.New("started provider command has no isolated process group")
+	}
+	if record.ProcessStartIdentity == "" {
+		return nil, errors.New("started provider process has no durable start identity")
+	}
+	if current := processStartIdentity(record.PID); current != "" && current != record.ProcessStartIdentity {
+		return nil, errors.New("started provider process identity changed before ownership capture")
+	}
+	if pgid, err := syscall.Getpgid(record.PID); err == nil {
+		if pgid != record.ProcessGroupID {
+			return nil, fmt.Errorf("started provider process group mismatch: recorded group %d, live group %d", record.ProcessGroupID, pgid)
+		}
+	} else if !errors.Is(err, syscall.ESRCH) {
+		return nil, fmt.Errorf("read started provider process group: %w", err)
+	}
+	group := ownedProviderProcessGroup{pid: record.PID, pgid: record.ProcessGroupID, start: record.ProcessStartIdentity}
+	return &providerTermination{group: group, grace: grace, done: make(chan error, 1)}, nil
+}
+
+func (termination *providerTermination) request() {
+	termination.mu.Lock()
+	if termination.requested || termination.completed {
+		termination.mu.Unlock()
+		return
+	}
+	termination.requested = true
+	termination.mu.Unlock()
+	go func() {
+		termination.done <- termination.group.terminate(termination.grace)
+		close(termination.done)
+	}()
+}
+
+// providerStopped completes the controller after cmd.Wait has reaped the
+// provider leader. It also joins any in-flight escalation before claim release.
+func (termination *providerTermination) providerStopped() error {
+	termination.mu.Lock()
+	if termination.completed {
+		termination.mu.Unlock()
+		return nil
+	}
+	termination.completed = true
+	requested := termination.requested
+	termination.mu.Unlock()
+	if !requested {
+		return nil
+	}
+	return <-termination.done
+}
+
+func installProviderSignalForwarder(requestTermination func()) (caught func() os.Signal, stop func()) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	done := make(chan struct{})
@@ -86,12 +240,12 @@ func installProviderSignalForwarder(cmd *exec.Cmd) (caught func() os.Signal, sto
 		for {
 			select {
 			case sig := <-signals:
-				signalProviderProcess(cmd, sig)
 				mu.Lock()
 				if first == nil {
 					first = sig
 				}
 				mu.Unlock()
+				requestTermination()
 			case <-done:
 				return
 			}
