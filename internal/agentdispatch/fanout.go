@@ -43,6 +43,7 @@ type fanoutCoordinatorState struct {
 	loadManifest           func(root string, id string) (FanoutManifest, error)
 	writeManifest          func(root string, manifest FanoutManifest) error
 	writePreparedRunRecord func(dir string, record *RunRecord) error
+	reserveSession         func(root string, run *dispatchRun) (Session, error)
 }
 
 func defaultFanoutCoordinatorState() fanoutCoordinatorState {
@@ -51,6 +52,7 @@ func defaultFanoutCoordinatorState() fanoutCoordinatorState {
 		loadManifest:           loadFanoutManifest,
 		writeManifest:          writeFanoutManifest,
 		writePreparedRunRecord: writeRunRecord,
+		reserveSession:         reserveSession,
 	}
 }
 
@@ -181,9 +183,10 @@ func fanout(opts FanoutOptions, coordinatorState fanoutCoordinatorState) error {
 			failPreparedFanoutChildren(opts.Root, prepared, stderr, err, coordinatorState.writePreparedRunRecord)
 			return err
 		}
-		session, reserveErr := reserveSession(opts.Root, run)
+		session, reserveErr := coordinatorState.reserveSession(opts.Root, run)
 		if reserveErr != nil {
-			failPreparedFanoutChildren(opts.Root, prepared, stderr, reserveErr, coordinatorState.writePreparedRunRecord)
+			current := preparedFanoutChild{request: dispatchExecution{Root: opts.Root, Run: run, Session: Session{Name: run.Record.Name}}}
+			failPreparedFanoutChildren(opts.Root, append(prepared, current), stderr, reserveErr, coordinatorState.writePreparedRunRecord)
 			return reserveErr
 		}
 		prepared = append(prepared, preparedFanoutChild{target: candidate.spec, request: dispatchExecution{
@@ -325,6 +328,9 @@ func failPreparedFanoutChildren(root string, prepared []preparedFanoutChild, std
 		record.TerminalReason = fmt.Sprintf("fanout preparation failed before launch: %v", cause)
 		if err := publishRunRecord(child.request.Run.Dir, &record); err != nil {
 			_, _ = fmt.Fprintf(stderr, "warning: could not finalize prepared fanout child %s: %v\n", record.ID, err)
+		}
+		if child.request.Session.Name == "" {
+			continue
 		}
 		if err := releaseConversation(root, child.request.Session.Name, record.ID); err != nil {
 			_, _ = fmt.Fprintf(stderr, "warning: could not release claim for fanout child %s: %v\n", child.request.Session.Name, err)

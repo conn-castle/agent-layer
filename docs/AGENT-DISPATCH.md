@@ -122,8 +122,9 @@ after a one-second grace period. The same bounded process-group terminator is
 used after forwarded caller signals, running-state publication failure, and
 provider reduction or capture failure. After forced escalation, Dispatch uses a
 second one-second bound to prove the group is gone; failure to prove death is
-reported and retains the claim. The claim is released only after group-death
-proof and the owning execution's pipe drainage and `Wait`, when applicable. A
+reported and retains the claim. `cancel` may release the claim immediately
+after group-death proof; owner-driven release additionally waits for the owning
+execution's pipe drainage and `Wait`. A
 fanout cancellation iterates only nonterminal children and applies this
 ownership boundary independently to every child.
 

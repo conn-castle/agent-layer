@@ -149,6 +149,41 @@ func TestExecuteDispatchPreservesFailedFreshRunForRecoveryHistory(t *testing.T) 
 	}
 }
 
+func TestUnprovenProviderTerminationRetainsRunAndActiveClaim(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := reserveSession(root, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.Record.State = dispatchStateRunning
+	run.Record.RecoveryState = recoveryAcceptanceUnknown
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		t.Fatal(err)
+	}
+	cause := &unprovenProviderTerminationError{err: exitError(ExitTargetFailure, "provider process group death was not proven")}
+	if err := finishDispatchFailure(dispatchExecution{Root: root, Run: run, Session: session, Mode: dispatchModeFresh}, cause); !errors.Is(err, cause) {
+		t.Fatalf("finishDispatchFailure error = %v, want unproven termination failure", err)
+	}
+	retained, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retained.ActiveRunID != run.Record.ID {
+		t.Fatalf("unproven termination released active claim: %#v", retained)
+	}
+	durable, err := loadRunRecord(root, run.Record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if durable.State != dispatchStateRunning || durable.CompletedAt != nil || durable.TerminalReason != "" {
+		t.Fatalf("unproven termination terminalized run evidence: %#v", durable)
+	}
+}
+
 func TestFailureFinalizationReleasesClaimWhenTerminalWriteFails(t *testing.T) {
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)

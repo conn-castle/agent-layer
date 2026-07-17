@@ -184,6 +184,45 @@ func TestFanoutPrepPublicationFailureStillReleasesPreparedClaim(t *testing.T) {
 	}
 }
 
+func TestFanoutReservationFailureFinalizesCurrentChildAndReleasesPartialClaim(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	reservationErr := errors.New("injected fanout reservation failure")
+	state := defaultFanoutCoordinatorState()
+	state.reserveSession = func(root string, run *dispatchRun) (Session, error) {
+		if _, err := reserveSession(root, run); err != nil {
+			return Session{}, err
+		}
+		return Session{}, reservationErr
+	}
+
+	err := fanout(FanoutOptions{
+		Root: root, Targets: []FanoutTarget{{Agent: AgentCodex}, {Agent: AgentClaude}}, PromptArgs: []string{"shared"},
+		Env: []string{}, LookPath: alwaysFound,
+		VersionLookup: func(_ string, agent string) (string, error) { return supportedProviderVersions[agent], nil },
+	}, state)
+	if !errors.Is(err, reservationErr) {
+		t.Fatalf("Fanout error = %v, want reservation failure", err)
+	}
+	records, warnings, err := listRunRecords(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 0 || len(records) != 1 {
+		t.Fatalf("run evidence = %#v, warnings = %#v", records, warnings)
+	}
+	record := records[0]
+	if record.State != dispatchStateFailed || record.RecoveryState != recoveryRetrySafe || record.CompletedAt == nil {
+		t.Fatalf("reservation-failed child not finalized: %#v", record)
+	}
+	session, err := loadSession(root, record.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.ActiveRunID != "" {
+		t.Fatalf("reservation-failed child retained partial claim: %#v", session)
+	}
+}
+
 func TestRetentionPrunesOnlyExpiredTerminalFanoutManifests(t *testing.T) {
 	root := t.TempDir()
 	now := time.Now().UTC()

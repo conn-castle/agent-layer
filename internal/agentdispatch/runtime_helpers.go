@@ -168,10 +168,9 @@ type providerTermination struct {
 	completed bool
 }
 
-// newStartedProviderTermination latches the process-group ownership proved by
-// this execution's successful cmd.Start call. Unlike a later cancel command,
-// the owning execution does not need a second live-process lookup when a very
-// short provider has already exited before identity capture completes.
+// newStartedProviderTermination latches process-group ownership after cmd.Start
+// only when a durable process-start identity was captured. Once captured, a
+// later ESRCH is safe for a short-lived provider that exited during setup.
 func newStartedProviderTermination(cmd *exec.Cmd, record RunRecord, grace time.Duration) (*providerTermination, error) {
 	if cmd == nil || cmd.Process == nil || cmd.Process.Pid != record.PID || record.PID <= 0 || record.ProcessGroupID != record.PID {
 		return nil, errors.New("started provider command does not match recorded process group")
@@ -179,10 +178,11 @@ func newStartedProviderTermination(cmd *exec.Cmd, record RunRecord, grace time.D
 	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
 		return nil, errors.New("started provider command has no isolated process group")
 	}
-	if record.ProcessStartIdentity != "" {
-		if current := processStartIdentity(record.PID); current != "" && current != record.ProcessStartIdentity {
-			return nil, errors.New("started provider process identity changed before ownership capture")
-		}
+	if record.ProcessStartIdentity == "" {
+		return nil, errors.New("started provider process has no durable start identity")
+	}
+	if current := processStartIdentity(record.PID); current != "" && current != record.ProcessStartIdentity {
+		return nil, errors.New("started provider process identity changed before ownership capture")
 	}
 	if pgid, err := syscall.Getpgid(record.PID); err == nil {
 		if pgid != record.ProcessGroupID {

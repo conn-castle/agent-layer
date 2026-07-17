@@ -111,6 +111,7 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 	}
 
 	failedRun := newRun(t)
+	terminationTestDeadline := 3 * providerTerminationGrace
 	failedStarted := time.Now()
 	_, err = executeProvider(providerCommand{
 		Path:       "/bin/sh",
@@ -121,7 +122,7 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 		Structured: true,
 	}, nil, failedRun, root, nil, func(string) error { return nil })
 	requireDispatchExitCode(t, err, ExitTargetFailure)
-	if elapsed := time.Since(failedStarted); elapsed > 2*time.Second {
+	if elapsed := time.Since(failedStarted); elapsed > terminationTestDeadline {
 		t.Fatalf("reducer failure waited %s for a SIGTERM-ignoring provider", elapsed)
 	}
 
@@ -140,7 +141,7 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 		return exec.Command("/bin/sh", "-c", `trap '' TERM; while :; do sleep 1; done`) // #nosec G204 -- fixed test-only shell command.
 	}, func(string) error { return nil })
 	requireDispatchExitCode(t, err, ExitUnavailable)
-	if elapsed := time.Since(publicationStarted); elapsed > 2*time.Second {
+	if elapsed := time.Since(publicationStarted); elapsed > terminationTestDeadline {
 		t.Fatalf("running-state publication failure waited %s for a SIGTERM-ignoring provider", elapsed)
 	}
 

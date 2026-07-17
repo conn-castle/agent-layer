@@ -330,10 +330,9 @@ func Cancel(request CancelRequest) error {
 	}
 	if ownedGroup != nil {
 		if err := ownedGroup.terminateReverified(providerTerminationGrace); err != nil {
-			if processOwnership(record) == ownershipDead {
-				return nil
+			if processOwnership(record) != ownershipDead || !providerProcessGroupDead(record.ProcessGroupID) {
+				return wrapExitError(ExitTargetFailure, "cancel dispatch process group", err)
 			}
-			return wrapExitError(ExitTargetFailure, "cancel dispatch process group", err)
 		}
 		if err := releaseConversation(request.Root, record.Name, record.ID); err != nil {
 			return err

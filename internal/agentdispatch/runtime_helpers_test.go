@@ -118,6 +118,10 @@ func TestProviderTerminationRejectsMismatchedProcessIdentityWithoutSignalling(t 
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		_ = cmd.Wait()
 	}()
+	missingIdentity := RunRecord{PID: cmd.Process.Pid, ProcessGroupID: cmd.Process.Pid}
+	if _, err := newStartedProviderTermination(cmd, missingIdentity, time.Second); err == nil {
+		t.Fatal("missing process-start identity produced a termination controller")
+	}
 	record := RunRecord{PID: cmd.Process.Pid, ProcessGroupID: cmd.Process.Pid, ProcessStartIdentity: "different-start-identity"}
 	if _, err := verifiedProviderProcessGroup(record); err == nil {
 		t.Fatal("mismatched process identity produced a termination capability")

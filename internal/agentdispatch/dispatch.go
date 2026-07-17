@@ -374,6 +374,12 @@ func completeDispatchSuccess(request dispatchExecution, result executionResult, 
 }
 
 func finishDispatchFailure(request dispatchExecution, cause error) error {
+	var terminationFailure *unprovenProviderTerminationError
+	if errors.As(cause, &terminationFailure) {
+		// The provider group may still be live. Keep both the nonterminal run
+		// evidence and active claim so no replacement can overlap it.
+		return cause
+	}
 	if current, err := loadRunRecord(request.Root, request.Run.Record.ID); err == nil && current.State == dispatchStateCancelled {
 		return finishDispatchCancellation(request)
 	}
