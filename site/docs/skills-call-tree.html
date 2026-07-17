@@ -906,14 +906,14 @@ auto-skill-loop:
           caller: dispatch(mode_worker)
     - while: substantive autonomous work remains and the user has not stopped the run
       calls:
-        - task: select the next coherent independent work without broadening it
+        - task: select the next coherent substantive work without broadening it; accept small work only when independently material
           caller: dispatch(mode_worker)
         - if: a complete pass finds no selectable work
           calls:
             - exit: report exhaustion or the smallest accumulated questions
         - task: review the selected work against the complete blocker-classification reference
           caller: dispatch(decision_reviewer)
-        - task: prepare or reuse one compatible workflow-owned delivery branch
+        - task: prepare or reuse one compatible workflow-owned delivery branch and prove its checked-out branch, intended base, current HEAD, and clean worktree and index
           caller: dispatch(shipper)
         - task: execute the selected work through its mode guidance
           caller: dispatch(mode_worker or mode-required roles)
@@ -928,13 +928,13 @@ auto-skill-loop:
             - task: preserve useful work on its branch or PR, note what would unblock it, and restore a clean primary or new delivery branch
               caller: dispatch(shipper)
             - break: select other work without interrupting the user
-        - if: a compatible batch reaches 3 resolved source items, 500 changed lines, or 10 changed files
+        - if: a compatible batch reaches 500 changed lines or 10 changed files
           calls:
             - skill: ship-pr
               caller: dispatch(shipper with exact unchanged ci_fixer instructions)
             - while: the exact PR and head lack a fresh merge-review ready verdict
               calls:
-                - task: review exact-head merge readiness
+                - task: review exact-head merge readiness using existing exact-tree or exact-head check evidence, rerunning the full lane only when that evidence is invalid
                   caller: dispatch(merge_reviewer)
                 - if: review returns simple in-scope repair findings
                   calls:
@@ -952,7 +952,7 @@ auto-skill-loop:
                 - task: issue one single-use authorization from standing loop authority for this freshly reviewed exact PR and head
                 - task: merge with the matching single-use authorization
                   caller: resume(shipper)
-        - if: the source is exhausted below every shipping threshold
+        - if: the source is exhausted below both shipping thresholds
           calls:
             - task: preserve and report the branch without opening a PR
         - if: delivery remains externally gated

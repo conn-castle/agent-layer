@@ -77,12 +77,11 @@ every selection.
    or worktree when the user explicitly requests isolation or when evidence
    shows unsafe overlap or incompatible delivery topology.
 5. Accumulate mutually compatible, completed work on the delivery branch. It is
-   ready to ship at three resolved source items, 500 added-plus-deleted changed
-   lines, or 10 changed files. Count resolved items from verified delivery
-   dispositions. Measure changed lines and files against the delivery's intended
-   base, excluding unrelated work. Below all thresholds, return to selection
-   unless a complete pass found no autonomous work; then dispatch `rote_worker`
-   to reconcile the preserved branch with its authoritative source and terminate
+   ready to ship at 500 added-plus-deleted changed lines or 10 changed files.
+   Measure changed lines and files against the delivery's intended base,
+   excluding unrelated work. Below both thresholds, return to selection unless
+   a complete pass found no autonomous work; then dispatch `rote_worker` to
+   reconcile the preserved branch with its authoritative source and terminate
    without opening a PR.
 6. Only when a threshold is met, dispatch `rote_worker` to run `/ship-pr`,
    passing the `implementer` target for any `/fix-ci` work. Keep `/ship-pr`

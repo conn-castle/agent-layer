@@ -100,9 +100,11 @@ fi
 if [[ "${pipeline_status[0]}" -ne 0 ]]; then
   cat >&2 <<'EOF'
 watch-pr-events: GitHub webhook forwarding failed. Review the preceding error.
-The watcher requires repository webhook administration permission and exclusive
-forwarder access for this repository. Ask the user to resolve the missing
-permission, authentication, or existing forwarder; do not fall back silently.
+Refetch authoritative pull-request state, then retry once with the same log if
+this was a transient transport failure. The watcher requires repository webhook
+administration permission and exclusive forwarder access for this repository;
+ask the user to resolve a repeated failure or output proving missing permission,
+authentication, or an existing forwarder. Do not fall back silently.
 EOF
   exit "${pipeline_status[0]}"
 fi

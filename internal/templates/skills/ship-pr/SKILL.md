@@ -87,7 +87,11 @@ pushed head and run missing local checks concurrently. Wait on watcher output;
 use new log lines only to recover after losing its session. When an event
 arrives or the deadline expires, fetch the current head, comments, reviews,
 checks, and mergeability with `gh`. Never infer current state from the event
-log.
+log. If the watcher ends unexpectedly, refetch that authoritative state and
+restart it with the same append-only log after one transient transport failure.
+Repeated failure or output proving a permission, authentication, or exclusive
+forwarder conflict is a concrete blocker; watcher loss alone does not invalidate
+otherwise exact-tree or exact-head check evidence.
 
 Group compatible fixes from current GitHub state:
 
