@@ -33,12 +33,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Next step: Decide whether random pools should be filtered by requested override support or preserve provider-only eligibility and fail after selection, then encode the chosen public policy in focused selection tests.
     Notes: Deferred because filtering semantics are a public-policy choice outside PR #151's classified production repairs.
 
-- Issue 2026-07-15 dispatch-provider-sigterm-no-escalation: Provider shutdown can hang after cancellation or internal failure
-    Priority: High. Area: internal/agentdispatch runner and runtime helpers
-    Description: Dispatch sends SIGTERM after caller signals, cancellation, reducer failure, or capture failure, but a provider or descendant that ignores SIGTERM can keep the pipes and Wait blocked indefinitely while the owned process group remains alive.
-    Next step: Choose whether shutdown escalates to SIGKILL after a fixed grace period or remains indefinitely graceful/user-driven, then encode the policy in one process-group terminator.
-    Notes: Requires a user-owned cancellation/cleanup policy; do not weaken process identity or group ownership checks.
-
 - Issue 2026-07-13 corrupt-run-record-blocks-delete-cancel: A corrupt run record leaves its mapping undeletable and uncancellable
     Priority: Low. Area: internal/agentdispatch/operations.go (Delete, Cancel) + state.go retention
     Description: Delete and Cancel deliberately fail loud on a corrupt referenced run record (tested behavior consistent with the retention stance of never hiding corrupt evidence), so the only recovery is manual removal of the run directory; history already skips-and-warns, but the mapping stays blocked and retention never expires nonterminal corrupt records.

@@ -167,7 +167,7 @@ func TestRetentionRemovesOnlyExpiredUnreferencedTerminalEvidence(t *testing.T) {
 	}
 }
 
-func TestCancelRetainsClaimUntilOwnedProcessIsProvablyDead(t *testing.T) {
+func TestCancelEscalatesButRetainsClaimUntilOwnedProcessIsReaped(t *testing.T) {
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 	if err != nil {
@@ -184,10 +184,16 @@ func TestCancelRetainsClaimUntilOwnedProcessIsProvablyDead(t *testing.T) {
 		t.Fatal(err)
 	}
 	stopped := false
+	waitStarted := false
+	waitDone := make(chan error, 1)
 	defer func() {
 		if !stopped {
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-			_ = cmd.Wait()
+			if waitStarted {
+				<-waitDone
+			} else {
+				_ = cmd.Wait()
+			}
 		}
 	}()
 	waitForFanoutTestPath(t, readyPath)
@@ -198,9 +204,11 @@ func TestCancelRetainsClaimUntilOwnedProcessIsProvablyDead(t *testing.T) {
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		t.Fatal(err)
 	}
-	if err := Cancel(CancelRequest{Root: root, ID: run.Record.ID}); err != nil {
-		t.Fatalf("Cancel: %v", err)
-	}
+	waitStarted = true
+	go func() { waitDone <- cmd.Wait() }()
+	cancelDone := make(chan error, 1)
+	go func() { cancelDone <- Cancel(CancelRequest{Root: root, ID: run.Record.ID}) }()
+	waitForFanoutRunState(t, root, run.Record.ID, dispatchStateCancelled)
 	record, err := loadRunRecord(root, run.Record.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -208,39 +216,38 @@ func TestCancelRetainsClaimUntilOwnedProcessIsProvablyDead(t *testing.T) {
 	if record.State != dispatchStateCancelled || record.RecoveryState != recoveryAcceptanceUnknown {
 		t.Fatalf("cancelled record = %#v", record)
 	}
-	retained, err := loadSession(root, session.Name)
+	retainedDuringGrace, err := loadSession(root, session.Name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if retained.ActiveRunID != run.Record.ID || !processOwned(record) {
-		t.Fatalf("cancel released a claim while its owned process remained live: session = %#v, record = %#v", retained, record)
+	if retainedDuringGrace.ActiveRunID != run.Record.ID || !processOwned(record) {
+		t.Fatalf("cancel released a claim during the graceful shutdown window: session = %#v, record = %#v", retainedDuringGrace, record)
+	}
+	select {
+	case err := <-cancelDone:
+		if err != nil {
+			t.Fatalf("Cancel: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Cancel did not finish after bounded forced escalation")
+	}
+	if err := <-waitDone; err == nil {
+		t.Fatal("automatically SIGKILLed test process exited successfully")
+	}
+	stopped = true
+	released, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if released.ActiveRunID != "" {
+		t.Fatalf("cancel retained the claim after proving process-group death: %#v", released)
 	}
 	replacement, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
 	if err != nil {
 		t.Fatal(err)
 	}
-	beforeBlockedClaim := retained
-	if _, err := claimConversation(root, session.Name, replacement.Record.ID); err == nil {
-		t.Fatal("cancelled live owner was replaced")
-	} else {
-		requireDispatchExitCode(t, err, ExitUnavailable)
-	}
-	afterBlockedClaim, err := loadSession(root, session.Name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if afterBlockedClaim != beforeBlockedClaim {
-		t.Fatalf("blocked replacement mutated conversation mapping: before = %#v, after = %#v", beforeBlockedClaim, afterBlockedClaim)
-	}
-	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
-		t.Fatalf("stop test process group: %v", err)
-	}
-	if err := cmd.Wait(); err == nil {
-		t.Fatal("SIGKILLed test process exited successfully")
-	}
-	stopped = true
 	if _, err := claimConversation(root, session.Name, replacement.Record.ID); err != nil {
-		t.Fatalf("replace cancelled claim after conservative dead-owner proof: %v", err)
+		t.Fatalf("replace cancelled claim after process-group death proof: %v", err)
 	}
 	recovered, err := loadSession(root, session.Name)
 	if err != nil {

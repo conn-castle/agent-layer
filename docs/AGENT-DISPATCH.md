@@ -111,13 +111,21 @@ simultaneous resume fails nonzero with the active run handle. It launches no
 provider, queues no prompt, and does not mutate provider conversation state.
 Unrelated conversations and fresh calls remain concurrent; no global lock is
 held while a provider runs. Publishing `cancelled` does not release the claim:
-the owning execution releases it only after provider termination, or recovery
-replaces it when recorded process-identity evidence proves the owner dead.
+the cancellation or owning execution path releases it only after complete
+process-group death is proven, or recovery replaces it when recorded process
+identity and group evidence prove the owner dead.
 
-`cancel` signals only the exact recorded live process group after verifying
-its process-start identity and retains the claim while that process group may
-still run. A fanout cancellation iterates only nonterminal children and applies
-the same ownership boundary independently to every child.
+`cancel` publishes authoritative cancelled state, then signals only the exact
+recorded live process group after verifying its process-start identity and
+group membership. Dispatch first sends `SIGTERM` and escalates to `SIGKILL`
+after a one-second grace period. The same bounded process-group terminator is
+used after forwarded caller signals, running-state publication failure, and
+provider reduction or capture failure. After forced escalation, Dispatch uses a
+second one-second bound to prove the group is gone; failure to prove death is
+reported and retains the claim. The claim is released only after group-death
+proof and the owning execution's pipe drainage and `Wait`, when applicable. A
+fanout cancellation iterates only nonterminal children and applies this
+ownership boundary independently to every child.
 
 ## Retention
 

@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -311,13 +310,13 @@ func Cancel(request CancelRequest) error {
 	if terminalDispatchState(record.State) {
 		return exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s is already terminal (%s)", record.ID, record.State))
 	}
+	var ownedGroup *ownedProviderProcessGroup
 	if record.State == dispatchStateRunning {
-		if !processOwned(record) || record.ProcessGroupID <= 0 {
-			return exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s has no live owned process to cancel", record.ID))
+		group, groupErr := verifiedProviderProcessGroup(record)
+		if groupErr != nil {
+			return wrapExitError(ExitUnavailable, fmt.Sprintf("dispatch run %s has no live owned process to cancel", record.ID), groupErr)
 		}
-		if err := syscall.Kill(-record.ProcessGroupID, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
-			return wrapExitError(ExitTargetFailure, "cancel dispatch process group", err)
-		}
+		ownedGroup = &group
 	} else if record.State != dispatchStatePending && record.State != dispatchStateStarting {
 		return exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s cannot be cancelled from state %s", record.ID, record.State))
 	}
@@ -329,9 +328,20 @@ func Cancel(request CancelRequest) error {
 	if err := writeRunRecord(filepathForRun(request.Root, record.ID), &record); err != nil {
 		return err
 	}
+	if ownedGroup != nil {
+		if err := ownedGroup.terminateReverified(providerTerminationGrace); err != nil {
+			if processOwnership(record) == ownershipDead {
+				return nil
+			}
+			return wrapExitError(ExitTargetFailure, "cancel dispatch process group", err)
+		}
+		if err := releaseConversation(request.Root, record.Name, record.ID); err != nil {
+			return err
+		}
+	}
 	// The owning execution releases the claim after its provider wait path has
-	// stopped. Cancel returning only records intent and sends SIGTERM; neither
-	// action proves that the execution no longer owns the conversation.
+	// stopped. Cancel may release it first only after the shared terminator has
+	// proven that the complete process group is gone.
 	return nil
 }
 

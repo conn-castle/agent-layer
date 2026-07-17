@@ -382,7 +382,7 @@ func cancelledClaimReleasable(record RunRecord) bool {
 	if record.PID == 0 && record.ProcessGroupID == 0 && record.ProcessStartIdentity == "" {
 		return true
 	}
-	return processOwnership(record) == ownershipDead
+	return processOwnership(record) == ownershipDead && providerProcessGroupDead(record.ProcessGroupID)
 }
 
 // sessionOwnerRunID resolves the explicit active claim and the compatibility

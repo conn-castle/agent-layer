@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -145,6 +144,16 @@ func executeProvider(
 	run.Record.PID = cmd.Process.Pid
 	run.Record.ProcessGroupID = cmd.Process.Pid
 	run.Record.ProcessStartIdentity = processStartIdentity(cmd.Process.Pid)
+	termination, err := newStartedProviderTermination(cmd, run.Record, providerTerminationGrace)
+	if err != nil {
+		// The exec.Cmd is direct proof that this leader is ours, but without a
+		// durable start identity Agent Layer must not signal its process group.
+		// Kill only the directly owned leader and fail before publishing running
+		// state or accepting provider output.
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return executionResult{}, wrapExitError(ExitTargetFailure, "verify dispatch provider process-group ownership", err)
+	}
 	run.Record.State = dispatchStateRunning
 	run.Record.RecoveryState = recoveryAcceptanceUnknown
 	started := time.Now().UTC()
@@ -161,13 +170,14 @@ func executeProvider(
 			_, _ = io.Copy(io.Discard, stderrPipe)
 			close(stderrDrained)
 		}()
-		signalProviderProcess(cmd, syscall.SIGTERM)
-		_ = cmd.Wait()
+		termination.request()
 		<-stdoutDrained
 		<-stderrDrained
-		return executionResult{}, err
+		_ = cmd.Wait()
+		terminationErr := termination.providerStopped()
+		return executionResult{}, errors.Join(err, terminationErr)
 	}
-	caughtSignal, stopForwarder := installProviderSignalForwarder(cmd)
+	caughtSignal, stopForwarder := installProviderSignalForwarder(termination.request)
 	defer stopForwarder()
 
 	var result executionResult
@@ -183,7 +193,7 @@ func executeProvider(
 			semanticErr = err
 		}
 		resultMu.Unlock()
-		signalProviderProcess(cmd, syscall.SIGTERM)
+		termination.request()
 	}
 	consume := func(event providerEvent) error {
 		resultMu.Lock()
@@ -279,6 +289,7 @@ func executeProvider(
 	streamResult := <-streamErr
 	stderrResult := <-stderrErr
 	waitErr := cmd.Wait()
+	terminationErr := termination.providerStopped()
 	if signal := caughtSignal(); signal != nil {
 		if signal == os.Interrupt {
 			return executionResult{}, exitError(ExitSigint, fmt.Sprintf("%s interrupted by signal SIGINT", command.Provider))
@@ -290,6 +301,9 @@ func executeProvider(
 	}
 	if stderrResult != nil {
 		return executionResult{}, wrapExitError(ExitTargetFailure, fmt.Sprintf("capture dispatch provider diagnostics: %v", stderrResult), stderrResult)
+	}
+	if terminationErr != nil {
+		return executionResult{}, wrapExitError(ExitTargetFailure, "terminate dispatch provider process group", terminationErr)
 	}
 	resultMu.Lock()
 	currentSemanticErr := semanticErr

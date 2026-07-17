@@ -89,6 +89,13 @@ func Run(opts RunOptions) error {
 
 // Resume continues exactly the provider session addressed by name.
 func Resume(opts ResumeOptions) error {
+	return resume(opts, writeRunRecord)
+}
+
+// resume continues a durable provider session and publishes every attempted
+// run outcome. The rejected-run writer is injectable so publication failures
+// can be verified without mutating process-wide state.
+func resume(opts ResumeOptions, writeRejectedRunRecord func(string, *RunRecord) error) error {
 	project, stderr, env, depth, err := loadDispatchProject(opts.Root, opts.Stderr, opts.Env)
 	if err != nil {
 		return err
@@ -148,13 +155,7 @@ func Resume(opts ResumeOptions) error {
 	}
 	session, err = claimConversation(opts.Root, session.Name, run.Record.ID)
 	if err != nil {
-		now := time.Now().UTC()
-		run.Record.State = dispatchStateFailed
-		run.Record.RecoveryState = recoveryRetrySafe
-		run.Record.CompletedAt = &now
-		run.Record.TerminalReason = err.Error()
-		_ = writeRunRecord(run.Dir, &run.Record)
-		return err
+		return finishRejectedResume(run, err, writeRejectedRunRecord)
 	}
 	preflightRequest := dispatchExecution{Root: opts.Root, WorkDir: opts.WorkDir, Project: project, Target: target, Version: version, Mode: dispatchModeResume, Run: run, Session: session}
 	if err := prepareProjection(project, opts.Root, stderr, opts.Quiet); err != nil {
@@ -185,6 +186,22 @@ func Resume(opts ResumeOptions) error {
 		NewCommand:    opts.NewCommand,
 		VersionLookup: opts.VersionLookup,
 	}).await()
+}
+
+// finishRejectedResume makes claim rejection and its attempted-run evidence one
+// durable outcome. A publication failure is joined with the rejection because
+// either error alone would hide material recovery state from the caller.
+func finishRejectedResume(run *dispatchRun, claimErr error, publish func(string, *RunRecord) error) error {
+	now := time.Now().UTC()
+	run.Record.State = dispatchStateFailed
+	run.Record.RecoveryState = recoveryRetrySafe
+	run.Record.CompletedAt = &now
+	run.Record.TerminalReason = claimErr.Error()
+	if err := publish(run.Dir, &run.Record); err != nil {
+		message := fmt.Sprintf("resume claim rejected (%v); publish rejected resume terminal evidence: %v", claimErr, err)
+		return wrapExitError(ExitConfig, message, errors.Join(claimErr, err))
+	}
+	return claimErr
 }
 
 type dispatchExecution struct {

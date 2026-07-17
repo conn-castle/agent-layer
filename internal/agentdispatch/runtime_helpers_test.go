@@ -2,6 +2,7 @@ package agentdispatch
 
 import (
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,38 +13,118 @@ import (
 	"time"
 )
 
-func TestSignalProviderProcessTerminatesProviderProcessGroup(t *testing.T) {
-	childPIDPath := filepath.Join(t.TempDir(), "child.pid")
-	cmd := exec.Command("/bin/sh", "-c", `sleep 30 & child=$!; printf '%s\n' "$child" > "$1"; wait "$child"`, "sh", childPIDPath) // #nosec G204 -- fixed test-only shell command.
+func TestProviderTerminationAllowsGracefulProcessGroupExit(t *testing.T) {
+	readyPath := filepath.Join(t.TempDir(), "ready")
+	cmd := exec.Command("/bin/sh", "-c", `trap 'exit 0' TERM; touch "$1"; while :; do sleep 1; done`, "sh", readyPath) // #nosec G204 -- test-owned path passed as an argument.
 	prepareProviderProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start provider process group: %v", err)
 	}
-	waitCalled := false
-	terminated := false
+	stopped := false
 	t.Cleanup(func() {
-		if terminated {
-			return
-		}
-		// Keep the group SIGKILL armed until both the child and the group are
-		// confirmed dead. If an exit assertion below fails, the orphaned child
-		// is still alive and keeps the process group ID reserved, so signalling
-		// -pid reliably reaps the leaked sleeper.
-		signalProviderProcess(cmd, syscall.SIGKILL)
-		if !waitCalled {
+		if !stopped {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 			_ = cmd.Wait()
 		}
 	})
+	waitForFanoutTestPath(t, readyPath)
+	record := RunRecord{PID: cmd.Process.Pid, ProcessGroupID: cmd.Process.Pid, ProcessStartIdentity: processStartIdentity(cmd.Process.Pid)}
+	termination, err := newStartedProviderTermination(cmd, record, 500*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
 
+	started := time.Now()
+	termination.request()
+	waitErr := cmd.Wait()
+	stopped = true
+	if waitErr != nil {
+		t.Fatalf("graceful provider exit: %v", waitErr)
+	}
+	if err := termination.providerStopped(); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed >= 500*time.Millisecond {
+		t.Fatalf("graceful termination took %s, want less than escalation grace", elapsed)
+	}
+}
+
+func TestProviderTerminationEscalatesAndUnblocksDescendantPipesAndWait(t *testing.T) {
+	childPIDPath := filepath.Join(t.TempDir(), "child.pid")
+	cmd := exec.Command("/bin/sh", "-c", `trap 'exit 0' TERM; (trap '' TERM; while :; do sleep 1; done) & child=$!; printf '%s\n' "$child" > "$1"; wait "$child"`, "sh", childPIDPath) // #nosec G204 -- fixed test-only shell command.
+	prepareProviderProcessGroup(cmd)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	stopped := false
+	waited := false
+	t.Cleanup(func() {
+		if !stopped {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			if !waited {
+				_ = cmd.Wait()
+			}
+		}
+	})
 	childPID := waitForProviderChildPID(t, childPIDPath)
-	signalProviderProcess(cmd, syscall.SIGTERM)
-	waitCalled = true
-	if err := cmd.Wait(); err == nil {
-		t.Fatal("provider process unexpectedly exited successfully after SIGTERM")
+	record := RunRecord{PID: cmd.Process.Pid, ProcessGroupID: cmd.Process.Pid, ProcessStartIdentity: processStartIdentity(cmd.Process.Pid)}
+	termination, err := newStartedProviderTermination(cmd, record, 75*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdoutDrained := make(chan struct{})
+	stderrDrained := make(chan struct{})
+	go func() { _, _ = io.Copy(io.Discard, stdout); close(stdoutDrained) }()
+	go func() { _, _ = io.Copy(io.Discard, stderr); close(stderrDrained) }()
+
+	termination.request()
+	select {
+	case <-stdoutDrained:
+	case <-time.After(2 * time.Second):
+		t.Fatal("provider stdout pipe did not drain after forced escalation")
+	}
+	select {
+	case <-stderrDrained:
+	case <-time.After(2 * time.Second):
+		t.Fatal("provider stderr pipe did not drain after forced escalation")
+	}
+	waited = true
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("graceful provider leader exit: %v", err)
+	}
+	if err := termination.providerStopped(); err != nil {
+		t.Fatal(err)
 	}
 	waitForProviderProcessExit(t, childPID)
 	waitForProviderProcessGroupExit(t, cmd.Process.Pid)
-	terminated = true
+	stopped = true
+}
+
+func TestProviderTerminationRejectsMismatchedProcessIdentityWithoutSignalling(t *testing.T) {
+	cmd := exec.Command("/bin/sh", "-c", `trap '' TERM; while :; do sleep 1; done`) // #nosec G204 -- fixed test-only shell command.
+	prepareProviderProcessGroup(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		_ = cmd.Wait()
+	}()
+	record := RunRecord{PID: cmd.Process.Pid, ProcessGroupID: cmd.Process.Pid, ProcessStartIdentity: "different-start-identity"}
+	if _, err := verifiedProviderProcessGroup(record); err == nil {
+		t.Fatal("mismatched process identity produced a termination capability")
+	}
+	if err := syscall.Kill(cmd.Process.Pid, 0); err != nil {
+		t.Fatalf("identity rejection signalled unrelated process: %v", err)
+	}
 }
 
 func waitForProviderChildPID(t *testing.T, path string) int {
@@ -84,7 +165,7 @@ func waitForProviderProcessExit(t *testing.T, pid int) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("provider child %d remained alive after SIGTERM", pid)
+	t.Fatalf("provider child %d remained alive after termination", pid)
 }
 
 func waitForProviderProcessGroupExit(t *testing.T, pid int) {
@@ -96,5 +177,5 @@ func waitForProviderProcessGroupExit(t *testing.T, pid int) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("provider process group %d remained alive after SIGTERM", pid)
+	t.Fatalf("provider process group %d remained alive after termination", pid)
 }
