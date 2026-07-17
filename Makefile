@@ -161,12 +161,14 @@ tidy: ## Run go mod tidy
 .PHONY: tidy-check
 tidy-check: ## Verify go.mod/go.sum are tidy
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@before_mod="$$(git hash-object go.mod)"; before_sum="$$(git hash-object go.sum)"; \
-	  GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go mod tidy; \
-	  after_mod="$$(git hash-object go.mod)"; after_sum="$$(git hash-object go.sum)"; \
-	  if [[ "$$before_mod" != "$$after_mod" || "$$before_sum" != "$$after_sum" ]]; then \
+	@tmp_mod="$$(mktemp)" && tmp_sum="$$(mktemp)" && \
+	  cp go.mod "$$tmp_mod" && cp go.sum "$$tmp_sum" && \
+	  trap 'cp "$$tmp_mod" go.mod 2>/dev/null || true; cp "$$tmp_sum" go.sum 2>/dev/null || true; rm -f "$$tmp_mod" "$$tmp_sum"' EXIT && \
+	  GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go mod tidy && \
+	  if ! cmp -s "$$tmp_mod" go.mod || ! cmp -s "$$tmp_sum" go.sum; then \
 	    echo "go mod tidy changed go.mod or go.sum" >&2; \
-	    git diff -- go.mod go.sum >&2; \
+	    diff -u "$$tmp_mod" go.mod >&2 || true; \
+	    diff -u "$$tmp_sum" go.sum >&2 || true; \
 	    exit 1; \
 	  fi
 

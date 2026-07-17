@@ -116,6 +116,9 @@ func TestClaudeResumeKeepsFreshTargetAfterConfigurationChanges(t *testing.T) {
 	}
 	changedConfig := strings.ReplaceAll(string(configData), `model = "configured-model"`, `model = "opus"`)
 	changedConfig = strings.ReplaceAll(changedConfig, `reasoning_effort = "medium"`, `reasoning_effort = "high"`)
+	if changedConfig == string(configData) {
+		t.Fatal("test config rewrite made no changes")
+	}
 	if err := os.WriteFile(configPath, []byte(changedConfig), 0o600); err != nil { // #nosec G703 -- path is inside the test-owned temporary repository.
 		t.Fatalf("change config: %v", err)
 	}
