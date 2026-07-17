@@ -16,26 +16,30 @@ func TestLoadSkills_ReadDirError(t *testing.T) {
 }
 
 func TestLoadSkills_ReadFileError(t *testing.T) {
-	dir := t.TempDir()
+	dir := filepath.Join("root", "skills")
 	skillDir := filepath.Join(dir, "bad")
-	if err := os.MkdirAll(skillDir, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
 	skillPath := filepath.Join(skillDir, "SKILL.md")
-	if err := os.WriteFile(skillPath, []byte{}, 0o600); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
 
-	orig := osReadFileFunc
-	osReadFileFunc = func(name string) ([]byte, error) {
-		if name == skillPath {
+	_, err := loadSkills(
+		dir,
+		func(path string) ([]skillDirEntry, error) {
+			switch path {
+			case dir:
+				return []skillDirEntry{{name: "bad", isDir: true}}, nil
+			case skillDir:
+				return []skillDirEntry{{name: "SKILL.md", isDir: false}}, nil
+			default:
+				t.Fatalf("unexpected directory read path: %q", path)
+				return nil, nil
+			}
+		},
+		func(path string) ([]byte, error) {
+			if path != skillPath {
+				t.Fatalf("unexpected read path: got %q, want %q", path, skillPath)
+			}
 			return nil, errors.New("injected read error")
-		}
-		return orig(name)
-	}
-	t.Cleanup(func() { osReadFileFunc = orig })
-
-	_, err := LoadSkills(dir)
+		},
+	)
 	if err == nil {
 		t.Fatalf("expected error from ReadFile")
 	}

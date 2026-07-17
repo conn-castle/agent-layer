@@ -27,12 +27,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-07-15 dispatch-random-override-filter-policy: Random selection can choose a provider that rejects a requested override
-    Priority: Medium. Area: internal/agentdispatch random resolution and fresh preflight
-    Description: Random eligibility considers enabled, installed, compatible, and caller facts, while requested model and reasoning support are validated only after a target is chosen; dispatch can therefore fail on the chosen provider even when another eligible pool member supports the override.
-    Next step: Decide whether random pools should be filtered by requested override support or preserve provider-only eligibility and fail after selection, then encode the chosen public policy in focused selection tests.
-    Notes: Deferred because filtering semantics are a public-policy choice outside PR #151's classified production repairs.
-
 - Issue 2026-07-13 corrupt-run-record-blocks-delete-cancel: A corrupt run record leaves its mapping undeletable and uncancellable
     Priority: Low. Area: internal/agentdispatch/operations.go (Delete, Cancel) + state.go retention
     Description: Delete and Cancel deliberately fail loud on a corrupt referenced run record (tested behavior consistent with the retention stance of never hiding corrupt evidence), so the only recovery is manual removal of the run directory; history already skips-and-warns, but the mapping stays blocked and retention never expires nonterminal corrupt records.
@@ -63,35 +57,17 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Next step: If reclaiming stale Agent Layer-written keys becomes a demonstrated need, add provenance tracking (a managed-key manifest/marker) so removed keys can be pruned without touching native values.
     Notes: Deferred by decision antigravity-settings-overlay-preserve (2026-07-10); provenance was judged too much persistent state for a preservation fix.
 
-- Issue 2026-07-10 antigravity-settings-format-unverified: Antigravity settings.json treated as strict JSON without primary-source confirmation
-    Priority: Low. Area: internal/sync/antigravity.go (readAntigravitySettings strict json.Decoder)
-    Description: The merge parses native settings.json as strict JSON. Secondary sources (codelabs/tutorials) consistently describe it as a plain JSON file, but the official docs page is a JS app that could not be machine-read, so the format was not confirmed from a primary source. If Antigravity actually permits JSONC (comments/trailing commas), a native comment would fail every sync loud until hand-edited.
-    Next step: Confirm the format from a primary source (official spec or an observed real file); if JSONC, add tolerant parsing for this client instead of strict JSON.
-    Notes: Verification gap recorded in decision antigravity-settings-overlay-preserve (2026-07-10).
-
-- Issue 2026-06-23 mcp-commandcontext-kill-path-untested: No test exercises the exec.CommandContext kill-on-timeout path for stdio MCP discovery
-    Priority: Low. Area: internal/warnings/mcp_connector.go (`ConnectAndDiscover` stdio branch), internal/warnings/mcp_test.go
-    Description: The stdio MCP discovery now binds the spawned server process to the discovery context via `exec.CommandContext(ctx, ...)` (carrying `mcpDiscoveryTimeout`) so a hung server is SIGKILLed directly on timeout rather than only torn down via session Close(). Existing stdio tests (`TestRealConnector_StdioConnectionError`, `TestRealConnector_StdioWithEnv`) execute the `exec.CommandContext` LINE (so it is covered for the coverage gate) but only on the connect-failure path; none drives a live, deliberately-hanging child process to verify the context cancel/timeout actually kills it without a goroutine leak or double-Wait against the SDK's CommandTransport.Close(). The swap's correctness was verified by code trace (the SDK's Close() owns the only cmd.Wait(); watchCtx drains via that Wait), so this is a coverage gap, not a known defect.
-    Next step: Human to decide whether a live-process kill test is worth the flakiness/platform risk (spawning a real hanging command, e.g. `sleep`, with a short ctx and asserting the process is reaped). Deferred because such a test is timing- and platform-sensitive and the behavior is already correct by trace.
-    Notes: Flagged by the iteration #8 re-audit (concurrency/cancellation lens). Coverage threshold is unaffected; the line is hit by existing tests.
-
-- Issue 2026-06-23 completion-windows-build-tag-misleading: `//go:build !windows` on cmd/al/completion.go implies Windows support the project cannot provide
-    Priority: Low. Area: cmd/al (completion.go build constraint; platform story)
-    Description: completion.go carries `//go:build !windows`, but the project as a whole is unbuildable on Windows (internal/dispatch depends on `unix.Flock`/`unix.LOCK_EX` with no Windows fallback), and platform.go calls `newCompletionCmd()` unconditionally with no Windows variant. The tag therefore signals partial Windows support that does not exist and would leave platform.go referencing an undefined symbol on a Windows build. Latent inconsistency, not a runtime defect on supported (Unix) platforms.
-    Next step: Human to decide the platform story. If Windows is never intended: remove the misleading `!windows` tag from completion.go. If Windows is intended: the larger correct fix is to add Windows variants for dispatch/platform (the opposite, much bigger change). Either direction is a deliberate decision, not a mechanical edit.
-    Notes: Deferred because it is a project-direction (Windows support) judgment call with two opposite valid resolutions.
-
 - Issue 2026-06-22 secret-in-url-precision-recall: Secret-in-URL detection precision vs recall tradeoff (needs human decision)
     Priority: Medium. Area: internal/warnings/policy.go (`looksLikeSecretQueryKey` and helpers)
     Description: Status quo (retained): secret-bearing query-param keys are matched by SUBSTRING — good recall (flags camelCase keys like `accessToken`/`authToken`/`apiToken`/`clientSecret` because e.g. "token" is a substring) but FALSE POSITIVES on benign keys containing a secret word (`?author=`, `?authority=`, `?tokenizer=`, `?passwordless=`), which currently fail `al sync` with a CRITICAL `POLICY_SECRET_IN_URL` finding. The obvious fix (word-segment matching) removes those false positives but REGRESSES recall: glued/camelCase secret keys (`accessToken`, `authtoken`, `clientSecret`) would no longer be flagged — a genuine security precision/recall tradeoff, not a clear win. An /improve-codebase rewrite of this logic was reverted pending this decision.
     Next step: Human to choose: (A) keep substring matching + add an explicit exclusion list of known-benign keys (preserves recall, surgical); (B) word-segment matching PLUS camelCase boundary splitting (fixes most false positives, restores camelCase recall, still misses fully-glued lowercase like `authtoken`); (C) accept the recall loss and ship pure word-segment matching.
     Notes: Recommendation: Option B is strongest if pursued, but this needs the maintainer's call because it changes a security control's detection semantics.
 
-- Issue 2026-06-22 fs-os-abstraction-four-patterns: OS/filesystem testability seam implemented four different ways across packages
+- Issue 2026-06-22 fs-os-abstraction-four-patterns: Filesystem testability seams remain inconsistent across packages
     Priority: Low. Area: architecture/cross-cutting
-    Description: install, sync, dispatch, launchers each define a `System` interface + `RealSystem` os-passthrough (install/sync overlap on 7 of 11 methods, each re-implemented); config uses both `fs.FS` injection AND a `var osReadFileFunc` function-pointer seam in the same package; doctor/wizard/update/clients use ad-hoc function-pointer vars. Same problem (testable OS access) solved four ways.
-    Next step: Decide and document one standard seam style, or extract a shared `internal/osfs` (or expand `internal/fsutil`) that install/sync/launchers embed; at minimum have config pick one of its two internal seams.
-    Notes: Genuine architectural tradeoff with multiple defensible options; not a defect. Broad change touching deprioritized install/sync — needs a human decision.
+    Description: install, sync, and launchers independently define `System` interfaces with `RealSystem` OS passthroughs, while doctor, wizard, and clients retain package-level function seams. The repeated approaches make filesystem testability conventions and maintenance inconsistent across package boundaries.
+    Next step: When adjacent work touches these seams, compare the concrete package contracts and document preferred patterns; consolidate only overlapping behavior that has a demonstrated shared contract.
+    Notes: Residual maintainability concern, not a known behavior defect; address incrementally without introducing a broad shared interface solely for uniformity.
 
 - Issue 2026-05-23 dispatch-antigravity-argv-prompt-cap: Antigravity dispatch still caps prompt size because `agy` has no stdin/prompt-file path
     Priority: Low. Area: providers/antigravity

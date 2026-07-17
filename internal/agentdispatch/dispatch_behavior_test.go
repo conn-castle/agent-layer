@@ -193,19 +193,87 @@ func TestTargetResolutionEnforcesEligibility(t *testing.T) {
 	}
 	_, err = resolveTarget(cfg, RunOptions{Agent: "unknown"}, "", false)
 	requireDispatchExitCode(t, err, ExitUsage)
-	_, err = chooseRandomTarget(cfg, "", AgentCodex, true, alwaysFound, versionLookup, chooseOnly(AgentCodex))
+	_, err = chooseRandomTarget(cfg, "", AgentCodex, true, "", "", alwaysFound, versionLookup, chooseOnly(AgentCodex))
 	requireDispatchExitCode(t, err, ExitTargetFailure)
-	_, err = chooseRandomTarget(cfg, "", "", false, func(string) (string, error) {
+	_, err = chooseRandomTarget(cfg, "", "", false, "", "", func(string) (string, error) {
 		return "", exec.ErrNotFound
 	}, versionLookup, nil)
 	requireDispatchExitCode(t, err, ExitUnavailable)
 	chooserErr := errors.New("random source failed")
-	_, err = chooseRandomTarget(cfg, "", "", false, alwaysFound, versionLookup, func([]string) (string, error) {
+	_, err = chooseRandomTarget(cfg, "", "", false, "", "", alwaysFound, versionLookup, func([]string) (string, error) {
 		return "", chooserErr
 	})
 	requireDispatchExitCode(t, err, ExitTargetFailure)
 	if !errors.Is(err, chooserErr) {
 		t.Fatalf("chooser error was not preserved: %v", err)
+	}
+}
+
+func TestRandomResolutionFiltersInvocationOverridesBeforeSelection(t *testing.T) {
+	cfg := dispatchTestConfig(AgentCodex, AgentClaude, AgentAntigravity)
+	versionLookup := func(_ string, agent string) (string, error) { return supportedProviderVersions[agent], nil }
+	tests := []struct {
+		name            string
+		model           string
+		reasoningEffort string
+		wantPool        string
+	}{
+		{name: "no overrides preserve the eligible pool", wantPool: "codex,claude,antigravity"},
+		{name: "model override keeps model-capable targets", model: "custom-model", wantPool: "codex,claude,antigravity"},
+		{name: "reasoning override excludes unsupported targets", reasoningEffort: "high", wantPool: "codex,claude"},
+		{name: "model and reasoning overrides require both capabilities", model: "custom-model", reasoningEffort: "high", wantPool: "codex,claude"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolved, err := resolveTarget(cfg, RunOptions{
+				Agent:           AgentRandom,
+				Model:           tt.model,
+				ReasoningEffort: tt.reasoningEffort,
+				LookPath:        alwaysFound,
+				VersionLookup:   versionLookup,
+				ChooseRandom: func(pool []string) (string, error) {
+					if got := strings.Join(pool, ","); got != tt.wantPool {
+						return "", fmt.Errorf("random pool = %q, want %q", got, tt.wantPool)
+					}
+					return pool[len(pool)-1], nil
+				},
+			}, "", false)
+			if err != nil {
+				t.Fatalf("resolveTarget: %v", err)
+			}
+			if resolved.Target.Name == AgentAntigravity && strings.TrimSpace(tt.reasoningEffort) != "" {
+				t.Fatalf("selected reasoning-incompatible target: %s", resolved.Target.Name)
+			}
+		})
+	}
+}
+
+func TestRandomResolutionRejectsEmptyOverridePoolBeforeSelection(t *testing.T) {
+	cfg := dispatchTestConfig(AgentAntigravity)
+	chooserCalled := false
+	resolve := func() error {
+		_, err := resolveTarget(cfg, RunOptions{
+			Agent:           AgentRandom,
+			Model:           "custom-model",
+			ReasoningEffort: "high",
+			LookPath:        alwaysFound,
+			VersionLookup:   func(_ string, agent string) (string, error) { return supportedProviderVersions[agent], nil },
+			ChooseRandom: func([]string) (string, error) {
+				chooserCalled = true
+				return AgentAntigravity, nil
+			},
+		}, "", false)
+		return err
+	}
+
+	first := requireDispatchExitError(t, resolve(), ExitUsage)
+	second := requireDispatchExitError(t, resolve(), ExitUsage)
+	want := "no agents eligible for `al dispatch --agent random` to support all requested overrides (--model and --reasoning-effort); remove unsupported overrides or select an explicit compatible agent"
+	if first.Message != want || second.Message != want {
+		t.Fatalf("empty compatible pool errors = %q and %q, want %q", first.Message, second.Message, want)
+	}
+	if chooserCalled {
+		t.Fatal("random chooser was invoked for an empty override-compatible pool")
 	}
 }
 
@@ -222,7 +290,7 @@ func TestRandomEligibilitySkipsIncompatibleProvidersBeforeChoice(t *testing.T) {
 		}
 		return "999.0.0", nil
 	}
-	selected, err := chooseRandomTarget(cfg, "", "", false, alwaysFound, versionLookup, func(pool []string) (string, error) {
+	selected, err := chooseRandomTarget(cfg, "", "", false, "", "", alwaysFound, versionLookup, func(pool []string) (string, error) {
 		if got := strings.Join(pool, ","); got != AgentClaude {
 			return "", fmt.Errorf("pool = %q, want %q", got, AgentClaude)
 		}
@@ -275,7 +343,7 @@ func TestRandomResolutionCachesCompatibleProviderVersions(t *testing.T) {
 		return "", exec.ErrNotFound
 	}
 	for range 2 {
-		selected, err := chooseRandomTarget(cfg, root, "", false, lookPath, nil, chooseOnly(AgentCodex))
+		selected, err := chooseRandomTarget(cfg, root, "", false, "", "", lookPath, nil, chooseOnly(AgentCodex))
 		if err != nil {
 			t.Fatalf("choose random target: %v", err)
 		}
