@@ -6,6 +6,7 @@ config.toml.bak
 .env.bak
 /templates/
 state/
+sync.lock
 tmp/
 open-vscode.app/
 open-vscode.command
