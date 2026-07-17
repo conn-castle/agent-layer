@@ -225,7 +225,7 @@ make ci
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+, `make tools` has been run
-Notes: Includes `make tidy-check`, `make test-race` (race detector on concurrency-critical packages), `make test-release`, `make test-e2e-ci` (online e2e with required upgrade scenarios), and `make docs-cta-check`; requires network access for upgrade binary downloads. `tidy-check` permits an existing intended diff and fails only when `go mod tidy` changes the module files.
+Notes: Includes `make tidy-check`, `make test-race` (race detector on concurrency-critical packages), `make test-release`, `make test-e2e-ci` (online e2e with required upgrade scenarios), and `make docs-cta-check`; requires network access for upgrade binary downloads. `tidy-check` permits an existing intended diff, reports a validation failure when `go mod tidy` changes the module files, and propagates dependency, toolchain, network, and filesystem errors.
 GitHub Actions also runs a separate website build job using `make website-build-check` against `conn-castle/agent-layer-web`.
 The release workflow runs this target on macOS before importing signing credentials.
 

@@ -153,6 +153,7 @@ func buildProviderCommand(
 	prompt []byte,
 	model string,
 	effort string,
+	targetPinned bool,
 	mode string,
 	sessionID string,
 	run *dispatchRun,
@@ -177,14 +178,14 @@ func buildProviderCommand(
 			args = append(args, "--session-id", sessionID)
 		}
 		resolvedModel := strings.TrimSpace(model)
-		if resolvedModel == "" {
+		if resolvedModel == "" && !targetPinned {
 			resolvedModel = strings.TrimSpace(project.Config.Agents.Claude.Model)
 		}
 		if resolvedModel != "" {
 			args = append(args, "--model", resolvedModel)
 		}
 		resolvedEffort := strings.TrimSpace(effort)
-		if resolvedEffort == "" && !config.HasProviderPassthroughKey(project.Config.Agents.Claude.AgentSpecific, "effortLevel") {
+		if resolvedEffort == "" && !targetPinned && !config.HasProviderPassthroughKey(project.Config.Agents.Claude.AgentSpecific, "effortLevel") {
 			resolvedEffort = strings.TrimSpace(project.Config.Agents.Claude.ReasoningEffort)
 		}
 		if resolvedEffort != "" {
@@ -211,14 +212,14 @@ func buildProviderCommand(
 			args = append(args, sessionID)
 		}
 		resolvedModel := strings.TrimSpace(model)
-		if resolvedModel == "" && !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexModelKey) {
+		if resolvedModel == "" && !targetPinned && !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexModelKey) {
 			resolvedModel = strings.TrimSpace(project.Config.Agents.Codex.Model)
 		}
 		if resolvedModel != "" {
 			args = append(args, "--model", resolvedModel)
 		}
 		resolvedEffort := strings.TrimSpace(effort)
-		if resolvedEffort == "" && !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexReasoningEffortKey) {
+		if resolvedEffort == "" && !targetPinned && !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexReasoningEffortKey) {
 			resolvedEffort = strings.TrimSpace(project.Config.Agents.Codex.ReasoningEffort)
 		}
 		if resolvedEffort != "" {

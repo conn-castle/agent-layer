@@ -31,7 +31,7 @@ func TestProviderCommandsUseExactProviderContracts(t *testing.T) {
 	if !ok {
 		t.Fatal("Claude target missing from registry")
 	}
-	claudeCommand, err := buildProviderCommand(claudeTarget, project, []string{}, []byte("prompt"), "override", "high", "fresh", runtimeSessionID, run, io.Discard)
+	claudeCommand, err := buildProviderCommand(claudeTarget, project, []string{}, []byte("prompt"), "override", "high", false, "fresh", runtimeSessionID, run, io.Discard)
 	if err != nil {
 		t.Fatalf("build Claude command: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestProviderCommandsUseExactProviderContracts(t *testing.T) {
 	if !ok {
 		t.Fatal("Codex target missing from registry")
 	}
-	codexCommand, err := buildProviderCommand(codexTarget, project, []string{}, []byte("prompt"), "", "high", "resume", runtimeSessionID, run, io.Discard)
+	codexCommand, err := buildProviderCommand(codexTarget, project, []string{}, []byte("prompt"), "", "high", false, "resume", runtimeSessionID, run, io.Discard)
 	if err != nil {
 		t.Fatalf("build Codex command: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestProviderCommandsUseExactProviderContracts(t *testing.T) {
 	project.Config.Agents.Codex.Model = "configured-codex"
 	project.Config.Agents.Codex.ReasoningEffort = "medium"
 	project.Config.Approvals.Mode = config.ApprovalModeYOLO
-	codexDefaults, err := buildProviderCommand(codexTarget, project, []string{}, []byte("prompt"), "", "", dispatchModeFresh, "", run, io.Discard)
+	codexDefaults, err := buildProviderCommand(codexTarget, project, []string{}, []byte("prompt"), "", "", false, dispatchModeFresh, "", run, io.Discard)
 	if err != nil {
 		t.Fatalf("build Codex defaults command: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestProviderCommandsUseExactProviderContracts(t *testing.T) {
 	if !ok {
 		t.Fatal("Antigravity target missing from registry")
 	}
-	if _, err := buildProviderCommand(antigravityTarget, project, []string{}, bytes.Repeat([]byte("x"), AntigravityPromptMaxBytes+1), "", "", "fresh", "", run, io.Discard); err == nil {
+	if _, err := buildProviderCommand(antigravityTarget, project, []string{}, bytes.Repeat([]byte("x"), AntigravityPromptMaxBytes+1), "", "", false, "fresh", "", run, io.Discard); err == nil {
 		t.Fatal("Antigravity accepted an argv-sized prompt")
 	} else {
 		requireDispatchExitCode(t, err, ExitUsage)
@@ -121,7 +121,7 @@ func TestClaudeDispatchPrintBackgroundWaitCeilingIsAuthoritative(t *testing.T) {
 			if got := len(envValues(childEnv, claudePrintBackgroundWaitCeilingEnv)); got != tt.inputKeyCount {
 				t.Fatalf("dispatch environment %q entries = %d, want %d: %#v", claudePrintBackgroundWaitCeilingEnv, got, tt.inputKeyCount, childEnv)
 			}
-			command, err := buildProviderCommand(claudeTarget, project, childEnv, []byte("prompt"), "", "", tt.mode, runtimeSessionID, run, io.Discard)
+			command, err := buildProviderCommand(claudeTarget, project, childEnv, []byte("prompt"), "", "", false, tt.mode, runtimeSessionID, run, io.Discard)
 			if err != nil {
 				t.Fatalf("build Claude command: %v", err)
 			}
@@ -141,7 +141,7 @@ func TestClaudeDispatchPrintBackgroundWaitCeilingIsAuthoritative(t *testing.T) {
 			if err != nil {
 				t.Fatalf("new dispatch run: %v", err)
 			}
-			command, err := buildProviderCommand(target, project, []string{"KEEP=1"}, []byte("prompt"), "", "", dispatchModeFresh, "", run, io.Discard)
+			command, err := buildProviderCommand(target, project, []string{"KEEP=1"}, []byte("prompt"), "", "", false, dispatchModeFresh, "", run, io.Discard)
 			if err != nil {
 				t.Fatalf("build %s command: %v", agent, err)
 			}

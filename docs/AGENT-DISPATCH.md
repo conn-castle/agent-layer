@@ -45,9 +45,10 @@ al dispatch options --json
 
 Ordinary calls are always fresh. Resume resolves the provider conversation
 exclusively from the named durable mapping. New mappings also retain the exact
-resolved model and reasoning effort so later configuration changes cannot alter
-the target used by a resumed conversation; mappings created by older releases
-continue to use current configured defaults until their next attempted turn.
+resolved model and reasoning effort, including an intentionally empty
+provider-default target, so later configuration changes cannot alter the target
+used by a resumed conversation; mappings created by older releases continue to
+use current configured defaults until their next attempted turn.
 
 ## Internal coordinator and completion
 
