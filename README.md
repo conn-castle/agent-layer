@@ -609,6 +609,11 @@ friendly name printed by the original call: `al dispatch resume <name> ...`.
 `delete` removes only Agent Layer’s mapping, never the provider transcript.
 `fanout` is a synchronous shared-prompt operation with independently retained
 child results; it is not a generic different-prompt batch interface.
+For `--agent random`, any requested `--model` or `--reasoning-effort` override
+filters that invocation's eligible pool before selection. If no eligible target
+supports every requested override, dispatch fails before choosing a target.
+The options command continues to report the general random pool because it has
+no invocation-specific overrides.
 `al dispatch options --json` reports exact installed versions plus separate
 fresh, resume, and inspection capabilities. For the full v0.13 contract,
 including bounded capture, state isolation, retries, and exit codes, see

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"math/big"
 	"os/exec"
+	"strings"
 
+	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
@@ -29,7 +31,7 @@ func resolveTarget(cfg config.Config, req RunOptions, caller string, callerKnown
 		requested = dispatchDefaultForCaller(cfg, caller)
 	}
 	if requested == AgentRandom {
-		selected, err := chooseRandomTarget(cfg, req.Root, caller, callerKnown, req.LookPath, req.VersionLookup, req.ChooseRandom)
+		selected, err := chooseRandomTarget(cfg, req.Root, caller, callerKnown, req.Model, req.ReasoningEffort, req.LookPath, req.VersionLookup, req.ChooseRandom)
 		if err != nil {
 			return resolution{}, err
 		}
@@ -50,7 +52,7 @@ func resolveTarget(cfg config.Config, req RunOptions, caller string, callerKnown
 	return resolved, nil
 }
 
-func chooseRandomTarget(cfg config.Config, root string, caller string, callerKnown bool, lookPath func(string) (string, error), versionLookup func(string, string) (string, error), chooser RandomChooser) (targetDiscovery, error) {
+func chooseRandomTarget(cfg config.Config, root string, caller string, callerKnown bool, model string, reasoningEffort string, lookPath func(string) (string, error), versionLookup func(string, string) (string, error), chooser RandomChooser) (targetDiscovery, error) {
 	if lookPath == nil {
 		lookPath = exec.LookPath
 	}
@@ -86,6 +88,18 @@ func chooseRandomTarget(cfg config.Config, root string, caller string, callerKno
 	if len(pool) == 0 {
 		return targetDiscovery{}, exitError(ExitUnavailable, messages.DispatchEmptyRandomPool)
 	}
+	requestedOverrides := make([]string, 0, 2)
+	if strings.TrimSpace(model) != "" {
+		requestedOverrides = append(requestedOverrides, "--model")
+		pool = filterRandomPool(pool, agentoptions.KindModel)
+	}
+	if strings.TrimSpace(reasoningEffort) != "" {
+		requestedOverrides = append(requestedOverrides, "--reasoning-effort")
+		pool = filterRandomPool(pool, agentoptions.KindReasoningEffort)
+	}
+	if len(pool) == 0 {
+		return targetDiscovery{}, exitError(ExitUsage, fmt.Sprintf(messages.DispatchEmptyRandomOverridePoolFmt, strings.Join(requestedOverrides, " and ")))
+	}
 	if chooser == nil {
 		chooser = defaultRandomChooser
 	}
@@ -113,6 +127,16 @@ func chooseRandomTarget(cfg config.Config, root string, caller string, callerKno
 		return targetDiscovery{}, wrapExitError(ExitTargetFailure, fmt.Sprintf(messages.DispatchInternalErrorFmt, ineligibleErr), ineligibleErr)
 	}
 	return discovered[normalized], nil
+}
+
+func filterRandomPool(pool []string, kind agentoptions.Kind) []string {
+	compatible := make([]string, 0, len(pool))
+	for _, candidate := range pool {
+		if agentoptions.Supports(candidate, kind) {
+			compatible = append(compatible, candidate)
+		}
+	}
+	return compatible
 }
 
 func defaultRandomChooser(pool []string) (string, error) {

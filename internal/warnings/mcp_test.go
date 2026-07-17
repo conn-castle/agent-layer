@@ -3,8 +3,11 @@ package warnings
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
@@ -715,6 +718,128 @@ func TestRealConnector_StdioWithEnv(t *testing.T) {
 	assert.Equal(t, "test-stdio-env", result.ServerID)
 	assert.Error(t, result.Error)
 	assert.Contains(t, result.Error.Error(), "connection failed")
+}
+
+type commandCapturingMCPClient struct {
+	delegate  mcpClientInterface
+	extraFile *os.File
+	command   chan<- *exec.Cmd
+}
+
+// Connect captures and prepares the stdio command before delegating to the real
+// MCP client, preserving the SDK's ownership of starting and waiting on it.
+func (c *commandCapturingMCPClient) Connect(ctx context.Context, transport mcp.Transport, opts *mcp.ClientSessionOptions) (mcpSessionInterface, error) {
+	commandTransport, ok := transport.(*mcp.CommandTransport)
+	if !ok {
+		return nil, fmt.Errorf("expected command transport, got %T", transport)
+	}
+
+	commandTransport.Command.ExtraFiles = append(commandTransport.Command.ExtraFiles, c.extraFile)
+	c.command <- commandTransport.Command
+	return c.delegate.Connect(ctx, transport, opts)
+}
+
+func TestRealConnector_StdioContextCancellationKillsAndReapsChild(t *testing.T) {
+	const helperEnv = "GO_TEST_MCP_HANGING_STDIO_CHILD"
+	if os.Getenv(helperEnv) == "1" {
+		ready := os.NewFile(3, "mcp-test-ready")
+		if ready == nil {
+			os.Exit(2)
+		}
+		if _, err := ready.Write([]byte{1}); err != nil {
+			os.Exit(3)
+		}
+		if err := ready.Close(); err != nil {
+			os.Exit(4)
+		}
+		_, _ = io.Copy(io.Discard, os.Stdin)
+		os.Exit(0)
+	}
+
+	readyReader, readyWriter, err := os.Pipe()
+	require.NoError(t, err)
+	defer func() { _ = readyReader.Close() }()
+	defer func() { _ = readyWriter.Close() }()
+
+	commandCh := make(chan *exec.Cmd, 1)
+	original := NewMCPClientFunc
+	NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) mcpClientInterface {
+		return &commandCapturingMCPClient{
+			delegate:  &realMCPClient{client: mcp.NewClient(impl, opts)},
+			extraFile: readyWriter,
+			command:   commandCh,
+		}
+	}
+	t.Cleanup(func() { NewMCPClientFunc = original })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	resultCh := make(chan DiscoveryResult, 1)
+	resultDone := make(chan struct{})
+	go func() {
+		defer close(resultDone)
+		resultCh <- (&RealConnector{}).ConnectAndDiscover(ctx, projection.ResolvedMCPServer{
+			ID:        "hanging-stdio",
+			Transport: config.TransportStdio,
+			Command:   os.Args[0],
+			Args:      []string{"-test.run=^TestRealConnector_StdioContextCancellationKillsAndReapsChild$"},
+			Env:       map[string]string{helperEnv: "1"},
+		})
+	}()
+
+	lifecycleTimer := time.NewTimer(5 * time.Second)
+	defer lifecycleTimer.Stop()
+
+	var cmd *exec.Cmd
+	select {
+	case cmd = <-commandCh:
+	case <-lifecycleTimer.C:
+		t.Fatal("timed out waiting for the MCP command to be captured")
+	}
+
+	readyCh := make(chan error, 1)
+	go func() {
+		var signal [1]byte
+		_, readErr := io.ReadFull(readyReader, signal[:])
+		if readErr == nil && signal[0] != 1 {
+			readErr = fmt.Errorf("unexpected readiness signal %d", signal[0])
+		}
+		readyCh <- readErr
+	}()
+
+	select {
+	case readyErr := <-readyCh:
+		require.NoError(t, readyErr)
+	case <-lifecycleTimer.C:
+		t.Fatal("timed out waiting for the hanging MCP child to signal readiness")
+	}
+
+	require.NotNil(t, cmd.Process)
+	require.Nil(t, cmd.ProcessState, "hanging MCP child must still be live before cancellation")
+	select {
+	case earlyResult := <-resultCh:
+		t.Fatalf("MCP discovery returned before cancellation: %#v", earlyResult)
+	default:
+	}
+
+	cancel()
+
+	var result DiscoveryResult
+	select {
+	case result = <-resultCh:
+	case <-lifecycleTimer.C:
+		t.Fatal("timed out waiting for MCP discovery to return after cancellation")
+	}
+	select {
+	case <-resultDone:
+	case <-lifecycleTimer.C:
+		t.Fatal("timed out waiting for the MCP discovery result goroutine to exit")
+	}
+
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "connection failed")
+	require.NotNil(t, cmd.ProcessState, "SDK command transport must reap the canceled child")
+	assert.ErrorIs(t, cmd.Process.Signal(os.Kill), os.ErrProcessDone)
 }
 
 func TestRealConnector_HTTPConnectionError(t *testing.T) {

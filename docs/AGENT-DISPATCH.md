@@ -50,6 +50,15 @@ provider-default target, so later configuration changes cannot alter the target
 used by a resumed conversation; mappings created by older releases continue to
 use current configured defaults until their next attempted turn.
 
+For a fresh call using `--agent random`, Dispatch first builds the ordinary
+enabled, installed, version-compatible, caller-excluded pool. Requested
+`--model` and `--reasoning-effort` overrides then filter that invocation's pool
+to targets supporting every requested override before random selection. An
+empty compatible pool fails before the chooser runs and directs the caller to
+remove unsupported overrides or choose an explicit compatible agent. The
+`options` command has no invocation-specific overrides, so its reported random
+pool remains the ordinary pool.
+
 ## Internal coordinator and completion
 
 Public fresh, resume, and fanout commands remain synchronous over an internal

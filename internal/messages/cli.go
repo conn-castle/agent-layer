@@ -267,6 +267,7 @@ const (
 	DispatchActiveDepthInvalidFmt         = "invalid %s value %q; expected a non-negative integer dispatch depth"
 	DispatchUnknownCallerRequiresAgent    = "`al dispatch` caller is unknown; pass --agent codex, claude, antigravity, or random"
 	DispatchEmptyRandomPool               = "no agents are eligible for `al dispatch` random selection"
+	DispatchEmptyRandomOverridePoolFmt    = "no agents eligible for `al dispatch --agent random` support all requested overrides (%s); remove unsupported overrides or select an explicit compatible agent"
 	DispatchUnsupportedModelFmt           = "%s does not support --model"
 	DispatchUnsupportedReasoningEffortFmt = "%s does not support --reasoning-effort"
 	DispatchTargetNonZeroFmt              = "%s exited with code %d; `al dispatch` exiting 70"

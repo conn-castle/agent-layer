@@ -20,9 +20,6 @@ import (
 // content before parsing.
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 
-// osReadFileFunc is a test seam over os.ReadFile used by LoadSkills.
-var osReadFileFunc = os.ReadFile
-
 const (
 	skillScannerInitialBufferSize = 64 * 1024
 	skillScannerMaxTokenSize      = 8 * 1024 * 1024
@@ -70,9 +67,7 @@ func LoadSkills(dir string) ([]Skill, error) {
 			}
 			return out, nil
 		},
-		func(path string) ([]byte, error) {
-			return osReadFileFunc(path)
-		},
+		os.ReadFile,
 	)
 }
 
