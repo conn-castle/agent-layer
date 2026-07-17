@@ -58,6 +58,7 @@ type Session struct {
 	State             string    `json:"state,omitempty"`
 	RunID             string    `json:"run_id,omitempty"`
 	ActiveRunID       string    `json:"active_run_id,omitempty"`
+	ActiveClaimKnown  bool      `json:"active_claim_known,omitempty"`
 }
 
 // RunRecord is private, recoverable dispatch evidence. It never contains the
@@ -234,7 +235,7 @@ func reserveSession(root string, run *dispatchRun) (Session, error) {
 			return Session{}, err
 		}
 		now := time.Now().UTC()
-		session := Session{Name: name, Agent: run.Record.Agent, CreatedAt: now, LastUsedAt: now, State: sessionStatePending, RunID: run.Record.ID, ActiveRunID: run.Record.ID}
+		session := Session{Name: name, Agent: run.Record.Agent, CreatedAt: now, LastUsedAt: now, State: sessionStatePending, RunID: run.Record.ID, ActiveRunID: run.Record.ID, ActiveClaimKnown: true}
 		file, openErr := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- name is generated from fixed vocabularies.
 		if errors.Is(openErr, fs.ErrExist) {
 			continue
@@ -292,6 +293,7 @@ func claimConversation(root string, name string, runID string) (Session, error) 
 			}
 		}
 		session.ActiveRunID = runID
+		session.ActiveClaimKnown = true
 		session.RunID = runID
 		session.LastUsedAt = time.Now().UTC()
 		if err := writeJSONAtomic(path, session); err != nil {
@@ -349,6 +351,7 @@ func releaseConversation(root string, name string, runID string) error {
 			return nil
 		}
 		session.ActiveRunID = ""
+		session.ActiveClaimKnown = true
 		return writeJSONAtomic(path, session)
 	})
 }
@@ -379,6 +382,9 @@ func activeClaimBlocksReplacement(record RunRecord) bool {
 func sessionOwnerRunID(session Session) string {
 	if session.ActiveRunID != "" {
 		return session.ActiveRunID
+	}
+	if session.ActiveClaimKnown {
+		return ""
 	}
 	return session.RunID
 }

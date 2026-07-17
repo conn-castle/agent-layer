@@ -184,6 +184,22 @@ func TestPreLaunchCancellationIsReleasedOnlyByOwningExecution(t *testing.T) {
 	if claimed.ActiveRunID != run.Record.ID {
 		t.Fatalf("pre-launch cancellation released before its owner ran: %#v", claimed)
 	}
+	replacement, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := claimConversation(root, session.Name, replacement.Record.ID); err == nil {
+		t.Fatal("pre-launch cancellation allowed a replacement before owner finalization")
+	} else {
+		requireDispatchExitCode(t, err, ExitUnavailable)
+	}
+	blocked, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocked != claimed {
+		t.Fatalf("blocked pre-launch replacement mutated mapping: before = %#v, after = %#v", claimed, blocked)
+	}
 
 	var launches atomic.Int32
 	project := &config.ProjectConfig{Root: root, Config: dispatchTestConfig(AgentCodex)}
@@ -205,6 +221,13 @@ func TestPreLaunchCancellationIsReleasedOnlyByOwningExecution(t *testing.T) {
 	}
 	if finalized.ActiveRunID != "" {
 		t.Fatalf("owning execution did not release pre-launch cancellation: %#v", finalized)
+	}
+	replaced, err := claimConversation(root, session.Name, replacement.Record.ID)
+	if err != nil {
+		t.Fatalf("claim after owning pre-launch finalization: %v", err)
+	}
+	if replaced.ActiveRunID != replacement.Record.ID || replaced.RunID != replacement.Record.ID {
+		t.Fatalf("replacement claim was not published after owner finalization: %#v", replaced)
 	}
 }
 
@@ -284,6 +307,7 @@ func TestDeleteProtectsRunningRecordWithUnprovableOwnership(t *testing.T) {
 	// Compatibility mappings created before explicit active claims use RunID
 	// as their only owner reference.
 	session.ActiveRunID = ""
+	session.ActiveClaimKnown = false
 	if err := persistSession(root, session); err != nil {
 		t.Fatal(err)
 	}

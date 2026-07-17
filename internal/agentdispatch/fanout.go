@@ -349,7 +349,11 @@ func writeFanoutManifest(root string, manifest FanoutManifest) error {
 	}
 	defer func() { _ = unix.Flock(int(lock.Fd()), unix.LOCK_UN) }() //nolint:gosec // supported Unix descriptor.
 	var current FanoutManifest
-	if err := readJSON(path, &current); err == nil && current.State == dispatchStateCancelled {
+	readErr := readJSON(path, &current)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return wrapExitError(ExitConfig, "read fanout manifest before update", readErr)
+	}
+	if readErr == nil && current.State == dispatchStateCancelled {
 		manifest.State = dispatchStateCancelled
 		manifest.CompletedAt = current.CompletedAt
 		terminalChildren := make(map[string]FanoutChild, len(current.Children))

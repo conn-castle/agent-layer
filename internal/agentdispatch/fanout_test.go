@@ -252,6 +252,7 @@ func TestFanoutCancellationRetainsEachLiveChildClaim(t *testing.T) {
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
+		children = append(children, liveChild{run: run, session: session, cmd: cmd})
 		waitForFanoutTestPath(t, readyPath)
 		run.Record.State = dispatchStateRunning
 		run.Record.RecoveryState = recoveryAcceptanceUnknown
@@ -262,7 +263,6 @@ func TestFanoutCancellationRetainsEachLiveChildClaim(t *testing.T) {
 			t.Fatal(err)
 		}
 		manifest.Children = append(manifest.Children, FanoutChild{RunID: run.Record.ID, Name: session.Name, Status: dispatchStateRunning})
-		children = append(children, liveChild{run: run, session: session, cmd: cmd})
 	}
 	if err := writeFanoutManifest(root, manifest); err != nil {
 		t.Fatal(err)
@@ -502,6 +502,7 @@ func TestConcurrentResumeRejectsSecondOwnerWithActiveRun(t *testing.T) {
 	session.State = "durable"
 	session.ProviderSessionID = runtimeSessionID
 	session.ActiveRunID = ""
+	session.ActiveClaimKnown = false
 	completed := time.Now().UTC()
 	run.Record.State = dispatchStateCompleted
 	run.Record.RecoveryState = recoveryResumeRequired
@@ -516,13 +517,29 @@ func TestConcurrentResumeRejectsSecondOwnerWithActiveRun(t *testing.T) {
 	startedPath := filepath.Join(t.TempDir(), "provider-started")
 	releasePath := filepath.Join(t.TempDir(), "release-provider")
 	var launches atomic.Int32
+	var firstCommand atomic.Pointer[exec.Cmd]
+	var firstFinished atomic.Bool
+	firstDone := make(chan error, 1)
+	t.Cleanup(func() {
+		if firstFinished.Load() {
+			return
+		}
+		if cmd := firstCommand.Load(); cmd != nil && cmd.Process != nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+		select {
+		case <-firstDone:
+		case <-time.After(2 * time.Second):
+		}
+	})
 	command := func(string, ...string) *exec.Cmd {
 		if launches.Add(1) == 1 {
-			return exec.Command("/bin/sh", "-c", `trap 'while [ ! -f "$1" ]; do sleep 0.01; done; exit 0' TERM; touch "$2"; while :; do sleep 1; done`, "sh", releasePath, startedPath) // #nosec G204 -- test-owned paths passed as positional arguments.
+			cmd := exec.Command("/bin/sh", "-c", `trap 'while [ ! -f "$1" ]; do sleep 0.01; done; exit 0' TERM; touch "$2"; while :; do sleep 1; done`, "sh", releasePath, startedPath) // #nosec G204 -- test-owned paths passed as positional arguments.
+			firstCommand.Store(cmd)
+			return cmd
 		}
 		return exec.Command("/bin/sh", "-c", `cat >/dev/null; printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n{"type":"agent_message","message":"resumed"}\n{"type":"turn.completed"}\n'`) // #nosec G204 -- fixed test command.
 	}
-	firstDone := make(chan error, 1)
 	go func() {
 		firstDone <- Resume(ResumeOptions{Root: root, Name: session.Name, PromptArgs: []string{"one"}, Env: []string{}, LookPath: alwaysFound, VersionLookup: func(_ string, agent string) (string, error) { return supportedProviderVersions[agent], nil }, NewCommand: command})
 	}()
@@ -567,6 +584,7 @@ func TestConcurrentResumeRejectsSecondOwnerWithActiveRun(t *testing.T) {
 		t.Fatalf("release cancelled provider: %v", err)
 	}
 	requireDispatchExitCode(t, <-firstDone, ExitTargetFailure)
+	firstFinished.Store(true)
 	finalized, err := loadSession(root, session.Name)
 	if err != nil {
 		t.Fatal(err)
@@ -579,6 +597,31 @@ func TestConcurrentResumeRejectsSecondOwnerWithActiveRun(t *testing.T) {
 	}
 	if launches.Load() != 2 {
 		t.Fatalf("provider launches after finalization = %d, want 2", launches.Load())
+	}
+}
+
+func TestWriteFanoutManifestPreservesUnreadableEvidence(t *testing.T) {
+	root := t.TempDir()
+	id, err := newUUID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := fanoutPath(root, id)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	corrupt := []byte("{not-json")
+	if err := os.WriteFile(path, corrupt, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = writeFanoutManifest(root, FanoutManifest{ID: id, State: dispatchStateRunning, CreatedAt: time.Now().UTC()})
+	requireDispatchExitCode(t, err, ExitConfig)
+	retained, err := os.ReadFile(path) // #nosec G304 -- path is test-owned fanout evidence.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(retained, corrupt) {
+		t.Fatalf("unreadable manifest was overwritten: got %q, want %q", retained, corrupt)
 	}
 }
 

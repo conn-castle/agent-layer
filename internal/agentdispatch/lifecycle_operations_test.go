@@ -183,7 +183,6 @@ func TestCancelRetainsClaimUntilOwnedProcessIsProvablyDead(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	waitForFanoutTestPath(t, readyPath)
 	stopped := false
 	defer func() {
 		if !stopped {
@@ -191,6 +190,7 @@ func TestCancelRetainsClaimUntilOwnedProcessIsProvablyDead(t *testing.T) {
 			_ = cmd.Wait()
 		}
 	}()
+	waitForFanoutTestPath(t, readyPath)
 	run.Record.State = dispatchStateRunning
 	run.Record.PID = cmd.Process.Pid
 	run.Record.ProcessGroupID = cmd.Process.Pid

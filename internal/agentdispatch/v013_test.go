@@ -159,6 +159,7 @@ func TestAntigravityResumeWithoutParsedIDRetainsDurableMapping(t *testing.T) {
 	session.ProviderSessionID = runtimeSessionID
 	session.State = "durable"
 	session.ActiveRunID = ""
+	session.ActiveClaimKnown = false
 	completed := time.Now().UTC()
 	run.Record.State = dispatchStateCompleted
 	run.Record.RecoveryState = recoveryResumeRequired
