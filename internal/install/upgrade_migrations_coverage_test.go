@@ -2513,6 +2513,10 @@ func (s *readFailOnNthSystem) Chmod(name string, mode os.FileMode) error {
 	return s.base.Chmod(name, mode)
 }
 
+func (s *readFailOnNthSystem) EvalSymlinks(path string) (string, error) {
+	return s.base.EvalSymlinks(path)
+}
+
 func (s *readFailOnNthSystem) Stat(name string) (os.FileInfo, error) {
 	return s.base.Stat(name)
 }

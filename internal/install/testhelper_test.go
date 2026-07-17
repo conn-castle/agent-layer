@@ -54,6 +54,10 @@ func (f *faultSystem) Chmod(name string, mode os.FileMode) error {
 	return f.base.Chmod(name, mode)
 }
 
+func (f *faultSystem) EvalSymlinks(path string) (string, error) {
+	return f.base.EvalSymlinks(path)
+}
+
 func normalizePath(path string) string {
 	return filepath.Clean(path)
 }

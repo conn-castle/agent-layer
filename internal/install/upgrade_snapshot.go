@@ -348,6 +348,9 @@ func (inst *installer) rollbackUpgradeSnapshot(snapshot *upgradeSnapshot, target
 		return err
 	}
 	snapshot.RollbackTargets = rollbackTargets
+	if err := inst.writeUpgradeSnapshot(*snapshot, false); err != nil {
+		return fmt.Errorf("persist rollback targets before rollback: %w", err)
+	}
 	return rollbackUpgradeSnapshotState(inst.root, inst.sys, *snapshot, targets)
 }
 

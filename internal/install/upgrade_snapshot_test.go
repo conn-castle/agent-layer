@@ -783,6 +783,124 @@ func TestRollbackUpgradeSnapshotState_RejectsOutsideTargetBeforeMutation(t *test
 	}
 }
 
+func TestRollbackUpgradeSnapshotState_RejectsTargetThroughExternalSymlinkAncestor(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	outsidePath := filepath.Join(outside, "preserve.txt")
+	if err := os.WriteFile(outsidePath, []byte("preserve\n"), 0o600); err != nil {
+		t.Fatalf("write outside target: %v", err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
+		t.Fatalf("create external ancestor symlink: %v", err)
+	}
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "external-symlink-ancestor",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+		Entries: []upgradeSnapshotEntry{{
+			Path: "link/preserve.txt",
+			Kind: upgradeSnapshotEntryKindAbsent,
+		}},
+	}
+
+	err := rollbackUpgradeSnapshotState(root, RealSystem{}, snapshot, []string{filepath.Join(root, "link", "preserve.txt")})
+	if err == nil || !strings.Contains(err.Error(), "ancestor that resolves outside repo root") {
+		t.Fatalf("external symlink ancestor error = %v, want containment rejection", err)
+	}
+	content, readErr := os.ReadFile(outsidePath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if readErr != nil {
+		t.Fatalf("read preserved outside target: %v", readErr)
+	}
+	if string(content) != "preserve\n" {
+		t.Fatalf("outside target changed to %q", content)
+	}
+}
+
+func TestRollbackUpgradeSnapshotState_AllowsTargetThroughInternalSymlinkAncestor(t *testing.T) {
+	root := t.TempDir()
+	actualDir := filepath.Join(root, "actual")
+	if err := os.MkdirAll(actualDir, 0o700); err != nil {
+		t.Fatalf("mkdir internal target: %v", err)
+	}
+	if err := os.Symlink("actual", filepath.Join(root, "link")); err != nil {
+		t.Fatalf("create internal ancestor symlink: %v", err)
+	}
+	actualPath := filepath.Join(actualDir, "state.txt")
+	if err := os.WriteFile(actualPath, []byte("current\n"), 0o600); err != nil {
+		t.Fatalf("write current internal target: %v", err)
+	}
+	perm := uint32(0o600)
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "internal-symlink-ancestor",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+		Entries: []upgradeSnapshotEntry{{
+			Path:          "link/state.txt",
+			Kind:          upgradeSnapshotEntryKindFile,
+			Perm:          &perm,
+			ContentBase64: base64.StdEncoding.EncodeToString([]byte("captured\n")),
+		}},
+	}
+
+	if err := rollbackUpgradeSnapshotState(root, RealSystem{}, snapshot, []string{filepath.Join(root, "link", "state.txt")}); err != nil {
+		t.Fatalf("rollback through internal symlink ancestor: %v", err)
+	}
+	content, err := os.ReadFile(actualPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read restored internal target: %v", err)
+	}
+	if string(content) != "captured\n" {
+		t.Fatalf("restored internal target = %q, want captured content", content)
+	}
+}
+
+func TestRollbackUpgradeSnapshotState_PreparesUpgradeCreatedDirectoriesBeforeReset(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "captured")
+	createdDir := filepath.Join(target, "created", "nested")
+	if err := os.MkdirAll(createdDir, 0o700); err != nil {
+		t.Fatalf("mkdir upgrade-created tree: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(createdDir, "extra.txt"), []byte("remove\n"), 0o400); err != nil {
+		t.Fatalf("write upgrade-created file: %v", err)
+	}
+	if err := os.Chmod(filepath.Dir(createdDir), 0o500); err != nil { // #nosec G302 -- restrictive current mode exercises reset preparation.
+		t.Fatalf("restrict created parent: %v", err)
+	}
+	if err := os.Chmod(createdDir, 0o500); err != nil { // #nosec G302 -- restrictive current mode exercises reset preparation.
+		t.Fatalf("restrict created child: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(filepath.Dir(createdDir), 0o700) // #nosec G302 -- test restores owner access if rollback fails.
+		_ = os.Chmod(createdDir, 0o700)               // #nosec G302 -- test restores owner access if rollback fails.
+	})
+	perm := uint32(0o700)
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "prepare-current-directories",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+		Entries: []upgradeSnapshotEntry{{
+			Path: "captured",
+			Kind: upgradeSnapshotEntryKindDir,
+			Perm: &perm,
+		}},
+	}
+	sys := &requireWritableDirectoriesBeforeRemoveSystem{
+		System: RealSystem{},
+		dirs:   []string{filepath.Dir(createdDir), createdDir},
+	}
+
+	if err := rollbackUpgradeSnapshotState(root, sys, snapshot, []string{target}); err != nil {
+		t.Fatalf("rollback with upgrade-created restrictive directories: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(createdDir, "extra.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("upgrade-created file still exists after reset, stat error = %v", err)
+	}
+}
+
 func TestRestoreUpgradeSnapshotEntriesAtRoot_ErrorBranches(t *testing.T) {
 	t.Run("snapshotEntryAbsPath error", func(t *testing.T) {
 		root := t.TempDir()
@@ -975,6 +1093,70 @@ func TestRestoreUpgradeSnapshotEntriesAtRoot_RestoresDescendantsBeforeDirectoryM
 	}
 	if string(content) != "original\n" {
 		t.Fatalf("restored descendant = %q, want original content", content)
+	}
+}
+
+func TestRestoreUpgradeSnapshotEntriesAtRoot_RejectsSymlinkBeforeTemporaryDirectoryMode(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	t.Cleanup(func() {
+		_ = os.Chmod(outside, 0o700) // #nosec G302 -- test restores owner access for TempDir cleanup.
+	})
+	if err := os.Chmod(outside, 0o500); err != nil { // #nosec G302 -- restrictive mode proves restore never chmods through the symlink.
+		t.Fatalf("set outside mode: %v", err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "captured")); err != nil {
+		t.Fatalf("create captured directory symlink: %v", err)
+	}
+
+	perm := uint32(0o700)
+	err := restoreUpgradeSnapshotEntriesAtRoot(root, RealSystem{}, []upgradeSnapshotEntry{{
+		Path: "captured",
+		Kind: upgradeSnapshotEntryKindDir,
+		Perm: &perm,
+	}})
+	if err == nil || !strings.Contains(err.Error(), "not a real directory") {
+		t.Fatalf("restore symlink directory error = %v, want real-directory rejection", err)
+	}
+	outsideInfo, statErr := os.Stat(outside)
+	if statErr != nil {
+		t.Fatalf("stat outside directory: %v", statErr)
+	}
+	if got := outsideInfo.Mode().Perm(); got != 0o500 {
+		t.Fatalf("outside directory mode = %o, want 500", got)
+	}
+}
+
+func TestRestoreUpgradeSnapshotEntriesAtRoot_RevalidatesDirectoryBeforeFinalMode(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	t.Cleanup(func() {
+		_ = os.Chmod(outside, 0o700) // #nosec G302 -- test restores owner access for TempDir cleanup.
+	})
+	if err := os.Chmod(outside, 0o500); err != nil { // #nosec G302 -- restrictive mode proves final restore never chmods through the symlink.
+		t.Fatalf("set outside mode: %v", err)
+	}
+	capturedPath := filepath.Join(root, "captured")
+	sys := &swapDirectoryForSymlinkAfterChmodSystem{
+		System: RealSystem{},
+		path:   capturedPath,
+		target: outside,
+	}
+	perm := uint32(0o700)
+	err := restoreUpgradeSnapshotEntriesAtRoot(root, sys, []upgradeSnapshotEntry{{
+		Path: "captured",
+		Kind: upgradeSnapshotEntryKindDir,
+		Perm: &perm,
+	}})
+	if err == nil || !strings.Contains(err.Error(), "not a real directory") {
+		t.Fatalf("restore swapped directory error = %v, want real-directory rejection", err)
+	}
+	outsideInfo, statErr := os.Stat(outside)
+	if statErr != nil {
+		t.Fatalf("stat outside directory: %v", statErr)
+	}
+	if got := outsideInfo.Mode().Perm(); got != 0o500 {
+		t.Fatalf("outside directory mode = %o, want 500", got)
 	}
 }
 
@@ -1314,15 +1496,102 @@ func TestRollbackUpgradeSnapshot_FailureAndStatusWriteFailure(t *testing.T) {
 
 	snapshotPath := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath), snapshot.SnapshotID+".json")
 	faults := newFaultSystem(RealSystem{})
-	faults.removeErrs[normalizePath(versionPath)] = errors.New("remove failed")
 	faults.writeErrs[normalizePath(snapshotPath)] = errors.New("snapshot write failed")
 
 	err := RollbackUpgradeSnapshot(root, snapshot.SnapshotID, RollbackUpgradeSnapshotOptions{System: faults})
 	if err == nil {
 		t.Fatal("expected rollback error")
 	}
-	if !strings.Contains(err.Error(), "failed to persist rollback_failed state") {
+	if !strings.Contains(err.Error(), "persist rollback targets before rollback") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	content, readErr := os.ReadFile(versionPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if readErr != nil {
+		t.Fatalf("read version after scope write failure: %v", readErr)
+	}
+	if string(content) != "0.6.0\n" {
+		t.Fatalf("version changed before rollback scope persisted: %q", content)
+	}
+}
+
+func TestRollbackUpgradeSnapshot_RejectsRollbackFailedSnapshotWithoutPersistedTargets(t *testing.T) {
+	root := t.TempDir()
+	targetPath := filepath.Join(root, "state.txt")
+	if err := os.WriteFile(targetPath, []byte("current\n"), 0o600); err != nil {
+		t.Fatalf("write current target: %v", err)
+	}
+	perm := uint32(0o600)
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "missing-retry-scope",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusRollbackFailed,
+		FailureStep:   manualRollbackFailureStep,
+		FailureError:  "prior rollback failed",
+		Entries: []upgradeSnapshotEntry{{
+			Path:          "state.txt",
+			Kind:          upgradeSnapshotEntryKindFile,
+			Perm:          &perm,
+			ContentBase64: base64.StdEncoding.EncodeToString([]byte("captured\n")),
+		}},
+	}
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.writeUpgradeSnapshot(snapshot, false); err != nil {
+		t.Fatalf("write rollback_failed snapshot: %v", err)
+	}
+
+	err := RollbackUpgradeSnapshot(root, snapshot.SnapshotID, RollbackUpgradeSnapshotOptions{System: RealSystem{}})
+	if err == nil || !strings.Contains(err.Error(), "missing persisted rollback targets") {
+		t.Fatalf("missing retry scope error = %v", err)
+	}
+	content, readErr := os.ReadFile(targetPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if readErr != nil {
+		t.Fatalf("read target after rejected retry: %v", readErr)
+	}
+	if string(content) != "current\n" {
+		t.Fatalf("target changed after rejected retry: %q", content)
+	}
+}
+
+func TestRollbackUpgradeSnapshot_PersistsAutomaticTargetsBeforeMutation(t *testing.T) {
+	root := t.TempDir()
+	targetPath := filepath.Join(root, "state.txt")
+	if err := os.WriteFile(targetPath, []byte("current\n"), 0o600); err != nil {
+		t.Fatalf("write current target: %v", err)
+	}
+	perm := uint32(0o600)
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "automatic-scope-write-fails",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusRollbackFailed,
+		FailureStep:   "write-state",
+		FailureError:  "upgrade failed",
+		Entries: []upgradeSnapshotEntry{{
+			Path:          "state.txt",
+			Kind:          upgradeSnapshotEntryKindFile,
+			Perm:          &perm,
+			ContentBase64: base64.StdEncoding.EncodeToString([]byte("captured\n")),
+		}},
+	}
+	snapshotPath := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath), snapshot.SnapshotID+".json")
+	faults := newFaultSystem(RealSystem{})
+	faults.writeErrs[normalizePath(snapshotPath)] = errors.New("persist scope failed")
+	inst := &installer{root: root, sys: faults}
+
+	err := inst.rollbackUpgradeSnapshot(&snapshot, []string{targetPath})
+	if err == nil || !strings.Contains(err.Error(), "persist rollback targets before rollback") {
+		t.Fatalf("automatic scope persistence error = %v", err)
+	}
+	if len(snapshot.RollbackTargets) != 1 || snapshot.RollbackTargets[0] != "state.txt" {
+		t.Fatalf("automatic rollback targets = %v, want [state.txt]", snapshot.RollbackTargets)
+	}
+	content, readErr := os.ReadFile(targetPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if readErr != nil {
+		t.Fatalf("read target after scope persistence failure: %v", readErr)
+	}
+	if string(content) != "current\n" {
+		t.Fatalf("target changed before automatic scope persisted: %q", content)
 	}
 }
 
@@ -2300,6 +2569,18 @@ type chmodFailOnceSystem struct {
 	fired    bool
 }
 
+type swapDirectoryForSymlinkAfterChmodSystem struct {
+	System
+	path    string
+	target  string
+	swapped bool
+}
+
+type requireWritableDirectoriesBeforeRemoveSystem struct {
+	System
+	dirs []string
+}
+
 func (s *chmodFailOnceSystem) Chmod(name string, mode os.FileMode) error {
 	if !s.fired && normalizePath(name) == normalizePath(s.failPath) && mode.Perm() == s.failMode.Perm() {
 		s.fired = true
@@ -2308,8 +2589,45 @@ func (s *chmodFailOnceSystem) Chmod(name string, mode os.FileMode) error {
 	return s.System.Chmod(name, mode)
 }
 
+func (s *swapDirectoryForSymlinkAfterChmodSystem) Chmod(name string, mode os.FileMode) error {
+	if err := s.System.Chmod(name, mode); err != nil {
+		return err
+	}
+	if s.swapped || normalizePath(name) != normalizePath(s.path) {
+		return nil
+	}
+	if err := s.RemoveAll(name); err != nil {
+		return err
+	}
+	if err := s.Symlink(s.target, name); err != nil {
+		return err
+	}
+	s.swapped = true
+	return nil
+}
+
+func (s *requireWritableDirectoriesBeforeRemoveSystem) RemoveAll(path string) error {
+	for _, dir := range s.dirs {
+		info, err := s.Lstat(dir)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if info.Mode().Perm()&0o700 != 0o700 {
+			return fmt.Errorf("directory %s was not prepared before reset", dir)
+		}
+	}
+	return s.System.RemoveAll(path)
+}
+
 func (s *writeFailOnceSystem) Chmod(name string, mode os.FileMode) error {
 	return s.base.Chmod(name, mode)
+}
+
+func (s *writeFailOnceSystem) EvalSymlinks(path string) (string, error) {
+	return s.base.EvalSymlinks(path)
 }
 
 func (s *writeFailOnceSystem) Stat(name string) (os.FileInfo, error) {
@@ -2366,6 +2684,10 @@ type walkCallbackErrSystem struct {
 
 func (s walkCallbackErrSystem) Chmod(name string, mode os.FileMode) error {
 	return s.base.Chmod(name, mode)
+}
+
+func (s walkCallbackErrSystem) EvalSymlinks(path string) (string, error) {
+	return s.base.EvalSymlinks(path)
 }
 
 func (s walkCallbackErrSystem) Stat(name string) (os.FileInfo, error) {

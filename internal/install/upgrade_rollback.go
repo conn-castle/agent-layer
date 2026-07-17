@@ -60,10 +60,13 @@ func RollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 	if err != nil {
 		return err
 	}
-	if len(snapshot.RollbackTargets) == 0 {
+	if len(snapshot.RollbackTargets) == 0 && len(targets) > 0 {
 		snapshot.RollbackTargets, err = rollbackTargetRelativePaths(root, targets)
 		if err != nil {
 			return err
+		}
+		if err := writeUpgradeSnapshotFile(snapshotPath, snapshot, sys); err != nil {
+			return fmt.Errorf("persist rollback targets before rollback snapshot %s: %w", snapshotID, err)
 		}
 	}
 	if err := rollbackUpgradeSnapshotState(root, sys, snapshot, targets); err != nil {
@@ -88,7 +91,10 @@ func RollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 }
 
 func rollbackTargetsForSnapshot(root string, snapshot upgradeSnapshot) ([]string, error) {
-	if snapshot.Status == upgradeSnapshotStatusRollbackFailed && len(snapshot.RollbackTargets) > 0 {
+	if snapshot.Status == upgradeSnapshotStatusRollbackFailed {
+		if len(snapshot.RollbackTargets) == 0 {
+			return nil, fmt.Errorf("rollback_failed snapshot %s is missing persisted rollback targets and cannot be retried safely", snapshot.SnapshotID)
+		}
 		return rollbackTargetsFromRelativePaths(root, snapshot.RollbackTargets)
 	}
 	return rollbackTargetsFromSnapshotEntries(root, snapshot.Entries)
@@ -167,6 +173,9 @@ func rollbackUpgradeSnapshotState(root string, sys System, snapshot upgradeSnaps
 	if len(scopedTargets) == 0 {
 		return nil
 	}
+	if err := validateRollbackTargetAncestors(root, sys, scopedTargets); err != nil {
+		return err
+	}
 	targetRelPaths, err := rollbackTargetRelativePaths(root, scopedTargets)
 	if err != nil {
 		return err
@@ -186,7 +195,7 @@ func rollbackUpgradeSnapshotState(root string, sys System, snapshot upgradeSnaps
 			filteredEntries = append(filteredEntries, entry)
 		}
 	}
-	if err := makeRollbackDirectoriesWritable(root, sys, filteredEntries); err != nil {
+	if err := makeRollbackDirectoriesWritable(root, sys, scopedTargets); err != nil {
 		return err
 	}
 	sort.Slice(scopedTargets, func(i, j int) bool {
@@ -210,43 +219,82 @@ func rollbackUpgradeSnapshotState(root string, sys System, snapshot upgradeSnaps
 	return restoreUpgradeSnapshotEntriesAtRoot(root, sys, filteredEntries)
 }
 
-func makeRollbackDirectoriesWritable(root string, sys System, entries []upgradeSnapshotEntry) error {
-	dirs := make([]upgradeSnapshotEntry, 0)
-	for _, entry := range entries {
-		if entry.Kind == upgradeSnapshotEntryKindDir {
-			dirs = append(dirs, entry)
-		}
-	}
-	sort.Slice(dirs, func(i, j int) bool {
-		leftRel := normalizeRelPath(filepath.Clean(filepath.FromSlash(dirs[i].Path)))
-		rightRel := normalizeRelPath(filepath.Clean(filepath.FromSlash(dirs[j].Path)))
-		leftDepth := strings.Count(leftRel, "/")
-		rightDepth := strings.Count(rightRel, "/")
-		if leftDepth == rightDepth {
-			return leftRel < rightRel
-		}
-		return leftDepth < rightDepth
-	})
-	for _, entry := range dirs {
-		absPath, err := snapshotEntryAbsPath(root, entry.Path)
-		if err != nil {
-			return err
-		}
-		info, err := sys.Lstat(absPath)
+// makeRollbackDirectoriesWritable prepares the current target tree for a
+// deepest-first reset, including directories created after snapshot capture.
+func makeRollbackDirectoriesWritable(root string, sys System, targets []string) error {
+	for _, target := range targets {
+		info, err := sys.Lstat(target)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
 		if err != nil {
-			return fmt.Errorf("inspect directory %s before rollback reset: %w", entry.Path, err)
+			return fmt.Errorf("inspect rollback target %s before reset: %w", rollbackDisplayPath(root, target), err)
 		}
 		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			continue
 		}
-		if err := sys.Chmod(absPath, info.Mode().Perm()|0o700); err != nil {
-			return fmt.Errorf("make directory %s writable for rollback reset: %w", entry.Path, err)
+		if err := sys.WalkDir(target, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+				return nil
+			}
+			entryInfo, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			if err := sys.Chmod(path, entryInfo.Mode().Perm()|0o700); err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("make directories under %s writable for rollback reset: %w", rollbackDisplayPath(root, target), err)
 		}
 	}
 	return nil
+}
+
+// validateRollbackTargetAncestors rejects targets whose deepest existing
+// ancestor resolves outside the repository through a symbolic link.
+func validateRollbackTargetAncestors(root string, sys System, targets []string) error {
+	resolvedRoot, err := sys.EvalSymlinks(root)
+	if err != nil {
+		return fmt.Errorf("resolve repository root before rollback: %w", err)
+	}
+	resolvedRoot = filepath.Clean(resolvedRoot)
+	for _, target := range targets {
+		ancestor := filepath.Dir(target)
+		for {
+			resolvedAncestor, resolveErr := sys.EvalSymlinks(ancestor)
+			if resolveErr == nil {
+				if !pathWithinRoot(resolvedRoot, resolvedAncestor) {
+					return fmt.Errorf("rollback target %s has an ancestor that resolves outside repo root", rollbackDisplayPath(root, target))
+				}
+				break
+			}
+			if !errors.Is(resolveErr, os.ErrNotExist) || filepath.Clean(ancestor) == filepath.Clean(root) {
+				return fmt.Errorf("resolve rollback target ancestor %s: %w", rollbackDisplayPath(root, ancestor), resolveErr)
+			}
+			ancestor = filepath.Dir(ancestor)
+		}
+	}
+	return nil
+}
+
+// pathWithinRoot reports whether path is root or one of its descendants.
+func pathWithinRoot(root string, path string) bool {
+	rel, err := filepath.Rel(root, filepath.Clean(path))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+}
+
+// rollbackDisplayPath returns a repository-relative path when possible.
+func rollbackDisplayPath(root string, path string) string {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return path
+	}
+	return rel
 }
 
 func ensureVersionRollbackTarget(root string, entries []upgradeSnapshotEntry, targets []string) ([]string, error) {
@@ -314,6 +362,9 @@ func restoreUpgradeSnapshotEntriesAtRoot(root string, sys System, entries []upgr
 		if err := sys.MkdirAll(absPath, temporaryMode); err != nil {
 			return fmt.Errorf("restore directory %s: %w", entry.Path, err)
 		}
+		if err := validateRestoreDirectory(sys, absPath, entry.Path); err != nil {
+			return err
+		}
 		// MkdirAll preserves an existing directory's mode. Explicitly make every
 		// captured directory traversable and owner-writable so a retry can repair
 		// descendants even when an earlier attempt already applied a read-only mode.
@@ -365,9 +416,25 @@ func restoreUpgradeSnapshotEntriesAtRoot(root string, sys System, entries []upgr
 		if err != nil {
 			return err
 		}
+		if err := validateRestoreDirectory(sys, absPath, entry.Path); err != nil {
+			return err
+		}
 		if err := sys.Chmod(absPath, permFromSnapshot(entry.Perm, 0o755)); err != nil {
 			return fmt.Errorf("restore directory mode %s: %w", entry.Path, err)
 		}
+	}
+	return nil
+}
+
+// validateRestoreDirectory prevents mode changes from following an unexpected
+// symlink or applying a captured directory mode to another filesystem object.
+func validateRestoreDirectory(sys System, absPath string, entryPath string) error {
+	info, err := sys.Lstat(absPath)
+	if err != nil {
+		return fmt.Errorf("inspect restored directory %s: %w", entryPath, err)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("restored directory %s is not a real directory", entryPath)
 	}
 	return nil
 }
