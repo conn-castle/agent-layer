@@ -98,6 +98,7 @@ type RunRecord struct {
 	StdoutPath           string     `json:"stdout_path"`
 	StderrPath           string     `json:"stderr_path"`
 	EventsPath           string     `json:"events_path,omitempty"`
+	LineagePath          string     `json:"lineage_path,omitempty"`
 	ProviderLogPath      string     `json:"provider_log_path,omitempty"`
 }
 
@@ -141,6 +142,14 @@ func validDispatchName(name string) bool {
 }
 
 func newDispatchRun(root string, agent string, version string, mode string) (*dispatchRun, error) {
+	claudeLineage := false
+	if agent == AgentClaude {
+		var err error
+		claudeLineage, err = claudeLineageSupported(version)
+		if err != nil {
+			return nil, wrapExitError(ExitConfig, "evaluate Claude lineage capability", err)
+		}
+	}
 	id, err := newUUID()
 	if err != nil {
 		return nil, wrapExitError(ExitTargetFailure, "allocate dispatch run ID", err)
@@ -168,6 +177,9 @@ func newDispatchRun(root string, agent string, version string, mode string) (*di
 	}
 	if providerProducesStructuredEvents(agent) {
 		record.EventsPath = filepath.Join(dir, "provider.events")
+	}
+	if claudeLineage {
+		record.LineagePath = filepath.Join(dir, "provider.lineage")
 	}
 	if err := writeRunRecord(dir, &record); err != nil {
 		return nil, err
@@ -686,11 +698,20 @@ func validateRunRecord(record RunRecord) error {
 	return nil
 }
 
+type runRecordLoadWarning struct {
+	ID  string
+	Err error
+}
+
+func (warning runRecordLoadWarning) String() string {
+	return fmt.Sprintf("skipped unreadable dispatch run record %s: %v", warning.ID, warning.Err)
+}
+
 // listRunRecords loads every readable run record. Records that cannot be
 // loaded or validated are skipped and reported as warnings so one corrupt
 // record cannot hide the history of unrelated conversations; the corrupt
 // evidence itself is left in place.
-func listRunRecords(root string) ([]RunRecord, []string, error) {
+func listRunRecords(root string) ([]RunRecord, []runRecordLoadWarning, error) {
 	entries, err := os.ReadDir(dispatchRunPath(root))
 	if errors.Is(err, fs.ErrNotExist) {
 		return []RunRecord{}, nil, nil
@@ -699,14 +720,14 @@ func listRunRecords(root string) ([]RunRecord, []string, error) {
 		return nil, nil, wrapExitError(ExitConfig, "list dispatch run records", err)
 	}
 	records := make([]RunRecord, 0, len(entries))
-	warnings := make([]string, 0)
+	warnings := make([]runRecordLoadWarning, 0)
 	for _, entry := range entries {
 		if !entry.IsDir() || parseUUID(entry.Name()) != nil {
 			continue
 		}
 		record, err := loadRunRecord(root, entry.Name())
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("skipped unreadable dispatch run record %s: %v", entry.Name(), err))
+			warnings = append(warnings, runRecordLoadWarning{ID: entry.Name(), Err: err})
 			continue
 		}
 		records = append(records, record)

@@ -3,10 +3,13 @@ package agentdispatch
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -72,6 +75,48 @@ func TestProviderCommandsUseExactProviderContracts(t *testing.T) {
 		t.Fatal("Antigravity accepted an argv-sized prompt")
 	} else {
 		requireDispatchExitCode(t, err, ExitUsage)
+	}
+}
+
+func TestClaudeLineageCapabilityGatesFreshAndResumeCommands(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	project, stderr, env, depth, err := loadDispatchProject(root, io.Discard, []string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stderr != io.Discard || len(env) != 0 || depth != 0 {
+		t.Fatalf("unexpected dispatch context: stderr=%T env=%v depth=%d", stderr, env, depth)
+	}
+	target, ok := lookupTarget(AgentClaude)
+	if !ok {
+		t.Fatal("Claude target missing")
+	}
+	for _, providerVersion := range []string{"2.1.207", "2.1.210", "2.1.211", "2.1.212"} {
+		for _, mode := range []string{dispatchModeFresh, dispatchModeResume} {
+			t.Run(providerVersion+"/"+mode, func(t *testing.T) {
+				run, runErr := newDispatchRun(root, AgentClaude, providerVersion, mode)
+				if runErr != nil {
+					t.Fatal(runErr)
+				}
+				command, commandErr := buildProviderCommand(target, project, nil, []byte("prompt"), "", "", false, mode, runtimeSessionID, run, io.Discard)
+				if commandErr != nil {
+					t.Fatal(commandErr)
+				}
+				want := providerVersion == "2.1.211" || providerVersion == "2.1.212"
+				if got := slices.Contains(command.Args, "--forward-subagent-text"); got != want || command.ClaudeLineage != want {
+					t.Fatalf("command lineage gate = args:%t bit:%t, want %t: %#v", got, command.ClaudeLineage, want, command.Args)
+				}
+				if got := run.Record.LineagePath != ""; got != want {
+					t.Fatalf("lineage path present = %t, want %t", got, want)
+				}
+			})
+		}
+	}
+	if _, err := newDispatchRun(root, AgentClaude, "malformed", dispatchModeFresh); err == nil {
+		t.Fatal("malformed Claude version created a run")
+	}
+	if supportedProviderVersions[AgentClaude] != claudeTestedVersion {
+		t.Fatalf("Claude tested baseline changed to %q", supportedProviderVersions[AgentClaude])
 	}
 }
 
@@ -245,6 +290,177 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 	}
 }
 
+func TestClaudeStructuredEventsNormalizeBoundedLineageSeparately(t *testing.T) {
+	input := strings.Join([]string{
+		`{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"text","text":"ignored"},{"type":"tool_use","id":"unrelated","name":"Read","input":{"huge":"ignored"}},{"type":"tool_use","id":"parent","name":"Agent","input":{"prompt":"private"}}]}}`,
+		`{"type":"system","subtype":"task_started","task_id":"task-parent","tool_use_id":"parent","task_type":"local_agent","description":"ignored"}`,
+		`{"type":"assistant","parent_tool_use_id":"parent","message":{"content":[{"type":"tool_use","id":"child","name":"Agent"}]}}`,
+		`{"type":"system","subtype":"task_started","task_id":"task-child","tool_use_id":"child","task_type":"local_agent"}`,
+		`{"type":"system","subtype":"task_started","task_id":"bash-task","tool_use_id":"bash-tool","task_type":"local_bash"}`,
+		`{"type":"system","subtype":"task_notification","task_id":"bash-task","tool_use_id":"bash-tool","status":"completed"}`,
+		`{"type":"system","subtype":"task_notification","task_id":"task-child","tool_use_id":"child","status":"stopped"}`,
+		`{"type":"system","subtype":"task_notification","task_id":"task-parent","status":"completed"}`,
+	}, "\n") + "\n"
+	var raw bytes.Buffer
+	var ordinary []providerEvent
+	var lineage []claudeLineageEvidence
+	err := readStructuredEventsWithLineage(strings.NewReader(input), &raw, AgentClaude, runtimeSessionID, true, func(event providerEvent) error {
+		ordinary = append(ordinary, event)
+		return nil
+	}, func(evidence claudeLineageEvidence) error {
+		lineage = append(lineage, evidence)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []claudeLineageEvidence{
+		{Kind: lineageKindToolUse, ToolUseID: "parent"},
+		{Kind: lineageKindTaskStarted, TaskID: "task-parent", ToolUseID: "parent", TaskType: "local_agent"},
+		{Kind: lineageKindToolUse, ToolUseID: "child", ParentToolUseID: "parent"},
+		{Kind: lineageKindTaskStarted, TaskID: "task-child", ToolUseID: "child", TaskType: "local_agent"},
+		{Kind: lineageKindTaskTerminal, TaskID: "task-child", ToolUseID: "child", Status: "stopped"},
+		{Kind: lineageKindTaskTerminal, TaskID: "task-parent", Status: "completed"},
+	}
+	if !slices.Equal(lineage, want) {
+		t.Fatalf("lineage = %#v, want %#v", lineage, want)
+	}
+	encoded, err := json.Marshal(ordinary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, private := range []string{"task-parent", "task-child", "child", "parent", "bash-task"} {
+		if bytes.Contains(encoded, []byte(private)) {
+			t.Fatalf("ordinary events leaked lineage identifier %q: %s", private, encoded)
+		}
+	}
+	if raw.String() != input {
+		t.Fatal("raw stream changed")
+	}
+}
+
+func TestClaudeStructuredEventsInvokeOrdinaryCallbacksBeforeLineage(t *testing.T) {
+	input := `{"type":"system","subtype":"task_started","task_id":"task","tool_use_id":"tool","task_type":"unknown"}` + "\n"
+	var order []string
+	err := readStructuredEventsWithLineage(strings.NewReader(input), io.Discard, AgentClaude, runtimeSessionID, true, func(providerEvent) error {
+		order = append(order, "ordinary")
+		return nil
+	}, func(claudeLineageEvidence) error {
+		order = append(order, "lineage")
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(order, []string{"ordinary", "lineage"}) {
+		t.Fatalf("callback order = %#v", order)
+	}
+
+	ordinaryErr := errors.New("ordinary callback failed")
+	lineageCalled := false
+	err = readStructuredEventsWithLineage(strings.NewReader(input), io.Discard, AgentClaude, runtimeSessionID, true, func(providerEvent) error {
+		return ordinaryErr
+	}, func(claudeLineageEvidence) error {
+		lineageCalled = true
+		return nil
+	})
+	if !errors.Is(err, ordinaryErr) || lineageCalled {
+		t.Fatalf("ordinary failure = %v, lineage called = %t", err, lineageCalled)
+	}
+
+	lineageErr := errors.New("lineage callback failed")
+	err = readStructuredEventsWithLineage(strings.NewReader(input), io.Discard, AgentClaude, runtimeSessionID, true, func(providerEvent) error {
+		return nil
+	}, func(claudeLineageEvidence) error {
+		return lineageErr
+	})
+	if !errors.Is(err, lineageErr) {
+		t.Fatalf("lineage failure = %v", err)
+	}
+}
+
+func TestClaudeStructuredEventsRecoverWithStableInvalidLineage(t *testing.T) {
+	var blocks strings.Builder
+	for index := 0; index <= claudeLineageContentLimit; index++ {
+		if index > 0 {
+			blocks.WriteByte(',')
+		}
+		blocks.WriteString(`{"type":"text","text":"ignored"}`)
+	}
+	input := "not-json\n" + `{"type":"assistant","message":{"content":[` + blocks.String() + `]}}` + "\n" +
+		`{"type":"system","subtype":"task_started","task_id":"task","tool_use_id":"tool","task_type":"unknown"}` + "\n"
+	var lineage []claudeLineageEvidence
+	err := readStructuredEventsWithLineage(strings.NewReader(input), io.Discard, AgentClaude, runtimeSessionID, true, func(providerEvent) error { return nil }, func(evidence claudeLineageEvidence) error {
+		lineage = append(lineage, evidence)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantReasons := []string{lineageReasonEvidenceMalformed, lineageReasonLimitExceeded, lineageReasonTaskTypeUnknown}
+	var gotReasons []string
+	for _, evidence := range lineage {
+		if evidence.Kind == lineageKindInvalid {
+			gotReasons = append(gotReasons, evidence.Reason)
+		}
+	}
+	if !slices.Equal(gotReasons, wantReasons) {
+		t.Fatalf("invalid reasons = %#v, want %#v (all %#v)", gotReasons, wantReasons, lineage)
+	}
+}
+
+func TestClaudeStructuredNullRequiredFieldsUseExistingReasons(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		reason string
+	}{
+		{name: "task identifier", input: `{"type":"system","subtype":"task_started","task_id":null,"tool_use_id":"tool","task_type":"local_agent"}`, reason: lineageReasonTaskIdentifierMissing},
+		{name: "tool identifier", input: `{"type":"system","subtype":"task_started","task_id":"task","tool_use_id":null,"task_type":"local_agent"}`, reason: lineageReasonTaskIdentifierMissing},
+		{name: "task type", input: `{"type":"system","subtype":"task_started","task_id":"task","tool_use_id":"tool","task_type":null}`, reason: lineageReasonTaskTypeMissing},
+		{name: "terminal task identifier", input: `{"type":"system","subtype":"task_notification","task_id":null,"status":"completed"}`, reason: lineageReasonTaskIdentifierMissing},
+		{name: "terminal status", input: `{"type":"system","subtype":"task_notification","task_id":"task","status":null}`, reason: lineageReasonTaskStatusUnknown},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var lineage []claudeLineageEvidence
+			err := readStructuredEventsWithLineage(strings.NewReader(tc.input+"\n"), io.Discard, AgentClaude, runtimeSessionID, true, func(providerEvent) error { return nil }, func(evidence claudeLineageEvidence) error {
+				lineage = append(lineage, evidence)
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []claudeLineageEvidence{{Kind: lineageKindInvalid, Reason: tc.reason}}
+			if !slices.Equal(lineage, want) {
+				t.Fatalf("lineage = %#v, want %#v", lineage, want)
+			}
+		})
+	}
+}
+
+func TestClaudeStructuredProjectionRejectsDuplicateAndCrossPairedBlocks(t *testing.T) {
+	input := strings.Join([]string{
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"one"},{"name":"Agent","id":"two"},{"type":"tool_use","type":"tool_use","id":"three","name":"Agent"}]}}`,
+		`{"type":"system","subtype":"task_started","task_id":false,"tool_use_id":"tool","task_type":"local_agent"}`,
+	}, "\n") + "\n"
+	var lineage []claudeLineageEvidence
+	if err := readStructuredEventsWithLineage(strings.NewReader(input), io.Discard, AgentClaude, runtimeSessionID, true, func(providerEvent) error { return nil }, func(evidence claudeLineageEvidence) error {
+		lineage = append(lineage, evidence)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := []claudeLineageEvidence{
+		{Kind: lineageKindInvalid, Reason: lineageReasonStructureInvalid},
+		{Kind: lineageKindInvalid, Reason: lineageReasonStructureInvalid},
+	}
+	if !slices.Equal(lineage, want) {
+		t.Fatalf("lineage = %#v", lineage)
+	}
+}
+
 func TestReadDiagnosticLineRetainsOversizedLinePrefix(t *testing.T) {
 	reader := bufio.NewReaderSize(strings.NewReader("conversation-marker-and-noise\nnext\n"), 8)
 	line, err := readDiagnosticLine(reader, len("conversation-marker"))
@@ -265,7 +481,7 @@ func TestSelectiveJSONReaderTruncatesRetainedAnswerAndConsumesRecord(t *testing.
 	if err != nil {
 		t.Fatalf("parse oversized retained answer: %v", err)
 	}
-	events, err := reduceCodexEvent(value)
+	events, err := reduceCodexEvent(value.Fields)
 	if err != nil || len(events) != 1 || events[0].Answer != "abcdefgh"+truncatedAnswerNotice {
 		t.Fatalf("truncated structured answer events = %#v, %v", events, err)
 	}
@@ -293,7 +509,7 @@ func TestRetainedAnswerTruncationDropsIncompleteUTF8Rune(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse UTF-8 answer at boundary: %v", err)
 	}
-	events, err := reduceCodexEvent(value)
+	events, err := reduceCodexEvent(value.Fields)
 	if err != nil || len(events) != 1 || events[0].Answer != truncatedAnswerNotice {
 		t.Fatalf("UTF-8 structured truncation events = %#v, %v", events, err)
 	}
@@ -372,6 +588,50 @@ func TestRunnerBuffersOnlyCompletedAnswer(t *testing.T) {
 	raw, readErr := os.ReadFile(incompleteRun.Record.StdoutPath)
 	if readErr != nil || !bytes.Contains(raw, []byte("partial")) {
 		t.Fatalf("raw progress evidence = %q, %v", raw, readErr)
+	}
+}
+
+func TestClaudeRunnerReadsLineageAndLatestResultThroughEOF(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentClaude, "2.1.212", dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := filepath.Abs(filepath.Join("testdata", "claude", "v0.13-2.1.212-lineage.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := executeProvider(providerCommand{
+		Path:          "/bin/sh",
+		Args:          []string{"-c", `cat "$1"`, "sh", fixture},
+		Env:           os.Environ(),
+		Provider:      AgentClaude,
+		SessionID:     runtimeSessionID,
+		Structured:    true,
+		ClaudeLineage: true,
+	}, []byte("prompt"), run, root, nil, func(string) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Answer != "final" || !result.Complete || result.SessionID != runtimeSessionID {
+		t.Fatalf("result = %#v", result)
+	}
+	summary := deriveClaudeDescendantSummary(root, run.Record)
+	wantTasks := []ClaudeDescendantTask{
+		{TaskID: "task-parent", ToolUseID: "agent-parent", Status: "completed"},
+		{TaskID: "task-child", ToolUseID: "agent-child", ParentTaskID: "task-parent", Status: "failed"},
+	}
+	if summary.State != "proven-terminal" || len(summary.Reasons) != 0 || !slices.Equal(summary.Tasks, wantTasks) {
+		t.Fatalf("summary = %#v", summary)
+	}
+	events, err := os.ReadFile(run.Record.EventsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, private := range []string{"task-parent", "agent-parent", "task-child"} {
+		if bytes.Contains(events, []byte(private)) {
+			t.Fatalf("ordinary events leaked %q: %s", private, events)
+		}
 	}
 }
 

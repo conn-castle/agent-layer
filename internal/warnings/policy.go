@@ -6,21 +6,24 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
-var secretLikeQueryKeys = []string{
-	"token",
-	"secret",
-	"password",
-	"passwd",
-	"api_key",
-	"apikey",
-	"access_token",
-	"access_key",
-	"auth",
+const secretQueryTokenSegment = "token"
+
+var secretLikeQueryKeySegments = [][]string{
+	{secretQueryTokenSegment},
+	{"secret"},
+	{"password"},
+	{"passwd"},
+	{"apikey"},
+	{"api", "key"},
+	{"access", secretQueryTokenSegment},
+	{"access", "key"},
+	{"auth"},
 }
 
 // CheckPolicy returns static policy warnings that do not require network calls.
@@ -247,8 +250,7 @@ func findSecretInURL(raw string) (string, bool) {
 
 	query := parsed.Query()
 	for key, values := range query {
-		lowerKey := strings.ToLower(strings.TrimSpace(key))
-		if !looksLikeSecretQueryKey(lowerKey) {
+		if !looksLikeSecretQueryKey(strings.TrimSpace(key)) {
 			continue
 		}
 		for _, value := range values {
@@ -266,12 +268,51 @@ func findSecretInURL(raw string) (string, bool) {
 }
 
 func looksLikeSecretQueryKey(key string) bool {
-	for _, candidate := range secretLikeQueryKeys {
-		if strings.Contains(key, candidate) {
-			return true
+	segments := identifierSegments(key)
+	for _, candidate := range secretLikeQueryKeySegments {
+		for start := 0; start+len(candidate) <= len(segments); start++ {
+			if slices.Equal(segments[start:start+len(candidate)], candidate) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// identifierSegments splits an identifier at separators, camel-case boundaries,
+// and acronym boundaries, then normalizes the resulting segments for comparison.
+func identifierSegments(identifier string) []string {
+	runes := []rune(identifier)
+	segments := make([]string, 0, len(runes))
+	segmentStart := -1
+
+	for i, current := range runes {
+		if !unicode.IsLetter(current) && !unicode.IsDigit(current) {
+			if segmentStart >= 0 {
+				segments = append(segments, strings.ToLower(string(runes[segmentStart:i])))
+				segmentStart = -1
+			}
+			continue
+		}
+
+		if segmentStart < 0 {
+			segmentStart = i
+			continue
+		}
+
+		previous := runes[i-1]
+		nextIsLower := i+1 < len(runes) && unicode.IsLower(runes[i+1])
+		if unicode.IsUpper(current) &&
+			(unicode.IsLower(previous) || unicode.IsDigit(previous) || unicode.IsUpper(previous) && nextIsLower) {
+			segments = append(segments, strings.ToLower(string(runes[segmentStart:i])))
+			segmentStart = i
+		}
+	}
+
+	if segmentStart >= 0 {
+		segments = append(segments, strings.ToLower(string(runes[segmentStart:])))
+	}
+	return segments
 }
 
 func findUnsupportedCodexHeaderForm(headers map[string]string) (string, bool) {

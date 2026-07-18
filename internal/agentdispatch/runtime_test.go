@@ -105,7 +105,7 @@ func TestPreStartRetryCleansOnlyPrivateCaptures(t *testing.T) {
 		Stdout:     &stdout,
 		Stderr:     io.Discard,
 		LookPath:   mockLookPath(binDir),
-		NewCommand: func(string, ...string) *exec.Cmd {
+		NewCommand: func(_ string, args ...string) *exec.Cmd {
 			attempts++
 			if attempts == 1 {
 				return exec.Command(filepath.Join(root, "missing-provider")) // #nosec G204 -- test-only missing executable.
@@ -118,6 +118,53 @@ func TestPreStartRetryCleansOnlyPrivateCaptures(t *testing.T) {
 	}
 	if attempts != 2 || stdout.String() != "retried" {
 		t.Fatalf("attempts=%d stdout=%q", attempts, stdout.String())
+	}
+}
+
+func TestCapableClaudePreStartRetryRecreatesLineageCapture(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	binDir := t.TempDir()
+	writeDispatchStub(t, binDir, "claude", "")
+	attempts := 0
+	var stdout bytes.Buffer
+	err := Run(RunOptions{
+		Root:          root,
+		Agent:         AgentClaude,
+		PromptArgs:    []string{"retry"},
+		Env:           []string{"PATH=" + testPath(binDir)},
+		Stdout:        &stdout,
+		Stderr:        io.Discard,
+		LookPath:      mockLookPath(binDir),
+		VersionLookup: func(string, string) (string, error) { return "2.1.212", nil },
+		NewCommand: func(_ string, args ...string) *exec.Cmd {
+			attempts++
+			if attempts == 1 {
+				return exec.Command(filepath.Join(root, "missing-provider")) // #nosec G204 -- test-only missing executable.
+			}
+			sessionID := ""
+			for index, arg := range args {
+				if arg == "--session-id" && index+1 < len(args) {
+					sessionID = args[index+1]
+				}
+			}
+			return exec.Command("/bin/sh", "-c", `printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool","name":"Agent"}]}}' '{"type":"system","subtype":"task_started","task_id":"task","tool_use_id":"tool","task_type":"local_agent"}' '{"type":"system","subtype":"task_notification","task_id":"task","status":"completed"}'; printf '{"type":"result","session_id":"%s","is_error":false,"result":"retried"}\n' "$1"`, "sh", sessionID) // #nosec G204 -- fixed test shell command with caller-assigned test session.
+		},
+	})
+	if err != nil {
+		t.Fatalf("retry run: %v", err)
+	}
+	if attempts != 2 || stdout.String() != "retried" {
+		t.Fatalf("attempts=%d stdout=%q", attempts, stdout.String())
+	}
+	records, warnings, err := listRunRecords(root)
+	if err != nil || len(warnings) != 0 || len(records) != 1 {
+		t.Fatalf("records=%#v warnings=%#v err=%v", records, warnings, err)
+	}
+	if _, err := os.Stat(records[0].LineagePath); err != nil {
+		t.Fatalf("retried lineage capture missing: %v", err)
+	}
+	if summary := deriveClaudeDescendantSummary(root, records[0]); summary.State != "proven-terminal" {
+		t.Fatalf("retried summary = %#v", summary)
 	}
 }
 
