@@ -462,23 +462,18 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 			}
 			continue
 		}
-		if claudeLineage && record.Claude.InvalidReason != "" {
-			if invalidErr := emitInvalid(record.Claude.InvalidReason); invalidErr != nil {
-				return invalidErr
-			}
-		}
 		var events []providerEvent
+		var lineageEvents []claudeLineageEvidence
 		switch agent {
 		case AgentClaude:
-			events, err = reduceClaudeEvent(expectedSession, record.Fields)
-			if claudeLineage && record.Claude.InvalidReason == "" && consumeLineage != nil {
-				lineageEvents := normalizer.reduce(record)
-				for _, lineageEvent := range lineageEvents {
-					if lineageErr := consumeLineage(lineageEvent); lineageErr != nil {
-						return lineageErr
-					}
+			if claudeLineage && consumeLineage != nil {
+				if record.Claude.InvalidReason != "" {
+					lineageEvents = []claudeLineageEvidence{{Kind: lineageKindInvalid, Reason: record.Claude.InvalidReason}}
+				} else {
+					lineageEvents = normalizer.reduce(record)
 				}
 			}
+			events, err = reduceClaudeEvent(expectedSession, record.Fields)
 		case AgentCodex:
 			events, err = reduceCodexEvent(record.Fields)
 		default:
@@ -489,6 +484,11 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 		}
 		for _, event := range events {
 			if err := consume(event); err != nil {
+				return err
+			}
+		}
+		for _, lineageEvent := range lineageEvents {
+			if err := consumeLineage(lineageEvent); err != nil {
 				return err
 			}
 		}

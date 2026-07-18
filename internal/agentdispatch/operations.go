@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -124,15 +125,18 @@ func Inspect(request InspectionRequest) error {
 			return err
 		}
 	}
-	_, err = fmt.Fprintf(stdout, "Diagnostics: stdout=%s stderr=%s", inspection.Artifacts.Stdout, inspection.Artifacts.Stderr)
+	if _, err := fmt.Fprintf(stdout, "Diagnostics: stdout=%s stderr=%s", inspection.Artifacts.Stdout, inspection.Artifacts.Stderr); err != nil {
+		return err
+	}
 	if inspection.Artifacts.Lineage != "" {
-		_, err = fmt.Fprintf(stdout, " lineage=%s", inspection.Artifacts.Lineage)
+		if _, err := fmt.Fprintf(stdout, " lineage=%s", inspection.Artifacts.Lineage); err != nil {
+			return err
+		}
 	}
 	if inspection.Artifacts.ProviderLog != "" {
-		_, err = fmt.Fprintf(stdout, " provider_log=%s", inspection.Artifacts.ProviderLog)
-	}
-	if err != nil {
-		return err
+		if _, err := fmt.Fprintf(stdout, " provider_log=%s", inspection.Artifacts.ProviderLog); err != nil {
+			return err
+		}
 	}
 	_, err = fmt.Fprintln(stdout)
 	return err
@@ -279,8 +283,12 @@ func processOwned(record RunRecord) bool {
 // History writes every retained immutable turn for one friendly name.
 func History(request HistoryRequest) error {
 	name := strings.TrimSpace(request.Name)
-	if _, err := loadSession(request.Root, name); err != nil {
+	session, err := loadSession(request.Root, name)
+	if err != nil {
 		return err
+	}
+	if session.RunID == "" {
+		return exitError(ExitConfig, fmt.Sprintf("dispatch session %q has no run record", session.Name))
 	}
 	records, warnings, err := listRunRecords(request.Root)
 	if err != nil {
@@ -296,12 +304,45 @@ func History(request HistoryRequest) error {
 		RunRecord
 		ClaudeDescendants *ClaudeDescendantSummary `json:"claude_descendants,omitempty"`
 	}
-	history := make([]historyRun, 0)
+	byID := make(map[string]RunRecord, len(records))
 	for _, record := range records {
-		if record.Name == name {
-			history = append(history, historyRun{RunRecord: record, ClaudeDescendants: deriveClaudeDescendantSummary(request.Root, record)})
-		}
+		byID[record.ID] = record
 	}
+	failuresByID := make(map[string]error, len(warnings))
+	for _, warning := range warnings {
+		failuresByID[warning.ID] = warning.Err
+	}
+	history := make([]historyRun, 0)
+	seen := make(map[string]struct{})
+	nextID := session.RunID
+	retentionBoundary := false
+	for nextID != "" {
+		if _, duplicate := seen[nextID]; duplicate {
+			return exitError(ExitConfig, fmt.Sprintf("dispatch history for %q contains a cycle at run %s", name, nextID))
+		}
+		seen[nextID] = struct{}{}
+		record, ok := byID[nextID]
+		if !ok {
+			loadErr, listedFailure := failuresByID[nextID]
+			if nextID == session.RunID {
+				if listedFailure {
+					return wrapExitError(ExitConfig, fmt.Sprintf("dispatch history for %q cannot read current run %s: %v; preserve its evidence and repair or restore the run record", name, nextID, loadErr), loadErr)
+				}
+				return exitError(ExitConfig, fmt.Sprintf("dispatch history for %q cannot find current run %s; restore the run record or repair the session mapping", name, nextID))
+			}
+			if listedFailure && !errors.Is(loadErr, errDispatchRunNotFound) {
+				return wrapExitError(ExitConfig, fmt.Sprintf("dispatch history for %q cannot read predecessor run %s: %v; preserve its evidence and repair or restore the run record", name, nextID, loadErr), loadErr)
+			}
+			retentionBoundary = true
+			break
+		}
+		if record.Name != name {
+			return exitError(ExitConfig, fmt.Sprintf("dispatch history for %q includes run %s recorded for %q; preserve its evidence and repair the session mapping or predecessor link", name, record.ID, record.Name))
+		}
+		history = append(history, historyRun{RunRecord: record, ClaudeDescendants: deriveClaudeDescendantSummary(request.Root, record)})
+		nextID = record.PreviousRunID
+	}
+	slices.Reverse(history)
 	stdout := writerOrDiscard(request.Stdout)
 	if request.JSON {
 		encoder := json.NewEncoder(stdout)
@@ -310,7 +351,7 @@ func History(request HistoryRequest) error {
 			Name              string       `json:"name"`
 			RetentionBoundary bool         `json:"retention_boundary"`
 			Runs              []historyRun `json:"runs"`
-		}{Name: name, RetentionBoundary: len(history) > 0 && history[0].PreviousRunID != "", Runs: history})
+		}{Name: name, RetentionBoundary: retentionBoundary, Runs: history})
 	}
 	for _, record := range history {
 		if _, err := fmt.Fprintf(stdout, "%s\t%s\t%s\t%s", record.ID, record.Mode, record.State, record.StartedAt.Format(time.RFC3339)); err != nil {
@@ -330,7 +371,7 @@ func History(request HistoryRequest) error {
 			return err
 		}
 	}
-	if len(history) > 0 && history[0].PreviousRunID != "" {
+	if retentionBoundary {
 		_, err = fmt.Fprintln(stdout, "History begins at the 30-day retention boundary.")
 	}
 	return err

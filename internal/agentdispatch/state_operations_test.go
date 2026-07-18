@@ -2,6 +2,7 @@ package agentdispatch
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -158,6 +159,52 @@ func TestInspectPresentsClaudeDescendantsAndLineageArtifact(t *testing.T) {
 			t.Fatalf("JSON inspection omitted %q: %s", want, jsonOutput.String())
 		}
 	}
+}
+
+func TestInspectPreservesFirstDiagnosticsWriteFailure(t *testing.T) {
+	root := t.TempDir()
+	run := newLineageTestRun(t, root, "2.1.212")
+	run.Record.Name = "tiny-round-capacitor"
+	run.Record.ProviderLogPath = filepath.Join(run.Dir, "provider.log")
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		name      string
+		segment   string
+		forbidden string
+	}{
+		{name: "base", segment: "Diagnostics:", forbidden: " lineage="},
+		{name: "lineage", segment: " lineage=", forbidden: " provider_log="},
+		{name: "provider log", segment: " provider_log="},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			wantErr := errors.New("diagnostics " + test.name + " write failed")
+			writer := &segmentFailingWriter{segment: test.segment, err: wantErr}
+			err := Inspect(InspectionRequest{Root: root, ID: run.Record.ID, Stdout: writer})
+			if !errors.Is(err, wantErr) {
+				t.Fatalf("Inspect error = %v, want %v", err, wantErr)
+			}
+			if test.forbidden != "" && strings.Contains(writer.attempted.String(), test.forbidden) {
+				t.Fatalf("Inspect attempted later diagnostics segment after first failure: %q", writer.attempted.String())
+			}
+		})
+	}
+}
+
+type segmentFailingWriter struct {
+	segment   string
+	err       error
+	attempted bytes.Buffer
+}
+
+func (w *segmentFailingWriter) Write(data []byte) (int, error) {
+	_, _ = w.attempted.Write(data)
+	if bytes.Contains(data, []byte(w.segment)) {
+		return 0, w.err
+	}
+	return len(data), nil
 }
 
 func TestDispatchSessionRetentionPrunesOnlyExpiredInactiveMappings(t *testing.T) {

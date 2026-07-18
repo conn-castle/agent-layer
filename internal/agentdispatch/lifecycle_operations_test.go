@@ -2,6 +2,10 @@ package agentdispatch
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,14 +49,318 @@ func TestHistoryUsesImmutableRunsAfterFriendlyMappingAdvances(t *testing.T) {
 	if err := persistSession(root, session); err != nil {
 		t.Fatal(err)
 	}
+	unrelated, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unrelated.Record.Name = session.Name
+	if err := writeRunRecord(unrelated.Dir, &unrelated.Record); err != nil {
+		t.Fatal(err)
+	}
 
 	var output bytes.Buffer
 	if err := History(HistoryRequest{Root: root, Name: session.Name, Stdout: &output}); err != nil {
 		t.Fatalf("History: %v", err)
 	}
-	if !strings.Contains(output.String(), first.Record.ID) || !strings.Contains(output.String(), second.Record.ID) {
-		t.Fatalf("history omitted a retained turn: %q", output.String())
+	firstIndex := strings.Index(output.String(), first.Record.ID)
+	secondIndex := strings.Index(output.String(), second.Record.ID)
+	if firstIndex < 0 || secondIndex < 0 || firstIndex >= secondIndex {
+		t.Fatalf("history is not the complete chronological chain: %q", output.String())
 	}
+	if strings.Contains(output.String(), unrelated.Record.ID) {
+		t.Fatalf("history included an unrelated same-name run: %q", output.String())
+	}
+}
+
+func TestHistoryReportsRetentionBoundaryForMissingPredecessor(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := reserveSession(root, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.Record.PreviousRunID = "33333333-3333-4333-8333-333333333333"
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	if err := History(HistoryRequest{Root: root, Name: session.Name, Stdout: &output}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), run.Record.ID) || !strings.Contains(output.String(), "History begins at the 30-day retention boundary.") {
+		t.Fatalf("retention-boundary history = %q", output.String())
+	}
+	var jsonOutput bytes.Buffer
+	if err := History(HistoryRequest{Root: root, Name: session.Name, Stdout: &jsonOutput, JSON: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(jsonOutput.String(), `"retention_boundary": true`) {
+		t.Fatalf("retention-boundary JSON = %s", jsonOutput.String())
+	}
+}
+
+func TestHistoryRejectsCorruptPredecessorWithoutEmittingOutput(t *testing.T) {
+	root := t.TempDir()
+	predecessor, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := reserveSession(root, predecessor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current.Record.Name = session.Name
+	current.Record.PreviousRunID = predecessor.Record.ID
+	if err := writeRunRecord(current.Dir, &current.Record); err != nil {
+		t.Fatal(err)
+	}
+	session.RunID = current.Record.ID
+	if err := persistSession(root, session); err != nil {
+		t.Fatal(err)
+	}
+	corrupt := []byte("not-json")
+	predecessorPath := filepath.Join(predecessor.Dir, dispatchRunFile)
+	if err := os.WriteFile(predecessorPath, corrupt, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, jsonOutput := range []bool{false, true} {
+		t.Run(map[bool]string{false: "text", true: "json"}[jsonOutput], func(t *testing.T) {
+			var output bytes.Buffer
+			err := History(HistoryRequest{Root: root, Name: session.Name, Stdout: &output, JSON: jsonOutput})
+			requireDispatchExitCode(t, err, ExitConfig)
+			if !strings.Contains(err.Error(), predecessor.Record.ID) || !strings.Contains(err.Error(), "read dispatch run record") {
+				t.Fatalf("History error = %v, want predecessor ID and parse cause", err)
+			}
+			var syntaxErr *json.SyntaxError
+			if !errors.As(err, &syntaxErr) {
+				t.Fatalf("History error cause = %v, want JSON syntax error", err)
+			}
+			if output.Len() != 0 {
+				t.Fatalf("History emitted output for a corrupt predecessor: %q", output.String())
+			}
+			if strings.Contains(output.String(), "retention_boundary") || strings.Contains(output.String(), "retention boundary") {
+				t.Fatalf("History mislabeled corruption as retention: %q", output.String())
+			}
+		})
+	}
+	retained, err := os.ReadFile(predecessorPath) // #nosec G304 -- test-controlled path under t.TempDir.
+	if err != nil {
+		t.Fatalf("read corrupt predecessor evidence: %v", err)
+	}
+	if !bytes.Equal(retained, corrupt) {
+		t.Fatalf("History mutated corrupt predecessor evidence: got %q, want %q", retained, corrupt)
+	}
+}
+
+func TestHistoryRejectsMissingOrUnreadableCurrentRun(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		prepare func(*testing.T, string)
+		cause   string
+		is      error
+		asJSON  bool
+	}{
+		{name: "missing", prepare: func(t *testing.T, path string) {
+			t.Helper()
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+		}, cause: "cannot read current run", is: errDispatchRunNotFound},
+		{name: "unreadable", prepare: func(t *testing.T, path string) {
+			t.Helper()
+			if err := os.WriteFile(path, []byte("not-json"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, cause: "read dispatch run record", asJSON: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err := reserveSession(root, run)
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.prepare(t, filepath.Join(run.Dir, dispatchRunFile))
+
+			var output bytes.Buffer
+			err = History(HistoryRequest{Root: root, Name: session.Name, Stdout: &output, JSON: true})
+			requireDispatchExitCode(t, err, ExitConfig)
+			if !strings.Contains(err.Error(), run.Record.ID) || !strings.Contains(err.Error(), test.cause) {
+				t.Fatalf("History error = %v, want current run ID and cause %q", err, test.cause)
+			}
+			if test.is != nil && !errors.Is(err, test.is) {
+				t.Fatalf("History error cause = %v, want %v", err, test.is)
+			}
+			if test.asJSON {
+				var syntaxErr *json.SyntaxError
+				if !errors.As(err, &syntaxErr) {
+					t.Fatalf("History error cause = %v, want JSON syntax error", err)
+				}
+			}
+			if output.Len() != 0 {
+				t.Fatalf("History emitted output for invalid current run: %q", output.String())
+			}
+		})
+	}
+}
+
+func TestHistoryRejectsSessionWithoutRunRecord(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := reserveSession(root, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordPath := filepath.Join(run.Dir, dispatchRunFile)
+	evidence, err := os.ReadFile(recordPath) // #nosec G304 -- test-controlled path under t.TempDir.
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.RunID = ""
+	if err := persistSession(root, session); err != nil {
+		t.Fatal(err)
+	}
+	wantError := fmt.Sprintf("dispatch session %q has no run record", session.Name)
+
+	for _, jsonOutput := range []bool{false, true} {
+		t.Run(map[bool]string{false: "text", true: "json"}[jsonOutput], func(t *testing.T) {
+			var output bytes.Buffer
+			err := History(HistoryRequest{Root: root, Name: session.Name, Stdout: &output, JSON: jsonOutput})
+			requireDispatchExitCode(t, err, ExitConfig)
+			if err.Error() != wantError {
+				t.Fatalf("History error = %q, want %q", err, wantError)
+			}
+			if output.Len() != 0 {
+				t.Fatalf("History emitted output for a session without a run record: %q", output.String())
+			}
+			retained, err := os.ReadFile(recordPath) // #nosec G304 -- test-controlled path under t.TempDir.
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(retained, evidence) {
+				t.Fatalf("History mutated selected run evidence: got %q, want %q", retained, evidence)
+			}
+		})
+	}
+}
+
+func TestHistoryRejectsForeignRunInChainWithoutEmittingOutput(t *testing.T) {
+	for _, position := range []string{"current", "predecessor"} {
+		t.Run(position, func(t *testing.T) {
+			root := t.TempDir()
+			predecessor, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err := reserveSession(root, predecessor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			offending := predecessor
+			if position == "current" {
+				predecessor.Record.Name = "foreign-run-owner"
+				if err := writeRunRecord(predecessor.Dir, &predecessor.Record); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				current, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
+				if err != nil {
+					t.Fatal(err)
+				}
+				current.Record.Name = session.Name
+				current.Record.PreviousRunID = predecessor.Record.ID
+				if err := writeRunRecord(current.Dir, &current.Record); err != nil {
+					t.Fatal(err)
+				}
+				session.RunID = current.Record.ID
+				if err := persistSession(root, session); err != nil {
+					t.Fatal(err)
+				}
+				predecessor.Record.Name = "foreign-run-owner"
+				if err := writeRunRecord(predecessor.Dir, &predecessor.Record); err != nil {
+					t.Fatal(err)
+				}
+			}
+			recordPath := filepath.Join(offending.Dir, dispatchRunFile)
+			evidence, err := os.ReadFile(recordPath) // #nosec G304 -- test-controlled path under t.TempDir.
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			for _, jsonOutput := range []bool{false, true} {
+				t.Run(map[bool]string{false: "text", true: "json"}[jsonOutput], func(t *testing.T) {
+					var output bytes.Buffer
+					err := History(HistoryRequest{Root: root, Name: session.Name, Stdout: &output, JSON: jsonOutput})
+					requireDispatchExitCode(t, err, ExitConfig)
+					for _, evidence := range []string{session.Name, offending.Record.ID, `"foreign-run-owner"`} {
+						if !strings.Contains(err.Error(), evidence) {
+							t.Fatalf("History error = %q, want identifying evidence %q", err, evidence)
+						}
+					}
+					if output.Len() != 0 {
+						t.Fatalf("History emitted output for a foreign %s run: %q", position, output.String())
+					}
+					retained, err := os.ReadFile(recordPath) // #nosec G304 -- test-controlled path under t.TempDir.
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !bytes.Equal(retained, evidence) {
+						t.Fatalf("History mutated foreign run evidence: got %q, want %q", retained, evidence)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestHistoryFailsLoudOnPreviousRunCycle(t *testing.T) {
+	root := t.TempDir()
+	first, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := reserveSession(root, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second.Record.Name = session.Name
+	first.Record.PreviousRunID = second.Record.ID
+	second.Record.PreviousRunID = first.Record.ID
+	if err := writeRunRecord(first.Dir, &first.Record); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeRunRecord(second.Dir, &second.Record); err != nil {
+		t.Fatal(err)
+	}
+	session.RunID = second.Record.ID
+	if err := persistSession(root, session); err != nil {
+		t.Fatal(err)
+	}
+
+	err = History(HistoryRequest{Root: root, Name: session.Name, Stdout: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "contains a cycle") {
+		t.Fatalf("History cycle error = %v", err)
+	}
+	requireDispatchExitCode(t, err, ExitConfig)
 }
 
 func TestHistoryAddsOnlyClaudeDerivedSummaryWithoutChangingFlattenedFields(t *testing.T) {

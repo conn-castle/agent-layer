@@ -47,6 +47,7 @@ const (
 	lineageReasonTaskCycle                  = "task_cycle"
 
 	claudeLineageEvidenceMaxLineBytes = 16 * 1024
+	claudeLineageArtifactMaxBytes     = claudeLineageEvidenceMaxLineBytes * claudeLineageContentLimit
 	claudeLineageFieldMaxBytes        = 1024
 )
 
@@ -213,9 +214,15 @@ func deriveClaudeDescendantSummary(root string, record RunRecord) *ClaudeDescend
 	toolTasks := make(map[string]string)
 	ordered := make([]*lineageTask, 0)
 	seen := make(map[claudeLineageEvidence]struct{})
-	reader := bufio.NewReaderSize(file, structuredJSONBufferBytes)
+	reader := bufio.NewReaderSize(io.LimitReader(file, claudeLineageArtifactMaxBytes+1), structuredJSONBufferBytes)
+	consumed := 0
 	for {
-		line, readErr := readLineBounded(reader, claudeLineageEvidenceMaxLineBytes)
+		line, lineBytes, readErr := readLineBounded(reader, claudeLineageEvidenceMaxLineBytes)
+		consumed += lineBytes
+		if consumed > claudeLineageArtifactMaxBytes {
+			add(lineageReasonLimitExceeded)
+			return unknownClaudeSummary(reasons, ordered)
+		}
 		if readErr != nil && readErr != io.EOF {
 			if errors.Is(readErr, errLineageEvidenceTooLarge) {
 				add(lineageReasonEvidenceMalformed)
@@ -348,11 +355,13 @@ func applyLineageEvidence(e claudeLineageEvidence, tools map[string]lineageTool,
 	}
 }
 
-func readLineBounded(reader *bufio.Reader, limit int) ([]byte, error) {
+func readLineBounded(reader *bufio.Reader, limit int) ([]byte, int, error) {
 	line := make([]byte, 0, min(limit, structuredJSONBufferBytes))
+	consumed := 0
 	overflow := false
 	for {
 		fragment, err := reader.ReadSlice('\n')
+		consumed += len(fragment)
 		if !overflow && len(line)+len(fragment) <= limit {
 			line = append(line, fragment...)
 		} else {
@@ -362,9 +371,9 @@ func readLineBounded(reader *bufio.Reader, limit int) ([]byte, error) {
 			continue
 		}
 		if overflow {
-			return nil, errLineageEvidenceTooLarge
+			return nil, consumed, errLineageEvidenceTooLarge
 		}
-		return line, err
+		return line, consumed, err
 	}
 }
 

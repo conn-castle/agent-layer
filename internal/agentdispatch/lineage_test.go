@@ -1,6 +1,7 @@
 package agentdispatch
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -78,6 +79,54 @@ func TestDeriveClaudeDescendantSummaryReportsConservativeUnknowns(t *testing.T) 
 	}
 }
 
+func TestDeriveClaudeDescendantSummaryReportsAbsentEvidenceForCapableOldRecord(t *testing.T) {
+	record := RunRecord{Agent: AgentClaude, ProviderVersion: "2.1.212"}
+
+	summary := deriveClaudeDescendantSummary(t.TempDir(), record)
+	if summary.State != statusUnknown || !slices.Equal(summary.Reasons, []string{"lineage_evidence_absent"}) || len(summary.Tasks) != 0 {
+		t.Fatalf("summary = %#v", summary)
+	}
+}
+
+func TestDeriveClaudeDescendantSummaryReportsUnreadableCanonicalLineageFile(t *testing.T) {
+	root := t.TempDir()
+	run := newLineageTestRun(t, root, "2.1.212")
+	if err := os.WriteFile(run.Record.LineagePath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(run.Record.LineagePath, 0o000); err != nil { // #nosec G302 -- restrictive test mode exercises the production unreadable-evidence path.
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(run.Record.LineagePath, 0o600) }) // #nosec G302 -- test restores owner access for TempDir cleanup.
+	if file, err := os.Open(run.Record.LineagePath); err == nil {
+		_ = file.Close()
+		t.Skip("fixture remains readable despite mode 0o000")
+	}
+
+	summary := deriveClaudeDescendantSummary(root, run.Record)
+	if summary.State != statusUnknown || !slices.Equal(summary.Reasons, []string{"lineage_evidence_unreadable"}) || len(summary.Tasks) != 0 {
+		t.Fatalf("summary = %#v", summary)
+	}
+}
+
+func TestDeriveClaudeDescendantSummaryReportsUnresolvedParentToolUse(t *testing.T) {
+	root := t.TempDir()
+	run := newLineageTestRun(t, root, "2.1.212")
+	writeLineageTestEvidence(t, run,
+		claudeLineageEvidence{Kind: lineageKindToolUse, ToolUseID: "tool-child", ParentToolUseID: "tool-parent-missing"},
+		claudeLineageEvidence{Kind: lineageKindTaskStarted, TaskID: "task-child", ToolUseID: "tool-child", TaskType: claudeTaskTypeAgent},
+		claudeLineageEvidence{Kind: lineageKindTaskTerminal, TaskID: "task-child", Status: dispatchStateCompleted},
+	)
+
+	summary := deriveClaudeDescendantSummary(root, run.Record)
+	if summary.State != statusUnknown || !slices.Equal(summary.Reasons, []string{"task_parent_unresolved"}) {
+		t.Fatalf("summary = %#v", summary)
+	}
+	if len(summary.Tasks) != 1 || summary.Tasks[0].TaskID != "task-child" || summary.Tasks[0].Status != dispatchStateCompleted || summary.Tasks[0].ParentTaskID != "" {
+		t.Fatalf("tasks = %#v", summary.Tasks)
+	}
+}
+
 func TestDeriveClaudeDescendantSummaryStopsInferenceAfterReadFailure(t *testing.T) {
 	root := t.TempDir()
 	run := newLineageTestRun(t, root, "2.1.212")
@@ -88,6 +137,65 @@ func TestDeriveClaudeDescendantSummaryStopsInferenceAfterReadFailure(t *testing.
 	summary := deriveClaudeDescendantSummary(root, run.Record)
 	if summary.State != statusUnknown || !slices.Equal(summary.Reasons, []string{lineageReasonEvidenceMalformed}) {
 		t.Fatalf("summary = %#v", summary)
+	}
+}
+
+func TestDeriveClaudeDescendantSummaryEnforcesCumulativeArtifactLimit(t *testing.T) {
+	root := t.TempDir()
+	run := newLineageTestRun(t, root, "2.1.212")
+	evidence := []claudeLineageEvidence{
+		{Kind: lineageKindToolUse, ToolUseID: "tool"},
+		{Kind: lineageKindTaskStarted, TaskID: "task", ToolUseID: "tool", TaskType: claudeTaskTypeAgent},
+		{Kind: lineageKindTaskTerminal, TaskID: "task", Status: dispatchStateCompleted},
+	}
+	var prefix bytes.Buffer
+	encoder := json.NewEncoder(&prefix)
+	for _, event := range evidence {
+		if err := encoder.Encode(event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	padding := bytes.Repeat([]byte(" \n"), (claudeLineageArtifactMaxBytes-prefix.Len())/2)
+	artifact := append(prefix.Bytes(), padding...)
+	if len(artifact) < claudeLineageArtifactMaxBytes {
+		artifact = append(artifact, ' ')
+	}
+	if len(artifact) != claudeLineageArtifactMaxBytes {
+		t.Fatalf("artifact size = %d", len(artifact))
+	}
+	if err := os.WriteFile(run.Record.LineagePath, artifact, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	exact := deriveClaudeDescendantSummary(root, run.Record)
+	if exact.State != claudeSummaryProven || len(exact.Reasons) != 0 || len(exact.Tasks) != 1 {
+		t.Fatalf("exact-limit summary = %#v", exact)
+	}
+	if err := os.WriteFile(run.Record.LineagePath, append(artifact, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	exceeded := deriveClaudeDescendantSummary(root, run.Record)
+	if exceeded.State != statusUnknown || !slices.Equal(exceeded.Reasons, []string{lineageReasonLimitExceeded}) {
+		t.Fatalf("over-limit summary = %#v", exceeded)
+	}
+	if len(exceeded.Tasks) != 1 || exceeded.Tasks[0].TaskID != "task" || exceeded.Tasks[0].Status != dispatchStateCompleted {
+		t.Fatalf("over-limit presentation = %#v", exceeded.Tasks)
+	}
+
+	tiePrefixSize := claudeLineageArtifactMaxBytes - claudeLineageEvidenceMaxLineBytes
+	tieArtifact := append([]byte{}, prefix.Bytes()...)
+	tieArtifact = append(tieArtifact, bytes.Repeat([]byte(" \n"), (tiePrefixSize-len(tieArtifact))/2)...)
+	if len(tieArtifact) < tiePrefixSize {
+		tieArtifact = append(tieArtifact, ' ')
+	}
+	tieArtifact = append(tieArtifact, bytes.Repeat([]byte{'x'}, claudeLineageEvidenceMaxLineBytes+1)...)
+	if err := os.WriteFile(run.Record.LineagePath, tieArtifact, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tied := deriveClaudeDescendantSummary(root, run.Record)
+	if tied.State != statusUnknown || !slices.Equal(tied.Reasons, []string{lineageReasonLimitExceeded}) {
+		t.Fatalf("tied cumulative/line limit summary = %#v", tied)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -335,6 +336,46 @@ func TestClaudeStructuredEventsNormalizeBoundedLineageSeparately(t *testing.T) {
 	}
 	if raw.String() != input {
 		t.Fatal("raw stream changed")
+	}
+}
+
+func TestClaudeStructuredEventsInvokeOrdinaryCallbacksBeforeLineage(t *testing.T) {
+	input := `{"type":"system","subtype":"task_started","task_id":"task","tool_use_id":"tool","task_type":"unknown"}` + "\n"
+	var order []string
+	err := readStructuredEventsWithLineage(strings.NewReader(input), io.Discard, AgentClaude, runtimeSessionID, true, func(providerEvent) error {
+		order = append(order, "ordinary")
+		return nil
+	}, func(claudeLineageEvidence) error {
+		order = append(order, "lineage")
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(order, []string{"ordinary", "lineage"}) {
+		t.Fatalf("callback order = %#v", order)
+	}
+
+	ordinaryErr := errors.New("ordinary callback failed")
+	lineageCalled := false
+	err = readStructuredEventsWithLineage(strings.NewReader(input), io.Discard, AgentClaude, runtimeSessionID, true, func(providerEvent) error {
+		return ordinaryErr
+	}, func(claudeLineageEvidence) error {
+		lineageCalled = true
+		return nil
+	})
+	if !errors.Is(err, ordinaryErr) || lineageCalled {
+		t.Fatalf("ordinary failure = %v, lineage called = %t", err, lineageCalled)
+	}
+
+	lineageErr := errors.New("lineage callback failed")
+	err = readStructuredEventsWithLineage(strings.NewReader(input), io.Discard, AgentClaude, runtimeSessionID, true, func(providerEvent) error {
+		return nil
+	}, func(claudeLineageEvidence) error {
+		return lineageErr
+	})
+	if !errors.Is(err, lineageErr) {
+		t.Fatalf("lineage failure = %v", err)
 	}
 }
 

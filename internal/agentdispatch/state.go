@@ -698,11 +698,20 @@ func validateRunRecord(record RunRecord) error {
 	return nil
 }
 
+type runRecordLoadWarning struct {
+	ID  string
+	Err error
+}
+
+func (warning runRecordLoadWarning) String() string {
+	return fmt.Sprintf("skipped unreadable dispatch run record %s: %v", warning.ID, warning.Err)
+}
+
 // listRunRecords loads every readable run record. Records that cannot be
 // loaded or validated are skipped and reported as warnings so one corrupt
 // record cannot hide the history of unrelated conversations; the corrupt
 // evidence itself is left in place.
-func listRunRecords(root string) ([]RunRecord, []string, error) {
+func listRunRecords(root string) ([]RunRecord, []runRecordLoadWarning, error) {
 	entries, err := os.ReadDir(dispatchRunPath(root))
 	if errors.Is(err, fs.ErrNotExist) {
 		return []RunRecord{}, nil, nil
@@ -711,14 +720,14 @@ func listRunRecords(root string) ([]RunRecord, []string, error) {
 		return nil, nil, wrapExitError(ExitConfig, "list dispatch run records", err)
 	}
 	records := make([]RunRecord, 0, len(entries))
-	warnings := make([]string, 0)
+	warnings := make([]runRecordLoadWarning, 0)
 	for _, entry := range entries {
 		if !entry.IsDir() || parseUUID(entry.Name()) != nil {
 			continue
 		}
 		record, err := loadRunRecord(root, entry.Name())
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("skipped unreadable dispatch run record %s: %v", entry.Name(), err))
+			warnings = append(warnings, runRecordLoadWarning{ID: entry.Name(), Err: err})
 			continue
 		}
 		records = append(records, record)

@@ -107,7 +107,12 @@ malformed or conflicting evidence, and unavailable evidence are `unknown`;
 Dispatch never reconstructs lineage from transcripts, raw output, elapsed
 time, process liveness, answer text, or background-task notices. A descendant
 terminal notification is activity evidence only and never completes the outer
-Claude turn.
+Claude turn. Lineage parsing accepts at most 4 MiB cumulatively (the 16 KiB
+per-line bound multiplied by the 256-content-item bound), counting every byte
+including whitespace and newlines. The first byte beyond that limit yields
+only `lineage_limit_exceeded` for the truncated remainder, preserves tasks
+already derived from the accepted prefix, and performs no absence or
+missing-terminal inference from evidence that was not read.
 
 Unknown reason codes are stable: `provider_version_missing`,
 `provider_version_malformed`, `provider_version_unsupported`,
@@ -189,6 +194,10 @@ time. Opportunistic pruning never removes active/nonterminal work, corrupt
 evidence whose age or state cannot be established, or the current run
 referenced by a retained mapping. When an older predecessor was pruned,
 `history` reports a retention boundary instead of claiming complete history.
+An absent predecessor is treated as that retention boundary, while a listed
+but unreadable predecessor fails with an actionable state error and preserves
+the corrupt evidence. A missing or unreadable current run also fails instead
+of being reported as retention.
 There is no retention configuration.
 
 Provider-owned conversations and transcripts are never deleted. `delete`
