@@ -85,6 +85,44 @@ Provider reduction is explicit:
 - Antigravity records successful print output as the candidate and publishes it
   at process completion.
 
+Claude Code 2.1.211 and newer also receives `--forward-subagent-text`. For
+those versions, Dispatch streams a bounded, normalized, append-only lineage
+record to the private per-run `provider.lineage` artifact. It retains only
+`Agent` tool-use identifiers and parent relationships plus `local_agent` task
+starts and `completed`, `failed`, or `stopped` task notifications. Provider
+stdout remains raw diagnostic evidence, and `provider.events` remains the
+ordinary reduced progress/result stream; neither is an alternative source for
+lineage summaries. The tested Claude dispatch baseline remains 2.1.207, so the
+lineage capability threshold is intentionally separate from compatibility.
+
+`inspect` and `history` derive a Claude-only `claude_descendants` summary from
+the recorded provider version and the exact run-local regular lineage file.
+The state is `proven-terminal` only when at least one descendant has a valid
+preceding `Agent` relationship and `local_agent` start, every nested parent is
+authoritatively resolved without conflict or cycle, and every started task has
+exactly one consistent terminal notification. Tasks are reported in first-start
+order with their task/tool identifiers, optional parent task, and terminal
+status. Zero starts, missing relationships or terminals, depth discontinuity,
+malformed or conflicting evidence, and unavailable evidence are `unknown`;
+Dispatch never reconstructs lineage from transcripts, raw output, elapsed
+time, process liveness, answer text, or background-task notices. A descendant
+terminal notification is activity evidence only and never completes the outer
+Claude turn.
+
+Unknown reason codes are stable: `provider_version_missing`,
+`provider_version_malformed`, `provider_version_unsupported`,
+`lineage_evidence_absent`, `lineage_path_invalid`,
+`lineage_evidence_unreadable`, `lineage_evidence_malformed`,
+`lineage_structure_invalid`, `lineage_limit_exceeded`, `task_start_absent`,
+`task_start_missing`, `task_identifier_missing`, `task_type_missing`,
+`task_type_unknown`, `task_terminal_missing`, `task_status_unknown`,
+`task_tool_use_mismatch`, `task_relationship_missing`,
+`task_parent_unresolved`, `task_relationship_conflict`,
+`task_event_order_invalid`, and `task_cycle`. Pre-2.1.211 Claude records are
+`unknown` with `provider_version_unsupported`; capable historical records that
+predate lineage capture are `unknown` with `lineage_evidence_absent`. Codex and
+Antigravity expose no descendant-proof field or line.
+
 Each fanout child has its own friendly name, immutable run record, and result
 path. Early child results are persisted immediately. Failure does not cancel
 unrelated children: fanout waits until all are terminal, emits complete
@@ -113,6 +151,8 @@ Run records expose:
 - resolved model, reasoning effort, and selected skill when present
 - process identifier, process group, and operating-system start identity
 - exact private result and diagnostic paths
+- for capable Claude runs, the private normalized lineage path and a derived
+  descendant summary; no mutable summary is stored in the run record
 
 Dispatch never derives a `stalled` state from elapsed inactivity. Inspection
 reports facts and reconciles a definitively dead owned wrapper to

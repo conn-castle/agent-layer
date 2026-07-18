@@ -21,7 +21,35 @@ const (
 	jsonResultKey             = "result"
 	jsonTextKey               = "text"
 	jsonTypeKey               = "type"
+	claudeLineageContentLimit = 256
 )
+
+type structuredScalar struct {
+	Present bool
+	Valid   bool
+	Value   string
+}
+
+type claudeToolUseBlock struct {
+	Type structuredScalar
+	ID   structuredScalar
+	Name structuredScalar
+}
+
+type claudeStructuredProjection struct {
+	ParentToolUseID structuredScalar
+	TaskID          structuredScalar
+	ToolUseID       structuredScalar
+	Status          structuredScalar
+	TaskType        structuredScalar
+	Content         []claudeToolUseBlock
+	InvalidReason   string
+}
+
+type structuredRecord struct {
+	Fields map[string]any
+	Claude claudeStructuredProjection
+}
 
 // selectiveJSONReader validates one JSON value while retaining only the small
 // set of fields used by Agent Dispatch. Unselected strings are scanned without
@@ -29,6 +57,8 @@ const (
 type selectiveJSONReader struct {
 	reader              *bufio.Reader
 	retainedStringBytes int
+	record              *structuredRecord
+	block               *claudeToolUseBlock
 }
 
 // structuredJSONLineReader exposes one JSONL record at a time without
@@ -88,19 +118,21 @@ func (p *selectiveJSONReader) discard() error {
 	return err
 }
 
-func (p *selectiveJSONReader) next() (map[string]any, error) {
+func (p *selectiveJSONReader) next() (structuredRecord, error) {
 	first, err := p.readNonSpace()
 	if err != nil {
-		return nil, err
+		return structuredRecord{}, err
 	}
 	if first != '{' {
-		return nil, fmt.Errorf("structured event must be a JSON object")
+		return structuredRecord{}, fmt.Errorf("structured event must be a JSON object")
 	}
-	value := make(map[string]any)
-	if err := p.readObject(value, nil, 1); err != nil {
-		return nil, err
+	p.record = &structuredRecord{Fields: make(map[string]any)}
+	if err := p.readObject(p.record.Fields, nil, 1); err != nil {
+		return structuredRecord{}, err
 	}
-	return value, nil
+	result := *p.record
+	p.record = nil
+	return result, nil
 }
 
 func (p *selectiveJSONReader) readObject(result map[string]any, path []string, depth int) error {
@@ -117,6 +149,7 @@ func (p *selectiveJSONReader) readObject(result map[string]any, path []string, d
 	if err := p.reader.UnreadByte(); err != nil {
 		return err
 	}
+	seen := make(map[string]struct{})
 	for {
 		quote, err := p.readNonSpace()
 		if err != nil {
@@ -136,6 +169,10 @@ func (p *selectiveJSONReader) readObject(result map[string]any, path []string, d
 		if colon != ':' {
 			return fmt.Errorf("structured event object key must be followed by ':'")
 		}
+		if _, duplicate := seen[key]; duplicate && p.retainsClaudeScalar(appendPath(path, key)) {
+			p.invalidateClaude(lineageReasonStructureInvalid)
+		}
+		seen[key] = struct{}{}
 		var childPath []string
 		if complete {
 			childPath = appendPath(path, key)
@@ -174,8 +211,22 @@ func (p *selectiveJSONReader) readArray(result map[string]any, path []string, de
 	if err := p.reader.UnreadByte(); err != nil {
 		return err
 	}
+	content := len(path) == 2 && path[0] == jsonMessageKey && path[1] == "content"
 	for {
-		if err := p.readValue(result, path, depth+1); err != nil {
+		if content {
+			block := claudeToolUseBlock{}
+			p.block = &block
+			if err := p.readValue(result, path, depth+1); err != nil {
+				p.block = nil
+				return err
+			}
+			p.block = nil
+			if len(p.record.Claude.Content) < claudeLineageContentLimit {
+				p.record.Claude.Content = append(p.record.Claude.Content, block)
+			} else {
+				p.invalidateClaude(lineageReasonLimitExceeded)
+			}
+		} else if err := p.readValue(result, path, depth+1); err != nil {
 			return err
 		}
 		separator, err := p.readNonSpace()
@@ -200,15 +251,20 @@ func (p *selectiveJSONReader) readValue(result map[string]any, path []string, de
 	}
 	switch first {
 	case '{':
+		p.setClaudeScalar(path, "", false)
 		return p.readObject(result, path, depth)
 	case '[':
+		p.setClaudeScalar(path, "", false)
 		return p.readArray(result, path, depth)
 	case '"':
 		keep := retainedStructuredPath(path)
+		keepClaude := p.retainsClaudeScalar(path)
 		limit := 0
 		truncatable := false
 		if keep {
 			limit, truncatable = p.retainedStructuredStringLimit(path)
+		} else if keepClaude {
+			limit = structuredJSONKeyBytes
 		}
 		value, complete, err := p.readString(limit)
 		if err != nil {
@@ -223,6 +279,7 @@ func (p *selectiveJSONReader) readValue(result map[string]any, path []string, de
 			}
 			setStructuredPath(result, path, value)
 		}
+		p.setClaudeScalar(path, value, complete)
 		return nil
 	case 't':
 		if err := p.readLiteral("rue"); err != nil {
@@ -231,6 +288,7 @@ func (p *selectiveJSONReader) readValue(result map[string]any, path []string, de
 		if retainedStructuredPath(path) {
 			setStructuredPath(result, path, true)
 		}
+		p.setClaudeScalar(path, "", false)
 		return nil
 	case 'f':
 		if err := p.readLiteral(jsonFalseLiteral[1:]); err != nil {
@@ -239,14 +297,74 @@ func (p *selectiveJSONReader) readValue(result map[string]any, path []string, de
 		if retainedStructuredPath(path) {
 			setStructuredPath(result, path, false)
 		}
+		p.setClaudeScalar(path, "", false)
 		return nil
 	case 'n':
 		return p.readLiteral("ull")
 	default:
 		if first == '-' || first >= '0' && first <= '9' {
+			p.setClaudeScalar(path, "", false)
 			return p.readNumber(first)
 		}
 		return fmt.Errorf("structured event contains invalid JSON value")
+	}
+}
+
+func (p *selectiveJSONReader) retainsClaudeScalar(path []string) bool {
+	if len(path) == 1 {
+		switch path[0] {
+		case "parent_tool_use_id", "task_id", "tool_use_id", "status", "task_type":
+			return true
+		}
+	}
+	return p.block != nil && len(path) == 3 && path[0] == jsonMessageKey && path[1] == "content" &&
+		(path[2] == jsonTypeKey || path[2] == "id" || path[2] == "name")
+}
+
+func (p *selectiveJSONReader) setClaudeScalar(path []string, value string, valid bool) {
+	if p.record == nil || !p.retainsClaudeScalar(path) {
+		return
+	}
+	slot := p.claudeScalar(path)
+	if slot.Present {
+		p.invalidateClaude(lineageReasonStructureInvalid)
+	}
+	slot.Present = true
+	slot.Valid = valid
+	slot.Value = value
+	if !valid {
+		p.invalidateClaude(lineageReasonStructureInvalid)
+	}
+}
+
+func (p *selectiveJSONReader) claudeScalar(path []string) *structuredScalar {
+	if p.block != nil && len(path) == 3 {
+		switch path[2] {
+		case jsonTypeKey:
+			return &p.block.Type
+		case "id":
+			return &p.block.ID
+		default:
+			return &p.block.Name
+		}
+	}
+	switch path[0] {
+	case "parent_tool_use_id":
+		return &p.record.Claude.ParentToolUseID
+	case "task_id":
+		return &p.record.Claude.TaskID
+	case "tool_use_id":
+		return &p.record.Claude.ToolUseID
+	case "status":
+		return &p.record.Claude.Status
+	default:
+		return &p.record.Claude.TaskType
+	}
+}
+
+func (p *selectiveJSONReader) invalidateClaude(reason string) {
+	if p.record != nil && p.record.Claude.InvalidReason == "" {
+		p.record.Claude.InvalidReason = reason
 	}
 }
 

@@ -94,6 +94,23 @@ func TestNewDispatchRunAdvertisesOnlyApplicableEventArtifact(t *testing.T) {
 	if structured.Record.EventsPath != filepath.Join(structured.Dir, "provider.events") {
 		t.Fatalf("structured events path = %q", structured.Record.EventsPath)
 	}
+	if structured.Record.LineagePath != "" {
+		t.Fatalf("Codex advertised Claude lineage path %q", structured.Record.LineagePath)
+	}
+	capableClaude, err := newDispatchRun(root, AgentClaude, "2.1.211", dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new capable Claude run: %v", err)
+	}
+	if capableClaude.Record.LineagePath != filepath.Join(capableClaude.Dir, "provider.lineage") {
+		t.Fatalf("Claude lineage path = %q", capableClaude.Record.LineagePath)
+	}
+	oldClaude, err := newDispatchRun(root, AgentClaude, "2.1.210", dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new old Claude run: %v", err)
+	}
+	if oldClaude.Record.LineagePath != "" {
+		t.Fatalf("old Claude advertised lineage path %q", oldClaude.Record.LineagePath)
+	}
 
 	plain, err := newDispatchRun(root, AgentAntigravity, supportedProviderVersions[AgentAntigravity], dispatchModeFresh)
 	if err != nil {
@@ -108,6 +125,38 @@ func TestNewDispatchRunAdvertisesOnlyApplicableEventArtifact(t *testing.T) {
 	}
 	if strings.Contains(string(data), `"events_path"`) {
 		t.Fatalf("plain run record advertised an events artifact: %s", data)
+	}
+}
+
+func TestInspectPresentsClaudeDescendantsAndLineageArtifact(t *testing.T) {
+	root := t.TempDir()
+	run := newLineageTestRun(t, root, "2.1.212")
+	run.Record.Name = "tiny-round-capacitor"
+	writeLineageTestEvidence(t, run,
+		claudeLineageEvidence{Kind: lineageKindToolUse, ToolUseID: "tool"},
+		claudeLineageEvidence{Kind: lineageKindTaskStarted, TaskID: "task", ToolUseID: "tool", TaskType: "local_agent"},
+		claudeLineageEvidence{Kind: lineageKindTaskTerminal, TaskID: "task", Status: "stopped"},
+	)
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		t.Fatal(err)
+	}
+	var textOutput bytes.Buffer
+	if err := Inspect(InspectionRequest{Root: root, ID: run.Record.ID, Stdout: &textOutput}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Claude descendants: proven-terminal (completed=0 failed=0 stopped=1)", "lineage=" + run.Record.LineagePath} {
+		if !strings.Contains(textOutput.String(), want) {
+			t.Fatalf("inspection omitted %q: %s", want, textOutput.String())
+		}
+	}
+	var jsonOutput bytes.Buffer
+	if err := Inspect(InspectionRequest{Root: root, ID: run.Record.ID, Stdout: &jsonOutput, JSON: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"claude_descendants"`, `"state": "proven-terminal"`, `"lineage": `} {
+		if !strings.Contains(jsonOutput.String(), want) {
+			t.Fatalf("JSON inspection omitted %q: %s", want, jsonOutput.String())
+		}
 	}
 }
 

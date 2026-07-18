@@ -52,18 +52,19 @@ var antigravityCreatedConversation = regexp.MustCompile(`^Created conversation (
 var antigravityPrintConversation = regexp.MustCompile(`^Print mode: conversation=(` + uuidExpression + `), sending message$`)
 
 type providerCommand struct {
-	Path       string
-	Args       []string
-	Env        []string
-	WorkDir    string
-	Plain      bool
-	SessionID  string
-	LogPath    string
-	Provider   string
-	RunMode    string
-	Structured bool
-	Model      string
-	Effort     string
+	Path          string
+	Args          []string
+	Env           []string
+	WorkDir       string
+	Plain         bool
+	SessionID     string
+	LogPath       string
+	Provider      string
+	RunMode       string
+	Structured    bool
+	Model         string
+	Effort        string
+	ClaudeLineage bool
 }
 
 type providerEvent struct {
@@ -87,9 +88,22 @@ const (
 )
 
 var supportedProviderVersions = map[string]string{
-	AgentClaude:      "2.1.207",
+	AgentClaude:      claudeTestedVersion,
 	AgentCodex:       "0.144.1",
 	AgentAntigravity: "1.1.1",
+}
+
+const (
+	claudeTestedVersion         = "2.1.207"
+	claudeLineageMinimumVersion = "2.1.211"
+)
+
+func claudeLineageSupported(providerVersion string) (bool, error) {
+	comparison, err := version.Compare(providerVersion, claudeLineageMinimumVersion)
+	if err != nil {
+		return false, fmt.Errorf("claude reported version %q, which cannot be evaluated for descendant lineage: %w", providerVersion, err)
+	}
+	return comparison >= 0, nil
 }
 
 func providerVersion(path string, agent string) (string, error) {
@@ -171,7 +185,14 @@ func buildProviderCommand(
 		if mode == dispatchModeFresh && sessionID == "" {
 			return providerCommand{}, exitError(ExitConfig, "new Claude dispatch requires a caller-assigned session ID")
 		}
+		lineage, err := claudeLineageSupported(run.Record.ProviderVersion)
+		if err != nil {
+			return providerCommand{}, exitError(ExitConfig, err.Error())
+		}
 		args := []string{"--print", "--output-format", "stream-json", "--verbose", "--include-partial-messages"}
+		if lineage {
+			args = append(args, "--forward-subagent-text")
+		}
 		if mode == dispatchModeResume {
 			args = append(args, "--resume", sessionID)
 		} else {
@@ -202,6 +223,7 @@ func buildProviderCommand(
 		command.Env = clients.SetEnv(command.Env, claudePrintBackgroundWaitCeilingEnv, claudePrintBackgroundWaitCeilingValue)
 		command.SessionID = sessionID
 		command.Structured = true
+		command.ClaudeLineage = lineage
 	case AgentCodex:
 		args := []string{"exec"}
 		if mode == dispatchModeResume {
@@ -380,12 +402,23 @@ func reduceCodexEvent(value map[string]any) ([]providerEvent, error) {
 }
 
 func readStructuredEvents(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, consume func(providerEvent) error) error {
+	return readStructuredEventsWithLineage(reader, rawWriter, agent, expectedSession, false, consume, nil)
+}
+
+func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, claudeLineage bool, consume func(providerEvent) error, consumeLineage func(claudeLineageEvidence) error) error {
 	source := bufio.NewReaderSize(io.TeeReader(reader, rawWriter), structuredJSONBufferBytes)
 	parser := newSelectiveJSONReader()
+	normalizer := claudeLineageNormalizer{ignoredTasks: make(map[string]struct{})}
+	emitInvalid := func(reason string) error {
+		if !claudeLineage || consumeLineage == nil {
+			return nil
+		}
+		return consumeLineage(claudeLineageEvidence{Kind: lineageKindInvalid, Reason: reason})
+	}
 	for {
 		line := &structuredJSONLineReader{source: source}
 		parser.reset(line)
-		value, err := parser.next()
+		record, err := parser.next()
 		if err == io.EOF {
 			if line.sourceErr != nil {
 				return line.sourceErr
@@ -405,6 +438,9 @@ func readStructuredEvents(reader io.Reader, rawWriter io.Writer, agent string, e
 			if consumeErr := consume(providerEvent{Kind: eventProgress, Activity: invalidStructuredEvent, Reason: err.Error()}); consumeErr != nil {
 				return consumeErr
 			}
+			if invalidErr := emitInvalid(lineageReasonEvidenceMalformed); invalidErr != nil {
+				return invalidErr
+			}
 			if line.sourceEOF {
 				return nil
 			}
@@ -421,14 +457,30 @@ func readStructuredEvents(reader io.Reader, rawWriter io.Writer, agent string, e
 			if consumeErr := consume(providerEvent{Kind: eventProgress, Activity: invalidStructuredEvent, Reason: trailingErr.Error()}); consumeErr != nil {
 				return consumeErr
 			}
+			if invalidErr := emitInvalid(lineageReasonEvidenceMalformed); invalidErr != nil {
+				return invalidErr
+			}
 			continue
+		}
+		if claudeLineage && record.Claude.InvalidReason != "" {
+			if invalidErr := emitInvalid(record.Claude.InvalidReason); invalidErr != nil {
+				return invalidErr
+			}
 		}
 		var events []providerEvent
 		switch agent {
 		case AgentClaude:
-			events, err = reduceClaudeEvent(expectedSession, value)
+			events, err = reduceClaudeEvent(expectedSession, record.Fields)
+			if claudeLineage && record.Claude.InvalidReason == "" && consumeLineage != nil {
+				lineageEvents := normalizer.reduce(record)
+				for _, lineageEvent := range lineageEvents {
+					if lineageErr := consumeLineage(lineageEvent); lineageErr != nil {
+						return lineageErr
+					}
+				}
+			}
 		case AgentCodex:
-			events, err = reduceCodexEvent(value)
+			events, err = reduceCodexEvent(record.Fields)
 		default:
 			err = fmt.Errorf("unsupported structured dispatch provider %q", agent)
 		}

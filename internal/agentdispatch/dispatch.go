@@ -447,7 +447,7 @@ func isSafePreStartFailure(err error) bool {
 // provider process could start, allowing the one permitted retry to reserve
 // its capture paths without erasing evidence from a running provider.
 func clearPreStartCaptures(record RunRecord) error {
-	for _, path := range []string{record.AnswerPath, record.StdoutPath, record.StderrPath, record.EventsPath, record.ProviderLogPath} {
+	for _, path := range []string{record.AnswerPath, record.StdoutPath, record.StderrPath, record.EventsPath, record.LineagePath, record.ProviderLogPath} {
 		if path == "" {
 			continue
 		}

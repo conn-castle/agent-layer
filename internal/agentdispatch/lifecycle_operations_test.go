@@ -55,6 +55,55 @@ func TestHistoryUsesImmutableRunsAfterFriendlyMappingAdvances(t *testing.T) {
 	}
 }
 
+func TestHistoryAddsOnlyClaudeDerivedSummaryWithoutChangingFlattenedFields(t *testing.T) {
+	root := t.TempDir()
+	claudeRun := newLineageTestRun(t, root, "2.1.212")
+	session, err := reserveSession(root, claudeRun)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeLineageTestEvidence(t, claudeRun,
+		claudeLineageEvidence{Kind: lineageKindToolUse, ToolUseID: "tool"},
+		claudeLineageEvidence{Kind: lineageKindTaskStarted, TaskID: "task", ToolUseID: "tool", TaskType: "local_agent"},
+		claudeLineageEvidence{Kind: lineageKindTaskTerminal, TaskID: "task", Status: "completed"},
+	)
+	if err := writeRunRecord(claudeRun.Dir, &claudeRun.Record); err != nil {
+		t.Fatal(err)
+	}
+	var textOutput bytes.Buffer
+	if err := History(HistoryRequest{Root: root, Name: session.Name, Stdout: &textOutput}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(textOutput.String(), "\tclaude_descendants=proven-terminal") {
+		t.Fatalf("Claude history = %q", textOutput.String())
+	}
+	var jsonOutput bytes.Buffer
+	if err := History(HistoryRequest{Root: root, Name: session.Name, Stdout: &jsonOutput, JSON: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"id":`, `"provider_version":`, `"claude_descendants":`} {
+		if !strings.Contains(jsonOutput.String(), want) {
+			t.Fatalf("history JSON omitted flattened field %q: %s", want, jsonOutput.String())
+		}
+	}
+
+	codexRun, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codexSession, err := reserveSession(root, codexRun)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var codexOutput bytes.Buffer
+	if err := History(HistoryRequest{Root: root, Name: codexSession.Name, Stdout: &codexOutput, JSON: true}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(codexOutput.String(), "claude_descendants") {
+		t.Fatalf("Codex history exposed Claude summary: %s", codexOutput.String())
+	}
+}
+
 func TestHistorySkipsUnreadableRunRecordsAndWarns(t *testing.T) {
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)

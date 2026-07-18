@@ -98,6 +98,7 @@ type RunRecord struct {
 	StdoutPath           string     `json:"stdout_path"`
 	StderrPath           string     `json:"stderr_path"`
 	EventsPath           string     `json:"events_path,omitempty"`
+	LineagePath          string     `json:"lineage_path,omitempty"`
 	ProviderLogPath      string     `json:"provider_log_path,omitempty"`
 }
 
@@ -141,6 +142,14 @@ func validDispatchName(name string) bool {
 }
 
 func newDispatchRun(root string, agent string, version string, mode string) (*dispatchRun, error) {
+	claudeLineage := false
+	if agent == AgentClaude {
+		var err error
+		claudeLineage, err = claudeLineageSupported(version)
+		if err != nil {
+			return nil, wrapExitError(ExitConfig, "evaluate Claude lineage capability", err)
+		}
+	}
 	id, err := newUUID()
 	if err != nil {
 		return nil, wrapExitError(ExitTargetFailure, "allocate dispatch run ID", err)
@@ -168,6 +177,9 @@ func newDispatchRun(root string, agent string, version string, mode string) (*di
 	}
 	if providerProducesStructuredEvents(agent) {
 		record.EventsPath = filepath.Join(dir, "provider.events")
+	}
+	if claudeLineage {
+		record.LineagePath = filepath.Join(dir, "provider.lineage")
 	}
 	if err := writeRunRecord(dir, &record); err != nil {
 		return nil, err

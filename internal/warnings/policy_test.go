@@ -501,6 +501,42 @@ func TestFindSecretInURL(t *testing.T) {
 	})
 }
 
+func TestLooksLikeSecretQueryKey(t *testing.T) {
+	cases := []struct {
+		key  string
+		want bool
+	}{
+		{key: "token", want: true},
+		{key: "secret", want: true},
+		{key: "password", want: true},
+		{key: "passwd", want: true},
+		{key: "apikey", want: true},
+		{key: "api_key", want: true},
+		{key: "access_token", want: true},
+		{key: "access-key", want: true},
+		{key: "auth", want: true},
+		{key: "accessToken", want: true},
+		{key: "authToken", want: true},
+		{key: "apiToken", want: true},
+		{key: "clientSecret", want: true},
+		{key: "APIKey", want: true},
+		{key: "my-access-token-value", want: true},
+		{key: "author", want: false},
+		{key: "authority", want: false},
+		{key: "tokenizer", want: false},
+		{key: "passwordless", want: false},
+		{key: "authtoken", want: false},
+		{key: "accesstoken", want: false},
+		{key: "clientsecret", want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.key, func(t *testing.T) {
+			require.Equal(t, tc.want, looksLikeSecretQueryKey(tc.key))
+		})
+	}
+}
+
 func TestFindUnsupportedCodexHeaderForm(t *testing.T) {
 	cases := []struct {
 		name    string

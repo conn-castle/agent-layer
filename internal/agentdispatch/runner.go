@@ -136,6 +136,17 @@ func executeProvider(
 		}
 		defer func() { _ = events.Close() }()
 	}
+	var lineage *captureWriter
+	if command.ClaudeLineage {
+		if run.Record.LineagePath == "" {
+			return executionResult{}, exitError(ExitConfig, "Claude lineage-capable command has no lineage artifact path")
+		}
+		lineage, err = newCaptureWriter(run.Record.LineagePath)
+		if err != nil {
+			return executionResult{}, wrapExitError(ExitConfig, "create dispatch lineage capture", err)
+		}
+		defer func() { _ = lineage.Close() }()
+	}
 
 	cmd := newCommand(command.Path, command.Args...)
 	cmd.Dir = command.WorkDir
@@ -296,7 +307,7 @@ func executeProvider(
 			streamErr <- err
 			return
 		}
-		err := readStructuredEvents(stdoutPipe, providerStdout, command.Provider, command.SessionID, func(event providerEvent) error {
+		err := readStructuredEventsWithLineage(stdoutPipe, providerStdout, command.Provider, command.SessionID, command.ClaudeLineage, func(event providerEvent) error {
 			encoded, marshalErr := json.Marshal(event)
 			if marshalErr != nil {
 				return marshalErr
@@ -305,6 +316,24 @@ func executeProvider(
 				return writeErr
 			}
 			return consume(event)
+		}, func(evidence claudeLineageEvidence) error {
+			encoded, marshalErr := json.Marshal(evidence)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			if _, writeErr := lineage.Write(append(encoded, '\n')); writeErr != nil {
+				return writeErr
+			}
+			activity := "claude_lineage_invalid"
+			switch evidence.Kind {
+			case lineageKindToolUse:
+				activity = "claude_agent_tool_use"
+			case lineageKindTaskStarted:
+				activity = "claude_task_started"
+			case lineageKindTaskTerminal:
+				activity = "claude_task_" + evidence.Status
+			}
+			return consume(providerEvent{Kind: eventProgress, Activity: activity})
 		})
 		if err != nil {
 			setFailure(err)

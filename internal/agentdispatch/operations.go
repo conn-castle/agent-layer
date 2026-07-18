@@ -13,25 +13,26 @@ import (
 // Inspection is the stable factual shape emitted by inspect. It deliberately
 // reports process transport facts without inferring provider health.
 type Inspection struct {
-	ID                   string     `json:"id"`
-	Name                 string     `json:"name"`
-	Agent                string     `json:"agent"`
-	Model                string     `json:"model,omitempty"`
-	ReasoningEffort      string     `json:"reasoning_effort,omitempty"`
-	Skill                string     `json:"skill,omitempty"`
-	State                string     `json:"state"`
-	RecoveryState        string     `json:"recovery_state"`
-	Mode                 string     `json:"mode"`
-	Attempt              int        `json:"attempt"`
-	Process              string     `json:"process"`
-	StartedAt            time.Time  `json:"started_at"`
-	LastOutputAt         *time.Time `json:"last_output_at,omitempty"`
-	LastActivityAt       *time.Time `json:"last_activity_at,omitempty"`
-	LastActivityKind     string     `json:"last_activity_kind,omitempty"`
-	ProviderConversation string     `json:"provider_conversation,omitempty"`
-	NotResumable         bool       `json:"not_resumable,omitempty"`
-	TerminalReason       string     `json:"terminal_reason,omitempty"`
-	Artifacts            Artifacts  `json:"artifacts"`
+	ID                   string                   `json:"id"`
+	Name                 string                   `json:"name"`
+	Agent                string                   `json:"agent"`
+	Model                string                   `json:"model,omitempty"`
+	ReasoningEffort      string                   `json:"reasoning_effort,omitempty"`
+	Skill                string                   `json:"skill,omitempty"`
+	State                string                   `json:"state"`
+	RecoveryState        string                   `json:"recovery_state"`
+	Mode                 string                   `json:"mode"`
+	Attempt              int                      `json:"attempt"`
+	Process              string                   `json:"process"`
+	StartedAt            time.Time                `json:"started_at"`
+	LastOutputAt         *time.Time               `json:"last_output_at,omitempty"`
+	LastActivityAt       *time.Time               `json:"last_activity_at,omitempty"`
+	LastActivityKind     string                   `json:"last_activity_kind,omitempty"`
+	ProviderConversation string                   `json:"provider_conversation,omitempty"`
+	NotResumable         bool                     `json:"not_resumable,omitempty"`
+	TerminalReason       string                   `json:"terminal_reason,omitempty"`
+	ClaudeDescendants    *ClaudeDescendantSummary `json:"claude_descendants,omitempty"`
+	Artifacts            Artifacts                `json:"artifacts"`
 }
 
 // Artifacts identifies private diagnostic evidence without embedding it in
@@ -41,6 +42,7 @@ type Artifacts struct {
 	Stdout      string `json:"stdout"`
 	Stderr      string `json:"stderr"`
 	Events      string `json:"events,omitempty"`
+	Lineage     string `json:"lineage,omitempty"`
 	ProviderLog string `json:"provider_log,omitempty"`
 }
 
@@ -106,7 +108,26 @@ func Inspect(request InspectionRequest) error {
 			return err
 		}
 	}
+	if inspection.ClaudeDescendants != nil {
+		if _, err := fmt.Fprintf(stdout, "Claude descendants: %s", inspection.ClaudeDescendants.State); err != nil {
+			return err
+		}
+		if inspection.ClaudeDescendants.State == claudeSummaryProven {
+			counts := map[string]int{dispatchStateCompleted: 0, dispatchStateFailed: 0, claudeTaskStatusStopped: 0}
+			for _, task := range inspection.ClaudeDescendants.Tasks {
+				counts[task.Status]++
+			}
+			if _, err := fmt.Fprintf(stdout, " (completed=%d failed=%d stopped=%d)\n", counts[dispatchStateCompleted], counts[dispatchStateFailed], counts[claudeTaskStatusStopped]); err != nil {
+				return err
+			}
+		} else if _, err := fmt.Fprintf(stdout, " (%s)\n", strings.Join(inspection.ClaudeDescendants.Reasons, ",")); err != nil {
+			return err
+		}
+	}
 	_, err = fmt.Fprintf(stdout, "Diagnostics: stdout=%s stderr=%s", inspection.Artifacts.Stdout, inspection.Artifacts.Stderr)
+	if inspection.Artifacts.Lineage != "" {
+		_, err = fmt.Fprintf(stdout, " lineage=%s", inspection.Artifacts.Lineage)
+	}
 	if inspection.Artifacts.ProviderLog != "" {
 		_, err = fmt.Fprintf(stdout, " provider_log=%s", inspection.Artifacts.ProviderLog)
 	}
@@ -146,7 +167,9 @@ func resolveInspection(root string, id string) (Inspection, error) {
 	if err != nil {
 		return Inspection{}, err
 	}
-	return inspectionFromRecord(record), nil
+	inspection := inspectionFromRecord(record)
+	inspection.ClaudeDescendants = deriveClaudeDescendantSummary(root, record)
+	return inspection, nil
 }
 
 func inspectionFromRecord(record RunRecord) Inspection {
@@ -174,6 +197,7 @@ func inspectionFromRecord(record RunRecord) Inspection {
 			Stdout:      record.StdoutPath,
 			Stderr:      record.StderrPath,
 			Events:      record.EventsPath,
+			Lineage:     record.LineagePath,
 			ProviderLog: record.ProviderLogPath,
 		},
 	}
@@ -268,10 +292,14 @@ func History(request HistoryRequest) error {
 			return err
 		}
 	}
-	history := make([]RunRecord, 0)
+	type historyRun struct {
+		RunRecord
+		ClaudeDescendants *ClaudeDescendantSummary `json:"claude_descendants,omitempty"`
+	}
+	history := make([]historyRun, 0)
 	for _, record := range records {
 		if record.Name == name {
-			history = append(history, record)
+			history = append(history, historyRun{RunRecord: record, ClaudeDescendants: deriveClaudeDescendantSummary(request.Root, record)})
 		}
 	}
 	stdout := writerOrDiscard(request.Stdout)
@@ -279,13 +307,26 @@ func History(request HistoryRequest) error {
 		encoder := json.NewEncoder(stdout)
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(struct {
-			Name              string      `json:"name"`
-			RetentionBoundary bool        `json:"retention_boundary"`
-			Runs              []RunRecord `json:"runs"`
+			Name              string       `json:"name"`
+			RetentionBoundary bool         `json:"retention_boundary"`
+			Runs              []historyRun `json:"runs"`
 		}{Name: name, RetentionBoundary: len(history) > 0 && history[0].PreviousRunID != "", Runs: history})
 	}
 	for _, record := range history {
-		if _, err := fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", record.ID, record.Mode, record.State, record.StartedAt.Format(time.RFC3339)); err != nil {
+		if _, err := fmt.Fprintf(stdout, "%s\t%s\t%s\t%s", record.ID, record.Mode, record.State, record.StartedAt.Format(time.RFC3339)); err != nil {
+			return err
+		}
+		if record.ClaudeDescendants != nil {
+			if _, err := fmt.Fprintf(stdout, "\tclaude_descendants=%s", record.ClaudeDescendants.State); err != nil {
+				return err
+			}
+			if len(record.ClaudeDescendants.Reasons) > 0 {
+				if _, err := fmt.Fprintf(stdout, "(%s)", strings.Join(record.ClaudeDescendants.Reasons, ",")); err != nil {
+					return err
+				}
+			}
+		}
+		if _, err := fmt.Fprintln(stdout); err != nil {
 			return err
 		}
 	}
