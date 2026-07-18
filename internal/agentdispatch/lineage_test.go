@@ -30,6 +30,27 @@ func TestDeriveClaudeDescendantSummaryProvesAuthoritativeHierarchy(t *testing.T)
 	}
 }
 
+func TestDeriveClaudeDescendantSummaryResolvesParentAfterChildStart(t *testing.T) {
+	root := t.TempDir()
+	run := newLineageTestRun(t, root, "2.1.212")
+	writeLineageTestEvidence(t, run,
+		claudeLineageEvidence{Kind: lineageKindToolUse, ToolUseID: "tool-parent"},
+		claudeLineageEvidence{Kind: lineageKindToolUse, ToolUseID: "tool-child", ParentToolUseID: "tool-parent"},
+		claudeLineageEvidence{Kind: lineageKindTaskStarted, TaskID: "task-child", ToolUseID: "tool-child", TaskType: "local_agent"},
+		claudeLineageEvidence{Kind: lineageKindTaskStarted, TaskID: "task-parent", ToolUseID: "tool-parent", TaskType: "local_agent"},
+		claudeLineageEvidence{Kind: lineageKindTaskTerminal, TaskID: "task-child", Status: "completed"},
+		claudeLineageEvidence{Kind: lineageKindTaskTerminal, TaskID: "task-parent", Status: "completed"},
+	)
+
+	summary := deriveClaudeDescendantSummary(root, run.Record)
+	if summary.State != claudeSummaryProven || len(summary.Reasons) != 0 || len(summary.Tasks) != 2 {
+		t.Fatalf("summary = %#v", summary)
+	}
+	if summary.Tasks[0].ParentTaskID != "task-parent" || summary.Tasks[1].TaskID != "task-parent" {
+		t.Fatalf("tasks = %#v", summary.Tasks)
+	}
+}
+
 func TestDeriveClaudeDescendantSummaryReportsConservativeUnknowns(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -72,7 +93,7 @@ func TestDeriveClaudeDescendantSummaryHandlesDuplicatesConflictsAndCycles(t *tes
 	}
 	writeLineageTestEvidence(t, run, evidence...)
 	summary := deriveClaudeDescendantSummary(root, run.Record)
-	for _, reason := range []string{lineageReasonTaskCycle, lineageReasonTaskParentUnresolved, lineageReasonTaskRelationshipConflict} {
+	for _, reason := range []string{lineageReasonTaskCycle, lineageReasonTaskRelationshipConflict} {
 		if !slices.Contains(summary.Reasons, reason) {
 			t.Fatalf("summary omitted %q: %#v", reason, summary)
 		}

@@ -212,7 +212,7 @@ func deriveClaudeDescendantSummary(root string, record RunRecord) *ClaudeDescend
 	tasks := make(map[string]*lineageTask)
 	toolTasks := make(map[string]string)
 	ordered := make([]*lineageTask, 0)
-	seen := make(map[string]struct{})
+	seen := make(map[claudeLineageEvidence]struct{})
 	reader := bufio.NewReaderSize(file, structuredJSONBufferBytes)
 	for {
 		line, readErr := readLineBounded(reader, claudeLineageEvidenceMaxLineBytes)
@@ -231,10 +231,8 @@ func deriveClaudeDescendantSummary(root string, record RunRecord) *ClaudeDescend
 			if decodeErr := decoder.Decode(&evidence); decodeErr != nil || hasTrailingJSON(decoder) || !validLineageFields(evidence) {
 				add(lineageReasonEvidenceMalformed)
 			} else {
-				encoded, _ := json.Marshal(evidence)
-				key := string(encoded)
-				if _, duplicate := seen[key]; !duplicate {
-					seen[key] = struct{}{}
+				if _, duplicate := seen[evidence]; !duplicate {
+					seen[evidence] = struct{}{}
 					applyLineageEvidence(evidence, tools, tasks, toolTasks, &ordered, add)
 				}
 			}
@@ -310,12 +308,6 @@ func applyLineageEvidence(e claudeLineageEvidence, tools map[string]lineageTool,
 		task := &lineageTask{taskID: e.TaskID, toolUseID: e.ToolUseID}
 		if ok && tool.parentToolUseID != "" {
 			task.parentToolID = tool.parentToolUseID
-			parentID, parentOK := toolTasks[tool.parentToolUseID]
-			if !parentOK {
-				add(lineageReasonTaskParentUnresolved)
-			} else {
-				task.parentTaskID = parentID
-			}
 		}
 		tasks[e.TaskID] = task
 		toolTasks[e.ToolUseID] = e.TaskID
