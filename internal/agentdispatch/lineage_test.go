@@ -78,6 +78,60 @@ func TestDeriveClaudeDescendantSummaryReportsConservativeUnknowns(t *testing.T) 
 	}
 }
 
+func TestDeriveClaudeDescendantSummaryStopsInferenceAfterReadFailure(t *testing.T) {
+	root := t.TempDir()
+	run := newLineageTestRun(t, root, "2.1.212")
+	if err := os.WriteFile(run.Record.LineagePath, []byte(strings.Repeat("x", claudeLineageEvidenceMaxLineBytes+1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	summary := deriveClaudeDescendantSummary(root, run.Record)
+	if summary.State != statusUnknown || !slices.Equal(summary.Reasons, []string{lineageReasonEvidenceMalformed}) {
+		t.Fatalf("summary = %#v", summary)
+	}
+}
+
+func TestDeriveClaudeDescendantSummaryRejectsChildAfterParentTerminal(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		evidence []claudeLineageEvidence
+	}{
+		{
+			name: "parent terminates before started child terminates",
+			evidence: []claudeLineageEvidence{
+				{Kind: lineageKindToolUse, ToolUseID: "parent-tool"},
+				{Kind: lineageKindTaskStarted, TaskID: "parent", ToolUseID: "parent-tool", TaskType: claudeTaskTypeAgent},
+				{Kind: lineageKindToolUse, ToolUseID: "child-tool", ParentToolUseID: "parent-tool"},
+				{Kind: lineageKindTaskStarted, TaskID: "child", ToolUseID: "child-tool", TaskType: claudeTaskTypeAgent},
+				{Kind: lineageKindTaskTerminal, TaskID: "parent", Status: dispatchStateCompleted},
+				{Kind: lineageKindTaskTerminal, TaskID: "child", Status: dispatchStateCompleted},
+			},
+		},
+		{
+			name: "child starts after parent terminal",
+			evidence: []claudeLineageEvidence{
+				{Kind: lineageKindToolUse, ToolUseID: "parent-tool"},
+				{Kind: lineageKindTaskStarted, TaskID: "parent", ToolUseID: "parent-tool", TaskType: claudeTaskTypeAgent},
+				{Kind: lineageKindTaskTerminal, TaskID: "parent", Status: dispatchStateCompleted},
+				{Kind: lineageKindToolUse, ToolUseID: "child-tool", ParentToolUseID: "parent-tool"},
+				{Kind: lineageKindTaskStarted, TaskID: "child", ToolUseID: "child-tool", TaskType: claudeTaskTypeAgent},
+				{Kind: lineageKindTaskTerminal, TaskID: "child", Status: dispatchStateCompleted},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			run := newLineageTestRun(t, root, "2.1.212")
+			writeLineageTestEvidence(t, run, test.evidence...)
+
+			summary := deriveClaudeDescendantSummary(root, run.Record)
+			if summary.State != statusUnknown || !slices.Contains(summary.Reasons, lineageReasonTaskEventOrderInvalid) {
+				t.Fatalf("summary = %#v", summary)
+			}
+		})
+	}
+}
+
 func TestDeriveClaudeDescendantSummaryHandlesDuplicatesConflictsAndCycles(t *testing.T) {
 	root := t.TempDir()
 	run := newLineageTestRun(t, root, "2.1.212")

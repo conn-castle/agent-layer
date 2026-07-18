@@ -222,7 +222,7 @@ func deriveClaudeDescendantSummary(root string, record RunRecord) *ClaudeDescend
 			} else {
 				add(lineageReasonEvidenceUnreadable)
 			}
-			break
+			return unknownClaudeSummary(reasons, ordered)
 		}
 		if len(bytes.TrimSpace(line)) > 0 {
 			var evidence claudeLineageEvidence
@@ -308,6 +308,9 @@ func applyLineageEvidence(e claudeLineageEvidence, tools map[string]lineageTool,
 		task := &lineageTask{taskID: e.TaskID, toolUseID: e.ToolUseID}
 		if ok && tool.parentToolUseID != "" {
 			task.parentToolID = tool.parentToolUseID
+			if parentID, parentOK := toolTasks[tool.parentToolUseID]; parentOK && tasks[parentID].status != "" {
+				add(lineageReasonTaskEventOrderInvalid)
+			}
 		}
 		tasks[e.TaskID] = task
 		toolTasks[e.ToolUseID] = e.TaskID
@@ -335,6 +338,11 @@ func applyLineageEvidence(e claudeLineageEvidence, tools map[string]lineageTool,
 			return
 		}
 		task.status = e.Status
+		for _, child := range tasks {
+			if child.parentToolID == task.toolUseID && child.status == "" {
+				add(lineageReasonTaskEventOrderInvalid)
+			}
+		}
 	default:
 		add(lineageReasonEvidenceMalformed)
 	}
