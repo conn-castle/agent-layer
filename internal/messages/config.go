@@ -30,7 +30,6 @@ const (
 	ConfigAntigravityAgentSpecificModelInvalidFmt = "%s: agents.antigravity.agent_specific.model is not supported; use agents.antigravity.model for Antigravity model selection"
 	ConfigCopilotCLIEnabledRequiredFmt            = "%s: agents.copilot_cli.enabled is required"
 	ConfigCopilotCLIReasoningEffortUnsupportedFmt = "%s: agents.copilot_cli.reasoning_effort is not supported in this release"
-	ConfigDispatchDefaultAgentInvalidFmt          = "%s: %s %q is invalid (allowed: random, codex, claude, antigravity)"
 	ConfigDispatchMaxDepthInvalidFmt              = "%s: dispatch.max_depth must be greater than zero"
 	ConfigMcpServerIDRequiredFmt                  = "%s: mcp.servers[%d].id is required"
 	ConfigMcpServerIDReservedFmt                  = "%s: mcp.servers[%d].id is reserved"
@@ -43,6 +42,7 @@ const (
 	ConfigMcpServerClientInvalidFmt               = "%s: mcp.servers[%d].clients contains invalid client %q"
 	ConfigUnrecognizedKeysFmt                     = "%s: unrecognized config keys: %w"
 	ConfigLegacyGeminiUnsupportedFmt              = "%s: agents.gemini is no longer supported; run 'al upgrade' to migrate to agents.antigravity (renames agents.gemini.enabled, drops legacy gemini.model/reasoning_effort keys, and rewrites mcp.servers[].clients gemini→antigravity)"
+	ConfigLegacyDispatchUnsupportedFmt            = "%s: agents.<agent>.dispatch.default_agent is no longer supported; run 'al upgrade' to remove the retired dispatch defaults"
 	ConfigWarningNoiseModeInvalidFmt              = "%s: warnings.noise_mode %q is invalid (allowed: default, reduce, quiet)"
 	ConfigWarningThresholdInvalidFmt              = "%s: %s must be greater than zero"
 

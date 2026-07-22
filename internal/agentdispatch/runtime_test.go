@@ -37,9 +37,6 @@ func TestSessionLifecycleIsExplicitAndInspectable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reserve session: %v", err)
 	}
-	err = Delete(root, session.Name)
-	requireDispatchExitCode(t, err, ExitUnavailable)
-
 	session.ProviderSessionID = runtimeSessionID
 	session.State = "durable"
 	if err := persistSession(root, session); err != nil {
@@ -53,19 +50,19 @@ func TestSessionLifecycleIsExplicitAndInspectable(t *testing.T) {
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		t.Fatalf("complete record: %v", err)
 	}
-
-	var inspection bytes.Buffer
-	if err := Inspect(InspectionRequest{Root: root, ID: session.Name, Stdout: &inspection}); err != nil {
-		t.Fatalf("Inspect: %v", err)
+	loaded, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatalf("load session: %v", err)
 	}
-	if !strings.Contains(inspection.String(), "Provider conversation: "+runtimeSessionID) {
-		t.Fatalf("inspection = %q", inspection.String())
+	if loaded.ProviderSessionID != runtimeSessionID || loaded.State != "durable" {
+		t.Fatalf("session lifecycle state = %#v", loaded)
 	}
-	if err := Delete(root, session.Name); err != nil {
-		t.Fatalf("delete completed mapping: %v", err)
+	record, err := loadRunRecord(root, run.Record.ID)
+	if err != nil {
+		t.Fatalf("load record: %v", err)
 	}
-	if _, err := loadSession(root, session.Name); err == nil {
-		t.Fatal("deleted session remained readable")
+	if record.ProviderSessionID != runtimeSessionID || record.State != dispatchStateCompleted {
+		t.Fatalf("completed record = %#v", record)
 	}
 }
 
@@ -85,7 +82,7 @@ func TestRunnerRequiresProviderTerminalEvidence(t *testing.T) {
 	}, []byte("prompt"), run, root, nil, func(string) error { return nil })
 	requireDispatchExitCode(t, err, ExitTargetFailure)
 
-	events, err := reduceStructuredEvent(AgentClaude, runtimeSessionID, []byte(`{"type":"result","session_id":"22222222-2222-4222-8222-222222222222","is_error":false}`))
+	events, err := reduceStructuredTestEvent(AgentClaude, runtimeSessionID, []byte(`{"type":"result","session_id":"22222222-2222-4222-8222-222222222222","is_error":false}`))
 	if err != nil || len(events) != 1 || events[0].Kind != eventFailure {
 		t.Fatalf("Claude mismatched result = %#v, %v", events, err)
 	}
@@ -97,14 +94,14 @@ func TestPreStartRetryCleansOnlyPrivateCaptures(t *testing.T) {
 	writeDispatchStub(t, binDir, "codex", "")
 	attempts := 0
 	var stdout bytes.Buffer
-	err := Run(RunOptions{
-		Root:       root,
-		Agent:      AgentCodex,
-		PromptArgs: []string{"retry"},
-		Env:        []string{"PATH=" + testPath(binDir)},
-		Stdout:     &stdout,
-		Stderr:     io.Discard,
-		LookPath:   mockLookPath(binDir),
+	err := executeFreshDispatch(dispatchExecRequest{
+		Root:     root,
+		Agent:    AgentCodex,
+		Prompt:   "retry",
+		Env:      []string{"PATH=" + testPath(binDir)},
+		Stdout:   &stdout,
+		Stderr:   io.Discard,
+		LookPath: mockLookPath(binDir),
 		NewCommand: func(_ string, args ...string) *exec.Cmd {
 			attempts++
 			if attempts == 1 {
@@ -127,10 +124,10 @@ func TestCapableClaudePreStartRetryRecreatesLineageCapture(t *testing.T) {
 	writeDispatchStub(t, binDir, "claude", "")
 	attempts := 0
 	var stdout bytes.Buffer
-	err := Run(RunOptions{
+	err := executeFreshDispatch(dispatchExecRequest{
 		Root:          root,
 		Agent:         AgentClaude,
-		PromptArgs:    []string{"retry"},
+		Prompt:        "retry",
 		Env:           []string{"PATH=" + testPath(binDir)},
 		Stdout:        &stdout,
 		Stderr:        io.Discard,
@@ -156,15 +153,22 @@ func TestCapableClaudePreStartRetryRecreatesLineageCapture(t *testing.T) {
 	if attempts != 2 || stdout.String() != "retried" {
 		t.Fatalf("attempts=%d stdout=%q", attempts, stdout.String())
 	}
-	records, warnings, err := listRunRecords(root)
-	if err != nil || len(warnings) != 0 || len(records) != 1 {
-		t.Fatalf("records=%#v warnings=%#v err=%v", records, warnings, err)
+	sessions, err := listSessions(root)
+	if err != nil || len(sessions) != 1 {
+		t.Fatalf("sessions=%#v err=%v", sessions, err)
 	}
-	if _, err := os.Stat(records[0].LineagePath); err != nil {
+	record, err := loadRunRecord(root, sessions[0].RunID)
+	if err != nil {
+		t.Fatalf("load retried record: %v", err)
+	}
+	lineage, err := os.ReadFile(record.LineagePath)
+	if err != nil {
 		t.Fatalf("retried lineage capture missing: %v", err)
 	}
-	if summary := deriveClaudeDescendantSummary(root, records[0]); summary.State != "proven-terminal" {
-		t.Fatalf("retried summary = %#v", summary)
+	for _, want := range []string{`"kind":"task_started"`, `"kind":"task_terminal"`, `"status":"completed"`} {
+		if !strings.Contains(string(lineage), want) {
+			t.Fatalf("retried lineage capture missing %q: %s", want, lineage)
+		}
 	}
 }
 

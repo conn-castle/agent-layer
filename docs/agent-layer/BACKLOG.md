@@ -30,14 +30,14 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 - Backlog 2026-07-09 copilot-cli-gpt-5.6-models: Advertise GPT-5.6 models for GitHub Copilot CLI
     Priority: Medium. Area: providers / copilot-cli / dispatch / wizard
-    Description: Add Sol, Terra, and Luna to the separate Copilot CLI model suggestion catalog after verifying the exact provider-native identifiers, so wizard and dispatch users do not need custom values.
-    Acceptance criteria: Provider-specific CLI evidence confirms the identifiers; the shared Copilot CLI catalog, exact catalog test, wizard, and dispatch suggestions expose all three models while preserving custom values.
+    Description: Add Sol, Terra, and Luna to the separate Copilot CLI model catalog after verifying the exact provider-native identifiers, so wizard and dispatch users do not need custom values.
+    Acceptance criteria: Provider-specific CLI evidence confirms the identifiers; the shared Copilot CLI catalog, exact catalog test, wizard, and dispatch validation accept all three models while preserving custom values.
     Notes: GitHub's 2026-07-09 changelog confirms gradual Copilot CLI availability; deferred from PR #135 because that reviewed plan is scoped to the Codex provider catalog.
 
-- Backlog 2026-06-30 shared-live-options: Use shared live option providers for wizard and dispatch choices
+- Backlog 2026-06-30 shared-live-options: Use shared live option providers for wizard and dispatch validation
     Priority: Medium. Area: providers / dispatch / wizard
     Description: Replace hard-coded model/reasoning suggestions with provider-backed discovery where a client exposes an authoritative source: Codex model and reasoning suggestions from `codex debug models`, Claude reasoning-effort choices from CLI help where available, and Antigravity models from `agy models`.
-    Acceptance criteria: Wizard and `al dispatch options` share one provider-backed option-discovery path with catalog fallbacks; no agent gets a one-off wizard or dispatch special case; Codex models/efforts come from the local CLI catalog; Antigravity models come from `agy models`; Claude efforts come from local help; Claude model suggestions remain catalog-backed or custom-only unless Claude exposes an authoritative model list.
+    Acceptance criteria: Wizard discovery and `al dispatch start` validation share one provider-backed option path with catalog fallbacks; no agent gets a one-off wizard or dispatch special case; Codex models/efforts come from the local CLI catalog; Antigravity models come from `agy models`; Claude efforts come from local help; Claude model suggestions remain catalog-backed or custom-only unless Claude exposes an authoritative model list.
     Notes: Wizard and dispatch now share `internal/agentoptions` for provider-backed options; remaining work is adding Codex/Claude live sources. Keep custom overrides allowed, and do not parse Claude model examples as a complete catalog.
 
 - Backlog 2026-06-15 interactive-html-review-skill: Skill to make any HTML output file browser-commentable

@@ -195,7 +195,6 @@ func executeProvider(
 	run.Record.RecoveryState = recoveryAcceptanceUnknown
 	started := time.Now().UTC()
 	run.Record.LastActivityAt = &started
-	run.Record.LastActivityKind = "provider_started"
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		stdoutDrained := make(chan struct{})
 		stderrDrained := make(chan struct{})
@@ -225,7 +224,7 @@ func executeProvider(
 	defer stopForwarder()
 
 	var result executionResult
-	var answerCandidate string
+	var pendingAnswer string
 	var resultMu sync.Mutex
 	var semanticErr error
 	setFailure := func(err error) {
@@ -265,15 +264,11 @@ func executeProvider(
 				return err
 			}
 		case eventAnswer:
-			answerCandidate = event.Answer
+			pendingAnswer = event.Answer
 			result.AnswerSeen = true
 			run.Record.LastOutputAt = &now
-			run.Record.LastActivityKind = "answer_candidate"
-		case eventProgress:
-			run.Record.LastActivityKind = event.Activity
 		case eventComplete:
 			result.Complete = true
-			run.Record.LastActivityKind = "provider_completed"
 		case eventFailure:
 			semanticErr = errors.New(event.Reason)
 			return semanticErr
@@ -293,12 +288,11 @@ func executeProvider(
 			_, err := io.Copy(io.MultiWriter(providerStdout, &candidate), stdoutPipe)
 			if err == nil {
 				resultMu.Lock()
-				answerCandidate = candidate.String()
+				pendingAnswer = candidate.String()
 				result.AnswerSeen = candidate.buffer.Len() > 0
 				now := time.Now().UTC()
 				run.Record.LastOutputAt = &now
 				run.Record.LastActivityAt = &now
-				run.Record.LastActivityKind = "answer_candidate"
 				resultMu.Unlock()
 			}
 			if err != nil {
@@ -395,7 +389,7 @@ func executeProvider(
 		return executionResult{}, exitError(ExitTargetFailure, "antigravity dispatch completed without a final answer")
 	}
 	resultMu.Lock()
-	terminalAnswer := answerCandidate
+	terminalAnswer := pendingAnswer
 	resultMu.Unlock()
 	result.Answer = terminalAnswer
 	return result, nil

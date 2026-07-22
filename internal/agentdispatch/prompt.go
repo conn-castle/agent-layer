@@ -2,7 +2,6 @@ package agentdispatch
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,32 +10,11 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
-// MaxStdinPromptBytes caps stdin reads when resolving the dispatch prompt so
-// a runaway producer cannot exhaust process memory. 10 MiB is well above any
-// realistic agent prompt and below typical container memory budgets.
+// MaxStdinPromptBytes caps prompt sources (--prompt text and --prompt-file
+// contents) so a runaway producer cannot exhaust process memory. 10 MiB is
+// well above any realistic agent prompt and below typical container memory
+// budgets.
 const MaxStdinPromptBytes = 10 * 1024 * 1024
-
-// ResolvePrompt returns the caller prompt. Positional args win over piped stdin.
-func ResolvePrompt(args []string, stdin io.Reader, readStdin bool) (string, error) {
-	if len(args) > 0 {
-		prompt := strings.Join(args, " ")
-		if len(prompt) > MaxStdinPromptBytes {
-			return "", exitError(ExitUsage, fmt.Sprintf("dispatch prompt is %d bytes; the maximum is %d bytes", len(prompt), MaxStdinPromptBytes))
-		}
-		return prompt, nil
-	}
-	if !readStdin || stdin == nil {
-		return "", nil
-	}
-	data, err := io.ReadAll(io.LimitReader(stdin, MaxStdinPromptBytes+1))
-	if err != nil {
-		return "", wrapExitError(ExitUsage, "read dispatch prompt from stdin", err)
-	}
-	if len(data) > MaxStdinPromptBytes {
-		return "", exitError(ExitUsage, fmt.Sprintf("dispatch prompt is %d bytes; the maximum is %d bytes", len(data), MaxStdinPromptBytes))
-	}
-	return string(data), nil
-}
 
 // BuildChildPrompt validates the optional skill and returns exact target-native
 // prompt bytes for the selected target.

@@ -30,7 +30,6 @@ run_scenario_codex_launch() {
   # Verify AL_RUN_DIR and AL_RUN_ID env vars have non-empty values
   assert_mock_agent_env_non_empty "$MOCK_AGENT_LOG" "AL_RUN_DIR"
   assert_mock_agent_env_non_empty "$MOCK_AGENT_LOG" "AL_RUN_ID"
-  assert_mock_agent_env "$MOCK_AGENT_LOG" "AL_DISPATCH_CALLER_AGENT" "codex"
   assert_mock_agent_env "$MOCK_AGENT_LOG" "CODEX_HOME" "$repo_dir/.codex"
 
   # Verify sync generated the codex-specific output.

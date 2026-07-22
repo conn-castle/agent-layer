@@ -108,11 +108,6 @@ var fields = []FieldDef{
 		AllowCustom: true,
 		Options:     antigravityModelOptions,
 	},
-	{
-		Key:     antigravityDefaultAgentKey,
-		Type:    FieldEnum,
-		Options: dispatchDefaultAgentOptions(),
-	},
 	{Key: "agents.claude.enabled", Type: FieldBool, Required: true},
 	{
 		Key:         ClaudeModelFieldKey,
@@ -125,11 +120,6 @@ var fields = []FieldDef{
 		Type:        FieldEnum,
 		AllowCustom: true,
 		Options:     claudeReasoningEffortOptions,
-	},
-	{
-		Key:     claudeDefaultAgentKey,
-		Type:    FieldEnum,
-		Options: dispatchDefaultAgentOptions(),
 	},
 	// statusline is explicit opt-in and is surfaced in the wizard. It remains in
 	// the field catalog so upgrade migrations render clean true/false prompts.
@@ -147,11 +137,6 @@ var fields = []FieldDef{
 		Type:        FieldEnum,
 		AllowCustom: true,
 		Options:     codexReasoningEffortOptions,
-	},
-	{
-		Key:     codexDefaultAgentKey,
-		Type:    FieldEnum,
-		Options: dispatchDefaultAgentOptions(),
 	},
 	{Key: "agents.codex.local_config_dir", Type: FieldBool},
 	// statusline is explicit opt-in and is surfaced in the wizard. It remains in
@@ -173,15 +158,6 @@ func fieldOptions(values ...string) []FieldOption {
 		options[i] = FieldOption{Value: value}
 	}
 	return options
-}
-
-func dispatchDefaultAgentOptions() []FieldOption {
-	return []FieldOption{
-		{Value: agentRandom},
-		{Value: agentCodex},
-		{Value: agentClaude},
-		{Value: agentAntigravity},
-	}
 }
 
 // fieldIndex provides O(1) lookup by key.

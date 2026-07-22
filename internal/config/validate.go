@@ -75,16 +75,7 @@ func (c *Config) Validate(path string) error {
 	if c.Agents.CopilotCLI.Enabled == nil {
 		return fmt.Errorf(messages.ConfigCopilotCLIEnabledRequiredFmt, path)
 	}
-	if err := validateDispatchDefault(path, antigravityDefaultAgentKey, c.Agents.Antigravity.Dispatch.DefaultAgent); err != nil {
-		return err
-	}
 	if err := validateAntigravityModelSource(path, c.Agents.Antigravity); err != nil {
-		return err
-	}
-	if err := validateDispatchDefault(path, claudeDefaultAgentKey, c.Agents.Claude.Dispatch.DefaultAgent); err != nil {
-		return err
-	}
-	if err := validateDispatchDefault(path, codexDefaultAgentKey, c.Agents.Codex.Dispatch.DefaultAgent); err != nil {
 		return err
 	}
 	if strings.TrimSpace(c.Agents.CopilotCLI.ReasoningEffort) != "" {
@@ -159,23 +150,6 @@ func (c *Config) Validate(path string) error {
 	}
 
 	return nil
-}
-
-func validateDispatchDefault(path string, key string, value string) error {
-	normalized := strings.TrimSpace(value)
-	// Empty/unset is allowed — the registry falls back to "random".
-	if normalized == "" {
-		return nil
-	}
-	// Source of truth: the field catalog in fields.go. Looking it up here
-	// avoids drift between the wizard's allowed options and the runtime
-	// validator, which used to be a duplicate map.
-	for _, opt := range dispatchDefaultAgentOptions() {
-		if normalized == opt.Value {
-			return nil
-		}
-	}
-	return fmt.Errorf(messages.ConfigDispatchDefaultAgentInvalidFmt, path, key, value)
 }
 
 func validateAntigravityModelSource(path string, cfg AntigravityConfig) error {

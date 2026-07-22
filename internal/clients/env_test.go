@@ -160,57 +160,17 @@ func TestBuildEnvStripsDispatchActive(t *testing.T) {
 	}
 }
 
-// TestBuildEnvForAgentStripsDispatchActive verifies that the normal
-// agent-launch helper also drops the dispatch-active marker (since it
-// composes BuildEnv).
-func TestBuildEnvForAgentStripsDispatchActive(t *testing.T) {
-	base := []string{"PATH=/bin", EnvDispatchActive + "=1"}
-	env := BuildEnvForAgent(base, nil, nil, "claude")
-
-	if _, ok := GetEnv(env, EnvDispatchActive); ok {
-		t.Fatalf("expected %s to be stripped from BuildEnvForAgent output", EnvDispatchActive)
-	}
-}
-
-func TestBuildEnvForAgentPreservesDevelopmentVersionDispatchBypass(t *testing.T) {
+func TestBuildEnvPreservesDevelopmentVersionDispatchBypass(t *testing.T) {
 	base := []string{
 		"PATH=/repo/.agent-layer/tmp/dev-bin:/bin",
 		versiondispatch.EnvDevelopmentBypassVersionDispatch + "=1",
 	}
-	env := BuildEnvForAgent(base, nil, nil, "codex")
+	env := BuildEnv(base, nil, nil)
 
 	if value, ok := GetEnv(env, versiondispatch.EnvDevelopmentBypassVersionDispatch); !ok || value != "1" {
 		t.Fatalf("expected %s=1 to reach the launched agent, got %q ok=%v", versiondispatch.EnvDevelopmentBypassVersionDispatch, value, ok)
 	}
 	if value, ok := GetEnv(env, "PATH"); !ok || value != "/repo/.agent-layer/tmp/dev-bin:/bin" {
 		t.Fatalf("expected development PATH to reach the launched agent, got %q ok=%v", value, ok)
-	}
-}
-
-func TestBuildEnvForAgentSetsSupportedCallerMarkers(t *testing.T) {
-	tests := map[string]string{
-		"antigravity": "antigravity",
-		"claude":      "claude",
-		"codex":       "codex",
-	}
-	for agent, want := range tests {
-		t.Run(agent, func(t *testing.T) {
-			env := BuildEnvForAgent([]string{"PATH=/bin"}, nil, nil, agent)
-			if got, ok := GetEnv(env, EnvDispatchCallerAgent); !ok || got != want {
-				t.Fatalf("expected %s=%s, got %q ok=%v", EnvDispatchCallerAgent, want, got, ok)
-			}
-		})
-	}
-}
-
-func TestBuildEnvForAgentStripsUnsupportedCallerMarkers(t *testing.T) {
-	tests := []string{"", "vscode", "claude_vscode", "copilot"}
-	for _, agent := range tests {
-		t.Run(agent, func(t *testing.T) {
-			env := BuildEnvForAgent([]string{"PATH=/bin", EnvDispatchCallerAgent + "=claude"}, nil, nil, agent)
-			if got, ok := GetEnv(env, EnvDispatchCallerAgent); ok {
-				t.Fatalf("expected %s to be stripped for %q, got %q", EnvDispatchCallerAgent, agent, got)
-			}
-		})
 	}
 }

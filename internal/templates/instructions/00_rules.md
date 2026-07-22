@@ -12,12 +12,12 @@ If a user request would violate any rule, stop and ask for explicit confirmation
 <minimum context needed to decide>
 
 **Option 1: <name>**
-- Pros: <meaningful advantages>
-- Cons: <meaningful disadvantages>
+- Pros: <...>
+- Cons: <...>
 
 **Option 2: <name>**
-- Pros: <meaningful advantages>
-- Cons: <meaningful disadvantages>
+- Pros: <...>
+- Cons: <...>
 
 **Recommendation:** Option <n>, because <reason tied to the user's priorities>.
 ```

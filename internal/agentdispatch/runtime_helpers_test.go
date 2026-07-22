@@ -27,7 +27,7 @@ func TestProviderTerminationAllowsGracefulProcessGroupExit(t *testing.T) {
 			_ = cmd.Wait()
 		}
 	})
-	waitForFanoutTestPath(t, readyPath)
+	waitForTestPath(t, readyPath)
 	record := RunRecord{PID: cmd.Process.Pid, ProcessGroupID: cmd.Process.Pid, ProcessStartIdentity: processStartIdentity(cmd.Process.Pid)}
 	termination, err := newStartedProviderTermination(cmd, record, 500*time.Millisecond)
 	if err != nil {

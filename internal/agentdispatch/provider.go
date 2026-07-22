@@ -3,7 +3,6 @@ package agentdispatch
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -122,7 +121,7 @@ func providerVersion(path string, agent string) (string, error) {
 }
 
 // providerVersionCompatibility is the canonical compatibility comparison
-// shared by capability reporting (buildTargetOptions) and execution gating
+// shared by option availability (buildTargetOptions) and execution gating
 // (requireSupportedVersion). An installed version equal to the tested pin is
 // compatible with no warning; a newer semantic version is compatible with a
 // single warning naming both versions; an older or non-semantic version
@@ -305,21 +304,6 @@ func buildProviderCommand(
 	return command, nil
 }
 
-func reduceStructuredEvent(agent string, expectedSession string, raw []byte) ([]providerEvent, error) {
-	var value map[string]any
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, fmt.Errorf("%s emitted unreadable structured output: %w", agent, err)
-	}
-	switch agent {
-	case AgentClaude:
-		return reduceClaudeEvent(expectedSession, value)
-	case AgentCodex:
-		return reduceCodexEvent(value)
-	default:
-		return nil, fmt.Errorf("unsupported structured dispatch provider %q", agent)
-	}
-}
-
 func reduceClaudeEvent(expected string, value map[string]any) ([]providerEvent, error) {
 	events := make([]providerEvent, 0, 2)
 	if text, ok := claudeTextDeltaV013(value); ok && text != "" {
@@ -399,10 +383,6 @@ func reduceCodexEvent(value map[string]any) ([]providerEvent, error) {
 		return []providerEvent{{Kind: eventProgress, Activity: eventType}}, nil
 	}
 	return nil, nil
-}
-
-func readStructuredEvents(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, consume func(providerEvent) error) error {
-	return readStructuredEventsWithLineage(reader, rawWriter, agent, expectedSession, false, consume, nil)
 }
 
 func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, claudeLineage bool, consume func(providerEvent) error, consumeLineage func(claudeLineageEvidence) error) error {
@@ -573,8 +553,8 @@ func compatibleTargetVersion(path string, target targetMeta, lookup func(string,
 	return target, installed, nil
 }
 
-func dispatchEnvironment(base []string, project *config.ProjectConfig, dispatchRun *dispatchRun, depth int, target string) []string {
+func dispatchEnvironment(base []string, project *config.ProjectConfig, dispatchRun *dispatchRun, depth int) []string {
 	info := &run.Info{ID: dispatchRun.Record.ID, Dir: dispatchRun.Dir}
-	env := clients.BuildEnvForAgent(base, project.Env, info, target)
+	env := clients.BuildEnv(base, project.Env, info)
 	return clients.SetEnv(env, clients.EnvDispatchActive, fmt.Sprintf("%d", depth))
 }

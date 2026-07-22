@@ -127,7 +127,7 @@ func shouldBypassDispatch(args []string) bool {
 		return false
 	}
 	command := firstCommandArg(args[1:])
-	return command == commandInit || command == commandUpgrade
+	return command == commandInit || command == commandUpgrade || command == "__dispatch-worker"
 }
 
 // firstCommandArg extracts the first non-flag token from root command arguments.

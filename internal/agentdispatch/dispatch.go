@@ -18,179 +18,6 @@ import (
 	"github.com/conn-castle/agent-layer/internal/sync"
 )
 
-// Run starts one fresh provider conversation. Existing conversations are never
-// selected implicitly; callers must use Resume with a durable friendly name.
-func Run(opts RunOptions) error {
-	project, stderr, env, depth, err := loadDispatchProject(opts.Root, opts.Stderr, opts.Env)
-	if err != nil {
-		return err
-	}
-	if err := pruneDispatchEvidence(opts.Root, time.Now()); err != nil {
-		return err
-	}
-	if err := checkDispatchDepth(project.Config, depth); err != nil {
-		return err
-	}
-	caller, callerKnown := knownCallerFromEnv(env)
-	resolved, err := resolveTarget(project.Config, opts, caller, callerKnown)
-	if err != nil {
-		return err
-	}
-	target, version, prompt, err := prepareFresh(project, resolved, opts)
-	if err != nil {
-		return err
-	}
-	if err := prepareProjection(project, opts.Root, stderr, opts.Quiet); err != nil {
-		return err
-	}
-	projectionRoot, err := prepareTargetProjection(project, opts.Root, opts.WorkDir, target)
-	if err != nil {
-		return err
-	}
-	if err := validateSkillProjection(projectionRoot, target, opts.Skill); err != nil {
-		return err
-	}
-	run, err := newDispatchRun(opts.Root, target.Name, version, dispatchModeFresh)
-	if err != nil {
-		return err
-	}
-	run.Record.Skill = strings.TrimSpace(opts.Skill)
-	if parent, ok := clients.GetEnv(env, "AL_RUN_ID"); ok {
-		run.Record.ParentRunID = parent
-		if err := writeRunRecord(run.Dir, &run.Record); err != nil {
-			return err
-		}
-	}
-	session, err := reserveSession(opts.Root, run)
-	if err != nil {
-		return err
-	}
-	return launchExecution(dispatchExecution{
-		Root:          opts.Root,
-		WorkDir:       opts.WorkDir,
-		Project:       project,
-		Target:        target,
-		Version:       version,
-		Prompt:        prompt,
-		Mode:          dispatchModeFresh,
-		Run:           run,
-		Session:       session,
-		Stdout:        writerOrDiscard(opts.Stdout),
-		Stderr:        stderr,
-		Env:           env,
-		Depth:         depth + 1,
-		Model:         opts.Model,
-		Effort:        opts.ReasoningEffort,
-		Skill:         opts.Skill,
-		NewCommand:    opts.NewCommand,
-		VersionLookup: opts.VersionLookup,
-	}).await()
-}
-
-// Resume continues exactly the provider session addressed by name.
-func Resume(opts ResumeOptions) error {
-	return resume(opts, writeRunRecord)
-}
-
-// resume continues a durable provider session and publishes every attempted
-// run outcome. The rejected-run writer is injectable so publication failures
-// can be verified without mutating process-wide state.
-func resume(opts ResumeOptions, writeRejectedRunRecord func(string, *RunRecord) error) error {
-	project, stderr, env, depth, err := loadDispatchProject(opts.Root, opts.Stderr, opts.Env)
-	if err != nil {
-		return err
-	}
-	if err := pruneDispatchEvidence(opts.Root, time.Now()); err != nil {
-		return err
-	}
-	if err := checkDispatchDepth(project.Config, depth); err != nil {
-		return err
-	}
-	session, err := loadSession(opts.Root, strings.TrimSpace(opts.Name))
-	if err != nil {
-		return err
-	}
-	if session.State != sessionStateDurable || session.ProviderSessionID == "" {
-		return exitError(ExitUnavailable, fmt.Sprintf("dispatch session %q is still pending and cannot be resumed", session.Name))
-	}
-	target, ok := lookupTarget(session.Agent)
-	if !ok {
-		return exitError(ExitConfig, fmt.Sprintf("dispatch session %q has unsupported provider %q", session.Name, session.Agent))
-	}
-	if !targetEnabled(project.Config, target.Name) {
-		return exitError(ExitConfig, fmt.Sprintf("`al dispatch` target %s is disabled in config", target.Name))
-	}
-	lookPath := opts.LookPath
-	if lookPath == nil {
-		lookPath = exec.LookPath
-	}
-	path, err := lookPath(target.Binary)
-	if err != nil {
-		return exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target.Name, target.Binary))
-	}
-	target, version, err := compatibleTargetVersionCached(opts.Root, path, target, opts.VersionLookup)
-	if err != nil {
-		return err
-	}
-	promptText, err := ResolvePrompt(opts.PromptArgs, opts.Stdin, opts.ReadStdin)
-	if err != nil {
-		return err
-	}
-	prompt, err := BuildChildPrompt(project, target.Name, promptText, opts.Skill)
-	if err != nil {
-		return err
-	}
-	run, err := newDispatchRun(opts.Root, target.Name, version, dispatchModeResume)
-	if err != nil {
-		return err
-	}
-	run.Record.Skill = strings.TrimSpace(opts.Skill)
-	if parent, ok := clients.GetEnv(env, "AL_RUN_ID"); ok {
-		run.Record.ParentRunID = parent
-	}
-	run.Record.Name = session.Name
-	run.Record.PreviousRunID = session.RunID
-	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
-		return err
-	}
-	session, err = claimConversation(opts.Root, session.Name, run.Record.ID)
-	if err != nil {
-		return finishRejectedResume(run, err, writeRejectedRunRecord)
-	}
-	preflightRequest := dispatchExecution{Root: opts.Root, WorkDir: opts.WorkDir, Project: project, Target: target, Version: version, Mode: dispatchModeResume, Run: run, Session: session}
-	if err := prepareProjection(project, opts.Root, stderr, opts.Quiet); err != nil {
-		return finishDispatchFailure(preflightRequest, &preStartFailure{err: err})
-	}
-	projectionRoot, err := prepareTargetProjection(project, opts.Root, opts.WorkDir, target)
-	if err != nil {
-		return finishDispatchFailure(preflightRequest, &preStartFailure{err: err})
-	}
-	if err := validateSkillProjection(projectionRoot, target, opts.Skill); err != nil {
-		return finishDispatchFailure(preflightRequest, &preStartFailure{err: err})
-	}
-	return launchExecution(dispatchExecution{
-		Root:          opts.Root,
-		WorkDir:       opts.WorkDir,
-		Project:       project,
-		Target:        target,
-		Version:       version,
-		Prompt:        prompt,
-		Mode:          dispatchModeResume,
-		Run:           run,
-		Session:       session,
-		Stdout:        writerOrDiscard(opts.Stdout),
-		Stderr:        stderr,
-		Env:           env,
-		Depth:         depth + 1,
-		Model:         session.Model,
-		Effort:        session.ReasoningEffort,
-		TargetPinned:  session.TargetPinned,
-		Skill:         opts.Skill,
-		NewCommand:    opts.NewCommand,
-		VersionLookup: opts.VersionLookup,
-	}).await()
-}
-
 // finishRejectedResume makes claim rejection and its attempted-run evidence one
 // durable outcome. A publication failure is joined with the rejection because
 // either error alone would hide material recovery state from the caller.
@@ -200,6 +27,7 @@ func finishRejectedResume(run *dispatchRun, claimErr error, publish func(string,
 	run.Record.RecoveryState = recoveryRetrySafe
 	run.Record.CompletedAt = &now
 	run.Record.TerminalReason = claimErr.Error()
+	run.Record.TerminalExitCode = terminalExitCode(claimErr)
 	if err := publish(run.Dir, &run.Record); err != nil {
 		message := fmt.Sprintf("resume claim rejected (%v); publish rejected resume terminal evidence: %v", claimErr, err)
 		return wrapExitError(ExitConfig, message, errors.Join(claimErr, err))
@@ -293,7 +121,7 @@ func executeDispatch(request dispatchExecution) error {
 				return err
 			}
 		}
-		childEnv := dispatchEnvironment(request.Env, request.Project, request.Run, request.Depth, request.Target.Name)
+		childEnv := dispatchEnvironment(request.Env, request.Project, request.Run, request.Depth)
 		command, err := buildProviderCommand(request.Target, request.Project, childEnv, request.Prompt, request.Model, request.Effort, request.TargetPinned, request.Mode, session.ProviderSessionID, request.Run, request.Stderr)
 		if err != nil {
 			return finishDispatchFailure(request, &preStartFailure{err: err})
@@ -368,6 +196,7 @@ func completeDispatchSuccess(request dispatchExecution, result executionResult, 
 		request.Run.Record.RecoveryState = recoveryResumeRequired
 	}
 	request.Run.Record.CompletedAt = &now
+	request.Run.Record.TerminalExitCode = 0
 	request.Run.Record.ProviderSessionID = session.ProviderSessionID
 	if err := writeRunRecord(request.Run.Dir, &request.Run.Record); err != nil {
 		cause := err
@@ -407,6 +236,7 @@ func finishDispatchFailure(request dispatchExecution, cause error) error {
 	}
 	request.Run.Record.CompletedAt = &now
 	request.Run.Record.TerminalReason = cause.Error()
+	request.Run.Record.TerminalExitCode = terminalExitCode(cause)
 	// Release the active claim even when the terminal write fails, so a
 	// persistence error cannot leave the conversation stuck on a failed run.
 	writeErr := writeRunRecord(request.Run.Dir, &request.Run.Record)
@@ -436,6 +266,17 @@ func finishDispatchCancellation(request dispatchExecution) error {
 		return err
 	}
 	return exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled", request.Run.Record.ID))
+}
+
+func terminalExitCode(err error) int {
+	var dispatchErr *ExitError
+	if errors.As(err, &dispatchErr) && dispatchErr.Code > 0 {
+		return dispatchErr.Code
+	}
+	// runMain exits 1 for uncategorized errors. Retain that exact behavior
+	// rather than reclassifying an unexpected internal failure as a provider
+	// failure when another process replays it through wait.
+	return 1
 }
 
 func isSafePreStartFailure(err error) bool {
@@ -501,8 +342,7 @@ func checkDispatchDepth(cfg config.Config, depth int) error {
 	return nil
 }
 
-func prepareFresh(project *config.ProjectConfig, resolved resolution, opts RunOptions) (targetMeta, string, []byte, error) {
-	target := resolved.Target
+func prepareFresh(project *config.ProjectConfig, target targetMeta, opts runOptions) (targetMeta, string, []byte, error) {
 	if strings.TrimSpace(opts.Model) != "" && !agentoptions.Supports(target.Name, agentoptions.KindModel) {
 		return targetMeta{}, "", nil, exitError(ExitUsage, fmt.Sprintf("%s does not support --model", target.Name))
 	}
@@ -512,38 +352,31 @@ func prepareFresh(project *config.ProjectConfig, resolved resolution, opts RunOp
 	if !targetEnabled(project.Config, target.Name) {
 		return targetMeta{}, "", nil, exitError(ExitConfig, fmt.Sprintf("`al dispatch` target %s is disabled in config", target.Name))
 	}
-	version := resolved.Version
-	if version == "" {
-		lookPath := opts.LookPath
-		if lookPath == nil {
-			lookPath = exec.LookPath
-		}
-		path, err := lookPath(target.Binary)
-		if err != nil {
-			return targetMeta{}, "", nil, exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target.Name, target.Binary))
-		}
-		target, version, err = compatibleTargetVersionCached(project.Root, path, target, opts.VersionLookup)
-		if err != nil {
-			return targetMeta{}, "", nil, err
-		}
+	lookPath := opts.LookPath
+	if lookPath == nil {
+		lookPath = exec.LookPath
 	}
-	promptText, err := ResolvePrompt(opts.PromptArgs, opts.Stdin, opts.ReadStdin)
+	path, err := lookPath(target.Binary)
+	if err != nil {
+		return targetMeta{}, "", nil, exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target.Name, target.Binary))
+	}
+	target, version, err := compatibleTargetVersionCached(project.Root, path, target, opts.VersionLookup)
 	if err != nil {
 		return targetMeta{}, "", nil, err
 	}
-	prompt, err := BuildChildPrompt(project, target.Name, promptText, opts.Skill)
+	prompt, err := BuildChildPrompt(project, target.Name, opts.Prompt, opts.Skill)
 	if err != nil {
 		return targetMeta{}, "", nil, err
 	}
 	return target, version, prompt, nil
 }
 
-func prepareProjection(project *config.ProjectConfig, root string, stderr io.Writer, quiet bool) error {
+func prepareProjection(project *config.ProjectConfig, root string, stderr io.Writer) error {
 	result, err := sync.RunWithProject(sync.RealSystem{}, root, project)
 	if err != nil {
 		return syncRunExitError(err)
 	}
-	if quiet || strings.EqualFold(strings.TrimSpace(project.Config.Warnings.NoiseMode), "quiet") {
+	if strings.EqualFold(strings.TrimSpace(project.Config.Warnings.NoiseMode), "quiet") {
 		return nil
 	}
 	for _, warning := range result.Warnings {

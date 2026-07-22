@@ -1,17 +1,17 @@
 ---
 name: find-docs
 description: >-
-  Use `npx ctx7` for API/library docs when local docs or CLI help are
+  Use globally installed `ctx7` for API/library docs when local docs or CLI help are
   insufficient. Trigger for API syntax, config, setup, migrations,
   version-sensitive, or post-cutoff questions. Do not use for web research,
   local files, browser automation, or installs.
-compatibility: Requires `npx ctx7` to run successfully and network access. Context7 authentication is strongly recommended for reliable access; failed authentication must be surfaced to the user.
-allowed-tools: Bash(npx:*)
+compatibility: Requires globally installed ctx7 and network access. Context7 authentication is strongly recommended for reliable access; failed authentication must be surfaced to the user.
+allowed-tools: Bash(ctx7:*)
 ---
 
 # Context7 Documentation Lookup
 
-Use `npx ctx7` as the documentation lookup surface. This skill provides
+Use globally installed `ctx7` as the documentation lookup surface. This skill provides
 routing, safety, and workflow rules; installed CLI help provides command
 syntax.
 
@@ -33,17 +33,16 @@ syntax.
 
 ## Global constraints
 
-- Run `npx ctx7 --help` before the first Context7 command in a session.
-- Run `npx ctx7 <command> --help` before using a non-obvious subcommand or
+- Run `ctx7 --version` before the first Context7 command in a session. Stop if
+  it is missing.
+- Run `ctx7 --help` before the first Context7 command in a session.
+- Run `ctx7 <command> --help` before using a non-obvious subcommand or
   flag.
 - Treat installed CLI help as the source of truth for commands, arguments,
   flags, output modes, and defaults.
-- If `npx ctx7` is missing, prompts for package installation, or cannot run,
-  stop and report the missing setup requirement. Do not install, upgrade,
-  authenticate, set up, remove, or reconfigure Context7 unless the user asked
-  for setup work.
-- Do not pin the `ctx7` package version unless the user explicitly selected
-  that package version.
+- If `ctx7` is missing or cannot run, stop and
+  report the missing setup requirement. Do not install, upgrade, authenticate,
+  set up, remove, or reconfigure Context7 unless the user asked for setup work.
 - Do not pass secrets, credentials, proprietary code, personal data, or private
   configuration values in Context7 queries.
 - Treat authentication as strongly recommended. If login status or an
@@ -54,9 +53,8 @@ syntax.
 
 ## Human checkpoints
 
-- Ask before installing packages, running Context7 setup or removal, logging in,
-  upgrading the CLI, changing configuration, or using a package version the user
-  did not request.
+- Ask before installing the global package, running Context7 setup or removal,
+  logging in, upgrading the CLI, or changing configuration.
 - Do not ask for permission merely to run read-only help, library, docs, or
   login-status commands.
 

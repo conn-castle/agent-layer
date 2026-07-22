@@ -58,7 +58,6 @@ run_scenario_upgrade_claude() {
   assert_claude_mock_called "$MOCK_CLAUDE_LOG"
   assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
   assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
-  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_DISPATCH_CALLER_AGENT" "claude"
   assert_generated_artifacts "$repo_dir"
 
   # Verify instruction files exist and have current template content

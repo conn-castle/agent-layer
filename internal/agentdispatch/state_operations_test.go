@@ -1,8 +1,6 @@
 package agentdispatch
 
 import (
-	"bytes"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -129,84 +127,6 @@ func TestNewDispatchRunAdvertisesOnlyApplicableEventArtifact(t *testing.T) {
 	}
 }
 
-func TestInspectPresentsClaudeDescendantsAndLineageArtifact(t *testing.T) {
-	root := t.TempDir()
-	run := newLineageTestRun(t, root, "2.1.212")
-	run.Record.Name = "tiny-round-capacitor"
-	writeLineageTestEvidence(t, run,
-		claudeLineageEvidence{Kind: lineageKindToolUse, ToolUseID: "tool"},
-		claudeLineageEvidence{Kind: lineageKindTaskStarted, TaskID: "task", ToolUseID: "tool", TaskType: "local_agent"},
-		claudeLineageEvidence{Kind: lineageKindTaskTerminal, TaskID: "task", Status: "stopped"},
-	)
-	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
-		t.Fatal(err)
-	}
-	var textOutput bytes.Buffer
-	if err := Inspect(InspectionRequest{Root: root, ID: run.Record.ID, Stdout: &textOutput}); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"Claude descendants: proven-terminal (completed=0 failed=0 stopped=1)", "lineage=" + run.Record.LineagePath} {
-		if !strings.Contains(textOutput.String(), want) {
-			t.Fatalf("inspection omitted %q: %s", want, textOutput.String())
-		}
-	}
-	var jsonOutput bytes.Buffer
-	if err := Inspect(InspectionRequest{Root: root, ID: run.Record.ID, Stdout: &jsonOutput, JSON: true}); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{`"claude_descendants"`, `"state": "proven-terminal"`, `"lineage": `} {
-		if !strings.Contains(jsonOutput.String(), want) {
-			t.Fatalf("JSON inspection omitted %q: %s", want, jsonOutput.String())
-		}
-	}
-}
-
-func TestInspectPreservesFirstDiagnosticsWriteFailure(t *testing.T) {
-	root := t.TempDir()
-	run := newLineageTestRun(t, root, "2.1.212")
-	run.Record.Name = "tiny-round-capacitor"
-	run.Record.ProviderLogPath = filepath.Join(run.Dir, "provider.log")
-	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, test := range []struct {
-		name      string
-		segment   string
-		forbidden string
-	}{
-		{name: "base", segment: "Diagnostics:", forbidden: " lineage="},
-		{name: "lineage", segment: " lineage=", forbidden: " provider_log="},
-		{name: "provider log", segment: " provider_log="},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			wantErr := errors.New("diagnostics " + test.name + " write failed")
-			writer := &segmentFailingWriter{segment: test.segment, err: wantErr}
-			err := Inspect(InspectionRequest{Root: root, ID: run.Record.ID, Stdout: writer})
-			if !errors.Is(err, wantErr) {
-				t.Fatalf("Inspect error = %v, want %v", err, wantErr)
-			}
-			if test.forbidden != "" && strings.Contains(writer.attempted.String(), test.forbidden) {
-				t.Fatalf("Inspect attempted later diagnostics segment after first failure: %q", writer.attempted.String())
-			}
-		})
-	}
-}
-
-type segmentFailingWriter struct {
-	segment   string
-	err       error
-	attempted bytes.Buffer
-}
-
-func (w *segmentFailingWriter) Write(data []byte) (int, error) {
-	_, _ = w.attempted.Write(data)
-	if bytes.Contains(data, []byte(w.segment)) {
-		return 0, w.err
-	}
-	return len(data), nil
-}
-
 func TestDispatchSessionRetentionPrunesOnlyExpiredInactiveMappings(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
@@ -263,75 +183,5 @@ func TestDispatchSessionRetentionPrunesOnlyExpiredInactiveMappings(t *testing.T)
 	}
 	if _, err := os.Stat(corruptPath); err != nil {
 		t.Fatalf("retention removed corrupt mapping: %v", err)
-	}
-}
-
-func TestListAndInspectExposeCurrentStateWithoutMutation(t *testing.T) {
-	root := t.TempDir()
-	run, err := newDispatchRun(root, AgentClaude, supportedProviderVersions[AgentClaude], "fresh")
-	if err != nil {
-		t.Fatalf("new run: %v", err)
-	}
-	session, err := reserveSession(root, run)
-	if err != nil {
-		t.Fatalf("reserve: %v", err)
-	}
-	session.State = "durable"
-	session.ProviderSessionID = runtimeSessionID
-	if err := persistSession(root, session); err != nil {
-		t.Fatalf("persist: %v", err)
-	}
-	now := time.Now().UTC()
-	run.Record.State = dispatchStateFailed
-	run.Record.RecoveryState = recoveryNotResumable
-	run.Record.CompletedAt = &now
-	run.Record.NotResumable = true
-	run.Record.TerminalReason = "provider failure"
-	run.Record.ProviderSessionID = runtimeSessionID
-	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
-		t.Fatalf("write record: %v", err)
-	}
-
-	var listed bytes.Buffer
-	if err := List(ListRequest{Root: root, Stdout: &listed}); err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if !strings.Contains(listed.String(), session.Name+"\tclaude\tdurable") {
-		t.Fatalf("list = %q", listed.String())
-	}
-	var inspection bytes.Buffer
-	if err := Inspect(InspectionRequest{Root: root, ID: run.Record.ID, Stdout: &inspection}); err != nil {
-		t.Fatalf("Inspect: %v", err)
-	}
-	for _, want := range []string{"Mode: fresh", "State: failed", "Provider status: not resumable", "Terminal reason: provider failure"} {
-		if !strings.Contains(inspection.String(), want) {
-			t.Fatalf("inspection omitted %q: %q", want, inspection.String())
-		}
-	}
-}
-
-func TestDeleteRejectsCorruptRunRecordButAllowsMissingRecord(t *testing.T) {
-	root := t.TempDir()
-	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
-	if err != nil {
-		t.Fatalf("new run: %v", err)
-	}
-	session, err := reserveSession(root, run)
-	if err != nil {
-		t.Fatalf("reserve: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(run.Dir, dispatchRunFile), []byte("not-json"), 0o600); err != nil {
-		t.Fatalf("corrupt run record: %v", err)
-	}
-	if err := Delete(root, session.Name); err == nil {
-		t.Fatal("Delete accepted corrupt run record")
-	} else {
-		requireDispatchExitCode(t, err, ExitConfig)
-	}
-	if err := os.RemoveAll(run.Dir); err != nil {
-		t.Fatalf("remove run: %v", err)
-	}
-	if err := Delete(root, session.Name); err != nil {
-		t.Fatalf("Delete with missing run record: %v", err)
 	}
 }

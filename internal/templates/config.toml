@@ -9,8 +9,8 @@
 mode = "all"
 
 [dispatch]
-# Maximum dispatch depth, including the initial `al dispatch` call.
-# 3 allows two nested `al dispatch` calls.
+# Maximum dispatch depth, including the initial `al dispatch start` call.
+# 3 allows two nested `al dispatch start` calls.
 max_depth = 3
 
 [notifications]
@@ -30,9 +30,6 @@ enabled = false
 # Use agent_specific to inject unmanaged JSON keys into settings.json
 # (deep-merged with Agent Layer-managed permissions). Do not put model here;
 # use agents.antigravity.model above.
-# Optional default target when `al dispatch` is invoked from Antigravity without --agent.
-# [agents.antigravity.dispatch]
-# default_agent = "random" # random | codex | claude | antigravity
 # [agents.antigravity.agent_specific]
 
 [agents.claude]
@@ -70,9 +67,6 @@ enabled = true
 # agent_specific.env.CLAUDE_CODE_AUTO_CONNECT_IDE = "false" # stop reading files open in the IDE
 # agent_specific.env.ENABLE_CLAUDEAI_MCP_SERVERS = "false"  # disable claude.ai app connectors
 # agent_specific.autoMemoryEnabled = false                  # disable auto-memory (does not affect CLAUDE.md)
-# Optional default target when `al dispatch` is invoked from Claude without --agent.
-# [agents.claude.dispatch]
-# default_agent = "random" # random | codex | claude | antigravity
 # [agents.claude.agent_specific]
 
 [agents.claude_vscode]
@@ -98,9 +92,6 @@ enabled = true
 # These are appended to .codex/config.toml and can override top-level managed keys.
 # Agent Layer already writes [projects."<repo root>"] trust_level = "trusted".
 # Overlapping keys override Agent Layer-managed values and trigger a sync warning.
-# Optional default target when `al dispatch` is invoked from Codex without --agent.
-# [agents.codex.dispatch]
-# default_agent = "random" # random | codex | claude | antigravity
 # [agents.codex.agent_specific]
 # [agents.codex.agent_specific.features]
 # apps = false              # disable built-in Codex apps (GitHub, Gmail, etc.) to reduce tool surface

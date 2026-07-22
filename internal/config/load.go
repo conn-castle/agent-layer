@@ -85,6 +85,9 @@ func ParseConfig(data []byte, source string) (*Config, error) {
 			// it) is omitted here — the wizard cannot rewrite this legacy key.
 			return nil, fmt.Errorf("%w: %w: "+messages.ConfigLegacyGeminiUnsupportedFmt, ErrConfigValidation, ErrConfigNeedsUpgrade, source)
 		}
+		if HasLegacyDispatchConfig(data) {
+			return nil, fmt.Errorf("%w: %w: "+messages.ConfigLegacyDispatchUnsupportedFmt, ErrConfigValidation, ErrConfigNeedsUpgrade, source)
+		}
 		return nil, fmt.Errorf("%w: "+messages.ConfigUnrecognizedKeysFmt+" "+messages.ConfigValidationGuidance, ErrConfigValidation, source, err)
 	}
 	if err := cfg.Validate(source); err != nil {
@@ -111,6 +114,29 @@ func HasLegacyGeminiConfig(data []byte) bool {
 	}
 	_, ok = agents["gemini"]
 	return ok
+}
+
+// HasLegacyDispatchConfig reports whether data contains retired per-agent
+// dispatch default tables that must be removed by al upgrade.
+func HasLegacyDispatchConfig(data []byte) bool {
+	var raw map[string]any
+	if err := toml.Unmarshal(data, &raw); err != nil {
+		return false
+	}
+	agents, ok := raw["agents"].(map[string]any)
+	if !ok {
+		return false
+	}
+	for _, agent := range []string{agentAntigravity, agentClaude, agentCodex} {
+		config, ok := agents[agent].(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, ok := config["dispatch"]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // HasLegacyAntigravityAgentSpecificModel reports whether `data` contains the

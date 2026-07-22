@@ -35,14 +35,14 @@ func TestRunUsesSuppliedRepositoryRootWithoutCreatingWorktree(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "codex.log")
 	writeDispatchStub(t, binDir, "codex", `printf 'PWD=%s\n' "$PWD" >> "$AL_TEST_LOG"
 printf '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\n'`)
-	if err := Run(RunOptions{
-		Root:       root,
-		Agent:      AgentCodex,
-		PromptArgs: []string{"work here"},
-		Env:        []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath},
-		LookPath:   mockLookPath(binDir),
+	if err := executeFreshDispatch(dispatchExecRequest{
+		Root:     root,
+		Agent:    AgentCodex,
+		Prompt:   "work here",
+		Env:      []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath},
+		LookPath: mockLookPath(binDir),
 	}); err != nil {
-		t.Fatalf("Run error: %v", err)
+		t.Fatalf("dispatch error: %v", err)
 	}
 	resolvedRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
@@ -62,16 +62,16 @@ func TestRunLaunchesProviderWithSkillsInSuppliedWorkingDirectory(t *testing.T) {
 	writeDispatchStub(t, binDir, "codex", `printf 'PWD=%s\n' "$PWD" >> "$AL_TEST_LOG"
 printf '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\n'`)
 
-	if err := Run(RunOptions{
-		Root:       root,
-		WorkDir:    workingDir,
-		Agent:      AgentCodex,
-		Skill:      "review-plan",
-		PromptArgs: []string{"work in caller checkout"},
-		Env:        []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath},
-		LookPath:   mockLookPath(binDir),
+	if err := executeFreshDispatch(dispatchExecRequest{
+		Root:     root,
+		WorkDir:  workingDir,
+		Agent:    AgentCodex,
+		Skill:    "review-plan",
+		Prompt:   "work in caller checkout",
+		Env:      []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath},
+		LookPath: mockLookPath(binDir),
 	}); err != nil {
-		t.Fatalf("Run error: %v", err)
+		t.Fatalf("dispatch error: %v", err)
 	}
 
 	resolvedWorkingDir, err := filepath.EvalSymlinks(workingDir)
@@ -84,11 +84,11 @@ printf '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\
 	}
 }
 
-func TestBuildOptionsJSONShapeAndRandomExclusion(t *testing.T) {
+func TestBuildOptionsJSONShape(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{AntigravityModel: "Gemini 3.1 Pro (High)"})
 	options, err := BuildOptions(OptionsRequest{
 		Root: root,
-		Env:  []string{clients.EnvDispatchCallerAgent + "=" + AgentClaude},
+		Env:  []string{},
 		LookPath: func(string) (string, error) {
 			return "/bin/mock", nil
 		},
@@ -99,20 +99,11 @@ func TestBuildOptionsJSONShapeAndRandomExclusion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildOptions error: %v", err)
 	}
-	if !options.Caller.Known || options.Caller.Agent != AgentClaude {
-		t.Fatalf("unexpected caller: %#v", options.Caller)
-	}
-	if strings.Join(options.Random.Pool, ",") != "codex,antigravity" {
-		t.Fatalf("unexpected random pool: %#v", options.Random.Pool)
-	}
-	var claude TargetOption
-	for _, target := range options.Targets {
+	var claude AgentOption
+	for _, target := range options.Agents {
 		if target.Agent == AgentClaude {
 			claude = target
 		}
-	}
-	if claude.RandomExclusionReason == nil || *claude.RandomExclusionReason != "caller" {
-		t.Fatalf("expected claude caller exclusion, got %#v", claude.RandomExclusionReason)
 	}
 	if !claude.Model.OverrideSupported || len(claude.Model.Suggestions) == 0 || !claude.Model.AllowCustom {
 		t.Fatalf("unexpected claude model metadata: %#v", claude.Model)
@@ -120,8 +111,8 @@ func TestBuildOptionsJSONShapeAndRandomExclusion(t *testing.T) {
 	if want := config.FieldOptionValues(config.ClaudeModelFieldKey); !slices.Equal(claude.Model.Suggestions, want) {
 		t.Fatalf("claude model suggestions = %v, want shared catalog %v", claude.Model.Suggestions, want)
 	}
-	var codex TargetOption
-	for _, target := range options.Targets {
+	var codex AgentOption
+	for _, target := range options.Agents {
 		if target.Agent == AgentCodex {
 			codex = target
 		}
@@ -138,8 +129,8 @@ func TestBuildOptionsJSONShapeAndRandomExclusion(t *testing.T) {
 	if want := config.FieldOptionValues(config.CodexReasoningEffortFieldKey); !slices.Equal(codex.ReasoningEffort.Suggestions, want) {
 		t.Fatalf("codex reasoning effort suggestions = %v, want shared catalog %v", codex.ReasoningEffort.Suggestions, want)
 	}
-	var agy TargetOption
-	for _, target := range options.Targets {
+	var agy AgentOption
+	for _, target := range options.Agents {
 		if target.Agent == AgentAntigravity {
 			agy = target
 		}
@@ -174,8 +165,8 @@ fi`)
 	if err != nil {
 		t.Fatalf("BuildOptions error: %v", err)
 	}
-	var agy TargetOption
-	for _, target := range options.Targets {
+	var agy AgentOption
+	for _, target := range options.Agents {
 		if target.Agent == AgentAntigravity {
 			agy = target
 		}
@@ -188,11 +179,11 @@ fi`)
 	assertFileContains(t, logPath, "AGY_CLI_DISABLE_AUTO_UPDATE=1")
 }
 
-func TestRunBlocksNestedDispatchAtDepthOne(t *testing.T) {
+func TestStartBlocksNestedDispatchAtDepthOne(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 1})
-	err := Run(RunOptions{
-		Root: root,
-		Env:  []string{clients.EnvDispatchActive + "=3"},
+	err := Start(StartOptions{
+		Root: root, Agent: AgentCodex, Prompt: "Review",
+		Env: []string{clients.EnvDispatchActive + "=3"},
 	})
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != ExitNested {
@@ -203,16 +194,16 @@ func TestRunBlocksNestedDispatchAtDepthOne(t *testing.T) {
 	}
 }
 
-func TestRunAllowsNestedDispatchWithinDefaultDepth(t *testing.T) {
+func TestDispatchAllowsNestedDispatchWithinDefaultDepth(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "codex.log")
 	writeDispatchStub(t, binDir, "codex", `printf '{"type":"agent_message","message":"codex ok"}\n'`)
 	var stdout bytes.Buffer
-	err := Run(RunOptions{
-		Root:       root,
-		Agent:      AgentCodex,
-		PromptArgs: []string{"Review"},
+	err := executeFreshDispatch(dispatchExecRequest{
+		Root:   root,
+		Agent:  AgentCodex,
+		Prompt: "Review",
 		Env: []string{
 			"PATH=" + testPath(binDir),
 			clients.EnvDispatchActive + "=2",
@@ -223,24 +214,31 @@ func TestRunAllowsNestedDispatchWithinDefaultDepth(t *testing.T) {
 		LookPath: mockLookPath(binDir),
 	})
 	if err != nil {
-		t.Fatalf("Run error: %v", err)
+		t.Fatalf("dispatch error: %v", err)
 	}
 	if stdout.String() != "codex ok" {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 	assertFileContains(t, logPath, clients.EnvDispatchActive+"=3")
+	// Positive env-passthrough contract: dispatch creates a per-run directory
+	// via run.Create and exports AL_RUN_DIR / AL_RUN_ID via BuildEnv.
+	assertFileContains(t, logPath, "AL_RUN_DIR=")
+	assertFileContains(t, logPath, "AL_RUN_ID=")
+	// Negative env-passthrough contract: BuildEnv strips AL_SHIM_ACTIVE so the
+	// shim marker does not leak into the dispatched child env.
+	assertFileDoesNotContain(t, logPath, "AL_SHIM_ACTIVE=")
 }
 
-func TestRunAllowsNestedDispatchWithinConfiguredDepth(t *testing.T) {
+func TestDispatchAllowsNestedDispatchWithinConfiguredDepth(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 2})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "codex.log")
 	writeDispatchStub(t, binDir, "codex", `printf '{"type":"agent_message","message":"codex ok"}\n'`)
 	var stdout bytes.Buffer
-	err := Run(RunOptions{
-		Root:       root,
-		Agent:      AgentCodex,
-		PromptArgs: []string{"Review"},
+	err := executeFreshDispatch(dispatchExecRequest{
+		Root:   root,
+		Agent:  AgentCodex,
+		Prompt: "Review",
 		Env: []string{
 			"PATH=" + testPath(binDir),
 			clients.EnvDispatchActive + "=1",
@@ -251,7 +249,7 @@ func TestRunAllowsNestedDispatchWithinConfiguredDepth(t *testing.T) {
 		LookPath: mockLookPath(binDir),
 	})
 	if err != nil {
-		t.Fatalf("Run error: %v", err)
+		t.Fatalf("dispatch error: %v", err)
 	}
 	if stdout.String() != "codex ok" {
 		t.Fatalf("stdout = %q", stdout.String())
@@ -259,11 +257,11 @@ func TestRunAllowsNestedDispatchWithinConfiguredDepth(t *testing.T) {
 	assertFileContains(t, logPath, clients.EnvDispatchActive+"=2")
 }
 
-func TestRunBlocksNestedDispatchAtConfiguredDepth(t *testing.T) {
+func TestStartBlocksNestedDispatchAtConfiguredDepth(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 2})
-	err := Run(RunOptions{
-		Root: root,
-		Env:  []string{clients.EnvDispatchActive + "=2"},
+	err := Start(StartOptions{
+		Root: root, Agent: AgentCodex, Prompt: "Review",
+		Env: []string{clients.EnvDispatchActive + "=2"},
 	})
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != ExitNested {
@@ -271,16 +269,16 @@ func TestRunBlocksNestedDispatchAtConfiguredDepth(t *testing.T) {
 	}
 }
 
-func TestRunRejectsInvalidDispatchDepthEnv(t *testing.T) {
+func TestStartRejectsInvalidDispatchDepthEnv(t *testing.T) {
 	// A present-but-non-parseable AL_DISPATCH_ACTIVE fails loud rather than
 	// silently defaulting to depth 0. Empty/whitespace counts as malformed: the
 	// variable is only ever set by dispatch itself to a positive integer.
 	for _, value := range []string{"bogus", "", "-1"} {
 		t.Run(fmt.Sprintf("value=%q", value), func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 2})
-			err := Run(RunOptions{
-				Root: root,
-				Env:  []string{clients.EnvDispatchActive + "=" + value},
+			err := Start(StartOptions{
+				Root: root, Agent: AgentCodex, Prompt: "Review",
+				Env: []string{clients.EnvDispatchActive + "=" + value},
 			})
 			var exitErr *ExitError
 			if !errors.As(err, &exitErr) || exitErr.Code != ExitNested {
@@ -290,111 +288,6 @@ func TestRunRejectsInvalidDispatchDepthEnv(t *testing.T) {
 				t.Fatalf("expected %s in error, got %q", clients.EnvDispatchActive, exitErr.Error())
 			}
 		})
-	}
-}
-
-func TestRunUnknownCallerRequiresAgent(t *testing.T) {
-	root := writeDispatchRepo(t, dispatchRepoConfig{})
-	err := Run(RunOptions{
-		Root: root,
-		Env:  []string{"PATH=/bin"},
-		LookPath: func(string) (string, error) {
-			return "/bin/mock", nil
-		},
-		PromptArgs: []string{"Review"},
-	})
-	var exitErr *ExitError
-	if !errors.As(err, &exitErr) || exitErr.Code != ExitUsage {
-		t.Fatalf("expected usage exit, got %T: %v", err, err)
-	}
-}
-
-func TestRunRandomExcludesCallerAndExecutesCodex(t *testing.T) {
-	root := writeDispatchRepo(t, dispatchRepoConfig{CodexLocalConfigDir: true})
-	binDir := t.TempDir()
-	logPath := filepath.Join(t.TempDir(), "codex.log")
-	promptPath := filepath.Join(t.TempDir(), "codex.prompt")
-	writeDispatchStub(t, binDir, "codex", `printf '{"type":"thread.started"}\n{"type":"agent_message","message":"codex ok"}\n'`)
-	writeDispatchStub(t, binDir, "agy", `printf 'agy unused'`)
-	env := []string{
-		"PATH=" + testPath(binDir),
-		clients.EnvDispatchCallerAgent + "=" + AgentClaude,
-		"AL_TEST_LOG=" + logPath,
-		"AL_TEST_PROMPT=" + promptPath,
-	}
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	pathLookups := map[string]int{}
-	versionLookups := map[string]int{}
-	lookPath := mockLookPath(binDir)
-	codexTarget, _ := lookupTarget(AgentCodex)
-	claudeTarget, _ := lookupTarget(AgentClaude)
-	antigravityTarget, _ := lookupTarget(AgentAntigravity)
-	err := Run(RunOptions{
-		Root:       root,
-		Agent:      AgentRandom,
-		PromptArgs: []string{"Review", "this"},
-		Env:        env,
-		Stdout:     &stdout,
-		Stderr:     &stderr,
-		LookPath: func(binary string) (string, error) {
-			pathLookups[binary]++
-			return lookPath(binary)
-		},
-		VersionLookup: func(_ string, agent string) (string, error) {
-			versionLookups[agent]++
-			return supportedProviderVersions[agent], nil
-		},
-		ChooseRandom: func(pool []string) (string, error) {
-			if strings.Join(pool, ",") != "codex,antigravity" {
-				return "", fmt.Errorf("pool = %v", pool)
-			}
-			return AgentCodex, nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("Run error: %v\nstderr:\n%s", err, stderr.String())
-	}
-	if stdout.String() != "codex ok" {
-		t.Fatalf("stdout = %q", stdout.String())
-	}
-	if pathLookups[codexTarget.Binary] != 1 || pathLookups[antigravityTarget.Binary] != 1 || pathLookups[claudeTarget.Binary] != 0 {
-		t.Fatalf("random preflight path lookups = %#v, want one per non-caller candidate", pathLookups)
-	}
-	if versionLookups[AgentCodex] != 1 || versionLookups[AgentAntigravity] != 1 || versionLookups[AgentClaude] != 0 {
-		t.Fatalf("random preflight version lookups = %#v, want one per installed non-caller candidate", versionLookups)
-	}
-	if !strings.Contains(stderr.String(), "] codex · fresh") {
-		t.Fatalf("expected dispatch identity, got %q", stderr.String())
-	}
-	assertFileContains(t, logPath, clients.EnvDispatchActive+"=1")
-	assertFileContains(t, logPath, clients.EnvDispatchCallerAgent+"=codex")
-	assertFileContains(t, logPath, "CODEX_HOME="+filepath.Join(root, ".codex"))
-	// Positive env-passthrough contract: dispatch creates a per-run directory
-	// via run.Create and exports AL_RUN_DIR / AL_RUN_ID via BuildEnv.
-	assertFileContains(t, logPath, "AL_RUN_DIR=")
-	assertFileContains(t, logPath, "AL_RUN_ID=")
-	// Negative env-passthrough contract: BuildEnv strips AL_SHIM_ACTIVE so the
-	// shim marker does not leak into the dispatched child env.
-	assertFileDoesNotContain(t, logPath, "AL_SHIM_ACTIVE=")
-	assertFileContains(t, promptPath, "Review this")
-}
-
-func TestRunAntigravityRejectsReasoningEffortBeforeLaunch(t *testing.T) {
-	root := writeDispatchRepo(t, dispatchRepoConfig{})
-	err := Run(RunOptions{
-		Root:            root,
-		Agent:           AgentAntigravity,
-		ReasoningEffort: "high",
-		PromptArgs:      []string{"Review"},
-		Env:             []string{"PATH=/bin"},
-		LookPath: func(string) (string, error) {
-			return "/bin/mock", nil
-		},
-	})
-	var exitErr *ExitError
-	if !errors.As(err, &exitErr) || exitErr.Code != ExitUsage {
-		t.Fatalf("expected usage exit, got %T: %v", err, err)
 	}
 }
 
@@ -408,17 +301,17 @@ func TestRunAntigravityUsesConfiguredModel(t *testing.T) {
 		"AL_TEST_LOG=" + logPath,
 	}
 	var stdout bytes.Buffer
-	err := Run(RunOptions{
-		Root:       root,
-		Agent:      AgentAntigravity,
-		PromptArgs: []string{"Review"},
-		Env:        env,
-		Stdout:     &stdout,
-		Stderr:     &bytes.Buffer{},
-		LookPath:   mockLookPath(binDir),
+	err := executeFreshDispatch(dispatchExecRequest{
+		Root:     root,
+		Agent:    AgentAntigravity,
+		Prompt:   "Review",
+		Env:      env,
+		Stdout:   &stdout,
+		Stderr:   &bytes.Buffer{},
+		LookPath: mockLookPath(binDir),
 	})
 	if err != nil {
-		t.Fatalf("Run error: %v", err)
+		t.Fatalf("dispatch error: %v", err)
 	}
 	if stdout.String() != "agy ok" {
 		t.Fatalf("stdout = %q", stdout.String())
@@ -438,18 +331,18 @@ func TestRunAntigravityUsesModelOverride(t *testing.T) {
 		"AL_TEST_LOG=" + logPath,
 	}
 	var stdout bytes.Buffer
-	err := Run(RunOptions{
-		Root:       root,
-		Agent:      AgentAntigravity,
-		Model:      "Gemini 3.5 Flash (High)",
-		PromptArgs: []string{"Review"},
-		Env:        env,
-		Stdout:     &stdout,
-		Stderr:     &bytes.Buffer{},
-		LookPath:   mockLookPath(binDir),
+	err := executeFreshDispatch(dispatchExecRequest{
+		Root:     root,
+		Agent:    AgentAntigravity,
+		Model:    "Gemini 3.5 Flash (High)",
+		Prompt:   "Review",
+		Env:      env,
+		Stdout:   &stdout,
+		Stderr:   &bytes.Buffer{},
+		LookPath: mockLookPath(binDir),
 	})
 	if err != nil {
-		t.Fatalf("Run error: %v", err)
+		t.Fatalf("dispatch error: %v", err)
 	}
 	if stdout.String() != "agy ok" {
 		t.Fatalf("stdout = %q", stdout.String())
@@ -459,7 +352,7 @@ func TestRunAntigravityUsesModelOverride(t *testing.T) {
 	assertFileDoesNotContain(t, logPath, "Gemini 3.1 Pro (High)")
 }
 
-func TestRunClaudeSkillPromptAndCommandConstruction(t *testing.T) {
+func TestClaudeSkillPromptAndCommandConstruction(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{ClaudeModel: "opus", ClaudeReasoningEffort: "high", ClaudeLocalConfigDir: true})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "claude.log")
@@ -471,18 +364,18 @@ func TestRunClaudeSkillPromptAndCommandConstruction(t *testing.T) {
 		"AL_TEST_PROMPT=" + promptPath,
 	}
 	var stdout bytes.Buffer
-	err := Run(RunOptions{
-		Root:       root,
-		Agent:      AgentClaude,
-		Skill:      "review-plan",
-		PromptArgs: []string{"Review"},
-		Env:        env,
-		Stdout:     &stdout,
-		Stderr:     &bytes.Buffer{},
-		LookPath:   mockLookPath(binDir),
+	err := executeFreshDispatch(dispatchExecRequest{
+		Root:     root,
+		Agent:    AgentClaude,
+		Skill:    "review-plan",
+		Prompt:   "Review",
+		Env:      env,
+		Stdout:   &stdout,
+		Stderr:   &bytes.Buffer{},
+		LookPath: mockLookPath(binDir),
 	})
 	if err != nil {
-		t.Fatalf("Run error: %v", err)
+		t.Fatalf("dispatch error: %v", err)
 	}
 	if stdout.String() != "ok" {
 		t.Fatalf("stdout = %q", stdout.String())
@@ -506,13 +399,9 @@ func TestRunClaudeSkillPromptAndCommandConstruction(t *testing.T) {
 	if record.Model != "opus" || record.ReasoningEffort != "high" || record.Skill != "review-plan" {
 		t.Fatalf("run execution configuration = %#v", record)
 	}
-	inspection := inspectionFromRecord(record)
-	if inspection.Model != record.Model || inspection.ReasoningEffort != record.ReasoningEffort || inspection.Skill != record.Skill {
-		t.Fatalf("inspection execution configuration = %#v", inspection)
-	}
 }
 
-func TestRunAntigravityCommandConstruction(t *testing.T) {
+func TestAntigravityCommandConstruction(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "agy.log")
@@ -524,17 +413,17 @@ func TestRunAntigravityCommandConstruction(t *testing.T) {
 		"AL_TEST_PROMPT=" + promptPath,
 	}
 	var stdout bytes.Buffer
-	err := Run(RunOptions{
-		Root:       root,
-		Agent:      AgentAntigravity,
-		PromptArgs: []string{"Review"},
-		Env:        env,
-		Stdout:     &stdout,
-		Stderr:     &bytes.Buffer{},
-		LookPath:   mockLookPath(binDir),
+	err := executeFreshDispatch(dispatchExecRequest{
+		Root:     root,
+		Agent:    AgentAntigravity,
+		Prompt:   "Review",
+		Env:      env,
+		Stdout:   &stdout,
+		Stderr:   &bytes.Buffer{},
+		LookPath: mockLookPath(binDir),
 	})
 	if err != nil {
-		t.Fatalf("Run error: %v", err)
+		t.Fatalf("dispatch error: %v", err)
 	}
 	if stdout.String() != "agy ok" {
 		t.Fatalf("stdout = %q", stdout.String())
@@ -546,9 +435,9 @@ func TestRunAntigravityCommandConstruction(t *testing.T) {
 	assertFileContains(t, logPath, "AGY_CLI_DISABLE_AUTO_UPDATE=1")
 }
 
-// TestRunCodexDownstreamRejectsCustomOverrideSuppressesProviderStderr proves
+// TestCodexDownstreamRejectsCustomOverrideSuppressesProviderStderr proves
 // that provider diagnostics remain private when a turn fails.
-func TestRunCodexDownstreamRejectsCustomOverrideSuppressesProviderStderr(t *testing.T) {
+func TestCodexDownstreamRejectsCustomOverrideSuppressesProviderStderr(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "codex.log")
@@ -567,20 +456,19 @@ printf '{"type":"agent_message","message":"ok"}\n'
 	writeDispatchStub(t, binDir, "codex", stub)
 	env := []string{
 		"PATH=" + testPath(binDir),
-		clients.EnvDispatchCallerAgent + "=" + AgentClaude,
 		"AL_TEST_LOG=" + logPath,
 	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := Run(RunOptions{
-		Root:       root,
-		Agent:      AgentCodex,
-		Model:      "bogus-rejected-model",
-		PromptArgs: []string{"Review"},
-		Env:        env,
-		Stdout:     &stdout,
-		Stderr:     &stderr,
-		LookPath:   mockLookPath(binDir),
+	err := executeFreshDispatch(dispatchExecRequest{
+		Root:     root,
+		Agent:    AgentCodex,
+		Model:    "bogus-rejected-model",
+		Prompt:   "Review",
+		Env:      env,
+		Stdout:   &stdout,
+		Stderr:   &stderr,
+		LookPath: mockLookPath(binDir),
 	})
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != ExitTargetFailure {

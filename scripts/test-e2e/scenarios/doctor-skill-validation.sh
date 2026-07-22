@@ -88,7 +88,6 @@ SKILL
   fi
 
   assert_claude_mock_called "$MOCK_CLAUDE_LOG"
-  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_DISPATCH_CALLER_AGENT" "claude"
 
   cleanup_scenario_dir "$repo_dir"
 }
