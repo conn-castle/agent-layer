@@ -2,6 +2,7 @@ package agentdispatch
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -12,62 +13,27 @@ import (
 	"time"
 )
 
-func TestResumeRejectsPendingDisabledAndUnavailableMappings(t *testing.T) {
+func TestContinueRejectsUnclaimableDisabledAndUnavailableConversations(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	pending := Session{Name: "calm-steady-rectifier", Agent: AgentCodex, State: "pending"}
 	if err := persistSession(root, pending); err != nil {
 		t.Fatalf("persist pending: %v", err)
 	}
-	err := Resume(ResumeOptions{Root: root, Name: pending.Name, Env: []string{}})
-	requireDispatchExitCode(t, err, ExitUnavailable)
+	err := Continue(ContinueOptions{Root: root, Handle: pending.Name, Prompt: "Continue", Env: []string{}})
+	requireDispatchExitCode(t, err, ExitConfig)
 
-	durable := pending
-	durable.Name = "calm-steady-capacitor"
-	durable.Agent = AgentClaude
-	durable.State = "durable"
-	durable.ProviderSessionID = runtimeSessionID
-	if err := persistSession(root, durable); err != nil {
-		t.Fatalf("persist durable: %v", err)
-	}
-	disableAgentInDispatchConfig(t, root, AgentClaude)
-	err = Resume(ResumeOptions{Root: root, Name: durable.Name, Env: []string{}})
+	_, disabled := terminalConversationForAsyncTest(t, root)
+	disableAgentInDispatchConfig(t, root, AgentCodex)
+	err = Continue(ContinueOptions{Root: root, Handle: disabled.Name, Prompt: "Continue", Env: []string{}})
 	requireDispatchExitCode(t, err, ExitConfig)
 
 	root = writeDispatchRepo(t, dispatchRepoConfig{})
-	if err := persistSession(root, durable); err != nil {
-		t.Fatalf("persist durable in enabled repo: %v", err)
-	}
-	err = Resume(ResumeOptions{Root: root, Name: durable.Name, Env: []string{}, LookPath: func(string) (string, error) { return "", exec.ErrNotFound }})
+	_, unavailable := terminalConversationForAsyncTest(t, root)
+	err = Continue(ContinueOptions{Root: root, Handle: unavailable.Name, Prompt: "Continue", Env: []string{}, LookPath: func(string) (string, error) { return "", exec.ErrNotFound }})
 	requireDispatchExitCode(t, err, ExitUnavailable)
 }
 
-func TestPublicOperationsWriteStableEmptyAndJSONForms(t *testing.T) {
-	root := t.TempDir()
-	var text bytes.Buffer
-	if err := List(ListRequest{Root: root, Stdout: &text}); err != nil {
-		t.Fatalf("empty List: %v", err)
-	}
-	if text.String() != "No dispatch sessions.\n" {
-		t.Fatalf("empty list = %q", text.String())
-	}
-	var jsonOut bytes.Buffer
-	if err := List(ListRequest{Root: root, Stdout: &jsonOut, JSON: true}); err != nil {
-		t.Fatalf("JSON List: %v", err)
-	}
-	if strings.TrimSpace(jsonOut.String()) != "[]" {
-		t.Fatalf("empty JSON list = %q", jsonOut.String())
-	}
-	if err := Inspect(InspectionRequest{Root: root, ID: ""}); err == nil {
-		t.Fatal("Inspect accepted missing ID")
-	} else {
-		requireDispatchExitCode(t, err, ExitUsage)
-	}
-	if err := List(ListRequest{Root: root, Stdout: failingWriter{}}); err == nil {
-		t.Fatal("List hid a caller writer error")
-	}
-}
-
-func TestWriteOptionsRendersCurrentContractAndPropagatesWriterFailure(t *testing.T) {
+func TestWriteOptionsRendersJSONAndPropagatesWriterFailure(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	var text bytes.Buffer
 	err := WriteOptions(OptionsRequest{
@@ -79,12 +45,12 @@ func TestWriteOptionsRendersCurrentContractAndPropagatesWriterFailure(t *testing
 	if err != nil {
 		t.Fatalf("WriteOptions text: %v", err)
 	}
-	if !strings.Contains(text.String(), "fresh=false resume=false inspect=true random_eligible=false") ||
-		!strings.Contains(text.String(), "random: excluded (provider binary not found)") ||
-		!strings.Contains(text.String(), "model: override_supported=true") ||
-		!strings.Contains(text.String(), "reasoning_effort: override_supported=") ||
-		!strings.Contains(text.String(), "Random pool:  (excludes_caller=false empty=true)") {
-		t.Fatalf("options text = %q", text.String())
+	var response OptionsResponse
+	if err := json.Unmarshal(text.Bytes(), &response); err != nil {
+		t.Fatalf("options output is not JSON: %v: %q", err, text.String())
+	}
+	if len(response.Agents) != len(targetRegistry()) || response.Agents[0].Available {
+		t.Fatalf("options response = %#v", response)
 	}
 	err = WriteOptions(OptionsRequest{Root: root, Env: []string{}, Stdout: failingWriter{}, LookPath: func(string) (string, error) { return "", exec.ErrNotFound }})
 	if err == nil {

@@ -13,11 +13,6 @@ func TestStateAPIsRejectMissingAndInvalidInputs(t *testing.T) {
 			t.Fatalf("persistSession accepted %q", name)
 		}
 	}
-	if err := deleteSession(root, "tiny-round-capacitor"); err == nil {
-		t.Fatal("deleteSession accepted a missing mapping")
-	} else {
-		requireDispatchExitCode(t, err, ExitUsage)
-	}
 	if _, err := loadSession(root, "tiny-round-capacitor"); err == nil {
 		t.Fatal("loadSession accepted a missing mapping")
 	} else {

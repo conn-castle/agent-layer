@@ -9,8 +9,6 @@ import (
 )
 
 const (
-	// EnvDispatchCallerAgent identifies the Agent Layer-launched caller for Agent Dispatch.
-	EnvDispatchCallerAgent = "AL_DISPATCH_CALLER_AGENT"
 	// EnvDispatchActive blocks nested Agent Dispatch calls inside dispatched children.
 	EnvDispatchActive = "AL_DISPATCH_ACTIVE"
 )
@@ -33,19 +31,6 @@ func BuildEnv(base []string, projectEnv map[string]string, runInfo *run.Info) []
 		})
 	}
 	return env
-}
-
-// BuildEnvForAgent extends BuildEnv with caller metadata for dispatch-aware
-// normal launches. Only headless agents supported as dispatch callers receive
-// AL_DISPATCH_CALLER_AGENT; all launch paths strip any inherited marker first.
-func BuildEnvForAgent(base []string, projectEnv map[string]string, runInfo *run.Info, agentName string) []string {
-	env := UnsetEnv(BuildEnv(base, projectEnv, runInfo), EnvDispatchCallerAgent)
-	switch agentName {
-	case agentAntigravity, agentClaude, agentCodex:
-		return SetEnv(env, EnvDispatchCallerAgent, agentName)
-	default:
-		return env
-	}
 }
 
 // GetEnv returns the value for the key from an env slice.

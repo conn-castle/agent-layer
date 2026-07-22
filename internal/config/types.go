@@ -37,11 +37,6 @@ type AgentsConfig struct {
 	CopilotCLI   AgentConfig       `toml:"copilot_cli"`
 }
 
-// DispatchConfig controls Agent Dispatch defaults for a caller agent.
-type DispatchConfig struct {
-	DefaultAgent string `toml:"default_agent"`
-}
-
 // DispatchLimits controls Agent Dispatch recursion limits.
 type DispatchLimits struct {
 	MaxDepth *int `toml:"max_depth"`
@@ -64,11 +59,10 @@ type AgentConfig struct {
 
 // ClaudeConfig extends AgentConfig with Claude-specific settings.
 type ClaudeConfig struct {
-	Enabled         *bool          `toml:"enabled"`
-	Model           string         `toml:"model"`
-	ReasoningEffort string         `toml:"reasoning_effort"`
-	Dispatch        DispatchConfig `toml:"dispatch"`
-	LocalConfigDir  *bool          `toml:"local_config_dir"`
+	Enabled         *bool  `toml:"enabled"`
+	Model           string `toml:"model"`
+	ReasoningEffort string `toml:"reasoning_effort"`
+	LocalConfigDir  *bool  `toml:"local_config_dir"`
 	// DisableQuestionTool, when true, blocks Claude Code's AskUserQuestion tool.
 	// Sync injects permissions.deny + a PreToolUse hook into .claude/settings.json
 	// (merged with any user agent_specific entries). nil/false leave it allowed.
@@ -93,17 +87,15 @@ type EnableOnlyConfig struct {
 type AntigravityConfig struct {
 	Enabled       *bool               `toml:"enabled"`
 	Model         string              `toml:"model"`
-	Dispatch      DispatchConfig      `toml:"dispatch"`
 	AgentSpecific ProviderPassthrough `toml:"agent_specific"`
 }
 
 // CodexConfig extends AgentConfig with Codex-specific settings.
 type CodexConfig struct {
-	Enabled         *bool          `toml:"enabled"`
-	Model           string         `toml:"model"`
-	ReasoningEffort string         `toml:"reasoning_effort"`
-	Dispatch        DispatchConfig `toml:"dispatch"`
-	LocalConfigDir  *bool          `toml:"local_config_dir"`
+	Enabled         *bool  `toml:"enabled"`
+	Model           string `toml:"model"`
+	ReasoningEffort string `toml:"reasoning_effort"`
+	LocalConfigDir  *bool  `toml:"local_config_dir"`
 	// Statusline controls whether Agent Layer reads the editable
 	// .agent-layer/codex-statusline.toml source and injects its native
 	// tui.status_line list into .codex/config.toml on sync. It is explicit

@@ -581,42 +581,23 @@ Skills are synced natively to Agent Skills directories with full subdirectory su
 
 ## Agent Dispatch
 
-`al dispatch` starts one fresh, final-answer-only headless turn with Codex,
-Claude, or Antigravity. Standard output is reserved for a successfully
-completed assistant answer; standard error carries the compact run identity and
-any actionable failure.
+Agent Dispatch is a fully asynchronous, stateful interface.
 
 Examples:
 
 ```bash
-al dispatch --agent codex "Review this plan."
-al dispatch --agent random --skill review-uncommitted-code "Review the current working tree."
-al dispatch --agent antigravity --model "Gemini 3.1 Pro (High)" "Review this plan."
-cat prompt.md | al dispatch --agent claude
-al dispatch options --json
-al dispatch resume tiny-round-capacitor "Review the revision."
-cat prompt.md | al dispatch fanout \
-  --target 'agent=codex' --target 'agent=claude'
-al dispatch inspect tiny-round-capacitor
-al dispatch history tiny-round-capacitor
-al dispatch cancel <name-or-run-or-fanout-id>
-al dispatch list
+al dispatch options
+al dispatch start --agent codex --prompt-file prompt.md
+al dispatch wait <handle>
+al dispatch continue <handle> --prompt "Review the revision."
+al dispatch cancel <handle>
 ```
 
-Ordinary calls never reuse a conversation. Continue one only with the exact
-friendly name printed by the original call: `al dispatch resume <name> ...`.
-`inspect` is deliberate, read-only diagnosis—not a polling mechanism—and
-`delete` removes only Agent Layer’s mapping, never the provider transcript.
-`fanout` is a synchronous shared-prompt operation with independently retained
-child results; it is not a generic different-prompt batch interface.
-For `--agent random`, any requested `--model` or `--reasoning-effort` override
-filters that invocation's eligible pool before selection. If no eligible target
-supports every requested override, dispatch fails before choosing a target.
-The options command continues to report the general random pool because it has
-no invocation-specific overrides.
-`al dispatch options --json` reports exact installed versions plus separate
-fresh, resume, and inspection capabilities. For the full v0.13 contract,
-including bounded capture, state isolation, retries, and exit codes, see
+`options` reports available agents, configured defaults, and supported
+overrides. `start` and `continue` return immediately. `wait` blocks until the
+current invocation reaches `completed`, `failed`, or `cancelled`; completed
+output is stored in the immutable Markdown file named by `result_path`. Every
+command returns one JSON object. For the complete contract, see
 [`docs/AGENT-DISPATCH.md`](docs/AGENT-DISPATCH.md).
 
 ---
@@ -702,7 +683,7 @@ Other commands:
 - `al upgrade repair-gitignore-block` — restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block
 - `al sync` — regenerate configs without launching a client
 - `al probe agy` — run the Antigravity capability probe and print JSON
-- `al dispatch` — run a supported headless target through Agent Dispatch (see the [Agent Dispatch](#agent-dispatch) section)
+- `al dispatch start` — start a supported headless target through Agent Dispatch (see the [Agent Dispatch](#agent-dispatch) section)
 - `al doctor` — check common setup issues and warn about available updates
 - `al wizard` — interactive setup wizard plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`)
 - `al completion` — generate shell completion scripts (bash/zsh/fish, macOS/Linux only)

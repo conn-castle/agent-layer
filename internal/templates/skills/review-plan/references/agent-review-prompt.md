@@ -1,11 +1,20 @@
 # Plan Reviewer Prompt
 
-Review the complete plan/task/context set. Do not edit artifacts.
+Review the complete plan/task/context set. Do not modify implementation code or
+artifacts.
 
 ## Inputs
 
-Treat the optional specification, otherwise the plan, as the contract. Report
+Plan: `{{PLAN_PATH}}`
+Task: `{{TASK_PATH}}`
+Context: `{{CONTEXT_PATH}}`
+Specification: `{{SPECIFICATION_PATH_OR_NONE}}`
+
+When present, treat the optional specification as the intended contract. Report
 any input defect that prevents review.
+
+If required information is missing, do not guess; ask for it and briefly
+explain why it is needed so the caller can resume the dispatch with the answer.
 
 ## Review standard
 

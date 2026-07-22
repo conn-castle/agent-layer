@@ -13,7 +13,7 @@ const (
 	AgentClaude = "claude"
 	// AgentAntigravity is the Antigravity dispatch target and caller marker value.
 	AgentAntigravity = "antigravity"
-	// AgentRandom is the resolver value that selects an eligible target at random.
+	// AgentRandom is rejected by start: every conversation names its exact agent.
 	AgentRandom = "random"
 )
 
@@ -72,100 +72,66 @@ func wrapExitError(code int, message string, err error) *ExitError {
 	return &ExitError{Code: code, Message: message, Err: err}
 }
 
-// RunOptions configures a single dispatch run.
-type RunOptions struct {
+// runOptions carries one prepared invocation's target and override inputs
+// between Start/Continue and the shared preparation helpers.
+type runOptions struct {
+	Root            string
+	Model           string
+	ReasoningEffort string
+	Skill           string
+	Prompt          string
+	LookPath        func(string) (string, error)
+	// VersionLookup reads the installed provider version. Production uses the
+	// provider's --version output; tests may inject exact fixture evidence.
+	VersionLookup func(path string, agent string) (string, error)
+}
+
+// StartOptions configures the first asynchronous invocation of a conversation.
+type StartOptions struct {
 	Root            string
 	WorkDir         string
 	Agent           string
 	Model           string
 	ReasoningEffort string
 	Skill           string
-	PromptArgs      []string
-	Stdin           io.Reader
-	ReadStdin       bool
+	Prompt          string
+	PromptFile      string
 	Stdout          io.Writer
 	Stderr          io.Writer
 	Env             []string
-	Quiet           bool
 	LookPath        func(string) (string, error)
-	NewCommand      CommandFactory
-	ChooseRandom    RandomChooser
-	// VersionLookup reads the installed provider version. Production uses the
-	// provider's --version output; tests may inject exact fixture evidence.
-	VersionLookup func(path string, agent string) (string, error)
+	VersionLookup   func(path string, agent string) (string, error)
+	launchWorker    workerLauncher
 }
 
-// ResumeOptions configures one explicit continuation of a durable session.
-type ResumeOptions struct {
+// ContinueOptions configures one asynchronous continuation of a conversation.
+type ContinueOptions struct {
 	Root          string
 	WorkDir       string
-	Name          string
-	Skill         string
-	PromptArgs    []string
-	Stdin         io.Reader
-	ReadStdin     bool
+	Handle        string
+	Prompt        string
+	PromptFile    string
 	Stdout        io.Writer
 	Stderr        io.Writer
 	Env           []string
-	Quiet         bool
 	LookPath      func(string) (string, error)
-	NewCommand    CommandFactory
 	VersionLookup func(path string, agent string) (string, error)
+	launchWorker  workerLauncher
 }
 
-// InspectionRequest configures factual, read-only dispatch inspection.
-type InspectionRequest struct {
+// WaitRequest identifies one existing dispatch conversation, by handle, to
+// await without changing provider work or execution state.
+type WaitRequest struct {
 	Root   string
 	ID     string
 	Stdout io.Writer
-	JSON   bool
 }
 
-// ListRequest configures durable mapping listing.
-type ListRequest struct {
-	Root   string
-	Stdout io.Writer
-	JSON   bool
-}
-
-// HistoryRequest configures immutable turn-history output.
-type HistoryRequest struct {
-	Root   string
-	Name   string
-	Stdout io.Writer
-	Stderr io.Writer
-	JSON   bool
-}
-
-// CancelRequest identifies one active run, friendly conversation, or fanout.
+// CancelRequest identifies one active invocation by handle or run UUID.
 type CancelRequest struct {
-	Root string
-	ID   string
-}
-
-// FanoutTarget is one self-contained provider target specification.
-type FanoutTarget struct {
-	Agent           string `json:"agent"`
-	Model           string `json:"model,omitempty"`
-	ReasoningEffort string `json:"reasoning_effort,omitempty"`
-}
-
-// FanoutOptions configures one synchronous shared-prompt fanout.
-type FanoutOptions struct {
-	Root          string
-	WorkDir       string
-	Targets       []FanoutTarget
-	Skill         string
-	PromptArgs    []string
-	Stdin         io.Reader
-	ReadStdin     bool
-	Stdout        io.Writer
-	Stderr        io.Writer
-	Env           []string
-	Quiet         bool
-	LookPath      func(string) (string, error)
-	NewCommand    CommandFactory
-	VersionLookup func(path string, agent string) (string, error)
+	Root   string
+	ID     string
+	Stdout io.Writer
 }
 
 // OptionsRequest configures an Agent Dispatch options response.
@@ -173,13 +139,9 @@ type OptionsRequest struct {
 	Root          string
 	Env           []string
 	Stdout        io.Writer
-	JSON          bool
 	LookPath      func(string) (string, error)
 	VersionLookup func(path string, agent string) (string, error)
 }
 
 // CommandFactory creates a command for a target adapter.
 type CommandFactory func(name string, args ...string) *exec.Cmd
-
-// RandomChooser selects one target from an already-built random pool.
-type RandomChooser func([]string) (string, error)

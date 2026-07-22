@@ -7,6 +7,33 @@ import (
 	"testing"
 )
 
+func TestEmbeddedDispatchWorkflowSkillsEncodeReliabilityContract(t *testing.T) {
+	dispatchTemplate, err := Read("skills-catalog/agent-dispatch/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatchSkill := string(dispatchTemplate)
+	if !strings.Contains(dispatchSkill, "al dispatch --help") || !strings.Contains(dispatchSkill, "al dispatch options") || !strings.Contains(dispatchSkill, "al dispatch start --agent <agent> --prompt-file <path>") || !strings.Contains(dispatchSkill, "al dispatch wait <handle>") || !strings.Contains(dispatchSkill, "al dispatch continue <handle> --prompt-file <path>") || !strings.Contains(dispatchSkill, "al dispatch cancel <handle>") {
+		t.Fatal("agent-dispatch skill lacks the asynchronous conversation workflow")
+	}
+	reviewTemplate, err := Read("skills/review-plan/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewSkill := string(reviewTemplate)
+	if !strings.Contains(reviewSkill, "al dispatch start --agent <reviewer-agent> --model <reviewer-model>") || !strings.Contains(reviewSkill, "al dispatch wait <handle>") || !strings.Contains(reviewSkill, `--prompt-file ".agent-layer/tmp/review-plan.<run-id>.prompt.md"`) {
+		t.Fatal("review-plan skill lacks its reviewer dispatch commands")
+	}
+	reviewerTemplate, err := Read("skills/review-plan/references/agent-review-prompt.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewerPrompt := string(reviewerTemplate)
+	if !strings.Contains(reviewerPrompt, "ask for it") || !strings.Contains(reviewerPrompt, "resume the dispatch with the answer") {
+		t.Fatal("reviewer prompt lacks terminal missing-input contract")
+	}
+}
+
 func TestReadTemplate(t *testing.T) {
 	data, err := Read("config.toml")
 	if err != nil {

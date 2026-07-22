@@ -43,7 +43,6 @@ run_scenario_fresh_install_claude() {
   # Verify mock claude received critical env vars with non-empty values
   assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
   assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
-  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_DISPATCH_CALLER_AGENT" "claude"
 
   # Default config does not enable local_config_dir, so CLAUDE_CONFIG_DIR
   # should NOT be set by the launcher.

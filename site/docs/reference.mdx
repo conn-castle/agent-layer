@@ -37,8 +37,8 @@ Never put secrets in `config.toml`. Secrets belong in `.agent-layer/.env`.
 mode = "all"
 
 [dispatch]
-# Maximum dispatch depth, including the initial `al dispatch` call.
-# 3 allows two nested `al dispatch` calls.
+# Maximum dispatch depth, including the initial `al dispatch start` call.
+# 3 allows two nested `al dispatch start` calls.
 max_depth = 3
 
 [notifications]
@@ -47,9 +47,6 @@ chime = false
 
 [agents.antigravity]
 enabled = true
-# Optional default when Antigravity calls `al dispatch` without --agent.
-# [agents.antigravity.dispatch]
-# default_agent = "random" # random | codex | claude | antigravity
 
 [agents.claude]
 enabled = true
@@ -69,9 +66,6 @@ enabled = true
 # Object values are deep-merged into .claude/settings.json; arrays and scalar values are replaced at their key.
 # Overlapping managed keys, such as permissions.allow, override Agent Layer-managed
 # values and trigger a sync warning. permissions.deny is additive and does not warn.
-# Optional default when Claude calls `al dispatch` without --agent.
-# [agents.claude.dispatch]
-# default_agent = "random" # random | codex | claude | antigravity
 # [agents.claude.agent_specific]
 
 [agents.claude_vscode]
@@ -90,9 +84,6 @@ enabled = true
 # These are patched into .codex/config.toml and can override top-level managed keys.
 # Agent Layer seeds [projects."<repo root>"] trust_level = "trusted" only when
 # that exact project entry is absent.
-# Optional default when Codex calls `al dispatch` without --agent.
-# [agents.codex.dispatch]
-# default_agent = "random" # random | codex | claude | antigravity
 # [agents.codex.agent_specific]
 # [agents.codex.agent_specific.features]
 # apps = false              # disable built-in Codex apps (GitHub, Gmail, etc.) to reduce tool surface
@@ -354,12 +345,10 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al wizard` | Interactive configuration plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`). |
 | `al sync` | Regenerate client configs without launching a client. |
 | `al <client>` | Sync and launch a client (agy/claude/codex/copilot/vscode). |
-| `al dispatch` | Run a supported headless target (`codex`, `claude`, `antigravity`, or `random`) from an Agent Layer-launched caller. |
-| `al dispatch fanout` | Send one shared prompt and optional skill to two or more self-contained target specifications, wait for all children, and emit one manifest. |
-| `al dispatch inspect <name-or-id>` | Report read-only factual state and diagnostics for one run or conversation. |
-| `al dispatch history <name>` | Show retained immutable turns for one friendly conversation name. |
-| `al dispatch cancel <id>` | Cancel an exact active run, conversation, or fanout process group. |
-| `al dispatch options --json` | Print the stable Agent Dispatch target/options contract for scripts. |
+| `al dispatch start` | Start a headless conversation asynchronously and return its handle. |
+| `al dispatch wait <handle>` | Block until the current invocation terminates, then return its state and result path or failure. |
+| `al dispatch continue <handle>` | Start another invocation in a terminal conversation. |
+| `al dispatch cancel <handle>` | Cancel a running invocation. |
 | `al probe agy` | Run the Antigravity capability probe and print JSON. |
 | `al doctor` | Validate configuration and probe enabled MCP servers. |
 | `al completion` | Print or install shell completions (bash/zsh/fish). |
@@ -657,52 +646,29 @@ al vscode --no-sync -- --reuse-window
 
 ### Dispatch
 
-`al dispatch` starts one fresh, final-answer-only headless provider turn:
+Agent Dispatch is a fully asynchronous, stateful interface.
 
 ```bash
-al dispatch --agent codex "Review this plan."
-al dispatch --agent random --skill review-uncommitted-code "Review the current working tree."
-cat prompt.md | al dispatch --agent claude
-al dispatch resume tiny-round-capacitor "Review the revision."
-cat prompt.md | al dispatch fanout \
-  --target 'agent=codex' --target 'agent=claude'
-al dispatch inspect tiny-round-capacitor --json
-al dispatch history tiny-round-capacitor --json
-al dispatch cancel <name-or-run-or-fanout-id>
-al dispatch list
-al dispatch delete tiny-round-capacitor
+al dispatch options
+al dispatch start --agent codex --prompt-file prompt.md
+al dispatch wait <handle>
+al dispatch continue <handle> --prompt "Review the revision."
+al dispatch cancel <handle>
 ```
 
-Supported target values are `codex`, `claude`, `antigravity`, and `random`.
-When `--agent` is omitted, Agent Layer uses the env-only caller marker
-(`AL_DISPATCH_CALLER_AGENT`) and the caller's optional
-`agents.<caller>.dispatch.default_agent`, defaulting to `random`.
+`options` reports available agents, configured defaults, and supported model
+and reasoning-effort overrides. `start` requires an agent and either `--prompt`
+or `--prompt-file`; model and reasoning effort are optional overrides. It
+returns a conversation handle immediately. `continue` inherits that
+conversation's resolved target configuration and returns immediately.
+`wait` blocks until the current invocation reaches `completed`, `failed`, or
+`cancelled`. Completed output is stored atomically in the immutable Markdown
+file named by `result_path`. Every command returns exactly one JSON object.
 
-Each ordinary call creates a new provider conversation. Only `resume <name>`
-continues a conversation, using an exact durable mapping; prompt, role, target,
-and artifact paths never infer reuse. Dispatch writes one identity line to
-standard error and replays only a semantically completed final answer to
-standard output. `fanout` is a synchronous shared-prompt operation that stores
-independent child results and emits one aggregate manifest after every child is
-terminal. `inspect` reports read-only transport facts, `history` derives turns
-from immutable records, `cancel` targets an exact owned process group, and `delete`
-removes only the Agent Layer mapping. Use `al dispatch options --json` for
-installed version and separate fresh/resume/inspect capability facts. The
-tested compatibility set is Claude Code 2.1.207, Codex CLI 0.144.1, and
-Antigravity 1.1.1; newer installed versions dispatch with a compatibility
-warning, while older or unreadable versions fail before launch. See
-`docs/AGENT-DISPATCH.md` in the repository for the full v0.13 contract.
-
-**Exit codes**
-
-- `0` — dispatch completed successfully
-- `64` — usage or resolution failure (missing prompt and skill, unknown target, unknown caller with omitted `--agent`, unknown dispatch/session name for resume, inspect, or delete, unsupported override field for the selected target)
-- `65` — configuration or state failure (missing source skill, stale/missing target skill projection, malformed config, disabled target)
-- `69` — target unavailable (missing target binary, unsupported provider version, no eligible target in the random-selection pool, attempt to delete an active session)
-- `70` — target or adapter failure (provider failure, missing required terminal result, capture limit/I/O failure, or process-supervision failure)
-- `75` — nested dispatch blocked by `dispatch.max_depth` or invalid `AL_DISPATCH_ACTIVE`
-- `130` — interrupted by `SIGINT`
-- `143` — terminated by `SIGTERM`
+The agent-facing interface contains read-only `options` plus `start`, `wait`,
+`continue`, and `cancel`. Parallel work uses independent conversation handles
+rather than a fanout resource. See `docs/AGENT-DISPATCH.md` in the repository
+for the complete contract.
 
 ### Doctor
 

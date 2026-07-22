@@ -1,8 +1,8 @@
 ---
 name: playwright-cli
-description: Use `playwright-cli` for browser automation, UI inspection, screenshots, Playwright test debugging, or test generation. Trigger when a task needs browser interaction or test repair. Do not use for generic tests, web search, non-browser docs, or API-only work.
+description: Use globally installed `playwright-cli` for browser automation, UI inspection, screenshots, Playwright test debugging, or test generation. Trigger when a task needs browser interaction or test repair. Do not use for generic tests, web search, non-browser docs, or API-only work.
 license: Apache-2.0
-compatibility: Requires the `playwright-cli` binary from the maintained `@playwright/cli` npm package (`npm install -g @playwright/cli`) and any browser, app, or Playwright test environment needed by the task. The unscoped `playwright-cli` npm package is deprecated; its replacement keeps the same binary name.
+compatibility: Requires globally installed `playwright-cli` from the maintained `@playwright/cli` npm package and any browser, app, or Playwright test environment needed by the task. The unscoped `playwright-cli` npm package is deprecated; its replacement keeps the same binary name.
 allowed-tools: Bash(playwright-cli:*) Bash(npx:*) Bash(npm:*)
 ---
 
@@ -12,7 +12,7 @@ allowed-tools: Bash(playwright-cli:*) Bash(npx:*) Bash(npm:*)
 > playwright-cli skill: reduced duplicated command reference material and
 > tailored the workflow guidance for Agent Layer.
 
-Use `playwright-cli` as the browser control surface. This skill provides
+Use globally installed `playwright-cli` as the browser control surface. This skill provides
 routing, safety, and workflow rules; installed CLI help provides command
 syntax.
 
@@ -32,6 +32,8 @@ syntax.
 
 ## Global constraints
 
+- Run `playwright-cli --version` before the first `playwright-cli` command in
+  a session. Stop if it is missing.
 - Run `playwright-cli --help` before the first `playwright-cli` command in a
   session.
 - Run `playwright-cli --help <command>` before using a non-obvious subcommand
@@ -43,6 +45,7 @@ syntax.
 - If CLI, browser, app, or test setup is missing, stop and report the missing
   requirement; do not install packages or browsers unless the user asked for
   setup.
+- Do not run `playwright-cli install --skills`.
 - Do not hard-code or expose secrets in commands, tests, storage state, traces,
   videos, screenshots, or logs.
 

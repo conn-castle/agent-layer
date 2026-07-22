@@ -18,16 +18,16 @@ func TestFreshCodexThenResumeUsesOnlyDurableMapping(t *testing.T) {
 
 	var freshOut bytes.Buffer
 	var freshErr bytes.Buffer
-	if err := Run(RunOptions{
-		Root:       root,
-		Agent:      AgentCodex,
-		PromptArgs: []string{"first"},
-		Env:        env,
-		Stdout:     &freshOut,
-		Stderr:     &freshErr,
-		LookPath:   mockLookPath(binDir),
+	if err := executeFreshDispatch(dispatchExecRequest{
+		Root:     root,
+		Agent:    AgentCodex,
+		Prompt:   "first",
+		Env:      env,
+		Stdout:   &freshOut,
+		Stderr:   &freshErr,
+		LookPath: mockLookPath(binDir),
 	}); err != nil {
-		t.Fatalf("fresh Run: %v", err)
+		t.Fatalf("fresh dispatch: %v", err)
 	}
 	if freshOut.String() != "first answer" {
 		t.Fatalf("fresh stdout = %q", freshOut.String())
@@ -43,16 +43,15 @@ func TestFreshCodexThenResumeUsesOnlyDurableMapping(t *testing.T) {
 
 	var resumeOut bytes.Buffer
 	var resumeErr bytes.Buffer
-	if err := Resume(ResumeOptions{
-		Root:       root,
-		Name:       name,
-		PromptArgs: []string{"revision"},
-		Env:        env,
-		Stdout:     &resumeOut,
-		Stderr:     &resumeErr,
-		LookPath:   mockLookPath(binDir),
-	}); err != nil {
-		t.Fatalf("Resume: %v", err)
+	if err := executeContinueDispatch(dispatchExecRequest{
+		Root:     root,
+		Prompt:   "revision",
+		Env:      env,
+		Stdout:   &resumeOut,
+		Stderr:   &resumeErr,
+		LookPath: mockLookPath(binDir),
+	}, name); err != nil {
+		t.Fatalf("continue dispatch: %v", err)
 	}
 	if resumeOut.String() != "first answer" {
 		t.Fatalf("resume stdout = %q", resumeOut.String())
@@ -65,18 +64,12 @@ func TestFreshCodexThenResumeUsesOnlyDurableMapping(t *testing.T) {
 	assertFileContains(t, logPath, "ARG_2=--json")
 	assertFileContains(t, logPath, "ARG_3=11111111-1111-4111-8111-111111111111")
 
-	var inspected bytes.Buffer
-	if err := Inspect(InspectionRequest{Root: root, ID: name, Stdout: &inspected}); err != nil {
-		t.Fatalf("Inspect: %v", err)
+	resumed, err := loadSession(root, name)
+	if err != nil {
+		t.Fatalf("load resumed session: %v", err)
 	}
-	if !strings.Contains(inspected.String(), "Provider conversation: 11111111-1111-4111-8111-111111111111") {
-		t.Fatalf("inspection = %q", inspected.String())
-	}
-	if err := Delete(root, name); err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
-	if _, err := loadSession(root, name); err == nil {
-		t.Fatal("deleted mapping remained readable")
+	if resumed.ProviderSessionID != "11111111-1111-4111-8111-111111111111" || resumed.State != "durable" {
+		t.Fatalf("resumed mapping = %#v", resumed)
 	}
 }
 
@@ -88,17 +81,17 @@ func TestClaudeResumeKeepsFreshTargetAfterConfigurationChanges(t *testing.T) {
 	env := []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath}
 
 	var stderr bytes.Buffer
-	if err := Run(RunOptions{
+	if err := executeFreshDispatch(dispatchExecRequest{
 		Root:            root,
 		Agent:           AgentClaude,
 		Model:           "fable",
 		ReasoningEffort: "medium",
-		PromptArgs:      []string{"fresh"},
+		Prompt:          "fresh",
 		Env:             env,
 		Stderr:          &stderr,
 		LookPath:        mockLookPath(binDir),
 	}); err != nil {
-		t.Fatalf("fresh Claude Run: %v", err)
+		t.Fatalf("fresh Claude dispatch: %v", err)
 	}
 	name := identityName(t, stderr.String())
 	session, err := loadSession(root, name)
@@ -126,14 +119,13 @@ func TestClaudeResumeKeepsFreshTargetAfterConfigurationChanges(t *testing.T) {
 		t.Fatalf("reset provider log: %v", err)
 	}
 
-	if err := Resume(ResumeOptions{
-		Root:       root,
-		Name:       name,
-		PromptArgs: []string{"resume"},
-		Env:        env,
-		LookPath:   mockLookPath(binDir),
-	}); err != nil {
-		t.Fatalf("Resume Claude: %v", err)
+	if err := executeContinueDispatch(dispatchExecRequest{
+		Root:     root,
+		Prompt:   "resume",
+		Env:      env,
+		LookPath: mockLookPath(binDir),
+	}, name); err != nil {
+		t.Fatalf("continue Claude dispatch: %v", err)
 	}
 	assertFileContains(t, logPath, "ARG_7=--model")
 	assertFileContains(t, logPath, "ARG_8=fable")
@@ -151,15 +143,15 @@ func TestClaudeResumeKeepsProviderDefaultsAfterConfigurationChanges(t *testing.T
 	env := []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath}
 
 	var stderr bytes.Buffer
-	if err := Run(RunOptions{
-		Root:       root,
-		Agent:      AgentClaude,
-		PromptArgs: []string{"fresh"},
-		Env:        env,
-		Stderr:     &stderr,
-		LookPath:   mockLookPath(binDir),
+	if err := executeFreshDispatch(dispatchExecRequest{
+		Root:     root,
+		Agent:    AgentClaude,
+		Prompt:   "fresh",
+		Env:      env,
+		Stderr:   &stderr,
+		LookPath: mockLookPath(binDir),
 	}); err != nil {
-		t.Fatalf("fresh Claude Run: %v", err)
+		t.Fatalf("fresh Claude dispatch: %v", err)
 	}
 	name := identityName(t, stderr.String())
 	session, err := loadSession(root, name)
@@ -187,14 +179,13 @@ func TestClaudeResumeKeepsProviderDefaultsAfterConfigurationChanges(t *testing.T
 		t.Fatalf("reset provider log: %v", err)
 	}
 
-	if err := Resume(ResumeOptions{
-		Root:       root,
-		Name:       name,
-		PromptArgs: []string{"resume"},
-		Env:        env,
-		LookPath:   mockLookPath(binDir),
-	}); err != nil {
-		t.Fatalf("Resume Claude: %v", err)
+	if err := executeContinueDispatch(dispatchExecRequest{
+		Root:     root,
+		Prompt:   "resume",
+		Env:      env,
+		LookPath: mockLookPath(binDir),
+	}, name); err != nil {
+		t.Fatalf("continue Claude dispatch: %v", err)
 	}
 	assertFileDoesNotContain(t, logPath, "--model")
 	assertFileDoesNotContain(t, logPath, "--effort")
@@ -215,17 +206,6 @@ func identityName(t *testing.T, stderr string) string {
 	return trimmed[1:end]
 }
 
-func TestInspectDoesNotInferProviderHealth(t *testing.T) {
-	record := RunRecord{ID: "11111111-1111-4111-8111-111111111111", Name: "tiny-round-capacitor", Agent: AgentClaude, State: dispatchStateRunning, PID: 0}
-	inspection := inspectionFromRecord(record)
-	if inspection.Process != statusUnknown {
-		t.Fatalf("process = %q, want unknown", inspection.Process)
-	}
-	if inspection.State != dispatchStateRunning {
-		t.Fatalf("state = %q", inspection.State)
-	}
-}
-
 func TestAntigravitySuccessfulAnswerWithoutIDIsNotResumable(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
@@ -242,16 +222,16 @@ printf 'answer without a provider id'
 	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	if err := Run(RunOptions{
-		Root:       root,
-		Agent:      AgentAntigravity,
-		PromptArgs: []string{"fresh"},
-		Env:        []string{"PATH=" + testPath(binDir)},
-		Stdout:     &stdout,
-		Stderr:     &stderr,
-		LookPath:   mockLookPath(binDir),
+	if err := executeFreshDispatch(dispatchExecRequest{
+		Root:     root,
+		Agent:    AgentAntigravity,
+		Prompt:   "fresh",
+		Env:      []string{"PATH=" + testPath(binDir)},
+		Stdout:   &stdout,
+		Stderr:   &stderr,
+		LookPath: mockLookPath(binDir),
 	}); err != nil {
-		t.Fatalf("Run Antigravity: %v", err)
+		t.Fatalf("dispatch Antigravity: %v", err)
 	}
 	if stdout.String() != "answer without a provider id" {
 		t.Fatalf("stdout = %q", stdout.String())
@@ -305,14 +285,13 @@ printf 'resumed answer without a provider id'
 	if err := os.WriteFile(path, []byte(stub), 0o700); err != nil { // #nosec G306 -- test-controlled provider stub.
 		t.Fatalf("write agy stub: %v", err)
 	}
-	if err := Resume(ResumeOptions{
-		Root:       root,
-		Name:       session.Name,
-		PromptArgs: []string{"resume"},
-		Env:        []string{"PATH=" + testPath(binDir)},
-		LookPath:   mockLookPath(binDir),
-	}); err != nil {
-		t.Fatalf("Resume Antigravity: %v", err)
+	if err := executeContinueDispatch(dispatchExecRequest{
+		Root:     root,
+		Prompt:   "resume",
+		Env:      []string{"PATH=" + testPath(binDir)},
+		LookPath: mockLookPath(binDir),
+	}, session.Name); err != nil {
+		t.Fatalf("continue Antigravity dispatch: %v", err)
 	}
 	retained, err := loadSession(root, session.Name)
 	if err != nil {
@@ -330,10 +309,10 @@ func TestSupportedVersionFixturesReduceOnlyRequiredEvents(t *testing.T) {
 	}
 	var claudeRaw bytes.Buffer
 	var claudeEvents []providerEvent
-	if err := readStructuredEvents(bytes.NewReader(claudeData), &claudeRaw, AgentClaude, "11111111-1111-4111-8111-111111111111", func(event providerEvent) error {
+	if err := readStructuredEventsWithLineage(bytes.NewReader(claudeData), &claudeRaw, AgentClaude, "11111111-1111-4111-8111-111111111111", false, func(event providerEvent) error {
 		claudeEvents = append(claudeEvents, event)
 		return nil
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("reduce Claude fixture: %v", err)
 	}
 	if len(claudeEvents) != 4 || claudeEvents[0].Kind != eventProgress || claudeEvents[1].Kind != eventSession || claudeEvents[2].Answer != "Claude final answer." || claudeEvents[3].Kind != eventComplete {
@@ -346,10 +325,10 @@ func TestSupportedVersionFixturesReduceOnlyRequiredEvents(t *testing.T) {
 	}
 	var codexRaw bytes.Buffer
 	var codexEvents []providerEvent
-	if err := readStructuredEvents(bytes.NewReader(codexData), &codexRaw, AgentCodex, "", func(event providerEvent) error {
+	if err := readStructuredEventsWithLineage(bytes.NewReader(codexData), &codexRaw, AgentCodex, "", false, func(event providerEvent) error {
 		codexEvents = append(codexEvents, event)
 		return nil
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("reduce Codex fixture: %v", err)
 	}
 	if len(codexEvents) != 3 || codexEvents[0].SessionID != "22222222-2222-4222-8222-222222222222" || codexEvents[1].Answer != "Codex final answer." || codexEvents[2].Kind != eventComplete {

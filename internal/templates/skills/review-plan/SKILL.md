@@ -19,45 +19,46 @@ Require:
 - plan, task, and context artifact paths
 - an optional specification artifact path
 
-Resolve each supplied reviewer request through `/agent-dispatch`'s live
-metadata. When it matches exactly one dispatchable target/model configuration,
-use that match without asking for confirmation. Missing artifacts block review,
-as does an empty reviewer list.
-
-## Output artifact
-
-Write `.agent-layer/tmp/review-plan.<run-id>.report.md` with run ID
-`YYYYMMDD-HHMMSS-<short-rand>`. Preserve canonical reviewer results as evidence.
-
-## Independence contract
-
-Every reviewer receives complete, equivalent copies of
-`references/agent-review-prompt.md`, plan, task, context, and optional spec. Only
-provider mechanics, target, and run identity may differ. Never share reviewer
-outputs or synthesis between reviewers.
+Each reviewer must supply an exact agent. Model and reasoning-effort overrides
+are optional; when omitted, dispatch uses the configured Agent Layer value or
+the agent CLI's default. Omit overrides that `al dispatch options` reports as
+unsupported. Missing artifacts or an empty reviewer list block review.
 
 ## Workflow
 
-Read all artifacts and confirm objective/scope alignment. Build one shared
-prompt; do not assign complementary coverage.
+1. Read all artifacts and confirm objective/scope alignment.
+2. Render `references/agent-review-prompt.md` to
+   `.agent-layer/tmp/review-plan.<run-id>.prompt.md`, replacing every input
+   placeholder with its exact path or "not provided". Every reviewer receives
+   this same prompt; do not assign complementary coverage.
+3. Start one independent conversation per reviewer, retaining every returned
+   handle. The following example supplies both optional overrides for an agent
+   that supports them.
 
-Run all supplied independent reviews concurrently through dispatch fanout.
-Each reviewer must make and report its own adaptive 1–4 built-in-subagent
-decision under `references/agent-review-prompt.md`.
-Retry an unusable result only through its same supplied target; do not replace a
-required reviewer with an unspecified or inferred target.
+   ```bash
+   al dispatch start --agent <reviewer-agent> --model <reviewer-model> \
+     --reasoning-effort <reviewer-effort> \
+     --prompt-file ".agent-layer/tmp/review-plan.<run-id>.prompt.md"
+   ```
 
-Validate candidates against artifacts and repository evidence. Merge duplicates
-and retain material correctness, safety, scope, implementability, verification,
-or maintainability gaps.
+4. Run `al dispatch wait <handle>` for every reviewer and read each completed
+   `result_path`. If a result is unusable, request its correction with
+   `continue` on that same handle; never substitute a reviewer.
+5. Validate findings against the artifacts and repository. Merge duplicates and
+   retain material correctness, safety, scope, implementability, verification,
+   or maintainability gaps.
+6. Apply accepted corrections to the artifacts and update direct dependencies.
+   Escalate only under the repository's human-escalation rules.
 
-Apply accepted corrections and update direct dependencies. Escalate only under
-the repository's human-escalation rules.
+## Output
 
-Report sources, accepted changes, unresolved decisions, and exactly one value:
+Write `.agent-layer/tmp/review-plan.<run-id>.report.md` using run ID
+`YYYYMMDD-HHMMSS-<short-rand>` and preserve canonical reviewer results as
+evidence. Include sources, accepted changes, unresolved decisions, and exactly
+one value:
 
 - `implementation-ready`
 - `blocked-for-user-decision`
 
-Finish after evaluating all reports and applying accepted corrections. Return
-evidence paths, changes, genuine user decisions, and readiness.
+Finish only after evaluating every report and applying accepted corrections.
+Return evidence paths, changes, genuine user decisions, and readiness.

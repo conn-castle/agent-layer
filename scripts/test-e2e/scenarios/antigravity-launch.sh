@@ -59,7 +59,6 @@ PROFILE
   # Verify env vars have non-empty values
   assert_mock_agent_env_non_empty "$MOCK_AGENT_LOG" "AL_RUN_DIR"
   assert_mock_agent_env_non_empty "$MOCK_AGENT_LOG" "AL_RUN_ID"
-  assert_mock_agent_env "$MOCK_AGENT_LOG" "AL_DISPATCH_CALLER_AGENT" "antigravity"
   assert_json_valid "$repo_dir/.agy/antigravity-cli/settings.json" \
     "Antigravity settings is valid JSON after launch"
   assert_json_valid "$repo_dir/.agy/antigravity-cli/mcp_config.json" \

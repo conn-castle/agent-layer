@@ -1,7 +1,6 @@
 package agentdispatch
 
 import (
-	"bytes"
 	"errors"
 	"io"
 	"os"
@@ -15,18 +14,13 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
-func TestResumeValidatesVersionPromptAndSkillBeforeLaunch(t *testing.T) {
+func TestContinueValidatesPromptAndVersionBeforeLaunch(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
-	session := Session{Name: "short-bright-transistor", Agent: AgentCodex, State: "durable", ProviderSessionID: runtimeSessionID}
-	if err := persistSession(root, session); err != nil {
-		t.Fatalf("persist session: %v", err)
-	}
-	err := Resume(ResumeOptions{Root: root, Name: session.Name, PromptArgs: []string{"resume"}, Env: []string{}, LookPath: alwaysFound, VersionLookup: func(string, string) (string, error) { return "0.1.0", nil }})
-	requireDispatchExitCode(t, err, ExitUnavailable)
-	err = Resume(ResumeOptions{Root: root, Name: session.Name, Env: []string{}, LookPath: alwaysFound, VersionLookup: func(_ string, agent string) (string, error) { return supportedProviderVersions[agent], nil }})
+	_, session := terminalConversationForAsyncTest(t, root)
+	err := Continue(ContinueOptions{Root: root, Handle: session.Name, Env: []string{}, LookPath: alwaysFound})
 	requireDispatchExitCode(t, err, ExitUsage)
-	err = Resume(ResumeOptions{Root: root, Name: session.Name, PromptArgs: []string{"resume"}, Skill: "missing", Env: []string{}, LookPath: alwaysFound, VersionLookup: func(_ string, agent string) (string, error) { return supportedProviderVersions[agent], nil }})
-	requireDispatchExitCode(t, err, ExitConfig)
+	err = Continue(ContinueOptions{Root: root, Handle: session.Name, Prompt: "Continue", Env: []string{}, LookPath: alwaysFound, VersionLookup: func(string, string) (string, error) { return "0.1.0", nil }})
+	requireDispatchExitCode(t, err, ExitUnavailable)
 }
 
 func TestRejectedResumeExposesTerminalPublicationFailure(t *testing.T) {
@@ -48,27 +42,26 @@ func TestRejectedResumeExposesTerminalPublicationFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	attempted, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempted.Record.Name = session.Name
+	attempted.Record.PreviousRunID = active.Record.ID
+	if err := writeRunRecord(attempted.Dir, &attempted.Record); err != nil {
+		t.Fatal(err)
+	}
+	_, claimErr := claimConversation(root, session.Name, attempted.Record.ID)
+	if claimErr == nil {
+		t.Fatal("claim against an active run unexpectedly succeeded")
+	}
 	publicationErr := errors.New("injected rejected-resume publication failure")
-	var launches atomic.Int32
-	err = resume(ResumeOptions{
-		Root: root, Name: session.Name, PromptArgs: []string{"resume"}, Env: []string{},
-		LookPath: alwaysFound,
-		VersionLookup: func(_ string, agent string) (string, error) {
-			return supportedProviderVersions[agent], nil
-		},
-		NewCommand: func(string, ...string) *exec.Cmd {
-			launches.Add(1)
-			return exec.Command("/bin/sh", "-c", "exit 0") // #nosec G204 -- fixed test command must remain unlaunched.
-		},
-	}, func(string, *RunRecord) error {
+	err = finishRejectedResume(attempted, claimErr, func(string, *RunRecord) error {
 		return publicationErr
 	})
 	requireDispatchExitCode(t, err, ExitConfig)
 	if !errors.Is(err, publicationErr) || !strings.Contains(err.Error(), "already active in run "+active.Record.ID) {
-		t.Fatalf("Resume error = %v, want claim rejection and publication failure", err)
-	}
-	if launches.Load() != 0 {
-		t.Fatalf("provider launches = %d, want 0", launches.Load())
+		t.Fatalf("rejected resume error = %v, want claim rejection and publication failure", err)
 	}
 	retained, err := loadSession(root, session.Name)
 	if err != nil {
@@ -77,46 +70,12 @@ func TestRejectedResumeExposesTerminalPublicationFailure(t *testing.T) {
 	if retained != session {
 		t.Fatalf("publication failure mutated active mapping: before = %#v, after = %#v", session, retained)
 	}
-	records, warnings, err := listRunRecords(root)
+	durable, err := loadRunRecord(root, attempted.Record.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(warnings) != 0 || len(records) != 2 {
-		t.Fatalf("run evidence = %#v, warnings = %#v", records, warnings)
-	}
-	for _, record := range records {
-		if record.ID != active.Record.ID && record.State != dispatchStatePending {
-			t.Fatalf("failed terminal publication changed attempted record: %#v", record)
-		}
-	}
-}
-
-func TestRunUsesConfiguredDefaultAndHonorsQuietOutput(t *testing.T) {
-	root := writeDispatchRepo(t, dispatchRepoConfig{})
-	replaceDispatchConfigText(t, root, "instruction_token_threshold = 50000", "instruction_token_threshold = 1")
-	binDir := t.TempDir()
-	logPath := filepath.Join(t.TempDir(), "codex.log")
-	writeDispatchStub(t, binDir, "codex", `printf '{"type":"agent_message","message":"answer"}\n'`)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	err := Run(RunOptions{
-		Root:       root,
-		Agent:      AgentCodex,
-		PromptArgs: []string{"Review"},
-		Env:        []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath},
-		Stdout:     &stdout,
-		Stderr:     &stderr,
-		Quiet:      true,
-		LookPath:   mockLookPath(binDir),
-	})
-	if err != nil {
-		t.Fatalf("quiet Run: %v", err)
-	}
-	if stdout.String() != "answer" {
-		t.Fatalf("stdout = %q", stdout.String())
-	}
-	if strings.Contains(stderr.String(), "instructions") {
-		t.Fatalf("quiet stderr leaked warnings: %q", stderr.String())
+	if durable.State != dispatchStatePending {
+		t.Fatalf("failed terminal publication changed attempted record: %#v", durable)
 	}
 }
 
@@ -295,14 +254,14 @@ func TestPreLaunchCancellationAllowsSafeReplacementWithoutProcessIdentity(t *tes
 
 	var launches atomic.Int32
 	project := &config.ProjectConfig{Root: root, Config: dispatchTestConfig(AgentCodex)}
-	err = launchExecution(dispatchExecution{
+	err = executeDispatch(dispatchExecution{
 		Root: root, Project: project, Target: targetMeta{Name: AgentCodex},
 		Run: run, Session: session, Mode: dispatchModeFresh,
 		NewCommand: func(string, ...string) *exec.Cmd {
 			launches.Add(1)
 			return exec.Command("/bin/sh", "-c", "exit 0") // #nosec G204 -- fixed test command must remain unlaunched.
 		},
-	}).await()
+	})
 	requireDispatchExitCode(t, err, ExitTargetFailure)
 	if launches.Load() != 0 {
 		t.Fatalf("provider launches after pre-launch cancellation = %d, want 0", launches.Load())
@@ -352,19 +311,6 @@ func TestNeverLaunchedCancelledClaimRecoveryOperations(t *testing.T) {
 		}
 	})
 
-	t.Run("delete removes stale mapping", func(t *testing.T) {
-		root, _, session := setup(t)
-		if err := Delete(root, session.Name); err != nil {
-			t.Fatalf("delete never-launched cancelled mapping: %v", err)
-		}
-		path, err := sessionPath(root, session.Name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("deleted mapping remains: %v", err)
-		}
-	})
 }
 
 func TestCancellationRevisionRaceIsFinalizedByOwningExecution(t *testing.T) {
@@ -382,7 +328,7 @@ func TestCancellationRevisionRaceIsFinalizedByOwningExecution(t *testing.T) {
 	var cancelled atomic.Bool
 	var launches atomic.Int32
 	project := &config.ProjectConfig{Root: root, Config: dispatchTestConfig(AgentCodex)}
-	err = launchExecution(dispatchExecution{
+	err = executeDispatch(dispatchExecution{
 		Root: root, Project: project, Target: targetMeta{Name: AgentCodex},
 		Version: supportedProviderVersions[AgentCodex], Run: run, Session: session, Mode: dispatchModeFresh,
 		Stderr: dispatchTestWriter(func(data []byte) (int, error) {
@@ -395,7 +341,7 @@ func TestCancellationRevisionRaceIsFinalizedByOwningExecution(t *testing.T) {
 			launches.Add(1)
 			return exec.Command("/bin/sh", "-c", "exit 0") // #nosec G204 -- fixed test command must remain unlaunched.
 		},
-	}).await()
+	})
 	if cancelErr != nil {
 		t.Fatalf("Cancel during identity publication: %v", cancelErr)
 	}
@@ -423,7 +369,7 @@ type dispatchTestWriter func([]byte) (int, error)
 
 func (write dispatchTestWriter) Write(data []byte) (int, error) { return write(data) }
 
-func TestDeleteProtectsRunningRecordWithUnprovableOwnership(t *testing.T) {
+func TestClaimReplacementBlockedByCompatibilityOwnerWithUnprovableOwnership(t *testing.T) {
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 	if err != nil {
@@ -446,11 +392,6 @@ func TestDeleteProtectsRunningRecordWithUnprovableOwnership(t *testing.T) {
 	session.ActiveClaimKnown = false
 	if err := persistSession(root, session); err != nil {
 		t.Fatal(err)
-	}
-	if err := Delete(root, session.Name); err == nil {
-		t.Fatal("Delete removed a mapping whose run may still be live")
-	} else {
-		requireDispatchExitCode(t, err, ExitUnavailable)
 	}
 	beforeClaim, err := loadSession(root, session.Name)
 	if err != nil {

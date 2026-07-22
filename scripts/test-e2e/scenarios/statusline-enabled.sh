@@ -99,12 +99,10 @@ run_scenario_statusline_enabled() {
   install_mock_claude "$repo_dir"
   assert_exit_zero_in "$repo_dir" "al claude with statusline enabled" al claude
   assert_claude_mock_called "$MOCK_CLAUDE_LOG"
-  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_DISPATCH_CALLER_AGENT" "claude"
 
   install_mock_agent "$repo_dir" "codex"
   assert_exit_zero_in "$repo_dir" "al codex with statusline enabled" al codex
   assert_mock_agent_called "$MOCK_AGENT_LOG"
-  assert_mock_agent_env "$MOCK_AGENT_LOG" "AL_DISPATCH_CALLER_AGENT" "codex"
   assert_mock_agent_env "$MOCK_AGENT_LOG" "CODEX_HOME" "$repo_dir/.codex"
 
   cleanup_scenario_dir "$repo_dir"

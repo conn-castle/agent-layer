@@ -162,7 +162,7 @@ func TestClaudeDispatchPrintBackgroundWaitCeilingIsAuthoritative(t *testing.T) {
 			if err != nil {
 				t.Fatalf("new dispatch run: %v", err)
 			}
-			childEnv := dispatchEnvironment(tt.baseEnv, project, run, 1, AgentClaude)
+			childEnv := dispatchEnvironment(tt.baseEnv, project, run, 1)
 			if got := len(envValues(childEnv, claudePrintBackgroundWaitCeilingEnv)); got != tt.inputKeyCount {
 				t.Fatalf("dispatch environment %q entries = %d, want %d: %#v", claudePrintBackgroundWaitCeilingEnv, got, tt.inputKeyCount, childEnv)
 			}
@@ -208,42 +208,56 @@ func envValues(env []string, key string) []string {
 	return values
 }
 
+// reduceStructuredTestEvent routes one raw provider record through the live
+// per-provider reducers exactly as the streaming parser does for parsed
+// records, so reducer contracts stay testable from raw JSON fixtures.
+func reduceStructuredTestEvent(agent string, expectedSession string, raw []byte) ([]providerEvent, error) {
+	var value map[string]any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, err
+	}
+	if agent == AgentClaude {
+		return reduceClaudeEvent(expectedSession, value)
+	}
+	return reduceCodexEvent(value)
+}
+
 func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
-	claudeEvents, err := reduceStructuredEvent(AgentClaude, runtimeSessionID, []byte(`{"type":"result","session_id":"22222222-2222-4222-8222-222222222222","is_error":false}`))
+	claudeEvents, err := reduceStructuredTestEvent(AgentClaude, runtimeSessionID, []byte(`{"type":"result","session_id":"22222222-2222-4222-8222-222222222222","is_error":false}`))
 	if err != nil || len(claudeEvents) != 1 || claudeEvents[0].Kind != eventFailure {
 		t.Fatalf("Claude events = %#v, %v", claudeEvents, err)
 	}
-	codexEvents, err := reduceStructuredEvent(AgentCodex, "", []byte(`{"type":"item.completed","item":{"type":"agent_message","text":"final answer"}}`))
+	codexEvents, err := reduceStructuredTestEvent(AgentCodex, "", []byte(`{"type":"item.completed","item":{"type":"agent_message","text":"final answer"}}`))
 	if err != nil || len(codexEvents) != 1 || codexEvents[0].Answer != "final answer" {
 		t.Fatalf("Codex events = %#v, %v", codexEvents, err)
 	}
-	progressEvents, err := reduceStructuredEvent(AgentCodex, "", []byte(`{"type":"item.completed","item":{"type":"command_execution","command":"pwd"}}`))
+	progressEvents, err := reduceStructuredTestEvent(AgentCodex, "", []byte(`{"type":"item.completed","item":{"type":"command_execution","command":"pwd"}}`))
 	if err != nil || len(progressEvents) != 1 || progressEvents[0].Kind != eventProgress || progressEvents[0].Activity != "item.completed" {
 		t.Fatalf("Codex non-agent item.completed events = %#v, %v", progressEvents, err)
 	}
-	flatEvents, err := reduceStructuredEvent(AgentCodex, "", []byte(`{"type":"agent_message","message":"compatible answer"}`))
+	flatEvents, err := reduceStructuredTestEvent(AgentCodex, "", []byte(`{"type":"agent_message","message":"compatible answer"}`))
 	if err != nil || len(flatEvents) != 1 || flatEvents[0].Answer != "compatible answer" {
 		t.Fatalf("Codex flat compatibility events = %#v, %v", flatEvents, err)
 	}
-	escapedSlashEvents, err := reduceStructuredEvent(AgentCodex, "", []byte(`{"type":"agent_message","message":"https:\/\/example.com\/answer"}`))
+	escapedSlashEvents, err := reduceStructuredTestEvent(AgentCodex, "", []byte(`{"type":"agent_message","message":"https:\/\/example.com\/answer"}`))
 	if err != nil || len(escapedSlashEvents) != 1 || escapedSlashEvents[0].Answer != "https://example.com/answer" {
 		t.Fatalf("Codex escaped-slash events = %#v, %v", escapedSlashEvents, err)
 	}
-	failureEvents, err := reduceStructuredEvent(AgentCodex, "", []byte(`{"type":"turn.failed","error":{"message":"model quota exhausted"}}`))
+	failureEvents, err := reduceStructuredTestEvent(AgentCodex, "", []byte(`{"type":"turn.failed","error":{"message":"model quota exhausted"}}`))
 	if err != nil || len(failureEvents) != 1 || failureEvents[0].Kind != eventFailure || failureEvents[0].Reason != "model quota exhausted" {
 		t.Fatalf("Codex nested failure events = %#v, %v", failureEvents, err)
 	}
-	stringFailureEvents, err := reduceStructuredEvent(AgentCodex, "", []byte(`{"type":"error","error":"quota exhausted"}`))
+	stringFailureEvents, err := reduceStructuredTestEvent(AgentCodex, "", []byte(`{"type":"error","error":"quota exhausted"}`))
 	if err != nil || len(stringFailureEvents) != 1 || stringFailureEvents[0].Kind != eventFailure || stringFailureEvents[0].Reason != "quota exhausted" {
 		t.Fatalf("Codex string failure events = %#v, %v", stringFailureEvents, err)
 	}
 	var raw bytes.Buffer
 	var recovered []providerEvent
 	invalidThenValid := "not-json\n" + `{"type":"turn.completed"}` + "\n"
-	if err := readStructuredEvents(strings.NewReader(invalidThenValid), &raw, AgentCodex, "", func(event providerEvent) error {
+	if err := readStructuredEventsWithLineage(strings.NewReader(invalidThenValid), &raw, AgentCodex, "", false, func(event providerEvent) error {
 		recovered = append(recovered, event)
 		return nil
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("invalid provider JSON prevented later record recovery: %v", err)
 	}
 	if len(recovered) != 2 || recovered[0].Kind != eventProgress || recovered[0].Activity != "invalid_structured_event" || recovered[1].Kind != eventComplete {
@@ -253,7 +267,7 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 		t.Fatalf("raw evidence = %q", raw.String())
 	}
 	raw.Reset()
-	if err := readStructuredEvents(strings.NewReader("\n  \n"), &raw, AgentCodex, "", func(providerEvent) error { return nil }); err != nil {
+	if err := readStructuredEventsWithLineage(strings.NewReader("\n  \n"), &raw, AgentCodex, "", false, func(providerEvent) error { return nil }, nil); err != nil {
 		t.Fatalf("blank provider lines failed: %v", err)
 	}
 	if raw.String() != "\n  \n" {
@@ -271,10 +285,10 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 	runtime.ReadMemStats(&before)
 	var largeEvents []providerEvent
 	retainedBytes := int64(0)
-	if err := readStructuredEvents(largeEvent, countingWriter{count: &retainedBytes}, AgentCodex, "", func(event providerEvent) error {
+	if err := readStructuredEventsWithLineage(largeEvent, countingWriter{count: &retainedBytes}, AgentCodex, "", false, func(event providerEvent) error {
 		largeEvents = append(largeEvents, event)
 		return nil
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("large valid provider event failed: %v", err)
 	}
 	runtime.ReadMemStats(&after)
@@ -616,13 +630,18 @@ func TestClaudeRunnerReadsLineageAndLatestResultThroughEOF(t *testing.T) {
 	if result.Answer != "final" || !result.Complete || result.SessionID != runtimeSessionID {
 		t.Fatalf("result = %#v", result)
 	}
-	summary := deriveClaudeDescendantSummary(root, run.Record)
-	wantTasks := []ClaudeDescendantTask{
-		{TaskID: "task-parent", ToolUseID: "agent-parent", Status: "completed"},
-		{TaskID: "task-child", ToolUseID: "agent-child", ParentTaskID: "task-parent", Status: "failed"},
+	lineage, err := os.ReadFile(run.Record.LineagePath)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if summary.State != "proven-terminal" || len(summary.Reasons) != 0 || !slices.Equal(summary.Tasks, wantTasks) {
-		t.Fatalf("summary = %#v", summary)
+	for _, want := range []string{
+		`{"kind":"task_started","task_id":"task-parent","tool_use_id":"agent-parent","task_type":"local_agent"}`,
+		`{"kind":"task_terminal","task_id":"task-parent","status":"completed"}`,
+		`{"kind":"task_terminal","task_id":"task-child","tool_use_id":"agent-child","status":"failed"}`,
+	} {
+		if !bytes.Contains(lineage, []byte(want)) {
+			t.Fatalf("lineage evidence missing %q: %s", want, lineage)
+		}
 	}
 	events, err := os.ReadFile(run.Record.EventsPath)
 	if err != nil {

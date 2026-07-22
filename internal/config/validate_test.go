@@ -105,21 +105,6 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "agents.copilot_cli.enabled",
 		},
 		{
-			name:    "invalid claude dispatch default",
-			cfg:     withClaudeDispatchDefault(valid, "copilot"),
-			wantErr: "agents.claude.dispatch.default_agent",
-		},
-		{
-			name:    "invalid codex dispatch default",
-			cfg:     withCodexDispatchDefault(valid, "vscode"),
-			wantErr: "agents.codex.dispatch.default_agent",
-		},
-		{
-			name:    "invalid antigravity dispatch default",
-			cfg:     withAntigravityDispatchDefault(valid, "agy"),
-			wantErr: "agents.antigravity.dispatch.default_agent",
-		},
-		{
 			name:    "invalid dispatch max depth",
 			cfg:     withDispatchMaxDepth(valid, 0),
 			wantErr: "dispatch.max_depth",
@@ -174,21 +159,6 @@ func withCopilotCLIEnabled(cfg Config, enabled *bool) Config {
 
 func withCopilotCLIReasoning(cfg Config, effort string) Config {
 	cfg.Agents.CopilotCLI.ReasoningEffort = effort
-	return cfg
-}
-
-func withClaudeDispatchDefault(cfg Config, defaultAgent string) Config {
-	cfg.Agents.Claude.Dispatch.DefaultAgent = defaultAgent
-	return cfg
-}
-
-func withCodexDispatchDefault(cfg Config, defaultAgent string) Config {
-	cfg.Agents.Codex.Dispatch.DefaultAgent = defaultAgent
-	return cfg
-}
-
-func withAntigravityDispatchDefault(cfg Config, defaultAgent string) Config {
-	cfg.Agents.Antigravity.Dispatch.DefaultAgent = defaultAgent
 	return cfg
 }
 

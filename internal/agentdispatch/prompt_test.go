@@ -67,32 +67,6 @@ func TestBuildChildPromptMissingSkill(t *testing.T) {
 	}
 }
 
-func TestResolvePromptPositionalWinsOverStdin(t *testing.T) {
-	got, err := ResolvePrompt([]string{"hello", "world"}, errorReader{}, true)
-	if err != nil {
-		t.Fatalf("ResolvePrompt error: %v", err)
-	}
-	if got != "hello world" {
-		t.Fatalf("prompt = %q, want positional prompt", got)
-	}
-}
-
-func TestResolvePromptReadsStdin(t *testing.T) {
-	got, err := ResolvePrompt(nil, strings.NewReader("from stdin"), true)
-	if err != nil {
-		t.Fatalf("ResolvePrompt error: %v", err)
-	}
-	if got != "from stdin" {
-		t.Fatalf("prompt = %q, want stdin prompt", got)
-	}
-}
-
-type errorReader struct{}
-
-func (errorReader) Read(_ []byte) (int, error) {
-	return 0, errors.New("read failed")
-}
-
 // TestValidateSkillProjectionRejectsSymlink exercises F6: a synced
 // projection that is a symlink (which Stat would have silently followed)
 // is rejected as a non-regular file with ExitConfig.

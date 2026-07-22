@@ -16,6 +16,9 @@ coverage.out
 .tools/
 .cache/
 
+# Other tools
+.playwright-cli/
+
 # >>> agent-layer
 # Template hash: 40e4d77df661e151efc12f8247e480ba241e3e04d9f56cc795b107d3259c76d2
 # Managed by Agent Layer. To customize, edit .agent-layer/gitignore.block

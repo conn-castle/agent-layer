@@ -3,7 +3,6 @@ package agentdispatch
 import (
 	"strings"
 
-	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
@@ -65,32 +64,6 @@ func normalizeAgent(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
 }
 
-func validTargetOrRandom(name string) bool {
-	switch normalizeAgent(name) {
-	case "", AgentRandom, AgentCodex, AgentClaude, AgentAntigravity:
-		return true
-	default:
-		return false
-	}
-}
-
-func knownCallerFromEnv(env []string) (string, bool) {
-	value, ok := clients.GetEnv(env, clients.EnvDispatchCallerAgent)
-	if !ok {
-		return "", false
-	}
-	switch normalizeAgent(value) {
-	case AgentCodex:
-		return AgentCodex, true
-	case AgentClaude:
-		return AgentClaude, true
-	case AgentAntigravity:
-		return AgentAntigravity, true
-	default:
-		return "", false
-	}
-}
-
 func targetEnabled(cfg config.Config, target string) bool {
 	switch target {
 	case AgentCodex:
@@ -102,21 +75,4 @@ func targetEnabled(cfg config.Config, target string) bool {
 	default:
 		return false
 	}
-}
-
-func dispatchDefaultForCaller(cfg config.Config, caller string) string {
-	var value string
-	switch caller {
-	case AgentCodex:
-		value = cfg.Agents.Codex.Dispatch.DefaultAgent
-	case AgentClaude:
-		value = cfg.Agents.Claude.Dispatch.DefaultAgent
-	case AgentAntigravity:
-		value = cfg.Agents.Antigravity.Dispatch.DefaultAgent
-	}
-	value = normalizeAgent(value)
-	if value == "" {
-		return AgentRandom
-	}
-	return value
 }
