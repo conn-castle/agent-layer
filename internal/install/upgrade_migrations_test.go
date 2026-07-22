@@ -2898,6 +2898,63 @@ func TestMigration_0_13_0_PreservesCustomizedInstructionResources(t *testing.T) 
 	}
 }
 
+// TestMigration_0_13_1_RemovesRetiredDispatchDefaults ensures users can
+// upgrade a valid pre-async configuration instead of being left with strict
+// TOML decode failures after the retired dispatch tables are removed.
+func TestMigration_0_13_1_RemovesRetiredDispatchDefaults(t *testing.T) {
+	root := t.TempDir()
+	pinPath := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
+		t.Fatalf("mkdir pin directory: %v", err)
+	}
+	if err := os.WriteFile(pinPath, []byte("0.13.0\n"), 0o600); err != nil {
+		t.Fatalf("write source pin: %v", err)
+	}
+	configPath := filepath.Join(root, ".agent-layer", "config.toml")
+	configData := []byte(`
+[agents.antigravity]
+enabled = true
+[agents.antigravity.dispatch]
+default_agent = "codex"
+[agents.claude]
+enabled = true
+[agents.claude.dispatch]
+default_agent = "codex"
+[agents.codex]
+enabled = true
+[agents.codex.dispatch]
+default_agent = "claude"
+`)
+	if err := os.WriteFile(configPath, configData, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	inst := &installer{root: root, pinVersion: "0.13.1", sys: RealSystem{}}
+	if err := inst.prepareUpgradeMigrations(); err != nil {
+		t.Fatalf("prepare 0.13.1 migrations: %v", err)
+	}
+	if err := inst.runMigrations(); err != nil {
+		t.Fatalf("run 0.13.1 migrations: %v", err)
+	}
+	data, err := os.ReadFile(configPath) // #nosec G304 -- test-owned path.
+	if err != nil {
+		t.Fatalf("read migrated config: %v", err)
+	}
+	if config.HasLegacyDispatchConfig(data) {
+		t.Fatalf("retired dispatch tables remain in migrated config:\n%s", data)
+	}
+	for _, id := range []string{
+		"a-delete-retired-antigravity-dispatch-default",
+		"b-delete-retired-claude-dispatch-default",
+		"c-delete-retired-codex-dispatch-default",
+	} {
+		entry, ok := migrationReportEntryByID(inst.migrationReport.Entries, id)
+		if !ok || entry.Status != UpgradeMigrationStatusApplied {
+			t.Fatalf("migration %s entry = %#v, present = %v; want applied", id, entry, ok)
+		}
+	}
+}
+
 func TestCollectMigrationChain(t *testing.T) {
 	withMigrationManifestChainOverride(t, map[string]string{
 		"0.6.0": `{"schema_version":1,"target_version":"0.6.0","min_prior_version":"0.5.0","operations":[]}`,

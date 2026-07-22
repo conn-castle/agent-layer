@@ -680,6 +680,59 @@ enabled = true
 	}
 }
 
+func TestParseConfig_LegacyDispatchDefaultsPointToUpgrade(t *testing.T) {
+	data := []byte(`
+[approvals]
+mode = "all"
+[agents.antigravity]
+enabled = true
+[agents.antigravity.dispatch]
+default_agent = "codex"
+[agents.claude]
+enabled = true
+[agents.claude.dispatch]
+default_agent = "codex"
+[agents.claude_vscode]
+enabled = true
+[agents.codex]
+enabled = true
+[agents.codex.dispatch]
+default_agent = "claude"
+[agents.vscode]
+enabled = true
+[agents.copilot_cli]
+enabled = true
+`)
+	_, err := ParseConfig(data, "test")
+	if err == nil {
+		t.Fatal("expected error for legacy dispatch defaults")
+	}
+	if !strings.Contains(err.Error(), "dispatch.default_agent is no longer supported") {
+		t.Fatalf("expected legacy dispatch marker in error, got: %v", err)
+	}
+	if !errors.Is(err, ErrConfigValidation) || !errors.Is(err, ErrConfigNeedsUpgrade) {
+		t.Fatalf("legacy dispatch error must require upgrade, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "al wizard") {
+		t.Fatalf("legacy dispatch error should not route to wizard guidance, got: %v", err)
+	}
+}
+
+func TestHasLegacyDispatchConfig(t *testing.T) {
+	data := []byte(`
+[agents.codex]
+enabled = true
+[agents.codex.dispatch]
+default_agent = "claude"
+`)
+	if !HasLegacyDispatchConfig(data) {
+		t.Fatal("expected retired dispatch table to be detected")
+	}
+	if HasLegacyDispatchConfig([]byte("# [agents.codex.dispatch]\n[agents.codex]\nenabled = true\n")) {
+		t.Fatal("commented dispatch table must not be detected")
+	}
+}
+
 func TestHasLegacyAntigravityAgentSpecificModel(t *testing.T) {
 	data := []byte(`
 [agents.antigravity]

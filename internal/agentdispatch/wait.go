@@ -1,6 +1,7 @@
 package agentdispatch
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,10 @@ const dispatchWaitInterval = 100 * time.Millisecond
 
 // Wait blocks until the current invocation for one conversation is terminal.
 func Wait(request WaitRequest) error {
+	ctx := request.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	handle := strings.TrimSpace(request.ID)
 	if handle == "" {
 		return exitError(ExitUsage, "dispatch wait requires a handle")
@@ -33,7 +38,11 @@ func Wait(request WaitRequest) error {
 		if terminalDispatchState(record.State) {
 			break
 		}
-		time.Sleep(dispatchWaitInterval)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(dispatchWaitInterval):
+		}
 		record, err = loadRunRecord(request.Root, record.ID)
 		if err != nil {
 			return err

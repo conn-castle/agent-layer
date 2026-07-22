@@ -201,8 +201,10 @@ func Continue(opts ContinueOptions) error {
 }
 
 func resolvePromptSource(prompt string, promptFile string) (string, error) {
-	hasText := prompt != ""
-	hasFile := strings.TrimSpace(promptFile) != ""
+	trimmedPrompt := strings.TrimSpace(prompt)
+	trimmedPromptFile := strings.TrimSpace(promptFile)
+	hasText := trimmedPrompt != ""
+	hasFile := trimmedPromptFile != ""
 	if hasText == hasFile {
 		return "", exitError(ExitUsage, "exactly one of --prompt or --prompt-file is required")
 	}
@@ -212,15 +214,15 @@ func resolvePromptSource(prompt string, promptFile string) (string, error) {
 		}
 		return prompt, nil
 	}
-	data, err := os.ReadFile(promptFile) // #nosec G304 -- caller explicitly selected the prompt file.
+	data, err := os.ReadFile(trimmedPromptFile) // #nosec G304 -- caller explicitly selected the prompt file.
 	if err != nil {
 		return "", wrapExitError(ExitUsage, "read dispatch prompt file", err)
 	}
 	if len(data) > MaxStdinPromptBytes {
 		return "", exitError(ExitUsage, fmt.Sprintf("dispatch prompt is %d bytes; the maximum is %d bytes", len(data), MaxStdinPromptBytes))
 	}
-	if len(data) == 0 {
-		return "", exitError(ExitUsage, "dispatch prompt file is empty")
+	if strings.TrimSpace(string(data)) == "" {
+		return "", exitError(ExitUsage, "dispatch prompt file is empty or whitespace")
 	}
 	return string(data), nil
 }

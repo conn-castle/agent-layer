@@ -2,6 +2,7 @@ package agentdispatch
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -93,6 +94,39 @@ func TestWaitBlocksUntilTerminal(t *testing.T) {
 	}
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestWaitReturnsPromptlyWhenContextIsCancelled ensures that a CLI interrupted
+// with Ctrl-C stops polling without changing the provider invocation state.
+func TestWaitReturnsPromptlyWhenContextIsCancelled(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	run, session := newWaitTestRun(t, root)
+	run.Record.State = dispatchStateRunning
+	run.Record.SupervisorPID = os.Getpid()
+	run.Record.SupervisorStartIdentity = processStartIdentity(os.Getpid())
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- Wait(WaitRequest{Context: ctx, Root: root, ID: session.Name, Stdout: io.Discard})
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("wait returned before cancellation: %v", err)
+	case <-time.After(2 * dispatchWaitInterval):
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("wait error = %v, want context cancellation", err)
+		}
+	case <-time.After(2 * dispatchWaitInterval):
+		t.Fatal("wait did not return after cancellation")
 	}
 }
 

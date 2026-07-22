@@ -1,6 +1,7 @@
 package agentdispatch
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
@@ -122,9 +123,10 @@ type ContinueOptions struct {
 // WaitRequest identifies one existing dispatch conversation, by handle, to
 // await without changing provider work or execution state.
 type WaitRequest struct {
-	Root   string
-	ID     string
-	Stdout io.Writer
+	Context context.Context
+	Root    string
+	ID      string
+	Stdout  io.Writer
 }
 
 // CancelRequest identifies one active invocation by handle or run UUID.

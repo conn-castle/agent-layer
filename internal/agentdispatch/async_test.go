@@ -67,6 +67,35 @@ func TestStartRequiresExplicitAgentAndOnePromptSource(t *testing.T) {
 	}
 }
 
+func TestResolvePromptSourceNormalizesPathButRejectsWhitespaceOnlySources(t *testing.T) {
+	promptPath := filepath.Join(t.TempDir(), "prompt.md")
+	if err := os.WriteFile(promptPath, []byte("Review this."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := resolvePromptSource("", "  "+promptPath+"  ")
+	if err != nil {
+		t.Fatalf("resolve trimmed prompt file path: %v", err)
+	}
+	if prompt != "Review this." {
+		t.Fatalf("prompt = %q", prompt)
+	}
+	for _, source := range []struct {
+		prompt string
+		file   string
+	}{
+		{prompt: " \t\n "},
+		{file: " \t\n "},
+	} {
+		_, err := resolvePromptSource(source.prompt, source.file)
+		requireDispatchExitCode(t, err, ExitUsage)
+	}
+	if err := os.WriteFile(promptPath, []byte(" \t\n "), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = resolvePromptSource("", promptPath)
+	requireDispatchExitCode(t, err, ExitUsage)
+}
+
 func TestStartAllowsOmittedOverrides(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	var stdout bytes.Buffer

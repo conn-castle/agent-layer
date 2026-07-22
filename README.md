@@ -597,7 +597,8 @@ al dispatch cancel <handle>
 overrides. `start` and `continue` return immediately. `wait` blocks until the
 current invocation reaches `completed`, `failed`, or `cancelled`; completed
 output is stored in the immutable Markdown file named by `result_path`. Every
-command returns one JSON object. For the complete contract, see
+successful command returns one JSON object; `wait` also writes its terminal
+JSON result before a non-zero failed-invocation exit. For the complete contract, see
 [`docs/AGENT-DISPATCH.md`](docs/AGENT-DISPATCH.md).
 
 ---

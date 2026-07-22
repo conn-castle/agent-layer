@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "target_version": "0.13.1",
+  "min_prior_version": "0.10.2",
+  "operations": [
+    {
+      "id": "a-delete-retired-antigravity-dispatch-default",
+      "kind": "config_delete_key",
+      "key": "agents.antigravity.dispatch",
+      "rationale": "Remove the retired per-agent Agent Dispatch default table. The asynchronous dispatch interface requires callers to select a target explicitly.",
+      "source_agnostic": true
+    },
+    {
+      "id": "b-delete-retired-claude-dispatch-default",
+      "kind": "config_delete_key",
+      "key": "agents.claude.dispatch",
+      "rationale": "Remove the retired per-agent Agent Dispatch default table. The asynchronous dispatch interface requires callers to select a target explicitly.",
+      "source_agnostic": true
+    },
+    {
+      "id": "c-delete-retired-codex-dispatch-default",
+      "kind": "config_delete_key",
+      "key": "agents.codex.dispatch",
+      "rationale": "Remove the retired per-agent Agent Dispatch default table. The asynchronous dispatch interface requires callers to select a target explicitly.",
+      "source_agnostic": true
+    }
+  ]
+}

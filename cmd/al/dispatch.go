@@ -80,7 +80,7 @@ func newDispatchWaitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return dispatchCommandError(cmd, agentdispatch.Wait(agentdispatch.WaitRequest{Root: root, ID: args[0], Stdout: cmd.OutOrStdout()}))
+			return dispatchCommandError(cmd, agentdispatch.Wait(agentdispatch.WaitRequest{Context: cmd.Context(), Root: root, ID: args[0], Stdout: cmd.OutOrStdout()}))
 		},
 	}
 }

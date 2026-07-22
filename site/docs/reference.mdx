@@ -663,7 +663,9 @@ returns a conversation handle immediately. `continue` inherits that
 conversation's resolved target configuration and returns immediately.
 `wait` blocks until the current invocation reaches `completed`, `failed`, or
 `cancelled`. Completed output is stored atomically in the immutable Markdown
-file named by `result_path`. Every command returns exactly one JSON object.
+file named by `result_path`. Every successful command returns exactly one JSON
+object; `wait` also writes its terminal JSON result before a non-zero
+failed-invocation exit.
 
 The agent-facing interface contains read-only `options` plus `start`, `wait`,
 `continue`, and `cancel`. Parallel work uses independent conversation handles
