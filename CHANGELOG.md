@@ -1,6 +1,39 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.14.0 - 2026-07-22
+
+Breaking Agent Dispatch lifecycle release. Dispatch now exposes asynchronous,
+handle-based conversations with durable result files instead of synchronous
+named conversations and fanout operations.
+
+### Added
+- `al dispatch start`, `wait`, `continue`, and `cancel`. `start` and
+  `continue` return a handle immediately; `wait` blocks for the terminal state
+  and returns the completed invocation's durable Markdown `result_path`.
+- A stable JSON contract for every successful dispatch command. Independent
+  `start` calls provide parallel work without a public fanout resource.
+
+### Changed
+- **Breaking:** `al dispatch` now requires the explicit lifecycle commands
+  above. The synchronous fresh/resume syntax and `fanout`, `inspect`,
+  `history`, `list`, and `delete` commands are removed.
+- **Breaking:** per-agent `agents.<agent>.dispatch.default_agent` tables are
+  removed. `start` requires `--agent`; the release migration deletes retired
+  tables before strict config decoding.
+- Completed results are persisted atomically before their invocation becomes
+  `completed`; failed and cancelled conversations may be continued with the
+  same handle.
+
+### Fixed
+- Dispatch and client launchers preserve cancellation signals, and sync ignores
+  its transient lock file.
+
+### Internal
+- Added the v0.14.0 migration and template ownership manifests. The migration
+  supports the established 0.10.2+ upgrade range and deletes retired per-agent
+  dispatch default tables.
+
 ## v0.13.0 - 2026-07-17
 
 Breaking Agent Dispatch redesign and workflow-skill refresh. Dispatch now

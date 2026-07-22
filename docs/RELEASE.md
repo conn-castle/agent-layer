@@ -56,10 +56,11 @@ CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>
 For a release that changes Agent Dispatch, attach a short evidence record under
 `docs/release-evidence/` to the release pull request before tagging. Record the
 exact `claude --version`, `codex --version`, and `agy --version` values plus a
-fresh and named-resume probe for every declared supported capability. A changed
-or missing Antigravity UUID line must also be shown to retain diagnostics and
-fail safe as `not resumable`; do not replace it with global/provider-private
-state lookup. This is release evidence, not a new public probe command.
+fresh `start`/`wait` probe and a `continue`/`wait` probe for every declared
+supported provider. A changed or missing Antigravity UUID line must also be
+shown to retain diagnostics and fail safe as `not resumable`; do not replace it
+with global/provider-private state lookup. This is release evidence, not a new
+public probe command.
 
 ## GitHub release (automatic)
 1. Tag push triggers the release workflow.
