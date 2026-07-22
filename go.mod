@@ -18,7 +18,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.44.0
-	golang.org/x/text v0.38.0
+	golang.org/x/text v0.39.0
 	golang.org/x/tools v0.48.0
 	golang.org/x/vuln v1.6.0
 	gotest.tools/gotestsum v1.13.0

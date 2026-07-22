@@ -28,6 +28,8 @@ named conversations and fanout operations.
 ### Fixed
 - Dispatch and client launchers preserve cancellation signals, and sync ignores
   its transient lock file.
+- Updated `golang.org/x/text` to v0.39.0 to remediate GO-2026-5970, which the
+  release binary vulnerability scan detected in v0.38.0.
 
 ### Internal
 - Added the v0.14.0 migration and template ownership manifests. The migration
