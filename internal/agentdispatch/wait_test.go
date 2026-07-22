@@ -41,6 +41,13 @@ func TestWaitReturnsDurableCompletedResult(t *testing.T) {
 	}
 }
 
+func TestCompletedResultPathRejectsEmptyAndNonFilePaths(t *testing.T) {
+	for _, answerPath := range []string{"", t.TempDir()} {
+		_, err := completedResultPath(RunRecord{AnswerPath: answerPath})
+		requireDispatchExitCode(t, err, ExitConfig)
+	}
+}
+
 func TestWaitReturnsFailedJSONAndExitCategory(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, session := newWaitTestRun(t, root)

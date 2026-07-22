@@ -261,7 +261,7 @@ const (
 	DispatchOptionsShort                 = "List available dispatch agents and override options"
 	DispatchOptionsLong                  = "Write one JSON object describing each dispatch agent's availability, configured defaults, and supported model and reasoning-effort overrides."
 	DispatchPromptOrSkillRequired        = "`al dispatch` requires prompt text, --skill, or both"
-	DispatchUnknownTargetFmt             = "unknown `al dispatch` target %q (supported: codex, claude, antigravity, random)"
+	DispatchUnknownTargetFmt             = "unknown `al dispatch` target %q (supported: codex, claude, antigravity)"
 	DispatchMissingSkillFmt              = "`al dispatch` skill %q was not found in .agent-layer/skills"
 	DispatchMissingSkillProjectionFmt    = "`al dispatch` skill %q is not synced for %s (missing %s); run al sync"
 	DispatchSkillProjectionNotRegularFmt = "`al dispatch` skill projection %s is not a regular file (mode %s); refusing to follow symlink or special file"

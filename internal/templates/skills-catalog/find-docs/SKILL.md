@@ -40,7 +40,7 @@ syntax.
   flag.
 - Treat installed CLI help as the source of truth for commands, arguments,
   flags, output modes, and defaults.
-- If `ctx7` is missing, cannot run, or reports a different version, stop and
+- If `ctx7` is missing or cannot run, stop and
   report the missing setup requirement. Do not install, upgrade, authenticate,
   set up, remove, or reconfigure Context7 unless the user asked for setup work.
 - Do not pass secrets, credentials, proprietary code, personal data, or private

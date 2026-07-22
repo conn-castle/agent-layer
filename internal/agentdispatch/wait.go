@@ -91,16 +91,19 @@ func writeWaitResult(handle string, record RunRecord, stdout io.Writer) error {
 }
 
 func completedResultPath(record RunRecord) (string, error) {
+	if strings.TrimSpace(record.AnswerPath) == "" {
+		return "", exitError(ExitConfig, "completed dispatch result path is empty")
+	}
 	path, err := filepath.Abs(record.AnswerPath)
 	if err != nil {
 		return "", wrapExitError(ExitConfig, "resolve dispatch result path", err)
 	}
-	file, err := os.Open(path) // #nosec G304 -- path comes from validated Agent Layer run state.
+	info, err := os.Stat(path) // #nosec G304 -- path comes from validated Agent Layer run state.
 	if err != nil {
-		return "", wrapExitError(ExitConfig, "open completed dispatch result", err)
+		return "", wrapExitError(ExitConfig, "stat completed dispatch result", err)
 	}
-	if err := file.Close(); err != nil {
-		return "", wrapExitError(ExitConfig, "close completed dispatch result", err)
+	if !info.Mode().IsRegular() {
+		return "", exitError(ExitConfig, "completed dispatch result is not a regular file")
 	}
 	return path, nil
 }
