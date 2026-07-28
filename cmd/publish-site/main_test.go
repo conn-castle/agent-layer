@@ -850,6 +850,28 @@ func TestPublishPages_StagesPagesAndGeneratesGuides(t *testing.T) {
 	}
 }
 
+func TestPublishDeepSWEPlanner_ReplacesOnlyOwnedStaticSubtree(t *testing.T) {
+	repoA := t.TempDir()
+	repoB := t.TempDir()
+	writeFile(t, filepath.Join(repoA, "site", "static", "deepswe-planner", "app", "index.html"), "planner")
+	writeFile(t, filepath.Join(repoB, "static", "deepswe-planner", "stale.txt"), "stale")
+	writeFile(t, filepath.Join(repoB, "static", "img", "logo.svg"), "logo")
+
+	if err := publishDeepSWEPlanner(repoA, repoB); err != nil {
+		t.Fatalf("publishDeepSWEPlanner: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoB, "static", "deepswe-planner", "stale.txt")); !os.IsNotExist(err) {
+		t.Fatalf("stale planner asset was not removed")
+	}
+	planner, err := os.ReadFile(filepath.Join(repoB, "static", "deepswe-planner", "app", "index.html")) // #nosec G304 -- test-controlled path.
+	if err != nil || string(planner) != "planner" {
+		t.Fatalf("planner asset = %q, %v", string(planner), err)
+	}
+	if _, err := os.Stat(filepath.Join(repoB, "static", "img", "logo.svg")); err != nil {
+		t.Fatalf("unrelated static asset was changed: %v", err)
+	}
+}
+
 func TestValidateRepoBRootErrors(t *testing.T) {
 	if err := validateRepoBRoot(filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("expected error for missing repo")
@@ -1596,6 +1618,7 @@ func TestRun(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(siteDocs, "reference.mdx"), []byte("reference"), 0o600); err != nil {
 		t.Fatalf("write doc: %v", err)
 	}
+	writeFile(t, filepath.Join(repoA, "site", "static", "deepswe-planner", "app", "index.html"), "planner")
 	writeTestGuideInputs(t, repoA)
 
 	if err := os.MkdirAll(filepath.Join(repoB, ".git"), 0o700); err != nil {
@@ -1741,6 +1764,7 @@ func setupRepoA(t *testing.T, opts repoAOptions) string {
 		if err := os.WriteFile(filepath.Join(sitePages, "index.mdx"), []byte("# Home"), 0o600); err != nil {
 			t.Fatalf("write page: %v", err)
 		}
+		writeFile(t, filepath.Join(repo, "site", "static", "deepswe-planner", "app", "index.html"), "planner")
 	}
 	if opts.withDocs {
 		siteDocs := filepath.Join(repo, "site", "docs")

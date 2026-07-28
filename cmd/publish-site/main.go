@@ -68,12 +68,19 @@ func run() error {
 
 	sitePages := filepath.Join(repoA, "site", "pages")
 	siteDocs := filepath.Join(repoA, "site", "docs")
+	plannerStatic := filepath.Join(repoA, "site", "static", "deepswe-planner")
 
 	if _, err := osStatFunc(sitePages); os.IsNotExist(err) {
 		return fmt.Errorf("missing Repo A site pages dir: %s", sitePages)
 	}
 	if _, err := osStatFunc(siteDocs); os.IsNotExist(err) {
 		return fmt.Errorf("missing Repo A site docs dir: %s", siteDocs)
+	}
+	if _, err := osStatFunc(plannerStatic); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("missing Repo A DeepSWE planner static dir: %s", plannerStatic)
+		}
+		return fmt.Errorf("failed to stat Repo A DeepSWE planner static dir: %w", err)
 	}
 	changelogSrc := filepath.Join(repoA, "CHANGELOG.md")
 	changelogInfo, err := osStatFunc(changelogSrc)
@@ -87,6 +94,9 @@ func run() error {
 	// Publish unversioned pages by replacing Repo B src/pages.
 	if err := publishPages(repoA, repoB); err != nil {
 		return fmt.Errorf("failed to copy pages: %w", err)
+	}
+	if err := publishDeepSWEPlanner(repoA, repoB); err != nil {
+		return fmt.Errorf("failed to copy DeepSWE planner: %w", err)
 	}
 
 	// Copy docs staging.
@@ -137,6 +147,15 @@ func run() error {
 
 	fmt.Println("Done!")
 	return nil
+}
+
+// publishDeepSWEPlanner replaces only the website subtree owned by the
+// planner. Other static website assets remain owned by Repo B.
+func publishDeepSWEPlanner(repoA, repoB string) error {
+	source := filepath.Join(repoA, "site", "static", "deepswe-planner")
+	destination := filepath.Join(repoB, "static", "deepswe-planner")
+	fmt.Printf("Copying %s -> %s\n", source, destination)
+	return copyTree(source, destination)
 }
 
 // repoRoot returns Repo A root by searching upwards for go.mod.

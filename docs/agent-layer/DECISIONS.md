@@ -27,6 +27,11 @@ A rolling log of important, non-obvious decisions that materially affect future 
 
 <!-- ENTRIES START -->
 
+- Decision 2026-07-23 deepswe-evidence-identity: One plan identity with a shared baseline and content-addressed treatment versions
+    Decision: Hash the exact website-exported plan JSON into the campaign identity. Store one immutable baseline below that plan, and store each instructions/skills version below its treatment-manifest hash; derive reports from those saved arms.
+    Reason: Every treatment must use the plan's exact tasks, repetitions, model, and reasoning while iterations reuse the same compatible paid baseline. Content-addressed treatment state prevents changed instructions or skills from reusing old treatment evidence.
+    Tradeoffs: Reformatting otherwise equivalent plan JSON creates a different campaign identity, so clipboard/download consumers should preserve the website's deterministic export bytes. The export intentionally contains no generation timestamp.
+
 - Decision 2026-01-24 a1b2c3d: Ignore unexpected working tree changes
     Decision: Agents will not pause, warn, or stop due to unexpected working tree changes (unstaged or staged files not created by the agent).
     Reason: The user works in parallel with agents, making concurrent changes a normal operating condition.
@@ -196,3 +201,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Match secret-like URL query keys by separator, camelCase, and acronym segments instead of arbitrary substrings.
     Reason: The user chose to remove false positives such as `author`, `authority`, `tokenizer`, and `passwordless` while retaining common segmented secret-key forms.
     Tradeoffs: Glued lowercase keys such as `authtoken`, `accesstoken`, and `clientsecret` are intentionally not detected.
+
+- Decision 2026-07-26 deepswe-web-planner: Run the benchmark planner entirely in the static website
+    Decision: Publish the DeepSWE task/repetition planner as a client-side website tool that uses a pinned public-data asset and copies a self-contained versioned JSON plan to the clipboard. The Go CLI only validates, executes, and reports that exact plan; it contains no second optimizer.
+    Reason: The public website is static GitHub Pages, the calculation uses only public embedded data, and users need a web workflow without a new hosted service or local Agent Layer server.
+    Tradeoffs: The optimizer runs only after the user presses Search and its visible 50,000-state bound can return a best-known plan with a quantified optimality gap. Published planning evidence used `mini-swe-agent` while local experiments use provider CLI harnesses; the report therefore recalculates its threshold exclusively from the observed local baseline and treatment arms.

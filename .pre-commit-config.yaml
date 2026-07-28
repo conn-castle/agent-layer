@@ -11,6 +11,9 @@ repos:
         exclude: ^internal/sync/testdata/fixture-repo/expected/\.vscode/settings\.json$
       - id: check-toml
       - id: check-added-large-files
+        # A versioned, generated benchmark snapshot keeps planner inputs
+        # reviewable and reproducible; its 3 MB+ size is intentional.
+        exclude: ^site/static/deepswe-planner/app/data\.js$
       - id: check-case-conflict
       - id: mixed-line-ending
       - id: detect-private-key

@@ -287,6 +287,22 @@ Run from: repo root
 Prerequisites: Go 1.26.0+, Node 22+, npm, and a local `conn-castle/agent-layer-web` git checkout
 Notes: Installs website dependencies, publishes this repo's `site/` content into `WEBSITE_REPO_DIR`, snapshots docs for `SITE_BUILD_TAG`, then runs `npm run build`. The checkout is mutated; use a temporary clone for release previews.
 
+- Refresh the versioned website DeepSWE planner snapshot
+```bash
+make refresh-deepswe-planner-data
+```
+Run from: repo root
+Prerequisites: Node 22+, curl, and network access
+Notes: Downloads the official DeepSWE v1.1 trials/tasks JSON files into `.agent-layer/tmp/deepswe-planner-data/`, validates required source fields, excludes unusable trials visibly, and writes the versioned browser snapshot. Review the printed source URL and SHA-256 before accepting a changed snapshot. The generated `site/static/deepswe-planner/app/data.js` intentionally exceeds the general 500 KB pre-commit limit because it is the planner's reviewable, reproducible evidence snapshot.
+
+- Verify the website optimizer against exhaustive allocation
+```bash
+make test-deepswe-planner
+```
+Run from: repo root
+Prerequisites: Node 22+
+Notes: Executes the planner's actual browser calculation code against the pinned published snapshot, exhaustively enumerates a deterministic small task/repetition search space, and verifies the optimal allocation and stable export contract.
+
 - Build release artifacts locally (cross-compile)
 ```bash
 make release-dist AL_VERSION=dev DIST_DIR=dist
@@ -294,3 +310,32 @@ make release-dist AL_VERSION=dev DIST_DIR=dist
 Run from: repo root
 Prerequisites: Go 1.26.0+, git, gzip, tar, `sha256sum` or `shasum`
 Notes: Runs `test-release` first to validate release scripts. Local builds stay unsigned unless `AL_CODESIGN_IDENTITY` is set on macOS; `AL_REQUIRE_CODESIGN=1` fails if signing cannot run.
+
+### Agent Layer skill A/B benchmark
+
+- Validate or run the bare-model baseline from an exported website plan
+```bash
+go run ./cmd/al benchmark baseline --check --plan <plan.json> --task-concurrency 4
+go run ./cmd/al benchmark baseline --plan <plan.json> --task-concurrency 4 --yes
+pbpaste | go run ./cmd/al benchmark baseline --check --plan -
+```
+Run from: repo root
+Prerequisites: Go 1.26.0+, Git, Docker, `uvx`, provider authentication, and a valid `deepswe-benchmark-plan` JSON exported by the website
+Notes: The website is the only task/repetition selector. The command validates and executes its exact allocation. `--plan -` reads the exported JSON from standard input. Successful calls are immutable and reused by plan ID; failures are not retried automatically.
+
+- Validate or run one immutable Agent Layer version
+```bash
+go run ./cmd/al benchmark treatment --check --plan <plan.json> --label "Iteration 1"
+go run ./cmd/al benchmark treatment --plan <plan.json> --label "Iteration 1" --task-concurrency 4 --yes
+```
+Run from: repo root
+Prerequisites: A completed baseline plus the baseline prerequisites
+Notes: The current Agent Layer instructions and skills are fingerprinted into a version identity. A changed bundle creates a new version and reuses the shared baseline. `--check` validates readiness and reports missing calls without writing state or invoking a model. Treatment cost is not inferred from the baseline, so paid execution reports the number of calls and asks for explicit confirmation.
+
+- Generate the campaign report without model calls
+```bash
+go run ./cmd/al benchmark report --plan <plan.json>
+```
+Run from: repo root
+Prerequisites: A completed baseline and at least one completed treatment version
+Notes: Calculates the observed two-sided threshold from both arms, then writes canonical JSON and offline HTML from immutable evidence. It does not invoke a provider, Pier, Docker, or a network service. Plans exported before cost-axis provenance was added require an explicit canonical `--analysis` artifact.

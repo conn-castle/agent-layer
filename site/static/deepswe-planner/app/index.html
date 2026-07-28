@@ -1,0 +1,2059 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>DeepSWE Benchmark Planner | Agent Layer</title>
+<style>
+:root {
+  color-scheme: light;
+  --canvas: #f2f0e9;
+  --surface: #fbfaf6;
+  --surface-strong: #ffffff;
+  --ink: #17211d;
+  --muted: #66716b;
+  --line: #d6d8cf;
+  --line-strong: #afb7ae;
+  --target: #116149;
+  --target-soft: #e3f0ea;
+  --comparison: #8b4b22;
+  --comparison-soft: #f5e8df;
+  --accent: #254f77;
+  --accent-soft: #e4edf5;
+  --warning: #875f00;
+  --warning-soft: #fff4ce;
+  --danger: #a43d35;
+  --danger-soft: #fbe7e3;
+  --shadow: 0 14px 38px rgba(31, 41, 35, .08);
+  --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+* { box-sizing: border-box; }
+html { background: var(--canvas); }
+body {
+  margin: 0;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 8% 0%, rgba(17, 97, 73, .07), transparent 30rem),
+    radial-gradient(circle at 92% 8%, rgba(139, 75, 34, .07), transparent 28rem),
+    var(--canvas);
+  font: 15px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select { font: inherit; }
+button, select { cursor: pointer; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+  outline: 3px solid rgba(37, 79, 119, .28);
+  outline-offset: 2px;
+}
+.shell { width: min(1440px, calc(100% - 36px)); margin: 0 auto; padding: 38px 0 80px; }
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--target);
+  font: 700 11px/1 var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+h1 { max-width: 850px; margin: 0; font-size: clamp(30px, 5vw, 54px); line-height: 1.02; letter-spacing: -.045em; }
+.lede { max-width: 760px; margin: 16px 0 0; color: var(--muted); font-size: 17px; }
+.provenance { margin: 18px 0 0; color: var(--muted); font: 12px/1.5 var(--mono); }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 20px; margin-top: 30px; align-items: start; }
+.main { min-width: 0; display: grid; gap: 20px; }
+.side { min-width: 0; display: grid; gap: 20px; position: sticky; top: 18px; }
+.card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(251, 250, 246, .94);
+  box-shadow: var(--shadow);
+}
+.card-pad { padding: 22px; }
+.card-title { display: flex; justify-content: space-between; gap: 16px; align-items: start; margin-bottom: 18px; }
+.card-title h2, .card-title h3 { margin: 0; font-size: 18px; letter-spacing: -.02em; }
+.card-title p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.step {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--surface);
+  font: 700 12px/1 var(--mono);
+}
+.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+.field { min-width: 0; display: grid; gap: 6px; }
+.field.full { grid-column: 1 / -1; }
+.field label { font-weight: 700; font-size: 12px; letter-spacing: .01em; }
+.field .help { color: var(--muted); font-size: 12px; }
+.field-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.field-row > div { min-width: 0; }
+input, select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  padding: 9px 11px;
+  background: var(--surface-strong);
+  color: var(--ink);
+}
+input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--danger); background: var(--danger-soft); }
+.target-field select { border-left: 4px solid var(--target); }
+.comparison-field select { border-left: 4px solid var(--comparison); }
+.fixed-method {
+  margin-top: 16px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: #29465f;
+  font-size: 12px;
+}
+.fixed-method strong { color: var(--ink); }
+.threshold {
+  overflow: hidden;
+  background: #17231f;
+  color: #f5f4ee;
+  border-color: #17231f;
+}
+.threshold-inner { padding: 25px; }
+.threshold .eyebrow { color: #98cbb9; }
+.threshold-value {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-height: 70px;
+  margin-top: 12px;
+}
+.threshold-value strong { font: 720 clamp(43px, 8vw, 68px)/.95 var(--mono); letter-spacing: -.07em; }
+.threshold-value span { color: #cbd7d1; }
+.threshold-copy { max-width: 720px; margin: 15px 0 0; color: #d7dfdb; font-size: 15px; }
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid rgba(255,255,255,.13);
+}
+.metric { padding: 15px 18px; border-right: 1px solid rgba(255,255,255,.13); }
+.metric:last-child { border-right: 0; }
+.metric span { display: block; color: #9fb0a8; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.metric strong { display: block; margin-top: 5px; color: #fff; font: 650 16px/1.2 var(--mono); overflow-wrap: anywhere; }
+.empty-state { color: #bfcac4; font-size: 16px; align-self: center; }
+.messages { display: grid; gap: 9px; margin-top: 16px; }
+.message { border-radius: 10px; padding: 11px 13px; font-size: 13px; color: var(--ink); }
+.message.warning { background: var(--warning-soft); border: 1px solid #ecd893; }
+.message.error { background: var(--danger-soft); border: 1px solid #e5aaa3; }
+.message.info { background: var(--accent-soft); border: 1px solid #bdd0e0; }
+.toolbar { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
+.toolbar .spacer { flex: 1; }
+.btn {
+  min-height: 38px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  padding: 8px 13px;
+  background: var(--surface-strong);
+  color: var(--ink);
+  font-weight: 700;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover:not(:disabled) { background: #193d60; color: #fff; }
+.btn:disabled { opacity: .42; cursor: not-allowed; }
+.status-pill, .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: 700 10px/1.2 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+.badge.target { color: var(--target); background: var(--target-soft); }
+.badge.comparison { color: var(--comparison); background: var(--comparison-soft); }
+.badge.warning { color: var(--warning); background: var(--warning-soft); }
+.badge.danger { color: var(--danger); background: var(--danger-soft); }
+.table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-strong); }
+table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 10px;
+  background: #f0f1ec;
+  color: var(--muted);
+  text-align: right;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  white-space: nowrap;
+}
+th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+td { padding: 10px; border-top: 1px solid #e7e8e2; text-align: right; vertical-align: middle; }
+tr:hover td { background: #fafbf8; }
+.task-name { min-width: 210px; max-width: 310px; }
+.task-name strong { display: block; overflow: hidden; text-overflow: ellipsis; }
+.task-name span { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+.signal-pos { color: var(--target); font-weight: 700; }
+.signal-neg { color: var(--comparison); font-weight: 700; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); }
+.plan-empty { padding: 34px 20px; color: var(--muted); text-align: center; }
+.explorer-tools { display: grid; grid-template-columns: minmax(180px, 1fr) 180px; gap: 10px; margin-bottom: 12px; }
+.explorer-state { min-width: 112px; min-height: 34px; padding: 5px 7px; font-size: 11px; }
+.inspect {
+  border: 0;
+  padding: 4px 0;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 11px;
+}
+.inspect:hover { text-decoration: underline; }
+.side dl { display: grid; grid-template-columns: 1fr auto; gap: 10px 14px; margin: 0; font-size: 12px; }
+.side dt { color: var(--muted); }
+.side dd { margin: 0; text-align: right; font-family: var(--mono); font-weight: 650; overflow-wrap: anywhere; }
+.method summary { cursor: pointer; font-weight: 750; }
+.method p, .method li { color: var(--muted); font-size: 12px; }
+.method code { font: 11px/1.5 var(--mono); color: var(--ink); }
+.method pre { overflow: auto; padding: 12px; border-radius: 9px; background: #eeefe9; white-space: pre-wrap; }
+.source-link { color: var(--accent); overflow-wrap: anywhere; }
+dialog {
+  width: min(860px, calc(100% - 28px));
+  max-height: calc(100vh - 40px);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 0;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 28px 80px rgba(0,0,0,.24);
+}
+dialog::backdrop { background: rgba(15, 22, 18, .56); backdrop-filter: blur(3px); }
+.dialog-head { position: sticky; top: 0; z-index: 4; display: flex; justify-content: space-between; gap: 20px; padding: 18px 20px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.dialog-head h2 { margin: 0; font-size: 18px; }
+.dialog-body { padding: 20px; }
+.dialog-close { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+.dialog-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.trial-card { border: 1px solid var(--line); border-radius: 11px; padding: 14px; background: #fff; }
+.trial-card h3 { margin: 0 0 9px; font-size: 14px; }
+.trial-list { display: grid; gap: 6px; font: 11px/1.45 var(--mono); }
+.trial { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; padding-top: 6px; border-top: 1px solid #ecece7; }
+.fallback-box { margin-top: 16px; padding: 14px; border: 1px solid #ecd893; border-radius: 11px; background: var(--warning-soft); }
+.fallback-box h3 { margin: 0 0 6px; font-size: 14px; }
+.footer { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@media (max-width: 1040px) {
+  .layout { grid-template-columns: 1fr; }
+  .side { position: static; grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 720px) {
+  .shell { width: min(100% - 20px, 1440px); padding-top: 24px; }
+  .fields, .field-row, .side, .dialog-grid { grid-template-columns: 1fr; }
+  .metric-grid { grid-template-columns: 1fr 1fr; }
+  .metric:nth-child(2) { border-right: 0; }
+  .metric:nth-child(-n+2) { border-bottom: 1px solid rgba(255,255,255,.13); }
+  .explorer-tools { grid-template-columns: 1fr; }
+  .card-pad { padding: 17px; }
+}
+
+/* Application layout */
+body {
+  background:
+    radial-gradient(circle at 12% -10%, rgba(17, 97, 73, .08), transparent 34rem),
+    #f5f4ef;
+}
+.shell { width: min(1180px, calc(100% - 32px)); padding: 28px 0 64px; }
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 28px;
+  align-items: end;
+  margin-bottom: 22px;
+}
+.app-header h1 {
+  max-width: none;
+  font-size: clamp(30px, 4vw, 45px);
+  line-height: 1;
+}
+.app-header .lede { max-width: 680px; margin-top: 12px; font-size: 16px; }
+.app-header .provenance { max-width: 330px; margin: 0; text-align: right; }
+.workspace { display: grid; gap: 18px; }
+.workspace > * { min-width: 0; }
+#resultsRegion { min-width: 0; display: grid; gap: 18px; }
+.setup-card { padding: 24px; }
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: start;
+  margin-bottom: 18px;
+}
+.section-heading h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
+.section-heading p { max-width: 720px; margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.configuration-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.configuration-panel {
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  padding: 16px;
+  background: #fff;
+}
+.configuration-panel.target-panel { border-top: 4px solid var(--target); }
+.configuration-panel.proxy-panel { border-top: 4px solid var(--comparison); }
+.configuration-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.configuration-label strong { font-size: 14px; }
+.configuration-label span:last-child { color: var(--muted); font-size: 12px; }
+.configuration-controls { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(120px, .75fr); gap: 10px; }
+.configuration-panel .field label, .constraint-grid .field label { font-size: 11px; text-transform: uppercase; letter-spacing: .055em; }
+.configuration-panel select { border-left-width: 1px; }
+.proxy-note {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--comparison-soft);
+  color: #654027;
+  font-size: 12px;
+}
+.proxy-note strong { color: var(--ink); }
+.constraint-grid {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.7fr) repeat(3, minmax(120px, .75fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.search-bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.search-state { color: var(--muted); font-size: 12px; }
+.search-button { min-width: 190px; min-height: 46px; padding-inline: 20px; }
+.search-button[aria-busy="true"] { cursor: wait; }
+.fixed-method { margin-top: 12px; background: #eef2f4; color: #465b68; }
+.result-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(280px, .75fr); gap: 18px; }
+.threshold { min-height: 100%; }
+.threshold-inner { padding: 28px; }
+.threshold-value { min-height: 58px; margin-top: 8px; }
+.threshold-value strong { font-size: clamp(44px, 7vw, 64px); }
+.threshold-copy { max-width: 650px; }
+.metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.anatomy { padding: 22px; }
+.anatomy dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 11px 14px; margin: 0; font-size: 12px; }
+.anatomy dt { color: var(--muted); }
+.anatomy dd { margin: 0; text-align: right; font-family: var(--mono); font-weight: 650; overflow-wrap: anywhere; }
+.plan-card, .explorer-card { padding: 22px; }
+.plan-card .section-heading, .explorer-card .section-heading { margin-bottom: 14px; }
+.method-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.method-grid .card { box-shadow: none; }
+.method-grid details { padding: 18px 20px; }
+.method-grid summary { font-size: 14px; }
+#messages:empty { display: none; }
+[hidden] { display: none !important; }
+@media (max-width: 900px) {
+  .app-header { display: block; }
+  .app-header .provenance { max-width: none; margin-top: 14px; text-align: left; }
+  .result-grid { grid-template-columns: 1fr; }
+  .constraint-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 680px) {
+  .shell { width: min(100% - 20px, 1180px); padding-top: 20px; }
+  .configuration-grid, .configuration-controls, .constraint-grid, .method-grid { grid-template-columns: 1fr; }
+  .setup-card, .plan-card, .explorer-card { padding: 17px; }
+  .search-bar { align-items: stretch; flex-direction: column; }
+  .search-button { width: 100%; }
+  .metric-grid { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+<main class="shell">
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">DeepSWE experiment design</p>
+      <h1>Test plan search</h1>
+      <p class="lede">Find the tasks and repetitions that historically revealed model-quality changes most clearly relative to their noise.</p>
+    </div>
+    <p class="provenance" id="provenance"></p>
+  </header>
+
+  <section class="workspace">
+    <section class="card setup-card" aria-labelledby="setup-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="setup-title">Configure the experiment</h2>
+          <p>The published pair shows which tasks changed when model quality changed, and how noisy that evidence was.</p>
+        </div>
+      </div>
+
+      <div class="configuration-grid">
+        <section class="configuration-panel target-panel">
+          <div class="configuration-label">
+            <span class="badge target">Bare model</span>
+            <strong>Configuration you will test</strong>
+          </div>
+          <div class="configuration-controls">
+            <div class="field">
+              <label for="targetModel">Model</label>
+              <select id="targetModel"><option value="">Choose model…</option></select>
+            </div>
+            <div class="field">
+              <label for="targetReasoning">Reasoning</label>
+              <select id="targetReasoning" disabled><option value="">Choose reasoning…</option></select>
+            </div>
+          </div>
+          <p class="help">Your fresh bare-model baseline and skill/instruction run will use this exact configuration.</p>
+        </section>
+
+        <section class="configuration-panel proxy-panel">
+          <div class="configuration-label">
+            <span class="badge comparison">Comparison</span>
+            <strong>Published model-quality contrast</strong>
+          </div>
+          <div class="configuration-controls">
+            <div class="field">
+              <label for="comparisonModel">Model</label>
+              <select id="comparisonModel"><option value="">Choose model…</option></select>
+            </div>
+            <div class="field">
+              <label for="comparisonReasoning">Reasoning</label>
+              <select id="comparisonReasoning" disabled><option value="">Choose reasoning…</option></select>
+            </div>
+          </div>
+          <p class="proxy-note"><strong>Why it matters:</strong> its score difference from the bare model measures demonstrated task response. Both configurations’ run-to-run variance measures noise.</p>
+        </section>
+      </div>
+
+      <div class="constraint-grid">
+        <div class="field">
+          <label for="budget">Bare-model baseline budget (USD)</label>
+          <input id="budget" type="number" min="0.01" step="0.01" placeholder="For example, 5">
+          <span class="help">The future skill/instruction arm has the same plan and unknown cost.</span>
+        </div>
+        <div class="field">
+          <label for="minTasks">Minimum tasks</label>
+          <input id="minTasks" type="number" min="1" step="1" value="3">
+          <span class="help">Recommended: 3</span>
+        </div>
+        <div class="field">
+          <label for="maxReps">Maximum reps</label>
+          <input id="maxReps" type="number" min="2" max="4" step="1" value="4">
+          <span class="help">Per task, per arm · minimum 2 to estimate observed variance</span>
+        </div>
+        <div class="field">
+          <label for="headroom">Headroom</label>
+          <input id="headroom" type="number" min="0" max="49.9" step="1" value="10">
+          <span class="help">Percent in each direction</span>
+        </div>
+      </div>
+
+      <div class="fixed-method"><strong>Fixed method:</strong> maximize historical model difference ÷ decision threshold · equal task weights · two-sided significance level 0.05 · deterministic branch-and-bound search, limited to 50,000 states.</div>
+      <div class="search-bar">
+        <span class="search-state" id="searchState">Set the configurations and budget, then search.</span>
+        <button class="btn primary search-button" id="runSearch">Search best plan</button>
+      </div>
+      <div class="messages" id="messages"></div>
+    </section>
+
+    <section id="resultsRegion" hidden>
+      <div class="result-grid">
+        <section class="card threshold" aria-live="polite">
+        <div class="threshold-inner">
+            <p class="eyebrow">Decision threshold for this plan</p>
+            <div class="threshold-value" id="thresholdValue"></div>
+            <p class="threshold-copy" id="thresholdCopy"></p>
+        </div>
+        <div class="metric-grid">
+            <div class="metric"><span>Baseline spend</span><strong id="metricSpend">—</strong></div>
+            <div class="metric"><span>Tasks · runs/arm</span><strong id="metricRuns">—</strong></div>
+            <div class="metric"><span>Historical model difference</span><strong id="metricSignal">—</strong></div>
+            <div class="metric"><span>Detectability</span><strong id="metricSnr">—</strong></div>
+        </div>
+        </section>
+
+        <section class="card anatomy">
+          <div class="section-heading"><div><h2>Why this threshold?</h2><p>Calculation details, not additional controls.</p></div></div>
+          <dl>
+            <dt>Planned standard error</dt><dd id="detailSe">—</dd>
+            <dt>Effective degrees of freedom</dt><dd id="detailDf">—</dd>
+            <dt>Student's t critical value</dt><dd id="detailT">—</dd>
+            <dt>Improvement room</dt><dd id="detailUp">—</dd>
+            <dt>Regression room</dt><dd id="detailDown">—</dd>
+            <dt>Unspent baseline budget</dt><dd id="detailUnspent">—</dd>
+            <dt>Optimization result</dt><dd id="detailOptimizer">—</dd>
+            <dt>Proven detectability ceiling</dt><dd id="detailBound">—</dd>
+            <dt>Eligible automatic tasks</dt><dd id="detailEligible">—</dd>
+            <dt>Both-zero fallbacks</dt><dd id="detailFallbacks">—</dd>
+          </dl>
+        </section>
+      </div>
+
+      <section class="card plan-card" aria-labelledby="plan-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="plan-title">Recommended test plan</h2>
+            <p>Each selected task has an independently optimized repetition count.</p>
+          </div>
+          <span class="status-pill" id="planStatus">Not searched</span>
+        </div>
+        <div class="toolbar">
+          <span class="spacer"></span>
+          <button class="btn" id="copyPlan" disabled>Copy JSON</button>
+          <button class="btn primary" id="downloadPlan" disabled>Download plan</button>
+        </div>
+        <div id="planTable" class="plan-empty">No plan calculated yet.</div>
+      </section>
+    </section>
+
+    <section class="card explorer-card" aria-labelledby="explorer-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="explorer-title">Task controls and evidence</h2>
+          <p>Optionally require or exclude tasks. Any change invalidates the current result until you search again.</p>
+        </div>
+      </div>
+      <div class="explorer-tools">
+        <input id="taskSearch" type="search" placeholder="Search task or language…" aria-label="Search tasks">
+        <select id="taskFilter" aria-label="Filter tasks">
+          <option value="all">All tasks</option>
+          <option value="selected">Selected</option>
+          <option value="eligible">Automatic eligible</option>
+          <option value="warnings">Warnings or unavailable</option>
+          <option value="overrides">Manual overrides</option>
+        </select>
+      </div>
+      <div id="explorerTable" class="plan-empty">Choose both configurations to inspect task evidence.</div>
+    </section>
+
+    <div class="method-grid">
+      <section class="card method">
+        <details>
+          <summary>How the method works</summary>
+          <p>For every candidate task and repetition plan:</p>
+          <ol>
+            <li>Calculate the signed, equal-weight historical model difference from the two published configurations’ means.</li>
+            <li>Separately calculate the ± decision threshold from their variances, planned repetitions, and a two-sided 0.05 Student’s t critical value.</li>
+            <li>Divide the absolute historical model difference by the threshold. This unitless detectability score says how many decision thresholds separated the published configurations.</li>
+            <li>Branch-and-bound searches joint task and repetition choices for maximum detectability.</li>
+            <li>The result is labeled optimal only when no remaining plan can improve detectability. Otherwise the page reports the proven ceiling and remaining gap.</li>
+          </ol>
+          <p>When both selected variances are zero, the page visibly substitutes pooled within-configuration variance from that same task in other published configurations.</p>
+          <pre>detectability = |historical model difference| ÷ decision threshold
+decision threshold = Student's t × planned standard error</pre>
+        </details>
+      </section>
+
+      <section class="card method">
+        <details>
+          <summary>Data and compatibility</summary>
+          <p id="sourceDetail"></p>
+          <p>The exported JSON is the complete task and repetition contract consumed by <code>al benchmark</code>.</p>
+          <p>The operational-defect exclusion list starts empty. Only confirmed execution or evaluation defects may enter it.</p>
+        </details>
+      </section>
+    </div>
+  </section>
+
+  <p class="footer">This planner optimizes a benchmark suite for the selected budget. Any later result applies only to the selected tasks and does not claim representativeness across DeepSWE.</p>
+</main>
+
+<dialog id="taskDialog">
+  <div class="dialog-head">
+    <div><p class="eyebrow">Source inspection</p><h2 id="dialogTitle"></h2></div>
+    <button class="dialog-close" id="dialogClose" aria-label="Close task details">×</button>
+  </div>
+  <div class="dialog-body" id="dialogBody"></div>
+</dialog>
+
+<script src="./data.js"></script>
+<script>
+const SNAPSHOT = window.__DEEPSWE_PLANNER_DATA__;
+if (!SNAPSHOT || SNAPSHOT.schemaVersion !== 1 || !Array.isArray(SNAPSHOT.configurations) || !Array.isArray(SNAPSHOT.tasks)) {
+  document.getElementById("messages").innerHTML = '<div class="message error"><strong>Error:</strong> The DeepSWE planner data could not be loaded. Reload the page; if the error remains, report it instead of using this planner.</div>';
+  document.getElementById("runSearch").disabled = true;
+  throw new Error("The embedded DeepSWE planner snapshot is missing or invalid.");
+}
+const ALPHA = 0.05;
+const MIN_REPETITIONS = 2;
+const SEARCH_NODE_LIMIT = 50_000;
+const COST_AXIS_REFERENCE_CONFIGURATION = "claude-fable-5::max";
+// Safely rounded below the two-sided 0.05 standard-normal critical value.
+const NORMAL_CRITICAL_LOWER_BOUND = 1.959963984;
+const OPERATIONAL_EXCLUSIONS = Object.freeze([]);
+const RUNNABLE_TARGET_MODELS = new Set([
+  "gpt-5-6-luna",
+  "gpt-5-6-terra",
+  "gpt-5-6-sol",
+  "claude-sonnet-5",
+  "claude-opus-4-8",
+  "claude-fable-5",
+]);
+const configById = new Map(SNAPSHOT.configurations.map((configuration) => [configuration.id, configuration]));
+const taskById = new Map(SNAPSHOT.tasks.map((task) => [task.id, task]));
+const manualStates = new Map();
+const tCriticalCache = new Map();
+let currentPlan = null;
+let currentRows = [];
+let currentInputs = null;
+let currentRowInputs = null;
+
+const $ = (id) => document.getElementById(id);
+const percent = (value, digits = 1) => Number.isFinite(value) ? `${(value * 100).toFixed(digits)} pp` : "—";
+const decimal = (value, digits = 3) => Number.isFinite(value) ? value.toFixed(digits) : "—";
+const money = (value) => Number.isFinite(value) ? `$${value.toFixed(2)}` : "—";
+const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
+})[character]);
+
+/**
+ * Natural logarithm of the gamma function.
+ * @param {number} value positive input
+ * @returns {number} log gamma
+ */
+function logGamma(value) {
+  const coefficients = [76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.001208650973866179, -0.000005395239384953];
+  let cursor = value;
+  let temporary = value + 5.5;
+  temporary -= (value + 0.5) * Math.log(temporary);
+  let series = 1.000000000190015;
+  for (const coefficient of coefficients) series += coefficient / ++cursor;
+  return -temporary + Math.log(2.5066282746310005 * series / value);
+}
+
+/**
+ * Continued fraction used by the regularized incomplete beta function.
+ * @param {number} a first beta parameter
+ * @param {number} b second beta parameter
+ * @param {number} x evaluation point
+ * @returns {number} continued-fraction value
+ */
+function betaFraction(a, b, x) {
+  const floor = 1e-300;
+  const qab = a + b;
+  const qap = a + 1;
+  const qam = a - 1;
+  let c = 1;
+  let d = 1 - qab * x / qap;
+  if (Math.abs(d) < floor) d = floor;
+  d = 1 / d;
+  let result = d;
+  for (let iteration = 1; iteration <= 200; iteration += 1) {
+    const doubled = 2 * iteration;
+    let coefficient = iteration * (b - iteration) * x / ((qam + doubled) * (a + doubled));
+    d = 1 + coefficient * d;
+    if (Math.abs(d) < floor) d = floor;
+    c = 1 + coefficient / c;
+    if (Math.abs(c) < floor) c = floor;
+    d = 1 / d;
+    result *= d * c;
+    coefficient = -(a + iteration) * (qab + iteration) * x / ((a + doubled) * (qap + doubled));
+    d = 1 + coefficient * d;
+    if (Math.abs(d) < floor) d = floor;
+    c = 1 + coefficient / c;
+    if (Math.abs(c) < floor) c = floor;
+    d = 1 / d;
+    const delta = d * c;
+    result *= delta;
+    if (Math.abs(delta - 1) < 3e-14) break;
+  }
+  return result;
+}
+
+/**
+ * Regularized incomplete beta function.
+ * @param {number} a first beta parameter
+ * @param {number} b second beta parameter
+ * @param {number} x evaluation point from zero to one
+ * @returns {number} regularized incomplete beta
+ */
+function regularizedBeta(a, b, x) {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  const factor = Math.exp(logGamma(a + b) - logGamma(a) - logGamma(b) + a * Math.log(x) + b * Math.log(1 - x));
+  return x < (a + 1) / (a + b + 2)
+    ? factor * betaFraction(a, b, x) / a
+    : 1 - factor * betaFraction(b, a, 1 - x) / b;
+}
+
+/**
+ * Two-sided Student's t tail probability.
+ * @param {number} value non-negative t value
+ * @param {number} degreesOfFreedom positive degrees of freedom
+ * @returns {number} two-sided tail probability
+ */
+function tTail(value, degreesOfFreedom) {
+  return regularizedBeta(degreesOfFreedom / 2, 0.5, degreesOfFreedom / (degreesOfFreedom + value * value));
+}
+
+/**
+ * Two-sided Student's t critical value at the supplied alpha.
+ * @param {number} degreesOfFreedom positive, possibly fractional degrees of freedom
+ * @param {number} alpha two-sided significance level
+ * @returns {number} t critical value
+ */
+function tCritical(degreesOfFreedom, alpha = ALPHA) {
+  if (!(degreesOfFreedom > 0)) return NaN;
+  const cacheKey = `${alpha}:${degreesOfFreedom}`;
+  const cached = tCriticalCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  let low = 0;
+  let high = 10000;
+  for (let iteration = 0; iteration < 64; iteration += 1) {
+    const middle = (low + high) / 2;
+    if (tTail(middle, degreesOfFreedom) > alpha) low = middle;
+    else high = middle;
+  }
+  const critical = (low + high) / 2;
+  tCriticalCache.set(cacheKey, critical);
+  return critical;
+}
+
+/**
+ * Derive pooled same-task variance from every other published configuration.
+ * @param {object} task task snapshot
+ * @param {string} targetId selected target configuration
+ * @param {string} comparisonId selected comparison configuration
+ * @returns {{variance:number,degreesOfFreedom:number,donors:object[]}|null} fallback evidence
+ */
+function pooledFallback(task, targetId, comparisonId) {
+  const donors = [];
+  let sumSquares = 0;
+  let degreesOfFreedom = 0;
+  for (const [configuration, cell] of Object.entries(task.cells)) {
+    if (configuration === targetId || configuration === comparisonId) continue;
+    if (!(cell.n >= 2) || !Number.isFinite(cell.variance)) continue;
+    const df = cell.n - 1;
+    sumSquares += df * cell.variance;
+    degreesOfFreedom += df;
+    donors.push({ configuration, n: cell.n, variance: cell.variance });
+  }
+  if (!(degreesOfFreedom > 0) || !(sumSquares > 0)) return null;
+  return { variance: sumSquares / degreesOfFreedom, degreesOfFreedom, donors };
+}
+
+/**
+ * Derive all selected-pair values and eligibility for one task.
+ * @param {object} task task snapshot
+ * @param {object} inputs validated user inputs
+ * @returns {object} derived task row
+ */
+function deriveTask(task, inputs) {
+  const target = task.cells[inputs.targetId];
+  const comparison = task.cells[inputs.comparisonId];
+  const manual = manualStates.get(task.id) ?? "automatic";
+  const operational = OPERATIONAL_EXCLUSIONS.find((entry) => entry.task === task.id);
+  const reasons = [];
+  if (operational) reasons.push(`Operational defect: ${operational.reason}`);
+  if (!target) reasons.push("No usable target trials");
+  if (!comparison) reasons.push("No usable comparison trials");
+  if (target && (!(target.n >= 2) || !Number.isFinite(target.variance))) reasons.push("Target variance is not estimable");
+  if (comparison && (!(comparison.n >= 2) || !Number.isFinite(comparison.variance))) reasons.push("Comparison variance is not estimable");
+  if (target && !Number.isFinite(target.meanCost)) reasons.push("Target cost is unavailable");
+  const costAxisReference = task.cells[COST_AXIS_REFERENCE_CONFIGURATION];
+  if (!costAxisReference || !Number.isFinite(costAxisReference.meanCost)) {
+    reasons.push(`The ${COST_AXIS_REFERENCE_CONFIGURATION} cost-axis reference is unavailable`);
+  }
+  let fallback = null;
+  if (reasons.length === 0 && target.variance === 0 && comparison.variance === 0) {
+    fallback = pooledFallback(task, inputs.targetId, inputs.comparisonId);
+    if (!fallback) reasons.push("Both variances are zero and same-task fallback noise is not estimable");
+  }
+  const dataAvailable = reasons.length === 0;
+  const headroomEligible = Boolean(target && target.mean >= inputs.headroom && target.mean <= 1 - inputs.headroom);
+  const requiredHeadroomBypass = manual === "required" && dataAvailable && !headroomEligible;
+  const automaticEligible = dataAvailable && headroomEligible && !operational && manual !== "excluded";
+  const components = !dataAvailable ? [] : fallback
+    ? [{ variance: 2 * fallback.variance, degreesOfFreedom: fallback.degreesOfFreedom, source: "same-task-pooled-fallback" }]
+    : [
+        { variance: target.variance, degreesOfFreedom: target.n - 1, source: "target" },
+        { variance: comparison.variance, degreesOfFreedom: comparison.n - 1, source: "comparison" },
+      ];
+  return {
+    id: task.id,
+    task,
+    target,
+    comparison,
+    manual,
+    reasons,
+    dataAvailable,
+    headroomEligible,
+    requiredHeadroomBypass,
+    automaticEligible,
+    fallback,
+    components,
+    signedDifference: dataAvailable ? comparison.mean - target.mean : NaN,
+    cost: target?.meanCost,
+  };
+}
+
+/**
+ * Calculate historical response, planned variance, SNR, and optional t threshold.
+ * @param {{row:object,repetitions:number}[]} selections selected allocations
+ * @param {boolean} includeCritical whether to calculate the t critical value
+ * @returns {object} suite statistics
+ */
+function suiteStatistics(selections, includeCritical = true) {
+  if (selections.length === 0) {
+    return { signedSignal: 0, signal: 0, variance: Infinity, standardError: Infinity, snr: 0, degreesOfFreedom: NaN, tCritical: NaN, criticalDifference: Infinity, detectability: 0 };
+  }
+  const count = selections.length;
+  let signedTotal = 0;
+  let variance = 0;
+  let denominator = 0;
+  for (const selection of selections) {
+    signedTotal += selection.row.signedDifference;
+    const scale = 1 / (count * count * selection.repetitions);
+    for (const component of selection.row.components) {
+      const term = component.variance * scale;
+      variance += term;
+      denominator += term * term / component.degreesOfFreedom;
+    }
+  }
+  const signedSignal = signedTotal / count;
+  const signal = Math.abs(signedSignal);
+  const standardError = Math.sqrt(variance);
+  const snr = standardError > 0 ? signal / standardError : signal > 0 ? Infinity : 0;
+  const degreesOfFreedom = denominator > 0 ? variance * variance / denominator : NaN;
+  const criticalValue = includeCritical ? tCritical(degreesOfFreedom) : NaN;
+  const criticalDifference = includeCritical ? criticalValue * standardError : NaN;
+  return {
+    signedSignal,
+    signal,
+    variance,
+    standardError,
+    snr,
+    degreesOfFreedom,
+    tCritical: criticalValue,
+    criticalDifference,
+    detectability: includeCritical && criticalDifference > 0 ? signal / criticalDifference : NaN,
+  };
+}
+
+/**
+ * Return the configuration matching separate model and reasoning selections.
+ * @param {string} model selected model
+ * @param {string} reasoning selected reasoning level
+ * @returns {object|null} matching configuration
+ */
+function selectedConfiguration(model, reasoning) {
+  if (!model || !reasoning) return null;
+  return SNAPSHOT.configurations.find((configuration) => configuration.model === model && configuration.reasoning === reasoning) ?? null;
+}
+
+/**
+ * Parse and validate every visible behavior-changing input.
+ * @param {boolean} showValidation whether to mark invalid controls
+ * @returns {{valid:boolean,errors:string[],targetId:string,comparisonId:string,budget:number,minTasks:number,maxReps:number,headroom:number}} inputs
+ */
+function readInputs(showValidation = false) {
+  const targetModel = $("targetModel").value;
+  const targetReasoning = $("targetReasoning").value;
+  const comparisonModel = $("comparisonModel").value;
+  const comparisonReasoning = $("comparisonReasoning").value;
+  const targetConfiguration = selectedConfiguration(targetModel, targetReasoning);
+  const comparisonConfiguration = selectedConfiguration(comparisonModel, comparisonReasoning);
+  const targetId = targetConfiguration?.id ?? "";
+  const comparisonId = comparisonConfiguration?.id ?? "";
+  const budgetRaw = $("budget").value.trim();
+  const minRaw = $("minTasks").value.trim();
+  const repsRaw = $("maxReps").value.trim();
+  const headroomRaw = $("headroom").value.trim();
+  const budget = Number(budgetRaw);
+  const minTasks = Number(minRaw);
+  const maxReps = Number(repsRaw);
+  const headroomPercent = Number(headroomRaw);
+  const errors = [];
+  if (!targetModel) errors.push("Choose the bare model.");
+  else if (!targetReasoning) errors.push("Choose the bare-model reasoning level.");
+  else if (!targetConfiguration) errors.push("The selected bare-model configuration is unavailable.");
+  if (!comparisonModel) errors.push("Choose the published comparison model.");
+  else if (!comparisonReasoning) errors.push("Choose the comparison reasoning level.");
+  else if (!comparisonConfiguration) errors.push("The selected comparison configuration is unavailable.");
+  if (targetId && targetId === comparisonId) errors.push("The bare model and comparison must be different configurations.");
+  if (budgetRaw === "" || !Number.isFinite(budget) || budget <= 0) errors.push("Enter a baseline budget greater than zero.");
+  if (minRaw === "" || !Number.isInteger(minTasks) || minTasks < 1 || minTasks > SNAPSHOT.tasks.length) errors.push(`Minimum tasks must be an integer from 1 to ${SNAPSHOT.tasks.length}.`);
+  if (repsRaw === "" || !Number.isInteger(maxReps) || maxReps < MIN_REPETITIONS || maxReps > 4) errors.push("Maximum repetitions must be an integer from 2 through 4.");
+  if (headroomRaw === "" || !Number.isFinite(headroomPercent) || headroomPercent < 0 || headroomPercent >= 50) errors.push("Headroom must be at least 0% and less than 50%.");
+  $("targetModel").setAttribute("aria-invalid", String(showValidation && (!targetModel || targetId === comparisonId)));
+  $("targetReasoning").setAttribute("aria-invalid", String(showValidation && (!targetReasoning || !targetConfiguration || targetId === comparisonId)));
+  $("comparisonModel").setAttribute("aria-invalid", String(showValidation && (!comparisonModel || targetId === comparisonId)));
+  $("comparisonReasoning").setAttribute("aria-invalid", String(showValidation && (!comparisonReasoning || !comparisonConfiguration || targetId === comparisonId)));
+  $("budget").setAttribute("aria-invalid", String(showValidation && (budgetRaw === "" || !Number.isFinite(budget) || budget <= 0)));
+  $("minTasks").setAttribute("aria-invalid", String(showValidation && (minRaw === "" || !Number.isInteger(minTasks) || minTasks < 1 || minTasks > SNAPSHOT.tasks.length)));
+  $("maxReps").setAttribute("aria-invalid", String(showValidation && (repsRaw === "" || !Number.isInteger(maxReps) || maxReps < MIN_REPETITIONS || maxReps > 4)));
+  $("headroom").setAttribute("aria-invalid", String(showValidation && (headroomRaw === "" || !Number.isFinite(headroomPercent) || headroomPercent < 0 || headroomPercent >= 50)));
+  return { valid: errors.length === 0, errors, targetId, comparisonId, budget, minTasks, maxReps, headroom: headroomPercent / 100 };
+}
+
+/**
+ * Return current baseline spend.
+ * @param {{row:object,repetitions:number}[]} selections allocations
+ * @returns {number} estimated target baseline cost
+ */
+function selectionCost(selections) {
+  return selections.reduce((sum, selection) => sum + selection.row.cost * selection.repetitions, 0);
+}
+
+/**
+ * Clone selected allocations.
+ * @param {{row:object,repetitions:number}[]} selections allocations
+ * @returns {{row:object,repetitions:number}[]} cloned allocations
+ */
+function cloneSelections(selections) {
+  return selections.map((selection) => ({ row: selection.row, repetitions: selection.repetitions }));
+}
+
+/**
+ * Compare two greedy detectability candidates with deterministic tie-breaks.
+ * @param {object} left candidate
+ * @param {object|null} right current best
+ * @param {boolean} useRate whether gain-per-dollar is the first criterion
+ * @returns {boolean} whether left wins
+ */
+function candidateWins(left, right, useRate) {
+  if (!right) return true;
+  if (useRate && left.rate !== right.rate) return left.rate > right.rate;
+  if (left.afterDetectability !== right.afterDetectability) {
+    return left.afterDetectability > right.afterDetectability;
+  }
+  if (left.gain !== right.gain) return left.gain > right.gain;
+  if (left.cost !== right.cost) return left.cost < right.cost;
+  if (left.row.id !== right.row.id) return left.row.id.localeCompare(right.row.id) < 0;
+  return left.kind === "add" && right.kind === "repeat";
+}
+
+/**
+ * Minimal deterministic binary heap ordered by a numeric upper bound.
+ */
+class SearchMaxHeap {
+  constructor() {
+    this.values = [];
+  }
+
+  get size() {
+    return this.values.length;
+  }
+
+  /**
+   * @param {object} value search node
+   * @returns {void}
+   */
+  push(value) {
+    this.values.push(value);
+    let index = this.values.length - 1;
+    while (index > 0) {
+      const parent = Math.floor((index - 1) / 2);
+      if (!SearchMaxHeap.less(value, this.values[parent])) break;
+      this.values[index] = this.values[parent];
+      index = parent;
+    }
+    this.values[index] = value;
+  }
+
+  /**
+   * @returns {object|null} largest-bound node
+   */
+  pop() {
+    if (this.values.length === 0) return null;
+    const first = this.values[0];
+    const last = this.values.pop();
+    if (this.values.length === 0) return first;
+    let index = 0;
+    while (true) {
+      const left = index * 2 + 1;
+      const right = left + 1;
+      if (left >= this.values.length) break;
+      let child = left;
+      if (right < this.values.length && SearchMaxHeap.less(this.values[right], this.values[left])) child = right;
+      if (!SearchMaxHeap.less(this.values[child], last)) break;
+      this.values[index] = this.values[child];
+      index = child;
+    }
+    this.values[index] = last;
+    return first;
+  }
+
+  /**
+   * @returns {object|null} largest-bound node without removal
+   */
+  peek() {
+    return this.values[0] ?? null;
+  }
+
+  /**
+   * @param {object} left first node
+   * @param {object} right second node
+   * @returns {boolean} whether left sorts first
+   */
+  static less(left, right) {
+    return left.upperBound > right.upperBound
+      || (left.upperBound === right.upperBound && left.serial < right.serial);
+  }
+}
+
+/**
+ * Collapse one task's Welch components into additive search quantities.
+ * @param {object} row derived task row
+ * @returns {{variance:number,welchDenominator:number}} additive terms at one repetition
+ */
+function searchTerms(row) {
+  return {
+    variance: row.components.reduce((sum, component) => sum + component.variance, 0),
+    welchDenominator: row.components.reduce(
+      (sum, component) => sum + component.variance * component.variance / component.degreesOfFreedom,
+      0,
+    ),
+  };
+}
+
+/**
+ * Calculate detectability from additive search quantities.
+ *
+ * The equal-weight task-count factor cancels between the signed historical
+ * model difference and the decision threshold.
+ *
+ * @param {number} responseSum sum of signed published task differences
+ * @param {number} varianceSum sum of one-task variance terms divided by repetitions
+ * @param {number} welchSum sum of squared terms divided by component degrees of freedom
+ * @returns {number} exact unitless detectability
+ */
+function aggregateDetectability(responseSum, varianceSum, welchSum) {
+  if (!(varianceSum > 0) || !(welchSum > 0)) return 0;
+  const degreesOfFreedom = varianceSum * varianceSum / welchSum;
+  const denominator = tCritical(degreesOfFreedom) * Math.sqrt(varianceSum);
+  return denominator > 0 ? Math.abs(responseSum) / denominator : 0;
+}
+
+/**
+ * Decode a base-five search path into task allocations.
+ * @param {bigint} code encoded repetition choices
+ * @param {number} processed number of processed task entries
+ * @param {object[]} entries ordered search task entries
+ * @returns {{row:object,repetitions:number}[]} decoded selections
+ */
+function decodeSearchSelections(code, processed, entries) {
+  const repetitions = Array(processed).fill(0);
+  let cursor = code;
+  for (let index = processed - 1; index >= 0; index -= 1) {
+    repetitions[index] = Number(cursor % 5n);
+    cursor /= 5n;
+  }
+  return repetitions
+    .map((value, index) => ({ row: entries[index].row, repetitions: value }))
+    .filter((selection) => selection.repetitions > 0);
+}
+
+/**
+ * Search all task/repetition decisions for maximum detectability.
+ *
+ * The upper bound allows every remaining response that helps either signed
+ * direction, relaxes future repetition costs, uses the lowest possible
+ * variance needed for breadth, and substitutes the standard-normal critical
+ * value below every finite-sample Student's t critical value. It can only
+ * overstate descendant detectability and is therefore safe for pruning.
+ *
+ * @param {object} inputs validated visible inputs
+ * @param {object[]} rows derived task rows
+ * @param {number} minimumCount required distinct-task count for this plan
+ * @param {{selections:{row:object,repetitions:number}[],statistics:object,spent:number}} seed heuristic incumbent
+ * @returns {object} best plan and proof metadata
+ */
+function branchAndBoundDetectability(inputs, rows, minimumCount, seed) {
+  const required = rows
+    .filter((row) => row.manual === "required" && row.dataAvailable)
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const automatic = rows
+    .filter((row) => row.manual === "automatic" && row.automaticEligible)
+    .map((row) => ({ row, terms: searchTerms(row) }))
+    .sort((left, right) => (
+      Math.abs(right.row.signedDifference) / Math.sqrt(right.terms.variance / inputs.maxReps)
+      - Math.abs(left.row.signedDifference) / Math.sqrt(left.terms.variance / inputs.maxReps)
+      || left.row.id.localeCompare(right.row.id)
+    ));
+  const entries = [
+    ...required.map((row) => ({ row, terms: searchTerms(row), required: true })),
+    ...automatic.map((entry) => ({ ...entry, required: false })),
+  ];
+  const requiredEntryCount = required.length;
+  const suffixRequiredCount = Array(entries.length + 1).fill(0);
+  const suffixRequiredCost = Array(entries.length + 1).fill(0);
+  const suffixRequiredBestVariance = Array(entries.length + 1).fill(0);
+  const suffixRequiredResponse = Array(entries.length + 1).fill(0);
+  const suffixOptionalBestVariances = Array(entries.length + 1);
+  const suffixOptionalCosts = Array(entries.length + 1);
+  const suffixOptionalPositiveResponse = Array(entries.length + 1).fill(0);
+  const suffixOptionalNegativeResponse = Array(entries.length + 1).fill(0);
+  const suffixRequiredMinimumInformation = Array(entries.length + 1).fill(0);
+  const suffixInformationUnits = Array(entries.length + 1);
+  suffixOptionalBestVariances[entries.length] = [];
+  suffixOptionalCosts[entries.length] = [];
+  suffixInformationUnits[entries.length] = [];
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    const informationPerRepetition = entry.row.signedDifference * entry.row.signedDifference / entry.terms.variance;
+    suffixRequiredCount[index] = suffixRequiredCount[index + 1] + (entry.required ? 1 : 0);
+    suffixRequiredCost[index] = suffixRequiredCost[index + 1] + (entry.required ? entry.row.cost * MIN_REPETITIONS : 0);
+    suffixRequiredBestVariance[index] = suffixRequiredBestVariance[index + 1]
+      + (entry.required ? entry.terms.variance / inputs.maxReps : 0);
+    suffixRequiredResponse[index] = suffixRequiredResponse[index + 1]
+      + (entry.required ? entry.row.signedDifference : 0);
+    suffixOptionalBestVariances[index] = entry.required
+      ? suffixOptionalBestVariances[index + 1]
+      : [entry.terms.variance / inputs.maxReps, ...suffixOptionalBestVariances[index + 1]]
+          .sort((left, right) => left - right);
+    suffixOptionalCosts[index] = entry.required
+      ? suffixOptionalCosts[index + 1]
+      : [...suffixOptionalCosts[index + 1], entry.row.cost * MIN_REPETITIONS].sort((left, right) => left - right);
+    suffixOptionalPositiveResponse[index] = suffixOptionalPositiveResponse[index + 1]
+      + (!entry.required ? Math.max(0, entry.row.signedDifference) : 0);
+    suffixOptionalNegativeResponse[index] = suffixOptionalNegativeResponse[index + 1]
+      + (!entry.required ? Math.min(0, entry.row.signedDifference) : 0);
+    suffixRequiredMinimumInformation[index] = suffixRequiredMinimumInformation[index + 1]
+      + (entry.required ? informationPerRepetition * MIN_REPETITIONS : 0);
+    const availableRepetitionUnits = entry.required ? inputs.maxReps - MIN_REPETITIONS : inputs.maxReps;
+    const newInformationUnits = Array.from(
+      { length: availableRepetitionUnits },
+      () => ({
+        cost: entry.row.cost,
+        information: informationPerRepetition,
+      }),
+    );
+    suffixInformationUnits[index] = [
+      ...suffixInformationUnits[index + 1],
+      ...newInformationUnits,
+    ].sort((left, right) => {
+          const leftDensity = left.cost > 0 ? left.information / left.cost : left.information > 0 ? Infinity : 0;
+          const rightDensity = right.cost > 0 ? right.information / right.cost : right.information > 0 ? Infinity : 0;
+          if (leftDensity !== rightDensity) return rightDensity > leftDensity ? 1 : -1;
+          return left.cost - right.cost;
+        });
+  }
+
+  /**
+   * @param {object} node partial search node
+   * @returns {number} valid optimistic detectability bound for every descendant
+   */
+  function upperBound(node) {
+    const index = node.index;
+    const mandatoryCost = node.cost + suffixRequiredCost[index];
+    if (mandatoryCost > inputs.budget) return -Infinity;
+    const baseCount = node.count + suffixRequiredCount[index];
+    const baseVariance = node.varianceSum + suffixRequiredBestVariance[index];
+    const remainingBudget = inputs.budget - mandatoryCost;
+    const optionalCosts = suffixOptionalCosts[index];
+    let affordableOptionalCount = 0;
+    let optionalCost = 0;
+    for (const cost of optionalCosts) {
+      if (optionalCost + cost > remainingBudget) break;
+      optionalCost += cost;
+      affordableOptionalCount += 1;
+    }
+    const neededOptionalCount = Math.max(0, minimumCount - baseCount);
+    if (neededOptionalCount > affordableOptionalCount) return -Infinity;
+    const optionalVariances = suffixOptionalBestVariances[index];
+    const minimumVariance = baseVariance + optionalVariances
+      .slice(0, neededOptionalCount)
+      .reduce((sum, variance) => sum + variance, 0);
+    if (!(minimumVariance > 0)) return Infinity;
+    const baseResponse = node.responseSum + suffixRequiredResponse[index];
+    const maximumAbsoluteResponse = Math.max(
+      Math.abs(baseResponse + suffixOptionalPositiveResponse[index]),
+      Math.abs(baseResponse + suffixOptionalNegativeResponse[index]),
+    );
+    const responseVarianceBound = maximumAbsoluteResponse
+      / (NORMAL_CRITICAL_LOWER_BOUND * Math.sqrt(minimumVariance));
+    let informationBudget = remainingBudget;
+    let optionalInformation = 0;
+    for (const item of suffixInformationUnits[index]) {
+      if (!(informationBudget > 0)) break;
+      if (item.cost <= informationBudget) {
+        optionalInformation += item.information;
+        informationBudget -= item.cost;
+      } else {
+        optionalInformation += item.information * informationBudget / item.cost;
+        informationBudget = 0;
+      }
+    }
+    const currentInformation = node.varianceSum > 0
+      ? node.responseSum * node.responseSum / node.varianceSum
+      : 0;
+    const informationBound = Math.sqrt(
+      currentInformation
+      + suffixRequiredMinimumInformation[index]
+      + optionalInformation,
+    ) / NORMAL_CRITICAL_LOWER_BOUND;
+    return Math.min(responseVarianceBound, informationBound);
+  }
+
+  let bestSelections = cloneSelections(seed.selections);
+  let bestStatistics = seed.statistics;
+  let bestSpent = seed.spent;
+  let bestDetectability = seed.statistics?.detectability ?? 0;
+  let bestNode = null;
+  let serial = 0;
+  const heap = new SearchMaxHeap();
+  const root = {
+    index: 0,
+    count: 0,
+    cost: 0,
+    responseSum: 0,
+    varianceSum: 0,
+    welchSum: 0,
+    code: 0n,
+    serial: serial++,
+  };
+  root.upperBound = upperBound(root);
+  if (root.upperBound > -Infinity) heap.push(root);
+  const rootUpperBound = root.upperBound;
+  let expandedNodes = 0;
+  let certified = false;
+  const comparisonTolerance = 1e-15;
+
+  while (heap.size > 0 && expandedNodes < SEARCH_NODE_LIMIT) {
+    const node = heap.pop();
+    if (node.upperBound <= bestDetectability + comparisonTolerance) {
+      certified = true;
+      break;
+    }
+    expandedNodes += 1;
+    if (node.index >= requiredEntryCount && node.count >= minimumCount) {
+      const detectability = aggregateDetectability(node.responseSum, node.varianceSum, node.welchSum);
+      if (
+        detectability > bestDetectability + comparisonTolerance
+        || (Math.abs(detectability - bestDetectability) <= comparisonTolerance && node.cost < bestSpent)
+      ) {
+        bestDetectability = detectability;
+        bestSpent = node.cost;
+        bestNode = node;
+      }
+    }
+    if (node.index >= entries.length) continue;
+    const entry = entries[node.index];
+    const selectedChoices = Array.from(
+      { length: inputs.maxReps - MIN_REPETITIONS + 1 },
+      (_, index) => inputs.maxReps - index,
+    );
+    const choices = entry.required ? selectedChoices : [0, ...selectedChoices];
+    for (const repetitions of choices) {
+      const cost = node.cost + entry.row.cost * repetitions;
+      if (cost > inputs.budget) continue;
+      const child = {
+        index: node.index + 1,
+        count: node.count + (repetitions > 0 ? 1 : 0),
+        cost,
+        responseSum: node.responseSum + (repetitions > 0 ? entry.row.signedDifference : 0),
+        varianceSum: node.varianceSum + (repetitions > 0 ? entry.terms.variance / repetitions : 0),
+        welchSum: node.welchSum + (repetitions > 0 ? entry.terms.welchDenominator / (repetitions * repetitions) : 0),
+        code: node.code * 5n + BigInt(repetitions),
+        serial: serial++,
+      };
+      child.upperBound = upperBound(child);
+      if (child.upperBound > bestDetectability + comparisonTolerance) heap.push(child);
+    }
+  }
+
+  if (bestNode) {
+    bestSelections = decodeSearchSelections(bestNode.code, bestNode.index, entries);
+    bestStatistics = suiteStatistics(bestSelections, true);
+  }
+  if (heap.size === 0) certified = true;
+  const frontierUpperBound = certified
+    ? bestStatistics.detectability
+    : Math.max(bestStatistics.detectability, heap.peek()?.upperBound ?? rootUpperBound);
+  const relativeGap = certified || !(frontierUpperBound > 0)
+    ? 0
+    : Math.max(0, (frontierUpperBound - bestStatistics.detectability) / frontierUpperBound);
+  const improvedSeed = bestStatistics.detectability > seed.statistics.detectability + comparisonTolerance;
+  return {
+    selections: bestSelections,
+    statistics: bestStatistics,
+    spent: bestSpent,
+    certified,
+    expandedNodes,
+    nodeLimit: SEARCH_NODE_LIMIT,
+    upperBound: frontierUpperBound,
+    relativeGap,
+    rootUpperBound,
+    improvedSeed,
+  };
+}
+
+/**
+ * Build a deterministic greedy experiment plan.
+ * @param {object} inputs validated inputs
+ * @param {object[]} rows derived task rows
+ * @returns {object} plan, search metadata, and action log
+ */
+function optimize(inputs, rows) {
+  const errors = [];
+  const warnings = [];
+  const required = rows.filter((row) => row.manual === "required");
+  const invalidRequired = required.filter((row) => !row.dataAvailable);
+  if (invalidRequired.length > 0) {
+    errors.push(`Required task data is unavailable: ${invalidRequired.map((row) => row.id).join(", ")}.`);
+    return { selections: [], errors, warnings, actionLog: [], valid: false, rows };
+  }
+  const selections = required
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map((row) => ({ row, repetitions: MIN_REPETITIONS }));
+  const actionLog = selections.map((selection) => ({
+    phase: "required",
+    kind: "add",
+    task: selection.row.id,
+    repetitionsAdded: MIN_REPETITIONS,
+    incrementalCost: selection.row.cost * MIN_REPETITIONS,
+    beforeCriticalDifference: null,
+    afterCriticalDifference: null,
+    beforeDetectability: null,
+    afterDetectability: null,
+    beforeSnr: null,
+    afterSnr: null,
+    reason: "manually required",
+  }));
+  let spent = selectionCost(selections);
+  if (spent > inputs.budget) {
+    errors.push(`Required tasks need at least ${money(spent)}, above the ${money(inputs.budget)} baseline budget.`);
+    return { selections: [], errors, warnings, actionLog, valid: false, rows, requiredMinimumCost: spent };
+  }
+  for (const row of required.filter((candidate) => candidate.requiredHeadroomBypass)) {
+    warnings.push(`${row.id} is required despite failing the ${Math.round(inputs.headroom * 100)}% target headroom rule.`);
+  }
+
+  const automatic = rows.filter((row) => row.manual === "automatic" && row.automaticEligible);
+  const selectedIds = new Set(selections.map((selection) => selection.row.id));
+  const neededForMinimum = Math.max(0, inputs.minTasks - selections.length);
+  const cheapest = automatic
+    .filter((row) => !selectedIds.has(row.id))
+    .sort((left, right) => left.cost - right.cost || left.id.localeCompare(right.id));
+  const enoughEligibleTasks = cheapest.length >= neededForMinimum;
+  const requestedMinimumCost = enoughEligibleTasks
+    ? spent + cheapest.slice(0, neededForMinimum).reduce((sum, row) => sum + row.cost * MIN_REPETITIONS, 0)
+    : Infinity;
+  const breadthAffordable = enoughEligibleTasks && requestedMinimumCost <= inputs.budget;
+  let targetCount = Math.max(inputs.minTasks, selections.length);
+  if (!breadthAffordable) {
+    let affordableCount = selections.length;
+    let runningCost = spent;
+    for (const row of cheapest) {
+      if (runningCost + row.cost * MIN_REPETITIONS > inputs.budget) continue;
+      runningCost += row.cost * MIN_REPETITIONS;
+      affordableCount += 1;
+      if (affordableCount >= inputs.minTasks) break;
+    }
+    targetCount = Math.max(selections.length, affordableCount);
+    if (enoughEligibleTasks) {
+      errors.push(`The ${money(inputs.budget)} baseline budget cannot satisfy the ${inputs.minTasks}-task breadth requirement. The minimum estimated budget is ${money(requestedMinimumCost)}.`);
+    } else {
+      errors.push(`The ${inputs.minTasks}-task breadth requirement cannot be satisfied: only ${selections.length + cheapest.length} required or automatically eligible tasks are available for this pair.`);
+    }
+  }
+
+  while (selections.length < targetCount) {
+    const beforeStatistics = suiteStatistics(selections, true);
+    let best = null;
+    for (const row of automatic) {
+      if (selectedIds.has(row.id) || spent + row.cost * MIN_REPETITIONS > inputs.budget) continue;
+      const remainingNeeded = targetCount - selections.length - 1;
+      const reserve = automatic
+        .filter((candidate) => candidate.id !== row.id && !selectedIds.has(candidate.id))
+        .sort((left, right) => left.cost - right.cost || left.id.localeCompare(right.id))
+        .slice(0, remainingNeeded)
+        .reduce((sum, candidate) => sum + candidate.cost * MIN_REPETITIONS, 0);
+      if (spent + row.cost * MIN_REPETITIONS + reserve > inputs.budget) continue;
+      const candidateSelections = [...selections, { row, repetitions: MIN_REPETITIONS }];
+      const afterStatistics = suiteStatistics(candidateSelections, true);
+      const candidate = {
+        kind: "add",
+        row,
+        repetitionsAdded: MIN_REPETITIONS,
+        cost: row.cost * MIN_REPETITIONS,
+        afterCriticalDifference: afterStatistics.criticalDifference,
+        afterDetectability: afterStatistics.detectability,
+        afterSnr: afterStatistics.snr,
+        gain: afterStatistics.detectability - beforeStatistics.detectability,
+        rate: (afterStatistics.detectability - beforeStatistics.detectability) / (row.cost * MIN_REPETITIONS),
+        selections: candidateSelections,
+      };
+      if (candidateWins(candidate, best, false)) best = candidate;
+    }
+    if (!best) break;
+    selections.push({ row: best.row, repetitions: MIN_REPETITIONS });
+    selectedIds.add(best.row.id);
+    spent += best.cost;
+    actionLog.push({
+      phase: "breadth",
+      kind: "add",
+      task: best.row.id,
+      repetitionsAdded: MIN_REPETITIONS,
+      incrementalCost: best.cost,
+      beforeCriticalDifference: beforeStatistics.criticalDifference,
+      afterCriticalDifference: best.afterCriticalDifference,
+      beforeDetectability: beforeStatistics.detectability,
+      afterDetectability: best.afterDetectability,
+      beforeSnr: beforeStatistics.snr,
+      afterSnr: best.afterSnr,
+      reason: "highest resulting detectability while reserving breadth budget",
+    });
+  }
+  if (selections.length < targetCount) {
+    errors.push(`Only ${selections.length} distinct tasks could be selected.`);
+  }
+
+  let bestSelections = cloneSelections(selections);
+  let bestStatistics = suiteStatistics(bestSelections, true);
+  let bestSpent = spent;
+  let bestActionLogLength = actionLog.length;
+  for (;;) {
+    const beforeStatistics = suiteStatistics(selections, true);
+    let best = null;
+    for (const row of automatic) {
+      if (selectedIds.has(row.id)) continue;
+      for (let repetitions = MIN_REPETITIONS; repetitions <= inputs.maxReps; repetitions += 1) {
+        const cost = row.cost * repetitions;
+        if (spent + cost > inputs.budget) break;
+        const candidateSelections = [...selections, { row, repetitions }];
+        const afterStatistics = suiteStatistics(candidateSelections, true);
+        const gain = afterStatistics.detectability - beforeStatistics.detectability;
+        const candidate = {
+          kind: "add",
+          row,
+          repetitionsAdded: repetitions,
+          cost,
+          afterCriticalDifference: afterStatistics.criticalDifference,
+          afterDetectability: afterStatistics.detectability,
+          afterSnr: afterStatistics.snr,
+          gain,
+          rate: gain / cost,
+          selections: candidateSelections,
+        };
+        if (gain > 0 && candidateWins(candidate, best, true)) best = candidate;
+      }
+    }
+    for (let index = 0; index < selections.length; index += 1) {
+      const selection = selections[index];
+      if (selection.repetitions >= inputs.maxReps || spent + selection.row.cost > inputs.budget) continue;
+      const candidateSelections = cloneSelections(selections);
+      candidateSelections[index].repetitions += 1;
+      const afterStatistics = suiteStatistics(candidateSelections, true);
+      const gain = afterStatistics.detectability - beforeStatistics.detectability;
+      if (!(gain > 0)) continue;
+      const candidate = {
+        kind: "repeat",
+        row: selection.row,
+        repetitionsAdded: 1,
+        cost: selection.row.cost,
+        afterCriticalDifference: afterStatistics.criticalDifference,
+        afterDetectability: afterStatistics.detectability,
+        afterSnr: afterStatistics.snr,
+        gain,
+        rate: gain / selection.row.cost,
+        selections: candidateSelections,
+      };
+      if (candidateWins(candidate, best, true)) best = candidate;
+    }
+    const chosen = best;
+    if (!chosen) break;
+    if (chosen.kind === "add") selectedIds.add(chosen.row.id);
+    selections.splice(0, selections.length, ...chosen.selections);
+    spent += chosen.cost;
+    actionLog.push({
+      phase: "detectability",
+      kind: chosen.kind,
+      task: chosen.row.id,
+      repetitionsAdded: chosen.repetitionsAdded,
+      incrementalCost: chosen.cost,
+      beforeCriticalDifference: beforeStatistics.criticalDifference,
+      afterCriticalDifference: chosen.afterCriticalDifference,
+      beforeDetectability: beforeStatistics.detectability,
+      afterDetectability: chosen.afterDetectability,
+      beforeSnr: beforeStatistics.snr,
+      afterSnr: chosen.afterSnr,
+      reason: "largest detectability improvement per target baseline dollar",
+    });
+    const chosenStatistics = suiteStatistics(selections, true);
+    if (chosenStatistics.detectability > bestStatistics.detectability) {
+      bestSelections = cloneSelections(selections);
+      bestStatistics = chosenStatistics;
+      bestSpent = spent;
+      bestActionLogLength = actionLog.length;
+    }
+  }
+
+  selections.splice(0, selections.length, ...bestSelections);
+  spent = bestSpent;
+  actionLog.splice(bestActionLogLength);
+  const seedDetectability = bestStatistics.detectability;
+  const optimization = branchAndBoundDetectability(inputs, rows, targetCount, {
+    selections,
+    statistics: bestStatistics,
+    spent,
+  });
+  selections.splice(0, selections.length, ...optimization.selections);
+  spent = optimization.spent;
+  const statistics = optimization.statistics;
+  if (optimization.improvedSeed) {
+    actionLog.splice(0, actionLog.length, {
+      phase: "branch-and-bound",
+      kind: "joint-search",
+      task: null,
+      repetitionsAdded: null,
+      incrementalCost: spent,
+      beforeCriticalDifference: bestStatistics.criticalDifference,
+      afterCriticalDifference: statistics.criticalDifference,
+      beforeDetectability: seedDetectability,
+      afterDetectability: statistics.detectability,
+      beforeSnr: bestStatistics.snr,
+      afterSnr: statistics.snr,
+      reason: `detectability improved from ${seedDetectability.toFixed(3)} to ${statistics.detectability.toFixed(3)} by bounded joint search`,
+    });
+  }
+  actionLog.push({
+    phase: "optimizer-proof",
+    kind: "search-summary",
+    task: null,
+    repetitionsAdded: null,
+    incrementalCost: null,
+    beforeCriticalDifference: null,
+    afterCriticalDifference: statistics.criticalDifference,
+    beforeDetectability: optimization.upperBound,
+    afterDetectability: statistics.detectability,
+    beforeSnr: null,
+    afterSnr: statistics.snr,
+    reason: optimization.certified
+      ? `maximum detectability certified after expanding ${optimization.expandedNodes.toLocaleString()} states`
+      : `search stopped at the visible ${optimization.nodeLimit.toLocaleString()}-state limit`,
+  });
+  const targetMeans = selections.map((selection) => selection.row.target.mean);
+  const improvementRoom = targetMeans.length ? targetMeans.reduce((sum, value) => sum + 1 - value, 0) / targetMeans.length : NaN;
+  const regressionRoom = targetMeans.length ? targetMeans.reduce((sum, value) => sum + value, 0) / targetMeans.length : NaN;
+  if (Number.isFinite(statistics.criticalDifference) && statistics.criticalDifference >= improvementRoom) warnings.push("The decision threshold is at least the selected suite’s projected improvement room.");
+  if (Number.isFinite(statistics.criticalDifference) && statistics.criticalDifference >= regressionRoom) warnings.push("The decision threshold is at least the selected suite’s projected regression room.");
+  if (!optimization.certified) {
+    warnings.push(`The optimizer reached its visible ${optimization.nodeLimit.toLocaleString()}-state limit. The remaining proven detectability gap is ${(optimization.relativeGap * 100).toFixed(2)}%.`);
+  }
+  const unspentBudget = inputs.budget - spent;
+  if (unspentBudget >= 0.005) {
+    warnings.push(optimization.certified
+      ? `${money(unspentBudget)} remains unspent because no affordable allocation can improve detectability under the visible constraints.`
+      : `The best plan found leaves ${money(unspentBudget)} unspent. Detectability—not budget consumption—is the objective, and the remaining search space is reflected in the reported gap.`);
+  }
+  if (inputs.minTasks < 3) warnings.push("One or two tasks provide narrow benchmark evidence. Three is the recommended minimum.");
+  return {
+    selections,
+    statistics,
+    spent,
+    unspent: inputs.budget - spent,
+    errors,
+    warnings,
+    actionLog,
+    optimization,
+    valid: errors.length === 0,
+    breadthAffordable,
+    requestedMinimumCost,
+    targetCount,
+    improvementRoom,
+    regressionRoom,
+    eligibleCount: automatic.length,
+    fallbackCount: selections.filter((selection) => selection.row.fallback).length,
+    rows,
+  };
+}
+
+/**
+ * Build a self-describing JSON export from the current plan.
+ * @param {object} plan calculated plan
+ * @param {object} inputs validated inputs
+ * @returns {object} export object
+ */
+function buildExport(plan, inputs) {
+  const costAxisRoundingIncrementUsd = 50;
+  const costAxisTasks = plan.selections.map((selection) => {
+    const referenceCell = selection.row.task.cells[COST_AXIS_REFERENCE_CONFIGURATION];
+    return {
+      task: selection.row.id,
+      repetitions: selection.repetitions,
+      referenceMeanCostUsd: referenceCell?.meanCost ?? null,
+      estimatedArmCostUsd: Number.isFinite(referenceCell?.meanCost)
+        ? referenceCell.meanCost * selection.repetitions
+        : null,
+    };
+  });
+  const costAxisMissingTasks = costAxisTasks
+    .filter((task) => !Number.isFinite(task.referenceMeanCostUsd))
+    .map((task) => task.task);
+  const costAxisReferenceEstimatedArmCostUsd = costAxisMissingTasks.length === 0
+    ? costAxisTasks.reduce((sum, task) => sum + task.estimatedArmCostUsd, 0)
+    : null;
+  const costAxisMaximumUsd = Number.isFinite(costAxisReferenceEstimatedArmCostUsd)
+    ? Math.ceil(costAxisReferenceEstimatedArmCostUsd / costAxisRoundingIncrementUsd) * costAxisRoundingIncrementUsd
+    : null;
+  return {
+    schema: "deepswe-benchmark-plan",
+    schemaVersion: 1,
+    optimizerVersion: "detectability-branch-and-bound-v4",
+    snapshot: SNAPSHOT.source,
+    target: configById.get(inputs.targetId),
+    comparison: configById.get(inputs.comparisonId),
+    costAxis: {
+      valid: costAxisMissingTasks.length === 0,
+      scale: "logarithmic",
+      referenceConfiguration: COST_AXIS_REFERENCE_CONFIGURATION,
+      referenceSnapshotSha256: SNAPSHOT.source.sha256,
+      referenceEstimatedArmCostUsd: costAxisReferenceEstimatedArmCostUsd,
+      roundingIncrementUsd: costAxisRoundingIncrementUsd,
+      maximumUsd: costAxisMaximumUsd,
+      missingTasks: costAxisMissingTasks,
+      tasks: costAxisTasks,
+    },
+    parameters: {
+      baselineBudgetUsd: inputs.budget,
+      minimumDistinctTasks: inputs.minTasks,
+      maximumRepetitionsPerTask: inputs.maxReps,
+      symmetricTargetHeadroom: inputs.headroom,
+      twoSidedSignificanceLevel: ALPHA,
+    },
+    result: {
+      valid: plan.valid,
+      errors: plan.errors,
+      warnings: plan.warnings,
+      estimatedBaselineSpendUsd: plan.spent,
+      unspentBaselineBudgetUsd: plan.unspent,
+      signedHistoricalModelDifference: plan.statistics.signedSignal,
+      absoluteHistoricalModelDifference: plan.statistics.signal,
+      calibrationVariance: plan.statistics.variance,
+      calibrationStandardError: plan.statistics.standardError,
+      historicalSnr: plan.statistics.snr,
+      historicalDetectability: plan.statistics.detectability,
+      effectiveDegreesOfFreedom: plan.statistics.degreesOfFreedom,
+      tCriticalValue: plan.statistics.tCritical,
+      decisionThreshold: plan.statistics.criticalDifference,
+      optimization: {
+        globallyOptimal: plan.optimization.certified,
+        expandedStates: plan.optimization.expandedNodes,
+        stateLimit: plan.optimization.nodeLimit,
+        provenUpperBound: plan.optimization.upperBound,
+        relativeGapToUpperBound: plan.optimization.relativeGap,
+        heuristicSeedImproved: plan.optimization.improvedSeed,
+      },
+      projectedImprovementRoom: plan.improvementRoom,
+      projectedRegressionRoom: plan.regressionRoom,
+    },
+    assumptions: [
+      "The selected published pair calibrates historical task responsiveness and noise; it is not the future skill/instruction comparison.",
+      "The pair's separate variances estimate the future two-arm experiment noise.",
+      "Historical responsiveness to the selected comparison may not transfer to skills or instructions.",
+      "Future repetitions are independent within and between arms.",
+      "Task-arm means are approximately normal and Welch-Satterthwaite is an approximation.",
+      "Results apply only to the selected tasks.",
+    ],
+    operationalExclusions: OPERATIONAL_EXCLUSIONS,
+    actionLog: plan.actionLog,
+    tasks: plan.selections.map((selection) => ({
+      id: selection.row.id,
+      language: selection.row.task.language,
+      selectionSource: selection.row.manual === "required" ? "required" : "optimizer",
+      repetitionsPerArm: selection.repetitions,
+      target: {
+        n: selection.row.target.n,
+        mean: selection.row.target.mean,
+        variance: selection.row.target.variance,
+        meanCost: selection.row.target.meanCost,
+      },
+      comparison: {
+        n: selection.row.comparison.n,
+        mean: selection.row.comparison.mean,
+        variance: selection.row.comparison.variance,
+        meanCost: selection.row.comparison.meanCost,
+      },
+      signedPublishedDifference: selection.row.signedDifference,
+      targetEstimatedBaselineCostUsd: selection.row.cost * selection.repetitions,
+      headroomBypassed: selection.row.requiredHeadroomBypass,
+      zeroVarianceFallback: selection.row.fallback,
+    })),
+    manuallyExcludedTasks: [...manualStates.entries()].filter(([, value]) => value === "excluded").map(([task]) => task).sort(),
+  };
+}
+
+/**
+ * Populate model selectors without selecting hidden defaults.
+ * @returns {void}
+ */
+function initializeSelectors() {
+  const models = [...new Set(SNAPSHOT.configurations.map((configuration) => configuration.model))].sort();
+  const targetOptions = models
+    .filter((model) => RUNNABLE_TARGET_MODELS.has(model))
+    .map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`)
+    .join("");
+  const comparisonOptions = models
+    .map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`)
+    .join("");
+  $("targetModel").insertAdjacentHTML("beforeend", targetOptions);
+  $("comparisonModel").insertAdjacentHTML("beforeend", comparisonOptions);
+}
+
+/**
+ * Populate the reasoning selector for one explicitly selected model.
+ * @param {string} modelSelectId model control id
+ * @param {string} reasoningSelectId reasoning control id
+ * @returns {void}
+ */
+function updateReasoningSelector(modelSelectId, reasoningSelectId) {
+  const model = $(modelSelectId).value;
+  const selector = $(reasoningSelectId);
+  const reasoningOrder = new Map(["low", "medium", "high", "xhigh", "max", "n/a"].map((value, index) => [value, index]));
+  const levels = SNAPSHOT.configurations
+    .filter((configuration) => configuration.model === model &&
+      (modelSelectId !== "targetModel" || RUNNABLE_TARGET_MODELS.has(configuration.model)))
+    .map((configuration) => configuration.reasoning)
+    .sort((left, right) => (reasoningOrder.get(left) ?? 99) - (reasoningOrder.get(right) ?? 99));
+  selector.innerHTML = `<option value="">Choose reasoning…</option>${levels.map((reasoning) => `<option value="${escapeHtml(reasoning)}">${escapeHtml(reasoning)}</option>`).join("")}`;
+  selector.disabled = levels.length === 0;
+}
+
+/**
+ * Render errors and warnings.
+ * @param {string[]} errors errors
+ * @param {string[]} warnings warnings
+ * @returns {void}
+ */
+function renderMessages(errors, warnings) {
+  $("messages").innerHTML = [
+    ...errors.map((message) => `<div class="message error"><strong>Error:</strong> ${escapeHtml(message)}</div>`),
+    ...warnings.map((message) => `<div class="message warning"><strong>Note:</strong> ${escapeHtml(message)}</div>`),
+  ].join("");
+}
+
+/**
+ * Render the selected plan table.
+ * @param {object|null} plan calculated plan
+ * @returns {void}
+ */
+function renderPlanTable(plan) {
+  if (!plan || plan.selections.length === 0) {
+    $("planTable").className = "plan-empty";
+    $("planTable").innerHTML = "No affordable plan is available for the current inputs.";
+    return;
+  }
+  $("planTable").className = "table-wrap";
+  $("planTable").innerHTML = `<table>
+    <thead><tr><th>Task</th><th>Source</th><th>Reps / arm</th><th>Historical Δ</th><th>Bare SD</th><th>Comparison SD</th><th>Baseline cost</th></tr></thead>
+    <tbody>${plan.selections.map((selection) => {
+      const row = selection.row;
+      const differenceClass = row.signedDifference >= 0 ? "signal-pos" : "signal-neg";
+      return `<tr>
+        <td class="task-name"><strong>${escapeHtml(row.id)}</strong><span>${escapeHtml(row.task.language)}${row.fallback ? ' · <span class="badge warning">fallback noise</span>' : ""}</span></td>
+        <td>${row.manual === "required" ? '<span class="badge target">required</span>' : '<span class="badge">optimizer</span>'}</td>
+        <td class="mono">${selection.repetitions}</td>
+        <td class="${differenceClass} mono">${percent(row.signedDifference)}</td>
+        <td class="mono">${decimal(row.target.sd)}</td>
+        <td class="mono">${decimal(row.comparison.sd)}</td>
+        <td class="mono">${money(row.cost * selection.repetitions)}</td>
+      </tr>`;
+    }).join("")}</tbody>
+  </table>`;
+}
+
+/**
+ * Render task explorer using the current search and filter.
+ * @returns {void}
+ */
+function renderExplorer() {
+  if (currentRows.length === 0) {
+    $("explorerTable").className = "plan-empty";
+    $("explorerTable").innerHTML = "Choose both configurations to inspect task evidence.";
+    return;
+  }
+  const query = $("taskSearch").value.trim().toLowerCase();
+  const filter = $("taskFilter").value;
+  const selected = new Map((currentPlan?.selections ?? []).map((selection) => [selection.row.id, selection.repetitions]));
+  const visible = currentRows.filter((row) => {
+    const matchesSearch = !query || `${row.id} ${row.task.language} ${row.task.title}`.toLowerCase().includes(query);
+    if (!matchesSearch) return false;
+    if (filter === "selected") return selected.has(row.id);
+    if (filter === "eligible") return row.automaticEligible;
+    if (filter === "warnings") return !row.dataAvailable || !row.headroomEligible || Boolean(row.fallback);
+    if (filter === "overrides") return row.manual !== "automatic";
+    return true;
+  });
+  $("explorerTable").className = "table-wrap";
+  $("explorerTable").innerHTML = `<table>
+    <thead><tr><th>Task</th><th>State</th><th>Plan</th><th>Bare mean</th><th>Comparison mean</th><th>Historical Δ</th><th>Combined noise</th><th>Cost / run</th><th>Details</th></tr></thead>
+    <tbody>${visible.map((row) => {
+      const selectedReps = selected.get(row.id);
+      const noise = row.dataAvailable ? Math.sqrt(row.components.reduce((sum, component) => sum + component.variance, 0)) : NaN;
+      const status = !row.dataAvailable ? row.reasons.join("; ") : row.manual === "excluded" ? "Manually excluded" : !row.headroomEligible && row.manual !== "required" ? "Outside target headroom" : row.fallback ? "Same-task fallback applied" : "Available";
+      return `<tr>
+        <td class="task-name"><strong>${escapeHtml(row.id)}</strong><span>${escapeHtml(row.task.language)} · ${escapeHtml(status)}</span></td>
+        <td><select class="explorer-state" data-task-state="${escapeHtml(row.id)}" aria-label="State for ${escapeHtml(row.id)}">
+          <option value="automatic"${row.manual === "automatic" ? " selected" : ""}>Automatic</option>
+          <option value="required"${row.manual === "required" ? " selected" : ""}>Required</option>
+          <option value="excluded"${row.manual === "excluded" ? " selected" : ""}>Excluded</option>
+        </select></td>
+        <td>${selectedReps ? `<span class="badge target">${selectedReps} rep${selectedReps === 1 ? "" : "s"}</span>` : "—"}</td>
+        <td class="mono">${row.target ? percent(row.target.mean) : "—"}</td>
+        <td class="mono">${row.comparison ? percent(row.comparison.mean) : "—"}</td>
+        <td class="${row.signedDifference >= 0 ? "signal-pos" : "signal-neg"} mono">${percent(row.signedDifference)}</td>
+        <td class="mono">${decimal(noise)}</td>
+        <td class="mono">${money(row.cost)}</td>
+        <td><button class="inspect" data-inspect="${escapeHtml(row.id)}">Inspect</button></td>
+      </tr>`;
+    }).join("") || '<tr><td colspan="9" class="muted">No tasks match this view.</td></tr>'}</tbody>
+  </table>`;
+}
+
+/**
+ * Render raw task evidence in a dialog.
+ * @param {string} taskId task identifier
+ * @returns {void}
+ */
+function openTaskDialog(taskId) {
+  const row = currentRows.find((candidate) => candidate.id === taskId);
+  if (!row) return;
+  $("dialogTitle").textContent = row.id;
+  const trialCard = (label, configurationId, cell, badgeClass) => {
+    if (!cell) {
+      return `<section class="trial-card">
+        <h3><span class="badge ${badgeClass}">${escapeHtml(label)}</span> ${escapeHtml(configurationId)}</h3>
+        <p class="muted">No usable published trials are available for this task and configuration.</p>
+      </section>`;
+    }
+    return `<section class="trial-card">
+      <h3><span class="badge ${badgeClass}">${escapeHtml(label)}</span> ${escapeHtml(configurationId)}</h3>
+      <p class="muted">Mean ${percent(cell.mean)} · raw sample variance ${decimal(cell.variance, 5)} · sample SD ${decimal(cell.sd)} · ${cell.n} usable trials · mean cost ${money(cell.meanCost)}</p>
+      <div class="trial-list">${cell.trials.map((trial) => `<div class="trial"><span title="${escapeHtml(trial.id)}">${escapeHtml(trial.id)}</span><span>${trial.passed}/${trial.total}</span><span>${money(trial.cost)}</span></div>`).join("")}</div>
+    </section>`;
+  };
+  $("dialogBody").innerHTML = `
+    <p>${escapeHtml(row.task.description)}</p>
+    <p class="muted">${escapeHtml(row.task.repository)} · ${escapeHtml(row.task.language)}</p>
+    <div class="dialog-grid">
+      ${trialCard("bare model", currentRowInputs?.targetId ?? "", row.target, "target")}
+      ${trialCard("comparison", currentRowInputs?.comparisonId ?? "", row.comparison, "comparison")}
+    </div>
+    ${row.fallback ? `<section class="fallback-box">
+      <h3>Both-zero planning fallback</h3>
+      <p>Both selected raw variances are zero. The planner uses pooled within-configuration variance from this same task in ${row.fallback.donors.length} other configurations.</p>
+      <p class="mono">variance ${row.fallback.variance} · df ${row.fallback.degreesOfFreedom}</p>
+      <details><summary>Show donor configurations</summary><div class="trial-list">${row.fallback.donors.map((donor) => `<div class="trial"><span>${escapeHtml(donor.configuration)}</span><span>n=${donor.n}</span><span>var ${decimal(donor.variance, 5)}</span></div>`).join("")}</div></details>
+    </section>` : ""}
+  `;
+  $("taskDialog").showModal();
+}
+
+/**
+ * Render one completed search result.
+ * @param {object} plan optimized plan
+ * @param {object} inputs validated search inputs
+ * @returns {void}
+ */
+function renderSearchResult(plan, inputs) {
+  const statistics = plan.statistics;
+  $("resultsRegion").hidden = false;
+  if (plan.selections.length > 0 && Number.isFinite(statistics?.criticalDifference)) {
+    $("thresholdValue").innerHTML = `<strong>±${(statistics.criticalDifference * 100).toFixed(1)}</strong><span>percentage points</span>`;
+    $("thresholdCopy").textContent = `A result between −${(statistics.criticalDifference * 100).toFixed(1)} and +${(statistics.criticalDifference * 100).toFixed(1)} points is inconclusive. Above it is better; below it is worse.`;
+  } else {
+    $("thresholdValue").innerHTML = '<span class="empty-state">A calculable plan is not available.</span>';
+    $("thresholdCopy").textContent = "Resolve the errors below without relying on a hidden fallback.";
+  }
+  $("metricSignal").textContent = percent(statistics?.signedSignal);
+  $("metricSnr").textContent = Number.isFinite(statistics?.detectability) ? `${statistics.detectability.toFixed(2)} thresholds` : "—";
+  $("metricSpend").textContent = plan.selections.length ? `${money(plan.spent)} / ${money(inputs.budget)}` : "—";
+  $("metricRuns").textContent = plan.selections.length ? `${plan.selections.length} · ${plan.selections.reduce((sum, selection) => sum + selection.repetitions, 0)}` : "—";
+  $("detailSe").textContent = percent(statistics?.standardError, 2);
+  $("detailDf").textContent = decimal(statistics?.degreesOfFreedom, 2);
+  $("detailT").textContent = decimal(statistics?.tCritical, 3);
+  $("detailUp").textContent = percent(plan.improvementRoom);
+  $("detailDown").textContent = percent(plan.regressionRoom);
+  $("detailUnspent").textContent = money(plan.unspent);
+  $("detailOptimizer").textContent = !plan.optimization
+    ? "Not run"
+    : plan.optimization.certified
+      ? `Maximum certified · ${plan.optimization.expandedNodes.toLocaleString()} states`
+      : `Bounded result · ${plan.optimization.expandedNodes.toLocaleString()} / ${plan.optimization.nodeLimit.toLocaleString()} states`;
+  $("detailBound").textContent = !plan.optimization
+    ? "—"
+    : plan.optimization.certified
+      ? decimal(plan.optimization.upperBound, 3)
+      : `${decimal(plan.optimization.upperBound, 3)} · ${(plan.optimization.relativeGap * 100).toFixed(2)}% gap`;
+  $("detailEligible").textContent = String(plan.eligibleCount ?? 0);
+  $("detailFallbacks").textContent = String(plan.fallbackCount ?? 0);
+  $("planStatus").textContent = plan.valid
+    ? plan.optimization?.certified ? "Globally optimal plan" : "Valid bounded plan"
+    : plan.selections.length ? "Invalid best-effort plan" : "No valid plan";
+  $("copyPlan").disabled = !isExportablePlan(plan);
+  $("downloadPlan").disabled = !isExportablePlan(plan);
+  renderMessages(plan.errors, plan.warnings);
+  renderPlanTable(plan);
+  renderExplorer();
+}
+
+/**
+ * Return whether a search result is valid for the CLI's exported-plan contract.
+ * @param {object} plan optimizer result
+ * @returns {boolean} whether the plan can be exported
+ */
+function isExportablePlan(plan) {
+  return plan?.valid === true && Array.isArray(plan.selections) && plan.selections.length > 0;
+}
+
+/**
+ * Invalidate any prior result and cheaply refresh task evidence.
+ * @returns {void}
+ */
+function resetSearchState() {
+  const inputs = readInputs(false);
+  currentPlan = null;
+  currentInputs = null;
+  $("resultsRegion").hidden = true;
+  $("copyPlan").disabled = true;
+  $("downloadPlan").disabled = true;
+  $("runSearch").disabled = false;
+  $("runSearch").setAttribute("aria-busy", "false");
+  $("runSearch").textContent = "Search best plan";
+  $("searchState").textContent = "Set the configurations and budget, then search.";
+  renderMessages([], []);
+  if (inputs.targetId && inputs.comparisonId && inputs.targetId !== inputs.comparisonId && Number.isFinite(inputs.headroom)) {
+    currentRowInputs = inputs;
+    currentRows = SNAPSHOT.tasks.map((task) => deriveTask(task, inputs));
+  } else {
+    currentRowInputs = null;
+    currentRows = [];
+  }
+  renderExplorer();
+}
+
+/**
+ * Run the expensive optimizer only after the user explicitly requests it.
+ * @returns {Promise<void>}
+ */
+async function searchPlan() {
+  const inputs = readInputs(true);
+  if (!inputs.valid) {
+    currentPlan = null;
+    currentInputs = null;
+    $("resultsRegion").hidden = true;
+    $("searchState").textContent = "Fix the highlighted inputs, then search again.";
+    renderMessages(inputs.errors, []);
+    return;
+  }
+
+  $("runSearch").disabled = true;
+  $("runSearch").setAttribute("aria-busy", "true");
+  $("runSearch").textContent = "Searching…";
+    $("searchState").textContent = "Searching up to 50,000 task and repetition plans for maximum detectability…";
+  renderMessages([], []);
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+  const startedAt = performance.now();
+  try {
+    currentRows = SNAPSHOT.tasks.map((task) => deriveTask(task, inputs));
+    currentRowInputs = inputs;
+    currentPlan = optimize(inputs, currentRows);
+    currentInputs = inputs;
+    renderSearchResult(currentPlan, inputs);
+    const elapsedSeconds = (performance.now() - startedAt) / 1000;
+    $("searchState").textContent = `Search completed in ${elapsedSeconds.toFixed(1)} seconds.`;
+    $("runSearch").textContent = "Search again";
+  } catch (error) {
+    currentPlan = null;
+    currentInputs = null;
+    $("resultsRegion").hidden = true;
+    $("searchState").textContent = "Search failed.";
+    renderMessages([`Search failed: ${error instanceof Error ? error.message : String(error)}`], []);
+    console.error(error);
+    $("runSearch").textContent = "Search again";
+  } finally {
+    $("runSearch").disabled = false;
+    $("runSearch").setAttribute("aria-busy", "false");
+  }
+}
+
+/**
+ * Return the current export JSON text.
+ * @returns {string|null} formatted export or null
+ */
+function currentExportText() {
+  if (!currentInputs || !currentPlan || currentPlan.selections.length === 0) return null;
+  return JSON.stringify(buildExport(currentPlan, currentInputs), null, 2);
+}
+
+initializeSelectors();
+$("provenance").textContent = `${SNAPSHOT.source.sourceTrialCount.toLocaleString()} official trials · ${SNAPSHOT.source.modelCount} models · ${SNAPSHOT.source.configurationCount} configurations · ${SNAPSHOT.source.taskCount} tasks · snapshot ${SNAPSHOT.source.retrievedAt.slice(0, 10)}`;
+const trialExclusionSummary = Object.entries(SNAPSHOT.exclusions.trialCounts)
+  .sort(([left], [right]) => left.localeCompare(right))
+  .map(([reason, count]) => `${count.toLocaleString()} ${reason}`)
+  .join(", ");
+$("sourceDetail").innerHTML = `<a class="source-link" href="${escapeHtml(SNAPSHOT.source.url)}">${escapeHtml(SNAPSHOT.source.url)}</a><br>Local input <code>${escapeHtml(SNAPSHOT.source.inputPath)}</code><br>Retrieved ${escapeHtml(SNAPSHOT.source.retrievedAt)}<br>SHA-256 <code>${escapeHtml(SNAPSHOT.source.sha256)}</code><br>${SNAPSHOT.source.usableTrialCount.toLocaleString()} usable of ${SNAPSHOT.source.sourceTrialCount.toLocaleString()} source trials; ${SNAPSHOT.source.excludedTrialCount.toLocaleString()} excluded (${escapeHtml(trialExclusionSummary)}).`;
+for (const [modelId, reasoningId] of [["targetModel", "targetReasoning"], ["comparisonModel", "comparisonReasoning"]]) {
+  $(modelId).addEventListener("change", () => {
+    updateReasoningSelector(modelId, reasoningId);
+    resetSearchState();
+  });
+}
+for (const id of ["targetReasoning", "comparisonReasoning"]) {
+  $(id).addEventListener("change", resetSearchState);
+}
+for (const id of ["budget", "minTasks", "maxReps", "headroom"]) {
+  $(id).addEventListener("input", resetSearchState);
+}
+$("runSearch").addEventListener("click", () => { void searchPlan(); });
+$("taskSearch").addEventListener("input", renderExplorer);
+$("taskFilter").addEventListener("change", renderExplorer);
+$("explorerTable").addEventListener("change", (event) => {
+  const control = event.target.closest("[data-task-state]");
+  if (!control) return;
+  const taskId = control.dataset.taskState;
+  if (control.value === "automatic") manualStates.delete(taskId);
+  else manualStates.set(taskId, control.value);
+  resetSearchState();
+});
+$("explorerTable").addEventListener("click", (event) => {
+  const control = event.target.closest("[data-inspect]");
+  if (control) openTaskDialog(control.dataset.inspect);
+});
+$("dialogClose").addEventListener("click", () => $("taskDialog").close());
+$("taskDialog").addEventListener("click", (event) => {
+  if (event.target === $("taskDialog")) $("taskDialog").close();
+});
+$("downloadPlan").addEventListener("click", () => {
+  const text = currentExportText();
+  if (!text) return;
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  link.download = `deepswe-plan-${currentInputs.targetId.replace(/[^a-z0-9]+/gi, "-")}.json`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+});
+$("copyPlan").addEventListener("click", async () => {
+  const text = currentExportText();
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    $("copyPlan").textContent = "Copied";
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    textarea.remove();
+    $("copyPlan").textContent = "Copied";
+  }
+  window.setTimeout(() => { $("copyPlan").textContent = "Copy JSON"; }, 1200);
+});
+
+resetSearchState();
+</script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+schema_version: 1
+currency: USD
+unit_tokens: 1000000
+verified_at: 2026-07-21
+
+# Manually maintained API-equivalent prices. Provider-reported cost remains
+# authoritative when available. Rates are USD per one million tokens.
+providers:
+  codex:
+    gpt-5.6-sol:
+      effective_from: 2026-07-21
+      source_url: https://developers.openai.com/api/docs/pricing
+      reasoning_output: included_in_output
+      long_context_threshold_tokens: 272000
+      rates:
+        short_context:
+          uncached_input_tokens: 5.00
+          cache_creation_input_tokens: 6.25
+          cache_read_input_tokens: 0.50
+          output_tokens: 30.00
+        long_context:
+          uncached_input_tokens: 10.00
+          cache_creation_input_tokens: 12.50
+          cache_read_input_tokens: 1.00
+          output_tokens: 45.00
+    gpt-5.6-terra:
+      effective_from: 2026-07-21
+      source_url: https://developers.openai.com/api/docs/pricing
+      reasoning_output: included_in_output
+      long_context_threshold_tokens: 272000
+      rates:
+        short_context:
+          uncached_input_tokens: 2.50
+          cache_creation_input_tokens: 3.125
+          cache_read_input_tokens: 0.25
+          output_tokens: 15.00
+        long_context:
+          uncached_input_tokens: 5.00
+          cache_creation_input_tokens: 6.25
+          cache_read_input_tokens: 0.50
+          output_tokens: 22.50
+    gpt-5.6-luna:
+      effective_from: 2026-07-21
+      source_url: https://developers.openai.com/api/docs/pricing
+      reasoning_output: included_in_output
+      long_context_threshold_tokens: 272000
+      rates:
+        short_context:
+          uncached_input_tokens: 1.00
+          cache_creation_input_tokens: 1.25
+          cache_read_input_tokens: 0.10
+          output_tokens: 6.00
+        long_context:
+          uncached_input_tokens: 2.00
+          cache_creation_input_tokens: 2.50
+          cache_read_input_tokens: 0.20
+          output_tokens: 9.00
