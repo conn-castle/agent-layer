@@ -10,9 +10,13 @@ import (
 	"time"
 )
 
-const dispatchWaitInterval = 100 * time.Millisecond
+const (
+	dispatchWaitInterval = 100 * time.Millisecond
+	dispatchWaitTimeout  = 8 * time.Minute
+)
 
-// Wait blocks until the current invocation for one conversation is terminal.
+// Wait blocks until the current invocation is terminal or the bounded wait
+// expires. Expiration reports running without changing the invocation.
 func Wait(request WaitRequest) error {
 	ctx := request.Context
 	if ctx == nil {
@@ -30,6 +34,11 @@ func Wait(request WaitRequest) error {
 	if err != nil {
 		return err
 	}
+	timeout := request.Timeout
+	if timeout <= 0 {
+		timeout = dispatchWaitTimeout
+	}
+	deadline := time.Now().Add(timeout)
 	for !terminalDispatchState(record.State) {
 		record, err = reconcileOrphan(request.Root, record)
 		if err != nil {
@@ -38,10 +47,15 @@ func Wait(request WaitRequest) error {
 		if terminalDispatchState(record.State) {
 			break
 		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return writePublicResult(writerOrDiscard(request.Stdout), publicResult{Handle: session.Name, State: dispatchStateRunning})
+		}
+		pollDelay := min(dispatchWaitInterval, remaining)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(dispatchWaitInterval):
+		case <-time.After(pollDelay):
 		}
 		record, err = loadRunRecord(request.Root, record.ID)
 		if err != nil {

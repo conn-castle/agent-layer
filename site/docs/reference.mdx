@@ -346,7 +346,7 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al sync` | Regenerate client configs without launching a client. |
 | `al <client>` | Sync and launch a client (agy/claude/codex/copilot/vscode). |
 | `al dispatch start` | Start a headless conversation asynchronously and return its handle. |
-| `al dispatch wait <handle>` | Block until the current invocation terminates, then return its state and result path or failure. |
+| `al dispatch wait <handle>` | Wait up to eight minutes; return `running` if work continues, otherwise return the terminal result. |
 | `al dispatch continue <handle>` | Start another invocation in a terminal conversation. |
 | `al dispatch cancel <handle>` | Cancel a running invocation. |
 | `al probe agy` | Run the Antigravity capability probe and print JSON. |
@@ -661,8 +661,9 @@ and reasoning-effort overrides. `start` requires an agent and either `--prompt`
 or `--prompt-file`; model and reasoning effort are optional overrides. It
 returns a conversation handle immediately. `continue` inherits that
 conversation's resolved target configuration and returns immediately.
-`wait` blocks until the current invocation reaches `completed`, `failed`, or
-`cancelled`. Completed output is stored atomically in the immutable Markdown
+`wait` blocks for up to eight minutes. If the invocation remains active, it
+returns `running` without changing that invocation; call `wait` again with the
+same handle. Completed output is stored atomically in the immutable Markdown
 file named by `result_path`. Every successful command returns exactly one JSON
 object; `wait` also writes its terminal JSON result before a non-zero
 failed-invocation exit.

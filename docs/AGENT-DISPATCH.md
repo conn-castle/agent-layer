@@ -51,7 +51,7 @@ invocation.
 
 | Command | `running` | `completed` | `failed` | `cancelled` |
 | --- | --- | --- | --- | --- |
-| `wait` | Blocks until terminal | Returns `result_path` | Returns the failure | Returns `cancelled` |
+| `wait` | Waits up to eight minutes, then returns `running` | Returns `result_path` | Returns the failure | Returns `cancelled` |
 | `continue` | Errors | Starts the next invocation | Starts the next invocation | Starts the next invocation |
 | `cancel` | Cancels the invocation | Errors: already completed | Errors: already failed | Returns `cancelled` successfully |
 
@@ -63,6 +63,9 @@ conversation, so either may be continued.
 Only one invocation may run for a conversation at a time. Concurrent
 `continue` calls cannot start duplicate work: one may succeed and the others
 must fail without contacting the provider.
+
+When `wait` returns `running`, the provider invocation is unchanged. Call
+`wait` again with the same handle until it returns a terminal state.
 
 ## Output
 
@@ -108,6 +111,9 @@ must omit those flags.
 }
 ```
 
+`wait` returns the same `running` object when its eight-minute interval expires
+before the invocation reaches a terminal state.
+
 `wait` on a completed invocation returns:
 
 ```json
@@ -144,10 +150,11 @@ an error rather than as completed.
 
 ## Waiting and idempotency
 
-`wait` is the agent synchronization operation. Callers never poll: it blocks
-until the invocation is terminal. Repeating it after termination immediately returns
-the same state and, for a completed invocation, the same `result_path` until a
-successful `continue` starts the next invocation.
+`wait` is the agent synchronization operation. It blocks for up to eight
+minutes, then returns `running` if the invocation remains active. Repeating it
+after termination immediately returns the same state and, for a completed
+invocation, the same `result_path` until a successful `continue` starts the
+next invocation.
 
 `cancel` is idempotent only after successful cancellation. Repeating it for a
 cancelled invocation succeeds. It cannot change a completed or failed
@@ -165,9 +172,9 @@ There is no public fanout resource. Parallel work consists of independent
 conversations, each with its own handle, state, result, cancellation, and
 resumability.
 
-There is no separate `read` command: `wait` returns the terminal state and the
-completed result path. There is no agent-facing `status` command: agents wait
-for state changes instead of polling.
+There is no separate `read` command: `wait` returns the current or terminal
+state and the completed result path. There is no agent-facing `status` command:
+agents use the bounded `wait` operation for state changes.
 
 The public Agent Dispatch lifecycle contains only `start`, `wait`, `continue`,
 and `cancel`; `options` is read-only discovery. Inspection, history, listing,

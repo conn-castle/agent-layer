@@ -24,6 +24,11 @@ authoritative source. Prior work may prevent duplication but never broadens the
 new scope. Revisit blocked work when its condition changes; exhaustion requires
 a complete current pass.
 
+## Delivery substance
+
+A mode may define additional substantive-delivery criteria in its `Execute`
+section. It supplements the core line and file thresholds.
+
 ## Direct repair execution
 
 Use direct repair for established work with concrete acceptance behavior, no

@@ -23,6 +23,9 @@ eligible member, refresh ISSUES.md. If live eligible issues remain, make them
 the next active cohort and select one delivery from it. Report exhaustion only
 when the refresh finds none.
 
+Stale-entry removal, BACKLOG.md reclassification, rejection, and decision-free
+investigation are eligible work, not exhaustion blockers.
+
 ## Execute
 
 Use direct repair execution for established, decision-ready work with concrete
@@ -42,6 +45,8 @@ and unchanged.
 
 Confirm merged dispositions in the canonical memory files. Leave entries for
 open or preserved deliveries unchanged until their delivery is authoritative.
+Refresh from the latest target branch and remove fixed entries resurrected by
+stale merge content.
 
 ## Exhaustion
 

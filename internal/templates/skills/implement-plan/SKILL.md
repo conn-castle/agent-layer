@@ -25,7 +25,8 @@ report `.agent-layer/tmp/implement-plan.<run-id>.report.md`, using
    materially broader work.
 3. Run proportionate checks, using the documented full lane when risk or the
    contract warrants it. Address concrete in-scope failures.
-4. Confirm there is no remaining work to be done.
+4. Before returning, confirm every task is complete or name a concrete blocker.
+   Do not report a partial implementation as ready for review.
 
 Stop with `blocked` only when planned work cannot safely continue or
 requires a user-owned decision.

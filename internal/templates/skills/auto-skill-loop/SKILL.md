@@ -22,18 +22,21 @@ Require:
 - any additional targets required by the selected mode
 
 Read `references/mode-contract.md`, the selected mode file,
-`references/blocker-classification.md`.
+`references/blocker-classification.md`, and `references/merge-readiness.md`.
 Validate the mode and all required targets before any side effect. Pass each
 target unchanged through `/agent-dispatch`; do not infer or substitute targets.
 
 
 ## Context and isolation
 
+When compacting, retain the caller's loop invocation and this skill text
+verbatim in addition to what you would normally retain.
+
 Write every fresh-dispatch prompt as a self-contained task. State what the
 subagent must do, the authoritative files or links it should inspect, and any
 required output format. Do not include internal role names or a narrative of
-the parent agent's workflow. Include prior results only when they are necessary
-task inputs.
+the parent agent's workflow. For follow-up dispatches, pass artifact and report
+paths, changed files, and unresolved finding IDs.
 
 ## Initialize
 

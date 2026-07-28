@@ -20,13 +20,17 @@ Run `al dispatch --help` for the command list and
    model, reasoning-effort, or skill flags. For short text, use
    `al dispatch start --agent <agent> --prompt <text>` instead. Parse the JSON
    and retain the handle.
-3. Run `al dispatch wait <handle>`. It blocks while the current invocation is
-   `running`; do not poll or inspect provider output.
-4. On `completed`, read and verify the Markdown file at `result_path`. On
-   `failed` or `cancelled`, report that terminal result.
+3. Run `al dispatch wait <handle>`. `running` means the bounded wait expired
+   while the target was still working, not that anything is wrong. Wait again
+   on the same handle, for as long as the work legitimately takes; a single
+   invocation may expire many times before it finishes.
+4. `completed`, `failed`, and `cancelled` are final. On `completed`, read and
+   verify the Markdown file at `result_path`. On `failed` or `cancelled`,
+   report that terminal result. Do not wait on that handle again.
 
-For parallel work, run `al dispatch start` once per independent conversation,
-retain every handle, and run `al dispatch wait <handle>` for each.
+For parallel work, run `al dispatch start` once per independent conversation
+and retain every handle. Wait only on the handles that are still outstanding,
+and drop each handle from that set as soon as it returns a terminal state.
 
 Run `al dispatch cancel <handle>` only when the user requests cancellation.
 Repeating it for an already cancelled invocation is safe; cancelling a
@@ -39,6 +43,9 @@ follow-up, requested information, or corrective action within the current
 scope and authority. Run `al dispatch continue <handle> --prompt <text>` or
 `al dispatch continue <handle> --prompt-file <path>`, then run
 `al dispatch wait <handle>` again.
+
+`continue` preserves the existing conversation context. Use `start` when a
+fresh context is required, not `continue`.
 
 ## Guardrails
 

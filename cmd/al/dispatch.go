@@ -73,7 +73,7 @@ func newDispatchStartCmd() *cobra.Command {
 
 func newDispatchWaitCmd() *cobra.Command {
 	return &cobra.Command{
-		Use: "wait <handle>", Short: "Wait for the current invocation to finish",
+		Use: "wait <handle>", Short: messages.DispatchWaitShort, Long: messages.DispatchWaitLong,
 		Args: cobra.ExactArgs(1), SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()

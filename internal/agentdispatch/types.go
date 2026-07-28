@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"time"
 )
 
 const (
@@ -127,6 +128,7 @@ type WaitRequest struct {
 	Root    string
 	ID      string
 	Stdout  io.Writer
+	Timeout time.Duration
 }
 
 // CancelRequest identifies one active invocation by handle or run UUID.

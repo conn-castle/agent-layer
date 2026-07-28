@@ -594,11 +594,12 @@ al dispatch cancel <handle>
 ```
 
 `options` reports available agents, configured defaults, and supported
-overrides. `start` and `continue` return immediately. `wait` blocks until the
-current invocation reaches `completed`, `failed`, or `cancelled`; completed
-output is stored in the immutable Markdown file named by `result_path`. Every
-successful command returns one JSON object; `wait` also writes its terminal
-JSON result before a non-zero failed-invocation exit. For the complete contract, see
+overrides. `start` and `continue` return immediately. `wait` blocks for up to
+eight minutes; it returns `running` when that interval expires without changing
+the invocation, so callers wait again on the same handle. Completed output is
+stored in the immutable Markdown file named by `result_path`. Every successful
+command returns one JSON object; `wait` also writes its terminal JSON result
+before a non-zero failed-invocation exit. For the complete contract, see
 [`docs/AGENT-DISPATCH.md`](docs/AGENT-DISPATCH.md).
 
 ---

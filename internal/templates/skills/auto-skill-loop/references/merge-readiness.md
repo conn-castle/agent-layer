@@ -1,10 +1,11 @@
 # Merge Readiness
 
 Dispatch `code_reviewer` in a fresh merge-readiness context for the exact open
-PR and head. Validate check evidence already produced by `/ship-pr`; rerun the
-full local check lane only when that evidence is missing, stale, contradictory,
-or not bound to the exact tree or head under review. Return `ready` only when
-all of these are true:
+PR and head. Review the delivery using the exact-head evidence produced by
+`/ship-pr`. Refetch or rerun checks only when that evidence is missing, stale,
+contradictory, or does not match the head under review.
+
+Return `ready` only after independently confirming all of the following:
 
 - the PR is mergeable and conflict-free
 - continuous integration and required local evidence are green for this head
