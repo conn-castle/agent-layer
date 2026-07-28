@@ -20,7 +20,7 @@ const dataPath = path.join(
 /**
  * Load the planner's actual browser calculation functions without running its
  * DOM initialization.
- * @returns {{snapshot:object,optimize:Function,suiteStatistics:Function,deriveTask:Function,buildExport:Function}} planner functions
+ * @returns {{snapshot:object,optimize:Function,suiteStatistics:Function,deriveTask:Function,buildExport:Function,isExportablePlan:Function}} planner functions
  */
 function loadPlanner() {
   const context = vm.createContext({ window: {}, console });
@@ -28,9 +28,9 @@ function loadPlanner() {
     filename: dataPath,
   });
   const html = fs.readFileSync(applicationPath, "utf8");
-  const match = html.match(/<script>\n([\s\S]*?)\n<\/script>/);
+  const match = html.match(/<script(?![^>]*\bsrc=)[^>]*>\s*([\s\S]*?)\s*<\/script>/i);
   assert.ok(match, "planner inline script was not found");
-  const initialization = "\ninitializeSelectors();";
+  const initialization = "initializeSelectors();";
   const initializationIndex = match[1].lastIndexOf(initialization);
   assert.notEqual(
     initializationIndex,
@@ -46,6 +46,7 @@ globalThis.__plannerTest = {
   suiteStatistics,
   deriveTask,
   buildExport,
+  isExportablePlan,
 };`,
     context,
     { filename: applicationPath },
@@ -184,4 +185,11 @@ test("tasks without report cost-axis evidence cannot enter a paid plan", () => {
       reason.includes("claude-fable-5::max cost-axis reference"),
     ),
   );
+});
+
+test("invalid best-effort plans cannot be exported", () => {
+  const planner = loadPlanner();
+  assert.equal(planner.isExportablePlan({ valid: false, selections: [{}] }), false);
+  assert.equal(planner.isExportablePlan({ valid: true, selections: [] }), false);
+  assert.equal(planner.isExportablePlan({ valid: true, selections: [{}] }), true);
 });

@@ -246,12 +246,13 @@ function buildSnapshot(trialsRoot, tasksRoot, provenance) {
     const configId = cellId.slice(separator + 1);
     const scores = trials.map((trial) => trial.score);
     const costs = trials.map((trial) => trial.cost);
+    const variance = trials.length >= 2 ? sampleVariance(scores) : null;
     if (!taskCells.has(taskId)) taskCells.set(taskId, {});
     taskCells.get(taskId)[configId] = {
       n: trials.length,
       mean: mean(scores),
-      variance: trials.length >= 2 ? sampleVariance(scores) : null,
-      sd: trials.length >= 2 ? Math.sqrt(sampleVariance(scores)) : null,
+      variance,
+      sd: variance === null ? null : Math.sqrt(variance),
       meanCost: mean(costs),
       minCost: Math.min(...costs),
       maxCost: Math.max(...costs),

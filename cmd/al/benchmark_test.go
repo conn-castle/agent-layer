@@ -73,3 +73,59 @@ func TestBenchmarkTreatmentCheckDoesNotRunTreatment(t *testing.T) {
 		t.Fatalf("unexpected output: %q", output.String())
 	}
 }
+
+func TestBenchmarkNoninteractiveExecutionReusesCachedWorkWithoutPrompting(t *testing.T) {
+	originalTerminal := isTerminal
+	originalBaseline := runBaseline
+	originalTreatment := runTreatment
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() {
+		isTerminal = originalTerminal
+		runBaseline = originalBaseline
+		runTreatment = originalTreatment
+	})
+	runBaseline = func(context.Context, bench.BaselineOptions, bench.TaskExecutor) (bench.BaselineOutcome, error) {
+		return bench.BaselineOutcome{PlanID: strings.Repeat("a", 64), Required: 1, Completed: 1, Summary: &bench.BaselineSummary{}}, nil
+	}
+	runTreatment = func(context.Context, bench.TreatmentOptions, bench.TaskExecutor) (bench.TreatmentOutcome, error) {
+		return bench.TreatmentOutcome{TreatmentID: strings.Repeat("b", 64), Label: "Cached", Required: 1, Completed: 1}, nil
+	}
+	for _, args := range [][]string{
+		{"benchmark", "baseline", "--plan", "plan.json"},
+		{"benchmark", "treatment", "--plan", "plan.json", "--label", "Cached"},
+	} {
+		root := newRootCmd()
+		root.SetArgs(args)
+		if err := root.Execute(); err != nil {
+			t.Fatalf("cached %v = %v", args[1], err)
+		}
+	}
+	runBaseline = func(context.Context, bench.BaselineOptions, bench.TaskExecutor) (bench.BaselineOutcome, error) {
+		return bench.BaselineOutcome{Required: 1}, bench.ErrConfirmationRequired
+	}
+	root := newRootCmd()
+	root.SetArgs([]string{"benchmark", "baseline", "--plan", "plan.json"})
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "requires --yes outside a terminal") {
+		t.Fatalf("noninteractive paid baseline error = %v", err)
+	}
+	if strings.Contains(output.String(), "Continue?") {
+		t.Fatalf("noninteractive paid baseline prompted: %q", output.String())
+	}
+	runTreatment = func(context.Context, bench.TreatmentOptions, bench.TaskExecutor) (bench.TreatmentOutcome, error) {
+		return bench.TreatmentOutcome{Label: "Paid", Required: 1}, bench.ErrConfirmationRequired
+	}
+	root = newRootCmd()
+	root.SetArgs([]string{"benchmark", "treatment", "--plan", "plan.json", "--label", "Paid"})
+	output.Reset()
+	root.SetOut(&output)
+	root.SetErr(&output)
+	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "requires --yes outside a terminal") {
+		t.Fatalf("noninteractive paid treatment error = %v", err)
+	}
+	if strings.Contains(output.String(), "Continue?") {
+		t.Fatalf("noninteractive paid treatment prompted: %q", output.String())
+	}
+}

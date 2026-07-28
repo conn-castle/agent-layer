@@ -238,6 +238,7 @@ type dispatchConformanceRecord struct {
 	Agent           string `json:"agent"`
 	Model           string `json:"model"`
 	ReasoningEffort string `json:"reasoning_effort"`
+	Skill           string `json:"skill"`
 	Mode            string `json:"mode"`
 	State           string `json:"state"`
 	ParentRunID     string `json:"parent_run_id"`
@@ -272,7 +273,7 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 		len(required) == 0 || len(paths) == 0 {
 		return false, nil
 	}
-	completedTopLevel := 0
+	completedRoles := make(map[string]bool, len(required))
 	for _, path := range paths {
 		data, err := os.ReadFile(path) // #nosec G122,G304 -- path was discovered below the restricted attempt stage.
 		if err != nil {
@@ -287,11 +288,29 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 			record.ReasoningEffort != request.Effort || record.State != "completed" {
 			return false, nil
 		}
-		if record.Mode == "fresh" && record.ParentRunID == "" {
-			completedTopLevel++
+		if record.Mode != "fresh" || record.ParentRunID != "" {
+			continue
+		}
+		for _, role := range required {
+			if expectedSkill := dispatchSkillForRole(role); expectedSkill != "" && record.Skill == expectedSkill {
+				completedRoles[role] = true
+			}
 		}
 	}
-	return completedTopLevel >= len(required), nil
+	return len(completedRoles) == len(required), nil
+}
+
+func dispatchSkillForRole(role string) string {
+	switch role {
+	case requiredRolePlanReviewer:
+		return "review-plan"
+	case requiredRoleImplementer:
+		return "implement-plan"
+	case requiredRoleCodeReviewer:
+		return "review-uncommitted-code"
+	default:
+		return ""
+	}
 }
 
 func submittedPatchBytes(stage string) (int64, error) {

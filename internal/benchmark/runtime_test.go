@@ -98,10 +98,10 @@ func TestDispatchConformanceUsesObservedLifecycleWithoutAffectingScore(t *testin
 	if err := os.MkdirAll(dispatchDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for index := 0; index < 3; index++ {
+	for index, skill := range []string{"review-plan", "implement-plan", "review-uncommitted-code"} {
 		record := fmt.Sprintf(
-			`{"id":"run-%d","agent":"codex","model":"gpt-5.6-luna","reasoning_effort":"high","mode":"fresh","state":"completed"}`,
-			index,
+			`{"id":"run-%d","agent":"codex","model":"gpt-5.6-luna","reasoning_effort":"high","skill":"%s","mode":"fresh","state":"completed"}`,
+			index, skill,
 		)
 		if err := os.WriteFile(filepath.Join(dispatchDir, fmt.Sprintf("%d.json", index)), []byte(record), 0o600); err != nil {
 			t.Fatal(err)
@@ -109,6 +109,12 @@ func TestDispatchConformanceUsesObservedLifecycleWithoutAffectingScore(t *testin
 	}
 	if conformant, err := dispatchConformance(stage, request); err != nil || !conformant {
 		t.Fatalf("complete lifecycle = %t, %v", conformant, err)
+	}
+	if err := os.WriteFile(filepath.Join(dispatchDir, "2.json"), []byte(`{"id":"run-2","agent":"codex","model":"gpt-5.6-luna","reasoning_effort":"high","skill":"implement-plan","mode":"fresh","state":"completed"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if conformant, err := dispatchConformance(stage, request); err != nil || conformant {
+		t.Fatalf("duplicated role lifecycle = %t, %v", conformant, err)
 	}
 	if err := os.WriteFile(filepath.Join(dispatchDir, "2.json"), []byte(`not-json`), 0o600); err != nil {
 		t.Fatal(err)
@@ -462,6 +468,16 @@ func TestPinnedCheckoutValidationRejectsMissingAndWrongRepositoryState(t *testin
 	}
 	run("add", "README.md")
 	run("commit", "--quiet", "-m", "fixture")
+	if err := os.WriteFile(filepath.Join(checkout, "untracked.txt"), []byte("dirty\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validatePinnedCheckoutClean(context.Background(), checkout); err == nil ||
+		!strings.Contains(err.Error(), "must be clean") {
+		t.Fatalf("dirty checkout error = %v", err)
+	}
+	if err := os.Remove(filepath.Join(checkout, "untracked.txt")); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := validateExistingPinnedCheckout(context.Background(), checkout); err == nil ||
 		!strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("wrong revision error = %v", err)

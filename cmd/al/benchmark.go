@@ -55,9 +55,6 @@ func newBenchmarkBaselineCmd() *cobra.Command {
 			if check && yes {
 				return errors.New("benchmark baseline --check does not accept --yes")
 			}
-			if !check && !isTerminal() && !yes {
-				return errors.New("benchmark paid execution requires a terminal confirmation or --yes")
-			}
 			root, err := resolveRepoRoot()
 			if err != nil {
 				return err
@@ -96,6 +93,9 @@ func newBenchmarkBaselineCmd() *cobra.Command {
 func runBenchmarkBaselineInteractive(cmd *cobra.Command, options bench.BaselineOptions) error {
 	outcome, err := runBaseline(context.Background(), options, nil)
 	if errors.Is(err, bench.ErrConfirmationRequired) {
+		if !isTerminal() {
+			return errors.New("benchmark paid execution requires --yes outside a terminal")
+		}
 		if _, writeErr := fmt.Fprintf(
 			cmd.OutOrStdout(),
 			"Baseline requires %d paid model calls; published estimate $%.2f. Continue? [y/N]: ",
@@ -146,9 +146,6 @@ func newBenchmarkTreatmentCmd() *cobra.Command {
 			if check && yes {
 				return errors.New("benchmark treatment --check does not accept --yes")
 			}
-			if !check && !isTerminal() && !yes {
-				return errors.New("benchmark paid execution requires a terminal confirmation or --yes")
-			}
 			root, err := resolveRepoRoot()
 			if err != nil {
 				return err
@@ -187,6 +184,9 @@ func newBenchmarkTreatmentCmd() *cobra.Command {
 func runBenchmarkTreatmentInteractive(cmd *cobra.Command, options bench.TreatmentOptions) error {
 	outcome, err := runTreatment(context.Background(), options, nil)
 	if errors.Is(err, bench.ErrConfirmationRequired) {
+		if !isTerminal() {
+			return errors.New("benchmark paid execution requires --yes outside a terminal")
+		}
 		if _, writeErr := fmt.Fprintf(
 			cmd.OutOrStdout(),
 			"Treatment %q requires %d paid model calls. Treatment cost cannot be estimated reliably from the bare-model baseline. Continue? [y/N]: ",

@@ -1891,11 +1891,20 @@ function renderSearchResult(plan, inputs) {
   $("planStatus").textContent = plan.valid
     ? plan.optimization?.certified ? "Globally optimal plan" : "Valid bounded plan"
     : plan.selections.length ? "Invalid best-effort plan" : "No valid plan";
-  $("copyPlan").disabled = plan.selections.length === 0;
-  $("downloadPlan").disabled = plan.selections.length === 0;
+  $("copyPlan").disabled = !isExportablePlan(plan);
+  $("downloadPlan").disabled = !isExportablePlan(plan);
   renderMessages(plan.errors, plan.warnings);
   renderPlanTable(plan);
   renderExplorer();
+}
+
+/**
+ * Return whether a search result is valid for the CLI's exported-plan contract.
+ * @param {object} plan optimizer result
+ * @returns {boolean} whether the plan can be exported
+ */
+function isExportablePlan(plan) {
+  return plan?.valid === true && Array.isArray(plan.selections) && plan.selections.length > 0;
 }
 
 /**

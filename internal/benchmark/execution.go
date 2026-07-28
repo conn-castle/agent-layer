@@ -328,7 +328,23 @@ func validateExistingPinnedCheckout(ctx context.Context, checkout string) (bool,
 	if strings.TrimSpace(string(data)) != DeepSWECommit {
 		return false, fmt.Errorf("pinned DeepSWE checkout revision does not match %s", DeepSWECommit)
 	}
+	if err := validatePinnedCheckoutClean(ctx, checkout); err != nil {
+		return false, err
+	}
 	return true, nil
+}
+
+// validatePinnedCheckoutClean prevents a labeled benchmark from running a
+// locally modified task tree under the pinned commit identity.
+func validatePinnedCheckoutClean(ctx context.Context, checkout string) error {
+	status, err := exec.CommandContext(ctx, commandGit, "-C", checkout, "status", "--porcelain=v1", "--untracked-files=all").Output() // #nosec G204 -- private fixed checkout path.
+	if err != nil {
+		return fmt.Errorf("inspect pinned DeepSWE checkout cleanliness: %w", err)
+	}
+	if strings.TrimSpace(string(status)) != "" {
+		return errors.New("pinned DeepSWE checkout must be clean")
+	}
+	return nil
 }
 
 func dispatchAgent(model Model) string {
