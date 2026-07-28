@@ -1,10 +1,5 @@
 # write-plan
 
-Write three implementation-ready artifacts for the smallest coherent,
-reviewable scope. Scale detail to risk and ambiguity; omit generic background,
-filler, and exhaustive file inventories. For unnamed roadmap execution, use the
-first incomplete phase.
-
 ## Artifacts
 
 Use one `YYYYMMDD-HHMMSS-<short-rand>` run id:
@@ -13,16 +8,7 @@ Use one `YYYYMMDD-HHMMSS-<short-rand>` run id:
 - `.agent-layer/tmp/write-plan.<run-id>.task.md`
 - `.agent-layer/tmp/write-plan.<run-id>.context.md`
 
-## Preflight
-
-Normalize the source into an objective, observable success criteria, scope and
-non-goals, constraints, user requirements, source evidence, and unresolved
-facts. Read only relevant code and documentation, including applicable memory
-files for architecture, roadmap, issue, or backlog work. Resolve facts from
-repository evidence before drafting. Escalate only a substantive choice that
-evidence cannot settle.
-
-## Plan artifact
+### Plan artifact
 
 Include:
 
@@ -37,13 +23,13 @@ Include:
   proves
 - `## Exit Criteria`: objective completion conditions
 
-## Task artifact
+### Task artifact
 
 Write a compact ordered Markdown checklist that mirrors implementation order.
 Include directly required code, tests, docs, and memory updates. Keep final
 verification in the plan rather than duplicating it as tasks.
 
-## Context artifact
+### Context artifact
 
 Include:
 
@@ -55,16 +41,14 @@ Include:
 
 Do not repeat the plan narrative or generic practices.
 
-## Self-check and handoff
+## Workflow
 
-Confirm that the artifacts match the source, resolve the approach rather than
-deferring it, cover risk-appropriate tests/docs/memory work, use valid paths,
-and record any user-owned decision. Correct autonomous gaps in place and rerun
-only the affected check.
+1. Write the plan artifacts.
+2. Escalate substantive decisions to the user.
+3. Iterate and update the plan in-place as needed.
+4. Confirm that the artifacts are complete, fully resolve the request and
+record any user-made decisions.
 
 Return the three paths, a short summary, material risks, and one verdict:
-
 - `proceed`: ready for review
-- `revise`: name an evidence-backed correction that can be made autonomously,
-  then apply it in this stage
 - `escalate`: name the unresolved substantive user decision

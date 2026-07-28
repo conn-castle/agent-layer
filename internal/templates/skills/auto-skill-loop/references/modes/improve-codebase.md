@@ -30,12 +30,9 @@ dependency, or performance problems, false test confidence, or material
 architectural or maintenance cost. Examine local, cross-boundary, and
 architectural causes.
 
-Do not select a candidate because it is easiest, smallest, or immediately
-actionable. While meaningful scopes or lenses remain without fresh coverage,
-reject isolated guardrails, bookkeeping, cosmetic cleanup, speculative
-abstraction, unjustified rewrites, and minor defensive changes. A small change
-qualifies only when concrete evidence shows independently material impact;
-otherwise continue searching for a substantive repair or prove exhaustion.
+While meaningful scopes or lenses remain without fresh coverage, reject
+isolated guardrails, bookkeeping, cosmetic cleanup, speculative abstraction,
+unjustified rewrites, and minor defensive changes.
 
 ## Execute
 

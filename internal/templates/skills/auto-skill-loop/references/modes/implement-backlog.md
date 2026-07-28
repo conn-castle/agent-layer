@@ -14,9 +14,8 @@ Read both files' formats and only the decisions needed to interpret candidates.
 
 ## Select
 
-Prefer prerequisites and established roadmap order. Select one settled outcome
-with only its inseparable parts or prerequisites. Note what must be decided or
-changed for unsettled work, set it aside, and continue selection.
+Prefer prerequisites and established roadmap order. Note what must be decided
+or changed for unsettled work, set it aside, and continue selection.
 
 ## Execute
 

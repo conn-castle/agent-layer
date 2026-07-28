@@ -16,9 +16,9 @@ prior audits.
 
 ## Select
 
-Choose the highest-value coherent autonomous improvement from the report and
-current repository evidence. Account for completed, in-flight, and blocked
-work; refresh the audit when its recommendation is stale or insufficient.
+Choose the highest-value autonomous improvement from the report and current
+repository evidence. Account for completed, in-flight, and blocked work; refresh
+the audit when its recommendation is stale or insufficient.
 
 ## Execute
 

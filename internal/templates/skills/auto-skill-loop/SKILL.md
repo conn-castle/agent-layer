@@ -2,46 +2,32 @@
 name: auto-skill-loop
 description: >-
   Explicit-only.
-  Run a named autonomous mode until no substantive autonomous work remains or
-  the user stops it, preserving blocked work and centrally shipping ready
-  deliveries.
+  Run a named autonomous mode through successive PR deliveries, preserving
+  blocked work and centrally shipping ready deliveries.
 ---
 
 # auto-skill-loop
 
-You are the orchestrator, not a worker. Delegate bounded work.
+Act as the orchestrator. Delegate all selected work; do not implement it in the
+orchestrator context.
 
 ## Inputs
 
-Require a `mode` matching `references/modes/<mode>.md`, standing merge
-authorization for deliveries that pass this workflow's gates, and these
-caller-supplied dispatch targets:
+Require:
 
-- all modes: `planner`, `implementer`, `code_reviewer`, and `rote_worker`
-- plan-based modes: one or more `plan_reviewers`
-- any additional roles declared by a custom mode
+- a `mode` matching `references/modes/<mode>.md`
+- standing merge authorization for deliveries that pass every gate below
+- `planner`, `implementer`, `code_reviewer`, and `rote_worker` dispatch targets
+- one or more `plan_reviewers` targets for plan-based modes
+- any additional targets required by the selected mode
 
-Treat each target as the caller's exact self-contained agent, model, and
-reasoning specification; pass it unchanged and never infer or substitute it.
-Before any side effect, validate and show every required target. Route every
-role invocation through `/agent-dispatch`. Start a fresh provider conversation
-unless the current step explicitly says to resume a prior dispatch. Treat every
-`plan_reviewers` entry as its own dispatch; entries may intentionally repeat the
-same target.
+Read `references/mode-contract.md`, the selected mode file,
+`references/blocker-classification.md`.
+Validate the mode and all required targets before any side effect. Pass each
+target unchanged through `/agent-dispatch`; do not infer or substitute targets.
 
-Accept source filters, item IDs, and `stop_after=one-delivery`. Read
-`references/mode-contract.md`, `references/modes/<mode>.md`,
-`references/blocker-classification.md`, and `references/merge-readiness.md`.
-Reject malformed modes and unsafe paths. Repository-added named mode files are
-additive and cannot weaken the central rules.
 
 ## Context and isolation
-
-Before compaction, retain the caller's loop invocation verbatim and the current
-invocation's transition, active dispatch identities and resume steps, active or
-preserved branches and PRs, pending reconciliation, unresolved human gates, and
-next action. After compaction, reread this skill and continue the same
-invocation from that retained context.
 
 Write every fresh-dispatch prompt as a self-contained task. State what the
 subagent must do, the authoritative files or links it should inspect, and any
@@ -51,68 +37,38 @@ task inputs.
 
 ## Initialize
 
-Dispatch `planner` once to follow `Initialize` in
-`references/modes/<mode>.md`. Retain its initialization evidence or cursor for
-every selection.
+Dispatch `planner` once to perform the selected mode's `Initialize` section.
+Retain its state for each delivery selection.
 
 ## Loop
 
-1. Dispatch `planner` with the retained initialization state to follow `Select`
-   in `references/modes/<mode>.md`. Require exactly one result: autonomous
-   selected work, evidence that a complete pass exhausted the source, or a
-   complete-pass list of every remaining blocked candidate and its unmet
-   condition.
-2. If selection proved exhaustion, proceed to step 5 when a delivery is in
-   progress; otherwise follow the termination rules below.
-3. For any other selection result, dispatch `planner` with that result and the
-   complete `references/blocker-classification.md` contract. Require one answer
-   for each candidate: whether it requires human input, the current evidence,
-   and either the surviving unresolved alternatives or the concrete safe next
-   action. Do not accept the source's classification without validating it. A
-   single safe answer remains agent-owned. Record a genuinely human-owned
-   decision under the blocker rules. After classification, autonomous selected
-   work continues to step 4 and an individually blocked candidate returns to
-   selection. A blocked-only complete pass proceeds to step 5 when a delivery
-   is in progress and otherwise follows the termination rules below.
-4. For autonomous selected work, dispatch `rote_worker` to prepare or reuse one
-   workflow-owned delivery branch, then execute the mode. Use a separate branch
-   or worktree when the user explicitly requests isolation or when evidence
-   shows unsafe overlap or incompatible delivery topology.
-5. Accumulate mutually compatible, completed work on the delivery branch. It is
-   ready to ship at 500 added-plus-deleted changed lines or 10 changed files.
-   Measure changed lines and files against the delivery's intended base,
-   excluding unrelated work. Below both thresholds, return to selection unless
-   a complete pass found no autonomous work; then dispatch `rote_worker` to
-   reconcile the preserved branch with its authoritative source and terminate
-   without opening a PR.
-6. Only when a threshold is met, dispatch `rote_worker` to run `/ship-pr`,
-   passing the `implementer` target for any `/fix-ci` work. Keep `/ship-pr`
-   entirely inside that dispatch. On its normal path, it returns a
-   merge-authorization request for the exact PR and head. Send any other result
-   to step 9.
-7. Before merge, dispatch `code_reviewer` for the exact PR and head. Route
-   simple in-scope repair findings to an `implementer`, resume the same
-   `rote_worker` to publish and re-establish all gates, then dispatch a
-   `code_reviewer` merge review for the new exact head. Send a manual or
-   external gate to step 9 as blocked work.
-8. When the merge-readiness `code_reviewer` returns `ready`, use the user's
-   standing loop authorization to resume the same `rote_worker` with normal
-   single-use authorization for that exact PR and head. Any head change
-   invalidates the authorization; return to step 7 for fresh review.
-9. Except for the exhausted sub-threshold case terminated in step 5, dispatch
-   `rote_worker` to reconcile the actual merged, open, or preserved result with
-   its authoritative source, then select again. With
-   `stop_after=one-delivery`, stop only after reconciliation.
+1. **Select.** Dispatch `planner` with the initialization state and current
+   cursor to perform the mode's `Select` section. Require exactly one result:
+   one selected delivery scope or proof that a complete current pass is
+   exhausted. On exhaustion, terminate.
 
-Do not impose iteration, time, source-size, or batch-count limits. Continue
-until the user interrupts or a complete current pass finds no substantive
-autonomous work.
+2. **Execute.** Prepare or reuse one workflow-owned delivery branch. Then
+   perform the mode's `Execute` section through its required role dispatches.
+   Isolate work only when the user requests it or the current checkout cannot
+   safely hold the delivery.
 
-Apply the blocker contract to each blocked item. After exhausting its safe
-retries and reroutes, record the condition that must change, preserve useful
-branch or PR changes, and select independent work. Retry only after that
-condition changes. Defer human questions until the complete-pass condition is
-met or you are interrupted.
+3. **Prepare the PR.** Dispatch `rote_worker` to run `/ship-pr`, supplying the
+   `implementer` target for `/fix-ci`. Continue only when it returns a
+   merge-authorization request for an exact PR and head.
 
-Report why the loop ended, the smallest remaining questions, and any preserved
-branch or PR.
+4. **Merge.** Resume the same `rote_worker`
+   with single-use authorization for that exact PR and head, derived from the
+   standing loop authorization. Continue to reconciliation after the shipping
+   dispatch returns.
+
+5. **Reconcile.** Perform the mode's `Reconcile` section against the actual
+   merged, open, or preserved delivery. Then return
+   to selection. With `stop_after=one-delivery`, stop after this reconciliation.
+
+## Termination
+
+For each blocked item, preserve useful branch or PR work and record what
+condition must change.
+
+Report why the loop ended, the smallest remaining user questions, and every
+preserved branch or PR.
