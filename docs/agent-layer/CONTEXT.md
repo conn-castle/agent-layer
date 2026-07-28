@@ -26,6 +26,16 @@ Do not duplicate information that belongs in other memory files:
 
 <!-- ENTRIES START -->
 
+## DeepSWE benchmark
+
+- The website planner is the canonical task-selection surface. It exports arbitrary selected tasks with two to four repetitions per arm; two is the minimum because the observed report estimates each task-arm sample variance. The Go benchmark commands validate and execute the exact pasted or downloaded JSON allocation and never optimize tasks or repetitions. The earlier locked nine-task suite is superseded.
+- The embedded public v1.1 snapshot is a reviewed offline input, not runtime web data. Its results use `mini-swe-agent`, so published-only output is reference-relative and cannot attribute a difference to Agent Layer.
+- Baseline identity excludes Agent Layer treatment content and scheduler task concurrency. A changed effective instruction/skill bundle creates a new treatment version while compatible local baseline attempts remain reusable whether missing tasks execute sequentially or with bounded workers.
+- DeepSWE cost evidence counts each coordinator and child session once. Codex 0.144.6 does not expose which non-cache-read input tokens were cache writes, so both baseline and treatment use the same token-derived API-equivalent minimum/maximum bounds; their midpoints are presentation-only. Claude reports an exact coordinator cost through Pier and an exact `total_cost_usd` for each dispatched child, so no Claude pricing estimate is used. Reports render horizontal cost-accounting bounds; verifier build failures remain scored evidence and are labeled on task rows.
+- The DeepSWE instructions-and-skills arm uses Pier's 4× agent-timeout multiplier so its complete multi-agent workflow is not truncated by the upstream 15-minute single-agent budget. This execution-affecting value is treatment-only, persisted in run identity, and shown in report provenance.
+- Benchmark optimization is an iterative campaign: keep the selected tasks, repetitions, model/reasoning level, and compatible bare-model baseline fixed; audit the current Agent Layer treatment's cost; make the smallest evidence-based instruction or skill change; run only the revised treatment; and append it to the same campaign report. Compare every treatment with the shared baseline using its observed score, decision threshold, cost range, and cost multiple. Task reselection and baseline reruns are unnecessary unless their compatibility inputs change.
+- Product-development sequence: first merge the production planner/runner/report delivery; then deeply analyze the completed Luna-low treatment for evidence-backed cost reductions that preserve quality; port the user's selected skills/instructions changes from the other repository; run the revised treatment against the same compatible baseline and plan; and evaluate the real multi-iteration campaign. Only after that evidence should the planner UI and campaign report receive their major general-consumption redesign, followed by complete user documentation and publication.
+
 ## Secrets
 
 - Codex is the one exception to "never embed secrets in generated configs": it embeds secrets in URLs/env via `bearer_token_env_var`, and shell environment takes precedence over `.agent-layer/.env`. All other clients use placeholder syntax in generated configs.

@@ -134,6 +134,21 @@ test: check-gotestsum ## Run tests
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
 	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/gotestsum" --format testname -- ./...
 
+.PHONY: test-deepswe-planner
+test-deepswe-planner: ## Compare the website planner with exhaustive allocation
+	@node --test scripts/test-deepswe-planner.js
+
+.PHONY: refresh-deepswe-planner-data
+refresh-deepswe-planner-data: ## Download the official DeepSWE snapshot and regenerate planner data
+	@mkdir -p .agent-layer/tmp/deepswe-planner-data
+	@curl --fail --location --retry 3 --output .agent-layer/tmp/deepswe-planner-data/trials.json https://deepswe.datacurve.ai/artifacts/v1.1/trials.json
+	@curl --fail --location --retry 3 --output .agent-layer/tmp/deepswe-planner-data/tasks.json https://deepswe.datacurve.ai/artifacts/v1.1/tasks.json
+	@node scripts/build-deepswe-planner-data.js \
+	  --trials .agent-layer/tmp/deepswe-planner-data/trials.json \
+	  --tasks .agent-layer/tmp/deepswe-planner-data/tasks.json \
+	  --output site/static/deepswe-planner/app/data.js \
+	  --retrieved-at "$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+
 .PHONY: test-race
 test-race: ## Run race detector for concurrency-critical packages
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
@@ -263,7 +278,7 @@ test-e2e-ci: ## Run e2e tests for CI (online downloads, upgrade scenarios requir
 	@AL_E2E_ONLINE=1 AL_E2E_REQUIRE_UPGRADE=1 ./scripts/test-e2e.sh
 
 .PHONY: ci
-ci: tidy-check fmt-check lint dead-code coverage test-race test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
+ci: tidy-check fmt-check lint dead-code coverage test-deepswe-planner test-race test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
 
 .PHONY: dev
 dev: ## Fast local checks during development (format + lint + coverage + release tests)
@@ -271,6 +286,7 @@ dev: ## Fast local checks during development (format + lint + coverage + release
 	@$(MAKE) fmt-check
 	@$(MAKE) lint
 	@$(MAKE) coverage
+	@$(MAKE) test-deepswe-planner
 	@$(MAKE) test-release
 
 # Local dev targets — run al subcommands against this repo's own .agent-layer using source

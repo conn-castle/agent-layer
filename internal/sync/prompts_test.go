@@ -526,6 +526,11 @@ func TestGeneratedSkillSourcePath(t *testing.T) {
 	if got := generatedSkillSourcePath(cmd); got != ".agent-layer/skills/alpha/SKILL.md" {
 		t.Fatalf("unexpected normalized source path: %q", got)
 	}
+
+	cmd.SourcePath = filepath.Join("/tmp/repo", ".agent-layer", "tmp", "stage", ".agent-layer", "skills", "alpha", "SKILL.md")
+	if got := generatedSkillSourcePath(cmd); got != ".agent-layer/skills/alpha/SKILL.md" {
+		t.Fatalf("nested projection retained an outer Agent Layer path: %q", got)
+	}
 }
 
 func TestCopyDirRecursive_ReadFilePermissionError(t *testing.T) {

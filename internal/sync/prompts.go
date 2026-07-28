@@ -387,7 +387,7 @@ func generatedSkillSourcePath(cmd config.Skill) string {
 		return normalized
 	}
 	marker := "/.agent-layer/"
-	if idx := strings.Index(normalized, marker); idx >= 0 {
+	if idx := strings.LastIndex(normalized, marker); idx >= 0 {
 		return normalized[idx+1:]
 	}
 	return defaultPath
