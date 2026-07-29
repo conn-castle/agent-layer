@@ -2,8 +2,8 @@
 name: review-plan
 description: >-
   Explicit-only.
-  Review and repair a plan/task/context artifact set with independent evidence,
-  then report implementation readiness.
+  Independently review a plan/task/context artifact set and report material
+  findings.
 ---
 
 # review-plan
@@ -12,33 +12,30 @@ description: >-
 
 Require:
 
-- one or more `plan_reviewers` as self-contained dispatch target specifications
 - plan, task, and context artifact paths
 - an optional specification artifact path
 
-Resolve each supplied reviewer request through `/agent-dispatch`'s live
-metadata. When it matches exactly one dispatchable target/model configuration,
-use that match without asking for confirmation. Missing artifacts block review,
-as does an empty reviewer list.
+## Findings artifact
 
-## Output artifact
-
-Write `.agent-layer/tmp/review-plan.<run-id>.report.md` with run ID
-`YYYYMMDD-HHMMSS-<short-rand>`. Preserve canonical reviewer results as evidence.
-
-## Independence contract
-
-Every reviewer receives complete, equivalent copies of
-`references/agent-review-prompt.md`, plan, task, context, and optional spec.
+Write `.agent-layer/tmp/review-plan.<run-id>.findings.md` with run ID
+`YYYYMMDD-HHMMSS-<short-rand>`.
 
 ## Workflow
 
-Run all supplied independent reviews concurrently through dispatch fanout.
+Do not edit the input artifacts or implementation code.
 
-Validate findings against artifacts and repository evidence. Merge duplicates
-and retain valid findings. Update the artifacts directly to fully address valid
-findings.
+1. Use 1–4 fresh built-in subagents in parallel, based on the plan's risk and
+   complexity. Each reviews all inputs through a distinct framing; do not split
+   coverage. Consequential architecture changes require an architecture
+   framing. Do not use Agent Dispatch or another workflow.
+2. Assess every subagent finding against the artifacts and repository. Do not
+   accept findings by vote or forward raw reports.
+3. Report only evidence-backed findings that are material. For each, give its
+   location, evidence, impact, and suggested correction.
 
-Once done, report one of the following to the caller:
-- `implementation-ready`
-- `blocked-for-user-decision`
+Include the subagent count, rationale, framings, and any substantive user
+decision. Return the findings path and one verdict:
+
+- `approved`: no material findings
+- `changes-needed`: material findings remain
+- `blocked-for-user-decision`: a substantive choice is unresolved

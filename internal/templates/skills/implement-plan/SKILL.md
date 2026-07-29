@@ -33,5 +33,4 @@ requires a user-owned decision.
 
 ## Completion contract
 
-Return the relative path to the output report, a summary, and any additional
-information that should be shared with a reviewer.
+Return the report path and status.

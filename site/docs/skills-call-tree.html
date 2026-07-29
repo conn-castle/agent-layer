@@ -1191,32 +1191,31 @@ plan-work:
     - if: no task source or no valid reviewer was supplied
       calls:
         - exit: return a missing-input blocker and create nothing
+    - task: resolve each reviewer through agent-dispatch live metadata
     - task: resolve material facts now rather than deferring investigation to implementation
     - reference: plan-work/references/write-plan
     - task: correct evidence-backed gaps within this stage
     - if: a substantive choice cannot be resolved under repository escalation rules
       calls:
         - exit: ask the user for that choice
-    - skill: review-plan
-      inputs: [plan_reviewers]
-    - exit: return the plan, task, context, and review-report paths with implementation-ready or blocked-for-user-decision
+    - for: plan_reviewer in plan_reviewers, concurrently
+      calls:
+        - skill: review-plan
+          caller: dispatch(plan_reviewer)
+    - task: assess each finding for correctness, relevance, and materiality; justify rejections and address accepted findings
+    - task: write the final report
+    - exit: return artifact and report paths with implementation-ready or blocked-for-user-decision
 review-plan:
-  inputs: [plan_reviewers]
   calls:
-    - task: resolve each reviewer request through agent-dispatch live metadata, accepting an unambiguous single match without confirmation
-    - if: an artifact is missing or the reviewer list is empty
+    - if: an artifact is missing
       calls:
         - exit: block the review
-    - for: plan_reviewer in plan_reviewers, concurrently through dispatch fanout
+    - for: 1-4 risk-proportional reviews of the complete artifact set, concurrently
       calls:
-        - reference: review-plan/references/agent-review-prompt
-          caller: dispatch(plan_reviewer)
-        - for: 1-4 risk-proportional reviews of the complete artifact set
-          calls:
-            - task: fully review the artifacts, including an architectural review for a consequential architecture change
-              caller: subagent
-    - task: validate findings against the artifacts and repository evidence, merge duplicates, and update the artifacts directly
-    - exit: report implementation-ready or blocked-for-user-decision
+        - task: review with a distinct framing, including architecture when consequential
+          caller: subagent
+    - task: validate every finding and write only evidence-backed material findings without disposition labels
+    - exit: return the findings path with approved, changes-needed, or blocked-for-user-decision
 review-uncommitted-code:
   calls:
     - task: resolve the review target from the explicit target, then requested hotspots, otherwise all working-tree changes

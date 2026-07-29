@@ -53,5 +53,4 @@ Return:
 - `complete-with-follow-up` when only explicit out-of-contract work remains
 - `blocked` for a named unresolved constraint
 
-Include artifact paths, implementation and deviations, final checks, review,
-verification, repairs, shipping obligations, report path, and residual risk.
+Return the report path and status.

@@ -399,8 +399,8 @@ body {
       <div class="configuration-grid">
         <section class="configuration-panel target-panel">
           <div class="configuration-label">
-            <span class="badge target">Bare model</span>
-            <strong>Configuration you will test</strong>
+            <span class="badge target">Reference</span>
+            <strong>Published calibration reference</strong>
           </div>
           <div class="configuration-controls">
             <div class="field">
@@ -412,13 +412,13 @@ body {
               <select id="targetReasoning" disabled><option value="">Choose reasoning…</option></select>
             </div>
           </div>
-          <p class="help">Your fresh bare-model baseline and skill/instruction run will use this exact configuration.</p>
+          <p class="help">Its published variance and cost guide task selection and repetition allocation. The benchmark CLI separately selects the configuration to execute.</p>
         </section>
 
         <section class="configuration-panel proxy-panel">
           <div class="configuration-label">
-            <span class="badge comparison">Comparison</span>
-            <strong>Published model-quality contrast</strong>
+            <span class="badge comparison">Contrast</span>
+            <strong>Published calibration contrast</strong>
           </div>
           <div class="configuration-controls">
             <div class="field">
@@ -430,15 +430,15 @@ body {
               <select id="comparisonReasoning" disabled><option value="">Choose reasoning…</option></select>
             </div>
           </div>
-          <p class="proxy-note"><strong>Why it matters:</strong> its score difference from the bare model measures demonstrated task response. Both configurations’ run-to-run variance measures noise.</p>
+          <p class="proxy-note"><strong>Why it matters:</strong> its score difference from the reference measures demonstrated task response. Both configurations’ run-to-run variance measures noise.</p>
         </section>
       </div>
 
       <div class="constraint-grid">
         <div class="field">
-          <label for="budget">Bare-model baseline budget (USD)</label>
+          <label for="budget">Calibration-reference budget proxy (USD)</label>
           <input id="budget" type="number" min="0.01" step="0.01" placeholder="For example, 5">
-          <span class="help">The future skill/instruction arm has the same plan and unknown cost.</span>
+          <span class="help">Uses published reference costs to allocate repetitions. Actual local arm costs are measured during execution.</span>
         </div>
         <div class="field">
           <label for="minTasks">Minimum tasks</label>
@@ -474,7 +474,7 @@ body {
             <p class="threshold-copy" id="thresholdCopy"></p>
         </div>
         <div class="metric-grid">
-            <div class="metric"><span>Baseline spend</span><strong id="metricSpend">—</strong></div>
+            <div class="metric"><span>Reference spend</span><strong id="metricSpend">—</strong></div>
             <div class="metric"><span>Tasks · runs/arm</span><strong id="metricRuns">—</strong></div>
             <div class="metric"><span>Historical model difference</span><strong id="metricSignal">—</strong></div>
             <div class="metric"><span>Detectability</span><strong id="metricSnr">—</strong></div>
@@ -489,7 +489,7 @@ body {
             <dt>Student's t critical value</dt><dd id="detailT">—</dd>
             <dt>Improvement room</dt><dd id="detailUp">—</dd>
             <dt>Regression room</dt><dd id="detailDown">—</dd>
-            <dt>Unspent baseline budget</dt><dd id="detailUnspent">—</dd>
+            <dt>Unspent reference budget</dt><dd id="detailUnspent">—</dd>
             <dt>Optimization result</dt><dd id="detailOptimizer">—</dd>
             <dt>Proven detectability ceiling</dt><dd id="detailBound">—</dd>
             <dt>Eligible automatic tasks</dt><dd id="detailEligible">—</dd>
@@ -590,14 +590,6 @@ const COST_AXIS_REFERENCE_CONFIGURATION = "claude-fable-5::max";
 // Safely rounded below the two-sided 0.05 standard-normal critical value.
 const NORMAL_CRITICAL_LOWER_BOUND = 1.959963984;
 const OPERATIONAL_EXCLUSIONS = Object.freeze([]);
-const RUNNABLE_TARGET_MODELS = new Set([
-  "gpt-5-6-luna",
-  "gpt-5-6-terra",
-  "gpt-5-6-sol",
-  "claude-sonnet-5",
-  "claude-opus-4-8",
-  "claude-fable-5",
-]);
 const configById = new Map(SNAPSHOT.configurations.map((configuration) => [configuration.id, configuration]));
 const taskById = new Map(SNAPSHOT.tasks.map((task) => [task.id, task]));
 const manualStates = new Map();
@@ -754,11 +746,11 @@ function deriveTask(task, inputs) {
   const operational = OPERATIONAL_EXCLUSIONS.find((entry) => entry.task === task.id);
   const reasons = [];
   if (operational) reasons.push(`Operational defect: ${operational.reason}`);
-  if (!target) reasons.push("No usable target trials");
-  if (!comparison) reasons.push("No usable comparison trials");
-  if (target && (!(target.n >= 2) || !Number.isFinite(target.variance))) reasons.push("Target variance is not estimable");
-  if (comparison && (!(comparison.n >= 2) || !Number.isFinite(comparison.variance))) reasons.push("Comparison variance is not estimable");
-  if (target && !Number.isFinite(target.meanCost)) reasons.push("Target cost is unavailable");
+  if (!target) reasons.push("No usable calibration-reference trials");
+  if (!comparison) reasons.push("No usable calibration-contrast trials");
+  if (target && (!(target.n >= 2) || !Number.isFinite(target.variance))) reasons.push("Calibration reference variance is not estimable");
+  if (comparison && (!(comparison.n >= 2) || !Number.isFinite(comparison.variance))) reasons.push("Calibration contrast variance is not estimable");
+  if (target && !Number.isFinite(target.meanCost)) reasons.push("Calibration reference cost is unavailable");
   const costAxisReference = task.cells[COST_AXIS_REFERENCE_CONFIGURATION];
   if (!costAxisReference || !Number.isFinite(costAxisReference.meanCost)) {
     reasons.push(`The ${COST_AXIS_REFERENCE_CONFIGURATION} cost-axis reference is unavailable`);
@@ -873,14 +865,14 @@ function readInputs(showValidation = false) {
   const maxReps = Number(repsRaw);
   const headroomPercent = Number(headroomRaw);
   const errors = [];
-  if (!targetModel) errors.push("Choose the bare model.");
-  else if (!targetReasoning) errors.push("Choose the bare-model reasoning level.");
-  else if (!targetConfiguration) errors.push("The selected bare-model configuration is unavailable.");
-  if (!comparisonModel) errors.push("Choose the published comparison model.");
-  else if (!comparisonReasoning) errors.push("Choose the comparison reasoning level.");
-  else if (!comparisonConfiguration) errors.push("The selected comparison configuration is unavailable.");
-  if (targetId && targetId === comparisonId) errors.push("The bare model and comparison must be different configurations.");
-  if (budgetRaw === "" || !Number.isFinite(budget) || budget <= 0) errors.push("Enter a baseline budget greater than zero.");
+  if (!targetModel) errors.push("Choose the calibration reference model.");
+  else if (!targetReasoning) errors.push("Choose the calibration reference reasoning level.");
+  else if (!targetConfiguration) errors.push("The selected calibration reference is unavailable.");
+  if (!comparisonModel) errors.push("Choose the calibration contrast model.");
+  else if (!comparisonReasoning) errors.push("Choose the calibration contrast reasoning level.");
+  else if (!comparisonConfiguration) errors.push("The selected calibration contrast is unavailable.");
+  if (targetId && targetId === comparisonId) errors.push("The calibration reference and contrast must be different configurations.");
+  if (budgetRaw === "" || !Number.isFinite(budget) || budget <= 0) errors.push("Enter a calibration-reference budget greater than zero.");
   if (minRaw === "" || !Number.isInteger(minTasks) || minTasks < 1 || minTasks > SNAPSHOT.tasks.length) errors.push(`Minimum tasks must be an integer from 1 to ${SNAPSHOT.tasks.length}.`);
   if (repsRaw === "" || !Number.isInteger(maxReps) || maxReps < MIN_REPETITIONS || maxReps > 4) errors.push("Maximum repetitions must be an integer from 2 through 4.");
   if (headroomRaw === "" || !Number.isFinite(headroomPercent) || headroomPercent < 0 || headroomPercent >= 50) errors.push("Headroom must be at least 0% and less than 50%.");
@@ -1322,11 +1314,11 @@ function optimize(inputs, rows) {
   }));
   let spent = selectionCost(selections);
   if (spent > inputs.budget) {
-    errors.push(`Required tasks need at least ${money(spent)}, above the ${money(inputs.budget)} baseline budget.`);
+    errors.push(`Required tasks need at least ${money(spent)}, above the ${money(inputs.budget)} calibration-reference budget.`);
     return { selections: [], errors, warnings, actionLog, valid: false, rows, requiredMinimumCost: spent };
   }
   for (const row of required.filter((candidate) => candidate.requiredHeadroomBypass)) {
-    warnings.push(`${row.id} is required despite failing the ${Math.round(inputs.headroom * 100)}% target headroom rule.`);
+    warnings.push(`${row.id} is required despite failing the ${Math.round(inputs.headroom * 100)}% calibration-reference headroom rule.`);
   }
 
   const automatic = rows.filter((row) => row.manual === "automatic" && row.automaticEligible);
@@ -1352,7 +1344,7 @@ function optimize(inputs, rows) {
     }
     targetCount = Math.max(selections.length, affordableCount);
     if (enoughEligibleTasks) {
-      errors.push(`The ${money(inputs.budget)} baseline budget cannot satisfy the ${inputs.minTasks}-task breadth requirement. The minimum estimated budget is ${money(requestedMinimumCost)}.`);
+      errors.push(`The ${money(inputs.budget)} calibration-reference budget cannot satisfy the ${inputs.minTasks}-task breadth requirement. The minimum estimated budget is ${money(requestedMinimumCost)}.`);
     } else {
       errors.push(`The ${inputs.minTasks}-task breadth requirement cannot be satisfied: only ${selections.length + cheapest.length} required or automatically eligible tasks are available for this pair.`);
     }
@@ -1478,7 +1470,7 @@ function optimize(inputs, rows) {
       afterDetectability: chosen.afterDetectability,
       beforeSnr: beforeStatistics.snr,
       afterSnr: chosen.afterSnr,
-      reason: "largest detectability improvement per target baseline dollar",
+      reason: "largest detectability improvement per calibration-reference dollar",
     });
     const chosenStatistics = suiteStatistics(selections, true);
     if (chosenStatistics.detectability > bestStatistics.detectability) {
@@ -1599,11 +1591,11 @@ function buildExport(plan, inputs) {
     : null;
   return {
     schema: "deepswe-benchmark-plan",
-    schemaVersion: 1,
+    schemaVersion: 2,
     optimizerVersion: "detectability-branch-and-bound-v4",
     snapshot: SNAPSHOT.source,
-    target: configById.get(inputs.targetId),
-    comparison: configById.get(inputs.comparisonId),
+    calibrationReference: configById.get(inputs.targetId),
+    calibrationContrast: configById.get(inputs.comparisonId),
     costAxis: {
       valid: costAxisMissingTasks.length === 0,
       scale: "logarithmic",
@@ -1616,7 +1608,7 @@ function buildExport(plan, inputs) {
       tasks: costAxisTasks,
     },
     parameters: {
-      baselineBudgetUsd: inputs.budget,
+      calibrationReferenceBudgetUsd: inputs.budget,
       minimumDistinctTasks: inputs.minTasks,
       maximumRepetitionsPerTask: inputs.maxReps,
       symmetricTargetHeadroom: inputs.headroom,
@@ -1626,8 +1618,8 @@ function buildExport(plan, inputs) {
       valid: plan.valid,
       errors: plan.errors,
       warnings: plan.warnings,
-      estimatedBaselineSpendUsd: plan.spent,
-      unspentBaselineBudgetUsd: plan.unspent,
+      estimatedCalibrationReferenceSpendUsd: plan.spent,
+      unspentCalibrationReferenceBudgetUsd: plan.unspent,
       signedHistoricalModelDifference: plan.statistics.signedSignal,
       absoluteHistoricalModelDifference: plan.statistics.signal,
       calibrationVariance: plan.statistics.variance,
@@ -1651,7 +1643,7 @@ function buildExport(plan, inputs) {
     assumptions: [
       "The selected published pair calibrates historical task responsiveness and noise; it is not the future skill/instruction comparison.",
       "The pair's separate variances estimate the future two-arm experiment noise.",
-      "Historical responsiveness to the selected comparison may not transfer to skills or instructions.",
+      "Historical responsiveness to the selected calibration contrast may not transfer to skills or instructions.",
       "Future repetitions are independent within and between arms.",
       "Task-arm means are approximately normal and Welch-Satterthwaite is an approximation.",
       "Results apply only to the selected tasks.",
@@ -1663,20 +1655,20 @@ function buildExport(plan, inputs) {
       language: selection.row.task.language,
       selectionSource: selection.row.manual === "required" ? "required" : "optimizer",
       repetitionsPerArm: selection.repetitions,
-      target: {
+      calibrationReference: {
         n: selection.row.target.n,
         mean: selection.row.target.mean,
         variance: selection.row.target.variance,
         meanCost: selection.row.target.meanCost,
       },
-      comparison: {
+      calibrationContrast: {
         n: selection.row.comparison.n,
         mean: selection.row.comparison.mean,
         variance: selection.row.comparison.variance,
         meanCost: selection.row.comparison.meanCost,
       },
       signedPublishedDifference: selection.row.signedDifference,
-      targetEstimatedBaselineCostUsd: selection.row.cost * selection.repetitions,
+      calibrationReferenceEstimatedBaselineCostUsd: selection.row.cost * selection.repetitions,
       headroomBypassed: selection.row.requiredHeadroomBypass,
       zeroVarianceFallback: selection.row.fallback,
     })),
@@ -1691,7 +1683,6 @@ function buildExport(plan, inputs) {
 function initializeSelectors() {
   const models = [...new Set(SNAPSHOT.configurations.map((configuration) => configuration.model))].sort();
   const targetOptions = models
-    .filter((model) => RUNNABLE_TARGET_MODELS.has(model))
     .map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`)
     .join("");
   const comparisonOptions = models
@@ -1712,8 +1703,7 @@ function updateReasoningSelector(modelSelectId, reasoningSelectId) {
   const selector = $(reasoningSelectId);
   const reasoningOrder = new Map(["low", "medium", "high", "xhigh", "max", "n/a"].map((value, index) => [value, index]));
   const levels = SNAPSHOT.configurations
-    .filter((configuration) => configuration.model === model &&
-      (modelSelectId !== "targetModel" || RUNNABLE_TARGET_MODELS.has(configuration.model)))
+    .filter((configuration) => configuration.model === model)
     .map((configuration) => configuration.reasoning)
     .sort((left, right) => (reasoningOrder.get(left) ?? 99) - (reasoningOrder.get(right) ?? 99));
   selector.innerHTML = `<option value="">Choose reasoning…</option>${levels.map((reasoning) => `<option value="${escapeHtml(reasoning)}">${escapeHtml(reasoning)}</option>`).join("")}`;
@@ -1746,7 +1736,7 @@ function renderPlanTable(plan) {
   }
   $("planTable").className = "table-wrap";
   $("planTable").innerHTML = `<table>
-    <thead><tr><th>Task</th><th>Source</th><th>Reps / arm</th><th>Historical Δ</th><th>Bare SD</th><th>Comparison SD</th><th>Baseline cost</th></tr></thead>
+    <thead><tr><th>Task</th><th>Source</th><th>Reps / arm</th><th>Historical Δ</th><th>Reference SD</th><th>Contrast SD</th><th>Reference cost</th></tr></thead>
     <tbody>${plan.selections.map((selection) => {
       const row = selection.row;
       const differenceClass = row.signedDifference >= 0 ? "signal-pos" : "signal-neg";
@@ -1787,11 +1777,11 @@ function renderExplorer() {
   });
   $("explorerTable").className = "table-wrap";
   $("explorerTable").innerHTML = `<table>
-    <thead><tr><th>Task</th><th>State</th><th>Plan</th><th>Bare mean</th><th>Comparison mean</th><th>Historical Δ</th><th>Combined noise</th><th>Cost / run</th><th>Details</th></tr></thead>
+    <thead><tr><th>Task</th><th>State</th><th>Plan</th><th>Reference mean</th><th>Contrast mean</th><th>Historical Δ</th><th>Combined noise</th><th>Cost / run</th><th>Details</th></tr></thead>
     <tbody>${visible.map((row) => {
       const selectedReps = selected.get(row.id);
       const noise = row.dataAvailable ? Math.sqrt(row.components.reduce((sum, component) => sum + component.variance, 0)) : NaN;
-      const status = !row.dataAvailable ? row.reasons.join("; ") : row.manual === "excluded" ? "Manually excluded" : !row.headroomEligible && row.manual !== "required" ? "Outside target headroom" : row.fallback ? "Same-task fallback applied" : "Available";
+      const status = !row.dataAvailable ? row.reasons.join("; ") : row.manual === "excluded" ? "Manually excluded" : !row.headroomEligible && row.manual !== "required" ? "Outside calibration-reference headroom" : row.fallback ? "Same-task fallback applied" : "Available";
       return `<tr>
         <td class="task-name"><strong>${escapeHtml(row.id)}</strong><span>${escapeHtml(row.task.language)} · ${escapeHtml(status)}</span></td>
         <td><select class="explorer-state" data-task-state="${escapeHtml(row.id)}" aria-label="State for ${escapeHtml(row.id)}">
@@ -1837,8 +1827,8 @@ function openTaskDialog(taskId) {
     <p>${escapeHtml(row.task.description)}</p>
     <p class="muted">${escapeHtml(row.task.repository)} · ${escapeHtml(row.task.language)}</p>
     <div class="dialog-grid">
-      ${trialCard("bare model", currentRowInputs?.targetId ?? "", row.target, "target")}
-      ${trialCard("comparison", currentRowInputs?.comparisonId ?? "", row.comparison, "comparison")}
+      ${trialCard("calibration reference", currentRowInputs?.targetId ?? "", row.target, "target")}
+      ${trialCard("calibration contrast", currentRowInputs?.comparisonId ?? "", row.comparison, "comparison")}
     </div>
     ${row.fallback ? `<section class="fallback-box">
       <h3>Both-zero planning fallback</h3>
