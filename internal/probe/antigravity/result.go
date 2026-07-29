@@ -3,10 +3,17 @@ package antigravity
 import "time"
 
 // CapabilityMatrix records the Antigravity behaviors the probe can verify.
+//
+// MCP support is recorded as three separate facts rather than one verdict:
+// MCPConfigNamesVisible covers configuration, MCPRuntimeDiscovery covers the
+// client registering the server, and MCPToolInvoked covers the client actually
+// executing a tool. Live MCP support may only be claimed when the runtime facts
+// are true, not when configuration alone is.
 type CapabilityMatrix struct {
 	PermissionsLoaded        bool `json:"permissions_loaded"`
 	MCPConfigMigrated        bool `json:"mcp_config_migrated"`
 	MCPRuntimeDiscovery      bool `json:"mcp_runtime_discovery"`
+	MCPToolInvoked           bool `json:"mcp_tool_invoked"`
 	WorkspacePermissionsRead bool `json:"workspace_permissions_read"`
 	InstructionsLoaded       bool `json:"instructions_loaded"`
 	SkillNamesVisible        bool `json:"skill_names_visible"`
@@ -28,6 +35,7 @@ type Result struct {
 	AgyConfigDir     string           `json:"agy_config_dir"`
 	LogPath          string           `json:"log_path,omitempty"`
 	ExitCode         int              `json:"exit_code"`
+	TimedOut         bool             `json:"timed_out"`
 	WallClockSeconds int              `json:"wall_clock_seconds"`
 	Capabilities     CapabilityMatrix `json:"capabilities"`
 	Evidence         []string         `json:"evidence,omitempty"`

@@ -1,63 +1,38 @@
 ---
 name: agent-dispatch
-description: Use `al dispatch` only when the user names an external dispatch target or another skill explicitly requires dispatch. Do not use it for generic subagent, second-agent, or fresh-context requests; use the built-in subagent instead.
-compatibility: Requires the project Agent Layer CLI (`al`) and a configured provider.
-allowed-tools: Bash(al:*) Bash(cat:*)
+description: Use Agent Dispatch MCP tools only when the user names an external dispatch target or another skill explicitly requires dispatch. Do not use it for generic subagent, second-agent, or fresh-context requests; use the built-in subagent instead.
+compatibility: Requires the built-in `agent-layer` MCP server and a configured provider.
+allowed-tools: mcp__agent-layer__dispatch_options mcp__agent-layer__dispatch_start mcp__agent-layer__dispatch_wait mcp__agent-layer__dispatch_continue mcp__agent-layer__dispatch_cancel Bash(cat:*)
 ---
 
-# al dispatch
+# Agent Dispatch
 
-Run `al dispatch --help` for the command list and
-`al dispatch <command> --help` for current syntax.
+If the MCP tools are unavailable, report the missing server; do not substitute
+command-line calls.
 
-## Workflow
+1. Call `dispatch_options`; resolve the provider and overrides. Ask if
+   ambiguous.
+2. Call `dispatch_start` once with exactly one prompt source and retain its
+   handle. Do not replace active work.
+3. Call `dispatch_wait` with the handle. On `running` or an interrupted wait,
+   wait again with the same handle; provider work remains active. On
+   `completed`, read the Markdown file at `result_path`; report `failed` or
+   `cancelled`.
 
-1. Run `al dispatch options`. Resolve the caller's role or shorthand against its
-   metadata to one exact available agent and any requested overrides. Accept
-   only unambiguous shorthand; otherwise ask.
-2. Put a substantial prompt under `.agent-layer/tmp/`, then run
-   `al dispatch start --agent <agent> --prompt-file <path>`, adding any resolved
-   model, reasoning-effort, or skill flags. For short text, use
-   `al dispatch start --agent <agent> --prompt <text>` instead. Parse the JSON
-   and retain the handle.
-3. Run `al dispatch wait <handle>`. `running` means the bounded wait expired
-   while the target was still working, not that anything is wrong. Wait again
-   on the same handle, for as long as the work legitimately takes; a single
-   invocation may expire many times before it finishes.
-4. `completed`, `failed`, and `cancelled` are final. On `completed`, read and
-   verify the Markdown file at `result_path`. On `failed` or `cancelled`,
-   report that terminal result. Do not wait on that handle again.
-
-For parallel work, run `al dispatch start` once per independent conversation
-and retain every handle. Wait only on the handles that are still outstanding,
-and drop each handle from that set as soon as it returns a terminal state.
-
-Run `al dispatch cancel <handle>` only when the user requests cancellation.
-Repeating it for an already cancelled invocation is safe; cancelling a
-completed or failed invocation is an error.
+For parallel work, call `dispatch_start` once per independent conversation and
+retain each handle. Call `dispatch_wait` for those handles in parallel when supported.
 
 ## Continuing a conversation
 
-After a terminal result, the same conversation may continue for useful
-follow-up, requested information, or corrective action within the current
-scope and authority. Run `al dispatch continue <handle> --prompt <text>` or
-`al dispatch continue <handle> --prompt-file <path>`, then run
-`al dispatch wait <handle>` again.
+After a terminal result, use `dispatch_continue` only for useful follow-up,
+requested information, or corrective action within the current scope. It
+preserves the provider conversation context. Pass the same handle and exactly
+one prompt source, then call `dispatch_wait` again.
 
-`continue` preserves the existing conversation context. Use `start` when a
-fresh context is required, not `continue`.
+Use `dispatch_start` when fresh context is required, not `dispatch_continue`.
 
-## Guardrails
+## Cancelling a conversation
 
-- The only public states are `running`, `completed`, `failed`, and `cancelled`.
-- Never repeat `al dispatch start` or `al dispatch continue` to recover
-  uncertain work; run `al dispatch wait <handle>` with the known handle.
-- Standard output is one JSON object. Do not parse standard error as state.
-- Do not use Agent Dispatch for shell work, tests, web retrieval, browser
-  automation, or to bypass caller restrictions.
-
-## Definition of done
-
-The exact conversation reaches a terminal state, every completed `result_path`
-is read and verified, created caller artifacts are reported, and failures or
-unresolved questions are surfaced.
+`dispatch_cancel` permanently stops active provider work. Call it only when the
+user explicitly requests cancellation or an active skill explicitly instructs
+you to abandon the dispatch.

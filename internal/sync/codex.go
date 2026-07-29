@@ -156,10 +156,10 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 
 	if !config.HasProviderPassthroughKey(agentSpecific, config.CodexMCPServersKey) {
 		// Use placeholder syntax for initial resolution (needed for bearer_token_env_var extraction).
-		resolved, err := projection.ResolveMCPServers(
-			project.Config.MCP.Servers,
+		resolved, err := projection.EffectiveMCPServers(
+			project.Config,
 			project.Env,
-			"codex",
+			projection.ClientCodex,
 			projection.ClientPlaceholderResolver("${%s}"),
 		)
 		if err != nil {
@@ -337,6 +337,13 @@ func writeCodexStdioServer(builder *strings.Builder, server projection.ResolvedM
 			resolvedEnv[key] = resolvedValue
 		}
 		fmt.Fprintf(builder, "env = %s\n", tomlInlineTable(resolvedEnv))
+	}
+
+	// Codex is the only supported client with a documented per-server execution
+	// timeout, so the built-in Agent Dispatch server projects its hard bound
+	// natively. Every other client relies on the server-side guard alone.
+	if server.ToolTimeoutSeconds > 0 {
+		fmt.Fprintf(builder, "tool_timeout_sec = %d\n", server.ToolTimeoutSeconds)
 	}
 
 	return nil

@@ -1,5 +1,7 @@
 package config
 
+import "time"
+
 // Approval mode constants.
 const (
 	ApprovalModeAll      = "all"
@@ -11,6 +13,16 @@ const (
 
 // DefaultDispatchMaxDepth is the maximum dispatch recursion depth when unset.
 const DefaultDispatchMaxDepth = 3
+
+const (
+	// DefaultDispatchMCPWaitTimeoutMinutes is how long a healthy `dispatch_wait`
+	// MCP call blocks before reporting the conversation as still running.
+	DefaultDispatchMCPWaitTimeoutMinutes = 30
+	// DefaultDispatchMCPToolTimeoutMinutes is the hard server-side bound applied
+	// to every Agent Dispatch MCP handler. It exists purely as recovery headroom
+	// above the bounded wait, so a wedged handler cannot linger indefinitely.
+	DefaultDispatchMCPToolTimeoutMinutes = 40
+)
 
 // Config is the root configuration loaded from .agent-layer/config.toml.
 type Config struct {
@@ -37,9 +49,16 @@ type AgentsConfig struct {
 	CopilotCLI   AgentConfig       `toml:"copilot_cli"`
 }
 
-// DispatchLimits controls Agent Dispatch recursion limits.
+// DispatchLimits controls Agent Dispatch recursion and MCP timeout limits.
 type DispatchLimits struct {
 	MaxDepth *int `toml:"max_depth"`
+	// MCPWaitTimeoutMinutes bounds one `dispatch_wait` MCP call. Nil selects
+	// DefaultDispatchMCPWaitTimeoutMinutes.
+	MCPWaitTimeoutMinutes *int `toml:"mcp_wait_timeout_minutes"`
+	// MCPToolTimeoutMinutes bounds every Agent Dispatch MCP handler and is
+	// projected into clients that support a per-server tool timeout. Nil selects
+	// DefaultDispatchMCPToolTimeoutMinutes.
+	MCPToolTimeoutMinutes *int `toml:"mcp_tool_timeout_minutes"`
 }
 
 // NotificationsConfig controls user-visible local notification behavior.
@@ -172,6 +191,32 @@ func DispatchMaxDepth(c Config) int {
 		return DefaultDispatchMaxDepth
 	}
 	return *c.Dispatch.MaxDepth
+}
+
+// DispatchMCPWaitTimeout returns how long one `dispatch_wait` MCP call blocks
+// before reporting the conversation as still running.
+func DispatchMCPWaitTimeout(c Config) time.Duration {
+	return time.Duration(dispatchMCPWaitTimeoutMinutes(c.Dispatch)) * time.Minute
+}
+
+// DispatchMCPToolTimeout returns the hard bound applied to every Agent Dispatch
+// MCP handler and projected into clients with per-server tool timeouts.
+func DispatchMCPToolTimeout(c Config) time.Duration {
+	return time.Duration(dispatchMCPToolTimeoutMinutes(c.Dispatch)) * time.Minute
+}
+
+func dispatchMCPWaitTimeoutMinutes(limits DispatchLimits) int {
+	if limits.MCPWaitTimeoutMinutes == nil {
+		return DefaultDispatchMCPWaitTimeoutMinutes
+	}
+	return *limits.MCPWaitTimeoutMinutes
+}
+
+func dispatchMCPToolTimeoutMinutes(limits DispatchLimits) int {
+	if limits.MCPToolTimeoutMinutes == nil {
+		return DefaultDispatchMCPToolTimeoutMinutes
+	}
+	return *limits.MCPToolTimeoutMinutes
 }
 
 // SharedAgentSkillsEnabled reports whether any agent that consumes the shared

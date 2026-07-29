@@ -140,6 +140,14 @@ class _AgentLayerTreatment:
                     "&& chmod 0644 /etc/agent-layer-benchmark-dispatch.json"
                 ),
             )
+            # Native client configuration is generated, not shipped in the
+            # bundle. Without this sync the coordinator's client never receives
+            # the built-in Agent Dispatch MCP server or its permission
+            # allowlist, and the treatment arm silently loses dispatch.
+            await self.exec_as_agent(
+                environment,
+                command=f"cd {REMOTE_WORKSPACE} && /usr/local/bin/al-real sync",
+            )
 
     async def _collect_evidence(self, environment):
         evidence_dir = EnvironmentPaths.agent_dir / "agent-layer-dispatch"

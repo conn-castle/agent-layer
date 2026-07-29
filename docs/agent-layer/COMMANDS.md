@@ -207,7 +207,7 @@ make al-copilot   # al copilot
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+
-Notes: Convenience wrappers against this repo's own `.agent-layer/` config. Interactive agent launchers build a source snapshot at `.agent-layer/tmp/dev-bin/al` and prepend that directory to the launched agent's `PATH`, so child `al dispatch` calls use the same source snapshot rather than the globally installed binary. The development launch bypasses repo version-pin handoff only for that Make invocation. `al-upgrade` and `al-doctor` continue to use `go run ./cmd/al`.
+Notes: Convenience wrappers against this repo's own `.agent-layer/` config. `al-doctor` and the interactive agent launchers build a source snapshot at `.agent-layer/tmp/dev-bin/al` and prepend that directory to `PATH`, so child `al dispatch` calls use the same source snapshot rather than the globally installed binary. The development launch bypasses repo version-pin handoff only for that Make invocation. `al-upgrade` continues to use `go run ./cmd/al`.
 
 - Run the Antigravity capability probe
 ```bash
@@ -215,7 +215,7 @@ go run ./cmd/al probe agy
 ```
 Run from: repo root
 Prerequisites: Antigravity (`agy`) installed on PATH
-Notes: Prints JSON describing the current `agy` permissions and MCP behavior observed in a repo-local probe workspace.
+Notes: Prints JSON describing the current `agy` permissions and MCP behavior observed in a repo-local probe workspace. The workspace is seeded with a real stdio MCP server (this binary's hidden `__probe-mcp-fixture` subcommand exposing one `probe_ping` tool), so `capabilities.mcp_runtime_discovery` and `capabilities.mcp_tool_invoked` report `agy` behavior rather than a fixture defect. `timed_out` reports the probe's own 45-second bound separately from a failed run. Do not claim live Antigravity MCP support unless both MCP capability flags are true.
 
 ### CI
 
@@ -315,27 +315,27 @@ Notes: Runs `test-release` first to validate release scripts. Local builds stay 
 
 - Validate or run the bare-model baseline from an exported website plan
 ```bash
-go run ./cmd/al benchmark baseline --check --plan <plan.json> --task-concurrency 4
-go run ./cmd/al benchmark baseline --plan <plan.json> --task-concurrency 4 --yes
-pbpaste | go run ./cmd/al benchmark baseline --check --plan -
+go run ./cmd/al benchmark baseline --check --plan <plan.json> --execution luna:low --task-concurrency 4
+go run ./cmd/al benchmark baseline --plan <plan.json> --execution luna:low --task-concurrency 4 --yes
+pbpaste | go run ./cmd/al benchmark baseline --check --plan - --execution luna:low
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+, Git, Docker, `uvx`, provider authentication, and a valid `deepswe-benchmark-plan` JSON exported by the website
-Notes: The website is the only task/repetition selector. The command validates and executes its exact allocation. `--plan -` reads the exported JSON from standard input. Successful calls are immutable and reused by plan ID; failures are not retried automatically.
+Notes: The website is the only task/repetition selector. Its published calibration reference and contrast select responsive tasks and use reference costs to allocate repetitions. `--execution` independently selects the model and reasoning used by both local arms. The command validates and executes the exact allocation; `--plan -` reads it from standard input. Successful calls are immutable and reused only when both plan and execution configuration match; failures are not retried automatically.
 
 - Validate or run one immutable Agent Layer version
 ```bash
-go run ./cmd/al benchmark treatment --check --plan <plan.json> --label "Iteration 1"
-go run ./cmd/al benchmark treatment --plan <plan.json> --label "Iteration 1" --task-concurrency 4 --yes
+go run ./cmd/al benchmark treatment --check --plan <plan.json> --execution luna:low --label "Iteration 1"
+go run ./cmd/al benchmark treatment --plan <plan.json> --execution luna:low --label "Iteration 1" --task-concurrency 4 --yes
 ```
 Run from: repo root
 Prerequisites: A completed baseline plus the baseline prerequisites
-Notes: The current Agent Layer instructions and skills are fingerprinted into a version identity. A changed bundle creates a new version and reuses the shared baseline. `--check` validates readiness and reports missing calls without writing state or invoking a model. Treatment cost is not inferred from the baseline, so paid execution reports the number of calls and asks for explicit confirmation.
+Notes: The current Agent Layer instructions and skills are fingerprinted into a version identity. A changed bundle creates a new version and reuses the shared baseline for the same plan and `--execution` configuration. `--check` prints the calibration pair and execution configuration, validates readiness, and reports missing calls without writing state or invoking a model. Treatment cost is not inferred from the baseline, so paid execution reports the number of calls and asks for explicit confirmation.
 
 - Generate the campaign report without model calls
 ```bash
-go run ./cmd/al benchmark report --plan <plan.json>
+go run ./cmd/al benchmark report --plan <plan.json> --execution luna:low
 ```
 Run from: repo root
 Prerequisites: A completed baseline and at least one completed treatment version
-Notes: Calculates the observed two-sided threshold from both arms, then writes canonical JSON and offline HTML from immutable evidence. It does not invoke a provider, Pier, Docker, or a network service. Plans exported before cost-axis provenance was added require an explicit canonical `--analysis` artifact.
+Notes: Calculates the observed two-sided threshold from both arms for the selected execution campaign, then writes canonical JSON and offline HTML from immutable evidence. It does not invoke a provider, Pier, Docker, or a network service.

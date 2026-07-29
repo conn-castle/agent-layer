@@ -11,7 +11,10 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
-const dispatchStartCommand = "start"
+const (
+	dispatchStartCommand     = "start"
+	dispatchMCPServerCommand = "mcp-server"
+)
 
 func newDispatchCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -21,8 +24,29 @@ func newDispatchCmd() *cobra.Command {
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 	}
-	cmd.AddCommand(newDispatchOptionsCmd(), newDispatchStartCmd(), newDispatchWaitCmd(), newDispatchContinueCmd(), newDispatchCancelCmd())
+	cmd.AddCommand(newDispatchOptionsCmd(), newDispatchStartCmd(), newDispatchWaitCmd(), newDispatchContinueCmd(), newDispatchCancelCmd(), newDispatchMCPServerCmd())
 	return cmd
+}
+
+// newDispatchMCPServerCmd serves the Agent Dispatch MCP tools over stdio. It is
+// hidden because clients launch it from generated MCP configuration; the public
+// `al dispatch` surface remains the five documented commands.
+func newDispatchMCPServerCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          dispatchMCPServerCommand,
+		Hidden:       true,
+		Args:         cobra.NoArgs,
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			root, workingDir, err := resolveRepoRootAndWorkingDir()
+			if err != nil {
+				return err
+			}
+			return dispatchCommandError(cmd, agentdispatch.RunMCPServer(cmd.Context(), agentdispatch.MCPServerOptions{
+				Root: root, WorkDir: workingDir, Version: cmd.Root().Version, Env: os.Environ(),
+			}))
+		},
+	}
 }
 
 func newDispatchOptionsCmd() *cobra.Command {

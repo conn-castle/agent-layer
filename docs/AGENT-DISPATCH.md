@@ -1,8 +1,83 @@
 # Agent Dispatch
 
 Agent Dispatch runs headless provider conversations. It has one read-only
-discovery command plus one opaque conversation handle, four lifecycle commands,
-and four states.
+discovery operation plus one opaque conversation handle, four lifecycle
+operations, and four states.
+
+It has two surfaces over one backend. The MCP tools are the canonical
+agent-facing path; the CLI is the human and scripting path. Both use the same
+handles, states, result files, and cancellation semantics.
+
+## MCP tools
+
+Agent Layer projects a built-in MCP server, `agent-layer`, into the generated
+configuration of every enabled Codex, Claude, Antigravity, VS Code, and Copilot
+CLI caller. It is derived state, not a `[[mcp.servers]]` entry, and its
+reserved ID cannot be taken by a user-defined server. It exposes five tools:
+
+Agent-facing tool and parameter descriptions are maintained in
+`internal/agentdispatch/mcp_tool_descriptions.toml` and embedded at build time.
+
+| Tool | Purpose |
+| --- | --- |
+| `dispatch_options` | List dispatchable providers and their allowed overrides |
+| `dispatch_start` | Start a conversation and return its handle immediately |
+| `dispatch_wait` | Block for the configured wait, then report state |
+| `dispatch_continue` | Start the next invocation in a terminal conversation |
+| `dispatch_cancel` | Terminate a running conversation (destructive) |
+
+`dispatch_start` accepts `agent`, optional `model`, `reasoning_effort`, and
+`skill`, and exactly one of `prompt` or `prompt_file`. `dispatch_continue`
+accepts `handle` and exactly one prompt source. `dispatch_wait` and
+`dispatch_cancel` accept `handle`. Results carry the same `handle`, `state`,
+`result_path`, and `error` fields as the CLI.
+
+Successful results are returned as `structuredContent`; the SDK also emits the
+serialized text fallback required for compatibility with older clients. The
+tools omit optional output schemas to keep their always-loaded definitions
+small; their descriptions state the fields callers need.
+
+### Timeouts
+
+Two optional settings in `.agent-layer/config.toml` control MCP timing:
+
+```toml
+[dispatch]
+mcp_wait_timeout_minutes = 30
+mcp_tool_timeout_minutes = 40
+```
+
+`mcp_wait_timeout_minutes` bounds one `dispatch_wait` call: a healthy wait
+blocks that long and then returns `running`. `mcp_tool_timeout_minutes` is a
+hard server-side bound applied to every Agent Dispatch tool call, so a wedged
+handler always releases the caller. Both are optional positive integers; when
+omitted they resolve to 30 and 40. The tool timeout must be greater than the
+wait timeout, and an invalid relationship fails configuration validation.
+
+Codex also receives the hard bound natively as `tool_timeout_sec`. Claude Code
+documents only a client-wide `MCP_TOOL_TIMEOUT`, which Agent Layer does not
+change because that would affect every unrelated MCP server; Antigravity
+documents no per-server timeout key. For those clients the server-side guard is
+the recovery bound.
+
+### Cancelling a request is not cancelling a dispatch
+
+Abandoning a `dispatch_wait` request — a client-side timeout, a disconnect, or
+a cancelled tool call — stops only that wait. Provider work remains active and
+the same handle can be waited on again.
+
+Only `dispatch_cancel` (or `al dispatch cancel`) terminates provider work.
+`dispatch_start`, `dispatch_continue`, and `dispatch_cancel` are annotated
+destructive because dispatched agents can modify their environment; cancellation
+is never inferred from elapsed time, silence, or a `running` result.
+
+### Transport risk
+
+An MCP `dispatch_start` or `dispatch_continue` is an RPC acknowledgement rather
+than a direct write to the caller's terminal. If the transport disconnects
+after the backend has started but before the client observes the response,
+provider work remains active while the caller never learns its handle. The
+evidence remains under `.agent-layer/tmp/runs/`.
 
 ## Commands
 
@@ -51,7 +126,7 @@ invocation.
 
 | Command | `running` | `completed` | `failed` | `cancelled` |
 | --- | --- | --- | --- | --- |
-| `wait` | Waits up to eight minutes, then returns `running` | Returns `result_path` | Returns the failure | Returns `cancelled` |
+| `wait` | Waits for the bounded interval, then returns `running` | Returns `result_path` | Returns the failure | Returns `cancelled` |
 | `continue` | Errors | Starts the next invocation | Starts the next invocation | Starts the next invocation |
 | `cancel` | Cancels the invocation | Errors: already completed | Errors: already failed | Returns `cancelled` successfully |
 
@@ -111,8 +186,9 @@ must omit those flags.
 }
 ```
 
-`wait` returns the same `running` object when its eight-minute interval expires
-before the invocation reaches a terminal state.
+`wait` returns the same `running` object when its bounded interval expires
+before the invocation reaches a terminal state. The CLI waits eight minutes;
+`dispatch_wait` waits `dispatch.mcp_wait_timeout_minutes` (30 by default).
 
 `wait` on a completed invocation returns:
 
@@ -150,11 +226,12 @@ an error rather than as completed.
 
 ## Waiting and idempotency
 
-`wait` is the agent synchronization operation. It blocks for up to eight
-minutes, then returns `running` if the invocation remains active. Repeating it
-after termination immediately returns the same state and, for a completed
-invocation, the same `result_path` until a successful `continue` starts the
-next invocation.
+`wait` is the agent synchronization operation. It blocks for its bounded
+interval — eight minutes on the CLI, `dispatch.mcp_wait_timeout_minutes` for
+`dispatch_wait` — then returns `running` if the invocation remains active.
+Repeating it after termination immediately returns the same state and, for a
+completed invocation, the same `result_path` until a successful `continue`
+starts the next invocation.
 
 `cancel` is idempotent only after successful cancellation. Repeating it for a
 cancelled invocation succeeds. It cannot change a completed or failed
@@ -179,3 +256,7 @@ agents use the bounded `wait` operation for state changes.
 The public Agent Dispatch lifecycle contains only `start`, `wait`, `continue`,
 and `cancel`; `options` is read-only discovery. Inspection, history, listing,
 deletion, and internal recovery state are not part of the agent interface.
+
+The MCP surface exposes `options`, `start`, `wait`, `continue`, and `cancel`.
+`al dispatch mcp-server`, which serves those tools over stdio, is a hidden entry
+point for generated client configuration, not a public command.

@@ -1,5 +1,13 @@
 {
   "servers": {
+    "agent-layer": {
+      "type": "stdio",
+      "command": "al",
+      "args": [
+        "dispatch",
+        "mcp-server"
+      ]
+    },
     "example": {
       "type": "http",
       "url": "https://mcp.example.com?token=${env:AL_EXAMPLE_TOKEN}",

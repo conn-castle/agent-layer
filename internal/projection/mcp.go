@@ -19,6 +19,10 @@ type ResolvedMCPServer struct {
 	Command       string
 	Args          []string
 	Env           map[string]string
+	// ToolTimeoutSeconds is a per-server execution bound. Only the built-in
+	// Agent Dispatch server sets it, and only clients with a documented
+	// per-server timeout field project it; zero means the client default.
+	ToolTimeoutSeconds int
 }
 
 // EnabledServerIDs returns sorted MCP server ids enabled for the client.

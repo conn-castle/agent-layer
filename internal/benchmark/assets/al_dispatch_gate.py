@@ -69,6 +69,16 @@ def main() -> None:
         sys.stdout.write("\n")
         return
 
+    if arguments[:2] == ["dispatch", "mcp-server"]:
+        # The MCP server accepts tool calls, not command-line flags, so this
+        # shim cannot inspect its selections. Hand the same root-owned policy to
+        # the Go server, which enforces it inside dispatch_options and
+        # dispatch_start.
+        os.environ["AL_BENCHMARK_DISPATCH_AGENT"] = agent
+        os.environ["AL_BENCHMARK_DISPATCH_MODEL"] = model
+        os.environ["AL_BENCHMARK_DISPATCH_REASONING_EFFORT"] = effort
+        os.execv(REAL_AL, [REAL_AL, *arguments])
+
     if arguments[:2] == ["dispatch", "start"]:
         selected_agent = _flag_value(arguments, "--agent")
         selected_model = _flag_value(arguments, "--model")

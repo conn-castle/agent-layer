@@ -32,7 +32,7 @@ func TestWaitReturnsDurableCompletedResult(t *testing.T) {
 	if err := Wait(WaitRequest{Root: root, ID: session.Name, Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
-	var got publicResult
+	var got Result
 	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestWaitReturnsFailedJSONAndExitCategory(t *testing.T) {
 	var stdout bytes.Buffer
 	err := Wait(WaitRequest{Root: root, ID: session.Name, Stdout: &stdout})
 	requireDispatchExitCode(t, err, ExitUnavailable)
-	var got publicResult
+	var got Result
 	if jsonErr := json.Unmarshal(stdout.Bytes(), &got); jsonErr != nil {
 		t.Fatal(jsonErr)
 	}
@@ -122,7 +122,7 @@ func TestWaitYieldsRunningWithoutChangingInvocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got publicResult
+	var got Result
 	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestWaitFailsInvocationAbandonedBeforeWorkerLaunch(t *testing.T) {
 	var stdout bytes.Buffer
 	err = Wait(WaitRequest{Root: root, ID: session.Name, Stdout: &stdout})
 	requireDispatchExitCode(t, err, ExitTargetFailure)
-	var got publicResult
+	var got Result
 	if jsonErr := json.Unmarshal(stdout.Bytes(), &got); jsonErr != nil {
 		t.Fatal(jsonErr)
 	}

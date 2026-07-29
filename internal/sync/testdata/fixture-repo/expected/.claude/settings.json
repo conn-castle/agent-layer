@@ -3,6 +3,7 @@
     "allow": [
       "Bash(git status:*)",
       "Bash(ls:*)",
+      "mcp__agent-layer__*",
       "mcp__example__*"
     ]
   },

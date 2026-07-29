@@ -39,7 +39,7 @@ func TestStartPublishesHandleBeforeAuthorizingWorker(t *testing.T) {
 	if _, err := gateRead.Read(token[:]); err != nil || token[0] != 1 {
 		t.Fatalf("worker authorization = %v, %v", token, err)
 	}
-	var response publicResult
+	var response Result
 	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestStartAllowsOmittedOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var response publicResult
+	var response Result
 	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestCancelIsIdempotentOnlyForCancelledInvocation(t *testing.T) {
 		if err := Cancel(CancelRequest{Root: root, ID: session.Name, Stdout: &stdout}); err != nil {
 			t.Fatal(err)
 		}
-		var result publicResult
+		var result Result
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 			t.Fatal(err)
 		}

@@ -13,6 +13,8 @@ import (
 const (
 	dispatchWaitInterval = 100 * time.Millisecond
 	dispatchWaitTimeout  = 8 * time.Minute
+	// mcpWaitPollInterval is the coarser cadence used by the long MCP wait.
+	mcpWaitPollInterval = time.Second
 )
 
 // Wait blocks until the current invocation is terminal or the bounded wait
@@ -38,6 +40,10 @@ func Wait(request WaitRequest) error {
 	if timeout <= 0 {
 		timeout = dispatchWaitTimeout
 	}
+	interval := request.PollInterval
+	if interval <= 0 {
+		interval = dispatchWaitInterval
+	}
 	deadline := time.Now().Add(timeout)
 	for !terminalDispatchState(record.State) {
 		record, err = reconcileOrphan(request.Root, record)
@@ -49,9 +55,9 @@ func Wait(request WaitRequest) error {
 		}
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
-			return writePublicResult(writerOrDiscard(request.Stdout), publicResult{Handle: session.Name, State: dispatchStateRunning})
+			return writePublicResult(writerOrDiscard(request.Stdout), Result{Handle: session.Name, State: dispatchStateRunning})
 		}
-		pollDelay := min(dispatchWaitInterval, remaining)
+		pollDelay := min(interval, remaining)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -83,13 +89,13 @@ func writeWaitResult(handle string, record RunRecord, stdout io.Writer) error {
 		if err != nil {
 			return err
 		}
-		return writePublicResult(stdout, publicResult{Handle: handle, State: dispatchStateCompleted, ResultPath: path})
+		return writePublicResult(stdout, Result{Handle: handle, State: dispatchStateCompleted, ResultPath: path})
 	case dispatchStateFailed, dispatchStateInterrupted:
 		reason := strings.TrimSpace(record.TerminalReason)
 		if reason == "" {
 			reason = "dispatch invocation failed without a recorded reason"
 		}
-		if err := writePublicResult(stdout, publicResult{Handle: handle, State: dispatchStateFailed, Error: reason}); err != nil {
+		if err := writePublicResult(stdout, Result{Handle: handle, State: dispatchStateFailed, Error: reason}); err != nil {
 			return err
 		}
 		code := record.TerminalExitCode
@@ -98,7 +104,7 @@ func writeWaitResult(handle string, record RunRecord, stdout io.Writer) error {
 		}
 		return exitError(code, reason)
 	case dispatchStateCancelled:
-		return writePublicResult(stdout, publicResult{Handle: handle, State: dispatchStateCancelled})
+		return writePublicResult(stdout, Result{Handle: handle, State: dispatchStateCancelled})
 	default:
 		return exitError(ExitConfig, fmt.Sprintf("dispatch invocation %s has unsupported terminal state %q", record.ID, record.State))
 	}

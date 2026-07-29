@@ -3,6 +3,7 @@
     "allow": [
       "command(git status)",
       "command(ls)",
+      "mcp(agent-layer/)",
       "mcp(example/)"
     ]
   }

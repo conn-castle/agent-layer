@@ -139,7 +139,7 @@ func Cancel(request CancelRequest) error {
 		return err
 	}
 	if alreadyCancelled {
-		return writePublicResult(writerOrDiscard(request.Stdout), publicResult{Handle: record.Name, State: dispatchStateCancelled})
+		return writePublicResult(writerOrDiscard(request.Stdout), Result{Handle: record.Name, State: dispatchStateCancelled})
 	}
 	if ownedGroup != nil {
 		if err := ownedGroup.terminateReverified(providerTerminationGrace); err != nil {
@@ -154,7 +154,7 @@ func Cancel(request CancelRequest) error {
 	// The owning execution releases the claim after its provider wait path has
 	// stopped. Cancel may release it first only after the shared terminator has
 	// proven that the complete process group is gone.
-	return writePublicResult(writerOrDiscard(request.Stdout), publicResult{Handle: record.Name, State: dispatchStateCancelled})
+	return writePublicResult(writerOrDiscard(request.Stdout), Result{Handle: record.Name, State: dispatchStateCancelled})
 }
 
 // beginCancellation publishes cancellation while holding the run lock. The
@@ -216,6 +216,11 @@ func beginCancellation(root string, id string) (RunRecord, *ownedProviderProcess
 	})
 	return record, ownedGroup, alreadyCancelled, err
 }
+
+// resolveRunRecord addresses one invocation by run UUID or by conversation
+// handle. Handles resolve through the same active-claim precedence Wait uses,
+// so cancelling a conversation after a continuation always targets the
+// invocation that is actually running rather than a stale compatibility run.
 func resolveRunRecord(root string, id string) (RunRecord, error) {
 	if parseUUID(id) == nil {
 		return loadRunRecord(root, id)
@@ -224,8 +229,5 @@ func resolveRunRecord(root string, id string) (RunRecord, error) {
 	if err != nil {
 		return RunRecord{}, err
 	}
-	if session.RunID == "" {
-		return RunRecord{}, exitError(ExitConfig, fmt.Sprintf("dispatch session %q has no run record", id))
-	}
-	return loadRunRecord(root, session.RunID)
+	return currentSessionRun(root, session)
 }

@@ -148,6 +148,41 @@ func TestBenchmarkDispatchGateFiltersOptionsAndRejectsWrongSelections(t *testing
 	}
 }
 
+// TestBenchmarkDispatchGateExportsPolicyToTheMCPServer guards the one dispatch
+// path the argument-inspecting gate cannot police. An MCP start carries its
+// selections in a tool call, so without this export a coordinator could pick an
+// arbitrary model and silently break treatment comparability.
+func TestBenchmarkDispatchGateExportsPolicyToTheMCPServer(t *testing.T) {
+	gate, err := treatmentAssets.ReadFile("assets/al_dispatch_gate.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		`arguments[:2] == ["dispatch", "mcp-server"]`,
+		`os.environ["AL_BENCHMARK_DISPATCH_AGENT"] = agent`,
+		`os.environ["AL_BENCHMARK_DISPATCH_MODEL"] = model`,
+		`os.environ["AL_BENCHMARK_DISPATCH_REASONING_EFFORT"] = effort`,
+	} {
+		if !strings.Contains(string(gate), required) {
+			t.Fatalf("benchmark dispatch gate does not export %q to the MCP server", required)
+		}
+	}
+}
+
+// TestTreatmentAdapterSyncsNativeClientConfiguration proves the treatment
+// container generates native client configuration. The built-in Agent Dispatch
+// MCP server and its permission allowlist are produced by sync, not shipped in
+// the bundle, so skipping it would leave the coordinator without dispatch.
+func TestTreatmentAdapterSyncsNativeClientConfiguration(t *testing.T) {
+	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(adapter), "/usr/local/bin/al-real sync") {
+		t.Fatal("treatment adapter does not sync native client configuration in the container")
+	}
+}
+
 func TestTreatmentAdapterLabelsReasoningEffortInRoleTargets(t *testing.T) {
 	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
 	if err != nil {
