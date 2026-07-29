@@ -145,6 +145,37 @@ func TestCodexCostUsesRequestLevelUsageAndReconcilesChildren(t *testing.T) {
 		math.Abs(usage.cost.maximum-.290319) > 1e-12 {
 		t.Fatalf("usage = %#v", usage)
 	}
+	exactUsage, err := parseCodexSessionCost(
+		filepath.Join("testdata", "codex-session-cost-with-cache-writes.jsonl"),
+		pricing,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exactUsage.id != "exact-cost-session" ||
+		math.Abs(exactUsage.cost.minimum-.290319) > 1e-12 ||
+		exactUsage.cost.minimum != exactUsage.cost.maximum {
+		t.Fatalf("exact usage = %#v", exactUsage)
+	}
+	exactFixture, err := os.ReadFile(filepath.Join("testdata", "codex-session-cost-with-cache-writes.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zeroFixture := bytes.ReplaceAll(exactFixture, []byte(`"cache_write_input_tokens":60`), []byte(`"cache_write_input_tokens":0`))
+	zeroFixture = bytes.ReplaceAll(zeroFixture, []byte(`"cache_write_input_tokens":100000`), []byte(`"cache_write_input_tokens":0`))
+	zeroFixture = bytes.ReplaceAll(zeroFixture, []byte(`"cache_write_input_tokens":100060`), []byte(`"cache_write_input_tokens":0`))
+	zeroPath := filepath.Join(t.TempDir(), "zero-cache-writes.jsonl")
+	// #nosec G703 -- zeroPath is beneath a test-owned temporary directory.
+	if err := os.WriteFile(zeroPath, zeroFixture, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	zeroUsage, err := parseCodexSessionCost(zeroPath, pricing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if zeroUsage.cost.minimum == zeroUsage.cost.maximum {
+		t.Fatalf("all-zero cache-write telemetry was treated as exact: %#v", zeroUsage)
+	}
 
 	stage := t.TempDir()
 	sessions := filepath.Join(stage, "jobs", "job", "agent", "sessions")
@@ -205,8 +236,23 @@ func TestCodexCostUsesRequestLevelUsageAndReconcilesChildren(t *testing.T) {
 	if *result.CostUSD == 99 ||
 		math.Abs(*result.CostMinUSD-.240304) > 1e-12 ||
 		math.Abs(*result.CostMaxUSD-.290319) > 1e-12 ||
+		result.CostKind != costKindProviderUsage+"-range" ||
 		*result.ChildCostUSD != 0 {
 		t.Fatalf("Codex baseline did not use the same token-derived cost basis: %#v", result)
+	}
+	if err := os.WriteFile(filepath.Join(baselineSessions, "coordinator.jsonl"), exactFixture, 0o600); err != nil { // #nosec G703 -- baselineSessions is beneath a test-owned temporary directory.
+		t.Fatal(err)
+	}
+	exactResult, err := normalizePier(baselineStage, ExecutionRequest{
+		EventID: "event", Attempt: 1, Task: "example-task", Model: model,
+		Effort: effort, Arm: ArmBaseline, TaskChecksum: "task-checksum",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exactResult.CostKind != costKindProviderUsage ||
+		*exactResult.CostMinUSD != *exactResult.CostMaxUSD {
+		t.Fatalf("Codex baseline did not use exact populated cache-write evidence: %#v", exactResult)
 	}
 
 	incomplete := filepath.Join(t.TempDir(), "session.jsonl")

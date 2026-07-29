@@ -128,7 +128,10 @@ func normalizePier(stage string, request ExecutionRequest) (AttemptResult, error
 		switch request.Model.Adapter {
 		case adapterCodex:
 			costs, costErr = codexAttemptCost(stage)
-			result.CostKind = costKindProviderUsage + "-range"
+			result.CostKind = costKindProviderUsage
+			if costs.total.minimum != costs.total.maximum {
+				result.CostKind += "-range"
+			}
 		case adapterClaudeCode:
 			costs, costErr = treatmentClaudeCost(stage, raw.AgentResult.CostUSD)
 			result.CostKind = costKindProviderTotal
@@ -569,13 +572,17 @@ func parseCodexSessionCost(path string, pricing benchmarkPricing) (codexSessionU
 	}
 	defer func() { _ = file.Close() }()
 	type usageRecord struct {
-		InputTokens       int `json:"input_tokens"`
-		CachedInputTokens int `json:"cached_input_tokens"`
-		OutputTokens      int `json:"output_tokens"`
+		InputTokens           int  `json:"input_tokens"`
+		CachedInputTokens     int  `json:"cached_input_tokens"`
+		CacheWriteInputTokens *int `json:"cache_write_input_tokens"`
+		OutputTokens          int  `json:"output_tokens"`
 	}
 	var result codexSessionUsage
 	model := ""
 	seen := make(map[[2]int]bool)
+	exactCost := 0.0
+	cacheWriteTelemetryComplete := true
+	cacheWriteTelemetryPopulated := false
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
@@ -642,6 +649,19 @@ func parseCodexSessionCost(path string, pricing benchmarkPricing) (codexSessionU
 				float64(last.OutputTokens)*outputRate
 			result.cost.minimum += (float64(uncached)*math.Min(uncachedRate, cacheCreationRate) + fixed) / float64(pricing.UnitTokens)
 			result.cost.maximum += (float64(uncached)*math.Max(uncachedRate, cacheCreationRate) + fixed) / float64(pricing.UnitTokens)
+			if last.CacheWriteInputTokens == nil ||
+				*last.CacheWriteInputTokens < 0 ||
+				last.InputTokens < last.CachedInputTokens+*last.CacheWriteInputTokens {
+				cacheWriteTelemetryComplete = false
+				continue
+			}
+			if *last.CacheWriteInputTokens > 0 {
+				cacheWriteTelemetryPopulated = true
+			}
+			ordinaryInput := last.InputTokens - last.CachedInputTokens - *last.CacheWriteInputTokens
+			exactCost += (float64(ordinaryInput)*uncachedRate +
+				float64(*last.CacheWriteInputTokens)*cacheCreationRate + fixed) /
+				float64(pricing.UnitTokens)
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -649,6 +669,10 @@ func parseCodexSessionCost(path string, pricing benchmarkPricing) (codexSessionU
 	}
 	if result.id == "" || len(seen) == 0 {
 		return codexSessionUsage{}, fmt.Errorf("codex session %s has incomplete identity or billing evidence", filepath.Base(path))
+	}
+	if cacheWriteTelemetryComplete && cacheWriteTelemetryPopulated {
+		result.cost.minimum = exactCost
+		result.cost.maximum = exactCost
 	}
 	return result, nil
 }

@@ -14,6 +14,7 @@ func TestBuildObservedReportValidatesAndRendersExecutiveResult(t *testing.T) {
 		SchemaVersion: observedAnalysisSchemaVersion,
 		GeneratedAt:   time.Date(2026, 7, 27, 15, 37, 0, 0, time.UTC),
 		PlanID:        strings.Repeat("a", 64),
+		CampaignID:    strings.Repeat("c", 64),
 		Tasks: []ObservedTaskReport{{
 			Task:                             "example-task",
 			RepetitionsPerArm:                2,
@@ -31,6 +32,8 @@ func TestBuildObservedReportValidatesAndRendersExecutiveResult(t *testing.T) {
 	}
 	document.Experiment.Model = "gpt-5-6-luna"
 	document.Experiment.Reasoning = effortLow
+	document.Experiment.CalibrationReference = "gpt-5-6-luna::medium"
+	document.Experiment.CalibrationContrast = "gpt-5-6-luna::high"
 	document.Experiment.Baseline = "bare Codex"
 	document.Experiment.Treatment = "Agent Layer instructions and skills"
 	document.Experiment.Tasks = 1
@@ -70,6 +73,9 @@ func TestBuildObservedReportValidatesAndRendersExecutiveResult(t *testing.T) {
 	campaign := report.ObservedCampaign
 	if campaign == nil || len(campaign.Versions) != 1 {
 		t.Fatalf("unexpected campaign: %#v", campaign)
+	}
+	if report.ComparisonID != document.CampaignID {
+		t.Fatalf("report comparison identity = %q; want campaign %q", report.ComparisonID, document.CampaignID)
 	}
 	version := campaign.Versions[0]
 	if math.Abs(campaign.BaselineStandardError-.1) > 1e-12 ||

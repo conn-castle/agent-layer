@@ -157,6 +157,27 @@ test("planner search matches exhaustive allocation and exports stable JSON", () 
   assert.equal(firstExport, secondExport);
   const exported = JSON.parse(firstExport);
   assert.equal(exported.schema, "deepswe-benchmark-plan");
+  assert.equal(exported.schemaVersion, 2);
+  assert.equal(exported.calibrationReference.id, inputs.targetId);
+  assert.equal(exported.calibrationContrast.id, inputs.comparisonId);
+  assert.equal("target" in exported, false);
+  assert.equal("comparison" in exported, false);
+  assert.equal("execution" in exported, false);
+  assert.equal(
+    exported.parameters.calibrationReferenceBudgetUsd,
+    inputs.budget,
+  );
+  assert.equal(
+    exported.result.estimatedCalibrationReferenceSpendUsd,
+    actual.spent,
+  );
+  for (const task of exported.tasks) {
+    assert.ok("calibrationReference" in task);
+    assert.ok("calibrationContrast" in task);
+    assert.ok("calibrationReferenceEstimatedBaselineCostUsd" in task);
+    assert.equal("target" in task, false);
+    assert.equal("comparison" in task, false);
+  }
   assert.equal("generatedAt" in exported, false);
   assert.equal(exported.costAxis.valid, true);
   assert.equal(

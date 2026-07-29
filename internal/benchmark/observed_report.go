@@ -8,7 +8,8 @@ import (
 )
 
 const observedAnalysisSchema = "deepswe-observed-arm-analysis"
-const observedAnalysisSchemaVersion = 2
+const observedAnalysisSchemaVersion = 3
+const legacyObservedAnalysisSchemaVersion = 2
 const observedCostAxisReference = "claude-fable-5::max"
 const observedCostAxisRoundingUSD = 50.0
 
@@ -94,8 +95,11 @@ type ObservedVersionReport struct {
 // and an ordered series of skills/instructions versions.
 type ObservedCampaignReport struct {
 	PlanID                string                       `json:"plan_id"`
+	CampaignID            string                       `json:"campaign_id"`
 	Model                 string                       `json:"model"`
 	Reasoning             string                       `json:"reasoning"`
+	CalibrationReference  string                       `json:"calibration_reference"`
+	CalibrationContrast   string                       `json:"calibration_contrast"`
 	BaselineLabel         string                       `json:"baseline_label"`
 	TaskCount             int                          `json:"task_count"`
 	RunsPerArm            int                          `json:"runs_per_arm"`
@@ -116,9 +120,12 @@ type observedAnalysisDocument struct {
 	SchemaVersion int       `json:"schemaVersion"`
 	GeneratedAt   time.Time `json:"generatedAt"`
 	PlanID        string    `json:"planId"`
+	CampaignID    string    `json:"campaignId"`
 	Experiment    struct {
 		Model                     string         `json:"model"`
 		Reasoning                 string         `json:"reasoning"`
+		CalibrationReference      string         `json:"calibrationReference"`
+		CalibrationContrast       string         `json:"calibrationContrast"`
 		Baseline                  string         `json:"baseline"`
 		Treatment                 string         `json:"treatment"`
 		Tasks                     int            `json:"tasks"`
@@ -159,6 +166,39 @@ type observedAnalysisDocument struct {
 	Limitations []string             `json:"limitations"`
 }
 
+func upgradeLegacyObservedAnalysis(data []byte, loaded loadedBenchmarkPlan) ([]byte, error) {
+	var source observedAnalysisDocument
+	if err := json.Unmarshal(data, &source); err != nil {
+		return nil, fmt.Errorf("decode observed benchmark analysis: %w", err)
+	}
+	if source.Schema != observedAnalysisSchema || source.PlanID != loaded.ID {
+		return nil, fmt.Errorf("analysis does not match the selected schema version 1 plan")
+	}
+	switch source.SchemaVersion {
+	case legacyObservedAnalysisSchemaVersion:
+		source.SchemaVersion = observedAnalysisSchemaVersion
+		source.CampaignID = loaded.CampaignID
+		source.Experiment.CalibrationReference = loaded.Plan.CalibrationReference.ID
+		source.Experiment.CalibrationContrast = loaded.Plan.CalibrationContrast.ID
+	case observedAnalysisSchemaVersion:
+		if source.CampaignID != loaded.CampaignID ||
+			source.Experiment.CalibrationReference != loaded.Plan.CalibrationReference.ID ||
+			source.Experiment.CalibrationContrast != loaded.Plan.CalibrationContrast.ID {
+			return nil, fmt.Errorf("current analysis does not match the selected schema version 1 campaign")
+		}
+	default:
+		return nil, fmt.Errorf("analysis uses unsupported schema version %d", source.SchemaVersion)
+	}
+	if err := source.validate(); err != nil {
+		return nil, err
+	}
+	upgraded, err := json.Marshal(source)
+	if err != nil {
+		return nil, fmt.Errorf("encode upgraded observed benchmark analysis: %w", err)
+	}
+	return upgraded, nil
+}
+
 // BuildObservedCampaignReport validates ordered observed-arm analyses sharing
 // one baseline and converts them into the canonical campaign report.
 func BuildObservedCampaignReport(documents ...[]byte) (Report, error) {
@@ -186,8 +226,11 @@ func BuildObservedCampaignReport(documents ...[]byte) (Report, error) {
 	})
 	campaign := &ObservedCampaignReport{
 		PlanID:                first.PlanID,
+		CampaignID:            first.CampaignID,
 		Model:                 first.Experiment.Model,
 		Reasoning:             first.Experiment.Reasoning,
+		CalibrationReference:  first.Experiment.CalibrationReference,
+		CalibrationContrast:   first.Experiment.CalibrationContrast,
 		BaselineLabel:         first.Experiment.Baseline,
 		TaskCount:             first.Experiment.Tasks,
 		RunsPerArm:            runsPerArm,
@@ -267,7 +310,7 @@ func BuildObservedCampaignReport(documents ...[]byte) (Report, error) {
 	last := sources[len(sources)-1]
 	return Report{
 		SchemaVersion:    ReportSchemaVersion,
-		ComparisonID:     first.PlanID,
+		ComparisonID:     first.CampaignID,
 		GeneratedAt:      last.GeneratedAt.UTC(),
 		ObservedCampaign: campaign,
 		Limitations:      append([]string(nil), last.Limitations...),
@@ -284,8 +327,11 @@ func addObservedCost(left, right ObservedCostRange) ObservedCostRange {
 
 func validateSharedObservedBaseline(first, next observedAnalysisDocument) error {
 	if first.PlanID != next.PlanID ||
+		first.CampaignID != next.CampaignID ||
 		first.Experiment.Model != next.Experiment.Model ||
 		first.Experiment.Reasoning != next.Experiment.Reasoning ||
+		first.Experiment.CalibrationReference != next.Experiment.CalibrationReference ||
+		first.Experiment.CalibrationContrast != next.Experiment.CalibrationContrast ||
 		first.Experiment.Baseline != next.Experiment.Baseline ||
 		first.Experiment.Tasks != next.Experiment.Tasks ||
 		first.Experiment.TwoSidedSignificanceLevel != next.Experiment.TwoSidedSignificanceLevel ||
@@ -317,10 +363,13 @@ func validateSharedObservedBaseline(first, next observedAnalysisDocument) error 
 
 func (source observedAnalysisDocument) validate() error {
 	if source.Schema != observedAnalysisSchema || source.SchemaVersion != observedAnalysisSchemaVersion ||
-		source.GeneratedAt.IsZero() || len(source.PlanID) != 64 {
+		source.GeneratedAt.IsZero() || len(source.PlanID) != 64 ||
+		len(source.CampaignID) != 64 {
 		return fmt.Errorf("observed benchmark analysis has an unsupported or incomplete identity")
 	}
 	if source.Experiment.Model == "" || source.Experiment.Reasoning == "" ||
+		source.Experiment.CalibrationReference == "" ||
+		source.Experiment.CalibrationContrast == "" ||
 		source.Experiment.Baseline == "" || source.Experiment.Treatment == "" ||
 		source.Experiment.Tasks < 1 || source.Experiment.Tasks != len(source.Tasks) ||
 		!source.Experiment.EqualTaskWeighting ||

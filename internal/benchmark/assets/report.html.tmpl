@@ -218,7 +218,7 @@ tbody tr:last-child > * { border-bottom: 0; }
       <span class="report-kind">Benchmark report</span>
     </div>
     <h1>Benchmark campaign</h1>
-    <p class="report-meta">{{.Model}} · {{.Reasoning}} reasoning · {{.TaskCount}} selected {{if eq .TaskCount 1}}task{{else}}tasks{{end}} · {{.RunsPerArm}} runs per arm · {{len .Versions}} {{if eq (len .Versions) 1}}version{{else}}versions{{end}}</p>
+    <p class="report-meta">{{.Model}} · {{.Reasoning}} reasoning · calibration {{.CalibrationReference}} vs {{.CalibrationContrast}} · {{.TaskCount}} selected {{if eq .TaskCount 1}}task{{else}}tasks{{end}} · {{.RunsPerArm}} runs per arm · {{len .Versions}} {{if eq (len .Versions) 1}}version{{else}}versions{{end}}</p>
   </header>
 
   {{range .Warnings}}<p class="report-warning"><strong>Campaign warning:</strong> {{.}}</p>{{end}}
@@ -352,7 +352,9 @@ tbody tr:last-child > * { border-bottom: 0; }
           {{range .Versions}}<tr><th>{{.Label}}</th><td>{{costRange .Cost.Minimum .Cost.Maximum}} · midpoint ${{printf "%.2f" .Cost.Midpoint}} · {{.InvocationCount}} invocations · {{.DispatchConformantRuns}}/{{.TotalRuns}} dispatch-conformant runs · {{printf "%.1f" .AgentTimeoutMultiplier}}× agent timeout</td></tr>{{end}}
           <tr><th>Campaign total</th><td>{{costRange .CampaignCost.Minimum .CampaignCost.Maximum}} · midpoint ${{printf "%.2f" .CampaignCost.Midpoint}}</td></tr>
           <tr><th>Model contract</th><td>{{.Model}} · {{.Reasoning}} reasoning</td></tr>
+          <tr><th>Published calibration</th><td>{{.CalibrationReference}} vs {{.CalibrationContrast}}</td></tr>
           <tr><th>Plan identity</th><td class="hash">{{.PlanID}}</td></tr>
+          <tr><th>Campaign identity</th><td class="hash">{{.CampaignID}}</td></tr>
           <tr><th>Cost-axis source</th><td class="hash">{{.CostAxis.ReferenceConfiguration}} · snapshot {{.CostAxis.ReferenceSnapshotSHA256}}</td></tr>
         </tbody></table></div>
       </div>

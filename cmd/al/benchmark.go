@@ -19,6 +19,7 @@ const (
 	benchmarkCommandName   = "benchmark"
 	benchmarkBaselineName  = "baseline"
 	benchmarkTreatmentName = "treatment"
+	benchmarkReportName    = "report"
 	benchmarkYes           = "yes"
 )
 
@@ -41,7 +42,7 @@ func newBenchmarkCmd() *cobra.Command {
 }
 
 func newBenchmarkBaselineCmd() *cobra.Command {
-	var planPath string
+	var planPath, execution string
 	var taskConcurrency int
 	var yes, check bool
 	command := &cobra.Command{
@@ -49,8 +50,8 @@ func newBenchmarkBaselineCmd() *cobra.Command {
 		Short: "Run or inspect the shared bare-model baseline",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if planPath == "" {
-				return errors.New("benchmark baseline requires --plan")
+			if planPath == "" || execution == "" {
+				return errors.New("benchmark baseline requires --plan and --execution")
 			}
 			if check && yes {
 				return errors.New("benchmark baseline --check does not accept --yes")
@@ -65,7 +66,7 @@ func newBenchmarkBaselineCmd() *cobra.Command {
 			}
 			options := bench.BaselineOptions{
 				RepoRoot: root, PlanPath: planPath, PlanJSON: planJSON,
-				TaskConcurrency: taskConcurrency, Confirmed: yes,
+				Execution: execution, TaskConcurrency: taskConcurrency, Confirmed: yes,
 			}
 			if check {
 				outcome, checkErr := checkBaseline(context.Background(), options)
@@ -74,9 +75,10 @@ func newBenchmarkBaselineCmd() *cobra.Command {
 				}
 				_, err = fmt.Fprintf(
 					cmd.OutOrStdout(),
-					"Baseline %.12s is ready: %d of %d runs cached, %d paid calls missing, published cost estimate $%.2f. No provider call was made.\n",
-					outcome.PlanID, outcome.Completed, outcome.Required,
-					outcome.Required-outcome.Completed, outcome.EstimatedUSD,
+					"Calibration: %s vs %s; executing both arms with %s.\nBaseline campaign %.12s is ready: %d of %d runs cached, %d paid calls missing. No provider call was made.\n",
+					outcome.CalibrationReference, outcome.CalibrationContrast, outcome.Execution,
+					outcome.CampaignID, outcome.Completed, outcome.Required,
+					outcome.Required-outcome.Completed,
 				)
 				return err
 			}
@@ -84,6 +86,7 @@ func newBenchmarkBaselineCmd() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&planPath, "plan", "", "website-exported DeepSWE benchmark plan, or - for standard input")
+	command.Flags().StringVar(&execution, "execution", "", "model and reasoning to execute, in the form <model>:<effort>")
 	command.Flags().IntVar(&taskConcurrency, "task-concurrency", 1, "parallel task executions, from 1 to 8")
 	command.Flags().BoolVar(&yes, "yes", false, "confirm paid model calls without prompting")
 	command.Flags().BoolVar(&check, "check", false, "validate and show cached progress without provider calls")
@@ -98,8 +101,8 @@ func runBenchmarkBaselineInteractive(cmd *cobra.Command, options bench.BaselineO
 		}
 		if _, writeErr := fmt.Fprintf(
 			cmd.OutOrStdout(),
-			"Baseline requires %d paid model calls; published estimate $%.2f. Continue? [y/N]: ",
-			outcome.Required-outcome.Completed, outcome.EstimatedUSD,
+			"Baseline with %s requires %d paid model calls. Continue? [y/N]: ",
+			outcome.Execution, outcome.Required-outcome.Completed,
 		); writeErr != nil {
 			return writeErr
 		}
@@ -121,8 +124,8 @@ func runBenchmarkBaselineInteractive(cmd *cobra.Command, options bench.BaselineO
 	}
 	_, err = fmt.Fprintf(
 		cmd.OutOrStdout(),
-		"Baseline %.12s complete: %.1f%% mean score, $%.2f midpoint actual cost ($%.2f–$%.2f accounting range) across %d runs.\nEvidence: %s\n",
-		outcome.PlanID, outcome.Summary.FreshBaselineMean*100,
+		"Baseline campaign %.12s (%s) complete: %.1f%% mean score, $%.2f midpoint actual cost ($%.2f–$%.2f accounting range) across %d runs.\nEvidence: %s\n",
+		outcome.CampaignID, outcome.Execution, outcome.Summary.FreshBaselineMean*100,
 		outcome.Summary.ActualBaselineCostUSD.Midpoint,
 		outcome.Summary.ActualBaselineCostUSD.Minimum,
 		outcome.Summary.ActualBaselineCostUSD.Maximum,
@@ -132,7 +135,7 @@ func runBenchmarkBaselineInteractive(cmd *cobra.Command, options bench.BaselineO
 }
 
 func newBenchmarkTreatmentCmd() *cobra.Command {
-	var planPath, label string
+	var planPath, execution, label string
 	var taskConcurrency int
 	var yes, check bool
 	command := &cobra.Command{
@@ -140,8 +143,8 @@ func newBenchmarkTreatmentCmd() *cobra.Command {
 		Short: "Run or inspect one immutable skills-and-instructions version",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if planPath == "" {
-				return errors.New("benchmark treatment requires --plan")
+			if planPath == "" || execution == "" {
+				return errors.New("benchmark treatment requires --plan and --execution")
 			}
 			if check && yes {
 				return errors.New("benchmark treatment --check does not accept --yes")
@@ -156,7 +159,7 @@ func newBenchmarkTreatmentCmd() *cobra.Command {
 			}
 			options := bench.TreatmentOptions{
 				RepoRoot: root, PlanPath: planPath, PlanJSON: planJSON, Label: label,
-				TaskConcurrency: taskConcurrency, Confirmed: yes,
+				Execution: execution, TaskConcurrency: taskConcurrency, Confirmed: yes,
 			}
 			if check {
 				outcome, checkErr := checkTreatment(context.Background(), options)
@@ -165,8 +168,10 @@ func newBenchmarkTreatmentCmd() *cobra.Command {
 				}
 				_, err = fmt.Fprintf(
 					cmd.OutOrStdout(),
-					"Treatment %q (%.12s) is ready: %d of %d runs cached, %d paid calls missing. No provider call was made.\n",
-					outcome.Label, outcome.TreatmentID, outcome.Completed, outcome.Required, outcome.Missing,
+					"Calibration: %s vs %s; executing both arms with %s.\nTreatment %q (%.12s) is ready: %d of %d runs cached, %d paid calls missing. No provider call was made.\n",
+					outcome.CalibrationReference, outcome.CalibrationContrast, outcome.Execution,
+					outcome.Label, outcome.TreatmentID,
+					outcome.Completed, outcome.Required, outcome.Missing,
 				)
 				return err
 			}
@@ -174,6 +179,7 @@ func newBenchmarkTreatmentCmd() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&planPath, "plan", "", "website-exported DeepSWE benchmark plan, or - for standard input")
+	command.Flags().StringVar(&execution, "execution", "", "model and reasoning to execute, in the form <model>:<effort>")
 	command.Flags().StringVar(&label, "label", "", "report label for this immutable treatment version")
 	command.Flags().IntVar(&taskConcurrency, "task-concurrency", 1, "parallel task executions, from 1 to 8")
 	command.Flags().BoolVar(&yes, "yes", false, "confirm paid model calls without prompting")
@@ -216,11 +222,11 @@ func runBenchmarkTreatmentInteractive(cmd *cobra.Command, options bench.Treatmen
 }
 
 func newBenchmarkReportCmd() *cobra.Command {
-	var planPath string
+	var planPath, execution string
 	var analyses []string
 	var open bool
 	command := &cobra.Command{
-		Use:   "report",
+		Use:   benchmarkReportName,
 		Short: "Calculate and render the campaign from immutable evidence",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -237,15 +243,15 @@ func newBenchmarkReportCmd() *cobra.Command {
 			}
 			outcome, err := buildCampaignReport(bench.CampaignReportOptions{
 				RepoRoot: root, PlanPath: planPath, PlanJSON: planJSON,
-				LegacyAnalysisPaths: analyses,
+				Execution: execution, LegacyAnalysisPaths: analyses,
 			})
 			if err != nil {
 				return err
 			}
 			if _, err := fmt.Fprintf(
 				cmd.OutOrStdout(),
-				"Campaign %.12s with %d treatment version(s)\nReport: %s\nJSON: %s\n",
-				outcome.PlanID, outcome.Versions, outcome.HTMLPath, outcome.JSONPath,
+				"Campaign %.12s (%s) with %d treatment version(s)\nReport: %s\nJSON: %s\n",
+				outcome.CampaignID, outcome.Execution, outcome.Versions, outcome.HTMLPath, outcome.JSONPath,
 			); err != nil {
 				return err
 			}
@@ -261,7 +267,8 @@ func newBenchmarkReportCmd() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&planPath, "plan", "", "website-exported DeepSWE benchmark plan, or - for standard input")
-	command.Flags().StringArrayVar(&analyses, "analysis", nil, "explicit canonical analysis for a legacy plan without cost-axis provenance")
+	command.Flags().StringVar(&execution, "execution", "", "model and reasoning executed by both arms for a schema version 2 plan, in the form <model>:<effort>")
+	command.Flags().StringArrayVar(&analyses, "analysis", nil, "explicit canonical analysis for a schema version 1 plan without cost-axis provenance")
 	command.Flags().BoolVar(&open, "open", false, "open the generated HTML report")
 	return command
 }

@@ -83,7 +83,9 @@ func (result AttemptResult) Validate() error {
 	if _, _, err := result.CostBounds(); err != nil {
 		return fmt.Errorf("successful attempt result has invalid cost evidence: %w", err)
 	}
-	if result.CostKind == costKindProviderUsage+"-range" || result.CostKind == costKindProviderTotal {
+	if result.CostKind == costKindProviderUsage ||
+		result.CostKind == costKindProviderUsage+"-range" ||
+		result.CostKind == costKindProviderTotal {
 		if result.InvocationCount < 1 {
 			return fmt.Errorf("provider-usage range is missing invocation evidence")
 		}

@@ -25,21 +25,27 @@ func TestCampaignRunsVersionedTreatmentAndBuildsReportFromImmutableEvidence(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
+	loaded, err = bindBenchmarkExecution(loaded, "luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
 	checksums := map[string]string{
 		"first-benchmark-task":  strings.Repeat("b", 64),
 		"second-benchmark-task": strings.Repeat("c", 64),
 	}
-	baselineDir := baselineStateDir(root, loaded.ID)
+	baselineDir := baselineStateDir(root, loaded.CampaignID)
 	baseline := baselineManifest{
-		SchemaVersion: baselineStateSchema,
-		PlanID:        loaded.ID,
-		PlanSnapshot:  loaded.Plan.Snapshot.SHA256,
-		Model:         loaded.Plan.Target.Model,
-		Reasoning:     loaded.Plan.Target.Reasoning,
-		DeepSWECommit: DeepSWECommit,
-		PierVersion:   PierVersion,
-		TaskChecksums: checksums,
-		Repetitions:   repetitionsForPlan(loaded.Plan),
+		SchemaVersion:  baselineStateSchema,
+		PlanID:         loaded.ID,
+		CampaignID:     loaded.CampaignID,
+		PlanSnapshot:   loaded.Plan.Snapshot.SHA256,
+		Model:          loaded.Model.PublishedIdentifier,
+		Reasoning:      loaded.Effort,
+		ProviderClient: loaded.Model.ProviderClientVersion,
+		DeepSWECommit:  DeepSWECommit,
+		PierVersion:    PierVersion,
+		TaskChecksums:  checksums,
+		Repetitions:    repetitionsForPlan(loaded.Plan),
 	}
 	if err := writeJSON(filepath.Join(baselineDir, "manifest.json"), baseline); err != nil {
 		t.Fatal(err)
@@ -55,15 +61,18 @@ func TestCampaignRunsVersionedTreatmentAndBuildsReportFromImmutableEvidence(t *t
 			writeCampaignAttemptFixture(t, baselineDir, loaded, item.task, index+1, item.baseline[index], .1, 0, 0, true, false, checksums[item.task])
 		}
 	}
-
 	originalPreflight := preflightBenchmark
 	originalPier := verifyBenchmarkPier
 	originalAuth := validateBenchmarkAuthentication
 	originalBundle := buildCampaignTreatmentBundle
+	var bundledModel Model
+	var bundledEffort string
 	preflightBenchmark = func([]parsedSelection) error { return nil }
 	verifyBenchmarkPier = func(context.Context) error { return nil }
 	validateBenchmarkAuthentication = func(string, []parsedSelection) error { return nil }
-	buildCampaignTreatmentBundle = func(_ string, _ string, mode string, _ Model, _ string) (*TreatmentBundle, error) {
+	buildCampaignTreatmentBundle = func(_ string, _ string, mode string, model Model, effort string) (*TreatmentBundle, error) {
+		bundledModel = model
+		bundledEffort = effort
 		return &TreatmentBundle{
 			Root:          t.TempDir(),
 			ManifestHash:  strings.Repeat("d", 64),
@@ -83,10 +92,28 @@ func TestCampaignRunsVersionedTreatmentAndBuildsReportFromImmutableEvidence(t *t
 		buildCampaignTreatmentBundle = originalBundle
 	})
 
-	options := TreatmentOptions{RepoRoot: root, PlanPath: planPath, Label: "Iteration 1", TaskConcurrency: 2}
+	options := TreatmentOptions{
+		RepoRoot: root, PlanPath: planPath, Execution: "luna:low",
+		Label: "Iteration 1", TaskConcurrency: 2,
+	}
+	baseline.ProviderClient = "stale-codex"
+	if err := writeJSON(filepath.Join(baselineDir, "manifest.json"), baseline); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CheckTreatment(context.Background(), options); err == nil ||
+		!strings.Contains(err.Error(), "baseline provider client version") {
+		t.Fatalf("stale provider client error = %v", err)
+	}
+	baseline.ProviderClient = loaded.Model.ProviderClientVersion
+	if err := writeJSON(filepath.Join(baselineDir, "manifest.json"), baseline); err != nil {
+		t.Fatal(err)
+	}
 	checked, err := CheckTreatment(context.Background(), options)
 	if err != nil || checked.Missing != loaded.RunCount {
 		t.Fatalf("CheckTreatment = %#v, %v", checked, err)
+	}
+	if bundledModel.PublishedIdentifier != publishedLuna || bundledEffort != effortLow {
+		t.Fatalf("treatment used calibration as execution: %s %s", bundledModel.PublishedIdentifier, bundledEffort)
 	}
 	if _, err := os.Stat(filepath.Join(checked.StateDir, "manifest.json")); !os.IsNotExist(err) {
 		t.Fatalf("read-only treatment check wrote state: %v", err)
@@ -109,18 +136,29 @@ func TestCampaignRunsVersionedTreatmentAndBuildsReportFromImmutableEvidence(t *t
 		cached.Label != options.Label || cached.ProviderCall {
 		t.Fatalf("cached treatment check = %#v, %v", cached, err)
 	}
+	baseline.SchemaVersion = providerlessBaselineSchema
+	baseline.ProviderClient = ""
+	if err := writeJSON(filepath.Join(baselineDir, "manifest.json"), baseline); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CheckTreatment(context.Background(), options); err == nil ||
+		!strings.Contains(err.Error(), "remains reportable but cannot seed") {
+		t.Fatalf("providerless baseline treatment error = %v", err)
+	}
 	var incomplete campaignTreatmentManifest
 	if err := readCampaignJSON(filepath.Join(checked.StateDir, "manifest.json"), &incomplete); err != nil {
 		t.Fatal(err)
 	}
 	incomplete.Label = "Incomplete iteration"
 	incomplete.CreatedAt = incomplete.CreatedAt.Add(time.Minute)
-	incompleteDir := filepath.Join(campaignRoot(root, loaded.ID), "treatments", strings.Repeat("f", 64))
+	incompleteDir := filepath.Join(campaignRoot(root, loaded.CampaignID), "treatments", strings.Repeat("f", 64))
 	if err := writeJSON(filepath.Join(incompleteDir, "manifest.json"), incomplete); err != nil {
 		t.Fatal(err)
 	}
 
-	outcome, err := BuildCampaignReport(CampaignReportOptions{RepoRoot: root, PlanPath: planPath})
+	outcome, err := BuildCampaignReport(CampaignReportOptions{
+		RepoRoot: root, PlanPath: planPath, Execution: "luna:low",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,6 +183,149 @@ func TestCampaignRunsVersionedTreatmentAndBuildsReportFromImmutableEvidence(t *t
 	}
 }
 
+func TestBuildCampaignReportReusesSchemaVersionOneEvidence(t *testing.T) {
+	root := t.TempDir()
+	planPath := filepath.Join(root, "legacy-plan.json")
+	writeLegacyBenchmarkPlanFixture(t, planPath, benchmarkPlanSchema)
+	loaded, err := loadBenchmarkPlan(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checksums := map[string]string{
+		"first-benchmark-task":  strings.Repeat("b", 64),
+		"second-benchmark-task": strings.Repeat("c", 64),
+	}
+	baselineDir := baselineStateDir(root, loaded.ID)
+	baseline := baselineManifest{
+		SchemaVersion: legacyBaselineStateSchema,
+		PlanID:        loaded.ID,
+		PlanSnapshot:  loaded.Plan.Snapshot.SHA256,
+		Model:         loaded.Model.PublishedIdentifier,
+		Reasoning:     loaded.Effort,
+		DeepSWECommit: DeepSWECommit,
+		PierVersion:   PierVersion,
+		TaskChecksums: checksums,
+		Repetitions:   repetitionsForPlan(loaded.Plan),
+	}
+	if err := writeJSON(filepath.Join(baselineDir, "manifest.json"), baseline); err != nil {
+		t.Fatal(err)
+	}
+	treatmentDir := filepath.Join(campaignRoot(root, loaded.ID), "treatments", strings.Repeat("d", 64))
+	treatment := campaignTreatmentManifest{
+		SchemaVersion: legacyCampaignTreatmentSchema,
+		PlanID:        loaded.ID,
+		CreatedAt:     time.Date(2026, 7, 27, 15, 37, 0, 0, time.UTC),
+		Label:         "Legacy iteration",
+		Arm:           ArmTreatment,
+		Model:         loaded.Model.PublishedIdentifier,
+		Reasoning:     loaded.Effort,
+		TaskChecksums: checksums,
+		Repetitions:   repetitionsForPlan(loaded.Plan),
+		Treatment: TreatmentManifest{
+			SchemaVersion:          TreatmentSchemaVersion,
+			Mode:                   TreatmentInstructionsAndSkills,
+			AgentTimeoutMultiplier: skillsAgentTimeoutFactor,
+		},
+	}
+	if err := writeJSON(filepath.Join(treatmentDir, "manifest.json"), treatment); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct {
+		task                string
+		baseline, treatment []float64
+	}{
+		{task: "first-benchmark-task", baseline: []float64{.2, .4}, treatment: []float64{.5, .7}},
+		{task: "second-benchmark-task", baseline: []float64{.6, .8}, treatment: []float64{.7, .9}},
+	} {
+		for index := range item.baseline {
+			writeCampaignAttemptFixture(t, baselineDir, loaded, item.task, index+1, item.baseline[index], .1, .09, .11, true, false, checksums[item.task])
+			writeCampaignAttemptFixture(t, treatmentDir, loaded, item.task, index+1, item.treatment[index], .2, .19, .21, true, false, checksums[item.task])
+		}
+	}
+
+	outcome, err := BuildCampaignReport(CampaignReportOptions{RepoRoot: root, PlanPath: planPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.PlanID != loaded.ID || outcome.CampaignID != loaded.ID ||
+		outcome.Execution != "luna:medium" || outcome.Versions != 1 ||
+		outcome.Report.ComparisonID != loaded.ID ||
+		outcome.Report.ObservedCampaign == nil ||
+		outcome.Report.ObservedCampaign.CalibrationReference != "gpt-5-6-luna::medium" ||
+		outcome.Report.ObservedCampaign.CalibrationContrast != "gpt-5-6-luna::high" {
+		t.Fatalf("legacy report = %#v", outcome)
+	}
+	roundTrip, err := BuildCampaignReport(CampaignReportOptions{
+		RepoRoot: root, PlanPath: planPath,
+		LegacyAnalysisPaths: outcome.Analyses,
+	})
+	if err != nil || roundTrip.Report.ComparisonID != loaded.ID {
+		t.Fatalf("current legacy analysis round trip = %#v, %v", roundTrip, err)
+	}
+	analysisData, err := os.ReadFile(outcome.Analyses[0]) // #nosec G304 -- the report generated this path in the test repository.
+	if err != nil {
+		t.Fatal(err)
+	}
+	var oldAnalysis map[string]any
+	if err := json.Unmarshal(analysisData, &oldAnalysis); err != nil {
+		t.Fatal(err)
+	}
+	oldAnalysis["schemaVersion"] = float64(legacyObservedAnalysisSchemaVersion)
+	delete(oldAnalysis, "campaignId")
+	experiment := oldAnalysis["experiment"].(map[string]any)
+	delete(experiment, "calibrationReference")
+	delete(experiment, "calibrationContrast")
+
+	analysisOnlyPlanPath := filepath.Join(root, "legacy-analysis-only-plan.json")
+	writeLegacyBenchmarkPlanFixture(t, analysisOnlyPlanPath, legacyBenchmarkPlanSchema)
+	analysisOnlyPlanData, err := os.ReadFile(analysisOnlyPlanPath) // #nosec G304 -- path belongs to the test repository.
+	if err != nil {
+		t.Fatal(err)
+	}
+	var analysisOnlyPlan map[string]any
+	if err := json.Unmarshal(analysisOnlyPlanData, &analysisOnlyPlan); err != nil {
+		t.Fatal(err)
+	}
+	delete(analysisOnlyPlan, "costAxis")
+	analysisOnlyPlanData, err = json.Marshal(analysisOnlyPlan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(analysisOnlyPlanPath, analysisOnlyPlanData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	analysisOnlyLoaded, err := loadBenchmarkPlan(analysisOnlyPlanPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldAnalysis["planId"] = analysisOnlyLoaded.ID
+	oldAnalysisData, err := json.Marshal(oldAnalysis)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldAnalysisPath := filepath.Join(root, "legacy-analysis.json")
+	if err := os.WriteFile(oldAnalysisPath, oldAnalysisData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	analysisOnlyOutcome, err := BuildCampaignReport(CampaignReportOptions{
+		RepoRoot: root, PlanPath: analysisOnlyPlanPath,
+		LegacyAnalysisPaths: []string{oldAnalysisPath},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if analysisOnlyOutcome.Report.ComparisonID != analysisOnlyLoaded.ID ||
+		analysisOnlyOutcome.Report.ObservedCampaign == nil ||
+		analysisOnlyOutcome.Report.ObservedCampaign.CampaignID != analysisOnlyLoaded.ID {
+		t.Fatalf("upgraded legacy analysis report = %#v", analysisOnlyOutcome)
+	}
+	if _, err := RunTreatment(context.Background(), TreatmentOptions{
+		RepoRoot: root, PlanPath: planPath, Execution: "luna:medium",
+	}, nil); err == nil || !strings.Contains(err.Error(), "report-only") {
+		t.Fatalf("legacy treatment execution error = %v", err)
+	}
+}
+
 func TestAnalyzeCampaignVersionDerivesThresholdAndCostsFromArmEvidence(t *testing.T) {
 	root := t.TempDir()
 	baselineDir := filepath.Join(root, "baseline")
@@ -154,25 +335,20 @@ func TestAnalyzeCampaignVersionDerivesThresholdAndCostsFromArmEvidence(t *testin
 		t.Fatal(err)
 	}
 	plan := benchmarkPlan{}
-	plan.Target.Model = model.PublishedIdentifier
-	plan.Target.Reasoning = effort
+	plan.CalibrationReference.ID = "gpt-5-6-luna::medium"
+	plan.CalibrationContrast.ID = "gpt-5-6-luna::high"
 	plan.Parameters.TwoSidedSignificanceLevel = .05
-	plan.CostAxis = &struct {
-		Valid                        bool    `json:"valid"`
-		Scale                        string  `json:"scale"`
-		ReferenceConfiguration       string  `json:"referenceConfiguration"`
-		ReferenceSnapshotSHA256      string  `json:"referenceSnapshotSha256"`
-		ReferenceEstimatedArmCostUSD float64 `json:"referenceEstimatedArmCostUsd"`
-		RoundingIncrementUSD         float64 `json:"roundingIncrementUsd"`
-		MaximumUSD                   float64 `json:"maximumUsd"`
-	}{
+	plan.CostAxis = &benchmarkPlanCostAxis{
 		Valid: true, Scale: "logarithmic", ReferenceConfiguration: observedCostAxisReference,
 		ReferenceSnapshotSHA256: strings.Repeat("a", 64), ReferenceEstimatedArmCostUSD: 310.61,
 		RoundingIncrementUSD: observedCostAxisRoundingUSD, MaximumUSD: 350,
 	}
 	task := benchmarkPlanTask{ID: "campaign-task", RepetitionsPerArm: 2}
 	plan.Tasks = []benchmarkPlanTask{task}
-	loaded := loadedBenchmarkPlan{ID: strings.Repeat("b", 64), Plan: plan, Model: model, Effort: effort, RunCount: 2}
+	loaded := loadedBenchmarkPlan{
+		ID: strings.Repeat("b", 64), CampaignID: strings.Repeat("d", 64),
+		Plan: plan, Model: model, Effort: effort, RunCount: 2,
+	}
 	checksums := map[string]string{task.ID: strings.Repeat("c", 64)}
 	baseline := baselineManifest{TaskChecksums: checksums, Repetitions: map[string]int{task.ID: 2}}
 	treatment := campaignTreatmentManifest{
@@ -208,7 +384,7 @@ func TestAnalyzeCampaignVersionDerivesThresholdAndCostsFromArmEvidence(t *testin
 	}
 }
 
-func TestBuildCampaignReportRequiresExplicitLegacyAnalysis(t *testing.T) {
+func TestBuildCampaignReportRejectsMissingCostAxis(t *testing.T) {
 	root := t.TempDir()
 	planPath := filepath.Join(root, "plan.json")
 	writeBenchmarkPlanFixture(t, planPath)
@@ -228,9 +404,22 @@ func TestBuildCampaignReportRequiresExplicitLegacyAnalysis(t *testing.T) {
 	if err := os.WriteFile(planPath, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = BuildCampaignReport(CampaignReportOptions{RepoRoot: root, PlanPath: planPath})
+	_, err = BuildCampaignReport(CampaignReportOptions{
+		RepoRoot: root, PlanPath: planPath, Execution: "luna:low",
+	})
 	if err == nil || !strings.Contains(err.Error(), "no cost-axis provenance") {
-		t.Fatalf("legacy plan error = %v", err)
+		t.Fatalf("missing cost-axis error = %v", err)
+	}
+}
+
+func TestBuildCampaignReportRequiresExecutionForSchemaVersionTwo(t *testing.T) {
+	root := t.TempDir()
+	planPath := filepath.Join(root, "plan.json")
+	writeBenchmarkPlanFixture(t, planPath)
+	if _, err := BuildCampaignReport(CampaignReportOptions{
+		RepoRoot: root, PlanPath: planPath,
+	}); err == nil || !strings.Contains(err.Error(), "require --execution") {
+		t.Fatalf("missing schema version 2 execution error = %v", err)
 	}
 }
 
