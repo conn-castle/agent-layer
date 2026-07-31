@@ -79,6 +79,14 @@ class _AgentLayerTreatment:
             raise RuntimeError(f"Unsupported Agent Layer benchmark treatment mode: {treatment_mode}")
         if treatment_agent not in {"claude", "codex"} or not treatment_model or not treatment_reasoning_effort:
             raise RuntimeError("Agent Layer benchmark workflow target is incomplete")
+        try:
+            self._dispatch_config = json.loads(
+                (self._treatment_bundle / "dispatch-targets.json").read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as error:
+            raise RuntimeError("Agent Layer benchmark dispatch targets are unavailable") from error
+        if self._dispatch_config.get("schema") != "agent-layer-benchmark-dispatch-v1":
+            raise RuntimeError("Agent Layer benchmark dispatch target schema is invalid")
         super().__init__(*args, **kwargs)
 
     async def _install_treatment(self, environment):
@@ -134,13 +142,19 @@ class _AgentLayerTreatment:
             command=install,
         )
         if self._treatment_mode == "instructions-and-skills":
+            role_targets = [
+                *self._dispatch_config["plan_reviewers"],
+                self._dispatch_config["implementer"],
+                self._dispatch_config["code_reviewer"],
+                self._dispatch_config["fixer"],
+            ]
+            unique_targets = list({
+                (target["agent"], target["model"], target["reasoning_effort"]): target
+                for target in role_targets
+            }.values())
             constraints = base64.b64encode(
                 json.dumps(
-                    {
-                        "agent": self._treatment_agent,
-                        "model": self._treatment_model,
-                        "reasoning_effort": self._treatment_reasoning_effort,
-                    },
+                    {"targets": unique_targets},
                     sort_keys=True,
                 ).encode("utf-8")
             ).decode("ascii")
@@ -229,7 +243,7 @@ class _AgentLayerTreatment:
             await self.exec_as_agent(
                 environment,
                 command=(
-                    f"{provider_shell_setup}/usr/local/bin/al-real dispatch options "
+                    f"{provider_shell_setup}/usr/local/bin/al dispatch options "
                     f"> {REMOTE_DISPATCH_OPTIONS_PREFLIGHT} && "
                     f"jq -e --arg agent '{self._treatment_agent}' "
                     "'any(.agents[]; .agent == $agent and .available == true)' "
@@ -321,16 +335,17 @@ class _AgentLayerTreatment:
 
     def _workflow_instruction(self, instruction: str) -> str:
         template = (self._treatment_bundle / "workflow-prompt.md").read_text(encoding="utf-8")
-        target = (
-            f"{self._treatment_agent} {self._treatment_model} with "
-            f"{self._treatment_reasoning_effort} reasoning-effort"
+        describe = lambda target: (
+            f"{target['agent']} {target['model']} with "
+            f"{target['reasoning_effort']} reasoning-effort"
         )
+        plan_reviewers = self._dispatch_config["plan_reviewers"]
         return template.format(
-            plan_reviewer_count=1,
-            plan_reviewers=target,
-            implementer=target,
-            code_reviewer=target,
-            fixer=target,
+            plan_reviewer_count=len(plan_reviewers),
+            plan_reviewers="; ".join(describe(target) for target in plan_reviewers),
+            implementer=describe(self._dispatch_config["implementer"]),
+            code_reviewer=describe(self._dispatch_config["code_reviewer"]),
+            fixer=describe(self._dispatch_config["fixer"]),
             task=instruction,
         )
 

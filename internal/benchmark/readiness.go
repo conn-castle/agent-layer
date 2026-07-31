@@ -29,11 +29,13 @@ var embeddedReadinessContracts embed.FS
 var readinessContracts fs.FS = embeddedReadinessContracts
 
 type taskReadinessContract struct {
-	Schema      string `json:"schema"`
-	Task        string `json:"task"`
-	Image       string `json:"image"`
-	ImageDigest string `json:"image_digest"`
-	Check       string `json:"check"`
+	Schema            string `json:"schema"`
+	Task              string `json:"task"`
+	Image             string `json:"image"`
+	ImageDigest       string `json:"image_digest"`
+	Check             string `json:"check"`
+	AgentImageOverlay string `json:"agent_image_overlay,omitempty"`
+	AgentCheck        string `json:"agent_check,omitempty"`
 }
 
 type taskReadinessCertification struct {
@@ -50,6 +52,9 @@ type loadedTaskReadiness struct {
 	contractHash string
 	check        []byte
 	pinnedImage  string
+	agentImage   string
+	overlay      []byte
+	agentCheck   []byte
 }
 
 var runTaskReadinessCommand = func(ctx context.Context, arguments ...string) ([]byte, error) {
@@ -77,7 +82,11 @@ func loadTaskReadiness(checkout, task string) (loadedTaskReadiness, error) {
 	}
 	if contract.Schema != readinessContractSchema || contract.Task != task || contract.Image == "" ||
 		len(contract.ImageDigest) != 71 || !strings.HasPrefix(contract.ImageDigest, "sha256:") ||
-		filepath.Base(contract.Check) != contract.Check || contract.Check == "." || contract.Check == "" {
+		filepath.Base(contract.Check) != contract.Check || contract.Check == "." || contract.Check == "" ||
+		(contract.AgentImageOverlay != "" &&
+			(filepath.Base(contract.AgentImageOverlay) != contract.AgentImageOverlay || contract.AgentImageOverlay == ".")) ||
+		(contract.AgentCheck != "" &&
+			(filepath.Base(contract.AgentCheck) != contract.AgentCheck || contract.AgentCheck == ".")) {
 		return loadedTaskReadiness{}, fmt.Errorf("benchmark task %s has an invalid environment readiness contract", task)
 	}
 	if _, err := hex.DecodeString(strings.TrimPrefix(contract.ImageDigest, "sha256:")); err != nil {
@@ -94,13 +103,41 @@ func loadTaskReadiness(checkout, task string) (loadedTaskReadiness, error) {
 	if taskImage != contract.Image {
 		return loadedTaskReadiness{}, fmt.Errorf("benchmark task %s readiness image %q does not match task.toml image %q", task, contract.Image, taskImage)
 	}
+	var overlay []byte
+	if contract.AgentImageOverlay != "" {
+		overlay, err = fs.ReadFile(readinessContracts, root+"/"+contract.AgentImageOverlay)
+		if err != nil || len(bytes.TrimSpace(overlay)) == 0 {
+			return loadedTaskReadiness{}, fmt.Errorf("read benchmark task %s agent image overlay: %w", task, err)
+		}
+	}
+	var agentCheck []byte
+	if contract.AgentCheck != "" {
+		agentCheck, err = fs.ReadFile(readinessContracts, root+"/"+contract.AgentCheck)
+		if err != nil || len(bytes.TrimSpace(agentCheck)) == 0 {
+			return loadedTaskReadiness{}, fmt.Errorf("read benchmark task %s agent readiness program: %w", task, err)
+		}
+	}
 	hash := sha256.New()
 	hash.Write(contractData)
 	hash.Write([]byte{0})
 	hash.Write(check)
+	hash.Write([]byte{0})
+	hash.Write(overlay)
+	hash.Write([]byte{0})
+	hash.Write(agentCheck)
+	contractHash := hex.EncodeToString(hash.Sum(nil))
+	pinnedImage := contract.Image + "@" + contract.ImageDigest
+	agentImage := pinnedImage
+	if len(overlay) > 0 {
+		overlayHash := sha256.New()
+		overlayHash.Write([]byte(pinnedImage))
+		overlayHash.Write([]byte{0})
+		overlayHash.Write(overlay)
+		agentImage = "agent-layer-benchmark/" + task + ":" + hex.EncodeToString(overlayHash.Sum(nil))[:24]
+	}
 	return loadedTaskReadiness{
-		contract: contract, contractHash: hex.EncodeToString(hash.Sum(nil)), check: check,
-		pinnedImage: contract.Image + "@" + contract.ImageDigest,
+		contract: contract, contractHash: contractHash, check: check,
+		pinnedImage: pinnedImage, agentImage: agentImage, overlay: overlay, agentCheck: agentCheck,
 	}, nil
 }
 
@@ -181,6 +218,9 @@ func certifyTaskEnvironment(ctx context.Context, repoRoot, checkout, task, taskC
 	if err != nil {
 		return "", err
 	}
+	if err := ensureTaskAgentImage(ctx, repoRoot, task, readiness); err != nil {
+		return "", err
+	}
 	receipt, identity, err := taskEnvironmentCertificationIdentity(readiness, task, taskChecksum)
 	if err != nil {
 		return "", err
@@ -204,13 +244,15 @@ func certifyTaskEnvironment(ctx context.Context, repoRoot, checkout, task, taskC
 	}
 	defer func() { _ = os.RemoveAll(stage) }()
 	checkPath := filepath.Join(stage, "check.sh")
-	if err := os.WriteFile(checkPath, readiness.check, 0o600); err != nil {
+	certificationCheck := append(append([]byte(nil), readiness.check...), '\n')
+	certificationCheck = append(certificationCheck, readiness.agentCheck...)
+	if err := os.WriteFile(checkPath, certificationCheck, 0o600); err != nil {
 		return "", fmt.Errorf("materialize benchmark task %s readiness program: %w", task, err)
 	}
 	output, runErr := runTaskReadinessCommand(ctx,
 		"run", "--rm", "--network", "none",
 		"--mount", "type=bind,source="+checkPath+",target=/opt/agent-layer/readiness.sh,readonly",
-		"--entrypoint", "/bin/bash", readiness.pinnedImage, "/opt/agent-layer/readiness.sh",
+		"--entrypoint", "/bin/bash", readiness.agentImage, "/opt/agent-layer/readiness.sh",
 	)
 	if runErr != nil {
 		return "", fmt.Errorf("benchmark task %s environment readiness failed before provider execution: %w: %s", task, runErr, strings.TrimSpace(string(output)))
@@ -221,10 +263,40 @@ func certifyTaskEnvironment(ctx context.Context, repoRoot, checkout, task, taskC
 	return identity, nil
 }
 
+func ensureTaskAgentImage(ctx context.Context, repoRoot, task string, readiness loadedTaskReadiness) error {
+	if len(readiness.overlay) == 0 {
+		return nil
+	}
+	if _, err := runTaskReadinessCommand(ctx, "image", "inspect", readiness.agentImage); err == nil {
+		return nil
+	}
+	stageRoot := filepath.Join(repoRoot, ".agent-layer", "tmp")
+	if err := os.MkdirAll(stageRoot, 0o700); err != nil {
+		return fmt.Errorf("create benchmark task %s agent image staging root: %w", task, err)
+	}
+	stage, err := os.MkdirTemp(stageRoot, "task-agent-image-")
+	if err != nil {
+		return fmt.Errorf("create benchmark task %s agent image context: %w", task, err)
+	}
+	defer func() { _ = os.RemoveAll(stage) }()
+	dockerfile := filepath.Join(stage, "Dockerfile")
+	if err := os.WriteFile(dockerfile, readiness.overlay, 0o600); err != nil {
+		return fmt.Errorf("write benchmark task %s agent image overlay: %w", task, err)
+	}
+	output, err := runTaskReadinessCommand(
+		ctx, "build", "--platform", "linux/amd64", "--tag", readiness.agentImage,
+		"--file", dockerfile, stage,
+	)
+	if err != nil {
+		return fmt.Errorf("build benchmark task %s agent image: %w: %s", task, err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
 func taskEnvironmentCertificationIdentity(readiness loadedTaskReadiness, task, taskChecksum string) (taskReadinessCertification, string, error) {
 	receipt := taskReadinessCertification{
 		Schema: readinessReceiptSchema, DeepSWECommit: DeepSWECommit, Task: task,
-		TaskChecksum: taskChecksum, ContractHash: readiness.contractHash, PinnedImage: readiness.pinnedImage,
+		TaskChecksum: taskChecksum, ContractHash: readiness.contractHash, PinnedImage: readiness.agentImage,
 	}
 	identity, err := hashCanonical(receipt)
 	if err != nil {

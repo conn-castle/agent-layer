@@ -207,6 +207,7 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 	}
 
 	command := exec.CommandContext(ctx, commandUVX, arguments...) // #nosec G204 -- every identity is validated or pinned above.
+	configureBenchmarkCommandCancellation(command)
 	command.Dir = request.RepoRoot
 	dockerConfig, err := prepareBenchmarkDockerConfig(stage)
 	if err != nil {

@@ -553,6 +553,29 @@ func TestBenchmarkPolicyInjectsLockedDefaults(t *testing.T) {
 	}
 }
 
+func TestBenchmarkPolicyAllowsOnlyConfiguredTargetTuples(t *testing.T) {
+	policy, err := loadBenchmarkPolicy([]string{
+		benchmarkPolicyTargetsEnv + `=[{"agent":"codex","model":"gpt-luna","reasoning_effort":"high"},{"agent":"codex","model":"gpt-terra","reasoning_effort":"low"}]`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := &OptionsResponse{}
+	policy.constrainOptions(options)
+	if len(options.Agents) != 1 || len(options.Agents[0].Model.Suggestions) != 2 ||
+		len(options.Agents[0].ReasoningEffort.Suggestions) != 2 {
+		t.Fatalf("multi-target options = %#v", options.Agents)
+	}
+	agent, model, effort := AgentCodex, "gpt-luna", "high"
+	if err := policy.constrainStart(&agent, &model, &effort); err != nil {
+		t.Fatalf("configured tuple rejected: %v", err)
+	}
+	model, effort = "gpt-luna", "low"
+	if err := policy.constrainStart(&agent, &model, &effort); err == nil {
+		t.Fatal("unconfigured model/effort cross-product was accepted")
+	}
+}
+
 // TestMCPServerRejectsMissingRoot proves the stdio entry point fails before
 // serving when it cannot resolve an Agent Layer root.
 func TestMCPServerRejectsMissingRoot(t *testing.T) {

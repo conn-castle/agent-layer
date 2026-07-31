@@ -9,6 +9,7 @@ from pier.environments.docker.docker import DockerEnvironment
 
 
 REMOTE_READINESS_SCRIPT = "/tmp/agent-layer-task-readiness.sh"
+REMOTE_AGENT_READINESS_SCRIPT = "/tmp/agent-layer-task-agent-readiness.sh"
 REMOTE_STARTUP_SCRIPT = "/tmp/agent-layer-task-startup.sh"
 
 
@@ -20,6 +21,8 @@ class CertifiedDockerEnvironment(DockerEnvironment):
         *args: object,
         readiness_script: str,
         pinned_image: str,
+        agent_context: str | None = None,
+        agent_readiness_script: str | None = None,
         startup_script: str | None = None,
         verifier_source_root: str,
         verifier_context: str,
@@ -30,6 +33,14 @@ class CertifiedDockerEnvironment(DockerEnvironment):
         if not self._readiness_script.is_file():
             raise RuntimeError("Task readiness program is missing")
         self._startup_script = Path(startup_script) if startup_script else None
+        self._agent_readiness_script = (
+            Path(agent_readiness_script) if agent_readiness_script else None
+        )
+        if (
+            self._agent_readiness_script is not None
+            and not self._agent_readiness_script.is_file()
+        ):
+            raise RuntimeError("Task agent readiness program is missing")
         if self._startup_script is not None and not self._startup_script.is_file():
             raise RuntimeError("Task startup program is missing")
         task_env_config = kwargs.get("task_env_config")
@@ -37,11 +48,18 @@ class CertifiedDockerEnvironment(DockerEnvironment):
             raise RuntimeError("Task environment configuration is missing")
         environment_dir = Path(str(kwargs.get("environment_dir", ""))).resolve()
         verifier_source = Path(verifier_source_root).resolve()
+        agent_source = Path(agent_context).resolve() if agent_context else None
         if environment_dir.is_relative_to(verifier_source):
+            self._is_agent_environment = False
             relative = environment_dir.relative_to(verifier_source)
             kwargs["environment_dir"] = Path(verifier_context) / relative
             task_env_config.docker_image = None
+        elif agent_source is not None:
+            self._is_agent_environment = True
+            kwargs["environment_dir"] = agent_source
+            task_env_config.docker_image = None
         else:
+            self._is_agent_environment = True
             task_env_config.docker_image = pinned_image
         super().__init__(*args, **kwargs)
 
@@ -63,6 +81,26 @@ class CertifiedDockerEnvironment(DockerEnvironment):
             )
         if output:
             self.logger.info("Task environment readiness output:\n%s", output)
+        if self._is_agent_environment and self._agent_readiness_script is not None:
+            await self.upload_file(
+                self._agent_readiness_script, REMOTE_AGENT_READINESS_SCRIPT
+            )
+            result = await self.exec(
+                f"bash {shlex.quote(REMOTE_AGENT_READINESS_SCRIPT)}",
+                user=0,
+            )
+            output = "\n".join(
+                part.strip()
+                for part in (result.stdout, result.stderr)
+                if part and part.strip()
+            )
+            if result.return_code != 0:
+                detail = f": {output}" if output else ""
+                raise RuntimeError(
+                    f"Task agent readiness program exited with code {result.return_code}{detail}"
+                )
+            if output:
+                self.logger.info("Task agent readiness output:\n%s", output)
         if self._startup_script is not None:
             await self.upload_file(self._startup_script, REMOTE_STARTUP_SCRIPT)
             result = await self.exec(

@@ -50,6 +50,23 @@ func TestReadTemplateMissing(t *testing.T) {
 	}
 }
 
+func TestEmbeddedPlaywrightSkillUsesDistinctIDAndCLICommand(t *testing.T) {
+	data, err := Read("skills-catalog/playwright/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	skill := string(data)
+	if !strings.Contains(skill, "\nname: playwright\n") {
+		t.Fatal("playwright skill frontmatter does not use the distinct playwright id")
+	}
+	if !strings.Contains(skill, "playwright-cli --help") {
+		t.Fatal("playwright skill does not preserve the playwright-cli command surface")
+	}
+	if _, err := Read("skills-catalog/playwright-cli/SKILL.md"); err == nil {
+		t.Fatal("colliding playwright-cli skill template should be absent")
+	}
+}
+
 func TestReadLauncherTemplate(t *testing.T) {
 	data, err := Read("launchers/open-vscode.command")
 	if err != nil {

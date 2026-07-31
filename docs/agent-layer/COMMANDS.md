@@ -354,3 +354,18 @@ node scripts/render-deepswe-matrix-report.js \
 Run from: repo root
 Prerequisites: Node 22+, a completed descriptive matrix, and the exact published-trials snapshot named by the selection
 Notes: Discovers every completed arm from immutable matrix manifests and results, verifies the trials snapshot SHA-256, and regenerates both report artifacts without model, Docker, or network calls. The HTML contains the cost-versus-score graph, arm summary, and complete two-sided calibrated Welch–Satterthwaite p-value matrix. Incomplete arms are reported explicitly and excluded.
+
+- Run a descriptive matrix with explicit Agent Dispatch role targets
+```bash
+go run ./cmd/al benchmark matrix \
+  --selection <selection.json> \
+  --baseline-execution sol:medium \
+  --treatment-execution sol:medium \
+  --treatment-label "Agent Layer" \
+  --dispatch-config <dispatch.toml> \
+  --task-concurrency 4 \
+  --yes
+```
+Run from: repo root
+Prerequisites: Baseline benchmark prerequisites and a validated `agent-layer-benchmark-dispatch-v1` TOML file.
+Notes: The dispatch file assigns exact `agent`, `model`, and `reasoning_effort` targets to `plan_reviewers`, `implementer`, `code_reviewer`, and `fixer`. Its canonical content is included in the immutable treatment identity.

@@ -154,14 +154,13 @@ func TestBenchmarkDispatchGateFiltersOptionsAndRejectsWrongSelections(t *testing
 	}
 	for _, required := range []string{
 		`arguments[:2] == ["dispatch", "options"]`,
-		`"suggestions": [model]`,
+		`"suggestions": models`,
+		`"suggestions": efforts`,
 		`"allow_custom": False`,
 		`arguments[:2] == ["dispatch", "start"]`,
-		`selected_agent != agent`,
-		`selected_model and selected_model != model`,
-		`selected_effort and selected_effort != effort`,
-		`arguments.extend(["--model", model])`,
-		`arguments.extend(["--reasoning-effort", effort])`,
+		`if len(matches) != 1:`,
+		`arguments.extend(["--model", target["model"]])`,
+		`arguments.extend(["--reasoning-effort", target["reasoning_effort"]])`,
 		`os.execv(REAL_AL, [REAL_AL, *arguments])`,
 	} {
 		if !strings.Contains(string(gate), required) {
@@ -181,9 +180,7 @@ func TestBenchmarkDispatchGateExportsPolicyToTheMCPServer(t *testing.T) {
 	}
 	for _, required := range []string{
 		`arguments[:2] == ["dispatch", "mcp-server"]`,
-		`os.environ["AL_BENCHMARK_DISPATCH_AGENT"] = agent`,
-		`os.environ["AL_BENCHMARK_DISPATCH_MODEL"] = model`,
-		`os.environ["AL_BENCHMARK_DISPATCH_REASONING_EFFORT"] = effort`,
+		`os.environ["AL_BENCHMARK_DISPATCH_TARGETS"] = json.dumps(targets, sort_keys=True)`,
 	} {
 		if !strings.Contains(string(gate), required) {
 			t.Fatalf("benchmark dispatch gate does not export %q to the MCP server", required)
@@ -228,8 +225,8 @@ func TestTreatmentAdapterLabelsReasoningEffortInRoleTargets(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, required := range []string{
-		`f"{self._treatment_agent} {self._treatment_model} with "`,
-		`f"{self._treatment_reasoning_effort} reasoning-effort"`,
+		`f"{target['agent']} {target['model']} with "`,
+		`f"{target['reasoning_effort']} reasoning-effort"`,
 	} {
 		if !strings.Contains(string(adapter), required) {
 			t.Fatalf("DeepSWE adapter does not label role-target reasoning effort with %q", required)

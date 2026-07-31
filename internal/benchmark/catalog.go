@@ -14,7 +14,7 @@ const (
 	ClaudeClientVersion    = "2.1.207"
 	ReportSchemaVersion    = "benchmark-report-v5"
 	StorageSchemaVersion   = "benchmark-store-v1"
-	TreatmentSchemaVersion = "benchmark-treatment-v1"
+	TreatmentSchemaVersion = "benchmark-treatment-v2"
 	DeepSWETrialsSourceURL = "https://deepswe.datacurve.ai/artifacts/v1.1/trials.json"
 )
 
@@ -49,6 +49,7 @@ const (
 	verdictBetter            = "better"
 	verdictWorse             = "worse"
 	costAxisLogarithmic      = "logarithmic"
+	publishedFable           = "claude-fable-5"
 	publishedLuna            = "gpt-5-6-luna"
 	pierAgentKwarg           = "--agent-kwarg"
 	taskInstructionFile      = "instruction.md"
@@ -78,7 +79,7 @@ var supportedModels = []Model{
 	{Name: "sol", PublishedIdentifier: "gpt-5-6-sol", RuntimeIdentifier: "openai/gpt-5.6-sol", Adapter: adapterCodex, ProviderClientVersion: CodexClientVersion},
 	{Name: "sonnet", PublishedIdentifier: "claude-sonnet-5", RuntimeIdentifier: "claude-sonnet-5", Adapter: adapterClaudeCode, ProviderClientVersion: ClaudeClientVersion},
 	{Name: "opus", PublishedIdentifier: "claude-opus-4-8", RuntimeIdentifier: "claude-opus-4-8", Adapter: adapterClaudeCode, ProviderClientVersion: ClaudeClientVersion},
-	{Name: "fable", PublishedIdentifier: "claude-fable-5", RuntimeIdentifier: "claude-fable-5", Adapter: adapterClaudeCode, ProviderClientVersion: ClaudeClientVersion},
+	{Name: "fable", PublishedIdentifier: publishedFable, RuntimeIdentifier: publishedFable, Adapter: adapterClaudeCode, ProviderClientVersion: ClaudeClientVersion},
 }
 
 var supportedEfforts = []string{effortLow, effortMedium, effortHigh, effortXHigh, effortMax}

@@ -39,11 +39,12 @@ type TreatmentBundle struct {
 // TreatmentManifest names only files that were actually injected. It cannot
 // contain .env, project memory, runtime state, temporary data, or credentials.
 type TreatmentManifest struct {
-	SchemaVersion          string          `json:"schema_version"`
-	Mode                   string          `json:"mode"`
-	AgentTimeoutMultiplier float64         `json:"agent_timeout_multiplier"`
-	Files                  []TreatmentFile `json:"files"`
-	RequiredRoles          []string        `json:"required_dispatch_roles"`
+	SchemaVersion          string                  `json:"schema_version"`
+	Mode                   string                  `json:"mode"`
+	AgentTimeoutMultiplier float64                 `json:"agent_timeout_multiplier"`
+	Files                  []TreatmentFile         `json:"files"`
+	RequiredRoles          []string                `json:"required_dispatch_roles"`
+	DispatchConfig         TreatmentDispatchConfig `json:"dispatch_config,omitempty"`
 }
 
 // TreatmentFile is the content-addressed declaration for one injected file.
@@ -57,6 +58,15 @@ type TreatmentFile struct {
 // Repository-local .agent-layer customizations are never treatment inputs. The
 // caller owns cleanup after the task adapter has consumed the bundle.
 func BuildTreatmentBundle(repoRoot, targetArch, mode string, model Model, effort string) (*TreatmentBundle, error) {
+	return buildTreatmentBundle(repoRoot, targetArch, mode, model, effort, defaultTreatmentDispatchConfig(model, effort))
+}
+
+// BuildTreatmentBundleWithDispatch stages a treatment with explicit role targets.
+func BuildTreatmentBundleWithDispatch(repoRoot, targetArch, mode string, model Model, effort string, dispatchConfig TreatmentDispatchConfig) (*TreatmentBundle, error) {
+	return buildTreatmentBundle(repoRoot, targetArch, mode, model, effort, dispatchConfig)
+}
+
+func buildTreatmentBundle(repoRoot, targetArch, mode string, model Model, effort string, dispatchConfig TreatmentDispatchConfig) (*TreatmentBundle, error) {
 	if targetArch != "amd64" && targetArch != "arm64" {
 		return nil, fmt.Errorf("unsupported benchmark Linux architecture %q", targetArch)
 	}
@@ -66,6 +76,13 @@ func BuildTreatmentBundle(repoRoot, targetArch, mode string, model Model, effort
 	parsedModel, parsedEffort, err := ParseModelSelection(model.Name + ":" + effort)
 	if err != nil || parsedModel != model || parsedEffort != effort {
 		return nil, fmt.Errorf("unsupported benchmark treatment target %s:%s", model.Name, effort)
+	}
+	if mode == TreatmentInstructionsAndSkills {
+		if err := validateTreatmentDispatchConfig(dispatchConfig, model); err != nil {
+			return nil, err
+		}
+	} else {
+		dispatchConfig = TreatmentDispatchConfig{}
 	}
 	stageParent := filepath.Join(repoRoot, ".agent-layer", "tmp")
 	if err := os.MkdirAll(stageParent, 0o700); err != nil {
@@ -133,6 +150,13 @@ func BuildTreatmentBundle(repoRoot, targetArch, mode string, model Model, effort
 		if err := os.WriteFile(filepath.Join(root, "workflow-prompt.md"), workflow, 0o600); err != nil {
 			return nil, fmt.Errorf("write benchmark workflow prompt: %w", err)
 		}
+		dispatchData, err := treatmentDispatchConfigJSON(dispatchConfig)
+		if err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(filepath.Join(root, "dispatch-targets.json"), dispatchData, 0o600); err != nil {
+			return nil, fmt.Errorf("write benchmark dispatch targets: %w", err)
+		}
 	}
 	binary, binaryChecksum := "", ""
 	if mode == TreatmentInstructionsAndSkills {
@@ -163,7 +187,7 @@ func BuildTreatmentBundle(repoRoot, targetArch, mode string, model Model, effort
 		}
 	}
 	adapterHash := sha256.Sum256(adapter)
-	manifest, err := treatmentManifest(root, mode, requiredRoles)
+	manifest, err := treatmentManifest(root, mode, requiredRoles, dispatchConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +331,7 @@ func buildDevelopmentLinuxBinary(repoRoot, root, targetArch string) (string, str
 	return target, hex.EncodeToString(hash[:]), nil
 }
 
-func treatmentManifest(root, mode string, requiredRoles []string) (TreatmentManifest, error) {
+func treatmentManifest(root, mode string, requiredRoles []string, dispatchConfig ...TreatmentDispatchConfig) (TreatmentManifest, error) {
 	if !validTreatmentMode(mode) {
 		return TreatmentManifest{}, fmt.Errorf("unsupported benchmark treatment mode %q", mode)
 	}
@@ -351,11 +375,15 @@ func treatmentManifest(root, mode string, requiredRoles []string) (TreatmentMani
 	if mode == TreatmentInstructionsAndSkills {
 		timeoutMultiplier = skillsAgentTimeoutFactor
 	}
-	return TreatmentManifest{
+	manifest := TreatmentManifest{
 		SchemaVersion: TreatmentSchemaVersion, Mode: mode,
 		AgentTimeoutMultiplier: timeoutMultiplier,
 		Files:                  files, RequiredRoles: roles,
-	}, nil
+	}
+	if len(dispatchConfig) > 0 {
+		manifest.DispatchConfig = dispatchConfig[0]
+	}
+	return manifest, nil
 }
 
 // templatesProvenance attributes a treatment bundle to the commit its skills

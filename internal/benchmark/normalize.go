@@ -353,21 +353,51 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 		if err := json.Unmarshal(data, &record); err != nil {
 			return false, fmt.Errorf("decode treatment dispatch evidence: %w", err)
 		}
-		if record.ID == "" || record.Agent != dispatchAgent(request.Model) ||
-			record.Model != dispatchModel(request.Model) ||
-			record.ReasoningEffort != request.Effort || record.State != "completed" {
+		if record.ID == "" || record.State != "completed" {
 			return false, nil
 		}
 		if record.Mode != "fresh" || record.ParentRunID != "" {
 			continue
 		}
 		for _, role := range required {
-			if expectedSkill := dispatchSkillForRole(role); expectedSkill != "" && record.Skill == expectedSkill {
+			expectedSkill := dispatchSkillForRole(role)
+			if expectedSkill != "" && record.Skill == expectedSkill &&
+				dispatchRecordMatchesRole(record, role, request) {
 				completedRoles[role] = true
 			}
 		}
 	}
 	return len(completedRoles) == len(required), nil
+}
+
+func dispatchRecordMatchesRole(record dispatchConformanceRecord, role string, request ExecutionRequest) bool {
+	config := request.Bundle.Manifest.DispatchConfig
+	var targets []TreatmentDispatchTarget
+	switch role {
+	case requiredRolePlanReviewer:
+		targets = config.PlanReviewers
+	case requiredRoleImplementer:
+		if config.Implementer.Agent != "" {
+			targets = []TreatmentDispatchTarget{config.Implementer}
+		}
+	case requiredRoleCodeReviewer:
+		if config.CodeReviewer.Agent != "" {
+			targets = []TreatmentDispatchTarget{config.CodeReviewer}
+		}
+	}
+	if len(targets) == 0 {
+		targets = []TreatmentDispatchTarget{{
+			Agent: dispatchAgent(request.Model), Model: dispatchModel(request.Model),
+			ReasoningEffort: request.Effort,
+		}}
+	}
+	for _, target := range targets {
+		if record.Agent == target.Agent && record.Model == target.Model &&
+			record.ReasoningEffort == target.ReasoningEffort {
+			return true
+		}
+	}
+	return false
 }
 
 func dispatchSkillForRole(role string) string {

@@ -49,6 +49,23 @@ func readinessTestFS(check string) fs.FS {
 	}
 }
 
+func readinessOverlayTestFS() fs.FS {
+	root := "readiness/" + DeepSWECommit + "/" + testReadinessTask + "/"
+	contract := `{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "expr-try-catch-errors",
+  "image": "registry.example/task:v1",
+  "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "check": "check.sh",
+  "agent_image_overlay": "agent.Dockerfile"
+}`
+	return fstest.MapFS{
+		root + "contract.json":    {Data: []byte(contract)},
+		root + "check.sh":         {Data: []byte("#!/bin/bash\ncheck-tools\n")},
+		root + "agent.Dockerfile": {Data: []byte("FROM " + testReadinessImage + "@" + testReadinessDigest + "\nRUN install-browser\n")},
+	}
+}
+
 func installReadinessTestBoundaries(t *testing.T, contractFS fs.FS, run func(context.Context, ...string) ([]byte, error)) {
 	t.Helper()
 	originalFS := readinessContracts
@@ -125,6 +142,47 @@ func TestTaskReadinessCertificationReuseAndInvalidation(t *testing.T) {
 	}
 	if runs != 3 {
 		t.Fatalf("contract change ran %d certifications, want 3", runs)
+	}
+}
+
+func TestTaskReadinessOverlayBuildsAndRunsIdenticallyThroughPier(t *testing.T) {
+	built := false
+	installReadinessTestBoundaries(t, readinessOverlayTestFS(), func(_ context.Context, arguments ...string) ([]byte, error) {
+		switch arguments[0] {
+		case "image":
+			if built {
+				return nil, nil
+			}
+			return nil, errors.New("not built")
+		case "build":
+			built = true
+			if !strings.Contains(strings.Join(arguments, " "), "agent-layer-benchmark/expr-try-catch-errors:") {
+				t.Fatalf("overlay build arguments = %#v", arguments)
+			}
+			return nil, nil
+		case "run":
+			if !built || !strings.Contains(strings.Join(arguments, " "), "agent-layer-benchmark/expr-try-catch-errors:") {
+				t.Fatalf("overlay readiness arguments = %#v", arguments)
+			}
+			return nil, nil
+		default:
+			t.Fatalf("unexpected Docker command %#v", arguments)
+			return nil, nil
+		}
+	})
+	repoRoot := t.TempDir()
+	checkout := t.TempDir()
+	writeReadinessTaskFixture(t, checkout, testReadinessTask, testReadinessImage, "#!/bin/bash\nhidden-tests\n")
+	if _, err := certifyTaskEnvironment(context.Background(), repoRoot, checkout, testReadinessTask, strings.Repeat("1", 64)); err != nil {
+		t.Fatal(err)
+	}
+	arguments, err := prepareTaskStartup(checkout, testReadinessTask, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(arguments, " ")
+	if !strings.Contains(joined, "agent_context=") {
+		t.Fatalf("Pier arguments omit the derived agent context: %#v", arguments)
 	}
 }
 

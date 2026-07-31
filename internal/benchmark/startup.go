@@ -45,12 +45,32 @@ func prepareTaskStartup(checkout, task, stage string) ([]string, error) {
 	if err := os.WriteFile(readinessPath, readiness.check, 0o600); err != nil {
 		return nil, fmt.Errorf("write task readiness program: %w", err)
 	}
+	agentReadinessPath := ""
+	if len(readiness.agentCheck) > 0 {
+		agentReadinessPath = filepath.Join(stage, "task-agent-readiness.sh")
+		if err := os.WriteFile(agentReadinessPath, readiness.agentCheck, 0o600); err != nil {
+			return nil, fmt.Errorf("write task agent readiness program: %w", err)
+		}
+	}
 	arguments := []string{
 		pierEnvironmentImportPath, taskEnvironmentClass,
 		pierEnvironmentKwarg, "readiness_script=" + readinessPath,
-		pierEnvironmentKwarg, "pinned_image=" + readiness.pinnedImage,
+		pierEnvironmentKwarg, "pinned_image=" + readiness.agentImage,
 		pierEnvironmentKwarg, "verifier_source_root=" + verifierSource,
 		pierEnvironmentKwarg, "verifier_context=" + verifierContext,
+	}
+	if agentReadinessPath != "" {
+		arguments = append(arguments, pierEnvironmentKwarg, "agent_readiness_script="+agentReadinessPath)
+	}
+	if len(readiness.overlay) > 0 {
+		agentContext := filepath.Join(stage, "agent-context")
+		if err := os.MkdirAll(agentContext, 0o700); err != nil {
+			return nil, fmt.Errorf("create task agent image context: %w", err)
+		}
+		if err := os.WriteFile(filepath.Join(agentContext, "Dockerfile"), readiness.overlay, 0o600); err != nil {
+			return nil, fmt.Errorf("write task agent image overlay: %w", err)
+		}
+		arguments = append(arguments, pierEnvironmentKwarg, "agent_context="+agentContext)
 	}
 	if found {
 		startupPath := filepath.Join(stage, "task-startup.sh")

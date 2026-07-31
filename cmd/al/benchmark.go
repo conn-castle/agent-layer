@@ -143,7 +143,7 @@ func runBenchmarkBaselineInteractive(cmd *cobra.Command, options bench.BaselineO
 }
 
 func newBenchmarkMatrixCmd() *cobra.Command {
-	var selectionPath, treatmentExecution, treatmentLabel string
+	var selectionPath, treatmentExecution, treatmentLabel, dispatchConfig string
 	var baselineExecutions []string
 	var tasks []string
 	var taskConcurrency int
@@ -160,6 +160,9 @@ func newBenchmarkMatrixCmd() *cobra.Command {
 			}
 			if treatmentExecution == "" && treatmentLabel != "" {
 				return errors.New("benchmark matrix --treatment-label requires --treatment-execution")
+			}
+			if treatmentExecution == "" && dispatchConfig != "" {
+				return errors.New("benchmark matrix --dispatch-config requires --treatment-execution")
 			}
 			if check && (yes || open) {
 				return errors.New("benchmark matrix --check does not accept --yes or --open")
@@ -178,6 +181,7 @@ func newBenchmarkMatrixCmd() *cobra.Command {
 				BaselineExecutions: baselineExecutions,
 				TreatmentExecution: treatmentExecution,
 				TreatmentLabel:     treatmentLabel,
+				DispatchConfigPath: dispatchConfig,
 				Tasks:              tasks,
 				TaskConcurrency:    taskConcurrency, Confirmed: yes,
 			}
@@ -229,6 +233,10 @@ func newBenchmarkMatrixCmd() *cobra.Command {
 	command.Flags().StringVar(
 		&treatmentLabel, "treatment-label", "",
 		"report label for the Agent Layer point",
+	)
+	command.Flags().StringVar(
+		&dispatchConfig, "dispatch-config", "",
+		"TOML role-to-target configuration for the Agent Layer point",
 	)
 	command.Flags().StringArrayVar(
 		&tasks, "task", nil,

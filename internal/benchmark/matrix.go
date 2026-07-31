@@ -38,6 +38,7 @@ type MatrixOptions struct {
 	BaselineExecutions []string
 	TreatmentExecution string
 	TreatmentLabel     string
+	DispatchConfigPath string
 	Tasks              []string
 	TaskConcurrency    int
 	Confirmed          bool
@@ -311,9 +312,16 @@ func prepareMatrix(ctx context.Context, options MatrixOptions) (matrixPreparatio
 	cleanup := func() {}
 	if options.TreatmentExecution != "" {
 		treatmentModel, treatmentEffort, _ := ParseModelSelection(options.TreatmentExecution)
-		bundle, err = buildCampaignTreatmentBundle(
+		dispatchConfig := defaultTreatmentDispatchConfig(treatmentModel, treatmentEffort)
+		if options.DispatchConfigPath != "" {
+			dispatchConfig, err = loadTreatmentDispatchConfig(options.DispatchConfigPath, treatmentModel)
+			if err != nil {
+				return matrixPreparation{}, err
+			}
+		}
+		bundle, err = BuildTreatmentBundleWithDispatch(
 			options.RepoRoot, runtime.GOARCH, TreatmentInstructionsAndSkills,
-			treatmentModel, treatmentEffort,
+			treatmentModel, treatmentEffort, dispatchConfig,
 		)
 		if err != nil {
 			return matrixPreparation{}, fmt.Errorf("build Agent Layer matrix treatment: %w", err)
