@@ -274,7 +274,7 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 		t.Fatalf("blank raw evidence = %q", raw.String())
 	}
 	raw.Reset()
-	const skippedOutputBytes = 482 * 1024 * 1024
+	const skippedOutputBytes = 16 * 1024 * 1024
 	largeEvent := io.MultiReader(
 		strings.NewReader(`{"type":"item.completed","item":{"type":"command_execution","aggregated_output":"`),
 		io.LimitReader(repeatingByteReader('x'), skippedOutputBytes),
@@ -299,7 +299,7 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 	if retainedBytes != wantRetained {
 		t.Fatalf("large raw evidence retained %d bytes, want %d", retainedBytes, wantRetained)
 	}
-	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 32*1024*1024 {
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 4*1024*1024 {
 		t.Fatalf("parsing %d skipped bytes allocated %d bytes; memory use must not scale with command output", skippedOutputBytes, allocated)
 	}
 }
