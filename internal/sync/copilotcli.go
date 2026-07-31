@@ -26,7 +26,6 @@ type copilotMCPServer struct {
 }
 
 // writeCopilotMCPConfig generates .copilot/mcp-config.json for GitHub Copilot CLI.
-// Contains external MCP servers only.
 func writeCopilotMCPConfig(sys System, root string, project *config.ProjectConfig) error {
 	cfg, err := buildCopilotMCPConfig(project)
 	if err != nil {
@@ -57,10 +56,10 @@ func buildCopilotMCPConfig(project *config.ProjectConfig) (*copilotMCPConfig, er
 		Servers: make(OrderedMap[copilotMCPServer]),
 	}
 
-	resolved, err := projection.ResolveMCPServers(
-		project.Config.MCP.Servers,
+	resolved, err := projection.EffectiveMCPServers(
+		project.Config,
 		project.Env,
-		"copilot",
+		projection.ClientCopilot,
 		projection.ClientPlaceholderResolver("${%s}"),
 	)
 	if err != nil {

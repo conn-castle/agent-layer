@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "agent-layer": {
+      "type": "stdio",
+      "command": "al",
+      "args": [
+        "dispatch",
+        "mcp-server"
+      ],
+      "tools": [
+        "*"
+      ]
+    }
+  }
+}

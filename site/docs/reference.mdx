@@ -40,6 +40,13 @@ mode = "all"
 # Maximum dispatch depth, including the initial `al dispatch start` call.
 # 3 allows two nested `al dispatch start` calls.
 max_depth = 3
+# How long one `dispatch_wait` MCP tool call blocks before reporting that the
+# conversation is still running. Optional; defaults to 30.
+mcp_wait_timeout_minutes = 30
+# Hard bound on every Agent Dispatch MCP tool call, also projected as Codex's
+# per-server `tool_timeout_sec`. Optional; defaults to 40. Must be greater than
+# mcp_wait_timeout_minutes.
+mcp_tool_timeout_minutes = 40
 
 [notifications]
 # Best-effort system chime for filtered top-level completion events.
@@ -131,7 +138,7 @@ Agent-specific passthrough keys in `agents.codex.agent_specific` or `agents.clau
 | Section | Purpose |
 | --- | --- |
 | `[approvals]` | auto-approval policy for commands and MCP tools |
-| `[dispatch]` | Agent Dispatch nesting depth limit (`max_depth`) |
+| `[dispatch]` | Agent Dispatch nesting depth limit (`max_depth`) and MCP timeouts (`mcp_wait_timeout_minutes`, `mcp_tool_timeout_minutes`) |
 | `[notifications]` | filtered, best-effort local completion chime (`chime`) |
 | `[agents.*]` | enablement and model selection per client |
 | `[[mcp.servers]]` | external MCP server definitions |
@@ -163,6 +170,13 @@ Supported agents:
 - `copilot_cli`
 
 ### MCP servers
+
+Agent Layer always projects one built-in MCP server, `agent-layer`, into every
+enabled Codex, Claude, Antigravity, VS Code, and Copilot CLI client. It serves
+the Agent Dispatch tools (see [Agent Dispatch](https://github.com/conn-castle/agent-layer/blob/main/docs/AGENT-DISPATCH.md)),
+is derived from your configuration rather than declared in it, and appears in
+generated permission allowlists alongside your own servers. Its `agent-layer`
+ID is reserved and cannot be used by a `[[mcp.servers]]` entry.
 
 Each `[[mcp.servers]]` entry must include:
 
@@ -346,7 +360,7 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al sync` | Regenerate client configs without launching a client. |
 | `al <client>` | Sync and launch a client (agy/claude/codex/copilot/vscode). |
 | `al dispatch start` | Start a headless conversation asynchronously and return its handle. |
-| `al dispatch wait <handle>` | Block until the current invocation terminates, then return its state and result path or failure. |
+| `al dispatch wait <handle>` | Wait up to eight minutes; return `running` if work continues, otherwise return the terminal result. |
 | `al dispatch continue <handle>` | Start another invocation in a terminal conversation. |
 | `al dispatch cancel <handle>` | Cancel a running invocation. |
 | `al probe agy` | Run the Antigravity capability probe and print JSON. |
@@ -661,8 +675,9 @@ and reasoning-effort overrides. `start` requires an agent and either `--prompt`
 or `--prompt-file`; model and reasoning effort are optional overrides. It
 returns a conversation handle immediately. `continue` inherits that
 conversation's resolved target configuration and returns immediately.
-`wait` blocks until the current invocation reaches `completed`, `failed`, or
-`cancelled`. Completed output is stored atomically in the immutable Markdown
+`wait` blocks for up to eight minutes. If the invocation remains active, it
+returns `running` without changing that invocation; call `wait` again with the
+same handle. Completed output is stored atomically in the immutable Markdown
 file named by `result_path`. Every successful command returns exactly one JSON
 object; `wait` also writes its terminal JSON result before a non-zero
 failed-invocation exit.

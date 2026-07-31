@@ -50,6 +50,7 @@ func TestRunGolden(t *testing.T) {
 		".claude/skills/beta/SKILL.md",
 		".vscode/settings.json",
 		".vscode/mcp.json",
+		".copilot/mcp-config.json",
 		".agy/antigravity-cli/settings.json",
 		".agy/antigravity-cli/mcp_config.json",
 		".claude/settings.json",

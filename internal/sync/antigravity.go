@@ -195,7 +195,7 @@ func buildAntigravitySettings(project *config.ProjectConfig) map[string]any {
 	permissions := buildPermissionsBlock(
 		project.Config,
 		project.CommandsAllow,
-		projection.EnabledServerIDs(project.Config.MCP.Servers, antigravityClientID),
+		projection.EffectiveServerIDs(project.Config, antigravityClientID),
 		antigravityRenderer{},
 	)
 	if permissions != nil {
@@ -312,8 +312,11 @@ func buildAntigravityMCPConfig(project *config.ProjectConfig) (*antigravityMCPCo
 	cfg := &antigravityMCPConfig{
 		Servers: make(OrderedMap[antigravityMCPServer]),
 	}
-	resolved, err := projection.ResolveMCPServers(
-		project.Config.MCP.Servers,
+	// Antigravity documents no per-server tool-timeout key, so the built-in
+	// server is projected with its documented fields only; its server-side
+	// guard is the recovery bound here too.
+	resolved, err := projection.EffectiveMCPServers(
+		project.Config,
 		project.Env,
 		antigravityClientID,
 		projection.ClientPlaceholderResolver("${%s}"),

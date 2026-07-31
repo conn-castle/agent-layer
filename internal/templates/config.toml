@@ -12,6 +12,13 @@ mode = "all"
 # Maximum dispatch depth, including the initial `al dispatch start` call.
 # 3 allows two nested `al dispatch start` calls.
 max_depth = 3
+# How long one `dispatch_wait` MCP tool call blocks before reporting that the
+# conversation is still running. The dispatch itself keeps running either way.
+mcp_wait_timeout_minutes = 30
+# Hard bound on every Agent Dispatch MCP tool call, and the per-server tool
+# timeout projected into clients that support one. Must exceed
+# mcp_wait_timeout_minutes so a healthy wait always returns first.
+mcp_tool_timeout_minutes = 40
 
 [notifications]
 # chime plays a best-effort system sound for filtered top-level completion events.

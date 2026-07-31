@@ -65,12 +65,14 @@ Do not duplicate information that belongs in other memory files:
 
 - Antigravity uses the `agy` binary and is launched with `--gemini_dir=<repo>/.agy` plus `AGY_CLI_DISABLE_AUTO_UPDATE=1` for repo-local containment. Agent Layer writes `.agy/antigravity-cli/settings.json` and `.agy/antigravity-cli/mcp_config.json`.
 - Antigravity model selection is `agents.antigravity.model` and sync projects it into generated `settings.json`; `agents.antigravity.agent_specific.model` is unsupported because `model` is an Agent Layer-owned field.
-- `agy` v1.0.0 migrates `.agy/antigravity-cli/mcp_config.json` into `<gemini_dir>/config/mcp_config.json`, but runtime MCP discovery remains false in the observed probe baseline. Use `al probe agy` when checking whether upstream behavior has changed.
+- `agy` v1.0.0 migrates `.agy/antigravity-cli/mcp_config.json` into `<gemini_dir>/config/mcp_config.json`, but runtime MCP discovery remains false in the observed probe baseline. Use `al probe agy` when checking whether upstream behavior has changed. The probe now seeds a real protocol server (`al __probe-mcp-fixture`) instead of `/usr/bin/true`, so `mcp_runtime_discovery: false` and `mcp_tool_invoked: false` are evidence about `agy`, not about the fixture; agy 1.1.8 still reports both false.
 
 ## Agent Dispatch
 
 - Agent Dispatch's public request/API shapes should stay caller- and provider-agnostic. Target-specific model or option discovery belongs behind the target/provider registry, not as fields like `AntigravityModels` on dispatch request structs.
 - Agent Dispatch is asynchronous and handle-based. Its read-only `options` command discovers valid targets and overrides; its only lifecycle operations are `start`, `wait`, `continue`, and `cancel`. Parallel work uses independent conversations rather than a fanout resource.
+- Agent Dispatch has two surfaces over one backend: the built-in `agent-layer` MCP server (`al dispatch mcp-server`, exposing `dispatch_options`/`dispatch_start`/`dispatch_wait`/`dispatch_continue`/`dispatch_cancel`) is the canonical agent-facing path, and the CLI is the human/scripting path. MCP handlers render through the same operations into private buffers and decode the canonical JSON result; nothing but the MCP SDK writes to the server's stdout. Cancelling an MCP request stops only that wait; only `cancel` stops provider work.
+- The built-in MCP server is derived state, not an `[[mcp.servers]]` entry. `internal/projection.EffectiveMCPServers`/`EffectiveServerIDs` is the single boundary that adds it, so native projection, permission allowlists, warning accounting, and doctor all see the same set.
 - Immutable run records are canonical history. Friendly names are lookup mappings, and factual workflow manifests must not carry recommendation, risk, readiness, confidence, verdict, or synthesis fields between independent stages.
 
 ## Pin file recovery

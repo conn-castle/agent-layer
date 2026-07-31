@@ -29,6 +29,18 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-07-28 antigravity-probe-headless-permission-denial: Probe stdout is empty on agy 1.1.8, so transcript-derived capabilities are unmeasurable
+    Priority: Medium. Area: Antigravity capability probe
+    Description: On agy 1.1.8 the headless probe run exits 0 with empty stdout and stderr `no output produced — a tool required the "command" permission that headless mode cannot prompt for`. Every stdout-derived capability (`instructions_loaded`, `skill_names_visible`, `mcp_config_names_visible`, `shared_skill_dedup_observed`) therefore reports false regardless of real behavior. Confirmed pre-existing: the same result occurs with the previous prompt and `/usr/bin/true` fixture.
+    Next step: Seed the probe's `settings.json` with the specific allow-rules the probe prompt needs, or run the probe with an explicit auto-approve flag, then re-establish the observed baseline in CONTEXT.md.
+    Notes: Log-derived capabilities (`permissions_loaded`, `mcp_config_migrated`, `mcp_runtime_discovery`) and the new marker-derived `mcp_tool_invoked` are unaffected.
+
+- Issue 2026-07-28 dispatch-mcp-start-transport-window: An MCP dispatch_start disconnect can orphan a handle
+    Priority: Medium. Area: Agent Dispatch MCP interface
+    Description: `dispatch_start` is an RPC acknowledgement rather than a direct write to the caller's terminal. If the transport disconnects after the backend starts but before the client observes the response, the dispatch keeps running durably while the caller never learns its handle. This slice deliberately added no idempotency state and no listing API.
+    Open question: Has this been observed in practice, justifying a caller-supplied idempotency key or narrow handle-recovery read?
+    Notes: Evidence remains under `.agent-layer/tmp/runs/`; documented in docs/AGENT-DISPATCH.md and the dispatch-mcp-interface decision.
+
 - Issue 2026-07-27 benchmark-cancelled-session-cost: Pre-request cancellation invalidates an otherwise-scored treatment run
     Priority: High. Area: benchmarks / treatment cost accounting
     Description: A Koota treatment completed and scored 37/51, but normalization rejected it because one Codex child dispatch was explicitly cancelled before a request and its session had identity but no token-count event.

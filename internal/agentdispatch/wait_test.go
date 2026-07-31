@@ -32,7 +32,7 @@ func TestWaitReturnsDurableCompletedResult(t *testing.T) {
 	if err := Wait(WaitRequest{Root: root, ID: session.Name, Stdout: &stdout}); err != nil {
 		t.Fatal(err)
 	}
-	var got publicResult
+	var got Result
 	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestWaitReturnsFailedJSONAndExitCategory(t *testing.T) {
 	var stdout bytes.Buffer
 	err := Wait(WaitRequest{Root: root, ID: session.Name, Stdout: &stdout})
 	requireDispatchExitCode(t, err, ExitUnavailable)
-	var got publicResult
+	var got Result
 	if jsonErr := json.Unmarshal(stdout.Bytes(), &got); jsonErr != nil {
 		t.Fatal(jsonErr)
 	}
@@ -101,6 +101,40 @@ func TestWaitBlocksUntilTerminal(t *testing.T) {
 	}
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestWaitYieldsRunningWithoutChangingInvocation(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	run, session := newWaitTestRun(t, root)
+	run.Record.State = dispatchStateRunning
+	run.Record.SupervisorPID = os.Getpid()
+	run.Record.SupervisorStartIdentity = processStartIdentity(os.Getpid())
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	err := Wait(WaitRequest{
+		Root: root, ID: session.Name, Stdout: &stdout,
+		Timeout: 2 * dispatchWaitInterval,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Result
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Handle != session.Name || got.State != dispatchStateRunning {
+		t.Fatalf("wait result = %#v", got)
+	}
+	current, err := loadRunRecord(root, run.Record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.State != dispatchStateRunning {
+		t.Fatalf("invocation state = %q, want running", current.State)
 	}
 }
 
@@ -188,7 +222,7 @@ func TestWaitFailsInvocationAbandonedBeforeWorkerLaunch(t *testing.T) {
 	var stdout bytes.Buffer
 	err = Wait(WaitRequest{Root: root, ID: session.Name, Stdout: &stdout})
 	requireDispatchExitCode(t, err, ExitTargetFailure)
-	var got publicResult
+	var got Result
 	if jsonErr := json.Unmarshal(stdout.Bytes(), &got); jsonErr != nil {
 		t.Fatal(jsonErr)
 	}

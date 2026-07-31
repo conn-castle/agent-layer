@@ -41,7 +41,7 @@ func buildClaudeSettings(root string, project *config.ProjectConfig) (map[string
 	permissions := buildPermissionsBlock(
 		project.Config,
 		project.CommandsAllow,
-		projection.EnabledServerIDs(project.Config.MCP.Servers, "claude"),
+		projection.EffectiveServerIDs(project.Config, projection.ClientClaude),
 		claudeRenderer{},
 	)
 	if permissions != nil {

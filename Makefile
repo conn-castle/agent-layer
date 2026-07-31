@@ -297,7 +297,7 @@ AL_DEV_LAUNCH_ENV := PATH="$(AL_DEV_BIN_DIR):$$PATH" AL_DEV_BYPASS_VERSION_DISPA
 AL_MANAGED_AGENT_ENV := AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE AL_DEV_BYPASS_VERSION_DISPATCH CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE
 
 .PHONY: al-dev-build
-al-dev-build: ## Build source al for interactive development launchers
+al-dev-build: ## Build source al for development commands that launch child processes
 	@mkdir -p "$(AL_DEV_BIN_DIR)"
 	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go build -o "$(AL_DEV_BIN)" ./cmd/al
 
@@ -310,8 +310,8 @@ al-wizard: ## Run al wizard against this repo using current source
 	@$(AL_RUN) wizard
 
 .PHONY: al-doctor
-al-doctor: ## Run al doctor against this repo using current source
-	@$(AL_RUN) doctor
+al-doctor: al-dev-build ## Run al doctor against this repo using current source
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) "$(AL_DEV_BIN)" doctor
 
 .PHONY: al-claude
 al-claude: al-dev-build ## Run al claude against this repo using current source
