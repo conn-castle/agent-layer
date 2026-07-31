@@ -228,10 +228,12 @@ _init_doctor_wizard_assert_post_wizard_files() {
     ".mcp.json has provenance marker"
   assert_file_not_contains "$repo_dir/.mcp.json" '"context7"' \
     ".mcp.json has no default MCP servers enabled"
-  _init_doctor_wizard_assert_compact_json_equals "$repo_dir/.copilot/mcp-config.json" '{"mcpServers":{}}' \
-    "Copilot CLI MCP config has no default servers"
-  _init_doctor_wizard_assert_compact_json_equals "$repo_dir/.vscode/mcp.json" '{"servers":{}}' \
-    "VS Code MCP config has no default servers"
+  _init_doctor_wizard_assert_compact_json_equals "$repo_dir/.copilot/mcp-config.json" \
+    '{"mcpServers":{"agent-layer":{"type":"stdio","command":"al","args":["dispatch","mcp-server"],"tools":["*"]}}}' \
+    "Copilot CLI MCP config includes the built-in Agent Dispatch server"
+  _init_doctor_wizard_assert_compact_json_equals "$repo_dir/.vscode/mcp.json" \
+    '{"servers":{"agent-layer":{"type":"stdio","command":"al","args":["dispatch","mcp-server"]}}}' \
+    "VS Code MCP config includes the built-in Agent Dispatch server"
   assert_file_contains "$repo_dir/.claude/settings.json" '"permissions"' \
     "settings.json has permissions block"
   assert_file_not_contains "$repo_dir/.claude/settings.json" "mcp__context7__" \
