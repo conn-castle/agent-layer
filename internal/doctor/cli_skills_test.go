@@ -109,10 +109,11 @@ func TestCheckCLISkills_BinaryMissingEmitsFail(t *testing.T) {
 
 func TestCheckCLISkills_EmbeddedCatalogLoads(t *testing.T) {
 	// The default loadCLISkillCatalogFunc reads the embedded TOML. Exercise it
-	// here to lift coverage on the default path.
+	// here and pin the renamed skill id to its unchanged command surface.
 	entries, err := loadCLISkillCatalogFunc()
 	require.NoError(t, err)
 	assert.NotEmpty(t, entries)
+	assert.Contains(t, entries, cliSkillCatalogEntry{ID: "playwright", Binary: "playwright-cli"})
 }
 
 func TestLoadCLISkillCatalogForDoctor_InvalidID(t *testing.T) {

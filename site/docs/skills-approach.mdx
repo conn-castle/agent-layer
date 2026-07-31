@@ -147,14 +147,14 @@ subagent. This is not a named dispatch role.
 
 ```text
 for plan_reviewer in plan_reviewers:
-    dispatch(plan_reviewer) -> .agent-review-prompt
+    dispatch(plan_reviewer) -> /review-plan
 ```
 
-Use a leading dot for bundled resources instead of skills. The example means
-each named plan reviewer follows the `agent-review-prompt` reference directly.
-Their findings are synthesized within the same review stage; agreement among
-reviewers is not an independent form of evidence. Leave the parentheses off
-when the resource has no agent-role inputs.
+Each named reviewer runs `/review-plan` directly through one to three
+risk-based framings of the complete artifact set. Separate dispatched reviewers
+provide independent contexts; multiple framings within one reviewer broaden
+coverage but are not independent reviews. The planner independently judges the
+resulting findings; reviewer agreement is not evidence.
 
 ```text
 subagent -> task: row-level verification
@@ -233,7 +233,7 @@ Representative stable contracts:
 
 | Root skill | Stable contract |
 | --- | --- |
-| `review-plan` | Make one risk-proportional pass over plan artifacts and report only gaps that materially affect implementation, verification, scope, or safety. |
+| `review-plan` | Make one risk-proportional pass over plan artifacts and report only evidence-backed, material findings. |
 | `implement-plan` | Execute an approved plan once, use task-local feedback checks when needed, and return the completed work, a concrete failure, or a user-owned decision. |
 | `review-uncommitted-code` | Review concrete files, diffs, behavior, and test evidence once and produce findings that materially affect correctness, safety, scope, or maintainability. |
 | `verify-work` | Make one final, evidence-based comparison of completed work against the plan or request and return a completion verdict or concrete failure. |

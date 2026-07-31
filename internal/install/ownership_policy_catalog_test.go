@@ -23,8 +23,8 @@ func TestOwnershipPolicyForPath_CatalogSkills(t *testing.T) {
 			want: ownershipPolicyCatalogSkills,
 		},
 		{
-			name: "playwright-cli nested file classified",
-			path: ".agent-layer/skills/playwright-cli/templates/something.md",
+			name: "playwright nested file classified",
+			path: ".agent-layer/skills/playwright/templates/something.md",
 			want: ownershipPolicyCatalogSkills,
 		},
 		{

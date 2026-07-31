@@ -16,17 +16,11 @@ Assign exactly one verdict:
 
 - `Accept`: current, evidenced, in scope, and actionable without a new user
   decision.
-- `Defer`: valid but blocked by a genuine user decision or information still
-  unavailable after reasonable investigation.
-
-A scope boundary alone is not a user-owned decision. Escalate only for an
-external write, a destructive action, a substantive product or architecture
-choice, or material expansion beyond the requested scope, per the repository's
-human-escalation rules. Breadth and reviewer agreement do not determine the
-verdict; evidence does.
+- `Blocked`: valid but blocked by a genuine user decision, per the repository's
+  human-escalation rules, or information still unavailable after reasonable
+  investigation.
 
 ## Reporting rules
 
-Preserve the strongest evidence when merging. Explain every `Defer`, calibrate
-severity to demonstrated impact, and leave final resolution to the caller that
-owns edits.
+Explain every `Blocked`, calibrate severity to demonstrated impact, and leave
+final resolution to the caller that owns edits.

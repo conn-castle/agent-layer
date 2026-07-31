@@ -897,70 +897,66 @@ audit-tests:
         - task: run one credible verification lane
     - exit: report material findings, gaps, and verification, then yield
 auto-skill-loop:
-  inputs: [mode, mode_worker, decision_reviewer, shipper, ci_fixer, merge_reviewer, planner, exactly three plan_reviewers, implementer, code_reviewer, fixer, verifier, standing merge authorization]
+  inputs: [mode, planner, implementer, code_reviewer, rote_worker, plan_reviewers for plan-based modes, mode-required targets, standing merge authorization]
   calls:
-    - task: validate distinct caller-supplied targets and reconstruct interrupted delivery or reconciliation from authoritative sources and brief loop notes
-    - if: the mode/configuration is not initialized
+    - reference: auto-skill-loop/references/mode-contract
+    - reference: auto-skill-loop/references/blocker-classification
+    - reference: auto-skill-loop/references/merge-readiness
+    - task: validate the mode and every required target before any side effect, passing each target through agent-dispatch unchanged
+    - task: perform the selected mode's Initialize section and retain its state for every selection pass
+      caller: dispatch(planner)
+    - while: the user has not stopped the run and a complete pass still finds substantive autonomous work
       calls:
-        - task: adaptively initialize sources without expanding a large source into plans
-          caller: dispatch(mode_worker)
-    - while: substantive autonomous work remains and the user has not stopped the run
-      calls:
-        - task: select the next coherent substantive work without broadening it; accept small work only when independently material
-          caller: dispatch(mode_worker)
-        - if: a complete pass finds no selectable work
+        - task: perform the mode's Select section and return selected work, proof of an exhausted pass, or a complete list of blocked candidates
+          caller: dispatch(planner)
+        - if: the pass is exhausted and no delivery is in progress
           calls:
-            - exit: report exhaustion or the smallest accumulated questions
-        - task: review the selected work against the complete blocker-classification reference
-          caller: dispatch(decision_reviewer)
-        - task: prepare or reuse one compatible workflow-owned delivery branch and prove its checked-out branch, intended base, current HEAD, and clean worktree and index
-          caller: dispatch(shipper)
-        - task: execute the selected work through its mode guidance
-          caller: dispatch(mode_worker or mode-required roles)
-        - if: authority or repository state cannot be recovered safely
+            - exit: terminate and report why the loop ended, the smallest remaining questions, and every preserved branch or PR
+        - task: classify the result against the complete blocker-classification contract
+          caller: dispatch(planner)
+        - if: the work is blocked
           calls:
-            - exit: stop immediately with the unsafe authority failure
-        - if: execution fails with a supported retry path
+            - task: record the human-owned decision or other unmet condition
+            - break: continue selecting independent work
+        - task: prepare or reuse one workflow-owned delivery branch
+          caller: dispatch(rote_worker)
+        - task: perform the mode's Execute section through its required role dispatches
+          caller: dispatch(mode-required roles)
+        - if: the delivery is below the mode's substantive-delivery criterion and both the 500-line and 10-file thresholds
           calls:
-            - task: retry only while new evidence supports safe progress
-        - if: the selected work is blocked
+            - break: return to selection while autonomous work remains
+        - if: a complete pass finds no further work and the delivery is still unshipped
           calls:
-            - task: preserve useful work on its branch or PR, note what would unblock it, and restore a clean primary or new delivery branch
-              caller: dispatch(shipper)
-            - break: select other work without interrupting the user
-        - if: a compatible batch reaches 500 changed lines or 10 changed files
+            - task: reconcile the preserved branch with its source
+              caller: dispatch(rote_worker)
+            - exit: stop without opening a PR
+        - skill: ship-pr
+          caller: dispatch(rote_worker supplying the implementer target for /fix-ci)
+        - if: shipping returns anything other than a merge-authorization request for an exact PR and head
           calls:
-            - skill: ship-pr
-              caller: dispatch(shipper with exact unchanged ci_fixer instructions)
-            - while: the exact PR and head lack a fresh merge-review ready verdict
+            - break: go to reconciliation
+        - while: the exact head lacks a ready merge-readiness verdict
+          calls:
+            - task: independently assess the exact head against the merge-readiness criteria using ship-pr evidence
+              caller: dispatch(code_reviewer)
+            - if: review returns simple in-scope findings
               calls:
-                - task: review exact-head merge readiness using existing exact-tree or exact-head check evidence, rerunning the full lane only when that evidence is invalid
-                  caller: dispatch(merge_reviewer)
-                - if: review returns simple in-scope repair findings
-                  calls:
-                    - task: apply the accepted repair set
-                      caller: dispatch(fixer)
-                    - task: publish and re-establish all shipping gates
-                      caller: resume(shipper)
-                    - break: dispatch a fresh merge review for the new exact head
-                - if: review finds a genuine manual or external gate
-                  calls:
-                    - task: preserve the open PR and continue independent work
-                    - break: select other work
-            - if: merge review returns ready for the exact current head
+                - task: apply the accepted repair set
+                  caller: dispatch(implementer)
+                - task: publish and restore the shipping gates
+                  caller: resume(rote_worker)
+                - break: review the new exact head
+            - if: review finds a manual or external gate
               calls:
-                - task: issue one single-use authorization from standing loop authority for this freshly reviewed exact PR and head
-                - task: merge with the matching single-use authorization
-                  caller: resume(shipper)
-        - if: the source is exhausted below both shipping thresholds
+                - break: treat it as blocked work and go to reconciliation
+        - task: merge with single-use authorization for that exact PR and head, derived from the standing loop authorization
+          caller: resume(rote_worker)
+        - task: perform the mode's Reconcile section against the actual merged, open, or preserved delivery
+          caller: dispatch(rote_worker)
+        - if: stop_after=one-delivery
           calls:
-            - task: preserve and report the branch without opening a PR
-        - if: delivery remains externally gated
-          calls:
-            - task: preserve the open PR and continue independent work
-        - task: reconcile the actual delivery or preservation result
-          caller: dispatch(mode_worker)
-        - break: start the next fresh selection
+            - exit: stop after this reconciliation
+        - break: return to selection
 boost-coverage:
   calls:
     - if: coverage-contract discovery is context-heavy
@@ -1048,53 +1044,76 @@ fix-ci:
         - exit: return blocked or repeated-failure evidence
     - exit: return uncommitted repair changes and evidence to the caller
 full-workflow:
-  inputs: [plan_reviewers, implementer, code_reviewer, fixer]
+  inputs: [implementer, code_reviewer, fixer, plan_reviewers]
   calls:
-    - task: resolve the default base, inventory the current checkout, and isolate the delivery boundary
-    - task: align the specification
+    - task: resolve the default base, inventory the current checkout, and isolate the delivery boundary with path- or hunk-specific staging
+    - task: write the spec artifact with objective, scope, non-goals, constraints, and settled decisions, resolving factual unknowns first
     - skill: plan-work
-      inputs: [exactly three plan_reviewers]
+      inputs: [plan_reviewers]
+    - if: plan-work reports a user blocker
+      calls:
+        - task: validate it against repository escalation rules
     - skill: implement-plan
       caller: dispatch(implementer)
-    - task: run proportional deterministic checks against one exact head
     - parallel:
-      - skill: review-uncommitted-code
-        caller: dispatch(code_reviewer)
       - skill: verify-work
         caller: subagent
-    - if: accumulated supported findings require repair
+      - skill: review-uncommitted-code
+        caller: dispatch(code_reviewer)
+    - task: validate and deduplicate supported findings
+    - task: send valid open findings in one bounded batch
+      caller: dispatch(fixer)
+    - while: verification is incomplete or an in-scope finding is neither resolved nor rejected with evidence
       calls:
-        - task: send one bounded repair batch
-          caller: dispatch(fixer)
-        - task: rerun invalidated focused checks and targeted contract verification
+        - if: a genuine substantive decision cannot be resolved under repository escalation rules
+          calls:
+            - exit: ask the user for that decision
+        - break: continue the review, repair, and verification cycle
     - skill: ship-pr
-    - exit: return merge authorization, verified merge cleanup, or the concrete blocker
+    - if: ship-pr requires merge authorization
+      calls:
+        - exit: return its exact request and resume only with the caller's answer
+    - exit: return artifact paths, the shipping result, or a concrete blocker
 fully-implement-plan:
   inputs: [implementer, code_reviewer, fixer]
   calls:
     - skill: implement-plan
       caller: dispatch(implementer)
-    - task: run proportional deterministic checks against one exact head
-    - parallel:
-      - skill: review-uncommitted-code
-        caller: dispatch(code_reviewer)
-      - skill: verify-work
-        caller: subagent
-    - if: accumulated supported findings require repair
+    - if: implementer leaves required work incomplete
       calls:
-        - if: a repair requires a user-owned decision
-          calls:
-            - exit: stop for the smallest user decision
-        - task: send one bounded repair batch
+        - task: retry with a different prompt and approach that includes the unresolved obligations and failure evidence; reuse the handle only when its prior context will help
+    - parallel:
+      - skill: verify-work
+        caller: fresh subagent
+      - skill: review-uncommitted-code
+        caller: dispatch(code_reviewer against the latest tree and supplied artifacts)
+    - if: verification or review confirms material in-scope findings
+      calls:
+        - task: send one consolidated finding set with the plan artifacts and resolve or disprove every finding with evidence
           caller: dispatch(fixer)
-        - task: rerun invalidated focused checks and targeted contract verification
+        - if: fixer leaves required work incomplete
+          calls:
+            - task: retry with a different prompt and approach that includes the unresolved obligations and failure evidence; reuse the handle only when its prior context will help
+    - task: rerun invalidated checks and targeted contract verification
+    - if: accepted code-review findings required repairs
+      calls:
+        - task: continue the original code_reviewer handle once to validate those repairs
+    - while: the plan is not fully implemented
+      calls:
+        - break: repeat incomplete implementation and repair work without repeating completed review passes
+    - task: treat an unsuccessful delegated attempt or unfinished technical work as incomplete work, not a workflow blocker
     - task: write the fully-implement-plan report
+    - exit: return complete, complete-with-follow-up, or blocked with artifact paths, evidence, and residual risk
 implement-plan:
   calls:
-    - task: implement ordered scope and report deviations, blockers, and verification readiness
-    - if: implementation requires a user-owned decision
+    - task: read the artifacts and resolve ambiguity from repository evidence
+    - task: implement every task, recording plan adjustments as equivalent or narrower
+    - if: the work would be materially broader than the plan
       calls:
-        - exit: stop for the smallest user decision
+        - exit: get approval before proceeding
+    - task: run proportionate checks, using the documented full lane when risk or the contract warrants it, and address concrete in-scope failures
+    - task: confirm every task is complete without reporting a partial implementation as ready
+    - exit: return the report path, a summary, and anything a reviewer should know
 improve-codebase:
   calls:
     - task: map the entire declared scope into subsystem, component, and boundary groups
@@ -1175,50 +1194,41 @@ interface-audit:
 plan-work:
   inputs: [plan_reviewers]
   calls:
-    - if: planning requires broad or cross-subsystem repository investigation
+    - if: no task source or no valid reviewer was supplied
       calls:
-        - task: return a compact evidence map for the planning questions
-          caller: subagent
+        - exit: return a missing-input blocker and create nothing
+    - task: resolve each reviewer through agent-dispatch live metadata
+    - task: resolve material facts now rather than deferring investigation to implementation
     - reference: plan-work/references/write-plan
-    - if: write-plan returns revise with a concrete evidence-backed gap
+    - task: correct evidence-backed gaps within this stage
+    - if: a substantive choice cannot be resolved under repository escalation rules
       calls:
-        - task: apply the cited corrections as one focused artifact revision and resolve any remaining concrete self-check gap
-    - skill: review-plan
-      inputs: [plan_reviewers]
-    - if: review returns blocked-for-user-decision
+        - exit: ask the user for that choice
+    - for: plan_reviewer in plan_reviewers, concurrently
       calls:
-        - task: ask the named question, then resume synthesis and update the artifacts and final report without redispatching reviewers
-    - task: return reviewed artifact paths and the readiness verdict
-review-plan:
-  inputs: [plan_reviewers]
-  calls:
-    - for: plan_reviewer in plan_reviewers
-      calls:
-        - reference: review-plan/references/agent-review-prompt
+        - skill: review-plan
           caller: dispatch(plan_reviewer)
-    - task: synthesize evidence and revise accepted findings
-    - if: a genuine user-owned decision remains
+    - task: assess each finding for correctness, relevance, and materiality; justify rejections and address accepted findings
+    - task: write the final report
+    - exit: return artifact and report paths with implementation-ready or blocked-for-user-decision
+review-plan:
+  calls:
+    - if: an artifact is missing
       calls:
-        - task: record blocked-for-user-decision, ask the smallest question, then resume synthesis and update the artifacts without redispatching reviewers
-    - task: report readiness
+        - exit: block the review
+    - for: 1-3 risk-proportional framings of the complete artifact set
+      calls:
+        - task: review directly with a distinct framing, including architecture when consequential
+    - task: validate every potential finding and write only evidence-backed material findings without disposition labels
+    - exit: return the findings path with approved, changes-needed, or blocked-for-user-decision
 review-uncommitted-code:
   calls:
-    - task: establish one concrete review target and its authoritative evidence
-    - if: scope is non-trivial
-      calls:
-        - for: correctness, architecture, and quality-operability perspectives
-          calls:
-            - task: independently review the concrete target once
-              caller: subagent
-    - if: scope is narrow and the current context authored or materially changed the target
-      calls:
-        - task: independently review the target through the most relevant perspective
-          caller: subagent
-    - if: scope is narrow and the current context did not author or materially change the target
-      calls:
-        - task: review the target directly
+    - task: resolve the review target from the explicit target, then requested hotspots, otherwise all working-tree changes
+    - task: review the target and determine findings with title, severity, confidence, location, scope, verdict, evidence, and impact
+    - task: merge duplicates
     - reference: review-uncommitted-code/references/finding-verdict-classification
-    - task: validate and synthesize material findings once, write the report, and yield
+    - task: apply the rubric to each finding, add a recommendation, and write the report
+    - exit: return the report path and readiness verdict without editing the target
 run-and-fix-all-checks:
   calls:
     - task: resolve and run the full documented check lane from COMMANDS.md
@@ -1243,59 +1253,48 @@ schedule-backlog:
     - exit: return the proposal or applied roadmap outcome and yield
 ship-pr:
   calls:
-    - task: publish the initial head, create or reuse the PR, and initialize one comment ledger
-    - while: current pushed head has not satisfied every closeout gate
+    - if: references/repo-specific-pr-policy.md exists
       calls:
-        - task: start monitor-pr.sh and queue remote actions while any local CI owns mutations
-        - if: exact pushed tree lacks current passing full-lane evidence
-          calls:
-            - skill: run-and-fix-all-checks
-              caller: subagent
-        - if: new or incomplete review feedback exists
+        - reference: ship-pr/references/repo-specific-pr-policy
+    - task: inspect base, branch, upstream, staged and unstaged changes, untracked files, and unpublished commits to determine the intended changes
+    - if: the intended changes cannot be separated from unrelated work safely
+      calls:
+        - exit: report the overlapping files
+    - asset: ship-pr/assets/pr-body-template
+    - task: create the branch if required, commit the intended changes, push, and create or reuse the PR
+    - task: start the canonical post-push local CI so it runs in parallel with hosted CI
+    - asset: ship-pr/scripts/watch-pr-events
+    - while: the current pushed head is not ready to merge
+      calls:
+        - task: wait until the watcher observes a new event or 5 minutes have elapsed since the last push
+        - task: fetch head, comments, reviews, checks, and mergeability with gh rather than inferring state from the event log
+        - if: unresolved feedback exists
           calls:
             - skill: address-pr-comments
-              caller: subagent
-        - if: remote CI failed and pending local repairs do not already address it
+        - if: the current head has a mechanical merge conflict
           calls:
-            - skill: fix-ci
-              caller: subagent
-        - if: fix-ci returns remote-retry-needed for a failure not yet retried on this head
+            - task: resolve it automatically
+        - if: a repo-specific PR policy exists
           calls:
-            - task: rerun only the failed remote checks and restart monitoring without pushing
-            - break: restart observation for the current head
-        - if: fix-ci returns blocked, repeated-failure, or an exhausted remote retry
+            - task: follow its guidance
+        - if: local CI failed
           calls:
-            - exit: report the concrete CI blocker
-        - if: the current head has a mechanically resolvable merge conflict
+            - task: repair the root cause without waiting for remote CI to finish
+        - if: items remain to address locally
           calls:
-            - task: resolve the conflict into the current repair batch
-        - if: the repair batch has local changes
-          calls:
-            - if: current tree is not covered by the latest passing full-lane evidence
-              calls:
-                - skill: run-and-fix-all-checks
-                  caller: subagent
-            - task: commit the combined batch once, push once, publish eligible replies, and refresh the ledger
-            - for: posted_reply in newly posted ledger replies, starting all audits before waiting
-              calls:
-                - asset: address-pr-comments/reviewer-prompt
-                  caller: subagent
-            - break: restart observation for the new pushed head
-        - if: no local changes remain and ledger replies are eligible
-          calls:
-            - task: publish every eligible reply separately and refresh the ledger
-            - for: posted_reply in newly posted ledger replies, starting all audits before waiting
-              calls:
-                - asset: address-pr-comments/reviewer-prompt
-                  caller: subagent
-            - break: run another monitor cycle after the replies
-        - if: monitor is ready after the minimum window, local and remote checks are green, final refresh found no feedback, and every ledger row passed reply audit
-          calls:
-            - exit: stop and request authorization to merge the exact PR
-    - if: user authorization or a matching exact-head auto-loop single-use authorization is present
+            - break: refetch state and fold newly arrived failures and comments into the current batch
+        - task: commit and push, then restart the post-push local CI
+        - task: replace pending-commit markers with the short hash and post supported replies serially in their native threads
+        - task: refetch reply IDs and URLs and pass the refreshed ledger back through /address-pr-comments until every eligible row is complete
+        - break: resume observation for the new pushed head
+    - exit: request single-use merge authorization for the exact PR and head, reporting final states and the comment disposition summary
+    - task: refetch the expected head, checks, mergeability, and comments and confirm the ledger and local tree are complete
+    - if: anything changed since authorization
       calls:
-        - task: merge and clean up
-        - exit: report merge outcome and branch cleanup
+        - break: return to the observation loop and obtain fresh merge authorization
+    - task: merge the PR
+    - task: switch the clean checkout to the default branch, fast-forward, and delete the workflow-owned branch or worktree
+    - exit: report the merge outcome, preserved state, and any unsafe cleanup skipped
 simplify-codebase:
   calls:
     - if: candidate discovery is repository-wide or context-heavy
@@ -1310,8 +1309,16 @@ simplify-codebase:
     - exit: return the terminal simplification verdict and yield
 verify-work:
   calls:
+    - if: exact plan/task/context or an explicit request and scope was not supplied
+      calls:
+        - exit: block rather than discovering a contract from .agent-layer/tmp/
     - reference: verify-work/references/contract-verification-rubric
-    - task: compare the contract to the final tree, gather sufficient evidence, and report the verdict
+    - task: read the contract, relevant diff, and final touched files, recording each contract item as complete, partial, missing, or unverified
+    - task: read COMMANDS.md and run the narrowest credible checks, broadening only for contract or risk
+    - if: a required check cannot run
+      calls:
+        - exit: report incomplete
+    - exit: write the report and return exactly one verdict — complete, complete-with-follow-up, or incomplete
 `;
 
     function skillList(spec) {
@@ -1322,7 +1329,7 @@ verify-work:
     }
 
     function logicKinds() {
-      return new Set(["if", "while", "for"]);
+      return new Set(["if", "while", "for", "parallel"]);
     }
 
     function terminalKinds() {
@@ -1330,7 +1337,7 @@ verify-work:
     }
 
     function callKinds() {
-      return new Set(["skill", "reference", "asset", "task", "if", "while", "for", "break", "exit"]);
+      return new Set(["skill", "reference", "asset", "task", "if", "while", "for", "parallel", "break", "exit"]);
     }
 
     function parseInlineValue(value, lineNumber) {
@@ -1383,12 +1390,16 @@ verify-work:
       if (dispatchMatch) {
         return {type: "dispatch", agent: dispatchMatch[1].trim()};
       }
-      throw new Error(`Line ${lineNumber}: caller must be "subagent" or "dispatch(agent)"`);
+      const resumeMatch = text.match(/^resume\(([^)]+)\)$/);
+      if (resumeMatch) {
+        return {type: "resume", agent: resumeMatch[1].trim()};
+      }
+      throw new Error(`Line ${lineNumber}: caller must be "subagent", "dispatch(agent)", or "resume(agent)"`);
     }
 
     function makeCall(key, value, lineNumber) {
       if (!callKinds().has(key)) {
-        throw new Error(`Line ${lineNumber}: expected "skill:", "reference:", "asset:", "task:", "if:", "while:", "for:", "break:", or "exit:"`);
+        throw new Error(`Line ${lineNumber}: expected "skill:", "reference:", "asset:", "task:", "if:", "while:", "for:", "parallel:", "break:", or "exit:"`);
       }
       const call = {kind: key, target: value, _lineNumber: lineNumber};
       if (logicKinds().has(key)) {
@@ -1466,6 +1477,14 @@ verify-work:
               throw new Error(`Line ${field.lineNumber}: unsupported indentation level ${field.indent}`);
             }
             if (field.content.startsWith("- ")) {
+              // "parallel:" takes its concurrent branches as a bare list; every
+              // other container requires an explicit "calls:" field.
+              if (call.kind === "parallel") {
+                const parsed = parseCallList(index, listIndent + 2);
+                call.calls = parsed.calls;
+                index = parsed.index;
+                continue;
+              }
               throw new Error(`Line ${field.lineNumber}: nested list items must be under a "calls:" field`);
             }
 
@@ -1544,8 +1563,14 @@ verify-work:
       }
 
       function validateCall(call, skillId) {
-        if (!callKinds().has(call.kind) || call.target === undefined || call.target === "") {
+        // "parallel:" is the one container whose label is optional; the bare
+        // keyword already says everything the branches under it need.
+        const targetOptional = call.kind === "parallel";
+        if (!callKinds().has(call.kind) || call.target === undefined || (call.target === "" && !targetOptional)) {
           throw new Error(`Skill "${skillId}" has a call without a valid target`);
+        }
+        if (call.kind === "parallel" && (!Array.isArray(call.calls) || call.calls.length < 2)) {
+          throw new Error(`Skill "${skillId}" has a "parallel" block with fewer than two branches`);
         }
         if (logicKinds().has(call.kind) && !Array.isArray(call.calls)) {
           call.calls = [];
@@ -1597,10 +1622,11 @@ verify-work:
       "Use flat top-level entries like `ship-pr:`. Do not add wrapper fields such as `skills:` or `defaultRoot:`.",
       "Use `skill:` for skills, `reference:` for loaded instructions, `asset:` for output resources, `task:` for local orchestration work, and `break:` or `exit:` for terminal control flow.",
       "Put `if:`, `while:`, and `for:` at the list-item level with their body under nested `calls:`.",
+      "Use `parallel:` for concurrent branches that a skill starts together. It takes no label and lists at least two branches directly beneath it, without a `calls:` field.",
       "Focus on meaningful delegation shape, not every mechanical instruction. At one `calls:` level, prefer one coarse direct `task:` row.",
       "When a source skill gates a child call, the rendered YAML can assume that call is ready. Put failure evidence and the direct repair under the same meaningful branch instead of rendering separate readiness checks.",
       "Use a reusable orchestration skill only when it owns a stable artifact and handoff contract. Do not introduce a plan/implement/verify sequence around a direct repair.",
-      "Use `caller: subagent` for built-in fresh-context subagents and `caller: dispatch(agent_name)` for named dispatch agents. Use `inputs:` only for agent-role inputs, ordered as `plan_reviewers`, `implementer`, `code_reviewer`, `fixer`, then `shipper` when present.",
+      "Use `caller: subagent` for built-in fresh-context subagents, `caller: dispatch(agent_name)` for a fresh named dispatch, and `caller: resume(agent_name)` when re-entering a dispatch that is already open. A resume counts at the same dispatch depth as the dispatch it continues. Use `inputs:` only for agent-role inputs, ordered as `plan_reviewers`, `implementer`, `code_reviewer`, `fixer`, then `shipper` when present.",
       "Use readable conditions and loop labels. Group repeated sibling guards into one branch, then show the meaningful calls inside it."
     ];
 
@@ -1976,7 +2002,9 @@ verify-work:
           callerFrames: state.callerFrames.slice()
         };
       }
-      if (frame.type === "dispatch") {
+      // Resuming an existing dispatch re-enters that agent, so it sits at the
+      // same depth a fresh dispatch of the same target would.
+      if (frame.type === "dispatch" || frame.type === "resume") {
         return {
           dispatch: state.dispatch + 1,
           subagent: 0,
@@ -2008,7 +2036,7 @@ verify-work:
       const callerType = call.caller && call.caller.type;
       const callerChain = callerChainLabel(state.callerFrames);
       const callerChainClause = callerChain ? `: Caller chain ${callerChain}` : "";
-      if (callerType === "dispatch" && state.dispatch > maxDispatchDepth) {
+      if ((callerType === "dispatch" || callerType === "resume") && state.dispatch > maxDispatchDepth) {
         warnings.push({
           message: `${context}${callerChainClause}: Dispatch depth ${state.dispatch} exceeds the limit of ${maxDispatchDepth}. Dispatch depth increments through subagent calls.`,
           frames: state.dispatchFrames
@@ -2178,8 +2206,8 @@ verify-work:
       if (!caller || !caller.type) {
         return;
       }
-      if (caller.type === "dispatch") {
-        parent.appendChild(makeElement("span", "caller-token", "dispatch"));
+      if (caller.type === "dispatch" || caller.type === "resume") {
+        parent.appendChild(makeElement("span", "caller-token", caller.type));
         parent.appendChild(makeElement("span", "punct", "("));
         parent.appendChild(makeElement("span", "agent-token", caller.agent || "agent"));
         parent.appendChild(makeElement("span", "punct", ")"));
@@ -2220,8 +2248,11 @@ verify-work:
     function logicLine(keyword, label, hasBody = true) {
       const line = makeElement("span", "line");
       line.appendChild(makeElement("span", "logic-token", keyword));
-      line.appendChild(makeElement("span", "logic-space", " "));
       const text = String(label || "");
+      if (!text && keyword === "parallel") {
+        return line;
+      }
+      line.appendChild(makeElement("span", "logic-space", " "));
       if (keyword === "for") {
         const match = text.match(/^([A-Za-z_][A-Za-z0-9_]*)\s+in\s+(.+)$/);
         if (match) {

@@ -16,15 +16,8 @@ Compare point-by-point:
 - undocumented differences from the contract
 - supplemental obligations, reported separately
 
-Reuse prior evidence only when its command, result, covered state, and relevance
-remain known; otherwise run the narrowest credible check.
+Do not expand into general review or low-signal cases.
 
-Try to falsify material completion claims where contract or risk supplies a
-credible failure path. Do not expand into general review or low-signal cases.
-
-For each finding, capture the contract item, status (`complete`, `partial`,
-`missing`, `unverified`, `undocumented_deviation`, or `scope_drift`), evidence,
-severity, and smallest correction. The skill defines presentation.
-
-Do not infer intent. If the contract promises X and the diff delivers Y, record
-`undocumented_deviation` even when Y appears reasonable.
+For each finding, capture the contract item, current status (`complete`,
+`partial`, `missing`, `unverified`, `undocumented_deviation`, or `scope_drift`),
+evidence, and severity.

@@ -252,7 +252,7 @@ Run `al wizard` any time to interactively configure the most important settings:
     - Status line checkboxes write explicit `statusline = true` or `statusline = false`; enabling one creates the missing editable source file once and never overwrites an existing source.
 - **Workflow bundle** (yes/no when the bundle is absent — creates missing bundled workflow skills, managed instruction files, memory docs/templates, and `04_conventions.md`; existing files are left unchanged. Use `al upgrade` when you want managed workflow updates.)
 - **Git tracking** (choose whether `.agent-layer/` and `docs/agent-layer/` stay trackable or are ignored through the managed `.agent-layer/gitignore.block` source)
-- **CLI skills** (opt-in catalog: `tavily-web`, `playwright-cli`, `find-docs`, `agent-dispatch`; some require their own CLI on PATH; `al doctor` reports missing binaries without blocking agent launch)
+- **CLI skills** (opt-in catalog: `tavily-web`, `playwright`, `find-docs`, `agent-dispatch`; some require their own CLI on PATH; `al doctor` reports missing binaries without blocking agent launch)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
 - **Warnings** (enable/disable warning checks; threshold values use template defaults)
 

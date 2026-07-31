@@ -5,51 +5,38 @@
 Resolve live ISSUES.md entries that do not require human input. Accept IDs,
 filters, or a user-supplied issue-count range or cap.
 
-## Required roles
-
-Require the common plan roles.
-
 ## Initialize
 
 Read ISSUES.md's format and insertion marker. Skip and report malformed entries
-without blocking valid work.
+without blocking valid work. Record the live eligible issue IDs as the active
+cohort.
 
 ## Select
 
 Honor a caller-supplied issue-count range or cap as a constraint, not a target.
-Otherwise select the smallest coherent independently executable group; one issue
-is valid. Add issues only when shared cause, outcome, or verification makes them
-one reviewable repair. Prefer prerequisites and material impact, then source
-order. Treat human-decision wording, proposed alternatives, next steps, and
-notes in an issue as historical evidence rather than an authoritative blocker.
-Refresh them against the current tree, accepted decisions, requested scope, and
-the blocker contract before excluding the issue from autonomous work.
+Select work from the active cohort. If a complete pass finds no
+eligible member, refresh ISSUES.md. If live eligible issues remain, make them
+the next active cohort and select work from it. Report exhaustion only
+when the refresh finds none.
 
 ## Execute
 
-Use direct repair execution for established, decision-ready work with concrete
-acceptance behavior and a localized boundary. Use common plan execution when
-the work does not meet that contract.
-
-Keep executing the selected objective when an approach, check, tool, or
-delegation fails: diagnose it, repair it, or reroute between the direct and
-planned paths. Do not turn execution difficulty or broader-than-expected work
-into a new stop condition. Only a human-input condition defined by
-`blocker-classification.md` can pause the item; preserve it and continue
-independent eligible work until the complete pass reaches the human question.
-If evidence shows every safe retry and reroute path is exhausted, preserve
-useful work, record the item as still blocked, and revisit it only after its
-condition changes.
+Fix newly discovered work in the same implementation when it is adjacent and
+shares the same change and verification boundary. Do not add it to
+ISSUES.md first. Add a new entry only when the work is substantial and
+independent enough to require broader design or separate verification.
 
 Include each verified ISSUES.md removal, BACKLOG.md reclassification, rejection,
-or still-blocked disposition in the delivery. Leave blocked entries canonical
-and unchanged.
+or still-blocked disposition in the implementation. Leave blocked entries
+canonical and unchanged.
 
 ## Reconcile
 
 Confirm merged dispositions in the canonical memory files. Leave entries for
-open or preserved deliveries unchanged until their delivery is authoritative.
+open or preserved PRs unchanged until the PR is merged.
+Refresh from the latest target branch and remove fixed entries resurrected by
+stale merge content.
 
 ## Exhaustion
 
-A complete refreshed pass finds no live eligible entry.
+A complete refreshed pass finds no live eligible issue.
