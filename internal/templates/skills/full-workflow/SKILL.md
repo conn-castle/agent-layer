@@ -40,7 +40,8 @@ Dispatch using `/agent-dispatch`.
    scope, non-goals, constraints, settled decisions, and any remaining
    user-owned choice. Resolve factual unknowns before continuing.
 2. Run `/plan-work` with the spec and `plan_reviewers`. Validate any reported
-   user blocker against repository escalation rules.
+   user blocker against repository escalation rules. Continue only with an
+   `implementation-ready` result.
 3. Run `/fully-implement-plan` with the reviewed artifacts and the supplied
    `implementer`, `code_reviewer`, and `fixer` targets.
 4. Run `/ship-pr`. Return its exact merge-authorization request when

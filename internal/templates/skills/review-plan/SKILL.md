@@ -23,7 +23,7 @@ Write `.agent-layer/tmp/review-plan.<run-id>.findings.md` with run ID
 
 Do not edit the input artifacts or implementation code.
 
-1. Review all inputs directly through 2–4 distinct framings chosen for the
+1. Review all inputs directly through 1–3 distinct framings chosen for the
    plan's risk and complexity. Each framing covers the complete artifact set;
    do not split coverage. Consequential architecture changes require an
    architecture framing.
