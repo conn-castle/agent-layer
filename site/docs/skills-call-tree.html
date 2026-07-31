@@ -1079,20 +1079,29 @@ fully-implement-plan:
   calls:
     - skill: implement-plan
       caller: dispatch(implementer)
-    - skill: review-uncommitted-code
-      caller: dispatch(code_reviewer against the latest tree and supplied artifacts)
-    - if: review confirms material in-scope findings
+    - if: implementer leaves required work incomplete
+      calls:
+        - task: retry with a different prompt and approach that includes the unresolved obligations and failure evidence; reuse the handle only when its prior context will help
+    - parallel:
+      - skill: verify-work
+        caller: fresh subagent
+      - skill: review-uncommitted-code
+        caller: dispatch(code_reviewer against the latest tree and supplied artifacts)
+    - if: verification or review confirms material in-scope findings
       calls:
         - task: send one consolidated finding set with the plan artifacts and resolve or disprove every finding with evidence
           caller: dispatch(fixer)
+        - if: fixer leaves required work incomplete
+          calls:
+            - task: retry with a different prompt and approach that includes the unresolved obligations and failure evidence; reuse the handle only when its prior context will help
     - task: rerun invalidated checks and targeted contract verification
-    - if: a repair changed design, architecture, or contract scope
+    - if: accepted code-review findings required repairs
       calls:
-        - skill: review-uncommitted-code
-          caller: dispatch(code_reviewer)
-    - while: unresolved findings remain and no permitted blocker is established
+        - task: continue the original code_reviewer handle once to validate those repairs
+    - while: the plan is not fully implemented
       calls:
-        - break: repeat repair and verification
+        - break: repeat incomplete implementation and repair work without repeating completed review passes
+    - task: treat an unsuccessful delegated attempt or unfinished technical work as incomplete work, not a workflow blocker
     - task: write the fully-implement-plan report
     - exit: return complete, complete-with-follow-up, or blocked with artifact paths, evidence, and residual risk
 implement-plan:
@@ -1103,10 +1112,7 @@ implement-plan:
       calls:
         - exit: get approval before proceeding
     - task: run proportionate checks, using the documented full lane when risk or the contract warrants it, and address concrete in-scope failures
-    - task: confirm every task is complete or name a concrete blocker without reporting a partial implementation as ready
-    - if: planned work cannot safely continue or requires a user-owned decision
-      calls:
-        - exit: stop with blocked
+    - task: confirm every task is complete without reporting a partial implementation as ready
     - exit: return the report path, a summary, and anything a reviewer should know
 improve-codebase:
   calls:
@@ -1210,11 +1216,10 @@ review-plan:
     - if: an artifact is missing
       calls:
         - exit: block the review
-    - for: 1-4 risk-proportional reviews of the complete artifact set, concurrently
+    - for: 1-3 risk-proportional framings of the complete artifact set
       calls:
-        - task: review with a distinct framing, including architecture when consequential
-          caller: subagent
-    - task: validate every finding and write only evidence-backed material findings without disposition labels
+        - task: review directly with a distinct framing, including architecture when consequential
+    - task: validate every potential finding and write only evidence-backed material findings without disposition labels
     - exit: return the findings path with approved, changes-needed, or blocked-for-user-decision
 review-uncommitted-code:
   calls:

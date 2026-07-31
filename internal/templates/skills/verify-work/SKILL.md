@@ -25,6 +25,8 @@ Write `.agent-layer/tmp/verify-work.<run-id>.report.md`, using
 - Apply `references/contract-verification-rubric.md`
   to the current tree and touched files with evidence proportional to behavior
   and risk.
+- Derive checks from the contract, not from tests added by the implementation;
+  treat tests as supporting evidence.
 - Report only material completion, behavior, safety, scope, docs, or memory
   gaps.
 - Do not modify code, documentation, memory, or planning artifacts.
@@ -44,27 +46,13 @@ the contract. If any cannot run, report `incomplete`.
 Direct inspection may be evidence when command output is not the right proof,
 but absence of evidence is not completion evidence.
 
-Write:
-
-1. `# Completion Verdict`
-2. `## Inputs`
-3. `## Contract Coverage`
-4. `## Material Findings`
-5. `## Working-Code Evidence`
-6. `## Shipping Obligations`
-7. `## Docs and Memory Assessment`
-8. `## Recommended Next Step`
-
-Each finding includes contract item/location, evidence, impact, and smallest
-correction.
-
-Document and return exactly one final verdict:
+Write a concise report containing the contract coverage and evidence, material
+findings, and exactly one final verdict:
 
 - `complete`
 - `complete-with-follow-up`: the contract is complete and remaining work is
   explicitly outside it
 - `incomplete`
 
-Account for every contract item, supplement, shipping obligation, and final-tree
-evidence. Return report path and verdict; for `incomplete`, name the next exact
-correction.
+Each finding includes its contract item or location, evidence, impact, and
+smallest correction. Return the report path and verdict.

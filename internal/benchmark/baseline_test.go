@@ -56,15 +56,28 @@ func TestRunBaselineUsesPerTaskRepetitionsAndReusesEvidence(t *testing.T) {
 	originalPier := verifyBenchmarkPier
 	originalAuth := validateBenchmarkAuthentication
 	originalCheckout := ensurePinnedBenchmarkCheckout
+	originalCertification := certifyBenchmarkTaskEnvironments
+	originalStartupPreflight := preflightTaskStartups
 	preflightBenchmark = func([]parsedSelection) error { return nil }
 	verifyBenchmarkPier = func(context.Context) error { return nil }
 	validateBenchmarkAuthentication = func(string, []parsedSelection) error { return nil }
 	ensurePinnedBenchmarkCheckout = func(context.Context, string) (string, error) { return checkout, nil }
+	environmentIdentity := strings.Repeat("e", 64)
+	certifyBenchmarkTaskEnvironments = func(_ context.Context, _ string, _ string, tasks []benchmarkPlanTask, _ map[string]string) (map[string]string, error) {
+		identities := make(map[string]string, len(tasks))
+		for _, task := range tasks {
+			identities[task.ID] = environmentIdentity
+		}
+		return identities, nil
+	}
+	preflightTaskStartups = func(string, []benchmarkPlanTask) error { return nil }
 	t.Cleanup(func() {
 		preflightBenchmark = originalPreflight
 		verifyBenchmarkPier = originalPier
 		validateBenchmarkAuthentication = originalAuth
 		ensurePinnedBenchmarkCheckout = originalCheckout
+		certifyBenchmarkTaskEnvironments = originalCertification
+		preflightTaskStartups = originalStartupPreflight
 	})
 
 	executor := &baselineFakeExecutor{}
@@ -112,6 +125,27 @@ func TestRunBaselineUsesPerTaskRepetitionsAndReusesEvidence(t *testing.T) {
 	}
 	if len(executor.calls) != 4 {
 		t.Fatalf("cached baseline made %d total calls; want 4", len(executor.calls))
+	}
+	oldManifestPath := filepath.Join(outcome.StateDir, "manifest.json")
+	oldManifest, err := os.ReadFile(oldManifestPath) // #nosec G304 -- outcome returned this test-owned path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	environmentIdentity = strings.Repeat("f", 64)
+	changed, err := CheckBaseline(context.Background(), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed.CampaignID == outcome.CampaignID || changed.StateDir == outcome.StateDir || changed.Completed != 0 {
+		t.Fatalf("changed readiness reused baseline state: old %#v, new %#v", outcome, changed)
+	}
+	fresh, err := RunBaseline(context.Background(), options, executor)
+	if err != nil || fresh.Completed != fresh.Required || len(executor.calls) != 8 {
+		t.Fatalf("environment-qualified baseline = %#v, %v, calls %d", fresh, err, len(executor.calls))
+	}
+	preserved, err := os.ReadFile(oldManifestPath) // #nosec G304 -- old immutable evidence must remain readable.
+	if err != nil || string(preserved) != string(oldManifest) {
+		t.Fatalf("old baseline manifest was not preserved: %v", err)
 	}
 }
 

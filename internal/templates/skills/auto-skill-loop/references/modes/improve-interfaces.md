@@ -5,10 +5,6 @@
 Run one fresh interface audit, then improve interfaces until current evidence
 reaches diminishing returns.
 
-## Required roles
-
-Require the common plan roles.
-
 ## Initialize
 
 Run one fresh `/interface-audit` and retain that report for the run. Do not load
@@ -16,13 +12,10 @@ prior audits.
 
 ## Select
 
-Choose the highest-value autonomous improvement from the report and current
-repository evidence. Account for completed, in-flight, and blocked work; refresh
-the audit when its recommendation is stale or insufficient.
-
-## Execute
-
-Run the common plan execution on the selected recommendation.
+Choose the highest-value autonomous improvement from the report and pass its
+exact handoff forward as the selected work. Account for completed, in-flight,
+and blocked work; refresh the audit when its recommendation is stale or
+insufficient.
 
 ## Reconcile
 

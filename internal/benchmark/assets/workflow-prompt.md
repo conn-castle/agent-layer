@@ -1,11 +1,11 @@
 This run is fully autonomous. If any human decision is required, answer and proceed.
 
-The instructions for this run are saved at `.agent-layer/tmp/instructions.md`.
+The specification for this run is saved at `.agent-layer/tmp/spec.md`.
 
 Execute the following skills sequentially.
 
 1. $plan-work
-instructions: .agent-layer/tmp/instructions.md
+specification: .agent-layer/tmp/spec.md
 plan_reviewers ({plan_reviewer_count}): {plan_reviewers}
 Every plan-reviewer dispatch must use the `review-plan` skill.
 

@@ -1,7 +1,5 @@
 # Rules
 
-If a user request would violate any rule, stop and ask for explicit confirmation before proceeding. If the user confirms, proceed only to the minimum extent required.
-
 - **Drive unknowns to ground before answering or doing:** State assumptions explicitly. If code can answer, code answers. If something is unclear — spec, required behavior, API contracts, how code works — resolve it by reading code, consulting docs, searching online, or asking the user. Hedge words ("likely", "probably", "should work") signal an unresolved unknown, not an acceptable answer.
 - **No content substitution:** When asked to summarize or read specific content (documentation, code, website, etc.), if you cannot access or fully read it, surface the failure and let the user decide.
 - **Stop and ask on substantive tradeoffs:** When a decision involves genuine tradeoffs between substantive alternatives — especially architecture, end-user-facing behavior, irreversible data changes, demoting log severity or silencing errors and warnings, or scope larger than requested — stop and ask the user to decide. An alternative is genuinely viable only after applying current facts, requested scope, binding constraints, and repository defaults.

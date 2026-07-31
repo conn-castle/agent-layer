@@ -150,9 +150,11 @@ for plan_reviewer in plan_reviewers:
     dispatch(plan_reviewer) -> /review-plan
 ```
 
-Each named reviewer runs `/review-plan`, which may fan out to built-in
-subagents. The planner independently judges the resulting findings; reviewer
-agreement is not evidence.
+Each named reviewer runs `/review-plan` directly through one to three
+risk-based framings of the complete artifact set. Separate dispatched reviewers
+provide independent contexts; multiple framings within one reviewer broaden
+coverage but are not independent reviews. The planner independently judges the
+resulting findings; reviewer agreement is not evidence.
 
 ```text
 subagent -> task: row-level verification

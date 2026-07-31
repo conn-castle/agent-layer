@@ -4,10 +4,6 @@
 
 Implement settled substantive BACKLOG.md or incomplete ROADMAP.md work.
 
-## Required roles
-
-Require the common plan roles.
-
 ## Initialize
 
 Read both files' formats and only the decisions needed to interpret candidates.
@@ -19,13 +15,12 @@ or changed for unsettled work, set it aside, and continue selection.
 
 ## Execute
 
-Run the common plan execution and include required BACKLOG.md or ROADMAP.md
-completion and consistency updates.
+Include required BACKLOG.md or ROADMAP.md completion and consistency updates.
 
 ## Reconcile
 
 Confirm merged work has one canonical source location and accurate completion
-state. Keep open deliveries in flight; never schedule an item merely to make it
+state. Keep open PRs in flight; never schedule an item merely to make it
 selectable.
 
 ## Exhaustion

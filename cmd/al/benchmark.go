@@ -18,6 +18,7 @@ import (
 const (
 	benchmarkCommandName   = "benchmark"
 	benchmarkBaselineName  = "baseline"
+	benchmarkMatrixName    = "matrix"
 	benchmarkTreatmentName = "treatment"
 	benchmarkReportName    = "report"
 	benchmarkYes           = "yes"
@@ -28,6 +29,8 @@ var (
 	checkBaseline       = bench.CheckBaseline
 	runTreatment        = bench.RunTreatment
 	checkTreatment      = bench.CheckTreatment
+	runMatrix           = bench.RunMatrix
+	checkMatrix         = bench.CheckMatrix
 	buildCampaignReport = bench.BuildCampaignReport
 )
 
@@ -37,7 +40,12 @@ func newBenchmarkCmd() *cobra.Command {
 		Short: "Run a website-planned DeepSWE comparison",
 		Args:  cobra.NoArgs,
 	}
-	command.AddCommand(newBenchmarkBaselineCmd(), newBenchmarkTreatmentCmd(), newBenchmarkReportCmd())
+	command.AddCommand(
+		newBenchmarkBaselineCmd(),
+		newBenchmarkTreatmentCmd(),
+		newBenchmarkReportCmd(),
+		newBenchmarkMatrixCmd(),
+	)
 	return command
 }
 
@@ -134,9 +142,186 @@ func runBenchmarkBaselineInteractive(cmd *cobra.Command, options bench.BaselineO
 	return err
 }
 
+func newBenchmarkMatrixCmd() *cobra.Command {
+	var selectionPath, treatmentExecution, treatmentLabel string
+	var baselineExecutions []string
+	var tasks []string
+	var taskConcurrency int
+	var yes, check, open bool
+	command := &cobra.Command{
+		Use:   benchmarkMatrixName,
+		Short: "Run a descriptive cross-model matrix",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if selectionPath == "" || len(baselineExecutions) == 0 {
+				return errors.New(
+					"benchmark matrix requires --selection and at least one --baseline-execution",
+				)
+			}
+			if treatmentExecution == "" && treatmentLabel != "" {
+				return errors.New("benchmark matrix --treatment-label requires --treatment-execution")
+			}
+			if check && (yes || open) {
+				return errors.New("benchmark matrix --check does not accept --yes or --open")
+			}
+			root, err := resolveRepoRoot()
+			if err != nil {
+				return err
+			}
+			selectionJSON, err := readBenchmarkPlanInput(cmd, selectionPath)
+			if err != nil {
+				return err
+			}
+			options := bench.MatrixOptions{
+				RepoRoot: root, SelectionPath: selectionPath,
+				SelectionJSON:      selectionJSON,
+				BaselineExecutions: baselineExecutions,
+				TreatmentExecution: treatmentExecution,
+				TreatmentLabel:     treatmentLabel,
+				Tasks:              tasks,
+				TaskConcurrency:    taskConcurrency, Confirmed: yes,
+			}
+			if check {
+				outcome, checkErr := checkMatrix(context.Background(), options)
+				if checkErr != nil {
+					return checkErr
+				}
+				return printMatrixProgress(cmd, outcome, true)
+			}
+			outcome, err := runBenchmarkMatrixInteractive(cmd, options)
+			if err != nil {
+				return err
+			}
+			if err := printMatrixProgress(cmd, outcome, false); err != nil {
+				return err
+			}
+			if outcome.Missing > 0 {
+				return nil
+			}
+			if outcome.HTMLPath == "" || outcome.Report == nil {
+				return errors.New("benchmark matrix completed without a report")
+			}
+			if _, err := fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"Report: %s\nJSON: %s\n",
+				outcome.HTMLPath, outcome.JSONPath,
+			); err != nil {
+				return err
+			}
+			if open {
+				return openBenchmarkReport(outcome.HTMLPath)
+			}
+			return nil
+		},
+	}
+	command.Flags().StringVar(
+		&selectionPath, "selection", "",
+		"versioned DeepSWE task selection JSON, or - for standard input",
+	)
+	command.Flags().StringArrayVar(
+		&baselineExecutions, "baseline-execution", nil,
+		"bare model and reasoning to execute; repeat for each point",
+	)
+	command.Flags().StringVar(
+		&treatmentExecution, "treatment-execution", "",
+		"Agent Layer model and reasoning to execute",
+	)
+	command.Flags().StringVar(
+		&treatmentLabel, "treatment-label", "",
+		"report label for the Agent Layer point",
+	)
+	command.Flags().StringArrayVar(
+		&tasks, "task", nil,
+		"execute only this selected task; repeat to execute multiple tasks",
+	)
+	command.Flags().IntVar(
+		&taskConcurrency, "task-concurrency", 1,
+		"total parallel task executions across all arms, from 1 to 8",
+	)
+	command.Flags().BoolVar(
+		&yes, "yes", false, "confirm paid model calls without prompting",
+	)
+	command.Flags().BoolVar(
+		&check, "check", false,
+		"validate and show cached progress without provider calls",
+	)
+	command.Flags().BoolVar(
+		&open, "open", false, "open the generated HTML report",
+	)
+	return command
+}
+
+func runBenchmarkMatrixInteractive(
+	cmd *cobra.Command,
+	options bench.MatrixOptions,
+) (bench.MatrixOutcome, error) {
+	outcome, err := runMatrix(context.Background(), options, nil)
+	if errors.Is(err, bench.ErrConfirmationRequired) {
+		if !isTerminal() {
+			return outcome, errors.New(
+				"benchmark paid execution requires --yes outside a terminal",
+			)
+		}
+		if _, writeErr := fmt.Fprintf(
+			cmd.OutOrStdout(),
+			"Matrix requires %d paid model calls. Continue? [y/N]: ",
+			outcome.Missing,
+		); writeErr != nil {
+			return outcome, writeErr
+		}
+		confirmed, readErr := readBenchmarkConfirmation(cmd)
+		if readErr != nil {
+			return outcome, readErr
+		}
+		if !confirmed {
+			return outcome, errors.New("benchmark confirmation declined")
+		}
+		options.Confirmed = true
+		outcome, err = runMatrix(context.Background(), options, nil)
+	}
+	return outcome, err
+}
+
+func printMatrixProgress(
+	cmd *cobra.Command,
+	outcome bench.MatrixOutcome,
+	check bool,
+) error {
+	status := "complete"
+	if check {
+		status = "ready"
+	} else if outcome.Missing > 0 {
+		status = "progress saved"
+	}
+	if _, err := fmt.Fprintf(
+		cmd.OutOrStdout(),
+		"Matrix %.12s %s: %d of %d runs cached, %d missing.\n",
+		outcome.SelectionID, status, outcome.Completed, outcome.Required,
+		outcome.Missing,
+	); err != nil {
+		return err
+	}
+	for _, arm := range outcome.Arms {
+		if _, err := fmt.Fprintf(
+			cmd.OutOrStdout(),
+			"- %s (%s, %s): %d of %d cached\n",
+			arm.Label, arm.Execution, arm.Mode, arm.Completed, arm.Required,
+		); err != nil {
+			return err
+		}
+	}
+	if check {
+		_, err := fmt.Fprintln(
+			cmd.OutOrStdout(), "No paid provider call was made.",
+		)
+		return err
+	}
+	return nil
+}
+
 func newBenchmarkTreatmentCmd() *cobra.Command {
 	var planPath, execution, label string
-	var taskConcurrency int
+	var taskConcurrency, maxNewRuns int
 	var yes, check bool
 	command := &cobra.Command{
 		Use:   benchmarkTreatmentName,
@@ -159,7 +344,8 @@ func newBenchmarkTreatmentCmd() *cobra.Command {
 			}
 			options := bench.TreatmentOptions{
 				RepoRoot: root, PlanPath: planPath, PlanJSON: planJSON, Label: label,
-				Execution: execution, TaskConcurrency: taskConcurrency, Confirmed: yes,
+				Execution: execution, TaskConcurrency: taskConcurrency,
+				MaxNewRuns: maxNewRuns, Confirmed: yes,
 			}
 			if check {
 				outcome, checkErr := checkTreatment(context.Background(), options)
@@ -182,6 +368,7 @@ func newBenchmarkTreatmentCmd() *cobra.Command {
 	command.Flags().StringVar(&execution, "execution", "", "model and reasoning to execute, in the form <model>:<effort>")
 	command.Flags().StringVar(&label, "label", "", "report label for this immutable treatment version")
 	command.Flags().IntVar(&taskConcurrency, "task-concurrency", 1, "parallel task executions, from 1 to 8")
+	command.Flags().IntVar(&maxNewRuns, "max-new-runs", 0, "execute at most this many missing runs; zero executes all")
 	command.Flags().BoolVar(&yes, "yes", false, "confirm paid model calls without prompting")
 	command.Flags().BoolVar(&check, "check", false, "validate and show cached progress without provider calls")
 	return command
@@ -213,10 +400,15 @@ func runBenchmarkTreatmentInteractive(cmd *cobra.Command, options bench.Treatmen
 	if err != nil {
 		return err
 	}
+	status := "complete"
+	if outcome.Missing > 0 {
+		status = "progress saved"
+	}
 	_, err = fmt.Fprintf(
 		cmd.OutOrStdout(),
-		"Treatment %q (%.12s) complete: %d of %d runs cached.\nEvidence: %s\n",
-		outcome.Label, outcome.TreatmentID, outcome.Completed, outcome.Required, outcome.StateDir,
+		"Treatment %q (%.12s) %s: %d of %d runs cached, %d missing.\nEvidence: %s\n",
+		outcome.Label, outcome.TreatmentID, status, outcome.Completed, outcome.Required,
+		outcome.Missing, outcome.StateDir,
 	)
 	return err
 }

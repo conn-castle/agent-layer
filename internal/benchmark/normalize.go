@@ -16,6 +16,11 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+const (
+	codexMCPPreflightEvidence    = "codex-mcp-preflight.json"
+	dispatchOptionsPreflightFile = "dispatch-options-preflight.json"
+)
+
 type pierTaskResult struct {
 	TaskChecksum string    `json:"task_checksum"`
 	StartedAt    time.Time `json:"started_at"`
@@ -41,50 +46,10 @@ type pierTaskResult struct {
 }
 
 func normalizePier(stage string, request ExecutionRequest) (AttemptResult, error) {
-	var paths []string
-	err := filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if !entry.IsDir() && entry.Name() == "result.json" && filepath.Base(filepath.Dir(path)) != "jobs" {
-			paths = append(paths, path)
-		}
-		return nil
-	})
+	raw, err := readPierTaskResult(stage, request)
 	if err != nil {
-		return AttemptResult{}, fmt.Errorf("find Pier task result: %w", err)
+		return AttemptResult{}, err
 	}
-	var matches []pierTaskResult
-	for _, path := range paths {
-		data, err := os.ReadFile(path) // #nosec G122,G304 -- path was discovered below the restricted attempt stage.
-		if err != nil {
-			return AttemptResult{}, err
-		}
-		var identity struct {
-			TaskChecksum string `json:"task_checksum"`
-		}
-		if err := json.Unmarshal(data, &identity); err != nil {
-			return AttemptResult{}, fmt.Errorf("decode Pier result identity: %w", err)
-		}
-		if identity.TaskChecksum == "" {
-			continue
-		}
-		if request.TaskChecksum == "" || identity.TaskChecksum != request.TaskChecksum {
-			return AttemptResult{}, fmt.Errorf(
-				"pier task checksum %q does not match the pinned %s checksum %q",
-				identity.TaskChecksum, request.Task, request.TaskChecksum,
-			)
-		}
-		var candidate pierTaskResult
-		if err := json.Unmarshal(data, &candidate); err != nil {
-			return AttemptResult{}, fmt.Errorf("decode Pier task result: %w", err)
-		}
-		matches = append(matches, candidate)
-	}
-	if len(matches) != 1 {
-		return AttemptResult{}, fmt.Errorf("pier produced %d matching task results for %s; expected one", len(matches), request.Task)
-	}
-	raw := matches[0]
 	provider := raw.AgentInfo.ModelInfo.Provider
 	if provider == "" {
 		provider = request.Model.Adapter
@@ -160,6 +125,106 @@ func normalizePier(stage string, request ExecutionRequest) (AttemptResult, error
 		return AttemptResult{}, err
 	}
 	return result, nil
+}
+
+func readPierTaskResult(stage string, request ExecutionRequest) (pierTaskResult, error) {
+	var paths []string
+	err := filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() && entry.Name() == "result.json" && filepath.Base(filepath.Dir(path)) != "jobs" {
+			paths = append(paths, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return pierTaskResult{}, fmt.Errorf("find Pier task result: %w", err)
+	}
+	var matches []pierTaskResult
+	for _, path := range paths {
+		data, err := os.ReadFile(path) // #nosec G122,G304 -- path was discovered below the restricted attempt stage.
+		if err != nil {
+			return pierTaskResult{}, err
+		}
+		var identity struct {
+			TaskChecksum string `json:"task_checksum"`
+		}
+		if err := json.Unmarshal(data, &identity); err != nil {
+			return pierTaskResult{}, fmt.Errorf("decode Pier result identity: %w", err)
+		}
+		if identity.TaskChecksum == "" {
+			continue
+		}
+		if request.TaskChecksum == "" || identity.TaskChecksum != request.TaskChecksum {
+			return pierTaskResult{}, fmt.Errorf(
+				"pier task checksum %q does not match the pinned %s checksum %q",
+				identity.TaskChecksum, request.Task, request.TaskChecksum,
+			)
+		}
+		var candidate pierTaskResult
+		if err := json.Unmarshal(data, &candidate); err != nil {
+			return pierTaskResult{}, fmt.Errorf("decode Pier task result: %w", err)
+		}
+		matches = append(matches, candidate)
+	}
+	if len(matches) != 1 {
+		return pierTaskResult{}, fmt.Errorf("pier produced %d matching task results for %s; expected one", len(matches), request.Task)
+	}
+	return matches[0], nil
+}
+
+func validatePierTreatmentPreflight(stage string, request ExecutionRequest) error {
+	raw, err := readPierTaskResult(stage, request)
+	if err != nil {
+		return err
+	}
+	if string(raw.ExceptionInfo) != "" && string(raw.ExceptionInfo) != "null" {
+		return fmt.Errorf("treatment runtime preflight failed: %s", raw.ExceptionInfo)
+	}
+	required := codexMCPPreflightEvidence
+	if request.Model.Adapter == adapterClaudeCode {
+		required = "claude-mcp-preflight.txt"
+	}
+	evidenceCounts := map[string]int{
+		required:                     0,
+		dispatchOptionsPreflightFile: 0,
+	}
+	err = filepath.WalkDir(filepath.Join(stage, "jobs"), func(_ string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() {
+			evidenceCounts[entry.Name()]++
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("inspect runtime preflight evidence: %w", err)
+	}
+	for _, name := range []string{required, dispatchOptionsPreflightFile} {
+		if evidenceCounts[name] != 1 {
+			return fmt.Errorf("treatment runtime preflight did not preserve %s", name)
+		}
+	}
+	var providerSessions int
+	err = filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() && filepath.Ext(path) == ".jsonl" &&
+			strings.Contains(path, string(filepath.Separator)+"agent"+string(filepath.Separator)+"sessions"+string(filepath.Separator)) {
+			providerSessions++
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("inspect runtime preflight provider sessions: %w", err)
+	}
+	if providerSessions != 0 {
+		return fmt.Errorf("treatment runtime preflight unexpectedly invoked the provider")
+	}
+	return nil
 }
 
 const buildErrorExcerptLines = 20
@@ -261,7 +326,9 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 			return walkErr
 		}
 		if !entry.IsDir() && filepath.Base(filepath.Dir(path)) == dispatchEvidenceDir &&
-			filepath.Ext(path) == ".json" {
+			filepath.Ext(path) == ".json" &&
+			entry.Name() != codexMCPPreflightEvidence &&
+			entry.Name() != dispatchOptionsPreflightFile {
 			paths = append(paths, path)
 		}
 		return nil
@@ -359,6 +426,13 @@ type codexSessionUsage struct {
 	cost    costRange
 }
 
+type codexTokenUsage struct {
+	InputTokens           int  `json:"input_tokens"`
+	CachedInputTokens     int  `json:"cached_input_tokens"`
+	CacheWriteInputTokens *int `json:"cache_write_input_tokens"`
+	OutputTokens          int  `json:"output_tokens"`
+}
+
 type costRange struct {
 	minimum float64
 	maximum float64
@@ -405,11 +479,16 @@ func codexAttemptCost(stage string) (treatmentCost, error) {
 		return treatmentCost{}, err
 	}
 	var result treatmentCost
+	sessionIDs := make(map[string]bool, len(sessions))
 	for _, path := range sessions {
 		usage, err := parseCodexSessionCost(path, pricing)
 		if err != nil {
 			return treatmentCost{}, err
 		}
+		if sessionIDs[usage.id] {
+			return treatmentCost{}, fmt.Errorf("codex provider session %q is duplicated", usage.id)
+		}
+		sessionIDs[usage.id] = true
 		if dispatchSessions[usage.id] {
 			usage.isChild = true
 		}
@@ -421,6 +500,14 @@ func codexAttemptCost(stage string) (treatmentCost, error) {
 		}
 	}
 	result.invocations = len(sessions)
+	for id := range dispatchSessions {
+		if !sessionIDs[id] {
+			return treatmentCost{}, fmt.Errorf(
+				"codex dispatch session %q has no captured request-level session evidence",
+				id,
+			)
+		}
+	}
 	return result, nil
 }
 
@@ -571,12 +658,6 @@ func parseCodexSessionCost(path string, pricing benchmarkPricing) (codexSessionU
 		return codexSessionUsage{}, err
 	}
 	defer func() { _ = file.Close() }()
-	type usageRecord struct {
-		InputTokens           int  `json:"input_tokens"`
-		CachedInputTokens     int  `json:"cached_input_tokens"`
-		CacheWriteInputTokens *int `json:"cache_write_input_tokens"`
-		OutputTokens          int  `json:"output_tokens"`
-	}
 	var result codexSessionUsage
 	model := ""
 	seen := make(map[[2]int]bool)
@@ -593,9 +674,9 @@ func parseCodexSessionCost(path string, pricing benchmarkPricing) (codexSessionU
 				Source any    `json:"source"`
 				Model  string `json:"model"`
 				Type   string `json:"type"`
-				Info   struct {
-					Last  *usageRecord `json:"last_token_usage"`
-					Total *usageRecord `json:"total_token_usage"`
+				Info   *struct {
+					Last  *codexTokenUsage `json:"last_token_usage"`
+					Total *codexTokenUsage `json:"total_token_usage"`
 				} `json:"info"`
 			} `json:"payload"`
 		}
@@ -604,15 +685,20 @@ func parseCodexSessionCost(path string, pricing benchmarkPricing) (codexSessionU
 		}
 		switch event.Type {
 		case "session_meta":
-			result.id = event.Payload.ID
-			source, _ := event.Payload.Source.(map[string]any)
-			if subagent, ok := source["subagent"].(map[string]any); ok {
-				_, result.isChild = subagent["thread_spawn"]
+			if result.id == "" {
+				result.id = event.Payload.ID
+				source, _ := event.Payload.Source.(map[string]any)
+				if subagent, ok := source["subagent"].(map[string]any); ok {
+					_, result.isChild = subagent["thread_spawn"]
+				}
 			}
 		case "turn_context":
 			model = event.Payload.Model
 		case "event_msg":
 			if event.Payload.Type != "token_count" {
+				continue
+			}
+			if event.Payload.Info == nil {
 				continue
 			}
 			if event.Payload.Info.Last == nil || event.Payload.Info.Total == nil {
@@ -624,44 +710,19 @@ func parseCodexSessionCost(path string, pricing benchmarkPricing) (codexSessionU
 				continue
 			}
 			seen[signature] = true
-			if last.InputTokens < last.CachedInputTokens || last.InputTokens < 0 ||
-				last.CachedInputTokens < 0 || last.OutputTokens < 0 {
-				return codexSessionUsage{}, fmt.Errorf("codex session %s has invalid token usage", filepath.Base(path))
+			requestCost, exact, err := priceCodexRequest(filepath.Base(path), model, last, pricing)
+			if err != nil {
+				return codexSessionUsage{}, err
 			}
-			entry, ok := pricing.Providers[adapterCodex][model]
-			if !ok {
-				return codexSessionUsage{}, fmt.Errorf("codex session %s has no pricing for model %q", filepath.Base(path), model)
-			}
-			band := "short_context"
-			if entry.LongContextThresholdTokens > 0 && last.InputTokens > entry.LongContextThresholdTokens {
-				band = "long_context"
-			}
-			rates := entry.Rates[band]
-			uncachedRate, uncachedOK := rates["uncached_input_tokens"]
-			cacheCreationRate, creationOK := rates["cache_creation_input_tokens"]
-			cachedRate, cachedOK := rates["cache_read_input_tokens"]
-			outputRate, outputOK := rates["output_tokens"]
-			if !uncachedOK || !creationOK || !cachedOK || !outputOK {
-				return codexSessionUsage{}, fmt.Errorf("codex session %s has incomplete %s pricing for model %q", filepath.Base(path), band, model)
-			}
-			uncached := last.InputTokens - last.CachedInputTokens
-			fixed := float64(last.CachedInputTokens)*cachedRate +
-				float64(last.OutputTokens)*outputRate
-			result.cost.minimum += (float64(uncached)*math.Min(uncachedRate, cacheCreationRate) + fixed) / float64(pricing.UnitTokens)
-			result.cost.maximum += (float64(uncached)*math.Max(uncachedRate, cacheCreationRate) + fixed) / float64(pricing.UnitTokens)
-			if last.CacheWriteInputTokens == nil ||
-				*last.CacheWriteInputTokens < 0 ||
-				last.InputTokens < last.CachedInputTokens+*last.CacheWriteInputTokens {
+			result.cost.add(requestCost)
+			if exact == nil {
 				cacheWriteTelemetryComplete = false
 				continue
 			}
 			if *last.CacheWriteInputTokens > 0 {
 				cacheWriteTelemetryPopulated = true
 			}
-			ordinaryInput := last.InputTokens - last.CachedInputTokens - *last.CacheWriteInputTokens
-			exactCost += (float64(ordinaryInput)*uncachedRate +
-				float64(*last.CacheWriteInputTokens)*cacheCreationRate + fixed) /
-				float64(pricing.UnitTokens)
+			exactCost += *exact
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -675,6 +736,45 @@ func parseCodexSessionCost(path string, pricing benchmarkPricing) (codexSessionU
 		result.cost.maximum = exactCost
 	}
 	return result, nil
+}
+
+func priceCodexRequest(label, model string, usage codexTokenUsage, pricing benchmarkPricing) (costRange, *float64, error) {
+	if usage.InputTokens < usage.CachedInputTokens || usage.InputTokens < 0 ||
+		usage.CachedInputTokens < 0 || usage.OutputTokens < 0 {
+		return costRange{}, nil, fmt.Errorf("codex usage %s has invalid token usage", label)
+	}
+	entry, ok := pricing.Providers[adapterCodex][model]
+	if !ok {
+		return costRange{}, nil, fmt.Errorf("codex usage %s has no pricing for model %q", label, model)
+	}
+	band := "short_context"
+	if entry.LongContextThresholdTokens > 0 && usage.InputTokens > entry.LongContextThresholdTokens {
+		band = "long_context"
+	}
+	rates := entry.Rates[band]
+	uncachedRate, uncachedOK := rates["uncached_input_tokens"]
+	cacheCreationRate, creationOK := rates["cache_creation_input_tokens"]
+	cachedRate, cachedOK := rates["cache_read_input_tokens"]
+	outputRate, outputOK := rates["output_tokens"]
+	if !uncachedOK || !creationOK || !cachedOK || !outputOK {
+		return costRange{}, nil, fmt.Errorf("codex usage %s has incomplete %s pricing for model %q", label, band, model)
+	}
+	uncached := usage.InputTokens - usage.CachedInputTokens
+	fixed := float64(usage.CachedInputTokens)*cachedRate +
+		float64(usage.OutputTokens)*outputRate
+	cost := costRange{
+		minimum: (float64(uncached)*math.Min(uncachedRate, cacheCreationRate) + fixed) / float64(pricing.UnitTokens),
+		maximum: (float64(uncached)*math.Max(uncachedRate, cacheCreationRate) + fixed) / float64(pricing.UnitTokens),
+	}
+	if usage.CacheWriteInputTokens == nil || *usage.CacheWriteInputTokens < 0 ||
+		usage.InputTokens < usage.CachedInputTokens+*usage.CacheWriteInputTokens {
+		return cost, nil, nil
+	}
+	ordinaryInput := usage.InputTokens - usage.CachedInputTokens - *usage.CacheWriteInputTokens
+	exact := (float64(ordinaryInput)*uncachedRate +
+		float64(*usage.CacheWriteInputTokens)*cacheCreationRate + fixed) /
+		float64(pricing.UnitTokens)
+	return cost, &exact, nil
 }
 
 func normalizedRoles(roles []string) []string {

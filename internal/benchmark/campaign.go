@@ -29,6 +29,7 @@ type TreatmentOptions struct {
 	Execution       string
 	Label           string
 	TaskConcurrency int
+	MaxNewRuns      int
 	Confirmed       bool
 }
 
@@ -72,26 +73,27 @@ type CampaignReportOutcome struct {
 }
 
 type campaignTreatmentManifest struct {
-	SchemaVersion       string            `json:"schema_version"`
-	PlanID              string            `json:"plan_id"`
-	CampaignID          string            `json:"campaign_id"`
-	CreatedAt           time.Time         `json:"created_at"`
-	Label               string            `json:"label,omitempty"`
-	Arm                 string            `json:"arm"`
-	Model               string            `json:"model"`
-	Reasoning           string            `json:"reasoning"`
-	TaskChecksums       map[string]string `json:"task_checksums"`
-	Repetitions         map[string]int    `json:"repetitions"`
-	TreatmentHash       string            `json:"treatment_manifest_hash"`
-	Treatment           TreatmentManifest `json:"treatment_manifest"`
-	LinuxBinarySHA256   string            `json:"linux_binary_sha256"`
-	AdapterSHA256       string            `json:"adapter_sha256"`
-	ProviderClient      string            `json:"provider_client_version"`
-	RuntimeModel        string            `json:"runtime_model"`
-	TemplatesCommit     string            `json:"templates_commit,omitempty"`
-	TemplatesDirty      bool              `json:"templates_dirty"`
-	NoAutomaticRetry    bool              `json:"no_automatic_retry"`
-	SelectionMethodOnly string            `json:"selection_method_note"`
+	SchemaVersion             string            `json:"schema_version"`
+	PlanID                    string            `json:"plan_id"`
+	CampaignID                string            `json:"campaign_id"`
+	CreatedAt                 time.Time         `json:"created_at"`
+	Label                     string            `json:"label,omitempty"`
+	Arm                       string            `json:"arm"`
+	Model                     string            `json:"model"`
+	Reasoning                 string            `json:"reasoning"`
+	TaskChecksums             map[string]string `json:"task_checksums"`
+	TaskEnvironmentIdentities map[string]string `json:"task_environment_identities,omitempty"`
+	Repetitions               map[string]int    `json:"repetitions"`
+	TreatmentHash             string            `json:"treatment_manifest_hash"`
+	Treatment                 TreatmentManifest `json:"treatment_manifest"`
+	LinuxBinarySHA256         string            `json:"linux_binary_sha256"`
+	AdapterSHA256             string            `json:"adapter_sha256"`
+	ProviderClient            string            `json:"provider_client_version"`
+	RuntimeModel              string            `json:"runtime_model"`
+	TemplatesCommit           string            `json:"templates_commit,omitempty"`
+	TemplatesDirty            bool              `json:"templates_dirty"`
+	NoAutomaticRetry          bool              `json:"no_automatic_retry"`
+	SelectionMethodOnly       string            `json:"selection_method_note"`
 }
 
 // CheckTreatment validates the plan, baseline, and current treatment bundle
@@ -111,7 +113,7 @@ func prepareTreatment(ctx context.Context, options TreatmentOptions, execute boo
 		options.TaskConcurrency = 1
 	}
 	if options.RepoRoot == "" || options.PlanPath == "" || options.Execution == "" ||
-		options.TaskConcurrency < 1 || options.TaskConcurrency > 8 {
+		options.TaskConcurrency < 1 || options.TaskConcurrency > 8 || options.MaxNewRuns < 0 {
 		return TreatmentOutcome{}, fmt.Errorf("benchmark treatment requires a repository root, --plan, --execution, and task concurrency from 1 to 8")
 	}
 	loaded, err := loadBenchmarkPlanInput(options.PlanPath, options.PlanJSON)
@@ -128,24 +130,6 @@ func prepareTreatment(ctx context.Context, options TreatmentOptions, execute boo
 	if err := validatePlanCostAxis(loaded.Plan); err != nil {
 		return TreatmentOutcome{}, err
 	}
-	baselineDir := baselineStateDir(options.RepoRoot, loaded.CampaignID)
-	baseline, err := readCampaignBaseline(baselineDir, loaded)
-	if err != nil {
-		return TreatmentOutcome{}, err
-	}
-	if baseline.SchemaVersion != baselineStateSchema {
-		return TreatmentOutcome{}, fmt.Errorf(
-			"baseline state %q remains reportable but cannot seed a new treatment; run a provider-versioned baseline",
-			baseline.SchemaVersion,
-		)
-	}
-	if baseline.ProviderClient != loaded.Model.ProviderClientVersion {
-		return TreatmentOutcome{}, fmt.Errorf(
-			"baseline provider client version %q does not match required version %q",
-			baseline.ProviderClient,
-			loaded.Model.ProviderClientVersion,
-		)
-	}
 	selections := []parsedSelection{{model: loaded.Model, effort: loaded.Effort}}
 	if err := preflightBenchmark(selections); err != nil {
 		return TreatmentOutcome{}, err
@@ -154,6 +138,25 @@ func prepareTreatment(ctx context.Context, options TreatmentOptions, execute boo
 		return TreatmentOutcome{}, err
 	}
 	if err := validateBenchmarkAuthentication(options.RepoRoot, selections); err != nil {
+		return TreatmentOutcome{}, err
+	}
+	checksums, environments, err := prepareBenchmarkTaskSet(ctx, options.RepoRoot, loaded.Plan.Tasks)
+	if err != nil {
+		return TreatmentOutcome{}, err
+	}
+	loaded, err = bindBenchmarkTaskEnvironments(loaded, environments)
+	if err != nil {
+		return TreatmentOutcome{}, err
+	}
+	baselineDir := baselineStateDir(options.RepoRoot, loaded.CampaignID)
+	baseline, err := readCampaignBaseline(baselineDir, loaded)
+	if err != nil {
+		return TreatmentOutcome{}, err
+	}
+	if !sameStringMap(checksums, baseline.TaskChecksums) {
+		return TreatmentOutcome{}, fmt.Errorf("baseline tasks do not match the current pinned DeepSWE checkout; run a fresh baseline")
+	}
+	if err := validateTaskEnvironmentParity(loaded.Plan.Tasks, baseline.TaskEnvironmentIdentities, environments); err != nil {
 		return TreatmentOutcome{}, err
 	}
 	bundle, err := buildCampaignTreatmentBundle(
@@ -180,26 +183,27 @@ func prepareTreatment(ctx context.Context, options TreatmentOptions, execute boo
 		}
 	}
 	manifest := campaignTreatmentManifest{
-		SchemaVersion:       campaignTreatmentSchema,
-		PlanID:              loaded.ID,
-		CampaignID:          loaded.CampaignID,
-		CreatedAt:           time.Now().UTC(),
-		Label:               label,
-		Arm:                 ArmTreatment,
-		Model:               loaded.Model.PublishedIdentifier,
-		Reasoning:           loaded.Effort,
-		TaskChecksums:       copyStringMap(baseline.TaskChecksums),
-		Repetitions:         copyIntMap(baseline.Repetitions),
-		TreatmentHash:       bundle.ManifestHash,
-		Treatment:           bundle.Manifest,
-		LinuxBinarySHA256:   bundle.LinuxBinarySHA256,
-		AdapterSHA256:       bundle.AdapterSHA256,
-		ProviderClient:      loaded.Model.ProviderClientVersion,
-		RuntimeModel:        loaded.Model.RuntimeIdentifier,
-		TemplatesCommit:     bundle.TemplatesCommit,
-		TemplatesDirty:      bundle.TemplatesDirty,
-		NoAutomaticRetry:    true,
-		SelectionMethodOnly: "Published mini-swe-agent data selected tasks; observed local arms determine the experiment result.",
+		SchemaVersion:             campaignTreatmentSchema,
+		PlanID:                    loaded.ID,
+		CampaignID:                loaded.CampaignID,
+		CreatedAt:                 time.Now().UTC(),
+		Label:                     label,
+		Arm:                       ArmTreatment,
+		Model:                     loaded.Model.PublishedIdentifier,
+		Reasoning:                 loaded.Effort,
+		TaskChecksums:             copyStringMap(baseline.TaskChecksums),
+		TaskEnvironmentIdentities: copyStringMap(baseline.TaskEnvironmentIdentities),
+		Repetitions:               copyIntMap(baseline.Repetitions),
+		TreatmentHash:             bundle.ManifestHash,
+		Treatment:                 bundle.Manifest,
+		LinuxBinarySHA256:         bundle.LinuxBinarySHA256,
+		AdapterSHA256:             bundle.AdapterSHA256,
+		ProviderClient:            loaded.Model.ProviderClientVersion,
+		RuntimeModel:              loaded.Model.RuntimeIdentifier,
+		TemplatesCommit:           bundle.TemplatesCommit,
+		TemplatesDirty:            bundle.TemplatesDirty,
+		NoAutomaticRetry:          true,
+		SelectionMethodOnly:       "Published mini-swe-agent data selected tasks; observed local arms determine the experiment result.",
 	}
 	exists, err := validateCampaignTreatmentManifest(manifestPath, &manifest)
 	if err != nil {
@@ -210,7 +214,7 @@ func prepareTreatment(ctx context.Context, options TreatmentOptions, execute boo
 	}
 	execution := armExecution{
 		repoRoot: options.RepoRoot, stateDir: stateDir, arm: ArmTreatment,
-		concurrency: options.TaskConcurrency, loaded: loaded,
+		concurrency: options.TaskConcurrency, maxNewRuns: options.MaxNewRuns, loaded: loaded,
 		checksums: baseline.TaskChecksums, bundle: bundle,
 	}
 	missing := missingPlanCells(execution)
@@ -227,11 +231,32 @@ func prepareTreatment(ctx context.Context, options TreatmentOptions, execute boo
 		Required:             loaded.RunCount,
 		Missing:              len(missing),
 	}
-	if !execute || len(missing) == 0 {
+	runRuntimePreflight := func() error {
+		eventID, err := NewEventID()
+		if err != nil {
+			return err
+		}
+		task := loaded.Plan.Tasks[0]
+		return preflightTreatmentRuntime(ctx, ExecutionRequest{
+			RepoRoot: options.RepoRoot, EvidenceDir: stateDir, EventID: eventID,
+			Attempt: 1, Task: task.ID, Model: loaded.Model, Effort: loaded.Effort,
+			Arm: ArmTreatment, Bundle: bundle, TaskChecksum: baseline.TaskChecksums[task.ID],
+		})
+	}
+	if !execute {
+		if err := runRuntimePreflight(); err != nil {
+			return outcome, fmt.Errorf("preflight Agent Layer treatment runtime: %w", err)
+		}
+		return outcome, nil
+	}
+	if len(missing) == 0 {
 		return outcome, nil
 	}
 	if !options.Confirmed {
 		return outcome, ErrConfirmationRequired
+	}
+	if err := runRuntimePreflight(); err != nil {
+		return outcome, fmt.Errorf("preflight Agent Layer treatment runtime: %w", err)
 	}
 	if err := ensureCampaignTreatmentManifest(manifestPath, &manifest); err != nil {
 		return outcome, err
@@ -242,8 +267,9 @@ func prepareTreatment(ctx context.Context, options TreatmentOptions, execute boo
 	if err := executePlanArm(ctx, execution, executor); err != nil {
 		return outcome, err
 	}
-	outcome.Completed = outcome.Required
-	outcome.Missing = 0
+	remaining := len(missingPlanCells(execution))
+	outcome.Completed = outcome.Required - remaining
+	outcome.Missing = remaining
 	outcome.ProviderCall = true
 	return outcome, nil
 }
@@ -386,6 +412,12 @@ func BuildCampaignReport(options CampaignReportOptions) (CampaignReportOutcome, 
 			}
 			return CampaignReportOutcome{}, err
 		}
+		if !loaded.Legacy {
+			loaded, err = resolveCampaignForReport(options.RepoRoot, loaded)
+			if err != nil {
+				return CampaignReportOutcome{}, err
+			}
+		}
 		baselineDir := baselineStateDir(options.RepoRoot, loaded.CampaignID)
 		baseline, baselineErr := readCampaignBaseline(baselineDir, loaded)
 		if baselineErr != nil {
@@ -442,6 +474,33 @@ func BuildCampaignReport(options CampaignReportOptions) (CampaignReportOutcome, 
 		JSONPath: jsonPath, HTMLPath: htmlPath, Analyses: analysisPaths,
 		SkippedTreatments: skippedTreatments,
 	}, nil
+}
+
+func resolveCampaignForReport(repoRoot string, loaded loadedBenchmarkPlan) (loadedBenchmarkPlan, error) {
+	legacyPath := filepath.Join(baselineStateDir(repoRoot, loaded.CampaignID), "manifest.json")
+	environments, err := identifyBenchmarkTaskEnvironments(context.Background(), repoRoot, loaded.Plan.Tasks)
+	if err != nil {
+		if _, statErr := os.Stat(legacyPath); statErr == nil {
+			return loaded, nil
+		}
+		return loadedBenchmarkPlan{}, err
+	}
+	qualified, err := bindBenchmarkTaskEnvironments(loaded, environments)
+	if err != nil {
+		return loadedBenchmarkPlan{}, err
+	}
+	qualifiedPath := filepath.Join(baselineStateDir(repoRoot, qualified.CampaignID), "manifest.json")
+	if _, err := os.Stat(qualifiedPath); err == nil {
+		return qualified, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return loadedBenchmarkPlan{}, fmt.Errorf("inspect environment-qualified baseline manifest: %w", err)
+	}
+	if _, err := os.Stat(legacyPath); err == nil {
+		return loaded, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return loadedBenchmarkPlan{}, fmt.Errorf("inspect legacy baseline manifest: %w", err)
+	}
+	return qualified, nil
 }
 
 func campaignRoot(repoRoot, campaignID string) string {
@@ -571,6 +630,16 @@ func analyzeCampaignVersion(loaded loadedBenchmarkPlan, baselineDir string, base
 			if err != nil {
 				return observedAnalysisDocument{}, err
 			}
+			if document.Experiment.BaselineProviderClient == "" {
+				document.Experiment.BaselineProviderClient = baselineResult.ProviderClientVersion
+			} else if document.Experiment.BaselineProviderClient != baselineResult.ProviderClientVersion {
+				return observedAnalysisDocument{}, fmt.Errorf("baseline evidence mixes provider client versions")
+			}
+			if document.Experiment.TreatmentProviderClient == "" {
+				document.Experiment.TreatmentProviderClient = treatmentResult.ProviderClientVersion
+			} else if document.Experiment.TreatmentProviderClient != treatmentResult.ProviderClientVersion {
+				return observedAnalysisDocument{}, fmt.Errorf("treatment evidence mixes provider client versions")
+			}
 			item.BaselineScores = append(item.BaselineScores, baselineResult.F2PScore)
 			item.TreatmentScores = append(item.TreatmentScores, treatmentResult.F2PScore)
 			if baselineResult.VerifierBuildFailed {
@@ -623,6 +692,13 @@ func analyzeCampaignVersion(loaded loadedBenchmarkPlan, baselineDir string, base
 		document.Result.Verdict = verdictWorse
 	}
 	document.CostUSD.Total = addObservedCost(document.CostUSD.Baseline, document.CostUSD.Treatment)
+	if document.Experiment.BaselineProviderClient != document.Experiment.TreatmentProviderClient {
+		document.Limitations = append(document.Limitations, fmt.Sprintf(
+			"The shared baseline used provider client %s and this treatment used %s; observed score and cost differences may include provider-client changes.",
+			document.Experiment.BaselineProviderClient,
+			document.Experiment.TreatmentProviderClient,
+		))
+	}
 	return document, document.validate()
 }
 

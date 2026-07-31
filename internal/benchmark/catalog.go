@@ -10,7 +10,7 @@ import (
 const (
 	DeepSWECommit          = "e016041a6ccf8da29906afc9a3f5a8df940a1f78"
 	PierVersion            = "0.3.0"
-	CodexClientVersion     = "0.145.0"
+	CodexClientVersion     = "0.146.0"
 	ClaudeClientVersion    = "2.1.207"
 	ReportSchemaVersion    = "benchmark-report-v5"
 	StorageSchemaVersion   = "benchmark-store-v1"

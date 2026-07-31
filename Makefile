@@ -135,7 +135,7 @@ test: check-gotestsum ## Run tests
 	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/gotestsum" --format testname -- ./...
 
 .PHONY: test-deepswe-planner
-test-deepswe-planner: ## Compare the website planner with exhaustive allocation
+test-deepswe-planner: ## Verify the website task-correlation evidence
 	@node --test scripts/test-deepswe-planner.js
 
 .PHONY: refresh-deepswe-planner-data

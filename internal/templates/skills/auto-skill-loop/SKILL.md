@@ -2,8 +2,8 @@
 name: auto-skill-loop
 description: >-
   Explicit-only.
-  Run a named autonomous mode through successive PR deliveries, preserving
-  blocked work and centrally shipping ready deliveries.
+  Run a named autonomous mode, repeatedly selecting, implementing, and shipping
+  coherent work while preserving anything blocked.
 ---
 
 # auto-skill-loop
@@ -16,16 +16,18 @@ orchestrator context.
 Require:
 
 - a `mode` matching `references/modes/<mode>.md`
-- standing merge authorization for deliveries that pass every gate below
+- standing authorization to merge work that passes every gate below
 - `planner`, `implementer`, `code_reviewer`, and `rote_worker` dispatch targets
-- one or more `plan_reviewers` targets for plan-based modes
+- one or more `plan_reviewers` targets when the mode always plans; otherwise
+  they are optional until the selected work needs planning
 - any additional targets required by the selected mode
 
-Read `references/mode-contract.md`, the selected mode file,
-`references/blocker-classification.md`, and `references/merge-readiness.md`.
+Read the selected mode file and `references/merge-authorization.md`.
 Validate the mode and all required targets before any side effect. Pass each
 target unchanged through `/agent-dispatch`; do not infer or substitute targets.
 
+A mode may add instructions to any stage of the core loop. Every section is
+optional; an omitted section uses the core behavior unchanged.
 
 ## Context and isolation
 
@@ -40,38 +42,48 @@ paths, changed files, and unresolved finding IDs.
 
 ## Initialize
 
-Dispatch `planner` once to perform the selected mode's `Initialize` section.
-Retain its state for each delivery selection.
+Dispatch `planner` once to initialize progress, applying any mode-specific
+initialization instructions. Its output must record what was examined and what
+remains eligible.
 
 ## Loop
 
-1. **Select.** Dispatch `planner` with the initialization state and current
-   cursor to perform the mode's `Select` section. Require exactly one result:
-   one selected delivery scope or proof that a complete current pass is
-   exhausted. On exhaustion, terminate.
+1. **Select.** Prompt a fresh `planner` with the selected mode, current progress,
+   latest reconciliation result, and `plan_reviewers`. Require it to select as
+   much eligible work as can be implemented and reviewed coherently together,
+   update progress, and run `/plan-work` when substantive design is needed.
+   Include any mode-specific `Execute` instructions in the plan. Terminate only
+   when it proves a complete pass is exhausted under any mode-specific criteria.
 
-2. **Execute.** Prepare or reuse one workflow-owned delivery branch. Then
-   perform the mode's `Execute` section through its required role dispatches.
-   Isolate work only when the user requests it or the current checkout cannot
-   safely hold the delivery.
+2. **Execute.** Prepare or reuse a branch for the selected work. Dispatch
+   `implementer` with any mode-specific `Execute` instructions and either
+   `/implement-plan` with the available plan or the selected work directly.
+   Then dispatch `code_reviewer` with `/review-uncommitted-code`, return material
+   findings to `implementer`, and rerun affected checks.
 
 3. **Prepare the PR.** Dispatch `rote_worker` to run `/ship-pr`, supplying the
    `implementer` target for `/fix-ci`. Continue only when it returns a
    merge-authorization request for an exact PR and head.
 
-4. **Merge.** Resume the same `rote_worker`
-   with single-use authorization for that exact PR and head, derived from the
+4. **Authorize.** Follow `references/merge-authorization.md` for the exact PR
+   and head. Continue only when its independent reviewer returns `authorize`.
+
+5. **Merge.** Resume the same `rote_worker`
+   with authorization for that exact PR and head, derived from the
    standing loop authorization. Continue to reconciliation after the shipping
    dispatch returns.
 
-5. **Reconcile.** Perform the mode's `Reconcile` section against the actual
-   merged, open, or preserved delivery. Then return
-   to selection. With `stop_after=one-delivery`, stop after this reconciliation.
+6. **Reconcile.** Reconcile the actual merged, open, or preserved PR with
+   its source, applying the mode's `Reconcile` section when present. Then return
+   to selection. With `stop_after=one-pr`, stop after this reconciliation.
 
 ## Termination
 
-For each blocked item, preserve useful branch or PR work and record what
-condition must change.
+Continue whenever evidence supports a safe, in-scope next step. Preserve blocked
+work and keep selecting independent work. Ask the user only after a complete
+pass finds no independent work and further progress requires authority only the
+user can provide or a consequential choice the available evidence cannot
+resolve.
 
 Report why the loop ended, the smallest remaining user questions, and every
 preserved branch or PR.

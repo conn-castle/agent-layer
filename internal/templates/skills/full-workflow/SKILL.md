@@ -41,17 +41,9 @@ Dispatch using `/agent-dispatch`.
    user-owned choice. Resolve factual unknowns before continuing.
 2. Run `/plan-work` with the spec and `plan_reviewers`. Validate any reported
    user blocker against repository escalation rules.
-3. Dispatch `implementer` with `/implement-plan` and the complete reviewed
-   artifacts.
-4. Concurrently run `/verify-work` in a fresh built-in subagent and dispatch
-   `code_reviewer` with `/review-uncommitted-code` against the same delivery
-   tree. Validate and deduplicate supported findings.
-5. Dispatch `fixer` with valid open findings in one bounded batch.
-6. Continue until verification is complete and every in-scope finding is
-   resolved or rejected with evidence; ask the user only for a genuine
-   substantive decision that cannot be resolved under repository escalation
-   rules.
-7. Run `/ship-pr`. Return its exact merge-authorization request when
+3. Run `/fully-implement-plan` with the reviewed artifacts and the supplied
+   `implementer`, `code_reviewer`, and `fixer` targets.
+4. Run `/ship-pr`. Return its exact merge-authorization request when
    required, then resume only with the caller's answer.
 
 ## Completion

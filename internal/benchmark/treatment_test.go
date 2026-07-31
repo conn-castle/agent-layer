@@ -33,6 +33,13 @@ func TestTreatmentProjectionAndManifestContainOnlyEffectiveFiles(t *testing.T) {
 	if err := writeNormalizedDispatchConfig(config, []string{"writer", "reviewer"}, model, effort); err != nil {
 		t.Fatalf("writeNormalizedDispatchConfig: %v", err)
 	}
+	configData, err := os.ReadFile(config) // #nosec G304 -- config is beneath a test-owned temporary directory.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(configData), "[agents.codex]\nenabled = true\nlocal_config_dir = true\n") {
+		t.Fatal("normalized Codex treatment does not isolate dispatched clients in the repository-local authenticated home")
+	}
 	manifestRoot := t.TempDir()
 	if err := copyRequiredTree(destination, filepath.Join(manifestRoot, "workspace", "skills")); err != nil {
 		t.Fatal(err)
@@ -75,9 +82,18 @@ func TestSkillsTreatmentPassesManifestTimeoutPolicyToPier(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	repository := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repository, ".codex"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, ".codex", "auth.json"), []byte(`{"token":"test"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	arguments, err := treatmentPierArguments(ExecutionRequest{
-		Model:  model,
-		Effort: effort,
+		RepoRoot:      repository,
+		Model:         model,
+		Effort:        effort,
+		PreflightOnly: true,
 		Bundle: &TreatmentBundle{
 			Root: "/immutable-treatment",
 			Manifest: TreatmentManifest{
@@ -92,6 +108,12 @@ func TestSkillsTreatmentPassesManifestTimeoutPolicyToPier(t *testing.T) {
 	if !strings.Contains(strings.Join(arguments, " "), "--agent-timeout-multiplier 4") {
 		t.Fatalf("Pier arguments omitted treatment timeout policy: %#v", arguments)
 	}
+	if !strings.Contains(strings.Join(arguments, " "), "codex_credentials_path="+filepath.Join(repository, ".codex", "auth.json")) {
+		t.Fatalf("Pier arguments omitted the treatment adapter's Codex credential source: %#v", arguments)
+	}
+	if !strings.Contains(strings.Join(arguments, " "), "preflight_only=true") {
+		t.Fatalf("Pier arguments omitted zero-provider runtime preflight mode: %#v", arguments)
+	}
 }
 
 func TestSkillsTreatmentUsesWorkflowRolesAndAutonomousPrompt(t *testing.T) {
@@ -103,7 +125,7 @@ func TestSkillsTreatmentUsesWorkflowRolesAndAutonomousPrompt(t *testing.T) {
 	if !strings.HasPrefix(string(workflow), autonomous) {
 		t.Fatalf("workflow prompt does not start with the autonomous-run instruction")
 	}
-	for _, required := range []string{"Execute the following skills sequentially.", "instructions: .agent-layer/tmp/instructions.md", "plan_reviewers ({plan_reviewer_count}): {plan_reviewers}", "implementer: {implementer}", "code_reviewer: {code_reviewer}", "fixer: {fixer}"} {
+	for _, required := range []string{"Execute the following skills sequentially.", "specification: .agent-layer/tmp/spec.md", "plan_reviewers ({plan_reviewer_count}): {plan_reviewers}", "implementer: {implementer}", "code_reviewer: {code_reviewer}", "fixer: {fixer}"} {
 		if !strings.Contains(string(workflow), required) {
 			t.Fatalf("workflow prompt does not require %q", required)
 		}
@@ -120,8 +142,8 @@ func TestSkillsTreatmentUsesWorkflowRolesAndAutonomousPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(adapter), `REMOTE_INSTRUCTIONS_FILE = f"{REMOTE_WORKSPACE}/.agent-layer/tmp/instructions.md"`) {
-		t.Fatal("adapter does not write the instructions file the workflow prompt cites")
+	if !strings.Contains(string(adapter), `REMOTE_SPEC_FILE = f"{REMOTE_WORKSPACE}/.agent-layer/tmp/spec.md"`) {
+		t.Fatal("adapter does not write the specification file the workflow prompt cites")
 	}
 }
 
@@ -180,6 +202,23 @@ func TestTreatmentAdapterSyncsNativeClientConfiguration(t *testing.T) {
 	}
 	if !strings.Contains(string(adapter), "/usr/local/bin/al-real sync") {
 		t.Fatal("treatment adapter does not sync native client configuration in the container")
+	}
+	for _, required := range []string{
+		`PIER_CODEX_AUTH = "/tmp/codex-secrets/auth.json"`,
+		`REMOTE_CODEX_HOME = f"{REMOTE_WORKSPACE}/.codex"`,
+		`REMOTE_CODEX_AUTH = f"{REMOTE_CODEX_HOME}/auth.json"`,
+		`REMOTE_CODEX_SESSIONS = f"{REMOTE_CODEX_HOME}/sessions"`,
+		`if self._treatment_agent == "codex":`,
+		`command=f"mkdir -p {Path(PIER_CODEX_AUTH).parent}"`,
+		`await environment.upload_file(self._codex_credentials_path, PIER_CODEX_AUTH)`,
+		`if ! test -r {PIER_CODEX_AUTH}`,
+		`ln -sfn {PIER_CODEX_AUTH} {REMOTE_CODEX_AUTH}`,
+		`test -r {REMOTE_CODEX_AUTH}`,
+		`cp -a {REMOTE_CODEX_SESSIONS}/. {dispatch_sessions_dir}/`,
+	} {
+		if !strings.Contains(string(adapter), required) {
+			t.Fatalf("treatment adapter does not prepare dispatched Codex authentication with %q", required)
+		}
 	}
 }
 

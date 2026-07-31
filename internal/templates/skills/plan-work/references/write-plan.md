@@ -41,6 +41,9 @@ Include:
 
 Do not repeat the plan narrative or generic practices.
 
+Preserve every valid requirement from the inputs in the derived
+artifacts without weakening or omitting them.
+
 ## Workflow
 
 1. Write the plan artifacts.

@@ -10,6 +10,4 @@ write, credential, or approval, and authority reserved by the user or repo.
 Facts, work ordering, one safe answer, breadth, agent or tool failure, and one
 inaccessible or blocked item are not human decisions. Preserve useful work on
 its branch or PR, note the unmet condition and when to reconsider it, and
-continue independent selection. Ask the smallest remaining questions only
-after a complete pass finds no independent work, or when the user asks for
-status.
+continue independent selection.

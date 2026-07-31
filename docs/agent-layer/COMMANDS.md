@@ -293,15 +293,15 @@ make refresh-deepswe-planner-data
 ```
 Run from: repo root
 Prerequisites: Node 22+, curl, and network access
-Notes: Downloads the official DeepSWE v1.1 trials/tasks JSON files into `.agent-layer/tmp/deepswe-planner-data/`, validates required source fields, excludes unusable trials visibly, and writes the versioned browser snapshot. Review the printed source URL and SHA-256 before accepting a changed snapshot. The generated `site/static/deepswe-planner/app/data.js` intentionally exceeds the general 500 KB pre-commit limit because it is the planner's reviewable, reproducible evidence snapshot.
+Notes: Downloads the official DeepSWE v1.1 trials/tasks JSON files into `.agent-layer/tmp/deepswe-planner-data/`, validates required source fields, excludes unusable trials visibly, precomputes deterministic one-run task-correlation distributions and per-task OLS calibrations, and writes the versioned browser snapshot. Review the printed source URL and SHA-256 before accepting a changed snapshot. The generated `site/static/deepswe-planner/app/data.js` intentionally exceeds the general 500 KB pre-commit limit because it is the planner's reviewable, reproducible evidence snapshot.
 
-- Verify the website optimizer against exhaustive allocation
+- Verify the website task-correlation evidence
 ```bash
 make test-deepswe-planner
 ```
 Run from: repo root
 Prerequisites: Node 22+
-Notes: Executes the planner's actual browser calculation code against the pinned published snapshot, exhaustively enumerates a deterministic small task/repetition search space, and verifies the optimal allocation and stable export contract.
+Notes: Verifies deterministic build-time correlations and OLS calibrations, incomplete-cell exclusion, conservative sorting, inverse residual-variance weights, budget highlighting, deterministic score/price simulation, and comparison-allocation reuse.
 
 - Build release artifacts locally (cross-compile)
 ```bash
@@ -313,24 +313,26 @@ Notes: Runs `test-release` first to validate release scripts. Local builds stay 
 
 ### Agent Layer skill A/B benchmark
 
-- Validate or run the bare-model baseline from an exported website plan
+- Validate or run the bare-model baseline from a benchmark plan
 ```bash
 go run ./cmd/al benchmark baseline --check --plan <plan.json> --execution luna:low --task-concurrency 4
 go run ./cmd/al benchmark baseline --plan <plan.json> --execution luna:low --task-concurrency 4 --yes
 pbpaste | go run ./cmd/al benchmark baseline --check --plan - --execution luna:low
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+, Git, Docker, `uvx`, provider authentication, and a valid `deepswe-benchmark-plan` JSON exported by the website
-Notes: The website is the only task/repetition selector. Its published calibration reference and contrast select responsive tasks and use reference costs to allocate repetitions. `--execution` independently selects the model and reasoning used by both local arms. The command validates and executes the exact allocation; `--plan -` reads it from standard input. Successful calls are immutable and reused only when both plan and execution configuration match; failures are not retried automatically.
+Prerequisites: Go 1.26.0+, Git, Docker, `uvx`, provider authentication, and a valid `deepswe-benchmark-plan` JSON
+Notes: The website currently presents task-level correlation, cost, and F2P evidence but does not create plans. `--execution` independently selects the model and reasoning used by both local arms. The command validates and executes the exact supplied allocation; `--plan -` reads it from standard input. Successful calls are immutable and reused only when both plan and execution configuration match; failures are not retried automatically.
 
 - Validate or run one immutable Agent Layer version
 ```bash
 go run ./cmd/al benchmark treatment --check --plan <plan.json> --execution luna:low --label "Iteration 1"
+go run ./cmd/al benchmark treatment --plan <plan.json> --execution luna:low --label "Iteration 1" --max-new-runs 1 --yes
 go run ./cmd/al benchmark treatment --plan <plan.json> --execution luna:low --label "Iteration 1" --task-concurrency 4 --yes
 ```
 Run from: repo root
 Prerequisites: A completed baseline plus the baseline prerequisites
-Notes: The current Agent Layer instructions and skills are fingerprinted into a version identity. A changed bundle creates a new version and reuses the shared baseline for the same plan and `--execution` configuration. `--check` prints the calibration pair and execution configuration, validates readiness, and reports missing calls without writing state or invoking a model. Treatment cost is not inferred from the baseline, so paid execution reports the number of calls and asks for explicit confirmation.
+Notes: The current Agent Layer instructions and skills are fingerprinted into a version identity. A changed bundle creates a new version and reuses the shared baseline for the same plan and `--execution` configuration, including across provider-client upgrades. Each arm preserves its actual provider-client version; a mismatch remains reportable and produces a comparability warning rather than invalidating or separating the evidence. `--check` prints the calibration pair and execution configuration, validates readiness, and reports missing calls without writing state or invoking a model. Treatment cost is not inferred from the baseline, so paid execution reports the number of calls and asks for explicit confirmation.
+Use `--max-new-runs 1` for a bounded paid probe; its successful result is cached, and a later unrestricted run executes only the remaining cells.
 
 - Generate the campaign report without model calls
 ```bash
@@ -338,4 +340,17 @@ go run ./cmd/al benchmark report --plan <plan.json> --execution luna:low
 ```
 Run from: repo root
 Prerequisites: A completed baseline and at least one completed treatment version
-Notes: Calculates the observed two-sided threshold from both arms for the selected execution campaign, then writes canonical JSON and offline HTML from immutable evidence. It does not invoke a provider, Pier, Docker, or a network service.
+Notes: Calculates the observed two-sided threshold from both arms for the selected execution campaign, then writes canonical JSON and offline HTML from immutable evidence. The report displays each arm's provider-client version and warns when versions differ without excluding the comparison. It does not invoke a provider, Pier, Docker, or a network service.
+
+- Generate one completed-matrix report with graph, summary, and pairwise p-values
+```bash
+node scripts/render-deepswe-matrix-report.js \
+  --selection <selection.json> \
+  --trials <matching-trials.json> \
+  --matrix-dir <matrix-state-directory> \
+  --output <report.html> \
+  --json-output <report.json>
+```
+Run from: repo root
+Prerequisites: Node 22+, a completed descriptive matrix, and the exact published-trials snapshot named by the selection
+Notes: Discovers every completed arm from immutable matrix manifests and results, verifies the trials snapshot SHA-256, and regenerates both report artifacts without model, Docker, or network calls. The HTML contains the cost-versus-score graph, arm summary, and complete two-sided calibrated Welch–Satterthwaite p-value matrix. Incomplete arms are reported explicitly and excluded.

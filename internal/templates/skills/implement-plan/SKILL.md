@@ -3,12 +3,12 @@ name: implement-plan
 description: >-
   Explicit-only.
   Apply an explicit plan/task/context artifact set and report the resulting
-  implementation, deviations, and remaining work.
+  implementation and deviations.
 ---
 
 # implement-plan
 
-Implement the supplied artifact contract or return a concrete blocker.
+Implement the supplied artifact contract.
 
 ## Inputs and boundaries
 
@@ -25,12 +25,9 @@ report `.agent-layer/tmp/implement-plan.<run-id>.report.md`, using
    materially broader work.
 3. Run proportionate checks, using the documented full lane when risk or the
    contract warrants it. Address concrete in-scope failures.
-4. Before returning, confirm every task is complete or name a concrete blocker.
-   Do not report a partial implementation as ready for review.
-
-Stop with `blocked` only when planned work cannot safely continue or
-requires a user-owned decision.
+4. Before returning, confirm every task is complete.
+   Do not return a partial implementation.
 
 ## Completion contract
 
-Return the report path and status.
+Return the report path.

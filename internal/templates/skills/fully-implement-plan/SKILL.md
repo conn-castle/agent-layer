@@ -24,25 +24,27 @@ stage, commit, weaken checks, or destructively rewrite user changes.
 
 If follow-up dispatches are required, pass artifact and report paths, changed
 files, and unresolved finding IDs. Do not inline complete artifacts, reports,
-command output, or resolved findings.
+command output, or resolved findings. If delegated work remains incomplete,
+either continue the retained conversation or start a fresh one if its
+existing context is impeding progress. Use a different prompt and approach,
+including the unresolved obligations and failure evidence.
 
 ## Workflow
 
 1. Dispatch `implementer` with `/implement-plan` and the supplied artifacts.
-2. Dispatch `code_reviewer` with `/review-uncommitted-code` against the latest
-   tree and supplied artifacts.
-3. Send confirmed material in-scope findings to `fixer` in one consolidated
-   batch with the plan artifacts. Require every finding to be resolved or
-   disproven with evidence, including any required tests, documentation, and
-   memory updates.
-4. Rerun invalidated checks and targeted contract verification after changes.
-   Repeat semantic review through a new dispatch to the supplied `code_reviewer`
-   target only when a repair changed design, architecture, or contract scope.
-5. Iterate as needed until the plan is fully implemented.
+   If it reports unfinished contract work, continue implementation before
+   starting review. Do not send known unfinished work to reviewers or `fixer`.
+2. When implementation is ready for review, run against the latest tree and
+   supplied artifacts in parallel:
+   - Run `/verify-work` in a fresh subagent
+   - Dispatch `code_reviewer` with `/review-uncommitted-code`
+3. Send all confirmed findings to `fixer` in one batch with the plan artifacts
+   and required tests, documentation, and memory updates.
+4. Validate the repairs with targeted checks. Address any findings those checks
+   confirm remain unresolved without repeating completed review work.
 
-Return `blocked` only when recovery is exhausted and the remaining constraint
-is external, missing authoritative contract input, unsafe overlap with user
-work, or a genuine user decision.
+An unsuccessful delegated attempt or unfinished technical work is not a
+workflow blocker.
 
 ## Completion contract
 

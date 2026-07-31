@@ -270,7 +270,7 @@ func writeNormalizedDispatchConfig(path string, requiredRoles []string, model Mo
 		)
 	} else {
 		content += fmt.Sprintf(
-			"[agents.claude]\nenabled = false\n\n[agents.codex]\nenabled = true\nmodel = %q\nreasoning_effort = %q\n\n",
+			"[agents.claude]\nenabled = false\n\n[agents.codex]\nenabled = true\nlocal_config_dir = true\nmodel = %q\nreasoning_effort = %q\n\n",
 			dispatchModel(model),
 			effort,
 		)

@@ -94,6 +94,72 @@ func TestBenchmarkTreatmentCheckDoesNotRunTreatment(t *testing.T) {
 	}
 }
 
+func TestBenchmarkMatrixCheckAcceptsBaselineOnly(t *testing.T) {
+	original := checkMatrix
+	checkMatrix = func(_ context.Context, options bench.MatrixOptions) (bench.MatrixOutcome, error) {
+		if len(options.BaselineExecutions) != 1 ||
+			options.BaselineExecutions[0] != "luna:high" ||
+			options.TreatmentExecution != "" {
+			t.Fatalf("options = %#v", options)
+		}
+		return bench.MatrixOutcome{
+			SelectionID: strings.Repeat("c", 64), Required: 2, Missing: 2,
+			Arms: []bench.MatrixArmProgress{{
+				Label: "Bare luna high", Execution: "luna:high", Mode: bench.ArmBaseline,
+				Required: 2, Missing: 2,
+			}},
+		}, nil
+	}
+	t.Cleanup(func() { checkMatrix = original })
+
+	root := newRootCmd()
+	root.SetArgs([]string{
+		"benchmark", "matrix", "--check", "--selection", "-",
+		"--baseline-execution", "luna:high",
+	})
+	root.SetIn(strings.NewReader(`{"selection":true}`))
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "2 paid calls missing") &&
+		!strings.Contains(output.String(), "2 missing") {
+		t.Fatalf("unexpected output: %q", output.String())
+	}
+}
+
+func TestBenchmarkTreatmentForwardsNewRunLimit(t *testing.T) {
+	original := runTreatment
+	runTreatment = func(_ context.Context, options bench.TreatmentOptions, _ bench.TaskExecutor) (bench.TreatmentOutcome, error) {
+		if options.MaxNewRuns != 1 {
+			t.Fatalf("max new runs = %d", options.MaxNewRuns)
+		}
+		return bench.TreatmentOutcome{
+			TreatmentID: strings.Repeat("b", 64), Label: "Probe",
+			Required: 12, Completed: 1, Missing: 11,
+		}, nil
+	}
+	t.Cleanup(func() { runTreatment = original })
+
+	root := newRootCmd()
+	root.SetArgs([]string{
+		"benchmark", "treatment", "--plan", "plan.json",
+		"--execution", "luna:low", "--label", "Probe",
+		"--max-new-runs", "1", "--yes",
+	})
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "progress saved: 1 of 12 runs cached, 11 missing") {
+		t.Fatalf("unexpected output: %q", output.String())
+	}
+}
+
 func TestBenchmarkNoninteractiveExecutionReusesCachedWorkWithoutPrompting(t *testing.T) {
 	originalTerminal := isTerminal
 	originalBaseline := runBaseline

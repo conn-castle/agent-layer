@@ -33,23 +33,31 @@ func TestCampaignRunsVersionedTreatmentAndBuildsReportFromImmutableEvidence(t *t
 		"first-benchmark-task":  strings.Repeat("b", 64),
 		"second-benchmark-task": strings.Repeat("c", 64),
 	}
+	environmentIdentities := map[string]string{"first-benchmark-task": strings.Repeat("e", 64), "second-benchmark-task": strings.Repeat("e", 64)}
+	loaded, err = bindBenchmarkTaskEnvironments(loaded, environmentIdentities)
+	if err != nil {
+		t.Fatal(err)
+	}
 	baselineDir := baselineStateDir(root, loaded.CampaignID)
 	baseline := baselineManifest{
-		SchemaVersion:  baselineStateSchema,
-		PlanID:         loaded.ID,
-		CampaignID:     loaded.CampaignID,
-		PlanSnapshot:   loaded.Plan.Snapshot.SHA256,
-		Model:          loaded.Model.PublishedIdentifier,
-		Reasoning:      loaded.Effort,
-		ProviderClient: loaded.Model.ProviderClientVersion,
-		DeepSWECommit:  DeepSWECommit,
-		PierVersion:    PierVersion,
-		TaskChecksums:  checksums,
-		Repetitions:    repetitionsForPlan(loaded.Plan),
+		SchemaVersion:             baselineStateSchema,
+		PlanID:                    loaded.ID,
+		CampaignID:                loaded.CampaignID,
+		PlanSnapshot:              loaded.Plan.Snapshot.SHA256,
+		Model:                     loaded.Model.PublishedIdentifier,
+		Reasoning:                 loaded.Effort,
+		ProviderClient:            loaded.Model.ProviderClientVersion,
+		DeepSWECommit:             DeepSWECommit,
+		PierVersion:               PierVersion,
+		TaskChecksums:             checksums,
+		TaskEnvironmentIdentities: environmentIdentities,
+		Repetitions:               repetitionsForPlan(loaded.Plan),
 	}
 	if err := writeJSON(filepath.Join(baselineDir, "manifest.json"), baseline); err != nil {
 		t.Fatal(err)
 	}
+	baselineLoaded := loaded
+	baselineLoaded.Model.ProviderClientVersion = "older-codex"
 	for _, item := range []struct {
 		task                string
 		baseline, treatment []float64
@@ -58,18 +66,48 @@ func TestCampaignRunsVersionedTreatmentAndBuildsReportFromImmutableEvidence(t *t
 		{task: "second-benchmark-task", baseline: []float64{.6, .8}, treatment: []float64{.7, .9}},
 	} {
 		for index := range item.baseline {
-			writeCampaignAttemptFixture(t, baselineDir, loaded, item.task, index+1, item.baseline[index], .1, 0, 0, true, false, checksums[item.task])
+			writeCampaignAttemptFixture(t, baselineDir, baselineLoaded, item.task, index+1, item.baseline[index], .1, 0, 0, true, false, checksums[item.task])
 		}
 	}
 	originalPreflight := preflightBenchmark
+	originalRuntimePreflight := preflightTreatmentRuntime
 	originalPier := verifyBenchmarkPier
 	originalAuth := validateBenchmarkAuthentication
 	originalBundle := buildCampaignTreatmentBundle
+	originalStartupPreflight := preflightTaskStartups
+	originalCertification := certifyBenchmarkTaskEnvironments
+	originalTaskPreparation := prepareBenchmarkTaskSet
+	originalTaskIdentification := identifyBenchmarkTaskEnvironments
 	var bundledModel Model
 	var bundledEffort string
 	preflightBenchmark = func([]parsedSelection) error { return nil }
+	runtimePreflightCalls := 0
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error {
+		runtimePreflightCalls++
+		return nil
+	}
 	verifyBenchmarkPier = func(context.Context) error { return nil }
 	validateBenchmarkAuthentication = func(string, []parsedSelection) error { return nil }
+	startupPreflightCalls := 0
+	preflightTaskStartups = func(string, []benchmarkPlanTask) error {
+		startupPreflightCalls++
+		return nil
+	}
+	certifyBenchmarkTaskEnvironments = func(_ context.Context, _ string, _ string, tasks []benchmarkPlanTask, _ map[string]string) (map[string]string, error) {
+		identities := make(map[string]string, len(tasks))
+		for _, task := range tasks {
+			identities[task.ID] = strings.Repeat("e", 64)
+		}
+		return identities, nil
+	}
+	taskPreparationCalls := 0
+	prepareBenchmarkTaskSet = func(context.Context, string, []benchmarkPlanTask) (map[string]string, map[string]string, error) {
+		taskPreparationCalls++
+		return copyStringMap(checksums), copyStringMap(environmentIdentities), nil
+	}
+	identifyBenchmarkTaskEnvironments = func(context.Context, string, []benchmarkPlanTask) (map[string]string, error) {
+		return copyStringMap(environmentIdentities), nil
+	}
 	buildCampaignTreatmentBundle = func(_ string, _ string, mode string, model Model, effort string) (*TreatmentBundle, error) {
 		bundledModel = model
 		bundledEffort = effort
@@ -87,30 +125,33 @@ func TestCampaignRunsVersionedTreatmentAndBuildsReportFromImmutableEvidence(t *t
 	}
 	t.Cleanup(func() {
 		preflightBenchmark = originalPreflight
+		preflightTreatmentRuntime = originalRuntimePreflight
 		verifyBenchmarkPier = originalPier
 		validateBenchmarkAuthentication = originalAuth
 		buildCampaignTreatmentBundle = originalBundle
+		preflightTaskStartups = originalStartupPreflight
+		certifyBenchmarkTaskEnvironments = originalCertification
+		prepareBenchmarkTaskSet = originalTaskPreparation
+		identifyBenchmarkTaskEnvironments = originalTaskIdentification
 	})
 
 	options := TreatmentOptions{
 		RepoRoot: root, PlanPath: planPath, Execution: "luna:low",
 		Label: "Iteration 1", TaskConcurrency: 2,
 	}
-	baseline.ProviderClient = "stale-codex"
-	if err := writeJSON(filepath.Join(baselineDir, "manifest.json"), baseline); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := CheckTreatment(context.Background(), options); err == nil ||
-		!strings.Contains(err.Error(), "baseline provider client version") {
-		t.Fatalf("stale provider client error = %v", err)
-	}
-	baseline.ProviderClient = loaded.Model.ProviderClientVersion
+	baseline.ProviderClient = baselineLoaded.Model.ProviderClientVersion
 	if err := writeJSON(filepath.Join(baselineDir, "manifest.json"), baseline); err != nil {
 		t.Fatal(err)
 	}
 	checked, err := CheckTreatment(context.Background(), options)
 	if err != nil || checked.Missing != loaded.RunCount {
 		t.Fatalf("CheckTreatment = %#v, %v", checked, err)
+	}
+	if runtimePreflightCalls != 1 {
+		t.Fatalf("CheckTreatment runtime preflight calls = %d, want 1", runtimePreflightCalls)
+	}
+	if taskPreparationCalls != 1 {
+		t.Fatalf("CheckTreatment task preparation calls = %d, want 1", taskPreparationCalls)
 	}
 	if bundledModel.PublishedIdentifier != publishedLuna || bundledEffort != effortLow {
 		t.Fatalf("treatment used calibration as execution: %s %s", bundledModel.PublishedIdentifier, bundledEffort)
@@ -122,6 +163,12 @@ func TestCampaignRunsVersionedTreatmentAndBuildsReportFromImmutableEvidence(t *t
 	if !errors.Is(err, ErrConfirmationRequired) || pending.Missing != loaded.RunCount {
 		t.Fatalf("unconfirmed treatment = %#v, %v", pending, err)
 	}
+	if runtimePreflightCalls != 1 {
+		t.Fatalf("unconfirmed treatment ran runtime preflight")
+	}
+	if taskPreparationCalls != 2 {
+		t.Fatalf("unconfirmed treatment task preparation calls = %d, want 2", taskPreparationCalls)
+	}
 	if _, err := os.Stat(filepath.Join(checked.StateDir, "manifest.json")); !os.IsNotExist(err) {
 		t.Fatalf("unconfirmed treatment wrote state: %v", err)
 	}
@@ -130,6 +177,12 @@ func TestCampaignRunsVersionedTreatmentAndBuildsReportFromImmutableEvidence(t *t
 	completed, err := RunTreatment(context.Background(), options, executor)
 	if err != nil || completed.Missing != 0 || completed.Completed != loaded.RunCount || !completed.ProviderCall {
 		t.Fatalf("completed treatment = %#v, %v", completed, err)
+	}
+	if runtimePreflightCalls != 2 {
+		t.Fatalf("confirmed treatment runtime preflight calls = %d, want 2", runtimePreflightCalls)
+	}
+	if taskPreparationCalls != 3 {
+		t.Fatalf("confirmed treatment task preparation calls = %d, want 3", taskPreparationCalls)
 	}
 	cached, err := CheckTreatment(context.Background(), options)
 	if err != nil || cached.Missing != 0 || cached.Completed != loaded.RunCount ||
@@ -141,9 +194,16 @@ func TestCampaignRunsVersionedTreatmentAndBuildsReportFromImmutableEvidence(t *t
 	if err := writeJSON(filepath.Join(baselineDir, "manifest.json"), baseline); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CheckTreatment(context.Background(), options); err == nil ||
-		!strings.Contains(err.Error(), "remains reportable but cannot seed") {
-		t.Fatalf("providerless baseline treatment error = %v", err)
+	if providerless, checkErr := CheckTreatment(context.Background(), options); checkErr != nil ||
+		providerless.Missing != 0 {
+		t.Fatalf("providerless baseline treatment check = %#v, %v", providerless, checkErr)
+	}
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error {
+		return errors.New("container setup failed")
+	}
+	if _, checkErr := CheckTreatment(context.Background(), options); checkErr == nil ||
+		!strings.Contains(checkErr.Error(), "container setup failed") {
+		t.Fatalf("runtime preflight failure was not surfaced: %v", checkErr)
 	}
 	var incomplete campaignTreatmentManifest
 	if err := readCampaignJSON(filepath.Join(checked.StateDir, "manifest.json"), &incomplete); err != nil {
@@ -166,7 +226,9 @@ func TestCampaignRunsVersionedTreatmentAndBuildsReportFromImmutableEvidence(t *t
 		len(outcome.Report.ObservedCampaign.Versions) != 1 ||
 		outcome.Report.ObservedCampaign.Versions[0].Label != "Iteration 1" ||
 		len(outcome.SkippedTreatments) != 1 ||
-		len(outcome.Report.ObservedCampaign.Warnings) != 1 {
+		len(outcome.Report.ObservedCampaign.Warnings) != 2 ||
+		outcome.Report.ObservedCampaign.BaselineProviderClient != "older-codex" ||
+		outcome.Report.ObservedCampaign.Versions[0].ProviderClient != loaded.Model.ProviderClientVersion {
 		t.Fatalf("campaign report = %#v", outcome)
 	}
 	for _, path := range []string{outcome.JSONPath, outcome.HTMLPath, outcome.Analyses[0]} {
@@ -180,6 +242,67 @@ func TestCampaignRunsVersionedTreatmentAndBuildsReportFromImmutableEvidence(t *t
 	}
 	if !strings.Contains(string(html), `Skipped incomplete treatment &#34;Incomplete iteration&#34;`) {
 		t.Fatalf("report omitted incomplete-treatment warning: %s", html)
+	}
+	if !strings.Contains(string(html), "score and cost differences may include provider-client changes") ||
+		!strings.Contains(string(html), "provider client older-codex") ||
+		!strings.Contains(string(html), "provider client "+loaded.Model.ProviderClientVersion) {
+		t.Fatalf("report omitted cross-version provenance: %s", html)
+	}
+}
+
+func TestReportResolutionPreservesPreReadinessCampaignUntilQualifiedEvidenceExists(t *testing.T) {
+	root := t.TempDir()
+	planPath := filepath.Join(root, "plan.json")
+	writeBenchmarkPlanFixture(t, planPath)
+	addCostAxisToPlanFixture(t, planPath)
+	loaded, err := loadBenchmarkPlan(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = bindBenchmarkExecution(loaded, "luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	preReadinessID := loaded.CampaignID
+	preReadinessManifest := filepath.Join(baselineStateDir(root, preReadinessID), "manifest.json")
+	if err := os.MkdirAll(filepath.Dir(preReadinessManifest), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(preReadinessManifest, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	originalIdentification := identifyBenchmarkTaskEnvironments
+	environments := make(map[string]string, len(loaded.Plan.Tasks))
+	for _, task := range loaded.Plan.Tasks {
+		environments[task.ID] = strings.Repeat("f", 64)
+	}
+	identifyBenchmarkTaskEnvironments = func(context.Context, string, []benchmarkPlanTask) (map[string]string, error) {
+		return copyStringMap(environments), nil
+	}
+	t.Cleanup(func() { identifyBenchmarkTaskEnvironments = originalIdentification })
+
+	resolved, err := resolveCampaignForReport(root, loaded)
+	if err != nil || resolved.CampaignID != preReadinessID {
+		t.Fatalf("pre-readiness campaign resolution = %#v, %v", resolved, err)
+	}
+	qualified, err := bindBenchmarkTaskEnvironments(loaded, environments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	qualifiedManifest := filepath.Join(baselineStateDir(root, qualified.CampaignID), "manifest.json")
+	if err := os.MkdirAll(filepath.Dir(qualifiedManifest), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(qualifiedManifest, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err = resolveCampaignForReport(root, loaded)
+	if err != nil || resolved.CampaignID != qualified.CampaignID {
+		t.Fatalf("environment-qualified campaign resolution = %#v, %v", resolved, err)
+	}
+	if _, err := os.Stat(preReadinessManifest); err != nil {
+		t.Fatalf("pre-readiness campaign was not preserved: %v", err)
 	}
 }
 

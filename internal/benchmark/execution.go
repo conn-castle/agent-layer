@@ -16,11 +16,22 @@ import (
 // ErrConfirmationRequired is returned before any paid model invocation.
 var ErrConfirmationRequired = errors.New("benchmark paid execution requires confirmation")
 
+var errProviderCapacity = errors.New("provider model is at capacity")
+
+const providerCapacityMessage = "Selected model is at capacity. Please try a different model."
+
 var (
-	preflightBenchmark              = preflight
-	validateBenchmarkAuthentication = validateAuthentication
-	ensurePinnedBenchmarkCheckout   = ensurePinnedCheckout
-	verifyBenchmarkPier             = verifyPinnedPier
+	preflightBenchmark        = preflight
+	preflightTreatmentRuntime = func(ctx context.Context, request ExecutionRequest) error {
+		return (PierExecutor{}).Preflight(ctx, request)
+	}
+	validateBenchmarkAuthentication   = validateAuthentication
+	ensurePinnedBenchmarkCheckout     = ensurePinnedCheckout
+	preflightTaskStartups             = validatePlanTaskStartups
+	certifyBenchmarkTaskEnvironments  = certifyPlanTaskEnvironments
+	prepareBenchmarkTaskSet           = prepareBenchmarkTasks
+	identifyBenchmarkTaskEnvironments = identifyPlanTaskEnvironments
+	verifyBenchmarkPier               = verifyPinnedPier
 )
 
 type parsedSelection struct {
@@ -36,16 +47,17 @@ type TaskExecutor interface {
 // ExecutionRequest identifies one plan-selected repetition and its evidence
 // destination.
 type ExecutionRequest struct {
-	RepoRoot     string
-	EvidenceDir  string
-	EventID      string
-	Attempt      int
-	Task         string
-	Model        Model
-	Effort       string
-	Arm          string
-	Bundle       *TreatmentBundle
-	TaskChecksum string
+	RepoRoot      string
+	EvidenceDir   string
+	EventID       string
+	Attempt       int
+	Task          string
+	Model         Model
+	Effort        string
+	Arm           string
+	Bundle        *TreatmentBundle
+	TaskChecksum  string
+	PreflightOnly bool
 }
 
 func sameIntMap(left, right map[string]int) bool {
@@ -129,6 +141,14 @@ func validateAuthentication(repoRoot string, selections []parsedSelection) error
 // PierExecutor invokes the pinned official Pier adapter once.
 type PierExecutor struct{}
 
+// Preflight executes the real Pier container and treatment setup without
+// invoking the provider model.
+func (PierExecutor) Preflight(ctx context.Context, request ExecutionRequest) error {
+	request.PreflightOnly = true
+	_, err := (PierExecutor{}).Execute(ctx, request)
+	return err
+}
+
 // Execute runs one task and promotes sanitized evidence before returning.
 func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (AttemptResult, error) {
 	if request.RepoRoot == "" || request.EvidenceDir == "" || request.EventID == "" ||
@@ -149,6 +169,10 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 		return AttemptResult{}, fmt.Errorf("create restricted benchmark staging directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(stage) }()
+	startupArguments, err := prepareTaskStartup(checkout, request.Task, stage)
+	if err != nil {
+		return AttemptResult{}, err
+	}
 
 	arguments := []string{
 		"--from", "datacurve-pier==" + PierVersion, "pier", "run",
@@ -159,6 +183,7 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 		"--job-name", request.EventID, "--yes",
 		"--include-task-name", request.Task,
 	}
+	arguments = append(arguments, startupArguments...)
 	if request.Arm == ArmTreatment {
 		treatmentArguments, err := treatmentPierArguments(request)
 		if err != nil {
@@ -188,8 +213,15 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 		return AttemptResult{}, err
 	}
 	command.Env = append(os.Environ(), "DOCKER_CONFIG="+dockerConfig)
+	pythonPaths := make([]string, 0, 2)
 	if request.Bundle != nil {
-		command.Env = append(command.Env, "PYTHONPATH="+filepath.Dir(request.Bundle.AdapterPath))
+		pythonPaths = append(pythonPaths, filepath.Dir(request.Bundle.AdapterPath))
+	}
+	if len(startupArguments) > 0 {
+		pythonPaths = append([]string{stage}, pythonPaths...)
+	}
+	if len(pythonPaths) > 0 {
+		command.Env = append(command.Env, "PYTHONPATH="+strings.Join(pythonPaths, string(os.PathListSeparator)))
 	}
 	output, commandErr := command.CombinedOutput()
 	if err := os.RemoveAll(dockerConfig); err != nil {
@@ -198,17 +230,57 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 	if err := os.WriteFile(filepath.Join(stage, "pier-command.log"), output, 0o600); err != nil {
 		return AttemptResult{}, err
 	}
+	if request.PreflightOnly {
+		if commandErr != nil {
+			return AttemptResult{}, fmt.Errorf("pier treatment runtime preflight failed: %w: %s", commandErr, strings.TrimSpace(string(output)))
+		}
+		if err := validatePierTreatmentPreflight(stage, request); err != nil {
+			return AttemptResult{}, err
+		}
+		return AttemptResult{}, nil
+	}
 	result, normalizeErr := normalizePier(stage, request)
 	if err := promoteSanitizedPierArtifacts(request, stage); err != nil {
 		return AttemptResult{}, err
 	}
 	if commandErr != nil {
+		capacity, err := hasProviderCapacityEvidence(stage)
+		if err != nil {
+			return AttemptResult{}, fmt.Errorf("inspect provider failure evidence: %w", err)
+		}
+		if capacity {
+			return AttemptResult{}, fmt.Errorf("%w: %s", errProviderCapacity, providerCapacityMessage)
+		}
 		return AttemptResult{}, fmt.Errorf("pier task execution failed: %w", commandErr)
 	}
 	if normalizeErr != nil {
 		return AttemptResult{}, normalizeErr
 	}
 	return result, nil
+}
+
+func hasProviderCapacityEvidence(root string) (bool, error) {
+	capacity := false
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if capacity || entry.IsDir() || !entry.Type().IsRegular() {
+			return nil
+		}
+		switch filepath.Base(path) {
+		case "codex.txt", "claude.txt", "claude-code.txt":
+		default:
+			return nil
+		}
+		data, err := os.ReadFile(path) // #nosec G122,G304 -- regular provider transcript beneath private staging.
+		if err != nil {
+			return err
+		}
+		capacity = bytes.Contains(data, []byte(providerCapacityMessage))
+		return nil
+	})
+	return capacity, err
 }
 
 // treatmentPierArguments returns the Pier flags that make the immutable
@@ -238,6 +310,15 @@ func treatmentPierArguments(request ExecutionRequest) ([]string, error) {
 			return nil, fmt.Errorf("claude authentication is required at %s", credentials)
 		}
 		arguments = append(arguments, pierAgentKwarg, "claude_credentials_path="+credentials)
+	} else {
+		credentials := filepath.Join(request.RepoRoot, ".codex", "auth.json")
+		if _, err := os.Stat(credentials); err != nil {
+			return nil, fmt.Errorf("codex authentication is required at %s", credentials)
+		}
+		arguments = append(arguments, pierAgentKwarg, "codex_credentials_path="+credentials)
+	}
+	if request.PreflightOnly {
+		arguments = append(arguments, pierAgentKwarg, "preflight_only=true")
 	}
 	return arguments, nil
 }

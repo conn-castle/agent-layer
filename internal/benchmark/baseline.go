@@ -173,28 +173,30 @@ type legacyBenchmarkPlanTask struct {
 }
 
 type loadedBenchmarkPlan struct {
-	ID         string
-	CampaignID string
-	Plan       benchmarkPlan
-	Model      Model
-	Effort     string
-	RunCount   int
-	Legacy     bool
+	ID                        string
+	CampaignID                string
+	Plan                      benchmarkPlan
+	Model                     Model
+	Effort                    string
+	RunCount                  int
+	Legacy                    bool
+	TaskEnvironmentIdentities map[string]string
 }
 
 type baselineManifest struct {
-	SchemaVersion  string            `json:"schema_version"`
-	PlanID         string            `json:"plan_id"`
-	CampaignID     string            `json:"campaign_id"`
-	CreatedAt      time.Time         `json:"created_at"`
-	PlanSnapshot   string            `json:"plan_snapshot_sha256"`
-	Model          string            `json:"model"`
-	Reasoning      string            `json:"reasoning"`
-	ProviderClient string            `json:"provider_client_version"`
-	DeepSWECommit  string            `json:"deep_swe_commit"`
-	PierVersion    string            `json:"pier_version"`
-	TaskChecksums  map[string]string `json:"task_checksums"`
-	Repetitions    map[string]int    `json:"repetitions"`
+	SchemaVersion             string            `json:"schema_version"`
+	PlanID                    string            `json:"plan_id"`
+	CampaignID                string            `json:"campaign_id"`
+	CreatedAt                 time.Time         `json:"created_at"`
+	PlanSnapshot              string            `json:"plan_snapshot_sha256"`
+	Model                     string            `json:"model"`
+	Reasoning                 string            `json:"reasoning"`
+	ProviderClient            string            `json:"provider_client_version"`
+	DeepSWECommit             string            `json:"deep_swe_commit"`
+	PierVersion               string            `json:"pier_version"`
+	TaskChecksums             map[string]string `json:"task_checksums"`
+	TaskEnvironmentIdentities map[string]string `json:"task_environment_identities,omitempty"`
+	Repetitions               map[string]int    `json:"repetitions"`
 }
 
 // CheckBaseline validates the exported plan and every local execution
@@ -469,6 +471,35 @@ func bindBenchmarkExecution(loaded loadedBenchmarkPlan, selection string) (loade
 	return loaded, nil
 }
 
+func bindBenchmarkTaskEnvironments(loaded loadedBenchmarkPlan, environments map[string]string) (loadedBenchmarkPlan, error) {
+	if loaded.Legacy || len(environments) != len(loaded.Plan.Tasks) {
+		return loadedBenchmarkPlan{}, fmt.Errorf("cannot identify a benchmark campaign without every task environment identity")
+	}
+	identity := struct {
+		Schema                    string            `json:"schema"`
+		PlanID                    string            `json:"plan_id"`
+		Model                     string            `json:"model"`
+		Reasoning                 string            `json:"reasoning"`
+		TaskEnvironmentIdentities map[string]string `json:"task_environment_identities"`
+	}{
+		Schema: "deepswe-campaign-identity-v2", PlanID: loaded.ID,
+		Model: loaded.Model.PublishedIdentifier, Reasoning: loaded.Effort,
+		TaskEnvironmentIdentities: copyStringMap(environments),
+	}
+	for _, task := range loaded.Plan.Tasks {
+		if environments[task.ID] == "" {
+			return loadedBenchmarkPlan{}, fmt.Errorf("cannot identify a benchmark campaign without task %s environment identity", task.ID)
+		}
+	}
+	campaignID, err := hashCanonical(identity)
+	if err != nil {
+		return loadedBenchmarkPlan{}, fmt.Errorf("identify environment-qualified benchmark campaign: %w", err)
+	}
+	loaded.CampaignID = campaignID
+	loaded.TaskEnvironmentIdentities = copyStringMap(environments)
+	return loaded, nil
+}
+
 func executionLabel(model Model, effort string) string {
 	return model.Name + ":" + effort
 }
@@ -507,26 +538,45 @@ func prepareBaseline(ctx context.Context, options BaselineOptions) (loadedBenchm
 	if err := validateBenchmarkAuthentication(options.RepoRoot, selections); err != nil {
 		return loadedBenchmarkPlan{}, nil, err
 	}
-	checkout, err := ensurePinnedBenchmarkCheckout(ctx, options.RepoRoot)
+	checksums, environments, err := prepareBenchmarkTaskSet(ctx, options.RepoRoot, loaded.Plan.Tasks)
 	if err != nil {
 		return loadedBenchmarkPlan{}, nil, err
 	}
-	checksums := make(map[string]string, len(loaded.Plan.Tasks))
-	for _, task := range loaded.Plan.Tasks {
+	loaded, err = bindBenchmarkTaskEnvironments(loaded, environments)
+	if err != nil {
+		return loadedBenchmarkPlan{}, nil, err
+	}
+	return loaded, checksums, nil
+}
+
+func prepareBenchmarkTasks(ctx context.Context, repoRoot string, tasks []benchmarkPlanTask) (map[string]string, map[string]string, error) {
+	checkout, err := ensurePinnedBenchmarkCheckout(ctx, repoRoot)
+	if err != nil {
+		return nil, nil, err
+	}
+	checksums := make(map[string]string, len(tasks))
+	for _, task := range tasks {
 		root := filepath.Join(checkout, "tasks", task.ID)
 		for _, required := range []string{taskTOMLFile, taskInstructionFile, taskPreArtifactsFile, filepath.Join("tests", "test.sh")} {
 			info, statErr := os.Stat(filepath.Join(root, required))
 			if statErr != nil || info.IsDir() {
-				return loadedBenchmarkPlan{}, nil, fmt.Errorf("benchmark task %s is missing %s", task.ID, required)
+				return nil, nil, fmt.Errorf("benchmark task %s is missing %s", task.ID, required)
 			}
 		}
 		checksum, checksumErr := TaskTreeChecksum(root)
 		if checksumErr != nil {
-			return loadedBenchmarkPlan{}, nil, fmt.Errorf("checksum benchmark task %s: %w", task.ID, checksumErr)
+			return nil, nil, fmt.Errorf("checksum benchmark task %s: %w", task.ID, checksumErr)
 		}
 		checksums[task.ID] = checksum
 	}
-	return loaded, checksums, nil
+	if err := preflightTaskStartups(checkout, tasks); err != nil {
+		return nil, nil, err
+	}
+	environments, err := certifyBenchmarkTaskEnvironments(ctx, repoRoot, checkout, tasks, checksums)
+	if err != nil {
+		return nil, nil, err
+	}
+	return checksums, environments, nil
 }
 
 func baselineStateDir(repoRoot, campaignID string) string {
@@ -539,18 +589,19 @@ func ensureBaselineManifest(stateDir string, loaded loadedBenchmarkPlan, checksu
 		repetitions[task.ID] = task.RepetitionsPerArm
 	}
 	manifest := baselineManifest{
-		SchemaVersion:  baselineStateSchema,
-		PlanID:         loaded.ID,
-		CampaignID:     loaded.CampaignID,
-		CreatedAt:      time.Now().UTC(),
-		PlanSnapshot:   loaded.Plan.Snapshot.SHA256,
-		Model:          loaded.Model.PublishedIdentifier,
-		Reasoning:      loaded.Effort,
-		ProviderClient: loaded.Model.ProviderClientVersion,
-		DeepSWECommit:  DeepSWECommit,
-		PierVersion:    PierVersion,
-		TaskChecksums:  checksums,
-		Repetitions:    repetitions,
+		SchemaVersion:             baselineStateSchema,
+		PlanID:                    loaded.ID,
+		CampaignID:                loaded.CampaignID,
+		CreatedAt:                 time.Now().UTC(),
+		PlanSnapshot:              loaded.Plan.Snapshot.SHA256,
+		Model:                     loaded.Model.PublishedIdentifier,
+		Reasoning:                 loaded.Effort,
+		ProviderClient:            loaded.Model.ProviderClientVersion,
+		DeepSWECommit:             DeepSWECommit,
+		PierVersion:               PierVersion,
+		TaskChecksums:             checksums,
+		TaskEnvironmentIdentities: copyStringMap(loaded.TaskEnvironmentIdentities),
+		Repetitions:               repetitions,
 	}
 	path := filepath.Join(stateDir, "manifest.json")
 	if data, err := os.ReadFile(path); err == nil { // #nosec G304 -- stateDir is content-addressed below the private benchmark store.

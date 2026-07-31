@@ -71,6 +71,7 @@ type ObservedVersionTaskReport struct {
 type ObservedVersionReport struct {
 	GeneratedAt               time.Time                   `json:"generated_at"`
 	Label                     string                      `json:"label"`
+	ProviderClient            string                      `json:"provider_client_version,omitempty"`
 	Verdict                   string                      `json:"verdict"`
 	Mean                      float64                     `json:"mean"`
 	StandardError             float64                     `json:"standard_error"`
@@ -94,25 +95,26 @@ type ObservedVersionReport struct {
 // ObservedCampaignReport is the executive report model for a shared baseline
 // and an ordered series of skills/instructions versions.
 type ObservedCampaignReport struct {
-	PlanID                string                       `json:"plan_id"`
-	CampaignID            string                       `json:"campaign_id"`
-	Model                 string                       `json:"model"`
-	Reasoning             string                       `json:"reasoning"`
-	CalibrationReference  string                       `json:"calibration_reference"`
-	CalibrationContrast   string                       `json:"calibration_contrast"`
-	BaselineLabel         string                       `json:"baseline_label"`
-	TaskCount             int                          `json:"task_count"`
-	RunsPerArm            int                          `json:"runs_per_arm"`
-	SignificanceLevel     float64                      `json:"two_sided_significance_level"`
-	EqualTaskWeighting    bool                         `json:"equal_task_weighting"`
-	BaselineMean          float64                      `json:"baseline_mean"`
-	BaselineStandardError float64                      `json:"baseline_standard_error"`
-	BaselineCost          ObservedCostRange            `json:"baseline_cost"`
-	CampaignCost          ObservedCostRange            `json:"campaign_cost"`
-	CostAxis              ObservedCostAxis             `json:"cost_axis"`
-	BaselineTasks         []ObservedBaselineTaskReport `json:"baseline_tasks"`
-	Versions              []ObservedVersionReport      `json:"versions"`
-	Warnings              []string                     `json:"warnings,omitempty"`
+	PlanID                 string                       `json:"plan_id"`
+	CampaignID             string                       `json:"campaign_id"`
+	Model                  string                       `json:"model"`
+	Reasoning              string                       `json:"reasoning"`
+	CalibrationReference   string                       `json:"calibration_reference"`
+	CalibrationContrast    string                       `json:"calibration_contrast"`
+	BaselineLabel          string                       `json:"baseline_label"`
+	BaselineProviderClient string                       `json:"baseline_provider_client_version,omitempty"`
+	TaskCount              int                          `json:"task_count"`
+	RunsPerArm             int                          `json:"runs_per_arm"`
+	SignificanceLevel      float64                      `json:"two_sided_significance_level"`
+	EqualTaskWeighting     bool                         `json:"equal_task_weighting"`
+	BaselineMean           float64                      `json:"baseline_mean"`
+	BaselineStandardError  float64                      `json:"baseline_standard_error"`
+	BaselineCost           ObservedCostRange            `json:"baseline_cost"`
+	CampaignCost           ObservedCostRange            `json:"campaign_cost"`
+	CostAxis               ObservedCostAxis             `json:"cost_axis"`
+	BaselineTasks          []ObservedBaselineTaskReport `json:"baseline_tasks"`
+	Versions               []ObservedVersionReport      `json:"versions"`
+	Warnings               []string                     `json:"warnings,omitempty"`
 }
 
 type observedAnalysisDocument struct {
@@ -128,6 +130,8 @@ type observedAnalysisDocument struct {
 		CalibrationContrast       string         `json:"calibrationContrast"`
 		Baseline                  string         `json:"baseline"`
 		Treatment                 string         `json:"treatment"`
+		BaselineProviderClient    string         `json:"baselineProviderClientVersion,omitempty"`
+		TreatmentProviderClient   string         `json:"treatmentProviderClientVersion,omitempty"`
 		Tasks                     int            `json:"tasks"`
 		RepetitionsPerArm         map[string]int `json:"repetitionsPerArm"`
 		TwoSidedSignificanceLevel float64        `json:"twoSidedSignificanceLevel"`
@@ -225,21 +229,22 @@ func BuildObservedCampaignReport(documents ...[]byte) (Report, error) {
 		return task.BaselineSampleVariance
 	})
 	campaign := &ObservedCampaignReport{
-		PlanID:                first.PlanID,
-		CampaignID:            first.CampaignID,
-		Model:                 first.Experiment.Model,
-		Reasoning:             first.Experiment.Reasoning,
-		CalibrationReference:  first.Experiment.CalibrationReference,
-		CalibrationContrast:   first.Experiment.CalibrationContrast,
-		BaselineLabel:         first.Experiment.Baseline,
-		TaskCount:             first.Experiment.Tasks,
-		RunsPerArm:            runsPerArm,
-		SignificanceLevel:     first.Experiment.TwoSidedSignificanceLevel,
-		EqualTaskWeighting:    first.Experiment.EqualTaskWeighting,
-		BaselineMean:          first.Result.BaselineMean,
-		BaselineStandardError: baselineStandardError,
-		BaselineCost:          first.CostUSD.Baseline,
-		CampaignCost:          first.CostUSD.Baseline,
+		PlanID:                 first.PlanID,
+		CampaignID:             first.CampaignID,
+		Model:                  first.Experiment.Model,
+		Reasoning:              first.Experiment.Reasoning,
+		CalibrationReference:   first.Experiment.CalibrationReference,
+		CalibrationContrast:    first.Experiment.CalibrationContrast,
+		BaselineLabel:          first.Experiment.Baseline,
+		BaselineProviderClient: first.Experiment.BaselineProviderClient,
+		TaskCount:              first.Experiment.Tasks,
+		RunsPerArm:             runsPerArm,
+		SignificanceLevel:      first.Experiment.TwoSidedSignificanceLevel,
+		EqualTaskWeighting:     first.Experiment.EqualTaskWeighting,
+		BaselineMean:           first.Result.BaselineMean,
+		BaselineStandardError:  baselineStandardError,
+		BaselineCost:           first.CostUSD.Baseline,
+		CampaignCost:           first.CostUSD.Baseline,
 		CostAxis: ObservedCostAxis{
 			Scale:                        first.CostAxis.Scale,
 			ReferenceConfiguration:       first.CostAxis.ReferenceConfiguration,
@@ -278,6 +283,7 @@ func BuildObservedCampaignReport(documents ...[]byte) (Report, error) {
 		version := ObservedVersionReport{
 			GeneratedAt:               source.GeneratedAt.UTC(),
 			Label:                     source.Experiment.Treatment,
+			ProviderClient:            source.Experiment.TreatmentProviderClient,
 			Verdict:                   source.Result.Verdict,
 			Mean:                      source.Result.TreatmentMean,
 			StandardError:             observedArmStandardError(source.Tasks, func(task ObservedTaskReport) float64 { return task.TreatmentSampleVariance }),
@@ -306,6 +312,13 @@ func BuildObservedCampaignReport(documents ...[]byte) (Report, error) {
 		}
 		campaign.Versions = append(campaign.Versions, version)
 		campaign.CampaignCost = addObservedCost(campaign.CampaignCost, source.CostUSD.Treatment)
+		if campaign.BaselineProviderClient != "" && version.ProviderClient != "" &&
+			campaign.BaselineProviderClient != version.ProviderClient {
+			campaign.Warnings = append(campaign.Warnings, fmt.Sprintf(
+				"%q used provider client %s while the shared baseline used %s; score and cost differences may include provider-client changes.",
+				version.Label, version.ProviderClient, campaign.BaselineProviderClient,
+			))
+		}
 	}
 	last := sources[len(sources)-1]
 	return Report{
@@ -333,6 +346,7 @@ func validateSharedObservedBaseline(first, next observedAnalysisDocument) error 
 		first.Experiment.CalibrationReference != next.Experiment.CalibrationReference ||
 		first.Experiment.CalibrationContrast != next.Experiment.CalibrationContrast ||
 		first.Experiment.Baseline != next.Experiment.Baseline ||
+		first.Experiment.BaselineProviderClient != next.Experiment.BaselineProviderClient ||
 		first.Experiment.Tasks != next.Experiment.Tasks ||
 		first.Experiment.TwoSidedSignificanceLevel != next.Experiment.TwoSidedSignificanceLevel ||
 		first.Experiment.EqualTaskWeighting != next.Experiment.EqualTaskWeighting ||
