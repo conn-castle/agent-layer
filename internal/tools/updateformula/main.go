@@ -23,7 +23,6 @@ const (
 var formulaTemplate = template.Must(template.New("formula").Parse(`class AgentLayer < Formula
   desc "Config-first CLI for keeping coding agents in sync"
   homepage "https://github.com/conn-castle/agent-layer"
-  version "{{ .Version }}"
   license "MIT"
 
   on_macos do
@@ -63,7 +62,6 @@ end
 `))
 
 type formulaData struct {
-	Version        string
 	ReleaseBaseURL string
 	DarwinARM64SHA string
 	DarwinAMD64SHA string
@@ -130,7 +128,6 @@ func run(args []string, errOut io.Writer) int {
 	}
 
 	data := formulaData{
-		Version:        strings.TrimPrefix(tag, "v"),
 		ReleaseBaseURL: releaseAssetURL + "/" + tag,
 		DarwinARM64SHA: darwinARM64SHA,
 		DarwinAMD64SHA: darwinAMD64SHA,
