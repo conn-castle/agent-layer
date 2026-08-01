@@ -64,9 +64,8 @@ remains eligible.
    Then dispatch `code_reviewer` with `/review-uncommitted-code`, return material
    findings to `implementer`, and rerun affected checks.
 
-3. **Prepare the PR.** Dispatch `rote_worker` to run `/ship-pr`, supplying the
-   `implementer` target for `/fix-ci`. Continue only when it returns a
-   merge-authorization request for an exact PR and head.
+3. **Prepare the PR.** Dispatch `rote_worker` to run `/ship-pr`. Continue only
+   when it returns a merge-authorization request for an exact PR and head.
 
 4. **Authorize.** Follow `references/merge-authorization.md` for the exact PR
    and head. On `changes-required`, dispatch `implementer` fresh with the
