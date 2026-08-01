@@ -19,7 +19,7 @@ func TestLoadCLISkillCatalog_EmbeddedHasFourEntries(t *testing.T) {
 	for _, entry := range entries {
 		ids[entry.ID] = entry
 	}
-	for _, want := range []string{"tavily-web", "playwright-cli", "find-docs", "agent-dispatch"} {
+	for _, want := range []string{"tavily-web", "playwright", "find-docs", "agent-dispatch"} {
 		_, ok := ids[want]
 		assert.True(t, ok, "catalog should declare %s", want)
 	}

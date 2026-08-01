@@ -1,5 +1,5 @@
 ---
-name: playwright-cli
+name: playwright
 description: Use globally installed `playwright-cli` for browser automation, UI inspection, screenshots, Playwright test debugging, or test generation. Trigger when a task needs browser interaction or test repair. Do not use for generic tests, web search, non-browser docs, or API-only work.
 license: Apache-2.0
 compatibility: Requires globally installed `playwright-cli` from the maintained `@playwright/cli` npm package and any browser, app, or Playwright test environment needed by the task. The unscoped `playwright-cli` npm package is deprecated; its replacement keeps the same binary name.

@@ -938,6 +938,26 @@ func TestLoadUpgradeMigrationManifest_0_12_0_ConsolidatesUnreleasedContracts(t *
 	}
 }
 
+func TestLoadUpgradeMigrationManifest_0_15_0_RenamesPlaywrightCatalogSkill(t *testing.T) {
+	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.15.0")
+	if err != nil {
+		t.Fatalf("load 0.15.0 manifest: %v", err)
+	}
+	if manifest.MinPriorVersion != "0.10.2" {
+		t.Fatalf("min_prior_version = %q, want 0.10.2", manifest.MinPriorVersion)
+	}
+	if len(manifest.Operations) != 1 {
+		t.Fatalf("operations = %d, want 1", len(manifest.Operations))
+	}
+
+	op := manifest.Operations[0]
+	if op.Kind != upgradeMigrationKindRenameFile ||
+		op.From != ".agent-layer/skills/playwright-cli" ||
+		op.To != ".agent-layer/skills/playwright" || !op.SourceAgnostic {
+		t.Fatalf("operation = %#v, want playwright catalog directory rename", op)
+	}
+}
+
 func TestLoadUpgradeMigrationManifest_0_12_1_RemovesCodexAgentsShim(t *testing.T) {
 	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.12.1")
 	if err != nil {

@@ -27,6 +27,7 @@ const (
 // flag them in existing repos after the skills-catalog restructure.
 var catalogSkillRelPathPrefixes = []string{
 	".agent-layer/skills/tavily-web/",
+	".agent-layer/skills/playwright/",
 	".agent-layer/skills/playwright-cli/",
 	".agent-layer/skills/find-docs/",
 	".agent-layer/skills/agent-dispatch/",

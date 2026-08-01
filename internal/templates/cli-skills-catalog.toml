@@ -11,7 +11,7 @@ name = "Tavily web search"
 binary = "tvly"
 
 [[cli_skills]]
-id = "playwright-cli"
+id = "playwright"
 name = "Playwright browser automation"
 binary = "playwright-cli"
 

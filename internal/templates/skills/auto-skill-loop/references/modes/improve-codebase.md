@@ -5,11 +5,6 @@
 Improve selected repository scopes and lenses until a fresh pass finds no
 material work.
 
-## Required roles
-
-Require `planner`, `implementer`, `code_reviewer`, and `rote_worker`. Do not
-require `plan_reviewers` or the common plan flow.
-
 ## Initialize
 
 Map repository-native components, cross-cutting boundaries, and relevant quality
@@ -30,17 +25,14 @@ dependency, or performance problems, false test confidence, or material
 architectural or maintenance cost. Examine local, cross-boundary, and
 architectural causes.
 
-Do not select a candidate because it is easiest, smallest, or immediately
-actionable. While meaningful scopes or lenses remain without fresh coverage,
-reject isolated guardrails, bookkeeping, cosmetic cleanup, speculative
-abstraction, unjustified rewrites, and minor defensive changes. A small change
-qualifies only when concrete evidence shows independently material impact;
-otherwise continue searching for a substantive repair or prove exhaustion.
+While meaningful scopes or lenses remain without fresh coverage, reject
+isolated guardrails, bookkeeping, cosmetic cleanup, speculative abstraction,
+unjustified rewrites, and minor defensive changes.
 
 ## Execute
 
-Dispatch `implementer` to run `/improve-codebase` exactly once on the selected
-scope and lenses. Do not invoke another skill or the common plan flow.
+Inspect the selected scope and lenses, then repair every validated material
+finding that is not genuinely blocked.
 
 ## Reconcile
 

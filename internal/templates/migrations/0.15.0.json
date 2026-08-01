@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "target_version": "0.15.0",
+  "min_prior_version": "0.10.2",
+  "operations": [
+    {
+      "id": "a-rename-playwright-catalog-skill",
+      "kind": "rename_file",
+      "source_agnostic": true,
+      "from": ".agent-layer/skills/playwright-cli",
+      "to": ".agent-layer/skills/playwright",
+      "rationale": "Rename the catalog skill id while preserving its files and the playwright-cli command surface."
+    }
+  ]
+}

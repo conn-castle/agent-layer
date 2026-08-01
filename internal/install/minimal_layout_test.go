@@ -108,5 +108,5 @@ func TestBuildUpgradePlan_InstalledCatalogSkillIsUpgradeManaged(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.NotNil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/skills/tavily-web/SKILL.md"))
-	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/playwright-cli/SKILL.md"))
+	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/playwright/SKILL.md"))
 }

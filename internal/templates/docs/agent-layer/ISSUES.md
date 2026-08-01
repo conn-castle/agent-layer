@@ -13,6 +13,8 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 - Keep **exactly one blank line** between entries.
 - Prevent duplicates: search the file and merge/rewrite instead of adding near-duplicates.
 - When fixed, remove the entry from this file.
+- Describe the problem without choosing a solution or listing options.
+- Use `Next step` only when the action is useful regardless of the eventual solution. Otherwise, use `Open question: <decision needed>`.
 
 ### Entry template
 ```text

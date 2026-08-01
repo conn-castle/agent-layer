@@ -23,8 +23,13 @@ func TestOwnershipPolicyForPath_CatalogSkills(t *testing.T) {
 			want: ownershipPolicyCatalogSkills,
 		},
 		{
-			name: "playwright-cli nested file classified",
-			path: ".agent-layer/skills/playwright-cli/templates/something.md",
+			name: "playwright nested file classified",
+			path: ".agent-layer/skills/playwright/templates/something.md",
+			want: ownershipPolicyCatalogSkills,
+		},
+		{
+			name: "legacy playwright-cli file remains classified during migration",
+			path: ".agent-layer/skills/playwright-cli/SKILL.md",
 			want: ownershipPolicyCatalogSkills,
 		},
 		{
@@ -81,12 +86,19 @@ func TestCatalogSkillRelPathPrefixesMatchEmbeddedCatalog(t *testing.T) {
 		require.NotEmpty(t, entry.ID)
 		want = append(want, ".agent-layer/skills/"+entry.ID+"/")
 	}
-	got := append([]string(nil), catalogSkillRelPathPrefixes...)
+	legacy := ".agent-layer/skills/playwright-cli/"
+	got := make([]string, 0, len(catalogSkillRelPathPrefixes))
+	for _, prefix := range catalogSkillRelPathPrefixes {
+		if prefix != legacy {
+			got = append(got, prefix)
+		}
+	}
 	sort.Strings(want)
 	sort.Strings(got)
 
 	assert.Equal(t, want, got)
-	for _, prefix := range got {
+	for _, prefix := range catalogSkillRelPathPrefixes {
 		assert.Equal(t, ownershipPolicyCatalogSkills, ownershipPolicyForPath(prefix+"SKILL.md"))
 	}
+	assert.Contains(t, catalogSkillRelPathPrefixes, legacy)
 }
