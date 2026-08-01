@@ -1,6 +1,32 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.15.0 - 2026-07-31
+
+Agent Dispatch MCP and benchmark tooling release.
+
+### Added
+- Agent Dispatch now exposes a built-in `agent-layer` MCP server with
+  `dispatch_options`, `dispatch_start`, `dispatch_wait`, `dispatch_continue`,
+  and `dispatch_cancel`, using the same asynchronous handles, states, and
+  durable result files as the CLI. The server is projected into enabled
+  Codex, Claude, Antigravity, VS Code, and Copilot CLI clients.
+- Added `al benchmark baseline`, `al benchmark treatment`, and
+  `al benchmark report` for website-planned DeepSWE comparisons backed by
+  immutable campaign evidence.
+
+### Changed
+- The bundled Agent Dispatch skill now uses the built-in MCP tools for
+  bounded leaf work, while the CLI remains the human and scripting surface.
+- Workflow skills were simplified around explicit root-to-leaf boundaries,
+  review gates, and delegated delivery.
+- Renamed the bundled `playwright-cli` skill to `playwright` while preserving
+  the Playwright CLI command surface.
+
+### Internal
+- Added the `v0.15.0` migration and template ownership manifests. The
+  migration renames the managed `playwright-cli` skill directory.
+
 ## v0.14.0 - 2026-07-22
 
 Breaking Agent Dispatch lifecycle release. Dispatch now exposes asynchronous,
