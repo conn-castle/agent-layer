@@ -576,6 +576,26 @@ func TestMCPHardGuardReleasesAWedgedHandler(t *testing.T) {
 	}
 }
 
+// TestMCPHardGuardBoundsAContextFreeHandler proves the guard itself releases
+// callers even when an operation cannot observe context cancellation.
+func TestMCPHardGuardBoundsAContextFreeHandler(t *testing.T) {
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	handler := guard(25*time.Millisecond, func(context.Context, *mcp.CallToolRequest, OptionsInput) (*mcp.CallToolResult, *OptionsResponse, error) {
+		<-release
+		return nil, &OptionsResponse{}, nil
+	})
+
+	started := time.Now()
+	_, _, err := handler(context.Background(), nil, OptionsInput{})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("guard error = %v, want context deadline exceeded", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("context-free handler blocked caller for %s", elapsed)
+	}
+}
+
 func newRunningMCPTestRun(t *testing.T, root string) (*dispatchRun, Session) {
 	t.Helper()
 	run, session := newWaitTestRun(t, root)

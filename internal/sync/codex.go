@@ -154,9 +154,23 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		appendCodexChimeBlock(&builder)
 	}
 
-	if !config.HasProviderPassthroughKey(agentSpecific, config.CodexMCPServersKey) {
+	var resolved []projection.ResolvedMCPServer
+	if config.HasProviderPassthroughKey(agentSpecific, config.CodexMCPServersKey) {
+		builtIn, ok := projection.BuiltInDispatchServer(project.Config, projection.ClientCodex)
+		if ok {
+			servers, isTable := agentSpecific[config.CodexMCPServersKey].(map[string]any)
+			if !isTable {
+				return codexManagedConfig{}, errors.New("agents.codex.agent_specific.mcp_servers must be a table")
+			}
+			if _, exists := servers[projection.BuiltInDispatchServerID]; exists {
+				return codexManagedConfig{}, fmt.Errorf("agents.codex.agent_specific.mcp_servers.%s is reserved for Agent Dispatch", projection.BuiltInDispatchServerID)
+			}
+			resolved = []projection.ResolvedMCPServer{builtIn}
+		}
+	} else {
 		// Use placeholder syntax for initial resolution (needed for bearer_token_env_var extraction).
-		resolved, err := projection.EffectiveMCPServers(
+		var err error
+		resolved, err = projection.EffectiveMCPServers(
 			project.Config,
 			project.Env,
 			projection.ClientCodex,
@@ -166,26 +180,27 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 			return codexManagedConfig{}, err
 		}
 
-		if len(resolved) > 0 {
-			appendCodexSectionBreak(&builder)
+	}
+
+	if len(resolved) > 0 {
+		appendCodexSectionBreak(&builder)
+	}
+	for i, server := range resolved {
+		if i > 0 {
+			builder.WriteString("\n")
 		}
-		for i, server := range resolved {
-			if i > 0 {
-				builder.WriteString("\n")
+		fmt.Fprintf(&builder, "[mcp_servers.%q]\n", server.ID)
+		switch server.Transport {
+		case config.TransportHTTP:
+			if err := writeCodexHTTPServer(&builder, server, project.Env); err != nil {
+				return codexManagedConfig{}, err
 			}
-			fmt.Fprintf(&builder, "[mcp_servers.%q]\n", server.ID)
-			switch server.Transport {
-			case config.TransportHTTP:
-				if err := writeCodexHTTPServer(&builder, server, project.Env); err != nil {
-					return codexManagedConfig{}, err
-				}
-			case config.TransportStdio:
-				if err := writeCodexStdioServer(&builder, server, project.Env); err != nil {
-					return codexManagedConfig{}, err
-				}
-			default:
-				return codexManagedConfig{}, fmt.Errorf(messages.MCPServerUnsupportedTransportFmt, server.ID, server.Transport)
+		case config.TransportStdio:
+			if err := writeCodexStdioServer(&builder, server, project.Env); err != nil {
+				return codexManagedConfig{}, err
 			}
+		default:
+			return codexManagedConfig{}, fmt.Errorf(messages.MCPServerUnsupportedTransportFmt, server.ID, server.Transport)
 		}
 	}
 

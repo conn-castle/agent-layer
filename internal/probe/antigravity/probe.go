@@ -104,7 +104,7 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 		// A run that outlives probeRunTimeout is reported as its own outcome.
 		// Folding it into a generic failure would hide whether the client never
 		// answered or answered wrongly.
-		TimedOut: runCtx.Err() != nil,
+		TimedOut: probeTimedOut(runCtx),
 	}
 	if runErr != nil {
 		result.Error = runErr.Error()
@@ -123,6 +123,10 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 		result.Evidence = append(result.Evidence, evidence)
 	}
 	return result, nil
+}
+
+func probeTimedOut(ctx context.Context) bool {
+	return errors.Is(ctx.Err(), context.DeadlineExceeded)
 }
 
 // probeMCPFixture describes the deterministic stdio MCP server seeded into the

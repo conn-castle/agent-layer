@@ -225,7 +225,23 @@ func guard[In, Out any](timeout time.Duration, handler mcp.ToolHandlerFor[In, Ou
 	return func(ctx context.Context, request *mcp.CallToolRequest, input In) (*mcp.CallToolResult, Out, error) {
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		return handler(ctx, request, input)
+		type response struct {
+			result *mcp.CallToolResult
+			output Out
+			err    error
+		}
+		completed := make(chan response, 1)
+		go func() {
+			result, output, err := handler(ctx, request, input)
+			completed <- response{result: result, output: output, err: err}
+		}()
+		select {
+		case response := <-completed:
+			return response.result, response.output, response.err
+		case <-ctx.Done():
+			var zero Out
+			return nil, zero, ctx.Err()
+		}
 	}
 }
 
