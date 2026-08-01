@@ -23,13 +23,6 @@ const (
 	workerLogFile     = "worker.log"
 )
 
-type publicResult struct {
-	Handle     string `json:"handle"`
-	State      string `json:"state"`
-	ResultPath string `json:"result_path,omitempty"`
-	Error      string `json:"error,omitempty"`
-}
-
 type workerRequest struct {
 	Root         string `json:"root"`
 	WorkDir      string `json:"work_dir"`
@@ -247,7 +240,7 @@ func publishInvocation(root string, run *dispatchRun, session Session, request w
 		_ = worker.gate.Close()
 		return failBeforePublication(root, run, session, err)
 	}
-	if err := writePublicResult(stdout, publicResult{Handle: session.Name, State: dispatchStateRunning}); err != nil {
+	if err := writePublicResult(stdout, Result{Handle: session.Name, State: dispatchStateRunning}); err != nil {
 		_ = worker.gate.Close()
 		return errors.Join(err, removeWorkerRequest(run.Dir))
 	}
@@ -417,7 +410,7 @@ func failWorkerBeforeExecution(root string, runID string, cause error) error {
 	return finishDispatchFailure(request, cause)
 }
 
-func writePublicResult(stdout io.Writer, result publicResult) error {
+func writePublicResult(stdout io.Writer, result Result) error {
 	if err := json.NewEncoder(stdout).Encode(result); err != nil {
 		return wrapExitError(ExitTargetFailure, "write dispatch response", err)
 	}

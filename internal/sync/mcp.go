@@ -50,10 +50,14 @@ func buildMCPConfig(project *config.ProjectConfig) (*mcpConfig, error) {
 		Servers:     make(OrderedMap[mcpServer]),
 	}
 
-	resolved, err := projection.ResolveMCPServers(
-		project.Config.MCP.Servers,
+	// Claude Code documents no per-server execution timeout, only the
+	// client-wide MCP_TOOL_TIMEOUT. Agent Layer deliberately leaves that global
+	// value alone — changing it would alter every unrelated MCP server — so the
+	// built-in server's own 40-minute guard is Claude's recovery bound.
+	resolved, err := projection.EffectiveMCPServers(
+		project.Config,
 		project.Env,
-		"claude",
+		projection.ClientClaude,
 		projection.ClientPlaceholderResolver("${%s}"),
 	)
 	if err != nil {

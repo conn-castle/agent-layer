@@ -207,7 +207,7 @@ make al-copilot   # al copilot
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+
-Notes: Convenience wrappers against this repo's own `.agent-layer/` config. Interactive agent launchers build a source snapshot at `.agent-layer/tmp/dev-bin/al` and prepend that directory to the launched agent's `PATH`, so child `al dispatch` calls use the same source snapshot rather than the globally installed binary. The development launch bypasses repo version-pin handoff only for that Make invocation. `al-upgrade` and `al-doctor` continue to use `go run ./cmd/al`.
+Notes: Convenience wrappers against this repo's own `.agent-layer/` config. `al-doctor` and the interactive agent launchers build a source snapshot at `.agent-layer/tmp/dev-bin/al` and prepend that directory to `PATH`, so child `al dispatch` calls use the same source snapshot rather than the globally installed binary. The development launch bypasses repo version-pin handoff only for that Make invocation. `al-upgrade` continues to use `go run ./cmd/al`.
 
 - Run the Antigravity capability probe
 ```bash
@@ -215,7 +215,7 @@ go run ./cmd/al probe agy
 ```
 Run from: repo root
 Prerequisites: Antigravity (`agy`) installed on PATH
-Notes: Prints JSON describing the current `agy` permissions and MCP behavior observed in a repo-local probe workspace.
+Notes: Prints JSON describing the current `agy` permissions and MCP behavior observed in a repo-local probe workspace. The workspace is seeded with a real stdio MCP server (this binary's hidden `__probe-mcp-fixture` subcommand exposing one `probe_ping` tool), so `capabilities.mcp_runtime_discovery` and `capabilities.mcp_tool_invoked` report `agy` behavior rather than a fixture defect. `timed_out` reports the probe's own 45-second bound separately from a failed run. Do not claim live Antigravity MCP support unless both MCP capability flags are true.
 
 ### CI
 

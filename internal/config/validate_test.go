@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidateConfigErrors(t *testing.T) {
@@ -110,6 +111,29 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "dispatch.max_depth",
 		},
 		{
+			name:    "non-positive mcp wait timeout",
+			cfg:     withDispatchMCPTimeouts(valid, ptr(0), nil),
+			wantErr: "dispatch.mcp_wait_timeout_minutes must be greater than zero",
+		},
+		{
+			name:    "non-positive mcp tool timeout",
+			cfg:     withDispatchMCPTimeouts(valid, nil, ptr(-1)),
+			wantErr: "dispatch.mcp_tool_timeout_minutes must be greater than zero",
+		},
+		{
+			name:    "mcp tool timeout not above wait timeout",
+			cfg:     withDispatchMCPTimeouts(valid, ptr(45), ptr(45)),
+			wantErr: "must be greater than dispatch.mcp_wait_timeout_minutes",
+		},
+		{
+			// A wait raised above the default hard bound must fail even though the
+			// tool timeout itself was never configured: the resolved default is
+			// what the server would actually enforce.
+			name:    "configured wait exceeds default tool timeout",
+			cfg:     withDispatchMCPTimeouts(valid, ptr(60), nil),
+			wantErr: "must be greater than dispatch.mcp_wait_timeout_minutes",
+		},
+		{
 			name: "antigravity agent_specific model is unsupported",
 			cfg: withAntigravityAgentSpecific(valid, map[string]any{
 				"model": "Gemini 3.1 Pro (High)",
@@ -165,6 +189,61 @@ func withCopilotCLIReasoning(cfg Config, effort string) Config {
 func withDispatchMaxDepth(cfg Config, maxDepth int) Config {
 	cfg.Dispatch.MaxDepth = &maxDepth
 	return cfg
+}
+
+func withDispatchMCPTimeouts(cfg Config, wait *int, tool *int) Config {
+	cfg.Dispatch.MCPWaitTimeoutMinutes = wait
+	cfg.Dispatch.MCPToolTimeoutMinutes = tool
+	return cfg
+}
+
+func ptr(value int) *int { return &value }
+
+// TestDispatchMCPTimeoutDefaults proves that a config predating the MCP
+// interface keeps working: both accessors resolve to the documented product
+// defaults, and the hard bound stays above the bounded wait.
+func TestDispatchMCPTimeoutDefaults(t *testing.T) {
+	var cfg Config
+	if got := DispatchMCPWaitTimeout(cfg); got != 30*time.Minute {
+		t.Fatalf("default wait timeout = %s, want 30m", got)
+	}
+	if got := DispatchMCPToolTimeout(cfg); got != 40*time.Minute {
+		t.Fatalf("default tool timeout = %s, want 40m", got)
+	}
+	defaults := withDispatchMCPTimeouts(validTimeoutConfig(), nil, nil)
+	if err := defaults.Validate("config.toml"); err != nil {
+		t.Fatalf("omitted MCP timeouts must validate: %v", err)
+	}
+}
+
+// TestDispatchMCPTimeoutOverrides proves custom valid minute values reach both
+// accessors so projection and the server-side guard agree with config.
+func TestDispatchMCPTimeoutOverrides(t *testing.T) {
+	cfg := withDispatchMCPTimeouts(validTimeoutConfig(), ptr(5), ptr(9))
+	if err := cfg.Validate("config.toml"); err != nil {
+		t.Fatalf("valid MCP timeouts rejected: %v", err)
+	}
+	if got := DispatchMCPWaitTimeout(cfg); got != 5*time.Minute {
+		t.Fatalf("wait timeout = %s, want 5m", got)
+	}
+	if got := DispatchMCPToolTimeout(cfg); got != 9*time.Minute {
+		t.Fatalf("tool timeout = %s, want 9m", got)
+	}
+}
+
+func validTimeoutConfig() Config {
+	enabled := true
+	return Config{
+		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
+		Agents: AgentsConfig{
+			Antigravity:  AntigravityConfig{Enabled: &enabled},
+			Claude:       ClaudeConfig{Enabled: &enabled},
+			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
+			Codex:        CodexConfig{Enabled: &enabled},
+			VSCode:       EnableOnlyConfig{Enabled: &enabled},
+			CopilotCLI:   AgentConfig{Enabled: &enabled},
+		},
+	}
 }
 
 func TestValidateApprovalsYOLO(t *testing.T) {

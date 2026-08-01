@@ -9,6 +9,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -411,6 +412,30 @@ func TestBuildCodexConfigAgentSpecificOverrides(t *testing.T) {
 	}
 	if !strings.Contains(output, "[mcp_servers.example]\n") {
 		t.Fatalf("expected agent-specific mcp_servers table in output:\n%s", output)
+	}
+	if !strings.Contains(output, `[mcp_servers."`+projection.BuiltInDispatchServerID+`"]`+"\n") {
+		t.Fatalf("expected built-in Agent Dispatch server alongside agent-specific mcp_servers:\n%s", output)
+	}
+}
+
+func TestBuildCodexConfigRejectsAgentSpecificDispatchServerOverride(t *testing.T) {
+	t.Parallel()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{Agents: config.AgentsConfig{Codex: config.CodexConfig{
+			Enabled: &enabled,
+			AgentSpecific: map[string]any{
+				"mcp_servers": map[string]any{
+					projection.BuiltInDispatchServerID: map[string]any{"command": "other"},
+				},
+			},
+		}}},
+		Env: map[string]string{},
+	}
+
+	_, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
+	if err == nil || !strings.Contains(err.Error(), "agent-layer is reserved for Agent Dispatch") {
+		t.Fatalf("error = %v, want reserved Agent Dispatch server rejection", err)
 	}
 }
 

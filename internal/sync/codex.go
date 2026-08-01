@@ -154,38 +154,53 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		appendCodexChimeBlock(&builder)
 	}
 
-	if !config.HasProviderPassthroughKey(agentSpecific, config.CodexMCPServersKey) {
+	var resolved []projection.ResolvedMCPServer
+	if config.HasProviderPassthroughKey(agentSpecific, config.CodexMCPServersKey) {
+		builtIn, ok := projection.BuiltInDispatchServer(project.Config, projection.ClientCodex)
+		if ok {
+			servers, isTable := agentSpecific[config.CodexMCPServersKey].(map[string]any)
+			if !isTable {
+				return codexManagedConfig{}, errors.New("agents.codex.agent_specific.mcp_servers must be a table")
+			}
+			if _, exists := servers[projection.BuiltInDispatchServerID]; exists {
+				return codexManagedConfig{}, fmt.Errorf("agents.codex.agent_specific.mcp_servers.%s is reserved for Agent Dispatch", projection.BuiltInDispatchServerID)
+			}
+			resolved = []projection.ResolvedMCPServer{builtIn}
+		}
+	} else {
 		// Use placeholder syntax for initial resolution (needed for bearer_token_env_var extraction).
-		resolved, err := projection.ResolveMCPServers(
-			project.Config.MCP.Servers,
+		var err error
+		resolved, err = projection.EffectiveMCPServers(
+			project.Config,
 			project.Env,
-			"codex",
+			projection.ClientCodex,
 			projection.ClientPlaceholderResolver("${%s}"),
 		)
 		if err != nil {
 			return codexManagedConfig{}, err
 		}
 
-		if len(resolved) > 0 {
-			appendCodexSectionBreak(&builder)
+	}
+
+	if len(resolved) > 0 {
+		appendCodexSectionBreak(&builder)
+	}
+	for i, server := range resolved {
+		if i > 0 {
+			builder.WriteString("\n")
 		}
-		for i, server := range resolved {
-			if i > 0 {
-				builder.WriteString("\n")
+		fmt.Fprintf(&builder, "[mcp_servers.%q]\n", server.ID)
+		switch server.Transport {
+		case config.TransportHTTP:
+			if err := writeCodexHTTPServer(&builder, server, project.Env); err != nil {
+				return codexManagedConfig{}, err
 			}
-			fmt.Fprintf(&builder, "[mcp_servers.%q]\n", server.ID)
-			switch server.Transport {
-			case config.TransportHTTP:
-				if err := writeCodexHTTPServer(&builder, server, project.Env); err != nil {
-					return codexManagedConfig{}, err
-				}
-			case config.TransportStdio:
-				if err := writeCodexStdioServer(&builder, server, project.Env); err != nil {
-					return codexManagedConfig{}, err
-				}
-			default:
-				return codexManagedConfig{}, fmt.Errorf(messages.MCPServerUnsupportedTransportFmt, server.ID, server.Transport)
+		case config.TransportStdio:
+			if err := writeCodexStdioServer(&builder, server, project.Env); err != nil {
+				return codexManagedConfig{}, err
 			}
+		default:
+			return codexManagedConfig{}, fmt.Errorf(messages.MCPServerUnsupportedTransportFmt, server.ID, server.Transport)
 		}
 	}
 
@@ -337,6 +352,13 @@ func writeCodexStdioServer(builder *strings.Builder, server projection.ResolvedM
 			resolvedEnv[key] = resolvedValue
 		}
 		fmt.Fprintf(builder, "env = %s\n", tomlInlineTable(resolvedEnv))
+	}
+
+	// Codex is the only supported client with a documented per-server execution
+	// timeout, so the built-in Agent Dispatch server projects its hard bound
+	// natively. Every other client relies on the server-side guard alone.
+	if server.ToolTimeoutSeconds > 0 {
+		fmt.Fprintf(builder, "tool_timeout_sec = %d\n", server.ToolTimeoutSeconds)
 	}
 
 	return nil

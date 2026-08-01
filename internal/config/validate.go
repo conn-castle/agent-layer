@@ -84,6 +84,9 @@ func (c *Config) Validate(path string) error {
 	if c.Dispatch.MaxDepth != nil && *c.Dispatch.MaxDepth <= 0 {
 		return fmt.Errorf(messages.ConfigDispatchMaxDepthInvalidFmt, path)
 	}
+	if err := validateDispatchMCPTimeouts(path, c.Dispatch); err != nil {
+		return err
+	}
 
 	// Model and reasoning-effort validation: agent model values
 	// (agents.antigravity.model, agents.claude.model, agents.codex.model) and
@@ -155,6 +158,26 @@ func (c *Config) Validate(path string) error {
 func validateAntigravityModelSource(path string, cfg AntigravityConfig) error {
 	if HasProviderPassthroughKey(cfg.AgentSpecific, "model") {
 		return fmt.Errorf("%w: "+messages.ConfigAntigravityAgentSpecificModelInvalidFmt, ErrConfigNeedsUpgrade, path)
+	}
+	return nil
+}
+
+// validateDispatchMCPTimeouts rejects non-positive minute values and any hard
+// tool timeout that does not leave recovery headroom above the bounded wait.
+// Omitted values resolve to their documented product defaults first, so an
+// existing config that sets only one of the two is validated against the value
+// Agent Dispatch will actually use.
+func validateDispatchMCPTimeouts(path string, limits DispatchLimits) error {
+	if limits.MCPWaitTimeoutMinutes != nil && *limits.MCPWaitTimeoutMinutes <= 0 {
+		return fmt.Errorf(messages.ConfigDispatchMCPWaitTimeoutInvalidFmt, path)
+	}
+	if limits.MCPToolTimeoutMinutes != nil && *limits.MCPToolTimeoutMinutes <= 0 {
+		return fmt.Errorf(messages.ConfigDispatchMCPToolTimeoutInvalidFmt, path)
+	}
+	wait := dispatchMCPWaitTimeoutMinutes(limits)
+	tool := dispatchMCPToolTimeoutMinutes(limits)
+	if tool <= wait {
+		return fmt.Errorf(messages.ConfigDispatchMCPTimeoutOrderInvalidFmt, path, tool, wait)
 	}
 	return nil
 }

@@ -581,9 +581,18 @@ Skills are synced natively to Agent Skills directories with full subdirectory su
 
 ## Agent Dispatch
 
-Agent Dispatch is a fully asynchronous, stateful interface.
+Agent Dispatch is a fully asynchronous, stateful interface with two surfaces
+over one backend: MCP tools for agents, and the CLI for humans and scripts.
 
-Examples:
+Agents use the built-in `agent-layer` MCP server, which `al sync` projects into
+every enabled Codex, Claude, Antigravity, VS Code, and Copilot CLI client. It
+exposes `dispatch_options`, `dispatch_start`, `dispatch_wait`,
+`dispatch_continue`, and `dispatch_cancel`.
+`dispatch_wait` blocks for 30 minutes by default, so a coordinator waits inside
+one tool call instead of polling; `dispatch_cancel` is destructive and stops
+provider work.
+
+The equivalent CLI:
 
 ```bash
 al dispatch options
@@ -594,12 +603,15 @@ al dispatch cancel <handle>
 ```
 
 `options` reports available agents, configured defaults, and supported
-overrides. `start` and `continue` return immediately. `wait` blocks until the
-current invocation reaches `completed`, `failed`, or `cancelled`; completed
-output is stored in the immutable Markdown file named by `result_path`. Every
-successful command returns one JSON object; `wait` also writes its terminal
-JSON result before a non-zero failed-invocation exit. For the complete contract, see
-[`docs/AGENT-DISPATCH.md`](docs/AGENT-DISPATCH.md).
+overrides. `start` and `continue` return immediately. `wait` blocks for a
+bounded interval — eight minutes on the CLI — and returns `running` when it
+expires without changing the invocation, so callers wait again on the same
+handle. Completed output is stored in the immutable Markdown file named by
+`result_path`. Every successful command returns one JSON object; `wait` also
+writes its terminal JSON result before a non-zero failed-invocation exit. For
+the complete contract, including the MCP tool schemas and the
+`dispatch.mcp_wait_timeout_minutes` / `dispatch.mcp_tool_timeout_minutes`
+settings, see [`docs/AGENT-DISPATCH.md`](docs/AGENT-DISPATCH.md).
 
 ---
 

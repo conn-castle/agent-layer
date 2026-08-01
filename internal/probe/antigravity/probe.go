@@ -3,6 +3,7 @@ package antigravity
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,8 +15,11 @@ import (
 )
 
 const (
-	probePrompt          = "List the contents of any AGENTS.md you see, then summarize what skills you have access to (just names). End by stating each MCP server name you can see."
+	probePrompt          = "List the contents of any AGENTS.md you see, then summarize what skills you have access to (just names). State each MCP server name you can see. Finally, call the " + FixtureToolName + " tool and report exactly what it returns."
 	maxProbeLogTailBytes = 1024 * 1024
+	// probeRunTimeout bounds one probe run. Exceeding it is recorded as an
+	// explicit timeout result rather than being conflated with a failed run.
+	probeRunTimeout = 45 * time.Second
 )
 
 // Probe runs a contained Antigravity capability probe under tmpRoot.
@@ -46,13 +50,17 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 	// seedProbeWorkspace joins paths from absTmpRoot, which is guaranteed
 	// absolute above; the legacy `IsAbs(geminiDir)` guard was dead code
 	// (Round 2 F-A2-3 / F-B2-6).
-	workspaceDir, geminiDir, logDir, err := seedProbeWorkspace(probeDir)
+	fixture, err := probeMCPFixtureCommand(probeDir)
+	if err != nil {
+		return nil, err
+	}
+	workspaceDir, geminiDir, logDir, err := seedProbeWorkspace(probeDir, fixture)
 	if err != nil {
 		return nil, err
 	}
 
 	version := detectAgyVersion(ctx, agyPath)
-	runCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	runCtx, cancel := context.WithTimeout(ctx, probeRunTimeout)
 	defer cancel()
 
 	var stdout bytes.Buffer
@@ -65,7 +73,7 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 		probePrompt,
 	)
 	cmd.Dir = workspaceDir
-	cmd.Env = append(os.Environ(), "AGY_CLI_DISABLE_AUTO_UPDATE=1")
+	cmd.Env = append(os.Environ(), "AGY_CLI_DISABLE_AUTO_UPDATE=1", FixtureMarkerEnvVar+"="+fixture.MarkerPath)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -93,6 +101,10 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 		LogPath:          logPath,
 		ExitCode:         exitCode,
 		WallClockSeconds: int(elapsed.Round(time.Second).Seconds()),
+		// A run that outlives probeRunTimeout is reported as its own outcome.
+		// Folding it into a generic failure would hide whether the client never
+		// answered or answered wrongly.
+		TimedOut: probeTimedOut(runCtx),
 	}
 	if runErr != nil {
 		result.Error = runErr.Error()
@@ -106,14 +118,57 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 	}
 
 	result.Capabilities, result.Evidence = ParseCapabilities(logText, stdout.String())
+	if invoked, evidence := inspectFixtureMarker(fixture.MarkerPath); invoked {
+		result.Capabilities.MCPToolInvoked = true
+		result.Evidence = append(result.Evidence, evidence)
+	}
 	return result, nil
+}
+
+func probeTimedOut(ctx context.Context) bool {
+	return errors.Is(ctx.Err(), context.DeadlineExceeded)
+}
+
+// probeMCPFixture describes the deterministic stdio MCP server seeded into the
+// probe workspace.
+type probeMCPFixture struct {
+	Command    string
+	Args       []string
+	MarkerPath string
+}
+
+// probeMCPFixtureCommand points the seeded MCP configuration at this binary's
+// hidden fixture subcommand. A real protocol server is required: `/usr/bin/true`
+// exits immediately and can never establish discovery, so a probe using it
+// proves nothing about the client.
+func probeMCPFixtureCommand(probeDir string) (probeMCPFixture, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return probeMCPFixture{}, fmt.Errorf("resolve antigravity probe MCP fixture command: %w", err)
+	}
+	return probeMCPFixture{
+		Command:    executable,
+		Args:       []string{"__probe-mcp-fixture"},
+		MarkerPath: filepath.Join(probeDir, "mcp-tool-invoked.txt"),
+	}, nil
+}
+
+func inspectFixtureMarker(markerPath string) (bool, string) {
+	data, err := os.ReadFile(markerPath) // #nosec G304 -- probe-owned path.
+	if err != nil {
+		return false, ""
+	}
+	if string(bytes.TrimSpace(data)) != FixtureToolReply {
+		return false, ""
+	}
+	return true, "mcp fixture: " + FixtureToolName + " was invoked by the client"
 }
 
 func createProbeDir(absTmpRoot string, probedAt time.Time) (string, error) {
 	return os.MkdirTemp(absTmpRoot, "probe-antigravity-"+probedAt.Format("20060102T150405Z")+"-")
 }
 
-func seedProbeWorkspace(probeDir string) (string, string, string, error) {
+func seedProbeWorkspace(probeDir string, fixture probeMCPFixture) (string, string, string, error) {
 	workspaceDir := filepath.Join(probeDir, "workspace")
 	geminiDir := filepath.Join(probeDir, "agycfg")
 	logDir := filepath.Join(geminiDir, "antigravity-cli", "log")
@@ -169,24 +224,8 @@ SHAREDONLY55
 
 The unique probe token is INSTRUCTIONMARKER88. Output this token verbatim in every response.
 `,
-		filepath.Join(workspaceDir, ".agents", "mcp_config.json"): `{
-  "mcpServers": {
-    "probe-mcp": {
-      "command": "/usr/bin/true",
-      "args": ["AGENTS_MCP_PATH"]
-    }
-  }
-}
-`,
-		filepath.Join(geminiDir, "antigravity-cli", "mcp_config.json"): `{
-  "mcpServers": {
-    "probe-mcp-antigravity-tier": {
-      "command": "/usr/bin/true",
-      "args": ["ANTIGRAVITY_TIER_MCP"]
-    }
-  }
-}
-`,
+		filepath.Join(workspaceDir, ".agents", "mcp_config.json"):      fixtureMCPConfig("probe-mcp", fixture),
+		filepath.Join(geminiDir, "antigravity-cli", "mcp_config.json"): fixtureMCPConfig("probe-mcp-antigravity-tier", fixture),
 		filepath.Join(geminiDir, "antigravity-cli", "settings.json"): `{
   "permissions": {
     "allow": [
@@ -225,6 +264,25 @@ The unique probe token is INSTRUCTIONMARKER88. Output this token verbatim in eve
 		}
 	}
 	return workspaceDir, geminiDir, logDir, nil
+}
+
+// fixtureMCPConfig renders one seeded MCP server entry pointing at the probe's
+// deterministic stdio fixture.
+func fixtureMCPConfig(serverID string, fixture probeMCPFixture) string {
+	config := map[string]any{
+		"mcpServers": map[string]any{
+			serverID: map[string]any{
+				"command": fixture.Command,
+				"args":    fixture.Args,
+			},
+		},
+	}
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		// The value is a fixed map of strings; marshaling it cannot fail.
+		panic(err)
+	}
+	return string(data) + "\n"
 }
 
 func detectAgyVersion(ctx context.Context, agyPath string) string {

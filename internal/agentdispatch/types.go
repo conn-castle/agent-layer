@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"time"
 )
 
 const (
@@ -120,6 +121,17 @@ type ContinueOptions struct {
 	launchWorker  workerLauncher
 }
 
+// Result is the provider-agnostic public response shared by every Agent
+// Dispatch surface. The CLI encodes it as one JSON line on stdout; the MCP
+// tools decode that same rendering from a private buffer, so both surfaces
+// report identical handles, states, result paths, and failure text.
+type Result struct {
+	Handle     string `json:"handle"`
+	State      string `json:"state"`
+	ResultPath string `json:"result_path,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
 // WaitRequest identifies one existing dispatch conversation, by handle, to
 // await without changing provider work or execution state.
 type WaitRequest struct {
@@ -127,6 +139,12 @@ type WaitRequest struct {
 	Root    string
 	ID      string
 	Stdout  io.Writer
+	Timeout time.Duration
+	// PollInterval sets how often this request re-reads run state. The CLI
+	// leaves it zero and keeps the responsive default; a long MCP wait sets a
+	// coarser interval so a 30-minute block does not spend the whole time
+	// re-reading run records.
+	PollInterval time.Duration
 }
 
 // CancelRequest identifies one active invocation by handle or run UUID.

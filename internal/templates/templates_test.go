@@ -7,6 +7,32 @@ import (
 	"testing"
 )
 
+// TestEmbeddedAgentDispatchSkillEncodesAsyncConversationWorkflow proves the
+// agent-facing workflow drives the five MCP tools. It also proves no CLI
+// polling fallback survives: a fallback would let an agent burn coordinator
+// turns on terminal waits exactly when the MCP server is misconfigured, hiding
+// the capability problem instead of surfacing it.
+func TestEmbeddedAgentDispatchSkillEncodesAsyncConversationWorkflow(t *testing.T) {
+	dispatchTemplate, err := Read("skills-catalog/agent-dispatch/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatchSkill := string(dispatchTemplate)
+	for _, required := range []string{
+		"dispatch_options", "dispatch_start", "dispatch_wait", "dispatch_continue", "dispatch_cancel",
+		"mcp__agent-layer__dispatch_start", "result_path",
+	} {
+		if !strings.Contains(dispatchSkill, required) {
+			t.Fatalf("agent-dispatch skill lacks %q", required)
+		}
+	}
+	for _, forbidden := range []string{"al dispatch options", "al dispatch start", "al dispatch wait", "al dispatch continue", "al dispatch cancel"} {
+		if strings.Contains(dispatchSkill, forbidden) {
+			t.Fatalf("agent-dispatch skill still instructs the CLI path %q", forbidden)
+		}
+	}
+}
+
 func TestReadTemplate(t *testing.T) {
 	data, err := Read("config.toml")
 	if err != nil {

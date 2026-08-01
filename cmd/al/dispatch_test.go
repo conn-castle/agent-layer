@@ -34,6 +34,29 @@ func TestDispatchHelpWiresAsyncSurface(t *testing.T) {
 	}
 }
 
+// TestDispatchMCPServerIsWiredButHidden proves the stdio entry point exists for
+// generated MCP client configuration while staying out of the documented five
+// command public surface an agent reads from `al dispatch --help`.
+func TestDispatchMCPServerIsWiredButHidden(t *testing.T) {
+	cmd := newDispatchCmd()
+	child, _, err := cmd.Find([]string{dispatchMCPServerCommand})
+	if err != nil || child == cmd || child.Name() != dispatchMCPServerCommand {
+		t.Fatalf("mcp-server not wired: child=%v err=%v", child, err)
+	}
+	if !child.Hidden {
+		t.Fatal("mcp-server must stay hidden from the public dispatch surface")
+	}
+	cmd.SetArgs([]string{"--help"})
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("help error: %v", err)
+	}
+	if strings.Contains(stdout.String(), dispatchMCPServerCommand) {
+		t.Fatalf("mcp-server leaked into dispatch help:\n%s", stdout.String())
+	}
+}
+
 func TestDispatchPromptFlagsAreWiredOnStartAndContinue(t *testing.T) {
 	cmd := newDispatchCmd()
 	for _, name := range []string{"start", "continue"} {

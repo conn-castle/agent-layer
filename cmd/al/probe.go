@@ -23,6 +23,20 @@ func newProbeCmd() *cobra.Command {
 	return cmd
 }
 
+// newProbeMCPFixtureCmd serves the probe's deterministic MCP fixture. It is a
+// hidden subcommand of this binary rather than a separately built helper so the
+// probe never depends on a Go toolchain or a build step at probe time.
+func newProbeMCPFixtureCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:    "__probe-mcp-fixture",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return probeantigravity.RunMCPFixture(cmd.Context())
+		},
+	}
+}
+
 func newProbeAntigravityCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   messages.ProbeAntigravityUse,
