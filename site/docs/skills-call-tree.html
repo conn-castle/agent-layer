@@ -842,11 +842,12 @@
   <script>
     const defaultYaml = String.raw`address-pr-comments:
   calls:
-    - task: gather, reconcile, and evaluate every pull request comment in one ledger with reply and audit state
-    - if: review comments have accepted in-scope fixes
+    - task: fetch every comment type and existing native replies from fresh GitHub state
+    - task: validate each eligible unresolved comment against the current tree
+    - if: comments have accepted in-scope fixes
       calls:
-        - task: directly address every accepted fix with focused evidence
-    - exit: return the updated ledger and local-change status
+        - task: repair accepted root causes and run focused checks
+    - exit: return dispositions, proposed replies, and uncommitted fixes without publishing
 audit-documentation:
   calls:
     - if: documentation scope is broad or context-heavy
@@ -900,60 +901,50 @@ auto-skill-loop:
   inputs: [mode, planner, implementer, code_reviewer, rote_worker, plan_reviewers for plan-based modes, mode-required targets, standing merge authorization]
   calls:
     - reference: auto-skill-loop/references/mode-contract
-    - reference: auto-skill-loop/references/blocker-classification
-    - reference: auto-skill-loop/references/merge-readiness
+    - reference: auto-skill-loop/references/merge-authorization
     - task: validate the mode and every required target before any side effect, passing each target through agent-dispatch unchanged
-    - task: perform the selected mode's Initialize section and retain its state for every selection pass
+    - task: initialize progress and retain the evidence for every selection pass
       caller: dispatch(planner)
-    - while: the user has not stopped the run and a complete pass still finds substantive autonomous work
+    - while: a complete pass still finds executable work
       calls:
-        - task: perform the mode's Select section and return selected work, proof of an exhausted pass, or a complete list of blocked candidates
+        - task: select coherent eligible work, update progress, and run plan-work when substantive design is needed
           caller: dispatch(planner)
-        - if: the pass is exhausted and no delivery is in progress
+        - if: planning is required without plan_reviewers or an implementation-ready result
           calls:
-            - exit: terminate and report why the loop ended, the smallest remaining questions, and every preserved branch or PR
-        - task: classify the result against the complete blocker-classification contract
-          caller: dispatch(planner)
-        - if: the work is blocked
+            - break: preserve the work and continue selecting independent work
+        - if: the pass is exhausted
           calls:
-            - task: record the human-owned decision or other unmet condition
-            - break: continue selecting independent work
+            - exit: report why the loop ended, the smallest remaining questions, and every preserved branch or PR
         - task: prepare or reuse one workflow-owned delivery branch
           caller: dispatch(rote_worker)
-        - task: perform the mode's Execute section through its required role dispatches
-          caller: dispatch(mode-required roles)
-        - if: the delivery is below the mode's substantive-delivery criterion and both the 500-line and 10-file thresholds
+        - task: implement the ready plan, or direct selected work when no plan was needed
+          caller: dispatch(implementer)
+        - skill: review-uncommitted-code
+          caller: dispatch(code_reviewer)
+        - if: review confirms material findings
           calls:
-            - break: return to selection while autonomous work remains
-        - if: a complete pass finds no further work and the delivery is still unshipped
-          calls:
-            - task: reconcile the preserved branch with its source
-              caller: dispatch(rote_worker)
-            - exit: stop without opening a PR
+            - task: repair the findings and rerun affected checks
+              caller: dispatch(implementer)
         - skill: ship-pr
-          caller: dispatch(rote_worker supplying the implementer target for /fix-ci)
+          caller: dispatch(rote_worker)
         - if: shipping returns anything other than a merge-authorization request for an exact PR and head
           calls:
             - break: go to reconciliation
-        - while: the exact head lacks a ready merge-readiness verdict
+        - task: independently assess the exact PR and head using ship-pr evidence
+          caller: dispatch(code_reviewer)
+        - if: authorization returns changes-required
           calls:
-            - task: independently assess the exact head against the merge-readiness criteria using ship-pr evidence
-              caller: dispatch(code_reviewer)
-            - if: review returns simple in-scope findings
-              calls:
-                - task: apply the accepted repair set
-                  caller: dispatch(implementer)
-                - task: publish and restore the shipping gates
-                  caller: resume(rote_worker)
-                - break: review the new exact head
-            - if: review finds a manual or external gate
-              calls:
-                - break: treat it as blocked work and go to reconciliation
+            - task: repair the findings and rerun affected checks
+              caller: dispatch(implementer)
+            - break: return to PR preparation for fresh evidence and authorization
+        - if: authorization returns blocked
+          calls:
+            - break: preserve the PR and go to reconciliation
         - task: merge with single-use authorization for that exact PR and head, derived from the standing loop authorization
           caller: resume(rote_worker)
         - task: perform the mode's Reconcile section against the actual merged, open, or preserved delivery
           caller: dispatch(rote_worker)
-        - if: stop_after=one-delivery
+        - if: stop_after=one-pr
           calls:
             - exit: stop after this reconciliation
         - break: return to selection
@@ -1050,25 +1041,11 @@ full-workflow:
     - task: write the spec artifact with objective, scope, non-goals, constraints, and settled decisions, resolving factual unknowns first
     - skill: plan-work
       inputs: [plan_reviewers]
-    - if: plan-work reports a user blocker
+    - if: plan-work does not return implementation-ready
       calls:
-        - task: validate it against repository escalation rules
-    - skill: implement-plan
-      caller: dispatch(implementer)
-    - parallel:
-      - skill: verify-work
-        caller: subagent
-      - skill: review-uncommitted-code
-        caller: dispatch(code_reviewer)
-    - task: validate and deduplicate supported findings
-    - task: send valid open findings in one bounded batch
-      caller: dispatch(fixer)
-    - while: verification is incomplete or an in-scope finding is neither resolved nor rejected with evidence
-      calls:
-        - if: a genuine substantive decision cannot be resolved under repository escalation rules
-          calls:
-            - exit: ask the user for that decision
-        - break: continue the review, repair, and verification cycle
+        - exit: return the validated user blocker
+    - skill: fully-implement-plan
+      inputs: [implementer, code_reviewer, fixer]
     - skill: ship-pr
     - if: ship-pr requires merge authorization
       calls:
@@ -1081,29 +1058,20 @@ fully-implement-plan:
       caller: dispatch(implementer)
     - if: implementer leaves required work incomplete
       calls:
-        - task: retry with a different prompt and approach that includes the unresolved obligations and failure evidence; reuse the handle only when its prior context will help
+        - task: continue implementation before review, reusing or replacing the conversation according to whether its context helps
     - parallel:
       - skill: verify-work
-        caller: fresh subagent
+        caller: subagent
       - skill: review-uncommitted-code
         caller: dispatch(code_reviewer against the latest tree and supplied artifacts)
     - if: verification or review confirms material in-scope findings
       calls:
         - task: send one consolidated finding set with the plan artifacts and resolve or disprove every finding with evidence
           caller: dispatch(fixer)
-        - if: fixer leaves required work incomplete
-          calls:
-            - task: retry with a different prompt and approach that includes the unresolved obligations and failure evidence; reuse the handle only when its prior context will help
-    - task: rerun invalidated checks and targeted contract verification
-    - if: accepted code-review findings required repairs
-      calls:
-        - task: continue the original code_reviewer handle once to validate those repairs
-    - while: the plan is not fully implemented
-      calls:
-        - break: repeat incomplete implementation and repair work without repeating completed review passes
+    - task: validate repairs with targeted checks and address confirmed unresolved findings without repeating completed review work
     - task: treat an unsuccessful delegated attempt or unfinished technical work as incomplete work, not a workflow blocker
     - task: write the fully-implement-plan report
-    - exit: return complete, complete-with-follow-up, or blocked with artifact paths, evidence, and residual risk
+    - exit: return complete, complete-with-follow-up, or a named blocker
 implement-plan:
   calls:
     - task: read the artifacts and resolve ambiguity from repository evidence
@@ -1262,33 +1230,31 @@ ship-pr:
         - exit: report the overlapping files
     - asset: ship-pr/assets/pr-body-template
     - task: create the branch if required, commit the intended changes, push, and create or reuse the PR
-    - task: start the canonical post-push local CI so it runs in parallel with hosted CI
     - asset: ship-pr/scripts/watch-pr-events
     - while: the current pushed head is not ready to merge
       calls:
-        - task: wait until the watcher observes a new event or 5 minutes have elapsed since the last push
+        - task: wait until at least 5 minutes have elapsed since the last push while the watcher records state changes
         - task: fetch head, comments, reviews, checks, and mergeability with gh rather than inferring state from the event log
         - if: unresolved feedback exists
           calls:
             - skill: address-pr-comments
+        - if: required checks fail
+          calls:
+            - skill: fix-ci
         - if: the current head has a mechanical merge conflict
           calls:
             - task: resolve it automatically
         - if: a repo-specific PR policy exists
           calls:
             - task: follow its guidance
-        - if: local CI failed
-          calls:
-            - task: repair the root cause without waiting for remote CI to finish
         - if: items remain to address locally
           calls:
             - break: refetch state and fold newly arrived failures and comments into the current batch
-        - task: commit and push, then restart the post-push local CI
-        - task: replace pending-commit markers with the short hash and post supported replies serially in their native threads
-        - task: refetch reply IDs and URLs and pass the refreshed ledger back through /address-pr-comments until every eligible row is complete
+        - task: commit and push
+        - task: post supported replies serially in their native threads, then refetch and validate their IDs and URLs
         - break: resume observation for the new pushed head
     - exit: request single-use merge authorization for the exact PR and head, reporting final states and the comment disposition summary
-    - task: refetch the expected head, checks, mergeability, and comments and confirm the ledger and local tree are complete
+    - task: refetch the expected head, checks, mergeability, and comments and confirm every eligible reply and the local tree are complete
     - if: anything changed since authorization
       calls:
         - break: return to the observation loop and obtain fresh merge authorization
@@ -1314,7 +1280,7 @@ verify-work:
         - exit: block rather than discovering a contract from .agent-layer/tmp/
     - reference: verify-work/references/contract-verification-rubric
     - task: read the contract, relevant diff, and final touched files, recording each contract item as complete, partial, missing, or unverified
-    - task: read COMMANDS.md and run the narrowest credible checks, broadening only for contract or risk
+    - task: read COMMANDS.md and run the narrowest credible checks, broadening only for the contract
     - if: a required check cannot run
       calls:
         - exit: report incomplete

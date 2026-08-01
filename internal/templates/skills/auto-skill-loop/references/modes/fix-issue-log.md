@@ -36,6 +36,8 @@ Confirm merged dispositions in the canonical memory files. Leave entries for
 open or preserved PRs unchanged until the PR is merged.
 Refresh from the latest target branch and remove fixed entries resurrected by
 stale merge content.
+Treat entries tied to open or preserved PRs as in flight and ineligible until
+their status changes.
 
 ## Exhaustion
 

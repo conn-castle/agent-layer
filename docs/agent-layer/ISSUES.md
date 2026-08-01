@@ -38,7 +38,7 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 - Issue 2026-07-28 dispatch-mcp-start-transport-window: An MCP dispatch_start disconnect can orphan a handle
     Priority: Medium. Area: Agent Dispatch MCP interface
     Description: `dispatch_start` is an RPC acknowledgement rather than a direct write to the caller's terminal. If the transport disconnects after the backend starts but before the client observes the response, the dispatch keeps running durably while the caller never learns its handle. This slice deliberately added no idempotency state and no listing API.
-    Next step: If this is observed in practice, add a caller-supplied idempotency key or a narrow handle-recovery read rather than a mutable second lifecycle store.
+    Open question: Has this been observed in practice, justifying a caller-supplied idempotency key or narrow handle-recovery read?
     Notes: Evidence remains under `.agent-layer/tmp/runs/`; documented in docs/AGENT-DISPATCH.md and the dispatch-mcp-interface decision.
 
 - Issue 2026-07-27 benchmark-cancelled-session-cost: Pre-request cancellation invalidates an otherwise-scored treatment run
@@ -64,15 +64,3 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: Claude Opus Low completed the configured plan-review, implementation, code-review, and fix workflow with five native Agent tool calls and zero `al dispatch` calls, despite those skills requiring external dispatch; the harness scores the result without flagging this protocol violation.
     Next step: Define and enforce a treatment-execution contract that records required role dispatches and marks a pair nonconformant when configured external roles are not actually dispatched, while retaining all candidate evidence.
     Notes: Confirmed in `opus-low-jsonpath-20260722`; `al` was installed and the Agent Dispatch skill was available, so this was not a provider failure.
-
-- Issue 2026-07-22 release-dependency-refresh: Re-evaluate and upgrade release dependency pins
-    Priority: Medium. Area: release automation and dependencies
-    Description: The v0.14.0 release exposed an outdated `golang.org/x/text` vulnerability and GitHub Actions Node 20 deprecation annotations for pinned workflow actions; release-time dependencies need a current compatible-version review.
-    Next step: Inventory Go modules and GitHub Actions pins, verify the latest compatible stable versions from their primary sources, update SHA-pinned workflow actions consistently in CI and release workflows, then run the full release gate.
-    Notes: Preserve full commit-SHA action pins and record any necessary compatibility changes; do not rely on runner-forced Node 24 compatibility.
-
-- Issue 2026-07-22 macos-homebrew-tap-trust-warning: macOS release runner emits an unrelated Homebrew tap-trust warning
-    Priority: Low. Area: release automation/macOS runner
-    Description: `brew install ripgrep` reports an untrusted pre-existing `aws/tap` during release setup even though the install and release succeed, creating misleading GitHub Action annotations.
-    Next step: Reproduce on a macOS GitHub-hosted runner and remove the annotation by avoiding Homebrew for ripgrep or safely removing the unused tap before installation; retain Homebrew trust checks.
-    Notes: Do not set `HOMEBREW_NO_REQUIRE_TAP_TRUST`; the warning is currently non-blocking and does not affect published artifacts.

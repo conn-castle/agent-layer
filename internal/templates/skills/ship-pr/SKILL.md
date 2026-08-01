@@ -71,6 +71,7 @@ bash <skill_dir>/scripts/watch-pr-events.sh \
 
    - Call `/address-pr-comments` when there is unresolved feedback, batching all
      feedback
+   - Call `/fix-ci` when required checks fail
    - Automatically resolve mechanical conflicts
    - Follow any repository-specific guidance in
      `references/repo-specific-pr-policy.md` if it exists

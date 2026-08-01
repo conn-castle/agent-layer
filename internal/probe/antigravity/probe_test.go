@@ -12,6 +12,20 @@ import (
 	"time"
 )
 
+func TestProbeTimedOutDistinguishesDeadlineFromCancellation(t *testing.T) {
+	deadlineCtx, deadlineCancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer deadlineCancel()
+	if !probeTimedOut(deadlineCtx) {
+		t.Fatal("expired deadline was not reported as a timeout")
+	}
+
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if probeTimedOut(cancelledCtx) {
+		t.Fatal("caller cancellation was reported as a timeout")
+	}
+}
+
 func TestCommandExitCode(t *testing.T) {
 	t.Run("cancelled context returns 124", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())

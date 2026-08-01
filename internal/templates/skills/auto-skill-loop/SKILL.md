@@ -54,19 +54,24 @@ remains eligible.
    update progress, and run `/plan-work` when substantive design is needed.
    Include any mode-specific `Execute` instructions in the plan. Terminate only
    when it proves a complete pass is exhausted under any mode-specific criteria.
+   If planning is required, do not proceed without a non-empty
+   `plan_reviewers` list and an `implementation-ready` result.
 
 2. **Execute.** Prepare or reuse a branch for the selected work. Dispatch
-   `implementer` with any mode-specific `Execute` instructions and either
-   `/implement-plan` with the available plan or the selected work directly.
+   `implementer` with any mode-specific `Execute` instructions and an
+   implementation-ready plan, or the selected work directly when no plan was
+   needed.
    Then dispatch `code_reviewer` with `/review-uncommitted-code`, return material
    findings to `implementer`, and rerun affected checks.
 
-3. **Prepare the PR.** Dispatch `rote_worker` to run `/ship-pr`, supplying the
-   `implementer` target for `/fix-ci`. Continue only when it returns a
-   merge-authorization request for an exact PR and head.
+3. **Prepare the PR.** Dispatch `rote_worker` to run `/ship-pr`. Continue only
+   when it returns a merge-authorization request for an exact PR and head.
 
 4. **Authorize.** Follow `references/merge-authorization.md` for the exact PR
-   and head. Continue only when its independent reviewer returns `authorize`.
+   and head. On `changes-required`, dispatch `implementer` fresh with the
+   findings, rerun affected checks, and return to PR preparation. Preserve a
+   `blocked` PR and continue independent work. Continue to merge only on
+   `authorize`.
 
 5. **Merge.** Resume the same `rote_worker`
    with authorization for that exact PR and head, derived from the
