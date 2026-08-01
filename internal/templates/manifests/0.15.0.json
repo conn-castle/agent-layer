@@ -1,0 +1,341 @@
+{
+  "schema_version": 1,
+  "version": "0.15.0",
+  "generated_at_utc": "2026-08-01T00:57:59Z",
+  "files": [
+    {
+      "path": ".agent-layer/commands.allow",
+      "full_hash_normalized": "bf0e2e77f19917c739dd3fb49a9c65f7ef00bff4aaeb92905a9e5faa393539e8",
+      "policy_id": "allowlist_lines_v1",
+      "policy_payload": {
+        "upstream_set": [
+          "cat",
+          "cd",
+          "echo",
+          "find",
+          "git describe",
+          "git diff",
+          "git log",
+          "git rev-parse",
+          "git show",
+          "git status",
+          "go",
+          "grep",
+          "head",
+          "ls",
+          "make",
+          "mkdir",
+          "node",
+          "npm",
+          "pnpm",
+          "pre-commit",
+          "pwd",
+          "pytest",
+          "python",
+          "rg",
+          "ruff",
+          "sort",
+          "tail",
+          "touch"
+        ],
+        "upstream_set_hash": "897e4ec758db1ffa10a832c1722cac510efe240e0d661bb18317fef5aab8056f"
+      }
+    },
+    {
+      "path": ".agent-layer/gitignore.block",
+      "full_hash_normalized": "40e4d77df661e151efc12f8247e480ba241e3e04d9f56cc795b107d3259c76d2"
+    },
+    {
+      "path": ".agent-layer/instructions/00_rules.md",
+      "full_hash_normalized": "684b7bd337b82a2bbd16f64ffb385a8c83749141067346b118abc3260fed361c"
+    },
+    {
+      "path": ".agent-layer/instructions/01_base.md",
+      "full_hash_normalized": "aeeae4e2222a45394288c1e3326d51b1964136ce8a6731a8e8125a7337adeb58"
+    },
+    {
+      "path": ".agent-layer/instructions/02_memory.md",
+      "full_hash_normalized": "99ba6d200503e43151b63ac6cf0b0f791ae9c20ab807d0065a91eeb093318f43"
+    },
+    {
+      "path": ".agent-layer/instructions/03_tools.md",
+      "full_hash_normalized": "09d80cc7ead91cd4da32534c21b9b2bf20f618e993c2f2d6b5235f85b751c224"
+    },
+    {
+      "path": ".agent-layer/instructions/04_conventions.md",
+      "full_hash_normalized": "f6619910dbfcb6f9c3abfda50c0a0901ca0938f54f89ae755993bcb98b5759a1"
+    },
+    {
+      "path": ".agent-layer/skills/address-pr-comments/SKILL.md",
+      "full_hash_normalized": "97afeaf893be4e5969a5e1ea89bb8cfacb3eb23ca8431322eda11613a4a92a78"
+    },
+    {
+      "path": ".agent-layer/skills/address-pr-comments/reviewer-prompt.md",
+      "full_hash_normalized": "a79236aee3fa2eb3511f7f3571e3717e6044f7f843b8d2e4c9d4ce2f23c185a4"
+    },
+    {
+      "path": ".agent-layer/skills/agent-dispatch/SKILL.md",
+      "full_hash_normalized": "f1c5271f09f608c73e5c507c5031fb8d672982ad2cbe1a69843690fbaf07ef22",
+      "policy_id": "catalog_skills_v1"
+    },
+    {
+      "path": ".agent-layer/skills/audit-documentation/SKILL.md",
+      "full_hash_normalized": "94c9e14d0fb897c4e9ccd89400aee0788b3f7da94a150d4300202b8bcae09c05"
+    },
+    {
+      "path": ".agent-layer/skills/audit-memory/SKILL.md",
+      "full_hash_normalized": "f24d966ff81527b0ac648a8413695c7bde214f39a356ba63e7f5f70daad76169"
+    },
+    {
+      "path": ".agent-layer/skills/audit-tests/SKILL.md",
+      "full_hash_normalized": "4ade6df0952386c7bebac6b7dfdad37aa4d5be0e4ce984b0b510945100a9042b"
+    },
+    {
+      "path": ".agent-layer/skills/auto-skill-loop/SKILL.md",
+      "full_hash_normalized": "288c44b6b15267fd00968bf3ad314a4138c4c48183963b62d9a3ad97411ce42b"
+    },
+    {
+      "path": ".agent-layer/skills/auto-skill-loop/references/blocker-classification.md",
+      "full_hash_normalized": "b2f9aa0fb0d8569fa722a27e1a2dff38929b4e0bca6a2ecac49d988e9fadf1cd"
+    },
+    {
+      "path": ".agent-layer/skills/auto-skill-loop/references/merge-authorization.md",
+      "full_hash_normalized": "f8b8f28c26872ba60562c8d1cefc8c8df1a6028504fbfde18e345d9da8a1211a"
+    },
+    {
+      "path": ".agent-layer/skills/auto-skill-loop/references/mode-contract.md",
+      "full_hash_normalized": "1ecc3475d67cab09e294dfaf130eaa7322f658d2e1a2cd1d6c9e57c5de0008c2"
+    },
+    {
+      "path": ".agent-layer/skills/auto-skill-loop/references/modes/fix-issue-log.md",
+      "full_hash_normalized": "879f7f14a91ff07aae930dadf290e6bae7f33de16addc10fb44d3703d76f494e"
+    },
+    {
+      "path": ".agent-layer/skills/auto-skill-loop/references/modes/implement-backlog.md",
+      "full_hash_normalized": "40dc5042a739f421591e312a1a85c4765b9c0fd43cdcaf34bc31d6b6059aa7b9"
+    },
+    {
+      "path": ".agent-layer/skills/auto-skill-loop/references/modes/improve-codebase.md",
+      "full_hash_normalized": "3133b601bf5475b11d4a3c18049d4439da6f77f0583b8c210fcfde90fbeb7dd1"
+    },
+    {
+      "path": ".agent-layer/skills/auto-skill-loop/references/modes/improve-interfaces.md",
+      "full_hash_normalized": "4237d9f2f1dcf6fde706c1de3148ac78460cff04ca2d1abb26c1fa5632d96688"
+    },
+    {
+      "path": ".agent-layer/skills/boost-coverage/SKILL.md",
+      "full_hash_normalized": "85b53dbe0636f73ee6814d048fda3b3bc268efba70befc2fcc1d0a3d75640ba9"
+    },
+    {
+      "path": ".agent-layer/skills/clean-and-fix-code/SKILL.md",
+      "full_hash_normalized": "dc95877d75db9f56efe59b4858bcb7250114b12cfd136bbd2ff674faa5920b51"
+    },
+    {
+      "path": ".agent-layer/skills/clean-and-fix-code/references/prune-uncommitted-tests.md",
+      "full_hash_normalized": "51ffd3021ccfcfa8b4ef87bb2d8ce795752f4a9e69df875880140d434311f2b3"
+    },
+    {
+      "path": ".agent-layer/skills/clean-and-fix-code/references/simplify-uncommitted-code.md",
+      "full_hash_normalized": "cdc0c43fd5ed4ca24680b4328a576325d7c4ca8c01e3908e7886a47b8b45bcba"
+    },
+    {
+      "path": ".agent-layer/skills/debug-and-fix-issue/SKILL.md",
+      "full_hash_normalized": "d2a48aed8958cfb8175451afb3a5f3e114fad5651c993c945f69faf0490ffe99"
+    },
+    {
+      "path": ".agent-layer/skills/find-docs/SKILL.md",
+      "full_hash_normalized": "920e7f4b717bb7182a79b92b1ca5746b962125ecfaf94303c61985aceb4bfad4",
+      "policy_id": "catalog_skills_v1"
+    },
+    {
+      "path": ".agent-layer/skills/fix-ci/SKILL.md",
+      "full_hash_normalized": "dfeef82a28f3fdab2a91550dcc010d1cc5563ee1024d9f92d1f9def7e3260afc"
+    },
+    {
+      "path": ".agent-layer/skills/full-workflow/SKILL.md",
+      "full_hash_normalized": "27b4c0f8d14ecc55ff9f0bf38070f17e4c9ea4f3260fffb75ee74627ca1f2b03"
+    },
+    {
+      "path": ".agent-layer/skills/fully-implement-plan/SKILL.md",
+      "full_hash_normalized": "3f7655a2d746e9f248e433867e03fe080c6c6563f412b35eafbfc7bc683baace"
+    },
+    {
+      "path": ".agent-layer/skills/implement-plan/SKILL.md",
+      "full_hash_normalized": "5d17cdee35560d4c08c0d7cfb782afdaa6448e54ae4dbfb29d8fdde8a6a21c74"
+    },
+    {
+      "path": ".agent-layer/skills/improve-codebase/SKILL.md",
+      "full_hash_normalized": "bf407ec0ea17364e70ad64a3b176b3799b19fb8c335cfec44e9a3897c7e9f8cd"
+    },
+    {
+      "path": ".agent-layer/skills/interface-audit/SKILL.md",
+      "full_hash_normalized": "574f645c6cb0a397c230450e9a0a64c15997c4509e35f135a184ed59422fa4c2"
+    },
+    {
+      "path": ".agent-layer/skills/interface-audit/references/report-structure.md",
+      "full_hash_normalized": "630ce6d20152b8b20141826b0bf918387e09ffe53aaba813795129e1936df853"
+    },
+    {
+      "path": ".agent-layer/skills/interface-audit/references/update-workflow.md",
+      "full_hash_normalized": "1119fad33cee235973cec8578c17fa2afebccff9ccaae237664336979c4eb132"
+    },
+    {
+      "path": ".agent-layer/skills/plan-work/SKILL.md",
+      "full_hash_normalized": "cbc4428202554c451543cd265494e779b104587345350b33065ba76ceed3364e"
+    },
+    {
+      "path": ".agent-layer/skills/plan-work/references/write-plan.md",
+      "full_hash_normalized": "7bccc638f05be8b30365038d79b8e1ece507b4f1157f54c6c3c6537138c0e4b1"
+    },
+    {
+      "path": ".agent-layer/skills/playwright/LICENSE",
+      "full_hash_normalized": "c16f8dcf1a368b83be78d826ea23de4079fe1b4469a0ab9ee20563f37ff3d44b",
+      "policy_id": "catalog_skills_v1"
+    },
+    {
+      "path": ".agent-layer/skills/playwright/SKILL.md",
+      "full_hash_normalized": "9d9ed5aebb87b82f48334c2cb169022c8d3d3c7ec44b08547e73f53585619346",
+      "policy_id": "catalog_skills_v1"
+    },
+    {
+      "path": ".agent-layer/skills/playwright/references/playwright-tests.md",
+      "full_hash_normalized": "712578bda408dee552d46d615a68142f867e5b532c7af84317b1b69642c4a9ad",
+      "policy_id": "catalog_skills_v1"
+    },
+    {
+      "path": ".agent-layer/skills/playwright/references/test-generation.md",
+      "full_hash_normalized": "8776c75a258adb2c8312096fe1f02e528ce6dfe456c5b7ffb937e6c7b0ab42ae",
+      "policy_id": "catalog_skills_v1"
+    },
+    {
+      "path": ".agent-layer/skills/review-plan/SKILL.md",
+      "full_hash_normalized": "5ab08bcaafc8ae91c5c2b30686602c5a2e84c335189941ee01a979889881ad47"
+    },
+    {
+      "path": ".agent-layer/skills/review-uncommitted-code/SKILL.md",
+      "full_hash_normalized": "5b20facc0110323ef2c66492afb5ff2cd3a4d8e540ae38ddd677b86aec7976e3"
+    },
+    {
+      "path": ".agent-layer/skills/review-uncommitted-code/references/finding-verdict-classification.md",
+      "full_hash_normalized": "68c06e43757ccafe96028c1f33654cac044a2f277ff3604aed8e9adae9ba90c3"
+    },
+    {
+      "path": ".agent-layer/skills/run-and-fix-all-checks/SKILL.md",
+      "full_hash_normalized": "f87332149b070412eb9d76cae9c3596af33e4d81e5d608fdd9ce4386c3fefe16"
+    },
+    {
+      "path": ".agent-layer/skills/schedule-backlog/SKILL.md",
+      "full_hash_normalized": "ae67d8af734442a08e6dd92e135568134df4c80bf366c9b899d69132a3f7701f"
+    },
+    {
+      "path": ".agent-layer/skills/ship-pr/SKILL.md",
+      "full_hash_normalized": "a14aa26d9c2bb6142307383e35539d85352eb06736b2f93b09fd45e4498c0fc6"
+    },
+    {
+      "path": ".agent-layer/skills/ship-pr/assets/pr-body-template.md",
+      "full_hash_normalized": "b610473f27697127388e53783ca95f06691b88758473e2bfd993fa3dad41dd90"
+    },
+    {
+      "path": ".agent-layer/skills/ship-pr/scripts/watch-pr-events.sh",
+      "full_hash_normalized": "21b606fb2b602802070f712470f5d4686227302dedef064475dec811172591ea"
+    },
+    {
+      "path": ".agent-layer/skills/simplify-codebase/SKILL.md",
+      "full_hash_normalized": "6cdeaa73dd965b14d83ecded24e78d37529fa8b0e9e7a87d9ad7d47ea4bfbbc3"
+    },
+    {
+      "path": ".agent-layer/skills/tavily-web/SKILL.md",
+      "full_hash_normalized": "88777362f3868b0289514c860ab7636a7660f0dd91a6ae2bcb28abae3495cc30",
+      "policy_id": "catalog_skills_v1"
+    },
+    {
+      "path": ".agent-layer/skills/verify-work/SKILL.md",
+      "full_hash_normalized": "dae2e95661195b6f89b9ea953aac5788cd554a752f27d910d93b2dade79b15b5"
+    },
+    {
+      "path": ".agent-layer/skills/verify-work/references/contract-verification-rubric.md",
+      "full_hash_normalized": "b776d716eecc2a74c386ce320b720154a6a925be02f4b4973909d30fae3fa37d"
+    },
+    {
+      "path": ".agent-layer/templates/docs/BACKLOG.md",
+      "full_hash_normalized": "218e2bca8e3068e4b0d200b693a8d3fa5f84d92abba04455ccee6951812162a7"
+    },
+    {
+      "path": ".agent-layer/templates/docs/COMMANDS.md",
+      "full_hash_normalized": "5be7e5e4ebb4569e566b29ce19dc669973b2bcd4dace0909030492a794bd204f"
+    },
+    {
+      "path": ".agent-layer/templates/docs/CONTEXT.md",
+      "full_hash_normalized": "bf4cdc50ffe528bf012c3816025301b5c801dea1dacd606dee32fc4b37b7841f"
+    },
+    {
+      "path": ".agent-layer/templates/docs/DECISIONS.md",
+      "full_hash_normalized": "710f3b0831303708a773b435958576c81b0e3033f717bd4b74099bcc71ba7f0e"
+    },
+    {
+      "path": ".agent-layer/templates/docs/ISSUES.md",
+      "full_hash_normalized": "74b3d292a71a04ca0e818502b416a3b9b04ae5ff84dde8f97e2b3383e7c5be86"
+    },
+    {
+      "path": ".agent-layer/templates/docs/ROADMAP.md",
+      "full_hash_normalized": "434e3a2322d5e0cce146c4dd2e7fde7af84024ce53c32feebfdd6cdd3b2e22ac"
+    },
+    {
+      "path": "docs/agent-layer/BACKLOG.md",
+      "full_hash_normalized": "218e2bca8e3068e4b0d200b693a8d3fa5f84d92abba04455ccee6951812162a7",
+      "policy_id": "memory_entries_v1",
+      "policy_payload": {
+        "marker": "\u003c!-- ENTRIES START --\u003e",
+        "managed_section_hash": "218e2bca8e3068e4b0d200b693a8d3fa5f84d92abba04455ccee6951812162a7"
+      }
+    },
+    {
+      "path": "docs/agent-layer/COMMANDS.md",
+      "full_hash_normalized": "5be7e5e4ebb4569e566b29ce19dc669973b2bcd4dace0909030492a794bd204f",
+      "policy_id": "memory_entries_v1",
+      "policy_payload": {
+        "marker": "\u003c!-- ENTRIES START --\u003e",
+        "managed_section_hash": "5be7e5e4ebb4569e566b29ce19dc669973b2bcd4dace0909030492a794bd204f"
+      }
+    },
+    {
+      "path": "docs/agent-layer/CONTEXT.md",
+      "full_hash_normalized": "bf4cdc50ffe528bf012c3816025301b5c801dea1dacd606dee32fc4b37b7841f",
+      "policy_id": "memory_entries_v1",
+      "policy_payload": {
+        "marker": "\u003c!-- ENTRIES START --\u003e",
+        "managed_section_hash": "bf4cdc50ffe528bf012c3816025301b5c801dea1dacd606dee32fc4b37b7841f"
+      }
+    },
+    {
+      "path": "docs/agent-layer/DECISIONS.md",
+      "full_hash_normalized": "710f3b0831303708a773b435958576c81b0e3033f717bd4b74099bcc71ba7f0e",
+      "policy_id": "memory_entries_v1",
+      "policy_payload": {
+        "marker": "\u003c!-- ENTRIES START --\u003e",
+        "managed_section_hash": "710f3b0831303708a773b435958576c81b0e3033f717bd4b74099bcc71ba7f0e"
+      }
+    },
+    {
+      "path": "docs/agent-layer/ISSUES.md",
+      "full_hash_normalized": "74b3d292a71a04ca0e818502b416a3b9b04ae5ff84dde8f97e2b3383e7c5be86",
+      "policy_id": "memory_entries_v1",
+      "policy_payload": {
+        "marker": "\u003c!-- ENTRIES START --\u003e",
+        "managed_section_hash": "74b3d292a71a04ca0e818502b416a3b9b04ae5ff84dde8f97e2b3383e7c5be86"
+      }
+    },
+    {
+      "path": "docs/agent-layer/ROADMAP.md",
+      "full_hash_normalized": "434e3a2322d5e0cce146c4dd2e7fde7af84024ce53c32feebfdd6cdd3b2e22ac",
+      "policy_id": "memory_roadmap_v1",
+      "policy_payload": {
+        "marker": "\u003c!-- PHASES START --\u003e",
+        "managed_section_hash": "434e3a2322d5e0cce146c4dd2e7fde7af84024ce53c32feebfdd6cdd3b2e22ac"
+      }
+    }
+  ],
+  "metadata": {
+    "source_version": "0.15.0"
+  }
+}

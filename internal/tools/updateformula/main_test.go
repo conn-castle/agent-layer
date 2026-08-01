@@ -37,7 +37,6 @@ func TestRunRendersBinaryFormula(t *testing.T) {
 	want := `class AgentLayer < Formula
   desc "Config-first CLI for keeping coding agents in sync"
   homepage "https://github.com/conn-castle/agent-layer"
-  version "1.2.3"
   license "MIT"
 
   on_macos do

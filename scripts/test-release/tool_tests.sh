@@ -144,8 +144,7 @@ dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd  agent-layer-1.
 EOF
 
       if run_update_formula "$valid_formula" "v1.2.3" "$formula_checksums" 2>/dev/null; then
-        if grep -q 'version "1.2.3"' "$valid_formula" && \
-           grep -q 'al-darwin-arm64", using: :nounzip' "$valid_formula" && \
+        if grep -q 'url "https://github.com/conn-castle/agent-layer/releases/download/v1.2.3/al-darwin-arm64", using: :nounzip' "$valid_formula" && \
            grep -q 'sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' "$valid_formula" && \
            grep -q 'al-darwin-amd64", using: :nounzip' "$valid_formula" && \
            grep -q 'sha256 "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"' "$valid_formula" && \
@@ -153,7 +152,7 @@ EOF
            grep -q 'sha256 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' "$valid_formula" && \
            grep -q 'al-linux-amd64", using: :nounzip' "$valid_formula" && \
            grep -q 'sha256 "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"' "$valid_formula"; then
-          pass "updateformula: renders binary asset urls and sha256 values"
+          pass "updateformula: renders tagged binary asset urls and sha256 values"
         else
           fail "updateformula: binary formula content is missing expected asset urls or sha256 values"
         fi
@@ -174,10 +173,10 @@ EOF
       fi
 
       # Test 3: Verify removed source-build formula features stay removed.
-      if ! grep -q 'depends_on "go"' "$valid_formula" && ! grep -q 'bottle do' "$valid_formula" && ! grep -q 'agent-layer-1.2.3.tar.gz' "$valid_formula"; then
-        pass "updateformula: drops source-build dependency, bottle block, and tarball url"
+      if ! grep -q '^  version ' "$valid_formula" && ! grep -q 'depends_on "go"' "$valid_formula" && ! grep -q 'bottle do' "$valid_formula" && ! grep -q 'agent-layer-1.2.3.tar.gz' "$valid_formula"; then
+        pass "updateformula: drops redundant version and source-build-only content"
       else
-        fail "updateformula: rendered formula still contains source-build-only content"
+        fail "updateformula: rendered formula still contains redundant version or source-build-only content"
       fi
 
       # Test 4: Exit code 1 when a required checksum is missing
