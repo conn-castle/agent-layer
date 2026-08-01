@@ -14,6 +14,9 @@ These instructions govern command line tools, built-in client tools, filesystem 
 - Use upstream docs, documentation retrieval, or web/search tools when local files, installed CLI help, and relevant skills cannot provide current or authoritative information.
 - If a source/tool is unavailable or insufficient, say so explicitly.
 
+## Respect user tool constraints
+- If the user rules out a tool or external access, comply and state what could not be verified.
+
 ## Safe tool workflow
 - Do not pass secrets on the command line; use environment variables or configured credentials.
 - Do not run destructive, deploy, publish, payment, production, or external-write operations without explicit approval.

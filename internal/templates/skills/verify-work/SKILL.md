@@ -54,5 +54,5 @@ findings, and exactly one final verdict:
   explicitly outside it
 - `incomplete`
 
-Each finding includes its contract item or location, evidence, impact, and
-smallest correction. Return the report path and verdict.
+Each finding includes its contract item or location, current status from the
+rubric, evidence, and severity. Return the report path and verdict.

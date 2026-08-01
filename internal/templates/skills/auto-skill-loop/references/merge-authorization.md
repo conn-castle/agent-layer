@@ -21,6 +21,8 @@ only when it is missing, stale, or contradictory.
 ## Act
 
 On `authorize`, return the exact PR and head authorized for merge. On
-`blocked`, leave the PR open, record why, and continue independent work.
+`changes-required`, return the findings for repair and require fresh shipping
+evidence and authorization for the new head. On `blocked`, leave the PR open,
+record why, and continue independent work.
 
 A changed head always requires fresh review and authorization.

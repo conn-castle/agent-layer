@@ -36,8 +36,8 @@ unresolved human decision, and a localized change boundary. Dispatch
 `implementer` fresh with the selected source item, objective, boundary, and
 required checks. The implementer baselines relevant behavior, implements the
 repair and diagnoses and addresses concrete failures.
-Then dispatch `code_reviewer` once with `/verify-work` against the explicit
-request and final tree. Route material verification findings to a fresh
+Then dispatch `code_reviewer` once with `/review-uncommitted-code` against the
+explicit request and final tree. Route material review findings to a fresh
 `implementer` and rerun invalidated checks. Escalate to common plan execution
 when evidence reveals a substantive architecture, public-contract, migration,
 or cross-cutting risk decision.
@@ -47,9 +47,10 @@ or cross-cutting risk decision.
 For a plan-based mode, dispatch `planner` to run `/plan-work`, passing the
 caller's complete non-empty `plan_reviewers` list unchanged; `/plan-work` owns
 all `/review-plan` dispatch. Dispatch `implementer` with `/implement-plan`, then
-dispatch `code_reviewer` fresh with `/verify-work` against the implemented tree.
+dispatch `code_reviewer` fresh with `/review-uncommitted-code` against the
+implemented tree.
 Dispatch `implementer` fresh with the accepted repairs. Rerun
-checks and verification affected by repairs; repeat semantic review when a
+checks affected by repairs; repeat semantic review when a
 repair materially changes the reviewed design or contract surface.
 
 ## Continuation

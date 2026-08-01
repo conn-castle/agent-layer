@@ -81,8 +81,9 @@ Generated code captures actions but not assertions. Add expectations in your tes
 
 - `toBeVisible()` — element is rendered and visible
 - `toHaveText(text)` — element text content matches
-- `toHaveValue(value) / toBeEmpty()` — input/select value matches
-- `toBeChecked() / toBeUnchecked()` — checkbox state matches
+- `toHaveValue(value)` — input/select value matches
+- `toBeEmpty()` — input has no value
+- `toBeChecked()` / `toBeChecked({ checked: false })` — checkbox state matches
 - `toMatchAriaSnapshot(snapshot)` — page (or locator) matches a partial accessibility snapshot
 
 Use `playwright-cli generate-locator <target>` to produce the locator expression for the assertion, and the snapshot/eval commands to capture the expected value.
@@ -102,7 +103,10 @@ playwright-cli --raw eval "el => el.textContent" e5
 # Capture expected input value for toHaveValue/toBeEmpty
 playwright-cli --raw eval "el => el.value" e5
 
-# Capture expected aria snapshot for toMatchAriaSnapshot/toBeChecked
+# Capture expected checkbox state for toBeChecked
+playwright-cli --raw eval "el => el.checked" e5
+
+# Capture expected aria snapshot for toMatchAriaSnapshot
 # (whole page, or use a ref to scope to a region)
 playwright-cli --raw snapshot
 playwright-cli --raw snapshot e5
