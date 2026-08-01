@@ -119,7 +119,6 @@ func TestCampaignRunsVersionedTreatmentAndBuildsReportFromImmutableEvidence(t *t
 				SchemaVersion:          TreatmentSchemaVersion,
 				Mode:                   mode,
 				AgentTimeoutMultiplier: skillsAgentTimeoutFactor,
-				RequiredRoles:          []string{requiredRolePlanReviewer, requiredRoleImplementer, requiredRoleCodeReviewer},
 			},
 		}, nil
 	}

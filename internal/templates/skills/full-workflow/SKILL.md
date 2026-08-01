@@ -18,7 +18,7 @@ Require:
 - the requested work
 - `implementer`: self-contained dispatch target for implementation
 - `code_reviewer`: self-contained semantic-review dispatch target
-- `fixer`: self-contained dispatch target for bounded repairs
+- `fixer`: self-contained dispatch target for improvement and repairs
 - `plan_reviewers`: one or more self-contained dispatch target specifications
 
 Ask for any missing target; do not infer roles or target specifications.
@@ -49,6 +49,5 @@ Dispatch using `/agent-dispatch`.
 
 ## Completion
 
-Complete only when the approved contract is satisfied and `/ship-pr` reports a
-merged PR with verified cleanup. Return the artifact paths, shipping result, or
-a concrete blocker.
+Complete only when the plan is implemented and `/ship-pr` reports a merged PR.
+Return the artifact paths, shipping result, or a concrete blocker.

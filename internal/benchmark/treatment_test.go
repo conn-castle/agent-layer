@@ -135,6 +135,16 @@ func TestSkillsTreatmentUsesWorkflowRolesAndAutonomousPrompt(t *testing.T) {
 			t.Fatalf("workflow prompt hard-enforces model behavior with %q", forbidden)
 		}
 	}
+	for _, forbidden := range []string{
+		"must use the `review-plan` skill",
+		"must use the `implement-plan` skill",
+		"must use the `review-uncommitted-code` skill",
+		"required role skills",
+	} {
+		if strings.Contains(string(workflow), forbidden) {
+			t.Fatalf("workflow prompt requires obsolete leaf-skill evidence with %q", forbidden)
+		}
+	}
 	// The prompt cites a path that a different asset writes. If the two drift,
 	// every skills run points the workflow at a file that does not exist and the
 	// failure is invisible until the transcript is read after the run is paid for.
@@ -234,6 +244,22 @@ func TestTreatmentAdapterLabelsReasoningEffortInRoleTargets(t *testing.T) {
 	}
 }
 
+func TestTreatmentAdapterLoadsDispatchTargetsOnlyForSkillsMode(t *testing.T) {
+	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		`self._dispatch_config = None`,
+		`if treatment_mode == "instructions-and-skills":`,
+		`self._treatment_bundle / "dispatch-targets.json"`,
+	} {
+		if !strings.Contains(string(adapter), required) {
+			t.Fatalf("treatment adapter omitted conditional dispatch loading %q", required)
+		}
+	}
+}
+
 func TestBuildInstructionsOnlyTreatmentFromRepositoryProjection(t *testing.T) {
 	model, effort, err := ParseModelSelection("luna:low")
 	if err != nil {
@@ -312,6 +338,9 @@ func TestBuildSkillsTreatmentIsIndependentOfTemporaryStagePath(t *testing.T) {
 	}
 	if first.ManifestHash != second.ManifestHash {
 		t.Fatalf("temporary stage path changed treatment identity: %s != %s", first.ManifestHash, second.ManifestHash)
+	}
+	if len(first.Manifest.RequiredRoles) != 0 || len(second.Manifest.RequiredRoles) != 0 {
+		t.Fatalf("skills treatment required legacy dispatch roles: %v, %v", first.Manifest.RequiredRoles, second.Manifest.RequiredRoles)
 	}
 	assertTemplateProjection(
 		t,

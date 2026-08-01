@@ -79,14 +79,16 @@ class _AgentLayerTreatment:
             raise RuntimeError(f"Unsupported Agent Layer benchmark treatment mode: {treatment_mode}")
         if treatment_agent not in {"claude", "codex"} or not treatment_model or not treatment_reasoning_effort:
             raise RuntimeError("Agent Layer benchmark workflow target is incomplete")
-        try:
-            self._dispatch_config = json.loads(
-                (self._treatment_bundle / "dispatch-targets.json").read_text(encoding="utf-8")
-            )
-        except (OSError, json.JSONDecodeError) as error:
-            raise RuntimeError("Agent Layer benchmark dispatch targets are unavailable") from error
-        if self._dispatch_config.get("schema") != "agent-layer-benchmark-dispatch-v1":
-            raise RuntimeError("Agent Layer benchmark dispatch target schema is invalid")
+        self._dispatch_config = None
+        if treatment_mode == "instructions-and-skills":
+            try:
+                self._dispatch_config = json.loads(
+                    (self._treatment_bundle / "dispatch-targets.json").read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError) as error:
+                raise RuntimeError("Agent Layer benchmark dispatch targets are unavailable") from error
+            if self._dispatch_config.get("schema") != "agent-layer-benchmark-dispatch-v1":
+                raise RuntimeError("Agent Layer benchmark dispatch target schema is invalid")
         super().__init__(*args, **kwargs)
 
     async def _install_treatment(self, environment):

@@ -17,7 +17,8 @@ Require:
 
 - a `mode` matching `references/modes/<mode>.md`
 - standing authorization to merge work that passes every gate below
-- `planner`, `implementer`, `code_reviewer`, and `rote_worker` dispatch targets
+- `planner`, `implementer`, `fixer`, `code_reviewer`, and `rote_worker` dispatch
+  targets
 - one or more `plan_reviewers` targets when the mode always plans; otherwise
   they are optional until the selected work needs planning
 - any additional targets required by the selected mode
@@ -57,12 +58,13 @@ remains eligible.
    If planning is required, do not proceed without a non-empty
    `plan_reviewers` list and an `implementation-ready` result.
 
-2. **Execute.** Prepare or reuse a branch for the selected work. Dispatch
-   `implementer` with any mode-specific `Execute` instructions and an
-   implementation-ready plan, or the selected work directly when no plan was
-   needed.
-   Then dispatch `code_reviewer` with `/review-uncommitted-code`, return material
-   findings to `implementer`, and rerun affected checks.
+2. **Execute.** Prepare or reuse a branch for the selected work. For planned
+   work, run `/fully-implement-plan` with the plan and context artifacts and the
+   `implementer`, `fixer`, and `code_reviewer` targets. Otherwise, dispatch
+   `implementer` with the selected work and any mode-specific `Execute`
+   instructions. Then dispatch `code_reviewer` with
+   `/review-uncommitted-code`, return material findings to `implementer`, and
+   rerun affected checks.
 
 3. **Prepare the PR.** Dispatch `rote_worker` to run `/ship-pr`. Continue only
    when it returns a merge-authorization request for an exact PR and head.

@@ -38,6 +38,7 @@ type MatrixOptions struct {
 	BaselineExecutions []string
 	TreatmentExecution string
 	TreatmentLabel     string
+	TreatmentMode      string
 	DispatchConfigPath string
 	Tasks              []string
 	TaskConcurrency    int
@@ -253,6 +254,17 @@ func prepareMatrix(ctx context.Context, options MatrixOptions) (matrixPreparatio
 	if err := validateMatrixTaskFilter(selection, options.Tasks); err != nil {
 		return matrixPreparation{}, err
 	}
+	treatmentMode := strings.TrimSpace(options.TreatmentMode)
+	if treatmentMode == "" {
+		treatmentMode = TreatmentInstructionsAndSkills
+	}
+	if options.TreatmentExecution != "" && !validTreatmentMode(treatmentMode) {
+		return matrixPreparation{}, fmt.Errorf("unsupported benchmark treatment mode %q", treatmentMode)
+	}
+	if options.TreatmentExecution != "" && treatmentMode == TreatmentInstructionsOnly &&
+		options.DispatchConfigPath != "" {
+		return matrixPreparation{}, fmt.Errorf("instructions-only matrix treatment does not accept a dispatch config")
+	}
 	tasks := make([]benchmarkPlanTask, len(selection.Tasks))
 	for index, task := range selection.Tasks {
 		tasks[index] = benchmarkPlanTask{ID: task.ID, RepetitionsPerArm: task.Repetitions}
@@ -320,7 +332,7 @@ func prepareMatrix(ctx context.Context, options MatrixOptions) (matrixPreparatio
 			}
 		}
 		bundle, err = BuildTreatmentBundleWithDispatch(
-			options.RepoRoot, runtime.GOARCH, TreatmentInstructionsAndSkills,
+			options.RepoRoot, runtime.GOARCH, treatmentMode,
 			treatmentModel, treatmentEffort, dispatchConfig,
 		)
 		if err != nil {

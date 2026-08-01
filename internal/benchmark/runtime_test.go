@@ -91,6 +91,13 @@ func TestDispatchConformanceUsesObservedLifecycleWithoutAffectingScore(t *testin
 			},
 		}},
 	}
+	unconstrained := request
+	unconstrained.Bundle = &TreatmentBundle{Manifest: TreatmentManifest{
+		Mode: TreatmentInstructionsAndSkills,
+	}}
+	if conformant, err := dispatchConformance(t.TempDir(), unconstrained); err != nil || !conformant {
+		t.Fatalf("unconstrained skills treatment = %t, %v", conformant, err)
+	}
 	if conformant, err := dispatchConformance(stage, request); err != nil || conformant {
 		t.Fatalf("missing lifecycle = %t, %v", conformant, err)
 	}
@@ -650,6 +657,7 @@ func TestTreatmentRuntimePreflightRequiresEvidenceWithoutProviderSession(t *test
 	}
 	request := ExecutionRequest{
 		Task: "example-task", TaskChecksum: "task-checksum", Model: model, Effort: effort,
+		Bundle: &TreatmentBundle{Manifest: TreatmentManifest{Mode: TreatmentInstructionsAndSkills}},
 	}
 	if err := validatePierTreatmentPreflight(stage, request); err != nil {
 		t.Fatalf("valid runtime preflight: %v", err)
@@ -664,6 +672,21 @@ func TestTreatmentRuntimePreflightRequiresEvidenceWithoutProviderSession(t *test
 	if err := validatePierTreatmentPreflight(stage, request); err == nil ||
 		!strings.Contains(err.Error(), "unexpectedly invoked the provider") {
 		t.Fatalf("provider session accepted in runtime preflight: %v", err)
+	}
+}
+
+func TestInstructionsOnlyRuntimePreflightDoesNotRequireDispatchEvidence(t *testing.T) {
+	stage := writePierStage(t, "task-checksum", .5, 0)
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ExecutionRequest{
+		Task: "example-task", TaskChecksum: "task-checksum", Model: model, Effort: effort,
+		Bundle: &TreatmentBundle{Manifest: TreatmentManifest{Mode: TreatmentInstructionsOnly}},
+	}
+	if err := validatePierTreatmentPreflight(stage, request); err != nil {
+		t.Fatalf("valid instructions-only runtime preflight: %v", err)
 	}
 }
 

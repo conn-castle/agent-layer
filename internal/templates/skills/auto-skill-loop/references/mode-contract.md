@@ -45,13 +45,9 @@ or cross-cutting risk decision.
 ## Common plan execution
 
 For a plan-based mode, dispatch `planner` to run `/plan-work`, passing the
-caller's complete non-empty `plan_reviewers` list unchanged; `/plan-work` owns
-all `/review-plan` dispatch. Dispatch `implementer` with `/implement-plan`, then
-dispatch `code_reviewer` fresh with `/review-uncommitted-code` against the
-implemented tree.
-Dispatch `implementer` fresh with the accepted repairs. Rerun
-checks affected by repairs; repeat semantic review when a
-repair materially changes the reviewed design or contract surface.
+caller's complete non-empty `plan_reviewers` list unchanged. Then run
+`/fully-implement-plan` with the finalized plan and context artifacts and the
+caller's `implementer`, `fixer`, and `code_reviewer` targets.
 
 ## Continuation
 

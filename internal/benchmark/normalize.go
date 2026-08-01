@@ -182,29 +182,31 @@ func validatePierTreatmentPreflight(stage string, request ExecutionRequest) erro
 	if string(raw.ExceptionInfo) != "" && string(raw.ExceptionInfo) != "null" {
 		return fmt.Errorf("treatment runtime preflight failed: %s", raw.ExceptionInfo)
 	}
-	required := codexMCPPreflightEvidence
-	if request.Model.Adapter == adapterClaudeCode {
-		required = "claude-mcp-preflight.txt"
-	}
-	evidenceCounts := map[string]int{
-		required:                     0,
-		dispatchOptionsPreflightFile: 0,
-	}
-	err = filepath.WalkDir(filepath.Join(stage, "jobs"), func(_ string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+	if request.Bundle != nil && request.Bundle.Manifest.Mode == TreatmentInstructionsAndSkills {
+		required := codexMCPPreflightEvidence
+		if request.Model.Adapter == adapterClaudeCode {
+			required = "claude-mcp-preflight.txt"
 		}
-		if !entry.IsDir() {
-			evidenceCounts[entry.Name()]++
+		evidenceCounts := map[string]int{
+			required:                     0,
+			dispatchOptionsPreflightFile: 0,
 		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("inspect runtime preflight evidence: %w", err)
-	}
-	for _, name := range []string{required, dispatchOptionsPreflightFile} {
-		if evidenceCounts[name] != 1 {
-			return fmt.Errorf("treatment runtime preflight did not preserve %s", name)
+		err = filepath.WalkDir(filepath.Join(stage, "jobs"), func(_ string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if !entry.IsDir() {
+				evidenceCounts[entry.Name()]++
+			}
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("inspect runtime preflight evidence: %w", err)
+		}
+		for _, name := range []string{required, dispatchOptionsPreflightFile} {
+			if evidenceCounts[name] != 1 {
+				return fmt.Errorf("treatment runtime preflight did not preserve %s", name)
+			}
 		}
 	}
 	var providerSessions int
@@ -320,6 +322,9 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 		return false, fmt.Errorf("treatment result has no immutable bundle")
 	}
 	required := normalizedRoles(request.Bundle.Manifest.RequiredRoles)
+	if request.Bundle.Manifest.Mode == TreatmentInstructionsAndSkills && len(required) == 0 {
+		return true, nil
+	}
 	var paths []string
 	err := filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -339,8 +344,7 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 	if request.Bundle.Manifest.Mode == TreatmentInstructionsOnly {
 		return len(paths) == 0 && len(required) == 0, nil
 	}
-	if request.Bundle.Manifest.Mode != TreatmentInstructionsAndSkills ||
-		len(required) == 0 || len(paths) == 0 {
+	if request.Bundle.Manifest.Mode != TreatmentInstructionsAndSkills || len(paths) == 0 {
 		return false, nil
 	}
 	completedRoles := make(map[string]bool, len(required))

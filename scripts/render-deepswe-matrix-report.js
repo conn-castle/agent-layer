@@ -132,7 +132,6 @@ function discoverCompletedArms(matrixDir, selection) {
     .sort((left, right) => left.name.localeCompare(right.name));
   const arms = [];
   const skipped = [];
-  const labels = new Set();
   for (const entry of entries) {
     const armDir = path.join(armsDir, entry.name);
     const manifestPath = path.join(armDir, "manifest.json");
@@ -144,7 +143,6 @@ function discoverCompletedArms(matrixDir, selection) {
     assert(manifest.selection_id === path.basename(matrixDir), `${entry.name}: selection identity mismatch`);
     assert(manifest.mode === "baseline" || manifest.mode === "treatment", `${entry.name}: invalid mode`);
     assert(typeof manifest.label === "string" && manifest.label, `${entry.name}: missing label`);
-    assert(!labels.has(manifest.label), `duplicate completed arm label ${manifest.label}`);
     const taskReports = [];
     let complete = true;
     for (const task of selection.tasks) {
@@ -206,7 +204,6 @@ function discoverCompletedArms(matrixDir, selection) {
       skipped.push(`${manifest.label}: incomplete`);
       continue;
     }
-    labels.add(manifest.label);
     const cost = taskReports.reduce(
       (total, task) => ({
         midpoint: total.midpoint + task.cost.midpoint,
@@ -224,6 +221,7 @@ function discoverCompletedArms(matrixDir, selection) {
       model: manifest.model,
       reasoning: manifest.reasoning,
       createdAt: manifest.created_at,
+      environmentQualified: Boolean(manifest.task_environment_identities),
       providerClientVersion: [...providerClients][0],
       score: taskReports.reduce((sum, task) => sum + task.weightedContribution, 0),
       cost,
@@ -235,6 +233,23 @@ function discoverCompletedArms(matrixDir, selection) {
       verifierBuildFailedRuns: taskReports.filter((task) => task.verifierBuildFailed).length,
       tasks: taskReports,
     });
+  }
+  const duplicateLabels = new Map();
+  for (const arm of arms) {
+    duplicateLabels.set(arm.label, (duplicateLabels.get(arm.label) ?? 0) + 1);
+  }
+  for (const arm of arms) {
+    if (duplicateLabels.get(arm.label) > 1) {
+      const harness = arm.environmentQualified ? "certified harness" : "legacy harness";
+      arm.label = `${arm.label} (${harness})`;
+    }
+  }
+  const resolvedLabels = new Set();
+  for (const arm of arms) {
+    if (resolvedLabels.has(arm.label)) {
+      arm.label = `${arm.label} [${arm.id.slice(0, 8)}]`;
+    }
+    resolvedLabels.add(arm.label);
   }
   const effortOrder = new Map([
     ["minimal", 0],

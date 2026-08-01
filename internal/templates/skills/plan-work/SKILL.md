@@ -7,36 +7,37 @@ description: >-
 
 # plan-work
 
-Create a reviewed, implementation-ready plan, task list, and context artifact.
-
 ## Inputs
 
 Require a task source or user request and one or more self-contained
-`plan_reviewers` target specifications. Resolve each through `/agent-dispatch`'s
-live metadata; use an unambiguous match without confirmation. Missing task
-input, an empty reviewer list, or an unresolved reviewer blocks planning;
-create nothing.
+`plan_reviewers` target specifications. Accept an optional dedicated
+specification document. Resolve each reviewer through `/agent-dispatch`'s live
+metadata; use an unambiguous match without confirmation.
 
 ## Workflow
 
-1. Resolve material facts now rather than deferring investigation to
-   implementation.
-2. Follow `references/write-plan.md`. Correct evidence-backed gaps within this
-   stage. Ask the user only when a substantive choice cannot be resolved under
-   repository escalation rules.
-3. Dispatch all supplied reviewers concurrently with `/review-plan`. Give each
-   the complete artifacts and optional source/spec.
-4. Merge duplicates, then assess each finding for correctness, relevance, and
-   materiality. Accept or reject each; briefly justify rejections.
-5. Address accepted findings in the artifacts. Escalate unresolved substantive
-   decisions.
-6. Write `.agent-layer/tmp/plan-work.<run-id>.report.md` using the plan artifact
-   run ID. Include reviewer finding paths, dispositions, rejection reasons,
-   unresolved decisions, and status.
+1. Write the plan and context artifacts using
+   `YYYYMMDD-HHMMSS-<short-rand>` as the run ID:
 
-## Completion
+   - `.agent-layer/tmp/write-plan.<run-id>.plan.md`
+   - `.agent-layer/tmp/write-plan.<run-id>.context.md`
 
-Return the plan, task, context, and report paths with one status:
+   The context artifact should contain key file paths, current state, and useful
+   implementation information not appropriate for the plan.
 
-- `implementation-ready`: accepted findings are addressed
-- `blocked-for-user-decision`: name the unresolved substantive decision
+2. Update the plan as needed. Ensure the artifacts have no gaps, are
+   unambiguous, leave no substantive decisions unresolved, and contain
+   everything a competent junior developer needs to complete the
+   implementation. Ask the user only when a substantive choice cannot be
+   resolved under repository escalation rules.
+
+3. Dispatch to each supplied reviewer concurrently using
+   `references/review-prompt.md`. Provide the plan artifact paths and optional
+   source or specification. Each reviewer returns findings and a review verdict.
+
+4. Address accepted findings by updating the plan artifacts.
+
+5. Return the finalized plan and context paths with one status:
+
+   - `implementation-ready`: accepted findings are addressed
+   - `blocked-for-user-decision`: name the unresolved substantive decision

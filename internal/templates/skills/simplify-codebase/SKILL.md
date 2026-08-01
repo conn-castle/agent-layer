@@ -15,8 +15,7 @@ a named concept rather than polishing syntax.
 ## Scope and useful-change gate
 
 Accept paths, filters, dead-code inclusion, and assessment-only mode; otherwise
-inspect repository source, excluding generated, vendored, and build output. Use
-`/clean-and-fix-code` for current-diff cleanup. Write
+inspect repository source, excluding generated, vendored, and build output. Write
 `.agent-layer/tmp/simplify-codebase.<run-id>.report.md`.
 
 A qualifying change removes dead code, an obsolete option, needless

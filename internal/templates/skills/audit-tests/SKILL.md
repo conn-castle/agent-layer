@@ -8,14 +8,12 @@ description: >-
 
 # audit-tests
 
-Audit tests and fix clear negative-value or mechanical problems. Use
-`/boost-coverage` for coverage targets and `/clean-and-fix-code` for tests added
-in the current diff.
+Audit tests and fix clear negative-value or mechanical problems.
 
 ## Scope
 
-- Default to all tests; accept paths, modules, repository-defined tiers,
-  coverage permission, and a report limit that does not reduce coverage.
+- Default to all tests; accept paths, modules, repository-defined tiers, and a
+  report limit that does not reduce coverage.
 - Derive tiers from repository configuration. If ambiguous, audit concrete
   tests without tiers and report the limitation.
 
@@ -30,6 +28,8 @@ Write `.agent-layer/tmp/audit-tests.<run-id>.report.md`, using
   preserving the strongest behavioral coverage.
 - Make mechanical assertion, naming, tier, helper, and fixture repairs when the
   intended behavior is established.
+- Add behavior-focused tests for material gaps when the expected behavior is
+  established.
 - Do not delete partially valuable tests or change production for testability
   without a user decision. Replace false coverage only for a clear behavior
   contract.
@@ -51,8 +51,8 @@ Review:
 
 Use coverage when documented and useful, reusing results until edits invalidate
 them. Apply safe deletions, consolidation, and mechanical fixes. Leave
-judgment-dependent work untouched; recommend `/boost-coverage` for material
-missing behavior.
+judgment-dependent work untouched. Fix material gaps with behavior-focused
+tests; report only gaps that require a user decision.
 
 If files changed, run a credible repository lane covering them. Diagnose and
 repair in-scope failures, then rerun invalidated checks.
@@ -67,7 +67,7 @@ The report contains:
 6. `## Decisions Needed`
 7. `## Verification`
 
-Outcomes are `fixed`, `needs-user-decision`, or `recommend-boost-coverage`; use
-`None` for empty sections. Finish after full evidence coverage, terminal finding
-outcomes, and a passing lane for changed tests. Return the report path, fixes,
-residuals, and verification.
+Outcomes are `fixed` or `needs-user-decision`; use `None` for empty sections.
+Finish after full evidence coverage, terminal finding outcomes, and a passing
+lane for changed tests. Return the report path, fixes, residuals, and
+verification.

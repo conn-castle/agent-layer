@@ -130,6 +130,34 @@ func TestBenchmarkMatrixCheckAcceptsBaselineOnly(t *testing.T) {
 	}
 }
 
+func TestBenchmarkMatrixForwardsInstructionsOnlyMode(t *testing.T) {
+	original := checkMatrix
+	checkMatrix = func(_ context.Context, options bench.MatrixOptions) (bench.MatrixOutcome, error) {
+		if options.TreatmentExecution != "luna:low" ||
+			options.TreatmentMode != bench.TreatmentInstructionsOnly ||
+			options.TreatmentLabel != "Instructions only" {
+			t.Fatalf("options = %#v", options)
+		}
+		return bench.MatrixOutcome{
+			SelectionID: strings.Repeat("c", 64), Required: 2, Missing: 2,
+		}, nil
+	}
+	t.Cleanup(func() { checkMatrix = original })
+
+	root := newRootCmd()
+	root.SetArgs([]string{
+		"benchmark", "matrix", "--check", "--selection", "-",
+		"--baseline-execution", "luna:low",
+		"--treatment-execution", "luna:low",
+		"--treatment-label", "Instructions only",
+		"--treatment-mode", bench.TreatmentInstructionsOnly,
+	})
+	root.SetIn(strings.NewReader(`{"selection":true}`))
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBenchmarkTreatmentForwardsNewRunLimit(t *testing.T) {
 	original := runTreatment
 	runTreatment = func(_ context.Context, options bench.TreatmentOptions, _ bench.TaskExecutor) (bench.TreatmentOutcome, error) {

@@ -125,12 +125,8 @@ func buildTreatmentBundle(repoRoot, targetArch, mode string, model Model, effort
 			return nil, err
 		}
 	}
-	requiredRoles := []string(nil)
-	if mode == TreatmentInstructionsAndSkills {
-		requiredRoles = []string{requiredRolePlanReviewer, requiredRoleImplementer, requiredRoleCodeReviewer}
-	}
 	configPath := filepath.Join(layer, "config.toml")
-	if err := writeNormalizedDispatchConfig(configPath, requiredRoles, model, effort); err != nil {
+	if err := writeNormalizedDispatchConfig(configPath, nil, model, effort); err != nil {
 		return nil, err
 	}
 	if err := os.WriteFile(filepath.Join(layer, ".env"), []byte("# Intentionally empty; provider authentication is injected separately.\n"), 0o600); err != nil {
@@ -187,7 +183,7 @@ func buildTreatmentBundle(repoRoot, targetArch, mode string, model Model, effort
 		}
 	}
 	adapterHash := sha256.Sum256(adapter)
-	manifest, err := treatmentManifest(root, mode, requiredRoles, dispatchConfig)
+	manifest, err := treatmentManifest(root, mode, nil, dispatchConfig)
 	if err != nil {
 		return nil, err
 	}

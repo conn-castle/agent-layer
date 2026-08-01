@@ -143,7 +143,7 @@ func runBenchmarkBaselineInteractive(cmd *cobra.Command, options bench.BaselineO
 }
 
 func newBenchmarkMatrixCmd() *cobra.Command {
-	var selectionPath, treatmentExecution, treatmentLabel, dispatchConfig string
+	var selectionPath, treatmentExecution, treatmentLabel, treatmentMode, dispatchConfig string
 	var baselineExecutions []string
 	var tasks []string
 	var taskConcurrency int
@@ -181,6 +181,7 @@ func newBenchmarkMatrixCmd() *cobra.Command {
 				BaselineExecutions: baselineExecutions,
 				TreatmentExecution: treatmentExecution,
 				TreatmentLabel:     treatmentLabel,
+				TreatmentMode:      treatmentMode,
 				DispatchConfigPath: dispatchConfig,
 				Tasks:              tasks,
 				TaskConcurrency:    taskConcurrency, Confirmed: yes,
@@ -233,6 +234,10 @@ func newBenchmarkMatrixCmd() *cobra.Command {
 	command.Flags().StringVar(
 		&treatmentLabel, "treatment-label", "",
 		"report label for the Agent Layer point",
+	)
+	command.Flags().StringVar(
+		&treatmentMode, "treatment-mode", bench.TreatmentInstructionsAndSkills,
+		"Agent Layer treatment mode: instructions-and-skills or instructions-only",
 	)
 	command.Flags().StringVar(
 		&dispatchConfig, "dispatch-config", "",
