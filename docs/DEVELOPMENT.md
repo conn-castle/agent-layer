@@ -83,6 +83,58 @@ Notes:
 - `sync` is optional because `al <client>` always syncs before launch.
 - `./scripts/setup.sh` is only for tool + hook setup, not required just to run the CLI.
 
+## Hidden maintenance commands
+These are registered but hidden from `al --help`. They are maintenance aids, not
+part of the supported CLI surface, and are not documented on the website.
+
+### `al organize-scratch` — sort a scratch directory for review
+Agent scratch directories accumulate hundreds of reports, logs, checkouts, and
+dependency trees. This command sorts the top level of one into folders that
+encode **how much review each entry needs**, so a later cleanup pass can skip
+whole folders instead of judging every entry:
+
+| Destination | Meaning |
+| --- | --- |
+| `reports/<prefix>/` | Matched a recurring report-family naming convention. No review. |
+| `reports/adhoc/<topic>/` | Ad-hoc Markdown, grouped by topic (`pr`, `incidents`, `reviews`, `plans-specs`, `misc`). No review. |
+| `artifacts/<kind>/` | Routed purely by file extension (`logs`, `screenshots`, `diffs`, `scripts`, `data`, `evidence`). No review. |
+| `review/…` | Needs a human decision, subdivided by the reason: `checkouts`, `regenerable`, `unique-assets`, `bulk-samples`, `secrets`, `unknown`. |
+
+```bash
+# Dry run: print the plan, move nothing (default)
+al organize-scratch --root .agent-layer/tmp
+
+# Perform the moves
+al organize-scratch --root .agent-layer/tmp --apply
+```
+
+| Flag | Purpose |
+| --- | --- |
+| `--root <dir>` | Directory to organize. Required — the command never picks one itself. |
+| `--apply` | Perform the moves. Without it the run is a dry run. |
+| `--keep <a,b>` | Top-level names to leave in place, for tool-managed paths other software resolves on its own. Repeatable, and accepts comma-separated values. |
+| `--move-worktrees` | Also relocate registered Git worktrees, repairing their registration afterwards. |
+| `--min-group <n>` | How many entries a filename prefix needs before it earns its own `reports/<prefix>` folder (default 5). |
+
+Guarantees worth knowing before running it with `--apply`:
+- **Nothing is ever deleted, overwritten, or merged.** Entries are only moved. An
+  entry whose destination path is already taken is reported as a collision and
+  left where it is. Every removal decision stays with you.
+- Each run writes `ORGANIZE-REVIEW.md` into the root — including on a dry run —
+  listing what needs a decision and what to check before removing it.
+- Registered Git worktrees, and any directory containing one, are left in place
+  unless `--move-worktrees` is passed, because relocating one rewrites Git's
+  worktree registration. With the flag, each real worktree path is repaired
+  after the move (repairing only a moved parent would leave nested worktrees
+  registered at their old location as prunable).
+- Value is judged by **reproducibility** — whether a tree is a copy of the repo,
+  a dependency install, or a build cache — not by whether prose sits next to it.
+  A directory of authored assets that exist nowhere else lands in
+  `review/unique-assets`, never in a "probably disposable" bucket.
+- Copy, asset, and worktree detection all depend on Git. When the root is not
+  inside a repository, or `git ls-files` reports nothing, the command says so on
+  stderr rather than silently classifying with those checks switched off.
+
 ## Run checks locally
 ```bash
 # Quick pass (format + fmt-check + lint + coverage + release tests)

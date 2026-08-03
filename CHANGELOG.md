@@ -1,6 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+- `al organize-scratch --root <dir>` sorts a scratch directory into `reports/`, `artifacts/`, and `review/` folders and writes an `ORGANIZE-REVIEW.md` listing everything that still needs a human decision. It only moves entries: nothing is deleted, overwritten, or merged, and an entry whose destination is already taken is left in place. Defaults to a dry run; pass `--apply` to move. Registered Git worktrees are left alone unless `--move-worktrees` is given, in which case their registrations are repaired after the move. The command is a maintenance aid and is hidden from `al --help`.
+
+### Fixed
+- Git subprocesses now resolve the repository from the path they are given instead of honoring an inherited `GIT_DIR`. Git exports its repository-discovery variables to every hook, and they take precedence over `git -C <path>`, so benchmark provenance and pinned-checkout validation could report on a different repository than the one being measured when a run started from a Git hook.
+
 ## v0.15.0 - 2026-07-31
 
 Agent Dispatch MCP and benchmark tooling release.
