@@ -556,14 +556,7 @@ func prepareBenchmarkTasks(ctx context.Context, repoRoot string, tasks []benchma
 	}
 	checksums := make(map[string]string, len(tasks))
 	for _, task := range tasks {
-		root := filepath.Join(checkout, "tasks", task.ID)
-		for _, required := range []string{taskTOMLFile, taskInstructionFile, taskPreArtifactsFile, filepath.Join("tests", "test.sh")} {
-			info, statErr := os.Stat(filepath.Join(root, required))
-			if statErr != nil || info.IsDir() {
-				return nil, nil, fmt.Errorf("benchmark task %s is missing %s", task.ID, required)
-			}
-		}
-		checksum, checksumErr := TaskTreeChecksum(root)
+		checksum, checksumErr := validateBenchmarkTaskTree(checkout, task.ID)
 		if checksumErr != nil {
 			return nil, nil, fmt.Errorf("checksum benchmark task %s: %w", task.ID, checksumErr)
 		}
@@ -577,6 +570,26 @@ func prepareBenchmarkTasks(ctx context.Context, repoRoot string, tasks []benchma
 		return nil, nil, err
 	}
 	return checksums, environments, nil
+}
+
+// validateBenchmarkTaskTree validates the files required by the pinned
+// DeepSWE runner and returns the immutable task-tree checksum.
+func validateBenchmarkTaskTree(checkout, task string) (string, error) {
+	root := filepath.Join(checkout, "tasks", task)
+	for _, required := range []string{taskTOMLFile, taskInstructionFile, taskPreArtifactsFile, filepath.Join("tests", "test.sh")} {
+		info, err := os.Stat(filepath.Join(root, required))
+		if err != nil {
+			return "", fmt.Errorf("missing %s: %w", required, err)
+		}
+		if info.IsDir() {
+			return "", fmt.Errorf("required path %s is a directory", required)
+		}
+	}
+	checksum, err := TaskTreeChecksum(root)
+	if err != nil {
+		return "", err
+	}
+	return checksum, nil
 }
 
 func baselineStateDir(repoRoot, campaignID string) string {

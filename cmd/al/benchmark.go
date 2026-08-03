@@ -21,6 +21,7 @@ const (
 	benchmarkMatrixName    = "matrix"
 	benchmarkTreatmentName = "treatment"
 	benchmarkReportName    = "report"
+	benchmarkReadinessName = "readiness"
 	benchmarkYes           = "yes"
 )
 
@@ -31,6 +32,7 @@ var (
 	checkTreatment      = bench.CheckTreatment
 	runMatrix           = bench.RunMatrix
 	checkMatrix         = bench.CheckMatrix
+	checkReadiness      = bench.CheckAllTaskReadiness
 	buildCampaignReport = bench.BuildCampaignReport
 )
 
@@ -45,7 +47,52 @@ func newBenchmarkCmd() *cobra.Command {
 		newBenchmarkTreatmentCmd(),
 		newBenchmarkReportCmd(),
 		newBenchmarkMatrixCmd(),
+		newBenchmarkReadinessCmd(),
 	)
+	return command
+}
+
+func newBenchmarkReadinessCmd() *cobra.Command {
+	var taskConcurrency int
+	command := &cobra.Command{
+		Use:   benchmarkReadinessName,
+		Short: "Preflight every task in the pinned DeepSWE catalog",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveRepoRoot()
+			if err != nil {
+				return err
+			}
+			outcome, err := checkReadiness(context.Background(), bench.ReadinessAuditOptions{
+				RepoRoot: root, TaskConcurrency: taskConcurrency,
+			})
+			if err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"DeepSWE readiness %s: %d of %d tasks certified, %d failed, %d blocked by shared infrastructure. No provider call was made.\n",
+				outcome.DeepSWECommit, outcome.Certified, outcome.Required, outcome.Failed, outcome.Blocked,
+			); err != nil {
+				return err
+			}
+			for _, task := range outcome.Tasks {
+				if task.Status == "failed" || task.Status == "blocked" {
+					if _, err := fmt.Fprintf(cmd.OutOrStdout(), "- %s: %s\n", task.Task, task.Error); err != nil {
+						return err
+					}
+				}
+			}
+			if outcome.Blocked > 0 {
+				return fmt.Errorf("DeepSWE readiness audit is blocked by shared infrastructure for %d task(s)", outcome.Blocked)
+			}
+			if outcome.Failed > 0 {
+				return fmt.Errorf("DeepSWE readiness audit failed for %d task(s)", outcome.Failed)
+			}
+			return nil
+		},
+	}
+	command.Flags().IntVar(&taskConcurrency, "task-concurrency", 1, "parallel task readiness checks, from 1 to 8")
 	return command
 }
 

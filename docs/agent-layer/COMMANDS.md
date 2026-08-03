@@ -321,6 +321,14 @@ Notes: Runs `test-release` first to validate release scripts. Local builds stay 
 
 ### Agent Layer skill A/B benchmark
 
+- Preflight every task in the pinned DeepSWE catalog without provider calls
+```bash
+go run ./cmd/al benchmark readiness --task-concurrency 4
+```
+Run from: repo root
+Prerequisites: Go 1.26.0+, Git, Docker, and network access when the pinned DeepSWE checkout or task images are not cached
+Notes: Enumerates every task in the pinned DeepSWE checkout, validates required task files and verifier startup definitions, checks each readiness contract, pins each task image by digest, and runs each task-owned readiness check with network disabled. It writes only content-addressed readiness receipts under `.agent-layer/state/benchmarks/deepswe/`; it never invokes a provider model. A nonzero result lists every task that failed.
+
 - Validate or run the bare-model baseline from a benchmark plan
 ```bash
 go run ./cmd/al benchmark baseline --check --plan <plan.json> --execution luna:low --task-concurrency 4

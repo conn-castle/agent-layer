@@ -10,7 +10,8 @@ function usage() {
     "Usage:",
     "  node scripts/render-deepswe-matrix-report.js \\",
     "    --selection PATH --trials PATH --matrix-dir PATH \\",
-    "    --output PATH --json-output PATH",
+    "    --output PATH --json-output PATH \\",
+    "    [--additional-baselines-from MATRIX_DIR]",
   ].join("\n");
 }
 
@@ -27,7 +28,10 @@ function parseArguments(argv) {
     values[key] = value;
   }
   const required = ["selection", "trials", "matrix-dir", "output", "json-output"];
-  const unknown = Object.keys(values).filter((key) => !required.includes(key));
+  const optional = ["additional-baselines-from"];
+  const unknown = Object.keys(values).filter(
+    (key) => !required.includes(key) && !optional.includes(key),
+  );
   const missing = required.filter((key) => !values[key]);
   if (unknown.length || missing.length) {
     throw new Error(
@@ -269,6 +273,21 @@ function discoverCompletedArms(matrixDir, selection) {
   );
   assert(arms.length >= 2, "fewer than two completed matrix arms were discovered");
   return { arms, skipped };
+}
+
+function latestBaselinePerConfiguration(arms) {
+  const latest = new Map();
+  for (const arm of arms.filter((candidate) => candidate.mode === "baseline")) {
+    const key = `${arm.model}\u0000${arm.reasoning}`;
+    const existing = latest.get(key);
+    if (!existing || existing.createdAt.localeCompare(arm.createdAt) < 0) {
+      latest.set(key, arm);
+    }
+  }
+  return [...latest.values()].map((arm) => ({
+    ...arm,
+    label: arm.label.replace(/ \((?:certified|legacy) harness\)$/, ""),
+  }));
 }
 
 function publishedCell(trials, task, arm) {
@@ -561,7 +580,37 @@ function main() {
     computedSelectionID === selectionID,
     `selection identity ${computedSelectionID} does not match matrix ${selectionID}`,
   );
-  const { arms, skipped } = discoverCompletedArms(options["matrix-dir"], selection);
+  const discovered = discoverCompletedArms(options["matrix-dir"], selection);
+  let arms = discovered.arms;
+  const skipped = [...discovered.skipped];
+  if (options["additional-baselines-from"]) {
+    const additional = discoverCompletedArms(
+      options["additional-baselines-from"],
+      selection,
+    );
+    arms = [
+      ...arms.filter((arm) => arm.mode === "treatment"),
+      ...latestBaselinePerConfiguration([...arms, ...additional.arms]),
+    ];
+    const effortOrder = new Map([
+      ["minimal", 0],
+      ["low", 1],
+      ["medium", 2],
+      ["high", 3],
+      ["xhigh", 4],
+      ["max", 5],
+    ]);
+    arms.sort(
+      (left, right) =>
+        (left.mode === "baseline" ? 0 : 1) -
+          (right.mode === "baseline" ? 0 : 1) ||
+        left.model.localeCompare(right.model) ||
+        (effortOrder.get(left.reasoning) ?? 99) -
+          (effortOrder.get(right.reasoning) ?? 99) ||
+        left.createdAt.localeCompare(right.createdAt) ||
+        left.label.localeCompare(right.label),
+    );
+  }
   const pValueMatrix = arms.map((left, leftIndex) =>
     arms.map((right, rightIndex) =>
       leftIndex === rightIndex ? null : compareArms(selection, snapshot.rows, left, right),

