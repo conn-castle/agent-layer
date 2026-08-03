@@ -269,7 +269,10 @@ type treeScan struct {
 	byExt map[string]int
 	names []string
 	// paths maps a candidate secret's filename to its full path so its content
-	// can be checked.
+	// can be checked. Unlike names it is not sampled, because a missed key is a
+	// safety failure rather than a heuristic miss. Only the first path per
+	// filename is kept, so two same-named candidates in different subdirectories
+	// are judged by the first one seen.
 	paths map[string]string
 	// truncated records that the sample is partial, so callers never mistake a
 	// bounded scan for a complete one.
@@ -382,22 +385,29 @@ func uniqueAssetCount(scan treeScan, tracked map[string]struct{}) int {
 	return count
 }
 
-// findSecrets returns the sampled names within a tree that hold, or may hold,
-// private key material.
+// findSecrets returns the names within a tree that hold, or may hold, private
+// key material.
+//
+// This walks scan.paths, not the scanNameSample-bounded scan.names: every
+// candidate the walk saw is recorded in paths, so a key whose filename sorts
+// past the sample is still inspected. Missing one would route a directory
+// holding a private key to a destination the review list calls unambiguous.
 func findSecrets(scan treeScan) []string {
+	candidates := make([]string, 0, len(scan.paths))
+	for name := range scan.paths {
+		candidates = append(candidates, name)
+	}
+	sort.Strings(candidates)
+
 	var hits []string
-	for _, name := range scan.names {
-		if !secretName.MatchString(name) {
-			continue
-		}
+	for _, name := range candidates {
 		if secretNameStrong.MatchString(name) {
 			hits = append(hits, name)
 			continue
 		}
 		// `.pem`/`.key` are ambiguous — confirm from content, and flag
 		// unreadable files rather than assuming they are harmless.
-		full, found := scan.paths[name]
-		if !found || privateKeyVerdict(full) != keyAbsent {
+		if privateKeyVerdict(scan.paths[name]) != keyAbsent {
 			hits = append(hits, name)
 		}
 	}

@@ -120,8 +120,14 @@ Guarantees worth knowing before running it with `--apply`:
 - **Nothing is ever deleted, overwritten, or merged.** Entries are only moved. An
   entry whose destination path is already taken is reported as a collision and
   left where it is. Every removal decision stays with you.
-- Each run writes `ORGANIZE-REVIEW.md` into the root — including on a dry run —
-  listing what needs a decision and what to check before removing it.
+- Any run that has something to organize writes `ORGANIZE-REVIEW.md` into the
+  root — including a dry run — listing what needs a decision, what to check
+  before removing it, and anything left in place. A run that finds only reserved
+  or kept entries leaves an earlier review list untouched rather than replacing
+  a still-outstanding decision list with "nothing to do".
+- Entries are moved one at a time, and the destination check is not atomic with
+  the move. The no-overwrite guarantee holds against existing files and earlier
+  runs, not against another process writing into the scratch root concurrently.
 - Registered Git worktrees, and any directory containing one, are left in place
   unless `--move-worktrees` is passed, because relocating one rewrites Git's
   worktree registration. With the flag, each real worktree path is repaired

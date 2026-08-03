@@ -133,19 +133,22 @@ func Run(ctx context.Context, opts Options, stdout, stderr io.Writer) error {
 		if err := writeReviewDoc(reviewPath, plan, skipped, false); err != nil {
 			return err
 		}
+		// A dry run moves nothing, so nothing can collide; skipped is the whole
+		// left-in-place set.
 		// Say where it landed: a dry run still leaves this file behind.
 		_, err := fmt.Fprintf(stdout, "review list: %s\n", reviewPath)
 		return err
 	}
 
 	moved, collisions, err := applyMoves(root, movable)
-	if err != nil {
-		return err
+	// Written the moment the moves stop, whether they all succeeded or one failed
+	// partway. Everything below can fail on a closed output stream — `al
+	// organize-scratch --apply | head` is enough — and a partial move with no
+	// record of what moved is the worst outcome this command can produce.
+	if writeErr := writeReviewDoc(reviewPath, plan, leftInPlace(skipped, collisions), true); writeErr != nil && err == nil {
+		err = writeErr
 	}
-	// Written the moment the moves are done. Every step below can fail on a
-	// closed output stream — `al organize-scratch --apply | head` is enough — and
-	// once entries have moved, the review list is the output that matters most.
-	if err := writeReviewDoc(reviewPath, plan, skipped, true); err != nil {
+	if err != nil {
 		return err
 	}
 	// Only entries that actually moved are repaired. A worktree left behind by a
@@ -171,13 +174,31 @@ func Run(ctx context.Context, opts Options, stdout, stderr io.Writer) error {
 	return err
 }
 
+// leftInPlace merges the entries that were deliberately skipped with the ones a
+// collision blocked, so the review document records everything still sitting at
+// the root. Stderr carries the same collisions, but stderr is transient and this
+// document is the durable record of the run.
+func leftInPlace(skipped, collisions []placement) []placement {
+	combined := make([]placement, 0, len(skipped)+len(collisions))
+	combined = append(combined, skipped...)
+	for _, blocked := range collisions {
+		blocked.reason = fmt.Sprintf("destination `%s/%s` was already taken, so it was not moved (was: %s)",
+			blocked.dest, blocked.name, blocked.reason)
+		combined = append(combined, blocked)
+	}
+	return combined
+}
+
 // reservedNames returns the top-level names the run must not touch: its own
 // destination folders, its review list, and anything the caller asked to keep.
 func reservedNames(keep []string) map[string]struct{} {
 	reserved := newSet("reports", "artifacts", "review", reviewDocName)
 	for _, name := range keep {
-		if name != "" {
-			reserved[name] = struct{}{}
+		// Trim here rather than trusting the caller: a stray space in a kept name
+		// silently fails to match a directory entry and moves the very path the
+		// caller asked to protect.
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			reserved[trimmed] = struct{}{}
 		}
 	}
 	return reserved
@@ -266,6 +287,14 @@ func applyMoves(root string, movable []placement) (moved, collisions []placement
 		target := filepath.Join(destDir, candidate.name)
 		// Lstat, not Stat: a dangling symlink at the target is still something
 		// a rename would destroy.
+		//
+		// This is a check followed by a rename, not one atomic operation: a
+		// process that creates target in between would have its file replaced.
+		// Go exposes no portable no-replace rename (RENAME_NOREPLACE and
+		// RENAME_EXCL are per-platform syscalls, and os.Link cannot move a
+		// directory), so the guarantee holds against earlier runs and existing
+		// files, not against another writer racing this one inside the scratch
+		// root.
 		if _, statErr := os.Lstat(target); statErr == nil {
 			collisions = append(collisions, candidate)
 			continue
@@ -412,10 +441,14 @@ func gatherGitFacts(ctx context.Context, root string, stderr io.Writer) (gitFact
 	// typically gitignored, so this must run from the repository top level.
 	// Running it in place silently yields an empty set — which would quietly
 	// disable copy detection.
-	if files, lsErr := gitOutput(ctx, top, "ls-files"); lsErr != nil {
+	// -z, because `git ls-files` applies core.quotePath by default: without it a
+	// path holding non-ASCII characters arrives as "\303\251tude.md" and its
+	// basename never matches the file on disk, silently shrinking the tracked set
+	// that copy and asset detection compare against.
+	if files, lsErr := gitOutput(ctx, top, "ls-files", "-z"); lsErr != nil {
 		warn.printf("WARNING: git ls-files failed (%v); copy and asset detection are disabled\n", lsErr)
 	} else {
-		for _, line := range strings.Split(files, "\n") {
+		for _, line := range strings.Split(files, "\x00") {
 			if line != "" {
 				facts.tracked[filepath.Base(line)] = struct{}{}
 			}
@@ -425,10 +458,13 @@ func gatherGitFacts(ctx context.Context, root string, stderr io.Writer) (gitFact
 		}
 	}
 
-	if list, wtErr := gitOutput(ctx, root, "worktree", "list", "--porcelain"); wtErr != nil {
+	// -z for the same reason, and because the porcelain format otherwise quotes a
+	// worktree path containing unusual characters. An unparsed path would leave
+	// that worktree unrecognised and moved without repair.
+	if list, wtErr := gitOutput(ctx, root, "worktree", "list", "--porcelain", "-z"); wtErr != nil {
 		warn.printf("WARNING: git worktree list failed (%v); registered worktrees are not protected\n", wtErr)
 	} else {
-		for _, line := range strings.Split(list, "\n") {
+		for _, line := range strings.Split(list, "\x00") {
 			if strings.HasPrefix(line, worktreeLinePrefix) {
 				facts.worktrees[canonicalPath(strings.TrimPrefix(line, worktreeLinePrefix))] = struct{}{}
 			}
@@ -449,6 +485,12 @@ func gitOutput(ctx context.Context, dir string, args ...string) (string, error) 
 	command.Env = gitenv.WithoutDiscovery()
 	out, err := command.Output()
 	if err != nil {
+		// Without this a caller's warning reads "exit status 128", which does not
+		// say why a check was disabled.
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && len(exit.Stderr) > 0 {
+			return "", fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exit.Stderr)))
+		}
 		return "", err
 	}
 	return string(out), nil

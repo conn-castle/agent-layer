@@ -11,33 +11,30 @@ func TestWithoutDiscoveryDropsOnlyRedirectingVariables(t *testing.T) {
 	// The point of the filter is that git resolves the repository from the
 	// directory it is given. Dropping too little re-introduces the redirect;
 	// dropping too much silently discards credentials and config the caller set.
-	environ := []string{
-		"GIT_DIR=/elsewhere/.git",
-		"GIT_WORK_TREE=/elsewhere",
-		"GIT_INDEX_FILE=/elsewhere/.git/index",
-		"GIT_PREFIX=sub/",
+	kept := []string{
 		"GIT_AUTHOR_NAME=keep me",
 		"GIT_SSH_COMMAND=ssh -i key",
 		"GIT_CONFIG_GLOBAL=/tmp/gitconfig",
 		"PATH=/usr/bin",
 		"MALFORMED_ENTRY_WITHOUT_EQUALS",
 	}
+	// Build the input from the canonical list so a variable added to it later is
+	// covered here without anyone remembering to extend this test.
+	environ := make([]string, 0, len(discoveryVariables)+len(kept))
+	for _, name := range discoveryVariables {
+		environ = append(environ, name+"=/elsewhere")
+	}
+	environ = append(environ, kept...)
 	got := withoutDiscovery(environ)
 
-	for _, dropped := range []string{"GIT_DIR=", "GIT_WORK_TREE=", "GIT_INDEX_FILE=", "GIT_PREFIX="} {
-		if slices.ContainsFunc(got, func(entry string) bool { return strings.HasPrefix(entry, dropped) }) {
-			t.Errorf("%s survived; git would still resolve a different repository", dropped)
+	for _, name := range discoveryVariables {
+		if slices.ContainsFunc(got, func(entry string) bool { return strings.HasPrefix(entry, name+"=") }) {
+			t.Errorf("%s survived; git would still resolve a different repository", name)
 		}
 	}
-	for _, kept := range []string{
-		"GIT_AUTHOR_NAME=keep me",
-		"GIT_SSH_COMMAND=ssh -i key",
-		"GIT_CONFIG_GLOBAL=/tmp/gitconfig",
-		"PATH=/usr/bin",
-		"MALFORMED_ENTRY_WITHOUT_EQUALS",
-	} {
-		if !slices.Contains(got, kept) {
-			t.Errorf("%q was dropped; only discovery variables should be removed", kept)
+	for _, entry := range kept {
+		if !slices.Contains(got, entry) {
+			t.Errorf("%q was dropped; only discovery variables should be removed", entry)
 		}
 	}
 }

@@ -2,7 +2,6 @@ package organizescratch
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -397,12 +396,6 @@ func TestRunPropagatesWriteFailures(t *testing.T) {
 	}
 }
 
-func TestGitOutputReportsFailures(t *testing.T) {
-	if _, err := gitOutput(context.Background(), t.TempDir(), "rev-parse", "--show-toplevel"); err == nil {
-		t.Fatal("gitOutput must return an error outside a repository")
-	}
-}
-
 func TestDisplayPathPrefersTheRelativeForm(t *testing.T) {
 	root := t.TempDir()
 	if got := displayPath(root, filepath.Join(root, "a", "b")); got != filepath.Join("a", "b") {
@@ -557,4 +550,83 @@ func TestRunResolvesGitFromTheRootNotAnInheritedGitDir(t *testing.T) {
 	// The decoy is untouched: nothing was organized in it and its worktree stands.
 	requireFile(t, filepath.Join(decoyScratch, "decoy-wt", ".git"))
 	requireNoFile(t, filepath.Join(decoyScratch, reviewDocName))
+}
+
+func TestRunFindsKeyMaterialBeyondTheFilenameSample(t *testing.T) {
+	// The name sample is capped, so a key whose filename sorts past the cap used
+	// to be invisible and the directory was routed to artifacts/evidence — a
+	// folder the review list tells the reader needs no attention.
+	root := t.TempDir()
+	tree := mkdirAt(t, filepath.Join(root, "evidence"))
+	for i := 0; i < scanNameSample+50; i++ {
+		writeFileAt(t, filepath.Join(tree, fmt.Sprintf("a%04d.json", i)), "{}")
+	}
+	// "z" sorts after every "a" name, so it falls outside the retained sample.
+	writeFileAt(t, filepath.Join(tree, "zzz-deploy.pem"), privateKeyPEM)
+
+	if _, _, err := runOrganize(t, Options{Root: root, Apply: true}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	requireFile(t, filepath.Join(root, destReviewSecrets, "evidence"))
+	if doc := readReviewDoc(t, root); !strings.Contains(doc, "zzz-deploy.pem") {
+		t.Fatalf("review doc = %q, want the out-of-sample key named", doc)
+	}
+}
+
+func TestRunRecordsCollisionsInTheReviewDocument(t *testing.T) {
+	// stderr is transient; the review list is the durable record. An entry that
+	// could not move must not be presented as though it had.
+	root := t.TempDir()
+	writeFileAt(t, filepath.Join(root, "build.log"), "new")
+	writeFileAt(t, filepath.Join(root, destArtifactsLogs, "build.log"), "earlier")
+
+	if _, _, err := runOrganize(t, Options{Root: root, Apply: true}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	doc := readReviewDoc(t, root)
+	if !strings.Contains(doc, "## Left in place") || !strings.Contains(doc, "already taken") {
+		t.Fatalf("review doc = %q, want the collision recorded as left in place", doc)
+	}
+}
+
+func TestRunTrimsKeptNames(t *testing.T) {
+	// A stray space would otherwise fail to match the directory entry and move the
+	// very path the caller asked to protect.
+	root := t.TempDir()
+	mkdirAt(t, filepath.Join(root, "venv"))
+	writeFileAt(t, filepath.Join(root, "notes.md"), "x")
+
+	if _, _, err := runOrganize(t, Options{Root: root, Apply: true, Keep: []string{"  venv  "}}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	requireFile(t, filepath.Join(root, "venv"))
+}
+
+func TestGatherGitFactsHandlesQuotedAndNonASCIIPaths(t *testing.T) {
+	// git ls-files applies core.quotePath by default, so without -z a non-ASCII
+	// path arrives escaped and its basename never matches the file on disk,
+	// silently shrinking the tracked set copy detection compares against.
+	repo, scratch := newRepoWithScratch(t)
+	writeFileAt(t, filepath.Join(repo, "étude.md"), "x")
+	git(t, repo, "add", "-A")
+	git(t, repo, "commit", "-m", "non-ascii")
+
+	facts, err := gatherGitFacts(t.Context(), scratch, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("gatherGitFacts: %v", err)
+	}
+	if !inSet(facts.tracked, "étude.md") {
+		t.Fatalf("tracked set = %v, want the decoded non-ASCII basename", facts.tracked)
+	}
+}
+
+func TestGitOutputErrorNamesTheGitFailure(t *testing.T) {
+	// "exit status 128" alone does not tell the reader why a check was disabled.
+	_, err := gitOutput(t.Context(), t.TempDir(), "rev-parse", "--show-toplevel")
+	if err == nil {
+		t.Fatal("expected an error outside a repository")
+	}
+	if !strings.Contains(err.Error(), "not a git repository") {
+		t.Fatalf("err = %v, want git's own diagnostic included", err)
+	}
 }

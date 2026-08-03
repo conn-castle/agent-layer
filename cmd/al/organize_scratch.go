@@ -30,7 +30,10 @@ func newOrganizeScratchCmd() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if strings.TrimSpace(options.Root) == "" {
+			// Assign the trimmed value, not just validate it: `--root "  /tmp/x  "`
+			// would otherwise pass this check and then fail as an unreadable path.
+			options.Root = strings.TrimSpace(options.Root)
+			if options.Root == "" {
 				return errors.New(organizeScratchCommandName + " requires --root")
 			}
 			options.Keep = splitKeepNames(keep)
