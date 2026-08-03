@@ -426,8 +426,8 @@ func TestScanTreeIgnoresSymlinksAndRecordsSecretPaths(t *testing.T) {
 	if scan.files != 1 {
 		t.Fatalf("files = %d, want 1: a symlink must not be walked into a second time", scan.files)
 	}
-	if got := scan.paths["id_rsa"]; got == "" {
-		t.Fatal("candidate secret paths must be retained so their content can be checked")
+	if got := scan.paths["id_rsa"]; len(got) != 1 {
+		t.Fatalf("scan.paths[id_rsa] = %v, want the one candidate path retained so its content can be checked", got)
 	}
 }
 
@@ -446,5 +446,35 @@ func TestClassifyDirCapsTheSecretsItEnumerates(t *testing.T) {
 	}
 	if names := strings.Count(got.reason, ".p12"); names != examplesShown {
 		t.Fatalf("reason = %q, want exactly %d examples", got.reason, examplesShown)
+	}
+}
+
+func TestClassifyDirInspectsEveryPathForADuplicateCandidateName(t *testing.T) {
+	// Two files can share a candidate filename and differ in content. Judging the
+	// name by whichever path was walked first lets a directory holding a real key
+	// bypass secret routing, so every recorded path is inspected.
+	root := t.TempDir()
+	item := dirEntry(t, root, "evidence")
+	writeFileAt(t, filepath.Join(item.abs, "first", "config.pem"), publicCertPEM)
+	writeFileAt(t, filepath.Join(item.abs, "second", "config.pem"), privateKeyPEM)
+
+	got := classify(item, emptyContext())
+	if got.dest != destReviewSecrets || !strings.Contains(got.reason, "config.pem") {
+		t.Fatalf("dest = %q reason = %q, want review/secrets naming config.pem", got.dest, got.reason)
+	}
+}
+
+func TestFindSecretsClearsANameOnlyWhenEveryPathIsClean(t *testing.T) {
+	// The mirror of the case above: a name whose every occurrence is a certificate
+	// must not be flagged, or review/secrets fills with noise and stops being read.
+	root := t.TempDir()
+	scan := treeScan{paths: map[string][]string{
+		"chain.pem": {
+			writeFileAt(t, filepath.Join(root, "a", "chain.pem"), publicCertPEM),
+			writeFileAt(t, filepath.Join(root, "b", "chain.pem"), publicCertPEM),
+		},
+	}}
+	if hits := findSecrets(scan); len(hits) != 0 {
+		t.Fatalf("findSecrets = %v, want no hits when every path is a certificate", hits)
 	}
 }

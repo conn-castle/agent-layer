@@ -268,12 +268,12 @@ type treeScan struct {
 	files int
 	byExt map[string]int
 	names []string
-	// paths maps a candidate secret's filename to its full path so its content
-	// can be checked. Unlike names it is not sampled, because a missed key is a
-	// safety failure rather than a heuristic miss. Only the first path per
-	// filename is kept, so two same-named candidates in different subdirectories
-	// are judged by the first one seen.
-	paths map[string]string
+	// paths maps a candidate secret's filename to every full path carrying that
+	// name, so each one's content can be checked. Unlike names it is not sampled,
+	// because a missed key is a safety failure rather than a heuristic miss, and
+	// every path is kept because same-named files in different subdirectories can
+	// differ — only one of them needs to hold a key.
+	paths map[string][]string
 	// truncated records that the sample is partial, so callers never mistake a
 	// bounded scan for a complete one.
 	truncated  bool
@@ -289,7 +289,7 @@ type treeScan struct {
 // sample — and therefore how a tree near a classification threshold is routed —
 // is the same on every run and every filesystem.
 func scanTree(dir string, limit int) treeScan {
-	scan := treeScan{byExt: map[string]int{}, paths: map[string]string{}}
+	scan := treeScan{byExt: map[string]int{}, paths: map[string][]string{}}
 	stack := []string{dir}
 	for len(stack) > 0 {
 		if scan.files >= limit {
@@ -315,9 +315,7 @@ func scanTree(dir string, limit int) treeScan {
 					scan.names = append(scan.names, child.Name())
 				}
 				if secretName.MatchString(child.Name()) {
-					if _, seen := scan.paths[child.Name()]; !seen {
-						scan.paths[child.Name()] = full
-					}
+					scan.paths[child.Name()] = append(scan.paths[child.Name()], full)
 				}
 			}
 		}
@@ -406,9 +404,15 @@ func findSecrets(scan treeScan) []string {
 			continue
 		}
 		// `.pem`/`.key` are ambiguous — confirm from content, and flag
-		// unreadable files rather than assuming they are harmless.
-		if privateKeyVerdict(scan.paths[name]) != keyAbsent {
-			hits = append(hits, name)
+		// unreadable files rather than assuming they are harmless. Every path
+		// recorded under this name is inspected: if `first/config.pem` is a
+		// certificate and `second/config.pem` holds a key, stopping at the first
+		// would let the directory bypass secret routing entirely.
+		for _, full := range scan.paths[name] {
+			if privateKeyVerdict(full) != keyAbsent {
+				hits = append(hits, name)
+				break
+			}
 		}
 	}
 	return hits
