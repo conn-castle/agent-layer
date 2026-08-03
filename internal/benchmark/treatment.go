@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -20,6 +21,8 @@ import (
 )
 
 const treatmentContainerRoot = "/app"
+
+const matrixTreatmentPinSchema = "deepswe-matrix-treatment-pin-v1"
 
 //go:embed assets/pier_agent_layer.py assets/al_dispatch_gate.py assets/workflow-prompt.md assets/pricing.yaml
 var treatmentAssets embed.FS
@@ -52,6 +55,157 @@ type TreatmentManifest struct {
 type TreatmentFile struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
+}
+
+type matrixTreatmentPin struct {
+	SchemaVersion     string            `json:"schema_version"`
+	PinID             string            `json:"pin_id"`
+	Name              string            `json:"name"`
+	Label             string            `json:"label"`
+	Model             string            `json:"model"`
+	Reasoning         string            `json:"reasoning"`
+	Architecture      string            `json:"architecture"`
+	ManifestHash      string            `json:"manifest_hash"`
+	Manifest          TreatmentManifest `json:"manifest"`
+	LinuxBinarySHA256 string            `json:"linux_binary_sha256,omitempty"`
+	AdapterSHA256     string            `json:"adapter_sha256"`
+	TemplatesCommit   string            `json:"templates_commit,omitempty"`
+	TemplatesDirty    bool              `json:"templates_dirty"`
+}
+
+func pinMatrixTreatmentBundle(
+	stateDir, name, label string,
+	model Model,
+	effort, mode string,
+	dispatchConfig TreatmentDispatchConfig,
+	build func() (*TreatmentBundle, error),
+) (*TreatmentBundle, error) {
+	identity := struct {
+		Schema         string                  `json:"schema"`
+		Name           string                  `json:"name"`
+		Label          string                  `json:"label"`
+		Model          string                  `json:"model"`
+		Reasoning      string                  `json:"reasoning"`
+		Mode           string                  `json:"mode"`
+		Architecture   string                  `json:"architecture"`
+		DispatchConfig TreatmentDispatchConfig `json:"dispatch_config,omitempty"`
+	}{
+		Schema: matrixTreatmentPinSchema, Name: name, Label: label,
+		Model: model.PublishedIdentifier, Reasoning: effort, Mode: mode,
+		Architecture:   runtime.GOARCH,
+		DispatchConfig: dispatchConfig,
+	}
+	pinID, err := hashCanonical(identity)
+	if err != nil {
+		return nil, fmt.Errorf("identify matrix treatment pin: %w", err)
+	}
+	pinRoot := filepath.Join(stateDir, "treatment-pins", pinID)
+	if bundle, found, err := loadMatrixTreatmentPin(pinRoot, pinID, name, label, model, effort); err != nil || found {
+		return bundle, err
+	}
+	bundle, err := build()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = os.RemoveAll(bundle.Root) }()
+	parent := filepath.Dir(pinRoot)
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return nil, fmt.Errorf("create matrix treatment pin directory: %w", err)
+	}
+	stage, err := os.MkdirTemp(parent, ".treatment-pin-")
+	if err != nil {
+		return nil, fmt.Errorf("stage matrix treatment pin: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(stage) }()
+	if err := copyRequiredTree(bundle.Root, filepath.Join(stage, "bundle")); err != nil {
+		return nil, fmt.Errorf("persist matrix treatment bundle: %w", err)
+	}
+	pin := matrixTreatmentPin{
+		SchemaVersion: matrixTreatmentPinSchema, PinID: pinID, Name: name, Label: label,
+		Model: model.PublishedIdentifier, Reasoning: effort,
+		Architecture: runtime.GOARCH,
+		ManifestHash: bundle.ManifestHash, Manifest: bundle.Manifest,
+		LinuxBinarySHA256: bundle.LinuxBinarySHA256, AdapterSHA256: bundle.AdapterSHA256,
+		TemplatesCommit: bundle.TemplatesCommit, TemplatesDirty: bundle.TemplatesDirty,
+	}
+	if err := writeJSON(filepath.Join(stage, "pin.json"), pin); err != nil {
+		return nil, err
+	}
+	if err := os.Rename(stage, pinRoot); err != nil {
+		if _, statErr := os.Stat(pinRoot); statErr != nil {
+			return nil, fmt.Errorf("publish matrix treatment pin: %w", err)
+		}
+	}
+	loaded, found, err := loadMatrixTreatmentPin(pinRoot, pinID, name, label, model, effort)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("published matrix treatment pin %s is missing", pinID)
+	}
+	return loaded, nil
+}
+
+func loadMatrixTreatmentPin(
+	root, pinID, name, label string,
+	model Model,
+	effort string,
+) (*TreatmentBundle, bool, error) {
+	var pin matrixTreatmentPin
+	if err := readCampaignJSON(filepath.Join(root, "pin.json"), &pin); errors.Is(err, os.ErrNotExist) {
+		if _, statErr := os.Stat(root); statErr == nil {
+			return nil, false, fmt.Errorf("matrix treatment pin %s is incomplete", pinID)
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return nil, false, fmt.Errorf("inspect matrix treatment pin %s: %w", pinID, statErr)
+		}
+		return nil, false, nil
+	} else if err != nil {
+		return nil, false, fmt.Errorf("read matrix treatment pin: %w", err)
+	}
+	if pin.SchemaVersion != matrixTreatmentPinSchema || pin.PinID != pinID ||
+		pin.Name != name || pin.Label != label || pin.Model != model.PublishedIdentifier ||
+		pin.Reasoning != effort || pin.Architecture != runtime.GOARCH || pin.ManifestHash == "" || pin.AdapterSHA256 == "" {
+		return nil, false, fmt.Errorf("matrix treatment pin %s has invalid identity metadata", pinID)
+	}
+	bundleRoot := filepath.Join(root, "bundle")
+	actualManifest, err := treatmentManifest(
+		bundleRoot, pin.Manifest.Mode, pin.Manifest.RequiredRoles, pin.Manifest.DispatchConfig,
+	)
+	if err != nil {
+		return nil, false, fmt.Errorf("validate matrix treatment pin %s: %w", pinID, err)
+	}
+	actualHash, err := hashCanonical(actualManifest)
+	if err != nil || actualHash != pin.ManifestHash {
+		return nil, false, fmt.Errorf("matrix treatment pin %s content does not match its manifest", pinID)
+	}
+	adapterPath := filepath.Join(bundleRoot, "adapter", "pier_agent_layer.py")
+	adapterHash, err := fileSHA256(adapterPath)
+	if err != nil || adapterHash != pin.AdapterSHA256 {
+		return nil, false, fmt.Errorf("matrix treatment pin %s adapter checksum does not match", pinID)
+	}
+	binaryPath := ""
+	if pin.LinuxBinarySHA256 != "" {
+		binaryPath = filepath.Join(bundleRoot, ".agent-layer", "bin", "al-linux-"+runtime.GOARCH)
+		binaryHash, hashErr := fileSHA256(binaryPath)
+		if hashErr != nil || binaryHash != pin.LinuxBinarySHA256 {
+			return nil, false, fmt.Errorf("matrix treatment pin %s binary checksum does not match", pinID)
+		}
+	}
+	return &TreatmentBundle{
+		Root: bundleRoot, Manifest: pin.Manifest, ManifestHash: pin.ManifestHash,
+		LinuxBinary: binaryPath, LinuxBinarySHA256: pin.LinuxBinarySHA256,
+		AdapterPath: adapterPath, AdapterSHA256: pin.AdapterSHA256,
+		TemplatesCommit: pin.TemplatesCommit, TemplatesDirty: pin.TemplatesDirty,
+	}, true, nil
+}
+
+func fileSHA256(path string) (string, error) {
+	data, err := os.ReadFile(path) // #nosec G304 -- caller supplies a path below a private content-addressed treatment pin.
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:]), nil
 }
 
 // BuildTreatmentBundle stages the canonical shipped templates, synchronizes

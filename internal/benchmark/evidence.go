@@ -35,6 +35,7 @@ type AttemptResult struct {
 	CostKind              string    `json:"cost_kind"`
 	DurationSeconds       *float64  `json:"duration_seconds,omitempty"`
 	TaskChecksum          string    `json:"task_checksum"`
+	EnvironmentIdentity   string    `json:"task_environment_identity,omitempty"`
 	StartedAt             time.Time `json:"started_at"`
 	FinishedAt            time.Time `json:"finished_at"`
 	Provider              string    `json:"provider"`

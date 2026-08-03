@@ -23,7 +23,7 @@ import (
 const (
 	matrixSelectionSchema        = "deepswe-benchmark-selection"
 	matrixSelectionSchemaVersion = 1
-	matrixManifestSchema         = "deepswe-matrix-arm-v1"
+	matrixManifestSchema         = "deepswe-matrix-arm-v2"
 	matrixReportSchema           = "deepswe-matrix-report-v1"
 )
 
@@ -38,6 +38,7 @@ type MatrixOptions struct {
 	BaselineExecutions []string
 	TreatmentExecution string
 	TreatmentLabel     string
+	TreatmentPin       string
 	TreatmentMode      string
 	DispatchConfigPath string
 	Tasks              []string
@@ -104,7 +105,6 @@ type matrixPreparation struct {
 	checksums    map[string]string
 	environments map[string]string
 	arms         []matrixArm
-	cleanup      func()
 }
 
 type matrixArm struct {
@@ -117,18 +117,17 @@ type matrixArm struct {
 }
 
 type matrixArmManifest struct {
-	SchemaVersion             string            `json:"schema_version"`
-	SelectionID               string            `json:"selection_id"`
-	CreatedAt                 time.Time         `json:"created_at"`
-	Label                     string            `json:"label"`
-	Mode                      string            `json:"mode"`
-	Model                     string            `json:"model"`
-	Reasoning                 string            `json:"reasoning"`
-	ProviderClient            string            `json:"provider_client_version"`
-	TaskChecksums             map[string]string `json:"task_checksums"`
-	TaskEnvironmentIdentities map[string]string `json:"task_environment_identities"`
-	Repetitions               map[string]int    `json:"repetitions"`
-	TreatmentHash             string            `json:"treatment_manifest_hash,omitempty"`
+	SchemaVersion  string            `json:"schema_version"`
+	SelectionID    string            `json:"selection_id"`
+	CreatedAt      time.Time         `json:"created_at"`
+	Label          string            `json:"label"`
+	Mode           string            `json:"mode"`
+	Model          string            `json:"model"`
+	Reasoning      string            `json:"reasoning"`
+	ProviderClient string            `json:"provider_client_version"`
+	TaskChecksums  map[string]string `json:"task_checksums"`
+	Repetitions    map[string]int    `json:"repetitions"`
+	TreatmentHash  string            `json:"treatment_manifest_hash,omitempty"`
 }
 
 type matrixJob struct {
@@ -180,6 +179,7 @@ type MatrixArmReport struct {
 // MatrixTaskArmReport preserves the observed task score and calibrated contribution.
 type MatrixTaskArmReport struct {
 	Task                 string            `json:"task"`
+	EnvironmentIdentity  string            `json:"task_environment_identity"`
 	F2PScore             float64           `json:"f2p_score"`
 	CalibratedScore      float64           `json:"calibrated_score"`
 	Weight               float64           `json:"weight"`
@@ -194,7 +194,6 @@ func CheckMatrix(ctx context.Context, options MatrixOptions) (MatrixOutcome, err
 	if err != nil {
 		return MatrixOutcome{}, err
 	}
-	defer preparation.cleanup()
 	return matrixProgress(preparation), nil
 }
 
@@ -204,7 +203,6 @@ func RunMatrix(ctx context.Context, options MatrixOptions, executor TaskExecutor
 	if err != nil {
 		return MatrixOutcome{}, err
 	}
-	defer preparation.cleanup()
 	outcome := matrixProgress(preparation)
 	if outcome.Missing == 0 {
 		return buildMatrixReport(preparation)
@@ -213,7 +211,7 @@ func RunMatrix(ctx context.Context, options MatrixOptions, executor TaskExecutor
 		return outcome, ErrConfirmationRequired
 	}
 	for index := range preparation.arms {
-		if err := ensureMatrixManifest(preparation.selectionID, preparation.tasks, preparation.checksums, preparation.environments, &preparation.arms[index]); err != nil {
+		if err := ensureMatrixManifest(preparation.selectionID, preparation.tasks, preparation.checksums, &preparation.arms[index]); err != nil {
 			return outcome, err
 		}
 	}
@@ -221,7 +219,7 @@ func RunMatrix(ctx context.Context, options MatrixOptions, executor TaskExecutor
 		executor = PierExecutor{}
 	}
 	if err := executeMatrix(
-		ctx, options.RepoRoot, preparation.checksums,
+		ctx, options.RepoRoot, preparation.checksums, preparation.environments,
 		preparation.arms, options.Tasks, options.TaskConcurrency, executor,
 	); err != nil {
 		return matrixProgress(preparation), err
@@ -321,9 +319,13 @@ func prepareMatrix(ctx context.Context, options MatrixOptions) (matrixPreparatio
 		return matrixPreparation{}, err
 	}
 	var bundle *TreatmentBundle
-	cleanup := func() {}
 	if options.TreatmentExecution != "" {
 		treatmentModel, treatmentEffort, _ := ParseModelSelection(options.TreatmentExecution)
+		treatmentLabel := inputs[len(inputs)-1].label
+		pinName := strings.TrimSpace(options.TreatmentPin)
+		if pinName == "" {
+			pinName = treatmentLabel
+		}
 		dispatchConfig := defaultTreatmentDispatchConfig(treatmentModel, treatmentEffort)
 		if options.DispatchConfigPath != "" {
 			dispatchConfig, err = loadTreatmentDispatchConfig(options.DispatchConfigPath, treatmentModel)
@@ -331,33 +333,36 @@ func prepareMatrix(ctx context.Context, options MatrixOptions) (matrixPreparatio
 				return matrixPreparation{}, err
 			}
 		}
-		bundle, err = BuildTreatmentBundleWithDispatch(
-			options.RepoRoot, runtime.GOARCH, treatmentMode,
-			treatmentModel, treatmentEffort, dispatchConfig,
+		bundle, err = pinMatrixTreatmentBundle(
+			stateDir, pinName, treatmentLabel, treatmentModel, treatmentEffort,
+			treatmentMode, dispatchConfig,
+			func() (*TreatmentBundle, error) {
+				return BuildTreatmentBundleWithDispatch(
+					options.RepoRoot, runtime.GOARCH, treatmentMode,
+					treatmentModel, treatmentEffort, dispatchConfig,
+				)
+			},
 		)
 		if err != nil {
-			return matrixPreparation{}, fmt.Errorf("build Agent Layer matrix treatment: %w", err)
+			return matrixPreparation{}, fmt.Errorf("pin Agent Layer matrix treatment: %w", err)
 		}
-		cleanup = func() { _ = os.RemoveAll(bundle.Root) }
 	}
 	preparation := matrixPreparation{
 		selection: selection, selectionID: selectionID, stateDir: stateDir,
-		tasks: tasks, checksums: checksums, environments: environments, cleanup: cleanup,
+		tasks: tasks, checksums: checksums, environments: environments,
 	}
 	for _, input := range inputs {
 		model, effort, _ := ParseModelSelection(input.execution)
 		identity := struct {
-			Schema                    string            `json:"schema"`
-			SelectionID               string            `json:"selection_id"`
-			Mode                      string            `json:"mode"`
-			Model                     string            `json:"model"`
-			Reasoning                 string            `json:"reasoning"`
-			TreatmentHash             string            `json:"treatment_hash,omitempty"`
-			TaskEnvironmentIdentities map[string]string `json:"task_environment_identities"`
+			Schema        string `json:"schema"`
+			SelectionID   string `json:"selection_id"`
+			Mode          string `json:"mode"`
+			Model         string `json:"model"`
+			Reasoning     string `json:"reasoning"`
+			TreatmentHash string `json:"treatment_hash,omitempty"`
 		}{
-			Schema: "deepswe-matrix-arm-identity-v1", SelectionID: selectionID,
+			Schema: "deepswe-matrix-arm-identity-v2", SelectionID: selectionID,
 			Mode: input.mode, Model: model.PublishedIdentifier, Reasoning: effort,
-			TaskEnvironmentIdentities: copyStringMap(environments),
 		}
 		var armBundle *TreatmentBundle
 		if input.mode == ArmTreatment {
@@ -366,7 +371,6 @@ func prepareMatrix(ctx context.Context, options MatrixOptions) (matrixPreparatio
 		}
 		armID, hashErr := hashCanonical(identity)
 		if hashErr != nil {
-			cleanup()
 			return matrixPreparation{}, fmt.Errorf("identify matrix arm: %w", hashErr)
 		}
 		runCount := 0
@@ -383,8 +387,7 @@ func prepareMatrix(ctx context.Context, options MatrixOptions) (matrixPreparatio
 			StateDir: filepath.Join(stateDir, "arms", armID),
 			Loaded:   loaded, Bundle: armBundle,
 		}
-		if err := validateMatrixManifest(selectionID, tasks, checksums, environments, &arm); err != nil {
-			cleanup()
+		if err := validateMatrixManifest(selectionID, tasks, checksums, &arm); err != nil {
 			return matrixPreparation{}, err
 		}
 		preparation.arms = append(preparation.arms, arm)
@@ -393,7 +396,6 @@ func prepareMatrix(ctx context.Context, options MatrixOptions) (matrixPreparatio
 		treatmentArm := preparation.arms[len(preparation.arms)-1]
 		eventID, eventErr := NewEventID()
 		if eventErr != nil {
-			cleanup()
 			return matrixPreparation{}, eventErr
 		}
 		if err := preflightTreatmentRuntime(ctx, ExecutionRequest{
@@ -401,8 +403,8 @@ func prepareMatrix(ctx context.Context, options MatrixOptions) (matrixPreparatio
 			EventID: eventID, Attempt: 1, Task: tasks[0].ID,
 			Model: treatmentArm.Loaded.Model, Effort: treatmentArm.Loaded.Effort,
 			Arm: ArmTreatment, Bundle: bundle, TaskChecksum: checksums[tasks[0].ID],
+			EnvironmentIdentity: environments[tasks[0].ID],
 		}); err != nil {
-			cleanup()
 			return matrixPreparation{}, fmt.Errorf("preflight Agent Layer matrix treatment runtime: %w", err)
 		}
 	}
@@ -515,7 +517,7 @@ func matrixProgress(preparation matrixPreparation) MatrixOutcome {
 		arm := &preparation.arms[index]
 		execution := armExecution{
 			stateDir: arm.StateDir, arm: arm.Mode, loaded: arm.Loaded,
-			checksums: preparation.checksums,
+			checksums: preparation.checksums, environments: preparation.environments,
 		}
 		missing := len(missingPlanCells(execution))
 		progress := MatrixArmProgress{
@@ -535,7 +537,6 @@ func expectedMatrixManifest(
 	selectionID string,
 	tasks []benchmarkPlanTask,
 	checksums map[string]string,
-	environments map[string]string,
 	arm *matrixArm,
 ) matrixArmManifest {
 	treatmentHash := ""
@@ -548,8 +549,7 @@ func expectedMatrixManifest(
 		Model: arm.Loaded.Model.PublishedIdentifier, Reasoning: arm.Loaded.Effort,
 		ProviderClient: arm.Loaded.Model.ProviderClientVersion,
 		TaskChecksums:  copyStringMap(checksums), Repetitions: repetitionsForTasks(tasks),
-		TaskEnvironmentIdentities: copyStringMap(environments),
-		TreatmentHash:             treatmentHash,
+		TreatmentHash: treatmentHash,
 	}
 }
 
@@ -565,7 +565,6 @@ func validateMatrixManifest(
 	selectionID string,
 	tasks []benchmarkPlanTask,
 	checksums map[string]string,
-	environments map[string]string,
 	arm *matrixArm,
 ) error {
 	path := filepath.Join(arm.StateDir, "manifest.json")
@@ -576,7 +575,7 @@ func validateMatrixManifest(
 		}
 		return fmt.Errorf("read matrix arm manifest: %w", err)
 	}
-	expected := expectedMatrixManifest(selectionID, tasks, checksums, environments, arm)
+	expected := expectedMatrixManifest(selectionID, tasks, checksums, arm)
 	expected.CreatedAt = existing.CreatedAt
 	expectedJSON, _ := json.Marshal(expected)
 	existingJSON, _ := json.Marshal(existing)
@@ -590,16 +589,15 @@ func ensureMatrixManifest(
 	selectionID string,
 	tasks []benchmarkPlanTask,
 	checksums map[string]string,
-	environments map[string]string,
 	arm *matrixArm,
 ) error {
 	path := filepath.Join(arm.StateDir, "manifest.json")
 	if _, err := os.Stat(path); err == nil {
-		return validateMatrixManifest(selectionID, tasks, checksums, environments, arm)
+		return validateMatrixManifest(selectionID, tasks, checksums, arm)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect matrix arm manifest: %w", err)
 	}
-	manifest := expectedMatrixManifest(selectionID, tasks, checksums, environments, arm)
+	manifest := expectedMatrixManifest(selectionID, tasks, checksums, arm)
 	manifest.CreatedAt = time.Now().UTC()
 	return writeJSON(path, manifest)
 }
@@ -608,6 +606,7 @@ func executeMatrix(
 	ctx context.Context,
 	repoRoot string,
 	checksums map[string]string,
+	environments map[string]string,
 	arms []matrixArm,
 	tasks []string,
 	concurrency int,
@@ -632,6 +631,8 @@ func executeMatrix(
 					task.ID, attempt, checksums[task.ID],
 					arm.Loaded.Model, arm.Loaded.Effort,
 					arm.Mode == ArmTreatment,
+				) || !resultMatchesEnvironment(
+					armResultPath(arm.StateDir, task.ID, attempt), environments[task.ID],
 				) {
 					jobs = append(jobs, matrixJob{
 						arm: arm, cell: planCell{task: task.ID, attempt: attempt},
@@ -669,7 +670,8 @@ func executeMatrix(
 							Attempt: job.cell.attempt, Task: job.cell.task,
 							Model: job.arm.Loaded.Model, Effort: job.arm.Loaded.Effort,
 							Arm: job.arm.Mode, Bundle: job.arm.Bundle,
-							TaskChecksum: checksums[job.cell.task],
+							TaskChecksum:        checksums[job.cell.task],
+							EnvironmentIdentity: environments[job.cell.task],
 						})
 						if err == nil {
 							if validationErr := result.Validate(); validationErr != nil {
@@ -751,7 +753,7 @@ func buildMatrixReport(preparation matrixPreparation) (MatrixOutcome, error) {
 		arm := &preparation.arms[armIndex]
 		execution := armExecution{
 			stateDir: arm.StateDir, arm: arm.Mode, loaded: arm.Loaded,
-			checksums: preparation.checksums,
+			checksums: preparation.checksums, environments: preparation.environments,
 		}
 		if missing := missingPlanCells(execution); len(missing) > 0 {
 			return MatrixOutcome{}, fmt.Errorf(
@@ -779,11 +781,13 @@ func buildMatrixReport(preparation matrixPreparation) (MatrixOutcome, error) {
 				)
 			}
 			taskReport := MatrixTaskArmReport{
-				Task: plannedTask.ID, Weight: plannedTask.Weight,
+				Task: plannedTask.ID, EnvironmentIdentity: preparation.environments[plannedTask.ID],
+				Weight: plannedTask.Weight,
 			}
 			for _, result := range observed {
 				if result.RuntimeModel != arm.Loaded.Model.RuntimeIdentifier ||
-					result.ReasoningEffort != arm.Loaded.Effort {
+					result.ReasoningEffort != arm.Loaded.Effort ||
+					result.EnvironmentIdentity != taskReport.EnvironmentIdentity {
 					return MatrixOutcome{}, fmt.Errorf(
 						"matrix arm %q contains mismatched execution evidence",
 						arm.Label,

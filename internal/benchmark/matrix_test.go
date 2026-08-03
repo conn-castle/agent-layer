@@ -68,6 +68,7 @@ func TestExecuteMatrixReturnsParentCancellation(t *testing.T) {
 
 	err = executeMatrix(
 		ctx, root, map[string]string{"first-task": "first-checksum"},
+		map[string]string{"first-task": "first-environment"},
 		arms, nil, 1, &baselineFakeExecutor{},
 	)
 	if !errors.Is(err, context.Canceled) {
@@ -92,10 +93,13 @@ func TestExecuteMatrixRunsEachArmOnceAndReusesEvidence(t *testing.T) {
 	checksums := map[string]string{
 		"first-task": "first-checksum", "second-task": "second-checksum",
 	}
+	environments := map[string]string{
+		"first-task": "first-environment", "second-task": "second-environment",
+	}
 	executor := &baselineFakeExecutor{}
 
 	if err := executeMatrix(
-		context.Background(), root, checksums, arms, nil, 2, executor,
+		context.Background(), root, checksums, environments, arms, nil, 2, executor,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +109,7 @@ func TestExecuteMatrixRunsEachArmOnceAndReusesEvidence(t *testing.T) {
 	for index := range arms {
 		execution := armExecution{
 			stateDir: arms[index].StateDir, arm: arms[index].Mode,
-			loaded: arms[index].Loaded, checksums: checksums,
+			loaded: arms[index].Loaded, checksums: checksums, environments: environments,
 		}
 		if missing := missingPlanCells(execution); len(missing) != 0 {
 			t.Fatalf("%s missing = %#v", arms[index].Label, missing)
@@ -113,7 +117,7 @@ func TestExecuteMatrixRunsEachArmOnceAndReusesEvidence(t *testing.T) {
 	}
 
 	if err := executeMatrix(
-		context.Background(), root, checksums, arms, nil, 2, executor,
+		context.Background(), root, checksums, environments, arms, nil, 2, executor,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -139,10 +143,13 @@ func TestExecuteMatrixFiltersTasks(t *testing.T) {
 	checksums := map[string]string{
 		"first-task": "first-checksum", "second-task": "second-checksum",
 	}
+	environments := map[string]string{
+		"first-task": "first-environment", "second-task": "second-environment",
+	}
 	executor := &baselineFakeExecutor{}
 
 	if err := executeMatrix(
-		context.Background(), root, checksums, arms, []string{"second-task"}, 2, executor,
+		context.Background(), root, checksums, environments, arms, []string{"second-task"}, 2, executor,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -153,6 +160,44 @@ func TestExecuteMatrixFiltersTasks(t *testing.T) {
 		if call.Task != "second-task" {
 			t.Fatalf("executed task = %q, want second-task", call.Task)
 		}
+	}
+}
+
+func TestMatrixInvalidatesOnlyTaskWithChangedEnvironment(t *testing.T) {
+	root := t.TempDir()
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks := []benchmarkPlanTask{
+		{ID: "first-task", RepetitionsPerArm: 1},
+		{ID: "second-task", RepetitionsPerArm: 1},
+	}
+	arm := matrixArmFixture(root, "bare", ArmBaseline, model, effort, tasks)
+	checksums := map[string]string{"first-task": "first-checksum", "second-task": "second-checksum"}
+	writeMatrixAttempt(t, &arm, "first-task", checksums["first-task"], .2, 1)
+	writeMatrixAttempt(t, &arm, "second-task", checksums["second-task"], .6, 2)
+	for _, task := range tasks {
+		path := armResultPath(arm.StateDir, task.ID, 1)
+		var result AttemptResult
+		if err := readCampaignJSON(path, &result); err != nil {
+			t.Fatal(err)
+		}
+		result.EnvironmentIdentity = task.ID + "-environment-v1"
+		if err := writeJSON(path, result); err != nil {
+			t.Fatal(err)
+		}
+	}
+	execution := armExecution{
+		stateDir: arm.StateDir, arm: arm.Mode, loaded: arm.Loaded, checksums: checksums,
+		environments: map[string]string{
+			"first-task":  "first-task-environment-v1",
+			"second-task": "second-task-environment-v2",
+		},
+	}
+	missing := missingPlanCells(execution)
+	if len(missing) != 1 || missing[0].task != "second-task" {
+		t.Fatalf("changed task environments produced missing cells %#v", missing)
 	}
 }
 
@@ -185,7 +230,7 @@ func TestBuildMatrixReportUsesFixedCalibrationsAndWeights(t *testing.T) {
 	preparation := matrixPreparation{
 		selection: selection, selectionID: selectionID,
 		stateDir: filepath.Join(root, "matrix"), tasks: tasks,
-		checksums: checksums, arms: arms, cleanup: func() {},
+		checksums: checksums, arms: arms,
 	}
 
 	outcome, err := buildMatrixReport(preparation)
@@ -242,7 +287,7 @@ func TestBuildMatrixReportSupportsBaselineOnly(t *testing.T) {
 	preparation := matrixPreparation{
 		selection: selection, selectionID: selectionID,
 		stateDir: filepath.Join(root, "matrix"), tasks: tasks,
-		checksums: checksums, arms: []matrixArm{arm}, cleanup: func() {},
+		checksums: checksums, arms: []matrixArm{arm},
 	}
 
 	outcome, err := buildMatrixReport(preparation)

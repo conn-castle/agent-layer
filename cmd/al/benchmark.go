@@ -190,7 +190,7 @@ func runBenchmarkBaselineInteractive(cmd *cobra.Command, options bench.BaselineO
 }
 
 func newBenchmarkMatrixCmd() *cobra.Command {
-	var selectionPath, treatmentExecution, treatmentLabel, treatmentMode, dispatchConfig string
+	var selectionPath, treatmentExecution, treatmentLabel, treatmentPin, treatmentMode, dispatchConfig string
 	var baselineExecutions []string
 	var tasks []string
 	var taskConcurrency int
@@ -207,6 +207,9 @@ func newBenchmarkMatrixCmd() *cobra.Command {
 			}
 			if treatmentExecution == "" && treatmentLabel != "" {
 				return errors.New("benchmark matrix --treatment-label requires --treatment-execution")
+			}
+			if treatmentExecution == "" && treatmentPin != "" {
+				return errors.New("benchmark matrix --treatment-pin requires --treatment-execution")
 			}
 			if treatmentExecution == "" && dispatchConfig != "" {
 				return errors.New("benchmark matrix --dispatch-config requires --treatment-execution")
@@ -228,6 +231,7 @@ func newBenchmarkMatrixCmd() *cobra.Command {
 				BaselineExecutions: baselineExecutions,
 				TreatmentExecution: treatmentExecution,
 				TreatmentLabel:     treatmentLabel,
+				TreatmentPin:       treatmentPin,
 				TreatmentMode:      treatmentMode,
 				DispatchConfigPath: dispatchConfig,
 				Tasks:              tasks,
@@ -281,6 +285,10 @@ func newBenchmarkMatrixCmd() *cobra.Command {
 	command.Flags().StringVar(
 		&treatmentLabel, "treatment-label", "",
 		"report label for the Agent Layer point",
+	)
+	command.Flags().StringVar(
+		&treatmentPin, "treatment-pin", "",
+		"stable name for the persisted Agent Layer bundle; defaults to the treatment label",
 	)
 	command.Flags().StringVar(
 		&treatmentMode, "treatment-mode", bench.TreatmentInstructionsAndSkills,

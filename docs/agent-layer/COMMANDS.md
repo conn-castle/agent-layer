@@ -364,12 +364,13 @@ node scripts/render-deepswe-matrix-report.js \
   --selection <selection.json> \
   --trials <matching-trials.json> \
   --matrix-dir <matrix-state-directory> \
+  --additional-arms-from <older-matrix-state-directory> \
   --output <report.html> \
   --json-output <report.json>
 ```
 Run from: repo root
 Prerequisites: Node 22+, a completed descriptive matrix, and the exact published-trials snapshot named by the selection
-Notes: Discovers every completed arm from immutable matrix manifests and results, verifies the trials snapshot SHA-256, and regenerates both report artifacts without model, Docker, or network calls. The HTML contains the cost-versus-score graph, arm summary, and complete two-sided calibrated Welch–Satterthwaite p-value matrix. Incomplete arms are reported explicitly and excluded.
+Notes: Discovers every completed arm from immutable matrix manifests and results, optionally combines all completed arms from one older matrix with `--additional-arms-from`, verifies the trials snapshot SHA-256, and regenerates both report artifacts without model, Docker, or network calls. Incomplete arms are reported explicitly and excluded. Use `--additional-baselines-from` instead when only the latest baseline per model/reasoning configuration should be imported. The HTML contains the cost-versus-score graph, arm summary, and complete two-sided calibrated Welch–Satterthwaite p-value matrix.
 
 - Run a descriptive matrix with explicit Agent Dispatch role targets
 ```bash
@@ -378,10 +379,11 @@ go run ./cmd/al benchmark matrix \
   --baseline-execution sol:medium \
   --treatment-execution sol:medium \
   --treatment-label "Agent Layer" \
+  --treatment-pin final-skills \
   --dispatch-config <dispatch.toml> \
   --task-concurrency 4 \
   --yes
 ```
 Run from: repo root
 Prerequisites: Baseline benchmark prerequisites and a validated `agent-layer-benchmark-dispatch-v2` TOML file.
-Notes: The dispatch file assigns exact `agent`, `model`, and `reasoning_effort` targets to `plan_reviewers`, `implementer`, and `code_reviewer`. Its canonical content is included in the immutable treatment identity.
+Notes: The dispatch file assigns exact `agent`, `model`, and `reasoning_effort` targets to `plan_reviewers`, `implementer`, and `code_reviewer`. Its canonical content is included in the immutable treatment identity. `--treatment-pin` names the persisted treatment bundle under `.agent-layer/state/benchmarks/deepswe/matrices/<selection-id>/treatment-pins/`; the first run for a pin builds and stores the bundle, and later runs reuse those exact bytes so working-tree edits to instructions or skills do not silently split an in-progress arm. It defaults to the treatment label and requires `--treatment-execution`. Use a new pin name to benchmark a changed bundle.

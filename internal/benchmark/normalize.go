@@ -22,6 +22,7 @@ const (
 )
 
 type pierTaskResult struct {
+	TrialName    string    `json:"trial_name"`
 	TaskChecksum string    `json:"task_checksum"`
 	StartedAt    time.Time `json:"started_at"`
 	FinishedAt   time.Time `json:"finished_at"`
@@ -57,7 +58,8 @@ func normalizePier(stage string, request ExecutionRequest) (AttemptResult, error
 	result := AttemptResult{
 		SchemaVersion: StorageSchemaVersion, EventID: request.EventID,
 		Attempt: request.Attempt, Task: request.Task, TaskChecksum: raw.TaskChecksum,
-		StartedAt: raw.StartedAt, FinishedAt: raw.FinishedAt, Provider: provider,
+		EnvironmentIdentity: request.EnvironmentIdentity,
+		StartedAt:           raw.StartedAt, FinishedAt: raw.FinishedAt, Provider: provider,
 		PublishedModel: request.Model.PublishedIdentifier,
 		RuntimeModel:   request.Model.RuntimeIdentifier, ReasoningEffort: request.Effort,
 		ProviderClientVersion: request.Model.ProviderClientVersion,
@@ -715,6 +717,13 @@ func parseCodexSessionCost(path string, pricing benchmarkPricing) (codexSessionU
 			} `json:"payload"`
 		}
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			// Codex can leave an interrupted response-item append before writing
+			// the complete replacement event. Response items never carry billing
+			// identity or token usage, so their malformed copies are irrelevant to
+			// cost reconstruction. Billing-bearing event types remain strict.
+			if bytes.Contains(scanner.Bytes(), []byte(`"type":"response_item"`)) {
+				continue
+			}
 			return codexSessionUsage{}, fmt.Errorf("decode codex session %s: %w", filepath.Base(path), err)
 		}
 		switch event.Type {

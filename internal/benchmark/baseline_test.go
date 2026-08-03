@@ -28,7 +28,8 @@ func (executor *baselineFakeExecutor) Execute(_ context.Context, request Executi
 		Task: request.Task, Status: statusSuccess, F2PPassed: request.Attempt, F2PTotal: 4,
 		F2PScore: float64(request.Attempt) / 4, CostUSD: &cost, CostKind: costKindProviderReported,
 		DurationSeconds: &duration, TaskChecksum: request.TaskChecksum, StartedAt: time.Now().UTC(),
-		FinishedAt: time.Now().UTC(), Provider: "openai", PublishedModel: request.Model.PublishedIdentifier,
+		EnvironmentIdentity: request.EnvironmentIdentity,
+		FinishedAt:          time.Now().UTC(), Provider: "openai", PublishedModel: request.Model.PublishedIdentifier,
 		RuntimeModel: request.Model.RuntimeIdentifier, ReasoningEffort: request.Effort,
 		ProviderClientVersion: request.Model.ProviderClientVersion, DispatchConformant: true, InvocationCount: 1,
 	}, nil

@@ -78,6 +78,58 @@ func TestRunGolden(t *testing.T) {
 	}
 }
 
+func TestRunPreservesUnchangedClientConfigurationFiles(t *testing.T) {
+	fixtureRoot := filepath.Join("testdata", "fixture-repo")
+	root := t.TempDir()
+	if err := copyFixtureRepo(fixtureRoot, root); err != nil {
+		t.Fatalf("copy fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", ".env"), []byte("AL_EXAMPLE_TOKEN=token123\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+	writeTemplateToFixtureSource(t, root, "claude-statusline.sh", filepath.Join(".agent-layer", "claude-statusline.sh"), 0o755)
+	writeTemplateToFixtureSource(t, root, "codex-statusline.toml", filepath.Join(".agent-layer", "codex-statusline.toml"), 0o644)
+
+	if _, err := Run(root); err != nil {
+		t.Fatalf("first sync: %v", err)
+	}
+	paths := []string{
+		filepath.Join(root, ".codex", "config.toml"),
+		filepath.Join(root, ".claude", "settings.json"),
+		filepath.Join(root, ".agy", "antigravity-cli", "mcp_config.json"),
+	}
+	before := make([]os.FileInfo, len(paths))
+	beforeData := make([][]byte, len(paths))
+	for i, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat first sync output %s: %v", path, err)
+		}
+		before[i] = info
+		beforeData[i], err = os.ReadFile(path) // #nosec G304 -- path is rooted in a test-owned temporary directory.
+		if err != nil {
+			t.Fatalf("read first sync output %s: %v", path, err)
+		}
+	}
+
+	if _, err := Run(root); err != nil {
+		t.Fatalf("second sync: %v", err)
+	}
+	for i, path := range paths {
+		after, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat second sync output %s: %v", path, err)
+		}
+		if !os.SameFile(before[i], after) {
+			afterData, readErr := os.ReadFile(path) // #nosec G304 -- path is rooted in a test-owned temporary directory.
+			if readErr != nil {
+				t.Fatalf("read second sync output %s: %v", path, readErr)
+			}
+			t.Errorf("no-op sync replaced client configuration %s\nbefore:\n%s\nafter:\n%s", path, beforeData[i], afterData)
+		}
+	}
+}
+
 func TestRunWithAntigravityDisabledPreservesMalformedSettingsAndCleansMCP(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

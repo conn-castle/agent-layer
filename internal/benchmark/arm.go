@@ -23,6 +23,7 @@ type armExecution struct {
 	maxNewRuns   int
 	loaded       loadedBenchmarkPlan
 	checksums    map[string]string
+	environments map[string]string
 	bundle       *TreatmentBundle
 	capacityWait func(context.Context) error
 }
@@ -50,7 +51,8 @@ func missingPlanCells(execution armExecution) []planCell {
 				armResultPath(execution.stateDir, task.ID, attempt),
 				task.ID, attempt, execution.checksums[task.ID],
 				execution.loaded.Model, execution.loaded.Effort, treatment,
-			) {
+			) || (execution.environments != nil &&
+				!resultMatchesEnvironment(armResultPath(execution.stateDir, task.ID, attempt), execution.environments[task.ID])) {
 				missing = append(missing, planCell{task: task.ID, attempt: attempt})
 			}
 		}
@@ -71,6 +73,14 @@ func validPlanResult(path, task string, attempt int, checksum string, model Mode
 		return false
 	}
 	return !treatment || result.InvocationCount > 0
+}
+
+func resultMatchesEnvironment(path, environment string) bool {
+	if environment == "" {
+		return false
+	}
+	var result AttemptResult
+	return readCampaignJSON(path, &result) == nil && result.EnvironmentIdentity == environment
 }
 
 func executePlanArm(ctx context.Context, execution armExecution, executor TaskExecutor) error {
@@ -106,7 +116,8 @@ func executePlanArm(ctx context.Context, execution armExecution, executor TaskEx
 							EventID: eventID, Attempt: item.attempt, Task: item.task,
 							Model: execution.loaded.Model, Effort: execution.loaded.Effort,
 							Arm: execution.arm, Bundle: execution.bundle,
-							TaskChecksum: execution.checksums[item.task],
+							TaskChecksum:        execution.checksums[item.task],
+							EnvironmentIdentity: execution.environments[item.task],
 						})
 						if err == nil {
 							if validationErr := result.Validate(); validationErr != nil {

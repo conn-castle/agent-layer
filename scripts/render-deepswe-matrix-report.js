@@ -11,7 +11,8 @@ function usage() {
     "  node scripts/render-deepswe-matrix-report.js \\",
     "    --selection PATH --trials PATH --matrix-dir PATH \\",
     "    --output PATH --json-output PATH \\",
-    "    [--additional-baselines-from MATRIX_DIR]",
+    "    [--additional-baselines-from MATRIX_DIR] \\",
+    "    [--additional-arms-from MATRIX_DIR]",
   ].join("\n");
 }
 
@@ -28,7 +29,7 @@ function parseArguments(argv) {
     values[key] = value;
   }
   const required = ["selection", "trials", "matrix-dir", "output", "json-output"];
-  const optional = ["additional-baselines-from"];
+  const optional = ["additional-baselines-from", "additional-arms-from"];
   const unknown = Object.keys(values).filter(
     (key) => !required.includes(key) && !optional.includes(key),
   );
@@ -128,6 +129,34 @@ function matrixSelectionID(selection) {
     .digest("hex");
 }
 
+const REASONING_EFFORT_ORDER = new Map([
+  ["minimal", 0],
+  ["low", 1],
+  ["medium", 2],
+  ["high", 3],
+  ["xhigh", 4],
+  ["max", 5],
+]);
+
+/**
+ * Order report arms deterministically: baselines first, then by model, then by
+ * increasing reasoning effort, then by creation time and label.
+ *
+ * @param {Array<object>} arms discovered arms, sorted in place
+ * @returns {Array<object>} the same array, sorted
+ */
+function sortArmsForReport(arms) {
+  return arms.sort(
+    (left, right) =>
+      (left.mode === "baseline" ? 0 : 1) - (right.mode === "baseline" ? 0 : 1) ||
+      left.model.localeCompare(right.model) ||
+      (REASONING_EFFORT_ORDER.get(left.reasoning) ?? 99) -
+        (REASONING_EFFORT_ORDER.get(right.reasoning) ?? 99) ||
+      left.createdAt.localeCompare(right.createdAt) ||
+      left.label.localeCompare(right.label),
+  );
+}
+
 function discoverCompletedArms(matrixDir, selection) {
   const armsDir = path.join(matrixDir, "arms");
   const entries = fs
@@ -149,6 +178,10 @@ function discoverCompletedArms(matrixDir, selection) {
     assert(typeof manifest.label === "string" && manifest.label, `${entry.name}: missing label`);
     const taskReports = [];
     let complete = true;
+    // Arms written before the certified-environment harness carry no identity at
+    // all. Legacy manifests recorded one identity map per arm; current results
+    // record the identity per attempt so a single task can be re-certified.
+    let resultsCarryEnvironmentIdentity = true;
     for (const task of selection.tasks) {
       const scores = [];
       const cost = { midpoint: 0, minimum: 0, maximum: 0 };
@@ -186,6 +219,7 @@ function discoverCompletedArms(matrixDir, selection) {
         verifierBuildFailed ||= Boolean(result.verifier_build_failed);
         invocationCount += result.invocation_count;
         dispatchConformantRuns += result.dispatch_conformant ? 1 : 0;
+        resultsCarryEnvironmentIdentity &&= Boolean(result.task_environment_identity);
       }
       if (!complete) break;
       const f2pScore = scores.reduce((sum, score) => sum + score, 0) / scores.length;
@@ -225,7 +259,9 @@ function discoverCompletedArms(matrixDir, selection) {
       model: manifest.model,
       reasoning: manifest.reasoning,
       createdAt: manifest.created_at,
-      environmentQualified: Boolean(manifest.task_environment_identities),
+      environmentQualified:
+        Boolean(manifest.task_environment_identities) ||
+        resultsCarryEnvironmentIdentity,
       providerClientVersion: [...providerClients][0],
       score: taskReports.reduce((sum, task) => sum + task.weightedContribution, 0),
       cost,
@@ -255,22 +291,7 @@ function discoverCompletedArms(matrixDir, selection) {
     }
     resolvedLabels.add(arm.label);
   }
-  const effortOrder = new Map([
-    ["minimal", 0],
-    ["low", 1],
-    ["medium", 2],
-    ["high", 3],
-    ["xhigh", 4],
-    ["max", 5],
-  ]);
-  arms.sort(
-    (left, right) =>
-      (left.mode === "baseline" ? 0 : 1) - (right.mode === "baseline" ? 0 : 1) ||
-      left.model.localeCompare(right.model) ||
-      (effortOrder.get(left.reasoning) ?? 99) - (effortOrder.get(right.reasoning) ?? 99) ||
-      left.createdAt.localeCompare(right.createdAt) ||
-      left.label.localeCompare(right.label),
-  );
+  sortArmsForReport(arms);
   assert(arms.length >= 2, "fewer than two completed matrix arms were discovered");
   return { arms, skipped };
 }
@@ -588,28 +609,23 @@ function main() {
       options["additional-baselines-from"],
       selection,
     );
-    arms = [
+    arms = sortArmsForReport([
       ...arms.filter((arm) => arm.mode === "treatment"),
       ...latestBaselinePerConfiguration([...arms, ...additional.arms]),
-    ];
-    const effortOrder = new Map([
-      ["minimal", 0],
-      ["low", 1],
-      ["medium", 2],
-      ["high", 3],
-      ["xhigh", 4],
-      ["max", 5],
     ]);
-    arms.sort(
-      (left, right) =>
-        (left.mode === "baseline" ? 0 : 1) -
-          (right.mode === "baseline" ? 0 : 1) ||
-        left.model.localeCompare(right.model) ||
-        (effortOrder.get(left.reasoning) ?? 99) -
-          (effortOrder.get(right.reasoning) ?? 99) ||
-        left.createdAt.localeCompare(right.createdAt) ||
-        left.label.localeCompare(right.label),
+  }
+  if (options["additional-arms-from"]) {
+    const additional = discoverCompletedArms(
+      options["additional-arms-from"],
+      selection,
     );
+    // The imported matrix is the older one, so an arm present in both keeps the
+    // evidence discovered under --matrix-dir.
+    const byID = new Map(
+      [...additional.arms, ...arms].map((arm) => [arm.id, arm]),
+    );
+    arms = sortArmsForReport([...byID.values()]);
+    skipped.push(...additional.skipped);
   }
   const pValueMatrix = arms.map((left, leftIndex) =>
     arms.map((right, rightIndex) =>

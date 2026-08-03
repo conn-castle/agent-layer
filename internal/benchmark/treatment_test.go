@@ -424,6 +424,68 @@ func TestBuildSkillsTreatmentIsIndependentOfTemporaryStagePath(t *testing.T) {
 	}
 }
 
+func TestMatrixTreatmentPinReusesPersistedBundleInsteadOfRebuilding(t *testing.T) {
+	model, effort, err := ParseModelSelection("luna:medium")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := t.TempDir()
+	builds := 0
+	build := func() (*TreatmentBundle, error) {
+		builds++
+		root := t.TempDir()
+		adapter := filepath.Join(root, "adapter", "pier_agent_layer.py")
+		if err := os.MkdirAll(filepath.Dir(adapter), 0o700); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(adapter, []byte("pinned adapter\n"), 0o600); err != nil {
+			return nil, err
+		}
+		manifest, err := treatmentManifest(
+			root, TreatmentInstructionsOnly, nil, TreatmentDispatchConfig{},
+		)
+		if err != nil {
+			return nil, err
+		}
+		manifestHash, err := hashCanonical(manifest)
+		if err != nil {
+			return nil, err
+		}
+		adapterHash, err := fileSHA256(adapter)
+		if err != nil {
+			return nil, err
+		}
+		return &TreatmentBundle{
+			Root: root, Manifest: manifest, ManifestHash: manifestHash,
+			AdapterPath: adapter, AdapterSHA256: adapterHash,
+		}, nil
+	}
+	first, err := pinMatrixTreatmentBundle(
+		state, "final-skills", "Agent Layer Final Skills", model, effort,
+		TreatmentInstructionsOnly, TreatmentDispatchConfig{}, build,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := pinMatrixTreatmentBundle(
+		state, "final-skills", "Agent Layer Final Skills", model, effort,
+		TreatmentInstructionsOnly, TreatmentDispatchConfig{}, func() (*TreatmentBundle, error) {
+			t.Fatal("persisted treatment pin unexpectedly rebuilt")
+			return nil, nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if builds != 1 || first.Root != second.Root || first.ManifestHash != second.ManifestHash {
+		t.Fatalf("treatment pin was not stable: builds=%d first=%#v second=%#v", builds, first, second)
+	}
+	data, err := os.ReadFile(second.AdapterPath)
+	if err != nil || string(data) != "pinned adapter\n" {
+		t.Fatalf("pinned adapter = %q, %v", data, err)
+	}
+}
+
 func assertTemplateProjection(t *testing.T, source, destination string) {
 	t.Helper()
 	sourceFS := os.DirFS(source)

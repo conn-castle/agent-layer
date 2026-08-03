@@ -45,6 +45,127 @@ func TestNormalizePierPreservesOutcomeCostAndDiagnostics(t *testing.T) {
 	}
 }
 
+func TestCompletedPierExecutionIsRecoveredWithoutProviderRetry(t *testing.T) {
+	model, effort, err := ParseModelSelection("fable:high")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := t.TempDir()
+	evidence := t.TempDir()
+	stage := writePierStage(t, "task-checksum", .5, 3.5)
+	request := ExecutionRequest{
+		RepoRoot: repository, EvidenceDir: evidence, EventID: "first-event",
+		Attempt: 1, Task: "example-task", Model: model, Effort: effort,
+		Arm: ArmBaseline, TaskChecksum: "task-checksum", EnvironmentIdentity: "environment-one",
+	}
+	if err := promoteSanitizedPierArtifacts(request, stage); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePierExecutionReceipt(request, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	retry := request
+	retry.EventID = "would-have-called-provider"
+	result, found, err := recoverCompletedPierExecution(retry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || result.EventID != "first-event" || result.EnvironmentIdentity != "environment-one" || result.F2PScore != .5 {
+		t.Fatalf("recovered result = %#v, found = %t", result, found)
+	}
+	executorResult, err := (PierExecutor{}).Execute(context.Background(), retry)
+	if err != nil || executorResult.EventID != "first-event" {
+		t.Fatalf("executor did not recover before provider setup: result=%#v err=%v", executorResult, err)
+	}
+
+	retry.EnvironmentIdentity = "changed-environment"
+	if _, found, err := recoverCompletedPierExecution(retry); err != nil || found {
+		t.Fatalf("changed environment recovered old cell: found=%t err=%v", found, err)
+	}
+}
+
+func TestCleanupPierDockerResourcesUsesExactComposeProject(t *testing.T) {
+	stage := writePierStage(t, "task-checksum", .5, 1)
+	request := ExecutionRequest{Task: "example-task", TaskChecksum: "task-checksum"}
+	original := runBenchmarkDockerCommand
+	var calls []string
+	runBenchmarkDockerCommand = func(_ context.Context, arguments ...string) ([]byte, error) {
+		call := strings.Join(arguments, " ")
+		calls = append(calls, call)
+		switch call {
+		case `ps --all --format {{.ID}}\t{{.Label "com.docker.compose.project"}}`:
+			return []byte("0123456789ab\texample-task__abc1234\n999999999999\tunrelated\n"), nil
+		case `network ls --format {{.ID}}\t{{.Label "com.docker.compose.project"}}`:
+			return []byte("abcdef012345\texample-task__abc1234__verifier__trial\n"), nil
+		case `volume ls --format {{.Name}}\t{{.Label "com.docker.compose.project"}}`:
+			return nil, nil
+		case "rm --force 0123456789ab", "network rm abcdef012345":
+			return nil, nil
+		default:
+			return nil, fmt.Errorf("unexpected Docker command %q", call)
+		}
+	}
+	t.Cleanup(func() { runBenchmarkDockerCommand = original })
+
+	if err := cleanupPierDockerResources(stage, request); err != nil {
+		t.Fatal(err)
+	}
+	expected := []string{
+		`ps --all --format {{.ID}}\t{{.Label "com.docker.compose.project"}}`,
+		"rm --force 0123456789ab",
+		`network ls --format {{.ID}}\t{{.Label "com.docker.compose.project"}}`,
+		"network rm abcdef012345",
+		`volume ls --format {{.Name}}\t{{.Label "com.docker.compose.project"}}`,
+	}
+	if strings.Join(calls, "\n") != strings.Join(expected, "\n") {
+		t.Fatalf("Docker cleanup calls = %#v", calls)
+	}
+}
+
+func TestCleanupPierDockerResourcesRejectsUnrelatedProject(t *testing.T) {
+	stage := writePierStage(t, "task-checksum", .5, 1)
+	resultPath := filepath.Join(stage, "jobs", "one", "result.json")
+	data, err := os.ReadFile(resultPath) // #nosec G304 -- path is rooted in a test-owned temporary stage.
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+	result["trial_name"] = "unrelated-task__Abc1234"
+	data, err = json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(resultPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err = cleanupPierDockerResources(stage, ExecutionRequest{Task: "example-task", TaskChecksum: "task-checksum"})
+	if err == nil || !strings.Contains(err.Error(), "does not match benchmark task") {
+		t.Fatalf("unrelated cleanup error = %v", err)
+	}
+}
+
+func TestPierCleanupIdentifiesTrialDirectoryAfterCancelledResult(t *testing.T) {
+	stage := t.TempDir()
+	trial := filepath.Join(stage, "jobs", "event", "example-task__Abc1234")
+	if err := os.MkdirAll(trial, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	project, err := identifyPierComposeProject(stage, ExecutionRequest{
+		Task: "example-task", TaskChecksum: "task-checksum",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project != "example-task__abc1234" {
+		t.Fatalf("cancelled trial project = %q", project)
+	}
+}
+
 func TestNormalizePierRejectsAmbiguousAndMalformedEvidence(t *testing.T) {
 	model, effort, err := ParseModelSelection("luna:low")
 	if err != nil {
@@ -302,6 +423,38 @@ func TestCodexCostUsesRequestLevelUsageAndReconcilesChildren(t *testing.T) {
 	if _, err := parseCodexSessionCost(incomplete, pricing); err == nil ||
 		!strings.Contains(err.Error(), "incomplete request-level") {
 		t.Fatalf("incomplete usage error = %v", err)
+	}
+}
+
+func TestCodexCostToleratesInterruptedNonBillingResponseItem(t *testing.T) {
+	pricing, err := loadBenchmarkPricing()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := os.ReadFile(filepath.Join("testdata", "codex-session-cost.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	interrupted := []byte(`{"timestamp":"2026-08-03T20:00:03Z","type":"response_item","payload":{"type":"reasoning","encrypted_content":"partial` + "\n")
+	if err := os.WriteFile(path, append(interrupted, fixture...), 0o600); err != nil { // #nosec G703 -- path is rooted in a test-owned temporary directory.
+		t.Fatal(err)
+	}
+	usage, err := parseCodexSessionCost(path, pricing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage.id != "shared-cost-session" {
+		t.Fatalf("usage = %#v", usage)
+	}
+
+	interruptedBilling := []byte(`{"timestamp":"2026-08-03T20:00:03Z","type":"event_msg","payload":{"type":"token_count"` + "\n")
+	if err := os.WriteFile(path, append(interruptedBilling, fixture...), 0o600); err != nil { // #nosec G703 -- path is rooted in a test-owned temporary directory.
+		t.Fatal(err)
+	}
+	if _, err := parseCodexSessionCost(path, pricing); err == nil ||
+		!strings.Contains(err.Error(), "decode codex session") {
+		t.Fatalf("interrupted billing error = %v", err)
 	}
 }
 
@@ -845,6 +998,7 @@ func writePierStage(t *testing.T, checksum string, score, cost float64) string {
 	}
 	started := time.Now().UTC().Add(-time.Second)
 	raw := map[string]any{
+		"trial_name":    "example-task__Abc1234",
 		"task_checksum": checksum, "started_at": started, "finished_at": started.Add(time.Second),
 		"agent_info":   map[string]any{"model_info": map[string]any{"provider": "openai"}},
 		"agent_result": map[string]any{"cost_usd": cost},
