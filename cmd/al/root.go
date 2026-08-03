@@ -47,6 +47,7 @@ func newRootCmd() *cobra.Command {
 		newDoctorCmd(),
 		newWizardCmd(),
 		newBenchmarkCmd(),
+		newOrganizeScratchCmd(),
 	)
 	addPlatformCommands(root)
 	return root

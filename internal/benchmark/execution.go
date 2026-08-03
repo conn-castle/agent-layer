@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/conn-castle/agent-layer/internal/gitenv"
 )
 
 // ErrConfirmationRequired is returned before any paid model invocation.
@@ -377,6 +379,7 @@ func ensurePinnedCheckout(ctx context.Context, repoRoot string) (string, error) 
 		{"-C", temporary, "checkout", "--quiet", "--detach", "FETCH_HEAD"},
 	} {
 		command := exec.CommandContext(ctx, commandGit, args...) // #nosec G204 -- source and commit are pinned.
+		command.Env = gitenv.WithoutDiscovery()
 		if output, err := command.CombinedOutput(); err != nil {
 			return "", fmt.Errorf("prepare pinned DeepSWE checkout: %w: %s", err, strings.TrimSpace(string(output)))
 		}
@@ -403,7 +406,9 @@ func validateExistingPinnedCheckout(ctx context.Context, checkout string) (bool,
 	if !info.IsDir() {
 		return false, fmt.Errorf("pinned DeepSWE checkout path is not a directory")
 	}
-	data, err := exec.CommandContext(ctx, commandGit, "-C", checkout, "rev-parse", "HEAD").Output() // #nosec G204 -- private fixed checkout path.
+	revisionCommand := exec.CommandContext(ctx, commandGit, "-C", checkout, "rev-parse", "HEAD") // #nosec G204 -- private fixed checkout path.
+	revisionCommand.Env = gitenv.WithoutDiscovery()
+	data, err := revisionCommand.Output()
 	if err != nil {
 		return false, fmt.Errorf("read pinned DeepSWE checkout revision: %w", err)
 	}
@@ -419,7 +424,9 @@ func validateExistingPinnedCheckout(ctx context.Context, checkout string) (bool,
 // validatePinnedCheckoutClean prevents a labeled benchmark from running a
 // locally modified task tree under the pinned commit identity.
 func validatePinnedCheckoutClean(ctx context.Context, checkout string) error {
-	status, err := exec.CommandContext(ctx, commandGit, "-C", checkout, "status", "--porcelain=v1", "--untracked-files=all").Output() // #nosec G204 -- private fixed checkout path.
+	statusCommand := exec.CommandContext(ctx, commandGit, "-C", checkout, "status", "--porcelain=v1", "--untracked-files=all") // #nosec G204 -- private fixed checkout path.
+	statusCommand.Env = gitenv.WithoutDiscovery()
+	status, err := statusCommand.Output()
 	if err != nil {
 		return fmt.Errorf("inspect pinned DeepSWE checkout cleanliness: %w", err)
 	}

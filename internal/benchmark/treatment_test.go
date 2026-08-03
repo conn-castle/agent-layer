@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/gitenv"
 )
 
 func TestTreatmentProjectionAndManifestContainOnlyEffectiveFiles(t *testing.T) {
@@ -458,6 +460,10 @@ func TestTemplatesProvenanceReportsCommitAndScopesDirtinessToTemplates(t *testin
 	run := func(args ...string) {
 		t.Helper()
 		command := exec.CommandContext(t.Context(), "git", append([]string{"-C", root}, args...)...) // #nosec G204 -- fixed git arguments below a test-owned root.
+		// Resolve the repository from the path above, never from an inherited
+		// GIT_DIR: git exports it to hooks, so under pre-commit this fixture would
+		// otherwise operate on the developer's own checkout.
+		command.Env = gitenv.WithoutDiscovery()
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, output)
 		}

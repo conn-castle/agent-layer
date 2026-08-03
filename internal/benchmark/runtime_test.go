@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/gitenv"
 )
 
 func TestNormalizePierPreservesOutcomeCostAndDiagnostics(t *testing.T) {
@@ -740,6 +742,10 @@ func TestPinnedCheckoutValidationRejectsMissingAndWrongRepositoryState(t *testin
 	run := func(arguments ...string) {
 		t.Helper()
 		command := exec.CommandContext(t.Context(), "git", append([]string{"-C", checkout}, arguments...)...) // #nosec G204 -- fixed git operations below a test-owned path.
+		// Resolve the repository from the path above, never from an inherited
+		// GIT_DIR: git exports it to hooks, so under pre-commit this fixture would
+		// otherwise operate on the developer's own checkout.
+		command.Env = gitenv.WithoutDiscovery()
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", arguments, err, output)
 		}

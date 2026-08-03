@@ -13,6 +13,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/gitenv"
 	"github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
@@ -22,6 +23,10 @@ func TestRunUsesSuppliedRepositoryRootWithoutCreatingWorktree(t *testing.T) {
 	git := func(args ...string) string {
 		t.Helper()
 		cmd := exec.Command("git", append([]string{"-C", root}, args...)...) // #nosec G204 -- fixed test command with a test-owned path.
+		// Resolve the repository from the path above, never from an inherited
+		// GIT_DIR: git exports it to hooks, so under pre-commit this fixture would
+		// otherwise operate on the developer's own checkout.
+		cmd.Env = gitenv.WithoutDiscovery()
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("git %v: %v: %s", args, err, output)

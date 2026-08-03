@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/conn-castle/agent-layer/internal/gitenv"
 	"github.com/conn-castle/agent-layer/internal/sync"
 )
 
@@ -397,11 +398,18 @@ func templatesProvenance(ctx context.Context, repoRoot string) (commit string, d
 	if statErr != nil {
 		return "", false, fmt.Errorf("inspect benchmark repository root: %w", statErr)
 	}
-	revision, err := exec.CommandContext(ctx, "git", "-C", repoRoot, "rev-parse", "HEAD").Output() // #nosec G204 -- every argument is a fixed literal; repoRoot is the caller's own repository path.
+	// The repository is resolved from the path above, never from an inherited
+	// GIT_DIR (see gitenv): git exports it to every hook, so a benchmark run
+	// started from a hook would otherwise inspect the wrong repository.
+	revisionCommand := exec.CommandContext(ctx, "git", "-C", repoRoot, "rev-parse", "HEAD") // #nosec G204 -- every argument is a fixed literal; repoRoot is the caller's own repository path.
+	revisionCommand.Env = gitenv.WithoutDiscovery()
+	revision, err := revisionCommand.Output()
 	if err != nil {
 		return "", false, fmt.Errorf("resolve templates commit: %w", err)
 	}
-	status, err := exec.CommandContext(ctx, "git", "-C", repoRoot, "status", "--porcelain", "--", templates).Output() // #nosec G204 -- every argument is a fixed literal; repoRoot is the caller's own repository path.
+	statusCommand := exec.CommandContext(ctx, "git", "-C", repoRoot, "status", "--porcelain", "--", templates) // #nosec G204 -- every argument is a fixed literal; repoRoot is the caller's own repository path.
+	statusCommand.Env = gitenv.WithoutDiscovery()
+	status, err := statusCommand.Output()
 	if err != nil {
 		return "", false, fmt.Errorf("resolve templates worktree state: %w", err)
 	}
