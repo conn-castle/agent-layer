@@ -409,7 +409,20 @@ function formatPValue(value) {
 }
 
 function renderHtml(report) {
-  const colors = ["#64748b", "#2f855a", "#2563a5", "#d97706", "#7c3aed", "#be185d"];
+  const colors = [
+    "#64748b",
+    "#2f855a",
+    "#2563a5",
+    "#d97706",
+    "#7c3aed",
+    "#be185d",
+    "#0891b2",
+    "#65a30d",
+    "#c2410c",
+    "#4338ca",
+    "#0f766e",
+    "#a16207",
+  ];
   const shortLabel = (arm) => `${arm.mode === "treatment" ? "AL" : "Bare"} ${arm.reasoning}`;
   const summaryRows = report.arms
     .map(
@@ -432,9 +445,9 @@ function renderHtml(report) {
     })
     .join("");
 
-  const width = 1040;
+  const width = 1280;
   const height = 500;
-  const margin = { top: 36, right: 54, bottom: 76, left: 76 };
+  const margin = { top: 36, right: 340, bottom: 76, left: 76 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
   const observedMaximum = Math.max(...report.arms.map((arm) => arm.cost.maximum));
@@ -451,7 +464,7 @@ function renderHtml(report) {
   const costGrid = costTicks
     .map((value) => `<line class="grid" x1="${x(value)}" y1="${margin.top}" x2="${x(value)}" y2="${height - margin.bottom}"></line><text class="tick" x="${x(value)}" y="${height - margin.bottom + 24}" text-anchor="middle">$${value}</text>`)
     .join("");
-  const chartPoints = report.arms
+  let chartPoints = report.arms
     .map((arm, index) => {
       const pointX = x(arm.cost.midpoint);
       const pointY = y(arm.score);
@@ -463,6 +476,66 @@ function renderHtml(report) {
       return `<g><line class="cost-range" x1="${x(arm.cost.minimum)}" y1="${pointY}" x2="${x(arm.cost.maximum)}" y2="${pointY}" stroke="${color}"></line><line class="cost-cap" x1="${x(arm.cost.minimum)}" y1="${pointY - 6}" x2="${x(arm.cost.minimum)}" y2="${pointY + 6}" stroke="${color}"></line><line class="cost-cap" x1="${x(arm.cost.maximum)}" y1="${pointY - 6}" x2="${x(arm.cost.maximum)}" y2="${pointY + 6}" stroke="${color}"></line><circle class="point" cx="${pointX}" cy="${pointY}" r="8" fill="${color}"></circle><text class="point-label" x="${labelX}" y="${labelY}" text-anchor="${anchor}">${escapeHtml(arm.label)}</text><text class="point-value" x="${labelX}" y="${labelY + 16}" text-anchor="${anchor}">${(arm.score * 100).toFixed(2)}% · $${arm.cost.midpoint.toFixed(2)}</text></g>`;
     })
     .join("");
+  let pointIndex = 0;
+  chartPoints = chartPoints.replace(/<g>/g, () => {
+    const arm = report.arms[pointIndex++];
+    return (
+      '<g tabindex="0" style="cursor:help"><title>' +
+      escapeHtml(arm.label) +
+      ': ' +
+      (arm.score * 100).toFixed(2) +
+      '% · $' +
+      arm.cost.midpoint.toFixed(2) +
+      ' midpoint cost; range $' +
+      arm.cost.minimum.toFixed(2) +
+      '–$' +
+      arm.cost.maximum.toFixed(2) +
+      '</title>'
+    );
+  });
+  chartPoints = chartPoints.replace(
+    /<text class="point-label"[^>]*>.*?<\/text><text class="point-value"[^>]*>.*?<\/text>/g,
+    "",
+  );
+  chartPoints +=
+    '<line x1="' +
+    (width - margin.right) +
+    '" y1="36" x2="' +
+    (width - margin.right) +
+    '" y2="' +
+    (height - margin.bottom) +
+    '" stroke="#d9ded9"></line><text x="' +
+    (width - margin.right + 18) +
+    '" y="24" fill="#17201b" font-size="13" font-weight="800">Arms</text>' +
+    report.arms
+      .map((arm, index) => {
+        const y = 58 + index * 32;
+        const color = colors[index % colors.length];
+        return (
+          '<g><circle cx="' +
+          (width - margin.right + 28) +
+          '" cy="' +
+          (y - 4) +
+          '" r="8" fill="' +
+          color +
+          '"></circle><text x="' +
+          (width - margin.right + 44) +
+          '" y="' +
+          (y - 5) +
+          '" fill="#17201b" font-size="11" font-weight="700">' +
+          escapeHtml(arm.label) +
+          '</text><text x="' +
+          (width - margin.right + 44) +
+          '" y="' +
+          (y + 10) +
+          '" fill="#667169" font-size="10" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">' +
+          (arm.score * 100).toFixed(2) +
+          '% · $' +
+          arm.cost.midpoint.toFixed(2) +
+          "</text></g>"
+        );
+      })
+      .join("");
   const skipped = report.skipped.length
     ? `<p class="warning"><strong>Excluded incomplete arms:</strong> ${escapeHtml(report.skipped.join("; "))}</p>`
     : "";

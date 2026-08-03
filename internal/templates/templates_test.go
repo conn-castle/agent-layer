@@ -67,6 +67,24 @@ func TestEmbeddedPlaywrightSkillUsesDistinctIDAndCLICommand(t *testing.T) {
 	}
 }
 
+func TestEmbeddedAutoSkillLoopRequiresExplicitInvocation(t *testing.T) {
+	skillData, err := Read("skills/auto-skill-loop/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(skillData), "disable-model-invocation: true") {
+		t.Fatal("auto-skill-loop does not disable Claude model invocation")
+	}
+
+	metadata, err := Read("skills/auto-skill-loop/agents/openai.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(metadata), "allow_implicit_invocation: false") {
+		t.Fatal("auto-skill-loop does not disable Codex implicit invocation")
+	}
+}
+
 func TestReadLauncherTemplate(t *testing.T) {
 	data, err := Read("launchers/open-vscode.command")
 	if err != nil {
@@ -157,6 +175,14 @@ func TestRemovedSkillTemplatesStayRemoved(t *testing.T) {
 		"skills/simplify-new-code/reviewer-prompt.md",
 		"skills/simplify-code/SKILL.md",
 		"skills/resolve-findings/SKILL.md",
+		"skills/address-pr-comments/SKILL.md",
+		"skills/fix-ci/SKILL.md",
+		"skills/full-workflow/SKILL.md",
+		"skills/fully-implement-plan/SKILL.md",
+		"skills/plan-work/SKILL.md",
+		"skills/review-uncommitted-code/SKILL.md",
+		"skills/run-and-fix-all-checks/SKILL.md",
+		"skills/schedule-backlog/SKILL.md",
 	} {
 		if _, err := Read(path); err == nil {
 			t.Fatalf("expected removed skill template %s to stay absent", path)

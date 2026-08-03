@@ -112,7 +112,7 @@ The current code has addressed or exposed the major campaign hazards:
 - `--check` validates readiness without paid calls, and `--max-new-runs 1` supports a bounded paid probe.
 - Baseline and treatment use the same readiness contracts and service startup requirements.
 - Reports regenerate offline from immutable evidence and preserve cost bounds and provider-client versions.
-- Matrix runs accept explicit dispatch targets for plan reviewers, implementer, code reviewer, and fixer.
+- Matrix runs accept explicit dispatch targets for plan reviewers, implementer, and code reviewer.
 
 Known interpretation cautions:
 

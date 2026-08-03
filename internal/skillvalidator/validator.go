@@ -98,12 +98,13 @@ type ParsedSkill struct {
 
 // allowedFrontMatterFields is the strict validator allowlist for skill frontmatter fields.
 var allowedFrontMatterFields = map[string]struct{}{
-	fieldName:        {},
-	fieldDescription: {},
-	"license":        {},
-	"compatibility":  {},
-	"metadata":       {},
-	"allowed-tools":  {},
+	fieldName:                  {},
+	fieldDescription:           {},
+	"license":                  {},
+	"compatibility":            {},
+	"metadata":                 {},
+	"allowed-tools":            {},
+	"disable-model-invocation": {},
 }
 
 // ParseSkillSource reads and parses a skill source file into validator input.
@@ -183,7 +184,7 @@ func ValidateMetadata(parsed ParsedSkill) []Finding {
 			findings = append(findings, warning(
 				FindingCodeUnknownField,
 				parsed.SourcePath,
-				fmt.Sprintf("unknown frontmatter field %q (allowed: name, description, license, compatibility, metadata, allowed-tools)", key),
+				fmt.Sprintf("unknown frontmatter field %q (allowed: name, description, license, compatibility, metadata, allowed-tools, disable-model-invocation)", key),
 			))
 		}
 	}

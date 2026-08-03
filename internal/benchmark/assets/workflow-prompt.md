@@ -1,14 +1,8 @@
 This run is fully autonomous. If any human decision is required, answer and proceed.
 
-The specification for this run is saved at `.agent-layer/tmp/spec.md`.
+Execute $implement with the following inputs.
 
-Execute the following skills sequentially.
-
-1. $plan-work
-specification: .agent-layer/tmp/spec.md
-plan_reviewers ({plan_reviewer_count}): {plan_reviewers}
-
-2. $fully-implement-plan using the exact plan and context artifacts returned by step 1
+input: .agent-layer/tmp/spec.md
 implementer: {implementer}
+plan_reviewers ({plan_reviewer_count}): {plan_reviewers}
 code_reviewer: {code_reviewer}
-fixer: {fixer}

@@ -10,7 +10,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-const treatmentDispatchConfigSchema = "agent-layer-benchmark-dispatch-v1"
+const treatmentDispatchConfigSchema = "agent-layer-benchmark-dispatch-v2"
 
 // TreatmentDispatchTarget is one exact Agent Dispatch execution identity.
 type TreatmentDispatchTarget struct {
@@ -25,7 +25,6 @@ type TreatmentDispatchConfig struct {
 	PlanReviewers []TreatmentDispatchTarget `toml:"plan_reviewers" json:"plan_reviewers"`
 	Implementer   TreatmentDispatchTarget   `toml:"implementer" json:"implementer"`
 	CodeReviewer  TreatmentDispatchTarget   `toml:"code_reviewer" json:"code_reviewer"`
-	Fixer         TreatmentDispatchTarget   `toml:"fixer" json:"fixer"`
 }
 
 func defaultTreatmentDispatchConfig(model Model, effort string) TreatmentDispatchConfig {
@@ -34,7 +33,7 @@ func defaultTreatmentDispatchConfig(model Model, effort string) TreatmentDispatc
 	}
 	return TreatmentDispatchConfig{
 		Schema: treatmentDispatchConfigSchema, PlanReviewers: []TreatmentDispatchTarget{target},
-		Implementer: target, CodeReviewer: target, Fixer: target,
+		Implementer: target, CodeReviewer: target,
 	}
 }
 
@@ -63,7 +62,7 @@ func validateTreatmentDispatchConfig(config TreatmentDispatchConfig, coordinator
 		return fmt.Errorf("benchmark treatment dispatch config has an invalid schema or no plan reviewers")
 	}
 	targets := append([]TreatmentDispatchTarget(nil), config.PlanReviewers...)
-	targets = append(targets, config.Implementer, config.CodeReviewer, config.Fixer)
+	targets = append(targets, config.Implementer, config.CodeReviewer)
 	for _, target := range targets {
 		model, effort, err := modelForDispatchTarget(target)
 		if err != nil {

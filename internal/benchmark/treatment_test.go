@@ -125,7 +125,7 @@ func TestSkillsTreatmentUsesWorkflowRolesAndAutonomousPrompt(t *testing.T) {
 	if !strings.HasPrefix(string(workflow), autonomous) {
 		t.Fatalf("workflow prompt does not start with the autonomous-run instruction")
 	}
-	for _, required := range []string{"Execute the following skills sequentially.", "specification: .agent-layer/tmp/spec.md", "plan_reviewers ({plan_reviewer_count}): {plan_reviewers}", "implementer: {implementer}", "code_reviewer: {code_reviewer}", "fixer: {fixer}"} {
+	for _, required := range []string{"Execute $implement with the following inputs.", "input: .agent-layer/tmp/spec.md", "plan_reviewers ({plan_reviewer_count}): {plan_reviewers}", "implementer: {implementer}", "code_reviewer: {code_reviewer}"} {
 		if !strings.Contains(string(workflow), required) {
 			t.Fatalf("workflow prompt does not require %q", required)
 		}
@@ -136,6 +136,8 @@ func TestSkillsTreatmentUsesWorkflowRolesAndAutonomousPrompt(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
+		"$plan-work",
+		"$fully-implement-plan",
 		"must use the `review-plan` skill",
 		"must use the `implement-plan` skill",
 		"must use the `review-uncommitted-code` skill",
@@ -212,20 +214,67 @@ func TestTreatmentAdapterSyncsNativeClientConfiguration(t *testing.T) {
 	}
 	for _, required := range []string{
 		`PIER_CODEX_AUTH = "/tmp/codex-secrets/auth.json"`,
-		`REMOTE_CODEX_HOME = f"{REMOTE_WORKSPACE}/.codex"`,
+		`REMOTE_CODEX_HOME = Codex._REMOTE_CODEX_HOME.as_posix()`,
+		`REMOTE_PROJECT_CODEX_HOME = f"{REMOTE_WORKSPACE}/.codex"`,
 		`REMOTE_CODEX_AUTH = f"{REMOTE_CODEX_HOME}/auth.json"`,
-		`REMOTE_CODEX_SESSIONS = f"{REMOTE_CODEX_HOME}/sessions"`,
 		`if self._treatment_agent == "codex":`,
 		`command=f"mkdir -p {Path(PIER_CODEX_AUTH).parent}"`,
 		`await environment.upload_file(self._codex_credentials_path, PIER_CODEX_AUTH)`,
+		`f"rm -rf {REMOTE_PROJECT_CODEX_HOME} {REMOTE_CODEX_HOME} "`,
+		`f"&& ln -s {REMOTE_PROJECT_CODEX_HOME} {REMOTE_CODEX_HOME}"`,
 		`if ! test -r {PIER_CODEX_AUTH}`,
 		`ln -sfn {PIER_CODEX_AUTH} {REMOTE_CODEX_AUTH}`,
 		`test -r {REMOTE_CODEX_AUTH}`,
-		`cp -a {REMOTE_CODEX_SESSIONS}/. {dispatch_sessions_dir}/`,
+		`cp -a {REMOTE_PROJECT_CODEX_HOME}/sessions/. \"$sessions\"/`,
+		`'.provider_session_id // empty'`,
+		`Expected one captured Codex session for dispatch $id, found $count`,
+		`mv \"$matches\" \"$target\"`,
 	} {
 		if !strings.Contains(string(adapter), required) {
 			t.Fatalf("treatment adapter does not prepare dispatched Codex authentication with %q", required)
 		}
+	}
+}
+
+func TestTreatmentCodexTrajectorySelectionExcludesDispatchDatesAcrossMidnight(t *testing.T) {
+	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		`def _get_session_dir(self) -> Path | None:`,
+		`sessions_dir.glob("*/*/*/*.jsonl")`,
+		`Expected exactly 1 coordinator session`,
+	} {
+		if !strings.Contains(string(adapter), required) {
+			t.Fatalf("Codex treatment adapter does not isolate coordinator trajectory selection with %q", required)
+		}
+	}
+
+	sessions := filepath.Join(t.TempDir(), "sessions")
+	coordinator := filepath.Join(sessions, "2026", "08", "01")
+	for session, directory := range map[string]string{
+		"coordinator.jsonl": coordinator,
+		"before-midnight.jsonl": filepath.Join(
+			sessions, "agent-layer-dispatch", "2026", "08", "01",
+		),
+		"after-midnight.jsonl": filepath.Join(
+			sessions, "agent-layer-dispatch", "2026", "08", "02",
+		),
+	} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(directory, session), []byte("{}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	candidates, err := filepath.Glob(filepath.Join(sessions, "*", "*", "*", "*.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || filepath.Dir(candidates[0]) != coordinator {
+		t.Fatalf("coordinator session files = %#v, want one file in %q", candidates, coordinator)
 	}
 }
 

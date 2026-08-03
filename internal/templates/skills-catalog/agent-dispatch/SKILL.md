@@ -10,10 +10,10 @@ allowed-tools: mcp__agent-layer__dispatch_options mcp__agent-layer__dispatch_sta
 If the MCP tools are unavailable, report the missing server; do not substitute
 command-line calls.
 
-1. Call `dispatch_options`; resolve the provider and overrides. Ask if
-   ambiguous.
+1. Call `dispatch_options`; map the requested target to `agent`, `model`, and
+   `reasoning_effort`. Ask if ambiguous.
 2. Call `dispatch_start` once with exactly one prompt source and retain its
-   handle. Do not replace active work.
+   session handle. Do not replace active work.
 3. Call `dispatch_wait` with the handle. If it returns `running` or is
    interrupted, call it again with the same handle. On `completed`, read the
    Markdown file at `result_path`; report `failed` or `cancelled`.

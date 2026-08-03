@@ -150,6 +150,14 @@ Run from: repo root
 Prerequisites: Go 1.26.0+, `curl`, `sha256sum` or `shasum`, network access
 Notes: Same as `make test-e2e` but sets `AL_E2E_ONLINE=1` to download release binaries from GitHub. Use before releases or to populate the persistent binary cache. Pin the latest release version with `AL_E2E_LATEST_VERSION=X.Y.Z`.
 
+- Verify live Codex Agent Dispatch waits do not create polling turns
+```bash
+make test-codex-dispatch-wait-live
+```
+Run from: repo root
+Prerequisites: Authenticated Codex CLI with access to `gpt-5.6-luna`, network access
+Notes: Paid, local-only integration test. It creates a disposable Agent Layer project, runs fresh Luna-low coordinator and child sessions, and inspects the coordinator rollout for one direct `dispatch_wait` with no Agent Layer code-mode wrapper or polling turns. The `live_codex` build tag excludes it from ordinary test and CI targets.
+
 - Run e2e tests for CI (mandatory upgrade scenarios)
 ```bash
 make test-e2e-ci
@@ -367,5 +375,5 @@ go run ./cmd/al benchmark matrix \
   --yes
 ```
 Run from: repo root
-Prerequisites: Baseline benchmark prerequisites and a validated `agent-layer-benchmark-dispatch-v1` TOML file.
-Notes: The dispatch file assigns exact `agent`, `model`, and `reasoning_effort` targets to `plan_reviewers`, `implementer`, `code_reviewer`, and `fixer`. Its canonical content is included in the immutable treatment identity.
+Prerequisites: Baseline benchmark prerequisites and a validated `agent-layer-benchmark-dispatch-v2` TOML file.
+Notes: The dispatch file assigns exact `agent`, `model`, and `reasoning_effort` targets to `plan_reviewers`, `implementer`, and `code_reviewer`. Its canonical content is included in the immutable treatment identity.

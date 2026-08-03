@@ -50,6 +50,7 @@ metadata:
   owner: team
   version: "1.0"
 allowed-tools: Bash(git:*) Read
+disable-model-invocation: true
 ---
 
 Body.`
@@ -81,6 +82,9 @@ Body.`
 	}
 	if len(skills[0].Metadata) != 2 || skills[0].Metadata["owner"] != "team" || skills[0].Metadata["version"] != "1.0" {
 		t.Fatalf("unexpected metadata: %#v", skills[0].Metadata)
+	}
+	if skills[0].DisableModelInvocation == nil || !*skills[0].DisableModelInvocation {
+		t.Fatalf("unexpected disable-model-invocation: %#v", skills[0].DisableModelInvocation)
 	}
 	expectedDir := filepath.Join(dir, "alpha")
 	if skills[0].SourceDir != expectedDir {
@@ -409,6 +413,7 @@ func TestParseSkill_TypeMismatchErrors(t *testing.T) {
 	tests := []string{
 		"---\ndescription: test\ncompatibility:\n  codex: \">=0.1\"\n---\n",
 		"---\ndescription: test\nallowed-tools:\n  - Read\n---\n",
+		"---\ndescription: test\ndisable-model-invocation: \"true\"\n---\n",
 		"---\ndescription: test\nmetadata:\n  owner: 7\n---\n",
 	}
 	for _, content := range tests {

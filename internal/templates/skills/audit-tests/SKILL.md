@@ -1,7 +1,6 @@
 ---
 name: audit-tests
 description: >-
-  Explicit-only.
   Audit the existing test suite once for redundancy, misleading coverage,
   organization, and material behavioral gaps, directly fixing safe findings.
 ---

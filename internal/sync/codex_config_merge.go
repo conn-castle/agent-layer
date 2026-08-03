@@ -105,6 +105,17 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 		editor.removePath(pathParts)
 	}
 
+	directOnlyNamespacesPath := []string{codexFeaturesKey, codexCodeModeKey, codexDirectOnlyToolNamespacesKey}
+	if value, ok := valueAtPath(managedMap, directOnlyNamespacesPath); ok {
+		literal, err := tomlLiteral(value)
+		if err != nil {
+			return "", err
+		}
+		editor.setPath(directOnlyNamespacesPath, literal)
+	} else {
+		editor.removePath(directOnlyNamespacesPath)
+	}
+
 	statuslinePath := []string{codexTUIKey, codexStatusLineKey}
 	if value, ok := valueAtPath(managedMap, statuslinePath); ok {
 		literal, err := tomlLiteral(value)
@@ -962,6 +973,9 @@ func collectLeafValues(prefix []string, value any, out *[]codexPathValue) {
 }
 
 func codexPathHandledElsewhere(path []string) bool {
+	if slices.Equal(path, []string{codexFeaturesKey, codexCodeModeKey, codexDirectOnlyToolNamespacesKey}) {
+		return true
+	}
 	if len(path) == 1 {
 		return slices.Contains(codexManagedRootScalarKeys, path[0])
 	}
@@ -1040,6 +1054,12 @@ func formatInlineValue(value any) string {
 	case float64:
 		return fmt.Sprintf("%v", v)
 	case []any:
+		parts := make([]string, 0, len(v))
+		for _, item := range v {
+			parts = append(parts, formatInlineValue(item))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case []string:
 		parts := make([]string, 0, len(v))
 		for _, item := range v {
 			parts = append(parts, formatInlineValue(item))

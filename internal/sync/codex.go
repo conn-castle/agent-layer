@@ -39,6 +39,12 @@ const codexPartialHeader = `# PARTIALLY GENERATED FILE - MAY CONTAIN SECRETS
 
 `
 
+const (
+	codexAgentLayerToolNamespace     = "mcp__agent_layer"
+	codexCodeModeKey                 = "code_mode"
+	codexDirectOnlyToolNamespacesKey = "direct_only_tool_namespaces"
+)
+
 // writeCodexConfig patches Agent Layer-owned entries in .codex/config.toml.
 func writeCodexConfig(sys System, root string, project *config.ProjectConfig) error {
 	return writeCodexConfigWithCLISettings(sys, root, project, true)
@@ -114,6 +120,12 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 	agentSpecific, _, err := codexAgentSpecificForOutput(sys, root, project.Config.Agents.Codex, includeCLISettings)
 	if err != nil {
 		return codexManagedConfig{}, err
+	}
+	if _, ok := projection.BuiltInDispatchServer(project.Config, projection.ClientCodex); ok {
+		agentSpecific, err = injectCodexAgentLayerDirectToolNamespace(agentSpecific)
+		if err != nil {
+			return codexManagedConfig{}, err
+		}
 	}
 
 	var builder strings.Builder
@@ -210,6 +222,62 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		AgentSpecific: agentSpecific,
 		ChimeEnabled:  chimeEnabled,
 	}, nil
+}
+
+// injectCodexAgentLayerDirectToolNamespace keeps Agent Dispatch outside Codex
+// code mode. Otherwise a long-running MCP wait is wrapped in a yielding exec
+// cell, forcing repeated model turns merely to keep waiting.
+func injectCodexAgentLayerDirectToolNamespace(agentSpecific map[string]any) (map[string]any, error) {
+	if agentSpecific == nil {
+		agentSpecific = make(map[string]any)
+	}
+	features, err := codexAgentSpecificTable(agentSpecific, codexFeaturesKey, "agents.codex.agent_specific.features")
+	if err != nil {
+		return nil, err
+	}
+	codeMode, err := codexAgentSpecificTable(features, codexCodeModeKey, "agents.codex.agent_specific.features.code_mode")
+	if err != nil {
+		return nil, err
+	}
+
+	var namespaces []string
+	if configured, ok := codeMode[codexDirectOnlyToolNamespacesKey]; ok {
+		switch values := configured.(type) {
+		case []string:
+			namespaces = append(namespaces, values...)
+		case []any:
+			for _, value := range values {
+				namespace, ok := value.(string)
+				if !ok {
+					return nil, fmt.Errorf("agents.codex.agent_specific.features.code_mode.%s must contain only strings", codexDirectOnlyToolNamespacesKey)
+				}
+				namespaces = append(namespaces, namespace)
+			}
+		default:
+			return nil, fmt.Errorf("agents.codex.agent_specific.features.code_mode.%s must be an array of strings", codexDirectOnlyToolNamespacesKey)
+		}
+	}
+	for _, namespace := range namespaces {
+		if namespace == codexAgentLayerToolNamespace {
+			codeMode[codexDirectOnlyToolNamespacesKey] = namespaces
+			return agentSpecific, nil
+		}
+	}
+	codeMode[codexDirectOnlyToolNamespacesKey] = append(namespaces, codexAgentLayerToolNamespace)
+	return agentSpecific, nil
+}
+
+func codexAgentSpecificTable(parent map[string]any, key string, path string) (map[string]any, error) {
+	if value, ok := parent[key]; ok {
+		table, ok := value.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("%s must be a table", path)
+		}
+		return table, nil
+	}
+	table := make(map[string]any)
+	parent[key] = table
+	return table, nil
 }
 
 func codexTrustedProjectRoot(root string) (string, error) {

@@ -21,9 +21,9 @@ EXPECTED_PIER_VERSION = "0.3.0"
 REMOTE_BUNDLE = "/tmp/agent-layer-benchmark"
 REMOTE_WORKSPACE = "/app"
 PIER_CODEX_AUTH = "/tmp/codex-secrets/auth.json"
-REMOTE_CODEX_HOME = f"{REMOTE_WORKSPACE}/.codex"
+REMOTE_CODEX_HOME = Codex._REMOTE_CODEX_HOME.as_posix()
+REMOTE_PROJECT_CODEX_HOME = f"{REMOTE_WORKSPACE}/.codex"
 REMOTE_CODEX_AUTH = f"{REMOTE_CODEX_HOME}/auth.json"
-REMOTE_CODEX_SESSIONS = f"{REMOTE_CODEX_HOME}/sessions"
 REMOTE_CODEX_MCP_PREFLIGHT = "/tmp/agent-layer-codex-mcp-preflight.json"
 REMOTE_CLAUDE_MCP_PREFLIGHT = "/tmp/agent-layer-claude-mcp-preflight.txt"
 REMOTE_DISPATCH_OPTIONS_PREFLIGHT = "/tmp/agent-layer-dispatch-options-preflight.json"
@@ -87,7 +87,7 @@ class _AgentLayerTreatment:
                 )
             except (OSError, json.JSONDecodeError) as error:
                 raise RuntimeError("Agent Layer benchmark dispatch targets are unavailable") from error
-            if self._dispatch_config.get("schema") != "agent-layer-benchmark-dispatch-v1":
+            if self._dispatch_config.get("schema") != "agent-layer-benchmark-dispatch-v2":
                 raise RuntimeError("Agent Layer benchmark dispatch target schema is invalid")
         super().__init__(*args, **kwargs)
 
@@ -148,7 +148,6 @@ class _AgentLayerTreatment:
                 *self._dispatch_config["plan_reviewers"],
                 self._dispatch_config["implementer"],
                 self._dispatch_config["code_reviewer"],
-                self._dispatch_config["fixer"],
             ]
             unique_targets = list({
                 (target["agent"], target["model"], target["reasoning_effort"]): target
@@ -177,15 +176,30 @@ class _AgentLayerTreatment:
             # bundle. Without this sync the coordinator's client never receives
             # the built-in Agent Dispatch MCP server or its permission
             # allowlist, and the treatment arm silently loses dispatch.
+            if self._treatment_agent == "codex":
+                # Pier fixes the coordinator's CODEX_HOME at /tmp/codex-home,
+                # while Agent Layer's local Codex configuration path is
+                # /app/.codex. Codex deliberately sanitizes stdio MCP server
+                # environments, so CODEX_HOME is not guaranteed to reach the
+                # Agent Dispatch server. Make both paths name the same physical
+                # home before sync so coordinator, MCP server, and dispatched
+                # Codex processes share configuration, authentication, and
+                # request-level session evidence regardless of inheritance.
+                await self.exec_as_agent(
+                    environment,
+                    command=(
+                        f"rm -rf {REMOTE_PROJECT_CODEX_HOME} {REMOTE_CODEX_HOME} "
+                        f"&& mkdir -p {REMOTE_PROJECT_CODEX_HOME} "
+                        f"&& ln -s {REMOTE_PROJECT_CODEX_HOME} {REMOTE_CODEX_HOME}"
+                    ),
+                )
             await self.exec_as_agent(
                 environment,
                 command=f"cd {REMOTE_WORKSPACE} && /usr/local/bin/al-real sync",
             )
             if self._treatment_agent == "codex":
-                # Pier installs the coordinator credential under /tmp, while
-                # dispatched Codex clients use the repository-local CODEX_HOME.
-                # Link the same credential into that home and fail before the
-                # paid coordinator starts if Pier's credential is unavailable.
+                # Link Pier's credential into the shared home and fail before
+                # the paid coordinator starts if it is unavailable.
                 await self.exec_as_agent(
                     environment,
                     command=(
@@ -271,16 +285,41 @@ class _AgentLayerTreatment:
             ),
         )
         if self._treatment_agent == "codex":
-            # Pier preserves the coordinator's CODEX_HOME. Agent Layer dispatch
-            # uses the repository-local CODEX_HOME, so preserve that session tree
-            # too; it contains request-level usage for dispatch continuations and
-            # any nested Codex subagents.
+            # Pier has copied the shared session tree and removed its /tmp home
+            # symlink. The physical repository-local home remains, allowing us
+            # to cancel any stragglers before refreshing the captured evidence.
+            # Then move Agent Dispatch sessions under a distinct prefix so Pier
+            # selects only the coordinator trajectory; the normalizer still
+            # walks and prices every individual session.
             await self.exec_as_agent(
                 environment,
                 command=(
-                    f"if test -d {REMOTE_CODEX_SESSIONS}; then "
-                    f"mkdir -p {dispatch_sessions_dir} && "
-                    f"cp -a {REMOTE_CODEX_SESSIONS}/. {dispatch_sessions_dir}/; fi"
+                    "set -eu; "
+                    f"sessions={EnvironmentPaths.agent_dir / 'sessions'}; "
+                    f"runs={REMOTE_WORKSPACE}/.agent-layer/tmp/runs; "
+                    "ids=/tmp/agent-layer-codex-dispatch-session-ids; "
+                    f"if test -d {REMOTE_PROJECT_CODEX_HOME}/sessions; then "
+                    "mkdir -p \"$sessions\"; "
+                    f"cp -a {REMOTE_PROJECT_CODEX_HOME}/sessions/. \"$sessions\"/; fi; "
+                    "if test -d \"$sessions\" && test -d \"$runs\"; then "
+                    "find \"$runs\" -mindepth 2 -maxdepth 2 -name dispatch.json "
+                    "-exec jq -r '.provider_session_id // empty' {} + "
+                    "> \"$ids\"; "
+                    "sort -u \"$ids\" -o \"$ids\"; "
+                    "while IFS= read -r id; do "
+                    "test -n \"$id\" || continue; "
+                    f"matches=$(find \"$sessions\" -path {dispatch_sessions_dir} -prune "
+                    "-o -type f -name \"*$id*.jsonl\" -print); "
+                    "count=$(printf '%s\n' \"$matches\" | "
+                    "awk 'NF { count++ } END { print count + 0 }'); "
+                    "if test \"$count\" -ne 1; then "
+                    "echo \"Expected one captured Codex session for dispatch $id, found $count\" >&2; "
+                    "exit 1; fi; "
+                    "relative=${matches#\"$sessions\"/}; "
+                    f"target={dispatch_sessions_dir}/$relative; "
+                    "mkdir -p \"$(dirname \"$target\")\"; "
+                    "mv \"$matches\" \"$target\"; "
+                    "done < \"$ids\"; fi"
                 ),
             )
         await self.exec_as_agent(
@@ -347,7 +386,6 @@ class _AgentLayerTreatment:
             plan_reviewers="; ".join(describe(target) for target in plan_reviewers),
             implementer=describe(self._dispatch_config["implementer"]),
             code_reviewer=describe(self._dispatch_config["code_reviewer"]),
-            fixer=describe(self._dispatch_config["fixer"]),
             task=instruction,
         )
 
@@ -362,6 +400,28 @@ class _AgentLayerTreatment:
 
 class AgentLayerCodex(_AgentLayerTreatment, Codex):
     """Pier Codex adapter with one immutable Agent Layer treatment."""
+
+    def _get_session_dir(self) -> Path | None:
+        """Return Pier's coordinator session directory, excluding dispatch evidence."""
+        sessions_dir = self.logs_dir / "sessions"
+        if not sessions_dir.exists():
+            return None
+
+        # Codex stores coordinator sessions at YYYY/MM/DD. Dispatched sessions
+        # are copied under agent-layer-dispatch/YYYY/MM/DD for cost accounting.
+        # Pier 0.3.0 recursively selects the deepest directories, so that extra
+        # prefix makes dispatch dates look like coordinator sessions and a run
+        # crossing midnight UTC produces two candidates.
+        session_dirs = sorted(
+            {path.parent for path in sessions_dir.glob("*/*/*/*.jsonl")}
+        )
+        if not session_dirs:
+            return None
+        if len(session_dirs) != 1:
+            raise ValueError(
+                f"Expected exactly 1 coordinator session, found {len(session_dirs)}"
+            )
+        return session_dirs[0]
 
     async def run(self, instruction, environment, context):
         effective = await self._prepare(instruction, environment)

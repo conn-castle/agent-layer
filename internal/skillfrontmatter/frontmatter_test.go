@@ -133,6 +133,42 @@ func TestParse_FieldStateDistinguishesAbsentNullValue(t *testing.T) {
 	}
 }
 
+func TestParse_BooleanFieldDistinguishesAbsentNullAndValue(t *testing.T) {
+	tests := []struct {
+		content string
+		state   FieldState
+		value   bool
+	}{
+		{content: "description: test\n", state: FieldAbsent},
+		{content: "disable-model-invocation: null\n", state: FieldNull},
+		{content: "disable-model-invocation: false\n", state: FieldValue, value: false},
+		{content: "disable-model-invocation: true\n", state: FieldValue, value: true},
+	}
+	for _, test := range tests {
+		doc, err := Parse(test.content)
+		if err != nil {
+			t.Fatalf("Parse(%q) error: %v", test.content, err)
+		}
+		field := doc.DisableModelInvocation
+		if field.State != test.state || field.Value != test.value {
+			t.Fatalf("Parse(%q) field = %#v, want state %v value %v", test.content, field, test.state, test.value)
+		}
+	}
+}
+
+func TestParse_NonBooleanFieldRejected(t *testing.T) {
+	for _, content := range []string{
+		"disable-model-invocation: \"true\"\n",
+		"disable-model-invocation: yes\n",
+		"disable-model-invocation:\n  - true\n",
+	} {
+		parseErr := parseKindErr(t, content, KindType)
+		if !strings.Contains(parseErr.Detail, "must be a boolean") {
+			t.Fatalf("Parse(%q) detail = %q, want boolean-type violation", content, parseErr.Detail)
+		}
+	}
+}
+
 func TestParse_MultilineStyleReportedNotRejected(t *testing.T) {
 	cases := map[string]bool{
 		"name: alpha\n":            false,

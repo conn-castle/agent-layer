@@ -1,7 +1,6 @@
 ---
 name: debug-and-fix-issue
 description: >-
-  Explicit-only.
   Reproduce an unexplained bug, prove its root cause, capture a failing test or
   diagnostic blocker, then make a proportional repair and verify it.
 ---
