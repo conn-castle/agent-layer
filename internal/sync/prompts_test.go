@@ -25,7 +25,13 @@ func (unknownTypeDirEntry) Info() (fs.FileInfo, error) {
 }
 
 func TestBuildAgentSkill(t *testing.T) {
-	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body"}
+	disableModelInvocation := true
+	cmd := config.Skill{
+		Name:                   "alpha",
+		Description:            "desc",
+		DisableModelInvocation: &disableModelInvocation,
+		Body:                   "Body",
+	}
 	content, err := buildAgentSkill(cmd)
 	if err != nil {
 		t.Fatalf("buildAgentSkill error: %v", err)
@@ -46,6 +52,9 @@ func TestBuildAgentSkill(t *testing.T) {
 	// builder must not also inject a `# <name>` heading into the body.
 	if strings.Contains(content, "# alpha") {
 		t.Fatalf("did not expect injected name heading in body, got:\n%s", content)
+	}
+	if strings.Contains(content, "disable-model-invocation") {
+		t.Fatalf("portable Agent Skills output contains Claude-specific frontmatter:\n%s", content)
 	}
 }
 
@@ -184,7 +193,13 @@ func TestWriteAgentSkillsMkdirSkillDirError(t *testing.T) {
 }
 
 func TestBuildClaudeSkill(t *testing.T) {
-	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body"}
+	disableModelInvocation := true
+	cmd := config.Skill{
+		Name:                   "alpha",
+		Description:            "desc",
+		DisableModelInvocation: &disableModelInvocation,
+		Body:                   "Body",
+	}
 	content, err := buildClaudeSkill(cmd)
 	if err != nil {
 		t.Fatalf("buildClaudeSkill error: %v", err)
@@ -194,6 +209,9 @@ func TestBuildClaudeSkill(t *testing.T) {
 	}
 	if !strings.Contains(content, "Body") {
 		t.Fatalf("expected body in skill")
+	}
+	if !strings.Contains(content, "disable-model-invocation: true") {
+		t.Fatalf("expected Claude invocation policy in skill:\n%s", content)
 	}
 }
 

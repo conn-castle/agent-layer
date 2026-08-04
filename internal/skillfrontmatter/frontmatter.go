@@ -8,12 +8,14 @@ package skillfrontmatter
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	yaml "go.yaml.in/yaml/v3"
 )
 
 const (
+	yamlTagBool = "!!bool"
 	yamlTagStr  = "!!str"
 	yamlTagNull = "!!null"
 )
@@ -74,6 +76,14 @@ type Field struct {
 	Multiline bool
 }
 
+// BooleanField is the structural parse result for one supported boolean field.
+type BooleanField struct {
+	// State reports whether the field was absent, null, or carried a value.
+	State FieldState
+	// Value is the parsed boolean; meaningful only when State is FieldValue.
+	Value bool
+}
+
 // Document is the structural parse result of SKILL.md YAML front matter.
 type Document struct {
 	// Keys lists the non-empty top-level keys in document order, including
@@ -89,6 +99,8 @@ type Document struct {
 	Compatibility Field
 	// AllowedTools is the "allowed-tools" field.
 	AllowedTools Field
+	// DisableModelInvocation is Claude Code's "disable-model-invocation" field.
+	DisableModelInvocation BooleanField
 	// Metadata holds the "metadata" string map; nil when the key is absent
 	// or null, possibly empty when an empty map was supplied.
 	Metadata map[string]string
@@ -142,6 +154,13 @@ func Parse(content string) (Document, error) {
 			target = &doc.Compatibility
 		case "allowed-tools":
 			target = &doc.AllowedTools
+		case "disable-model-invocation":
+			field, err := parseBooleanField(key, valueNode)
+			if err != nil {
+				return Document{}, err
+			}
+			doc.DisableModelInvocation = field
+			continue
 		case "metadata":
 			metadata, err := parseMetadata(valueNode)
 			if err != nil {
@@ -161,6 +180,24 @@ func Parse(content string) (Document, error) {
 		*target = field
 	}
 	return doc, nil
+}
+
+// parseBooleanField accepts only YAML booleans or null for a boolean field.
+func parseBooleanField(field string, node *yaml.Node) (BooleanField, error) {
+	if node.Kind != yaml.ScalarNode {
+		return BooleanField{}, typeError(fmt.Sprintf("field %q must be a boolean", field))
+	}
+	if node.Tag == yamlTagNull {
+		return BooleanField{State: FieldNull}, nil
+	}
+	if node.Tag != yamlTagBool {
+		return BooleanField{}, typeError(fmt.Sprintf("field %q must be a boolean", field))
+	}
+	value, err := strconv.ParseBool(node.Value)
+	if err != nil {
+		return BooleanField{}, typeError(fmt.Sprintf("field %q must be a boolean", field))
+	}
+	return BooleanField{State: FieldValue, Value: value}, nil
 }
 
 func parseScalarField(field string, node *yaml.Node) (Field, error) {

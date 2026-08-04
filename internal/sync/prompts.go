@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	yaml "go.yaml.in/yaml/v3"
@@ -268,8 +269,19 @@ func WriteClaudeSkills(sys System, root string, commands []config.Skill) error {
 
 // buildAgentSkill returns portable Agent Skills SKILL.md content.
 func buildAgentSkill(cmd config.Skill) (string, error) {
+	return buildSkill(cmd, false)
+}
+
+// buildClaudeSkill returns Claude Code SKILL.md content with Claude-specific
+// frontmatter preserved.
+func buildClaudeSkill(cmd config.Skill) (string, error) {
+	return buildSkill(cmd, true)
+}
+
+// buildSkill renders a skill and optionally includes client-specific Claude fields.
+func buildSkill(cmd config.Skill, includeClaudeFields bool) (string, error) {
 	var builder strings.Builder
-	frontMatter, err := buildSkillFrontMatter(cmd)
+	frontMatter, err := buildSkillFrontMatter(cmd, includeClaudeFields)
 	if err != nil {
 		return "", err
 	}
@@ -285,16 +297,14 @@ func buildAgentSkill(cmd config.Skill) (string, error) {
 	return builder.String(), nil
 }
 
-// buildClaudeSkill returns the Claude Code SKILL.md content.
-// Uses the standard agentskills.io format: YAML frontmatter + body.
-func buildClaudeSkill(cmd config.Skill) (string, error) {
-	return buildAgentSkill(cmd)
-}
-
-func buildSkillFrontMatter(cmd config.Skill) (string, error) {
+// buildSkillFrontMatter renders canonical fields and optional Claude extensions.
+func buildSkillFrontMatter(cmd config.Skill, includeClaudeFields bool) (string, error) {
 	root := &yaml.Node{Kind: yaml.MappingNode}
 	appendFrontMatterScalar(root, "name", strings.TrimSpace(cmd.Name))
 	appendFrontMatterDescription(root, strings.TrimSpace(cmd.Description))
+	if includeClaudeFields {
+		appendFrontMatterOptionalBoolean(root, "disable-model-invocation", cmd.DisableModelInvocation)
+	}
 	appendFrontMatterOptionalScalar(root, "license", strings.TrimSpace(cmd.License))
 	appendFrontMatterOptionalScalar(root, "compatibility", strings.TrimSpace(cmd.Compatibility))
 	appendFrontMatterMetadata(root, copyMetadata(cmd.Metadata))
@@ -315,6 +325,17 @@ func buildSkillFrontMatter(cmd config.Skill) (string, error) {
 	frontMatter.WriteString(strings.TrimSuffix(yamlBody.String(), "\n"))
 	frontMatter.WriteString("\n---\n\n")
 	return frontMatter.String(), nil
+}
+
+// appendFrontMatterOptionalBoolean appends a present boolean without inventing a default.
+func appendFrontMatterOptionalBoolean(root *yaml.Node, key string, value *bool) {
+	if value == nil {
+		return
+	}
+	root.Content = append(root.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: key},
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: strconv.FormatBool(*value)},
+	)
 }
 
 func appendFrontMatterScalar(root *yaml.Node, key string, value string) {

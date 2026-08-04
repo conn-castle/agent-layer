@@ -35,13 +35,14 @@ type skillReadDir func(dir string) ([]skillDirEntry, error)
 type skillReadFile func(path string) ([]byte, error)
 
 type parsedSkill struct {
-	description   string
-	license       string
-	compatibility string
-	metadata      map[string]string
-	allowedTools  string
-	body          string
-	name          string
+	description            string
+	license                string
+	compatibility          string
+	metadata               map[string]string
+	allowedTools           string
+	disableModelInvocation *bool
+	body                   string
+	name                   string
 }
 
 type skillSource struct {
@@ -158,15 +159,16 @@ func loadDirectorySkill(byName map[string]skillSource, root string, dirName stri
 	}
 
 	skill := Skill{
-		Name:          name,
-		Description:   parsed.description,
-		License:       parsed.license,
-		Compatibility: parsed.compatibility,
-		Metadata:      parsed.metadata,
-		AllowedTools:  parsed.allowedTools,
-		Body:          parsed.body,
-		SourcePath:    skillPath,
-		SourceDir:     skillDirPath,
+		Name:                   name,
+		Description:            parsed.description,
+		License:                parsed.license,
+		Compatibility:          parsed.compatibility,
+		Metadata:               parsed.metadata,
+		AllowedTools:           parsed.allowedTools,
+		DisableModelInvocation: parsed.disableModelInvocation,
+		Body:                   parsed.body,
+		SourcePath:             skillPath,
+		SourceDir:              skillDirPath,
 	}
 	return registerSkill(byName, skill)
 }
@@ -230,13 +232,14 @@ func parseSkill(content string) (parsedSkill, error) {
 	body := strings.TrimPrefix(bodyBuilder.String(), "\n")
 	body = strings.TrimRight(body, "\n")
 	return parsedSkill{
-		description:   description,
-		license:       normalizeOptionalSkillValue(skillFieldValue(doc.License)),
-		compatibility: normalizeOptionalSkillValue(skillFieldValue(doc.Compatibility)),
-		metadata:      normalizeSkillMetadata(doc.Metadata),
-		allowedTools:  normalizeOptionalSkillValue(skillFieldValue(doc.AllowedTools)),
-		body:          body,
-		name:          name,
+		description:            description,
+		license:                normalizeOptionalSkillValue(skillFieldValue(doc.License)),
+		compatibility:          normalizeOptionalSkillValue(skillFieldValue(doc.Compatibility)),
+		metadata:               normalizeSkillMetadata(doc.Metadata),
+		allowedTools:           normalizeOptionalSkillValue(skillFieldValue(doc.AllowedTools)),
+		disableModelInvocation: skillBooleanFieldValue(doc.DisableModelInvocation),
+		body:                   body,
+		name:                   name,
 	}, nil
 }
 
@@ -270,6 +273,15 @@ func skillFieldValue(field skillfrontmatter.Field) *string {
 	default:
 		return nil
 	}
+}
+
+// skillBooleanFieldValue maps a present boolean field to the config model.
+func skillBooleanFieldValue(field skillfrontmatter.BooleanField) *bool {
+	if field.State != skillfrontmatter.FieldValue {
+		return nil
+	}
+	value := field.Value
+	return &value
 }
 
 func parseSkillDescription(description *string) (string, error) {

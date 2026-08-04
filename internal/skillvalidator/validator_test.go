@@ -285,6 +285,30 @@ Body.
 	}
 }
 
+func TestValidateParsedSkill_AllowsClaudeInvocationPolicy(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "alpha.md")
+	content := `---
+name: alpha
+description: test
+disable-model-invocation: true
+---
+Body.
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	parsed, err := ParseSkillSource(path)
+	if err != nil {
+		t.Fatalf("ParseSkillSource: %v", err)
+	}
+	findings := ValidateParsedSkill(parsed)
+	if hasFinding(findings, FindingCodeUnknownField) {
+		t.Fatalf("Claude invocation policy should be allowed, got %#v", findings)
+	}
+}
+
 func TestValidateParsedSkill_LengthConstraints(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "alpha.md")
