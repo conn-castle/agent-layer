@@ -61,6 +61,9 @@ type state struct {
 	// userSkills holds normalized user-managed skill names, which block an
 	// import of the same name.
 	userSkills map[string]string
+	// env is the AL_-filtered `.agent-layer/.env` map that repository
+	// references resolve their `${AL_*}` placeholders from.
+	env map[string]string
 }
 
 // loadState reads configuration, lock state, and every imported directory.
@@ -92,6 +95,13 @@ func loadState(root string) (*state, error) {
 		return nil, err
 	}
 
+	// Secret values are read here but never enter configuration identity, lock
+	// state, or any report; they are handed to the Git access boundary alone.
+	env, err := config.LoadEnv(paths.EnvPath)
+	if err != nil {
+		return nil, err
+	}
+
 	return &state{
 		paths:       paths,
 		configRaw:   string(raw),
@@ -100,6 +110,7 @@ func loadState(root string) (*state, error) {
 		lockPresent: present,
 		local:       local,
 		userSkills:  userSkills,
+		env:         env,
 	}, nil
 }
 
@@ -237,9 +248,16 @@ func (s *state) entriesForBlock(block config.SkillImport) []skilllock.Entry {
 	return entries
 }
 
-// blockLockedIdentity returns the recorded source identity shared by a block's
-// lock entries. Entries of one block are always written together, so the first
-// entry carries the block's locked commit.
+// blockLockedIdentity returns the recorded source identity of a block, taken
+// from its first entry in name order.
+//
+// A pull writes a block's entries together, but a per-skill failure keeps that
+// skill's previous entry, so one block's entries can carry different commits
+// and configured refs. The representative entry is still coherent because
+// openBlock reads the commit and the configured ref from this same entry:
+// whichever one it lands on, the retarget decision and the target commit
+// describe one recorded generation, so the remaining skills reconcile forward
+// onto it rather than being split across two.
 func (s *state) blockLockedIdentity(block config.SkillImport) (skilllock.Entry, bool) {
 	entries := s.entriesForBlock(block)
 	if len(entries) == 0 {

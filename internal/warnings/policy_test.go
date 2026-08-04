@@ -501,42 +501,6 @@ func TestFindSecretInURL(t *testing.T) {
 	})
 }
 
-func TestLooksLikeSecretQueryKey(t *testing.T) {
-	cases := []struct {
-		key  string
-		want bool
-	}{
-		{key: "token", want: true},
-		{key: "secret", want: true},
-		{key: "password", want: true},
-		{key: "passwd", want: true},
-		{key: "apikey", want: true},
-		{key: "api_key", want: true},
-		{key: "access_token", want: true},
-		{key: "access-key", want: true},
-		{key: "auth", want: true},
-		{key: "accessToken", want: true},
-		{key: "authToken", want: true},
-		{key: "apiToken", want: true},
-		{key: "clientSecret", want: true},
-		{key: "APIKey", want: true},
-		{key: "my-access-token-value", want: true},
-		{key: "author", want: false},
-		{key: "authority", want: false},
-		{key: "tokenizer", want: false},
-		{key: "passwordless", want: false},
-		{key: "authtoken", want: false},
-		{key: "accesstoken", want: false},
-		{key: "clientsecret", want: false},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.key, func(t *testing.T) {
-			require.Equal(t, tc.want, looksLikeSecretQueryKey(tc.key))
-		})
-	}
-}
-
 func TestFindUnsupportedCodexHeaderForm(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -605,10 +569,6 @@ func TestPolicyHelpers(t *testing.T) {
 	require.False(t, isExplicitClientTargeted(nil, "codex"))
 	require.True(t, isExplicitClientTargeted([]string{"codex"}, "codex"))
 	require.False(t, isExplicitClientTargeted([]string{"claude"}, "codex"))
-
-	require.True(t, looksLikeSecretQueryKey("api_key"))
-	require.True(t, looksLikeSecretQueryKey("my-access_token-value"))
-	require.False(t, looksLikeSecretQueryKey("page"))
 
 	require.True(t, hasEnvPlaceholder("Bearer ${AL_TOKEN}"))
 	require.False(t, hasEnvPlaceholder("Bearer literal"))

@@ -131,6 +131,12 @@ func removeSkillImportBlockLines(lines []string, span skillImportBlockSpan) []st
 	out := make([]string, 0, len(lines))
 	out = append(out, lines[:start]...)
 	out = append(out, lines[span.end:]...)
+	// Splitting on "\n" represents a document's final newline as a trailing
+	// empty element. Removing the block that ends the document consumes it, so
+	// it is restored to keep the rewritten file's final newline.
+	if span.end == len(lines) && lines[len(lines)-1] == "" {
+		out = append(out, "")
+	}
 	if len(out) == 0 {
 		return []string{""}
 	}

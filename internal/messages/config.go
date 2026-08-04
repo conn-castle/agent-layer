@@ -86,9 +86,12 @@ const (
 	ConfigSkillImportBlockUnparsableFmt              = "failed to parse a [[skills.imports]] block: %w"
 	ConfigSkillImportSelectorsAssignmentMissing      = "[[skills.imports]] block has no selectors assignment"
 	ConfigSkillImportSelectorsAssignmentUnterminated = "[[skills.imports]] selectors array is unterminated"
+	ConfigSkillImportRepositoryInvalidFmt            = "%s: skills.imports[%d].repository is invalid: %w"
+	ConfigSkillImportPushRepositoryInvalidFmt        = "%s: skills.imports[%d].push_repository is invalid: %w"
 	ConfigSkillSelectorBackslash                     = "use '/' as the path separator"
 	ConfigSkillSelectorAbsolute                      = "must be a repository-relative path"
 	ConfigSkillSelectorNotNormalized                 = "must be a normalized repository-relative path without '.' or '..' segments"
+	ConfigSkillSelectorControlCharacter              = "must not contain control characters"
 
 	ConfigMissingInstructionsDirFmt = "missing instructions directory %s: %w"
 	ConfigFailedReadInstructionFmt  = "failed to read instruction %s: %w"

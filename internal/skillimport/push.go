@@ -28,7 +28,10 @@ type pushCandidate struct {
 // pushGroup collects every candidate that shares one destination repository and
 // branch, which are committed and pushed together.
 type pushGroup struct {
-	Repository string
+	// Repository is the destination in both forms: its String is the configured
+	// text used for grouping, comparison, and every message, while the resolved
+	// value it carries reaches git alone.
+	Repository gitrepo.Repository
 	Branch     string
 	// BranchConfigured is true when the branch came from an explicit
 	// `push_branch`; a missing configured branch is created from the locked
@@ -37,7 +40,7 @@ type pushGroup struct {
 	// BaseRepository and BaseCommit locate the locked source commit a missing
 	// configured branch is created from. They always name a real repository,
 	// even when several source blocks contribute to this destination.
-	BaseRepository string
+	BaseRepository gitrepo.Repository
 	BaseCommit     string
 	// SharedBySources is true when more than one source block contributes here.
 	// A shared destination can never be the exact tracked source ref of any one
@@ -77,7 +80,7 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 		return nil
 	}
 
-	runner, err := s.newRunner()
+	runner, err := s.newRunner(st.env)
 	if err != nil {
 		return err
 	}
@@ -108,7 +111,14 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 		if mkErr := os.MkdirAll(blockWorkDir, 0o700); mkErr != nil {
 			return fmt.Errorf("failed to create git working directory %s: %w", blockWorkDir, mkErr)
 		}
-		source, openErr := gitrepo.OpenSource(ctx, runner, blockWorkDir, repository)
+		// Placeholders resolve here, at the Git access boundary. `repository`
+		// above stays the configured text used for reporting and lock identity.
+		sourceRepository, resolveErr := runner.Secrets().Resolve(repository)
+		if resolveErr != nil {
+			blocked(resolveErr)
+			continue
+		}
+		source, openErr := gitrepo.OpenSource(ctx, runner, blockWorkDir, sourceRepository)
 		if openErr != nil {
 			blocked(openErr)
 			continue
@@ -124,21 +134,27 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 			continue
 		}
 
-		destination := block.EffectivePushRepository()
+		destination, destinationErr := runner.Secrets().Resolve(config.NormalizeSkillRepository(block.EffectivePushRepository()))
+		if destinationErr != nil {
+			blocked(destinationErr)
+			continue
+		}
 		branch, branchConfigured, branchErr := resolvePushBranch(ctx, branches, block, destination)
 		if branchErr != nil {
 			blocked(branchErr)
 			continue
 		}
 
-		key := destination + "\x00" + branch
+		// Grouping keys off the configured text, so placeholder spelling is what
+		// decides whether two blocks share a destination commit.
+		key := destination.String() + "\x00" + branch
 		group, exists := groups[key]
 		if !exists {
 			group = &pushGroup{
 				Repository:       destination,
 				Branch:           branch,
 				BranchConfigured: branchConfigured,
-				BaseRepository:   repository,
+				BaseRepository:   sourceRepository,
 				BaseCommit:       entries[0].Commit,
 				SourceRepository: repository,
 				SourceRef:        entries[0].ResolvedRef,
@@ -230,8 +246,8 @@ type defaultBranchCache struct {
 	resolved map[string]string
 }
 
-func (c *defaultBranchCache) get(ctx context.Context, repository string) (string, error) {
-	if branch, ok := c.resolved[repository]; ok {
+func (c *defaultBranchCache) get(ctx context.Context, repository gitrepo.Repository) (string, error) {
+	if branch, ok := c.resolved[repository.String()]; ok {
 		return branch, nil
 	}
 	dir, err := os.MkdirTemp(c.workRoot, "default-branch-")
@@ -246,7 +262,7 @@ func (c *defaultBranchCache) get(ctx context.Context, repository string) (string
 	if err != nil {
 		return "", err
 	}
-	c.resolved[repository] = branch
+	c.resolved[repository.String()] = branch
 	return branch, nil
 }
 
@@ -258,7 +274,7 @@ func (c *defaultBranchCache) get(ctx context.Context, repository string) (string
 // vocabulary reserves primary-branch writes for `direct`, and a repository
 // whose default branch is neither `main` nor `master` cannot be recognized
 // statically.
-func resolvePushBranch(ctx context.Context, branches *defaultBranchCache, block config.SkillImport, destination string) (branch string, configured bool, err error) {
+func resolvePushBranch(ctx context.Context, branches *defaultBranchCache, block config.SkillImport, destination gitrepo.Repository) (branch string, configured bool, err error) {
 	defaultBranch, err := branches.get(ctx, destination)
 	if err != nil {
 		return "", false, err
@@ -332,7 +348,7 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 	}
 	groupDir, err := os.MkdirTemp(workRoot, "destination-")
 	if err != nil {
-		report.AddSourceFailure(group.Repository, group.Branch, fmt.Errorf("failed to create a git working directory: %w", err))
+		report.AddSourceFailure(group.Repository.String(), group.Branch, fmt.Errorf("failed to create a git working directory: %w", err))
 		return
 	}
 	destination, err := gitrepo.OpenDestination(ctx, runner, groupDir, group.Repository)
@@ -365,6 +381,16 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 
 	var updates []gitrepo.Update
 	var pushed []pushCandidate
+	// Results for candidates that need no commit are held until the group's
+	// outcome is known: publishing to a tracked source ref moves that ref for
+	// every skill on it, so an unchanged sibling's lock has to advance too.
+	var unchanged []SkillResult
+	var unchangedCandidates []pushCandidate
+	flushUnchanged := func() {
+		for _, result := range unchanged {
+			report.Add(result)
+		}
+	}
 	for _, candidate := range group.Candidates {
 		result := SkillResult{
 			Name:         candidate.Entry.Name,
@@ -405,7 +431,8 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 		if merged.Equal(destinationTree) {
 			result.Outcome = OutcomeUnchanged
 			result.Detail = unchangedDetail(group, candidate, merged)
-			report.Add(result)
+			unchanged = append(unchanged, result)
+			unchangedCandidates = append(unchangedCandidates, candidate)
 			continue
 		}
 		if _, validateErr := skilltree.ValidateSkill(merged, candidate.Entry.SelectedPath); validateErr != nil {
@@ -419,12 +446,14 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 	}
 
 	if len(updates) == 0 {
+		flushUnchanged()
 		return
 	}
 
 	commit, err := destination.Publish(ctx, head, group.Branch, updates, groupCommitMessage(pushed))
 	if err != nil {
 		// A grouped commit or push failure affects every skill in the group.
+		flushUnchanged()
 		for _, candidate := range pushed {
 			report.Add(SkillResult{
 				Name:         candidate.Entry.Name,
@@ -436,6 +465,9 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 		}
 		return
 	}
+
+	advanceUnchangedLocks(txn, group, head, commit, unchanged, unchangedCandidates)
+	flushUnchanged()
 
 	for _, candidate := range pushed {
 		result := SkillResult{
@@ -453,6 +485,30 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 			result.Detail += "; lock advanced"
 		}
 		report.Add(result)
+	}
+}
+
+// advanceUnchangedLocks moves the locks of skills a grouped publication left
+// untouched but whose tracked source ref the publication itself moved.
+//
+// Publishing to the exact tracked source ref advances that ref for every skill
+// recorded against it, not only the ones this commit changed. Leaving an
+// unchanged sibling at the previous commit would make the very next push reject
+// it as a stale source and demand a pull that has nothing to do.
+//
+// The lock is only advanced when the destination head this publication built on
+// is the skill's own locked commit. That proves the commit did not alter this
+// skill's path — its updates are disjoint by construction — so the recorded
+// tree hash still describes the tree at the new commit.
+func advanceUnchangedLocks(txn *transaction, group *pushGroup, head string, commit string, results []SkillResult, candidates []pushCandidate) {
+	for i, candidate := range candidates {
+		if !advancesLock(group, candidate) || candidate.Entry.Commit != head {
+			continue
+		}
+		entry := candidate.Entry
+		entry.Commit = commit
+		txn.SetLockEntry(entry)
+		results[i].Detail += "; lock advanced"
 	}
 }
 
@@ -517,7 +573,9 @@ func advancesLock(group *pushGroup, candidate pushCandidate) bool {
 	if candidate.Entry.Tracking != config.SkillTrackingTracked {
 		return false
 	}
-	if group.Repository != candidate.Entry.Repository {
+	// The lock records configured text, so the comparison is against the
+	// group's configured text rather than anything resolved.
+	if group.Repository.String() != candidate.Entry.Repository {
 		return false
 	}
 	return group.Branch == candidate.Entry.ResolvedRef

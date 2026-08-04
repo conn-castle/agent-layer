@@ -148,7 +148,7 @@ func finishSkillsOperation(cmd *cobra.Command, operation string, report *skillim
 			return err
 		}
 		if report.Failed() {
-			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), fmt.Sprintf(messages.SkillsOperationFailedFmt, operation))
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), messages.SkillsOperationFailedFmt+"\n", operation)
 			return &SilentExitError{Code: 1}
 		}
 		return nil

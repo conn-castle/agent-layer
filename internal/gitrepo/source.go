@@ -33,15 +33,17 @@ type Resolution struct {
 // Source is an isolated local mirror of one remote repository. It lives inside
 // a caller-owned temporary directory and is discarded with it.
 type Source struct {
-	runner     *Runner
-	dir        string
-	repository string
+	runner *Runner
+	dir    string
+	// repository carries both the configured text used in every message and the
+	// resolved value handed to git.
+	repository Repository
 	fetched    bool
 }
 
 // OpenSource initializes an isolated repository for repository under workDir.
 // Nothing is fetched until a resolution or read requires it.
-func OpenSource(ctx context.Context, runner *Runner, workDir string, repository string) (*Source, error) {
+func OpenSource(ctx context.Context, runner *Runner, workDir string, repository Repository) (*Source, error) {
 	if runner == nil {
 		return nil, fmt.Errorf("a git runner is required")
 	}
@@ -55,12 +57,13 @@ func OpenSource(ctx context.Context, runner *Runner, workDir string, repository 
 	return &Source{runner: runner, dir: dir, repository: repository}, nil
 }
 
-// Repository returns the source repository reference.
-func (s *Source) Repository() string { return s.repository }
+// Repository returns the configured source repository reference, with any
+// placeholder text intact.
+func (s *Source) Repository() string { return s.repository.String() }
 
 // DefaultBranch resolves the repository's actual default branch name.
 func (s *Source) DefaultBranch(ctx context.Context) (string, error) {
-	output, err := s.runner.run(ctx, s.dir, "ls-remote", "--symref", "--", s.repository, "HEAD")
+	output, err := s.runner.run(ctx, s.dir, "ls-remote", "--symref", "--", s.repository.git, "HEAD")
 	if err != nil {
 		return "", err
 	}
@@ -90,13 +93,18 @@ func (s *Source) Resolve(ctx context.Context, ref string) (Resolution, error) {
 	}
 
 	if IsCommitID(configured) {
-		if err := s.ensureCommit(ctx, configured); err != nil {
+		// Every other commit value in this package comes from git, which prints
+		// object ids in lowercase, and the lockfile only accepts lowercase hex.
+		// Normalizing here keeps a configured id comparable with any later
+		// resolution of the same commit.
+		commit := strings.ToLower(configured)
+		if err := s.ensureCommit(ctx, commit); err != nil {
 			return Resolution{}, err
 		}
-		return Resolution{Ref: configured, Kind: skilllock.RefKindCommit, Commit: configured}, nil
+		return Resolution{Ref: commit, Kind: skilllock.RefKindCommit, Commit: commit}, nil
 	}
 
-	output, err := s.runner.run(ctx, s.dir, "ls-remote", "--", s.repository,
+	output, err := s.runner.run(ctx, s.dir, "ls-remote", "--", s.repository.git,
 		"refs/heads/"+configured, "refs/tags/"+configured, "refs/tags/"+configured+"^{}")
 	if err != nil {
 		return Resolution{}, err
@@ -147,7 +155,7 @@ func (s *Source) ensureCommit(ctx context.Context, commit string) error {
 	}
 	// A commit that is not reachable from any ref can still be fetched directly
 	// when the server allows it; try that before failing.
-	if _, err := s.runner.run(ctx, s.dir, "fetch", "--quiet", "--no-tags", "--", s.repository, commit); err != nil {
+	if _, err := s.runner.run(ctx, s.dir, "fetch", "--quiet", "--no-tags", "--", s.repository.git, commit); err != nil {
 		return fmt.Errorf("commit %s could not be fetched from %s: %w", commit, s.repository, err)
 	}
 	if !s.hasCommit(ctx, commit) {
@@ -166,7 +174,7 @@ func (s *Source) fetchAll(ctx context.Context) error {
 	if s.fetched {
 		return nil
 	}
-	if _, err := s.runner.run(ctx, s.dir, "fetch", "--quiet", "--prune", "--", s.repository,
+	if _, err := s.runner.run(ctx, s.dir, "fetch", "--quiet", "--prune", "--", s.repository.git,
 		"+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*"); err != nil {
 		return err
 	}

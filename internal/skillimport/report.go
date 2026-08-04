@@ -72,14 +72,25 @@ type Report struct {
 // One operation can touch a skill in more than one stage (membership
 // reconciliation then branch advancement); the report keeps exactly one final
 // line per skill so identical state always renders identically.
+//
+// A skill is identified by its repository and selected path, not by its name:
+// two import blocks can resolve different paths to the same name, and that is
+// precisely the case a report must show, because one of them succeeded and the
+// other was rejected for colliding with it.
 func (r *Report) Add(result SkillResult) {
 	for i := range r.Skills {
-		if r.Skills[i].Name == result.Name {
+		if r.Skills[i].identity() == result.identity() {
 			r.Skills[i] = result
 			return
 		}
 	}
 	r.Skills = append(r.Skills, result)
+}
+
+// identity returns the repository and selected path pair that distinguishes one
+// managed skill from another.
+func (s SkillResult) identity() string {
+	return skillKey(s.Repository, s.SelectedPath)
 }
 
 // AddSourceFailure records a source-level failure.
@@ -96,7 +107,15 @@ func (r *Report) Sort() {
 		}
 		return r.Sources[i].Ref < r.Sources[j].Ref
 	})
-	sort.SliceStable(r.Skills, func(i, j int) bool { return r.Skills[i].Name < r.Skills[j].Name })
+	sort.SliceStable(r.Skills, func(i, j int) bool {
+		if r.Skills[i].Name != r.Skills[j].Name {
+			return r.Skills[i].Name < r.Skills[j].Name
+		}
+		// Two blocks can resolve different paths to one name, so the name alone
+		// is not a total order. Falling through to the identity keeps identical
+		// state rendering identically.
+		return r.Skills[i].identity() < r.Skills[j].identity()
+	})
 }
 
 // Failed reports whether any scoped unit of work failed.

@@ -214,6 +214,43 @@ func TestParseRejectsUntrustworthyState(t *testing.T) {
 				validEntry("alpha")),
 			want: "overlap",
 		},
+		// Sorting alone does not put an ancestor next to its descendant: every
+		// byte below '/' sorts ahead of it, so "skills-old" lands between
+		// "skills" and "skills/alpha" and a neighbour-only check would accept
+		// two overlapping editable owners.
+		{
+			name: "nested selected paths separated by a sibling",
+			data: lockDocument(t,
+				mutated("skills", func(e *Entry) { e.Selector, e.SelectedPath = "skills", "skills" }),
+				mutated("skills-old", func(e *Entry) { e.Selector, e.SelectedPath = "skills-old", "skills-old" }),
+				validEntry("alpha")),
+			want: "overlap",
+		},
+		// A repository URL carrying a credential would be persisted here and
+		// echoed back in status output and Git errors. A hand-edited lock is
+		// exactly how one could arrive without passing configuration
+		// validation, so the same rule is enforced on the way in.
+		{
+			name: "repository embeds a password",
+			data: lockDocument(t, mutated("alpha", func(e *Entry) {
+				e.Repository = "https://user:pa55phrase@example.test/skills.git"
+			})),
+			want: "literal password",
+		},
+		{
+			name: "repository embeds a query secret",
+			data: lockDocument(t, mutated("alpha", func(e *Entry) {
+				e.Repository = "https://example.test/skills.git?access_token=ghp_literalvalue"
+			})),
+			want: `"access_token" query parameter`,
+		},
+		{
+			name: "repository hides literal userinfo behind a placeholder scheme",
+			data: lockDocument(t, mutated("alpha", func(e *Entry) {
+				e.Repository = "${AL_SCHEME}://ghp_literalvalue@example.test/skills.git"
+			})),
+			want: "literal credentials",
+		},
 	}
 
 	for _, tt := range tests {
@@ -308,5 +345,127 @@ func TestMarshalRefusesToPersistUntrustworthyState(t *testing.T) {
 	}
 	if err := file.Save(filepath.Join(t.TempDir(), "skills.lock.json")); !errors.Is(err, ErrMalformed) {
 		t.Fatalf("Save error = %v, want ErrMalformed", err)
+	}
+}
+
+// TestValidateRepositoryRejectsOnlyEmbeddedCredentials proves the credential
+// rule is precise: Agent Layer never reads or stores a secret, so a repository
+// URL that carries one is refused before it reaches config.toml, this lockfile,
+// status output, or a Git command error. The ordinary SSH identity forms carry
+// a username rather than a secret and stay accepted.
+func TestValidateRepositoryRejectsOnlyEmbeddedCredentials(t *testing.T) {
+	t.Parallel()
+	accepted := []string{
+		"https://example.test/skills.git",
+		"git@github.com:org/skills.git",
+		"ssh://git@example.test/org/skills.git",
+		"git://git@example.test/org/skills.git",
+		"/local/path/to/skills.git",
+		"file:///local/skills.git",
+		// A placeholder is not a secret: it is the text that stays canonical in
+		// configuration and in this lockfile, and the value it names is resolved
+		// only at the Git access boundary.
+		"https://${AL_SKILLS_TOKEN}@example.test/skills.git",
+		"https://oauth2:${AL_SKILLS_TOKEN}@example.test/skills.git",
+		"https://${AL_SKILLS_USER}:${AL_SKILLS_TOKEN}@example.test/skills.git",
+		"https://${AL_SKILLS_HOST}/skills.git",
+		"${AL_SKILLS_REPOSITORY}",
+		// A query value that is itself a reference carries no secret text.
+		"https://example.test/skills.git?access_token=${AL_SKILLS_TOKEN}",
+		// An ordinary query parameter is not a credential at all.
+		"https://example.test/skills.git?depth=1",
+	}
+	for _, repository := range accepted {
+		t.Run("accepted "+repository, func(t *testing.T) {
+			t.Parallel()
+			if err := ValidateRepository(repository); err != nil {
+				t.Fatalf("ValidateRepository(%q) = %v, want accepted", repository, err)
+			}
+		})
+	}
+
+	// Each case names the literal credential separately, so the no-echo
+	// assertion checks the actual value rather than tripping on the prose.
+	// #nosec G101 -- invented credentials in a fixture whose whole point is proving such URLs are refused.
+	rejected := []struct {
+		name       string
+		repository string
+		want       string
+		secret     string
+	}{
+		{name: "password", repository: "https://user:pa55phrase@example.test/skills.git", want: "literal password", secret: "pa55phrase"},
+		{name: "http password", repository: "http://user:pa55phrase@example.test/skills.git", want: "literal password", secret: "pa55phrase"},
+		{name: "ssh password", repository: "ssh://git:pa55phrase@example.test/skills.git", want: "literal password", secret: "pa55phrase"},
+		{name: "bare https token", repository: "https://ghp_literalvalue@example.test/s.git", want: "literal credentials", secret: "ghp_literalvalue"},
+		{name: "uppercase scheme", repository: "HTTPS://ghp_literalvalue@example.test/s.git", want: "literal credentials", secret: "ghp_literalvalue"},
+		// A userinfo that only partly uses a placeholder still carries literal
+		// secret text, so it is refused rather than partly protected.
+		{name: "partly literal password", repository: "https://user:${AL_TOKEN}pa55phrase@example.test/s.git", want: "literal password", secret: "pa55phrase"},
+		{name: "partly literal userinfo", repository: "https://${AL_TOKEN}ghp_literalvalue@example.test/s.git", want: "literal credentials", secret: "ghp_literalvalue"},
+		// The last "@" ends the userinfo, so a literal password containing "@"
+		// is not mistaken for a host separator.
+		{name: "password containing at", repository: "https://user:pa55@phrase@example.test/s.git", want: "literal password", secret: "pa55@phrase"},
+		// Only the AL_ namespace can ever resolve, so anything else is reported
+		// now rather than as a missing value at the first Git access.
+		{name: "foreign namespace", repository: "https://${SKILLS_TOKEN}@example.test/s.git", want: "outside the AL_ namespace"},
+		// A credential rides in the query string as readily as in userinfo, and
+		// the key vocabulary is the one the MCP policy warning already uses.
+		{name: "query access token", repository: "https://example.test/s.git?access_token=ghp_literalvalue", want: `"access_token" query parameter`, secret: "ghp_literalvalue"},
+		{name: "query api key beside an ordinary parameter", repository: "https://example.test/s.git?depth=1&api_key=ghp_literalvalue", want: `"api_key" query parameter`, secret: "ghp_literalvalue"},
+		// The query check does not depend on a parseable scheme or host.
+		{name: "query behind a placeholder repository", repository: "${AL_SKILLS_REPOSITORY}?token=ghp_literalvalue", want: `"token" query parameter`, secret: "ghp_literalvalue"},
+		// A percent-encoded key must not slip past the vocabulary.
+		{name: "encoded query key", repository: "https://example.test/s.git?access%5Ftoken=ghp_literalvalue", want: `"access_token" query parameter`, secret: "ghp_literalvalue"},
+		// A scheme built from a placeholder could resolve to https, so literal
+		// userinfo behind one is refused rather than assumed to be an identity.
+		{name: "placeholder scheme", repository: "${AL_SCHEME}://ghp_literalvalue@example.test/s.git", want: "literal credentials", secret: "ghp_literalvalue"},
+		// An unrecognized transport is treated the same way: only ssh and git
+		// are known to carry an account name rather than a credential.
+		{name: "unknown scheme", repository: "ftps://ghp_literalvalue@example.test/s.git", want: "literal credentials", secret: "ghp_literalvalue"},
+	}
+	for _, tc := range rejected {
+		t.Run("rejected "+tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := ValidateRepository(tc.repository)
+			if err == nil {
+				t.Fatalf("ValidateRepository(%q) accepted an embedded credential", tc.repository)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("ValidateRepository(%q) = %v, want a message naming %q", tc.repository, err, tc.want)
+			}
+			// Repeating the credential in the error would reproduce the exposure
+			// the rule exists to prevent. Naming the query key is fine: the key
+			// is what makes the message actionable, and it is not the secret.
+			if tc.secret != "" && strings.Contains(err.Error(), tc.secret) {
+				t.Fatalf("ValidateRepository(%q) echoed the credential back: %v", tc.repository, err)
+			}
+		})
+	}
+}
+
+// TestParseAcceptsPlaceholderRepositories proves a lockfile written from a
+// placeholder-backed import round-trips. The lock records configured text, so
+// refusing a placeholder here would make the machine-written file unreadable by
+// the next operation.
+func TestParseAcceptsPlaceholderRepositories(t *testing.T) {
+	t.Parallel()
+	for _, repository := range []string{
+		"${AL_SKILLS_REPOSITORY}",
+		"https://${AL_SKILLS_TOKEN}@example.test/skills.git",
+		"https://oauth2:${AL_SKILLS_TOKEN}@example.test/skills.git",
+		"https://example.test/skills.git?access_token=${AL_SKILLS_TOKEN}",
+	} {
+		t.Run(repository, func(t *testing.T) {
+			t.Parallel()
+			data := lockDocument(t, mutated("alpha", func(e *Entry) { e.Repository = repository }))
+			file, err := Parse([]byte(data), "skills.lock.json")
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			entry, ok := file.Entry("alpha")
+			if !ok || entry.Repository != repository {
+				t.Fatalf("round-tripped repository = %q, want the configured text", entry.Repository)
+			}
+		})
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -210,6 +211,45 @@ func (p *project) AppendConfig(content string) {
 	writeProjectFile(p.t, p.paths.ConfigPath, string(existing)+content) // #nosec G703 -- the path is the test project's own configuration file.
 }
 
+// WriteEnv writes .agent-layer/.env with the given AL_ keys, which is where a
+// repository placeholder resolves its value from.
+func (p *project) WriteEnv(values map[string]string) {
+	p.t.Helper()
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var builder strings.Builder
+	for _, key := range keys {
+		builder.WriteString(key + "=" + values[key] + "\n")
+	}
+	writeProjectFile(p.t, p.paths.EnvPath, builder.String())
+}
+
+// LockContent returns the raw lockfile bytes, so a test can assert on what was
+// actually persisted rather than on the parsed view.
+func (p *project) LockContent() string {
+	p.t.Helper()
+	data, err := os.ReadFile(p.paths.SkillsLockPath) // #nosec G304 -- test-controlled path.
+	if err != nil {
+		p.t.Fatalf("read lock: %v", err)
+	}
+	return string(data)
+}
+
+// ReplaceInConfig rewrites the configuration file, replacing the first
+// occurrence of old. It models a user editing config.toml after an import.
+func (p *project) ReplaceInConfig(old string, replacement string) {
+	p.t.Helper()
+	content := p.ConfigContent()
+	updated := strings.Replace(content, old, replacement, 1)
+	if updated == content {
+		p.t.Fatalf("configuration does not contain %q", old)
+	}
+	writeProjectFile(p.t, p.paths.ConfigPath, updated)
+}
+
 // ConfigContent returns the current configuration file content.
 func (p *project) ConfigContent() string {
 	p.t.Helper()
@@ -302,6 +342,19 @@ func requireOutcome(t *testing.T, report *Report, name string, want Outcome) Ski
 		t.Fatalf("%s outcome = %q (%v), want %q", name, result.Outcome, result.Err, want)
 	}
 	return result
+}
+
+// resultFor returns the report line for one repository and selected path,
+// which identifies a skill even when two blocks resolve the same name.
+func resultFor(t *testing.T, report *Report, repository string, selectedPath string) SkillResult {
+	t.Helper()
+	for _, result := range report.Skills {
+		if result.Repository == repository && result.SelectedPath == selectedPath {
+			return result
+		}
+	}
+	t.Fatalf("no result for %s %s in:\n%s", repository, selectedPath, report.Render("operation"))
+	return SkillResult{}
 }
 
 // mustSkillTree builds a minimal valid skill tree for transaction tests.

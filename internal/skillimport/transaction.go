@@ -134,7 +134,17 @@ func (t *transaction) Commit() (err error) {
 		return fmt.Errorf("failed to create %s: %w", staging, err)
 	}
 	t.stagingRoot = staging
-	defer func() { _ = os.RemoveAll(staging) }()
+	// The staging directory holds the journal and the only copies of every file
+	// this transaction replaces. It is cleared once the outcome is settled — a
+	// complete commit or a clean rollback — but deliberately kept when rollback
+	// itself failed, because those backups are then the only way the next
+	// operation's recovery can repair the mixed state left on disk.
+	stagingSettled := true
+	defer func() {
+		if stagingSettled {
+			_ = os.RemoveAll(staging)
+		}
+	}()
 
 	if err := t.prepareJournal(); err != nil {
 		return err
@@ -142,7 +152,9 @@ func (t *transaction) Commit() (err error) {
 
 	published := &publishedState{}
 	fail := func(cause error) error {
-		return joinRollback(cause, t.rollback(published))
+		rollbackErr := t.rollback(published)
+		stagingSettled = rollbackErr == nil
+		return joinRollback(cause, rollbackErr)
 	}
 
 	for _, name := range sortedKeys(t.writes) {

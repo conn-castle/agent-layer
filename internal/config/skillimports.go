@@ -224,6 +224,14 @@ func validateSkillImportBlock(configPath string, index int, imp SkillImport) err
 	if NormalizeSkillRepository(imp.Repository) == "" {
 		return fmt.Errorf(messages.ConfigSkillImportRepositoryRequiredFmt, configPath, index)
 	}
+	if err := skilllock.ValidateRepository(NormalizeSkillRepository(imp.Repository)); err != nil {
+		return fmt.Errorf(messages.ConfigSkillImportRepositoryInvalidFmt, configPath, index, err)
+	}
+	if pushRepository := NormalizeSkillRepository(imp.PushRepository); pushRepository != "" {
+		if err := skilllock.ValidateRepository(pushRepository); err != nil {
+			return fmt.Errorf(messages.ConfigSkillImportPushRepositoryInvalidFmt, configPath, index, err)
+		}
+	}
 	if len(imp.Selectors) == 0 {
 		return fmt.Errorf(messages.ConfigSkillImportSelectorsRequiredFmt, configPath, index)
 	}
@@ -291,6 +299,15 @@ func validateSkillSelector(configPath string, index int, selector string) error 
 func ValidateSkillSelectorPath(value string) error {
 	if strings.Contains(value, "\\") {
 		return fmt.Errorf(messages.ConfigSkillSelectorBackslash)
+	}
+	// A control character survives configuration decoding but has no valid
+	// repository path to match, and rendering one back into config.toml emits a
+	// Go escape such as `\a` that TOML does not define, which would make the
+	// rewritten file unparsable.
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf(messages.ConfigSkillSelectorControlCharacter)
+		}
 	}
 	if strings.HasPrefix(value, "/") {
 		return fmt.Errorf(messages.ConfigSkillSelectorAbsolute)

@@ -18,8 +18,10 @@ import (
 type Service struct {
 	root string
 	sys  sync.System
-	// newRunner is injected so tests can exercise reporting without git.
-	newRunner func() (*gitrepo.Runner, error)
+	// newRunner is injected so tests can exercise reporting without git. It
+	// receives the AL_-filtered `.agent-layer/.env` map every repository
+	// reference resolves its `${AL_*}` placeholders from.
+	newRunner func(env map[string]string) (*gitrepo.Runner, error)
 }
 
 // New returns a service bound to a repository root.
@@ -83,7 +85,13 @@ func (s *Service) openBlock(ctx context.Context, runner *gitrepo.Runner, workRoo
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create git working directory %s: %w", workDir, err)
 	}
-	source, err := gitrepo.OpenSource(ctx, runner, workDir, config.NormalizeSkillRepository(block.Repository))
+	// The configured reference becomes a usable URL only here, at the Git access
+	// boundary. Everything recorded or reported keeps the placeholder text.
+	repository, err := runner.Secrets().Resolve(config.NormalizeSkillRepository(block.Repository))
+	if err != nil {
+		return nil, err
+	}
+	source, err := gitrepo.OpenSource(ctx, runner, workDir, repository)
 	if err != nil {
 		return nil, err
 	}

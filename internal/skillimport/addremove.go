@@ -100,7 +100,7 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 	txn := newTransaction(pathSetFor(st), st.lock)
 	txn.SetConfig(nextConfig)
 
-	runner, err := s.newRunner()
+	runner, err := s.newRunner(st.env)
 	if err != nil {
 		return err
 	}
@@ -244,7 +244,7 @@ func (s *Service) removeLocked(ctx context.Context, st *state, repository string
 		return fmt.Errorf("the updated configuration does not contain the expected skills.imports block")
 	}
 
-	runner, err := s.newRunner()
+	runner, err := s.newRunner(st.env)
 	if err != nil {
 		return err
 	}
@@ -346,12 +346,26 @@ func containsSelector(selectors []string, normalized string) bool {
 // recorded members of every other block so cross-block identity and overlap
 // rules are enforced against the complete managed set.
 func withOtherBlockEntries(st *state, block config.SkillImport, desired []desiredSkill) []desiredSkill {
-	changed := make(map[string]struct{}, len(st.entriesForBlock(block)))
-	for _, entry := range st.entriesForBlock(block) {
+	return combineWithOtherEntries(st, block, st.entriesForBlock(block), st.lock.Skills, desired)
+}
+
+// withOtherPendingEntries is withOtherBlockEntries against the state an
+// in-flight operation has built so far, so a multi-block pull validates each
+// block against what the earlier blocks already staged rather than against the
+// snapshot it started from.
+func withOtherPendingEntries(st *state, txn *transaction, block config.SkillImport, desired []desiredSkill) []desiredSkill {
+	return combineWithOtherEntries(st, block, txnEntriesForBlock(txn, block), txn.lock.Skills, desired)
+}
+
+// combineWithOtherEntries appends every recorded entry outside the block under
+// change to its freshly resolved desired set.
+func combineWithOtherEntries(st *state, block config.SkillImport, blockEntries []skilllock.Entry, allEntries []skilllock.Entry, desired []desiredSkill) []desiredSkill {
+	changed := make(map[string]struct{}, len(blockEntries))
+	for _, entry := range blockEntries {
 		changed[entry.Name] = struct{}{}
 	}
 	combined := append([]desiredSkill{}, desired...)
-	for _, entry := range st.lock.Skills {
+	for _, entry := range allEntries {
 		if _, sameBlock := changed[entry.Name]; sameBlock {
 			continue
 		}

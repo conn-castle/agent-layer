@@ -283,8 +283,10 @@ func TestPushRejectsOverlappingDestinationPathsInOneGroup(t *testing.T) {
 	destination := newGitRepo(t, "main")
 
 	proj := newProject(t)
+	// The two sources import cleanly while they target different destination
+	// branches, so nothing rejects them up front.
 	proj.AppendConfig(importBlock(outer.URL(), []string{"skills"},
-		`write_policy = "branch"`, `push_branch = "skill-updates"`, `push_repository = "`+destination.URL()+`"`))
+		`write_policy = "branch"`, `push_branch = "outer-updates"`, `push_repository = "`+destination.URL()+`"`))
 	proj.AppendConfig(importBlock(inner.URL(), []string{"skills/alpha"},
 		`write_policy = "branch"`, `push_branch = "skill-updates"`, `push_repository = "`+destination.URL()+`"`))
 	if _, err := proj.Service().Pull(context.Background()); err != nil {
@@ -292,6 +294,10 @@ func TestPushRejectsOverlappingDestinationPathsInOneGroup(t *testing.T) {
 	}
 	proj.WriteImportedFile("skills", "notes.md", "outer note\n")
 	proj.WriteImportedFile("alpha", "notes.md", "inner note\n")
+
+	// Editing configuration after the import routes both into one destination
+	// group. Push never pulls, so only the runtime group check can catch it.
+	proj.ReplaceInConfig(`push_branch = "outer-updates"`, `push_branch = "skill-updates"`)
 
 	report, err := proj.Service().Push(context.Background())
 	if err != nil {
@@ -762,5 +768,94 @@ func TestPushReportsADeleteModifyConflictAgainstADestinationDeletion(t *testing.
 	}
 	if source.HasPath("skill-updates", "skills/alpha/SKILL.md") {
 		t.Fatal("a conflicted push re-added the deleted skill")
+	}
+}
+
+// TestPushAdvancesUnchangedSiblingsOnATrackedSourceRef proves a grouped direct
+// push leaves every skill on the ref it just moved at the same commit.
+//
+// Publishing to the exact tracked source ref advances that ref for all of the
+// block's skills, not only the ones the commit changed. Leaving an unchanged
+// sibling at the previous commit makes the very next push reject it as a stale
+// source and demand a pull that has nothing to do.
+func TestPushAdvancesUnchangedSiblingsOnATrackedSourceRef(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteSkill("skills/zulu", "zulu", "Zulu body")
+	before := source.Commit("add skills")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/*"}, `write_policy = "direct"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	// Only one of the two grouped skills has a local change to contribute.
+	proj.WriteImportedFile("alpha", "notes.md", "local note\n")
+
+	report, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	requireOutcome(t, report, "alpha", OutcomePushed)
+	unchanged := requireOutcome(t, report, "zulu", OutcomeUnchanged)
+	if !strings.Contains(unchanged.Detail, "lock advanced") {
+		t.Fatalf("unchanged sibling detail = %q, want it to report the lock advance", unchanged.Detail)
+	}
+
+	pushed := source.Head("main")
+	if pushed == before {
+		t.Fatal("the push created no commit")
+	}
+	lock := proj.Lock()
+	for _, name := range []string{"alpha", "zulu"} {
+		entry, ok := lock.Entry(name)
+		if !ok {
+			t.Fatalf("%s left the lock", name)
+		}
+		if entry.Commit != pushed {
+			t.Fatalf("%s is locked to %s, want the pushed commit %s", name, entry.Commit, pushed)
+		}
+	}
+
+	// The proof that matters: pushing again is a clean no-op rather than a
+	// stale-source rejection demanding a pull.
+	second, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("second Push: %v", err)
+	}
+	if second.Failed() {
+		t.Fatalf("the follow-up push failed:\n%s", second.Render("al skills push"))
+	}
+	requireOutcome(t, second, "zulu", OutcomeUnchanged)
+}
+
+// TestPushDoesNotAdvanceUnchangedSiblingsOnAnotherBranch proves the advance
+// above is scoped to the exact tracked source ref. A `branch` policy publishes
+// somewhere the lock does not track, so no lock may move.
+func TestPushDoesNotAdvanceUnchangedSiblingsOnAnotherBranch(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteSkill("skills/zulu", "zulu", "Zulu body")
+	source.Commit("add skills")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/*"},
+		`write_policy = "branch"`, `push_branch = "skill-updates"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	locked, _ := proj.Lock().Entry("zulu")
+	proj.WriteImportedFile("alpha", "notes.md", "local note\n")
+
+	report, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	unchanged := requireOutcome(t, report, "zulu", OutcomeUnchanged)
+	if strings.Contains(unchanged.Detail, "lock advanced") {
+		t.Fatalf("a push to a non-tracked branch advanced a lock: %q", unchanged.Detail)
+	}
+	if after, _ := proj.Lock().Entry("zulu"); after.Commit != locked.Commit {
+		t.Fatalf("lock commit = %s, want the untouched %s", after.Commit, locked.Commit)
 	}
 }

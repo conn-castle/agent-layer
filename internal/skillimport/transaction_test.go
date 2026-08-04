@@ -9,6 +9,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/skilljournal"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
+	"github.com/conn-castle/agent-layer/internal/sync"
 )
 
 // newTestTransaction returns a transaction bound to a project's real paths.
@@ -216,6 +217,69 @@ func TestTransactionSurfacesARollbackFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "rolling the change back also failed") {
 		t.Fatalf("error %q does not surface the rollback failure", err)
+	}
+
+	// A failed rollback leaves mixed generations on disk, and the staging
+	// directory holds the journal plus the only copies of every replaced file.
+	// Clearing it would make that state unrecoverable, so it survives for the
+	// next operation's recovery to use.
+	staging := skilljournal.StagingRoot(proj.paths.ImportedSkillsDir)
+	if _, statErr := os.Stat(staging); statErr != nil {
+		t.Fatalf("the staging directory was removed after a failed rollback: %v", statErr)
+	}
+	for _, backup := range []string{skilljournal.FileName, skilljournal.ConfigBackupName} {
+		if _, statErr := os.Stat(filepath.Join(staging, backup)); statErr != nil {
+			t.Fatalf("%s did not survive the failed rollback: %v", backup, statErr)
+		}
+	}
+
+	// Recovery is exactly what those backups are for: it restores the
+	// configuration the failed rollback could not.
+	if recoverErr := sync.RecoverInterruptedImport(proj.root); recoverErr != nil {
+		t.Fatalf("RecoverInterruptedImport: %v", recoverErr)
+	}
+	if got := proj.ConfigContent(); got != original {
+		t.Fatalf("recovery did not restore the configuration:\n%q", got)
+	}
+	if _, statErr := os.Stat(staging); !os.IsNotExist(statErr) {
+		t.Fatalf("recovery left the staging directory behind: %v", statErr)
+	}
+}
+
+// TestTransactionClearsStagingAfterACleanRollback proves the preservation above
+// is scoped to an unrecoverable outcome: when rollback succeeds there is
+// nothing left to repair, so no staging directory is stranded for the next
+// operation to recover from.
+func TestTransactionClearsStagingAfterACleanRollback(t *testing.T) {
+	proj := newProject(t)
+	if err := os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	original := proj.ConfigContent()
+
+	txn := newTestTransaction(proj, mustEmptyLock())
+	txn.SetConfig(original + "\n# edited\n")
+	txn.SetLockEntry(lockEntry("alpha"))
+	txn.writeFile = func(path string, data []byte, perm os.FileMode) error {
+		if path == proj.paths.SkillsLockPath {
+			return fmt.Errorf("injected lock failure")
+		}
+		return os.WriteFile(path, data, perm) // #nosec G306,G703 -- path is a fixture path this test owns; the mode mirrors the production permission.
+	}
+
+	err := txn.Commit()
+	if err == nil {
+		t.Fatal("expected the commit to fail")
+	}
+	if strings.Contains(err.Error(), "rolling the change back also failed") {
+		t.Fatalf("rollback was expected to succeed: %v", err)
+	}
+	if got := proj.ConfigContent(); got != original {
+		t.Fatalf("rollback did not restore the configuration:\n%q", got)
+	}
+	staging := skilljournal.StagingRoot(proj.paths.ImportedSkillsDir)
+	if _, statErr := os.Stat(staging); !os.IsNotExist(statErr) {
+		t.Fatalf("a clean rollback left the staging directory behind: %v", statErr)
 	}
 }
 

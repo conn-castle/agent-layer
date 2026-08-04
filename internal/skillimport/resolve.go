@@ -9,6 +9,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/gitrepo"
+	"github.com/conn-castle/agent-layer/internal/skilllock"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
 
@@ -247,18 +248,27 @@ func validateDesiredSet(desired []desiredSkill) error {
 
 // rejectOverlappingPaths fails when one selected path is an ancestor or
 // descendant of another, because that would create overlapping editable owners.
+//
+// Comparing sorted neighbours is not enough: every byte below '/' sorts ahead
+// of it, so "a/b-x" lands between "a/b" and "a/b/c" and would hide that pair.
+// Each path is instead checked against every path already accepted, by walking
+// its own ancestor prefixes. Sorting guarantees an ancestor is accepted before
+// any of its descendants, because an ancestor is a strict prefix.
 func rejectOverlappingPaths(skills []desiredSkill, scope string) error {
 	paths := make([]string, 0, len(skills))
 	for _, skill := range skills {
 		paths = append(paths, skill.SelectedPath)
 	}
 	sort.Strings(paths)
-	for i := 1; i < len(paths); i++ {
-		previous := paths[i-1]
-		current := paths[i]
-		if current == previous || strings.HasPrefix(current, previous+"/") {
-			return fmt.Errorf("selected paths %s and %s overlap within %s; overlapping editable owners are not supported", previous, current, scope)
+	accepted := make(map[string]struct{}, len(paths))
+	for _, current := range paths {
+		for ancestor := current; ancestor != "." && ancestor != "/" && ancestor != ""; ancestor = path.Dir(ancestor) {
+			if _, exists := accepted[ancestor]; exists {
+				return fmt.Errorf("selected paths %s and %s overlap within %s; overlapping editable owners are not supported",
+					ancestor, current, scope)
+			}
 		}
+		accepted[current] = struct{}{}
 	}
 	return nil
 }
@@ -275,14 +285,14 @@ func shortCommit(commit string) string {
 // can prove: a branch may track or pin, while a tag or commit can only pin.
 func ensureTrackedRefKind(block config.SkillImport, resolution gitrepo.Resolution) (string, error) {
 	configured := strings.TrimSpace(block.Tracking)
-	if configured == config.SkillTrackingTracked && resolution.Kind != "branch" {
+	if configured == config.SkillTrackingTracked && resolution.Kind != skilllock.RefKindBranch {
 		return "", fmt.Errorf("tracking = \"tracked\" requires a branch, but ref %q resolves to a %s; use tracking = \"pinned\" or configure a branch",
 			resolution.Ref, resolution.Kind)
 	}
 	if configured != "" {
 		return configured, nil
 	}
-	if resolution.Kind == "branch" {
+	if resolution.Kind == skilllock.RefKindBranch {
 		return config.SkillTrackingTracked, nil
 	}
 	return config.SkillTrackingPinned, nil

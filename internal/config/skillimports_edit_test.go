@@ -125,6 +125,35 @@ func TestSetSkillImportSelectorsAppendsAndRemovesBlocks(t *testing.T) {
 	if _, err := ParseConfig([]byte(removed), "config.toml"); err != nil {
 		t.Fatalf("config after removal does not parse: %v", err)
 	}
+	// Removing the block that ends the document must not swallow the file's
+	// final newline. Nothing else notices: the block was appended after a
+	// TrimRight, and both the absence check and the parse succeed either way.
+	if removed != content {
+		t.Fatalf("removal did not restore the original content:\ngot:\n%q\nwant:\n%q", removed, content)
+	}
+}
+
+// TestSetSkillImportSelectorsKeepsTheFinalNewline proves a removal that ends
+// the document leaves an ordinary text file behind rather than one missing its
+// terminating newline.
+func TestSetSkillImportSelectorsKeepsTheFinalNewline(t *testing.T) {
+	t.Parallel()
+	identity := SkillImport{Repository: "https://example.test/skills.git"}.Identity()
+	content := baseConfigTOML + `
+[[skills.imports]]
+repository = "https://example.test/skills.git"
+selectors = ["skills/alpha"]
+`
+	removed, err := SetSkillImportSelectors(content, identity, nil)
+	if err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if !strings.HasSuffix(removed, "\n") {
+		t.Fatalf("removal dropped the final newline:\n%q", removed)
+	}
+	if removed != baseConfigTOML {
+		t.Fatalf("removal changed unrelated content:\ngot:\n%q\nwant:\n%q", removed, baseConfigTOML)
+	}
 }
 
 // TestSetSkillImportSelectorsTargetsOnlyTheMatchingBlock proves an edit

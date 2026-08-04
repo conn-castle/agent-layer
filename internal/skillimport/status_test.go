@@ -40,7 +40,7 @@ func TestStatusReportsLocalStateWithoutNetworkAccess(t *testing.T) {
 	proj.WriteImportedFile("broken", "SKILL.md", "not a skill\n")
 
 	service := proj.Service()
-	service.newRunner = func() (*gitrepo.Runner, error) {
+	service.newRunner = func(map[string]string) (*gitrepo.Runner, error) {
 		return nil, errors.New("status must not contact a remote")
 	}
 	status, err := service.Status()
@@ -92,7 +92,7 @@ func TestStatusReportsMissingRefEvidence(t *testing.T) {
 	proj.AppendConfig(importBlock("https://example.test/skills.git", []string{"skills/alpha"}))
 
 	service := proj.Service()
-	service.newRunner = func() (*gitrepo.Runner, error) {
+	service.newRunner = func(map[string]string) (*gitrepo.Runner, error) {
 		return nil, errors.New("status must not contact a remote")
 	}
 	status, err := service.Status()
@@ -222,18 +222,30 @@ func TestReportDistinguishesPartialFromTotalFailure(t *testing.T) {
 }
 
 // TestReportKeepsOneResultPerSkill proves a skill touched by several stages of
-// one operation renders exactly one final line.
+// one operation renders exactly one final line, while two skills that merely
+// share a name keep their own lines.
 func TestReportKeepsOneResultPerSkill(t *testing.T) {
 	t.Parallel()
 	report := &Report{}
-	report.Add(SkillResult{Name: "alpha", Outcome: OutcomeImported})
-	report.Add(SkillResult{Name: "alpha", Outcome: OutcomeUpdated})
-	report.Add(SkillResult{Name: "beta", Outcome: OutcomeImported})
+	report.Add(SkillResult{Name: "alpha", Repository: "https://one.test/s.git", SelectedPath: "skills/alpha", Outcome: OutcomeImported})
+	report.Add(SkillResult{Name: "alpha", Repository: "https://one.test/s.git", SelectedPath: "skills/alpha", Outcome: OutcomeUpdated})
+	report.Add(SkillResult{Name: "beta", Repository: "https://one.test/s.git", SelectedPath: "skills/beta", Outcome: OutcomeImported})
 	if len(report.Skills) != 2 {
 		t.Fatalf("skills = %+v, want one entry per skill", report.Skills)
 	}
-	if outcomeFor(t, report, "alpha").Outcome != OutcomeUpdated {
-		t.Fatal("the later stage did not replace the earlier result")
+	if got := resultFor(t, report, "https://one.test/s.git", "skills/alpha"); got.Outcome != OutcomeUpdated {
+		t.Fatalf("later stage outcome = %q, want the earlier result replaced", got.Outcome)
+	}
+
+	// A second block whose distinct path resolves to the same name is a
+	// different unit of work. Collapsing the two would let its rejection
+	// silently overwrite the first block's success.
+	report.Add(SkillResult{Name: "alpha", Repository: "https://two.test/s.git", SelectedPath: "vendor/alpha", Outcome: OutcomeFailed})
+	if len(report.Skills) != 3 {
+		t.Fatalf("skills = %+v, want a separate line per repository and path", report.Skills)
+	}
+	if got := resultFor(t, report, "https://one.test/s.git", "skills/alpha"); got.Outcome != OutcomeUpdated {
+		t.Fatalf("a same-named failure overwrote another block's result: %+v", got)
 	}
 }
 
@@ -459,8 +471,9 @@ func TestReportSortsSourcesAndSkillsDeterministically(t *testing.T) {
 	report.AddSourceFailure("zeta", "main", errors.New("z"))
 	report.AddSourceFailure("alpha", "v2", errors.New("a2"))
 	report.AddSourceFailure("alpha", "v1", errors.New("a1"))
-	report.Add(SkillResult{Name: "zulu", Outcome: OutcomeImported})
-	report.Add(SkillResult{Name: "alpha", Outcome: OutcomeImported})
+	report.Add(SkillResult{Name: "zulu", Repository: "https://one.test/s.git", SelectedPath: "skills/zulu", Outcome: OutcomeImported})
+	report.Add(SkillResult{Name: "alpha", Repository: "https://two.test/s.git", SelectedPath: "vendor/alpha", Outcome: OutcomeFailed})
+	report.Add(SkillResult{Name: "alpha", Repository: "https://one.test/s.git", SelectedPath: "skills/alpha", Outcome: OutcomeImported})
 	report.Sort()
 
 	if report.Sources[0].Repository != "alpha" || report.Sources[0].Ref != "v1" {
@@ -469,7 +482,15 @@ func TestReportSortsSourcesAndSkillsDeterministically(t *testing.T) {
 	if report.Sources[1].Ref != "v2" || report.Sources[2].Repository != "zeta" {
 		t.Fatalf("sources = %+v", report.Sources)
 	}
-	if report.Skills[0].Name != "alpha" || report.Skills[1].Name != "zulu" {
+	// Two skills share the name "alpha", so the name alone is not a total
+	// order; the repository and selected path break the tie.
+	if report.Skills[0].Name != "alpha" || report.Skills[0].Repository != "https://one.test/s.git" {
+		t.Fatalf("skills = %+v", report.Skills)
+	}
+	if report.Skills[1].Name != "alpha" || report.Skills[1].Repository != "https://two.test/s.git" {
+		t.Fatalf("skills = %+v", report.Skills)
+	}
+	if report.Skills[2].Name != "zulu" {
 		t.Fatalf("skills = %+v", report.Skills)
 	}
 }

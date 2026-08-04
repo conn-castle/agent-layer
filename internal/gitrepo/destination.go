@@ -2,7 +2,9 @@ package gitrepo
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,14 +24,16 @@ var missingIdentityMarkers = []string{
 // upstream contribution. It can fetch from several repositories so a branch
 // created for a fork can start from the locked source commit.
 type Destination struct {
-	runner     *Runner
-	dir        string
-	repository string
+	runner *Runner
+	dir    string
+	// repository carries both the configured text used in every message and the
+	// resolved value handed to git.
+	repository Repository
 }
 
 // OpenDestination initializes an isolated working repository under workDir for
 // the destination repository.
-func OpenDestination(ctx context.Context, runner *Runner, workDir string, repository string) (*Destination, error) {
+func OpenDestination(ctx context.Context, runner *Runner, workDir string, repository Repository) (*Destination, error) {
 	if runner == nil {
 		return nil, fmt.Errorf("a git runner is required")
 	}
@@ -43,12 +47,13 @@ func OpenDestination(ctx context.Context, runner *Runner, workDir string, reposi
 	return &Destination{runner: runner, dir: dir, repository: repository}, nil
 }
 
-// Repository returns the destination repository reference.
-func (d *Destination) Repository() string { return d.repository }
+// Repository returns the configured destination repository reference, with any
+// placeholder text intact.
+func (d *Destination) Repository() string { return d.repository.String() }
 
 // DefaultBranch resolves the destination repository's default branch name.
 func (d *Destination) DefaultBranch(ctx context.Context) (string, error) {
-	output, err := d.runner.run(ctx, d.dir, "ls-remote", "--symref", "--", d.repository, "HEAD")
+	output, err := d.runner.run(ctx, d.dir, "ls-remote", "--symref", "--", d.repository.git, "HEAD")
 	if err != nil {
 		return "", err
 	}
@@ -65,7 +70,7 @@ func (d *Destination) DefaultBranch(ctx context.Context) (string, error) {
 // false when the branch does not exist yet, which `branch` write policy handles
 // by creating it from the locked source commit.
 func (d *Destination) Head(ctx context.Context, branch string) (commit string, exists bool, err error) {
-	output, err := d.runner.run(ctx, d.dir, "ls-remote", "--", d.repository, "refs/heads/"+branch)
+	output, err := d.runner.run(ctx, d.dir, "ls-remote", "--", d.repository.git, "refs/heads/"+branch)
 	if err != nil {
 		return "", false, err
 	}
@@ -80,16 +85,18 @@ func (d *Destination) Head(ctx context.Context, branch string) (commit string, e
 
 // FetchCommit makes a commit from repository available in the destination
 // working repository.
-func (d *Destination) FetchCommit(ctx context.Context, repository string, commit string) error {
+func (d *Destination) FetchCommit(ctx context.Context, repository Repository, commit string) error {
 	if d.hasCommit(ctx, commit) {
 		return nil
 	}
-	if _, err := d.runner.run(ctx, d.dir, "fetch", "--quiet", "--no-tags", "--", repository, commit); err != nil {
+	if _, err := d.runner.run(ctx, d.dir, "fetch", "--quiet", "--no-tags", "--", repository.git, commit); err != nil {
 		// Some servers refuse to serve an arbitrary object id; mirroring the
-		// refs makes reachable commits available instead.
-		if _, mirrorErr := d.runner.run(ctx, d.dir, "fetch", "--quiet", "--", repository,
+		// refs makes reachable commits available instead. Both diagnostics are
+		// reported because the fallback failure is often the one that names the
+		// real cause, such as an authentication problem.
+		if _, mirrorErr := d.runner.run(ctx, d.dir, "fetch", "--quiet", "--", repository.git,
 			"+refs/heads/*:refs/remotes/fetched/*", "+refs/tags/*:refs/tags/*"); mirrorErr != nil {
-			return err
+			return errors.Join(err, mirrorErr)
 		}
 	}
 	if !d.hasCommit(ctx, commit) {
@@ -131,7 +138,20 @@ func (d *Destination) Publish(ctx context.Context, base string, branch string, u
 		return "", err
 	}
 	for _, update := range updates {
+		// Publication removes the whole path, so the relative path is validated
+		// here rather than trusted from the caller.
+		if err := skilltree.ValidateRelativePath(update.Path); err != nil {
+			return "", fmt.Errorf("destination path %q is unsafe: %w", update.Path, err)
+		}
 		target := filepath.Join(d.dir, filepath.FromSlash(update.Path))
+		// Canonical skill content never carries the ignored artifacts, so
+		// replacing the path wholesale would publish a deletion of any the
+		// destination itself committed. They are preserved instead: push
+		// contributes skill content and never removes files it does not manage.
+		preserved, err := collectIgnoredFiles(target)
+		if err != nil {
+			return "", err
+		}
 		if err := os.RemoveAll(target); err != nil {
 			return "", fmt.Errorf("failed to clear destination path %s: %w", update.Path, err)
 		}
@@ -139,6 +159,9 @@ func (d *Destination) Publish(ctx context.Context, base string, branch string, u
 			return "", fmt.Errorf("failed to create destination path %s: %w", update.Path, err)
 		}
 		if err := skilltree.Materialize(update.Tree, target); err != nil {
+			return "", err
+		}
+		if err := restoreIgnoredFiles(target, preserved); err != nil {
 			return "", err
 		}
 	}
@@ -152,10 +175,81 @@ func (d *Destination) Publish(ctx context.Context, base string, branch string, u
 	if err != nil {
 		return "", err
 	}
-	if _, err := d.runner.run(ctx, d.dir, "push", "--", d.repository, "HEAD:refs/heads/"+branch); err != nil {
+	if _, err := d.runner.run(ctx, d.dir, "push", "--", d.repository.git, "HEAD:refs/heads/"+branch); err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(string(commit)), nil
+}
+
+// ignoredFile is one destination-only artifact preserved across publication.
+type ignoredFile struct {
+	// relative is the slash-separated path below the replaced skill root.
+	relative string
+	data     []byte
+	mode     os.FileMode
+}
+
+// collectIgnoredFiles reads every regular file under root that canonical skill
+// content excludes, so publication can put them back. A missing root yields no
+// files: the destination simply does not carry the skill yet.
+func collectIgnoredFiles(root string) ([]ignoredFile, error) {
+	// The walk is rooted so a symlink committed upstream cannot lead a read
+	// outside the skill path being replaced.
+	opened, err := os.OpenRoot(root)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to open destination path %s: %w", root, err)
+	}
+	defer func() { _ = opened.Close() }()
+
+	rooted := opened.FS()
+	var preserved []ignoredFile
+	walkErr := fs.WalkDir(rooted, ".", func(name string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if name == "." || !isIgnoredTreePath(name) {
+			return nil
+		}
+		if entry.IsDir() {
+			// A directory whose own name is ignored carries nothing canonical,
+			// and .git is a nested repository rather than skill content.
+			return fs.SkipDir
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return fmt.Errorf("failed to inspect %s: %w", name, infoErr)
+		}
+		data, readErr := fs.ReadFile(rooted, name)
+		if readErr != nil {
+			return fmt.Errorf("failed to read %s: %w", name, readErr)
+		}
+		preserved = append(preserved, ignoredFile{relative: name, data: data, mode: info.Mode().Perm()})
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	return preserved, nil
+}
+
+// restoreIgnoredFiles rewrites the artifacts collectIgnoredFiles preserved.
+func restoreIgnoredFiles(root string, preserved []ignoredFile) error {
+	for _, file := range preserved {
+		target := filepath.Join(root, filepath.FromSlash(file.relative))
+		if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+			return fmt.Errorf("failed to create %s: %w", filepath.Dir(target), err)
+		}
+		if err := os.WriteFile(target, file.data, file.mode); err != nil { // #nosec G306 -- the destination's own recorded mode is restored unchanged.
+			return fmt.Errorf("failed to restore %s: %w", target, err)
+		}
+	}
+	return nil
 }
 
 // annotateIdentityFailure turns git's missing-identity error into actionable

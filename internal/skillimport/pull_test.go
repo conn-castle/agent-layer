@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
 )
 
@@ -824,5 +825,137 @@ func TestPullPreservesALocallyInvalidImportedSkill(t *testing.T) {
 	}
 	if report.ProjectionErr == nil {
 		t.Fatalf("projection accepted a locally invalid imported skill: %s", report.Render("pull"))
+	}
+}
+
+// TestPullRecordsATrackingPolicyChange proves a configuration change that only
+// moves the tracking mode is written through to the lock.
+//
+// Nothing else would ever apply it: content and commit are unchanged, so the
+// pull takes its "already at the target state" path. A lock left saying
+// "tracked" keeps status reporting the superseded policy, keeps push running
+// tracked-source freshness checks, and lets a direct push advance a lock the
+// user has pinned.
+func TestPullRecordsATrackingPolicyChange(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}, `ref = "main"`, `tracking = "tracked"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("first pull: %v", err)
+	}
+	entry, ok := proj.Lock().Entry("alpha")
+	if !ok || entry.Tracking != config.SkillTrackingTracked {
+		t.Fatalf("first pull recorded tracking %q, want tracked", entry.Tracking)
+	}
+
+	proj.ReplaceInConfig(`tracking = "tracked"`, `tracking = "pinned"`)
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("second pull: %v", err)
+	}
+	requireOutcome(t, report, "alpha", OutcomeUnchanged)
+
+	entry, ok = proj.Lock().Entry("alpha")
+	if !ok {
+		t.Fatal("the lock entry disappeared")
+	}
+	if entry.Tracking != config.SkillTrackingPinned {
+		t.Fatalf("lock tracking = %q, want pinned after the configuration change", entry.Tracking)
+	}
+}
+
+// TestPullValidatesAcrossImportBlocks proves one block cannot stage an import
+// that collides with another block's skill.
+//
+// Configuration validation cannot see this: two distinct selectors resolving to
+// the same skill name is remote-dependent, so it is only knowable once both
+// sources are resolved. Without the cross-block check the first block imports
+// and the second fails on a local-directory conflict, and the later failed
+// result also replaces the earlier successful one in the report.
+func TestPullValidatesAcrossImportBlocks(t *testing.T) {
+	first := newGitRepo(t, "main")
+	first.WriteSkill("skills/alpha", "alpha", "First alpha")
+	first.Commit("add first alpha")
+
+	second := newGitRepo(t, "main")
+	second.WriteSkill("vendor/alpha", "alpha", "Second alpha")
+	second.Commit("add second alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(first.URL(), []string{"skills/alpha"}))
+	proj.AppendConfig(importBlock(second.URL(), []string{"vendor/alpha"}))
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if !report.Failed() {
+		t.Fatalf("a cross-block name collision was accepted:\n%s", report.Render("al skills pull"))
+	}
+
+	// The first block's import is intact and still reported as its own result:
+	// the second block's rejection names the same skill, so a name-keyed report
+	// would have overwritten the success with the failure.
+	imported := resultFor(t, report, first.URL(), "skills/alpha")
+	if imported.Outcome != OutcomeImported {
+		t.Fatalf("first block outcome = %q (%v), want imported", imported.Outcome, imported.Err)
+	}
+	rejected := resultFor(t, report, second.URL(), "vendor/alpha")
+	if rejected.Outcome != OutcomeFailed {
+		t.Fatalf("second block outcome = %q, want failed", rejected.Outcome)
+	}
+	if !strings.Contains(proj.ImportedFile("alpha", "SKILL.md"), "First alpha") {
+		t.Fatal("the first block's import was not preserved")
+	}
+	entry, ok := proj.Lock().Entry("alpha")
+	if !ok || entry.Repository != first.URL() {
+		t.Fatalf("lock entry = %+v, want the first block's import", entry)
+	}
+	// The second block is blocked as a whole, naming the identity collision.
+	if len(report.Sources) != 1 || !strings.Contains(report.Sources[0].Err.Error(), "resolve to skill name") {
+		t.Fatalf("source failures = %+v, want one naming the name collision", report.Sources)
+	}
+}
+
+// TestPullRetiresAnUnconfiguredSkillDespiteASameNamedFailure proves retirement
+// is decided per repository and selected path rather than per skill name.
+//
+// Two blocks can resolve different paths to the same name. Skipping retirement
+// whenever the *name* already appears in the report let one block's failure
+// keep another block's unconfigured entry in the lock indefinitely.
+func TestPullRetiresAnUnconfiguredSkillDespiteASameNamedFailure(t *testing.T) {
+	retiring := newGitRepo(t, "main")
+	retiring.WriteSkill("skills/alpha", "alpha", "Retiring alpha")
+	retiring.Commit("add retiring alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(retiring.URL(), []string{"skills/alpha"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("first pull: %v", err)
+	}
+	if _, ok := proj.Lock().Entry("alpha"); !ok {
+		t.Fatal("the first pull recorded no entry")
+	}
+
+	// The selector leaves configuration, and an unreachable block that resolves
+	// the same name takes its place.
+	unreachable := filepath.Join(t.TempDir(), "missing-repository.git")
+	proj.ReplaceInConfig(
+		"repository = \""+retiring.URL()+"\"",
+		"repository = \""+unreachable+"\"")
+	proj.ReplaceInConfig(`selectors = ["skills/alpha"]`, `selectors = ["vendor/alpha"]`)
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("second pull: %v", err)
+	}
+	if _, ok := proj.Lock().Entry("alpha"); ok {
+		t.Fatalf("the unconfigured entry was not retired:\n%s", report.Render("al skills pull"))
+	}
+	if proj.ImportedExists("alpha") {
+		t.Fatal("the retired skill directory was not removed")
 	}
 }

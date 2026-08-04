@@ -51,6 +51,9 @@ func TestWriteClaudeSkillsProjectsEveryRegularResource(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(sourceDir, ".DS_Store"), []byte("junk"), 0o600); err != nil {
 		t.Fatalf("write .DS_Store: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "Thumbs.db"), []byte("junk"), 0o600); err != nil {
+		t.Fatalf("write Thumbs.db: %v", err)
+	}
 
 	skill := config.Skill{Name: "alpha", Description: "Source skill.", SourceDir: sourceDir}
 	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{skill}); err != nil {
@@ -68,7 +71,7 @@ func TestWriteClaudeSkillsProjectsEveryRegularResource(t *testing.T) {
 	if info.Mode().Perm()&0o111 == 0 {
 		t.Fatalf("projected script lost its executable bit: %v", info.Mode())
 	}
-	for _, ignored := range []string{".git", ".DS_Store"} {
+	for _, ignored := range []string{".git", ".DS_Store", "Thumbs.db"} {
 		if _, err := os.Lstat(filepath.Join(projected, ignored)); !os.IsNotExist(err) {
 			t.Fatalf("expected %s to be ignored, stat err = %v", ignored, err)
 		}

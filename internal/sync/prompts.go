@@ -87,12 +87,8 @@ func publishSkillProjection(sys System, skillsDir string, skill config.Skill, co
 		return err
 	}
 
-	restored, err := swapSkillProjection(sys, target, staging, backup)
-	if err != nil {
+	if err := swapSkillProjection(sys, target, staging, backup); err != nil {
 		_ = sys.RemoveAll(staging)
-		if !restored {
-			return err
-		}
 		return err
 	}
 	if err := sys.RemoveAll(backup); err != nil {
@@ -163,30 +159,34 @@ func stageSkillProjection(sys System, staging string, skill config.Skill, conten
 	return nil
 }
 
-// swapSkillProjection replaces target with staging. It reports whether a
-// rollback restored the previous tree when the swap failed.
-func swapSkillProjection(sys System, target string, staging string, backup string) (restored bool, err error) {
+// swapSkillProjection replaces target with staging.
+//
+// A failed swap that had moved a previous tree aside restores it before
+// returning, and a failure to restore is reported alongside the original error
+// rather than replacing it, so the caller never sees a clean-looking failure
+// over a half-published projection.
+func swapSkillProjection(sys System, target string, staging string, backup string) error {
 	hadPrevious := false
 	if _, statErr := sys.Lstat(target); statErr == nil {
 		if renameErr := sys.Rename(target, backup); renameErr != nil {
-			return false, fmt.Errorf(messages.SyncRenameFailedFmt, target, backup, renameErr)
+			return fmt.Errorf(messages.SyncRenameFailedFmt, target, backup, renameErr)
 		}
 		hadPrevious = true
 	} else if !os.IsNotExist(statErr) {
-		return false, fmt.Errorf(messages.SyncReadFailedFmt, target, statErr)
+		return fmt.Errorf(messages.SyncReadFailedFmt, target, statErr)
 	}
 
 	if renameErr := sys.Rename(staging, target); renameErr != nil {
 		publishErr := fmt.Errorf(messages.SyncRenameFailedFmt, staging, target, renameErr)
 		if !hadPrevious {
-			return false, publishErr
+			return publishErr
 		}
 		if rollbackErr := sys.Rename(backup, target); rollbackErr != nil {
-			return false, fmt.Errorf("%w; rollback of %s also failed: %v", publishErr, target, rollbackErr)
+			return fmt.Errorf("%w; rollback of %s also failed: %v", publishErr, target, rollbackErr)
 		}
-		return true, publishErr
+		return publishErr
 	}
-	return false, nil
+	return nil
 }
 
 // skillNodePolicy selects the node policy for a skill's editable source.

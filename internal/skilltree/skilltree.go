@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -174,7 +175,10 @@ func Read(fsys FS, dir string, policy NodePolicy) (Tree, error) {
 func readInto(fsys FS, dir string, relativeDir string, policy NodePolicy, files *[]File) error {
 	entries, err := fsys.ReadDir(dir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		// FS is injectable, so a implementation may wrap its error. errors.Is
+		// keeps a wrapped missing directory reading as the documented empty
+		// tree instead of a hard failure.
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
 		return fmt.Errorf("failed to read %s: %w", dir, err)

@@ -19,9 +19,12 @@ import (
 	"strings"
 )
 
-// commitIDPattern matches a full 40-character SHA-1 object id. Abbreviated ids
-// are not accepted as configured refs because they are ambiguous.
-var commitIDPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
+// commitIDPattern matches a full object id in either width Git uses: 40
+// characters for SHA-1 and 64 for SHA-256. Abbreviated ids are not accepted as
+// configured refs because they are ambiguous. The widths match the ones
+// skilllock accepts, so a configured id and a locked id are never classified
+// differently.
+var commitIDPattern = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
 
 // ErrGitUnavailable reports that no usable `git` executable is on PATH.
 var ErrGitUnavailable = errors.New("git executable not found on PATH")
@@ -30,20 +33,50 @@ var ErrGitUnavailable = errors.New("git executable not found on PATH")
 type Runner struct {
 	path string
 	env  []string
+	// secrets resolves `${AL_*}` placeholders in repository references and
+	// redacts the resolved values back out of anything reported to the user.
+	// Repository URLs are ordinary command arguments, so every diagnostic this
+	// runner produces passes through it.
+	secrets *Secrets
 }
 
-// NewRunner locates git and returns a runner bound to it.
-func NewRunner() (*Runner, error) {
+// NewRunner locates git and returns a runner whose repository references
+// resolve from env, an AL_-filtered `.agent-layer/.env` map.
+func NewRunner(env map[string]string) (*Runner, error) {
 	path, err := exec.LookPath("git")
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrGitUnavailable, err)
 	}
-	return &Runner{path: path, env: nonInteractiveEnv(os.Environ())}, nil
+	return &Runner{path: path, env: nonInteractiveEnv(os.Environ()), secrets: NewSecrets(env)}, nil
+}
+
+// Secrets returns the runner's resolution and redaction boundary. Every
+// repository reference a caller hands to this runner must be resolved through
+// it, so the resolved value is known to the redactor.
+func (r *Runner) Secrets() *Secrets { return r.secrets }
+
+// repositorySelectionVars are the environment variables Git uses to choose a
+// repository, work tree, index, or object store instead of discovering them
+// from the working directory. Inheriting any of them would let an ambient value
+// redirect an isolated import at the consuming project's repository, which is
+// exactly the isolation this package promises, so they are dropped rather than
+// overridden. The user's Git *configuration* stays authoritative:
+// GIT_CONFIG_NOSYSTEM and the credential environment are untouched here.
+var repositorySelectionVars = []string{
+	"GIT_DIR=",
+	"GIT_WORK_TREE=",
+	"GIT_INDEX_FILE=",
+	"GIT_COMMON_DIR=",
+	"GIT_OBJECT_DIRECTORY=",
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES=",
+	"GIT_NAMESPACE=",
 }
 
 // nonInteractiveEnv disables every interactive credential and SSH prompt so a
 // missing credential fails fast with an actionable error instead of blocking on
-// a terminal that an automated run does not have.
+// a terminal that an automated run does not have. It also removes every
+// inherited repository-selection variable so each command operates only on the
+// caller-owned temporary directory it runs in.
 func nonInteractiveEnv(base []string) []string {
 	filtered := make([]string, 0, len(base)+4)
 	for _, entry := range base {
@@ -52,6 +85,9 @@ func nonInteractiveEnv(base []string) []string {
 			strings.HasPrefix(entry, "GIT_ASKPASS="),
 			strings.HasPrefix(entry, "SSH_ASKPASS="),
 			strings.HasPrefix(entry, "GIT_OPTIONAL_LOCKS="):
+			continue
+		}
+		if hasAnyPrefix(entry, repositorySelectionVars) {
 			continue
 		}
 		filtered = append(filtered, entry)
@@ -64,8 +100,22 @@ func nonInteractiveEnv(base []string) []string {
 	)
 }
 
+// hasAnyPrefix reports whether value starts with any of the given prefixes.
+func hasAnyPrefix(value string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(value, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // CommandError carries the captured stderr of a failed git invocation so the
 // caller can report an actionable message.
+//
+// Its Args and Stderr are already redacted: a repository URL is an ordinary
+// command argument, and git echoes it back in most of its own diagnostics, so
+// both are passed through the runner's Secrets before being stored.
 type CommandError struct {
 	Args   []string
 	Stderr string
@@ -114,9 +164,18 @@ func (r *Runner) runAllowExit(ctx context.Context, dir string, allowedExitCodes 
 				return stdout.Bytes(), code, nil
 			}
 		}
-		return stdout.Bytes(), code, &CommandError{Args: args, Stderr: stderr.String(), Err: err}
+		return stdout.Bytes(), code, r.commandError(args, stderr.String(), err)
 	}
-	return nil, -1, &CommandError{Args: args, Stderr: stderr.String(), Err: err}
+	return nil, -1, r.commandError(args, stderr.String(), err)
+}
+
+// commandError builds a failure whose rendered form carries no resolved secret.
+func (r *Runner) commandError(args []string, stderr string, err error) *CommandError {
+	return &CommandError{
+		Args:   r.secrets.redactAll(args),
+		Stderr: r.secrets.Redact(stderr),
+		Err:    err,
+	}
 }
 
 // IsCommitID reports whether value is a full object id rather than a symbolic

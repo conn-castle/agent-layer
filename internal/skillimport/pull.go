@@ -37,7 +37,7 @@ func (s *Service) pullLocked(ctx context.Context, st *state, report *Report) err
 	adoptMissingImports(st, txn, report)
 
 	if len(st.cfg.Skills.Imports) > 0 {
-		runner, err := s.newRunner()
+		runner, err := s.newRunner(st.env)
 		if err != nil {
 			return err
 		}
@@ -105,7 +105,11 @@ func (s *Service) pullBlock(ctx context.Context, runner *gitrepo.Runner, workRoo
 		blocked(err)
 		return
 	}
-	if err := validateDesiredSet(desired); err != nil {
+	// Selector overlap between blocks is remote-dependent, so configuration
+	// validation cannot see it. Validating against the other blocks' pending
+	// entries — as add and remove already do — keeps one block from staging an
+	// import that collides with another block's skill name or selected path.
+	if err := validateDesiredSet(withOtherPendingEntries(st, txn, block, desired)); err != nil {
 		blocked(err)
 		return
 	}
@@ -201,7 +205,7 @@ func (s *Service) reconcileMembership(ctx context.Context, st *state, txn *trans
 	if err != nil {
 		return err
 	}
-	if err := validateDesiredSet(desired); err != nil {
+	if err := validateDesiredSet(withOtherPendingEntries(st, txn, blockCtx.Block, desired)); err != nil {
 		return err
 	}
 	failedPaths := reportCandidateFailures(report, config.NormalizeSkillRepository(blockCtx.Block.Repository), failures)
@@ -299,7 +303,12 @@ func (s *Service) advanceExisting(ctx context.Context, runner *gitrepo.Runner, s
 		return
 	}
 
-	if skill.Tree.Equal(base) && entry.Commit == blockCtx.TargetCommit && entry.ResolvedRef == blockCtx.Resolution.Ref && entry.ConfiguredRef == skill.Block.Ref {
+	// Every field the lock records for this skill is compared, not just the
+	// content: a configuration change that only moves the tracking mode or the
+	// resolved ref kind must still be written through, or status, push
+	// freshness checks, and lock advancement would keep applying the superseded
+	// policy indefinitely.
+	if skill.Tree.Equal(base) && entry == lockEntryFor(skill, blockCtx, blockCtx.TargetCommit, skill.Tree) {
 		result.Outcome = OutcomeUnchanged
 		report.Add(result)
 		return
@@ -375,9 +384,9 @@ func retireUnconfigured(st *state, txn *transaction, report *Report) {
 	}
 	// Iterate a snapshot: retiring an entry mutates the transaction's lock.
 	pending := append([]skilllock.Entry{}, txn.lock.Skills...)
-	reported := reportedNames(report)
+	reported := reportedSkillKeys(report)
 	for _, entry := range pending {
-		if _, stillReported := reported[entry.Name]; stillReported {
+		if _, stillReported := reported[skillKey(entry.Repository, entry.SelectedPath)]; stillReported {
 			continue
 		}
 		key := entry.Repository + "\x00" + config.NormalizeSkillSelector(entry.Selector)
@@ -388,13 +397,24 @@ func retireUnconfigured(st *state, txn *transaction, report *Report) {
 	}
 }
 
-// reportedNames returns the skills already accounted for in a report.
-func reportedNames(report *Report) map[string]struct{} {
-	names := make(map[string]struct{}, len(report.Skills))
+// reportedSkillKeys returns the skills already accounted for in a report.
+//
+// Skills are keyed by repository and selected path rather than by name: two
+// blocks can resolve distinct paths to the same name, and a name-keyed skip
+// would let one block's failure suppress retirement of an entirely different
+// block's unconfigured entry.
+func reportedSkillKeys(report *Report) map[string]struct{} {
+	keys := make(map[string]struct{}, len(report.Skills))
 	for _, skill := range report.Skills {
-		names[skill.Name] = struct{}{}
+		keys[skillKey(skill.Repository, skill.SelectedPath)] = struct{}{}
 	}
-	return names
+	return keys
+}
+
+// skillKey renders the repository and selected path pair that identifies one
+// managed skill independently of the name it declares.
+func skillKey(repository string, selectedPath string) string {
+	return config.NormalizeSkillRepository(repository) + "\x00" + config.NormalizeSkillSelector(selectedPath)
 }
 
 // txnEntriesForBlock returns a block's lock entries from the pending

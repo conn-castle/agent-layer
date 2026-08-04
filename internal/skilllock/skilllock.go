@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/conn-castle/agent-layer/internal/envref"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
@@ -175,16 +176,113 @@ func validate(file *File, source string) error {
 // rejectOverlappingPaths refuses duplicate or ancestor/descendant selected
 // paths in one repository, because they describe overlapping editable owners
 // that no import operation can reconcile.
+//
+// Comparing sorted neighbours is not enough: every byte below '/' sorts ahead
+// of it, so a sibling such as "skills-old" lands between "skills" and
+// "skills/alpha" and would hide that pair. Each path is instead checked against
+// every path already accepted, by walking its own ancestor prefixes. Sorting
+// guarantees an ancestor is accepted before any of its descendants, because an
+// ancestor is a strict prefix and therefore sorts first.
 func rejectOverlappingPaths(paths []string) error {
 	sorted := append([]string{}, paths...)
 	sort.Strings(sorted)
-	for i := 1; i < len(sorted); i++ {
-		previous, current := sorted[i-1], sorted[i]
-		if current == previous || strings.HasPrefix(current, previous+"/") {
-			return fmt.Errorf("selected paths %s and %s overlap", previous, current)
+	accepted := make(map[string]struct{}, len(sorted))
+	for _, current := range sorted {
+		if conflict, overlaps := findOverlap(accepted, current); overlaps {
+			return fmt.Errorf("selected paths %s and %s overlap", conflict, current)
 		}
+		accepted[current] = struct{}{}
 	}
 	return nil
+}
+
+// findOverlap returns an already-accepted path that is candidate itself or one
+// of its ancestors.
+func findOverlap(accepted map[string]struct{}, candidate string) (string, bool) {
+	for current := candidate; current != "." && current != "/" && current != ""; current = path.Dir(current) {
+		if _, exists := accepted[current]; exists {
+			return current, true
+		}
+	}
+	return "", false
+}
+
+// ValidateRepository rejects a repository reference that embeds a literal
+// credential, while accepting one that references a secret by placeholder.
+//
+// A repository URL is written into config.toml, copied into this lockfile, and
+// printed in status output and Git command errors. A literal secret would be
+// published to all three, so it is refused. A `${AL_*}` placeholder is not a
+// secret: the placeholder text is what stays canonical everywhere, and the
+// value it names is resolved only at the Git access boundary. That mirrors how
+// MCP server URLs and headers reference secrets.
+//
+// A literal credential can reach a URL three ways, and all three are refused: a
+// password component, userinfo on any scheme that is not a known identity-only
+// transport, and a value under a secret-like query key. Only the scp-like
+// `user@host:path` form and an `ssh://user@host/path` or `git://user@host/path`
+// username are ordinary identifiers rather than secrets, so only those stay
+// accepted literally.
+func ValidateRepository(repository string) error {
+	// The AL_ namespace is the only one `.agent-layer/.env` exposes, so any
+	// other placeholder can never resolve and is reported now rather than as a
+	// missing value at the first Git access.
+	for _, name := range envref.Names(repository) {
+		if !envref.IsAgentLayerName(name) {
+			return fmt.Errorf("placeholder ${%s} is outside the %s namespace that .agent-layer/.env provides", name, envref.AgentLayerPrefix)
+		}
+	}
+
+	// A credential can ride in the query string as well as in userinfo. The key
+	// vocabulary is the one the MCP policy warning already uses, so both places
+	// agree on what counts as a secret parameter.
+	if key, found := envref.LiteralSecretQueryKey(repository); found {
+		return fmt.Errorf("repository URL embeds a literal secret in its %q query parameter; reference it as ${%sNAME} from .agent-layer/.env, or let a Git credential helper or SSH supply the credential",
+			key, envref.AgentLayerPrefix)
+	}
+
+	scheme, rest, ok := strings.Cut(repository, "://")
+	if !ok {
+		return nil
+	}
+	authority, _, _ := strings.Cut(rest, "/")
+	// Userinfo ends at the last "@" in the authority, so a literal "@" inside a
+	// password is not mistaken for the host separator.
+	at := strings.LastIndex(authority, "@")
+	if at < 0 {
+		return nil
+	}
+	userinfo := authority[:at]
+	username, password, hasPassword := strings.Cut(userinfo, ":")
+
+	// The rejected value is never echoed back: repeating it in the error would
+	// reproduce the exposure this rule exists to prevent.
+	switch {
+	case hasPassword && !envref.IsEntirelyPlaceholders(password):
+		return fmt.Errorf("repository URL embeds a literal password; reference it as ${%sNAME} from .agent-layer/.env, or let a Git credential helper or SSH supply it", envref.AgentLayerPrefix)
+	case !hasPassword && !allowsLiteralUsername(scheme) && !envref.IsEntirelyPlaceholders(username):
+		return fmt.Errorf("repository URL embeds literal credentials in its userinfo; reference them as ${%sNAME} from .agent-layer/.env, or let a Git credential helper or SSH supply them", envref.AgentLayerPrefix)
+	}
+	return nil
+}
+
+// identityOnlySchemes are the transports whose userinfo names an account rather
+// than carrying a credential, so a literal username stays acceptable.
+var identityOnlySchemes = map[string]struct{}{
+	"ssh": {},
+	"git": {},
+}
+
+// allowsLiteralUsername reports whether a bare literal username is an identity
+// on this scheme rather than a token.
+//
+// Only the named transports qualify. Every other scheme — including one built
+// from a placeholder, whose resolved value is unknowable here — is treated as
+// possibly web, because `${AL_SCHEME}://token@host` would otherwise hand git
+// `https://token@host` while passing validation.
+func allowsLiteralUsername(scheme string) bool {
+	_, ok := identityOnlySchemes[strings.ToLower(strings.TrimSpace(scheme))]
+	return ok
 }
 
 func validateEntry(entry Entry) error {
@@ -213,6 +311,9 @@ func validateEntry(entry Entry) error {
 	}
 	if entry.Repository != strings.TrimSpace(entry.Repository) || strings.HasSuffix(entry.Repository, "/") {
 		return fmt.Errorf("repository %q is not normalized", entry.Repository)
+	}
+	if err := ValidateRepository(entry.Repository); err != nil {
+		return fmt.Errorf("repository is invalid: %w", err)
 	}
 	if strings.HasPrefix(strings.TrimSpace(entry.Selector), "!") {
 		return fmt.Errorf("selector %q is an exclusion; only a positive selector can own a lock entry", entry.Selector)

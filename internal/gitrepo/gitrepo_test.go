@@ -74,13 +74,23 @@ func (r *testRepo) commit(message string) string {
 	return r.git("rev-parse", "HEAD")
 }
 
+// literalRepository wraps a reference that carries no placeholder, which is
+// what every fixture that is not exercising secret resolution uses.
+func literalRepository(reference string) Repository {
+	resolved, err := NewSecrets(nil).Resolve(reference)
+	if err != nil {
+		panic(err)
+	}
+	return resolved
+}
+
 func newTestSource(t *testing.T, repo *testRepo) (*Runner, *Source) {
 	t.Helper()
-	runner, err := NewRunner()
+	runner, err := NewRunner(nil)
 	if err != nil {
 		t.Skipf("git runner unavailable: %v", err)
 	}
-	source, err := OpenSource(context.Background(), runner, t.TempDir(), repo.dir)
+	source, err := OpenSource(context.Background(), runner, t.TempDir(), literalRepository(repo.dir))
 	if err != nil {
 		t.Fatalf("OpenSource: %v", err)
 	}
@@ -195,6 +205,113 @@ func TestReadTreeRejectsUnsafeEntries(t *testing.T) {
 	}
 }
 
+// TestReadTreeRejectsGitlinks proves a committed submodule inside a selected
+// skill root fails loudly. It is the realistic case of the same rejection the
+// symlink test covers: git records it as a commit object, and following or
+// silently dropping it would import a skill the source does not describe.
+func TestReadTreeRejectsGitlinks(t *testing.T) {
+	inner := newTestRepo(t, "main")
+	innerCommit := inner.commit("inner")
+
+	repo := newTestRepo(t, "main")
+	repo.write("skills/alpha/SKILL.md", "---\nname: alpha\ndescription: d\n---\nBody\n", 0o644)
+	repo.commit("add alpha")
+	repo.git("update-index", "--add", "--cacheinfo", "160000,"+innerCommit+",skills/alpha/vendor")
+	tree := repo.git("write-tree")
+	commit := repo.git("commit-tree", tree, "-p", repo.git("rev-parse", "HEAD"), "-m", "add gitlink")
+	repo.git("update-ref", "refs/heads/main", commit)
+
+	_, source := newTestSource(t, repo)
+	_, err := source.ReadTree(context.Background(), commit, "skills/alpha")
+	if err == nil {
+		t.Fatal("expected a gitlink entry to be rejected")
+	}
+	if !strings.Contains(err.Error(), "gitlink") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+// TestPublishPreservesDestinationOnlyIgnoredFiles proves push contributes skill
+// content without removing files it does not manage. Canonical trees exclude
+// .DS_Store and Thumbs.db, so replacing the skill path wholesale would publish
+// a deletion of any the destination itself committed.
+func TestPublishPreservesDestinationOnlyIgnoredFiles(t *testing.T) {
+	repo := newTestRepo(t, "main")
+	repo.write("skills/alpha/SKILL.md", "---\nname: alpha\ndescription: d\n---\nBody\n", 0o644)
+	repo.write("skills/alpha/.DS_Store", "destination noise\n", 0o644)
+	repo.write("skills/alpha/nested/Thumbs.db", "more noise\n", 0o644)
+	head := repo.commit("add alpha with ignored artifacts")
+
+	runner, err := NewRunner(nil)
+	if err != nil {
+		t.Skipf("git runner unavailable: %v", err)
+	}
+	ctx := context.Background()
+	destination, err := OpenDestination(ctx, runner, t.TempDir(), literalRepository(repo.dir))
+	if err != nil {
+		t.Fatalf("OpenDestination: %v", err)
+	}
+	if err := destination.FetchCommit(ctx, literalRepository(repo.dir), head); err != nil {
+		t.Fatalf("FetchCommit: %v", err)
+	}
+	tree, err := skilltree.NewTree([]skilltree.File{
+		{Path: "SKILL.md", Data: []byte("---\nname: alpha\ndescription: d\n---\nUpdated\n")},
+	})
+	if err != nil {
+		t.Fatalf("NewTree: %v", err)
+	}
+	if _, err := destination.Publish(ctx, head, "main", []Update{{Path: "skills/alpha", Tree: tree}}, "Update skill alpha"); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	if got := repo.git("show", "main:skills/alpha/SKILL.md"); !strings.Contains(got, "Updated") {
+		t.Fatalf("skill content was not published: %q", got)
+	}
+	for path, want := range map[string]string{
+		"skills/alpha/.DS_Store":        "destination noise",
+		"skills/alpha/nested/Thumbs.db": "more noise",
+	} {
+		got := repo.git("show", "main:"+path)
+		if !strings.Contains(got, want) {
+			t.Fatalf("%s was removed by publication: %q", path, got)
+		}
+	}
+}
+
+// TestPublishRejectsAnUnsafeUpdatePath proves the path a publication clears is
+// validated before any removal, so a caller that bypassed lock parsing cannot
+// direct os.RemoveAll outside the skill root.
+func TestPublishRejectsAnUnsafeUpdatePath(t *testing.T) {
+	repo := newTestRepo(t, "main")
+	head := repo.commit("seed publish")
+
+	runner, err := NewRunner(nil)
+	if err != nil {
+		t.Skipf("git runner unavailable: %v", err)
+	}
+	ctx := context.Background()
+	destination, err := OpenDestination(ctx, runner, t.TempDir(), literalRepository(repo.dir))
+	if err != nil {
+		t.Fatalf("OpenDestination: %v", err)
+	}
+	if err := destination.FetchCommit(ctx, literalRepository(repo.dir), head); err != nil {
+		t.Fatalf("FetchCommit: %v", err)
+	}
+	tree, err := skilltree.NewTree([]skilltree.File{
+		{Path: "SKILL.md", Data: []byte("---\nname: alpha\ndescription: d\n---\nBody\n")},
+	})
+	if err != nil {
+		t.Fatalf("NewTree: %v", err)
+	}
+	_, err = destination.Publish(ctx, head, "main", []Update{{Path: "../escape", Tree: tree}}, "escape")
+	if err == nil {
+		t.Fatal("expected an unsafe destination path to be rejected")
+	}
+	if !strings.Contains(err.Error(), "unsafe") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 // TestListDirectoriesAndPathExistsSupportSelectorResolution proves wildcard
 // expansion and exact-selector checks read the repository without a checkout.
 func TestListDirectoriesAndPathExistsSupportSelectorResolution(t *testing.T) {
@@ -246,7 +363,7 @@ func TestFetchRejectsAnUnknownCommit(t *testing.T) {
 // TestMergeTextMergesCompatibleChangesAndReportsConflicts proves the production
 // text merger routes both outcomes correctly.
 func TestMergeTextMergesCompatibleChangesAndReportsConflicts(t *testing.T) {
-	runner, err := NewRunner()
+	runner, err := NewRunner(nil)
 	if err != nil {
 		t.Skipf("git runner unavailable: %v", err)
 	}
@@ -287,12 +404,12 @@ func TestDestinationPublishesWithoutForce(t *testing.T) {
 	repo.write("skills/alpha/SKILL.md", "---\nname: alpha\ndescription: d\n---\nBody\n", 0o644)
 	head := repo.commit("add alpha")
 
-	runner, err := NewRunner()
+	runner, err := NewRunner(nil)
 	if err != nil {
 		t.Skipf("git runner unavailable: %v", err)
 	}
 	ctx := context.Background()
-	destination, err := OpenDestination(ctx, runner, t.TempDir(), repo.dir)
+	destination, err := OpenDestination(ctx, runner, t.TempDir(), literalRepository(repo.dir))
 	if err != nil {
 		t.Fatalf("OpenDestination: %v", err)
 	}
@@ -310,7 +427,7 @@ func TestDestinationPublishesWithoutForce(t *testing.T) {
 	if _, exists, err = destination.Head(ctx, "absent"); err != nil || exists {
 		t.Fatalf("Head(absent) = (%v, %v)", exists, err)
 	}
-	if err := destination.FetchCommit(ctx, repo.dir, head); err != nil {
+	if err := destination.FetchCommit(ctx, literalRepository(repo.dir), head); err != nil {
 		t.Fatalf("FetchCommit: %v", err)
 	}
 
@@ -339,20 +456,114 @@ func TestDestinationPublishesWithoutForce(t *testing.T) {
 // treated as an unambiguous commit selection.
 func TestIsCommitIDAcceptsOnlyFullObjectIDs(t *testing.T) {
 	t.Parallel()
-	if !IsCommitID("0123456789abcdef0123456789abcdef01234567") {
-		t.Fatal("a full object id was rejected")
+	// Both widths git uses are accepted, matching the widths skilllock records:
+	// a SHA-256 repository's 64-character id must resolve as a commit rather
+	// than being looked up as a branch or tag name that does not exist.
+	for _, value := range []string{
+		"0123456789abcdef0123456789abcdef01234567",
+		strings.Repeat("ab", 32),
+	} {
+		if !IsCommitID(value) {
+			t.Fatalf("%d-character object id was rejected", len(value))
+		}
 	}
-	for _, value := range []string{"0123456", "main", "v1.0.0", strings.Repeat("g", 40)} {
+	for _, value := range []string{"0123456", "main", "v1.0.0", strings.Repeat("g", 40), strings.Repeat("a", 41), strings.Repeat("a", 63)} {
 		if IsCommitID(value) {
 			t.Fatalf("%q was treated as a commit id", value)
 		}
 	}
 }
 
+// TestResolveNormalizesAnUppercaseCommitID proves a configured object id is
+// recorded in the lowercase form git prints. skilllock only accepts lowercase
+// hex, so an uppercase id recorded verbatim would make the lock unwritable and
+// would never compare equal to a later resolution of the same commit.
+func TestResolveNormalizesAnUppercaseCommitID(t *testing.T) {
+	repo := newTestRepo(t, "main")
+	repo.write("skills/alpha/SKILL.md", "---\nname: alpha\ndescription: d\n---\nBody\n", 0o644)
+	commit := repo.commit("add alpha")
+
+	_, source := newTestSource(t, repo)
+	resolution, err := source.Resolve(context.Background(), strings.ToUpper(commit))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if resolution.Commit != commit || resolution.Ref != commit {
+		t.Fatalf("resolution = %+v, want lowercase commit %s", resolution, commit)
+	}
+	entry := skilllock.Entry{
+		Name: "alpha", Repository: repo.dir, Selector: "skills/alpha", SelectedPath: "skills/alpha",
+		ConfiguredRef: strings.ToUpper(commit), ResolvedRef: resolution.Ref, RefKind: resolution.Kind,
+		Tracking: skilllock.TrackingPinned, Commit: resolution.Commit,
+		TreeHash: "sha256:" + strings.Repeat("0", 64),
+	}
+	lock := skilllock.New()
+	lock.Upsert(entry)
+	if _, err := lock.Marshal(); err != nil {
+		t.Fatalf("the resolved commit is not recordable in the lock: %v", err)
+	}
+}
+
+// TestNonInteractiveEnvDropsInheritedRepositorySelection proves an ambient Git
+// repository selection cannot redirect an isolated import at the consuming
+// project's own repository, which is the isolation this package promises.
+func TestNonInteractiveEnvDropsInheritedRepositorySelection(t *testing.T) {
+	t.Parallel()
+	env := nonInteractiveEnv([]string{
+		"PATH=/usr/bin",
+		"GIT_DIR=/elsewhere/.git",
+		"GIT_WORK_TREE=/elsewhere",
+		"GIT_INDEX_FILE=/elsewhere/.git/index",
+		"GIT_COMMON_DIR=/elsewhere/.git",
+		"GIT_OBJECT_DIRECTORY=/elsewhere/.git/objects",
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES=/other/objects",
+		"GIT_NAMESPACE=ns",
+	})
+	joined := strings.Join(env, "\n")
+	for _, leaked := range []string{"GIT_DIR=", "GIT_WORK_TREE=", "GIT_INDEX_FILE=", "GIT_COMMON_DIR=", "GIT_OBJECT_DIRECTORY=", "GIT_ALTERNATE_OBJECT_DIRECTORIES=", "GIT_NAMESPACE="} {
+		if strings.Contains(joined, leaked) {
+			t.Fatalf("%s survived into the isolated environment: %v", leaked, env)
+		}
+	}
+	if !strings.Contains(joined, "PATH=/usr/bin") {
+		t.Fatal("unrelated environment entries were dropped")
+	}
+}
+
+// TestRunnerIgnoresAnInheritedGitDir proves the filtering above holds for a
+// real invocation: a runner built while GIT_DIR names another repository still
+// reports the repository its working directory selects.
+func TestRunnerIgnoresAnInheritedGitDir(t *testing.T) {
+	elsewhere := newTestRepo(t, "main")
+	elsewhere.write("marker.txt", "elsewhere\n", 0o644)
+	elsewhereCommit := elsewhere.commit("elsewhere commit")
+
+	here := newTestRepo(t, "main")
+	hereCommit := here.commit("here commit")
+
+	t.Setenv("GIT_DIR", filepath.Join(elsewhere.dir, ".git"))
+	t.Setenv("GIT_WORK_TREE", elsewhere.dir)
+	runner, err := NewRunner(nil)
+	if err != nil {
+		t.Skipf("git runner unavailable: %v", err)
+	}
+	output, err := runner.run(context.Background(), here.dir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("rev-parse: %v", err)
+	}
+	got := strings.TrimSpace(string(output))
+	if got == elsewhereCommit {
+		t.Fatal("the inherited GIT_DIR redirected the command at another repository")
+	}
+	if got != hereCommit {
+		t.Fatalf("HEAD = %s, want %s", got, hereCommit)
+	}
+}
+
 // TestCommandErrorSurfacesGitDiagnostics proves a failed invocation reports the
 // captured stderr so the user sees an actionable message.
 func TestCommandErrorSurfacesGitDiagnostics(t *testing.T) {
-	runner, err := NewRunner()
+	runner, err := NewRunner(nil)
 	if err != nil {
 		t.Skipf("git runner unavailable: %v", err)
 	}
@@ -388,10 +599,10 @@ func TestNonInteractiveEnvDisablesPrompting(t *testing.T) {
 // resolved git executable rather than silently doing nothing.
 func TestOpenSourceRequiresARunner(t *testing.T) {
 	t.Parallel()
-	if _, err := OpenSource(context.Background(), nil, t.TempDir(), "repo"); err == nil {
+	if _, err := OpenSource(context.Background(), nil, t.TempDir(), literalRepository("repo")); err == nil {
 		t.Fatal("expected a missing runner to fail")
 	}
-	if _, err := OpenDestination(context.Background(), nil, t.TempDir(), "repo"); err == nil {
+	if _, err := OpenDestination(context.Background(), nil, t.TempDir(), literalRepository("repo")); err == nil {
 		t.Fatal("expected a missing runner to fail")
 	}
 }
@@ -403,16 +614,16 @@ func TestDestinationReadTreeSeesFetchedContent(t *testing.T) {
 	repo.write("skills/alpha/SKILL.md", "---\nname: alpha\ndescription: d\n---\nDestination\n", 0o644)
 	head := repo.commit("add alpha")
 
-	runner, err := NewRunner()
+	runner, err := NewRunner(nil)
 	if err != nil {
 		t.Skipf("git runner unavailable: %v", err)
 	}
 	ctx := context.Background()
-	destination, err := OpenDestination(ctx, runner, t.TempDir(), repo.dir)
+	destination, err := OpenDestination(ctx, runner, t.TempDir(), literalRepository(repo.dir))
 	if err != nil {
 		t.Fatalf("OpenDestination: %v", err)
 	}
-	if err := destination.FetchCommit(ctx, repo.dir, head); err != nil {
+	if err := destination.FetchCommit(ctx, literalRepository(repo.dir), head); err != nil {
 		t.Fatalf("FetchCommit: %v", err)
 	}
 	tree, err := destination.ReadTree(ctx, head, "skills/alpha")
@@ -424,10 +635,10 @@ func TestDestinationReadTreeSeesFetchedContent(t *testing.T) {
 		t.Fatalf("destination tree = %v", tree.Paths())
 	}
 	// A second fetch of an already-present commit is a no-op rather than an error.
-	if err := destination.FetchCommit(ctx, repo.dir, head); err != nil {
+	if err := destination.FetchCommit(ctx, literalRepository(repo.dir), head); err != nil {
 		t.Fatalf("repeat FetchCommit: %v", err)
 	}
-	if err := destination.FetchCommit(ctx, repo.dir, "0000000000000000000000000000000000000000"); err == nil {
+	if err := destination.FetchCommit(ctx, literalRepository(repo.dir), "0000000000000000000000000000000000000000"); err == nil {
 		t.Fatal("expected fetching an unknown commit to fail")
 	}
 }
@@ -507,16 +718,16 @@ func TestPublishReportsAFailedPush(t *testing.T) {
 	repo.write("skills/alpha/SKILL.md", "---\nname: alpha\ndescription: d\n---\nBody\n", 0o644)
 	head := repo.commit("add alpha")
 
-	runner, err := NewRunner()
+	runner, err := NewRunner(nil)
 	if err != nil {
 		t.Skipf("git runner unavailable: %v", err)
 	}
 	ctx := context.Background()
-	destination, err := OpenDestination(ctx, runner, t.TempDir(), repo.dir)
+	destination, err := OpenDestination(ctx, runner, t.TempDir(), literalRepository(repo.dir))
 	if err != nil {
 		t.Fatalf("OpenDestination: %v", err)
 	}
-	if err := destination.FetchCommit(ctx, repo.dir, head); err != nil {
+	if err := destination.FetchCommit(ctx, literalRepository(repo.dir), head); err != nil {
 		t.Fatalf("FetchCommit: %v", err)
 	}
 	// The destination refuses non-fast-forward updates to its checked-out
@@ -540,12 +751,12 @@ func TestPublishReportsAFailedPush(t *testing.T) {
 // TestSourceAndDestinationSurfaceUnreachableRepositories proves every remote
 // entry point reports an unreachable repository instead of degrading silently.
 func TestSourceAndDestinationSurfaceUnreachableRepositories(t *testing.T) {
-	runner, err := NewRunner()
+	runner, err := NewRunner(nil)
 	if err != nil {
 		t.Skipf("git runner unavailable: %v", err)
 	}
 	ctx := context.Background()
-	missing := filepath.Join(t.TempDir(), "absent-repository")
+	missing := literalRepository(filepath.Join(t.TempDir(), "absent-repository"))
 
 	source, err := OpenSource(ctx, runner, t.TempDir(), missing)
 	if err != nil {
@@ -610,12 +821,12 @@ func TestPublishRefusesAnUnknownBase(t *testing.T) {
 	repo.write("skills/alpha/SKILL.md", "---\nname: alpha\ndescription: d\n---\nBody\n", 0o644)
 	head := repo.commit("add alpha")
 
-	runner, err := NewRunner()
+	runner, err := NewRunner(nil)
 	if err != nil {
 		t.Skipf("git runner unavailable: %v", err)
 	}
 	ctx := context.Background()
-	destination, err := OpenDestination(ctx, runner, t.TempDir(), repo.dir)
+	destination, err := OpenDestination(ctx, runner, t.TempDir(), literalRepository(repo.dir))
 	if err != nil {
 		t.Fatalf("OpenDestination: %v", err)
 	}
