@@ -541,7 +541,11 @@ func retainedStructuredPath(path []string) bool {
 		}
 	}
 	if len(path) == 2 {
-		return (path[0] == "event" && path[1] == jsonTypeKey) ||
+		// Array elements do not extend the path, so every denial in the list
+		// writes this one entry. Only its presence drives the reducer, which
+		// reports the retained name as an example.
+		return (path[0] == permissionDenialsKey && path[1] == toolNameKey) ||
+			(path[0] == "event" && path[1] == jsonTypeKey) ||
 			(path[0] == jsonErrorKey && (path[1] == jsonMessageKey || path[1] == jsonReasonKey)) ||
 			(path[0] == "item" && (path[1] == jsonTypeKey || path[1] == jsonMessageKey || path[1] == jsonTextKey)) ||
 			(path[0] == "delta" && (path[1] == jsonTypeKey || path[1] == jsonTextKey))

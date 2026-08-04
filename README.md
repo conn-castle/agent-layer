@@ -523,6 +523,47 @@ Client notes:
 
 Codex may still deny or override these settings if its `requirements.toml` disallows them.
 
+##### How approvals reach a dispatched agent
+
+`al dispatch` runs agents headlessly (`codex exec`, `claude -p`), where both providers
+deny file edits by default and no one can answer a prompt. Agent Layer therefore sends
+the approval policy on the command line:
+
+| `approvals.mode` | Codex `sandbox_mode` | Claude `--permission-mode` |
+| --- | --- | --- |
+| `none`, `mcp` | `read-only` | `dontAsk` |
+| `commands`, `all` | `workspace-write` | `acceptEdits` |
+| `yolo` | `danger-full-access` | `--dangerously-skip-permissions` |
+
+Editing capability follows command approval, because Codex has no separate edit-approval
+rule: its sandbox is what permits or denies unprompted edits. Under `none` and `mcp` a
+dispatched agent can read and answer questions but cannot change files.
+
+Claude applies a project's `permissions.allow` rules only after you accept its workspace
+trust dialog, and that dialog never appears under `-p`. Dispatch therefore also passes the
+allowlisted commands and MCP servers as `--allowedTools`, so the same approvals apply
+whether or not the repository has been trusted interactively. `deny` rules and managed
+policy are unaffected and still win.
+
+Under `commands` and `all`, a dispatched Codex agent works inside the sandbox Codex itself
+uses by default for a version-controlled folder. That envelope has limits worth knowing:
+
+- **Writes** are confined to the working directory and temporary directories.
+- **`.git` is not writable.** Codex protects `.git`, `.agents`, and `.codex` inside
+  writable roots, so a dispatched agent cannot stage, commit, or rewrite refs. Interactive
+  users approve that escalation; a headless run has no one to ask.
+- **Network access is off**, including loopback. An agent cannot bind a test server or
+  fetch dependencies. Set `sandbox_workspace_write.network_access` through
+  `agents.codex.agent_specific` if a repository needs it.
+
+Explicit provider settings stay authoritative: `agents.codex.agent_specific.sandbox_mode`
+and `agents.claude.agent_specific.permissions.defaultMode` are never overridden by
+dispatch.
+
+If a dispatched Claude agent is denied a tool call, the dispatch fails with the denied
+tool name. Claude itself reports such a run as a success with a plausible final answer, so
+Agent Layer treats a denial as a failure rather than passing that answer through.
+
 ### Secrets: `.agent-layer/.env`
 
 API tokens and other secrets live in `.agent-layer/.env` (always gitignored).

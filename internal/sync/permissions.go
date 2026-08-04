@@ -41,9 +41,9 @@ func buildPermissionsBlock(cfg config.Config, commandsAllow []string, enabledSer
 type claudeRenderer struct{}
 
 func (claudeRenderer) RenderCommand(pattern string) string {
-	return "Bash(" + pattern + ":*)"
+	return projection.ClaudeCommandRule(pattern)
 }
 
 func (claudeRenderer) RenderMCP(serverID string) string {
-	return "mcp__" + serverID + "__*"
+	return projection.ClaudeMCPRule(serverID)
 }
