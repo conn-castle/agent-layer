@@ -29,6 +29,18 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-08-04 benchmark-treatment-skill-mapping-stale: Skills-treatment conformance requires skills that no longer ship
+    Priority: High. Area: benchmarks / treatment conformance
+    Description: `dispatchSkillForRole` in internal/benchmark/normalize.go returns `review-plan`, `implement-plan`, and `review-uncommitted-code`, and assets/workflow-prompt.md instructs `$plan-work` then `$fully-implement-plan`. All five skills were removed in PR #167, so `dispatchConformance` can never reach `len(completedRoles) == len(required)`. A `TreatmentInstructionsAndSkills` run therefore scores as an underperforming treatment instead of failing, producing invalid comparison data.
+    Open question: Which skill should each required role map to now that the workflow is `$implement`, or should the gate stop keying on skill name at all?
+    Notes: feat/benchmark-campaigns already updates workflow-prompt.md to `$implement` but leaves dispatchSkillForRole unchanged, so merging that branch does not by itself resolve this.
+
+- Issue 2026-08-04 template-consumer-skill-names-unverified: Nothing checks that in-repo consumers name skills that exist
+    Priority: Medium. Area: templates / test coverage
+    Description: internal/templates guards the producer side with TestRemovedSkillTemplatesStayRemoved, but no test verifies that code and assets referencing skill names resolve to shipped skills. internal/benchmark/runtime_test.go builds its dispatch records from the same three string literals the production switch returns, so it passes whether or not those skills exist, and assets/workflow-prompt.md has no content assertion at all.
+    Next step: Add a test asserting every skill name referenced by benchmark code and assets resolves to a directory under internal/templates/skills.
+    Notes: This gap is why removing 16 skill templates in PR #167 left CI fully green.
+
 - Issue 2026-07-28 antigravity-probe-headless-permission-denial: Probe stdout is empty on agy 1.1.8, so transcript-derived capabilities are unmeasurable
     Priority: Medium. Area: Antigravity capability probe
     Description: On agy 1.1.8 the headless probe run exits 0 with empty stdout and stderr `no output produced — a tool required the "command" permission that headless mode cannot prompt for`. Every stdout-derived capability (`instructions_loaded`, `skill_names_visible`, `mcp_config_names_visible`, `shared_skill_dedup_observed`) therefore reports false regardless of real behavior. Confirmed pre-existing: the same result occurs with the previous prompt and `/usr/bin/true` fixture.
