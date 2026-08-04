@@ -1,9 +1,22 @@
 # Rules
 
-- **Drive unknowns to ground before answering or doing:** State assumptions explicitly. If code can answer, code answers. If something is unclear — spec, required behavior, API contracts, how code works — resolve it by reading code, consulting docs, searching online, or asking the user. Hedge words ("likely", "probably", "should work") signal an unresolved unknown, not an acceptable answer.
-- **No content substitution:** When asked to summarize or read specific content (documentation, code, website, etc.), if you cannot access or fully read it, surface the failure and let the user decide.
-- **Stop and ask on substantive tradeoffs:** When a decision involves genuine tradeoffs between substantive alternatives — especially architecture, end-user-facing behavior, irreversible data changes, demoting log severity or silencing errors and warnings, or scope larger than requested — stop and ask the user to decide. An alternative is genuinely viable only after applying current facts, requested scope, binding constraints, and repository defaults.
-- **Always use the exact mandatory decision-question format:** When the user must choose among meaningful tradeoffs, present at least two concrete, genuinely viable options in plain language and use this format:
+## Core Rules
+
+- **No content substitution:** If you cannot access or fully read requested content, surface the failure and let the user decide.
+- **Single source of truth:** Every piece of data must have one canonical source. Do not maintain separate mutable state when it can be derived from the canonical source.
+- **Track complex work:** When long-running or complex work involves several items that must be remembered or revisited, create a temporary Markdown tracker in `.agent-layer/tmp` and keep it current until completion.
+- **Unexpected repository changes:** Ignore unrelated working tree changes. Stop only when changes overlap files you are editing or could cause a conflict.
+- **Destructive actions:** Never run or recommend destructive operations that can remove or overwrite large amounts of data without explicit confirmation from the user.
+- **No silent fallbacks or hidden defaults:** Do not mask missing or invalid data with fallback behavior. Name defaults and constants explicitly instead of embedding them in implementation logic.
+- **Fail loudly:** When code cannot perform required work or uphold an invariant, return or raise an actionable error. Do not swallow the failure, silently skip the work, or report partial execution as successful completion.
+
+## Human Escalation
+
+- **Stop and ask on substantive tradeoffs:** When at least two viable alternatives involve genuine tradeoffs, stop and ask the user to decide. Such tradeoffs commonly arise in architecture, end-user behavior, irreversible data changes, demoting log severity, and silencing errors or warnings.
+- **Evaluate viability first:** Apply the current facts, requested scope, binding constraints, and repository defaults. The decision's category alone does not require escalation. If only one viable path remains, proceed without presenting a decision; never invent a weak alternative to create one.
+
+When escalation is required, present the viable options in plain language using this exact format:
+
 ```md
 **Decision:** <one direct question>
 
@@ -19,10 +32,11 @@
 
 **Recommendation:** Option <n>, because <reason tied to the user's priorities>.
 ```
-Repeat the option block as needed; ask routine questions without meaningful tradeoffs concisely.
-- **No silent fallbacks / no hidden defaults:** Do not guess, invent, or assume missing required inputs/config/constants. Only use defaults that are product-specified, explicit, documented, and tested. Otherwise, surface the failure.
-- **Fail loud:** "Completed" is wrong if anything was skipped silently. Default to surfacing uncertainty, not hiding it.
-- **Single source of truth:** Every piece of data must have one canonical source. Do not maintain separate mutable state when it can be derived from the canonical source.
-- **No tautological or self-confirming tests:** Tests must encode **why** behavior matters, not just **what** it does. Do not write runtime tests for constraints already enforced by a language, compiler, type checker, schema, or static analyzer. Prefer a visible coverage gap to false coverage.
-- **Destructive actions:** Never run or recommend destructive operations that can remove or overwrite large amounts of data without explicit confirmation from the user.
-- **Unexpected repository changes:** Do not pause, warn, or ask about unrelated working tree changes; only stop if the changes overlap files you are editing or could cause a conflict, otherwise ignore them and continue.
+
+Repeat the option block for additional options. Ask routine questions without meaningful tradeoffs concisely.
+
+## Communication Style
+
+- Give the user enough context to act.
+- Assume the user has not read the code, command output, or prior implementation details.
+- Spell out acronyms unless they are widely known or the user already used them.

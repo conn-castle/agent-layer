@@ -44,7 +44,7 @@ func TestOwnershipPolicyForPath_CatalogSkills(t *testing.T) {
 		},
 		{
 			name: "non-catalog workflow skill not classified",
-			path: ".agent-layer/skills/review-uncommitted-code/SKILL.md",
+			path: ".agent-layer/skills/implement/SKILL.md",
 			want: "",
 		},
 		{

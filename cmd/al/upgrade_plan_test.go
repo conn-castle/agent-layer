@@ -317,15 +317,15 @@ func prepareUpgradeTestRepo(t *testing.T) string {
 		t.Fatalf("write issues: %v", err)
 	}
 
-	planWorkPath := filepath.Join(root, ".agent-layer", "skills", "plan-work", "SKILL.md")
-	if err := os.Remove(planWorkPath); err != nil {
-		t.Fatalf("remove plan-work skill: %v", err)
+	implementPath := filepath.Join(root, ".agent-layer", "skills", "implement", "SKILL.md")
+	if err := os.Remove(implementPath); err != nil {
+		t.Fatalf("remove implement skill: %v", err)
 	}
-	planWorkTemplate, err := templates.Read("skills/plan-work/SKILL.md")
+	implementTemplate, err := templates.Read("skills/implement/SKILL.md")
 	if err != nil {
 		t.Fatalf("read plan-work template: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "skills", "plan-work-legacy.md"), planWorkTemplate, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "skills", "implement-legacy.md"), implementTemplate, 0o600); err != nil {
 		t.Fatalf("write orphan rename file: %v", err)
 	}
 	return root

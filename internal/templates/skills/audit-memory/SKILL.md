@@ -1,7 +1,6 @@
 ---
 name: audit-memory
 description: >-
-  Explicit-only.
   Audit agent memory files (ISSUES, BACKLOG, ROADMAP, DECISIONS, COMMANDS,
   CONTEXT) for structure, staleness, placement, consistency, and DECISIONS.md
   bloat; fix accepted findings.

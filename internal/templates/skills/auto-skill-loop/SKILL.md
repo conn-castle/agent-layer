@@ -1,94 +1,72 @@
 ---
 name: auto-skill-loop
 description: >-
-  Explicit-only.
-  Run a named autonomous mode, repeatedly selecting, implementing, and shipping
-  coherent work while preserving anything blocked.
+  Run an autonomous loop intended to result in merged PRs.
+disable-model-invocation: true
 ---
 
 # auto-skill-loop
 
-Act as the orchestrator. Delegate all selected work; do not implement it in the
-orchestrator context.
-
 ## Inputs
 
-Require:
+Required:
 
 - a `mode` matching `references/modes/<mode>.md`
-- standing authorization to merge work that passes every gate below
-- `planner`, `implementer`, `code_reviewer`, and `rote_worker` dispatch targets
-- one or more `plan_reviewers` targets when the mode always plans; otherwise
-  they are optional until the selected work needs planning
-- any additional targets required by the selected mode
+- standing authorization to merge under the gate below
+- `operator`, `planner`, one or more `plan_reviewers`, `implementer`, `code_reviewer`,
+  `pr_worker`, and `rote_worker` dispatch targets
 
-Read the selected mode file and `references/merge-authorization.md`.
-Validate the mode and all required targets before any side effect. Pass each
-target unchanged through `/agent-dispatch`; do not infer or substitute targets.
+## Rules
 
-A mode may add instructions to any stage of the core loop. Every section is
-optional; an omitted section uses the core behavior unchanged.
+- Use `/agent-dispatch` for every dispatch.
+- Act as the orchestrator. Delegate all work.
+- When compacting, retain the original user inputs and this skill verbatim in
+  addition to what you would normally retain.
 
-## Context and isolation
+## Acting on the User's Behalf
 
-When compacting, retain the caller's loop invocation and this skill text
-verbatim in addition to what you would normally retain.
+This loop must run without human intervention. Each iteration is intended to result
+in a merged PR. For each loop that requires human input, dispatch `operator` in
+a fresh session. Use `dispatch_continue` for multiple invocations within a
+single loop. The first prompt should include the complete contents of
+`references/human-guidance.md`, followed by the item requiring human input with all
+provided details verbatim.
 
-Write every fresh-dispatch prompt as a self-contained task. State what the
-subagent must do, the authoritative files or links it should inspect, and any
-required output format. Do not include internal role names or a narrative of
-the parent agent's workflow. For follow-up dispatches, pass artifact and report
-paths, changed files, and unresolved finding IDs.
-
-## Initialize
-
-Dispatch `planner` once to initialize progress, applying any mode-specific
-initialization instructions. Its output must record what was examined and what
-remains eligible.
+If the `operator` determines that real human intervention is required, save the
+work to an appropriate remote branch for future handling, then check out the
+primary branch. Continue with another loop iteration. Do not block the loop
+waiting for human input.
 
 ## Loop
 
-1. **Select.** Prompt a fresh `planner` with the selected mode, current progress,
-   latest reconciliation result, and `plan_reviewers`. Require it to select as
-   much eligible work as can be implemented and reviewed coherently together,
-   update progress, and run `/plan-work` when substantive design is needed.
-   Include any mode-specific `Execute` instructions in the plan. Terminate only
-   when it proves a complete pass is exhausted under any mode-specific criteria.
-   If planning is required, do not proceed without a non-empty
-   `plan_reviewers` list and an `implementation-ready` result.
+1. Dispatch `planner` with skill `implement`. Use the complete contents of
+`references/modes/<mode>.md` and any caller input as its
+prompt, then append:
 
-2. **Execute.** Prepare or reuse a branch for the selected work. Dispatch
-   `implementer` with any mode-specific `Execute` instructions and an
-   implementation-ready plan, or the selected work directly when no plan was
-   needed.
-   Then dispatch `code_reviewer` with `/review-uncommitted-code`, return material
-   findings to `implementer`, and rerun affected checks.
+```text
+implementer: <implementer>
+plan_reviewers: <plan_reviewers>
+code_reviewer: <code_reviewer>
+```
 
-3. **Prepare the PR.** Dispatch `rote_worker` to run `/ship-pr`. Continue only
-   when it returns a merge-authorization request for an exact PR and head.
+If `planner` is unable to find work to complete, repeat the dispatch one more
+time. If two invocations in a row cannot find work, exit and inform the user.
 
-4. **Authorize.** Follow `references/merge-authorization.md` for the exact PR
-   and head. On `changes-required`, dispatch `implementer` fresh with the
-   findings, rerun affected checks, and return to PR preparation. Preserve a
-   `blocked` PR and continue independent work. Continue to merge only on
-   `authorize`.
+2. Dispatch `rote_worker` with skill `ship-pr` and this prompt:
 
-5. **Merge.** Resume the same `rote_worker`
-   with authorization for that exact PR and head, derived from the
-   standing loop authorization. Continue to reconciliation after the shipping
-   dispatch returns.
+```text
+pr_worker: <pr_worker>
+```
 
-6. **Reconcile.** Reconcile the actual merged, open, or preserved PR with
-   its source, applying the mode's `Reconcile` section when present. Then return
-   to selection. With `stop_after=one-pr`, stop after this reconciliation.
+Continue when it returns a merge-authorization request.
 
-## Termination
+3. Dispatch `operator` in a new session. Use the complete contents of
+`references/merge-authorization.md` as its prompt, then append:
 
-Continue whenever evidence supports a safe, in-scope next step. Preserve blocked
-work and keep selecting independent work. Ask the user only after a complete
-pass finds no independent work and further progress requires authority only the
-user can provide or a consequential choice the available evidence cannot
-resolve.
+```text
+request: <rote_worker merge-authorization request>
+```
 
-Report why the loop ended, the smallest remaining user questions, and every
-preserved branch or PR.
+4. If authorized, continue the dispatch session from step 2 with the exact
+authorization. If not, continue the dispatch to preserve the PR and return to
+the primary branch without merging. Then return to step 1.

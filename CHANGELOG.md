@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 ### Added
 - `al organize-scratch --root <dir>` sorts a scratch directory into `reports/`, `artifacts/`, and `review/` folders and writes an `ORGANIZE-REVIEW.md` listing everything that still needs a human decision. It only moves entries: nothing is deleted, overwritten, or merged, and an entry whose destination is already taken is left in place. Defaults to a dry run; pass `--apply` to move. Registered Git worktrees are left alone unless `--move-worktrees` is given, in which case their registrations are repaired after the move. The command is a maintenance aid and is hidden from `al --help`.
 
+### Changed
+- The workflow skill templates are consolidated. `implement` replaces the `plan-work`, `review-plan`, `implement-plan`, `fully-implement-plan`, and `full-workflow` chain, and `ship-pr` absorbs `address-pr-comments` and `fix-ci` as references. `boost-coverage`, `clean-and-fix-code`, `improve-codebase`, `review-uncommitted-code`, `run-and-fix-all-checks`, `schedule-backlog`, `simplify-codebase`, and `verify-work` are removed; their work is covered by the remaining skills. Existing installs keep their copies of the removed skills until they are deleted by hand; `al upgrade` reports them as orphans rather than removing them.
+- The managed instruction templates and the `agent-dispatch`, `audit-documentation`, `audit-memory`, `audit-tests`, `auto-skill-loop`, `debug-and-fix-issue`, and `interface-audit` skills are rewritten for brevity. The `Explicit-only.` description marker is dropped in favor of per-client invocation metadata.
+
 ### Fixed
 - Git subprocesses now resolve the repository from the path they are given instead of honoring an inherited `GIT_DIR`. Git exports its repository-discovery variables to every hook, and they take precedence over `git -C <path>`, so benchmark provenance and pinned-checkout validation could report on a different repository than the one being measured when a run started from a Git hook.
 

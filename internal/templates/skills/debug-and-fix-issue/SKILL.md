@@ -1,7 +1,6 @@
 ---
 name: debug-and-fix-issue
 description: >-
-  Explicit-only.
   Reproduce an unexplained bug, prove its root cause, capture a failing test or
   diagnostic blocker, then make a proportional repair and verify it.
 ---
@@ -48,9 +47,9 @@ destructively rewrite changes.
    stop here.
 4. Use the direct path when the cause, desired behavior, boundary, and checks
    are clear: dispatch `implementer` with the diagnosis and failing test, then
-   dispatch `fixer` with `/clean-and-fix-code` over the repair boundary. Use the
-   planned path only for substantive architecture, behavior, migration, or risk
-   changes: run `/plan-work` with `plan_reviewers`, then
+   dispatch `fixer` to improve the repair within its boundary and run affected
+   checks. Use the planned path only for substantive architecture, behavior,
+   migration, or risk changes: run `/plan-work` with `plan_reviewers`, then
    `/fully-implement-plan` with `implementer`, `code_reviewer`, and `fixer`.
    Unknown causes justify instrumentation, not speculative fixes.
 5. Prove red-to-green behavior, run affected checks, and verify the original
