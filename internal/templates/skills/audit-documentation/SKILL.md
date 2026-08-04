@@ -12,7 +12,7 @@ Audit Markdown against repository evidence; fix safe inaccuracies.
 ## Scope
 
 - Use supplied scope; otherwise audit all tracked `*.md` files.
-- Exclude ISSUES.md, BACKLOG.md, ROADMAP.md, DECISIONS.md, COMMANDS.md, and
+- Exclude ISSUES.md, BACKLOG.md, DECISIONS.md, COMMANDS.md, and
   CONTEXT.md. Use `/audit-memory` when the user requests memory files.
 - A finding limit caps reporting, not coverage. Empty scope returns
   `no-findings`.

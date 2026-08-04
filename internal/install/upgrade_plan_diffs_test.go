@@ -164,7 +164,7 @@ func TestAllTemplatePathByRel_MergesManagedAndMemory(t *testing.T) {
 
 	required := []string{
 		".agent-layer/commands.allow",
-		"docs/agent-layer/ROADMAP.md",
+		"docs/agent-layer/BACKLOG.md",
 	}
 	for _, path := range required {
 		if strings.TrimSpace(paths[path]) == "" {
@@ -228,7 +228,7 @@ func TestBuildUpgradePlanDiffPreviews_CoversAllCollectionsWithoutPinDiff(t *test
 		},
 		TemplateRemovalsOrOrphans: []UpgradeChange{
 			{
-				Path:      ".agent-layer/templates/docs/ROADMAP.md",
+				Path:      ".agent-layer/templates/docs/BACKLOG.md",
 				Ownership: OwnershipLocalCustomization,
 			},
 		},
@@ -250,7 +250,7 @@ func TestBuildUpgradePlanDiffPreviews_CoversAllCollectionsWithoutPinDiff(t *test
 		".agent-layer/instructions/01_base.md",
 		".agent-layer/commands.allow",
 		"docs/agent-layer/ISSUES.md",
-		".agent-layer/templates/docs/ROADMAP.md",
+		".agent-layer/templates/docs/BACKLOG.md",
 	}
 	for _, path := range required {
 		if _, ok := previews[path]; !ok {

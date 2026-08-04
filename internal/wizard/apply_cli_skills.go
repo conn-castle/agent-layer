@@ -53,7 +53,6 @@ type skillsChangeSet struct {
 var memoryFileBasenames = []string{
 	"ISSUES.md",
 	"BACKLOG.md",
-	"ROADMAP.md",
 	"DECISIONS.md",
 	"COMMANDS.md",
 	"CONTEXT.md",

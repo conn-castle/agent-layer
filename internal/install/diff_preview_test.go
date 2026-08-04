@@ -321,7 +321,7 @@ func TestBuildManagedAndMemoryDiffPreviews(t *testing.T) {
 		Ownership: OwnershipUpstreamTemplateDelta,
 	}}
 	memoryEntries := []LabeledPath{{
-		Path:      "docs/agent-layer/ROADMAP.md",
+		Path:      "docs/agent-layer/BACKLOG.md",
 		Ownership: OwnershipUpstreamTemplateDelta,
 	}}
 
@@ -420,9 +420,9 @@ func TestBuildSingleDiffPreview_SectionAwareMarkerError(t *testing.T) {
 		t.Fatalf("seed repo: %v", err)
 	}
 	seedWorkflowBundleForTest(t, root)
-	roadmapPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
-	if err := os.WriteFile(roadmapPath, []byte("# no marker here\n"), 0o600); err != nil {
-		t.Fatalf("write roadmap without marker: %v", err)
+	backlogPath := filepath.Join(root, "docs", "agent-layer", "BACKLOG.md")
+	if err := os.WriteFile(backlogPath, []byte("# no marker here\n"), 0o600); err != nil {
+		t.Fatalf("write backlog without marker: %v", err)
 	}
 
 	inst := &installer{
@@ -436,7 +436,7 @@ func TestBuildSingleDiffPreview_SectionAwareMarkerError(t *testing.T) {
 	}
 
 	_, err = inst.buildSingleDiffPreview(LabeledPath{
-		Path:      "docs/agent-layer/ROADMAP.md",
+		Path:      "docs/agent-layer/BACKLOG.md",
 		Ownership: OwnershipUpstreamTemplateDelta,
 	}, templatePathByRel)
 	if err == nil || !strings.Contains(err.Error(), "missing in") {

@@ -33,7 +33,7 @@ func TestInstallRun_BareInitSeedsOnlyOperationalScaffolding(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, entries, "skills directory should be empty under bare init")
 
-	for _, name := range []string{"ISSUES.md", "BACKLOG.md", "ROADMAP.md", "DECISIONS.md", "COMMANDS.md", "CONTEXT.md"} {
+	for _, name := range []string{"ISSUES.md", "BACKLOG.md", "DECISIONS.md", "COMMANDS.md", "CONTEXT.md"} {
 		_, err := os.Stat(filepath.Join(root, "docs", "agent-layer", name))
 		assert.True(t, os.IsNotExist(err), "%s should not be seeded under bare init", name)
 		_, err = os.Stat(filepath.Join(root, ".agent-layer", "templates", "docs", name))
