@@ -42,6 +42,7 @@ var (
 const (
 	benchmarkDockerCleanupTimeout = 30 * time.Second
 	dockerFormatFlag              = "--format"
+	dockerImageResource           = "image"
 	dockerNetworkResource         = "network"
 	dockerVolumeResource          = "volume"
 	// These formats print one resource identity and its Compose project label
@@ -368,6 +369,40 @@ func cleanupPierDockerResources(stage string, request ExecutionRequest) error {
 		removeOutput, removeErr := runBenchmarkDockerCommand(ctx, arguments...)
 		if removeErr != nil {
 			return fmt.Errorf("remove Pier %ss for project %s: %w: %s", resource.name, project, removeErr, strings.TrimSpace(string(removeOutput)))
+		}
+	}
+	// Pier asks Compose to build a uniquely named main image for every trial.
+	// Compose down does not remove that image, so leaving it behind makes image
+	// storage grow linearly even though the trial's containers are gone.
+	var imageIDs []string
+	for _, imageReference := range []string{
+		project + "-main:latest",
+		project + "__verifier__*-main:latest",
+	} {
+		output, listErr := runBenchmarkDockerCommand(
+			ctx,
+			dockerImageResource, "ls", "--filter", "reference="+imageReference,
+			dockerFormatFlag, "{{.ID}}",
+		)
+		if listErr != nil {
+			return fmt.Errorf("list Pier images for project %s: %w: %s", project, listErr, strings.TrimSpace(string(output)))
+		}
+		for _, line := range strings.Split(string(output), "\n") {
+			id := strings.TrimSpace(line)
+			if id == "" {
+				continue
+			}
+			if !dockerResourceIDPattern.MatchString(id) {
+				return fmt.Errorf("inspect Pier image ownership: Docker returned invalid ID %q for project %s", id, project)
+			}
+			imageIDs = append(imageIDs, id)
+		}
+	}
+	if len(imageIDs) > 0 {
+		arguments := append([]string{dockerImageResource, "rm"}, imageIDs...)
+		removeOutput, removeErr := runBenchmarkDockerCommand(ctx, arguments...)
+		if removeErr != nil {
+			return fmt.Errorf("remove Pier images for project %s: %w: %s", project, removeErr, strings.TrimSpace(string(removeOutput)))
 		}
 	}
 	return nil

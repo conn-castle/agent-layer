@@ -100,7 +100,11 @@ func TestCleanupPierDockerResourcesUsesExactComposeProject(t *testing.T) {
 			return []byte("abcdef012345\texample-task__abc1234__verifier__trial\n"), nil
 		case `volume ls --format {{.Name}}\t{{.Label "com.docker.compose.project"}}`:
 			return nil, nil
-		case "rm --force 0123456789ab", "network rm abcdef012345":
+		case `image ls --filter reference=example-task__abc1234-main:latest --format {{.ID}}`:
+			return []byte("fedcba987654\n"), nil
+		case `image ls --filter reference=example-task__abc1234__verifier__*-main:latest --format {{.ID}}`:
+			return []byte("111111111111\n"), nil
+		case "rm --force 0123456789ab", "network rm abcdef012345", "image rm fedcba987654 111111111111":
 			return nil, nil
 		default:
 			return nil, fmt.Errorf("unexpected Docker command %q", call)
@@ -117,6 +121,9 @@ func TestCleanupPierDockerResourcesUsesExactComposeProject(t *testing.T) {
 		`network ls --format {{.ID}}\t{{.Label "com.docker.compose.project"}}`,
 		"network rm abcdef012345",
 		`volume ls --format {{.Name}}\t{{.Label "com.docker.compose.project"}}`,
+		`image ls --filter reference=example-task__abc1234-main:latest --format {{.ID}}`,
+		`image ls --filter reference=example-task__abc1234__verifier__*-main:latest --format {{.ID}}`,
+		"image rm fedcba987654 111111111111",
 	}
 	if strings.Join(calls, "\n") != strings.Join(expected, "\n") {
 		t.Fatalf("Docker cleanup calls = %#v", calls)

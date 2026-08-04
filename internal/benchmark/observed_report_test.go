@@ -8,7 +8,10 @@ import (
 	"time"
 )
 
-func TestBuildObservedReportValidatesAndRendersExecutiveResult(t *testing.T) {
+// validObservedAnalysisFixture returns one internally consistent published
+// analysis: the verdict matches the threshold, the threshold matches the
+// standard error and t critical value, and the costs reconcile.
+func validObservedAnalysisFixture() observedAnalysisDocument {
 	document := observedAnalysisDocument{
 		Schema:        observedAnalysisSchema,
 		SchemaVersion: observedAnalysisSchemaVersion,
@@ -61,6 +64,11 @@ func TestBuildObservedReportValidatesAndRendersExecutiveResult(t *testing.T) {
 	document.CostAxis.ReferenceEstimatedArmCostUSD = 310.61
 	document.CostAxis.RoundingIncrementUSD = observedCostAxisRoundingUSD
 	document.CostAxis.MaximumUSD = 350
+	return document
+}
+
+func TestBuildObservedReportValidatesAndRendersExecutiveResult(t *testing.T) {
+	document := validObservedAnalysisFixture()
 
 	data, err := json.Marshal(document)
 	if err != nil {

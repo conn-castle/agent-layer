@@ -98,13 +98,17 @@ type matrixSelectionTask struct {
 }
 
 type matrixPreparation struct {
-	selection    matrixSelection
-	selectionID  string
-	stateDir     string
-	tasks        []benchmarkPlanTask
-	checksums    map[string]string
-	environments map[string]string
-	arms         []matrixArm
+	selection matrixSelection
+	// taskConcurrency is the validated worker count. prepareMatrix normalizes an
+	// unset value, so callers must execute with this rather than with the
+	// caller-supplied option.
+	taskConcurrency int
+	selectionID     string
+	stateDir        string
+	tasks           []benchmarkPlanTask
+	checksums       map[string]string
+	environments    map[string]string
+	arms            []matrixArm
 }
 
 type matrixArm struct {
@@ -220,7 +224,7 @@ func RunMatrix(ctx context.Context, options MatrixOptions, executor TaskExecutor
 	}
 	if err := executeMatrix(
 		ctx, options.RepoRoot, preparation.checksums, preparation.environments,
-		preparation.arms, options.Tasks, options.TaskConcurrency, executor,
+		preparation.arms, options.Tasks, preparation.taskConcurrency, executor,
 	); err != nil {
 		return matrixProgress(preparation), err
 	}
@@ -348,7 +352,8 @@ func prepareMatrix(ctx context.Context, options MatrixOptions) (matrixPreparatio
 		}
 	}
 	preparation := matrixPreparation{
-		selection: selection, selectionID: selectionID, stateDir: stateDir,
+		selection: selection, taskConcurrency: options.TaskConcurrency,
+		selectionID: selectionID, stateDir: stateDir,
 		tasks: tasks, checksums: checksums, environments: environments,
 	}
 	for _, input := range inputs {
@@ -612,6 +617,11 @@ func executeMatrix(
 	concurrency int,
 	executor TaskExecutor,
 ) error {
+	// Without at least one worker nothing would drain jobChannel, so the send
+	// loop below would block forever instead of reporting a problem.
+	if concurrency < 1 {
+		return fmt.Errorf("matrix execution requires at least one task worker, got %d", concurrency)
+	}
 	selected := make(map[string]bool, len(tasks))
 	for _, task := range tasks {
 		selected[task] = true
