@@ -20,6 +20,16 @@ const (
 	CodexSandboxModeKey = "sandbox_mode"
 	// CodexWebSearchKey is the top-level Codex config key for web search.
 	CodexWebSearchKey = "web_search"
+
+	// CodexSandboxReadOnly denies all writes. Codex applies it by default to
+	// `codex exec`, so headless dispatch inherits it unless it is set.
+	CodexSandboxReadOnly = "read-only"
+	// CodexSandboxWorkspaceWrite permits writes inside the working directory and
+	// temporary directories. It matches Codex's own default preset for a
+	// version-controlled folder and still protects `.git` and denies network.
+	CodexSandboxWorkspaceWrite = "workspace-write"
+	// CodexSandboxDangerFullAccess disables the sandbox entirely.
+	CodexSandboxDangerFullAccess = "danger-full-access"
 	// CodexFeatureAppsKey is the Codex [features] key controlling built-in apps.
 	CodexFeatureAppsKey = "apps"
 	// CodexFeaturePluginsKey is the Codex [features] key controlling plugins.

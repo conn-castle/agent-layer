@@ -5,7 +5,32 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/projection"
 )
+
+// TestClaudeAllowRulesMatchGeneratedSettings keeps the two deliveries of the
+// same approvals in agreement. Claude ignores a project's permissions.allow
+// rules under `claude -p` until the workspace trust dialog is accepted, so
+// headless dispatch passes projection.ClaudeAllowRules on the command line
+// while sync writes this block to settings.json. If they diverge, a dispatched
+// agent silently gets different approvals than the ones the project configured.
+func TestClaudeAllowRulesMatchGeneratedSettings(t *testing.T) {
+	t.Parallel()
+	enabled := true
+	cfg := config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll}}
+	cfg.MCP.Servers = []config.MCPServer{
+		{ID: "zeta", Enabled: &enabled, Transport: config.TransportHTTP, URL: "https://example.com"},
+		{ID: "alpha", Enabled: &enabled, Transport: config.TransportHTTP, URL: "https://example.com"},
+	}
+	commands := []string{"git status", "npm test"}
+	serverIDs := projection.EffectiveServerIDs(cfg, projection.ClientClaude)
+
+	settings := buildPermissionsBlock(cfg, commands, serverIDs, claudeRenderer{})
+	dispatched := projection.ClaudeAllowRules(cfg, commands, serverIDs)
+	if !reflect.DeepEqual(settings["allow"], dispatched) {
+		t.Fatalf("settings allow %v != dispatch allowlist %v", settings["allow"], dispatched)
+	}
+}
 
 // TestBuildPermissionsBlock covers the contract of buildPermissionsBlock
 // directly (not via the Claude settings marshaller). The previous test was a

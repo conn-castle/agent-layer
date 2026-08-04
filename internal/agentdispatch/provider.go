@@ -17,6 +17,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients/claude"
 	"github.com/conn-castle/agent-layer/internal/clients/codex"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/run"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
@@ -40,7 +41,52 @@ const (
 	claudePrintBackgroundWaitCeilingEnv   = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
 	claudePrintBackgroundWaitCeilingValue = "0"
 	truncatedAnswerNotice                 = "\n\n[Agent Layer truncated this final answer after retaining 256 MiB. Resume the conversation and ask the agent to summarize the final answer in another turn.]\n"
+	// claudePermissionModeAcceptEdits auto-accepts file edits and common
+	// filesystem commands for paths in the working directory. Other commands
+	// still require an allow rule, which dispatch supplies via --allowedTools.
+	claudePermissionModeAcceptEdits = "acceptEdits"
+	// claudePermissionModeDontAsk denies anything without an allow rule instead
+	// of waiting for a prompt that a headless run can never answer.
+	claudePermissionModeDontAsk = "dontAsk"
+	// claudePermissionsPassthroughKey and claudeDefaultModePassthroughKey locate
+	// an explicit permission mode in agents.claude.agent_specific.
+	claudePermissionsPassthroughKey = "permissions"
+	claudeDefaultModePassthroughKey = "defaultMode"
+	// permissionDenialsKey is the Claude terminal-result field listing tool calls
+	// that were denied. Claude still reports such a run as a success.
+	permissionDenialsKey = "permission_denials"
+	toolNameKey          = "tool_name"
 )
+
+// codexDispatchSandboxMode resolves the Codex sandbox for a non-YOLO dispatch.
+// Codex has no separate edit-approval rule, so the sandbox is what grants or
+// denies unprompted edits; it therefore tracks whether commands are approved.
+func codexDispatchSandboxMode(cfg config.Config, commandsAllow []string) string {
+	if projection.BuildApprovals(cfg, commandsAllow).AllowCommands {
+		return config.CodexSandboxWorkspaceWrite
+	}
+	return config.CodexSandboxReadOnly
+}
+
+// claudeDispatchPermissionMode resolves the Claude permission mode for a
+// non-YOLO dispatch, mirroring codexDispatchSandboxMode.
+func claudeDispatchPermissionMode(cfg config.Config, commandsAllow []string) string {
+	if projection.BuildApprovals(cfg, commandsAllow).AllowCommands {
+		return claudePermissionModeAcceptEdits
+	}
+	return claudePermissionModeDontAsk
+}
+
+// claudeDefaultPermissionModePinned reports whether the project pinned an
+// explicit Claude permission mode, which dispatch must not override.
+func claudeDefaultPermissionModePinned(passthrough config.ProviderPassthrough) bool {
+	permissions, ok := passthrough[claudePermissionsPassthroughKey].(map[string]any)
+	if !ok {
+		return false
+	}
+	_, ok = permissions[claudeDefaultModePassthroughKey]
+	return ok
+}
 
 var versionPattern = regexp.MustCompile(`\b(?:v)?(\d+\.\d+\.\d+)\b`)
 
@@ -215,6 +261,23 @@ func buildProviderCommand(
 		command.Effort = resolvedEffort
 		if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
 			args = append(args, "--dangerously-skip-permissions")
+		} else {
+			if !claudeDefaultPermissionModePinned(project.Config.Agents.Claude.AgentSpecific) {
+				args = append(args, "--permission-mode", claudeDispatchPermissionMode(project.Config, project.CommandsAllow))
+			}
+			// Claude ignores a project's permissions.allow rules until the
+			// workspace trust dialog is accepted, and that dialog never appears
+			// under --print. The generated settings file alone would leave every
+			// approval inert, so the same rules are delivered on the command line.
+			// The flag repeats rather than joining on "," so a command pattern
+			// containing a comma cannot corrupt the list.
+			for _, rule := range projection.ClaudeAllowRules(
+				project.Config,
+				project.CommandsAllow,
+				projection.EffectiveServerIDs(project.Config, projection.ClientClaude),
+			) {
+				args = append(args, "--allowedTools", rule)
+			}
 		}
 		command.Args = args
 		command.Env = claude.ConfigureEnvironment(project.Root, env, project.Config.Agents.Claude, diagnostics)
@@ -253,11 +316,17 @@ func buildProviderCommand(
 				args = append(args, "-c", "approval_policy=never")
 			}
 			if !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexSandboxModeKey) {
-				args = append(args, "-c", "sandbox_mode=danger-full-access")
+				args = append(args, "-c", config.CodexSandboxModeKey+"="+config.CodexSandboxDangerFullAccess)
 			}
 			if !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexWebSearchKey) {
 				args = append(args, "-c", "web_search=live")
 			}
+		} else if !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexSandboxModeKey) {
+			// `codex exec` defaults to a read-only sandbox, unlike the interactive
+			// TUI, which starts a version-controlled folder at workspace-write.
+			// Without this the sandbox silently contradicts approvals.mode: an
+			// allowlisted command is approved and then fails on its first write.
+			args = append(args, "-c", config.CodexSandboxModeKey+"="+codexDispatchSandboxMode(project.Config, project.CommandsAllow))
 		}
 		args = append(args, "-")
 		command.Args = args
@@ -304,7 +373,7 @@ func buildProviderCommand(
 	return command, nil
 }
 
-func reduceClaudeEvent(expected string, value map[string]any) ([]providerEvent, error) {
+func reduceClaudeEvent(expected string, value map[string]any) []providerEvent {
 	events := make([]providerEvent, 0, 2)
 	if text, ok := claudeTextDeltaV013(value); ok && text != "" {
 		events = append(events, providerEvent{Kind: eventProgress, Activity: "text_delta"})
@@ -320,28 +389,43 @@ func reduceClaudeEvent(expected string, value map[string]any) ([]providerEvent, 
 			}
 			events = append(events, providerEvent{Kind: eventProgress, Activity: activity})
 		}
-		return events, nil
+		return events
 	}
 	if claudeResultIsErrorV013(value) {
 		reason, _ := value[jsonResultKey].(string)
 		if reason == "" {
 			reason = "Claude reported a terminal failure"
 		}
-		return append(events, providerEvent{Kind: eventFailure, Reason: reason}), nil
+		return append(events, providerEvent{Kind: eventFailure, Reason: reason})
+	}
+	// Claude reports a run whose tool calls were all denied as a success, with
+	// is_error false and a fluent final answer. Treating that as completion
+	// hides work that never happened, so a denial fails the dispatch.
+	if denied, ok := mapValueV013(value, permissionDenialsKey); ok {
+		example := ""
+		if name, _ := denied[toolNameKey].(string); name != "" {
+			example = fmt.Sprintf(" (for example %s)", name)
+		}
+		// The remedy is not always a wider allowlist: a deny rule or managed
+		// policy denies a call whatever approvals.mode says, and Agent Layer
+		// itself denies AskUserQuestion, so the message points at the effective
+		// permissions rather than prescribing one fix.
+		reason := fmt.Sprintf("Claude denied at least one tool call%s, so the dispatch could not do the requested work. Check the effective Claude permissions before dispatching again: approvals.mode and .agent-layer/commands.allow decide what is allowed, and a deny rule or managed policy overrides both.", example)
+		return append(events, providerEvent{Kind: eventFailure, Reason: reason})
 	}
 	id, _ := firstStringV013(value, "session_id", "sessionId")
 	if id == "" || id != expected {
-		return append(events, providerEvent{Kind: eventFailure, Reason: "Claude terminal result did not return the caller-assigned session ID"}), nil
+		return append(events, providerEvent{Kind: eventFailure, Reason: "Claude terminal result did not return the caller-assigned session ID"})
 	}
 	answer, _ := value[jsonResultKey].(string)
 	if answer == "" {
-		return append(events, providerEvent{Kind: eventFailure, Reason: "Claude terminal result did not contain a final answer"}), nil
+		return append(events, providerEvent{Kind: eventFailure, Reason: "Claude terminal result did not contain a final answer"})
 	}
 	events = append(events, providerEvent{Kind: eventSession, SessionID: id}, providerEvent{Kind: eventAnswer, Answer: answer}, providerEvent{Kind: eventComplete})
-	return events, nil
+	return events
 }
 
-func reduceCodexEvent(value map[string]any) ([]providerEvent, error) {
+func reduceCodexEvent(value map[string]any) []providerEvent {
 	eventType, _ := value[jsonTypeKey].(string)
 	switch eventType {
 	case "thread.started":
@@ -350,11 +434,11 @@ func reduceCodexEvent(value map[string]any) ([]providerEvent, error) {
 			// Ignore a duplicate/incomplete lifecycle notification. The shared
 			// completion invariant still rejects the run unless a separate
 			// thread.started event supplied an exact thread ID.
-			return nil, nil
+			return nil
 		}
-		return []providerEvent{{Kind: eventSession, SessionID: id}}, nil
+		return []providerEvent{{Kind: eventSession, SessionID: id}}
 	case "turn.completed":
-		return []providerEvent{{Kind: eventComplete}}, nil
+		return []providerEvent{{Kind: eventComplete}}
 	case "turn.failed", "turn.aborted", jsonErrorKey:
 		reason, _ := firstStringV013(value, jsonMessageKey, jsonReasonKey, jsonErrorKey)
 		if reason == "" {
@@ -365,24 +449,24 @@ func reduceCodexEvent(value map[string]any) ([]providerEvent, error) {
 		if reason == "" {
 			reason = "Codex reported a terminal failure"
 		}
-		return []providerEvent{{Kind: eventFailure, Reason: reason}}, nil
+		return []providerEvent{{Kind: eventFailure, Reason: reason}}
 	case codexAgentMessageType:
 		if answer, ok := firstStringV013(value, jsonMessageKey, jsonTextKey); ok {
-			return []providerEvent{{Kind: eventAnswer, Answer: answer}}, nil
+			return []providerEvent{{Kind: eventAnswer, Answer: answer}}
 		}
 	case codexItemCompletedType:
 		if item, ok := mapValueV013(value, "item"); ok {
 			if itemType, _ := item[jsonTypeKey].(string); itemType == codexAgentMessageType {
 				if answer, found := firstStringV013(item, jsonMessageKey, jsonTextKey); found {
-					return []providerEvent{{Kind: eventAnswer, Answer: answer}}, nil
+					return []providerEvent{{Kind: eventAnswer, Answer: answer}}
 				}
 			}
 		}
 	}
 	if eventType != "" {
-		return []providerEvent{{Kind: eventProgress, Activity: eventType}}, nil
+		return []providerEvent{{Kind: eventProgress, Activity: eventType}}
 	}
-	return nil, nil
+	return nil
 }
 
 func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, claudeLineage bool, consume func(providerEvent) error, consumeLineage func(claudeLineageEvidence) error) error {
@@ -453,14 +537,11 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 					lineageEvents = normalizer.reduce(record)
 				}
 			}
-			events, err = reduceClaudeEvent(expectedSession, record.Fields)
+			events = reduceClaudeEvent(expectedSession, record.Fields)
 		case AgentCodex:
-			events, err = reduceCodexEvent(record.Fields)
+			events = reduceCodexEvent(record.Fields)
 		default:
-			err = fmt.Errorf("unsupported structured dispatch provider %q", agent)
-		}
-		if err != nil {
-			return err
+			return fmt.Errorf("unsupported structured dispatch provider %q", agent)
 		}
 		for _, event := range events {
 			if err := consume(event); err != nil {

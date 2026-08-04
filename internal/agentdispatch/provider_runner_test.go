@@ -208,18 +208,25 @@ func envValues(env []string, key string) []string {
 	return values
 }
 
-// reduceStructuredTestEvent routes one raw provider record through the live
-// per-provider reducers exactly as the streaming parser does for parsed
-// records, so reducer contracts stay testable from raw JSON fixtures.
+// reduceStructuredTestEvent routes one raw provider record through the whole
+// production path — the selective parser and then the per-provider reducer —
+// so reducer contracts stay testable from raw JSON fixtures.
+//
+// It must not parse with encoding/json. The selective parser retains only the
+// fields in retainedStructuredPath and does not extend the path for array
+// elements, so the two produce different shapes for nested fields: a record
+// encoding/json turns into a []any can reach the reducer as a map. A reducer
+// test fed by encoding/json therefore proves nothing about the input the
+// reducer actually receives.
 func reduceStructuredTestEvent(agent string, expectedSession string, raw []byte) ([]providerEvent, error) {
-	var value map[string]any
-	if err := json.Unmarshal(raw, &value); err != nil {
+	var events []providerEvent
+	if err := readStructuredEventsWithLineage(bytes.NewReader(append(raw, '\n')), io.Discard, agent, expectedSession, false, func(event providerEvent) error {
+		events = append(events, event)
+		return nil
+	}, nil); err != nil {
 		return nil, err
 	}
-	if agent == AgentClaude {
-		return reduceClaudeEvent(expectedSession, value)
-	}
-	return reduceCodexEvent(value)
+	return events, nil
 }
 
 func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
@@ -495,9 +502,9 @@ func TestSelectiveJSONReaderTruncatesRetainedAnswerAndConsumesRecord(t *testing.
 	if err != nil {
 		t.Fatalf("parse oversized retained answer: %v", err)
 	}
-	events, err := reduceCodexEvent(value.Fields)
-	if err != nil || len(events) != 1 || events[0].Answer != "abcdefgh"+truncatedAnswerNotice {
-		t.Fatalf("truncated structured answer events = %#v, %v", events, err)
+	events := reduceCodexEvent(value.Fields)
+	if len(events) != 1 || events[0].Answer != "abcdefgh"+truncatedAnswerNotice {
+		t.Fatalf("truncated structured answer events = %#v", events)
 	}
 	if _, err := parser.next(); err != io.EOF {
 		t.Fatalf("parser did not consume complete oversized record: %v", err)
@@ -523,9 +530,9 @@ func TestRetainedAnswerTruncationDropsIncompleteUTF8Rune(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse UTF-8 answer at boundary: %v", err)
 	}
-	events, err := reduceCodexEvent(value.Fields)
-	if err != nil || len(events) != 1 || events[0].Answer != truncatedAnswerNotice {
-		t.Fatalf("UTF-8 structured truncation events = %#v, %v", events, err)
+	events := reduceCodexEvent(value.Fields)
+	if len(events) != 1 || events[0].Answer != truncatedAnswerNotice {
+		t.Fatalf("UTF-8 structured truncation events = %#v", events)
 	}
 
 	buffer := answerPrefixBuffer{limit: 1}

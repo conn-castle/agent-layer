@@ -132,7 +132,7 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 			builder.WriteString("approval_policy = \"never\"\n")
 		}
 		if !config.HasProviderPassthroughKey(agentSpecific, config.CodexSandboxModeKey) {
-			builder.WriteString("sandbox_mode = \"danger-full-access\"\n")
+			fmt.Fprintf(&builder, "sandbox_mode = %q\n", config.CodexSandboxDangerFullAccess)
 		}
 		if !config.HasProviderPassthroughKey(agentSpecific, config.CodexWebSearchKey) {
 			builder.WriteString("web_search = \"live\"\n")
