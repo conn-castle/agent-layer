@@ -377,9 +377,8 @@ func adoptMissingImports(st *state, txn *transaction, report *Report) {
 func retireUnconfigured(st *state, txn *transaction, report *Report) {
 	configured := make(map[string]struct{})
 	for _, block := range st.cfg.Skills.Imports {
-		repository := config.NormalizeSkillRepository(block.Repository)
 		for _, selector := range block.PositiveSelectors() {
-			configured[repository+"\x00"+config.NormalizeSkillSelector(selector)] = struct{}{}
+			configured[skillKey(block.Repository, selector)] = struct{}{}
 		}
 	}
 	// Iterate a snapshot: retiring an entry mutates the transaction's lock.
@@ -389,8 +388,9 @@ func retireUnconfigured(st *state, txn *transaction, report *Report) {
 		if _, stillReported := reported[skillKey(entry.Repository, entry.SelectedPath)]; stillReported {
 			continue
 		}
-		key := entry.Repository + "\x00" + config.NormalizeSkillSelector(entry.Selector)
-		if _, ok := configured[key]; ok {
+		// Both sides of this comparison go through skillKey, so retirement can
+		// never turn on an incidental difference in how a repository is spelled.
+		if _, ok := configured[skillKey(entry.Repository, entry.Selector)]; ok {
 			continue
 		}
 		retire(st, txn, entry, report)
@@ -411,10 +411,15 @@ func reportedSkillKeys(report *Report) map[string]struct{} {
 	return keys
 }
 
-// skillKey renders the repository and selected path pair that identifies one
-// managed skill independently of the name it declares.
-func skillKey(repository string, selectedPath string) string {
-	return config.NormalizeSkillRepository(repository) + "\x00" + config.NormalizeSkillSelector(selectedPath)
+// skillKey renders the repository and path pair that identifies one managed
+// skill independently of the name it declares.
+//
+// Both components are normalized, so a key never depends on how a repository or
+// selector happened to be spelled. path is either a selected path or the
+// selector that produced it; the two are normalized the same way, and callers
+// keep them in separate maps.
+func skillKey(repository string, path string) string {
+	return config.NormalizeSkillRepository(repository) + "\x00" + config.NormalizeSkillSelector(path)
 }
 
 // txnEntriesForBlock returns a block's lock entries from the pending

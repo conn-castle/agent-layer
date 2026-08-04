@@ -844,7 +844,12 @@ func TestPushDoesNotAdvanceUnchangedSiblingsOnAnotherBranch(t *testing.T) {
 	if _, err := proj.Service().Pull(context.Background()); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
-	locked, _ := proj.Lock().Entry("zulu")
+	// The baseline has to exist, or the comparison below would pass on two
+	// empty commits and prove nothing.
+	locked, ok := proj.Lock().Entry("zulu")
+	if !ok {
+		t.Fatal("the pull recorded no lock entry for zulu")
+	}
 	proj.WriteImportedFile("alpha", "notes.md", "local note\n")
 
 	report, err := proj.Service().Push(context.Background())
@@ -855,7 +860,11 @@ func TestPushDoesNotAdvanceUnchangedSiblingsOnAnotherBranch(t *testing.T) {
 	if strings.Contains(unchanged.Detail, "lock advanced") {
 		t.Fatalf("a push to a non-tracked branch advanced a lock: %q", unchanged.Detail)
 	}
-	if after, _ := proj.Lock().Entry("zulu"); after.Commit != locked.Commit {
+	after, ok := proj.Lock().Entry("zulu")
+	if !ok {
+		t.Fatal("the push removed zulu from the lock")
+	}
+	if after.Commit != locked.Commit {
 		t.Fatalf("lock commit = %s, want the untouched %s", after.Commit, locked.Commit)
 	}
 }

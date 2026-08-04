@@ -959,3 +959,82 @@ func TestPullRetiresAnUnconfiguredSkillDespiteASameNamedFailure(t *testing.T) {
 		t.Fatal("the retired skill directory was not removed")
 	}
 }
+
+// TestRetireUnconfiguredIgnoresRepositorySpelling proves retirement compares
+// normalized keys on both sides.
+//
+// The configured set is built from `config.toml`, the candidates come from lock
+// entries, and the two files are written by different code paths. Keying either
+// side on raw text would let a trailing slash or stray whitespace make a
+// still-configured skill look unconfigured — and retirement deletes the local
+// directory, so a false positive is destructive.
+//
+// This is exercised at the function rather than through a pull, because
+// skilllock.Parse rejects a non-canonical repository before a loaded lock could
+// reach here. The rule is asserted directly so retirement stays correct on its
+// own terms rather than depending on that separate validator.
+func TestRetireUnconfiguredIgnoresRepositorySpelling(t *testing.T) {
+	t.Parallel()
+	const canonical = "https://example.test/skills.git"
+
+	tests := []struct {
+		name            string
+		entryRepository string
+		wantRetired     bool
+	}{
+		{name: "canonical spelling", entryRepository: canonical},
+		{name: "trailing slash", entryRepository: canonical + "/"},
+		{name: "repeated trailing slashes", entryRepository: canonical + "//"},
+		{name: "surrounding whitespace", entryRepository: "  " + canonical + "  "},
+		// A genuinely different repository is still retired, so the test cannot
+		// pass by never retiring anything.
+		{name: "different repository", entryRepository: "https://other.test/skills.git", wantRetired: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := &config.Config{}
+			cfg.Skills.Imports = []config.SkillImport{{
+				Repository: canonical,
+				Selectors:  []string{"skills/alpha"},
+			}}
+			st := &state{
+				paths: config.DefaultPaths(t.TempDir()),
+				cfg:   cfg,
+				lock:  skilllock.New(),
+				local: map[string]localSkill{},
+			}
+			txn := newTransaction(pathSetFor(st), st.lock)
+			txn.SetLockEntry(skilllock.Entry{
+				Name:         "alpha",
+				Repository:   tt.entryRepository,
+				Selector:     "skills/alpha",
+				SelectedPath: "skills/alpha",
+				ResolvedRef:  "main",
+				RefKind:      skilllock.RefKindBranch,
+				Tracking:     skilllock.TrackingTracked,
+				Commit:       strings.Repeat("a", 40),
+				TreeHash:     "sha256:" + strings.Repeat("b", 64),
+			})
+
+			report := &Report{}
+			retireUnconfigured(st, txn, report)
+
+			_, stillLocked := txn.lock.Entry("alpha")
+			if tt.wantRetired {
+				if stillLocked {
+					t.Fatalf("an unconfigured entry survived retirement:\n%s", report.Render("al skills pull"))
+				}
+				return
+			}
+			if !stillLocked {
+				t.Fatalf("a still-configured skill was retired because of its repository spelling %q:\n%s",
+					tt.entryRepository, report.Render("al skills pull"))
+			}
+			if len(report.Skills) != 0 {
+				t.Fatalf("a still-configured skill produced a retirement result: %+v", report.Skills)
+			}
+		})
+	}
+}
