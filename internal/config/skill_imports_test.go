@@ -96,6 +96,13 @@ func TestSkillImportValidationRejections(t *testing.T) {
 			document: "\n[[skills.imports]]\nrepository = \"r\"\nselectors = [\"skills\\\\alpha\"]\n",
 			want:     "must use forward slashes",
 		},
+		"malformed glob selector": {
+			// A selector that path.Match cannot compile matches nothing at resolution
+			// time, which is indistinguishable from "upstream removed everything" and
+			// would retire every skill the block owns. It has to fail here instead.
+			document: "\n[[skills.imports]]\nrepository = \"r\"\nselectors = [\"skills/[\"]\n",
+			want:     "malformed glob segment",
+		},
 		"invalid tracking": {
 			document: "\n[[skills.imports]]\nrepository = \"r\"\nselectors = [\"skills/a\"]\ntracking = \"sometimes\"\n",
 			want:     "tracking must be",
@@ -233,6 +240,19 @@ func TestParseSkillSelectorNormalizesAndClassifies(t *testing.T) {
 	}
 	if _, _, err := ParseSkillSelector("skills/.git/hooks"); err == nil {
 		t.Fatal("a selector must not reach into Git internals")
+	}
+	// Well-formed globs stay accepted; an uncompilable one is rejected, because
+	// resolution reports a pattern error as an empty match and an empty desired
+	// set retires skills.
+	for _, accepted := range []string{"skills/*", "skills/**", "skills/a?pha", "skills/[a-c]lpha"} {
+		if _, _, err := ParseSkillSelector(accepted); err != nil {
+			t.Fatalf("ParseSkillSelector(%q) = %v, want it accepted", accepted, err)
+		}
+	}
+	for _, rejected := range []string{"skills/[", "skills/[a-", "!skills/[]"} {
+		if _, _, err := ParseSkillSelector(rejected); err == nil {
+			t.Fatalf("ParseSkillSelector(%q) must reject a glob path.Match cannot compile", rejected)
+		}
 	}
 }
 

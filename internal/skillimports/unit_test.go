@@ -54,6 +54,24 @@ func TestRedactSecretsKeepsHostAndPathVisible(t *testing.T) {
 	// The host and path must remain so the message is still actionable.
 	requireContains(t, redacted, "github.com/org/repo.git")
 
+	// A token is routinely the whole userinfo, with no password separator at all.
+	tokenOnly := RedactSecrets("fatal: could not read https://ghp_supersecret@github.com/org/repo.git")
+	if strings.Contains(tokenOnly, "ghp_supersecret") {
+		t.Fatalf("userinfo without a colon survived redaction: %q", tokenOnly)
+	}
+	requireContains(t, tokenOnly, "github.com/org/repo.git")
+
+	// A URL with no userinfo keeps every character, and scp-style SSH remotes
+	// carry no secret, so neither may be mangled into an unrecognizable message.
+	plain := "fatal: could not read https://github.com/org/repo.git"
+	if RedactSecrets(plain) != plain {
+		t.Fatalf("a credential-free URL was rewritten: %q", RedactSecrets(plain))
+	}
+	scp := "fatal: could not read git@github.com:org/repo.git"
+	if RedactSecrets(scp) != scp {
+		t.Fatalf("an scp-style remote was rewritten: %q", RedactSecrets(scp))
+	}
+
 	header := RedactSecrets("Authorization: Bearer abc123def")
 	if strings.Contains(header, "abc123def") {
 		t.Fatalf("a bearer token survived redaction: %q", header)

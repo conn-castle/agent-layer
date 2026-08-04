@@ -221,6 +221,14 @@ func ParseSkillSelector(selector string) (normalized string, exclusion bool, err
 		if segment == gitDirName {
 			return "", exclusion, fmt.Errorf("selector %q must not select Git internals", selector)
 		}
+		// Every segment is matched with path.Match at resolution time, which reports
+		// a malformed pattern as an error rather than a miss. Rejecting it here is
+		// the only place that failure can still be attributed to the selector: a
+		// malformed selector that reached resolution would expand to nothing, and an
+		// empty desired set retires every skill the block owns.
+		if _, err := path.Match(segment, ""); err != nil {
+			return "", exclusion, fmt.Errorf("selector %q has a malformed glob segment %q: %w", selector, segment, err)
+		}
 	}
 	return cleaned, exclusion, nil
 }

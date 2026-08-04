@@ -40,6 +40,15 @@ type remoteRefs struct {
 	tags map[string]string
 }
 
+// Ref namespaces a configured ref may name explicitly. A short name is resolved
+// against both namespaces; a qualified name resolves against exactly one, which
+// is how an import states which of an ambiguous branch and tag it means.
+const (
+	qualifiedRefPrefix = "refs/"
+	branchRefPrefix    = "refs/heads/"
+	tagRefPrefix       = "refs/tags/"
+)
+
 var commitIDPattern = regexp.MustCompile(`^[0-9a-f]{40}$|^[0-9a-f]{64}$`)
 
 // isCommitID reports whether a configured ref is a full object id. Abbreviated
@@ -127,12 +136,16 @@ func resolveRef(ctx context.Context, space *workspace, repository string, config
 		}, nil
 	}
 
+	if strings.HasPrefix(ref, qualifiedRefPrefix) {
+		return resolveQualifiedRef(refs, repository, ref)
+	}
+
 	branchCommit, isBranch := refs.branches[ref]
 	tagCommit, isTag := refs.tags[ref]
 	if isBranch && isTag {
 		return ResolvedRef{}, fmt.Errorf(
-			"%s has both a branch and a tag named %q; use refs/heads/ or refs/tags/ naming upstream to disambiguate",
-			RedactSecrets(repository), ref,
+			"%s has both a branch and a tag named %q; set ref to %q or %q to say which one this import means",
+			RedactSecrets(repository), ref, branchRefPrefix+ref, tagRefPrefix+ref,
 		)
 	}
 	switch {
@@ -148,6 +161,34 @@ func resolveRef(ctx context.Context, space *workspace, repository string, config
 			RedactSecrets(repository), ref, ref,
 		)
 	}
+}
+
+// resolveQualifiedRef resolves a configured ref that names its namespace
+// explicitly (refs/heads/x or refs/tags/x). The recorded Name stays the short
+// name so the lock records the same ref identity however it was spelled, while
+// the namespace decides the ref type and therefore whether the block tracks.
+func resolveQualifiedRef(refs *remoteRefs, repository string, ref string) (ResolvedRef, error) {
+	var kind, name string
+	var commits map[string]string
+	switch {
+	case strings.HasPrefix(ref, branchRefPrefix):
+		kind, name, commits = config.SkillRefBranch, strings.TrimPrefix(ref, branchRefPrefix), refs.branches
+	case strings.HasPrefix(ref, tagRefPrefix):
+		kind, name, commits = config.SkillRefTag, strings.TrimPrefix(ref, tagRefPrefix), refs.tags
+	default:
+		return ResolvedRef{}, fmt.Errorf(
+			"ref %q names a ref namespace Agent Layer does not import; use %s<branch>, %s<tag>, a short name, or a full commit id",
+			ref, branchRefPrefix, tagRefPrefix,
+		)
+	}
+	if name == "" {
+		return ResolvedRef{}, fmt.Errorf("ref %q names no %s", ref, kind)
+	}
+	commit, ok := commits[name]
+	if !ok {
+		return ResolvedRef{}, fmt.Errorf("%s has no %s named %q", RedactSecrets(repository), kind, name)
+	}
+	return ResolvedRef{Name: name, Type: kind, Commit: commit, FullRef: ref}, nil
 }
 
 // resolveTracking turns a block's configured tracking mode into the recorded

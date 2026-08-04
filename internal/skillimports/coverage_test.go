@@ -75,6 +75,79 @@ func TestResolveRefRejectsAnAmbiguousBranchAndTagName(t *testing.T) {
 	message := requireError(t, out, err)
 	// Picking one silently would import different content than the user expects.
 	requireContains(t, message, "both a branch and a tag")
+	// The remedy the error names has to be the remedy that works.
+	requireContains(t, message, "refs/heads/release")
+	requireContains(t, message, "refs/tags/release")
+}
+
+func TestResolveRefImportsTheQualifiedRefNamedByTheAmbiguityError(t *testing.T) {
+	hermeticGitEnv(t)
+	repo := newSourceRepo(t, "main")
+	repo.writeSkill("skills/alpha", "alpha", "Alpha at the tag")
+	repo.commit("add alpha")
+	repo.tag("release")
+	// The branch of the same name moves past the tag, so the two names resolve to
+	// different content and picking the wrong one is visible.
+	runGit(t, repo.path(), "branch", "release")
+	repo.checkout("release")
+	repo.writeSkill("skills/alpha", "alpha", "Alpha on the branch")
+	branchCommit := repo.commit("revise alpha on the branch")
+
+	p := newProject(t)
+	options := addOptions(repo, "skills/alpha")
+	options.Ref = "refs/heads/release"
+	out, err := p.run(func(s *Service) error { return s.Add(ctx(t), options) })
+	requireNoError(t, out, err)
+
+	entry := p.entry("alpha")
+	if entry.SourceCommit != branchCommit {
+		t.Fatalf("locked commit = %q, want the branch tip %q", entry.SourceCommit, branchCommit)
+	}
+	// The namespace decides the ref kind, and a branch tracks while a tag pins.
+	if entry.ResolvedRefType != config.SkillRefBranch || entry.Tracking != config.SkillTrackingTracked {
+		t.Fatalf("qualified branch recorded as type %q tracking %q", entry.ResolvedRefType, entry.Tracking)
+	}
+	// The short name is the ref identity however the ref was spelled.
+	if entry.ResolvedRefName != "release" {
+		t.Fatalf("resolved ref name = %q, want release", entry.ResolvedRefName)
+	}
+	body, _ := p.readSkillFile("alpha", SkillManifestName)
+	requireContains(t, body, "Alpha on the branch")
+}
+
+func TestResolveRefQualifiedTagPinsAndUnknownNamespaceFails(t *testing.T) {
+	hermeticGitEnv(t)
+	repo := newSourceRepo(t, "main")
+	repo.writeSkill("skills/alpha", "alpha", "Alpha at the tag")
+	tagCommit := repo.commit("add alpha")
+	repo.tag("release")
+	runGit(t, repo.path(), "branch", "release")
+	repo.checkout("release")
+	repo.writeSkill("skills/alpha", "alpha", "Alpha on the branch")
+	repo.commit("revise alpha on the branch")
+
+	p := newProject(t)
+	options := addOptions(repo, "skills/alpha")
+	options.Ref = "refs/tags/release"
+	out, err := p.run(func(s *Service) error { return s.Add(ctx(t), options) })
+	requireNoError(t, out, err)
+
+	entry := p.entry("alpha")
+	if entry.SourceCommit != tagCommit {
+		t.Fatalf("locked commit = %q, want the tagged commit %q", entry.SourceCommit, tagCommit)
+	}
+	if entry.ResolvedRefType != config.SkillRefTag || entry.Tracking != config.SkillTrackingPinned {
+		t.Fatalf("qualified tag recorded as type %q tracking %q", entry.ResolvedRefType, entry.Tracking)
+	}
+
+	// A namespace Agent Layer does not import must say so instead of reporting a
+	// missing branch or tag the user never named.
+	other := newProject(t)
+	options = addOptions(repo, "skills/alpha")
+	options.Ref = "refs/remotes/origin/release"
+	out, err = other.run(func(s *Service) error { return s.Add(ctx(t), options) })
+	message := requireError(t, out, err)
+	requireContains(t, message, "ref namespace Agent Layer does not import")
 }
 
 func TestAddRejectsAnAbbreviatedCommitRef(t *testing.T) {

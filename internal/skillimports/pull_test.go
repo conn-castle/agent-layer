@@ -524,6 +524,36 @@ func TestPullRejectsChangedSelectorsWithoutAdvancingPinnedBlock(t *testing.T) {
 	requireNotContains(t, body, "Beta revised")
 }
 
+func TestPullRefusesAMalformedGlobInsteadOfRetiringTheBlock(t *testing.T) {
+	hermeticGitEnv(t)
+	repo := newSourceRepo(t, "main")
+	repo.writeSkill("skills/alpha", "alpha", "Alpha")
+	repo.writeSkill("skills/beta", "beta", "Beta")
+	repo.commit("add skills")
+
+	p := newProject(t)
+	out, err := p.run(func(s *Service) error { return s.Add(ctx(t), addOptions(repo, "skills/*")) })
+	requireNoError(t, out, err)
+
+	// The user hand-edits the selector into a glob that cannot be compiled. A
+	// pattern error must not read as "nothing matched": both skills are clean, so
+	// an empty desired set would silently delete them and their lock entries.
+	p.writeConfig(strings.Replace(p.configText(), `"skills/*"`, `"skills/["`, 1))
+
+	out, err = p.run(func(s *Service) error { return s.Pull(ctx(t)) })
+	message := requireError(t, out, err)
+	requireContains(t, message, "malformed glob segment")
+
+	for _, name := range []string{"alpha", "beta"} {
+		if !p.hasEntry(name) {
+			t.Fatalf("the lock entry for %q was retired by an unusable selector\n%s", name, out)
+		}
+		if _, ok := p.readSkillFile(name, SkillManifestName); !ok {
+			t.Fatalf("the imported skill %q was deleted by an unusable selector\n%s", name, out)
+		}
+	}
+}
+
 var errProjectionForTest = &projectionTestError{}
 
 type projectionTestError struct{}

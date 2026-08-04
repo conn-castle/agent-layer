@@ -210,6 +210,9 @@ func matchSegments(pattern []string, candidate []string) bool {
 		if len(candidate) == 0 {
 			return false
 		}
+		// config.ParseSkillSelector rejects a malformed glob segment before any
+		// selector reaches this point, so path.Match cannot report ErrBadPattern
+		// here; a pattern error would otherwise be indistinguishable from a miss.
 		matched, err := path.Match(pattern[0], candidate[0])
 		if err != nil || !matched {
 			return false

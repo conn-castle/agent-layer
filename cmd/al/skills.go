@@ -77,7 +77,8 @@ func newSkillsAddCmd() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&options.Ref, "ref", "",
-		"branch, tag, or full commit id to import from (default: the repository's default branch)")
+		"branch, tag, refs/heads/<branch>, refs/tags/<tag>, or full commit id to import from"+
+			" (default: the repository's default branch)")
 	command.Flags().StringVar(&options.Tracking, "tracking", "",
 		fmt.Sprintf("%q to advance on pull or %q to stay at the locked commit (default: branches track, tags and commits pin)",
 			config.SkillTrackingTracked, config.SkillTrackingPinned))

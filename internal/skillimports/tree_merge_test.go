@@ -92,6 +92,49 @@ func TestReadLocalTreeExcludesOnlyTheDocumentedNames(t *testing.T) {
 	}
 }
 
+func TestReadLocalTreeDerivesTheExecutableBitExactlyAsGitDoes(t *testing.T) {
+	hermeticGitEnv(t)
+	// The canonical tree hash is compared against trees read out of Git, so the
+	// local executable bit has to be the one Git would record for the same file.
+	// Git's rule is the owner-execute bit alone: a file that is executable only
+	// for its group or others is still mode 100644.
+	repo := newSourceRepo(t, "main")
+	modes := map[string]os.FileMode{
+		"owner.sh": 0o700,
+		"group.sh": 0o610,
+		"other.sh": 0o601,
+		"plain.md": 0o644,
+	}
+	for name, mode := range modes {
+		repo.writeFile(name, "#!/bin/sh\n", mode)
+	}
+	repo.commit("add files")
+
+	gitExecutable := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(runGit(t, repo.path(), "ls-files", "-s")), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 4 {
+			t.Fatalf("unexpected ls-files output: %q", line)
+		}
+		gitExecutable[fields[3]] = fields[0] == "100755"
+	}
+
+	built, err := ReadLocalTree(repo.path())
+	if err != nil {
+		t.Fatalf("read tree: %v", err)
+	}
+	for name := range modes {
+		file, ok := built.Lookup(name)
+		if !ok {
+			t.Fatalf("%s missing from the tree", name)
+		}
+		if file.Executable != gitExecutable[name] {
+			t.Fatalf("%s (mode %v): tree executable = %v, but git recorded executable = %v",
+				name, modes[name], file.Executable, gitExecutable[name])
+		}
+	}
+}
+
 func TestReadLocalTreeRejectsIrregularNodes(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

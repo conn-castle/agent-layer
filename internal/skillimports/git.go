@@ -88,8 +88,11 @@ func (ExecGitRunner) Run(ctx context.Context, dir string, args ...string) ([]byt
 
 // credentialPattern matches userinfo embedded in a URL. Agent Layer rejects
 // configured repositories that carry credentials, but a credential helper,
-// insteadOf rule, or submodule URL can still put one into git's output.
-var credentialPattern = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@\s]*:[^/@\s]*@`)
+// insteadOf rule, or submodule URL can still put one into git's output. The
+// whole userinfo is redacted whether or not it carries a colon, because a token
+// is routinely the entire userinfo (https://ghp_secret@host/org/repo.git) and a
+// username is not worth showing at the cost of leaking one that is not.
+var credentialPattern = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@\s]+@`)
 
 // bearerPattern matches an Authorization header value echoed by a transport helper.
 var bearerPattern = regexp.MustCompile(`(?i)(authorization\s*:\s*\w+\s+)\S+`)
