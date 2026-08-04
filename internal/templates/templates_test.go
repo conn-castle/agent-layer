@@ -158,13 +158,23 @@ func TestRemovedSkillTemplatesStayRemoved(t *testing.T) {
 		"skills/simplify-code/SKILL.md",
 		"skills/resolve-findings/SKILL.md",
 		"skills/address-pr-comments/SKILL.md",
+		"skills/address-pr-comments/reviewer-prompt.md",
+		"skills/auto-skill-loop/references/blocker-classification.md",
+		"skills/auto-skill-loop/references/mode-contract.md",
+		"skills/boost-coverage/SKILL.md",
+		"skills/clean-and-fix-code/SKILL.md",
 		"skills/fix-ci/SKILL.md",
 		"skills/full-workflow/SKILL.md",
 		"skills/fully-implement-plan/SKILL.md",
+		"skills/implement-plan/SKILL.md",
+		"skills/improve-codebase/SKILL.md",
 		"skills/plan-work/SKILL.md",
+		"skills/review-plan/SKILL.md",
 		"skills/review-uncommitted-code/SKILL.md",
 		"skills/run-and-fix-all-checks/SKILL.md",
 		"skills/schedule-backlog/SKILL.md",
+		"skills/simplify-codebase/SKILL.md",
+		"skills/verify-work/SKILL.md",
 	} {
 		if _, err := Read(path); err == nil {
 			t.Fatalf("expected removed skill template %s to stay absent", path)
