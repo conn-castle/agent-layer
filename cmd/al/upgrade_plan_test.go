@@ -323,7 +323,7 @@ func prepareUpgradeTestRepo(t *testing.T) string {
 	}
 	implementTemplate, err := templates.Read("skills/implement/SKILL.md")
 	if err != nil {
-		t.Fatalf("read plan-work template: %v", err)
+		t.Fatalf("read implement template: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "skills", "implement-legacy.md"), implementTemplate, 0o600); err != nil {
 		t.Fatalf("write orphan rename file: %v", err)
