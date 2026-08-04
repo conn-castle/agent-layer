@@ -37,22 +37,22 @@ func TestBuildSingleDiffPreview_TemplateSectionSplitError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("memoryTemplatePathByRel: %v", err)
 	}
-	roadmapTemplatePath := templatePathByRel["docs/agent-layer/ROADMAP.md"]
-	if strings.TrimSpace(roadmapTemplatePath) == "" {
-		t.Fatal("missing roadmap template path")
+	backlogTemplatePath := templatePathByRel["docs/agent-layer/BACKLOG.md"]
+	if strings.TrimSpace(backlogTemplatePath) == "" {
+		t.Fatal("missing backlog template path")
 	}
 
 	origRead := templates.ReadFunc
 	templates.ReadFunc = func(name string) ([]byte, error) {
-		if name == roadmapTemplatePath {
-			return []byte("# ROADMAP without marker\n"), nil
+		if name == backlogTemplatePath {
+			return []byte("# BACKLOG without marker\n"), nil
 		}
 		return origRead(name)
 	}
 	t.Cleanup(func() { templates.ReadFunc = origRead })
 
 	_, err = inst.buildSingleDiffPreview(LabeledPath{
-		Path:      "docs/agent-layer/ROADMAP.md",
+		Path:      "docs/agent-layer/BACKLOG.md",
 		Ownership: OwnershipUpstreamTemplateDelta,
 	}, templatePathByRel)
 	if err == nil || !strings.Contains(err.Error(), "missing in") {

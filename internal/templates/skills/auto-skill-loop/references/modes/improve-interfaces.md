@@ -1,28 +1,9 @@
 # Improve Interfaces
 
-## Purpose
-
-Run one fresh interface audit, then improve interfaces until current evidence
-reaches diminishing returns.
-
-## Initialize
-
-Run one fresh `/interface-audit` and retain that report for the run. Do not load
-prior audits.
-
-## Select
-
-Choose the highest-value autonomous improvement from the report and pass its
-exact handoff forward as the selected work. Account for completed, in-flight,
-and blocked work; refresh the audit when its recommendation is stale or
-insufficient.
-
-## Reconcile
-
-After each merge, dispatch `planner` fresh to run `/interface-audit --update` on
-the same report. Preserve open or blocked work and continue with current
-evidence.
-
-## Exhaustion
-
-The refreshed audit and current tree show no worthwhile autonomous improvement.
+This is one iteration of a repeated loop whose purpose is to improve interfaces,
+one PR at a time. Require an existing interface-audit report path as input; do
+not run a fresh audit. Select the highest-value coherent improvement that fits
+in one PR and can be implemented without a human decision. After implementation
+succeeds, use a fresh subagent to run
+`/interface-audit --update <report-path>` before returning. Stop when the current
+report shows diminishing returns.

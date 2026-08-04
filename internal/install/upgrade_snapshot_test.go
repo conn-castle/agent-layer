@@ -296,7 +296,7 @@ func TestRunWithOverwrite_RollbackScopesToExecutedStepTargets(t *testing.T) {
 		t.Fatalf("snapshot failure_step = %q, want writeVersionFile", snapshot.FailureStep)
 	}
 
-	manifestPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
+	manifestPath := filepath.Join(root, "docs", "agent-layer", "BACKLOG.md")
 	if _, statErr := os.Stat(manifestPath); statErr != nil {
 		t.Fatalf("expected unrelated memory file to remain: %v", statErr)
 	}
@@ -313,8 +313,8 @@ func TestRollbackUpgradeSnapshot_RestoresAppliedSnapshot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "al.version"), []byte("0.6.0\n"), 0o600); err != nil {
 		t.Fatalf("write current pin: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "docs", "agent-layer", "ROADMAP.md"), []byte("new roadmap\n"), 0o600); err != nil {
-		t.Fatalf("write current roadmap: %v", err)
+	if err := os.WriteFile(filepath.Join(root, "docs", "agent-layer", "BACKLOG.md"), []byte("new backlog\n"), 0o600); err != nil {
+		t.Fatalf("write current backlog: %v", err)
 	}
 	extraPath := filepath.Join(root, ".agent-layer", "tmp", "extra.txt")
 	if err := os.WriteFile(extraPath, []byte("remove me"), 0o600); err != nil {
@@ -345,10 +345,10 @@ func TestRollbackUpgradeSnapshot_RestoresAppliedSnapshot(t *testing.T) {
 				Perm: &permDir,
 			},
 			{
-				Path:          "docs/agent-layer/ROADMAP.md",
+				Path:          "docs/agent-layer/BACKLOG.md",
 				Kind:          upgradeSnapshotEntryKindFile,
 				Perm:          &permFile,
-				ContentBase64: base64.StdEncoding.EncodeToString([]byte("old roadmap\n")),
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("old backlog\n")),
 			},
 		},
 	}
@@ -368,12 +368,12 @@ func TestRollbackUpgradeSnapshot_RestoresAppliedSnapshot(t *testing.T) {
 	if string(versionBytes) != "0.5.0\n" {
 		t.Fatalf("restored pin = %q, want %q", string(versionBytes), "0.5.0\n")
 	}
-	roadmapBytes, err := os.ReadFile(filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")) // #nosec G304 -- path is constructed from test-controlled inputs.
+	backlogBytes, err := os.ReadFile(filepath.Join(root, "docs", "agent-layer", "BACKLOG.md")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
-		t.Fatalf("read restored roadmap: %v", err)
+		t.Fatalf("read restored backlog: %v", err)
 	}
-	if string(roadmapBytes) != "old roadmap\n" {
-		t.Fatalf("restored roadmap = %q, want %q", string(roadmapBytes), "old roadmap\n")
+	if string(backlogBytes) != "old backlog\n" {
+		t.Fatalf("restored backlog = %q, want %q", string(backlogBytes), "old backlog\n")
 	}
 	if _, err := os.Stat(extraPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected extra file removed, stat err = %v", err)
@@ -558,7 +558,7 @@ func TestRollbackTargetsFromSnapshotEntries_DedupesPaths(t *testing.T) {
 	entries := []upgradeSnapshotEntry{
 		{Path: ".agent-layer/al.version", Kind: upgradeSnapshotEntryKindFile},
 		{Path: ".agent-layer/./al.version", Kind: upgradeSnapshotEntryKindFile},
-		{Path: "docs/agent-layer/ROADMAP.md", Kind: upgradeSnapshotEntryKindFile},
+		{Path: "docs/agent-layer/BACKLOG.md", Kind: upgradeSnapshotEntryKindFile},
 	}
 
 	targets, err := rollbackTargetsFromSnapshotEntries(root, entries)
@@ -662,12 +662,12 @@ func TestRollbackUpgradeSnapshotState_AlwaysRestoresVersionEntry(t *testing.T) {
 		t.Fatalf("mkdir docs/agent-layer: %v", err)
 	}
 	versionPath := filepath.Join(root, ".agent-layer", "al.version")
-	roadmapPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
+	backlogPath := filepath.Join(root, "docs", "agent-layer", "BACKLOG.md")
 	if err := os.WriteFile(versionPath, []byte("0.6.0\n"), 0o600); err != nil {
 		t.Fatalf("write current version: %v", err)
 	}
-	if err := os.WriteFile(roadmapPath, []byte("new roadmap\n"), 0o600); err != nil {
-		t.Fatalf("write current roadmap: %v", err)
+	if err := os.WriteFile(backlogPath, []byte("new backlog\n"), 0o600); err != nil {
+		t.Fatalf("write current backlog: %v", err)
 	}
 
 	filePerm := uint32(0o644)
@@ -684,16 +684,16 @@ func TestRollbackUpgradeSnapshotState_AlwaysRestoresVersionEntry(t *testing.T) {
 				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.5.0\n")),
 			},
 			{
-				Path:          "docs/agent-layer/ROADMAP.md",
+				Path:          "docs/agent-layer/BACKLOG.md",
 				Kind:          upgradeSnapshotEntryKindFile,
 				Perm:          &filePerm,
-				ContentBase64: base64.StdEncoding.EncodeToString([]byte("old roadmap\n")),
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("old backlog\n")),
 			},
 		},
 	}
 
 	// Simulate a target list that omits .agent-layer/al.version.
-	if err := rollbackUpgradeSnapshotState(root, RealSystem{}, snapshot, []string{roadmapPath}); err != nil {
+	if err := rollbackUpgradeSnapshotState(root, RealSystem{}, snapshot, []string{backlogPath}); err != nil {
 		t.Fatalf("rollbackUpgradeSnapshotState: %v", err)
 	}
 
@@ -704,12 +704,12 @@ func TestRollbackUpgradeSnapshotState_AlwaysRestoresVersionEntry(t *testing.T) {
 	if string(versionBytes) != "0.5.0\n" {
 		t.Fatalf("restored version = %q, want %q", string(versionBytes), "0.5.0\n")
 	}
-	roadmapBytes, err := os.ReadFile(roadmapPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	backlogBytes, err := os.ReadFile(backlogPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
-		t.Fatalf("read restored roadmap: %v", err)
+		t.Fatalf("read restored backlog: %v", err)
 	}
-	if string(roadmapBytes) != "old roadmap\n" {
-		t.Fatalf("restored roadmap = %q, want %q", string(roadmapBytes), "old roadmap\n")
+	if string(backlogBytes) != "old backlog\n" {
+		t.Fatalf("restored backlog = %q, want %q", string(backlogBytes), "old backlog\n")
 	}
 }
 

@@ -259,15 +259,16 @@ type InstructionFile struct {
 
 // Skill represents a parsed skill with metadata and body.
 type Skill struct {
-	Name          string
-	Description   string
-	License       string
-	Compatibility string
-	Metadata      map[string]string
-	AllowedTools  string
-	Body          string
-	SourcePath    string
-	SourceDir     string // Absolute path to the skill directory (parent of SKILL.md)
+	Name                   string
+	Description            string
+	License                string
+	Compatibility          string
+	Metadata               map[string]string
+	AllowedTools           string
+	DisableModelInvocation *bool
+	Body                   string
+	SourcePath             string
+	SourceDir              string // Absolute path to the skill directory (parent of SKILL.md)
 }
 
 // ProjectConfig is the fully loaded configuration state for sync and launch.

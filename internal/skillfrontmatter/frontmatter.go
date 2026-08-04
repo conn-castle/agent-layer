@@ -74,6 +74,14 @@ type Field struct {
 	Multiline bool
 }
 
+// BooleanField is the structural parse result for one supported boolean field.
+type BooleanField struct {
+	// State reports whether the field was absent, null, or carried a value.
+	State FieldState
+	// Value is the parsed boolean; meaningful only when State is FieldValue.
+	Value bool
+}
+
 // Document is the structural parse result of SKILL.md YAML front matter.
 type Document struct {
 	// Keys lists the non-empty top-level keys in document order, including
@@ -89,6 +97,8 @@ type Document struct {
 	Compatibility Field
 	// AllowedTools is the "allowed-tools" field.
 	AllowedTools Field
+	// DisableModelInvocation is Claude Code's "disable-model-invocation" field.
+	DisableModelInvocation BooleanField
 	// Metadata holds the "metadata" string map; nil when the key is absent
 	// or null, possibly empty when an empty map was supplied.
 	Metadata map[string]string
@@ -142,6 +152,13 @@ func Parse(content string) (Document, error) {
 			target = &doc.Compatibility
 		case "allowed-tools":
 			target = &doc.AllowedTools
+		case "disable-model-invocation":
+			field, err := parseBooleanField(key, valueNode)
+			if err != nil {
+				return Document{}, err
+			}
+			doc.DisableModelInvocation = field
+			continue
 		case "metadata":
 			metadata, err := parseMetadata(valueNode)
 			if err != nil {
@@ -161,6 +178,40 @@ func Parse(content string) (Document, error) {
 		*target = field
 	}
 	return doc, nil
+}
+
+// booleanLiterals maps every scalar Claude Code reads as a boolean skill field
+// to its value. Claude Code accepts yes, no, on, off, 1, and 0 in any letter
+// case in addition to true and false, and YAML 1.2 tags several of those as
+// strings or integers rather than booleans. Matching the client's set keeps a
+// skill authored against its documentation loadable here unchanged.
+var booleanLiterals = map[string]bool{
+	"true":  true,
+	"yes":   true,
+	"on":    true,
+	"1":     true,
+	"false": false,
+	"no":    false,
+	"off":   false,
+	"0":     false,
+}
+
+// booleanLiteralList names the accepted spellings for error messages.
+const booleanLiteralList = "true, false, yes, no, on, off, 1, or 0"
+
+// parseBooleanField accepts null or any scalar Claude Code reads as a boolean.
+func parseBooleanField(field string, node *yaml.Node) (BooleanField, error) {
+	if node.Kind != yaml.ScalarNode {
+		return BooleanField{}, typeError(fmt.Sprintf("field %q must be a boolean (%s)", field, booleanLiteralList))
+	}
+	if node.Tag == yamlTagNull {
+		return BooleanField{State: FieldNull}, nil
+	}
+	value, ok := booleanLiterals[strings.ToLower(node.Value)]
+	if !ok {
+		return BooleanField{}, typeError(fmt.Sprintf("field %q must be a boolean (%s)", field, booleanLiteralList))
+	}
+	return BooleanField{State: FieldValue, Value: value}, nil
 }
 
 func parseScalarField(field string, node *yaml.Node) (Field, error) {

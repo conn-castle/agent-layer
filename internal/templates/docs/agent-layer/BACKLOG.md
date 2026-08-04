@@ -12,7 +12,6 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 - Lines 2–5 are indented by **4 spaces** and use `Key: Value`.
 - Keep **exactly one blank line** between entries.
 - Prevent duplicates: search the file and merge/rewrite instead of adding near-duplicates.
-- When scheduled into ROADMAP.md, move the work into ROADMAP.md and remove it from this file.
 - When implemented, remove the entry from this file.
 
 ### Entry template

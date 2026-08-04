@@ -1,104 +1,99 @@
 ---
 name: ship-pr
 description: >-
-  Explicit-only.
-  Ship one pull request, observe hosted CI and review feedback, follow PR
-  policy, reply to every eligible comment, and request merge authorization
-  before merging and cleaning up.
+  Ship one pull request, monitor hosted CI and review feedback,
+  follow PR policy, and request authorization before merging and cleaning up.
 ---
 
 # ship-pr
 
-Invoking this skill authorizes the normal branch, staging, commit, push, PR
-creation/update, and eligible comment-reply writes needed to prepare one PR for
-the merge-authorization gate below.
+Invoking this skill authorizes branch creation, staging, commits, pushes, PR
+creation or updates, and eligible comment replies needed to prepare one PR for
+the merge-authorization gate. It does not authorize the merge itself.
 
 If `references/repo-specific-pr-policy.md` exists, read it before starting the
 workflow and treat it as authoritative.
 
-## Pull request files
+## Inputs
 
-- Use the repository default base unless the user specifies another. Derive the
-  title from the intended changes and fill `assets/pr-body-template.md`,
-  removing placeholders and unused sections. Write
-  `.agent-layer/tmp/ship-pr-body.<run-id>.md` and use it as the PR body file.
-- Use `.agent-layer/tmp/ship-pr-events-<pr-number>.jsonl` only as the polling
-  watcher's append-only state-change log.
-- Bind check and review evidence to the exact tree or pushed head it covers.
-  Rerun only evidence invalidated by changes or shown incomplete.
+Require a `pr_worker` dispatch target. Use `/agent-dispatch` for every dispatch.
 
-## Comment integration
+## PR worker
 
-`/address-pr-comments` owns feedback discovery and eligibility, dispositions,
-local fixes, and proposed reply content; it never commits, pushes, or posts.
+The `pr_worker` fixes review feedback and failed CI checks in the local working
+tree without committing or pushing. It returns proposed comment replies without
+posting them.
 
-After committing accepted fixes, post supported replies serially in their native
-threads, then refetch their IDs and URLs. Correct any reply that fresh evidence
-shows is missing or unsupported before closeout.
+After committing accepted fixes, post each supported reply in its original
+thread, one at a time. Then refetch the reply IDs and URLs. Before closeout,
+correct any reply that current evidence shows is missing or unsupported.
 
 ## Determining the intended changes
 
-Inspect the base branch, current branch and upstream, staged and unstaged
-changes, untracked files, and unpublished commits. Identify exactly which
-changes belong in the PR and preserve unrelated work with path- or
-hunk-specific staging. If the changes cannot be separated safely, report
-the overlapping files.
+Unless the user defines a narrower scope, include every change in the current
+working tree in the PR.
 
 ## Workflow
 
-1. Create a new branch if required, following repository norms. Then commit the
-intended changes. Push the branch and create or reuse a PR.
+1. Create a branch if required by repository norms. Commit the intended changes,
+   push the branch, and create or reuse a PR. Derive the PR title from the
+   intended changes. Fill `assets/pr-body-template.md`, removing placeholders
+   and unused sections.
 
 2. Start the polling watcher in a managed background session. Keep one watcher
    running until the PR is merged or the workflow stops, then stop it explicitly.
    If the watcher ends unexpectedly, refetch authoritative state and restart it
-   with the same append-only log after one transient transport failure.
-```bash
-bash <skill_dir>/scripts/watch-pr-events.sh \
-  --repo <owner/name> \
-  --pr <pr-number> \
-  --log-file .agent-layer/tmp/ship-pr-events-<pr-number>.jsonl \
-  --interval-seconds 300
-```
+   with the same append-only log after a transient transport failure.
 
-3. Determine the timestamp of the last push and wait until at least 5 minutes
-   has elapsed. The watcher records state changes during this review window, but
-   a state change does not shorten it.
+   ```bash
+   bash <skill_dir>/scripts/watch-pr-events.sh \
+     --repo <owner/name> \
+     --pr <pr-number> \
+     --log-file .agent-layer/tmp/ship-pr-events-<pr-number>.jsonl \
+     --interval-seconds 300
+   ```
 
-4. Fetch the current head, comments, reviews, checks, and mergeability with
+3. Fetch the current head, comments, reviews, checks, and mergeability with
    `gh`. Never infer current state from the polling log. Determine the next steps
    based on the following rules:
 
-   - Call `/address-pr-comments` when there is unresolved feedback, batching all
-     feedback
-   - Call `/fix-ci` when required checks fail
-   - Automatically resolve mechanical conflicts
-   - Follow any repository-specific guidance in
-     `references/repo-specific-pr-policy.md` if it exists
-   - If the PR is ready to be merged, jump to step 6.
+   - For unresolved feedback, dispatch `pr_worker` with the exact PR and head,
+     all feedback, and `references/address-pr-comments.md`.
+   - For a failed required check, dispatch `pr_worker` with the exact PR and
+     head, failure evidence, and `references/fix-ci.md`.
+   - Resolve mechanical conflicts automatically.
 
-   A PR is ready to be merged when the latest head is mergeable, the required
-   repository gates are green, all eligible comments have a validated reply,
-   and when the optional policy exists, all merge criteria it defines are met.
+   The PR is ready to merge only when:
 
-   Do not commit until step 5. Iteratively repeat step 4, fetching the state
-   after each round of fixes, until all items have been addressed locally. This
-   allows new CI failures or new comments that may have arrived while you were
-   working to be included in the current batch of fixes.
+   - The PR is mergeable at its latest head.
+   - At least one agent or human reviewer has posted feedback as a formal review
+     or comment.
+   - Every required check and repository gate is green.
+   - Every eligible comment has a validated reply.
+   - If the optional repository policy exists, every merge criterion it defines
+     is met.
 
-5. Commit and push. Go back to step 3 and repeat until all feedback is addressed
-   and the PR is ready to be merged.
+   If no agent or human reviewer posts feedback within 10 minutes of PR
+   creation, stop and tell the user that no reviewer feedback was received. If
+   the PR is ready, proceed to step 5. Otherwise, address every actionable item
+   locally before proceeding to step 4. Do not commit midway through a round of
+   fixes.
 
-6. Request single-use merge authorization, specifying the exact PR and head.
-   Report the final states, the comment disposition summary, and other evidence
-   to the caller that the PR is ready to be merged.
+4. Commit and push any local fixes, then post supported replies as described
+   above. Return to step 3 until the PR is ready to merge. If nothing is
+   actionable while checks or reviews are pending, wait for the watcher to
+   report a change or reach its next polling interval.
 
-7. After merge authorization, refetch the expected head, checks, mergeability,
+5. Request single-use merge authorization for the exact PR and head. Report any
+   substantive findings, the comment disposition summary, and the evidence that
+   the PR is ready to merge.
+
+6. After merge authorization, refetch the expected head, checks, mergeability,
    and comments, then confirm the local tree is complete and every eligible
-   comment has a supported posted reply. If anything changed, return to step 4
-   and obtain fresh merge authorization when reaching step 6. Otherwise, merge
+   comment has a supported posted reply. If anything changed, return to step 3
+   and obtain fresh merge authorization when reaching step 5. Otherwise, merge
    the PR.
 
-8. Switch the clean checkout to the default branch, and fast-forward to the
-   latest commit. Delete workflow-owned branch/worktree. Preserve state and
-   report any unsafe cleanup skipped.
+7. Confirm the checkout is clean, switch to the default branch, and fast-forward
+   it to the latest commit. Delete any branch or worktree created by this
+   workflow. Preserve state and report any unsafe cleanup that was skipped.

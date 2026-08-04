@@ -305,7 +305,6 @@ The workflow bundle creates missing memory docs and templates. Bare init does no
 Common memory files include:
 - `docs/agent-layer/ISSUES.md`
 - `docs/agent-layer/BACKLOG.md`
-- `docs/agent-layer/ROADMAP.md`
 - `docs/agent-layer/DECISIONS.md`
 - `docs/agent-layer/COMMANDS.md`
 - `docs/agent-layer/CONTEXT.md`

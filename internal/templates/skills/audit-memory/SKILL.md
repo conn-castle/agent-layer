@@ -1,8 +1,7 @@
 ---
 name: audit-memory
 description: >-
-  Explicit-only.
-  Audit agent memory files (ISSUES, BACKLOG, ROADMAP, DECISIONS, COMMANDS,
+  Audit agent memory files (ISSUES, BACKLOG, DECISIONS, COMMANDS,
   CONTEXT) for structure, staleness, placement, consistency, and DECISIONS.md
   bloat; fix accepted findings.
 ---
@@ -13,7 +12,7 @@ Audit memory files and fix evidence-backed problems.
 
 ## Scope
 
-- Default scope is ISSUES.md, BACKLOG.md, ROADMAP.md, DECISIONS.md,
+- Default scope is ISSUES.md, BACKLOG.md, DECISIONS.md,
   COMMANDS.md, and CONTEXT.md.
 - Accept a subset, audit-only mode, documentation cross-checks, and a report
   limit that does not reduce coverage.
@@ -41,14 +40,14 @@ owning agent validates evidence and edits. Check:
 
 - required sections, markers, and entry formats
 - stale, completed, duplicate, or misplaced ISSUES.md and BACKLOG.md entries
-- ROADMAP.md status/references and COMMANDS.md commands against current evidence
+- COMMANDS.md commands against current evidence
 - CONTEXT.md facts and cross-file contradictions or duplication
 - DECISIONS.md entries that are superseded, duplicated, now self-evident, or no
   longer constrain future work
 
 Consolidate superseded decision chains while retaining future-guiding rationale.
-Remove proven stale/completed entries, move entries only when both files are in
-scope, and update roadmap status only with sufficient evidence. Audit-only mode
+Remove proven stale/completed entries and move entries only when both files are
+in scope. Audit-only mode
 records the same outcomes without edits.
 
 The report contains:

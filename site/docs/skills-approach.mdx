@@ -65,27 +65,22 @@ conditions, verification expectations, and final handoff shape. The agent still
 uses judgment inside the task, but the module boundary and terminal
 responsibility should be stable.
 
-**Root skills own bounded jobs; workflow skills compose them.** Planning,
-review, implementation, verification, cleanup, and shipping remain distinct
-stages with distinct artifacts. A root skill may use tools or a purposefully
-assigned subagent to produce its output, but it must not call another skill or
-create a nested orchestration layer. Workflow skills own cross-skill sequencing
-and advance after each stage satisfies its contract. They may re-enter a stage
-only in response to a concrete failure or materially changed artifact.
+**Skills own bounded jobs and compose only when the boundary is useful.** The
+bundled `implement` skill chooses a direct or planned path and adds independent
+review only when its expected value justifies the cost. `ship-pr` owns the
+external pull-request lifecycle. `auto-skill-loop` composes those two workflows
+through named Agent Dispatch targets. A stage is re-entered only for a concrete
+failure or materially changed artifact.
 
 **Evidence over assertion or consensus.** Skills should push agents toward
 observable evidence: read the code, inspect the diff, run documented checks,
 use real artifacts, and state what was verified. Additional review does not
 override repository behavior, specifications, tests, or documented contracts.
 
-**Verification is intentionally placed.** Implementation skills may use narrow
-task-local checks when they need feedback, but final verification is its own
-boundary. `verify-work` owns the final verification pass for completed work:
-it runs the smallest credible checks or accepts current evidence only when that
-evidence clearly covers the final working tree. Workflow skills should call
-that boundary once at the appropriate point instead of rerunning broad checks
-after every step. A failed check or a subsequent material change is a concrete
-reason to repair and re-verify the affected work.
+**Verification is intentionally placed.** Implementation uses narrow task-local
+checks for feedback and finishes with the smallest credible checks for the final
+working tree. A failed check or a subsequent material change is a concrete
+reason to repair and re-run the affected evidence; unchanged work is not.
 
 **Use built-in subagents only for a distinct perspective or bounded job.** The
 child must be able to follow its prompt without knowing whether a user or parent
@@ -105,138 +100,15 @@ write, or missing requirement that prevents progress. State where execution
 resumes after the answer. Agents resolve routine implementation and verification
 details and continue automatically when no user-owned decision is required.
 
-## Nested skill call notation
-
-Use this notation when describing how workflow skills call other skills,
-dispatch named agents, or launch built-in subagents.
-
-Parentheses show only agent-role inputs passed into the call, such as
-`implementer`, `code_reviewer`, `fixer`, or `plan_reviewers`. Do not include
-ordinary file paths, artifacts, issue numbers, or prose task inputs unless they
-are essential to the explanation.
-
-```text
-/skill-name
-```
-
-Use a bare skill name when the current agent calls the skill directly and no
-agent-role input is relevant.
-
-```text
-/plan-work(plan_reviewers)
-```
-
-Add parentheses to any call form that passes agent-role inputs into the
-skill. A skill name with no prefix, as shown here, means the current agent
-calls the skill directly.
-
-```text
-dispatch(implementer) -> /fully-implement-plan(implementer, code_reviewer, fixer)
-```
-
-Use `dispatch(agent_name) ->` when a named dispatch role launches the skill.
-The name can be a workflow role such as `implementer` or one item from a
-caller-provided list.
-
-```text
-subagent -> /verify-work
-```
-
-Use `subagent ->` when the current skill launches a built-in fresh-context
-subagent. This is not a named dispatch role.
-
-```text
-for plan_reviewer in plan_reviewers:
-    dispatch(plan_reviewer) -> /review-plan
-```
-
-Each named reviewer runs `/review-plan` directly through one to three
-risk-based framings of the complete artifact set. Separate dispatched reviewers
-provide independent contexts; multiple framings within one reviewer broaden
-coverage but are not independent reviews. The planner independently judges the
-resulting findings; reviewer agreement is not evidence.
-
-```text
-subagent -> task: row-level verification
-```
-
-Use `task:` when a workflow names work that is not a skill call and is not
-backed by a named prompt or asset file. Add `caller: subagent` when that task
-runs in a built-in fresh-context subagent. Do not use a leading dot for these
-rows; dot-prefixes are reserved for real assets.
-
-Keep `task:` rows coarse. At any one `calls:` level, use at most one direct
-`task:` row to summarize local orchestration work. If several adjacent bullets
-would only describe mechanical local steps, fold them into one readable phrase
-instead of rendering each step. Prefer `task: commit, push, and prepare the PR`
-over separate rows for branch prep, PR create/reuse, ledger setup, and reply
-publishing. Use additional rows only when they are real logic blocks, skill
-calls, asset calls, dispatch/subagent boundaries, or terminal `break:`/`exit:`
-statements.
-
-Do not render readiness checks that are only internal gates of the previous
-child call. When the source workflow means "if repair is needed, capture
-evidence, plan, implement, and verify", keep those calls inside one meaningful
-condition instead of adding separate `if the plan is ready` or
-`if implementation changed files` rows. A reusable plan/implement/verify node is
-useful only when it corresponds to a real skill with a stable contract;
-otherwise inline the three skill calls. Any path that re-enters a completed
-stage must name the concrete failure or changed artifact that requires it.
-
-Conditional calls can be shown with a short condition:
-
-```text
-if accepted findings:
-    subagent -> /plan-work(plan_reviewers)
-```
-
-In the YAML call-tree spec, logic is represented as a block node. Put `if`,
-`while`, and `for` at the list-item level, and put the body under nested
-`calls:`. Do not attach an `if` or `while` field to a sibling call.
-
-```yaml
-ship-pr:
-  inputs: [plan_reviewers, implementer, fixer]
-  calls:
-    - while: PR is not ready for closeout
-      calls:
-        - task: run monitor-pr.sh and reconcile its action
-        - if: PR is created or a new head SHA is pushed
-          calls:
-            - skill: run-and-fix-all-checks
-              inputs: [plan_reviewers, implementer]
-              caller: subagent
-        - if: local changes exist after repair work
-          calls:
-            - task: commit and push local repair changes
-            - break: restart monitoring for the new pushed head
-        - if: PR is ready for merge authorization
-          calls:
-            - exit: stop and request authorization to merge the exact PR
-```
-
-Use `break:` for a loop exit or restart point, and `exit:` for leaving the
-current skill at a stop gate or final handoff.
-
-Lifecycle monitoring may observe changing external state more than once within
-one shipping stage. That does not authorize repeated review for confidence. In
-the example, a failed check or new head SHA is new evidence that justifies the
-affected repair or verification work; an unchanged state does not.
-
-Keep the tree focused on delegation shape: who launches the work, whether it is
-a skill, asset, task, or terminal control statement, and which agent-role inputs
-flow into it. Omit redundant review layers and confidence-seeking loops.
-
 ## Root Skill Model
 
 Representative stable contracts:
 
 | Root skill | Stable contract |
 | --- | --- |
-| `review-plan` | Make one risk-proportional pass over plan artifacts and report only evidence-backed, material findings. |
-| `implement-plan` | Execute an approved plan once, use task-local feedback checks when needed, and return the completed work, a concrete failure, or a user-owned decision. |
-| `review-uncommitted-code` | Review concrete files, diffs, behavior, and test evidence once and produce findings that materially affect correctness, safety, scope, or maintainability. |
-| `verify-work` | Make one final, evidence-based comparison of completed work against the plan or request and return a completion verdict or concrete failure. |
+| `implement` | Select a proportional direct or planned path, complete the requested code change, simplify it, and verify the final result. |
+| `ship-pr` | Prepare and monitor one pull request, dispatch bounded repairs, and stop at the exact-head merge-authorization gate. |
+| `interface-audit` | Audit component boundaries and produce or update a report without implementing its recommendations. |
 
 ## Workflow skills
 
@@ -246,12 +118,10 @@ Workflow boundaries include:
   continuous integration monitoring, reviewer feedback, and final status
   checks. External state changes may require targeted repair without restarting
   unrelated stages.
-- `full-workflow` owns specification alignment for features or roadmap phases,
-  planning, implementation, concrete-work review, verification, closeout, and
-  pull request shipping. Each stage yields its result before the workflow
-  advances.
-- `improve-codebase` covers one declared scope, repairs validated findings, and
-  reviews and verifies the combined result.
+- `implement` owns proportional planning, implementation, review selection,
+  cleanup, and local verification for one requested change.
+- `interface-audit` covers one declared scope, scores component boundaries, and
+  reports recommendations without implementing them.
 - `auto-skill-loop` adaptively selects the next coherent work from a named mode,
   delegates each bounded step, centrally batches and ships ready deliveries,
   reconciles authoritative sources, and moves past local blockers until

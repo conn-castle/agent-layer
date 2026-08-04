@@ -22,14 +22,14 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 
 	// Simulate an unchanged local docs file relative to the prior managed baseline,
 	// while the embedded template has since changed.
-	oldRoadmap := []byte("# ROADMAP\n\nLegacy header\n\n<!-- PHASES START -->\n")
-	roadmapPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
-	baselineRoadmapPath := filepath.Join(root, ".agent-layer", "templates", "docs", "ROADMAP.md")
-	if err := os.WriteFile(roadmapPath, oldRoadmap, 0o600); err != nil {
-		t.Fatalf("write roadmap: %v", err)
+	oldBacklog := []byte("# BACKLOG\n\nLegacy header\n\n<!-- ENTRIES START -->\n")
+	backlogPath := filepath.Join(root, "docs", "agent-layer", "BACKLOG.md")
+	baselineBacklogPath := filepath.Join(root, ".agent-layer", "templates", "docs", "BACKLOG.md")
+	if err := os.WriteFile(backlogPath, oldBacklog, 0o600); err != nil {
+		t.Fatalf("write backlog: %v", err)
 	}
-	if err := os.WriteFile(baselineRoadmapPath, oldRoadmap, 0o600); err != nil {
-		t.Fatalf("write baseline roadmap: %v", err)
+	if err := os.WriteFile(baselineBacklogPath, oldBacklog, 0o600); err != nil {
+		t.Fatalf("write baseline backlog: %v", err)
 	}
 
 	// Simulate a local customization in memory docs.
@@ -44,16 +44,16 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 	}
 
 	// Simulate a rename candidate by moving one managed template file to an orphan path.
-	planWorkPath := filepath.Join(root, ".agent-layer", "skills", "plan-work", "SKILL.md")
-	if err := os.Remove(planWorkPath); err != nil {
-		t.Fatalf("remove plan-work skill: %v", err)
+	implementPath := filepath.Join(root, ".agent-layer", "skills", "implement", "SKILL.md")
+	if err := os.Remove(implementPath); err != nil {
+		t.Fatalf("remove implement skill: %v", err)
 	}
-	planWorkTemplate, err := templates.Read("skills/plan-work/SKILL.md")
+	implementTemplate, err := templates.Read("skills/implement/SKILL.md")
 	if err != nil {
 		t.Fatalf("read template skill: %v", err)
 	}
-	orphanRenamePath := filepath.Join(root, ".agent-layer", "skills", "plan-work-legacy.md")
-	if err := os.WriteFile(orphanRenamePath, planWorkTemplate, 0o600); err != nil {
+	orphanRenamePath := filepath.Join(root, ".agent-layer", "skills", "implement-legacy.md")
+	if err := os.WriteFile(orphanRenamePath, implementTemplate, 0o600); err != nil {
 		t.Fatalf("write orphan rename path: %v", err)
 	}
 
@@ -81,21 +81,21 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 		t.Fatalf("unexpected pin transition: %#v", plan.PinVersionChange)
 	}
 
-	roadmapUpdate := findUpgradeChange(plan.SectionAwareUpdates, "docs/agent-layer/ROADMAP.md")
-	if roadmapUpdate == nil {
-		t.Fatalf("expected roadmap update in section-aware updates")
+	backlogUpdate := findUpgradeChange(plan.SectionAwareUpdates, "docs/agent-layer/BACKLOG.md")
+	if backlogUpdate == nil {
+		t.Fatalf("expected backlog update in section-aware updates")
 	}
-	if roadmapUpdate.Ownership != OwnershipUpstreamTemplateDelta {
-		t.Fatalf("expected upstream ownership for roadmap, got %s", roadmapUpdate.Ownership)
+	if backlogUpdate.Ownership != OwnershipUpstreamTemplateDelta {
+		t.Fatalf("expected upstream ownership for backlog, got %s", backlogUpdate.Ownership)
 	}
-	if roadmapUpdate.OwnershipState != OwnershipStateUpstreamTemplateDelta {
-		t.Fatalf("expected upstream ownership_state for roadmap, got %s", roadmapUpdate.OwnershipState)
+	if backlogUpdate.OwnershipState != OwnershipStateUpstreamTemplateDelta {
+		t.Fatalf("expected upstream ownership_state for backlog, got %s", backlogUpdate.OwnershipState)
 	}
-	if roadmapUpdate.OwnershipConfidence == nil || *roadmapUpdate.OwnershipConfidence != OwnershipConfidenceLow {
-		t.Fatalf("expected low ownership_confidence for roadmap, got %#v", roadmapUpdate.OwnershipConfidence)
+	if backlogUpdate.OwnershipConfidence == nil || *backlogUpdate.OwnershipConfidence != OwnershipConfidenceLow {
+		t.Fatalf("expected low ownership_confidence for backlog, got %#v", backlogUpdate.OwnershipConfidence)
 	}
-	if roadmapUpdate.OwnershipBaselineSource == nil || *roadmapUpdate.OwnershipBaselineSource != BaselineStateSourceMigratedFromLegacyDocsSnapshot {
-		t.Fatalf("expected migrated legacy baseline source for roadmap, got %#v", roadmapUpdate.OwnershipBaselineSource)
+	if backlogUpdate.OwnershipBaselineSource == nil || *backlogUpdate.OwnershipBaselineSource != BaselineStateSourceMigratedFromLegacyDocsSnapshot {
+		t.Fatalf("expected migrated legacy baseline source for backlog, got %#v", backlogUpdate.OwnershipBaselineSource)
 	}
 
 	// ISSUES.md has a user entry below the marker but its managed section matches
@@ -110,10 +110,10 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 		t.Fatalf("expected at least one rename")
 	}
 	rename := plan.TemplateRenames[0]
-	if rename.From != ".agent-layer/skills/plan-work-legacy.md" {
+	if rename.From != ".agent-layer/skills/implement-legacy.md" {
 		t.Fatalf("unexpected rename from path: %s", rename.From)
 	}
-	if rename.To != ".agent-layer/skills/plan-work/SKILL.md" {
+	if rename.To != ".agent-layer/skills/implement/SKILL.md" {
 		t.Fatalf("unexpected rename to path: %s", rename.To)
 	}
 	if rename.Confidence != UpgradeRenameConfidenceHigh {

@@ -1,7 +1,6 @@
 ---
 name: interface-audit
 description: >-
-  Explicit-only.
   Audit product interfaces as component boundaries, score complexity,
   over-engineering, and debt, maintain .agent-layer/tmp interface-audit reports,
   and finish at the final recommendation gate. Use for fresh interface cleanup
@@ -48,7 +47,7 @@ for an update.
    that architecture only when a smaller interface improvement is insufficient;
    otherwise recommend the smallest coherent improvement. State any behavior
    change and require approval before it enters a plan. Include exact
-   `/plan-work` input as a handoff, but do not run it.
+   `/implement` input as a handoff, but do not run it.
 
 Do not edit production code, tests, docs, or memory files, widen beyond product
 interfaces, or create parallel reports. Return the report path and either the

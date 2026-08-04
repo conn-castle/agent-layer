@@ -33,7 +33,7 @@ func TestInstallRun_BareInitSeedsOnlyOperationalScaffolding(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, entries, "skills directory should be empty under bare init")
 
-	for _, name := range []string{"ISSUES.md", "BACKLOG.md", "ROADMAP.md", "DECISIONS.md", "COMMANDS.md", "CONTEXT.md"} {
+	for _, name := range []string{"ISSUES.md", "BACKLOG.md", "DECISIONS.md", "COMMANDS.md", "CONTEXT.md"} {
 		_, err := os.Stat(filepath.Join(root, "docs", "agent-layer", name))
 		assert.True(t, os.IsNotExist(err), "%s should not be seeded under bare init", name)
 		_, err = os.Stat(filepath.Join(root, ".agent-layer", "templates", "docs", name))
@@ -63,7 +63,7 @@ func TestInstallRun_UpgradePreservesBareLayoutWithoutWorkflowEvidence(t *testing
 	}))
 
 	assert.NoFileExists(t, filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"))
-	assert.NoFileExists(t, filepath.Join(root, ".agent-layer", "skills", "review-uncommitted-code", "SKILL.md"))
+	assert.NoFileExists(t, filepath.Join(root, ".agent-layer", "skills", "implement", "SKILL.md"))
 	assert.NoFileExists(t, filepath.Join(root, "docs", "agent-layer", "ISSUES.md"))
 	assert.FileExists(t, filepath.Join(root, ".agent-layer", "skills", "tavily-web", "SKILL.md"))
 }
@@ -76,7 +76,7 @@ func TestBuildUpgradePlan_BareLayoutDoesNotPlanWorkflowBundle(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/instructions/00_rules.md"))
-	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/review-uncommitted-code/SKILL.md"))
+	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/implement/SKILL.md"))
 	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, "docs/agent-layer/ISSUES.md"))
 	assert.Nil(t, findUpgradeChange(plan.TemplateUpdates, "docs/agent-layer/ISSUES.md"))
 	assert.Nil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/instructions/04_conventions.md"))
@@ -93,7 +93,7 @@ func TestBuildUpgradePlan_ManagedInstructionEvidenceIncludesWorkflowBundle(t *te
 
 	assert.NotNil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/instructions/00_rules.md"))
 	assert.NotNil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/instructions/01_base.md"))
-	assert.NotNil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/review-uncommitted-code/SKILL.md"))
+	assert.NotNil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/implement/SKILL.md"))
 }
 
 func TestBuildUpgradePlan_InstalledCatalogSkillIsUpgradeManaged(t *testing.T) {
