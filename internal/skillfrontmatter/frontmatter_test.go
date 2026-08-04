@@ -143,6 +143,19 @@ func TestParse_BooleanFieldDistinguishesAbsentNullAndValue(t *testing.T) {
 		{content: "disable-model-invocation: null\n", state: FieldNull},
 		{content: "disable-model-invocation: false\n", state: FieldValue, value: false},
 		{content: "disable-model-invocation: true\n", state: FieldValue, value: true},
+		// Claude Code also accepts yes/no/on/off/1/0 in any letter case, and
+		// YAML 1.2 tags those as strings or integers rather than booleans. A
+		// skill authored against Claude Code's documentation must load here.
+		{content: "disable-model-invocation: yes\n", state: FieldValue, value: true},
+		{content: "disable-model-invocation: no\n", state: FieldValue, value: false},
+		{content: "disable-model-invocation: on\n", state: FieldValue, value: true},
+		{content: "disable-model-invocation: off\n", state: FieldValue, value: false},
+		{content: "disable-model-invocation: 1\n", state: FieldValue, value: true},
+		{content: "disable-model-invocation: 0\n", state: FieldValue, value: false},
+		{content: "disable-model-invocation: TRUE\n", state: FieldValue, value: true},
+		{content: "disable-model-invocation: Yes\n", state: FieldValue, value: true},
+		{content: "disable-model-invocation: OFF\n", state: FieldValue, value: false},
+		{content: "disable-model-invocation: \"true\"\n", state: FieldValue, value: true},
 	}
 	for _, test := range tests {
 		doc, err := Parse(test.content)
@@ -156,11 +169,18 @@ func TestParse_BooleanFieldDistinguishesAbsentNullAndValue(t *testing.T) {
 	}
 }
 
+// TestParse_NonBooleanFieldRejected proves the field still refuses values
+// Claude Code would not read as a boolean. Accepting them would let a typo
+// like "ture" silently mean false and quietly re-expose a skill the author
+// meant to keep explicit-only.
 func TestParse_NonBooleanFieldRejected(t *testing.T) {
 	for _, content := range []string{
-		"disable-model-invocation: \"true\"\n",
-		"disable-model-invocation: yes\n",
+		"disable-model-invocation: maybe\n",
+		"disable-model-invocation: ture\n",
+		"disable-model-invocation: 2\n",
+		"disable-model-invocation: \"\"\n",
 		"disable-model-invocation:\n  - true\n",
+		"disable-model-invocation:\n  nested: true\n",
 	} {
 		parseErr := parseKindErr(t, content, KindType)
 		if !strings.Contains(parseErr.Detail, "must be a boolean") {

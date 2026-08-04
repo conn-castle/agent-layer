@@ -413,7 +413,7 @@ func TestParseSkill_TypeMismatchErrors(t *testing.T) {
 	tests := []string{
 		"---\ndescription: test\ncompatibility:\n  codex: \">=0.1\"\n---\n",
 		"---\ndescription: test\nallowed-tools:\n  - Read\n---\n",
-		"---\ndescription: test\ndisable-model-invocation: \"true\"\n---\n",
+		"---\ndescription: test\ndisable-model-invocation: maybe\n---\n",
 		"---\ndescription: test\nmetadata:\n  owner: 7\n---\n",
 	}
 	for _, content := range tests {

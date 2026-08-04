@@ -8,14 +8,12 @@ package skillfrontmatter
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	yaml "go.yaml.in/yaml/v3"
 )
 
 const (
-	yamlTagBool = "!!bool"
 	yamlTagStr  = "!!str"
 	yamlTagNull = "!!null"
 )
@@ -182,20 +180,36 @@ func Parse(content string) (Document, error) {
 	return doc, nil
 }
 
-// parseBooleanField accepts only YAML booleans or null for a boolean field.
+// booleanLiterals maps every scalar Claude Code reads as a boolean skill field
+// to its value. Claude Code accepts yes, no, on, off, 1, and 0 in any letter
+// case in addition to true and false, and YAML 1.2 tags several of those as
+// strings or integers rather than booleans. Matching the client's set keeps a
+// skill authored against its documentation loadable here unchanged.
+var booleanLiterals = map[string]bool{
+	"true":  true,
+	"yes":   true,
+	"on":    true,
+	"1":     true,
+	"false": false,
+	"no":    false,
+	"off":   false,
+	"0":     false,
+}
+
+// booleanLiteralList names the accepted spellings for error messages.
+const booleanLiteralList = "true, false, yes, no, on, off, 1, or 0"
+
+// parseBooleanField accepts null or any scalar Claude Code reads as a boolean.
 func parseBooleanField(field string, node *yaml.Node) (BooleanField, error) {
 	if node.Kind != yaml.ScalarNode {
-		return BooleanField{}, typeError(fmt.Sprintf("field %q must be a boolean", field))
+		return BooleanField{}, typeError(fmt.Sprintf("field %q must be a boolean (%s)", field, booleanLiteralList))
 	}
 	if node.Tag == yamlTagNull {
 		return BooleanField{State: FieldNull}, nil
 	}
-	if node.Tag != yamlTagBool {
-		return BooleanField{}, typeError(fmt.Sprintf("field %q must be a boolean", field))
-	}
-	value, err := strconv.ParseBool(node.Value)
-	if err != nil {
-		return BooleanField{}, typeError(fmt.Sprintf("field %q must be a boolean", field))
+	value, ok := booleanLiterals[strings.ToLower(node.Value)]
+	if !ok {
+		return BooleanField{}, typeError(fmt.Sprintf("field %q must be a boolean (%s)", field, booleanLiteralList))
 	}
 	return BooleanField{State: FieldValue, Value: value}, nil
 }
