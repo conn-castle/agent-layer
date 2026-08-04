@@ -372,10 +372,11 @@ func prepareFresh(project *config.ProjectConfig, target targetMeta, opts runOpti
 }
 
 func prepareProjection(project *config.ProjectConfig, root string, stderr io.Writer) error {
-	result, err := sync.RunWithProject(sync.RealSystem{}, root, project)
+	result, err := sync.Run(root)
 	if err != nil {
 		return syncRunExitError(err)
 	}
+	*project = *result.Project
 	if strings.EqualFold(strings.TrimSpace(project.Config.Warnings.NoiseMode), "quiet") {
 		return nil
 	}

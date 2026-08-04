@@ -107,12 +107,49 @@ var allowedFrontMatterFields = map[string]struct{}{
 	"disable-model-invocation": {},
 }
 
+// AllowedFrontMatterFields returns the sorted strict allowlist of skill
+// frontmatter fields. It is the single source of truth shared by the warning
+// validator and by skill importers, which reject unknown fields outright
+// because Agent Layer cannot faithfully project them.
+func AllowedFrontMatterFields() []string {
+	fields := make([]string, 0, len(allowedFrontMatterFields))
+	for field := range allowedFrontMatterFields {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+	return fields
+}
+
+// IsAllowedFrontMatterField reports whether key is in the strict allowlist.
+func IsAllowedFrontMatterField(key string) bool {
+	_, ok := allowedFrontMatterFields[key]
+	return ok
+}
+
+// IsValidSkillName reports whether name is a safe skill name: lowercase
+// letters, digits, and hyphens only, with no leading or trailing hyphen.
+func IsValidSkillName(name string) bool {
+	return isValidSkillName(name)
+}
+
+// NormalizeName returns the canonical comparison form of a skill name.
+func NormalizeName(name string) string {
+	return normalizeSkillName(name)
+}
+
 // ParseSkillSource reads and parses a skill source file into validator input.
 func ParseSkillSource(path string) (ParsedSkill, error) {
 	raw, err := os.ReadFile(path) // #nosec G304 -- skill source path is provided by the al CLI which resolved it from a configured templates directory, not user input.
 	if err != nil {
 		return ParsedSkill{}, fmt.Errorf("read skill source %s: %w", path, err)
 	}
+	return ParseSkillSourceBytes(path, raw)
+}
+
+// ParseSkillSourceBytes parses an already-read skill manifest. It lets callers
+// operating on an fs.FS snapshot apply the same validation without rereading a
+// different live filesystem view.
+func ParseSkillSourceBytes(path string, raw []byte) (ParsedSkill, error) {
 	content := string(bytes.TrimPrefix(raw, utf8BOM))
 	lineCount := countLines(content)
 

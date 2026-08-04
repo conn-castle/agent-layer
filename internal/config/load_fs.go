@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io/fs"
 	pathpkg "path"
@@ -24,6 +25,12 @@ func LoadProjectConfigFS(fsys fs.FS, root string) (*ProjectConfig, error) {
 		return nil, fmt.Errorf(messages.ConfigRootRequired)
 	}
 	paths := DefaultPaths(root)
+	journalPath := filepath.Join(root, ".agent-layer", SkillImportJournalFileName)
+	if _, err := readFileFS(fsys, root, journalPath); err == nil {
+		return nil, fmt.Errorf("an interrupted skill import publish is recorded in %s; run 'al skills status' to recover it before syncing or launching an agent", journalPath)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("inspect skill import transaction journal %s: %w", journalPath, err)
+	}
 
 	cfg, err := LoadConfigFS(fsys, root, paths.ConfigPath)
 	if err != nil {
@@ -41,7 +48,22 @@ func LoadProjectConfigFS(fsys fs.FS, root string) (*ProjectConfig, error) {
 		return nil, err
 	}
 
-	skills, err := LoadSkillsFS(fsys, root, paths.SkillsDir)
+	userSkills, err := LoadSkillsFS(fsys, root, paths.SkillsDir)
+	if err != nil {
+		return nil, err
+	}
+
+	// Imported skills are read from the same snapshot as user-managed skills so
+	// every client projection is built from one consistent view of both roots.
+	skillImportLock, err := LoadSkillImportLockFS(fsys, root, paths.SkillImportLockPath)
+	if err != nil {
+		return nil, err
+	}
+	importedSkills, err := LoadImportedSkillsFS(fsys, root, paths.ImportedSkillsDir, skillImportLock)
+	if err != nil {
+		return nil, err
+	}
+	skills, err := MergeSkillSources(userSkills, importedSkills)
 	if err != nil {
 		return nil, err
 	}
@@ -52,12 +74,13 @@ func LoadProjectConfigFS(fsys fs.FS, root string) (*ProjectConfig, error) {
 	}
 
 	return &ProjectConfig{
-		Config:        *cfg,
-		Env:           env,
-		Instructions:  instructions,
-		Skills:        skills,
-		CommandsAllow: commandsAllow,
-		Root:          root,
+		Config:          *cfg,
+		Env:             env,
+		Instructions:    instructions,
+		Skills:          skills,
+		CommandsAllow:   commandsAllow,
+		Root:            root,
+		SkillImportLock: skillImportLock,
 	}, nil
 }
 

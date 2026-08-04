@@ -41,11 +41,11 @@ func TestRunWithProjectSerializesConcurrentRuns(t *testing.T) {
 			},
 		},
 		Instructions: []config.InstructionFile{{Name: "00_rules.md", Content: "Follow the rules."}},
-		Skills:       []config.Skill{{Name: "alpha", Description: "Alpha skill.", Body: "Do alpha work."}},
+		Skills:       []config.Skill{managedSkillSource(t, root, "alpha")},
 		Root:         root,
 	}
 
-	target := filepath.Join(root, ".agents", "skills", "alpha", "SKILL.md")
+	target := filepath.Join(root, ".agents", "skills", ".agent-layer-projection-staging", "staged", "alpha", "SKILL.md")
 	sys := newOverlapDetectingSystem(target)
 	t.Cleanup(sys.releaseBlockedWrite)
 

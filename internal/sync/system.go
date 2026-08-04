@@ -24,6 +24,7 @@ type System interface {
 	ReadDir(name string) ([]os.DirEntry, error)
 	Remove(name string) error
 	RemoveAll(path string) error
+	Rename(oldPath string, newPath string) error
 	Close(file *os.File) error
 	Flock(fd int, how int) error
 	Now() time.Time
@@ -86,6 +87,11 @@ func (RealSystem) Remove(name string) error {
 // RemoveAll removes path and any children it contains.
 func (RealSystem) RemoveAll(path string) error {
 	return os.RemoveAll(path)
+}
+
+// Rename moves a filesystem node atomically within one filesystem.
+func (RealSystem) Rename(oldPath string, newPath string) error {
+	return os.Rename(oldPath, newPath)
 }
 
 // Close closes file.

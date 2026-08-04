@@ -17,17 +17,23 @@ import (
 type Result struct {
 	Warnings    []warnings.Warning
 	AllWarnings []warnings.Warning
+	Project     *config.ProjectConfig
 }
 
 // Run regenerates all configured outputs for the repo.
 // Returns any sync-time warnings and an error if sync failed.
 func Run(root string) (*Result, error) {
-	project, err := config.LoadProjectConfigFS(os.DirFS(root), root)
-	if err != nil {
-		return nil, err
-	}
-
-	return RunWithProject(RealSystem{}, root, project)
+	return withProjectSyncLock(RealSystem{}, root, func() (*Result, error) {
+		project, err := config.LoadProjectConfigFS(os.DirFS(root), root)
+		if err != nil {
+			return nil, err
+		}
+		result, err := runWithProjectLocked(RealSystem{}, root, project)
+		if result != nil {
+			result.Project = project
+		}
+		return result, err
+	})
 }
 
 // RunWithSystemFS loads project config from fsys and runs sync with the provided System.
@@ -39,11 +45,17 @@ func RunWithSystemFS(sys System, fsys fs.FS, root string) (*Result, error) {
 	if fsys == nil {
 		return nil, fmt.Errorf(messages.SyncConfigFSRequired)
 	}
-	project, err := config.LoadProjectConfigFS(fsys, root)
-	if err != nil {
-		return nil, err
-	}
-	return RunWithProject(sys, root, project)
+	return withProjectSyncLock(sys, root, func() (*Result, error) {
+		project, err := config.LoadProjectConfigFS(fsys, root)
+		if err != nil {
+			return nil, err
+		}
+		result, err := runWithProjectLocked(sys, root, project)
+		if result != nil {
+			result.Project = project
+		}
+		return result, err
+	})
 }
 
 // RunWithProject regenerates outputs using an already loaded project config.
@@ -156,6 +168,7 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 	return &Result{
 		Warnings:    filteredWarnings,
 		AllWarnings: rawWarnings,
+		Project:     project,
 	}, nil
 }
 

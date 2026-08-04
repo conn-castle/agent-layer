@@ -62,6 +62,9 @@ func Start(opts StartOptions) error {
 	if err := pruneDispatchEvidence(opts.Root, time.Now()); err != nil {
 		return err
 	}
+	if err := prepareProjection(project, opts.Root, stderr); err != nil {
+		return err
+	}
 	if err := checkDispatchDepth(project.Config, depth); err != nil {
 		return err
 	}
@@ -75,9 +78,6 @@ func Start(opts StartOptions) error {
 		VersionLookup: opts.VersionLookup,
 	})
 	if err != nil {
-		return err
-	}
-	if err := prepareProjection(project, opts.Root, stderr); err != nil {
 		return err
 	}
 	projectionRoot, err := prepareTargetProjection(project, opts.Root, opts.WorkDir, target)
@@ -121,6 +121,9 @@ func Continue(opts ContinueOptions) error {
 	if err != nil {
 		return err
 	}
+	if err := prepareProjection(project, opts.Root, stderr); err != nil {
+		return err
+	}
 	if err := checkDispatchDepth(project.Config, depth); err != nil {
 		return err
 	}
@@ -161,9 +164,6 @@ func Continue(opts ContinueOptions) error {
 	}
 	prompt, err := BuildChildPrompt(project, target.Name, promptText, "")
 	if err != nil {
-		return err
-	}
-	if err := prepareProjection(project, opts.Root, stderr); err != nil {
 		return err
 	}
 	if _, err := prepareTargetProjection(project, opts.Root, opts.WorkDir, target); err != nil {

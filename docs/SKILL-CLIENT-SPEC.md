@@ -27,9 +27,21 @@ As of 2026-05-21, Agent Layer projects skills from the canonical source director
 
 - Write `.agents/skills/` when at least one shared-skill consumer is enabled: Codex, Antigravity, VS Code/GitHub Copilot, or Copilot CLI.
 - Write `.claude/skills/` when Claude Code or the Claude VS Code extension is enabled.
-- Rebuild generated top-level `SKILL.md` from parsed source metadata and body.
-- Copy all non-hidden, non-symlink support files from the source skill directory into every generated skill output, preserving file modes.
-- Skip top-level source `SKILL.md` and `skill.md` during resource copying because the generated `SKILL.md` is rebuilt.
+- Copy each skill's complete source tree byte-for-byte, including the exact `SKILL.md` bytes and the executable bit. Agent Layer injects nothing into projected content: no generated header, no re-rendered frontmatter. What an agent reads is exactly what the skill author wrote.
+- Project the same exhaustive file set for user-managed (`.agent-layer/skills/`) and imported (`.agent-layer/imported-skills/`) sources. Hidden files and dotfiles are part of a skill; only `.git`, `.DS_Store`, and `Thumbs.db` are excluded. Symlinks are skipped and never dereferenced.
+- Project a legacy lowercase source `skill.md` under the canonical `SKILL.md` name with its bytes unchanged, because clients only look for `SKILL.md`.
+- Do not filter client-specific frontmatter out of the portable `.agents/skills/` output. A field such as Claude Code's `disable-model-invocation` reaches every client, because an exact copy cannot drop one key without re-serializing the document and losing the fidelity these rules exist to guarantee. A client that does not recognize a field ignores it.
+
+### Ownership of projected skill directories
+
+Because projected content carries no Agent Layer marker, ownership is recorded beside the skills rather than inside them. Each projected skills directory holds `.agent-layer-skills.json` listing the skill directories Agent Layer created and their last projected canonical tree hashes.
+
+- A complete tree is staged before it replaces live projected content.
+- An existing same-name directory must already be owned; unowned client content is never overwritten.
+- An owned directory is refreshed or removed only while its current tree still matches the recorded projection hash.
+- A skill directory Agent Layer never created — hand-authored or client-installed — is left untouched, however much it looks like a projected skill.
+- An unreadable or unsupported manifest fails the sync with instructions to delete it, rather than silently forgetting what Agent Layer owns.
+- A projection directory written before this manifest existed has its previously generated skills adopted once, identified by the retired generated header. New output never carries that header, so the migration cannot misfire.
 
 ### Ownership of legacy projection paths
 

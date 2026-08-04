@@ -64,10 +64,11 @@ func RunWithStderr(ctx context.Context, root string, name string, enabled Enable
 	if project.Config.Warnings.VersionUpdateOnSync != nil && *project.Config.Warnings.VersionUpdateOnSync {
 		updatewarn.WarnIfOutdated(ctx, currentVersion, stderr)
 	}
-	result, err := sync.RunWithProject(sync.RealSystem{}, root, project)
+	result, err := sync.Run(root)
 	if err != nil {
 		return err
 	}
+	project = result.Project
 
 	// Print warnings to stderr before launching
 	if stderr != nil {

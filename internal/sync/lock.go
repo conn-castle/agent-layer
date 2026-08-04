@@ -46,6 +46,17 @@ type projectSyncLock struct {
 	processLock *projectSyncProcessLock
 }
 
+// WithProjectLock runs fn while holding the project sync lock, so a caller that
+// mutates the skill sources is serialized against the projection that reads
+// them. Remote work must happen outside this call: the lock only covers the
+// window in which local source state changes.
+func WithProjectLock(root string, fn func() error) error {
+	_, err := withProjectSyncLock(RealSystem{}, root, func() (*Result, error) {
+		return nil, fn()
+	})
+	return err
+}
+
 func withProjectSyncLock(sys System, root string, fn func() (*Result, error)) (result *Result, err error) {
 	lockPath := filepath.Join(root, ".agent-layer", projectSyncLockFile)
 	processLock := processLockForSyncPath(lockPath)

@@ -19,6 +19,7 @@ type MockSystem struct {
 	ReadDirFunc         func(name string) ([]os.DirEntry, error)
 	RemoveFunc          func(name string) error
 	RemoveAllFunc       func(path string) error
+	RenameFunc          func(oldPath string, newPath string) error
 	CloseFunc           func(file *os.File) error
 	FlockFunc           func(fd int, how int) error
 	NowFunc             func() time.Time
@@ -133,6 +134,16 @@ func (m *MockSystem) RemoveAll(path string) error {
 		return m.Fallback.RemoveAll(path)
 	}
 	return os.ErrNotExist
+}
+
+func (m *MockSystem) Rename(oldPath string, newPath string) error {
+	if m.RenameFunc != nil {
+		return m.RenameFunc(oldPath, newPath)
+	}
+	if m.Fallback != nil {
+		return m.Fallback.Rename(oldPath, newPath)
+	}
+	return errors.New("mock system Rename not implemented")
 }
 
 func (m *MockSystem) Close(file *os.File) error {

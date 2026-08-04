@@ -31,6 +31,7 @@ type Config struct {
 	Dispatch      DispatchLimits      `toml:"dispatch"`
 	MCP           MCPConfig           `toml:"mcp"`
 	Notifications NotificationsConfig `toml:"notifications"`
+	Skills        SkillsConfig        `toml:"skills"`
 	Warnings      WarningsConfig      `toml:"warnings"`
 }
 
@@ -269,14 +270,26 @@ type Skill struct {
 	Body                   string
 	SourcePath             string
 	SourceDir              string // Absolute path to the skill directory (parent of SKILL.md)
+	// Imported reports that the skill's source directory is the managed
+	// .agent-layer/imported-skills/ root rather than .agent-layer/skills/. Both
+	// tiers project identically; this only tells reporting surfaces which local
+	// source owns the skill.
+	Imported bool
 }
 
 // ProjectConfig is the fully loaded configuration state for sync and launch.
 type ProjectConfig struct {
-	Config        Config
-	Env           map[string]string
-	Instructions  []InstructionFile
+	Config       Config
+	Env          map[string]string
+	Instructions []InstructionFile
+	// Skills is the merged projection set: user-managed skills from
+	// .agent-layer/skills/ plus imported skills from
+	// .agent-layer/imported-skills/, sorted by name. Loading fails rather than
+	// letting one tier silently shadow the other.
 	Skills        []Skill
 	CommandsAllow []string
 	Root          string
+	// SkillImportLock is the resolved import state that was read alongside the
+	// skill sources, so callers project from one snapshot.
+	SkillImportLock *SkillImportLock
 }

@@ -41,10 +41,11 @@ func newSyncCmd() *cobra.Command {
 			if project.Config.Warnings.VersionUpdateOnSync != nil && *project.Config.Warnings.VersionUpdateOnSync {
 				updatewarn.WarnIfOutdated(cmd.Context(), Version, stderr)
 			}
-			result, err := sync.RunWithProject(sync.RealSystem{}, root, project)
+			result, err := sync.Run(root)
 			if err != nil {
 				return err
 			}
+			project = result.Project
 
 			if len(result.AllWarnings) > 0 {
 				if effectiveQuiet {

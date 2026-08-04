@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -24,124 +25,519 @@ func (unknownTypeDirEntry) Info() (fs.FileInfo, error) {
 	return nil, errors.New("directory entry info should not be used")
 }
 
-func TestBuildAgentSkill(t *testing.T) {
-	disableModelInvocation := true
-	cmd := config.Skill{
-		Name:                   "alpha",
-		Description:            "desc",
-		DisableModelInvocation: &disableModelInvocation,
-		Body:                   "Body",
-	}
-	content, err := buildAgentSkill(cmd)
-	if err != nil {
-		t.Fatalf("buildAgentSkill error: %v", err)
-	}
-	if !strings.Contains(content, "name: alpha") {
-		t.Fatalf("expected name in skill")
-	}
-	if !strings.Contains(content, "description: >-") {
-		t.Fatalf("expected folded description in frontmatter")
-	}
-	if !strings.Contains(content, "Body") {
-		t.Fatalf("expected body in skill")
-	}
-	if !strings.HasSuffix(content, "\n") {
-		t.Fatalf("expected trailing newline")
-	}
-	// The agentskills.io format relies on the `name:` front-matter field; the
-	// builder must not also inject a `# <name>` heading into the body.
-	if strings.Contains(content, "# alpha") {
-		t.Fatalf("did not expect injected name heading in body, got:\n%s", content)
-	}
-	if strings.Contains(content, "disable-model-invocation") {
-		t.Fatalf("portable Agent Skills output contains Claude-specific frontmatter:\n%s", content)
-	}
+// skillManifestFixture returns a valid SKILL.md body for a named skill.
+func skillManifestFixture(name string) string {
+	return "---\nname: " + name + "\ndescription: The " + name + " skill.\n---\n\nBody for " + name + "\n"
 }
 
-func TestBuildSkillFrontMatter_FieldOrderAndMetadataSorting(t *testing.T) {
-	cmd := config.Skill{
-		Name:          "alpha",
-		Description:   "desc",
-		License:       "MIT",
-		Compatibility: "requires git",
-		Metadata: map[string]string{
-			"z-key": "last",
-			"a-key": "first",
-		},
-		AllowedTools: "Bash(git:*) Read",
-	}
+// sourceSkill materializes a skill source directory containing SKILL.md and
+// returns the loaded-skill value the projection writes from.
+func sourceSkill(t *testing.T, name string) config.Skill {
+	t.Helper()
+	return writeSkillSource(t, t.TempDir(), name)
+}
 
-	content, err := buildAgentSkill(cmd)
+// writeSkillSource materializes a skill source at dir. Projection is a byte
+// copy, so every test needs a real source tree rather than parsed fields.
+func writeSkillSource(t *testing.T, dir string, name string) config.Skill {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("mkdir source skill: %v", err)
+	}
+	manifest := filepath.Join(dir, "SKILL.md")
+	if err := os.WriteFile(manifest, []byte(skillManifestFixture(name)), 0o600); err != nil {
+		t.Fatalf("write source SKILL.md: %v", err)
+	}
+	return config.Skill{Name: name, SourceDir: dir, SourcePath: manifest}
+}
+
+// managedSkillSource materializes a skill under a project root's managed skills
+// directory, the way internal/config would load it.
+func managedSkillSource(t *testing.T, root string, name string) config.Skill {
+	t.Helper()
+	return writeSkillSource(t, filepath.Join(root, ".agent-layer", "skills", name), name)
+}
+
+// projectedSkillsDir is the client directory a projection writes into.
+func projectedSkillsDir(root string, client string) string {
+	if client == "claude" {
+		return filepath.Join(root, ".claude", "skills")
+	}
+	return filepath.Join(root, ".agents", "skills")
+}
+
+// readOwnedManifest decodes the ownership manifest for a projected skills directory.
+func readOwnedManifest(t *testing.T, skillsDir string) ownedSkillsManifest {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(skillsDir, ownedSkillsManifestName)) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
-		t.Fatalf("buildAgentSkill error: %v", err)
+		t.Fatalf("read ownership manifest: %v", err)
 	}
+	var manifest ownedSkillsManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("decode ownership manifest: %v", err)
+	}
+	return manifest
+}
 
-	expectedOrder := []string{
-		"name:",
-		"description:",
-		"license:",
-		"compatibility:",
-		"metadata:",
-		"allowed-tools:",
-	}
-	last := -1
-	for _, token := range expectedOrder {
-		idx := strings.Index(content, token)
-		if idx == -1 {
-			t.Fatalf("expected token %q in output", token)
+func TestRecoverSkillProjectionRepairsEveryInterruptedSwapShape(t *testing.T) {
+	t.Parallel()
+	t.Run("removes a newly created target", func(t *testing.T) {
+		skillsDir := t.TempDir()
+		stagingRoot := filepath.Join(skillsDir, ".agent-layer-projection-staging")
+		target := filepath.Join(skillsDir, "alpha")
+		if err := os.MkdirAll(filepath.Join(stagingRoot, "created"), 0o750); err != nil {
+			t.Fatalf("mkdir creation markers: %v", err)
 		}
-		if idx < last {
-			t.Fatalf("expected token %q after previous token, got output:\n%s", token, content)
+		if err := os.MkdirAll(target, 0o750); err != nil {
+			t.Fatalf("mkdir target: %v", err)
 		}
-		last = idx
-	}
+		if err := os.WriteFile(filepath.Join(stagingRoot, "created", "alpha"), nil, 0o600); err != nil {
+			t.Fatalf("write creation marker: %v", err)
+		}
+		if err := recoverSkillProjection(RealSystem{}, skillsDir, stagingRoot); err != nil {
+			t.Fatalf("recover: %v", err)
+		}
+		if _, err := os.Stat(target); !os.IsNotExist(err) {
+			t.Fatalf("new target survived recovery: %v", err)
+		}
+	})
 
-	idxA := strings.Index(content, "a-key:")
-	idxZ := strings.Index(content, "z-key:")
-	if idxA == -1 || idxZ == -1 {
-		t.Fatalf("expected metadata keys in output, got:\n%s", content)
+	t.Run("restores a displaced target", func(t *testing.T) {
+		skillsDir := t.TempDir()
+		stagingRoot := filepath.Join(skillsDir, ".agent-layer-projection-staging")
+		backup := filepath.Join(stagingRoot, "backup", "alpha")
+		if err := os.MkdirAll(backup, 0o750); err != nil {
+			t.Fatalf("mkdir backup: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(backup, "old.txt"), []byte("old"), 0o600); err != nil {
+			t.Fatalf("write backup: %v", err)
+		}
+		if err := recoverSkillProjection(RealSystem{}, skillsDir, stagingRoot); err != nil {
+			t.Fatalf("recover: %v", err)
+		}
+		if data, err := os.ReadFile(filepath.Join(skillsDir, "alpha", "old.txt")); err != nil || string(data) != "old" { // #nosec G304 -- path is constructed entirely from test-controlled temporary paths.
+			t.Fatalf("restored target = %q, %v", data, err)
+		}
+	})
+
+	t.Run("discards a backup after the target was published", func(t *testing.T) {
+		skillsDir := t.TempDir()
+		stagingRoot := filepath.Join(skillsDir, ".agent-layer-projection-staging")
+		backup := filepath.Join(stagingRoot, "backup", "alpha")
+		target := filepath.Join(skillsDir, "alpha")
+		if err := os.MkdirAll(backup, 0o750); err != nil {
+			t.Fatalf("mkdir backup: %v", err)
+		}
+		if err := os.MkdirAll(target, 0o750); err != nil {
+			t.Fatalf("mkdir target: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(target, "new.txt"), []byte("new"), 0o600); err != nil {
+			t.Fatalf("write target: %v", err)
+		}
+		if err := recoverSkillProjection(RealSystem{}, skillsDir, stagingRoot); err != nil {
+			t.Fatalf("recover: %v", err)
+		}
+		if data, err := os.ReadFile(filepath.Join(target, "new.txt")); err != nil || string(data) != "new" { // #nosec G304 -- path is constructed entirely from test-controlled temporary paths.
+			t.Fatalf("published target = %q, %v", data, err)
+		}
+	})
+
+	t.Run("rejects unsafe recovery names", func(t *testing.T) {
+		for _, directory := range []string{"created", "backup"} {
+			t.Run(directory, func(t *testing.T) {
+				skillsDir := t.TempDir()
+				stagingRoot := filepath.Join(skillsDir, ".agent-layer-projection-staging")
+				unsafe := filepath.Join(stagingRoot, directory, "Not-Normalized")
+				if directory == "created" {
+					if err := os.MkdirAll(filepath.Dir(unsafe), 0o750); err != nil {
+						t.Fatalf("mkdir marker dir: %v", err)
+					}
+					if err := os.WriteFile(unsafe, nil, 0o600); err != nil {
+						t.Fatalf("write marker: %v", err)
+					}
+				} else if err := os.MkdirAll(unsafe, 0o750); err != nil {
+					t.Fatalf("mkdir backup: %v", err)
+				}
+				if err := recoverSkillProjection(RealSystem{}, skillsDir, stagingRoot); err == nil {
+					t.Fatal("unsafe recovery state must fail")
+				}
+			})
+		}
+	})
+}
+
+func TestLoadOwnedSkillsValidatesLegacyAndCurrentManifests(t *testing.T) {
+	t.Parallel()
+	validHash := desiredSkillHash(map[string]desiredSkillResource{
+		"SKILL.md": {data: []byte("manifest"), mode: 0o644},
+	})
+	cases := map[string]struct {
+		manifest string
+		wantName string
+		wantErr  bool
+	}{
+		"legacy":            {`{"version":1,"skills":["alpha"]}`, "alpha", false},
+		"legacy unsafe":     {`{"version":1,"skills":["../alpha"]}`, "", true},
+		"legacy duplicate":  {`{"version":1,"skills":["alpha","alpha"]}`, "", true},
+		"unsupported":       {`{"version":99,"skills":[]}`, "", true},
+		"current unsafe":    {`{"version":2,"skills":["../alpha"],"hashes":{"../alpha":"` + validHash + `"}}`, "", true},
+		"current duplicate": {`{"version":2,"skills":["alpha","alpha"],"hashes":{"alpha":"` + validHash + `"}}`, "", true},
+		"invalid hash":      {`{"version":2,"skills":["alpha"],"hashes":{"alpha":"sha256-v1:nope"}}`, "", true},
+		"extra hash":        {`{"version":2,"skills":[],"hashes":{"alpha":"` + validHash + `"}}`, "", true},
 	}
-	if idxA > idxZ {
-		t.Fatalf("expected sorted metadata keys, got:\n%s", content)
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			skillsDir := t.TempDir()
+			path := filepath.Join(skillsDir, ownedSkillsManifestName)
+			if err := os.WriteFile(path, []byte(testCase.manifest), 0o600); err != nil {
+				t.Fatalf("write manifest: %v", err)
+			}
+			owned, err := loadOwnedSkills(RealSystem{}, skillsDir)
+			if testCase.wantErr {
+				if err == nil {
+					t.Fatal("invalid ownership manifest must fail")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("load manifest: %v", err)
+			}
+			if _, ok := owned[testCase.wantName]; !ok {
+				t.Fatalf("owned = %v, want %q", owned, testCase.wantName)
+			}
+		})
 	}
 }
 
-func TestBuildSkillFrontMatter_OmitsEmptyOptionalFields(t *testing.T) {
-	cmd := config.Skill{
-		Name:          "alpha",
-		Description:   "desc",
-		License:       "",
-		Compatibility: "  ",
-		Metadata:      map[string]string{},
-		AllowedTools:  "",
+func TestProjectedSkillIsAByteForByteCopyOfItsSource(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	srcDir := t.TempDir()
+
+	// Deliberately unusual formatting: a comment, an unsorted optional field, a
+	// blank line inside the frontmatter, and no trailing newline. A re-rendering
+	// projection would normalize all of it away.
+	manifest := "---\n" +
+		"# author's note, kept verbatim\n" +
+		"license: MIT\n" +
+		"name: alpha\n" +
+		"\n" +
+		"description: The alpha skill.\n" +
+		"---\n\nBody with  odd   spacing and no trailing newline"
+	sourceManifest := filepath.Join(srcDir, "SKILL.md")
+	if err := os.WriteFile(sourceManifest, []byte(manifest), 0o600); err != nil {
+		t.Fatalf("write source SKILL.md: %v", err)
 	}
 
-	content, err := buildAgentSkill(cmd)
+	skill := config.Skill{Name: "alpha", SourceDir: srcDir, SourcePath: sourceManifest}
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{skill}); err != nil {
+		t.Fatalf("WriteClaudeSkills error: %v", err)
+	}
+
+	projected, err := os.ReadFile(filepath.Join(root, ".claude", "skills", "alpha", "SKILL.md")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
-		t.Fatalf("buildAgentSkill error: %v", err)
+		t.Fatalf("read projected SKILL.md: %v", err)
 	}
-	if strings.Contains(content, "license:") {
-		t.Fatalf("did not expect license field in output:\n%s", content)
+	if string(projected) != manifest {
+		t.Fatalf("projected SKILL.md is not byte-identical to its source.\nwant:\n%q\ngot:\n%q", manifest, projected)
 	}
-	if strings.Contains(content, "compatibility:") {
-		t.Fatalf("did not expect compatibility field in output:\n%s", content)
-	}
-	if strings.Contains(content, "metadata:") {
-		t.Fatalf("did not expect metadata field in output:\n%s", content)
-	}
-	if strings.Contains(content, "allowed-tools:") {
-		t.Fatalf("did not expect allowed-tools field in output:\n%s", content)
+	// Agent Layer metadata must never appear inside a skill an agent reads.
+	if strings.Contains(string(projected), generatedMarkerHeader) {
+		t.Fatalf("a generated header was injected into the projected skill:\n%s", projected)
 	}
 }
 
-func TestBuildSkillFrontMatter_UsesLiteralDescriptionForMultiline(t *testing.T) {
-	cmd := config.Skill{Name: "alpha", Description: "line1\nline2"}
-	content, err := buildAgentSkill(cmd)
-	if err != nil {
-		t.Fatalf("buildAgentSkill error: %v", err)
+func TestBothSkillTiersProjectThroughTheSamePath(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	userSkill := sourceSkill(t, "user-tier")
+	imported := sourceSkill(t, "import-tier")
+	imported.Imported = true
+
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{userSkill, imported}); err != nil {
+		t.Fatalf("WriteClaudeSkills error: %v", err)
 	}
-	if !strings.Contains(content, "description: |-") {
-		t.Fatalf("expected literal description style for multiline description, got:\n%s", content)
+
+	for _, name := range []string{"user-tier", "import-tier"} {
+		projected, err := os.ReadFile(filepath.Join(root, ".claude", "skills", name, "SKILL.md")) // #nosec G304 -- path is constructed from test-controlled inputs.
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		// An imported skill is projected exactly like a user-managed one; nothing
+		// in the output records where it came from.
+		if string(projected) != skillManifestFixture(name) {
+			t.Fatalf("%s projection is not byte-identical: %q", name, projected)
+		}
+	}
+}
+
+func TestProjectionCopiesTheExhaustiveResourceSet(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	srcDir := t.TempDir()
+
+	write := func(relative string, content string, mode os.FileMode) {
+		t.Helper()
+		target := filepath.Join(srcDir, filepath.FromSlash(relative))
+		if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(target, []byte(content), mode); err != nil {
+			t.Fatalf("write %s: %v", relative, err)
+		}
+		if err := os.Chmod(target, mode); err != nil {
+			t.Fatalf("chmod %s: %v", relative, err)
+		}
+	}
+	write("SKILL.md", skillManifestFixture("alpha"), 0o600)
+	write("references/REF.md", "# Ref", 0o600)
+	write("scripts/run.sh", "#!/bin/sh\necho hi\n", 0o755)
+	write(".hidden", "secret", 0o600)
+	write(".DS_Store", "finder", 0o600)
+	write("Thumbs.db", "explorer", 0o600)
+	write(".git/config", "[core]", 0o600)
+
+	skill := config.Skill{Name: "alpha", SourceDir: srcDir}
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{skill}); err != nil {
+		t.Fatalf("WriteClaudeSkills error: %v", err)
+	}
+	destDir := filepath.Join(root, ".claude", "skills", "alpha")
+
+	// A dotfile is part of the skill: an agent told to read it at runtime must
+	// find it.
+	hidden, err := os.ReadFile(filepath.Join(destDir, ".hidden")) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil || string(hidden) != "secret" {
+		t.Fatalf("hidden resource was not projected: data=%q err=%v", hidden, err)
+	}
+	if _, err := os.Stat(filepath.Join(destDir, "references", "REF.md")); err != nil {
+		t.Fatalf("nested reference was not projected: %v", err)
+	}
+
+	// Only repository and platform noise is excluded.
+	for _, excluded := range []string{".DS_Store", "Thumbs.db", ".git"} {
+		if _, err := os.Stat(filepath.Join(destDir, excluded)); !os.IsNotExist(err) {
+			t.Fatalf("expected %s to be excluded from the projection", excluded)
+		}
+	}
+
+	// The executable bit is content: a script the skill tells an agent to run
+	// must still be runnable.
+	info, err := os.Stat(filepath.Join(destDir, "scripts", "run.sh"))
+	if err != nil {
+		t.Fatalf("stat projected script: %v", err)
+	}
+	if info.Mode().Perm() != skillResourceExecutableMode {
+		t.Fatalf("projected script mode = %v, want %v", info.Mode().Perm(), skillResourceExecutableMode)
+	}
+	// A restrictive source permission must not make a projected resource
+	// unreadable to the agent.
+	refInfo, err := os.Stat(filepath.Join(destDir, "references", "REF.md"))
+	if err != nil {
+		t.Fatalf("stat projected reference: %v", err)
+	}
+	if refInfo.Mode().Perm() != skillResourceRegularMode {
+		t.Fatalf("projected reference mode = %v, want %v", refInfo.Mode().Perm(), skillResourceRegularMode)
+	}
+}
+
+func TestProjectionRemovesOwnedSkillsAndKeepsUnownedOnes(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	skillsDir := projectedSkillsDir(root, "claude")
+
+	alpha := sourceSkill(t, "alpha")
+	beta := sourceSkill(t, "beta")
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{alpha, beta}); err != nil {
+		t.Fatalf("first projection: %v", err)
+	}
+
+	// A skill the user wrote straight into the client directory. Agent Layer
+	// never created it, so it must survive every later sync.
+	manualDir := filepath.Join(skillsDir, "hand-written")
+	if err := os.MkdirAll(manualDir, 0o750); err != nil {
+		t.Fatalf("mkdir manual skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(manualDir, "SKILL.md"), []byte(skillManifestFixture("hand-written")), 0o600); err != nil {
+		t.Fatalf("write manual skill: %v", err)
+	}
+
+	if manifest := readOwnedManifest(t, skillsDir); strings.Join(manifest.Skills, ",") != "alpha,beta" {
+		t.Fatalf("ownership manifest = %v, want the two projected skills", manifest.Skills)
+	}
+
+	// beta leaves the source set.
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{alpha}); err != nil {
+		t.Fatalf("second projection: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(skillsDir, "beta")); !os.IsNotExist(err) {
+		t.Fatalf("a projected skill that left the source set must be removed")
+	}
+	if _, err := os.Stat(filepath.Join(skillsDir, "alpha", "SKILL.md")); err != nil {
+		t.Fatalf("the surviving skill was disturbed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(manualDir, "SKILL.md")); err != nil {
+		t.Fatalf("an unowned client skill directory was removed: %v", err)
+	}
+	if manifest := readOwnedManifest(t, skillsDir); strings.Join(manifest.Skills, ",") != "alpha" {
+		t.Fatalf("ownership manifest = %v, want only alpha", manifest.Skills)
+	}
+}
+
+func TestOwnershipManifestLivesBesideTheSkillsNotInsideThem(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{sourceSkill(t, "alpha")}); err != nil {
+		t.Fatalf("projection: %v", err)
+	}
+	skillsDir := projectedSkillsDir(root, "claude")
+
+	// The manifest is a sibling of the skill directories, so it is not mistaken
+	// for a skill and it puts no metadata inside any SKILL.md.
+	if _, err := os.Stat(filepath.Join(skillsDir, ownedSkillsManifestName)); err != nil {
+		t.Fatalf("ownership manifest was not written: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(skillsDir, "alpha", ownedSkillsManifestName)); !os.IsNotExist(err) {
+		t.Fatalf("ownership metadata must not be written inside a skill directory")
+	}
+	projected, err := os.ReadFile(filepath.Join(skillsDir, "alpha", "SKILL.md")) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read projected skill: %v", err)
+	}
+	if string(projected) != skillManifestFixture("alpha") {
+		t.Fatalf("SKILL.md carries ownership metadata: %q", projected)
+	}
+}
+
+func TestProjectionAdoptsSkillsGeneratedBeforeTheOwnershipManifest(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	skillsDir := projectedSkillsDir(root, "claude")
+	if err := os.MkdirAll(filepath.Join(skillsDir, "legacy"), 0o750); err != nil {
+		t.Fatalf("mkdir legacy skill: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(skillsDir, "hand-written"), 0o750); err != nil {
+		t.Fatalf("mkdir manual skill: %v", err)
+	}
+	// A skill an older release generated, identified by the header it injected.
+	if err := os.WriteFile(filepath.Join(skillsDir, "legacy", "SKILL.md"), []byte(generatedMarkerFixture), 0o600); err != nil {
+		t.Fatalf("write legacy skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "hand-written", "SKILL.md"), []byte("# manual\n"), 0o600); err != nil {
+		t.Fatalf("write manual skill: %v", err)
+	}
+
+	// The upgraded release projects a different skill set, so the previously
+	// generated one is stale and must still be cleaned up.
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{sourceSkill(t, "alpha")}); err != nil {
+		t.Fatalf("projection: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(skillsDir, "legacy")); !os.IsNotExist(err) {
+		t.Fatalf("a skill generated before the manifest must still be removable")
+	}
+	if _, err := os.Stat(filepath.Join(skillsDir, "hand-written", "SKILL.md")); err != nil {
+		t.Fatalf("a hand-written skill must survive the migration: %v", err)
+	}
+}
+
+func TestProjectionRejectsAnUnreadableOwnershipManifest(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	skillsDir := projectedSkillsDir(root, "claude")
+	if err := os.MkdirAll(skillsDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, ownedSkillsManifestName), []byte("{not json"), 0o600); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{sourceSkill(t, "alpha")})
+	if err == nil {
+		t.Fatal("a manifest Agent Layer cannot read must fail rather than silently forget what it owns")
+	}
+	if !strings.Contains(err.Error(), "delete it") {
+		t.Fatalf("the error must say how to recover: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(skillsDir, ownedSkillsManifestName), []byte(`{"version":99,"skills":[]}`), 0o600); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{sourceSkill(t, "alpha")}); err == nil {
+		t.Fatal("an unsupported manifest version must fail")
+	}
+}
+
+func TestProjectionRemovesTheManifestWhenNothingIsOwned(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	skillsDir := projectedSkillsDir(root, "claude")
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{sourceSkill(t, "alpha")}); err != nil {
+		t.Fatalf("first projection: %v", err)
+	}
+	if err := WriteClaudeSkills(RealSystem{}, root, nil); err != nil {
+		t.Fatalf("second projection: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(skillsDir, "alpha")); !os.IsNotExist(err) {
+		t.Fatalf("the last owned skill must be removed")
+	}
+	// An empty manifest would be indistinguishable from "no record", so it is
+	// removed instead of left behind.
+	if _, err := os.Stat(filepath.Join(skillsDir, ownedSkillsManifestName)); !os.IsNotExist(err) {
+		t.Fatalf("an empty ownership manifest must not be left behind")
+	}
+}
+
+func TestProjectionProjectsALegacyLowercaseSourceManifestUnderTheCanonicalName(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	srcDir := t.TempDir()
+	content := skillManifestFixture("alpha")
+	if err := os.WriteFile(filepath.Join(srcDir, "skill.md"), []byte(content), 0o600); err != nil {
+		t.Fatalf("write lowercase source manifest: %v", err)
+	}
+
+	skill := config.Skill{Name: "alpha", SourceDir: srcDir}
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{skill}); err != nil {
+		t.Fatalf("WriteClaudeSkills error: %v", err)
+	}
+
+	// internal/config still accepts the lowercase spelling in a source, but
+	// clients only look for SKILL.md, so the bytes land under the canonical name.
+	projected, err := os.ReadFile(filepath.Join(root, ".claude", "skills", "alpha", "SKILL.md")) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read projected skill: %v", err)
+	}
+	if string(projected) != content {
+		t.Fatalf("projected content = %q, want the source bytes", projected)
+	}
+}
+
+func TestProjectionRejectsASkillWithoutASourceDirectory(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{{Name: "alpha"}})
+	if err == nil {
+		t.Fatal("a skill with nothing to copy must fail rather than project an empty directory")
+	}
+	if !strings.Contains(err.Error(), "no source directory") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWriteSkillFiles_PathTraversalRejected(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	skill := sourceSkill(t, "alpha")
+	skill.Name = "../escape"
+	err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{skill})
+	if err == nil {
+		t.Fatalf("expected error for path traversal in skill name")
+	}
+	if !strings.Contains(err.Error(), "invalid skill name") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -167,9 +563,24 @@ func TestWriteAgentSkillsWriteError(t *testing.T) {
 			return errors.New("write failed")
 		},
 	}
-	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	if err := WriteAgentSkills(sys, root, cmds); err == nil {
+	if err := WriteAgentSkills(sys, root, []config.Skill{sourceSkill(t, "alpha")}); err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestWriteAgentSkillsManifestWriteError(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		MarshalIndentFunc: func(any, string, string) ([]byte, error) {
+			return nil, errors.New("encode failed")
+		},
+	}
+	// If ownership cannot be recorded, a later sync could not clean up what it
+	// just created, so the failure must surface now.
+	if err := WriteAgentSkills(sys, root, []config.Skill{sourceSkill(t, "alpha")}); err == nil {
+		t.Fatalf("expected an error when the ownership manifest cannot be encoded")
 	}
 }
 
@@ -185,75 +596,35 @@ func TestWriteAgentSkillsMkdirSkillDirError(t *testing.T) {
 		t.Fatalf("chmod: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(skillsDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
-	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	err := WriteAgentSkills(RealSystem{}, root, cmds)
+	err := WriteAgentSkills(RealSystem{}, root, []config.Skill{sourceSkill(t, "alpha")})
 	if err == nil {
 		t.Fatalf("expected error for skill dir removal/creation failure")
-	}
-}
-
-func TestBuildClaudeSkill(t *testing.T) {
-	disableModelInvocation := true
-	cmd := config.Skill{
-		Name:                   "alpha",
-		Description:            "desc",
-		DisableModelInvocation: &disableModelInvocation,
-		Body:                   "Body",
-	}
-	content, err := buildClaudeSkill(cmd)
-	if err != nil {
-		t.Fatalf("buildClaudeSkill error: %v", err)
-	}
-	if !strings.Contains(content, "name: alpha") {
-		t.Fatalf("expected name in skill")
-	}
-	if !strings.Contains(content, "Body") {
-		t.Fatalf("expected body in skill")
-	}
-	if !strings.Contains(content, "disable-model-invocation: true") {
-		t.Fatalf("expected Claude invocation policy in skill:\n%s", content)
 	}
 }
 
 func TestWriteClaudeSkills(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	if err := WriteClaudeSkills(RealSystem{}, root, cmds); err != nil {
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{sourceSkill(t, "alpha")}); err != nil {
 		t.Fatalf("WriteClaudeSkills error: %v", err)
 	}
-	path := filepath.Join(root, ".claude", "skills", "alpha", "SKILL.md")
-	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read skill: %v", err)
-	}
-	if !strings.Contains(string(data), "name: alpha") {
-		t.Fatalf("expected name in written skill")
-	}
+	assertCanonicalSkillEntrypoint(t, root, filepath.Join(".claude", "skills"), "alpha")
 }
 
 func TestWriteAgentSkills(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	cmds := []config.Skill{{Name: "beta", Description: "desc", Body: "Body"}}
-	if err := WriteAgentSkills(RealSystem{}, root, cmds); err != nil {
+	if err := WriteAgentSkills(RealSystem{}, root, []config.Skill{sourceSkill(t, "beta")}); err != nil {
 		t.Fatalf("WriteAgentSkills error: %v", err)
 	}
-	path := filepath.Join(root, ".agents", "skills", "beta", "SKILL.md")
-	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read skill: %v", err)
-	}
-	if !strings.Contains(string(data), "name: beta") {
-		t.Fatalf("expected name in written skill")
-	}
+	assertCanonicalSkillEntrypoint(t, root, filepath.Join(".agents", "skills"), "beta")
 }
 
 func TestWriteAgentSkillsRefreshKeepsSkillReadable(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	if err := WriteAgentSkills(RealSystem{}, root, cmds); err != nil {
+	skills := []config.Skill{sourceSkill(t, "alpha")}
+	if err := WriteAgentSkills(RealSystem{}, root, skills); err != nil {
 		t.Fatalf("initial WriteAgentSkills error: %v", err)
 	}
 
@@ -285,11 +656,44 @@ func TestWriteAgentSkillsRefreshKeepsSkillReadable(t *testing.T) {
 		},
 	}
 
-	if err := WriteAgentSkills(sys, root, cmds); err != nil {
+	if err := WriteAgentSkills(sys, root, skills); err != nil {
 		t.Fatalf("refresh WriteAgentSkills error: %v", err)
 	}
 	if readerErr != nil {
 		t.Fatalf("existing SKILL.md became unreadable during refresh: %v", readerErr)
+	}
+}
+
+func TestWriteAgentSkillsStageFailureLeavesCompleteLiveTree(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	skill := sourceSkill(t, "alpha")
+	if err := WriteAgentSkills(RealSystem{}, root, []config.Skill{skill}); err != nil {
+		t.Fatalf("initial projection: %v", err)
+	}
+	live := filepath.Join(root, ".agents", "skills", "alpha", "SKILL.md")
+	original, err := os.ReadFile(live) // #nosec G304 -- live is rooted in a test-owned temporary directory.
+	if err != nil {
+		t.Fatalf("read original projection: %v", err)
+	}
+	if err := os.WriteFile(skill.SourcePath, []byte(skillManifestFixture("alpha")+"\nchanged\n"), 0o600); err != nil {
+		t.Fatalf("change source: %v", err)
+	}
+	sys := &MockSystem{Fallback: RealSystem{}, WriteFileAtomicFunc: func(path string, data []byte, mode os.FileMode) error {
+		if strings.Contains(path, ".agent-layer-projection-staging") && filepath.Base(path) == "SKILL.md" {
+			return errors.New("injected stage failure")
+		}
+		return (RealSystem{}).WriteFileAtomic(path, data, mode)
+	}}
+	if err := WriteAgentSkills(sys, root, []config.Skill{skill}); err == nil {
+		t.Fatal("expected staged projection failure")
+	}
+	after, err := os.ReadFile(live) // #nosec G304 -- live is rooted in a test-owned temporary directory.
+	if err != nil {
+		t.Fatalf("live projection became unreadable: %v", err)
+	}
+	if string(after) != string(original) {
+		t.Fatalf("stage failure exposed partial new content: %q", after)
 	}
 }
 
@@ -307,7 +711,7 @@ func TestWriteAgentSkillsReplacesPreexistingSkillDirectorySymlink(t *testing.T) 
 	}
 
 	skillsDir := filepath.Join(root, ".agents", "skills")
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil { // #nosec G301 -- the fixture uses the same managed-directory mode as production.
+	if err := os.MkdirAll(skillsDir, 0o750); err != nil { // #nosec G301 -- the fixture uses the same managed-directory mode as production.
 		t.Fatalf("mkdir skills: %v", err)
 	}
 	skillDir := filepath.Join(skillsDir, "alpha")
@@ -315,20 +719,20 @@ func TestWriteAgentSkillsReplacesPreexistingSkillDirectorySymlink(t *testing.T) 
 		t.Fatalf("symlink skill directory: %v", err)
 	}
 
-	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	if err := WriteAgentSkills(RealSystem{}, root, cmds); err != nil {
-		t.Fatalf("WriteAgentSkills error: %v", err)
+	if err := WriteAgentSkills(RealSystem{}, root, []config.Skill{sourceSkill(t, "alpha")}); err == nil {
+		t.Fatal("expected an unowned client skill symlink collision to be refused")
 	}
 
 	info, err := os.Lstat(skillDir)
 	if err != nil {
 		t.Fatalf("lstat generated skill directory: %v", err)
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		t.Fatalf("expected a real generated skill directory, got mode %v", info.Mode())
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("unowned client symlink was replaced, got mode %v", info.Mode())
 	}
-	assertCanonicalSkillEntrypoint(t, root, filepath.Join(".agents", "skills"), "alpha")
 
+	// Writing through the symlink would have overwritten content outside the
+	// projection root.
 	data, err := os.ReadFile(externalSkillPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read external skill: %v", err)
@@ -338,129 +742,57 @@ func TestWriteAgentSkillsReplacesPreexistingSkillDirectorySymlink(t *testing.T) 
 	}
 }
 
-func TestCopySkillSubFiles(t *testing.T) {
-	t.Parallel()
-	srcDir := t.TempDir()
-	destDir := t.TempDir()
-
-	// Create source structure: scripts/run.sh, references/REF.md, .hidden, SKILL.md
-	if err := os.MkdirAll(filepath.Join(srcDir, "scripts"), 0o700); err != nil {
-		t.Fatalf("mkdir scripts: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(srcDir, "scripts", "run.sh"), []byte("#!/bin/sh\necho hi"), 0o600); err != nil {
-		t.Fatalf("write script: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(srcDir, "references"), 0o700); err != nil {
-		t.Fatalf("mkdir references: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(srcDir, "references", "REF.md"), []byte("# Ref"), 0o600); err != nil {
-		t.Fatalf("write ref: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("---\nname: test\n---\nBody"), 0o600); err != nil {
-		t.Fatalf("write SKILL.md: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(srcDir, ".hidden"), []byte("secret"), 0o600); err != nil {
-		t.Fatalf("write hidden: %v", err)
-	}
-
-	skill := config.Skill{Name: "test", SourceDir: srcDir}
-	if err := copySkillSubFiles(RealSystem{}, skill, destDir); err != nil {
-		t.Fatalf("copySkillSubFiles error: %v", err)
-	}
-
-	// scripts/run.sh should be copied
-	data, err := os.ReadFile(filepath.Join(destDir, "scripts", "run.sh")) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read copied script: %v", err)
-	}
-	if !strings.Contains(string(data), "echo hi") {
-		t.Fatalf("expected script content")
-	}
-
-	// references/REF.md should be copied
-	if _, err := os.Stat(filepath.Join(destDir, "references", "REF.md")); err != nil {
-		t.Fatalf("expected REF.md to be copied: %v", err)
-	}
-
-	// SKILL.md should NOT be copied (handled by builder)
-	if _, err := os.Stat(filepath.Join(destDir, "SKILL.md")); !os.IsNotExist(err) {
-		t.Fatalf("expected SKILL.md to be skipped")
-	}
-
-	// .hidden should NOT be copied
-	if _, err := os.Stat(filepath.Join(destDir, ".hidden")); !os.IsNotExist(err) {
-		t.Fatalf("expected hidden file to be skipped")
-	}
-}
-
-func TestCopySkillSubFiles_EmptySourceDir(t *testing.T) {
+func TestCopySkillTree_EmptySourceDir(t *testing.T) {
 	t.Parallel()
 	skill := config.Skill{Name: "test", SourceDir: ""}
-	if err := copySkillSubFiles(RealSystem{}, skill, t.TempDir()); err != nil {
+	if err := copySkillTree(RealSystem{}, skill, t.TempDir()); err != nil {
 		t.Fatalf("expected nil error for empty SourceDir, got %v", err)
 	}
 }
 
-func TestRemoveStaleSkillDirs(t *testing.T) {
+func TestCopySkillTreeCopiesNestedManifestsToo(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	wanted := map[string]struct{}{
-		"keep": {},
+	srcDir := t.TempDir()
+	destDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("top-level"), 0o600); err != nil {
+		t.Fatalf("write top SKILL.md: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(srcDir, "references"), 0o700); err != nil {
+		t.Fatalf("mkdir references: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "references", "SKILL.md"), []byte("nested"), 0o600); err != nil {
+		t.Fatalf("write nested SKILL.md: %v", err)
 	}
 
-	keepDir := filepath.Join(dir, "keep")
-	staleDir := filepath.Join(dir, "stale")
-	manualDir := filepath.Join(dir, "manual")
-	ignoreFile := filepath.Join(dir, "ignore.txt")
-	for _, d := range []string{keepDir, staleDir, manualDir} {
-		if err := os.MkdirAll(d, 0o700); err != nil {
-			t.Fatalf("mkdir %s: %v", d, err)
+	skill := config.Skill{Name: "test", SourceDir: srcDir}
+	if err := copySkillTree(RealSystem{}, skill, destDir); err != nil {
+		t.Fatalf("copySkillTree error: %v", err)
+	}
+
+	for relative, want := range map[string]string{
+		"SKILL.md":            "top-level",
+		"references/SKILL.md": "nested",
+	} {
+		data, err := os.ReadFile(filepath.Join(destDir, filepath.FromSlash(relative))) // #nosec G304 -- path is constructed from test-controlled inputs.
+		if err != nil {
+			t.Fatalf("read %s: %v", relative, err)
+		}
+		if string(data) != want {
+			t.Fatalf("%s = %q, want %q", relative, data, want)
 		}
 	}
-	if err := os.WriteFile(ignoreFile, []byte("ignore"), 0o600); err != nil {
-		t.Fatalf("write ignore: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(keepDir, "SKILL.md"), []byte(generatedMarkerFixture), 0o600); err != nil {
-		t.Fatalf("write keep: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(staleDir, "SKILL.md"), []byte(generatedMarkerFixture), 0o600); err != nil {
-		t.Fatalf("write stale: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(manualDir, "SKILL.md"), []byte("manual"), 0o600); err != nil {
-		t.Fatalf("write manual: %v", err)
-	}
-
-	if err := removeStaleSkillDirs(RealSystem{}, dir, wanted); err != nil {
-		t.Fatalf("removeStaleSkillDirs error: %v", err)
-	}
-	if _, err := os.Stat(staleDir); !os.IsNotExist(err) {
-		t.Fatalf("expected stale dir to be removed")
-	}
-	if _, err := os.Stat(manualDir); err != nil {
-		t.Fatalf("expected manual dir to remain: %v", err)
-	}
 }
 
-func TestRemoveStaleSkillDirsMissingDir(t *testing.T) {
-	t.Parallel()
-	err := removeStaleSkillDirs(RealSystem{}, filepath.Join(t.TempDir(), "missing"), map[string]struct{}{})
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
-func TestCleanSharedAgentSkillsRemovesGeneratedOnly(t *testing.T) {
+func TestCleanSharedAgentSkillsRemovesOwnedOnly(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	generatedDir := filepath.Join(root, ".agents", "skills", "generated")
-	manualDir := filepath.Join(root, ".agents", "skills", "manual")
-	for _, dir := range []string{generatedDir, manualDir} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			t.Fatalf("mkdir %s: %v", dir, err)
-		}
+	if err := WriteAgentSkills(RealSystem{}, root, []config.Skill{sourceSkill(t, "generated")}); err != nil {
+		t.Fatalf("projection: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(generatedDir, "SKILL.md"), []byte(generatedMarkerFixture), 0o600); err != nil {
-		t.Fatalf("write generated skill: %v", err)
+	manualDir := filepath.Join(root, ".agents", "skills", "manual")
+	if err := os.MkdirAll(manualDir, 0o750); err != nil {
+		t.Fatalf("mkdir manual: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(manualDir, "SKILL.md"), []byte("# manual\n"), 0o600); err != nil {
 		t.Fatalf("write manual skill: %v", err)
@@ -469,11 +801,18 @@ func TestCleanSharedAgentSkillsRemovesGeneratedOnly(t *testing.T) {
 	if err := cleanSharedAgentSkills(RealSystem{}, root); err != nil {
 		t.Fatalf("cleanSharedAgentSkills error: %v", err)
 	}
-	if _, err := os.Stat(generatedDir); !os.IsNotExist(err) {
-		t.Fatalf("expected generated shared skill to be removed")
+	if _, err := os.Stat(filepath.Join(root, ".agents", "skills", "generated")); !os.IsNotExist(err) {
+		t.Fatalf("expected the owned shared skill to be removed")
 	}
 	if _, err := os.Stat(manualDir); err != nil {
-		t.Fatalf("expected manual shared skill to remain: %v", err)
+		t.Fatalf("expected the manual shared skill to remain: %v", err)
+	}
+}
+
+func TestCleanSharedAgentSkillsMissingDir(t *testing.T) {
+	t.Parallel()
+	if err := cleanSharedAgentSkills(RealSystem{}, t.TempDir()); err != nil {
+		t.Fatalf("a project that never projected shared skills must be a no-op, got %v", err)
 	}
 }
 
@@ -534,23 +873,6 @@ func TestHasGeneratedMarker(t *testing.T) {
 	}
 }
 
-func TestGeneratedSkillSourcePath(t *testing.T) {
-	cmd := config.Skill{Name: "alpha"}
-	if got := generatedSkillSourcePath(cmd); got != ".agent-layer/skills/alpha/SKILL.md" {
-		t.Fatalf("unexpected default source path: %q", got)
-	}
-
-	cmd.SourcePath = filepath.Join("/tmp/repo", ".agent-layer", "skills", "alpha", "SKILL.md")
-	if got := generatedSkillSourcePath(cmd); got != ".agent-layer/skills/alpha/SKILL.md" {
-		t.Fatalf("unexpected normalized source path: %q", got)
-	}
-
-	cmd.SourcePath = filepath.Join("/tmp/repo", ".agent-layer", "tmp", "stage", ".agent-layer", "skills", "alpha", "SKILL.md")
-	if got := generatedSkillSourcePath(cmd); got != ".agent-layer/skills/alpha/SKILL.md" {
-		t.Fatalf("nested projection retained an outer Agent Layer path: %q", got)
-	}
-}
-
 func TestCopyDirRecursive_ReadFilePermissionError(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
@@ -563,7 +885,7 @@ func TestCopyDirRecursive_ReadFilePermissionError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o600) })
 
-	err := copyDirRecursive(RealSystem{}, srcDir, destDir, nil)
+	err := copyDirRecursive(RealSystem{}, srcDir, destDir)
 	if err == nil {
 		t.Fatalf("expected error for unreadable file")
 	}
@@ -575,36 +897,9 @@ func TestCopyDirRecursive_ReadFilePermissionError(t *testing.T) {
 func TestCopyDirRecursive_NonexistentSourceDir(t *testing.T) {
 	t.Parallel()
 	destDir := t.TempDir()
-	err := copyDirRecursive(RealSystem{}, filepath.Join(t.TempDir(), "nonexistent"), destDir, nil)
+	err := copyDirRecursive(RealSystem{}, filepath.Join(t.TempDir(), "nonexistent"), destDir)
 	if err != nil {
 		t.Fatalf("expected nil for nonexistent source dir, got: %v", err)
-	}
-}
-
-func TestCopyDirRecursive_PreservesExecutePermission(t *testing.T) {
-	t.Parallel()
-	srcDir := t.TempDir()
-	destDir := t.TempDir()
-
-	if err := os.MkdirAll(filepath.Join(srcDir, "scripts"), 0o700); err != nil {
-		t.Fatalf("mkdir scripts: %v", err)
-	}
-	scriptPath := filepath.Join(srcDir, "scripts", "run.sh")
-	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\necho hi"), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
-		t.Fatalf("write script: %v", err)
-	}
-
-	if err := copyDirRecursive(RealSystem{}, srcDir, destDir, nil); err != nil {
-		t.Fatalf("copyDirRecursive error: %v", err)
-	}
-
-	destScript := filepath.Join(destDir, "scripts", "run.sh")
-	info, err := os.Stat(destScript)
-	if err != nil {
-		t.Fatalf("stat copied script: %v", err)
-	}
-	if info.Mode().Perm()&0o111 == 0 {
-		t.Fatalf("expected execute permission on copied script, got %v", info.Mode())
 	}
 }
 
@@ -630,63 +925,8 @@ func TestWriteClaudeSkillsWriteError(t *testing.T) {
 			return errors.New("write failed")
 		},
 	}
-	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	if err := WriteClaudeSkills(sys, root, cmds); err == nil {
+	if err := WriteClaudeSkills(sys, root, []config.Skill{sourceSkill(t, "alpha")}); err == nil {
 		t.Fatalf("expected error")
-	}
-}
-
-func TestWriteClaudeSkillsWithSubdirectory(t *testing.T) {
-	t.Parallel()
-
-	// Set up a source skill directory with scripts/ subdirectory.
-	srcDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(srcDir, "scripts"), 0o700); err != nil {
-		t.Fatalf("mkdir scripts: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(srcDir, "scripts", "deploy.sh"), []byte("#!/bin/sh\necho deploy"), 0o755); err != nil { // #nosec G306 -- test writes a fixture whose perm value drives the production code path under test.
-		t.Fatalf("write deploy.sh: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("---\nname: deploy\n---\nDeploy body"), 0o600); err != nil {
-		t.Fatalf("write SKILL.md: %v", err)
-	}
-
-	root := t.TempDir()
-	cmds := []config.Skill{{
-		Name:        "deploy",
-		Description: "Deploy skill",
-		Body:        "Deploy body",
-		SourceDir:   srcDir,
-	}}
-	if err := WriteClaudeSkills(RealSystem{}, root, cmds); err != nil {
-		t.Fatalf("WriteClaudeSkills error: %v", err)
-	}
-
-	// Verify SKILL.md was written (by the builder, not copied from source).
-	skillPath := filepath.Join(root, ".claude", "skills", "deploy", "SKILL.md")
-	data, err := os.ReadFile(skillPath) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read SKILL.md: %v", err)
-	}
-	if !strings.Contains(string(data), "name: deploy") {
-		t.Fatalf("expected name in SKILL.md")
-	}
-
-	// Verify scripts/deploy.sh was copied with execute permission preserved.
-	scriptPath := filepath.Join(root, ".claude", "skills", "deploy", "scripts", "deploy.sh")
-	scriptData, err := os.ReadFile(scriptPath) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read deploy.sh: %v", err)
-	}
-	if !strings.Contains(string(scriptData), "echo deploy") {
-		t.Fatalf("expected script content")
-	}
-	info, err := os.Stat(scriptPath)
-	if err != nil {
-		t.Fatalf("stat deploy.sh: %v", err)
-	}
-	if info.Mode().Perm()&0o111 == 0 {
-		t.Fatalf("expected execute permission on deploy.sh, got %v", info.Mode())
 	}
 }
 
@@ -694,8 +934,10 @@ func TestWriteClaudeSkillsStaleSubFileCleanup(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 
-	// First sync: skill with scripts/old.sh
 	srcDir1 := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcDir1, "SKILL.md"), []byte(skillManifestFixture("alpha")), 0o600); err != nil {
+		t.Fatalf("write SKILL.md: %v", err)
+	}
 	if err := os.MkdirAll(filepath.Join(srcDir1, "scripts"), 0o700); err != nil {
 		t.Fatalf("mkdir scripts: %v", err)
 	}
@@ -703,24 +945,19 @@ func TestWriteClaudeSkillsStaleSubFileCleanup(t *testing.T) {
 		t.Fatalf("write old.sh: %v", err)
 	}
 
-	cmds1 := []config.Skill{{
-		Name:        "alpha",
-		Description: "desc",
-		Body:        "Body",
-		SourceDir:   srcDir1,
-	}}
-	if err := WriteClaudeSkills(RealSystem{}, root, cmds1); err != nil {
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{{Name: "alpha", SourceDir: srcDir1}}); err != nil {
 		t.Fatalf("first WriteClaudeSkills error: %v", err)
 	}
-
-	// Verify old.sh exists after first sync.
 	oldScript := filepath.Join(root, ".claude", "skills", "alpha", "scripts", "old.sh")
 	if _, err := os.Stat(oldScript); err != nil {
 		t.Fatalf("expected old.sh after first sync: %v", err)
 	}
 
-	// Second sync: skill now has scripts/new.sh (old.sh removed from source).
+	// The source now has scripts/new.sh instead.
 	srcDir2 := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcDir2, "SKILL.md"), []byte(skillManifestFixture("alpha")), 0o600); err != nil {
+		t.Fatalf("write SKILL.md: %v", err)
+	}
 	if err := os.MkdirAll(filepath.Join(srcDir2, "scripts"), 0o700); err != nil {
 		t.Fatalf("mkdir scripts: %v", err)
 	}
@@ -728,24 +965,14 @@ func TestWriteClaudeSkillsStaleSubFileCleanup(t *testing.T) {
 		t.Fatalf("write new.sh: %v", err)
 	}
 
-	cmds2 := []config.Skill{{
-		Name:        "alpha",
-		Description: "desc",
-		Body:        "Body",
-		SourceDir:   srcDir2,
-	}}
-	if err := WriteClaudeSkills(RealSystem{}, root, cmds2); err != nil {
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{{Name: "alpha", SourceDir: srcDir2}}); err != nil {
 		t.Fatalf("second WriteClaudeSkills error: %v", err)
 	}
 
-	// Verify old.sh is removed (stale sub-file cleanup).
 	if _, err := os.Stat(oldScript); !os.IsNotExist(err) {
 		t.Fatalf("expected old.sh to be removed after second sync")
 	}
-
-	// Verify new.sh exists.
-	newScript := filepath.Join(root, ".claude", "skills", "alpha", "scripts", "new.sh")
-	if _, err := os.Stat(newScript); err != nil {
+	if _, err := os.Stat(filepath.Join(root, ".claude", "skills", "alpha", "scripts", "new.sh")); err != nil {
 		t.Fatalf("expected new.sh after second sync: %v", err)
 	}
 }
@@ -754,6 +981,9 @@ func TestWriteClaudeSkillsReconcilesResourceTree(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	srcDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte(skillManifestFixture("alpha")), 0o600); err != nil {
+		t.Fatalf("write SKILL.md: %v", err)
+	}
 	keepScript := filepath.Join(srcDir, "scripts", "keep.sh")
 	staleFile := filepath.Join(srcDir, "references", "obsolete", "nested.txt")
 	if err := os.MkdirAll(filepath.Dir(keepScript), 0o700); err != nil {
@@ -768,22 +998,19 @@ func TestWriteClaudeSkillsReconcilesResourceTree(t *testing.T) {
 	if err := os.WriteFile(staleFile, []byte("stale"), 0o600); err != nil {
 		t.Fatalf("write stale reference: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(srcDir, "skill.md"), []byte("source-owned lowercase entrypoint"), 0o600); err != nil {
-		t.Fatalf("write ignored lowercase entrypoint: %v", err)
-	}
 
-	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body", SourceDir: srcDir}
+	skill := config.Skill{Name: "alpha", SourceDir: srcDir}
 	refresh := func(sourceDir string) {
 		t.Helper()
-		cmd.SourceDir = sourceDir
-		if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{cmd}); err != nil {
+		skill.SourceDir = sourceDir
+		if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{skill}); err != nil {
 			t.Fatalf("WriteClaudeSkills refresh error: %v", err)
 		}
-		assertCanonicalSkillEntrypoint(t, root, filepath.Join(".claude", "skills"), cmd.Name)
 	}
 
 	refresh(srcDir)
 	refresh(srcDir)
+	assertCanonicalSkillEntrypoint(t, root, filepath.Join(".claude", "skills"), "alpha")
 	destScript := filepath.Join(root, ".claude", "skills", "alpha", "scripts", "keep.sh")
 	data, err := os.ReadFile(destScript) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil || !strings.Contains(string(data), "echo keep") {
@@ -801,21 +1028,15 @@ func TestWriteClaudeSkillsReconcilesResourceTree(t *testing.T) {
 		t.Fatalf("remove source references: %v", err)
 	}
 	refresh(srcDir)
-	destReferences := filepath.Join(root, ".claude", "skills", "alpha", "references")
-	if _, err := os.Stat(destReferences); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(root, ".claude", "skills", "alpha", "references")); !os.IsNotExist(err) {
 		t.Fatalf("expected whole stale resource directory to be removed, got %v", err)
 	}
 
-	refresh("")
-	destScripts := filepath.Join(root, ".claude", "skills", "alpha", "scripts")
-	if _, err := os.Stat(destScripts); !os.IsNotExist(err) {
-		t.Fatalf("expected empty SourceDir to remove resources, got %v", err)
-	}
-
-	refresh(srcDir)
+	// A source directory that vanished empties the projected skill rather than
+	// leaving stale content an agent would still read.
 	refresh(filepath.Join(t.TempDir(), "missing"))
-	if _, err := os.Stat(destScripts); !os.IsNotExist(err) {
-		t.Fatalf("expected nonexistent SourceDir to remove resources, got %v", err)
+	if _, err := os.Stat(filepath.Join(root, ".claude", "skills", "alpha", "scripts")); !os.IsNotExist(err) {
+		t.Fatalf("expected a missing SourceDir to remove resources, got %v", err)
 	}
 }
 
@@ -823,18 +1044,21 @@ func TestWriteClaudeSkillsReconcilesResourceTypeTransitions(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	srcDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte(skillManifestFixture("alpha")), 0o600); err != nil {
+		t.Fatalf("write SKILL.md: %v", err)
+	}
 	sourceResource := filepath.Join(srcDir, "resource")
 	if err := os.WriteFile(sourceResource, []byte("file first"), 0o600); err != nil {
 		t.Fatalf("write source file: %v", err)
 	}
 
-	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body", SourceDir: srcDir}
+	skill := config.Skill{Name: "alpha", SourceDir: srcDir}
 	refresh := func() {
 		t.Helper()
-		if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{cmd}); err != nil {
+		if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{skill}); err != nil {
 			t.Fatalf("WriteClaudeSkills refresh error: %v", err)
 		}
-		assertCanonicalSkillEntrypoint(t, root, filepath.Join(".claude", "skills"), cmd.Name)
+		assertCanonicalSkillEntrypoint(t, root, filepath.Join(".claude", "skills"), skill.Name)
 	}
 	destResource := filepath.Join(root, ".claude", "skills", "alpha", "resource")
 
@@ -896,7 +1120,7 @@ func TestCopyDirRecursive_LstatError(t *testing.T) {
 		},
 	}
 
-	err := copyDirRecursive(sys, srcDir, destDir, nil)
+	err := copyDirRecursive(sys, srcDir, destDir)
 	if err == nil {
 		t.Fatalf("expected error from Lstat failure")
 	}
@@ -919,7 +1143,7 @@ func TestCopyDirRecursive_DestinationLstatError(t *testing.T) {
 			return nil, errors.New("destination lstat failed")
 		},
 	}
-	err := copyDirRecursive(sys, srcDir, destDir, nil)
+	err := copyDirRecursive(sys, srcDir, destDir)
 	if err == nil || !strings.Contains(err.Error(), "destination lstat failed") {
 		t.Fatalf("expected actionable destination lstat error, got %v", err)
 	}
@@ -944,7 +1168,7 @@ func TestCopyDirRecursive_ResourceConflictErrors(t *testing.T) {
 				return errors.New("conflict removal failed")
 			},
 		}
-		err := copyDirRecursive(sys, srcDir, destDir, nil)
+		err := copyDirRecursive(sys, srcDir, destDir)
 		if err == nil || !strings.Contains(err.Error(), "conflict removal failed") {
 			t.Fatalf("expected actionable conflict removal error, got %v", err)
 		}
@@ -966,7 +1190,7 @@ func TestCopyDirRecursive_ResourceConflictErrors(t *testing.T) {
 				return RealSystem{}.MkdirAll(path, perm)
 			},
 		}
-		err := copyDirRecursive(sys, srcDir, destDir, nil)
+		err := copyDirRecursive(sys, srcDir, destDir)
 		if err == nil || !strings.Contains(err.Error(), "desired directory creation failed") {
 			t.Fatalf("expected actionable desired directory error, got %v", err)
 		}
@@ -987,7 +1211,7 @@ func TestCopyDirRecursive_StaleCleanupErrors(t *testing.T) {
 				return RealSystem{}.ReadDir(path)
 			},
 		}
-		err := copyDirRecursive(sys, "", destDir, nil)
+		err := copyDirRecursive(sys, "", destDir)
 		if err == nil || !strings.Contains(err.Error(), "destination read failed") {
 			t.Fatalf("expected actionable destination read error, got %v", err)
 		}
@@ -1008,7 +1232,7 @@ func TestCopyDirRecursive_StaleCleanupErrors(t *testing.T) {
 				return RealSystem{}.Lstat(path)
 			},
 		}
-		err := copyDirRecursive(sys, "", destDir, nil)
+		err := copyDirRecursive(sys, "", destDir)
 		if err == nil || !strings.Contains(err.Error(), "stale node lstat failed") {
 			t.Fatalf("expected actionable stale-node lstat error, got %v", err)
 		}
@@ -1029,7 +1253,7 @@ func TestCopyDirRecursive_StaleCleanupErrors(t *testing.T) {
 				return RealSystem{}.Remove(path)
 			},
 		}
-		err := copyDirRecursive(sys, "", destDir, nil)
+		err := copyDirRecursive(sys, "", destDir)
 		if err == nil || !strings.Contains(err.Error(), "stale node removal failed") {
 			t.Fatalf("expected actionable stale-node removal error, got %v", err)
 		}
@@ -1055,7 +1279,7 @@ func TestCopyDirRecursive_WriteFileAtomicSubFileError(t *testing.T) {
 		},
 	}
 
-	err := copyDirRecursive(sys, srcDir, destDir, nil)
+	err := copyDirRecursive(sys, srcDir, destDir)
 	if err == nil {
 		t.Fatalf("expected error from WriteFileAtomic failure")
 	}
@@ -1077,7 +1301,7 @@ func TestCopyDirRecursive_SkipsSymlinks(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	if err := copyDirRecursive(RealSystem{}, srcDir, destDir, nil); err != nil {
+	if err := copyDirRecursive(RealSystem{}, srcDir, destDir); err != nil {
 		t.Fatalf("copyDirRecursive error: %v", err)
 	}
 
@@ -1122,7 +1346,7 @@ func TestCopyDirRecursive_UsesLstatForSourceSymlinkDetection(t *testing.T) {
 		},
 	}
 
-	if err := copyDirRecursive(sys, srcDir, destDir, nil); err != nil {
+	if err := copyDirRecursive(sys, srcDir, destDir); err != nil {
 		t.Fatalf("copyDirRecursive error: %v", err)
 	}
 	if data, err := os.ReadFile(filepath.Join(destDir, "real.txt")); err != nil || string(data) != "real" { // #nosec G304 -- path is constructed from test-controlled inputs.
@@ -1165,7 +1389,7 @@ func TestCopyDirRecursive_NestedSourceReadError(t *testing.T) {
 		},
 	}
 
-	err := copyDirRecursive(sys, srcDir, destDir, nil)
+	err := copyDirRecursive(sys, srcDir, destDir)
 	if err == nil || !strings.Contains(err.Error(), "nested source read failed") {
 		t.Fatalf("expected actionable nested source read error, got %v", err)
 	}
@@ -1185,7 +1409,7 @@ func TestCopyDirRecursive_DestinationSymlinkStaleRemoval(t *testing.T) {
 	}
 
 	// Empty srcDir means nothing is desired, so the destination symlink is stale.
-	if err := copyDirRecursive(RealSystem{}, "", destDir, nil); err != nil {
+	if err := copyDirRecursive(RealSystem{}, "", destDir); err != nil {
 		t.Fatalf("copyDirRecursive error: %v", err)
 	}
 
@@ -1200,27 +1424,6 @@ func TestCopyDirRecursive_DestinationSymlinkStaleRemoval(t *testing.T) {
 	}
 	if string(data) != "external target" {
 		t.Fatalf("external target content changed: %q", data)
-	}
-}
-
-func TestCopyDirRecursive_PreservesCanonicalSkillFileCase(t *testing.T) {
-	t.Parallel()
-	destDir := t.TempDir()
-	canonicalPath := filepath.Join(destDir, "skill.md")
-	if err := os.WriteFile(canonicalPath, []byte("generated content"), 0o600); err != nil {
-		t.Fatalf("write lowercase canonical skill file: %v", err)
-	}
-
-	if err := copyDirRecursive(RealSystem{}, "", destDir, map[string]struct{}{"SKILL.md": {}}); err != nil {
-		t.Fatalf("copyDirRecursive error: %v", err)
-	}
-
-	data, err := os.ReadFile(canonicalPath) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read lowercase canonical skill file: %v", err)
-	}
-	if string(data) != "generated content" {
-		t.Fatalf("canonical skill file changed: %q", data)
 	}
 }
 
@@ -1265,7 +1468,7 @@ func TestCopyDirRecursive_RemovesDestinationSymlinkBeforeWriting(t *testing.T) {
 		},
 	}
 
-	if err := copyDirRecursive(sys, srcDir, destDir, nil); err != nil {
+	if err := copyDirRecursive(sys, srcDir, destDir); err != nil {
 		t.Fatalf("copyDirRecursive error: %v", err)
 	}
 	if removedPath != destPath {
@@ -1294,50 +1497,126 @@ func TestCopyDirRecursive_RemovesDestinationSymlinkBeforeWriting(t *testing.T) {
 	}
 }
 
-func TestWriteSkillFiles_PathTraversalRejected(t *testing.T) {
+func TestProjectionSurfacesOwnershipBookkeepingFailures(t *testing.T) {
+	t.Parallel()
+
+	t.Run("unreadable manifest", func(t *testing.T) {
+		root := t.TempDir()
+		sys := &MockSystem{
+			Fallback: RealSystem{},
+			ReadFileFunc: func(name string) ([]byte, error) {
+				if filepath.Base(name) == ownedSkillsManifestName {
+					return nil, errors.New("manifest read failed")
+				}
+				return RealSystem{}.ReadFile(name)
+			},
+		}
+		err := WriteClaudeSkills(sys, root, []config.Skill{sourceSkill(t, "alpha")})
+		if err == nil || !strings.Contains(err.Error(), "manifest read failed") {
+			t.Fatalf("a manifest Agent Layer cannot read must fail, got %v", err)
+		}
+	})
+
+	t.Run("unreadable skills directory during adoption", func(t *testing.T) {
+		root := t.TempDir()
+		skillsDir := projectedSkillsDir(root, "claude")
+		sys := &MockSystem{
+			Fallback: RealSystem{},
+			ReadDirFunc: func(path string) ([]os.DirEntry, error) {
+				if path == skillsDir {
+					return nil, errors.New("skills dir read failed")
+				}
+				return RealSystem{}.ReadDir(path)
+			},
+		}
+		err := WriteClaudeSkills(sys, root, []config.Skill{sourceSkill(t, "alpha")})
+		if err == nil || !strings.Contains(err.Error(), "skills dir read failed") {
+			t.Fatalf("expected the adoption scan failure to surface, got %v", err)
+		}
+	})
+
+	t.Run("stale manifest removal", func(t *testing.T) {
+		root := t.TempDir()
+		if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{sourceSkill(t, "alpha")}); err != nil {
+			t.Fatalf("first projection: %v", err)
+		}
+		sys := &MockSystem{
+			Fallback: RealSystem{},
+			RemoveFunc: func(name string) error {
+				if filepath.Base(name) == ownedSkillsManifestName {
+					return errors.New("manifest removal failed")
+				}
+				return RealSystem{}.Remove(name)
+			},
+		}
+		err := WriteClaudeSkills(sys, root, nil)
+		if err == nil || !strings.Contains(err.Error(), "manifest removal failed") {
+			t.Fatalf("expected the manifest removal failure to surface, got %v", err)
+		}
+	})
+}
+
+func TestProjectionToleratesAnOwnedSkillSomeoneElseAlreadyDeleted(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	cmds := []config.Skill{{Name: "../escape", Description: "desc", Body: "Body"}}
-	err := WriteClaudeSkills(RealSystem{}, root, cmds)
-	if err == nil {
-		t.Fatalf("expected error for path traversal in skill name")
+	skillsDir := projectedSkillsDir(root, "claude")
+	alpha := sourceSkill(t, "alpha")
+	beta := sourceSkill(t, "beta")
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{alpha, beta}); err != nil {
+		t.Fatalf("first projection: %v", err)
 	}
-	if !strings.Contains(err.Error(), "invalid skill name") {
-		t.Fatalf("unexpected error: %v", err)
+
+	// The user deleted the projected directory by hand between syncs. Removing
+	// something already gone is the desired end state, not a failure.
+	if err := os.RemoveAll(filepath.Join(skillsDir, "beta")); err != nil {
+		t.Fatalf("remove projected skill: %v", err)
+	}
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{alpha}); err != nil {
+		t.Fatalf("second projection: %v", err)
+	}
+	if manifest := readOwnedManifest(t, skillsDir); strings.Join(manifest.Skills, ",") != "alpha" {
+		t.Fatalf("ownership manifest = %v, want only alpha", manifest.Skills)
 	}
 }
 
-func TestCopySkillSubFiles_SkipOnlyTopLevelSkillMd(t *testing.T) {
+func TestProjectionSurfacesAnUninspectableOwnedSkill(t *testing.T) {
 	t.Parallel()
-	srcDir := t.TempDir()
-	destDir := t.TempDir()
-
-	// Create a top-level SKILL.md (should be skipped) and a nested SKILL.md (should be copied).
-	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("top-level"), 0o600); err != nil {
-		t.Fatalf("write top SKILL.md: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(srcDir, "references"), 0o700); err != nil {
-		t.Fatalf("mkdir references: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(srcDir, "references", "SKILL.md"), []byte("nested"), 0o600); err != nil {
-		t.Fatalf("write nested SKILL.md: %v", err)
+	root := t.TempDir()
+	skillsDir := projectedSkillsDir(root, "claude")
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{sourceSkill(t, "alpha")}); err != nil {
+		t.Fatalf("first projection: %v", err)
 	}
 
-	skill := config.Skill{Name: "test", SourceDir: srcDir}
-	if err := copySkillSubFiles(RealSystem{}, skill, destDir); err != nil {
-		t.Fatalf("copySkillSubFiles error: %v", err)
+	stalePath := filepath.Join(skillsDir, "alpha")
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		LstatFunc: func(path string) (os.FileInfo, error) {
+			if path == stalePath {
+				return nil, errors.New("owned skill lstat failed")
+			}
+			return RealSystem{}.Lstat(path)
+		},
 	}
+	err := WriteClaudeSkills(sys, root, nil)
+	if err == nil || !strings.Contains(err.Error(), "owned skill lstat failed") {
+		t.Fatalf("expected an actionable inspection failure, got %v", err)
+	}
+}
 
-	// Top-level SKILL.md should NOT be copied.
-	if _, err := os.Stat(filepath.Join(destDir, "SKILL.md")); !os.IsNotExist(err) {
-		t.Fatalf("expected top-level SKILL.md to be skipped")
+func TestCopySkillTreeSurfacesADestinationInspectionFailure(t *testing.T) {
+	t.Parallel()
+	destDir := filepath.Join(t.TempDir(), "alpha")
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		LstatFunc: func(path string) (os.FileInfo, error) {
+			if path == destDir {
+				return nil, errors.New("destination inspection failed")
+			}
+			return RealSystem{}.Lstat(path)
+		},
 	}
-	// Nested references/SKILL.md SHOULD be copied.
-	data, err := os.ReadFile(filepath.Join(destDir, "references", "SKILL.md")) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("expected nested SKILL.md to be copied: %v", err)
-	}
-	if string(data) != "nested" {
-		t.Fatalf("unexpected nested SKILL.md content: %q", string(data))
+	err := copySkillTree(sys, sourceSkill(t, "alpha"), destDir)
+	if err == nil || !strings.Contains(err.Error(), "destination inspection failed") {
+		t.Fatalf("expected an actionable destination inspection error, got %v", err)
 	}
 }
