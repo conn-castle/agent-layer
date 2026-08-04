@@ -67,7 +67,7 @@ architecture impact, and relative value. Use
 ### `## Proposed Next Spec`
 
 For the selected candidate record title, type, target rows, problem, outcome,
-non-goals, behavior changes, risks, rationale, and exact `/plan-work` input. Use
+non-goals, behavior changes, risks, rationale, and exact `/implement` input. Use
 `None — no material improvement` when appropriate.
 
 ### `## Update Log`

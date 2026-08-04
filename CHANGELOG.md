@@ -8,7 +8,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - The workflow skill templates are consolidated. `implement` replaces the `plan-work`, `review-plan`, `implement-plan`, `fully-implement-plan`, and `full-workflow` chain, and `ship-pr` absorbs `address-pr-comments` and `fix-ci` as references. `boost-coverage`, `clean-and-fix-code`, `improve-codebase`, `review-uncommitted-code`, `run-and-fix-all-checks`, `schedule-backlog`, `simplify-codebase`, and `verify-work` are removed; their work is covered by the remaining skills. Existing installs keep their copies of the removed skills until they are deleted by hand; `al upgrade` reports them as orphans rather than removing them.
-- The managed instruction templates and the `agent-dispatch`, `audit-documentation`, `audit-memory`, `audit-tests`, `auto-skill-loop`, `debug-and-fix-issue`, and `interface-audit` skills are rewritten for brevity. The `Explicit-only.` description marker is dropped in favor of per-client invocation metadata.
+- `debug-and-fix-issue` is removed. No remaining skill covers reproduce-then-diagnose debugging; run those investigations directly, or hand the diagnosis to `implement` once the cause is known.
+- The managed instruction templates and the `agent-dispatch`, `audit-documentation`, `audit-memory`, `audit-tests`, `auto-skill-loop`, and `interface-audit` skills are rewritten for brevity. The `Explicit-only.` description marker is dropped in favor of per-client invocation metadata.
 
 ### Fixed
 - Git subprocesses now resolve the repository from the path they are given instead of honoring an inherited `GIT_DIR`. Git exports its repository-discovery variables to every hook, and they take precedence over `git -C <path>`, so benchmark provenance and pinned-checkout validation could report on a different repository than the one being measured when a run started from a Git hook.

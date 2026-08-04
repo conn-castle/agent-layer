@@ -163,6 +163,7 @@ func TestRemovedSkillTemplatesStayRemoved(t *testing.T) {
 		"skills/auto-skill-loop/references/mode-contract.md",
 		"skills/boost-coverage/SKILL.md",
 		"skills/clean-and-fix-code/SKILL.md",
+		"skills/debug-and-fix-issue/SKILL.md",
 		"skills/fix-ci/SKILL.md",
 		"skills/full-workflow/SKILL.md",
 		"skills/fully-implement-plan/SKILL.md",
