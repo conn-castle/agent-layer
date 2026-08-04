@@ -290,3 +290,81 @@ const (
 	StubShortFmt          = "%s (not implemented yet)"
 	StubNotImplementedFmt = "%s is not implemented in this phase"
 )
+
+// Skill import command messages.
+const (
+	// SkillsUse is the skills command name.
+	SkillsUse   = "skills"
+	SkillsShort = "Manage Git-backed Agent Skill imports"
+	SkillsLong  = `Manage Agent Skills imported from Git repositories.
+
+Imported skills live in .agent-layer/imported-skills/<skill-name>/ and are
+projected through ordinary 'al sync' alongside .agent-layer/skills/. Recorded
+upstream state lives in .agent-layer/skills.lock.json.
+
+Only add, pull, and push contact remote repositories; status, 'al sync', and
+agent launch stay local.`
+
+	SkillsAddUse   = "add <repository> <selector>..."
+	SkillsAddShort = "Import skills from a Git repository"
+	SkillsAddLong  = `Import one or more skills from a Git repository.
+
+Selectors are repository-relative skill directory paths. A selector may use a
+path wildcard, and a selector prefixed with '!' excludes matches within the
+same import block. Every selector added in one invocation shares the block
+policy given by the flags, so adding a selector with a different policy creates
+a separate block.
+
+'al skills add' never searches, recommends, or previews skills.`
+
+	SkillsRemoveUse   = "remove <repository> <selector>"
+	SkillsRemoveShort = "Remove one configured import selector"
+	SkillsRemoveLong  = `Remove one configured positive or exclusion selector and recompute the desired
+set at the block's locked source commit.
+
+Skills still matched by another selector remain managed. A clean imported
+directory that leaves the desired set is deleted; a modified one is preserved
+and reported so you can adopt or delete it explicitly.`
+
+	SkillsStatusUse   = "status"
+	SkillsStatusShort = "Report local imported-skill state"
+	SkillsStatusLong  = `Report imported-skill state from local files only. This command performs no
+network or Git fetch.
+
+Use --all to expand the summary into one entry per resolved skill plus the
+configured exclusion selectors.`
+
+	SkillsPullUse   = "pull"
+	SkillsPullShort = "Fetch and reconcile configured skill sources"
+	SkillsPullLong  = `Fetch every configured source, reconcile it with local content, update recorded
+state, and project the results.
+
+This is the only command that advances tracked imports. Pinned imports stay at
+their locked commits unless the configured ref itself changed. Local edits are
+merged against the locked upstream tree and are never overwritten; a conflict
+fails only that skill.
+
+'al skills pull' never commits or pushes upstream.`
+
+	SkillsPushUse   = "push"
+	SkillsPushShort = "Contribute local skill changes to configured destinations"
+	SkillsPushLong  = `Publish local imported-skill changes to each block's configured write
+destination.
+
+Blocks with write_policy = "none" (the default) are skipped. Changes for one
+destination repository and branch are committed and pushed together. Agent
+Layer never force-pushes, never generates a branch name, and never falls back
+to another destination or mode.
+
+'al skills push' never pulls first.`
+
+	SkillsRefFlag            = "Source branch, tag, or commit (default: the repository's default branch)"
+	SkillsTrackingFlag       = "Tracking mode: tracked or pinned (default: tracked for branches, pinned for tags and commits)"
+	SkillsWriteFlag          = "Write policy: none, branch, or direct"
+	SkillsPushRepositoryFlag = "Destination repository for upstream writes (default: the source repository)"
+	SkillsPushBranchFlag     = "Destination branch, required when --write=branch"
+	SkillsAllFlag            = "Expand the summary into one entry per resolved skill and exclusion"
+
+	// SkillsOperationFailedFmt reports a failed or partially failed operation.
+	SkillsOperationFailedFmt = "al skills %s did not complete successfully"
+)

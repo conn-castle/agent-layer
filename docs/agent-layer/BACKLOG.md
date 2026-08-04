@@ -184,12 +184,6 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Acceptance criteria: Headless and headed modes compared for behavior parity; headless made default if parity is confirmed; explicit opt-in path preserved for headed debugging.
     Notes: Keep an explicit opt-in path for headed runs for local debugging even if headless becomes the default.
 
-- Backlog 2026-02-16 skill-install: Install community skills from external sources
-    Priority: Low. Area: skills / ecosystem
-    Description: Allow users to install agentskills.io-compliant skills from GitHub repos or a registry (e.g., `al skill add <repo>` or `al skill add <name>`).
-    Acceptance criteria: Users can install a skill from an external source into `.agent-layer/skills/` and it is picked up by `al sync`.
-    Notes: Depends on Phase 15 (skills standard alignment). Consider validation, versioning, and update mechanisms.
-
 - Backlog 2026-02-10 test-agents: Multi-agent test strategy and execution workflows
     Priority: High. Area: workflows/testing
     Description: Multi-agent workflow where one agent "dreams up" and documents test strategies/cases (unit/E2E/integration), while a second agent implements tests, runs them, fixes failures, and opens PRs.

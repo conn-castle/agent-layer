@@ -162,6 +162,73 @@ Run `al sync` to project the new skill into all enabled clients.
 
 For the complete research-backed authoring guide — including empirical studies on instruction-following, context length effects, and constraint composition — see [Skill Design Guide](/skill-design). For command-line tool workflows, use [CLI Skill Design Guide](/cli-skill-design) so live `--help` stays the source of truth for syntax.
 
+## Importing skills from Git
+
+Agent Layer can import known Agent Skills from any Git repository your existing
+Git authentication can reach, keep them editable locally, pull upstream changes
+without losing your edits, and contribute changes back.
+
+```bash
+al skills add https://github.com/example/skills.git skills/reviewer
+al skills status
+al skills pull
+```
+
+Imported skills land in `.agent-layer/imported-skills/<skill-name>/` and are
+projected through ordinary `al sync` exactly like the skills you write in
+`.agent-layer/skills/`. Edit them in place: `al skills pull` merges upstream
+updates against the version you originally imported, so your local changes
+survive. When a change genuinely conflicts, or an upstream skill stops being
+valid, that one skill fails and its content is left untouched — the rest of the
+repository still imports. If a run is interrupted part way through, the next
+`al skills` or `al sync` command rolls it back, so you never end up with a
+half-replaced skill.
+
+Import several skills at once with a wildcard, and exclude the ones you do not
+want:
+
+```bash
+al skills add https://github.com/example/skills.git "skills/*" "!skills/internal-only"
+```
+
+Pin an import to a tag or commit when you want it to hold still:
+
+```bash
+al skills add https://github.com/example/skills.git skills/reviewer --ref v1.4.0
+```
+
+To contribute your local edits back, give the import a write policy. Push to an
+explicit branch, or through your own fork:
+
+```bash
+al skills add https://github.com/example/skills.git skills/reviewer \
+  --write branch --push-branch skill-updates
+al skills push
+```
+
+Agent Layer never force-pushes, never invents a branch name, and never opens a
+pull request for you. `al skills push` uses your current files whether or not
+you committed them in your own project, and it never pulls first.
+
+Changes are reconciled against the destination the same way `al skills pull`
+reconciles upstream changes, so a change made on the destination branch is
+preserved rather than overwritten. If the destination branch removed a skill
+entirely, that removal is preserved too: the push reports the skill as
+unchanged when your copy still matches what you imported, and reports a
+conflict when you had also edited it.
+
+To stop managing an imported skill, remove its selector. A clean copy is
+deleted; a copy you edited is preserved and reported so you can move it into
+`.agent-layer/skills/` and own it yourself.
+
+```bash
+al skills remove https://github.com/example/skills.git skills/reviewer
+```
+
+See the [CLI reference](./reference#skill-imports-1) for the full command
+contract and [configuration reference](./reference#skill-imports) for every
+`[[skills.imports]]` field.
+
 ## Skills approach
 
 The built-in skills follow an Agent Layer-specific model: deterministic root

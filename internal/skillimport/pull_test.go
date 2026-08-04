@@ -1,0 +1,828 @@
+package skillimport
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/skilllock"
+)
+
+// importBlock renders one configuration block for a test fixture.
+func importBlock(repository string, selectors []string, extra ...string) string {
+	quoted := make([]string, 0, len(selectors))
+	for _, selector := range selectors {
+		quoted = append(quoted, fmt.Sprintf("%q", selector))
+	}
+	block := fmt.Sprintf("\n[[skills.imports]]\nrepository = %q\nselectors = [%s]\n",
+		repository, strings.Join(quoted, ", "))
+	for _, line := range extra {
+		block += line + "\n"
+	}
+	return block
+}
+
+// TestPullImportsResolvesAndProjects proves the primary path end to end against
+// a real local repository: exact and wildcard selectors resolve, the complete
+// tree (including hidden and executable resources) lands in the imported tier,
+// lock state records the resolved source, and ordinary projection runs.
+func TestPullImportsResolvesAndProjects(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteFile("skills/alpha/scripts/run.sh", "#!/bin/sh\necho alpha\n", 0o755)
+	source.WriteFile("skills/alpha/.hidden", "hidden\n", 0o644)
+	source.WriteSkill("skills/beta", "beta", "Beta body")
+	source.WriteFile("skills/notaskill/README.md", "not a skill\n", 0o644)
+	commit := source.Commit("add skills")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/*"}))
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v\n%s", err, report.Render("pull"))
+	}
+	if report.Failed() {
+		t.Fatalf("pull failed: %s", report.Render("pull"))
+	}
+	requireOutcome(t, report, "alpha", OutcomeImported)
+	requireOutcome(t, report, "beta", OutcomeImported)
+	if len(report.Skills) != 2 {
+		t.Fatalf("a wildcard imported an ordinary directory: %s", report.Render("pull"))
+	}
+
+	if got := proj.ImportedFile("alpha", ".hidden"); got != "hidden\n" {
+		t.Fatalf("hidden resource = %q", got)
+	}
+	info, err := os.Stat(filepath.Join(proj.paths.ImportedSkillsDir, "alpha", "scripts", "run.sh"))
+	if err != nil {
+		t.Fatalf("stat imported script: %v", err)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("imported script lost its executable bit: %v", info.Mode())
+	}
+
+	lock := proj.Lock()
+	if lock == nil {
+		t.Fatal("pull did not write lock state")
+	}
+	entry, ok := lock.Entry("alpha")
+	if !ok {
+		t.Fatalf("lock has no alpha entry: %+v", lock.Skills)
+	}
+	if entry.Commit != commit || entry.ResolvedRef != "main" || entry.RefKind != skilllock.RefKindBranch {
+		t.Fatalf("lock entry = %+v, want commit %s on branch main", entry, commit)
+	}
+	if entry.Tracking != "tracked" {
+		t.Fatalf("an omitted tracking mode on a branch resolved to %q, want tracked", entry.Tracking)
+	}
+	if entry.ConfiguredRef != "" {
+		t.Fatalf("configured ref = %q, want the omitted value preserved", entry.ConfiguredRef)
+	}
+
+	if _, ok := proj.ProjectedFile("alpha", "SKILL.md"); !ok {
+		t.Fatal("pull did not project the imported skill")
+	}
+	if _, ok := proj.ProjectedFile("alpha", "scripts/run.sh"); !ok {
+		t.Fatal("pull did not project the imported skill's resources")
+	}
+}
+
+// TestPullMergesUpstreamAndLocalChanges proves a tracked advance merges the
+// locked base, local edits, and new upstream content without discarding local
+// work, and advances the lock even though local modifications remain.
+func TestPullMergesUpstreamAndLocalChanges(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteFile("skills/alpha/notes.md", "line one\nline two\nline three\n", 0o644)
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+
+	// Local edit to the last line only.
+	proj.WriteImportedFile("alpha", "notes.md", "line one\nline two\nlocal three\n")
+	// Upstream edit to the first line only.
+	source.WriteFile("skills/alpha/notes.md", "upstream one\nline two\nline three\n", 0o644)
+	source.WriteFile("skills/alpha/added.md", "new upstream file\n", 0o644)
+	advanced := source.Commit("advance alpha")
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("second pull: %v\n%s", err, report.Render("pull"))
+	}
+	result := requireOutcome(t, report, "alpha", OutcomeUpdated)
+	if !strings.Contains(result.Detail, "local modifications retained") {
+		t.Fatalf("update detail = %q, want a note that local modifications were retained", result.Detail)
+	}
+
+	merged := proj.ImportedFile("alpha", "notes.md")
+	if merged != "upstream one\nline two\nlocal three\n" {
+		t.Fatalf("merged content = %q; both one-sided changes must apply", merged)
+	}
+	if got := proj.ImportedFile("alpha", "added.md"); got != "new upstream file\n" {
+		t.Fatalf("new upstream file not applied: %q", got)
+	}
+
+	entry, _ := proj.Lock().Entry("alpha")
+	if entry.Commit != advanced {
+		t.Fatalf("lock commit = %s, want the advanced upstream commit %s", entry.Commit, advanced)
+	}
+}
+
+// TestPullConflictPreservesLocalContentAndLock proves an incompatible change
+// fails only that skill, leaves local content untouched, and does not advance
+// its lock.
+func TestPullConflictPreservesLocalContentAndLock(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
+	source.WriteSkill("skills/beta", "beta", "Beta body")
+	source.Commit("add skills")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/*"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+	lockedAlpha, _ := proj.Lock().Entry("alpha")
+
+	proj.WriteImportedFile("alpha", "notes.md", "local change\n")
+	source.WriteFile("skills/alpha/notes.md", "upstream change\n", 0o644)
+	source.WriteSkill("skills/beta", "beta", "Beta body updated")
+	source.Commit("diverge")
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull returned a fatal error for a per-skill conflict: %v", err)
+	}
+	if !report.Partial() {
+		t.Fatalf("expected partial success, got: %s", report.Render("pull"))
+	}
+	failed := requireOutcome(t, report, "alpha", OutcomeFailed)
+	if !strings.Contains(failed.Err.Error(), "notes.md") {
+		t.Fatalf("conflict error %q does not name the conflicted path", failed.Err)
+	}
+	requireOutcome(t, report, "beta", OutcomeUpdated)
+
+	if got := proj.ImportedFile("alpha", "notes.md"); got != "local change\n" {
+		t.Fatalf("conflicted skill's local content was overwritten: %q", got)
+	}
+	entry, _ := proj.Lock().Entry("alpha")
+	if entry.Commit != lockedAlpha.Commit {
+		t.Fatalf("conflicted skill's lock advanced from %s to %s", lockedAlpha.Commit, entry.Commit)
+	}
+}
+
+// TestPullRetiresCleanAndPreservesModifiedDisappearances proves the one
+// retirement rule: a clean skill that leaves the desired set is deleted, and a
+// modified one is preserved and reported as a failure with instructions.
+func TestPullRetiresCleanAndPreservesModifiedDisappearances(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteSkill("skills/beta", "beta", "Beta body")
+	source.Commit("add skills")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/*"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+	proj.WriteImportedFile("beta", "local.md", "work in progress\n")
+
+	source.RemovePath("skills/alpha")
+	source.RemovePath("skills/beta")
+	source.Commit("remove skills upstream")
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	requireOutcome(t, report, "alpha", OutcomeRetired)
+	preserved := requireOutcome(t, report, "beta", OutcomeFailed)
+	if !strings.Contains(preserved.Err.Error(), "adopt it as user-managed") {
+		t.Fatalf("retirement failure %q lacks adoption instructions", preserved.Err)
+	}
+
+	if proj.ImportedExists("alpha") {
+		t.Fatal("a clean retired skill was not deleted")
+	}
+	if !proj.ImportedExists("beta") {
+		t.Fatal("a modified retired skill was deleted instead of preserved")
+	}
+	if _, ok := proj.Lock().Entry("beta"); !ok {
+		t.Fatal("a preserved skill lost its lock entry")
+	}
+}
+
+// TestPullRestoresMissingImportedDirectory proves a desired skill whose
+// directory was deleted is rebuilt from the selected source and reported.
+func TestPullRestoresMissingImportedDirectory(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+	if err := os.RemoveAll(filepath.Join(proj.paths.ImportedSkillsDir, "alpha")); err != nil {
+		t.Fatalf("remove imported directory: %v", err)
+	}
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	requireOutcome(t, report, "alpha", OutcomeRestored)
+	if !strings.Contains(proj.ImportedFile("alpha", "SKILL.md"), "Alpha body") {
+		t.Fatal("restored skill does not carry its source content")
+	}
+	if source.HasPath("HEAD", "skills/alpha/SKILL.md") == false {
+		t.Fatal("restoration must never delete the upstream skill")
+	}
+}
+
+// TestPullAdoptionPrunesLockAndSkipsRestoration proves the documented adoption
+// flow: after a skill is moved into the user-managed tier and its selector no
+// longer matches, the stale lock entry is pruned and the imported collision is
+// never recreated.
+func TestPullAdoptionPrunesLockAndSkipsRestoration(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+
+	// Adoption step one: move the skill into the user-managed tier.
+	proj.WriteUserSkill("alpha")
+	if err := os.RemoveAll(filepath.Join(proj.paths.ImportedSkillsDir, "alpha")); err != nil {
+		t.Fatalf("remove imported directory: %v", err)
+	}
+
+	// While the selector still matches, the missing directory must not be
+	// restored on top of the user-managed skill; the incomplete adoption is
+	// reported instead.
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("pull during incomplete adoption: %v", err)
+	}
+	incomplete := requireOutcome(t, report, "alpha", OutcomeFailed)
+	if !strings.Contains(incomplete.Err.Error(), "narrow the selector") {
+		t.Fatalf("incomplete adoption error %q does not offer the adoption resolution", incomplete.Err)
+	}
+	if proj.ImportedExists("alpha") {
+		t.Fatal("restoration recreated the imported collision")
+	}
+	// The stale lock entry is pruned as soon as the directory is absent and the
+	// same-name user-managed skill exists.
+	if _, ok := proj.Lock().Entry("alpha"); ok {
+		t.Fatal("adoption did not prune the stale lock entry")
+	}
+
+	// Adoption step two: narrow the import so it no longer matches.
+	writeProjectFile(t, proj.paths.ConfigPath, baseConfigTOML)
+
+	report, err = proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("pull after adoption: %v\n%s", err, report.Render("pull"))
+	}
+	if report.Failed() {
+		t.Fatalf("completed adoption still reports failure: %s", report.Render("pull"))
+	}
+	if proj.ImportedExists("alpha") {
+		t.Fatal("adoption recreated the imported collision")
+	}
+	if content, ok := proj.ProjectedFile("alpha", "SKILL.md"); !ok || !strings.Contains(content, "User body") {
+		t.Fatalf("the adopted user-managed skill does not project: ok=%v content=%q", ok, content)
+	}
+}
+
+// TestPullBlocksImportOfAUserManagedName proves an existing user-managed skill
+// blocks an import of the same name instead of shadowing either source.
+func TestPullBlocksImportOfAUserManagedName(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.WriteUserSkill("alpha")
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}))
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	blocked := requireOutcome(t, report, "alpha", OutcomeFailed)
+	if !strings.Contains(blocked.Err.Error(), "already owns the name") {
+		t.Fatalf("collision error = %q", blocked.Err)
+	}
+	if proj.ImportedExists("alpha") {
+		t.Fatal("a blocked import created an imported directory")
+	}
+}
+
+// TestPullPinnedRefStaysStationaryAndRetargets proves a pinned tag does not
+// move when upstream advances, and that changing the configured ref reconciles
+// local edits onto the newly selected version.
+func TestPullPinnedRefStaysStationaryAndRetargets(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha v1")
+	source.WriteFile("skills/alpha/notes.md", "one\ntwo\nthree\nfour\nfive\n", 0o644)
+	v1 := source.Commit("v1")
+	source.Tag("v1.0.0")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}, `ref = "v1.0.0"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+	entry, _ := proj.Lock().Entry("alpha")
+	if entry.RefKind != skilllock.RefKindTag || entry.Tracking != "pinned" {
+		t.Fatalf("a tag resolved to %+v, want a pinned tag", entry)
+	}
+
+	source.WriteFile("skills/alpha/notes.md", "one\ntwo\nthree\nfour\nupstream five\n", 0o644)
+	source.Commit("v2")
+	source.Tag("v2.0.0")
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("pinned pull: %v", err)
+	}
+	requireOutcome(t, report, "alpha", OutcomeUnchanged)
+	pinned, _ := proj.Lock().Entry("alpha")
+	if pinned.Commit != v1 {
+		t.Fatalf("pinned lock moved from %s to %s", v1, pinned.Commit)
+	}
+
+	// Retarget: a local edit is reconciled onto the newly selected version.
+	proj.WriteImportedFile("alpha", "notes.md", "local one\ntwo\nthree\nfour\nfive\n")
+	retargeted := strings.Replace(proj.ConfigContent(), `ref = "v1.0.0"`, `ref = "v2.0.0"`, 1)
+	writeProjectFile(t, proj.paths.ConfigPath, retargeted)
+
+	report, err = proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("retarget pull: %v\n%s", err, report.Render("pull"))
+	}
+	requireOutcome(t, report, "alpha", OutcomeUpdated)
+	if got := proj.ImportedFile("alpha", "notes.md"); got != "local one\ntwo\nthree\nfour\nupstream five\n" {
+		t.Fatalf("retarget did not reconcile local edits onto the new version: %q", got)
+	}
+	after, _ := proj.Lock().Entry("alpha")
+	if after.ConfiguredRef != "v2.0.0" || after.ResolvedRef != "v2.0.0" {
+		t.Fatalf("lock identity after retarget = %+v", after)
+	}
+}
+
+// TestPullRejectsExplicitTrackedNonBranch proves a tracked tag is an actionable
+// error rather than a silent downgrade to pinning.
+func TestPullRejectsExplicitTrackedNonBranch(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.Commit("add alpha")
+	source.Tag("v1.0.0")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}, `ref = "v1.0.0"`, `tracking = "tracked"`))
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if len(report.Sources) != 1 {
+		t.Fatalf("expected one source failure: %s", report.Render("pull"))
+	}
+	if !strings.Contains(report.Sources[0].Err.Error(), "requires a branch") {
+		t.Fatalf("source failure = %v", report.Sources[0].Err)
+	}
+}
+
+// TestPullContinuesAfterOneSourceFails proves a source-level failure blocks
+// only its own block while other sources still import and project.
+func TestPullContinuesAfterOneSourceFails(t *testing.T) {
+	good := newGitRepo(t, "main")
+	good.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	good.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(good.URL(), []string{"skills/alpha"}))
+	proj.AppendConfig(importBlock(filepath.Join(t.TempDir(), "missing-repo"), []string{"skills/beta"}))
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if len(report.Sources) != 1 {
+		t.Fatalf("expected exactly one source failure: %s", report.Render("pull"))
+	}
+	requireOutcome(t, report, "alpha", OutcomeImported)
+	// Every skill the failed source blocked must appear in the report; the
+	// source line alone leaves the blocked skill unaccounted for.
+	requireOutcome(t, report, "beta", OutcomeFailed)
+	if !report.Partial() {
+		t.Fatalf("expected partial success: %s", report.Render("pull"))
+	}
+	if !proj.ImportedExists("alpha") {
+		t.Fatal("a healthy source did not import while another failed")
+	}
+}
+
+// TestPullReportsEveryAlreadyImportedSkillBlockedByASourceFailure proves the
+// recorded members of a failed block are reported as failed rather than
+// silently omitted or, worse, mistaken for skills that left the desired set.
+func TestPullReportsEveryAlreadyImportedSkillBlockedByASourceFailure(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteSkill("skills/beta", "beta", "Beta body")
+	source.Commit("add skills")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/*"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+
+	// The configured source becomes unreachable after the skills were imported.
+	if err := os.Rename(source.dir, source.dir+"-moved"); err != nil {
+		t.Fatalf("move the source repository: %v", err)
+	}
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if len(report.Sources) != 1 {
+		t.Fatalf("expected one source failure: %s", report.Render("pull"))
+	}
+	for _, name := range []string{"alpha", "beta"} {
+		requireOutcome(t, report, name, OutcomeFailed)
+		if !proj.ImportedExists(name) {
+			t.Fatalf("a source failure deleted %s", name)
+		}
+	}
+}
+
+// TestPullFailsOnMalformedLockWithoutTouchingContent proves a lockfile that
+// cannot establish a merge base fails loudly and preserves local content.
+func TestPullFailsOnMalformedLockWithoutTouchingContent(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+	writeProjectFile(t, proj.paths.SkillsLockPath, `{"version":1,"skills":[{"name":"alpha"}]}`)
+
+	if _, err := proj.Service().Pull(context.Background()); err == nil {
+		t.Fatal("expected a malformed lock to fail the operation")
+	}
+	if !strings.Contains(proj.ImportedFile("alpha", "SKILL.md"), "Alpha body") {
+		t.Fatal("a malformed lock destroyed local content")
+	}
+}
+
+// TestPullRejectsOrphanImportedDirectories proves a directory Agent Layer does
+// not own blocks operations with actionable instructions.
+func TestPullRejectsOrphanImportedDirectories(t *testing.T) {
+	proj := newProject(t)
+	dir := filepath.Join(proj.paths.ImportedSkillsDir, "stray")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	writeProjectFile(t, filepath.Join(dir, "SKILL.md"), skillManifest("stray", "Body"))
+
+	_, err := proj.Service().Pull(context.Background())
+	if err == nil {
+		t.Fatal("expected an orphan imported directory to fail the operation")
+	}
+	if !strings.Contains(err.Error(), "adopt it as user-managed") {
+		t.Fatalf("orphan error %q lacks adoption instructions", err)
+	}
+}
+
+// TestPullRejectsUnsafeUpstreamNodes proves an imported skill containing a
+// symlink is refused rather than dereferenced.
+func TestPullRejectsUnsafeUpstreamNodes(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteFile("skills/alpha/target.md", "secret\n", 0o644)
+	if err := os.Symlink("target.md", filepath.Join(source.dir, "skills", "alpha", "link.md")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	source.Commit("add alpha with a link")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}))
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	failed := requireOutcome(t, report, "alpha", OutcomeFailed)
+	if !strings.Contains(failed.Err.Error(), "symbolic link") {
+		t.Fatalf("expected a symlink rejection: %s", report.Render("pull"))
+	}
+	if proj.ImportedExists("alpha") {
+		t.Fatal("an unsafe skill was imported")
+	}
+}
+
+// TestPullDefaultBranchRenameIsARetarget proves an omitted ref re-resolves the
+// default branch on every pull and treats a rename as a retarget.
+func TestPullDefaultBranchRenameIsARetarget(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+
+	source.run("branch", "--move", "main", "trunk")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha renamed")
+	renamed := source.Commit("advance on trunk")
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v\n%s", err, report.Render("pull"))
+	}
+	requireOutcome(t, report, "alpha", OutcomeUpdated)
+	entry, _ := proj.Lock().Entry("alpha")
+	if entry.ResolvedRef != "trunk" || entry.Commit != renamed {
+		t.Fatalf("lock after default-branch rename = %+v, want trunk @ %s", entry, renamed)
+	}
+}
+
+// TestPullDeduplicatesOnePathMatchedBySeveralSelectors proves a source path
+// matched by more than one positive selector becomes exactly one lock entry,
+// recorded against the first matching selector in configuration order.
+func TestPullDeduplicatesOnePathMatchedBySeveralSelectors(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha", "skills/*"}))
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v\n%s", err, report.Render("pull"))
+	}
+	if len(report.Skills) != 1 {
+		t.Fatalf("skills = %+v, want one deduplicated entry", report.Skills)
+	}
+	entry, ok := proj.Lock().Entry("alpha")
+	if !ok {
+		t.Fatal("the deduplicated skill has no lock entry")
+	}
+	if entry.Selector != "skills/alpha" {
+		t.Fatalf("recorded selector = %q, want the first matching selector", entry.Selector)
+	}
+	if len(proj.Lock().Skills) != 1 {
+		t.Fatalf("lock = %+v, want one entry", proj.Lock().Skills)
+	}
+}
+
+// TestPullExclusionsApplyBeforeValidation proves an excluded path is outside the
+// desired set and is never validated as an import, so an invalid directory the
+// user excluded does not fail the block.
+func TestPullExclusionsApplyBeforeValidation(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteFile("skills/broken/SKILL.md", "---\nname: wrong-name\ndescription: d\n---\nBody\n", 0o644)
+	source.Commit("add skills")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/*", "!skills/broken"}))
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v\n%s", err, report.Render("pull"))
+	}
+	if report.Failed() {
+		t.Fatalf("an excluded invalid directory failed the block: %s", report.Render("pull"))
+	}
+	requireOutcome(t, report, "alpha", OutcomeImported)
+	if proj.ImportedExists("broken") {
+		t.Fatal("an excluded directory was imported")
+	}
+}
+
+// TestPullFailsAWildcardMatchWithAnInvalidManifest proves a matched directory
+// that does carry a SKILL.md must be valid; it is an actionable error, not a
+// silent skip. The failure is scoped to that skill: a validation failure blocks
+// only its own skill, so the block's unaffected skills still import.
+func TestPullFailsAWildcardMatchWithAnInvalidManifest(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteFile("skills/broken/SKILL.md", "---\nname: wrong-name\ndescription: d\n---\nBody\n", 0o644)
+	source.Commit("add skills")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/*"}))
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if len(report.Sources) != 0 {
+		t.Fatalf("one invalid skill was promoted to a source failure: %s", report.Render("pull"))
+	}
+	failed := requireOutcome(t, report, "broken", OutcomeFailed)
+	if !strings.Contains(failed.Err.Error(), "must match canonical source name") {
+		t.Fatalf("failure = %v", failed.Err)
+	}
+	requireOutcome(t, report, "alpha", OutcomeImported)
+	if !proj.ImportedExists("alpha") {
+		t.Fatal("an unrelated valid skill was blocked by another skill's invalid manifest")
+	}
+	if proj.ImportedExists("broken") {
+		t.Fatal("an invalid skill was imported")
+	}
+	if _, ok := proj.Lock().Entry("broken"); ok {
+		t.Fatal("an invalid skill was recorded in the lock")
+	}
+	if !report.Partial() {
+		t.Fatalf("expected partial success: %s", report.Render("pull"))
+	}
+}
+
+// TestPullPreservesAPreviouslyImportedSkillThatBecomesInvalidUpstream proves
+// upstream invalidity is never treated as upstream removal: the local
+// directory and its lock entry survive and only that skill fails.
+func TestPullPreservesAPreviouslyImportedSkillThatBecomesInvalidUpstream(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteSkill("skills/beta", "beta", "Beta body")
+	source.Commit("add skills")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/*"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+	locked, ok := proj.Lock().Entry("beta")
+	if !ok {
+		t.Fatal("beta was not imported")
+	}
+
+	source.WriteFile("skills/beta/SKILL.md", "---\nname: renamed\ndescription: d\n---\nBody\n", 0o644)
+	source.WriteSkill("skills/alpha", "alpha", "Alpha advanced")
+	source.Commit("break beta upstream")
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v\n%s", err, report.Render("pull"))
+	}
+	requireOutcome(t, report, "beta", OutcomeFailed)
+	requireOutcome(t, report, "alpha", OutcomeUpdated)
+	if !strings.Contains(proj.ImportedFile("beta", "SKILL.md"), "Beta body") {
+		t.Fatal("an upstream validation failure destroyed local content")
+	}
+	after, ok := proj.Lock().Entry("beta")
+	if !ok || after.Commit != locked.Commit {
+		t.Fatal("an upstream validation failure was treated as upstream removal")
+	}
+}
+
+// TestPullReconcilesSelectorChangesAtTheLockedCommitBeforeAdvancing proves the
+// two-stage contract: a manually added selector is resolved at the block's
+// locked commit first, and only then does the tracked branch advance — so the
+// newly included skill is not silently pulled from a newer commit before the
+// rest of the block moves.
+func TestPullReconcilesSelectorChangesAtTheLockedCommitBeforeAdvancing(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha at lock time")
+	source.WriteSkill("skills/beta", "beta", "Beta at lock time")
+	locked := source.Commit("initial")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+
+	// Upstream advances, and the user adds a selector by hand for a skill that
+	// already existed at the locked commit.
+	source.WriteSkill("skills/alpha", "alpha", "Alpha advanced")
+	source.WriteSkill("skills/beta", "beta", "Beta advanced")
+	advanced := source.Commit("advance both skills")
+	writeProjectFile(t, proj.paths.ConfigPath,
+		baseConfigTOML+importBlock(source.URL(), []string{"skills/alpha", "skills/beta"}))
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v\n%s", err, report.Render("pull"))
+	}
+	requireOutcome(t, report, "alpha", OutcomeUpdated)
+	// beta is first imported at the locked commit, then advanced with the block.
+	requireOutcome(t, report, "beta", OutcomeUpdated)
+
+	if got := proj.ImportedFile("beta", "SKILL.md"); !strings.Contains(got, "Beta advanced") {
+		t.Fatalf("beta content = %q, want the advanced upstream body", got)
+	}
+	for _, name := range []string{"alpha", "beta"} {
+		entry, ok := proj.Lock().Entry(name)
+		if !ok {
+			t.Fatalf("%s has no lock entry", name)
+		}
+		if entry.Commit != advanced {
+			t.Fatalf("%s locked at %s, want the advanced commit %s", name, entry.Commit, advanced)
+		}
+	}
+	if locked == advanced {
+		t.Fatal("the fixture did not actually advance upstream")
+	}
+}
+
+// TestPullRejectsAMergeResultThatIsNoLongerAValidSkill proves a merge whose
+// output would not validate fails that skill instead of publishing an
+// unusable tree.
+func TestPullRejectsAMergeResultThatIsNoLongerAValidSkill(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteFile("skills/alpha/SKILL.md", skillManifest("alpha", "Alpha body"), 0o644)
+	source.WriteFile("skills/alpha/notes.md", "one\n", 0o644)
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+
+	// The local side deletes the manifest while upstream changes an unrelated
+	// file, so the one-sided deletion merges cleanly into an invalid skill.
+	if err := os.Remove(filepath.Join(proj.paths.ImportedSkillsDir, "alpha", "SKILL.md")); err != nil {
+		t.Fatalf("remove manifest: %v", err)
+	}
+	source.WriteFile("skills/alpha/notes.md", "two\n", 0o644)
+	source.Commit("advance")
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	failed := requireOutcome(t, report, "alpha", OutcomeFailed)
+	if failed.Err == nil {
+		t.Fatal("the failure carries no diagnostic")
+	}
+	entry, _ := proj.Lock().Entry("alpha")
+	if entry.TreeHash == "" {
+		t.Fatal("the failing skill lost its lock entry")
+	}
+}
+
+// TestPullPreservesALocallyInvalidImportedSkill proves a locally broken import
+// fails only itself: its content and lock entry survive so the user can repair
+// or adopt it, unaffected skills still advance, and projection reports the
+// broken tree instead of publishing a lossy copy of it.
+func TestPullPreservesALocallyInvalidImportedSkill(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteSkill("skills/beta", "beta", "Beta body")
+	source.Commit("add skills")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/*"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+	locked, _ := proj.Lock().Entry("beta")
+
+	proj.WriteImportedFile("beta", "SKILL.md", "no frontmatter at all\n")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha advanced")
+	source.Commit("advance alpha")
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	requireOutcome(t, report, "beta", OutcomeFailed)
+	requireOutcome(t, report, "alpha", OutcomeUpdated)
+	if got := proj.ImportedFile("beta", "SKILL.md"); got != "no frontmatter at all\n" {
+		t.Fatalf("local content = %q, want the untouched local edit", got)
+	}
+	if after, _ := proj.Lock().Entry("beta"); after.Commit != locked.Commit {
+		t.Fatal("a locally invalid skill lost its recorded merge base")
+	}
+	if report.ProjectionErr == nil {
+		t.Fatalf("projection accepted a locally invalid imported skill: %s", report.Render("pull"))
+	}
+}

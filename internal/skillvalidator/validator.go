@@ -113,6 +113,15 @@ func ParseSkillSource(path string) (ParsedSkill, error) {
 	if err != nil {
 		return ParsedSkill{}, fmt.Errorf("read skill source %s: %w", path, err)
 	}
+	return ParseSkillContent(path, raw)
+}
+
+// ParseSkillContent parses already-read skill source bytes into validator
+// input. path supplies the canonical name and source format and is used for
+// error context; it does not have to exist on the local filesystem, so callers
+// holding a skill tree in memory (imports, merges, upstream comparisons)
+// validate through exactly the same rules as on-disk sources.
+func ParseSkillContent(path string, raw []byte) (ParsedSkill, error) {
 	content := string(bytes.TrimPrefix(raw, utf8BOM))
 	lineCount := countLines(content)
 

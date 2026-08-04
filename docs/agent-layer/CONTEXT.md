@@ -26,6 +26,15 @@ Do not duplicate information that belongs in other memory files:
 
 <!-- ENTRIES START -->
 
+## Skill sources
+
+- Agent Layer projects two skill source tiers: user-managed `.agent-layer/skills/` and Git-imported `.agent-layer/imported-skills/`. Both project identically. The imported tier is fully managed: a directory without a `.agent-layer/skills.lock.json` entry, or a name owned by both tiers, is a loud error rather than a silent shadow.
+- The project lock (`.agent-layer/sync.lock`, owned by `internal/projectlock`) serializes skill-source reads and mutations with projection. Production entry points load their source snapshot **inside** that lock; loading before acquiring it can observe a half-applied `al skills` mutation.
+- Imported skill trees reject symlinks, gitlinks, and every other non-directory, non-regular node. User-managed sources keep the historical symlink skip so existing projects do not start failing ordinary sync.
+- Two validation strictness levels exist by design. Generic configuration loading stays tolerant (lowercase `skill.md` fallback, known frontmatter fields only) so doctor, dispatch metadata, benchmark, and repair flows can read broken projects. The combined snapshot every projection is built from (`sync.LoadSources`) additionally holds the imported tier to the strict import rules, so ordinary sync and agent launch never publish a lossy copy of a skill that `al skills status` classifies as invalid.
+- `.agent-layer/skills.lock.json` is a trust boundary, not just a cache: its values become filesystem paths inside destination checkouts and merge bases for Git operations, so `internal/skilllock` strictly validates every persisted invariant at parse *and* marshal time.
+- Failure scope for `al skills` operations: a source-level fetch, authentication, or ref failure blocks its whole block (and every blocked skill is still reported individually); a per-skill validation, merge, or freshness failure blocks only that skill. `al skills add` and `al skills remove` are the exception — they preflight the entire desired-set change and leave local state untouched if any part of it fails.
+
 ## DeepSWE benchmark
 
 - The website planner is the canonical task-selection surface. It exports arbitrary selected tasks with two to four repetitions per arm; two is the minimum because the observed report estimates each task-arm sample variance. The Go benchmark commands validate and execute the exact pasted or downloaded JSON allocation and never optimize tasks or repetitions. The earlier locked nine-task suite is superseded.

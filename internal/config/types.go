@@ -31,6 +31,7 @@ type Config struct {
 	Dispatch      DispatchLimits      `toml:"dispatch"`
 	MCP           MCPConfig           `toml:"mcp"`
 	Notifications NotificationsConfig `toml:"notifications"`
+	Skills        SkillsConfig        `toml:"skills"`
 	Warnings      WarningsConfig      `toml:"warnings"`
 }
 
@@ -269,6 +270,11 @@ type Skill struct {
 	Body                   string
 	SourcePath             string
 	SourceDir              string // Absolute path to the skill directory (parent of SKILL.md)
+	// Imported is true when the skill's editable source lives under
+	// .agent-layer/imported-skills/ instead of .agent-layer/skills/. Both tiers
+	// project identically; the flag exists so ownership rules and `al skills
+	// status` never have to infer provenance from a path prefix.
+	Imported bool
 }
 
 // ProjectConfig is the fully loaded configuration state for sync and launch.

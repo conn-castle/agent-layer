@@ -64,6 +64,11 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	return nil
 }
 
+// SyncDir fsyncs a directory so renames inside it survive a crash. Callers
+// that publish content with rename rather than WriteFileAtomic use it to make
+// the swap durable before recording state that depends on it.
+func SyncDir(dir string) error { return syncDirFunc(dir) }
+
 // syncDir fsyncs a directory to ensure rename durability.
 func syncDir(dir string) error {
 	d, err := os.Open(dir) // #nosec G304 -- dir is the parent of a write target chosen by an internal caller of WriteFileAtomic; not user input.

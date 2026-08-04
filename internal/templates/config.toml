@@ -118,6 +118,24 @@ enabled = true
 # model = "..."
 # reasoning_effort is not currently supported for Copilot CLI in Agent Layer.
 
+[skills]
+# Git-backed Agent Skill imports. Each [[skills.imports]] block declares one
+# source repository plus the selectors that share its ref, tracking mode, write
+# policy, and push destination. Manage these blocks with `al skills add` and
+# `al skills remove`, then run `al skills pull` to fetch and reconcile them.
+# Imported skills live in .agent-layer/imported-skills/<skill-name>/ and are
+# editable; `al skills pull` merges upstream changes without discarding local
+# edits. See https://agent-layer.dev/docs/skills#importing-skills-from-git
+#
+# [[skills.imports]]
+# repository = "https://github.com/example/skills.git"
+# selectors = ["skills/*", "!skills/internal-only"]
+# ref = "main"               # branch, tag, or commit; omit for the default branch
+# tracking = "tracked"       # tracked or pinned; branches track, tags and commits pin
+# write_policy = "none"      # none | branch | direct
+# push_repository = "..."    # optional fork destination for contributions
+# push_branch = "..."        # required when write_policy = "branch"
+
 [mcp]
 # To add an MCP server, run `al wizard` or see https://agent-layer.dev/docs/reference#mcp-servers
 

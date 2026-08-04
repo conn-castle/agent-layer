@@ -836,3 +836,50 @@ func TestRelativeUnknowns_Empty(t *testing.T) {
 		t.Fatalf("expected nil for empty unknowns, got %v", rel)
 	}
 }
+
+// TestBuildKnownPaths_PreservesImportedSkillState proves upgrade never
+// classifies Git-backed skill import state as deletable unknown content. The
+// lockfile, the tier root, and every nested imported resource must be known,
+// including hidden files that arrive with an upstream skill.
+func TestBuildKnownPaths_PreservesImportedSkillState(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	lockPath := filepath.Join(root, ".agent-layer", "skills.lock.json")
+	if err := os.WriteFile(lockPath, []byte(`{"version":1,"skills":[]}`), 0o600); err != nil {
+		t.Fatalf("write skills lock: %v", err)
+	}
+	nested := filepath.Join(root, ".agent-layer", "imported-skills", "alpha", "scripts")
+	if err := os.MkdirAll(nested, 0o700); err != nil {
+		t.Fatalf("mkdir imported skill: %v", err)
+	}
+	resources := []string{
+		filepath.Join(root, ".agent-layer", "imported-skills", "alpha", "SKILL.md"),
+		filepath.Join(root, ".agent-layer", "imported-skills", "alpha", ".hidden"),
+		filepath.Join(nested, "run.sh"),
+	}
+	for _, path := range resources {
+		if err := os.WriteFile(path, []byte("content"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	known, err := inst.buildKnownPaths()
+	if err != nil {
+		t.Fatalf("buildKnownPaths: %v", err)
+	}
+	for _, path := range append(resources, lockPath, filepath.Join(root, ".agent-layer", "imported-skills")) {
+		if _, ok := known[filepath.Clean(path)]; !ok {
+			t.Fatalf("expected %s to be a known Agent Layer path", path)
+		}
+	}
+
+	if err := inst.scanUnknowns(); err != nil {
+		t.Fatalf("scanUnknowns: %v", err)
+	}
+	if rel := inst.relativeUnknowns(); len(rel) != 0 {
+		t.Fatalf("imported skill state was classified as unknown: %v", rel)
+	}
+}

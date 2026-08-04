@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/projectlock"
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
@@ -45,7 +46,9 @@ func TestRunWithProjectSerializesConcurrentRuns(t *testing.T) {
 		Root:         root,
 	}
 
-	target := filepath.Join(root, ".agents", "skills", "alpha", "SKILL.md")
+	// Projection stages each skill off-path before publishing it, so the
+	// contended generated write is the staged manifest.
+	target := filepath.Join(root, ".agents", "skills", stagingPrefix+"alpha", "SKILL.md")
 	sys := newOverlapDetectingSystem(target)
 	t.Cleanup(sys.releaseBlockedWrite)
 
@@ -94,110 +97,9 @@ func TestRunWithProjectSerializesConcurrentRuns(t *testing.T) {
 	}
 }
 
-// TestAcquireProjectSyncLockHoldsOSFileLock proves the production lock engages a
-// real cross-open-file-description OS advisory lock (unix.Flock), not just the
-// in-process mutex. It opens a second, independent file description on the same
-// lock path and asserts a non-blocking exclusive flock is refused while the
-// production lock is held, then granted once it is released. This fails if the
-// unix.Flock(LOCK_EX) call in lockProjectSyncFile is removed, which the
-// same-process goroutine test (TestRunWithProjectSerializesConcurrentRuns)
-// cannot detect because its processLock mutex serializes the goroutines alone.
-func TestAcquireProjectSyncLockHoldsOSFileLock(t *testing.T) {
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
-		t.Fatalf("mkdir .agent-layer: %v", err)
-	}
-	lockPath := filepath.Join(root, ".agent-layer", projectSyncLockFile)
-
-	// Mirror withProjectSyncLock: hold the process token before acquiring so
-	// release() returns it after releasing the operating-system lock.
-	processLock := &projectSyncProcessLock{token: make(chan struct{}, 1)}
-	processLock.token <- struct{}{}
-	if err := processLock.acquire(RealSystem{}, time.Now().Add(projectSyncLockWaitTimeout)); err != nil {
-		t.Fatalf("acquire process lock: %v", err)
-	}
-
-	lock, err := acquireProjectSyncLock(RealSystem{}, lockPath, processLock, time.Now().Add(projectSyncLockWaitTimeout))
-	if err != nil {
-		processLock.release()
-		t.Fatalf("acquireProjectSyncLock: %v", err)
-	}
-
-	// Independent open-file-description on the same path. flock locks are bound to
-	// the open file description, so a non-blocking exclusive lock from this fd must
-	// be refused while the production lock holds it — independent of the mutex.
-	probe, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- lockPath is rooted under a test-controlled t.TempDir().
-	if err != nil {
-		_ = lock.release()
-		t.Fatalf("open probe descriptor: %v", err)
-	}
-	t.Cleanup(func() { _ = probe.Close() })
-
-	err = unix.Flock(int(probe.Fd()), unix.LOCK_EX|unix.LOCK_NB) //nolint:gosec // Unix file descriptors are small non-negative ints on supported platforms.
-	if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
-		_ = lock.release()
-		t.Fatalf("expected EWOULDBLOCK/EAGAIN from probe while production lock held, got: %v", err)
-	}
-
-	// Releasing the production lock must free the OS lock so the probe can take it.
-	if err := lock.release(); err != nil {
-		t.Fatalf("release production lock: %v", err)
-	}
-
-	if err := unix.Flock(int(probe.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil { //nolint:gosec // Unix file descriptors are small non-negative ints on supported platforms.
-		t.Fatalf("expected probe to acquire lock after release, got: %v", err)
-	}
-	if err := unix.Flock(int(probe.Fd()), unix.LOCK_UN); err != nil { //nolint:gosec // Unix file descriptors are small non-negative ints on supported platforms.
-		t.Fatalf("unlock probe: %v", err)
-	}
-}
-
-func TestProjectSyncProcessLockDeadlineAndRecovery(t *testing.T) {
-	now := time.Date(2026, time.July, 11, 12, 0, 0, 0, time.UTC)
-	sys := &MockSystem{
-		NowFunc:   func() time.Time { return now },
-		SleepFunc: func(d time.Duration) { now = now.Add(d) },
-	}
-	lock := &projectSyncProcessLock{token: make(chan struct{}, 1)}
-	lock.token <- struct{}{}
-
-	if err := lock.acquire(sys, now.Add(time.Second)); err != nil {
-		t.Fatalf("acquire initial process lock: %v", err)
-	}
-	if err := lock.acquire(sys, now.Add(250*time.Millisecond)); !errors.Is(err, errProjectSyncLockDeadline) {
-		t.Fatalf("contended process lock error = %v, want deadline error", err)
-	}
-
-	lock.release()
-	if err := lock.acquire(sys, now.Add(time.Second)); err != nil {
-		t.Fatalf("process lock did not recover after timeout: %v", err)
-	}
-	lock.release()
-}
-
-func TestProjectSyncProcessLockRejectsTokenReleasedAtDeadline(t *testing.T) {
-	now := time.Date(2026, time.July, 11, 12, 0, 0, 0, time.UTC)
-	lock := &projectSyncProcessLock{token: make(chan struct{}, 1)}
-	deadline := now.Add(projectSyncLockPollEvery)
-	sys := &MockSystem{
-		NowFunc: func() time.Time { return now },
-		SleepFunc: func(d time.Duration) {
-			now = now.Add(d)
-			lock.release()
-		},
-	}
-
-	if err := lock.acquire(sys, deadline); !errors.Is(err, errProjectSyncLockDeadline) {
-		t.Fatalf("acquire error = %v, want deadline error", err)
-	}
-	if len(lock.token) != 1 {
-		t.Fatal("token released at the deadline was consumed")
-	}
-}
-
 func TestWithProjectSyncLockTimeoutDiagnosticsAndRecovery(t *testing.T) {
 	root := newSyncLockTestRoot(t)
-	lockPath := filepath.Join(root, ".agent-layer", projectSyncLockFile)
+	lockPath := projectlock.Path(root)
 	now := time.Date(2026, time.July, 11, 12, 0, 0, 0, time.UTC)
 	contended := true
 	sys := &MockSystem{
@@ -404,36 +306,6 @@ func TestWithProjectSyncLockKeepsWorkFailurePrimaryWhenCleanupAlsoFails(t *testi
 				t.Fatalf("combined error %q does not retain cleanup detail %q", err, cleanupErr)
 			}
 		})
-	}
-}
-
-func TestAcquireProjectSyncLockReportsAcquisitionCleanupFailure(t *testing.T) {
-	root := newSyncLockTestRoot(t)
-	path := filepath.Join(root, ".agent-layer", projectSyncLockFile)
-	cleanupErr := errors.New("close during acquisition failed")
-	sys := &MockSystem{
-		Fallback:  RealSystem{},
-		FlockFunc: func(int, int) error { return unix.EPERM },
-		CloseFunc: func(file *os.File) error {
-			if err := file.Close(); err != nil {
-				return err
-			}
-			return cleanupErr
-		},
-	}
-	processLock := &projectSyncProcessLock{token: make(chan struct{}, 1)}
-	processLock.token <- struct{}{}
-	if err := processLock.acquire(sys, time.Now().Add(time.Second)); err != nil {
-		t.Fatalf("acquire process lock: %v", err)
-	}
-	defer processLock.release()
-
-	lock, err := acquireProjectSyncLock(sys, path, processLock, time.Now().Add(time.Second))
-	if lock != nil {
-		t.Fatalf("lock = %#v, want nil", lock)
-	}
-	if !errors.Is(err, unix.EPERM) || !strings.Contains(err.Error(), cleanupErr.Error()) {
-		t.Fatalf("acquisition error = %v, want flock and cleanup failures", err)
 	}
 }
 
