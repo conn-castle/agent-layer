@@ -260,7 +260,9 @@ func renderSkillImportBlock(identity SkillImportBlockIdentity, selectors []strin
 	if identity.WritePolicy != SkillWritePolicyNone {
 		appendOptional("write_policy", identity.WritePolicy)
 	}
-	appendOptional("push_repository", identity.PushRepository)
+	if NormalizeSkillRepository(identity.PushRepository) != NormalizeSkillRepository(identity.Repository) {
+		appendOptional("push_repository", identity.PushRepository)
+	}
 	appendOptional("push_branch", identity.PushBranch)
 	return lines
 }

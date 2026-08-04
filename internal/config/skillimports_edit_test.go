@@ -53,6 +53,39 @@ selectors = ["skills/a"]
 	}
 }
 
+// TestSetSkillImportSelectorsMatchesAnExplicitEffectiveDestination proves a
+// selector edit extends the existing policy block when its redundant
+// push_repository spells out the source repository.
+func TestSetSkillImportSelectorsMatchesAnExplicitEffectiveDestination(t *testing.T) {
+	t.Parallel()
+	content := baseConfigTOML + `
+[[skills.imports]]
+repository = "https://example.test/skills.git"
+selectors = ["skills/a"]
+write_policy = "direct"
+push_repository = "https://example.test/skills.git"
+`
+	identity := SkillImport{
+		Repository:  "https://example.test/skills.git",
+		WritePolicy: SkillWritePolicyDirect,
+	}.Identity()
+	updated, err := SetSkillImportSelectors(content, identity, []string{"skills/a", "skills/b"})
+	if err != nil {
+		t.Fatalf("SetSkillImportSelectors: %v", err)
+	}
+
+	cfg, err := ParseConfig([]byte(updated), "config.toml")
+	if err != nil {
+		t.Fatalf("updated config does not parse: %v", err)
+	}
+	if len(cfg.Skills.Imports) != 1 {
+		t.Fatalf("imports = %d, want the existing block to be extended", len(cfg.Skills.Imports))
+	}
+	if got := strings.Join(cfg.Skills.Imports[0].Selectors, ","); got != "skills/a,skills/b" {
+		t.Fatalf("selectors = %q", got)
+	}
+}
+
 // TestSetSkillImportSelectorsAppendsAndRemovesBlocks proves a new policy
 // creates one block with only the fields it needs, and clearing the selectors
 // removes the block entirely.

@@ -174,6 +174,38 @@ push_branch = "skill-updates"
 	}
 }
 
+// TestSkillImportIdentityUsesTheEffectivePushRepository proves an omitted
+// destination and the equivalent explicit source destination identify the same
+// policy block, preventing duplicate blocks and misdirected selector edits.
+func TestSkillImportIdentityUsesTheEffectivePushRepository(t *testing.T) {
+	t.Parallel()
+	omitted := SkillImport{
+		Repository:  "https://example.test/skills.git",
+		WritePolicy: SkillWritePolicyDirect,
+	}
+	explicit := omitted
+	explicit.PushRepository = "https://example.test/skills.git/"
+	if omitted.Identity() != explicit.Identity() {
+		t.Fatalf("equivalent push destinations have different identities: omitted=%+v explicit=%+v", omitted.Identity(), explicit.Identity())
+	}
+
+	_, err := parseWithImports(t, `
+[[skills.imports]]
+repository = "https://example.test/skills.git"
+selectors = ["skills/a"]
+write_policy = "direct"
+
+[[skills.imports]]
+repository = "https://example.test/skills.git"
+selectors = ["skills/b"]
+write_policy = "direct"
+push_repository = "https://example.test/skills.git"
+`)
+	if err == nil || !strings.Contains(err.Error(), "duplicates the repository") {
+		t.Fatalf("equivalent duplicate block error = %v", err)
+	}
+}
+
 // TestNormalizeSkillSelectorProducesStableIdentity proves selector identity
 // does not depend on incidental formatting, which is what makes `al skills
 // remove` able to find exactly one selector.

@@ -156,7 +156,7 @@ func (imp SkillImport) Identity() SkillImportBlockIdentity {
 		Ref:            strings.TrimSpace(imp.Ref),
 		Tracking:       strings.TrimSpace(imp.Tracking),
 		WritePolicy:    imp.EffectiveWritePolicy(),
-		PushRepository: strings.TrimSpace(imp.PushRepository),
+		PushRepository: NormalizeSkillRepository(imp.EffectivePushRepository()),
 		PushBranch:     strings.TrimSpace(imp.PushBranch),
 	}
 }

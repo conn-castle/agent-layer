@@ -24,6 +24,7 @@ func newTestRepo(t *testing.T, defaultBranch string) *testRepo {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skipf("git is required: %v", err)
 	}
+	configureTestGitIdentity(t)
 	repo := &testRepo{t: t, dir: t.TempDir()}
 	repo.git("init", "--quiet", "--initial-branch="+defaultBranch)
 	repo.git("config", "user.name", "Agent Layer Test")
@@ -32,6 +33,16 @@ func newTestRepo(t *testing.T, defaultBranch string) *testRepo {
 	repo.write("README.md", "seed\n", 0o644)
 	repo.commit("seed")
 	return repo
+}
+
+// configureTestGitIdentity keeps commits created in isolated destination
+// checkouts independent of the developer or CI runner's global Git config.
+func configureTestGitIdentity(t *testing.T) {
+	t.Helper()
+	t.Setenv("GIT_AUTHOR_NAME", "Agent Layer Test")
+	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.invalid")
+	t.Setenv("GIT_COMMITTER_NAME", "Agent Layer Test")
+	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.invalid")
 }
 
 func (r *testRepo) git(args ...string) string {
