@@ -406,7 +406,11 @@ func reduceClaudeEvent(expected string, value map[string]any) []providerEvent {
 		if name, _ := denied[toolNameKey].(string); name != "" {
 			example = fmt.Sprintf(" (for example %s)", name)
 		}
-		reason := fmt.Sprintf("Claude denied at least one tool call%s, so the dispatch could not do the requested work. Widen approvals.mode or .agent-layer/commands.allow and dispatch again.", example)
+		// The remedy is not always a wider allowlist: a deny rule or managed
+		// policy denies a call whatever approvals.mode says, and Agent Layer
+		// itself denies AskUserQuestion, so the message points at the effective
+		// permissions rather than prescribing one fix.
+		reason := fmt.Sprintf("Claude denied at least one tool call%s, so the dispatch could not do the requested work. Check the effective Claude permissions before dispatching again: approvals.mode and .agent-layer/commands.allow decide what is allowed, and a deny rule or managed policy overrides both.", example)
 		return append(events, providerEvent{Kind: eventFailure, Reason: reason})
 	}
 	id, _ := firstStringV013(value, "session_id", "sessionId")

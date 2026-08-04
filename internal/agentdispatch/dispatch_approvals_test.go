@@ -2,6 +2,7 @@ package agentdispatch
 
 import (
 	"io"
+	"slices"
 	"strings"
 	"testing"
 
@@ -237,6 +238,20 @@ func TestClaudeDeniedToolCallsFailDispatch(t *testing.T) {
 	}
 	if !strings.Contains(failure.Reason, "Write") {
 		t.Errorf("failure reason %q did not name the denied tool", failure.Reason)
+	}
+
+	// The denied tool name is an example, not the signal. A denial reported
+	// without one still has to fail, or a provider change that drops the field
+	// would silently restore the success this test exists to prevent.
+	unnamed := claudeStreamEvents(t, `{"type":"result","session_id":"`+runtimeSessionID+`","is_error":false,`+
+		`"result":"I could not create hello.txt.","permission_denials":[{"tool_use_id":"toolu_01"}]}`)
+	for _, event := range unnamed {
+		if event.Kind == eventComplete {
+			t.Fatalf("denial without a tool name completed the dispatch: %#v", unnamed)
+		}
+	}
+	if !slices.ContainsFunc(unnamed, func(event providerEvent) bool { return event.Kind == eventFailure }) {
+		t.Fatalf("denial without a tool name events = %#v, want a failure", unnamed)
 	}
 
 	// Claude reports an empty list on a clean run, which must stay a success or

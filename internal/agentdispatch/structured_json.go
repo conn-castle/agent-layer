@@ -541,10 +541,13 @@ func retainedStructuredPath(path []string) bool {
 		}
 	}
 	if len(path) == 2 {
-		// Array elements do not extend the path, so every denial in the list
-		// writes this one entry. Only its presence drives the reducer, which
-		// reports the retained name as an example.
-		return (path[0] == permissionDenialsKey && path[1] == toolNameKey) ||
+		// Every scalar field of a denial is retained, not just tool_name, so a
+		// denial Claude reports without a tool name still marks the list as
+		// non-empty and fails the dispatch. Array elements do not extend the
+		// path, so the whole list collapses into this one entry; only its
+		// presence drives the reducer, which reports whatever name it retained
+		// as an example. An empty list retains nothing and stays a success.
+		return path[0] == permissionDenialsKey ||
 			(path[0] == "event" && path[1] == jsonTypeKey) ||
 			(path[0] == jsonErrorKey && (path[1] == jsonMessageKey || path[1] == jsonReasonKey)) ||
 			(path[0] == "item" && (path[1] == jsonTypeKey || path[1] == jsonMessageKey || path[1] == jsonTextKey)) ||
