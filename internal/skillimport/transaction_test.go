@@ -218,6 +218,9 @@ func TestTransactionSurfacesARollbackFailure(t *testing.T) {
 	if !strings.Contains(err.Error(), "rolling the change back also failed") {
 		t.Fatalf("error %q does not surface the rollback failure", err)
 	}
+	if strings.Contains(err.Error(), "no local state was changed") {
+		t.Fatalf("error %q falsely claims rollback restored local state", err)
+	}
 
 	// A failed rollback leaves mixed generations on disk, and the staging
 	// directory holds the journal plus the only copies of every replaced file.
@@ -426,5 +429,38 @@ func TestTransactionRemovesANewSkillWhenTheCommitFails(t *testing.T) {
 	}
 	if proj.Lock() != nil {
 		t.Fatal("a failed commit left lock state behind")
+	}
+}
+
+// TestTransactionRollsBackAPartiallyPublishedBatch proves a deterministic
+// failure after two tree swaps restores the previous tree, removes the newly
+// created tree, and leaves no lock describing the abandoned generation.
+func TestTransactionRollsBackAPartiallyPublishedBatch(t *testing.T) {
+	proj := newProject(t)
+	if err := os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	proj.WriteImportedFile("alpha", "SKILL.md", skillManifest("alpha", "Original body"))
+
+	txn := newTestTransaction(proj, mustEmptyLock())
+	txn.WriteSkill("alpha", mustSkillTree(t, "alpha", "Replacement body"))
+	txn.WriteSkill("beta", mustSkillTree(t, "beta", "New body"))
+	txn.SetLockEntry(lockEntry("alpha"))
+	txn.SetLockEntry(lockEntry("beta"))
+	// Tree publication precedes the lock write, so this injected failure occurs
+	// only after both live tree paths have been replaced.
+	txn.writeFile = failingWriter(proj.paths.SkillsLockPath, false)
+
+	if err := txn.Commit(); err == nil {
+		t.Fatal("expected the batch to fail")
+	}
+	if got := proj.ImportedFile("alpha", "SKILL.md"); !strings.Contains(got, "Original body") {
+		t.Fatalf("alpha was not rolled back: %q", got)
+	}
+	if proj.ImportedExists("beta") {
+		t.Fatal("a newly published beta tree survived rollback")
+	}
+	if proj.Lock() != nil {
+		t.Fatal("a failed batch wrote lock state")
 	}
 }

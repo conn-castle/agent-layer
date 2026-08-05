@@ -36,13 +36,6 @@ type blockContext struct {
 	Source     *gitrepo.Source
 	Resolution gitrepo.Resolution
 	Tracking   string
-	// LockedCommit is the commit the block's existing lock entries were taken
-	// at. It is the merge base for every skill in the block.
-	LockedCommit string
-	// Retarget is true when the configured ref (or the resolved default-branch
-	// name) changed, which reconciles local edits onto the newly selected
-	// version for pinned and tracked imports alike.
-	Retarget bool
 	// TargetCommit is the commit this operation's desired set is resolved at.
 	TargetCommit string
 	workDir      string
@@ -80,7 +73,7 @@ func (s *Service) project(report *Report) {
 // It resolves the configured ref (or the repository's actual default branch),
 // proves the tracking mode against the resolved ref kind, and decides whether
 // the operation is an ordinary advance or a retarget.
-func (s *Service) openBlock(ctx context.Context, runner *gitrepo.Runner, workRoot string, st *state, index int, block config.SkillImport) (*blockContext, error) {
+func (s *Service) openBlock(ctx context.Context, runner *gitrepo.Runner, workRoot string, index int, block config.SkillImport) (*blockContext, error) {
 	workDir := filepath.Join(workRoot, fmt.Sprintf("block-%d", index))
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create git working directory %s: %w", workDir, err)
@@ -114,16 +107,6 @@ func (s *Service) openBlock(ctx context.Context, runner *gitrepo.Runner, workRoo
 		workDir:      workDir,
 	}
 
-	locked, hasLocked := st.blockLockedIdentity(block)
-	if !hasLocked {
-		return blockCtx, nil
-	}
-	blockCtx.LockedCommit = locked.Commit
-	blockCtx.Retarget = isRetarget(block, locked, resolution)
-	if !blockCtx.Retarget && tracking == config.SkillTrackingPinned {
-		// Pinning prevents movement of the configured ref.
-		blockCtx.TargetCommit = locked.Commit
-	}
 	return blockCtx, nil
 }
 
@@ -136,6 +119,17 @@ func isRetarget(block config.SkillImport, locked skilllock.Entry, resolution git
 	// With an omitted ref the repository's default branch is re-resolved on
 	// every pull; a changed default-branch name is a retarget.
 	return block.Ref == "" && locked.ResolvedRef != resolution.Ref
+}
+
+// targetCommitForEntry chooses one existing skill's target independently. A
+// pinned skill stays at its own commit unless its configured selection was
+// explicitly retargeted; tracked skills and retargeted pins use the operation's
+// freshly resolved target.
+func targetCommitForEntry(blockCtx *blockContext, entry skilllock.Entry) string {
+	if !isRetarget(blockCtx.Block, entry, blockCtx.Resolution) && blockCtx.Tracking == config.SkillTrackingPinned {
+		return entry.Commit
+	}
+	return blockCtx.Resolution.Commit
 }
 
 // lockEntryFor builds the lock entry recorded for a resolved skill.

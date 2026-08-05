@@ -302,8 +302,8 @@ Imported skills live in .agent-layer/imported-skills/<skill-name>/ and are
 projected through ordinary 'al sync' alongside .agent-layer/skills/. Recorded
 upstream state lives in .agent-layer/skills.lock.json.
 
-Only add, pull, and push contact remote repositories; status, 'al sync', and
-agent launch stay local.`
+Only add, pull, reset, and push contact remote repositories; status, 'al sync',
+and agent launch stay local.`
 
 	SkillsAddUse   = "add <repository> <selector>..."
 	SkillsAddShort = "Import skills from a Git repository"
@@ -320,7 +320,8 @@ a separate block.
 	SkillsRemoveUse   = "remove <repository> <selector>"
 	SkillsRemoveShort = "Remove one configured import selector"
 	SkillsRemoveLong  = `Remove one configured positive or exclusion selector and recompute the desired
-set at the block's locked source commit.
+set. Existing members retain their independent lock entries; newly revealed
+members are imported from the source's current resolved target.
 
 Skills still matched by another selector remain managed. A clean imported
 directory that leaves the desired set is deleted; a modified one is preserved
@@ -345,6 +346,17 @@ merged against the locked upstream tree and are never overwritten; a conflict
 fails only that skill.
 
 'al skills pull' never commits or pushes upstream.`
+
+	SkillsResetUse   = "reset <name>"
+	SkillsResetShort = "Discard one imported skill's local edits"
+	SkillsResetLong  = `Permanently discard one imported skill's local edits and replace its tree and
+lock entry with the current configured upstream version.
+
+Exactly one imported skill name is required. Reset does not reconcile wildcard
+membership, retire other skills, inspect version-control status, or create a
+commit, stash, copy, or backup. Preserve any edits you want to keep yourself
+before running this command. A pinned branch is deliberately repinned to its
+current resolved commit; ordinary pull leaves that new pin fixed.`
 
 	SkillsPushUse   = "push"
 	SkillsPushShort = "Contribute local skill changes to configured destinations"

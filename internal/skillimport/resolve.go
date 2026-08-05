@@ -199,6 +199,28 @@ func matchesAnySelector(candidate string, selectors []string) bool {
 	return false
 }
 
+// selectingPositiveSelector returns the first configured positive selector
+// that selects candidate after block exclusions are applied. Configuration
+// validation guarantees every pattern is syntactically valid before this
+// helper is reached.
+func selectingPositiveSelector(block config.SkillImport, candidate string) (string, bool) {
+	normalizedCandidate := config.NormalizeSkillSelector(candidate)
+	if matchesAnySelector(normalizedCandidate, block.ExclusionSelectors()) {
+		return "", false
+	}
+	for _, selector := range block.PositiveSelectors() {
+		normalized := config.NormalizeSkillSelector(selector)
+		if normalized == normalizedCandidate {
+			return normalized, true
+		}
+		matched, _ := path.Match(normalized, normalizedCandidate)
+		if matched {
+			return normalized, true
+		}
+	}
+	return "", false
+}
+
 // validateDesiredSet enforces the identity rules that only hold across a
 // complete desired set: one normalized name per import, no ancestor or
 // descendant selected paths within a repository, and no overlapping

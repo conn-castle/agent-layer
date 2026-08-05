@@ -77,7 +77,8 @@ type File struct {
 	Path string
 	// Data is the file's exact bytes.
 	Data []byte
-	// Executable records whether any execute bit is set.
+	// Executable records whether the owner execute bit is set. Git uses that
+	// bit to choose between blob modes 100644 and 100755.
 	Executable bool
 }
 
@@ -214,7 +215,7 @@ func readInto(fsys FS, dir string, relativeDir string, policy NodePolicy, files 
 			*files = append(*files, File{
 				Path:       relativePath,
 				Data:       data,
-				Executable: mode.Perm()&0o111 != 0,
+				Executable: mode.Perm()&0o100 != 0,
 			})
 		case policy == PolicyLenient && mode&os.ModeSymlink != 0:
 			// Existing user-managed skill sources may contain symlinks that

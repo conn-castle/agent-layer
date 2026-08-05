@@ -64,7 +64,7 @@ func buildStatus(st *state) (*Status, error) {
 		for _, selector := range block.ExclusionSelectors() {
 			status.Exclusions = append(status.Exclusions, StatusExclusion{Repository: repository, Selector: selector})
 		}
-		if _, hasEvidence := st.blockLockedIdentity(block); !hasEvidence {
+		if len(st.entriesForBlock(block)) == 0 {
 			ref := block.Ref
 			if ref == "" {
 				ref = "(default branch)"
@@ -75,7 +75,7 @@ func buildStatus(st *state) (*Status, error) {
 	}
 
 	for _, entry := range st.lock.Skills {
-		block, _, configured := st.blockForSelector(entry.Repository, entry.Selector)
+		block, _, configured := st.configuredBlockForEntry(entry)
 		writePolicy := config.SkillWritePolicyNone
 		writeEnabled := false
 		if configured {

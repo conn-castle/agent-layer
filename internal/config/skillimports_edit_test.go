@@ -40,10 +40,6 @@ selectors = ["skills/a"]
 			t.Fatalf("edit dropped preserved content %q:\n%s", preserved, updated)
 		}
 	}
-	if !strings.Contains(updated, `"skills/b"`) {
-		t.Fatalf("new selector missing:\n%s", updated)
-	}
-
 	cfg, err := ParseConfig([]byte(updated), "config.toml")
 	if err != nil {
 		t.Fatalf("updated config does not parse: %v", err)
@@ -153,6 +149,24 @@ selectors = ["skills/alpha"]
 	}
 	if removed != baseConfigTOML {
 		t.Fatalf("removal changed unrelated content:\ngot:\n%q\nwant:\n%q", removed, baseConfigTOML)
+	}
+}
+
+// TestSetSkillImportSelectorsPreservesMissingFinalNewline proves appending a
+// block does not silently change the document's trailing-newline state.
+func TestSetSkillImportSelectorsPreservesMissingFinalNewline(t *testing.T) {
+	t.Parallel()
+	content := strings.TrimSuffix(baseConfigTOML, "\n")
+	identity := SkillImport{Repository: "https://example.test/skills.git"}.Identity()
+	updated, err := SetSkillImportSelectors(content, identity, []string{"skills/alpha"})
+	if err != nil {
+		t.Fatalf("SetSkillImportSelectors: %v", err)
+	}
+	if strings.HasSuffix(updated, "\n") {
+		t.Fatalf("append introduced a final newline:\n%q", updated)
+	}
+	if _, err := ParseConfig([]byte(updated), "config.toml"); err != nil {
+		t.Fatalf("updated config does not parse: %v", err)
 	}
 }
 
@@ -325,7 +339,11 @@ ref = "v1"
 	if err != nil {
 		t.Fatalf("adjacent blocks: %v", err)
 	}
-	if !strings.Contains(updated, `"skills/c"`) || !strings.Contains(updated, `"skills/b"`) {
-		t.Fatalf("adjacent blocks were not edited independently:\n%s", updated)
+	cfg, err := ParseConfig([]byte(updated), "config.toml")
+	if err != nil {
+		t.Fatalf("updated config does not parse: %v", err)
+	}
+	if len(cfg.Skills.Imports) != 2 || strings.Join(cfg.Skills.Imports[0].Selectors, ",") != "skills/a,skills/c" || strings.Join(cfg.Skills.Imports[1].Selectors, ",") != "skills/b" {
+		t.Fatalf("adjacent blocks were not edited independently: %+v", cfg.Skills.Imports)
 	}
 }

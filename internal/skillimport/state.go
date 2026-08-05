@@ -177,7 +177,13 @@ func readUserSkillNames(dir string) (map[string]string, error) {
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
-		names[skilltree.NormalizeName(entry.Name())] = filepath.Join(dir, entry.Name())
+		path := filepath.Join(dir, entry.Name())
+		normalized := skilltree.NormalizeName(entry.Name())
+		if existing, duplicate := names[normalized]; duplicate {
+			return nil, fmt.Errorf("user-managed skill directories %s and %s normalize to the same name %q; rename one directory before retrying",
+				existing, path, normalized)
+		}
+		names[normalized] = path
 	}
 	return names, nil
 }
@@ -226,21 +232,14 @@ func (s *state) orphanDirectories() []string {
 	return orphans
 }
 
-// entriesForBlock returns the lock entries produced by one configured block.
-// Repository and selector together identify exactly one block, so the mapping
-// is unambiguous.
+// entriesForBlock returns the independent lock entries currently selected by a
+// configured block. Matching the recorded path as well as the recorded
+// selector lets a manual selector rewrite keep ownership of an already-selected
+// path without inventing a block identifier or shared block state.
 func (s *state) entriesForBlock(block config.SkillImport) []skilllock.Entry {
-	selectors := make(map[string]struct{})
-	for _, selector := range block.PositiveSelectors() {
-		selectors[config.NormalizeSkillSelector(selector)] = struct{}{}
-	}
-	repository := config.NormalizeSkillRepository(block.Repository)
 	var entries []skilllock.Entry
 	for _, entry := range s.lock.Skills {
-		if entry.Repository != repository {
-			continue
-		}
-		if _, ok := selectors[config.NormalizeSkillSelector(entry.Selector)]; ok {
+		if entryBelongsToBlock(s.cfg, block, entry) {
 			entries = append(entries, entry)
 		}
 	}
@@ -248,22 +247,40 @@ func (s *state) entriesForBlock(block config.SkillImport) []skilllock.Entry {
 	return entries
 }
 
-// blockLockedIdentity returns the recorded source identity of a block, taken
-// from its first entry in name order.
-//
-// A pull writes a block's entries together, but a per-skill failure keeps that
-// skill's previous entry, so one block's entries can carry different commits
-// and configured refs. The representative entry is still coherent because
-// openBlock reads the commit and the configured ref from this same entry:
-// whichever one it lands on, the retarget decision and the target commit
-// describe one recorded generation, so the remaining skills reconcile forward
-// onto it rather than being split across two.
-func (s *state) blockLockedIdentity(block config.SkillImport) (skilllock.Entry, bool) {
-	entries := s.entriesForBlock(block)
-	if len(entries) == 0 {
-		return skilllock.Entry{}, false
+// entryBelongsToBlock maps an independent entry back to configuration without
+// persisted block identity. Its recorded repository-and-selector pair remains
+// authoritative while configured. If the selector was manually replaced, the
+// entry follows its recorded path only when exactly one current block in that
+// repository selects it; ambiguous ownership is left for desired-set
+// validation instead of being guessed.
+func entryBelongsToBlock(cfg *config.Config, block config.SkillImport, entry skilllock.Entry) bool {
+	if config.NormalizeSkillRepository(entry.Repository) != config.NormalizeSkillRepository(block.Repository) {
+		return false
 	}
-	return entries[0], true
+	recorded := config.NormalizeSkillSelector(entry.Selector)
+	for _, selector := range block.PositiveSelectors() {
+		if config.NormalizeSkillSelector(selector) == recorded {
+			return true
+		}
+	}
+	if _, _, configured := (&state{cfg: cfg}).blockForSelector(entry.Repository, entry.Selector); configured {
+		return false
+	}
+	var owner *config.SkillImport
+	for i := range cfg.Skills.Imports {
+		candidate := &cfg.Skills.Imports[i]
+		if config.NormalizeSkillRepository(candidate.Repository) != config.NormalizeSkillRepository(entry.Repository) {
+			continue
+		}
+		if _, selected := selectingPositiveSelector(*candidate, entry.SelectedPath); !selected {
+			continue
+		}
+		if owner != nil {
+			return false
+		}
+		owner = candidate
+	}
+	return owner != nil && owner.Identity() == block.Identity()
 }
 
 // blockForSelector finds the configured block that owns a repository and
@@ -279,6 +296,21 @@ func (s *state) blockForSelector(repository string, selector string) (config.Ski
 			if config.NormalizeSkillSelector(candidate) == normalizedSelector {
 				return block, i, true
 			}
+		}
+	}
+	return config.SkillImport{}, 0, false
+}
+
+// configuredBlockForEntry finds the unique current block that owns an
+// independent entry, including after a manual selector replacement that still
+// selects the recorded path.
+func (s *state) configuredBlockForEntry(entry skilllock.Entry) (config.SkillImport, int, bool) {
+	if block, index, ok := s.blockForSelector(entry.Repository, entry.Selector); ok {
+		return block, index, true
+	}
+	for index, block := range s.cfg.Skills.Imports {
+		if entryBelongsToBlock(s.cfg, block, entry) {
+			return block, index, true
 		}
 	}
 	return config.SkillImport{}, 0, false

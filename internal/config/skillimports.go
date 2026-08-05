@@ -301,9 +301,7 @@ func ValidateSkillSelectorPath(value string) error {
 		return fmt.Errorf(messages.ConfigSkillSelectorBackslash)
 	}
 	// A control character survives configuration decoding but has no valid
-	// repository path to match, and rendering one back into config.toml emits a
-	// Go escape such as `\a` that TOML does not define, which would make the
-	// rewritten file unparsable.
+	// repository path to match.
 	for _, r := range value {
 		if r < 0x20 || r == 0x7f {
 			return fmt.Errorf(messages.ConfigSkillSelectorControlCharacter)
@@ -314,6 +312,9 @@ func ValidateSkillSelectorPath(value string) error {
 	}
 	if value != path.Clean(value) {
 		return fmt.Errorf(messages.ConfigSkillSelectorNotNormalized)
+	}
+	if _, err := path.Match(value, ""); err != nil {
+		return fmt.Errorf(messages.ConfigSkillSelectorPatternInvalidFmt, err)
 	}
 	for _, segment := range strings.Split(value, "/") {
 		switch segment {

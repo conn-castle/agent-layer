@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
@@ -48,7 +47,7 @@ func SetSkillImportSelectors(content string, identity SkillImportBlockIdentity, 
 		if len(selectors) == 0 {
 			return content, nil
 		}
-		return appendSkillImportBlock(content, identity, selectors), nil
+		return appendSkillImportBlock(content, identity, selectors)
 	}
 
 	span := spans[match]
@@ -149,7 +148,10 @@ func replaceSelectorsInBlock(lines []string, span skillImportBlockSpan, selector
 	if err != nil {
 		return nil, err
 	}
-	rendered := renderSelectorsAssignment(indent, selectors)
+	rendered, err := renderSelectorsAssignment(indent, selectors)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]string, 0, len(lines)+len(rendered))
 	out = append(out, lines[:keyStart]...)
 	out = append(out, rendered...)
@@ -227,48 +229,83 @@ func selectorsArrayEndIndex(lines []string, startIdx int, limit int) (int, error
 }
 
 // renderSelectorsAssignment renders a deterministic multi-line selectors array.
-func renderSelectorsAssignment(indent string, selectors []string) []string {
+func renderSelectorsAssignment(indent string, selectors []string) ([]string, error) {
 	out := make([]string, 0, len(selectors)+2)
 	out = append(out, indent+"selectors = [")
 	for _, selector := range selectors {
-		out = append(out, indent+"  "+strconv.Quote(selector)+",")
+		literal, err := tomlpatch.FormatString(selector)
+		if err != nil {
+			return nil, fmt.Errorf("selector %q cannot be written to config.toml: %w", selector, err)
+		}
+		out = append(out, indent+"  "+literal+",")
 	}
 	out = append(out, indent+"]")
-	return out
+	return out, nil
 }
 
 // appendSkillImportBlock appends a fully rendered import block to content.
-func appendSkillImportBlock(content string, identity SkillImportBlockIdentity, selectors []string) string {
-	block := renderSkillImportBlock(identity, selectors)
-	trimmed := strings.TrimRight(content, "\n")
-	if trimmed == "" {
-		return strings.Join(block, "\n") + "\n"
+func appendSkillImportBlock(content string, identity SkillImportBlockIdentity, selectors []string) (string, error) {
+	block, err := renderSkillImportBlock(identity, selectors)
+	if err != nil {
+		return "", err
 	}
-	return trimmed + "\n\n" + strings.Join(block, "\n") + "\n"
+	hadFinalNewline := strings.HasSuffix(content, "\n")
+	trimmed := strings.TrimRight(content, "\n")
+	suffix := ""
+	if hadFinalNewline {
+		suffix = "\n"
+	}
+	if trimmed == "" {
+		return strings.Join(block, "\n") + suffix, nil
+	}
+	return trimmed + "\n\n" + strings.Join(block, "\n") + suffix, nil
 }
 
 // renderSkillImportBlock renders a new `[[skills.imports]]` block, omitting
 // every optional field the caller left at its default.
-func renderSkillImportBlock(identity SkillImportBlockIdentity, selectors []string) []string {
+func renderSkillImportBlock(identity SkillImportBlockIdentity, selectors []string) ([]string, error) {
+	repository, err := tomlpatch.FormatString(identity.Repository)
+	if err != nil {
+		return nil, fmt.Errorf("repository cannot be written to config.toml: %w", err)
+	}
 	lines := []string{
 		"[[" + skillImportsTableName + "]]",
-		"repository = " + strconv.Quote(identity.Repository),
+		"repository = " + repository,
 	}
-	lines = append(lines, renderSelectorsAssignment("", selectors)...)
-	appendOptional := func(key string, value string) {
+	renderedSelectors, err := renderSelectorsAssignment("", selectors)
+	if err != nil {
+		return nil, err
+	}
+	lines = append(lines, renderedSelectors...)
+	appendOptional := func(key string, value string) error {
 		if strings.TrimSpace(value) == "" {
-			return
+			return nil
 		}
-		lines = append(lines, key+" = "+strconv.Quote(value))
+		literal, err := tomlpatch.FormatString(value)
+		if err != nil {
+			return fmt.Errorf("%s cannot be written to config.toml: %w", key, err)
+		}
+		lines = append(lines, key+" = "+literal)
+		return nil
 	}
-	appendOptional("ref", identity.Ref)
-	appendOptional("tracking", identity.Tracking)
+	if err := appendOptional("ref", identity.Ref); err != nil {
+		return nil, err
+	}
+	if err := appendOptional("tracking", identity.Tracking); err != nil {
+		return nil, err
+	}
 	if identity.WritePolicy != SkillWritePolicyNone {
-		appendOptional("write_policy", identity.WritePolicy)
+		if err := appendOptional("write_policy", identity.WritePolicy); err != nil {
+			return nil, err
+		}
 	}
 	if NormalizeSkillRepository(identity.PushRepository) != NormalizeSkillRepository(identity.Repository) {
-		appendOptional("push_repository", identity.PushRepository)
+		if err := appendOptional("push_repository", identity.PushRepository); err != nil {
+			return nil, err
+		}
 	}
-	appendOptional("push_branch", identity.PushBranch)
-	return lines
+	if err := appendOptional("push_branch", identity.PushBranch); err != nil {
+		return nil, err
+	}
+	return lines, nil
 }

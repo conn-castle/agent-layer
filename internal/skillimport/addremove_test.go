@@ -2,8 +2,6 @@ package skillimport
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -30,7 +28,7 @@ func TestAddCreatesBlockPerformsInitialPullAndProjects(t *testing.T) {
 	if strings.Count(content, "[[skills.imports]]") != 1 {
 		t.Fatalf("expected exactly one import block:\n%s", content)
 	}
-	if !strings.Contains(content, `"skills/alpha"`) {
+	if !strings.Contains(content, "skills/alpha") {
 		t.Fatalf("selector not recorded:\n%s", content)
 	}
 	if _, ok := proj.Lock().Entry("alpha"); !ok {
@@ -69,6 +67,34 @@ func TestAddExtendsAMatchingBlockAndRejectsDuplicates(t *testing.T) {
 
 	if _, err := service.Add(context.Background(), AddOptions{Repository: source.URL(), Selectors: []string{"skills/beta"}}); err == nil {
 		t.Fatal("expected a duplicate selector to be refused")
+	}
+}
+
+// TestAddAndRemoveRejectMalformedPatternsBeforeMutation proves both CLI-backed
+// selector edit paths fail before changing configuration, content, or lock
+// evidence when a wildcard cannot be parsed.
+func TestAddAndRemoveRejectMalformedPatternsBeforeMutation(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	service := proj.Service()
+	if _, err := service.Add(context.Background(), AddOptions{Repository: source.URL(), Selectors: []string{"skills/alpha"}}); err != nil {
+		t.Fatalf("initial add: %v", err)
+	}
+	configBefore := proj.ConfigContent()
+	lockBefore := proj.LockContent()
+	contentBefore := proj.ImportedFile("alpha", "SKILL.md")
+
+	if _, err := service.Add(context.Background(), AddOptions{Repository: source.URL(), Selectors: []string{"skills/[a"}}); err == nil || !strings.Contains(err.Error(), "invalid wildcard pattern") {
+		t.Fatalf("malformed add error = %v", err)
+	}
+	if _, err := service.Remove(context.Background(), source.URL(), "!skills/[a"); err == nil || !strings.Contains(err.Error(), "invalid wildcard pattern") {
+		t.Fatalf("malformed remove error = %v", err)
+	}
+	if proj.ConfigContent() != configBefore || proj.LockContent() != lockBefore || proj.ImportedFile("alpha", "SKILL.md") != contentBefore {
+		t.Fatal("malformed selector changed configuration, lock evidence, or local content")
 	}
 }
 
@@ -223,13 +249,13 @@ func TestRemoveSelectorRetiresAndKeepsOthers(t *testing.T) {
 	}
 }
 
-// TestRemoveExclusionRevealsSkillAtLockedCommit proves removing an exclusion
-// imports the revealed skill without advancing the block's locked commit.
-func TestRemoveExclusionRevealsSkillAtLockedCommit(t *testing.T) {
+// TestRemoveExclusionRevealsSkillAtCurrentTarget proves newly revealed
+// membership is imported immediately from the operation's resolved target.
+func TestRemoveExclusionRevealsSkillAtCurrentTarget(t *testing.T) {
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta at lock time")
-	locked := source.Commit("add skills")
+	source.Commit("add skills")
 
 	proj := newProject(t)
 	service := proj.Service()
@@ -240,21 +266,22 @@ func TestRemoveExclusionRevealsSkillAtLockedCommit(t *testing.T) {
 		t.Fatalf("add: %v", err)
 	}
 
-	// Upstream moves on; removing the exclusion must resolve at the locked commit.
+	// Upstream moves on; removing the exclusion resolves the new member at the
+	// current target without moving the already imported sibling as a side effect.
 	source.WriteSkill("skills/beta", "beta", "Beta after lock")
-	source.Commit("advance")
+	advanced := source.Commit("advance")
 
 	report, err := service.Remove(context.Background(), source.URL(), "!skills/beta")
 	if err != nil {
 		t.Fatalf("remove exclusion: %v\n%s", err, report.Render("remove"))
 	}
 	requireOutcome(t, report, "beta", OutcomeImported)
-	if !strings.Contains(proj.ImportedFile("beta", "SKILL.md"), "Beta at lock time") {
-		t.Fatalf("revealed skill was imported from an advanced commit: %q", proj.ImportedFile("beta", "SKILL.md"))
+	if !strings.Contains(proj.ImportedFile("beta", "SKILL.md"), "Beta after lock") {
+		t.Fatalf("revealed skill was not imported from the current target: %q", proj.ImportedFile("beta", "SKILL.md"))
 	}
 	entry, _ := proj.Lock().Entry("beta")
-	if entry.Commit != locked {
-		t.Fatalf("revealed skill locked at %s, want the block's locked commit %s", entry.Commit, locked)
+	if entry.Commit != advanced {
+		t.Fatalf("revealed skill locked at %s, want current target %s", entry.Commit, advanced)
 	}
 }
 
@@ -336,47 +363,6 @@ func TestAddRejectsDistinctPathsResolvingToOneName(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "resolve to skill name") {
 		t.Fatalf("error %q does not explain the name collision", err)
-	}
-}
-
-// TestAddTransactionRollsBackOnCommitFailure proves an interrupted commit
-// leaves configuration, lock state, and the imported tier at their prior
-// values rather than half-applied.
-func TestAddTransactionRollsBackOnCommitFailure(t *testing.T) {
-	proj := newProject(t)
-	if err := os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
-	tree := mustSkillTree(t, "alpha", "Alpha body")
-	txn := newTransaction(pathSet{
-		ConfigPath:        proj.paths.ConfigPath,
-		SkillsLockPath:    proj.paths.SkillsLockPath,
-		ImportedSkillsDir: proj.paths.ImportedSkillsDir,
-	}, mustEmptyLock())
-	txn.WriteSkill("alpha", tree)
-	txn.SetConfig(baseConfigTOML + "\n# edited\n")
-	// A read-only imported tier makes publication fail after staging.
-	blocker := filepath.Join(proj.paths.ImportedSkillsDir, "alpha")
-	if err := os.MkdirAll(blocker, 0o500); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.Chmod(proj.paths.ImportedSkillsDir, 0o500); err != nil { // #nosec G302 -- removing write permission is how this test forces a publication failure.
-		t.Fatalf("chmod: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(proj.paths.ImportedSkillsDir, 0o750) }) // #nosec G302 -- restores the directory so t.TempDir cleanup succeeds.
-
-	if err := txn.Commit(); err == nil {
-		t.Fatal("expected a publication failure")
-	}
-	if err := os.Chmod(proj.paths.ImportedSkillsDir, 0o750); err != nil { // #nosec G302 -- restores the directory so the assertions below can read it.
-		t.Fatalf("chmod: %v", err)
-	}
-	if proj.ConfigContent() != baseConfigTOML {
-		t.Fatal("a failed transaction rewrote configuration")
-	}
-	if proj.Lock() != nil {
-		t.Fatal("a failed transaction wrote lock state")
 	}
 }
 

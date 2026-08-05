@@ -72,52 +72,27 @@ func (s *Service) pullBlock(ctx context.Context, runner *gitrepo.Runner, workRoo
 	// for.
 	blocked := func(err error) {
 		report.AddSourceFailure(repository, block.Ref, err)
-		reportBlockedBlockSkills(report, txn, block, err)
+		reportBlockedBlockSkills(report, st, txn, block, err)
 	}
 
-	blockCtx, err := s.openBlock(ctx, runner, workRoot, st, index, block)
+	blockCtx, err := s.openBlock(ctx, runner, workRoot, index, block)
 	if err != nil {
 		blocked(err)
 		return
 	}
 
 	// Lock entries are read from the pending transaction, not the loaded
-	// snapshot, so earlier stages of this pull (adoption pruning, membership
-	// reconciliation) are visible here.
-	lockedEntries := txnEntriesForBlock(txn, block)
+	// snapshot, so earlier blocks' independent results are visible here.
+	lockedEntries := txnEntriesForBlock(st, txn, block)
 
-	// Manual selector membership is reconciled at the block's locked commit
-	// before any advance, so an added or excluded selector takes effect without
-	// advancing a tracked branch as a side effect. When the block is not moving
-	// (a pinned import, or a tracked branch that has not advanced) the main
-	// reconciliation below already runs at the locked commit and performs the
-	// same membership work, so the extra pass would be redundant.
-	if blockCtx.LockedCommit != "" && !blockCtx.Retarget && blockCtx.TargetCommit != blockCtx.LockedCommit {
-		if err := s.reconcileMembership(ctx, st, txn, blockCtx, lockedEntries, report); err != nil {
-			blocked(err)
-			return
-		}
-		lockedEntries = txnEntriesForBlock(txn, block)
-	}
-
-	desired, failures, err := resolveBlock(ctx, blockCtx.Source, index, block, blockCtx.TargetCommit)
+	// Membership is always resolved at the operation's current source target.
+	// That lets a wildcard discover a new skill immediately without making an
+	// existing pinned sibling move off its own independently recorded commit.
+	desired, failures, err := resolveBlock(ctx, blockCtx.Source, index, block, blockCtx.Resolution.Commit)
 	if err != nil {
 		blocked(err)
 		return
 	}
-	// Selector overlap between blocks is remote-dependent, so configuration
-	// validation cannot see it. Validating against the other blocks' pending
-	// entries — as add and remove already do — keeps one block from staging an
-	// import that collides with another block's skill name or selected path.
-	if err := validateDesiredSet(withOtherPendingEntries(st, txn, block, desired)); err != nil {
-		blocked(err)
-		return
-	}
-	// A skill that cannot be read or validated upstream fails on its own. Its
-	// local directory and lock entry are preserved: invalidity is never treated
-	// as upstream removal.
-	failedPaths := reportCandidateFailures(report, repository, failures)
-
 	desiredByPath := make(map[string]desiredSkill, len(desired))
 	for _, skill := range desired {
 		desiredByPath[skill.SelectedPath] = skill
@@ -126,25 +101,82 @@ func (s *Service) pullBlock(ctx context.Context, runner *gitrepo.Runner, workRoo
 	for _, entry := range lockedEntries {
 		lockedByPath[entry.SelectedPath] = entry
 	}
+	failedByPath := make(map[string]struct{}, len(failures))
+	for _, failure := range failures {
+		failedByPath[failure.Path] = struct{}{}
+	}
 
-	// Paths that disappeared upstream, or that a new exclusion removed, retire
-	// under the one shared rule.
-	for _, entry := range lockedEntries {
-		if _, invalid := failedPaths[entry.SelectedPath]; invalid {
+	// Validate the actual prospective set. Existing pins that stay on their own
+	// commits and existing skills preserved after an upstream validation failure
+	// remain owners even when the current source tree does not provide a usable
+	// desiredSkill for them.
+	prospective := make([]desiredSkill, 0, len(desired)+len(lockedEntries))
+	for _, skill := range desired {
+		entry, locked := lockedByPath[skill.SelectedPath]
+		if locked && targetCommitForEntry(blockCtx, entry) != blockCtx.Resolution.Commit {
 			continue
 		}
-		if _, still := desiredByPath[entry.SelectedPath]; !still {
-			retire(st, txn, entry, report)
+		prospective = append(prospective, skill)
+	}
+	for _, entry := range lockedEntries {
+		_, failed := failedByPath[entry.SelectedPath]
+		if targetCommitForEntry(blockCtx, entry) == blockCtx.Resolution.Commit && !failed {
+			continue
 		}
+		selector, selected := selectingPositiveSelector(block, entry.SelectedPath)
+		if !selected {
+			continue
+		}
+		prospective = append(prospective, desiredSkill{BlockIndex: index, Block: block, Selector: selector, SelectedPath: entry.SelectedPath, Name: entry.Name})
+	}
+	if err := validateDesiredSet(withOtherPendingEntries(st, txn, block, prospective)); err != nil {
+		blocked(err)
+		return
+	}
+
+	// A skill that cannot be read or validated at the current target fails on
+	// its own. Its local directory and independent lock entry are preserved.
+	failedPaths := reportCandidateFailures(report, repository, failures)
+
+	for _, entry := range lockedEntries {
+		if _, selected := selectingPositiveSelector(block, entry.SelectedPath); !selected {
+			retire(st, txn, entry, report)
+			continue
+		}
+		targetCommit := targetCommitForEntry(blockCtx, entry)
+		if targetCommit == blockCtx.Resolution.Commit {
+			if _, invalid := failedPaths[entry.SelectedPath]; invalid {
+				continue
+			}
+			skill, still := desiredByPath[entry.SelectedPath]
+			if !still {
+				retire(st, txn, entry, report)
+				continue
+			}
+			entryCtx := *blockCtx
+			entryCtx.TargetCommit = targetCommit
+			s.advanceExisting(ctx, runner, st, txn, &entryCtx, skill, entry, report)
+			continue
+		}
+
+		// This pin remains at its own commit. Read and validate that exact path so
+		// its lock evidence, rather than another member's generation, is the only
+		// merge base involved.
+		skill, skillErr := desiredSkillAtCommit(ctx, blockCtx.Source, index, block, entry, targetCommit)
+		if skillErr != nil {
+			report.Add(SkillResult{Name: entry.Name, Repository: entry.Repository, SelectedPath: entry.SelectedPath, Outcome: OutcomeFailed, Err: skillErr})
+			continue
+		}
+		entryCtx := *blockCtx
+		entryCtx.TargetCommit = targetCommit
+		s.advanceExisting(ctx, runner, st, txn, &entryCtx, skill, entry, report)
 	}
 
 	for _, skill := range desired {
-		entry, locked := lockedByPath[skill.SelectedPath]
-		if !locked {
-			s.importNew(st, txn, blockCtx, skill, report)
+		if _, locked := lockedByPath[skill.SelectedPath]; locked {
 			continue
 		}
-		s.advanceExisting(ctx, runner, st, txn, blockCtx, skill, entry, report)
+		s.importNew(st, txn, blockCtx, skill, report)
 	}
 }
 
@@ -169,8 +201,8 @@ func reportCandidateFailures(report *Report, repository string, failures []candi
 // failure blocked. Recorded members come from the lock; a newly configured
 // exact selector has no lock entry yet and would otherwise be missing from the
 // report entirely.
-func reportBlockedBlockSkills(report *Report, txn *transaction, block config.SkillImport, err error) {
-	entries := txnEntriesForBlock(txn, block)
+func reportBlockedBlockSkills(report *Report, st *state, txn *transaction, block config.SkillImport, err error) {
+	entries := txnEntriesForBlock(st, txn, block)
 	reportBlockedSkills(report, entries, err)
 
 	covered := make(map[string]struct{}, len(entries))
@@ -198,44 +230,23 @@ func reportBlockedBlockSkills(report *Report, txn *transaction, block config.Ski
 	}
 }
 
-// reconcileMembership imports newly desired paths and retires newly excluded or
-// unmatched ones at the block's locked commit, without advancing it.
-func (s *Service) reconcileMembership(ctx context.Context, st *state, txn *transaction, blockCtx *blockContext, lockedEntries []skilllock.Entry, report *Report) error {
-	desired, failures, err := resolveBlock(ctx, blockCtx.Source, blockCtx.Index, blockCtx.Block, blockCtx.LockedCommit)
+// desiredSkillAtCommit reconstructs one existing entry from its own locked
+// commit. It is used only when an unchanged pin deliberately stays behind the
+// operation's current source target.
+func desiredSkillAtCommit(ctx context.Context, source treeReader, blockIndex int, block config.SkillImport, entry skilllock.Entry, commit string) (desiredSkill, error) {
+	selector, selected := selectingPositiveSelector(block, entry.SelectedPath)
+	if !selected {
+		return desiredSkill{}, fmt.Errorf("selected path %s is no longer selected", entry.SelectedPath)
+	}
+	tree, err := source.ReadTree(ctx, commit, entry.SelectedPath)
 	if err != nil {
-		return err
+		return desiredSkill{}, fmt.Errorf("locked source commit %s could not be read for %s: %w", shortCommit(commit), entry.SelectedPath, err)
 	}
-	if err := validateDesiredSet(withOtherPendingEntries(st, txn, blockCtx.Block, desired)); err != nil {
-		return err
+	info, err := skilltree.ValidateSkill(tree, entry.SelectedPath)
+	if err != nil {
+		return desiredSkill{}, fmt.Errorf("locked source commit %s no longer provides a valid merge base for %s: %w", shortCommit(commit), entry.SelectedPath, err)
 	}
-	failedPaths := reportCandidateFailures(report, config.NormalizeSkillRepository(blockCtx.Block.Repository), failures)
-
-	lockedByPath := make(map[string]skilllock.Entry, len(lockedEntries))
-	for _, entry := range lockedEntries {
-		lockedByPath[entry.SelectedPath] = entry
-	}
-	desiredByPath := make(map[string]desiredSkill, len(desired))
-	for _, skill := range desired {
-		desiredByPath[skill.SelectedPath] = skill
-	}
-
-	for _, entry := range lockedEntries {
-		if _, invalid := failedPaths[entry.SelectedPath]; invalid {
-			continue
-		}
-		if _, still := desiredByPath[entry.SelectedPath]; !still {
-			retire(st, txn, entry, report)
-		}
-	}
-	for _, skill := range desired {
-		if _, locked := lockedByPath[skill.SelectedPath]; locked {
-			continue
-		}
-		lockedCtx := *blockCtx
-		lockedCtx.TargetCommit = blockCtx.LockedCommit
-		s.importNewAt(st, txn, &lockedCtx, skill, blockCtx.LockedCommit, report)
-	}
-	return nil
+	return desiredSkill{BlockIndex: blockIndex, Block: block, Selector: selector, SelectedPath: entry.SelectedPath, Name: info.Name, Tree: tree}, nil
 }
 
 // importNew imports a newly desired skill at the block's target commit.
@@ -375,12 +386,6 @@ func adoptMissingImports(st *state, txn *transaction, report *Report) {
 // retireUnconfigured applies the retirement rule to locked skills whose
 // repository and selector pair is no longer configured at all.
 func retireUnconfigured(st *state, txn *transaction, report *Report) {
-	configured := make(map[string]struct{})
-	for _, block := range st.cfg.Skills.Imports {
-		for _, selector := range block.PositiveSelectors() {
-			configured[skillKey(block.Repository, selector)] = struct{}{}
-		}
-	}
 	// Iterate a snapshot: retiring an entry mutates the transaction's lock.
 	pending := append([]skilllock.Entry{}, txn.lock.Skills...)
 	reported := reportedSkillKeys(report)
@@ -388,13 +393,30 @@ func retireUnconfigured(st *state, txn *transaction, report *Report) {
 		if _, stillReported := reported[skillKey(entry.Repository, entry.SelectedPath)]; stillReported {
 			continue
 		}
-		// Both sides of this comparison go through skillKey, so retirement can
-		// never turn on an incidental difference in how a repository is spelled.
-		if _, ok := configured[skillKey(entry.Repository, entry.Selector)]; ok {
+		// Configuration has no block ID. Any current block that still selects the
+		// recorded path keeps the independent entry owned when a source failure
+		// prevented its selector evidence from being refreshed. Unique ownership
+		// can be remapped; ambiguous ownership is preserved but fails validation.
+		if entrySelectedByConfiguration(st, entry) {
 			continue
 		}
 		retire(st, txn, entry, report)
 	}
+}
+
+// entrySelectedByConfiguration reports whether at least one current block in
+// the recorded repository still selects an entry's path. It deliberately does
+// not choose among multiple matching blocks.
+func entrySelectedByConfiguration(st *state, entry skilllock.Entry) bool {
+	for _, block := range st.cfg.Skills.Imports {
+		if config.NormalizeSkillRepository(block.Repository) != config.NormalizeSkillRepository(entry.Repository) {
+			continue
+		}
+		if _, selected := selectingPositiveSelector(block, entry.SelectedPath); selected {
+			return true
+		}
+	}
+	return false
 }
 
 // reportedSkillKeys returns the skills already accounted for in a report.
@@ -424,18 +446,10 @@ func skillKey(repository string, path string) string {
 
 // txnEntriesForBlock returns a block's lock entries from the pending
 // transaction so a later stage sees membership reconciliation results.
-func txnEntriesForBlock(txn *transaction, block config.SkillImport) []skilllock.Entry {
-	selectors := make(map[string]struct{})
-	for _, selector := range block.PositiveSelectors() {
-		selectors[config.NormalizeSkillSelector(selector)] = struct{}{}
-	}
-	repository := config.NormalizeSkillRepository(block.Repository)
+func txnEntriesForBlock(st *state, txn *transaction, block config.SkillImport) []skilllock.Entry {
 	var entries []skilllock.Entry
 	for _, entry := range txn.lock.Skills {
-		if entry.Repository != repository {
-			continue
-		}
-		if _, ok := selectors[config.NormalizeSkillSelector(entry.Selector)]; ok {
+		if entryBelongsToBlock(st.cfg, block, entry) {
 			entries = append(entries, entry)
 		}
 	}

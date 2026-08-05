@@ -105,7 +105,7 @@ func TestSkillsCommandSurfaceMatchesTheContract(t *testing.T) {
 	for _, sub := range skills.Commands() {
 		got[sub.Name()] = true
 	}
-	for _, want := range []string{"add", "remove", "status", "pull", "push"} {
+	for _, want := range []string{"add", "remove", "status", "pull", "reset", "push"} {
 		if !got[want] {
 			t.Fatalf("missing subcommand %q", want)
 		}
@@ -113,8 +113,8 @@ func TestSkillsCommandSurfaceMatchesTheContract(t *testing.T) {
 	if got["sync"] {
 		t.Fatal("an al skills sync alias was added")
 	}
-	if len(skills.Commands()) != 5 {
-		t.Fatalf("subcommands = %d, want exactly 5", len(skills.Commands()))
+	if len(skills.Commands()) != 6 {
+		t.Fatalf("subcommands = %d, want exactly 6", len(skills.Commands()))
 	}
 
 	find := func(name string) *cobra.Command {
@@ -154,6 +154,20 @@ func TestSkillsCommandSurfaceMatchesTheContract(t *testing.T) {
 	}
 	if err := status.Args(status, []string{"extra"}); err == nil {
 		t.Fatal("al skills status accepted an argument")
+	}
+
+	reset := find("reset")
+	if err := reset.Args(reset, nil); err == nil {
+		t.Fatal("al skills reset accepted no name")
+	}
+	if err := reset.Args(reset, []string{"alpha", "beta"}); err == nil {
+		t.Fatal("al skills reset accepted more than one name")
+	}
+	if err := reset.Args(reset, []string{"alpha"}); err != nil {
+		t.Fatalf("al skills reset rejected exactly one name: %v", err)
+	}
+	if reset.Flags().Lookup("all") != nil {
+		t.Fatal("al skills reset exposes a forbidden --all form")
 	}
 }
 

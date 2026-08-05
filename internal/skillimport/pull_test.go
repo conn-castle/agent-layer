@@ -179,6 +179,49 @@ func TestPullConflictPreservesLocalContentAndLock(t *testing.T) {
 	if entry.Commit != lockedAlpha.Commit {
 		t.Fatalf("conflicted skill's lock advanced from %s to %s", lockedAlpha.Commit, entry.Commit)
 	}
+	advancedBeta, _ := proj.Lock().Entry("beta")
+	if advancedBeta.Commit == entry.Commit {
+		t.Fatal("partial success did not leave independent per-skill commits")
+	}
+
+	// A later pull discovers a new wildcard member at the current target while
+	// alpha remains independently blocked. No block-level base is manufactured
+	// from alpha's older commit or beta's newer one.
+	source.WriteSkill("skills/beta", "beta", "Beta body updated again")
+	source.WriteSkill("skills/gamma", "gamma", "Gamma body")
+	current := source.Commit("advance beta and add gamma")
+	report, err = proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("second conflicted pull: %v\n%s", err, report.Render("pull"))
+	}
+	requireOutcome(t, report, "alpha", OutcomeFailed)
+	requireOutcome(t, report, "beta", OutcomeUpdated)
+	requireOutcome(t, report, "gamma", OutcomeImported)
+	for _, name := range []string{"beta", "gamma"} {
+		locked, _ := proj.Lock().Entry(name)
+		if locked.Commit != current {
+			t.Fatalf("%s locked at %s, want current target %s", name, locked.Commit, current)
+		}
+	}
+	stillBlocked, _ := proj.Lock().Entry("alpha")
+	if stillBlocked.Commit != lockedAlpha.Commit {
+		t.Fatalf("alpha moved during another member's convergence: %s", stillBlocked.Commit)
+	}
+
+	// The user resolves alpha by restoring its locked base. Its next pull then
+	// converges independently, while the already-current siblings stay put.
+	proj.WriteImportedFile("alpha", "notes.md", "shared\n")
+	report, err = proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("convergence pull: %v\n%s", err, report.Render("pull"))
+	}
+	requireOutcome(t, report, "alpha", OutcomeUpdated)
+	for _, name := range []string{"alpha", "beta", "gamma"} {
+		locked, _ := proj.Lock().Entry(name)
+		if locked.Commit != current {
+			t.Fatalf("%s did not converge independently at %s: %+v", name, current, locked)
+		}
+	}
 }
 
 // TestPullRetiresCleanAndPreservesModifiedDisappearances proves the one
@@ -384,6 +427,52 @@ func TestPullPinnedRefStaysStationaryAndRetargets(t *testing.T) {
 	after, _ := proj.Lock().Entry("alpha")
 	if after.ConfiguredRef != "v2.0.0" || after.ResolvedRef != "v2.0.0" {
 		t.Fatalf("lock identity after retarget = %+v", after)
+	}
+}
+
+// TestPinnedWildcardImportsNewMembershipWithoutMovingExistingPins proves the
+// block is only shorthand: a newly discovered member pins at today's target
+// while an existing member keeps its own older pin.
+func TestPinnedWildcardImportsNewMembershipWithoutMovingExistingPins(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha one")
+	first := source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/*"}, `ref = "main"`, `tracking = "pinned"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+
+	source.WriteSkill("skills/alpha", "alpha", "Alpha two")
+	source.WriteSkill("skills/beta", "beta", "Beta one")
+	second := source.Commit("advance alpha and add beta")
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("second pull: %v\n%s", err, report.Render("pull"))
+	}
+	requireOutcome(t, report, "alpha", OutcomeUnchanged)
+	requireOutcome(t, report, "beta", OutcomeImported)
+	alpha, _ := proj.Lock().Entry("alpha")
+	beta, _ := proj.Lock().Entry("beta")
+	if alpha.Commit != first || beta.Commit != second {
+		t.Fatalf("independent pins = alpha %s beta %s, want %s and %s", alpha.Commit, beta.Commit, first, second)
+	}
+	if !strings.Contains(proj.ImportedFile("alpha", "SKILL.md"), "Alpha one") {
+		t.Fatal("discovering beta moved alpha's pinned content")
+	}
+
+	proj.ReplaceInConfig(`selectors = ["skills/*"]`, `selectors = ["skills/*", "!skills/alpha"]`)
+	report, err = proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("pull after excluding an older pin: %v\n%s", err, report.Render("pull"))
+	}
+	requireOutcome(t, report, "alpha", OutcomeRetired)
+	if proj.ImportedExists("alpha") {
+		t.Fatal("an excluded pinned member remained imported")
+	}
+	if remaining, _ := proj.Lock().Entry("beta"); remaining.Commit != second {
+		t.Fatalf("retiring alpha moved beta's pin: %+v", remaining)
 	}
 }
 
@@ -703,12 +792,9 @@ func TestPullPreservesAPreviouslyImportedSkillThatBecomesInvalidUpstream(t *test
 	}
 }
 
-// TestPullReconcilesSelectorChangesAtTheLockedCommitBeforeAdvancing proves the
-// two-stage contract: a manually added selector is resolved at the block's
-// locked commit first, and only then does the tracked branch advance — so the
-// newly included skill is not silently pulled from a newer commit before the
-// rest of the block moves.
-func TestPullReconcilesSelectorChangesAtTheLockedCommitBeforeAdvancing(t *testing.T) {
+// TestPullImportsNewSelectorMembershipAtCurrentTarget proves a manually added
+// selector creates its own lock directly at the operation's resolved target.
+func TestPullImportsNewSelectorMembershipAtCurrentTarget(t *testing.T) {
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha at lock time")
 	source.WriteSkill("skills/beta", "beta", "Beta at lock time")
@@ -733,8 +819,7 @@ func TestPullReconcilesSelectorChangesAtTheLockedCommitBeforeAdvancing(t *testin
 		t.Fatalf("Pull: %v\n%s", err, report.Render("pull"))
 	}
 	requireOutcome(t, report, "alpha", OutcomeUpdated)
-	// beta is first imported at the locked commit, then advanced with the block.
-	requireOutcome(t, report, "beta", OutcomeUpdated)
+	requireOutcome(t, report, "beta", OutcomeImported)
 
 	if got := proj.ImportedFile("beta", "SKILL.md"); !strings.Contains(got, "Beta advanced") {
 		t.Fatalf("beta content = %q, want the advanced upstream body", got)
@@ -917,6 +1002,38 @@ func TestPullValidatesAcrossImportBlocks(t *testing.T) {
 	// The second block is blocked as a whole, naming the identity collision.
 	if len(report.Sources) != 1 || !strings.Contains(report.Sources[0].Err.Error(), "resolve to skill name") {
 		t.Fatalf("source failures = %+v, want one naming the name collision", report.Sources)
+	}
+}
+
+// TestPullPreservesAnEntryWhoseReplacementSelectorOwnershipIsAmbiguous proves
+// cross-block validation fails without retiring the prior independent entry
+// merely because no synthetic block identity can be assigned to it.
+func TestPullPreservesAnEntryWhoseReplacementSelectorOwnershipIsAmbiguous(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+	before, _ := proj.Lock().Entry("alpha")
+	writeProjectFile(t, proj.paths.ConfigPath,
+		baseConfigTOML+
+			importBlock(source.URL(), []string{"skills/*"})+
+			importBlock(source.URL(), []string{"skills/a*"}, `write_policy = "direct"`))
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if !report.Failed() {
+		t.Fatalf("ambiguous selector ownership was accepted:\n%s", report.Render("pull"))
+	}
+	after, ok := proj.Lock().Entry("alpha")
+	if !ok || after != before || !proj.ImportedExists("alpha") {
+		t.Fatalf("ambiguous ownership retired prior state: before=%+v after=%+v exists=%v", before, after, proj.ImportedExists("alpha"))
 	}
 }
 

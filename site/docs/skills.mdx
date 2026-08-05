@@ -184,6 +184,18 @@ repository still imports. If a run is interrupted part way through, the next
 `al skills` or `al sync` command rolls it back, so you never end up with a
 half-replaced skill.
 
+If you want to discard one skill's edits instead, reset it explicitly. This is
+permanent: Agent Layer creates no commit, stash, copy, or backup for you.
+
+```bash
+al skills reset reviewer
+```
+
+Reset accepts the current configured upstream version for that skill only. It
+does not add new wildcard matches, retire other skills, or otherwise reconcile
+membership. Preserve edits yourself before running it if you may want to
+reapply them.
+
 Import several skills at once with a wildcard, and exclude the ones you do not
 want:
 
