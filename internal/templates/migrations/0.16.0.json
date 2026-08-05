@@ -8,6 +8,28 @@
       "kind": "claim_skill_projection_roots",
       "source_agnostic": true,
       "rationale": "Verify client skill roots contain only released Agent Layer projections before treating those roots as disposable output."
+    },
+    {
+      "id": "b-rename-memory-to-01",
+      "kind": "rename_file",
+      "from": ".agent-layer/instructions/02_memory.md",
+      "to": ".agent-layer/instructions/01_memory.md",
+      "rationale": "Instruction templates consolidated to 00_rules.md and 01_memory.md; renumber memory instructions to close the gap left by the removed files.",
+      "source_agnostic": true
+    },
+    {
+      "id": "c-delete-instructions-base",
+      "kind": "delete_file",
+      "path": ".agent-layer/instructions/01_base.md",
+      "rationale": "Engineering approach and workflow rules were folded into 00_rules.md; leaving 01_base.md behind would load duplicate, superseded instructions.",
+      "source_agnostic": true
+    },
+    {
+      "id": "d-delete-instructions-tools",
+      "kind": "delete_file",
+      "path": ".agent-layer/instructions/03_tools.md",
+      "rationale": "Tool usage rules were folded into 00_rules.md; leaving 03_tools.md behind would load duplicate, superseded instructions.",
+      "source_agnostic": true
     }
   ]
 }

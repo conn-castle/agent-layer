@@ -168,7 +168,7 @@ _init_doctor_wizard_assert_bare_init_files() {
   _init_doctor_wizard_assert_dir_empty "$repo_dir/.agent-layer/skills" \
     "init leaves skills directory empty"
 
-  for name in 00_rules.md 01_base.md 02_memory.md 03_tools.md 04_conventions.md; do
+  for name in 00_rules.md 01_memory.md; do
     assert_file_not_exists "$repo_dir/.agent-layer/instructions/$name" \
       "$name is not seeded by bare init"
   done

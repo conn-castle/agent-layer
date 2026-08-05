@@ -119,20 +119,17 @@ func TestDetectAgentLayerEnabledFromDisk(t *testing.T) {
 		assert.True(t, detectAgentLayerEnabledFromDisk(root))
 	})
 
-	t.Run("returns true when custom user-owned instruction exists", func(t *testing.T) {
-		root := t.TempDir()
-		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
-		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md"), []byte("custom conventions"), 0o600))
-		assert.True(t, detectAgentLayerEnabledFromDisk(root))
-	})
-
-	t.Run("returns true when template user-owned instruction exists", func(t *testing.T) {
-		root := t.TempDir()
-		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
-		conventionsTemplate, err := templates.Read("instructions/04_conventions.md")
-		require.NoError(t, err)
-		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md"), conventionsTemplate, 0o600))
-		assert.True(t, detectAgentLayerEnabledFromDisk(root))
+	// A repo installed before the 0.16.0 instruction consolidation still holds
+	// the pre-consolidation filenames until `al upgrade` runs. Treating those as
+	// evidence keeps the wizard from offering to install a workflow bundle over
+	// files the user already has.
+	t.Run("returns true when only a pre-consolidation instruction file exists", func(t *testing.T) {
+		for _, name := range legacyInstructionBasenames {
+			root := t.TempDir()
+			require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
+			require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", name), []byte("legacy instructions"), 0o600))
+			assert.True(t, detectAgentLayerEnabledFromDisk(root), "%s should count as workflow-bundle evidence", name)
+		}
 	})
 
 	t.Run("returns true when managed instruction template exists", func(t *testing.T) {

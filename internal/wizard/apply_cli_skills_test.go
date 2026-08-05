@@ -80,7 +80,6 @@ func TestComputeSkillsChangeSet_WorkflowBundleNoDoesNotPrune(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "docs", "agent-layer", "BACKLOG.md"), []byte("custom backlog"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "templates", "docs", "ISSUES.md"), []byte("x"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), rulesTemplate, 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md"), []byte("custom conventions"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "custom.md"), []byte("x"), 0o600))
 
 	choices := NewChoices()
@@ -95,7 +94,6 @@ func TestComputeSkillsChangeSet_WorkflowBundleNoDoesNotPrune(t *testing.T) {
 	assert.Empty(t, cs.memoryFilesToCreate)
 	assert.Empty(t, cs.templateMemoryFilesToCreate)
 	assert.Empty(t, cs.managedInstructionFilesToCreate)
-	assert.Empty(t, cs.userInstructionFilesToCreate)
 	// tavily-web is a catalog skill present on disk AND selected → no change.
 	assert.Empty(t, cs.catalogSkillsToAdd)
 	assert.Empty(t, cs.catalogSkillsToRemove)
@@ -119,9 +117,7 @@ func TestComputeSkillsChangeSet_WorkflowBundleInstallOnlyMissing(t *testing.T) {
 	assert.Contains(t, cs.memoryFilesToCreate, "docs/agent-layer/ISSUES.md")
 	assert.Contains(t, cs.templateMemoryFilesToCreate, ".agent-layer/templates/docs/ISSUES.md")
 	assert.NotContains(t, cs.managedInstructionFilesToCreate, ".agent-layer/instructions/00_rules.md")
-	assert.NotContains(t, cs.managedInstructionFilesToCreate, ".agent-layer/instructions/04_conventions.md")
-	assert.Contains(t, cs.managedInstructionFilesToCreate, ".agent-layer/instructions/01_base.md")
-	assert.Contains(t, cs.userInstructionFilesToCreate, ".agent-layer/instructions/04_conventions.md")
+	assert.Contains(t, cs.managedInstructionFilesToCreate, ".agent-layer/instructions/01_memory.md")
 }
 
 func TestComputeSkillsChangeSet_NoChanges(t *testing.T) {
@@ -218,11 +214,9 @@ func TestApplySkillsChanges_WorkflowAndMemoryCreatePreservesExistingFiles(t *tes
 	require.NoError(t, os.MkdirAll(filepath.Dir(templateMemoryPath), 0o750))
 	require.NoError(t, os.WriteFile(templateMemoryPath, []byte("x"), 0o600))
 	instructionPath := filepath.Join(root, ".agent-layer", "instructions", "00_rules.md")
-	missingInstructionPath := filepath.Join(root, ".agent-layer", "instructions", "01_base.md")
+	missingInstructionPath := filepath.Join(root, ".agent-layer", "instructions", "01_memory.md")
 	require.NoError(t, os.MkdirAll(filepath.Dir(instructionPath), 0o750))
 	require.NoError(t, os.WriteFile(instructionPath, []byte("x"), 0o600))
-	userInstructionPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
-	require.NoError(t, os.WriteFile(userInstructionPath, []byte("custom conventions"), 0o600))
 
 	changes := skillsChangeSet{
 		workflowSkillsToInstall: []string{"implement", "ship-pr"},
@@ -236,9 +230,8 @@ func TestApplySkillsChanges_WorkflowAndMemoryCreatePreservesExistingFiles(t *tes
 		},
 		managedInstructionFilesToCreate: []string{
 			".agent-layer/instructions/00_rules.md",
-			".agent-layer/instructions/01_base.md",
+			".agent-layer/instructions/01_memory.md",
 		},
-		userInstructionFilesToCreate: []string{".agent-layer/instructions/04_conventions.md"},
 	}
 	require.NoError(t, applySkillsChanges(root, changes))
 
@@ -260,9 +253,6 @@ func TestApplySkillsChanges_WorkflowAndMemoryCreatePreservesExistingFiles(t *tes
 	require.NoError(t, err)
 	assert.Equal(t, "x", string(instructionData))
 	assert.FileExists(t, missingInstructionPath)
-	userInstructionData, err := os.ReadFile(userInstructionPath) // #nosec G304 -- path is constructed from test-controlled inputs.
-	require.NoError(t, err)
-	assert.Equal(t, "custom conventions", string(userInstructionData))
 }
 
 func TestApplySkillsChanges_AddCatalogErrorIncludesSkill(t *testing.T) {
@@ -311,15 +301,6 @@ func TestApplySkillsChanges_ErrorBranches(t *testing.T) {
 		require.ErrorContains(t, err, "create managed instruction file .agent-layer/instructions/00_rules.md")
 	})
 
-	t.Run("create user instruction file reports filesystem error", func(t *testing.T) {
-		root := t.TempDir()
-		blocker := filepath.Join(root, ".agent-layer", "instructions")
-		require.NoError(t, os.MkdirAll(filepath.Dir(blocker), 0o750))
-		require.NoError(t, os.WriteFile(blocker, []byte("file blocks instruction create"), 0o600))
-
-		err := applySkillsChanges(root, skillsChangeSet{userInstructionFilesToCreate: []string{".agent-layer/instructions/04_conventions.md"}})
-		require.ErrorContains(t, err, "create instruction file .agent-layer/instructions/04_conventions.md")
-	})
 }
 
 func TestApplySkillsChanges_WorkflowAndMemoryInstall(t *testing.T) {
@@ -332,8 +313,7 @@ func TestApplySkillsChanges_WorkflowAndMemoryInstall(t *testing.T) {
 		workflowSkillsToInstall:         []string{"implement"},
 		memoryFilesToCreate:             []string{"docs/agent-layer/ISSUES.md"},
 		templateMemoryFilesToCreate:     []string{".agent-layer/templates/docs/ISSUES.md"},
-		managedInstructionFilesToCreate: []string{".agent-layer/instructions/00_rules.md"},
-		userInstructionFilesToCreate:    []string{".agent-layer/instructions/04_conventions.md"},
+		managedInstructionFilesToCreate: []string{".agent-layer/instructions/00_rules.md", ".agent-layer/instructions/01_memory.md"},
 	}
 	require.NoError(t, applySkillsChanges(root, changes))
 
@@ -341,7 +321,7 @@ func TestApplySkillsChanges_WorkflowAndMemoryInstall(t *testing.T) {
 	assert.FileExists(t, filepath.Join(root, "docs", "agent-layer", "ISSUES.md"))
 	assert.FileExists(t, filepath.Join(root, ".agent-layer", "templates", "docs", "ISSUES.md"))
 	assert.FileExists(t, filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"))
-	assert.FileExists(t, filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md"))
+	assert.FileExists(t, filepath.Join(root, ".agent-layer", "instructions", "01_memory.md"))
 	data, err := os.ReadFile(customInstruction) // #nosec G304 -- path is constructed from test-controlled inputs.
 	require.NoError(t, err)
 	assert.Equal(t, "custom instruction", string(data), "workflow install leaves unrelated files in place")
@@ -357,7 +337,7 @@ func TestCopyTemplateDirMissingSkipsExistingFiles(t *testing.T) {
 	data, err := os.ReadFile(existing) // #nosec G304 -- path is constructed from test-controlled inputs.
 	require.NoError(t, err)
 	assert.Equal(t, "custom rules", string(data))
-	assert.FileExists(t, filepath.Join(dest, "01_base.md"))
+	assert.FileExists(t, filepath.Join(dest, "01_memory.md"))
 }
 
 func TestCopyTemplateDirMissingMissingTemplateErrors(t *testing.T) {
@@ -449,8 +429,11 @@ func TestListMissingManagedFilesReportStatErrors(t *testing.T) {
 		instructionsDir := filepath.Join(root, ".agent-layer", "instructions")
 		require.NoError(t, os.MkdirAll(filepath.Dir(instructionsDir), 0o750))
 		require.NoError(t, os.WriteFile(instructionsDir, []byte("file blocks instruction scan"), 0o600))
+		choices := NewChoices()
+		choices.InstallWorkflowBundleTouched = true
+		choices.InstallWorkflowBundle = true
 
-		_, err := listMissingUserOwnedInstructionFiles(root)
+		_, err := computeSkillsChangeSet(root, choices)
 		require.Error(t, err)
 	})
 
@@ -474,13 +457,6 @@ func TestListMissingManagedFilesReportStatErrors(t *testing.T) {
 		require.ErrorContains(t, err, "exists but is not a regular file")
 	})
 
-	t.Run("user-owned instruction path is directory", func(t *testing.T) {
-		root := t.TempDir()
-		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md"), 0o750))
-
-		_, err := listMissingUserOwnedInstructionFiles(root)
-		require.ErrorContains(t, err, "exists but is not a regular file")
-	})
 }
 
 func TestBuildSkillsPreview(t *testing.T) {
@@ -503,9 +479,6 @@ func TestBuildSkillsPreview(t *testing.T) {
 			managedInstructionFilesToCreate: []string{
 				".agent-layer/instructions/00_rules.md",
 			},
-			userInstructionFilesToCreate: []string{
-				".agent-layer/instructions/04_conventions.md",
-			},
 		})
 		assert.Contains(t, preview, "+ .agent-layer/skills/find-docs/")
 		assert.Contains(t, preview, "+ .agent-layer/skills/playwright/  (missing catalog skill files)")
@@ -514,6 +487,5 @@ func TestBuildSkillsPreview(t *testing.T) {
 		assert.Contains(t, preview, "docs/agent-layer/BACKLOG.md  (memory file)")
 		assert.Contains(t, preview, ".agent-layer/templates/docs/BACKLOG.md  (memory template)")
 		assert.Contains(t, preview, ".agent-layer/instructions/00_rules.md  (managed instruction seed)")
-		assert.Contains(t, preview, ".agent-layer/instructions/04_conventions.md  (user-owned instruction seed)")
 	})
 }

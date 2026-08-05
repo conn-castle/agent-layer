@@ -61,8 +61,18 @@ run_scenario_upgrade_claude() {
   assert_generated_artifacts "$repo_dir"
 
   # Verify instruction files exist and have current template content
-  assert_file_contains "$repo_dir/.agent-layer/instructions/01_base.md" \
-    "Engineering Approach" "upgraded instructions/01_base.md has current template content"
+  assert_file_contains "$repo_dir/.agent-layer/instructions/00_rules.md" \
+    "Guiding Principles" "upgraded instructions/00_rules.md has current template content"
+
+  # The 0.16.0 consolidation folded 01_base.md and 03_tools.md into 00_rules.md
+  # and renumbered 02_memory.md. Without the migration an upgraded repo would
+  # keep loading the superseded files alongside the new ones.
+  assert_file_contains "$repo_dir/.agent-layer/instructions/01_memory.md" \
+    "Project Memory" "upgrade renames instructions/02_memory.md to 01_memory.md"
+  for name in 01_base.md 02_memory.md 03_tools.md; do
+    assert_file_not_exists "$repo_dir/.agent-layer/instructions/$name" \
+      "upgrade removes superseded instructions/$name"
+  done
 
   cleanup_scenario_dir "$repo_dir"
 }

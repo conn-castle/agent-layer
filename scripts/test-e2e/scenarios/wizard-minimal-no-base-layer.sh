@@ -11,7 +11,7 @@ run_scenario_wizard_minimal_no_base_layer() {
 
   assert_exit_zero_in "$repo_dir" "al init --no-wizard" al init --no-wizard
 
-  for name in 00_rules.md 01_base.md 02_memory.md 03_tools.md 04_conventions.md; do
+  for name in 00_rules.md 01_memory.md; do
     assert_file_not_exists "$repo_dir/.agent-layer/instructions/$name" \
       "$name is not seeded by bare init"
   done
