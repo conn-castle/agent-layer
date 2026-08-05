@@ -3646,6 +3646,45 @@ func TestExecuteAppendToFile_AppendsWhenMatchAbsent(t *testing.T) {
 	}
 }
 
+// TestExecuteAppendToFile_DecodesValueExactlyOnce pins the encoding contract
+// documented in docs/DEVELOPMENT.md: op.Value is an ordinary JSON string that
+// is decoded once, so "\n" in a manifest is a line ending. A double-escaped
+// value silently writes a literal backslash-n plus stray quote characters into
+// the user's instruction file, which every Contains-based assertion misses.
+func TestExecuteAppendToFile_DecodesValueExactlyOnce(t *testing.T) {
+	root := t.TempDir()
+	targetDir := filepath.Join(root, ".agent-layer", "instructions")
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	targetPath := filepath.Join(targetDir, "00_rules.md")
+	if err := os.WriteFile(targetPath, []byte("# Existing content\n"), 0o600); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	op := upgradeMigrationOperation{
+		ID:        "append_exact",
+		Kind:      upgradeMigrationKindAppendToFile,
+		Rationale: "Append a rule with a real line ending",
+		Path:      ".agent-layer/instructions/00_rules.md",
+		Value:     []byte(`"- **Rule name:** Rule text.\n"`),
+		From:      "**Rule name:**",
+	}
+	if _, err := inst.executeAppendToFile(op); err != nil {
+		t.Fatalf("executeAppendToFile: %v", err)
+	}
+
+	data, err := os.ReadFile(targetPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	const want = "# Existing content\n- **Rule name:** Rule text.\n"
+	if string(data) != want {
+		t.Fatalf("appended bytes = %q, want %q", string(data), want)
+	}
+}
+
 func TestExecuteAppendToFile_NoopWhenMatchPresent(t *testing.T) {
 	root := t.TempDir()
 	targetDir := filepath.Join(root, ".agent-layer", "instructions")

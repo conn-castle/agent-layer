@@ -181,12 +181,12 @@ Use an `append_to_file` migration when content must reach an existing install wi
   "rationale": "Add <rule description>",
   "source_agnostic": true,
   "path": ".agent-layer/instructions/00_rules.md",
-  "value": "\"- **Rule name:** Rule text.\\n\"",
+  "value": "- **Rule name:** Rule text.\n",
   "from": "**Rule name:**"
 }
 ```
 - `path`: the file to append to (relative to repo root).
-- `value`: JSON-encoded string content to append.
+- `value`: the content to append, as an ordinary JSON string. It is decoded once, so `\n` is a line ending — do not double-escape it.
 - `from`: duplicate-detection match string. If this string is already present in the file, the migration is a no-op (no-op migrations are not shown in the upgrade output). When the path has a bundled template and the file is missing, the full template is seeded as the base so the result is never a partial stub.
 
 During `al upgrade` the migration appends the content and reports it in the upgrade output when it actually applies.

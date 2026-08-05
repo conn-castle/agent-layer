@@ -79,7 +79,9 @@ func TestBuildUpgradePlan_BareLayoutDoesNotPlanWorkflowBundle(t *testing.T) {
 	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/implement/SKILL.md"))
 	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, "docs/agent-layer/ISSUES.md"))
 	assert.Nil(t, findUpgradeChange(plan.TemplateUpdates, "docs/agent-layer/ISSUES.md"))
-	assert.Nil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/instructions/01_memory.md"))
+	// A file absent from a bare layout can only ever be planned as an addition,
+	// so asserting against TemplateUpdates here would pass vacuously.
+	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/instructions/01_memory.md"))
 }
 
 func TestBuildUpgradePlan_ManagedInstructionEvidenceIncludesWorkflowBundle(t *testing.T) {
