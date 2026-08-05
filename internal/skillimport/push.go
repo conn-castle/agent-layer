@@ -34,15 +34,13 @@ type pushGroup struct {
 	// value it carries reaches git alone.
 	Repository gitrepo.Repository
 	Branch     string
+	// DefaultBranch is resolved once with Branch and reused if a missing
+	// configured branch must start from the destination default.
+	DefaultBranch string
 	// BranchConfigured is true when the branch came from an explicit
-	// `push_branch`; a missing configured branch is created from the locked
-	// source commit.
+	// `push_branch`; a missing configured branch is created from the
+	// destination repository's current default-branch commit.
 	BranchConfigured bool
-	// BaseRepository and BaseCommit locate the locked source commit a missing
-	// configured branch is created from. They always name a real repository,
-	// even when several source blocks contribute to this destination.
-	BaseRepository gitrepo.Repository
-	BaseCommit     string
 	// SharedBySources is true when more than one source block contributes here.
 	// A shared destination can never be the exact tracked source ref of any one
 	// skill, so no lock advances from it.
@@ -140,7 +138,7 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 			blocked(destinationErr)
 			continue
 		}
-		branch, branchConfigured, branchErr := resolvePushBranch(ctx, branches, block, destination)
+		branch, defaultBranch, branchConfigured, branchErr := resolvePushBranch(ctx, branches, block, destination)
 		if branchErr != nil {
 			blocked(branchErr)
 			continue
@@ -154,9 +152,8 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 			group = &pushGroup{
 				Repository:       destination,
 				Branch:           branch,
+				DefaultBranch:    defaultBranch,
 				BranchConfigured: branchConfigured,
-				BaseRepository:   sourceRepository,
-				BaseCommit:       entries[0].Commit,
 				SourceRepository: repository,
 				SourceRef:        entries[0].ResolvedRef,
 			}
@@ -164,10 +161,7 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 			order = append(order, key)
 		} else if group.SourceRepository != repository || group.SourceRef != entries[0].ResolvedRef {
 			// Two different sources contributing to one destination group cannot
-			// both claim it for lock advancement. The base repository stays as
-			// the first contributor in configuration order so a missing branch
-			// is created from one deterministic commit; every skill the branch
-			// does not carry is then added whole rather than merged against it.
+			// both claim it for lock advancement.
 			group.SharedBySources = true
 		}
 
@@ -275,20 +269,20 @@ func (c *defaultBranchCache) get(ctx context.Context, repository gitrepo.Reposit
 // vocabulary reserves primary-branch writes for `direct`, and a repository
 // whose default branch is neither `main` nor `master` cannot be recognized
 // statically.
-func resolvePushBranch(ctx context.Context, branches *defaultBranchCache, block config.SkillImport, destination gitrepo.Repository) (branch string, configured bool, err error) {
-	defaultBranch, err := branches.get(ctx, destination)
+func resolvePushBranch(ctx context.Context, branches *defaultBranchCache, block config.SkillImport, destination gitrepo.Repository) (branch string, defaultBranch string, configured bool, err error) {
+	defaultBranch, err = branches.get(ctx, destination)
 	if err != nil {
-		return "", false, err
+		return "", "", false, err
 	}
 	configuredBranch := strings.TrimSpace(block.PushBranch)
 	if configuredBranch == "" {
-		return defaultBranch, false, nil
+		return defaultBranch, defaultBranch, false, nil
 	}
 	if configuredBranch == defaultBranch {
-		return "", false, fmt.Errorf("push_branch %q is the default branch of %s; write_policy = %q never writes to a destination's primary branch, so use write_policy = %q or configure a different branch",
+		return "", "", false, fmt.Errorf("push_branch %q is the default branch of %s; write_policy = %q never writes to a destination's primary branch, so use write_policy = %q or configure a different branch",
 			configuredBranch, destination, config.SkillWritePolicyBranch, config.SkillWritePolicyDirect)
 	}
-	return configuredBranch, true, nil
+	return configuredBranch, defaultBranch, true, nil
 }
 
 // reportBlockedSkills records the required failed result for every skill a
@@ -368,13 +362,20 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 			s.failGroup(group, report, fmt.Errorf("destination %s has no branch %s", group.Repository, group.Branch))
 			return
 		}
-		// An explicitly configured branch that does not exist yet is created
-		// from the locked source commit.
-		if fetchErr := destination.FetchCommit(ctx, group.BaseRepository, group.BaseCommit); fetchErr != nil {
+		defaultHead, defaultExists, headErr := destination.Head(ctx, group.DefaultBranch)
+		if headErr != nil {
+			s.failGroup(group, report, headErr)
+			return
+		}
+		if !defaultExists {
+			s.failGroup(group, report, fmt.Errorf("cannot create destination branch %s because default branch %s does not exist in %s", group.Branch, group.DefaultBranch, group.Repository))
+			return
+		}
+		if fetchErr := destination.FetchCommit(ctx, group.Repository, defaultHead); fetchErr != nil {
 			s.failGroup(group, report, fetchErr)
 			return
 		}
-		head = group.BaseCommit
+		head = defaultHead
 	} else if fetchErr := destination.FetchCommit(ctx, group.Repository, head); fetchErr != nil {
 		s.failGroup(group, report, fetchErr)
 		return
@@ -408,9 +409,9 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 		// An absent destination path means two different things, and only the
 		// branch's history distinguishes them.
 		//
-		// On a branch this publication just created from one contributing
-		// source's commit, a path that base never carried was never present at
-		// the destination at all: there is no common history to reconcile, so
+		// On a branch this publication just created from the destination's
+		// default branch, a path absent from that base was never present on the
+		// contribution branch: there is no common skill history to reconcile, so
 		// the complete local skill is added. That is what keeps a heterogeneous
 		// group coherent — merging against an empty tree would read every
 		// unchanged file as a destination deletion and publish a partial skill.
@@ -454,8 +455,8 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 	commit, err := destination.Publish(ctx, head, group.Branch, updates, groupCommitMessage(pushed))
 	if err != nil {
 		// A grouped commit or push failure affects every skill in the group.
-		flushUnchanged()
-		for _, candidate := range pushed {
+		failed := append(append([]pushCandidate{}, pushed...), unchangedCandidates...)
+		for _, candidate := range failed {
 			report.Add(SkillResult{
 				Name:         candidate.Entry.Name,
 				Repository:   candidate.Entry.Repository,

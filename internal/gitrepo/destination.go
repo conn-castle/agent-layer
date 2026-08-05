@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -21,8 +21,8 @@ var missingIdentityMarkers = []string{
 }
 
 // Destination is an isolated working repository used to publish one grouped
-// upstream contribution. It can fetch from several repositories so a branch
-// created for a fork can start from the locked source commit.
+// upstream contribution. It can fetch the destination base and any locked
+// source commits needed for reconciliation without checking out either tree.
 type Destination struct {
 	runner *Runner
 	dir    string
@@ -68,7 +68,7 @@ func (d *Destination) DefaultBranch(ctx context.Context) (string, error) {
 
 // Head returns the destination branch's current commit. It reports exists =
 // false when the branch does not exist yet, which `branch` write policy handles
-// by creating it from the locked source commit.
+// by creating it from the destination's default-branch commit.
 func (d *Destination) Head(ctx context.Context, branch string) (commit string, exists bool, err error) {
 	output, err := d.runner.run(ctx, d.dir, "ls-remote", "--", d.repository.git, "refs/heads/"+branch)
 	if err != nil {
@@ -86,7 +86,11 @@ func (d *Destination) Head(ctx context.Context, branch string) (commit string, e
 // FetchCommit makes a commit from repository available in the destination
 // working repository.
 func (d *Destination) FetchCommit(ctx context.Context, repository Repository, commit string) error {
-	if d.hasCommit(ctx, commit) {
+	exists, err := commitExists(ctx, d.runner, d.dir, commit)
+	if err != nil {
+		return err
+	}
+	if exists {
 		return nil
 	}
 	if _, err := d.runner.run(ctx, d.dir, "fetch", "--quiet", "--no-tags", "--", repository.git, commit); err != nil {
@@ -99,22 +103,21 @@ func (d *Destination) FetchCommit(ctx context.Context, repository Repository, co
 			return errors.Join(err, mirrorErr)
 		}
 	}
-	if !d.hasCommit(ctx, commit) {
+	exists, err = commitExists(ctx, d.runner, d.dir, commit)
+	if err != nil {
+		return err
+	}
+	if !exists {
 		return fmt.Errorf("commit %s could not be fetched from %s", commit, repository)
 	}
 	return nil
-}
-
-func (d *Destination) hasCommit(ctx context.Context, commit string) bool {
-	_, code, err := d.runner.runAllowExit(ctx, d.dir, []int{1, 128}, "cat-file", "-e", commit+"^{commit}")
-	return err == nil && code == 0
 }
 
 // ReadTree returns the content of a repository path at a commit that is already
 // available in the destination working repository.
 func (d *Destination) ReadTree(ctx context.Context, commit string, repoPath string) (skilltree.Tree, error) {
 	source := &Source{runner: d.runner, dir: d.dir, repository: d.repository, fetched: true}
-	return source.ReadTree(ctx, commit, repoPath)
+	return source.readTree(ctx, commit, repoPath, true)
 }
 
 // Update is one skill's desired destination content.
@@ -125,8 +128,9 @@ type Update struct {
 	Tree skilltree.Tree
 }
 
-// Publish checks out base, replaces each update's path with its desired tree,
-// commits the result, and pushes it to branch without force.
+// Publish loads base into Git's index, replaces each update's path with exact
+// blobs, creates a commit through Git's object database, and pushes it to
+// branch without force. It never checks out remote-controlled content.
 //
 // It returns the pushed commit. Publish never rewrites history and never falls
 // back to another branch or repository.
@@ -134,119 +138,71 @@ func (d *Destination) Publish(ctx context.Context, base string, branch string, u
 	if len(updates) == 0 {
 		return "", fmt.Errorf("publishing requires at least one skill update")
 	}
-	if _, err := d.runner.run(ctx, d.dir, "checkout", "--quiet", "--force", "--detach", base); err != nil {
-		return "", err
-	}
 	for _, update := range updates {
-		// Publication removes the whole path, so the relative path is validated
-		// here rather than trusted from the caller.
 		if err := skilltree.ValidateRelativePath(update.Path); err != nil {
 			return "", fmt.Errorf("destination path %q is unsafe: %w", update.Path, err)
 		}
-		target := filepath.Join(d.dir, filepath.FromSlash(update.Path))
-		// Canonical skill content never carries the ignored artifacts, so
-		// replacing the path wholesale would publish a deletion of any the
-		// destination itself committed. They are preserved instead: push
-		// contributes skill content and never removes files it does not manage.
-		preserved, err := collectIgnoredFiles(target)
-		if err != nil {
-			return "", err
-		}
-		if err := os.RemoveAll(target); err != nil {
-			return "", fmt.Errorf("failed to clear destination path %s: %w", update.Path, err)
-		}
-		if err := os.MkdirAll(target, 0o750); err != nil {
-			return "", fmt.Errorf("failed to create destination path %s: %w", update.Path, err)
-		}
-		if err := skilltree.Materialize(update.Tree, target); err != nil {
-			return "", err
-		}
-		if err := restoreIgnoredFiles(target, preserved); err != nil {
+		if _, err := d.ReadTree(ctx, base, update.Path); err != nil {
 			return "", err
 		}
 	}
-	if _, err := d.runner.run(ctx, d.dir, "add", "--all", "--"); err != nil {
+	if _, err := d.runner.run(ctx, d.dir, "read-tree", base); err != nil {
 		return "", err
 	}
-	if _, err := d.runner.run(ctx, d.dir, "commit", "--quiet", "--message", message); err != nil {
+	for _, update := range updates {
+		if err := d.replaceIndexTree(ctx, update); err != nil {
+			return "", err
+		}
+	}
+	tree, err := d.runner.run(ctx, d.dir, "write-tree")
+	if err != nil {
+		return "", err
+	}
+	commit, err := d.runner.run(ctx, d.dir,
+		"-c", "commit.gpgSign=false",
+		"commit-tree", strings.TrimSpace(string(tree)), "-p", base, "-m", message)
+	if err != nil {
 		return "", annotateIdentityFailure(err)
 	}
-	commit, err := d.runner.run(ctx, d.dir, "rev-parse", "HEAD")
-	if err != nil {
+	commitID := strings.TrimSpace(string(commit))
+	if _, err := d.runner.run(ctx, d.dir, "push", "--", d.repository.git, commitID+":refs/heads/"+branch); err != nil {
 		return "", err
 	}
-	if _, err := d.runner.run(ctx, d.dir, "push", "--", d.repository.git, "HEAD:refs/heads/"+branch); err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(commit)), nil
+	return commitID, nil
 }
 
-// ignoredFile is one destination-only artifact preserved across publication.
-type ignoredFile struct {
-	// relative is the slash-separated path below the replaced skill root.
-	relative string
-	data     []byte
-	mode     os.FileMode
-}
-
-// collectIgnoredFiles reads every regular file under root that canonical skill
-// content excludes, so publication can put them back. A missing root yields no
-// files: the destination simply does not carry the skill yet.
-func collectIgnoredFiles(root string) ([]ignoredFile, error) {
-	// The walk is rooted so a symlink committed upstream cannot lead a read
-	// outside the skill path being replaced.
-	opened, err := os.OpenRoot(root)
+// replaceIndexTree removes every indexed entry below update.Path and inserts
+// the desired tree as exact Git blobs. Paths and modes come only from the
+// already validated canonical skill tree.
+func (d *Destination) replaceIndexTree(ctx context.Context, update Update) error {
+	tracked, err := d.runner.run(ctx, d.dir, "ls-files", "-z", "--", literalPathspec(update.Path))
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
+		return fmt.Errorf("failed to list destination index path %s: %w", update.Path, err)
+	}
+	for _, existing := range strings.Split(string(tracked), "\x00") {
+		if existing == "" {
+			continue
 		}
-		return nil, fmt.Errorf("failed to open destination path %s: %w", root, err)
+		if _, err := d.runner.run(ctx, d.dir, "update-index", "--force-remove", "--", existing); err != nil {
+			return fmt.Errorf("failed to remove %s from the destination index: %w", existing, err)
+		}
 	}
-	defer func() { _ = opened.Close() }()
 
-	rooted := opened.FS()
-	var preserved []ignoredFile
-	walkErr := fs.WalkDir(rooted, ".", func(name string, entry fs.DirEntry, err error) error {
+	for _, file := range update.Tree.Files() {
+		indexPath := path.Join(update.Path, file.Path)
+		if err := skilltree.ValidateRelativePath(indexPath); err != nil {
+			return fmt.Errorf("destination file path %q is unsafe: %w", indexPath, err)
+		}
+		object, err := d.runner.runInput(ctx, d.dir, file.Data, "hash-object", "-w", "--no-filters", "--stdin")
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to write blob for %s: %w", indexPath, err)
 		}
-		if name == "." || !isIgnoredTreePath(name) {
-			return nil
+		mode := "100644"
+		if file.Executable {
+			mode = "100755"
 		}
-		if entry.IsDir() {
-			// A directory whose own name is ignored carries nothing canonical,
-			// and .git is a nested repository rather than skill content.
-			return fs.SkipDir
-		}
-		if !entry.Type().IsRegular() {
-			return nil
-		}
-		info, infoErr := entry.Info()
-		if infoErr != nil {
-			return fmt.Errorf("failed to inspect %s: %w", name, infoErr)
-		}
-		data, readErr := fs.ReadFile(rooted, name)
-		if readErr != nil {
-			return fmt.Errorf("failed to read %s: %w", name, readErr)
-		}
-		preserved = append(preserved, ignoredFile{relative: name, data: data, mode: info.Mode().Perm()})
-		return nil
-	})
-	if walkErr != nil {
-		return nil, walkErr
-	}
-	return preserved, nil
-}
-
-// restoreIgnoredFiles rewrites the artifacts collectIgnoredFiles preserved.
-func restoreIgnoredFiles(root string, preserved []ignoredFile) error {
-	for _, file := range preserved {
-		target := filepath.Join(root, filepath.FromSlash(file.relative))
-		if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
-			return fmt.Errorf("failed to create %s: %w", filepath.Dir(target), err)
-		}
-		if err := os.WriteFile(target, file.data, file.mode); err != nil { // #nosec G306 -- the destination's own recorded mode is restored unchanged.
-			return fmt.Errorf("failed to restore %s: %w", target, err)
+		if _, err := d.runner.run(ctx, d.dir, "update-index", "--add", "--cacheinfo", mode, strings.TrimSpace(string(object)), indexPath); err != nil {
+			return fmt.Errorf("failed to stage %s in the destination index: %w", indexPath, err)
 		}
 	}
 	return nil

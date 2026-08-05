@@ -3,6 +3,7 @@ package skillimport
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -82,9 +83,45 @@ func TestPushDirectPolicyCommitsToTheDestinationDefaultBranch(t *testing.T) {
 	}
 }
 
+// TestPullIgnoresButPushRejectsDestinationArtifacts proves source ingestion may
+// omit platform noise without authorizing a later push to silently preserve or
+// delete that same committed destination state.
+func TestPullIgnoresButPushRejectsDestinationArtifacts(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteFile("skills/alpha/.DS_Store", "noise\n", 0o644)
+	head := source.Commit("add alpha with destination noise")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}, `write_policy = "direct"`))
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	requireOutcome(t, report, "alpha", OutcomeImported)
+	if _, err := os.Stat(filepath.Join(proj.paths.ImportedSkillsDir, "alpha", ".DS_Store")); !os.IsNotExist(err) {
+		t.Fatalf("pull materialized an ignored source artifact: %v", err)
+	}
+	proj.WriteImportedFile("alpha", "notes.md", "local note\n")
+
+	report, err = proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	failed := requireOutcome(t, report, "alpha", OutcomeFailed)
+	for _, want := range []string{"skills/alpha/.DS_Store", "remove", "destination repository"} {
+		if !strings.Contains(failed.Err.Error(), want) {
+			t.Fatalf("failure %q does not contain %q", failed.Err, want)
+		}
+	}
+	if source.Head("main") != head {
+		t.Fatal("artifact rejection still modified the destination")
+	}
+}
+
 // TestPushBranchPolicyCreatesTheConfiguredBranchAndGroupsSkills proves an
-// explicitly configured branch is created from the locked source commit and
-// that every skill sharing a destination is committed together.
+// explicitly configured branch is created from the destination default branch
+// and every skill sharing a destination is committed together.
 func TestPushBranchPolicyCreatesTheConfiguredBranchAndGroupsSkills(t *testing.T) {
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
@@ -260,11 +297,46 @@ func TestPushRefusesToWriteToADestinationDefaultBranchUnderBranchPolicy(t *testi
 		t.Fatalf("Push: %v", err)
 	}
 	failed := requireOutcome(t, report, "alpha", OutcomeFailed)
-	if !strings.Contains(failed.Err.Error(), "default branch") {
+	if !strings.Contains(failed.Err.Error(), `write_policy = "branch" never writes`) {
 		t.Fatalf("failure %q does not name the primary-branch policy", failed.Err)
 	}
 	if source.Head("develop") != head {
 		t.Fatal("branch policy wrote to the destination's primary branch")
+	}
+}
+
+// TestPushCannotCreateABranchWithoutADestinationDefault proves Agent Layer does
+// not invent a base or select one candidate's locked source when the
+// destination has no default branch.
+func TestPushCannotCreateABranchWithoutADestinationDefault(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.Commit("add alpha")
+
+	destination := newGitRepo(t, "main")
+	destination.run("checkout", "--quiet", "--detach", destination.Head("main"))
+	destination.run("branch", "-D", "main")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"},
+		`write_policy = "branch"`, `push_branch = "skill-updates"`, `push_repository = "`+destination.URL()+`"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	proj.WriteImportedFile("alpha", "notes.md", "local note\n")
+
+	report, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	failed := requireOutcome(t, report, "alpha", OutcomeFailed)
+	if !strings.Contains(failed.Err.Error(), "could not determine the default branch") {
+		t.Fatalf("failure %q does not explain the missing destination base", failed.Err)
+	}
+	cmd := exec.Command("git", "show-ref", "--verify", "--quiet", "refs/heads/skill-updates")
+	cmd.Dir = destination.dir
+	if cmd.Run() == nil {
+		t.Fatal("a failed push still created the configured branch")
 	}
 }
 
@@ -669,8 +741,10 @@ func TestPushFailsEverySkillInARejectedGroup(t *testing.T) {
 	if _, err := proj.Service().Pull(context.Background()); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
+	// Only alpha changes. Beta is still a surviving member of the same atomic
+	// destination group, so the rejected publication must fail beta too rather
+	// than reporting it unchanged.
 	proj.WriteImportedFile("alpha", "notes.md", "alpha note\n")
-	proj.WriteImportedFile("beta", "notes.md", "beta note\n")
 
 	// The destination refuses updates to its checked-out branch, so the push
 	// itself is rejected after the group's commit was built.
