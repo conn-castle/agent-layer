@@ -46,6 +46,7 @@ const (
 	SyncReadTemplateFailedFmt                       = "failed to read template %s: %w"
 	SyncReadFailedFmt                               = "failed to read %s: %w"
 	SyncRemoveFailedFmt                             = "failed to remove %s: %w"
+	SyncRenameFailedFmt                             = "failed to rename %s to %s: %w"
 	SyncMCPServerErrorFmt                           = "mcp server %s: %w"
 	SyncMCPServerArgFailedFmt                       = "mcp server %s arg: %w"
 	SyncCodexHeaderPlaceholderUnsupportedFmt        = "codex header %s must be literal or use ${VAR}"
@@ -68,4 +69,16 @@ const (
 	MCPServerEnvFmt                  = "mcp server %s env %s: %w"
 	MCPUnsupportedTransportFmt       = "unsupported transport %s"
 	MCPServerUnsupportedTransportFmt = "mcp server %s: unsupported transport %s"
+)
+
+// Skill source snapshot messages. These describe ownership problems that only
+// exist once Git-backed imports are configured alongside user-managed skills.
+const (
+	// SyncImportedSkillOrphanFmt reports imported directories with no lock entry.
+	SyncImportedSkillOrphanFmt = "imported skill directories have no entry in .agent-layer/skills.lock.json: %s; move each one into .agent-layer/skills/ to adopt it as user-managed, or delete it, then run 'al skills status'"
+	// SyncImportedSkillInvalidFmt reports an imported skill whose local content
+	// Agent Layer cannot project faithfully.
+	SyncImportedSkillInvalidFmt = "imported skill %s cannot be projected: %v; fix it in place, adopt it as user-managed, or run 'al skills pull' to restore it from its source"
+	// SyncSkillTierCollisionFmt reports one skill name owned by both tiers.
+	SyncSkillTierCollisionFmt = "skill %q exists in both %s and %s; Agent Layer never shadows one source with the other -- remove one directory or narrow the import selector that produced it"
 )

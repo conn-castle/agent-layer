@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io/fs"
 	pathpkg "path"
@@ -145,6 +146,28 @@ func LoadSkillsFS(fsys fs.FS, root string, dir string) ([]Skill, error) {
 			return readFileFS(fsys, root, path)
 		},
 	)
+}
+
+// LoadImportedSkillsFS reads .agent-layer/imported-skills from fsys using the
+// same strict directory-format rules as user-managed skills, and marks every
+// result as imported. A missing directory contributes no skills because
+// imports are optional; any other read failure is returned.
+// root is used for path resolution when dir is absolute; dir is used for error messages.
+func LoadImportedSkillsFS(fsys fs.FS, root string, dir string) ([]Skill, error) {
+	if _, err := readDirFS(fsys, root, dir); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf(messages.ConfigFailedReadImportedSkillsDirFmt, dir, err)
+	}
+	skills, err := LoadSkillsFS(fsys, root, dir)
+	if err != nil {
+		return nil, err
+	}
+	for i := range skills {
+		skills[i].Imported = true
+	}
+	return skills, nil
 }
 
 // LoadCommandsAllowFS reads .agent-layer/commands.allow from fsys into a slice of prefixes.

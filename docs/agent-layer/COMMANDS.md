@@ -132,7 +132,7 @@ make test-race
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+
-Notes: Covers `internal/agentdispatch`, `internal/sync`, `internal/install`, and `internal/warnings`.
+Notes: Covers `internal/agentdispatch`, `internal/sync`, `internal/install`, `internal/warnings`, `internal/projectlock`, and `internal/skillimport` — every package that participates in the shared project lock that serializes projection with skill import mutations.
 
 - Run scenario-based end-to-end tests (offline, hermetic)
 ```bash

@@ -3,16 +3,19 @@ package config
 import (
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/mitchellh/go-homedir"
 
+	"github.com/conn-castle/agent-layer/internal/envref"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
-var envVarPattern = regexp.MustCompile(`\$\{([A-Z0-9_]+)\}`)
+// envVarPattern is the shared placeholder syntax. It is defined in
+// internal/envref so the validation paths that must recognize a placeholder
+// without resolving it cannot drift from this substitution path.
+var envVarPattern = envref.Pattern
 
 // EnvVarReplacer returns a replacement string for a resolved env var.
 type EnvVarReplacer func(name string, value string) string
@@ -20,17 +23,7 @@ type EnvVarReplacer func(name string, value string) string
 // ExtractEnvVarNames returns env var names referenced by ${VAR} placeholders.
 // input is a string that may contain placeholders; returns names in scan order.
 func ExtractEnvVarNames(input string) []string {
-	matches := envVarPattern.FindAllStringSubmatch(input, -1)
-	if len(matches) == 0 {
-		return nil
-	}
-	names := make([]string, 0, len(matches))
-	for _, match := range matches {
-		if len(match) > 1 && match[1] != "" {
-			names = append(names, match[1])
-		}
-	}
-	return names
+	return envref.Names(input)
 }
 
 // SubstituteEnvVars replaces ${VAR} placeholders using env values.

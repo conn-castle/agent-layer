@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -29,19 +30,22 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 			quietFlag, _ := cmd.Flags().GetBool("quiet")
-			project, err := config.LoadProjectConfig(root)
+			// Only base configuration is read here. The skill sources sync
+			// projects are loaded inside the project lock by sync.Run so a
+			// concurrent `al skills` mutation cannot be observed half-applied.
+			cfg, err := config.LoadConfigFS(os.DirFS(root), root, config.DefaultPaths(root).ConfigPath)
 			if err != nil {
 				return err
 			}
-			effectiveQuiet := quietFlag || strings.EqualFold(strings.TrimSpace(project.Config.Warnings.NoiseMode), warnings.NoiseModeQuiet)
+			effectiveQuiet := quietFlag || strings.EqualFold(strings.TrimSpace(cfg.Warnings.NoiseMode), warnings.NoiseModeQuiet)
 			stderr := cmd.ErrOrStderr()
 			if effectiveQuiet {
 				stderr = io.Discard
 			}
-			if project.Config.Warnings.VersionUpdateOnSync != nil && *project.Config.Warnings.VersionUpdateOnSync {
+			if cfg.Warnings.VersionUpdateOnSync != nil && *cfg.Warnings.VersionUpdateOnSync {
 				updatewarn.WarnIfOutdated(cmd.Context(), Version, stderr)
 			}
-			result, err := sync.RunWithProject(sync.RealSystem{}, root, project)
+			result, err := sync.Run(root)
 			if err != nil {
 				return err
 			}
@@ -57,7 +61,7 @@ func newSyncCmd() *cobra.Command {
 					return ErrSyncCompletedWithWarnings
 				}
 			}
-			if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
+			if cfg.Approvals.Mode == config.ApprovalModeYOLO {
 				_, _ = fmt.Fprintln(stderr, messages.WarningsPolicyYOLOAck)
 			}
 			return nil

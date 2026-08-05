@@ -316,8 +316,11 @@ func writeIdentity(stderr io.Writer, name string, agent string, mode string, dur
 	return err
 }
 
+// loadDispatchProject loads the combined skill-source snapshot inside the
+// project lock so `--skill` validation sees imported skills exactly as ordinary
+// projection does.
 func loadDispatchProject(root string, stderr io.Writer, env []string) (*config.ProjectConfig, io.Writer, []string, int, error) {
-	project, err := config.LoadProjectConfig(root)
+	project, err := sync.LoadLockedSources(sync.RealSystem{}, root)
 	if err != nil {
 		return nil, nil, nil, 0, wrapExitError(ExitConfig, err.Error(), err)
 	}
@@ -372,7 +375,8 @@ func prepareFresh(project *config.ProjectConfig, target targetMeta, opts runOpti
 }
 
 func prepareProjection(project *config.ProjectConfig, root string, stderr io.Writer) error {
-	result, err := sync.RunWithProject(sync.RealSystem{}, root, project)
+	// Skill sources are loaded inside the project lock by sync.Run.
+	result, err := sync.Run(root)
 	if err != nil {
 		return syncRunExitError(err)
 	}
@@ -396,7 +400,11 @@ func prepareProjection(project *config.ProjectConfig, root string, stderr io.Wri
 // provider launch directory. Dispatch state and the canonical generated
 // projection remain rooted at root; a distinct working directory receives a
 // derived target-specific projection so native skill references resolve there.
-func prepareTargetProjection(project *config.ProjectConfig, root string, workingDir string, target targetMeta) (string, error) {
+//
+// The derived projection is built from the same locked combined source snapshot
+// ordinary sync uses, so user-managed and imported skills are equally visible
+// and a concurrent `al skills` mutation cannot be observed half-applied.
+func prepareTargetProjection(root string, workingDir string, target targetMeta) (string, error) {
 	projectionRoot := workingDir
 	if projectionRoot == "" {
 		projectionRoot = root
@@ -405,12 +413,12 @@ func prepareTargetProjection(project *config.ProjectConfig, root string, working
 		return projectionRoot, nil
 	}
 
-	var err error
-	if target.SharedSkillProject {
-		err = sync.WriteAgentSkills(sync.RealSystem{}, projectionRoot, project.Skills)
-	} else {
-		err = sync.WriteClaudeSkills(sync.RealSystem{}, projectionRoot, project.Skills)
-	}
+	err := sync.WithLockedProject(sync.RealSystem{}, root, func(project *config.ProjectConfig) error {
+		if target.SharedSkillProject {
+			return sync.WriteAgentSkills(sync.RealSystem{}, projectionRoot, project.Skills)
+		}
+		return sync.WriteClaudeSkills(sync.RealSystem{}, projectionRoot, project.Skills)
+	})
 	if err != nil {
 		return "", syncRunExitError(err)
 	}

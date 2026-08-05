@@ -19,6 +19,7 @@ type MockSystem struct {
 	ReadDirFunc         func(name string) ([]os.DirEntry, error)
 	RemoveFunc          func(name string) error
 	RemoveAllFunc       func(path string) error
+	RenameFunc          func(oldpath string, newpath string) error
 	CloseFunc           func(file *os.File) error
 	FlockFunc           func(fd int, how int) error
 	NowFunc             func() time.Time
@@ -131,6 +132,17 @@ func (m *MockSystem) RemoveAll(path string) error {
 	}
 	if m.Fallback != nil {
 		return m.Fallback.RemoveAll(path)
+	}
+	return os.ErrNotExist
+}
+
+// Rename injects publication and rollback faults for skill projection.
+func (m *MockSystem) Rename(oldpath string, newpath string) error {
+	if m.RenameFunc != nil {
+		return m.RenameFunc(oldpath, newpath)
+	}
+	if m.Fallback != nil {
+		return m.Fallback.Rename(oldpath, newpath)
 	}
 	return os.ErrNotExist
 }

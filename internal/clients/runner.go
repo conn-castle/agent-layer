@@ -64,7 +64,9 @@ func RunWithStderr(ctx context.Context, root string, name string, enabled Enable
 	if project.Config.Warnings.VersionUpdateOnSync != nil && *project.Config.Warnings.VersionUpdateOnSync {
 		updatewarn.WarnIfOutdated(ctx, currentVersion, stderr)
 	}
-	result, err := sync.RunWithProject(sync.RealSystem{}, root, project)
+	// Skill sources are loaded inside the project lock by sync.Run; the
+	// launcher only needs base configuration before projection.
+	result, err := sync.Run(root)
 	if err != nil {
 		return err
 	}

@@ -20,17 +20,16 @@ type Result struct {
 }
 
 // Run regenerates all configured outputs for the repo.
+//
+// The combined skill-source snapshot is loaded inside the project lock so an
+// `al skills` mutation running concurrently can never be observed half-applied.
 // Returns any sync-time warnings and an error if sync failed.
 func Run(root string) (*Result, error) {
-	project, err := config.LoadProjectConfigFS(os.DirFS(root), root)
-	if err != nil {
-		return nil, err
-	}
-
-	return RunWithProject(RealSystem{}, root, project)
+	return RunWithSystemFS(RealSystem{}, os.DirFS(root), root)
 }
 
-// RunWithSystemFS loads project config from fsys and runs sync with the provided System.
+// RunWithSystemFS loads the combined source snapshot from fsys inside the
+// project lock and runs sync with the provided System.
 // sys provides OS operations for sync writers; fsys must be rooted at repo root.
 func RunWithSystemFS(sys System, fsys fs.FS, root string) (*Result, error) {
 	if sys == nil {
@@ -39,14 +38,20 @@ func RunWithSystemFS(sys System, fsys fs.FS, root string) (*Result, error) {
 	if fsys == nil {
 		return nil, fmt.Errorf(messages.SyncConfigFSRequired)
 	}
-	project, err := config.LoadProjectConfigFS(fsys, root)
-	if err != nil {
-		return nil, err
-	}
-	return RunWithProject(sys, root, project)
+	return withProjectSyncLock(sys, root, func() (*Result, error) {
+		project, err := LoadSources(fsys, root)
+		if err != nil {
+			return nil, err
+		}
+		return runWithProjectLocked(sys, root, project)
+	})
 }
 
 // RunWithProject regenerates outputs using an already loaded project config.
+//
+// Production entry points use Run or RunWithSystemFS instead so source loading
+// happens inside the lock; this variant exists for callers that already own a
+// validated snapshot (and for focused tests of the projection steps).
 // Returns any sync-time warnings and an error if sync failed.
 func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Result, error) {
 	if sys == nil {

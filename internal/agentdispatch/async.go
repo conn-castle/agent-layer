@@ -16,6 +16,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/sync"
 )
 
 const (
@@ -80,7 +81,7 @@ func Start(opts StartOptions) error {
 	if err := prepareProjection(project, opts.Root, stderr); err != nil {
 		return err
 	}
-	projectionRoot, err := prepareTargetProjection(project, opts.Root, opts.WorkDir, target)
+	projectionRoot, err := prepareTargetProjection(opts.Root, opts.WorkDir, target)
 	if err != nil {
 		return err
 	}
@@ -166,7 +167,7 @@ func Continue(opts ContinueOptions) error {
 	if err := prepareProjection(project, opts.Root, stderr); err != nil {
 		return err
 	}
-	if _, err := prepareTargetProjection(project, opts.Root, opts.WorkDir, target); err != nil {
+	if _, err := prepareTargetProjection(opts.Root, opts.WorkDir, target); err != nil {
 		return err
 	}
 	run, err := newDispatchRun(opts.Root, target.Name, version, dispatchModeResume)
@@ -389,8 +390,11 @@ func RunWorker(root string, runID string, gate io.Reader) error {
 	})
 }
 
+// loadWorkerProject loads the combined skill-source snapshot inside the project
+// lock so a background worker resolves `--skill` against the same validated set
+// the foreground command did.
 func loadWorkerProject(root string) (*config.ProjectConfig, error) {
-	project, err := config.LoadProjectConfig(root)
+	project, err := sync.LoadLockedSources(sync.RealSystem{}, root)
 	if err != nil {
 		return nil, wrapExitError(ExitConfig, err.Error(), err)
 	}

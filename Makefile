@@ -152,7 +152,7 @@ refresh-deepswe-planner-data: ## Download the official DeepSWE snapshot and rege
 .PHONY: test-race
 test-race: ## Run race detector for concurrency-critical packages
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go test -race ./internal/agentdispatch/... ./internal/sync/... ./internal/install/... ./internal/warnings/...
+	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go test -race ./internal/agentdispatch/... ./internal/sync/... ./internal/install/... ./internal/warnings/... ./internal/projectlock/... ./internal/skillimport/...
 
 .PHONY: dead-code
 dead-code: check-deadcode ## Run dead code analysis across all packages (test-aware); fails on findings
