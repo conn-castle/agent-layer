@@ -972,48 +972,87 @@ func TestLoadUpgradeMigrationManifest_0_16_0_ClaimsClientSkillRoots(t *testing.T
 	}
 }
 
-// TestLoadUpgradeMigrationManifest_0_16_0_ConsolidatesInstructionFiles pins the
-// upgrade path for the 0.16.0 instruction-template consolidation. 00_rules.md
-// absorbed 01_base.md and 03_tools.md and 02_memory.md was renumbered, so an
-// existing install that is not migrated would keep loading the superseded
-// files alongside the new ones. 04_conventions.md is deliberately left in
-// place: it is user-authored content whose subject matter did not move into
-// 00_rules.md, so deleting it would destroy the user's own conventions.
-func TestLoadUpgradeMigrationManifest_0_16_0_ConsolidatesInstructionFiles(t *testing.T) {
+// TestLoadUpgradeMigrationManifest_0_16_0_RenamesMemoryWithoutDeletingInstructions
+// pins the upgrade path for the 0.16.0 instruction-template consolidation.
+// 02_memory.md is renumbered so its content (including any local edits) carries
+// forward into 01_memory.md and stays on the managed overwrite-prompt path.
+//
+// The files 00_rules.md superseded are deliberately NOT deleted. Instruction
+// fragments are documented as user-editable, and a delete_file migration runs
+// unconditionally ahead of the overwrite prompts, so it would silently discard
+// project-specific rules a user added to them. They are reported as orphans
+// instead — see TestBuildUpgradePlan_SupersededInstructionFilesAreReportedAsOrphans.
+func TestLoadUpgradeMigrationManifest_0_16_0_RenamesMemoryWithoutDeletingInstructions(t *testing.T) {
 	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.16.0")
 	if err != nil {
 		t.Fatalf("load 0.16.0 manifest: %v", err)
 	}
 
 	renamed := false
-	deleted := map[string]bool{}
 	for _, op := range manifest.Operations {
-		if !op.SourceAgnostic {
-			continue
+		if op.Kind == upgradeMigrationKindRenameFile &&
+			op.From == ".agent-layer/instructions/02_memory.md" &&
+			op.To == ".agent-layer/instructions/01_memory.md" &&
+			op.SourceAgnostic {
+			renamed = true
 		}
-		switch op.Kind {
-		case upgradeMigrationKindRenameFile:
-			if op.From == ".agent-layer/instructions/02_memory.md" && op.To == ".agent-layer/instructions/01_memory.md" {
-				renamed = true
-			}
-		case upgradeMigrationKindDeleteFile:
-			deleted[op.Path] = true
-		}
-		if op.Path == ".agent-layer/instructions/04_conventions.md" {
-			t.Fatalf("operation %s must not touch user-authored 04_conventions.md", op.ID)
+		if op.Kind == upgradeMigrationKindDeleteFile &&
+			strings.HasPrefix(op.Path, ".agent-layer/instructions/") {
+			t.Fatalf("operation %s deletes user-editable %s; superseded instruction files must be reported as orphans", op.ID, op.Path)
 		}
 	}
 
 	if !renamed {
 		t.Fatalf("manifest = %#v, want 02_memory.md renamed to 01_memory.md", manifest.Operations)
 	}
+}
+
+// TestBuildUpgradePlan_SupersededInstructionFilesAreReportedAsOrphans is the
+// other half of the consolidation contract: because the migration no longer
+// deletes them, `al upgrade` must surface 01_base.md and 03_tools.md so the
+// user knows superseded instructions are still being loaded every session.
+// Without this the files would sit in .agent-layer/instructions/ unmentioned.
+func TestBuildUpgradePlan_SupersededInstructionFilesAreReportedAsOrphans(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.2.3"}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	instructionsDir := filepath.Join(root, ".agent-layer", "instructions")
+	if err := os.MkdirAll(instructionsDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// A pre-0.16.0 layout, including a file the user edited.
+	for name, content := range map[string]string{
+		"00_rules.md": "# Rules\n",
+		"01_base.md":  "# Instructions\n\n- My own project rule.\n",
+		"03_tools.md": "# Tools\n",
+	} {
+		if err := os.WriteFile(filepath.Join(instructionsDir, name), []byte(content), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+	if err != nil {
+		t.Fatalf("BuildUpgradePlan: %v", err)
+	}
+
 	for _, path := range []string{
 		".agent-layer/instructions/01_base.md",
 		".agent-layer/instructions/03_tools.md",
 	} {
-		if !deleted[path] {
-			t.Fatalf("manifest = %#v, want superseded %s deleted", manifest.Operations, path)
+		if findUpgradeChange(plan.TemplateRemovalsOrOrphans, path) == nil {
+			t.Fatalf("plan orphans = %#v, want superseded %s reported", plan.TemplateRemovalsOrOrphans, path)
 		}
+	}
+
+	// Reporting must not imply removal: the user's edits are still on disk.
+	data, err := os.ReadFile(filepath.Join(instructionsDir, "01_base.md")) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read 01_base.md: %v", err)
+	}
+	if !strings.Contains(string(data), "My own project rule.") {
+		t.Fatalf("planning an upgrade must not touch user content, got:\n%s", string(data))
 	}
 }
 

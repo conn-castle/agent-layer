@@ -192,7 +192,13 @@ Use an `append_to_file` migration when content must reach an existing install wi
 During `al upgrade` the migration appends the content and reports it in the upgrade output when it actually applies.
 
 ### Renaming or removing a bundled instruction
-Template renames and removals do not reach existing installs on their own — an orphaned file keeps being loaded as instructions. Pair the template change with `rename_file` / `delete_file` operations in the next version's migration manifest, as `0.16.0` does for the consolidation into `00_rules.md` and `01_memory.md`. Do not delete files that hold user-authored content.
+Template renames and removals do not reach existing installs on their own, and an orphaned instruction file keeps being loaded every session.
+
+For a **rename**, add a `rename_file` operation to the next version's migration manifest, as `0.16.0` does for `02_memory.md` → `01_memory.md`. The file carries its content forward and stays on the managed overwrite-prompt path, so local edits are preserved or prompted rather than lost.
+
+For a **removal**, do not add a `delete_file` operation. Instruction fragments are documented as user-editable, and `delete_file` runs unconditionally ahead of the overwrite prompts, so it would silently discard project-specific rules a user added to the file. `al upgrade` already reports a file whose template is gone under template removals/orphans; deleting it is the user's call. `0.16.0` takes this route for `01_base.md` and `03_tools.md` after folding their content into `00_rules.md`.
+
+Reserve `delete_file` for artifacts a user cannot meaningfully have edited.
 
 ## Troubleshooting
 - If you see `golangci-lint: command not found` or `goimports: command not found`, run:

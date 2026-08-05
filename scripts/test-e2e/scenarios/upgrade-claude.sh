@@ -65,13 +65,20 @@ run_scenario_upgrade_claude() {
     "Guiding Principles" "upgraded instructions/00_rules.md has current template content"
 
   # The 0.16.0 consolidation folded 01_base.md and 03_tools.md into 00_rules.md
-  # and renumbered 02_memory.md. Without the migration an upgraded repo would
-  # keep loading the superseded files alongside the new ones.
+  # and renumbered 02_memory.md.
   assert_file_contains "$repo_dir/.agent-layer/instructions/01_memory.md" \
     "Project Memory" "upgrade renames instructions/02_memory.md to 01_memory.md"
-  for name in 01_base.md 02_memory.md 03_tools.md; do
+  assert_file_not_exists "$repo_dir/.agent-layer/instructions/02_memory.md" \
+    "upgrade leaves no instructions/02_memory.md behind after the rename"
+
+  # No migration deletes the superseded files: instruction fragments are
+  # user-editable, so they are reported as orphans and removed only when the
+  # user opts in. This scenario passes --apply-deletions, which is that opt-in,
+  # so they are gone here. The default (report, keep) is covered by
+  # TestBuildUpgradePlan_SupersededInstructionFilesAreReportedAsOrphans.
+  for name in 01_base.md 03_tools.md; do
     assert_file_not_exists "$repo_dir/.agent-layer/instructions/$name" \
-      "upgrade removes superseded instructions/$name"
+      "--apply-deletions removes orphaned instructions/$name"
   done
 
   cleanup_scenario_dir "$repo_dir"
