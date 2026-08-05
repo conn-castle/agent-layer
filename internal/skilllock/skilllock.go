@@ -267,22 +267,23 @@ func ValidateRepository(repository string) error {
 }
 
 func validateRepositoryTransport(repository string) error {
+	if index := strings.Index(repository, "::"); index > 0 && isLiteralScheme(repository[:index]) {
+		return fmt.Errorf("repository remote-helper transport %q is not supported; use https, ssh, git, file, an scp-style SSH reference, or a local path", strings.ToLower(repository[:index]))
+	}
 	if scheme, explicit := explicitGitTransport(repository); explicit && !allowedGitTransport(scheme) {
 		return fmt.Errorf("repository transport %q is not supported; use https, ssh, git, file, an scp-style SSH reference, or a local path", scheme)
 	}
 	return nil
 }
 
-// explicitGitTransport returns a literal URL or remote-helper transport. Local
-// paths and scp-style SSH references have no explicit transport and remain
-// supported. Placeholder-built schemes are resolved only at execution, where
-// the runner's protocol allowlist is authoritative.
+// explicitGitTransport returns a literal URL transport. Local paths and
+// scp-style SSH references have no explicit transport and remain supported.
+// Remote helpers are rejected before this function. Placeholder-built schemes
+// are resolved only at execution, where the runner's protocol allowlist is
+// authoritative.
 func explicitGitTransport(repository string) (string, bool) {
-	for _, separator := range []string{"://", "::"} {
-		index := strings.Index(repository, separator)
-		if index <= 0 {
-			continue
-		}
+	index := strings.Index(repository, "://")
+	if index > 0 {
 		scheme := repository[:index]
 		if isLiteralScheme(scheme) {
 			return strings.ToLower(scheme), true

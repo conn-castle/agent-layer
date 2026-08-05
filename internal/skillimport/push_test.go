@@ -297,7 +297,7 @@ func TestPushRefusesToWriteToADestinationDefaultBranchUnderBranchPolicy(t *testi
 		t.Fatalf("Push: %v", err)
 	}
 	failed := requireOutcome(t, report, "alpha", OutcomeFailed)
-	if !strings.Contains(failed.Err.Error(), "default branch") {
+	if !strings.Contains(failed.Err.Error(), `write_policy = "branch" never writes`) {
 		t.Fatalf("failure %q does not name the primary-branch policy", failed.Err)
 	}
 	if source.Head("develop") != head {
@@ -330,7 +330,7 @@ func TestPushCannotCreateABranchWithoutADestinationDefault(t *testing.T) {
 		t.Fatalf("Push: %v", err)
 	}
 	failed := requireOutcome(t, report, "alpha", OutcomeFailed)
-	if !strings.Contains(failed.Err.Error(), "default branch") {
+	if !strings.Contains(failed.Err.Error(), "could not determine the default branch") {
 		t.Fatalf("failure %q does not explain the missing destination base", failed.Err)
 	}
 	cmd := exec.Command("git", "show-ref", "--verify", "--quiet", "refs/heads/skill-updates")

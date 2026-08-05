@@ -82,6 +82,16 @@ var gitPolicyVars = []string{
 	"GIT_PROTOCOL_FROM_USER=",
 }
 
+// gitPathspecVars can globally disable or change pathspec magic. Agent Layer
+// supplies explicit literal pathspecs, so inheriting any of these would change
+// the meaning of its validated repository paths.
+var gitPathspecVars = []string{
+	"GIT_LITERAL_PATHSPECS=",
+	"GIT_GLOB_PATHSPECS=",
+	"GIT_NOGLOB_PATHSPECS=",
+	"GIT_ICASE_PATHSPECS=",
+}
+
 // nonInteractiveEnv disables every interactive credential and SSH prompt so a
 // missing credential fails fast with an actionable error instead of blocking on
 // a terminal that an automated run does not have. It removes every inherited
@@ -101,6 +111,9 @@ func nonInteractiveEnv(base []string) []string {
 			continue
 		}
 		if hasAnyPrefix(entry, gitPolicyVars) {
+			continue
+		}
+		if hasAnyPrefix(entry, gitPathspecVars) {
 			continue
 		}
 		filtered = append(filtered, entry)

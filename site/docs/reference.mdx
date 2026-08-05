@@ -264,7 +264,7 @@ push_branch = "skill-updates"
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `repository` | yes | Source Git repository, reached through your existing Git authentication. Supported transports are HTTPS, SSH, Git, file, scp-style SSH, and local paths. |
+| `repository` | yes | Source Git repository, reached through your existing Git authentication. Supported transports are HTTPS, SSH, Git, file, scp-style SSH, and local paths. Plain HTTP is refused; use HTTPS or SSH instead. |
 | `selectors` | yes | Repository-relative skill directory paths. Wildcards are allowed, and a `!` prefix excludes matches inside the same block. At least one positive selector is required. |
 | `ref` | no | Branch, tag, or commit. Omit it to follow the repository's default branch, which is re-resolved on every pull. |
 | `tracking` | no | `tracked` or `pinned`. Omitted values resolve from the ref kind: branches track, tags and commits pin. `tracking = "tracked"` with a tag or commit is an error. |

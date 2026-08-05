@@ -227,7 +227,7 @@ you committed them in your own project, and it never pulls first.
 A missing configured contribution branch starts from the destination's current
 default branch. Pushes use Git objects directly rather than checking out remote
 content, and accept only HTTPS, SSH, Git, file, scp-style SSH, and local-path
-repository transports. If a destination skill contains an ignored artifact,
+repository transports. Plain HTTP is refused; use HTTPS or SSH instead. If a destination skill contains an ignored artifact,
 symbolic link, submodule, or another unsupported node, Agent Layer names it and
 requires you to remove it from the destination before retrying.
 

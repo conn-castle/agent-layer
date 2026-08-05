@@ -464,6 +464,8 @@ func TestValidateRepositoryRestrictsLiteralTransports(t *testing.T) {
 		"http://example.test/skills.git",
 		"ftp://example.test/skills.git",
 		"ext::sh -c true",
+		"ssh::git@example.test/org/skills.git",
+		"https::example.test/skills.git",
 		"unknown://example.test/skills.git",
 	} {
 		err := ValidateRepository(repository)

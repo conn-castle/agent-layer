@@ -541,6 +541,7 @@ func TestDestinationPathsAreAlwaysLiteral(t *testing.T) {
 	repo.write("skills/alpha/unrelated.txt", "keep\n", 0o644)
 	head := repo.commit("add metacharacter path and sibling")
 
+	t.Setenv("GIT_LITERAL_PATHSPECS", "1")
 	runner, err := NewRunner(nil)
 	if err != nil {
 		t.Skipf("git runner unavailable: %v", err)
@@ -722,6 +723,10 @@ func TestNonInteractiveEnvDropsInheritedRepositorySelection(t *testing.T) {
 		"GIT_NAMESPACE=ns",
 		"GIT_ALLOW_PROTOCOL=ext:file",
 		"GIT_PROTOCOL_FROM_USER=1",
+		"GIT_LITERAL_PATHSPECS=1",
+		"GIT_GLOB_PATHSPECS=1",
+		"GIT_NOGLOB_PATHSPECS=1",
+		"GIT_ICASE_PATHSPECS=1",
 	})
 	joined := strings.Join(env, "\n")
 	for _, leaked := range []string{"GIT_DIR=", "GIT_WORK_TREE=", "GIT_INDEX_FILE=", "GIT_COMMON_DIR=", "GIT_OBJECT_DIRECTORY=", "GIT_ALTERNATE_OBJECT_DIRECTORIES=", "GIT_NAMESPACE="} {
@@ -739,6 +744,11 @@ func TestNonInteractiveEnvDropsInheritedRepositorySelection(t *testing.T) {
 	}
 	if strings.Contains(joined, "GIT_ALLOW_PROTOCOL=ext:file") || strings.Contains(joined, "GIT_PROTOCOL_FROM_USER=1") {
 		t.Fatalf("inherited protocol policy survived: %v", env)
+	}
+	for _, leaked := range []string{"GIT_LITERAL_PATHSPECS=", "GIT_GLOB_PATHSPECS=", "GIT_NOGLOB_PATHSPECS=", "GIT_ICASE_PATHSPECS="} {
+		if strings.Contains(joined, leaked) {
+			t.Fatalf("inherited pathspec policy %s survived: %v", leaked, env)
+		}
 	}
 }
 

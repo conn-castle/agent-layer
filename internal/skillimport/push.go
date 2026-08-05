@@ -34,6 +34,9 @@ type pushGroup struct {
 	// value it carries reaches git alone.
 	Repository gitrepo.Repository
 	Branch     string
+	// DefaultBranch is resolved once with Branch and reused if a missing
+	// configured branch must start from the destination default.
+	DefaultBranch string
 	// BranchConfigured is true when the branch came from an explicit
 	// `push_branch`; a missing configured branch is created from the
 	// destination repository's current default-branch commit.
@@ -135,7 +138,7 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 			blocked(destinationErr)
 			continue
 		}
-		branch, branchConfigured, branchErr := resolvePushBranch(ctx, branches, block, destination)
+		branch, defaultBranch, branchConfigured, branchErr := resolvePushBranch(ctx, branches, block, destination)
 		if branchErr != nil {
 			blocked(branchErr)
 			continue
@@ -149,6 +152,7 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 			group = &pushGroup{
 				Repository:       destination,
 				Branch:           branch,
+				DefaultBranch:    defaultBranch,
 				BranchConfigured: branchConfigured,
 				SourceRepository: repository,
 				SourceRef:        entries[0].ResolvedRef,
@@ -265,20 +269,20 @@ func (c *defaultBranchCache) get(ctx context.Context, repository gitrepo.Reposit
 // vocabulary reserves primary-branch writes for `direct`, and a repository
 // whose default branch is neither `main` nor `master` cannot be recognized
 // statically.
-func resolvePushBranch(ctx context.Context, branches *defaultBranchCache, block config.SkillImport, destination gitrepo.Repository) (branch string, configured bool, err error) {
-	defaultBranch, err := branches.get(ctx, destination)
+func resolvePushBranch(ctx context.Context, branches *defaultBranchCache, block config.SkillImport, destination gitrepo.Repository) (branch string, defaultBranch string, configured bool, err error) {
+	defaultBranch, err = branches.get(ctx, destination)
 	if err != nil {
-		return "", false, err
+		return "", "", false, err
 	}
 	configuredBranch := strings.TrimSpace(block.PushBranch)
 	if configuredBranch == "" {
-		return defaultBranch, false, nil
+		return defaultBranch, defaultBranch, false, nil
 	}
 	if configuredBranch == defaultBranch {
-		return "", false, fmt.Errorf("push_branch %q is the default branch of %s; write_policy = %q never writes to a destination's primary branch, so use write_policy = %q or configure a different branch",
+		return "", "", false, fmt.Errorf("push_branch %q is the default branch of %s; write_policy = %q never writes to a destination's primary branch, so use write_policy = %q or configure a different branch",
 			configuredBranch, destination, config.SkillWritePolicyBranch, config.SkillWritePolicyDirect)
 	}
-	return configuredBranch, true, nil
+	return configuredBranch, defaultBranch, true, nil
 }
 
 // reportBlockedSkills records the required failed result for every skill a
@@ -358,18 +362,13 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 			s.failGroup(group, report, fmt.Errorf("destination %s has no branch %s", group.Repository, group.Branch))
 			return
 		}
-		defaultBranch, defaultErr := destination.DefaultBranch(ctx)
-		if defaultErr != nil {
-			s.failGroup(group, report, fmt.Errorf("cannot create destination branch %s because %s has no usable default branch: %w", group.Branch, group.Repository, defaultErr))
-			return
-		}
-		defaultHead, defaultExists, headErr := destination.Head(ctx, defaultBranch)
+		defaultHead, defaultExists, headErr := destination.Head(ctx, group.DefaultBranch)
 		if headErr != nil {
 			s.failGroup(group, report, headErr)
 			return
 		}
 		if !defaultExists {
-			s.failGroup(group, report, fmt.Errorf("cannot create destination branch %s because default branch %s does not exist in %s", group.Branch, defaultBranch, group.Repository))
+			s.failGroup(group, report, fmt.Errorf("cannot create destination branch %s because default branch %s does not exist in %s", group.Branch, group.DefaultBranch, group.Repository))
 			return
 		}
 		if fetchErr := destination.FetchCommit(ctx, group.Repository, defaultHead); fetchErr != nil {
