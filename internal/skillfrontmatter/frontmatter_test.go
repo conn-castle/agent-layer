@@ -123,7 +123,17 @@ func TestParse_UnknownAndEmptyKeysTolerated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse error: %v", err)
 	}
-	if len(doc.Keys) != 2 || doc.Keys[0] != "description" || doc.Keys[1] != "foo" {
-		t.Fatalf("keys = %v, want [description foo]", doc.Keys)
+	if len(doc.Keys) != 3 || doc.Keys[0] != "description" || doc.Keys[1] != "foo" || doc.Keys[2] != " " {
+		t.Fatalf("keys = %q, want [description foo <space>]", doc.Keys)
+	}
+}
+
+func TestParse_WhitespaceBearingRequiredKeyNamesRemainOpaque(t *testing.T) {
+	doc, err := Parse("\" name \": alpha\n\" description \": test\n")
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if doc.Name.State != FieldAbsent || doc.Description.State != FieldAbsent {
+		t.Fatalf("whitespace-bearing keys populated required fields: %#v", doc)
 	}
 }

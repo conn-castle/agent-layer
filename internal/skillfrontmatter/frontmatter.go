@@ -109,7 +109,7 @@ func Parse(content string) (Document, error) {
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		keyNode := mapping.Content[i]
 		valueNode := mapping.Content[i+1]
-		key := strings.TrimSpace(keyNode.Value)
+		key := keyNode.Value
 		if key == "" {
 			continue
 		}

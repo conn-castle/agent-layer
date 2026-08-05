@@ -191,6 +191,12 @@ func TestValidateSkillEnforcesImportRules(t *testing.T) {
 			wantErr:    "description",
 		},
 		{
+			name:       "whitespace-bearing required keys are not required keys",
+			files:      []File{{Path: "SKILL.md", Data: []byte("---\n\" name \": alpha\n\" description \": d\n---\nBody\n")}},
+			sourcePath: "skills/alpha",
+			wantErr:    "missing required frontmatter field \"name\"",
+		},
+		{
 			name:       "unsafe name",
 			files:      []File{{Path: "SKILL.md", Data: []byte("---\nname: Alpha_One\ndescription: d\n---\nBody\n")}},
 			sourcePath: "skills/Alpha_One",

@@ -151,19 +151,8 @@ func Continue(opts ContinueOptions) error {
 	if !ok {
 		return exitError(ExitConfig, fmt.Sprintf("dispatch conversation %q has unsupported provider %q", session.Name, session.Agent))
 	}
-	lookPath := opts.LookPath
-	if lookPath == nil {
-		lookPath = exec.LookPath
-	}
-	path, err := lookPath(target.Binary)
-	if err != nil {
-		return exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target.Name, target.Binary))
-	}
-	target, version, err := compatibleTargetVersionCached(opts.Root, path, target, opts.VersionLookup)
-	if err != nil {
-		return err
-	}
 	var project *config.ProjectConfig
+	var version string
 	var prompt []byte
 	err = sync.WithLockedProject(sync.RealSystem{}, opts.Root, func(loaded *config.ProjectConfig) error {
 		project = loaded
@@ -172,6 +161,19 @@ func Continue(opts ContinueOptions) error {
 		}
 		if !targetEnabled(project.Config, target.Name) {
 			return exitError(ExitConfig, fmt.Sprintf("`al dispatch` target %s is disabled in config", target.Name))
+		}
+		lookPath := opts.LookPath
+		if lookPath == nil {
+			lookPath = exec.LookPath
+		}
+		path, lookErr := lookPath(target.Binary)
+		if lookErr != nil {
+			return exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target.Name, target.Binary))
+		}
+		var versionErr error
+		target, version, versionErr = compatibleTargetVersionCached(opts.Root, path, target, opts.VersionLookup)
+		if versionErr != nil {
+			return versionErr
 		}
 		var promptErr error
 		prompt, promptErr = BuildChildPrompt(project, target.Name, promptText, "")
