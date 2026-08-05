@@ -29,6 +29,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-08-05 coverage-remainder-is-error-injection-only: Coverage above ~91.4% requires failure-injection tests
+    Priority: Low. Area: test suite / coverage
+    Description: After a behavior-focused pass raised total coverage from 90.02% to 91.42%, every remaining uncovered region is a block of 1–5 statements. They are overwhelmingly `if err != nil` wrappers around filesystem, git, and process calls, plus platform-unreachable branches (device/socket nodes in skilltree.describeNode, non-finite floats that `encoding/json` cannot decode, and defensive duplicate-selector checks that config validation already rejects). No untested feature-level behavior remains in a single block larger than 5 statements.
+    Open question: whether a higher coverage threshold is worth adding fault-injection seams (an injectable filesystem or forced-error hooks) to the packages that currently call `os` directly.
+    Notes: `internal/agentdispatch` (~430 missed) and `internal/benchmark` (~300 missed) hold most of the remainder; both are dominated by provider/Docker orchestration failure paths.
+
 - Issue 2026-08-04 permission-based-test-fixtures-assume-non-root: chmod-driven failure fixtures silently pass under root
     Priority: Low. Area: test suite
     Description: Pre-existing tests in internal/install and internal/clients drive production error paths by removing a directory's write bit. A process with CAP_DAC_OVERRIDE — root in many containers — writes anyway, so the operation under test succeeds and the assertion fails for an environment reason. CI runs on ubuntu-latest as a non-root user, so nothing currently fails.

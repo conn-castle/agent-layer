@@ -3,6 +3,7 @@ package wizard
 import (
 	"errors"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -345,4 +346,59 @@ func TestBuildSummary(t *testing.T) {
 		assert.Contains(t, summary, "- GITHUB_TOKEN")
 		assert.Contains(t, summary, "- OTHER_TOKEN")
 	})
+}
+
+// TestBuildSummaryReportsEveryClaudeHardeningChoice covers the confirmation
+// step the user actually reads before the wizard writes anything: a choice that
+// turns off a Claude capability must appear in the summary, and a capability
+// left at its client default must not — otherwise the user confirms a change
+// they were never shown, or is warned about one they did not make.
+func TestBuildSummaryReportsEveryClaudeHardeningChoice(t *testing.T) {
+	disabled := NewChoices()
+	disabled.ApprovalMode = "none"
+	disabled.EnabledAgentsTouched = true
+	disabled.EnabledAgents[AgentClaude] = true
+	disabled.ClaudeModel = "opus"
+	disabled.ClaudeReasoning = "high"
+	for _, touched := range []*bool{
+		&disabled.ClaudeDisableIDEReadingTouched, &disabled.ClaudeDisableMemoryTouched,
+		&disabled.ClaudeDisableConnectorsTouched, &disabled.ClaudeDisableQuestionToolTouched,
+	} {
+		*touched = true
+	}
+	for _, value := range []*bool{
+		&disabled.ClaudeDisableIDEReading, &disabled.ClaudeDisableMemory,
+		&disabled.ClaudeDisableConnectors, &disabled.ClaudeDisableQuestionTool,
+	} {
+		*value = true
+	}
+
+	summary := buildSummary(disabled)
+	for _, line := range []string{
+		messages.WizardSummaryClaudeIDEReadingDisabled,
+		messages.WizardSummaryClaudeMemoryDisabled,
+		messages.WizardSummaryClaudeConnectorsDisabled,
+		messages.WizardSummaryClaudeQuestionToolDisabled,
+	} {
+		assert.Contains(t, summary, strings.TrimSpace(line))
+	}
+	assert.Contains(t, summary, "opus (high)")
+
+	// The same choices left at the client default report nothing.
+	kept := NewChoices()
+	kept.ApprovalMode = "none"
+	kept.EnabledAgentsTouched = true
+	kept.EnabledAgents[AgentClaude] = true
+	kept.ClaudeDisableIDEReadingTouched = true
+	kept.ClaudeDisableMemoryTouched = true
+	keptSummary := buildSummary(kept)
+	assert.NotContains(t, keptSummary, strings.TrimSpace(messages.WizardSummaryClaudeIDEReadingDisabled))
+	assert.NotContains(t, keptSummary, strings.TrimSpace(messages.WizardSummaryClaudeMemoryDisabled))
+
+	// A reasoning effort chosen without a model still has to be reported.
+	reasoningOnly := NewChoices()
+	reasoningOnly.ApprovalMode = "none"
+	reasoningOnly.EnabledAgents[AgentClaude] = true
+	reasoningOnly.ClaudeReasoning = "high"
+	assert.Contains(t, buildSummary(reasoningOnly), "reasoning: high")
 }

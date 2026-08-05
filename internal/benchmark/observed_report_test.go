@@ -8,7 +8,9 @@ import (
 	"time"
 )
 
-func TestBuildObservedReportValidatesAndRendersExecutiveResult(t *testing.T) {
+// validObservedAnalysisDocument returns a canonical analysis artifact whose
+// identity, statistics, costs, and per-task evidence all reconcile.
+func validObservedAnalysisDocument() observedAnalysisDocument {
 	document := observedAnalysisDocument{
 		Schema:        observedAnalysisSchema,
 		SchemaVersion: observedAnalysisSchemaVersion,
@@ -58,6 +60,11 @@ func TestBuildObservedReportValidatesAndRendersExecutiveResult(t *testing.T) {
 	document.CostAxis.ReferenceEstimatedArmCostUSD = 310.61
 	document.CostAxis.RoundingIncrementUSD = observedCostAxisRoundingUSD
 	document.CostAxis.MaximumUSD = 350
+	return document
+}
+
+func TestBuildObservedReportValidatesAndRendersExecutiveResult(t *testing.T) {
+	document := validObservedAnalysisDocument()
 
 	data, err := json.Marshal(document)
 	if err != nil {
@@ -134,5 +141,85 @@ func TestBuildObservedReportValidatesAndRendersExecutiveResult(t *testing.T) {
 	}
 	if _, err := BuildObservedCampaignReport(invalid); err == nil {
 		t.Fatal("observed report accepted a verdict that contradicted its threshold")
+	}
+}
+
+// TestObservedReportRejectsEvidenceThatDoesNotReconcile covers the guarantee
+// that makes a published benchmark report trustworthy: the report is derived
+// only from an analysis artifact whose statistics, costs, and per-task scores
+// are internally consistent. Each case breaks exactly one of those invariants,
+// so a report that renders anyway would be presenting a claim its own evidence
+// does not support.
+func TestObservedReportRejectsEvidenceThatDoesNotReconcile(t *testing.T) {
+	tests := []struct {
+		name   string
+		broken func(*observedAnalysisDocument)
+	}{
+		{"unsupported schema version", func(d *observedAnalysisDocument) {
+			d.SchemaVersion = observedAnalysisSchemaVersion + 1
+		}},
+		{"missing generation time", func(d *observedAnalysisDocument) {
+			d.GeneratedAt = time.Time{}
+		}},
+		{"plan identity is not a full digest", func(d *observedAnalysisDocument) {
+			d.PlanID = strings.Repeat("a", 32)
+		}},
+		{"task count contradicts the task evidence", func(d *observedAnalysisDocument) {
+			d.Experiment.Tasks = 2
+		}},
+		{"tasks are not weighted equally", func(d *observedAnalysisDocument) {
+			d.Experiment.EqualTaskWeighting = false
+		}},
+		{"significance level is not a probability", func(d *observedAnalysisDocument) {
+			d.Experiment.TwoSidedSignificanceLevel = 1
+		}},
+		{"cost axis maximum is not the rounded reference", func(d *observedAnalysisDocument) {
+			d.CostAxis.MaximumUSD = 400
+		}},
+		{"threshold is not the critical value times the standard error", func(d *observedAnalysisDocument) {
+			d.Result.DecisionThreshold = .3
+		}},
+		{"observed difference contradicts the arm means", func(d *observedAnalysisDocument) {
+			d.Result.ObservedDifference = .1
+		}},
+		{"cost range is inverted", func(d *observedAnalysisDocument) {
+			d.CostUSD.Treatment.Maximum = 1
+		}},
+		{"total cost does not reconcile with the arms", func(d *observedAnalysisDocument) {
+			d.CostUSD.Total.Midpoint = 4
+		}},
+		{"baseline cost cannot anchor a cost multiple", func(d *observedAnalysisDocument) {
+			d.CostUSD.Baseline = ObservedCostRange{}
+			d.CostUSD.Total = ObservedCostRange{Midpoint: 2, Minimum: 1.9, Maximum: 2.1}
+		}},
+		{"more runs claimed conformant than were run", func(d *observedAnalysisDocument) {
+			d.TreatmentDiagnostics.DispatchConformantRuns = d.TreatmentDiagnostics.TotalRuns + 1
+		}},
+		{"task has fewer scores than repetitions", func(d *observedAnalysisDocument) {
+			d.Tasks[0].TreatmentScores = []float64{.7}
+		}},
+		{"task score is outside the score range", func(d *observedAnalysisDocument) {
+			d.Tasks[0].BaselineScores = []float64{.4, 1.6}
+		}},
+		{"task mean contradicts its scores", func(d *observedAnalysisDocument) {
+			d.Tasks[0].TreatmentMean = .9
+		}},
+		{"run total contradicts the per-task repetitions", func(d *observedAnalysisDocument) {
+			d.TreatmentDiagnostics.TotalRuns = 3
+		}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			document := validObservedAnalysisDocument()
+			test.broken(&document)
+			data, err := json.Marshal(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := BuildObservedCampaignReport(data); err == nil {
+				t.Fatal("observed report accepted analysis evidence that does not reconcile")
+			}
+		})
 	}
 }
