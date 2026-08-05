@@ -4,8 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-
-	"github.com/conn-castle/agent-layer/internal/install"
 )
 
 // catalogSkillExistsOnDisk reports whether a CLI catalog skill directory is
@@ -98,15 +96,13 @@ func hasAnyTemplateMemoryFile(root string) bool {
 }
 
 func hasAnyStandardInstructionFile(root string) bool {
-	for _, name := range standardInstructionBasenames {
-		path := filepath.Join(root, ".agent-layer", "instructions", name)
-		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-			return true
+	for _, names := range [][]string{standardInstructionBasenames, legacyInstructionBasenames} {
+		for _, name := range names {
+			path := filepath.Join(root, ".agent-layer", "instructions", name)
+			if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+				return true
+			}
 		}
 	}
 	return false
-}
-
-func isUserOwnedStandardInstructionFile(name string) bool {
-	return install.IsUserOwnedInstructionFile(name)
 }

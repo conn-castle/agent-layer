@@ -250,7 +250,7 @@ Run `al wizard` any time to interactively configure the most important settings:
     - Unchecking writes the matching `agent_specific` disable key; re-checking removes it, keeping the client's native default — except Codex **apps**, which defaults unchecked and always writes an explicit `features.apps`.
     - The AskUserQuestion toggle instead writes a typed `agents.claude.disable_question_tool` flag, and `al sync` injects the `permissions.deny` entry plus a `PreToolUse` hook (merged with, never replacing, your own deny/hook entries).
     - Status line checkboxes write explicit `statusline = true` or `statusline = false`; enabling one creates the missing editable source file once and never overwrites an existing source.
-- **Workflow bundle** (yes/no when the bundle is absent — creates missing bundled workflow skills, managed instruction files, memory docs/templates, and `04_conventions.md`; existing files are left unchanged. Use `al upgrade` when you want managed workflow updates.)
+- **Workflow bundle** (yes/no when the bundle is absent — creates missing bundled workflow skills, managed instruction files, and memory docs/templates; existing files are left unchanged. Use `al upgrade` when you want managed workflow updates.)
 - **Git tracking** (choose whether `.agent-layer/` and `docs/agent-layer/` stay trackable or are ignored through the managed `.agent-layer/gitignore.block` source)
 - **CLI skills** (opt-in catalog: `tavily-web`, `playwright`, `find-docs`, `agent-dispatch`; some require their own CLI on PATH; `al doctor` reports missing binaries without blocking agent launch)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)

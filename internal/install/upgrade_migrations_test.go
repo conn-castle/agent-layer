@@ -963,12 +963,96 @@ func TestLoadUpgradeMigrationManifest_0_16_0_ClaimsClientSkillRoots(t *testing.T
 	if err != nil {
 		t.Fatalf("load 0.16.0 manifest: %v", err)
 	}
-	if manifest.MinPriorVersion != "0.10.2" || len(manifest.Operations) != 1 {
-		t.Fatalf("manifest = %#v, want one migration supporting prior releases", manifest)
+	if manifest.MinPriorVersion != "0.10.2" {
+		t.Fatalf("min_prior_version = %q, want 0.10.2 so prior releases are supported", manifest.MinPriorVersion)
 	}
 	claim := manifest.Operations[0]
 	if claim.Kind != upgradeMigrationKindClaimSkillRoots || !claim.SourceAgnostic {
 		t.Fatalf("operation = %#v, want source-agnostic client-root ownership transition", claim)
+	}
+}
+
+// TestLoadUpgradeMigrationManifest_0_16_0_RenamesMemoryWithoutDeletingInstructions
+// pins the upgrade path for the 0.16.0 instruction-template consolidation.
+// 02_memory.md is renumbered so its content (including any local edits) carries
+// forward into 01_memory.md and stays on the managed overwrite-prompt path.
+//
+// The files 00_rules.md superseded are deliberately NOT deleted. Instruction
+// fragments are documented as user-editable, and a delete_file migration runs
+// unconditionally ahead of the overwrite prompts, so it would silently discard
+// project-specific rules a user added to them. They are reported as orphans
+// instead — see TestBuildUpgradePlan_SupersededInstructionFilesAreReportedAsOrphans.
+func TestLoadUpgradeMigrationManifest_0_16_0_RenamesMemoryWithoutDeletingInstructions(t *testing.T) {
+	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.16.0")
+	if err != nil {
+		t.Fatalf("load 0.16.0 manifest: %v", err)
+	}
+
+	renamed := false
+	for _, op := range manifest.Operations {
+		if op.Kind == upgradeMigrationKindRenameFile &&
+			op.From == ".agent-layer/instructions/02_memory.md" &&
+			op.To == ".agent-layer/instructions/01_memory.md" &&
+			op.SourceAgnostic {
+			renamed = true
+		}
+		if op.Kind == upgradeMigrationKindDeleteFile &&
+			strings.HasPrefix(op.Path, ".agent-layer/instructions/") {
+			t.Fatalf("operation %s deletes user-editable %s; superseded instruction files must be reported as orphans", op.ID, op.Path)
+		}
+	}
+
+	if !renamed {
+		t.Fatalf("manifest = %#v, want 02_memory.md renamed to 01_memory.md", manifest.Operations)
+	}
+}
+
+// TestBuildUpgradePlan_SupersededInstructionFilesAreReportedAsOrphans is the
+// other half of the consolidation contract: because the migration no longer
+// deletes them, `al upgrade` must surface 01_base.md and 03_tools.md so the
+// user knows superseded instructions are still being loaded every session.
+// Without this the files would sit in .agent-layer/instructions/ unmentioned.
+func TestBuildUpgradePlan_SupersededInstructionFilesAreReportedAsOrphans(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.2.3"}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	instructionsDir := filepath.Join(root, ".agent-layer", "instructions")
+	if err := os.MkdirAll(instructionsDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// A pre-0.16.0 layout, including a file the user edited.
+	for name, content := range map[string]string{
+		"00_rules.md": "# Rules\n",
+		"01_base.md":  "# Instructions\n\n- My own project rule.\n",
+		"03_tools.md": "# Tools\n",
+	} {
+		if err := os.WriteFile(filepath.Join(instructionsDir, name), []byte(content), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+	if err != nil {
+		t.Fatalf("BuildUpgradePlan: %v", err)
+	}
+
+	for _, path := range []string{
+		".agent-layer/instructions/01_base.md",
+		".agent-layer/instructions/03_tools.md",
+	} {
+		if findUpgradeChange(plan.TemplateRemovalsOrOrphans, path) == nil {
+			t.Fatalf("plan orphans = %#v, want superseded %s reported", plan.TemplateRemovalsOrOrphans, path)
+		}
+	}
+
+	// Reporting must not imply removal: the user's edits are still on disk.
+	data, err := os.ReadFile(filepath.Join(instructionsDir, "01_base.md")) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read 01_base.md: %v", err)
+	}
+	if !strings.Contains(string(data), "My own project rule.") {
+		t.Fatalf("planning an upgrade must not touch user content, got:\n%s", string(data))
 	}
 }
 
@@ -3568,7 +3652,7 @@ func TestExecuteAppendToFile_AppendsWhenMatchAbsent(t *testing.T) {
 	if err := os.MkdirAll(targetDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	targetPath := filepath.Join(targetDir, "04_conventions.md")
+	targetPath := filepath.Join(targetDir, "00_rules.md")
 	if err := os.WriteFile(targetPath, []byte("# Existing content\n"), 0o600); err != nil {
 		t.Fatalf("write target: %v", err)
 	}
@@ -3578,7 +3662,7 @@ func TestExecuteAppendToFile_AppendsWhenMatchAbsent(t *testing.T) {
 		ID:        "append_conv",
 		Kind:      upgradeMigrationKindAppendToFile,
 		Rationale: "Add new convention",
-		Path:      ".agent-layer/instructions/04_conventions.md",
+		Path:      ".agent-layer/instructions/00_rules.md",
 		Value:     []byte(`"- **New rule:** Do the thing.\n"`),
 		From:      "**New rule:**",
 	}
@@ -3601,13 +3685,52 @@ func TestExecuteAppendToFile_AppendsWhenMatchAbsent(t *testing.T) {
 	}
 }
 
+// TestExecuteAppendToFile_DecodesValueExactlyOnce pins the encoding contract
+// documented in docs/DEVELOPMENT.md: op.Value is an ordinary JSON string that
+// is decoded once, so "\n" in a manifest is a line ending. A double-escaped
+// value silently writes a literal backslash-n plus stray quote characters into
+// the user's instruction file, which every Contains-based assertion misses.
+func TestExecuteAppendToFile_DecodesValueExactlyOnce(t *testing.T) {
+	root := t.TempDir()
+	targetDir := filepath.Join(root, ".agent-layer", "instructions")
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	targetPath := filepath.Join(targetDir, "00_rules.md")
+	if err := os.WriteFile(targetPath, []byte("# Existing content\n"), 0o600); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	op := upgradeMigrationOperation{
+		ID:        "append_exact",
+		Kind:      upgradeMigrationKindAppendToFile,
+		Rationale: "Append a rule with a real line ending",
+		Path:      ".agent-layer/instructions/00_rules.md",
+		Value:     []byte(`"- **Rule name:** Rule text.\n"`),
+		From:      "**Rule name:**",
+	}
+	if _, err := inst.executeAppendToFile(op); err != nil {
+		t.Fatalf("executeAppendToFile: %v", err)
+	}
+
+	data, err := os.ReadFile(targetPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	const want = "# Existing content\n- **Rule name:** Rule text.\n"
+	if string(data) != want {
+		t.Fatalf("appended bytes = %q, want %q", string(data), want)
+	}
+}
+
 func TestExecuteAppendToFile_NoopWhenMatchPresent(t *testing.T) {
 	root := t.TempDir()
 	targetDir := filepath.Join(root, ".agent-layer", "instructions")
 	if err := os.MkdirAll(targetDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	targetPath := filepath.Join(targetDir, "04_conventions.md")
+	targetPath := filepath.Join(targetDir, "00_rules.md")
 	original := "# Existing content\n- **New rule:** Do the thing.\n"
 	if err := os.WriteFile(targetPath, []byte(original), 0o600); err != nil {
 		t.Fatalf("write target: %v", err)
@@ -3618,7 +3741,7 @@ func TestExecuteAppendToFile_NoopWhenMatchPresent(t *testing.T) {
 		ID:        "append_conv",
 		Kind:      upgradeMigrationKindAppendToFile,
 		Rationale: "Add new convention",
-		Path:      ".agent-layer/instructions/04_conventions.md",
+		Path:      ".agent-layer/instructions/00_rules.md",
 		Value:     []byte(`"- **New rule:** Do the thing.\n"`),
 		From:      "**New rule:**",
 	}
@@ -3646,7 +3769,7 @@ func TestExecuteAppendToFile_CreatesFileWhenMissing(t *testing.T) {
 		ID:        "append_new",
 		Kind:      upgradeMigrationKindAppendToFile,
 		Rationale: "Create file with initial content",
-		Path:      ".agent-layer/instructions/04_conventions.md",
+		Path:      ".agent-layer/instructions/00_rules.md",
 		Value:     []byte(`"# Conventions\n- **Rule one:** First rule.\n"`),
 	}
 	changed, err := inst.executeAppendToFile(op)
@@ -3656,7 +3779,7 @@ func TestExecuteAppendToFile_CreatesFileWhenMissing(t *testing.T) {
 	if !changed {
 		t.Fatal("expected migration to report changed")
 	}
-	targetPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
+	targetPath := filepath.Join(root, ".agent-layer", "instructions", "00_rules.md")
 	data, err := os.ReadFile(targetPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read target: %v", err)
@@ -3713,16 +3836,17 @@ func TestExecuteAppendToFile_CreatesFileWhenMissing_NoTemplate(t *testing.T) {
 func TestExecuteAppendToFile_SeedsTemplateWhenMatchAlreadyInTemplate(t *testing.T) {
 	root := t.TempDir()
 
-	// Simulates the real 0.9.1 upgrade scenario: appending UTC convention
-	// when the template already contains the match string.
+	// Simulates the real 0.9.1 upgrade scenario: delivering a rule to an
+	// existing install when the shipped template already contains the match
+	// string, so a fresh install must be seeded from the template alone.
 	inst := &installer{root: root, sys: RealSystem{}}
 	op := upgradeMigrationOperation{
-		ID:        "append_utc",
+		ID:        "append_sot",
 		Kind:      upgradeMigrationKindAppendToFile,
-		Rationale: "Move UTC-only internals from rules to conventions",
-		Path:      ".agent-layer/instructions/04_conventions.md",
-		From:      "UTC-only internals",
-		Value:     []byte(`"\n## Time & Data\n- **UTC-only internals:** Store, compute, and transport time in UTC.\n"`),
+		Rationale: "Deliver the single-source-of-truth rule to existing installs",
+		Path:      ".agent-layer/instructions/00_rules.md",
+		From:      "Single source of truth",
+		Value:     []byte(`"\n- **Single source of truth:** Derive state from its canonical source instead of maintaining copies.\n"`),
 	}
 	changed, err := inst.executeAppendToFile(op)
 	if err != nil {
@@ -3731,7 +3855,7 @@ func TestExecuteAppendToFile_SeedsTemplateWhenMatchAlreadyInTemplate(t *testing.
 	if !changed {
 		t.Fatal("expected migration to report changed (template seeded)")
 	}
-	targetPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
+	targetPath := filepath.Join(root, ".agent-layer", "instructions", "00_rules.md")
 	data, err := os.ReadFile(targetPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read target: %v", err)
@@ -3760,7 +3884,7 @@ func TestExecuteAppendToFile_HandlesNoTrailingNewline(t *testing.T) {
 	if err := os.MkdirAll(targetDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	targetPath := filepath.Join(targetDir, "04_conventions.md")
+	targetPath := filepath.Join(targetDir, "00_rules.md")
 	// No trailing newline.
 	if err := os.WriteFile(targetPath, []byte("# Existing content"), 0o600); err != nil {
 		t.Fatalf("write target: %v", err)
@@ -3771,7 +3895,7 @@ func TestExecuteAppendToFile_HandlesNoTrailingNewline(t *testing.T) {
 		ID:        "append_no_newline",
 		Kind:      upgradeMigrationKindAppendToFile,
 		Rationale: "Append after content without trailing newline",
-		Path:      ".agent-layer/instructions/04_conventions.md",
+		Path:      ".agent-layer/instructions/00_rules.md",
 		Value:     []byte(`"- **New rule:** Added.\n"`),
 		From:      "**New rule:**",
 	}
@@ -3798,7 +3922,7 @@ func TestExecuteAppendToFile_RollbackCoverage(t *testing.T) {
 	if err := os.MkdirAll(targetDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	targetPath := filepath.Join(targetDir, "04_conventions.md")
+	targetPath := filepath.Join(targetDir, "00_rules.md")
 	if err := os.WriteFile(targetPath, []byte("# Existing\n"), 0o600); err != nil {
 		t.Fatalf("write target: %v", err)
 	}
@@ -3813,7 +3937,7 @@ func TestExecuteAppendToFile_RollbackCoverage(t *testing.T) {
       "kind": "append_to_file",
       "rationale": "Add new convention",
       "source_agnostic": true,
-      "path": ".agent-layer/instructions/04_conventions.md",
+      "path": ".agent-layer/instructions/00_rules.md",
       "value": "\"- **New rule:** Something.\\n\"",
       "from": "**New rule:**"
     }
@@ -3825,11 +3949,11 @@ func TestExecuteAppendToFile_RollbackCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("planUpgradeMigrations: %v", err)
 	}
-	targetAbs := filepath.Clean(filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md"))
+	targetAbs := filepath.Clean(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"))
 	if !containsString(plan.rollbackTargets, targetAbs) {
 		t.Fatalf("rollback targets missing append path %q: %#v", targetAbs, plan.rollbackTargets)
 	}
-	if _, ok := plan.coveredPaths[".agent-layer/instructions/04_conventions.md"]; !ok {
+	if _, ok := plan.coveredPaths[".agent-layer/instructions/00_rules.md"]; !ok {
 		t.Fatalf("expected covered path for append_to_file, got %#v", plan.coveredPaths)
 	}
 }
@@ -3840,7 +3964,7 @@ func TestValidateUpgradeMigrationOperation_AppendToFile(t *testing.T) {
 		ID:        "append_test",
 		Kind:      upgradeMigrationKindAppendToFile,
 		Rationale: "Test append",
-		Path:      ".agent-layer/instructions/04_conventions.md",
+		Path:      ".agent-layer/instructions/00_rules.md",
 		Value:     []byte(`"appended content"`),
 	}
 	if err := validateUpgradeMigrationOperation(validOp); err != nil {
@@ -3875,7 +3999,7 @@ func TestRunMigrations_AppendToFileAppliesAndReports(t *testing.T) {
 	if err := os.MkdirAll(targetDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(targetDir, "04_conventions.md"), []byte("# Conventions\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(targetDir, "00_rules.md"), []byte("# Conventions\n"), 0o600); err != nil {
 		t.Fatalf("write target: %v", err)
 	}
 
@@ -3889,7 +4013,7 @@ func TestRunMigrations_AppendToFileAppliesAndReports(t *testing.T) {
       "kind": "append_to_file",
       "rationale": "Add new convention",
       "source_agnostic": true,
-      "path": ".agent-layer/instructions/04_conventions.md",
+      "path": ".agent-layer/instructions/00_rules.md",
       "value": "\"- **New rule:** Do the thing.\\n\"",
       "from": "**New rule:**"
     }
@@ -3915,7 +4039,7 @@ func TestRunMigrations_AppendToFileAppliesAndReports(t *testing.T) {
 		t.Fatalf("expected migration report output, got %q", warn.String())
 	}
 
-	data, err := os.ReadFile(filepath.Join(targetDir, "04_conventions.md")) // #nosec G304 -- path is constructed from test-controlled inputs.
+	data, err := os.ReadFile(filepath.Join(targetDir, "00_rules.md")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read file: %v", err)
 	}

@@ -163,41 +163,42 @@ make release-dist AL_VERSION=ci DIST_DIR=dist
 ```
 Note: `make ci` includes `make tidy-check`, which fails if `go.mod` or `go.sum` would change. While you are actively editing dependencies, use `make test`, `make lint`, and `make coverage` instead. `make ci` expects tools to be installed via `make tools`. The `make release-dist ...` command mirrors CI's dry-run release artifact build.
 
-## Managing project conventions
+## Managing bundled instructions
 
-`04_conventions.md` contains project-specific defaults (frontend rules, test coverage thresholds, package policies, typing requirements, schema safety). Unlike other bundled instruction files, it is **user-managed**: created by the workflow bundle when missing, but never overwritten during `al wizard` or `al upgrade`. Users can freely edit, add, or remove entries to match their tech stack.
+The bundled instruction set is `internal/templates/instructions/00_rules.md` (rules, escalation, and communication style) and `01_memory.md` (the project memory files and how to use them). Both are **managed**: the workflow bundle seeds them when missing, and `al upgrade` updates them, prompting before overwriting local edits. Anything else a user drops into `.agent-layer/instructions/` is their own file and is never touched.
 
-### Ownership model
-- **New projects** (`al wizard` workflow bundle): `04_conventions.md` is created from the template in `internal/templates/instructions/04_conventions.md` when missing.
-- **Existing projects** (`al wizard` or `al upgrade`): the file is never overwritten. User edits are preserved.
-- **Managed diffs**: `04_conventions.md` does not appear in `al upgrade plan` managed diffs.
+Users tailor instructions by editing these files or adding their own; there is no separate user-owned instruction template.
 
-### Adding a new default convention
-Edit `internal/templates/instructions/04_conventions.md`. This only affects workflow-bundle installs where `04_conventions.md` is missing; existing users are not overwritten.
+### Changing a bundled instruction
+Edit the template under `internal/templates/instructions/`. New installs pick the change up directly, and existing installs receive it through the normal `al upgrade` managed-file flow.
 
-### Delivering a new convention to existing users via migration
-To add a convention that existing users should see:
-1. Add the convention to `internal/templates/instructions/04_conventions.md` (for new projects).
-2. Add an `append_to_file` migration entry to the next version's migration manifest:
-   ```json
-   {
-     "id": "add_<convention_name>",
-     "kind": "append_to_file",
-     "rationale": "Add <convention description>",
-     "source_agnostic": true,
-     "path": ".agent-layer/instructions/04_conventions.md",
-     "value": "\"- **Convention name:** Convention text.\\n\"",
-     "from": "**Convention name:**"
-   }
-   ```
-   - `path`: the file to append to (relative to repo root).
-   - `value`: JSON-encoded string content to append.
-   - `from`: duplicate-detection match string. If this string is already present in the file, the migration is a no-op (no-op migrations are not shown in the upgrade output).
-3. During `al upgrade`, the migration appends the content to the end of the file and reports it in the upgrade output when it actually applies.
-4. The user can keep, edit, or remove the convention after upgrade.
+### Appending to a file that upgrade must not overwrite
+Use an `append_to_file` migration when content must reach an existing install without clobbering what is already there — for example adding one rule to a file a user may have edited:
+```json
+{
+  "id": "add_<rule_name>",
+  "kind": "append_to_file",
+  "rationale": "Add <rule description>",
+  "source_agnostic": true,
+  "path": ".agent-layer/instructions/00_rules.md",
+  "value": "- **Rule name:** Rule text.\n",
+  "from": "**Rule name:**"
+}
+```
+- `path`: the file to append to (relative to repo root).
+- `value`: the content to append, as an ordinary JSON string. It is decoded once, so `\n` is a line ending — do not double-escape it.
+- `from`: duplicate-detection match string. If this string is already present in the file, the migration is a no-op (no-op migrations are not shown in the upgrade output). When the path has a bundled template and the file is missing, the full template is seeded as the base so the result is never a partial stub.
 
-### Future enhancement
-Per-item accept/reject prompting during upgrade (not yet implemented).
+During `al upgrade` the migration appends the content and reports it in the upgrade output when it actually applies.
+
+### Renaming or removing a bundled instruction
+Template renames and removals do not reach existing installs on their own, and an orphaned instruction file keeps being loaded every session.
+
+For a **rename**, add a `rename_file` operation to the next version's migration manifest, as `0.16.0` does for `02_memory.md` → `01_memory.md`. The file carries its content forward and stays on the managed overwrite-prompt path, so local edits are preserved or prompted rather than lost.
+
+For a **removal**, do not add a `delete_file` operation. Instruction fragments are documented as user-editable, and `delete_file` runs unconditionally ahead of the overwrite prompts, so it would silently discard project-specific rules a user added to the file. `al upgrade` already reports a file whose template is gone under template removals/orphans; deleting it is the user's call. `0.16.0` takes this route for `01_base.md` and `03_tools.md` after folding their content into `00_rules.md`.
+
+Reserve `delete_file` for artifacts a user cannot meaningfully have edited.
 
 ## Troubleshooting
 - If you see `golangci-lint: command not found` or `goimports: command not found`, run:

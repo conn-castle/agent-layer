@@ -23,7 +23,7 @@ func TestInstallRun_BareInitSeedsOnlyOperationalScaffolding(t *testing.T) {
 		assert.True(t, info.IsDir(), "%s should be a directory", dir)
 	}
 
-	for _, name := range []string{"00_rules.md", "01_base.md", "02_memory.md", "03_tools.md", "04_conventions.md"} {
+	for _, name := range []string{"00_rules.md", "01_memory.md"} {
 		_, err := os.Stat(filepath.Join(root, ".agent-layer", "instructions", name))
 		assert.True(t, os.IsNotExist(err), "%s should not be seeded under bare init", name)
 	}
@@ -79,7 +79,9 @@ func TestBuildUpgradePlan_BareLayoutDoesNotPlanWorkflowBundle(t *testing.T) {
 	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/implement/SKILL.md"))
 	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, "docs/agent-layer/ISSUES.md"))
 	assert.Nil(t, findUpgradeChange(plan.TemplateUpdates, "docs/agent-layer/ISSUES.md"))
-	assert.Nil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/instructions/04_conventions.md"))
+	// A file absent from a bare layout can only ever be planned as an addition,
+	// so asserting against TemplateUpdates here would pass vacuously.
+	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/instructions/01_memory.md"))
 }
 
 func TestBuildUpgradePlan_ManagedInstructionEvidenceIncludesWorkflowBundle(t *testing.T) {
@@ -92,7 +94,7 @@ func TestBuildUpgradePlan_ManagedInstructionEvidenceIncludesWorkflowBundle(t *te
 	require.NoError(t, err)
 
 	assert.NotNil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/instructions/00_rules.md"))
-	assert.NotNil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/instructions/01_base.md"))
+	assert.NotNil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/instructions/01_memory.md"))
 	assert.NotNil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/implement/SKILL.md"))
 }
 

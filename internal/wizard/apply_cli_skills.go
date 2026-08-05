@@ -42,9 +42,6 @@ type skillsChangeSet struct {
 	// managedInstructionFilesToCreate holds bundled managed instruction files
 	// that are missing and should be created.
 	managedInstructionFilesToCreate []string
-	// userInstructionFilesToCreate holds user-owned instruction files that should
-	// be created only when missing because Q1 is yes.
-	userInstructionFilesToCreate []string
 }
 
 // memoryFileBasenames is the canonical set of agent-managed memory files that
@@ -58,8 +55,18 @@ var memoryFileBasenames = []string{
 	"CONTEXT.md",
 }
 
+// standardInstructionBasenames is the current bundled instruction set that the
+// workflow-bundle step seeds when missing.
 var standardInstructionBasenames = []string{
 	"00_rules.md",
+	"01_memory.md",
+}
+
+// legacyInstructionBasenames are instruction files shipped by releases before
+// the 0.16.0 consolidation. They are no longer seeded, but their presence still
+// counts as workflow-bundle evidence so a repo that has not run `al upgrade`
+// yet is not re-prompted to install a bundle it already has.
+var legacyInstructionBasenames = []string{
 	"01_base.md",
 	"02_memory.md",
 	"03_tools.md",
@@ -121,11 +128,6 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 		}
 		out.memoryFilesToCreate = memoryAdds
 		out.templateMemoryFilesToCreate = templateMemoryAdds
-		userInstructionAdds, err := listMissingUserOwnedInstructionFiles(root)
-		if err != nil {
-			return skillsChangeSet{}, err
-		}
-		out.userInstructionFilesToCreate = userInstructionAdds
 		for _, rel := range managedInstructionFiles() {
 			path := filepath.Join(root, filepath.FromSlash(rel))
 			exists, err := regularFileExists(path)
@@ -145,7 +147,6 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 	sort.Strings(out.memoryFilesToCreate)
 	sort.Strings(out.templateMemoryFilesToCreate)
 	sort.Strings(out.managedInstructionFilesToCreate)
-	sort.Strings(out.userInstructionFilesToCreate)
 	return out, nil
 }
 
@@ -188,12 +189,6 @@ func applySkillsChanges(root string, changes skillsChangeSet) error {
 		name := filepath.Base(rel)
 		if err := copyTemplateFileIfMissing("instructions/"+name, filepath.Join(root, filepath.FromSlash(rel))); err != nil {
 			return fmt.Errorf("create managed instruction file %s: %w", rel, err)
-		}
-	}
-	for _, rel := range changes.userInstructionFilesToCreate {
-		name := filepath.Base(rel)
-		if err := copyTemplateFileIfMissing("instructions/"+name, filepath.Join(root, filepath.FromSlash(rel))); err != nil {
-			return fmt.Errorf("create instruction file %s: %w", rel, err)
 		}
 	}
 	return nil
@@ -424,31 +419,9 @@ func listMissingMemoryFiles(root string, destRoot string) ([]string, error) {
 func managedInstructionFiles() []string {
 	out := make([]string, 0, len(standardInstructionBasenames))
 	for _, name := range standardInstructionBasenames {
-		if isUserOwnedStandardInstructionFile(name) {
-			continue
-		}
 		out = append(out, filepath.ToSlash(filepath.Join(".agent-layer", "instructions", name)))
 	}
 	return out
-}
-
-func listMissingUserOwnedInstructionFiles(root string) ([]string, error) {
-	out := make([]string, 0, len(standardInstructionBasenames))
-	for _, name := range standardInstructionBasenames {
-		if !isUserOwnedStandardInstructionFile(name) {
-			continue
-		}
-		path := filepath.Join(root, ".agent-layer", "instructions", name)
-		exists, err := regularFileExists(path)
-		if err != nil {
-			return nil, err
-		}
-		if exists {
-			continue
-		}
-		out = append(out, filepath.ToSlash(filepath.Join(".agent-layer", "instructions", name)))
-	}
-	return out, nil
 }
 
 // buildSkillsPreview returns a directory-summary preview for the rewrite
@@ -461,8 +434,7 @@ func buildSkillsPreview(changes skillsChangeSet) string {
 		len(changes.workflowSkillsToInstall) +
 		len(changes.memoryFilesToCreate) +
 		len(changes.templateMemoryFilesToCreate) +
-		len(changes.managedInstructionFilesToCreate) +
-		len(changes.userInstructionFilesToCreate)
+		len(changes.managedInstructionFilesToCreate)
 	lines := make([]string, 0, lineCapacity)
 	for _, id := range changes.catalogSkillsToAdd {
 		lines = append(lines, fmt.Sprintf("  + .agent-layer/skills/%s/", id))
@@ -484,9 +456,6 @@ func buildSkillsPreview(changes skillsChangeSet) string {
 	}
 	for _, rel := range changes.managedInstructionFilesToCreate {
 		lines = append(lines, fmt.Sprintf("  + %s  (managed instruction seed)", rel))
-	}
-	for _, rel := range changes.userInstructionFilesToCreate {
-		lines = append(lines, fmt.Sprintf("  + %s  (user-owned instruction seed)", rel))
 	}
 	if len(lines) == 0 {
 		return ""

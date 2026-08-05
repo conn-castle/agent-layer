@@ -8,6 +8,14 @@
       "kind": "claim_skill_projection_roots",
       "source_agnostic": true,
       "rationale": "Verify client skill roots contain only released Agent Layer projections before treating those roots as disposable output."
+    },
+    {
+      "id": "b-rename-memory-to-01",
+      "kind": "rename_file",
+      "from": ".agent-layer/instructions/02_memory.md",
+      "to": ".agent-layer/instructions/01_memory.md",
+      "rationale": "Instruction templates consolidated to 00_rules.md and 01_memory.md; renumber memory instructions to close the gap left by the removed files.",
+      "source_agnostic": true
     }
   ]
 }

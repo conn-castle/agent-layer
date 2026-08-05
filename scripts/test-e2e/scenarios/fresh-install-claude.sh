@@ -14,7 +14,7 @@ run_scenario_fresh_install_claude() {
 
   # Bare init creates operational directories only; the workflow bundle is
   # installed explicitly through the wizard or preserved during upgrade.
-  for name in 00_rules.md 01_base.md 02_memory.md 03_tools.md 04_conventions.md; do
+  for name in 00_rules.md 01_memory.md; do
     assert_file_not_exists "$repo_dir/.agent-layer/instructions/$name" \
       "$name is not seeded by bare init"
   done
