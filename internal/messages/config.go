@@ -92,6 +92,7 @@ const (
 	ConfigSkillSelectorAbsolute                      = "must be a repository-relative path"
 	ConfigSkillSelectorNotNormalized                 = "must be a normalized repository-relative path without '.' or '..' segments"
 	ConfigSkillSelectorControlCharacter              = "must not contain control characters"
+	ConfigSkillSelectorPatternInvalidFmt             = "contains an invalid wildcard pattern: %v"
 
 	ConfigMissingInstructionsDirFmt = "missing instructions directory %s: %w"
 	ConfigFailedReadInstructionFmt  = "failed to read instruction %s: %w"

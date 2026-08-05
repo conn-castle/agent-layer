@@ -110,58 +110,51 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 	}
 	defer func() { _ = os.RemoveAll(workRoot) }()
 
-	blockCtx, err := s.openBlock(ctx, runner, workRoot, st, blockIndex, block)
+	blockCtx, err := s.openBlock(ctx, runner, workRoot, blockIndex, block)
 	if err != nil {
 		return err
 	}
-	// An existing block resolves selector changes at its locked source commit
-	// without advancing it. A new block performs its initial pull.
-	commit := blockCtx.TargetCommit
-	if blockCtx.LockedCommit != "" {
-		commit = blockCtx.LockedCommit
-		blockCtx.TargetCommit = commit
-	}
-
+	commit := blockCtx.Resolution.Commit
 	desired, failures, err := resolveBlock(ctx, blockCtx.Source, blockIndex, block, commit)
 	if err != nil {
 		return err
 	}
-	if len(failures) > 0 {
-		// `al skills add` validates and preflights the entire old-to-new
-		// desired-set change before any local state changes, so one unusable
-		// match fails the command rather than importing part of it.
-		return fmt.Errorf("no local state was changed: %w", candidateFailureError(failures))
-	}
-	if err := validateDesiredSet(withOtherBlockEntries(st, block, desired)); err != nil {
-		return err
-	}
-	if len(desired) == 0 {
-		return fmt.Errorf("the requested selectors resolve to no valid skills at %s; no local state was changed", shortCommit(commit))
-	}
-
-	lockedEntries := st.entriesForBlock(block)
-	desiredByPath := make(map[string]desiredSkill, len(desired))
-	for _, skill := range desired {
-		desiredByPath[skill.SelectedPath] = skill
+	lockedEntries := []skilllock.Entry{}
+	if hasExisting {
+		lockedEntries = st.entriesForBlock(existing)
 	}
 	lockedByPath := make(map[string]skilllock.Entry, len(lockedEntries))
 	for _, entry := range lockedEntries {
 		lockedByPath[entry.SelectedPath] = entry
 	}
+	newFailures := failuresForNewPaths(failures, lockedByPath, block)
+	if len(newFailures) > 0 {
+		// `al skills add` validates and preflights the entire old-to-new
+		// desired-set change before any local state changes, so one unusable
+		// newly selected match fails the command rather than importing part of it.
+		return fmt.Errorf("no local state was changed: %w", candidateFailureError(newFailures))
+	}
+	prospective := prospectiveSelectorEdit(blockIndex, block, desired, lockedEntries)
+	if err := validateDesiredSet(combineWithOtherEntries(st, block, lockedEntries, st.lock.Skills, prospective)); err != nil {
+		return err
+	}
+	if len(prospective) == 0 {
+		return fmt.Errorf("the requested selectors resolve to no valid skills at %s; no local state was changed", shortCommit(commit))
+	}
 
 	for _, entry := range lockedEntries {
-		if _, still := desiredByPath[entry.SelectedPath]; !still {
+		selector, still := selectingPositiveSelector(block, entry.SelectedPath)
+		if !still {
 			retire(st, txn, entry, report)
+			continue
 		}
+		updated := entry
+		updated.Selector = selector
+		txn.SetLockEntry(updated)
+		report.Add(SkillResult{Name: entry.Name, Repository: entry.Repository, SelectedPath: entry.SelectedPath, Outcome: OutcomeUnchanged})
 	}
 	for _, skill := range desired {
 		if _, locked := lockedByPath[skill.SelectedPath]; locked {
-			report.Add(SkillResult{
-				Name:         skill.Name,
-				Repository:   config.NormalizeSkillRepository(skill.Block.Repository),
-				SelectedPath: skill.SelectedPath,
-				Outcome:      OutcomeUnchanged,
-			})
 			continue
 		}
 		s.importNewAt(st, txn, blockCtx, skill, commit, report)
@@ -177,8 +170,9 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 	return nil
 }
 
-// Remove drops one configured positive or exclusion selector, recomputes the
-// desired set at the block's locked source commit, and projects the result.
+// Remove drops one configured positive or exclusion selector, keeps each
+// existing entry on its own lock evidence, imports newly revealed membership
+// at the current resolved target, and projects the result.
 func (s *Service) Remove(ctx context.Context, repository string, selector string) (*Report, error) {
 	report := &Report{}
 	err := s.withLockedState(func(st *state) error {
@@ -191,6 +185,9 @@ func (s *Service) Remove(ctx context.Context, repository string, selector string
 func (s *Service) removeLocked(ctx context.Context, st *state, repository string, selector string, report *Report) error {
 	if err := failOnOrphans(st); err != nil {
 		return err
+	}
+	if err := config.ValidateSkillSelectorPath(config.SkillExclusionPath(selector)); err != nil {
+		return fmt.Errorf("invalid selector %q: %w", selector, err)
 	}
 	block, blockIndex, ok := st.blockForSelector(repository, selector)
 	if !ok {
@@ -254,53 +251,45 @@ func (s *Service) removeLocked(ctx context.Context, st *state, repository string
 	}
 	defer func() { _ = os.RemoveAll(workRoot) }()
 
-	blockCtx, err := s.openBlock(ctx, runner, workRoot, st, blockIndex, nextBlock)
+	blockCtx, err := s.openBlock(ctx, runner, workRoot, blockIndex, nextBlock)
 	if err != nil {
 		return err
 	}
-	commit := blockCtx.TargetCommit
-	if blockCtx.LockedCommit != "" {
-		commit = blockCtx.LockedCommit
-		blockCtx.TargetCommit = commit
-	}
-
+	commit := blockCtx.Resolution.Commit
 	desired, failures, err := resolveBlock(ctx, blockCtx.Source, blockIndex, nextBlock, commit)
 	if err != nil {
 		return err
-	}
-	if len(failures) > 0 {
-		// Like add, remove leaves prior state unchanged when either step fails.
-		return fmt.Errorf("no local state was changed: %w", candidateFailureError(failures))
-	}
-	if err := validateDesiredSet(withOtherBlockEntries(st, nextBlock, desired)); err != nil {
-		return err
-	}
-
-	desiredByPath := make(map[string]desiredSkill, len(desired))
-	for _, skill := range desired {
-		desiredByPath[skill.SelectedPath] = skill
 	}
 	lockedByPath := make(map[string]skilllock.Entry, len(lockedEntries))
 	for _, entry := range lockedEntries {
 		lockedByPath[entry.SelectedPath] = entry
 	}
+	newFailures := failuresForNewPaths(failures, lockedByPath, nextBlock)
+	if len(newFailures) > 0 {
+		// Like add, remove leaves prior state unchanged when either step fails.
+		return fmt.Errorf("no local state was changed: %w", candidateFailureError(newFailures))
+	}
+	prospective := prospectiveSelectorEdit(blockIndex, nextBlock, desired, lockedEntries)
+	if err := validateDesiredSet(combineWithOtherEntries(st, nextBlock, lockedEntries, st.lock.Skills, prospective)); err != nil {
+		return err
+	}
 
 	for _, entry := range lockedEntries {
-		if _, still := desiredByPath[entry.SelectedPath]; !still {
+		selectedBy, still := selectingPositiveSelector(nextBlock, entry.SelectedPath)
+		if !still {
 			retire(st, txn, entry, report)
-		}
-	}
-	for _, skill := range desired {
-		if entry, locked := lockedByPath[skill.SelectedPath]; locked {
-			// A path still matched by another selector stays managed; only its
-			// recorded selector changes.
-			updated := entry
-			updated.Selector = config.NormalizeSkillSelector(skill.Selector)
-			txn.SetLockEntry(updated)
-			report.Add(SkillResult{Name: skill.Name, Repository: entry.Repository, SelectedPath: skill.SelectedPath, Outcome: OutcomeUnchanged})
 			continue
 		}
-		// Removing an exclusion reveals a skill; import it at the locked commit.
+		updated := entry
+		updated.Selector = selectedBy
+		txn.SetLockEntry(updated)
+		report.Add(SkillResult{Name: entry.Name, Repository: entry.Repository, SelectedPath: entry.SelectedPath, Outcome: OutcomeUnchanged})
+	}
+	for _, skill := range desired {
+		if _, locked := lockedByPath[skill.SelectedPath]; locked {
+			continue
+		}
+		// Removing an exclusion reveals a skill at the operation's current target.
 		s.importNewAt(st, txn, blockCtx, skill, commit, report)
 	}
 
@@ -342,11 +331,52 @@ func containsSelector(selectors []string, normalized string) bool {
 	return false
 }
 
-// withOtherBlockEntries combines a freshly resolved block desired set with the
-// recorded members of every other block so cross-block identity and overlap
-// rules are enforced against the complete managed set.
-func withOtherBlockEntries(st *state, block config.SkillImport, desired []desiredSkill) []desiredSkill {
-	return combineWithOtherEntries(st, block, st.entriesForBlock(block), st.lock.Skills, desired)
+// failuresForNewPaths removes failures for existing entries that a selector
+// edit leaves selected. Add/remove never advances those entries, so their own
+// locked commits remain authoritative and the current source version is only
+// relevant to newly introduced or newly revealed membership.
+func failuresForNewPaths(failures []candidateFailure, lockedByPath map[string]skilllock.Entry, block config.SkillImport) []candidateFailure {
+	filtered := make([]candidateFailure, 0, len(failures))
+	for _, failure := range failures {
+		if _, locked := lockedByPath[failure.Path]; locked {
+			if _, selected := selectingPositiveSelector(block, failure.Path); selected {
+				continue
+			}
+		}
+		filtered = append(filtered, failure)
+	}
+	return filtered
+}
+
+// prospectiveSelectorEdit combines newly resolved membership with every
+// existing independently locked entry the edited selectors still select. The
+// existing entry's recorded name wins because selector edits do not advance or
+// revalidate its upstream generation.
+func prospectiveSelectorEdit(blockIndex int, block config.SkillImport, desired []desiredSkill, lockedEntries []skilllock.Entry) []desiredSkill {
+	lockedByPath := make(map[string]skilllock.Entry, len(lockedEntries))
+	for _, entry := range lockedEntries {
+		lockedByPath[entry.SelectedPath] = entry
+	}
+	prospective := make([]desiredSkill, 0, len(desired)+len(lockedEntries))
+	for _, skill := range desired {
+		if _, locked := lockedByPath[skill.SelectedPath]; !locked {
+			prospective = append(prospective, skill)
+		}
+	}
+	for _, entry := range lockedEntries {
+		selector, selected := selectingPositiveSelector(block, entry.SelectedPath)
+		if !selected {
+			continue
+		}
+		prospective = append(prospective, desiredSkill{
+			BlockIndex:   blockIndex,
+			Block:        block,
+			Selector:     selector,
+			SelectedPath: entry.SelectedPath,
+			Name:         entry.Name,
+		})
+	}
+	return prospective
 }
 
 // withOtherPendingEntries is withOtherBlockEntries against the state an
@@ -354,7 +384,7 @@ func withOtherBlockEntries(st *state, block config.SkillImport, desired []desire
 // block against what the earlier blocks already staged rather than against the
 // snapshot it started from.
 func withOtherPendingEntries(st *state, txn *transaction, block config.SkillImport, desired []desiredSkill) []desiredSkill {
-	return combineWithOtherEntries(st, block, txnEntriesForBlock(txn, block), txn.lock.Skills, desired)
+	return combineWithOtherEntries(st, block, txnEntriesForBlock(st, txn, block), txn.lock.Skills, desired)
 }
 
 // combineWithOtherEntries appends every recorded entry outside the block under
@@ -387,7 +417,7 @@ func combineWithOtherEntries(st *state, block config.SkillImport, blockEntries [
 // minimal stand-in carrying the recorded repository when configuration no
 // longer declares it.
 func blockForEntry(st *state, entry skilllock.Entry) config.SkillImport {
-	if block, _, ok := st.blockForSelector(entry.Repository, entry.Selector); ok {
+	if block, _, ok := st.configuredBlockForEntry(entry); ok {
 		return block
 	}
 	return config.SkillImport{Repository: entry.Repository}

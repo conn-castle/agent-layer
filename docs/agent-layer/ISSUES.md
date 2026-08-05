@@ -29,17 +29,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-08-04 skill-import-block-identity-name-ordered: A block's locked identity is taken from its alphabetically first skill
-    Priority: Low. Area: skill imports / recorded state
-    Description: `state.blockLockedIdentity` returns `entriesForBlock(block)[0]`, and a per-skill pull failure can leave one block's entries carrying different commits and configured refs. `openBlock` reads the commit and the retarget decision from that same entry, so every reachable path converges forward rather than reverting, but which recorded generation a block reconciles onto depends on skill names rather than on anything meaningful.
-    Open question: Should a block's entries be required to share one commit, or should each skill reconcile against its own recorded commit?
-    Notes: Raised in PR #170 review; the current reasoning is documented on `blockLockedIdentity`. No incorrect outcome has been demonstrated.
-
 - Issue 2026-08-04 permission-based-test-fixtures-assume-non-root: chmod-driven failure fixtures silently pass under root
     Priority: Low. Area: test suite
-    Description: Tests across internal/install, internal/clients, and internal/skillimport drive production error paths by removing a directory's write bit. A process with CAP_DAC_OVERRIDE — root in many containers — writes anyway, so the operation under test succeeds and the assertion fails for an environment reason. CI runs on ubuntu-latest as a non-root user, so nothing currently fails.
+    Description: Pre-existing tests in internal/install and internal/clients drive production error paths by removing a directory's write bit. A process with CAP_DAC_OVERRIDE — root in many containers — writes anyway, so the operation under test succeeds and the assertion fails for an environment reason. CI runs on ubuntu-latest as a non-root user, so nothing currently fails.
     Next step: If root execution is ever supported, add one shared writability probe helper and apply it to every chmod-based fixture rather than to individual tests.
-    Notes: Raised in PR #170 review against two skillimport tests; the pattern is repository-wide, so a per-test fix would be inconsistent.
+    Notes: The skill-import fixtures raised in PR #170 were removed or replaced with deterministic injected failures; this issue now covers only the older remaining fixtures.
 
 - Issue 2026-08-04 benchmark-treatment-skill-mapping-stale: Skills-treatment conformance requires skills that no longer ship
     Priority: High. Area: benchmarks / treatment conformance

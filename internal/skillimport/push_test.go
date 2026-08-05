@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/skilllock"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
 
@@ -311,6 +312,23 @@ func TestPushRejectsOverlappingDestinationPathsInOneGroup(t *testing.T) {
 	}
 	if destination.HasPath("skill-updates", "skills/alpha/SKILL.md") {
 		t.Fatal("overlapping destination paths were published")
+	}
+}
+
+// TestDestinationOverlapChecksAllAncestorPrefixes proves a sorting sibling
+// cannot hide an ancestor/descendant pair from the publication preflight.
+func TestDestinationOverlapChecksAllAncestorPrefixes(t *testing.T) {
+	t.Parallel()
+	group := &pushGroup{Branch: "updates"}
+	for _, selectedPath := range []string{"skills", "skills-old", "skills/alpha"} {
+		group.Candidates = append(group.Candidates, pushCandidate{Entry: skilllock.Entry{SelectedPath: selectedPath}})
+	}
+	err := rejectOverlappingDestinationPaths(group)
+	if err == nil {
+		t.Fatal("a non-adjacent ancestor/descendant pair was accepted")
+	}
+	if !strings.Contains(err.Error(), "skills and skills/alpha overlap") {
+		t.Fatalf("error %q does not identify the hidden overlap", err)
 	}
 }
 

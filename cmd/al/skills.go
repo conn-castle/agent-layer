@@ -26,9 +26,27 @@ func newSkillsCmd() *cobra.Command {
 		newSkillsRemoveCmd(),
 		newSkillsStatusCmd(),
 		newSkillsPullCmd(),
+		newSkillsResetCmd(),
 		newSkillsPushCmd(),
 	)
 	return cmd
+}
+
+func newSkillsResetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   messages.SkillsResetUse,
+		Short: messages.SkillsResetShort,
+		Long:  messages.SkillsResetLong,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveRepoRoot()
+			if err != nil {
+				return err
+			}
+			report, err := skillimport.New(root).Reset(cmd.Context(), args[0])
+			return finishSkillsOperation(cmd, "reset", report, err)
+		},
+	}
 }
 
 func newSkillsAddCmd() *cobra.Command {

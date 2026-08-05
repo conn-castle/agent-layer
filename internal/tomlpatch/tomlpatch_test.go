@@ -3,6 +3,8 @@ package tomlpatch
 import (
 	"strings"
 	"testing"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 func TestMultilineValueEndIndex_TripleQuotedStringInsideArray(t *testing.T) {
@@ -352,6 +354,30 @@ func TestRenderAndCloneHelpers_DoNotAliasInputs(t *testing.T) {
 	}
 	if got := strings.Join(TrimTrailingEmptyLines([]string{"a", "", ""}), "|"); got != "a" {
 		t.Fatalf("unexpected trim-trailing result %q", got)
+	}
+}
+
+// TestFormatStringUsesTOMLRules proves arbitrary valid UTF-8 round-trips
+// through the TOML encoder while malformed UTF-8 is rejected before an editor
+// can place it into configuration.
+func TestFormatStringUsesTOMLRules(t *testing.T) {
+	t.Parallel()
+	value := "quotes \" and control \a and unicode λ"
+	literal, err := FormatString(value)
+	if err != nil {
+		t.Fatalf("FormatString: %v", err)
+	}
+	var decoded struct {
+		Value string `toml:"value"`
+	}
+	if err := toml.Unmarshal([]byte("value = "+literal+"\n"), &decoded); err != nil {
+		t.Fatalf("rendered literal does not parse: %v", err)
+	}
+	if decoded.Value != value {
+		t.Fatalf("round trip = %q, want %q", decoded.Value, value)
+	}
+	if _, err := FormatString(string([]byte{0xff})); err == nil {
+		t.Fatal("invalid UTF-8 was accepted")
 	}
 }
 

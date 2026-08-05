@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -551,12 +552,16 @@ func rejectOverlappingDestinationPaths(group *pushGroup) error {
 		paths = append(paths, candidate.Entry.SelectedPath)
 	}
 	sort.Strings(paths)
-	for i := 1; i < len(paths); i++ {
-		previous, current := paths[i-1], paths[i]
-		if current == previous || strings.HasPrefix(current, previous+"/") {
+	accepted := make(map[string]struct{}, len(paths))
+	for _, current := range paths {
+		for ancestor := current; ancestor != "." && ancestor != "/" && ancestor != ""; ancestor = path.Dir(ancestor) {
+			if _, exists := accepted[ancestor]; !exists {
+				continue
+			}
 			return fmt.Errorf("destination paths %s and %s overlap in %s branch %s; narrow one selector or route the blocks to different destinations",
-				previous, current, group.Repository, group.Branch)
+				ancestor, current, group.Repository, group.Branch)
 		}
+		accepted[current] = struct{}{}
 	}
 	return nil
 }

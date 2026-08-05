@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 // baseConfigTOML is a minimally valid configuration used to exercise the
@@ -68,6 +70,16 @@ func TestSkillImportValidationRejectsUnsafePolicy(t *testing.T) {
 			name:    "absolute selector",
 			imports: "\n[[skills.imports]]\nrepository = \"r\"\nselectors = [\"/skills/a\"]\n",
 			want:    "repository-relative path",
+		},
+		{
+			name:    "malformed positive wildcard",
+			imports: "\n[[skills.imports]]\nrepository = \"r\"\nselectors = [\"skills/[a\"]\n",
+			want:    "invalid wildcard pattern",
+		},
+		{
+			name:    "malformed exclusion wildcard",
+			imports: "\n[[skills.imports]]\nrepository = \"r\"\nselectors = [\"skills/*\", \"!skills/[a\"]\n",
+			want:    "invalid wildcard pattern",
 		},
 		{
 			name:    "invalid tracking",
@@ -175,11 +187,18 @@ push_branch = "skill-updates"
 	}
 }
 
-// TestSkillImportIdentityUsesTheEffectivePushRepository proves an omitted
-// destination and the equivalent explicit source destination identify the same
-// policy block, preventing duplicate blocks and misdirected selector edits.
-func TestSkillImportIdentityUsesTheEffectivePushRepository(t *testing.T) {
+// TestSkillImportIdentityUsesEffectiveDefaults proves omitted values and their
+// explicit equivalents identify the same policy block, preventing duplicate
+// blocks and misdirected selector edits.
+func TestSkillImportIdentityUsesEffectiveDefaults(t *testing.T) {
 	t.Parallel()
+	omittedPolicy := SkillImport{Repository: "https://example.test/skills.git"}
+	explicitNone := omittedPolicy
+	explicitNone.WritePolicy = SkillWritePolicyNone
+	if omittedPolicy.Identity() != explicitNone.Identity() {
+		t.Fatalf("equivalent write policies have different identities: omitted=%+v explicit=%+v", omittedPolicy.Identity(), explicitNone.Identity())
+	}
+
 	omitted := SkillImport{
 		Repository:  "https://example.test/skills.git",
 		WritePolicy: SkillWritePolicyDirect,
@@ -246,6 +265,8 @@ func TestValidateSkillSelectorPathRejectsUnsafePaths(t *testing.T) {
 		"skills/a\a":   "control characters",
 		"skills/a\x01": "control characters",
 		"skills/a\x7f": "control characters",
+		"skills/[a":    "invalid wildcard pattern",
+		"skills/a]\\":  "path separator",
 	}
 	for value, want := range rejected {
 		err := ValidateSkillSelectorPath(value)
@@ -285,13 +306,9 @@ func TestSkillExclusionHelpersRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSelectorRenderingStaysParsableTOML proves a selector that reaches the
-// configuration writer always round-trips.
-//
-// The writer quotes selectors with strconv.Quote, which emits Go escapes. Two
-// of them — \a and \v — are not TOML escapes, so a control character in a
-// selector would produce a config.toml that the next load cannot parse.
-// Validation rejects those selectors before they can be written.
+// TestSelectorRenderingStaysParsableTOML proves selector validation rejects
+// invalid paths while the shared TOML renderer still produces valid syntax for
+// every valid UTF-8 string it is asked to encode directly.
 func TestSelectorRenderingStaysParsableTOML(t *testing.T) {
 	t.Parallel()
 	identity := SkillImport{Repository: "https://example.test/skills.git"}.Identity()
@@ -301,14 +318,23 @@ func TestSelectorRenderingStaysParsableTOML(t *testing.T) {
 		}
 	}
 
-	// The escape really is fatal, so the rejection above is what protects the
-	// file rather than an incidental property of the parser.
 	written, err := SetSkillImportSelectors(baseConfigTOML, identity, []string{"skills/a\a"})
 	if err != nil {
 		t.Fatalf("SetSkillImportSelectors: %v", err)
 	}
-	if _, err := ParseConfig([]byte(written), "config.toml"); err == nil {
-		t.Fatal("expected a Go-only escape to make the rewritten configuration unparsable")
+	var decoded struct {
+		Skills SkillsConfig `toml:"skills"`
+	}
+	if err := toml.Unmarshal([]byte(written), &decoded); err != nil {
+		t.Fatalf("TOML-safe rendering produced an unparsable file: %v", err)
+	}
+	if got := decoded.Skills.Imports[0].Selectors[0]; got != "skills/a\a" {
+		t.Fatalf("selector round trip = %q", got)
+	}
+
+	invalidUTF8 := string([]byte{'s', 0xff})
+	if _, err := SetSkillImportSelectors(baseConfigTOML, identity, []string{invalidUTF8}); err == nil {
+		t.Fatal("invalid UTF-8 reached config.toml")
 	}
 }
 

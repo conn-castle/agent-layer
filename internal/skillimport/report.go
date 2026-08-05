@@ -25,6 +25,9 @@ const (
 	OutcomeUnchanged Outcome = "unchanged"
 	// OutcomeRestored reports a missing imported directory rebuilt from source.
 	OutcomeRestored Outcome = "restored"
+	// OutcomeReset reports a skill whose local edits were discarded in favor of
+	// the current configured upstream content.
+	OutcomeReset Outcome = "reset"
 	// OutcomeRetired reports a skill removed from the desired set and deleted.
 	OutcomeRetired Outcome = "retired"
 	// OutcomePruned reports a lock entry dropped because its directory was

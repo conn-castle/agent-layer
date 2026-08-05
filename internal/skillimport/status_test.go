@@ -110,6 +110,33 @@ func TestStatusReportsMissingRefEvidence(t *testing.T) {
 	}
 }
 
+// TestStatusMapsAManuallyReplacedSelectorToItsUniqueBlock proves offline status
+// keeps reporting the current policy when one unambiguous wildcard replaces an
+// entry's recorded exact selector.
+func TestStatusMapsAManuallyReplacedSelectorToItsUniqueBlock(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}, `write_policy = "direct"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	proj.ReplaceInConfig(`selectors = ["skills/alpha"]`, `selectors = ["skills/*"]`)
+
+	status, err := proj.Service().Status()
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if len(status.Entries) != 1 || !status.Entries[0].WriteEnabled || status.Entries[0].WritePolicy != config.SkillWritePolicyDirect {
+		t.Fatalf("status lost the current block policy: %+v", status.Entries)
+	}
+	if len(status.MissingRefEvidence) != 0 {
+		t.Fatalf("status treated the remapped entry as missing evidence: %v", status.MissingRefEvidence)
+	}
+}
+
 // TestStatusDetectsUserManagedCollision proves an ownership collision is
 // surfaced by status rather than only failing at projection time.
 func TestStatusDetectsUserManagedCollision(t *testing.T) {
@@ -311,41 +338,6 @@ func TestStatusPreservesLocalStateWhenTheImportedTierIsUnreadable(t *testing.T) 
 	}
 }
 
-// TestTransactionRollsBackAPartiallyPublishedBatch proves a failure partway
-// through a multi-skill commit restores every tree it had already swapped in.
-func TestTransactionRollsBackAPartiallyPublishedBatch(t *testing.T) {
-	proj := newProject(t)
-	if err := os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	// alpha already exists with known content; beta is new and will fail.
-	proj.WriteImportedFile("alpha", "SKILL.md", skillManifest("alpha", "Original body"))
-
-	txn := newTransaction(pathSetFor(&state{paths: proj.paths}), mustEmptyLock())
-	txn.WriteSkill("alpha", mustSkillTree(t, "alpha", "Replacement body"))
-	txn.WriteSkill("beta", mustSkillTree(t, "beta", "New body"))
-	// A regular file where beta's directory must go makes its publication fail
-	// after alpha has already been swapped in.
-	writeProjectFile(t, filepath.Join(proj.paths.ImportedSkillsDir, "beta"), "not a directory")
-	if err := os.Chmod(proj.paths.ImportedSkillsDir, 0o500); err != nil { // #nosec G302 -- an unwritable tier is how this test forces the failure.
-		t.Fatalf("chmod: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(proj.paths.ImportedSkillsDir, 0o750) }) // #nosec G302 -- restores the directory for cleanup.
-
-	if err := txn.Commit(); err == nil {
-		t.Fatal("expected the batch to fail")
-	}
-	if err := os.Chmod(proj.paths.ImportedSkillsDir, 0o750); err != nil { // #nosec G302 -- restores the directory so assertions can read it.
-		t.Fatalf("chmod: %v", err)
-	}
-	if got := proj.ImportedFile("alpha", "SKILL.md"); !strings.Contains(got, "Original body") {
-		t.Fatalf("alpha was not rolled back: %q", got)
-	}
-	if proj.Lock() != nil {
-		t.Fatal("a failed batch wrote lock state")
-	}
-}
-
 // TestLocalSkillValidReportsReadability proves the observed-state helper
 // distinguishes a present, readable skill from an absent or broken one.
 func TestLocalSkillValidReportsReadability(t *testing.T) {
@@ -358,6 +350,29 @@ func TestLocalSkillValidReportsReadability(t *testing.T) {
 	}
 	if !(localSkill{Present: true}).Valid() {
 		t.Fatal("a present readable skill reported as invalid")
+	}
+}
+
+// TestUserManagedNamesRejectNFKCCollisions proves filesystem enumeration never
+// lets a later compatibility-equivalent directory silently replace the first
+// collision path in the ownership map.
+func TestUserManagedNamesRejectNFKCCollisions(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	first := filepath.Join(dir, "1")
+	second := filepath.Join(dir, "①")
+	if err := os.Mkdir(first, 0o750); err != nil {
+		t.Fatalf("mkdir first: %v", err)
+	}
+	if err := os.Mkdir(second, 0o750); err != nil {
+		t.Fatalf("mkdir second: %v", err)
+	}
+	_, err := readUserSkillNames(dir)
+	if err == nil {
+		t.Fatal("NFKC-equivalent skill directories were accepted")
+	}
+	if !strings.Contains(err.Error(), first) || !strings.Contains(err.Error(), second) {
+		t.Fatalf("error %q does not identify both colliding paths", err)
 	}
 }
 

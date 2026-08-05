@@ -7,7 +7,31 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
+
+	"github.com/pelletier/go-toml/v2"
 )
+
+// FormatString renders one string as a TOML value using the repository's TOML
+// encoder. Invalid UTF-8 and values the encoder cannot represent are rejected
+// instead of being written with Go-specific escaping rules.
+func FormatString(value string) (string, error) {
+	if !utf8.ValidString(value) {
+		return "", fmt.Errorf("TOML strings must contain valid UTF-8")
+	}
+	encoded, err := toml.Marshal(struct {
+		Value string `toml:"value"`
+	}{Value: value})
+	if err != nil {
+		return "", fmt.Errorf("value cannot be represented as TOML: %w", err)
+	}
+	line := strings.TrimSuffix(string(encoded), "\n")
+	const prefix = "value = "
+	if !strings.HasPrefix(line, prefix) || strings.Contains(strings.TrimPrefix(line, prefix), "\n") {
+		return "", fmt.Errorf("TOML encoder returned an unexpected string representation")
+	}
+	return strings.TrimPrefix(line, prefix), nil
+}
 
 // Block is a contiguous TOML table or array-of-table block.
 type Block struct {

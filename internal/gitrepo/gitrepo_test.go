@@ -184,6 +184,45 @@ func TestReadTreeReturnsExactCanonicalContent(t *testing.T) {
 	}
 }
 
+// TestLocalExecutableClassificationMatchesGit proves only owner execute maps to
+// Git mode 100755. Group- or other-execute bits alone remain 100644, so local
+// hashing and a committed source tree classify the same bytes identically.
+func TestLocalExecutableClassificationMatchesGit(t *testing.T) {
+	repo := newTestRepo(t, "main")
+	repo.write("skills/alpha/SKILL.md", "---\nname: alpha\ndescription: d\n---\nBody\n", 0o644)
+	modes := map[string]os.FileMode{
+		"owner.sh": 0o744,
+		"group.sh": 0o654,
+		"other.sh": 0o645,
+	}
+	for name, mode := range modes {
+		repo.write("skills/alpha/"+name, name+"\n", 0o644)
+		if err := os.Chmod(filepath.Join(repo.dir, "skills", "alpha", name), mode); err != nil {
+			t.Fatalf("chmod %s: %v", name, err)
+		}
+	}
+	commit := repo.commit("record executable modes")
+
+	_, source := newTestSource(t, repo)
+	upstream, err := source.ReadTree(context.Background(), commit, "skills/alpha")
+	if err != nil {
+		t.Fatalf("ReadTree: %v", err)
+	}
+	local, err := skilltree.Read(skilltree.OSFS{}, filepath.Join(repo.dir, "skills", "alpha"), skilltree.PolicyStrict)
+	if err != nil {
+		t.Fatalf("local Read: %v", err)
+	}
+	if upstream.Hash() != local.Hash() {
+		t.Fatalf("local hash %s does not match Git tree hash %s", local.Hash(), upstream.Hash())
+	}
+	for name, want := range map[string]bool{"owner.sh": true, "group.sh": false, "other.sh": false} {
+		file, ok := local.File(name)
+		if !ok || file.Executable != want {
+			t.Fatalf("%s executable = %v, want %v", name, file.Executable, want)
+		}
+	}
+}
+
 // TestReadTreeRejectsUnsafeEntries proves a symlink recorded in Git is refused
 // without being followed.
 func TestReadTreeRejectsUnsafeEntries(t *testing.T) {

@@ -420,6 +420,7 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al skills remove <repository> <selector>` | Remove one configured import selector and recompute the desired set. |
 | `al skills status` | Report local imported-skill state. Local and network-free; `--all` expands it. |
 | `al skills pull` | Fetch configured sources, reconcile them with local content, and project the results. |
+| `al skills reset <name>` | Permanently discard one imported skill's local edits and accept its current configured upstream version. |
 | `al skills push` | Publish local imported-skill changes to configured destinations. |
 | `al probe agy` | Run the Antigravity capability probe and print JSON. |
 | `al doctor` | Validate configuration and probe enabled MCP servers. |
@@ -754,6 +755,7 @@ al skills add https://github.com/example/skills.git skills/reviewer
 al skills add https://github.com/example/skills.git "skills/*" --ref v1.4.0
 al skills status --all
 al skills pull
+al skills reset reviewer
 al skills push
 al skills remove https://github.com/example/skills.git skills/reviewer
 ```
@@ -764,25 +766,26 @@ upstream state lives in `.agent-layer/skills.lock.json`. Both are ordinary
 files: whether you commit them is your project's choice, and Agent Layer never
 stages or commits your repository.
 
-`add`, `pull`, and `push` always contact remote repositories, and `remove`
-contacts one whenever the block keeps a selector, because it re-resolves the
-remaining desired set at the block's locked commit. Removing a block's last
-positive selector is the only `remove` that stays local. `status`, `al sync`,
-and agent launch are always local.
+`add`, `pull`, `reset`, and `push` contact remote repositories. `remove`
+contacts one whenever the block keeps a selector so newly revealed membership
+can be resolved at the current source target. Removing a block's last positive
+selector is the only `remove` that stays local. `status`, `al sync`, and agent
+launch are always local.
 
 **add** validates the selectors you name, creates or extends the one block with
 a matching policy, performs the initial pull for a new block, and projects the
-result. For an existing block it resolves the selector change at that block's
-locked source commit without advancing it. Configuration, imported skills, and
-lock state change together, so a failure leaves your prior state intact. It
-never searches, recommends, or previews skills.
+result. For an existing block, already selected skills retain their independent
+lock entries while newly introduced membership is imported immediately at the
+current resolved source target. Configuration, imported skills, and lock state
+change together, so a failure leaves your prior state intact. It never
+searches, recommends, or previews skills.
 
 **remove** drops one configured positive or exclusion selector. Skills still
 matched by another selector stay managed. Removing an exclusion imports the
-skill it was hiding, again at the block's locked commit; resolving that
-remaining desired set opens the source, so `remove` contacts the remote unless
-it is removing the block's last positive selector. A block left without a
-positive selector is removed.
+skill it was hiding at the current resolved source target; already selected
+skills retain their own lock entries. Resolving new membership opens the source,
+so `remove` contacts the remote unless it is removing the block's last positive
+selector. A block left without a positive selector is removed.
 
 **status** is local and read-only. Its default output summarizes total, clean,
 modified, missing, invalid, and collided skills plus tracking and write policy
@@ -796,6 +799,18 @@ changes to the same path, delete/modify cases, and non-text files changed on
 both sides are reported as conflicts and fail only that skill. Pinned imports
 stay put unless you change the configured ref, which is reconciled as a
 retarget rather than a removal plus addition.
+
+Each skill uses only its own lock entry as the upstream merge base. Members
+declared together may therefore remain at different commits after partial
+success. Newly matched skills are imported at that pull's current resolved
+target without moving an existing pinned sibling.
+
+**reset** requires exactly one imported skill name and has no `--all` form. It
+permanently discards that skill's local edits and atomically replaces its tree
+and lock entry with the current configured upstream version. Reset does not
+reconcile selector membership, inspect version-control status, or create a
+commit, stash, copy, or backup. Resetting a pinned branch deliberately repins it
+at the branch's current commit; ordinary pull leaves that new pin fixed.
 
 **push** publishes local changes to each block's configured destination. It
 never pulls first and never force-pushes. Changes for one destination
