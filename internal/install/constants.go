@@ -6,6 +6,7 @@ const (
 	configFileName                 = "config.toml"
 	instructionsDirName            = "instructions"
 	skillDirectoryName             = "skills"
+	skillManifestFileName          = "SKILL.md"
 	docsAgentLayerDir              = "docs/agent-layer"
 	issuesPath                     = "docs/agent-layer/ISSUES.md"
 	backlogPath                    = "docs/agent-layer/BACKLOG.md"

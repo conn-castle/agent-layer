@@ -68,6 +68,14 @@ func TestExclusiveSkillRootPreflightAcceptsReleasedMarkers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	lowercaseDir := filepath.Join(root, ".agents", "skills", "lowercase-release")
+	if err := os.MkdirAll(lowercaseDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	lowercaseMarker := strings.Replace(releasedProjectionMarker, "skills/alpha/SKILL.md", "skills/lowercase-release/skill.md", 1)
+	if err := os.WriteFile(filepath.Join(lowercaseDir, "SKILL.md"), []byte(lowercaseMarker), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	inst := &installer{root: root, sys: RealSystem{}}
 	if err := inst.preflightExclusiveSkillRoots(); err != nil {
 		t.Fatalf("released projections must be safe to replace: %v", err)
@@ -105,6 +113,22 @@ func TestExclusiveSkillRootPreflightRejectsNonDirectoryRootAndMarkerTextOutsideH
 		err := (&installer{root: root, sys: RealSystem{}}).preflightExclusiveSkillRoots()
 		if err == nil || !strings.Contains(err.Error(), skillDir) {
 			t.Fatalf("manual marker text was accepted as a released header: %v", err)
+		}
+	})
+
+	t.Run("anchored marker names an impossible released source", func(t *testing.T) {
+		root := t.TempDir()
+		skillDir := filepath.Join(root, ".claude", "skills", "manual")
+		if err := os.MkdirAll(skillDir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		manifest := strings.Replace(releasedProjectionMarker, "skills/alpha/SKILL.md", "manual-content", 1)
+		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(manifest), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		err := (&installer{root: root, sys: RealSystem{}}).preflightExclusiveSkillRoots()
+		if err == nil || !strings.Contains(err.Error(), skillDir) {
+			t.Fatalf("impossible released source was accepted: %v", err)
 		}
 	})
 }

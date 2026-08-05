@@ -75,7 +75,7 @@ func blockingSkillRootEntries(sys System, root string) ([]string, error) {
 
 		safe := false
 		if entry.IsDir() {
-			manifest, err := sys.ReadFile(filepath.Join(path, "SKILL.md"))
+			manifest, err := sys.ReadFile(filepath.Join(path, skillManifestFileName))
 			if err == nil {
 				safe = hasReleasedSkillProjectionMarker(manifest)
 			}
@@ -103,6 +103,18 @@ func hasReleasedSkillProjectionMarker(manifest []byte) bool {
 	if sourceEnd <= 0 {
 		return false
 	}
+	source := content[len(releasedSkillProjectionMarkerPrefix) : len(releasedSkillProjectionMarkerPrefix)+sourceEnd]
+	if !isReleasedSkillProjectionSource(source) {
+		return false
+	}
 	headerRemainder := content[len(releasedSkillProjectionMarkerPrefix)+sourceEnd:]
 	return strings.HasPrefix(headerRemainder, releasedSkillProjectionMarkerSuffix)
+}
+
+func isReleasedSkillProjectionSource(source string) bool {
+	parts := strings.Split(source, "/")
+	if len(parts) != 3 || parts[0] != skillDirectoryName || parts[1] == "" {
+		return false
+	}
+	return parts[2] == skillManifestFileName || parts[2] == "skill.md"
 }
