@@ -1,64 +1,77 @@
 ---
 name: implement
 description: >-
-  Implement a large and substantive code change directly or through a planned cross-agent
-  workflow, adding independent plan or code review only when warranted.
+  Implement a large, substantive code change directly or through a planned
+  cross-agent workflow, adding plan or code review only when warranted.
 ---
 
 # implement
 
 ## Inputs
 
-Require a task, request, or spec, referred to as `<input>`.
-
-Require dispatch targets named `implementer`, `plan_reviewers`, and
-`code_reviewer`. The workflow decisions below determine which targets are used;
-providing a target does not require or imply its use. Do not infer or substitute missing
-targets. Use `/agent-dispatch` for every dispatch.
+Require a task, request, or spec as `<input>` and dispatch targets named
+`implementer`, `plan_reviewers`, and `code_reviewer`. Providing a target does
+not imply its use. Do not infer missing targets. Use `/agent-dispatch` for every
+dispatch.
 
 ## Decide Implementation Approach
 
-Decide separately whether to plan, whether planned work needs independent plan
-review, and whether the implementation needs independent code review. Choosing
-one does not imply choosing another.
+Inspect the relevant architecture. Reuse existing code and established patterns
+when they fit `<input>`. Resolve substantive requirements and tradeoffs before
+implementation.
 
-Planning and each independent review add significant cost. Account for that
-cost instead of choosing the lowest-risk workflow by default.
+Planning and independent review add significant cost. Before implementation,
+answer each question yes or no:
 
-If you are confident you can proceed and no substantive requirements or
-tradeoffs remain unresolved, implement directly. Code review can be selected
-for either direct or planned implementation.
+- Is a written plan required to confidently complete and verify `<input>`?
+- If a plan is required, does its material risk or complexity justify
+  independent plan review?
+- Does the implementation's material risk or complexity justify independent
+  code review, whether implementation is direct or planned?
 
-## Implementation
+If no plan is required, implement `<input>` directly without dispatching or
+writing a plan. Run only targeted checks as needed, then continue to the Finish
+section.
 
-If a plan is not required, implement `<input>` directly without dispatching or
-writing a plan.
+## Implementation with a Written Plan
 
-If a plan is required, do the following:
+If a plan is required, write the following self-contained artifacts. Set
+`<run-id>` to `YYYYMMDD-HHMMSS-<short-rand>`:
 
-- Write a self-contained plan under `.agent-layer/tmp` without dispatching.
-- If independent plan review is required, write each reviewer a self-contained
-  prompt that asks it to review the plan against `<input>` without editing files
-  or implementing the plan. Dispatch all `plan_reviewers` concurrently, then
-  update the plan to address any findings you agree with. Do not repeat plan
-  review.
-- Dispatch `implementer` to implement the plan.
+- `.agent-layer/tmp/write-plan.<run-id>.plan.md` - the implementation plan
+- `.agent-layer/tmp/write-plan.<run-id>.task.md` - a checklist for all
+  requirements, used to assess completion
+- `.agent-layer/tmp/write-plan.<run-id>.context.md` - all background and context
+  required for executing the implementation plan
+
+If independent plan review is required, write each reviewer a self-contained
+prompt instructing it to review the plan artifacts against `<input>` without
+editing files or implementing. Dispatch all `plan_reviewers` concurrently. Then
+update the artifacts to address any findings you agree with. Do not repeat plan
+review.
+
+Finally, dispatch `implementer` with a prompt instructing it to implement the
+plan based on the provided artifacts and to only run targeted checks as needed.
+
+If implementation is incomplete or leaves requirements unresolved, use
+`dispatch_continue` once to reuse the same session. Be specific in the
+continuation prompt about what remains to be done.
 
 ## Finish
 
-1. Inspect and simplify the completed implementation:
-   - Remove unnecessary complexity, duplication, dead code, and premature
-     abstractions without changing required behavior.
-   - Keep code readable and easy to reason about. Prefer direct code over new
-     indirection.
-   - Remove new or modified tests that cannot detect a concrete product defect,
-     encode implementation details, or are tautological. Keep mocks minimal.
-   - Do not broaden the task into cleanup of unrelated existing code.
-2. If independent code review is required, dispatch `code_reviewer` to review
-   the implementation without editing it. Address any findings you agree with.
+1. Inspect and simplify the implementation without changing required behavior
+   or broadening the task. Remove unnecessary complexity, duplication, dead
+   code, premature abstractions, and tests that cannot detect a product defect.
+
+2. If independent code review is required, dispatch `code_reviewer` with a
+   self-contained prompt that includes `<input>` and any plan artifacts and
+   instructs it to review the implementation against them without editing
+   files and return a list of findings. Consider the findings, then address
+   those you agree with.
+
 3. Confirm the final implementation satisfies `<input>` and, for planned work,
-   every plan requirement. If a dispatched implementer returns with unresolved
-   requirements, you may use `/agent-dispatch` once to continue that same
-   conversation. Include the specific unresolved requirements and accepted
-   review findings in the continuation prompt. Resolve any gaps and run
-   required checks before reporting completion.
+   every task and requirement.
+
+4. Run the repository's complete required verification suite against the final
+   candidate. Fix any failures, then run the minimal checks required to confirm
+   the fixes.

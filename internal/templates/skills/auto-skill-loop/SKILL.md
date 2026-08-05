@@ -39,14 +39,19 @@ waiting for human input.
 
 ## Loop
 
-1. Dispatch `planner` with skill `implement`. Use the complete contents of
-`references/modes/<mode>.md` and any caller input as its
-prompt, then append:
+1. Dispatch `planner` with skill `implement`. Use the following as its prompt:
 
 ```text
+<complete contents of references/modes/<mode>.md>
+<applicable caller-provided context or constraints, if any>
+
 implementer: <implementer>
 plan_reviewers: <plan_reviewers>
 code_reviewer: <code_reviewer>
+
+Return a self-contained `<implementation_input>` that states the actual task,
+request, or spec you implemented and includes paths to plan artifacts if used.
+This context will preserve the intended scope during later review.
 ```
 
 If `planner` is unable to find work to complete, repeat the dispatch one more
@@ -56,6 +61,11 @@ time. If two invocations in a row cannot find work, exit and inform the user.
 
 ```text
 pr_worker: <pr_worker>
+
+Use the following context to preserve intended scope and behavior throughout the PR
+workflow:
+
+<implementation_input>
 ```
 
 Continue when it returns a merge-authorization request.

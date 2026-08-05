@@ -3,7 +3,7 @@
 Note: This is an agent-layer memory file. It is primarily for agent use.
 
 ## Purpose
-Persistent project-specific knowledge that does not belong in ISSUES, BACKLOG, ROADMAP, DECISIONS, or COMMANDS. Read this file before starting work on a task.
+Persistent project-specific knowledge that does not belong in ISSUES, BACKLOG, DECISIONS, or COMMANDS. Read this file before starting work on a task.
 
 Record three categories of information here:
 1. **Project context** — domain concepts, architectural invariants, naming conventions, external dependencies, environment setup notes, team norms, and any other stable facts an agent needs to work effectively in this repository.
@@ -15,7 +15,6 @@ Do not duplicate information that belongs in other memory files:
 - Planned features → BACKLOG.md
 - Workflow commands → COMMANDS.md
 - Non-obvious decisions → DECISIONS.md
-- Phased plans → ROADMAP.md
 
 ## Format
 - Organize by topic using headings (`##`, `###`).

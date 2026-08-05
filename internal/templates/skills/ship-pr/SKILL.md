@@ -22,7 +22,7 @@ Require a `pr_worker` dispatch target. Use `/agent-dispatch` for every dispatch.
 
 The `pr_worker` fixes review feedback and failed CI checks in the local working
 tree without committing or pushing. It returns proposed comment replies without
-posting them.
+posting them. Relay any additional caller input in every `pr_worker` prompt.
 
 After committing accepted fixes, post each supported reply in its original
 thread, one at a time. Then refetch the reply IDs and URLs. Before closeout,
