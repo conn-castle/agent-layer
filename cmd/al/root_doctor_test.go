@@ -360,6 +360,7 @@ func TestDoctorCommand_QuietFlagSuppressesWarningNotifications(t *testing.T) {
 		t.Fatalf("mkdir skill dir: %v", err)
 	}
 	skillContent := `---
+name: alpha
 description: test
 ---
 Body.

@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "target_version": "0.16.0",
+  "min_prior_version": "0.10.2",
+  "operations": [
+    {
+      "id": "a-claim-client-skill-roots",
+      "kind": "claim_skill_projection_roots",
+      "source_agnostic": true,
+      "rationale": "Verify client skill roots contain only released Agent Layer projections before treating those roots as disposable output."
+    }
+  ]
+}

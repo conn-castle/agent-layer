@@ -1,6 +1,6 @@
 # Agent Skills Client Support Spec
 
-As of 2026-05-21, Agent Layer projects skills from the canonical source directory `.agent-layer/skills/<name>/SKILL.md` into client discovery locations that support directory-format Agent Skills. The source skill directory is the single source of truth; generated client folders are disposable sync outputs.
+As of 2026-08-05, Agent Layer projects skills from the canonical user-managed tier `.agent-layer/skills/` and Git-imported tier `.agent-layer/imported-skills/` into client discovery locations that support directory-format Agent Skills. Those two source tiers are the single source of truth; client skill roots are disposable sync outputs.
 
 ## Sources
 
@@ -27,13 +27,20 @@ As of 2026-05-21, Agent Layer projects skills from the canonical source director
 
 - Write `.agents/skills/` when at least one shared-skill consumer is enabled: Codex, Antigravity, VS Code/GitHub Copilot, or Copilot CLI.
 - Write `.claude/skills/` when Claude Code or the Claude VS Code extension is enabled.
-- Rebuild generated top-level `SKILL.md` from parsed source metadata and body.
-- Copy all non-hidden, non-symlink support files from the source skill directory into every generated skill output, preserving file modes.
-- Skip top-level source `SKILL.md` and `skill.md` during resource copying because the generated `SKILL.md` is rebuilt.
+- Require an uppercase `SKILL.md` in every source directory. Lowercase `skill.md` is not accepted, and having both spellings is ambiguous.
+- Read each source once under the project lock and project its complete tree byte-for-byte, including hidden and nested files and executable bits. Ignore only `.git`, `.DS_Store`, and `Thumbs.db`.
+- Accept additional frontmatter fields without interpreting or filtering them. Provider-specific fields therefore reach every enabled client projection unchanged.
+- Reject symlinks and every other non-directory, non-regular source node without dereferencing or silently skipping it.
+- Replace each enabled client skill root as one complete staged tree. Direct edits and extra files in a client root are discarded on the next sync.
+- Remove the entire client skill root when its projection is disabled.
+
+### Ownership of current projection paths
+
+Agent Layer exclusively owns `.agents/skills/` and `.claude/skills/` in an Agent Layer project. Do not install or edit skills directly in either directory. Put user-managed skills in `.agent-layer/skills/`; imported skills live in `.agent-layer/imported-skills/` and are managed through `al skills`. Every other entry in the client roots is removed during sync.
 
 ### Ownership of legacy projection paths
 
-If a project uses Agent Layer, it must use Agent Layer to manage skills. `.agent-layer/skills/` is the single source of truth, and the following client-side directories are claimed exclusively by Agent Layer and removed unconditionally on every `al sync`:
+If a project uses Agent Layer, it must use Agent Layer to manage skills. `.agent-layer/skills/` and `.agent-layer/imported-skills/` are the two canonical source tiers, and the following client-side directories are claimed exclusively by Agent Layer and removed unconditionally on every `al sync`:
 
 - `.codex/skills/`
 - `.agent/skills/` (singular; legacy Antigravity location)
@@ -41,7 +48,7 @@ If a project uses Agent Layer, it must use Agent Layer to manage skills. `.agent
 - `.github/skills/`
 - `.vscode/prompts/`
 
-Any content placed in those directories — generated or hand-authored — is destroyed during sync. Users who want skills surfaced through Codex, Antigravity, GitHub Copilot, or Copilot CLI must define them in `.agent-layer/skills/`; Agent Layer projects them into the shared `.agents/skills/` (or `.claude/skills/`) location instead. The unconditional removal is intentional: it keeps the projection deterministic and prevents drift between the source and any disposable client folder.
+Any content placed in those directories — generated or hand-authored — is destroyed during sync. Users who want skills surfaced through Codex, Antigravity, GitHub Copilot, or Copilot CLI must define them in one of the two canonical source tiers. The unconditional removal is intentional: it keeps the projection deterministic and prevents drift between a source and any disposable client folder.
 
 ## VS Code Settings Contract
 

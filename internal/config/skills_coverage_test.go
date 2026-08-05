@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
 
 func TestLoadSkills_ReadDirError(t *testing.T) {
@@ -18,8 +20,6 @@ func TestLoadSkills_ReadDirError(t *testing.T) {
 func TestLoadSkills_ReadFileError(t *testing.T) {
 	dir := filepath.Join("root", "skills")
 	skillDir := filepath.Join(dir, "bad")
-	skillPath := filepath.Join(skillDir, "SKILL.md")
-
 	_, err := loadSkills(
 		dir,
 		func(path string) ([]skillDirEntry, error) {
@@ -33,11 +33,11 @@ func TestLoadSkills_ReadFileError(t *testing.T) {
 				return nil, nil
 			}
 		},
-		func(path string) ([]byte, error) {
-			if path != skillPath {
-				t.Fatalf("unexpected read path: got %q, want %q", path, skillPath)
+		func(path string) (skilltree.Tree, error) {
+			if path != skillDir {
+				t.Fatalf("unexpected tree read path: got %q, want %q", path, skillDir)
 			}
-			return nil, errors.New("injected read error")
+			return skilltree.Tree{}, errors.New("injected read error")
 		},
 	)
 	if err == nil {
@@ -63,36 +63,5 @@ func TestLoadSkills_ParseError(t *testing.T) {
 	_, err := LoadSkills(dir)
 	if err == nil {
 		t.Fatalf("expected error from parseSkill")
-	}
-}
-
-func TestParseSkillFrontMatter_DuplicateKeysReturnError(t *testing.T) {
-	_, err := parseSkill("---\nname: first\nname: second\ndescription: test\n---\nBody.\n")
-	if err == nil || !strings.Contains(err.Error(), "duplicate key") {
-		t.Fatalf("expected duplicate key error, got %v", err)
-	}
-}
-
-func TestParseSkill_InvalidFrontMatterSyntax(t *testing.T) {
-	_, err := parseSkill("---\ndescription: test\nmetadata: [\n---\n")
-	if err == nil || !strings.Contains(err.Error(), "invalid front matter") {
-		t.Fatalf("expected invalid front matter syntax error, got %v", err)
-	}
-}
-
-func TestParseSkill_LegacyUnquotedColonScalarRejected(t *testing.T) {
-	_, err := parseSkill("---\ndescription: legacy parser style: value\n---\n")
-	if err == nil || !strings.Contains(err.Error(), "invalid front matter") {
-		t.Fatalf("expected invalid front matter error, got %v", err)
-	}
-}
-
-func TestParseSkill_MetadataNilWhenEmpty(t *testing.T) {
-	parsed, err := parseSkill("---\ndescription: test\nmetadata: {}\n---\n")
-	if err != nil {
-		t.Fatalf("parseSkill error: %v", err)
-	}
-	if parsed.metadata != nil {
-		t.Fatalf("expected nil metadata for empty map, got %#v", parsed.metadata)
 	}
 }

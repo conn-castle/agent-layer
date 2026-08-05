@@ -9,6 +9,8 @@ import (
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
+const generatedMarkerFixture = "<!--\n  GENERATED FILE\n  Source: .agent-layer/skills/alpha/SKILL.md\n  Regenerate: al sync\n-->\n"
+
 func TestRunGolden(t *testing.T) {
 	fixtureRoot := filepath.Join("testdata", "fixture-repo")
 	root := t.TempDir()

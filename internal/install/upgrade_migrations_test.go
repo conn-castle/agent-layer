@@ -958,6 +958,20 @@ func TestLoadUpgradeMigrationManifest_0_15_0_RenamesPlaywrightCatalogSkill(t *te
 	}
 }
 
+func TestLoadUpgradeMigrationManifest_0_16_0_ClaimsClientSkillRoots(t *testing.T) {
+	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.16.0")
+	if err != nil {
+		t.Fatalf("load 0.16.0 manifest: %v", err)
+	}
+	if manifest.MinPriorVersion != "0.10.2" || len(manifest.Operations) != 1 {
+		t.Fatalf("manifest = %#v, want one migration supporting prior releases", manifest)
+	}
+	claim := manifest.Operations[0]
+	if claim.Kind != upgradeMigrationKindClaimSkillRoots || !claim.SourceAgnostic {
+		t.Fatalf("operation = %#v, want source-agnostic client-root ownership transition", claim)
+	}
+}
+
 func TestLoadUpgradeMigrationManifest_0_12_1_RemovesCodexAgentsShim(t *testing.T) {
 	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.12.1")
 	if err != nil {

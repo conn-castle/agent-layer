@@ -49,9 +49,9 @@ func RunWithSystemFS(sys System, fsys fs.FS, root string) (*Result, error) {
 
 // RunWithProject regenerates outputs using an already loaded project config.
 //
-// Production entry points use Run or RunWithSystemFS instead so source loading
-// happens inside the lock; this variant exists for callers that already own a
-// validated snapshot (and for focused tests of the projection steps).
+// Most production entry points use Run or RunWithSystemFS so source loading
+// happens inside the lock. Callers that already hold the lock use
+// RunLockedProject; this variant exists for focused projection tests.
 // Returns any sync-time warnings and an error if sync failed.
 func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Result, error) {
 	if sys == nil {
@@ -63,6 +63,19 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 	return withProjectSyncLock(sys, root, func() (*Result, error) {
 		return runWithProjectLocked(sys, root, project)
 	})
+}
+
+// RunLockedProject regenerates outputs from an already loaded project while
+// the caller holds the project lock. It lets launch and dispatch pipelines use
+// one canonical source snapshot for validation and every derived projection.
+func RunLockedProject(sys System, root string, project *config.ProjectConfig) (*Result, error) {
+	if sys == nil {
+		return nil, fmt.Errorf(messages.SyncSystemRequired)
+	}
+	if project == nil {
+		return nil, fmt.Errorf(messages.SyncProjectRequired)
+	}
+	return runWithProjectLocked(sys, root, project)
 }
 
 func runWithProjectLocked(sys System, root string, project *config.ProjectConfig) (*Result, error) {
@@ -131,7 +144,10 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 			func() error { return WriteClaudeSkills(sys, root, project.Skills) },
 		)
 	} else {
-		steps = append(steps, func() error { return cleanClaudeChimeHook(sys, root) })
+		steps = append(steps,
+			func() error { return cleanClaudeChimeHook(sys, root) },
+			func() error { return cleanClaudeSkills(sys, root) },
+		)
 	}
 
 	codexEnabled := config.IsAgentEnabled(agents.Codex.Enabled)

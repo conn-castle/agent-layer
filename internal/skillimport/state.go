@@ -147,7 +147,7 @@ func readImportedSkills(dir string) (map[string]localSkill, error) {
 		name := entry.Name()
 		skillDir := filepath.Join(dir, name)
 		observed := localSkill{Name: name, Dir: skillDir, Present: true}
-		tree, readErr := skilltree.Read(skilltree.OSFS{}, skillDir, skilltree.PolicyStrict)
+		tree, readErr := skilltree.Read(skilltree.OSFS{}, skillDir)
 		if readErr != nil {
 			observed.Err = readErr
 			local[name] = observed

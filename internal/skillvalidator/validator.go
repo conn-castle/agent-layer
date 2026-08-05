@@ -27,8 +27,6 @@ const (
 	MaxSkillNameLength = 64
 	// MaxDescriptionLength is the maximum accepted length for skill description.
 	MaxDescriptionLength = 1024
-	// MaxCompatibilityLength is the maximum accepted length for compatibility text.
-	MaxCompatibilityLength = 500
 	// MaxRecommendedSkillLines is the recommended upper bound for SKILL.md lines.
 	MaxRecommendedSkillLines = 500
 )
@@ -48,10 +46,6 @@ const (
 	FindingCodeDescriptionMissing = "SKILL_DESCRIPTION_MISSING"
 	// FindingCodeDescriptionTooLong reports descriptions that exceed MaxDescriptionLength.
 	FindingCodeDescriptionTooLong = "SKILL_DESCRIPTION_TOO_LONG"
-	// FindingCodeCompatibilityTooLong reports compatibility values that exceed MaxCompatibilityLength.
-	FindingCodeCompatibilityTooLong = "SKILL_COMPATIBILITY_TOO_LONG"
-	// FindingCodeUnknownField reports unknown frontmatter fields.
-	FindingCodeUnknownField = "SKILL_FRONTMATTER_UNKNOWN_FIELD"
 	// FindingCodeDirectorySkillFileName reports non-canonical directory skill filenames.
 	FindingCodeDirectorySkillFileName = "SKILL_DIRECTORY_FILENAME"
 	// FindingCodeSizeRecommendation reports SKILL.md files that exceed MaxRecommendedSkillLines.
@@ -93,18 +87,6 @@ type ParsedSkill struct {
 	FrontMatterKeys []string
 	Name            *string
 	Description     *string
-	Compatibility   *string
-}
-
-// allowedFrontMatterFields is the strict validator allowlist for skill frontmatter fields.
-var allowedFrontMatterFields = map[string]struct{}{
-	fieldName:                  {},
-	fieldDescription:           {},
-	"license":                  {},
-	"compatibility":            {},
-	"metadata":                 {},
-	"allowed-tools":            {},
-	"disable-model-invocation": {},
 }
 
 // ParseSkillSource reads and parses a skill source file into validator input.
@@ -168,7 +150,6 @@ func ParseSkillContent(path string, raw []byte) (ParsedSkill, error) {
 		FrontMatterKeys: keys,
 		Name:            presentFieldValue(doc.Name),
 		Description:     presentFieldValue(doc.Description),
-		Compatibility:   presentFieldValue(doc.Compatibility),
 	}, nil
 }
 
@@ -186,18 +167,6 @@ func presentFieldValue(field skillfrontmatter.Field) *string {
 // ValidateMetadata validates frontmatter-level skill requirements.
 func ValidateMetadata(parsed ParsedSkill) []Finding {
 	findings := make([]Finding, 0)
-	keySet := make(map[string]struct{}, len(parsed.FrontMatterKeys))
-	for _, key := range parsed.FrontMatterKeys {
-		keySet[key] = struct{}{}
-		if _, ok := allowedFrontMatterFields[key]; !ok {
-			findings = append(findings, warning(
-				FindingCodeUnknownField,
-				parsed.SourcePath,
-				fmt.Sprintf("unknown frontmatter field %q (allowed: name, description, license, compatibility, metadata, allowed-tools, disable-model-invocation)", key),
-			))
-		}
-	}
-
 	if parsed.Name == nil {
 		findings = append(findings, warning(FindingCodeNameMissing, parsed.SourcePath, "missing required frontmatter field \"name\""))
 	} else {
@@ -241,17 +210,6 @@ func ValidateMetadata(parsed ParsedSkill) []Finding {
 				FindingCodeDescriptionTooLong,
 				parsed.SourcePath,
 				fmt.Sprintf("frontmatter field \"description\" exceeds %d characters (%d)", MaxDescriptionLength, descriptionRuneCount),
-			))
-		}
-	}
-
-	if _, ok := keySet["compatibility"]; ok && parsed.Compatibility != nil {
-		compatibility := strings.TrimSpace(*parsed.Compatibility)
-		if compatibilityRuneCount := utf8.RuneCountInString(compatibility); compatibilityRuneCount > MaxCompatibilityLength {
-			findings = append(findings, warning(
-				FindingCodeCompatibilityTooLong,
-				parsed.SourcePath,
-				fmt.Sprintf("frontmatter field \"compatibility\" exceeds %d characters (%d)", MaxCompatibilityLength, compatibilityRuneCount),
 			))
 		}
 	}

@@ -625,39 +625,38 @@ Think of sync as a build step. You can run it any time you want to refresh gener
 **What it does**
 
 - Validates `.agent-layer/config.toml`
-- Reads `.agent-layer/instructions/`, `.agent-layer/skills/`, `.agent-layer/commands.allow`, and `.agent-layer/.env`
+- Reads `.agent-layer/instructions/`, both `.agent-layer/skills/` and `.agent-layer/imported-skills/`, `.agent-layer/commands.allow`, and `.agent-layer/.env`
 - Regenerates client outputs and launchers
 
 **Steps (high level)**
 
 1. Load and validate `config.toml`, then resolve secrets from `.agent-layer/.env`.
-2. Parse instructions and skills to build client-specific outputs.
+2. Parse instructions and load both canonical skill tiers into one locked source snapshot.
 3. Write generated configs and launchers for enabled clients.
 4. Emit warnings if any thresholds in `[warnings]` are exceeded.
 
 **Skill format**
 
-Skill sources align with the [agentskills.io specification](https://agentskills.io/specification), with explicit backward-compatibility behavior documented below. For authoring guidance, use the [Skill Design Guide](/skill-design); for installed command-line tools, use the [CLI Skill Design Guide](/cli-skill-design).
+Skill sources align with the [agentskills.io specification](https://agentskills.io/specification). For authoring guidance, use the [Skill Design Guide](/skill-design); for installed command-line tools, use the [CLI Skill Design Guide](/cli-skill-design).
 
-`.agent-layer/skills/` uses directory format:
+User-managed `.agent-layer/skills/` and Git-managed `.agent-layer/imported-skills/` use directory format:
 
-- `.agent-layer/skills/<name>/SKILL.md` (canonical; lowercase `skill.md` is accepted as a compatibility fallback)
+- `<source-tier>/<name>/SKILL.md` (uppercase filename required)
 
 Frontmatter fields:
 
 - Required: `name`, `description`
-- Optional: `license`, `compatibility`, `metadata`, `allowed-tools`
+- Additional fields are accepted without interpretation and projected unchanged.
 
 Validation notes (`al doctor`):
 
 - Name checks are NFKC-normalized and normalization-aware when matching `name` to the canonical source name.
 - Name limits: max 64 Unicode characters, lowercase letters/digits/hyphens only, no leading/trailing/consecutive hyphens.
 - Description limit: max 1024 Unicode characters.
-- Compatibility limit (when present): max 500 Unicode characters.
 - Size recommendation: `al doctor` warns when a skill source exceeds 500 lines.
-- Missing `name` remains load-compatible (name is derived from path), but `al doctor` warns.
-- Missing or empty `description` fails load/sync (fail-loud).
-- Directory skills using lowercase `skill.md` load for compatibility, but `al doctor` warns to use canonical `SKILL.md`.
+- Missing or empty `name` or `description` fails load/sync.
+- Lowercase-only `skill.md` fails with rename guidance; having both filename spellings is ambiguous and also fails.
+- Skill trees may contain only real directories and regular files. Symlinks and other node types fail with the offending path.
 
 Example:
 
@@ -684,6 +683,8 @@ Common outputs include:
 - repo-local VS Code launchers under `.agent-layer/` when VS Code is enabled (for example `open-vscode.command`, `open-vscode.sh`, and `open-vscode.app/`)
 
 Generated outputs are safe to delete, and `al sync` will recreate them — except the shared-state files it patches in place, `.codex/config.toml` and `.agy/antigravity-cli/settings.json`. Keep both gitignored but do not treat them as disposable: native values (for Antigravity, workspace approval or trust) are preserved there. Managed MCP output remains safe to regenerate.
+
+Agent Layer owns `.agents/skills/` and `.claude/skills/` completely. Each enabled root is replaced from the canonical source snapshot on sync, and each disabled root is removed. Do not edit or independently install content there: direct changes and extra entries are discarded. Skill manifests, including unknown or provider-specific frontmatter, are projected byte-for-byte with no generated header.
 
 **Warnings**
 

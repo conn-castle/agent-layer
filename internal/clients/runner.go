@@ -53,7 +53,27 @@ func RunNoSyncWithStderr(root string, name string, enabled EnabledSelector, laun
 
 // RunWithStderr is like Run but allows specifying a custom stderr writer for testing.
 func RunWithStderr(ctx context.Context, root string, name string, enabled EnabledSelector, launch LaunchFunc, quiet bool, args []string, currentVersion string, stderr io.Writer) error {
-	project, err := loadProject(root, name, enabled)
+	// Validate the small base config before opening the lock so missing or
+	// disabled projects keep their direct user-facing errors. Skill trees are
+	// loaded only once, inside the locked combined snapshot below.
+	baseConfig, err := config.LoadConfigFS(os.DirFS(root), root, config.DefaultPaths(root).ConfigPath)
+	if err != nil {
+		return err
+	}
+	if err := sync.EnsureEnabled(name, enabled(baseConfig)); err != nil {
+		return err
+	}
+	var project *config.ProjectConfig
+	var result *sync.Result
+	err = sync.WithLockedProject(sync.RealSystem{}, root, func(loaded *config.ProjectConfig) error {
+		if err := sync.EnsureEnabled(name, enabled(&loaded.Config)); err != nil {
+			return err
+		}
+		project = loaded
+		var runErr error
+		result, runErr = sync.RunLockedProject(sync.RealSystem{}, root, loaded)
+		return runErr
+	})
 	if err != nil {
 		return err
 	}
@@ -64,13 +84,6 @@ func RunWithStderr(ctx context.Context, root string, name string, enabled Enable
 	if project.Config.Warnings.VersionUpdateOnSync != nil && *project.Config.Warnings.VersionUpdateOnSync {
 		updatewarn.WarnIfOutdated(ctx, currentVersion, stderr)
 	}
-	// Skill sources are loaded inside the project lock by sync.Run; the
-	// launcher only needs base configuration before projection.
-	result, err := sync.Run(root)
-	if err != nil {
-		return err
-	}
-
 	// Print warnings to stderr before launching
 	if stderr != nil {
 		for _, w := range result.Warnings {

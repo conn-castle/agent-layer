@@ -1,49 +1,25 @@
 package config
 
 import (
-	"bufio"
-	"bytes"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"golang.org/x/text/unicode/norm"
-
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/skillfrontmatter"
-)
-
-// utf8BOM is the UTF-8 byte-order-mark trimmed from skill and instruction file
-// content before parsing.
-var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
-
-const (
-	skillScannerInitialBufferSize = 64 * 1024
-	skillScannerMaxTokenSize      = 8 * 1024 * 1024
+	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
 
 type skillDirEntry struct {
 	name  string
 	isDir bool
+	mode  os.FileMode
 }
 
 type skillReadDir func(dir string) ([]skillDirEntry, error)
 
-type skillReadFile func(path string) ([]byte, error)
-
-type parsedSkill struct {
-	description            string
-	license                string
-	compatibility          string
-	metadata               map[string]string
-	allowedTools           string
-	disableModelInvocation *bool
-	body                   string
-	name                   string
-}
+type skillReadTree func(dir string) (skilltree.Tree, error)
 
 type skillSource struct {
 	path  string
@@ -52,7 +28,7 @@ type skillSource struct {
 
 // LoadSkills reads .agent-layer/skills from disk.
 // Supported source format:
-// - .agent-layer/skills/<name>/SKILL.md (canonical; fallback to skill.md for compatibility)
+// - .agent-layer/skills/<name>/SKILL.md
 // Flat-format .agent-layer/skills/<name>.md files are rejected with actionable errors.
 // Directories without a supported skill file also fail loudly.
 func LoadSkills(dir string) ([]Skill, error) {
@@ -64,15 +40,21 @@ func LoadSkills(dir string) ([]Skill, error) {
 			}
 			out := make([]skillDirEntry, 0, len(entries))
 			for _, entry := range entries {
-				out = append(out, skillDirEntry{name: entry.Name(), isDir: entry.IsDir()})
+				info, err := entry.Info()
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, skillDirEntry{name: entry.Name(), isDir: entry.IsDir(), mode: info.Mode()})
 			}
 			return out, nil
 		},
-		os.ReadFile,
+		func(path string) (skilltree.Tree, error) {
+			return skilltree.Read(skilltree.OSFS{}, path)
+		},
 	)
 }
 
-func loadSkills(dir string, readDir skillReadDir, readFile skillReadFile) ([]Skill, error) {
+func loadSkills(dir string, readDir skillReadDir, readTree skillReadTree) ([]Skill, error) {
 	entries, err := readDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf(messages.ConfigMissingSkillsDirFmt, dir, err)
@@ -84,18 +66,26 @@ func loadSkills(dir string, readDir skillReadDir, readFile skillReadFile) ([]Ski
 
 	byName := make(map[string]skillSource)
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.name, ".") {
+		if skilltree.IsIgnoredName(entry.name) {
+			continue
+		}
+		if !entry.isDir && !entry.mode.IsRegular() {
+			return nil, fmt.Errorf("%s is a %s; skill source tiers may contain only directories and regular files", filepath.Join(dir, entry.name), sourceNodeType(entry.mode))
+		}
+		if !entry.isDir && strings.HasSuffix(entry.name, ".md") {
+			name := strings.TrimSuffix(entry.name, ".md")
+			return nil, fmt.Errorf(messages.ConfigSkillFlatFormatUnsupportedFmt, name, filepath.Join(dir, entry.name))
+		}
+	}
+	for _, entry := range entries {
+		if skilltree.IsIgnoredName(entry.name) {
 			continue
 		}
 		if entry.isDir {
-			if err := loadDirectorySkill(byName, dir, entry.name, readDir, readFile); err != nil {
+			if err := loadDirectorySkill(byName, dir, entry.name, readTree); err != nil {
 				return nil, err
 			}
 			continue
-		}
-		if strings.HasSuffix(entry.name, ".md") {
-			name := strings.TrimSuffix(entry.name, ".md")
-			return nil, fmt.Errorf(messages.ConfigSkillFlatFormatUnsupportedFmt, name, filepath.Join(dir, entry.name))
 		}
 	}
 
@@ -112,63 +102,39 @@ func loadSkills(dir string, readDir skillReadDir, readFile skillReadFile) ([]Ski
 	return skills, nil
 }
 
-func loadDirectorySkill(byName map[string]skillSource, root string, dirName string, readDir skillReadDir, readFile skillReadFile) error {
+func sourceNodeType(mode os.FileMode) string {
+	switch {
+	case mode&os.ModeSymlink != 0:
+		return "symlink"
+	case mode&os.ModeNamedPipe != 0:
+		return "named pipe"
+	case mode&os.ModeSocket != 0:
+		return "socket"
+	case mode&os.ModeDevice != 0:
+		return "device"
+	default:
+		return "unsupported filesystem node"
+	}
+}
+
+func loadDirectorySkill(byName map[string]skillSource, root string, dirName string, readTree skillReadTree) error {
 	skillDirPath := filepath.Join(root, dirName)
-	entries, err := readDir(skillDirPath)
+	tree, err := readTree(skillDirPath)
 	if err != nil {
 		return fmt.Errorf(messages.ConfigFailedReadSkillFmt, skillDirPath, err)
 	}
-
-	hasCanonical := false
-	hasFallback := false
-	for _, entry := range entries {
-		if entry.isDir {
-			continue
-		}
-		switch entry.name {
-		case skillManifestName:
-			hasCanonical = true
-		case lowercaseSkillManifestName:
-			hasFallback = true
-		}
-	}
-
-	skillPath := ""
-	switch {
-	case hasCanonical:
-		skillPath = filepath.Join(skillDirPath, skillManifestName)
-	case hasFallback:
-		skillPath = filepath.Join(skillDirPath, lowercaseSkillManifestName)
-	default:
-		return fmt.Errorf(messages.ConfigSkillDirEmptyFmt, skillDirPath)
-	}
-
-	data, err := readFile(skillPath)
+	info, err := skilltree.ValidateSkill(tree, filepath.ToSlash(skillDirPath))
 	if err != nil {
-		return fmt.Errorf(messages.ConfigFailedReadSkillFmt, skillPath, err)
+		return fmt.Errorf(messages.ConfigInvalidSkillFmt, filepath.Join(skillDirPath, skillManifestName), err)
 	}
-
-	parsed, err := parseSkill(string(bytes.TrimPrefix(data, utf8BOM)))
-	if err != nil {
-		return fmt.Errorf(messages.ConfigInvalidSkillFmt, skillPath, err)
-	}
-
-	name := dirName
-	if parsed.name != "" && !skillNamesEqual(parsed.name, name) {
-		return fmt.Errorf(messages.ConfigSkillNameMismatchFmt, skillPath, parsed.name, name)
-	}
+	skillPath := filepath.Join(skillDirPath, skillManifestName)
 
 	skill := Skill{
-		Name:                   name,
-		Description:            parsed.description,
-		License:                parsed.license,
-		Compatibility:          parsed.compatibility,
-		Metadata:               parsed.metadata,
-		AllowedTools:           parsed.allowedTools,
-		DisableModelInvocation: parsed.disableModelInvocation,
-		Body:                   parsed.body,
-		SourcePath:             skillPath,
-		SourceDir:              skillDirPath,
+		Name:        info.Name,
+		Description: info.Description,
+		SourcePath:  skillPath,
+		SourceDir:   skillDirPath,
+		Tree:        tree,
 	}
 	return registerSkill(byName, skill)
 }
@@ -179,159 +145,4 @@ func registerSkill(byName map[string]skillSource, skill Skill) error {
 	}
 	byName[skill.Name] = skillSource{path: skill.SourcePath, skill: skill}
 	return nil
-}
-
-func parseSkill(content string) (parsedSkill, error) {
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	scanner.Buffer(make([]byte, skillScannerInitialBufferSize), skillScannerMaxTokenSize)
-	if !scanner.Scan() {
-		return parsedSkill{}, fmt.Errorf(messages.ConfigSkillMissingContent)
-	}
-	if strings.TrimSpace(scanner.Text()) != "---" {
-		return parsedSkill{}, fmt.Errorf(messages.ConfigSkillMissingFrontMatter)
-	}
-
-	var fmLines []string
-	foundEnd := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.TrimSpace(line) == "---" {
-			foundEnd = true
-			break
-		}
-		fmLines = append(fmLines, line)
-	}
-	if !foundEnd {
-		return parsedSkill{}, fmt.Errorf(messages.ConfigSkillUnterminatedFrontMatter)
-	}
-
-	var bodyBuilder strings.Builder
-	for scanner.Scan() {
-		bodyBuilder.WriteString(scanner.Text())
-		bodyBuilder.WriteString("\n")
-	}
-	if err := scanner.Err(); err != nil {
-		return parsedSkill{}, fmt.Errorf(messages.ConfigSkillFailedReadContentFmt, err)
-	}
-
-	doc, err := skillfrontmatter.Parse(strings.Join(fmLines, "\n"))
-	if err != nil {
-		return parsedSkill{}, wrapFrontMatterError(err)
-	}
-
-	description, err := parseSkillDescription(skillFieldValue(doc.Description))
-	if err != nil {
-		return parsedSkill{}, err
-	}
-
-	name, err := parseSkillName(skillFieldValue(doc.Name), doc.Name.Multiline)
-	if err != nil {
-		return parsedSkill{}, err
-	}
-
-	body := strings.TrimPrefix(bodyBuilder.String(), "\n")
-	body = strings.TrimRight(body, "\n")
-	return parsedSkill{
-		description:            description,
-		license:                normalizeOptionalSkillValue(skillFieldValue(doc.License)),
-		compatibility:          normalizeOptionalSkillValue(skillFieldValue(doc.Compatibility)),
-		metadata:               normalizeSkillMetadata(doc.Metadata),
-		allowedTools:           normalizeOptionalSkillValue(skillFieldValue(doc.AllowedTools)),
-		disableModelInvocation: skillBooleanFieldValue(doc.DisableModelInvocation),
-		body:                   body,
-		name:                   name,
-	}, nil
-}
-
-// wrapFrontMatterError converts a structural front-matter parse failure into
-// the config package's existing error message conventions.
-func wrapFrontMatterError(err error) error {
-	var parseErr *skillfrontmatter.Error
-	if errors.As(err, &parseErr) {
-		switch parseErr.Kind {
-		case skillfrontmatter.KindDuplicateKey:
-			return fmt.Errorf(messages.ConfigSkillDuplicateKeyFmt, parseErr.Key)
-		case skillfrontmatter.KindSyntax:
-			return fmt.Errorf(messages.ConfigSkillInvalidFrontMatterFmt, parseErr)
-		default:
-			return fmt.Errorf(messages.ConfigSkillInvalidFrontMatterTypeFmt, parseErr.Detail)
-		}
-	}
-	return fmt.Errorf(messages.ConfigSkillInvalidFrontMatterFmt, err)
-}
-
-// skillFieldValue maps a structural field to the config policy view: absent
-// fields are nil, while present-null fields behave like present empty values.
-func skillFieldValue(field skillfrontmatter.Field) *string {
-	switch field.State {
-	case skillfrontmatter.FieldNull:
-		empty := ""
-		return &empty
-	case skillfrontmatter.FieldValue:
-		value := field.Value
-		return &value
-	default:
-		return nil
-	}
-}
-
-// skillBooleanFieldValue maps a present boolean field to the config model.
-func skillBooleanFieldValue(field skillfrontmatter.BooleanField) *bool {
-	if field.State != skillfrontmatter.FieldValue {
-		return nil
-	}
-	value := field.Value
-	return &value
-}
-
-func parseSkillDescription(description *string) (string, error) {
-	if description == nil {
-		return "", fmt.Errorf(messages.ConfigSkillMissingDescription)
-	}
-	normalized := strings.TrimSpace(*description)
-	if normalized == "" {
-		return "", fmt.Errorf(messages.ConfigSkillDescriptionEmpty)
-	}
-	return normalized, nil
-}
-
-func parseSkillName(name *string, multiline bool) (string, error) {
-	if name == nil {
-		return "", nil
-	}
-	normalized := strings.TrimSpace(*name)
-	if normalized == "" {
-		return "", fmt.Errorf(messages.ConfigSkillNameEmpty)
-	}
-	if multiline || strings.Contains(normalized, "\n") {
-		return "", fmt.Errorf(messages.ConfigSkillNameInvalidMultiline)
-	}
-	return normalized, nil
-}
-
-func normalizeOptionalSkillValue(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return strings.TrimSpace(*value)
-}
-
-func normalizeSkillName(value string) string {
-	return strings.TrimSpace(norm.NFKC.String(value))
-}
-
-func skillNamesEqual(left string, right string) bool {
-	return normalizeSkillName(left) == normalizeSkillName(right)
-}
-
-func normalizeSkillMetadata(metadata map[string]string) map[string]string {
-	if len(metadata) == 0 {
-		return nil
-	}
-
-	normalized := make(map[string]string, len(metadata))
-	for key, value := range metadata {
-		normalized[key] = value
-	}
-	return normalized
 }

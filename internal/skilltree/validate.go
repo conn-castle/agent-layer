@@ -36,11 +36,14 @@ type SkillInfo struct {
 // Agent Layer can project faithfully. sourcePath is used for error context and
 // to derive the expected name.
 func ValidateSkill(tree Tree, sourcePath string) (SkillInfo, error) {
+	if alternate, found := findCaseVariantManifest(tree); found {
+		if _, canonical := tree.File(SkillManifestName); canonical {
+			return SkillInfo{}, fmt.Errorf("skill %s contains both %s and %s; remove one so only the canonical %s remains", sourcePath, SkillManifestName, alternate, SkillManifestName)
+		}
+		return SkillInfo{}, fmt.Errorf("skill %s uses %s; rename it to the canonical %s", sourcePath, alternate, SkillManifestName)
+	}
 	manifest, ok := tree.File(SkillManifestName)
 	if !ok {
-		if alternate, found := findCaseVariantManifest(tree); found {
-			return SkillInfo{}, fmt.Errorf("skill %s uses %s; imported skills require a canonical %s", sourcePath, alternate, SkillManifestName)
-		}
 		return SkillInfo{}, fmt.Errorf("skill %s has no %s", sourcePath, SkillManifestName)
 	}
 	return ValidateManifest(manifest.Data, sourcePath)
@@ -48,10 +51,9 @@ func ValidateSkill(tree Tree, sourcePath string) (SkillInfo, error) {
 
 // ValidateManifest applies the same strict rules to one manifest's bytes.
 //
-// Callers that already hold the manifest — ordinary projection reads it from
-// the editable source directory — use it so local content is held to the exact
-// standard imports are, rather than to the tolerant rules generic
-// configuration loading applies. sourcePath names the skill root.
+// Callers that already hold the manifest use it to apply the same identity and
+// metadata rules without constructing a second tree. sourcePath names the
+// skill root.
 func ValidateManifest(manifest []byte, sourcePath string) (SkillInfo, error) {
 	expected := path.Base(sourcePath)
 	parsed, err := skillvalidator.ParseSkillContent(path.Join(sourcePath, SkillManifestName), manifest)
@@ -85,7 +87,7 @@ func findCaseVariantManifest(tree Tree) (string, bool) {
 		if strings.Contains(file.Path, "/") {
 			continue
 		}
-		if strings.EqualFold(file.Path, SkillManifestName) {
+		if file.Path != SkillManifestName && strings.EqualFold(file.Path, SkillManifestName) {
 			return file.Path, true
 		}
 	}

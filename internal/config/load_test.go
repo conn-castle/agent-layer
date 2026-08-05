@@ -53,6 +53,7 @@ enabled = false
 		t.Fatalf("write instructions: %v", err)
 	}
 	cmdContent := `---
+name: hello
 description: test command
 ---
 
@@ -135,6 +136,7 @@ enabled = false
 		t.Fatalf("write instructions: %v", err)
 	}
 	cmdContent := `---
+name: hello
 description: test command
 ---
 
@@ -191,6 +193,7 @@ enabled = false
 		t.Fatalf("write env: %v", err)
 	}
 	cmdContent := `---
+name: hello
 description: test command
 ---
 
@@ -298,6 +301,7 @@ enabled = false
 		t.Fatalf("write instructions: %v", err)
 	}
 	cmdContent := `---
+name: hello
 description: test command
 ---
 

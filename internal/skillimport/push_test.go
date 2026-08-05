@@ -525,7 +525,7 @@ func TestPushFailsWhenTheDestinationDefaultBranchCannotBeResolved(t *testing.T) 
 // content, so a test can record lock state that matches what is on disk.
 func importedTreeHash(t *testing.T, proj *project, name string) string {
 	t.Helper()
-	tree, err := skilltree.Read(skilltree.OSFS{}, filepath.Join(proj.paths.ImportedSkillsDir, name), skilltree.PolicyStrict)
+	tree, err := skilltree.Read(skilltree.OSFS{}, filepath.Join(proj.paths.ImportedSkillsDir, name))
 	if err != nil {
 		t.Fatalf("read imported %s: %v", name, err)
 	}

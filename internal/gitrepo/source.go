@@ -257,8 +257,7 @@ func parseTreeRecord(record string) (mode string, objectType string, object stri
 // three artifacts excluded from every canonical skill content operation.
 func isIgnoredTreePath(name string) bool {
 	for _, segment := range strings.Split(name, "/") {
-		switch segment {
-		case ".git", ".DS_Store", "Thumbs.db":
+		if skilltree.IsIgnoredName(segment) {
 			return true
 		}
 	}

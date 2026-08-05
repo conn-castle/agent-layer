@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	pathpkg "path"
 	"path/filepath"
 	"sort"
@@ -13,7 +14,49 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
+
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
+type skillTreeFS struct {
+	fsys fs.FS
+	root string
+}
+
+func (s skillTreeFS) Lstat(name string) (os.FileInfo, error) {
+	fsPath, err := fsPathFromRoot(s.root, name)
+	if err != nil {
+		return nil, err
+	}
+	dir, base := pathpkg.Split(fsPath)
+	dir = strings.TrimSuffix(dir, "/")
+	if dir == "" {
+		dir = "."
+	}
+	entries, err := fs.ReadDir(s.fsys, dir)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		if entry.Name() == base {
+			return entry.Info()
+		}
+	}
+	return nil, fs.ErrNotExist
+}
+
+func (s skillTreeFS) ReadDir(name string) ([]os.DirEntry, error) {
+	fsPath, err := fsPathFromRoot(s.root, name)
+	if err != nil {
+		return nil, err
+	}
+	return fs.ReadDir(s.fsys, fsPath)
+}
+
+func (s skillTreeFS) ReadFile(name string) ([]byte, error) {
+	return readFileFS(s.fsys, s.root, name)
+}
 
 // LoadProjectConfigFS reads and validates the full Agent Layer config from an fs.FS rooted at repo root.
 // fsys is the filesystem to read from; root is used for error messages and built-in env values.
@@ -138,12 +181,16 @@ func LoadSkillsFS(fsys fs.FS, root string, dir string) ([]Skill, error) {
 			}
 			out := make([]skillDirEntry, 0, len(entries))
 			for _, entry := range entries {
-				out = append(out, skillDirEntry{name: entry.Name(), isDir: entry.IsDir()})
+				info, err := entry.Info()
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, skillDirEntry{name: entry.Name(), isDir: entry.IsDir(), mode: info.Mode()})
 			}
 			return out, nil
 		},
-		func(path string) ([]byte, error) {
-			return readFileFS(fsys, root, path)
+		func(path string) (skilltree.Tree, error) {
+			return skilltree.Read(skillTreeFS{fsys: fsys, root: root}, path)
 		},
 	)
 }

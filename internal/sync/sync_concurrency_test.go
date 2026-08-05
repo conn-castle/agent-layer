@@ -42,13 +42,13 @@ func TestRunWithProjectSerializesConcurrentRuns(t *testing.T) {
 			},
 		},
 		Instructions: []config.InstructionFile{{Name: "00_rules.md", Content: "Follow the rules."}},
-		Skills:       []config.Skill{{Name: "alpha", Description: "Alpha skill.", Body: "Do alpha work."}},
+		Skills:       []config.Skill{projectionSkill(t, "alpha", projectionManifest("alpha"))},
 		Root:         root,
 	}
 
 	// Projection stages each skill off-path before publishing it, so the
 	// contended generated write is the staged manifest.
-	target := filepath.Join(root, ".agents", "skills", stagingPrefix+"alpha", "SKILL.md")
+	target := filepath.Join(root, ".agents", "skills"+projectionStageSuffix, "alpha", "SKILL.md")
 	sys := newOverlapDetectingSystem(target)
 	t.Cleanup(sys.releaseBlockedWrite)
 

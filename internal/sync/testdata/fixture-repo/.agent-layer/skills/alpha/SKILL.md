@@ -1,4 +1,5 @@
 ---
+name: alpha
 description: First command description.
 ---
 

@@ -82,8 +82,8 @@ Incomplete:
 
 ## Phase 15 ✅ — Skills standard alignment (agentskills.io)
 - Added a reusable `internal/skillvalidator` package with parse/validate separation, deterministic findings, Unicode NFKC-aware name checks, rune-based length limits, and normalization-aware name/path matching.
-- Integrated skill validation into `al doctor` with dedicated diagnostics and tests, including explicit warnings when directory-format skills use non-canonical lowercase `skill.md`.
-- Added directory loader compatibility for lowercase `skill.md` with canonical `SKILL.md` precedence, keeping parser behavior backward-compatible for existing repos.
+- Integrated skill validation into `al doctor` with dedicated diagnostics and tests; current loading requires canonical uppercase `SKILL.md` and rejects lowercase-only or ambiguous dual-spelling sources.
+- Unified user-managed and imported source loading on the same strict `skilltree.Tree` validation path.
 - Migrated embedded template skills to directory format (`skills/<name>/SKILL.md`), updated embed patterns/tests/manifests/migrations, and added the `review-plan` skill with deterministic `*.plan.md` discovery guidance.
 - Aligned public docs (`README.md`, `site/docs/reference.mdx`) with current frontmatter/spec rules and added individual skill-level workflow guidance.
 

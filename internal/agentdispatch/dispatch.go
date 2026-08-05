@@ -324,6 +324,14 @@ func loadDispatchProject(root string, stderr io.Writer, env []string) (*config.P
 	if err != nil {
 		return nil, nil, nil, 0, wrapExitError(ExitConfig, err.Error(), err)
 	}
+	stderr, env, depth, err := dispatchRuntimeInputs(stderr, env)
+	if err != nil {
+		return nil, nil, nil, 0, err
+	}
+	return project, stderr, env, depth, nil
+}
+
+func dispatchRuntimeInputs(stderr io.Writer, env []string) (io.Writer, []string, int, error) {
 	if stderr == nil {
 		stderr = io.Discard
 	}
@@ -332,9 +340,9 @@ func loadDispatchProject(root string, stderr io.Writer, env []string) (*config.P
 	}
 	depth, err := dispatchDepthFromEnv(env)
 	if err != nil {
-		return nil, nil, nil, 0, err
+		return nil, nil, 0, err
 	}
-	return project, stderr, env, depth, nil
+	return stderr, env, depth, nil
 }
 
 func checkDispatchDepth(cfg config.Config, depth int) error {
@@ -375,8 +383,9 @@ func prepareFresh(project *config.ProjectConfig, target targetMeta, opts runOpti
 }
 
 func prepareProjection(project *config.ProjectConfig, root string, stderr io.Writer) error {
-	// Skill sources are loaded inside the project lock by sync.Run.
-	result, err := sync.Run(root)
+	// The caller holds the project lock and passes the one canonical snapshot
+	// used for prompt construction and every dispatch projection.
+	result, err := sync.RunLockedProject(sync.RealSystem{}, root, project)
 	if err != nil {
 		return syncRunExitError(err)
 	}
@@ -404,7 +413,7 @@ func prepareProjection(project *config.ProjectConfig, root string, stderr io.Wri
 // The derived projection is built from the same locked combined source snapshot
 // ordinary sync uses, so user-managed and imported skills are equally visible
 // and a concurrent `al skills` mutation cannot be observed half-applied.
-func prepareTargetProjection(root string, workingDir string, target targetMeta) (string, error) {
+func prepareTargetProjection(project *config.ProjectConfig, root string, workingDir string, target targetMeta) (string, error) {
 	projectionRoot := workingDir
 	if projectionRoot == "" {
 		projectionRoot = root
@@ -413,12 +422,12 @@ func prepareTargetProjection(root string, workingDir string, target targetMeta) 
 		return projectionRoot, nil
 	}
 
-	err := sync.WithLockedProject(sync.RealSystem{}, root, func(project *config.ProjectConfig) error {
-		if target.SharedSkillProject {
-			return sync.WriteAgentSkills(sync.RealSystem{}, projectionRoot, project.Skills)
-		}
-		return sync.WriteClaudeSkills(sync.RealSystem{}, projectionRoot, project.Skills)
-	})
+	var err error
+	if target.SharedSkillProject {
+		err = sync.WriteAgentSkills(sync.RealSystem{}, projectionRoot, project.Skills)
+	} else {
+		err = sync.WriteClaudeSkills(sync.RealSystem{}, projectionRoot, project.Skills)
+	}
 	if err != nil {
 		return "", syncRunExitError(err)
 	}

@@ -123,8 +123,10 @@ func Run(root string, opts Options) error {
 		}
 		inst.pinVersion = normalized
 	}
-	if err := inst.upgrades().ensureBaseDirs(); err != nil {
-		return err
+	if !overwrite {
+		if err := inst.preflightExclusiveSkillRoots(); err != nil {
+			return err
+		}
 	}
 	if overwrite {
 		// Overwrite upgrades need unknowns scanned before snapshot capture so the
@@ -138,6 +140,12 @@ func Run(root string, opts Options) error {
 		if err := inst.preflightAndConfirmSkillsMigration(); err != nil {
 			return err
 		}
+		if err := inst.preflightPendingExclusiveSkillRoots(); err != nil {
+			return err
+		}
+		if err := inst.upgrades().ensureBaseDirs(); err != nil {
+			return err
+		}
 		snapshot, err := inst.createUpgradeSnapshot()
 		if err != nil {
 			return err
@@ -146,6 +154,9 @@ func Run(root string, opts Options) error {
 			return err
 		}
 	} else {
+		if err := inst.upgrades().ensureBaseDirs(); err != nil {
+			return err
+		}
 		// scanUnknowns is a no-op for init (init requires no prior .agent-layer/),
 		// but is kept for symmetry and defensive coverage.
 		if err := inst.scanUnknowns(); err != nil {

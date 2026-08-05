@@ -1,6 +1,10 @@
 package config
 
-import "time"
+import (
+	"time"
+
+	"github.com/conn-castle/agent-layer/internal/skilltree"
+)
 
 // Approval mode constants.
 const (
@@ -258,18 +262,13 @@ type InstructionFile struct {
 	Content string
 }
 
-// Skill represents a parsed skill with metadata and body.
+// Skill carries validated identity, provenance, and the exact canonical tree.
 type Skill struct {
-	Name                   string
-	Description            string
-	License                string
-	Compatibility          string
-	Metadata               map[string]string
-	AllowedTools           string
-	DisableModelInvocation *bool
-	Body                   string
-	SourcePath             string
-	SourceDir              string // Absolute path to the skill directory (parent of SKILL.md)
+	Name        string
+	Description string
+	SourcePath  string
+	SourceDir   string // Absolute path to the skill directory (parent of SKILL.md)
+	Tree        skilltree.Tree
 	// Imported is true when the skill's editable source lives under
 	// .agent-layer/imported-skills/ instead of .agent-layer/skills/. Both tiers
 	// project identically; the flag exists so ownership rules and `al skills

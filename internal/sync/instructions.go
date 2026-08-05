@@ -86,3 +86,17 @@ func cleanCodexInstructions(sys System, root string) error {
 	}
 	return nil
 }
+
+func hasGeneratedMarker(sys System, path string) (bool, error) {
+	data, err := sys.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf(messages.SyncReadFailedFmt, path, err)
+	}
+	content := string(data)
+	return strings.Contains(content, "GENERATED FILE") &&
+		strings.Contains(content, "Source: .agent-layer/") &&
+		strings.Contains(content, "Regenerate: al sync"), nil
+}
