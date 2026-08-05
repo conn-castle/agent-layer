@@ -741,8 +741,10 @@ func TestPushFailsEverySkillInARejectedGroup(t *testing.T) {
 	if _, err := proj.Service().Pull(context.Background()); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
+	// Only alpha changes. Beta is still a surviving member of the same atomic
+	// destination group, so the rejected publication must fail beta too rather
+	// than reporting it unchanged.
 	proj.WriteImportedFile("alpha", "notes.md", "alpha note\n")
-	proj.WriteImportedFile("beta", "notes.md", "beta note\n")
 
 	// The destination refuses updates to its checked-out branch, so the push
 	// itself is rejected after the group's commit was built.

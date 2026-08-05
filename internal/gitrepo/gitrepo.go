@@ -130,6 +130,26 @@ func hasAnyPrefix(value string, prefixes []string) bool {
 // literal interpretation explicit rather than depending on ambient config.
 func literalPathspec(repoPath string) string { return ":(literal)" + repoPath }
 
+// commitExists distinguishes an absent commit from a failure to inspect the
+// object database. Batch-check reports a missing object in machine-readable
+// stdout while reserving a non-zero exit for repository and object failures.
+func commitExists(ctx context.Context, runner *Runner, dir string, commit string) (bool, error) {
+	query := commit + "^{commit}\n"
+	output, err := runner.runInput(ctx, dir, []byte(query), "cat-file", "--batch-check=%(objecttype)")
+	if err != nil {
+		return false, err
+	}
+	result := strings.TrimSpace(string(output))
+	switch {
+	case result == "commit":
+		return true, nil
+	case result == strings.TrimSpace(query)+" missing":
+		return false, nil
+	default:
+		return false, fmt.Errorf("git cat-file returned an unexpected commit inspection result %q", result)
+	}
+}
+
 // CommandError carries the captured stderr of a failed git invocation so the
 // caller can report an actionable message.
 //

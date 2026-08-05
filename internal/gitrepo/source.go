@@ -145,13 +145,21 @@ func (s *Source) Resolve(ctx context.Context, ref string) (Resolution, error) {
 
 // ensureCommit makes a commit object available locally, fetching it if needed.
 func (s *Source) ensureCommit(ctx context.Context, commit string) error {
-	if s.hasCommit(ctx, commit) {
+	exists, err := commitExists(ctx, s.runner, s.dir, commit)
+	if err != nil {
+		return err
+	}
+	if exists {
 		return nil
 	}
 	if err := s.fetchAll(ctx); err != nil {
 		return err
 	}
-	if s.hasCommit(ctx, commit) {
+	exists, err = commitExists(ctx, s.runner, s.dir, commit)
+	if err != nil {
+		return err
+	}
+	if exists {
 		return nil
 	}
 	// A commit that is not reachable from any ref can still be fetched directly
@@ -159,15 +167,14 @@ func (s *Source) ensureCommit(ctx context.Context, commit string) error {
 	if _, err := s.runner.run(ctx, s.dir, "fetch", "--quiet", "--no-tags", "--", s.repository.git, commit); err != nil {
 		return fmt.Errorf("commit %s could not be fetched from %s: %w", commit, s.repository, err)
 	}
-	if !s.hasCommit(ctx, commit) {
+	exists, err = commitExists(ctx, s.runner, s.dir, commit)
+	if err != nil {
+		return err
+	}
+	if !exists {
 		return fmt.Errorf("commit %s could not be fetched from %s", commit, s.repository)
 	}
 	return nil
-}
-
-func (s *Source) hasCommit(ctx context.Context, commit string) bool {
-	_, code, err := s.runner.runAllowExit(ctx, s.dir, []int{1, 128}, "cat-file", "-e", commit+"^{commit}")
-	return err == nil && code == 0
 }
 
 // fetchAll mirrors every branch and tag once per source lifetime.

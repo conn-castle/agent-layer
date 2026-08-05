@@ -456,8 +456,8 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 	commit, err := destination.Publish(ctx, head, group.Branch, updates, groupCommitMessage(pushed))
 	if err != nil {
 		// A grouped commit or push failure affects every skill in the group.
-		flushUnchanged()
-		for _, candidate := range pushed {
+		failed := append(append([]pushCandidate{}, pushed...), unchangedCandidates...)
+		for _, candidate := range failed {
 			report.Add(SkillResult{
 				Name:         candidate.Entry.Name,
 				Repository:   candidate.Entry.Repository,

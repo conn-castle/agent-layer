@@ -105,6 +105,7 @@ func TestResolveProvesRefKindFromTheRemote(t *testing.T) {
 	repo.write("skills/alpha/SKILL.md", "---\nname: alpha\ndescription: d\n---\nBody\n", 0o644)
 	commit := repo.commit("add alpha")
 	repo.git("tag", "v1.0.0")
+	repo.git("tag", "-a", "v1.1.0", "-m", "annotated release")
 	repo.git("branch", "feature")
 
 	_, source := newTestSource(t, repo)
@@ -119,6 +120,7 @@ func TestResolveProvesRefKindFromTheRemote(t *testing.T) {
 		{name: "omitted resolves the default branch", ref: "", wantRef: "trunk", wantKind: skilllock.RefKindBranch},
 		{name: "branch", ref: "feature", wantRef: "feature", wantKind: skilllock.RefKindBranch},
 		{name: "tag", ref: "v1.0.0", wantRef: "v1.0.0", wantKind: skilllock.RefKindTag},
+		{name: "annotated tag", ref: "v1.1.0", wantRef: "v1.1.0", wantKind: skilllock.RefKindTag},
 		{name: "commit id", ref: commit, wantRef: commit, wantKind: skilllock.RefKindCommit},
 	}
 	for _, tt := range tests {
@@ -891,8 +893,55 @@ func TestDestinationReadTreeSeesFetchedContent(t *testing.T) {
 		t.Fatalf("corrupt destination object database: %v", err)
 	}
 	destination.repository = literalRepository(filepath.Join(t.TempDir(), "unreachable-after-corruption"))
+	if err := destination.FetchCommit(ctx, destination.repository, head); err == nil {
+		t.Fatal("a corrupt object database was treated as a missing commit")
+	} else if !strings.Contains(err.Error(), "cat-file") || strings.Contains(err.Error(), "fetch") {
+		t.Fatalf("corrupt object diagnostic = %v, want the local cat-file failure without a fetch", err)
+	}
 	if tree, err := destination.ReadTree(ctx, head, "skills/alpha"); err == nil {
 		t.Fatalf("a corrupt object database became an empty destination tree: %v", tree.Paths())
+	}
+}
+
+// TestCommitInspectionPreservesFatalFailures proves a local object-database
+// failure is distinct from an absent commit for source repositories too. It
+// also proves unexpected successful batch output fails loud instead of being
+// interpreted as either state.
+func TestCommitInspectionPreservesFatalFailures(t *testing.T) {
+	repo := newTestRepo(t, "main")
+	repo.write("SKILL.md", "---\nname: root\ndescription: d\n---\n", 0o644)
+	head := repo.commit("add root")
+
+	runner, err := NewRunner(nil)
+	if err != nil {
+		t.Skipf("git runner unavailable: %v", err)
+	}
+	ctx := context.Background()
+	source, err := OpenSource(ctx, runner, t.TempDir(), literalRepository(repo.dir))
+	if err != nil {
+		t.Fatalf("OpenSource: %v", err)
+	}
+	if err := source.Fetch(ctx, head); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if _, err := commitExists(ctx, runner, source.dir, head+"\n"+head); err == nil {
+		t.Fatal("unexpected commit inspection output was accepted")
+	}
+
+	objects := filepath.Join(source.dir, "objects")
+	if err := os.Rename(objects, objects+"-corrupt"); err != nil {
+		t.Fatalf("corrupt source object database: %v", err)
+	}
+	if err := source.Fetch(ctx, head); err == nil {
+		t.Fatal("a corrupt source object database was treated as a missing commit")
+	} else if !strings.Contains(err.Error(), "cat-file") || strings.Contains(err.Error(), "fetch") {
+		t.Fatalf("corrupt object diagnostic = %v, want the local cat-file failure without a fetch", err)
+	}
+	if _, err := source.Resolve(ctx, head); err == nil || !strings.Contains(err.Error(), "cat-file") {
+		t.Fatalf("commit resolution did not preserve source corruption: %v", err)
+	}
+	if _, err := source.ReadTree(ctx, head, ""); err == nil || !strings.Contains(err.Error(), "cat-file") {
+		t.Fatalf("tree reading did not preserve source corruption: %v", err)
 	}
 }
 
@@ -1063,6 +1112,17 @@ func TestDefaultBranchFailsWhenHeadIsNotSymbolic(t *testing.T) {
 		t.Fatal("expected an unresolvable default branch to fail")
 	} else if !strings.Contains(err.Error(), "specify an explicit ref") {
 		t.Fatalf("error %q does not guide the user", err)
+	}
+	runner, err := NewRunner(nil)
+	if err != nil {
+		t.Skipf("git runner unavailable: %v", err)
+	}
+	destination, err := OpenDestination(context.Background(), runner, t.TempDir(), literalRepository(repo.dir))
+	if err != nil {
+		t.Fatalf("OpenDestination: %v", err)
+	}
+	if _, err := destination.DefaultBranch(context.Background()); err == nil {
+		t.Fatal("expected an unresolvable destination default branch to fail")
 	}
 }
 

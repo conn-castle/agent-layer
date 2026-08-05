@@ -86,7 +86,11 @@ func (d *Destination) Head(ctx context.Context, branch string) (commit string, e
 // FetchCommit makes a commit from repository available in the destination
 // working repository.
 func (d *Destination) FetchCommit(ctx context.Context, repository Repository, commit string) error {
-	if d.hasCommit(ctx, commit) {
+	exists, err := commitExists(ctx, d.runner, d.dir, commit)
+	if err != nil {
+		return err
+	}
+	if exists {
 		return nil
 	}
 	if _, err := d.runner.run(ctx, d.dir, "fetch", "--quiet", "--no-tags", "--", repository.git, commit); err != nil {
@@ -99,15 +103,14 @@ func (d *Destination) FetchCommit(ctx context.Context, repository Repository, co
 			return errors.Join(err, mirrorErr)
 		}
 	}
-	if !d.hasCommit(ctx, commit) {
+	exists, err = commitExists(ctx, d.runner, d.dir, commit)
+	if err != nil {
+		return err
+	}
+	if !exists {
 		return fmt.Errorf("commit %s could not be fetched from %s", commit, repository)
 	}
 	return nil
-}
-
-func (d *Destination) hasCommit(ctx context.Context, commit string) bool {
-	_, code, err := d.runner.runAllowExit(ctx, d.dir, []int{1, 128}, "cat-file", "-e", commit+"^{commit}")
-	return err == nil && code == 0
 }
 
 // ReadTree returns the content of a repository path at a commit that is already
