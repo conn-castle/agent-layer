@@ -15,6 +15,10 @@ var exclusiveSkillRootPaths = [][]string{
 	{".claude", skillDirectoryName},
 }
 
+const releasedSkillProjectionMarkerPrefix = "<!--\n  GENERATED FILE\n  Source: .agent-layer/"
+
+const releasedSkillProjectionMarkerSuffix = "\n  Regenerate: al sync\n-->\n"
+
 // preflightPendingExclusiveSkillRoots performs the ownership transition only
 // when its version-targeted migration is pending. Once the installed version
 // reaches that target, marker-free generated roots are accepted on upgrades.
@@ -57,6 +61,9 @@ func blockingSkillRootEntries(sys System, root string) ([]string, error) {
 			return walkErr
 		}
 		if path == root {
+			if !entry.IsDir() {
+				blocking = append(blocking, path)
+			}
 			return nil
 		}
 		if filepath.Dir(path) != root {
@@ -70,10 +77,7 @@ func blockingSkillRootEntries(sys System, root string) ([]string, error) {
 		if entry.IsDir() {
 			manifest, err := sys.ReadFile(filepath.Join(path, "SKILL.md"))
 			if err == nil {
-				content := string(manifest)
-				safe = strings.Contains(content, "GENERATED FILE") &&
-					strings.Contains(content, "Source: .agent-layer/") &&
-					strings.Contains(content, "Regenerate: al sync")
+				safe = hasReleasedSkillProjectionMarker(manifest)
 			}
 		}
 		if !safe {
@@ -88,4 +92,17 @@ func blockingSkillRootEntries(sys System, root string) ([]string, error) {
 		return nil, fmt.Errorf("inspect client skill root %s: %w", root, err)
 	}
 	return blocking, nil
+}
+
+func hasReleasedSkillProjectionMarker(manifest []byte) bool {
+	content := string(manifest)
+	if !strings.HasPrefix(content, releasedSkillProjectionMarkerPrefix) {
+		return false
+	}
+	sourceEnd := strings.IndexByte(content[len(releasedSkillProjectionMarkerPrefix):], '\n')
+	if sourceEnd <= 0 {
+		return false
+	}
+	headerRemainder := content[len(releasedSkillProjectionMarkerPrefix)+sourceEnd:]
+	return strings.HasPrefix(headerRemainder, releasedSkillProjectionMarkerSuffix)
 }

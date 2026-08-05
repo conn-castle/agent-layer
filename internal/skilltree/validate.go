@@ -83,12 +83,12 @@ func ValidateManifest(manifest []byte, sourcePath string) (SkillInfo, error) {
 // findCaseVariantManifest reports a root-level manifest that differs from the
 // canonical filename only by case, so the error can name the actual problem.
 func findCaseVariantManifest(tree Tree) (string, bool) {
-	for _, file := range tree.Files() {
-		if strings.Contains(file.Path, "/") {
+	for _, filePath := range tree.Paths() {
+		if strings.Contains(filePath, "/") {
 			continue
 		}
-		if file.Path != SkillManifestName && strings.EqualFold(file.Path, SkillManifestName) {
-			return file.Path, true
+		if filePath != SkillManifestName && strings.EqualFold(filePath, SkillManifestName) {
+			return filePath, true
 		}
 	}
 	return "", false

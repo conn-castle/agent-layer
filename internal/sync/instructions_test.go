@@ -74,7 +74,7 @@ func TestCleanCodexInstructionsPreservesUserAuthoredFile(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(root, ".codex", "AGENTS.md")
-	content := []byte("# Personal Codex home instructions\n")
+	content := []byte("# Personal Codex home instructions\n\nMentions GENERATED FILE, Source: .agent-layer/, and Regenerate: al sync.\n")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir .codex: %v", err)
 	}

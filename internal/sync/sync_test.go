@@ -27,7 +27,7 @@ func TestRunGolden(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(staleCodexInstructions), 0o700); err != nil {
 		t.Fatalf("mkdir stale codex instructions dir: %v", err)
 	}
-	if err := os.WriteFile(staleCodexInstructions, []byte(generatedMarkerFixture), 0o600); err != nil {
+	if err := os.WriteFile(staleCodexInstructions, []byte(instructionHeader+"stale\n"), 0o600); err != nil {
 		t.Fatalf("write stale codex instructions: %v", err)
 	}
 	result, err := Run(root)

@@ -59,7 +59,7 @@ The recommended section order is informed by research on how language models pro
 The skill standard defines the format. Agent Layer builds on it with:
 
 - **A workflow-bundle library of 7 focused skills** covering implementation, PR lifecycle, auditing, and autonomous delivery — available when the workflow bundle is installed through the wizard and refreshed through upgrade flows for repos that already have it.
-- **Client projection** — User-managed `.agent-layer/skills/` and Git-managed `.agent-layer/imported-skills/` are canonical. `al sync` projects their exact trees to `.agents/skills/` for shared-skill clients and `.claude/skills/` for Claude Code.
+- **Client projection** — User-managed `.agent-layer/skills/` and Git-managed `.agent-layer/imported-skills/` are canonical. `al sync` merges them into one immutable source snapshot, then projects that snapshot to `.agents/skills/` for shared-skill clients and `.claude/skills/` for Claude Code.
 - **Memory integration** — Skills read from and write to project memory files (`ISSUES.md`, `BACKLOG.md`, `DECISIONS.md`, `COMMANDS.md`, `CONTEXT.md`), keeping project context durable across sessions.
 - **Artifact conventions** — Skills keep agent-only plans, reports, and trackers under `.agent-layer/tmp/`, where another agent can pick them up without mixing transient state into product files.
 - **Orchestrator composition** — Top-level skills delegate to supporting skills automatically, enabling complex multi-step workflows from a single invocation.
@@ -160,7 +160,7 @@ Follow the [skill structure](#skill-structure) outlined above. Keep the body foc
 
 Run `al sync` to project the new skill into all enabled clients.
 
-The two client skill roots are Agent Layer-owned disposable output. Do not edit or install skills directly in `.agents/skills/` or `.claude/skills/`; sync replaces each enabled root wholesale and removes all extra content. `SKILL.md` bytes, unknown/provider-specific frontmatter, nested resources, and executable bits are preserved exactly. Lowercase `skill.md` and symlinked resources are rejected.
+The two client skill roots are Agent Layer-owned disposable output. Do not edit or install skills directly in `.agents/skills/` or `.claude/skills/`; sync replaces each enabled root wholesale and removes all extra content. `SKILL.md` bytes, unknown/provider-specific frontmatter, nested resources, and executable bits are preserved exactly. Lowercase `skill.md` is rejected. Every source-tree node must be a real directory or regular file; symlinks and all other node types are rejected, including symlinked skill directories and `SKILL.md` files.
 
 For the complete research-backed authoring guide — including empirical studies on instruction-following, context length effects, and constraint composition — see [Skill Design Guide](/skill-design). For command-line tool workflows, use [CLI Skill Design Guide](/cli-skill-design) so live `--help` stays the source of truth for syntax.
 

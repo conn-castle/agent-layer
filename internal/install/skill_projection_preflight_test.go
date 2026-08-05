@@ -61,11 +61,52 @@ func TestExclusiveSkillRootPreflightAcceptsReleasedMarkers(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(releasedProjectionMarker), 0o600); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.MkdirAll(filepath.Join(dir, "resources"), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "resources", "reference.md"), []byte("released projection resource"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	inst := &installer{root: root, sys: RealSystem{}}
 	if err := inst.preflightExclusiveSkillRoots(); err != nil {
 		t.Fatalf("released projections must be safe to replace: %v", err)
 	}
+}
+
+func TestExclusiveSkillRootPreflightRejectsNonDirectoryRootAndMarkerTextOutsideHeader(t *testing.T) {
+	t.Parallel()
+
+	t.Run("client root is a regular file", func(t *testing.T) {
+		root := t.TempDir()
+		clientRoot := filepath.Join(root, ".agents", "skills")
+		if err := os.MkdirAll(filepath.Dir(clientRoot), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(clientRoot, []byte("manual"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		err := (&installer{root: root, sys: RealSystem{}}).preflightExclusiveSkillRoots()
+		if err == nil || !strings.Contains(err.Error(), clientRoot) {
+			t.Fatalf("non-directory client root was not blocked: %v", err)
+		}
+	})
+
+	t.Run("marker phrases occur only in manual content", func(t *testing.T) {
+		root := t.TempDir()
+		skillDir := filepath.Join(root, ".claude", "skills", "manual")
+		if err := os.MkdirAll(skillDir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		manifest := "---\nname: manual\ndescription: manual\n---\nGENERATED FILE\nSource: .agent-layer/\nRegenerate: al sync\n"
+		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(manifest), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		err := (&installer{root: root, sys: RealSystem{}}).preflightExclusiveSkillRoots()
+		if err == nil || !strings.Contains(err.Error(), skillDir) {
+			t.Fatalf("manual marker text was accepted as a released header: %v", err)
+		}
+	})
 }
 
 func TestExclusiveSkillRootUpgradeCheckRunsOnlyWhileMigrationIsPending(t *testing.T) {

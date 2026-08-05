@@ -95,8 +95,5 @@ func hasGeneratedMarker(sys System, path string) (bool, error) {
 		}
 		return false, fmt.Errorf(messages.SyncReadFailedFmt, path, err)
 	}
-	content := string(data)
-	return strings.Contains(content, "GENERATED FILE") &&
-		strings.Contains(content, "Source: .agent-layer/") &&
-		strings.Contains(content, "Regenerate: al sync"), nil
+	return strings.HasPrefix(string(data), instructionHeader), nil
 }
