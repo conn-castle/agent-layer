@@ -315,3 +315,19 @@ func (s *state) configuredBlockForEntry(entry skilllock.Entry) (config.SkillImpo
 	}
 	return config.SkillImport{}, 0, false
 }
+
+// configuredSelectionCount returns how many current blocks in the recorded
+// repository select an entry's path after exclusions. A count above one is an
+// ownership error; callers must not choose one block arbitrarily.
+func (s *state) configuredSelectionCount(entry skilllock.Entry) int {
+	count := 0
+	for _, block := range s.cfg.Skills.Imports {
+		if config.NormalizeSkillRepository(block.Repository) != config.NormalizeSkillRepository(entry.Repository) {
+			continue
+		}
+		if _, selected := selectingPositiveSelector(block, entry.SelectedPath); selected {
+			count++
+		}
+	}
+	return count
+}

@@ -1035,6 +1035,24 @@ func TestPullPreservesAnEntryWhoseReplacementSelectorOwnershipIsAmbiguous(t *tes
 	if !ok || after != before || !proj.ImportedExists("alpha") {
 		t.Fatalf("ambiguous ownership retired prior state: before=%+v after=%+v exists=%v", before, after, proj.ImportedExists("alpha"))
 	}
+
+	// Even if the path later disappears at the currently observed ref, neither
+	// block is authoritative: another valid ambiguous configuration can use a
+	// different ref. Pull must keep failing until the user resolves ownership.
+	source.RemovePath("skills/alpha")
+	source.Commit("remove alpha")
+	report, err = proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull after disappearance: %v", err)
+	}
+	failed := requireOutcome(t, report, "alpha", OutcomeFailed)
+	if !strings.Contains(failed.Err.Error(), "selected by multiple configured blocks") {
+		t.Fatalf("ambiguous disappearance error = %v", failed.Err)
+	}
+	after, ok = proj.Lock().Entry("alpha")
+	if !ok || after != before || !proj.ImportedExists("alpha") {
+		t.Fatalf("ambiguous disappearance retired prior state: before=%+v after=%+v exists=%v", before, after, proj.ImportedExists("alpha"))
+	}
 }
 
 // TestPullRetiresAnUnconfiguredSkillDespiteASameNamedFailure proves retirement

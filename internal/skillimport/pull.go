@@ -393,30 +393,27 @@ func retireUnconfigured(st *state, txn *transaction, report *Report) {
 		if _, stillReported := reported[skillKey(entry.Repository, entry.SelectedPath)]; stillReported {
 			continue
 		}
-		// Configuration has no block ID. Any current block that still selects the
+		// Configuration has no block ID. One current block that still selects the
 		// recorded path keeps the independent entry owned when a source failure
-		// prevented its selector evidence from being refreshed. Unique ownership
-		// can be remapped; ambiguous ownership is preserved but fails validation.
-		if entrySelectedByConfiguration(st, entry) {
+		// prevented its selector evidence from being refreshed. Multiple matches
+		// are an ownership error: blocks may use different refs, so neither an
+		// update nor retirement can choose one block's observation as authoritative.
+		selectionCount := st.configuredSelectionCount(entry)
+		if selectionCount > 1 {
+			report.Add(SkillResult{
+				Name:         entry.Name,
+				Repository:   entry.Repository,
+				SelectedPath: entry.SelectedPath,
+				Outcome:      OutcomeFailed,
+				Err:          fmt.Errorf("selected by multiple configured blocks; make selector ownership unambiguous before pulling"),
+			})
+			continue
+		}
+		if selectionCount == 1 {
 			continue
 		}
 		retire(st, txn, entry, report)
 	}
-}
-
-// entrySelectedByConfiguration reports whether at least one current block in
-// the recorded repository still selects an entry's path. It deliberately does
-// not choose among multiple matching blocks.
-func entrySelectedByConfiguration(st *state, entry skilllock.Entry) bool {
-	for _, block := range st.cfg.Skills.Imports {
-		if config.NormalizeSkillRepository(block.Repository) != config.NormalizeSkillRepository(entry.Repository) {
-			continue
-		}
-		if _, selected := selectingPositiveSelector(block, entry.SelectedPath); selected {
-			return true
-		}
-	}
-	return false
 }
 
 // reportedSkillKeys returns the skills already accounted for in a report.

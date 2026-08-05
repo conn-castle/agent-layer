@@ -31,16 +31,7 @@ func (s *Service) resetLocked(ctx context.Context, st *state, name string, repor
 	}
 	block, blockIndex, configured := st.configuredBlockForEntry(entry)
 	if !configured {
-		matchingBlocks := 0
-		for _, candidate := range st.cfg.Skills.Imports {
-			if config.NormalizeSkillRepository(candidate.Repository) != config.NormalizeSkillRepository(entry.Repository) {
-				continue
-			}
-			if _, selected := selectingPositiveSelector(candidate, entry.SelectedPath); selected {
-				matchingBlocks++
-			}
-		}
-		if matchingBlocks > 1 {
+		if st.configuredSelectionCount(entry) > 1 {
 			return fmt.Errorf("imported skill %q at %s is selected by multiple configured blocks; make selector ownership unambiguous before resetting", name, entry.SelectedPath)
 		}
 		return fmt.Errorf("imported skill %q is no longer selected by configuration; run 'al skills pull' to apply retirement rules before resetting", name)
