@@ -300,3 +300,35 @@ func TestLoadCommandsAllowFS_ScannerError(t *testing.T) {
 		t.Fatalf("expected error for scanner overflow")
 	}
 }
+
+// TestLoadImportedSkillsFS covers the two facts projection depends on: imported
+// skills are optional, so a project that never imported one still loads; and
+// every skill that does come from the import directory is marked imported, which
+// is what keeps a Git-owned skill from being treated as user-authored.
+func TestLoadImportedSkillsFS(t *testing.T) {
+	const dir = ".agent-layer/imported-skills"
+	manifest := []byte("---\nname: alpha\ndescription: An imported skill.\n---\n\nBody")
+
+	skills, err := LoadImportedSkillsFS(fstest.MapFS{}, "root", dir)
+	if err != nil || len(skills) != 0 {
+		t.Fatalf("a project with no imports = %#v, %v", skills, err)
+	}
+
+	fsys := fstest.MapFS{
+		dir:                     {Mode: fs.ModeDir},
+		dir + "/alpha":          {Mode: fs.ModeDir},
+		dir + "/alpha/SKILL.md": {Data: manifest},
+	}
+	skills, err = LoadImportedSkillsFS(fsys, "root", dir)
+	if err != nil {
+		t.Fatalf("LoadImportedSkillsFS: %v", err)
+	}
+	if len(skills) != 1 || skills[0].Name != "alpha" || !skills[0].Imported {
+		t.Fatalf("imported skills = %#v, want one skill marked imported", skills)
+	}
+
+	failing := errorFS{FS: fsys, errPath: dir, err: fs.ErrPermission}
+	if _, err := LoadImportedSkillsFS(failing, "root", dir); err == nil {
+		t.Fatal("an unreadable import directory was treated as no imports")
+	}
+}

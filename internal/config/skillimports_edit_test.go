@@ -347,3 +347,75 @@ ref = "v1"
 		t.Fatalf("adjacent blocks were not edited independently: %+v", cfg.Skills.Imports)
 	}
 }
+
+// TestSetSkillImportSelectorsScansArrayDelimitersOutsideStringsAndComments
+// proves a selector edit finds the true end of the array. A `]` inside a
+// quoted selector, an escaped quote, a literal string, or a trailing comment
+// must not be mistaken for the closing bracket: doing so would truncate the
+// array and silently delete the user's remaining configuration.
+func TestSetSkillImportSelectorsScansArrayDelimitersOutsideStringsAndComments(t *testing.T) {
+	t.Parallel()
+	identity := SkillImport{Repository: "https://example.test/skills.git"}.Identity()
+	content := baseConfigTOML + `
+[[skills.imports]]
+repository = "https://example.test/skills.git"
+selectors = [ # keep everything below ]
+  "skills/bracket]name",       # ] in a comment
+  "skills/quote\"name",        # escaped quote
+  'skills/literal]name',
+]
+
+# trailing user configuration marker
+[dispatch]
+max_depth = 3
+`
+
+	updated, err := SetSkillImportSelectors(content, identity, []string{"skills/a"})
+	if err != nil {
+		t.Fatalf("SetSkillImportSelectors: %v", err)
+	}
+	cfg, err := ParseConfig([]byte(updated), "config.toml")
+	if err != nil {
+		t.Fatalf("edited config does not parse: %v\n%s", err, updated)
+	}
+	if len(cfg.Skills.Imports) != 1 || len(cfg.Skills.Imports[0].Selectors) != 1 ||
+		cfg.Skills.Imports[0].Selectors[0] != "skills/a" {
+		t.Fatalf("selectors were not replaced: %+v", cfg.Skills.Imports)
+	}
+	if !strings.Contains(updated, "# trailing user configuration marker") || !strings.Contains(updated, "max_depth = 3") {
+		t.Fatalf("configuration after the selectors array was lost:\n%s", updated)
+	}
+	for _, stale := range []string{"skills/bracket]name", "skills/literal]name"} {
+		if strings.Contains(updated, stale) {
+			t.Fatalf("replaced selector %q survived the edit:\n%s", stale, updated)
+		}
+	}
+}
+
+// TestSetSkillImportSelectorsRecordsAnExplicitPushDestination proves a new
+// block writes push_repository only when publication targets a repository
+// other than the import source, so a reader can tell where writes will land.
+func TestSetSkillImportSelectorsRecordsAnExplicitPushDestination(t *testing.T) {
+	t.Parallel()
+	identity := SkillImport{
+		Repository:     "https://example.test/skills.git",
+		WritePolicy:    SkillWritePolicyBranch,
+		PushRepository: "https://example.test/fork.git",
+		PushBranch:     "skill-updates",
+	}.Identity()
+
+	added, err := SetSkillImportSelectors(baseConfigTOML, identity, []string{"skills/a"})
+	if err != nil {
+		t.Fatalf("SetSkillImportSelectors: %v", err)
+	}
+	cfg, err := ParseConfig([]byte(added), "config.toml")
+	if err != nil {
+		t.Fatalf("appended config does not parse: %v\n%s", err, added)
+	}
+	if len(cfg.Skills.Imports) != 1 || cfg.Skills.Imports[0].Identity() != identity {
+		t.Fatalf("appended block identity mismatch: %+v", cfg.Skills.Imports)
+	}
+	if !strings.Contains(added, "push_repository = ") || !strings.Contains(added, "https://example.test/fork.git") {
+		t.Fatalf("append omitted the distinct push destination:\n%s", added)
+	}
+}
