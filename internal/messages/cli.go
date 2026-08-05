@@ -302,8 +302,9 @@ Imported skills live in .agent-layer/imported-skills/<skill-name>/ and are
 projected through ordinary 'al sync' alongside .agent-layer/skills/. Recorded
 upstream state lives in .agent-layer/skills.lock.json.
 
-Only add, pull, reset, and push contact remote repositories; status, 'al sync',
-and agent launch stay local.`
+Add, pull, reset, and push contact remote repositories. Remove also contacts a
+remote when its block retains a positive selector; removing the last positive
+selector stays local. Status, 'al sync', and agent launch stay local.`
 
 	SkillsAddUse   = "add <repository> <selector>..."
 	SkillsAddShort = "Import skills from a Git repository"

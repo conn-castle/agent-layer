@@ -100,6 +100,9 @@ func runSkillsCommand(t *testing.T, args ...string) (string, string, error) {
 func TestSkillsCommandSurfaceMatchesTheContract(t *testing.T) {
 	t.Parallel()
 	skills := newSkillsCmd()
+	if !strings.Contains(skills.Long, "Remove also contacts a") || !strings.Contains(skills.Long, "selector stays local") {
+		t.Fatalf("skills help misstates remove's network boundary:\n%s", skills.Long)
+	}
 
 	got := map[string]bool{}
 	for _, sub := range skills.Commands() {

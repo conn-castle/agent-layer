@@ -116,6 +116,36 @@ func TestResetUsesTheCurrentSelectorAfterManualReplacement(t *testing.T) {
 	}
 }
 
+// TestResetReportsAmbiguousSelectorOwnership proves reset does not mislabel a
+// path selected by several current blocks as unconfigured or choose one policy
+// arbitrarily.
+func TestResetReportsAmbiguousSelectorOwnership(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+	before, _ := proj.Lock().Entry("alpha")
+	proj.WriteImportedFile("alpha", "local.md", "keep me\n")
+	writeProjectFile(t, proj.paths.ConfigPath,
+		baseConfigTOML+
+			importBlock(source.URL(), []string{"skills/*"})+
+			importBlock(source.URL(), []string{"skills/a*"}, `write_policy = "direct"`))
+
+	_, err := proj.Service().Reset(context.Background(), "alpha")
+	if err == nil || !strings.Contains(err.Error(), "selected by multiple configured blocks") {
+		t.Fatalf("ambiguous reset error = %v", err)
+	}
+	after, _ := proj.Lock().Entry("alpha")
+	if after != before || !strings.Contains(proj.ImportedFile("alpha", "local.md"), "keep me") {
+		t.Fatal("ambiguous reset changed local content or lock evidence")
+	}
+}
+
 // TestResetFailurePreservesLocalContentAndLock proves source validation is a
 // preflight: a missing upstream path cannot discard the user's local tree.
 func TestResetFailurePreservesLocalContentAndLock(t *testing.T) {

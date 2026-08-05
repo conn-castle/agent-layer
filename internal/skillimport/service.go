@@ -70,9 +70,9 @@ func (s *Service) project(report *Report) {
 
 // openBlock prepares one block's source access for a networked operation.
 //
-// It resolves the configured ref (or the repository's actual default branch),
-// proves the tracking mode against the resolved ref kind, and decides whether
-// the operation is an ordinary advance or a retarget.
+// It resolves the configured ref (or the repository's actual default branch)
+// and proves the tracking mode against the resolved ref kind. Callers decide
+// each existing entry's advance or retarget behavior from its own lock evidence.
 func (s *Service) openBlock(ctx context.Context, runner *gitrepo.Runner, workRoot string, index int, block config.SkillImport) (*blockContext, error) {
 	workDir := filepath.Join(workRoot, fmt.Sprintf("block-%d", index))
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
