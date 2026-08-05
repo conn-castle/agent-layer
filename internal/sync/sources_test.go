@@ -240,12 +240,9 @@ func TestWithLockedProjectRunsInsideTheCriticalSection(t *testing.T) {
 	}
 }
 
-// TestLoadSourcesRejectsAnImportedSkillWithUnprojectableFrontmatter proves the
-// imported tier is held to the same strict rules its import was accepted under.
-// Generic configuration loading keeps only the fields it can project, so an
-// unsupported field would otherwise be silently dropped from the projection
-// while `al skills status` reported the same tree as invalid.
-func TestLoadSourcesRejectsAnImportedSkillWithUnprojectableFrontmatter(t *testing.T) {
+// TestLoadSourcesAcceptsUnknownImportedFrontmatter proves provider-specific
+// fields remain opaque canonical bytes rather than renderer input.
+func TestLoadSourcesAcceptsUnknownImportedFrontmatter(t *testing.T) {
 	t.Parallel()
 	root := newSourcesTestRoot(t)
 	dir := filepath.Join(root, ".agent-layer", "imported-skills", "remote")
@@ -256,21 +253,18 @@ func TestLoadSourcesRejectsAnImportedSkillWithUnprojectableFrontmatter(t *testin
 	}
 	writeSkillsLock(t, root, "remote")
 
-	_, err := LoadSources(os.DirFS(root), root)
-	if err == nil {
-		t.Fatal("expected unprojectable imported frontmatter to fail source loading")
+	project, err := LoadSources(os.DirFS(root), root)
+	if err != nil {
+		t.Fatalf("LoadSources: %v", err)
 	}
-	for _, want := range []string{"remote", "unsupported-field"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error %q does not contain %q", err, want)
-		}
+	file, ok := project.Skills[0].Tree.File("SKILL.md")
+	if !ok || string(file.Data) != manifest {
+		t.Fatalf("canonical manifest was not retained exactly: %q", file.Data)
 	}
 }
 
 // TestLoadSourcesRejectsAnImportedSkillWithALowercaseManifest proves the
-// canonical manifest requirement applies to imported sources. The generic
-// loader keeps its lowercase compatibility fallback for user-managed skills,
-// but an imported tree that no import operation would accept must not project.
+// canonical manifest requirement applies to imported sources.
 func TestLoadSourcesRejectsAnImportedSkillWithALowercaseManifest(t *testing.T) {
 	t.Parallel()
 	root := newSourcesTestRoot(t)
@@ -290,10 +284,9 @@ func TestLoadSourcesRejectsAnImportedSkillWithALowercaseManifest(t *testing.T) {
 	}
 }
 
-// TestLoadSourcesKeepsTheUserManagedLowercaseFallback proves the strict rule is
-// scoped to the imported tier, so an existing user-managed skill that predates
-// imports keeps syncing exactly as before.
-func TestLoadSourcesKeepsTheUserManagedLowercaseFallback(t *testing.T) {
+// TestLoadSourcesRejectsAUserManagedLowercaseManifest proves both source tiers
+// require the same canonical filename.
+func TestLoadSourcesRejectsAUserManagedLowercaseManifest(t *testing.T) {
 	t.Parallel()
 	root := newSourcesTestRoot(t)
 	dir := filepath.Join(root, ".agent-layer", "skills", "local")
@@ -302,11 +295,72 @@ func TestLoadSourcesKeepsTheUserManagedLowercaseFallback(t *testing.T) {
 		t.Fatalf("rename manifest: %v", err)
 	}
 
-	project, err := LoadSources(os.DirFS(root), root)
-	if err != nil {
-		t.Fatalf("LoadSources: %v", err)
+	_, err := LoadSources(os.DirFS(root), root)
+	if err == nil || !strings.Contains(err.Error(), "rename") || !strings.Contains(err.Error(), "SKILL.md") {
+		t.Fatalf("expected canonical rename guidance, got %v", err)
 	}
-	if len(project.Skills) != 1 || project.Skills[0].Name != "local" {
-		t.Fatalf("skills = %+v, want the user-managed skill", project.Skills)
+}
+
+// TestLoadSourcesRejectsSymlinksInBothTiers proves user-managed and imported
+// content share one strict tree reader rather than tier-specific omission rules.
+func TestLoadSourcesRejectsSymlinksInBothTiers(t *testing.T) {
+	for _, imported := range []bool{false, true} {
+		name := "user-managed"
+		if imported {
+			name = "imported"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			root := newSourcesTestRoot(t)
+			base := filepath.Join(root, ".agent-layer", "skills")
+			if imported {
+				base = filepath.Join(root, ".agent-layer", "imported-skills")
+			}
+			dir := filepath.Join(base, "alpha")
+			writeSkillDir(t, dir, "alpha", "Body")
+			link := filepath.Join(dir, "linked-resource")
+			if err := os.Symlink("SKILL.md", link); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+			if imported {
+				writeSkillsLock(t, root, "alpha")
+			}
+
+			_, err := LoadSources(os.DirFS(root), root)
+			if err == nil || !strings.Contains(err.Error(), "symbolic link") || !strings.Contains(err.Error(), link) {
+				t.Fatalf("expected path-specific symlink rejection, got %v", err)
+			}
+		})
+	}
+}
+
+// TestLoadSourcesRejectsTopLevelSymlinksInBothTiers proves a link cannot evade
+// strict validation by occupying the source directory's skill-name slot.
+func TestLoadSourcesRejectsTopLevelSymlinksInBothTiers(t *testing.T) {
+	for _, imported := range []bool{false, true} {
+		name := "user-managed"
+		if imported {
+			name = "imported"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			root := newSourcesTestRoot(t)
+			base := filepath.Join(root, ".agent-layer", "skills")
+			if imported {
+				base = filepath.Join(root, ".agent-layer", "imported-skills")
+			}
+			if err := os.MkdirAll(base, 0o750); err != nil {
+				t.Fatal(err)
+			}
+			link := filepath.Join(base, "alpha")
+			if err := os.Symlink("missing", link); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+
+			_, err := LoadSources(os.DirFS(root), root)
+			if err == nil || !strings.Contains(err.Error(), "symlink") || !strings.Contains(err.Error(), link) {
+				t.Fatalf("expected path-specific top-level symlink rejection, got %v", err)
+			}
+		})
 	}
 }

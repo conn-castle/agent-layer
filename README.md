@@ -585,25 +585,28 @@ These files are user-editable; customize them for your team's preferences.
 
 ### Skills: `.agent-layer/skills/`
 
-These files are user-editable; define the workflows you want your agents to run.
+User-managed skills live in `.agent-layer/skills/`; skills managed through
+`al skills` live in `.agent-layer/imported-skills/`. These canonical source
+tiers define the workflows you want your agents to run.
 
 Agent Layer aligns with the [Agent Skills specification](https://agentskills.io/specification), and `al doctor` validates configured skills against agentskills-aligned conventions.
 
 - Source format:
-  - Directory: `.agent-layer/skills/<name>/SKILL.md` (canonical; `skill.md` is accepted as a compatibility fallback)
+  - Directory: `<source-tier>/<name>/SKILL.md` (uppercase filename required)
 - Frontmatter fields:
   - Required: `name`, `description`
-  - Optional: `license`, `compatibility`, `metadata`, `allowed-tools`
+  - Additional fields are accepted without interpretation and projected unchanged.
 - `name` validation (`al doctor`):
   - NFKC-normalized and compared against the canonical source name (filename stem or directory name) using normalization-aware matching
   - Maximum 64 Unicode characters, lowercase letters/digits/hyphens only, and no leading/trailing/consecutive hyphens
-- Length warnings (`al doctor`): `description` max 1024 Unicode characters per skill; `compatibility` max 500 Unicode characters.
+- Description limit: maximum 1024 Unicode characters per skill.
 - Catalog warning (`al doctor`): all skill names plus descriptions (the always-loaded catalog metadata) should stay at or below an estimated ~4,000 tokens.
 - Size recommendation (`al doctor`): warns when a skill source exceeds 500 lines.
-- Backward compatibility: skills with missing `name` still load (name derived from path), but `al doctor` warns.
-- Missing or empty `description` is a load/sync error (fail-loud); it is not warning-only.
-- Directory-format skills should use `SKILL.md`; lowercase `skill.md` loads but triggers an `al doctor` warning.
-- Shared-skill clients consume these from `.agents/skills/<name>/SKILL.md`; Claude consumes them from `.claude/skills/<name>/SKILL.md`.
+- Missing or empty `name` or `description` is a load/sync error.
+- Lowercase-only `skill.md` fails with rename guidance; having both filename spellings is ambiguous and also fails.
+- Skill trees may contain only real directories and regular files; symlinks and other node types fail with the offending path.
+- Shared-skill clients consume disposable output from `.agents/skills/<name>/SKILL.md`; Claude consumes disposable output from `.claude/skills/<name>/SKILL.md`.
+- Agent Layer owns both client skill roots exclusively. Sync replaces each enabled root wholesale, removes extra content, and removes the root when its projection is disabled. Edit only the canonical source tiers.
 - Workflow guidance is provided by individual skill sources under `.agent-layer/skills/`.
 
 ### Approved commands: `.agent-layer/commands.allow`

@@ -86,3 +86,14 @@ func cleanCodexInstructions(sys System, root string) error {
 	}
 	return nil
 }
+
+func hasGeneratedMarker(sys System, path string) (bool, error) {
+	data, err := sys.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf(messages.SyncReadFailedFmt, path, err)
+	}
+	return strings.HasPrefix(string(data), instructionHeader), nil
+}

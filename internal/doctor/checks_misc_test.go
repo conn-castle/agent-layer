@@ -584,7 +584,7 @@ Body.
 	}
 }
 
-func TestCheckSkills_Warnings(t *testing.T) {
+func TestCheckSkills_AcceptsUnknownFrontmatter(t *testing.T) {
 	root := t.TempDir()
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
 	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o700); err != nil {
@@ -592,6 +592,7 @@ func TestCheckSkills_Warnings(t *testing.T) {
 	}
 	skillPath := filepath.Join(skillsDir, "alpha", "SKILL.md")
 	content := `---
+name: alpha
 description: test
 foo: bar
 ---
@@ -607,16 +608,8 @@ Body.
 		},
 	}
 	results := CheckSkills(cfg)
-	if len(results) < 2 {
-		t.Fatalf("expected at least 2 warning results, got %d: %#v", len(results), results)
-	}
-	for _, result := range results {
-		if result.Status != StatusWarn {
-			t.Fatalf("status = %s, want %s (%#v)", result.Status, StatusWarn, result)
-		}
-		if result.CheckName != messages.DoctorCheckNameSkills {
-			t.Fatalf("check name = %q, want %q", result.CheckName, messages.DoctorCheckNameSkills)
-		}
+	if len(results) != 1 || results[0].Status != StatusOK {
+		t.Fatalf("unknown frontmatter must be accepted, got %#v", results)
 	}
 }
 

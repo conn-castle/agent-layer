@@ -66,9 +66,6 @@ Body.
 	if parsed.CanonicalName != "beta" {
 		t.Fatalf("canonical name = %q, want %q", parsed.CanonicalName, "beta")
 	}
-	if parsed.Compatibility == nil || *parsed.Compatibility != "requires git" {
-		t.Fatalf("compatibility = %#v, want requires git", parsed.Compatibility)
-	}
 }
 
 func TestParseSkillSource_DirectoryLowercaseSkillFile(t *testing.T) {
@@ -261,7 +258,7 @@ Body.
 	}
 }
 
-func TestValidateParsedSkill_UnknownFieldWarning(t *testing.T) {
+func TestValidateParsedSkill_AcceptsUnknownFields(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "alpha.md")
 	content := `---
@@ -280,8 +277,8 @@ Body.
 		t.Fatalf("ParseSkillSource: %v", err)
 	}
 	findings := ValidateParsedSkill(parsed)
-	if !hasFinding(findings, FindingCodeUnknownField) {
-		t.Fatalf("expected %s finding, got %#v", FindingCodeUnknownField, findings)
+	if len(findings) != 0 {
+		t.Fatalf("unknown fields must pass through without findings, got %#v", findings)
 	}
 }
 
@@ -304,8 +301,8 @@ Body.
 		t.Fatalf("ParseSkillSource: %v", err)
 	}
 	findings := ValidateParsedSkill(parsed)
-	if hasFinding(findings, FindingCodeUnknownField) {
-		t.Fatalf("Claude invocation policy should be allowed, got %#v", findings)
+	if len(findings) != 0 {
+		t.Fatalf("Claude invocation policy should pass through without findings, got %#v", findings)
 	}
 }
 
@@ -313,11 +310,10 @@ func TestValidateParsedSkill_LengthConstraints(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "alpha.md")
 	descriptionTooLong := strings.Repeat("界", MaxDescriptionLength+1)
-	compatibilityTooLong := strings.Repeat("漢", MaxCompatibilityLength+1)
 	content := `---
 name: alpha
 description: ` + descriptionTooLong + `
-compatibility: ` + compatibilityTooLong + `
+compatibility: ` + strings.Repeat("漢", 2000) + `
 ---
 Body.
 `
@@ -333,8 +329,8 @@ Body.
 	if !hasFinding(findings, FindingCodeDescriptionTooLong) {
 		t.Fatalf("expected %s finding, got %#v", FindingCodeDescriptionTooLong, findings)
 	}
-	if !hasFinding(findings, FindingCodeCompatibilityTooLong) {
-		t.Fatalf("expected %s finding, got %#v", FindingCodeCompatibilityTooLong, findings)
+	if len(findings) != 1 {
+		t.Fatalf("opaque compatibility field produced findings: %#v", findings)
 	}
 }
 
@@ -493,7 +489,7 @@ func TestValidateParsedSkill_DeterministicOrder(t *testing.T) {
 		Description:     strPtr("test"),
 	}
 	findings := ValidateParsedSkill(parsed)
-	if len(findings) < 3 {
+	if len(findings) < 2 {
 		t.Fatalf("expected multiple findings, got %#v", findings)
 	}
 	for i := 1; i < len(findings); i++ {
@@ -513,7 +509,7 @@ func TestValidateMetadata_DeterministicOrder(t *testing.T) {
 		Description:     strPtr(""),
 	}
 	findings := ValidateMetadata(parsed)
-	if len(findings) < 4 {
+	if len(findings) < 2 {
 		t.Fatalf("expected multiple findings, got %#v", findings)
 	}
 	for i := 1; i < len(findings); i++ {

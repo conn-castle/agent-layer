@@ -70,12 +70,16 @@ func TestPrepareTargetProjectionMaterializesImportedSkills(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	seedImportedSkill(t, root, "imported-helper")
 	workDir := t.TempDir()
+	project, _, _, _, err := loadDispatchProject(root, nil, []string{}) //nolint:dogsled // only the snapshot is relevant.
+	if err != nil {
+		t.Fatalf("loadDispatchProject: %v", err)
+	}
 
 	target, ok := lookupTarget("claude")
 	if !ok {
 		t.Fatal("claude target is not registered")
 	}
-	projectionRoot, err := prepareTargetProjection(root, workDir, target)
+	projectionRoot, err := prepareTargetProjection(project, root, workDir, target)
 	if err != nil {
 		t.Fatalf("prepareTargetProjection: %v", err)
 	}
@@ -121,12 +125,9 @@ func loadImportedDispatchProject(root string) (*config.ProjectConfig, error) {
 	return project, err
 }
 
-// TestDispatchRefusesAnImportedSkillWithUnprojectableFrontmatter proves agent
-// launch is held to the same strict rules import operations are. A locally
-// added frontmatter field Agent Layer cannot project would otherwise be
-// silently dropped, so the dispatched agent would load a lossy copy of a skill
-// that `al skills status` classifies as invalid.
-func TestDispatchRefusesAnImportedSkillWithUnprojectableFrontmatter(t *testing.T) {
+// TestDispatchPreservesUnknownImportedFrontmatter proves dispatch reuses the
+// canonical tree without interpreting provider-specific fields.
+func TestDispatchPreservesUnknownImportedFrontmatter(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	seedImportedSkill(t, root, "imported-helper")
 
@@ -136,11 +137,12 @@ func TestDispatchRefusesAnImportedSkillWithUnprojectableFrontmatter(t *testing.T
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	_, err := loadImportedDispatchProject(root)
-	if err == nil {
-		t.Fatal("expected unprojectable imported frontmatter to fail dispatch source loading")
+	project, err := loadImportedDispatchProject(root)
+	if err != nil {
+		t.Fatalf("loadImportedDispatchProject: %v", err)
 	}
-	if !strings.Contains(err.Error(), "unsupported-field") {
-		t.Fatalf("error %q does not name the unsupported field", err)
+	file, ok := project.Skills[0].Tree.File("SKILL.md")
+	if !ok || string(file.Data) != manifest {
+		t.Fatalf("canonical manifest was not retained exactly: %q", file.Data)
 	}
 }

@@ -55,6 +55,62 @@ func TestStartPublishesHandleBeforeAuthorizingWorker(t *testing.T) {
 	}
 }
 
+func TestStartUsesOneLockedSkillSnapshotForRootAndTargetProjection(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	workDir := t.TempDir()
+	skillDir := filepath.Join(root, ".agent-layer", "skills", "snapshot")
+	if err := os.MkdirAll(skillDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	oldManifest := []byte("---\nname: snapshot\ndescription: Original snapshot.\n---\nold bytes")
+	newManifest := []byte("---\nname: snapshot\ndescription: Mutated source.\n---\nnew bytes")
+	source := filepath.Join(skillDir, "SKILL.md")
+	if err := os.WriteFile(source, oldManifest, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	launcher := func(string, string, string) (launchedWorker, error) {
+		read, write, err := os.Pipe()
+		if err != nil {
+			return launchedWorker{}, err
+		}
+		go func() {
+			defer func() { _ = read.Close() }()
+			var token [1]byte
+			_, _ = read.Read(token[:])
+		}()
+		return launchedWorker{gate: write, pid: os.Getpid(), startIdentity: processStartIdentity(os.Getpid())}, nil
+	}
+	var lookups atomic.Int32
+	err := Start(StartOptions{
+		Root: root, WorkDir: workDir, Agent: AgentCodex, Skill: "snapshot", Prompt: "Use the skill",
+		Env: []string{}, LookPath: alwaysFound, launchWorker: launcher,
+		VersionLookup: func(string, string) (string, error) {
+			lookups.Add(1)
+			if err := os.WriteFile(source, newManifest, 0o600); err != nil {
+				return "", err
+			}
+			return supportedProviderVersions[AgentCodex], nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if lookups.Load() != 1 {
+		t.Fatalf("provider version lookups = %d, want 1", lookups.Load())
+	}
+	for _, projectionRoot := range []string{root, workDir} {
+		projected, readErr := os.ReadFile(filepath.Join(projectionRoot, ".agents", "skills", "snapshot", "SKILL.md")) // #nosec G304 -- test-controlled path.
+		if readErr != nil || string(projected) != string(oldManifest) {
+			t.Fatalf("projection at %s did not use the original locked snapshot: %q, %v", projectionRoot, projected, readErr)
+		}
+	}
+	mutated, err := os.ReadFile(source) // #nosec G304 -- test-controlled path.
+	if err != nil || string(mutated) != string(newManifest) {
+		t.Fatalf("test mutation did not occur: %q, %v", mutated, err)
+	}
+}
+
 func TestStartRequiresExplicitAgentAndOnePromptSource(t *testing.T) {
 	tests := []StartOptions{
 		{Model: "model", ReasoningEffort: "high", Prompt: "p"},

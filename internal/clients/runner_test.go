@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -64,6 +65,37 @@ func TestRunPipeline(t *testing.T) {
 	settings, err := os.ReadFile(settingsPath) // #nosec G304 -- test-controlled path.
 	if err != nil || !strings.Contains(string(settings), `"workspaceTrust"`) {
 		t.Fatalf("expected launcher preparation to preserve native settings, got %q err=%v", settings, err)
+	}
+}
+
+func TestRunProjectsTheSingleLockedSkillSnapshot(t *testing.T) {
+	root := t.TempDir()
+	writeMinimalRepo(t, root)
+	source := filepath.Join(root, ".agent-layer", "skills", "alpha", "SKILL.md")
+	original, err := os.ReadFile(source) // #nosec G304 -- test-controlled path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutated := []byte("---\nname: alpha\ndescription: mutated\n---\nnew bytes")
+	var selectorCalls atomic.Int32
+	err = Run(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
+		if selectorCalls.Add(1) == 2 {
+			if writeErr := os.WriteFile(source, mutated, 0o600); writeErr != nil {
+				t.Fatalf("mutate source: %v", writeErr)
+			}
+		}
+		return cfg.Agents.Antigravity.Enabled
+	}, func(*config.ProjectConfig, *run.Info, []string, []string) error { return nil }, false, nil, "v1.0.0")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	projected, err := os.ReadFile(filepath.Join(root, ".agents", "skills", "alpha", "SKILL.md")) // #nosec G304 -- test-controlled path.
+	if err != nil || string(projected) != string(original) {
+		t.Fatalf("projection did not use the locked snapshot: %q, %v", projected, err)
+	}
+	current, err := os.ReadFile(source) // #nosec G304 -- test-controlled path.
+	if err != nil || string(current) != string(mutated) {
+		t.Fatalf("test mutation did not occur: %q, %v", current, err)
 	}
 }
 
@@ -395,6 +427,7 @@ mcp_server_threshold = 5
 		t.Fatalf("write instructions: %v", err)
 	}
 	command := `---
+name: alpha
 description: test
 ---
 
@@ -465,6 +498,7 @@ mcp_server_threshold = 5
 		t.Fatalf("write instructions: %v", err)
 	}
 	command := `---
+name: alpha
 description: test
 ---
 

@@ -51,7 +51,7 @@ func TestRunWithProjectError(t *testing.T) {
 		},
 		Instructions: []config.InstructionFile{{Name: "00_base.md", Content: "base"}},
 		Skills: []config.Skill{
-			{Name: "alpha", Description: "desc", Body: "body"},
+			{Name: "alpha", Description: "desc"},
 		},
 		Root: file,
 	}

@@ -8,269 +8,324 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
 
-// writeSkillSource creates a minimal valid editable skill source directory.
-func writeSkillSource(t *testing.T, root string, name string) string {
+func projectionSkill(t *testing.T, name string, manifest []byte, resources ...skilltree.File) config.Skill {
 	t.Helper()
-	dir := filepath.Join(root, name)
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		t.Fatalf("mkdir source: %v", err)
+	files := append([]skilltree.File{{Path: "SKILL.md", Data: manifest}}, resources...)
+	tree, err := skilltree.NewTree(files)
+	if err != nil {
+		t.Fatalf("NewTree: %v", err)
 	}
-	manifest := "---\nname: " + name + "\ndescription: Source skill.\n---\nBody\n"
-	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(manifest), 0o600); err != nil {
-		t.Fatalf("write manifest: %v", err)
-	}
-	return dir
+	return config.Skill{Name: name, SourceDir: filepath.Join(".agent-layer", "skills", name), Tree: tree}
 }
 
-// TestWriteClaudeSkillsProjectsEveryRegularResource proves both source tiers
-// project the same exhaustive resource set: hidden files are included, the
-// executable bit survives, nested trees are preserved, and only the three
-// named filesystem artifacts are ignored.
-func TestWriteClaudeSkillsProjectsEveryRegularResource(t *testing.T) {
+func projectionManifest(name string) []byte {
+	return []byte("---\n# retained comment\nname: " + name + "\ndescription: Exact bytes.\nprovider-field: true\n---\nBody without final newline")
+}
+
+func TestSkillRootsProjectTheSameCanonicalTreeByteForByte(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	sourceDir := writeSkillSource(t, t.TempDir(), "alpha")
+	skill := projectionSkill(t, "alpha", projectionManifest("alpha"),
+		skilltree.File{Path: ".hidden", Data: []byte{0, 1, 2}},
+		skilltree.File{Path: "scripts/run.sh", Data: []byte("#!/bin/sh\n"), Executable: true},
+	)
 
-	if err := os.MkdirAll(filepath.Join(sourceDir, "scripts"), 0o750); err != nil {
-		t.Fatalf("mkdir scripts: %v", err)
+	for _, write := range []func(System, string, []config.Skill) error{WriteAgentSkills, WriteClaudeSkills} {
+		if err := write(RealSystem{}, root, []config.Skill{skill}); err != nil {
+			t.Fatalf("write projection: %v", err)
+		}
 	}
-	if err := os.WriteFile(filepath.Join(sourceDir, "scripts", "run.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil { // #nosec G306 -- the executable bit is the behavior under test.
-		t.Fatalf("write script: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(sourceDir, ".hidden-config"), []byte("hidden"), 0o600); err != nil {
-		t.Fatalf("write hidden file: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(sourceDir, ".git"), 0o750); err != nil {
-		t.Fatalf("mkdir .git: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(sourceDir, ".git", "HEAD"), []byte("ref: refs/heads/main\n"), 0o600); err != nil {
-		t.Fatalf("write .git/HEAD: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(sourceDir, ".DS_Store"), []byte("junk"), 0o600); err != nil {
-		t.Fatalf("write .DS_Store: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(sourceDir, "Thumbs.db"), []byte("junk"), 0o600); err != nil {
-		t.Fatalf("write Thumbs.db: %v", err)
-	}
-
-	skill := config.Skill{Name: "alpha", Description: "Source skill.", SourceDir: sourceDir}
-	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{skill}); err != nil {
-		t.Fatalf("WriteClaudeSkills: %v", err)
-	}
-
-	projected := filepath.Join(root, ".claude", "skills", "alpha")
-	if data, err := os.ReadFile(filepath.Join(projected, ".hidden-config")); err != nil || string(data) != "hidden" { // #nosec G304 -- path is built from test-controlled temporary directories.
-		t.Fatalf("hidden resource not projected: data=%q err=%v", data, err)
-	}
-	info, err := os.Stat(filepath.Join(projected, "scripts", "run.sh"))
-	if err != nil {
-		t.Fatalf("stat projected script: %v", err)
-	}
-	if info.Mode().Perm()&0o111 == 0 {
-		t.Fatalf("projected script lost its executable bit: %v", info.Mode())
-	}
-	for _, ignored := range []string{".git", ".DS_Store", "Thumbs.db"} {
-		if _, err := os.Lstat(filepath.Join(projected, ignored)); !os.IsNotExist(err) {
-			t.Fatalf("expected %s to be ignored, stat err = %v", ignored, err)
+	for _, rel := range []string{filepath.Join(".agents", "skills"), filepath.Join(".claude", "skills")} {
+		for path, want := range map[string][]byte{
+			"SKILL.md":       projectionManifest("alpha"),
+			".hidden":        {0, 1, 2},
+			"scripts/run.sh": []byte("#!/bin/sh\n"),
+		} {
+			got, err := os.ReadFile(filepath.Join(root, rel, "alpha", filepath.FromSlash(path))) // #nosec G304 -- test-controlled path.
+			if err != nil || string(got) != string(want) {
+				t.Fatalf("%s %s = %q, err=%v", rel, path, got, err)
+			}
+		}
+		info, err := os.Stat(filepath.Join(root, rel, "alpha", "scripts", "run.sh"))
+		if err != nil || info.Mode().Perm()&0o100 == 0 {
+			t.Fatalf("%s executable mode = %v, err=%v", rel, info, err)
 		}
 	}
 }
 
-// TestWriteClaudeSkillsRejectsUnsafeImportedNode proves the imported tier is
-// held to the strict node policy: an imported symlink fails projection instead
-// of being silently skipped or dereferenced.
-func TestWriteClaudeSkillsRejectsUnsafeImportedNode(t *testing.T) {
+func TestBothClientProjectionsReuseTheLoadedTreeWithoutSourceReads(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	sourceDir := writeSkillSource(t, t.TempDir(), "imported")
-	if err := os.Symlink("/etc/hosts", filepath.Join(sourceDir, "link")); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
-	}
-
-	skill := config.Skill{Name: "imported", Description: "Source skill.", SourceDir: sourceDir, Imported: true}
-	err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{skill})
-	if err == nil {
-		t.Fatal("expected an imported symlink to fail projection")
-	}
-	if !strings.Contains(err.Error(), "symbolic link") {
-		t.Fatalf("error %q does not name the rejected node type", err)
-	}
-}
-
-// TestWriteClaudeSkillsSkipsUserManagedSymlink proves an existing user-managed
-// source keeps the historical symlink skip so adding imports does not make
-// ordinary sync newly fail for projects that already contain one.
-func TestWriteClaudeSkillsSkipsUserManagedSymlink(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	sourceDir := writeSkillSource(t, t.TempDir(), "local")
-	if err := os.Symlink("/etc/hosts", filepath.Join(sourceDir, "link")); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
-	}
-
-	skill := config.Skill{Name: "local", Description: "Source skill.", SourceDir: sourceDir}
-	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{skill}); err != nil {
-		t.Fatalf("WriteClaudeSkills: %v", err)
-	}
-	if _, err := os.Lstat(filepath.Join(root, ".claude", "skills", "local", "link")); !os.IsNotExist(err) {
-		t.Fatalf("expected the user-managed symlink to be skipped, stat err = %v", err)
-	}
-}
-
-// TestWriteClaudeSkillsPublicationRollsBackOnRenameFailure proves a failed
-// publication leaves the previous complete tree in place rather than an empty
-// or half-written skill directory.
-func TestWriteClaudeSkillsPublicationRollsBackOnRenameFailure(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	sourceDir := writeSkillSource(t, t.TempDir(), "alpha")
-	if err := os.WriteFile(filepath.Join(sourceDir, "note.md"), []byte("v1"), 0o600); err != nil {
-		t.Fatalf("write resource: %v", err)
-	}
-
-	skill := config.Skill{Name: "alpha", Description: "Source skill.", SourceDir: sourceDir}
-	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{skill}); err != nil {
-		t.Fatalf("initial projection: %v", err)
-	}
-
-	if err := os.WriteFile(filepath.Join(sourceDir, "note.md"), []byte("v2"), 0o600); err != nil {
-		t.Fatalf("update resource: %v", err)
-	}
-	publishErr := errors.New("publication rename failed")
-	target := filepath.Join(root, ".claude", "skills", "alpha")
+	skill := projectionSkill(t, "alpha", projectionManifest("alpha"))
 	sys := &MockSystem{
 		Fallback: RealSystem{},
-		RenameFunc: func(oldpath string, newpath string) error {
-			if newpath == target && strings.Contains(oldpath, stagingPrefix) {
-				return publishErr
-			}
-			return os.Rename(oldpath, newpath)
+		ReadFileFunc: func(name string) ([]byte, error) {
+			return nil, errors.New("unexpected projection read: " + name)
 		},
 	}
-
-	err := WriteClaudeSkills(sys, root, []config.Skill{skill})
-	if !errors.Is(err, publishErr) {
-		t.Fatalf("error = %v, want the publication failure", err)
+	if err := WriteAgentSkills(sys, root, []config.Skill{skill}); err != nil {
+		t.Fatalf("agent projection reread source state: %v", err)
 	}
-	data, readErr := os.ReadFile(filepath.Join(target, "note.md")) // #nosec G304 -- path is built from test-controlled temporary directories.
-	if readErr != nil {
-		t.Fatalf("previous projection was not restored: %v", readErr)
+	if err := WriteClaudeSkills(sys, root, []config.Skill{skill}); err != nil {
+		t.Fatalf("Claude projection reread source state: %v", err)
 	}
-	if string(data) != "v1" {
-		t.Fatalf("restored resource = %q, want the previous complete tree", data)
-	}
-}
-
-// TestWriteClaudeSkillsReplacesStaleResources proves publication swaps in the
-// complete new tree, so a resource removed from the source disappears from the
-// projection.
-func TestWriteClaudeSkillsReplacesStaleResources(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	sourceDir := writeSkillSource(t, t.TempDir(), "alpha")
-	if err := os.WriteFile(filepath.Join(sourceDir, "old.md"), []byte("old"), 0o600); err != nil {
-		t.Fatalf("write resource: %v", err)
-	}
-	skill := config.Skill{Name: "alpha", Description: "Source skill.", SourceDir: sourceDir}
-	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{skill}); err != nil {
-		t.Fatalf("initial projection: %v", err)
-	}
-	if err := os.Remove(filepath.Join(sourceDir, "old.md")); err != nil {
-		t.Fatalf("remove resource: %v", err)
-	}
-	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{skill}); err != nil {
-		t.Fatalf("second projection: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(root, ".claude", "skills", "alpha", "old.md")); !os.IsNotExist(err) {
-		t.Fatalf("stale resource survived publication, stat err = %v", err)
+	for _, parent := range []string{".agents", ".claude"} {
+		live := filepath.Join(root, parent, "skills")
+		entries, err := os.ReadDir(live)
+		if err != nil || len(entries) != 1 || entries[0].Name() != "alpha" {
+			t.Fatalf("%s contains non-skill projection state: %v, %v", live, entries, err)
+		}
+		for _, forbidden := range []string{
+			filepath.Join(live, ".agent-layer-skills.json"),
+			live + projectionStageSuffix,
+			live + projectionDiscardSuffix,
+			live + ".al-backup",
+			live + ".journal",
+		} {
+			if _, err := os.Lstat(forbidden); !os.IsNotExist(err) {
+				t.Fatalf("projection created forbidden ownership/recovery state %s: %v", forbidden, err)
+			}
+		}
 	}
 }
 
-// TestWriteClaudeSkillsRecoversAnInterruptedPublication proves projection is
-// restart-safe. A process killed between the two publication renames leaves the
-// only copy of the skill in its backup directory; clearing that backup before
-// inspecting it would delete a complete projected skill and leave the reader
-// with nothing.
-func TestWriteClaudeSkillsRecoversAnInterruptedPublication(t *testing.T) {
+func TestNFKCEquivalentSkillNamesFailBeforeProjection(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	sourceDir := writeSkillSource(t, t.TempDir(), "alpha")
-	if err := os.WriteFile(filepath.Join(sourceDir, "note.md"), []byte("v1"), 0o600); err != nil {
-		t.Fatalf("write resource: %v", err)
+	live := filepath.Join(root, ".agents", "skills")
+	if err := os.MkdirAll(live, 0o750); err != nil {
+		t.Fatal(err)
 	}
-	skill := config.Skill{Name: "alpha", Description: "Source skill.", SourceDir: sourceDir}
-	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{skill}); err != nil {
+	if err := os.WriteFile(filepath.Join(live, "sentinel"), []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	skills := []config.Skill{
+		projectionSkill(t, "file", projectionManifest("file")),
+		{SourceDir: filepath.Join(".agent-layer", "skills", "ﬁle"), Tree: projectionSkill(t, "file", projectionManifest("file")).Tree},
+	}
+
+	err := WriteAgentSkills(RealSystem{}, root, skills)
+	if err == nil || !strings.Contains(err.Error(), "file") || !strings.Contains(err.Error(), "ﬁle") {
+		t.Fatalf("expected normalized duplicate error, got %v", err)
+	}
+	if got, readErr := os.ReadFile(filepath.Join(live, "sentinel")); readErr != nil || string(got) != "old" { // #nosec G304 -- test-controlled path.
+		t.Fatalf("live root changed before duplicate validation: %q, %v", got, readErr)
+	}
+}
+
+func TestSkillRootReplacementRemovesEveryExtraEntryAndRepairsEdits(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	live := filepath.Join(root, ".agents", "skills")
+	if err := os.MkdirAll(filepath.Join(live, "alpha"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(live, "alpha", "SKILL.md"), []byte("edited"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(live, "extra-file"), []byte("extra"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(live, "extra-dir"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("extra-file", filepath.Join(live, "extra-link")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	skill := projectionSkill(t, "alpha", projectionManifest("alpha"))
+	if err := WriteAgentSkills(RealSystem{}, root, []config.Skill{skill}); err != nil {
+		t.Fatalf("WriteAgentSkills: %v", err)
+	}
+	for _, extra := range []string{"extra-file", "extra-dir", "extra-link"} {
+		if _, err := os.Lstat(filepath.Join(live, extra)); !os.IsNotExist(err) {
+			t.Fatalf("extra entry %s survived: %v", extra, err)
+		}
+	}
+	got, err := os.ReadFile(filepath.Join(live, "alpha", "SKILL.md")) // #nosec G304 -- test-controlled path.
+	if err != nil || string(got) != string(projectionManifest("alpha")) {
+		t.Fatalf("canonical edit repair = %q, err=%v", got, err)
+	}
+}
+
+func TestSkillRootRetryRebuildsAfterInterruptedSwap(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	live := filepath.Join(root, ".claude", "skills")
+	v1 := projectionSkill(t, "alpha", projectionManifest("alpha"), skilltree.File{Path: "version", Data: []byte("one")})
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{v1}); err != nil {
 		t.Fatalf("initial projection: %v", err)
 	}
 
-	// Reproduce the crash state: the previous tree is parked in its backup and
-	// nothing is at the target.
-	skillsDir := filepath.Join(root, ".claude", "skills")
-	target := filepath.Join(skillsDir, "alpha")
-	backup := filepath.Join(skillsDir, backupPrefix+"alpha")
-	if err := os.Rename(target, backup); err != nil {
-		t.Fatalf("simulate interrupted publication: %v", err)
+	v2 := projectionSkill(t, "alpha", projectionManifest("alpha"), skilltree.File{Path: "version", Data: []byte("two")})
+	publishErr := errors.New("injected publish failure")
+	sys := &MockSystem{Fallback: RealSystem{}, RenameFunc: func(oldpath, newpath string) error {
+		if oldpath == live+projectionStageSuffix && newpath == live {
+			return publishErr
+		}
+		return os.Rename(oldpath, newpath)
+	}}
+	if err := WriteClaudeSkills(sys, root, []config.Skill{v2}); !errors.Is(err, publishErr) {
+		t.Fatalf("interrupted projection error = %v", err)
 	}
+	if _, err := os.Lstat(live); !os.IsNotExist(err) {
+		t.Fatalf("failed swap exposed a live partial root: %v", err)
+	}
+	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{v2}); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(live, "alpha", "version")) // #nosec G304 -- test-controlled path.
+	if err != nil || string(got) != "two" {
+		t.Fatalf("retry output = %q, err=%v", got, err)
+	}
+	for _, scratch := range []string{live + projectionStageSuffix, live + projectionDiscardSuffix} {
+		if _, err := os.Lstat(scratch); !os.IsNotExist(err) {
+			t.Fatalf("scratch path survived: %s: %v", scratch, err)
+		}
+	}
+}
 
-	// A source that cannot be staged forces the next publication to stop before
-	// it could replace the target, so only recovery can restore the skill.
-	if err := os.RemoveAll(sourceDir); err != nil {
-		t.Fatalf("remove source: %v", err)
+func TestSkillRootValidationFinishesBeforeLiveRootIsTouched(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	live := filepath.Join(root, ".agents", "skills")
+	if err := os.MkdirAll(live, 0o750); err != nil {
+		t.Fatal(err)
 	}
-	if err := os.WriteFile(sourceDir, []byte("not a directory"), 0o600); err != nil {
-		t.Fatalf("replace source with a file: %v", err)
+	if err := os.WriteFile(filepath.Join(live, "sentinel"), []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{skill}); err == nil {
-		t.Fatal("expected an unreadable source to fail projection")
-	}
-
-	data, err := os.ReadFile(filepath.Join(target, "note.md")) // #nosec G304 -- path is built from test-controlled temporary directories.
+	invalidTree, err := skilltree.NewTree([]skilltree.File{{Path: "skill.md", Data: projectionManifest("alpha")}})
 	if err != nil {
-		t.Fatalf("the interrupted publication was not recovered: %v", err)
+		t.Fatal(err)
 	}
-	if string(data) != "v1" {
-		t.Fatalf("recovered resource = %q, want the previous complete tree", data)
+	err = WriteAgentSkills(RealSystem{}, root, []config.Skill{{Name: "alpha", SourceDir: "alpha", Tree: invalidTree}})
+	if err == nil || !strings.Contains(err.Error(), "rename") {
+		t.Fatalf("expected lowercase rename error, got %v", err)
+	}
+	if got, readErr := os.ReadFile(filepath.Join(live, "sentinel")); readErr != nil || string(got) != "old" { // #nosec G304 -- test-controlled path.
+		t.Fatalf("live root changed before validation: %q, %v", got, readErr)
 	}
 }
 
-// TestWriteClaudeSkillsDiscardsABackupWhenTheSwapCompleted proves recovery
-// distinguishes an interrupted swap from an interrupted cleanup. A backup left
-// beside a live target means publication already finished, so restoring it
-// would replace the current projection with a stale tree.
-func TestWriteClaudeSkillsDiscardsABackupWhenTheSwapCompleted(t *testing.T) {
+func TestDisabledSkillProjectionRemovesOwnedRootAndScratch(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	sourceDir := writeSkillSource(t, t.TempDir(), "alpha")
-	if err := os.WriteFile(filepath.Join(sourceDir, "note.md"), []byte("current"), 0o600); err != nil {
-		t.Fatalf("write resource: %v", err)
+	live := filepath.Join(root, ".agents", "skills")
+	for _, path := range []string{live, live + projectionStageSuffix, live + projectionDiscardSuffix} {
+		if err := os.MkdirAll(path, 0o750); err != nil {
+			t.Fatal(err)
+		}
 	}
-	skill := config.Skill{Name: "alpha", Description: "Source skill.", SourceDir: sourceDir}
-	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{skill}); err != nil {
-		t.Fatalf("initial projection: %v", err)
+	if err := cleanSharedAgentSkills(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanSharedAgentSkills: %v", err)
 	}
+	for _, path := range []string{live, live + projectionStageSuffix, live + projectionDiscardSuffix} {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Fatalf("owned path survived disable: %s: %v", path, err)
+		}
+	}
+}
 
-	skillsDir := filepath.Join(root, ".claude", "skills")
-	backup := filepath.Join(skillsDir, backupPrefix+"alpha")
-	if err := os.MkdirAll(backup, 0o750); err != nil {
-		t.Fatalf("mkdir backup: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(backup, "note.md"), []byte("stale"), 0o600); err != nil {
-		t.Fatalf("write stale backup: %v", err)
-	}
+func TestSkillRootPublicationFailuresIdentifyTheFailedBoundary(t *testing.T) {
+	t.Parallel()
+	skill := projectionSkill(t, "alpha", projectionManifest("alpha"))
+	failure := errors.New("injected boundary failure")
 
-	if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{skill}); err != nil {
-		t.Fatalf("second projection: %v", err)
-	}
-	data, err := os.ReadFile(filepath.Join(skillsDir, "alpha", "note.md")) // #nosec G304 -- path is built from test-controlled temporary directories.
-	if err != nil {
-		t.Fatalf("read projection: %v", err)
-	}
-	if string(data) != "current" {
-		t.Fatalf("projection = %q, want the current tree rather than the stale backup", data)
-	}
-	if _, err := os.Stat(backup); !os.IsNotExist(err) {
-		t.Fatalf("the stale backup survived: %v", err)
-	}
+	t.Run("staging cleanup", func(t *testing.T) {
+		root := t.TempDir()
+		stage := filepath.Join(root, ".agents", "skills") + projectionStageSuffix
+		sys := &MockSystem{Fallback: RealSystem{}, RemoveAllFunc: func(path string) error {
+			if path == stage {
+				return failure
+			}
+			return os.RemoveAll(path)
+		}}
+		if err := WriteAgentSkills(sys, root, []config.Skill{skill}); err == nil || !strings.Contains(err.Error(), stage) {
+			t.Fatalf("cleanup failure was not actionable: %v", err)
+		}
+	})
+
+	t.Run("staging creation", func(t *testing.T) {
+		root := t.TempDir()
+		stage := filepath.Join(root, ".agents", "skills") + projectionStageSuffix
+		sys := &MockSystem{Fallback: RealSystem{}, MkdirAllFunc: func(path string, perm os.FileMode) error {
+			if path == stage {
+				return failure
+			}
+			return os.MkdirAll(path, perm)
+		}}
+		if err := WriteAgentSkills(sys, root, []config.Skill{skill}); err == nil || !strings.Contains(err.Error(), stage) {
+			t.Fatalf("staging creation failure was not actionable: %v", err)
+		}
+	})
+
+	t.Run("skill file write", func(t *testing.T) {
+		root := t.TempDir()
+		manifest := filepath.Join(root, ".agents", "skills") + projectionStageSuffix
+		manifest = filepath.Join(manifest, "alpha", "SKILL.md")
+		sys := &MockSystem{Fallback: RealSystem{}, WriteFileAtomicFunc: func(path string, data []byte, perm os.FileMode) error {
+			if path == manifest {
+				return failure
+			}
+			return RealSystem{}.WriteFileAtomic(path, data, perm)
+		}}
+		if err := WriteAgentSkills(sys, root, []config.Skill{skill}); err == nil || !strings.Contains(err.Error(), manifest) {
+			t.Fatalf("skill write failure was not actionable: %v", err)
+		}
+	})
+
+	t.Run("live root inspection", func(t *testing.T) {
+		root := t.TempDir()
+		live := filepath.Join(root, ".agents", "skills")
+		sys := &MockSystem{Fallback: RealSystem{}, LstatFunc: func(path string) (os.FileInfo, error) {
+			if path == live {
+				return nil, failure
+			}
+			return os.Lstat(path)
+		}}
+		if err := WriteAgentSkills(sys, root, []config.Skill{skill}); err == nil || !strings.Contains(err.Error(), live) {
+			t.Fatalf("live inspection failure was not actionable: %v", err)
+		}
+	})
+
+	t.Run("live root move", func(t *testing.T) {
+		root := t.TempDir()
+		live := filepath.Join(root, ".agents", "skills")
+		if err := os.MkdirAll(live, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		sys := &MockSystem{Fallback: RealSystem{}, RenameFunc: func(oldPath string, newPath string) error {
+			if oldPath == live {
+				return failure
+			}
+			return os.Rename(oldPath, newPath)
+		}}
+		if err := WriteAgentSkills(sys, root, []config.Skill{skill}); err == nil || !strings.Contains(err.Error(), live) {
+			t.Fatalf("live move failure was not actionable: %v", err)
+		}
+	})
+
+	t.Run("discard cleanup", func(t *testing.T) {
+		root := t.TempDir()
+		live := filepath.Join(root, ".agents", "skills")
+		discard := live + projectionDiscardSuffix
+		if err := os.MkdirAll(live, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		sys := &MockSystem{Fallback: RealSystem{}, RemoveAllFunc: func(path string) error {
+			if path == discard {
+				if _, err := os.Lstat(live); err == nil {
+					return failure
+				}
+			}
+			return os.RemoveAll(path)
+		}}
+		if err := WriteAgentSkills(sys, root, []config.Skill{skill}); err == nil || !strings.Contains(err.Error(), discard) {
+			t.Fatalf("discard cleanup failure was not actionable: %v", err)
+		}
+	})
 }

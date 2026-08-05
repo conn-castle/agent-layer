@@ -196,7 +196,7 @@ func (inst *installer) executeMigrateSkillsFormat(relSkillsDir string) (bool, er
 	for _, name := range flatSkills {
 		flatPath := filepath.Join(absSkillsDir, name+".md")
 		destDir := filepath.Join(absSkillsDir, name)
-		destPath := filepath.Join(destDir, "SKILL.md")
+		destPath := filepath.Join(destDir, skillManifestFileName)
 
 		// Check if destination already exists (duplicate cleanup case).
 		destInfo, destStatErr := inst.sys.Stat(destPath)
@@ -255,7 +255,7 @@ func preflightSkillsMigration(sys System, absSkillsDir string) (flatCount int, c
 		flatCount++
 		name := strings.TrimSuffix(entry.name, ".md")
 		flatPath := filepath.Join(absSkillsDir, entry.name)
-		destPath := filepath.Join(absSkillsDir, name, "SKILL.md")
+		destPath := filepath.Join(absSkillsDir, name, skillManifestFileName)
 
 		destInfo, statErr := sys.Stat(destPath)
 		if statErr != nil {

@@ -441,7 +441,7 @@ func detectVSCodeNoSyncStaleness(inst *installer, cfg *config.Config, configPath
 		}
 		if skillCount > 0 {
 			sharedSkillsDir := filepath.Join(inst.root, ".agents", "skills")
-			skillFiles, newestSkill, skillsErr := listGeneratedFilesWithSuffix(inst, sharedSkillsDir, "SKILL.md")
+			skillFiles, newestSkill, skillsErr := listGeneratedFilesWithSuffix(inst, sharedSkillsDir, skillManifestFileName)
 			if skillsErr != nil {
 				return nil, skillsErr
 			}
@@ -578,7 +578,7 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 				{path: filepath.Join(inst.root, ".claude", "settings.json"), evidence: isJSONObject},
 			},
 			dirs: []disabledArtifactDirSpec{
-				{root: filepath.Join(inst.root, ".claude", "skills"), suffix: "SKILL.md"},
+				{root: filepath.Join(inst.root, ".claude", "skills"), suffix: skillManifestFileName},
 			},
 		},
 		{
@@ -612,7 +612,7 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 			agent:   "shared-skills",
 			enabled: boolPtr(config.SharedAgentSkillsEnabled(cfg.Agents)),
 			dirs: []disabledArtifactDirSpec{
-				{root: filepath.Join(inst.root, ".agents", "skills"), suffix: "SKILL.md"},
+				{root: filepath.Join(inst.root, ".agents", "skills"), suffix: skillManifestFileName},
 			},
 		},
 		{

@@ -39,7 +39,7 @@ func TestReadIncludesEveryRegularResource(t *testing.T) {
 	writeFile(t, filepath.Join(dir, ".DS_Store"), "junk", 0o644)
 	writeFile(t, filepath.Join(dir, "assets", "Thumbs.db"), "junk", 0o644)
 
-	tree, err := Read(OSFS{}, dir, PolicyStrict)
+	tree, err := Read(OSFS{}, dir)
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
@@ -54,10 +54,9 @@ func TestReadIncludesEveryRegularResource(t *testing.T) {
 	}
 }
 
-// TestReadStrictPolicyRejectsUnsafeNodes proves an imported tree refuses a
-// symlink without dereferencing it, while the lenient user-managed policy keeps
-// the historical skip.
-func TestReadStrictPolicyRejectsUnsafeNodes(t *testing.T) {
+// TestReadRejectsUnsafeNodes proves every tree refuses a symlink without
+// dereferencing or silently skipping it.
+func TestReadRejectsUnsafeNodes(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "SKILL.md"), manifest("alpha"), 0o644)
@@ -66,18 +65,10 @@ func TestReadStrictPolicyRejectsUnsafeNodes(t *testing.T) {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 
-	if _, err := Read(OSFS{}, dir, PolicyStrict); err == nil {
-		t.Fatal("expected the strict policy to reject a symlink")
+	if _, err := Read(OSFS{}, dir); err == nil {
+		t.Fatal("expected the tree reader to reject a symlink")
 	} else if !strings.Contains(err.Error(), "symbolic link") {
 		t.Fatalf("error %q does not name the node type", err)
-	}
-
-	tree, err := Read(OSFS{}, dir, PolicyLenient)
-	if err != nil {
-		t.Fatalf("lenient Read: %v", err)
-	}
-	if _, ok := tree.File("link.txt"); ok {
-		t.Fatal("lenient policy included a symlink instead of skipping it")
 	}
 }
 
@@ -132,9 +123,31 @@ func TestNewTreeRejectsDuplicatePaths(t *testing.T) {
 	}
 }
 
+// TestTreeOwnsItsBytes proves callers cannot mutate a canonical snapshot
+// through either the constructor input or an accessor result.
+func TestTreeOwnsItsBytes(t *testing.T) {
+	t.Parallel()
+	data := []byte("original")
+	tree := mustTree(t, []File{{Path: "notes.md", Data: data}})
+	data[0] = 'X'
+
+	files := tree.Files()
+	files[0].Data[1] = 'X'
+	file, ok := tree.File("notes.md")
+	if !ok {
+		t.Fatal("tree lost notes.md")
+	}
+	file.Data[2] = 'X'
+
+	unchanged, _ := tree.File("notes.md")
+	if got := string(unchanged.Data); got != "original" {
+		t.Fatalf("tree bytes changed through an external slice: %q", got)
+	}
+}
+
 // TestValidateSkillEnforcesImportRules proves import acceptance requires a
 // canonical manifest, required metadata, a safe name, a name matching the
-// selected directory, and projectable frontmatter.
+// selected directory, and valid required frontmatter.
 func TestValidateSkillEnforcesImportRules(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -167,16 +180,21 @@ func TestValidateSkillEnforcesImportRules(t *testing.T) {
 			wantErr:    "must match canonical source name",
 		},
 		{
-			name:       "unprojectable frontmatter field",
+			name:       "unknown frontmatter field passes through",
 			files:      []File{{Path: "SKILL.md", Data: []byte("---\nname: alpha\ndescription: d\nmodel: opus\n---\nBody\n")}},
 			sourcePath: "skills/alpha",
-			wantErr:    "unknown frontmatter field",
 		},
 		{
 			name:       "missing description",
 			files:      []File{{Path: "SKILL.md", Data: []byte("---\nname: alpha\n---\nBody\n")}},
 			sourcePath: "skills/alpha",
 			wantErr:    "description",
+		},
+		{
+			name:       "whitespace-bearing required keys are not required keys",
+			files:      []File{{Path: "SKILL.md", Data: []byte("---\n\" name \": alpha\n\" description \": d\n---\nBody\n")}},
+			sourcePath: "skills/alpha",
+			wantErr:    "missing required frontmatter field \"name\"",
 		},
 		{
 			name:       "unsafe name",
@@ -234,7 +252,7 @@ func TestMaterializeWritesExactContent(t *testing.T) {
 	if err := Materialize(tree, dir); err != nil {
 		t.Fatalf("Materialize: %v", err)
 	}
-	roundTrip, err := Read(OSFS{}, dir, PolicyStrict)
+	roundTrip, err := Read(OSFS{}, dir)
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
@@ -302,17 +320,12 @@ func TestReadRejectsNonRegularNodesByType(t *testing.T) {
 		t.Skipf("named pipes unavailable: %v", err)
 	}
 
-	_, err := Read(OSFS{}, dir, PolicyStrict)
+	_, err := Read(OSFS{}, dir)
 	if err == nil {
 		t.Fatal("expected a named pipe to be rejected")
 	}
 	if !strings.Contains(err.Error(), "named pipe") {
 		t.Fatalf("error %q does not name the node type", err)
-	}
-	// The lenient policy only tolerates symlinks; every other unsupported node
-	// is still refused so a device or socket cannot enter a projection.
-	if _, err := Read(OSFS{}, dir, PolicyLenient); err == nil {
-		t.Fatal("the lenient policy accepted a named pipe")
 	}
 }
 

@@ -21,9 +21,7 @@ import (
 //
 // It enforces the ownership invariants that only apply once both tiers exist:
 // an imported directory with no lock entry is an actionable error, and one
-// normalized skill name may not exist in both tiers. Generic configuration
-// loading stays tolerant of broken imported state so doctor, dispatch metadata,
-// benchmark, and repair flows can still read base configuration.
+// normalized skill name may not exist in both tiers.
 //
 // Callers must already hold the project lock; use WithLockedProject unless the
 // lock is held for a larger operation.
@@ -39,9 +37,6 @@ func LoadSources(fsys fs.FS, root string) (*config.ProjectConfig, error) {
 		return nil, err
 	}
 	if err := verifyImportedOwnership(fsys, root, paths); err != nil {
-		return nil, err
-	}
-	if err := verifyImportedValidity(fsys, root, imported); err != nil {
 		return nil, err
 	}
 	combined, err := combineSkillTiers(project.Skills, imported)
@@ -111,47 +106,6 @@ func verifyImportedOwnership(fsys fs.FS, root string, paths config.Paths) error 
 		return fmt.Errorf(messages.SyncImportedSkillOrphanFmt, strings.Join(orphans, ", "))
 	}
 	return nil
-}
-
-// verifyImportedValidity holds every imported skill to the same strict rules
-// its import was accepted under.
-//
-// Generic configuration loading is deliberately tolerant — it accepts a
-// lowercase manifest and keeps only the frontmatter fields it knows how to
-// project — because doctor, dispatch metadata, and repair flows must still read
-// broken projects. Projection cannot be tolerant: silently accepting a manifest
-// import operations reject would make ordinary sync publish a lossy copy of a
-// skill that `al skills status` reports as invalid, so local editable content
-// and runtime-visible content would diverge with no error anywhere.
-func verifyImportedValidity(fsys fs.FS, root string, imported []config.Skill) error {
-	for _, skill := range imported {
-		sourcePath := filepath.ToSlash(relativeToRoot(root, skill.SourceDir))
-		if filepath.Base(skill.SourcePath) != skilltree.SkillManifestName {
-			return fmt.Errorf(messages.SyncImportedSkillInvalidFmt, sourcePath,
-				fmt.Errorf("it uses %s; imported skills require a canonical %s", filepath.Base(skill.SourcePath), skilltree.SkillManifestName))
-		}
-		rel, err := filepath.Rel(root, skill.SourcePath)
-		if err != nil {
-			return fmt.Errorf(messages.SyncReadFailedFmt, skill.SourcePath, err)
-		}
-		manifest, err := fs.ReadFile(fsys, filepath.ToSlash(rel))
-		if err != nil {
-			return fmt.Errorf(messages.SyncReadFailedFmt, skill.SourcePath, err)
-		}
-		if _, err := skilltree.ValidateManifest(manifest, sourcePath); err != nil {
-			return fmt.Errorf(messages.SyncImportedSkillInvalidFmt, sourcePath, err)
-		}
-	}
-	return nil
-}
-
-// relativeToRoot renders a path relative to the repository root for messages.
-func relativeToRoot(root string, path string) string {
-	rel, err := filepath.Rel(root, path)
-	if err != nil {
-		return path
-	}
-	return rel
 }
 
 // importedDirectoryNames lists the directory entries under the imported tier.

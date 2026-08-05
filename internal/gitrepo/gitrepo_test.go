@@ -175,7 +175,7 @@ func TestReadTreeReturnsExactCanonicalContent(t *testing.T) {
 	if err := skilltree.Materialize(tree, local); err != nil {
 		t.Fatalf("Materialize: %v", err)
 	}
-	roundTrip, err := skilltree.Read(skilltree.OSFS{}, local, skilltree.PolicyStrict)
+	roundTrip, err := skilltree.Read(skilltree.OSFS{}, local)
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestLocalExecutableClassificationMatchesGit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadTree: %v", err)
 	}
-	local, err := skilltree.Read(skilltree.OSFS{}, filepath.Join(repo.dir, "skills", "alpha"), skilltree.PolicyStrict)
+	local, err := skilltree.Read(skilltree.OSFS{}, filepath.Join(repo.dir, "skills", "alpha"))
 	if err != nil {
 		t.Fatalf("local Read: %v", err)
 	}

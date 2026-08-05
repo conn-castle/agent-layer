@@ -53,16 +53,15 @@ func TestParseSkillSource_KeysSortedAcrossAllFields(t *testing.T) {
 	}
 }
 
-func TestParseSkillSource_MalformedMetadataRejected(t *testing.T) {
+func TestParseSkillSource_OpaqueMetadataAccepted(t *testing.T) {
 	cases := []string{
 		"---\nname: alpha\nmetadata: scalar\n---\nBody.\n",
 		"---\nname: alpha\nmetadata:\n  123: val\n---\nBody.\n",
 		"---\nname: alpha\nmetadata:\n  key:\n    - nested\n---\nBody.\n",
 	}
 	for _, content := range cases {
-		_, err := ParseSkillSource(writeSkillFixture(t, content))
-		if err == nil || !strings.Contains(err.Error(), "metadata") {
-			t.Fatalf("expected metadata error for %q, got %v", content, err)
+		if _, err := ParseSkillSource(writeSkillFixture(t, content)); err != nil {
+			t.Fatalf("opaque metadata %q was rejected: %v", content, err)
 		}
 	}
 }
@@ -71,15 +70,6 @@ func TestParseSkillSource_NonStringScalarFieldRejected(t *testing.T) {
 	_, err := ParseSkillSource(writeSkillFixture(t, "---\nname: 42\ndescription: test\n---\nBody.\n"))
 	if err == nil || !strings.Contains(err.Error(), "must be a string") {
 		t.Fatalf("expected string-type error for integer name, got %v", err)
-	}
-}
-
-func TestParseSkillSource_DuplicateMetadataKeyRejected(t *testing.T) {
-	// Doctor now fails loudly on duplicate metadata keys, matching config
-	// loading, instead of silently tolerating last-value-wins.
-	_, err := ParseSkillSource(writeSkillFixture(t, "---\nname: alpha\nmetadata:\n  owner: a\n  owner: b\n---\nBody.\n"))
-	if err == nil || !strings.Contains(err.Error(), "duplicate key") {
-		t.Fatalf("expected duplicate metadata key error, got %v", err)
 	}
 }
 

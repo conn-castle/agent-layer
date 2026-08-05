@@ -102,6 +102,7 @@ const (
 	upgradeMigrationKindConfigSetDefault        upgradeMigrationOperationKind = "config_set_default"
 	upgradeMigrationKindMigrateSkillsFormat     upgradeMigrationOperationKind = "migrate_skills_format"
 	upgradeMigrationKindAppendToFile            upgradeMigrationOperationKind = "append_to_file"
+	upgradeMigrationKindClaimSkillRoots         upgradeMigrationOperationKind = "claim_skill_projection_roots"
 )
 
 type upgradeMigrationOperation struct {
@@ -518,6 +519,8 @@ func (inst *installer) executeUpgradeMigrationOperation(op upgradeMigrationOpera
 		return inst.executeMigrateSkillsFormat(op.Path)
 	case upgradeMigrationKindAppendToFile:
 		return inst.executeAppendToFile(op)
+	case upgradeMigrationKindClaimSkillRoots:
+		return false, nil
 	default:
 		return false, fmt.Errorf("unsupported migration kind %q", op.Kind)
 	}
@@ -1741,6 +1744,9 @@ func validateUpgradeMigrationOperation(op upgradeMigrationOperation) error {
 		if err := json.Unmarshal(op.Value, &decoded); err != nil {
 			return fmt.Errorf("migration %s (%s) value must be a JSON string: %w", op.ID, op.Kind, err)
 		}
+	case upgradeMigrationKindClaimSkillRoots:
+		// The pre-mutation preflight owns this transition. Execution is a no-op;
+		// reaching the target version is the durable evidence that it completed.
 	default:
 		return fmt.Errorf("migration %s has unsupported kind %q", op.ID, op.Kind)
 	}

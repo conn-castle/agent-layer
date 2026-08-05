@@ -1,8 +1,6 @@
-// Package skillfrontmatter is the canonical structural parser for SKILL.md
-// YAML front matter. It owns root-mapping validation, duplicate-key
-// rejection, scalar field typing, and metadata string-map validation.
-// Consumer-specific policy (required fields, standards warnings, sync
-// semantics) stays with the consumers.
+// Package skillfrontmatter parses only the required identity fields from
+// SKILL.md YAML front matter. Additional fields remain opaque so callers can
+// preserve and project their original bytes without imposing provider policy.
 package skillfrontmatter
 
 import (
@@ -74,14 +72,6 @@ type Field struct {
 	Multiline bool
 }
 
-// BooleanField is the structural parse result for one supported boolean field.
-type BooleanField struct {
-	// State reports whether the field was absent, null, or carried a value.
-	State FieldState
-	// Value is the parsed boolean; meaningful only when State is FieldValue.
-	Value bool
-}
-
 // Document is the structural parse result of SKILL.md YAML front matter.
 type Document struct {
 	// Keys lists the non-empty top-level keys in document order, including
@@ -91,17 +81,6 @@ type Document struct {
 	Name Field
 	// Description is the "description" field.
 	Description Field
-	// License is the "license" field.
-	License Field
-	// Compatibility is the "compatibility" field.
-	Compatibility Field
-	// AllowedTools is the "allowed-tools" field.
-	AllowedTools Field
-	// DisableModelInvocation is Claude Code's "disable-model-invocation" field.
-	DisableModelInvocation BooleanField
-	// Metadata holds the "metadata" string map; nil when the key is absent
-	// or null, possibly empty when an empty map was supplied.
-	Metadata map[string]string
 }
 
 // Parse parses SKILL.md YAML front-matter content into a Document.
@@ -130,7 +109,7 @@ func Parse(content string) (Document, error) {
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		keyNode := mapping.Content[i]
 		valueNode := mapping.Content[i+1]
-		key := strings.TrimSpace(keyNode.Value)
+		key := keyNode.Value
 		if key == "" {
 			continue
 		}
@@ -140,78 +119,24 @@ func Parse(content string) (Document, error) {
 		seen[key] = true
 		doc.Keys = append(doc.Keys, key)
 
-		var target *Field
 		switch key {
 		case "name":
-			target = &doc.Name
+			field, err := parseScalarField(key, valueNode)
+			if err != nil {
+				return Document{}, err
+			}
+			doc.Name = field
 		case "description":
-			target = &doc.Description
-		case "license":
-			target = &doc.License
-		case "compatibility":
-			target = &doc.Compatibility
-		case "allowed-tools":
-			target = &doc.AllowedTools
-		case "disable-model-invocation":
-			field, err := parseBooleanField(key, valueNode)
+			field, err := parseScalarField(key, valueNode)
 			if err != nil {
 				return Document{}, err
 			}
-			doc.DisableModelInvocation = field
-			continue
-		case "metadata":
-			metadata, err := parseMetadata(valueNode)
-			if err != nil {
-				return Document{}, err
-			}
-			doc.Metadata = metadata
-			continue
+			doc.Description = field
 		default:
-			// Unknown fields are tolerated at parse time; consumers decide
-			// whether to warn on them.
-			continue
+			// Additional fields are intentionally opaque.
 		}
-		field, err := parseScalarField(key, valueNode)
-		if err != nil {
-			return Document{}, err
-		}
-		*target = field
 	}
 	return doc, nil
-}
-
-// booleanLiterals maps every scalar Claude Code reads as a boolean skill field
-// to its value. Claude Code accepts yes, no, on, off, 1, and 0 in any letter
-// case in addition to true and false, and YAML 1.2 tags several of those as
-// strings or integers rather than booleans. Matching the client's set keeps a
-// skill authored against its documentation loadable here unchanged.
-var booleanLiterals = map[string]bool{
-	"true":  true,
-	"yes":   true,
-	"on":    true,
-	"1":     true,
-	"false": false,
-	"no":    false,
-	"off":   false,
-	"0":     false,
-}
-
-// booleanLiteralList names the accepted spellings for error messages.
-const booleanLiteralList = "true, false, yes, no, on, off, 1, or 0"
-
-// parseBooleanField accepts null or any scalar Claude Code reads as a boolean.
-func parseBooleanField(field string, node *yaml.Node) (BooleanField, error) {
-	if node.Kind != yaml.ScalarNode {
-		return BooleanField{}, typeError(fmt.Sprintf("field %q must be a boolean (%s)", field, booleanLiteralList))
-	}
-	if node.Tag == yamlTagNull {
-		return BooleanField{State: FieldNull}, nil
-	}
-	value, ok := booleanLiterals[strings.ToLower(node.Value)]
-	if !ok {
-		return BooleanField{}, typeError(fmt.Sprintf("field %q must be a boolean (%s)", field, booleanLiteralList))
-	}
-	return BooleanField{State: FieldValue, Value: value}, nil
 }
 
 func parseScalarField(field string, node *yaml.Node) (Field, error) {
@@ -229,31 +154,6 @@ func parseScalarField(field string, node *yaml.Node) (Field, error) {
 		Value:     node.Value,
 		Multiline: node.Style == yaml.LiteralStyle || node.Style == yaml.FoldedStyle,
 	}, nil
-}
-
-func parseMetadata(node *yaml.Node) (map[string]string, error) {
-	if node.Kind == yaml.ScalarNode && node.Tag == yamlTagNull {
-		return nil, nil
-	}
-	if node.Kind != yaml.MappingNode {
-		return nil, typeError("metadata must be a string map")
-	}
-	metadata := make(map[string]string, len(node.Content)/2)
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		keyNode := node.Content[i]
-		valueNode := node.Content[i+1]
-		if keyNode.Kind != yaml.ScalarNode || (keyNode.Tag != "" && keyNode.Tag != yamlTagStr) {
-			return nil, typeError("metadata keys must be strings")
-		}
-		if valueNode.Kind != yaml.ScalarNode || (valueNode.Tag != "" && valueNode.Tag != yamlTagStr) {
-			return nil, typeError("metadata values must be strings")
-		}
-		if _, exists := metadata[keyNode.Value]; exists {
-			return nil, duplicateKeyError(keyNode.Value)
-		}
-		metadata[keyNode.Value] = valueNode.Value
-	}
-	return metadata, nil
 }
 
 func typeError(detail string) *Error {

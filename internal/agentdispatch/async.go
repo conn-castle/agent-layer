@@ -56,36 +56,45 @@ func Start(opts StartOptions) error {
 	if err != nil {
 		return err
 	}
-	project, stderr, env, depth, err := loadDispatchProject(opts.Root, opts.Stderr, opts.Env)
+	stderr, env, depth, err := dispatchRuntimeInputs(opts.Stderr, opts.Env)
 	if err != nil {
 		return err
 	}
 	if err := pruneDispatchEvidence(opts.Root, time.Now()); err != nil {
 		return err
 	}
-	if err := checkDispatchDepth(project.Config, depth); err != nil {
-		return err
-	}
 	requested, ok := lookupTarget(opts.Agent)
 	if !ok {
 		return exitError(ExitUsage, fmt.Sprintf(messages.DispatchUnknownTargetFmt, opts.Agent))
 	}
-	target, version, prompt, err := prepareFresh(project, requested, runOptions{
-		Root: opts.Root, Model: opts.Model, ReasoningEffort: opts.ReasoningEffort,
-		Skill: opts.Skill, Prompt: promptText, LookPath: opts.LookPath,
-		VersionLookup: opts.VersionLookup,
+	var project *config.ProjectConfig
+	var target targetMeta
+	var version string
+	var prompt []byte
+	err = sync.WithLockedProject(sync.RealSystem{}, opts.Root, func(loaded *config.ProjectConfig) error {
+		project = loaded
+		if err := checkDispatchDepth(project.Config, depth); err != nil {
+			return err
+		}
+		var prepareErr error
+		target, version, prompt, prepareErr = prepareFresh(project, requested, runOptions{
+			Root: opts.Root, Model: opts.Model, ReasoningEffort: opts.ReasoningEffort,
+			Skill: opts.Skill, Prompt: promptText, LookPath: opts.LookPath,
+			VersionLookup: opts.VersionLookup,
+		})
+		if prepareErr != nil {
+			return prepareErr
+		}
+		if err := prepareProjection(project, opts.Root, stderr); err != nil {
+			return err
+		}
+		projectionRoot, err := prepareTargetProjection(project, opts.Root, opts.WorkDir, target)
+		if err != nil {
+			return err
+		}
+		return validateSkillProjection(projectionRoot, target, opts.Skill)
 	})
 	if err != nil {
-		return err
-	}
-	if err := prepareProjection(project, opts.Root, stderr); err != nil {
-		return err
-	}
-	projectionRoot, err := prepareTargetProjection(opts.Root, opts.WorkDir, target)
-	if err != nil {
-		return err
-	}
-	if err := validateSkillProjection(projectionRoot, target, opts.Skill); err != nil {
 		return err
 	}
 	run, err := newDispatchRun(opts.Root, target.Name, version, dispatchModeFresh)
@@ -118,11 +127,8 @@ func Continue(opts ContinueOptions) error {
 	if err != nil {
 		return err
 	}
-	project, stderr, env, depth, err := loadDispatchProject(opts.Root, opts.Stderr, opts.Env)
+	stderr, env, depth, err := dispatchRuntimeInputs(opts.Stderr, opts.Env)
 	if err != nil {
-		return err
-	}
-	if err := checkDispatchDepth(project.Config, depth); err != nil {
 		return err
 	}
 	session, err := loadSession(opts.Root, strings.TrimSpace(opts.Handle))
@@ -145,29 +151,42 @@ func Continue(opts ContinueOptions) error {
 	if !ok {
 		return exitError(ExitConfig, fmt.Sprintf("dispatch conversation %q has unsupported provider %q", session.Name, session.Agent))
 	}
-	if !targetEnabled(project.Config, target.Name) {
-		return exitError(ExitConfig, fmt.Sprintf("`al dispatch` target %s is disabled in config", target.Name))
-	}
-	lookPath := opts.LookPath
-	if lookPath == nil {
-		lookPath = exec.LookPath
-	}
-	path, err := lookPath(target.Binary)
-	if err != nil {
-		return exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target.Name, target.Binary))
-	}
-	target, version, err := compatibleTargetVersionCached(opts.Root, path, target, opts.VersionLookup)
-	if err != nil {
+	var project *config.ProjectConfig
+	var version string
+	var prompt []byte
+	err = sync.WithLockedProject(sync.RealSystem{}, opts.Root, func(loaded *config.ProjectConfig) error {
+		project = loaded
+		if err := checkDispatchDepth(project.Config, depth); err != nil {
+			return err
+		}
+		if !targetEnabled(project.Config, target.Name) {
+			return exitError(ExitConfig, fmt.Sprintf("`al dispatch` target %s is disabled in config", target.Name))
+		}
+		lookPath := opts.LookPath
+		if lookPath == nil {
+			lookPath = exec.LookPath
+		}
+		path, lookErr := lookPath(target.Binary)
+		if lookErr != nil {
+			return exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target.Name, target.Binary))
+		}
+		var versionErr error
+		target, version, versionErr = compatibleTargetVersionCached(opts.Root, path, target, opts.VersionLookup)
+		if versionErr != nil {
+			return versionErr
+		}
+		var promptErr error
+		prompt, promptErr = BuildChildPrompt(project, target.Name, promptText, "")
+		if promptErr != nil {
+			return promptErr
+		}
+		if err := prepareProjection(project, opts.Root, stderr); err != nil {
+			return err
+		}
+		_, err := prepareTargetProjection(project, opts.Root, opts.WorkDir, target)
 		return err
-	}
-	prompt, err := BuildChildPrompt(project, target.Name, promptText, "")
+	})
 	if err != nil {
-		return err
-	}
-	if err := prepareProjection(project, opts.Root, stderr); err != nil {
-		return err
-	}
-	if _, err := prepareTargetProjection(opts.Root, opts.WorkDir, target); err != nil {
 		return err
 	}
 	run, err := newDispatchRun(opts.Root, target.Name, version, dispatchModeResume)

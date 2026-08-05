@@ -213,50 +213,42 @@ func TestLoadSkillsFS_DirectorySkill(t *testing.T) {
 	if len(skills) != 1 || skills[0].Name != "alpha" {
 		t.Fatalf("unexpected skills: %#v", skills)
 	}
-	if skills[0].License != "MIT" || skills[0].Compatibility != "requires git" || skills[0].AllowedTools != "Read" {
-		t.Fatalf("unexpected parsed optional fields: %#v", skills[0])
-	}
-	if skills[0].Metadata["owner"] != "team" {
-		t.Fatalf("unexpected metadata: %#v", skills[0].Metadata)
+	manifest, ok := skills[0].Tree.File("SKILL.md")
+	if !ok || !strings.Contains(string(manifest.Data), "metadata:\n  owner: team") {
+		t.Fatalf("canonical optional frontmatter was not retained: %q", manifest.Data)
 	}
 }
 
 func TestLoadSkillsFS_DirectorySkillNameMatchUsesNFKCNormalization(t *testing.T) {
 	fsys := fstest.MapFS{
-		".agent-layer/skills":               {Mode: fs.ModeDir},
-		".agent-layer/skills/café":          {Mode: fs.ModeDir},
-		".agent-layer/skills/café/SKILL.md": {Data: []byte("---\nname: café\ndescription: dir\n---\n\nBody")},
+		".agent-layer/skills":              {Mode: fs.ModeDir},
+		".agent-layer/skills/ﬁle":          {Mode: fs.ModeDir},
+		".agent-layer/skills/ﬁle/SKILL.md": {Data: []byte("---\nname: file\ndescription: dir\n---\n\nBody")},
 	}
 
 	skills, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
 	if err != nil {
 		t.Fatalf("LoadSkillsFS: %v", err)
 	}
-	if len(skills) != 1 || skills[0].Name != "café" {
+	if len(skills) != 1 || skills[0].Name != "file" {
 		t.Fatalf("unexpected skills: %#v", skills)
 	}
 }
 
-func TestLoadSkillsFS_DirectorySkillLowercaseFallback(t *testing.T) {
+func TestLoadSkillsFS_DirectorySkillLowercaseFails(t *testing.T) {
 	fsys := fstest.MapFS{
 		".agent-layer/skills":                {Mode: fs.ModeDir},
 		".agent-layer/skills/alpha":          {Mode: fs.ModeDir},
 		".agent-layer/skills/alpha/skill.md": {Data: []byte("---\nname: alpha\ndescription: dir\n---\n\nBody")},
 	}
 
-	skills, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
-	if err != nil {
-		t.Fatalf("LoadSkillsFS: %v", err)
-	}
-	if len(skills) != 1 || skills[0].Name != "alpha" {
-		t.Fatalf("unexpected skills: %#v", skills)
-	}
-	if skills[0].SourcePath != ".agent-layer/skills/alpha/skill.md" {
-		t.Fatalf("expected fallback source path, got %q", skills[0].SourcePath)
+	_, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
+	if err == nil || !strings.Contains(err.Error(), "rename") || !strings.Contains(err.Error(), "SKILL.md") {
+		t.Fatalf("expected canonical rename guidance, got %v", err)
 	}
 }
 
-func TestLoadSkillsFS_DirectorySkillPrefersCanonicalFilename(t *testing.T) {
+func TestLoadSkillsFS_DirectorySkillRejectsBothFilenames(t *testing.T) {
 	fsys := fstest.MapFS{
 		".agent-layer/skills":                {Mode: fs.ModeDir},
 		".agent-layer/skills/alpha":          {Mode: fs.ModeDir},
@@ -264,18 +256,9 @@ func TestLoadSkillsFS_DirectorySkillPrefersCanonicalFilename(t *testing.T) {
 		".agent-layer/skills/alpha/skill.md": {Data: []byte("---\nname: alpha\ndescription: fallback\n---\n\nBody")},
 	}
 
-	skills, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
-	if err != nil {
-		t.Fatalf("LoadSkillsFS: %v", err)
-	}
-	if len(skills) != 1 || skills[0].Name != "alpha" {
-		t.Fatalf("unexpected skills: %#v", skills)
-	}
-	if skills[0].Description != "canonical" {
-		t.Fatalf("expected canonical file to win, got %q", skills[0].Description)
-	}
-	if skills[0].SourcePath != ".agent-layer/skills/alpha/SKILL.md" {
-		t.Fatalf("expected canonical source path, got %q", skills[0].SourcePath)
+	_, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
+	if err == nil || !strings.Contains(err.Error(), "both SKILL.md and skill.md") {
+		t.Fatalf("expected ambiguous manifest error, got %v", err)
 	}
 }
 

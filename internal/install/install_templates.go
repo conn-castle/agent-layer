@@ -101,7 +101,7 @@ func (inst templateManager) managedTemplateDirs() []templateDir {
 	root := inst.root
 	return []templateDir{
 		{instructionsDirName, filepath.Join(root, ".agent-layer", instructionsDirName)},
-		{"skills", filepath.Join(root, ".agent-layer", "skills")},
+		{skillDirectoryName, filepath.Join(root, ".agent-layer", skillDirectoryName)},
 		{docsAgentLayerDir, filepath.Join(root, ".agent-layer", "templates", "docs")},
 	}
 }

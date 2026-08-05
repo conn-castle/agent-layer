@@ -138,8 +138,8 @@ func TestSkillProjectionDoesNotDuplicateEnabledClientDiscovery(t *testing.T) {
 				},
 				Instructions: []config.InstructionFile{{Name: "00_rules.md", Content: "rules"}},
 				Skills: []config.Skill{
-					{Name: "alpha", Description: "Alpha skill", Body: "Alpha body", SourcePath: filepath.Join(root, ".agent-layer", "skills", "alpha", "SKILL.md")},
-					{Name: "beta", Description: "Beta skill", Body: "Beta body", SourcePath: filepath.Join(root, ".agent-layer", "skills", "beta", "SKILL.md")},
+					projectionSkill(t, "alpha", projectionManifest("alpha")),
+					projectionSkill(t, "beta", projectionManifest("beta")),
 				},
 			}
 			if _, err := RunWithProject(RealSystem{}, root, project); err != nil {

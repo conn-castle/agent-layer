@@ -21,8 +21,8 @@ import (
 	"strings"
 )
 
-// SkillManifestName is the canonical skill manifest filename. Imports require
-// it exactly; no lowercase fallback is accepted for imported sources.
+// SkillManifestName is the canonical skill manifest filename. Every source
+// tier requires it exactly; no lowercase fallback is accepted.
 const SkillManifestName = "SKILL.md"
 
 // ignoredNames are the only filesystem artifacts excluded from a skill tree.
@@ -33,20 +33,12 @@ var ignoredNames = map[string]struct{}{
 	"Thumbs.db": {},
 }
 
-// NodePolicy selects how non-directory, non-regular filesystem nodes are
-// treated while reading a tree.
-type NodePolicy int
-
-const (
-	// PolicyStrict rejects symlinks, gitlinks, submodules, devices, sockets,
-	// and every other node type without dereferencing them. Imported skill
-	// trees use this policy so an import can never smuggle in a link.
-	PolicyStrict NodePolicy = iota
-	// PolicyLenient skips symlinks instead of failing. User-managed skill
-	// sources use this policy so projects that already contain a symlinked
-	// resource keep syncing exactly as before.
-	PolicyLenient
-)
+// IsIgnoredName reports whether a filesystem entry is one of the three
+// source artifacts excluded from every canonical skill-tree read.
+func IsIgnoredName(name string) bool {
+	_, ignored := ignoredNames[name]
+	return ignored
+}
 
 // FS is the filesystem surface a tree read needs. It is deliberately small so
 // the sync package's injectable System and a plain OS implementation both
@@ -94,7 +86,10 @@ type Tree struct {
 // NewTree builds a tree from files, sorting them and rejecting duplicates.
 func NewTree(files []File) (Tree, error) {
 	sorted := make([]File, len(files))
-	copy(sorted, files)
+	for i, file := range files {
+		sorted[i] = file
+		sorted[i].Data = append([]byte(nil), file.Data...)
+	}
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Path < sorted[j].Path })
 	for i := 1; i < len(sorted); i++ {
 		if sorted[i].Path == sorted[i-1].Path {
@@ -104,8 +99,15 @@ func NewTree(files []File) (Tree, error) {
 	return Tree{files: sorted}, nil
 }
 
-// Files returns the tree's files in sorted path order.
-func (t Tree) Files() []File { return t.files }
+// Files returns a detached copy of the tree's files in sorted path order.
+func (t Tree) Files() []File {
+	files := make([]File, len(t.files))
+	for i, file := range t.files {
+		files[i] = file
+		files[i].Data = append([]byte(nil), file.Data...)
+	}
+	return files
+}
 
 // Len returns the number of files in the tree.
 func (t Tree) Len() int { return len(t.files) }
@@ -126,7 +128,9 @@ func (t Tree) Paths() []string {
 func (t Tree) File(filePath string) (File, bool) {
 	index := sort.Search(len(t.files), func(i int) bool { return t.files[i].Path >= filePath })
 	if index < len(t.files) && t.files[index].Path == filePath {
-		return t.files[index], true
+		file := t.files[index]
+		file.Data = append([]byte(nil), file.Data...)
+		return file, true
 	}
 	return File{}, false
 }
@@ -162,18 +166,18 @@ func (t Tree) Equal(other Tree) bool { return t.Hash() == other.Hash() }
 //
 // It walks with Lstat so a link is classified without being followed, includes
 // every regular file (hidden files included), ignores only `.git`, `.DS_Store`,
-// and `Thumbs.db`, and applies policy to every other node type. A missing root
+// and `Thumbs.db`, and rejects every other node type. A missing root
 // directory yields an empty tree so callers can distinguish "no content" from a
 // read failure by checking the directory themselves.
-func Read(fsys FS, dir string, policy NodePolicy) (Tree, error) {
+func Read(fsys FS, dir string) (Tree, error) {
 	var files []File
-	if err := readInto(fsys, dir, "", policy, &files); err != nil {
+	if err := readInto(fsys, dir, "", &files); err != nil {
 		return Tree{}, err
 	}
 	return NewTree(files)
 }
 
-func readInto(fsys FS, dir string, relativeDir string, policy NodePolicy, files *[]File) error {
+func readInto(fsys FS, dir string, relativeDir string, files *[]File) error {
 	entries, err := fsys.ReadDir(dir)
 	if err != nil {
 		// FS is injectable, so a implementation may wrap its error. errors.Is
@@ -188,7 +192,7 @@ func readInto(fsys FS, dir string, relativeDir string, policy NodePolicy, files 
 
 	for _, entry := range entries {
 		name := entry.Name()
-		if _, ignored := ignoredNames[name]; ignored {
+		if IsIgnoredName(name) {
 			continue
 		}
 		nodePath := filepath.Join(dir, name)
@@ -204,7 +208,7 @@ func readInto(fsys FS, dir string, relativeDir string, policy NodePolicy, files 
 		mode := info.Mode()
 		switch {
 		case mode.IsDir():
-			if err := readInto(fsys, nodePath, relativePath, policy, files); err != nil {
+			if err := readInto(fsys, nodePath, relativePath, files); err != nil {
 				return err
 			}
 		case mode.IsRegular():
@@ -217,10 +221,6 @@ func readInto(fsys FS, dir string, relativeDir string, policy NodePolicy, files 
 				Data:       data,
 				Executable: mode.Perm()&0o100 != 0,
 			})
-		case policy == PolicyLenient && mode&os.ModeSymlink != 0:
-			// Existing user-managed skill sources may contain symlinks that
-			// predate imports. Skipping them keeps ordinary sync working.
-			continue
 		default:
 			return fmt.Errorf("%s is a %s; skill trees may contain only directories and regular files", nodePath, describeNode(mode))
 		}

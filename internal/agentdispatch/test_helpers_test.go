@@ -62,7 +62,7 @@ func executeFreshDispatch(req dispatchExecRequest) error {
 	if err := prepareProjection(project, req.Root, stderr); err != nil {
 		return err
 	}
-	projectionRoot, err := prepareTargetProjection(req.Root, req.WorkDir, target)
+	projectionRoot, err := prepareTargetProjection(project, req.Root, req.WorkDir, target)
 	if err != nil {
 		return err
 	}
@@ -134,7 +134,7 @@ func executeContinueDispatch(req dispatchExecRequest, handle string) error {
 	if err := prepareProjection(project, req.Root, stderr); err != nil {
 		return err
 	}
-	if _, err := prepareTargetProjection(req.Root, req.WorkDir, target); err != nil {
+	if _, err := prepareTargetProjection(project, req.Root, req.WorkDir, target); err != nil {
 		return err
 	}
 	run, err := newDispatchRun(req.Root, target.Name, version, dispatchModeResume)
