@@ -11,8 +11,10 @@ import (
 // TestEnvPreviewNeverShowsASecretValue covers the wizard's `.env` diff preview.
 // The preview is printed to the terminal and is the one place a stored API key
 // could be echoed back, so every parsed value must be replaced with a redaction
-// marker while the surrounding text a user needs to read the diff — keys,
-// `export` prefixes, comments, and blank lines — is preserved verbatim.
+// marker. An assignment line is rebuilt rather than copied — the key is trimmed
+// and the value is requoted — so what is asserted here is that the parts a user
+// needs to read the diff survive that rewrite: the key, any `export` prefix, any
+// trailing comment, comment-only lines, and the line count.
 func TestEnvPreviewNeverShowsASecretValue(t *testing.T) {
 	const kept = "kept-secret-value"
 	const rotated = "rotated-secret-value"

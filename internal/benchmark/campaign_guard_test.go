@@ -65,6 +65,11 @@ func newCampaignFixture(t *testing.T) campaignFixture {
 // stubCampaignPreflight replaces the environment probes a treatment performs
 // before it is allowed to spend money. Each returns nil unless a test overrides
 // it, so a single failing probe can be isolated.
+//
+// These are package-level function variables restored with t.Cleanup, so every
+// test in this package must run sequentially. Do not call t.Parallel() in a test
+// that uses this helper, or in any test that could run beside one: a parallel
+// test would observe another test's stub.
 func stubCampaignPreflight(t *testing.T) {
 	t.Helper()
 	originalPreflight := preflightBenchmark

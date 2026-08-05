@@ -87,7 +87,9 @@ func TestStructuredEventsAcceptFullJSONValueGrammar(t *testing.T) {
 	}{
 		{"numeric fields", `{"type":"agent_message","usage":{"cost":-1.5e-3,"tokens":42},"message":"numbers parsed"}`, "numbers parsed"},
 		{"literal fields", `{"type":"agent_message","done":true,"cached":false,"parent":null,"message":"literals parsed"}`, "literals parsed"},
-		{"unicode escapes", `{"type":"agent_message","message":"café ✓"}`, "café ✓"},
+		{"literal multi-byte UTF-8", `{"type":"agent_message","message":"café ✓"}`, "café ✓"},
+		{"unicode escapes", `{"type":"agent_message","message":"caf\u00e9 \u2713"}`, "café ✓"},
+		{"uppercase unicode escape digits", `{"type":"agent_message","message":"caf\u00E9"}`, "café"},
 		{"control escapes", `{"type":"agent_message","message":"line\nbreak\ttab\\slash\"quote\""}`, "line\nbreak\ttab\\slash\"quote\""},
 		{"insignificant whitespace", "{ \"type\" : \"agent_message\" ,\t\"message\" :\r \"whitespace parsed\" }", "whitespace parsed"},
 	}

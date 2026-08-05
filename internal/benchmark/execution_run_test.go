@@ -61,6 +61,19 @@ func fakePierArgv(t *testing.T, argvPath string) []string {
 	return strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 }
 
+// stubPinnedCheckout points benchmark execution at a fixed checkout path.
+//
+// This replaces a package-level function variable and restores it with
+// t.Cleanup, so every test in this package must run sequentially. Do not call
+// t.Parallel() in a test that uses this helper, or in any test that could run
+// beside one: a parallel test would observe another test's stub.
+func stubPinnedCheckout(t *testing.T, checkout string) {
+	t.Helper()
+	original := ensurePinnedBenchmarkCheckout
+	ensurePinnedBenchmarkCheckout = func(context.Context, string) (string, error) { return checkout, nil }
+	t.Cleanup(func() { ensurePinnedBenchmarkCheckout = original })
+}
+
 func argvContainsPair(argv []string, flag, value string) bool {
 	for index := range argv {
 		if argv[index] == flag && index+1 < len(argv) && argv[index+1] == value {
@@ -78,9 +91,7 @@ func argvContainsPair(argv []string, flag, value string) bool {
 func TestPierExecutionPinsTheRunAndNormalizesItsEvidence(t *testing.T) {
 	repository := t.TempDir()
 	checkout := filepath.Join(repository, "pinned-checkout")
-	originalCheckout := ensurePinnedBenchmarkCheckout
-	ensurePinnedBenchmarkCheckout = func(context.Context, string) (string, error) { return checkout, nil }
-	t.Cleanup(func() { ensurePinnedBenchmarkCheckout = originalCheckout })
+	stubPinnedCheckout(t, checkout)
 
 	argvPath := installFakePier(t, "task-checksum")
 	model, effort, err := ParseModelSelection("fable:high")
@@ -157,11 +168,7 @@ func TestPierTreatmentExecutionRunsTheImmutableBundle(t *testing.T) {
 	if err := os.WriteFile(credentials, []byte(`{"accessToken":"secret"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	originalCheckout := ensurePinnedBenchmarkCheckout
-	ensurePinnedBenchmarkCheckout = func(context.Context, string) (string, error) {
-		return filepath.Join(repository, "pinned-checkout"), nil
-	}
-	t.Cleanup(func() { ensurePinnedBenchmarkCheckout = originalCheckout })
+	stubPinnedCheckout(t, filepath.Join(repository, "pinned-checkout"))
 
 	argvPath := installFakePier(t, "task-checksum")
 	model, effort, err := ParseModelSelection("fable:high")
@@ -226,7 +233,12 @@ func TestPierTreatmentExecutionRunsTheImmutableBundle(t *testing.T) {
 	}
 }
 
+// TestPierExecutionRejectsIncompleteRequests covers the request contract that
+// runs before any provider is reached. Each case names the rejection it expects,
+// so a case cannot pass because of unrelated setup, and the baseline request is
+// asserted to clear this gate so no case can pass vacuously.
 func TestPierExecutionRejectsIncompleteRequests(t *testing.T) {
+	const invalidRequest = "invalid Pier execution request"
 	valid := ExecutionRequest{
 		RepoRoot: t.TempDir(), EvidenceDir: t.TempDir(), EventID: "event",
 		Attempt: 1, Task: "example-task", Arm: ArmBaseline,
@@ -234,27 +246,39 @@ func TestPierExecutionRejectsIncompleteRequests(t *testing.T) {
 	tests := []struct {
 		name   string
 		broken func(*ExecutionRequest)
+		want   string
 	}{
-		{"no repository root", func(r *ExecutionRequest) { r.RepoRoot = "" }},
-		{"no evidence directory", func(r *ExecutionRequest) { r.EvidenceDir = "" }},
-		{"no event identity", func(r *ExecutionRequest) { r.EventID = "" }},
-		{"unnumbered attempt", func(r *ExecutionRequest) { r.Attempt = 0 }},
-		{"task is not a catalog identifier", func(r *ExecutionRequest) { r.Task = "../escape" }},
-		{"arm is neither baseline nor treatment", func(r *ExecutionRequest) { r.Arm = "control" }},
-		{"treatment without a bundle", func(r *ExecutionRequest) { r.Arm = ArmTreatment }},
+		{"no repository root", func(r *ExecutionRequest) { r.RepoRoot = "" }, invalidRequest},
+		{"no evidence directory", func(r *ExecutionRequest) { r.EvidenceDir = "" }, invalidRequest},
+		{"no event identity", func(r *ExecutionRequest) { r.EventID = "" }, invalidRequest},
+		{"unnumbered attempt", func(r *ExecutionRequest) { r.Attempt = 0 }, invalidRequest},
+		{"task is not a catalog identifier", func(r *ExecutionRequest) { r.Task = "../escape" }, invalidRequest},
+		{"arm is neither baseline nor treatment", func(r *ExecutionRequest) { r.Arm = "control" }, invalidRequest},
+		{"treatment without a bundle", func(r *ExecutionRequest) { r.Arm = ArmTreatment }, "requires an immutable treatment bundle"},
 	}
-	originalCheckout := ensurePinnedBenchmarkCheckout
-	ensurePinnedBenchmarkCheckout = func(context.Context, string) (string, error) {
-		return "", nil
+	stubPinnedCheckout(t, "")
+	// The fake runner keeps the baseline probe below offline; without it the
+	// real `uvx` would be invoked and would try to resolve Pier from the network.
+	installFakePier(t, "task-checksum")
+
+	// The baseline request must clear request validation, otherwise every case
+	// below would be rejected for the same reason no matter what it broke. It
+	// still fails afterwards because it records no task checksum to match.
+	if _, err := (PierExecutor{}).Execute(context.Background(), valid); err == nil ||
+		strings.Contains(err.Error(), invalidRequest) {
+		t.Fatalf("baseline request did not clear request validation: %v", err)
 	}
-	t.Cleanup(func() { ensurePinnedBenchmarkCheckout = originalCheckout })
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			request := valid
 			test.broken(&request)
-			if _, err := (PierExecutor{}).Execute(context.Background(), request); err == nil {
+			_, err := PierExecutor{}.Execute(context.Background(), request)
+			if err == nil {
 				t.Fatal("a paid run was started from an incomplete request")
+			}
+			if !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("rejection = %v, want it to name %q", err, test.want)
 			}
 		})
 	}

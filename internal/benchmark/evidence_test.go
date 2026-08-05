@@ -96,8 +96,14 @@ func TestAttemptResultRejectsIncompleteEvidence(t *testing.T) {
 		{"coordinator cost falls outside its own range", func(r *AttemptResult) {
 			r.CoordinatorCostUSD = floatPointer(.9)
 		}},
+		// The whole child range moves together so it stays internally valid and
+		// only its reconciliation with the reported total is broken. Lowering the
+		// midpoint alone would be rejected by the range check first, leaving the
+		// reconciliation rule unproven.
 		{"components do not sum to the reported cost", func(r *AttemptResult) {
 			r.ChildCostUSD = floatPointer(.9)
+			r.ChildCostMinUSD = floatPointer(.8)
+			r.ChildCostMaxUSD = floatPointer(.9)
 		}},
 	}
 
