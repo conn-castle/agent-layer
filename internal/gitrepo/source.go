@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -198,12 +199,34 @@ func (s *Source) Fetch(ctx context.Context, commit string) error {
 // carry a skill yet. Callers that require the path to exist compare the result
 // against recorded state, which an empty tree can never match.
 func (s *Source) ReadTree(ctx context.Context, commit string, repoPath string) (skilltree.Tree, error) {
-	exists, _, err := s.PathExists(ctx, commit, repoPath)
+	return s.readTree(ctx, commit, repoPath, false)
+}
+
+// readTree reads one repository tree and optionally rejects artifacts that
+// source imports normally ignore. Destination publication uses the strict form
+// because it must never silently preserve or delete unsupported remote state.
+func (s *Source) readTree(ctx context.Context, commit string, repoPath string, rejectIgnored bool) (skilltree.Tree, error) {
+	exists, mode, objectType, err := s.pathEntry(ctx, commit, repoPath)
 	if err != nil {
 		return skilltree.Tree{}, err
 	}
 	if !exists {
 		return skilltree.Tree{}, nil
+	}
+	if objectType != gitObjectTree {
+		if rejectIgnored {
+			kind := fmt.Sprintf("unsupported Git object type %q", objectType)
+			switch {
+			case mode == "120000":
+				kind = "symbolic link"
+			case objectType == gitObjectCommit:
+				kind = "gitlink (submodule)"
+			case objectType == gitObjectBlob:
+				kind = "regular file where a skill directory is required"
+			}
+			return skilltree.Tree{}, destinationArtifactError(repoPath, "", kind)
+		}
+		return skilltree.Tree{}, fmt.Errorf("%s is not a directory; a skill destination may contain only directories and regular files", repoPath)
 	}
 	spec := commit + ":" + repoPath
 	output, err := s.runner.run(ctx, s.dir, "ls-tree", "-r", "-z", "--full-tree", spec)
@@ -221,14 +244,26 @@ func (s *Source) ReadTree(ctx context.Context, commit string, repoPath string) (
 			return skilltree.Tree{}, parseErr
 		}
 		if isIgnoredTreePath(name) {
+			if rejectIgnored {
+				return skilltree.Tree{}, destinationArtifactError(repoPath, name, "artifact")
+			}
 			continue
 		}
 		switch {
 		case objectType == gitObjectCommit:
+			if rejectIgnored {
+				return skilltree.Tree{}, destinationArtifactError(repoPath, name, "gitlink (submodule)")
+			}
 			return skilltree.Tree{}, fmt.Errorf("%s/%s is a gitlink (submodule); imported skills may contain only directories and regular files", repoPath, name)
 		case mode == "120000":
+			if rejectIgnored {
+				return skilltree.Tree{}, destinationArtifactError(repoPath, name, "symbolic link")
+			}
 			return skilltree.Tree{}, fmt.Errorf("%s/%s is a symbolic link; imported skills may contain only directories and regular files", repoPath, name)
 		case objectType != gitObjectBlob:
+			if rejectIgnored {
+				return skilltree.Tree{}, destinationArtifactError(repoPath, name, fmt.Sprintf("Git object type %q", objectType))
+			}
 			return skilltree.Tree{}, fmt.Errorf("%s/%s is an unsupported git object type %q", repoPath, name, objectType)
 		}
 		data, catErr := s.runner.run(ctx, s.dir, "cat-file", gitObjectBlob, object)
@@ -238,6 +273,16 @@ func (s *Source) ReadTree(ctx context.Context, commit string, repoPath string) (
 		files = append(files, skilltree.File{Path: name, Data: data, Executable: mode == "100755"})
 	}
 	return skilltree.NewTree(files)
+}
+
+// destinationArtifactError gives every strict destination rejection the same
+// path-specific remediation without changing ordinary source-import wording.
+func destinationArtifactError(repoPath string, relative string, kind string) error {
+	artifact := repoPath
+	if relative != "" {
+		artifact = path.Join(repoPath, relative)
+	}
+	return fmt.Errorf("destination skill %s contains unsupported %s at %s; remove %s from the destination repository before retrying", repoPath, kind, artifact, artifact)
 }
 
 // parseTreeRecord splits one NUL-delimited `git ls-tree` record.
@@ -289,21 +334,35 @@ func (s *Source) ListDirectories(ctx context.Context, commit string) ([]string, 
 // PathExists reports whether a repository path exists at a commit and whether
 // it is a directory.
 func (s *Source) PathExists(ctx context.Context, commit string, repoPath string) (exists bool, isDir bool, err error) {
+	exists, _, objectType, err := s.pathEntry(ctx, commit, repoPath)
+	return exists, objectType == gitObjectTree, err
+}
+
+// pathEntry reads one exact tree entry while keeping absence distinct from an
+// invalid commit or object-database failure.
+func (s *Source) pathEntry(ctx context.Context, commit string, repoPath string) (exists bool, mode string, objectType string, err error) {
 	if err := s.ensureCommit(ctx, commit); err != nil {
-		return false, false, err
+		return false, "", "", err
 	}
-	output, _, err := s.runner.runAllowExit(ctx, s.dir, []int{128}, "cat-file", "-t", commit+":"+repoPath)
+	// ls-tree exits successfully with no records when the path is absent, but
+	// fails for an invalid or unreadable commit. That distinction prevents a
+	// corrupt object database from being reinterpreted as an empty skill.
+	output, err := s.runner.run(ctx, s.dir, "ls-tree", "-z", "--full-tree", commit, "--", literalPathspec(repoPath))
 	if err != nil {
-		return false, false, err
+		return false, "", "", err
 	}
-	switch strings.TrimSpace(string(output)) {
-	case gitObjectTree:
-		return true, true, nil
-	case gitObjectBlob:
-		return true, false, nil
-	default:
-		return false, false, nil
+	record := strings.TrimSuffix(string(output), "\x00")
+	if record == "" {
+		return false, "", "", nil
 	}
+	mode, objectType, _, name, parseErr := parseTreeRecord(record)
+	if parseErr != nil {
+		return false, "", "", parseErr
+	}
+	if name != repoPath {
+		return false, "", "", fmt.Errorf("unexpected git tree path %q while reading %q", name, repoPath)
+	}
+	return true, mode, objectType, nil
 }
 
 // MergeText performs a deterministic three-way text merge using git's own

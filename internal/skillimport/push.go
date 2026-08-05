@@ -35,14 +35,9 @@ type pushGroup struct {
 	Repository gitrepo.Repository
 	Branch     string
 	// BranchConfigured is true when the branch came from an explicit
-	// `push_branch`; a missing configured branch is created from the locked
-	// source commit.
+	// `push_branch`; a missing configured branch is created from the
+	// destination repository's current default-branch commit.
 	BranchConfigured bool
-	// BaseRepository and BaseCommit locate the locked source commit a missing
-	// configured branch is created from. They always name a real repository,
-	// even when several source blocks contribute to this destination.
-	BaseRepository gitrepo.Repository
-	BaseCommit     string
 	// SharedBySources is true when more than one source block contributes here.
 	// A shared destination can never be the exact tracked source ref of any one
 	// skill, so no lock advances from it.
@@ -155,8 +150,6 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 				Repository:       destination,
 				Branch:           branch,
 				BranchConfigured: branchConfigured,
-				BaseRepository:   sourceRepository,
-				BaseCommit:       entries[0].Commit,
 				SourceRepository: repository,
 				SourceRef:        entries[0].ResolvedRef,
 			}
@@ -164,10 +157,7 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 			order = append(order, key)
 		} else if group.SourceRepository != repository || group.SourceRef != entries[0].ResolvedRef {
 			// Two different sources contributing to one destination group cannot
-			// both claim it for lock advancement. The base repository stays as
-			// the first contributor in configuration order so a missing branch
-			// is created from one deterministic commit; every skill the branch
-			// does not carry is then added whole rather than merged against it.
+			// both claim it for lock advancement.
 			group.SharedBySources = true
 		}
 
@@ -368,13 +358,25 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 			s.failGroup(group, report, fmt.Errorf("destination %s has no branch %s", group.Repository, group.Branch))
 			return
 		}
-		// An explicitly configured branch that does not exist yet is created
-		// from the locked source commit.
-		if fetchErr := destination.FetchCommit(ctx, group.BaseRepository, group.BaseCommit); fetchErr != nil {
+		defaultBranch, defaultErr := destination.DefaultBranch(ctx)
+		if defaultErr != nil {
+			s.failGroup(group, report, fmt.Errorf("cannot create destination branch %s because %s has no usable default branch: %w", group.Branch, group.Repository, defaultErr))
+			return
+		}
+		defaultHead, defaultExists, headErr := destination.Head(ctx, defaultBranch)
+		if headErr != nil {
+			s.failGroup(group, report, headErr)
+			return
+		}
+		if !defaultExists {
+			s.failGroup(group, report, fmt.Errorf("cannot create destination branch %s because default branch %s does not exist in %s", group.Branch, defaultBranch, group.Repository))
+			return
+		}
+		if fetchErr := destination.FetchCommit(ctx, group.Repository, defaultHead); fetchErr != nil {
 			s.failGroup(group, report, fetchErr)
 			return
 		}
-		head = group.BaseCommit
+		head = defaultHead
 	} else if fetchErr := destination.FetchCommit(ctx, group.Repository, head); fetchErr != nil {
 		s.failGroup(group, report, fetchErr)
 		return
@@ -408,9 +410,9 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 		// An absent destination path means two different things, and only the
 		// branch's history distinguishes them.
 		//
-		// On a branch this publication just created from one contributing
-		// source's commit, a path that base never carried was never present at
-		// the destination at all: there is no common history to reconcile, so
+		// On a branch this publication just created from the destination's
+		// default branch, a path absent from that base was never present on the
+		// contribution branch: there is no common skill history to reconcile, so
 		// the complete local skill is added. That is what keeps a heterogeneous
 		// group coherent — merging against an empty tree would read every
 		// unchanged file as a destination deletion and publish a partial skill.

@@ -1,6 +1,7 @@
 package gitrepo
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -242,6 +243,9 @@ func TestReadTreeRejectsUnsafeEntries(t *testing.T) {
 	if !strings.Contains(err.Error(), "symbolic link") {
 		t.Fatalf("error = %v", err)
 	}
+	destination := newTestDestination(t, repo, commit)
+	_, err = destination.ReadTree(context.Background(), commit, "skills/alpha")
+	assertDestinationArtifactError(t, err, "symbolic link", "skills/alpha/link.md")
 }
 
 // TestReadTreeRejectsGitlinks proves a committed submodule inside a selected
@@ -268,13 +272,43 @@ func TestReadTreeRejectsGitlinks(t *testing.T) {
 	if !strings.Contains(err.Error(), "gitlink") {
 		t.Fatalf("error = %v", err)
 	}
+	destination := newTestDestination(t, repo, commit)
+	_, err = destination.ReadTree(context.Background(), commit, "skills/alpha")
+	assertDestinationArtifactError(t, err, "gitlink (submodule)", "skills/alpha/vendor")
 }
 
-// TestPublishPreservesDestinationOnlyIgnoredFiles proves push contributes skill
-// content without removing files it does not manage. Canonical trees exclude
-// .DS_Store and Thumbs.db, so replacing the skill path wholesale would publish
-// a deletion of any the destination itself committed.
-func TestPublishPreservesDestinationOnlyIgnoredFiles(t *testing.T) {
+func newTestDestination(t *testing.T, repo *testRepo, commit string) *Destination {
+	t.Helper()
+	runner, err := NewRunner(nil)
+	if err != nil {
+		t.Skipf("git runner unavailable: %v", err)
+	}
+	destination, err := OpenDestination(context.Background(), runner, t.TempDir(), literalRepository(repo.dir))
+	if err != nil {
+		t.Fatalf("OpenDestination: %v", err)
+	}
+	if err := destination.FetchCommit(context.Background(), literalRepository(repo.dir), commit); err != nil {
+		t.Fatalf("FetchCommit: %v", err)
+	}
+	return destination
+}
+
+func assertDestinationArtifactError(t *testing.T, err error, kind string, artifact string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("destination accepted %s at %s", kind, artifact)
+	}
+	for _, want := range []string{kind, artifact, "remove", "destination repository"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("destination error %q does not contain %q", err, want)
+		}
+	}
+}
+
+// TestPublishRejectsDestinationArtifacts proves a destination tree cannot hide
+// state that the canonical source reader would normally ignore. Publication
+// names the artifact and leaves the remote commit unchanged.
+func TestPublishRejectsDestinationArtifacts(t *testing.T) {
 	repo := newTestRepo(t, "main")
 	repo.write("skills/alpha/SKILL.md", "---\nname: alpha\ndescription: d\n---\nBody\n", 0o644)
 	repo.write("skills/alpha/.DS_Store", "destination noise\n", 0o644)
@@ -299,21 +333,17 @@ func TestPublishPreservesDestinationOnlyIgnoredFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTree: %v", err)
 	}
-	if _, err := destination.Publish(ctx, head, "main", []Update{{Path: "skills/alpha", Tree: tree}}, "Update skill alpha"); err != nil {
-		t.Fatalf("Publish: %v", err)
+	_, err = destination.Publish(ctx, head, "main", []Update{{Path: "skills/alpha", Tree: tree}}, "Update skill alpha")
+	if err == nil {
+		t.Fatal("Publish accepted unsupported destination artifacts")
 	}
-
-	if got := repo.git("show", "main:skills/alpha/SKILL.md"); !strings.Contains(got, "Updated") {
-		t.Fatalf("skill content was not published: %q", got)
-	}
-	for path, want := range map[string]string{
-		"skills/alpha/.DS_Store":        "destination noise",
-		"skills/alpha/nested/Thumbs.db": "more noise",
-	} {
-		got := repo.git("show", "main:"+path)
-		if !strings.Contains(got, want) {
-			t.Fatalf("%s was removed by publication: %q", path, got)
+	for _, want := range []string{"skills/alpha/.DS_Store", "remove", "destination repository"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not contain %q", err, want)
 		}
+	}
+	if got := repo.git("rev-parse", "main"); got != head {
+		t.Fatalf("rejected publication moved main to %s, want %s", got, head)
 	}
 }
 
@@ -472,6 +502,7 @@ func TestDestinationPublishesWithoutForce(t *testing.T) {
 
 	tree, err := skilltree.NewTree([]skilltree.File{
 		{Path: "SKILL.md", Data: []byte("---\nname: alpha\ndescription: d\n---\nUpdated\n")},
+		{Path: "scripts/run.bin", Data: []byte{0x00, 0xff, '\n'}, Executable: true},
 	})
 	if err != nil {
 		t.Fatalf("NewTree: %v", err)
@@ -486,8 +517,138 @@ func TestDestinationPublishesWithoutForce(t *testing.T) {
 	if got := repo.git("show", "main:skills/alpha/SKILL.md"); !strings.Contains(got, "Updated") {
 		t.Fatalf("destination content = %q", got)
 	}
+	show := exec.Command("git", "show", "main:skills/alpha/scripts/run.bin")
+	show.Dir = repo.dir
+	data, err := show.Output()
+	if err != nil || !bytes.Equal(data, []byte{0x00, 0xff, '\n'}) {
+		t.Fatalf("published binary bytes = %v (%v)", data, err)
+	}
+	if got := repo.git("ls-tree", "main", "skills/alpha/scripts/run.bin"); !strings.HasPrefix(got, "100755 blob ") {
+		t.Fatalf("published executable mode = %q", got)
+	}
 	if _, err := destination.Publish(ctx, head, "main", nil, "no updates"); err == nil {
 		t.Fatal("expected publishing zero updates to fail")
+	}
+}
+
+// TestDestinationPathsAreAlwaysLiteral proves a metacharacter in an actual
+// repository directory cannot expand as a Git pathspec and remove a sibling.
+func TestDestinationPathsAreAlwaysLiteral(t *testing.T) {
+	repo := newTestRepo(t, "main")
+	repo.write("skills/a*/SKILL.md", "old\n", 0o644)
+	repo.write("skills/alpha/unrelated.txt", "keep\n", 0o644)
+	head := repo.commit("add metacharacter path and sibling")
+
+	runner, err := NewRunner(nil)
+	if err != nil {
+		t.Skipf("git runner unavailable: %v", err)
+	}
+	ctx := context.Background()
+	destination, err := OpenDestination(ctx, runner, t.TempDir(), literalRepository(repo.dir))
+	if err != nil {
+		t.Fatalf("OpenDestination: %v", err)
+	}
+	if err := destination.FetchCommit(ctx, literalRepository(repo.dir), head); err != nil {
+		t.Fatalf("FetchCommit: %v", err)
+	}
+	tree, err := skilltree.NewTree([]skilltree.File{{Path: "SKILL.md", Data: []byte("updated\n")}})
+	if err != nil {
+		t.Fatalf("NewTree: %v", err)
+	}
+	if _, err := destination.Publish(ctx, head, "main", []Update{{Path: "skills/a*", Tree: tree}}, "Update literal path"); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if got := repo.git("show", "main:skills/a*/SKILL.md"); got != "updated" {
+		t.Fatalf("literal destination content = %q", got)
+	}
+	if got := repo.git("show", "main:skills/alpha/unrelated.txt"); got != "keep" {
+		t.Fatalf("pathspec expansion modified sibling content: %q", got)
+	}
+}
+
+// TestDestinationPublicationCannotRunHooksOrFilters proves hostile repository
+// attributes and global init templates never gain a filesystem execution path.
+// Publication still preserves unrelated destination content and succeeds when
+// global commit signing is enabled.
+func TestDestinationPublicationCannotRunHooksOrFilters(t *testing.T) {
+	repo := newTestRepo(t, "main")
+	repo.write(".gitattributes", "*.md filter=hostile\n", 0o644)
+	repo.write("README.md", "destination only\n", 0o644)
+	repo.write("skills/alpha/SKILL.md", "---\nname: alpha\ndescription: d\n---\nBody\n", 0o644)
+	head := repo.commit("add filtered skill")
+	bare := filepath.Join(t.TempDir(), "destination.git")
+	clone := exec.Command("git", "clone", "--quiet", "--bare", repo.dir, bare)
+	if output, err := clone.CombinedOutput(); err != nil {
+		t.Fatalf("clone bare destination: %v\n%s", err, output)
+	}
+
+	root := t.TempDir()
+	sentinel := filepath.Join(root, "executed")
+	filter := filepath.Join(root, "filter.sh")
+	if err := os.WriteFile(filter, []byte("#!/bin/sh\ntouch '"+sentinel+"'\ncat\n"), 0o700); err != nil { // #nosec G306 -- this private test fixture must be executable to prove Git never invokes it.
+		t.Fatalf("write filter: %v", err)
+	}
+	template := filepath.Join(root, "template")
+	hooks := filepath.Join(template, "hooks")
+	if err := os.MkdirAll(hooks, 0o700); err != nil {
+		t.Fatalf("create hook template: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(hooks, "pre-commit"), []byte("#!/bin/sh\ntouch '"+sentinel+"'\n"), 0o700); err != nil { // #nosec G306 -- this private test fixture must be executable to prove Git never invokes it.
+		t.Fatalf("write hook: %v", err)
+	}
+	globalConfig := filepath.Join(root, "gitconfig")
+	for _, setting := range [][]string{
+		{"init.templateDir", template},
+		{"filter.hostile.clean", filter},
+		{"filter.hostile.smudge", filter},
+		{"gpg.program", filter},
+		{"commit.gpgSign", "true"},
+	} {
+		cmd := exec.Command("git", "config", "--file", globalConfig, setting[0], setting[1])
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git config %s: %v\n%s", setting[0], err, output)
+		}
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
+	requireNotExecuted := func(stage string) {
+		t.Helper()
+		if _, err := os.Stat(sentinel); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s executed a hook or filter: %v", stage, err)
+		}
+	}
+	requireNotExecuted("fixture setup")
+
+	runner, err := NewRunner(nil)
+	if err != nil {
+		t.Skipf("git runner unavailable: %v", err)
+	}
+	ctx := context.Background()
+	destination, err := OpenDestination(ctx, runner, root, literalRepository(bare))
+	if err != nil {
+		t.Fatalf("OpenDestination: %v", err)
+	}
+	requireNotExecuted("OpenDestination")
+	if _, err := os.Stat(filepath.Join(destination.dir, ".git", "hooks", "pre-commit")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("global template seeded a hook: %v", err)
+	}
+	if err := destination.FetchCommit(ctx, literalRepository(bare), head); err != nil {
+		t.Fatalf("FetchCommit: %v", err)
+	}
+	requireNotExecuted("FetchCommit")
+	tree, err := skilltree.NewTree([]skilltree.File{{
+		Path: "SKILL.md", Data: []byte("---\nname: alpha\ndescription: d\n---\nUpdated\n"),
+	}})
+	if err != nil {
+		t.Fatalf("NewTree: %v", err)
+	}
+	if _, err := destination.Publish(ctx, head, "main", []Update{{Path: "skills/alpha", Tree: tree}}, "Update skill alpha"); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	requireNotExecuted("Publish")
+	show := exec.Command("git", "--git-dir", bare, "show", "main:README.md")
+	output, err := show.Output()
+	if err != nil || strings.TrimSpace(string(output)) != "destination only" {
+		t.Fatalf("unrelated destination content = %q (%v)", output, err)
 	}
 }
 
@@ -557,6 +718,8 @@ func TestNonInteractiveEnvDropsInheritedRepositorySelection(t *testing.T) {
 		"GIT_OBJECT_DIRECTORY=/elsewhere/.git/objects",
 		"GIT_ALTERNATE_OBJECT_DIRECTORIES=/other/objects",
 		"GIT_NAMESPACE=ns",
+		"GIT_ALLOW_PROTOCOL=ext:file",
+		"GIT_PROTOCOL_FROM_USER=1",
 	})
 	joined := strings.Join(env, "\n")
 	for _, leaked := range []string{"GIT_DIR=", "GIT_WORK_TREE=", "GIT_INDEX_FILE=", "GIT_COMMON_DIR=", "GIT_OBJECT_DIRECTORY=", "GIT_ALTERNATE_OBJECT_DIRECTORIES=", "GIT_NAMESPACE="} {
@@ -566,6 +729,14 @@ func TestNonInteractiveEnvDropsInheritedRepositorySelection(t *testing.T) {
 	}
 	if !strings.Contains(joined, "PATH=/usr/bin") {
 		t.Fatal("unrelated environment entries were dropped")
+	}
+	for _, want := range []string{"GIT_ALLOW_PROTOCOL=https:ssh:git:file", "GIT_PROTOCOL_FROM_USER=0"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("environment is missing enforced protocol policy %q: %v", want, env)
+		}
+	}
+	if strings.Contains(joined, "GIT_ALLOW_PROTOCOL=ext:file") || strings.Contains(joined, "GIT_PROTOCOL_FROM_USER=1") {
+		t.Fatalf("inherited protocol policy survived: %v", env)
 	}
 }
 
@@ -596,6 +767,41 @@ func TestRunnerIgnoresAnInheritedGitDir(t *testing.T) {
 	}
 	if got != hereCommit {
 		t.Fatalf("HEAD = %s, want %s", got, hereCommit)
+	}
+}
+
+// TestRunnerBlocksCommandCapableTransportsAfterResolution proves the execution
+// boundary replaces inherited policy and still rejects ext after either an
+// insteadOf rewrite or an AL_ placeholder resolution. The helper command never
+// runs.
+func TestRunnerBlocksCommandCapableTransportsAfterResolution(t *testing.T) {
+	root := t.TempDir()
+	sentinel := filepath.Join(root, "transport-ran")
+	globalConfig := filepath.Join(root, "gitconfig")
+	config := "[url \"ext::sh -c 'touch " + sentinel + "'\"]\n\tinsteadOf = https://rewrite.invalid/\n"
+	if err := os.WriteFile(globalConfig, []byte(config), 0o600); err != nil {
+		t.Fatalf("write git config: %v", err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
+	t.Setenv("GIT_ALLOW_PROTOCOL", "ext:file")
+	t.Setenv("GIT_PROTOCOL_FROM_USER", "1")
+
+	runner, err := NewRunner(map[string]string{"AL_SKILLS_REPOSITORY": "ext::sh -c 'touch " + sentinel + "'"})
+	if err != nil {
+		t.Skipf("git runner unavailable: %v", err)
+	}
+	resolved, err := runner.Secrets().Resolve("${AL_SKILLS_REPOSITORY}")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	for _, repository := range []string{"https://rewrite.invalid/skills.git", resolved.git} {
+		_, runErr := runner.run(context.Background(), root, "ls-remote", "--", repository)
+		if runErr == nil || !strings.Contains(runErr.Error(), "transport 'ext' not allowed") {
+			t.Fatalf("ls-remote %q = %v, want blocked ext transport", runner.secrets.Redact(repository), runErr)
+		}
+	}
+	if _, err := os.Stat(sentinel); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("blocked transport executed its helper: %v", err)
 	}
 }
 
@@ -680,6 +886,14 @@ func TestDestinationReadTreeSeesFetchedContent(t *testing.T) {
 	if err := destination.FetchCommit(ctx, literalRepository(repo.dir), "0000000000000000000000000000000000000000"); err == nil {
 		t.Fatal("expected fetching an unknown commit to fail")
 	}
+	objects := filepath.Join(destination.dir, ".git", "objects")
+	if err := os.Rename(objects, objects+"-corrupt"); err != nil {
+		t.Fatalf("corrupt destination object database: %v", err)
+	}
+	destination.repository = literalRepository(filepath.Join(t.TempDir(), "unreachable-after-corruption"))
+	if tree, err := destination.ReadTree(ctx, head, "skills/alpha"); err == nil {
+		t.Fatalf("a corrupt object database became an empty destination tree: %v", tree.Paths())
+	}
 }
 
 // TestAnnotateIdentityFailureGuidesTheUser proves Agent Layer never invents a
@@ -750,9 +964,9 @@ func TestSourceFetchesAllRefsOnlyOnce(t *testing.T) {
 	}
 }
 
-// TestPublishReportsAFailedPush proves a rejected push is surfaced rather than
-// silently retried with force.
-func TestPublishReportsAFailedPush(t *testing.T) {
+// TestPublishRejectsANonFastForward proves a destination that advances after
+// Agent Layer reads its head is never overwritten or retried with force.
+func TestPublishRejectsANonFastForward(t *testing.T) {
 	repo := newTestRepo(t, "main")
 	repo.write("skills/alpha/SKILL.md", "---\nname: alpha\ndescription: d\n---\nBody\n", 0o644)
 	head := repo.commit("add alpha")
@@ -769,9 +983,8 @@ func TestPublishReportsAFailedPush(t *testing.T) {
 	if err := destination.FetchCommit(ctx, literalRepository(repo.dir), head); err != nil {
 		t.Fatalf("FetchCommit: %v", err)
 	}
-	// The destination refuses non-fast-forward updates to its checked-out
-	// branch once denyCurrentBranch is restored to its default.
-	repo.git("config", "receive.denyCurrentBranch", "refuse")
+	repo.write("destination-advanced.md", "new remote state\n", 0o644)
+	advanced := repo.commit("advance destination after fetch")
 
 	tree, err := skilltree.NewTree([]skilltree.File{
 		{Path: "SKILL.md", Data: []byte("---\nname: alpha\ndescription: d\n---\nUpdated\n")},
@@ -780,10 +993,10 @@ func TestPublishReportsAFailedPush(t *testing.T) {
 		t.Fatalf("NewTree: %v", err)
 	}
 	if _, err := destination.Publish(ctx, head, "main", []Update{{Path: "skills/alpha", Tree: tree}}, "Update skill alpha"); err == nil {
-		t.Fatal("expected a refused push to fail")
+		t.Fatal("expected a non-fast-forward push to fail")
 	}
-	if repo.git("rev-parse", "main") != head {
-		t.Fatal("a refused push still moved the destination branch")
+	if repo.git("rev-parse", "main") != advanced {
+		t.Fatal("a rejected push overwrote the advanced destination branch")
 	}
 }
 

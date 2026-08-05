@@ -243,14 +243,14 @@ func ValidateRepository(repository string) error {
 
 	scheme, rest, ok := strings.Cut(repository, "://")
 	if !ok {
-		return nil
+		return validateRepositoryTransport(repository)
 	}
 	authority, _, _ := strings.Cut(rest, "/")
 	// Userinfo ends at the last "@" in the authority, so a literal "@" inside a
 	// password is not mistaken for the host separator.
 	at := strings.LastIndex(authority, "@")
 	if at < 0 {
-		return nil
+		return validateRepositoryTransport(repository)
 	}
 	userinfo := authority[:at]
 	username, password, hasPassword := strings.Cut(userinfo, ":")
@@ -263,7 +263,54 @@ func ValidateRepository(repository string) error {
 	case !hasPassword && !allowsLiteralUsername(scheme) && !envref.IsEntirelyPlaceholders(username):
 		return fmt.Errorf("repository URL embeds literal credentials in its userinfo; reference them as ${%sNAME} from .agent-layer/.env, or let a Git credential helper or SSH supply them", envref.AgentLayerPrefix)
 	}
+	return validateRepositoryTransport(repository)
+}
+
+func validateRepositoryTransport(repository string) error {
+	if scheme, explicit := explicitGitTransport(repository); explicit && !allowedGitTransport(scheme) {
+		return fmt.Errorf("repository transport %q is not supported; use https, ssh, git, file, an scp-style SSH reference, or a local path", scheme)
+	}
 	return nil
+}
+
+// explicitGitTransport returns a literal URL or remote-helper transport. Local
+// paths and scp-style SSH references have no explicit transport and remain
+// supported. Placeholder-built schemes are resolved only at execution, where
+// the runner's protocol allowlist is authoritative.
+func explicitGitTransport(repository string) (string, bool) {
+	for _, separator := range []string{"://", "::"} {
+		index := strings.Index(repository, separator)
+		if index <= 0 {
+			continue
+		}
+		scheme := repository[:index]
+		if isLiteralScheme(scheme) {
+			return strings.ToLower(scheme), true
+		}
+	}
+	return "", false
+}
+
+func isLiteralScheme(value string) bool {
+	for index, char := range value {
+		switch {
+		case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z':
+		case index > 0 && char >= '0' && char <= '9':
+		case index > 0 && (char == '+' || char == '-' || char == '.'):
+		default:
+			return false
+		}
+	}
+	return value != ""
+}
+
+func allowedGitTransport(scheme string) bool {
+	switch scheme {
+	case "https", "ssh", "git", "file":
+		return true
+	default:
+		return false
+	}
 }
 
 // identityOnlySchemes are the transports whose userinfo names an account rather

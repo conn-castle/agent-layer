@@ -443,6 +443,36 @@ func TestValidateRepositoryRejectsOnlyEmbeddedCredentials(t *testing.T) {
 	}
 }
 
+// TestValidateRepositoryRestrictsLiteralTransports proves unsupported URL and
+// remote-helper schemes fail during configuration validation while every
+// supported local and remote spelling remains available.
+func TestValidateRepositoryRestrictsLiteralTransports(t *testing.T) {
+	t.Parallel()
+	for _, repository := range []string{
+		"https://example.test/skills.git",
+		"ssh://git@example.test/org/skills.git",
+		"git://example.test/skills.git",
+		"file:///tmp/skills.git",
+		"git@example.test:org/skills.git",
+		"../skills.git",
+	} {
+		if err := ValidateRepository(repository); err != nil {
+			t.Fatalf("ValidateRepository(%q) = %v", repository, err)
+		}
+	}
+	for _, repository := range []string{
+		"http://example.test/skills.git",
+		"ftp://example.test/skills.git",
+		"ext::sh -c true",
+		"unknown://example.test/skills.git",
+	} {
+		err := ValidateRepository(repository)
+		if err == nil || !strings.Contains(err.Error(), "not supported") {
+			t.Fatalf("ValidateRepository(%q) = %v, want unsupported transport", repository, err)
+		}
+	}
+}
+
 // TestParseAcceptsPlaceholderRepositories proves a lockfile written from a
 // placeholder-backed import round-trips. The lock records configured text, so
 // refusing a placeholder here would make the machine-written file unreadable by

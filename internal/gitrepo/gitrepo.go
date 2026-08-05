@@ -4,8 +4,9 @@
 // Every invocation uses an argument array (never a shell command string),
 // disables interactive prompting, and works inside a caller-owned temporary
 // directory so an import can never mutate the consuming project's repository.
-// The user's existing Git authentication and configuration remain
-// authoritative: Agent Layer neither reads nor stores credentials.
+// The user's existing Git authentication and identity remain authoritative:
+// Agent Layer neither reads nor stores credentials. Protocol, hook, template,
+// and publication-signing settings are narrowed at the execution boundary.
 package gitrepo
 
 import (
@@ -60,7 +61,7 @@ func (r *Runner) Secrets() *Secrets { return r.secrets }
 // from the working directory. Inheriting any of them would let an ambient value
 // redirect an isolated import at the consuming project's repository, which is
 // exactly the isolation this package promises, so they are dropped rather than
-// overridden. The user's Git *configuration* stays authoritative:
+// overridden. Credential and identity configuration stays authoritative;
 // GIT_CONFIG_NOSYSTEM and the credential environment are untouched here.
 var repositorySelectionVars = []string{
 	"GIT_DIR=",
@@ -72,13 +73,22 @@ var repositorySelectionVars = []string{
 	"GIT_NAMESPACE=",
 }
 
+// gitPolicyVars are replaced rather than inherited. GIT_ALLOW_PROTOCOL sets
+// Git's default protocol policy to never and enables only the listed
+// transports; GIT_PROTOCOL_FROM_USER prevents nested Git operations from
+// re-enabling a user-only transport through configuration such as insteadOf.
+var gitPolicyVars = []string{
+	"GIT_ALLOW_PROTOCOL=",
+	"GIT_PROTOCOL_FROM_USER=",
+}
+
 // nonInteractiveEnv disables every interactive credential and SSH prompt so a
 // missing credential fails fast with an actionable error instead of blocking on
-// a terminal that an automated run does not have. It also removes every
-// inherited repository-selection variable so each command operates only on the
-// caller-owned temporary directory it runs in.
+// a terminal that an automated run does not have. It removes every inherited
+// repository-selection variable and replaces inherited protocol policy so each
+// command operates only on its caller-owned directory and approved transports.
 func nonInteractiveEnv(base []string) []string {
-	filtered := make([]string, 0, len(base)+4)
+	filtered := make([]string, 0, len(base)+6)
 	for _, entry := range base {
 		switch {
 		case strings.HasPrefix(entry, "GIT_TERMINAL_PROMPT="),
@@ -90,6 +100,9 @@ func nonInteractiveEnv(base []string) []string {
 		if hasAnyPrefix(entry, repositorySelectionVars) {
 			continue
 		}
+		if hasAnyPrefix(entry, gitPolicyVars) {
+			continue
+		}
 		filtered = append(filtered, entry)
 	}
 	return append(filtered,
@@ -97,6 +110,8 @@ func nonInteractiveEnv(base []string) []string {
 		"GIT_ASKPASS=",
 		"SSH_ASKPASS=",
 		"GIT_OPTIONAL_LOCKS=0",
+		"GIT_ALLOW_PROTOCOL=https:ssh:git:file",
+		"GIT_PROTOCOL_FROM_USER=0",
 	)
 }
 
@@ -109,6 +124,11 @@ func hasAnyPrefix(value string, prefixes []string) bool {
 	}
 	return false
 }
+
+// literalPathspec prevents repository paths containing Git metacharacters from
+// selecting sibling content. Callers still pass `--`; this magic prefix makes
+// literal interpretation explicit rather than depending on ambient config.
+func literalPathspec(repoPath string) string { return ":(literal)" + repoPath }
 
 // CommandError carries the captured stderr of a failed git invocation so the
 // caller can report an actionable message.
@@ -136,7 +156,15 @@ func (e *CommandError) Unwrap() error { return e.Err }
 
 // run executes git in dir and returns its standard output.
 func (r *Runner) run(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	stdout, _, err := r.runAllowExit(ctx, dir, nil, args...)
+	stdout, _, err := r.runAllowExitInput(ctx, dir, nil, nil, args...)
+	return stdout, err
+}
+
+// runInput executes git with input connected to standard input. Object
+// publication uses it to hash exact blob bytes without materializing a remote
+// tree or passing content through checkout filters.
+func (r *Runner) runInput(ctx context.Context, dir string, input []byte, args ...string) ([]byte, error) {
+	stdout, _, err := r.runAllowExitInput(ctx, dir, input, nil, args...)
 	return stdout, err
 }
 
@@ -145,9 +173,25 @@ func (r *Runner) run(ctx context.Context, dir string, args ...string) ([]byte, e
 // treat a specific exit code as meaningful (for example `git merge-file`
 // reporting conflict counts) use this form.
 func (r *Runner) runAllowExit(ctx context.Context, dir string, allowedExitCodes []int, args ...string) ([]byte, int, error) {
-	cmd := exec.CommandContext(ctx, r.path, args...) // #nosec G204 -- args are built from validated configuration and resolved object ids, never a shell string.
+	return r.runAllowExitInput(ctx, dir, nil, allowedExitCodes, args...)
+}
+
+// runAllowExitInput is the single process boundary for Git invocation. It
+// applies fixed hook/template protections, optional standard input, redaction,
+// and caller-declared non-zero result handling.
+func (r *Runner) runAllowExitInput(ctx context.Context, dir string, input []byte, allowedExitCodes []int, args ...string) ([]byte, int, error) {
+	// These protections apply to every invocation, including `git init`, so a
+	// global template cannot seed hooks into a disposable repository and no Git
+	// command can discover or run repository hooks.
+	effectiveArgs := make([]string, 0, len(args)+4)
+	effectiveArgs = append(effectiveArgs, "-c", "core.hooksPath="+os.DevNull, "-c", "init.templateDir=")
+	effectiveArgs = append(effectiveArgs, args...)
+	cmd := exec.CommandContext(ctx, r.path, effectiveArgs...) // #nosec G204 -- args are built from validated configuration and resolved object ids, never a shell string.
 	cmd.Dir = dir
 	cmd.Env = r.env
+	if input != nil {
+		cmd.Stdin = bytes.NewReader(input)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

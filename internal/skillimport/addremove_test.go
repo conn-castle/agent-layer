@@ -415,6 +415,8 @@ func TestPushGroupsTwoSourcesIntoOneDestinationCommit(t *testing.T) {
 	second.Commit("add beta")
 
 	destination := newGitRepo(t, "main")
+	destination.WriteFile("destination-only.md", "destination base\n", 0o644)
+	destination.Commit("add destination-only base content")
 
 	proj := newProject(t)
 	proj.AppendConfig(importBlock(first.URL(), []string{"skills/alpha"},
@@ -442,7 +444,7 @@ func TestPushGroupsTwoSourcesIntoOneDestinationCommit(t *testing.T) {
 		}
 	}
 	// The published trees must be complete skills. A destination branch created
-	// from one source's commit does not carry the other source's skill, so an
+	// from the destination default does not carry either source's skill, so an
 	// unguarded merge would read every unchanged file as a destination deletion
 	// and commit a skill with the added note but no manifest or resources.
 	for _, published := range []struct {
@@ -466,5 +468,8 @@ func TestPushGroupsTwoSourcesIntoOneDestinationCommit(t *testing.T) {
 	}
 	if got := destination.FileAt("skill-updates", "skills/beta/notes.md"); got != "beta note" {
 		t.Fatalf("beta not published: %q", got)
+	}
+	if got := destination.FileAt("skill-updates", "destination-only.md"); got != "destination base" {
+		t.Fatalf("the new branch did not start from the destination default: %q", got)
 	}
 }

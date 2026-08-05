@@ -224,6 +224,13 @@ Agent Layer never force-pushes, never invents a branch name, and never opens a
 pull request for you. `al skills push` uses your current files whether or not
 you committed them in your own project, and it never pulls first.
 
+A missing configured contribution branch starts from the destination's current
+default branch. Pushes use Git objects directly rather than checking out remote
+content, and accept only HTTPS, SSH, Git, file, scp-style SSH, and local-path
+repository transports. If a destination skill contains an ignored artifact,
+symbolic link, submodule, or another unsupported node, Agent Layer names it and
+requires you to remove it from the destination before retrying.
+
 Changes are reconciled against the destination the same way `al skills pull`
 reconciles upstream changes, so a change made on the destination branch is
 preserved rather than overwritten. If the destination branch removed a skill
