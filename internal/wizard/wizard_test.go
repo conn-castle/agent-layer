@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -655,6 +657,15 @@ func TestInitializeChoices_QuestionToolReadBackPrecedence(t *testing.T) {
 			t.Fatal("expected typed flag=false to take precedence over legacy block")
 		}
 	})
+}
+
+func TestInitializeChoices_PreservesLegacyDispatchAgentSelection(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", legacyDispatchAgentCatalogID), 0o750))
+
+	choices, err := initializeChoices(&config.ProjectConfig{Root: root})
+	require.NoError(t, err)
+	assert.True(t, choices.EnabledCLISkills["dispatch-agent"])
 }
 
 func TestInitializeChoices_StatuslineWizardDefaults(t *testing.T) {

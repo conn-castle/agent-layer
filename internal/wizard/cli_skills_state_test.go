@@ -41,6 +41,22 @@ func TestCatalogSkillIsManagedOnDiskRequiresConfiguredOwnershipMarker(t *testing
 	assert.True(t, catalogSkillIsManagedOnDisk(root, entry), "catalog template carries its ownership marker")
 }
 
+func TestLegacyDispatchAgentDirectoryRemainsCatalogStateUntilMigration(t *testing.T) {
+	root := t.TempDir()
+	entry := CLISkillCatalogEntry{ID: "dispatch-agent", Name: "Agent dispatch"}
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", legacyDispatchAgentCatalogID), 0o750))
+
+	assert.Equal(t, legacyDispatchAgentCatalogID, catalogSkillStateIDOnDisk(root, entry))
+	assert.True(t, catalogSkillIsManagedOnDisk(root, entry))
+
+	require.NoError(t, os.Rename(
+		filepath.Join(root, ".agent-layer", "skills", legacyDispatchAgentCatalogID),
+		filepath.Join(root, ".agent-layer", "skills", entry.ID),
+	))
+	assert.Equal(t, entry.ID, catalogSkillStateIDOnDisk(root, entry))
+	assert.True(t, catalogSkillIsManagedOnDisk(root, entry))
+}
+
 func TestHasNonCatalogWorkflowSkillHandlesMalformedSkillsDir(t *testing.T) {
 	t.Run("returns true when skills path cannot be read as a directory", func(t *testing.T) {
 		root := t.TempDir()

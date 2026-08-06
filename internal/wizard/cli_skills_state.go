@@ -7,6 +7,11 @@ import (
 	"path/filepath"
 )
 
+const (
+	dispatchAgentCatalogID       = "dispatch-agent"
+	legacyDispatchAgentCatalogID = "agent-dispatch"
+)
+
 // catalogSkillExistsOnDisk reports whether a CLI catalog skill directory is
 // present at .agent-layer/skills/<id>/. It is used both for default-from-state
 // in initializeChoices and for the apply path's add/remove diff.
@@ -22,19 +27,31 @@ func catalogSkillExistsOnDisk(root string, id string) bool {
 	return info.IsDir()
 }
 
+// catalogSkillStateIDOnDisk returns the directory id that currently represents
+// a catalog entry. Repositories installed before 0.16 keep the dispatch skill
+// under its legacy id until the upgrade migration renames it. The wizard must
+// preserve that state instead of creating the renamed directory alongside it.
+func catalogSkillStateIDOnDisk(root string, entry CLISkillCatalogEntry) string {
+	if entry.ID == dispatchAgentCatalogID && catalogSkillExistsOnDisk(root, legacyDispatchAgentCatalogID) {
+		return legacyDispatchAgentCatalogID
+	}
+	return entry.ID
+}
+
 // catalogSkillIsManagedOnDisk reports whether the directory at a catalog
 // entry's path is safe for the wizard to claim and remove. Entries without an
 // ownership marker retain the legacy directory-presence behavior. Marked
 // entries must contain their marker in SKILL.md so a user-authored same-name
 // skill is not mistaken for catalog-installed content.
 func catalogSkillIsManagedOnDisk(root string, entry CLISkillCatalogEntry) bool {
-	if !catalogSkillExistsOnDisk(root, entry.ID) {
+	stateID := catalogSkillStateIDOnDisk(root, entry)
+	if !catalogSkillExistsOnDisk(root, stateID) {
 		return false
 	}
 	if entry.OwnershipMarker == "" {
 		return true
 	}
-	data, err := os.ReadFile(filepath.Join(root, ".agent-layer", "skills", entry.ID, "SKILL.md")) // #nosec G304 -- root is the project root and catalogSkillExistsOnDisk has validated entry.ID as a single safe path segment.
+	data, err := os.ReadFile(filepath.Join(root, ".agent-layer", "skills", stateID, "SKILL.md")) // #nosec G304 -- root is the project root and catalogSkillStateIDOnDisk returns a validated catalog id.
 	if err != nil {
 		return false
 	}
