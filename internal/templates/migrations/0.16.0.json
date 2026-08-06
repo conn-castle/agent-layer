@@ -18,15 +18,7 @@
       "source_agnostic": true
     },
     {
-      "id": "c-rename-imported-skills-directory",
-      "kind": "rename_file",
-      "source_agnostic": true,
-      "rationale": "Group the Git-imported skill tier beside the user-managed skills directory.",
-      "from": ".agent-layer/imported-skills",
-      "to": ".agent-layer/skills-imported"
-    },
-    {
-      "id": "d-rename-dispatch-agent-catalog-skill",
+      "id": "c-rename-dispatch-agent-catalog-skill",
       "kind": "rename_file",
       "source_agnostic": true,
       "from": ".agent-layer/skills/agent-dispatch",
