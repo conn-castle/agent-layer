@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -19,6 +20,25 @@ func catalogSkillExistsOnDisk(root string, id string) bool {
 		return false
 	}
 	return info.IsDir()
+}
+
+// catalogSkillIsManagedOnDisk reports whether the directory at a catalog
+// entry's path is safe for the wizard to claim and remove. Entries without an
+// ownership marker retain the legacy directory-presence behavior. Marked
+// entries must contain their marker in SKILL.md so a user-authored same-name
+// skill is not mistaken for catalog-installed content.
+func catalogSkillIsManagedOnDisk(root string, entry CLISkillCatalogEntry) bool {
+	if !catalogSkillExistsOnDisk(root, entry.ID) {
+		return false
+	}
+	if entry.OwnershipMarker == "" {
+		return true
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".agent-layer", "skills", entry.ID, "SKILL.md")) // #nosec G304 -- root is the project root and catalogSkillExistsOnDisk has validated entry.ID as a single safe path segment.
+	if err != nil {
+		return false
+	}
+	return bytes.Contains(data, []byte(entry.OwnershipMarker))
 }
 
 // detectAgentLayerEnabledFromDisk returns true when the workflow bundle appears

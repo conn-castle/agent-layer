@@ -22,6 +22,25 @@ func TestCatalogSkillExistsOnDisk(t *testing.T) {
 	assert.False(t, catalogSkillExistsOnDisk(root, ""), "empty id returns false")
 }
 
+func TestCatalogSkillIsManagedOnDiskRequiresConfiguredOwnershipMarker(t *testing.T) {
+	root := t.TempDir()
+	entry := CLISkillCatalogEntry{
+		ID:              "skill-sync",
+		Name:            "Agent Layer skill sync",
+		OwnershipMarker: "<!-- agent-layer-catalog-skill: skill-sync -->",
+	}
+	skillDir := filepath.Join(root, ".agent-layer", "skills", entry.ID)
+	require.NoError(t, os.MkdirAll(skillDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("# User skill\n"), 0o600))
+
+	assert.False(t, catalogSkillIsManagedOnDisk(root, entry), "same-name user skill is not catalog-managed")
+
+	template, err := templates.Read("skills-catalog/skill-sync/SKILL.md")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), template, 0o600))
+	assert.True(t, catalogSkillIsManagedOnDisk(root, entry), "catalog template carries its ownership marker")
+}
+
 func TestHasNonCatalogWorkflowSkillHandlesMalformedSkillsDir(t *testing.T) {
 	t.Run("returns true when skills path cannot be read as a directory", func(t *testing.T) {
 		root := t.TempDir()

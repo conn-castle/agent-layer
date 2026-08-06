@@ -189,7 +189,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	choices.CLISkillsCatalog = cliSkills
 	choices.InstallWorkflowBundle = detectAgentLayerEnabledFromDisk(cfg.Root)
 	for _, entry := range cliSkills {
-		choices.EnabledCLISkills[entry.ID] = catalogSkillExistsOnDisk(cfg.Root, entry.ID)
+		choices.EnabledCLISkills[entry.ID] = catalogSkillIsManagedOnDisk(cfg.Root, entry)
 	}
 	if err := initializeGitTrackingChoices(cfg.Root, choices); err != nil {
 		return nil, err

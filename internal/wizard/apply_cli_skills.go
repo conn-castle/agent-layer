@@ -82,9 +82,17 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 
 	for _, entry := range choices.CLISkillsCatalog {
 		exists := catalogSkillExistsOnDisk(root, entry.ID)
+		managed := catalogSkillIsManagedOnDisk(root, entry)
 		selected := choices.EnabledCLISkills[entry.ID]
 		missingFiles := false
-		if selected && exists {
+		if selected && exists && !managed {
+			return skillsChangeSet{}, fmt.Errorf(
+				"cannot install catalog skill %s: .agent-layer/skills/%s/ already exists and is not catalog-managed; remove or rename it first",
+				entry.ID,
+				entry.ID,
+			)
+		}
+		if selected && managed {
 			var err error
 			missingFiles, err = templateDirHasMissingFiles(
 				cliSkillsCatalogTemplateRoot+"/"+entry.ID,
@@ -97,9 +105,9 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 		switch {
 		case selected && !exists:
 			out.catalogSkillsToAdd = append(out.catalogSkillsToAdd, entry.ID)
-		case selected && missingFiles:
+		case selected && managed && missingFiles:
 			out.catalogSkillsToRepair = append(out.catalogSkillsToRepair, entry.ID)
-		case !selected && exists:
+		case !selected && managed:
 			out.catalogSkillsToRemove = append(out.catalogSkillsToRemove, entry.ID)
 		}
 	}

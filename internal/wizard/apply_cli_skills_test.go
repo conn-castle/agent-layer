@@ -64,6 +64,37 @@ func TestComputeSkillsChangeSet_CatalogRemoveIgnoresMalformedMissingFiles(t *tes
 	assert.Equal(t, []string{"playwright"}, cs.catalogSkillsToRemove)
 }
 
+func TestComputeSkillsChangeSet_PreservesUserOwnedCatalogPath(t *testing.T) {
+	root := t.TempDir()
+	skillDir := filepath.Join(root, ".agent-layer", "skills", "skill-sync")
+	require.NoError(t, os.MkdirAll(skillDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("# User-owned skill\n"), 0o600))
+	entry := CLISkillCatalogEntry{
+		ID:              "skill-sync",
+		Name:            "Agent Layer skill sync",
+		OwnershipMarker: "<!-- agent-layer-catalog-skill: skill-sync -->",
+	}
+
+	choices := NewChoices()
+	choices.CLISkillsCatalog = []CLISkillCatalogEntry{entry}
+	changes, err := computeSkillsChangeSet(root, choices)
+	require.NoError(t, err)
+	assert.Empty(t, changes.catalogSkillsToRemove)
+
+	choices.EnabledCLISkills[entry.ID] = true
+	_, err = computeSkillsChangeSet(root, choices)
+	require.ErrorContains(t, err, "already exists and is not catalog-managed")
+	assert.FileExists(t, filepath.Join(skillDir, "SKILL.md"))
+
+	template, err := templates.Read("skills-catalog/skill-sync/SKILL.md")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), template, 0o600))
+	choices.EnabledCLISkills[entry.ID] = false
+	changes, err = computeSkillsChangeSet(root, choices)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"skill-sync"}, changes.catalogSkillsToRemove)
+}
+
 func TestComputeSkillsChangeSet_WorkflowBundleNoDoesNotPrune(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "implement"), 0o750))

@@ -17,8 +17,9 @@ const cliSkillsCatalogTemplatePath = "cli-skills-catalog.toml"
 
 // CLISkillCatalogEntry describes one wizard-managed CLI skill option.
 type CLISkillCatalogEntry struct {
-	ID   string
-	Name string
+	ID              string
+	Name            string
+	OwnershipMarker string `toml:"ownership_marker"`
 }
 
 var cliSkillCatalogIDPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`)

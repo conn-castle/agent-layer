@@ -1,9 +1,11 @@
 ---
 name: skill-sync
-description: Manage local skills backed by known remote Git repositories. Use when the user wants to import, inspect, sync, pull, push, reset, or remove them. Do not use to discover new skills or create user-owned skills.
+description: Manage local skills backed by known remote Git repositories. Use when the user wants to import, inspect, pull, push, reset, or remove them, or project current local skills to enabled clients with `al sync`. Do not use to discover new skills or create user-owned skills.
 compatibility: Requires `al` in an initialized Agent Layer project and Git access for remote operations.
 allowed-tools: Bash(al:*)
 ---
+
+<!-- agent-layer-catalog-skill: skill-sync -->
 
 # Skill Sync
 

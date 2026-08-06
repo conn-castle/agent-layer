@@ -29,4 +29,5 @@ name = "Agent dispatch"
 [[cli_skills]]
 id = "skill-sync"
 name = "Agent Layer skill sync"
+ownership_marker = "<!-- agent-layer-catalog-skill: skill-sync -->"
 # skill-sync uses the current Agent Layer binary; no external binary key.

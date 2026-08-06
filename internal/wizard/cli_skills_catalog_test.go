@@ -23,6 +23,7 @@ func TestLoadCLISkillCatalog_EmbeddedHasFiveEntries(t *testing.T) {
 		_, ok := ids[want]
 		assert.True(t, ok, "catalog should declare %s", want)
 	}
+	assert.Equal(t, "<!-- agent-layer-catalog-skill: skill-sync -->", ids["skill-sync"].OwnershipMarker)
 }
 
 func TestLoadCLISkillCatalog_ReadError(t *testing.T) {
