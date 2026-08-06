@@ -82,6 +82,92 @@ func TestExclusiveSkillRootPreflightAcceptsReleasedMarkers(t *testing.T) {
 	}
 }
 
+// writeSkillDir creates dir with a marker-free manifest, the shape both the
+// byte-exact source tiers and their projections have.
+func writeSkillDir(t *testing.T, dir string, name string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	manifest := "---\nname: " + name + "\ndescription: " + name + "\n---\n"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Projections stopped carrying a generated header when skill trees became
+// byte-exact copies of their source. Without this, a repository synced by the
+// claiming version can never complete the claim: its own output is
+// indistinguishable from user content and every entry blocks forever.
+func TestExclusiveSkillRootPreflightAcceptsMarkerFreeProjectionsOfCurrentSources(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeSkillDir(t, filepath.Join(root, ".agent-layer", "skills", "user-tier"), "user-tier")
+	writeSkillDir(t, filepath.Join(root, ".agent-layer", "skills-imported", "imported-tier"), "imported-tier")
+	writeSkillDir(t, filepath.Join(root, ".agent-layer", "imported-skills", "legacy-tier"), "legacy-tier")
+	for _, client := range []string{".agents", ".claude"} {
+		for _, name := range []string{"user-tier", "imported-tier", "legacy-tier"} {
+			writeSkillDir(t, filepath.Join(root, client, "skills", name), name)
+		}
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.preflightExclusiveSkillRoots(); err != nil {
+		t.Fatalf("projections of current sources must be safe to replace: %v", err)
+	}
+}
+
+// Name matching is only sound because a source skill's client directory is
+// rewritten on every sync. A name with no source behind it has never been
+// projected, so it is user content and must still block.
+func TestExclusiveSkillRootPreflightBlocksNamesNoSourceTierProjects(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeSkillDir(t, filepath.Join(root, ".agent-layer", "skills", "projected"), "projected")
+	// A source directory without a manifest is not a projectable skill and must
+	// not launder a client-root entry of the same name.
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "not-a-skill"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	manifestDir := filepath.Join(root, ".agent-layer", "skills", "manifest-is-directory")
+	if err := os.MkdirAll(filepath.Join(manifestDir, "SKILL.md"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	linkedManifest := filepath.Join(root, ".agent-layer", "skills", "linked-manifest")
+	if err := os.MkdirAll(linkedManifest, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	manifestTarget := filepath.Join(root, "linked-manifest-target.md")
+	if err := os.WriteFile(manifestTarget, []byte("---\nname: linked-manifest\ndescription: linked\n---\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(manifestTarget, filepath.Join(linkedManifest, "SKILL.md")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	handWritten := filepath.Join(root, ".claude", "skills", "hand-written")
+	notASkill := filepath.Join(root, ".claude", "skills", "not-a-skill")
+	manifestIsDirectory := filepath.Join(root, ".claude", "skills", "manifest-is-directory")
+	linkedManifestClient := filepath.Join(root, ".claude", "skills", "linked-manifest")
+	writeSkillDir(t, handWritten, "hand-written")
+	writeSkillDir(t, notASkill, "not-a-skill")
+	writeSkillDir(t, manifestIsDirectory, "manifest-is-directory")
+	writeSkillDir(t, linkedManifestClient, "linked-manifest")
+	writeSkillDir(t, filepath.Join(root, ".claude", "skills", "projected"), "projected")
+
+	err := (&installer{root: root, sys: RealSystem{}}).preflightExclusiveSkillRoots()
+	if err == nil {
+		t.Fatal("expected preflight to block content no source tier projects")
+	}
+	for _, path := range []string{handWritten, notASkill, manifestIsDirectory, linkedManifestClient} {
+		if !strings.Contains(err.Error(), path) {
+			t.Fatalf("error %q does not name %s", err, path)
+		}
+	}
+	if strings.Contains(err.Error(), filepath.Join(root, ".claude", "skills", "projected")) {
+		t.Fatalf("error %q blocks a projection of a current source", err)
+	}
+}
+
 func TestExclusiveSkillRootPreflightRejectsNonDirectoryRootAndMarkerTextOutsideHeader(t *testing.T) {
 	t.Parallel()
 

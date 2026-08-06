@@ -305,6 +305,10 @@ al-dev-build: ## Build source al for development commands that launch child proc
 al-upgrade: ## Upgrade this repo's .agent-layer using current source
 	@$(AL_RUN) upgrade
 
+.PHONY: al-sync
+al-sync: ## Sync this repo's generated agent files using current source
+	@$(AL_RUN) sync
+
 .PHONY: al-wizard
 al-wizard: ## Run al wizard against this repo using current source
 	@$(AL_RUN) wizard
