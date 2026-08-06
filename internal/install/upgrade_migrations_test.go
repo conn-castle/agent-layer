@@ -958,13 +958,13 @@ func TestLoadUpgradeMigrationManifest_0_15_0_RenamesPlaywrightCatalogSkill(t *te
 	}
 }
 
-func TestLoadUpgradeMigrationManifest_0_16_0_ClaimsClientSkillRootsAndRenamesImportedSkills(t *testing.T) {
+func TestLoadUpgradeMigrationManifest_0_16_0_ClaimsClientSkillRootsAndRenamesReleasedPaths(t *testing.T) {
 	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.16.0")
 	if err != nil {
 		t.Fatalf("load 0.16.0 manifest: %v", err)
 	}
-	if manifest.MinPriorVersion != "0.10.2" || len(manifest.Operations) != 4 {
-		t.Fatalf("manifest = %#v, want four migrations supporting prior releases", manifest)
+	if manifest.MinPriorVersion != "0.10.2" || len(manifest.Operations) != 3 {
+		t.Fatalf("manifest = %#v, want three migrations supporting prior releases", manifest)
 	}
 	byID := make(map[string]upgradeMigrationOperation, len(manifest.Operations))
 	for _, op := range manifest.Operations {
@@ -979,27 +979,22 @@ func TestLoadUpgradeMigrationManifest_0_16_0_ClaimsClientSkillRootsAndRenamesImp
 		memoryRename.From != ".agent-layer/instructions/02_memory.md" || memoryRename.To != ".agent-layer/instructions/01_memory.md" {
 		t.Fatalf("operation = %#v, want source-agnostic instruction memory rename", memoryRename)
 	}
-	rename := byID["c-rename-imported-skills-directory"]
-	if rename.Kind != upgradeMigrationKindRenameFile || !rename.SourceAgnostic ||
-		rename.From != ".agent-layer/imported-skills" || rename.To != ".agent-layer/skills-imported" {
-		t.Fatalf("operation = %#v, want source-agnostic imported-skills directory rename", rename)
-	}
 	// Without this rename an upgraded repo keeps the old catalog directory: the
 	// wizard installs and removes the skill under the new id only, so the stale
 	// copy would stay on disk and keep answering `/agent-dispatch` while the
 	// workflow skills instruct `/dispatch-agent`.
-	dispatchRename := byID["d-rename-dispatch-agent-catalog-skill"]
+	dispatchRename := byID["c-rename-dispatch-agent-catalog-skill"]
 	if dispatchRename.Kind != upgradeMigrationKindRenameFile || !dispatchRename.SourceAgnostic ||
 		dispatchRename.From != ".agent-layer/skills/agent-dispatch" || dispatchRename.To != ".agent-layer/skills/dispatch-agent" {
 		t.Fatalf("operation = %#v, want source-agnostic dispatch-agent catalog directory rename", dispatchRename)
 	}
 }
 
-func TestHasUnpinnedMigrationTrigger_FindsImportedSkillsDirectoryRename(t *testing.T) {
+func TestHasUnpinnedMigrationTrigger_FindsCatalogSkillDirectoryRename(t *testing.T) {
 	root := t.TempDir()
-	legacy := filepath.Join(root, ".agent-layer", "imported-skills", "alpha")
+	legacy := filepath.Join(root, ".agent-layer", "skills", "agent-dispatch")
 	if err := os.MkdirAll(legacy, 0o700); err != nil {
-		t.Fatalf("mkdir legacy imported skill: %v", err)
+		t.Fatalf("mkdir legacy catalog skill: %v", err)
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
@@ -1008,13 +1003,13 @@ func TestHasUnpinnedMigrationTrigger_FindsImportedSkillsDirectoryRename(t *testi
 		t.Fatalf("hasUnpinnedMigrationTrigger: %v", err)
 	}
 	if !triggered {
-		t.Fatal("legacy imported-skills directory must trigger the unpinned v0.16 migration")
+		t.Fatal("legacy agent-dispatch catalog directory must trigger the unpinned v0.16 migration")
 	}
 }
 
 func TestHasUnpinnedMigrationTrigger_FailsOnLegacyPathStatError(t *testing.T) {
 	root := t.TempDir()
-	legacy := filepath.Join(root, ".agent-layer", "imported-skills")
+	legacy := filepath.Join(root, ".agent-layer", "skills", "agent-dispatch")
 	fault := newFaultSystem(RealSystem{})
 	fault.statErrs[normalizePath(legacy)] = errors.New("stat boom")
 
@@ -1028,45 +1023,45 @@ func TestHasUnpinnedMigrationTrigger_FailsOnLegacyPathStatError(t *testing.T) {
 	}
 }
 
-func TestMigration_0_16_0_RenamesImportedSkillsDirectorySafely(t *testing.T) {
+func TestMigration_0_16_0_RenamesCatalogSkillDirectorySafely(t *testing.T) {
 	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.16.0")
 	if err != nil {
 		t.Fatalf("load 0.16.0 manifest: %v", err)
 	}
 	var rename upgradeMigrationOperation
 	for _, op := range manifest.Operations {
-		if op.ID == "c-rename-imported-skills-directory" {
+		if op.ID == "c-rename-dispatch-agent-catalog-skill" {
 			rename = op
 			break
 		}
 	}
 	if rename.ID == "" {
-		t.Fatal("0.16.0 manifest is missing the imported skills directory rename")
+		t.Fatal("0.16.0 manifest is missing the dispatch-agent catalog directory rename")
 	}
 
 	t.Run("moves populated legacy directory intact", func(t *testing.T) {
 		root := t.TempDir()
-		legacyFile := filepath.Join(root, ".agent-layer", "imported-skills", "alpha", "SKILL.md")
+		legacyFile := filepath.Join(root, ".agent-layer", "skills", "agent-dispatch", "SKILL.md")
 		if err := os.MkdirAll(filepath.Dir(legacyFile), 0o700); err != nil {
-			t.Fatalf("mkdir legacy imported skill: %v", err)
+			t.Fatalf("mkdir legacy catalog skill: %v", err)
 		}
 		if err := os.WriteFile(legacyFile, []byte("skill bytes\n"), 0o600); err != nil {
-			t.Fatalf("write legacy imported skill: %v", err)
+			t.Fatalf("write legacy catalog skill: %v", err)
 		}
 
 		changed, err := (&installer{root: root, sys: RealSystem{}}).executeUpgradeMigrationOperation(rename)
 		if err != nil {
-			t.Fatalf("execute imported skills rename: %v", err)
+			t.Fatalf("execute catalog skill rename: %v", err)
 		}
 		if !changed {
 			t.Fatal("populated legacy directory rename must report a change")
 		}
-		if _, err := os.Stat(filepath.Join(root, ".agent-layer", "imported-skills")); !errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(filepath.Join(root, ".agent-layer", "skills", "agent-dispatch")); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("legacy directory must be absent after rename, stat error: %v", err)
 		}
-		got, err := os.ReadFile(filepath.Join(root, ".agent-layer", "skills-imported", "alpha", "SKILL.md")) // #nosec G304 -- path is built from t.TempDir and test-controlled constants.
+		got, err := os.ReadFile(filepath.Join(root, ".agent-layer", "skills", "dispatch-agent", "SKILL.md")) // #nosec G304 -- path is built from t.TempDir and test-controlled constants.
 		if err != nil {
-			t.Fatalf("read migrated imported skill: %v", err)
+			t.Fatalf("read migrated catalog skill: %v", err)
 		}
 		if string(got) != "skill bytes\n" {
 			t.Fatalf("migrated content = %q, want exact original bytes", got)
@@ -1075,8 +1070,8 @@ func TestMigration_0_16_0_RenamesImportedSkillsDirectorySafely(t *testing.T) {
 
 	t.Run("refuses populated destination without mutation", func(t *testing.T) {
 		root := t.TempDir()
-		legacyFile := filepath.Join(root, ".agent-layer", "imported-skills", "alpha", "SKILL.md")
-		destinationFile := filepath.Join(root, ".agent-layer", "skills-imported", "beta", "SKILL.md")
+		legacyFile := filepath.Join(root, ".agent-layer", "skills", "agent-dispatch", "SKILL.md")
+		destinationFile := filepath.Join(root, ".agent-layer", "skills", "dispatch-agent", "references", "existing.md")
 		for path, content := range map[string]string{legacyFile: "legacy\n", destinationFile: "destination\n"} {
 			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 				t.Fatalf("mkdir %s: %v", path, err)
@@ -1087,7 +1082,7 @@ func TestMigration_0_16_0_RenamesImportedSkillsDirectorySafely(t *testing.T) {
 		}
 
 		changed, err := (&installer{root: root, sys: RealSystem{}}).executeUpgradeMigrationOperation(rename)
-		if err == nil || !strings.Contains(err.Error(), "reconcile .agent-layer/imported-skills and .agent-layer/skills-imported manually") ||
+		if err == nil || !strings.Contains(err.Error(), "reconcile .agent-layer/skills/agent-dispatch and .agent-layer/skills/dispatch-agent manually") ||
 			!strings.Contains(err.Error(), "rerun 'al upgrade'") {
 			t.Fatalf("expected actionable populated-destination error, got changed=%v err=%v", changed, err)
 		}
@@ -1104,9 +1099,9 @@ func TestMigration_0_16_0_RenamesImportedSkillsDirectorySafely(t *testing.T) {
 
 	t.Run("already migrated is a no-op", func(t *testing.T) {
 		root := t.TempDir()
-		destination := filepath.Join(root, ".agent-layer", "skills-imported", "alpha")
+		destination := filepath.Join(root, ".agent-layer", "skills", "dispatch-agent")
 		if err := os.MkdirAll(destination, 0o700); err != nil {
-			t.Fatalf("mkdir migrated imported skill: %v", err)
+			t.Fatalf("mkdir migrated catalog skill: %v", err)
 		}
 
 		changed, err := (&installer{root: root, sys: RealSystem{}}).executeUpgradeMigrationOperation(rename)

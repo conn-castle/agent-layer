@@ -19,13 +19,10 @@ var exclusiveSkillRootPaths = [][]string{
 }
 
 // projectionSourceTierPaths are the skill source tiers a client root is
-// projected from. `imported-skills` is the pre-0.16.0 spelling of the imported
-// tier: this preflight runs before the same migration's rename operation, so
-// either spelling can be the live tier while the check is running.
+// projected from.
 var projectionSourceTierPaths = [][]string{
 	{agentLayerDirName, skillDirectoryName},
 	{agentLayerDirName, config.ImportedSkillsDirName},
-	{agentLayerDirName, "imported-skills"},
 }
 
 const releasedSkillProjectionMarkerPrefix = "<!--\n  GENERATED FILE\n  Source: .agent-layer/"

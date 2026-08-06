@@ -105,9 +105,8 @@ func TestExclusiveSkillRootPreflightAcceptsMarkerFreeProjectionsOfCurrentSources
 	root := t.TempDir()
 	writeSkillDir(t, filepath.Join(root, ".agent-layer", "skills", "user-tier"), "user-tier")
 	writeSkillDir(t, filepath.Join(root, ".agent-layer", "skills-imported", "imported-tier"), "imported-tier")
-	writeSkillDir(t, filepath.Join(root, ".agent-layer", "imported-skills", "legacy-tier"), "legacy-tier")
 	for _, client := range []string{".agents", ".claude"} {
-		for _, name := range []string{"user-tier", "imported-tier", "legacy-tier"} {
+		for _, name := range []string{"user-tier", "imported-tier"} {
 			writeSkillDir(t, filepath.Join(root, client, "skills", name), name)
 		}
 	}

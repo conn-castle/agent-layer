@@ -1,14 +1,16 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v0.16.0 - 2026-08-06
+
+Git-backed Agent Skill imports and a consolidated skill and instruction bundle.
 
 ### Added
+- Git-backed Agent Skill imports. `al skills add <repository> <selector>...` records an import in a new `[[skills.imports]]` config block, `al skills pull` fetches every configured source and reconciles it with local content, `al skills status` reports local state without touching the network, `al skills reset <name>` discards one skill's local edits, `al skills remove` drops a selector, and `al skills push` publishes local changes back to a configured destination. Imported skills live in `.agent-layer/skills-imported/<skill-name>/` and stay editable; `pull` merges upstream changes without discarding local edits. Each import block carries its own `ref`, `tracking` (`tracked` or `pinned`), and `write_policy` (`none`, `branch`, or `direct`); `write_policy = "branch"` requires an explicit non-primary `push_branch`, and `al skills push` refuses to write to the destination's actual default branch. `add`, `remove`, `reset`, and `push` prompt before persistent configuration changes, destructive reset, or remote publication; non-interactive callers confirm with `--yes`. The generated `.agent-layer/.gitignore` ignores both `skills-imported/` and the `skills.lock.json` state file.
+- A bundled `skill-sync` catalog skill for managing those imports from an agent. Its pre-approved shell surface is limited to `al skills` and `al sync`.
 - `al organize-scratch --root <dir>` sorts a scratch directory into `reports/`, `artifacts/`, and `review/` folders and writes an `ORGANIZE-REVIEW.md` listing everything that still needs a human decision. It only moves entries: nothing is deleted, overwritten, or merged, and an entry whose destination is already taken is left in place. Defaults to a dry run; pass `--apply` to move. Registered Git worktrees are left alone unless `--move-worktrees` is given, in which case their registrations are repaired after the move. The command is a maintenance aid and is hidden from `al --help`.
 
 ### Changed
-- `al skills add`, `remove`, `reset`, and `push` now prompt before persistent configuration changes, destructive reset, or remote publication. Non-interactive callers can confirm explicitly with `--yes`. The bundled `skill-sync` skill limits its pre-approved shell surface to `al skills` and `al sync` instead of every `al` subcommand.
-- Git-imported skills now live in `.agent-layer/skills-imported/`, grouping them beside `.agent-layer/skills/`. The v0.16.0 upgrade safely renames the previous `.agent-layer/imported-skills/` directory and fails if a populated destination already exists. The generated `.agent-layer/.gitignore` now ignores both the machine-managed imported-skill directory and its `.agent-layer/skills.lock.json` state.
 - Skill sources now use one strict, byte-exact tree contract. User-managed and Git-imported skills both require uppercase `SKILL.md`, reject symlinks and other non-regular nodes, preserve unknown/provider-specific frontmatter and every resource byte, and project from one locked immutable snapshot. Agent Layer now owns `.agents/skills/` and `.claude/skills/` completely: enabled roots are replaced wholesale and disabled roots are removed. The `v0.16.0` migration blocks before mutation if a pre-existing client root contains an entry that is neither marker-bearing output from a released Agent Layer version nor a directory matching a source-tier skill directory with a canonical regular `SKILL.md`.
 - The workflow skill templates are consolidated. `implement` replaces the `plan-work`, `review-plan`, `implement-plan`, `fully-implement-plan`, and `full-workflow` chain, and `ship-pr` absorbs `address-pr-comments` and `fix-ci` as references. `boost-coverage`, `clean-and-fix-code`, `improve-codebase`, `review-uncommitted-code`, `run-and-fix-all-checks`, `schedule-backlog`, `simplify-codebase`, and `verify-work` are removed; their work is covered by the remaining skills. Existing installs keep their copies of the removed skills until they are deleted by hand; `al upgrade` reports them as orphans rather than removing them.
 - `debug-and-fix-issue` is removed. No remaining skill covers reproduce-then-diagnose debugging; run those investigations directly, or hand the diagnosis to `implement` once the cause is known.
@@ -22,6 +24,10 @@ All notable changes to this project will be documented in this file.
 - Claude dispatches now pass the allowlisted commands and MCP servers as `--allowedTools`. Claude applies a project's `permissions.allow` rules only after its workspace trust dialog is accepted, and that dialog never appears under `-p`, so the generated settings file left every approval inert unless the repository happened to have been trusted in an earlier interactive session.
 - A dispatched Claude agent that is denied a tool call now fails the dispatch instead of reporting success. Claude returns exit 0, `is_error: false`, and a fluent final answer for a run whose writes were all denied, so a denied dispatch previously looked complete.
 - Git subprocesses now resolve the repository from the path they are given instead of honoring an inherited `GIT_DIR`. Git exports its repository-discovery variables to every hook, and they take precedence over `git -C <path>`, so benchmark provenance and pinned-checkout validation could report on a different repository than the one being measured when a run started from a Git hook.
+
+### Internal
+- Added the `v0.16.0` migration and template ownership manifests. The migration claims the client skill projection roots, renames the managed `02_memory.md` instruction file to `01_memory.md`, and renames the `agent-dispatch` catalog skill directory to `dispatch-agent`.
+- The generated Homebrew formula no longer sets a redundant `version` field; Homebrew derives it from the release asset URLs.
 
 ## v0.15.0 - 2026-07-31
 
