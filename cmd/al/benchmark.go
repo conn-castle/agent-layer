@@ -19,7 +19,6 @@ const (
 	benchmarkCommandName   = "benchmark"
 	benchmarkBaselineName  = "baseline"
 	benchmarkTreatmentName = "treatment"
-	benchmarkYes           = "yes"
 )
 
 var (
@@ -272,7 +271,7 @@ func readBenchmarkConfirmation(cmd *cobra.Command) (bool, error) {
 		return false, fmt.Errorf("read benchmark confirmation: %w", err)
 	}
 	answer = strings.ToLower(strings.TrimSpace(answer))
-	return answer == "y" || answer == benchmarkYes, nil
+	return answer == "y" || answer == affirmativeResponse, nil
 }
 
 func readBenchmarkPlanInput(cmd *cobra.Command, planPath string) ([]byte, error) {

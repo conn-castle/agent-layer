@@ -416,12 +416,12 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al dispatch wait <handle>` | Wait up to eight minutes; return `running` if work continues, otherwise return the terminal result. |
 | `al dispatch continue <handle>` | Start another invocation in a terminal conversation. |
 | `al dispatch cancel <handle>` | Cancel a running invocation. |
-| `al skills add <repository> <selector>...` | Import skills from a Git repository and project them. |
-| `al skills remove <repository> <selector>` | Remove one configured import selector and recompute the desired set. |
+| `al skills add <repository> <selector>... [--yes]` | Import skills from a Git repository and project them. |
+| `al skills remove <repository> <selector> [--yes]` | Remove one configured import selector and recompute the desired set. |
 | `al skills status` | Report local imported-skill state. Local and network-free; `--all` expands it. |
 | `al skills pull` | Fetch configured sources, reconcile them with local content, and project the results. |
-| `al skills reset <name>` | Permanently discard one imported skill's local edits and accept its current configured upstream version. |
-| `al skills push` | Publish local imported-skill changes to configured destinations. |
+| `al skills reset <name> [--yes]` | Permanently discard one imported skill's local edits and accept its current configured upstream version. |
+| `al skills push [--yes]` | Publish local imported-skill changes to configured destinations. |
 | `al probe agy` | Run the Antigravity capability probe and print JSON. |
 | `al doctor` | Validate configuration and probe enabled MCP servers. |
 | `al completion` | Print or install shell completions (bash/zsh/fish). |
@@ -811,13 +811,16 @@ permanently discards that skill's local edits and atomically replaces its tree
 and lock entry with the current configured upstream version. Reset does not
 reconcile selector membership, inspect version-control status, or create a
 commit, stash, copy, or backup. Resetting a pinned branch deliberately repins it
-at the branch's current commit; ordinary pull leaves that new pin fixed.
+at the branch's current commit; ordinary pull leaves that new pin fixed. Reset
+prompts before discarding edits; non-interactive callers must pass `--yes`.
 
 **push** publishes local changes to each block's configured destination. It
 never pulls first and never force-pushes. Changes for one destination
 repository and branch are committed and pushed together. For a tracked import,
 push first verifies the source ref is still at the locked commit and tells you
-to run `al skills pull` if it moved.
+to run `al skills pull` if it moved. Push prompts before publication;
+non-interactive callers must pass `--yes`. `add` and `remove` use the same
+confirmation pattern before modifying import configuration.
 
 A missing configured branch starts from the destination's current default
 branch and fails without creating a ref when no default exists. Agent Layer

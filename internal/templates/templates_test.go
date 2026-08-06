@@ -67,6 +67,30 @@ func TestEmbeddedPlaywrightSkillUsesDistinctIDAndCLICommand(t *testing.T) {
 	}
 }
 
+func TestEmbeddedSkillSyncNarrowsToolsAndUsesConfirmedDestructiveCommands(t *testing.T) {
+	data, err := Read("skills-catalog/skill-sync/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	skill := string(data)
+	if !strings.Contains(skill, "\nallowed-tools: Bash(al skills *) Bash(al sync)\n") {
+		t.Fatal("skill-sync does not limit its pre-approved shell commands to al skills and al sync")
+	}
+	if strings.Contains(skill, "Bash(al:*)") {
+		t.Fatal("skill-sync retains the unrestricted al command grant")
+	}
+	for _, required := range []string{
+		"al skills add <repository> <selector>... --yes",
+		"<selector> --yes",
+		"al skills reset <name> --yes",
+		"al skills push --yes",
+	} {
+		if !strings.Contains(skill, required) {
+			t.Fatalf("skill-sync lacks confirmed mutation form %q", required)
+		}
+	}
+}
+
 func TestReadLauncherTemplate(t *testing.T) {
 	data, err := Read("launchers/open-vscode.command")
 	if err != nil {

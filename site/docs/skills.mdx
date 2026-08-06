@@ -200,7 +200,8 @@ al skills reset reviewer
 Reset accepts the current configured upstream version for that skill only. It
 does not add new wildcard matches, retire other skills, or otherwise reconcile
 membership. Preserve edits yourself before running it if you may want to
-reapply them.
+reapply them. Reset prompts before discarding edits; non-interactive callers
+must pass `--yes`.
 
 Import several skills at once with a wildcard, and exclude the ones you do not
 want:
@@ -226,7 +227,10 @@ al skills push
 
 Agent Layer never force-pushes, never invents a branch name, and never opens a
 pull request for you. `al skills push` uses your current files whether or not
-you committed them in your own project, and it never pulls first.
+you committed them in your own project, and it never pulls first. Push prompts
+before publication; non-interactive callers must pass `--yes`. The `add` and
+`remove` commands likewise prompt before changing import configuration and
+accept `--yes` for automation.
 
 A missing configured contribution branch starts from the destination's current
 default branch. Pushes use Git objects directly rather than checking out remote

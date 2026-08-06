@@ -316,7 +316,8 @@ same import block. Every selector added in one invocation shares the block
 policy given by the flags, so adding a selector with a different policy creates
 a separate block.
 
-'al skills add' never searches, recommends, or previews skills.`
+'al skills add' never searches, recommends, or previews skills. It prompts
+before changing project configuration; pass --yes for non-interactive use.`
 
 	SkillsRemoveUse   = "remove <repository> <selector>"
 	SkillsRemoveShort = "Remove one configured import selector"
@@ -326,7 +327,8 @@ members are imported from the source's current resolved target.
 
 Skills still matched by another selector remain managed. A clean imported
 directory that leaves the desired set is deleted; a modified one is preserved
-and reported so you can adopt or delete it explicitly.`
+and reported so you can adopt or delete it explicitly. The command prompts
+before changing project configuration; pass --yes for non-interactive use.`
 
 	SkillsStatusUse   = "status"
 	SkillsStatusShort = "Report local imported-skill state"
@@ -357,7 +359,8 @@ Exactly one imported skill name is required. Reset does not reconcile wildcard
 membership, retire other skills, inspect version-control status, or create a
 commit, stash, copy, or backup. Preserve any edits you want to keep yourself
 before running this command. A pinned branch is deliberately repinned to its
-current resolved commit; ordinary pull leaves that new pin fixed.`
+current resolved commit; ordinary pull leaves that new pin fixed. The command
+prompts before discarding edits; pass --yes for non-interactive use.`
 
 	SkillsPushUse   = "push"
 	SkillsPushShort = "Contribute local skill changes to configured destinations"
@@ -367,7 +370,8 @@ destination.
 Blocks with write_policy = "none" (the default) are skipped. Changes for one
 destination repository and branch are committed and pushed together. Agent
 Layer never force-pushes, never generates a branch name, and never falls back
-to another destination or mode.
+to another destination or mode. The command prompts before publishing; pass
+--yes for non-interactive use.
 
 'al skills push' never pulls first.`
 
@@ -377,6 +381,14 @@ to another destination or mode.
 	SkillsPushRepositoryFlag = "Destination repository for upstream writes (default: the source repository)"
 	SkillsPushBranchFlag     = "Destination branch, required when --write=branch"
 	SkillsAllFlag            = "Expand the summary into one entry per resolved skill and exclusion"
+	SkillsYesFlag            = "Confirm the mutation without prompting"
+	SkillsAddConfirmFmt      = "Import selectors %s from %s and update project configuration?"
+	SkillsRemoveConfirmFmt   = "Remove selector %s from %s and update project configuration?"
+	SkillsResetConfirmFmt    = "Permanently discard local edits to imported skill %q?"
+	SkillsPushConfirm        = "Publish local changes to every configured writable skill destination?"
+
+	SkillsNonInteractiveRequiresYesFmt = "al skills %s requires --yes outside a terminal"
+	SkillsConfirmationDeclinedFmt      = "al skills %s confirmation declined"
 
 	// SkillsOperationFailedFmt reports a failed or partially failed operation.
 	SkillsOperationFailedFmt = "al skills %s did not complete successfully"

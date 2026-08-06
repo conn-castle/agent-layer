@@ -8,6 +8,8 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
+const affirmativeResponse = "yes"
+
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           messages.RootUse,
