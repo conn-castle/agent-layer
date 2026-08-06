@@ -10,19 +10,20 @@ import (
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
-func TestLoadCLISkillCatalog_EmbeddedHasFourEntries(t *testing.T) {
+func TestLoadCLISkillCatalog_EmbeddedHasFiveEntries(t *testing.T) {
 	entries, err := loadCLISkillCatalog()
 	require.NoError(t, err)
-	require.Len(t, entries, 4)
+	require.Len(t, entries, 5)
 
 	ids := make(map[string]CLISkillCatalogEntry, len(entries))
 	for _, entry := range entries {
 		ids[entry.ID] = entry
 	}
-	for _, want := range []string{"tavily-web", "playwright", "find-docs", "agent-dispatch"} {
+	for _, want := range []string{"tavily-web", "playwright", "find-docs", "agent-dispatch", "skill-sync"} {
 		_, ok := ids[want]
 		assert.True(t, ok, "catalog should declare %s", want)
 	}
+	assert.Equal(t, "<!-- agent-layer-catalog-skill: skill-sync -->", ids["skill-sync"].OwnershipMarker)
 }
 
 func TestLoadCLISkillCatalog_ReadError(t *testing.T) {

@@ -416,12 +416,12 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al dispatch wait <handle>` | Wait up to eight minutes; return `running` if work continues, otherwise return the terminal result. |
 | `al dispatch continue <handle>` | Start another invocation in a terminal conversation. |
 | `al dispatch cancel <handle>` | Cancel a running invocation. |
-| `al skills add <repository> <selector>...` | Import skills from a Git repository and project them. |
-| `al skills remove <repository> <selector>` | Remove one configured import selector and recompute the desired set. |
+| `al skills add <repository> <selector>... [--yes]` | Import skills from a Git repository and project them. |
+| `al skills remove <repository> <selector> [--yes]` | Remove one configured import selector and recompute the desired set. |
 | `al skills status` | Report local imported-skill state. Local and network-free; `--all` expands it. |
 | `al skills pull` | Fetch configured sources, reconcile them with local content, and project the results. |
-| `al skills reset <name>` | Permanently discard one imported skill's local edits and accept its current configured upstream version. |
-| `al skills push` | Publish local imported-skill changes to configured destinations. |
+| `al skills reset <name> [--yes]` | Permanently discard one imported skill's local edits and accept its current configured upstream version. |
+| `al skills push [--yes]` | Publish local imported-skill changes to configured destinations. |
 | `al probe agy` | Run the Antigravity capability probe and print JSON. |
 | `al doctor` | Validate configuration and probe enabled MCP servers. |
 | `al completion` | Print or install shell completions (bash/zsh/fish). |
@@ -625,7 +625,7 @@ Think of sync as a build step. You can run it any time you want to refresh gener
 **What it does**
 
 - Validates `.agent-layer/config.toml`
-- Reads `.agent-layer/instructions/`, both `.agent-layer/skills/` and `.agent-layer/imported-skills/`, `.agent-layer/commands.allow`, and `.agent-layer/.env`
+- Reads `.agent-layer/instructions/`, both `.agent-layer/skills/` and `.agent-layer/skills-imported/`, `.agent-layer/commands.allow`, and `.agent-layer/.env`
 - Regenerates client outputs and launchers
 
 **Steps (high level)**
@@ -639,7 +639,7 @@ Think of sync as a build step. You can run it any time you want to refresh gener
 
 Skill sources align with the [agentskills.io specification](https://agentskills.io/specification). For authoring guidance, use the [Skill Design Guide](/skill-design); for installed command-line tools, use the [CLI Skill Design Guide](/cli-skill-design).
 
-User-managed `.agent-layer/skills/` and Git-managed `.agent-layer/imported-skills/` use directory format:
+User-managed `.agent-layer/skills/` and Git-managed `.agent-layer/skills-imported/` use directory format:
 
 - `<source-tier>/<name>/SKILL.md` (uppercase filename required)
 
@@ -761,11 +761,11 @@ al skills push
 al skills remove https://github.com/example/skills.git skills/reviewer
 ```
 
-Imported skills live in `.agent-layer/imported-skills/<skill-name>/` and are
+Imported skills live in `.agent-layer/skills-imported/<skill-name>/` and are
 projected through ordinary `al sync` alongside `.agent-layer/skills/`. Recorded
-upstream state lives in `.agent-layer/skills.lock.json`. Both are ordinary
-files: whether you commit them is your project's choice, and Agent Layer never
-stages or commits your repository.
+upstream state lives in `.agent-layer/skills.lock.json`. The generated
+`.agent-layer/.gitignore` ignores both machine-managed paths by default. Agent
+Layer never stages or commits your repository.
 
 `add`, `pull`, `reset`, and `push` contact remote repositories. `remove`
 contacts one whenever the block keeps a selector so newly revealed membership
@@ -811,13 +811,16 @@ permanently discards that skill's local edits and atomically replaces its tree
 and lock entry with the current configured upstream version. Reset does not
 reconcile selector membership, inspect version-control status, or create a
 commit, stash, copy, or backup. Resetting a pinned branch deliberately repins it
-at the branch's current commit; ordinary pull leaves that new pin fixed.
+at the branch's current commit; ordinary pull leaves that new pin fixed. Reset
+prompts before discarding edits; non-interactive callers must pass `--yes`.
 
 **push** publishes local changes to each block's configured destination. It
 never pulls first and never force-pushes. Changes for one destination
 repository and branch are committed and pushed together. For a tracked import,
 push first verifies the source ref is still at the locked commit and tells you
-to run `al skills pull` if it moved.
+to run `al skills pull` if it moved. Push prompts before publication;
+non-interactive callers must pass `--yes`. `add` and `remove` use the same
+confirmation pattern before modifying import configuration.
 
 A missing configured branch starts from the destination's current default
 branch and fails without creating a ref when no default exists. Agent Layer
@@ -853,8 +856,8 @@ variable, rather than contacting a remote with a half-substituted URL.
 
 The placeholder text is what stays canonical. It is what `config.toml` and
 `.agent-layer/skills.lock.json` record, what `al skills status` prints, and what
-identifies the block — so the lockfile stays shareable and identical across
-machines. The value is resolved only when a Git command runs, and is redacted
+identifies the block — so the lockfile remains portable and secret-free. The
+value is resolved only when a Git command runs, and is redacted
 back to its placeholder in any Git error, because a repository URL is an
 ordinary command argument that Git echoes into its own diagnostics.
 
@@ -880,9 +883,9 @@ reported so you can move it into `.agent-layer/skills/` to adopt it as
 user-managed or delete it explicitly. Whole-skill deletion is never propagated
 upstream.
 
-**Ownership.** `.agent-layer/imported-skills/` is fully managed. A directory
+**Ownership.** `.agent-layer/skills-imported/` is fully managed. A directory
 with no lock entry, or one name owned by both `.agent-layer/skills/` and
-`.agent-layer/imported-skills/`, is an actionable error rather than a silent
+`.agent-layer/skills-imported/`, is an actionable error rather than a silent
 shadow.
 
 ### Doctor

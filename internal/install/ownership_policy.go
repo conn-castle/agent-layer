@@ -31,6 +31,7 @@ var catalogSkillRelPathPrefixes = []string{
 	".agent-layer/skills/playwright-cli/",
 	".agent-layer/skills/find-docs/",
 	".agent-layer/skills/agent-dispatch/",
+	".agent-layer/skills/skill-sync/",
 }
 
 const (

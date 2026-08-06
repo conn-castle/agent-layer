@@ -18,7 +18,7 @@ type scene struct {
 func newScene(t *testing.T) *scene {
 	t.Helper()
 	root := t.TempDir()
-	imported := filepath.Join(root, "imported-skills")
+	imported := filepath.Join(root, "skills-imported")
 	if err := os.MkdirAll(StagingRoot(imported), 0o750); err != nil {
 		t.Fatalf("mkdir staging: %v", err)
 	}

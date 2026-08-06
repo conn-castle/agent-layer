@@ -79,7 +79,7 @@ func WithLockedProject(sys System, root string, fn func(*config.ProjectConfig) e
 }
 
 // verifyImportedOwnership rejects imported directories Agent Layer does not
-// own. `.agent-layer/imported-skills/` is fully managed, so a directory without
+// own. `.agent-layer/skills-imported/` is fully managed, so a directory without
 // a lock entry means recorded state and local state disagree and no import
 // operation can safely reconcile it.
 func verifyImportedOwnership(fsys fs.FS, root string, paths config.Paths) error {

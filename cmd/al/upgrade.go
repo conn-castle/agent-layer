@@ -986,7 +986,7 @@ func writeUpgradeSummary(out io.Writer, plan install.UpgradePlan) error {
 		}
 	}
 	needsReview := len(plan.ReadinessChecks) > 0
-	reviewState := "yes"
+	reviewState := affirmativeResponse
 	if !needsReview {
 		reviewState = "no"
 	}

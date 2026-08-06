@@ -586,8 +586,12 @@ These files are user-editable; customize them for your team's preferences.
 ### Skills: `.agent-layer/skills/`
 
 User-managed skills live in `.agent-layer/skills/`; skills managed through
-`al skills` live in `.agent-layer/imported-skills/`. These canonical source
+`al skills` live in `.agent-layer/skills-imported/`. These canonical source
 tiers define the workflows you want your agents to run.
+
+The generated `.agent-layer/.gitignore` ignores both the machine-managed
+`.agent-layer/skills-imported/` directory and its `.agent-layer/skills.lock.json`
+upstream state by default.
 
 Agent Layer aligns with the [Agent Skills specification](https://agentskills.io/specification), and `al doctor` validates configured skills against agentskills-aligned conventions.
 

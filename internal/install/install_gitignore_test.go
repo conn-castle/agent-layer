@@ -637,6 +637,8 @@ func TestAgentLayerGitignoreTemplateEntries(t *testing.T) {
 		"/templates/",
 		"state/",
 		"sync.lock",
+		"skills.lock.json",
+		"skills-imported/",
 		"tmp/",
 		"open-vscode.app/",
 		"open-vscode.command",

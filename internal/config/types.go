@@ -270,7 +270,7 @@ type Skill struct {
 	SourceDir   string // Absolute path to the skill directory (parent of SKILL.md)
 	Tree        skilltree.Tree
 	// Imported is true when the skill's editable source lives under
-	// .agent-layer/imported-skills/ instead of .agent-layer/skills/. Both tiers
+	// .agent-layer/skills-imported/ instead of .agent-layer/skills/. Both tiers
 	// project identically; the flag exists so ownership rules and `al skills
 	// status` never have to infer provenance from a path prefix.
 	Imported bool

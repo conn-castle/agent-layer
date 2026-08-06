@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -33,7 +34,8 @@ func newSkillsCmd() *cobra.Command {
 }
 
 func newSkillsResetCmd() *cobra.Command {
-	return &cobra.Command{
+	var yes bool
+	cmd := &cobra.Command{
 		Use:   messages.SkillsResetUse,
 		Short: messages.SkillsResetShort,
 		Long:  messages.SkillsResetLong,
@@ -43,14 +45,20 @@ func newSkillsResetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := confirmSkillsMutation(cmd, "reset", fmt.Sprintf(messages.SkillsResetConfirmFmt, args[0]), yes); err != nil {
+				return err
+			}
 			report, err := skillimport.New(root).Reset(cmd.Context(), args[0])
 			return finishSkillsOperation(cmd, "reset", report, err)
 		},
 	}
+	cmd.Flags().BoolVar(&yes, "yes", false, messages.SkillsYesFlag)
+	return cmd
 }
 
 func newSkillsAddCmd() *cobra.Command {
 	var opts skillimport.AddOptions
+	var yes bool
 	cmd := &cobra.Command{
 		Use:   messages.SkillsAddUse,
 		Short: messages.SkillsAddShort,
@@ -59,6 +67,9 @@ func newSkillsAddCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {
+				return err
+			}
+			if err := confirmSkillsMutation(cmd, "add", fmt.Sprintf(messages.SkillsAddConfirmFmt, strings.Join(args[1:], ", "), args[0]), yes); err != nil {
 				return err
 			}
 			opts.Repository = args[0]
@@ -72,11 +83,13 @@ func newSkillsAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.WritePolicy, "write", "", messages.SkillsWriteFlag)
 	cmd.Flags().StringVar(&opts.PushRepository, "push-repository", "", messages.SkillsPushRepositoryFlag)
 	cmd.Flags().StringVar(&opts.PushBranch, "push-branch", "", messages.SkillsPushBranchFlag)
+	cmd.Flags().BoolVar(&yes, "yes", false, messages.SkillsYesFlag)
 	return cmd
 }
 
 func newSkillsRemoveCmd() *cobra.Command {
-	return &cobra.Command{
+	var yes bool
+	cmd := &cobra.Command{
 		Use:   messages.SkillsRemoveUse,
 		Short: messages.SkillsRemoveShort,
 		Long:  messages.SkillsRemoveLong,
@@ -86,10 +99,15 @@ func newSkillsRemoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := confirmSkillsMutation(cmd, "remove", fmt.Sprintf(messages.SkillsRemoveConfirmFmt, args[1], args[0]), yes); err != nil {
+				return err
+			}
 			report, err := skillimport.New(root).Remove(cmd.Context(), args[0], args[1])
 			return finishSkillsOperation(cmd, "remove", report, err)
 		},
 	}
+	cmd.Flags().BoolVar(&yes, "yes", false, messages.SkillsYesFlag)
+	return cmd
 }
 
 func newSkillsStatusCmd() *cobra.Command {
@@ -134,7 +152,8 @@ func newSkillsPullCmd() *cobra.Command {
 }
 
 func newSkillsPushCmd() *cobra.Command {
-	return &cobra.Command{
+	var yes bool
+	cmd := &cobra.Command{
 		Use:   messages.SkillsPushUse,
 		Short: messages.SkillsPushShort,
 		Long:  messages.SkillsPushLong,
@@ -144,10 +163,35 @@ func newSkillsPushCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := confirmSkillsMutation(cmd, "push", messages.SkillsPushConfirm, yes); err != nil {
+				return err
+			}
 			report, err := skillimport.New(root).Push(cmd.Context())
 			return finishSkillsOperation(cmd, "push", report, err)
 		},
 	}
+	cmd.Flags().BoolVar(&yes, "yes", false, messages.SkillsYesFlag)
+	return cmd
+}
+
+// confirmSkillsMutation protects persistent configuration changes, destructive
+// imported-skill replacement, and remote publication. Interactive calls use a
+// default-no prompt; automation must opt in explicitly with --yes.
+func confirmSkillsMutation(cmd *cobra.Command, operation string, prompt string, yes bool) error {
+	if yes {
+		return nil
+	}
+	if !isTerminal() {
+		return fmt.Errorf(messages.SkillsNonInteractiveRequiresYesFmt, operation)
+	}
+	confirmed, err := promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, false)
+	if err != nil {
+		return fmt.Errorf("read al skills %s confirmation: %w", operation, err)
+	}
+	if !confirmed {
+		return fmt.Errorf(messages.SkillsConfirmationDeclinedFmt, operation)
+	}
+	return nil
 }
 
 // finishSkillsOperation writes the deterministic report and converts partial or

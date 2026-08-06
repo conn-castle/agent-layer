@@ -30,8 +30,9 @@ answer each question yes or no:
   code review, whether implementation is direct or planned?
 
 If no plan is required, implement `<input>` directly without dispatching or
-writing a plan. Run only targeted checks as needed, then continue to the Finish
-section.
+writing a plan. Run only targeted checks as needed. Check completion against
+`<input>`, resolve gaps until implementation is complete. Then continue to
+the Finish section.
 
 ## Implementation with a Written Plan
 
@@ -51,11 +52,20 @@ update the artifacts to address any findings you agree with. Do not repeat plan
 review.
 
 Finally, dispatch `implementer` with a prompt instructing it to implement the
-plan based on the provided artifacts and to only run targeted checks as needed.
+plan from the artifacts, run only targeted checks as needed, and return after
+completing the plan or when blocked. A blocked response must list the unmet
+requirements and current implementation state. The prompt must also instruct it
+not to invoke the `implement` skill or dispatch another implementer.
 
-If implementation is incomplete or leaves requirements unresolved, use
-`dispatch_continue` once to reuse the same session. Be specific in the
-continuation prompt about what remains to be done.
+Check completion against the plan artifacts. If the implementation is
+incomplete, call `dispatch_continue` once with the `implementer` session handle
+and a prompt listing the unmet requirements and instructing it to complete the
+plan before returning. If implementation remains incomplete after that
+continuation, use a fresh dispatch whose prompt includes the original plan,
+current implementation state, and remaining work. Repeat the instruction not
+to invoke the `implement` skill or dispatch another implementer in the fresh
+prompt. If the continuation did not make meaningful progress, detail a
+different approach in that prompt.
 
 ## Finish
 
@@ -67,10 +77,15 @@ continuation prompt about what remains to be done.
    self-contained prompt that includes `<input>` and any plan artifacts and
    instructs it to review the implementation against them without editing
    files and return a list of findings. Consider the findings, then address
-   those you agree with.
+   those you agree with. Code review must cover the final implementation,
+   including changes made in response to review findings. After addressing any
+   accepted finding that changes the implementation, dispatch a fresh review of
+   the final implementation: use a full review for substantial changes and a
+   targeted review for smaller fixes. Repeat until no accepted finding changes
+   the implementation.
 
-3. Confirm the final implementation satisfies `<input>` and, for planned work,
-   every task and requirement.
+3. Repeat the completion check. Resolve gaps until it passes. Passing tests
+   are supporting evidence, not proof of completion.
 
 4. Run the repository's complete required verification suite against the final
    candidate. Fix any failures, then run the minimal checks required to confirm

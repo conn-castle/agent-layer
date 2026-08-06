@@ -7,6 +7,8 @@ config.toml.bak
 /templates/
 state/
 sync.lock
+skills.lock.json
+skills-imported/
 tmp/
 open-vscode.app/
 open-vscode.command

@@ -16,6 +16,14 @@
       "to": ".agent-layer/instructions/01_memory.md",
       "rationale": "Instruction templates consolidated to 00_rules.md and 01_memory.md; renumber memory instructions to close the gap left by the removed files.",
       "source_agnostic": true
+    },
+    {
+      "id": "c-rename-imported-skills-directory",
+      "kind": "rename_file",
+      "source_agnostic": true,
+      "rationale": "Group the Git-imported skill tier beside the user-managed skills directory.",
+      "from": ".agent-layer/imported-skills",
+      "to": ".agent-layer/skills-imported"
     }
   ]
 }

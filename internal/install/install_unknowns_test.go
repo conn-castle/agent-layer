@@ -850,13 +850,13 @@ func TestBuildKnownPaths_PreservesImportedSkillState(t *testing.T) {
 	if err := os.WriteFile(lockPath, []byte(`{"version":1,"skills":[]}`), 0o600); err != nil {
 		t.Fatalf("write skills lock: %v", err)
 	}
-	nested := filepath.Join(root, ".agent-layer", "imported-skills", "alpha", "scripts")
+	nested := filepath.Join(root, ".agent-layer", "skills-imported", "alpha", "scripts")
 	if err := os.MkdirAll(nested, 0o700); err != nil {
 		t.Fatalf("mkdir imported skill: %v", err)
 	}
 	resources := []string{
-		filepath.Join(root, ".agent-layer", "imported-skills", "alpha", "SKILL.md"),
-		filepath.Join(root, ".agent-layer", "imported-skills", "alpha", ".hidden"),
+		filepath.Join(root, ".agent-layer", "skills-imported", "alpha", "SKILL.md"),
+		filepath.Join(root, ".agent-layer", "skills-imported", "alpha", ".hidden"),
 		filepath.Join(nested, "run.sh"),
 	}
 	for _, path := range resources {
@@ -870,7 +870,7 @@ func TestBuildKnownPaths_PreservesImportedSkillState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildKnownPaths: %v", err)
 	}
-	for _, path := range append(resources, lockPath, filepath.Join(root, ".agent-layer", "imported-skills")) {
+	for _, path := range append(resources, lockPath, filepath.Join(root, ".agent-layer", "skills-imported")) {
 		if _, ok := known[filepath.Clean(path)]; !ok {
 			t.Fatalf("expected %s to be a known Agent Layer path", path)
 		}

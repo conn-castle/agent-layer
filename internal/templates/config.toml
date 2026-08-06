@@ -123,7 +123,7 @@ enabled = true
 # source repository plus the selectors that share its ref, tracking mode, write
 # policy, and push destination. Manage these blocks with `al skills add` and
 # `al skills remove`, then run `al skills pull` to fetch and reconcile them.
-# Imported skills live in .agent-layer/imported-skills/<skill-name>/ and are
+# Imported skills live in .agent-layer/skills-imported/<skill-name>/ and are
 # editable; `al skills pull` merges upstream changes without discarding local
 # edits. See https://agent-layer.dev/docs/skills#importing-skills-from-git
 #

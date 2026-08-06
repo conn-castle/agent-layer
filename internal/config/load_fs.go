@@ -195,7 +195,7 @@ func LoadSkillsFS(fsys fs.FS, root string, dir string) ([]Skill, error) {
 	)
 }
 
-// LoadImportedSkillsFS reads .agent-layer/imported-skills from fsys using the
+// LoadImportedSkillsFS reads .agent-layer/skills-imported from fsys using the
 // same strict directory-format rules as user-managed skills, and marks every
 // result as imported. A missing directory contributes no skills because
 // imports are optional; any other read failure is returned.

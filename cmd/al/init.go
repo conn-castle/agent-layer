@@ -238,7 +238,7 @@ func promptYesNo(in io.Reader, out io.Writer, prompt string, defaultYes bool) (b
 			}
 		}
 		switch strings.ToLower(response) {
-		case "y", "yes":
+		case "y", affirmativeResponse:
 			return true, nil
 		case "n", "no":
 			return false, nil

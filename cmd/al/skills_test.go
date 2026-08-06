@@ -84,11 +84,16 @@ func newSkillsRepo(t *testing.T) string {
 // runSkillsCommand executes one `al skills` invocation and returns its stdout,
 // stderr, and error.
 func runSkillsCommand(t *testing.T, args ...string) (string, string, error) {
+	return runSkillsCommandWithInput(t, "", args...)
+}
+
+func runSkillsCommandWithInput(t *testing.T, input string, args ...string) (string, string, error) {
 	t.Helper()
 	cmd := newRootCmd()
 	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
+	cmd.SetIn(strings.NewReader(input))
 	cmd.SetArgs(append([]string{"skills"}, args...))
 	err := cmd.Execute()
 	return out.String(), errOut.String(), err
@@ -131,7 +136,7 @@ func TestSkillsCommandSurfaceMatchesTheContract(t *testing.T) {
 	}
 
 	add := find("add")
-	for _, flag := range []string{"ref", "tracking", "write", "push-repository", "push-branch"} {
+	for _, flag := range []string{"ref", "tracking", "write", "push-repository", "push-branch", "yes"} {
 		if add.Flags().Lookup(flag) == nil {
 			t.Fatalf("al skills add is missing --%s", flag)
 		}
@@ -144,6 +149,9 @@ func TestSkillsCommandSurfaceMatchesTheContract(t *testing.T) {
 	}
 
 	remove := find("remove")
+	if remove.Flags().Lookup("yes") == nil {
+		t.Fatal("al skills remove is missing --yes")
+	}
 	if err := remove.Args(remove, []string{"repo"}); err == nil {
 		t.Fatal("al skills remove accepted one argument")
 	}
@@ -172,6 +180,17 @@ func TestSkillsCommandSurfaceMatchesTheContract(t *testing.T) {
 	if reset.Flags().Lookup("all") != nil {
 		t.Fatal("al skills reset exposes a forbidden --all form")
 	}
+	if reset.Flags().Lookup("yes") == nil {
+		t.Fatal("al skills reset is missing --yes")
+	}
+
+	push := find("push")
+	if push.Flags().Lookup("yes") == nil {
+		t.Fatal("al skills push is missing --yes")
+	}
+	if find("pull").Flags().Lookup("yes") != nil {
+		t.Fatal("al skills pull should not require destructive-operation confirmation")
+	}
 }
 
 // TestSkillsStatusRunsWithoutImports proves status is local and read-only and
@@ -198,10 +217,10 @@ func TestSkillsAddPullAndStatusRoundTrip(t *testing.T) {
 	root := newSkillsRepo(t)
 	source := newSkillsSourceRepo(t)
 
-	if _, _, err := runSkillsCommand(t, "add", source, "skills/alpha"); err != nil {
+	if _, _, err := runSkillsCommand(t, "add", source, "skills/alpha", "--yes"); err != nil {
 		t.Fatalf("al skills add: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "imported-skills", "alpha", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "skills-imported", "alpha", "SKILL.md")); err != nil {
 		t.Fatalf("add did not import the skill: %v", err)
 	}
 
@@ -216,15 +235,52 @@ func TestSkillsAddPullAndStatusRoundTrip(t *testing.T) {
 	if _, _, err := runSkillsCommand(t, "pull"); err != nil {
 		t.Fatalf("al skills pull: %v", err)
 	}
-	if _, _, err := runSkillsCommand(t, "push"); err != nil {
+	if _, _, err := runSkillsCommand(t, "push", "--yes"); err != nil {
 		t.Fatalf("al skills push with the default write policy: %v", err)
 	}
 
-	if _, _, err := runSkillsCommand(t, "remove", source, "skills/alpha"); err != nil {
+	if _, _, err := runSkillsCommand(t, "remove", source, "skills/alpha", "--yes"); err != nil {
 		t.Fatalf("al skills remove: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "imported-skills", "alpha")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "skills-imported", "alpha")); !os.IsNotExist(err) {
 		t.Fatalf("remove did not retire the clean skill: %v", err)
+	}
+}
+
+func TestSkillsMutationsRequireExplicitConfirmation(t *testing.T) {
+	newSkillsRepo(t)
+	originalIsTerminal := isTerminal
+	t.Cleanup(func() { isTerminal = originalIsTerminal })
+
+	isTerminal = func() bool { return false }
+	for _, args := range [][]string{
+		{"add", "https://example.invalid/skills.git", "skills/alpha"},
+		{"remove", "https://example.invalid/skills.git", "skills/alpha"},
+		{"reset", "alpha"},
+		{"push"},
+	} {
+		_, _, err := runSkillsCommand(t, args...)
+		if err == nil || !strings.Contains(err.Error(), "requires --yes outside a terminal") {
+			t.Fatalf("al skills %s error = %v, want non-interactive confirmation failure", args[0], err)
+		}
+	}
+	if _, _, err := runSkillsCommand(t, "push", "--yes"); err != nil {
+		t.Fatalf("al skills push --yes: %v", err)
+	}
+	if _, _, err := runSkillsCommand(t, "reset", "alpha", "--yes"); err == nil || !strings.Contains(err.Error(), "no lock entry") {
+		t.Fatalf("al skills reset --yes error = %v, want service validation after confirmation", err)
+	}
+
+	isTerminal = func() bool { return true }
+	out, _, err := runSkillsCommandWithInput(t, "n\n", "push")
+	if err == nil || !strings.Contains(err.Error(), "confirmation declined") {
+		t.Fatalf("declined al skills push error = %v", err)
+	}
+	if !strings.Contains(out, "Publish local changes") || !strings.Contains(out, "[y/N]") {
+		t.Fatalf("push confirmation output = %q", out)
+	}
+	if _, _, err := runSkillsCommandWithInput(t, "yes\n", "push"); err != nil {
+		t.Fatalf("confirmed al skills push: %v", err)
 	}
 }
 

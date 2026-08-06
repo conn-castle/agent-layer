@@ -3,6 +3,8 @@ package templates
 import (
 	"io/fs"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -64,6 +66,46 @@ func TestEmbeddedPlaywrightSkillUsesDistinctIDAndCLICommand(t *testing.T) {
 	}
 	if _, err := Read("skills-catalog/playwright-cli/SKILL.md"); err == nil {
 		t.Fatal("colliding playwright-cli skill template should be absent")
+	}
+}
+
+func TestEmbeddedSkillSyncNarrowsToolsAndUsesConfirmedDestructiveCommands(t *testing.T) {
+	data, err := Read("skills-catalog/skill-sync/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	skill := string(data)
+	if !strings.Contains(skill, "\nallowed-tools: Bash(al skills *) Bash(al sync)\n") {
+		t.Fatal("skill-sync does not limit its pre-approved shell commands to al skills and al sync")
+	}
+	if strings.Contains(skill, "Bash(al:*)") {
+		t.Fatal("skill-sync retains the unrestricted al command grant")
+	}
+	for _, required := range []string{
+		"al skills add <repository> <selector>... --yes",
+		"<selector> --yes",
+		"al skills reset <name> --yes",
+		"al skills push --yes",
+	} {
+		if !strings.Contains(skill, required) {
+			t.Fatalf("skill-sync lacks confirmed mutation form %q", required)
+		}
+	}
+	mutatingCommand := regexp.MustCompile(`\bal skills (?:add|remove|reset|push)\b`)
+	commandSpan := regexp.MustCompile("(?s)`(al skills (?:add|remove|reset|push)\\b[^`]*)`")
+	commands := commandSpan.FindAllStringSubmatch(skill, -1)
+	if got, want := len(commands), len(mutatingCommand.FindAllString(skill, -1)); got != want {
+		t.Fatalf("skill-sync has %d parsed mutation command examples for %d mutation occurrences", got, want)
+	}
+	for _, match := range commands {
+		command := strings.Join(strings.Fields(match[1]), " ")
+		tokens := strings.Fields(command)
+		if slices.Contains(tokens, "--help") {
+			continue
+		}
+		if !slices.Contains(tokens, "--yes") {
+			t.Fatalf("skill-sync mutation command %q lacks an exact --yes token", command)
+		}
 	}
 }
 
