@@ -201,7 +201,7 @@ func TestSkillsAddPullAndStatusRoundTrip(t *testing.T) {
 	if _, _, err := runSkillsCommand(t, "add", source, "skills/alpha"); err != nil {
 		t.Fatalf("al skills add: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "imported-skills", "alpha", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "skills-imported", "alpha", "SKILL.md")); err != nil {
 		t.Fatalf("add did not import the skill: %v", err)
 	}
 
@@ -223,7 +223,7 @@ func TestSkillsAddPullAndStatusRoundTrip(t *testing.T) {
 	if _, _, err := runSkillsCommand(t, "remove", source, "skills/alpha"); err != nil {
 		t.Fatalf("al skills remove: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "imported-skills", "alpha")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "skills-imported", "alpha")); !os.IsNotExist(err) {
 		t.Fatalf("remove did not retire the clean skill: %v", err)
 	}
 }

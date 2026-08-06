@@ -454,7 +454,7 @@ func txnEntriesForBlock(st *state, txn *transaction, block config.SkillImport) [
 	return entries
 }
 
-// failOnOrphans refuses to operate while `.agent-layer/imported-skills/`
+// failOnOrphans refuses to operate while `.agent-layer/skills-imported/`
 // contains a directory Agent Layer does not own.
 func failOnOrphans(st *state) error {
 	orphans := st.orphanDirectories()

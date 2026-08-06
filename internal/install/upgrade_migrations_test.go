@@ -958,17 +958,163 @@ func TestLoadUpgradeMigrationManifest_0_15_0_RenamesPlaywrightCatalogSkill(t *te
 	}
 }
 
-func TestLoadUpgradeMigrationManifest_0_16_0_ClaimsClientSkillRoots(t *testing.T) {
+func TestLoadUpgradeMigrationManifest_0_16_0_ClaimsClientSkillRootsAndRenamesImportedSkills(t *testing.T) {
 	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.16.0")
 	if err != nil {
 		t.Fatalf("load 0.16.0 manifest: %v", err)
 	}
-	if manifest.MinPriorVersion != "0.10.2" {
-		t.Fatalf("min_prior_version = %q, want 0.10.2 so prior releases are supported", manifest.MinPriorVersion)
+	if manifest.MinPriorVersion != "0.10.2" || len(manifest.Operations) != 3 {
+		t.Fatalf("manifest = %#v, want three migrations supporting prior releases", manifest)
 	}
-	claim := manifest.Operations[0]
+	byID := make(map[string]upgradeMigrationOperation, len(manifest.Operations))
+	for _, op := range manifest.Operations {
+		byID[op.ID] = op
+	}
+	claim := byID["a-claim-client-skill-roots"]
 	if claim.Kind != upgradeMigrationKindClaimSkillRoots || !claim.SourceAgnostic {
 		t.Fatalf("operation = %#v, want source-agnostic client-root ownership transition", claim)
+	}
+	memoryRename := byID["b-rename-memory-to-01"]
+	if memoryRename.Kind != upgradeMigrationKindRenameFile || !memoryRename.SourceAgnostic ||
+		memoryRename.From != ".agent-layer/instructions/02_memory.md" || memoryRename.To != ".agent-layer/instructions/01_memory.md" {
+		t.Fatalf("operation = %#v, want source-agnostic instruction memory rename", memoryRename)
+	}
+	rename := byID["c-rename-imported-skills-directory"]
+	if rename.Kind != upgradeMigrationKindRenameFile || !rename.SourceAgnostic ||
+		rename.From != ".agent-layer/imported-skills" || rename.To != ".agent-layer/skills-imported" {
+		t.Fatalf("operation = %#v, want source-agnostic imported-skills directory rename", rename)
+	}
+}
+
+func TestHasUnpinnedMigrationTrigger_FindsImportedSkillsDirectoryRename(t *testing.T) {
+	root := t.TempDir()
+	legacy := filepath.Join(root, ".agent-layer", "imported-skills", "alpha")
+	if err := os.MkdirAll(legacy, 0o700); err != nil {
+		t.Fatalf("mkdir legacy imported skill: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	triggered, err := inst.hasUnpinnedMigrationTrigger("0.16.0")
+	if err != nil {
+		t.Fatalf("hasUnpinnedMigrationTrigger: %v", err)
+	}
+	if !triggered {
+		t.Fatal("legacy imported-skills directory must trigger the unpinned v0.16 migration")
+	}
+}
+
+func TestHasUnpinnedMigrationTrigger_FailsOnLegacyPathStatError(t *testing.T) {
+	root := t.TempDir()
+	legacy := filepath.Join(root, ".agent-layer", "imported-skills")
+	fault := newFaultSystem(RealSystem{})
+	fault.statErrs[normalizePath(legacy)] = errors.New("stat boom")
+
+	inst := &installer{root: root, sys: fault}
+	triggered, err := inst.hasUnpinnedMigrationTrigger("0.16.0")
+	if err == nil || !strings.Contains(err.Error(), legacy) || !strings.Contains(err.Error(), "stat boom") {
+		t.Fatalf("expected actionable legacy-path stat error, got triggered=%v err=%v", triggered, err)
+	}
+	if triggered {
+		t.Fatal("a failed trigger probe must not report migration work")
+	}
+}
+
+func TestMigration_0_16_0_RenamesImportedSkillsDirectorySafely(t *testing.T) {
+	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.16.0")
+	if err != nil {
+		t.Fatalf("load 0.16.0 manifest: %v", err)
+	}
+	var rename upgradeMigrationOperation
+	for _, op := range manifest.Operations {
+		if op.ID == "c-rename-imported-skills-directory" {
+			rename = op
+			break
+		}
+	}
+	if rename.ID == "" {
+		t.Fatal("0.16.0 manifest is missing the imported skills directory rename")
+	}
+
+	t.Run("moves populated legacy directory intact", func(t *testing.T) {
+		root := t.TempDir()
+		legacyFile := filepath.Join(root, ".agent-layer", "imported-skills", "alpha", "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(legacyFile), 0o700); err != nil {
+			t.Fatalf("mkdir legacy imported skill: %v", err)
+		}
+		if err := os.WriteFile(legacyFile, []byte("skill bytes\n"), 0o600); err != nil {
+			t.Fatalf("write legacy imported skill: %v", err)
+		}
+
+		changed, err := (&installer{root: root, sys: RealSystem{}}).executeUpgradeMigrationOperation(rename)
+		if err != nil {
+			t.Fatalf("execute imported skills rename: %v", err)
+		}
+		if !changed {
+			t.Fatal("populated legacy directory rename must report a change")
+		}
+		if _, err := os.Stat(filepath.Join(root, ".agent-layer", "imported-skills")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("legacy directory must be absent after rename, stat error: %v", err)
+		}
+		got, err := os.ReadFile(filepath.Join(root, ".agent-layer", "skills-imported", "alpha", "SKILL.md")) // #nosec G304 -- path is built from t.TempDir and test-controlled constants.
+		if err != nil {
+			t.Fatalf("read migrated imported skill: %v", err)
+		}
+		if string(got) != "skill bytes\n" {
+			t.Fatalf("migrated content = %q, want exact original bytes", got)
+		}
+	})
+
+	t.Run("refuses populated destination without mutation", func(t *testing.T) {
+		root := t.TempDir()
+		legacyFile := filepath.Join(root, ".agent-layer", "imported-skills", "alpha", "SKILL.md")
+		destinationFile := filepath.Join(root, ".agent-layer", "skills-imported", "beta", "SKILL.md")
+		for path, content := range map[string]string{legacyFile: "legacy\n", destinationFile: "destination\n"} {
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatalf("mkdir %s: %v", path, err)
+			}
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatalf("write %s: %v", path, err)
+			}
+		}
+
+		changed, err := (&installer{root: root, sys: RealSystem{}}).executeUpgradeMigrationOperation(rename)
+		if err == nil || !strings.Contains(err.Error(), "reconcile .agent-layer/imported-skills and .agent-layer/skills-imported manually") ||
+			!strings.Contains(err.Error(), "rerun 'al upgrade'") {
+			t.Fatalf("expected actionable populated-destination error, got changed=%v err=%v", changed, err)
+		}
+		if changed {
+			t.Fatal("refused rename must not report a change")
+		}
+		for path, want := range map[string]string{legacyFile: "legacy\n", destinationFile: "destination\n"} {
+			got, readErr := os.ReadFile(path) // #nosec G304 -- path is built from t.TempDir and test-controlled constants.
+			if readErr != nil || string(got) != want {
+				t.Fatalf("refused rename mutated %s: content=%q err=%v", path, got, readErr)
+			}
+		}
+	})
+
+	t.Run("already migrated is a no-op", func(t *testing.T) {
+		root := t.TempDir()
+		destination := filepath.Join(root, ".agent-layer", "skills-imported", "alpha")
+		if err := os.MkdirAll(destination, 0o700); err != nil {
+			t.Fatalf("mkdir migrated imported skill: %v", err)
+		}
+
+		changed, err := (&installer{root: root, sys: RealSystem{}}).executeUpgradeMigrationOperation(rename)
+		if err != nil || changed {
+			t.Fatalf("already-migrated rename = changed %v, err %v; want clean no-op", changed, err)
+		}
+	})
+}
+
+func TestHasUnpinnedMigrationTrigger_NoLegacyStateIsFalse(t *testing.T) {
+	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
+	triggered, err := inst.hasUnpinnedMigrationTrigger("0.16.0")
+	if err != nil {
+		t.Fatalf("hasUnpinnedMigrationTrigger: %v", err)
+	}
+	if triggered {
+		t.Fatal("a repo without legacy filesystem or configuration state must not trigger unpinned migrations")
 	}
 }
 

@@ -1,6 +1,6 @@
 # Agent Skills Client Support Spec
 
-As of 2026-08-05, Agent Layer projects skills from the canonical user-managed tier `.agent-layer/skills/` and Git-imported tier `.agent-layer/imported-skills/` into client discovery locations that support directory-format Agent Skills. Those two source tiers are the single source of truth; client skill roots are disposable sync outputs.
+As of 2026-08-05, Agent Layer projects skills from the canonical user-managed tier `.agent-layer/skills/` and Git-imported tier `.agent-layer/skills-imported/` into client discovery locations that support directory-format Agent Skills. Those two source tiers are the single source of truth; client skill roots are disposable sync outputs.
 
 ## Sources
 
@@ -36,11 +36,11 @@ As of 2026-08-05, Agent Layer projects skills from the canonical user-managed ti
 
 ### Ownership of current projection paths
 
-Agent Layer exclusively owns `.agents/skills/` and `.claude/skills/` in an Agent Layer project. Do not install or edit skills directly in either directory. Put user-managed skills in `.agent-layer/skills/`; imported skills live in `.agent-layer/imported-skills/` and are managed through `al skills`. Every other entry in the client roots is removed during sync.
+Agent Layer exclusively owns `.agents/skills/` and `.claude/skills/` in an Agent Layer project. Do not install or edit skills directly in either directory. Put user-managed skills in `.agent-layer/skills/`; imported skills live in `.agent-layer/skills-imported/` and are managed through `al skills`. Every other entry in the client roots is removed during sync.
 
 ### Ownership of legacy projection paths
 
-If a project uses Agent Layer, it must use Agent Layer to manage skills. `.agent-layer/skills/` and `.agent-layer/imported-skills/` are the two canonical source tiers, and the following client-side directories are claimed exclusively by Agent Layer and removed unconditionally on every `al sync`:
+If a project uses Agent Layer, it must use Agent Layer to manage skills. `.agent-layer/skills/` and `.agent-layer/skills-imported/` are the two canonical source tiers, and the following client-side directories are claimed exclusively by Agent Layer and removed unconditionally on every `al sync`:
 
 - `.codex/skills/`
 - `.agent/skills/` (singular; legacy Antigravity location)

@@ -306,7 +306,7 @@ func TestLoadCommandsAllowFS_ScannerError(t *testing.T) {
 // every skill that does come from the import directory is marked imported, which
 // is what keeps a Git-owned skill from being treated as user-authored.
 func TestLoadImportedSkillsFS(t *testing.T) {
-	const dir = ".agent-layer/imported-skills"
+	const dir = ".agent-layer/skills-imported"
 	manifest := []byte("---\nname: alpha\ndescription: An imported skill.\n---\n\nBody")
 
 	skills, err := LoadImportedSkillsFS(fstest.MapFS{}, "root", dir)

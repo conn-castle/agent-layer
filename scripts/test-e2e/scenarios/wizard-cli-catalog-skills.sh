@@ -11,7 +11,7 @@ run_scenario_wizard_cli_catalog_skills() {
   assert_exit_zero_in "$repo_dir" "al init --no-wizard" al init --no-wizard
 
   # The catalog skills are NOT seeded automatically by al init.
-  for id in tavily-web playwright find-docs agent-dispatch; do
+  for id in tavily-web playwright find-docs agent-dispatch skill-sync; do
     assert_file_not_exists "$repo_dir/.agent-layer/skills/$id/SKILL.md" \
       "$id catalog skill is not seeded by al init"
   done
@@ -36,7 +36,8 @@ run_scenario_wizard_cli_catalog_skills() {
       "docs/agent-layer/"
     ],
     "Enable CLI skills (some require a CLI on PATH; doctor reports missing binaries)": [
-      "Playwright browser automation"
+      "Playwright browser automation",
+      "Agent Layer skill sync"
     ],
     "Enable Default MCP Servers": []
   },
@@ -73,6 +74,13 @@ JSON
     "playwright catalog skill uses the collision-free skill id"
   assert_file_contains "$skill_dir/SKILL.md" "playwright-cli --help" \
     "playwright catalog skill preserves the playwright-cli command surface"
+  local skill_sync_dir="$repo_dir/.agent-layer/skills/skill-sync"
+  assert_file_exists "$skill_sync_dir/SKILL.md" \
+    "scripted wizard installed skill-sync catalog skill"
+  assert_file_contains "$skill_sync_dir/SKILL.md" "name: skill-sync" \
+    "skill-sync catalog skill preserves its catalog id"
+  assert_file_contains "$skill_sync_dir/SKILL.md" "al skills status --all" \
+    "skill-sync catalog skill preserves its local status workflow"
   for id in tavily-web find-docs agent-dispatch; do
     assert_file_not_exists "$repo_dir/.agent-layer/skills/$id/SKILL.md" \
       "$id catalog skill remains absent when unselected"

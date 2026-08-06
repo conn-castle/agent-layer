@@ -323,6 +323,36 @@ func (inst *installer) upgradeMigrationTargetVersion(resolution sourceVersionRes
 }
 
 func (inst *installer) hasUnpinnedMigrationTrigger(targetVersion string) (bool, error) {
+	targetManifest, _, err := loadUpgradeMigrationManifestByVersion(targetVersion)
+	if err != nil {
+		return false, err
+	}
+	manifests, err := collectMigrationChainFromVersionThroughTarget(targetManifest.MinPriorVersion, targetVersion)
+	if err != nil {
+		return false, err
+	}
+	for _, cm := range manifests {
+		for _, op := range cm.manifest.Operations {
+			if !op.SourceAgnostic {
+				continue
+			}
+			switch op.Kind {
+			case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
+			default:
+				continue
+			}
+			fromPath, pathErr := snapshotEntryAbsPath(inst.root, op.From)
+			if pathErr != nil {
+				return false, pathErr
+			}
+			if _, statErr := inst.sys.Stat(fromPath); statErr == nil {
+				return true, nil
+			} else if !errors.Is(statErr, os.ErrNotExist) {
+				return false, fmt.Errorf(messages.InstallFailedStatFmt, fromPath, statErr)
+			}
+		}
+	}
+
 	data, err := inst.sys.ReadFile(filepath.Join(inst.root, filepath.FromSlash(upgradeMigrationConfigPath)))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -593,7 +623,7 @@ func (inst *installer) executeRenameMigration(fromRel string, toRel string) (boo
 				return true, nil
 			}
 		}
-		return false, fmt.Errorf("rename migration target already exists: %s", toRel)
+		return false, fmt.Errorf("rename migration target already exists: %s; reconcile %s and %s manually, remove the obsolete path, then rerun 'al upgrade'", toRel, fromRel, toRel)
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return false, fmt.Errorf(messages.InstallFailedStatFmt, toPath, err)

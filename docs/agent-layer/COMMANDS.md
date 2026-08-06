@@ -313,6 +313,38 @@ Notes: Runs `test-release` first to validate release scripts. Local builds stay 
 
 ### Agent Layer skill A/B benchmark
 
+- Re-run the established eight-task Luna-low matrix against the latest instructions and skills
+```bash
+BENCH_RUNNER_DIR="$(mktemp -d .agent-layer/tmp/deepswe-matrix-runner.XXXXXX)"
+git archive 075ca0d | tar -x -C "$BENCH_RUNNER_DIR"
+(cd "$BENCH_RUNNER_DIR" && go build -o "$OLDPWD/.agent-layer/tmp/al-benchmark-matrix-075" ./cmd/al)
+
+BENCH_LABEL="$(TZ=America/New_York date '+%Y-%m-%d %I:%M %p ET') — Luna Low after-change repeat 1"
+
+.agent-layer/tmp/al-benchmark-matrix-075 benchmark matrix \
+  --selection .agent-layer/tmp/deepswe-luna-low-065-selection-replicate-2.json \
+  --baseline-execution luna:low \
+  --treatment-execution luna:low \
+  --treatment-label "$BENCH_LABEL" \
+  --dispatch-config .agent-layer/tmp/luna-low-agent-layer-dispatch-v2.toml \
+  --task-concurrency 4 \
+  --check
+
+.agent-layer/tmp/al-benchmark-matrix-075 benchmark matrix \
+  --selection .agent-layer/tmp/deepswe-luna-low-065-selection-replicate-2.json \
+  --baseline-execution luna:low \
+  --treatment-execution luna:low \
+  --treatment-label "$BENCH_LABEL" \
+  --dispatch-config .agent-layer/tmp/luna-low-agent-layer-dispatch-v2.toml \
+  --task-concurrency 4 \
+  --yes
+```
+Run from: repo root
+Prerequisites: Go 1.26.0+, Git, Docker, `uvx`, Codex authentication, the preserved selection and dispatch files under `.agent-layer/tmp`, and the compatible completed matrix state under `.agent-layer/state/benchmarks/deepswe/matrices/c9be59278c2d7b9b1e9b03dd9a68751ccc206df1f9dadab685d67674ded51c8b`
+Notes: This is the recurring descriptive eight-task experiment, with one repetition per task. It is distinct from the website-planned campaign below. Commit `075ca0d` is the report-compatible matrix runner: it supports the current `$implement` workflow and dispatch-v2 file while retaining the task-environment and arm identities used by the completed Luna-low baseline. The binary runs from the repository root, so it fingerprints and packages the repository's current `internal/templates/instructions` and `internal/templates/skills`, not the runner snapshot's templates. Preflight should report `8 of 8` baseline cells cached and `0 of 8` treatment cells cached before paid execution. If it does not, stop rather than rerunning the baseline. The matrix report is written under the matrix state's `report/` directory; the latest consolidated scratch reports are `.agent-layer/tmp/deepswe-valid-runs-full-report.html` and `.agent-layer/tmp/all-eight-task-arms-live.{html,json}`.
+
+Use a unique treatment label in the form `YYYY-MM-DD h:mm AM/PM ET — Luna Low <purpose> repeat <n>` (for example, `2026-08-05 8:12 PM ET — Luna Low after-fix repeat 1`). Do not reuse lifecycle labels such as `Latest` or `Final`; date-based labels keep repeated eight-task runs distinguishable in reports. Stored arm manifests are immutable benchmark evidence, so apply clearer historical names as report-level aliases rather than editing completed manifests.
+
 - Validate or run the bare-model baseline from an exported website plan
 ```bash
 go run ./cmd/al benchmark baseline --check --plan <plan.json> --task-concurrency 4

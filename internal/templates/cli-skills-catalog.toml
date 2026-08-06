@@ -25,3 +25,8 @@ binary = "npx"
 id = "agent-dispatch"
 name = "Agent dispatch"
 # agent-dispatch has no external CLI requirement; no binary key.
+
+[[cli_skills]]
+id = "skill-sync"
+name = "Agent Layer skill sync"
+# skill-sync uses the current Agent Layer binary; no external binary key.

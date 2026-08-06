@@ -5,7 +5,7 @@ import "path/filepath"
 const (
 	// ImportedSkillsDirName is the fully managed editable source tier for
 	// Git-backed skill imports, relative to .agent-layer/.
-	ImportedSkillsDirName = "imported-skills"
+	ImportedSkillsDirName = "skills-imported"
 	// SkillsLockFileName is the machine-managed skill import lock, relative to
 	// .agent-layer/.
 	SkillsLockFileName = "skills.lock.json"

@@ -43,6 +43,11 @@ func TestOwnershipPolicyForPath_CatalogSkills(t *testing.T) {
 			want: ownershipPolicyCatalogSkills,
 		},
 		{
+			name: "skill-sync classified",
+			path: ".agent-layer/skills/skill-sync/SKILL.md",
+			want: ownershipPolicyCatalogSkills,
+		},
+		{
 			name: "non-catalog workflow skill not classified",
 			path: ".agent-layer/skills/implement/SKILL.md",
 			want: "",

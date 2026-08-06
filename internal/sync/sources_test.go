@@ -87,7 +87,7 @@ func TestLoadSourcesCombinesBothTiers(t *testing.T) {
 	t.Parallel()
 	root := newSourcesTestRoot(t)
 	writeSkillDir(t, filepath.Join(root, ".agent-layer", "skills", "local"), "local", "Local body")
-	writeSkillDir(t, filepath.Join(root, ".agent-layer", "imported-skills", "remote"), "remote", "Remote body")
+	writeSkillDir(t, filepath.Join(root, ".agent-layer", "skills-imported", "remote"), "remote", "Remote body")
 	writeSkillsLock(t, root, "remote")
 
 	project, err := LoadSources(os.DirFS(root), root)
@@ -110,7 +110,7 @@ func TestLoadSourcesCombinesBothTiers(t *testing.T) {
 func TestLoadSourcesRejectsOrphanImportedDirectories(t *testing.T) {
 	t.Parallel()
 	root := newSourcesTestRoot(t)
-	writeSkillDir(t, filepath.Join(root, ".agent-layer", "imported-skills", "stray"), "stray", "Body")
+	writeSkillDir(t, filepath.Join(root, ".agent-layer", "skills-imported", "stray"), "stray", "Body")
 
 	_, err := LoadSources(os.DirFS(root), root)
 	if err == nil {
@@ -129,14 +129,14 @@ func TestLoadSourcesRejectsCollidingNames(t *testing.T) {
 	t.Parallel()
 	root := newSourcesTestRoot(t)
 	writeSkillDir(t, filepath.Join(root, ".agent-layer", "skills", "alpha"), "alpha", "Local")
-	writeSkillDir(t, filepath.Join(root, ".agent-layer", "imported-skills", "alpha"), "alpha", "Imported")
+	writeSkillDir(t, filepath.Join(root, ".agent-layer", "skills-imported", "alpha"), "alpha", "Imported")
 	writeSkillsLock(t, root, "alpha")
 
 	_, err := LoadSources(os.DirFS(root), root)
 	if err == nil {
 		t.Fatal("expected a cross-tier name collision to fail")
 	}
-	for _, want := range []string{filepath.Join(".agent-layer", "skills", "alpha"), filepath.Join(".agent-layer", "imported-skills", "alpha")} {
+	for _, want := range []string{filepath.Join(".agent-layer", "skills", "alpha"), filepath.Join(".agent-layer", "skills-imported", "alpha")} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("collision error %q does not name %q", err, want)
 		}
@@ -148,7 +148,7 @@ func TestLoadSourcesRejectsCollidingNames(t *testing.T) {
 func TestLoadSourcesFailsOnAMalformedLock(t *testing.T) {
 	t.Parallel()
 	root := newSourcesTestRoot(t)
-	writeSkillDir(t, filepath.Join(root, ".agent-layer", "imported-skills", "alpha"), "alpha", "Imported")
+	writeSkillDir(t, filepath.Join(root, ".agent-layer", "skills-imported", "alpha"), "alpha", "Imported")
 	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "skills.lock.json"), []byte("{"), 0o600); err != nil {
 		t.Fatalf("write lock: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestRunProjectsBothTiersWithoutNetworkAccess(t *testing.T) {
 	t.Parallel()
 	root := newSourcesTestRoot(t)
 	writeSkillDir(t, filepath.Join(root, ".agent-layer", "skills", "local"), "local", "Local body")
-	writeSkillDir(t, filepath.Join(root, ".agent-layer", "imported-skills", "remote"), "remote", "Remote body")
+	writeSkillDir(t, filepath.Join(root, ".agent-layer", "skills-imported", "remote"), "remote", "Remote body")
 	writeSkillsLock(t, root, "remote")
 
 	if _, err := Run(root); err != nil {
@@ -196,7 +196,7 @@ func TestLoadLockedSourcesReturnsTheValidatedSnapshot(t *testing.T) {
 	t.Parallel()
 	root := newSourcesTestRoot(t)
 	writeSkillDir(t, filepath.Join(root, ".agent-layer", "skills", "local"), "local", "Local body")
-	writeSkillDir(t, filepath.Join(root, ".agent-layer", "imported-skills", "remote"), "remote", "Remote body")
+	writeSkillDir(t, filepath.Join(root, ".agent-layer", "skills-imported", "remote"), "remote", "Remote body")
 	writeSkillsLock(t, root, "remote")
 
 	project, err := LoadLockedSources(RealSystem{}, root)
@@ -208,7 +208,7 @@ func TestLoadLockedSourcesReturnsTheValidatedSnapshot(t *testing.T) {
 	}
 
 	// A source-loading failure inside the lock is surfaced, not swallowed.
-	writeSkillDir(t, filepath.Join(root, ".agent-layer", "imported-skills", "stray"), "stray", "Body")
+	writeSkillDir(t, filepath.Join(root, ".agent-layer", "skills-imported", "stray"), "stray", "Body")
 	if _, err := LoadLockedSources(RealSystem{}, root); err == nil {
 		t.Fatal("expected orphan imported state to fail the locked load")
 	}
@@ -245,7 +245,7 @@ func TestWithLockedProjectRunsInsideTheCriticalSection(t *testing.T) {
 func TestLoadSourcesAcceptsUnknownImportedFrontmatter(t *testing.T) {
 	t.Parallel()
 	root := newSourcesTestRoot(t)
-	dir := filepath.Join(root, ".agent-layer", "imported-skills", "remote")
+	dir := filepath.Join(root, ".agent-layer", "skills-imported", "remote")
 	writeSkillDir(t, dir, "remote", "Remote body")
 	manifest := "---\nname: remote\ndescription: The remote skill.\nunsupported-field: value\n---\nRemote body\n"
 	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(manifest), 0o600); err != nil {
@@ -268,7 +268,7 @@ func TestLoadSourcesAcceptsUnknownImportedFrontmatter(t *testing.T) {
 func TestLoadSourcesRejectsAnImportedSkillWithALowercaseManifest(t *testing.T) {
 	t.Parallel()
 	root := newSourcesTestRoot(t)
-	dir := filepath.Join(root, ".agent-layer", "imported-skills", "remote")
+	dir := filepath.Join(root, ".agent-layer", "skills-imported", "remote")
 	writeSkillDir(t, dir, "remote", "Remote body")
 	if err := os.Rename(filepath.Join(dir, "SKILL.md"), filepath.Join(dir, "skill.md")); err != nil {
 		t.Fatalf("rename manifest: %v", err)
@@ -314,7 +314,7 @@ func TestLoadSourcesRejectsSymlinksInBothTiers(t *testing.T) {
 			root := newSourcesTestRoot(t)
 			base := filepath.Join(root, ".agent-layer", "skills")
 			if imported {
-				base = filepath.Join(root, ".agent-layer", "imported-skills")
+				base = filepath.Join(root, ".agent-layer", "skills-imported")
 			}
 			dir := filepath.Join(base, "alpha")
 			writeSkillDir(t, dir, "alpha", "Body")
@@ -347,7 +347,7 @@ func TestLoadSourcesRejectsTopLevelSymlinksInBothTiers(t *testing.T) {
 			root := newSourcesTestRoot(t)
 			base := filepath.Join(root, ".agent-layer", "skills")
 			if imported {
-				base = filepath.Join(root, ".agent-layer", "imported-skills")
+				base = filepath.Join(root, ".agent-layer", "skills-imported")
 			}
 			if err := os.MkdirAll(base, 0o750); err != nil {
 				t.Fatal(err)

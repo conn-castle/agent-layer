@@ -298,7 +298,7 @@ const (
 	SkillsShort = "Manage Git-backed Agent Skill imports"
 	SkillsLong  = `Manage Agent Skills imported from Git repositories.
 
-Imported skills live in .agent-layer/imported-skills/<skill-name>/ and are
+Imported skills live in .agent-layer/skills-imported/<skill-name>/ and are
 projected through ordinary 'al sync' alongside .agent-layer/skills/. Recorded
 upstream state lives in .agent-layer/skills.lock.json.
 

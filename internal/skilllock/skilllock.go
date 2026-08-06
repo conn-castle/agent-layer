@@ -69,7 +69,7 @@ var ErrMalformed = errors.New("skill lock file is malformed")
 // Entry is one imported skill's recorded upstream state.
 type Entry struct {
 	// Name is the validated skill name and the local directory name under
-	// .agent-layer/imported-skills/.
+	// .agent-layer/skills-imported/.
 	Name string `json:"name"`
 	// Repository is the configured source repository.
 	Repository string `json:"repository"`
