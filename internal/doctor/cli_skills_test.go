@@ -48,12 +48,12 @@ func TestCheckCLISkills_AbsentSkillDirEmitsNothing(t *testing.T) {
 func TestCheckCLISkills_NoBinaryEntrySkipped(t *testing.T) {
 	originalCatalog := loadCLISkillCatalogFunc
 	loadCLISkillCatalogFunc = func() ([]cliSkillCatalogEntry, error) {
-		return []cliSkillCatalogEntry{{ID: "agent-dispatch"}}, nil
+		return []cliSkillCatalogEntry{{ID: "dispatch-agent"}}, nil
 	}
 	t.Cleanup(func() { loadCLISkillCatalogFunc = originalCatalog })
 
 	root := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "agent-dispatch"), 0o750))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "dispatch-agent"), 0o750))
 	cfg := &config.ProjectConfig{Root: root}
 	results := CheckCLISkills(cfg)
 	assert.Empty(t, results, "catalog entries without a binary contract are skipped")

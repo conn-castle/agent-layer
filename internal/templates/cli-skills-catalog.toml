@@ -22,9 +22,9 @@ name = "Context7 docs lookup"
 binary = "npx"
 
 [[cli_skills]]
-id = "agent-dispatch"
+id = "dispatch-agent"
 name = "Agent dispatch"
-# agent-dispatch has no external CLI requirement; no binary key.
+# dispatch-agent has no external CLI requirement; no binary key.
 
 [[cli_skills]]
 id = "skill-sync"

@@ -1,11 +1,11 @@
 ---
-name: agent-dispatch
+name: dispatch-agent
 description: Use Agent Dispatch MCP tools only when the user names an external dispatch target or another skill explicitly requires dispatch. Do not use it for generic subagent, second-agent, or fresh-context requests; use the built-in subagent instead.
 compatibility: Requires the built-in `agent-layer` MCP server and a configured provider.
 allowed-tools: mcp__agent-layer__dispatch_options mcp__agent-layer__dispatch_start mcp__agent-layer__dispatch_wait mcp__agent-layer__dispatch_continue mcp__agent-layer__dispatch_cancel Bash(cat:*)
 ---
 
-# Agent Dispatch
+# Dispatch Agent
 
 If the MCP tools are unavailable, report the missing server; do not substitute
 command-line calls.

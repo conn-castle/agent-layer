@@ -72,7 +72,7 @@ var loadCLISkillCatalogFunc = func() ([]cliSkillCatalogEntry, error) {
 //     present + binary on PATH → no result
 //     present + binary missing  → FAIL result
 //     absent                    → no result (user opted out)
-//   - Catalog entries without a declared binary (e.g. agent-dispatch) are skipped.
+//   - Catalog entries without a declared binary (e.g. dispatch-agent) are skipped.
 func CheckCLISkills(cfg *config.ProjectConfig) []Result {
 	if cfg == nil {
 		return nil

@@ -28,7 +28,8 @@ type skillsChangeSet struct {
 	// catalogSkillsToRepair holds selected catalog ids whose directory exists but
 	// one or more embedded files are missing.
 	catalogSkillsToRepair []string
-	// catalogSkillsToRemove holds catalog ids that are deselected but exist on disk.
+	// catalogSkillsToRemove holds catalog directory ids that are deselected but
+	// exist on disk. A directory id may be a legacy pre-migration id.
 	catalogSkillsToRemove []string
 	// workflowSkillsToInstall holds embedded workflow skill directory names with
 	// missing template files to create. Existing files are preserved.
@@ -81,7 +82,8 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 	out := skillsChangeSet{}
 
 	for _, entry := range choices.CLISkillsCatalog {
-		exists := catalogSkillExistsOnDisk(root, entry.ID)
+		stateID := catalogSkillStateIDOnDisk(root, entry)
+		exists := catalogSkillExistsOnDisk(root, stateID)
 		managed := catalogSkillIsManagedOnDisk(root, entry)
 		selected := choices.EnabledCLISkills[entry.ID]
 		missingFiles := false
@@ -89,10 +91,10 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 			return skillsChangeSet{}, fmt.Errorf(
 				"cannot install catalog skill %s: .agent-layer/skills/%s/ already exists and is not catalog-managed; remove or rename it first",
 				entry.ID,
-				entry.ID,
+				stateID,
 			)
 		}
-		if selected && managed {
+		if selected && managed && stateID == entry.ID {
 			var err error
 			missingFiles, err = templateDirHasMissingFiles(
 				cliSkillsCatalogTemplateRoot+"/"+entry.ID,
@@ -108,7 +110,7 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 		case selected && managed && missingFiles:
 			out.catalogSkillsToRepair = append(out.catalogSkillsToRepair, entry.ID)
 		case !selected && managed:
-			out.catalogSkillsToRemove = append(out.catalogSkillsToRemove, entry.ID)
+			out.catalogSkillsToRemove = append(out.catalogSkillsToRemove, stateID)
 		}
 	}
 

@@ -11,7 +11,7 @@ run_scenario_wizard_cli_catalog_skills() {
   assert_exit_zero_in "$repo_dir" "al init --no-wizard" al init --no-wizard
 
   # The catalog skills are NOT seeded automatically by al init.
-  for id in tavily-web playwright find-docs agent-dispatch skill-sync; do
+  for id in tavily-web playwright find-docs dispatch-agent skill-sync; do
     assert_file_not_exists "$repo_dir/.agent-layer/skills/$id/SKILL.md" \
       "$id catalog skill is not seeded by al init"
   done
@@ -81,7 +81,7 @@ JSON
     "skill-sync catalog skill preserves its catalog id"
   assert_file_contains "$skill_sync_dir/SKILL.md" "al skills status --all" \
     "skill-sync catalog skill preserves its local status workflow"
-  for id in tavily-web find-docs agent-dispatch; do
+  for id in tavily-web find-docs dispatch-agent; do
     assert_file_not_exists "$repo_dir/.agent-layer/skills/$id/SKILL.md" \
       "$id catalog skill remains absent when unselected"
   done

@@ -31,6 +31,39 @@ func TestComputeSkillsChangeSet_CatalogAddAndRemove(t *testing.T) {
 	assert.NotEmpty(t, buildSkillsPreview(cs))
 }
 
+func TestComputeSkillsChangeSet_LegacyDispatchAgentState(t *testing.T) {
+	entry := CLISkillCatalogEntry{ID: "dispatch-agent", Name: "Agent dispatch"}
+
+	t.Run("selected legacy installation is preserved for migration", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", legacyDispatchAgentCatalogID), 0o750))
+		choices := NewChoices()
+		choices.CLISkillsCatalog = []CLISkillCatalogEntry{entry}
+		choices.EnabledCLISkills[entry.ID] = true
+
+		changes, err := computeSkillsChangeSet(root, choices)
+		require.NoError(t, err)
+		assert.Empty(t, changes.catalogSkillsToAdd)
+		assert.Empty(t, changes.catalogSkillsToRepair)
+		assert.Empty(t, changes.catalogSkillsToRemove)
+		assert.NoDirExists(t, filepath.Join(root, ".agent-layer", "skills", entry.ID))
+	})
+
+	t.Run("deselected legacy installation is removable", func(t *testing.T) {
+		root := t.TempDir()
+		legacyDir := filepath.Join(root, ".agent-layer", "skills", legacyDispatchAgentCatalogID)
+		require.NoError(t, os.MkdirAll(legacyDir, 0o750))
+		choices := NewChoices()
+		choices.CLISkillsCatalog = []CLISkillCatalogEntry{entry}
+
+		changes, err := computeSkillsChangeSet(root, choices)
+		require.NoError(t, err)
+		assert.Equal(t, []string{legacyDispatchAgentCatalogID}, changes.catalogSkillsToRemove)
+		require.NoError(t, applySkillsChanges(root, changes))
+		assert.NoDirExists(t, legacyDir)
+	})
+}
+
 func TestComputeSkillsChangeSet_CatalogRepairMissingFiles(t *testing.T) {
 	root := t.TempDir()
 	skillDir := filepath.Join(root, ".agent-layer", "skills", "playwright")

@@ -18,7 +18,7 @@ Required:
 
 ## Rules
 
-- Use `/agent-dispatch` for every dispatch.
+- Use `/dispatch-agent` for every dispatch.
 - Act as the orchestrator. Delegate all work.
 - When compacting, retain the original user inputs and this skill verbatim in
   addition to what you would normally retain.
