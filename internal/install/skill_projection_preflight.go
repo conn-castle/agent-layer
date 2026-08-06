@@ -106,8 +106,14 @@ func collectSourceSkillNames(sys System, tier string, into map[string]struct{}) 
 		}
 		// Only a directory holding a canonical regular manifest can be a
 		// projectable skill source. Anything else in the tier cannot launder a
-		// client-root name.
-		manifest, err := sys.Lstat(filepath.Join(path, skillManifestFileName))
+		// client-root name. A missing manifest means non-skill content; any
+		// other inspection failure must surface rather than silently drop the
+		// name and misreport its projection as user content.
+		manifestPath := filepath.Join(path, skillManifestFileName)
+		manifest, err := sys.Lstat(manifestPath)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("inspect skill manifest %s: %w", manifestPath, err)
+		}
 		if err == nil && manifest.Mode().IsRegular() {
 			into[skilltree.NormalizeName(entry.Name())] = struct{}{}
 		}

@@ -1,6 +1,7 @@
 package install
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -133,6 +134,15 @@ func TestExclusiveSkillRootPreflightBlocksNamesNoSourceTierProjects(t *testing.T
 	if err := os.MkdirAll(filepath.Join(manifestDir, "SKILL.md"), 0o750); err != nil {
 		t.Fatal(err)
 	}
+	handWritten := filepath.Join(root, ".claude", "skills", "hand-written")
+	notASkill := filepath.Join(root, ".claude", "skills", "not-a-skill")
+	manifestIsDirectory := filepath.Join(root, ".claude", "skills", "manifest-is-directory")
+	writeSkillDir(t, handWritten, "hand-written")
+	writeSkillDir(t, notASkill, "not-a-skill")
+	writeSkillDir(t, manifestIsDirectory, "manifest-is-directory")
+	writeSkillDir(t, filepath.Join(root, ".claude", "skills", "projected"), "projected")
+	mustBlock := []string{handWritten, notASkill, manifestIsDirectory}
+
 	linkedManifest := filepath.Join(root, ".agent-layer", "skills", "linked-manifest")
 	if err := os.MkdirAll(linkedManifest, 0o750); err != nil {
 		t.Fatal(err)
@@ -141,30 +151,47 @@ func TestExclusiveSkillRootPreflightBlocksNamesNoSourceTierProjects(t *testing.T
 	if err := os.WriteFile(manifestTarget, []byte("---\nname: linked-manifest\ndescription: linked\n---\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(manifestTarget, filepath.Join(linkedManifest, "SKILL.md")); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+	if err := os.Symlink(manifestTarget, filepath.Join(linkedManifest, "SKILL.md")); err == nil {
+		linkedManifestClient := filepath.Join(root, ".claude", "skills", "linked-manifest")
+		writeSkillDir(t, linkedManifestClient, "linked-manifest")
+		mustBlock = append(mustBlock, linkedManifestClient)
+	} else {
+		t.Logf("symlinks unavailable, skipping the symlinked-manifest case: %v", err)
 	}
-	handWritten := filepath.Join(root, ".claude", "skills", "hand-written")
-	notASkill := filepath.Join(root, ".claude", "skills", "not-a-skill")
-	manifestIsDirectory := filepath.Join(root, ".claude", "skills", "manifest-is-directory")
-	linkedManifestClient := filepath.Join(root, ".claude", "skills", "linked-manifest")
-	writeSkillDir(t, handWritten, "hand-written")
-	writeSkillDir(t, notASkill, "not-a-skill")
-	writeSkillDir(t, manifestIsDirectory, "manifest-is-directory")
-	writeSkillDir(t, linkedManifestClient, "linked-manifest")
-	writeSkillDir(t, filepath.Join(root, ".claude", "skills", "projected"), "projected")
 
 	err := (&installer{root: root, sys: RealSystem{}}).preflightExclusiveSkillRoots()
 	if err == nil {
 		t.Fatal("expected preflight to block content no source tier projects")
 	}
-	for _, path := range []string{handWritten, notASkill, manifestIsDirectory, linkedManifestClient} {
+	for _, path := range mustBlock {
 		if !strings.Contains(err.Error(), path) {
 			t.Fatalf("error %q does not name %s", err, path)
 		}
 	}
 	if strings.Contains(err.Error(), filepath.Join(root, ".claude", "skills", "projected")) {
 		t.Fatalf("error %q blocks a projection of a current source", err)
+	}
+}
+
+// An unreadable source manifest must fail the preflight outright. Silently
+// treating it as a non-skill would drop the name from the projected set and
+// misreport the skill's own client projection as blocking user content.
+func TestExclusiveSkillRootPreflightSurfacesManifestInspectionErrors(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeSkillDir(t, filepath.Join(root, ".agent-layer", "skills", "projected"), "projected")
+	writeSkillDir(t, filepath.Join(root, ".claude", "skills", "projected"), "projected")
+
+	sys := newFaultSystem(RealSystem{})
+	manifestPath := filepath.Join(root, ".agent-layer", "skills", "projected", "SKILL.md")
+	sys.lstatErrs[manifestPath] = os.ErrPermission
+
+	err := (&installer{root: root, sys: sys}).preflightExclusiveSkillRoots()
+	if err == nil || !strings.Contains(err.Error(), manifestPath) || !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("manifest inspection failure was not surfaced: %v", err)
+	}
+	if strings.Contains(err.Error(), "cannot claim the client skill roots") {
+		t.Fatalf("inspection failure was misreported as blocking user content: %v", err)
 	}
 }
 

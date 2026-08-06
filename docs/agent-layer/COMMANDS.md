@@ -200,6 +200,7 @@ Prerequisites: Go 1.26.0+, `make tools` has been run
 ```bash
 make al-upgrade   # al upgrade
 make al-sync      # al sync
+make al-wizard    # al wizard
 make al-doctor    # al doctor
 make al-claude    # al claude
 make al-codex     # al codex
