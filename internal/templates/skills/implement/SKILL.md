@@ -52,19 +52,18 @@ update the artifacts to address any findings you agree with. Do not repeat plan
 review.
 
 Finally, dispatch `implementer` with a prompt instructing it to implement the
-plan from the artifacts, run only targeted checks as needed, and return after
-completing the plan or when blocked. A blocked response must list the unmet
-requirements and current implementation state. The prompt must also instruct it
-not to invoke the `implement` skill or dispatch another implementer.
+plan from the artifacts, run only targeted checks as needed, and return only
+after completing the plan. The prompt must also instruct it not to invoke the
+`implement` skill or dispatch another implementer.
 
-Check completion against the plan artifacts. If the implementation is
-incomplete, call `dispatch_continue` once with the `implementer` session handle
-and a prompt listing the unmet requirements and instructing it to complete the
-plan before returning. If implementation remains incomplete after that
-continuation, use a fresh dispatch whose prompt includes the original plan,
-current implementation state, and remaining work. Repeat the instruction not
-to invoke the `implement` skill or dispatch another implementer in the fresh
-prompt. If the continuation did not make meaningful progress, detail a
+Check completion against `<input>` and the plan artifacts. If the implementation
+is incomplete, call `dispatch_continue` once with the `implementer` session
+handle and a prompt listing the unmet requirements and instructing it to
+complete the plan before returning. If implementation remains incomplete after
+that continuation, use a fresh dispatch whose prompt includes the original
+plan, current implementation state, and remaining work. Repeat the instruction
+not to invoke the `implement` skill or dispatch another implementer in the
+fresh prompt. If the continuation did not make meaningful progress, detail a
 different approach in that prompt.
 
 ## Finish
@@ -73,19 +72,16 @@ different approach in that prompt.
    or broadening the task. Remove unnecessary complexity, duplication, dead
    code, premature abstractions, and tests that cannot detect a product defect.
 
-2. If independent code review is required, dispatch `code_reviewer` with a
-   self-contained prompt that includes `<input>` and any plan artifacts and
-   instructs it to review the implementation against them without editing
-   files and return a list of findings. Consider the findings, then address
-   those you agree with. Code review must cover the final implementation,
-   including changes made in response to review findings. After addressing any
-   accepted finding that changes the implementation, dispatch a fresh review of
-   the final implementation: use a full review for substantial changes and a
-   targeted review for smaller fixes. Repeat until no accepted finding changes
-   the implementation.
+2. If independent code review is required, dispatch `code_reviewer` to review
+   the implementation against `<input>` and any plan artifacts without editing
+   files. Evaluate each finding and fix those that are valid. Check findings
+   related to explicit requirements against `<input>` before rejecting them. If
+   the fixes are substantial, perform one fresh final review. Do not
+   automatically repeat it.
 
-3. Repeat the completion check. Resolve gaps until it passes. Passing tests
-   are supporting evidence, not proof of completion.
+3. Repeat the completion check against `<input>` and any plan artifacts. Resolve
+   gaps until it passes. Passing tests are supporting evidence, not proof of
+   completion.
 
 4. Run the repository's complete required verification suite against the final
    candidate. Fix any failures, then run the minimal checks required to confirm

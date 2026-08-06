@@ -7,7 +7,7 @@
 - **Root-cause fixes:** Fix root causes rather than surface symptoms.
 - **Single source of truth:** Derive state from its canonical source instead of maintaining copies.
 - **Prefer explicit failure to false success:** Use normal error paths rather than guessing, silently falling back, or continuing with invalid state. Make failures actionable and traceable through errors and logs.
-- **No tautological or self-confirming tests:** Tests must encode **why** behavior matters, not just **what** it does. Prefer a visible coverage gap to false coverage.
+- **No tautological or self-confirming tests:** Derive test cases from requested behavior, not the implementation's structure. When behavior is externally observable, exercise it through the relevant public boundary. Prefer a visible coverage gap to false coverage.
 
 ## Evidence, Uncertainty, and Failure Handling
 
