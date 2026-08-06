@@ -5,6 +5,7 @@ const (
 	commandsAllowName              = "commands.allow"
 	configFileName                 = "config.toml"
 	instructionsDirName            = "instructions"
+	agentLayerDirName              = ".agent-layer"
 	skillDirectoryName             = "skills"
 	skillManifestFileName          = "SKILL.md"
 	docsAgentLayerDir              = "docs/agent-layer"

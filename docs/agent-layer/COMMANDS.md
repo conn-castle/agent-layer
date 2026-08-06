@@ -199,6 +199,8 @@ Prerequisites: Go 1.26.0+, `make tools` has been run
 - Run al subcommands against this repo's own .agent-layer using the source tree
 ```bash
 make al-upgrade   # al upgrade
+make al-sync      # al sync
+make al-wizard    # al wizard
 make al-doctor    # al doctor
 make al-claude    # al claude
 make al-codex     # al codex
@@ -207,7 +209,7 @@ make al-copilot   # al copilot
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+
-Notes: Convenience wrappers against this repo's own `.agent-layer/` config. `al-doctor` and the interactive agent launchers build a source snapshot at `.agent-layer/tmp/dev-bin/al` and prepend that directory to `PATH`, so child `al dispatch` calls use the same source snapshot rather than the globally installed binary. The development launch bypasses repo version-pin handoff only for that Make invocation. `al-upgrade` continues to use `go run ./cmd/al`.
+Notes: Convenience wrappers against this repo's own `.agent-layer/` config. `al-doctor` and the interactive agent launchers build a source snapshot at `.agent-layer/tmp/dev-bin/al` and prepend that directory to `PATH`, so child `al dispatch` calls use the same source snapshot rather than the globally installed binary. The development launch bypasses repo version-pin handoff only for that Make invocation. `al-upgrade`, `al-sync`, and `al-wizard` continue to use `go run ./cmd/al`. Always use these wrappers instead of a globally installed `al` in this repo: this repo's `.agent-layer/config.toml` tracks the unreleased schema, so a released `al` rejects it as unrecognized keys.
 
 - Run the Antigravity capability probe
 ```bash
