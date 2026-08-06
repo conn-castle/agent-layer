@@ -24,6 +24,14 @@
       "rationale": "Group the Git-imported skill tier beside the user-managed skills directory.",
       "from": ".agent-layer/imported-skills",
       "to": ".agent-layer/skills-imported"
+    },
+    {
+      "id": "d-rename-dispatch-agent-catalog-skill",
+      "kind": "rename_file",
+      "source_agnostic": true,
+      "from": ".agent-layer/skills/agent-dispatch",
+      "to": ".agent-layer/skills/dispatch-agent",
+      "rationale": "Rename the catalog skill id to the verb-first form while preserving its files and the Agent Dispatch MCP tool surface."
     }
   ]
 }

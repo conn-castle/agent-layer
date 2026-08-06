@@ -38,7 +38,12 @@ func TestOwnershipPolicyForPath_CatalogSkills(t *testing.T) {
 			want: ownershipPolicyCatalogSkills,
 		},
 		{
-			name: "agent-dispatch classified",
+			name: "dispatch-agent classified",
+			path: ".agent-layer/skills/dispatch-agent/SKILL.md",
+			want: ownershipPolicyCatalogSkills,
+		},
+		{
+			name: "legacy agent-dispatch file remains classified during migration",
 			path: ".agent-layer/skills/agent-dispatch/SKILL.md",
 			want: ownershipPolicyCatalogSkills,
 		},
@@ -91,10 +96,16 @@ func TestCatalogSkillRelPathPrefixesMatchEmbeddedCatalog(t *testing.T) {
 		require.NotEmpty(t, entry.ID)
 		want = append(want, ".agent-layer/skills/"+entry.ID+"/")
 	}
-	legacy := ".agent-layer/skills/playwright-cli/"
+	// Renamed catalog ids keep their old prefix so a repo that has not yet run
+	// the renaming upgrade still classifies the directory as wizard-owned
+	// instead of reporting it as an unknown file.
+	legacy := map[string]struct{}{
+		".agent-layer/skills/playwright-cli/": {},
+		".agent-layer/skills/agent-dispatch/": {},
+	}
 	got := make([]string, 0, len(catalogSkillRelPathPrefixes))
 	for _, prefix := range catalogSkillRelPathPrefixes {
-		if prefix != legacy {
+		if _, ok := legacy[prefix]; !ok {
 			got = append(got, prefix)
 		}
 	}
@@ -105,5 +116,7 @@ func TestCatalogSkillRelPathPrefixesMatchEmbeddedCatalog(t *testing.T) {
 	for _, prefix := range catalogSkillRelPathPrefixes {
 		assert.Equal(t, ownershipPolicyCatalogSkills, ownershipPolicyForPath(prefix+"SKILL.md"))
 	}
-	assert.Contains(t, catalogSkillRelPathPrefixes, legacy)
+	for prefix := range legacy {
+		assert.Contains(t, catalogSkillRelPathPrefixes, prefix)
+	}
 }

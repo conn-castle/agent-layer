@@ -7,13 +7,13 @@ import (
 	"testing"
 )
 
-// TestEmbeddedAgentDispatchSkillEncodesAsyncConversationWorkflow proves the
+// TestEmbeddedDispatchAgentSkillEncodesAsyncConversationWorkflow proves the
 // agent-facing workflow drives the five MCP tools. It also proves no CLI
 // polling fallback survives: a fallback would let an agent burn coordinator
 // turns on terminal waits exactly when the MCP server is misconfigured, hiding
 // the capability problem instead of surfacing it.
-func TestEmbeddedAgentDispatchSkillEncodesAsyncConversationWorkflow(t *testing.T) {
-	dispatchTemplate, err := Read("skills-catalog/agent-dispatch/SKILL.md")
+func TestEmbeddedDispatchAgentSkillEncodesAsyncConversationWorkflow(t *testing.T) {
+	dispatchTemplate, err := Read("skills-catalog/dispatch-agent/SKILL.md")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,13 +23,32 @@ func TestEmbeddedAgentDispatchSkillEncodesAsyncConversationWorkflow(t *testing.T
 		"mcp__agent-layer__dispatch_start", "result_path",
 	} {
 		if !strings.Contains(dispatchSkill, required) {
-			t.Fatalf("agent-dispatch skill lacks %q", required)
+			t.Fatalf("dispatch-agent skill lacks %q", required)
 		}
 	}
 	for _, forbidden := range []string{"al dispatch options", "al dispatch start", "al dispatch wait", "al dispatch continue", "al dispatch cancel"} {
 		if strings.Contains(dispatchSkill, forbidden) {
-			t.Fatalf("agent-dispatch skill still instructs the CLI path %q", forbidden)
+			t.Fatalf("dispatch-agent skill still instructs the CLI path %q", forbidden)
 		}
+	}
+}
+
+// TestEmbeddedDispatchAgentSkillUsesRenamedID pins the catalog id to the
+// directory name and to the frontmatter that clients project as the invocable
+// skill name. A mismatch between the two would ship a skill whose directory the
+// wizard installs and removes under one id while agents invoke it under
+// another, and the workflow skills that instruct `/dispatch-agent` would have
+// no matching skill to call.
+func TestEmbeddedDispatchAgentSkillUsesRenamedID(t *testing.T) {
+	data, err := Read("skills-catalog/dispatch-agent/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "\nname: dispatch-agent\n") {
+		t.Fatal("dispatch-agent skill frontmatter does not declare the dispatch-agent id")
+	}
+	if _, err := Read("skills-catalog/agent-dispatch/SKILL.md"); err == nil {
+		t.Fatal("superseded agent-dispatch skill template should be absent")
 	}
 }
 

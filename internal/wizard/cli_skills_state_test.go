@@ -107,7 +107,7 @@ func TestDetectAgentLayerEnabledFromDisk(t *testing.T) {
 	t.Run("returns false when only catalog skill directories exist", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "tavily-web"), 0o750))
-		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "agent-dispatch"), 0o750))
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "dispatch-agent"), 0o750))
 		assert.False(t, detectAgentLayerEnabledFromDisk(root))
 	})
 

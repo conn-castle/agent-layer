@@ -963,8 +963,8 @@ func TestLoadUpgradeMigrationManifest_0_16_0_ClaimsClientSkillRootsAndRenamesImp
 	if err != nil {
 		t.Fatalf("load 0.16.0 manifest: %v", err)
 	}
-	if manifest.MinPriorVersion != "0.10.2" || len(manifest.Operations) != 3 {
-		t.Fatalf("manifest = %#v, want three migrations supporting prior releases", manifest)
+	if manifest.MinPriorVersion != "0.10.2" || len(manifest.Operations) != 4 {
+		t.Fatalf("manifest = %#v, want four migrations supporting prior releases", manifest)
 	}
 	byID := make(map[string]upgradeMigrationOperation, len(manifest.Operations))
 	for _, op := range manifest.Operations {
@@ -983,6 +983,15 @@ func TestLoadUpgradeMigrationManifest_0_16_0_ClaimsClientSkillRootsAndRenamesImp
 	if rename.Kind != upgradeMigrationKindRenameFile || !rename.SourceAgnostic ||
 		rename.From != ".agent-layer/imported-skills" || rename.To != ".agent-layer/skills-imported" {
 		t.Fatalf("operation = %#v, want source-agnostic imported-skills directory rename", rename)
+	}
+	// Without this rename an upgraded repo keeps the old catalog directory: the
+	// wizard installs and removes the skill under the new id only, so the stale
+	// copy would stay on disk and keep answering `/agent-dispatch` while the
+	// workflow skills instruct `/dispatch-agent`.
+	dispatchRename := byID["d-rename-dispatch-agent-catalog-skill"]
+	if dispatchRename.Kind != upgradeMigrationKindRenameFile || !dispatchRename.SourceAgnostic ||
+		dispatchRename.From != ".agent-layer/skills/agent-dispatch" || dispatchRename.To != ".agent-layer/skills/dispatch-agent" {
+		t.Fatalf("operation = %#v, want source-agnostic dispatch-agent catalog directory rename", dispatchRename)
 	}
 }
 

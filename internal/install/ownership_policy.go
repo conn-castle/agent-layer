@@ -24,13 +24,16 @@ const (
 // catalogSkillRelPathPrefixes lists the .agent-layer/skills/<id>/ prefixes that
 // are managed by the wizard's CLI-skill catalog. Paths under these prefixes are
 // classified under ownershipPolicyCatalogSkills so the unknowns scan does not
-// flag them in existing repos after the skills-catalog restructure.
+// flag them in existing repos after the skills-catalog restructure. Pre-rename
+// ids (playwright-cli, agent-dispatch) stay listed so a repo that has not yet
+// run the renaming upgrade is still classified correctly.
 var catalogSkillRelPathPrefixes = []string{
 	".agent-layer/skills/tavily-web/",
 	".agent-layer/skills/playwright/",
 	".agent-layer/skills/playwright-cli/",
 	".agent-layer/skills/find-docs/",
 	".agent-layer/skills/agent-dispatch/",
+	".agent-layer/skills/dispatch-agent/",
 	".agent-layer/skills/skill-sync/",
 }
 

@@ -11,7 +11,7 @@ description: >-
 
 Require a task, request, or spec as `<input>` and dispatch targets named
 `implementer`, `plan_reviewers`, and `code_reviewer`. Providing a target does
-not imply its use. Do not infer missing targets. Use `/agent-dispatch` for every
+not imply its use. Do not infer missing targets. Use `/dispatch-agent` for every
 dispatch.
 
 ## Decide Implementation Approach

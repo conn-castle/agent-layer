@@ -98,7 +98,7 @@ func BuildTreatmentBundle(repoRoot, targetArch, mode string, model Model, effort
 		if err := copyRequiredTree(filepath.Join(repoRoot, "internal", "templates", "skills"), filepath.Join(layer, "skills")); err != nil {
 			return nil, fmt.Errorf("copy Agent Layer skills: %w", err)
 		}
-		if err := copyRequiredTree(filepath.Join(repoRoot, "internal", "templates", "skills-catalog", "agent-dispatch"), filepath.Join(layer, "skills", "agent-dispatch")); err != nil {
+		if err := copyRequiredTree(filepath.Join(repoRoot, "internal", "templates", "skills-catalog", "dispatch-agent"), filepath.Join(layer, "skills", "dispatch-agent")); err != nil {
 			return nil, fmt.Errorf("copy Agent Dispatch skill: %w", err)
 		}
 	} else if err := os.MkdirAll(filepath.Join(layer, "skills"), 0o700); err != nil {

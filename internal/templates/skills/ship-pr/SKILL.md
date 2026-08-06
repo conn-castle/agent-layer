@@ -16,7 +16,7 @@ workflow and treat it as authoritative.
 
 ## Inputs
 
-Require a `pr_worker` dispatch target. Use `/agent-dispatch` for every dispatch.
+Require a `pr_worker` dispatch target. Use `/dispatch-agent` for every dispatch.
 
 ## PR worker
 

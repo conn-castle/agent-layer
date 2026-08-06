@@ -256,8 +256,8 @@ func TestBuildSkillsTreatmentIsIndependentOfTemporaryStagePath(t *testing.T) {
 	)
 	assertTemplateProjection(
 		t,
-		filepath.Join(repoRoot, "internal", "templates", "skills-catalog", "agent-dispatch"),
-		filepath.Join(first.Root, ".agent-layer", "skills", "agent-dispatch"),
+		filepath.Join(repoRoot, "internal", "templates", "skills-catalog", "dispatch-agent"),
+		filepath.Join(first.Root, ".agent-layer", "skills", "dispatch-agent"),
 	)
 	for _, bundle := range []*TreatmentBundle{first, second} {
 		for _, file := range bundle.Manifest.Files {
