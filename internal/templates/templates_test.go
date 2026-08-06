@@ -3,6 +3,8 @@ package templates
 import (
 	"io/fs"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -87,6 +89,22 @@ func TestEmbeddedSkillSyncNarrowsToolsAndUsesConfirmedDestructiveCommands(t *tes
 	} {
 		if !strings.Contains(skill, required) {
 			t.Fatalf("skill-sync lacks confirmed mutation form %q", required)
+		}
+	}
+	mutatingCommand := regexp.MustCompile(`\bal skills (?:add|remove|reset|push)\b`)
+	commandSpan := regexp.MustCompile("(?s)`(al skills (?:add|remove|reset|push)\\b[^`]*)`")
+	commands := commandSpan.FindAllStringSubmatch(skill, -1)
+	if got, want := len(commands), len(mutatingCommand.FindAllString(skill, -1)); got != want {
+		t.Fatalf("skill-sync has %d parsed mutation command examples for %d mutation occurrences", got, want)
+	}
+	for _, match := range commands {
+		command := strings.Join(strings.Fields(match[1]), " ")
+		tokens := strings.Fields(command)
+		if slices.Contains(tokens, "--help") {
+			continue
+		}
+		if !slices.Contains(tokens, "--yes") {
+			t.Fatalf("skill-sync mutation command %q lacks an exact --yes token", command)
 		}
 	}
 }
