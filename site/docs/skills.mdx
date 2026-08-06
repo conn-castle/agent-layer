@@ -127,12 +127,13 @@ These are used by orchestrators or available for fine-grained control when you n
 ### Optional CLI catalog skills
 
 These skills are installed only when selected through the CLI catalog. They route
-agents to installed local tools and require the corresponding command to be
-available on `PATH`.
+agents to optional tool integrations. Most require the corresponding command to
+be available on `PATH`; `dispatch-agent` uses the built-in Agent Dispatch MCP
+tools and has no external binary requirement.
 
 | Skill | What it does |
 | --- | --- |
-| `dispatch-agent` | Uses `al dispatch` only when the user names an external dispatch target or another skill explicitly requires dispatch. |
+| `dispatch-agent` | Uses the Agent Dispatch MCP tools only when the user names an external dispatch target or another skill explicitly requires dispatch; it has no external binary requirement. |
 | `find-docs` | Uses Context7 for current API and library documentation when local docs or CLI help are insufficient. |
 | `playwright` | Uses `playwright-cli` for browser automation, screenshots, user interface inspection, and Playwright test work. |
 | `tavily-web` | Uses Tavily CLI for web search, URL extraction, site mapping, and cited research. |
