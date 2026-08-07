@@ -1775,8 +1775,9 @@ func validateUpgradeMigrationOperation(op upgradeMigrationOperation) error {
 			return fmt.Errorf("migration %s (%s) value must be a JSON string: %w", op.ID, op.Kind, err)
 		}
 	case upgradeMigrationKindClaimSkillRoots:
-		// The pre-mutation preflight owns this transition. Execution is a no-op;
-		// reaching the target version is the durable evidence that it completed.
+		// Kept as a compatibility no-op for the published v0.16.0 manifest.
+		// Client skill roots are disposable projections and require no ownership
+		// inspection before init or upgrade replaces them.
 	default:
 		return fmt.Errorf("migration %s has unsupported kind %q", op.ID, op.Kind)
 	}

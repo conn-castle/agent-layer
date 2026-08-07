@@ -57,6 +57,47 @@ func TestRunCreatesStructure(t *testing.T) {
 	}
 }
 
+func TestRunDoesNotInspectDisposableClientSkillRoots(t *testing.T) {
+	t.Run("init", func(t *testing.T) {
+		root := t.TempDir()
+		manual := filepath.Join(root, ".claude", "skills", "manual", "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(manual), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(manual, []byte("manual"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := Run(root, Options{System: RealSystem{}}); err != nil {
+			t.Fatalf("disposable client content blocked init: %v", err)
+		}
+	})
+
+	t.Run("upgrade across v0.16.0 claim migration", func(t *testing.T) {
+		root := t.TempDir()
+		if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.15.0"}); err != nil {
+			t.Fatalf("seed v0.15.0 install: %v", err)
+		}
+		manual := filepath.Join(root, ".agents", "skills", "manual", "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(manual), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(manual, []byte("manual"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := Run(root, Options{
+			System:     RealSystem{},
+			Overwrite:  true,
+			Prompter:   autoApprovePrompter(),
+			PinVersion: "0.16.1",
+		}); err != nil {
+			t.Fatalf("disposable client content blocked upgrade: %v", err)
+		}
+		assertFileContent(t, filepath.Join(root, ".agent-layer", "al.version"), "0.16.1\n")
+	})
+}
+
 func assertFileContent(t *testing.T, path string, want string) {
 	t.Helper()
 	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
