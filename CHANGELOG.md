@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.16.1 - 2026-08-06
+
+### Fixed
+- `al init` and `al upgrade` no longer block when `.agents/skills/` or `.claude/skills/` contains content that cannot be matched to a canonical Agent Layer skill. Those client roots are exclusively owned disposable projections, so inspecting their contents before replacing them contradicted the documented sync contract and prevented some v0.15.0 projects from upgrading to v0.16.0.
+
 ## v0.16.0 - 2026-08-06
 
 Git-backed Agent Skill imports and a consolidated skill and instruction bundle.

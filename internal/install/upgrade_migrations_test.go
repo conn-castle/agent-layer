@@ -990,6 +990,16 @@ func TestLoadUpgradeMigrationManifest_0_16_0_ClaimsClientSkillRootsAndRenamesRel
 	}
 }
 
+func TestLoadUpgradeMigrationManifest_0_16_1_IsEmpty(t *testing.T) {
+	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.16.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.MinPriorVersion != "0.10.2" || len(manifest.Operations) != 0 {
+		t.Fatalf("manifest = %#v, want empty patch-release manifest supporting v0.10.2+", manifest)
+	}
+}
+
 func TestHasUnpinnedMigrationTrigger_FindsCatalogSkillDirectoryRename(t *testing.T) {
 	root := t.TempDir()
 	legacy := filepath.Join(root, ".agent-layer", "skills", "agent-dispatch")

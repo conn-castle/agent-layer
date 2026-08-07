@@ -123,11 +123,6 @@ func Run(root string, opts Options) error {
 		}
 		inst.pinVersion = normalized
 	}
-	if !overwrite {
-		if err := inst.preflightExclusiveSkillRoots(); err != nil {
-			return err
-		}
-	}
 	if overwrite {
 		// Overwrite upgrades need unknowns scanned before snapshot capture so the
 		// snapshot can restore unknown paths that handleUnknowns may delete.
@@ -138,9 +133,6 @@ func Run(root string, opts Options) error {
 			return err
 		}
 		if err := inst.preflightAndConfirmSkillsMigration(); err != nil {
-			return err
-		}
-		if err := inst.preflightPendingExclusiveSkillRoots(); err != nil {
 			return err
 		}
 		if err := inst.upgrades().ensureBaseDirs(); err != nil {
