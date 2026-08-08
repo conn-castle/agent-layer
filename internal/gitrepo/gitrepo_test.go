@@ -897,6 +897,8 @@ func TestDestinationReadTreeSeesFetchedContent(t *testing.T) {
 	}
 	if err := destination.FetchCommit(ctx, literalRepository(repo.dir), "0000000000000000000000000000000000000000"); err == nil {
 		t.Fatal("expected fetching an unknown commit to fail")
+	} else if !errors.Is(err, ErrCommitUnavailable) {
+		t.Fatalf("unknown commit error = %v, want ErrCommitUnavailable", err)
 	}
 	objects := filepath.Join(destination.dir, ".git", "objects")
 	if err := os.Rename(objects, objects+"-corrupt"); err != nil {
@@ -905,6 +907,8 @@ func TestDestinationReadTreeSeesFetchedContent(t *testing.T) {
 	destination.repository = literalRepository(filepath.Join(t.TempDir(), "unreachable-after-corruption"))
 	if err := destination.FetchCommit(ctx, destination.repository, head); err == nil {
 		t.Fatal("a corrupt object database was treated as a missing commit")
+	} else if errors.Is(err, ErrCommitUnavailable) {
+		t.Fatalf("corrupt object database error = %v, must not be ErrCommitUnavailable", err)
 	} else if !strings.Contains(err.Error(), "cat-file") || strings.Contains(err.Error(), "fetch") {
 		t.Fatalf("corrupt object diagnostic = %v, want the local cat-file failure without a fetch", err)
 	}
@@ -1104,6 +1108,8 @@ func TestSourceAndDestinationSurfaceUnreachableRepositories(t *testing.T) {
 	}
 	if err := destination.FetchCommit(ctx, missing, "0123456789abcdef0123456789abcdef01234567"); err == nil {
 		t.Fatal("FetchCommit succeeded for an unreachable destination")
+	} else if errors.Is(err, ErrCommitUnavailable) {
+		t.Fatalf("unreachable destination error = %v, must not be ErrCommitUnavailable", err)
 	}
 }
 

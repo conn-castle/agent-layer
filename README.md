@@ -598,9 +598,9 @@ entry is a loud error rather than a silent shadow. Only
 `.agent-layer/skills-imported/.staging/`, the import transaction's scratch space,
 stays ignored.
 
-The root `.gitignore` block ships with `/.agent-layer/` uncommented, which ignores
-the whole directory and takes precedence over the above. To commit your Agent Layer
-configuration and imported skills, comment that line out in
+The root `.gitignore` block ships with `/.agent-layer/`, which ignores the whole
+directory and takes precedence over the above. To commit your Agent Layer
+configuration and imported skills, remove that line from
 `.agent-layer/gitignore.block` and re-run `al sync`; `.agent-layer/.env` stays
 ignored either way.
 

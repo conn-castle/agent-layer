@@ -20,6 +20,11 @@ var missingIdentityMarkers = []string{
 	"empty ident name",
 }
 
+// ErrCommitUnavailable means the repository was reachable but did not provide
+// the requested commit. Callers may safely distinguish this from transport,
+// authentication, server, and local object-database failures.
+var ErrCommitUnavailable = errors.New("commit is unavailable")
+
 // Destination is an isolated working repository used to publish one grouped
 // upstream contribution. It can fetch the destination base and any locked
 // source commits needed for reconciliation without checking out either tree.
@@ -108,9 +113,20 @@ func (d *Destination) FetchCommit(ctx context.Context, repository Repository, co
 		return err
 	}
 	if !exists {
-		return fmt.Errorf("commit %s could not be fetched from %s", commit, repository)
+		return fmt.Errorf("%w: commit %s could not be fetched from %s", ErrCommitUnavailable, commit, repository)
 	}
 	return nil
+}
+
+// IsAncestor reports whether ancestor is reachable from descendant. Both
+// commits must already be available in the destination repository.
+func (d *Destination) IsAncestor(ctx context.Context, ancestor string, descendant string) (bool, error) {
+	_, exitCode, err := d.runner.runAllowExit(ctx, d.dir, []int{1},
+		"merge-base", "--is-ancestor", ancestor, descendant)
+	if err != nil {
+		return false, err
+	}
+	return exitCode == 0, nil
 }
 
 // ReadTree returns the content of a repository path at a commit that is already

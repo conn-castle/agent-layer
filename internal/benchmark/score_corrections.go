@@ -14,6 +14,7 @@ const (
 	obsidianAutoTOCTask     = "obsidian-linter-auto-table-of-contents"
 	obsidianAutoTOCChecksum = "d6fdefea1eb2d0e1c30ac507c1f738957e45ce49029bfc3601183d4294a5fbaf"
 	obsidianAutoTOCPrefix   = "Auto Table of Contents "
+	obsidianAutoTOCP2PTotal = 1131
 	canonicalResultSchema   = "deepswe-canonical-result-v1"
 	obsidianCorrectionID    = "deepswe-v1.1-obsidian-auto-toc-display-name-v1"
 	ctrfStatusPassed        = "passed"
@@ -78,6 +79,12 @@ func applyScoreCorrections(result AttemptResult, resultPath string) (AttemptResu
 		return AttemptResult{}, fmt.Errorf(
 			"score correction expected %d feature identifiers, found %d",
 			result.F2PTotal, len(expected),
+		)
+	}
+	if p2pTotal != obsidianAutoTOCP2PTotal {
+		return AttemptResult{}, fmt.Errorf(
+			"score correction expected %d pass-to-pass tests, found %d",
+			obsidianAutoTOCP2PTotal, p2pTotal,
 		)
 	}
 
@@ -193,6 +200,17 @@ func readCanonicalResult(resultPath string, raw []byte, source AttemptResult) (A
 		return AttemptResult{}, false, fmt.Errorf("invalid canonical benchmark result %s", canonicalResultPath(resultPath))
 	}
 	return record.Result, true, nil
+}
+
+// canonicalizeAttemptResult applies the same canonical-result preference and
+// artifact fallback to every benchmark reporting path.
+func canonicalizeAttemptResult(resultPath string, raw []byte, source AttemptResult) (AttemptResult, error) {
+	if canonical, exists, err := readCanonicalResult(resultPath, raw, source); err != nil {
+		return AttemptResult{}, err
+	} else if exists {
+		return canonical, nil
+	}
+	return applyScoreCorrections(source, resultPath)
 }
 
 func obsidianFeatureCaseName(name, suite string) (string, bool) {

@@ -764,8 +764,10 @@ al skills remove https://github.com/example/skills.git skills/reviewer
 Imported skills live in `.agent-layer/skills-imported/<skill-name>/` and are
 projected through ordinary `al sync` alongside `.agent-layer/skills/`. Recorded
 upstream state lives in `.agent-layer/skills.lock.json`. The generated
-`.agent-layer/.gitignore` ignores both machine-managed paths by default. Agent
-Layer never stages or commits your repository.
+`.agent-layer/.gitignore` ignores only `.agent-layer/skills-imported/.staging/`.
+Keep imported skills and the lockfile tracked and commit them together so clones
+and CI retain the imported content and publication checkpoints. Agent Layer never
+stages or commits your repository.
 
 `add`, `pull`, `reset`, and `push` contact remote repositories. `remove`
 contacts one whenever the block keeps a selector so newly revealed membership

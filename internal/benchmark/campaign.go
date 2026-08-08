@@ -524,11 +524,20 @@ func analyzeCampaignVersion(loaded loadedBenchmarkPlan, baselineDir string, base
 func readCampaignResult(root, task string, attempt int, checksum string, loaded loadedBenchmarkPlan, treatment bool) (AttemptResult, error) {
 	var result AttemptResult
 	path := armResultPath(root, task, attempt)
-	if err := readCampaignJSON(path, &result); err != nil {
+	raw, err := os.ReadFile(path) // #nosec G304 -- task and attempt are validated plan inputs.
+	if err != nil {
 		return AttemptResult{}, fmt.Errorf("read %s repetition %d: %w", task, attempt, err)
 	}
-	if !validPlanResult(path, task, attempt, checksum, loaded.Model, loaded.Effort, treatment) {
+	if json.Unmarshal(raw, &result) != nil ||
+		!validPlanAttemptResult(result, task, attempt, checksum, loaded.Model, loaded.Effort, treatment) {
 		return AttemptResult{}, fmt.Errorf("invalid %s repetition %d evidence", task, attempt)
+	}
+	result, err = canonicalizeAttemptResult(path, raw, result)
+	if err != nil {
+		return AttemptResult{}, fmt.Errorf("read canonical %s repetition %d evidence: %w", task, attempt, err)
+	}
+	if !validPlanAttemptResult(result, task, attempt, checksum, loaded.Model, loaded.Effort, treatment) {
+		return AttemptResult{}, fmt.Errorf("invalid canonical %s repetition %d evidence", task, attempt)
 	}
 	return result, nil
 }

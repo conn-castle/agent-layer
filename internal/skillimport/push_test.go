@@ -243,6 +243,18 @@ func TestPushBranchStillPreservesExternalChangesAfterAPriorPublication(t *testin
 	if got != "published one\nlocal two\nthree\nfour\nexternal five" {
 		t.Fatalf("destination content = %q; external branch change was not preserved", got)
 	}
+	if local := proj.ImportedFile("alpha", "notes.md"); local != got+"\n" {
+		t.Fatalf("local content = %q, want merged destination content %q", local, got+"\n")
+	}
+	secondHead := source.Head("skill-updates")
+	third, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("third Push: %v\n%s", err, third.Render("push"))
+	}
+	requireOutcome(t, third, "alpha", OutcomeUnchanged)
+	if source.Head("skill-updates") != secondHead {
+		t.Fatal("an unchanged follow-up push reverted the synchronized external edit")
+	}
 }
 
 func TestPushDoesNotCheckpointAMissingUnchangedBranch(t *testing.T) {
@@ -270,6 +282,33 @@ func TestPushDoesNotCheckpointAMissingUnchangedBranch(t *testing.T) {
 	}
 }
 
+func TestGroupedPushAdvancesUnchangedSiblingPublication(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteSkill("skills/beta", "beta", "Beta body")
+	source.Commit("add grouped skills")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha", "skills/beta"},
+		`write_policy = "branch"`, `push_branch = "skill-updates"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	proj.WriteImportedFile("alpha", "notes.md", "local note\n")
+
+	report, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("Push: %v\n%s", err, report.Render("push"))
+	}
+	requireOutcome(t, report, "alpha", OutcomePushed)
+	requireOutcome(t, report, "beta", OutcomeUnchanged)
+	head := source.Head("skill-updates")
+	beta, _ := proj.Lock().Entry("beta")
+	if beta.Publication == nil || beta.Publication.Commit != head {
+		t.Fatalf("unchanged sibling publication = %+v, want checkpoint at %s", beta.Publication, head)
+	}
+}
+
 func TestPushFallsBackSafelyWhenPublicationWasRebasedAway(t *testing.T) {
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Original body")
@@ -289,9 +328,8 @@ func TestPushFallsBackSafelyWhenPublicationWasRebasedAway(t *testing.T) {
 	requireOutcome(t, first, "alpha", OutcomePushed)
 	oldPublication := source.Head("skill-updates")
 
+	source.run("tag", "keep-old-publication", oldPublication)
 	source.run("branch", "--force", "skill-updates", "main")
-	source.run("reflog", "expire", "--expire=now", "--all")
-	source.run("gc", "--prune=now")
 	proj.WriteImportedFile("alpha", "SKILL.md", skillManifest("alpha", "Second body"))
 
 	second, err := proj.Service().Push(context.Background())
@@ -1041,6 +1079,18 @@ func TestPushPreservesADestinationDeletionOnAnExistingBranch(t *testing.T) {
 	}
 	if source.Head("skill-updates") == destinationHead {
 		t.Fatal("the fixture did not actually publish beta")
+	}
+	if !strings.Contains(proj.ImportedFile("alpha", "SKILL.md"), "Alpha body") {
+		t.Fatal("preserving a destination deletion removed the managed local skill")
+	}
+	secondHead := source.Head("skill-updates")
+	second, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("second Push: %v\n%s", err, second.Render("push"))
+	}
+	requireOutcome(t, second, "alpha", OutcomeUnchanged)
+	if source.Head("skill-updates") != secondHead || source.HasPath("skill-updates", "skills/alpha/SKILL.md") {
+		t.Fatal("a follow-up push reverted the preserved destination deletion")
 	}
 }
 

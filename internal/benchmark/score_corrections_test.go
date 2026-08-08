@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -15,11 +16,10 @@ func TestApplyScoreCorrectionsReconcilesObsidianDisplayName(t *testing.T) {
 	resultPath := filepath.Join(root, "attempts", "1", "tasks", obsidianAutoTOCTask, "result.json")
 	result := correctionTestResult()
 	writeCorrectionReports(t, resultPath, result.EventID,
-		[]map[string]string{
-			{"name": "[p2p] existing behavior", "status": ctrfStatusPassed},
-			{"name": "[f2p] Auto Table of Contents first case", "status": statusFailed},
-			{"name": "[f2p] Auto Table of Contents second case", "status": statusFailed},
-		},
+		completeCorrectionGradedTests(
+			map[string]string{"name": "[f2p] Auto Table of Contents first case", "status": statusFailed},
+			map[string]string{"name": "[f2p] Auto Table of Contents second case", "status": statusFailed},
+		),
 		[]map[string]string{
 			{"name": "Auto TOC first case", "suite": "auto-toc.test.ts > Auto TOC", "status": ctrfStatusPassed},
 			{"name": "Auto TOC second case", "suite": "auto-toc.test.ts > Auto TOC", "status": statusFailed},
@@ -33,7 +33,7 @@ func TestApplyScoreCorrectionsReconcilesObsidianDisplayName(t *testing.T) {
 	if corrected.F2PPassed != 1 || corrected.F2PTotal != 2 || corrected.F2PScore != .5 {
 		t.Fatalf("corrected F2P = %d/%d (%v)", corrected.F2PPassed, corrected.F2PTotal, corrected.F2PScore)
 	}
-	if corrected.PartialScore != float64(2)/3 || corrected.Reward != 0 {
+	if corrected.PartialScore != float64(obsidianAutoTOCP2PTotal+1)/float64(obsidianAutoTOCP2PTotal+2) || corrected.Reward != 0 {
 		t.Fatalf("corrected partial/reward = %v/%v", corrected.PartialScore, corrected.Reward)
 	}
 }
@@ -43,11 +43,10 @@ func TestCorrectStoredScoresWritesVersionedCanonicalResult(t *testing.T) {
 	resultPath := filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "matrices", "matrix", "arms", "arm", "attempts", "1", "tasks", obsidianAutoTOCTask, "result.json")
 	result := correctionTestResult()
 	writeCorrectionReports(t, resultPath, result.EventID,
-		[]map[string]string{
-			{"name": "[p2p] existing behavior", "status": ctrfStatusPassed},
-			{"name": "[f2p] Auto Table of Contents first case", "status": statusFailed},
-			{"name": "[f2p] Auto Table of Contents second case", "status": statusFailed},
-		},
+		completeCorrectionGradedTests(
+			map[string]string{"name": "[f2p] Auto Table of Contents first case", "status": statusFailed},
+			map[string]string{"name": "[f2p] Auto Table of Contents second case", "status": statusFailed},
+		),
 		[]map[string]string{
 			{"name": "Auto TOC first case", "suite": "auto-toc.test.ts > Auto TOC", "status": "passed"},
 			{"name": "Auto TOC second case", "suite": "auto-toc.test.ts > Auto TOC", "status": "failed"},
@@ -86,7 +85,6 @@ func TestCorrectStoredScoresWritesVersionedCanonicalResult(t *testing.T) {
 }
 
 func TestCorrectStoredScoresTreatsMissingStateAsEmpty(t *testing.T) {
-	t.Parallel()
 	count, err := CorrectStoredScores(t.TempDir())
 	if err != nil {
 		t.Fatalf("CorrectStoredScores: %v", err)
@@ -97,7 +95,6 @@ func TestCorrectStoredScoresTreatsMissingStateAsEmpty(t *testing.T) {
 }
 
 func TestReadCanonicalResultRejectsChangedAttemptIdentity(t *testing.T) {
-	t.Parallel()
 	root := t.TempDir()
 	resultPath := filepath.Join(root, "result.json")
 	source := correctionTestResult()
@@ -124,11 +121,10 @@ func TestApplyScoreCorrectionsUsesWorstDuplicateStatus(t *testing.T) {
 	resultPath := filepath.Join(root, "attempts", "1", "tasks", obsidianAutoTOCTask, "result.json")
 	result := correctionTestResult()
 	writeCorrectionReports(t, resultPath, result.EventID,
-		[]map[string]string{
-			{"name": "[p2p] existing behavior", "status": "passed"},
-			{"name": "[f2p] Auto Table of Contents first case", "status": "failed"},
-			{"name": "[f2p] Auto Table of Contents second case", "status": "failed"},
-		},
+		completeCorrectionGradedTests(
+			map[string]string{"name": "[f2p] Auto Table of Contents first case", "status": "failed"},
+			map[string]string{"name": "[f2p] Auto Table of Contents second case", "status": "failed"},
+		),
 		[]map[string]string{
 			{"name": "Auto TOC first case", "suite": "auto-toc.test.ts > Auto TOC", "status": ctrfStatusPassed},
 			{"name": "Auto TOC first case", "suite": "auto-toc.test.ts > Auto TOC", "status": statusFailed},
@@ -145,6 +141,65 @@ func TestApplyScoreCorrectionsUsesWorstDuplicateStatus(t *testing.T) {
 	}
 }
 
+func TestApplyScoreCorrectionsRejectsIncompleteP2PReport(t *testing.T) {
+	root := t.TempDir()
+	resultPath := filepath.Join(root, "attempts", "1", "tasks", obsidianAutoTOCTask, "result.json")
+	result := correctionTestResult()
+	writeCorrectionReports(t, resultPath, result.EventID,
+		[]map[string]string{
+			{"name": "[f2p] Auto Table of Contents first case", "status": statusFailed},
+			{"name": "[f2p] Auto Table of Contents second case", "status": statusFailed},
+		},
+		[]map[string]string{
+			{"name": "Auto TOC first case", "suite": "auto-toc.test.ts > Auto TOC", "status": ctrfStatusPassed},
+			{"name": "Auto TOC second case", "suite": "auto-toc.test.ts > Auto TOC", "status": ctrfStatusPassed},
+		},
+	)
+
+	if _, err := applyScoreCorrections(result, resultPath); err == nil || !strings.Contains(err.Error(), "pass-to-pass tests") {
+		t.Fatalf("incomplete P2P report error = %v", err)
+	}
+}
+
+func TestReadCampaignResultUsesCanonicalResult(t *testing.T) {
+	root := t.TempDir()
+	path := armResultPath(root, obsidianAutoTOCTask, 1)
+	source := correctionTestResult()
+	raw, err := json.Marshal(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	corrected := source
+	corrected.F2PPassed = 2
+	corrected.F2PScore = 1
+	record := canonicalAttemptResult{
+		SchemaVersion: canonicalResultSchema, CorrectionID: obsidianCorrectionID,
+		SourceResultSHA256: fmt.Sprintf("%x", sha256.Sum256(raw)), Result: corrected,
+	}
+	if err := writeJSON(canonicalResultPath(path), record); err != nil {
+		t.Fatal(err)
+	}
+	loaded := loadedBenchmarkPlan{
+		Model:  Model{RuntimeIdentifier: source.RuntimeModel},
+		Effort: source.ReasoningEffort,
+	}
+	got, err := readCampaignResult(root, source.Task, source.Attempt, source.TaskChecksum, loaded, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.F2PPassed != corrected.F2PPassed || got.F2PScore != corrected.F2PScore {
+		t.Fatalf("campaign result score = %d/%d (%v), want canonical %d/%d (%v)",
+			got.F2PPassed, got.F2PTotal, got.F2PScore,
+			corrected.F2PPassed, corrected.F2PTotal, corrected.F2PScore)
+	}
+}
+
 func correctionTestResult() AttemptResult {
 	cost, duration := 1.0, 1.0
 	now := time.Now().UTC()
@@ -157,6 +212,16 @@ func correctionTestResult() AttemptResult {
 		Provider: "openai", PublishedModel: "model", RuntimeModel: "runtime",
 		ReasoningEffort: "low", ProviderClientVersion: "version", InvocationCount: 1,
 	}
+}
+
+func completeCorrectionGradedTests(f2pTests ...map[string]string) []map[string]string {
+	tests := make([]map[string]string, 0, obsidianAutoTOCP2PTotal+len(f2pTests))
+	for index := 0; index < obsidianAutoTOCP2PTotal; index++ {
+		tests = append(tests, map[string]string{
+			"name": fmt.Sprintf("[p2p] existing behavior %d", index), "status": ctrfStatusPassed,
+		})
+	}
+	return append(tests, f2pTests...)
 }
 
 func writeCorrectionReports(t *testing.T, resultPath, eventID string, gradedTests, featureTests []map[string]string) {

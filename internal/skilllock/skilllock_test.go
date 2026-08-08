@@ -147,6 +147,29 @@ func TestParseReadsVersionOneWithoutPublicationState(t *testing.T) {
 	}
 }
 
+func TestMarshalUpgradesVersionOneToCurrentVersion(t *testing.T) {
+	t.Parallel()
+	data, err := json.Marshal(File{Version: 1, Skills: []Entry{validEntry("alpha")}})
+	if err != nil {
+		t.Fatalf("marshal version 1 fixture: %v", err)
+	}
+	file, err := Parse(data, "skills.lock.json")
+	if err != nil {
+		t.Fatalf("Parse version 1: %v", err)
+	}
+	written, err := file.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal parsed version 1: %v", err)
+	}
+	reparsed, err := Parse(written, "skills.lock.json")
+	if err != nil {
+		t.Fatalf("Parse rewritten lock: %v", err)
+	}
+	if reparsed.Version != Version {
+		t.Fatalf("rewritten version = %d, want %d", reparsed.Version, Version)
+	}
+}
+
 func TestParseRequiresVersionTwoForPublicationState(t *testing.T) {
 	t.Parallel()
 	entry := validEntry("alpha")
