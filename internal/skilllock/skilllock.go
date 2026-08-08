@@ -1,11 +1,10 @@
 // Package skilllock owns `.agent-layer/skills.lock.json`, the machine-managed
 // record of what Agent Layer actually imported from each configured Git source.
 //
-// The lockfile is the canonical merge base for every skill import operation:
-// it records the resolved source ref, commit, and upstream tree hash for each
-// imported skill so pull and push can reconcile local edits without inferring
-// state. It is schema-versioned, stable-sorted, strictly decoded, and written
-// atomically so a partially written file can never be mistaken for valid state.
+// The lockfile records the canonical source merge base for every imported skill
+// and, when one has been published, the latest destination merge base. It is
+// schema-versioned, stable-sorted, strictly decoded, and written atomically so
+// a partially written file can never be mistaken for valid state.
 package skilllock
 
 import (
@@ -23,9 +22,12 @@ import (
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
 
-// Version is the current lockfile schema version. A file recording a different
-// version is rejected rather than guessed at.
-const Version = 1
+// Version is the current lockfile schema version. Version 1 remains readable so
+// repositories upgrade in place; publication checkpoints require version 2 so
+// older binaries report an unsupported version instead of an unknown field.
+const Version = 2
+
+const firstReadableVersion = 1
 
 // Tracking modes recorded for an imported skill. They are declared here because
 // the lockfile is where they are persisted; internal/config exposes the same
@@ -44,6 +46,8 @@ var commitIDLengths = map[int]struct{}{40: {}, 64: {}}
 // treeHashPrefix is the algorithm prefix every canonical skill tree hash
 // carries. skilltree.Tree.Hash is the only producer.
 const treeHashPrefix = "sha256:"
+
+const treeHashField = "tree_hash"
 
 // Ref kinds recorded from remote resolution evidence. Offline code paths read
 // these instead of guessing whether a configured ref names a branch.
@@ -93,6 +97,34 @@ type Entry struct {
 	// TreeHash is the canonical hash of the upstream skill tree at Commit. It is
 	// the immutable merge base; local edits never replace it.
 	TreeHash string `json:"tree_hash"`
+	// Publication records the last tree Agent Layer successfully published to a
+	// contribution destination. It is independent of the source lock so a later
+	// push can reconcile against its own prior result without changing pull or
+	// local-modification semantics.
+	Publication *Publication `json:"publication,omitempty"`
+}
+
+// Publication is one trustworthy destination-side merge checkpoint.
+type Publication struct {
+	Repository string `json:"repository"`
+	Branch     string `json:"branch"`
+	Commit     string `json:"commit"`
+	TreeHash   string `json:"tree_hash"`
+}
+
+// Equal compares persisted entry values rather than pointer identity.
+func (entry Entry) Equal(other Entry) bool {
+	entryPublication := entry.Publication
+	otherPublication := other.Publication
+	entry.Publication = nil
+	other.Publication = nil
+	if entry != other {
+		return false
+	}
+	if entryPublication == nil || otherPublication == nil {
+		return entryPublication == nil && otherPublication == nil
+	}
+	return *entryPublication == *otherPublication
 }
 
 // File is the complete on-disk lock document.
@@ -135,8 +167,15 @@ func Parse(data []byte, source string) (*File, error) {
 	if decoder.More() {
 		return nil, fmt.Errorf("%w: %s: unexpected trailing content", ErrMalformed, source)
 	}
-	if file.Version != Version {
-		return nil, fmt.Errorf("%w: %s: unsupported schema version %d (this Agent Layer supports %d)", ErrMalformed, source, file.Version, Version)
+	if file.Version < firstReadableVersion || file.Version > Version {
+		return nil, fmt.Errorf("%w: %s: unsupported schema version %d (this Agent Layer supports %d through %d)", ErrMalformed, source, file.Version, firstReadableVersion, Version)
+	}
+	if file.Version < Version {
+		for i, entry := range file.Skills {
+			if entry.Publication != nil {
+				return nil, fmt.Errorf("%w: %s: skills[%d]: publication requires schema version %d", ErrMalformed, source, i, Version)
+			}
+		}
 	}
 	if err := validate(&file, source); err != nil {
 		return nil, err
@@ -346,7 +385,7 @@ func validateEntry(entry Entry) error {
 		{"ref_kind", entry.RefKind},
 		{"tracking", entry.Tracking},
 		{"commit", entry.Commit},
-		{"tree_hash", entry.TreeHash},
+		{treeHashField, entry.TreeHash},
 	}
 	for _, field := range required {
 		if strings.TrimSpace(field.value) == "" {
@@ -402,6 +441,44 @@ func validateEntry(entry Entry) error {
 	}
 	if err := validateTreeHash(entry.TreeHash); err != nil {
 		return fmt.Errorf("tree_hash %q is invalid: %w", entry.TreeHash, err)
+	}
+	if entry.Publication != nil {
+		if err := validatePublication(*entry.Publication); err != nil {
+			return fmt.Errorf("publication is invalid: %w", err)
+		}
+	}
+	return nil
+}
+
+func validatePublication(publication Publication) error {
+	required := []struct {
+		field string
+		value string
+	}{
+		{"repository", publication.Repository},
+		{"branch", publication.Branch},
+		{"commit", publication.Commit},
+		{treeHashField, publication.TreeHash},
+	}
+	for _, field := range required {
+		if strings.TrimSpace(field.value) == "" {
+			return fmt.Errorf("%s is required", field.field)
+		}
+	}
+	if publication.Repository != strings.TrimSpace(publication.Repository) || strings.HasSuffix(publication.Repository, "/") {
+		return fmt.Errorf("repository %q is not normalized", publication.Repository)
+	}
+	if err := ValidateRepository(publication.Repository); err != nil {
+		return fmt.Errorf("repository is invalid: %w", err)
+	}
+	if publication.Branch != strings.TrimSpace(publication.Branch) {
+		return fmt.Errorf("branch %q is not normalized", publication.Branch)
+	}
+	if err := validateCommitID(publication.Commit); err != nil {
+		return fmt.Errorf("commit %q is invalid: %w", publication.Commit, err)
+	}
+	if err := validateTreeHash(publication.TreeHash); err != nil {
+		return fmt.Errorf("tree_hash %q is invalid: %w", publication.TreeHash, err)
 	}
 	return nil
 }
@@ -506,6 +583,13 @@ func (f *File) Clone() *File {
 	if len(f.Skills) > 0 {
 		clone.Skills = make([]Entry, len(f.Skills))
 		copy(clone.Skills, f.Skills)
+		for i := range clone.Skills {
+			if f.Skills[i].Publication == nil {
+				continue
+			}
+			publication := *f.Skills[i].Publication
+			clone.Skills[i].Publication = &publication
+		}
 	}
 	return clone
 }

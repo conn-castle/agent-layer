@@ -148,6 +148,16 @@ func lockEntryFor(skill desiredSkill, blockCtx *blockContext, commit string, tre
 	}
 }
 
+// preservePublication carries destination history across source pulls and
+// resets while the skill still owns the same destination path. Source state and
+// publication state are independent merge bases.
+func preservePublication(next skilllock.Entry, previous skilllock.Entry) skilllock.Entry {
+	if next.SelectedPath == previous.SelectedPath {
+		next.Publication = previous.Publication
+	}
+	return next
+}
+
 // retire applies the single retirement rule shared by selector removal,
 // exclusion, and upstream disappearance.
 //

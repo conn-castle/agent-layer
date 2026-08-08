@@ -41,8 +41,14 @@ func missingPlanCells(execution armExecution) []planCell {
 
 func validPlanResult(path, task string, attempt int, checksum string, model Model, effort string, treatment bool) bool {
 	var result AttemptResult
-	if readCampaignJSON(path, &result) != nil || result.Validate() != nil ||
-		result.Status != statusSuccess {
+	if readCampaignJSON(path, &result) != nil {
+		return false
+	}
+	return validPlanAttemptResult(result, task, attempt, checksum, model, effort, treatment)
+}
+
+func validPlanAttemptResult(result AttemptResult, task string, attempt int, checksum string, model Model, effort string, treatment bool) bool {
+	if result.Validate() != nil || result.Status != statusSuccess {
 		return false
 	}
 	if result.Task != task || result.Attempt != attempt ||

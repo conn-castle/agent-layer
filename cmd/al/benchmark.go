@@ -19,6 +19,7 @@ const (
 	benchmarkCommandName   = "benchmark"
 	benchmarkBaselineName  = "baseline"
 	benchmarkTreatmentName = "treatment"
+	benchmarkCorrectName   = "correct-scores"
 )
 
 var (
@@ -35,8 +36,28 @@ func newBenchmarkCmd() *cobra.Command {
 		Short: "Run a website-planned DeepSWE comparison",
 		Args:  cobra.NoArgs,
 	}
-	command.AddCommand(newBenchmarkBaselineCmd(), newBenchmarkTreatmentCmd(), newBenchmarkReportCmd())
+	command.AddCommand(newBenchmarkBaselineCmd(), newBenchmarkTreatmentCmd(), newBenchmarkReportCmd(), newBenchmarkCorrectScoresCmd())
 	return command
+}
+
+func newBenchmarkCorrectScoresCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   benchmarkCorrectName,
+		Short: "Regenerate canonical scores for affected stored DeepSWE runs",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveRepoRoot()
+			if err != nil {
+				return err
+			}
+			count, err := bench.CorrectStoredScores(root)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Regenerated %d canonical benchmark scores.\n", count)
+			return err
+		},
+	}
 }
 
 func newBenchmarkBaselineCmd() *cobra.Command {

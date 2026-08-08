@@ -76,7 +76,14 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "skills.lock.json")
 	file := New()
-	file.Upsert(validEntry("alpha"))
+	entry := validEntry("alpha")
+	entry.Publication = &Publication{
+		Repository: "https://example.test/fork.git",
+		Branch:     "skill-updates",
+		Commit:     "fedcba9876543210fedcba9876543210fedcba98",
+		TreeHash:   "sha256:" + strings.Repeat("cd", 32),
+	}
+	file.Upsert(entry)
 	if err := file.Save(path); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -85,8 +92,94 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	entry, ok := loaded.Entry("alpha")
-	if !ok || entry.Commit != validEntry("alpha").Commit {
+	if !ok || entry.Commit != validEntry("alpha").Commit || entry.Publication == nil || entry.Publication.Branch != "skill-updates" {
 		t.Fatalf("round-tripped entry = %+v", entry)
+	}
+}
+
+func TestCloneDeepCopiesPublication(t *testing.T) {
+	t.Parallel()
+	file := New()
+	entry := validEntry("alpha")
+	entry.Publication = &Publication{
+		Repository: entry.Repository,
+		Branch:     "skill-updates",
+		Commit:     entry.Commit,
+		TreeHash:   entry.TreeHash,
+	}
+	file.Upsert(entry)
+
+	clone := file.Clone()
+	clone.Skills[0].Publication.Branch = "other-updates"
+	if file.Skills[0].Publication.Branch != "skill-updates" {
+		t.Fatal("mutating a cloned publication changed the original lock")
+	}
+}
+
+func TestEntryEqualComparesPublicationValues(t *testing.T) {
+	t.Parallel()
+	left := validEntry("alpha")
+	left.Publication = &Publication{Repository: left.Repository, Branch: "skill-updates", Commit: left.Commit, TreeHash: left.TreeHash}
+	right := left
+	publicationCopy := *left.Publication
+	right.Publication = &publicationCopy
+	if !left.Equal(right) {
+		t.Fatal("equal publication values at different addresses compared unequal")
+	}
+	right.Publication.Branch = "other-updates"
+	if left.Equal(right) {
+		t.Fatal("different publication values compared equal")
+	}
+}
+
+func TestParseReadsVersionOneWithoutPublicationState(t *testing.T) {
+	t.Parallel()
+	data, err := json.Marshal(File{Version: 1, Skills: []Entry{validEntry("alpha")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := Parse(data, "skills.lock.json")
+	if err != nil {
+		t.Fatalf("Parse version 1: %v", err)
+	}
+	if file.Version != 1 {
+		t.Fatalf("parsed version = %d, want preserved version 1", file.Version)
+	}
+}
+
+func TestMarshalUpgradesVersionOneToCurrentVersion(t *testing.T) {
+	t.Parallel()
+	data, err := json.Marshal(File{Version: 1, Skills: []Entry{validEntry("alpha")}})
+	if err != nil {
+		t.Fatalf("marshal version 1 fixture: %v", err)
+	}
+	file, err := Parse(data, "skills.lock.json")
+	if err != nil {
+		t.Fatalf("Parse version 1: %v", err)
+	}
+	written, err := file.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal parsed version 1: %v", err)
+	}
+	reparsed, err := Parse(written, "skills.lock.json")
+	if err != nil {
+		t.Fatalf("Parse rewritten lock: %v", err)
+	}
+	if reparsed.Version != Version {
+		t.Fatalf("rewritten version = %d, want %d", reparsed.Version, Version)
+	}
+}
+
+func TestParseRequiresVersionTwoForPublicationState(t *testing.T) {
+	t.Parallel()
+	entry := validEntry("alpha")
+	entry.Publication = &Publication{Repository: entry.Repository, Branch: "skill-updates", Commit: entry.Commit, TreeHash: entry.TreeHash}
+	data, err := json.Marshal(File{Version: 1, Skills: []Entry{entry}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Parse(data, "skills.lock.json"); err == nil || !strings.Contains(err.Error(), "requires schema version 2") {
+		t.Fatalf("Parse version 1 publication error = %v", err)
 	}
 }
 
@@ -188,6 +281,13 @@ func TestParseRejectsUntrustworthyState(t *testing.T) {
 			name: "tree hash without the canonical algorithm",
 			data: lockDocument(t, mutated("alpha", func(e *Entry) { e.TreeHash = strings.Repeat("ab", 32) })),
 			want: "tree_hash",
+		},
+		{
+			name: "incomplete publication checkpoint",
+			data: lockDocument(t, mutated("alpha", func(e *Entry) {
+				e.Publication = &Publication{Repository: e.Repository, Branch: "skill-updates", Commit: e.Commit}
+			})),
+			want: "publication is invalid",
 		},
 		{
 			name: "commit ref kind whose resolved ref is not the commit",

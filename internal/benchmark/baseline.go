@@ -397,6 +397,10 @@ func readArmResults(stateDir string, tasks []benchmarkPlanTask, checksums map[st
 			if json.Unmarshal(data, &result) != nil || result.Validate() != nil || result.Status != statusSuccess || result.Task != task.ID || result.Attempt != attempt || result.TaskChecksum != checksums[task.ID] {
 				return nil, fmt.Errorf("invalid benchmark result %s repetition %d", task.ID, attempt)
 			}
+			result, err = canonicalizeAttemptResult(path, data, result)
+			if err != nil {
+				return nil, fmt.Errorf("read canonical benchmark result %s repetition %d: %w", task.ID, attempt, err)
+			}
 			results[task.ID] = append(results[task.ID], result)
 		}
 	}

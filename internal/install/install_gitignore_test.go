@@ -3,6 +3,7 @@ package install
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -637,9 +638,10 @@ func TestAgentLayerGitignoreTemplateEntries(t *testing.T) {
 		"/templates/",
 		"state/",
 		"sync.lock",
-		"skills.lock.json",
-		"skills-imported/",
 		"tmp/",
+		// The import transaction's scratch space is machine-local even though
+		// the imported skills around it are committed.
+		"skills-imported/.staging/",
 		"open-vscode.app/",
 		"open-vscode.command",
 		"open-vscode.desktop",
@@ -649,6 +651,39 @@ func TestAgentLayerGitignoreTemplateEntries(t *testing.T) {
 		if _, ok := lines[entry]; !ok {
 			t.Errorf("agent-layer.gitignore template missing required entry %q", entry)
 		}
+	}
+
+	// Exercise Git's actual matching rules so equivalent patterns such as a
+	// leading slash, omitted trailing slash, or wildcard suffix cannot bypass an
+	// exact-line assertion.
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), data, 0o600); err != nil {
+		t.Fatalf("write template fixture: %v", err)
+	}
+	if output, err := exec.Command("git", "-C", root, "init", "--quiet").CombinedOutput(); err != nil { // #nosec G204 -- fixed test command and temp path.
+		t.Fatalf("initialize template fixture: %v: %s", err, output)
+	}
+	isIgnored := func(path string) bool {
+		t.Helper()
+		cmd := exec.Command("git", "-C", root, "check-ignore", "--no-index", "--quiet", "--", path) // #nosec G204 -- fixed test command and test-controlled path.
+		err := cmd.Run()
+		if err == nil {
+			return true
+		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return false
+		}
+		t.Fatalf("check ignore status for %q: %v", path, err)
+		return false
+	}
+	for _, path := range []string{"skills.lock.json", "skills-imported/example/SKILL.md"} {
+		if isIgnored(path) {
+			t.Errorf("agent-layer.gitignore template must not ignore %q", path)
+		}
+	}
+	if !isIgnored("skills-imported/.staging/transaction") {
+		t.Error("agent-layer.gitignore template must ignore imported-skill staging content")
 	}
 }
 

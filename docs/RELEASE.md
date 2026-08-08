@@ -66,14 +66,32 @@ public probe command.
 1. Tag push triggers the release workflow.
 2. The workflow validates upgrade-contract docs for the tag (`make docs-upgrade-check RELEASE_TAG=<tag>`), ensuring a matching migration-table row exists, blocking placeholder migration text when changelog notes breaking/manual migration impact, verifying the migration manifest and template ownership manifest exist, and enforcing upgrade CTA syntax drift checks in core docs/message surfaces.
 3. The workflow runs `make ci` on macOS before importing signing credentials, then imports the Developer ID certificate, builds release artifacts, signs the darwin binaries, writes checksums after signing, notarizes the darwin binaries, and publishes `al-install.sh`, macOS/Linux platform binaries, `agent-layer-<version>.tar.gz` (source tarball; version without leading `v`), and `checksums.txt`.
-4. The workflow opens a PR against `conn-castle/homebrew-tap` to render `Formula/agent-layer.rb` as a binary formula using the published macOS/Linux release assets and their SHA256 values.
+4. The workflow opens a PR against `conn-castle/homebrew-tap` to render `Formula/agent-layer.rb` as a binary formula using the published macOS/Linux release assets and their SHA256 values. **Eligible PRs merge automatically after successful validation — see [Homebrew tap PR](#homebrew-tap-pr--automatic-after-successful-validation). Do not merge it manually.**
 5. The workflow publishes website content by pushing directly to `conn-castle/agent-layer-web` on `main`. This is mandatory; the release fails if `cmd/publish-site/main.go` or `site/` is missing, or if the published Docusaurus site does not build.
 6. Release notes are automatically extracted from `CHANGELOG.md` by the workflow.
 
-## Homebrew tap PR handling
-`agent-layer` is published to Homebrew as a binary formula that points at the signed and notarized release assets produced by this repository's release workflow. The tap does not build, sign, notarize, or bottle `agent-layer`.
+Once this workflow succeeds, the release is done. The tap PR normally completes automatically after its own validation; if it remains open after validation and auto-merge have finished, inspect the auto-merge guards. The only remaining routine step is the optional [post-release verification](#post-release-verification-fresh-repo) below.
 
-After the release workflow opens the `conn-castle/homebrew-tap` PR, the tap's binary-formula auto-merge workflow should merge it after `brew test-bot` validates the formula on macOS and Linux. Do not add the `pr-pull` label and do not run `brew pr-pull` for `agent-layer` PRs; that path is only for formulae that produce Homebrew bottle artifacts.
+## Homebrew tap PR — automatic after successful validation
+
+> **Do not merge, approve, label, or close the `conn-castle/homebrew-tap` PR manually. Eligible PRs merge automatically after successful validation.**
+
+An open PR titled `agent-layer vX.Y.Z` in `conn-castle/homebrew-tap` immediately after a release is the **normal, healthy, expected** state. `brew test-bot` or the auto-merge workflow may still be running. Releasing is complete once the release workflow succeeds; if both tap workflows complete without a merge, inspect the auto-merge run to identify which guard stopped it.
+
+Every `agent-layer` tap PR to date has been merged by the `conn-castle-release-bot` app, typically 2–25 minutes after it was opened.
+
+### What happens without you
+1. This repo's release workflow opens the PR as `conn-castle-release-bot`, from branch `bump-agent-layer-vX.Y.Z`, changing only `Formula/agent-layer.rb`.
+2. The tap's `brew test-bot` workflow validates the formula on macOS and Linux.
+3. On success, the tap's `Auto merge binary formula bumps` workflow (`.github/workflows/auto-merge-binary-formula.yml` in the tap repo) **squash-merges the PR and attempts to delete the branch automatically.**
+
+There is no manual approval gate anywhere in that chain.
+
+### Never do these
+- **Do not merge the PR by hand.** Merging it yourself bypasses the `brew test-bot` gate.
+- **Do not add the `pr-pull` label and do not run `brew pr-pull`.** The auto-merge workflow deliberately *refuses to merge* any binary-formula PR carrying that label, so adding it converts a self-completing release into a stuck one. `pr-pull` is only for formulae that produce Homebrew bottle artifacts; `agent-layer` is a binary formula that points at this repo's already-signed and notarized release assets, so the tap never builds, signs, notarizes, or bottles it.
+
+**If it really is stuck:** when both `brew test-bot` and auto-merge have completed but the PR remains open, read the tap's `Auto merge binary formula bumps` run to see which guard stopped it, and fix that cause rather than merging by hand.
 
 ## Website publish details (agent-layer-web)
 The `publish-website-and-tap` job publishes website content by running `go run ./cmd/publish-site --tag vX.Y.Z --repo-b-dir agent-layer-web`, then runs `npm run build` in `agent-layer-web`.

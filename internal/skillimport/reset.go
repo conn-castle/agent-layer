@@ -80,7 +80,7 @@ func (s *Service) resetLocked(ctx context.Context, st *state, name string, repor
 	}
 	txn := newTransaction(pathSetFor(st), st.lock)
 	txn.WriteSkill(entry.Name, tree)
-	txn.SetLockEntry(lockEntryFor(skill, blockCtx, blockCtx.Resolution.Commit, tree))
+	txn.SetLockEntry(preservePublication(lockEntryFor(skill, blockCtx, blockCtx.Resolution.Commit, tree), entry))
 	if err := txn.Commit(); err != nil {
 		return err
 	}

@@ -187,9 +187,10 @@ repository still imports. If a run is interrupted part way through, the next
 `al skills` or `al sync` command rolls it back, so you never end up with a
 half-replaced skill.
 
-The generated `.agent-layer/.gitignore` ignores both the machine-managed
-`.agent-layer/skills-imported/` directory and its `.agent-layer/skills.lock.json`
-upstream state by default.
+The generated `.agent-layer/.gitignore` ignores only
+`.agent-layer/skills-imported/.staging/`, the transaction scratch space. Keep
+imported skills and `.agent-layer/skills.lock.json` tracked and commit them
+together so clones and CI retain the imported content and publication checkpoints.
 
 If you want to discard one skill's edits instead, reset it explicitly. This is
 permanent: Agent Layer creates no commit, stash, copy, or backup for you.
@@ -246,6 +247,26 @@ preserved rather than overwritten. If the destination branch removed a skill
 entirely, that removal is preserved too: the push reports the skill as
 unchanged when your copy still matches what you imported, and reports a
 conflict when you had also edited it.
+
+After a successful contribution-branch push, Agent Layer records that exact
+published tree as a separate destination checkpoint. Running `al skills push`
+again therefore adds another commit to the same branch—and updates any open
+pull request for that branch—while treating review-driven edits and reversions
+relative to the prior push. Direct edits made to the destination branch are
+still reconciled and preserved.
+
+A contribution branch first pushed by an older Agent Layer version has no
+publication checkpoint. Its first post-upgrade push still uses the locked
+source as the conservative merge base and can report a conflict when both the
+pending edit and existing branch changed the same lines. It also fails instead
+of claiming success when an apparent reversion would leave the destination
+unchanged; Agent Layer cannot safely infer which destination changes were its
+own. Align the local skill with the destination and push once to establish a
+checkpoint, then reapply the reversion. Once one push succeeds or finds the
+local and destination trees identical, later pushes use the recorded
+checkpoint. If a branch is rebased and its recorded commit disappears, Agent
+Layer discards that obsolete checkpoint and safely falls back to the source
+merge base.
 
 To stop managing an imported skill, remove its selector. A clean copy is
 deleted; a copy you edited is preserved and reported so you can move it into

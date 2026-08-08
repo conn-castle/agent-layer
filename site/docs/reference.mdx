@@ -764,8 +764,10 @@ al skills remove https://github.com/example/skills.git skills/reviewer
 Imported skills live in `.agent-layer/skills-imported/<skill-name>/` and are
 projected through ordinary `al sync` alongside `.agent-layer/skills/`. Recorded
 upstream state lives in `.agent-layer/skills.lock.json`. The generated
-`.agent-layer/.gitignore` ignores both machine-managed paths by default. Agent
-Layer never stages or commits your repository.
+`.agent-layer/.gitignore` ignores only `.agent-layer/skills-imported/.staging/`.
+Keep imported skills and the lockfile tracked and commit them together so clones
+and CI retain the imported content and publication checkpoints. Agent Layer never
+stages or commits your repository.
 
 `add`, `pull`, `reset`, and `push` contact remote repositories. `remove`
 contacts one whenever the block keeps a selector so newly revealed membership
@@ -801,10 +803,12 @@ both sides are reported as conflicts and fail only that skill. Pinned imports
 stay put unless you change the configured ref, which is reconciled as a
 retarget rather than a removal plus addition.
 
-Each skill uses only its own lock entry as the upstream merge base. Members
-declared together may therefore remain at different commits after partial
-success. Newly matched skills are imported at that pull's current resolved
-target without moving an existing pinned sibling.
+Each skill uses its own lock entry as the upstream merge base. Members declared
+together may therefore remain at different commits after partial success.
+Newly matched skills are imported at that pull's current resolved target
+without moving an existing pinned sibling. A successful push to a separate
+destination also records a distinct publication checkpoint; it does not move
+or replace that upstream state.
 
 **reset** requires exactly one imported skill name and has no `--all` form. It
 permanently discards that skill's local edits and atomically replaces its tree
@@ -821,6 +825,23 @@ push first verifies the source ref is still at the locked commit and tells you
 to run `al skills pull` if it moved. Push prompts before publication;
 non-interactive callers must pass `--yes`. `add` and `remove` use the same
 confirmation pattern before modifying import configuration.
+
+The first push reconciles against the locked source tree. After publication,
+the lock entry separately records the exact destination commit and tree, which
+become the merge base for the next push to that repository and branch. Repeated
+pushes can therefore update the same pull-request branch, including reverting a
+previously published edit. Destination changes made outside Agent Layer remain
+the remote side of the three-way merge and are preserved when compatible.
+
+Locks written before destination checkpoints were introduced cannot identify
+which existing branch changes came from Agent Layer. The first post-upgrade
+push therefore still reconciles conservatively against the source lock and may
+conflict with a same-line follow-up edit. An ambiguous reversion that would
+leave a non-empty destination unchanged fails explicitly; align the local skill
+with the destination and push once before reapplying it. A successful or
+exactly unchanged push establishes the checkpoint for later calls. A
+rebased-away checkpoint is dropped safely and the source tree becomes the merge
+base again.
 
 A missing configured branch starts from the destination's current default
 branch and fails without creating a ref when no default exists. Agent Layer

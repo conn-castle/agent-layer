@@ -287,7 +287,7 @@ func (s *Service) advanceExisting(ctx context.Context, runner *gitrepo.Runner, s
 		// selected source. Adoption is handled before any block runs, so a
 		// same-name user-managed skill never reaches this path.
 		txn.WriteSkill(skill.Name, skill.Tree)
-		txn.SetLockEntry(lockEntryFor(skill, blockCtx, blockCtx.TargetCommit, skill.Tree))
+		txn.SetLockEntry(preservePublication(lockEntryFor(skill, blockCtx, blockCtx.TargetCommit, skill.Tree), entry))
 		result.Outcome = OutcomeRestored
 		report.Add(result)
 		return
@@ -319,7 +319,8 @@ func (s *Service) advanceExisting(ctx context.Context, runner *gitrepo.Runner, s
 	// resolved ref kind must still be written through, or status, push
 	// freshness checks, and lock advancement would keep applying the superseded
 	// policy indefinitely.
-	if skill.Tree.Equal(base) && entry == lockEntryFor(skill, blockCtx, blockCtx.TargetCommit, skill.Tree) {
+	nextEntry := preservePublication(lockEntryFor(skill, blockCtx, blockCtx.TargetCommit, skill.Tree), entry)
+	if skill.Tree.Equal(base) && entry.Equal(nextEntry) {
 		result.Outcome = OutcomeUnchanged
 		report.Add(result)
 		return
@@ -348,7 +349,7 @@ func (s *Service) advanceExisting(ctx context.Context, runner *gitrepo.Runner, s
 	txn.WriteSkill(skill.Name, merged)
 	// The lock advances to the new upstream commit and hash even when the
 	// merged tree still carries local modifications.
-	txn.SetLockEntry(lockEntryFor(skill, blockCtx, blockCtx.TargetCommit, skill.Tree))
+	txn.SetLockEntry(nextEntry)
 	if merged.Equal(observed.Tree) && entry.Commit == blockCtx.TargetCommit {
 		result.Outcome = OutcomeUnchanged
 	} else {

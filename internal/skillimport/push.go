@@ -2,6 +2,7 @@ package skillimport
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -15,6 +16,8 @@ import (
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
 
+var errPublicationUnavailable = errors.New("publication merge base is unavailable")
+
 // pushCandidate is one validated skill whose local change is ready to reconcile
 // against a destination.
 type pushCandidate struct {
@@ -24,6 +27,13 @@ type pushCandidate struct {
 	Base skilltree.Tree
 	// Local is the current imported filesystem content.
 	Local skilltree.Tree
+	// CanCheckpoint is true when Local is known to be the exact destination
+	// result. Only then may an unchanged push establish or advance publication
+	// state without creating a commit.
+	CanCheckpoint bool
+	// SyncLocal records that reconciliation incorporated destination-only state.
+	// It is written locally only after the whole destination group succeeds.
+	SyncLocal bool
 }
 
 // pushGroup collects every candidate that shares one destination repository and
@@ -406,6 +416,31 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 			report.Add(result)
 			continue
 		}
+		mergeBase := candidate.Base
+		checkpointed := false
+		if branchExisted {
+			var baseErr error
+			mergeBase, checkpointed, baseErr = publicationMergeBase(ctx, destination, group, candidate, head)
+			if errors.Is(baseErr, errPublicationUnavailable) {
+				candidate.Entry.Publication = nil
+				txn.SetLockEntry(candidate.Entry)
+				mergeBase = candidate.Base
+				baseErr = nil
+			}
+			if baseErr != nil {
+				result.Outcome = OutcomeFailed
+				result.Err = baseErr
+				report.Add(result)
+				continue
+			}
+		} else if publicationMatches(group, candidate.Entry.Publication) {
+			// A deleted branch has no destination history left to reconcile. Drop
+			// its obsolete checkpoint before optionally creating the branch anew.
+			candidate.Entry.Publication = nil
+			txn.SetLockEntry(candidate.Entry)
+		}
+		candidate.Base = mergeBase
+		candidate.CanCheckpoint = checkpointed
 		// An absent destination path means two different things, and only the
 		// branch's history distinguishes them.
 		//
@@ -428,6 +463,24 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 				continue
 			}
 		}
+		if !checkpointed && !destinationTree.IsEmpty() && !merged.Equal(candidate.Local) && merged.Equal(destinationTree) {
+			result.Outcome = OutcomeFailed
+			result.Err = fmt.Errorf("no publication checkpoint exists for %s branch %s, so Agent Layer cannot distinguish a local reversion from no local change; first align the local skill with the destination and push once to establish a checkpoint, then reapply the reversion",
+				group.Repository, group.Branch)
+			report.Add(result)
+			continue
+		}
+		if merged.Equal(candidate.Local) {
+			candidate.CanCheckpoint = true
+		}
+		// A whole-skill destination deletion cannot be materialized as a valid
+		// imported skill. Leaving its checkpoint unadvanced preserves that remote
+		// deletion on later pushes without corrupting the managed local tier.
+		if merged.IsEmpty() {
+			candidate.CanCheckpoint = false
+		}
+		candidate.SyncLocal = !merged.IsEmpty() && !merged.Equal(candidate.Local)
+		candidate.Local = merged
 		// Equality is settled before validation so a preserved deletion reports
 		// unchanged instead of failing validation on an empty tree.
 		if merged.Equal(destinationTree) {
@@ -444,10 +497,14 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 			continue
 		}
 		updates = append(updates, gitrepo.Update{Path: candidate.Entry.SelectedPath, Tree: merged})
-		pushed = append(pushed, pushCandidate{Entry: candidate.Entry, Block: candidate.Block, Base: candidate.Base, Local: merged})
+		pushed = append(pushed, candidate)
 	}
 
 	if len(updates) == 0 {
+		if branchExisted {
+			advancePublications(txn, group, head, unchangedCandidates)
+		}
+		syncMergedLocals(txn, unchangedCandidates)
 		flushUnchanged()
 		return
 	}
@@ -469,6 +526,8 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 	}
 
 	advanceUnchangedLocks(txn, group, head, commit, unchanged, unchangedCandidates)
+	advancePublications(txn, group, commit, unchangedCandidates)
+	syncMergedLocals(txn, unchangedCandidates)
 	flushUnchanged()
 
 	for _, candidate := range pushed {
@@ -483,10 +542,92 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 			entry := candidate.Entry
 			entry.Commit = commit
 			entry.TreeHash = candidate.Local.Hash()
+			entry.Publication = nil
 			txn.SetLockEntry(entry)
 			result.Detail += "; lock advanced"
+		} else {
+			entry := candidate.Entry
+			entry.Publication = publicationFor(group, commit, candidate.Local)
+			txn.SetLockEntry(entry)
+		}
+		if candidate.SyncLocal {
+			txn.WriteSkill(candidate.Entry.Name, candidate.Local)
 		}
 		report.Add(result)
+	}
+}
+
+// publicationMergeBase returns the last tree this destination received from a
+// successful push. A checkpoint for another destination is intentionally
+// ignored; the immutable source tree remains the first-push base there.
+func publicationMergeBase(ctx context.Context, destination *gitrepo.Destination, group *pushGroup, candidate pushCandidate, head string) (skilltree.Tree, bool, error) {
+	publication := candidate.Entry.Publication
+	if !publicationMatches(group, publication) {
+		return candidate.Base, false, nil
+	}
+	if err := destination.FetchCommit(ctx, group.Repository, publication.Commit); err != nil {
+		if errors.Is(err, gitrepo.ErrCommitUnavailable) {
+			return skilltree.Tree{}, false, fmt.Errorf("%w: commit %s from %s branch %s: %v",
+				errPublicationUnavailable, shortCommit(publication.Commit), group.Repository, group.Branch, err)
+		}
+		return skilltree.Tree{}, false, fmt.Errorf("fetch published merge base %s from %s branch %s: %w",
+			shortCommit(publication.Commit), group.Repository, group.Branch, err)
+	}
+	ancestor, err := destination.IsAncestor(ctx, publication.Commit, head)
+	if err != nil {
+		return skilltree.Tree{}, false, fmt.Errorf("verify published merge base %s on %s branch %s: %w",
+			shortCommit(publication.Commit), group.Repository, group.Branch, err)
+	}
+	if !ancestor {
+		// The branch was rebased or force-pushed away from the prior publication.
+		// The locked source remains a trustworthy conservative merge base.
+		return skilltree.Tree{}, false, fmt.Errorf("%w: commit %s is not an ancestor of %s branch %s",
+			errPublicationUnavailable, shortCommit(publication.Commit), group.Repository, group.Branch)
+	}
+	base, err := destination.ReadTree(ctx, publication.Commit, candidate.Entry.SelectedPath)
+	if err != nil {
+		return skilltree.Tree{}, false, fmt.Errorf("published merge base %s could not be read for %s: %w",
+			shortCommit(publication.Commit), candidate.Entry.SelectedPath, err)
+	}
+	if base.Hash() != publication.TreeHash {
+		return skilltree.Tree{}, false, fmt.Errorf("published merge base for %s does not match commit %s; refusing to guess at prior destination state",
+			candidate.Entry.SelectedPath, shortCommit(publication.Commit))
+	}
+	return base, true, nil
+}
+
+func syncMergedLocals(txn *transaction, candidates []pushCandidate) {
+	for _, candidate := range candidates {
+		if candidate.SyncLocal {
+			txn.WriteSkill(candidate.Entry.Name, candidate.Local)
+		}
+	}
+}
+
+func publicationMatches(group *pushGroup, publication *skilllock.Publication) bool {
+	return publication != nil && publication.Repository == group.Repository.String() && publication.Branch == group.Branch
+}
+
+func publicationFor(group *pushGroup, commit string, tree skilltree.Tree) *skilllock.Publication {
+	return &skilllock.Publication{
+		Repository: group.Repository.String(),
+		Branch:     group.Branch,
+		Commit:     commit,
+		TreeHash:   tree.Hash(),
+	}
+}
+
+// advancePublications moves trustworthy unchanged checkpoints to the group's
+// resulting commit. This matters for grouped pushes: one skill's update moves
+// the branch commit shared by every unchanged sibling.
+func advancePublications(txn *transaction, group *pushGroup, commit string, candidates []pushCandidate) {
+	for _, candidate := range candidates {
+		if !candidate.CanCheckpoint || advancesLock(group, candidate) {
+			continue
+		}
+		entry := candidate.Entry
+		entry.Publication = publicationFor(group, commit, candidate.Local)
+		txn.SetLockEntry(entry)
 	}
 }
 

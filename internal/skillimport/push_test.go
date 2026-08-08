@@ -83,6 +83,269 @@ func TestPushDirectPolicyCommitsToTheDestinationDefaultBranch(t *testing.T) {
 	}
 }
 
+// TestPushBranchUsesThePriorPublicationForFollowUpEdits proves an agent can
+// address review feedback by pushing another change to the same PR branch.
+// Using the original source tree again would make these edits to the same line
+// look like competing local and destination changes.
+func TestPushBranchUsesThePriorPublicationForFollowUpEdits(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Original body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"},
+		`write_policy = "branch"`, `push_branch = "skill-updates"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+
+	proj.WriteImportedFile("alpha", "SKILL.md", skillManifest("alpha", "First review body"))
+	first, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("first Push: %v\n%s", err, first.Render("push"))
+	}
+	requireOutcome(t, first, "alpha", OutcomePushed)
+	firstHead := source.Head("skill-updates")
+	locked, _ := proj.Lock().Entry("alpha")
+	if locked.Publication == nil || locked.Publication.Commit != firstHead {
+		t.Fatalf("publication = %+v, want checkpoint at %s", locked.Publication, firstHead)
+	}
+
+	proj.WriteImportedFile("alpha", "SKILL.md", skillManifest("alpha", "Second review body"))
+	second, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("second Push: %v\n%s", err, second.Render("push"))
+	}
+	requireOutcome(t, second, "alpha", OutcomePushed)
+	if got := source.FileAt("skill-updates", "skills/alpha/SKILL.md"); !strings.Contains(got, "Second review body") {
+		t.Fatalf("destination content = %q, want the follow-up edit", got)
+	}
+	if source.Head("skill-updates") == firstHead {
+		t.Fatal("the follow-up push did not advance the contribution branch")
+	}
+}
+
+// TestPushBranchPublishesAReversionToTheSourceVersion proves returning a file
+// to its original source content is still a change relative to what Agent
+// Layer last published. Without publication state, three-way merge treats the
+// local side as unchanged and silently retains the old destination edit.
+func TestPushBranchPublishesAReversionToTheSourceVersion(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Original body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"},
+		`write_policy = "branch"`, `push_branch = "skill-updates"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	original := proj.ImportedFile("alpha", "SKILL.md")
+
+	proj.WriteImportedFile("alpha", "SKILL.md", skillManifest("alpha", "Temporary body"))
+	first, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("first Push: %v\n%s", err, first.Render("push"))
+	}
+	requireOutcome(t, first, "alpha", OutcomePushed)
+	firstHead := source.Head("skill-updates")
+
+	proj.WriteImportedFile("alpha", "SKILL.md", original)
+	second, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("reversion Push: %v\n%s", err, second.Render("push"))
+	}
+	requireOutcome(t, second, "alpha", OutcomePushed)
+	if got := source.FileAt("skill-updates", "skills/alpha/SKILL.md"); got != strings.TrimSuffix(original, "\n") {
+		t.Fatalf("destination content = %q, want original %q", got, strings.TrimSuffix(original, "\n"))
+	}
+	if source.Head("skill-updates") == firstHead {
+		t.Fatal("publishing the reversion did not advance the contribution branch")
+	}
+}
+
+func TestPushReportsAReversionWithoutAPublicationCheckpoint(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Original body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"},
+		`write_policy = "branch"`, `push_branch = "skill-updates"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	original := proj.ImportedFile("alpha", "SKILL.md")
+	proj.WriteImportedFile("alpha", "SKILL.md", skillManifest("alpha", "Temporary body"))
+	first, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("first Push: %v", err)
+	}
+	requireOutcome(t, first, "alpha", OutcomePushed)
+	branchHead := source.Head("skill-updates")
+
+	lock := proj.Lock()
+	entry, _ := lock.Entry("alpha")
+	entry.Publication = nil
+	lock.Upsert(entry)
+	if err := lock.Save(proj.paths.SkillsLockPath); err != nil {
+		t.Fatalf("save checkpoint-less lock: %v", err)
+	}
+	proj.WriteImportedFile("alpha", "SKILL.md", original)
+
+	second, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("second Push: %v", err)
+	}
+	failed := requireOutcome(t, second, "alpha", OutcomeFailed)
+	if !strings.Contains(failed.Err.Error(), "no publication checkpoint") {
+		t.Fatalf("failure = %q", failed.Err)
+	}
+	if source.Head("skill-updates") != branchHead {
+		t.Fatal("ambiguous checkpoint-less reversion changed the destination")
+	}
+}
+
+// TestPushBranchStillPreservesExternalChangesAfterAPriorPublication proves the
+// checkpoint does not turn repeated push into destination overwrite. Changes
+// made directly on the PR branch remain the remote side of the three-way merge.
+func TestPushBranchStillPreservesExternalChangesAfterAPriorPublication(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteFile("skills/alpha/notes.md", "one\ntwo\nthree\nfour\nfive\n", 0o644)
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"},
+		`write_policy = "branch"`, `push_branch = "skill-updates"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	proj.WriteImportedFile("alpha", "notes.md", "published one\ntwo\nthree\nfour\nfive\n")
+	first, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("first Push: %v\n%s", err, first.Render("push"))
+	}
+	requireOutcome(t, first, "alpha", OutcomePushed)
+
+	source.Checkout("skill-updates", false)
+	source.WriteFile("skills/alpha/notes.md", "published one\ntwo\nthree\nfour\nexternal five\n", 0o644)
+	source.Commit("external PR branch edit")
+	source.Checkout("main", false)
+	proj.WriteImportedFile("alpha", "notes.md", "published one\nlocal two\nthree\nfour\nfive\n")
+
+	second, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("second Push: %v\n%s", err, second.Render("push"))
+	}
+	requireOutcome(t, second, "alpha", OutcomePushed)
+	got := source.FileAt("skill-updates", "skills/alpha/notes.md")
+	if got != "published one\nlocal two\nthree\nfour\nexternal five" {
+		t.Fatalf("destination content = %q; external branch change was not preserved", got)
+	}
+	if local := proj.ImportedFile("alpha", "notes.md"); local != got+"\n" {
+		t.Fatalf("local content = %q, want merged destination content %q", local, got+"\n")
+	}
+	secondHead := source.Head("skill-updates")
+	third, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("third Push: %v\n%s", err, third.Render("push"))
+	}
+	requireOutcome(t, third, "alpha", OutcomeUnchanged)
+	if source.Head("skill-updates") != secondHead {
+		t.Fatal("an unchanged follow-up push reverted the synchronized external edit")
+	}
+}
+
+func TestPushDoesNotCheckpointAMissingUnchangedBranch(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"},
+		`write_policy = "branch"`, `push_branch = "skill-updates"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	report, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	requireOutcome(t, report, "alpha", OutcomeUnchanged)
+	entry, _ := proj.Lock().Entry("alpha")
+	if entry.Publication != nil {
+		t.Fatalf("missing branch produced publication checkpoint %+v", entry.Publication)
+	}
+	if output := source.run("branch", "--list", "skill-updates"); output != "" {
+		t.Fatalf("unchanged push unexpectedly created branch: %s", output)
+	}
+}
+
+func TestGroupedPushAdvancesUnchangedSiblingPublication(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteSkill("skills/beta", "beta", "Beta body")
+	source.Commit("add grouped skills")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha", "skills/beta"},
+		`write_policy = "branch"`, `push_branch = "skill-updates"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	proj.WriteImportedFile("alpha", "notes.md", "local note\n")
+
+	report, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("Push: %v\n%s", err, report.Render("push"))
+	}
+	requireOutcome(t, report, "alpha", OutcomePushed)
+	requireOutcome(t, report, "beta", OutcomeUnchanged)
+	head := source.Head("skill-updates")
+	beta, _ := proj.Lock().Entry("beta")
+	if beta.Publication == nil || beta.Publication.Commit != head {
+		t.Fatalf("unchanged sibling publication = %+v, want checkpoint at %s", beta.Publication, head)
+	}
+}
+
+func TestPushFallsBackSafelyWhenPublicationWasRebasedAway(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Original body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"},
+		`write_policy = "branch"`, `push_branch = "skill-updates"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	proj.WriteImportedFile("alpha", "SKILL.md", skillManifest("alpha", "First body"))
+	first, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("first Push: %v", err)
+	}
+	requireOutcome(t, first, "alpha", OutcomePushed)
+	oldPublication := source.Head("skill-updates")
+
+	source.run("tag", "keep-old-publication", oldPublication)
+	source.run("branch", "--force", "skill-updates", "main")
+	proj.WriteImportedFile("alpha", "SKILL.md", skillManifest("alpha", "Second body"))
+
+	second, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("second Push: %v\n%s", err, second.Render("push"))
+	}
+	requireOutcome(t, second, "alpha", OutcomePushed)
+	entry, _ := proj.Lock().Entry("alpha")
+	if entry.Publication == nil || entry.Publication.Commit == oldPublication {
+		t.Fatalf("publication = %+v, want replacement for unreachable %s", entry.Publication, oldPublication)
+	}
+	if got := source.FileAt("skill-updates", "skills/alpha/SKILL.md"); !strings.Contains(got, "Second body") {
+		t.Fatalf("destination content = %q, want fallback push result", got)
+	}
+}
+
 // TestPullIgnoresButPushRejectsDestinationArtifacts proves source ingestion may
 // omit platform noise without authorizing a later push to silently preserve or
 // delete that same committed destination state.
@@ -816,6 +1079,18 @@ func TestPushPreservesADestinationDeletionOnAnExistingBranch(t *testing.T) {
 	}
 	if source.Head("skill-updates") == destinationHead {
 		t.Fatal("the fixture did not actually publish beta")
+	}
+	if !strings.Contains(proj.ImportedFile("alpha", "SKILL.md"), "Alpha body") {
+		t.Fatal("preserving a destination deletion removed the managed local skill")
+	}
+	secondHead := source.Head("skill-updates")
+	second, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("second Push: %v\n%s", err, second.Render("push"))
+	}
+	requireOutcome(t, second, "alpha", OutcomeUnchanged)
+	if source.Head("skill-updates") != secondHead || source.HasPath("skill-updates", "skills/alpha/SKILL.md") {
+		t.Fatal("a follow-up push reverted the preserved destination deletion")
 	}
 }
 

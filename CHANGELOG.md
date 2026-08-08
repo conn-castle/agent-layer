@@ -1,6 +1,17 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+- Added `al benchmark correct-scores` to regenerate versioned canonical results for affected stored DeepSWE runs from preserved verifier evidence. Benchmark reports consume the canonical result and fail rather than emit a known-incorrect score when neither it nor the required verifier artifacts remains available.
+
+### Changed
+- The generated `.agent-layer/.gitignore` no longer ignores `skills-imported/` or `skills.lock.json`. In a project that commits `.agent-layer/`, imported skills and their lockfile are now tracked, so a fresh clone or CI run has the exact imported skill content — including local edits — without a network `al skills pull`, and a `pinned` import reproduces without one. The two must be committed together: the imported tier is fully managed, and `al sync` rejects a skill directory that has no `skills.lock.json` entry. `.agent-layer/skills-imported/.staging/`, the import transaction's scratch space, stays ignored. `.agent-layer/.gitignore` is agent-owned and rewritten on every `al init`/`al upgrade`, so existing projects pick this up with no migration; run `git add .agent-layer/skills-imported .agent-layer/skills.lock.json` once after upgrading to start tracking them. Note that the root `.gitignore` block still ships `/.agent-layer/` uncommented, which ignores the whole directory and overrides this; projects that want their Agent Layer configuration in version control comment that line out in `.agent-layer/gitignore.block`.
+
+### Fixed
+- Repeated `al skills push` calls to a contribution branch now record the last successfully published tree separately from the source lock, so review-driven edits and explicit reversions add commits to the same pull-request branch without conflicting with or silently preserving the previous push. Compatible edits made directly on the destination branch are still retained. This release reads existing skill lock schema version 1 files and writes version 2 whenever it next changes a lock; every consumer of a committed version 2 lock must upgrade, while older Agent Layer binaries reject it with an explicit unsupported-version error instead of misreading new fields.
+
 ## v0.16.1 - 2026-08-06
 
 ### Fixed
