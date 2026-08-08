@@ -1,7 +1,7 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v0.16.2 - 2026-08-08
 
 ### Added
 - Added `al benchmark correct-scores` to regenerate versioned canonical results for affected stored DeepSWE runs from preserved verifier evidence. Benchmark reports consume the canonical result and fail rather than emit a known-incorrect score when neither it nor the required verifier artifacts remains available.
