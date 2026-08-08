@@ -54,6 +54,69 @@ globalThis.__plannerTest = {
   return context.__plannerTest;
 }
 
+test("planner explains its purpose, model availability, and evidence source", () => {
+  const html = fs.readFileSync(applicationPath, "utf8");
+  assert.match(html, /id="overview-title">What this planner does</);
+  assert.match(html, /arXiv paper forthcoming/);
+  assert.match(html, /family=Inter:wght@400;500;600;700&family=JetBrains\+Mono/);
+  assert.match(html, /src="\.\/agent-layer-logo\.svg"/);
+  assert.match(html, /<strong>Required · Runnable models only\.<\/strong>/);
+  assert.match(html, /<strong>Optional · Plot only\.<\/strong>/);
+  assert.match(html, /<option value="">No comparison<\/option>/);
+  assert.match(html, /id="estimateChart"/);
+  assert.match(html, /data-task-excluded=/);
+  assert.doesNotMatch(html, /data-task-state=/);
+  assert.doesNotMatch(html, />Required<\/option>/);
+  assert.match(html, /<th>Runs in current plan<\/th>/);
+  assert.match(html, /<th>Evidence<\/th>/);
+  assert.doesNotMatch(html, /<th>Comparison score<\/th>/);
+  assert.doesNotMatch(html, /<th>Historical difference<\/th>/);
+  assert.match(html, /<section class="card data-card"/);
+  assert.ok(
+    fs.existsSync(path.join(path.dirname(applicationPath), "agent-layer-logo.svg")),
+    "planner uses a local copy of the real Agent Layer logo",
+  );
+  assert.doesNotMatch(
+    html,
+    /<header class="app-header">[\s\S]*?id="provenance"[\s\S]*?<\/header>/,
+  );
+});
+
+test("comparison is optional and cannot change the recommended plan", () => {
+  const planner = loadPlanner();
+  assert.equal(planner.snapshot.schemaVersion, 3);
+  assert.equal(planner.snapshot.correlationMethod.samples, 10_000);
+  const baseInputs = {
+    targetId: "gpt-5-6-luna::low",
+    comparisonId: "",
+    budget: 2,
+    minTasks: 3,
+    maxReps: 3,
+    headroom: 0.1,
+  };
+  const comparisonInputs = {
+    ...baseInputs,
+    comparisonId: "gpt-5-6-luna::medium",
+  };
+  const baseRows = planner.snapshot.tasks.map((task) =>
+    planner.deriveTask(task, baseInputs),
+  );
+  const comparisonRows = planner.snapshot.tasks.map((task) =>
+    planner.deriveTask(task, comparisonInputs),
+  );
+  const basePlan = planner.optimize(baseInputs, baseRows);
+  const comparisonPlan = planner.optimize(comparisonInputs, comparisonRows);
+  const allocation = (plan) => plan.selections.map((selection) => [
+    selection.row.id,
+    selection.repetitions,
+  ]);
+  assert.deepEqual(allocation(basePlan), allocation(comparisonPlan));
+  assert.equal(basePlan.statistics.detectability, comparisonPlan.statistics.detectability);
+  const exported = JSON.parse(JSON.stringify(planner.buildExport(basePlan, baseInputs)));
+  assert.equal("comparison" in exported, false);
+  assert.ok(exported.tasks.every((task) => !("comparison" in task)));
+});
+
 /**
  * Exhaustively enumerate every allowed task/repetition allocation.
  * @param {object[]} rows eligible planner rows

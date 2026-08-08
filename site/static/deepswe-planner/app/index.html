@@ -6,38 +6,39 @@
 <link rel="icon" href="data:,">
 <title>DeepSWE Benchmark Planner | Agent Layer</title>
 <style>
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+
 :root {
   color-scheme: light;
-  --canvas: #f2f0e9;
-  --surface: #fbfaf6;
+  --canvas: #fafbfc;
+  --surface: #ffffff;
   --surface-strong: #ffffff;
-  --ink: #17211d;
-  --muted: #66716b;
-  --line: #d6d8cf;
-  --line-strong: #afb7ae;
-  --target: #116149;
-  --target-soft: #e3f0ea;
-  --comparison: #8b4b22;
-  --comparison-soft: #f5e8df;
-  --accent: #254f77;
-  --accent-soft: #e4edf5;
+  --ink: #1f2937;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --line-strong: #cbd5e1;
+  --target: #3d74ac;
+  --target-soft: #edf6fb;
+  --comparison: #5578b8;
+  --comparison-soft: #eef2fb;
+  --accent: #4a85c0;
+  --accent-strong: #2d5a8a;
+  --accent-soft: #edf6fb;
+  --accent-light: #80c7dc;
   --warning: #875f00;
   --warning-soft: #fff4ce;
   --danger: #a43d35;
   --danger-soft: #fbe7e3;
-  --shadow: 0 14px 38px rgba(31, 41, 35, .08);
+  --shadow: 0 10px 30px rgba(15, 23, 42, .06);
   --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 * { box-sizing: border-box; }
 html { background: var(--canvas); }
 body {
   margin: 0;
   color: var(--ink);
-  background:
-    radial-gradient(circle at 8% 0%, rgba(17, 97, 73, .07), transparent 30rem),
-    radial-gradient(circle at 92% 8%, rgba(139, 75, 34, .07), transparent 28rem),
-    var(--canvas);
+  background: var(--canvas);
   font: 15px/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
 }
@@ -64,8 +65,8 @@ h1 { max-width: 850px; margin: 0; font-size: clamp(30px, 5vw, 54px); line-height
 .card {
   min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 16px;
-  background: rgba(251, 250, 246, .94);
+  border-radius: 14px;
+  background: var(--surface);
   box-shadow: var(--shadow);
 }
 .card-pad { padding: 22px; }
@@ -113,12 +114,12 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--da
 .fixed-method strong { color: var(--ink); }
 .threshold {
   overflow: hidden;
-  background: #17231f;
+  background: #1a2332;
   color: #f5f4ee;
-  border-color: #17231f;
+  border-color: #1a2332;
 }
 .threshold-inner { padding: 25px; }
-.threshold .eyebrow { color: #98cbb9; }
+.threshold .eyebrow { color: var(--accent-light); }
 .threshold-value {
   display: flex;
   align-items: baseline;
@@ -157,7 +158,7 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--da
 }
 .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.btn.primary:hover:not(:disabled) { background: #193d60; color: #fff; }
+.btn.primary:hover:not(:disabled) { background: var(--accent-strong); color: #fff; }
 .btn:disabled { opacity: .42; cursor: not-allowed; }
 .status-pill, .badge {
   display: inline-flex;
@@ -261,28 +262,82 @@ dialog::backdrop { background: rgba(15, 22, 18, .56); backdrop-filter: blur(3px)
 
 /* Application layout */
 body {
-  background:
-    radial-gradient(circle at 12% -10%, rgba(17, 97, 73, .08), transparent 34rem),
-    #f5f4ef;
+  background: #fafbfc;
 }
-.shell { width: min(1180px, calc(100% - 32px)); padding: 28px 0 64px; }
+.shell { width: min(1180px, calc(100% - 32px)); padding: 24px 0 64px; }
 .app-header {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 18px;
+  padding: clamp(28px, 5vw, 54px);
+  border: 1px solid #dce8f1;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(128, 199, 220, .15), rgba(98, 154, 208, .08));
+}
+.app-header::after {
+  position: absolute;
+  right: -90px;
+  bottom: -145px;
+  width: 320px;
+  height: 320px;
+  border: 1px solid rgba(98, 154, 208, .24);
+  border-radius: 50%;
+  content: "";
+}
+.brand-lockup {
+  position: relative;
+  z-index: 1;
   display: flex;
-  justify-content: space-between;
-  gap: 28px;
-  align-items: end;
-  margin-bottom: 22px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 30px;
+  color: var(--accent-strong);
+  font: 600 12px/1 var(--sans);
 }
+.brand-mark {
+  width: 32px;
+  height: 32px;
+}
+.brand-name { color: #1e293b; font-size: 16px; font-weight: 700; letter-spacing: -.035em; }
+.brand-context { color: var(--muted); font-weight: 500; }
+.app-header-copy { position: relative; z-index: 1; max-width: 820px; }
 .app-header h1 {
-  max-width: none;
-  font-size: clamp(30px, 4vw, 45px);
-  line-height: 1;
+  max-width: 760px;
+  font-size: clamp(36px, 5vw, 58px);
+  line-height: 1.02;
 }
-.app-header .lede { max-width: 680px; margin-top: 12px; font-size: 16px; }
-.app-header .provenance { max-width: 330px; margin: 0; text-align: right; }
+.app-header .lede { max-width: 720px; margin-top: 16px; color: #4b5f70; font-size: 17px; }
 .workspace { display: grid; gap: 18px; }
 .workspace > * { min-width: 0; }
 #resultsRegion { min-width: 0; display: grid; gap: 18px; }
+.overview-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 28px;
+  align-items: center;
+  padding: 24px;
+  border-left: 4px solid var(--accent);
+  box-shadow: none;
+}
+.overview-card h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
+.overview-card p { max-width: 820px; margin: 7px 0 0; color: var(--muted); font-size: 13px; }
+.paper-link {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 290px;
+  border: 1px solid #aac7df;
+  border-radius: 12px;
+  padding: 16px 18px;
+  background: linear-gradient(135deg, #eaf5fb, #f4f8fd);
+  color: var(--accent-strong);
+  font: 600 12px/1.25 var(--mono);
+  text-decoration: none;
+  pointer-events: none;
+}
+.paper-link .paper-kicker { color: var(--accent-strong); font: 700 10px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+.paper-link .paper-title { color: var(--ink); font: 700 15px/1.35 var(--sans); }
+.paper-link .paper-status { color: var(--accent); font: 500 11px/1.3 var(--sans); }
 .setup-card { padding: 24px; }
 .section-heading {
   display: flex;
@@ -313,6 +368,8 @@ body {
 .configuration-controls { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(120px, .75fr); gap: 10px; }
 .configuration-panel .field label, .constraint-grid .field label { font-size: 11px; text-transform: uppercase; letter-spacing: .055em; }
 .configuration-panel select { border-left-width: 1px; }
+.configuration-panel .availability-note { margin: 11px 0 0; color: var(--muted); font-size: 12px; }
+.configuration-panel .availability-note strong { color: var(--ink); }
 .proxy-note {
   margin: 12px 0 0;
   padding: 10px 12px;
@@ -354,17 +411,40 @@ body {
 .anatomy dd { margin: 0; text-align: right; font-family: var(--mono); font-weight: 650; overflow-wrap: anywhere; }
 .plan-card, .explorer-card { padding: 22px; }
 .plan-card .section-heading, .explorer-card .section-heading { margin-bottom: 14px; }
-.method-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.method-grid { display: grid; grid-template-columns: 1fr; gap: 18px; }
 .method-grid .card { box-shadow: none; }
 .method-grid details { padding: 18px 20px; }
 .method-grid summary { font-size: 14px; }
+.data-card { padding: 22px; box-shadow: none; }
+.data-card-grid { display: grid; grid-template-columns: minmax(220px, .65fr) minmax(0, 1.35fr); gap: 30px; }
+.data-card h2 { margin: 0; font-size: 18px; }
+.data-card .provenance { margin: 10px 0 0; color: var(--ink); }
+.data-card .data-copy { margin: 0; color: var(--muted); font-size: 12px; }
+.data-card .data-copy + .data-copy { margin-top: 12px; }
+.data-card details { margin-top: 12px; }
+.data-card summary { color: var(--accent-strong); cursor: pointer; font-size: 12px; font-weight: 600; }
+.exclude-control { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.exclude-control input { width: 16px; min-height: 16px; margin: 0; accent-color: var(--danger); }
+.estimate-chart { width: 100%; min-height: 270px; border: 1px solid var(--line); border-radius: 12px; background: #fbfdff; }
+.chart-axis { stroke: #94a3b8; stroke-width: 1; }
+.chart-grid { stroke: #e2e8f0; stroke-width: 1; stroke-dasharray: 3 4; }
+.chart-label { fill: #64748b; font: 10px var(--mono); }
+.chart-range { stroke: var(--target); stroke-width: 2; }
+.chart-range.comparison { stroke: var(--comparison); }
+.chart-point { fill: var(--target); stroke: #fff; stroke-width: 3; }
+.chart-point.comparison { fill: var(--comparison); }
+.estimate-legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--target); }
+.legend-dot.comparison { background: var(--comparison); }
+.comparison-status { margin: 10px 0 0; color: var(--warning); font-size: 12px; }
 #messages:empty { display: none; }
 [hidden] { display: none !important; }
 @media (max-width: 900px) {
-  .app-header { display: block; }
-  .app-header .provenance { max-width: none; margin-top: 14px; text-align: left; }
   .result-grid { grid-template-columns: 1fr; }
   .constraint-grid { grid-template-columns: 1fr 1fr; }
+  .overview-card, .data-card-grid { grid-template-columns: 1fr; }
+  .paper-link { min-width: 0; }
 }
 @media (max-width: 680px) {
   .shell { width: min(100% - 20px, 1180px); padding-top: 20px; }
@@ -379,20 +459,35 @@ body {
 <body>
 <main class="shell">
   <header class="app-header">
-    <div>
-      <p class="eyebrow">DeepSWE experiment design</p>
-      <h1>Test plan search</h1>
-      <p class="lede">Find the tasks and repetitions that historically revealed model-quality changes most clearly relative to their noise.</p>
+    <div class="brand-lockup">
+      <img class="brand-mark" src="./agent-layer-logo.svg" alt="">
+      <span class="brand-name">Agent Layer</span>
+      <span class="brand-context">/ Benchmarking</span>
     </div>
-    <p class="provenance" id="provenance"></p>
+    <div class="app-header-copy">
+      <h1>Pick a cost-effective benchmark for improving your agent.</h1>
+      <p class="lede">The planner finds the best DeepSWE tasks for testing changes to skills and instructions. Choose the bare model you will run and how much you want to spend.</p>
+    </div>
   </header>
 
   <section class="workspace">
+    <section class="card overview-card" aria-labelledby="overview-title">
+      <div>
+        <h2 id="overview-title">What this planner does</h2>
+        <p>It chooses a small benchmark that tracks the full DeepSWE suite, then uses the bare model’s published cost and run-to-run variation to fit that benchmark to your budget.</p>
+      </div>
+      <a class="paper-link" href="#" aria-disabled="true" tabindex="-1">
+        <span class="paper-kicker">Research note</span>
+        <span class="paper-title">Designing sensitive agent benchmarks</span>
+        <span class="paper-status">arXiv paper forthcoming</span>
+      </a>
+    </section>
+
     <section class="card setup-card" aria-labelledby="setup-title">
       <div class="section-heading">
         <div>
           <h2 id="setup-title">Configure the experiment</h2>
-          <p>The published pair shows which tasks changed when model quality changed, and how noisy that evidence was.</p>
+          <p>Choose the model used for both arms of your experiment. Add a comparison only if you want another published result on the estimate plot.</p>
         </div>
       </div>
 
@@ -412,25 +507,25 @@ body {
               <select id="targetReasoning" disabled><option value="">Choose reasoning…</option></select>
             </div>
           </div>
-          <p class="help">Your fresh bare-model baseline and skill/instruction run will use this exact configuration.</p>
+          <p class="availability-note"><strong>Required · Runnable models only.</strong> Both arms of your new experiment will use this model and reasoning level.</p>
         </section>
 
         <section class="configuration-panel proxy-panel">
           <div class="configuration-label">
             <span class="badge comparison">Comparison</span>
-            <strong>Published model-quality contrast</strong>
+            <strong>Optional point of reference</strong>
           </div>
           <div class="configuration-controls">
             <div class="field">
               <label for="comparisonModel">Model</label>
-              <select id="comparisonModel"><option value="">Choose model…</option></select>
+              <select id="comparisonModel"><option value="">No comparison</option></select>
             </div>
             <div class="field">
               <label for="comparisonReasoning">Reasoning</label>
               <select id="comparisonReasoning" disabled><option value="">Choose reasoning…</option></select>
             </div>
           </div>
-          <p class="proxy-note"><strong>Why it matters:</strong> its score difference from the bare model measures demonstrated task response. Both configurations’ run-to-run variance measures noise.</p>
+          <p class="proxy-note"><strong>Optional · Plot only.</strong> It uses the same tasks and repetitions as the bare model. It never changes the recommended plan or appears in the plan table.</p>
         </section>
       </div>
 
@@ -438,28 +533,27 @@ body {
         <div class="field">
           <label for="budget">Bare-model baseline budget (USD)</label>
           <input id="budget" type="number" min="0.01" step="0.01" placeholder="For example, 5">
-          <span class="help">The future skill/instruction arm has the same plan and unknown cost.</span>
+          <span class="help">Maximum spend for one bare-model arm. The treatment arm uses the same tasks and repetitions.</span>
         </div>
         <div class="field">
           <label for="minTasks">Minimum tasks</label>
           <input id="minTasks" type="number" min="1" step="1" value="3">
-          <span class="help">Recommended: 3</span>
+          <span class="help">Broader plans depend less on any one task. Recommended: 3.</span>
         </div>
         <div class="field">
           <label for="maxReps">Maximum reps</label>
           <input id="maxReps" type="number" min="2" max="4" step="1" value="4">
-          <span class="help">Per task, per arm · minimum 2 to estimate observed variance</span>
+          <span class="help">The planner may use 2–4 runs per task. More runs reduce noise but leave less budget for other tasks.</span>
         </div>
         <div class="field">
           <label for="headroom">Headroom</label>
           <input id="headroom" type="number" min="0" max="49.9" step="1" value="10">
-          <span class="help">Percent in each direction</span>
+          <span class="help">Ignore tasks whose bare score is this close to 0% or 100%.</span>
         </div>
       </div>
 
-      <div class="fixed-method"><strong>Fixed method:</strong> maximize historical model difference ÷ decision threshold · equal task weights · two-sided significance level 0.05 · deterministic branch-and-bound search, limited to 50,000 states.</div>
       <div class="search-bar">
-        <span class="search-state" id="searchState">Set the configurations and budget, then search.</span>
+        <span class="search-state" id="searchState">Choose a bare model and budget, then search.</span>
         <button class="btn primary search-button" id="runSearch">Search best plan</button>
       </div>
       <div class="messages" id="messages"></div>
@@ -476,33 +570,42 @@ body {
         <div class="metric-grid">
             <div class="metric"><span>Baseline spend</span><strong id="metricSpend">—</strong></div>
             <div class="metric"><span>Tasks · runs/arm</span><strong id="metricRuns">—</strong></div>
-            <div class="metric"><span>Historical model difference</span><strong id="metricSignal">—</strong></div>
-            <div class="metric"><span>Detectability</span><strong id="metricSnr">—</strong></div>
+            <div class="metric"><span>Benchmark relevance</span><strong id="metricSignal">—</strong></div>
+            <div class="metric"><span>Decision threshold</span><strong id="metricSnr">—</strong></div>
         </div>
         </section>
 
         <section class="card anatomy">
-          <div class="section-heading"><div><h2>Why this threshold?</h2><p>Calculation details, not additional controls.</p></div></div>
+          <div class="section-heading"><div><h2>Why this threshold?</h2><p>These values come from the selected tasks and published bare-model runs.</p></div></div>
           <dl>
-            <dt>Planned standard error</dt><dd id="detailSe">—</dd>
-            <dt>Effective degrees of freedom</dt><dd id="detailDf">—</dd>
-            <dt>Student's t critical value</dt><dd id="detailT">—</dd>
+            <dt>Estimated noise</dt><dd id="detailSe">—</dd>
+            <dt>Degrees of freedom</dt><dd id="detailDf">—</dd>
+            <dt>95% cutoff</dt><dd id="detailT">—</dd>
             <dt>Improvement room</dt><dd id="detailUp">—</dd>
             <dt>Regression room</dt><dd id="detailDown">—</dd>
-            <dt>Unspent baseline budget</dt><dd id="detailUnspent">—</dd>
-            <dt>Optimization result</dt><dd id="detailOptimizer">—</dd>
-            <dt>Proven detectability ceiling</dt><dd id="detailBound">—</dd>
-            <dt>Eligible automatic tasks</dt><dd id="detailEligible">—</dd>
-            <dt>Both-zero fallbacks</dt><dd id="detailFallbacks">—</dd>
+            <dt>Budget left</dt><dd id="detailUnspent">—</dd>
+            <dt>Search result</dt><dd id="detailOptimizer">—</dd>
+            <dt>Best possible selection score</dt><dd id="detailBound">—</dd>
+            <dt>Tasks considered</dt><dd id="detailEligible">—</dd>
+            <dt>Zero-variance fallbacks</dt><dd id="detailFallbacks">—</dd>
           </dl>
         </section>
       </div>
+
+      <section class="card plan-card" aria-labelledby="estimate-title">
+        <div class="section-heading">
+          <div><h2 id="estimate-title">Published score and cost estimate</h2><p>The comparison reuses the bare model’s selected tasks and repetitions.</p></div>
+        </div>
+        <div class="estimate-legend" id="estimateLegend"></div>
+        <svg class="estimate-chart" id="estimateChart" viewBox="0 0 520 270" role="img" aria-label="Estimated published score and cost for the selected benchmark"></svg>
+        <p class="comparison-status" id="comparisonStatus" hidden></p>
+      </section>
 
       <section class="card plan-card" aria-labelledby="plan-title">
         <div class="section-heading">
           <div>
             <h2 id="plan-title">Recommended test plan</h2>
-            <p>Each selected task has an independently optimized repetition count.</p>
+            <p>Tasks and repetitions are chosen from the bare model’s published evidence.</p>
           </div>
           <span class="status-pill" id="planStatus">Not searched</span>
         </div>
@@ -519,7 +622,7 @@ body {
       <div class="section-heading">
         <div>
           <h2 id="explorer-title">Task controls and evidence</h2>
-          <p>Optionally require or exclude tasks. Any change invalidates the current result until you search again.</p>
+          <p>Exclude tasks you do not want to run. Search again to update the plan.</p>
         </div>
       </div>
       <div class="explorer-tools">
@@ -527,44 +630,52 @@ body {
         <select id="taskFilter" aria-label="Filter tasks">
           <option value="all">All tasks</option>
           <option value="selected">Selected</option>
-          <option value="eligible">Automatic eligible</option>
+          <option value="eligible">Eligible</option>
           <option value="warnings">Warnings or unavailable</option>
-          <option value="overrides">Manual overrides</option>
+          <option value="overrides">Excluded</option>
         </select>
       </div>
-      <div id="explorerTable" class="plan-empty">Choose both configurations to inspect task evidence.</div>
+      <div id="explorerTable" class="plan-empty">Choose a bare model to inspect task evidence.</div>
     </section>
 
     <div class="method-grid">
       <section class="card method">
         <details>
           <summary>How the method works</summary>
-          <p>For every candidate task and repetition plan:</p>
+          <p>The planner compares task and repetition combinations that fit your budget:</p>
           <ol>
-            <li>Calculate the signed, equal-weight historical model difference from the two published configurations’ means.</li>
-            <li>Separately calculate the ± decision threshold from their variances, planned repetitions, and a two-sided 0.05 Student’s t critical value.</li>
-            <li>Divide the absolute historical model difference by the threshold. This unitless detectability score says how many decision thresholds separated the published configurations.</li>
-            <li>Branch-and-bound searches joint task and repetition choices for maximum detectability.</li>
-            <li>The result is labeled optimal only when no remaining plan can improve detectability. Otherwise the page reports the proven ceiling and remaining gap.</li>
+            <li>Published correlations show how well each task tracks the full DeepSWE benchmark.</li>
+            <li>The bare model’s repeated runs provide score variation, cost, and available headroom.</li>
+            <li>The planner favors relevant, stable tasks while respecting your budget and minimum task count.</li>
+            <li>A result is labeled optimal only when the search proves no remaining plan can do better. Otherwise the result shows the remaining possible gap.</li>
           </ol>
-          <p>When both selected variances are zero, the page visibly substitutes pooled within-configuration variance from that same task in other published configurations.</p>
-          <pre>detectability = |historical model difference| ÷ decision threshold
+          <p>If the bare model’s repeated scores have zero variation, the planner may use variation from the same task under other published configurations. The plan labels that fallback.</p>
+          <pre>planning signal = conservative task correlation
 decision threshold = Student's t × planned standard error</pre>
         </details>
       </section>
 
-      <section class="card method">
-        <details>
-          <summary>Data and compatibility</summary>
-          <p id="sourceDetail"></p>
-          <p>The exported JSON is the complete task and repetition contract consumed by <code>al benchmark</code>.</p>
-          <p>The operational-defect exclusion list starts empty. Only confirmed execution or evaluation defects may enter it.</p>
-        </details>
-      </section>
     </div>
+
+    <section class="card data-card" aria-labelledby="data-title">
+      <div class="data-card-grid">
+        <div>
+          <p class="eyebrow">Evidence snapshot</p>
+          <h2 id="data-title">What this plan is based on</h2>
+          <p class="provenance" id="provenance"></p>
+        </div>
+        <div>
+          <p class="data-copy">The planner uses the official DeepSWE v1.1 trial snapshot. The exported JSON records the bare model, tasks, repetitions, costs, and assumptions for <code>al benchmark</code>.</p>
+          <details>
+            <summary>View source and integrity details</summary>
+            <p class="data-copy" id="sourceDetail"></p>
+          </details>
+        </div>
+      </div>
+    </section>
   </section>
 
-  <p class="footer">This planner optimizes a benchmark suite for the selected budget. Any later result applies only to the selected tasks and does not claim representativeness across DeepSWE.</p>
+  <p class="footer">Results describe only the tasks in the exported plan; they do not represent every DeepSWE task.</p>
 </main>
 
 <dialog id="taskDialog">
@@ -578,7 +689,7 @@ decision threshold = Student's t × planned standard error</pre>
 <script src="./data.js"></script>
 <script>
 const SNAPSHOT = window.__DEEPSWE_PLANNER_DATA__;
-if (!SNAPSHOT || SNAPSHOT.schemaVersion !== 1 || !Array.isArray(SNAPSHOT.configurations) || !Array.isArray(SNAPSHOT.tasks)) {
+if (!SNAPSHOT || SNAPSHOT.schemaVersion !== 3 || SNAPSHOT.correlationMethod?.samples !== 10_000 || !Array.isArray(SNAPSHOT.configurations) || !Array.isArray(SNAPSHOT.tasks)) {
   document.getElementById("messages").innerHTML = '<div class="message error"><strong>Error:</strong> The DeepSWE planner data could not be loaded. Reload the page; if the error remains, report it instead of using this planner.</div>';
   document.getElementById("runSearch").disabled = true;
   throw new Error("The embedded DeepSWE planner snapshot is missing or invalid.");
@@ -600,7 +711,7 @@ const RUNNABLE_TARGET_MODELS = new Set([
 ]);
 const configById = new Map(SNAPSHOT.configurations.map((configuration) => [configuration.id, configuration]));
 const taskById = new Map(SNAPSHOT.tasks.map((task) => [task.id, task]));
-const manualStates = new Map();
+const excludedTasks = new Set();
 const tCriticalCache = new Map();
 let currentPlan = null;
 let currentRows = [];
@@ -722,7 +833,7 @@ function tCritical(degreesOfFreedom, alpha = ALPHA) {
  * Derive pooled same-task variance from every other published configuration.
  * @param {object} task task snapshot
  * @param {string} targetId selected target configuration
- * @param {string} comparisonId selected comparison configuration
+ * @param {string} comparisonId optional comparison configuration
  * @returns {{variance:number,degreesOfFreedom:number,donors:object[]}|null} fallback evidence
  */
 function pooledFallback(task, targetId, comparisonId) {
@@ -742,42 +853,38 @@ function pooledFallback(task, targetId, comparisonId) {
 }
 
 /**
- * Derive all selected-pair values and eligibility for one task.
+ * Derive primary-model values and eligibility for one task.
  * @param {object} task task snapshot
  * @param {object} inputs validated user inputs
  * @returns {object} derived task row
  */
 function deriveTask(task, inputs) {
   const target = task.cells[inputs.targetId];
-  const comparison = task.cells[inputs.comparisonId];
-  const manual = manualStates.get(task.id) ?? "automatic";
+  const comparison = inputs.comparisonId ? task.cells[inputs.comparisonId] ?? null : null;
+  const manual = excludedTasks.has(task.id) ? "excluded" : "automatic";
   const operational = OPERATIONAL_EXCLUSIONS.find((entry) => entry.task === task.id);
   const reasons = [];
   if (operational) reasons.push(`Operational defect: ${operational.reason}`);
   if (!target) reasons.push("No usable target trials");
-  if (!comparison) reasons.push("No usable comparison trials");
   if (target && (!(target.n >= 2) || !Number.isFinite(target.variance))) reasons.push("Target variance is not estimable");
-  if (comparison && (!(comparison.n >= 2) || !Number.isFinite(comparison.variance))) reasons.push("Comparison variance is not estimable");
+  if (!Number.isFinite(task.correlation?.p05)) reasons.push("Task correlation is unavailable");
   if (target && !Number.isFinite(target.meanCost)) reasons.push("Target cost is unavailable");
   const costAxisReference = task.cells[COST_AXIS_REFERENCE_CONFIGURATION];
   if (!costAxisReference || !Number.isFinite(costAxisReference.meanCost)) {
     reasons.push(`The ${COST_AXIS_REFERENCE_CONFIGURATION} cost-axis reference is unavailable`);
   }
   let fallback = null;
-  if (reasons.length === 0 && target.variance === 0 && comparison.variance === 0) {
+  if (reasons.length === 0 && target.variance === 0) {
     fallback = pooledFallback(task, inputs.targetId, inputs.comparisonId);
-    if (!fallback) reasons.push("Both variances are zero and same-task fallback noise is not estimable");
+    if (!fallback) reasons.push("Bare-model variance is zero and same-task fallback noise is not estimable");
   }
   const dataAvailable = reasons.length === 0;
   const headroomEligible = Boolean(target && target.mean >= inputs.headroom && target.mean <= 1 - inputs.headroom);
   const requiredHeadroomBypass = manual === "required" && dataAvailable && !headroomEligible;
-  const automaticEligible = dataAvailable && headroomEligible && !operational && manual !== "excluded";
+  const automaticEligible = dataAvailable && headroomEligible && task.correlation.p05 > 0 && !operational && manual !== "excluded";
   const components = !dataAvailable ? [] : fallback
     ? [{ variance: 2 * fallback.variance, degreesOfFreedom: fallback.degreesOfFreedom, source: "same-task-pooled-fallback" }]
-    : [
-        { variance: target.variance, degreesOfFreedom: target.n - 1, source: "target" },
-        { variance: comparison.variance, degreesOfFreedom: comparison.n - 1, source: "comparison" },
-      ];
+    : [{ variance: 2 * target.variance, degreesOfFreedom: target.n - 1, source: "bare-model-two-arm-proxy" }];
   return {
     id: task.id,
     task,
@@ -791,7 +898,7 @@ function deriveTask(task, inputs) {
     automaticEligible,
     fallback,
     components,
-    signedDifference: dataAvailable ? comparison.mean - target.mean : NaN,
+    signedDifference: dataAvailable ? Math.max(0, task.correlation.p05) : NaN,
     cost: target?.meanCost,
   };
 }
@@ -876,18 +983,16 @@ function readInputs(showValidation = false) {
   if (!targetModel) errors.push("Choose the bare model.");
   else if (!targetReasoning) errors.push("Choose the bare-model reasoning level.");
   else if (!targetConfiguration) errors.push("The selected bare-model configuration is unavailable.");
-  if (!comparisonModel) errors.push("Choose the published comparison model.");
-  else if (!comparisonReasoning) errors.push("Choose the comparison reasoning level.");
-  else if (!comparisonConfiguration) errors.push("The selected comparison configuration is unavailable.");
-  if (targetId && targetId === comparisonId) errors.push("The bare model and comparison must be different configurations.");
+  if (comparisonModel && !comparisonReasoning) errors.push("Choose the comparison reasoning level or remove the comparison.");
+  else if (comparisonModel && !comparisonConfiguration) errors.push("The selected comparison configuration is unavailable.");
   if (budgetRaw === "" || !Number.isFinite(budget) || budget <= 0) errors.push("Enter a baseline budget greater than zero.");
   if (minRaw === "" || !Number.isInteger(minTasks) || minTasks < 1 || minTasks > SNAPSHOT.tasks.length) errors.push(`Minimum tasks must be an integer from 1 to ${SNAPSHOT.tasks.length}.`);
   if (repsRaw === "" || !Number.isInteger(maxReps) || maxReps < MIN_REPETITIONS || maxReps > 4) errors.push("Maximum repetitions must be an integer from 2 through 4.");
   if (headroomRaw === "" || !Number.isFinite(headroomPercent) || headroomPercent < 0 || headroomPercent >= 50) errors.push("Headroom must be at least 0% and less than 50%.");
-  $("targetModel").setAttribute("aria-invalid", String(showValidation && (!targetModel || targetId === comparisonId)));
-  $("targetReasoning").setAttribute("aria-invalid", String(showValidation && (!targetReasoning || !targetConfiguration || targetId === comparisonId)));
-  $("comparisonModel").setAttribute("aria-invalid", String(showValidation && (!comparisonModel || targetId === comparisonId)));
-  $("comparisonReasoning").setAttribute("aria-invalid", String(showValidation && (!comparisonReasoning || !comparisonConfiguration || targetId === comparisonId)));
+  $("targetModel").setAttribute("aria-invalid", String(showValidation && !targetModel));
+  $("targetReasoning").setAttribute("aria-invalid", String(showValidation && (!targetReasoning || !targetConfiguration)));
+  $("comparisonModel").setAttribute("aria-invalid", "false");
+  $("comparisonReasoning").setAttribute("aria-invalid", String(showValidation && comparisonModel && (!comparisonReasoning || !comparisonConfiguration)));
   $("budget").setAttribute("aria-invalid", String(showValidation && (budgetRaw === "" || !Number.isFinite(budget) || budget <= 0)));
   $("minTasks").setAttribute("aria-invalid", String(showValidation && (minRaw === "" || !Number.isInteger(minTasks) || minTasks < 1 || minTasks > SNAPSHOT.tasks.length)));
   $("maxReps").setAttribute("aria-invalid", String(showValidation && (repsRaw === "" || !Number.isInteger(maxReps) || maxReps < MIN_REPETITIONS || maxReps > 4)));
@@ -1354,7 +1459,7 @@ function optimize(inputs, rows) {
     if (enoughEligibleTasks) {
       errors.push(`The ${money(inputs.budget)} baseline budget cannot satisfy the ${inputs.minTasks}-task breadth requirement. The minimum estimated budget is ${money(requestedMinimumCost)}.`);
     } else {
-      errors.push(`The ${inputs.minTasks}-task breadth requirement cannot be satisfied: only ${selections.length + cheapest.length} required or automatically eligible tasks are available for this pair.`);
+      errors.push(`The ${inputs.minTasks}-task breadth requirement cannot be satisfied: only ${selections.length + cheapest.length} tasks have usable bare-model evidence.`);
     }
   }
 
@@ -1544,8 +1649,8 @@ function optimize(inputs, rows) {
   const unspentBudget = inputs.budget - spent;
   if (unspentBudget >= 0.005) {
     warnings.push(optimization.certified
-      ? `${money(unspentBudget)} remains unspent because no affordable allocation can improve detectability under the visible constraints.`
-      : `The best plan found leaves ${money(unspentBudget)} unspent. Detectability—not budget consumption—is the objective, and the remaining search space is reflected in the reported gap.`);
+      ? `${money(unspentBudget)} remains because spending it would not improve the selected benchmark.`
+      : `The best plan found leaves ${money(unspentBudget)}. The search stopped before proving that no better allocation exists.`);
   }
   if (inputs.minTasks < 3) warnings.push("One or two tasks provide narrow benchmark evidence. Three is the recommended minimum.");
   return {
@@ -1600,7 +1705,7 @@ function buildExport(plan, inputs) {
   return {
     schema: "deepswe-benchmark-plan",
     schemaVersion: 1,
-    optimizerVersion: "detectability-branch-and-bound-v4",
+    optimizerVersion: "primary-correlation-branch-and-bound-v1",
     snapshot: SNAPSHOT.source,
     target: configById.get(inputs.targetId),
     comparison: configById.get(inputs.comparisonId),
@@ -1628,12 +1733,11 @@ function buildExport(plan, inputs) {
       warnings: plan.warnings,
       estimatedBaselineSpendUsd: plan.spent,
       unspentBaselineBudgetUsd: plan.unspent,
-      signedHistoricalModelDifference: plan.statistics.signedSignal,
-      absoluteHistoricalModelDifference: plan.statistics.signal,
+      conservativeTaskCorrelation: plan.statistics.signedSignal,
       calibrationVariance: plan.statistics.variance,
       calibrationStandardError: plan.statistics.standardError,
-      historicalSnr: plan.statistics.snr,
-      historicalDetectability: plan.statistics.detectability,
+      planningSignalToNoise: plan.statistics.snr,
+      planningSignalToThreshold: plan.statistics.detectability,
       effectiveDegreesOfFreedom: plan.statistics.degreesOfFreedom,
       tCriticalValue: plan.statistics.tCritical,
       decisionThreshold: plan.statistics.criticalDifference,
@@ -1649,9 +1753,9 @@ function buildExport(plan, inputs) {
       projectedRegressionRoom: plan.regressionRoom,
     },
     assumptions: [
-      "The selected published pair calibrates historical task responsiveness and noise; it is not the future skill/instruction comparison.",
-      "The pair's separate variances estimate the future two-arm experiment noise.",
-      "Historical responsiveness to the selected comparison may not transfer to skills or instructions.",
+      "Task relevance is the fifth percentile of its one-run correlation with the full published DeepSWE score.",
+      "The bare model's published variance is used for both arms of the future skills or instructions experiment.",
+      "The optional comparison reuses the selected allocation only for the estimate plot and does not affect this plan.",
       "Future repetitions are independent within and between arms.",
       "Task-arm means are approximately normal and Welch-Satterthwaite is an approximation.",
       "Results apply only to the selected tasks.",
@@ -1669,18 +1773,12 @@ function buildExport(plan, inputs) {
         variance: selection.row.target.variance,
         meanCost: selection.row.target.meanCost,
       },
-      comparison: {
-        n: selection.row.comparison.n,
-        mean: selection.row.comparison.mean,
-        variance: selection.row.comparison.variance,
-        meanCost: selection.row.comparison.meanCost,
-      },
-      signedPublishedDifference: selection.row.signedDifference,
+      conservativeTaskCorrelation: selection.row.task.correlation.p05,
       targetEstimatedBaselineCostUsd: selection.row.cost * selection.repetitions,
       headroomBypassed: selection.row.requiredHeadroomBypass,
       zeroVarianceFallback: selection.row.fallback,
     })),
-    manuallyExcludedTasks: [...manualStates.entries()].filter(([, value]) => value === "excluded").map(([task]) => task).sort(),
+    manuallyExcludedTasks: [...excludedTasks].sort(),
   };
 }
 
@@ -1734,6 +1832,86 @@ function renderMessages(errors, warnings) {
 }
 
 /**
+ * Estimate the published score and cost of one configuration on a fixed plan.
+ * @param {object} plan selected task allocation
+ * @param {string} configurationId published configuration
+ * @returns {{score:number,scoreLow:number,scoreHigh:number,cost:number,costLow:number,costHigh:number}|null} estimate
+ */
+function estimateConfiguration(plan, configurationId) {
+  if (!configurationId || !plan?.selections?.length) return null;
+  const rows = plan.selections.map((selection) => ({
+    selection,
+    cell: selection.row.task.cells[configurationId],
+  }));
+  if (rows.some(({ cell }) => !cell || !(cell.n >= 2) || !Number.isFinite(cell.variance))) return null;
+  const count = rows.length;
+  let score = 0;
+  let scoreVariance = 0;
+  let cost = 0;
+  let costLow = 0;
+  let costHigh = 0;
+  for (const { selection, cell } of rows) {
+    score += cell.mean / count;
+    scoreVariance += cell.variance / (selection.repetitions * count * count);
+    cost += cell.meanCost * selection.repetitions;
+    costLow += cell.minCost * selection.repetitions;
+    costHigh += cell.maxCost * selection.repetitions;
+  }
+  const margin = 1.645 * Math.sqrt(scoreVariance);
+  return { score, scoreLow: Math.max(0, score - margin), scoreHigh: Math.min(1, score + margin), cost, costLow, costHigh };
+}
+
+/** Render the bare-model estimate and optional comparison on one score/cost plot. */
+function renderEstimateChart(plan, inputs) {
+  const primary = estimateConfiguration(plan, inputs.targetId);
+  const comparison = inputs.comparisonId ? estimateConfiguration(plan, inputs.comparisonId) : null;
+  const primaryConfig = configById.get(inputs.targetId);
+  const comparisonConfig = configById.get(inputs.comparisonId);
+  const label = (configuration) => configuration ? `${configuration.model} · ${configuration.reasoning}` : "";
+  const estimateLabel = (estimate) => `${(estimate.score * 100).toFixed(1)}% · ${money(estimate.cost)}`;
+  $("estimateLegend").innerHTML = primary ? `
+    <span class="legend-item"><span class="legend-dot"></span>Bare model · ${escapeHtml(label(primaryConfig))} · ${estimateLabel(primary)}</span>
+    ${comparison ? `<span class="legend-item"><span class="legend-dot comparison"></span>Comparison · ${escapeHtml(label(comparisonConfig))} · ${estimateLabel(comparison)}</span>` : ""}
+  ` : "";
+  $("comparisonStatus").hidden = !inputs.comparisonId || Boolean(comparison);
+  $("comparisonStatus").textContent = inputs.comparisonId && !comparison
+    ? "The comparison is not plotted because one or more selected tasks lack complete published runs."
+    : "";
+  if (!primary) {
+    $("estimateChart").innerHTML = '<text class="chart-label" x="260" y="135" text-anchor="middle">No estimate is available.</text>';
+    return;
+  }
+  const estimates = [primary, comparison].filter(Boolean);
+  const left = 58, right = 500, top = 18, bottom = 226;
+  const maxCost = Math.max(inputs.budget, ...estimates.map((estimate) => estimate.costHigh), 0.01) * 1.08;
+  const observedLow = Math.min(...estimates.map((estimate) => estimate.scoreLow));
+  const observedHigh = Math.max(...estimates.map((estimate) => estimate.scoreHigh));
+  const minScore = Math.min(0, observedLow);
+  const maxScore = Math.max(1, observedHigh);
+  const x = (value) => left + Math.max(0, value) / maxCost * (right - left);
+  const y = (value) => bottom - (value - minScore) / (maxScore - minScore) * (bottom - top);
+  const point = (estimate, className) => {
+    const suffix = className ? ` ${className}` : "";
+    const px = x(estimate.cost), py = y(estimate.score);
+    return `<line class="chart-range${suffix}" x1="${x(estimate.costLow)}" y1="${py}" x2="${x(estimate.costHigh)}" y2="${py}"></line>
+      <line class="chart-range${suffix}" x1="${px}" y1="${y(estimate.scoreHigh)}" x2="${px}" y2="${y(estimate.scoreLow)}"></line>
+      <circle class="chart-point${suffix}" cx="${px}" cy="${py}" r="7"></circle>`;
+  };
+  $("estimateChart").innerHTML = `
+    <line class="chart-grid" x1="${left}" y1="${y(.5)}" x2="${right}" y2="${y(.5)}"></line>
+    <line class="chart-axis" x1="${left}" y1="${top}" x2="${left}" y2="${bottom}"></line>
+    <line class="chart-axis" x1="${left}" y1="${bottom}" x2="${right}" y2="${bottom}"></line>
+    <text class="chart-label" x="${left - 8}" y="${y(1) + 4}" text-anchor="end">100%</text>
+    <text class="chart-label" x="${left - 8}" y="${y(.5) + 4}" text-anchor="end">50%</text>
+    <text class="chart-label" x="${left - 8}" y="${y(0) + 4}" text-anchor="end">0%</text>
+    <text class="chart-label" x="${left}" y="${bottom + 20}" text-anchor="middle">$0</text>
+    <text class="chart-label" x="${right}" y="${bottom + 20}" text-anchor="middle">${money(maxCost)}</text>
+    <text class="chart-label" x="${(left + right) / 2}" y="265" text-anchor="middle">Estimated cost</text>
+    <text class="chart-label" x="14" y="${(top + bottom) / 2}" text-anchor="middle" transform="rotate(-90 14 ${(top + bottom) / 2})">Estimated score</text>
+    ${point(primary, "")}${comparison ? point(comparison, "comparison") : ""}`;
+}
+
+/**
  * Render the selected plan table.
  * @param {object|null} plan calculated plan
  * @returns {void}
@@ -1746,17 +1924,14 @@ function renderPlanTable(plan) {
   }
   $("planTable").className = "table-wrap";
   $("planTable").innerHTML = `<table>
-    <thead><tr><th>Task</th><th>Source</th><th>Reps / arm</th><th>Historical Δ</th><th>Bare SD</th><th>Comparison SD</th><th>Baseline cost</th></tr></thead>
+    <thead><tr><th>Task</th><th>Reps / arm</th><th>Correlation (5th percentile)</th><th>Bare SD</th><th>Baseline cost</th></tr></thead>
     <tbody>${plan.selections.map((selection) => {
       const row = selection.row;
-      const differenceClass = row.signedDifference >= 0 ? "signal-pos" : "signal-neg";
       return `<tr>
         <td class="task-name"><strong>${escapeHtml(row.id)}</strong><span>${escapeHtml(row.task.language)}${row.fallback ? ' · <span class="badge warning">fallback noise</span>' : ""}</span></td>
-        <td>${row.manual === "required" ? '<span class="badge target">required</span>' : '<span class="badge">optimizer</span>'}</td>
         <td class="mono">${selection.repetitions}</td>
-        <td class="${differenceClass} mono">${percent(row.signedDifference)}</td>
+        <td class="signal-pos mono">${decimal(row.task.correlation.p05)}</td>
         <td class="mono">${decimal(row.target.sd)}</td>
-        <td class="mono">${decimal(row.comparison.sd)}</td>
         <td class="mono">${money(row.cost * selection.repetitions)}</td>
       </tr>`;
     }).join("")}</tbody>
@@ -1770,7 +1945,7 @@ function renderPlanTable(plan) {
 function renderExplorer() {
   if (currentRows.length === 0) {
     $("explorerTable").className = "plan-empty";
-    $("explorerTable").innerHTML = "Choose both configurations to inspect task evidence.";
+    $("explorerTable").innerHTML = "Choose a bare model to inspect task evidence.";
     return;
   }
   const query = $("taskSearch").value.trim().toLowerCase();
@@ -1781,33 +1956,28 @@ function renderExplorer() {
     if (!matchesSearch) return false;
     if (filter === "selected") return selected.has(row.id);
     if (filter === "eligible") return row.automaticEligible;
-    if (filter === "warnings") return !row.dataAvailable || !row.headroomEligible || Boolean(row.fallback);
+    if (filter === "warnings") return !row.dataAvailable || !row.headroomEligible || row.task.correlation.p05 <= 0 || Boolean(row.fallback);
     if (filter === "overrides") return row.manual !== "automatic";
     return true;
   });
   $("explorerTable").className = "table-wrap";
   $("explorerTable").innerHTML = `<table>
-    <thead><tr><th>Task</th><th>State</th><th>Plan</th><th>Bare mean</th><th>Comparison mean</th><th>Historical Δ</th><th>Combined noise</th><th>Cost / run</th><th>Details</th></tr></thead>
+    <thead><tr><th>Task</th><th>Exclude</th><th>Runs in current plan</th><th>Bare score</th><th>Correlation</th><th>Bare variability</th><th>Cost / run</th><th>Evidence</th></tr></thead>
     <tbody>${visible.map((row) => {
       const selectedReps = selected.get(row.id);
-      const noise = row.dataAvailable ? Math.sqrt(row.components.reduce((sum, component) => sum + component.variance, 0)) : NaN;
-      const status = !row.dataAvailable ? row.reasons.join("; ") : row.manual === "excluded" ? "Manually excluded" : !row.headroomEligible && row.manual !== "required" ? "Outside target headroom" : row.fallback ? "Same-task fallback applied" : "Available";
+      const noise = row.target?.sd;
+      const status = !row.dataAvailable ? row.reasons.join("; ") : row.manual === "excluded" ? "Excluded" : !row.headroomEligible ? "Outside bare-model headroom" : row.task.correlation.p05 <= 0 ? "Weak benchmark correlation" : row.fallback ? "Same-task fallback applied" : "Available";
       return `<tr>
         <td class="task-name"><strong>${escapeHtml(row.id)}</strong><span>${escapeHtml(row.task.language)} · ${escapeHtml(status)}</span></td>
-        <td><select class="explorer-state" data-task-state="${escapeHtml(row.id)}" aria-label="State for ${escapeHtml(row.id)}">
-          <option value="automatic"${row.manual === "automatic" ? " selected" : ""}>Automatic</option>
-          <option value="required"${row.manual === "required" ? " selected" : ""}>Required</option>
-          <option value="excluded"${row.manual === "excluded" ? " selected" : ""}>Excluded</option>
-        </select></td>
-        <td>${selectedReps ? `<span class="badge target">${selectedReps} rep${selectedReps === 1 ? "" : "s"}</span>` : "—"}</td>
+        <td><label class="exclude-control"><input type="checkbox" data-task-excluded="${escapeHtml(row.id)}"${row.manual === "excluded" ? " checked" : ""}> Exclude</label></td>
+        <td>${selectedReps ? `<span class="badge target">${selectedReps} rep${selectedReps === 1 ? "" : "s"}</span>` : currentPlan ? '<span class="muted">Not selected</span>' : '<span class="muted">Search first</span>'}</td>
         <td class="mono">${row.target ? percent(row.target.mean) : "—"}</td>
-        <td class="mono">${row.comparison ? percent(row.comparison.mean) : "—"}</td>
-        <td class="${row.signedDifference >= 0 ? "signal-pos" : "signal-neg"} mono">${percent(row.signedDifference)}</td>
+        <td class="mono">${decimal(row.task.correlation?.p05)}</td>
         <td class="mono">${decimal(noise)}</td>
         <td class="mono">${money(row.cost)}</td>
-        <td><button class="inspect" data-inspect="${escapeHtml(row.id)}">Inspect</button></td>
+        <td><button class="inspect" data-inspect="${escapeHtml(row.id)}">View</button></td>
       </tr>`;
-    }).join("") || '<tr><td colspan="9" class="muted">No tasks match this view.</td></tr>'}</tbody>
+    }).join("") || '<tr><td colspan="8" class="muted">No tasks match this view.</td></tr>'}</tbody>
   </table>`;
 }
 
@@ -1838,11 +2008,11 @@ function openTaskDialog(taskId) {
     <p class="muted">${escapeHtml(row.task.repository)} · ${escapeHtml(row.task.language)}</p>
     <div class="dialog-grid">
       ${trialCard("bare model", currentRowInputs?.targetId ?? "", row.target, "target")}
-      ${trialCard("comparison", currentRowInputs?.comparisonId ?? "", row.comparison, "comparison")}
+      ${currentRowInputs?.comparisonId ? trialCard("comparison", currentRowInputs.comparisonId, row.comparison, "comparison") : ""}
     </div>
     ${row.fallback ? `<section class="fallback-box">
-      <h3>Both-zero planning fallback</h3>
-      <p>Both selected raw variances are zero. The planner uses pooled within-configuration variance from this same task in ${row.fallback.donors.length} other configurations.</p>
+      <h3>Zero-variance planning fallback</h3>
+      <p>The bare model’s published variance is zero. The planner uses pooled within-configuration variance from this same task in ${row.fallback.donors.length} other configurations.</p>
       <p class="mono">variance ${row.fallback.variance} · df ${row.fallback.degreesOfFreedom}</p>
       <details><summary>Show donor configurations</summary><div class="trial-list">${row.fallback.donors.map((donor) => `<div class="trial"><span>${escapeHtml(donor.configuration)}</span><span>n=${donor.n}</span><span>var ${decimal(donor.variance, 5)}</span></div>`).join("")}</div></details>
     </section>` : ""}
@@ -1866,8 +2036,8 @@ function renderSearchResult(plan, inputs) {
     $("thresholdValue").innerHTML = '<span class="empty-state">A calculable plan is not available.</span>';
     $("thresholdCopy").textContent = "Resolve the errors below without relying on a hidden fallback.";
   }
-  $("metricSignal").textContent = percent(statistics?.signedSignal);
-  $("metricSnr").textContent = Number.isFinite(statistics?.detectability) ? `${statistics.detectability.toFixed(2)} thresholds` : "—";
+  $("metricSignal").textContent = decimal(statistics?.signedSignal);
+  $("metricSnr").textContent = Number.isFinite(statistics?.criticalDifference) ? `±${(statistics.criticalDifference * 100).toFixed(1)} pp` : "—";
   $("metricSpend").textContent = plan.selections.length ? `${money(plan.spent)} / ${money(inputs.budget)}` : "—";
   $("metricRuns").textContent = plan.selections.length ? `${plan.selections.length} · ${plan.selections.reduce((sum, selection) => sum + selection.repetitions, 0)}` : "—";
   $("detailSe").textContent = percent(statistics?.standardError, 2);
@@ -1879,8 +2049,8 @@ function renderSearchResult(plan, inputs) {
   $("detailOptimizer").textContent = !plan.optimization
     ? "Not run"
     : plan.optimization.certified
-      ? `Maximum certified · ${plan.optimization.expandedNodes.toLocaleString()} states`
-      : `Bounded result · ${plan.optimization.expandedNodes.toLocaleString()} / ${plan.optimization.nodeLimit.toLocaleString()} states`;
+      ? `Best plan confirmed · ${plan.optimization.expandedNodes.toLocaleString()} checked`
+      : `Best plan found · ${plan.optimization.expandedNodes.toLocaleString()} / ${plan.optimization.nodeLimit.toLocaleString()} checked`;
   $("detailBound").textContent = !plan.optimization
     ? "—"
     : plan.optimization.certified
@@ -1889,11 +2059,12 @@ function renderSearchResult(plan, inputs) {
   $("detailEligible").textContent = String(plan.eligibleCount ?? 0);
   $("detailFallbacks").textContent = String(plan.fallbackCount ?? 0);
   $("planStatus").textContent = plan.valid
-    ? plan.optimization?.certified ? "Globally optimal plan" : "Valid bounded plan"
+    ? plan.optimization?.certified ? "Best plan confirmed" : "Best plan found"
     : plan.selections.length ? "Invalid best-effort plan" : "No valid plan";
   $("copyPlan").disabled = !isExportablePlan(plan);
   $("downloadPlan").disabled = !isExportablePlan(plan);
   renderMessages(plan.errors, plan.warnings);
+  renderEstimateChart(plan, inputs);
   renderPlanTable(plan);
   renderExplorer();
 }
@@ -1921,9 +2092,9 @@ function resetSearchState() {
   $("runSearch").disabled = false;
   $("runSearch").setAttribute("aria-busy", "false");
   $("runSearch").textContent = "Search best plan";
-  $("searchState").textContent = "Set the configurations and budget, then search.";
+  $("searchState").textContent = "Choose a bare model and budget, then search.";
   renderMessages([], []);
-  if (inputs.targetId && inputs.comparisonId && inputs.targetId !== inputs.comparisonId && Number.isFinite(inputs.headroom)) {
+  if (inputs.targetId && Number.isFinite(inputs.headroom)) {
     currentRowInputs = inputs;
     currentRows = SNAPSHOT.tasks.map((task) => deriveTask(task, inputs));
   } else {
@@ -1951,7 +2122,7 @@ async function searchPlan() {
   $("runSearch").disabled = true;
   $("runSearch").setAttribute("aria-busy", "true");
   $("runSearch").textContent = "Searching…";
-    $("searchState").textContent = "Searching up to 50,000 task and repetition plans for maximum detectability…";
+  $("searchState").textContent = "Comparing task and repetition plans that fit this budget…";
   renderMessages([], []);
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
@@ -2011,11 +2182,11 @@ $("runSearch").addEventListener("click", () => { void searchPlan(); });
 $("taskSearch").addEventListener("input", renderExplorer);
 $("taskFilter").addEventListener("change", renderExplorer);
 $("explorerTable").addEventListener("change", (event) => {
-  const control = event.target.closest("[data-task-state]");
+  const control = event.target.closest("[data-task-excluded]");
   if (!control) return;
-  const taskId = control.dataset.taskState;
-  if (control.value === "automatic") manualStates.delete(taskId);
-  else manualStates.set(taskId, control.value);
+  const taskId = control.dataset.taskExcluded;
+  if (control.checked) excludedTasks.add(taskId);
+  else excludedTasks.delete(taskId);
   resetSearchState();
 });
 $("explorerTable").addEventListener("click", (event) => {
