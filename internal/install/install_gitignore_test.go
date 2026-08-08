@@ -637,9 +637,10 @@ func TestAgentLayerGitignoreTemplateEntries(t *testing.T) {
 		"/templates/",
 		"state/",
 		"sync.lock",
-		"skills.lock.json",
-		"skills-imported/",
 		"tmp/",
+		// The import transaction's scratch space is machine-local even though
+		// the imported skills around it are committed.
+		"skills-imported/.staging/",
 		"open-vscode.app/",
 		"open-vscode.command",
 		"open-vscode.desktop",
@@ -648,6 +649,15 @@ func TestAgentLayerGitignoreTemplateEntries(t *testing.T) {
 	for _, entry := range required {
 		if _, ok := lines[entry]; !ok {
 			t.Errorf("agent-layer.gitignore template missing required entry %q", entry)
+		}
+	}
+
+	// Imported skills and their lockfile are project state a clone must carry,
+	// and the imported tier fails loudly when its lock entries are missing, so
+	// neither may be ignored.
+	for _, entry := range []string{"skills.lock.json", "skills-imported/"} {
+		if _, ok := lines[entry]; ok {
+			t.Errorf("agent-layer.gitignore template must not ignore %q", entry)
 		}
 	}
 }

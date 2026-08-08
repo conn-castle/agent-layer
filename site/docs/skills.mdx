@@ -247,6 +247,26 @@ entirely, that removal is preserved too: the push reports the skill as
 unchanged when your copy still matches what you imported, and reports a
 conflict when you had also edited it.
 
+After a successful contribution-branch push, Agent Layer records that exact
+published tree as a separate destination checkpoint. Running `al skills push`
+again therefore adds another commit to the same branch—and updates any open
+pull request for that branch—while treating review-driven edits and reversions
+relative to the prior push. Direct edits made to the destination branch are
+still reconciled and preserved.
+
+A contribution branch first pushed by an older Agent Layer version has no
+publication checkpoint. Its first post-upgrade push still uses the locked
+source as the conservative merge base and can report a conflict when both the
+pending edit and existing branch changed the same lines. It also fails instead
+of claiming success when an apparent reversion would leave the destination
+unchanged; Agent Layer cannot safely infer which destination changes were its
+own. Align the local skill with the destination and push once to establish a
+checkpoint, then reapply the reversion. Once one push succeeds or finds the
+local and destination trees identical, later pushes use the recorded
+checkpoint. If a branch is rebased and its recorded commit disappears, Agent
+Layer discards that obsolete checkpoint and safely falls back to the source
+merge base.
+
 To stop managing an imported skill, remove its selector. A clean copy is
 deleted; a copy you edited is preserved and reported so you can move it into
 `.agent-layer/skills/` and own it yourself.

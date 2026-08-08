@@ -589,9 +589,20 @@ User-managed skills live in `.agent-layer/skills/`; skills managed through
 `al skills` live in `.agent-layer/skills-imported/`. These canonical source
 tiers define the workflows you want your agents to run.
 
-The generated `.agent-layer/.gitignore` ignores both the machine-managed
-`.agent-layer/skills-imported/` directory and its `.agent-layer/skills.lock.json`
-upstream state by default.
+In a project that commits `.agent-layer/`, the generated `.agent-layer/.gitignore`
+leaves both `.agent-layer/skills-imported/` and its `.agent-layer/skills.lock.json`
+upstream state tracked, so a fresh clone or CI run has the exact imported skill
+content — including local edits — without a network `al skills pull`. Commit the two
+together: the imported tier is fully managed, and a skill directory with no lock
+entry is a loud error rather than a silent shadow. Only
+`.agent-layer/skills-imported/.staging/`, the import transaction's scratch space,
+stays ignored.
+
+The root `.gitignore` block ships with `/.agent-layer/` uncommented, which ignores
+the whole directory and takes precedence over the above. To commit your Agent Layer
+configuration and imported skills, comment that line out in
+`.agent-layer/gitignore.block` and re-run `al sync`; `.agent-layer/.env` stays
+ignored either way.
 
 Agent Layer aligns with the [Agent Skills specification](https://agentskills.io/specification), and `al doctor` validates configured skills against agentskills-aligned conventions.
 

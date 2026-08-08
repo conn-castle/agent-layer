@@ -373,5 +373,13 @@ Notes: The current Agent Layer instructions and skills are fingerprinted into a 
 go run ./cmd/al benchmark report --plan <plan.json>
 ```
 Run from: repo root
-Prerequisites: A completed baseline and at least one completed treatment version
-Notes: Calculates the observed two-sided threshold from both arms, then writes canonical JSON and offline HTML from immutable evidence. It does not invoke a provider, Pier, Docker, or a network service. Plans exported before cost-axis provenance was added require an explicit canonical `--analysis` artifact.
+Prerequisites: A completed baseline and at least one completed treatment version. An affected historical score also requires either its generated `canonical-result.json` or the preserved verifier artifacts needed to regenerate that canonical result.
+Notes: Calculates the observed two-sided threshold from both arms, then writes canonical JSON and offline HTML from immutable evidence. It fails rather than report a known-incorrect historical score when neither canonical correction nor its verifier evidence remains. It does not invoke a provider, Pier, Docker, or a network service. Plans exported before cost-axis provenance was added require an explicit canonical `--analysis` artifact.
+
+- Regenerate canonical scores for affected stored DeepSWE runs
+```bash
+go run ./cmd/al benchmark correct-scores
+```
+Run from: repo root
+Prerequisites: Preserved benchmark result and verifier artifacts under `.agent-layer/state/benchmarks/deepswe`
+Notes: Applies versioned corrections only to their pinned task checksum and writes derived `canonical-result.json` files beside the immutable upstream results. Reports use the canonical result as the score. The command makes no provider, Pier, Docker, or network calls and is safe to repeat.
