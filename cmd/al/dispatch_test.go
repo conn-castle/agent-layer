@@ -3,12 +3,35 @@ package main
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/agentdispatch"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
+
+func TestRootedMCPWorkingDir(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".agent-layer"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	subdir := filepath.Join(root, "nested")
+	if err := os.Mkdir(subdir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if got := rootedMCPWorkingDir(root, root, subdir); got != subdir {
+		t.Fatalf("same-project working dir = %q, want %q", got, subdir)
+	}
+	outside := t.TempDir()
+	if got := rootedMCPWorkingDir(root, root, outside); got != root {
+		t.Fatalf("unrelated working dir = %q, want fallback %q", got, root)
+	}
+	if got := rootedMCPWorkingDir(root, root, "relative"); got != root {
+		t.Fatalf("relative working dir = %q, want fallback %q", got, root)
+	}
+}
 
 func TestDispatchHelpWiresAsyncSurface(t *testing.T) {
 	cmd := newDispatchCmd()

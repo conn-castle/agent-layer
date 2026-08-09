@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -14,6 +16,7 @@ import (
 const (
 	dispatchStartCommand     = "start"
 	dispatchMCPServerCommand = "mcp-server"
+	dispatchMCPWorkingDirEnv = "AL_MCP_WORKING_DIR" //nolint:gosec // Internal working-directory metadata, not a credential.
 )
 
 func newDispatchCmd() *cobra.Command {
@@ -42,11 +45,27 @@ func newDispatchMCPServerCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			workingDir = rootedMCPWorkingDir(root, workingDir, os.Getenv(dispatchMCPWorkingDirEnv))
 			return dispatchCommandError(cmd, agentdispatch.RunMCPServer(cmd.Context(), agentdispatch.MCPServerOptions{
 				Root: root, WorkDir: workingDir, Version: cmd.Root().Version, Env: os.Environ(),
 			}))
 		},
 	}
+}
+
+// rootedMCPWorkingDir preserves the MCP client's original cwd when it belongs
+// to the same Agent Layer project. Clients that start the server elsewhere use
+// the canonical root embedded by sync instead.
+func rootedMCPWorkingDir(root string, fallback string, candidate string) string {
+	candidate = strings.TrimSpace(candidate)
+	if candidate == "" || !filepath.IsAbs(candidate) {
+		return fallback
+	}
+	candidateRoot, found, err := findAgentLayerRoot(candidate)
+	if err != nil || !found || filepath.Clean(candidateRoot) != filepath.Clean(root) {
+		return fallback
+	}
+	return filepath.Clean(candidate)
 }
 
 func newDispatchOptionsCmd() *cobra.Command {

@@ -3,10 +3,12 @@
   "mcpServers": {
     "agent-layer": {
       "type": "stdio",
-      "command": "al",
+      "command": "/bin/sh",
       "args": [
-        "dispatch",
-        "mcp-server"
+        "-c",
+        "AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd \"$1\" \u0026\u0026 exec al dispatch mcp-server",
+        "agent-layer-mcp",
+        "__REPO_ROOT__"
       ]
     },
     "example": {

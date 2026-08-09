@@ -416,6 +416,10 @@ func TestBuildCodexConfigAgentSpecificOverrides(t *testing.T) {
 	if !strings.Contains(output, `[mcp_servers."`+projection.BuiltInDispatchServerID+`"]`+"\n") {
 		t.Fatalf("expected built-in Agent Dispatch server alongside agent-specific mcp_servers:\n%s", output)
 	}
+	if !strings.Contains(output, `command = "/bin/sh"`) ||
+		!strings.Contains(output, `exec al dispatch mcp-server`) {
+		t.Fatalf("expected rooted built-in Agent Dispatch invocation alongside agent-specific mcp_servers:\n%s", output)
+	}
 }
 
 func TestBuildCodexConfigRejectsAgentSpecificDispatchServerOverride(t *testing.T) {

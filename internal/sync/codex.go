@@ -156,7 +156,7 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 
 	var resolved []projection.ResolvedMCPServer
 	if config.HasProviderPassthroughKey(agentSpecific, config.CodexMCPServersKey) {
-		builtIn, ok := projection.BuiltInDispatchServer(project.Config, projection.ClientCodex)
+		builtIn, ok := projection.RootedBuiltInDispatchServer(project.Config, projection.ClientCodex, root)
 		if ok {
 			servers, isTable := agentSpecific[config.CodexMCPServersKey].(map[string]any)
 			if !isTable {
