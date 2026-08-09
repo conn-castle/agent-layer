@@ -20,7 +20,19 @@ func builtInProject(t *testing.T) *config.ProjectConfig {
 	cfg.Agents.Antigravity.Enabled = &on
 	cfg.Agents.CopilotCLI.Enabled = &on
 	cfg.Agents.VSCode.Enabled = &on
-	return &config.ProjectConfig{Config: cfg, Env: map[string]string{}, Root: t.TempDir()}
+	root := t.TempDir()
+	return &config.ProjectConfig{Config: cfg, Env: config.WithBuiltInEnv(map[string]string{}, root), Root: root}
+}
+
+func wantBuiltInDispatchInvocation(t *testing.T, command string, args []string, root string) {
+	t.Helper()
+	if command != "/bin/sh" {
+		t.Fatalf("built-in dispatch command = %q, want /bin/sh", command)
+	}
+	want := []string{"-c", `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" && exec al dispatch mcp-server`, "agent-layer-mcp", root}
+	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("built-in dispatch args = %q, want %q", args, want)
+	}
 }
 
 // TestClaudeReceivesTheBuiltInDispatchServer proves the generated Claude MCP
@@ -29,7 +41,8 @@ func builtInProject(t *testing.T) *config.ProjectConfig {
 // stdio keys — Agent Layer must not reach for the client-wide MCP_TOOL_TIMEOUT.
 func TestClaudeReceivesTheBuiltInDispatchServer(t *testing.T) {
 	t.Parallel()
-	cfg, err := buildMCPConfig(builtInProject(t))
+	project := builtInProject(t)
+	cfg, err := buildMCPConfig(project)
 	if err != nil {
 		t.Fatalf("build claude mcp config: %v", err)
 	}
@@ -37,12 +50,10 @@ func TestClaudeReceivesTheBuiltInDispatchServer(t *testing.T) {
 	if !ok {
 		t.Fatalf("claude mcp config is missing %q: %#v", projection.BuiltInDispatchServerID, cfg.Servers)
 	}
-	if server.Type != config.TransportStdio || server.Command != "al" {
-		t.Fatalf("built-in claude server = %#v, want an stdio `al` server", server)
+	if server.Type != config.TransportStdio {
+		t.Fatalf("built-in claude server = %#v, want an stdio server", server)
 	}
-	if strings.Join(server.Args, " ") != "dispatch mcp-server" {
-		t.Fatalf("built-in claude server args = %v", server.Args)
-	}
+	wantBuiltInDispatchInvocation(t, server.Command, server.Args, project.Root)
 	if len(server.Env) != 0 || server.URL != "" {
 		t.Fatalf("built-in claude server carries unexpected fields: %#v", server)
 	}
@@ -53,7 +64,8 @@ func TestClaudeReceivesTheBuiltInDispatchServer(t *testing.T) {
 // no tool-timeout field and none may be invented.
 func TestAntigravityReceivesTheBuiltInDispatchServer(t *testing.T) {
 	t.Parallel()
-	cfg, err := buildAntigravityMCPConfig(builtInProject(t))
+	project := builtInProject(t)
+	cfg, err := buildAntigravityMCPConfig(project)
 	if err != nil {
 		t.Fatalf("build antigravity mcp config: %v", err)
 	}
@@ -61,9 +73,7 @@ func TestAntigravityReceivesTheBuiltInDispatchServer(t *testing.T) {
 	if !ok {
 		t.Fatalf("antigravity mcp config is missing %q: %#v", projection.BuiltInDispatchServerID, cfg.Servers)
 	}
-	if server.Command != "al" || strings.Join(server.Args, " ") != "dispatch mcp-server" {
-		t.Fatalf("built-in antigravity server = %#v", server)
-	}
+	wantBuiltInDispatchInvocation(t, server.Command, server.Args, project.Root)
 	if server.ServerURL != "" || len(server.Headers) != 0 {
 		t.Fatalf("built-in antigravity server carries unexpected fields: %#v", server)
 	}
@@ -73,7 +83,8 @@ func TestAntigravityReceivesTheBuiltInDispatchServer(t *testing.T) {
 // cannot be left with Agent Dispatch instructions but no matching MCP tools.
 func TestCopilotReceivesTheBuiltInDispatchServer(t *testing.T) {
 	t.Parallel()
-	cfg, err := buildCopilotMCPConfig(builtInProject(t))
+	project := builtInProject(t)
+	cfg, err := buildCopilotMCPConfig(project)
 	if err != nil {
 		t.Fatalf("build copilot mcp config: %v", err)
 	}
@@ -81,10 +92,10 @@ func TestCopilotReceivesTheBuiltInDispatchServer(t *testing.T) {
 	if !ok {
 		t.Fatalf("copilot mcp config is missing %q: %#v", projection.BuiltInDispatchServerID, cfg.Servers)
 	}
-	if server.Type != config.TransportStdio || server.Command != "al" ||
-		strings.Join(server.Args, " ") != "dispatch mcp-server" {
+	if server.Type != config.TransportStdio {
 		t.Fatalf("built-in copilot server = %#v", server)
 	}
+	wantBuiltInDispatchInvocation(t, server.Command, server.Args, project.Root)
 	if len(server.Tools) != 1 || server.Tools[0] != "*" {
 		t.Fatalf("built-in copilot server tools = %v, want [\"*\"]", server.Tools)
 	}
@@ -94,7 +105,8 @@ func TestCopilotReceivesTheBuiltInDispatchServer(t *testing.T) {
 // projection and MCP configuration expose one coherent Agent Dispatch surface.
 func TestVSCodeReceivesTheBuiltInDispatchServer(t *testing.T) {
 	t.Parallel()
-	cfg, err := buildVSCodeMCPConfig(builtInProject(t))
+	project := builtInProject(t)
+	cfg, err := buildVSCodeMCPConfig(project)
 	if err != nil {
 		t.Fatalf("build vscode mcp config: %v", err)
 	}
@@ -102,10 +114,10 @@ func TestVSCodeReceivesTheBuiltInDispatchServer(t *testing.T) {
 	if !ok {
 		t.Fatalf("vscode mcp config is missing %q: %#v", projection.BuiltInDispatchServerID, cfg.Servers)
 	}
-	if server.Type != config.TransportStdio || server.Command != "al" ||
-		strings.Join(server.Args, " ") != "dispatch mcp-server" {
+	if server.Type != config.TransportStdio {
 		t.Fatalf("built-in vscode server = %#v", server)
 	}
+	wantBuiltInDispatchInvocation(t, server.Command, server.Args, project.Root)
 }
 
 // TestCodexReceivesTheBuiltInDispatchServerWithItsHardTimeout proves Codex's
@@ -142,9 +154,7 @@ func TestCodexReceivesTheBuiltInDispatchServerWithItsHardTimeout(t *testing.T) {
 	if !ok {
 		t.Fatalf("codex config is missing %q: %#v", projection.BuiltInDispatchServerID, decoded.MCPServers)
 	}
-	if server.Command != "al" || strings.Join(server.Args, " ") != "dispatch mcp-server" {
-		t.Fatalf("built-in codex server = %#v", server)
-	}
+	wantBuiltInDispatchInvocation(t, server.Command, server.Args, project.Root)
 	if server.ToolTimeoutSec != minutes*60 {
 		t.Fatalf("codex tool_timeout_sec = %d, want %d", server.ToolTimeoutSec, minutes*60)
 	}

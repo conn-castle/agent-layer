@@ -16,8 +16,8 @@ status_line = ['model-with-reasoning', 'context-used', 'weekly-limit', 'thread-i
 trust_level = "trusted"
 
 [mcp_servers."agent-layer"]
-command = "al"
-args = ["dispatch", "mcp-server"]
+command = "/bin/sh"
+args = ["-c", "AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd \"$1\" && exec al dispatch mcp-server", "agent-layer-mcp", "__REPO_ROOT__"]
 tool_timeout_sec = 2400
 
 [mcp_servers."example"]

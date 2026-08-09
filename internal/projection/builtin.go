@@ -25,6 +25,9 @@ const (
 	builtInDispatchCommand = "al"
 	builtInDispatchSubject = "dispatch"
 	builtInDispatchAction  = "mcp-server"
+	builtInDispatchShell   = "/bin/sh"
+	builtInDispatchScript  = `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" && exec al dispatch mcp-server`
+	builtInDispatchArgZero = "agent-layer-mcp"
 )
 
 // BuiltInDispatchServer returns the derived Agent Dispatch MCP server for one
@@ -42,6 +45,24 @@ func BuiltInDispatchServer(cfg config.Config, client string) (ResolvedMCPServer,
 		Args:               []string{builtInDispatchSubject, builtInDispatchAction},
 		ToolTimeoutSeconds: int(config.DispatchMCPToolTimeout(cfg).Seconds()),
 	}, true
+}
+
+// RootedBuiltInDispatchServer returns the built-in server with a launcher that
+// enters repoRoot before invoking al. This lets version dispatch find the repo
+// pin even when an MCP client chooses a different server working directory.
+func RootedBuiltInDispatchServer(cfg config.Config, client string, repoRoot string) (ResolvedMCPServer, bool) {
+	builtIn, ok := BuiltInDispatchServer(cfg, client)
+	if !ok {
+		return ResolvedMCPServer{}, false
+	}
+	if repoRoot != "" {
+		// Preserve the caller cwd for current binaries while keeping the actual al
+		// arguments compatible with cached older binaries, which ignore the extra
+		// environment variable and run safely from the canonical root.
+		builtIn.Command = builtInDispatchShell
+		builtIn.Args = []string{"-c", builtInDispatchScript, builtInDispatchArgZero, repoRoot}
+	}
+	return builtIn, true
 }
 
 // builtInDispatchClientEnabled reports whether a client surface actually acts
@@ -72,7 +93,7 @@ func EffectiveMCPServers(cfg config.Config, env map[string]string, client string
 	if err != nil {
 		return nil, err
 	}
-	return withBuiltInDispatchServer(cfg, client, resolved), nil
+	return withBuiltInDispatchServer(cfg, env, client, resolved), nil
 }
 
 // EffectiveServerIDs returns the sorted IDs of every MCP server a client
@@ -105,8 +126,8 @@ func ResolveEffectiveEnabledMCPServers(cfg config.Config, env map[string]string)
 	return resolved, nil
 }
 
-func withBuiltInDispatchServer(cfg config.Config, client string, resolved []ResolvedMCPServer) []ResolvedMCPServer {
-	builtIn, ok := BuiltInDispatchServer(cfg, client)
+func withBuiltInDispatchServer(cfg config.Config, env map[string]string, client string, resolved []ResolvedMCPServer) []ResolvedMCPServer {
+	builtIn, ok := RootedBuiltInDispatchServer(cfg, client, env[config.BuiltinRepoRootEnvVar])
 	if !ok {
 		return resolved
 	}
