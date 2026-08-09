@@ -1,6 +1,10 @@
 package projection
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -107,6 +111,76 @@ func TestEffectiveServersKeepUserServersIntact(t *testing.T) {
 	listed := EffectiveServerIDs(cfg, ClientClaude)
 	if len(listed) != len(want) {
 		t.Fatalf("effective server ids for permissions = %v, want %v", listed, want)
+	}
+}
+
+// TestEffectiveDispatchServerCarriesRepoRoot proves generated MCP invocations
+// do not depend on a client's choice of server working directory. The root is
+// what lets the global shim find and honor this repository's version pin.
+func TestEffectiveDispatchServerCarriesRepoRoot(t *testing.T) {
+	cfg := dispatchCallerConfig(ClientClaude)
+	root := "/workspace/older-pinned-repo"
+	resolved, err := EffectiveMCPServers(cfg, map[string]string{
+		config.BuiltinRepoRootEnvVar: root,
+	}, ClientClaude, nil)
+	if err != nil {
+		t.Fatalf("resolve effective servers: %v", err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("effective servers = %#v, want one built-in server", resolved)
+	}
+	if resolved[0].Command != "/bin/sh" {
+		t.Fatalf("built-in command = %q, want /bin/sh", resolved[0].Command)
+	}
+	want := []string{"-c", `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" && exec al dispatch mcp-server`, "agent-layer-mcp", root}
+	if len(resolved[0].Args) != len(want) {
+		t.Fatalf("built-in args = %q, want %q", resolved[0].Args, want)
+	}
+	for i := range want {
+		if resolved[0].Args[i] != want[i] {
+			t.Fatalf("built-in args = %q, want %q", resolved[0].Args, want)
+		}
+	}
+}
+
+// TestEffectiveDispatchInvocationSelectsRepoBeforeAl proves the wrapper's
+// observable boundary: the unchanged legacy al arguments run from the pinned
+// repository even when the MCP client starts elsewhere.
+func TestEffectiveDispatchInvocationSelectsRepoBeforeAl(t *testing.T) {
+	cfg := dispatchCallerConfig(ClientClaude)
+	root := filepath.Join(t.TempDir(), "repo with spaces")
+	if err := os.Mkdir(root, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	binDir := t.TempDir()
+	fakeAL := filepath.Join(binDir, "al")
+	if err := os.WriteFile(fakeAL, []byte("#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$AL_MCP_WORKING_DIR\" \"$@\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(fakeAL, 0o700); err != nil { // #nosec G302 -- test-owned executable fixture.
+		t.Fatal(err)
+	}
+	resolved, err := EffectiveMCPServers(cfg, map[string]string{
+		config.BuiltinRepoRootEnvVar: root,
+	}, ClientClaude, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(resolved[0].Command, resolved[0].Args...) // #nosec G204 -- command and arguments are the fixed built-in invocation under test.
+	originalWorkingDir := t.TempDir()
+	cmd.Dir = originalWorkingDir
+	cmd.Env = []string{"PATH=" + binDir + ":/usr/bin:/bin"}
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("run built-in invocation: %v", err)
+	}
+	physicalWorkingDir, err := filepath.EvalSymlinks(originalWorkingDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Join([]string{root, physicalWorkingDir, "dispatch", "mcp-server", ""}, "\n")
+	if string(output) != want {
+		t.Fatalf("built-in invocation output = %q, want %q", output, want)
 	}
 }
 
