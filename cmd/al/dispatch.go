@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -55,9 +54,9 @@ func newDispatchMCPServerCmd() *cobra.Command {
 
 // rootedMCPWorkingDir preserves the MCP client's original cwd when it belongs
 // to the same Agent Layer project. Clients that start the server elsewhere use
-// the canonical root embedded by sync instead.
+// the canonical root embedded by sync instead. The candidate is used verbatim:
+// POSIX paths may legally begin or end with whitespace.
 func rootedMCPWorkingDir(root string, fallback string, candidate string) string {
-	candidate = strings.TrimSpace(candidate)
 	if candidate == "" || !filepath.IsAbs(candidate) {
 		return fallback
 	}

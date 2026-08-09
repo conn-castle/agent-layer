@@ -31,6 +31,13 @@ func TestRootedMCPWorkingDir(t *testing.T) {
 	if got := rootedMCPWorkingDir(root, root, "relative"); got != root {
 		t.Fatalf("relative working dir = %q, want fallback %q", got, root)
 	}
+	spaced := filepath.Join(root, "nested ")
+	if err := os.Mkdir(spaced, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if got := rootedMCPWorkingDir(root, root, spaced); got != spaced {
+		t.Fatalf("whitespace-suffixed working dir = %q, want %q", got, spaced)
+	}
 }
 
 func TestDispatchHelpWiresAsyncSurface(t *testing.T) {

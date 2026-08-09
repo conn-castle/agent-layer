@@ -56,6 +56,7 @@ _init_doctor_wizard_assert_compact_json_equals() {
   fi
   local actual
   actual="$(tr -d '[:space:]' < "$file")"
+  expected="$(tr -d '[:space:]' <<<"$expected")"
   assert_output_equals "$actual" "$expected" "$label"
 }
 
@@ -228,11 +229,15 @@ _init_doctor_wizard_assert_post_wizard_files() {
     ".mcp.json has provenance marker"
   assert_file_not_contains "$repo_dir/.mcp.json" '"context7"' \
     ".mcp.json has no default MCP servers enabled"
+  # Whitespace inside the launcher script is stripped by the compact-JSON
+  # helper on both sides; \u0026 is Go's JSON escaping of "&".
+  local dispatch_launcher_args
+  dispatch_launcher_args='["-c","AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd \"$1\" \u0026\u0026 exec al dispatch mcp-server","agent-layer-mcp","'"$repo_dir"'"]'
   _init_doctor_wizard_assert_compact_json_equals "$repo_dir/.copilot/mcp-config.json" \
-    '{"mcpServers":{"agent-layer":{"type":"stdio","command":"al","args":["dispatch","mcp-server"],"tools":["*"]}}}' \
+    '{"mcpServers":{"agent-layer":{"type":"stdio","command":"/bin/sh","args":'"$dispatch_launcher_args"',"tools":["*"]}}}' \
     "Copilot CLI MCP config includes the built-in Agent Dispatch server"
   _init_doctor_wizard_assert_compact_json_equals "$repo_dir/.vscode/mcp.json" \
-    '{"servers":{"agent-layer":{"type":"stdio","command":"al","args":["dispatch","mcp-server"]}}}' \
+    '{"servers":{"agent-layer":{"type":"stdio","command":"/bin/sh","args":'"$dispatch_launcher_args"'}}}' \
     "VS Code MCP config includes the built-in Agent Dispatch server"
   assert_file_contains "$repo_dir/.claude/settings.json" '"permissions"' \
     "settings.json has permissions block"
