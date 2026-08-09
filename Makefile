@@ -135,7 +135,7 @@ test: check-gotestsum ## Run tests
 	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/gotestsum" --format testname -- ./...
 
 .PHONY: test-deepswe-planner
-test-deepswe-planner: ## Compare the website planner with exhaustive allocation
+test-deepswe-planner: ## Verify the website task-correlation evidence
 	@node --test scripts/test-deepswe-planner.js
 
 .PHONY: refresh-deepswe-planner-data
@@ -214,6 +214,10 @@ test-e2e: ## Run end-to-end tests (offline — uses cached binaries only)
 .PHONY: test-e2e-online
 test-e2e-online: ## Run e2e tests with online upgrade binary downloads
 	@AL_E2E_ONLINE=1 ./scripts/test-e2e.sh
+
+.PHONY: test-codex-dispatch-wait-live
+test-codex-dispatch-wait-live: al-dev-build ## Run paid local Codex dispatch-wait polling test (never CI)
+	@AL_LIVE_CODEX_DISPATCH_WAIT=1 go test -tags=live_codex -count=1 -run '^TestCodexDispatchWaitStaysDirect$$' -v ./internal/sync
 
 .PHONY: docs-upgrade-check
 docs-upgrade-check: ## Validate upgrade contract docs for a release tag (set RELEASE_TAG=vX.Y.Z)

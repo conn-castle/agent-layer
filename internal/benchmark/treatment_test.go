@@ -35,6 +35,13 @@ func TestTreatmentProjectionAndManifestContainOnlyEffectiveFiles(t *testing.T) {
 	if err := writeNormalizedDispatchConfig(config, []string{"writer", "reviewer"}, model, effort); err != nil {
 		t.Fatalf("writeNormalizedDispatchConfig: %v", err)
 	}
+	configData, err := os.ReadFile(config) // #nosec G304 -- config is beneath a test-owned temporary directory.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(configData), "[agents.codex]\nenabled = true\nlocal_config_dir = true\n") {
+		t.Fatal("normalized Codex treatment does not isolate dispatched clients in the repository-local authenticated home")
+	}
 	manifestRoot := t.TempDir()
 	if err := copyRequiredTree(destination, filepath.Join(manifestRoot, "workspace", "skills")); err != nil {
 		t.Fatal(err)
@@ -77,9 +84,18 @@ func TestSkillsTreatmentPassesManifestTimeoutPolicyToPier(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	repository := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repository, ".codex"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, ".codex", "auth.json"), []byte(`{"token":"test"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	arguments, err := treatmentPierArguments(ExecutionRequest{
-		Model:  model,
-		Effort: effort,
+		RepoRoot:      repository,
+		Model:         model,
+		Effort:        effort,
+		PreflightOnly: true,
 		Bundle: &TreatmentBundle{
 			Root: "/immutable-treatment",
 			Manifest: TreatmentManifest{
@@ -94,6 +110,12 @@ func TestSkillsTreatmentPassesManifestTimeoutPolicyToPier(t *testing.T) {
 	if !strings.Contains(strings.Join(arguments, " "), "--agent-timeout-multiplier 4") {
 		t.Fatalf("Pier arguments omitted treatment timeout policy: %#v", arguments)
 	}
+	if !strings.Contains(strings.Join(arguments, " "), "codex_credentials_path="+filepath.Join(repository, ".codex", "auth.json")) {
+		t.Fatalf("Pier arguments omitted the treatment adapter's Codex credential source: %#v", arguments)
+	}
+	if !strings.Contains(strings.Join(arguments, " "), "preflight_only=true") {
+		t.Fatalf("Pier arguments omitted zero-provider runtime preflight mode: %#v", arguments)
+	}
 }
 
 func TestSkillsTreatmentUsesWorkflowRolesAndAutonomousPrompt(t *testing.T) {
@@ -105,7 +127,7 @@ func TestSkillsTreatmentUsesWorkflowRolesAndAutonomousPrompt(t *testing.T) {
 	if !strings.HasPrefix(string(workflow), autonomous) {
 		t.Fatalf("workflow prompt does not start with the autonomous-run instruction")
 	}
-	for _, required := range []string{"Execute the following skills sequentially.", "instructions: .agent-layer/tmp/instructions.md", "plan_reviewers ({plan_reviewer_count}): {plan_reviewers}", "implementer: {implementer}", "code_reviewer: {code_reviewer}", "fixer: {fixer}"} {
+	for _, required := range []string{"Execute $implement with the following inputs.", "input: .agent-layer/tmp/spec.md", "plan_reviewers ({plan_reviewer_count}): {plan_reviewers}", "implementer: {implementer}", "code_reviewer: {code_reviewer}"} {
 		if !strings.Contains(string(workflow), required) {
 			t.Fatalf("workflow prompt does not require %q", required)
 		}
@@ -115,6 +137,18 @@ func TestSkillsTreatmentUsesWorkflowRolesAndAutonomousPrompt(t *testing.T) {
 			t.Fatalf("workflow prompt hard-enforces model behavior with %q", forbidden)
 		}
 	}
+	for _, forbidden := range []string{
+		"$plan-work",
+		"$fully-implement-plan",
+		"must use the `review-plan` skill",
+		"must use the `implement-plan` skill",
+		"must use the `review-uncommitted-code` skill",
+		"required role skills",
+	} {
+		if strings.Contains(string(workflow), forbidden) {
+			t.Fatalf("workflow prompt requires obsolete leaf-skill evidence with %q", forbidden)
+		}
+	}
 	// The prompt cites a path that a different asset writes. If the two drift,
 	// every skills run points the workflow at a file that does not exist and the
 	// failure is invisible until the transcript is read after the run is paid for.
@@ -122,8 +156,8 @@ func TestSkillsTreatmentUsesWorkflowRolesAndAutonomousPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(adapter), `REMOTE_INSTRUCTIONS_FILE = f"{REMOTE_WORKSPACE}/.agent-layer/tmp/instructions.md"`) {
-		t.Fatal("adapter does not write the instructions file the workflow prompt cites")
+	if !strings.Contains(string(adapter), `REMOTE_SPEC_FILE = f"{REMOTE_WORKSPACE}/.agent-layer/tmp/spec.md"`) {
+		t.Fatal("adapter does not write the specification file the workflow prompt cites")
 	}
 }
 
@@ -134,19 +168,115 @@ func TestBenchmarkDispatchGateFiltersOptionsAndRejectsWrongSelections(t *testing
 	}
 	for _, required := range []string{
 		`arguments[:2] == ["dispatch", "options"]`,
-		`"suggestions": [model]`,
+		`"suggestions": models`,
+		`"suggestions": efforts`,
 		`"allow_custom": False`,
 		`arguments[:2] == ["dispatch", "start"]`,
-		`selected_agent != agent`,
-		`selected_model and selected_model != model`,
-		`selected_effort and selected_effort != effort`,
-		`arguments.extend(["--model", model])`,
-		`arguments.extend(["--reasoning-effort", effort])`,
+		`if len(matches) != 1:`,
+		`arguments.extend(["--model", target["model"]])`,
+		`arguments.extend(["--reasoning-effort", target["reasoning_effort"]])`,
 		`os.execv(REAL_AL, [REAL_AL, *arguments])`,
 	} {
 		if !strings.Contains(string(gate), required) {
 			t.Fatalf("benchmark dispatch gate does not enforce %q", required)
 		}
+	}
+}
+
+// TestBenchmarkDispatchGateExportsPolicyToTheMCPServer guards the one dispatch
+// path the argument-inspecting gate cannot police. An MCP start carries its
+// selections in a tool call, so without this export a coordinator could pick an
+// arbitrary model and silently break treatment comparability.
+func TestBenchmarkDispatchGateExportsPolicyToTheMCPServer(t *testing.T) {
+	gate, err := treatmentAssets.ReadFile("assets/al_dispatch_gate.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		`arguments[:2] == ["dispatch", "mcp-server"]`,
+		`os.environ["AL_BENCHMARK_DISPATCH_TARGETS"] = json.dumps(targets, sort_keys=True)`,
+	} {
+		if !strings.Contains(string(gate), required) {
+			t.Fatalf("benchmark dispatch gate does not export %q to the MCP server", required)
+		}
+	}
+}
+
+// TestTreatmentAdapterSyncsNativeClientConfiguration proves the treatment
+// container generates native client configuration. The built-in Agent Dispatch
+// MCP server and its permission allowlist are produced by sync, not shipped in
+// the bundle, so skipping it would leave the coordinator without dispatch.
+func TestTreatmentAdapterSyncsNativeClientConfiguration(t *testing.T) {
+	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(adapter), "/usr/local/bin/al-real sync") {
+		t.Fatal("treatment adapter does not sync native client configuration in the container")
+	}
+	for _, required := range []string{
+		`PIER_CODEX_AUTH = "/tmp/codex-secrets/auth.json"`,
+		`REMOTE_CODEX_HOME = Codex._REMOTE_CODEX_HOME.as_posix()`,
+		`REMOTE_PROJECT_CODEX_HOME = f"{REMOTE_WORKSPACE}/.codex"`,
+		`REMOTE_CODEX_AUTH = f"{REMOTE_CODEX_HOME}/auth.json"`,
+		`if self._treatment_agent == "codex":`,
+		`command=f"mkdir -p {Path(PIER_CODEX_AUTH).parent}"`,
+		`await environment.upload_file(self._codex_credentials_path, PIER_CODEX_AUTH)`,
+		`f"rm -rf {REMOTE_PROJECT_CODEX_HOME} {REMOTE_CODEX_HOME} "`,
+		`f"&& ln -s {REMOTE_PROJECT_CODEX_HOME} {REMOTE_CODEX_HOME}"`,
+		`if ! test -r {PIER_CODEX_AUTH}`,
+		`ln -sfn {PIER_CODEX_AUTH} {REMOTE_CODEX_AUTH}`,
+		`test -r {REMOTE_CODEX_AUTH}`,
+		`cp -a {REMOTE_PROJECT_CODEX_HOME}/sessions/. \"$sessions\"/`,
+		`'.provider_session_id // empty'`,
+		`Expected one captured Codex session for dispatch $id, found $count`,
+		`mv \"$matches\" \"$target\"`,
+	} {
+		if !strings.Contains(string(adapter), required) {
+			t.Fatalf("treatment adapter does not prepare dispatched Codex authentication with %q", required)
+		}
+	}
+}
+
+func TestTreatmentCodexTrajectorySelectionExcludesDispatchDatesAcrossMidnight(t *testing.T) {
+	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		`def _get_session_dir(self) -> Path | None:`,
+		`sessions_dir.glob("*/*/*/*.jsonl")`,
+		`Expected exactly 1 coordinator session`,
+	} {
+		if !strings.Contains(string(adapter), required) {
+			t.Fatalf("Codex treatment adapter does not isolate coordinator trajectory selection with %q", required)
+		}
+	}
+
+	sessions := filepath.Join(t.TempDir(), "sessions")
+	coordinator := filepath.Join(sessions, "2026", "08", "01")
+	for session, directory := range map[string]string{
+		"coordinator.jsonl": coordinator,
+		"before-midnight.jsonl": filepath.Join(
+			sessions, "agent-layer-dispatch", "2026", "08", "01",
+		),
+		"after-midnight.jsonl": filepath.Join(
+			sessions, "agent-layer-dispatch", "2026", "08", "02",
+		),
+	} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(directory, session), []byte("{}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	candidates, err := filepath.Glob(filepath.Join(sessions, "*", "*", "*", "*.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || filepath.Dir(candidates[0]) != coordinator {
+		t.Fatalf("coordinator session files = %#v, want one file in %q", candidates, coordinator)
 	}
 }
 
@@ -156,11 +286,27 @@ func TestTreatmentAdapterLabelsReasoningEffortInRoleTargets(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, required := range []string{
-		`f"{self._treatment_agent} {self._treatment_model} with "`,
-		`f"{self._treatment_reasoning_effort} reasoning-effort"`,
+		`f"{target['agent']} {target['model']} with "`,
+		`f"{target['reasoning_effort']} reasoning-effort"`,
 	} {
 		if !strings.Contains(string(adapter), required) {
 			t.Fatalf("DeepSWE adapter does not label role-target reasoning effort with %q", required)
+		}
+	}
+}
+
+func TestTreatmentAdapterLoadsDispatchTargetsOnlyForSkillsMode(t *testing.T) {
+	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		`self._dispatch_config = None`,
+		`if treatment_mode == "instructions-and-skills":`,
+		`self._treatment_bundle / "dispatch-targets.json"`,
+	} {
+		if !strings.Contains(string(adapter), required) {
+			t.Fatalf("treatment adapter omitted conditional dispatch loading %q", required)
 		}
 	}
 }
@@ -244,6 +390,9 @@ func TestBuildSkillsTreatmentIsIndependentOfTemporaryStagePath(t *testing.T) {
 	if first.ManifestHash != second.ManifestHash {
 		t.Fatalf("temporary stage path changed treatment identity: %s != %s", first.ManifestHash, second.ManifestHash)
 	}
+	if len(first.Manifest.RequiredRoles) != 0 || len(second.Manifest.RequiredRoles) != 0 {
+		t.Fatalf("skills treatment required legacy dispatch roles: %v, %v", first.Manifest.RequiredRoles, second.Manifest.RequiredRoles)
+	}
 	assertTemplateProjection(
 		t,
 		filepath.Join(repoRoot, "internal", "templates", "instructions"),
@@ -272,6 +421,68 @@ func TestBuildSkillsTreatmentIsIndependentOfTemporaryStagePath(t *testing.T) {
 				t.Fatalf("treatment file %s retained temporary stage root", file.Path)
 			}
 		}
+	}
+}
+
+func TestMatrixTreatmentPinReusesPersistedBundleInsteadOfRebuilding(t *testing.T) {
+	model, effort, err := ParseModelSelection("luna:medium")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := t.TempDir()
+	builds := 0
+	build := func() (*TreatmentBundle, error) {
+		builds++
+		root := t.TempDir()
+		adapter := filepath.Join(root, "adapter", "pier_agent_layer.py")
+		if err := os.MkdirAll(filepath.Dir(adapter), 0o700); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(adapter, []byte("pinned adapter\n"), 0o600); err != nil {
+			return nil, err
+		}
+		manifest, err := treatmentManifest(
+			root, TreatmentInstructionsOnly, nil, TreatmentDispatchConfig{},
+		)
+		if err != nil {
+			return nil, err
+		}
+		manifestHash, err := hashCanonical(manifest)
+		if err != nil {
+			return nil, err
+		}
+		adapterHash, err := fileSHA256(adapter)
+		if err != nil {
+			return nil, err
+		}
+		return &TreatmentBundle{
+			Root: root, Manifest: manifest, ManifestHash: manifestHash,
+			AdapterPath: adapter, AdapterSHA256: adapterHash,
+		}, nil
+	}
+	first, err := pinMatrixTreatmentBundle(
+		state, "final-skills", "Agent Layer Final Skills", model, effort,
+		TreatmentInstructionsOnly, TreatmentDispatchConfig{}, build,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := pinMatrixTreatmentBundle(
+		state, "final-skills", "Agent Layer Final Skills", model, effort,
+		TreatmentInstructionsOnly, TreatmentDispatchConfig{}, func() (*TreatmentBundle, error) {
+			t.Fatal("persisted treatment pin unexpectedly rebuilt")
+			return nil, nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if builds != 1 || first.Root != second.Root || first.ManifestHash != second.ManifestHash {
+		t.Fatalf("treatment pin was not stable: builds=%d first=%#v second=%#v", builds, first, second)
+	}
+	data, err := os.ReadFile(second.AdapterPath)
+	if err != nil || string(data) != "pinned adapter\n" {
+		t.Fatalf("pinned adapter = %q, %v", data, err)
 	}
 }
 

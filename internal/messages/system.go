@@ -71,15 +71,17 @@ const (
 	EnvfileUnterminatedQuotedValue = "unterminated quoted value"
 	EnvfileInvalidQuotedSuffix     = "invalid trailing characters after quoted value"
 
-	// FsutilCreateTempFileFmt formats temp file creation errors.
-	FsutilCreateTempFileFmt = "create temp file for %s: %w"
-	FsutilSetPermissionsFmt = "set permissions for %s: %w"
-	FsutilWriteTempFileFmt  = "write temp file for %s: %w"
-	FsutilSyncTempFileFmt   = "sync temp file for %s: %w"
-	FsutilCloseTempFileFmt  = "close temp file for %s: %w"
-	FsutilRenameTempFileFmt = "rename temp file for %s: %w"
-	FsutilOpenDirFmt        = "open dir %s: %w"
-	FsutilSyncDirFmt        = "sync dir %s: %w"
+	// Filesystem write errors.
+	FsutilCheckExistingFileFmt = "check existing file %s: %w"
+	FsutilReadExistingFileFmt  = "read existing file %s: %w"
+	FsutilCreateTempFileFmt    = "create temp file for %s: %w"
+	FsutilSetPermissionsFmt    = "set permissions for %s: %w"
+	FsutilWriteTempFileFmt     = "write temp file for %s: %w"
+	FsutilSyncTempFileFmt      = "sync temp file for %s: %w"
+	FsutilCloseTempFileFmt     = "close temp file for %s: %w"
+	FsutilRenameTempFileFmt    = "rename temp file for %s: %w"
+	FsutilOpenDirFmt           = "open dir %s: %w"
+	FsutilSyncDirFmt           = "sync dir %s: %w"
 
 	// WarningsResolveConfigFailedFmt formats config resolution failures.
 	WarningsResolveConfigFailedFmt          = "Failed to resolve configuration: %v"

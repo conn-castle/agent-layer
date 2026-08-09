@@ -45,6 +45,134 @@ func TestNormalizePierPreservesOutcomeCostAndDiagnostics(t *testing.T) {
 	}
 }
 
+func TestCompletedPierExecutionIsRecoveredWithoutProviderRetry(t *testing.T) {
+	model, effort, err := ParseModelSelection("fable:high")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := t.TempDir()
+	evidence := t.TempDir()
+	stage := writePierStage(t, "task-checksum", .5, 3.5)
+	request := ExecutionRequest{
+		RepoRoot: repository, EvidenceDir: evidence, EventID: "first-event",
+		Attempt: 1, Task: "example-task", Model: model, Effort: effort,
+		Arm: ArmBaseline, TaskChecksum: "task-checksum", EnvironmentIdentity: "environment-one",
+	}
+	if err := promoteSanitizedPierArtifacts(request, stage); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePierExecutionReceipt(request, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	retry := request
+	retry.EventID = "would-have-called-provider"
+	result, found, err := recoverCompletedPierExecution(retry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || result.EventID != "first-event" || result.EnvironmentIdentity != "environment-one" || result.F2PScore != .5 {
+		t.Fatalf("recovered result = %#v, found = %t", result, found)
+	}
+	executorResult, err := (PierExecutor{}).Execute(context.Background(), retry)
+	if err != nil || executorResult.EventID != "first-event" {
+		t.Fatalf("executor did not recover before provider setup: result=%#v err=%v", executorResult, err)
+	}
+
+	retry.EnvironmentIdentity = "changed-environment"
+	if _, found, err := recoverCompletedPierExecution(retry); err != nil || found {
+		t.Fatalf("changed environment recovered old cell: found=%t err=%v", found, err)
+	}
+}
+
+func TestCleanupPierDockerResourcesUsesExactComposeProject(t *testing.T) {
+	stage := writePierStage(t, "task-checksum", .5, 1)
+	request := ExecutionRequest{Task: "example-task", TaskChecksum: "task-checksum"}
+	original := runBenchmarkDockerCommand
+	var calls []string
+	runBenchmarkDockerCommand = func(_ context.Context, arguments ...string) ([]byte, error) {
+		call := strings.Join(arguments, " ")
+		calls = append(calls, call)
+		switch call {
+		case `ps --all --format {{.ID}}\t{{.Label "com.docker.compose.project"}}`:
+			return []byte("0123456789ab\texample-task__abc1234\n999999999999\tunrelated\n"), nil
+		case `network ls --format {{.ID}}\t{{.Label "com.docker.compose.project"}}`:
+			return []byte("abcdef012345\texample-task__abc1234__verifier__trial\n"), nil
+		case `volume ls --format {{.Name}}\t{{.Label "com.docker.compose.project"}}`:
+			return nil, nil
+		case `image ls --filter reference=example-task__abc1234-main:latest --format {{.ID}}`:
+			return []byte("fedcba987654\n"), nil
+		case `image ls --filter reference=example-task__abc1234__verifier__*-main:latest --format {{.ID}}`:
+			return []byte("111111111111\n"), nil
+		case "rm --force 0123456789ab", "network rm abcdef012345", "image rm fedcba987654 111111111111":
+			return nil, nil
+		default:
+			return nil, fmt.Errorf("unexpected Docker command %q", call)
+		}
+	}
+	t.Cleanup(func() { runBenchmarkDockerCommand = original })
+
+	if err := cleanupPierDockerResources(stage, request); err != nil {
+		t.Fatal(err)
+	}
+	expected := []string{
+		`ps --all --format {{.ID}}\t{{.Label "com.docker.compose.project"}}`,
+		"rm --force 0123456789ab",
+		`network ls --format {{.ID}}\t{{.Label "com.docker.compose.project"}}`,
+		"network rm abcdef012345",
+		`volume ls --format {{.Name}}\t{{.Label "com.docker.compose.project"}}`,
+		`image ls --filter reference=example-task__abc1234-main:latest --format {{.ID}}`,
+		`image ls --filter reference=example-task__abc1234__verifier__*-main:latest --format {{.ID}}`,
+		"image rm fedcba987654 111111111111",
+	}
+	if strings.Join(calls, "\n") != strings.Join(expected, "\n") {
+		t.Fatalf("Docker cleanup calls = %#v", calls)
+	}
+}
+
+func TestCleanupPierDockerResourcesRejectsUnrelatedProject(t *testing.T) {
+	stage := writePierStage(t, "task-checksum", .5, 1)
+	resultPath := filepath.Join(stage, "jobs", "one", "result.json")
+	data, err := os.ReadFile(resultPath) // #nosec G304 -- path is rooted in a test-owned temporary stage.
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+	result["trial_name"] = "unrelated-task__Abc1234"
+	data, err = json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(resultPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err = cleanupPierDockerResources(stage, ExecutionRequest{Task: "example-task", TaskChecksum: "task-checksum"})
+	if err == nil || !strings.Contains(err.Error(), "does not match benchmark task") {
+		t.Fatalf("unrelated cleanup error = %v", err)
+	}
+}
+
+func TestPierCleanupIdentifiesTrialDirectoryAfterCancelledResult(t *testing.T) {
+	stage := t.TempDir()
+	trial := filepath.Join(stage, "jobs", "event", "example-task__Abc1234")
+	if err := os.MkdirAll(trial, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	project, err := identifyPierComposeProject(stage, ExecutionRequest{
+		Task: "example-task", TaskChecksum: "task-checksum",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project != "example-task__abc1234" {
+		t.Fatalf("cancelled trial project = %q", project)
+	}
+}
+
 func TestNormalizePierRejectsAmbiguousAndMalformedEvidence(t *testing.T) {
 	model, effort, err := ParseModelSelection("luna:low")
 	if err != nil {
@@ -93,6 +221,13 @@ func TestDispatchConformanceUsesObservedLifecycleWithoutAffectingScore(t *testin
 			},
 		}},
 	}
+	unconstrained := request
+	unconstrained.Bundle = &TreatmentBundle{Manifest: TreatmentManifest{
+		Mode: TreatmentInstructionsAndSkills,
+	}}
+	if conformant, err := dispatchConformance(t.TempDir(), unconstrained); err != nil || !conformant {
+		t.Fatalf("unconstrained skills treatment = %t, %v", conformant, err)
+	}
 	if conformant, err := dispatchConformance(stage, request); err != nil || conformant {
 		t.Fatalf("missing lifecycle = %t, %v", conformant, err)
 	}
@@ -111,6 +246,14 @@ func TestDispatchConformanceUsesObservedLifecycleWithoutAffectingScore(t *testin
 	}
 	if conformant, err := dispatchConformance(stage, request); err != nil || !conformant {
 		t.Fatalf("complete lifecycle = %t, %v", conformant, err)
+	}
+	for _, name := range []string{"codex-mcp-preflight.json", "dispatch-options-preflight.json"} {
+		if err := os.WriteFile(filepath.Join(dispatchDir, name), []byte("{}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if conformant, err := dispatchConformance(stage, request); err != nil || !conformant {
+		t.Fatalf("lifecycle with preflight evidence = %t, %v", conformant, err)
 	}
 	if err := os.WriteFile(filepath.Join(dispatchDir, "2.json"), []byte(`{"id":"run-2","agent":"codex","model":"gpt-5.6-luna","reasoning_effort":"high","skill":"implement-plan","mode":"fresh","state":"completed"}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -147,6 +290,37 @@ func TestCodexCostUsesRequestLevelUsageAndReconcilesChildren(t *testing.T) {
 		math.Abs(usage.cost.maximum-.290319) > 1e-12 {
 		t.Fatalf("usage = %#v", usage)
 	}
+	exactUsage, err := parseCodexSessionCost(
+		filepath.Join("testdata", "codex-session-cost-with-cache-writes.jsonl"),
+		pricing,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exactUsage.id != "exact-cost-session" ||
+		math.Abs(exactUsage.cost.minimum-.290319) > 1e-12 ||
+		exactUsage.cost.minimum != exactUsage.cost.maximum {
+		t.Fatalf("exact usage = %#v", exactUsage)
+	}
+	exactFixture, err := os.ReadFile(filepath.Join("testdata", "codex-session-cost-with-cache-writes.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zeroFixture := bytes.ReplaceAll(exactFixture, []byte(`"cache_write_input_tokens":60`), []byte(`"cache_write_input_tokens":0`))
+	zeroFixture = bytes.ReplaceAll(zeroFixture, []byte(`"cache_write_input_tokens":100000`), []byte(`"cache_write_input_tokens":0`))
+	zeroFixture = bytes.ReplaceAll(zeroFixture, []byte(`"cache_write_input_tokens":100060`), []byte(`"cache_write_input_tokens":0`))
+	zeroPath := filepath.Join(t.TempDir(), "zero-cache-writes.jsonl")
+	// #nosec G703 -- zeroPath is beneath a test-owned temporary directory.
+	if err := os.WriteFile(zeroPath, zeroFixture, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	zeroUsage, err := parseCodexSessionCost(zeroPath, pricing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if zeroUsage.cost.minimum == zeroUsage.cost.maximum {
+		t.Fatalf("all-zero cache-write telemetry was treated as exact: %#v", zeroUsage)
+	}
 
 	stage := t.TempDir()
 	sessions := filepath.Join(stage, "jobs", "job", "agent", "sessions")
@@ -163,15 +337,35 @@ func TestCodexCostUsesRequestLevelUsageAndReconcilesChildren(t *testing.T) {
 	}
 	for name, id := range map[string]string{
 		"coordinator.jsonl": "shared-cost-session",
-		"second.jsonl":      "second-session",
+		"nested.jsonl":      "nested-session",
 		"child.jsonl":       "child-session",
 	} {
 		data := bytes.Replace(fixture, []byte("shared-cost-session"), []byte(id), 1)
+		if name == "nested.jsonl" {
+			data = bytes.Replace(
+				data,
+				[]byte(`"source":"exec"`),
+				[]byte(`"source":{"subagent":{"thread_spawn":{"parent_thread_id":"child-session"}}}`),
+				1,
+			)
+			data = append(
+				data,
+				[]byte(`{"type":"session_meta","payload":{"id":"child-session","source":"exec"}}`+"\n")...,
+			)
+		}
 		if err := os.WriteFile(filepath.Join(sessions, name), data, 0o600); err != nil { // #nosec G703 -- name comes from the fixed test fixture map.
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(dispatch, "child.json"), []byte(`{"provider_session_id":"child-session"}`), 0o600); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(dispatch, "child.json"),
+		[]byte(`{"provider_session_id":"child-session","model":"gpt-5.6-luna"}`),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	execOutput := `{"type":"turn.completed","usage":{"input_tokens":300000,"cached_input_tokens":200000,"cache_write_input_tokens":0,"output_tokens":10000}}` + "\n"
+	if err := os.WriteFile(filepath.Join(dispatch, "child.stdout"), []byte(execOutput), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cost, err := codexAttemptCost(stage)
@@ -181,7 +375,7 @@ func TestCodexCostUsesRequestLevelUsageAndReconcilesChildren(t *testing.T) {
 	if cost.invocations != 3 ||
 		math.Abs(cost.total.minimum-.720912) > 1e-12 ||
 		math.Abs(cost.total.maximum-.870957) > 1e-12 ||
-		math.Abs(cost.child.maximum-.290319) > 1e-12 {
+		math.Abs(cost.child.maximum-.580638) > 1e-12 {
 		t.Fatalf("cost = %#v", cost)
 	}
 
@@ -207,8 +401,23 @@ func TestCodexCostUsesRequestLevelUsageAndReconcilesChildren(t *testing.T) {
 	if *result.CostUSD == 99 ||
 		math.Abs(*result.CostMinUSD-.240304) > 1e-12 ||
 		math.Abs(*result.CostMaxUSD-.290319) > 1e-12 ||
+		result.CostKind != costKindProviderUsage+"-range" ||
 		*result.ChildCostUSD != 0 {
 		t.Fatalf("Codex baseline did not use the same token-derived cost basis: %#v", result)
+	}
+	if err := os.WriteFile(filepath.Join(baselineSessions, "coordinator.jsonl"), exactFixture, 0o600); err != nil { // #nosec G703 -- baselineSessions is beneath a test-owned temporary directory.
+		t.Fatal(err)
+	}
+	exactResult, err := normalizePier(baselineStage, ExecutionRequest{
+		EventID: "event", Attempt: 1, Task: "example-task", Model: model,
+		Effort: effort, Arm: ArmBaseline, TaskChecksum: "task-checksum",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exactResult.CostKind != costKindProviderUsage ||
+		*exactResult.CostMinUSD != *exactResult.CostMaxUSD {
+		t.Fatalf("Codex baseline did not use exact populated cache-write evidence: %#v", exactResult)
 	}
 
 	incomplete := filepath.Join(t.TempDir(), "session.jsonl")
@@ -221,6 +430,68 @@ func TestCodexCostUsesRequestLevelUsageAndReconcilesChildren(t *testing.T) {
 	if _, err := parseCodexSessionCost(incomplete, pricing); err == nil ||
 		!strings.Contains(err.Error(), "incomplete request-level") {
 		t.Fatalf("incomplete usage error = %v", err)
+	}
+}
+
+func TestCodexCostToleratesInterruptedNonBillingResponseItem(t *testing.T) {
+	pricing, err := loadBenchmarkPricing()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := os.ReadFile(filepath.Join("testdata", "codex-session-cost.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	interrupted := []byte(`{"timestamp":"2026-08-03T20:00:03Z","type":"response_item","payload":{"type":"reasoning","encrypted_content":"partial` + "\n")
+	if err := os.WriteFile(path, append(interrupted, fixture...), 0o600); err != nil { // #nosec G703 -- path is rooted in a test-owned temporary directory.
+		t.Fatal(err)
+	}
+	usage, err := parseCodexSessionCost(path, pricing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage.id != "shared-cost-session" {
+		t.Fatalf("usage = %#v", usage)
+	}
+
+	interruptedBilling := []byte(`{"timestamp":"2026-08-03T20:00:03Z","type":"event_msg","payload":{"type":"token_count"` + "\n")
+	if err := os.WriteFile(path, append(interruptedBilling, fixture...), 0o600); err != nil { // #nosec G703 -- path is rooted in a test-owned temporary directory.
+		t.Fatal(err)
+	}
+	if _, err := parseCodexSessionCost(path, pricing); err == nil ||
+		!strings.Contains(err.Error(), "decode codex session") {
+		t.Fatalf("interrupted billing error = %v", err)
+	}
+}
+
+func TestCodexCostRejectsDispatchWithoutRequestLevelSessionEvidence(t *testing.T) {
+	stage := t.TempDir()
+	sessions := filepath.Join(stage, "jobs", "job", "agent", "sessions")
+	dispatch := filepath.Join(stage, "jobs", "job", "agent", "agent-layer-dispatch")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dispatch, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := os.ReadFile(filepath.Join("testdata", "codex-session-cost.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sessions, "coordinator.jsonl"), fixture, 0o600); err != nil { // #nosec G703 -- sessions is beneath a test-owned temporary directory.
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(dispatch, "missing.json"),
+		[]byte(`{"provider_session_id":"missing-session","model":"gpt-5.6-luna"}`),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := codexAttemptCost(stage); err == nil ||
+		!strings.Contains(err.Error(), `dispatch session "missing-session" has no captured request-level session evidence`) {
+		t.Fatalf("codexAttemptCost() error = %v", err)
 	}
 }
 
@@ -404,7 +675,7 @@ func TestArtifactSanitizationUsesVersionedEvidenceRoot(t *testing.T) {
 	}
 }
 
-func TestArmExecutorPreservesSuccessesAndReturnsEveryFailure(t *testing.T) {
+func TestArmExecutorStopsSchedulingAfterInfrastructureFailure(t *testing.T) {
 	model, effort, err := ParseModelSelection("luna:low")
 	if err != nil {
 		t.Fatal(err)
@@ -417,22 +688,198 @@ func TestArmExecutorPreservesSuccessesAndReturnsEveryFailure(t *testing.T) {
 	loaded := loadedBenchmarkPlan{
 		ID: strings.Repeat("a", 64), Plan: plan, Model: model, Effort: effort, RunCount: 4,
 	}
-	executor := &selectiveFailureExecutor{failures: map[string]bool{
-		"first-task:1": true, "second-task:2": true,
-	}}
+	executor := &selectiveFailureExecutor{failures: map[string]bool{"first-task:2": true}}
 	root := t.TempDir()
 	execution := armExecution{
 		repoRoot: root, stateDir: filepath.Join(root, "evidence"),
-		arm: ArmBaseline, concurrency: 2, loaded: loaded,
+		arm: ArmBaseline, concurrency: 1, loaded: loaded,
 		checksums: map[string]string{"first-task": "first", "second-task": "second"},
 	}
 	err = executePlanArm(context.Background(), execution, executor)
-	if err == nil || !strings.Contains(err.Error(), "first-task repetition 1") ||
-		!strings.Contains(err.Error(), "second-task repetition 2") {
-		t.Fatalf("aggregate failures = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "first-task repetition 2") {
+		t.Fatalf("infrastructure failure = %v", err)
+	}
+	if len(executor.calls) != 2 {
+		t.Fatalf("executed %d cells after failure, want 2", len(executor.calls))
+	}
+	if missing := missingPlanCells(execution); len(missing) != 3 {
+		t.Fatalf("missing cells = %#v; expected one preserved success and no later runs", missing)
+	}
+}
+
+func TestArmExecutorRerunsCapacityFailureAfterWaitWithoutStoppingOtherCells(t *testing.T) {
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded := loadedBenchmarkPlan{
+		ID: strings.Repeat("a", 64),
+		Plan: benchmarkPlan{Tasks: []benchmarkPlanTask{
+			{ID: "first-task", RepetitionsPerArm: 2},
+			{ID: "second-task", RepetitionsPerArm: 1},
+		}},
+		Model: model, Effort: effort, RunCount: 3,
+	}
+	executor := &capacityOnceExecutor{}
+	waitCalls := 0
+	root := t.TempDir()
+	execution := armExecution{
+		repoRoot: root, stateDir: filepath.Join(root, "evidence"),
+		arm: ArmTreatment, concurrency: 1, loaded: loaded,
+		checksums: map[string]string{"first-task": "first", "second-task": "second"},
+		capacityWait: func(context.Context) error {
+			waitCalls++
+			return nil
+		},
+	}
+	if err := executePlanArm(context.Background(), execution, executor); err != nil {
+		t.Fatal(err)
+	}
+	if waitCalls != 1 {
+		t.Fatalf("capacity waits = %d, want 1", waitCalls)
+	}
+	if len(executor.calls) != 4 {
+		t.Fatalf("executions = %d, want one fresh retry plus three successful cells", len(executor.calls))
+	}
+	if executor.calls[0].EventID == executor.calls[1].EventID {
+		t.Fatal("capacity retry reused the failed provider event")
+	}
+	if missing := missingPlanCells(execution); len(missing) != 0 {
+		t.Fatalf("missing cells after capacity retry = %#v", missing)
+	}
+}
+
+func TestArmExecutorReturnsCancellationDuringCapacityWait(t *testing.T) {
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded := loadedBenchmarkPlan{
+		ID: strings.Repeat("a", 64),
+		Plan: benchmarkPlan{Tasks: []benchmarkPlanTask{
+			{ID: "first-task", RepetitionsPerArm: 1},
+		}},
+		Model: model, Effort: effort, RunCount: 1,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	execution := armExecution{
+		repoRoot: t.TempDir(), stateDir: filepath.Join(t.TempDir(), "evidence"),
+		arm: ArmTreatment, concurrency: 1, loaded: loaded,
+		checksums: map[string]string{"first-task": "first"},
+		capacityWait: func(context.Context) error {
+			cancel()
+			return context.Canceled
+		},
+	}
+
+	err = executePlanArm(ctx, execution, &capacityOnceExecutor{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("capacity cancellation = %v, want context canceled", err)
+	}
+}
+
+func TestProviderCapacityRequiresExactProviderTranscriptEvidence(t *testing.T) {
+	stage := t.TempDir()
+	transcript := filepath.Join(stage, "jobs", "one", "agent", "codex.txt")
+	if err := os.MkdirAll(filepath.Dir(transcript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		transcript,
+		[]byte(`{"type":"error","message":"`+providerCapacityMessage+`"}`+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if capacity, err := hasProviderCapacityEvidence(stage); err != nil || !capacity {
+		t.Fatalf("capacity evidence = %t, %v", capacity, err)
+	}
+	if err := os.WriteFile(transcript, []byte("generic provider failure\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if capacity, err := hasProviderCapacityEvidence(stage); err != nil || capacity {
+		t.Fatalf("generic failure classified as capacity = %t, %v", capacity, err)
+	}
+}
+
+func TestTreatmentRuntimePreflightRequiresEvidenceWithoutProviderSession(t *testing.T) {
+	stage := writePierStage(t, "task-checksum", .5, 0)
+	evidence := filepath.Join(stage, "jobs", "one", "agent", dispatchEvidenceDir)
+	if err := os.MkdirAll(evidence, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"codex-mcp-preflight.json", "dispatch-options-preflight.json"} {
+		if err := os.WriteFile(filepath.Join(evidence, name), []byte("{}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ExecutionRequest{
+		Task: "example-task", TaskChecksum: "task-checksum", Model: model, Effort: effort,
+		Bundle: &TreatmentBundle{Manifest: TreatmentManifest{Mode: TreatmentInstructionsAndSkills}},
+	}
+	if err := validatePierTreatmentPreflight(stage, request); err != nil {
+		t.Fatalf("valid runtime preflight: %v", err)
+	}
+	session := filepath.Join(stage, "jobs", "one", "agent", "sessions", "session.jsonl")
+	if err := os.MkdirAll(filepath.Dir(session), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(session, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validatePierTreatmentPreflight(stage, request); err == nil ||
+		!strings.Contains(err.Error(), "unexpectedly invoked the provider") {
+		t.Fatalf("provider session accepted in runtime preflight: %v", err)
+	}
+}
+
+func TestInstructionsOnlyRuntimePreflightDoesNotRequireDispatchEvidence(t *testing.T) {
+	stage := writePierStage(t, "task-checksum", .5, 0)
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ExecutionRequest{
+		Task: "example-task", TaskChecksum: "task-checksum", Model: model, Effort: effort,
+		Bundle: &TreatmentBundle{Manifest: TreatmentManifest{Mode: TreatmentInstructionsOnly}},
+	}
+	if err := validatePierTreatmentPreflight(stage, request); err != nil {
+		t.Fatalf("valid instructions-only runtime preflight: %v", err)
+	}
+}
+
+func TestArmExecutorLimitsNewRunsWithoutInvalidatingCachedProgress(t *testing.T) {
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded := loadedBenchmarkPlan{
+		ID: strings.Repeat("a", 64),
+		Plan: benchmarkPlan{Tasks: []benchmarkPlanTask{
+			{ID: "first-task", RepetitionsPerArm: 2},
+			{ID: "second-task", RepetitionsPerArm: 1},
+		}},
+		Model: model, Effort: effort, RunCount: 3,
+	}
+	executor := &baselineFakeExecutor{}
+	root := t.TempDir()
+	execution := armExecution{
+		repoRoot: root, stateDir: filepath.Join(root, "evidence"),
+		arm: ArmBaseline, concurrency: 1, maxNewRuns: 1, loaded: loaded,
+		checksums: map[string]string{"first-task": "first", "second-task": "second"},
+	}
+	if err := executePlanArm(context.Background(), execution, executor); err != nil {
+		t.Fatal(err)
+	}
+	if len(executor.calls) != 1 {
+		t.Fatalf("executed %d new runs, want 1", len(executor.calls))
 	}
 	if missing := missingPlanCells(execution); len(missing) != 2 {
-		t.Fatalf("missing cells = %#v; completed successes were not preserved", missing)
+		t.Fatalf("missing cells after bounded run = %#v", missing)
 	}
 }
 
@@ -497,12 +944,39 @@ func TestPinnedCheckoutValidationRejectsMissingAndWrongRepositoryState(t *testin
 type selectiveFailureExecutor struct {
 	mutex    sync.Mutex
 	failures map[string]bool
+	calls    []string
+}
+
+type capacityOnceExecutor struct {
+	calls []ExecutionRequest
+}
+
+func (executor *capacityOnceExecutor) Execute(_ context.Context, request ExecutionRequest) (AttemptResult, error) {
+	executor.calls = append(executor.calls, request)
+	if len(executor.calls) == 1 {
+		return AttemptResult{}, fmt.Errorf("%w: %s", errProviderCapacity, providerCapacityMessage)
+	}
+	cost, duration := .1, 1.0
+	now := time.Now().UTC()
+	return AttemptResult{
+		SchemaVersion: StorageSchemaVersion, EventID: request.EventID,
+		Attempt: request.Attempt, Task: request.Task, Status: statusSuccess,
+		F2PPassed: 1, F2PTotal: 2, F2PScore: .5,
+		CostUSD: &cost, CostKind: costKindProviderReported,
+		DurationSeconds: &duration, TaskChecksum: request.TaskChecksum,
+		StartedAt: now, FinishedAt: now.Add(time.Second),
+		Provider: request.Model.Adapter, PublishedModel: request.Model.PublishedIdentifier,
+		RuntimeModel: request.Model.RuntimeIdentifier, ReasoningEffort: request.Effort,
+		ProviderClientVersion: request.Model.ProviderClientVersion,
+		InvocationCount:       1, DispatchConformant: true,
+	}, nil
 }
 
 func (executor *selectiveFailureExecutor) Execute(_ context.Context, request ExecutionRequest) (AttemptResult, error) {
 	key := fmt.Sprintf("%s:%d", request.Task, request.Attempt)
 	executor.mutex.Lock()
 	fails := executor.failures[key]
+	executor.calls = append(executor.calls, key)
 	executor.mutex.Unlock()
 	if fails {
 		return AttemptResult{}, errors.New("observed failure")
@@ -531,6 +1005,7 @@ func writePierStage(t *testing.T, checksum string, score, cost float64) string {
 	}
 	started := time.Now().UTC().Add(-time.Second)
 	raw := map[string]any{
+		"trial_name":    "example-task__Abc1234",
 		"task_checksum": checksum, "started_at": started, "finished_at": started.Add(time.Second),
 		"agent_info":   map[string]any{"model_info": map[string]any{"provider": "openai"}},
 		"agent_result": map[string]any{"cost_usd": cost},

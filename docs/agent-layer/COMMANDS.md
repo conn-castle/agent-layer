@@ -150,6 +150,14 @@ Run from: repo root
 Prerequisites: Go 1.26.0+, `curl`, `sha256sum` or `shasum`, network access
 Notes: Same as `make test-e2e` but sets `AL_E2E_ONLINE=1` to download release binaries from GitHub. Use before releases or to populate the persistent binary cache. Pin the latest release version with `AL_E2E_LATEST_VERSION=X.Y.Z`.
 
+- Verify live Codex Agent Dispatch waits do not create polling turns
+```bash
+make test-codex-dispatch-wait-live
+```
+Run from: repo root
+Prerequisites: Authenticated Codex CLI with access to `gpt-5.6-luna`, network access
+Notes: Paid, local-only integration test. It creates a disposable Agent Layer project, runs fresh Luna-low coordinator and child sessions, and inspects the coordinator rollout for one direct `dispatch_wait` with no Agent Layer code-mode wrapper or polling turns. The `live_codex` build tag excludes it from ordinary test and CI targets.
+
 - Run e2e tests for CI (mandatory upgrade scenarios)
 ```bash
 make test-e2e-ci
@@ -295,15 +303,15 @@ make refresh-deepswe-planner-data
 ```
 Run from: repo root
 Prerequisites: Node 22+, curl, and network access
-Notes: Downloads the official DeepSWE v1.1 trials/tasks JSON files into `.agent-layer/tmp/deepswe-planner-data/`, validates required source fields, excludes unusable trials visibly, and writes the versioned browser snapshot. Review the printed source URL and SHA-256 before accepting a changed snapshot. The generated `site/static/deepswe-planner/app/data.js` intentionally exceeds the general 500 KB pre-commit limit because it is the planner's reviewable, reproducible evidence snapshot.
+Notes: Downloads the official DeepSWE v1.1 trials/tasks JSON files into `.agent-layer/tmp/deepswe-planner-data/`, validates required source fields, excludes unusable trials visibly, precomputes deterministic one-run task-correlation distributions and per-task OLS calibrations, and writes the versioned browser snapshot. Review the printed source URL and SHA-256 before accepting a changed snapshot. The generated `site/static/deepswe-planner/app/data.js` intentionally exceeds the general 500 KB pre-commit limit because it is the planner's reviewable, reproducible evidence snapshot.
 
-- Verify the website optimizer against exhaustive allocation
+- Verify the website task-correlation evidence
 ```bash
 make test-deepswe-planner
 ```
 Run from: repo root
 Prerequisites: Node 22+
-Notes: Executes the planner's actual browser calculation code against the pinned published snapshot, exhaustively enumerates a deterministic small task/repetition search space, and verifies the optimal allocation and stable export contract.
+Notes: Verifies deterministic build-time correlations and OLS calibrations, incomplete-cell exclusion, conservative sorting, inverse residual-variance weights, budget highlighting, deterministic score/price simulation, and comparison-allocation reuse.
 
 - Build release artifacts locally (cross-compile)
 ```bash
@@ -345,36 +353,46 @@ BENCH_LABEL="$(TZ=America/New_York date '+%Y-%m-%d %I:%M %p ET') — Luna Low af
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+, Git, Docker, `uvx`, Codex authentication, the preserved selection and dispatch files under `.agent-layer/tmp`, and the compatible completed matrix state under `.agent-layer/state/benchmarks/deepswe/matrices/c9be59278c2d7b9b1e9b03dd9a68751ccc206df1f9dadab685d67674ded51c8b`
-Notes: This is the recurring descriptive eight-task experiment, with one repetition per task. It is distinct from the website-planned campaign below. Run it from a checkout whose `origin` is this repository; the preflight verifies that commit `075ca0d` exists locally and fetches it from `origin` when missing. Commit `075ca0d` is the report-compatible matrix runner: it supports the current `$implement` workflow and dispatch-v2 file while retaining the task-environment and arm identities used by the completed Luna-low baseline. The binary runs from the repository root, so it fingerprints and packages the repository's current `internal/templates/instructions` and `internal/templates/skills`, not the runner snapshot's templates. Preflight should report `8 of 8` baseline cells cached and `0 of 8` treatment cells cached before paid execution. If it does not, stop rather than rerunning the baseline. The matrix report is written under the matrix state's `report/` directory; the latest consolidated scratch reports are `.agent-layer/tmp/deepswe-valid-runs-full-report.html` and `.agent-layer/tmp/all-eight-task-arms-live.{html,json}`.
+Notes: This is the recurring descriptive eight-task experiment, with one repetition per task. It is distinct from the schema-v2 plan campaign below. Run it from a checkout whose `origin` is this repository; the preflight verifies that commit `075ca0d` exists locally and fetches it from `origin` when missing. Commit `075ca0d` is the report-compatible matrix runner: it supports the current `$implement` workflow and dispatch-v2 file while retaining the task-environment and arm identities used by the completed Luna-low baseline. The binary runs from the repository root, so it fingerprints and packages the repository's current `internal/templates/instructions` and `internal/templates/skills`, not the runner snapshot's templates. Preflight should report `8 of 8` baseline cells cached and `0 of 8` treatment cells cached before paid execution. If it does not, stop rather than rerunning the baseline. The matrix report is written under the matrix state's `report/` directory; the latest consolidated scratch reports are `.agent-layer/tmp/deepswe-valid-runs-full-report.html` and `.agent-layer/tmp/all-eight-task-arms-live.{html,json}`.
 
 Use a unique treatment label in the form `YYYY-MM-DD h:mm AM/PM ET — Luna Low <purpose> repeat <n> — <run-id>` (for example, `2026-08-05 8:12 PM ET — Luna Low after-fix repeat 1 — kP3x9Q`). The command derives the collision-resistant run ID from the unique `mktemp` runner directory. Do not reuse lifecycle labels such as `Latest` or `Final`; the date, description, repetition, and run ID keep repeated eight-task runs distinguishable in reports. Stored arm manifests are immutable benchmark evidence, so apply clearer historical names as report-level aliases rather than editing completed manifests.
 
-- Validate or run the bare-model baseline from an exported website plan
+- Preflight every task in the pinned DeepSWE catalog without provider calls
 ```bash
-go run ./cmd/al benchmark baseline --check --plan <plan.json> --task-concurrency 4
-go run ./cmd/al benchmark baseline --plan <plan.json> --task-concurrency 4 --yes
-pbpaste | go run ./cmd/al benchmark baseline --check --plan -
+go run ./cmd/al benchmark readiness --task-concurrency 4
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+, Git, Docker, `uvx`, provider authentication, and a valid `deepswe-benchmark-plan` JSON exported by the website
-Notes: The website is the only task/repetition selector. The command validates and executes its exact allocation. `--plan -` reads the exported JSON from standard input. Successful calls are immutable and reused by plan ID; failures are not retried automatically.
+Prerequisites: Go 1.26.0+, Git, Docker, and network access when the pinned DeepSWE checkout or task images are not cached
+Notes: Enumerates every task in the pinned DeepSWE checkout, validates required task files and verifier startup definitions, checks each readiness contract, pins each task image by digest, and runs each task-owned readiness check with network disabled. It writes only content-addressed readiness receipts under `.agent-layer/state/benchmarks/deepswe/`; it never invokes a provider model. A nonzero result lists every task that failed.
+
+- Validate or run the bare-model baseline from a benchmark plan
+```bash
+go run ./cmd/al benchmark baseline --check --plan <plan.json> --execution luna:low --task-concurrency 4
+go run ./cmd/al benchmark baseline --plan <plan.json> --execution luna:low --task-concurrency 4 --yes
+pbpaste | go run ./cmd/al benchmark baseline --check --plan - --execution luna:low
+```
+Run from: repo root
+Prerequisites: Go 1.26.0+, Git, Docker, `uvx`, provider authentication, and a valid `deepswe-benchmark-plan` JSON
+Notes: The website currently presents task-level correlation, cost, and F2P evidence but does not create plans. `--execution` independently selects the model and reasoning used by both local arms. The command validates and executes the exact supplied allocation; `--plan -` reads it from standard input. Successful calls are immutable and reused only when both plan and execution configuration match; failures are not retried automatically.
 
 - Validate or run one immutable Agent Layer version
 ```bash
-go run ./cmd/al benchmark treatment --check --plan <plan.json> --label "Iteration 1"
-go run ./cmd/al benchmark treatment --plan <plan.json> --label "Iteration 1" --task-concurrency 4 --yes
+go run ./cmd/al benchmark treatment --check --plan <plan.json> --execution luna:low --label "Iteration 1"
+go run ./cmd/al benchmark treatment --plan <plan.json> --execution luna:low --label "Iteration 1" --max-new-runs 1 --yes
+go run ./cmd/al benchmark treatment --plan <plan.json> --execution luna:low --label "Iteration 1" --task-concurrency 4 --yes
 ```
 Run from: repo root
 Prerequisites: A completed baseline plus the baseline prerequisites
-Notes: The current Agent Layer instructions and skills are fingerprinted into a version identity. A changed bundle creates a new version and reuses the shared baseline. `--check` validates readiness and reports missing calls without writing state or invoking a model. Treatment cost is not inferred from the baseline, so paid execution reports the number of calls and asks for explicit confirmation.
+Notes: The current Agent Layer instructions and skills are fingerprinted into a version identity. A changed bundle creates a new version and reuses the shared baseline for the same plan and `--execution` configuration, including across provider-client upgrades. Each arm preserves its actual provider-client version; a mismatch remains reportable and produces a comparability warning rather than invalidating or separating the evidence. `--check` prints the calibration pair and execution configuration, validates readiness, and reports missing calls without writing state or invoking a model. Treatment cost is not inferred from the baseline, so paid execution reports the number of calls and asks for explicit confirmation.
+Use `--max-new-runs 1` for a bounded paid probe; its successful result is cached, and a later unrestricted run executes only the remaining cells.
 
 - Generate the campaign report without model calls
 ```bash
-go run ./cmd/al benchmark report --plan <plan.json>
+go run ./cmd/al benchmark report --plan <plan.json> --execution luna:low
 ```
 Run from: repo root
 Prerequisites: A completed baseline and at least one completed treatment version. An affected historical score also requires either its generated `canonical-result.json` or the preserved verifier artifacts needed to regenerate that canonical result.
-Notes: Calculates the observed two-sided threshold from both arms, then writes canonical JSON and offline HTML from immutable evidence. It fails rather than report a known-incorrect historical score when neither canonical correction nor its verifier evidence remains. It does not invoke a provider, Pier, Docker, or a network service. Plans exported before cost-axis provenance was added require an explicit canonical `--analysis` artifact.
+Notes: Calculates the observed two-sided threshold from both arms for the selected execution campaign, then writes canonical JSON and offline HTML from immutable evidence. It fails rather than report a known-incorrect historical score when neither canonical correction nor its verifier evidence remains. The report displays each arm's provider-client version and warns when versions differ without excluding the comparison. It does not invoke a provider, Pier, Docker, or a network service. Plans exported before cost-axis provenance was added require an explicit canonical `--analysis` artifact.
 
 - Regenerate canonical scores for affected stored DeepSWE runs
 ```bash
@@ -383,3 +401,33 @@ go run ./cmd/al benchmark correct-scores
 Run from: repo root
 Prerequisites: Preserved benchmark result and verifier artifacts under `.agent-layer/state/benchmarks/deepswe`
 Notes: Applies versioned corrections only to their pinned task checksum and writes derived `canonical-result.json` files beside the immutable upstream results. Reports use the canonical result as the score. The command makes no provider, Pier, Docker, or network calls and is safe to repeat.
+
+- Generate one completed-matrix report with graph, summary, and pairwise p-values
+```bash
+node scripts/render-deepswe-matrix-report.js \
+  --selection <selection.json> \
+  --trials <matching-trials.json> \
+  --matrix-dir <matrix-state-directory> \
+  --additional-arms-from <older-matrix-state-directory> \
+  --output <report.html> \
+  --json-output <report.json>
+```
+Run from: repo root
+Prerequisites: Node 22+, a completed descriptive matrix, and the exact published-trials snapshot named by the selection
+Notes: Discovers every completed arm from immutable matrix manifests and results, optionally combines all completed arms from one older matrix with `--additional-arms-from`, verifies the trials snapshot SHA-256, and regenerates both report artifacts without model, Docker, or network calls. Incomplete arms are reported explicitly and excluded. Use `--additional-baselines-from` instead when only the latest baseline per model/reasoning configuration should be imported. The HTML contains the cost-versus-score graph, arm summary, and complete two-sided calibrated Welch–Satterthwaite p-value matrix.
+
+- Run a descriptive matrix with explicit Agent Dispatch role targets
+```bash
+go run ./cmd/al benchmark matrix \
+  --selection <selection.json> \
+  --baseline-execution sol:medium \
+  --treatment-execution sol:medium \
+  --treatment-label "Agent Layer" \
+  --treatment-pin final-skills \
+  --dispatch-config <dispatch.toml> \
+  --task-concurrency 4 \
+  --yes
+```
+Run from: repo root
+Prerequisites: Baseline benchmark prerequisites and a validated `agent-layer-benchmark-dispatch-v2` TOML file.
+Notes: The dispatch file assigns exact `agent`, `model`, and `reasoning_effort` targets to `plan_reviewers`, `implementer`, and `code_reviewer`. Its canonical content is included in the immutable treatment identity. `--treatment-pin` names the persisted treatment bundle under `.agent-layer/state/benchmarks/deepswe/matrices/<selection-id>/treatment-pins/`; the first run for a pin builds and stores the bundle, and later runs reuse those exact bytes so working-tree edits to instructions or skills do not silently split an in-progress arm. It defaults to the treatment label and requires `--treatment-execution`. Use a new pin name to benchmark a changed bundle.

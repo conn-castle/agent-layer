@@ -59,9 +59,10 @@ func (RealSystem) MkdirAll(path string, perm os.FileMode) error {
 	return os.MkdirAll(path, perm)
 }
 
-// WriteFileAtomic writes data to a file atomically by writing to a temp file and renaming.
+// WriteFileAtomic writes changed data atomically and preserves an identical
+// regular file so no-op syncs do not emit configuration watcher events.
 func (RealSystem) WriteFileAtomic(filename string, data []byte, perm os.FileMode) error {
-	return fsutil.WriteFileAtomic(filename, data, perm)
+	return fsutil.WriteFileAtomicIfChanged(filename, data, perm)
 }
 
 // MarshalIndent returns the JSON encoding of v with indentation.

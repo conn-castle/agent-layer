@@ -8,151 +8,232 @@ import (
 	"testing"
 )
 
-// validBenchmarkPlanDocument returns the exported plan fixture as a mutable
-// document so a single field can be invalidated per case.
-func validBenchmarkPlanDocument(t *testing.T) map[string]any {
+// benchmarkPlanDocument returns the website-exported plan as a mutable map so a
+// test can invalidate exactly one part of the paid allocation contract.
+func benchmarkPlanDocument(t *testing.T) map[string]any {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "plan.json")
 	writeBenchmarkPlanFixture(t, path)
-	addCostAxisToPlanFixture(t, path)
-	raw, err := os.ReadFile(path) // #nosec G304 -- test-owned path.
+	data, err := os.ReadFile(path) // #nosec G304 -- path is inside this test's temporary directory.
 	if err != nil {
 		t.Fatal(err)
 	}
-	var document map[string]any
-	if err := json.Unmarshal(raw, &document); err != nil {
+	var plan map[string]any
+	if err := json.Unmarshal(data, &plan); err != nil {
 		t.Fatal(err)
 	}
-	return document
+	return plan
 }
 
-func planTasksFixture(document map[string]any) []any {
-	return document["tasks"].([]any)
-}
-
-func planTaskFixture(document map[string]any, index int) map[string]any {
-	return planTasksFixture(document)[index].(map[string]any)
-}
-
-// TestBenchmarkPlanRejectsAnythingItCannotVouchFor covers the only gate between
-// a JSON file the user pastes in and a run that spends real money against a
-// provider. The plan carries the task selection, repetition counts, and spend
-// estimate the campaign is later reported under, so a plan whose own numbers do
-// not agree — or whose provenance is missing — must never be loaded.
-func TestBenchmarkPlanRejectsAnythingItCannotVouchFor(t *testing.T) {
-	if _, err := loadBenchmarkPlanJSON(nil); err == nil {
-		t.Fatal("an empty plan was accepted")
+func loadPlanDocument(t *testing.T, plan map[string]any) (loadedBenchmarkPlan, error) {
+	t.Helper()
+	data, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := loadBenchmarkPlanJSON([]byte("not-json")); err == nil {
-		t.Fatal("a plan that is not JSON was accepted")
+	return loadBenchmarkPlanJSON(data)
+}
+
+func TestBenchmarkPlanRefusesAllocationsItCannotExecuteFaithfully(t *testing.T) {
+	if _, err := loadPlanDocument(t, benchmarkPlanDocument(t)); err != nil {
+		t.Fatalf("valid plan rejected: %v", err)
 	}
 
-	tests := []struct {
-		name    string
-		breakIt func(map[string]any)
+	for _, test := range []struct {
+		name   string
+		mutate func(map[string]any)
+		wanted string
 	}{
-		{"unsupported schema", func(d map[string]any) { d["schema"] = "some-other-schema" }},
-		{"unsupported schema version", func(d map[string]any) { d["schemaVersion"] = 99 }},
-		{"the website never marked the result valid", func(d map[string]any) {
-			d["result"].(map[string]any)["valid"] = false
-		}},
-		{"snapshot provenance points elsewhere", func(d map[string]any) {
-			d["snapshot"].(map[string]any)["url"] = "https://example.com/trials.json"
-		}},
-		{"snapshot digest is not a full hash", func(d map[string]any) {
-			d["snapshot"].(map[string]any)["sha256"] = strings.Repeat("a", 32)
-		}},
-		{"target model is not a supported selection", func(d map[string]any) {
-			d["target"].(map[string]any)["model"] = "some-unreleased-model"
-		}},
-		{"no published harness", func(d map[string]any) {
-			d["target"].(map[string]any)["harnesses"] = []any{}
-		}},
-		{"a published harness is unnamed", func(d map[string]any) {
-			d["target"].(map[string]any)["harnesses"] = []any{""}
-		}},
-		{"no tasks selected", func(d map[string]any) { d["tasks"] = []any{} }},
-		{"significance level is not a probability", func(d map[string]any) {
-			d["parameters"].(map[string]any)["twoSidedSignificanceLevel"] = 1.0
-		}},
-		{"estimated spend exceeds the plan budget", func(d map[string]any) {
-			d["parameters"].(map[string]any)["baselineBudgetUsd"] = .05
-		}},
-		{"decision threshold is outside the score range", func(d map[string]any) {
-			d["result"].(map[string]any)["decisionThreshold"] = 1.5
-		}},
-		{"a task is repeated", func(d map[string]any) {
-			planTaskFixture(d, 1)["id"] = planTaskFixture(d, 0)["id"]
-		}},
-		{"a task name is not a catalog identifier", func(d map[string]any) {
-			planTaskFixture(d, 0)["id"] = "First Benchmark Task"
-		}},
-		{"a task has too few repetitions to estimate variance", func(d map[string]any) {
-			planTaskFixture(d, 0)["repetitionsPerArm"] = 1
-		}},
-		{"a task has more repetitions than the plan allows", func(d map[string]any) {
-			planTaskFixture(d, 0)["repetitionsPerArm"] = 5
-		}},
-		{"a task target mean is outside the score range", func(d map[string]any) {
-			planTaskFixture(d, 0)["target"].(map[string]any)["mean"] = 1.5
-		}},
-		{"a task carries no cost estimate", func(d map[string]any) {
-			planTaskFixture(d, 0)["targetEstimatedBaselineCostUsd"] = 0
-		}},
-		{"task costs do not sum to the estimated spend", func(d map[string]any) {
-			planTaskFixture(d, 0)["targetEstimatedBaselineCostUsd"] = .05
-		}},
-	}
-
-	for _, test := range tests {
+		{
+			"unknown schema",
+			func(p map[string]any) { p["schema"] = "deepswe-benchmark-plan-v9" },
+			"unsupported or invalid DeepSWE benchmark plan",
+		},
+		{
+			"website marked the plan unusable",
+			func(p map[string]any) { p["result"].(map[string]any)["valid"] = false },
+			"unsupported or invalid DeepSWE benchmark plan",
+		},
+		{
+			"unpinned trials snapshot",
+			func(p map[string]any) { p["snapshot"].(map[string]any)["sha256"] = "short" },
+			"missing pinned DeepSWE snapshot provenance",
+		},
+		{
+			"foreign trials source",
+			func(p map[string]any) { p["snapshot"].(map[string]any)["url"] = "https://example.invalid/trials.json" },
+			"missing pinned DeepSWE snapshot provenance",
+		},
+		{
+			"calibration pair is one configuration",
+			func(p map[string]any) { p["calibrationContrast"] = p["calibrationReference"] },
+			"invalid calibration pair",
+		},
+		{
+			"calibration identity contradicts its parts",
+			func(p map[string]any) {
+				p["calibrationContrast"].(map[string]any)["id"] = "gpt-5-6-luna::medium-ish"
+			},
+			"invalid calibration pair",
+		},
+		{
+			"calibration harness is unrecorded",
+			func(p map[string]any) { p["calibrationReference"].(map[string]any)["harnesses"] = []any{} },
+			"invalid calibration pair",
+		},
+		{
+			"no tasks",
+			func(p map[string]any) { p["tasks"] = []any{} },
+			"invalid budget, result, or task selection",
+		},
+		{
+			"spend exceeds the approved budget",
+			func(p map[string]any) { p["parameters"].(map[string]any)["calibrationReferenceBudgetUsd"] = .01 },
+			"invalid budget, result, or task selection",
+		},
+		{
+			"significance level outside (0,1)",
+			func(p map[string]any) { p["parameters"].(map[string]any)["twoSidedSignificanceLevel"] = 1.0 },
+			"invalid budget, result, or task selection",
+		},
+		{
+			"duplicate task allocation",
+			func(p map[string]any) {
+				tasks := p["tasks"].([]any)
+				p["tasks"] = []any{tasks[0], tasks[0]}
+			},
+			"invalid task allocation",
+		},
+		{
+			"single repetition cannot support a variance",
+			func(p map[string]any) {
+				p["tasks"].([]any)[0].(map[string]any)["repetitionsPerArm"] = 1.0
+			},
+			"invalid task allocation",
+		},
+		{
+			"published mean outside the score range",
+			func(p map[string]any) {
+				p["tasks"].([]any)[0].(map[string]any)["calibrationReference"] = map[string]any{"mean": 1.5}
+			},
+			"invalid task allocation",
+		},
+		{
+			"task costs contradict the estimated spend",
+			func(p map[string]any) {
+				p["tasks"].([]any)[0].(map[string]any)["calibrationReferenceEstimatedBaselineCostUsd"] = .05
+			},
+			"task costs do not match its estimated baseline spend",
+		},
+	} {
 		t.Run(test.name, func(t *testing.T) {
-			document := validBenchmarkPlanDocument(t)
-			test.breakIt(document)
-			raw, err := json.Marshal(document)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := loadBenchmarkPlanJSON(raw); err == nil {
-				t.Fatal("an unusable benchmark plan was accepted for a paid run")
+			plan := benchmarkPlanDocument(t)
+			test.mutate(plan)
+			// Every number in the plan determines how much real money the
+			// campaign spends and what the resulting comparison is allowed to
+			// claim, so an internally inconsistent plan must never execute.
+			_, err := loadPlanDocument(t, plan)
+			if err == nil || !strings.Contains(err.Error(), test.wanted) {
+				t.Fatalf("%s error = %v", test.name, err)
 			}
 		})
 	}
 }
 
-// TestBenchmarkPlanIdentityIsContentAddressed covers the property that lets
-// evidence be reused safely: a plan's ID is derived from its exact bytes, so a
-// plan edited after a run cannot silently adopt the previous run's evidence.
-func TestBenchmarkPlanIdentityIsContentAddressed(t *testing.T) {
-	document := validBenchmarkPlanDocument(t)
-	raw, err := json.Marshal(document)
-	if err != nil {
-		t.Fatal(err)
+func TestBenchmarkPlanInputMustBeOneBoundedDocument(t *testing.T) {
+	if _, err := loadBenchmarkPlanJSON(nil); err == nil ||
+		!strings.Contains(err.Error(), "non-empty and no larger than") {
+		t.Fatalf("empty plan error = %v", err)
 	}
-	first, err := loadBenchmarkPlanJSON(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	again, err := loadBenchmarkPlanJSON(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first.ID != again.ID || len(first.ID) != 64 {
-		t.Fatalf("plan identity = %q and %q, want one stable digest", first.ID, again.ID)
-	}
-	if first.RunCount != 4 {
-		t.Fatalf("run count = %d, want the sum of the plan's repetitions", first.RunCount)
+	if _, err := loadBenchmarkPlanJSON([]byte("{")); err == nil ||
+		!strings.Contains(err.Error(), "decode benchmark plan") {
+		t.Fatalf("truncated plan error = %v", err)
 	}
 
-	planTaskFixture(document, 0)["target"].(map[string]any)["mean"] = .30
-	edited, err := json.Marshal(document)
+	directory := t.TempDir()
+	if _, err := loadBenchmarkPlanInput(directory, nil); err == nil ||
+		!strings.Contains(err.Error(), "must be a non-empty JSON file") {
+		t.Fatalf("directory plan error = %v", err)
+	}
+	if _, err := loadBenchmarkPlanInput(filepath.Join(directory, "absent.json"), nil); err == nil ||
+		!strings.Contains(err.Error(), "inspect benchmark plan") {
+		t.Fatalf("missing plan error = %v", err)
+	}
+
+	path := filepath.Join(directory, "plan.json")
+	writeBenchmarkPlanFixture(t, path)
+	fromFile, err := loadBenchmarkPlanInput(path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	changed, err := loadBenchmarkPlanJSON(edited)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is inside this test's temporary directory.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if changed.ID == first.ID {
-		t.Fatal("an edited plan reused the original plan's evidence identity")
+	fromStandardInput, err := loadBenchmarkPlanInput(path, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A plan piped in has to identify the same campaign as the same plan on
+	// disk, otherwise the two entry points would build separate evidence trees
+	// and re-run paid cells.
+	if fromFile.ID != fromStandardInput.ID {
+		t.Fatalf("plan identity differs by input source: %q != %q", fromFile.ID, fromStandardInput.ID)
+	}
+}
+
+func TestLegacyBenchmarkPlansAreReportOnly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "plan.json")
+	writeLegacyBenchmarkPlanFixture(t, path, legacyBenchmarkPlanSchema)
+
+	loaded, err := loadBenchmarkPlan(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.Legacy || len(loaded.Plan.Tasks) == 0 {
+		t.Fatalf("legacy plan = %#v", loaded)
+	}
+	// Version 1 plans predate the recorded execution configuration, so a new
+	// paid run from one could not state which model produced its evidence.
+	if _, err := bindBenchmarkExecution(loaded, "luna:low"); err == nil ||
+		!strings.Contains(err.Error(), "report-only") {
+		t.Fatalf("legacy execution error = %v", err)
+	}
+}
+
+func TestBenchmarkExecutionSelectionMustBeExplicit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "plan.json")
+	writeBenchmarkPlanFixture(t, path)
+	loaded, err := loadBenchmarkPlan(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The plan carries published calibrations, not an execution target. Guessing
+	// one would silently benchmark a model the operator never chose.
+	if _, err := bindBenchmarkExecution(loaded, ""); err == nil ||
+		!strings.Contains(err.Error(), "execution configuration is required") {
+		t.Fatalf("unset execution error = %v", err)
+	}
+	if _, err := bindBenchmarkExecution(loaded, "gemini:low"); err == nil ||
+		!strings.Contains(err.Error(), "unsupported model") {
+		t.Fatalf("unsupported execution error = %v", err)
+	}
+
+	bound, err := bindBenchmarkExecution(loaded, "luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound.Model.PublishedIdentifier != publishedLuna || bound.Effort != effortLow {
+		t.Fatalf("bound execution = %#v", bound)
+	}
+	// The campaign identity has to fold in the execution, so the same plan run
+	// at two efforts keeps two separate immutable evidence trees.
+	other, err := bindBenchmarkExecution(loaded, "luna:high")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound.CampaignID == other.CampaignID || bound.CampaignID == "" {
+		t.Fatalf("campaign identity ignored execution: %q and %q", bound.CampaignID, other.CampaignID)
 	}
 }

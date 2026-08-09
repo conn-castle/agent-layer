@@ -17,12 +17,15 @@ import (
 )
 
 const (
-	benchmarkPlanSchema = "deepswe-benchmark-plan"
-	// legacyBenchmarkPlanSchema keeps already-paid campaign reports readable.
+	benchmarkPlanSchema        = "deepswe-benchmark-plan"
 	legacyBenchmarkPlanSchema  = "deepswe-diagnostic-plan"
-	benchmarkPlanSchemaVersion = 1
-	baselineStateSchema        = "deepswe-baseline-state-v1"
+	benchmarkPlanSchemaVersion = 2
+	legacyPlanSchemaVersion    = 1
+	baselineStateSchema        = "deepswe-baseline-state-v3"
+	providerlessBaselineSchema = "deepswe-baseline-state-v2"
+	legacyBaselineStateSchema  = "deepswe-baseline-state-v1"
 	maxBenchmarkPlanBytes      = 4 << 20
+	legacyUnrecordedValue      = "not-recorded"
 )
 
 // BaselineOptions configures a bare-model run from a website-exported plan.
@@ -30,40 +33,47 @@ type BaselineOptions struct {
 	RepoRoot        string
 	PlanPath        string
 	PlanJSON        []byte
+	Execution       string
 	TaskConcurrency int
 	Confirmed       bool
 }
 
 // BaselineOutcome reports the immutable plan identity and current baseline.
 type BaselineOutcome struct {
-	PlanID       string
-	StateDir     string
-	EstimatedUSD float64
-	ActualUSD    float64
-	Completed    int
-	Required     int
-	Summary      *BaselineSummary
+	PlanID               string
+	CampaignID           string
+	Execution            string
+	CalibrationReference string
+	CalibrationContrast  string
+	StateDir             string
+	ActualUSD            float64
+	Completed            int
+	Required             int
+	Summary              *BaselineSummary
 }
 
 // BaselineSummary compares the fresh equal-task baseline with the published
-// target evidence carried by the planner export.
+// calibration-reference evidence carried by the planner export.
 type BaselineSummary struct {
-	SchemaVersion          string                `json:"schema_version"`
-	PlanID                 string                `json:"plan_id"`
-	Model                  string                `json:"model"`
-	Reasoning              string                `json:"reasoning"`
-	PublishedHarnesses     []string              `json:"published_harnesses"`
-	LocalHarness           string                `json:"local_harness"`
-	PublishedComparable    bool                  `json:"published_comparable"`
-	PublishedMean          float64               `json:"published_mean"`
-	FreshBaselineMean      float64               `json:"fresh_baseline_mean"`
-	FreshMinusPublished    float64               `json:"fresh_minus_published"`
-	DecisionThreshold      float64               `json:"decision_threshold"`
-	ActualBaselineCostUSD  ObservedCostRange     `json:"actual_baseline_cost_usd"`
-	EstimatedBaselineSpend float64               `json:"estimated_baseline_spend_usd"`
-	CompletedAt            time.Time             `json:"completed_at"`
-	Tasks                  []BaselineTaskSummary `json:"tasks"`
-	Limitations            []string              `json:"limitations"`
+	SchemaVersion                      string                `json:"schema_version"`
+	PlanID                             string                `json:"plan_id"`
+	CampaignID                         string                `json:"campaign_id"`
+	Model                              string                `json:"model"`
+	Reasoning                          string                `json:"reasoning"`
+	CalibrationReference               string                `json:"calibration_reference"`
+	CalibrationContrast                string                `json:"calibration_contrast"`
+	PublishedHarnesses                 []string              `json:"calibration_reference_harnesses"`
+	LocalHarness                       string                `json:"local_harness"`
+	PublishedComparable                bool                  `json:"published_comparable"`
+	PublishedMean                      float64               `json:"published_mean"`
+	FreshBaselineMean                  float64               `json:"fresh_baseline_mean"`
+	FreshMinusPublished                float64               `json:"fresh_minus_published"`
+	DecisionThreshold                  float64               `json:"decision_threshold"`
+	ActualBaselineCostUSD              ObservedCostRange     `json:"actual_baseline_cost_usd"`
+	EstimatedCalibrationReferenceSpend float64               `json:"estimated_calibration_reference_spend_usd"`
+	CompletedAt                        time.Time             `json:"completed_at"`
+	Tasks                              []BaselineTaskSummary `json:"tasks"`
+	Limitations                        []string              `json:"limitations"`
 }
 
 // BaselineTaskSummary preserves each task's planned repetition count and
@@ -77,6 +87,23 @@ type BaselineTaskSummary struct {
 	CostUSD       ObservedCostRange `json:"cost_usd"`
 }
 
+type benchmarkPlanConfiguration struct {
+	ID        string   `json:"id"`
+	Model     string   `json:"model"`
+	Reasoning string   `json:"reasoning"`
+	Harnesses []string `json:"harnesses"`
+}
+
+type benchmarkPlanCostAxis struct {
+	Valid                        bool    `json:"valid"`
+	Scale                        string  `json:"scale"`
+	ReferenceConfiguration       string  `json:"referenceConfiguration"`
+	ReferenceSnapshotSHA256      string  `json:"referenceSnapshotSha256"`
+	ReferenceEstimatedArmCostUSD float64 `json:"referenceEstimatedArmCostUsd"`
+	RoundingIncrementUSD         float64 `json:"roundingIncrementUsd"`
+	MaximumUSD                   float64 `json:"maximumUsd"`
+}
+
 type benchmarkPlan struct {
 	Schema        string `json:"schema"`
 	SchemaVersion int    `json:"schemaVersion"`
@@ -84,11 +111,30 @@ type benchmarkPlan struct {
 		URL    string `json:"url"`
 		SHA256 string `json:"sha256"`
 	} `json:"snapshot"`
-	Target struct {
-		Model     string   `json:"model"`
-		Reasoning string   `json:"reasoning"`
-		Harnesses []string `json:"harnesses"`
-	} `json:"target"`
+	CalibrationReference benchmarkPlanConfiguration `json:"calibrationReference"`
+	CalibrationContrast  benchmarkPlanConfiguration `json:"calibrationContrast"`
+	Parameters           struct {
+		CalibrationReferenceBudgetUSD float64 `json:"calibrationReferenceBudgetUsd"`
+		TwoSidedSignificanceLevel     float64 `json:"twoSidedSignificanceLevel"`
+	} `json:"parameters"`
+	Result struct {
+		Valid                                 bool    `json:"valid"`
+		EstimatedCalibrationReferenceSpendUSD float64 `json:"estimatedCalibrationReferenceSpendUsd"`
+		DecisionThreshold                     float64 `json:"decisionThreshold"`
+	} `json:"result"`
+	CostAxis *benchmarkPlanCostAxis `json:"costAxis"`
+	Tasks    []benchmarkPlanTask    `json:"tasks"`
+}
+
+type legacyBenchmarkPlan struct {
+	Schema        string `json:"schema"`
+	SchemaVersion int    `json:"schemaVersion"`
+	Snapshot      struct {
+		URL    string `json:"url"`
+		SHA256 string `json:"sha256"`
+	} `json:"snapshot"`
+	Target     benchmarkPlanConfiguration `json:"target"`
+	Comparison benchmarkPlanConfiguration `json:"comparison"`
 	Parameters struct {
 		BaselineBudgetUSD         float64 `json:"baselineBudgetUsd"`
 		TwoSidedSignificanceLevel float64 `json:"twoSidedSignificanceLevel"`
@@ -98,46 +144,59 @@ type benchmarkPlan struct {
 		EstimatedBaselineSpendUSD float64 `json:"estimatedBaselineSpendUsd"`
 		DecisionThreshold         float64 `json:"decisionThreshold"`
 	} `json:"result"`
-	CostAxis *struct {
-		Valid                        bool    `json:"valid"`
-		Scale                        string  `json:"scale"`
-		ReferenceConfiguration       string  `json:"referenceConfiguration"`
-		ReferenceSnapshotSHA256      string  `json:"referenceSnapshotSha256"`
-		ReferenceEstimatedArmCostUSD float64 `json:"referenceEstimatedArmCostUsd"`
-		RoundingIncrementUSD         float64 `json:"roundingIncrementUsd"`
-		MaximumUSD                   float64 `json:"maximumUsd"`
-	} `json:"costAxis"`
-	Tasks []benchmarkPlanTask `json:"tasks"`
+	CostAxis *benchmarkPlanCostAxis    `json:"costAxis"`
+	Tasks    []legacyBenchmarkPlanTask `json:"tasks"`
 }
 
 type benchmarkPlanTask struct {
+	ID                   string `json:"id"`
+	RepetitionsPerArm    int    `json:"repetitionsPerArm"`
+	CalibrationReference struct {
+		Mean float64 `json:"mean"`
+	} `json:"calibrationReference"`
+	CalibrationContrast struct {
+		Mean float64 `json:"mean"`
+	} `json:"calibrationContrast"`
+	CalibrationReferenceEstimatedBaselineCostUSD float64 `json:"calibrationReferenceEstimatedBaselineCostUsd"`
+}
+
+type legacyBenchmarkPlanTask struct {
 	ID                string `json:"id"`
 	RepetitionsPerArm int    `json:"repetitionsPerArm"`
 	Target            struct {
 		Mean float64 `json:"mean"`
 	} `json:"target"`
+	Comparison struct {
+		Mean float64 `json:"mean"`
+	} `json:"comparison"`
 	TargetEstimatedBaselineCostUSD float64 `json:"targetEstimatedBaselineCostUsd"`
 }
 
 type loadedBenchmarkPlan struct {
-	ID       string
-	Plan     benchmarkPlan
-	Model    Model
-	Effort   string
-	RunCount int
+	ID                        string
+	CampaignID                string
+	Plan                      benchmarkPlan
+	Model                     Model
+	Effort                    string
+	RunCount                  int
+	Legacy                    bool
+	TaskEnvironmentIdentities map[string]string
 }
 
 type baselineManifest struct {
-	SchemaVersion string            `json:"schema_version"`
-	PlanID        string            `json:"plan_id"`
-	CreatedAt     time.Time         `json:"created_at"`
-	PlanSnapshot  string            `json:"plan_snapshot_sha256"`
-	Model         string            `json:"model"`
-	Reasoning     string            `json:"reasoning"`
-	DeepSWECommit string            `json:"deep_swe_commit"`
-	PierVersion   string            `json:"pier_version"`
-	TaskChecksums map[string]string `json:"task_checksums"`
-	Repetitions   map[string]int    `json:"repetitions"`
+	SchemaVersion             string            `json:"schema_version"`
+	PlanID                    string            `json:"plan_id"`
+	CampaignID                string            `json:"campaign_id"`
+	CreatedAt                 time.Time         `json:"created_at"`
+	PlanSnapshot              string            `json:"plan_snapshot_sha256"`
+	Model                     string            `json:"model"`
+	Reasoning                 string            `json:"reasoning"`
+	ProviderClient            string            `json:"provider_client_version"`
+	DeepSWECommit             string            `json:"deep_swe_commit"`
+	PierVersion               string            `json:"pier_version"`
+	TaskChecksums             map[string]string `json:"task_checksums"`
+	TaskEnvironmentIdentities map[string]string `json:"task_environment_identities,omitempty"`
+	Repetitions               map[string]int    `json:"repetitions"`
 }
 
 // CheckBaseline validates the exported plan and every local execution
@@ -147,17 +206,20 @@ func CheckBaseline(ctx context.Context, options BaselineOptions) (BaselineOutcom
 	if err != nil {
 		return BaselineOutcome{}, err
 	}
-	stateDir := baselineStateDir(options.RepoRoot, loaded.ID)
+	stateDir := baselineStateDir(options.RepoRoot, loaded.CampaignID)
 	execution := armExecution{
 		repoRoot: options.RepoRoot, stateDir: stateDir, arm: ArmBaseline,
 		concurrency: options.TaskConcurrency, loaded: loaded, checksums: checksums,
 	}
 	return BaselineOutcome{
-		PlanID:       loaded.ID,
-		StateDir:     stateDir,
-		EstimatedUSD: loaded.Plan.Result.EstimatedBaselineSpendUSD,
-		Required:     loaded.RunCount,
-		Completed:    loaded.RunCount - len(missingPlanCells(execution)),
+		PlanID:               loaded.ID,
+		CampaignID:           loaded.CampaignID,
+		Execution:            executionLabel(loaded.Model, loaded.Effort),
+		CalibrationReference: loaded.Plan.CalibrationReference.ID,
+		CalibrationContrast:  loaded.Plan.CalibrationContrast.ID,
+		StateDir:             stateDir,
+		Required:             loaded.RunCount,
+		Completed:            loaded.RunCount - len(missingPlanCells(execution)),
 	}, nil
 }
 
@@ -171,17 +233,20 @@ func RunBaseline(ctx context.Context, options BaselineOptions, executor TaskExec
 	if err != nil {
 		return BaselineOutcome{}, err
 	}
-	stateDir := baselineStateDir(options.RepoRoot, loaded.ID)
+	stateDir := baselineStateDir(options.RepoRoot, loaded.CampaignID)
 	execution := armExecution{
 		repoRoot: options.RepoRoot, stateDir: stateDir, arm: ArmBaseline,
 		concurrency: options.TaskConcurrency, loaded: loaded, checksums: checksums,
 	}
 	outcome := BaselineOutcome{
-		PlanID:       loaded.ID,
-		StateDir:     stateDir,
-		EstimatedUSD: loaded.Plan.Result.EstimatedBaselineSpendUSD,
-		Required:     loaded.RunCount,
-		Completed:    loaded.RunCount - len(missingPlanCells(execution)),
+		PlanID:               loaded.ID,
+		CampaignID:           loaded.CampaignID,
+		Execution:            executionLabel(loaded.Model, loaded.Effort),
+		CalibrationReference: loaded.Plan.CalibrationReference.ID,
+		CalibrationContrast:  loaded.Plan.CalibrationContrast.ID,
+		StateDir:             stateDir,
+		Required:             loaded.RunCount,
+		Completed:            loaded.RunCount - len(missingPlanCells(execution)),
 	}
 	if outcome.Completed < outcome.Required && !options.Confirmed {
 		return outcome, ErrConfirmationRequired
@@ -238,62 +303,210 @@ func loadBenchmarkPlanJSON(raw []byte) (loadedBenchmarkPlan, error) {
 	if len(raw) == 0 || len(raw) > maxBenchmarkPlanBytes {
 		return loadedBenchmarkPlan{}, fmt.Errorf("benchmark plan must be non-empty and no larger than %d bytes", maxBenchmarkPlanBytes)
 	}
-	var plan benchmarkPlan
-	if err := json.Unmarshal(raw, &plan); err != nil {
+	var identity struct {
+		Schema        string `json:"schema"`
+		SchemaVersion int    `json:"schemaVersion"`
+	}
+	if err := json.Unmarshal(raw, &identity); err != nil {
 		return loadedBenchmarkPlan{}, fmt.Errorf("decode benchmark plan: %w", err)
 	}
-	if (plan.Schema != benchmarkPlanSchema && plan.Schema != legacyBenchmarkPlanSchema) ||
-		plan.SchemaVersion != benchmarkPlanSchemaVersion || !plan.Result.Valid {
+	var plan benchmarkPlan
+	legacy := false
+	switch {
+	case identity.Schema == benchmarkPlanSchema && identity.SchemaVersion == benchmarkPlanSchemaVersion:
+		if err := json.Unmarshal(raw, &plan); err != nil {
+			return loadedBenchmarkPlan{}, fmt.Errorf("decode benchmark plan: %w", err)
+		}
+	case (identity.Schema == benchmarkPlanSchema || identity.Schema == legacyBenchmarkPlanSchema) &&
+		identity.SchemaVersion == legacyPlanSchemaVersion:
+		var old legacyBenchmarkPlan
+		if err := json.Unmarshal(raw, &old); err != nil {
+			return loadedBenchmarkPlan{}, fmt.Errorf("decode legacy benchmark plan: %w", err)
+		}
+		plan = upgradeLegacyBenchmarkPlan(old)
+		legacy = true
+	default:
+		return loadedBenchmarkPlan{}, fmt.Errorf("unsupported or invalid DeepSWE benchmark plan")
+	}
+	if !plan.Result.Valid {
 		return loadedBenchmarkPlan{}, fmt.Errorf("unsupported or invalid DeepSWE benchmark plan")
 	}
 	if plan.Snapshot.URL != DeepSWETrialsSourceURL || len(plan.Snapshot.SHA256) != 64 {
 		return loadedBenchmarkPlan{}, fmt.Errorf("benchmark plan is missing pinned DeepSWE snapshot provenance")
 	}
-	model, effort, err := ParseModelSelection(modelNameForPublished(plan.Target.Model) + ":" + plan.Target.Reasoning)
-	if err != nil || model.PublishedIdentifier != plan.Target.Model {
-		return loadedBenchmarkPlan{}, fmt.Errorf("benchmark plan target is unsupported: %s:%s", plan.Target.Model, plan.Target.Reasoning)
+	if !validPlanConfiguration(plan.CalibrationReference) ||
+		!validPlanConfiguration(plan.CalibrationContrast) ||
+		plan.CalibrationReference.ID == plan.CalibrationContrast.ID {
+		return loadedBenchmarkPlan{}, fmt.Errorf("benchmark plan has an invalid calibration pair")
 	}
-	if len(plan.Target.Harnesses) == 0 || len(plan.Tasks) == 0 ||
-		plan.Parameters.BaselineBudgetUSD <= 0 ||
+	if len(plan.Tasks) == 0 ||
+		plan.Parameters.CalibrationReferenceBudgetUSD <= 0 ||
 		plan.Parameters.TwoSidedSignificanceLevel <= 0 ||
 		plan.Parameters.TwoSidedSignificanceLevel >= 1 ||
-		plan.Result.EstimatedBaselineSpendUSD <= 0 ||
-		plan.Result.EstimatedBaselineSpendUSD-plan.Parameters.BaselineBudgetUSD > 1e-9 ||
+		plan.Result.EstimatedCalibrationReferenceSpendUSD <= 0 ||
+		plan.Result.EstimatedCalibrationReferenceSpendUSD-plan.Parameters.CalibrationReferenceBudgetUSD > 1e-9 ||
 		plan.Result.DecisionThreshold <= 0 || plan.Result.DecisionThreshold >= 1 {
 		return loadedBenchmarkPlan{}, fmt.Errorf("benchmark plan has invalid budget, result, or task selection")
-	}
-	for _, harness := range plan.Target.Harnesses {
-		if harness == "" {
-			return loadedBenchmarkPlan{}, fmt.Errorf("benchmark plan has an invalid published harness")
-		}
 	}
 	seen := make(map[string]bool, len(plan.Tasks))
 	runCount := 0
 	estimated := 0.0
 	for _, task := range plan.Tasks {
-		if !validTaskName(task.ID) || seen[task.ID] || task.RepetitionsPerArm < 2 || task.RepetitionsPerArm > 4 || task.Target.Mean < 0 || task.Target.Mean > 1 || task.TargetEstimatedBaselineCostUSD <= 0 {
+		if !validTaskName(task.ID) || seen[task.ID] || task.RepetitionsPerArm < 2 || task.RepetitionsPerArm > 4 ||
+			task.CalibrationReference.Mean < 0 || task.CalibrationReference.Mean > 1 ||
+			task.CalibrationContrast.Mean < 0 || task.CalibrationContrast.Mean > 1 ||
+			task.CalibrationReferenceEstimatedBaselineCostUSD <= 0 {
 			return loadedBenchmarkPlan{}, fmt.Errorf("benchmark plan contains an invalid task allocation")
 		}
 		seen[task.ID] = true
 		runCount += task.RepetitionsPerArm
-		estimated += task.TargetEstimatedBaselineCostUSD
+		estimated += task.CalibrationReferenceEstimatedBaselineCostUSD
 	}
-	if math.Abs(estimated-plan.Result.EstimatedBaselineSpendUSD) > 1e-9 {
+	if math.Abs(estimated-plan.Result.EstimatedCalibrationReferenceSpendUSD) > 1e-9 {
 		return loadedBenchmarkPlan{}, fmt.Errorf("benchmark plan task costs do not match its estimated baseline spend")
 	}
 	hash := sha256.Sum256(raw)
-	return loadedBenchmarkPlan{
-		ID:       hex.EncodeToString(hash[:]),
-		Plan:     plan,
-		Model:    model,
-		Effort:   effort,
-		RunCount: runCount,
-	}, nil
+	loaded := loadedBenchmarkPlan{
+		ID: hex.EncodeToString(hash[:]), Plan: plan, RunCount: runCount, Legacy: legacy,
+	}
+	if legacy {
+		model, effort, err := ParseModelSelection(
+			modelNameForPublished(plan.CalibrationReference.Model) + ":" + plan.CalibrationReference.Reasoning,
+		)
+		if err != nil || model.PublishedIdentifier != plan.CalibrationReference.Model {
+			return loadedBenchmarkPlan{}, fmt.Errorf(
+				"legacy benchmark execution is unsupported: %s:%s",
+				plan.CalibrationReference.Model,
+				plan.CalibrationReference.Reasoning,
+			)
+		}
+		loaded.CampaignID = loaded.ID
+		loaded.Model = model
+		loaded.Effort = effort
+	}
+	return loaded, nil
+}
+
+func upgradeLegacyBenchmarkPlan(old legacyBenchmarkPlan) benchmarkPlan {
+	reference := old.Target
+	if reference.ID == "" && reference.Model != "" && reference.Reasoning != "" {
+		reference.ID = reference.Model + "::" + reference.Reasoning
+	}
+	contrast := old.Comparison
+	if contrast.ID == "" && contrast.Model != "" && contrast.Reasoning != "" {
+		contrast.ID = contrast.Model + "::" + contrast.Reasoning
+	}
+	if contrast.Model == "" {
+		contrast = benchmarkPlanConfiguration{
+			ID: legacyUnrecordedValue + "::" + legacyUnrecordedValue, Model: legacyUnrecordedValue,
+			Reasoning: legacyUnrecordedValue, Harnesses: []string{legacyUnrecordedValue},
+		}
+	}
+	plan := benchmarkPlan{
+		Schema: old.Schema, SchemaVersion: old.SchemaVersion,
+		CalibrationReference: reference, CalibrationContrast: contrast,
+		CostAxis: old.CostAxis,
+	}
+	plan.Snapshot = old.Snapshot
+	plan.Parameters.CalibrationReferenceBudgetUSD = old.Parameters.BaselineBudgetUSD
+	plan.Parameters.TwoSidedSignificanceLevel = old.Parameters.TwoSidedSignificanceLevel
+	plan.Result.Valid = old.Result.Valid
+	plan.Result.EstimatedCalibrationReferenceSpendUSD = old.Result.EstimatedBaselineSpendUSD
+	plan.Result.DecisionThreshold = old.Result.DecisionThreshold
+	for _, oldTask := range old.Tasks {
+		task := benchmarkPlanTask{
+			ID: oldTask.ID, RepetitionsPerArm: oldTask.RepetitionsPerArm,
+			CalibrationReferenceEstimatedBaselineCostUSD: oldTask.TargetEstimatedBaselineCostUSD,
+		}
+		task.CalibrationReference.Mean = oldTask.Target.Mean
+		task.CalibrationContrast.Mean = oldTask.Comparison.Mean
+		plan.Tasks = append(plan.Tasks, task)
+	}
+	return plan
+}
+
+func validPlanConfiguration(configuration benchmarkPlanConfiguration) bool {
+	if configuration.ID == "" || configuration.Model == "" ||
+		configuration.Reasoning == "" || len(configuration.Harnesses) == 0 {
+		return false
+	}
+	if configuration.ID != configuration.Model+"::"+configuration.Reasoning {
+		return false
+	}
+	for _, harness := range configuration.Harnesses {
+		if harness == "" {
+			return false
+		}
+	}
+	return true
+}
+
+func bindBenchmarkExecution(loaded loadedBenchmarkPlan, selection string) (loadedBenchmarkPlan, error) {
+	if loaded.Legacy {
+		return loadedBenchmarkPlan{}, fmt.Errorf("schema version 1 benchmark plans are report-only; export a schema version 2 plan for new execution")
+	}
+	if selection == "" {
+		return loadedBenchmarkPlan{}, fmt.Errorf("benchmark execution configuration is required")
+	}
+	model, effort, err := ParseModelSelection(selection)
+	if err != nil {
+		return loadedBenchmarkPlan{}, err
+	}
+	identity := struct {
+		Schema    string `json:"schema"`
+		PlanID    string `json:"plan_id"`
+		Model     string `json:"model"`
+		Reasoning string `json:"reasoning"`
+	}{
+		Schema: "deepswe-campaign-identity-v1", PlanID: loaded.ID,
+		Model: model.PublishedIdentifier, Reasoning: effort,
+	}
+	campaignID, err := hashCanonical(identity)
+	if err != nil {
+		return loadedBenchmarkPlan{}, fmt.Errorf("identify benchmark campaign: %w", err)
+	}
+	loaded.CampaignID = campaignID
+	loaded.Model = model
+	loaded.Effort = effort
+	return loaded, nil
+}
+
+func bindBenchmarkTaskEnvironments(loaded loadedBenchmarkPlan, environments map[string]string) (loadedBenchmarkPlan, error) {
+	if loaded.Legacy || len(environments) != len(loaded.Plan.Tasks) {
+		return loadedBenchmarkPlan{}, fmt.Errorf("cannot identify a benchmark campaign without every task environment identity")
+	}
+	identity := struct {
+		Schema                    string            `json:"schema"`
+		PlanID                    string            `json:"plan_id"`
+		Model                     string            `json:"model"`
+		Reasoning                 string            `json:"reasoning"`
+		TaskEnvironmentIdentities map[string]string `json:"task_environment_identities"`
+	}{
+		Schema: "deepswe-campaign-identity-v2", PlanID: loaded.ID,
+		Model: loaded.Model.PublishedIdentifier, Reasoning: loaded.Effort,
+		TaskEnvironmentIdentities: copyStringMap(environments),
+	}
+	for _, task := range loaded.Plan.Tasks {
+		if environments[task.ID] == "" {
+			return loadedBenchmarkPlan{}, fmt.Errorf("cannot identify a benchmark campaign without task %s environment identity", task.ID)
+		}
+	}
+	campaignID, err := hashCanonical(identity)
+	if err != nil {
+		return loadedBenchmarkPlan{}, fmt.Errorf("identify environment-qualified benchmark campaign: %w", err)
+	}
+	loaded.CampaignID = campaignID
+	loaded.TaskEnvironmentIdentities = copyStringMap(environments)
+	return loaded, nil
+}
+
+func executionLabel(model Model, effort string) string {
+	return model.Name + ":" + effort
 }
 
 func prepareBaseline(ctx context.Context, options BaselineOptions) (loadedBenchmarkPlan, map[string]string, error) {
-	if options.RepoRoot == "" || options.PlanPath == "" {
-		return loadedBenchmarkPlan{}, nil, fmt.Errorf("benchmark baseline requires a repository root and --plan")
+	if options.RepoRoot == "" || options.PlanPath == "" || options.Execution == "" {
+		return loadedBenchmarkPlan{}, nil, fmt.Errorf("benchmark baseline requires a repository root, --plan, and --execution")
 	}
 	if options.TaskConcurrency == 0 {
 		options.TaskConcurrency = 1
@@ -302,6 +515,13 @@ func prepareBaseline(ctx context.Context, options BaselineOptions) (loadedBenchm
 		return loadedBenchmarkPlan{}, nil, fmt.Errorf("benchmark baseline task concurrency must be from 1 to 8")
 	}
 	loaded, err := loadBenchmarkPlanInput(options.PlanPath, options.PlanJSON)
+	if err != nil {
+		return loadedBenchmarkPlan{}, nil, err
+	}
+	if loaded.Legacy {
+		return loadedBenchmarkPlan{}, nil, fmt.Errorf("schema version 1 benchmark plans are report-only; export a schema version 2 plan for new execution")
+	}
+	loaded, err = bindBenchmarkExecution(loaded, options.Execution)
 	if err != nil {
 		return loadedBenchmarkPlan{}, nil, err
 	}
@@ -318,30 +538,62 @@ func prepareBaseline(ctx context.Context, options BaselineOptions) (loadedBenchm
 	if err := validateBenchmarkAuthentication(options.RepoRoot, selections); err != nil {
 		return loadedBenchmarkPlan{}, nil, err
 	}
-	checkout, err := ensurePinnedBenchmarkCheckout(ctx, options.RepoRoot)
+	checksums, environments, err := prepareBenchmarkTaskSet(ctx, options.RepoRoot, loaded.Plan.Tasks)
 	if err != nil {
 		return loadedBenchmarkPlan{}, nil, err
 	}
-	checksums := make(map[string]string, len(loaded.Plan.Tasks))
-	for _, task := range loaded.Plan.Tasks {
-		root := filepath.Join(checkout, "tasks", task.ID)
-		for _, required := range []string{taskTOMLFile, taskInstructionFile, taskPreArtifactsFile, filepath.Join("tests", "test.sh")} {
-			info, statErr := os.Stat(filepath.Join(root, required))
-			if statErr != nil || info.IsDir() {
-				return loadedBenchmarkPlan{}, nil, fmt.Errorf("benchmark task %s is missing %s", task.ID, required)
-			}
-		}
-		checksum, checksumErr := TaskTreeChecksum(root)
-		if checksumErr != nil {
-			return loadedBenchmarkPlan{}, nil, fmt.Errorf("checksum benchmark task %s: %w", task.ID, checksumErr)
-		}
-		checksums[task.ID] = checksum
+	loaded, err = bindBenchmarkTaskEnvironments(loaded, environments)
+	if err != nil {
+		return loadedBenchmarkPlan{}, nil, err
 	}
 	return loaded, checksums, nil
 }
 
-func baselineStateDir(repoRoot, planID string) string {
-	return filepath.Join(campaignRoot(repoRoot, planID), ArmBaseline)
+func prepareBenchmarkTasks(ctx context.Context, repoRoot string, tasks []benchmarkPlanTask) (map[string]string, map[string]string, error) {
+	checkout, err := ensurePinnedBenchmarkCheckout(ctx, repoRoot)
+	if err != nil {
+		return nil, nil, err
+	}
+	checksums := make(map[string]string, len(tasks))
+	for _, task := range tasks {
+		checksum, checksumErr := validateBenchmarkTaskTree(checkout, task.ID)
+		if checksumErr != nil {
+			return nil, nil, fmt.Errorf("checksum benchmark task %s: %w", task.ID, checksumErr)
+		}
+		checksums[task.ID] = checksum
+	}
+	if err := preflightTaskStartups(checkout, tasks); err != nil {
+		return nil, nil, err
+	}
+	environments, err := certifyBenchmarkTaskEnvironments(ctx, repoRoot, checkout, tasks, checksums)
+	if err != nil {
+		return nil, nil, err
+	}
+	return checksums, environments, nil
+}
+
+// validateBenchmarkTaskTree validates the files required by the pinned
+// DeepSWE runner and returns the immutable task-tree checksum.
+func validateBenchmarkTaskTree(checkout, task string) (string, error) {
+	root := filepath.Join(checkout, "tasks", task)
+	for _, required := range []string{taskTOMLFile, taskInstructionFile, taskPreArtifactsFile, filepath.Join("tests", "test.sh")} {
+		info, err := os.Stat(filepath.Join(root, required))
+		if err != nil {
+			return "", fmt.Errorf("missing %s: %w", required, err)
+		}
+		if info.IsDir() {
+			return "", fmt.Errorf("required path %s is a directory", required)
+		}
+	}
+	checksum, err := TaskTreeChecksum(root)
+	if err != nil {
+		return "", err
+	}
+	return checksum, nil
+}
+
+func baselineStateDir(repoRoot, campaignID string) string {
+	return filepath.Join(campaignRoot(repoRoot, campaignID), ArmBaseline)
 }
 
 func ensureBaselineManifest(stateDir string, loaded loadedBenchmarkPlan, checksums map[string]string) error {
@@ -350,22 +602,28 @@ func ensureBaselineManifest(stateDir string, loaded loadedBenchmarkPlan, checksu
 		repetitions[task.ID] = task.RepetitionsPerArm
 	}
 	manifest := baselineManifest{
-		SchemaVersion: baselineStateSchema,
-		PlanID:        loaded.ID,
-		CreatedAt:     time.Now().UTC(),
-		PlanSnapshot:  loaded.Plan.Snapshot.SHA256,
-		Model:         loaded.Plan.Target.Model,
-		Reasoning:     loaded.Plan.Target.Reasoning,
-		DeepSWECommit: DeepSWECommit,
-		PierVersion:   PierVersion,
-		TaskChecksums: checksums,
-		Repetitions:   repetitions,
+		SchemaVersion:             baselineStateSchema,
+		PlanID:                    loaded.ID,
+		CampaignID:                loaded.CampaignID,
+		CreatedAt:                 time.Now().UTC(),
+		PlanSnapshot:              loaded.Plan.Snapshot.SHA256,
+		Model:                     loaded.Model.PublishedIdentifier,
+		Reasoning:                 loaded.Effort,
+		ProviderClient:            loaded.Model.ProviderClientVersion,
+		DeepSWECommit:             DeepSWECommit,
+		PierVersion:               PierVersion,
+		TaskChecksums:             checksums,
+		TaskEnvironmentIdentities: copyStringMap(loaded.TaskEnvironmentIdentities),
+		Repetitions:               repetitions,
 	}
 	path := filepath.Join(stateDir, "manifest.json")
 	if data, err := os.ReadFile(path); err == nil { // #nosec G304 -- stateDir is content-addressed below the private benchmark store.
 		var existing baselineManifest
 		if json.Unmarshal(data, &existing) != nil {
 			return fmt.Errorf("decode cached baseline manifest")
+		}
+		if existing.SchemaVersion == providerlessBaselineSchema {
+			return fmt.Errorf("baseline state schema v2 predates provider-client provenance; it remains reportable but cannot be reused for new execution")
 		}
 		manifest.CreatedAt = existing.CreatedAt
 		expected, _ := json.Marshal(manifest)
@@ -409,18 +667,33 @@ func readArmResults(stateDir string, tasks []benchmarkPlanTask, checksums map[st
 
 func summarizeBaseline(loaded loadedBenchmarkPlan, results map[string][]AttemptResult) (BaselineSummary, error) {
 	summary := BaselineSummary{
-		SchemaVersion:          baselineStateSchema,
-		PlanID:                 loaded.ID,
-		Model:                  loaded.Plan.Target.Model,
-		Reasoning:              loaded.Plan.Target.Reasoning,
-		PublishedHarnesses:     append([]string(nil), loaded.Plan.Target.Harnesses...),
-		LocalHarness:           loaded.Model.Adapter,
-		PublishedComparable:    containsString(loaded.Plan.Target.Harnesses, loaded.Model.Adapter),
-		DecisionThreshold:      loaded.Plan.Result.DecisionThreshold,
-		EstimatedBaselineSpend: loaded.Plan.Result.EstimatedBaselineSpendUSD,
-		CompletedAt:            time.Now().UTC(),
+		SchemaVersion:                      baselineStateSchema,
+		PlanID:                             loaded.ID,
+		CampaignID:                         loaded.CampaignID,
+		Model:                              loaded.Model.PublishedIdentifier,
+		Reasoning:                          loaded.Effort,
+		CalibrationReference:               loaded.Plan.CalibrationReference.ID,
+		CalibrationContrast:                loaded.Plan.CalibrationContrast.ID,
+		PublishedHarnesses:                 append([]string(nil), loaded.Plan.CalibrationReference.Harnesses...),
+		LocalHarness:                       loaded.Model.Adapter,
+		DecisionThreshold:                  loaded.Plan.Result.DecisionThreshold,
+		EstimatedCalibrationReferenceSpend: loaded.Plan.Result.EstimatedCalibrationReferenceSpendUSD,
+		CompletedAt:                        time.Now().UTC(),
 	}
-	if !summary.PublishedComparable {
+	executionConfiguration := loaded.Model.PublishedIdentifier + "::" + loaded.Effort
+	sameConfiguration := executionConfiguration == loaded.Plan.CalibrationReference.ID
+	sameHarness := containsString(loaded.Plan.CalibrationReference.Harnesses, loaded.Model.Adapter)
+	summary.PublishedComparable = sameConfiguration && sameHarness
+	if !sameConfiguration {
+		summary.Limitations = append(summary.Limitations,
+			fmt.Sprintf(
+				"The fresh baseline executed %s while the published planning evidence uses %s; published means and differences are calibration references, not like-for-like model results.",
+				executionConfiguration,
+				loaded.Plan.CalibrationReference.ID,
+			),
+		)
+	}
+	if !sameHarness {
 		summary.Limitations = append(summary.Limitations,
 			"The published planning evidence and fresh baseline used different agent harnesses; the published mean and decision threshold are planning references, not like-for-like local A/B results.",
 		)
@@ -430,7 +703,10 @@ func summarizeBaseline(loaded loadedBenchmarkPlan, results map[string][]AttemptR
 		if len(observed) != task.RepetitionsPerArm {
 			return BaselineSummary{}, fmt.Errorf("benchmark task %s has %d results; expected %d", task.ID, len(observed), task.RepetitionsPerArm)
 		}
-		item := BaselineTaskSummary{Task: task.ID, Repetitions: task.RepetitionsPerArm, PublishedMean: task.Target.Mean}
+		item := BaselineTaskSummary{
+			Task: task.ID, Repetitions: task.RepetitionsPerArm,
+			PublishedMean: task.CalibrationReference.Mean,
+		}
 		for _, result := range observed {
 			item.FreshMean += result.F2PScore / float64(len(observed))
 			minimum, maximum, err := result.CostBounds()

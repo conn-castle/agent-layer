@@ -23,18 +23,64 @@ func TestBenchmarkRequiresWebsitePlan(t *testing.T) {
 	}
 }
 
+func TestBenchmarkRequiresExecutionConfiguration(t *testing.T) {
+	for _, subcommand := range []string{"baseline", "treatment"} {
+		root := newRootCmd()
+		root.SetArgs([]string{"benchmark", subcommand, "--plan", "plan.json"})
+		err := root.Execute()
+		if err == nil || !strings.Contains(err.Error(), "requires --plan and --execution") {
+			t.Fatalf("benchmark %s error = %v", subcommand, err)
+		}
+	}
+}
+
+func TestBenchmarkReadinessRunsWithoutProviderCalls(t *testing.T) {
+	original := checkReadiness
+	checkReadiness = func(_ context.Context, options bench.ReadinessAuditOptions) (bench.ReadinessAuditOutcome, error) {
+		if options.RepoRoot == "" || options.TaskConcurrency != 4 {
+			t.Fatalf("options = %#v", options)
+		}
+		return bench.ReadinessAuditOutcome{
+			DeepSWECommit: strings.Repeat("d", 40), Required: 2, Certified: 2,
+			Tasks: []bench.ReadinessAuditTask{
+				{Task: "first-task", Status: "certified"},
+				{Task: "second-task", Status: "certified"},
+			},
+		}, nil
+	}
+	t.Cleanup(func() { checkReadiness = original })
+
+	root := newRootCmd()
+	root.SetArgs([]string{"benchmark", "readiness", "--task-concurrency", "4"})
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "2 of 2 tasks certified") ||
+		!strings.Contains(output.String(), "No provider call was made") {
+		t.Fatalf("unexpected output: %q", output.String())
+	}
+}
+
 func TestBenchmarkBaselineAcceptsPipedWebsiteJSON(t *testing.T) {
 	original := checkBaseline
 	checkBaseline = func(_ context.Context, options bench.BaselineOptions) (bench.BaselineOutcome, error) {
-		if options.PlanPath != "-" || string(options.PlanJSON) != `{"plan":true}` {
+		if options.PlanPath != "-" || string(options.PlanJSON) != `{"plan":true}` ||
+			options.Execution != "luna:low" {
 			t.Fatalf("unexpected plan input: %#v", options)
 		}
-		return bench.BaselineOutcome{PlanID: strings.Repeat("a", 64), Required: 4, Completed: 1, EstimatedUSD: 2.5}, nil
+		return bench.BaselineOutcome{
+			CampaignID: strings.Repeat("a", 64), Execution: options.Execution,
+			CalibrationReference: "luna:medium", CalibrationContrast: "luna:high",
+			Required: 4, Completed: 1,
+		}, nil
 	}
 	t.Cleanup(func() { checkBaseline = original })
 
 	root := newRootCmd()
-	root.SetArgs([]string{"benchmark", "baseline", "--check", "--plan", "-"})
+	root.SetArgs([]string{"benchmark", "baseline", "--check", "--plan", "-", "--execution", "luna:low"})
 	root.SetIn(strings.NewReader(`{"plan":true}`))
 	var output bytes.Buffer
 	root.SetOut(&output)
@@ -43,7 +89,8 @@ func TestBenchmarkBaselineAcceptsPipedWebsiteJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "3 paid calls missing") ||
-		!strings.Contains(output.String(), "No provider call was made") {
+		!strings.Contains(output.String(), "No provider call was made") ||
+		strings.Contains(output.String(), "$") {
 		t.Fatalf("unexpected output: %q", output.String())
 	}
 }
@@ -51,18 +98,21 @@ func TestBenchmarkBaselineAcceptsPipedWebsiteJSON(t *testing.T) {
 func TestBenchmarkTreatmentCheckDoesNotRunTreatment(t *testing.T) {
 	original := checkTreatment
 	checkTreatment = func(_ context.Context, options bench.TreatmentOptions) (bench.TreatmentOutcome, error) {
-		if options.Label != "Iteration 2" {
-			t.Fatalf("label = %q", options.Label)
+		if options.Label != "Iteration 2" || options.Execution != "luna:low" {
+			t.Fatalf("options = %#v", options)
 		}
 		return bench.TreatmentOutcome{
-			TreatmentID: strings.Repeat("b", 64), Label: options.Label,
+			TreatmentID: strings.Repeat("b", 64), Label: options.Label, Execution: options.Execution,
 			Required: 12, Completed: 8, Missing: 4,
 		}, nil
 	}
 	t.Cleanup(func() { checkTreatment = original })
 
 	root := newRootCmd()
-	root.SetArgs([]string{"benchmark", "treatment", "--check", "--plan", "plan.json", "--label", "Iteration 2"})
+	root.SetArgs([]string{
+		"benchmark", "treatment", "--check", "--plan", "plan.json",
+		"--execution", "luna:low", "--label", "Iteration 2",
+	})
 	var output bytes.Buffer
 	root.SetOut(&output)
 	root.SetErr(&output)
@@ -70,6 +120,100 @@ func TestBenchmarkTreatmentCheckDoesNotRunTreatment(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "4 paid calls missing") {
+		t.Fatalf("unexpected output: %q", output.String())
+	}
+}
+
+func TestBenchmarkMatrixCheckAcceptsBaselineOnly(t *testing.T) {
+	original := checkMatrix
+	checkMatrix = func(_ context.Context, options bench.MatrixOptions) (bench.MatrixOutcome, error) {
+		if len(options.BaselineExecutions) != 1 ||
+			options.BaselineExecutions[0] != "luna:high" ||
+			options.TreatmentExecution != "" {
+			t.Fatalf("options = %#v", options)
+		}
+		return bench.MatrixOutcome{
+			SelectionID: strings.Repeat("c", 64), Required: 2, Missing: 2,
+			Arms: []bench.MatrixArmProgress{{
+				Label: "Bare luna high", Execution: "luna:high", Mode: bench.ArmBaseline,
+				Required: 2, Missing: 2,
+			}},
+		}, nil
+	}
+	t.Cleanup(func() { checkMatrix = original })
+
+	root := newRootCmd()
+	root.SetArgs([]string{
+		"benchmark", "matrix", "--check", "--selection", "-",
+		"--baseline-execution", "luna:high",
+	})
+	root.SetIn(strings.NewReader(`{"selection":true}`))
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "2 paid calls missing") &&
+		!strings.Contains(output.String(), "2 missing") {
+		t.Fatalf("unexpected output: %q", output.String())
+	}
+}
+
+func TestBenchmarkMatrixForwardsInstructionsOnlyMode(t *testing.T) {
+	original := checkMatrix
+	checkMatrix = func(_ context.Context, options bench.MatrixOptions) (bench.MatrixOutcome, error) {
+		if options.TreatmentExecution != "luna:low" ||
+			options.TreatmentMode != bench.TreatmentInstructionsOnly ||
+			options.TreatmentLabel != "Instructions only" {
+			t.Fatalf("options = %#v", options)
+		}
+		return bench.MatrixOutcome{
+			SelectionID: strings.Repeat("c", 64), Required: 2, Missing: 2,
+		}, nil
+	}
+	t.Cleanup(func() { checkMatrix = original })
+
+	root := newRootCmd()
+	root.SetArgs([]string{
+		"benchmark", "matrix", "--check", "--selection", "-",
+		"--baseline-execution", "luna:low",
+		"--treatment-execution", "luna:low",
+		"--treatment-label", "Instructions only",
+		"--treatment-mode", bench.TreatmentInstructionsOnly,
+	})
+	root.SetIn(strings.NewReader(`{"selection":true}`))
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBenchmarkTreatmentForwardsNewRunLimit(t *testing.T) {
+	original := runTreatment
+	runTreatment = func(_ context.Context, options bench.TreatmentOptions, _ bench.TaskExecutor) (bench.TreatmentOutcome, error) {
+		if options.MaxNewRuns != 1 {
+			t.Fatalf("max new runs = %d", options.MaxNewRuns)
+		}
+		return bench.TreatmentOutcome{
+			TreatmentID: strings.Repeat("b", 64), Label: "Probe",
+			Required: 12, Completed: 1, Missing: 11,
+		}, nil
+	}
+	t.Cleanup(func() { runTreatment = original })
+
+	root := newRootCmd()
+	root.SetArgs([]string{
+		"benchmark", "treatment", "--plan", "plan.json",
+		"--execution", "luna:low", "--label", "Probe",
+		"--max-new-runs", "1", "--yes",
+	})
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "progress saved: 1 of 12 runs cached, 11 missing") {
 		t.Fatalf("unexpected output: %q", output.String())
 	}
 }
@@ -91,8 +235,8 @@ func TestBenchmarkNoninteractiveExecutionReusesCachedWorkWithoutPrompting(t *tes
 		return bench.TreatmentOutcome{TreatmentID: strings.Repeat("b", 64), Label: "Cached", Required: 1, Completed: 1}, nil
 	}
 	for _, args := range [][]string{
-		{"benchmark", "baseline", "--plan", "plan.json"},
-		{"benchmark", "treatment", "--plan", "plan.json", "--label", "Cached"},
+		{"benchmark", "baseline", "--plan", "plan.json", "--execution", "luna:low"},
+		{"benchmark", "treatment", "--plan", "plan.json", "--execution", "luna:low", "--label", "Cached"},
 	} {
 		root := newRootCmd()
 		root.SetArgs(args)
@@ -104,7 +248,7 @@ func TestBenchmarkNoninteractiveExecutionReusesCachedWorkWithoutPrompting(t *tes
 		return bench.BaselineOutcome{Required: 1}, bench.ErrConfirmationRequired
 	}
 	root := newRootCmd()
-	root.SetArgs([]string{"benchmark", "baseline", "--plan", "plan.json"})
+	root.SetArgs([]string{"benchmark", "baseline", "--plan", "plan.json", "--execution", "luna:low"})
 	var output bytes.Buffer
 	root.SetOut(&output)
 	root.SetErr(&output)
@@ -118,7 +262,10 @@ func TestBenchmarkNoninteractiveExecutionReusesCachedWorkWithoutPrompting(t *tes
 		return bench.TreatmentOutcome{Label: "Paid", Required: 1}, bench.ErrConfirmationRequired
 	}
 	root = newRootCmd()
-	root.SetArgs([]string{"benchmark", "treatment", "--plan", "plan.json", "--label", "Paid"})
+	root.SetArgs([]string{
+		"benchmark", "treatment", "--plan", "plan.json",
+		"--execution", "luna:low", "--label", "Paid",
+	})
 	output.Reset()
 	root.SetOut(&output)
 	root.SetErr(&output)

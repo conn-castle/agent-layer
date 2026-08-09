@@ -9,8 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/conn-castle/agent-layer/internal/gitenv"
 )
@@ -18,11 +20,41 @@ import (
 // ErrConfirmationRequired is returned before any paid model invocation.
 var ErrConfirmationRequired = errors.New("benchmark paid execution requires confirmation")
 
+var errProviderCapacity = errors.New("provider model is at capacity")
+
+const providerCapacityMessage = "Selected model is at capacity. Please try a different model."
+
 var (
-	preflightBenchmark              = preflight
-	validateBenchmarkAuthentication = validateAuthentication
-	ensurePinnedBenchmarkCheckout   = ensurePinnedCheckout
-	verifyBenchmarkPier             = verifyPinnedPier
+	preflightBenchmark        = preflight
+	preflightTreatmentRuntime = func(ctx context.Context, request ExecutionRequest) error {
+		return (PierExecutor{}).Preflight(ctx, request)
+	}
+	validateBenchmarkAuthentication   = validateAuthentication
+	ensurePinnedBenchmarkCheckout     = ensurePinnedCheckout
+	preflightTaskStartups             = validatePlanTaskStartups
+	certifyBenchmarkTaskEnvironments  = certifyPlanTaskEnvironments
+	prepareBenchmarkTaskSet           = prepareBenchmarkTasks
+	identifyBenchmarkTaskEnvironments = identifyPlanTaskEnvironments
+	verifyBenchmarkPier               = verifyPinnedPier
+	runBenchmarkDockerCommand         = runDockerCommand
+)
+
+const (
+	benchmarkDockerCleanupTimeout = 30 * time.Second
+	dockerFormatFlag              = "--format"
+	dockerImageResource           = "image"
+	dockerNetworkResource         = "network"
+	dockerVolumeResource          = "volume"
+	// These formats print one resource identity and its Compose project label
+	// per line. Docker expands the literal \t escape itself. Containers and
+	// networks are addressed by ID; volumes are addressed by name.
+	dockerComposeOwnershipIDFormat   = `{{.ID}}\t{{.Label "com.docker.compose.project"}}`
+	dockerComposeOwnershipNameFormat = `{{.Name}}\t{{.Label "com.docker.compose.project"}}`
+)
+
+var (
+	dockerResourceIDPattern = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
+	dockerVolumeNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]+$`)
 )
 
 type parsedSelection struct {
@@ -38,16 +70,18 @@ type TaskExecutor interface {
 // ExecutionRequest identifies one plan-selected repetition and its evidence
 // destination.
 type ExecutionRequest struct {
-	RepoRoot     string
-	EvidenceDir  string
-	EventID      string
-	Attempt      int
-	Task         string
-	Model        Model
-	Effort       string
-	Arm          string
-	Bundle       *TreatmentBundle
-	TaskChecksum string
+	RepoRoot            string
+	EvidenceDir         string
+	EventID             string
+	Attempt             int
+	Task                string
+	Model               Model
+	Effort              string
+	Arm                 string
+	Bundle              *TreatmentBundle
+	TaskChecksum        string
+	EnvironmentIdentity string
+	PreflightOnly       bool
 }
 
 func sameIntMap(left, right map[string]int) bool {
@@ -131,12 +165,27 @@ func validateAuthentication(repoRoot string, selections []parsedSelection) error
 // PierExecutor invokes the pinned official Pier adapter once.
 type PierExecutor struct{}
 
+// Preflight executes the real Pier container and treatment setup without
+// invoking the provider model.
+func (PierExecutor) Preflight(ctx context.Context, request ExecutionRequest) error {
+	request.PreflightOnly = true
+	_, err := (PierExecutor{}).Execute(ctx, request)
+	return err
+}
+
 // Execute runs one task and promotes sanitized evidence before returning.
 func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (AttemptResult, error) {
 	if request.RepoRoot == "" || request.EvidenceDir == "" || request.EventID == "" ||
 		request.Attempt < 1 || !validTaskName(request.Task) ||
 		(request.Arm != ArmBaseline && request.Arm != ArmTreatment) {
 		return AttemptResult{}, fmt.Errorf("invalid Pier execution request")
+	}
+	if !request.PreflightOnly {
+		if recovered, found, err := recoverCompletedPierExecution(request); err != nil {
+			return AttemptResult{}, err
+		} else if found {
+			return recovered, nil
+		}
 	}
 	checkout, err := ensurePinnedBenchmarkCheckout(ctx, request.RepoRoot)
 	if err != nil {
@@ -151,6 +200,10 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 		return AttemptResult{}, fmt.Errorf("create restricted benchmark staging directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(stage) }()
+	startupArguments, err := prepareTaskStartup(checkout, request.Task, stage)
+	if err != nil {
+		return AttemptResult{}, err
+	}
 
 	arguments := []string{
 		"--from", "datacurve-pier==" + PierVersion, "pier", "run",
@@ -161,6 +214,7 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 		"--job-name", request.EventID, "--yes",
 		"--include-task-name", request.Task,
 	}
+	arguments = append(arguments, startupArguments...)
 	if request.Arm == ArmTreatment {
 		treatmentArguments, err := treatmentPierArguments(request)
 		if err != nil {
@@ -184,33 +238,254 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 	}
 
 	command := exec.CommandContext(ctx, commandUVX, arguments...) // #nosec G204 -- every identity is validated or pinned above.
+	configureBenchmarkCommandCancellation(command)
 	command.Dir = request.RepoRoot
 	dockerConfig, err := prepareBenchmarkDockerConfig(stage)
 	if err != nil {
 		return AttemptResult{}, err
 	}
-	command.Env = append(os.Environ(), "DOCKER_CONFIG="+dockerConfig)
+	command.Env = append(
+		os.Environ(),
+		"DOCKER_CONFIG="+dockerConfig,
+		"PYTHONDONTWRITEBYTECODE=1",
+	)
+	pythonPaths := make([]string, 0, 2)
 	if request.Bundle != nil {
-		command.Env = append(command.Env, "PYTHONPATH="+filepath.Dir(request.Bundle.AdapterPath))
+		pythonPaths = append(pythonPaths, filepath.Dir(request.Bundle.AdapterPath))
+	}
+	if len(startupArguments) > 0 {
+		pythonPaths = append([]string{stage}, pythonPaths...)
+	}
+	if len(pythonPaths) > 0 {
+		command.Env = append(command.Env, "PYTHONPATH="+strings.Join(pythonPaths, string(os.PathListSeparator)))
 	}
 	output, commandErr := command.CombinedOutput()
+	cleanupErr := cleanupPierDockerResources(stage, request)
 	if err := os.RemoveAll(dockerConfig); err != nil {
 		return AttemptResult{}, fmt.Errorf("remove transient benchmark Docker configuration: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(stage, "pier-command.log"), output, 0o600); err != nil {
 		return AttemptResult{}, err
 	}
-	result, normalizeErr := normalizePier(stage, request)
+	if request.PreflightOnly {
+		if commandErr != nil {
+			return AttemptResult{}, fmt.Errorf("pier treatment runtime preflight failed: %w: %s", errors.Join(commandErr, cleanupErr), strings.TrimSpace(string(output)))
+		}
+		if cleanupErr != nil {
+			return AttemptResult{}, fmt.Errorf("clean Pier treatment runtime preflight: %w", cleanupErr)
+		}
+		if err := validatePierTreatmentPreflight(stage, request); err != nil {
+			return AttemptResult{}, err
+		}
+		return AttemptResult{}, nil
+	}
 	if err := promoteSanitizedPierArtifacts(request, stage); err != nil {
 		return AttemptResult{}, err
 	}
+	artifactRoot, err := artifactDestination(request)
+	if err != nil {
+		return AttemptResult{}, err
+	}
 	if commandErr != nil {
-		return AttemptResult{}, fmt.Errorf("pier task execution failed: %w", commandErr)
+		capacity, err := hasProviderCapacityEvidence(artifactRoot)
+		if err != nil {
+			return AttemptResult{}, fmt.Errorf("inspect provider failure evidence: %w", err)
+		}
+		if capacity {
+			if cleanupErr != nil {
+				return AttemptResult{}, fmt.Errorf("%w: %s; cleanup: %v", errProviderCapacity, providerCapacityMessage, cleanupErr)
+			}
+			return AttemptResult{}, fmt.Errorf("%w: %s", errProviderCapacity, providerCapacityMessage)
+		}
+	}
+	if err := writePierExecutionReceipt(request, commandErr, cleanupErr); err != nil {
+		return AttemptResult{}, err
+	}
+	result, normalizeErr := normalizePier(artifactRoot, request)
+	if commandErr != nil {
+		return AttemptResult{}, fmt.Errorf("pier task execution failed: %w", errors.Join(commandErr, cleanupErr))
+	}
+	if cleanupErr != nil {
+		return AttemptResult{}, fmt.Errorf("clean Pier task environment: %w", cleanupErr)
 	}
 	if normalizeErr != nil {
 		return AttemptResult{}, normalizeErr
 	}
 	return result, nil
+}
+
+func runDockerCommand(ctx context.Context, arguments ...string) ([]byte, error) {
+	command := exec.CommandContext(ctx, commandDocker, arguments...) // #nosec G204 -- callers validate Docker-owned resource IDs.
+	return command.CombinedOutput()
+}
+
+// cleanupPierDockerResources removes only the Compose resources owned by the
+// exact Pier trial that just exited. Pier 0.3.0 can abandon its shielded
+// teardown when cancellation closes the Python event loop.
+func cleanupPierDockerResources(stage string, request ExecutionRequest) error {
+	project, err := identifyPierComposeProject(stage, request)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), benchmarkDockerCleanupTimeout)
+	defer cancel()
+	for _, resource := range []struct {
+		name       string
+		list       []string
+		removeBase []string
+		validName  *regexp.Regexp
+	}{
+		{name: "container", list: []string{"ps", "--all", dockerFormatFlag, dockerComposeOwnershipIDFormat}, removeBase: []string{"rm", "--force"}, validName: dockerResourceIDPattern},
+		{name: dockerNetworkResource, list: []string{dockerNetworkResource, "ls", dockerFormatFlag, dockerComposeOwnershipIDFormat}, removeBase: []string{dockerNetworkResource, "rm"}, validName: dockerResourceIDPattern},
+		{name: dockerVolumeResource, list: []string{dockerVolumeResource, "ls", dockerFormatFlag, dockerComposeOwnershipNameFormat}, removeBase: []string{dockerVolumeResource, "rm", "--force"}, validName: dockerVolumeNamePattern},
+	} {
+		output, listErr := runBenchmarkDockerCommand(ctx, resource.list...)
+		if listErr != nil {
+			return fmt.Errorf("list Pier %ss for project %s: %w: %s", resource.name, project, listErr, strings.TrimSpace(string(output)))
+		}
+		var ids []string
+		for _, line := range strings.Split(string(output), "\n") {
+			line = strings.TrimSuffix(line, "\r")
+			if line == "" {
+				continue
+			}
+			fields := strings.SplitN(line, "\t", 2)
+			if len(fields) != 2 {
+				return fmt.Errorf("inspect Pier %s ownership: Docker returned malformed record %q", resource.name, line)
+			}
+			owner := strings.ToLower(fields[1])
+			if owner != project && !strings.HasPrefix(owner, project+"__verifier__") {
+				continue
+			}
+			if !resource.validName.MatchString(fields[0]) {
+				return fmt.Errorf("inspect Pier %s ownership: Docker returned invalid ID %q for project %s", resource.name, fields[0], owner)
+			}
+			ids = append(ids, fields[0])
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		arguments := append(append([]string{}, resource.removeBase...), ids...)
+		removeOutput, removeErr := runBenchmarkDockerCommand(ctx, arguments...)
+		if removeErr != nil {
+			return fmt.Errorf("remove Pier %ss for project %s: %w: %s", resource.name, project, removeErr, strings.TrimSpace(string(removeOutput)))
+		}
+	}
+	// Pier asks Compose to build a uniquely named main image for every trial.
+	// Compose down does not remove that image, so leaving it behind makes image
+	// storage grow linearly even though the trial's containers are gone.
+	var imageIDs []string
+	for _, imageReference := range []string{
+		project + "-main:latest",
+		project + "__verifier__*-main:latest",
+	} {
+		output, listErr := runBenchmarkDockerCommand(
+			ctx,
+			dockerImageResource, "ls", "--filter", "reference="+imageReference,
+			dockerFormatFlag, "{{.ID}}",
+		)
+		if listErr != nil {
+			return fmt.Errorf("list Pier images for project %s: %w: %s", project, listErr, strings.TrimSpace(string(output)))
+		}
+		for _, line := range strings.Split(string(output), "\n") {
+			id := strings.TrimSpace(line)
+			if id == "" {
+				continue
+			}
+			if !dockerResourceIDPattern.MatchString(id) {
+				return fmt.Errorf("inspect Pier image ownership: Docker returned invalid ID %q for project %s", id, project)
+			}
+			imageIDs = append(imageIDs, id)
+		}
+	}
+	if len(imageIDs) > 0 {
+		arguments := append([]string{dockerImageResource, "rm"}, imageIDs...)
+		removeOutput, removeErr := runBenchmarkDockerCommand(ctx, arguments...)
+		if removeErr != nil {
+			return fmt.Errorf("remove Pier images for project %s: %w: %s", project, removeErr, strings.TrimSpace(string(removeOutput)))
+		}
+	}
+	return nil
+}
+
+func identifyPierComposeProject(stage string, request ExecutionRequest) (string, error) {
+	raw, resultErr := readPierTaskResult(stage, request)
+	if resultErr == nil {
+		project, err := validatePierComposeProject(raw.TrialName, request.Task)
+		if err != nil {
+			return "", err
+		}
+		return project, nil
+	}
+	projects := make(map[string]struct{})
+	walkErr := filepath.WalkDir(filepath.Join(stage, "jobs"), func(_ string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		if project, err := validatePierComposeProject(entry.Name(), request.Task); err == nil {
+			projects[project] = struct{}{}
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return "", fmt.Errorf("identify Pier Compose project after incomplete result: %w", errors.Join(resultErr, walkErr))
+	}
+	if len(projects) != 1 {
+		return "", fmt.Errorf(
+			"identify Pier Compose project after incomplete result: %w; found %d matching trial directories",
+			resultErr, len(projects),
+		)
+	}
+	for project := range projects {
+		return project, nil
+	}
+	return "", fmt.Errorf("identify Pier Compose project after incomplete result: no project remained after validation")
+}
+
+func validatePierComposeProject(trialName, task string) (string, error) {
+	prefix := task
+	if len(prefix) > 32 {
+		prefix = prefix[:32]
+	}
+	expected := prefix + "__"
+	if !strings.HasPrefix(trialName, expected) || len(trialName) != len(expected)+7 {
+		return "", fmt.Errorf("pier trial name %q does not match benchmark task %s", trialName, task)
+	}
+	for _, character := range trialName[len(expected):] {
+		if (character < 'a' || character > 'z') &&
+			(character < 'A' || character > 'Z') &&
+			(character < '0' || character > '9') {
+			return "", fmt.Errorf("pier trial name %q has an invalid random suffix", trialName)
+		}
+	}
+	return strings.ToLower(trialName), nil
+}
+
+func hasProviderCapacityEvidence(root string) (bool, error) {
+	capacity := false
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if capacity || entry.IsDir() || !entry.Type().IsRegular() {
+			return nil
+		}
+		switch filepath.Base(path) {
+		case "codex.txt", "claude.txt", "claude-code.txt":
+		default:
+			return nil
+		}
+		data, err := os.ReadFile(path) // #nosec G122,G304 -- regular provider transcript beneath private staging.
+		if err != nil {
+			return err
+		}
+		capacity = bytes.Contains(data, []byte(providerCapacityMessage))
+		return nil
+	})
+	return capacity, err
 }
 
 // treatmentPierArguments returns the Pier flags that make the immutable
@@ -240,6 +515,15 @@ func treatmentPierArguments(request ExecutionRequest) ([]string, error) {
 			return nil, fmt.Errorf("claude authentication is required at %s", credentials)
 		}
 		arguments = append(arguments, pierAgentKwarg, "claude_credentials_path="+credentials)
+	} else {
+		credentials := filepath.Join(request.RepoRoot, ".codex", "auth.json")
+		if _, err := os.Stat(credentials); err != nil {
+			return nil, fmt.Errorf("codex authentication is required at %s", credentials)
+		}
+		arguments = append(arguments, pierAgentKwarg, "codex_credentials_path="+credentials)
+	}
+	if request.PreflightOnly {
+		arguments = append(arguments, pierAgentKwarg, "preflight_only=true")
 	}
 	return arguments, nil
 }
