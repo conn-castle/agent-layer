@@ -12,14 +12,25 @@ disable-model-invocation: true
 Required:
 
 - a `mode` matching `references/modes/<mode>.md`
-- standing authorization to merge under the gate below
+- `merge_authorization`: standing authorization to merge under the gate below
 - `operator`, `planner`, one or more `plan_reviewers`, `implementer`, `code_reviewer`,
   `pr_worker`, and `rote_worker` dispatch targets
+
+Optional:
+
+- `loop_context`: additional context for the orchestrator only
+- `planner_context`: additional context included only in step 1
+- `ship_pr_context`: additional context included only in step 2
+- `operator_context`: additional context included only in `operator` dispatches
+
+Every input must be explicitly named in the skill invocation. Do not infer an
+unnamed input from unstructured text or from another input.
 
 ## Rules
 
 - Use `/dispatch-agent` for every dispatch.
 - Act as the orchestrator. Delegate all work.
+- Build each dispatch prompt only from its specified prompt template.
 - When compacting, retain the original user inputs and this skill verbatim in
   addition to what you would normally retain.
 
@@ -29,8 +40,8 @@ This loop must run without human intervention. Each iteration is intended to res
 in a merged PR. For each loop that requires human input, dispatch `operator` in
 a fresh session. Use `dispatch_continue` for multiple invocations within a
 single loop. The first prompt should include the complete contents of
-`references/human-guidance.md`, followed by the item requiring human input with all
-provided details verbatim.
+`references/human-guidance.md`, followed by `operator_context` if provided, then
+the item requiring human input with all provided details verbatim.
 
 If the `operator` determines that real human intervention is required, save the
 work to an appropriate remote branch for future handling, then check out the
@@ -43,7 +54,7 @@ waiting for human input.
 
 ```text
 <complete contents of references/modes/<mode>.md>
-<applicable caller-provided context or constraints, if any>
+<planner_context, if provided>
 
 implementer: <implementer>
 plan_reviewers: <plan_reviewers>
@@ -61,6 +72,7 @@ time. If two invocations in a row cannot find work, exit and inform the user.
 
 ```text
 pr_worker: <pr_worker>
+<ship_pr_context, if provided>
 
 Use the following context to preserve intended scope and behavior throughout the PR
 workflow:
@@ -74,6 +86,7 @@ Continue when it returns a merge-authorization request.
 `references/merge-authorization.md` as its prompt, then append:
 
 ```text
+<operator_context, if provided>
 request: <rote_worker merge-authorization request>
 ```
 
