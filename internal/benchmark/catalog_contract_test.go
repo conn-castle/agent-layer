@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -234,50 +233,5 @@ func TestUncertifiableTaskEnvironmentFailsBeforeProviderExecution(t *testing.T) 
 	if _, err := certifyTaskEnvironment(context.Background(), repository, checkout, task, "short"); err == nil ||
 		!strings.Contains(err.Error(), "no valid task checksum") {
 		t.Fatalf("unchecksummed certification error = %v", err)
-	}
-}
-
-func TestCampaignReportFindsBaselinesRecordedBeforeEnvironmentCertification(t *testing.T) {
-	planPath := filepath.Join(t.TempDir(), "plan.json")
-	writeBenchmarkPlanFixture(t, planPath)
-	loaded, err := loadBenchmarkPlan(planPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bound, err := bindBenchmarkExecution(loaded, "luna:low")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	original := identifyBenchmarkTaskEnvironments
-	identifyBenchmarkTaskEnvironments = func(context.Context, string, []benchmarkPlanTask) (map[string]string, error) {
-		return nil, fmt.Errorf("pinned checkout is unavailable offline")
-	}
-	t.Cleanup(func() { identifyBenchmarkTaskEnvironments = original })
-
-	repository := t.TempDir()
-	// Without a recorded baseline there is nothing to report on, so the
-	// underlying failure has to reach the operator.
-	if _, err := resolveCampaignForReport(repository, bound); err == nil ||
-		!strings.Contains(err.Error(), "pinned checkout is unavailable") {
-		t.Fatalf("unresolvable campaign error = %v", err)
-	}
-
-	legacy := filepath.Join(baselineStateDir(repository, bound.CampaignID), "manifest.json")
-	if err := os.MkdirAll(filepath.Dir(legacy), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(legacy, []byte("{}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// Campaigns recorded before environment certification existed are still
-	// valid evidence. Reporting on them must not require re-deriving identities
-	// the original run never captured.
-	resolved, err := resolveCampaignForReport(repository, bound)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resolved.CampaignID != bound.CampaignID {
-		t.Fatalf("resolved campaign = %q, want the pre-certification identity %q", resolved.CampaignID, bound.CampaignID)
 	}
 }

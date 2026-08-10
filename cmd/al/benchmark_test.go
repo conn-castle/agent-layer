@@ -9,47 +9,52 @@ import (
 	bench "github.com/conn-castle/agent-layer/internal/benchmark"
 )
 
-func TestBenchmarkRequiresWebsitePlan(t *testing.T) {
-	for _, subcommand := range []string{"baseline", "treatment", "report"} {
-		root := newRootCmd()
-		root.SetArgs([]string{"benchmark", subcommand})
-		var output bytes.Buffer
-		root.SetOut(&output)
-		root.SetErr(&output)
-		err := root.Execute()
-		if err == nil || !strings.Contains(err.Error(), "requires --plan") {
-			t.Fatalf("benchmark %s error = %v", subcommand, err)
-		}
+func TestBenchmarkOnlyExposesRunAndReadiness(t *testing.T) {
+	command := newBenchmarkCmd()
+	var names []string
+	for _, child := range command.Commands() {
+		names = append(names, child.Name())
+	}
+	if strings.Join(names, ",") != "readiness,run" {
+		t.Fatalf("benchmark commands = %v", names)
 	}
 }
 
-func TestBenchmarkRequiresExecutionConfiguration(t *testing.T) {
-	for _, subcommand := range []string{"baseline", "treatment"} {
-		root := newRootCmd()
-		root.SetArgs([]string{"benchmark", subcommand, "--plan", "plan.json"})
-		err := root.Execute()
-		if err == nil || !strings.Contains(err.Error(), "requires --plan and --execution") {
-			t.Fatalf("benchmark %s error = %v", subcommand, err)
+func TestBenchmarkRunDryRunDoesNotInvokeProvider(t *testing.T) {
+	original := runStudy
+	runStudy = func(_ context.Context, options bench.StudyOptions, _ bench.TaskExecutor) (bench.StudyOutcome, error) {
+		if !options.DryRun || options.StudyPath != "study.toml" || options.TaskConcurrency != 4 {
+			t.Fatalf("options = %#v", options)
 		}
+		outcome := bench.StudyOutcome{StudyID: strings.Repeat("a", 64), Required: 2, Missing: 2, Experiments: []bench.StudyExperimentProgress{{Name: "Bare", Required: 1, Missing: 1}}}
+		if err := options.OnPrepared(outcome); err != nil {
+			return bench.StudyOutcome{}, err
+		}
+		return outcome, nil
+	}
+	t.Cleanup(func() { runStudy = original })
+	root := newRootCmd()
+	root.SetArgs([]string{"benchmark", "run", "study.toml", "--dry-run", "--task-concurrency", "4"})
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "Bare: 0 of 1 cells cached") || !strings.Contains(output.String(), "authorizes paid") || !strings.Contains(output.String(), "No provider call was made") {
+		t.Fatalf("output = %q", output.String())
 	}
 }
 
 func TestBenchmarkReadinessRunsWithoutProviderCalls(t *testing.T) {
 	original := checkReadiness
 	checkReadiness = func(_ context.Context, options bench.ReadinessAuditOptions) (bench.ReadinessAuditOutcome, error) {
-		if options.RepoRoot == "" || options.TaskConcurrency != 4 {
+		if options.TaskConcurrency != 4 {
 			t.Fatalf("options = %#v", options)
 		}
-		return bench.ReadinessAuditOutcome{
-			DeepSWECommit: strings.Repeat("d", 40), Required: 2, Certified: 2,
-			Tasks: []bench.ReadinessAuditTask{
-				{Task: "first-task", Status: "certified"},
-				{Task: "second-task", Status: "certified"},
-			},
-		}, nil
+		return bench.ReadinessAuditOutcome{DeepSWECommit: strings.Repeat("d", 40), Required: 2, Certified: 2}, nil
 	}
 	t.Cleanup(func() { checkReadiness = original })
-
 	root := newRootCmd()
 	root.SetArgs([]string{"benchmark", "readiness", "--task-concurrency", "4"})
 	var output bytes.Buffer
@@ -58,221 +63,31 @@ func TestBenchmarkReadinessRunsWithoutProviderCalls(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "2 of 2 tasks certified") ||
-		!strings.Contains(output.String(), "No provider call was made") {
-		t.Fatalf("unexpected output: %q", output.String())
+	if !strings.Contains(output.String(), "2 of 2 tasks certified") || !strings.Contains(output.String(), "No provider call was made") {
+		t.Fatalf("output = %q", output.String())
 	}
 }
 
-func TestBenchmarkBaselineAcceptsPipedWebsiteJSON(t *testing.T) {
-	original := checkBaseline
-	checkBaseline = func(_ context.Context, options bench.BaselineOptions) (bench.BaselineOutcome, error) {
-		if options.PlanPath != "-" || string(options.PlanJSON) != `{"plan":true}` ||
-			options.Execution != "luna:low" {
-			t.Fatalf("unexpected plan input: %#v", options)
-		}
-		return bench.BaselineOutcome{
-			CampaignID: strings.Repeat("a", 64), Execution: options.Execution,
-			CalibrationReference: "luna:medium", CalibrationContrast: "luna:high",
-			Required: 4, Completed: 1,
-		}, nil
+func TestBenchmarkReadinessPrintsActionableTaskFailures(t *testing.T) {
+	original := checkReadiness
+	checkReadiness = func(_ context.Context, _ bench.ReadinessAuditOptions) (bench.ReadinessAuditOutcome, error) {
+		return bench.ReadinessAuditOutcome{DeepSWECommit: strings.Repeat("d", 40), Required: 2, Failed: 1, Blocked: 1, Tasks: []bench.ReadinessAuditTask{
+			{Task: "missing-contract", Status: "failed", Error: "no mandatory environment readiness contract"},
+			{Task: "shared-docker", Status: "blocked", Error: "no space left on device"},
+		}}, nil
 	}
-	t.Cleanup(func() { checkBaseline = original })
-
+	t.Cleanup(func() { checkReadiness = original })
 	root := newRootCmd()
-	root.SetArgs([]string{"benchmark", "baseline", "--check", "--plan", "-", "--execution", "luna:low"})
-	root.SetIn(strings.NewReader(`{"plan":true}`))
+	root.SetArgs([]string{"benchmark", "readiness"})
 	var output bytes.Buffer
 	root.SetOut(&output)
 	root.SetErr(&output)
-	if err := root.Execute(); err != nil {
-		t.Fatal(err)
+	if err := root.Execute(); err == nil {
+		t.Fatal("readiness command accepted failed tasks")
 	}
-	if !strings.Contains(output.String(), "3 paid calls missing") ||
-		!strings.Contains(output.String(), "No provider call was made") ||
-		strings.Contains(output.String(), "$") {
-		t.Fatalf("unexpected output: %q", output.String())
-	}
-}
-
-func TestBenchmarkTreatmentCheckDoesNotRunTreatment(t *testing.T) {
-	original := checkTreatment
-	checkTreatment = func(_ context.Context, options bench.TreatmentOptions) (bench.TreatmentOutcome, error) {
-		if options.Label != "Iteration 2" || options.Execution != "luna:low" {
-			t.Fatalf("options = %#v", options)
+	for _, wanted := range []string{"missing-contract: failed: no mandatory environment readiness contract", "shared-docker: blocked: no space left on device"} {
+		if !strings.Contains(output.String(), wanted) {
+			t.Fatalf("output = %q, missing %q", output.String(), wanted)
 		}
-		return bench.TreatmentOutcome{
-			TreatmentID: strings.Repeat("b", 64), Label: options.Label, Execution: options.Execution,
-			Required: 12, Completed: 8, Missing: 4,
-		}, nil
-	}
-	t.Cleanup(func() { checkTreatment = original })
-
-	root := newRootCmd()
-	root.SetArgs([]string{
-		"benchmark", "treatment", "--check", "--plan", "plan.json",
-		"--execution", "luna:low", "--label", "Iteration 2",
-	})
-	var output bytes.Buffer
-	root.SetOut(&output)
-	root.SetErr(&output)
-	if err := root.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(output.String(), "4 paid calls missing") {
-		t.Fatalf("unexpected output: %q", output.String())
-	}
-}
-
-func TestBenchmarkMatrixCheckAcceptsBaselineOnly(t *testing.T) {
-	original := checkMatrix
-	checkMatrix = func(_ context.Context, options bench.MatrixOptions) (bench.MatrixOutcome, error) {
-		if len(options.BaselineExecutions) != 1 ||
-			options.BaselineExecutions[0] != "luna:high" ||
-			options.TreatmentExecution != "" {
-			t.Fatalf("options = %#v", options)
-		}
-		return bench.MatrixOutcome{
-			SelectionID: strings.Repeat("c", 64), Required: 2, Missing: 2,
-			Arms: []bench.MatrixArmProgress{{
-				Label: "Bare luna high", Execution: "luna:high", Mode: bench.ArmBaseline,
-				Required: 2, Missing: 2,
-			}},
-		}, nil
-	}
-	t.Cleanup(func() { checkMatrix = original })
-
-	root := newRootCmd()
-	root.SetArgs([]string{
-		"benchmark", "matrix", "--check", "--selection", "-",
-		"--baseline-execution", "luna:high",
-	})
-	root.SetIn(strings.NewReader(`{"selection":true}`))
-	var output bytes.Buffer
-	root.SetOut(&output)
-	root.SetErr(&output)
-	if err := root.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(output.String(), "2 paid calls missing") &&
-		!strings.Contains(output.String(), "2 missing") {
-		t.Fatalf("unexpected output: %q", output.String())
-	}
-}
-
-func TestBenchmarkMatrixForwardsInstructionsOnlyMode(t *testing.T) {
-	original := checkMatrix
-	checkMatrix = func(_ context.Context, options bench.MatrixOptions) (bench.MatrixOutcome, error) {
-		if options.TreatmentExecution != "luna:low" ||
-			options.TreatmentMode != bench.TreatmentInstructionsOnly ||
-			options.TreatmentLabel != "Instructions only" {
-			t.Fatalf("options = %#v", options)
-		}
-		return bench.MatrixOutcome{
-			SelectionID: strings.Repeat("c", 64), Required: 2, Missing: 2,
-		}, nil
-	}
-	t.Cleanup(func() { checkMatrix = original })
-
-	root := newRootCmd()
-	root.SetArgs([]string{
-		"benchmark", "matrix", "--check", "--selection", "-",
-		"--baseline-execution", "luna:low",
-		"--treatment-execution", "luna:low",
-		"--treatment-label", "Instructions only",
-		"--treatment-mode", bench.TreatmentInstructionsOnly,
-	})
-	root.SetIn(strings.NewReader(`{"selection":true}`))
-	if err := root.Execute(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestBenchmarkTreatmentForwardsNewRunLimit(t *testing.T) {
-	original := runTreatment
-	runTreatment = func(_ context.Context, options bench.TreatmentOptions, _ bench.TaskExecutor) (bench.TreatmentOutcome, error) {
-		if options.MaxNewRuns != 1 {
-			t.Fatalf("max new runs = %d", options.MaxNewRuns)
-		}
-		return bench.TreatmentOutcome{
-			TreatmentID: strings.Repeat("b", 64), Label: "Probe",
-			Required: 12, Completed: 1, Missing: 11,
-		}, nil
-	}
-	t.Cleanup(func() { runTreatment = original })
-
-	root := newRootCmd()
-	root.SetArgs([]string{
-		"benchmark", "treatment", "--plan", "plan.json",
-		"--execution", "luna:low", "--label", "Probe",
-		"--max-new-runs", "1", "--yes",
-	})
-	var output bytes.Buffer
-	root.SetOut(&output)
-	root.SetErr(&output)
-	if err := root.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(output.String(), "progress saved: 1 of 12 runs cached, 11 missing") {
-		t.Fatalf("unexpected output: %q", output.String())
-	}
-}
-
-func TestBenchmarkNoninteractiveExecutionReusesCachedWorkWithoutPrompting(t *testing.T) {
-	originalTerminal := isTerminal
-	originalBaseline := runBaseline
-	originalTreatment := runTreatment
-	isTerminal = func() bool { return false }
-	t.Cleanup(func() {
-		isTerminal = originalTerminal
-		runBaseline = originalBaseline
-		runTreatment = originalTreatment
-	})
-	runBaseline = func(context.Context, bench.BaselineOptions, bench.TaskExecutor) (bench.BaselineOutcome, error) {
-		return bench.BaselineOutcome{PlanID: strings.Repeat("a", 64), Required: 1, Completed: 1, Summary: &bench.BaselineSummary{}}, nil
-	}
-	runTreatment = func(context.Context, bench.TreatmentOptions, bench.TaskExecutor) (bench.TreatmentOutcome, error) {
-		return bench.TreatmentOutcome{TreatmentID: strings.Repeat("b", 64), Label: "Cached", Required: 1, Completed: 1}, nil
-	}
-	for _, args := range [][]string{
-		{"benchmark", "baseline", "--plan", "plan.json", "--execution", "luna:low"},
-		{"benchmark", "treatment", "--plan", "plan.json", "--execution", "luna:low", "--label", "Cached"},
-	} {
-		root := newRootCmd()
-		root.SetArgs(args)
-		if err := root.Execute(); err != nil {
-			t.Fatalf("cached %v = %v", args[1], err)
-		}
-	}
-	runBaseline = func(context.Context, bench.BaselineOptions, bench.TaskExecutor) (bench.BaselineOutcome, error) {
-		return bench.BaselineOutcome{Required: 1}, bench.ErrConfirmationRequired
-	}
-	root := newRootCmd()
-	root.SetArgs([]string{"benchmark", "baseline", "--plan", "plan.json", "--execution", "luna:low"})
-	var output bytes.Buffer
-	root.SetOut(&output)
-	root.SetErr(&output)
-	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "requires --yes outside a terminal") {
-		t.Fatalf("noninteractive paid baseline error = %v", err)
-	}
-	if strings.Contains(output.String(), "Continue?") {
-		t.Fatalf("noninteractive paid baseline prompted: %q", output.String())
-	}
-	runTreatment = func(context.Context, bench.TreatmentOptions, bench.TaskExecutor) (bench.TreatmentOutcome, error) {
-		return bench.TreatmentOutcome{Label: "Paid", Required: 1}, bench.ErrConfirmationRequired
-	}
-	root = newRootCmd()
-	root.SetArgs([]string{
-		"benchmark", "treatment", "--plan", "plan.json",
-		"--execution", "luna:low", "--label", "Paid",
-	})
-	output.Reset()
-	root.SetOut(&output)
-	root.SetErr(&output)
-	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "requires --yes outside a terminal") {
-		t.Fatalf("noninteractive paid treatment error = %v", err)
-	}
-	if strings.Contains(output.String(), "Continue?") {
-		t.Fatalf("noninteractive paid treatment prompted: %q", output.String())
 	}
 }

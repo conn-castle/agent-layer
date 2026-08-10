@@ -54,6 +54,7 @@ type AttemptResult struct {
 	ChildCostMinUSD       *float64  `json:"child_cost_min_usd,omitempty"`
 	ChildCostMaxUSD       *float64  `json:"child_cost_max_usd,omitempty"`
 	InvocationCount       int       `json:"invocation_count"`
+	InvocationWorkers     int       `json:"invocation_workers,omitempty"`
 }
 
 // Validate prevents malformed or incomplete evidence from entering analysis.

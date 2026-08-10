@@ -27,11 +27,6 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
-- Backlog 2026-07-30 deepswe-copy-selection-json: Copy a planner selection as JSON
-    Priority: High. Area: DeepSWE planner
-    Description: Let users copy the primary model, reasoning, budget, iterations, and exact selected task allocation as portable JSON.
-    Acceptance criteria: A Copy selection JSON control emits a versioned, validated artifact that the benchmark runner can consume without reconstructing browser state.
-
 - Backlog 2026-07-09 copilot-cli-gpt-5.6-models: Advertise GPT-5.6 models for GitHub Copilot CLI
     Priority: Medium. Area: providers / copilot-cli / dispatch / wizard
     Description: Add Sol, Terra, and Luna to the separate Copilot CLI model catalog after verifying the exact provider-native identifiers, so wizard and dispatch users do not need custom values.

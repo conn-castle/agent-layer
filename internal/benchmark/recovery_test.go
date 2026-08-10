@@ -55,6 +55,46 @@ func TestFailedPierExecutionIsNotSilentlyRetriedAtProviderExpense(t *testing.T) 
 	}
 }
 
+func TestFailedPierExecutionResumesOnlyThroughANewStudyInvocation(t *testing.T) {
+	request := recoveryRequestFixture(t)
+	promotePierAttempt(t, request, errors.New("task environment unavailable"))
+
+	resume := request
+	resume.EventID = "fresh-event"
+	resume.ResumeFailedInfrastructure = true
+	if _, found, err := recoverCompletedPierExecution(resume); err != nil || found {
+		t.Fatalf("explicit resume recovery = found=%t err=%v", found, err)
+	}
+	failed, err := failedPierExecutionIDs(resume)
+	if err != nil || len(failed) != 1 || failed[0] != request.EventID {
+		t.Fatalf("failed execution history = %#v, %v", failed, err)
+	}
+	resume.resumedFailedEventIDs = failed
+	if err := writePierExecutionReceipt(resume, errors.New("second infrastructure failure"), nil); err != nil {
+		t.Fatal(err)
+	}
+	destination, err := artifactDestination(resume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt pierExecutionReceipt
+	if err := readStudyJSON(filepath.Join(destination, "execution-receipt.json"), &receipt); err != nil {
+		t.Fatal(err)
+	}
+	if len(receipt.ResumedFailedEventIDs) != 1 || receipt.ResumedFailedEventIDs[0] != request.EventID {
+		t.Fatalf("resume transition = %#v", receipt)
+	}
+	// The predecessor receipt remains immutable and attributable; a resumption
+	// always receives a distinct event directory.
+	previous, err := artifactDestination(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(previous, "execution-receipt.json")); err != nil {
+		t.Fatalf("original failed receipt was overwritten: %v", err)
+	}
+}
+
 func TestCompletedPierExecutionIsNotSharedAcrossArmsOrConfigurations(t *testing.T) {
 	request := recoveryRequestFixture(t)
 	promotePierAttempt(t, request, nil)
@@ -100,7 +140,7 @@ func TestPierExecutionReceiptMustDescribeTheCellItSitsIn(t *testing.T) {
 	receiptPath := filepath.Join(destination, "execution-receipt.json")
 
 	var receipt pierExecutionReceipt
-	if err := readCampaignJSON(receiptPath, &receipt); err != nil {
+	if err := readStudyJSON(receiptPath, &receipt); err != nil {
 		t.Fatal(err)
 	}
 	receipt.EventID = "some-other-event"

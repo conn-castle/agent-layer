@@ -4,14 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -675,109 +673,6 @@ func TestArtifactSanitizationUsesVersionedEvidenceRoot(t *testing.T) {
 	}
 }
 
-func TestArmExecutorStopsSchedulingAfterInfrastructureFailure(t *testing.T) {
-	model, effort, err := ParseModelSelection("luna:low")
-	if err != nil {
-		t.Fatal(err)
-	}
-	plan := benchmarkPlan{}
-	plan.Tasks = []benchmarkPlanTask{
-		{ID: "first-task", RepetitionsPerArm: 2},
-		{ID: "second-task", RepetitionsPerArm: 2},
-	}
-	loaded := loadedBenchmarkPlan{
-		ID: strings.Repeat("a", 64), Plan: plan, Model: model, Effort: effort, RunCount: 4,
-	}
-	executor := &selectiveFailureExecutor{failures: map[string]bool{"first-task:2": true}}
-	root := t.TempDir()
-	execution := armExecution{
-		repoRoot: root, stateDir: filepath.Join(root, "evidence"),
-		arm: ArmBaseline, concurrency: 1, loaded: loaded,
-		checksums: map[string]string{"first-task": "first", "second-task": "second"},
-	}
-	err = executePlanArm(context.Background(), execution, executor)
-	if err == nil || !strings.Contains(err.Error(), "first-task repetition 2") {
-		t.Fatalf("infrastructure failure = %v", err)
-	}
-	if len(executor.calls) != 2 {
-		t.Fatalf("executed %d cells after failure, want 2", len(executor.calls))
-	}
-	if missing := missingPlanCells(execution); len(missing) != 3 {
-		t.Fatalf("missing cells = %#v; expected one preserved success and no later runs", missing)
-	}
-}
-
-func TestArmExecutorRerunsCapacityFailureAfterWaitWithoutStoppingOtherCells(t *testing.T) {
-	model, effort, err := ParseModelSelection("luna:low")
-	if err != nil {
-		t.Fatal(err)
-	}
-	loaded := loadedBenchmarkPlan{
-		ID: strings.Repeat("a", 64),
-		Plan: benchmarkPlan{Tasks: []benchmarkPlanTask{
-			{ID: "first-task", RepetitionsPerArm: 2},
-			{ID: "second-task", RepetitionsPerArm: 1},
-		}},
-		Model: model, Effort: effort, RunCount: 3,
-	}
-	executor := &capacityOnceExecutor{}
-	waitCalls := 0
-	root := t.TempDir()
-	execution := armExecution{
-		repoRoot: root, stateDir: filepath.Join(root, "evidence"),
-		arm: ArmTreatment, concurrency: 1, loaded: loaded,
-		checksums: map[string]string{"first-task": "first", "second-task": "second"},
-		capacityWait: func(context.Context) error {
-			waitCalls++
-			return nil
-		},
-	}
-	if err := executePlanArm(context.Background(), execution, executor); err != nil {
-		t.Fatal(err)
-	}
-	if waitCalls != 1 {
-		t.Fatalf("capacity waits = %d, want 1", waitCalls)
-	}
-	if len(executor.calls) != 4 {
-		t.Fatalf("executions = %d, want one fresh retry plus three successful cells", len(executor.calls))
-	}
-	if executor.calls[0].EventID == executor.calls[1].EventID {
-		t.Fatal("capacity retry reused the failed provider event")
-	}
-	if missing := missingPlanCells(execution); len(missing) != 0 {
-		t.Fatalf("missing cells after capacity retry = %#v", missing)
-	}
-}
-
-func TestArmExecutorReturnsCancellationDuringCapacityWait(t *testing.T) {
-	model, effort, err := ParseModelSelection("luna:low")
-	if err != nil {
-		t.Fatal(err)
-	}
-	loaded := loadedBenchmarkPlan{
-		ID: strings.Repeat("a", 64),
-		Plan: benchmarkPlan{Tasks: []benchmarkPlanTask{
-			{ID: "first-task", RepetitionsPerArm: 1},
-		}},
-		Model: model, Effort: effort, RunCount: 1,
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	execution := armExecution{
-		repoRoot: t.TempDir(), stateDir: filepath.Join(t.TempDir(), "evidence"),
-		arm: ArmTreatment, concurrency: 1, loaded: loaded,
-		checksums: map[string]string{"first-task": "first"},
-		capacityWait: func(context.Context) error {
-			cancel()
-			return context.Canceled
-		},
-	}
-
-	err = executePlanArm(ctx, execution, &capacityOnceExecutor{})
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("capacity cancellation = %v, want context canceled", err)
-	}
-}
-
 func TestProviderCapacityRequiresExactProviderTranscriptEvidence(t *testing.T) {
 	stage := t.TempDir()
 	transcript := filepath.Join(stage, "jobs", "one", "agent", "codex.txt")
@@ -852,37 +747,6 @@ func TestInstructionsOnlyRuntimePreflightDoesNotRequireDispatchEvidence(t *testi
 	}
 }
 
-func TestArmExecutorLimitsNewRunsWithoutInvalidatingCachedProgress(t *testing.T) {
-	model, effort, err := ParseModelSelection("luna:low")
-	if err != nil {
-		t.Fatal(err)
-	}
-	loaded := loadedBenchmarkPlan{
-		ID: strings.Repeat("a", 64),
-		Plan: benchmarkPlan{Tasks: []benchmarkPlanTask{
-			{ID: "first-task", RepetitionsPerArm: 2},
-			{ID: "second-task", RepetitionsPerArm: 1},
-		}},
-		Model: model, Effort: effort, RunCount: 3,
-	}
-	executor := &baselineFakeExecutor{}
-	root := t.TempDir()
-	execution := armExecution{
-		repoRoot: root, stateDir: filepath.Join(root, "evidence"),
-		arm: ArmBaseline, concurrency: 1, maxNewRuns: 1, loaded: loaded,
-		checksums: map[string]string{"first-task": "first", "second-task": "second"},
-	}
-	if err := executePlanArm(context.Background(), execution, executor); err != nil {
-		t.Fatal(err)
-	}
-	if len(executor.calls) != 1 {
-		t.Fatalf("executed %d new runs, want 1", len(executor.calls))
-	}
-	if missing := missingPlanCells(execution); len(missing) != 2 {
-		t.Fatalf("missing cells after bounded run = %#v", missing)
-	}
-}
-
 func TestPinnedCheckoutValidationRejectsMissingAndWrongRepositoryState(t *testing.T) {
 	root := t.TempDir()
 	checkout := filepath.Join(root, "checkout")
@@ -939,61 +803,6 @@ func TestPinnedCheckoutValidationRejectsMissingAndWrongRepositoryState(t *testin
 		!strings.Contains(err.Error(), "invalid Pier execution request") {
 		t.Fatalf("invalid Pier request error = %v", err)
 	}
-}
-
-type selectiveFailureExecutor struct {
-	mutex    sync.Mutex
-	failures map[string]bool
-	calls    []string
-}
-
-type capacityOnceExecutor struct {
-	calls []ExecutionRequest
-}
-
-func (executor *capacityOnceExecutor) Execute(_ context.Context, request ExecutionRequest) (AttemptResult, error) {
-	executor.calls = append(executor.calls, request)
-	if len(executor.calls) == 1 {
-		return AttemptResult{}, fmt.Errorf("%w: %s", errProviderCapacity, providerCapacityMessage)
-	}
-	cost, duration := .1, 1.0
-	now := time.Now().UTC()
-	return AttemptResult{
-		SchemaVersion: StorageSchemaVersion, EventID: request.EventID,
-		Attempt: request.Attempt, Task: request.Task, Status: statusSuccess,
-		F2PPassed: 1, F2PTotal: 2, F2PScore: .5,
-		CostUSD: &cost, CostKind: costKindProviderReported,
-		DurationSeconds: &duration, TaskChecksum: request.TaskChecksum,
-		StartedAt: now, FinishedAt: now.Add(time.Second),
-		Provider: request.Model.Adapter, PublishedModel: request.Model.PublishedIdentifier,
-		RuntimeModel: request.Model.RuntimeIdentifier, ReasoningEffort: request.Effort,
-		ProviderClientVersion: request.Model.ProviderClientVersion,
-		InvocationCount:       1, DispatchConformant: true,
-	}, nil
-}
-
-func (executor *selectiveFailureExecutor) Execute(_ context.Context, request ExecutionRequest) (AttemptResult, error) {
-	key := fmt.Sprintf("%s:%d", request.Task, request.Attempt)
-	executor.mutex.Lock()
-	fails := executor.failures[key]
-	executor.calls = append(executor.calls, key)
-	executor.mutex.Unlock()
-	if fails {
-		return AttemptResult{}, errors.New("observed failure")
-	}
-	cost, duration := .1, 1.0
-	now := time.Now().UTC()
-	return AttemptResult{
-		SchemaVersion: StorageSchemaVersion, EventID: request.EventID,
-		Attempt: request.Attempt, Task: request.Task, Status: statusSuccess,
-		F2PPassed: 1, F2PTotal: 2, F2PScore: .5,
-		CostUSD: &cost, CostKind: costKindProviderReported,
-		DurationSeconds: &duration, TaskChecksum: request.TaskChecksum,
-		StartedAt: now, FinishedAt: now.Add(time.Second),
-		Provider: request.Model.Adapter, PublishedModel: request.Model.PublishedIdentifier,
-		RuntimeModel: request.Model.RuntimeIdentifier, ReasoningEffort: request.Effort,
-		ProviderClientVersion: request.Model.ProviderClientVersion,
-	}, nil
 }
 
 func writePierStage(t *testing.T, checksum string, score, cost float64) string {

@@ -1,4 +1,4 @@
-// Package benchmark executes and reports website-planned DeepSWE campaigns.
+// Package benchmark executes and reports content-addressed DeepSWE studies.
 package benchmark
 
 import (
@@ -55,6 +55,13 @@ const (
 	taskInstructionFile      = "instruction.md"
 	taskPreArtifactsFile     = "pre_artifacts.sh"
 	taskTOMLFile             = "task.toml"
+	studyResourceTimeoutKey  = "agent_timeout_multiplier"
+	studyResourceSchemaKey   = "schema"
+	studyResourceSchema      = "deepswe-benchmark-resources-v1"
+	agentLayerEnvPath        = ".agent-layer/.env"
+	studyInputInstructions   = "instructions"
+	studyInputSkills         = "skills"
+	studyInputEntryPrompt    = "entry_prompt"
 	skillsAgentTimeoutFactor = 4.0
 )
 

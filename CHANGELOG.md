@@ -3,6 +3,12 @@ All notable changes to this project will be documented in this file.
 
 ## v0.16.3 - 2026-08-09
 
+### Added
+- Added one content-addressed DeepSWE study workflow: `al benchmark run <study.toml>` executes explicit experiments from a website selection, resumes immutable cell evidence, and produces JSON and HTML reports with fixed-selection Welch comparisons and Holm-adjusted p-values. `al benchmark readiness` remains the developer preflight for the pinned task catalog.
+
+### Changed
+- Removed the obsolete `benchmark baseline`, `benchmark treatment`, `benchmark report`, matrix runner, and `benchmark correct-scores` implementations. Compatible historical selection evidence is read narrowly by the study reporter and corrected automatically from preserved verifier artifacts; private campaign state is never scanned or rewritten.
+
 ### Fixed
 - The built-in Agent Dispatch MCP server now starts from the repository root embedded during `al sync`, so installing a newer global `al` no longer causes MCP clients with an older repo pin to bypass that pin. The launcher keeps the legacy `al dispatch mcp-server` argument contract when it reaches the cached binary, preserving compatibility with older pinned releases, and retains a same-project caller working directory for dispatched agents. Existing generated MCP files need a one-time refresh with the fixed binary (`AL_VERSION=v0.16.3 al sync`); this does not change the repo pin.
 

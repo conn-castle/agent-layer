@@ -238,7 +238,7 @@ func TestTaskReadinessRejectsBaselineTreatmentIdentityMismatch(t *testing.T) {
 		t.Fatalf("matching task environments: %v", err)
 	}
 	mismatched := map[string]string{"task-one": strings.Repeat("1", 64), "task-two": strings.Repeat("3", 64)}
-	if err := validateTaskEnvironmentParity(tasks, baseline, mismatched); err == nil || !strings.Contains(err.Error(), "fresh baseline") {
+	if err := validateTaskEnvironmentParity(tasks, baseline, mismatched); err == nil || !strings.Contains(err.Error(), "run benchmark run again") {
 		t.Fatalf("mismatched task environments = %v", err)
 	}
 	if err := validateTaskEnvironmentParity(tasks, nil, matching); err == nil {

@@ -491,6 +491,12 @@
       Tasks are ranked by the fifth percentile of their one-run Pearson
       correlation with the fixed full DeepSWE configuration score. Pricing and
       F2P table evidence reflect the primary published model and effort.
+      Headroom and optional comparison statistics are published-model evidence,
+      not evidence about a future local intervention. The comparison never
+      changes selection. Exported selections authorize paid calls when passed
+      to <code>al benchmark run</code>; the fixed-score target includes each
+      candidate task, which creates a small part-whole correlation limitation.
+      arXiv paper forthcoming
     </p>
   </header>
 
@@ -522,6 +528,7 @@
       </div>
       <button id="copySelection" type="button" disabled>Copy selection JSON</button>
       <p class="copy-status" id="copyStatus" role="status" aria-live="polite"></p>
+      <p class="note">Uncheck a task to record a manual exclusion. These are distinct from automatic completeness, published-headroom, cost, and budget filters.</p>
       <div class="comparison-controls">
         <h2>Comparison</h2>
         <div class="field">
@@ -920,7 +927,7 @@ function comparePublishedRows(primaryRows, comparisonRows, iterations) {
  * @param {number} minimumHeadroom minimum required score headroom from zero through one
  * @returns {{rows:object[],selectedCount:number,estimatedSpend:number}} selection
  */
-function selectRowsWithinBudget(rows, budget, iterations, minimumHeadroom = 0) {
+function selectRowsWithinBudget(rows, budget, iterations, minimumHeadroom = 0, manualExclusions = new Set()) {
   let remaining = Number.isFinite(budget) && budget >= 0 ? budget : 0;
   const repetitions =
     Number.isInteger(iterations) && iterations >= 1 ? iterations : NaN;
@@ -941,6 +948,7 @@ function selectRowsWithinBudget(rows, budget, iterations, minimumHeadroom = 0) {
     const headroom = row.cell ? 1 - row.cell.mean : -Infinity;
     const selected =
       Number.isFinite(requiredHeadroom) &&
+      !manualExclusions.has(row.id) &&
       headroom + 1e-9 >= requiredHeadroom &&
       Number.isFinite(cost) &&
       cost <= remaining + 1e-9;
@@ -1249,6 +1257,7 @@ function buildBenchmarkSelection(
   configurationId,
   budget,
   iterations,
+  manualExclusions = [],
 ) {
   const configuration = SNAPSHOT.configurations.find(
     (candidate) => candidate.id === configurationId,
@@ -1267,7 +1276,7 @@ function buildBenchmarkSelection(
   }
   return {
     schema: "deepswe-benchmark-selection",
-    schemaVersion: 1,
+    schemaVersion: 2,
     snapshot: {
       url: SNAPSHOT.source.url,
       sha256: SNAPSHOT.source.sha256,
@@ -1279,6 +1288,7 @@ function buildBenchmarkSelection(
       iterationsPerTask: iterations,
     },
     estimatedPublishedSpendUsd: selection.estimatedSpend,
+    manualExclusions: [...manualExclusions].sort(),
     tasks: tasks.map((row) => ({
       id: row.id,
       repetitions: iterations,
@@ -1328,12 +1338,14 @@ async function copyCurrentSelection() {
     budget,
     iterations,
     minimumHeadroom,
+    manualExclusions,
   );
   const selectionDocument = buildBenchmarkSelection(
     selection,
     configurationId,
     budget,
     iterations,
+    manualExclusions,
   );
   if (!selectionDocument) return;
   try {
@@ -1360,6 +1372,7 @@ function renderTable() {
     budget,
     iterations,
     minimumHeadroom,
+    manualExclusions,
   );
   const selectedIds = selection.rows
     .filter((row) => row.selected)
@@ -1408,7 +1421,7 @@ function renderTable() {
   $("taskRows").innerHTML = selection.rows
     .map((row) => `
       <tr${row.selected ? ' class="in-budget"' : ""}>
-        <td>${escapeHtml(row.id)}</td>
+        <td><label><input class="manual-exclusion" type="checkbox" data-task="${escapeHtml(row.id)}" ${manualExclusions.has(row.id) ? "" : "checked"}> ${escapeHtml(row.id)}</label></td>
         <td class="correlation">
           ${decimal(row.correlation.median)}
           <span class="interval">${decimal(row.correlation.p05)} – ${decimal(row.correlation.p95)}</span>
@@ -1428,8 +1441,16 @@ function renderTable() {
     primaryId,
     budget,
     iterations,
+    manualExclusions,
   );
   $("copyStatus").textContent = "";
+  for (const input of document.querySelectorAll(".manual-exclusion")) {
+    input.addEventListener("change", () => {
+      if (input.checked) manualExclusions.delete(input.dataset.task);
+      else manualExclusions.add(input.dataset.task);
+      renderTable();
+    });
+  }
   renderEstimate({
     primaryEstimate,
     comparisonEstimate,
@@ -1516,6 +1537,7 @@ function initializeApp() {
   renderTable();
 }
 
+const manualExclusions = new Set();
 initializeApp();
 </script>
 </body>

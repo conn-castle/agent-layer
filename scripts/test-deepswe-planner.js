@@ -2,6 +2,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
@@ -12,9 +13,6 @@ const {
   pearsonCorrelation,
   quantile,
 } = require("./build-deepswe-planner-data.js");
-const {
-  matrixSelectionID,
-} = require("./render-deepswe-matrix-report.js");
 
 const repositoryRoot = path.resolve(__dirname, "..");
 const applicationPath = path.join(
@@ -25,6 +23,21 @@ const dataPath = path.join(
   repositoryRoot,
   "site/static/deepswe-planner/app/data.js",
 );
+
+function benchmarkSelectionID(selection) {
+  const canonical = {
+    schema: selection.schema,
+    schemaVersion: selection.schemaVersion,
+    snapshot: selection.snapshot,
+    selector: selection.selector,
+    estimatedPublishedSpendUsd: selection.estimatedPublishedSpendUsd,
+  };
+  if (selection.schemaVersion >= 2) {
+    canonical.manualExclusions = selection.manualExclusions ?? [];
+  }
+  canonical.tasks = selection.tasks;
+  return crypto.createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
 
 /**
  * Build one valid published trial fixture.
@@ -290,6 +303,20 @@ test("browser headroom excludes saturated tasks before budget selection", () => 
   assert.equal(selection.rows[2].normalizedWeight, 0.6);
 });
 
+test("manual exclusions happen before budget walking and selected weights renormalize", () => {
+  const { selectRowsWithinBudget } = loadApplication();
+  const rows = [
+    { id: "excluded-first", cell: { meanCost: 5, mean: .5 }, calibration: { precisionWeight: 8 } },
+    { id: "second", cell: { meanCost: 3, mean: .5 }, calibration: { precisionWeight: 1 } },
+    { id: "third", cell: { meanCost: 2, mean: .5 }, calibration: { precisionWeight: 3 } },
+  ];
+  const selection = selectRowsWithinBudget(rows, 5, 1, 0, new Set(["excluded-first"]));
+  assert.deepEqual(selection.rows.map((row) => row.selected), [false, true, true]);
+  assert.equal(selection.estimatedSpend, 5);
+  assert.equal(selection.rows[1].normalizedWeight, .25);
+  assert.equal(selection.rows[2].normalizedWeight, .75);
+});
+
 test("comparison rows reuse the primary allocation and reject incomplete cells", () => {
   const { buildComparisonRows } = loadApplication();
   const primaryRows = [
@@ -493,13 +520,14 @@ test("copied selection matches the benchmark CLI schema", () => {
   );
 
   assert.equal(document.schema, "deepswe-benchmark-selection");
-  assert.equal(document.schemaVersion, 1);
+  assert.equal(document.schemaVersion, 2);
   assert.equal(document.snapshot.sha256, snapshot.source.sha256);
   assert.deepEqual(
     [document.selector.model, document.selector.reasoning],
     [configuration.model, configuration.reasoning],
   );
   assert.equal(document.estimatedPublishedSpendUsd, 2.5);
+  assert.equal(JSON.stringify(document.manualExclusions), "[]");
   assert.equal(
     JSON.stringify(document.tasks),
     JSON.stringify([
@@ -514,7 +542,7 @@ test("copied selection matches the benchmark CLI schema", () => {
   );
 });
 
-test("matrix selection identity matches the Go canonical identity", () => {
+test("benchmark selection identity matches the Go canonical identity", () => {
   const selection = {
     schema: "deepswe-benchmark-selection",
     schemaVersion: 1,
@@ -548,12 +576,18 @@ test("matrix selection identity matches the Go canonical identity", () => {
   };
 
   assert.equal(
-    matrixSelectionID(selection),
+    benchmarkSelectionID(selection),
     "62ab8876c8a70c14c3994401243eece6e6e807aa39629e42952b84adaa5bc8b0",
   );
   selection.tasks[0].calibration.slope = 0.7;
   assert.notEqual(
-    matrixSelectionID(selection),
+    benchmarkSelectionID(selection),
     "62ab8876c8a70c14c3994401243eece6e6e807aa39629e42952b84adaa5bc8b0",
   );
+
+  selection.schemaVersion = 2;
+  selection.manualExclusions = ["excluded-task"];
+  const withExclusion = benchmarkSelectionID(selection);
+  selection.manualExclusions = ["different-task"];
+  assert.notEqual(benchmarkSelectionID(selection), withExclusion);
 });

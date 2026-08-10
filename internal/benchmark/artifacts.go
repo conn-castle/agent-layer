@@ -29,10 +29,21 @@ type pierExecutionReceipt struct {
 	CompletedAt         time.Time `json:"completed_at"`
 	Succeeded           bool      `json:"succeeded"`
 	CleanupSucceeded    bool      `json:"cleanup_succeeded"`
+	// ResumedFailedEventIDs records the prior immutable infrastructure-failure
+	// receipts that this distinct provider event was explicitly authorized to
+	// replace on a later benchmark invocation.
+	ResumedFailedEventIDs []string `json:"resumed_failed_event_ids,omitempty"`
 }
 
 func promoteSanitizedPierArtifacts(request ExecutionRequest, stage string) error {
 	var secrets [][]byte
+	if values, err := benchmarkCredentialValues(request.RepoRoot, request.Bundle); err != nil {
+		return err
+	} else {
+		for _, value := range values {
+			secrets = append(secrets, []byte(value))
+		}
+	}
 	for _, path := range []string{
 		filepath.Join(request.RepoRoot, ".codex", "auth.json"),
 		filepath.Join(request.RepoRoot, ".claude-config", ".credentials.json"),
@@ -81,7 +92,8 @@ func writePierExecutionReceipt(request ExecutionRequest, commandErr, cleanupErr 
 		EnvironmentIdentity: request.EnvironmentIdentity, Arm: request.Arm,
 		RuntimeModel: request.Model.RuntimeIdentifier, ReasoningEffort: request.Effort,
 		CompletedAt: time.Now().UTC(), Succeeded: commandErr == nil,
-		CleanupSucceeded: cleanupErr == nil,
+		CleanupSucceeded:      cleanupErr == nil,
+		ResumedFailedEventIDs: append([]string(nil), request.resumedFailedEventIDs...),
 	}
 	if request.Bundle != nil {
 		receipt.TreatmentHash = request.Bundle.ManifestHash
@@ -92,47 +104,45 @@ func writePierExecutionReceipt(request ExecutionRequest, commandErr, cleanupErr 
 	return nil
 }
 
-func recoverCompletedPierExecution(request ExecutionRequest) (AttemptResult, bool, error) {
+type completedPierExecution struct {
+	root    string
+	receipt pierExecutionReceipt
+}
+
+func matchingPierExecutions(request ExecutionRequest) ([]completedPierExecution, error) {
 	root := filepath.Join(
 		request.EvidenceDir, "attempts", fmt.Sprintf("%d", request.Attempt),
 		"tasks", request.Task, "artifacts",
 	)
 	entries, err := os.ReadDir(root)
 	if errors.Is(err, os.ErrNotExist) {
-		return AttemptResult{}, false, nil
+		return nil, nil
 	}
 	if err != nil {
-		return AttemptResult{}, false, fmt.Errorf("inspect completed Pier executions: %w", err)
+		return nil, fmt.Errorf("inspect completed Pier executions: %w", err)
 	}
-	type candidate struct {
-		root    string
-		receipt pierExecutionReceipt
-	}
-	var candidates []candidate
+	var candidates []completedPierExecution
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
 		var receipt pierExecutionReceipt
 		path := filepath.Join(root, entry.Name(), "execution-receipt.json")
-		if err := readCampaignJSON(path, &receipt); errors.Is(err, os.ErrNotExist) {
+		if err := readStudyJSON(path, &receipt); errors.Is(err, os.ErrNotExist) {
 			continue
 		} else if err != nil {
-			return AttemptResult{}, false, fmt.Errorf("read completed Pier execution receipt: %w", err)
+			return nil, fmt.Errorf("read completed Pier execution receipt: %w", err)
 		}
 		if receipt.SchemaVersion != pierExecutionReceiptSchema || receipt.EventID != entry.Name() ||
 			receipt.Attempt != request.Attempt || receipt.Task != request.Task || receipt.CompletedAt.IsZero() {
-			return AttemptResult{}, false, fmt.Errorf("completed Pier execution receipt %s does not match its benchmark cell", path)
+			return nil, fmt.Errorf("completed Pier execution receipt %s does not match its benchmark cell", path)
 		}
 		if receipt.TaskChecksum != request.TaskChecksum || receipt.EnvironmentIdentity != request.EnvironmentIdentity ||
 			receipt.Arm != request.Arm || receipt.RuntimeModel != request.Model.RuntimeIdentifier ||
 			receipt.ReasoningEffort != request.Effort || receipt.TreatmentHash != executionTreatmentHash(request) {
 			continue
 		}
-		candidates = append(candidates, candidate{root: filepath.Dir(path), receipt: receipt})
-	}
-	if len(candidates) == 0 {
-		return AttemptResult{}, false, nil
+		candidates = append(candidates, completedPierExecution{root: filepath.Dir(path), receipt: receipt})
 	}
 	sort.Slice(candidates, func(i, j int) bool {
 		if candidates[i].receipt.CompletedAt.Equal(candidates[j].receipt.CompletedAt) {
@@ -140,11 +150,28 @@ func recoverCompletedPierExecution(request ExecutionRequest) (AttemptResult, boo
 		}
 		return candidates[i].receipt.CompletedAt.Before(candidates[j].receipt.CompletedAt)
 	})
-	selected := candidates[0]
-	if !selected.receipt.Succeeded {
+	return candidates, nil
+}
+
+func recoverCompletedPierExecution(request ExecutionRequest) (AttemptResult, bool, error) {
+	candidates, err := matchingPierExecutions(request)
+	if err != nil {
+		return AttemptResult{}, false, err
+	}
+	var selected *completedPierExecution
+	for index := range candidates {
+		if candidates[index].receipt.Succeeded {
+			selected = &candidates[index]
+			break
+		}
+	}
+	if selected == nil {
+		if len(candidates) == 0 || request.ResumeFailedInfrastructure {
+			return AttemptResult{}, false, nil
+		}
 		return AttemptResult{}, false, fmt.Errorf(
 			"earliest completed Pier execution %s failed; refusing an automatic paid retry",
-			selected.receipt.EventID,
+			candidates[0].receipt.EventID,
 		)
 	}
 	recoveredRequest := request
@@ -165,6 +192,20 @@ func recoverCompletedPierExecution(request ExecutionRequest) (AttemptResult, boo
 		)
 	}
 	return result, true, nil
+}
+
+func failedPierExecutionIDs(request ExecutionRequest) ([]string, error) {
+	candidates, err := matchingPierExecutions(request)
+	if err != nil {
+		return nil, err
+	}
+	var failed []string
+	for _, candidate := range candidates {
+		if !candidate.receipt.Succeeded {
+			failed = append(failed, candidate.receipt.EventID)
+		}
+	}
+	return failed, nil
 }
 
 func executionTreatmentHash(request ExecutionRequest) string {

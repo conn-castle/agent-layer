@@ -2,6 +2,7 @@ package benchmark
 
 import (
 	_ "embed"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -124,13 +125,18 @@ func prepareVerifierBuildContext(source, target, image, pinnedImage string) erro
 // validatePlanTaskStartups parses every selected task's mandatory readiness
 // contract and optional startup definition without executing either program.
 func validatePlanTaskStartups(checkout string, tasks []benchmarkPlanTask) error {
+	var failures []error
 	for _, task := range tasks {
 		if _, err := loadTaskReadiness(checkout, task.ID); err != nil {
-			return err
+			failures = append(failures, fmt.Errorf("%s: %w", task.ID, err))
+			continue
 		}
 		if _, _, err := readTaskStartup(checkout, task.ID); err != nil {
-			return err
+			failures = append(failures, fmt.Errorf("%s: %w", task.ID, err))
 		}
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("selected benchmark task startup validation failed:\n%w", errors.Join(failures...))
 	}
 	return nil
 }

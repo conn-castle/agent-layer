@@ -9,8 +9,13 @@ from __future__ import annotations
 
 import base64
 import importlib.metadata
+import inspect
 import json
 import os
+import subprocess
+import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from pier.agents.installed.claude_code import ClaudeCode
@@ -41,6 +46,133 @@ PROJECTED_PATHS = (
 )
 
 
+def validate_mcp_initialize_response(
+    payload: str, content_type: str, requested_protocol_version: str
+) -> None:
+    """Require a complete MCP InitializeResult, not merely a JSON-RPC 2xx reply."""
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    if media_type == "text/event-stream":
+        data_lines = []
+        for line in payload.splitlines():
+            if not line:
+                if data_lines:
+                    break
+                continue
+            if line.startswith("data:"):
+                data_lines.append(line[5:].lstrip())
+        if not data_lines:
+            raise RuntimeError("SSE MCP initialize response contained no data event")
+        payload = "\n".join(data_lines)
+    elif media_type != "application/json":
+        raise RuntimeError(f"unsupported HTTP MCP initialize response content type {content_type!r}")
+    try:
+        response = json.loads(payload)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("HTTP MCP initialize response is not JSON-RPC") from error
+    if not isinstance(response, dict) or response.get("jsonrpc") != "2.0":
+        raise RuntimeError("HTTP MCP initialize response is not a JSON-RPC object")
+    if "error" in response:
+        raise RuntimeError("HTTP MCP initialize response contained an error")
+    if response.get("id") != 1 or "result" not in response:
+        raise RuntimeError("HTTP MCP initialize response did not match request id 1 with a result")
+    result = response["result"]
+    if not isinstance(result, dict):
+        raise RuntimeError("HTTP MCP initialize result is not an object")
+    protocol_version = result.get("protocolVersion")
+    if protocol_version != requested_protocol_version:
+        raise RuntimeError(
+            f"HTTP MCP initialize result protocolVersion {protocol_version!r} does not match "
+            f"requested {requested_protocol_version!r}"
+        )
+    if not isinstance(result.get("capabilities"), dict):
+        raise RuntimeError("HTTP MCP initialize result has no capabilities object")
+    server_info = result.get("serverInfo")
+    if not isinstance(server_info, dict):
+        raise RuntimeError("HTTP MCP initialize result has no serverInfo object")
+    for key in ("name", "version"):
+        if not isinstance(server_info.get(key), str) or not server_info[key].strip():
+            raise RuntimeError(f"HTTP MCP initialize serverInfo has no {key}")
+
+
+def _set_response_read_timeout(response, remaining_seconds: float) -> None:
+    """Tighten urllib's socket timeout so each read shares one total deadline."""
+    # urllib's HTTPResponse exposes this socket chain on the CPython versions
+    # used in Pier. Keep the best-effort traversal isolated for offline fakes.
+    socket = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
+    if socket is not None and hasattr(socket, "settimeout"):
+        socket.settimeout(remaining_seconds)
+
+
+def read_mcp_initialize_response(
+    response,
+    content_type: str,
+    requested_protocol_version: str,
+    *,
+    deadline_seconds: float = 15,
+    byte_cap: int = 1024 * 1024,
+    event_cap: int = 128,
+    monotonic=None,
+) -> str:
+    """Read one HTTP/SSE initialize reply under one deadline and finite bounds."""
+    if monotonic is None:
+        from time import monotonic
+    if deadline_seconds <= 0 or byte_cap <= 0 or event_cap <= 0:
+        raise RuntimeError("invalid MCP initialize response bounds")
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    started = monotonic()
+
+    def remaining() -> float:
+        seconds = deadline_seconds - (monotonic() - started)
+        if seconds <= 0:
+            raise RuntimeError(f"HTTP MCP initialize response exceeded {deadline_seconds:g} second deadline")
+        _set_response_read_timeout(response, seconds)
+        return seconds
+
+    if media_type == "application/json":
+        remaining()
+        payload = response.read(byte_cap + 1)
+        remaining()
+        if len(payload) > byte_cap:
+            raise RuntimeError(f"HTTP MCP initialize response exceeds {byte_cap} byte limit")
+        decoded = payload.decode("utf-8")
+        validate_mcp_initialize_response(decoded, "application/json", requested_protocol_version)
+        return decoded
+    if media_type != "text/event-stream":
+        raise RuntimeError(f"unsupported HTTP MCP initialize response content type {content_type!r}")
+
+    total_bytes = 0
+    completed_events = 0
+    data_lines = []
+    while True:
+        remaining()
+        line = response.readline(byte_cap - total_bytes + 1)
+        remaining()
+        if not line:
+            if data_lines:
+                payload = "\n".join(data_lines)
+                validate_mcp_initialize_response(payload, "application/json", requested_protocol_version)
+                return payload
+            raise RuntimeError("SSE MCP initialize response contained no data event")
+        total_bytes += len(line)
+        if total_bytes > byte_cap:
+            raise RuntimeError(f"HTTP MCP initialize response exceeds {byte_cap} byte limit")
+        try:
+            text = line.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise RuntimeError("SSE MCP initialize response is not UTF-8") from error
+        if text in ("\n", "\r\n"):
+            completed_events += 1
+            if completed_events > event_cap:
+                raise RuntimeError(f"SSE MCP initialize response exceeds {event_cap} events")
+            if data_lines:
+                payload = "\n".join(data_lines)
+                validate_mcp_initialize_response(payload, "application/json", requested_protocol_version)
+                return payload
+            continue
+        if text.startswith("data:"):
+            data_lines.append(text[5:].lstrip().rstrip("\r\n"))
+
+
 class _AgentLayerTreatment:
     """Install only the declared bundle before the native agent executes."""
 
@@ -53,6 +185,7 @@ class _AgentLayerTreatment:
         treatment_model: str,
         treatment_reasoning_effort: str,
         required_dispatch_roles: str = "",
+        credential_names: str = "",
         preflight_only: bool = False,
         codex_credentials_path: str | None = None,
         claude_credentials_path: str | None = None,
@@ -73,6 +206,13 @@ class _AgentLayerTreatment:
         self._codex_credentials_path = Path(codex_credentials_path) if codex_credentials_path else None
         self._claude_credentials_path = Path(claude_credentials_path) if claude_credentials_path else None
         self._required_dispatch_roles = [role for role in required_dispatch_roles.split(",") if role]
+        self._credential_names = [name for name in credential_names.split(",") if name]
+        self._credential_env = {}
+        for name in self._credential_names:
+            value = os.environ.get(name)
+            if not value:
+                raise RuntimeError(f"Configured MCP credential {name} is unavailable")
+            self._credential_env[name] = value
         if not self._treatment_bundle.is_dir():
             raise RuntimeError("Agent Layer benchmark treatment bundle is missing")
         if treatment_mode not in {"instructions-only", "instructions-and-skills"}:
@@ -127,22 +267,68 @@ class _AgentLayerTreatment:
         await self.exec_as_agent(environment, command=preserve)
         install = (
             f"mkdir -p {REMOTE_WORKSPACE}/docs {REMOTE_WORKSPACE}/.agent-layer/tmp "
-            f"&& cp -a {REMOTE_BUNDLE}/AGENTS.md {REMOTE_WORKSPACE}/AGENTS.md "
-            f"&& cp -a {REMOTE_BUNDLE}/docs/agent-layer {REMOTE_WORKSPACE}/docs/agent-layer "
+            f"&& test ! -f {REMOTE_BUNDLE}/AGENTS.md || cp -a {REMOTE_BUNDLE}/AGENTS.md {REMOTE_WORKSPACE}/AGENTS.md "
+            f"&& test ! -d {REMOTE_BUNDLE}/docs/agent-layer || cp -a {REMOTE_BUNDLE}/docs/agent-layer {REMOTE_WORKSPACE}/docs/agent-layer "
             f"&& git -C {REMOTE_WORKSPACE} config user.email benchmark@local.invalid "
             f"&& git -C {REMOTE_WORKSPACE} config user.name 'Agent Layer Benchmark' "
             f"&& (git -C {REMOTE_WORKSPACE} show-ref --verify --quiet refs/heads/main || "
             f"git -C {REMOTE_WORKSPACE} branch main HEAD)"
         )
-        if self._treatment_mode == "instructions-and-skills":
-            install += (
-                f" && cp -a {REMOTE_BUNDLE}/.agent-layer/. {REMOTE_WORKSPACE}/.agent-layer/ "
-                f"&& cp -a {REMOTE_BUNDLE}/.agents {REMOTE_WORKSPACE}/.agents "
-            )
+        # Every study mode carries its normal secret-free projection.  Config
+        # (including MCP and permissions), instructions, and skills must not
+        # disappear merely because this experiment does not use dispatch.
+        install += (
+            f" && cp -a {REMOTE_BUNDLE}/.agent-layer/. {REMOTE_WORKSPACE}/.agent-layer/ "
+            f"&& test ! -d {REMOTE_BUNDLE}/.agents || cp -a {REMOTE_BUNDLE}/.agents {REMOTE_WORKSPACE}/.agents "
+            f"&& for path in .codex .claude .copilot .gemini .mcp.json .vscode; do "
+            f"test ! -e {REMOTE_BUNDLE}/\"$path\" || cp -a {REMOTE_BUNDLE}/\"$path\" {REMOTE_WORKSPACE}/\"$path\"; done "
+        )
         await self.exec_as_agent(
             environment,
             command=install,
         )
+        # Agent Layer resolves configuration placeholders from its normal .env
+        # boundary. Upload only the declared names from Pier's child environment
+        # before sync; projected-path restoration and host-side sanitization keep
+        # these values out of submitted patches and preserved evidence.
+        if self._credential_env:
+            temporary = None
+            try:
+                with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as stream:
+                    temporary = stream.name
+                    for name in self._credential_names:
+                        stream.write(f"{name}={self._credential_env[name]}\n")
+                os.chmod(temporary, 0o600)
+                await environment.upload_file(
+                    Path(temporary),
+                    f"{REMOTE_WORKSPACE}/.agent-layer/.env",
+                )
+            finally:
+                if temporary:
+                    Path(temporary).unlink(missing_ok=True)
+        if self._treatment_mode != "instructions-and-skills":
+            # Runtime installation is not a skill feature. Config-only and
+            # instructions-only projections can contain normal MCP servers.
+            await self.exec_as_root(
+                environment,
+                command=(
+                    f"cp {REMOTE_BUNDLE}/.agent-layer/bin/al-linux-* /usr/local/bin/al "
+                    "&& chown root:root /usr/local/bin/al && chmod 0755 /usr/local/bin/al"
+                ),
+            )
+            if self._treatment_agent == "codex":
+                await self.exec_as_agent(
+                    environment,
+                    command=(
+                        f"rm -rf {REMOTE_PROJECT_CODEX_HOME} {REMOTE_CODEX_HOME} "
+                        f"&& mkdir -p {REMOTE_PROJECT_CODEX_HOME} "
+                        f"&& ln -s {REMOTE_PROJECT_CODEX_HOME} {REMOTE_CODEX_HOME}"
+                    ),
+                )
+            await self.exec_as_agent(
+                environment,
+                command=f"cd {REMOTE_WORKSPACE} && /usr/local/bin/al sync",
+            )
         if self._treatment_mode == "instructions-and-skills":
             role_targets = [
                 *self._dispatch_config["plan_reviewers"],
@@ -269,6 +455,62 @@ class _AgentLayerTreatment:
                     f"cat {REMOTE_DISPATCH_OPTIONS_PREFLIGHT} >&2; exit 1; }}"
                 ),
             )
+        await self._preflight_mcp_transports(environment)
+
+    async def _preflight_mcp_transports(self, environment) -> None:
+        """Exercise every configured transport before a paid coordinator starts."""
+        # Keep the remote task-side parser byte-for-byte coupled to the
+        # offline-tested function above. The HTTP response is protocol evidence,
+        # not a generic connectivity probe, so a 2xx page or unrelated JSON must
+        # not admit a paid task.
+        script = (
+            "import json, os, re, select, subprocess, sys, urllib.error, urllib.request\n"
+            + inspect.getsource(validate_mcp_initialize_response)
+            + inspect.getsource(_set_response_read_timeout)
+            + inspect.getsource(read_mcp_initialize_response)
+            + r'''
+p = "/tmp/agent-layer-benchmark/mcp-preflight.json"
+mcp_protocol_version = "2025-03-26"
+def resolve(value):
+    def replace(match):
+        name = match.group(1)
+        if name == "AL_REPO_ROOT": return "/app"
+        if not os.environ.get(name): raise RuntimeError(f"missing configured MCP credential {name}")
+        return os.environ[name]
+    return re.sub(r"\$\{([A-Z0-9_]+)\}", replace, value)
+for s in json.load(open(p, encoding="utf-8")).get("servers", []):
+    transport = s["transport"]
+    if transport == "stdio":
+        env = os.environ.copy(); env.update({k: resolve(v) for k, v in s.get("env", {}).items()})
+        proc = subprocess.Popen([resolve(s["command"]), *[resolve(v) for v in s.get("args", [])]], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        try:
+            proc.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":mcp_protocol_version,"capabilities":{},"clientInfo":{"name":"agent-layer-benchmark","version":"1"}}}) + "\n"); proc.stdin.flush()
+            if not select.select([proc.stdout], [], [], 15)[0]: raise RuntimeError("initialize timed out")
+            line = proc.stdout.readline()
+            validate_mcp_initialize_response(line, "application/json", mcp_protocol_version)
+        finally:
+            if proc.poll() is None: proc.terminate(); proc.wait(timeout=5)
+    elif transport == "http":
+        request = urllib.request.Request(resolve(s["url"]), data=json.dumps({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":mcp_protocol_version,"capabilities":{},"clientInfo":{"name":"agent-layer-benchmark","version":"1"}}}).encode(), headers={"Content-Type":"application/json", "Accept":"application/json, text/event-stream", **{k: resolve(v) for k, v in s.get("headers", {}).items()}}, method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                if response.status >= 400: raise RuntimeError(f"HTTP {response.status}")
+                content_type = response.headers.get("Content-Type", "")
+                read_mcp_initialize_response(response, content_type, mcp_protocol_version)
+        except urllib.error.HTTPError as error:
+            raise RuntimeError(f"HTTP MCP authentication/service preflight failed: {error.code}") from error
+    else: raise RuntimeError(f"unsupported MCP transport {transport}")
+'''
+        )
+        encoded = base64.b64encode(script.encode("utf-8")).decode("ascii")
+        await self.exec_as_agent(
+            environment,
+            command=(
+                f"printf '%s' '{encoded}' | base64 -d | python3 || "
+                "{ echo 'configured MCP transport preflight failed' >&2; exit 1; }"
+            ),
+            env=self.build_process_env(self._credential_env),
+        )
 
     async def _collect_evidence(self, environment):
         evidence_dir = EnvironmentPaths.agent_dir / "agent-layer-dispatch"
@@ -376,6 +618,10 @@ class _AgentLayerTreatment:
 
     def _workflow_instruction(self, instruction: str) -> str:
         template = (self._treatment_bundle / "workflow-prompt.md").read_text(encoding="utf-8")
+        if template.count("{{task}}") == 1:
+            # Study-owned entry prompts are reproducibility inputs. Do not add
+            # a workflow prefix/suffix or infer task placement.
+            return template.replace("{{task}}", instruction)
         describe = lambda target: (
             f"{target['agent']} {target['model']} with "
             f"{target['reasoning_effort']} reasoning-effort"

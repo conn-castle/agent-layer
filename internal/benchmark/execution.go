@@ -10,15 +10,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/gitenv"
 )
-
-// ErrConfirmationRequired is returned before any paid model invocation.
-var ErrConfirmationRequired = errors.New("benchmark paid execution requires confirmation")
 
 var errProviderCapacity = errors.New("provider model is at capacity")
 
@@ -29,14 +28,13 @@ var (
 	preflightTreatmentRuntime = func(ctx context.Context, request ExecutionRequest) error {
 		return (PierExecutor{}).Preflight(ctx, request)
 	}
-	validateBenchmarkAuthentication   = validateAuthentication
-	ensurePinnedBenchmarkCheckout     = ensurePinnedCheckout
-	preflightTaskStartups             = validatePlanTaskStartups
-	certifyBenchmarkTaskEnvironments  = certifyPlanTaskEnvironments
-	prepareBenchmarkTaskSet           = prepareBenchmarkTasks
-	identifyBenchmarkTaskEnvironments = identifyPlanTaskEnvironments
-	verifyBenchmarkPier               = verifyPinnedPier
-	runBenchmarkDockerCommand         = runDockerCommand
+	validateBenchmarkAuthentication  = validateAuthentication
+	ensurePinnedBenchmarkCheckout    = ensurePinnedCheckout
+	preflightTaskStartups            = validatePlanTaskStartups
+	certifyBenchmarkTaskEnvironments = certifyPlanTaskEnvironments
+	prepareBenchmarkTaskSet          = prepareBenchmarkTasks
+	verifyBenchmarkPier              = verifyPinnedPier
+	runBenchmarkDockerCommand        = runDockerCommand
 )
 
 const (
@@ -70,18 +68,25 @@ type TaskExecutor interface {
 // ExecutionRequest identifies one plan-selected repetition and its evidence
 // destination.
 type ExecutionRequest struct {
-	RepoRoot            string
-	EvidenceDir         string
-	EventID             string
-	Attempt             int
-	Task                string
-	Model               Model
-	Effort              string
-	Arm                 string
-	Bundle              *TreatmentBundle
-	TaskChecksum        string
-	EnvironmentIdentity string
-	PreflightOnly       bool
+	RepoRoot               string
+	EvidenceDir            string
+	EventID                string
+	Attempt                int
+	Task                   string
+	Model                  Model
+	Effort                 string
+	Arm                    string
+	Bundle                 *TreatmentBundle
+	TaskChecksum           string
+	EnvironmentIdentity    string
+	AgentTimeoutMultiplier float64
+	PreflightOnly          bool
+	// ResumeFailedInfrastructure is set only by the study scheduler for a new
+	// user-authorized benchmark invocation. It permits a fresh event after an
+	// earlier immutable infrastructure-failure receipt; it never retries a cell
+	// within the failed invocation.
+	ResumeFailedInfrastructure bool
+	resumedFailedEventIDs      []string
 }
 
 func sameIntMap(left, right map[string]int) bool {
@@ -186,6 +191,13 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 		} else if found {
 			return recovered, nil
 		}
+		if request.ResumeFailedInfrastructure {
+			resumed, err := failedPierExecutionIDs(request)
+			if err != nil {
+				return AttemptResult{}, err
+			}
+			request.resumedFailedEventIDs = resumed
+		}
 	}
 	checkout, err := ensurePinnedBenchmarkCheckout(ctx, request.RepoRoot)
 	if err != nil {
@@ -223,6 +235,9 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 		arguments = append(arguments, treatmentArguments...)
 	} else {
 		arguments = append(arguments, "--agent", request.Model.Adapter)
+		if request.AgentTimeoutMultiplier > 0 {
+			arguments = append(arguments, "--agent-timeout-multiplier", strconv.FormatFloat(request.AgentTimeoutMultiplier, 'f', -1, 64))
+		}
 	}
 	arguments = append(
 		arguments,
@@ -244,8 +259,12 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 	if err != nil {
 		return AttemptResult{}, err
 	}
+	credentialValues, err := benchmarkCredentialValues(request.RepoRoot, request.Bundle)
+	if err != nil {
+		return AttemptResult{}, err
+	}
 	command.Env = append(
-		os.Environ(),
+		benchmarkProcessEnvironment(credentialValues),
 		"DOCKER_CONFIG="+dockerConfig,
 		"PYTHONDONTWRITEBYTECODE=1",
 	)
@@ -292,6 +311,12 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 			return AttemptResult{}, fmt.Errorf("inspect provider failure evidence: %w", err)
 		}
 		if capacity {
+			// The provider was invoked, so its failed event must remain in the
+			// immutable receipt chain. A later benchmark invocation can resume
+			// it explicitly; this invocation must not silently retry it.
+			if err := writePierExecutionReceipt(request, commandErr, cleanupErr); err != nil {
+				return AttemptResult{}, err
+			}
 			if cleanupErr != nil {
 				return AttemptResult{}, fmt.Errorf("%w: %s; cleanup: %v", errProviderCapacity, providerCapacityMessage, cleanupErr)
 			}
@@ -312,6 +337,58 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 		return AttemptResult{}, normalizeErr
 	}
 	return result, nil
+}
+
+// benchmarkProcessEnvironment preserves non-secret host infrastructure while
+// adding only MCP credential names referenced by the effective config. Secret
+// values travel in the child environment, never Pier's command line.
+func benchmarkProcessEnvironment(credentials map[string]string) []string {
+	keys := []string{
+		"PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR", "TERM",
+		"DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CERT_PATH", "DOCKER_TLS_VERIFY",
+		"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+		"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR", "XDG_DATA_HOME", "XDG_STATE_HOME",
+	}
+	values := make([]string, 0, len(keys)+len(credentials))
+	for _, key := range keys {
+		if value, ok := os.LookupEnv(key); ok && value != "" {
+			values = append(values, key+"="+value)
+		}
+	}
+	names := make([]string, 0, len(credentials))
+	for name := range credentials {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		values = append(values, name+"="+credentials[name])
+	}
+	return values
+}
+
+func benchmarkCredentialValues(repoRoot string, bundle *TreatmentBundle) (map[string]string, error) {
+	values := map[string]string{}
+	if bundle == nil || len(bundle.CredentialNames) == 0 {
+		return values, nil
+	}
+	fromFile := map[string]string{}
+	envPath := filepath.Join(repoRoot, ".agent-layer", ".env")
+	if loaded, err := config.LoadEnv(envPath); err == nil {
+		fromFile = loaded
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("read benchmark credential boundary: %w", err)
+	}
+	for _, name := range bundle.CredentialNames {
+		value := fromFile[name]
+		if value == "" {
+			value = os.Getenv(name)
+		}
+		if value == "" {
+			return nil, fmt.Errorf("configured MCP credential %s is unavailable; set it in .agent-layer/.env or the process environment", name)
+		}
+		values[name] = value
+	}
+	return values, nil
 }
 
 func runDockerCommand(ctx context.Context, arguments ...string) ([]byte, error) {
@@ -498,8 +575,15 @@ func treatmentPierArguments(request ExecutionRequest) ([]string, error) {
 	if request.Model.Adapter == adapterClaudeCode {
 		className = "AgentLayerClaudeCode"
 	}
+	timeout := request.AgentTimeoutMultiplier
+	if timeout == 0 {
+		timeout = request.Bundle.Manifest.AgentTimeoutMultiplier
+	}
+	if timeout <= 0 {
+		return nil, fmt.Errorf("treatment execution requires a positive agent timeout multiplier")
+	}
 	arguments := []string{
-		"--agent-timeout-multiplier", strconv.FormatFloat(request.Bundle.Manifest.AgentTimeoutMultiplier, 'f', -1, 64),
+		"--agent-timeout-multiplier", strconv.FormatFloat(timeout, 'f', -1, 64),
 		"--agent-import-path", "pier_agent_layer:" + className,
 		pierAgentKwarg, "treatment_bundle=" + request.Bundle.Root,
 		pierAgentKwarg, "treatment_mode=" + request.Bundle.Manifest.Mode,
@@ -507,6 +591,7 @@ func treatmentPierArguments(request ExecutionRequest) ([]string, error) {
 		pierAgentKwarg, "treatment_agent=" + dispatchAgent(request.Model),
 		pierAgentKwarg, "treatment_model=" + dispatchModel(request.Model),
 		pierAgentKwarg, "treatment_reasoning_effort=" + request.Effort,
+		pierAgentKwarg, "credential_names=" + strings.Join(request.Bundle.CredentialNames, ","),
 		"--agent-env", "PATH=/home/dev/.local/bin:/usr/local/bin:/usr/bin:/bin",
 	}
 	if request.Model.Adapter == adapterClaudeCode {

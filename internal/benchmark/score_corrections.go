@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 )
 
@@ -125,61 +126,18 @@ func applyScoreCorrections(result AttemptResult, resultPath string) (AttemptResu
 	return result, nil
 }
 
-// CorrectStoredScores writes reproducible derived results for every affected
-// historical run while preserving the immutable upstream result files.
-func CorrectStoredScores(repoRoot string) (int, error) {
-	stateRoot := filepath.Join(repoRoot, ".agent-layer", "state", "benchmarks", "deepswe")
-	var resultPaths []string
-	err := filepath.WalkDir(stateRoot, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			if path == stateRoot && os.IsNotExist(walkErr) {
-				return nil
-			}
-			return walkErr
-		}
-		if !entry.IsDir() && entry.Name() == "result.json" &&
-			filepath.Base(filepath.Dir(path)) == obsidianAutoTOCTask {
-			resultPaths = append(resultPaths, path)
-		}
-		return nil
-	})
-	if err != nil {
-		return 0, fmt.Errorf("find stored benchmark results: %w", err)
-	}
-	written := 0
-	for _, resultPath := range resultPaths {
-		raw, err := os.ReadFile(resultPath) // #nosec G304 -- path was discovered below benchmark state.
-		if err != nil {
-			return written, err
-		}
-		var result AttemptResult
-		if err := json.Unmarshal(raw, &result); err != nil || result.Validate() != nil {
-			return written, fmt.Errorf("invalid stored benchmark result %s", resultPath)
-		}
-		if result.TaskChecksum != obsidianAutoTOCChecksum {
-			continue
-		}
-		corrected, err := applyScoreCorrections(result, resultPath)
-		if err != nil {
-			return written, fmt.Errorf("correct stored benchmark result %s: %w", resultPath, err)
-		}
-		record := canonicalAttemptResult{
-			SchemaVersion: canonicalResultSchema, CorrectionID: obsidianCorrectionID,
-			SourceResultSHA256: fmt.Sprintf("%x", sha256.Sum256(raw)), Result: corrected,
-		}
-		if err := writeJSON(canonicalResultPath(resultPath), record); err != nil {
-			return written, err
-		}
-		written++
-	}
-	return written, nil
-}
-
 func canonicalResultPath(resultPath string) string {
 	return filepath.Join(filepath.Dir(resultPath), "canonical-result.json")
 }
 
-func readCanonicalResult(resultPath string, raw []byte, source AttemptResult) (AttemptResult, bool, error) {
+// readCanonicalResult consumes a cache only when the source is the affected,
+// predecessor matrix evidence. A cache is not a general result sidecar: native
+// study evidence and private campaigns must remain governed by their immutable
+// result alone, even if a file named canonical-result.json is present beside it.
+func readCanonicalResult(resultPath string, raw []byte, source AttemptResult, arm matrixArm) (AttemptResult, bool, error) {
+	if !eligibleHistoricalCanonicalization(resultPath, source, arm) {
+		return AttemptResult{}, false, nil
+	}
 	data, err := os.ReadFile(canonicalResultPath(resultPath)) // #nosec G304 -- derived from validated benchmark state path.
 	if os.IsNotExist(err) {
 		return AttemptResult{}, false, nil
@@ -196,21 +154,77 @@ func readCanonicalResult(resultPath string, raw []byte, source AttemptResult) (A
 		record.Result.Status != source.Status ||
 		record.Result.Task != source.Task ||
 		record.Result.Attempt != source.Attempt ||
-		record.Result.TaskChecksum != source.TaskChecksum {
+		record.Result.TaskChecksum != source.TaskChecksum ||
+		!sameCanonicalSourceFields(record.Result, source) {
 		return AttemptResult{}, false, fmt.Errorf("invalid canonical benchmark result %s", canonicalResultPath(resultPath))
 	}
 	return record.Result, true, nil
 }
 
-// canonicalizeAttemptResult applies the same canonical-result preference and
-// artifact fallback to every benchmark reporting path.
-func canonicalizeAttemptResult(resultPath string, raw []byte, source AttemptResult) (AttemptResult, error) {
-	if canonical, exists, err := readCanonicalResult(resultPath, raw, source); err != nil {
+// Canonicalization is verifier-derived only: correcting a score cannot rewrite
+// event identity, environment, execution target, provider provenance, timing,
+// or cost. Keep this comparison explicit so future AttemptResult additions fail
+// closed rather than silently widening the correction authority.
+func sameCanonicalSourceFields(canonical, source AttemptResult) bool {
+	canonical.F2PPassed, canonical.F2PScore, canonical.PartialScore, canonical.Reward = 0, 0, 0, 0
+	source.F2PPassed, source.F2PScore, source.PartialScore, source.Reward = 0, 0, 0, 0
+	return reflect.DeepEqual(canonical, source)
+}
+
+// canonicalizeAttemptResult only repairs eligible old selection-based matrix
+// evidence. New studies are normalized at write time; private campaign evidence
+// remains directly readable and is never modified by report regeneration.
+func canonicalizeAttemptResult(resultPath string, raw []byte, source AttemptResult, arm matrixArm) (AttemptResult, error) {
+	// Keep one eligibility boundary in front of both cache consumption and
+	// creation. This prevents a preexisting sidecar from changing native-study
+	// or private-campaign results, and prevents new sidecars outside the one
+	// historical correction scope.
+	if !eligibleHistoricalCanonicalization(resultPath, source, arm) {
+		return source, nil
+	}
+	if canonical, exists, err := readCanonicalResult(resultPath, raw, source, arm); err != nil {
 		return AttemptResult{}, err
 	} else if exists {
 		return canonical, nil
 	}
-	return applyScoreCorrections(source, resultPath)
+	corrected, err := applyScoreCorrections(source, resultPath)
+	if err != nil {
+		return AttemptResult{}, err
+	}
+	// Reports are the canonicalization boundary. The immutable source result and
+	// verifier artifacts remain untouched; writeJSON publishes the derived
+	// content-addressed record atomically for later reads.
+	record := canonicalAttemptResult{
+		SchemaVersion: canonicalResultSchema, CorrectionID: obsidianCorrectionID,
+		SourceResultSHA256: fmt.Sprintf("%x", sha256.Sum256(raw)), Result: corrected,
+	}
+	if err := writeJSON(canonicalResultPath(resultPath), record); err != nil {
+		return AttemptResult{}, fmt.Errorf("cache canonical benchmark result: %w", err)
+	}
+	return corrected, nil
+}
+
+// eligibleHistoricalCanonicalization proves that correction authority is
+// limited to the known verifier defect in predecessor selection-matrix
+// evidence. readStudyResult validates the result and immutable receipt before
+// reaching this boundary; this predicate additionally binds that provenance to
+// the arm's exact legacy matrix result location.
+func eligibleHistoricalCanonicalization(resultPath string, source AttemptResult, arm matrixArm) bool {
+	if source.Task != obsidianAutoTOCTask || source.TaskChecksum != obsidianAutoTOCChecksum {
+		return false
+	}
+	expectedResult := filepath.Clean(armResultPath(arm.StateDir, source.Task, source.Attempt))
+	if filepath.Clean(resultPath) != expectedResult {
+		return false
+	}
+	statePath := filepath.ToSlash(filepath.Clean(arm.StateDir))
+	const matrixRoot = "/.agent-layer/state/benchmarks/deepswe/matrices/"
+	index := strings.Index(statePath, matrixRoot)
+	if index < 0 {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(statePath[index+len(matrixRoot):], "/"), "/")
+	return len(parts) == 3 && parts[0] != "" && parts[1] == "arms" && parts[2] != ""
 }
 
 func obsidianFeatureCaseName(name, suite string) (string, bool) {

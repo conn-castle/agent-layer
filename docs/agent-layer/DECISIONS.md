@@ -47,11 +47,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: A long MCP request lets a coordinator wait inside one tool call instead of spending turns polling `al dispatch wait`, without adding a second lifecycle store, a workflow supervisor, or MCP-side state. The 10-minute gap between the soft and hard deadlines gives recovery headroom without letting a broken tool call linger for an hour. Claude documents only a client-wide `MCP_TOOL_TIMEOUT`, so Agent Layer leaves it alone and relies on the server-side guard rather than changing every unrelated MCP server.
     Tradeoffs: Every enabled caller now carries five extra tool schemas in always-present context. `dispatch_start`, `dispatch_continue`, and `dispatch_cancel` are annotated destructive because dispatched agents can modify their environment or cancellation can terminate provider work. An MCP `dispatch_start` is an RPC acknowledgement, so a transport disconnect after the backend starts can leave a durable run whose handle the caller never saw; no idempotency state or listing API was added for that case. Antigravity receives the same canonical definition, but agy 1.1.8 still reports no MCP runtime discovery, so its live support remains unproven.
 
-- Decision 2026-07-23 deepswe-evidence-identity: One plan identity with a shared baseline and content-addressed treatment versions
-    Decision: Hash the exact website-exported plan JSON into the campaign identity. Store one immutable baseline below that plan, and store each instructions/skills version below its treatment-manifest hash; derive reports from those saved arms.
-    Reason: Every treatment must use the plan's exact tasks, repetitions, model, and reasoning while iterations reuse the same compatible paid baseline. Content-addressed treatment state prevents changed instructions or skills from reusing old treatment evidence.
-    Tradeoffs: Reformatting otherwise equivalent plan JSON creates a different campaign identity, so clipboard/download consumers should preserve the website's deterministic export bytes. The export intentionally contains no generation timestamp.
-
 - Decision 2026-01-24 a1b2c3d: Ignore unexpected working tree changes
     Decision: Agents will not pause, warn, or stop due to unexpected working tree changes (unstaged or staged files not created by the agent).
     Reason: The user works in parallel with agents, making concurrent changes a normal operating condition.
@@ -221,11 +216,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Match secret-like URL query keys by separator, camelCase, and acronym segments instead of arbitrary substrings.
     Reason: The user chose to remove false positives such as `author`, `authority`, `tokenizer`, and `passwordless` while retaining common segmented secret-key forms.
     Tradeoffs: Glued lowercase keys such as `authtoken`, `accesstoken`, and `clientsecret` are intentionally not detected.
-
-- Decision 2026-07-26 deepswe-web-planner: Run the benchmark planner entirely in the static website
-    Decision: Publish the DeepSWE task/repetition planner as a client-side website tool that uses a pinned public-data asset and copies a self-contained versioned JSON plan to the clipboard. The Go CLI only validates, executes, and reports that exact plan; it contains no second optimizer.
-    Reason: The public website is static GitHub Pages, the calculation uses only public embedded data, and users need a web workflow without a new hosted service or local Agent Layer server.
-    Tradeoffs: The optimizer runs only after the user presses Search and its visible 50,000-state bound can return a best-known plan with a quantified optimality gap. Published planning evidence used `mini-swe-agent` while local experiments use provider CLI harnesses; the report therefore recalculates its threshold exclusively from the observed local baseline and treatment arms.
 
 - Decision 2026-08-03 dispatch-headless-approvals: `approvals.mode` is delivered to headless dispatch on the command line
     Decision: `al dispatch` sends the approval policy as provider flags instead of relying on generated config. Non-YOLO Codex dispatches set `sandbox_mode` (`read-only` for `none`/`mcp`, `workspace-write` for `commands`/`all`); Claude dispatches set `--permission-mode` (`dontAsk` / `acceptEdits`) plus the command and MCP allowlist as repeated `--allowedTools` flags. YOLO is unchanged. Editing capability keys off `projection.Approvals.AllowCommands`, and a non-empty Claude `permission_denials` fails the dispatch.

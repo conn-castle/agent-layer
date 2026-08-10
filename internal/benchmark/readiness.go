@@ -21,6 +21,11 @@ import (
 const (
 	readinessContractSchema = "deepswe-task-readiness-v1"
 	readinessReceiptSchema  = "deepswe-task-readiness-certification-v1"
+	// benchmarkTaskContainerPlatform is the certified execution contract for
+	// DeepSWE tasks. Every treatment runtime must match this platform; it must
+	// never follow the host that happens to prepare a study.
+	benchmarkTaskContainerPlatform     = "linux/amd64"
+	benchmarkTaskContainerArchitecture = "amd64"
 )
 
 //go:embed readiness/*/*/*
@@ -163,48 +168,28 @@ func readTaskDockerImage(path string) (string, error) {
 
 func certifyPlanTaskEnvironments(ctx context.Context, repoRoot, checkout string, tasks []benchmarkPlanTask, checksums map[string]string) (map[string]string, error) {
 	identities := make(map[string]string, len(tasks))
+	var failures []error
 	for _, task := range tasks {
 		identity, err := certifyTaskEnvironment(ctx, repoRoot, checkout, task.ID, checksums[task.ID])
 		if err != nil {
-			return nil, err
+			failures = append(failures, fmt.Errorf("%s: %w", task.ID, err))
+			continue
 		}
 		identities[task.ID] = identity
 	}
-	return identities, nil
-}
-
-func identifyPlanTaskEnvironments(ctx context.Context, repoRoot string, tasks []benchmarkPlanTask) (map[string]string, error) {
-	checkout, err := ensurePinnedBenchmarkCheckout(ctx, repoRoot)
-	if err != nil {
-		return nil, err
-	}
-	identities := make(map[string]string, len(tasks))
-	for _, task := range tasks {
-		root := filepath.Join(checkout, "tasks", task.ID)
-		checksum, err := TaskTreeChecksum(root)
-		if err != nil {
-			return nil, fmt.Errorf("checksum benchmark task %s for report identity: %w", task.ID, err)
-		}
-		readiness, err := loadTaskReadiness(checkout, task.ID)
-		if err != nil {
-			return nil, err
-		}
-		_, identity, err := taskEnvironmentCertificationIdentity(readiness, task.ID, checksum)
-		if err != nil {
-			return nil, err
-		}
-		identities[task.ID] = identity
+	if len(failures) > 0 {
+		return nil, fmt.Errorf("selected benchmark tasks failed readiness certification:\n%w", errors.Join(failures...))
 	}
 	return identities, nil
 }
 
 func validateTaskEnvironmentParity(tasks []benchmarkPlanTask, baseline, treatment map[string]string) error {
 	if len(baseline) != len(tasks) || len(treatment) != len(tasks) || !sameStringMap(baseline, treatment) {
-		return fmt.Errorf("baseline task environments do not match the current certified readiness contracts; run a fresh baseline")
+		return fmt.Errorf("study task environments do not match the current certified readiness contracts; run benchmark run again")
 	}
 	for _, task := range tasks {
 		if baseline[task.ID] == "" {
-			return fmt.Errorf("baseline task environments do not match the current certified readiness contracts; run a fresh baseline")
+			return fmt.Errorf("study task environments do not match the current certified readiness contracts; run benchmark run again")
 		}
 	}
 	return nil
@@ -284,7 +269,7 @@ func ensureTaskAgentImage(ctx context.Context, repoRoot, task string, readiness 
 		return fmt.Errorf("write benchmark task %s agent image overlay: %w", task, err)
 	}
 	output, err := runTaskReadinessCommand(
-		ctx, "build", "--platform", "linux/amd64", "--tag", readiness.agentImage,
+		ctx, "build", "--platform", benchmarkTaskContainerPlatform, "--tag", readiness.agentImage,
 		"--file", dockerfile, stage,
 	)
 	if err != nil {
