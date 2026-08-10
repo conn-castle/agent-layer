@@ -95,6 +95,29 @@ func TestTaskReadinessRejectsMissingContractBeforeDockerOrProviderWork(t *testin
 	}
 }
 
+func TestTaskDockerImageDefinitionFailsExplicitly(t *testing.T) {
+	root := t.TempDir()
+	for _, test := range []struct {
+		name, contents, want string
+	}{
+		{name: "malformed", contents: "[environment\n", want: "decode benchmark task environment identity"},
+		{name: "missing image", contents: "[environment]\n", want: "must declare one Docker image"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(root, test.name+".toml")
+			if err := os.WriteFile(path, []byte(test.contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := readTaskDockerImage(path); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("task image error=%v, want %q", err, test.want)
+			}
+		})
+	}
+	if _, err := readTaskDockerImage(filepath.Join(root, "missing.toml")); err == nil || !strings.Contains(err.Error(), "read benchmark task environment identity") {
+		t.Fatalf("missing task definition error=%v", err)
+	}
+}
+
 func TestTaskReadinessFailureIsHarnessFailureBeforeProviderWork(t *testing.T) {
 	installReadinessTestBoundaries(t, readinessTestFS("#!/bin/bash\nexit 19\n"), func(context.Context, ...string) ([]byte, error) {
 		return []byte("firefox is unavailable"), errors.New("exit status 19")
@@ -145,23 +168,63 @@ func TestTaskReadinessCertificationReuseAndInvalidation(t *testing.T) {
 	}
 }
 
+func TestPlanTaskCertificationReturnsOnlyCompleteEnvironmentSet(t *testing.T) {
+	repoRoot, checkout := t.TempDir(), t.TempDir()
+	writeAuditCatalogFixture(t, checkout, "first-task", "second-task")
+	runs := 0
+	installReadinessTestBoundaries(t, auditContractsFixture("first-task", "second-task"), func(_ context.Context, arguments ...string) ([]byte, error) {
+		runs++
+		if len(arguments) == 0 || arguments[0] != commandRun {
+			t.Fatalf("unexpected readiness command: %#v", arguments)
+		}
+		return nil, nil
+	})
+	tasks := []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 1}, {ID: "second-task", RepetitionsPerArm: 1}}
+	checksums := map[string]string{"first-task": strings.Repeat("1", 64), "second-task": strings.Repeat("2", 64)}
+
+	identities, err := certifyPlanTaskEnvironments(context.Background(), repoRoot, checkout, tasks, checksums)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(identities) != 2 || identities["first-task"] == "" || identities["second-task"] == "" || runs != 2 {
+		t.Fatalf("identities=%#v readiness runs=%d", identities, runs)
+	}
+
+	readinessContracts = fstest.MapFS{}
+	if _, err := certifyPlanTaskEnvironments(context.Background(), repoRoot, checkout, tasks, checksums); err == nil ||
+		!strings.Contains(err.Error(), "selected benchmark tasks failed readiness certification") ||
+		!strings.Contains(err.Error(), "first-task") || !strings.Contains(err.Error(), "second-task") {
+		t.Fatalf("partial certification error=%v", err)
+	}
+}
+
 func TestTaskReadinessOverlayBuildsAndRunsIdenticallyThroughPier(t *testing.T) {
-	built := false
+	builds := 0
+	readinessRuns := 0
+	immutableImage := "sha256:" + strings.Repeat("b", 64)
 	installReadinessTestBoundaries(t, readinessOverlayTestFS(), func(_ context.Context, arguments ...string) ([]byte, error) {
 		switch arguments[0] {
 		case "image":
-			if built {
-				return nil, nil
-			}
-			return nil, errors.New("not built")
+			t.Fatalf("mutable overlay tag was trusted: %#v", arguments)
+			return nil, nil
 		case "build":
-			built = true
+			builds++
 			if !strings.Contains(strings.Join(arguments, " "), "agent-layer-benchmark/expr-try-catch-errors:") {
 				t.Fatalf("overlay build arguments = %#v", arguments)
 			}
+			for index, argument := range arguments {
+				if argument == "--iidfile" && index+1 < len(arguments) {
+					if err := os.WriteFile(arguments[index+1], []byte(immutableImage+"\n"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+					return nil, nil
+				}
+			}
+			t.Fatalf("overlay build omitted --iidfile: %#v", arguments)
 			return nil, nil
-		case "run":
-			if !built || !strings.Contains(strings.Join(arguments, " "), "agent-layer-benchmark/expr-try-catch-errors:") {
+		case commandRun:
+			readinessRuns++
+			if builds == 0 || !strings.Contains(strings.Join(arguments, " "), immutableImage) {
 				t.Fatalf("overlay readiness arguments = %#v", arguments)
 			}
 			return nil, nil
@@ -173,16 +236,68 @@ func TestTaskReadinessOverlayBuildsAndRunsIdenticallyThroughPier(t *testing.T) {
 	repoRoot := t.TempDir()
 	checkout := t.TempDir()
 	writeReadinessTaskFixture(t, checkout, testReadinessTask, testReadinessImage, "#!/bin/bash\nhidden-tests\n")
-	if _, err := certifyTaskEnvironment(context.Background(), repoRoot, checkout, testReadinessTask, strings.Repeat("1", 64)); err != nil {
+	identity, err := certifyTaskEnvironment(context.Background(), repoRoot, checkout, testReadinessTask, strings.Repeat("1", 64))
+	if err != nil {
 		t.Fatal(err)
+	}
+	reusedIdentity, err := certifyTaskEnvironment(context.Background(), repoRoot, checkout, testReadinessTask, strings.Repeat("1", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reusedIdentity != identity || builds != 2 || readinessRuns != 1 {
+		t.Fatalf("overlay certification reuse identity=%q builds=%d readiness runs=%d", reusedIdentity, builds, readinessRuns)
+	}
+	var receipt taskReadinessCertification
+	if err := readStudyJSON(filepath.Join(repoRoot, ".agent-layer", "state", "benchmarks", "deepswe", "environment-certifications", identity+".json"), &receipt); err != nil {
+		t.Fatal(err)
+	}
+	if receipt.PinnedImage != immutableImage {
+		t.Fatalf("certified overlay image = %q, want %q", receipt.PinnedImage, immutableImage)
 	}
 	arguments, err := prepareTaskStartup(checkout, testReadinessTask, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	joined := strings.Join(arguments, " ")
-	if !strings.Contains(joined, "agent_context=") {
+	if !strings.Contains(joined, "agent_context=") || strings.Contains(joined, "pinned_image=agent-layer-benchmark/") {
 		t.Fatalf("Pier arguments omit the derived agent context: %#v", arguments)
+	}
+}
+
+func TestTaskReadinessOverlayRequiresDockerBuildIdentity(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		imageID  string
+		buildErr error
+		want     string
+	}{
+		{name: "build failure", buildErr: errors.New("builder unavailable"), want: "builder unavailable"},
+		{name: "missing iid file", want: "read benchmark task"},
+		{name: "malformed iid", imageID: "not-an-image", want: "invalid immutable identity"},
+		{name: "non-hex iid", imageID: "sha256:" + strings.Repeat("z", 64), want: "invalid immutable identity"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			installReadinessTestBoundaries(t, readinessOverlayTestFS(), func(_ context.Context, arguments ...string) ([]byte, error) {
+				if len(arguments) == 0 || arguments[0] != "build" {
+					t.Fatalf("unexpected Docker command: %#v", arguments)
+				}
+				if test.imageID != "" {
+					for index, argument := range arguments {
+						if argument == "--iidfile" && index+1 < len(arguments) {
+							if err := os.WriteFile(arguments[index+1], []byte(test.imageID), 0o600); err != nil {
+								t.Fatal(err)
+							}
+						}
+					}
+				}
+				return []byte("build diagnostics"), test.buildErr
+			})
+			checkout := t.TempDir()
+			writeReadinessTaskFixture(t, checkout, testReadinessTask, testReadinessImage, "#!/bin/bash\nhidden-tests\n")
+			if _, err := certifyTaskEnvironment(context.Background(), t.TempDir(), checkout, testReadinessTask, strings.Repeat("1", 64)); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("overlay identity error=%v, want %q", err, test.want)
+			}
+		})
 	}
 }
 

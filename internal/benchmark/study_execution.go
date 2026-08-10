@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -109,6 +111,49 @@ type studyArmManifest struct {
 type matrixJob struct {
 	arm  *matrixArm
 	cell planCell
+}
+
+const studyExecutionLockFile = ".execution.lock"
+
+type studyExecutionLock struct {
+	file *os.File
+}
+
+func acquireStudyExecutionLock(arms []matrixArm) (*studyExecutionLock, error) {
+	root := filepath.Dir(arms[0].StateDir)
+	for _, arm := range arms[1:] {
+		if filepath.Dir(arm.StateDir) != root {
+			return nil, fmt.Errorf("study experiments do not share one execution root")
+		}
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return nil, fmt.Errorf("create study execution root: %w", err)
+	}
+	path := filepath.Join(root, studyExecutionLockFile)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- path is under the content-addressed private study state root.
+	if err != nil {
+		return nil, fmt.Errorf("open study execution lock: %w", err)
+	}
+	if err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil { //nolint:gosec // supported Unix file descriptors are small non-negative ints.
+		closeErr := file.Close()
+		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
+			if closeErr != nil {
+				return nil, fmt.Errorf("study execution is already in progress; close lock: %w", closeErr)
+			}
+			return nil, fmt.Errorf("study execution is already in progress")
+		}
+		return nil, fmt.Errorf("lock study execution: %w", errors.Join(err, closeErr))
+	}
+	return &studyExecutionLock{file: file}, nil
+}
+
+func (lock *studyExecutionLock) release() error {
+	unlockErr := unix.Flock(int(lock.file.Fd()), unix.LOCK_UN) //nolint:gosec // supported Unix file descriptors are small non-negative ints.
+	closeErr := lock.file.Close()
+	if err := errors.Join(unlockErr, closeErr); err != nil {
+		return fmt.Errorf("release study execution lock: %w", err)
+	}
+	return nil
 }
 
 type planCell struct {
@@ -261,13 +306,20 @@ func ensureStudyArmManifest(selectionID string, tasks []benchmarkPlanTask, check
 	return writeJSON(path, manifest)
 }
 
-func executeMatrix(ctx context.Context, repoRoot string, checksums, environments map[string]string, arms []matrixArm, tasks []string, concurrency int, executor TaskExecutor, onCellComplete ...func(AttemptResult)) error {
+func executeMatrix(ctx context.Context, repoRoot string, checksums, environments map[string]string, arms []matrixArm, tasks []string, concurrency int, executor TaskExecutor, onCellComplete ...func(AttemptResult)) (returnErr error) {
 	if concurrency < 1 {
 		return fmt.Errorf("study execution requires at least one task worker, got %d", concurrency)
 	}
 	if len(arms) == 0 {
 		return fmt.Errorf("study execution requires an experiment")
 	}
+	executionLock, err := acquireStudyExecutionLock(arms)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		returnErr = errors.Join(returnErr, executionLock.release())
+	}()
 	var notify func(AttemptResult)
 	if len(onCellComplete) > 0 {
 		notify = onCellComplete[0]

@@ -43,6 +43,7 @@ const (
 	dockerImageResource           = "image"
 	dockerNetworkResource         = "network"
 	dockerVolumeResource          = "volume"
+	commandRun                    = "run"
 	// These formats print one resource identity and its Compose project label
 	// per line. Docker expands the literal \t escape itself. Containers and
 	// networks are addressed by ID; volumes are addressed by name.
@@ -218,7 +219,7 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 	}
 
 	arguments := []string{
-		"--from", "datacurve-pier==" + PierVersion, "pier", "run",
+		"--from", "datacurve-pier==" + PierVersion, "pier", commandRun,
 		"--path", filepath.Join(checkout, "tasks"),
 		"--model", request.Model.RuntimeIdentifier,
 		"--n-attempts", "1", "--n-concurrent", "1", "--max-retries", "0",

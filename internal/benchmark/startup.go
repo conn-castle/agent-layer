@@ -56,7 +56,7 @@ func prepareTaskStartup(checkout, task, stage string) ([]string, error) {
 	arguments := []string{
 		pierEnvironmentImportPath, taskEnvironmentClass,
 		pierEnvironmentKwarg, "readiness_script=" + readinessPath,
-		pierEnvironmentKwarg, "pinned_image=" + readiness.agentImage,
+		pierEnvironmentKwarg, "pinned_image=" + readiness.pinnedImage,
 		pierEnvironmentKwarg, "verifier_source_root=" + verifierSource,
 		pierEnvironmentKwarg, "verifier_context=" + verifierContext,
 	}

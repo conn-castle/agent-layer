@@ -203,9 +203,11 @@ func certifyTaskEnvironment(ctx context.Context, repoRoot, checkout, task, taskC
 	if err != nil {
 		return "", err
 	}
-	if err := ensureTaskAgentImage(ctx, repoRoot, task, readiness); err != nil {
+	agentImage, err := ensureTaskAgentImage(ctx, repoRoot, task, readiness)
+	if err != nil {
 		return "", err
 	}
+	readiness.agentImage = agentImage
 	receipt, identity, err := taskEnvironmentCertificationIdentity(readiness, task, taskChecksum)
 	if err != nil {
 		return "", err
@@ -235,7 +237,7 @@ func certifyTaskEnvironment(ctx context.Context, repoRoot, checkout, task, taskC
 		return "", fmt.Errorf("materialize benchmark task %s readiness program: %w", task, err)
 	}
 	output, runErr := runTaskReadinessCommand(ctx,
-		"run", "--rm", "--network", "none",
+		commandRun, "--rm", "--network", "none",
 		"--mount", "type=bind,source="+checkPath+",target=/opt/agent-layer/readiness.sh,readonly",
 		"--entrypoint", "/bin/bash", readiness.agentImage, "/opt/agent-layer/readiness.sh",
 	)
@@ -248,34 +250,43 @@ func certifyTaskEnvironment(ctx context.Context, repoRoot, checkout, task, taskC
 	return identity, nil
 }
 
-func ensureTaskAgentImage(ctx context.Context, repoRoot, task string, readiness loadedTaskReadiness) error {
+func ensureTaskAgentImage(ctx context.Context, repoRoot, task string, readiness loadedTaskReadiness) (string, error) {
 	if len(readiness.overlay) == 0 {
-		return nil
-	}
-	if _, err := runTaskReadinessCommand(ctx, "image", "inspect", readiness.agentImage); err == nil {
-		return nil
+		return readiness.agentImage, nil
 	}
 	stageRoot := filepath.Join(repoRoot, ".agent-layer", "tmp")
 	if err := os.MkdirAll(stageRoot, 0o700); err != nil {
-		return fmt.Errorf("create benchmark task %s agent image staging root: %w", task, err)
+		return "", fmt.Errorf("create benchmark task %s agent image staging root: %w", task, err)
 	}
 	stage, err := os.MkdirTemp(stageRoot, "task-agent-image-")
 	if err != nil {
-		return fmt.Errorf("create benchmark task %s agent image context: %w", task, err)
+		return "", fmt.Errorf("create benchmark task %s agent image context: %w", task, err)
 	}
 	defer func() { _ = os.RemoveAll(stage) }()
 	dockerfile := filepath.Join(stage, "Dockerfile")
 	if err := os.WriteFile(dockerfile, readiness.overlay, 0o600); err != nil {
-		return fmt.Errorf("write benchmark task %s agent image overlay: %w", task, err)
+		return "", fmt.Errorf("write benchmark task %s agent image overlay: %w", task, err)
 	}
+	imageIDPath := filepath.Join(stage, "image-id")
 	output, err := runTaskReadinessCommand(
-		ctx, "build", "--platform", benchmarkTaskContainerPlatform, "--tag", readiness.agentImage,
+		ctx, "build", "--platform", benchmarkTaskContainerPlatform, "--iidfile", imageIDPath, "--tag", readiness.agentImage,
 		"--file", dockerfile, stage,
 	)
 	if err != nil {
-		return fmt.Errorf("build benchmark task %s agent image: %w: %s", task, err, strings.TrimSpace(string(output)))
+		return "", fmt.Errorf("build benchmark task %s agent image: %w: %s", task, err, strings.TrimSpace(string(output)))
 	}
-	return nil
+	imageIDData, err := os.ReadFile(imageIDPath) // #nosec G304 -- Docker writes this file inside the private build staging directory.
+	if err != nil {
+		return "", fmt.Errorf("read benchmark task %s agent image identity: %w", task, err)
+	}
+	imageID := strings.TrimSpace(string(imageIDData))
+	if len(imageID) != 71 || !strings.HasPrefix(imageID, "sha256:") {
+		return "", fmt.Errorf("benchmark task %s agent image has invalid immutable identity %q", task, imageID)
+	}
+	if _, err := hex.DecodeString(strings.TrimPrefix(imageID, "sha256:")); err != nil {
+		return "", fmt.Errorf("benchmark task %s agent image has invalid immutable identity: %w", task, err)
+	}
+	return imageID, nil
 }
 
 func taskEnvironmentCertificationIdentity(readiness loadedTaskReadiness, task, taskChecksum string) (taskReadinessCertification, string, error) {

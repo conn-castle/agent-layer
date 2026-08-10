@@ -3,12 +3,17 @@ package benchmark
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestStudySchedulerStopsAfterInfrastructureFailure(t *testing.T) {
@@ -55,6 +60,48 @@ func TestStudySelectionRejectsManualExclusionsInSchemaV1(t *testing.T) {
 	}
 }
 
+func TestStudySelectionBoundaryRejectsMalformedDocumentsAndTaskScopes(t *testing.T) {
+	selectionData, err := json.Marshal(matrixSelectionFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "selection.json")
+	if err := os.WriteFile(path, selectionData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	selection, identity, err := loadMatrixSelection(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(identity) != 64 || len(selection.Tasks) != 2 {
+		t.Fatalf("loaded selection identity=%q selection=%#v", identity, selection)
+	}
+	if _, _, err := loadMatrixSelection(path, append(append([]byte(nil), selectionData...), []byte("\n{}")...)); err == nil || !strings.Contains(err.Error(), "trailing JSON") {
+		t.Fatalf("trailing document error=%v", err)
+	}
+	if _, _, err := loadMatrixSelection(path, []byte(`{"unknown":true}`)); err == nil || !strings.Contains(err.Error(), "decode benchmark selection") {
+		t.Fatalf("unknown selection field error=%v", err)
+	}
+	if _, _, err := loadMatrixSelection(path, []byte(`{}`)); err == nil || !strings.Contains(err.Error(), "unsupported or invalid") {
+		t.Fatalf("invalid selection error=%v", err)
+	}
+	if _, _, err := loadMatrixSelection(path, make([]byte, maxStudySelectionBytes+1)); err == nil || !strings.Contains(err.Error(), "no larger than") {
+		t.Fatalf("oversized selection error=%v", err)
+	}
+	if _, _, err := loadMatrixSelection(filepath.Join(t.TempDir(), "missing.json"), nil); err == nil || !strings.Contains(err.Error(), "inspect benchmark selection") {
+		t.Fatalf("missing selection error=%v", err)
+	}
+	if err := validateMatrixTaskFilter(selection, []string{"first-task"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMatrixTaskFilter(selection, []string{"unknown-task"}); err == nil || !strings.Contains(err.Error(), "is not in the selection") {
+		t.Fatalf("unknown task filter error=%v", err)
+	}
+	if err := validateMatrixTaskFilter(selection, []string{"first-task", "first-task"}); err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("duplicate task filter error=%v", err)
+	}
+}
+
 func TestStudySchedulerScopesTasksAndStampsWorkerProvenance(t *testing.T) {
 	arm, checksums, environments := schedulerArmFixture(t, []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 1}, {ID: "second-task", RepetitionsPerArm: 1}})
 	executor := &schedulerExecutor{}
@@ -93,6 +140,56 @@ func TestStudySchedulerSerializesCompletionNotifications(t *testing.T) {
 	}
 	if output.String() != "first-task:1\nsecond-task:1\n" && output.String() != "second-task:1\nfirst-task:1\n" {
 		t.Fatalf("completion stream = %q", output.String())
+	}
+}
+
+func TestStudyExecutionClaimsStudyBeforeSchedulingPaidWork(t *testing.T) {
+	arm, checksums, environments := schedulerArmFixture(t, []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 1}})
+	repoRoot := t.TempDir()
+	firstExecutor := &schedulerExecutor{barrier: make(chan struct{}), started: make(chan struct{}, 1)}
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- executeMatrix(context.Background(), repoRoot, checksums, environments, []matrixArm{arm}, nil, 1, firstExecutor)
+	}()
+	select {
+	case <-firstExecutor.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first study execution did not start")
+	}
+	released := false
+	defer func() {
+		if !released {
+			close(firstExecutor.barrier)
+		}
+	}()
+
+	lockPath := filepath.Join(filepath.Dir(arm.StateDir), studyExecutionLockFile)
+	probe, err := os.OpenFile(lockPath, os.O_RDWR, 0o600) // #nosec G304 -- test-owned temporary path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	probeErr := unix.Flock(int(probe.Fd()), unix.LOCK_EX|unix.LOCK_NB) //nolint:gosec // test-owned descriptor.
+	if !errors.Is(probeErr, unix.EWOULDBLOCK) && !errors.Is(probeErr, unix.EAGAIN) {
+		_ = probe.Close()
+		t.Fatalf("independent process lock probe = %v, want contention", probeErr)
+	}
+	if err := probe.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	secondExecutor := &schedulerExecutor{}
+	err = executeMatrix(context.Background(), repoRoot, checksums, environments, []matrixArm{arm}, nil, 1, secondExecutor)
+	if err == nil || !strings.Contains(err.Error(), "already in progress") {
+		t.Fatalf("concurrent execution error = %v", err)
+	}
+	if calls := secondExecutor.requests(); len(calls) != 0 {
+		t.Fatalf("concurrent execution scheduled paid work: %#v", calls)
+	}
+
+	close(firstExecutor.barrier)
+	released = true
+	if err := <-firstDone; err != nil {
+		t.Fatal(err)
 	}
 }
 

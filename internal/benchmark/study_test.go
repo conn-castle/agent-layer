@@ -1,11 +1,15 @@
 package benchmark
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -30,6 +34,213 @@ func TestStudyPublishedBareEstimateRequiresMatchingSelectorTarget(t *testing.T) 
 	if outcome.BarePublishedEstimateUSD == nil || *outcome.BarePublishedEstimateUSD != selection.EstimatedPublishedSpendUSD {
 		t.Fatalf("matching bare estimate = %#v", outcome.BarePublishedEstimateUSD)
 	}
+}
+
+func TestRunStudyDryRunAndPaidWorkflow(t *testing.T) {
+	root := t.TempDir()
+	selectionData, err := json.Marshal(matrixSelectionFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeStudyInputFixture(t, root, "selection.json", string(selectionData))
+	writeStudyInputFixture(t, root, "study.toml", "selection = \"selection.json\"\n[[experiments]]\nname = \"Bare\"\nmodel = \"luna\"\nreasoning = \"low\"\n")
+
+	originalPreflight := preflightBenchmark
+	originalVerifyPier := verifyBenchmarkPier
+	originalValidateAuthentication := validateBenchmarkAuthentication
+	originalPrepareTasks := prepareBenchmarkTaskSet
+	preflightBenchmark = func(selections []parsedSelection) error {
+		if len(selections) != 1 || selections[0].model.PublishedIdentifier != publishedLuna || selections[0].effort != effortLow {
+			return fmt.Errorf("unexpected study selections: %#v", selections)
+		}
+		return nil
+	}
+	verifyBenchmarkPier = func(context.Context) error { return nil }
+	validateBenchmarkAuthentication = func(string, []parsedSelection) error { return nil }
+	prepareBenchmarkTaskSet = func(_ context.Context, gotRoot string, tasks []benchmarkPlanTask) (map[string]string, map[string]string, error) {
+		if gotRoot != root || len(tasks) != 2 || tasks[0].ID != "first-task" || tasks[1].ID != "second-task" {
+			return nil, nil, fmt.Errorf("unexpected task preparation: root=%q tasks=%#v", gotRoot, tasks)
+		}
+		return map[string]string{"first-task": "first-checksum", "second-task": "second-checksum"}, map[string]string{"first-task": "env-1", "second-task": "env-2"}, nil
+	}
+	t.Cleanup(func() {
+		preflightBenchmark = originalPreflight
+		verifyBenchmarkPier = originalVerifyPier
+		validateBenchmarkAuthentication = originalValidateAuthentication
+		prepareBenchmarkTaskSet = originalPrepareTasks
+	})
+
+	dryExecutor := &studyWorkflowExecutor{}
+	preparedCalls := 0
+	dryOutcome, err := RunStudy(context.Background(), StudyOptions{
+		RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), DryRun: true,
+		OnPrepared: func(outcome StudyOutcome) error {
+			preparedCalls++
+			if outcome.Completed != 0 || outcome.Missing != 2 {
+				return fmt.Errorf("unexpected dry-run progress: %#v", outcome)
+			}
+			return nil
+		},
+	}, dryExecutor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preparedCalls != 1 || dryOutcome.Required != 2 || dryOutcome.Missing != 2 || len(dryExecutor.requests()) != 0 {
+		t.Fatalf("dry-run outcome=%#v prepared calls=%d executor calls=%#v", dryOutcome, preparedCalls, dryExecutor.requests())
+	}
+	preparedErr := errors.New("progress output unavailable")
+	blockedExecutor := &studyWorkflowExecutor{}
+	if _, err := RunStudy(context.Background(), StudyOptions{
+		RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"),
+		OnPrepared: func(StudyOutcome) error { return preparedErr },
+	}, blockedExecutor); !errors.Is(err, preparedErr) {
+		t.Fatalf("prepared callback error=%v", err)
+	}
+	if calls := blockedExecutor.requests(); len(calls) != 0 {
+		t.Fatalf("failed prepared callback reached provider: %#v", calls)
+	}
+	successfulPreflight := preflightBenchmark
+	preflightErr := errors.New("provider prerequisites unavailable")
+	preflightBenchmark = func([]parsedSelection) error { return preflightErr }
+	preflightBlockedExecutor := &studyWorkflowExecutor{}
+	if _, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, preflightBlockedExecutor); !errors.Is(err, preflightErr) {
+		t.Fatalf("preflight error=%v", err)
+	}
+	if calls := preflightBlockedExecutor.requests(); len(calls) != 0 {
+		t.Fatalf("failed preflight reached provider: %#v", calls)
+	}
+	preflightBenchmark = successfulPreflight
+	successfulPierVerification := verifyBenchmarkPier
+	pierErr := errors.New("pinned Pier unavailable")
+	verifyBenchmarkPier = func(context.Context) error { return pierErr }
+	pierBlockedExecutor := &studyWorkflowExecutor{}
+	if _, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, pierBlockedExecutor); !errors.Is(err, pierErr) {
+		t.Fatalf("Pier verification error=%v", err)
+	}
+	if calls := pierBlockedExecutor.requests(); len(calls) != 0 {
+		t.Fatalf("failed Pier verification reached provider: %#v", calls)
+	}
+	verifyBenchmarkPier = successfulPierVerification
+
+	executor := &studyWorkflowExecutor{}
+	var observed []ObservedCostRange
+	outcome, err := RunStudy(context.Background(), StudyOptions{
+		RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), TaskConcurrency: 1,
+		OnCellComplete: func(cost ObservedCostRange) { observed = append(observed, cost) },
+	}, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Completed != 2 || outcome.Missing != 0 || outcome.ObservedInvocationCost.Midpoint != .2 || len(observed) != 2 {
+		t.Fatalf("paid outcome=%#v observed=%#v", outcome, observed)
+	}
+	calls := executor.requests()
+	if len(calls) != 2 || calls[0].Task != "first-task" || calls[1].Task != "second-task" {
+		t.Fatalf("paid executor calls=%#v", calls)
+	}
+	for _, path := range []string{outcome.JSONPath, outcome.HTMLPath} {
+		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+			t.Fatalf("study report %q: info=%v err=%v", path, info, err)
+		}
+	}
+	var report StudyReport
+	if err := readStudyJSON(outcome.JSONPath, &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.StudyID != outcome.StudyID || len(report.Experiments) != 1 || report.Experiments[0].CompletedCells != 2 {
+		t.Fatalf("study report=%#v", report)
+	}
+
+	resumeExecutor := &studyWorkflowExecutor{}
+	resumed, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), DryRun: true}, resumeExecutor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.Completed != 2 || resumed.Missing != 0 || len(resumeExecutor.requests()) != 0 {
+		t.Fatalf("resumed dry run=%#v executor calls=%#v", resumed, resumeExecutor.requests())
+	}
+}
+
+func TestRunStudyRejectsMissingManifestBeforeProviderWork(t *testing.T) {
+	executor := &studyWorkflowExecutor{}
+	if _, err := RunStudy(context.Background(), StudyOptions{}, executor); err == nil || !strings.Contains(err.Error(), "requires one study.toml path") {
+		t.Fatalf("missing study error=%v", err)
+	}
+	if calls := executor.requests(); len(calls) != 0 {
+		t.Fatalf("invalid study reached provider: %#v", calls)
+	}
+}
+
+func TestPrepareBenchmarkTasksValidatesBeforeCertification(t *testing.T) {
+	repoRoot, checkout := t.TempDir(), t.TempDir()
+	writeAuditCatalogFixture(t, checkout, "first-task", "second-task")
+	installAuditCheckout(t, checkout)
+	installReadinessTestBoundaries(t, auditContractsFixture("first-task", "second-task"), func(context.Context, ...string) ([]byte, error) {
+		return nil, nil
+	})
+
+	originalCertify := certifyBenchmarkTaskEnvironments
+	certifications := 0
+	certifyBenchmarkTaskEnvironments = func(_ context.Context, gotRoot, gotCheckout string, tasks []benchmarkPlanTask, checksums map[string]string) (map[string]string, error) {
+		certifications++
+		if gotRoot != repoRoot || gotCheckout != checkout || len(tasks) != 2 || len(checksums["first-task"]) != 64 || len(checksums["second-task"]) != 64 {
+			return nil, fmt.Errorf("unexpected certification boundary: root=%q checkout=%q tasks=%#v checksums=%#v", gotRoot, gotCheckout, tasks, checksums)
+		}
+		return map[string]string{"first-task": "env-1", "second-task": "env-2"}, nil
+	}
+	t.Cleanup(func() { certifyBenchmarkTaskEnvironments = originalCertify })
+
+	tasks := []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 1}, {ID: "second-task", RepetitionsPerArm: 1}}
+	checksums, environments, err := prepareBenchmarkTasks(context.Background(), repoRoot, tasks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if certifications != 1 || len(checksums) != 2 || environments["first-task"] != "env-1" || environments["second-task"] != "env-2" {
+		t.Fatalf("checksums=%#v environments=%#v certifications=%d", checksums, environments, certifications)
+	}
+
+	if err := os.Remove(filepath.Join(checkout, "tasks", "second-task", taskInstructionFile)); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := prepareBenchmarkTasks(context.Background(), repoRoot, tasks); err == nil || !strings.Contains(err.Error(), "selected benchmark tasks failed static validation") || !strings.Contains(err.Error(), taskInstructionFile) {
+		t.Fatalf("invalid task-tree error=%v", err)
+	}
+	if certifications != 1 {
+		t.Fatalf("invalid task tree reached certification %d times", certifications)
+	}
+}
+
+type studyWorkflowExecutor struct {
+	mu    sync.Mutex
+	calls []ExecutionRequest
+}
+
+func (executor *studyWorkflowExecutor) Execute(_ context.Context, request ExecutionRequest) (AttemptResult, error) {
+	executor.mu.Lock()
+	executor.calls = append(executor.calls, request)
+	executor.mu.Unlock()
+	if err := writePierExecutionReceipt(request, nil, nil); err != nil {
+		return AttemptResult{}, err
+	}
+	cost, duration := .1, 1.0
+	now := time.Now().UTC()
+	return AttemptResult{
+		SchemaVersion: StorageSchemaVersion, EventID: request.EventID,
+		Attempt: request.Attempt, Task: request.Task, Status: statusSuccess,
+		F2PPassed: 8, F2PTotal: 10, F2PScore: .8,
+		CostUSD: &cost, CostKind: costKindProviderReported, DurationSeconds: &duration,
+		TaskChecksum: request.TaskChecksum, EnvironmentIdentity: request.EnvironmentIdentity,
+		StartedAt: now, FinishedAt: now, Provider: request.Model.Adapter,
+		PublishedModel: request.Model.PublishedIdentifier, RuntimeModel: request.Model.RuntimeIdentifier,
+		ReasoningEffort: request.Effort, ProviderClientVersion: request.Model.ProviderClientVersion,
+		DispatchConformant: true, InvocationCount: 1,
+	}, nil
+}
+
+func (executor *studyWorkflowExecutor) requests() []ExecutionRequest {
+	executor.mu.Lock()
+	defer executor.mu.Unlock()
+	return append([]ExecutionRequest(nil), executor.calls...)
 }
 
 func TestStudyReportUsesWithinCellWelchVarianceAndHolmFamily(t *testing.T) {
