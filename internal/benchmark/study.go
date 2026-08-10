@@ -159,32 +159,6 @@ func writeStudyManifest(study *preparedStudy, preparation matrixPreparation) err
 	return writeJSON(path, manifest)
 }
 
-// CheckStudy validates the full reproducibility boundary before provider calls.
-// It deliberately does not invoke a provider. Runtime readiness is performed by
-// the executor immediately before a paid cell is eligible to run.
-func CheckStudy(ctx context.Context, options StudyOptions) (StudyOutcome, error) {
-	prepared, err := prepareStudy(options)
-	if err != nil {
-		return StudyOutcome{}, err
-	}
-	defer prepared.cleanupInputs()
-	preparation, err := prepareStudyExecution(ctx, options, &prepared)
-	if err != nil {
-		return StudyOutcome{}, err
-	}
-	outcome := studyProgress(prepared, options)
-	progress, err := studyProgressChecked(preparation)
-	if err != nil {
-		return StudyOutcome{}, err
-	}
-	outcome.Completed, outcome.Missing = progress.Completed, progress.Missing
-	for i := range outcome.Experiments {
-		outcome.Experiments[i].Completed = progress.Arms[i].Completed
-		outcome.Experiments[i].Missing = progress.Arms[i].Missing
-	}
-	return outcome, nil
-}
-
 // RunStudy is intentionally the only paid public entry point. The command itself
 // is authorization; callers must use DryRun when they need the no-call path.
 func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) (StudyOutcome, error) {
