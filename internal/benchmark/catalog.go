@@ -1,4 +1,4 @@
-// Package benchmark executes and reports website-planned DeepSWE campaigns.
+// Package benchmark executes and reports content-addressed DeepSWE studies.
 package benchmark
 
 import (
@@ -10,11 +10,11 @@ import (
 const (
 	DeepSWECommit          = "e016041a6ccf8da29906afc9a3f5a8df940a1f78"
 	PierVersion            = "0.3.0"
-	CodexClientVersion     = "0.144.6"
+	CodexClientVersion     = "0.146.0"
 	ClaudeClientVersion    = "2.1.207"
-	ReportSchemaVersion    = "benchmark-report-v4"
+	ReportSchemaVersion    = "benchmark-report-v5"
 	StorageSchemaVersion   = "benchmark-store-v1"
-	TreatmentSchemaVersion = "benchmark-treatment-v1"
+	TreatmentSchemaVersion = "benchmark-treatment-v2"
 	DeepSWETrialsSourceURL = "https://deepswe.datacurve.ai/artifacts/v1.1/trials.json"
 )
 
@@ -31,6 +31,7 @@ const (
 	commandDocker            = "docker"
 	dispatchEvidenceDir      = "agent-layer-dispatch"
 	effortLow                = "low"
+	effortMedium             = "medium"
 	effortHigh               = "high"
 	effortXHigh              = "xhigh"
 	effortMax                = "max"
@@ -48,11 +49,19 @@ const (
 	verdictBetter            = "better"
 	verdictWorse             = "worse"
 	costAxisLogarithmic      = "logarithmic"
+	publishedFable           = "claude-fable-5"
 	publishedLuna            = "gpt-5-6-luna"
 	pierAgentKwarg           = "--agent-kwarg"
 	taskInstructionFile      = "instruction.md"
 	taskPreArtifactsFile     = "pre_artifacts.sh"
 	taskTOMLFile             = "task.toml"
+	studyResourceTimeoutKey  = "agent_timeout_multiplier"
+	studyResourceSchemaKey   = "schema"
+	studyResourceSchema      = "deepswe-benchmark-resources-v1"
+	agentLayerEnvPath        = ".agent-layer/.env"
+	studyInputInstructions   = "instructions"
+	studyInputSkills         = "skills"
+	studyInputEntryPrompt    = "entry_prompt"
 	skillsAgentTimeoutFactor = 4.0
 )
 
@@ -77,10 +86,10 @@ var supportedModels = []Model{
 	{Name: "sol", PublishedIdentifier: "gpt-5-6-sol", RuntimeIdentifier: "openai/gpt-5.6-sol", Adapter: adapterCodex, ProviderClientVersion: CodexClientVersion},
 	{Name: "sonnet", PublishedIdentifier: "claude-sonnet-5", RuntimeIdentifier: "claude-sonnet-5", Adapter: adapterClaudeCode, ProviderClientVersion: ClaudeClientVersion},
 	{Name: "opus", PublishedIdentifier: "claude-opus-4-8", RuntimeIdentifier: "claude-opus-4-8", Adapter: adapterClaudeCode, ProviderClientVersion: ClaudeClientVersion},
-	{Name: "fable", PublishedIdentifier: "claude-fable-5", RuntimeIdentifier: "claude-fable-5", Adapter: adapterClaudeCode, ProviderClientVersion: ClaudeClientVersion},
+	{Name: "fable", PublishedIdentifier: publishedFable, RuntimeIdentifier: publishedFable, Adapter: adapterClaudeCode, ProviderClientVersion: ClaudeClientVersion},
 }
 
-var supportedEfforts = []string{effortLow, "medium", effortHigh, effortXHigh, effortMax}
+var supportedEfforts = []string{effortLow, effortMedium, effortHigh, effortXHigh, effortMax}
 
 // ParseModelSelection validates the stable family:effort identity.
 func ParseModelSelection(value string) (Model, string, error) {

@@ -45,6 +45,44 @@ func TestWriteFileAtomicOverwritesFile(t *testing.T) {
 	assert.Equal(t, os.FileMode(0600), info.Mode().Perm())
 }
 
+func TestWriteFileAtomicIfChangedPreservesIdenticalFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	data := []byte("unchanged")
+	require.NoError(t, os.WriteFile(path, data, 0o600))
+	before, err := os.Stat(path)
+	require.NoError(t, err)
+
+	require.NoError(t, WriteFileAtomicIfChanged(path, data, 0o600))
+	after, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(before, after), "identical write replaced the file")
+}
+
+func TestWriteFileAtomicIfChangedRepairsModeAndReplacesSymlink(t *testing.T) {
+	t.Run("mode", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.toml")
+		// #nosec G306 -- the wider mode is the condition under test: an identical
+		// file whose mode differs must still be rewritten with the wanted mode.
+		require.NoError(t, os.WriteFile(path, []byte("same"), 0o644))
+		require.NoError(t, WriteFileAtomicIfChanged(path, []byte("same"), 0o600))
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0o600), info.Mode())
+	})
+
+	t.Run("symlink", func(t *testing.T) {
+		dir := t.TempDir()
+		target := filepath.Join(dir, "target")
+		path := filepath.Join(dir, "config.toml")
+		require.NoError(t, os.WriteFile(target, []byte("same"), 0o600))
+		require.NoError(t, os.Symlink(target, path))
+		require.NoError(t, WriteFileAtomicIfChanged(path, []byte("same"), 0o600))
+		info, err := os.Lstat(path)
+		require.NoError(t, err)
+		assert.True(t, info.Mode().IsRegular(), "write preserved destination symlink")
+	})
+}
+
 func TestWriteFileAtomicFailures(t *testing.T) {
 	t.Run("invalid dir", func(t *testing.T) {
 		err := WriteFileAtomic("/invalid/path/config.toml", []byte("data"), 0644)

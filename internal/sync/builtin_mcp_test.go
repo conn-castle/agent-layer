@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -135,6 +136,11 @@ func TestCodexReceivesTheBuiltInDispatchServerWithItsHardTimeout(t *testing.T) {
 		t.Fatalf("build codex config: %v", err)
 	}
 	var decoded struct {
+		Features struct {
+			CodeMode struct {
+				DirectOnlyToolNamespaces []string `toml:"direct_only_tool_namespaces"`
+			} `toml:"code_mode"`
+		} `toml:"features"`
 		MCPServers map[string]struct {
 			Command        string   `toml:"command"`
 			Args           []string `toml:"args"`
@@ -151,6 +157,74 @@ func TestCodexReceivesTheBuiltInDispatchServerWithItsHardTimeout(t *testing.T) {
 	wantBuiltInDispatchInvocation(t, server.Command, server.Args, project.Root)
 	if server.ToolTimeoutSec != minutes*60 {
 		t.Fatalf("codex tool_timeout_sec = %d, want %d", server.ToolTimeoutSec, minutes*60)
+	}
+	namespaces := decoded.Features.CodeMode.DirectOnlyToolNamespaces
+	if len(namespaces) != 1 || namespaces[0] != codexAgentLayerToolNamespace {
+		t.Fatalf("Codex direct-only tool namespaces = %v, want [%q]", namespaces, codexAgentLayerToolNamespace)
+	}
+}
+
+// TestCodexPreservesUserDirectToolNamespaces proves Agent Layer adds its
+// namespace without replacing or duplicating a user's Codex-native settings.
+func TestCodexPreservesUserDirectToolNamespaces(t *testing.T) {
+	t.Parallel()
+	project := builtInProject(t)
+	project.Config.Agents.Codex.AgentSpecific = map[string]any{
+		"features": map[string]any{
+			"code_mode": map[string]any{
+				"direct_only_tool_namespaces": []any{"mcp__history", codexAgentLayerToolNamespace},
+			},
+		},
+	}
+
+	managed, err := buildCodexManagedConfigWithSystem(RealSystem{}, project.Root, project, true)
+	if err != nil {
+		t.Fatalf("build codex config: %v", err)
+	}
+	var decoded struct {
+		Features struct {
+			CodeMode struct {
+				DirectOnlyToolNamespaces []string `toml:"direct_only_tool_namespaces"`
+			} `toml:"code_mode"`
+		} `toml:"features"`
+	}
+	if err := toml.Unmarshal([]byte(managed.Content), &decoded); err != nil {
+		t.Fatalf("parse generated codex config: %v\n%s", err, managed.Content)
+	}
+	namespaces := decoded.Features.CodeMode.DirectOnlyToolNamespaces
+	if len(namespaces) != 2 || namespaces[0] != "mcp__history" || namespaces[1] != codexAgentLayerToolNamespace {
+		t.Fatalf("Codex direct-only tool namespaces = %v, want preserved user namespace plus Agent Layer", namespaces)
+	}
+}
+
+// TestCodexRemovesAgentLayerDirectNamespaceWhenDispatchIsNotProjected proves
+// switching to a VS Code-only projection cannot leave a stale Codex routing
+// override in the shared project config.
+func TestCodexRemovesAgentLayerDirectNamespaceWhenDispatchIsNotProjected(t *testing.T) {
+	t.Parallel()
+	project := builtInProject(t)
+	withDispatch, err := buildCodexManagedConfigWithSystem(RealSystem{}, project.Root, project, true)
+	if err != nil {
+		t.Fatalf("build Codex config with dispatch: %v", err)
+	}
+
+	off := false
+	project.Config.Agents.Codex.Enabled = &off
+	withoutDispatch, err := buildCodexManagedConfigWithSystem(RealSystem{}, project.Root, project, false)
+	if err != nil {
+		t.Fatalf("build VS Code-only Codex config: %v", err)
+	}
+	merged, err := mergeCodexConfig(filepath.Join(project.Root, ".codex", "config.toml"), withDispatch.Content, withoutDispatch)
+	if err != nil {
+		t.Fatalf("merge VS Code-only Codex config: %v", err)
+	}
+
+	var decoded map[string]any
+	if err := toml.Unmarshal([]byte(merged), &decoded); err != nil {
+		t.Fatalf("parse merged Codex config: %v\n%s", err, merged)
+	}
+	if _, ok := valueAtPath(decoded, []string{codexFeaturesKey, codexCodeModeKey, codexDirectOnlyToolNamespacesKey}); ok {
+		t.Fatalf("stale Agent Layer direct-only namespace remains after dispatch removal:\n%s", merged)
 	}
 }
 

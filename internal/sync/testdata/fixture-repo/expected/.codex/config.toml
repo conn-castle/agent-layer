@@ -5,6 +5,10 @@
 # Removed arbitrary passthrough entries outside known Agent Layer-owned paths may need manual cleanup.
 # Regenerate managed entries: al sync
 
+[features]
+[features.code_mode]
+direct_only_tool_namespaces = ['mcp__agent_layer']
+
 [tui]
 status_line = ['model-with-reasoning', 'context-used', 'weekly-limit', 'thread-id', 'git-branch', 'branch-changes', 'pull-request-number', 'current-dir']
 

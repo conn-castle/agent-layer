@@ -1,6 +1,8 @@
 package fsutil
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +19,27 @@ var (
 	renameFile    = os.Rename
 	syncDirFunc   = syncDir
 )
+
+// WriteFileAtomicIfChanged preserves an existing regular file when both its
+// bytes and mode already match. Avoiding an otherwise-identical rename keeps
+// file watchers from treating a no-op generation pass as a configuration
+// change. Missing files, symlinks, directories, and mode changes still flow
+// through WriteFileAtomic.
+func WriteFileAtomicIfChanged(path string, data []byte, perm os.FileMode) error {
+	info, err := os.Lstat(path)
+	if err == nil && info.Mode().IsRegular() && info.Mode() == perm {
+		existing, readErr := os.ReadFile(path) // #nosec G304 -- path is an internal write target supplied by the caller.
+		if readErr != nil {
+			return fmt.Errorf(messages.FsutilReadExistingFileFmt, path, readErr)
+		}
+		if bytes.Equal(existing, data) {
+			return nil
+		}
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf(messages.FsutilCheckExistingFileFmt, path, err)
+	}
+	return WriteFileAtomic(path, data, perm)
+}
 
 // WriteFileAtomic writes data to path using a temp file and atomic rename.
 // perm sets the file mode applied to the final file.

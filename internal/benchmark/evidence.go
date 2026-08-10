@@ -35,6 +35,7 @@ type AttemptResult struct {
 	CostKind              string    `json:"cost_kind"`
 	DurationSeconds       *float64  `json:"duration_seconds,omitempty"`
 	TaskChecksum          string    `json:"task_checksum"`
+	EnvironmentIdentity   string    `json:"task_environment_identity,omitempty"`
 	StartedAt             time.Time `json:"started_at"`
 	FinishedAt            time.Time `json:"finished_at"`
 	Provider              string    `json:"provider"`
@@ -53,6 +54,7 @@ type AttemptResult struct {
 	ChildCostMinUSD       *float64  `json:"child_cost_min_usd,omitempty"`
 	ChildCostMaxUSD       *float64  `json:"child_cost_max_usd,omitempty"`
 	InvocationCount       int       `json:"invocation_count"`
+	InvocationWorkers     int       `json:"invocation_workers,omitempty"`
 }
 
 // Validate prevents malformed or incomplete evidence from entering analysis.
@@ -83,7 +85,9 @@ func (result AttemptResult) Validate() error {
 	if _, _, err := result.CostBounds(); err != nil {
 		return fmt.Errorf("successful attempt result has invalid cost evidence: %w", err)
 	}
-	if result.CostKind == costKindProviderUsage+"-range" || result.CostKind == costKindProviderTotal {
+	if result.CostKind == costKindProviderUsage ||
+		result.CostKind == costKindProviderUsage+"-range" ||
+		result.CostKind == costKindProviderTotal {
 		if result.InvocationCount < 1 {
 			return fmt.Errorf("provider-usage range is missing invocation evidence")
 		}

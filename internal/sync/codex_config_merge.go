@@ -3,6 +3,7 @@ package sync
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"slices"
 	"sort"
 	"strconv"
@@ -82,11 +83,9 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 	for _, key := range codexManagedRootScalarKeys {
 		pathParts := []string{key}
 		if value, ok := valueAtPath(managedMap, pathParts); ok {
-			literal, err := tomlLiteral(value)
-			if err != nil {
+			if err := setManagedCodexPath(editor, existingMap, pathParts, value); err != nil {
 				return "", err
 			}
-			editor.setPath(pathParts, literal)
 			continue
 		}
 		editor.removePath(pathParts)
@@ -95,23 +94,28 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 	for _, key := range config.CodexKnownManagedFeatureKeys() {
 		pathParts := []string{codexFeaturesKey, key}
 		if value, ok := valueAtPath(managedMap, pathParts); ok {
-			literal, err := tomlLiteral(value)
-			if err != nil {
+			if err := setManagedCodexPath(editor, existingMap, pathParts, value); err != nil {
 				return "", err
 			}
-			editor.setPath(pathParts, literal)
 			continue
 		}
 		editor.removePath(pathParts)
 	}
 
-	statuslinePath := []string{codexTUIKey, codexStatusLineKey}
-	if value, ok := valueAtPath(managedMap, statuslinePath); ok {
-		literal, err := tomlLiteral(value)
-		if err != nil {
+	directOnlyNamespacesPath := []string{codexFeaturesKey, codexCodeModeKey, codexDirectOnlyToolNamespacesKey}
+	if value, ok := valueAtPath(managedMap, directOnlyNamespacesPath); ok {
+		if err := setManagedCodexPath(editor, existingMap, directOnlyNamespacesPath, value); err != nil {
 			return "", err
 		}
-		editor.setPath(statuslinePath, literal)
+	} else {
+		editor.removePath(directOnlyNamespacesPath)
+	}
+
+	statuslinePath := []string{codexTUIKey, codexStatusLineKey}
+	if value, ok := valueAtPath(managedMap, statuslinePath); ok {
+		if err := setManagedCodexPath(editor, existingMap, statuslinePath, value); err != nil {
+			return "", err
+		}
 	} else {
 		editor.removePath(statuslinePath)
 	}
@@ -120,11 +124,13 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 		if codexPathHandledElsewhere(item.path) {
 			continue
 		}
-		literal, err := tomlLiteral(item.value)
-		if err != nil {
+		value := item.value
+		if parsed, ok := valueAtPath(managedMap, item.path); ok {
+			value = parsed
+		}
+		if err := setManagedCodexPath(editor, existingMap, item.path, value); err != nil {
 			return "", err
 		}
-		editor.setPath(item.path, literal)
 	}
 
 	// Seed missing projects before re-appending the managed mcp_servers block so
@@ -147,6 +153,18 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 		return "", fmt.Errorf("merged Codex config is invalid TOML: %w", err)
 	}
 	return out, nil
+}
+
+func setManagedCodexPath(editor *codexTomlEditor, existing map[string]any, path []string, value any) error {
+	if current, ok := valueAtPath(existing, path); ok && reflect.DeepEqual(current, value) {
+		return nil
+	}
+	literal, err := tomlLiteral(value)
+	if err != nil {
+		return err
+	}
+	editor.setPath(path, literal)
+	return nil
 }
 
 // cleanCodexChimeHook removes only Agent Layer-owned Codex chime hooks from
@@ -962,6 +980,9 @@ func collectLeafValues(prefix []string, value any, out *[]codexPathValue) {
 }
 
 func codexPathHandledElsewhere(path []string) bool {
+	if slices.Equal(path, []string{codexFeaturesKey, codexCodeModeKey, codexDirectOnlyToolNamespacesKey}) {
+		return true
+	}
 	if len(path) == 1 {
 		return slices.Contains(codexManagedRootScalarKeys, path[0])
 	}
@@ -1040,6 +1061,12 @@ func formatInlineValue(value any) string {
 	case float64:
 		return fmt.Sprintf("%v", v)
 	case []any:
+		parts := make([]string, 0, len(v))
+		for _, item := range v {
+			parts = append(parts, formatInlineValue(item))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case []string:
 		parts := make([]string, 0, len(v))
 		for _, item := range v {
 			parts = append(parts, formatInlineValue(item))

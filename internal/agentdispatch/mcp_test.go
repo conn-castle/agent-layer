@@ -484,6 +484,98 @@ func TestMCPStartRejectsAmbiguousPromptSource(t *testing.T) {
 	}
 }
 
+// TestMCPBenchmarkPolicyLocksTheExecutionTarget proves a benchmark container's
+// root-owned policy reaches the MCP surface. Without it, a coordinator could
+// select an arbitrary model through MCP and invalidate treatment comparability.
+func TestMCPBenchmarkPolicyLocksTheExecutionTarget(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	policy, err := loadBenchmarkPolicy([]string{
+		benchmarkPolicyAgentEnv + "=" + AgentClaude,
+		benchmarkPolicyModelEnv + "=locked-model",
+		benchmarkPolicyEffortEnv + "=low",
+	})
+	if err != nil {
+		t.Fatalf("load benchmark policy: %v", err)
+	}
+	tools := newMCPTestTools(root)
+	tools.policy = policy
+	session := newMCPTestSession(t, tools)
+
+	data, err := json.Marshal(callMCPTool(t, session, ToolOptions, map[string]any{}).StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var options OptionsResponse
+	if err := json.Unmarshal(data, &options); err != nil {
+		t.Fatal(err)
+	}
+	if len(options.Agents) != 1 || options.Agents[0].Agent != AgentClaude {
+		t.Fatalf("dispatch_options under benchmark policy = %#v, want only claude", options.Agents)
+	}
+	if got := options.Agents[0].Model.Configured; got != "locked-model" {
+		t.Fatalf("locked model = %q, want %q", got, "locked-model")
+	}
+
+	result := callMCPTool(t, session, ToolStart, StartInput{Agent: AgentCodex, Prompt: "hello"})
+	if !result.IsError || !strings.Contains(toolResultText(result), "benchmark dispatch constraint") {
+		t.Fatalf("expected a benchmark constraint error, got %q", toolResultText(result))
+	}
+	result = callMCPTool(t, session, ToolStart, StartInput{Agent: AgentClaude, Model: "other", Prompt: "hello"})
+	if !result.IsError || !strings.Contains(toolResultText(result), "benchmark dispatch constraint") {
+		t.Fatalf("expected a locked-model error, got %q", toolResultText(result))
+	}
+}
+
+// TestBenchmarkPolicyRejectsPartialExport proves an incomplete policy fails
+// loudly at server construction rather than silently disabling enforcement.
+func TestBenchmarkPolicyRejectsPartialExport(t *testing.T) {
+	_, err := loadBenchmarkPolicy([]string{benchmarkPolicyAgentEnv + "=" + AgentClaude})
+	requireDispatchExitCode(t, err, ExitConfig)
+}
+
+// TestBenchmarkPolicyInjectsLockedDefaults proves an MCP start that omits model
+// and effort still records the exact treatment identity.
+func TestBenchmarkPolicyInjectsLockedDefaults(t *testing.T) {
+	policy, err := loadBenchmarkPolicy([]string{
+		benchmarkPolicyAgentEnv + "=" + AgentCodex,
+		benchmarkPolicyModelEnv + "=gpt-locked",
+		benchmarkPolicyEffortEnv + "=high",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent, model, effort := AgentCodex, "", ""
+	if err := policy.constrainStart(&agent, &model, &effort); err != nil {
+		t.Fatalf("constrain start: %v", err)
+	}
+	if model != "gpt-locked" || effort != "high" {
+		t.Fatalf("injected selection = %q/%q, want gpt-locked/high", model, effort)
+	}
+}
+
+func TestBenchmarkPolicyAllowsOnlyConfiguredTargetTuples(t *testing.T) {
+	policy, err := loadBenchmarkPolicy([]string{
+		benchmarkPolicyTargetsEnv + `=[{"agent":"codex","model":"gpt-luna","reasoning_effort":"high"},{"agent":"codex","model":"gpt-terra","reasoning_effort":"low"}]`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := &OptionsResponse{}
+	policy.constrainOptions(options)
+	if len(options.Agents) != 1 || len(options.Agents[0].Model.Suggestions) != 2 ||
+		len(options.Agents[0].ReasoningEffort.Suggestions) != 2 {
+		t.Fatalf("multi-target options = %#v", options.Agents)
+	}
+	agent, model, effort := AgentCodex, "gpt-luna", "high"
+	if err := policy.constrainStart(&agent, &model, &effort); err != nil {
+		t.Fatalf("configured tuple rejected: %v", err)
+	}
+	model, effort = "gpt-luna", "low"
+	if err := policy.constrainStart(&agent, &model, &effort); err == nil {
+		t.Fatal("unconfigured model/effort cross-product was accepted")
+	}
+}
+
 // TestMCPServerRejectsMissingRoot proves the stdio entry point fails before
 // serving when it cannot resolve an Agent Layer root.
 func TestMCPServerRejectsMissingRoot(t *testing.T) {

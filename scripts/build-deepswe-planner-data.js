@@ -5,6 +5,8 @@ const crypto = require("crypto");
 const fs = require("fs");
 
 const SOURCE_URL = "https://deepswe.datacurve.ai/artifacts/v1.1/trials.json";
+const CORRELATION_SAMPLES = 10_000;
+const COMPLETE_CELL_RUNS = 4;
 const REASONING_ORDER = new Map(
   ["low", "medium", "high", "xhigh", "max", "n/a"].map((value, index) => [
     value,
@@ -127,6 +129,167 @@ function sampleVariance(values) {
 }
 
 /**
+ * Calculate a Pearson correlation, returning zero for a constant vector.
+ * @param {number[]} left first finite vector
+ * @param {number[]} right second finite vector of equal length
+ * @returns {number} Pearson correlation
+ */
+function pearsonCorrelation(left, right) {
+  if (left.length !== right.length || left.length < 2) {
+    throw new Error("Pearson correlation requires equal vectors of length two or greater.");
+  }
+  const leftMean = mean(left);
+  const rightMean = mean(right);
+  let covariance = 0;
+  let leftSquares = 0;
+  let rightSquares = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    const leftDelta = left[index] - leftMean;
+    const rightDelta = right[index] - rightMean;
+    covariance += leftDelta * rightDelta;
+    leftSquares += leftDelta * leftDelta;
+    rightSquares += rightDelta * rightDelta;
+  }
+  const denominator = Math.sqrt(leftSquares * rightSquares);
+  return denominator > 0 ? covariance / denominator : 0;
+}
+
+/**
+ * Calculate a type-7 empirical quantile from sorted finite values.
+ * @param {number[]} sortedValues ascending finite values
+ * @param {number} probability probability from zero through one
+ * @returns {number} interpolated quantile
+ */
+function quantile(sortedValues, probability) {
+  if (sortedValues.length === 0) throw new Error("Quantile requires values.");
+  const position = (sortedValues.length - 1) * probability;
+  const lower = Math.floor(position);
+  const fraction = position - lower;
+  const upper = sortedValues[Math.min(lower + 1, sortedValues.length - 1)];
+  return sortedValues[lower] + fraction * (upper - sortedValues[lower]);
+}
+
+/**
+ * Create a deterministic unsigned 32-bit generator.
+ * @param {number} seed unsigned 32-bit seed
+ * @returns {() => number} next unsigned 32-bit value
+ */
+function createGenerator(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return (value ^ (value >>> 14)) >>> 0;
+  };
+}
+
+/**
+ * Calculate one task's deterministic one-run correlation distribution.
+ * @param {object} task generated task with cells
+ * @param {Map<string, number>} fullScores fixed full DeepSWE score by configuration
+ * @param {string} sourceSha256 pinned source digest
+ * @returns {object} compact correlation evidence
+ */
+function calculateTaskCorrelation(task, fullScores, sourceSha256) {
+  const completeCells = Object.entries(task.cells)
+    .filter(
+      ([configuration, cell]) =>
+        cell.n === COMPLETE_CELL_RUNS && fullScores.has(configuration),
+    )
+    .sort(([left], [right]) => left.localeCompare(right));
+  if (completeCells.length < 2) {
+    return {
+      completeConfigurationCount: completeCells.length,
+      median: null,
+      p05: null,
+      p95: null,
+    };
+  }
+  const fixedScores = completeCells.map(([configuration]) =>
+    fullScores.get(configuration),
+  );
+  const seed = crypto
+    .createHash("sha256")
+    .update(`${sourceSha256}\u0000${task.id}`)
+    .digest()
+    .readUInt32LE(0);
+  const nextValue = createGenerator(seed);
+  const sampledScores = Array(completeCells.length);
+  const correlations = Array(CORRELATION_SAMPLES);
+  for (let sample = 0; sample < CORRELATION_SAMPLES; sample += 1) {
+    for (let index = 0; index < completeCells.length; index += 1) {
+      const trials = completeCells[index][1].trials;
+      sampledScores[index] =
+        trials[nextValue() % COMPLETE_CELL_RUNS].score;
+    }
+    correlations[sample] = pearsonCorrelation(sampledScores, fixedScores);
+  }
+  correlations.sort((left, right) => left - right);
+  return {
+    completeConfigurationCount: completeCells.length,
+    median: quantile(correlations, 0.5),
+    p05: quantile(correlations, 0.05),
+    p95: quantile(correlations, 0.95),
+  };
+}
+
+/**
+ * Fit one task's F2P mean to the fixed full DeepSWE configuration score.
+ * @param {object} task generated task with cells
+ * @param {Map<string, number>} fullScores fixed full DeepSWE score by configuration
+ * @returns {object|null} ordinary least-squares calibration and precision
+ */
+function calculateTaskCalibration(task, fullScores) {
+  const observations = Object.entries(task.cells)
+    .filter(
+      ([configuration, cell]) =>
+        cell.n === COMPLETE_CELL_RUNS && fullScores.has(configuration),
+    )
+    .map(([configuration, cell]) => ({
+      predictor: cell.mean,
+      target: fullScores.get(configuration),
+    }));
+  if (observations.length < 3) return null;
+
+  const predictorMean = mean(
+    observations.map((observation) => observation.predictor),
+  );
+  const targetMean = mean(
+    observations.map((observation) => observation.target),
+  );
+  let crossProduct = 0;
+  let predictorSquares = 0;
+  for (const observation of observations) {
+    const predictorDelta = observation.predictor - predictorMean;
+    crossProduct += predictorDelta * (observation.target - targetMean);
+    predictorSquares += predictorDelta * predictorDelta;
+  }
+  if (predictorSquares <= 0) return null;
+
+  const slope = crossProduct / predictorSquares;
+  const intercept = targetMean - slope * predictorMean;
+  const residualSquares = observations.reduce((sum, observation) => {
+    const residual =
+      observation.target -
+      (intercept + slope * observation.predictor);
+    return sum + residual * residual;
+  }, 0);
+  const residualVariance =
+    residualSquares / (observations.length - 2);
+  if (!Number.isFinite(residualVariance) || residualVariance <= 0) return null;
+
+  return {
+    configurationCount: observations.length,
+    intercept,
+    slope,
+    residualVariance,
+    precisionWeight: 1 / residualVariance,
+  };
+}
+
+/**
  * Sort configuration records deterministically.
  * @param {{model:string,reasoning:string}[]} configs configurations
  * @returns {{model:string,reasoning:string}[]} sorted copy
@@ -177,6 +340,7 @@ function buildSnapshot(trialsRoot, tasksRoot, provenance) {
   }
 
   const configurations = new Map();
+  const fullScoreTrials = new Map();
   const cells = new Map();
   const excludedTrials = [];
 
@@ -193,6 +357,13 @@ function buildSnapshot(trialsRoot, tasksRoot, provenance) {
         ? row.reasoning_effort
         : "n/a";
     const configId = `${model}::${reasoning}`;
+    if (row.included_in_score === true) {
+      if (!Number.isFinite(row.score_value)) {
+        throw new Error(`${trialId}.score_value must be finite when included in score.`);
+      }
+      if (!fullScoreTrials.has(configId)) fullScoreTrials.set(configId, []);
+      fullScoreTrials.get(configId).push(Number(row.score_value));
+    }
     const exclusionReason = trialExclusionReason(row);
     if (exclusionReason) {
       excludedTrials.push({
@@ -264,13 +435,29 @@ function buildSnapshot(trialsRoot, tasksRoot, provenance) {
   const configList = sortConfigurations([...configurations.values()]).map(
     (configuration) => ({
       ...configuration,
+      deepSWEScore: mean(fullScoreTrials.get(configuration.id)),
       providers: [...configuration.providers].sort(),
       harnesses: [...configuration.harnesses].sort(),
     }),
   );
+  const fullScores = new Map(
+    configList.map((configuration) => [
+      configuration.id,
+      configuration.deepSWEScore,
+    ]),
+  );
   const tasks = [...taskMetadata.values()]
     .sort((left, right) => left.id.localeCompare(right.id))
-    .map((task) => ({ ...task, cells: taskCells.get(task.id) ?? {} }));
+    .map((task) => ({ ...task, cells: taskCells.get(task.id) ?? {} }))
+    .map((task) => ({
+      ...task,
+      correlation: calculateTaskCorrelation(
+        task,
+        fullScores,
+        provenance.sourceSha256,
+      ),
+      calibration: calculateTaskCalibration(task, fullScores),
+    }));
 
   const exclusionCounts = {};
   for (const trial of excludedTrials) {
@@ -283,7 +470,7 @@ function buildSnapshot(trialsRoot, tasksRoot, provenance) {
   const modelCount = new Set(configList.map((configuration) => configuration.model)).size;
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 3,
     source: {
       url: SOURCE_URL,
       inputPath: SOURCE_URL,
@@ -298,31 +485,58 @@ function buildSnapshot(trialsRoot, tasksRoot, provenance) {
     },
     configurations: configList,
     tasks,
+    correlationMethod: {
+      id: "one-run-pearson-monte-carlo-v1",
+      samples: CORRELATION_SAMPLES,
+      completeCellRuns: COMPLETE_CELL_RUNS,
+      seed: "sha256(snapshot-sha256 + NUL + task-id), first uint32 little-endian",
+      rankingStatistic: "p05",
+      interval: ["p05", "p95"],
+      fixedScore: "mean score_value across all included trials per configuration",
+    },
+    calibrationMethod: {
+      id: "task-ols-inverse-residual-variance-v1",
+      predictor: "mean F2P score for each complete four-run configuration cell",
+      target: "fixed full DeepSWE configuration score",
+      fit: "ordinary least squares with intercept",
+      residualVariance: "residual sum of squares divided by configuration count minus two",
+      combination: "normalized inverse residual-variance weighted mean",
+    },
     exclusions: {
       trialCounts: exclusionCounts,
     },
   };
 }
 
-const args = parseArguments(process.argv.slice(2));
-const sourceBytes = fs.readFileSync(args.trialsPath);
-const snapshot = buildSnapshot(
-  JSON.parse(sourceBytes.toString("utf8")),
-  readJson(args.tasksPath),
-  {
-    sourceSha256: crypto.createHash("sha256").update(sourceBytes).digest("hex"),
-    retrievedAt: args.retrievedAt,
-  },
-);
-const serialized = JSON.stringify(snapshot).replaceAll("<", "\\u003c");
-fs.writeFileSync(
-  args.outputPath,
-  `"use strict";\nwindow.__DEEPSWE_PLANNER_DATA__=${serialized};\n`,
-);
-console.log(
-  JSON.stringify({
-    output: args.outputPath,
-    source: snapshot.source,
-    bytes: fs.statSync(args.outputPath).size,
-  }),
-);
+if (require.main === module) {
+  const args = parseArguments(process.argv.slice(2));
+  const sourceBytes = fs.readFileSync(args.trialsPath);
+  const snapshot = buildSnapshot(
+    JSON.parse(sourceBytes.toString("utf8")),
+    readJson(args.tasksPath),
+    {
+      sourceSha256: crypto.createHash("sha256").update(sourceBytes).digest("hex"),
+      retrievedAt: args.retrievedAt,
+    },
+  );
+  const serialized = JSON.stringify(snapshot).replaceAll("<", "\\u003c");
+  fs.writeFileSync(
+    args.outputPath,
+    `"use strict";\nwindow.__DEEPSWE_PLANNER_DATA__=${serialized};\n`,
+  );
+  console.log(
+    JSON.stringify({
+      output: args.outputPath,
+      source: snapshot.source,
+      bytes: fs.statSync(args.outputPath).size,
+    }),
+  );
+}
+
+module.exports = {
+  buildSnapshot,
+  calculateTaskCalibration,
+  calculateTaskCorrelation,
+  pearsonCorrelation,
+  quantile,
+};

@@ -2,10 +2,17 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
+
+const {
+  buildSnapshot,
+  pearsonCorrelation,
+  quantile,
+} = require("./build-deepswe-planner-data.js");
 
 const repositoryRoot = path.resolve(__dirname, "..");
 const applicationPath = path.join(
@@ -17,179 +24,570 @@ const dataPath = path.join(
   "site/static/deepswe-planner/app/data.js",
 );
 
+function benchmarkSelectionID(selection) {
+  const canonical = {
+    schema: selection.schema,
+    schemaVersion: selection.schemaVersion,
+    snapshot: selection.snapshot,
+    selector: selection.selector,
+    estimatedPublishedSpendUsd: selection.estimatedPublishedSpendUsd,
+  };
+  if (selection.schemaVersion >= 2) {
+    canonical.manualExclusions = selection.manualExclusions ?? [];
+  }
+  canonical.tasks = selection.tasks;
+  return crypto.createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
+
 /**
- * Load the planner's actual browser calculation functions without running its
- * DOM initialization.
- * @returns {{snapshot:object,optimize:Function,suiteStatistics:Function,deriveTask:Function,buildExport:Function,isExportablePlan:Function}} planner functions
+ * Build one valid published trial fixture.
+ * @param {string} task task identifier
+ * @param {string} model model identifier
+ * @param {number} run zero-based run
+ * @param {number} f2p F2P score
+ * @param {number} fullScore fixed full DeepSWE score
+ * @returns {object} source trial row
  */
-function loadPlanner() {
-  const context = vm.createContext({ window: {}, console });
+function trial(task, model, run, f2p, fullScore) {
+  return {
+    trial_name: `${task}-${model}-${run}`,
+    task_name: task,
+    model,
+    reasoning_effort: "high",
+    provider: "fixture",
+    harness: "mini-swe-agent",
+    included_in_score: true,
+    errored: false,
+    score_value: fullScore,
+    f2p_passed: Math.round(f2p * 10),
+    f2p_total: 10,
+    cost_usd: 1 + run / 10,
+  };
+}
+
+/**
+ * Load the browser's pure row builder without initializing the DOM.
+ * @returns {{snapshot:object,buildRows:Function,buildComparisonRows:Function,selectRowsWithinBudget:Function,simulateBaseline:Function,comparePublishedRows:Function,buildBenchmarkSelection:Function}} browser evidence functions
+ */
+function loadApplication() {
+  const context = vm.createContext({
+    window: {},
+    console,
+    Intl,
+  });
   vm.runInContext(fs.readFileSync(dataPath, "utf8"), context, {
     filename: dataPath,
   });
   const html = fs.readFileSync(applicationPath, "utf8");
-  const match = html.match(/<script(?![^>]*\bsrc=)[^>]*>\s*([\s\S]*?)\s*<\/script>/i);
-  assert.ok(match, "planner inline script was not found");
-  const initialization = "initializeSelectors();";
+  const match = html.match(
+    /<script(?![^>]*\bsrc=)[^>]*>\s*([\s\S]*?)\s*<\/script>/i,
+  );
+  assert.ok(match, "application inline script was not found");
+  const initialization = "initializeApp();";
   const initializationIndex = match[1].lastIndexOf(initialization);
   assert.notEqual(
     initializationIndex,
     -1,
-    "planner DOM initialization boundary was not found",
+    "application initialization boundary was not found",
   );
-  const calculationSource = match[1].slice(0, initializationIndex);
   vm.runInContext(
-    `${calculationSource}
-globalThis.__plannerTest = {
+    `${match[1].slice(0, initializationIndex)}
+globalThis.__applicationTest = {
   snapshot: SNAPSHOT,
-  optimize,
-  suiteStatistics,
-  deriveTask,
-  buildExport,
-  isExportablePlan,
+  buildRows,
+  buildComparisonRows,
+  selectRowsWithinBudget,
+  simulateBaseline,
+  comparePublishedRows,
+  buildBenchmarkSelection,
 };`,
     context,
     { filename: applicationPath },
   );
-  return context.__plannerTest;
+  return context.__applicationTest;
 }
 
-/**
- * Exhaustively enumerate every allowed task/repetition allocation.
- * @param {object[]} rows eligible planner rows
- * @param {object} inputs planner inputs
- * @param {Function} suiteStatistics production statistics function
- * @returns {{selections:object[],statistics:object,spent:number}} exact optimum
- */
-function exhaustiveOptimum(rows, inputs, suiteStatistics) {
-  const choices = [0];
-  for (let repetitions = 2; repetitions <= inputs.maxReps; repetitions += 1) {
-    choices.push(repetitions);
-  }
-  let best = null;
-  const selections = [];
-
-  /**
-   * Visit one allocation prefix.
-   * @param {number} index next row index
-   * @param {number} spent accumulated baseline cost
-   * @returns {void}
-   */
-  function visit(index, spent) {
-    if (spent > inputs.budget + 1e-12) return;
-    if (index === rows.length) {
-      if (selections.length < inputs.minTasks) return;
-      const statistics = suiteStatistics(selections, true);
-      if (
-        !best ||
-        statistics.detectability > best.statistics.detectability + 1e-12 ||
-        (Math.abs(statistics.detectability - best.statistics.detectability) <=
-          1e-12 &&
-          spent < best.spent)
-      ) {
-        best = {
-          selections: selections.map((selection) => ({ ...selection })),
-          statistics,
-          spent,
-        };
+test("build-time correlation evidence is deterministic and excludes incomplete cells", () => {
+  const rows = [];
+  const models = ["weak", "middle", "strong"];
+  for (let modelIndex = 0; modelIndex < models.length; modelIndex += 1) {
+    for (let run = 0; run < 4; run += 1) {
+      rows.push(
+        trial(
+          "complete-task",
+          models[modelIndex],
+          run,
+          Math.min(1, modelIndex / 2 + run / 20),
+          modelIndex / 2,
+        ),
+      );
+      if (!(modelIndex === 1 && run === 3)) {
+        rows.push(
+          trial(
+            "incomplete-task",
+            models[modelIndex],
+            run,
+            Math.min(1, modelIndex / 2 + run / 10),
+            modelIndex / 2,
+          ),
+        );
       }
-      return;
-    }
-    for (const repetitions of choices) {
-      if (repetitions > 0) {
-        selections.push({ row: rows[index], repetitions });
-      }
-      visit(index + 1, spent + rows[index].cost * repetitions);
-      if (repetitions > 0) selections.pop();
     }
   }
-
-  visit(0, 0);
-  assert.ok(best, "fixture must contain an affordable allocation");
-  return best;
-}
-
-test("planner search matches exhaustive allocation and exports stable JSON", () => {
-  const planner = loadPlanner();
-  const inputs = {
-    targetId: "gpt-5-6-luna::low",
-    comparisonId: "gpt-5-6-luna::medium",
-    budget: 0,
-    minTasks: 3,
-    maxReps: 4,
-    headroom: 0.1,
+  const trials = { rows };
+  const tasks = {
+    rows: [
+      {
+        id: "complete-task",
+        language: "go",
+        problem_title: "Complete",
+        display_description: "Complete task",
+        repository: "fixture/complete",
+        repository_url: "https://example.com/complete",
+      },
+      {
+        id: "incomplete-task",
+        language: "python",
+        problem_title: "Incomplete",
+        display_description: "Incomplete task",
+        repository: "fixture/incomplete",
+        repository_url: "https://example.com/incomplete",
+      },
+    ],
   };
-  const rows = planner.snapshot.tasks
-    .map((task) => planner.deriveTask(task, inputs))
-    .filter((row) => row.automaticEligible)
-    .sort((left, right) => left.id.localeCompare(right.id))
-    .slice(0, 6);
-  assert.equal(rows.length, 6, "fixture requires six eligible published tasks");
+  const provenance = {
+    sourceSha256: "a".repeat(64),
+    retrievedAt: "2026-07-30T00:00:00.000Z",
+  };
 
-  const minimumBreadthCost = [...rows]
-    .sort((left, right) => left.cost - right.cost)
-    .slice(0, inputs.minTasks)
-    .reduce((sum, row) => sum + row.cost * 2, 0);
-  inputs.budget = minimumBreadthCost + 0.75;
+  const first = buildSnapshot(trials, tasks, provenance);
+  const second = buildSnapshot(trials, tasks, provenance);
 
-  const exact = exhaustiveOptimum(
-    rows,
-    inputs,
-    planner.suiteStatistics,
-  );
-  const actual = planner.optimize(inputs, rows);
-
-  assert.equal(actual.valid, true);
-  assert.equal(actual.optimization.certified, true);
-  assert.ok(actual.spent <= inputs.budget + 1e-12);
-  assert.ok(actual.selections.length >= inputs.minTasks);
-  for (const selection of actual.selections) {
-    assert.ok(selection.repetitions >= 2 && selection.repetitions <= 4);
-  }
-  assert.ok(
-    Math.abs(
-      actual.statistics.detectability - exact.statistics.detectability,
-    ) <= 1e-12,
-    `detectability ${actual.statistics.detectability} != exhaustive ${exact.statistics.detectability}`,
-  );
-  const firstExport = JSON.stringify(planner.buildExport(actual, inputs));
-  const secondExport = JSON.stringify(planner.buildExport(actual, inputs));
-  assert.equal(firstExport, secondExport);
-  const exported = JSON.parse(firstExport);
-  assert.equal(exported.schema, "deepswe-benchmark-plan");
-  assert.equal("generatedAt" in exported, false);
-  assert.equal(exported.costAxis.valid, true);
+  assert.deepEqual(first, second);
+  assert.equal(first.schemaVersion, 3);
+  assert.equal(first.correlationMethod.samples, 10_000);
   assert.equal(
-    exported.costAxis.referenceConfiguration,
-    "claude-fable-5::max",
+    first.calibrationMethod.id,
+    "task-ols-inverse-residual-variance-v1",
   );
-  assert.deepEqual(exported.costAxis.missingTasks, []);
+  assert.equal(
+    first.tasks.find((task) => task.id === "complete-task").correlation
+      .completeConfigurationCount,
+    3,
+  );
+  assert.equal(
+    first.tasks.find((task) => task.id === "incomplete-task").correlation
+      .completeConfigurationCount,
+    2,
+  );
+  const completeCalibration = first.tasks.find(
+    (task) => task.id === "complete-task",
+  ).calibration;
+  assert.equal(completeCalibration.configurationCount, 3);
+  assert.ok(Number.isFinite(completeCalibration.intercept));
+  assert.ok(Number.isFinite(completeCalibration.slope));
+  assert.ok(completeCalibration.residualVariance > 0);
+  assert.equal(
+    completeCalibration.precisionWeight,
+    1 / completeCalibration.residualVariance,
+  );
+  assert.equal(
+    first.tasks.find((task) => task.id === "incomplete-task").calibration,
+    null,
+  );
+  for (const task of first.tasks) {
+    assert.ok(task.correlation.p05 <= task.correlation.median);
+    assert.ok(task.correlation.median <= task.correlation.p95);
+  }
 });
 
-test("tasks without report cost-axis evidence cannot enter a paid plan", () => {
-  const planner = loadPlanner();
-  const inputs = {
-    targetId: "gpt-5-6-luna::low",
-    comparisonId: "gpt-5-6-luna::medium",
-    budget: 1,
-    minTasks: 1,
-    maxReps: 4,
-    headroom: 0.1,
-  };
-  const task = JSON.parse(JSON.stringify(planner.snapshot.tasks[0]));
-  delete task.cells["claude-fable-5::max"];
-  const row = planner.deriveTask(task, inputs);
-  assert.equal(row.automaticEligible, false);
+test("correlation and quantile helpers preserve their mathematical contracts", () => {
+  assert.equal(pearsonCorrelation([0, 1, 2], [0, 2, 4]), 1);
+  assert.equal(pearsonCorrelation([1, 1, 1], [0, 1, 2]), 0);
+  assert.equal(quantile([0, 1, 2, 3, 4], 0.05), 0.2);
+  assert.equal(quantile([0, 1, 2, 3, 4], 0.95), 3.8);
+});
+
+test("browser rows keep fixed correlations and change only selected-model evidence", () => {
+  const application = loadApplication();
+  assert.equal(application.snapshot.schemaVersion, 3);
+  assert.equal(application.snapshot.correlationMethod.samples, 10_000);
+
+  const firstConfiguration = application.snapshot.configurations[0].id;
+  const secondConfiguration = application.snapshot.configurations[1].id;
+  const firstRows = application.buildRows(firstConfiguration);
+  const secondRows = application.buildRows(secondConfiguration);
+
+  assert.equal(firstRows.length, application.snapshot.tasks.length);
+  assert.deepEqual(
+    firstRows.map((row) => [row.id, row.correlation]),
+    secondRows.map((row) => [row.id, row.correlation]),
+  );
+  for (let index = 1; index < firstRows.length; index += 1) {
+    assert.ok(
+      firstRows[index - 1].correlation.p05 >=
+        firstRows[index].correlation.p05,
+    );
+  }
   assert.ok(
-    row.reasons.some((reason) =>
-      reason.includes("claude-fable-5::max cost-axis reference"),
+    firstRows.some(
+      (row, index) => row.cell !== secondRows[index].cell,
     ),
+    "selected configuration must change model-specific evidence",
   );
 });
 
-test("invalid best-effort plans cannot be exported", () => {
-  const planner = loadPlanner();
-  assert.equal(planner.isExportablePlan({ valid: false, selections: [{}] }), false);
-  assert.equal(planner.isExportablePlan({ valid: true, selections: [] }), false);
-  assert.equal(planner.isExportablePlan({ valid: true, selections: [{}] }), true);
+test("browser budget selection uses average cost and uniform iterations", () => {
+  const { selectRowsWithinBudget } = loadApplication();
+  const rows = [
+    {
+      id: "first",
+      cell: { meanCost: 2, mean: 0.7 },
+      calibration: { precisionWeight: 1 },
+    },
+    {
+      id: "too-expensive",
+      cell: { meanCost: 4, mean: 0.8 },
+      calibration: { precisionWeight: 2 },
+    },
+    {
+      id: "later-affordable",
+      cell: { meanCost: 0.5, mean: 0.9 },
+      calibration: { precisionWeight: 3 },
+    },
+    { id: "incomplete", cell: null, calibration: null },
+  ];
+
+  const selection = selectRowsWithinBudget(rows, 5, 2);
+
+  assert.deepEqual(
+    selection.rows.map((row) => row.selected),
+    [true, false, true, false],
+  );
+  assert.equal(selection.selectedCount, 2);
+  assert.equal(selection.estimatedSpend, 5);
+  assert.equal(selection.rows[0].normalizedWeight, 0.25);
+  assert.equal(selection.rows[2].normalizedWeight, 0.75);
+});
+
+test("browser headroom excludes saturated tasks before budget selection", () => {
+  const { selectRowsWithinBudget } = loadApplication();
+  const rows = [
+    {
+      id: "saturated",
+      cell: { meanCost: 1, mean: 0.95 },
+      calibration: { precisionWeight: 8 },
+    },
+    {
+      id: "eligible",
+      cell: { meanCost: 2, mean: 0.8 },
+      calibration: { precisionWeight: 2 },
+    },
+    {
+      id: "also-eligible",
+      cell: { meanCost: 3, mean: 0.75 },
+      calibration: { precisionWeight: 3 },
+    },
+  ];
+
+  const selection = selectRowsWithinBudget(rows, 5, 1, 0.1);
+
+  assert.deepEqual(
+    selection.rows.map((row) => row.selected),
+    [false, true, true],
+  );
+  assert.equal(selection.selectedCount, 2);
+  assert.equal(selection.estimatedSpend, 5);
+  assert.equal(selection.rows[0].normalizedWeight, null);
+  assert.equal(selection.rows[1].normalizedWeight, 0.4);
+  assert.equal(selection.rows[2].normalizedWeight, 0.6);
+});
+
+test("manual exclusions happen before budget walking and selected weights renormalize", () => {
+  const { selectRowsWithinBudget } = loadApplication();
+  const rows = [
+    { id: "excluded-first", cell: { meanCost: 5, mean: .5 }, calibration: { precisionWeight: 8 } },
+    { id: "second", cell: { meanCost: 3, mean: .5 }, calibration: { precisionWeight: 1 } },
+    { id: "third", cell: { meanCost: 2, mean: .5 }, calibration: { precisionWeight: 3 } },
+  ];
+  const selection = selectRowsWithinBudget(rows, 5, 1, 0, new Set(["excluded-first"]));
+  assert.deepEqual(selection.rows.map((row) => row.selected), [false, true, true]);
+  assert.equal(selection.estimatedSpend, 5);
+  assert.equal(selection.rows[1].normalizedWeight, .25);
+  assert.equal(selection.rows[2].normalizedWeight, .75);
+});
+
+test("comparison rows reuse the primary allocation and reject incomplete cells", () => {
+  const { buildComparisonRows } = loadApplication();
+  const primaryRows = [
+    {
+      id: "selected",
+      selected: true,
+      normalizedWeight: 0.75,
+      calibration: { intercept: 0.1, slope: 0.8 },
+      cell: { n: 4, meanCost: 1 },
+    },
+    {
+      id: "also-selected",
+      selected: true,
+      normalizedWeight: 0.25,
+      calibration: { intercept: 0.2, slope: 0.5 },
+      cell: { n: 4, meanCost: 2 },
+    },
+    {
+      id: "not-selected",
+      selected: false,
+      normalizedWeight: null,
+      calibration: { intercept: 0.3, slope: 0.4 },
+      cell: { n: 4, meanCost: 3 },
+    },
+  ];
+  const tasks = [
+    {
+      id: "selected",
+      cells: { comparison: { n: 4, meanCost: 4 } },
+    },
+    {
+      id: "also-selected",
+      cells: { comparison: { n: 4, meanCost: 5 } },
+    },
+    {
+      id: "not-selected",
+      cells: { comparison: { n: 4, meanCost: 6 } },
+    },
+  ];
+
+  const comparison = buildComparisonRows(
+    primaryRows,
+    "comparison",
+    tasks,
+  );
+
+  assert.deepEqual(
+    comparison.rows.map((row) => row.id),
+    ["selected", "also-selected"],
+  );
+  assert.deepEqual(
+    comparison.rows.map((row) => row.normalizedWeight),
+    [0.75, 0.25],
+  );
+  assert.deepEqual(
+    comparison.rows.map((row) => row.cell.meanCost),
+    [4, 5],
+  );
+  assert.equal(comparison.missingTaskIds.length, 0);
+
+  tasks[1].cells.comparison.n = 3;
+  const incomplete = buildComparisonRows(
+    primaryRows,
+    "comparison",
+    tasks,
+  );
+  assert.equal(incomplete.rows, null);
+  assert.equal(incomplete.missingTaskIds.length, 1);
+  assert.equal(incomplete.missingTaskIds[0], "also-selected");
+});
+
+test("baseline simulation is deterministic and returns score and price ranges", () => {
+  const { simulateBaseline } = loadApplication();
+  const rows = [
+    {
+      id: "first",
+      selected: true,
+      normalizedWeight: 0.25,
+      calibration: { intercept: 0.1, slope: 0.8 },
+      cell: {
+        trials: [
+          { score: 0.2, cost: 1 },
+          { score: 0.4, cost: 2 },
+          { score: 0.6, cost: 3 },
+          { score: 0.8, cost: 4 },
+        ],
+      },
+    },
+    {
+      id: "second",
+      selected: true,
+      normalizedWeight: 0.75,
+      calibration: { intercept: 0.2, slope: 0.5 },
+      cell: {
+        trials: [
+          { score: 0.1, cost: 2 },
+          { score: 0.3, cost: 3 },
+          { score: 0.5, cost: 4 },
+          { score: 0.7, cost: 5 },
+        ],
+      },
+    },
+  ];
+
+  const first = simulateBaseline(rows, 2, "deterministic fixture");
+  const second = simulateBaseline(rows, 2, "deterministic fixture");
+
+  assert.equal(JSON.stringify(first), JSON.stringify(second));
+  assert.ok(first.score.p05 <= first.score.mean);
+  assert.ok(first.score.mean <= first.score.p95);
+  assert.ok(first.price.p05 <= first.price.mean);
+  assert.ok(first.price.mean <= first.price.p95);
+
+  const unbounded = simulateBaseline(
+    [
+      {
+        id: "unbounded",
+        selected: true,
+        normalizedWeight: 1,
+        calibration: { intercept: -0.5, slope: 0 },
+        cell: {
+          trials: [
+            { score: 0, cost: 1 },
+            { score: 0, cost: 1 },
+            { score: 0, cost: 1 },
+            { score: 0, cost: 1 },
+          ],
+        },
+      },
+    ],
+    1,
+    "unbounded fixture",
+  );
+  assert.equal(unbounded.score.mean, -0.5);
+  assert.equal(unbounded.score.p05, -0.5);
+  assert.equal(unbounded.score.p95, -0.5);
+});
+
+test("published comparison uses the fixed weighted Welch calculation", () => {
+  const { comparePublishedRows } = loadApplication();
+  const primary = [
+    {
+      id: "task",
+      selected: true,
+      normalizedWeight: 1,
+      calibration: { slope: 1 },
+      cell: { n: 4, mean: 0.8, variance: 0.04 },
+    },
+  ];
+  const comparison = [
+    {
+      ...primary[0],
+      cell: { n: 4, mean: 0.5, variance: 0.01 },
+    },
+  ];
+
+  const result = comparePublishedRows(primary, comparison, 2);
+
+  assert.ok(Math.abs(result.difference - 0.3) < 1e-12);
+  assert.ok(Math.abs(result.standardError - Math.sqrt(0.025)) < 1e-12);
+  assert.ok(Math.abs(result.degreesOfFreedom - 4.411764705882353) < 1e-12);
+  assert.ok(result.pValue > 0 && result.pValue < 1);
+  assert.equal(
+    comparePublishedRows(
+      [{ ...primary[0], cell: { n: 4, mean: 1, variance: 0 } }],
+      [{ ...comparison[0], cell: { n: 4, mean: 1, variance: 0 } }],
+      1,
+    ),
+    null,
+  );
+});
+
+test("copied selection matches the benchmark CLI schema", () => {
+  const { snapshot, buildBenchmarkSelection } = loadApplication();
+  const configuration = snapshot.configurations[0];
+  const selection = {
+    estimatedSpend: 2.5,
+    rows: [
+      {
+        id: "selected-task",
+        selected: true,
+        normalizedWeight: 1,
+        calibration: { intercept: 0.1, slope: 0.8 },
+        cell: { meanCost: 1.25 },
+      },
+      {
+        id: "not-selected",
+        selected: false,
+        normalizedWeight: null,
+        calibration: { intercept: 0.2, slope: 0.5 },
+        cell: { meanCost: 1 },
+      },
+    ],
+  };
+
+  const document = buildBenchmarkSelection(
+    selection,
+    configuration.id,
+    5,
+    2,
+  );
+
+  assert.equal(document.schema, "deepswe-benchmark-selection");
+  assert.equal(document.schemaVersion, 2);
+  assert.equal(document.snapshot.sha256, snapshot.source.sha256);
+  assert.deepEqual(
+    [document.selector.model, document.selector.reasoning],
+    [configuration.model, configuration.reasoning],
+  );
+  assert.equal(document.estimatedPublishedSpendUsd, 2.5);
+  assert.equal(JSON.stringify(document.manualExclusions), "[]");
+  assert.equal(
+    JSON.stringify(document.tasks),
+    JSON.stringify([
+      {
+        id: "selected-task",
+        repetitions: 2,
+        weight: 1,
+        calibration: { intercept: 0.1, slope: 0.8 },
+        publishedMeanCostUsd: 1.25,
+      },
+    ]),
+  );
+});
+
+test("benchmark selection identity matches the Go canonical identity", () => {
+  const selection = {
+    schema: "deepswe-benchmark-selection",
+    schemaVersion: 1,
+    snapshot: {
+      url: "https://deepswe.datacurve.ai/artifacts/v1.1/trials.json",
+      sha256: "a".repeat(64),
+    },
+    selector: {
+      model: "gpt-5-6-luna",
+      reasoning: "low",
+      budgetUsd: 0.2,
+      iterationsPerTask: 1,
+    },
+    estimatedPublishedSpendUsd: 0.2,
+    tasks: [
+      {
+        id: "first-task",
+        repetitions: 1,
+        weight: 0.25,
+        calibration: { intercept: 0.1, slope: 0.8 },
+        publishedMeanCostUsd: 0.1,
+      },
+      {
+        id: "second-task",
+        repetitions: 1,
+        weight: 0.75,
+        calibration: { intercept: 0.2, slope: 0.5 },
+        publishedMeanCostUsd: 0.1,
+      },
+    ],
+  };
+
+  assert.equal(
+    benchmarkSelectionID(selection),
+    "62ab8876c8a70c14c3994401243eece6e6e807aa39629e42952b84adaa5bc8b0",
+  );
+  selection.tasks[0].calibration.slope = 0.7;
+  assert.notEqual(
+    benchmarkSelectionID(selection),
+    "62ab8876c8a70c14c3994401243eece6e6e807aa39629e42952b84adaa5bc8b0",
+  );
+
+  selection.schemaVersion = 2;
+  selection.manualExclusions = ["excluded-task"];
+  const withExclusion = benchmarkSelectionID(selection);
+  selection.manualExclusions = ["different-task"];
+  assert.notEqual(benchmarkSelectionID(selection), withExclusion);
 });

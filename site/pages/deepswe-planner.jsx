@@ -11,23 +11,23 @@ const frameStyle = {
 };
 
 /**
- * Render the self-contained DeepSWE experiment planner inside the website
- * shell. The iframe keeps the validated planner layout isolated from
+ * Render the self-contained DeepSWE task evidence table inside the website
+ * shell. The iframe keeps the validated evidence layout isolated from
  * documentation theme styles while preserving same-origin clipboard access.
  *
- * @returns {React.JSX.Element} website planner page
+ * @returns {React.JSX.Element} website task-evidence page
  */
 export default function DeepSWEPlannerPage() {
   const plannerUrl = useBaseUrl("/deepswe-planner/app/");
 
   return (
     <Layout
-      title="DeepSWE benchmark planner"
-      description="Choose DeepSWE tasks and repetitions that maximize historical detectability for a baseline budget."
+      title="DeepSWE task evidence"
+      description="Compare DeepSWE task correlation, calibrated composite weight, and estimated published score and price."
       noFooter
     >
       <iframe
-        title="DeepSWE benchmark planner"
+        title="DeepSWE task correlation and cost"
         src={plannerUrl}
         style={frameStyle}
         allow="clipboard-write"
