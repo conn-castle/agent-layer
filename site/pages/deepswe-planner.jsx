@@ -1,13 +1,14 @@
 import React from "react";
 import Layout from "@theme/Layout";
 import useBaseUrl from "@docusaurus/useBaseUrl";
+import { useColorMode } from "@docusaurus/theme-common";
 
 const frameStyle = {
   display: "block",
   width: "100%",
   minHeight: "calc(100vh - 60px)",
   border: 0,
-  background: "#f3f5f2",
+  background: "transparent",
 };
 
 /**
@@ -18,7 +19,9 @@ const frameStyle = {
  * @returns {React.JSX.Element} website task-evidence page
  */
 export default function DeepSWEPlannerPage() {
-  const plannerUrl = useBaseUrl("/deepswe-planner/app/");
+  const plannerBaseUrl = useBaseUrl("/deepswe-planner/app/");
+  const { colorMode } = useColorMode();
+  const plannerUrl = `${plannerBaseUrl}?theme=${colorMode}`;
 
   return (
     <Layout
