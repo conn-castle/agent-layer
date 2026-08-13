@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import Layout from "@theme/Layout";
 import useBaseUrl from "@docusaurus/useBaseUrl";
 import { useColorMode } from "@docusaurus/theme-common";
@@ -14,14 +14,27 @@ const frameStyle = {
 function PlannerFrame() {
   const plannerBaseUrl = useBaseUrl("/deepswe-planner/app/");
   const { colorMode } = useColorMode();
-  const plannerUrl = `${plannerBaseUrl}?theme=${colorMode}`;
+  const plannerUrl = useRef(`${plannerBaseUrl}?theme=${colorMode}`).current;
+  const frameRef = useRef(null);
+
+  const synchronizeTheme = useCallback(() => {
+    if (colorMode !== "light" && colorMode !== "dark") return;
+    frameRef.current?.contentWindow?.postMessage(
+      { type: "agent-layer-theme", theme: colorMode },
+      window.location.origin,
+    );
+  }, [colorMode]);
+
+  useEffect(synchronizeTheme, [synchronizeTheme]);
 
   return (
     <iframe
+      ref={frameRef}
       title="DeepSWE task correlation and cost"
       src={plannerUrl}
       style={frameStyle}
       allow="clipboard-write"
+      onLoad={synchronizeTheme}
     />
   );
 }

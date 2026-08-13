@@ -11,7 +11,7 @@ import (
 func TestRenderStudyReportHTMLPresentsResultsAndPreservesSafeBoundaries(t *testing.T) {
 	scoreA, scoreB := .72, .64
 	mean, calibrated, difference := .8, .72, .08
-	p, adjusted, degrees := .018, .036, 7.4
+	p, adjusted, degrees := .018, .072, 7.4
 	report := StudyReport{
 		StudyID: strings.Repeat("a", 64), SelectionID: strings.Repeat("b", 64), GeneratedAt: time.Date(2026, time.August, 11, 14, 30, 0, 0, time.UTC),
 		Selection: StudySelectionProvenance{Model: publishedLuna, Reasoning: effortLow, SnapshotURL: "https://example.com/snapshot.json", SnapshotSHA: strings.Repeat("c", 64)},
@@ -29,7 +29,7 @@ func TestRenderStudyReportHTMLPresentsResultsAndPreservesSafeBoundaries(t *testi
 		t.Fatal(err)
 	}
 	document := string(html)
-	for _, want := range []string{"Benchmark Results", "Compare experiment quality, cost, and statistical evidence across a shared task set.", "Score versus cost", "plotly.js (basic - minified) v3.7.0", "error_x", "Fit to results", "Fixed · $0.10–$1,000", "Compare two experiments", "Choose both experiments", "Agent &lt;Layer&gt;", "Pairwise score evidence", "data-raw-p=\"0.018\"", "p = ", "0.036", "raw 0.018", "Task evidence", "raw 80.0%", "best-badge", "× baseline", "Comparability warning", "Provider provenance differs.", "al benchmark run study.toml --task-concurrency 2", "DataCurve Pier 0.3.0", "Download canonical report.json", "Fixed selection only."} {
+	for _, want := range []string{"Benchmark Results", "Compare experiment quality, cost, and statistical evidence across a shared task set.", "Score versus cost", "plotly.js (basic - minified) v3.7.0", "error_x", "Fit to results", "Fixed · $0.10–$1,000", "Compare two experiments", "Choose both experiments", "Agent &lt;Layer&gt;", "Pairwise score evidence", "data-raw-p=\"0.018\"", "data-adjusted-p=\"0.072\"", "Holm-adjusted p = ", "raw p = ", "0.072", "raw 0.018", "adjustedSignificant", "if(adjustedSignificant)", "Task evidence", "raw 80.0%", "best-badge", "× baseline", "Comparability warning", "Provider provenance differs.", "al benchmark run study.toml --task-concurrency 2", "DataCurve Pier 0.3.0", "Download canonical report.json", "Fixed selection only."} {
 		if !strings.Contains(document, want) {
 			t.Errorf("rendered report missing %q", want)
 		}
@@ -46,14 +46,34 @@ func TestRenderStudyReportHTMLPresentsResultsAndPreservesSafeBoundaries(t *testi
 	if !strings.Contains(document, `data-baseline="1" data-comparison="2"`) {
 		t.Fatal("rendered report is missing interactive pairwise comparison data")
 	}
-	if strings.Contains(document, `data-adjusted-p=`) {
-		t.Fatal("pairwise picker includes experiment-family adjustment data")
+	if strings.Contains(document, `rawSignificant`) {
+		t.Fatal("pairwise picker still derives its verdict from the raw p-value")
 	}
 	if strings.Contains(document, "pts contribution") {
 		t.Fatal("task table repeats derivable weighted contributions")
 	}
 	if !strings.Contains(document, `let baseline=null,comparison=null,role=null`) || strings.Contains(document, `class="selection-slot role-button" data-role="baseline" aria-pressed="true"`) || strings.Contains(document, `id="comparison-results" hidden`) {
 		t.Fatal("interactive comparison does not start with an empty selection")
+	}
+}
+
+func TestStudyReportHTMLKeepsScoresIndependentOfChartCostEligibility(t *testing.T) {
+	score := 1.2
+	view := newStudyReportHTMLView(StudyReport{Experiments: []StudyExperimentReport{{Name: "Zero cost", Score: &score}}})
+	if len(view.Experiments) != 1 || !view.Experiments[0].HasScore || view.Experiments[0].Score != "120.0%" {
+		t.Fatalf("score summary = %+v, want completed 120.0%% score", view.Experiments)
+	}
+	if len(view.ChartExperiments) != 0 {
+		t.Fatalf("chart experiments = %+v, want zero without positive log-scale cost", view.ChartExperiments)
+	}
+	document, err := renderStudyReportHTML(StudyReport{Experiments: []StudyExperimentReport{{Name: "Out of range", Score: &score, ObservedCost: ObservedCostRange{Midpoint: 1, Minimum: .9, Maximum: 1.1}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`data-score="1.2"`, `rawScoreMax=Math.max(1,...scores)`, `range:scoreRange`} {
+		if !strings.Contains(string(document), want) {
+			t.Errorf("out-of-range score report missing %q", want)
+		}
 	}
 }
 

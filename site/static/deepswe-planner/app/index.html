@@ -7,8 +7,6 @@
   <title>DeepSWE benchmark task selector</title>
   <script src="./theme.js"></script>
   <style>
-    @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
-
     :root {
       color-scheme: light;
       --background: #fafbfc;
@@ -1081,6 +1079,17 @@ const moneyDifference = (value) => {
     maximumFractionDigits: 2,
   }).format(value);
 };
+const moneyPrecise = (value) => {
+  if (!Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: Math.abs(value) < 1 ? 4 : 2,
+  }).format(value);
+};
+const comparisonStatusText = (comparisonError, extrapolationWarning) =>
+  [comparisonError, extrapolationWarning].filter(Boolean).join(" ");
 
 /**
  * Calculate a type-7 empirical quantile.
@@ -1462,7 +1471,7 @@ function renderModelEvidence(cell) {
   }
   const scores = cell.trials.map((trial) => trial.score);
   return `
-    <td class="evidence-cell">${money(cell.meanCost)} <span class="range">(${money(cell.minCost)} – ${money(cell.maxCost)})</span></td>
+    <td class="evidence-cell">${moneyPrecise(cell.meanCost)} <span class="range">(${moneyPrecise(cell.minCost)} – ${moneyPrecise(cell.maxCost)})</span></td>
     <td class="evidence-cell">${percent(cell.mean)} <span class="range">(${percent(Math.min(...scores))} – ${percent(Math.max(...scores))})</span></td>
   `;
 }
@@ -1620,12 +1629,9 @@ function renderEstimate({
       comparisonEstimate.score.mean < 0 || comparisonEstimate.score.mean > 1
         ? "The calibrated comparison estimate falls outside the benchmark’s 0–100% score range. The chart pins it to the physical boundary; the OLS estimate and p-value remain visible for transparency."
         : "";
-    if (extrapolationWarning) {
-      $("comparisonStatus").hidden = false;
-      $("comparisonStatus").textContent = [comparisonError, extrapolationWarning]
-        .filter(Boolean)
-        .join(" ");
-    }
+    const statusText = comparisonStatusText(comparisonError, extrapolationWarning);
+    $("comparisonStatus").hidden = statusText === "";
+    $("comparisonStatus").textContent = statusText;
     renderPValueBand(comparisonTest?.pValue);
     $("comparisonPValue").textContent = pValue(comparisonTest?.pValue);
     $("comparisonPValueDetail").textContent = comparisonTest
@@ -1743,7 +1749,7 @@ function buildBenchmarkSelection(
 /**
  * Copy text using the modern clipboard API or a local-file-compatible fallback.
  * @param {string} contents text to copy
- * @returns {void}
+ * @returns {Promise<void>} completion promise
  */
 async function copyText(contents) {
   if (navigator.clipboard?.writeText) {
@@ -1832,7 +1838,7 @@ ${JSON.stringify(selectionDocument, null, 2)}
 
 /**
  * Open the benchmark handoff for the canonical selection JSON.
- * @returns {Promise<void>} completion promise
+ * @returns {void}
  */
 function openCurrentSelection() {
   const state = currentExportState();

@@ -23,6 +23,11 @@ const dataPath = path.join(
   repositoryRoot,
   "site/static/deepswe-planner/app/data.js",
 );
+const themePath = path.join(
+  repositoryRoot,
+  "site/static/deepswe-planner/app/theme.js",
+);
+const pagePath = path.join(repositoryRoot, "site/pages/deepswe-planner.jsx");
 
 function benchmarkSelectionID(selection) {
   const canonical = {
@@ -100,6 +105,8 @@ globalThis.__applicationTest = {
   simulateBaseline,
   comparePublishedRows,
   classifyPValue,
+  moneyPrecise,
+  comparisonStatusText,
   buildBenchmarkSelection,
 };`,
     context,
@@ -400,9 +407,10 @@ test("comparison rows reuse the primary allocation and flag limited cells", () =
     tasks,
   );
   assert.deepEqual(limited.rows.map((row) => row.id), ["selected", "also-selected"]);
-  assert.equal(JSON.stringify(limited.partialCells), JSON.stringify([
-    { id: "also-selected", runs: 3 },
-  ]));
+  assert.deepEqual(
+    [...limited.partialCells].map(({ id, runs }) => ({ id, runs })),
+    [{ id: "also-selected", runs: 3 }],
+  );
 
   tasks[1].cells.comparison.n = 1;
   const incomplete = buildComparisonRows(primaryRows, "comparison", tasks);
@@ -621,6 +629,61 @@ test("benchmark handoff offers explicit save actions and current CLI commands", 
   assert.match(html, /id="downloadSelection"[^>]*>Download selection\.json</);
   assert.doesNotMatch(html, /copied to your clipboard/i);
   assert.match(html, /al benchmark run study\.toml --dry-run/);
-  assert.match(html, /al benchmark run study\.toml/);
+  assert.match(html, /^\s*al benchmark run study\.toml$/m);
   assert.match(html, /Check the prerequisites/);
+});
+
+test("standalone presentation stays local and preserves precise status evidence", () => {
+  const html = fs.readFileSync(applicationPath, "utf8");
+  const { moneyPrecise, comparisonStatusText } = loadApplication();
+
+  assert.doesNotMatch(html, /fonts\.googleapis\.com/);
+  assert.equal(moneyPrecise(0.0042), "$0.0042");
+  assert.equal(moneyPrecise(1.25), "$1.25");
+  assert.equal(comparisonStatusText("Limited comparison data.", ""), "Limited comparison data.");
+  assert.equal(
+    comparisonStatusText("Limited comparison data.", "Outside score range."),
+    "Limited comparison data. Outside score range.",
+  );
+});
+
+test("theme synchronization preserves iframe state and validates same-origin updates", () => {
+  const themeSource = fs.readFileSync(themePath, "utf8");
+  const pageSource = fs.readFileSync(pagePath, "utf8");
+  let messageHandler;
+  const parent = {};
+  const context = vm.createContext({
+    URLSearchParams,
+    location: { search: "?theme=dark", origin: "https://example.test" },
+    document: { documentElement: { dataset: {} } },
+    window: {
+      parent,
+      addEventListener(type, handler) {
+        if (type === "message") messageHandler = handler;
+      },
+    },
+  });
+
+  vm.runInContext(themeSource, context, { filename: themePath });
+  assert.equal(context.document.documentElement.dataset.theme, "dark");
+  messageHandler({
+    origin: "https://attacker.test",
+    source: parent,
+    data: { type: "agent-layer-theme", theme: "light" },
+  });
+  assert.equal(context.document.documentElement.dataset.theme, "dark");
+  messageHandler({
+    origin: "https://example.test",
+    source: parent,
+    data: { type: "agent-layer-theme", theme: "invalid" },
+  });
+  assert.equal(context.document.documentElement.dataset.theme, "dark");
+  messageHandler({
+    origin: "https://example.test",
+    source: parent,
+    data: { type: "agent-layer-theme", theme: "light" },
+  });
+  assert.equal(context.document.documentElement.dataset.theme, "light");
+  assert.match(pageSource, /useRef\(`\$\{plannerBaseUrl\}\?theme=\$\{colorMode\}`\)\.current/);
+  assert.match(pageSource, /postMessage\([\s\S]*window\.location\.origin/);
 });

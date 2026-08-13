@@ -85,6 +85,8 @@ type studyComparisonHTMLView struct {
 	DifferenceValue string
 	RawP            string
 	RawPValue       string
+	AdjustedP       string
+	AdjustedPValue  string
 	Reason          string
 }
 
@@ -183,7 +185,7 @@ func newStudyReportHTMLView(report StudyReport) studyReportHTMLView {
 		for _, warning := range experiment.ComparabilityWarnings {
 			view.Warnings = append(view.Warnings, fmt.Sprintf("%s: %s", experiment.Name, warning))
 		}
-		if experiment.Score != nil && experiment.ObservedCost.Midpoint > 0 && experiment.ObservedCost.Minimum > 0 && experiment.ObservedCost.Maximum > 0 {
+		if experiment.Score != nil {
 			item.HasScore = true
 			item.Score = formatPercent(*experiment.Score)
 			item.ScoreValue = machineNumber(*experiment.Score)
@@ -191,7 +193,7 @@ func newStudyReportHTMLView(report StudyReport) studyReportHTMLView {
 			item.Score = "Pending"
 		}
 		view.Experiments = append(view.Experiments, item)
-		if item.HasScore {
+		if item.HasScore && experiment.ObservedCost.Midpoint > 0 && experiment.ObservedCost.Minimum > 0 && experiment.ObservedCost.Maximum > 0 {
 			view.ChartExperiments = append(view.ChartExperiments, item)
 		}
 	}
@@ -255,6 +257,10 @@ func newStudyReportHTMLView(report StudyReport) studyReportHTMLView {
 			item.RawP = formatPValue(comparison.RawTwoSidedPValue)
 			if comparison.RawTwoSidedPValue != nil {
 				item.RawPValue = machineNumber(*comparison.RawTwoSidedPValue)
+			}
+			item.AdjustedP = formatPValue(comparison.HolmAdjustedPValue)
+			if comparison.HolmAdjustedPValue != nil {
+				item.AdjustedPValue = machineNumber(*comparison.HolmAdjustedPValue)
 			}
 			view.Comparisons = append(view.Comparisons, item)
 		}
