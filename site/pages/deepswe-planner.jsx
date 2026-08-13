@@ -11,6 +11,21 @@ const frameStyle = {
   background: "transparent",
 };
 
+function PlannerFrame() {
+  const plannerBaseUrl = useBaseUrl("/deepswe-planner/app/");
+  const { colorMode } = useColorMode();
+  const plannerUrl = `${plannerBaseUrl}?theme=${colorMode}`;
+
+  return (
+    <iframe
+      title="DeepSWE task correlation and cost"
+      src={plannerUrl}
+      style={frameStyle}
+      allow="clipboard-write"
+    />
+  );
+}
+
 /**
  * Render the self-contained DeepSWE task evidence table inside the website
  * shell. The iframe keeps the validated evidence layout isolated from
@@ -19,22 +34,13 @@ const frameStyle = {
  * @returns {React.JSX.Element} website task-evidence page
  */
 export default function DeepSWEPlannerPage() {
-  const plannerBaseUrl = useBaseUrl("/deepswe-planner/app/");
-  const { colorMode } = useColorMode();
-  const plannerUrl = `${plannerBaseUrl}?theme=${colorMode}`;
-
   return (
     <Layout
       title="DeepSWE task evidence"
       description="Compare DeepSWE task correlation, calibrated composite weight, and estimated published score and price."
       noFooter
     >
-      <iframe
-        title="DeepSWE task correlation and cost"
-        src={plannerUrl}
-        style={frameStyle}
-        allow="clipboard-write"
-      />
+      <PlannerFrame />
     </Layout>
   );
 }
