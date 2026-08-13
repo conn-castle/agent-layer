@@ -23,6 +23,11 @@ const dataPath = path.join(
   repositoryRoot,
   "site/static/deepswe-planner/app/data.js",
 );
+const themePath = path.join(
+  repositoryRoot,
+  "site/static/deepswe-planner/app/theme.js",
+);
+const pagePath = path.join(repositoryRoot, "site/pages/deepswe-planner.jsx");
 
 function benchmarkSelectionID(selection) {
   const canonical = {
@@ -99,6 +104,9 @@ globalThis.__applicationTest = {
   selectRowsWithinBudget,
   simulateBaseline,
   comparePublishedRows,
+  classifyPValue,
+  moneyPrecise,
+  comparisonStatusText,
   buildBenchmarkSelection,
 };`,
     context,
@@ -206,6 +214,20 @@ test("correlation and quantile helpers preserve their mathematical contracts", (
   assert.equal(pearsonCorrelation([1, 1, 1], [0, 1, 2]), 0);
   assert.equal(quantile([0, 1, 2, 3, 4], 0.05), 0.2);
   assert.equal(quantile([0, 1, 2, 3, 4], 0.95), 3.8);
+});
+
+test("published p-value bands use the documented traffic-light thresholds", () => {
+  const { classifyPValue } = loadApplication();
+  assert.deepEqual(
+    { ...classifyPValue(0.0499) },
+    { className: "p-value-green", label: "Significant" },
+  );
+  assert.equal(classifyPValue(0.05).className, "p-value-yellow");
+  assert.equal(classifyPValue(0.05).label, "Borderline");
+  assert.equal(classifyPValue(0.0999).className, "p-value-yellow");
+  assert.equal(classifyPValue(0.1).className, "p-value-red");
+  assert.equal(classifyPValue(0.1).label, "Not significant");
+  assert.equal(classifyPValue(NaN).className, "");
 });
 
 test("browser rows keep fixed correlations and change only selected-model evidence", () => {
@@ -317,7 +339,7 @@ test("manual exclusions happen before budget walking and selected weights renorm
   assert.equal(selection.rows[2].normalizedWeight, .75);
 });
 
-test("comparison rows reuse the primary allocation and reject incomplete cells", () => {
+test("comparison rows reuse the primary allocation and flag limited cells", () => {
   const { buildComparisonRows } = loadApplication();
   const primaryRows = [
     {
@@ -345,15 +367,15 @@ test("comparison rows reuse the primary allocation and reject incomplete cells",
   const tasks = [
     {
       id: "selected",
-      cells: { comparison: { n: 4, meanCost: 4 } },
+      cells: { comparison: { n: 4, meanCost: 4, variance: 0.1 } },
     },
     {
       id: "also-selected",
-      cells: { comparison: { n: 4, meanCost: 5 } },
+      cells: { comparison: { n: 4, meanCost: 5, variance: 0.1 } },
     },
     {
       id: "not-selected",
-      cells: { comparison: { n: 4, meanCost: 6 } },
+      cells: { comparison: { n: 4, meanCost: 6, variance: 0.1 } },
     },
   ];
 
@@ -376,13 +398,22 @@ test("comparison rows reuse the primary allocation and reject incomplete cells",
     [4, 5],
   );
   assert.equal(comparison.missingTaskIds.length, 0);
+  assert.equal(comparison.partialCells.length, 0);
 
   tasks[1].cells.comparison.n = 3;
-  const incomplete = buildComparisonRows(
+  const limited = buildComparisonRows(
     primaryRows,
     "comparison",
     tasks,
   );
+  assert.deepEqual(limited.rows.map((row) => row.id), ["selected", "also-selected"]);
+  assert.deepEqual(
+    [...limited.partialCells].map(({ id, runs }) => ({ id, runs })),
+    [{ id: "also-selected", runs: 3 }],
+  );
+
+  tasks[1].cells.comparison.n = 1;
+  const incomplete = buildComparisonRows(primaryRows, "comparison", tasks);
   assert.equal(incomplete.rows, null);
   assert.equal(incomplete.missingTaskIds.length, 1);
   assert.equal(incomplete.missingTaskIds[0], "also-selected");
@@ -415,7 +446,6 @@ test("baseline simulation is deterministic and returns score and price ranges", 
           { score: 0.1, cost: 2 },
           { score: 0.3, cost: 3 },
           { score: 0.5, cost: 4 },
-          { score: 0.7, cost: 5 },
         ],
       },
     },
@@ -590,4 +620,70 @@ test("benchmark selection identity matches the Go canonical identity", () => {
   const withExclusion = benchmarkSelectionID(selection);
   selection.manualExclusions = ["different-task"];
   assert.notEqual(benchmarkSelectionID(selection), withExclusion);
+});
+
+test("benchmark handoff offers explicit save actions and current CLI commands", () => {
+  const html = fs.readFileSync(applicationPath, "utf8");
+
+  assert.match(html, /id="copySelectionJson"[^>]*>Copy selection</);
+  assert.match(html, /id="downloadSelection"[^>]*>Download selection\.json</);
+  assert.doesNotMatch(html, /copied to your clipboard/i);
+  assert.match(html, /al benchmark run study\.toml --dry-run/);
+  assert.match(html, /^\s*al benchmark run study\.toml$/m);
+  assert.match(html, /Check the prerequisites/);
+});
+
+test("standalone presentation stays local and preserves precise status evidence", () => {
+  const html = fs.readFileSync(applicationPath, "utf8");
+  const { moneyPrecise, comparisonStatusText } = loadApplication();
+
+  assert.doesNotMatch(html, /fonts\.googleapis\.com/);
+  assert.equal(moneyPrecise(0.0042), "$0.0042");
+  assert.equal(moneyPrecise(1.25), "$1.25");
+  assert.equal(comparisonStatusText("Limited comparison data.", ""), "Limited comparison data.");
+  assert.equal(
+    comparisonStatusText("Limited comparison data.", "Outside score range."),
+    "Limited comparison data. Outside score range.",
+  );
+});
+
+test("theme synchronization preserves iframe state and validates same-origin updates", () => {
+  const themeSource = fs.readFileSync(themePath, "utf8");
+  const pageSource = fs.readFileSync(pagePath, "utf8");
+  let messageHandler;
+  const parent = {};
+  const context = vm.createContext({
+    URLSearchParams,
+    location: { search: "?theme=dark", origin: "https://example.test" },
+    document: { documentElement: { dataset: {} } },
+    window: {
+      parent,
+      addEventListener(type, handler) {
+        if (type === "message") messageHandler = handler;
+      },
+    },
+  });
+
+  vm.runInContext(themeSource, context, { filename: themePath });
+  assert.equal(context.document.documentElement.dataset.theme, "dark");
+  messageHandler({
+    origin: "https://attacker.test",
+    source: parent,
+    data: { type: "agent-layer-theme", theme: "light" },
+  });
+  assert.equal(context.document.documentElement.dataset.theme, "dark");
+  messageHandler({
+    origin: "https://example.test",
+    source: parent,
+    data: { type: "agent-layer-theme", theme: "invalid" },
+  });
+  assert.equal(context.document.documentElement.dataset.theme, "dark");
+  messageHandler({
+    origin: "https://example.test",
+    source: parent,
+    data: { type: "agent-layer-theme", theme: "light" },
+  });
+  assert.equal(context.document.documentElement.dataset.theme, "light");
+  assert.match(pageSource, /useRef\(`\$\{plannerBaseUrl\}\?theme=\$\{colorMode\}`\)\.current/);
+  assert.match(pageSource, /postMessage\([\s\S]*window\.location\.origin/);
 });

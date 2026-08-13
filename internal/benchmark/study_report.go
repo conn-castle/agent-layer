@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"math"
 	"os"
 	"path/filepath"
@@ -22,7 +21,10 @@ func bundleManifestHash(bundle *TreatmentBundle) string {
 	return bundle.ManifestHash
 }
 
-const studyReportSchema = "deepswe-benchmark-study-report-v1"
+const (
+	studyReportSchema = "deepswe-benchmark-study-report-v1"
+	studyReportCLI    = "Agent Layer (al)"
+)
 
 // StudyReport is deliberately independent from MatrixReport.  A study is the
 // public reproducibility boundary: it records exactly its declared experiments
@@ -32,11 +34,22 @@ type StudyReport struct {
 	StudyID       string                   `json:"study_id"`
 	SelectionID   string                   `json:"selection_id"`
 	GeneratedAt   time.Time                `json:"generated_at"`
+	Execution     StudyExecutionProvenance `json:"execution"`
 	Selection     StudySelectionProvenance `json:"selection"`
 	Experiments   []StudyExperimentReport  `json:"experiments"`
 	Comparisons   []StudyComparisonReport  `json:"comparisons"`
 	HolmFamily    StudyHolmFamily          `json:"holm_family"`
 	Limitations   []string                 `json:"limitations"`
+}
+
+// StudyExecutionProvenance records the public runner and pinned evaluation harness.
+type StudyExecutionProvenance struct {
+	Command                   string `json:"reproduction_command"`
+	CLI                       string `json:"cli"`
+	Harness                   string `json:"harness"`
+	HarnessVersion            string `json:"harness_version"`
+	TaskConcurrency           int    `json:"task_concurrency"`
+	TaskContainerArchitecture string `json:"task_container_architecture"`
 }
 
 // StudySelectionProvenance records the immutable selection inputs used by a study.
@@ -118,6 +131,11 @@ func buildStudyReport(study preparedStudy, preparation matrixPreparation) (Study
 	report := StudyReport{
 		SchemaVersion: studyReportSchema, StudyID: study.studyID, SelectionID: study.selectionID,
 		GeneratedAt: time.Now().UTC(),
+		Execution: StudyExecutionProvenance{
+			Command: fmt.Sprintf("al benchmark run <study.toml> --task-concurrency %d", preparation.taskConcurrency),
+			CLI:     studyReportCLI, Harness: "DataCurve Pier", HarnessVersion: PierVersion,
+			TaskConcurrency: preparation.taskConcurrency, TaskContainerArchitecture: benchmarkTaskContainerArchitecture,
+		},
 		Selection: StudySelectionProvenance{Model: study.selection.Selector.Model, Reasoning: study.selection.Selector.Reasoning,
 			SnapshotURL: study.selection.Snapshot.URL, SnapshotSHA: study.selection.Snapshot.SHA256,
 			TaskChecksums: copyStringMap(preparation.checksums), Environments: copyStringMap(preparation.environments)},
@@ -164,15 +182,14 @@ func buildStudyReport(study preparedStudy, preparation matrixPreparation) (Study
 	if err := writeJSON(jsonPath, report); err != nil {
 		return StudyReport{}, "", "", err
 	}
-	data, err := json.MarshalIndent(report, "", "  ")
+	htmlDocument, err := renderStudyReportHTML(report)
 	if err != nil {
 		return StudyReport{}, "", "", err
 	}
-	htmlDocument := "<!doctype html><meta charset=\"utf-8\"><title>DeepSWE benchmark study</title><main><h1>DeepSWE benchmark study</h1><p>Study " + html.EscapeString(study.studyID) + "</p><pre>" + html.EscapeString(string(data)) + "</pre></main>"
 	if err := os.MkdirAll(reportDir, 0o700); err != nil {
 		return StudyReport{}, "", "", err
 	}
-	if err := fsutil.WriteFileAtomic(htmlPath, []byte(htmlDocument), 0o600); err != nil {
+	if err := fsutil.WriteFileAtomic(htmlPath, htmlDocument, 0o600); err != nil {
 		return StudyReport{}, "", "", err
 	}
 	return report, jsonPath, htmlPath, nil
