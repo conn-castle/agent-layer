@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/conn-castle/agent-layer/internal/clients"
@@ -23,14 +24,60 @@ const (
 	probePrompt              = "Call the " + probeantigravity.FixtureToolName + " tool and report exactly what it returns."
 	probeRunTimeout          = 45 * time.Second
 	maxStreamingJSONLineSize = 16 * 1024 * 1024
+	maxProbeOutputBytes      = 32 * 1024 * 1024
+	maxProbeVersionBytes     = 64 * 1024
+	probeOutputTruncatedMark = "\n[Agent Layer truncated Grok probe output.]\n"
 )
+
+type boundedProbeOutput struct {
+	buffer    bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func (w *boundedProbeOutput) Write(data []byte) (int, error) {
+	written := len(data)
+	if w.truncated {
+		return written, nil
+	}
+	if w.buffer.Len()+len(data) <= w.limit {
+		_, _ = w.buffer.Write(data)
+		return written, nil
+	}
+
+	prefixLimit := w.limit - len(probeOutputTruncatedMark)
+	if w.buffer.Len() > prefixLimit {
+		w.buffer.Truncate(prefixLimit)
+	}
+	remaining := prefixLimit - w.buffer.Len()
+	if remaining > len(data) {
+		remaining = len(data)
+	}
+	if remaining > 0 {
+		_, _ = w.buffer.Write(data[:remaining])
+	}
+	_, _ = w.buffer.WriteString(probeOutputTruncatedMark)
+	w.truncated = true
+	return written, nil
+}
+
+func (w *boundedProbeOutput) Bytes() []byte {
+	return w.buffer.Bytes()
+}
 
 // Probe runs a contained Grok capability probe under tmpRoot. When authHome
 // contains Grok credentials, only auth.json is copied into the disposable
 // home for the duration of the provider process.
 func Probe(ctx context.Context, tmpRoot string, authHome string) (*Result, error) {
+	return probeWithOutputLimit(ctx, tmpRoot, authHome, maxProbeOutputBytes)
+}
+
+func probeWithOutputLimit(ctx context.Context, tmpRoot string, authHome string, outputLimit int) (*Result, error) {
 	if tmpRoot == "" {
 		return nil, errors.New("grok probe requires a temporary root")
+	}
+	if outputLimit < len(probeOutputTruncatedMark) {
+		return nil, errors.New("grok probe output limit is too small for the truncation marker")
 	}
 	grokPath, err := exec.LookPath("grok")
 	if err != nil {
@@ -66,8 +113,8 @@ func Probe(ctx context.Context, tmpRoot string, authHome string) (*Result, error
 	runCtx, cancel := context.WithTimeout(ctx, probeRunTimeout)
 	defer cancel()
 
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
+	stdout := &boundedProbeOutput{limit: outputLimit}
+	stderr := &boundedProbeOutput{limit: outputLimit}
 	// #nosec G204 -- grokPath is resolved from exec.LookPath("grok") and is the explicit probe target.
 	cmd := exec.CommandContext(runCtx, grokPath,
 		"--no-auto-update",
@@ -81,8 +128,8 @@ func Probe(ctx context.Context, tmpRoot string, authHome string) (*Result, error
 	)
 	cmd.Dir = workspaceDir
 	cmd.Env = clients.SetEnv(os.Environ(), clientgrok.EnvHome, grokHome)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 
 	start := time.Now()
 	runErr := cmd.Run()
@@ -115,13 +162,29 @@ func Probe(ctx context.Context, tmpRoot string, authHome string) (*Result, error
 	if runErr != nil {
 		result.Error = runErr.Error()
 	}
+	overflowed := make([]string, 0, 2)
+	if stdout.truncated {
+		overflowed = append(overflowed, "stdout")
+	}
+	if stderr.truncated {
+		overflowed = append(overflowed, "stderr")
+	}
+	if len(overflowed) > 0 {
+		overflowErr := fmt.Sprintf("grok probe output exceeded the %d-byte retention limit: %s", outputLimit, strings.Join(overflowed, ", "))
+		result.Evidence = append(result.Evidence, overflowErr)
+		if result.Error == "" {
+			result.Error = overflowErr
+		} else {
+			result.Error += "; " + overflowErr
+		}
+	}
 
-	if streamErr := validateStreamingJSON(&stdout); streamErr == nil {
+	if streamErr := validateStreamingJSON(bytes.NewReader(stdout.Bytes())); streamErr == nil {
 		result.Capabilities.StreamingJSONUsed = true
 		result.Evidence = append(result.Evidence, "grok stdout contained a valid streaming-json sequence ending with a completed turn")
 	} else {
 		result.Evidence = append(result.Evidence, "invalid grok streaming-json output: "+streamErr.Error())
-		if runErr == nil {
+		if result.Error == "" {
 			result.Error = streamErr.Error()
 		}
 	}
@@ -290,12 +353,15 @@ func inspectFixtureMarker(markerPath string) bool {
 func detectGrokVersion(ctx context.Context, grokPath string) string {
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	output := &boundedProbeOutput{limit: maxProbeVersionBytes}
 	// #nosec G204 -- grokPath is resolved from exec.LookPath("grok") and is the explicit probe target.
-	output, err := exec.CommandContext(runCtx, grokPath, "--version").CombinedOutput()
-	if err != nil {
+	cmd := exec.CommandContext(runCtx, grokPath, "--version")
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Run(); err != nil || output.truncated {
 		return ""
 	}
-	return string(bytes.TrimSpace(output))
+	return string(bytes.TrimSpace(output.Bytes()))
 }
 
 func commandExitCode(ctx context.Context, err error) int {

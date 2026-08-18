@@ -19,6 +19,7 @@ const (
 	jsonErrorKey              = "error"
 	jsonFalseLiteral          = "false"
 	jsonContentKey            = "content"
+	jsonDataKey               = "data"
 	jsonMessageKey            = "message"
 	jsonReasonKey             = "reason"
 	jsonResultKey             = "result"
@@ -283,7 +284,7 @@ func (p *selectiveJSONReader) readValue(result map[string]any, path []string, de
 				if !truncatable {
 					return fmt.Errorf("structured event metadata exceeded %d bytes", limit)
 				}
-				value += truncatedAnswerNotice
+				value += retainedStructuredTruncationNotice(path)
 			}
 			setStructuredPath(result, path, value)
 		}
@@ -316,6 +317,16 @@ func (p *selectiveJSONReader) readValue(result map[string]any, path []string, de
 		}
 		return fmt.Errorf("structured event contains invalid JSON value")
 	}
+}
+
+func retainedStructuredTruncationNotice(path []string) string {
+	if len(path) == 1 && path[0] == jsonDataKey {
+		return grokEventDataTruncatedNotice
+	}
+	if len(path) == 3 && path[0] == jsonContentKey && path[1] == jsonContentKey && path[2] == jsonTextKey {
+		return grokToolUpdateTruncatedNotice
+	}
+	return truncatedAnswerNotice
 }
 
 func (p *selectiveJSONReader) retainsClaudeScalar(path []string) bool {
@@ -382,7 +393,7 @@ func (p *selectiveJSONReader) retainedStructuredStringLimit(path []string) (int,
 	if len(path) == 3 && path[0] == jsonContentKey && path[1] == jsonContentKey && path[2] == jsonTextKey {
 		return grokToolUpdateTextBytes, true
 	}
-	if len(path) == 1 && path[0] == "data" {
+	if len(path) == 1 && path[0] == jsonDataKey {
 		return grokEventDataBytes, true
 	}
 	key := path[len(path)-1]
@@ -550,7 +561,7 @@ func (p *selectiveJSONReader) readNonSpace() (byte, error) {
 func retainedStructuredPath(path []string) bool {
 	if len(path) == 1 {
 		switch path[0] {
-		case jsonTypeKey, "thread_id", "threadId", "id", jsonMessageKey, jsonTextKey, jsonReasonKey, jsonErrorKey, jsonResultKey, "session_id", "sessionId", "is_error", "subtype", jsonStatusKey, "data", "stopReason", "stop_reason":
+		case jsonTypeKey, "thread_id", "threadId", "id", jsonMessageKey, jsonTextKey, jsonReasonKey, jsonErrorKey, jsonResultKey, "session_id", "sessionId", "is_error", "subtype", jsonStatusKey, jsonDataKey, "stopReason", "stop_reason":
 			return true
 		}
 	}

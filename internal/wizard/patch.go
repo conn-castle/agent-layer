@@ -348,10 +348,17 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 			setOptionalKeyValue(block, templateBlock, "reasoning_effort", choices.GrokReasoning, anchor)
 		}
 		if choices.GrokDisableMemoryTouched {
+			anchor := "reasoning_effort"
+			if _, ok := findKeyLine(block.lines, anchor); !ok {
+				anchor = "model"
+				if _, ok := findKeyLine(block.lines, anchor); !ok {
+					anchor = "enabled"
+				}
+			}
 			if choices.GrokDisableMemory {
-				setKeyValue(block, templateBlock, "disable_memory", formatTomlValue(true), "reasoning_effort")
+				setKeyValue(block, templateBlock, "disable_memory", formatTomlValue(true), anchor)
 			} else {
-				setCommentedKeyLine(block, templateBlock, "disable_memory", "reasoning_effort")
+				setCommentedKeyLine(block, templateBlock, "disable_memory", anchor)
 			}
 		}
 	case warningsSection:

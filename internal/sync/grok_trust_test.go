@@ -33,6 +33,13 @@ func TestWriteGrokTrustedFoldersSeedsMissingEntry(t *testing.T) {
 	if !strings.Contains(got, "trusted = true") {
 		t.Fatalf("expected trusted = true, got:\n%s", got)
 	}
+	homeInfo, err := os.Stat(filepath.Join(root, ".grok-config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotMode := homeInfo.Mode().Perm(); gotMode != 0o700 {
+		t.Fatalf("grok home mode = %04o, want 0700", gotMode)
+	}
 }
 
 func TestGrokTrustedFolderRootResolvesSymlinks(t *testing.T) {
@@ -117,6 +124,25 @@ func TestWriteGrokTrustedFoldersFailsLoudly(t *testing.T) {
 		data, readErr := os.ReadFile(outsideTrust) // #nosec G304 -- test-controlled path.
 		if readErr != nil || string(data) != existing {
 			t.Fatalf("outside trust changed: %q, %v", data, readErr)
+		}
+	})
+
+	t.Run("broad home permissions", func(t *testing.T) {
+		root := t.TempDir()
+		home := filepath.Join(root, ".grok-config")
+		if err := os.Mkdir(home, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(home, 0o755); err != nil { // #nosec G302 -- intentionally broad mode exercises the production rejection.
+			t.Fatal(err)
+		}
+
+		err := writeGrokTrustedFolders(RealSystem{}, root)
+		if err == nil || !strings.Contains(err.Error(), "chmod 700") {
+			t.Fatalf("broad home permissions error = %v", err)
+		}
+		if _, statErr := os.Stat(filepath.Join(home, "trusted_folders.toml")); !os.IsNotExist(statErr) {
+			t.Fatalf("trust file was written despite broad home permissions: %v", statErr)
 		}
 	})
 }

@@ -76,6 +76,15 @@ const (
 	MCPServerUnsupportedTransportFmt = "mcp server %s: unsupported transport %s"
 )
 
+// Grok path messages are kept together because sync applies the same safety
+// checks while generating and cleaning its project-local outputs.
+const (
+	SyncGrokHomePermissionsFmt         = "grok home directory must be private: %s has permissions %04o; run `chmod 700 %s` and retry"
+	SyncGrokConfigDirConflictFmt       = "grok config directory must be a real directory: %s"
+	SyncGrokConfigTargetConflictFmt    = "grok config target must be a regular file, not a symlink or special file: %s"
+	SyncGrokConfigOwnershipConflictFmt = "refusing to overwrite user-owned Grok config %s; move managed settings into .agent-layer/config.toml or agents.grok.agent_specific first"
+)
+
 // Skill source snapshot messages. These describe ownership problems that only
 // exist once Git-backed imports are configured alongside user-managed skills.
 const (

@@ -261,7 +261,7 @@ func TestGrokStructuredReaderBoundsSingleTextEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := largeChunk[:structuredJSONBufferBytes] + truncatedAnswerNotice
+	want := largeChunk[:structuredJSONBufferBytes] + grokEventDataTruncatedNotice
 	for _, event := range events {
 		if event.Kind == eventAnswer {
 			if event.Answer != want {

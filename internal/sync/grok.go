@@ -49,32 +49,53 @@ func writeGrokConfig(sys System, root string, project *config.ProjectConfig) err
 }
 
 func ensureGrokConfigTarget(sys System, grokDir, path string) error {
-	if info, err := sys.Lstat(grokDir); err == nil {
-		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-			return fmt.Errorf("grok config directory must be a real directory: %s", grokDir)
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf(messages.InstallFailedStatFmt, grokDir, err)
+	if _, err := validateGrokConfigDirectory(sys, grokDir); err != nil {
+		return err
 	}
 
-	info, err := sys.Lstat(path)
-	if os.IsNotExist(err) {
-		return nil
-	}
+	exists, err := validateGrokConfigFile(sys, path)
 	if err != nil {
-		return fmt.Errorf(messages.InstallFailedStatFmt, path, err)
+		return err
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return fmt.Errorf("grok config target must be a regular file, not a symlink or special file: %s", path)
+	if !exists {
+		return nil
 	}
 	existing, err := sys.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf(messages.SyncReadFailedFmt, path, err)
 	}
 	if !grokConfigIsManaged(existing) {
-		return fmt.Errorf("refusing to overwrite user-owned Grok config %s; move managed settings into .agent-layer/config.toml or agents.grok.agent_specific first", path)
+		return fmt.Errorf(messages.SyncGrokConfigOwnershipConflictFmt, path)
 	}
 	return nil
+}
+
+func validateGrokConfigDirectory(sys System, path string) (bool, error) {
+	info, err := sys.Lstat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf(messages.InstallFailedStatFmt, path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return false, fmt.Errorf(messages.SyncGrokConfigDirConflictFmt, path)
+	}
+	return true, nil
+}
+
+func validateGrokConfigFile(sys System, path string) (bool, error) {
+	info, err := sys.Lstat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf(messages.InstallFailedStatFmt, path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return false, fmt.Errorf(messages.SyncGrokConfigTargetConflictFmt, path)
+	}
+	return true, nil
 }
 
 func grokConfigIsManaged(data []byte) bool {
@@ -171,22 +192,20 @@ func writeGrokPermission(builder *strings.Builder, project *config.ProjectConfig
 // Call this when agents.grok is disabled so stale config does not persist.
 func cleanGrokOutputs(sys System, root string) error {
 	grokDir := filepath.Join(root, ".grok")
-	if info, err := sys.Lstat(grokDir); err == nil {
-		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-			return fmt.Errorf("grok config directory must be a real directory: %s", grokDir)
-		}
-	} else if os.IsNotExist(err) {
+	exists, err := validateGrokConfigDirectory(sys, grokDir)
+	if err != nil {
+		return err
+	}
+	if !exists {
 		return cleanGrokChimeHook(sys, root)
-	} else {
-		return fmt.Errorf(messages.InstallFailedStatFmt, grokDir, err)
 	}
 
 	path := filepath.Join(grokDir, "config.toml")
-	info, err := sys.Lstat(path)
-	if err == nil {
-		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-			return fmt.Errorf("grok config target must be a regular file, not a symlink or special file: %s", path)
-		}
+	exists, err = validateGrokConfigFile(sys, path)
+	if err != nil {
+		return err
+	}
+	if exists {
 		data, readErr := sys.ReadFile(path)
 		if readErr != nil {
 			return fmt.Errorf(messages.SyncReadFailedFmt, path, readErr)
@@ -196,8 +215,6 @@ func cleanGrokOutputs(sys System, root string) error {
 				return fmt.Errorf(messages.SyncRemoveFailedFmt, path, err)
 			}
 		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf(messages.InstallFailedStatFmt, path, err)
 	}
 	return cleanGrokChimeHook(sys, root)
 }

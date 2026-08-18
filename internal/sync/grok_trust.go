@@ -31,7 +31,7 @@ func writeGrokTrustedFolders(sys System, root string) error {
 	if err := ensureGrokHomeDirectory(sys, homeDir); err != nil {
 		return err
 	}
-	if err := sys.MkdirAll(homeDir, 0o755); err != nil {
+	if err := sys.MkdirAll(homeDir, 0o700); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, homeDir, err)
 	}
 
@@ -73,6 +73,9 @@ func ensureGrokHomeDirectory(sys System, homeDir string) error {
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return fmt.Errorf("grok home directory must be a real directory: %s", homeDir)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf(messages.SyncGrokHomePermissionsFmt, homeDir, info.Mode().Perm(), homeDir)
 	}
 	return nil
 }

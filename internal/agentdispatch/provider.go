@@ -42,6 +42,7 @@ const (
 	claudePrintBackgroundWaitCeilingEnv   = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
 	claudePrintBackgroundWaitCeilingValue = "0"
 	truncatedAnswerNotice                 = "\n\n[Agent Layer truncated this final answer after retaining 256 MiB. Resume the conversation and ask the agent to summarize the final answer in another turn.]\n"
+	grokEventDataTruncatedNotice          = "\n\n[Agent Layer truncated this Grok text event after retaining 64 KiB.]\n"
 	// claudePermissionModeAcceptEdits auto-accepts file edits and common
 	// filesystem commands for paths in the working directory. Other commands
 	// still require an allow rule, which dispatch supplies via --allowedTools.
@@ -561,9 +562,6 @@ func reduceGrokEvent(expected string, value map[string]any, textAccumulator *str
 			if content, ok := mapValueV013(value, "content"); ok {
 				if nested, found := mapValueV013(content, "content"); found {
 					if message, _ := nested[jsonTextKey].(string); strings.HasPrefix(message, grokToolDeniedPrefix) && strings.Contains(message, grokPermissionDenied) {
-						if strings.HasSuffix(message, truncatedAnswerNotice) {
-							message = strings.TrimSuffix(message, truncatedAnswerNotice) + grokToolUpdateTruncatedNotice
-						}
 						return []providerEvent{{Kind: eventFailure, Reason: "Grok denied a tool call, so the dispatch could not do the requested work. Check the effective Grok permissions before dispatching again: approvals.mode and .agent-layer/commands.allow decide what is allowed, and a deny rule or managed policy overrides both. Provider detail: " + message}}
 					}
 				}

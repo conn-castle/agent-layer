@@ -299,3 +299,41 @@ func TestProbeReportsProviderExitWithValidStream(t *testing.T) {
 		t.Fatalf("provider failure result = %+v", result)
 	}
 }
+
+func TestProbeBoundsProviderOutputWhileProcessRuns(t *testing.T) {
+	for _, stream := range []string{"stdout", "stderr"} {
+		t.Run(stream, func(t *testing.T) {
+			binDir := t.TempDir()
+			stub := filepath.Join(binDir, "grok")
+			redirect := ""
+			if stream == "stderr" {
+				redirect = " >&2"
+			}
+			script := "#!/bin/sh\n" +
+				"if [ \"$1\" = \"--version\" ]; then echo 'grok 1.0.5'; exit 0; fi\n" +
+				"echo '{\"type\":\"text\",\"data\":\"partial\"}'\n" +
+				"echo '{\"type\":\"end\",\"stopReason\":\"end_turn\",\"sessionId\":\"probe\"}'\n" +
+				"i=0; while [ \"$i\" -lt 20 ]; do printf '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'" + redirect + "; i=$((i + 1)); done\n"
+			if err := os.WriteFile(stub, []byte(script), 0o700); err != nil { // #nosec G306 -- test stub.
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", binDir)
+
+			const outputLimit = 256
+			result, err := probeWithOutputLimit(context.Background(), t.TempDir(), "", outputLimit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(result.Error, stream) {
+				t.Fatalf("overflow result error = %q, want %s", result.Error, stream)
+			}
+			artifact, err := os.ReadFile(filepath.Join(result.ProbeDir, stream+".txt")) // #nosec G304 -- result path is probe-owned.
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(artifact) > outputLimit || !strings.Contains(string(artifact), probeOutputTruncatedMark) {
+				t.Fatalf("bounded %s artifact length=%d content=%q", stream, len(artifact), artifact)
+			}
+		})
+	}
+}

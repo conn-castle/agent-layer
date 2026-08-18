@@ -2488,6 +2488,7 @@ func TestPatchConfig_GrokDisableMemory(t *testing.T) {
 	content := `
 [agents.grok]
 enabled = true
+model = "grok-4.6"
 `
 	choices := NewChoices()
 	choices.GrokDisableMemoryTouched = true
@@ -2496,6 +2497,13 @@ enabled = true
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
 	assert.Contains(t, out, "disable_memory = true")
+	assert.Less(t, strings.Index(out, `model = "grok-4.6"`), strings.Index(out, "disable_memory = true"))
+
+	choices.GrokDisableMemory = false
+	out, err = PatchConfig(out, choices)
+	require.NoError(t, err)
+	assert.NotContains(t, out, "\ndisable_memory = true")
+	assert.Contains(t, out, "# disable_memory = true")
 }
 
 func TestPatchConfig_ClaudeDisableQuestionToolWritesTypedFlag(t *testing.T) {
