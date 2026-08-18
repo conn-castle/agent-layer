@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/gitenv"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
@@ -34,6 +35,9 @@ enabled = false
 enabled = false
 
 [agents.copilot_cli]
+enabled = false
+
+[agents.grok]
 enabled = false
 `
 
@@ -86,7 +90,10 @@ func (r *gitRepo) run(args ...string) string {
 	r.t.Helper()
 	cmd := exec.Command("git", args...) // #nosec G204 -- test-controlled arguments.
 	cmd.Dir = r.dir
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	// Resolve the repository from the directory above, never from an inherited
+	// GIT_DIR: git exports it to hooks, so under pre-commit this fixture would
+	// otherwise commit into the developer's own checkout.
+	cmd.Env = append(gitenv.WithoutDiscovery(), "GIT_TERMINAL_PROMPT=0")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		r.t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)
@@ -162,6 +169,7 @@ func (r *gitRepo) HasPath(ref string, path string) bool {
 	r.t.Helper()
 	cmd := exec.Command("git", "cat-file", "-e", ref+":"+path) // #nosec G204 -- test-controlled arguments.
 	cmd.Dir = r.dir
+	cmd.Env = gitenv.WithoutDiscovery()
 	return cmd.Run() == nil
 }
 

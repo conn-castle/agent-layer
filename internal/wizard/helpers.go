@@ -73,7 +73,9 @@ func buildSummary(c *Choices) string {
 	if c.ClaudeDisableQuestionToolTouched && claudeToggleVisible(c) && c.ClaudeDisableQuestionTool {
 		sb.WriteString(messages.WizardSummaryClaudeQuestionToolDisabled)
 	}
-
+	if c.GrokDisableMemoryTouched && grokToggleVisible(c) && c.GrokDisableMemory {
+		sb.WriteString(messages.WizardSummaryGrokMemoryDisabled)
+	}
 	sb.WriteString(messages.WizardSummaryGitTrackingHeader)
 	writeGitTrackingSummaryLine(&sb, messages.WizardGitTrackAgentLayerLabel, c.TrackAgentLayerDir)
 	writeGitTrackingSummaryLine(&sb, messages.WizardGitTrackDocsAgentLayerLabel, c.TrackDocsAgentLayerDir)
@@ -173,6 +175,10 @@ func codexStatuslineToggleVisible(c *Choices) bool {
 // write .claude/settings.json).
 func claudeToggleVisible(c *Choices) bool {
 	return !c.EnabledAgentsTouched || c.EnabledAgents[AgentClaude] || c.EnabledAgents[AgentClaudeVSCode]
+}
+
+func grokToggleVisible(c *Choices) bool {
+	return !c.EnabledAgentsTouched || c.EnabledAgents[AgentGrok]
 }
 
 type agentEnabledConfig struct {
@@ -358,9 +364,24 @@ func agentModelSummary(agent string, c *Choices) string {
 		return codexModelSummary(c)
 	case AgentCopilotCLI:
 		return c.CopilotCLIModel
+	case AgentGrok:
+		return grokModelSummary(c)
 	default:
 		return ""
 	}
+}
+
+func grokModelSummary(c *Choices) string {
+	if c.GrokModel != "" && c.GrokReasoning != "" {
+		return fmt.Sprintf(messages.WizardSummaryModelReasoningFmt, c.GrokModel, c.GrokReasoning)
+	}
+	if c.GrokModel != "" {
+		return c.GrokModel
+	}
+	if c.GrokReasoning != "" {
+		return fmt.Sprintf(messages.WizardSummaryReasoningFmt, c.GrokReasoning)
+	}
+	return ""
 }
 
 func claudeModelSummary(c *Choices) string {

@@ -16,6 +16,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients/antigravity"
 	"github.com/conn-castle/agent-layer/internal/clients/claude"
 	"github.com/conn-castle/agent-layer/internal/clients/codex"
+	"github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/run"
@@ -54,8 +55,15 @@ const (
 	claudeDefaultModePassthroughKey = "defaultMode"
 	// permissionDenialsKey is the Claude terminal-result field listing tool calls
 	// that were denied. Claude still reports such a run as a success.
-	permissionDenialsKey = "permission_denials"
-	toolNameKey          = "tool_name"
+	permissionDenialsKey          = "permission_denials"
+	toolNameKey                   = "tool_name"
+	textDeltaActivity             = "text_delta"
+	thoughtActivity               = "thought"
+	grokToolUpdateType            = "tool_call_update"
+	grokToolFailedStatus          = "failed"
+	grokToolDeniedPrefix          = "Tool `"
+	grokPermissionDenied          = " was not executed: Denied by permission policy:"
+	grokToolUpdateTruncatedNotice = "\n\n[Agent Layer truncated this Grok tool update after retaining 512 bytes.]\n"
 )
 
 // codexDispatchSandboxMode resolves the Codex sandbox for a non-YOLO dispatch.
@@ -136,6 +144,7 @@ var supportedProviderVersions = map[string]string{
 	AgentClaude:      claudeTestedVersion,
 	AgentCodex:       "0.144.1",
 	AgentAntigravity: "1.1.1",
+	AgentGrok:        grok.SupportedVersion,
 }
 
 const (
@@ -367,6 +376,60 @@ func buildProviderCommand(
 		command.SessionID = sessionID
 		command.LogPath = logPath
 		command.Plain = true
+	case AgentGrok:
+		if mode == dispatchModeFresh && sessionID == "" {
+			return providerCommand{}, exitError(ExitConfig, "new Grok dispatch requires a caller-assigned session ID")
+		}
+		promptPath := filepath.Join(run.Dir, "prompt.txt")
+		if err := os.WriteFile(promptPath, prompt, 0o600); err != nil {
+			return providerCommand{}, wrapExitError(ExitConfig, "write Grok dispatch prompt", err)
+		}
+		args := []string{"--no-auto-update", "--prompt-file", promptPath, "--output-format", "streaming-json"}
+		if mode == dispatchModeResume {
+			args = append(args, "--resume", sessionID)
+		} else {
+			args = append(args, "--session-id", sessionID)
+		}
+		resolvedModel := strings.TrimSpace(model)
+		if resolvedModel == "" && !targetPinned {
+			resolvedModel = strings.TrimSpace(project.Config.Agents.Grok.Model)
+		}
+		if resolvedModel != "" {
+			args = append(args, "--model", resolvedModel)
+		}
+		resolvedEffort := strings.TrimSpace(effort)
+		if resolvedEffort == "" && !targetPinned {
+			resolvedEffort = strings.TrimSpace(project.Config.Agents.Grok.ReasoningEffort)
+		}
+		if resolvedEffort != "" {
+			args = append(args, "--reasoning-effort", resolvedEffort)
+		}
+		command.Model = resolvedModel
+		command.Effort = resolvedEffort
+		if config.GrokDisableMemory(project.Config.Agents.Grok) {
+			args = append(args, "--no-memory")
+		}
+		args = append(args, grok.SandboxArgs(project.Config, project.CommandsAllow)...)
+		if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
+			args = append(args, "--permission-mode", "bypassPermissions", "--always-approve")
+		} else {
+			if projection.BuildApprovals(project.Config, project.CommandsAllow).AllowCommands {
+				args = append(args, "--permission-mode", claudePermissionModeAcceptEdits)
+			} else {
+				args = append(args, "--permission-mode", claudePermissionModeDontAsk)
+			}
+			for _, rule := range projection.ClaudeAllowRules(
+				project.Config,
+				project.CommandsAllow,
+				projection.EffectiveServerIDs(project.Config, projection.ClientGrok),
+			) {
+				args = append(args, "--allow", rule)
+			}
+		}
+		command.Args = args
+		command.Env = grok.ConfigureEnvironment(project.Root, env, project.Config.Agents.Grok, diagnostics)
+		command.SessionID = sessionID
+		command.Structured = true
 	default:
 		return providerCommand{}, exitError(ExitUsage, fmt.Sprintf("unsupported dispatch provider %q", target.Name))
 	}
@@ -376,7 +439,7 @@ func buildProviderCommand(
 func reduceClaudeEvent(expected string, value map[string]any) []providerEvent {
 	events := make([]providerEvent, 0, 2)
 	if text, ok := claudeTextDeltaV013(value); ok && text != "" {
-		events = append(events, providerEvent{Kind: eventProgress, Activity: "text_delta"})
+		events = append(events, providerEvent{Kind: eventProgress, Activity: textDeltaActivity})
 	}
 	eventType, _ := value[jsonTypeKey].(string)
 	if eventType != jsonResultKey {
@@ -469,10 +532,86 @@ func reduceCodexEvent(value map[string]any) []providerEvent {
 	return nil
 }
 
+func appendRetainedGrokText(dst *strings.Builder, chunk string) {
+	if dst == nil || chunk == "" || dst.Len() >= maxRetainedAnswerBytes {
+		return
+	}
+	remain := maxRetainedAnswerBytes - dst.Len()
+	if len(chunk) > remain {
+		chunk = chunk[:remain]
+	}
+	dst.WriteString(chunk)
+}
+
+func reduceGrokEvent(expected string, value map[string]any, textAccumulator *strings.Builder) []providerEvent {
+	eventType, _ := value[jsonTypeKey].(string)
+	switch eventType {
+	case thoughtActivity:
+		return []providerEvent{{Kind: eventProgress, Activity: thoughtActivity}}
+	case "text":
+		chunk, _ := value["data"].(string)
+		if chunk != "" && textAccumulator != nil {
+			appendRetainedGrokText(textAccumulator, chunk)
+		}
+		return []providerEvent{{Kind: eventProgress, Activity: textDeltaActivity}}
+	case "usage":
+		return nil
+	case grokToolUpdateType:
+		if status, _ := value["status"].(string); status == grokToolFailedStatus {
+			if content, ok := mapValueV013(value, "content"); ok {
+				if nested, found := mapValueV013(content, "content"); found {
+					if message, _ := nested[jsonTextKey].(string); strings.HasPrefix(message, grokToolDeniedPrefix) && strings.Contains(message, grokPermissionDenied) {
+						if strings.HasSuffix(message, truncatedAnswerNotice) {
+							message = strings.TrimSuffix(message, truncatedAnswerNotice) + grokToolUpdateTruncatedNotice
+						}
+						return []providerEvent{{Kind: eventFailure, Reason: "Grok denied a tool call, so the dispatch could not do the requested work. Check the effective Grok permissions before dispatching again: approvals.mode and .agent-layer/commands.allow decide what is allowed, and a deny rule or managed policy overrides both. Provider detail: " + message}}
+					}
+				}
+			}
+		}
+		return []providerEvent{{Kind: eventProgress, Activity: grokToolUpdateType}}
+	case "end":
+		id, _ := firstStringV013(value, "session_id", "sessionId")
+		if id == "" || id != expected {
+			return []providerEvent{{Kind: eventFailure, Reason: "Grok terminal result did not return the caller-assigned session ID"}}
+		}
+		stopReason, _ := firstStringV013(value, "stopReason", "stop_reason")
+		if !grok.IsSuccessfulStopReason(stopReason) {
+			return []providerEvent{{Kind: eventFailure, Reason: fmt.Sprintf("Grok terminated with abnormal stop reason %q", stopReason)}}
+		}
+		var answer string
+		if textAccumulator != nil {
+			answer = textAccumulator.String()
+			if textAccumulator.Len() >= maxRetainedAnswerBytes {
+				answer += truncatedAnswerNotice
+			}
+		}
+		if answer == "" {
+			return []providerEvent{{Kind: eventFailure, Reason: "Grok terminal result did not contain a final answer"}}
+		}
+		return []providerEvent{
+			{Kind: eventSession, SessionID: id},
+			{Kind: eventAnswer, Answer: answer},
+			{Kind: eventComplete},
+		}
+	case "error":
+		reason, _ := firstStringV013(value, "message", "error", "reason")
+		if reason == "" {
+			reason = "Grok reported a terminal failure"
+		}
+		return []providerEvent{{Kind: eventFailure, Reason: reason}}
+	}
+	if eventType != "" {
+		return []providerEvent{{Kind: eventProgress, Activity: eventType}}
+	}
+	return nil
+}
+
 func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, claudeLineage bool, consume func(providerEvent) error, consumeLineage func(claudeLineageEvidence) error) error {
 	source := bufio.NewReaderSize(io.TeeReader(reader, rawWriter), structuredJSONBufferBytes)
 	parser := newSelectiveJSONReader()
 	normalizer := claudeLineageNormalizer{ignoredTasks: make(map[string]struct{})}
+	var grokAccumulator strings.Builder
 	emitInvalid := func(reason string) error {
 		if !claudeLineage || consumeLineage == nil {
 			return nil
@@ -540,6 +679,8 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 			events = reduceClaudeEvent(expectedSession, record.Fields)
 		case AgentCodex:
 			events = reduceCodexEvent(record.Fields)
+		case AgentGrok:
+			events = reduceGrokEvent(expectedSession, record.Fields, &grokAccumulator)
 		default:
 			return fmt.Errorf("unsupported structured dispatch provider %q", agent)
 		}

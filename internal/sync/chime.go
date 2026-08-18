@@ -14,6 +14,7 @@ const (
 	agentLayerClaudeChimeCommand            = `al hook chime claude || { echo 'agent-layer chime handler unavailable' >&2; true; } # agent-layer-chime`
 	agentLayerCodexChimeCommand             = `al hook chime codex || { printf 'agent-layer chime handler unavailable\n' >&2; printf '{}\n'; } # agent-layer-chime`
 	agentLayerAntigravityChimeCommand       = `al hook chime antigravity || { printf 'agent-layer chime handler unavailable\n' >&2; printf '{"decision":"allow"}\n'; } # agent-layer-chime`
+	agentLayerGrokChimeCommand              = `al hook chime grok || { echo 'agent-layer chime handler unavailable' >&2; true; } # agent-layer-chime`
 	legacyAgentLayerClaudeChimeCommand      = "/usr/bin/afplay /System/Library/Sounds/Blow.aiff >/dev/null 2>&1 & # agent-layer-chime"
 	legacyAgentLayerCodexChimeCommand       = `/usr/bin/afplay /System/Library/Sounds/Blow.aiff >/dev/null 2>&1 & printf '{"continue":true}\n' # agent-layer-chime`
 	legacyAgentLayerAntigravityChimeCommand = `/usr/bin/afplay /System/Library/Sounds/Blow.aiff >/dev/null 2>&1 & printf '{"decision":"allow"}\n' # agent-layer-chime`

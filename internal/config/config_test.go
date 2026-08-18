@@ -53,6 +53,9 @@ enabled = true
 [agents.copilot_cli]
 enabled = false
 
+[agents.grok]
+enabled = false
+
 [mcp]
 [[mcp.servers]]
 id = "local"
@@ -173,6 +176,9 @@ enabled = true
 [agents.copilot_cli]
 enabled = false
 
+[agents.grok]
+enabled = false
+
 [mcp]
 [[mcp.servers]]
 id = "custom"
@@ -227,6 +233,9 @@ enabled = true
 enabled = true
 
 [agents.copilot_cli]
+enabled = false
+
+[agents.grok]
 enabled = false
 
 [mcp]

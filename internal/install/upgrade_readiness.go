@@ -609,6 +609,14 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 			},
 		},
 		{
+			agent:   "grok",
+			enabled: cfg.Agents.Grok.Enabled,
+			files: []disabledArtifactFileSpec{
+				{path: filepath.Join(inst.root, ".grok", "config.toml"), evidence: hasGeneratedFileMarker},
+				{path: filepath.Join(inst.root, ".grok", "hooks", "agent-layer-chime.json"), evidence: hasGrokChimeHookMarker},
+			},
+		},
+		{
 			agent:   "shared-skills",
 			enabled: boolPtr(config.SharedAgentSkillsEnabled(cfg.Agents)),
 			dirs: []disabledArtifactDirSpec{
@@ -700,6 +708,11 @@ func appendDisabledArtifactDetail(inst *installer, details *[]string, agent stri
 
 func hasGeneratedFileMarker(data []byte) (bool, error) {
 	return strings.Contains(string(data), generatedFileMarker), nil
+}
+
+func hasGrokChimeHookMarker(data []byte) (bool, error) {
+	content := string(data)
+	return strings.Contains(content, "al hook chime grok") && strings.Contains(content, "agent-layer-chime"), nil
 }
 
 func hasVSCodeManagedBlock(data []byte) (bool, error) {

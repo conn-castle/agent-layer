@@ -384,6 +384,78 @@ func TestDetectDisabledAgentArtifacts_SharedSkillsEnabledByAnyConsumer(t *testin
 	}
 }
 
+func TestDetectDisabledAgentArtifacts_FlagsGeneratedGrokConfig(t *testing.T) {
+	root := t.TempDir()
+	grokPath := filepath.Join(root, ".grok", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(grokPath), 0o700); err != nil {
+		t.Fatalf("mkdir grok dir: %v", err)
+	}
+	if err := os.WriteFile(grokPath, []byte("# GENERATED FILE\n"), 0o600); err != nil {
+		t.Fatalf("write grok config: %v", err)
+	}
+	hookPath := filepath.Join(root, ".grok", "hooks", "agent-layer-chime.json")
+	if err := os.MkdirAll(filepath.Dir(hookPath), 0o700); err != nil {
+		t.Fatalf("mkdir grok hooks: %v", err)
+	}
+	if err := os.WriteFile(hookPath, []byte(`{"command":"al hook chime grok # agent-layer-chime"}`+"\n"), 0o600); err != nil {
+		t.Fatalf("write grok chime hook: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	cfg := config.Config{Agents: config.AgentsConfig{
+		Antigravity:  config.AntigravityConfig{Enabled: testutil.BoolPtr(true)},
+		Claude:       config.ClaudeConfig{Enabled: testutil.BoolPtr(true)},
+		ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
+		Codex:        config.CodexConfig{Enabled: testutil.BoolPtr(true)},
+		VSCode:       config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
+		CopilotCLI:   config.AgentConfig{Enabled: testutil.BoolPtr(true)},
+		Grok:         config.GrokConfig{Enabled: testutil.BoolPtr(false)},
+	}}
+	check, err := detectDisabledAgentArtifacts(inst, &cfg)
+	if err != nil {
+		t.Fatalf("detectDisabledAgentArtifacts: %v", err)
+	}
+	if check == nil {
+		t.Fatal("expected disabled-agent artifacts check for .grok/config.toml")
+	}
+	joined := strings.Join(check.Details, "\n")
+	if !strings.Contains(joined, ".grok/config.toml") {
+		t.Fatalf("expected .grok/config.toml in details, got %q", joined)
+	}
+	if !strings.Contains(joined, ".grok/hooks/agent-layer-chime.json") {
+		t.Fatalf("expected .grok/hooks/agent-layer-chime.json in details, got %q", joined)
+	}
+}
+
+func TestDetectDisabledAgentArtifacts_IgnoresUserOwnedGrokConfig(t *testing.T) {
+	root := t.TempDir()
+	grokPath := filepath.Join(root, ".grok", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(grokPath), 0o700); err != nil {
+		t.Fatalf("mkdir grok dir: %v", err)
+	}
+	if err := os.WriteFile(grokPath, []byte("model = \"grok-4.6\"\n"), 0o600); err != nil {
+		t.Fatalf("write user grok config: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	cfg := config.Config{Agents: config.AgentsConfig{
+		Antigravity:  config.AntigravityConfig{Enabled: testutil.BoolPtr(true)},
+		Claude:       config.ClaudeConfig{Enabled: testutil.BoolPtr(true)},
+		ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
+		Codex:        config.CodexConfig{Enabled: testutil.BoolPtr(true)},
+		VSCode:       config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
+		CopilotCLI:   config.AgentConfig{Enabled: testutil.BoolPtr(true)},
+		Grok:         config.GrokConfig{Enabled: testutil.BoolPtr(false)},
+	}}
+	check, err := detectDisabledAgentArtifacts(inst, &cfg)
+	if err != nil {
+		t.Fatalf("detectDisabledAgentArtifacts: %v", err)
+	}
+	if check != nil {
+		t.Fatalf("expected no finding for user-owned grok config, got %#v", check)
+	}
+}
+
 func TestDetectDisabledAgentArtifacts_FlagsSharedSkillsWhenNoConsumerEnabled(t *testing.T) {
 	root := t.TempDir()
 	sharedSkill := filepath.Join(root, ".agents", "skills", "alpha", "SKILL.md")

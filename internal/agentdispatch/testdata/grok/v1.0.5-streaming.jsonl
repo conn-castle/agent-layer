@@ -1,0 +1,5 @@
+{"type":"thought","data":"thinking"}
+{"type":"text","data":"Hello "}
+{"type":"text","data":"world!"}
+{"type":"usage","messageId":"resp_1","stopReason":"end_turn","usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"reasoning_tokens":0},"signature":"fixture"}
+{"type":"end","stopReason":"end_turn","sessionId":"11111111-1111-4111-8111-111111111111","requestId":"xyz789"}

@@ -10,6 +10,7 @@ import (
 	"io"
 	"os/exec"
 	"runtime"
+	"strings"
 )
 
 const (
@@ -18,7 +19,9 @@ const (
 	// ProviderCodex identifies the Codex hook event schema.
 	ProviderCodex = "codex"
 	// ProviderAntigravity identifies the Antigravity hook event schema.
-	ProviderAntigravity  = "antigravity"
+	ProviderAntigravity = "antigravity"
+	// ProviderGrok identifies the Grok hook event schema.
+	ProviderGrok         = "grok"
 	codexResponse        = "{}\n"
 	antigravityResponse  = "{\"decision\":\"allow\"}\n"
 	operatingSystemLinux = "linux"
@@ -89,6 +92,15 @@ type stopEvent struct {
 	StopHookActive  *bool        `json:"stop_hook_active"`
 	BackgroundTasks nonNullArray `json:"background_tasks"`
 	SessionCrons    nonNullArray `json:"session_crons"`
+}
+
+type grokStopEvent struct {
+	HookEventName   string       `json:"hookEventName"`
+	StopHookActive  *bool        `json:"stopHookActive"`
+	BackgroundTasks nonNullArray `json:"backgroundTasks"`
+	SessionCrons    nonNullArray `json:"sessionCrons"`
+	Reason          string       `json:"reason"`
+	SubagentType    string       `json:"subagentType"`
 }
 
 type antigravityEvent struct {
@@ -176,6 +188,12 @@ func decision(provider string, stdin io.Reader) (bool, string, error) {
 
 	switch provider {
 	case ProviderClaude, ProviderCodex:
+		// Grok's Claude-compatibility layer discovers .claude/settings.json and
+		// invokes its hooks with Grok's camelCase envelope. Ignore that foreign
+		// envelope here so the dedicated Grok hook handles it exactly once.
+		if provider == ProviderClaude && hasGrokHookEnvelope(raw) {
+			return false, "", nil
+		}
 		var event stopEvent
 		if err := json.Unmarshal(raw, &event); err != nil {
 			return false, "", fmt.Errorf("agent-layer chime: invalid %s hook event: %w", provider, err)
@@ -206,7 +224,37 @@ func decision(provider string, stdin io.Reader) (bool, string, error) {
 		}
 		hasError := event.Error.present && event.Error.value != ""
 		return *event.FullyIdle && *event.TerminationReason == "model_stop" && !hasError, antigravityResponse, nil
+	case ProviderGrok:
+		var event grokStopEvent
+		if err := json.Unmarshal(raw, &event); err != nil {
+			return false, "", fmt.Errorf("agent-layer chime: invalid grok hook event: %w", err)
+		}
+		if !isGrokStopEventName(event.HookEventName) {
+			return false, "", fmt.Errorf("agent-layer chime: grok hookEventName must be stop")
+		}
+		if event.StopHookActive == nil {
+			return false, "", errors.New("agent-layer chime: grok stopHookActive must be a boolean")
+		}
+		play := !*event.StopHookActive &&
+			event.Reason == "end_turn" &&
+			event.SubagentType == "" &&
+			len(event.BackgroundTasks) == 0 &&
+			len(event.SessionCrons) == 0
+		return play, "", nil
 	default:
 		return false, "", fmt.Errorf("agent-layer chime: unsupported provider %q", provider)
 	}
+}
+
+func hasGrokHookEnvelope(raw json.RawMessage) bool {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return false
+	}
+	_, ok := fields["hookEventName"]
+	return ok
+}
+
+func isGrokStopEventName(name string) bool {
+	return strings.EqualFold(strings.TrimSpace(name), "stop")
 }

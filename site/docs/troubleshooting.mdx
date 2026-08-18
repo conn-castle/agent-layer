@@ -39,7 +39,7 @@ If you have not installed `al` yet, start with [/install](/install).
 
 ### Missing client CLI
 
-Agent Layer does not install Antigravity, Claude, Codex, Copilot CLI, or VS Code. Install the target client and ensure it is on your `PATH`.
+Agent Layer does not install Antigravity, Claude, Codex, Copilot CLI, Grok, or VS Code. Install the target client and ensure it is on your `PATH`.
 
 ### VS Code preflight: `code` command not found
 
@@ -71,13 +71,15 @@ Run [`al init`](./reference#init) in the repo to create `.agent-layer/`. To add 
 
 ### Generated files showing up in git
 
-Generated client outputs should stay gitignored. If you see files like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.codex/`, `.copilot/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.mcp.json`, `.github/copilot-instructions.md`, `AGENTS.md`, or `CLAUDE.md` showing up in `git status`, it usually means one of:
+Generated client outputs should stay gitignored. If you see files like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.codex/`, `.copilot/`, `.grok/`, `.grok-config/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.mcp.json`, `.github/copilot-instructions.md`, `AGENTS.md`, or `CLAUDE.md` showing up in `git status`, it usually means one of:
 
 - the repo has not been initialized with Agent Layer's managed `.gitignore` block,
 - the ignore rules were customized,
 - or the generated files were committed previously.
 
 Run `al sync` (or `al <client>`) to reinstall the managed ignore rules. If the files were already committed, you will also need to stop tracking them in git (and ensure `.agent-layer/.env` stays untracked, since it contains secrets).
+
+Grok uses the repo-local `.grok-config/` directory as `GROK_HOME` for `al grok`, dispatch, and `al vscode`. Authentication and sessions are therefore isolated per repository; if Grok reports that authentication is missing, authenticate from `al grok` in that repository or provide the client-supported credential environment variable.
 
 :::caution
 `.codex/config.toml` and `.agy/antigravity-cli/settings.json` are shared state patched by `al sync`, not disposable generated files. Antigravity settings can contain native workspace approval or trust state; Agent Layer patches only its managed model, `permissions.allow`, and `agent_specific` paths. Treat both files as private and keep them gitignored. Antigravity MCP output remains safe to regenerate.
@@ -223,7 +225,7 @@ If `al agy` exits with `antigravity launcher requires \`agy\` on PATH`, install 
 
 ### Client CLI not found
 
-Install the target client CLI (Antigravity `agy`, Claude, Codex, Copilot CLI, or VS Code) and ensure it is available on your `PATH`.
+Install the target client CLI (Antigravity `agy`, Claude, Codex, Copilot CLI, Grok, or VS Code) and ensure it is available on your `PATH`.
 
 ## Pinning and offline mode
 

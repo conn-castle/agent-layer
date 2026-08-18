@@ -34,6 +34,8 @@ enabled = false
 enabled = false
 [agents.copilot_cli]
 enabled = false
+[agents.grok]
+enabled = false
 `
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
@@ -113,6 +115,8 @@ enabled = false
 enabled = false
 [agents.copilot_cli]
 enabled = false
+[agents.grok]
+enabled = false
 [mcp]
 `
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0600))
@@ -161,6 +165,8 @@ enabled = false
 [agents.vscode]
 enabled = false
 [agents.copilot_cli]
+enabled = false
+[agents.grok]
 enabled = false
 [mcp]
 `
@@ -223,6 +229,8 @@ enabled = false
 enabled = false
 [agents.copilot_cli]
 enabled = false
+[agents.grok]
+enabled = false
 `
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
@@ -269,6 +277,8 @@ enabled = false
 enabled = false
 [agents.copilot_cli]
 enabled = false
+[agents.grok]
+enabled = false
 `
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
@@ -313,6 +323,8 @@ enabled = false
 [agents.vscode]
 enabled = false
 [agents.copilot_cli]
+enabled = false
+[agents.grok]
 enabled = false
 
 [[mcp.servers]]
@@ -380,6 +392,8 @@ enabled = false
 enabled = false
 [agents.copilot_cli]
 enabled = false
+[agents.grok]
+enabled = false
 `
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
@@ -443,6 +457,8 @@ enabled = false
 enabled = false
 [agents.copilot_cli]
 enabled = false
+[agents.grok]
+enabled = false
 `
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
@@ -505,6 +521,8 @@ enabled = true
 [agents.vscode]
 enabled = false
 [agents.copilot_cli]
+enabled = false
+[agents.grok]
 enabled = false
 `
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0600))
@@ -572,6 +590,8 @@ enabled = false
 [agents.vscode]
 enabled = true
 [agents.copilot_cli]
+enabled = false
+[agents.grok]
 enabled = false
 `
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0600))

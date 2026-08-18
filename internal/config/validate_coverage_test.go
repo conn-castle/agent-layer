@@ -16,6 +16,7 @@ func TestValidate_TopLevelErrors(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
 			CopilotCLI:   AgentConfig{Enabled: &enabled},
+			Grok:         GrokConfig{Enabled: &enabled},
 		},
 	}
 
@@ -53,6 +54,16 @@ func TestValidate_TopLevelErrors(t *testing.T) {
 			name:        "missing vscode enabled",
 			modify:      func(c *Config) { c.Agents.VSCode.Enabled = nil },
 			errContains: "agents.vscode.enabled is required",
+		},
+		{
+			name:        "missing copilot_cli enabled",
+			modify:      func(c *Config) { c.Agents.CopilotCLI.Enabled = nil },
+			errContains: "agents.copilot_cli.enabled is required",
+		},
+		{
+			name:        "missing grok enabled",
+			modify:      func(c *Config) { c.Agents.Grok.Enabled = nil },
+			errContains: "agents.grok.enabled is required",
 		},
 		{
 			name: "missing mcp id",
@@ -96,6 +107,7 @@ func TestValidate_MCPServerErrors(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
 			CopilotCLI:   AgentConfig{Enabled: &enabled},
+			Grok:         GrokConfig{Enabled: &enabled},
 		},
 	}
 

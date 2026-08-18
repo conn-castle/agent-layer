@@ -187,6 +187,8 @@ func dispatchTestConfig(enabledAgents ...string) config.Config {
 			cfg.Agents.Claude.Enabled = boolPtr(true)
 		case AgentAntigravity:
 			cfg.Agents.Antigravity.Enabled = boolPtr(true)
+		case AgentGrok:
+			cfg.Agents.Grok.Enabled = boolPtr(true)
 		}
 	}
 	return cfg

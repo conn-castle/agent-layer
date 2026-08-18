@@ -95,6 +95,7 @@ var preferredWizardSectionOrder = []string{
 	codexSection,
 	"agents.vscode",
 	"agents.copilot_cli",
+	"agents.grok",
 	mcpSection,
 	warningsSection,
 }
@@ -331,6 +332,27 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 		}
 		if choices.CopilotCLIModelTouched {
 			setOptionalKeyValue(block, templateBlock, "model", choices.CopilotCLIModel, "enabled")
+		}
+	case "agents.grok":
+		if choices.EnabledAgentsTouched {
+			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentGrok]), "")
+		}
+		if choices.GrokModelTouched {
+			setOptionalKeyValue(block, templateBlock, "model", choices.GrokModel, "enabled")
+		}
+		if choices.GrokReasoningTouched {
+			anchor := "model"
+			if _, ok := findKeyLine(block.lines, "model"); !ok {
+				anchor = "enabled"
+			}
+			setOptionalKeyValue(block, templateBlock, "reasoning_effort", choices.GrokReasoning, anchor)
+		}
+		if choices.GrokDisableMemoryTouched {
+			if choices.GrokDisableMemory {
+				setKeyValue(block, templateBlock, "disable_memory", formatTomlValue(true), "reasoning_effort")
+			} else {
+				setCommentedKeyLine(block, templateBlock, "disable_memory", "reasoning_effort")
+			}
 		}
 	case warningsSection:
 		if choices.WarningsEnabledTouched && choices.WarningsEnabled {
@@ -679,7 +701,7 @@ func applyCodexPluginsUpdate(doc *tomlDocument, choices *Choices) error {
 	if !choices.CodexPluginsTouched {
 		return nil
 	}
-	return applyCodexBooleanFeatureUpdate(doc, choices, config.CodexFeaturePluginsKey, choices.CodexPlugins, codexFeatureDefaultPlugins)
+	return applyCodexBooleanFeatureUpdate(doc, choices, config.PluginsKey, choices.CodexPlugins, codexFeatureDefaultPlugins)
 }
 
 func applyCodexBooleanFeatureUpdate(doc *tomlDocument, choices *Choices, key string, enabled, defaultEnabled bool) error {

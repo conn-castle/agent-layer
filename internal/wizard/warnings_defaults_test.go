@@ -56,6 +56,9 @@ enabled = true
 [agents.copilot_cli]
 enabled = true
 
+[agents.grok]
+enabled = true
+
 [warnings]
 instruction_token_threshold = 10000
 `), nil

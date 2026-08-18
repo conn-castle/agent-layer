@@ -29,6 +29,18 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-08-18 grok-duplicate-root-instructions: Grok loads both generated instruction shims
+    Priority: Low. Area: providers / grok / instructions / warnings
+    Description: Grok 1.0.5 loads both byte-identical generated `AGENTS.md` and `CLAUDE.md`, duplicating project instructions while the shared instruction-token warning counts the source once.
+    Next step: Revisit if Grok adds a compatibility toggle or Agent Layer gains a client-aware instruction projection and warning model.
+    Notes: Current Grok documentation says both files contribute and exposes no toggle that suppresses only the root `CLAUDE.md`; the limitation is documented in the reference.
+
+- Issue 2026-08-18 codex-trust-symlink-path: Codex trust uses a lexical rather than canonical repository path
+    Priority: Low. Area: providers / codex / trust
+    Description: Codex trust seeding uses `filepath.Abs` without resolving symlinks, so a repository opened through a symlink may not match the client-observed canonical path.
+    Next step: Reproduce at the installed Codex boundary and canonicalize the trust key with regression coverage if confirmed.
+    Notes: Found while fixing the equivalent Grok integration defect; outside the Grok change scope.
+
 - Issue 2026-08-05 coverage-remainder-is-error-injection-only: Coverage above ~91.4% requires failure-injection tests
     Priority: Low. Area: test suite / coverage
     Description: After a behavior-focused pass raised total coverage from 90.02% to 91.42%, every remaining uncovered region is a block of 1–5 statements. They are overwhelmingly `if err != nil` wrappers around filesystem, git, and process calls, plus platform-unreachable branches (device/socket nodes in skilltree.describeNode, non-finite floats that `encoding/json` cannot decode, and defensive duplicate-selector checks that config validation already rejects). No untested feature-level behavior remains in a single block larger than 5 statements.

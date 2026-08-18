@@ -40,6 +40,7 @@ done < <(env | awk -F= '/^AL_/ {print $1}')
 # Avoid host-specific client config variables leaking into scenarios.
 unset CLAUDE_CONFIG_DIR
 unset CODEX_HOME
+unset GROK_HOME
 
 export AL_NO_NETWORK=1
 

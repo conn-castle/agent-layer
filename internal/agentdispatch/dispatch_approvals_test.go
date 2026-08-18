@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
@@ -56,11 +57,13 @@ func TestDispatchGrantsWriteCapabilityOnlyWhenCommandsAreApproved(t *testing.T) 
 		mode           string
 		codexSandbox   string
 		claudePermMode string
+		grokSandbox    string
+		grokPermMode   string
 	}{
-		{config.ApprovalModeNone, config.CodexSandboxReadOnly, claudePermissionModeDontAsk},
-		{config.ApprovalModeMCP, config.CodexSandboxReadOnly, claudePermissionModeDontAsk},
-		{config.ApprovalModeCommands, config.CodexSandboxWorkspaceWrite, claudePermissionModeAcceptEdits},
-		{config.ApprovalModeAll, config.CodexSandboxWorkspaceWrite, claudePermissionModeAcceptEdits},
+		{config.ApprovalModeNone, config.CodexSandboxReadOnly, claudePermissionModeDontAsk, grok.SandboxReadOnly, "dontAsk"},
+		{config.ApprovalModeMCP, config.CodexSandboxReadOnly, claudePermissionModeDontAsk, grok.SandboxReadOnly, "dontAsk"},
+		{config.ApprovalModeCommands, config.CodexSandboxWorkspaceWrite, claudePermissionModeAcceptEdits, grok.SandboxWorkspace, "acceptEdits"},
+		{config.ApprovalModeAll, config.CodexSandboxWorkspaceWrite, claudePermissionModeAcceptEdits, grok.SandboxWorkspace, "acceptEdits"},
 	}
 	for _, testCase := range cases {
 		for _, dispatchMode := range []string{dispatchModeFresh, dispatchModeResume} {
@@ -80,6 +83,16 @@ func TestDispatchGrantsWriteCapabilityOnlyWhenCommandsAreApproved(t *testing.T) 
 			}
 			if strings.Contains(claudeArgs, "--dangerously-skip-permissions") {
 				t.Errorf("Claude %s/%s args %q skipped permissions outside yolo", testCase.mode, dispatchMode, claudeArgs)
+			}
+
+			grokArgs := dispatchArgsForMode(t, AgentGrok, testCase.mode, dispatchMode)
+			wantGrokSandbox := "--sandbox " + testCase.grokSandbox
+			if !strings.Contains(grokArgs, wantGrokSandbox) {
+				t.Errorf("Grok %s/%s args %q omitted %q", testCase.mode, dispatchMode, grokArgs, wantGrokSandbox)
+			}
+			wantGrokMode := "--permission-mode " + testCase.grokPermMode
+			if !strings.Contains(grokArgs, wantGrokMode) {
+				t.Errorf("Grok %s/%s args %q omitted %q", testCase.mode, dispatchMode, grokArgs, wantGrokMode)
 			}
 		}
 	}
@@ -107,6 +120,14 @@ func TestYOLODispatchKeepsFullBypassWithoutSandboxDowngrade(t *testing.T) {
 		// allowlist would only re-introduce prompts yolo exists to remove.
 		if strings.Contains(claudeArgs, "--permission-mode") || strings.Contains(claudeArgs, "--allowedTools") {
 			t.Errorf("Claude yolo/%s args %q constrained a full bypass", dispatchMode, claudeArgs)
+		}
+
+		grokArgs := dispatchArgsForMode(t, AgentGrok, config.ApprovalModeYOLO, dispatchMode)
+		if !strings.Contains(grokArgs, "--permission-mode bypassPermissions --always-approve") {
+			t.Errorf("Grok yolo/%s args %q dropped the bypass flags", dispatchMode, grokArgs)
+		}
+		if strings.Contains(grokArgs, "--sandbox") {
+			t.Errorf("Grok yolo/%s args %q set a sandbox", dispatchMode, grokArgs)
 		}
 	}
 }

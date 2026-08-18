@@ -69,6 +69,8 @@ func TestValuesUsesSharedStaticFieldCatalog(t *testing.T) {
 		{name: "codex model", agent: "codex", kind: KindModel, key: config.CodexModelFieldKey},
 		{name: "codex reasoning", agent: "codex", kind: KindReasoningEffort, key: config.CodexReasoningEffortFieldKey},
 		{name: "copilot cli model", agent: "copilot_cli", kind: KindModel, key: config.CopilotCLIModelFieldKey},
+		{name: "grok model", agent: "grok", kind: KindModel, key: config.GrokModelFieldKey},
+		{name: "grok reasoning", agent: "grok", kind: KindReasoningEffort, key: config.GrokReasoningEffortFieldKey},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -88,6 +90,7 @@ func TestConfiguredValueTrimsKnownAgentFields(t *testing.T) {
 			Codex:       config.CodexConfig{Model: " gpt-5.4 ", ReasoningEffort: " medium "},
 			CopilotCLI:  config.AgentConfig{Model: " claude-sonnet-4.6 "},
 			Antigravity: config.AntigravityConfig{Model: " Gemini 3.5 Flash (High) "},
+			Grok:        config.GrokConfig{Model: " grok-4.6 ", ReasoningEffort: " high "},
 		},
 	}
 	tests := []struct {
@@ -101,6 +104,8 @@ func TestConfiguredValueTrimsKnownAgentFields(t *testing.T) {
 		{agent: "codex", kind: KindReasoningEffort, want: "medium"},
 		{agent: "copilot_cli", kind: KindModel, want: "claude-sonnet-4.6"},
 		{agent: "antigravity", kind: KindModel, want: "Gemini 3.5 Flash (High)"},
+		{agent: "grok", kind: KindModel, want: "grok-4.6"},
+		{agent: "grok", kind: KindReasoningEffort, want: "high"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.agent+"/"+string(tt.kind), func(t *testing.T) {

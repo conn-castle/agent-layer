@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/conn-castle/agent-layer/internal/gitenv"
 	"github.com/conn-castle/agent-layer/internal/skillimport"
 )
 
@@ -35,6 +36,9 @@ enabled = false
 enabled = false
 
 [agents.copilot_cli]
+enabled = false
+
+[agents.grok]
 enabled = false
 `
 
@@ -292,6 +296,10 @@ func newSkillsSourceRepo(t *testing.T) string {
 		t.Helper()
 		cmd := exec.Command("git", args...) // #nosec G204 -- test-controlled arguments.
 		cmd.Dir = dir
+		// Resolve the repository from the directory above, never from an
+		// inherited GIT_DIR: git exports it to hooks, so under pre-commit this
+		// fixture would otherwise commit into the developer's own checkout.
+		cmd.Env = gitenv.WithoutDiscovery()
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)
 		}

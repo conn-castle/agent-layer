@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/gitenv"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
@@ -598,6 +599,7 @@ func TestPushCannotCreateABranchWithoutADestinationDefault(t *testing.T) {
 	}
 	cmd := exec.Command("git", "show-ref", "--verify", "--quiet", "refs/heads/skill-updates")
 	cmd.Dir = destination.dir
+	cmd.Env = gitenv.WithoutDiscovery()
 	if cmd.Run() == nil {
 		t.Fatal("a failed push still created the configured branch")
 	}

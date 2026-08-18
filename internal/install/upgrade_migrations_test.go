@@ -735,6 +735,35 @@ func TestLoadUpgradeMigrationManifest_0_8_8_RenamesAndBackfillsClaudeVSCodeKey(t
 	}
 }
 
+func TestLoadUpgradeMigrationManifest_0_17_0_AddsGrokEnabled(t *testing.T) {
+	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.17.0")
+	if err != nil {
+		t.Fatalf("load 0.17.0 manifest: %v", err)
+	}
+	if len(manifest.Operations) != 1 {
+		t.Fatalf("expected 1 operation, got %d", len(manifest.Operations))
+	}
+	op := manifest.Operations[0]
+	if op.ID != "add-grok-enabled" {
+		t.Fatalf("op ID = %q, want %q", op.ID, "add-grok-enabled")
+	}
+	if op.Kind != upgradeMigrationKindConfigSetDefault {
+		t.Fatalf("op kind = %q, want %q", op.Kind, upgradeMigrationKindConfigSetDefault)
+	}
+	if op.Key != "agents.grok.enabled" {
+		t.Fatalf("op key = %q, want %q", op.Key, "agents.grok.enabled")
+	}
+	if string(op.Value) != "false" {
+		t.Fatalf("op value = %q, want %q", string(op.Value), "false")
+	}
+	if !op.SourceAgnostic {
+		t.Fatal("expected source_agnostic = true")
+	}
+	if manifest.MinPriorVersion != "0.10.2" {
+		t.Fatalf("min_prior_version = %q, want %q", manifest.MinPriorVersion, "0.10.2")
+	}
+}
+
 func TestLoadUpgradeMigrationManifest_0_9_0_IncludesMigrateSkillsFormat(t *testing.T) {
 	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.9.0")
 	if err != nil {
@@ -1627,6 +1656,9 @@ func TestMigration_0_10_2_UnknownSourceKeepsCurrentAntigravity(t *testing.T) {
 		"[agents.copilot_cli]",
 		"enabled = false",
 		"",
+		"[agents.grok]",
+		"enabled = false",
+		"",
 		"[[mcp.servers]]",
 		`id = "example"`,
 		"enabled = true",
@@ -1877,6 +1909,9 @@ func TestPlanUpgradeMigrations_UnpinnedLegacyAntigravityModelRunsLatestManifest(
 		"enabled = false",
 		"",
 		"[agents.copilot_cli]",
+		"enabled = false",
+		"",
+		"[agents.grok]",
 		"enabled = false",
 	}, "\n"))
 	withMigrationManifestChainOverride(t, map[string]string{
@@ -2399,6 +2434,9 @@ func antigravityMigrationConfigWithClients(geminiBlock []string, clients string)
 		"[agents.copilot_cli]",
 		"enabled = false",
 		"",
+		"[agents.grok]",
+		"enabled = false",
+		"",
 		"[[mcp.servers]]",
 		`id = "filesystem"`,
 		"enabled = true",
@@ -2592,6 +2630,9 @@ func TestMigration_0_9_0_ProducesValidConfig(t *testing.T) {
 		"[agents.copilot_cli]",
 		"enabled = false",
 		"",
+		"[agents.grok]",
+		"enabled = false",
+		"",
 		"[warnings]",
 		"instruction_token_threshold = 10000",
 		"mcp_server_threshold = 5",
@@ -2665,6 +2706,9 @@ func TestMigration_0_12_0_MigratesAntigravityAgentSpecificModelToTypedField(t *t
 		"",
 		"[agents.copilot_cli]",
 		"enabled = false",
+		"",
+		"[agents.grok]",
+		"enabled = false",
 	}, "\n")
 
 	root := t.TempDir()
@@ -2698,6 +2742,59 @@ func TestMigration_0_12_0_MigratesAntigravityAgentSpecificModelToTypedField(t *t
 	}
 	if got := cfg.Agents.Antigravity.AgentSpecific["custom"]; got != "preserved" {
 		t.Fatalf("agents.antigravity.agent_specific.custom = %#v, want preserved", got)
+	}
+}
+
+func TestMigration_0_17_0_AddsGrokEnabledDefault(t *testing.T) {
+	preGrokConfig := strings.Join([]string{
+		"[approvals]",
+		`mode = "all"`,
+		"",
+		"[agents.antigravity]",
+		"enabled = false",
+		"",
+		"[agents.claude]",
+		"enabled = false",
+		"",
+		"[agents.claude_vscode]",
+		"enabled = false",
+		"",
+		"[agents.codex]",
+		"enabled = false",
+		"",
+		"[agents.vscode]",
+		"enabled = false",
+		"",
+		"[agents.copilot_cli]",
+		"enabled = false",
+	}, "\n")
+
+	root := t.TempDir()
+	cfgPath := writeMigrationConfigForTest(t, root, preGrokConfig)
+	writePinForTest(t, root, "0.16.3")
+
+	var warn bytes.Buffer
+	inst := &installer{root: root, pinVersion: "0.17.0", sys: RealSystem{}, warnWriter: &warn}
+	if err := inst.prepareUpgradeMigrations(); err != nil {
+		t.Fatalf("prepareUpgradeMigrations: %v", err)
+	}
+	if err := inst.runMigrations(); err != nil {
+		t.Fatalf("runMigrations: %v", err)
+	}
+	if entry, ok := migrationReportEntryByID(inst.migrationReport.Entries, "add-grok-enabled"); !ok || entry.Status != UpgradeMigrationStatusApplied {
+		t.Fatalf("expected applied add-grok-enabled entry, got %#v ok=%v", entry, ok)
+	}
+
+	data, err := os.ReadFile(cfgPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read migrated config: %v", err)
+	}
+	cfg, err := config.ParseConfig(data, cfgPath)
+	if err != nil {
+		t.Fatalf("strict config parse failed after v0.17.0 migration: %v\n%s", err, string(data))
+	}
+	if cfg.Agents.Grok.Enabled == nil || *cfg.Agents.Grok.Enabled {
+		t.Fatalf("expected agents.grok.enabled = false after v0.17.0 migration, got %v", cfg.Agents.Grok.Enabled)
 	}
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -9,9 +10,13 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/messages"
 	probeantigravity "github.com/conn-castle/agent-layer/internal/probe/antigravity"
+	probegrok "github.com/conn-castle/agent-layer/internal/probe/grok"
 )
 
 var runAntigravityProbe = probeantigravity.Probe
+var runGrokProbe = probegrok.Probe
+
+type probeExecution func(context.Context, string, string) (result any, exitCode int, resultError string, err error)
 
 func newProbeCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -20,6 +25,7 @@ func newProbeCmd() *cobra.Command {
 		Long:  messages.ProbeLong,
 	}
 	cmd.AddCommand(newProbeAntigravityCmd())
+	cmd.AddCommand(newProbeGrokCmd())
 	return cmd
 }
 
@@ -43,27 +49,52 @@ func newProbeAntigravityCmd() *cobra.Command {
 		Short: messages.ProbeAntigravityShort,
 		Long:  messages.ProbeAntigravityLong,
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := resolveRepoRoot()
+		RunE: probeCommandRunner(func(ctx context.Context, _ string, tmpRoot string) (any, int, string, error) {
+			result, err := runAntigravityProbe(ctx, tmpRoot)
 			if err != nil {
-				return err
+				return nil, 0, "", err
 			}
-			result, err := runAntigravityProbe(cmd.Context(), filepath.Join(root, ".agent-layer", "tmp"))
+			return result, result.ExitCode, result.Error, nil
+		}, messages.ProbeAntigravityNonZeroExitFmt),
+	}
+}
+
+func newProbeGrokCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   messages.ProbeGrokUse,
+		Short: messages.ProbeGrokShort,
+		Long:  messages.ProbeGrokLong,
+		Args:  cobra.NoArgs,
+		RunE: probeCommandRunner(func(ctx context.Context, root string, tmpRoot string) (any, int, string, error) {
+			result, err := runGrokProbe(ctx, tmpRoot, probegrok.PreferredAuthHome(root))
 			if err != nil {
-				return err
+				return nil, 0, "", err
 			}
-			encoder := json.NewEncoder(cmd.OutOrStdout())
-			encoder.SetIndent("", "  ")
-			if encodeErr := encoder.Encode(result); encodeErr != nil {
-				return encodeErr
-			}
-			// Surface a non-zero exit when agy exited non-zero or the probe
-			// reported an internal error. Keep the JSON on stdout so callers
-			// piping into jq still get the full machine-readable output.
-			if result.ExitCode != 0 || result.Error != "" {
-				return fmt.Errorf(messages.ProbeAntigravityNonZeroExitFmt, result.ExitCode, result.Error)
-			}
-			return nil
-		},
+			return result, result.ExitCode, result.Error, nil
+		}, messages.ProbeGrokNonZeroExitFmt),
+	}
+}
+
+func probeCommandRunner(execute probeExecution, nonZeroFormat string) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, _ []string) error {
+		root, err := resolveRepoRoot()
+		if err != nil {
+			return err
+		}
+		result, exitCode, resultError, err := execute(cmd.Context(), root, filepath.Join(root, ".agent-layer", "tmp"))
+		if err != nil {
+			return err
+		}
+		encoder := json.NewEncoder(cmd.OutOrStdout())
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(result); err != nil {
+			return err
+		}
+		// Keep the complete machine-readable result on stdout, then fail the
+		// command when the provider or the capability validation failed.
+		if exitCode != 0 || resultError != "" {
+			return fmt.Errorf(nonZeroFormat, exitCode, resultError)
+		}
+		return nil
 	}
 }

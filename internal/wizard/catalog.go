@@ -15,6 +15,7 @@ const (
 	AgentCodex        = "codex"
 	AgentVSCode       = "vscode"
 	AgentCopilotCLI   = "copilot_cli"
+	AgentGrok         = "grok"
 )
 
 // supportedAgentKeys returns the config field keys for agent enablement in UI order.
@@ -26,6 +27,7 @@ func supportedAgentKeys() []string {
 		"agents.codex.enabled",
 		"agents.vscode.enabled",
 		"agents.copilot_cli.enabled",
+		"agents.grok.enabled",
 	}
 }
 

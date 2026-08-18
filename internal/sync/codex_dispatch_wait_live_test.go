@@ -98,7 +98,7 @@ func liveCodexConfigureProject(t *testing.T, path string) {
 	if !ok {
 		t.Fatal("initialized Agent Layer config has no agents table")
 	}
-	for _, name := range []string{"antigravity", "claude", "claude_vscode", "vscode", "copilot_cli"} {
+	for _, name := range []string{"antigravity", "claude", "claude_vscode", "vscode", "copilot_cli", "grok"} {
 		agent, ok := agents[name].(map[string]any)
 		if !ok {
 			t.Fatalf("initialized Agent Layer config has no agents.%s table", name)

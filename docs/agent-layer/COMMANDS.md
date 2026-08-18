@@ -214,6 +214,7 @@ make al-claude    # al claude
 make al-codex     # al codex
 make al-agy       # al agy
 make al-copilot   # al copilot
+make al-grok      # al grok
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+
@@ -226,6 +227,14 @@ go run ./cmd/al probe agy
 Run from: repo root
 Prerequisites: Antigravity (`agy`) installed on PATH
 Notes: Prints JSON describing the current `agy` permissions and MCP behavior observed in a repo-local probe workspace. The workspace is seeded with a real stdio MCP server (this binary's hidden `__probe-mcp-fixture` subcommand exposing one `probe_ping` tool), so `capabilities.mcp_runtime_discovery` and `capabilities.mcp_tool_invoked` report `agy` behavior rather than a fixture defect. `timed_out` reports the probe's own 45-second bound separately from a failed run. Do not claim live Antigravity MCP support unless both MCP capability flags are true.
+
+- Run the Grok capability probe
+```bash
+go run ./cmd/al probe grok
+```
+Run from: repo root
+Prerequisites: Grok Build CLI (`grok`) installed on PATH
+Notes: Prints JSON describing a contained `grok` run under `.agent-layer/tmp/probe-grok-<ts>-<suffix>/`. The probe sets `GROK_HOME` to a disposable home, copies only an existing `auth.json` into it for the provider process and removes that copy immediately afterward, seeds folder trust, uses the workspace sandbox, and registers the same `__probe-mcp-fixture` server. `capabilities.mcp_tool_invoked` is true only when Grok actually called `probe_ping`. `timed_out` reports the probe's own 45-second bound separately from a failed run.
 
 ### CI
 

@@ -185,7 +185,7 @@ log="$log_dir/${binary}.log"
     echo "ARG_\${i}=\${arg}"
     i=\$((i + 1))
   done
-  env | grep -E '^(AL_|CLAUDE_|AGY_|CODEX_HOME=)' | sort || true
+  env | grep -E '^(AL_|CLAUDE_|AGY_|CODEX_HOME=|GROK_HOME=)' | sort || true
   echo "---END---"
 } >> "\$log"
 

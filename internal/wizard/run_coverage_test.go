@@ -30,6 +30,8 @@ enabled = false
 enabled = false
 [agents.copilot_cli]
 enabled = false
+[agents.grok]
+enabled = false
 
 [mcp]
 [[mcp.servers]]

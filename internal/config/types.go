@@ -52,6 +52,7 @@ type AgentsConfig struct {
 	Codex        CodexConfig       `toml:"codex"`
 	VSCode       EnableOnlyConfig  `toml:"vscode"`
 	CopilotCLI   AgentConfig       `toml:"copilot_cli"`
+	Grok         GrokConfig        `toml:"grok"`
 }
 
 // DispatchLimits controls Agent Dispatch recursion and MCP timeout limits.
@@ -126,6 +127,17 @@ type CodexConfig struct {
 	// opt-in: only true enables it. Read via
 	// CodexStatuslineEnabled.
 	Statusline    *bool               `toml:"statusline"`
+	AgentSpecific ProviderPassthrough `toml:"agent_specific"`
+}
+
+// GrokConfig extends AgentConfig with Grok-specific settings.
+type GrokConfig struct {
+	Enabled         *bool  `toml:"enabled"`
+	Model           string `toml:"model"`
+	ReasoningEffort string `toml:"reasoning_effort"`
+	// DisableMemory, when true, force-disables Grok's experimental memory via
+	// --no-memory and GROK_MEMORY=0. nil/false leave Grok's own default (off).
+	DisableMemory *bool               `toml:"disable_memory"`
 	AgentSpecific ProviderPassthrough `toml:"agent_specific"`
 }
 
@@ -224,6 +236,12 @@ func dispatchMCPToolTimeoutMinutes(limits DispatchLimits) int {
 	return *limits.MCPToolTimeoutMinutes
 }
 
+// GrokDisableMemory reports whether Agent Layer should force-disable Grok
+// memory for this project.
+func GrokDisableMemory(c GrokConfig) bool {
+	return c.DisableMemory != nil && *c.DisableMemory
+}
+
 // SharedAgentSkillsEnabled reports whether any agent that consumes the shared
 // `.agents/skills/` projection is enabled. Adding a new shared-skill consumer
 // means updating this function in one place; sync writers and readiness checks
@@ -232,7 +250,8 @@ func SharedAgentSkillsEnabled(agents AgentsConfig) bool {
 	return IsAgentEnabled(agents.Codex.Enabled) ||
 		IsAgentEnabled(agents.Antigravity.Enabled) ||
 		IsAgentEnabled(agents.VSCode.Enabled) ||
-		IsAgentEnabled(agents.CopilotCLI.Enabled)
+		IsAgentEnabled(agents.CopilotCLI.Enabled) ||
+		IsAgentEnabled(agents.Grok.Enabled)
 }
 
 // LegacySkillProjection names a retired client-side directory that Agent Layer

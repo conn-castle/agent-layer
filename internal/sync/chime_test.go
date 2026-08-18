@@ -17,6 +17,7 @@ func TestProjectedChimeCommandsFailOpen(t *testing.T) {
 		{"claude", "claude", agentLayerClaudeChimeCommand, ""},
 		{"codex", "codex", agentLayerCodexChimeCommand, "{}\n"},
 		{"antigravity", "antigravity", agentLayerAntigravityChimeCommand, "{\"decision\":\"allow\"}\n"},
+		{"grok", "grok", agentLayerGrokChimeCommand, ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

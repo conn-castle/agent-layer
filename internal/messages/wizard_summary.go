@@ -44,4 +44,5 @@ const (
 	WizardSummaryClaudeMemoryDisabled       = "\nClaude memory: disabled (auto-memory off; does not affect CLAUDE.md)\n"
 	WizardSummaryClaudeConnectorsDisabled   = "\nClaude connectors: disabled\n"
 	WizardSummaryClaudeQuestionToolDisabled = "\nClaude AskUserQuestion tool: disabled (permissions.deny + PreToolUse hook)\n"
+	WizardSummaryGrokMemoryDisabled         = "\nGrok memory: disabled (--no-memory / GROK_MEMORY=0)\n"
 )

@@ -107,6 +107,17 @@ enabled = true
 # model = "..."
 # reasoning_effort is not currently supported for Copilot CLI in Agent Layer.
 
+[agents.grok]
+enabled = false
+# model is optional; when omitted, the client uses its default.
+# model = "grok-4.6" # grok-4.6 | grok-4.5
+# reasoning_effort is optional; Grok applies it where the active model supports it.
+# reasoning_effort = "high" # none | minimal | low | medium | high | xhigh | max
+# GROK_HOME is always <repo>/.grok-config for al grok, dispatch, and al vscode.
+# disable_memory = true   # force --no-memory / GROK_MEMORY=0
+# Optional project plugin configuration may be placed under
+# [agents.grok.agent_specific.plugins]. Other Grok settings are user-level.
+
 [mcp]
 # MCP servers are external tool servers projected into client configs.
 
@@ -152,15 +163,19 @@ Agent-specific passthrough keys in `agents.codex.agent_specific` or `agents.clau
 
 ### Notifications
 
-`notifications.chime = true` projects one project-shareable Agent Layer `Stop` handler into each enabled Claude, Codex, and Antigravity client. It does not write global provider settings and does not require Codex `notify` or `agents.codex.local_config_dir`.
+`notifications.chime = true` projects one project-shareable Agent Layer `Stop` handler into each enabled Claude, Codex, Antigravity, and Grok client. It does not write global provider settings and does not require Codex `notify` or `agents.codex.local_config_dir`. Grok's handler is written to `.grok/hooks/agent-layer-chime.json`.
 
-The handler chimes for a main Claude turn only when no continuation, background task, or scheduled wakeup remains; for Codex only on the initial stop where `stop_hook_active` is false; and for Antigravity only when the client is fully idle after a normal, error-free model stop. Invalid event metadata stays silent. Hook or sound failures fail open so notifications cannot block or continue an agent.
+The handler chimes for a main Claude turn only when no continuation, background task, or scheduled wakeup remains; for Codex only on the initial stop where `stop_hook_active` is false; for Antigravity only when the client is fully idle after a normal, error-free model stop; and for Grok only on a main-session `end_turn` stop with no continuation, background task, or scheduled wakeup. Invalid event metadata stays silent. Hook or sound failures fail open so notifications cannot block or continue an agent. Grok folder trust is seeded into `.grok-config/trusted_folders.toml` so project hooks, MCP, and LSP load without `/hooks-trust`.
 
 Codex matching hooks run concurrently. Its first `Stop` can therefore chime before another hook requests continuation; later continuation stops are suppressed, but this project-shareable hook cannot guarantee exact semantic task completion. On macOS the handler uses `/usr/bin/afplay` with the system Blow sound. On Linux it uses `canberra-gtk-play --id=complete` when that command is available on `PATH`; Agent Layer bundles no sound asset, and a missing command fails open with a diagnostic. Other operating systems are unsupported.
 
 ### Agents
 
-Each agent has an `enabled` flag and optional `model` value. Claude supports `reasoning_effort` (`low`, `medium`, `high`, `xhigh`, `max`); Agent Layer passes the value through to Claude Code regardless of the selected model (including when `model` is unset), and Claude Code applies it where the active model supports it. `max` is session-only and is passed via the `--effort` CLI flag (it is not written to settings.json). Custom values outside the catalog pass through with a sync-time warning so new effort levels work before agent-layer is updated. Codex supports `reasoning_effort` with its own set of options. Copilot CLI supports `model` but not `reasoning_effort`. Omit `reasoning_effort` (and `model`) to use the client defaults. Codex supports `local_config_dir` (boolean, default `false`); when `true`, `al codex`, Codex dispatch, and `al vscode` set `CODEX_HOME=<repo>/.codex` for per-repo auth, sessions, logs, and runtime state. When absent or false, Agent Layer preserves any inherited `CODEX_HOME`. Claude also supports `local_config_dir` (boolean, default `false`); when `true`, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local directory for per-repo settings and caches isolation. Note: auth credentials are stored globally by Claude Code in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of this setting (upstream limitation). For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir` is `true` and `agents.claude_vscode` is enabled; otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values.
+Grok authentication and sessions are isolated per repository because managed launches always use `<repo>/.grok-config` as `GROK_HOME`. Grok project passthrough accepts only `[agents.grok.agent_specific.plugins]`; put other Grok settings in the user-level `.grok-config/config.toml`.
+
+Grok's compatibility discovery loads both generated root instruction shims, `AGENTS.md` and `CLAUDE.md`. Their content is intentionally identical for cross-client compatibility, so Grok currently receives the same project instructions twice. Grok also discovers Claude-compatible hooks; Agent Layer's Claude chime handler silently ignores Grok's camelCase hook envelope so the dedicated Grok handler is the only one that chimes.
+
+Each agent has an `enabled` flag and optional `model` value. Claude supports `reasoning_effort` (`low`, `medium`, `high`, `xhigh`, `max`); Agent Layer passes the value through to Claude Code regardless of the selected model (including when `model` is unset), and Claude Code applies it where the active model supports it. `max` is session-only and is passed via the `--effort` CLI flag (it is not written to settings.json). Custom values outside the catalog pass through with a sync-time warning so new effort levels work before agent-layer is updated. Codex supports `reasoning_effort` with its own set of options. Copilot CLI supports `model` but not `reasoning_effort`. Grok supports `model` (`grok-4.6`, `grok-4.5`) and `reasoning_effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). Omit `reasoning_effort` (and `model`) to use the client defaults. Codex supports `local_config_dir` (boolean, default `false`); when `true`, `al codex`, Codex dispatch, and `al vscode` set `CODEX_HOME=<repo>/.codex` for per-repo auth, sessions, logs, and runtime state. When absent or false, Agent Layer preserves any inherited `CODEX_HOME`. Claude also supports `local_config_dir` (boolean, default `false`); when `true`, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local directory for per-repo settings and caches isolation. Note: auth credentials are stored globally by Claude Code in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of this setting (upstream limitation). For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir` is `true` and `agents.claude_vscode` is enabled; otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values. When Grok is enabled, `al grok`, Grok dispatch, and `al vscode` always set `GROK_HOME=<repo>/.grok-config` so user credentials stay out of the project `.grok/` directory that Agent Layer writes. `agents.grok.disable_memory = true` force-disables Grok's experimental memory. Sync also writes `[permission] allow` from `commands.allow` and enabled MCP servers. Headless Grok dispatch maps approvals to `--sandbox` (`workspace` when commands are approved, `read-only` otherwise, off under YOLO); interactive `al grok` leaves Grok's sandbox default so a human can still approve writes.
 
 Supported agents:
 
@@ -170,11 +185,12 @@ Supported agents:
 - `codex`
 - `vscode`
 - `copilot_cli`
+- `grok`
 
 ### MCP servers
 
 Agent Layer always projects one built-in MCP server, `agent-layer`, into every
-enabled Codex, Claude, Antigravity, VS Code, and Copilot CLI client. It serves
+enabled Codex, Claude, Antigravity, VS Code, Copilot CLI, and Grok client. It serves
 the Agent Dispatch tools (see [Agent Dispatch](https://github.com/conn-castle/agent-layer/blob/main/docs/AGENT-DISPATCH.md)),
 is derived from your configuration rather than declared in it, and appears in
 generated permission allowlists alongside your own servers. Its `agent-layer`
@@ -188,7 +204,7 @@ Each `[[mcp.servers]]` entry must include:
 
 Optional fields:
 
-- `clients` to restrict which clients receive a server (valid values: `antigravity`, `claude`, `vscode`, `codex`, `copilot`; note that `claude_vscode` uses the `claude` client)
+- `clients` to restrict which clients receive a server (valid values: `antigravity`, `claude`, `vscode`, `codex`, `copilot`, `grok`; note that `claude_vscode` uses the `claude` client)
 - `http_transport` (`sse` or `streamable`) for HTTP servers
 - `headers` for HTTP auth and metadata
 - `command`, `args`, `env` for stdio servers
@@ -214,6 +230,7 @@ Here is how placeholder projection works for MCP servers:
 | VS Code (`.vscode/mcp.json`) | `${env:AL_TOKEN}` |
 | Codex (`.codex/config.toml`) | headers become env-var references; URLs/commands/args/env values are resolved because Codex does not support placeholders; the file is shared Codex state patched by `al sync` |
 | Copilot CLI (`.copilot/mcp-config.json`) | `${AL_TOKEN}` (env vars resolved at runtime by the client) |
+| Grok (`.grok/config.toml`) | `${AL_TOKEN}` (env vars resolved at runtime by the client) |
 
 Practical guidance:
 
@@ -411,7 +428,7 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al upgrade repair-gitignore-block` | Restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block. |
 | `al wizard` | Interactive configuration plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`). |
 | `al sync` | Regenerate client configs without launching a client. |
-| `al <client>` | Sync and launch a client (agy/claude/codex/copilot/vscode). |
+| `al <client>` | Sync and launch a client (agy/claude/codex/copilot/grok/vscode). |
 | `al dispatch start` | Start a headless conversation asynchronously and return its handle. |
 | `al dispatch wait <handle>` | Wait up to eight minutes; return `running` if work continues, otherwise return the terminal result. |
 | `al dispatch continue <handle>` | Start another invocation in a terminal conversation. |
@@ -423,6 +440,7 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al skills reset <name> [--yes]` | Permanently discard one imported skill's local edits and accept its current configured upstream version. |
 | `al skills push [--yes]` | Publish local imported-skill changes to configured destinations. |
 | `al probe agy` | Run the Antigravity capability probe and print JSON. |
+| `al probe grok` | Run the Grok capability probe and print JSON. |
 | `al doctor` | Validate configuration and probe enabled MCP servers. |
 | `al completion` | Print or install shell completions (bash/zsh/fish). |
 | `al --version` | Print the installed Agent Layer version. |
@@ -677,6 +695,8 @@ Common outputs include:
 - `.agy/antigravity-cli/settings.json` (shared state patched at Agent Layer-managed model, `permissions.allow`, and `agent_specific` paths)
 - `.codex/` (generated config and rules)
 - `.copilot/mcp-config.json`
+- `.grok/config.toml`
+- `.grok/hooks/agent-layer-chime.json` when `notifications.chime` is enabled
 - `.vscode/mcp.json` and a managed block in `.vscode/settings.json`
 - `.github/copilot-instructions.md`
 - `AGENTS.md`, `CLAUDE.md`
@@ -698,6 +718,7 @@ Agent Layer owns `.agents/skills/` and `.claude/skills/` completely. Each enable
 - `al claude`
 - `al codex`
 - `al copilot`
+- `al grok`
 - `al vscode`
 
 These commands read `.agent-layer/`, regenerate client outputs, and then launch the selected client.

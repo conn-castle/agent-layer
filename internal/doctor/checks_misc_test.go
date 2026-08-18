@@ -496,6 +496,81 @@ func TestCheckAntigravityBinary(t *testing.T) {
 	})
 }
 
+func TestCheckGrokBinary(t *testing.T) {
+	originalLookPath := lookPathFunc
+	originalCommandOutput := commandOutputFunc
+	t.Cleanup(func() {
+		lookPathFunc = originalLookPath
+		commandOutputFunc = originalCommandOutput
+	})
+
+	t.Run("missing is a warning", func(t *testing.T) {
+		lookPathFunc = func(file string) (string, error) { return "", os.ErrNotExist }
+		results := CheckGrokBinary()
+		if len(results) != 1 || results[0].Status != StatusWarn || results[0].Message != messages.DoctorGrokNotFound {
+			t.Fatalf("unexpected result: %#v", results)
+		}
+	})
+
+	t.Run("too old is a warning", func(t *testing.T) {
+		lookPathFunc = func(file string) (string, error) { return "/test/bin/grok", nil }
+		commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+			return []byte("grok 1.0.2 (deadbeef) [stable]\n"), nil
+		}
+		results := CheckGrokBinary()
+		if len(results) != 1 || results[0].Status != StatusWarn || !strings.Contains(results[0].Message, "below tested") {
+			t.Fatalf("unexpected result: %#v", results)
+		}
+	})
+
+	t.Run("version command failure is a warning", func(t *testing.T) {
+		lookPathFunc = func(file string) (string, error) { return "/test/bin/grok", nil }
+		commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+			return nil, errors.New("version failed")
+		}
+		results := CheckGrokBinary()
+		if len(results) != 1 || results[0].Status != StatusWarn || !strings.Contains(results[0].Message, "Failed to read Grok version") {
+			t.Fatalf("unexpected result: %#v", results)
+		}
+	})
+
+	t.Run("unparseable version is a warning", func(t *testing.T) {
+		lookPathFunc = func(file string) (string, error) { return "/test/bin/grok", nil }
+		commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+			return []byte("grok development build"), nil
+		}
+		results := CheckGrokBinary()
+		if len(results) != 1 || results[0].Status != StatusWarn || !strings.Contains(results[0].Message, "Could not parse") {
+			t.Fatalf("unexpected result: %#v", results)
+		}
+	})
+
+	t.Run("ok at tested pin", func(t *testing.T) {
+		lookPathFunc = func(file string) (string, error) { return "/test/bin/grok", nil }
+		commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+			return []byte("grok 1.0.5 (deadbeef) [stable]\n"), nil
+		}
+		results := CheckGrokBinary()
+		if len(results) != 1 || results[0].Status != StatusOK || results[0].Message != "Grok version OK: 1.0.5" {
+			t.Fatalf("unexpected result: %#v", results)
+		}
+	})
+}
+
+func TestParseGrokVersionFormats(t *testing.T) {
+	tests := map[string]string{
+		"1.0.5":                       "1.0.5",
+		"grok version v1.2.3\n":       "1.2.3",
+		"header\ngrok 2.3.4 stable\n": "2.3.4",
+		"grok development build 2026": "",
+	}
+	for input, expected := range tests {
+		if got := parseGrokVersion(input); got != expected {
+			t.Errorf("parseGrokVersion(%q) = %q, want %q", input, got, expected)
+		}
+	}
+}
+
 // TestCheckAgents_DisabledAntigravitySkipsBinaryCheck asserts F-A-17: when
 // Antigravity is disabled (or unset), CheckAgents must NOT invoke the binary
 // check, so the user is not failed for missing `agy` on a Claude-only repo.

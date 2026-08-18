@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/clients"
+	"github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/run"
@@ -23,8 +24,8 @@ var (
 	readFile = os.ReadFile
 )
 
-// Launch starts VS Code, optionally setting CODEX_HOME and/or CLAUDE_CONFIG_DIR
-// based on the enabled agent extensions.
+// Launch starts VS Code, optionally setting CODEX_HOME, GROK_HOME, and/or
+// CLAUDE_CONFIG_DIR based on the enabled agent extensions.
 func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
 	if err := runPreflight(cfg.Root); err != nil {
 		return err
@@ -33,6 +34,12 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	if config.IsAgentEnabled(cfg.Config.Agents.VSCode.Enabled) && config.CodexLocalConfigDirEnabled(cfg.Config.Agents.Codex) {
 		codexHome := filepath.Join(cfg.Root, ".codex")
 		env = clients.SetEnv(env, "CODEX_HOME", codexHome)
+	}
+
+	if config.IsAgentEnabled(cfg.Config.Agents.Grok.Enabled) {
+		env = grok.ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Grok, os.Stderr)
+	} else {
+		env = grok.ClearStaleHome(cfg.Root, env)
 	}
 
 	localConfigDir := cfg.Config.Agents.Claude.LocalConfigDir != nil && *cfg.Config.Agents.Claude.LocalConfigDir

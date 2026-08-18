@@ -46,6 +46,10 @@ const (
 	CodexReasoningEffortFieldKey = "agents.codex.reasoning_effort"
 	// CopilotCLIModelFieldKey is the canonical config path for Copilot CLI model selection.
 	CopilotCLIModelFieldKey = "agents.copilot_cli.model"
+	// GrokModelFieldKey is the canonical config path for Grok model selection.
+	GrokModelFieldKey = "agents.grok.model"
+	// GrokReasoningEffortFieldKey is the canonical config path for Grok reasoning effort.
+	GrokReasoningEffortFieldKey = "agents.grok.reasoning_effort"
 )
 
 var (
@@ -82,6 +86,8 @@ var (
 	)
 	codexReasoningEffortOptions = fieldOptions("low", "medium", "high", "xhigh", "max", "ultra")
 	copilotCLIModelOptions      = fieldOptions("auto", "claude-sonnet-4.6", "gpt-5.4", "claude-haiku-4.5", "gpt-5.3-codex", "gemini-3.1-pro-preview", "gemini-3.5-flash", "mai-code-1-flash")
+	grokModelOptions            = fieldOptions("grok-4.6", "grok-4.5")
+	grokReasoningEffortOptions  = fieldOptions("none", "minimal", "low", "medium", "high", "xhigh", "max")
 )
 
 // fields is the canonical ordered registry of all config fields with constrained values.
@@ -149,6 +155,19 @@ var fields = []FieldDef{
 		Type:        FieldEnum,
 		AllowCustom: true,
 		Options:     copilotCLIModelOptions,
+	},
+	{Key: "agents.grok.enabled", Type: FieldBool, Required: true},
+	{
+		Key:         GrokModelFieldKey,
+		Type:        FieldEnum,
+		AllowCustom: true,
+		Options:     grokModelOptions,
+	},
+	{
+		Key:         GrokReasoningEffortFieldKey,
+		Type:        FieldEnum,
+		AllowCustom: true,
+		Options:     grokReasoningEffortOptions,
 	},
 }
 

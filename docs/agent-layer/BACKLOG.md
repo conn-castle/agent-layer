@@ -27,6 +27,18 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-08-17 grok-live-models: Use `grok models` for wizard and dispatch suggestions
+    Priority: Medium. Area: providers / grok / dispatch / wizard
+    Description: Replace the hardcoded Grok model catalog (`grok-4.6`, `grok-4.5`) with live `grok models` output so wizard and dispatch suggestions stay current.
+    Acceptance criteria: Wizard discovery and `al dispatch start` validation share one provider-backed Grok model path with catalog fallback; custom values remain allowed.
+    Notes: Fits the existing `shared-live-options` backlog; Grok is the remaining live-source gap after Antigravity.
+
+- Backlog 2026-08-17 grok-dispatch-usage: Keep Grok dispatch usage/cost events
+    Priority: Low. Area: providers / grok / dispatch
+    Description: Record Grok streaming `usage` events instead of dropping them in `reduceGrokEvent`, so dispatch results can report cost like Claude/Codex.
+    Acceptance criteria: A completed Grok dispatch retains observed usage when the stream includes it; missing usage stays explicitly absent rather than inferred.
+    Notes: Current reducer returns nil for `usage` events.
+
 - Backlog 2026-07-09 copilot-cli-gpt-5.6-models: Advertise GPT-5.6 models for GitHub Copilot CLI
     Priority: Medium. Area: providers / copilot-cli / dispatch / wizard
     Description: Add Sol, Terra, and Luna to the separate Copilot CLI model catalog after verifying the exact provider-native identifiers, so wizard and dispatch users do not need custom values.
@@ -137,8 +149,8 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 - Backlog 2026-03-23 disable-client-memory-config: Agent-specific config option to disable client memory systems
     Priority: Medium. Area: config / sync
-    Description: Claude is now covered: the `al wizard` "disable memory" toggle writes `agents.claude.agent_specific.autoMemoryEnabled = false` directly (a simpler mechanism than the originally-proposed translated central flag — see DECISIONS.md). Remaining work is the other clients: surface equivalent memory-disable controls for Antigravity (and any future client with a memory system) so users do not have to know each client's setting name. Codex `memories` is intentionally excluded (experimental and already off by default — pinning it would write a redundant key).
-    Acceptance criteria: For each client with a memory system besides Claude, the wizard (or config) can disable it via the correct client-specific setting; documented in README or CONTEXT.md.
+    Description: Claude and Grok are now covered. Remaining work is Antigravity (and any future client with a memory system) so users do not have to know each client's setting name. Codex `memories` is intentionally excluded (experimental and already off by default — pinning it would write a redundant key).
+    Acceptance criteria: For each remaining client with a memory system besides Claude and Grok, the wizard (or config) can disable it via the correct client-specific setting; documented in README or CONTEXT.md.
     Notes: Source: claude-assistant project discovered the need while disabling memory across all agents. Each client has a different mechanism — the mapping must be maintained as new clients are added. The chosen pattern is direct `agent_specific` keys per client, not a single translated flag.
 
 - Backlog 2026-03-21 reassess-skill-resources: Audit template skills for scripts/references/assets opportunities

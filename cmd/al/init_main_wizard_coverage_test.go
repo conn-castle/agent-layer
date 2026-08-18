@@ -254,6 +254,9 @@ func TestWizardCommand_AdditionalBranches(t *testing.T) {
 		})
 
 		root := t.TempDir()
+		if resolved, err := filepath.EvalSymlinks(root); err == nil {
+			root = resolved
+		}
 		if err := os.MkdirAll(filepath.Join(root, ".git"), 0o700); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}

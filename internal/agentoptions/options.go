@@ -89,6 +89,20 @@ var providers = map[string]map[Kind]fieldProvider{
 			},
 		},
 	},
+	agentGrok: {
+		KindModel: {
+			key: config.GrokModelFieldKey,
+			configured: func(cfg config.Config) string {
+				return cfg.Agents.Grok.Model
+			},
+		},
+		KindReasoningEffort: {
+			key: config.GrokReasoningEffortFieldKey,
+			configured: func(cfg config.Config) string {
+				return cfg.Agents.Grok.ReasoningEffort
+			},
+		},
+	},
 }
 
 // DefaultDiscoveryRequest enables live option discovery with the current

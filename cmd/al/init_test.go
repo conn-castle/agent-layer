@@ -140,6 +140,9 @@ func TestInitCmd(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup temp dir as root
 			tmpDir := t.TempDir()
+			if resolved, err := filepath.EvalSymlinks(tmpDir); err == nil {
+				tmpDir = resolved
+			}
 			// Create .git to make it a valid root
 			if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0700); err != nil {
 				t.Fatal(err)

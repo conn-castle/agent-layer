@@ -206,6 +206,9 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 
+[agents.grok]
+enabled = false
+
 [warnings]
 version_update_on_sync = true
 instruction_token_threshold = 50000
@@ -267,6 +270,9 @@ enabled = false
 enabled = false
 
 [agents.copilot_cli]
+enabled = false
+
+[agents.grok]
 enabled = false
 
 [warnings]
@@ -334,6 +340,9 @@ enabled = false
 enabled = false
 
 [agents.copilot_cli]
+enabled = false
+
+[agents.grok]
 enabled = false
 
 [warnings]
@@ -409,6 +418,9 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 
+[agents.grok]
+enabled = false
+
 [warnings]
 instruction_token_threshold = 50000
 mcp_server_threshold = 5
@@ -478,6 +490,9 @@ enabled = false
 enabled = false
 
 [agents.copilot_cli]
+enabled = false
+
+[agents.grok]
 enabled = false
 
 [warnings]

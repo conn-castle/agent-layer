@@ -55,6 +55,9 @@ enabled = false
 
 [agents.copilot_cli]
 enabled = true
+
+[agents.grok]
+enabled = true
 `
 	if err := os.WriteFile(paths, []byte(configToml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -94,6 +97,9 @@ enabled = true
 enabled = false
 
 [agents.copilot_cli]
+enabled = true
+
+[agents.grok]
 enabled = true
 `
 	if err := os.WriteFile(paths, []byte(configToml), 0o600); err != nil {

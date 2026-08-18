@@ -61,7 +61,10 @@ func rootedMCPWorkingDir(root string, fallback string, candidate string) string 
 		return fallback
 	}
 	candidateRoot, found, err := findAgentLayerRoot(candidate)
-	if err != nil || !found || filepath.Clean(candidateRoot) != filepath.Clean(root) {
+	if err != nil || !found {
+		return fallback
+	}
+	if filepath.Clean(candidateRoot) != filepath.Clean(root) {
 		return fallback
 	}
 	return filepath.Clean(candidate)

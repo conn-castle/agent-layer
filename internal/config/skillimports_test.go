@@ -30,6 +30,9 @@ enabled = false
 
 [agents.copilot_cli]
 enabled = false
+
+[agents.grok]
+enabled = false
 `
 
 func parseWithImports(t *testing.T, imports string) (*Config, error) {

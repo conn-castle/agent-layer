@@ -182,6 +182,7 @@ func agentsForSkillsTest(enabled ...string) config.AgentsConfig {
 		Codex:        config.CodexConfig{Enabled: &falseVal},
 		VSCode:       config.EnableOnlyConfig{Enabled: &falseVal},
 		CopilotCLI:   config.AgentConfig{Enabled: &falseVal},
+		Grok:         config.GrokConfig{Enabled: &falseVal},
 	}
 	for _, name := range enabled {
 		trueVal := true
@@ -198,6 +199,8 @@ func agentsForSkillsTest(enabled ...string) config.AgentsConfig {
 			agents.VSCode.Enabled = &trueVal
 		case "copilot_cli":
 			agents.CopilotCLI.Enabled = &trueVal
+		case "grok":
+			agents.Grok.Enabled = &trueVal
 		}
 	}
 	return agents

@@ -21,6 +21,9 @@ enabled = true
 [agents.copilot_cli]
 enabled = true
 
+[agents.grok]
+enabled = true
+
 [mcp]
 [[mcp.servers]]
 id = "example"

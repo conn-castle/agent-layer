@@ -1,0 +1,12 @@
+# GENERATED FILE — MAY CONTAIN SECRETS
+# This file is gitignored. Do not commit or share it.
+# Source: .agent-layer/config.toml
+# Regenerate: al sync
+
+[permission]
+allow = ["Bash(git status:*)", "Bash(ls:*)", "mcp__agent-layer__*"]
+
+[mcp_servers."agent-layer"]
+command = "/bin/sh"
+args = ["-c", "AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd \"$1\" && exec al dispatch mcp-server", "agent-layer-mcp", "__REPO_ROOT__"]
+tool_timeout_sec = 2400

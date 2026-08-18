@@ -17,6 +17,7 @@ func TestValidateConfigErrors(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &trueVal},
 			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
 			CopilotCLI:   AgentConfig{Enabled: &trueVal},
+			Grok:         GrokConfig{Enabled: &trueVal},
 		},
 		MCP: MCPConfig{},
 	}
@@ -106,6 +107,11 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "agents.copilot_cli.enabled",
 		},
 		{
+			name:    "missing grok enabled",
+			cfg:     withGrokEnabled(valid, nil),
+			wantErr: "agents.grok.enabled",
+		},
+		{
 			name:    "invalid dispatch max depth",
 			cfg:     withDispatchMaxDepth(valid, 0),
 			wantErr: "dispatch.max_depth",
@@ -145,6 +151,34 @@ func TestValidateConfigErrors(t *testing.T) {
 			cfg:     withCopilotCLIReasoning(valid, "high"),
 			wantErr: "agents.copilot_cli.reasoning_effort is not supported",
 		},
+		{
+			name: "grok agent_specific permission is unsupported",
+			cfg: withGrokAgentSpecific(valid, map[string]any{
+				"permission": map[string]any{"allow": []string{"Bash(git *)"}},
+			}),
+			wantErr: "agents.grok.agent_specific.permission is not supported",
+		},
+		{
+			name: "grok agent_specific mcp_servers is unsupported",
+			cfg: withGrokAgentSpecific(valid, map[string]any{
+				"mcp_servers": map[string]any{"example": map[string]any{"url": "https://example.com"}},
+			}),
+			wantErr: "agents.grok.agent_specific.mcp_servers is not supported",
+		},
+		{
+			name: "grok agent_specific hooks is unsupported",
+			cfg: withGrokAgentSpecific(valid, map[string]any{
+				"hooks": map[string]any{},
+			}),
+			wantErr: "agents.grok.agent_specific.hooks is not supported",
+		},
+		{
+			name: "grok user-level agent_specific setting is unsupported",
+			cfg: withGrokAgentSpecific(valid, map[string]any{
+				"ui": map[string]any{"screen_mode": "minimal"},
+			}),
+			wantErr: "agents.grok.agent_specific.ui is not supported",
+		},
 	}
 
 	for _, tc := range cases {
@@ -153,6 +187,16 @@ func TestValidateConfigErrors(t *testing.T) {
 				t.Fatalf("expected error containing %q, got %v", tc.wantErr, err)
 			}
 		})
+	}
+}
+
+func TestValidateGrokPluginPassthrough(t *testing.T) {
+	cfg := validTimeoutConfig()
+	cfg.Agents.Grok.AgentSpecific = map[string]any{
+		"plugins": map[string]any{"example": map[string]any{"enabled": true}},
+	}
+	if err := cfg.Validate("config.toml"); err != nil {
+		t.Fatalf("valid Grok plugin passthrough rejected: %v", err)
 	}
 }
 
@@ -178,6 +222,16 @@ func withServers(cfg Config, servers []MCPServer) Config {
 
 func withCopilotCLIEnabled(cfg Config, enabled *bool) Config {
 	cfg.Agents.CopilotCLI.Enabled = enabled
+	return cfg
+}
+
+func withGrokEnabled(cfg Config, enabled *bool) Config {
+	cfg.Agents.Grok.Enabled = enabled
+	return cfg
+}
+
+func withGrokAgentSpecific(cfg Config, agentSpecific map[string]any) Config {
+	cfg.Agents.Grok.AgentSpecific = agentSpecific
 	return cfg
 }
 
@@ -242,6 +296,7 @@ func validTimeoutConfig() Config {
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
 			CopilotCLI:   AgentConfig{Enabled: &enabled},
+			Grok:         GrokConfig{Enabled: &enabled},
 		},
 	}
 }
@@ -257,6 +312,7 @@ func TestValidateApprovalsYOLO(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &trueVal},
 			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
 			CopilotCLI:   AgentConfig{Enabled: &trueVal},
+			Grok:         GrokConfig{Enabled: &trueVal},
 		},
 	}
 	if err := cfg.Validate("config.toml"); err != nil {
@@ -275,6 +331,7 @@ func TestValidateClaudeReasoningEffortWithOpusModel(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &trueVal},
 			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
 			CopilotCLI:   AgentConfig{Enabled: &trueVal},
+			Grok:         GrokConfig{Enabled: &trueVal},
 		},
 	}
 	if err := cfg.Validate("config.toml"); err != nil {
@@ -297,6 +354,7 @@ func TestValidateClaudeReasoningEffortWithoutOpusModelAllowed(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &trueVal},
 			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
 			CopilotCLI:   AgentConfig{Enabled: &trueVal},
+			Grok:         GrokConfig{Enabled: &trueVal},
 		},
 	}
 	cases := []struct {
@@ -331,6 +389,7 @@ func TestValidateClaudeReasoningEffortMaxWithOpusModel(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &trueVal},
 			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
 			CopilotCLI:   AgentConfig{Enabled: &trueVal},
+			Grok:         GrokConfig{Enabled: &trueVal},
 		},
 	}
 	if err := cfg.Validate("config.toml"); err != nil {
@@ -349,6 +408,7 @@ func TestValidateWarningsThresholds(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
 			CopilotCLI:   AgentConfig{Enabled: &enabled},
+			Grok:         GrokConfig{Enabled: &enabled},
 		},
 	}
 
@@ -433,6 +493,7 @@ func TestValidateWarningsNoiseModeQuiet(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
 			CopilotCLI:   AgentConfig{Enabled: &enabled},
+			Grok:         GrokConfig{Enabled: &enabled},
 		},
 		Warnings: WarningsConfig{NoiseMode: "quiet"},
 	}
@@ -452,6 +513,7 @@ func TestValidateSanitizesTransportIncompatibleFields(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
 			CopilotCLI:   AgentConfig{Enabled: &enabled},
+			Grok:         GrokConfig{Enabled: &enabled},
 		},
 	}
 

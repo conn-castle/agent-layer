@@ -30,6 +30,8 @@ const (
 	ConfigAntigravityAgentSpecificModelInvalidFmt = "%s: agents.antigravity.agent_specific.model is not supported; use agents.antigravity.model for Antigravity model selection"
 	ConfigCopilotCLIEnabledRequiredFmt            = "%s: agents.copilot_cli.enabled is required"
 	ConfigCopilotCLIReasoningEffortUnsupportedFmt = "%s: agents.copilot_cli.reasoning_effort is not supported in this release"
+	ConfigGrokEnabledRequiredFmt                  = "%s: agents.grok.enabled is required"
+	ConfigGrokAgentSpecificReservedKeyFmt         = "%s: agents.grok.agent_specific.%s is not supported; %s"
 	ConfigDispatchMaxDepthInvalidFmt              = "%s: dispatch.max_depth must be greater than zero"
 	ConfigDispatchMCPWaitTimeoutInvalidFmt        = "%s: dispatch.mcp_wait_timeout_minutes must be greater than zero"
 	ConfigDispatchMCPToolTimeoutInvalidFmt        = "%s: dispatch.mcp_tool_timeout_minutes must be greater than zero"

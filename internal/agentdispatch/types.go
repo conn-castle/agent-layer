@@ -15,6 +15,8 @@ const (
 	AgentClaude = "claude"
 	// AgentAntigravity is the Antigravity dispatch target and caller marker value.
 	AgentAntigravity = "antigravity"
+	// AgentGrok is the Grok dispatch target and caller marker value.
+	AgentGrok = "grok"
 	// AgentRandom is rejected by start: every conversation names its exact agent.
 	AgentRandom = "random"
 )
