@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	grokMCPServersKey = "mcp_servers"
-	grokHeader        = `# GENERATED FILE — MAY CONTAIN SECRETS
-# This file is gitignored. Do not commit or share it.
+	grokMCPServersKey       = "mcp_servers"
+	grokGeneratedMarker     = "# GENERATED FILE\n"
+	grokLegacyGeneratedLine = "# GENERATED FILE — MAY CONTAIN SECRETS\n"
+	grokHeader              = grokGeneratedMarker + `# MAY CONTAIN SECRETS. This file is gitignored; do not commit or share it.
 # Source: .agent-layer/config.toml
 # Regenerate: al sync
 
@@ -77,7 +78,8 @@ func ensureGrokConfigTarget(sys System, grokDir, path string) error {
 }
 
 func grokConfigIsManaged(data []byte) bool {
-	return bytes.HasPrefix(data, []byte(grokHeader))
+	return bytes.HasPrefix(data, []byte(grokGeneratedMarker)) ||
+		bytes.HasPrefix(data, []byte(grokLegacyGeneratedLine))
 }
 
 func buildGrokConfig(project *config.ProjectConfig) (string, error) {

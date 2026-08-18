@@ -337,6 +337,40 @@ func TestWriteGrokConfigRejectsUserOwnedAndSymlinkTargets(t *testing.T) {
 	})
 }
 
+func TestWriteGrokConfigRecognizesStableAndLegacyGeneratedMarkers(t *testing.T) {
+	t.Parallel()
+	project := &config.ProjectConfig{Env: map[string]string{}}
+
+	for _, existing := range []string{
+		grokGeneratedMarker + "# Header wording changed in a later release\ncustom = true\n",
+		grokLegacyGeneratedLine + "# This file is gitignored. Do not commit or share it.\n",
+	} {
+		root := t.TempDir()
+		grokDir := filepath.Join(root, ".grok")
+		if err := os.MkdirAll(grokDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(grokDir, "config.toml")
+		if err := os.WriteFile(path, []byte(existing), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeGrokConfig(RealSystem{}, root, project); err != nil {
+			t.Fatalf("writeGrokConfig rejected generated config: %v", err)
+		}
+		data, err := os.ReadFile(path) // #nosec G304 -- test-controlled path.
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) == existing || !strings.HasPrefix(string(data), grokHeader) {
+			t.Fatalf("generated config was not refreshed: %q", data)
+		}
+	}
+
+	if grokConfigIsManaged([]byte("# Personal config\n# GENERATED FILE\n")) {
+		t.Fatal("generated marker away from the first line must not claim a user-owned config")
+	}
+}
+
 func TestCleanGrokOutputsRemovesConfig(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

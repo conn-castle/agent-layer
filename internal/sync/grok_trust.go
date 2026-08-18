@@ -28,6 +28,9 @@ func writeGrokTrustedFolders(sys System, root string) error {
 	}
 
 	homeDir := filepath.Join(root, ".grok-config")
+	if err := ensureGrokHomeDirectory(sys, homeDir); err != nil {
+		return err
+	}
 	if err := sys.MkdirAll(homeDir, 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, homeDir, err)
 	}
@@ -56,6 +59,20 @@ func writeGrokTrustedFolders(sys System, root string) error {
 	content := grokTrustedFoldersHeader + grokTrustedFolderSection(absRoot, sys.Now().Unix())
 	if err := sys.WriteFileAtomic(path, []byte(content), 0o600); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
+	}
+	return nil
+}
+
+func ensureGrokHomeDirectory(sys System, homeDir string) error {
+	info, err := sys.Lstat(homeDir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf(messages.InstallFailedStatFmt, homeDir, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return fmt.Errorf("grok home directory must be a real directory: %s", homeDir)
 	}
 	return nil
 }

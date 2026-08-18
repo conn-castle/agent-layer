@@ -97,6 +97,28 @@ func TestWriteGrokTrustedFoldersFailsLoudly(t *testing.T) {
 			t.Fatalf("write error = %v", err)
 		}
 	})
+
+	t.Run("symlinked home", func(t *testing.T) {
+		root := t.TempDir()
+		outside := t.TempDir()
+		outsideTrust := filepath.Join(outside, "trusted_folders.toml")
+		const existing = "[folders.\"/outside\"]\ntrusted = true\n"
+		if err := os.WriteFile(outsideTrust, []byte(existing), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outside, filepath.Join(root, ".grok-config")); err != nil {
+			t.Fatal(err)
+		}
+
+		err := writeGrokTrustedFolders(RealSystem{}, root)
+		if err == nil || !strings.Contains(err.Error(), "grok home directory must be a real directory") {
+			t.Fatalf("symlinked home error = %v", err)
+		}
+		data, readErr := os.ReadFile(outsideTrust) // #nosec G304 -- test-controlled path.
+		if readErr != nil || string(data) != existing {
+			t.Fatalf("outside trust changed: %q, %v", data, readErr)
+		}
+	})
 }
 
 func TestWriteGrokTrustedFoldersPreservesExistingEntry(t *testing.T) {

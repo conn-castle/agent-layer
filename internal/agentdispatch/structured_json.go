@@ -14,6 +14,7 @@ const (
 	structuredJSONBufferBytes = 64 * 1024
 	structuredJSONMaxDepth    = 256
 	structuredJSONKeyBytes    = 256
+	grokEventDataBytes        = structuredJSONBufferBytes
 	grokToolUpdateTextBytes   = 512
 	jsonErrorKey              = "error"
 	jsonFalseLiteral          = "false"
@@ -381,9 +382,12 @@ func (p *selectiveJSONReader) retainedStructuredStringLimit(path []string) (int,
 	if len(path) == 3 && path[0] == jsonContentKey && path[1] == jsonContentKey && path[2] == jsonTextKey {
 		return grokToolUpdateTextBytes, true
 	}
+	if len(path) == 1 && path[0] == "data" {
+		return grokEventDataBytes, true
+	}
 	key := path[len(path)-1]
 	switch key {
-	case jsonResultKey, jsonMessageKey, jsonTextKey, jsonReasonKey, jsonErrorKey, "data":
+	case jsonResultKey, jsonMessageKey, jsonTextKey, jsonReasonKey, jsonErrorKey:
 		return p.retainedStringBytes, true
 	default:
 		return structuredJSONKeyBytes, false

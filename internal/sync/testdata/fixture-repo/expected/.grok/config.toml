@@ -1,5 +1,5 @@
-# GENERATED FILE — MAY CONTAIN SECRETS
-# This file is gitignored. Do not commit or share it.
+# GENERATED FILE
+# MAY CONTAIN SECRETS. This file is gitignored; do not commit or share it.
 # Source: .agent-layer/config.toml
 # Regenerate: al sync
 
