@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/skillvalidator"
@@ -81,20 +82,20 @@ func commandOutputWithTimeout(timeout time.Duration, name string, args ...string
 // and `agy version 1.0.0`. The first capture group is the bare X.Y.Z triple.
 var agyVersionRE = regexp.MustCompile(`(?m)^agy(?:\s+version)?\s+v?(\d+\.\d+\.\d+)\b`)
 
-// bareAgyVersionRE matches output whose entire (trimmed) content is nothing
+// bareSemverVersionRE matches output whose entire (trimmed) content is nothing
 // but a version triple, e.g. the literal `1.0.2` that `agy --version` prints
 // as of Antigravity 1.0.x. Anchoring to the whole trimmed output (rather than
 // any line) keeps a stray dotted-numeric line inside noisier multi-line output
 // from being mistaken for the version. The first capture group is the bare
 // X.Y.Z triple.
-var bareAgyVersionRE = regexp.MustCompile(`^v?(\d+\.\d+\.\d+)$`)
+var bareSemverVersionRE = regexp.MustCompile(`^v?(\d+\.\d+\.\d+)$`)
 
 // parseAgyVersion extracts the bare X.Y.Z version from `agy --version` output.
 // It accepts both the bare form the current CLI prints (`1.0.2`) and the
 // `agy`-prefixed line shape, returning "" when neither yields a confident
 // match so the caller can surface an explicit "could not parse" failure.
 func parseAgyVersion(output string) string {
-	if match := bareAgyVersionRE.FindStringSubmatch(strings.TrimSpace(output)); len(match) >= 2 {
+	if match := bareSemverVersionRE.FindStringSubmatch(strings.TrimSpace(output)); len(match) >= 2 {
 		return match[1]
 	}
 	if match := agyVersionRE.FindStringSubmatch(output); len(match) >= 2 {
@@ -390,6 +391,7 @@ func CheckAgents(cfg *config.ProjectConfig) []Result {
 		{"Codex", cfg.Config.Agents.Codex.Enabled},
 		{"VSCode", cfg.Config.Agents.VSCode.Enabled},
 		{"CopilotCLI", cfg.Config.Agents.CopilotCLI.Enabled},
+		{"Grok", cfg.Config.Agents.Grok.Enabled},
 	}
 
 	for _, a := range agents {
@@ -409,6 +411,9 @@ func CheckAgents(cfg *config.ProjectConfig) []Result {
 	}
 	if config.IsAgentEnabled(cfg.Config.Agents.Antigravity.Enabled) {
 		results = append(results, CheckAntigravityBinary()...)
+	}
+	if config.IsAgentEnabled(cfg.Config.Agents.Grok.Enabled) {
+		results = append(results, CheckGrokBinary()...)
 	}
 	return results
 }
@@ -468,6 +473,78 @@ func CheckAntigravityBinary() []Result {
 		CheckName: messages.DoctorCheckNameAgents,
 		Message:   fmt.Sprintf(messages.DoctorAntigravityVersionOKFmt, versionValue),
 	}}
+}
+
+var grokVersionRE = regexp.MustCompile(`(?m)^grok(?:\s+version)?\s+v?(\d+\.\d+\.\d+)\b`)
+
+func parseGrokVersion(output string) string {
+	if match := bareSemverVersionRE.FindStringSubmatch(strings.TrimSpace(output)); len(match) >= 2 {
+		return match[1]
+	}
+	if match := grokVersionRE.FindStringSubmatch(output); len(match) >= 2 {
+		return match[1]
+	}
+	return ""
+}
+
+// CheckGrokBinary verifies that grok exists and is at least the tested pin.
+// Missing or old binaries are warnings: Grok remains usable to configure, and
+// the user can still install or upgrade the CLI.
+func CheckGrokBinary() []Result {
+	path, err := lookPathFunc("grok")
+	if err != nil {
+		return []Result{{
+			Status:         StatusWarn,
+			CheckName:      messages.DoctorCheckNameAgents,
+			Message:        messages.DoctorGrokNotFound,
+			Recommendation: grokInstallRecommend(),
+		}}
+	}
+	output, err := commandOutputFunc(path, "--version")
+	if err != nil {
+		return []Result{{
+			Status:         StatusWarn,
+			CheckName:      messages.DoctorCheckNameAgents,
+			Message:        fmt.Sprintf(messages.DoctorGrokVersionFailedFmt, err),
+			Recommendation: grokInstallRecommend(),
+		}}
+	}
+	versionText := string(output)
+	versionValue := parseGrokVersion(versionText)
+	if versionValue == "" {
+		return []Result{{
+			Status:         StatusWarn,
+			CheckName:      messages.DoctorCheckNameAgents,
+			Message:        fmt.Sprintf(messages.DoctorGrokVersionUnknownFmt, strings.TrimSpace(versionText)),
+			Recommendation: grokInstallRecommend(),
+		}}
+	}
+	cmp, err := compareDoctorSemver(versionValue, grok.SupportedVersion)
+	if err != nil {
+		return []Result{{
+			Status:         StatusWarn,
+			CheckName:      messages.DoctorCheckNameAgents,
+			Message:        fmt.Sprintf(messages.DoctorGrokVersionCompareFailedFmt, versionValue, err),
+			Recommendation: grokInstallRecommend(),
+		}}
+	}
+	if cmp < 0 {
+		return []Result{{
+			Status:         StatusWarn,
+			CheckName:      messages.DoctorCheckNameAgents,
+			Message:        fmt.Sprintf(messages.DoctorGrokVersionTooOldFmt, versionValue, grok.SupportedVersion),
+			Recommendation: grokInstallRecommend(),
+		}}
+	}
+	return []Result{{
+		Status:    StatusOK,
+		CheckName: messages.DoctorCheckNameAgents,
+		Message:   fmt.Sprintf(messages.DoctorGrokVersionOKFmt, versionValue),
+	}}
+}
+
+func grokInstallRecommend() string {
+	return fmt.Sprintf(messages.DoctorGrokInstallRecommendFmt, grok.SupportedVersion)
 }
 
 func compareDoctorSemver(a string, b string) (int, error) {

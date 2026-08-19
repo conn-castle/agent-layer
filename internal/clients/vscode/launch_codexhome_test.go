@@ -489,3 +489,91 @@ func TestLaunchVSCode_PreservesInheritedCLAUDECONFIGDIRWhenLocalConfigDirDisable
 		t.Fatalf("expected user CLAUDE_CONFIG_DIR to be preserved, got env:\n%s", string(got))
 	}
 }
+
+func TestLaunchVSCode_ReplacesGROKHOMEWhenGrokEnabled(t *testing.T) {
+	origLookPath := lookPath
+	origReadFile := readFile
+	t.Cleanup(func() {
+		lookPath = origLookPath
+		readFile = origReadFile
+	})
+
+	root := t.TempDir()
+	binDir := t.TempDir()
+	envFile := filepath.Join(t.TempDir(), "env.txt")
+	stubPath := filepath.Join(binDir, "code")
+	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub.
+		t.Fatalf("write stub: %v", err)
+	}
+
+	enabled := true
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				VSCode: config.EnableOnlyConfig{Enabled: &enabled},
+				Grok:   config.GrokConfig{Enabled: &enabled},
+			},
+		},
+		Root: root,
+	}
+
+	t.Setenv("PATH", binDir)
+	env := clients.SetEnv(os.Environ(), "GROK_HOME", filepath.Join(t.TempDir(), "external-grok-home"))
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	got, err := os.ReadFile(envFile) // #nosec G304 -- test-controlled path.
+	if err != nil {
+		t.Fatalf("read env file: %v", err)
+	}
+	expected := "GROK_HOME=" + filepath.Join(root, ".grok-config")
+	if !strings.Contains(string(got), expected) {
+		t.Fatalf("expected %s, got env:\n%s", expected, string(got))
+	}
+}
+
+func TestLaunchVSCode_ClearsStaleGROKHOMEWhenGrokDisabled(t *testing.T) {
+	origLookPath := lookPath
+	origReadFile := readFile
+	t.Cleanup(func() {
+		lookPath = origLookPath
+		readFile = origReadFile
+	})
+
+	root := t.TempDir()
+	binDir := t.TempDir()
+	envFile := filepath.Join(t.TempDir(), "env.txt")
+	stubPath := filepath.Join(binDir, "code")
+	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub.
+		t.Fatalf("write stub: %v", err)
+	}
+
+	enabled := true
+	disabled := false
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				VSCode: config.EnableOnlyConfig{Enabled: &enabled},
+				Grok:   config.GrokConfig{Enabled: &disabled},
+			},
+		},
+		Root: root,
+	}
+
+	t.Setenv("PATH", binDir)
+	env := append(clients.UnsetEnv(os.Environ(), "GROK_HOME"), "GROK_HOME="+filepath.Join(root, ".grok-config"))
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	got, err := os.ReadFile(envFile) // #nosec G304 -- test-controlled path.
+	if err != nil {
+		t.Fatalf("read env file: %v", err)
+	}
+	if strings.Contains(string(got), "GROK_HOME=") {
+		t.Fatalf("expected stale GROK_HOME to be cleared, got env:\n%s", string(got))
+	}
+}

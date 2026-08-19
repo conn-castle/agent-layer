@@ -47,6 +47,13 @@ const (
 	DoctorAntigravityVersionUnknownFmt = "Could not parse Antigravity version from %q"
 	DoctorAntigravityVersionTooOldFmt  = "Antigravity version %s is below required 1.0.0"
 	DoctorAntigravityVersionOKFmt      = "Antigravity version OK: %s"
+	DoctorGrokNotFound                 = "Grok binary not found: grok"
+	DoctorGrokInstallRecommendFmt      = "Install Grok Build CLI and ensure `grok` (>= %s) is on PATH; run `al probe grok` to verify."
+	DoctorGrokVersionFailedFmt         = "Failed to read Grok version: %v"
+	DoctorGrokVersionUnknownFmt        = "Could not parse Grok version from %q"
+	DoctorGrokVersionCompareFailedFmt  = "Could not compare Grok version %q: %v"
+	DoctorGrokVersionTooOldFmt         = "Grok version %s is below tested %s"
+	DoctorGrokVersionOKFmt             = "Grok version OK: %s"
 
 	DoctorSkillsValidatedFmt       = "Skills validated successfully (%d checked)"
 	DoctorSkillsNoneConfigured     = "No skills configured for validation."

@@ -248,6 +248,8 @@ enabled = false
 enabled = true
 [agents.copilot_cli]
 enabled = false
+[agents.grok]
+enabled = false
 `
 	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600); err != nil {
 		t.Fatal(err)

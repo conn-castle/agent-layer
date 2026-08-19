@@ -65,10 +65,10 @@ func executeDispatch(request dispatchExecution) error {
 		return finishDispatchCancellation(request)
 	}
 	session := request.Session
-	if request.Mode == dispatchModeFresh && request.Target.Name == AgentClaude {
+	if request.Mode == dispatchModeFresh && callerAssignsSessionID(request.Target.Name) {
 		id, err := newUUID()
 		if err != nil {
-			return wrapExitError(ExitTargetFailure, "generate Claude dispatch session ID", err)
+			return wrapExitError(ExitTargetFailure, fmt.Sprintf("generate %s dispatch session ID", request.Target.Name), err)
 		}
 		session.ProviderSessionID = id
 		session.State = sessionStateDurable
@@ -111,10 +111,10 @@ func executeDispatch(request dispatchExecution) error {
 		if err := writeRunRecord(request.Run.Dir, &request.Run.Record); err != nil {
 			return finishDispatchFailure(request, err)
 		}
-		if request.Mode == dispatchModeFresh && request.Target.Name == AgentClaude && attempt == 2 {
+		if request.Mode == dispatchModeFresh && callerAssignsSessionID(request.Target.Name) && attempt == 2 {
 			id, err := newUUID()
 			if err != nil {
-				return wrapExitError(ExitTargetFailure, "generate retry Claude session ID", err)
+				return wrapExitError(ExitTargetFailure, fmt.Sprintf("generate retry %s session ID", request.Target.Name), err)
 			}
 			session.ProviderSessionID = id
 			if err := persistSession(request.Root, session); err != nil {
@@ -182,6 +182,10 @@ func executeDispatch(request dispatchExecution) error {
 		return completeDispatchSuccess(request, result, session)
 	}
 	return finishDispatchFailure(request, exitError(ExitTargetFailure, "dispatch retry exhausted"))
+}
+
+func callerAssignsSessionID(agent string) bool {
+	return agent == AgentClaude || agent == AgentGrok
 }
 
 func completeDispatchSuccess(request dispatchExecution, result executionResult, session Session) error {

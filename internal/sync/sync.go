@@ -134,6 +134,16 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 		)
 	}
 
+	if config.IsAgentEnabled(agents.Grok.Enabled) {
+		steps = append(steps,
+			func() error { return writeGrokConfig(sys, root, project) },
+			func() error { return writeGrokTrustedFolders(sys, root) },
+			func() error { return writeGrokChimeHook(sys, root, project) },
+		)
+	} else {
+		steps = append(steps, func() error { return cleanGrokOutputs(sys, root) })
+	}
+
 	// Claude files (.mcp.json, .claude/settings.json, .claude/skills/) fire when claude OR claude_vscode enabled.
 	claudeEnabled := config.IsAgentEnabled(agents.Claude.Enabled)
 	if claudeEnabled || claudeVSCodeEnabled {

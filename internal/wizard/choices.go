@@ -69,6 +69,16 @@ type Choices struct {
 	CopilotCLIModel        string
 	CopilotCLIModelTouched bool
 
+	GrokModel        string
+	GrokModelTouched bool
+
+	GrokReasoning        string
+	GrokReasoningTouched bool
+
+	// GrokDisableMemory is disable-intent: true writes disable_memory = true.
+	GrokDisableMemory        bool
+	GrokDisableMemoryTouched bool
+
 	// Agent Layer workflow bundle install action.
 	// InstallWorkflowBundle=true creates missing bundled workflow files without
 	// overwriting existing files. false is a no-op for workflow-bundle files.

@@ -47,6 +47,14 @@ func targetRegistry() []targetMeta {
 			AnswerText:         answerTextPartial,
 			Progress:           progressNone,
 		},
+		{
+			Name:               AgentGrok,
+			Binary:             "grok",
+			SkillPrefix:        "/",
+			SharedSkillProject: true,
+			AnswerText:         answerTextPartial,
+			Progress:           progressPartial,
+		},
 	}
 }
 
@@ -72,6 +80,8 @@ func targetEnabled(cfg config.Config, target string) bool {
 		return config.IsAgentEnabled(cfg.Agents.Claude.Enabled)
 	case AgentAntigravity:
 		return config.IsAgentEnabled(cfg.Agents.Antigravity.Enabled)
+	case AgentGrok:
+		return config.IsAgentEnabled(cfg.Agents.Grok.Enabled)
 	default:
 		return false
 	}

@@ -20,7 +20,7 @@ coverage.out
 .playwright-cli/
 
 # >>> agent-layer
-# Template hash: 40e4d77df661e151efc12f8247e480ba241e3e04d9f56cc795b107d3259c76d2
+# Template hash: 442501c834701e2ba4d1f980d8c54bcd9361691aafce55766a83c927993a62d6
 # Managed by Agent Layer. To customize, edit .agent-layer/gitignore.block
 # and re-run `al sync` to apply changes.
 
@@ -43,6 +43,8 @@ coverage.out
 /.codex/
 /.copilot/
 /.gemini/
+/.grok/
+/.grok-config/
 
 # Antigravity workspace marker (auto-created by agy; symlinks store per-user paths)
 /.antigravitycli/

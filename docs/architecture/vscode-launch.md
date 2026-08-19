@@ -10,6 +10,7 @@ This architecture covers:
 - repo-local launcher scripts under `.agent-layer/`
 - `CODEX_HOME` wiring for the VS Code Codex extension
 - `CLAUDE_CONFIG_DIR` wiring for the VS Code Claude extension
+- `GROK_HOME` wiring for Grok when `[agents.grok]` is enabled
 - `.vscode/settings.json` managed block lifecycle
 
 ## Entry points
@@ -33,6 +34,7 @@ Launcher scripts call `al vscode --no-sync` after checking that `al` and `code` 
    - `.vscode/settings.json` managed markers are not malformed/duplicated
 5. Launch sets environment variables based on enabled agents:
    - `CODEX_HOME=<repo>/.codex` only when `agents.vscode` is enabled and `agents.codex.local_config_dir` is `true` (otherwise inherited `CODEX_HOME` is preserved)
+   - `GROK_HOME=<repo>/.grok-config` when `agents.grok` is enabled (when disabled, clears only stale repo-local values)
    - `CLAUDE_CONFIG_DIR=<repo>/.claude-config` when **both** `agents.claude_vscode` is enabled **and** `agents.claude.local_config_dir` is `true` (when disabled, clears only stale repo-local values and preserves user-defined values that point outside the repository)
 6. Executes `code ...` with pass-through args, appending `.` only when no positional path/file arg is provided.
 

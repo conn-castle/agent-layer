@@ -1,0 +1,5 @@
+{"type":"tool_call","toolCallId":"call-provider-fixture-0","title":"run_terminal_command","kind":"execute","status":"pending","toolName":"run_terminal_command","rawInput":{"command":"printf denial-evidence","description":"Print denial-evidence string exactly once"},"content":[],"locations":[]}
+{"type":"tool_call_update","toolCallId":"call-provider-fixture-0","status":null,"content":[{"type":"content","content":{"type":"text","text":"Print denial-evidence string exactly once"}}],"rawOutput":null,"locations":[]}
+{"type":"tool_call_update","toolCallId":"call-provider-fixture-0","status":"failed","content":[{"type":"content","content":{"type":"text","text":"Tool `run_terminal_command` was not executed: Denied by permission policy: deny rule on bash matching \"printf *\""}}],"rawOutput":null,"locations":[]}
+{"type":"text","data":"It did not run. The Bash tool was blocked by a deny rule matching `printf *`."}
+{"type":"end","stopReason":"end_turn","sessionId":"11111111-1111-4111-8111-111111111111","requestId":"provider-fixture-request"}

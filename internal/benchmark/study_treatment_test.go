@@ -453,6 +453,9 @@ enabled = false
 
 [agents.copilot_cli]
 enabled = false
+
+[agents.grok]
+enabled = false
 `)
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)

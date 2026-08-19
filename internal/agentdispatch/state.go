@@ -196,7 +196,7 @@ func newDispatchRun(root string, agent string, version string, mode string) (*di
 }
 
 func providerProducesStructuredEvents(agent string) bool {
-	return agent == AgentClaude || agent == AgentCodex
+	return agent == AgentClaude || agent == AgentCodex || agent == AgentGrok
 }
 
 func newUUID() (string, error) {
@@ -828,7 +828,7 @@ func listSessions(root string) ([]Session, error) {
 }
 
 func isProvider(agent string) bool {
-	return agent == AgentClaude || agent == AgentCodex || agent == AgentAntigravity
+	return agent == AgentClaude || agent == AgentCodex || agent == AgentAntigravity || agent == AgentGrok
 }
 
 func processAlive(pid int) string {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/gitenv"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -660,12 +661,18 @@ func TestAgentLayerGitignoreTemplateEntries(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"), data, 0o600); err != nil {
 		t.Fatalf("write template fixture: %v", err)
 	}
-	if output, err := exec.Command("git", "-C", root, "init", "--quiet").CombinedOutput(); err != nil { // #nosec G204 -- fixed test command and temp path.
+	// Resolve the repository from -C above, never from an inherited GIT_DIR: git
+	// exports it to hooks, so under pre-commit this fixture would otherwise
+	// re-initialize the developer's own checkout.
+	initCmd := exec.Command("git", "-C", root, "init", "--quiet") // #nosec G204 -- fixed test command and temp path.
+	initCmd.Env = gitenv.WithoutDiscovery()
+	if output, err := initCmd.CombinedOutput(); err != nil {
 		t.Fatalf("initialize template fixture: %v: %s", err, output)
 	}
 	isIgnored := func(path string) bool {
 		t.Helper()
 		cmd := exec.Command("git", "-C", root, "check-ignore", "--no-index", "--quiet", "--", path) // #nosec G204 -- fixed test command and test-controlled path.
+		cmd.Env = gitenv.WithoutDiscovery()
 		err := cmd.Run()
 		if err == nil {
 			return true

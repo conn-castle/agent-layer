@@ -84,6 +84,29 @@ func TestReservationDoesNotOverwriteCollidingName(t *testing.T) {
 	}
 }
 
+func TestGrokSessionRoundTripsThroughStateStore(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	session, err := reserveSession(root, run)
+	if err != nil {
+		t.Fatalf("reserve session: %v", err)
+	}
+	loaded, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatalf("load session: %v", err)
+	}
+	if loaded.Agent != AgentGrok || loaded.Name != session.Name {
+		t.Fatalf("loaded session = %#v", loaded)
+	}
+	sessions, err := listSessions(root)
+	if err != nil || len(sessions) != 1 || sessions[0].Name != session.Name {
+		t.Fatalf("list sessions = %#v, %v", sessions, err)
+	}
+}
+
 func TestNewDispatchRunAdvertisesOnlyApplicableEventArtifact(t *testing.T) {
 	root := t.TempDir()
 	structured, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)

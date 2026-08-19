@@ -325,6 +325,9 @@ enabled = true
 [agents.copilot_cli]
 enabled = true
 
+[agents.grok]
+enabled = true
+
 [warnings]
 noise_mode = "quiet"
 instruction_token_threshold = 1

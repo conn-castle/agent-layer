@@ -4,4 +4,5 @@ const (
 	agentClaude     = "claude"
 	agentCodex      = "codex"
 	agentCopilotCLI = "copilot_cli"
+	agentGrok       = "grok"
 )

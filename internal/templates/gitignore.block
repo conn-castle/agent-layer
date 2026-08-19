@@ -17,6 +17,8 @@
 /.codex/
 /.copilot/
 /.gemini/
+/.grok/
+/.grok-config/
 
 # Antigravity workspace marker (auto-created by agy; symlinks store per-user paths)
 /.antigravitycli/

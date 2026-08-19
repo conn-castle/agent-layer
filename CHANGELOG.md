@@ -1,6 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+- Grok Build CLI is a first-class Agent Layer client: `al grok`, `[agents.grok]` (`enabled`, `model`, `reasoning_effort`, `disable_memory`), always-on `GROK_HOME=<repo>/.grok-config`, native `.grok/config.toml` MCP and `[permission]` projection, seeded folder trust, `--sandbox` mapping, shared `.agents/skills/` skills, doctor warning for a missing or older-than-1.0.5 `grok`, `al probe grok`, wizard coverage, Agent Dispatch target `grok`, and `notifications.chime` via `.grok/hooks/agent-layer-chime.json`. Upgrade `0.17.0` defaults `agents.grok.enabled` to `false`.
+
+### Fixed
+- Grok sync now recognizes generated `.grok/config.toml` files by a stable marker across header revisions, requires the credential-bearing `.grok-config` home to be a private real directory, and rejects symlinks before seeding repo trust outside the isolated home. Grok dispatch and capability probes also bound retained provider output with accurate truncation notices.
+
 ## v0.16.3 - 2026-08-09
 
 ### Added

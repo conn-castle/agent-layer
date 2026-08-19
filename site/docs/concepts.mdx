@@ -55,6 +55,8 @@ When you run `al sync` or `al <client>`, Agent Layer generates client-specific c
 - `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`
 - `.agy/antigravity-cli/settings.json` (shared state patched only at Agent Layer-managed paths)
 - `.codex/` (generated config and rules)
+- `.grok/config.toml`
+- `.grok/hooks/agent-layer-chime.json` when `notifications.chime` is enabled
 - `.vscode/mcp.json` and a managed block in `.vscode/settings.json`
 - `AGENTS.md`
 - `CLAUDE.md`
@@ -73,7 +75,7 @@ Agent Layer avoids that by forcing managed values through a single canonical inp
 
 ### Anti-patterns to avoid
 
-- Editing Agent Layer-managed values under `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/`, `.codex/`, `.copilot/`, or `.mcp.json`
+- Editing Agent Layer-managed values under `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/`, `.codex/`, `.copilot/`, `.grok/`, or `.mcp.json`
 - Editing Agent Layer-managed files under `.vscode/` (`mcp.json` and the managed block in `settings.json`)
 - Copying instructions manually between clients
 - Maintaining separate MCP configs for each agent
@@ -109,6 +111,8 @@ local_config_dir = true
 ```
 
 When `agents.codex.local_config_dir` is absent or false, Agent Layer does not set or clear `CODEX_HOME`; Codex uses its normal global/project config layering and any inherited `CODEX_HOME` remains user-owned.
+
+**Grok** home isolation is always on. `al grok`, Grok dispatch, and `al vscode` set `GROK_HOME=<repo>/.grok-config` so user auth stays out of generated project `.grok/`. Auth and sessions are per repository, so the first Grok launch in a repo may require login even when global Grok is authenticated. Sync seeds `.grok-config/trusted_folders.toml` for the current repo when that exact folder entry is absent.
 
 **Claude** isolation is opt-in. Set `local_config_dir = true` under `[agents.claude]` in `.agent-layer/config.toml`:
 
@@ -292,7 +296,7 @@ See [Environment variables](./reference#environment-variables) for how `.env` is
 
 ### Client targeting
 
-Use `clients = ["antigravity", "claude", "codex", "vscode", "copilot"]` to restrict a server to specific clients. If you omit `clients`, the server is projected to all supported clients.
+Use `clients = ["antigravity", "claude", "codex", "vscode", "copilot", "grok"]` to restrict a server to specific clients. If you omit `clients`, the server is projected to all supported clients.
 
 ### Built-in path placeholder
 

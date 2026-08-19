@@ -11,8 +11,8 @@ handles, states, result files, and cancellation semantics.
 ## MCP tools
 
 Agent Layer projects a built-in MCP server, `agent-layer`, into the generated
-configuration of every enabled Codex, Claude, Antigravity, VS Code, and Copilot
-CLI caller. It is derived state, not a `[[mcp.servers]]` entry, and its
+configuration of every enabled Codex, Claude, Antigravity, VS Code, Copilot
+CLI, and Grok caller. It is derived state, not a `[[mcp.servers]]` entry, and its
 reserved ID cannot be taken by a user-defined server. It exposes five tools:
 
 Agent-facing tool and parameter descriptions are maintained in

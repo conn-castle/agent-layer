@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "target_version": "0.17.0",
+  "min_prior_version": "0.10.2",
+  "operations": [
+    {
+      "id": "add-grok-enabled",
+      "kind": "config_set_default",
+      "key": "agents.grok.enabled",
+      "value": false,
+      "rationale": "New agent added in v0.17.0. Enable if you use Grok Build CLI.",
+      "source_agnostic": true
+    }
+  ]
+}

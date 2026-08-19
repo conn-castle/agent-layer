@@ -96,6 +96,8 @@ enabled = true
 enabled = true
 [agents.copilot_cli]
 enabled = true
+[agents.grok]
+enabled = true
 `), 0o600); err != nil {
 		t.Fatalf("write profile: %v", err)
 	}

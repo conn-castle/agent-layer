@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/conn-castle/agent-layer/internal/probe/antigravity"
+	probegrok "github.com/conn-castle/agent-layer/internal/probe/grok"
 )
 
 // TestProbeAntigravityCommandHonorsTmpRoot exercises the path-construction
@@ -152,5 +153,62 @@ func TestProbeCommandWiresAntigravitySubcommand(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("expected probe command to register an agy subcommand")
+	}
+}
+
+func TestProbeCommandWiresGrokSubcommand(t *testing.T) {
+	cmd := newProbeCmd()
+	found := false
+	for _, sub := range cmd.Commands() {
+		if sub.Name() == "grok" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected probe command to register a grok subcommand")
+	}
+}
+
+func TestProbeGrokCommandHonorsTmpRoot(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	originalGetwd := getwd
+	getwd = func() (string, error) { return root, nil }
+	t.Cleanup(func() { getwd = originalGetwd })
+
+	originalProbe := runGrokProbe
+	runGrokProbe = func(ctx context.Context, tmpRoot string, _ string) (*probegrok.Result, error) {
+		if !strings.HasSuffix(tmpRoot, ".agent-layer/tmp") {
+			t.Fatalf("tmp root = %q, want .agent-layer/tmp", tmpRoot)
+		}
+		return &probegrok.Result{
+			GrokVersion:  "grok 1.0.5",
+			ProbedAt:     time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC),
+			ProbeDir:     tmpRoot + "/probe-grok-test",
+			WorkspaceDir: tmpRoot + "/probe-grok-test/workspace",
+			GrokHomeDir:  tmpRoot + "/probe-grok-test/grok-home",
+			ExitCode:     0,
+			Capabilities: probegrok.CapabilityMatrix{StreamingJSONUsed: true},
+		}, nil
+	}
+	t.Cleanup(func() { runGrokProbe = originalProbe })
+
+	cmd := newProbeGrokCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("probe command: %v", err)
+	}
+	rendered := out.String()
+	for _, key := range []string{
+		`"grok_version"`, `"probed_at"`, `"probe_dir"`, `"workspace_dir"`,
+		`"grok_home_dir"`, `"exit_code"`, `"capabilities"`,
+	} {
+		if !strings.Contains(rendered, key) {
+			t.Fatalf("expected JSON key %s in output, got:\n%s", key, rendered)
+		}
 	}
 }

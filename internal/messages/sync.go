@@ -19,6 +19,10 @@ const (
 	SyncCodexTrustRootResolveFailedFmt              = "failed to resolve repo root for codex trust stanza %q: %w"
 	SyncCodexTrustRootControlCharFmt                = "repo root %q for codex trust stanza contains a control character (U+%04X) that cannot be encoded as a valid TOML key; move the repository to a path without control characters"
 	SyncCodexTrustRootInvalidUTF8Fmt                = "repo root %q for codex trust stanza contains invalid UTF-8 bytes that cannot be encoded as a valid TOML key; move the repository to a path with valid UTF-8 characters"
+	SyncGrokTrustRootRequired                       = "repo root required for grok folder trust"
+	SyncGrokTrustRootResolveFailedFmt               = "failed to resolve repo root for grok folder trust %q: %w"
+	SyncGrokTrustReadFailedFmt                      = "failed to read grok folder trust %s: %w"
+	SyncGrokTrustParseFailedFmt                     = "failed to parse grok folder trust %s: %w"
 	SyncCodexStatuslineInvalidTOMLFmt               = "%s: invalid codex statusline TOML: %w"
 	SyncCodexStatuslineOnlyStatusLineFmt            = "%s: codex statusline fragment may contain only [tui].status_line; put unrelated Codex config under agents.codex.agent_specific"
 	SyncCodexStatuslineStatusLineMissingFmt         = "%s: codex statusline fragment must define [tui].status_line"
@@ -37,6 +41,7 @@ const (
 	SyncCodexChimeMarkerConflictFmt                 = "%s: Agent Layer-managed Codex chime hook markers are incomplete or ambiguous; remove the marked chime block before running al sync"
 	SyncCodexChimeOwnershipConflictFmt              = "%s contains an augmented or ambiguous Agent Layer chime hook; remove that hook before running al sync"
 	SyncAntigravityChimePluginConflictFmt           = "%s already exists and is not the Agent Layer-managed chime plugin; remove or rename it before running al sync"
+	SyncGrokChimeHookConflictFmt                    = "%s already exists and is not the Agent Layer-managed Grok chime hook; remove or rename it before running al sync"
 	SyncClaudeStatuslineSourceMissingFmt            = "agents.claude.statusline is true but %s is missing; run `al wizard` to create the source file, run interactive `al upgrade` to review statusline sources, or create the file manually"
 	SyncCodexStatuslineSourceMissingFmt             = "agents.codex.statusline is true but %s is missing; run `al wizard` to create the source file, run interactive `al upgrade` to review statusline sources, or create the file manually"
 	SyncMarshalAntigravitySettingsFailedFmt         = "failed to marshal antigravity settings: %w"
@@ -69,6 +74,15 @@ const (
 	MCPServerEnvFmt                  = "mcp server %s env %s: %w"
 	MCPUnsupportedTransportFmt       = "unsupported transport %s"
 	MCPServerUnsupportedTransportFmt = "mcp server %s: unsupported transport %s"
+)
+
+// Grok path messages are kept together because sync applies the same safety
+// checks while generating and cleaning its project-local outputs.
+const (
+	SyncGrokHomePermissionsFmt         = "grok home directory must be private: %s has permissions %04o; run `chmod 700 %s` and retry"
+	SyncGrokConfigDirConflictFmt       = "grok config directory must be a real directory: %s"
+	SyncGrokConfigTargetConflictFmt    = "grok config target must be a regular file, not a symlink or special file: %s"
+	SyncGrokConfigOwnershipConflictFmt = "refusing to overwrite user-owned Grok config %s; move managed settings into .agent-layer/config.toml or agents.grok.agent_specific first"
 )
 
 // Skill source snapshot messages. These describe ownership problems that only

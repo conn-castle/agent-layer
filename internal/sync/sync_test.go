@@ -45,6 +45,7 @@ func TestRunGolden(t *testing.T) {
 		"CLAUDE.md",
 		".github/copilot-instructions.md",
 		".codex/config.toml",
+		".grok/config.toml",
 		".codex/rules/default.rules",
 		".agents/skills/alpha/SKILL.md",
 		".agents/skills/beta/SKILL.md",
@@ -97,6 +98,7 @@ func TestRunPreservesUnchangedClientConfigurationFiles(t *testing.T) {
 	}
 	paths := []string{
 		filepath.Join(root, ".codex", "config.toml"),
+		filepath.Join(root, ".grok", "config.toml"),
 		filepath.Join(root, ".claude", "settings.json"),
 		filepath.Join(root, ".agy", "antigravity-cli", "mcp_config.json"),
 	}
@@ -154,6 +156,8 @@ enabled = false
 [agents.vscode]
 enabled = false
 [agents.copilot_cli]
+enabled = false
+[agents.grok]
 enabled = false
 `
 	if err := os.WriteFile(filepath.Join(agentLayer, "config.toml"), []byte(configToml), 0o600); err != nil {

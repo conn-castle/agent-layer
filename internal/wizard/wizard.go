@@ -218,6 +218,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 		{id: AgentCodex, enabled: cfg.Config.Agents.Codex.Enabled},
 		{id: AgentVSCode, enabled: cfg.Config.Agents.VSCode.Enabled},
 		{id: AgentCopilotCLI, enabled: cfg.Config.Agents.CopilotCLI.Enabled},
+		{id: AgentGrok, enabled: cfg.Config.Agents.Grok.Enabled},
 	}
 	setEnabledAgentsFromConfig(choices.EnabledAgents, agentConfigs)
 
@@ -258,6 +259,11 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 		choices.CodexStatusline = *cfg.Config.Agents.Codex.Statusline
 	}
 	choices.CopilotCLIModel = agentoptions.ConfiguredValue(cfg.Config, AgentCopilotCLI, agentoptions.KindModel)
+	choices.GrokModel = agentoptions.ConfiguredValue(cfg.Config, AgentGrok, agentoptions.KindModel)
+	choices.GrokReasoning = agentoptions.ConfiguredValue(cfg.Config, AgentGrok, agentoptions.KindReasoningEffort)
+	if cfg.Config.Agents.Grok.DisableMemory != nil {
+		choices.GrokDisableMemory = *cfg.Config.Agents.Grok.DisableMemory
+	}
 
 	for _, srv := range cfg.Config.MCP.Servers {
 		if config.IsAgentEnabled(srv.Enabled) {
@@ -311,7 +317,7 @@ func readCodexAppsEnabled(agentSpecific map[string]any) bool {
 }
 
 func readCodexPluginsEnabled(agentSpecific map[string]any) bool {
-	value, ok := readCodexFeatureValue(agentSpecific, config.CodexFeaturePluginsKey)
+	value, ok := readCodexFeatureValue(agentSpecific, config.PluginsKey)
 	if !ok {
 		return true
 	}
@@ -655,6 +661,10 @@ func promptEnabledAgents(ui UI, choices *Choices) error {
 		choices.ClaudeStatusline = false
 		choices.ClaudeStatuslineTouched = false
 	}
+	if !choices.EnabledAgents[AgentGrok] {
+		choices.GrokDisableMemory = false
+		choices.GrokDisableMemoryTouched = false
+	}
 	return nil
 }
 
@@ -775,6 +785,21 @@ func promptModels(ui UI, choices *Choices, optionCache *wizardOptionDiscoveryCac
 			return err
 		}
 		choices.CopilotCLIModelTouched = true
+	}
+	if choices.EnabledAgents[AgentGrok] {
+		if err := selectOptionalValue(ui, messages.WizardGrokModelTitle, modelOptions(AgentGrok), &choices.GrokModel); err != nil {
+			return err
+		}
+		choices.GrokModelTouched = true
+		if err := selectOptionalValue(ui, messages.WizardGrokReasoningEffortTitle, reasoningEffortOptions(AgentGrok), &choices.GrokReasoning); err != nil {
+			return err
+		}
+		choices.GrokReasoningTouched = true
+		if err := promptFeatureToggles(ui, messages.WizardGrokFeaturesTitle, []featureToggle{
+			{label: messages.WizardGrokFeatureMemoryLabel, field: &choices.GrokDisableMemory, touched: &choices.GrokDisableMemoryTouched},
+		}); err != nil {
+			return err
+		}
 	}
 
 	return nil

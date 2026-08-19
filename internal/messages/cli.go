@@ -249,6 +249,10 @@ const (
 	ProbeAntigravityShort          = "Probe Antigravity capabilities"
 	ProbeAntigravityLong           = "Run `agy` against a sealed probe workspace under .agent-layer/tmp/probe-antigravity-<ts>-<suffix>/ and report observed capabilities as JSON.\n\nThe command requires `agy` on PATH and a 45s hard timeout (exit code 124 on timeout). On success the JSON is written to stdout; on agy exiting non-zero or returning an unreadable log the JSON is still written but the CLI exits non-zero so scripts can detect failure. Probe artifacts (workspace/, agycfg/, stdout.txt, stderr.txt) persist under .agent-layer/tmp/ and can be pruned by `al upgrade --apply-tmp-deletions`."
 	ProbeAntigravityNonZeroExitFmt = "antigravity probe reported a non-zero result (exit code %d): %s"
+	ProbeGrokUse                   = "grok"
+	ProbeGrokShort                 = "Probe Grok capabilities"
+	ProbeGrokLong                  = "Run `grok` against a sealed probe workspace under .agent-layer/tmp/probe-grok-<ts>-<suffix>/ and report observed capabilities as JSON.\n\nThe command requires `grok` on PATH and a 45s hard timeout (exit code 124 on timeout). On success the JSON is written to stdout; on grok exiting non-zero the JSON is still written but the CLI exits non-zero so scripts can detect failure. Probe artifacts persist under .agent-layer/tmp/ and can be pruned by `al upgrade --apply-tmp-deletions`."
+	ProbeGrokNonZeroExitFmt        = "grok probe reported a non-zero result (exit code %d): %s"
 
 	DispatchUse                          = "dispatch"
 	DispatchShort                        = "Run asynchronous headless agent conversations"
@@ -273,6 +277,9 @@ const (
 	CopilotUse   = "copilot"
 	CopilotShort = "Sync and launch GitHub Copilot CLI"
 
+	GrokUse   = "grok"
+	GrokShort = "Sync and launch Grok Build CLI"
+
 	McpPromptsUse        = "mcp-prompts"
 	McpPromptsShort      = "Start the MCP prompt server (deprecated)"
 	McpPromptsDeprecated = "al mcp-prompts is deprecated: skills are now synced natively. Run 'al sync' to update."
@@ -285,6 +292,7 @@ const (
 
 	ClientsCodexHomeWarningFmt       = "Warning: CODEX_HOME is set to %s; expected %s\n"
 	ClientsClaudeConfigDirWarningFmt = "Warning: CLAUDE_CONFIG_DIR is set to %s; expected %s\n"
+	ClientsGrokHomeWarningFmt        = "Warning: overriding inherited GROK_HOME=%s with repo-local %s\n"
 
 	// StubShortFmt formats stub command descriptions.
 	StubShortFmt          = "%s (not implemented yet)"

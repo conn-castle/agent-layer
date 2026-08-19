@@ -58,6 +58,26 @@ func TestAgentModelSummary(t *testing.T) {
 	assert.Equal(t, "codex-max (high)", agentModelSummary(AgentCodex, c))
 	assert.Equal(t, "", agentModelSummary(AgentVSCode, c))
 	assert.Equal(t, "", agentModelSummary("unknown", c))
+	assert.Equal(t, "grok-4.6 (high)", agentModelSummary(AgentGrok, &Choices{GrokModel: "grok-4.6", GrokReasoning: "high"}))
+}
+
+func TestGrokHelpers(t *testing.T) {
+	assert.True(t, grokToggleVisible(&Choices{}))
+	assert.True(t, grokToggleVisible(&Choices{EnabledAgentsTouched: true, EnabledAgents: map[string]bool{AgentGrok: true}}))
+	assert.False(t, grokToggleVisible(&Choices{EnabledAgentsTouched: true, EnabledAgents: map[string]bool{}}))
+
+	tests := []struct {
+		choices  *Choices
+		expected string
+	}{
+		{choices: &Choices{GrokModel: "grok-test-model", GrokReasoning: "high"}, expected: "grok-test-model (high)"},
+		{choices: &Choices{GrokModel: "grok-test-model"}, expected: "grok-test-model"},
+		{choices: &Choices{GrokReasoning: "high"}, expected: "reasoning: high"},
+		{choices: &Choices{}, expected: ""},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.expected, grokModelSummary(tt.choices))
+	}
 }
 
 func TestCodexModelSummary(t *testing.T) {

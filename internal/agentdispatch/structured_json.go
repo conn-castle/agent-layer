@@ -14,11 +14,16 @@ const (
 	structuredJSONBufferBytes = 64 * 1024
 	structuredJSONMaxDepth    = 256
 	structuredJSONKeyBytes    = 256
+	grokEventDataBytes        = structuredJSONBufferBytes
+	grokToolUpdateTextBytes   = 512
 	jsonErrorKey              = "error"
 	jsonFalseLiteral          = "false"
+	jsonContentKey            = "content"
+	jsonDataKey               = "data"
 	jsonMessageKey            = "message"
 	jsonReasonKey             = "reason"
 	jsonResultKey             = "result"
+	jsonStatusKey             = "status"
 	jsonTextKey               = "text"
 	jsonTypeKey               = "type"
 	claudeLineageContentLimit = 256
@@ -211,7 +216,11 @@ func (p *selectiveJSONReader) readArray(result map[string]any, path []string, de
 	if err := p.reader.UnreadByte(); err != nil {
 		return err
 	}
-	content := len(path) == 2 && path[0] == jsonMessageKey && path[1] == "content"
+	content := len(path) == 2 && path[0] == jsonMessageKey && path[1] == jsonContentKey
+	// Grok 1.0.5 emits one content element for tool updates. Generic arrays
+	// intentionally retain only the last scalar to keep parsing bounded; the
+	// provider-derived denial fixture locks the single-element contract used by
+	// failure detection.
 	for {
 		if content {
 			block := claudeToolUseBlock{}
@@ -275,7 +284,7 @@ func (p *selectiveJSONReader) readValue(result map[string]any, path []string, de
 				if !truncatable {
 					return fmt.Errorf("structured event metadata exceeded %d bytes", limit)
 				}
-				value += truncatedAnswerNotice
+				value += retainedStructuredTruncationNotice(path)
 			}
 			setStructuredPath(result, path, value)
 		}
@@ -310,14 +319,24 @@ func (p *selectiveJSONReader) readValue(result map[string]any, path []string, de
 	}
 }
 
+func retainedStructuredTruncationNotice(path []string) string {
+	if len(path) == 1 && path[0] == jsonDataKey {
+		return grokEventDataTruncatedNotice
+	}
+	if len(path) == 3 && path[0] == jsonContentKey && path[1] == jsonContentKey && path[2] == jsonTextKey {
+		return grokToolUpdateTruncatedNotice
+	}
+	return truncatedAnswerNotice
+}
+
 func (p *selectiveJSONReader) retainsClaudeScalar(path []string) bool {
 	if len(path) == 1 {
 		switch path[0] {
-		case "parent_tool_use_id", "task_id", "tool_use_id", "status", "task_type":
+		case "parent_tool_use_id", "task_id", "tool_use_id", jsonStatusKey, "task_type":
 			return true
 		}
 	}
-	return p.block != nil && len(path) == 3 && path[0] == jsonMessageKey && path[1] == "content" &&
+	return p.block != nil && len(path) == 3 && path[0] == jsonMessageKey && path[1] == jsonContentKey &&
 		(path[2] == jsonTypeKey || path[2] == "id" || path[2] == "name")
 }
 
@@ -355,7 +374,7 @@ func (p *selectiveJSONReader) claudeScalar(path []string) *structuredScalar {
 		return &p.record.Claude.TaskID
 	case "tool_use_id":
 		return &p.record.Claude.ToolUseID
-	case "status":
+	case jsonStatusKey:
 		return &p.record.Claude.Status
 	default:
 		return &p.record.Claude.TaskType
@@ -371,6 +390,12 @@ func (p *selectiveJSONReader) invalidateClaude(reason string) {
 // retainedStructuredStringLimit returns the byte ceiling and whether the field
 // may be returned with the explicit final-answer truncation notice.
 func (p *selectiveJSONReader) retainedStructuredStringLimit(path []string) (int, bool) {
+	if len(path) == 3 && path[0] == jsonContentKey && path[1] == jsonContentKey && path[2] == jsonTextKey {
+		return grokToolUpdateTextBytes, true
+	}
+	if len(path) == 1 && path[0] == jsonDataKey {
+		return grokEventDataBytes, true
+	}
 	key := path[len(path)-1]
 	switch key {
 	case jsonResultKey, jsonMessageKey, jsonTextKey, jsonReasonKey, jsonErrorKey:
@@ -536,7 +561,7 @@ func (p *selectiveJSONReader) readNonSpace() (byte, error) {
 func retainedStructuredPath(path []string) bool {
 	if len(path) == 1 {
 		switch path[0] {
-		case jsonTypeKey, "thread_id", "threadId", "id", jsonMessageKey, jsonTextKey, jsonReasonKey, jsonErrorKey, jsonResultKey, "session_id", "sessionId", "is_error", "subtype":
+		case jsonTypeKey, "thread_id", "threadId", "id", jsonMessageKey, jsonTextKey, jsonReasonKey, jsonErrorKey, jsonResultKey, "session_id", "sessionId", "is_error", "subtype", jsonStatusKey, jsonDataKey, "stopReason", "stop_reason":
 			return true
 		}
 	}
@@ -552,6 +577,9 @@ func retainedStructuredPath(path []string) bool {
 			(path[0] == jsonErrorKey && (path[1] == jsonMessageKey || path[1] == jsonReasonKey)) ||
 			(path[0] == "item" && (path[1] == jsonTypeKey || path[1] == jsonMessageKey || path[1] == jsonTextKey)) ||
 			(path[0] == "delta" && (path[1] == jsonTypeKey || path[1] == jsonTextKey))
+	}
+	if len(path) == 3 && path[0] == jsonContentKey && path[1] == jsonContentKey && path[2] == jsonTextKey {
+		return true
 	}
 	return len(path) == 3 && path[0] == "event" && path[1] == "delta" && (path[2] == jsonTypeKey || path[2] == jsonTextKey)
 }

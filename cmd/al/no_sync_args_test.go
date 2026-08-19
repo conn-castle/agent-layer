@@ -242,6 +242,9 @@ enabled = true
 
 [agents.copilot_cli]
 enabled = true
+
+[agents.grok]
+enabled = true
 `
 	if quiet {
 		configToml += "\n[warnings]\nnoise_mode = \"quiet\"\n"

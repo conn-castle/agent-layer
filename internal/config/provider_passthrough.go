@@ -32,8 +32,8 @@ const (
 	CodexSandboxDangerFullAccess = "danger-full-access"
 	// CodexFeatureAppsKey is the Codex [features] key controlling built-in apps.
 	CodexFeatureAppsKey = "apps"
-	// CodexFeaturePluginsKey is the Codex [features] key controlling plugins.
-	CodexFeaturePluginsKey = "plugins"
+	// PluginsKey is the provider-native key used for plugin settings.
+	PluginsKey = "plugins"
 )
 
 var codexBrowserFeatureKeys = []string{browserUseFeatureKey, "in_app_browser", "computer_use"}
@@ -63,7 +63,7 @@ func CodexBrowserFeatureKeys() []string {
 func CodexKnownManagedFeatureKeys() []string {
 	keys := make([]string, 0, 2+len(codexBrowserFeatureKeys))
 	keys = append(keys, CodexFeatureAppsKey)
-	keys = append(keys, CodexFeaturePluginsKey)
+	keys = append(keys, PluginsKey)
 	keys = append(keys, codexBrowserFeatureKeys...)
 	return keys
 }

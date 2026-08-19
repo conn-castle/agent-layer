@@ -32,7 +32,7 @@ Quick start is the shortest path to a working agent. You can always refine confi
 ### Prerequisites
 
 - Install the Agent Layer CLI (`al`)
-- Install the target client (Antigravity `agy`, Claude, Codex, Copilot CLI, VS Code)
+- Install the target client (Antigravity `agy`, Claude, Codex, Copilot CLI, Grok Build CLI `grok`, VS Code)
 
 Agent Layer does not install client CLIs for you. If you already have `al` installed, skip to step 2.
 
@@ -72,7 +72,7 @@ For detailed behavior, see [Init](./reference#init), [Upgrade](./reference#upgra
 al agy
 ```
 
-Any client command (agy/claude/codex/copilot/vscode) will:
+Any client command (agy/claude/codex/copilot/grok/vscode) will:
 
 1. read `.agent-layer/`
 2. sync client configs
@@ -198,6 +198,8 @@ CLAUDE.md
 .mcp.json
 .codex/
 .copilot/mcp-config.json
+.grok/config.toml
+.grok/hooks/agent-layer-chime.json
 .vscode/mcp.json
 .vscode/settings.json
 
@@ -250,7 +252,7 @@ Do not commit:
 - `.agent-layer/.env` (secrets)
 - `.agent-layer/state/managed-baseline.json` (machine-managed baseline state)
 - `.agent-layer/tmp/` (agent-only artifacts)
-- generated client outputs like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`, `.codex/`, `.copilot/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`
+- generated client outputs like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`, `.codex/`, `.copilot/`, `.grok/`, `.grok-config/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`
 
 ## CLI command map
 
@@ -271,12 +273,14 @@ If you only remember one pattern: `al <client>` is the “do the right thing” 
 | `al sync` | Regenerate configs without launching. | [Sync](./reference#sync) |
 | `al doctor` | Validate config and probe MCP servers. | [Doctor](./reference#doctor) |
 | `al probe agy` | Report observed Antigravity capabilities. | [CLI guide](./reference#cli-guide) |
+| `al probe grok` | Report observed Grok capabilities. | [CLI guide](./reference#cli-guide) |
 | `al completion` | Print or install shell completions. | [Completion](./reference#completion) |
 | `al agy` | Sync and launch Antigravity. | [Launch a client](./reference#launch-a-client) |
 | `al claude` | Sync and launch Claude Code. | [Launch a client](./reference#launch-a-client) |
 | `al codex` | Sync and launch Codex. | [Launch a client](./reference#launch-a-client) |
 | `al vscode` | Sync and launch VS Code. | [Launch a client](./reference#launch-a-client) |
 | `al copilot` | Sync and launch Copilot CLI. | [Launch a client](./reference#launch-a-client) |
+| `al grok` | Sync and launch Grok. | [Launch a client](./reference#launch-a-client) |
 | `al --version` | Print the installed version. | [Help and version](./reference#help-and-version) |
 | `al help` | Show help for a command. | [Help and version](./reference#help-and-version) |
 

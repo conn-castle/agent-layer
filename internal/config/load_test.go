@@ -42,6 +42,9 @@ enabled = true
 
 [agents.copilot_cli]
 enabled = false
+
+[agents.grok]
+enabled = false
 `
 	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -128,6 +131,9 @@ enabled = true
 
 [agents.copilot_cli]
 enabled = false
+
+[agents.grok]
+enabled = false
 `
 	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -185,6 +191,9 @@ enabled = true
 
 [agents.copilot_cli]
 enabled = false
+
+[agents.grok]
+enabled = false
 `
 	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -239,6 +248,9 @@ enabled = true
 
 [agents.copilot_cli]
 enabled = false
+
+[agents.grok]
+enabled = false
 `
 	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -289,6 +301,9 @@ enabled = true
 enabled = true
 
 [agents.copilot_cli]
+enabled = false
+
+[agents.grok]
 enabled = false
 `
 	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o600); err != nil {
@@ -437,6 +452,9 @@ enabled = true
 
 [agents.copilot_cli]
 enabled = false
+
+[agents.grok]
+enabled = false
 `
 	cfg, err := ParseConfigLenient([]byte(toml), "test")
 	if err != nil {
@@ -509,6 +527,9 @@ enabled = false
 enabled = false
 
 [agents.copilot_cli]
+enabled = false
+
+[agents.grok]
 enabled = false
 `
 	cfg, err := ParseConfigLenient([]byte(tomlData), "test")
@@ -591,6 +612,8 @@ enabled = true
 enabled = true
 [agents.copilot_cli]
 enabled = true
+[agents.grok]
+enabled = true
 `
 	_, err := ParseConfig([]byte(data), "test")
 	if err == nil {
@@ -624,6 +647,8 @@ enabled = true
 [agents.vscode]
 enabled = true
 [agents.copilot_cli]
+enabled = true
+[agents.grok]
 enabled = true
 `
 	_, err := ParseConfig([]byte(data), "test")
@@ -665,6 +690,8 @@ enabled = true
 enabled = true
 [agents.copilot_cli]
 enabled = true
+[agents.grok]
+enabled = true
 `
 	_, err := ParseConfig([]byte(data), "test")
 	if err == nil {
@@ -705,6 +732,8 @@ default_agent = "claude"
 [agents.vscode]
 enabled = true
 [agents.copilot_cli]
+enabled = true
+[agents.grok]
 enabled = true
 `)
 	_, err := ParseConfig(data, "test")
@@ -791,6 +820,9 @@ enabled = true
 enabled = true
 [agents.copilot_cli]
 enabled = false
+
+[agents.grok]
+enabled = false
 `)
 	cfg, err := ParseConfigLenient(data, "test")
 	if err != nil {
@@ -824,6 +856,8 @@ features.prevent_idle_sleep = true
 [agents.vscode]
 enabled = true
 [agents.copilot_cli]
+enabled = true
+[agents.grok]
 enabled = true
 	`
 	cfg, err := ParseConfig([]byte(data), "test")

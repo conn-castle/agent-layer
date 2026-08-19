@@ -9,7 +9,7 @@ description = "List configured providers and their model and reasoning-effort ru
 description = "Start one asynchronous dispatch. Returns its conversation handle and running state."
 
 [tools.dispatch_start.parameters]
-agent = "Provider to dispatch: codex, claude, or antigravity."
+agent = "Provider to dispatch: codex, claude, antigravity, or grok."
 model = "Optional model override; resolve against dispatch_options."
 reasoning_effort = "Optional reasoning-effort override; resolve against dispatch_options."
 skill = "Optional skill the dispatched agent must run."

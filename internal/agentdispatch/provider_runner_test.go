@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/clients"
+	clientgrok "github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
@@ -75,6 +78,26 @@ func TestProviderCommandsUseExactProviderContracts(t *testing.T) {
 		t.Fatal("Antigravity accepted an argv-sized prompt")
 	} else {
 		requireDispatchExitCode(t, err, ExitUsage)
+	}
+
+	grokTarget, ok := lookupTarget(AgentGrok)
+	if !ok {
+		t.Fatal("Grok target missing from registry")
+	}
+	grokCommand, err := buildProviderCommand(grokTarget, project, []string{"GROK_HOME=/external"}, []byte("prompt text"), "grok-4.6", "high", false, "fresh", runtimeSessionID, run, io.Discard)
+	if err != nil {
+		t.Fatalf("build Grok command: %v", err)
+	}
+	grokArgs := strings.Join(grokCommand.Args, " ")
+	if !grokCommand.Structured || !slices.Contains(grokCommand.Args, "--no-auto-update") || !strings.Contains(grokArgs, "--session-id "+runtimeSessionID) || !strings.Contains(grokArgs, "--model grok-4.6") || !strings.Contains(grokArgs, "--reasoning-effort high") || !strings.Contains(grokArgs, "--output-format streaming-json") || !strings.Contains(grokArgs, "--permission-mode bypassPermissions --always-approve") {
+		t.Fatalf("Grok command = %#v", grokCommand)
+	}
+	if home, ok := clients.GetEnv(grokCommand.Env, clientgrok.EnvHome); !ok || home != clientgrok.HomeDir(root) {
+		t.Fatalf("Grok dispatch GROK_HOME = %q (present %t), want %q", home, ok, clientgrok.HomeDir(root))
+	}
+	promptContent, err := os.ReadFile(filepath.Join(run.Dir, "prompt.txt"))
+	if err != nil || string(promptContent) != "prompt text" {
+		t.Fatalf("Grok prompt file content = %q, %v", promptContent, err)
 	}
 }
 
@@ -687,4 +710,204 @@ func TestAntigravityLogIDIsStrictAndVersionGateFailsLoudly(t *testing.T) {
 	}
 	_, err = requireSupportedVersion("ignored", AgentCodex, func(string, string) (string, error) { return "0.1.0", nil })
 	requireDispatchExitCode(t, err, ExitUnavailable)
+}
+
+func TestGrokStructuredEvents(t *testing.T) {
+	expectedSession := runtimeSessionID
+
+	t.Run("thought progress event", func(t *testing.T) {
+		events, err := reduceStructuredTestEvent(AgentGrok, expectedSession, []byte(`{"type":"thought","data":"thinking about the plan"}`))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(events) != 1 || events[0].Kind != eventProgress || events[0].Activity != "thought" {
+			t.Fatalf("events = %#v", events)
+		}
+	})
+
+	t.Run("accumulates text chunks and completes on end", func(t *testing.T) {
+		streamData, readErr := os.ReadFile(filepath.Join("testdata", "grok", "v1.0.5-streaming.jsonl"))
+		if readErr != nil {
+			t.Fatalf("read provider-derived Grok fixture: %v", readErr)
+		}
+		var events []providerEvent
+		err := readStructuredEventsWithLineage(bytes.NewReader(streamData), io.Discard, AgentGrok, expectedSession, false, func(e providerEvent) error {
+			events = append(events, e)
+			return nil
+		}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(events) != 6 {
+			t.Fatalf("got %d events, want 6: %#v", len(events), events)
+		}
+		// Expect: progress(thought), progress(text_delta), progress(text_delta), session, answer("Hello world!"), complete
+		if events[3].Kind != eventSession || events[3].SessionID != expectedSession {
+			t.Fatalf("expected session event, got %#v", events[3])
+		}
+		if events[4].Kind != eventAnswer || events[4].Answer != "Hello world!" {
+			t.Fatalf("expected answer 'Hello world!', got %#v", events[4])
+		}
+		if events[5].Kind != eventComplete {
+			t.Fatalf("expected complete event, got %#v", events[5])
+		}
+	})
+
+	t.Run("reports failure on mismatched session ID", func(t *testing.T) {
+		events, err := reduceStructuredTestEvent(AgentGrok, expectedSession, []byte(`{"type":"end","sessionId":"other-session","stopReason":"end_turn"}`))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(events) != 1 || events[0].Kind != eventFailure {
+			t.Fatalf("expected failure event, got %#v", events)
+		}
+	})
+
+	t.Run("accepts documented completed turn spelling", func(t *testing.T) {
+		var text strings.Builder
+		text.WriteString("complete")
+		events := reduceGrokEvent(expectedSession, map[string]any{
+			"type": "end", "sessionId": expectedSession, "stopReason": "end_turn",
+		}, &text)
+		if len(events) != 3 || events[2].Kind != eventComplete {
+			t.Fatalf("expected completed events, got %#v", events)
+		}
+	})
+
+	t.Run("reports failure on abnormal stop reason", func(t *testing.T) {
+		events, err := reduceStructuredTestEvent(AgentGrok, expectedSession, []byte(`{"type":"end","sessionId":"`+expectedSession+`","stopReason":"refusal"}`))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(events) != 1 || events[0].Kind != eventFailure || !strings.Contains(events[0].Reason, "refusal") {
+			t.Fatalf("expected refusal failure event, got %#v", events)
+		}
+	})
+
+	t.Run("reports failure on error event", func(t *testing.T) {
+		events, err := reduceStructuredTestEvent(AgentGrok, expectedSession, []byte(`{"type":"error","message":"rate limit exceeded"}`))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(events) != 1 || events[0].Kind != eventFailure || !strings.Contains(events[0].Reason, "rate limit") {
+			t.Fatalf("expected error failure event, got %#v", events)
+		}
+	})
+
+	t.Run("fails on provider-observed permission denial before completed end", func(t *testing.T) {
+		streamData, readErr := os.ReadFile(filepath.Join("testdata", "grok", "v1.0.5-denied-tool.jsonl"))
+		if readErr != nil {
+			t.Fatalf("read provider-derived Grok denial fixture: %v", readErr)
+		}
+		var events []providerEvent
+		err := readStructuredEventsWithLineage(bytes.NewReader(streamData), io.Discard, AgentGrok, expectedSession, false, func(event providerEvent) error {
+			events = append(events, event)
+			if event.Kind == eventFailure {
+				return errors.New(event.Reason)
+			}
+			return nil
+		}, nil)
+		if err == nil || !strings.Contains(err.Error(), "Denied by permission policy") {
+			t.Fatalf("denied stream error = %v, events = %#v", err, events)
+		}
+		if !slices.ContainsFunc(events, func(event providerEvent) bool { return event.Kind == eventFailure }) {
+			t.Fatalf("denied stream emitted no failure: %#v", events)
+		}
+		if slices.ContainsFunc(events, func(event providerEvent) bool { return event.Kind == eventComplete }) {
+			t.Fatalf("denied stream reached completion: %#v", events)
+		}
+	})
+
+	t.Run("accepts provider-observed resumed session echo", func(t *testing.T) {
+		const resumedSession = "7b0f2d84-9a63-4e17-8c52-14f6b93d20aa"
+		streamData, readErr := os.ReadFile(filepath.Join("testdata", "grok", "v1.0.5-resume-streaming.jsonl"))
+		if readErr != nil {
+			t.Fatalf("read provider-derived Grok resume fixture: %v", readErr)
+		}
+		var events []providerEvent
+		err := readStructuredEventsWithLineage(bytes.NewReader(streamData), io.Discard, AgentGrok, resumedSession, false, func(event providerEvent) error {
+			events = append(events, event)
+			return nil
+		}, nil)
+		if err != nil {
+			t.Fatalf("resume stream error: %v", err)
+		}
+		if !slices.ContainsFunc(events, func(event providerEvent) bool { return event.Kind == eventComplete }) {
+			t.Fatalf("resume stream did not complete: %#v", events)
+		}
+	})
+
+	t.Run("ordinary failed tool update remains progress", func(t *testing.T) {
+		events, err := reduceStructuredTestEvent(AgentGrok, expectedSession, []byte(`{"type":"tool_call_update","status":"failed","content":[{"type":"content","content":{"type":"text","text":"Command exited with status 1"}}]}`))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(events) != 1 || events[0].Kind != eventProgress || events[0].Activity != grokToolUpdateType {
+			t.Fatalf("ordinary failed tool events = %#v", events)
+		}
+	})
+
+	t.Run("overlong denial reports the tool-update retention limit", func(t *testing.T) {
+		message := "Tool `run_terminal_command` was not executed: Denied by permission policy: " + strings.Repeat("x", 700)
+		record := fmt.Sprintf(`{"type":"tool_call_update","status":"failed","content":[{"type":"content","content":{"type":"text","text":%q}}]}`, message)
+		events, err := reduceStructuredTestEvent(AgentGrok, expectedSession, []byte(record))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(events) != 1 || events[0].Kind != eventFailure || !strings.Contains(events[0].Reason, "retaining 512 bytes") {
+			t.Fatalf("overlong denial events = %#v", events)
+		}
+		if strings.Contains(events[0].Reason, "256 MiB") {
+			t.Fatalf("overlong denial used final-answer notice: %q", events[0].Reason)
+		}
+	})
+}
+
+func TestGrokRunnerReadsStreamingJSONThroughEOF(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentGrok, clientgrok.SupportedVersion, dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixtureContent := `{"type":"thought","data":"thinking"}` + "\n" +
+		`{"type":"text","data":"Grok output"}` + "\n" +
+		`{"type":"end","sessionId":"` + runtimeSessionID + `","stopReason":"end_turn"}` + "\n"
+	result, err := executeProvider(providerCommand{
+		Path:       "/bin/sh",
+		Args:       []string{"-c", `printf '%s' "$1"`, "sh", fixtureContent},
+		Env:        os.Environ(),
+		Provider:   AgentGrok,
+		SessionID:  runtimeSessionID,
+		Structured: true,
+	}, []byte("prompt"), run, root, nil, func(string) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Answer != "Grok output" || !result.Complete || result.SessionID != runtimeSessionID {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestGrokRunnerFailsProviderObservedPermissionDenial(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentGrok, clientgrok.SupportedVersion, dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	streamData, err := os.ReadFile(filepath.Join("testdata", "grok", "v1.0.5-denied-tool.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = executeProvider(providerCommand{
+		Path:       "/bin/sh",
+		Args:       []string{"-c", `printf '%s' "$1"`, "sh", string(streamData)},
+		Env:        os.Environ(),
+		Provider:   AgentGrok,
+		SessionID:  runtimeSessionID,
+		Structured: true,
+	}, []byte("prompt"), run, root, nil, func(string) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "Denied by permission policy") {
+		t.Fatalf("denied provider run error = %v", err)
+	}
+	requireDispatchExitCode(t, err, ExitTargetFailure)
 }

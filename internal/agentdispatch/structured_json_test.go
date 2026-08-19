@@ -248,6 +248,31 @@ func TestStructuredEventParserConsumesEachRecordCompletely(t *testing.T) {
 	}
 }
 
+func TestGrokStructuredReaderBoundsSingleTextEvent(t *testing.T) {
+	const sessionID = "caller-session"
+	largeChunk := strings.Repeat("x", 2*structuredJSONBufferBytes)
+	stream := `{"type":"text","data":"` + largeChunk + `"}` + "\n" +
+		`{"type":"end","session_id":"` + sessionID + `","stopReason":"end_turn"}` + "\n"
+	var events []providerEvent
+	if err := readStructuredEventsWithLineage(strings.NewReader(stream), io.Discard, AgentGrok, sessionID, false, func(event providerEvent) error {
+		events = append(events, event)
+		return nil
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	want := largeChunk[:structuredJSONBufferBytes] + grokEventDataTruncatedNotice
+	for _, event := range events {
+		if event.Kind == eventAnswer {
+			if event.Answer != want {
+				t.Fatalf("bounded Grok answer length = %d, want %d", len(event.Answer), len(want))
+			}
+			return
+		}
+	}
+	t.Fatalf("no answer event in %#v", events)
+}
+
 func TestStructuredEventParserAcceptsEmptyContainers(t *testing.T) {
 	record, err := parseStructuredEvent(t, `{"type":"agent_message","usage":{},"tools":[],"session_id":""}`)
 	if err != nil {

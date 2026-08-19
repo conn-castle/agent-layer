@@ -47,6 +47,7 @@ func newRootCmd() *cobra.Command {
 		newVSCodeCmd(),
 		newAntigravityCmd(),
 		newCopilotCmd(),
+		newGrokCmd(),
 		newDoctorCmd(),
 		newWizardCmd(),
 		newBenchmarkCmd(),

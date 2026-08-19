@@ -406,6 +406,74 @@ func TestClaudeSkillPromptAndCommandConstruction(t *testing.T) {
 	}
 }
 
+func TestGrokFreshAndResumeDispatchPreserveProviderSession(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	replaceDispatchConfigText(t, root, "[agents.grok]\nenabled = false", "[agents.grok]\nenabled = true")
+	binDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "grok.log")
+	writeDispatchStub(t, binDir, "grok", `
+session=""
+previous=""
+for arg in "$@"; do
+  if [ "$previous" = "session" ]; then
+    session="$arg"
+    previous=""
+    continue
+  fi
+  if [ "$arg" = "--session-id" ] || [ "$arg" = "--resume" ]; then previous="session"; fi
+done
+printf '{"type":"text","data":"grok ok"}\n'
+printf '{"type":"end","stopReason":"end_turn","sessionId":"%s"}\n' "$session"
+`)
+
+	var stdout bytes.Buffer
+	err := executeFreshDispatch(dispatchExecRequest{
+		Root: root, Agent: AgentGrok, Prompt: "Review",
+		Env:    []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath},
+		Stdout: &stdout, Stderr: &bytes.Buffer{}, LookPath: mockLookPath(binDir),
+	})
+	if err != nil {
+		t.Fatalf("dispatch error: %v", err)
+	}
+	if stdout.String() != "grok ok" {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	sessions, err := listSessions(root)
+	if err != nil || len(sessions) != 1 {
+		t.Fatalf("list sessions = %#v, %v", sessions, err)
+	}
+	session := sessions[0]
+	if session.Agent != AgentGrok || session.State != sessionStateDurable {
+		t.Fatalf("persisted Grok session = %#v", session)
+	}
+	if err := parseUUID(session.ProviderSessionID); err != nil {
+		t.Fatalf("provider session ID %q: %v", session.ProviderSessionID, err)
+	}
+	assertFileContains(t, logPath, "ARG_5=--session-id")
+	assertFileContains(t, logPath, "ARG_6="+session.ProviderSessionID)
+
+	stdout.Reset()
+	err = executeContinueDispatch(dispatchExecRequest{
+		Root: root, Prompt: "Continue",
+		Env:    []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath},
+		Stdout: &stdout, Stderr: &bytes.Buffer{}, LookPath: mockLookPath(binDir),
+	}, session.Name)
+	if err != nil {
+		t.Fatalf("resume dispatch error: %v", err)
+	}
+	if stdout.String() != "grok ok" {
+		t.Fatalf("resume stdout = %q", stdout.String())
+	}
+	resumed, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatalf("load resumed session: %v", err)
+	}
+	if resumed.ProviderSessionID != session.ProviderSessionID {
+		t.Fatalf("resume changed provider session ID from %q to %q", session.ProviderSessionID, resumed.ProviderSessionID)
+	}
+	assertFileContains(t, logPath, "ARG_5=--resume")
+}
+
 func TestAntigravityCommandConstruction(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
@@ -561,6 +629,9 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 
+[agents.grok]
+enabled = false
+
 [warnings]
 instruction_token_threshold = 50000
 mcp_server_threshold = 50
@@ -601,7 +672,7 @@ func writeDispatchStub(t *testing.T, binDir string, name string, outputScript st
 		t.Fatalf("mkdir bin: %v", err)
 	}
 	path := filepath.Join(binDir, name)
-	version := map[string]string{"claude": "2.1.207", "codex": "0.144.1", "agy": "1.1.1"}[name]
+	version := map[string]string{"claude": "2.1.207", "codex": "0.144.1", "agy": "1.1.1", "grok": "1.0.5"}[name]
 	content := fmt.Sprintf(`#!/bin/sh
 if [ "${1:-}" = "--version" ]; then
   printf '%%s\n' %q

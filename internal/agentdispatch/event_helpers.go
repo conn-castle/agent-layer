@@ -23,7 +23,7 @@ func claudeTextDeltaV013(raw map[string]any) (string, bool) {
 }
 
 func textFromDeltaV013(delta map[string]any) (string, bool) {
-	if deltaType, _ := delta[jsonTypeKey].(string); deltaType != "text_delta" {
+	if deltaType, _ := delta[jsonTypeKey].(string); deltaType != textDeltaActivity {
 		return "", false
 	}
 	text, ok := delta[jsonTextKey].(string)

@@ -24,8 +24,9 @@ mcp_tool_timeout_minutes = 40
 # chime plays a best-effort system sound for filtered top-level completion events.
 # Claude suppresses continuation/background/wakeup stops; Antigravity requires an
 # idle normal stop; Codex suppresses repeated continuation stops but its concurrent
-# hooks cannot prove final semantic completion. macOS uses afplay; Linux requires
-# canberra-gtk-play on PATH. Absent or false disables it.
+# hooks cannot prove final semantic completion; Grok chimes only on a main-session
+# end_turn with no continuation, background task, or scheduled wakeup. macOS uses
+# afplay; Linux requires canberra-gtk-play on PATH. Absent or false disables it.
 chime = false
 
 [agents.antigravity]
@@ -117,6 +118,20 @@ enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model flag and the client uses its default.
 # model = "..."
 # reasoning_effort is not currently supported for Copilot CLI in Agent Layer.
+
+[agents.grok]
+enabled = false
+# model is optional; when omitted, Agent Layer does not pass a model flag and the client uses its default.
+# model = "grok-4.6" # grok-4.6 | grok-4.5
+# reasoning_effort is optional; Grok applies it where the active model supports it.
+# reasoning_effort = "high" # none | minimal | low | medium | high | xhigh | max
+# GROK_HOME is always set to <repo>/.grok-config for al grok, dispatch, and al vscode.
+# disable_memory = true   # force --no-memory / GROK_MEMORY=0
+# Optional project-scoped Grok plugin settings. Grok only loads plugins,
+# permission, and mcp_servers from .grok/config.toml; Agent Layer owns the last
+# two. Put user-level UI, memory, model, and terminal settings in Grok itself.
+# [agents.grok.agent_specific]
+# [agents.grok.agent_specific.plugins]
 
 [skills]
 # Git-backed Agent Skill imports. Each [[skills.imports]] block declares one

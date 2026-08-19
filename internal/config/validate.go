@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -37,6 +38,7 @@ var validClients = map[string]struct{}{
 	"vscode":         {},
 	agentCodex:       {},
 	"copilot":        {},
+	agentGrok:        {},
 }
 
 var validHTTPTransports = map[string]struct{}{
@@ -75,7 +77,13 @@ func (c *Config) Validate(path string) error {
 	if c.Agents.CopilotCLI.Enabled == nil {
 		return fmt.Errorf(messages.ConfigCopilotCLIEnabledRequiredFmt, path)
 	}
+	if c.Agents.Grok.Enabled == nil {
+		return fmt.Errorf(messages.ConfigGrokEnabledRequiredFmt, path)
+	}
 	if err := validateAntigravityModelSource(path, c.Agents.Antigravity); err != nil {
+		return err
+	}
+	if err := validateGrokAgentSpecific(path, c.Agents.Grok); err != nil {
 		return err
 	}
 	if strings.TrimSpace(c.Agents.CopilotCLI.ReasoningEffort) != "" {
@@ -162,6 +170,29 @@ func (c *Config) Validate(path string) error {
 func validateAntigravityModelSource(path string, cfg AntigravityConfig) error {
 	if HasProviderPassthroughKey(cfg.AgentSpecific, "model") {
 		return fmt.Errorf("%w: "+messages.ConfigAntigravityAgentSpecificModelInvalidFmt, ErrConfigNeedsUpgrade, path)
+	}
+	return nil
+}
+
+func validateGrokAgentSpecific(path string, cfg GrokConfig) error {
+	if HasProviderPassthroughKey(cfg.AgentSpecific, "permission") {
+		return fmt.Errorf(messages.ConfigGrokAgentSpecificReservedKeyFmt, path, "permission", "use approvals.mode and commands.allow")
+	}
+	if HasProviderPassthroughKey(cfg.AgentSpecific, "mcp_servers") {
+		return fmt.Errorf(messages.ConfigGrokAgentSpecificReservedKeyFmt, path, "mcp_servers", "use [[mcp.servers]]")
+	}
+	if HasProviderPassthroughKey(cfg.AgentSpecific, "hooks") {
+		return fmt.Errorf(messages.ConfigGrokAgentSpecificReservedKeyFmt, path, "hooks", "use notifications.chime or .grok/hooks")
+	}
+	keys := make([]string, 0, len(cfg.AgentSpecific))
+	for key := range cfg.AgentSpecific {
+		if key != PluginsKey {
+			keys = append(keys, key)
+		}
+	}
+	if len(keys) > 0 {
+		sort.Strings(keys)
+		return fmt.Errorf(messages.ConfigGrokAgentSpecificReservedKeyFmt, path, keys[0], "Grok project config only loads plugins; put user-level settings in GROK_HOME/config.toml")
 	}
 	return nil
 }

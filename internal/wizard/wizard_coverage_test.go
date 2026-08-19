@@ -317,6 +317,35 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 			t.Fatalf("expected codex features error, got %v", err)
 		}
 	})
+
+	t.Run("promptModels grok memory multi-select writes disable intent", func(t *testing.T) {
+		choices := NewChoices()
+		choices.EnabledAgents[AgentGrok] = true
+		var memoryPreChecked bool
+		err := promptModels(&MockUI{
+			SelectFunc: func(string, []string, *string) error { return nil },
+			MultiSelectFunc: func(title string, _ []string, selected *[]string) error {
+				if title == messages.WizardGrokFeaturesTitle {
+					for _, label := range *selected {
+						if label == messages.WizardGrokFeatureMemoryLabel {
+							memoryPreChecked = true
+						}
+					}
+					*selected = []string{}
+				}
+				return nil
+			},
+		}, choices, &wizardOptionDiscoveryCache{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !memoryPreChecked {
+			t.Fatal("expected memory checkbox to be pre-selected when memory is not force-disabled")
+		}
+		if !choices.GrokDisableMemory {
+			t.Fatal("expected GrokDisableMemory after unchecking memory")
+		}
+	})
 }
 
 func TestConfirmAndApply_ErrorBranches(t *testing.T) {

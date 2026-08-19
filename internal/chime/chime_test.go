@@ -19,6 +19,7 @@ func TestHandleProviderFilters(t *testing.T) {
 		{"claude continuation", ProviderClaude, `{"hook_event_name":"Stop","stop_hook_active":true}`, "", false},
 		{"claude background", ProviderClaude, `{"hook_event_name":"Stop","stop_hook_active":false,"background_tasks":[{}]}`, "", false},
 		{"claude cron", ProviderClaude, `{"hook_event_name":"Stop","stop_hook_active":false,"session_crons":[{}]}`, "", false},
+		{"grok compatibility invocation of claude hook", ProviderClaude, `{"hookEventName":"stop","stopHookActive":false,"reason":"end_turn"}`, "", false},
 		{"codex accepted", ProviderCodex, `{"hook_event_name":"Stop","stop_hook_active":false,"future":true}`, "{}\n", true},
 		{"codex continuation", ProviderCodex, `{"hook_event_name":"Stop","stop_hook_active":true}`, "{}\n", false},
 		{"antigravity accepted", ProviderAntigravity, `{"fullyIdle":true,"terminationReason":"model_stop"}`, "{\"decision\":\"allow\"}\n", true},
@@ -26,6 +27,13 @@ func TestHandleProviderFilters(t *testing.T) {
 		{"antigravity busy", ProviderAntigravity, `{"fullyIdle":false,"terminationReason":"model_stop"}`, "{\"decision\":\"allow\"}\n", false},
 		{"antigravity other termination", ProviderAntigravity, `{"fullyIdle":true,"terminationReason":"error"}`, "{\"decision\":\"allow\"}\n", false},
 		{"antigravity error", ProviderAntigravity, `{"fullyIdle":true,"terminationReason":"model_stop","error":"boom"}`, "{\"decision\":\"allow\"}\n", false},
+		{"grok accepted", ProviderGrok, `{"hookEventName":"stop","stopHookActive":false,"reason":"end_turn"}`, "", true},
+		{"grok Stop event name", ProviderGrok, `{"hookEventName":"Stop","stopHookActive":false,"reason":"end_turn"}`, "", true},
+		{"grok continuation", ProviderGrok, `{"hookEventName":"stop","stopHookActive":true,"reason":"end_turn"}`, "", false},
+		{"grok background", ProviderGrok, `{"hookEventName":"stop","stopHookActive":false,"reason":"end_turn","backgroundTasks":[{}]}`, "", false},
+		{"grok cron", ProviderGrok, `{"hookEventName":"stop","stopHookActive":false,"reason":"end_turn","sessionCrons":[{}]}`, "", false},
+		{"grok session end", ProviderGrok, `{"hookEventName":"stop","stopHookActive":false,"reason":"shutdown"}`, "", false},
+		{"grok subagent", ProviderGrok, `{"hookEventName":"stop","stopHookActive":false,"reason":"end_turn","subagentType":"explore"}`, "", false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -78,6 +86,10 @@ func TestHandleRejectsMalformedOrIncompleteEvents(t *testing.T) {
 		{"wrong error", ProviderAntigravity, `{"fullyIdle":true,"terminationReason":"model_stop","error":{}}`, "invalid antigravity"},
 		{"null error", ProviderAntigravity, `{"fullyIdle":true,"terminationReason":"model_stop","error":null}`, "invalid antigravity"},
 		{"unsupported", "other", `{}`, "unsupported provider"},
+		{"grok wrong event", ProviderGrok, `{"hookEventName":"pre_tool_use","stopHookActive":false}`, "must be stop"},
+		{"grok missing event", ProviderGrok, `{"stopHookActive":false,"reason":"end_turn"}`, "must be stop"},
+		{"grok missing stop active", ProviderGrok, `{"hookEventName":"stop","reason":"end_turn"}`, "stopHookActive"},
+		{"grok null background", ProviderGrok, `{"hookEventName":"stop","stopHookActive":false,"reason":"end_turn","backgroundTasks":null}`, "invalid grok"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

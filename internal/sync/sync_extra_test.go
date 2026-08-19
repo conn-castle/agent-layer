@@ -164,6 +164,7 @@ func TestRunWithProject_ProjectsNotificationsChimeForEnabledProviders(t *testing
 		filepath.Join(root, ".claude", "settings.json"),
 		filepath.Join(root, ".codex", "config.toml"),
 		filepath.Join(root, ".agents", "plugins", "agent-layer-chime", "hooks.json"),
+		filepath.Join(root, ".grok", "hooks", grokChimeHookFileName),
 	} {
 		content := readFileForTest(t, path)
 		if !strings.Contains(content, agentLayerChimeMarker) {

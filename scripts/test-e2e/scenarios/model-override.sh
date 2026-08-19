@@ -34,6 +34,9 @@ enabled = true
 
 [agents.copilot_cli]
 enabled = true
+
+[agents.grok]
+enabled = false
 PROFILE
 
   assert_exit_zero_in "$repo_dir" "al wizard --profile model.toml --yes" \

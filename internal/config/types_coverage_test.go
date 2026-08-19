@@ -91,6 +91,20 @@ func TestCodexLocalConfigDirEnabled(t *testing.T) {
 	}
 }
 
+func TestGrokDisableMemory(t *testing.T) {
+	trueVal := true
+	falseVal := false
+	if GrokDisableMemory(GrokConfig{}) {
+		t.Fatal("nil disable_memory must be off")
+	}
+	if GrokDisableMemory(GrokConfig{DisableMemory: &falseVal}) {
+		t.Fatal("explicit false disable_memory must be off")
+	}
+	if !GrokDisableMemory(GrokConfig{DisableMemory: &trueVal}) {
+		t.Fatal("expected disable_memory=true to be on")
+	}
+}
+
 func TestSharedAgentSkillsEnabled(t *testing.T) {
 	on := true
 	tests := []struct {
@@ -103,6 +117,7 @@ func TestSharedAgentSkillsEnabled(t *testing.T) {
 		{"antigravity enabled", AgentsConfig{Antigravity: AntigravityConfig{Enabled: &on}}, true},
 		{"vscode enabled", AgentsConfig{VSCode: EnableOnlyConfig{Enabled: &on}}, true},
 		{"copilot_cli enabled", AgentsConfig{CopilotCLI: AgentConfig{Enabled: &on}}, true},
+		{"grok enabled", AgentsConfig{Grok: GrokConfig{Enabled: &on}}, true},
 		// Claude (and Claude VS Code) do not consume the shared `.agents/skills/`
 		// projection, so enabling only Claude must NOT report shared skills as in
 		// use. This guards against accidentally adding a non-consumer to the set.

@@ -18,6 +18,7 @@ const (
 	ClientClaude      = "claude"
 	ClientCodex       = "codex"
 	ClientCopilot     = "copilot"
+	ClientGrok        = "grok"
 	ClientVSCode      = "vscode"
 )
 
@@ -79,6 +80,8 @@ func builtInDispatchClientEnabled(cfg config.Config, client string) bool {
 		return config.IsAgentEnabled(cfg.Agents.Antigravity.Enabled)
 	case ClientCopilot:
 		return config.IsAgentEnabled(cfg.Agents.CopilotCLI.Enabled)
+	case ClientGrok:
+		return config.IsAgentEnabled(cfg.Agents.Grok.Enabled)
 	case ClientVSCode:
 		return config.IsAgentEnabled(cfg.Agents.VSCode.Enabled)
 	default:
@@ -116,7 +119,7 @@ func ResolveEffectiveEnabledMCPServers(cfg config.Config, env map[string]string)
 	if err != nil {
 		return nil, err
 	}
-	for _, client := range []string{ClientAntigravity, ClientClaude, ClientCodex, ClientCopilot, ClientVSCode} {
+	for _, client := range []string{ClientAntigravity, ClientClaude, ClientCodex, ClientCopilot, ClientGrok, ClientVSCode} {
 		if builtIn, ok := BuiltInDispatchServer(cfg, client); ok {
 			resolved = append(resolved, builtIn)
 			sort.Slice(resolved, func(i, j int) bool { return resolved[i].ID < resolved[j].ID })

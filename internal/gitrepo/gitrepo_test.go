@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/gitenv"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
@@ -50,6 +51,10 @@ func (r *testRepo) git(args ...string) string {
 	r.t.Helper()
 	cmd := exec.Command("git", args...) // #nosec G204 -- test-controlled arguments.
 	cmd.Dir = r.dir
+	// Resolve the repository from the directory above, never from an inherited
+	// GIT_DIR: git exports it to hooks, so under pre-commit this fixture would
+	// otherwise commit into the developer's own checkout.
+	cmd.Env = gitenv.WithoutDiscovery()
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		r.t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)
@@ -521,6 +526,7 @@ func TestDestinationPublishesWithoutForce(t *testing.T) {
 	}
 	show := exec.Command("git", "show", "main:skills/alpha/scripts/run.bin")
 	show.Dir = repo.dir
+	show.Env = gitenv.WithoutDiscovery()
 	data, err := show.Output()
 	if err != nil || !bytes.Equal(data, []byte{0x00, 0xff, '\n'}) {
 		t.Fatalf("published binary bytes = %v (%v)", data, err)
@@ -581,6 +587,7 @@ func TestDestinationPublicationCannotRunHooksOrFilters(t *testing.T) {
 	head := repo.commit("add filtered skill")
 	bare := filepath.Join(t.TempDir(), "destination.git")
 	clone := exec.Command("git", "clone", "--quiet", "--bare", repo.dir, bare)
+	clone.Env = gitenv.WithoutDiscovery()
 	if output, err := clone.CombinedOutput(); err != nil {
 		t.Fatalf("clone bare destination: %v\n%s", err, output)
 	}
@@ -608,6 +615,7 @@ func TestDestinationPublicationCannotRunHooksOrFilters(t *testing.T) {
 		{"commit.gpgSign", "true"},
 	} {
 		cmd := exec.Command("git", "config", "--file", globalConfig, setting[0], setting[1])
+		cmd.Env = gitenv.WithoutDiscovery()
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git config %s: %v\n%s", setting[0], err, output)
 		}
@@ -649,6 +657,7 @@ func TestDestinationPublicationCannotRunHooksOrFilters(t *testing.T) {
 	}
 	requireNotExecuted("Publish")
 	show := exec.Command("git", "--git-dir", bare, "show", "main:README.md")
+	show.Env = gitenv.WithoutDiscovery()
 	output, err := show.Output()
 	if err != nil || strings.TrimSpace(string(output)) != "destination only" {
 		t.Fatalf("unrelated destination content = %q (%v)", output, err)

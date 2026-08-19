@@ -298,7 +298,7 @@ AL_RUN := GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run ./cmd/al
 AL_DEV_BIN_DIR := $(ROOT_DIR)/.agent-layer/tmp/dev-bin
 AL_DEV_BIN := $(AL_DEV_BIN_DIR)/al
 AL_DEV_LAUNCH_ENV := PATH="$(AL_DEV_BIN_DIR):$$PATH" AL_DEV_BYPASS_VERSION_DISPATCH=1
-AL_MANAGED_AGENT_ENV := AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE AL_DEV_BYPASS_VERSION_DISPATCH CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE
+AL_MANAGED_AGENT_ENV := AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE AL_DEV_BYPASS_VERSION_DISPATCH CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE GROK_HOME
 
 .PHONY: al-dev-build
 al-dev-build: ## Build source al for development commands that launch child processes
@@ -336,3 +336,7 @@ al-agy: al-dev-build ## Run al agy against this repo using current source
 .PHONY: al-copilot
 al-copilot: al-dev-build ## Run al copilot against this repo using current source
 	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) "$(AL_DEV_BIN)" copilot
+
+.PHONY: al-grok
+al-grok: al-dev-build ## Run al grok against this repo using current source
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) "$(AL_DEV_BIN)" grok
