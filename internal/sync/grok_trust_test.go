@@ -89,10 +89,6 @@ func TestWriteGrokTrustedFoldersFailsLoudly(t *testing.T) {
 	t.Run("filesystem failures", func(t *testing.T) {
 		injected := errors.New("injected")
 		root := t.TempDir()
-		mkdirSystem := &MockSystem{MkdirAllFunc: func(string, os.FileMode) error { return injected }}
-		if err := writeGrokTrustedFolders(mkdirSystem, root); !errors.Is(err, injected) {
-			t.Fatalf("mkdir error = %v", err)
-		}
 
 		readSystem := &MockSystem{Fallback: RealSystem{}, ReadFileFunc: func(string) ([]byte, error) { return nil, injected }}
 		if err := writeGrokTrustedFolders(readSystem, root); !errors.Is(err, injected) {
@@ -118,7 +114,7 @@ func TestWriteGrokTrustedFoldersFailsLoudly(t *testing.T) {
 		}
 
 		err := writeGrokTrustedFolders(RealSystem{}, root)
-		if err == nil || !strings.Contains(err.Error(), "grok home directory must be a real directory") {
+		if err == nil || !strings.Contains(err.Error(), "must be a real directory") {
 			t.Fatalf("symlinked home error = %v", err)
 		}
 		data, readErr := os.ReadFile(outsideTrust) // #nosec G304 -- test-controlled path.
@@ -133,16 +129,34 @@ func TestWriteGrokTrustedFoldersFailsLoudly(t *testing.T) {
 		if err := os.Mkdir(home, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Chmod(home, 0o755); err != nil { // #nosec G302 -- intentionally broad mode exercises the production rejection.
+		if err := os.Chmod(home, 0o755); err != nil { // #nosec G302 -- fixture starts too open so production can tighten it.
 			t.Fatal(err)
 		}
 
-		err := writeGrokTrustedFolders(RealSystem{}, root)
-		if err == nil || !strings.Contains(err.Error(), "chmod 700") {
-			t.Fatalf("broad home permissions error = %v", err)
+		if err := writeGrokTrustedFolders(RealSystem{}, root); err != nil {
+			t.Fatalf("writeGrokTrustedFolders: %v", err)
 		}
-		if _, statErr := os.Stat(filepath.Join(home, "trusted_folders.toml")); !os.IsNotExist(statErr) {
-			t.Fatalf("trust file was written despite broad home permissions: %v", statErr)
+		homeInfo, err := os.Lstat(home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gotMode := homeInfo.Mode().Perm(); gotMode != 0o700 {
+			t.Fatalf("grok home mode = %04o, want 0700", gotMode)
+		}
+		if _, err := os.Stat(filepath.Join(home, "trusted_folders.toml")); err != nil {
+			t.Fatalf("trust file missing after tightening home permissions: %v", err)
+		}
+	})
+
+	t.Run("home is a file", func(t *testing.T) {
+		root := t.TempDir()
+		home := filepath.Join(root, ".grok-config")
+		if err := os.WriteFile(home, []byte("not a directory"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		err := writeGrokTrustedFolders(RealSystem{}, root)
+		if err == nil || !strings.Contains(err.Error(), "must be a real directory") {
+			t.Fatalf("file home error = %v", err)
 		}
 	})
 }

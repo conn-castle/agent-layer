@@ -81,6 +81,14 @@ Run `al sync` (or `al <client>`) to reinstall the managed ignore rules. If the f
 
 Grok uses the repo-local `.grok-config/` directory as `GROK_HOME` for `al grok`, dispatch, and `al vscode`. Authentication and sessions are therefore isolated per repository; if Grok reports that authentication is missing, authenticate from `al grok` in that repository or provide the client-supported credential environment variable.
 
+### Grok setup and diagnostics
+
+Agent Layer is tested against Grok Build CLI `1.0.5` or newer. Enable Grok with `[agents.grok] enabled = true`, then run `al doctor`: a missing or older `grok` binary is reported as a warning with the tested minimum version. Run `al probe grok` for a contained end-to-end check of Grok's streaming JSON and MCP tool support. The probe prints a JSON result, has a 45-second timeout, and keeps a forensic workspace under `.agent-layer/tmp/probe-grok-TIMESTAMP-SUFFIX/`; clean retained probe artifacts with `al upgrade --apply-tmp-deletions` after reviewing them.
+
+The credential-bearing `.grok-config/` home must be a real directory rather than a symlink. Agent Layer creates it with owner-only permissions and tightens an existing home that is too open; it still refuses to write through a symlink. Agent Layer preserves existing entries in `.grok-config/trusted_folders.toml` and adds trust for the current repository so project hooks, MCP servers, and LSP configuration can load.
+
+Agent Layer owns the project `.grok/config.toml` it generates. If that path already contains a user-owned file, sync refuses to overwrite it. Move project plugin settings under `[agents.grok.agent_specific.plugins]` in `.agent-layer/config.toml`; put Grok's user-level UI, memory, model, and terminal settings in `.grok-config/config.toml`. Then move the conflicting `.grok/config.toml` aside and run `al sync` again. Agent Layer also rejects a symlink or special file at `.grok/config.toml` instead of writing through it.
+
 :::caution
 `.codex/config.toml` and `.agy/antigravity-cli/settings.json` are shared state patched by `al sync`, not disposable generated files. Antigravity settings can contain native workspace approval or trust state; Agent Layer patches only its managed model, `permissions.allow`, and `agent_specific` paths. Treat both files as private and keep them gitignored. Antigravity MCP output remains safe to regenerate.
 :::

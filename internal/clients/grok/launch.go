@@ -10,6 +10,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/run"
@@ -43,6 +44,16 @@ var execFunc = clients.ExecHandoff
 // HomeDir is the repo-local GROK_HOME Agent Layer always sets.
 func HomeDir(root string) string {
 	return filepath.Join(root, ".grok-config")
+}
+
+// EnsureHome creates or tightens the repo-local GROK_HOME to owner-only
+// permissions so the Grok CLI cannot mkdir it with group/other access.
+func EnsureHome(root string) error {
+	home := HomeDir(root)
+	if err := fsutil.EnsurePrivateDir(home); err != nil {
+		return fmt.Errorf(messages.SyncGrokHomeEnsureFailedFmt, home, err)
+	}
+	return nil
 }
 
 // SandboxArgs maps approvals.mode onto Grok --sandbox flags. YOLO leaves
@@ -79,12 +90,14 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	}
 	args = append(args, passArgs...)
 
-	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Grok, os.Stderr)
-
 	path, err := exec.LookPath(executableName)
 	if err != nil {
 		return fmt.Errorf(messages.ClientsExecLookupErrorFmt, executableName, err)
 	}
+	if err := EnsureHome(cfg.Root); err != nil {
+		return err
+	}
+	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Grok, os.Stderr)
 
 	argv := append([]string{executableName}, args...)
 	if err := execFunc(path, argv, env); err != nil {
@@ -95,6 +108,8 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 
 // ConfigureEnvironment applies the Grok environment rules shared by
 // interactive launching, headless Agent Dispatch, and al vscode.
+// Callers that set GROK_HOME must call EnsureHome first so the Grok CLI
+// cannot create the isolated home with default 0755 permissions.
 func ConfigureEnvironment(root string, env []string, cfg config.GrokConfig, warning io.Writer) []string {
 	env = ensureGrokHomeWithWarning(root, env, warning)
 	if config.GrokDisableMemory(cfg) {

@@ -76,10 +76,10 @@ const (
 	MCPServerUnsupportedTransportFmt = "mcp server %s: unsupported transport %s"
 )
 
-// Grok path messages are kept together because sync applies the same safety
-// checks while generating and cleaning its project-local outputs.
+// Grok path messages are kept together because sync and launch apply the same
+// safety checks while creating the isolated home and generating project outputs.
 const (
-	SyncGrokHomePermissionsFmt         = "grok home directory must be private: %s has permissions %04o; run `chmod 700 %s` and retry"
+	SyncGrokHomeEnsureFailedFmt        = "grok home directory %s: %w"
 	SyncGrokConfigDirConflictFmt       = "grok config directory must be a real directory: %s"
 	SyncGrokConfigTargetConflictFmt    = "grok config target must be a regular file, not a symlink or special file: %s"
 	SyncGrokConfigOwnershipConflictFmt = "refusing to overwrite user-owned Grok config %s; move managed settings into .agent-layer/config.toml or agents.grok.agent_specific first"

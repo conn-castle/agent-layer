@@ -37,6 +37,9 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	}
 
 	if config.IsAgentEnabled(cfg.Config.Agents.Grok.Enabled) {
+		if err := grok.EnsureHome(cfg.Root); err != nil {
+			return err
+		}
 		env = grok.ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Grok, os.Stderr)
 	} else {
 		env = grok.ClearStaleHome(cfg.Root, env)
