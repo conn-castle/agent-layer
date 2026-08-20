@@ -367,9 +367,6 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	}
 	dispatch := defaultTreatmentDispatchConfig(experiment.model, experiment.effort)
 	roles := append([]string(nil), experiment.RequiredDispatchRoles...)
-	if len(roles) == 0 {
-		roles = nil
-	}
 	if mode != TreatmentInstructionsAndSkills {
 		dispatch = TreatmentDispatchConfig{}
 		roles = nil

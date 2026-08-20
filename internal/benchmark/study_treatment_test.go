@@ -349,6 +349,15 @@ func TestStudyTreatmentBundlePropagatesRequiredDispatchRoles(t *testing.T) {
 	if unconstrained.ManifestHash == bundle.ManifestHash {
 		t.Fatal("nonempty required roles did not change treatment manifest identity")
 	}
+	experiment.RequiredDispatchRoles = []string{}
+	empty, err := BuildStudyTreatmentBundle(root, experiment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(empty.Root) })
+	if empty.Manifest.RequiredRoles != nil || empty.ManifestHash != unconstrained.ManifestHash {
+		t.Fatalf("explicit empty roles changed unconstrained treatment identity: roles=%#v", empty.Manifest.RequiredRoles)
+	}
 }
 
 func TestTreatmentManifestKeepsExplicitEmptyRolesByteCompatible(t *testing.T) {
