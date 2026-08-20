@@ -366,14 +366,19 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 		return nil, err
 	}
 	dispatch := defaultTreatmentDispatchConfig(experiment.model, experiment.effort)
+	roles := append([]string(nil), experiment.RequiredDispatchRoles...)
 	if mode != TreatmentInstructionsAndSkills {
 		dispatch = TreatmentDispatchConfig{}
+		roles = nil
 	} else {
 		data, marshalErr := json.Marshal(dispatch)
 		if marshalErr != nil {
 			return nil, fmt.Errorf("encode study dispatch targets: %w", marshalErr)
 		}
 		if err := os.WriteFile(filepath.Join(root, "dispatch-targets.json"), append(data, '\n'), 0o600); err != nil {
+			return nil, err
+		}
+		if _, err := expectedDispatchSlots(roles, dispatch); err != nil {
 			return nil, err
 		}
 	}
@@ -407,7 +412,7 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	}
 	// Hash only after every effective adapter/runtime byte has been staged.
 	// This is the content that is later atomically pinned and identified.
-	manifest, err := treatmentManifest(root, mode, nil, dispatch)
+	manifest, err := treatmentManifest(root, mode, roles, dispatch)
 	if err != nil {
 		return nil, err
 	}
