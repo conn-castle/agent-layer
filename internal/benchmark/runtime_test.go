@@ -493,6 +493,171 @@ func TestCodexCostRejectsDispatchWithoutRequestLevelSessionEvidence(t *testing.T
 	}
 }
 
+func TestCodexCostOmitsCallerCancelledSessionWithoutUsage(t *testing.T) {
+	pricing, err := loadBenchmarkPricing()
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinator, err := os.ReadFile(filepath.Join("testdata", "codex-session-cost.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	noUsage := []byte(`{"type":"session_meta","payload":{"id":"cancelled-session","source":"exec"}}` + "\n" +
+		`{"type":"turn_context","payload":{"model":"gpt-5.6-luna"}}` + "\n" +
+		`{"type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"primary":{"used_percent":12.5}}}}` + "\n")
+	parsed, err := parseCodexSessionCost(writeTempSession(t, noUsage), pricing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.id != "cancelled-session" || parsed.hasCompleteUsage || parsed.cost != (costRange{}) {
+		t.Fatalf("identified no-usage parse = %#v", parsed)
+	}
+
+	callerCancel := []byte(`{"provider_session_id":"cancelled-session","state":"cancelled","terminal_reason":"cancelled by caller"}`)
+	stage := writeCodexCostStage(t, map[string][]byte{
+		"coordinator.jsonl": coordinator,
+		"cancelled.jsonl":   noUsage,
+	}, map[string][]byte{
+		"cancelled.json": callerCancel,
+		"continued.json": callerCancel,
+		"preflight.json": []byte(`{"id":"codex-mcp-preflight"}`),
+	})
+	cost, err := codexAttemptCost(stage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cost.invocations != 1 ||
+		math.Abs(cost.total.minimum-.240304) > 1e-12 ||
+		math.Abs(cost.total.maximum-.290319) > 1e-12 ||
+		cost.child != (costRange{}) ||
+		cost.coordinator != cost.total {
+		t.Fatalf("omitted caller-cancelled session cost = %#v", cost)
+	}
+}
+
+func TestCodexCostBillsCallerCancelledSessionWithCompleteUsage(t *testing.T) {
+	coordinator, err := os.ReadFile(filepath.Join("testdata", "codex-session-cost.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := bytes.Replace(coordinator, []byte("shared-cost-session"), []byte("cancelled-session"), 1)
+	stage := writeCodexCostStage(t, map[string][]byte{
+		"coordinator.jsonl": coordinator,
+		"cancelled.jsonl":   child,
+	}, map[string][]byte{
+		"cancelled.json": []byte(`{"provider_session_id":"cancelled-session","state":"cancelled","terminal_reason":"cancelled by caller"}`),
+		"continued.json": []byte(`{"provider_session_id":"cancelled-session","state":"completed"}`),
+	})
+	cost, err := codexAttemptCost(stage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cost.invocations != 2 ||
+		math.Abs(cost.total.minimum-.480608) > 1e-12 ||
+		math.Abs(cost.total.maximum-.580638) > 1e-12 ||
+		math.Abs(cost.child.minimum-.240304) > 1e-12 ||
+		math.Abs(cost.child.maximum-.290319) > 1e-12 {
+		t.Fatalf("billed cancelled session cost = %#v", cost)
+	}
+}
+
+func TestCodexCostRejectsNoUsageWithoutProvenCallerCancellation(t *testing.T) {
+	coordinator, err := os.ReadFile(filepath.Join("testdata", "codex-session-cost.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	noUsage := []byte(`{"type":"session_meta","payload":{"id":"cancelled-session","source":"exec"}}` + "\n" +
+		`{"type":"event_msg","payload":{"type":"token_count","info":null}}` + "\n")
+	incomplete := []byte(`{"type":"session_meta","payload":{"id":"cancelled-session"}}` + "\n" +
+		`{"type":"turn_context","payload":{"model":"gpt-5.6-luna"}}` + "\n" +
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1}}}}` + "\n")
+	missingIdentity := []byte(`{"type":"turn_context","payload":{"model":"gpt-5.6-luna"}}` + "\n")
+	malformed := []byte(`{"type":"session_meta","payload":{"id":"cancelled-session"}}` + "\n" +
+		`{"timestamp":"2026-08-03T20:00:03Z","type":"event_msg","payload":{"type":"token_count"` + "\n")
+	callerCancel := []byte(`{"provider_session_id":"cancelled-session","state":"cancelled","terminal_reason":"cancelled by caller"}`)
+	for _, test := range []struct {
+		name       string
+		sessions   map[string][]byte
+		dispatches map[string][]byte
+		want       string
+	}{
+		{
+			name: "missing dispatch",
+			sessions: map[string][]byte{
+				"coordinator.jsonl": coordinator,
+				"cancelled.jsonl":   noUsage,
+			},
+			want: `session "cancelled-session" has no complete request-level usage and is not proven caller-cancelled before usage`,
+		},
+		{
+			name: "mixed lifecycle records",
+			sessions: map[string][]byte{
+				"coordinator.jsonl": coordinator,
+				"cancelled.jsonl":   noUsage,
+			},
+			dispatches: map[string][]byte{
+				"cancelled.json": callerCancel,
+				"continued.json": []byte(`{"provider_session_id":"cancelled-session","state":"completed"}`),
+			},
+			want: `session "cancelled-session" has no complete request-level usage and is not proven caller-cancelled before usage`,
+		},
+		{
+			name: "failed dispatch",
+			sessions: map[string][]byte{
+				"coordinator.jsonl": coordinator,
+				"cancelled.jsonl":   noUsage,
+			},
+			dispatches: map[string][]byte{
+				"cancelled.json": []byte(`{"provider_session_id":"cancelled-session","state":"failed","terminal_reason":"cancelled by caller"}`),
+			},
+			want: `session "cancelled-session" has no complete request-level usage and is not proven caller-cancelled before usage`,
+		},
+		{
+			name: "non-caller cancellation",
+			sessions: map[string][]byte{
+				"coordinator.jsonl": coordinator,
+				"cancelled.jsonl":   noUsage,
+			},
+			dispatches: map[string][]byte{
+				"cancelled.json": []byte(`{"provider_session_id":"cancelled-session","state":"cancelled","terminal_reason":"dispatch was interrupted before launching its worker"}`),
+			},
+			want: `session "cancelled-session" has no complete request-level usage and is not proven caller-cancelled before usage`,
+		},
+		{
+			name: "incomplete non-null usage",
+			sessions: map[string][]byte{
+				"coordinator.jsonl": coordinator,
+				"cancelled.jsonl":   incomplete,
+			},
+			dispatches: map[string][]byte{"cancelled.json": callerCancel},
+			want:       "incomplete request-level token usage",
+		},
+		{
+			name: "missing identity",
+			sessions: map[string][]byte{
+				"coordinator.jsonl": coordinator,
+				"cancelled.jsonl":   missingIdentity,
+			},
+			dispatches: map[string][]byte{"cancelled.json": callerCancel},
+			want:       "incomplete identity or billing evidence",
+		},
+		{
+			name: "malformed billing event",
+			sessions: map[string][]byte{
+				"coordinator.jsonl": coordinator,
+				"cancelled.jsonl":   malformed,
+			},
+			dispatches: map[string][]byte{"cancelled.json": callerCancel},
+			want:       "decode codex session",
+		},
+	} {
+		if _, err := codexAttemptCost(writeCodexCostStage(t, test.sessions, test.dispatches)); err == nil ||
+			!strings.Contains(err.Error(), test.want) {
+			t.Fatalf("%s error = %v", test.name, err)
+		}
+	}
+}
+
 func TestClaudeCostUsesProviderReportedCoordinatorAndDispatchTotals(t *testing.T) {
 	stage := t.TempDir()
 	dispatch := filepath.Join(stage, "jobs", "job", "agent", "agent-layer-dispatch")
@@ -803,6 +968,39 @@ func TestPinnedCheckoutValidationRejectsMissingAndWrongRepositoryState(t *testin
 		!strings.Contains(err.Error(), "invalid Pier execution request") {
 		t.Fatalf("invalid Pier request error = %v", err)
 	}
+}
+
+func writeTempSession(t *testing.T, data []byte) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	if err := os.WriteFile(path, data, 0o600); err != nil { // #nosec G703 -- path is rooted in a test-owned temporary directory.
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeCodexCostStage(t *testing.T, sessions, dispatches map[string][]byte) string {
+	t.Helper()
+	stage := t.TempDir()
+	sessionDir := filepath.Join(stage, "jobs", "job", "agent", "sessions")
+	dispatchDir := filepath.Join(stage, "jobs", "job", "agent", dispatchEvidenceDir)
+	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dispatchDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range sessions {
+		if err := os.WriteFile(filepath.Join(sessionDir, name), data, 0o600); err != nil { // #nosec G703 -- sessionDir is beneath a test-owned temporary directory.
+			t.Fatal(err)
+		}
+	}
+	for name, data := range dispatches {
+		if err := os.WriteFile(filepath.Join(dispatchDir, name), data, 0o600); err != nil { // #nosec G703 -- dispatchDir is beneath a test-owned temporary directory.
+			t.Fatal(err)
+		}
+	}
+	return stage
 }
 
 func writePierStage(t *testing.T, checksum string, score, cost float64) string {

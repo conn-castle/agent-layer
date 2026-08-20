@@ -457,9 +457,10 @@ func submittedPatchBytes(stage string) (int64, error) {
 }
 
 type codexSessionUsage struct {
-	id      string
-	isChild bool
-	cost    costRange
+	id               string
+	isChild          bool
+	hasCompleteUsage bool
+	cost             costRange
 }
 
 type codexTokenUsage struct {
@@ -510,7 +511,7 @@ func codexAttemptCost(stage string) (treatmentCost, error) {
 	if len(sessions) == 0 {
 		return treatmentCost{}, fmt.Errorf("benchmark attempt has no Codex provider session evidence")
 	}
-	dispatchSessions, err := dispatchProviderSessionIDs(stage)
+	dispatchSessions, err := dispatchProviderSessions(stage)
 	if err != nil {
 		return treatmentCost{}, err
 	}
@@ -525,7 +526,16 @@ func codexAttemptCost(stage string) (treatmentCost, error) {
 			return treatmentCost{}, fmt.Errorf("codex provider session %q is duplicated", usage.id)
 		}
 		sessionIDs[usage.id] = true
-		if dispatchSessions[usage.id] {
+		if !usage.hasCompleteUsage {
+			if !dispatchRecordsProveCallerCancellation(dispatchSessions[usage.id]) {
+				return treatmentCost{}, fmt.Errorf(
+					"codex session %q has no complete request-level usage and is not proven caller-cancelled before usage",
+					usage.id,
+				)
+			}
+			continue
+		}
+		if len(dispatchSessions[usage.id]) > 0 {
 			usage.isChild = true
 		}
 		result.total.add(usage.cost)
@@ -534,8 +544,8 @@ func codexAttemptCost(stage string) (treatmentCost, error) {
 		} else {
 			result.coordinator.add(usage.cost)
 		}
+		result.invocations++
 	}
-	result.invocations = len(sessions)
 	for id := range dispatchSessions {
 		if !sessionIDs[id] {
 			return treatmentCost{}, fmt.Errorf(
@@ -551,7 +561,7 @@ func treatmentClaudeCost(stage string, coordinator *float64) (treatmentCost, err
 	if coordinator == nil || *coordinator < 0 {
 		return treatmentCost{}, fmt.Errorf("claude treatment coordinator cost is unavailable")
 	}
-	dispatchSessions, err := dispatchProviderSessionIDs(stage)
+	dispatchSessions, err := dispatchProviderSessions(stage)
 	if err != nil {
 		return treatmentCost{}, err
 	}
@@ -579,7 +589,7 @@ func treatmentClaudeCost(stage string, coordinator *float64) (treatmentCost, err
 		if parseErr != nil {
 			return treatmentCost{}, parseErr
 		}
-		if !dispatchSessions[sessionID] {
+		if len(dispatchSessions[sessionID]) == 0 {
 			return treatmentCost{}, fmt.Errorf("claude dispatch billing session %q has no matching dispatch record", sessionID)
 		}
 		if seen[sessionID] {
@@ -660,8 +670,13 @@ func loadBenchmarkPricing() (benchmarkPricing, error) {
 	return pricing, nil
 }
 
-func dispatchProviderSessionIDs(stage string) (map[string]bool, error) {
-	ids := make(map[string]bool)
+type dispatchProviderSession struct {
+	state          string
+	terminalReason string
+}
+
+func dispatchProviderSessions(stage string) (map[string][]dispatchProviderSession, error) {
+	sessions := make(map[string][]dispatchProviderSession)
 	err := filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -676,16 +691,34 @@ func dispatchProviderSessionIDs(stage string) (map[string]bool, error) {
 		}
 		var record struct {
 			ProviderSessionID string `json:"provider_session_id"`
+			State             string `json:"state"`
+			TerminalReason    string `json:"terminal_reason"`
 		}
 		if err := json.Unmarshal(data, &record); err != nil {
 			return err
 		}
-		if record.ProviderSessionID != "" {
-			ids[record.ProviderSessionID] = true
+		if record.ProviderSessionID == "" {
+			return nil
 		}
+		sessions[record.ProviderSessionID] = append(sessions[record.ProviderSessionID], dispatchProviderSession{
+			state:          record.State,
+			terminalReason: record.TerminalReason,
+		})
 		return nil
 	})
-	return ids, err
+	return sessions, err
+}
+
+func dispatchRecordsProveCallerCancellation(records []dispatchProviderSession) bool {
+	if len(records) == 0 {
+		return false
+	}
+	for _, record := range records {
+		if record.state != "cancelled" || record.terminalReason != "cancelled by caller" {
+			return false
+		}
+	}
+	return true
 }
 
 func parseCodexSessionCost(path string, pricing benchmarkPricing) (codexSessionUsage, error) {
@@ -771,9 +804,10 @@ func parseCodexSessionCost(path string, pricing benchmarkPricing) (codexSessionU
 	if err := scanner.Err(); err != nil {
 		return codexSessionUsage{}, err
 	}
-	if result.id == "" || len(seen) == 0 {
+	if result.id == "" {
 		return codexSessionUsage{}, fmt.Errorf("codex session %s has incomplete identity or billing evidence", filepath.Base(path))
 	}
+	result.hasCompleteUsage = len(seen) > 0
 	if cacheWriteTelemetryComplete && cacheWriteTelemetryPopulated {
 		result.cost.minimum = exactCost
 		result.cost.maximum = exactCost
