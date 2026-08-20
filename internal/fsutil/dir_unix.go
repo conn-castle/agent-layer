@@ -33,10 +33,10 @@ func ensurePrivateDir(path, parent, name string) error {
 	if err := unix.Fstatat(parentFD, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 		return fmt.Errorf(messages.FsutilPrivateDirStatFmt, path, err)
 	}
-	if !isPrivateDirMode(uint32(st.Mode)) {
+	if !isPrivateDirMode(st) {
 		return fmt.Errorf(messages.FsutilPrivateDirNotDirectoryFmt, path)
 	}
-	if uint32(st.Mode)&0o077 == 0 {
+	if st.Mode&0o077 == 0 {
 		return nil
 	}
 
@@ -52,10 +52,10 @@ func ensurePrivateDir(path, parent, name string) error {
 	if err := unix.Fstat(fd, &st); err != nil {
 		return fmt.Errorf(messages.FsutilPrivateDirStatFmt, path, err)
 	}
-	if !isPrivateDirMode(uint32(st.Mode)) {
+	if !isPrivateDirMode(st) {
 		return fmt.Errorf(messages.FsutilPrivateDirNotDirectoryFmt, path)
 	}
-	if uint32(st.Mode)&0o077 == 0 {
+	if st.Mode&0o077 == 0 {
 		return nil
 	}
 	if err := privateDirFchmod(fd, privateDirMode); err != nil {
@@ -64,8 +64,8 @@ func ensurePrivateDir(path, parent, name string) error {
 	return nil
 }
 
-func isPrivateDirMode(mode uint32) bool {
-	return mode&unix.S_IFMT == unix.S_IFDIR
+func isPrivateDirMode(st unix.Stat_t) bool {
+	return st.Mode&unix.S_IFMT == unix.S_IFDIR
 }
 
 func isNoFollowTypeError(err error) bool {
