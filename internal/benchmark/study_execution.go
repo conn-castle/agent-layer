@@ -277,22 +277,11 @@ func repetitionsForTasks(tasks []benchmarkPlanTask) map[string]int {
 }
 
 func validateStudyArmManifest(selectionID string, tasks []benchmarkPlanTask, checksums map[string]string, arm *matrixArm) error {
-	path := filepath.Join(arm.StateDir, "manifest.json")
-	var existing studyArmManifest
-	if err := readStudyJSON(path, &existing); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return fmt.Errorf("read study arm manifest: %w", err)
+	err := compareStudyArmManifest(selectionID, tasks, checksums, arm)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
 	}
-	expected := expectedStudyArmManifest(selectionID, tasks, checksums, arm)
-	expected.CreatedAt = existing.CreatedAt
-	expectedJSON, _ := json.Marshal(expected)
-	existingJSON, _ := json.Marshal(existing)
-	if string(expectedJSON) != string(existingJSON) {
-		return fmt.Errorf("study arm %q conflicts with its immutable manifest", arm.Label)
-	}
-	return nil
+	return err
 }
 
 func ensureStudyArmManifest(selectionID string, tasks []benchmarkPlanTask, checksums map[string]string, arm *matrixArm) error {
@@ -308,11 +297,19 @@ func ensureStudyArmManifest(selectionID string, tasks []benchmarkPlanTask, check
 }
 
 func requireStudyArmManifest(selectionID string, tasks []benchmarkPlanTask, checksums map[string]string, arm *matrixArm) error {
+	err := compareStudyArmManifest(selectionID, tasks, checksums, arm)
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("study arm %q is missing its immutable manifest", arm.Label)
+	}
+	return err
+}
+
+func compareStudyArmManifest(selectionID string, tasks []benchmarkPlanTask, checksums map[string]string, arm *matrixArm) error {
 	path := filepath.Join(arm.StateDir, "manifest.json")
 	var existing studyArmManifest
 	if err := readStudyJSON(path, &existing); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("study arm %q is missing its immutable manifest", arm.Label)
+			return err
 		}
 		return fmt.Errorf("read study arm manifest: %w", err)
 	}

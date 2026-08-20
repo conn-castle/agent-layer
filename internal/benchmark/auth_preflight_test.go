@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 const authPreflightSecret = "super-secret-credential-token"
@@ -744,6 +746,83 @@ func TestStudyReportOmitsAuthenticationPreflightWhenAbsent(t *testing.T) {
 	}
 	if strings.Contains(string(data), "authentication_preflight") {
 		t.Fatalf("optional field serialized: %s", data)
+	}
+}
+
+func TestStudyReportNormalizesCachedAuthenticationTimestampToUTC(t *testing.T) {
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	offset := time.FixedZone("offset", 2*3600)
+	verified := time.Date(2026, 8, 20, 12, 0, 0, 0, offset)
+	item, err := buildStudyExperimentReport(
+		preparedStudyExperiment{studyExperiment: studyExperiment{Name: "Bare"}, model: model, effort: effort},
+		matrixArm{},
+		matrixSelection{},
+		matrixPreparation{authentication: map[string]AuthenticationPreflight{
+			adapterCodex: {Provider: adapterCodex, Check: codexLoginStatusCheck, AuthenticationMethod: codexAuthMethodChatGPT, VerifiedAt: verified},
+		}},
+		1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.AuthenticationPreflight == nil {
+		t.Fatal("missing authentication_preflight")
+	}
+	got := item.AuthenticationPreflight.VerifiedAt
+	if got.Location() != time.UTC {
+		t.Fatalf("verified_at location=%v", got.Location())
+	}
+	if !got.Equal(verified) {
+		t.Fatalf("verified_at instant changed: got=%v want=%v", got, verified)
+	}
+	payload, err := json.Marshal(item.AuthenticationPreflight)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), "+02:00") {
+		t.Fatalf("regenerated report kept offset timestamp: %s", payload)
+	}
+}
+
+func TestCachedAuthenticationPreflightRejectsExperimentCountMismatch(t *testing.T) {
+	stateDir := t.TempDir()
+	verified := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	report := cachedStudyReportDeclaration{
+		Experiments: []cachedStudyExperimentDeclaration{{
+			Name: "Bare",
+			AuthenticationPreflight: &AuthenticationPreflight{
+				Provider: adapterCodex, Check: codexLoginStatusCheck, AuthenticationMethod: codexAuthMethodChatGPT, VerifiedAt: verified,
+			},
+		}},
+	}
+	if err := writeJSON(filepath.Join(stateDir, "report", "report.json"), report); err != nil {
+		t.Fatal(err)
+	}
+	_, err := cachedAuthenticationPreflight(stateDir, &preparedStudy{})
+	if err == nil || !strings.Contains(err.Error(), "report experiments changed during preparation") {
+		t.Fatalf("error=%v", err)
+	}
+}
+
+func TestRequireJSONCredentialFileRejectsNamedPipeWithoutBlocking(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	if err := unix.Mkfifo(path, 0o600); err != nil {
+		t.Skipf("named pipes unavailable: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- requireJSONCredentialFile(path, adapterCodex)
+	}()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "must be a non-empty JSON file") {
+			t.Fatalf("error=%v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("credential check blocked on a named pipe")
 	}
 }
 

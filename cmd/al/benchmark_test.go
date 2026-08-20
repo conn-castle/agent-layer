@@ -20,7 +20,7 @@ func TestBenchmarkOnlyExposesRunAndReadiness(t *testing.T) {
 	}
 }
 
-func TestBenchmarkRunDryRunDoesNotInvokeProvider(t *testing.T) {
+func TestBenchmarkRunDryRunDoesNotInvokeProviderInference(t *testing.T) {
 	original := runStudy
 	runStudy = func(_ context.Context, options bench.StudyOptions, _ bench.TaskExecutor) (bench.StudyOutcome, error) {
 		if !options.DryRun || options.StudyPath != "study.toml" || options.TaskConcurrency != 4 {

@@ -549,6 +549,9 @@ func cachedAuthenticationPreflight(stateDir string, prepared *preparedStudy) (ma
 	if err := readStudyJSON(filepath.Join(stateDir, "report", "report.json"), &report); err != nil {
 		return nil, fmt.Errorf("read completed cached study authentication provenance: %w", err)
 	}
+	if len(report.Experiments) != len(prepared.experiments) {
+		return nil, fmt.Errorf("completed cached study %s report experiments changed during preparation", filepath.Base(stateDir))
+	}
 	authentication := make(map[string]AuthenticationPreflight)
 	for index, item := range report.Experiments {
 		if item.AuthenticationPreflight == nil {

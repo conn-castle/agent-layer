@@ -207,8 +207,9 @@ func buildStudyReport(study preparedStudy, preparation matrixPreparation) (Study
 
 func buildStudyExperimentReport(experiment preparedStudyExperiment, arm matrixArm, selection matrixSelection, preparation matrixPreparation, workers int) (StudyExperimentReport, error) {
 	item := StudyExperimentReport{Name: experiment.Name, Identity: experiment.identity, Model: experiment.model.PublishedIdentifier, Reasoning: experiment.effort,
-		InputHashes: copyStringMap(experiment.inputHashes), ResourceContract: map[string]any{studyResourceSchemaKey: studyResourceSchema, studyResourceTimeoutKey: skillsAgentTimeoutFactor}}
+		InputHashes: copyStringMap(experiment.inputHashes), ResourceContract: studyResourceContract()}
 	if evidence, ok := preparation.authentication[experiment.model.Adapter]; ok {
+		evidence.VerifiedAt = evidence.VerifiedAt.UTC()
 		item.AuthenticationPreflight = &evidence
 	}
 	if arm.Bundle != nil {

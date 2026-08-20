@@ -180,7 +180,7 @@ func validateProviderAuthentication(ctx context.Context, repoRoot, adapter strin
 
 func requireJSONCredentialFile(path, provider string) error {
 	info, err := os.Stat(path)
-	if err != nil || info.IsDir() {
+	if err != nil || !info.Mode().IsRegular() {
 		return fmt.Errorf("%s authentication must be a non-empty JSON file at %s", provider, path)
 	}
 	data, err := os.ReadFile(path) // #nosec G304 -- provider determines a fixed repo-local path.
