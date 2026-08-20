@@ -860,7 +860,7 @@ func TestAuthenticationPreflightAndDockerIsolationFailLoud(t *testing.T) {
 		t.Fatal(err)
 	}
 	selection := []parsedSelection{{model: model, effort: effort}}
-	if err := validateAuthentication(repository, selection); err == nil {
+	if _, err := validateAuthentication(context.Background(), repository, selection); err == nil {
 		t.Fatal("missing credentials accepted")
 	}
 	auth := filepath.Join(repository, ".codex", "auth.json")
@@ -870,16 +870,17 @@ func TestAuthenticationPreflightAndDockerIsolationFailLoud(t *testing.T) {
 	if err := os.WriteFile(auth, []byte("not-json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateAuthentication(repository, selection); err == nil {
+	if _, err := validateAuthentication(context.Background(), repository, selection); err == nil {
 		t.Fatal("malformed credentials accepted")
 	}
 	if err := os.WriteFile(auth, []byte(`{"token":"secret"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateAuthentication(repository, selection); err != nil {
+	installAuthCommandStubs(t, successfulCodexStatusScript(), "")
+	if _, err := validateAuthentication(context.Background(), repository, selection); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateAuthentication(repository, []parsedSelection{{model: Model{Adapter: "unknown"}}}); err == nil {
+	if _, err := validateAuthentication(context.Background(), repository, []parsedSelection{{model: Model{Adapter: "unknown"}}}); err == nil {
 		t.Fatal("unknown provider accepted")
 	}
 

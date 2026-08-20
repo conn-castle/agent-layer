@@ -25,7 +25,7 @@ type StudyOptions struct {
 	Tasks           []string
 	DryRun          bool
 	// OnPrepared receives validated cached/missing progress after the full
-	// runtime preflight and before any provider call.
+	// runtime preflight and before any inference call.
 	OnPrepared func(StudyOutcome) error
 	// OnCellComplete is a serial CLI-facing progress hook. Library code never
 	// writes stdout, and completed cells remain observable even if a later cell
@@ -130,7 +130,7 @@ type studyArmContract struct {
 }
 
 func writeStudyManifest(study *preparedStudy, preparation matrixPreparation) error {
-	manifest := immutableStudyManifest{SchemaVersion: "deepswe-study-manifest-v1", StudyID: study.studyID, SelectionID: study.selectionID, Checksums: copyStringMap(preparation.checksums), Environments: copyStringMap(preparation.environments), Resources: map[string]any{studyResourceSchemaKey: studyResourceSchema, studyResourceTimeoutKey: skillsAgentTimeoutFactor}}
+	manifest := immutableStudyManifest{SchemaVersion: "deepswe-study-manifest-v1", StudyID: study.studyID, SelectionID: study.selectionID, Checksums: copyStringMap(preparation.checksums), Environments: copyStringMap(preparation.environments), Resources: studyResourceContract()}
 	for _, arm := range preparation.arms {
 		manifest.Membership = append(manifest.Membership, arm.Label)
 		contract := studyArmContract{Name: arm.Label, ID: arm.ID, Target: arm.Loaded.Model.RuntimeIdentifier + ":" + arm.Loaded.Effort}
@@ -161,7 +161,7 @@ func writeStudyManifest(study *preparedStudy, preparation matrixPreparation) err
 }
 
 // RunStudy is intentionally the only paid public entry point. The command itself
-// is authorization; callers must use DryRun when they need the no-call path.
+// is authorization; callers must use DryRun when they need the no-inference path.
 func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) (StudyOutcome, error) {
 	prepared, err := prepareStudy(options)
 	if err != nil {
@@ -231,6 +231,8 @@ func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) 
 	return outcome, nil
 }
 
+var stageBenchmarkExperimentBundles = stageStudyExperimentBundles
+
 func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *preparedStudy) (matrixPreparation, error) {
 	if options.TaskConcurrency == 0 {
 		options.TaskConcurrency = 1
@@ -243,67 +245,50 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 	for i, experiment := range prepared.experiments {
 		selections[i] = parsedSelection{model: experiment.model, effort: experiment.effort}
 	}
+	candidates, err := listPlausibleCompletedCachedStudies(options.RepoRoot, prepared)
+	if err != nil {
+		return matrixPreparation{}, err
+	}
+	var bundles []*TreatmentBundle
+	if len(candidates) > 0 {
+		bundles, err = stageStudyBundlesIfNeeded(options.RepoRoot, prepared)
+		if err != nil {
+			return matrixPreparation{}, err
+		}
+		cached, found, err := loadCompleteCachedStudy(options.RepoRoot, prepared, candidates, bundles, tasks, options.TaskConcurrency)
+		if err != nil {
+			return matrixPreparation{}, err
+		}
+		if found {
+			return cached, nil
+		}
+	}
 	if err := preflightBenchmark(selections); err != nil {
 		return matrixPreparation{}, err
 	}
 	if err := verifyBenchmarkPier(ctx); err != nil {
 		return matrixPreparation{}, err
 	}
-	if err := validateBenchmarkAuthentication(options.RepoRoot, selections); err != nil {
+	authentication, err := validateBenchmarkAuthentication(ctx, options.RepoRoot, selections)
+	if err != nil {
 		return matrixPreparation{}, err
+	}
+	if bundles == nil {
+		bundles, err = stageStudyBundlesIfNeeded(options.RepoRoot, prepared)
+		if err != nil {
+			return matrixPreparation{}, err
+		}
 	}
 	checksums, environments, err := prepareBenchmarkTaskSet(ctx, options.RepoRoot, tasks)
 	if err != nil {
 		return matrixPreparation{}, err
 	}
-	preparation := matrixPreparation{selection: prepared.selection, selectionID: prepared.selectionID, tasks: tasks, checksums: checksums, environments: environments, taskConcurrency: options.TaskConcurrency}
-	for _, experiment := range prepared.experiments {
-		mode := ArmBaseline
-		var bundle *TreatmentBundle
-		if experiment.Config != "" || experiment.Instructions != "" || experiment.Skills != "" {
-			mode = ArmTreatment
-			bundle, err = BuildStudyTreatmentBundle(options.RepoRoot, experiment)
-			if err != nil {
-				return matrixPreparation{}, fmt.Errorf("stage experiment %q: %w", experiment.Name, err)
-			}
-			bundle, err = pinStudyTreatmentBundle(options.RepoRoot, bundle)
-			if err != nil {
-				return matrixPreparation{}, fmt.Errorf("pin experiment %q effective bundle: %w", experiment.Name, err)
-			}
-		}
-		identityInput := struct {
-			Schema, Selection, Experiment          string
-			TaskChecksums, Environments            map[string]string
-			Resource                               map[string]any
-			ManifestHash, AdapterHash, RuntimeHash string
-		}{Schema: "deepswe-study-arm-v2", Selection: prepared.selectionID, Experiment: experiment.identity,
-			TaskChecksums: checksums, Environments: environments,
-			Resource: map[string]any{studyResourceSchemaKey: studyResourceSchema, studyResourceTimeoutKey: skillsAgentTimeoutFactor}}
-		if bundle != nil {
-			identityInput.ManifestHash, identityInput.AdapterHash, identityInput.RuntimeHash = bundle.ManifestHash, bundle.AdapterSHA256, bundle.LinuxBinarySHA256
-		}
-		identity, err := hashCanonical(identityInput)
-		if err != nil {
-			return matrixPreparation{}, err
-		}
-		loaded := loadedBenchmarkPlan{Model: experiment.model, Effort: experiment.effort}
-		loaded.Plan.Tasks = tasks
-		arm := matrixArm{ID: identity, Label: experiment.Name, Mode: mode, Loaded: loaded, Bundle: bundle, AgentTimeoutMultiplier: skillsAgentTimeoutFactor, IgnoreProviderClientInManifest: true}
-		preparation.arms = append(preparation.arms, arm)
-	}
-	membership := make([]struct{ Name, Arm string }, len(preparation.arms))
-	for i, arm := range preparation.arms {
-		membership[i] = struct{ Name, Arm string }{arm.Label, arm.ID}
-	}
-	studyID, err := identifyStudy(prepared.selectionID, membership, checksums, environments)
+	preparation, err := bindStudyPreparation(options.RepoRoot, prepared, tasks, checksums, environments, bundles, authentication, options.TaskConcurrency)
 	if err != nil {
 		return matrixPreparation{}, err
 	}
-	prepared.studyID = studyID
-	preparation.stateDir = filepath.Join(options.RepoRoot, ".agent-layer", "state", "benchmarks", "deepswe", "studies", studyID)
 	for index := range preparation.arms {
 		arm := &preparation.arms[index]
-		arm.StateDir = filepath.Join(preparation.stateDir, "arms", arm.ID)
 		if err := ensureStudyArmManifest(prepared.selectionID, tasks, checksums, arm); err != nil {
 			return matrixPreparation{}, err
 		}
@@ -332,6 +317,323 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 		return matrixPreparation{}, err
 	}
 	return preparation, nil
+}
+
+func stageStudyExperimentBundles(repoRoot string, prepared *preparedStudy) ([]*TreatmentBundle, error) {
+	bundles := make([]*TreatmentBundle, len(prepared.experiments))
+	for index, experiment := range prepared.experiments {
+		if experiment.Config == "" && experiment.Instructions == "" && experiment.Skills == "" {
+			continue
+		}
+		bundle, err := BuildStudyTreatmentBundle(repoRoot, experiment)
+		if err != nil {
+			return nil, fmt.Errorf("stage experiment %q: %w", experiment.Name, err)
+		}
+		bundle, err = pinStudyTreatmentBundle(repoRoot, bundle)
+		if err != nil {
+			return nil, fmt.Errorf("pin experiment %q effective bundle: %w", experiment.Name, err)
+		}
+		bundles[index] = bundle
+	}
+	return bundles, nil
+}
+
+func studyDeclaresTreatment(prepared *preparedStudy) bool {
+	for _, experiment := range prepared.experiments {
+		if experiment.Config != "" || experiment.Instructions != "" || experiment.Skills != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func stageStudyBundlesIfNeeded(repoRoot string, prepared *preparedStudy) ([]*TreatmentBundle, error) {
+	if !studyDeclaresTreatment(prepared) {
+		return make([]*TreatmentBundle, len(prepared.experiments)), nil
+	}
+	return stageBenchmarkExperimentBundles(repoRoot, prepared)
+}
+
+const maxHistoricalStudyDirectories = 1024
+
+type cachedStudyReportDeclaration struct {
+	SchemaVersion string                             `json:"schema_version"`
+	StudyID       string                             `json:"study_id"`
+	SelectionID   string                             `json:"selection_id"`
+	Experiments   []cachedStudyExperimentDeclaration `json:"experiments"`
+}
+
+type cachedStudyExperimentDeclaration struct {
+	Name                    string                   `json:"name"`
+	Identity                string                   `json:"identity"`
+	Model                   string                   `json:"model"`
+	Reasoning               string                   `json:"reasoning"`
+	AuthenticationPreflight *AuthenticationPreflight `json:"authentication_preflight,omitempty"`
+	CompletedCells          int                      `json:"completed_cells"`
+	RequiredCells           int                      `json:"required_cells"`
+}
+
+func listPlausibleCompletedCachedStudies(repoRoot string, prepared *preparedStudy) ([]string, error) {
+	root := filepath.Join(repoRoot, ".agent-layer", "state", "benchmarks", "deepswe", "studies")
+	entries, err := os.ReadDir(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("inspect completed study state: %w", err)
+	}
+	var directories int
+	var candidates []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		directories++
+		if directories > maxHistoricalStudyDirectories {
+			return nil, fmt.Errorf("benchmark study cache inspection exceeded %d historical study directories under %s; remove unused study state before retrying", maxHistoricalStudyDirectories, root)
+		}
+		stateDir := filepath.Join(root, entry.Name())
+		var report cachedStudyReportDeclaration
+		if err := readStudyJSON(filepath.Join(stateDir, "report", "report.json"), &report); err != nil {
+			continue
+		}
+		if !cachedStudyReportMatchesDeclaration(report, prepared) {
+			continue
+		}
+		candidates = append(candidates, stateDir)
+	}
+	return candidates, nil
+}
+
+func cachedStudyReportMatchesDeclaration(report cachedStudyReportDeclaration, prepared *preparedStudy) bool {
+	if report.SchemaVersion != studyReportSchema || report.SelectionID != prepared.selectionID {
+		return false
+	}
+	if len(report.Experiments) != len(prepared.experiments) {
+		return false
+	}
+	required := 0
+	for _, task := range prepared.selection.Tasks {
+		required += task.Repetitions
+	}
+	if required < 1 {
+		return false
+	}
+	for index, experiment := range prepared.experiments {
+		item := report.Experiments[index]
+		if item.Name != experiment.Name || item.Identity != experiment.identity ||
+			item.Model != experiment.model.PublishedIdentifier || item.Reasoning != experiment.effort {
+			return false
+		}
+		if item.RequiredCells != required || item.CompletedCells != item.RequiredCells {
+			return false
+		}
+	}
+	return true
+}
+
+func loadCompleteCachedStudy(repoRoot string, prepared *preparedStudy, candidates []string, bundles []*TreatmentBundle, tasks []benchmarkPlanTask, concurrency int) (matrixPreparation, bool, error) {
+	var matches []matrixPreparation
+	for _, stateDir := range candidates {
+		var manifest immutableStudyManifest
+		if err := readStudyJSON(filepath.Join(stateDir, "study-manifest.json"), &manifest); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return matrixPreparation{}, false, fmt.Errorf("completed cached study %s is missing its immutable manifest", filepath.Base(stateDir))
+			}
+			return matrixPreparation{}, false, fmt.Errorf("read immutable study manifest %s: %w", filepath.Base(stateDir), err)
+		}
+		if !studyManifestDeclarationCompatible(manifest, prepared) {
+			return matrixPreparation{}, false, fmt.Errorf("completed cached study %s conflicts with its immutable manifest declaration", filepath.Base(stateDir))
+		}
+		if !studyManifestBundleMatches(manifest, bundles) {
+			continue
+		}
+		preparation, err := preparationFromCachedStudy(repoRoot, prepared, manifest, stateDir, bundles, tasks, concurrency)
+		if err != nil {
+			return matrixPreparation{}, false, err
+		}
+		matches = append(matches, preparation)
+	}
+	switch len(matches) {
+	case 0:
+		return matrixPreparation{}, false, nil
+	case 1:
+		prepared.studyID = filepath.Base(matches[0].stateDir)
+		return matches[0], true, nil
+	default:
+		return matrixPreparation{}, false, fmt.Errorf("completed benchmark study matches more than one historical state directory")
+	}
+}
+
+func studyManifestDeclarationCompatible(manifest immutableStudyManifest, prepared *preparedStudy) bool {
+	if manifest.SchemaVersion != "deepswe-study-manifest-v1" || manifest.SelectionID != prepared.selectionID {
+		return false
+	}
+	if len(manifest.Arms) != len(prepared.experiments) || len(manifest.Membership) != len(prepared.experiments) {
+		return false
+	}
+	left, leftErr := hashCanonical(manifest.Resources)
+	right, rightErr := hashCanonical(studyResourceContract())
+	if leftErr != nil || rightErr != nil || left != right {
+		return false
+	}
+	for index, experiment := range prepared.experiments {
+		arm := manifest.Arms[index]
+		if manifest.Membership[index] != experiment.Name || arm.Name != experiment.Name {
+			return false
+		}
+		if arm.Target != experiment.model.RuntimeIdentifier+":"+experiment.effort {
+			return false
+		}
+	}
+	return true
+}
+
+func studyManifestBundleMatches(manifest immutableStudyManifest, bundles []*TreatmentBundle) bool {
+	if len(manifest.Arms) != len(bundles) {
+		return false
+	}
+	for index, arm := range manifest.Arms {
+		bundle := bundles[index]
+		if bundle == nil {
+			if arm.Bundle != "" || arm.Adapter != "" || arm.Runtime != "" || arm.RuntimeSource != "" || arm.RuntimeVersion != "" {
+				return false
+			}
+			continue
+		}
+		if arm.Bundle != bundle.ManifestHash || arm.Adapter != bundle.AdapterSHA256 || arm.Runtime != bundle.LinuxBinarySHA256 ||
+			arm.RuntimeSource != bundle.RuntimeSourceKind || arm.RuntimeVersion != bundle.RuntimeVersion {
+			return false
+		}
+	}
+	return true
+}
+
+func preparationFromCachedStudy(repoRoot string, prepared *preparedStudy, manifest immutableStudyManifest, stateDir string, bundles []*TreatmentBundle, tasks []benchmarkPlanTask, concurrency int) (matrixPreparation, error) {
+	preparation, err := bindStudyPreparation(repoRoot, prepared, tasks, copyStringMap(manifest.Checksums), copyStringMap(manifest.Environments), bundles, nil, concurrency)
+	if err != nil {
+		return matrixPreparation{}, err
+	}
+	if filepath.Base(stateDir) != manifest.StudyID {
+		return matrixPreparation{}, fmt.Errorf("completed cached study %s conflicts with its immutable manifest identity", filepath.Base(stateDir))
+	}
+	if preparation.stateDir != stateDir {
+		return matrixPreparation{}, fmt.Errorf("completed cached study %s identity does not match its state directory", filepath.Base(stateDir))
+	}
+	for index := range preparation.arms {
+		arm := &preparation.arms[index]
+		if arm.ID != manifest.Arms[index].ID || arm.Label != manifest.Arms[index].Name {
+			return matrixPreparation{}, fmt.Errorf("completed cached study %s experiment %q identity does not match its immutable manifest", filepath.Base(stateDir), arm.Label)
+		}
+		if err := requireStudyArmManifest(prepared.selectionID, tasks, preparation.checksums, arm); err != nil {
+			return matrixPreparation{}, err
+		}
+	}
+	progress, err := studyProgressChecked(preparation)
+	if err != nil {
+		return matrixPreparation{}, err
+	}
+	if progress.Missing > 0 {
+		return matrixPreparation{}, fmt.Errorf("completed cached study %s is missing required cell evidence", filepath.Base(stateDir))
+	}
+	authentication, err := cachedAuthenticationPreflight(stateDir, prepared)
+	if err != nil {
+		return matrixPreparation{}, err
+	}
+	preparation.authentication = authentication
+	return preparation, nil
+}
+
+func cachedAuthenticationPreflight(stateDir string, prepared *preparedStudy) (map[string]AuthenticationPreflight, error) {
+	var report cachedStudyReportDeclaration
+	if err := readStudyJSON(filepath.Join(stateDir, "report", "report.json"), &report); err != nil {
+		return nil, fmt.Errorf("read completed cached study authentication provenance: %w", err)
+	}
+	if len(report.Experiments) != len(prepared.experiments) {
+		return nil, fmt.Errorf("completed cached study %s report experiments changed during preparation", filepath.Base(stateDir))
+	}
+	authentication := make(map[string]AuthenticationPreflight)
+	for index, item := range report.Experiments {
+		if item.AuthenticationPreflight == nil {
+			continue
+		}
+		adapter := prepared.experiments[index].model.Adapter
+		evidence := *item.AuthenticationPreflight
+		if !validCachedAuthenticationPreflight(adapter, evidence) {
+			return nil, fmt.Errorf("completed cached study %s has invalid authentication provenance for experiment %q", filepath.Base(stateDir), item.Name)
+		}
+		if existing, ok := authentication[adapter]; ok && !sameAuthenticationPreflight(existing, evidence) {
+			return nil, fmt.Errorf("completed cached study %s has conflicting authentication provenance for provider %q", filepath.Base(stateDir), evidence.Provider)
+		}
+		authentication[adapter] = evidence
+	}
+	return authentication, nil
+}
+
+func validCachedAuthenticationPreflight(adapter string, evidence AuthenticationPreflight) bool {
+	if adapter != adapterCodex || evidence.Provider != adapterCodex || evidence.Check != codexLoginStatusCheck || evidence.VerifiedAt.IsZero() {
+		return false
+	}
+	for _, method := range codexLoginStatusAllowlist {
+		if evidence.AuthenticationMethod == method.normalized {
+			return true
+		}
+	}
+	return false
+}
+
+func sameAuthenticationPreflight(left, right AuthenticationPreflight) bool {
+	return left.Provider == right.Provider && left.Check == right.Check &&
+		left.AuthenticationMethod == right.AuthenticationMethod && left.VerifiedAt.Equal(right.VerifiedAt)
+}
+
+func bindStudyPreparation(repoRoot string, prepared *preparedStudy, tasks []benchmarkPlanTask, checksums, environments map[string]string, bundles []*TreatmentBundle, authentication map[string]AuthenticationPreflight, concurrency int) (matrixPreparation, error) {
+	preparation := matrixPreparation{selection: prepared.selection, selectionID: prepared.selectionID, tasks: tasks, checksums: checksums, environments: environments, authentication: authentication, taskConcurrency: concurrency}
+	for index, experiment := range prepared.experiments {
+		identity, err := studyArmIdentity(prepared.selectionID, experiment.identity, checksums, environments, bundles[index])
+		if err != nil {
+			return matrixPreparation{}, err
+		}
+		mode := ArmBaseline
+		if bundles[index] != nil {
+			mode = ArmTreatment
+		}
+		loaded := loadedBenchmarkPlan{Model: experiment.model, Effort: experiment.effort}
+		loaded.Plan.Tasks = tasks
+		preparation.arms = append(preparation.arms, matrixArm{ID: identity, Label: experiment.Name, Mode: mode, Loaded: loaded, Bundle: bundles[index], AgentTimeoutMultiplier: skillsAgentTimeoutFactor, IgnoreProviderClientInManifest: true})
+	}
+	membership := make([]struct{ Name, Arm string }, len(preparation.arms))
+	for i, arm := range preparation.arms {
+		membership[i] = struct{ Name, Arm string }{arm.Label, arm.ID}
+	}
+	studyID, err := identifyStudy(prepared.selectionID, membership, checksums, environments)
+	if err != nil {
+		return matrixPreparation{}, err
+	}
+	prepared.studyID = studyID
+	preparation.stateDir = filepath.Join(repoRoot, ".agent-layer", "state", "benchmarks", "deepswe", "studies", studyID)
+	for index := range preparation.arms {
+		preparation.arms[index].StateDir = filepath.Join(preparation.stateDir, "arms", preparation.arms[index].ID)
+	}
+	return preparation, nil
+}
+
+func studyArmIdentity(selectionID, experimentIdentity string, checksums, environments map[string]string, bundle *TreatmentBundle) (string, error) {
+	identityInput := struct {
+		Schema, Selection, Experiment          string
+		TaskChecksums, Environments            map[string]string
+		Resource                               map[string]any
+		ManifestHash, AdapterHash, RuntimeHash string
+	}{Schema: "deepswe-study-arm-v2", Selection: selectionID, Experiment: experimentIdentity,
+		TaskChecksums: checksums, Environments: environments, Resource: studyResourceContract()}
+	if bundle != nil {
+		identityInput.ManifestHash, identityInput.AdapterHash, identityInput.RuntimeHash = bundle.ManifestHash, bundle.AdapterSHA256, bundle.LinuxBinarySHA256
+	}
+	return hashCanonical(identityInput)
+}
+
+func studyResourceContract() map[string]any {
+	return map[string]any{studyResourceSchemaKey: studyResourceSchema, studyResourceTimeoutKey: skillsAgentTimeoutFactor}
 }
 
 // reuseMatchingEvidence reuses only arms requested by this study. It checks
@@ -683,7 +985,7 @@ func identifyStudy(selectionID string, membership []struct{ Name, Arm string }, 
 		Membership              []struct{ Name, Arm string }
 		Checksums, Environments map[string]string
 		Resources               map[string]any
-	}{Schema: "deepswe-study-v3", Selection: selectionID, Membership: membership, Checksums: checksums, Environments: environments, Resources: map[string]any{studyResourceSchemaKey: studyResourceSchema, studyResourceTimeoutKey: skillsAgentTimeoutFactor}})
+	}{Schema: "deepswe-study-v3", Selection: selectionID, Membership: membership, Checksums: checksums, Environments: environments, Resources: studyResourceContract()})
 }
 
 func canonicalizeRequiredDispatchRoles(roles []string, hasSkills bool) ([]string, error) {

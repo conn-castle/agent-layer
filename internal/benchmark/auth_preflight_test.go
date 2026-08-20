@@ -1,0 +1,988 @@
+package benchmark
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"golang.org/x/sys/unix"
+)
+
+const authPreflightSecret = "super-secret-credential-token"
+
+func TestCodexAuthenticationPreflightUsesRepoLocalStatus(t *testing.T) {
+	repository := t.TempDir()
+	path := writeJSONCredential(t, filepath.Join(repository, ".codex", "auth.json"), []byte(`{"token":"`+authPreflightSecret+`"}`))
+	before, err := os.ReadFile(path) // #nosec G304 -- test-owned credential path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEX_HOME", filepath.Join(t.TempDir(), "unrelated-codex-home"))
+	logDir := installAuthCommandStubs(t, successfulCodexStatusScript(), "")
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	selections := []parsedSelection{{model: model, effort: effort}, {model: model, effort: effortHigh}}
+	evidence, err := validateAuthentication(context.Background(), repository, selections)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path) // #nosec G304 -- test-owned credential path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("credential bytes changed")
+	}
+	item, ok := evidence[adapterCodex]
+	if !ok || item.Provider != adapterCodex || item.Check != codexLoginStatusCheck || item.AuthenticationMethod != codexAuthMethodChatGPT {
+		t.Fatalf("evidence=%#v", evidence)
+	}
+	if item.VerifiedAt.Location() != time.UTC || item.VerifiedAt.IsZero() || time.Since(item.VerifiedAt) > time.Minute {
+		t.Fatalf("verified_at=%v", item.VerifiedAt)
+	}
+	if item.Check == CodexClientVersion || strings.Contains(item.Check, CodexClientVersion) {
+		t.Fatalf("host status check used in-container client pin: %#v", item)
+	}
+	if calls := readStubFile(t, logDir, "calls"); strings.Count(calls, "invoked") != 1 {
+		t.Fatalf("codex invocations=%q", calls)
+	}
+	if args := readStubFile(t, logDir, "args"); args != "login\nstatus\n" {
+		t.Fatalf("codex args=%q", args)
+	}
+	if home := strings.TrimSpace(readStubFile(t, logDir, "codex_home")); home != filepath.Join(repository, ".codex") {
+		t.Fatalf("CODEX_HOME=%q", home)
+	}
+	if _, err := os.Stat(filepath.Join(logDir, "claude-calls")); !os.IsNotExist(err) {
+		t.Fatalf("claude invoked: %v", err)
+	}
+	payload, err := json.Marshal(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serialized := string(payload)
+	for _, leaked := range []string{authPreflightSecret, "Logged in using", CodexClientVersion} {
+		if strings.Contains(serialized, leaked) {
+			t.Fatalf("evidence leaked %q: %s", leaked, serialized)
+		}
+	}
+}
+
+func TestCodexAuthenticationPreflightNormalizesAPIKeyStatusWithoutSecrets(t *testing.T) {
+	repository := t.TempDir()
+	writeJSONCredential(t, filepath.Join(repository, ".codex", "auth.json"), []byte(`{"token":"`+authPreflightSecret+`"}`))
+	logDir := installAuthCommandStubs(t, "printf 'Logged in using an API key - sk-proj-***LEAK\\n' >&2\nexit 0\n", "")
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := validateAuthentication(context.Background(), repository, []parsedSelection{{model: model, effort: effort}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := evidence[adapterCodex]
+	if item.AuthenticationMethod != codexAuthMethodAPIKey {
+		t.Fatalf("method=%q", item.AuthenticationMethod)
+	}
+	payload, err := json.Marshal(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), "sk-proj") || strings.Contains(string(payload), "LEAK") || strings.Contains(string(payload), authPreflightSecret) {
+		t.Fatalf("api key evidence leaked secrets: %s", payload)
+	}
+	if _, err := os.Stat(filepath.Join(logDir, "claude-calls")); !os.IsNotExist(err) {
+		t.Fatalf("claude invoked: %v", err)
+	}
+}
+
+func TestCodexAuthenticationPreflightFailuresStayPrivate(t *testing.T) {
+	repository := t.TempDir()
+	writeJSONCredential(t, filepath.Join(repository, ".codex", "auth.json"), []byte(`{"token":"`+authPreflightSecret+`"}`))
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection := []parsedSelection{{model: model, effort: effort}}
+	for _, test := range []struct {
+		name, script, want string
+		timeout            bool
+	}{
+		{name: "unauthenticated", script: "printf 'Not logged in " + authPreflightSecret + "\\n' >&2\nexit 1\n", want: "command failed"},
+		{name: "command failed", script: "printf 'Error checking login status: " + authPreflightSecret + "\\n' >&2\nexit 2\n", want: "command failed"},
+		{name: "unrecognized", script: "printf 'unexpected status " + authPreflightSecret + "\\n' >&2\nexit 0\n", want: "unrecognized"},
+		{name: "timeout", script: "sleep 5\nexit 0\n", want: "timed out", timeout: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			installAuthCommandStubs(t, test.script, "")
+			ctx := context.Background()
+			if test.timeout {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 200*time.Millisecond)
+				defer cancel()
+			}
+			_, err := validateAuthentication(ctx, repository, selection)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error=%v", err)
+			}
+			message := err.Error()
+			for _, leaked := range []string{authPreflightSecret, "Not logged in", "unexpected status", "Error checking login status"} {
+				if strings.Contains(message, leaked) {
+					t.Fatalf("error leaked %q: %s", leaked, message)
+				}
+			}
+		})
+	}
+}
+
+func TestClaudeAuthenticationFailsClosedWithoutInvokingClient(t *testing.T) {
+	repository := t.TempDir()
+	writeJSONCredential(t, filepath.Join(repository, ".claude-config", ".credentials.json"), []byte(`{"token":"`+authPreflightSecret+`"}`))
+	logDir := installAuthCommandStubs(t, successfulCodexStatusScript(), "printf 'claude-output "+authPreflightSecret+"\\n' >&2\nexit 0\n")
+	model, effort, err := ParseModelSelection("opus:high")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = validateAuthentication(context.Background(), repository, []parsedSelection{{model: model, effort: effort}})
+	if err == nil || !strings.Contains(err.Error(), "cannot be validated before task setup") {
+		t.Fatalf("claude error=%v", err)
+	}
+	if strings.Contains(err.Error(), authPreflightSecret) {
+		t.Fatalf("claude error leaked credential: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(logDir, "claude-calls")); !os.IsNotExist(statErr) {
+		t.Fatalf("claude client invoked: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(logDir, "calls")); !os.IsNotExist(statErr) {
+		t.Fatalf("codex invoked for claude-only selection: %v", statErr)
+	}
+}
+
+func TestReplaceEnvValueReplacesWithoutDuplicateKeys(t *testing.T) {
+	got := replaceEnvValue([]string{"PATH=/bin", "CODEX_HOME=/old", "CODEX_HOME=/other", "LANG=C"}, "CODEX_HOME", "/repo/.codex")
+	count := 0
+	for _, entry := range got {
+		if strings.HasPrefix(entry, "CODEX_HOME=") {
+			count++
+			if entry != "CODEX_HOME=/repo/.codex" {
+				t.Fatalf("entry=%q", entry)
+			}
+		}
+	}
+	if count != 1 || strings.Join(got, ",") != "PATH=/bin,LANG=C,CODEX_HOME=/repo/.codex" {
+		t.Fatalf("env=%q", got)
+	}
+}
+
+func TestRunStudyRejectsAuthenticationFailuresBeforeTaskSetup(t *testing.T) {
+	t.Run("missing codex credentials", func(t *testing.T) {
+		root := t.TempDir()
+		preparedCalls := stubStudyInfrastructure(t, root)
+		writeParsedBareStudy(t, root, "luna:low")
+		installAuthCommandStubs(t, successfulCodexStatusScript(), "")
+		_, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+		if err == nil || !strings.Contains(err.Error(), "must be a non-empty JSON file") {
+			t.Fatalf("error=%v", err)
+		}
+		if *preparedCalls != 0 {
+			t.Fatalf("task preparation ran %d times", *preparedCalls)
+		}
+	})
+	t.Run("unauthenticated codex", func(t *testing.T) {
+		root := t.TempDir()
+		preparedCalls := stubStudyInfrastructure(t, root)
+		writeParsedBareStudy(t, root, "luna:low")
+		writeJSONCredential(t, filepath.Join(root, ".codex", "auth.json"), []byte(`{"token":"`+authPreflightSecret+`"}`))
+		installAuthCommandStubs(t, "printf 'Not logged in "+authPreflightSecret+"\\n' >&2\nexit 1\n", "")
+		_, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+		if err == nil || !strings.Contains(err.Error(), "command failed") {
+			t.Fatalf("error=%v", err)
+		}
+		if strings.Contains(err.Error(), authPreflightSecret) || strings.Contains(err.Error(), "Not logged in") {
+			t.Fatalf("error leaked provider output: %v", err)
+		}
+		if *preparedCalls != 0 {
+			t.Fatalf("task preparation ran %d times", *preparedCalls)
+		}
+	})
+	t.Run("claude fail closed", func(t *testing.T) {
+		root := t.TempDir()
+		preparedCalls := stubStudyInfrastructure(t, root)
+		writeParsedBareStudy(t, root, "opus:high")
+		writeJSONCredential(t, filepath.Join(root, ".claude-config", ".credentials.json"), []byte(`{"token":"`+authPreflightSecret+`"}`))
+		logDir := installAuthCommandStubs(t, successfulCodexStatusScript(), "echo invoked\nexit 0\n")
+		_, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+		if err == nil || !strings.Contains(err.Error(), "cannot be validated before task setup") {
+			t.Fatalf("error=%v", err)
+		}
+		if *preparedCalls != 0 {
+			t.Fatalf("task preparation ran %d times", *preparedCalls)
+		}
+		if _, statErr := os.Stat(filepath.Join(logDir, "claude-calls")); !os.IsNotExist(statErr) {
+			t.Fatalf("claude client invoked: %v", statErr)
+		}
+	})
+}
+
+func TestRunStudyRecordsAuthenticationPreflightWithoutChangingIdentity(t *testing.T) {
+	writeStudy := func(t *testing.T) string {
+		t.Helper()
+		root := t.TempDir()
+		writeParsedBareStudy(t, root, "luna:low")
+		writeJSONCredential(t, filepath.Join(root, ".codex", "auth.json"), []byte(`{"token":"`+authPreflightSecret+`"}`))
+		stubStudyInfrastructure(t, root)
+		return root
+	}
+
+	baselineRoot := writeStudy(t)
+	originalAuth := validateBenchmarkAuthentication
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	baseline, err := RunStudy(context.Background(), StudyOptions{RepoRoot: baselineRoot, StudyPath: filepath.Join(baselineRoot, "study.toml"), DryRun: true}, &studyWorkflowExecutor{})
+	validateBenchmarkAuthentication = originalAuth
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	root := writeStudy(t)
+	installAuthCommandStubs(t, successfulCodexStatusScript(), "")
+	executor := &studyWorkflowExecutor{}
+	outcome, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.StudyID != baseline.StudyID || len(outcome.Experiments) != 1 || outcome.Experiments[0].Identity != baseline.Experiments[0].Identity {
+		t.Fatalf("identity changed: outcome=%#v baseline=%#v", outcome, baseline)
+	}
+	if outcome.JSONPath == "" {
+		t.Fatal("missing canonical report")
+	}
+	raw, err := os.ReadFile(outcome.JSONPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serialized := string(raw)
+	if strings.Contains(serialized, authPreflightSecret) || strings.Contains(serialized, "Logged in using") {
+		t.Fatalf("report leaked secrets: %s", serialized)
+	}
+	var report StudyReport
+	if err := json.Unmarshal(raw, &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Experiments) != 1 || report.Experiments[0].AuthenticationPreflight == nil {
+		t.Fatalf("report experiments=%#v", report.Experiments)
+	}
+	item := *report.Experiments[0].AuthenticationPreflight
+	if item.Provider != adapterCodex || item.Check != codexLoginStatusCheck || item.AuthenticationMethod != codexAuthMethodChatGPT || item.VerifiedAt.Location() != time.UTC {
+		t.Fatalf("authentication_preflight=%#v", item)
+	}
+	if item.Check == CodexClientVersion || strings.Contains(serialized, `"check":"`+CodexClientVersion+`"`) {
+		t.Fatalf("report used pinned client version as status check: %s", serialized)
+	}
+}
+
+func TestRunStudyRegeneratesCompleteCachedStudiesWithoutAuthentication(t *testing.T) {
+	for _, test := range []struct {
+		name, selection string
+	}{
+		{name: adapterCodex, selection: "luna:low"},
+		{name: providerClaude, selection: "opus:high"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			model, effort, err := ParseModelSelection(test.selection)
+			if err != nil {
+				t.Fatal(err)
+			}
+			root := t.TempDir()
+			writeBareStudy(t, root, model.Name, effort)
+			preparedCalls := stubStudyInfrastructure(t, root)
+			originalAuth := validateBenchmarkAuthentication
+			t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+			validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+				return map[string]AuthenticationPreflight{}, nil
+			}
+			if model.Adapter == adapterCodex {
+				writeJSONCredential(t, filepath.Join(root, ".codex", "auth.json"), []byte(`{"token":"`+authPreflightSecret+`"}`))
+				installAuthCommandStubs(t, successfulCodexStatusScript(), "")
+				validateBenchmarkAuthentication = originalAuth
+			}
+			first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if first.Completed != 2 || first.Missing != 0 || first.JSONPath == "" {
+				t.Fatalf("seeded study=%#v", first)
+			}
+			if *preparedCalls != 1 {
+				t.Fatalf("seeded task preparation calls=%d", *preparedCalls)
+			}
+
+			validateBenchmarkAuthentication = originalAuth
+			preflightBenchmark = func([]parsedSelection) error {
+				return fmt.Errorf("cached regeneration reached prerequisite discovery")
+			}
+			verifyBenchmarkPier = func(context.Context) error {
+				return fmt.Errorf("cached regeneration reached Pier verification")
+			}
+			prepareBenchmarkTaskSet = func(context.Context, string, []benchmarkPlanTask) (map[string]string, map[string]string, error) {
+				return nil, nil, fmt.Errorf("cached regeneration reached task preparation")
+			}
+			originalTreatment := preflightTreatmentRuntime
+			preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error {
+				return fmt.Errorf("cached regeneration reached treatment runtime preflight")
+			}
+			t.Cleanup(func() { preflightTreatmentRuntime = originalTreatment })
+			switch model.Adapter {
+			case adapterCodex:
+				if err := os.Remove(filepath.Join(root, ".codex", "auth.json")); err != nil {
+					t.Fatal(err)
+				}
+			case adapterClaudeCode:
+				writeJSONCredential(t, filepath.Join(root, ".claude-config", ".credentials.json"), []byte(`{"token":"`+authPreflightSecret+`"}`))
+			}
+
+			second, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if *preparedCalls != 1 {
+				t.Fatalf("cached regeneration prepared tasks %d times", *preparedCalls)
+			}
+			if second.StudyID != first.StudyID || second.Experiments[0].Identity != first.Experiments[0].Identity {
+				t.Fatalf("cached identity changed: first=%#v second=%#v", first, second)
+			}
+			if second.Completed != 2 || second.Missing != 0 || second.JSONPath == "" {
+				t.Fatalf("cached regeneration=%#v", second)
+			}
+			raw, err := os.ReadFile(second.JSONPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(raw), authPreflightSecret) {
+				t.Fatalf("regenerated report leaked credential: %s", raw)
+			}
+			var report StudyReport
+			if err := json.Unmarshal(raw, &report); err != nil {
+				t.Fatal(err)
+			}
+			if report.StudyID != first.StudyID || len(report.Experiments) != 1 || report.Experiments[0].CompletedCells != 2 {
+				t.Fatalf("regenerated report=%#v", report)
+			}
+			if model.Adapter == adapterCodex {
+				if report.Experiments[0].AuthenticationPreflight == nil ||
+					report.Experiments[0].AuthenticationPreflight.AuthenticationMethod != codexAuthMethodChatGPT {
+					t.Fatalf("cached regeneration lost authentication provenance: %#v", report.Experiments[0].AuthenticationPreflight)
+				}
+			} else if report.Experiments[0].AuthenticationPreflight != nil {
+				t.Fatalf("Claude cached report invented authentication provenance: %#v", report.Experiments[0].AuthenticationPreflight)
+			}
+		})
+	}
+}
+
+func TestRunStudyRejectsCorruptCachedEvidenceWithoutTaskSetup(t *testing.T) {
+	root := t.TempDir()
+	writeParsedBareStudy(t, root, "luna:low")
+	preparedCalls := stubStudyInfrastructure(t, root)
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest immutableStudyManifest
+	if err := readStudyJSON(filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies", first.StudyID, "study-manifest.json"), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	corrupt := armResultPath(filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies", first.StudyID, "arms", manifest.Arms[0].ID), "first-task", 1)
+	if err := os.WriteFile(corrupt, []byte("not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	validateBenchmarkAuthentication = validateAuthentication
+	prepareBenchmarkTaskSet = func(context.Context, string, []benchmarkPlanTask) (map[string]string, map[string]string, error) {
+		return nil, nil, fmt.Errorf("corrupt cached evidence reached task preparation")
+	}
+	if _, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{}); err == nil || !strings.Contains(err.Error(), "inspect immutable study cell") {
+		t.Fatalf("corrupt cached error=%v", err)
+	}
+	if *preparedCalls != 1 {
+		t.Fatalf("corrupt cached evidence prepared tasks %d times", *preparedCalls)
+	}
+}
+
+func TestRunStudyRejectsMissingAndConflictingCachedArmManifests(t *testing.T) {
+	for _, test := range []struct {
+		name, want string
+		mutate     func(*testing.T, string)
+	}{
+		{
+			name: "missing",
+			want: "missing its immutable manifest",
+			mutate: func(t *testing.T, path string) {
+				t.Helper()
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "conflicting",
+			want: "conflicts with its immutable manifest",
+			mutate: func(t *testing.T, path string) {
+				t.Helper()
+				var manifest studyArmManifest
+				if err := readStudyJSON(path, &manifest); err != nil {
+					t.Fatal(err)
+				}
+				manifest.SelectionID = "conflicting-selection"
+				if err := writeJSON(path, manifest); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeParsedBareStudy(t, root, "luna:low")
+			preparedCalls := stubStudyInfrastructure(t, root)
+			originalAuth := validateBenchmarkAuthentication
+			t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+			validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+				return map[string]AuthenticationPreflight{}, nil
+			}
+			first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			armRoot := filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies", first.StudyID, "arms")
+			entries, err := os.ReadDir(armRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			armDir := ""
+			for _, entry := range entries {
+				if entry.IsDir() {
+					if armDir != "" {
+						t.Fatalf("multiple arm directories: %v", entries)
+					}
+					armDir = entry.Name()
+				}
+			}
+			if armDir == "" {
+				t.Fatalf("arm entries=%v", entries)
+			}
+			manifestPath := filepath.Join(armRoot, armDir, "manifest.json")
+			test.mutate(t, manifestPath)
+			_, statErr := os.Stat(manifestPath)
+
+			validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+				return nil, fmt.Errorf("cached regeneration reached authentication")
+			}
+			prepareBenchmarkTaskSet = func(context.Context, string, []benchmarkPlanTask) (map[string]string, map[string]string, error) {
+				return nil, nil, fmt.Errorf("cached regeneration reached task preparation")
+			}
+			if _, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{}); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error=%v", err)
+			}
+			if *preparedCalls != 1 {
+				t.Fatalf("task preparation ran %d times", *preparedCalls)
+			}
+			if _, err := os.Stat(manifestPath); (err == nil) != (statErr == nil) {
+				t.Fatalf("arm manifest existence changed: before=%v after=%v", statErr, err)
+			}
+		})
+	}
+}
+
+func TestRunStudyIgnoresUnrelatedMalformedReportsDuringCheapNarrowing(t *testing.T) {
+	root := t.TempDir()
+	writeParsedBareStudy(t, root, "luna:low")
+	preparedCalls := stubStudyInfrastructure(t, root)
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unrelated := filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies", "unrelated")
+	if err := os.MkdirAll(filepath.Join(unrelated, "report"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(unrelated, "report", "report.json"), []byte("not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(unrelated, "study-manifest.json"), []byte("also-not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return nil, fmt.Errorf("cached regeneration reached authentication")
+	}
+	prepareBenchmarkTaskSet = func(context.Context, string, []benchmarkPlanTask) (map[string]string, map[string]string, error) {
+		return nil, nil, fmt.Errorf("cached regeneration reached task preparation")
+	}
+	second, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *preparedCalls != 1 {
+		t.Fatalf("task preparation ran %d times", *preparedCalls)
+	}
+	if second.StudyID != first.StudyID || second.Completed != 2 || second.JSONPath == "" {
+		t.Fatalf("cached regeneration=%#v", second)
+	}
+}
+
+func TestRunStudyRejectsUnboundedHistoricalStudyInspection(t *testing.T) {
+	root := t.TempDir()
+	writeParsedBareStudy(t, root, "luna:low")
+	preparedCalls := stubStudyInfrastructure(t, root)
+	studies := filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies")
+	for i := 0; i < maxHistoricalStudyDirectories+1; i++ {
+		if err := os.MkdirAll(filepath.Join(studies, fmt.Sprintf("%04d", i)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return nil, fmt.Errorf("unbounded inspection reached authentication")
+	}
+	_, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("exceeded %d historical study directories", maxHistoricalStudyDirectories)) {
+		t.Fatalf("error=%v", err)
+	}
+	if !strings.Contains(err.Error(), studies) || !strings.Contains(err.Error(), "remove unused study state") {
+		t.Fatalf("error was not actionable: %v", err)
+	}
+	if *preparedCalls != 0 {
+		t.Fatalf("task preparation ran %d times", *preparedCalls)
+	}
+}
+
+func TestRunStudyAuthenticatesBeforeTreatmentBundleStagingWhenNoCachedCandidate(t *testing.T) {
+	root := t.TempDir()
+	writeParsedTreatmentStudy(t, root, "luna:low")
+	preparedCalls := stubStudyInfrastructure(t, root)
+	originalStage := stageBenchmarkExperimentBundles
+	t.Cleanup(func() { stageBenchmarkExperimentBundles = originalStage })
+	stageBenchmarkExperimentBundles = func(string, *preparedStudy) ([]*TreatmentBundle, error) {
+		return nil, fmt.Errorf("bundle staging reached before authentication")
+	}
+	_, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err == nil || !strings.Contains(err.Error(), "must be a non-empty JSON file") {
+		t.Fatalf("error=%v", err)
+	}
+	if strings.Contains(err.Error(), "bundle staging") {
+		t.Fatalf("staged before authentication: %v", err)
+	}
+	if *preparedCalls != 0 {
+		t.Fatalf("task preparation ran %d times", *preparedCalls)
+	}
+}
+
+func TestRunStudyStagesTreatmentBundlesAfterAuthenticationForMissingWork(t *testing.T) {
+	root := t.TempDir()
+	writeParsedTreatmentStudy(t, root, "luna:low")
+	writeJSONCredential(t, filepath.Join(root, ".codex", "auth.json"), []byte(`{"token":"`+authPreflightSecret+`"}`))
+	preparedCalls := stubStudyInfrastructure(t, root)
+	order := []string{}
+	originalAuth := validateBenchmarkAuthentication
+	originalStage := stageBenchmarkExperimentBundles
+	t.Cleanup(func() {
+		validateBenchmarkAuthentication = originalAuth
+		stageBenchmarkExperimentBundles = originalStage
+	})
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		order = append(order, "auth")
+		return map[string]AuthenticationPreflight{
+			adapterCodex: {Provider: adapterCodex, Check: codexLoginStatusCheck, AuthenticationMethod: codexAuthMethodChatGPT, VerifiedAt: time.Now().UTC()},
+		}, nil
+	}
+	stageBenchmarkExperimentBundles = func(string, *preparedStudy) ([]*TreatmentBundle, error) {
+		order = append(order, "stage")
+		return nil, fmt.Errorf("stop after staging observation")
+	}
+	_, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err == nil || !strings.Contains(err.Error(), "stop after staging observation") {
+		t.Fatalf("error=%v", err)
+	}
+	if strings.Join(order, ",") != "auth,stage" {
+		t.Fatalf("order=%q", order)
+	}
+	if *preparedCalls != 0 {
+		t.Fatalf("task preparation ran %d times", *preparedCalls)
+	}
+}
+
+func TestRunStudyRegeneratesCompleteTreatmentStudyWithoutAuthentication(t *testing.T) {
+	root := t.TempDir()
+	writeParsedTreatmentStudy(t, root, "luna:low")
+	preparedCalls := stubStudyInfrastructure(t, root)
+	stubFakeStudyTreatmentBundles(t)
+	originalTreatment := preflightTreatmentRuntime
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error { return nil }
+	t.Cleanup(func() { preflightTreatmentRuntime = originalTreatment })
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Completed != 2 || first.Missing != 0 {
+		t.Fatalf("seeded study=%#v", first)
+	}
+	if *preparedCalls != 1 {
+		t.Fatalf("seeded task preparation calls=%d", *preparedCalls)
+	}
+
+	stageCalls := 0
+	originalStage := stageBenchmarkExperimentBundles
+	bundle := fakeStudyTreatmentBundle()
+	stageBenchmarkExperimentBundles = func(string, *preparedStudy) ([]*TreatmentBundle, error) {
+		stageCalls++
+		return []*TreatmentBundle{bundle}, nil
+	}
+	t.Cleanup(func() { stageBenchmarkExperimentBundles = originalStage })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return nil, fmt.Errorf("cached regeneration reached authentication")
+	}
+	preflightBenchmark = func([]parsedSelection) error {
+		return fmt.Errorf("cached regeneration reached prerequisite discovery")
+	}
+	verifyBenchmarkPier = func(context.Context) error {
+		return fmt.Errorf("cached regeneration reached Pier verification")
+	}
+	prepareBenchmarkTaskSet = func(context.Context, string, []benchmarkPlanTask) (map[string]string, map[string]string, error) {
+		return nil, nil, fmt.Errorf("cached regeneration reached task preparation")
+	}
+	second, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stageCalls != 1 {
+		t.Fatalf("treatment cache verification staged %d times", stageCalls)
+	}
+	if *preparedCalls != 1 {
+		t.Fatalf("cached regeneration prepared tasks %d times", *preparedCalls)
+	}
+	if second.StudyID != first.StudyID || second.Completed != 2 || second.JSONPath == "" {
+		t.Fatalf("cached regeneration=%#v", second)
+	}
+}
+
+func TestRunStudyDoesNotUseCachedPathForIncompleteReports(t *testing.T) {
+	root := t.TempDir()
+	writeParsedBareStudy(t, root, "luna:low")
+	preparedCalls := stubStudyInfrastructure(t, root)
+	prepared, err := prepareStudy(StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared.cleanupInputs()
+	writeMatchingStudyReport(t, root, "incomplete", prepared, 0, 2)
+
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return nil, fmt.Errorf("missing-cell run reached authentication")
+	}
+	_, err = RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err == nil || !strings.Contains(err.Error(), "missing-cell run reached authentication") {
+		t.Fatalf("error=%v", err)
+	}
+	if *preparedCalls != 0 {
+		t.Fatalf("task preparation ran %d times", *preparedCalls)
+	}
+}
+
+func TestRunStudyFailsClosedWhenCompletedReportLacksStudyManifest(t *testing.T) {
+	root := t.TempDir()
+	writeParsedBareStudy(t, root, "luna:low")
+	preparedCalls := stubStudyInfrastructure(t, root)
+	prepared, err := prepareStudy(StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared.cleanupInputs()
+	writeMatchingStudyReport(t, root, "complete-without-manifest", prepared, 2, 2)
+
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return nil, fmt.Errorf("corrupt cached candidate reached authentication")
+	}
+	_, err = RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err == nil || !strings.Contains(err.Error(), "missing its immutable manifest") {
+		t.Fatalf("error=%v", err)
+	}
+	if *preparedCalls != 0 {
+		t.Fatalf("task preparation ran %d times", *preparedCalls)
+	}
+}
+
+func TestStudyReportOmitsAuthenticationPreflightWhenAbsent(t *testing.T) {
+	item := StudyExperimentReport{Name: "Bare"}
+	data, err := json.Marshal(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "authentication_preflight") {
+		t.Fatalf("optional field serialized: %s", data)
+	}
+}
+
+func TestStudyReportNormalizesCachedAuthenticationTimestampToUTC(t *testing.T) {
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	offset := time.FixedZone("offset", 2*3600)
+	verified := time.Date(2026, 8, 20, 12, 0, 0, 0, offset)
+	item, err := buildStudyExperimentReport(
+		preparedStudyExperiment{studyExperiment: studyExperiment{Name: "Bare"}, model: model, effort: effort},
+		matrixArm{},
+		matrixSelection{},
+		matrixPreparation{authentication: map[string]AuthenticationPreflight{
+			adapterCodex: {Provider: adapterCodex, Check: codexLoginStatusCheck, AuthenticationMethod: codexAuthMethodChatGPT, VerifiedAt: verified},
+		}},
+		1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.AuthenticationPreflight == nil {
+		t.Fatal("missing authentication_preflight")
+	}
+	got := item.AuthenticationPreflight.VerifiedAt
+	if got.Location() != time.UTC {
+		t.Fatalf("verified_at location=%v", got.Location())
+	}
+	if !got.Equal(verified) {
+		t.Fatalf("verified_at instant changed: got=%v want=%v", got, verified)
+	}
+	payload, err := json.Marshal(item.AuthenticationPreflight)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), "+02:00") {
+		t.Fatalf("regenerated report kept offset timestamp: %s", payload)
+	}
+}
+
+func TestCachedAuthenticationPreflightRejectsExperimentCountMismatch(t *testing.T) {
+	stateDir := t.TempDir()
+	verified := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	report := cachedStudyReportDeclaration{
+		Experiments: []cachedStudyExperimentDeclaration{{
+			Name: "Bare",
+			AuthenticationPreflight: &AuthenticationPreflight{
+				Provider: adapterCodex, Check: codexLoginStatusCheck, AuthenticationMethod: codexAuthMethodChatGPT, VerifiedAt: verified,
+			},
+		}},
+	}
+	if err := writeJSON(filepath.Join(stateDir, "report", "report.json"), report); err != nil {
+		t.Fatal(err)
+	}
+	_, err := cachedAuthenticationPreflight(stateDir, &preparedStudy{})
+	if err == nil || !strings.Contains(err.Error(), "report experiments changed during preparation") {
+		t.Fatalf("error=%v", err)
+	}
+}
+
+func TestRequireJSONCredentialFileRejectsNamedPipeWithoutBlocking(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	if err := unix.Mkfifo(path, 0o600); err != nil {
+		t.Skipf("named pipes unavailable: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- requireJSONCredentialFile(path, adapterCodex)
+	}()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "must be a non-empty JSON file") {
+			t.Fatalf("error=%v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("credential check blocked on a named pipe")
+	}
+}
+
+func writeParsedTreatmentStudy(t *testing.T, root, selection string) {
+	t.Helper()
+	model, effort, err := ParseModelSelection(selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectionData, err := json.Marshal(matrixSelectionFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeStudyInputFixture(t, root, "selection.json", string(selectionData))
+	writeStudyTreatmentConfig(t, root)
+	writeStudyInputFixture(t, root, "study.toml", "selection = \"selection.json\"\n[[experiments]]\nname = \"Treatment\"\nmodel = \""+model.Name+"\"\nreasoning = \""+effort+"\"\nconfig = \"config.toml\"\n")
+}
+
+func stubFakeStudyTreatmentBundles(t *testing.T) {
+	t.Helper()
+	original := stageBenchmarkExperimentBundles
+	bundle := fakeStudyTreatmentBundle()
+	stageBenchmarkExperimentBundles = func(string, *preparedStudy) ([]*TreatmentBundle, error) {
+		return []*TreatmentBundle{bundle}, nil
+	}
+	t.Cleanup(func() { stageBenchmarkExperimentBundles = original })
+}
+
+func fakeStudyTreatmentBundle() *TreatmentBundle {
+	return &TreatmentBundle{
+		ManifestHash:      "treatment-manifest-hash",
+		AdapterSHA256:     "adapter-hash",
+		LinuxBinarySHA256: "runtime-hash",
+		RuntimeSourceKind: "release",
+		RuntimeVersion:    "test",
+		Manifest:          TreatmentManifest{Mode: TreatmentInstructionsOnly, AgentTimeoutMultiplier: skillsAgentTimeoutFactor},
+	}
+}
+
+func writeMatchingStudyReport(t *testing.T, root, studyID string, prepared preparedStudy, completed, required int) {
+	t.Helper()
+	report := cachedStudyReportDeclaration{
+		SchemaVersion: studyReportSchema,
+		StudyID:       studyID,
+		SelectionID:   prepared.selectionID,
+	}
+	for _, experiment := range prepared.experiments {
+		report.Experiments = append(report.Experiments, cachedStudyExperimentDeclaration{
+			Name: experiment.Name, Identity: experiment.identity,
+			Model: experiment.model.PublishedIdentifier, Reasoning: experiment.effort,
+			CompletedCells: completed, RequiredCells: required,
+		})
+	}
+	if err := writeJSON(filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies", studyID, "report", "report.json"), report); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeParsedBareStudy(t *testing.T, root, selection string) {
+	t.Helper()
+	model, effort, err := ParseModelSelection(selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeBareStudy(t, root, model.Name, effort)
+}
+
+func writeBareStudy(t *testing.T, root, model, reasoning string) {
+	t.Helper()
+	selectionData, err := json.Marshal(matrixSelectionFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeStudyInputFixture(t, root, "selection.json", string(selectionData))
+	writeStudyInputFixture(t, root, "study.toml", "selection = \"selection.json\"\n[[experiments]]\nname = \"Bare\"\nmodel = \""+model+"\"\nreasoning = \""+reasoning+"\"\n")
+}
+
+func stubStudyInfrastructure(t *testing.T, root string) *int {
+	t.Helper()
+	originalPreflight := preflightBenchmark
+	originalVerifyPier := verifyBenchmarkPier
+	originalPrepareTasks := prepareBenchmarkTaskSet
+	preparedCalls := 0
+	preflightBenchmark = func([]parsedSelection) error { return nil }
+	verifyBenchmarkPier = func(context.Context) error { return nil }
+	prepareBenchmarkTaskSet = func(_ context.Context, gotRoot string, tasks []benchmarkPlanTask) (map[string]string, map[string]string, error) {
+		preparedCalls++
+		if gotRoot != root {
+			return nil, nil, fmt.Errorf("unexpected task preparation root %q", gotRoot)
+		}
+		checksums := make(map[string]string, len(tasks))
+		environments := make(map[string]string, len(tasks))
+		for _, task := range tasks {
+			checksums[task.ID] = task.ID + "-checksum"
+			environments[task.ID] = task.ID + "-env"
+		}
+		return checksums, environments, nil
+	}
+	t.Cleanup(func() {
+		preflightBenchmark = originalPreflight
+		verifyBenchmarkPier = originalVerifyPier
+		prepareBenchmarkTaskSet = originalPrepareTasks
+	})
+	return &preparedCalls
+}
+
+func writeJSONCredential(t *testing.T, path string, contents []byte) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func successfulCodexStatusScript() string {
+	return "printf 'Logged in using ChatGPT\\n' >&2\nexit 0\n"
+}
+
+func installAuthCommandStubs(t *testing.T, codexScript, claudeScript string) string {
+	t.Helper()
+	logDir := t.TempDir()
+	bin := t.TempDir()
+	codexBody := "#!/bin/sh\n" +
+		"logdir=" + shellQuote(logDir) + "\n" +
+		"printf '%s\\n' \"$@\" > \"$logdir/args\"\n" +
+		"printf '%s\\n' \"$CODEX_HOME\" > \"$logdir/codex_home\"\n" +
+		"echo invoked >> \"$logdir/calls\"\n" +
+		codexScript
+	writeExecutable(t, filepath.Join(bin, adapterCodex), codexBody)
+	if claudeScript == "" {
+		claudeScript = "printf 'unexpected claude invocation\\n' >&2\nexit 1\n"
+	}
+	claudeBody := "#!/bin/sh\necho invoked >> " + shellQuote(filepath.Join(logDir, "claude-calls")) + "\n" + claudeScript
+	writeExecutable(t, filepath.Join(bin, providerClaude), claudeBody)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return logDir
+}
+
+func writeExecutable(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o700); err != nil { // #nosec G302 -- executable test stub.
+		t.Fatal(err)
+	}
+}
+
+func readStubFile(t *testing.T, dir, name string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, name)) // #nosec G304 -- test-owned stub log.
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
+}

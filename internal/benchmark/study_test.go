@@ -56,7 +56,9 @@ func TestRunStudyDryRunAndPaidWorkflow(t *testing.T) {
 		return nil
 	}
 	verifyBenchmarkPier = func(context.Context) error { return nil }
-	validateBenchmarkAuthentication = func(string, []parsedSelection) error { return nil }
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
 	prepareBenchmarkTaskSet = func(_ context.Context, gotRoot string, tasks []benchmarkPlanTask) (map[string]string, map[string]string, error) {
 		if gotRoot != root || len(tasks) != 2 || tasks[0].ID != "first-task" || tasks[1].ID != "second-task" {
 			return nil, nil, fmt.Errorf("unexpected task preparation: root=%q tasks=%#v", gotRoot, tasks)

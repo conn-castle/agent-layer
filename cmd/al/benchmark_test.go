@@ -20,7 +20,7 @@ func TestBenchmarkOnlyExposesRunAndReadiness(t *testing.T) {
 	}
 }
 
-func TestBenchmarkRunDryRunDoesNotInvokeProvider(t *testing.T) {
+func TestBenchmarkRunDryRunDoesNotInvokeProviderInference(t *testing.T) {
 	original := runStudy
 	runStudy = func(_ context.Context, options bench.StudyOptions, _ bench.TaskExecutor) (bench.StudyOutcome, error) {
 		if !options.DryRun || options.StudyPath != "study.toml" || options.TaskConcurrency != 4 {
@@ -41,7 +41,7 @@ func TestBenchmarkRunDryRunDoesNotInvokeProvider(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "Bare: 0 of 1 cells cached") || !strings.Contains(output.String(), "authorizes paid") || !strings.Contains(output.String(), "No provider call was made") {
+	if !strings.Contains(output.String(), "Bare: 0 of 1 cells cached") || !strings.Contains(output.String(), "authorizes paid") || !strings.Contains(output.String(), "No inference call was made") {
 		t.Fatalf("output = %q", output.String())
 	}
 }
