@@ -29,12 +29,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-08-18 antigravity-async-prefetch-test-flake: `TestPromptModelsAntigravityUsesReadyAsyncPrefetch` is load-sensitive
-    Priority: Low. Area: test suite / wizard
-    Description: `waitForAntigravityModelDiscoveryReady` (`internal/wizard/option_discovery_test.go:438`) waits a hardcoded 1 second for async discovery that forks a shell `agy` stub. Under full-suite parallel load the fork can exceed that deadline, failing `make test`; the test passes repeatedly in isolation.
-    Next step: Replace the fixed deadline with a generous bound or a synchronization signal from the prefetch goroutine rather than wall-clock polling.
-    Notes: Observed once during PR #188 (`make test` via pre-commit); re-ran 5x isolated with no failure. Unrelated to the Grok change.
-
 - Issue 2026-08-18 grok-duplicate-root-instructions: Grok loads both generated instruction shims
     Priority: Low. Area: providers / grok / instructions / warnings
     Description: Grok 1.0.5 loads both byte-identical generated `AGENTS.md` and `CLAUDE.md`, duplicating project instructions while the shared instruction-token warning counts the source once.
