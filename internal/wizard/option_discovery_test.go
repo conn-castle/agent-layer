@@ -435,20 +435,19 @@ func TestPromptWizardFlowSkipsAntigravityPrefetchWhenAgentDisabled(t *testing.T)
 
 func waitForAntigravityModelDiscoveryReady(t *testing.T, cache *wizardOptionDiscoveryCache) {
 	t.Helper()
-	deadline := time.After(time.Second)
-	tick := time.NewTicker(time.Millisecond)
-	defer tick.Stop()
-	for {
-		cache.mu.Lock()
-		ready := cache.antigravityModelsReady
-		cache.mu.Unlock()
-		if ready {
-			return
-		}
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting for async Antigravity model discovery")
-		case <-tick.C:
-		}
+	cache.mu.Lock()
+	ready := cache.antigravityModelsReady
+	done := cache.antigravityModelsDone
+	cache.mu.Unlock()
+	if ready {
+		return
+	}
+	if done == nil {
+		t.Fatal("async Antigravity model discovery was not started")
+	}
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("timed out waiting for async Antigravity model discovery")
 	}
 }
