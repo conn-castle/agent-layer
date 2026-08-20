@@ -168,6 +168,27 @@ func TestEnsureHomeTightensBroadPermissions(t *testing.T) {
 	}
 }
 
+func TestEnsureHomeRejectsSymlinkWithoutDuplicatingPath(t *testing.T) {
+	root := t.TempDir()
+	home := HomeDir(root)
+	if err := os.Symlink(t.TempDir(), home); err != nil {
+		t.Fatal(err)
+	}
+	err := EnsureHome(root)
+	if err == nil {
+		t.Fatal("expected symlink home to fail")
+	}
+	if !strings.Contains(err.Error(), "grok home directory") {
+		t.Fatalf("expected grok home prefix, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "must be a real directory") {
+		t.Fatalf("expected inner directory error, got: %v", err)
+	}
+	if got, want := strings.Count(err.Error(), home), 1; got != want {
+		t.Fatalf("path %q count = %d, want %d in %q", home, got, want, err)
+	}
+}
+
 func TestConfigureEnvironmentAlwaysSetsHome(t *testing.T) {
 	root := t.TempDir()
 	expected := HomeDir(root)

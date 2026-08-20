@@ -1,7 +1,6 @@
 package fsutil
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +10,15 @@ import (
 
 func TestEnsurePrivateDirCreatesOwnerOnlyDirectory(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "home")
+	require.NoError(t, EnsurePrivateDir(path))
+	info, err := os.Lstat(path)
+	require.NoError(t, err)
+	require.True(t, info.IsDir())
+	require.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+}
+
+func TestEnsurePrivateDirCreatesMissingParents(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "home")
 	require.NoError(t, EnsurePrivateDir(path))
 	info, err := os.Lstat(path)
 	require.NoError(t, err)
@@ -42,11 +50,15 @@ func TestEnsurePrivateDirRejectsSymlinkAndFile(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "target")
 	require.NoError(t, os.Mkdir(target, 0o700))
+	require.NoError(t, os.Chmod(target, 0o755)) // #nosec G302 -- target stays broad so a followed chmod would be visible.
 	link := filepath.Join(root, "home")
 	require.NoError(t, os.Symlink(target, link))
 	err := EnsurePrivateDir(link)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "must be a real directory")
+	info, statErr := os.Lstat(target)
+	require.NoError(t, statErr)
+	require.Equal(t, os.FileMode(0o755), info.Mode().Perm())
 
 	file := filepath.Join(root, "file")
 	require.NoError(t, os.WriteFile(file, []byte("x"), 0o600))
@@ -55,31 +67,34 @@ func TestEnsurePrivateDirRejectsSymlinkAndFile(t *testing.T) {
 	require.Contains(t, err.Error(), "must be a real directory")
 }
 
-func TestEnsurePrivateDirReportsFilesystemFailures(t *testing.T) {
-	t.Cleanup(func() {
-		privateDirLstat = os.Lstat
-		privateDirMkdirAll = os.MkdirAll
-		privateDirChmod = os.Chmod
-	})
-	injected := errors.New("injected")
+func TestEnsurePrivateDirRejectsDanglingSymlink(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "home")
-
-	privateDirLstat = func(string) (os.FileInfo, error) { return nil, injected }
+	require.NoError(t, os.Symlink("missing", path))
 	err := EnsurePrivateDir(path)
-	require.ErrorIs(t, err, injected)
-	require.Contains(t, err.Error(), "stat")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "must be a real directory")
+	info, err := os.Lstat(path)
+	require.NoError(t, err)
+	require.NotZero(t, info.Mode()&os.ModeSymlink)
+}
 
-	privateDirLstat = os.Lstat
-	privateDirMkdirAll = func(string, os.FileMode) error { return injected }
-	err = EnsurePrivateDir(path)
-	require.ErrorIs(t, err, injected)
-	require.Contains(t, err.Error(), "create")
+func TestEnsurePrivateDirReportsFilesystemFailures(t *testing.T) {
+	t.Run("parent is a file", func(t *testing.T) {
+		root := t.TempDir()
+		parent := filepath.Join(root, "file")
+		require.NoError(t, os.WriteFile(parent, []byte("x"), 0o600))
+		err := EnsurePrivateDir(filepath.Join(parent, "home"))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "create")
+	})
 
-	require.NoError(t, os.Mkdir(path, 0o700))
-	require.NoError(t, os.Chmod(path, 0o755)) // #nosec G302 -- fixture starts too open so the chmod failure path is reachable.
-	privateDirMkdirAll = os.MkdirAll
-	privateDirChmod = func(string, os.FileMode) error { return injected }
-	err = EnsurePrivateDir(path)
-	require.ErrorIs(t, err, injected)
-	require.Contains(t, err.Error(), "restrict")
+	t.Run("invalid path", func(t *testing.T) {
+		err := EnsurePrivateDir("")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid")
+
+		err = EnsurePrivateDir(".")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid")
+	})
 }

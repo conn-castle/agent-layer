@@ -86,6 +86,7 @@ const (
 	FsutilPrivateDirCreateFmt       = "create directory %s: %w"
 	FsutilPrivateDirNotDirectoryFmt = "%s must be a real directory, not a symlink or file"
 	FsutilPrivateDirChmodFmt        = "restrict %s to owner-only permissions: %w"
+	FsutilPrivateDirInvalidPathFmt  = "private directory path %q is invalid"
 
 	// WarningsResolveConfigFailedFmt formats config resolution failures.
 	WarningsResolveConfigFailedFmt          = "Failed to resolve configuration: %v"

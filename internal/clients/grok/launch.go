@@ -51,7 +51,7 @@ func HomeDir(root string) string {
 func EnsureHome(root string) error {
 	home := HomeDir(root)
 	if err := fsutil.EnsurePrivateDir(home); err != nil {
-		return fmt.Errorf(messages.SyncGrokHomeEnsureFailedFmt, home, err)
+		return fmt.Errorf(messages.SyncGrokHomeEnsureFailedFmt, err)
 	}
 	return nil
 }

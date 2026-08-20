@@ -30,7 +30,7 @@ func writeGrokTrustedFolders(sys System, root string) error {
 
 	homeDir := filepath.Join(root, ".grok-config")
 	if err := fsutil.EnsurePrivateDir(homeDir); err != nil {
-		return fmt.Errorf(messages.SyncGrokHomeEnsureFailedFmt, homeDir, err)
+		return fmt.Errorf(messages.SyncGrokHomeEnsureFailedFmt, err)
 	}
 
 	path := filepath.Join(homeDir, "trusted_folders.toml")
