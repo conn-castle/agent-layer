@@ -687,6 +687,8 @@ func identifyStudy(selectionID string, membership []struct{ Name, Arm string }, 
 }
 
 func canonicalizeRequiredDispatchRoles(roles []string, hasSkills bool) ([]string, error) {
+	// pelletier/go-toml/v2 decodes an explicit required_dispatch_roles = [] as a
+	// non-nil empty slice, so nil means the key was omitted.
 	if roles == nil {
 		if hasSkills {
 			return nil, fmt.Errorf("skills require required_dispatch_roles")
