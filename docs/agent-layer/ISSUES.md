@@ -29,11 +29,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-08-20 benchmark-auth-free-report-recovery: Completed cells without a report still require authentication
-    Priority: Low. Area: benchmark / study recovery
-    Description: No-auth report regeneration discovers candidates only from existing `report/report.json`. If every selected cell is written but report generation is interrupted, the retry authenticates and can fail closed for Claude or expired Codex even though `executeMatrix` would have no missing jobs.
-    Next step: If this interruption window is observed, discover unique completed matches from immutable manifests and cell evidence without inventing authentication provenance.
-
 - Issue 2026-08-18 grok-duplicate-root-instructions: Grok loads both generated instruction shims
     Priority: Low. Area: providers / grok / instructions / warnings
     Description: Grok 1.0.5 loads both byte-identical generated `AGENTS.md` and `CLAUDE.md`, duplicating project instructions while the shared instruction-token warning counts the source once.
