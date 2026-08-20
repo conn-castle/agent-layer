@@ -3,6 +3,7 @@ package grok
 import (
 	"bytes"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -45,6 +46,13 @@ func TestLaunchGrokExecHandoff(t *testing.T) {
 	val, ok := clients.GetEnv(call.Env, EnvHome)
 	if !ok || val != HomeDir(root) {
 		t.Fatalf("expected GROK_HOME=%s, got %s (ok=%v)", HomeDir(root), val, ok)
+	}
+	homeInfo, err := os.Lstat(HomeDir(root))
+	if err != nil {
+		t.Fatalf("grok home: %v", err)
+	}
+	if gotMode := homeInfo.Mode().Perm(); gotMode != 0o700 {
+		t.Fatalf("grok home mode = %04o, want 0700", gotMode)
 	}
 }
 
@@ -133,6 +141,51 @@ func TestLaunchGrokLookupError(t *testing.T) {
 	err := Launch(cfg, &run.Info{ID: "id", Dir: root}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "grok launcher requires `grok` on PATH") {
 		t.Fatalf("expected lookup error, got: %v", err)
+	}
+	if _, statErr := os.Lstat(HomeDir(root)); !os.IsNotExist(statErr) {
+		t.Fatalf("lookup failure created grok home: %v", statErr)
+	}
+}
+
+func TestEnsureHomeTightensBroadPermissions(t *testing.T) {
+	root := t.TempDir()
+	home := HomeDir(root)
+	if err := os.Mkdir(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(home, 0o755); err != nil { // #nosec G302 -- fixture starts too open so production can tighten it.
+		t.Fatal(err)
+	}
+	if err := EnsureHome(root); err != nil {
+		t.Fatalf("EnsureHome: %v", err)
+	}
+	info, err := os.Lstat(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotMode := info.Mode().Perm(); gotMode != 0o700 {
+		t.Fatalf("grok home mode = %04o, want 0700", gotMode)
+	}
+}
+
+func TestEnsureHomeRejectsSymlinkWithoutDuplicatingPath(t *testing.T) {
+	root := t.TempDir()
+	home := HomeDir(root)
+	if err := os.Symlink(t.TempDir(), home); err != nil {
+		t.Fatal(err)
+	}
+	err := EnsureHome(root)
+	if err == nil {
+		t.Fatal("expected symlink home to fail")
+	}
+	if !strings.Contains(err.Error(), "grok home directory") {
+		t.Fatalf("expected grok home prefix, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "must be a real directory") {
+		t.Fatalf("expected inner directory error, got: %v", err)
+	}
+	if got, want := strings.Count(err.Error(), home), 1; got != want {
+		t.Fatalf("path %q count = %d, want %d in %q", home, got, want, err)
 	}
 }
 

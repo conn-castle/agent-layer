@@ -532,6 +532,13 @@ func TestLaunchVSCode_ReplacesGROKHOMEWhenGrokEnabled(t *testing.T) {
 	if !strings.Contains(string(got), expected) {
 		t.Fatalf("expected %s, got env:\n%s", expected, string(got))
 	}
+	homeInfo, err := os.Lstat(filepath.Join(root, ".grok-config"))
+	if err != nil {
+		t.Fatalf("grok home: %v", err)
+	}
+	if gotMode := homeInfo.Mode().Perm(); gotMode != 0o700 {
+		t.Fatalf("grok home mode = %04o, want 0700", gotMode)
+	}
 }
 
 func TestLaunchVSCode_ClearsStaleGROKHOMEWhenGrokDisabled(t *testing.T) {

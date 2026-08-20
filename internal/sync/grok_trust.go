@@ -8,6 +8,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/tomlpatch"
 )
@@ -28,11 +29,8 @@ func writeGrokTrustedFolders(sys System, root string) error {
 	}
 
 	homeDir := filepath.Join(root, ".grok-config")
-	if err := ensureGrokHomeDirectory(sys, homeDir); err != nil {
-		return err
-	}
-	if err := sys.MkdirAll(homeDir, 0o700); err != nil {
-		return fmt.Errorf(messages.SyncCreateDirFailedFmt, homeDir, err)
+	if err := fsutil.EnsurePrivateDir(homeDir); err != nil {
+		return fmt.Errorf(messages.SyncGrokHomeEnsureFailedFmt, err)
 	}
 
 	path := filepath.Join(homeDir, "trusted_folders.toml")
@@ -59,23 +57,6 @@ func writeGrokTrustedFolders(sys System, root string) error {
 	content := grokTrustedFoldersHeader + grokTrustedFolderSection(absRoot, sys.Now().Unix())
 	if err := sys.WriteFileAtomic(path, []byte(content), 0o600); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
-	}
-	return nil
-}
-
-func ensureGrokHomeDirectory(sys System, homeDir string) error {
-	info, err := sys.Lstat(homeDir)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf(messages.InstallFailedStatFmt, homeDir, err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return fmt.Errorf("grok home directory must be a real directory: %s", homeDir)
-	}
-	if info.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf(messages.SyncGrokHomePermissionsFmt, homeDir, info.Mode().Perm(), homeDir)
 	}
 	return nil
 }

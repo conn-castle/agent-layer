@@ -428,6 +428,9 @@ func buildProviderCommand(
 			}
 		}
 		command.Args = args
+		if err := grok.EnsureHome(project.Root); err != nil {
+			return providerCommand{}, wrapExitError(ExitConfig, "prepare Grok home", err)
+		}
 		command.Env = grok.ConfigureEnvironment(project.Root, env, project.Config.Agents.Grok, diagnostics)
 		command.SessionID = sessionID
 		command.Structured = true

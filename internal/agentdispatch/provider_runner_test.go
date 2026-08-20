@@ -95,6 +95,13 @@ func TestProviderCommandsUseExactProviderContracts(t *testing.T) {
 	if home, ok := clients.GetEnv(grokCommand.Env, clientgrok.EnvHome); !ok || home != clientgrok.HomeDir(root) {
 		t.Fatalf("Grok dispatch GROK_HOME = %q (present %t), want %q", home, ok, clientgrok.HomeDir(root))
 	}
+	homeInfo, err := os.Lstat(clientgrok.HomeDir(root))
+	if err != nil {
+		t.Fatalf("grok home: %v", err)
+	}
+	if gotMode := homeInfo.Mode().Perm(); gotMode != 0o700 {
+		t.Fatalf("grok home mode = %04o, want 0700", gotMode)
+	}
 	promptContent, err := os.ReadFile(filepath.Join(run.Dir, "prompt.txt"))
 	if err != nil || string(promptContent) != "prompt text" {
 		t.Fatalf("Grok prompt file content = %q, %v", promptContent, err)
