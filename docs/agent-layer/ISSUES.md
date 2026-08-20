@@ -53,12 +53,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Next step: If root execution is ever supported, add one shared writability probe helper and apply it to every chmod-based fixture rather than to individual tests.
     Notes: The skill-import fixtures raised in PR #170 were removed or replaced with deterministic injected failures; this issue now covers only the older remaining fixtures.
 
-- Issue 2026-07-28 antigravity-probe-headless-permission-denial: Probe stdout is empty on agy 1.1.8, so transcript-derived capabilities are unmeasurable
-    Priority: Medium. Area: Antigravity capability probe
-    Description: On agy 1.1.8 the headless probe run exits 0 with empty stdout and stderr `no output produced — a tool required the "command" permission that headless mode cannot prompt for`. Every stdout-derived capability (`instructions_loaded`, `skill_names_visible`, `mcp_config_names_visible`, `shared_skill_dedup_observed`) therefore reports false regardless of real behavior. Confirmed pre-existing: the same result occurs with the previous prompt and `/usr/bin/true` fixture.
-    Next step: Seed the probe's `settings.json` with the specific allow-rules the probe prompt needs, or run the probe with an explicit auto-approve flag, then re-establish the observed baseline in CONTEXT.md.
-    Notes: Log-derived capabilities (`permissions_loaded`, `mcp_config_migrated`, `mcp_runtime_discovery`) and the new marker-derived `mcp_tool_invoked` are unaffected.
-
 - Issue 2026-07-28 dispatch-mcp-start-transport-window: An MCP dispatch_start disconnect can orphan a handle
     Priority: Medium. Area: Agent Dispatch MCP interface
     Description: `dispatch_start` is an RPC acknowledgement rather than a direct write to the caller's terminal. If the transport disconnects after the backend starts but before the client observes the response, the dispatch keeps running durably while the caller never learns its handle. This slice deliberately added no idempotency state and no listing API.

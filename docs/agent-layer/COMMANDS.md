@@ -226,7 +226,7 @@ go run ./cmd/al probe agy
 ```
 Run from: repo root
 Prerequisites: Antigravity (`agy`) installed on PATH
-Notes: Prints JSON describing the current `agy` permissions and MCP behavior observed in a repo-local probe workspace. The workspace is seeded with a real stdio MCP server (this binary's hidden `__probe-mcp-fixture` subcommand exposing one `probe_ping` tool), so `capabilities.mcp_runtime_discovery` and `capabilities.mcp_tool_invoked` report `agy` behavior rather than a fixture defect. `timed_out` reports the probe's own 45-second bound separately from a failed run. Do not claim live Antigravity MCP support unless both MCP capability flags are true.
+Notes: Prints JSON describing the current `agy` permissions and MCP behavior observed in a repo-local probe workspace. The contained `agy --print` process receives probe-only `--dangerously-skip-permissions` and `--sandbox`; stdout-derived visibility and tool-invocation results are measured under that diagnostic mode, not default headless permission prompting. The workspace is seeded with a real stdio MCP server (this binary's hidden `__probe-mcp-fixture` subcommand exposing one `probe_ping` tool), so `capabilities.mcp_runtime_discovery` and `capabilities.mcp_tool_invoked` report `agy` behavior rather than a fixture defect. `timed_out` reports the probe's own 45-second bound separately from a failed run. Do not claim live Antigravity MCP support unless both MCP capability flags are true.
 
 - Run the Grok capability probe
 ```bash
