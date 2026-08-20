@@ -37,6 +37,21 @@ if [[ "\${1:-}" == "--version" ]]; then
   exit 0
 fi
 
+has_skip=0
+has_sandbox=0
+for arg in "\$@"; do
+  if [[ "\$arg" == "--dangerously-skip-permissions" ]]; then
+    has_skip=1
+  fi
+  if [[ "\$arg" == "--sandbox" ]]; then
+    has_sandbox=1
+  fi
+done
+if [[ "\$has_skip" != 1 || "\$has_sandbox" != 1 ]]; then
+  echo "no output produced — a tool required the \"command\" permission that headless mode cannot prompt for" >&2
+  exit 0
+fi
+
 if [[ -n "\$gemini_dir" ]]; then
   mkdir -p "\$gemini_dir/antigravity-cli/log"
   cat > "\$gemini_dir/antigravity-cli/log/cli.log" <<'LOG_EOF'
@@ -80,6 +95,8 @@ run_scenario_antigravity_probe() {
   assert_output_contains "$output" '"instructions_loaded": true' \
     "probe observes AGENTS.md instructions"
   assert_mock_agent_has_arg "$MOCK_AGENT_LOG" "--print"
+  assert_mock_agent_has_arg "$MOCK_AGENT_LOG" "--dangerously-skip-permissions"
+  assert_mock_agent_has_arg "$MOCK_AGENT_LOG" "--sandbox"
 
   install_mock_agy_probe "$repo_dir" 2
   rc=0

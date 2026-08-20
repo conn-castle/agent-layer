@@ -65,9 +65,15 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
+	// Probe-only: headless agy cannot prompt for the command permission the
+	// fixed prompt needs. Pair auto-approval with --sandbox so the bypass
+	// stays inside this disposable workspace. Do not copy these flags into
+	// BaseArgs, interactive launch, or Agent Dispatch.
 	// #nosec G204 -- agyPath is resolved from exec.LookPath("agy") and is the explicit probe target.
 	cmd := exec.CommandContext(runCtx, agyPath,
 		"--gemini_dir="+geminiDir,
+		"--dangerously-skip-permissions",
+		"--sandbox",
 		"--print-timeout=30s",
 		"--print",
 		probePrompt,
