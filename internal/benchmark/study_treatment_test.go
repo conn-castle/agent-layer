@@ -289,6 +289,117 @@ func TestStudySkillsRequireTheDeclaredEntryPrompt(t *testing.T) {
 	}
 }
 
+func TestStudyTreatmentBundlePropagatesRequiredDispatchRoles(t *testing.T) {
+	root := t.TempDir()
+	configPath := writeStudyTreatmentConfig(t, root)
+	skills := filepath.Join(root, "skills", "benchmark")
+	if err := os.MkdirAll(skills, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skills, "SKILL.md"), []byte("---\nname: benchmark\ndescription: Benchmark skill.\n---\n\nDo the task.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prompt := filepath.Join(root, "prompt.md")
+	if err := os.WriteFile(prompt, []byte("Use {{task}}."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	experiment := preparedStudyExperiment{
+		studyExperiment: studyExperiment{
+			Config: filepath.Base(configPath), Skills: "skills", EntryPrompt: "prompt.md",
+			RequiredDispatchRoles: []string{requiredRolePlanReviewer, requiredRoleImplementer},
+		},
+		model: model, effort: effort,
+		inputs: studyExperimentInputs{Config: configPath, Skills: filepath.Dir(skills), EntryPrompt: prompt},
+	}
+	bundle, err := BuildStudyTreatmentBundle(root, experiment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(bundle.Root) })
+	if got := bundle.Manifest.RequiredRoles; len(got) != 2 || got[0] != requiredRoleImplementer || got[1] != requiredRolePlanReviewer {
+		t.Fatalf("manifest required roles = %#v", got)
+	}
+	encoded, err := json.Marshal(bundle.Manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"required_dispatch_roles":["implementer","plan-reviewer"]`) {
+		t.Fatalf("constrained manifest encoding = %s", encoded)
+	}
+	experiment.RequiredDispatchRoles = nil
+	unconstrained, err := BuildStudyTreatmentBundle(root, experiment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(unconstrained.Root) })
+	if unconstrained.Manifest.RequiredRoles != nil {
+		t.Fatalf("unconstrained manifest roles = %#v", unconstrained.Manifest.RequiredRoles)
+	}
+	encoded, err = json.Marshal(unconstrained.Manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"required_dispatch_roles":null`) {
+		t.Fatalf("unconstrained manifest encoding = %s", encoded)
+	}
+	if unconstrained.ManifestHash == bundle.ManifestHash {
+		t.Fatal("nonempty required roles did not change treatment manifest identity")
+	}
+}
+
+func TestTreatmentManifestKeepsExplicitEmptyRolesByteCompatible(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("content\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatch := defaultTreatmentDispatchConfig(model, effort)
+	omitted, err := treatmentManifest(root, TreatmentInstructionsAndSkills, nil, dispatch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty, err := treatmentManifest(root, TreatmentInstructionsAndSkills, []string{}, dispatch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	left, err := hashCanonical(omitted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := hashCanonical(empty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if left != right || omitted.RequiredRoles != nil || empty.RequiredRoles != nil {
+		t.Fatalf("explicit empty roles changed unconstrained manifest identity: omitted=%#v empty=%#v", omitted, empty)
+	}
+	encoded, err := json.Marshal(omitted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"required_dispatch_roles":null`) {
+		t.Fatalf("unconstrained manifest encoding = %s", encoded)
+	}
+	constrained, err := treatmentManifest(root, TreatmentInstructionsAndSkills, []string{requiredRoleImplementer}, dispatch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := hashCanonical(constrained)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed == left {
+		t.Fatal("nonempty required roles did not change treatment manifest identity")
+	}
+}
+
 func TestStudyTreatmentPinRejectsMutatedPinMetadata(t *testing.T) {
 	repoRoot := t.TempDir()
 	bundle := minimalStudyTreatmentBundle(t)

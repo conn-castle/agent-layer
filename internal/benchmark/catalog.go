@@ -143,3 +143,12 @@ func containsString(values []string, wanted string) bool {
 	}
 	return false
 }
+
+func validRequiredDispatchRole(role string) bool {
+	switch role {
+	case requiredRoleCodeReviewer, requiredRoleImplementer, requiredRolePlanReviewer:
+		return true
+	default:
+		return false
+	}
+}

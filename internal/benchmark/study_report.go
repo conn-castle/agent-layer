@@ -270,6 +270,9 @@ func buildStudyExperimentReport(experiment preparedStudyExperiment, arm matrixAr
 	if len(item.ProviderClients) > 1 {
 		item.ComparabilityWarnings = append(item.ComparabilityWarnings, "Evidence contains more than one provider client version.")
 	}
+	if item.WorkflowNoncomplianceRuns > 0 {
+		item.ComparabilityWarnings = append(item.ComparabilityWarnings, "Workflow-noncompliant completed runs are retained as scored evidence; statistical comparisons involving this experiment are unavailable.")
+	}
 	if complete {
 		score := 0.0
 		for _, task := range item.Tasks {
@@ -330,6 +333,21 @@ func compareStudyExperiments(left, right StudyExperimentReport) StudyComparisonR
 	comparison := StudyComparisonReport{Left: left.Name, Right: right.Name}
 	if left.Score == nil || right.Score == nil {
 		comparison.UnavailableReason = "requires every selected task cell to be complete in both experiments"
+		return comparison
+	}
+	if left.WorkflowNoncomplianceRuns > 0 || right.WorkflowNoncomplianceRuns > 0 {
+		names := make([]string, 0, 2)
+		if left.WorkflowNoncomplianceRuns > 0 {
+			names = append(names, left.Name)
+		}
+		if right.WorkflowNoncomplianceRuns > 0 {
+			names = append(names, right.Name)
+		}
+		verb := "has"
+		if len(names) > 1 {
+			verb = "have"
+		}
+		comparison.UnavailableReason = fmt.Sprintf("%s %s workflow-noncompliant completed runs; statistical comparison is unavailable while candidate evidence is retained", strings.Join(names, " and "), verb)
 		return comparison
 	}
 	var variance, denominator float64

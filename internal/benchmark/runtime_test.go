@@ -203,49 +203,52 @@ func TestNormalizePierRejectsAmbiguousAndMalformedEvidence(t *testing.T) {
 	}
 }
 
-func TestDispatchConformanceUsesObservedLifecycleWithoutAffectingScore(t *testing.T) {
+func TestDispatchConformanceMatchesRequiredTargetMultiset(t *testing.T) {
 	model, effort, err := ParseModelSelection("luna:high")
 	if err != nil {
 		t.Fatal(err)
 	}
-	stage := writePierStage(t, "task-checksum", .5, 1)
-	request := ExecutionRequest{
-		EventID: "event", Attempt: 1, Task: "example-task", Model: model,
-		Effort: effort, Arm: ArmTreatment, TaskChecksum: "task-checksum",
-		Bundle: &TreatmentBundle{Manifest: TreatmentManifest{
-			Mode: TreatmentInstructionsAndSkills,
-			RequiredRoles: []string{
-				requiredRolePlanReviewer, requiredRoleImplementer, requiredRoleCodeReviewer,
-			},
-		}},
+	opusModel, opusEffort, err := ParseModelSelection("opus:high")
+	if err != nil {
+		t.Fatal(err)
 	}
-	unconstrained := request
-	unconstrained.Bundle = &TreatmentBundle{Manifest: TreatmentManifest{
-		Mode: TreatmentInstructionsAndSkills,
-	}}
+	luna := TreatmentDispatchTarget{Agent: dispatchAgent(model), Model: dispatchModel(model), ReasoningEffort: effort}
+	opus := TreatmentDispatchTarget{Agent: dispatchAgent(opusModel), Model: dispatchModel(opusModel), ReasoningEffort: opusEffort}
+	skillsRequest := func(roles []string, config TreatmentDispatchConfig) ExecutionRequest {
+		return ExecutionRequest{
+			EventID: "event", Attempt: 1, Task: "example-task", Model: model,
+			Effort: effort, Arm: ArmTreatment, TaskChecksum: "task-checksum",
+			Bundle: &TreatmentBundle{Manifest: TreatmentManifest{
+				Mode: TreatmentInstructionsAndSkills, RequiredRoles: roles, DispatchConfig: config,
+			}},
+		}
+	}
+	shared := defaultTreatmentDispatchConfig(model, effort)
+	threeRoles := []string{requiredRolePlanReviewer, requiredRoleImplementer, requiredRoleCodeReviewer}
+	completed := func(id, agent, modelName, reasoning string) dispatchConformanceRecord {
+		return dispatchConformanceRecord{ID: id, Agent: agent, Model: modelName, ReasoningEffort: reasoning, Mode: "fresh", State: "completed"}
+	}
+	lunaRecord := func(id string) dispatchConformanceRecord {
+		return completed(id, luna.Agent, luna.Model, luna.ReasoningEffort)
+	}
+
+	unconstrained := skillsRequest(nil, TreatmentDispatchConfig{})
 	if conformant, err := dispatchConformance(t.TempDir(), unconstrained); err != nil || !conformant {
 		t.Fatalf("unconstrained skills treatment = %t, %v", conformant, err)
 	}
+
+	stage := writePierStage(t, "task-checksum", .5, 1)
+	request := skillsRequest(threeRoles, shared)
 	if conformant, err := dispatchConformance(stage, request); err != nil || conformant {
 		t.Fatalf("missing lifecycle = %t, %v", conformant, err)
 	}
-	dispatchDir := filepath.Join(stage, "jobs", "one", "agent-layer-dispatch")
-	if err := os.MkdirAll(dispatchDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	for index, skill := range []string{"review-plan", "implement-plan", "review-uncommitted-code"} {
-		record := fmt.Sprintf(
-			`{"id":"run-%d","agent":"codex","model":"gpt-5.6-luna","reasoning_effort":"high","skill":"%s","mode":"fresh","state":"completed"}`,
-			index, skill,
-		)
-		if err := os.WriteFile(filepath.Join(dispatchDir, fmt.Sprintf("%d.json", index)), []byte(record), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
+
+	dispatchDir := filepath.Join(stage, "jobs", "one", dispatchEvidenceDir)
+	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0"), lunaRecord("run-1"), lunaRecord("run-2"))
 	if conformant, err := dispatchConformance(stage, request); err != nil || !conformant {
-		t.Fatalf("complete lifecycle = %t, %v", conformant, err)
+		t.Fatalf("required target multiset = %t, %v", conformant, err)
 	}
-	for _, name := range []string{"codex-mcp-preflight.json", "dispatch-options-preflight.json"} {
+	for _, name := range []string{codexMCPPreflightEvidence, dispatchOptionsPreflightFile} {
 		if err := os.WriteFile(filepath.Join(dispatchDir, name), []byte("{}\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -253,13 +256,67 @@ func TestDispatchConformanceUsesObservedLifecycleWithoutAffectingScore(t *testin
 	if conformant, err := dispatchConformance(stage, request); err != nil || !conformant {
 		t.Fatalf("lifecycle with preflight evidence = %t, %v", conformant, err)
 	}
-	if err := os.WriteFile(filepath.Join(dispatchDir, "2.json"), []byte(`{"id":"run-2","agent":"codex","model":"gpt-5.6-luna","reasoning_effort":"high","skill":"implement-plan","mode":"fresh","state":"completed"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
+
+	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0"))
 	if conformant, err := dispatchConformance(stage, request); err != nil || conformant {
-		t.Fatalf("duplicated role lifecycle = %t, %v", conformant, err)
+		t.Fatalf("one lifecycle cannot satisfy two roles = %t, %v", conformant, err)
 	}
-	if err := os.WriteFile(filepath.Join(dispatchDir, "2.json"), []byte(`not-json`), 0o600); err != nil {
+	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0"), lunaRecord("run-0"), lunaRecord("run-0"))
+	if _, err := dispatchConformance(stage, request); err == nil || !strings.Contains(err.Error(), "lifecycle \"run-0\" is duplicated") {
+		t.Fatalf("duplicated lifecycle error = %v", err)
+	}
+
+	writeDispatchRecords(t, dispatchDir, completed("run-0", opus.Agent, opus.Model, opus.ReasoningEffort), lunaRecord("run-1"), lunaRecord("run-2"))
+	if conformant, err := dispatchConformance(stage, request); err != nil || conformant {
+		t.Fatalf("wrong target lifecycle = %t, %v", conformant, err)
+	}
+
+	failed := lunaRecord("run-2")
+	failed.State = "failed"
+	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0"), lunaRecord("run-1"), failed)
+	if conformant, err := dispatchConformance(stage, request); err != nil || conformant {
+		t.Fatalf("incomplete lifecycle = %t, %v", conformant, err)
+	}
+
+	nested := lunaRecord("nested")
+	nested.ParentRunID = "run-0"
+	continued := lunaRecord("continued")
+	continued.Mode = "continued"
+	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0"), lunaRecord("run-1"), lunaRecord("run-2"), nested, continued, completed("extra", opus.Agent, opus.Model, opus.ReasoningEffort))
+	if conformant, err := dispatchConformance(stage, request); err != nil || !conformant {
+		t.Fatalf("nested extra records poisoned a valid multiset = %t, %v", conformant, err)
+	}
+
+	writeDispatchRecords(t, dispatchDir, nested, continued)
+	if conformant, err := dispatchConformance(stage, request); err != nil || conformant {
+		t.Fatalf("nested records filled a required slot = %t, %v", conformant, err)
+	}
+	nestedFailed := nested
+	nestedFailed.State = "failed"
+	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0"), lunaRecord("run-1"), lunaRecord("run-2"), nestedFailed)
+	if conformant, err := dispatchConformance(stage, request); err != nil || conformant {
+		t.Fatalf("failed nested lifecycle was ignored = %t, %v", conformant, err)
+	}
+
+	twoReviewers := shared
+	twoReviewers.PlanReviewers = []TreatmentDispatchTarget{luna, opus}
+	reviewerRequest := skillsRequest([]string{requiredRolePlanReviewer}, twoReviewers)
+	writeDispatchRecords(t, dispatchDir, lunaRecord("review-luna"), completed("review-opus", opus.Agent, opus.Model, opus.ReasoningEffort))
+	if conformant, err := dispatchConformance(stage, reviewerRequest); err != nil || !conformant {
+		t.Fatalf("plan-reviewer target multiset = %t, %v", conformant, err)
+	}
+	writeDispatchRecords(t, dispatchDir, lunaRecord("review-luna"), lunaRecord("review-luna-2"))
+	if conformant, err := dispatchConformance(stage, reviewerRequest); err != nil || conformant {
+		t.Fatalf("missing distinct reviewer target = %t, %v", conformant, err)
+	}
+
+	if _, err := dispatchConformance(stage, skillsRequest([]string{requiredRoleImplementer}, TreatmentDispatchConfig{})); err == nil ||
+		!strings.Contains(err.Error(), "no configured implementer target") {
+		t.Fatalf("missing configured target error = %v", err)
+	}
+
+	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0"))
+	if err := os.WriteFile(filepath.Join(dispatchDir, "bad.json"), []byte("not-json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := dispatchConformance(stage, request); err == nil ||
@@ -267,10 +324,53 @@ func TestDispatchConformanceUsesObservedLifecycleWithoutAffectingScore(t *testin
 		t.Fatalf("malformed lifecycle error = %v", err)
 	}
 
-	request.Bundle.Manifest.Mode = TreatmentInstructionsOnly
-	request.Bundle.Manifest.RequiredRoles = nil
-	if conformant, err := dispatchConformance(t.TempDir(), request); err == nil || conformant {
+	instructions := request
+	instructions.Bundle = &TreatmentBundle{Manifest: TreatmentManifest{Mode: TreatmentInstructionsOnly}}
+	if conformant, err := dispatchConformance(t.TempDir(), instructions); err == nil || conformant {
 		t.Fatalf("missing jobs directory should fail visibly: %t, %v", conformant, err)
+	}
+}
+
+func TestNormalizePierRetainsScoreWhenDispatchIsNonconformant(t *testing.T) {
+	model, effort, err := ParseModelSelection("fable:high")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage := writePierStage(t, "task-checksum", .5, 3.5)
+	request := ExecutionRequest{
+		EventID: "event", Attempt: 1, Task: "example-task", Model: model,
+		Effort: effort, Arm: ArmTreatment, TaskChecksum: "task-checksum",
+		Bundle: &TreatmentBundle{Manifest: TreatmentManifest{
+			Mode:           TreatmentInstructionsAndSkills,
+			RequiredRoles:  []string{requiredRoleImplementer},
+			DispatchConfig: defaultTreatmentDispatchConfig(model, effort),
+		}},
+	}
+	result, err := normalizePier(stage, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != statusSuccess || result.DispatchConformant || result.F2PScore != .5 || result.CostUSD == nil || *result.CostUSD != 3.5 {
+		t.Fatalf("nonconformant normalized result = %#v", result)
+	}
+}
+
+func writeDispatchRecords(t *testing.T, dir string, records ...dispatchConformanceRecord) {
+	t.Helper()
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for index, record := range records {
+		data, err := json.Marshal(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("%d.json", index)), append(data, '\n'), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

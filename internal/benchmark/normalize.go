@@ -310,7 +310,6 @@ type dispatchConformanceRecord struct {
 	Agent           string `json:"agent"`
 	Model           string `json:"model"`
 	ReasoningEffort string `json:"reasoning_effort"`
-	Skill           string `json:"skill"`
 	Mode            string `json:"mode"`
 	State           string `json:"state"`
 	ParentRunID     string `json:"parent_run_id"`
@@ -323,7 +322,8 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 	if request.Bundle == nil {
 		return false, fmt.Errorf("treatment result has no immutable bundle")
 	}
-	required := normalizedRoles(request.Bundle.Manifest.RequiredRoles)
+	required := append([]string(nil), request.Bundle.Manifest.RequiredRoles...)
+	sort.Strings(required)
 	if request.Bundle.Manifest.Mode == TreatmentInstructionsAndSkills && len(required) == 0 {
 		return true, nil
 	}
@@ -346,10 +346,18 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 	if request.Bundle.Manifest.Mode == TreatmentInstructionsOnly {
 		return len(paths) == 0 && len(required) == 0, nil
 	}
-	if request.Bundle.Manifest.Mode != TreatmentInstructionsAndSkills || len(paths) == 0 {
+	if request.Bundle.Manifest.Mode != TreatmentInstructionsAndSkills {
 		return false, nil
 	}
-	completedRoles := make(map[string]bool, len(required))
+	slots, err := expectedDispatchSlots(required, request.Bundle.Manifest.DispatchConfig)
+	if err != nil {
+		return false, err
+	}
+	if len(paths) == 0 {
+		return false, nil
+	}
+	var eligible []dispatchConformanceRecord
+	seenIDs := make(map[string]bool, len(paths))
 	for _, path := range paths {
 		data, err := os.ReadFile(path) // #nosec G122,G304 -- path was discovered below the restricted attempt stage.
 		if err != nil {
@@ -362,61 +370,36 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 		if record.ID == "" || record.State != "completed" {
 			return false, nil
 		}
+		if seenIDs[record.ID] {
+			return false, fmt.Errorf("treatment dispatch lifecycle %q is duplicated", record.ID)
+		}
+		seenIDs[record.ID] = true
 		if record.Mode != "fresh" || record.ParentRunID != "" {
 			continue
 		}
-		for _, role := range required {
-			expectedSkill := dispatchSkillForRole(role)
-			if expectedSkill != "" && record.Skill == expectedSkill &&
-				dispatchRecordMatchesRole(record, role, request) {
-				completedRoles[role] = true
+		eligible = append(eligible, record)
+	}
+	used := make([]bool, len(eligible))
+	for _, slot := range slots {
+		matched := false
+		for index, record := range eligible {
+			if used[index] || !dispatchRecordMatchesTarget(record, slot) {
+				continue
 			}
+			used[index] = true
+			matched = true
+			break
+		}
+		if !matched {
+			return false, nil
 		}
 	}
-	return len(completedRoles) == len(required), nil
+	return true, nil
 }
 
-func dispatchRecordMatchesRole(record dispatchConformanceRecord, role string, request ExecutionRequest) bool {
-	config := request.Bundle.Manifest.DispatchConfig
-	var targets []TreatmentDispatchTarget
-	switch role {
-	case requiredRolePlanReviewer:
-		targets = config.PlanReviewers
-	case requiredRoleImplementer:
-		if config.Implementer.Agent != "" {
-			targets = []TreatmentDispatchTarget{config.Implementer}
-		}
-	case requiredRoleCodeReviewer:
-		if config.CodeReviewer.Agent != "" {
-			targets = []TreatmentDispatchTarget{config.CodeReviewer}
-		}
-	}
-	if len(targets) == 0 {
-		targets = []TreatmentDispatchTarget{{
-			Agent: dispatchAgent(request.Model), Model: dispatchModel(request.Model),
-			ReasoningEffort: request.Effort,
-		}}
-	}
-	for _, target := range targets {
-		if record.Agent == target.Agent && record.Model == target.Model &&
-			record.ReasoningEffort == target.ReasoningEffort {
-			return true
-		}
-	}
-	return false
-}
-
-func dispatchSkillForRole(role string) string {
-	switch role {
-	case requiredRolePlanReviewer:
-		return "review-plan"
-	case requiredRoleImplementer:
-		return "implement-plan"
-	case requiredRoleCodeReviewer:
-		return "review-uncommitted-code"
-	default:
-		return ""
-	}
+func dispatchRecordMatchesTarget(record dispatchConformanceRecord, target TreatmentDispatchTarget) bool {
+	return record.Agent == target.Agent && record.Model == target.Model &&
+		record.ReasoningEffort == target.ReasoningEffort
 }
 
 func submittedPatchBytes(stage string) (int64, error) {
@@ -852,21 +835,6 @@ func priceCodexRequest(label, model string, usage codexTokenUsage, pricing bench
 		float64(*usage.CacheWriteInputTokens)*cacheCreationRate + fixed) /
 		float64(pricing.UnitTokens)
 	return cost, &exact, nil
-}
-
-func normalizedRoles(roles []string) []string {
-	unique := make(map[string]bool, len(roles))
-	for _, role := range roles {
-		if role = strings.TrimSpace(role); role != "" {
-			unique[role] = true
-		}
-	}
-	normalized := make([]string, 0, len(unique))
-	for role := range unique {
-		normalized = append(normalized, role)
-	}
-	sort.Strings(normalized)
-	return normalized
 }
 
 func float64Pointer(value float64) *float64 { return &value }

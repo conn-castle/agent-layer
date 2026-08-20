@@ -303,6 +303,85 @@ func TestStudyReportUsesWithinCellWelchVarianceAndHolmFamily(t *testing.T) {
 	}
 }
 
+func TestStudyReportGatesNoncompliantComparisonsAndKeepsEligibleHolmFamily(t *testing.T) {
+	root := t.TempDir()
+	selection := matrixSelectionFixture()
+	selection.SchemaVersion = matrixSelectionSchemaVersion
+	for index := range selection.Tasks {
+		selection.Tasks[index].Repetitions = 2
+	}
+	selectionID, err := hashCanonical(selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks := []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 2}, {ID: "second-task", RepetitionsPerArm: 2}}
+	checksums := map[string]string{"first-task": "first-checksum", "second-task": "second-checksum"}
+	arms := []matrixArm{
+		matrixArmFixture(root, "Noncompliant", ArmTreatment, model, effort, tasks),
+		matrixArmFixture(root, "Conformant", ArmTreatment, model, effort, tasks),
+		matrixArmFixture(root, "Unconstrained", ArmBaseline, model, effort, tasks),
+	}
+	for index := range arms {
+		arms[index].ID = strings.Repeat(string(rune('a'+index)), 64)
+	}
+	arms[0].Bundle = &TreatmentBundle{Manifest: TreatmentManifest{
+		Mode: TreatmentInstructionsAndSkills, RequiredRoles: []string{requiredRoleImplementer},
+	}}
+	arms[1].Bundle = &TreatmentBundle{Manifest: TreatmentManifest{Mode: TreatmentInstructionsAndSkills}}
+	for attempt, score := range []float64{.2, .4} {
+		rewriteStudyAttemptConformance(t, arms[0], "first-task", attempt+1, checksums["first-task"], score, 1, false)
+		rewriteStudyAttempt(t, arms[1], "first-task", attempt+1, checksums["first-task"], score, 1)
+		rewriteStudyAttempt(t, arms[2], "first-task", attempt+1, checksums["first-task"], score, 1)
+	}
+	for attempt, score := range []float64{.6, .8} {
+		rewriteStudyAttemptConformance(t, arms[0], "second-task", attempt+1, checksums["second-task"], score, 1, false)
+		rewriteStudyAttempt(t, arms[1], "second-task", attempt+1, checksums["second-task"], score, 1)
+		rewriteStudyAttempt(t, arms[2], "second-task", attempt+1, checksums["second-task"], score, 1)
+	}
+	study := preparedStudy{selection: selection, selectionID: selectionID, studyID: strings.Repeat("s", 64), experiments: []preparedStudyExperiment{
+		{studyExperiment: studyExperiment{Name: "Noncompliant"}, model: model, effort: effort, identity: "a"},
+		{studyExperiment: studyExperiment{Name: "Conformant"}, model: model, effort: effort, identity: "b"},
+		{studyExperiment: studyExperiment{Name: "Unconstrained"}, model: model, effort: effort, identity: "c"},
+	}}
+	report, _, _, err := buildStudyReport(study, matrixPreparation{selection: selection, selectionID: selectionID, stateDir: filepath.Join(root, "study"), tasks: tasks, checksums: checksums, environments: map[string]string{"first-task": "env-1", "second-task": "env-2"}, arms: arms, taskConcurrency: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Experiments) != 3 || report.Experiments[0].Score == nil || report.Experiments[1].Score == nil || report.Experiments[2].Score == nil {
+		t.Fatalf("expected retained experiment scores: %#v", report.Experiments)
+	}
+	if report.Experiments[0].WorkflowNoncomplianceRuns != 4 || report.Experiments[0].DispatchConformantRuns != 0 {
+		t.Fatalf("noncompliant counts = %#v", report.Experiments[0])
+	}
+	if !containsString(report.Experiments[0].ComparabilityWarnings, "Workflow-noncompliant completed runs are retained as scored evidence; statistical comparisons involving this experiment are unavailable.") {
+		t.Fatalf("missing noncompliance warning: %#v", report.Experiments[0].ComparabilityWarnings)
+	}
+	if report.Experiments[1].WorkflowNoncomplianceRuns != 0 || report.Experiments[2].WorkflowNoncomplianceRuns != 0 {
+		t.Fatalf("eligible experiments were marked noncompliant: %#v", report.Experiments)
+	}
+	if len(report.Comparisons) != 3 || report.HolmFamily.Size != 1 || len(report.HolmFamily.Members) != 1 || report.HolmFamily.Members[0] != "Conformant vs Unconstrained" {
+		t.Fatalf("holm family = %#v comparisons = %#v", report.HolmFamily, report.Comparisons)
+	}
+	for _, comparison := range report.Comparisons {
+		switch {
+		case comparison.Left == "Conformant" && comparison.Right == "Unconstrained":
+			if !comparison.Available || comparison.RawTwoSidedPValue == nil || comparison.HolmAdjustedPValue == nil || *comparison.HolmAdjustedPValue != *comparison.RawTwoSidedPValue {
+				t.Fatalf("eligible comparison = %#v", comparison)
+			}
+		case comparison.Left == "Noncompliant" || comparison.Right == "Noncompliant":
+			if comparison.Available || comparison.Difference != nil || comparison.HolmAdjustedPValue != nil || !strings.Contains(comparison.UnavailableReason, "workflow-noncompliant") {
+				t.Fatalf("noncompliant comparison = %#v", comparison)
+			}
+		default:
+			t.Fatalf("unexpected comparison = %#v", comparison)
+		}
+	}
+}
+
 func dereference(value *float64) float64 {
 	if value == nil {
 		return math.NaN()
@@ -503,13 +582,18 @@ func TestLegacyMatrixArmManifestIsReadOnlyRecoveryInput(t *testing.T) {
 
 func rewriteStudyAttempt(t *testing.T, arm matrixArm, task string, attempt int, checksum string, score, cost float64) {
 	t.Helper()
+	rewriteStudyAttemptConformance(t, arm, task, attempt, checksum, score, cost, true)
+}
+
+func rewriteStudyAttemptConformance(t *testing.T, arm matrixArm, task string, attempt int, checksum string, score, cost float64, dispatchConformant bool) {
+	t.Helper()
 	duration := 1.0
 	now := time.Now().UTC()
 	environment := "env-1"
 	if task == "second-task" {
 		environment = "env-2"
 	}
-	result := AttemptResult{SchemaVersion: StorageSchemaVersion, EventID: strings.Repeat("e", 32), Attempt: attempt, Task: task, Status: statusSuccess, F2PPassed: int(math.Round(score * 10)), F2PTotal: 10, F2PScore: score, CostUSD: &cost, CostKind: costKindProviderReported, DurationSeconds: &duration, TaskChecksum: checksum, EnvironmentIdentity: environment, StartedAt: now, FinishedAt: now, Provider: arm.Loaded.Model.Adapter, PublishedModel: arm.Loaded.Model.PublishedIdentifier, RuntimeModel: arm.Loaded.Model.RuntimeIdentifier, ReasoningEffort: arm.Loaded.Effort, ProviderClientVersion: arm.Loaded.Model.ProviderClientVersion, DispatchConformant: true, InvocationCount: 1}
+	result := AttemptResult{SchemaVersion: StorageSchemaVersion, EventID: strings.Repeat("e", 32), Attempt: attempt, Task: task, Status: statusSuccess, F2PPassed: int(math.Round(score * 10)), F2PTotal: 10, F2PScore: score, CostUSD: &cost, CostKind: costKindProviderReported, DurationSeconds: &duration, TaskChecksum: checksum, EnvironmentIdentity: environment, StartedAt: now, FinishedAt: now, Provider: arm.Loaded.Model.Adapter, PublishedModel: arm.Loaded.Model.PublishedIdentifier, RuntimeModel: arm.Loaded.Model.RuntimeIdentifier, ReasoningEffort: arm.Loaded.Effort, ProviderClientVersion: arm.Loaded.Model.ProviderClientVersion, DispatchConformant: dispatchConformant, InvocationCount: 1}
 	if err := writeJSON(armResultPath(arm.StateDir, task, attempt), result); err != nil {
 		t.Fatal(err)
 	}
@@ -545,7 +629,7 @@ func TestStudyValidatesExplicitInputsAndIdentity(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "entry.md"), []byte("Use skill for {{task}} exactly."), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	study := "selection = \"selection.json\"\n\n[[experiments]]\nname = \"Bare\"\nmodel = \"luna\"\nreasoning = \"low\"\n\n[[experiments]]\nname = \"Skills\"\nmodel = \"luna\"\nreasoning = \"low\"\nconfig = \"config.toml\"\ninstructions = \"instructions\"\nskills = \"skills\"\nentry_prompt = \"entry.md\"\n"
+	study := "selection = \"selection.json\"\n\n[[experiments]]\nname = \"Bare\"\nmodel = \"luna\"\nreasoning = \"low\"\n\n[[experiments]]\nname = \"Skills\"\nmodel = \"luna\"\nreasoning = \"low\"\nconfig = \"config.toml\"\ninstructions = \"instructions\"\nskills = \"skills\"\nentry_prompt = \"entry.md\"\nrequired_dispatch_roles = []\n"
 	studyPath := filepath.Join(root, "study.toml")
 	if err := os.WriteFile(studyPath, []byte(study), 0o600); err != nil {
 		t.Fatal(err)
@@ -582,6 +666,69 @@ func TestStudyValidatesExplicitInputsAndIdentity(t *testing.T) {
 	}
 	if changed == first {
 		t.Fatal("production v3 study identity ignored its certified environments")
+	}
+	unconstrained := firstPrepared.experiments[1]
+	legacyIdentity, err := hashCanonical(struct {
+		Schema    string            `json:"schema"`
+		Model     string            `json:"model"`
+		Reasoning string            `json:"reasoning"`
+		Resources map[string]any    `json:"resources"`
+		Inputs    map[string]string `json:"inputs"`
+	}{
+		Schema: "deepswe-benchmark-experiment-v1", Model: unconstrained.model.PublishedIdentifier, Reasoning: unconstrained.effort,
+		Resources: map[string]any{studyResourceSchemaKey: studyResourceSchema, studyResourceTimeoutKey: skillsAgentTimeoutFactor},
+		Inputs:    unconstrained.inputHashes,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unconstrained.identity != legacyIdentity {
+		t.Fatal("explicit empty required_dispatch_roles changed unconstrained experiment identity")
+	}
+}
+
+func TestStudyRequiredDispatchRolesParticipateInIdentity(t *testing.T) {
+	writeSkillsStudy := func(t *testing.T, root, roles string) string {
+		t.Helper()
+		selection, err := json.Marshal(matrixSelectionFixture())
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeStudyInputFixture(t, root, "selection.json", string(selection))
+		writeStudySkillsInputs(t, root)
+		body := "selection = \"selection.json\"\n[[experiments]]\nname = \"Skills\"\nmodel = \"luna\"\nreasoning = \"low\"\nconfig = \"config.toml\"\nskills = \"skills\"\nentry_prompt = \"prompt.md\"\nrequired_dispatch_roles = " + roles + "\n"
+		path := filepath.Join(root, "study.toml")
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	emptyRoot := t.TempDir()
+	emptyPrepared, err := prepareStudy(StudyOptions{RepoRoot: emptyRoot, StudyPath: writeSkillsStudy(t, emptyRoot, "[]")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer emptyPrepared.cleanupInputs()
+	reorderedRoot := t.TempDir()
+	reorderedPrepared, err := prepareStudy(StudyOptions{RepoRoot: reorderedRoot, StudyPath: writeSkillsStudy(t, reorderedRoot, "[\"implementer\", \"plan-reviewer\"]")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reorderedPrepared.cleanupInputs()
+	canonicalRoot := t.TempDir()
+	canonicalPrepared, err := prepareStudy(StudyOptions{RepoRoot: canonicalRoot, StudyPath: writeSkillsStudy(t, canonicalRoot, "[\"plan-reviewer\", \"implementer\"]")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer canonicalPrepared.cleanupInputs()
+	if reorderedPrepared.experiments[0].identity != canonicalPrepared.experiments[0].identity {
+		t.Fatal("required_dispatch_roles order changed experiment identity")
+	}
+	if emptyPrepared.experiments[0].identity == canonicalPrepared.experiments[0].identity {
+		t.Fatal("nonempty required_dispatch_roles did not change experiment identity")
+	}
+	if got := canonicalPrepared.experiments[0].RequiredDispatchRoles; len(got) != 2 || got[0] != requiredRoleImplementer || got[1] != requiredRolePlanReviewer {
+		t.Fatalf("canonical roles = %#v", got)
 	}
 }
 
@@ -648,7 +795,7 @@ func TestStudyRejectsInvalidSkillPromptBeforeCalls(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "prompt.md"), []byte("no placeholder"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	study := "selection = \"selection.json\"\n[[experiments]]\nname = \"Skills\"\nmodel = \"luna\"\nreasoning = \"low\"\nconfig = \"config.toml\"\nskills = \"skills\"\nentry_prompt = \"prompt.md\"\n"
+	study := "selection = \"selection.json\"\n[[experiments]]\nname = \"Skills\"\nmodel = \"luna\"\nreasoning = \"low\"\nconfig = \"config.toml\"\nskills = \"skills\"\nentry_prompt = \"prompt.md\"\nrequired_dispatch_roles = []\n"
 	path := filepath.Join(root, "study.toml")
 	if err := os.WriteFile(path, []byte(study), 0o600); err != nil {
 		t.Fatal(err)
@@ -694,7 +841,7 @@ func TestStudyRejectsInvalidDeclaredSchemaAndInputs(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, "require config"},
-		{"skills require prompt", bare + "[[experiments]]\nname = \"Skills\"\nmodel = \"luna\"\nreasoning = \"low\"\nconfig = \"config.toml\"\nskills = \"skills\"\n", func(t *testing.T, root string) {
+		{"skills require prompt", bare + "[[experiments]]\nname = \"Skills\"\nmodel = \"luna\"\nreasoning = \"low\"\nconfig = \"config.toml\"\nskills = \"skills\"\nrequired_dispatch_roles = []\n", func(t *testing.T, root string) {
 			writeStudyInputFixture(t, root, "config.toml", "config")
 			if err := os.Mkdir(filepath.Join(root, "skills"), 0o700); err != nil {
 				t.Fatal(err)
@@ -704,7 +851,7 @@ func TestStudyRejectsInvalidDeclaredSchemaAndInputs(t *testing.T) {
 			writeStudyInputFixture(t, root, "config.toml", "config")
 			writeStudyInputFixture(t, root, "prompt.md", "{{task}}")
 		}, "only valid with skills"},
-		{"multiple placeholders", bare + "[[experiments]]\nname = \"Skills\"\nmodel = \"luna\"\nreasoning = \"low\"\nconfig = \"config.toml\"\nskills = \"skills\"\nentry_prompt = \"prompt.md\"\n", func(t *testing.T, root string) {
+		{"multiple placeholders", bare + "[[experiments]]\nname = \"Skills\"\nmodel = \"luna\"\nreasoning = \"low\"\nconfig = \"config.toml\"\nskills = \"skills\"\nentry_prompt = \"prompt.md\"\nrequired_dispatch_roles = []\n", func(t *testing.T, root string) {
 			writeStudyInputFixture(t, root, "config.toml", "config")
 			if err := os.Mkdir(filepath.Join(root, "skills"), 0o700); err != nil {
 				t.Fatal(err)
@@ -722,6 +869,14 @@ func TestStudyRejectsInvalidDeclaredSchemaAndInputs(t *testing.T) {
 			}
 		}, "non-empty regular"},
 		{"noncanonical model", "selection = \"selection.json\"\n[[experiments]]\nname = \"Bare\"\nmodel = \"Luna\"\nreasoning = \"low\"\n", nil, "invalid explicit model"},
+		{"skills require dispatch roles", bare + "[[experiments]]\nname = \"Skills\"\nmodel = \"luna\"\nreasoning = \"low\"\nconfig = \"config.toml\"\nskills = \"skills\"\nentry_prompt = \"prompt.md\"\n", writeStudySkillsInputs, "skills require required_dispatch_roles"},
+		{"dispatch roles require skills", bare + "[[experiments]]\nname = \"Bare roles\"\nmodel = \"luna\"\nreasoning = \"low\"\nrequired_dispatch_roles = []\n", nil, "required_dispatch_roles is only valid with skills"},
+		{"dispatch roles on config-only", bare + "[[experiments]]\nname = \"Config\"\nmodel = \"luna\"\nreasoning = \"low\"\nconfig = \"config.toml\"\nrequired_dispatch_roles = [\"implementer\"]\n", func(t *testing.T, root string) {
+			writeStudyInputFixture(t, root, "config.toml", "config")
+		}, "required_dispatch_roles is only valid with skills"},
+		{"unknown dispatch role", bare + "[[experiments]]\nname = \"Skills\"\nmodel = \"luna\"\nreasoning = \"low\"\nconfig = \"config.toml\"\nskills = \"skills\"\nentry_prompt = \"prompt.md\"\nrequired_dispatch_roles = [\"reviewer\"]\n", writeStudySkillsInputs, "unsupported required_dispatch_roles"},
+		{"blank dispatch role", bare + "[[experiments]]\nname = \"Skills\"\nmodel = \"luna\"\nreasoning = \"low\"\nconfig = \"config.toml\"\nskills = \"skills\"\nentry_prompt = \"prompt.md\"\nrequired_dispatch_roles = [\" \"]\n", writeStudySkillsInputs, "blank values"},
+		{"duplicate dispatch role", bare + "[[experiments]]\nname = \"Skills\"\nmodel = \"luna\"\nreasoning = \"low\"\nconfig = \"config.toml\"\nskills = \"skills\"\nentry_prompt = \"prompt.md\"\nrequired_dispatch_roles = [\"implementer\", \"implementer\"]\n", writeStudySkillsInputs, "duplicate values"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -764,4 +919,14 @@ func writeStudyInputFixture(t *testing.T, root, name, contents string) {
 	if err := os.WriteFile(filepath.Join(root, name), []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeStudySkillsInputs(t *testing.T, root string) {
+	t.Helper()
+	writeStudyInputFixture(t, root, "config.toml", "config")
+	if err := os.Mkdir(filepath.Join(root, "skills"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeStudyInputFixture(t, filepath.Join(root, "skills"), "skill.md", "skill")
+	writeStudyInputFixture(t, root, "prompt.md", "{{task}}")
 }

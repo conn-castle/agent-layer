@@ -63,13 +63,14 @@ type studyDocument struct {
 }
 
 type studyExperiment struct {
-	Name         string `toml:"name"`
-	Model        string `toml:"model"`
-	Reasoning    string `toml:"reasoning"`
-	Config       string `toml:"config"`
-	Instructions string `toml:"instructions"`
-	Skills       string `toml:"skills"`
-	EntryPrompt  string `toml:"entry_prompt"`
+	Name                  string   `toml:"name"`
+	Model                 string   `toml:"model"`
+	Reasoning             string   `toml:"reasoning"`
+	Config                string   `toml:"config"`
+	Instructions          string   `toml:"instructions"`
+	Skills                string   `toml:"skills"`
+	EntryPrompt           string   `toml:"entry_prompt"`
+	RequiredDispatchRoles []string `toml:"required_dispatch_roles"`
 }
 
 type preparedStudyExperiment struct {
@@ -634,6 +635,11 @@ func prepareStudy(options StudyOptions) (preparedStudy, error) {
 		if experiment.Model != modelNameForPublished(model.PublishedIdentifier) || experiment.Reasoning != effort {
 			return preparedStudy{}, fmt.Errorf("benchmark experiment %q has an invalid explicit model or reasoning", experiment.Name)
 		}
+		roles, err := canonicalizeRequiredDispatchRoles(experiment.RequiredDispatchRoles, experiment.Skills != "")
+		if err != nil {
+			return preparedStudy{}, fmt.Errorf("benchmark experiment %q: %w", experiment.Name, err)
+		}
+		experiment.RequiredDispatchRoles = roles
 		inputs, err := snapshotStudyExperimentInputs(inputRoot, index, base, experiment)
 		if err != nil {
 			return preparedStudy{}, fmt.Errorf("benchmark experiment %q: %w", experiment.Name, err)
@@ -648,9 +654,11 @@ func prepareStudy(options StudyOptions) (preparedStudy, error) {
 			Reasoning string            `json:"reasoning"`
 			Resources map[string]any    `json:"resources"`
 			Inputs    map[string]string `json:"inputs"`
+			Roles     []string          `json:"required_dispatch_roles,omitempty"`
 		}{
 			Schema: "deepswe-benchmark-experiment-v1", Model: model.PublishedIdentifier, Reasoning: effort,
 			Resources: map[string]any{studyResourceSchemaKey: studyResourceSchema, studyResourceTimeoutKey: skillsAgentTimeoutFactor}, Inputs: hashes,
+			Roles: roles,
 		})
 		if err != nil {
 			return preparedStudy{}, fmt.Errorf("identify benchmark experiment %q: %w", experiment.Name, err)
@@ -676,6 +684,39 @@ func identifyStudy(selectionID string, membership []struct{ Name, Arm string }, 
 		Checksums, Environments map[string]string
 		Resources               map[string]any
 	}{Schema: "deepswe-study-v3", Selection: selectionID, Membership: membership, Checksums: checksums, Environments: environments, Resources: map[string]any{studyResourceSchemaKey: studyResourceSchema, studyResourceTimeoutKey: skillsAgentTimeoutFactor}})
+}
+
+func canonicalizeRequiredDispatchRoles(roles []string, hasSkills bool) ([]string, error) {
+	if roles == nil {
+		if hasSkills {
+			return nil, fmt.Errorf("skills require required_dispatch_roles")
+		}
+		return nil, nil
+	}
+	if !hasSkills {
+		return nil, fmt.Errorf("required_dispatch_roles is only valid with skills")
+	}
+	seen := make(map[string]bool, len(roles))
+	normalized := make([]string, 0, len(roles))
+	for _, role := range roles {
+		role = strings.TrimSpace(role)
+		if role == "" {
+			return nil, fmt.Errorf("required_dispatch_roles must not contain blank values")
+		}
+		if !validRequiredDispatchRole(role) {
+			return nil, fmt.Errorf("unsupported required_dispatch_roles value %q", role)
+		}
+		if seen[role] {
+			return nil, fmt.Errorf("required_dispatch_roles must not contain duplicate values")
+		}
+		seen[role] = true
+		normalized = append(normalized, role)
+	}
+	sort.Strings(normalized)
+	if len(normalized) == 0 {
+		return nil, nil
+	}
+	return normalized, nil
 }
 
 func snapshotStudyExperimentInputs(snapshotRoot string, index int, base string, experiment studyExperiment) (studyExperimentInputs, error) {
