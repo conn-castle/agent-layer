@@ -71,7 +71,7 @@ func newBenchmarkRunCmd() *cobra.Command {
 					}
 				}
 				if dryRun {
-					_, err := fmt.Fprintln(cmd.OutOrStdout(), "Dry run completed validation and preflight discovery. No provider call was made.")
+					_, err := fmt.Fprintln(cmd.OutOrStdout(), "Dry run completed validation and preflight discovery. No inference call was made.")
 					return err
 				}
 				return nil
@@ -90,7 +90,7 @@ func newBenchmarkRunCmd() *cobra.Command {
 			return err
 		},
 	}
-	command.Flags().BoolVar(&dryRun, "dry-run", false, "validate and preflight without provider calls")
+	command.Flags().BoolVar(&dryRun, "dry-run", false, "validate and preflight without inference calls")
 	command.Flags().IntVar(&taskConcurrency, "task-concurrency", 1, "parallel task cells, from 1 to 8")
 	command.Flags().StringArrayVar(&tasks, "task", nil, "execute only this selected task; repeatable")
 	return command

@@ -38,12 +38,16 @@ var (
 )
 
 const (
-	benchmarkDockerCleanupTimeout = 30 * time.Second
-	dockerFormatFlag              = "--format"
-	dockerImageResource           = "image"
-	dockerNetworkResource         = "network"
-	dockerVolumeResource          = "volume"
-	commandRun                    = "run"
+	benchmarkDockerCleanupTimeout  = 30 * time.Second
+	authenticationPreflightTimeout = 15 * time.Second
+	codexLoginStatusCheck          = "codex login status"
+	codexAuthMethodChatGPT         = "chatgpt"
+	codexAuthMethodAPIKey          = "api_key"
+	dockerFormatFlag               = "--format"
+	dockerImageResource            = "image"
+	dockerNetworkResource          = "network"
+	dockerVolumeResource           = "volume"
+	commandRun                     = "run"
 	// These formats print one resource identity and its Compose project label
 	// per line. Docker expands the literal \t escape itself. Containers and
 	// networks are addressed by ID; volumes are addressed by name.
@@ -137,35 +141,146 @@ func verifyPinnedPier(ctx context.Context) error {
 	return nil
 }
 
-func validateAuthentication(repoRoot string, selections []parsedSelection) error {
+func validateAuthentication(ctx context.Context, repoRoot string, selections []parsedSelection) (map[string]AuthenticationPreflight, error) {
 	validated := make(map[string]bool)
+	evidence := make(map[string]AuthenticationPreflight)
 	for _, selection := range selections {
-		if validated[selection.model.Adapter] {
+		adapter := selection.model.Adapter
+		if validated[adapter] {
 			continue
 		}
-		validated[selection.model.Adapter] = true
-		var path, provider string
-		switch selection.model.Adapter {
-		case adapterCodex:
-			path, provider = filepath.Join(repoRoot, ".codex", "auth.json"), adapterCodex
-		case adapterClaudeCode:
-			path, provider = filepath.Join(repoRoot, ".claude-config", ".credentials.json"), providerClaude
-		default:
-			return fmt.Errorf("unsupported benchmark provider adapter %q", selection.model.Adapter)
-		}
-		info, err := os.Stat(path)
-		if err != nil || info.IsDir() {
-			return fmt.Errorf("%s authentication must be a non-empty JSON file at %s", provider, path)
-		}
-		data, err := os.ReadFile(path) // #nosec G304 -- provider determines a fixed repo-local path.
+		validated[adapter] = true
+		item, err := validateProviderAuthentication(ctx, repoRoot, adapter)
 		if err != nil {
-			return fmt.Errorf("read %s authentication: %w", provider, err)
+			return nil, err
 		}
-		if len(bytes.TrimSpace(data)) == 0 || !json.Valid(data) {
-			return fmt.Errorf("%s authentication at %s must be non-empty JSON", provider, path)
-		}
+		evidence[adapter] = item
+	}
+	return evidence, nil
+}
+
+func validateProviderAuthentication(ctx context.Context, repoRoot, adapter string) (AuthenticationPreflight, error) {
+	var path, provider string
+	switch adapter {
+	case adapterCodex:
+		path, provider = filepath.Join(repoRoot, ".codex", "auth.json"), adapterCodex
+	case adapterClaudeCode:
+		path, provider = filepath.Join(repoRoot, ".claude-config", ".credentials.json"), providerClaude
+	default:
+		return AuthenticationPreflight{}, fmt.Errorf("unsupported benchmark provider adapter %q", adapter)
+	}
+	if err := requireJSONCredentialFile(path, provider); err != nil {
+		return AuthenticationPreflight{}, err
+	}
+	if adapter == adapterClaudeCode {
+		return AuthenticationPreflight{}, fmt.Errorf("%s authentication cannot be validated before task setup because no available non-billing command verifies the copied OAuth token", provider)
+	}
+	return validateCodexLoginStatus(ctx, repoRoot)
+}
+
+func requireJSONCredentialFile(path, provider string) error {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return fmt.Errorf("%s authentication must be a non-empty JSON file at %s", provider, path)
+	}
+	data, err := os.ReadFile(path) // #nosec G304 -- provider determines a fixed repo-local path.
+	if err != nil {
+		return fmt.Errorf("read %s authentication: %w", provider, err)
+	}
+	if len(bytes.TrimSpace(data)) == 0 || !json.Valid(data) {
+		return fmt.Errorf("%s authentication at %s must be non-empty JSON", provider, path)
 	}
 	return nil
+}
+
+func validateCodexLoginStatus(ctx context.Context, repoRoot string) (AuthenticationPreflight, error) {
+	ctx, cancel := context.WithTimeout(ctx, authenticationPreflightTimeout)
+	defer cancel()
+	command := exec.CommandContext(ctx, adapterCodex, "login", "status") // #nosec G204 -- provider binary name and arguments are fixed.
+	configureBenchmarkCommandCancellation(command)
+	command.WaitDelay = 2 * time.Second
+	command.Env = replaceEnvValue(os.Environ(), "CODEX_HOME", filepath.Join(repoRoot, ".codex"))
+	output, err := command.CombinedOutput()
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return AuthenticationPreflight{}, errors.New("codex authentication status timed out")
+		}
+		if ctx.Err() != nil {
+			return AuthenticationPreflight{}, errors.New("codex authentication status canceled")
+		}
+		return AuthenticationPreflight{}, errors.New("codex authentication status command failed")
+	}
+	method, ok := parseCodexLoginStatus(output)
+	if !ok {
+		return AuthenticationPreflight{}, errors.New("codex authentication status was unrecognized")
+	}
+	return AuthenticationPreflight{
+		Provider:             adapterCodex,
+		Check:                codexLoginStatusCheck,
+		AuthenticationMethod: method,
+		VerifiedAt:           time.Now().UTC(),
+	}, nil
+}
+
+type codexLoginStatusMethod struct {
+	match      string
+	prefix     bool
+	normalized string
+}
+
+var codexLoginStatusAllowlist = []codexLoginStatusMethod{
+	{match: "Logged in using ChatGPT", normalized: codexAuthMethodChatGPT},
+	{match: "Logged in using an API key", prefix: true, normalized: codexAuthMethodAPIKey},
+	{match: "Logged in using workload identity", normalized: "workload_identity"},
+	{match: "Logged in using access token", normalized: "access_token"},
+	{match: "Logged in using personal access token", normalized: "personal_access_token"},
+	{match: "Logged in using Amazon Bedrock API key", normalized: "amazon_bedrock_api_key"},
+}
+
+func parseCodexLoginStatus(output []byte) (string, bool) {
+	method := ""
+	found := false
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		normalized, ok := matchCodexLoginStatusLine(line)
+		if !ok {
+			return "", false
+		}
+		if found {
+			return "", false
+		}
+		found, method = true, normalized
+	}
+	return method, found
+}
+
+func matchCodexLoginStatusLine(line string) (string, bool) {
+	for _, item := range codexLoginStatusAllowlist {
+		if item.prefix {
+			if line == item.match || strings.HasPrefix(line, item.match+" - ") {
+				return item.normalized, true
+			}
+			continue
+		}
+		if line == item.match {
+			return item.normalized, true
+		}
+	}
+	return "", false
+}
+
+func replaceEnvValue(env []string, key, value string) []string {
+	prefix := key + "="
+	replaced := make([]string, 0, len(env)+1)
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, prefix) {
+			replaced = append(replaced, entry)
+		}
+	}
+	return append(replaced, prefix+value)
 }
 
 // PierExecutor invokes the pinned official Pier adapter once.

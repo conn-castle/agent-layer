@@ -343,7 +343,7 @@ func TestBenchmarkAuthenticationRejectsUnusableCredentials(t *testing.T) {
 	codex := []parsedSelection{{model: supportedModels[0], effort: effortLow}}
 	path := filepath.Join(repository, ".codex", "auth.json")
 
-	if err := validateAuthentication(repository, codex); err == nil ||
+	if _, err := validateAuthentication(context.Background(), repository, codex); err == nil ||
 		!strings.Contains(err.Error(), "must be a non-empty JSON file") {
 		t.Fatalf("missing credential error = %v", err)
 	}
@@ -356,7 +356,7 @@ func TestBenchmarkAuthenticationRejectsUnusableCredentials(t *testing.T) {
 	}
 	// A malformed credential file fails deep inside the container minutes later,
 	// after Docker work has already been spent.
-	if err := validateAuthentication(repository, codex); err == nil ||
+	if _, err := validateAuthentication(context.Background(), repository, codex); err == nil ||
 		!strings.Contains(err.Error(), "must be non-empty JSON") {
 		t.Fatalf("malformed credential error = %v", err)
 	}
@@ -364,11 +364,12 @@ func TestBenchmarkAuthenticationRejectsUnusableCredentials(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"token":"x"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateAuthentication(repository, codex); err != nil {
+	installAuthCommandStubs(t, successfulCodexStatusScript(), "")
+	if _, err := validateAuthentication(context.Background(), repository, codex); err != nil {
 		t.Fatalf("valid credential rejected: %v", err)
 	}
 
-	if err := validateAuthentication(repository, []parsedSelection{{model: Model{Adapter: "gemini"}}}); err == nil ||
+	if _, err := validateAuthentication(context.Background(), repository, []parsedSelection{{model: Model{Adapter: "gemini"}}}); err == nil ||
 		!strings.Contains(err.Error(), "unsupported benchmark provider adapter") {
 		t.Fatalf("unsupported adapter error = %v", err)
 	}

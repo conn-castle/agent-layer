@@ -62,6 +62,7 @@ type matrixPreparation struct {
 	tasks           []benchmarkPlanTask
 	checksums       map[string]string
 	environments    map[string]string
+	authentication  map[string]AuthenticationPreflight
 	arms            []matrixArm
 }
 
@@ -304,6 +305,25 @@ func ensureStudyArmManifest(selectionID string, tasks []benchmarkPlanTask, check
 	manifest := expectedStudyArmManifest(selectionID, tasks, checksums, arm)
 	manifest.CreatedAt = time.Now().UTC()
 	return writeJSON(path, manifest)
+}
+
+func requireStudyArmManifest(selectionID string, tasks []benchmarkPlanTask, checksums map[string]string, arm *matrixArm) error {
+	path := filepath.Join(arm.StateDir, "manifest.json")
+	var existing studyArmManifest
+	if err := readStudyJSON(path, &existing); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("study arm %q is missing its immutable manifest", arm.Label)
+		}
+		return fmt.Errorf("read study arm manifest: %w", err)
+	}
+	expected := expectedStudyArmManifest(selectionID, tasks, checksums, arm)
+	expected.CreatedAt = existing.CreatedAt
+	expectedJSON, _ := json.Marshal(expected)
+	existingJSON, _ := json.Marshal(existing)
+	if string(expectedJSON) != string(existingJSON) {
+		return fmt.Errorf("study arm %q conflicts with its immutable manifest", arm.Label)
+	}
+	return nil
 }
 
 func executeMatrix(ctx context.Context, repoRoot string, checksums, environments map[string]string, arms []matrixArm, tasks []string, concurrency int, executor TaskExecutor, onCellComplete ...func(AttemptResult)) (returnErr error) {

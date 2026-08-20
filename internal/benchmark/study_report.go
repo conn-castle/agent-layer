@@ -64,28 +64,38 @@ type StudySelectionProvenance struct {
 
 // StudyExperimentReport records one content-addressed experiment and its cells.
 type StudyExperimentReport struct {
-	Name                      string             `json:"name"`
-	Identity                  string             `json:"identity"`
-	Model                     string             `json:"model"`
-	Reasoning                 string             `json:"reasoning"`
-	InputHashes               map[string]string  `json:"immutable_inputs"`
-	ResourceContract          map[string]any     `json:"resource_contract"`
-	ProviderClients           []string           `json:"provider_client_versions"`
-	WorkerCountObserved       int                `json:"observed_worker_count"`
-	CompletedCells            int                `json:"completed_cells"`
-	RequiredCells             int                `json:"required_cells"`
-	Score                     *float64           `json:"calibrated_score,omitempty"`
-	ObservedCost              ObservedCostRange  `json:"observed_cost"`
-	InvocationCount           int                `json:"invocation_count"`
-	DispatchConformantRuns    int                `json:"dispatch_conformant_runs"`
-	WorkflowNoncomplianceRuns int                `json:"workflow_noncompliance_runs"`
-	Tasks                     []StudyTaskReport  `json:"tasks"`
-	BundleManifest            *TreatmentManifest `json:"immutable_bundle_manifest,omitempty"`
-	LinuxBinarySHA256         string             `json:"linux_binary_sha256,omitempty"`
-	AdapterSHA256             string             `json:"adapter_sha256,omitempty"`
-	SourceCommit              string             `json:"source_commit,omitempty"`
-	SourceDirty               bool               `json:"source_dirty,omitempty"`
-	ComparabilityWarnings     []string           `json:"comparability_warnings"`
+	Name                      string                   `json:"name"`
+	Identity                  string                   `json:"identity"`
+	Model                     string                   `json:"model"`
+	Reasoning                 string                   `json:"reasoning"`
+	InputHashes               map[string]string        `json:"immutable_inputs"`
+	ResourceContract          map[string]any           `json:"resource_contract"`
+	ProviderClients           []string                 `json:"provider_client_versions"`
+	AuthenticationPreflight   *AuthenticationPreflight `json:"authentication_preflight,omitempty"`
+	WorkerCountObserved       int                      `json:"observed_worker_count"`
+	CompletedCells            int                      `json:"completed_cells"`
+	RequiredCells             int                      `json:"required_cells"`
+	Score                     *float64                 `json:"calibrated_score,omitempty"`
+	ObservedCost              ObservedCostRange        `json:"observed_cost"`
+	InvocationCount           int                      `json:"invocation_count"`
+	DispatchConformantRuns    int                      `json:"dispatch_conformant_runs"`
+	WorkflowNoncomplianceRuns int                      `json:"workflow_noncompliance_runs"`
+	Tasks                     []StudyTaskReport        `json:"tasks"`
+	BundleManifest            *TreatmentManifest       `json:"immutable_bundle_manifest,omitempty"`
+	LinuxBinarySHA256         string                   `json:"linux_binary_sha256,omitempty"`
+	AdapterSHA256             string                   `json:"adapter_sha256,omitempty"`
+	SourceCommit              string                   `json:"source_commit,omitempty"`
+	SourceDirty               bool                     `json:"source_dirty,omitempty"`
+	ComparabilityWarnings     []string                 `json:"comparability_warnings"`
+}
+
+// AuthenticationPreflight is invocation provenance for a successful provider
+// credential check. It is not part of study, arm, or treatment identity.
+type AuthenticationPreflight struct {
+	Provider             string    `json:"provider"`
+	Check                string    `json:"check"`
+	AuthenticationMethod string    `json:"authentication_method"`
+	VerifiedAt           time.Time `json:"verified_at"`
 }
 
 // StudyTaskReport records one selected task's repetitions and score evidence.
@@ -198,6 +208,9 @@ func buildStudyReport(study preparedStudy, preparation matrixPreparation) (Study
 func buildStudyExperimentReport(experiment preparedStudyExperiment, arm matrixArm, selection matrixSelection, preparation matrixPreparation, workers int) (StudyExperimentReport, error) {
 	item := StudyExperimentReport{Name: experiment.Name, Identity: experiment.identity, Model: experiment.model.PublishedIdentifier, Reasoning: experiment.effort,
 		InputHashes: copyStringMap(experiment.inputHashes), ResourceContract: map[string]any{studyResourceSchemaKey: studyResourceSchema, studyResourceTimeoutKey: skillsAgentTimeoutFactor}}
+	if evidence, ok := preparation.authentication[experiment.model.Adapter]; ok {
+		item.AuthenticationPreflight = &evidence
+	}
 	if arm.Bundle != nil {
 		manifest := arm.Bundle.Manifest
 		item.BundleManifest = &manifest
