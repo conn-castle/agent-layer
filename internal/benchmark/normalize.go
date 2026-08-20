@@ -310,6 +310,7 @@ type dispatchConformanceRecord struct {
 	Agent           string `json:"agent"`
 	Model           string `json:"model"`
 	ReasoningEffort string `json:"reasoning_effort"`
+	Skill           string `json:"skill,omitempty"`
 	Mode            string `json:"mode"`
 	State           string `json:"state"`
 	ParentRunID     string `json:"parent_run_id"`
@@ -383,7 +384,7 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 	for _, slot := range slots {
 		matched := false
 		for index, record := range eligible {
-			if used[index] || !dispatchRecordMatchesTarget(record, slot) {
+			if used[index] || !dispatchRecordMatchesSlot(record, slot) {
 				continue
 			}
 			used[index] = true
@@ -397,9 +398,9 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 	return true, nil
 }
 
-func dispatchRecordMatchesTarget(record dispatchConformanceRecord, target TreatmentDispatchTarget) bool {
-	return record.Agent == target.Agent && record.Model == target.Model &&
-		record.ReasoningEffort == target.ReasoningEffort
+func dispatchRecordMatchesSlot(record dispatchConformanceRecord, slot dispatchSlot) bool {
+	return record.Skill == slot.skill && record.Agent == slot.target.Agent &&
+		record.Model == slot.target.Model && record.ReasoningEffort == slot.target.ReasoningEffort
 }
 
 func submittedPatchBytes(stage string) (int64, error) {

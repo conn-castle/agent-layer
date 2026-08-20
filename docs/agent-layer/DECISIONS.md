@@ -256,3 +256,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Skills experiments must declare `required_dispatch_roles`. An explicit `[]` is stored as nil in experiment identity (`omitempty`) and in `TreatmentManifest.RequiredRoles`, so unconstrained JSON remains `required_dispatch_roles: null` and historical unconstrained cells stay reusable. Nonempty normalized roles participate in both identities.
     Reason: Omitting the field would silently disable enforcement, but encoding explicit empty as `[]` would change every existing unconstrained arm and manifest hash.
     Tradeoffs: Presence of the TOML key is a validation concern distinct from identity bytes. Constrained studies cannot reuse older unconstrained results whose stored conformance flag was true.
+
+- Decision 2026-08-20 benchmark-dispatch-slot-skill-match: Conformance matches lifecycle skill to each role slot
+    Decision: Required dispatch slots match completed fresh-root Agent Dispatch records one-to-one on the role's workflow skill plus the configured agent, model, and reasoning effort. `RunRecord` has no role field; `plan-reviewer` maps to `review-plan`, `implementer` to `implement-plan`, and `code-reviewer` to `review-uncommitted-code`. Records that omit `skill` cannot fill a constrained slot. Unconstrained skills experiments still skip slot matching.
+    Reason: Default treatments assign the same execution target to every role, so target identity alone cannot prove the declared protocol ran.
+    Tradeoffs: Prompt-only or skill-less historical dispatches are nonconformant for nonempty role contracts even when agent, model, and effort match.

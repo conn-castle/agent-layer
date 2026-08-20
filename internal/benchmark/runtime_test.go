@@ -225,11 +225,19 @@ func TestDispatchConformanceMatchesRequiredTargetMultiset(t *testing.T) {
 	}
 	shared := defaultTreatmentDispatchConfig(model, effort)
 	threeRoles := []string{requiredRolePlanReviewer, requiredRoleImplementer, requiredRoleCodeReviewer}
-	completed := func(id, agent, modelName, reasoning string) dispatchConformanceRecord {
-		return dispatchConformanceRecord{ID: id, Agent: agent, Model: modelName, ReasoningEffort: reasoning, Mode: "fresh", State: "completed"}
+	completed := func(id, agent, modelName, reasoning, skill string) dispatchConformanceRecord {
+		return dispatchConformanceRecord{
+			ID: id, Agent: agent, Model: modelName, ReasoningEffort: reasoning,
+			Skill: skill, Mode: "fresh", State: "completed",
+		}
 	}
-	lunaRecord := func(id string) dispatchConformanceRecord {
-		return completed(id, luna.Agent, luna.Model, luna.ReasoningEffort)
+	lunaRecord := func(id, skill string) dispatchConformanceRecord {
+		return completed(id, luna.Agent, luna.Model, luna.ReasoningEffort, skill)
+	}
+	protocol := []dispatchConformanceRecord{
+		lunaRecord("run-0", dispatchSkillPlanReviewer),
+		lunaRecord("run-1", dispatchSkillImplementer),
+		lunaRecord("run-2", dispatchSkillCodeReviewer),
 	}
 
 	unconstrained := skillsRequest(nil, TreatmentDispatchConfig{})
@@ -244,7 +252,29 @@ func TestDispatchConformanceMatchesRequiredTargetMultiset(t *testing.T) {
 	}
 
 	dispatchDir := filepath.Join(stage, "jobs", "one", dispatchEvidenceDir)
-	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0"), lunaRecord("run-1"), lunaRecord("run-2"))
+	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0", ""), lunaRecord("run-1", ""), lunaRecord("run-2", ""))
+	if conformant, err := dispatchConformance(stage, request); err != nil || conformant {
+		t.Fatalf("skill-less shared-target lifecycles = %t, %v", conformant, err)
+	}
+	writeDispatchRecords(t, dispatchDir,
+		lunaRecord("run-0", dispatchSkillPlanReviewer),
+		lunaRecord("run-1", dispatchSkillPlanReviewer),
+		lunaRecord("run-2", dispatchSkillPlanReviewer),
+	)
+	if conformant, err := dispatchConformance(stage, request); err != nil || conformant {
+		t.Fatalf("repeated plan-review skill filled distinct roles = %t, %v", conformant, err)
+	}
+	implementerRequest := skillsRequest([]string{requiredRoleImplementer}, shared)
+	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0", dispatchSkillPlanReviewer))
+	if conformant, err := dispatchConformance(stage, implementerRequest); err != nil || conformant {
+		t.Fatalf("review-plan filled implementer = %t, %v", conformant, err)
+	}
+	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0", dispatchSkillImplementer))
+	if conformant, err := dispatchConformance(stage, implementerRequest); err != nil || !conformant {
+		t.Fatalf("implement-plan on configured target = %t, %v", conformant, err)
+	}
+
+	writeDispatchRecords(t, dispatchDir, protocol...)
 	if conformant, err := dispatchConformance(stage, request); err != nil || !conformant {
 		t.Fatalf("required target multiset = %t, %v", conformant, err)
 	}
@@ -257,32 +287,43 @@ func TestDispatchConformanceMatchesRequiredTargetMultiset(t *testing.T) {
 		t.Fatalf("lifecycle with preflight evidence = %t, %v", conformant, err)
 	}
 
-	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0"))
+	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0", dispatchSkillImplementer))
 	if conformant, err := dispatchConformance(stage, request); err != nil || conformant {
 		t.Fatalf("one lifecycle cannot satisfy two roles = %t, %v", conformant, err)
 	}
-	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0"), lunaRecord("run-0"), lunaRecord("run-0"))
+	writeDispatchRecords(t, dispatchDir,
+		lunaRecord("run-0", dispatchSkillPlanReviewer),
+		lunaRecord("run-0", dispatchSkillImplementer),
+		lunaRecord("run-0", dispatchSkillCodeReviewer),
+	)
 	if _, err := dispatchConformance(stage, request); err == nil || !strings.Contains(err.Error(), "lifecycle \"run-0\" is duplicated") {
 		t.Fatalf("duplicated lifecycle error = %v", err)
 	}
 
-	writeDispatchRecords(t, dispatchDir, completed("run-0", opus.Agent, opus.Model, opus.ReasoningEffort), lunaRecord("run-1"), lunaRecord("run-2"))
+	writeDispatchRecords(t, dispatchDir,
+		completed("run-0", opus.Agent, opus.Model, opus.ReasoningEffort, dispatchSkillPlanReviewer),
+		lunaRecord("run-1", dispatchSkillImplementer),
+		lunaRecord("run-2", dispatchSkillCodeReviewer),
+	)
 	if conformant, err := dispatchConformance(stage, request); err != nil || conformant {
 		t.Fatalf("wrong target lifecycle = %t, %v", conformant, err)
 	}
 
-	failed := lunaRecord("run-2")
+	failed := protocol[2]
 	failed.State = "failed"
-	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0"), lunaRecord("run-1"), failed)
+	writeDispatchRecords(t, dispatchDir, protocol[0], protocol[1], failed)
 	if conformant, err := dispatchConformance(stage, request); err != nil || conformant {
 		t.Fatalf("incomplete lifecycle = %t, %v", conformant, err)
 	}
 
-	nested := lunaRecord("nested")
+	nested := lunaRecord("nested", dispatchSkillImplementer)
 	nested.ParentRunID = "run-0"
-	continued := lunaRecord("continued")
+	continued := lunaRecord("continued", dispatchSkillCodeReviewer)
 	continued.Mode = "continued"
-	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0"), lunaRecord("run-1"), lunaRecord("run-2"), nested, continued, completed("extra", opus.Agent, opus.Model, opus.ReasoningEffort))
+	protocolWith := func(extras ...dispatchConformanceRecord) []dispatchConformanceRecord {
+		return append(append([]dispatchConformanceRecord{}, protocol...), extras...)
+	}
+	writeDispatchRecords(t, dispatchDir, protocolWith(nested, continued, completed("extra", opus.Agent, opus.Model, opus.ReasoningEffort, dispatchSkillPlanReviewer))...)
 	if conformant, err := dispatchConformance(stage, request); err != nil || !conformant {
 		t.Fatalf("nested extra records poisoned a valid multiset = %t, %v", conformant, err)
 	}
@@ -293,7 +334,7 @@ func TestDispatchConformanceMatchesRequiredTargetMultiset(t *testing.T) {
 	}
 	nestedFailed := nested
 	nestedFailed.State = "failed"
-	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0"), lunaRecord("run-1"), lunaRecord("run-2"), nestedFailed)
+	writeDispatchRecords(t, dispatchDir, protocolWith(nestedFailed)...)
 	if conformant, err := dispatchConformance(stage, request); err != nil || conformant {
 		t.Fatalf("failed nested lifecycle was ignored = %t, %v", conformant, err)
 	}
@@ -301,11 +342,17 @@ func TestDispatchConformanceMatchesRequiredTargetMultiset(t *testing.T) {
 	twoReviewers := shared
 	twoReviewers.PlanReviewers = []TreatmentDispatchTarget{luna, opus}
 	reviewerRequest := skillsRequest([]string{requiredRolePlanReviewer}, twoReviewers)
-	writeDispatchRecords(t, dispatchDir, lunaRecord("review-luna"), completed("review-opus", opus.Agent, opus.Model, opus.ReasoningEffort))
+	writeDispatchRecords(t, dispatchDir,
+		lunaRecord("review-luna", dispatchSkillPlanReviewer),
+		completed("review-opus", opus.Agent, opus.Model, opus.ReasoningEffort, dispatchSkillPlanReviewer),
+	)
 	if conformant, err := dispatchConformance(stage, reviewerRequest); err != nil || !conformant {
 		t.Fatalf("plan-reviewer target multiset = %t, %v", conformant, err)
 	}
-	writeDispatchRecords(t, dispatchDir, lunaRecord("review-luna"), lunaRecord("review-luna-2"))
+	writeDispatchRecords(t, dispatchDir,
+		lunaRecord("review-luna", dispatchSkillPlanReviewer),
+		lunaRecord("review-luna-2", dispatchSkillPlanReviewer),
+	)
 	if conformant, err := dispatchConformance(stage, reviewerRequest); err != nil || conformant {
 		t.Fatalf("missing distinct reviewer target = %t, %v", conformant, err)
 	}
@@ -315,7 +362,7 @@ func TestDispatchConformanceMatchesRequiredTargetMultiset(t *testing.T) {
 		t.Fatalf("missing configured target error = %v", err)
 	}
 
-	writeDispatchRecords(t, dispatchDir, lunaRecord("run-0"))
+	writeDispatchRecords(t, dispatchDir, protocol[0])
 	if err := os.WriteFile(filepath.Join(dispatchDir, "bad.json"), []byte("not-json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
