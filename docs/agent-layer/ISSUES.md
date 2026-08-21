@@ -29,6 +29,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-08-21 make-dev-slow-execution-time: make dev execution time is excessively slow for local workflows
+    Priority: Medium. Area: developer experience / build tooling
+    Description: `make dev` runs full formatting, linting, global coverage enforcement, DeepSWE verification, and release test suites sequentially, taking several minutes per invocation and slowing local iteration.
+    Next step: Profile individual target durations in `make dev` and evaluate separating fast local iteration from full whole-repo verification.
+
 - Issue 2026-08-18 codex-trust-symlink-path: Codex trust uses a lexical rather than canonical repository path
     Priority: Low. Area: providers / codex / trust
     Description: Codex trust seeding uses `filepath.Abs` without resolving symlinks, so a repository opened through a symlink may not match the client-observed canonical path.

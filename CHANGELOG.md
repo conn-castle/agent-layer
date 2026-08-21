@@ -1,7 +1,7 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v0.17.1 - 2026-08-21
 
 ### Added
 - `al skills diff <name>` compares live `base`, `local`, `upstream`, and `destination` trees as an ordinary Git unified diff.

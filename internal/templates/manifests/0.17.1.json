@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "version": "0.17.1",
-  "generated_at_utc": "2026-08-21T18:22:06Z",
+  "generated_at_utc": "2026-08-21T20:19:07Z",
   "files": [
     {
       "path": ".agent-layer/commands.allow",
@@ -47,7 +47,7 @@
     },
     {
       "path": ".agent-layer/instructions/00_rules.md",
-      "full_hash_normalized": "64b724d0ff38f6fd1b20d7927b007078e5d8f4d76a1c3661279a6e8d60c49363"
+      "full_hash_normalized": "21ecfe0a8b2b5cafd5e9194374fdec02185e0be7710516034e39de448d6f0484"
     },
     {
       "path": ".agent-layer/instructions/01_memory.md",
