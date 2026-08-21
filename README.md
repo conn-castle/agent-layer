@@ -314,7 +314,7 @@ Common memory files include:
 ### Generated client files (gitignored by default)
 Generated outputs are written into the repo in client-specific formats (examples):
 
-- Instruction shims: `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`
+- Instruction shims: `AGENTS.md`, `.claude/CLAUDE.md`, `.github/copilot-instructions.md`
 - MCP + client configs: `.mcp.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.codex/`, `.copilot/mcp-config.json`, `.grok/config.toml`
 - Shared Antigravity settings: `.agy/antigravity-cli/settings.json` (Agent Layer patches its managed model, `permissions.allow`, and `agent_specific` paths while preserving native settings)
 - Shared skills: `.agents/skills/`

@@ -187,6 +187,7 @@ _init_doctor_wizard_assert_bare_init_files() {
   for rel_path in \
     "AGENTS.md" \
     "CLAUDE.md" \
+    ".claude/CLAUDE.md" \
     ".github/copilot-instructions.md" \
     ".codex/AGENTS.md" \
     ".claude/settings.json" \

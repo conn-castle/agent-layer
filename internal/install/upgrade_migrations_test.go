@@ -2745,6 +2745,86 @@ func TestMigration_0_12_0_MigratesAntigravityAgentSpecificModelToTypedField(t *t
 	}
 }
 
+func TestLoadUpgradeMigrationManifest_0_17_1_RemovesRootClaudeShim(t *testing.T) {
+	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.17.1")
+	if err != nil {
+		t.Fatalf("load 0.17.1 manifest: %v", err)
+	}
+	if manifest.MinPriorVersion != "0.10.2" {
+		t.Fatalf("min_prior_version = %q, want %q", manifest.MinPriorVersion, "0.10.2")
+	}
+	if len(manifest.Operations) != 1 {
+		t.Fatalf("expected 1 operation, got %d", len(manifest.Operations))
+	}
+
+	op := manifest.Operations[0]
+	if op.ID != "l-delete-root-claude-md-shim" {
+		t.Fatalf("operation id = %q, want l-delete-root-claude-md-shim", op.ID)
+	}
+	if op.Kind != upgradeMigrationKindDeleteGeneratedArtifact {
+		t.Fatalf("operation kind = %q, want %q", op.Kind, upgradeMigrationKindDeleteGeneratedArtifact)
+	}
+	if op.Path != "CLAUDE.md" {
+		t.Fatalf("operation path = %q, want CLAUDE.md", op.Path)
+	}
+	if !op.SourceAgnostic {
+		t.Fatal("expected source_agnostic = true")
+	}
+}
+
+func TestMigration_0_17_1_DeletesGeneratedRootClaudeShim(t *testing.T) {
+	root := t.TempDir()
+	claudePath := filepath.Join(root, "CLAUDE.md")
+	if err := os.WriteFile(claudePath, []byte("<!--\n  GENERATED FILE\n-->\n"), 0o600); err != nil {
+		t.Fatalf("write claude shim: %v", err)
+	}
+	writePinForTest(t, root, "0.17.0")
+
+	var warn bytes.Buffer
+	inst := &installer{root: root, pinVersion: "0.17.1", sys: RealSystem{}, warnWriter: &warn}
+	if err := inst.prepareUpgradeMigrations(); err != nil {
+		t.Fatalf("prepareUpgradeMigrations: %v", err)
+	}
+	if err := inst.runMigrations(); err != nil {
+		t.Fatalf("runMigrations: %v", err)
+	}
+	if _, err := os.Stat(claudePath); !os.IsNotExist(err) {
+		t.Fatalf("expected generated CLAUDE.md to be removed, got %v", err)
+	}
+	if entry, ok := migrationReportEntryByID(inst.migrationReport.Entries, "l-delete-root-claude-md-shim"); !ok || entry.Status != UpgradeMigrationStatusApplied {
+		t.Fatalf("expected applied Claude shim deletion entry, got %#v ok=%v", entry, ok)
+	}
+}
+
+func TestMigration_0_17_1_PreservesHandAuthoredRootClaude(t *testing.T) {
+	root := t.TempDir()
+	claudePath := filepath.Join(root, "CLAUDE.md")
+	content := []byte("# Personal Claude notes\n")
+	if err := os.WriteFile(claudePath, content, 0o600); err != nil {
+		t.Fatalf("write hand-authored claude: %v", err)
+	}
+	writePinForTest(t, root, "0.17.0")
+
+	var warn bytes.Buffer
+	inst := &installer{root: root, pinVersion: "0.17.1", sys: RealSystem{}, warnWriter: &warn}
+	if err := inst.prepareUpgradeMigrations(); err != nil {
+		t.Fatalf("prepareUpgradeMigrations: %v", err)
+	}
+	if err := inst.runMigrations(); err != nil {
+		t.Fatalf("runMigrations: %v", err)
+	}
+	got, err := os.ReadFile(claudePath) // #nosec G304 -- test-controlled path.
+	if err != nil {
+		t.Fatalf("hand-authored CLAUDE.md must survive: %v", err)
+	}
+	if string(got) != string(content) {
+		t.Fatalf("hand-authored content changed: %q", got)
+	}
+	if entry, ok := migrationReportEntryByID(inst.migrationReport.Entries, "l-delete-root-claude-md-shim"); !ok || entry.Status != UpgradeMigrationStatusNoop {
+		t.Fatalf("expected no-op Claude shim deletion entry, got %#v ok=%v", entry, ok)
+	}
+}
+
 func TestMigration_0_17_0_AddsGrokEnabledDefault(t *testing.T) {
 	preGrokConfig := strings.Join([]string{
 		"[approvals]",

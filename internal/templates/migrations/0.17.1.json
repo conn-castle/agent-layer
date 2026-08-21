@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "target_version": "0.17.1",
+  "min_prior_version": "0.10.2",
+  "operations": [
+    {
+      "id": "l-delete-root-claude-md-shim",
+      "kind": "delete_generated_artifact",
+      "path": "CLAUDE.md",
+      "rationale": "Remove the generated root CLAUDE.md instruction shim. Claude Code now reads .claude/CLAUDE.md, and a leftover root copy is loaded by Grok alongside AGENTS.md.",
+      "source_agnostic": true
+    }
+  ]
+}

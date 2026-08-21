@@ -34,7 +34,7 @@ func TestWriteInstructionShims(t *testing.T) {
 
 	paths := []string{
 		filepath.Join(root, "AGENTS.md"),
-		filepath.Join(root, "CLAUDE.md"),
+		filepath.Join(root, ".claude", "CLAUDE.md"),
 		filepath.Join(root, ".github", "copilot-instructions.md"),
 	}
 	for _, path := range paths {
@@ -67,6 +67,44 @@ func TestCleanCodexInstructionsRemovesGeneratedShim(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("expected generated codex instructions to be removed, got %v", err)
+	}
+}
+
+func TestCleanClaudeRootInstructionsRemovesGeneratedShim(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	instructions := []config.InstructionFile{{Name: "00_base.md", Content: "base\n"}}
+	path := filepath.Join(root, "CLAUDE.md")
+	if err := os.WriteFile(path, []byte(buildInstructionShim(instructions)), 0o600); err != nil {
+		t.Fatalf("write generated shim: %v", err)
+	}
+
+	if err := cleanClaudeRootInstructions(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanClaudeRootInstructions error: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected generated root CLAUDE.md to be removed, got %v", err)
+	}
+}
+
+func TestCleanClaudeRootInstructionsPreservesUserAuthoredFile(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, "CLAUDE.md")
+	content := []byte("# Personal Claude instructions\n\nMentions GENERATED FILE, Source: .agent-layer/, and Regenerate: al sync.\n")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("write user instructions: %v", err)
+	}
+
+	if err := cleanClaudeRootInstructions(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanClaudeRootInstructions error: %v", err)
+	}
+	got, err := os.ReadFile(path) // #nosec G304 -- path is test-controlled.
+	if err != nil {
+		t.Fatalf("read preserved user instructions: %v", err)
+	}
+	if string(got) != string(content) {
+		t.Fatalf("unexpected content after cleanup: %q", string(got))
 	}
 }
 
@@ -121,9 +159,18 @@ func TestWriteInstructionShimsErrorPaths(t *testing.T) {
 			},
 		},
 		{
+			name: "claude dir mkdir fails",
+			setup: func(root string) error {
+				return os.WriteFile(filepath.Join(root, ".claude"), []byte("x"), 0o600)
+			},
+		},
+		{
 			name: "claude write fails",
 			setup: func(root string) error {
-				return os.Mkdir(filepath.Join(root, "CLAUDE.md"), 0o700)
+				if err := os.Mkdir(filepath.Join(root, ".claude"), 0o700); err != nil {
+					return err
+				}
+				return os.Mkdir(filepath.Join(root, ".claude", "CLAUDE.md"), 0o700)
 			},
 		},
 		{

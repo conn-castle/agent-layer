@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Changed
+- The Claude instruction shim is now `.claude/CLAUDE.md` instead of root `CLAUDE.md`. When Grok is enabled, sync sets `[compat.claude] agents = false` in repo-local `.grok-config/config.toml`, and Grok launch/dispatch/VS Code set `GROK_CLAUDE_AGENTS_ENABLED=false`, so Grok does not load both generated instruction files. The `0.17.1` migration deletes Agent Layer-generated root `CLAUDE.md` files; hand-authored files at that path are left untouched.
+
 ## v0.17.0 - 2026-08-20
 
 ### Added

@@ -13,17 +13,22 @@ import (
 const instructionHeader = "<!--\n  GENERATED FILE\n  Source: .agent-layer/instructions/*.md\n  Regenerate: al sync\n-->\n\n"
 
 // writeInstructionShims generates instruction shims for supported clients.
-// agy (Antigravity), Claude, Codex, Copilot, and other shared-tier clients
-// all read AGENTS.md (per the agentskills.io standard) or their client-
-// specific shim. GEMINI.md is intentionally NOT written: the Gemini CLI was
-// retired in 0.10.2 and agy reads AGENTS.md. The v0.10.2 migration's
+// agy (Antigravity), Codex, Copilot, Grok, and other shared-tier clients
+// read AGENTS.md (per the agentskills.io standard) or their client-specific
+// shim. Claude Code reads `.claude/CLAUDE.md` (an equivalent project location
+// to root CLAUDE.md). GEMINI.md is intentionally NOT written: the Gemini CLI
+// was retired in 0.10.2 and agy reads AGENTS.md. The v0.10.2 migration's
 // `f-delete-orphan-gemini-md` op removes any leftover GEMINI.md from
 // pre-0.10.2 repos.
 func writeInstructionShims(sys System, root string, instructions []config.InstructionFile) error {
 	if err := writeInstructionFile(sys, filepath.Join(root, "AGENTS.md"), instructions); err != nil {
 		return err
 	}
-	if err := writeInstructionFile(sys, filepath.Join(root, "CLAUDE.md"), instructions); err != nil {
+	claudeDir := filepath.Join(root, ".claude")
+	if err := sys.MkdirAll(claudeDir, 0o755); err != nil {
+		return fmt.Errorf(messages.SyncCreateDirFailedFmt, claudeDir, err)
+	}
+	if err := writeInstructionFile(sys, filepath.Join(claudeDir, "CLAUDE.md"), instructions); err != nil {
 		return err
 	}
 
@@ -73,7 +78,16 @@ func buildInstructionShim(instructions []config.InstructionFile) string {
 // repo-local .codex, .codex/AGENTS.md is loaded as home-level instructions and
 // duplicates the project document.
 func cleanCodexInstructions(sys System, root string) error {
-	path := filepath.Join(root, ".codex", "AGENTS.md")
+	return removeGeneratedInstructionShim(sys, filepath.Join(root, ".codex", "AGENTS.md"))
+}
+
+// cleanClaudeRootInstructions removes a generated root CLAUDE.md. Claude Code
+// reads `.claude/CLAUDE.md`; a leftover root copy is still loaded by Grok.
+func cleanClaudeRootInstructions(sys System, root string) error {
+	return removeGeneratedInstructionShim(sys, filepath.Join(root, "CLAUDE.md"))
+}
+
+func removeGeneratedInstructionShim(sys System, path string) error {
 	isGenerated, err := hasGeneratedMarker(sys, path)
 	if err != nil {
 		return err
