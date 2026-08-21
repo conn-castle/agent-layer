@@ -16,9 +16,9 @@ run_scenario_idempotency() {
 
   assert_claude_mock_called "$MOCK_CLAUDE_LOG"
 
-  # Bare init has no instruction sources, so CLAUDE.md is expected to be empty.
-  assert_file_empty "$repo_dir/CLAUDE.md" \
-    "CLAUDE.md is empty before idempotency snapshot without instruction sources"
+  # Bare init has no instruction sources, so .claude/CLAUDE.md is expected to be empty.
+  assert_file_empty "$repo_dir/.claude/CLAUDE.md" \
+    ".claude/CLAUDE.md is empty before idempotency snapshot without instruction sources"
   assert_file_contains "$repo_dir/.mcp.json" '"_generatedBy"' \
     ".mcp.json has content before idempotency snapshot"
 

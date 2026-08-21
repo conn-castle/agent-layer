@@ -712,7 +712,7 @@ assert_al_version_content() {
 # Sync output paths (relative to repo root) — source of truth from
 # internal/sync/*.go. Used by assert_generated_artifacts and idempotency.
 _SYNC_OUTPUT_PATHS=(
-  "CLAUDE.md"
+  ".claude/CLAUDE.md"
   "AGENTS.md"
   ".github/copilot-instructions.md"
   ".claude/settings.json"
@@ -736,12 +736,12 @@ assert_generated_artifacts() {
   assert_file_not_exists "$dir/.codex/AGENTS.md" ".codex/AGENTS.md is not generated after Codex AGENTS.md retirement"
   if _instruction_sources_have_content "$dir"; then
     # Verify managed markers in instruction shims (all use the same header).
-    assert_file_contains "$dir/CLAUDE.md" "GENERATED FILE" "CLAUDE.md has managed marker"
+    assert_file_contains "$dir/.claude/CLAUDE.md" "GENERATED FILE" ".claude/CLAUDE.md has managed marker"
     assert_file_contains "$dir/AGENTS.md" "GENERATED FILE" "AGENTS.md has managed marker"
     assert_file_contains "$dir/.github/copilot-instructions.md" "GENERATED FILE" \
       "copilot-instructions.md has managed marker"
   else
-    assert_file_empty "$dir/CLAUDE.md" "CLAUDE.md is empty without instruction sources"
+    assert_file_empty "$dir/.claude/CLAUDE.md" ".claude/CLAUDE.md is empty without instruction sources"
     assert_file_empty "$dir/AGENTS.md" "AGENTS.md is empty without instruction sources"
     assert_file_empty "$dir/.github/copilot-instructions.md" \
       "copilot-instructions.md is empty without instruction sources"

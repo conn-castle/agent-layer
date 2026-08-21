@@ -114,9 +114,9 @@ ENVEOF
   assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
   assert_generated_artifacts "$repo_dir"
 
-  # Verify CLAUDE.md has instruction content
-  assert_file_contains "$repo_dir/CLAUDE.md" "BEGIN: 00_rules.md" \
-    "CLAUDE.md has instruction blocks after upgrade+wizard+all"
+  # Verify .claude/CLAUDE.md has instruction content
+  assert_file_contains "$repo_dir/.claude/CLAUDE.md" "BEGIN: 00_rules.md" \
+    ".claude/CLAUDE.md has instruction blocks after upgrade+wizard+all"
 
   cleanup_scenario_dir "$repo_dir"
 }
