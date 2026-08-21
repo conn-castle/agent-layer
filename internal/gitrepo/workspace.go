@@ -135,8 +135,15 @@ func (r *Runner) CreateConflictWorkspace(ctx context.Context, dir string, spec C
 
 // ConflictIndexReady reports whether the workspace index is a fully staged
 // resolution. Unmerged paths and unstaged tracked changes are refused;
-// untracked files are ignored.
+// untracked files are ignored. An aborted or committed merge is refused so
+// resolve cannot treat the pre-merge local tree as an accepted result.
 func (r *Runner) ConflictIndexReady(ctx context.Context, dir string) error {
+	if _, err := os.Stat(filepath.Join(dir, ".git", "MERGE_HEAD")); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("conflict workspace merge is no longer in progress; finish the merge with git add, or recreate the workspace with the original command")
+		}
+		return err
+	}
 	unmerged, err := r.run(ctx, dir, "ls-files", "-u", "-z")
 	if err != nil {
 		return err

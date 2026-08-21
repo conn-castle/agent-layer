@@ -90,6 +90,35 @@ func TestCreateConflictWorkspaceMaterializesGitMerge(t *testing.T) {
 	}
 }
 
+func TestConflictIndexReadyRejectsAnAbortedMerge(t *testing.T) {
+	runner, err := NewRunner(nil)
+	if err != nil {
+		t.Skipf("git runner unavailable: %v", err)
+	}
+	dir := filepath.Join(t.TempDir(), "workspace")
+	base := testSkillTree(t, []skilltree.File{
+		{Path: "SKILL.md", Data: []byte("---\nname: alpha\ndescription: d\n---\nBody\n")},
+		{Path: "notes.md", Data: []byte("shared\n")},
+	})
+	local := testSkillTree(t, []skilltree.File{
+		{Path: "SKILL.md", Data: []byte("---\nname: alpha\ndescription: d\n---\nBody\n")},
+		{Path: "notes.md", Data: []byte("local\n")},
+	})
+	upstream := testSkillTree(t, []skilltree.File{
+		{Path: "SKILL.md", Data: []byte("---\nname: alpha\ndescription: d\n---\nBody\n")},
+		{Path: "notes.md", Data: []byte("upstream\n")},
+	})
+	if err := runner.CreateConflictWorkspace(context.Background(), dir, ConflictWorkspaceSpec{
+		Base: base, Local: local, Theirs: upstream, TheirsBranch: ConflictBranchUpstream,
+	}); err != nil {
+		t.Fatalf("CreateConflictWorkspace: %v", err)
+	}
+	gitOutput(t, dir, "merge", "--abort")
+	if err := runner.ConflictIndexReady(context.Background(), dir); err == nil || !strings.Contains(err.Error(), "no longer in progress") {
+		t.Fatalf("aborted merge ready = %v", err)
+	}
+}
+
 func TestCreateConflictWorkspaceRejectsUnknownOtherBranch(t *testing.T) {
 	runner, err := NewRunner(nil)
 	if err != nil {

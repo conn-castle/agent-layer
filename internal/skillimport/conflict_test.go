@@ -458,3 +458,119 @@ func TestResetInvalidatesAConflictedPushWorkspace(t *testing.T) {
 		t.Fatalf("status after reset = %+v", status.Entries)
 	}
 }
+
+func TestWriteConflictWorkspacePreservesAStaleWorkspace(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+	proj.WriteImportedFile("alpha", "notes.md", "local\n")
+	source.WriteFile("skills/alpha/notes.md", "upstream\n", 0o644)
+	source.Commit("conflict")
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("conflicted pull: %v", err)
+	}
+	workspace, err := conflictWorkspace(proj.root, "alpha")
+	if err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	writeProjectFile(t, filepath.Join(workspace, "notes.md"), "in-progress\n")
+	marker := filepath.Join(workspace, "keep-me.txt")
+	writeProjectFile(t, marker, "staged work\n")
+
+	proj.WriteImportedFile("alpha", "notes.md", "local-changed\n")
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("retry pull: %v", err)
+	}
+	failed := requireOutcome(t, report, "alpha", OutcomeFailed)
+	if !strings.Contains(failed.Err.Error(), "stale") || !strings.Contains(failed.Err.Error(), "move or remove") {
+		t.Fatalf("retry pull error = %v", failed.Err)
+	}
+	if got := proj.ImportedFile("alpha", "notes.md"); got != "local-changed\n" {
+		t.Fatalf("local skill changed while the stale workspace was protected: %q", got)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("stale workspace was replaced: %v", err)
+	}
+	kept, err := os.ReadFile(filepath.Join(workspace, "notes.md")) // #nosec G304 -- test-owned workspace path.
+	if err != nil {
+		t.Fatalf("read in-progress resolution: %v", err)
+	}
+	if string(kept) != "in-progress\n" {
+		t.Fatalf("in-progress resolution was overwritten: %q", kept)
+	}
+}
+
+func TestResolveRejectsPushWorkspaceAfterWritePolicyChange(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"},
+		`write_policy = "branch"`, `push_branch = "skill-updates"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+	source.Checkout("skill-updates", true)
+	source.WriteFile("skills/alpha/notes.md", "destination change\n", 0o644)
+	source.Commit("destination change")
+	source.Checkout("main", false)
+	proj.WriteImportedFile("alpha", "notes.md", "local change\n")
+	if _, err := proj.Service().Push(context.Background()); err != nil {
+		t.Fatalf("conflicted Push: %v", err)
+	}
+	workspace, err := conflictWorkspace(proj.root, "alpha")
+	if err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	writeProjectFile(t, filepath.Join(workspace, "notes.md"), "resolved\n")
+	runGit(t, workspace, "add", "--", "notes.md")
+
+	proj.ReplaceInConfig("write_policy = \"branch\"\npush_branch = \"skill-updates\"\n", "write_policy = \"direct\"\n")
+	if _, err := proj.Service().Resolve(context.Background(), "alpha"); err == nil || !strings.Contains(err.Error(), "stale") {
+		t.Fatalf("write-policy-changed workspace error = %v", err)
+	}
+}
+
+func TestResolveRejectsPullWorkspaceAfterClearingPinnedTracking(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"},
+		`tracking = "pinned"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+	proj.WriteImportedFile("alpha", "notes.md", "local\n")
+	source.Checkout("other", true)
+	source.WriteFile("skills/alpha/notes.md", "upstream\n", 0o644)
+	source.Commit("retarget conflict")
+	source.Checkout("main", false)
+	proj.ReplaceInConfig(`selectors = ["skills/alpha"]`, "selectors = [\"skills/alpha\"]\nref = \"other\"")
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("conflicted pull: %v", err)
+	}
+	workspace, err := conflictWorkspace(proj.root, "alpha")
+	if err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	writeProjectFile(t, filepath.Join(workspace, "notes.md"), "resolved\n")
+	runGit(t, workspace, "add", "--", "notes.md")
+
+	proj.ReplaceInConfig("\ntracking = \"pinned\"\n", "\n")
+	if _, err := proj.Service().Resolve(context.Background(), "alpha"); err == nil || !strings.Contains(err.Error(), "stale") {
+		t.Fatalf("cleared-tracking workspace error = %v", err)
+	}
+}

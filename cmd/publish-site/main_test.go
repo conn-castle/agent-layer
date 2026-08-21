@@ -140,6 +140,9 @@ func TestNormalizeVersionsJSON(t *testing.T) {
 		t.Fatalf("write versions.json: %v", err)
 	}
 
+	droppedVersions := map[string]struct{}{
+		"0.8.3": {}, "0.8.2": {}, "0.8.1": {}, "0.8.0": {}, "0.6.0": {},
+	}
 	for _, v := range []string{
 		"0.8.7", "0.8.6", "0.8.5", "0.8.4", "0.8.3", "0.8.2", "0.8.1", "0.8.0", "0.7.0", "0.6.1", "0.6.0",
 	} {
@@ -150,8 +153,13 @@ func TestNormalizeVersionsJSON(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(docsDir, "doc.mdx"), []byte("x"), 0o600); err != nil {
 			t.Fatalf("write docs file for %s: %v", v, err)
 		}
-		if err := os.WriteFile(filepath.Join(docsDir, "old-only.mdx"), []byte("x"), 0o600); err != nil {
-			t.Fatalf("write old-only docs file for %s: %v", v, err)
+		if _, dropped := droppedVersions[v]; dropped {
+			if err := os.WriteFile(filepath.Join(docsDir, "old-only.mdx"), []byte("x"), 0o600); err != nil {
+				t.Fatalf("write old-only docs file for %s: %v", v, err)
+			}
+			if err := os.WriteFile(filepath.Join(docsDir, "current-only.mdx"), []byte("x"), 0o600); err != nil {
+				t.Fatalf("write current-only docs file for %s: %v", v, err)
+			}
 		}
 
 		sidebarsDir := filepath.Join(repo, "versioned_sidebars")
@@ -168,6 +176,9 @@ func TestNormalizeVersionsJSON(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(latestDocs, "doc.mdx"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("write latest docs file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(latestDocs, "current-only.mdx"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write current-only docs file: %v", err)
 	}
 
 	if err := normalizeVersionsJSON(repo); err != nil {
@@ -214,16 +225,21 @@ func TestNormalizeVersionsJSON(t *testing.T) {
 		t.Fatalf("unmarshal redirect manifest: %v", err)
 	}
 	wantRedirects := map[string]string{
-		"/docs/0.6.0/doc":      "/docs/doc",
-		"/docs/0.6.0/old-only": "/docs/",
-		"/docs/0.8.0/doc":      "/docs/doc",
-		"/docs/0.8.0/old-only": "/docs/",
-		"/docs/0.8.1/doc":      "/docs/doc",
-		"/docs/0.8.1/old-only": "/docs/",
-		"/docs/0.8.2/doc":      "/docs/doc",
-		"/docs/0.8.2/old-only": "/docs/",
-		"/docs/0.8.3/doc":      "/docs/doc",
-		"/docs/0.8.3/old-only": "/docs/",
+		"/docs/0.6.0/current-only": "/docs/",
+		"/docs/0.6.0/doc":          "/docs/doc",
+		"/docs/0.6.0/old-only":     "/docs/",
+		"/docs/0.8.0/current-only": "/docs/",
+		"/docs/0.8.0/doc":          "/docs/doc",
+		"/docs/0.8.0/old-only":     "/docs/",
+		"/docs/0.8.1/current-only": "/docs/",
+		"/docs/0.8.1/doc":          "/docs/doc",
+		"/docs/0.8.1/old-only":     "/docs/",
+		"/docs/0.8.2/current-only": "/docs/",
+		"/docs/0.8.2/doc":          "/docs/doc",
+		"/docs/0.8.2/old-only":     "/docs/",
+		"/docs/0.8.3/current-only": "/docs/",
+		"/docs/0.8.3/doc":          "/docs/doc",
+		"/docs/0.8.3/old-only":     "/docs/",
 	}
 	if len(redirects) != len(wantRedirects) {
 		t.Fatalf("got %d redirects, want %d: %#v", len(redirects), len(wantRedirects), redirects)
@@ -367,7 +383,7 @@ func TestPruneDroppedVersionArtifacts_RemoveSidebarError(t *testing.T) {
 		t.Fatalf("write nested file: %v", err)
 	}
 
-	if err := pruneDroppedVersionArtifacts(repo, []string{"1.2.3"}); err == nil {
+	if err := pruneDroppedVersionArtifacts(repo, nil, []string{"1.2.3"}); err == nil {
 		t.Fatal("expected remove sidebar error when sidebar path is a directory")
 	}
 }
@@ -407,7 +423,7 @@ func TestPruneDroppedVersionArtifacts_RecordsRedirectsBeforeDeleting(t *testing.
 		t.Fatalf("write dropped removed doc: %v", err)
 	}
 
-	if err := pruneDroppedVersionArtifacts(repo, []string{"1.2.3"}); err != nil {
+	if err := pruneDroppedVersionArtifacts(repo, nil, []string{"1.2.3"}); err != nil {
 		t.Fatalf("prune: %v", err)
 	}
 
@@ -438,6 +454,64 @@ func TestPruneDroppedVersionArtifacts_RecordsRedirectsBeforeDeleting(t *testing.
 	}
 }
 
+func TestPruneDroppedVersionArtifacts_UsesLatestRetainedVersionedDocs(t *testing.T) {
+	repo := t.TempDir()
+	latestDocs := filepath.Join(repo, "docs")
+	if err := os.MkdirAll(latestDocs, 0o700); err != nil {
+		t.Fatalf("mkdir current docs: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(latestDocs, "intro.mdx"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write current intro: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(latestDocs, "agent-dispatch.mdx"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write current-only page: %v", err)
+	}
+
+	retainedDocs := filepath.Join(repo, "versioned_docs", "version-0.16.3")
+	if err := os.MkdirAll(retainedDocs, 0o700); err != nil {
+		t.Fatalf("mkdir retained docs: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(retainedDocs, "intro.mdx"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write retained intro: %v", err)
+	}
+
+	droppedDocs := filepath.Join(repo, "versioned_docs", "version-0.0.0")
+	if err := os.MkdirAll(droppedDocs, 0o700); err != nil {
+		t.Fatalf("mkdir dropped docs: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(droppedDocs, "intro.mdx"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write dropped intro: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(droppedDocs, "agent-dispatch.mdx"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write dropped current-only page: %v", err)
+	}
+
+	if err := pruneDroppedVersionArtifacts(repo, []string{"0.16.3"}, []string{"0.0.0"}); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+
+	manifestData, err := os.ReadFile(filepath.Join(repo, redirectManifestName)) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	var got []redirectManifestEntry
+	if err := json.Unmarshal(manifestData, &got); err != nil {
+		t.Fatalf("unmarshal manifest: %v", err)
+	}
+	want := []redirectManifestEntry{
+		{From: "/docs/0.0.0/agent-dispatch", To: "/docs/"},
+		{From: "/docs/0.0.0/intro", To: "/docs/intro"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got redirects %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("redirect %d = %#v, want %#v", i, got[i], want[i])
+		}
+	}
+}
+
 func TestPruneDroppedVersionArtifacts_ManifestWriteErrorSkipsPrune(t *testing.T) {
 	repo := t.TempDir()
 	droppedDocs := filepath.Join(repo, "versioned_docs", "version-1.2.3")
@@ -457,7 +531,7 @@ func TestPruneDroppedVersionArtifacts_ManifestWriteErrorSkipsPrune(t *testing.T)
 	}
 
 	withWriteFileError(t, filepath.Join(repo, redirectManifestName), os.ErrPermission)
-	if err := pruneDroppedVersionArtifacts(repo, []string{"1.2.3"}); err == nil || !errors.Is(err, os.ErrPermission) {
+	if err := pruneDroppedVersionArtifacts(repo, nil, []string{"1.2.3"}); err == nil || !errors.Is(err, os.ErrPermission) {
 		t.Fatalf("expected manifest write error, got %v", err)
 	}
 

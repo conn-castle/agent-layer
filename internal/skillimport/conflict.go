@@ -21,14 +21,15 @@ const (
 )
 
 type conflictState struct {
-	Kind                  string          `json:"kind"`
-	Lock                  skilllock.Entry `json:"lock"`
-	LocalTreeHash         string          `json:"local_tree_hash"`
-	Next                  skilllock.Entry `json:"next"`
-	DestinationRepository string          `json:"destination_repository,omitempty"`
-	DestinationBranch     string          `json:"destination_branch,omitempty"`
-	DestinationHead       string          `json:"destination_head,omitempty"`
-	DestinationTreeHash   string          `json:"destination_tree_hash,omitempty"`
+	Kind                   string          `json:"kind"`
+	Lock                   skilllock.Entry `json:"lock"`
+	LocalTreeHash          string          `json:"local_tree_hash"`
+	Next                   skilllock.Entry `json:"next"`
+	DestinationRepository  string          `json:"destination_repository,omitempty"`
+	DestinationBranch      string          `json:"destination_branch,omitempty"`
+	DestinationHead        string          `json:"destination_head,omitempty"`
+	DestinationTreeHash    string          `json:"destination_tree_hash,omitempty"`
+	DestinationWritePolicy string          `json:"destination_write_policy,omitempty"`
 }
 
 // Resolve applies the staged Git index of a skill conflict workspace.
@@ -126,18 +127,24 @@ func writePullConflictWorkspace(ctx context.Context, runner *gitrepo.Runner, st 
 }
 
 func writePushConflictWorkspace(ctx context.Context, runner *gitrepo.Runner, st *state, name string, local, baseTree, destination skilltree.Tree, lock skilllock.Entry, group *pushGroup, head string) (string, error) {
+	block, _, configured := st.configuredBlockForEntry(lock)
+	writePolicy := ""
+	if configured {
+		writePolicy = block.EffectiveWritePolicy()
+	}
 	return writeConflictWorkspace(ctx, runner, st, name, gitrepo.ConflictWorkspaceSpec{
 		Base:         baseTree,
 		Local:        local,
 		Theirs:       destination,
 		TheirsBranch: gitrepo.ConflictBranchDestination,
 	}, conflictState{
-		Kind:                  conflictKindPush,
-		Lock:                  lock,
-		DestinationRepository: group.Repository.String(),
-		DestinationBranch:     group.Branch,
-		DestinationHead:       head,
-		DestinationTreeHash:   destination.Hash(),
+		Kind:                   conflictKindPush,
+		Lock:                   lock,
+		DestinationRepository:  group.Repository.String(),
+		DestinationBranch:      group.Branch,
+		DestinationHead:        head,
+		DestinationTreeHash:    destination.Hash(),
+		DestinationWritePolicy: writePolicy,
 	})
 }
 
@@ -154,6 +161,7 @@ func writeConflictWorkspace(ctx context.Context, runner *gitrepo.Runner, st *sta
 		if conflictMatches(st, state.Lock, existing) {
 			return "", fmt.Errorf("active %s conflict workspace %s already exists; finish it with git and run 'al skills resolve %s'", existing.Kind, relativeTo(st.paths.Root, dir), name)
 		}
+		return "", fmt.Errorf("existing conflict workspace %s is stale; move or remove it before retrying", relativeTo(st.paths.Root, dir))
 	} else if !os.IsNotExist(statErr) {
 		return "", fmt.Errorf("inspect conflict workspace %s: %w", relativeTo(st.paths.Root, dir), statErr)
 	}
@@ -245,7 +253,10 @@ func conflictMatches(st *state, entry skilllock.Entry, state conflictState) bool
 		if config.NormalizeSkillRepository(block.EffectivePushRepository()) != state.DestinationRepository {
 			return false
 		}
-		if block.EffectiveWritePolicy() == config.SkillWritePolicyBranch {
+		if block.EffectiveWritePolicy() != state.DestinationWritePolicy {
+			return false
+		}
+		if state.DestinationWritePolicy == config.SkillWritePolicyBranch {
 			return strings.TrimSpace(block.PushBranch) == state.DestinationBranch
 		}
 		// Direct writes follow the live default branch, which cannot be rechecked
@@ -284,9 +295,23 @@ func pullNextMatchesConfig(st *state, entry skilllock.Entry, next skilllock.Entr
 	if block.Ref != next.ConfiguredRef {
 		return false
 	}
-	if tracking := strings.TrimSpace(block.Tracking); tracking != "" && tracking != next.Tracking {
+	if configuredTracking(block, next.RefKind) != next.Tracking {
 		return false
 	}
 	_, selected := selectingPositiveSelector(block, next.SelectedPath)
 	return selected
+}
+
+// configuredTracking is the tracking mode resolve must compare against the
+// recorded lock. An omitted config value is derived from the recorded ref kind
+// the same way the first networked pull would: branches track, tags and
+// commits pin.
+func configuredTracking(block config.SkillImport, recordedRefKind string) string {
+	if tracking := strings.TrimSpace(block.Tracking); tracking != "" {
+		return tracking
+	}
+	if recordedRefKind == skilllock.RefKindBranch {
+		return config.SkillTrackingTracked
+	}
+	return config.SkillTrackingPinned
 }

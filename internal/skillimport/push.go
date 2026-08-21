@@ -444,7 +444,7 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 		candidate.Base = mergeBase
 		candidate.CanCheckpoint = checkpointed
 		// An absent destination path means two different things, and only the
-		// branch's history distinguishes them.
+		// branch's history (or a restored publication checkpoint) distinguishes them.
 		//
 		// On a branch this publication just created from the destination's
 		// default branch, a path absent from that base was never present on the
@@ -453,12 +453,13 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 		// group coherent — merging against an empty tree would read every
 		// unchanged file as a destination deletion and publish a partial skill.
 		//
-		// On a branch that already existed, an absent path is a destination-side
-		// whole-skill deletion relative to the locked base, which is ordinary
-		// three-way input: unchanged local content preserves the deletion, and
-		// modified local content is a delete/modify conflict.
+		// On a branch that already existed, or when recreating a deleted branch
+		// from a prior publication checkpoint, an absent path is a
+		// destination-side whole-skill deletion relative to the merge base:
+		// unchanged local content preserves the deletion, and modified local
+		// content is a delete/modify conflict.
 		merged := candidate.Local
-		if branchExisted || !destinationTree.IsEmpty() {
+		if branchExisted || checkpointed || !destinationTree.IsEmpty() {
 			result, merged = mergeAgainstDestination(ctx, runner, st, group, head, candidate, destinationTree, result)
 			if result.Outcome == OutcomeFailed {
 				report.Add(result)
