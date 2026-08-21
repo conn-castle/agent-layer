@@ -1140,6 +1140,8 @@ func TestRunStudyAuthenticatesWhenManifestOnlyCellsAreMissing(t *testing.T) {
 	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
 		return nil, fmt.Errorf("missing-cell run reached authentication")
 	}
+	originalStage := stageBenchmarkExperimentBundles
+	t.Cleanup(func() { stageBenchmarkExperimentBundles = originalStage })
 	stageBenchmarkExperimentBundles = func(string, *preparedStudy) ([]*TreatmentBundle, error) {
 		return nil, fmt.Errorf("missing-cell run reached bundle staging")
 	}
@@ -1152,6 +1154,48 @@ func TestRunStudyAuthenticatesWhenManifestOnlyCellsAreMissing(t *testing.T) {
 	}
 	if *preparedCalls != 1 {
 		t.Fatalf("task preparation ran %d times", *preparedCalls)
+	}
+}
+
+func TestManifestOnlyCachedStudyCompleteDoesNotMutateCallerStudyID(t *testing.T) {
+	root := t.TempDir()
+	writeParsedBareStudy(t, root, "luna:low")
+	stubStudyInfrastructure(t, root)
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	removeStudyReport(t, root, first.StudyID)
+	studies := filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies")
+	rejected := filepath.Join(studies, "rejected-identity")
+	if err := os.Rename(filepath.Join(studies, first.StudyID), rejected); err != nil {
+		t.Fatal(err)
+	}
+
+	prepared, err := prepareStudy(StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.cleanupInputs()
+	prepared.studyID = "sentinel-study-id"
+	tasks := make([]benchmarkPlanTask, len(prepared.selection.Tasks))
+	for i, task := range prepared.selection.Tasks {
+		tasks[i] = benchmarkPlanTask{ID: task.ID, RepetitionsPerArm: task.Repetitions}
+	}
+	complete, err := manifestOnlyCachedStudyComplete(root, &prepared, rejected, tasks, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if complete {
+		t.Fatal("identity-mismatched candidate was treated as complete")
+	}
+	if prepared.studyID != "sentinel-study-id" {
+		t.Fatalf("rejected probe mutated studyID to %q", prepared.studyID)
 	}
 }
 
@@ -1428,6 +1472,14 @@ func removeStudyReport(t *testing.T, root, studyID string) {
 
 func blockCachedStudySidecars(t *testing.T) {
 	t.Helper()
+	originalPreflight, originalVerify := preflightBenchmark, verifyBenchmarkPier
+	originalAuth, originalPrepare := validateBenchmarkAuthentication, prepareBenchmarkTaskSet
+	originalTreatment := preflightTreatmentRuntime
+	t.Cleanup(func() {
+		preflightBenchmark, verifyBenchmarkPier = originalPreflight, originalVerify
+		validateBenchmarkAuthentication, prepareBenchmarkTaskSet = originalAuth, originalPrepare
+		preflightTreatmentRuntime = originalTreatment
+	})
 	preflightBenchmark = func([]parsedSelection) error {
 		return fmt.Errorf("cached regeneration reached prerequisite discovery")
 	}
@@ -1440,11 +1492,9 @@ func blockCachedStudySidecars(t *testing.T) {
 	prepareBenchmarkTaskSet = func(context.Context, string, []benchmarkPlanTask) (map[string]string, map[string]string, error) {
 		return nil, nil, fmt.Errorf("cached regeneration reached task preparation")
 	}
-	originalTreatment := preflightTreatmentRuntime
 	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error {
 		return fmt.Errorf("cached regeneration reached treatment runtime preflight")
 	}
-	t.Cleanup(func() { preflightTreatmentRuntime = originalTreatment })
 }
 
 func writeMatchingStudyReport(t *testing.T, root, studyID string, prepared preparedStudy, completed, required int) {

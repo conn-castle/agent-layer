@@ -546,7 +546,8 @@ func manifestOnlyCachedStudyComplete(repoRoot string, prepared *preparedStudy, s
 	if !studyManifestDeclarationCompatible(manifest, prepared) {
 		return false, nil
 	}
-	preparation, err := bindStudyPreparation(repoRoot, prepared, tasks, copyStringMap(manifest.Checksums), copyStringMap(manifest.Environments), historicalBundlesFromManifest(manifest), nil, concurrency)
+	probe := *prepared
+	preparation, err := bindStudyPreparation(repoRoot, &probe, tasks, copyStringMap(manifest.Checksums), copyStringMap(manifest.Environments), historicalBundlesFromManifest(manifest), nil, concurrency)
 	if err != nil {
 		return false, err
 	}
