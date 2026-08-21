@@ -29,6 +29,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-08-21 website-docs-tone-and-readability: Public website documentation uses unnatural, dense, and ambiguous terminology
+    Priority: Medium. Area: documentation / website / copy
+    Description: Much of the public-facing documentation on the website reads like unnatural AI slop, using dense, jargon-heavy phrasing and ambiguous terms that obscure core concepts for human readers.
+    Next step: Audit website docs (landing page, guides, concepts, reference) and rewrite them in clear, direct, human-oriented language.
+
 - Issue 2026-08-21 make-dev-slow-execution-time: make dev execution time is excessively slow for local workflows
     Priority: Medium. Area: developer experience / build tooling
     Description: `make dev` runs full formatting, linting, global coverage enforcement, DeepSWE verification, and release test suites sequentially, taking several minutes per invocation and slowing local iteration.
