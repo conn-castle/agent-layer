@@ -30,6 +30,10 @@ func TestRunGolden(t *testing.T) {
 	if err := os.WriteFile(staleCodexInstructions, []byte(instructionHeader+"stale\n"), 0o600); err != nil {
 		t.Fatalf("write stale codex instructions: %v", err)
 	}
+	staleClaudeInstructions := filepath.Join(root, "CLAUDE.md")
+	if err := os.WriteFile(staleClaudeInstructions, []byte(instructionHeader+"stale\n"), 0o600); err != nil {
+		t.Fatalf("write stale claude instructions: %v", err)
+	}
 	result, err := Run(root)
 	if err != nil {
 		t.Fatalf("sync run: %v", err)
@@ -42,7 +46,7 @@ func TestRunGolden(t *testing.T) {
 	expectedRoot := filepath.Join(fixtureRoot, "expected")
 	files := []string{
 		"AGENTS.md",
-		"CLAUDE.md",
+		".claude/CLAUDE.md",
 		".github/copilot-instructions.md",
 		".codex/config.toml",
 		".grok/config.toml",
@@ -67,12 +71,20 @@ func TestRunGolden(t *testing.T) {
 	assertFileMatchesTemplate(t, "claude-statusline.sh", filepath.Join(root, ".claude", "claude-statusline.sh"))
 
 	absent := []string{
+		"CLAUDE.md",
 		".codex/AGENTS.md",
 		".codex/skills",
 		".agent/skills",
 		".gemini/skills",
 		".github/skills",
 		".vscode/prompts",
+	}
+	grokHomeConfig, err := os.ReadFile(filepath.Join(root, ".grok-config", "config.toml")) // #nosec G304 -- test-controlled path.
+	if err != nil {
+		t.Fatalf("read grok home config: %v", err)
+	}
+	if !strings.Contains(string(grokHomeConfig), "agents = false") {
+		t.Fatalf("expected grok home Claude agents compat off, got:\n%s", grokHomeConfig)
 	}
 	for _, rel := range absent {
 		if _, err := os.Stat(filepath.Join(root, rel)); !os.IsNotExist(err) {

@@ -86,6 +86,7 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 			return writeInstructionShims(sys, root, project.Instructions)
 		},
 		func() error { return cleanCodexInstructions(sys, root) },
+		func() error { return cleanClaudeRootInstructions(sys, root) },
 		func() error { return cleanLegacySkillOutputs(sys, root) },
 	}
 
@@ -138,6 +139,7 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 		steps = append(steps,
 			func() error { return writeGrokConfig(sys, root, project) },
 			func() error { return writeGrokTrustedFolders(sys, root) },
+			func() error { return writeGrokHomeClaudeCompat(sys, root) },
 			func() error { return writeGrokChimeHook(sys, root, project) },
 		)
 	} else {

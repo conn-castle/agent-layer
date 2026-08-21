@@ -22,6 +22,9 @@ const (
 	SupportedVersion = "1.0.5"
 	// EnvHome is the Grok home directory override.
 	EnvHome = "GROK_HOME"
+	// EnvClaudeAgents disables Grok discovery of Claude-named instruction files
+	// under ~/.claude/ and <dir>/.claude/CLAUDE*.md.
+	EnvClaudeAgents = "GROK_CLAUDE_AGENTS_ENABLED"
 	// EnvMemory is Grok's experimental memory switch.
 	EnvMemory = "GROK_MEMORY"
 	// SandboxWorkspace allows writes in the project directory.
@@ -112,6 +115,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 // cannot create the isolated home with default 0755 permissions.
 func ConfigureEnvironment(root string, env []string, cfg config.GrokConfig, warning io.Writer) []string {
 	env = ensureGrokHomeWithWarning(root, env, warning)
+	env = clients.SetEnv(env, EnvClaudeAgents, "false")
 	if config.GrokDisableMemory(cfg) {
 		env = clients.SetEnv(env, EnvMemory, "0")
 	}

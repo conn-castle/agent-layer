@@ -83,6 +83,10 @@ const (
 	SyncGrokConfigDirConflictFmt       = "grok config directory must be a real directory: %s"
 	SyncGrokConfigTargetConflictFmt    = "grok config target must be a regular file, not a symlink or special file: %s"
 	SyncGrokConfigOwnershipConflictFmt = "refusing to overwrite user-owned Grok config %s; move managed settings into .agent-layer/config.toml or agents.grok.agent_specific first"
+	SyncGrokHomeConfigReadFailedFmt    = "failed to read grok home config %s: %w"
+	SyncGrokHomeConfigParseFailedFmt   = "failed to parse grok home config %s: %w"
+	SyncGrokHomeConfigCompatFmt        = "failed to set grok home [compat.claude] agents = false in %s: %w"
+	SyncGrokHomeConfigCompatUnapplied  = "could not disable Grok Claude-named instruction discovery"
 )
 
 // Skill source snapshot messages. These describe ownership problems that only

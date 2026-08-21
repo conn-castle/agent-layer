@@ -47,6 +47,9 @@ func TestLaunchGrokExecHandoff(t *testing.T) {
 	if !ok || val != HomeDir(root) {
 		t.Fatalf("expected GROK_HOME=%s, got %s (ok=%v)", HomeDir(root), val, ok)
 	}
+	if val, ok := clients.GetEnv(call.Env, EnvClaudeAgents); !ok || val != "false" {
+		t.Fatalf("expected %s=false, got %s (ok=%v)", EnvClaudeAgents, val, ok)
+	}
 	homeInfo, err := os.Lstat(HomeDir(root))
 	if err != nil {
 		t.Fatalf("grok home: %v", err)
@@ -198,6 +201,9 @@ func TestConfigureEnvironmentAlwaysSetsHome(t *testing.T) {
 		val, ok := clients.GetEnv(env, EnvHome)
 		if !ok || val != expected {
 			t.Fatalf("expected GROK_HOME=%s, got %s (ok=%v)", expected, val, ok)
+		}
+		if val, ok := clients.GetEnv(env, EnvClaudeAgents); !ok || val != "false" {
+			t.Fatalf("expected %s=false, got %s (ok=%v)", EnvClaudeAgents, val, ok)
 		}
 	})
 
