@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "version": "0.17.1",
-  "generated_at_utc": "2026-08-20T16:08:48Z",
+  "generated_at_utc": "2026-08-21T18:22:06Z",
   "files": [
     {
       "path": ".agent-layer/commands.allow",
@@ -145,7 +145,7 @@
     },
     {
       "path": ".agent-layer/skills/ship-pr/SKILL.md",
-      "full_hash_normalized": "7e12f40c0fe5792fdfe06490f92f4779e64a2b4116e89cb5fa458fa330fa8009"
+      "full_hash_normalized": "85a1f5a1a7396a251085c881f1cefb6763548e302850242a0ad667c2c2a919e6"
     },
     {
       "path": ".agent-layer/skills/ship-pr/assets/pr-body-template.md",
@@ -153,11 +153,15 @@
     },
     {
       "path": ".agent-layer/skills/ship-pr/references/address-pr-comments.md",
-      "full_hash_normalized": "d68d2325dcee7060604a0b57d485848fdb326ff0267cf21e011ef78d9016bf90"
+      "full_hash_normalized": "a9b60d0c4f03a6b19e9f956676670211ec4a69af663f3be237d03ff84a84d26b"
     },
     {
       "path": ".agent-layer/skills/ship-pr/references/fix-ci.md",
       "full_hash_normalized": "53f9fd2e3d6189d3fd7a6067c26429048ff49609169804b3686f2791d50d2ec8"
+    },
+    {
+      "path": ".agent-layer/skills/ship-pr/scripts/read-pr-comments.sh",
+      "full_hash_normalized": "89a47a170725a3a813b85626bfb24d2d5f9229d5e38a0dc805c3abc762692503"
     },
     {
       "path": ".agent-layer/skills/ship-pr/scripts/watch-pr-events.sh",
@@ -165,7 +169,7 @@
     },
     {
       "path": ".agent-layer/skills/skill-sync/SKILL.md",
-      "full_hash_normalized": "ac150018fb683be8d82a71eaa1889836c0c2204f915f03380634715de8715dbb",
+      "full_hash_normalized": "c059c06dfbdb309db2b5d0c4b7fddf87e6bbde148e0c38def80681a2ceea02a5",
       "policy_id": "catalog_skills_v1"
     },
     {

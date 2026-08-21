@@ -335,7 +335,13 @@ func (s *Service) advanceExisting(ctx context.Context, runner *gitrepo.Runner, s
 	}
 	if len(conflicts) > 0 {
 		result.Outcome = OutcomeFailed
-		result.Err = fmt.Errorf("upstream and local changes conflict in %s", describeConflicts(conflicts))
+		workspace, workspaceErr := writePullConflictWorkspace(ctx, runner, st, skill.Name, observed.Tree, base, skill.Tree, entry, nextEntry)
+		switch {
+		case workspaceErr != nil:
+			result.Err = fmt.Errorf("upstream and local changes conflict in %s; could not write resolution workspace: %w", describeConflicts(conflicts), workspaceErr)
+		default:
+			result.Err = fmt.Errorf("upstream and local changes conflict in %s; resolve %s with git and run 'al skills resolve %s'", describeConflicts(conflicts), relativeTo(st.paths.Root, workspace), skill.Name)
+		}
 		report.Add(result)
 		return
 	}

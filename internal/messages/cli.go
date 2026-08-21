@@ -310,9 +310,10 @@ Imported skills live in .agent-layer/skills-imported/<skill-name>/ and are
 projected through ordinary 'al sync' alongside .agent-layer/skills/. Recorded
 upstream state lives in .agent-layer/skills.lock.json.
 
-Add, pull, reset, and push contact remote repositories. Remove also contacts a
-remote when its block retains a positive selector; removing the last positive
-selector stays local. Status, 'al sync', and agent launch stay local.`
+Add, pull, reset, push, and diff (when a requested side is remote) contact
+remote repositories. Remove also contacts a remote when its block retains a
+positive selector; removing the last positive selector stays local. Status,
+resolve, 'al sync', and agent launch stay local.`
 
 	SkillsAddUse   = "add <repository> <selector>..."
 	SkillsAddShort = "Import skills from a Git repository"
@@ -344,7 +345,26 @@ before changing project configuration; pass --yes for non-interactive use.`
 network or Git fetch.
 
 Use --all to expand the summary into one entry per resolved skill plus the
-configured exclusion selectors.`
+configured exclusion selectors. A skill with an active matching conflict
+workspace is reported as conflicted; --all includes that workspace path.`
+
+	SkillsDiffUse   = "diff <name>"
+	SkillsDiffShort = "Show a Git diff between two live skill sides"
+	SkillsDiffLong  = `Compare two live sides of one imported skill and print an ordinary Git unified
+diff.
+
+Supported sides are base (the locked source tree), local (the live imported
+tree), upstream (the current configured source target), and destination (the
+current configured push destination tree). Defaults are local to upstream.
+Fetch runs only for sides that require it. Identical trees produce no output.
+For a pinned import, upstream is the current ref tip even though ordinary pull
+does not follow that tip until the configured ref changes.
+
+The destination side requires a writable import whose configured branch exists.
+An absent skill path on that branch is treated as an empty tree.`
+
+	SkillsDiffFromFlag = "Source side: base, local, upstream, or destination (default: local)"
+	SkillsDiffToFlag   = "Destination side: base, local, upstream, or destination (default: upstream)"
 
 	SkillsPullUse   = "pull"
 	SkillsPullShort = "Fetch and reconcile configured skill sources"
@@ -353,10 +373,29 @@ state, and project the results.
 
 This is the only command that advances tracked imports. Pinned imports stay at
 their locked commits unless the configured ref itself changed. Local edits are
-merged against the locked upstream tree and are never overwritten; a conflict
-fails only that skill.
+merged against the locked upstream tree and are never overwritten. A conflict
+leaves a Git workspace under .agent-layer/tmp/skill-conflicts/<name>/ for
+'al skills resolve'; it fails only that skill.
 
 'al skills pull' never commits or pushes upstream.`
+
+	SkillsResolveUse   = "resolve <name>"
+	SkillsResolveShort = "Finish a conflicted skill pull or push"
+	SkillsResolveLong  = `Apply the staged Git index of a conflict workspace left by a conflicted
+'al skills pull' or 'al skills push'.
+
+Resolve the merge with ordinary git commands in the workspace path printed by
+the failed operation, git add the result, then run this command with the exact
+skill name. Resolve uses the staged index only: unmerged or unstaged tracked
+changes are refused, and untracked mergetool files are ignored. It validates
+the tree and that recorded lock and configuration still match.
+
+A pull resolution applies the staged tree and advances the recorded upstream
+lock. A push resolution applies the staged tree locally and records the
+destination head that was reconciled as the publication checkpoint without
+moving the source lock; rerun 'al skills push' afterwards. Successful resolve
+removes the workspace and projects the imported skill. It does not fetch,
+prompt, commit, or push.`
 
 	SkillsResetUse   = "reset <name>"
 	SkillsResetShort = "Discard one imported skill's local edits"
@@ -378,8 +417,10 @@ destination.
 Blocks with write_policy = "none" (the default) are skipped. Changes for one
 destination repository and branch are committed and pushed together. Agent
 Layer never force-pushes, never generates a branch name, and never falls back
-to another destination or mode. The command prompts before publishing; pass
---yes for non-interactive use.
+to another destination or mode. A destination merge conflict leaves the same
+kind of Git workspace as pull; finish it with 'al skills resolve' and rerun
+push. The command prompts before publishing; pass --yes for non-interactive
+use.
 
 'al skills push' never pulls first.`
 

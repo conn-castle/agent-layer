@@ -126,6 +126,43 @@ func TestPushBranchUsesThePriorPublicationForFollowUpEdits(t *testing.T) {
 	}
 }
 
+func TestPushRecreatesADeletedMergedBranchFromItsPublication(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Original body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"},
+		`tracking = "pinned"`, `write_policy = "branch"`, `push_branch = "skill-updates"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	proj.WriteImportedFile("alpha", "SKILL.md", skillManifest("alpha", "First body"))
+	first, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("first Push: %v\n%s", err, first.Render("push"))
+	}
+	requireOutcome(t, first, "alpha", OutcomePushed)
+	firstPublication := source.Head("skill-updates")
+
+	source.run("merge", "--quiet", "--no-ff", "--no-edit", "skill-updates")
+	source.run("branch", "--delete", "skill-updates")
+	proj.WriteImportedFile("alpha", "SKILL.md", skillManifest("alpha", "Second body"))
+
+	second, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("second Push: %v\n%s", err, second.Render("push"))
+	}
+	requireOutcome(t, second, "alpha", OutcomePushed)
+	if got := source.FileAt("skill-updates", "skills/alpha/SKILL.md"); !strings.Contains(got, "Second body") {
+		t.Fatalf("recreated destination content = %q", got)
+	}
+	entry, _ := proj.Lock().Entry("alpha")
+	if entry.Publication == nil || entry.Publication.Commit == firstPublication {
+		t.Fatalf("publication was not advanced after branch recreation: %+v", entry.Publication)
+	}
+}
+
 // TestPushBranchPublishesAReversionToTheSourceVersion proves returning a file
 // to its original source content is still a change relative to what Agent
 // Layer last published. Without publication state, three-way merge treats the

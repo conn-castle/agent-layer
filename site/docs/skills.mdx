@@ -1,7 +1,7 @@
 ---
 title: Skills
 description: Structured workflows that give agents repeatable, multi-phase processes for common development tasks.
-sidebar_position: 4
+sidebar_position: 5
 ---
 
 Agent skills are structured Markdown workflows that guide AI coding agents through complex, multi-step tasks. Instead of describing what you want step by step, you invoke a skill and the agent follows a tested process with built-in quality gates.
@@ -133,7 +133,7 @@ tools and has no external binary requirement.
 
 | Skill | What it does |
 | --- | --- |
-| `dispatch-agent` | Uses the Agent Dispatch MCP tools only when the user names an external dispatch target or another skill explicitly requires dispatch; it has no external binary requirement. |
+| `dispatch-agent` | Uses the built-in [Agent Dispatch](./agent-dispatch) MCP tools only when the user names an external dispatch target or another skill explicitly requires dispatch; it has no external binary requirement. |
 | `find-docs` | Uses Context7 for current API and library documentation when local docs or CLI help are insufficient. |
 | `playwright` | Uses `playwright-cli` for browser automation, screenshots, user interface inspection, and Playwright test work. |
 | `tavily-web` | Uses Tavily CLI for web search, URL extraction, site mapping, and cited research. |
@@ -174,6 +174,7 @@ without losing your edits, and contribute changes back.
 ```bash
 al skills add https://github.com/example/skills.git skills/reviewer
 al skills status
+al skills diff reviewer
 al skills pull
 ```
 
@@ -186,6 +187,13 @@ valid, that one skill fails and its content is left untouched — the rest of th
 repository still imports. If a run is interrupted part way through, the next
 `al skills` or `al sync` command rolls it back, so you never end up with a
 half-replaced skill.
+
+A conflict leaves a Git workspace under `.agent-layer/tmp/skill-conflicts/<name>/`.
+Finish the merge with ordinary git commands, `git add` the result, and run
+`al skills resolve <name>`. Agent Layer applies the staged index after verifying
+that the recorded lock and configuration still match. `al skills diff <name>`
+prints an ordinary Git diff of live `base`, `local`, `upstream`, or
+`destination` trees.
 
 The generated `.agent-layer/.gitignore` ignores only
 `.agent-layer/skills-imported/.staging/`, the transaction scratch space. Keep
@@ -246,7 +254,8 @@ reconciles upstream changes, so a change made on the destination branch is
 preserved rather than overwritten. If the destination branch removed a skill
 entirely, that removal is preserved too: the push reports the skill as
 unchanged when your copy still matches what you imported, and reports a
-conflict when you had also edited it.
+conflict when you had also edited it. Finish a destination conflict in its Git
+workspace with `al skills resolve`, then rerun push.
 
 After a successful contribution-branch push, Agent Layer records that exact
 published tree as a separate destination checkpoint. Running `al skills push`

@@ -22,6 +22,9 @@ type StatusEntry struct {
 	WritePolicy  string
 	Condition    Condition
 	WriteEnabled bool
+	// Workspace is the conflict workspace path relative to the repository root
+	// when Condition is conflicted.
+	Workspace string
 }
 
 // StatusExclusion is one configured exclusion selector.
@@ -75,12 +78,22 @@ func buildStatus(st *state) (*Status, error) {
 	}
 
 	for _, entry := range st.lock.Skills {
+		if err := validateConflictWorkspaceMetadata(st, entry.Name); err != nil {
+			return nil, err
+		}
 		block, _, configured := st.configuredBlockForEntry(entry)
 		writePolicy := config.SkillWritePolicyNone
 		writeEnabled := false
 		if configured {
 			writePolicy = block.EffectiveWritePolicy()
 			writeEnabled = block.WriteEnabled()
+		}
+		condition := st.classify(entry)
+		workspace := ""
+		if condition == ConditionConflicted {
+			if path, ok := matchingConflictWorkspace(st, entry); ok {
+				workspace = relativeTo(st.paths.Root, path)
+			}
 		}
 		status.Entries = append(status.Entries, StatusEntry{
 			Name:         entry.Name,
@@ -89,8 +102,9 @@ func buildStatus(st *state) (*Status, error) {
 			Ref:          entry.ResolvedRef,
 			Tracking:     entry.Tracking,
 			WritePolicy:  writePolicy,
-			Condition:    st.classify(entry),
+			Condition:    condition,
 			WriteEnabled: writeEnabled,
+			Workspace:    workspace,
 		})
 	}
 
@@ -124,17 +138,21 @@ func (s *Status) Render(all bool) string {
 		}
 	}
 
-	fmt.Fprintf(&builder, "imported skills: %d total, %d clean, %d modified, %d missing, %d invalid, %d collided\n",
+	fmt.Fprintf(&builder, "imported skills: %d total, %d clean, %d modified, %d missing, %d invalid, %d collided, %d conflicted\n",
 		len(s.Entries), counts[ConditionClean], counts[ConditionModified], counts[ConditionMissing],
-		counts[ConditionInvalid], counts[ConditionCollided])
+		counts[ConditionInvalid], counts[ConditionCollided], counts[ConditionConflicted])
 	fmt.Fprintf(&builder, "tracking: %d tracked, %d pinned, %d write-enabled\n", tracked, pinned, writeEnabled)
 	fmt.Fprintf(&builder, "configured exclusions: %d\n", len(s.Exclusions))
 
 	if all {
 		for _, entry := range s.Entries {
-			fmt.Fprintf(&builder, "%s\t%s\t%s\t%s\t%s\t%s\twrite=%s\n",
+			fmt.Fprintf(&builder, "%s\t%s\t%s\t%s\t%s\t%s\twrite=%s",
 				entry.Name, entry.Condition, entry.Repository, entry.SelectedPath,
 				entry.Ref, entry.Tracking, entry.WritePolicy)
+			if entry.Workspace != "" {
+				fmt.Fprintf(&builder, "\t%s", entry.Workspace)
+			}
+			builder.WriteString("\n")
 		}
 		for _, exclusion := range s.Exclusions {
 			fmt.Fprintf(&builder, "exclusion\t%s\t!%s\n", exclusion.Repository, exclusion.Selector)

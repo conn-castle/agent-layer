@@ -39,6 +39,8 @@ const (
 	OutcomeSkipped Outcome = "skipped"
 	// OutcomeFailed reports a skill-level failure that blocked only that skill.
 	OutcomeFailed Outcome = "failed"
+	// OutcomeResolved reports a conflicted pull or push completed from its workspace.
+	OutcomeResolved Outcome = "resolved"
 )
 
 // SkillResult is one skill's outcome.

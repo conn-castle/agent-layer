@@ -194,7 +194,7 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 	sort.Strings(order)
 	txn := newTransaction(pathSetFor(st), st.lock)
 	for _, key := range order {
-		s.publishGroup(ctx, runner, workRoot, txn, groups[key], report)
+		s.publishGroup(ctx, runner, workRoot, st, txn, groups[key], report)
 	}
 
 	if txn.NeedsCommit(st.lock, st.lockPresent) {
@@ -284,15 +284,22 @@ func resolvePushBranch(ctx context.Context, branches *defaultBranchCache, block 
 	if err != nil {
 		return "", "", false, err
 	}
+	branch, configured, err = pushBranchForDefault(block, destination, defaultBranch)
+	return branch, defaultBranch, configured, err
+}
+
+// pushBranchForDefault applies write-policy branch selection against an already
+// resolved destination default branch. Branch policy may not target that default.
+func pushBranchForDefault(block config.SkillImport, destination gitrepo.Repository, defaultBranch string) (branch string, configured bool, err error) {
 	configuredBranch := strings.TrimSpace(block.PushBranch)
 	if configuredBranch == "" {
-		return defaultBranch, defaultBranch, false, nil
+		return defaultBranch, false, nil
 	}
 	if configuredBranch == defaultBranch {
-		return "", "", false, fmt.Errorf("push_branch %q is the default branch of %s; write_policy = %q never writes to a destination's primary branch, so use write_policy = %q or configure a different branch",
+		return "", false, fmt.Errorf("push_branch %q is the default branch of %s; write_policy = %q never writes to a destination's primary branch, so use write_policy = %q or configure a different branch",
 			configuredBranch, destination, config.SkillWritePolicyBranch, config.SkillWritePolicyDirect)
 	}
-	return configuredBranch, defaultBranch, true, nil
+	return configuredBranch, true, nil
 }
 
 // reportBlockedSkills records the required failed result for every skill a
@@ -337,7 +344,7 @@ func buildPushCandidate(ctx context.Context, st *state, source *gitrepo.Source, 
 
 // publishGroup reconciles every candidate in one destination group against the
 // destination head and, when anything changed, commits and pushes them together.
-func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, workRoot string, txn *transaction, group *pushGroup, report *Report) {
+func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, workRoot string, st *state, txn *transaction, group *pushGroup, report *Report) {
 	if len(group.Candidates) == 0 {
 		return
 	}
@@ -416,28 +423,23 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 			report.Add(result)
 			continue
 		}
-		mergeBase := candidate.Base
-		checkpointed := false
-		if branchExisted {
-			var baseErr error
-			mergeBase, checkpointed, baseErr = publicationMergeBase(ctx, destination, group, candidate, head)
-			if errors.Is(baseErr, errPublicationUnavailable) {
-				candidate.Entry.Publication = nil
-				txn.SetLockEntry(candidate.Entry)
-				mergeBase = candidate.Base
-				baseErr = nil
-			}
-			if baseErr != nil {
-				result.Outcome = OutcomeFailed
-				result.Err = baseErr
-				report.Add(result)
-				continue
-			}
-		} else if publicationMatches(group, candidate.Entry.Publication) {
-			// A deleted branch has no destination history left to reconcile. Drop
-			// its obsolete checkpoint before optionally creating the branch anew.
+		// Check the prior publication even when the contribution branch is absent.
+		// Hosts commonly delete a branch after merging it; when that publication is
+		// still an ancestor of the default head, it remains the correct merge base
+		// for recreating the contribution branch. Unreachable or rewritten history
+		// falls back to the locked source below.
+		mergeBase, checkpointed, baseErr := publicationMergeBase(ctx, destination, group, candidate, head)
+		if errors.Is(baseErr, errPublicationUnavailable) {
 			candidate.Entry.Publication = nil
 			txn.SetLockEntry(candidate.Entry)
+			mergeBase = candidate.Base
+			baseErr = nil
+		}
+		if baseErr != nil {
+			result.Outcome = OutcomeFailed
+			result.Err = baseErr
+			report.Add(result)
+			continue
 		}
 		candidate.Base = mergeBase
 		candidate.CanCheckpoint = checkpointed
@@ -457,7 +459,7 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 		// modified local content is a delete/modify conflict.
 		merged := candidate.Local
 		if branchExisted || !destinationTree.IsEmpty() {
-			result, merged = mergeAgainstDestination(ctx, runner, candidate, destinationTree, result)
+			result, merged = mergeAgainstDestination(ctx, runner, st, group, head, candidate, destinationTree, result)
 			if result.Outcome == OutcomeFailed {
 				report.Add(result)
 				continue
@@ -658,7 +660,7 @@ func advanceUnchangedLocks(txn *transaction, group *pushGroup, head string, comm
 // mergeAgainstDestination reconciles one candidate's local change with the
 // content the destination already carries. A failure is reported on the
 // returned result, which the caller detects through OutcomeFailed.
-func mergeAgainstDestination(ctx context.Context, runner *gitrepo.Runner, candidate pushCandidate, destinationTree skilltree.Tree, result SkillResult) (SkillResult, skilltree.Tree) {
+func mergeAgainstDestination(ctx context.Context, runner *gitrepo.Runner, st *state, group *pushGroup, head string, candidate pushCandidate, destinationTree skilltree.Tree, result SkillResult) (SkillResult, skilltree.Tree) {
 	merged, conflicts, mergeErr := skilltree.Merge(candidate.Base, candidate.Local, destinationTree, runner.TextMerger(ctx))
 	if mergeErr != nil {
 		result.Outcome = OutcomeFailed
@@ -667,7 +669,13 @@ func mergeAgainstDestination(ctx context.Context, runner *gitrepo.Runner, candid
 	}
 	if len(conflicts) > 0 {
 		result.Outcome = OutcomeFailed
-		result.Err = fmt.Errorf("local and destination changes conflict in %s", describeConflicts(conflicts))
+		workspace, workspaceErr := writePushConflictWorkspace(ctx, runner, st, candidate.Entry.Name, candidate.Local, candidate.Base, destinationTree, candidate.Entry, group, head)
+		switch {
+		case workspaceErr != nil:
+			result.Err = fmt.Errorf("local and destination changes conflict in %s; could not write resolution workspace: %w", describeConflicts(conflicts), workspaceErr)
+		default:
+			result.Err = fmt.Errorf("local and destination changes conflict in %s; resolve %s with git and run 'al skills resolve %s'", describeConflicts(conflicts), relativeTo(st.paths.Root, workspace), candidate.Entry.Name)
+		}
 		return result, skilltree.Tree{}
 	}
 	return result, merged

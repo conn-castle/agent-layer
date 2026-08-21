@@ -26,11 +26,56 @@ func newSkillsCmd() *cobra.Command {
 		newSkillsAddCmd(),
 		newSkillsRemoveCmd(),
 		newSkillsStatusCmd(),
+		newSkillsDiffCmd(),
 		newSkillsPullCmd(),
 		newSkillsResetCmd(),
+		newSkillsResolveCmd(),
 		newSkillsPushCmd(),
 	)
 	return cmd
+}
+
+func newSkillsDiffCmd() *cobra.Command {
+	var from string
+	var to string
+	cmd := &cobra.Command{
+		Use:   messages.SkillsDiffUse,
+		Short: messages.SkillsDiffShort,
+		Long:  messages.SkillsDiffLong,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveRepoRoot()
+			if err != nil {
+				return err
+			}
+			output, err := skillimport.New(root).Diff(cmd.Context(), args[0], from, to)
+			if err != nil {
+				return err
+			}
+			_, err = cmd.OutOrStdout().Write(output)
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&from, "from", "local", messages.SkillsDiffFromFlag)
+	cmd.Flags().StringVar(&to, "to", "upstream", messages.SkillsDiffToFlag)
+	return cmd
+}
+
+func newSkillsResolveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   messages.SkillsResolveUse,
+		Short: messages.SkillsResolveShort,
+		Long:  messages.SkillsResolveLong,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveRepoRoot()
+			if err != nil {
+				return err
+			}
+			report, err := skillimport.New(root).Resolve(cmd.Context(), args[0])
+			return finishSkillsOperation(cmd, "resolve", report, err)
+		},
+	}
 }
 
 func newSkillsResetCmd() *cobra.Command {

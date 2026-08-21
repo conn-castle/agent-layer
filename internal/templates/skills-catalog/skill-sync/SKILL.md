@@ -1,6 +1,6 @@
 ---
 name: skill-sync
-description: Manage local skills backed by known remote Git repositories. Use when the user wants to import, inspect, pull, push, reset, or remove them, or project current local skills to enabled clients with `al sync`. Do not use to discover new skills or create user-owned skills.
+description: Manage local skills backed by known remote Git repositories. Use when the user wants to import, inspect, diff, pull, resolve, push, reset, or remove them, or project current local skills to enabled clients with `al sync`. Do not use to discover new skills or create user-owned skills.
 compatibility: Requires `al` in an initialized Agent Layer project and Git access for remote operations.
 allowed-tools: Bash(al skills *) Bash(al sync)
 ---
@@ -23,17 +23,23 @@ Git. Use `al sync` only to copy the current local skills into enabled client
 directories.
 
 1. Start with `al skills status --all`. It reads local state without using the
-   network.
-2. To import skills, run `al skills add <repository> <selector>... --yes` only
+   network. A `conflicted` skill includes its Git workspace path.
+2. To compare live trees, run `al skills diff <name>` with `--from`/`--to`
+   `base`, `local`, `upstream`, or `destination`. Defaults are local to
+   upstream. The output is an ordinary Git unified diff.
+3. To import skills, run `al skills add <repository> <selector>... --yes` only
    when the user explicitly requests the import and the repository and
    selectors are known. Quote selectors that contain wildcards or start with
    `!`. The command does not search for, recommend, or preview skills. Run `al
    skills add --help` before choosing source, tracking, or publishing options.
-3. To update imported skills, run `al skills pull`. It fetches every configured
+4. To update imported skills, run `al skills pull`. It fetches every configured
    source and merges upstream changes with local edits. Pinned imports stay at
    their locked versions unless their configured `ref` changes. Treat any
-   partial or conflicted result as a failure and report every result.
-4. To stop managing one selector, run `al skills remove <repository>
+   partial or conflicted result as a failure and report every result. For a
+   conflict, finish the Git merge in the workspace named in the error, `git add`
+   the result, then run `al skills resolve <name>`. Do not hand-edit the
+   lockfile.
+5. To stop managing one selector, run `al skills remove <repository>
    <selector> --yes` only when the user explicitly requests the removal, using
    the exact values from `.agent-layer/config.toml`. Skills still matched by
    another selector remain managed. Clean skills that are no longer matched
@@ -61,8 +67,9 @@ destination matches the user's request. If one does not match, stop and ask.
 Do not change write settings silently.
 
 Push uses only configured destinations and branches. It never pulls first,
-force-pushes, or opens a pull request. If it fails, report each failed skill and
-the required action.
+force-pushes, or opens a pull request. A destination merge conflict leaves the
+same kind of Git workspace as pull; finish it with `al skills resolve <name>`
+and rerun push. If it fails, report each failed skill and the required action.
 
 Use existing Git authentication. Repository URLs must not contain literal
 credentials. Use `${AL_*}` placeholders whose values are stored in

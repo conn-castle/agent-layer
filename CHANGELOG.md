@@ -3,8 +3,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+- `al skills diff <name>` compares live `base`, `local`, `upstream`, and `destination` trees as an ordinary Git unified diff.
+- Pull and push merge conflicts now leave a Git workspace under `.agent-layer/tmp/skill-conflicts/<name>/`. Finish the merge with ordinary git commands and `al skills resolve <name>`.
+- `ship-pr` includes a stateless `read-pr-comments.sh` command that prints every PR comment kind, including review-thread resolved/outdated state, as readable Markdown.
+
 ### Changed
 - The Claude instruction shim is now `.claude/CLAUDE.md` instead of root `CLAUDE.md`. When Grok is enabled, sync sets `[compat.claude] agents = false` in repo-local `.grok-config/config.toml`, and Grok launch/dispatch/VS Code set `GROK_CLAUDE_AGENTS_ENABLED=false`, so Grok does not load both generated instruction files. The `0.17.1` migration deletes Agent Layer-generated root `CLAUDE.md` files; hand-authored files at that path are left untouched.
+- Recreating a deleted contribution branch reuses its prior publication checkpoint when that commit remains in the destination's history, avoiding conflicts with changes already merged from the earlier branch.
 
 ## v0.17.0 - 2026-08-20
 

@@ -25,7 +25,7 @@
 - **Destructive actions:** Never run or recommend destructive operations that can remove or overwrite large amounts of data without explicit confirmation from the user.
 - **Subagents:** Give each subagent a self-contained task and only the context it needs; preserve any intended independence.
 - **Git safety:** Do not stage, unstage, or commit unless authorized by the user's request or an active skill. Authorization is request-specific.
-- **Wait efficiently:** Prefer event-driven waiting for operations that continue without agent input. Wait for completion when possible; otherwise wait for the next meaningful event. Fall back to time-based polling only when no event-driven option exists. When polling, minimize model turns and tokens by checking no more often than meaningful change is expected.
+- **Wait efficiently:** When waiting for an operation that can proceed without agent input, minimize unnecessary model turns and token use. Use an event-driven wait that returns when it completes or another meaningful event occurs; if none is available, poll no more often than meaningful change is expected.
 - **Protect secrets:** Minimize data shared with external tools. Never send secrets or credentials to MCP tools or pass them on the command line; use environment variables or configured credentials.
 - **Missing tokens:** If a tool requires a token and it's missing, instruct the user to set it in `.agent-layer/.env` (never in repo-tracked files).
 
@@ -58,4 +58,4 @@ Repeat the option block as needed. Ask routine questions without meaningful trad
 
 - Be concise.
 - Do not invent terminology.
-- Give the user enough context to respond or act without assuming they have read the code, command output, or prior implementation details.
+- When the user needs to respond or act, include enough context without assuming they have read the code, command output, or prior implementation details.
