@@ -27,6 +27,9 @@ agents = false
 `
 
 const grokCompatClaudeSection = "compat.claude"
+const grokCompatKeyCompat = "compat"
+const grokCompatKeyClaude = "claude"
+const grokCompatKeyAgents = "agents"
 
 type grokTrustedFoldersFile struct {
 	Folders map[string]any `toml:"folders"`
@@ -164,15 +167,28 @@ func grokClaudeAgentsCompatApplied(data []byte) error {
 }
 
 func applyGrokClaudeAgentsCompat(content string) (string, error) {
-	doc := tomlpatch.ParseDocument(content)
-	block, ok := doc.Sections[grokCompatClaudeSection]
-	if !ok {
-		trimmed := strings.TrimRight(content, "\n")
-		if trimmed == "" {
-			return grokHomeClaudeCompatHeader + grokClaudeAgentsCompatSection, nil
-		}
-		return trimmed + "\n\n" + grokClaudeAgentsCompatSection, nil
+	if strings.TrimSpace(content) == "" {
+		return grokHomeClaudeCompatHeader + grokClaudeAgentsCompatSection, nil
 	}
+
+	doc := tomlpatch.ParseDocument(content)
+	if block, ok := doc.Sections[grokCompatClaudeSection]; ok {
+		return applyGrokClaudeAgentsSection(content, block)
+	}
+
+	updated, handled, err := applyGrokClaudeAgentsParsed(content)
+	if err != nil {
+		return "", err
+	}
+	if handled {
+		return updated, nil
+	}
+
+	trimmed := strings.TrimRight(content, "\n")
+	return trimmed + "\n\n" + grokClaudeAgentsCompatSection, nil
+}
+
+func applyGrokClaudeAgentsSection(content string, block *tomlpatch.Block) (string, error) {
 	oldSection := strings.Join(block.Lines, "\n")
 	tomlpatch.SetKeyValue(block, nil, "agents", "false", "")
 	newSection := strings.Join(block.Lines, "\n")
@@ -183,4 +199,108 @@ func applyGrokClaudeAgentsCompat(content string) (string, error) {
 		return "", fmt.Errorf("%s", messages.SyncGrokHomeConfigCompatUnapplied)
 	}
 	return strings.Replace(content, oldSection, newSection, 1), nil
+}
+
+// applyGrokClaudeAgentsParsed updates inline-table or dotted compat.claude
+// assignments. Appending [compat.claude] would redefine those paths.
+func applyGrokClaudeAgentsParsed(content string) (string, bool, error) {
+	var parsed map[string]any
+	if err := toml.Unmarshal([]byte(content), &parsed); err != nil {
+		return "", false, err
+	}
+	_, claudeExists := valueAtPath(parsed, []string{grokCompatKeyCompat, grokCompatKeyClaude})
+	compatVal, compatExists := valueAtPath(parsed, []string{grokCompatKeyCompat})
+	_, compatIsTable := compatVal.(map[string]any)
+	editor := newCodexTomlEditor(content)
+	compatInline := compatExists && compatIsTable && editor.rootInlineTableExists(grokCompatKeyCompat)
+	if !claudeExists && !compatInline {
+		return "", false, nil
+	}
+
+	path := []string{grokCompatKeyCompat, grokCompatKeyClaude, grokCompatKeyAgents}
+	if !mutateGrokInlineTablePrefix(editor, path, "false") {
+		if ranges := editor.rangesForExactPath(path); len(ranges) > 0 {
+			editor.replaceAssignmentValue(ranges, "false")
+		} else if !insertGrokClaudeAgentsAssignment(editor) {
+			return "", false, fmt.Errorf("%s", messages.SyncGrokHomeConfigCompatUnapplied)
+		}
+	}
+	return renderUpdatedTOML(editor.lines), true, nil
+}
+
+func mutateGrokInlineTablePrefix(editor *codexTomlEditor, path []string, literal string) bool {
+	var target assignmentInfo
+	found := false
+	editor.walkAssignments(func(info assignmentInfo) {
+		if len(info.fullPath) == 0 || len(info.fullPath) >= len(path) {
+			return
+		}
+		if !pathHasPrefix(path, info.fullPath) {
+			return
+		}
+		if found && len(info.fullPath) <= len(target.fullPath) {
+			return
+		}
+		target = info
+		found = true
+	})
+	if !found {
+		return false
+	}
+	return rewriteGrokInlineTableAssignment(editor, target, path[len(target.fullPath):], literal)
+}
+
+func rewriteGrokInlineTableAssignment(editor *codexTomlEditor, target assignmentInfo, rest []string, literal string) bool {
+	assignment := strings.Join(editor.lines[target.start:target.end+1], "\n")
+	var parsed map[string]any
+	if err := toml.Unmarshal([]byte(assignment), &parsed); err != nil {
+		return false
+	}
+	value, ok := valueAtPath(parsed, target.keyPath)
+	if !ok {
+		return false
+	}
+	table, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	setNestedValue(table, rest, literalValue{literal: literal})
+
+	startLine := editor.lines[target.start]
+	lhs, _, _ := strings.Cut(stripLineComment(startLine), "=")
+	newLine := strings.TrimRight(lhs, " \t") + " = " + formatInlineValue(table)
+	if target.start == target.end {
+		if comment := inlineCommentOf(startLine); comment != "" {
+			newLine += " " + comment
+		}
+	}
+	editor.lines = replaceLineRange(editor.lines, target.start, target.end+1, []string{newLine})
+	return true
+}
+
+func insertGrokClaudeAgentsAssignment(editor *codexTomlEditor) bool {
+	full := []string{grokCompatKeyCompat, grokCompatKeyClaude, grokCompatKeyAgents}
+	var last assignmentInfo
+	found := false
+	editor.walkAssignments(func(info assignmentInfo) {
+		if pathHasPrefix(info.fullPath, []string{grokCompatKeyCompat}) {
+			last = info
+			found = true
+		}
+	})
+	if !found || !pathHasPrefix(full, last.tablePath) {
+		return false
+	}
+	newLine := tomlpatch.FormatDottedKeyPath(full[len(last.tablePath):]) + " = false"
+	insertAt := last.end + 1
+	editor.lines = append(editor.lines[:insertAt], append([]string{newLine}, editor.lines[insertAt:]...)...)
+	return true
+}
+
+func renderUpdatedTOML(lines []string) string {
+	out := strings.Join(lines, "\n")
+	if !strings.HasSuffix(out, "\n") {
+		out += "\n"
+	}
+	return out
 }
