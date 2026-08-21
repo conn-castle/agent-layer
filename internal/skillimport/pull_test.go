@@ -224,6 +224,69 @@ func TestPullConflictPreservesLocalContentAndLock(t *testing.T) {
 	}
 }
 
+// TestResolveAppliesAConflictedPull proves the conflict workspace is the public
+// handoff between pull and resolve, without a snapshot or second fetch.
+func TestResolveAppliesAConflictedPull(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+	locked, _ := proj.Lock().Entry("alpha")
+	proj.WriteImportedFile("alpha", "notes.md", "local\n")
+	source.WriteFile("skills/alpha/notes.md", "upstream\n", 0o644)
+	advanced := source.Commit("conflict")
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("conflicted pull: %v", err)
+	}
+	failed := requireOutcome(t, report, "alpha", OutcomeFailed)
+	if !strings.Contains(failed.Err.Error(), "al skills resolve alpha") {
+		t.Fatalf("conflict error is not actionable: %v", failed.Err)
+	}
+	workspace, err := conflictWorkspace(proj.root, "alpha")
+	if err != nil {
+		t.Fatalf("conflict workspace path: %v", err)
+	}
+	marked, err := os.ReadFile(filepath.Join(workspace, "notes.md")) // #nosec G304 -- test-owned temp path.
+	if err != nil || !strings.Contains(string(marked), "<<<<<<<") {
+		t.Fatalf("workspace content = %q, error %v", marked, err)
+	}
+	if _, err := proj.Service().Resolve(context.Background(), "alpha"); err == nil || !strings.Contains(err.Error(), "unmerged") {
+		t.Fatalf("unresolved workspace error = %v", err)
+	}
+	writeProjectFile(t, filepath.Join(workspace, "notes.md"), "resolved\n")
+	runGit(t, workspace, "add", "--", "notes.md")
+	writeProjectFile(t, filepath.Join(workspace, "notes.md"), "unstaged\n")
+	if _, err := proj.Service().Resolve(context.Background(), "alpha"); err == nil || !strings.Contains(err.Error(), "unstaged") {
+		t.Fatalf("edited but unstaged workspace error = %v", err)
+	}
+	writeProjectFile(t, filepath.Join(workspace, "notes.md"), "resolved\n")
+	runGit(t, workspace, "add", "--", "notes.md")
+
+	report, err = proj.Service().Resolve(context.Background(), "alpha")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	requireOutcome(t, report, "alpha", OutcomeResolved)
+	if got := proj.ImportedFile("alpha", "notes.md"); got != "resolved\n" {
+		t.Fatalf("resolved content = %q", got)
+	}
+	entry, _ := proj.Lock().Entry("alpha")
+	if entry.Commit != advanced || entry.Commit == locked.Commit {
+		t.Fatalf("resolved lock commit = %s, want %s", entry.Commit, advanced)
+	}
+	if _, err := os.Stat(workspace); !os.IsNotExist(err) {
+		t.Fatalf("conflict workspace remains after resolve: %v", err)
+	}
+}
+
 // TestPullRetiresCleanAndPreservesModifiedDisappearances proves the one
 // retirement rule: a clean skill that leaves the desired set is deleted, and a
 // modified one is preserved and reported as a failure with instructions.

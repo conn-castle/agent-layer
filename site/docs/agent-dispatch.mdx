@@ -1,0 +1,195 @@
+---
+title: Agent Dispatch
+description: Run and coordinate asynchronous, headless agent conversations through MCP tools or the CLI.
+sidebar_position: 4
+---
+
+Agent Dispatch runs headless provider conversations asynchronously. Use it when one agent needs to delegate a bounded task, or when a person or script needs to start provider work without holding open an interactive session.
+
+It has two surfaces over one backend:
+
+- Agents use tools from Agent Layer's built-in MCP server.
+- Humans and scripts use `al dispatch` commands.
+
+Both surfaces use the same conversation handles, states, result files, continuation behavior, and cancellation semantics.
+
+## In this page
+
+- [How dispatch works](#how-dispatch-works)
+- [MCP tools](#mcp-tools)
+- [CLI commands](#cli-commands)
+- [Conversation lifecycle](#conversation-lifecycle)
+- [Results and errors](#results-and-errors)
+- [Waiting and cancellation](#waiting-and-cancellation)
+- [Configuration](#configuration)
+
+## How dispatch works
+
+Starting a dispatch creates a conversation and its first invocation, then immediately returns an opaque handle. Use that handle to wait for completion, continue the same provider conversation with another prompt, or cancel active work.
+
+Each conversation has at most one running invocation. Parallel work uses independent conversations and handles; there is no fanout operation.
+
+Dispatch distinguishes callers from targets. Any enabled client can call the MCP tools, but only `codex`, `claude`, `antigravity`, and `grok` are valid targets for `agent` or `--agent`. VS Code and Copilot CLI can call dispatch but cannot be dispatched to. A target must be enabled in `.agent-layer/config.toml`; use `dispatch_options` or `al dispatch options` to see what is currently available.
+
+The public lifecycle is intentionally small:
+
+```text
+start -> wait -> completed | failed | cancelled
+                       |
+                       +-> continue -> wait -> ...
+```
+
+`options` is a separate, read-only discovery operation. It reports which providers are available and which model and reasoning-effort overrides each one accepts.
+
+## MCP tools
+
+`al sync` projects a built-in MCP server named `agent-layer` into every enabled Codex, Claude, Antigravity, VS Code, Copilot CLI, and Grok client. The server is derived from Agent Layer configuration, not declared as a `[[mcp.servers]]` entry. Its ID is reserved and cannot be used by a custom server.
+
+The server exposes five Agent Dispatch tools:
+
+| Tool | Purpose |
+| --- | --- |
+| `dispatch_options` | List dispatchable providers and their allowed overrides. |
+| `dispatch_start` | Start a conversation and return its handle immediately. |
+| `dispatch_wait` | Wait for the configured interval, then report the current state. |
+| `dispatch_continue` | Start the next invocation in a terminal conversation. |
+| `dispatch_cancel` | Terminate a running invocation. |
+
+`dispatch_start` accepts an `agent`, optional `model`, `reasoning_effort`, and `skill`, plus exactly one of `prompt` or `prompt_file`. `dispatch_continue` accepts a handle and exactly one prompt source. The wait and cancel tools accept a handle.
+
+The MCP server returns structured results and a serialized text fallback for clients that do not yet consume structured MCP output.
+
+## CLI commands
+
+The CLI exposes the same backend for people and scripts:
+
+```bash
+al dispatch options
+
+al dispatch start --agent codex \
+  [--model <model>] \
+  [--reasoning-effort <effort>] \
+  [--skill <skill>] \
+  (--prompt <text> | --prompt-file <path>)
+
+al dispatch wait <handle>
+
+al dispatch continue <handle> \
+  (--prompt <text> | --prompt-file <path>)
+
+al dispatch cancel <handle>
+```
+
+`start` requires `--agent` and exactly one prompt source. When model or reasoning effort is omitted, Agent Layer uses the configured value; if there is no configured value, the provider uses its own default.
+
+`--prompt-file` avoids shell escaping and command-length limits for substantial prompts. `--skill` names a known user-managed or imported Agent Layer skill. Dispatch prepends the target's native skill invocation to the prompt—for example `$review` for Codex or `/review` for another target. The skill must already be projected for that target; run `al sync` if start reports it missing. `dispatch_continue` does not accept a skill.
+
+`continue` retains the conversation's provider, model, reasoning effort, and provider context. It accepts a new prompt only after the current invocation reaches a terminal state.
+
+Every successful CLI command writes exactly one JSON object to standard output. Diagnostics go to standard error.
+
+A typical CLI flow looks like this:
+
+```bash
+al dispatch start --agent codex --prompt "Summarize docs/AGENT-DISPATCH.md"
+# {"handle":"abc123","state":"running"}
+
+al dispatch wait abc123
+# If the state is still running, wait again with the same handle.
+```
+
+`wait` is bounded rather than “wait until finished.” The CLI returns in at most eight minutes, and the MCP tool returns after `dispatch.mcp_wait_timeout_minutes` (30 by default). If the state is `running`, call `wait` again. Waiting on an already-terminal invocation returns immediately.
+
+## Conversation lifecycle
+
+An invocation has exactly one public state:
+
+```text
+running -> completed | failed | cancelled
+```
+
+Terminal states are immutable. Continuing a terminal conversation creates a new invocation in `running`; it does not rewrite the previous invocation.
+
+| Operation | `running` | `completed` | `failed` | `cancelled` |
+| --- | --- | --- | --- | --- |
+| `wait` | Waits for the bounded interval, then returns `running`. | Returns `result_path`. | Returns the failure. | Returns `cancelled`. |
+| `continue` | Errors. | Starts the next invocation. | Starts the next invocation. | Starts the next invocation. |
+| `cancel` | Cancels the invocation. | Errors: already completed. | Errors: already failed. | Returns `cancelled` successfully. |
+
+Only one invocation can run for a conversation at a time. Concurrent continuation attempts cannot start duplicate provider work.
+
+## Results and errors
+
+`start` and `continue` return the handle and initial state:
+
+```json
+{
+  "handle": "abc123",
+  "state": "running"
+}
+```
+
+A completed wait returns an absolute path to the result:
+
+```json
+{
+  "handle": "abc123",
+  "state": "completed",
+  "result_path": "/absolute/path/to/result.md"
+}
+```
+
+Each invocation has its own immutable Markdown result file. Agent Layer writes that file atomically before reporting `completed`. A completed invocation without a readable result is reported as an error rather than as a false success.
+
+A failed wait includes an actionable error:
+
+```json
+{
+  "handle": "abc123",
+  "state": "failed",
+  "error": "Provider authentication failed"
+}
+```
+
+Failure does not invalidate the conversation. You can continue a failed or cancelled conversation with another prompt.
+
+On the CLI, a failed wait writes this JSON object before exiting non-zero. MCP `dispatch_wait` returns the same failed object as a normal tool result, allowing an agent to inspect the failure and decide what to do next.
+
+## Waiting and cancellation
+
+Waiting is bounded. `al dispatch wait` waits up to eight minutes; `dispatch_wait` uses the configured MCP wait timeout. If work is still active when the interval ends, the operation returns `running` without changing the invocation. Wait again with the same handle.
+
+Abandoning a wait because of a client timeout, disconnect, cancelled tool call, or Ctrl-C during `al dispatch wait` stops only that wait. Provider work continues. Only `dispatch_cancel` or `al dispatch cancel` terminates the active invocation.
+
+Cancellation is idempotent after a successful cancellation. It cannot change a completed or failed invocation into `cancelled`.
+
+`dispatch_options` and `dispatch_wait` are marked read-only. `dispatch_start`, `dispatch_continue`, and `dispatch_cancel` are marked destructive because dispatched work can change the environment. An MCP client may require approval before calling them.
+
+:::caution Transport acknowledgement
+An MCP start or continue call acknowledges work that runs independently. If the transport disconnects after provider work starts but before the caller receives the response, the work remains active and the caller may not know its handle. Recovery evidence remains under `.agent-layer/tmp/runs/`.
+:::
+
+There is no public list or inspect command. If the caller never receives the handle, provider work can continue; `.agent-layer/tmp/runs/` is diagnostic evidence, not a supported handle-recovery interface. Prefer the CLI when a human needs to retain the handle directly.
+
+## Configuration
+
+The optional `[dispatch]` section controls nesting and MCP timeouts:
+
+```toml
+[dispatch]
+max_depth = 3
+mcp_wait_timeout_minutes = 30
+mcp_tool_timeout_minutes = 40
+```
+
+- `max_depth` limits nested dispatch and defaults to 3.
+- `mcp_wait_timeout_minutes` controls how long one `dispatch_wait` call blocks before returning `running`. It defaults to 30.
+- `mcp_tool_timeout_minutes` is the server-side hard limit for every dispatch MCP tool call. It defaults to 40 and must be greater than the wait timeout.
+
+Inside an already-dispatched conversation, prefer the client's built-in subagent for further delegation. A blocked nested start fails rather than queuing. `max_depth` counts the initial start, so the default of 3 permits that start and two nested starts.
+
+Codex and Grok also receive the hard tool timeout as per-server `tool_timeout_sec`. Agent Layer does not set Claude Code's client-wide `MCP_TOOL_TIMEOUT`, because doing so would affect unrelated MCP servers. Antigravity has no per-server timeout key, so the Agent Layer server-side bound remains its recovery limit.
+
+Dispatch honors the repository's configured agents, models, reasoning effort, approvals, environment isolation, and pinned Agent Layer version. Use [`al dispatch options`](./reference#dispatch) to inspect the resolved provider choices before starting work.
+
+For exact configuration fields and CLI summaries, see [Reference](./reference). For the internal implementation contract, see [`docs/AGENT-DISPATCH.md`](https://github.com/conn-castle/agent-layer/blob/main/docs/AGENT-DISPATCH.md).

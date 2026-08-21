@@ -18,6 +18,7 @@ One important design choice follows from that: Agent Layer is repo-local. Differ
 - [Per-repo isolation](#per-repo-credential-isolation)
 - [Approvals and safety](#approvals-and-safety)
 - [MCP servers](#mcp-servers)
+- [Agent Dispatch](#agent-dispatch)
 - [Project memory](#project-memory)
 - [Version pinning](#version-pinning)
 
@@ -321,6 +322,12 @@ Skills are synced natively to Agent Skills directories with full subdirectory su
 :::tip
 Start with one or two servers, verify with `al doctor`, then expand. It is easier to trust your agents when the tool surface is deliberate and scoped.
 :::
+
+## Agent Dispatch
+
+Agent Dispatch lets an agent, person, or script start a headless provider conversation and coordinate it asynchronously. Starting work returns a handle immediately; callers use that handle to wait for a result, continue the same conversation, or cancel active work. Independent handles make parallel delegation possible without coupling the conversations. Valid dispatch targets are Codex, Claude, Antigravity, and Grok; other enabled clients can call the tools but are not targets.
+
+Agents access dispatch through Agent Layer's built-in `agent-layer` MCP server, while humans and scripts use matching `al dispatch` commands. Both surfaces share the same lifecycle and results. See [Agent Dispatch](./agent-dispatch) for the tools, commands, states, timeouts, and configuration.
 
 ## Project memory
 

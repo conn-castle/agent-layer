@@ -88,15 +88,20 @@ func (r *gitRepo) URL() string { return r.dir }
 
 func (r *gitRepo) run(args ...string) string {
 	r.t.Helper()
+	return runGit(r.t, r.dir, args...)
+}
+
+func runGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
 	cmd := exec.Command("git", args...) // #nosec G204 -- test-controlled arguments.
-	cmd.Dir = r.dir
+	cmd.Dir = dir
 	// Resolve the repository from the directory above, never from an inherited
 	// GIT_DIR: git exports it to hooks, so under pre-commit this fixture would
 	// otherwise commit into the developer's own checkout.
 	cmd.Env = append(gitenv.WithoutDiscovery(), "GIT_TERMINAL_PROMPT=0")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		r.t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)
 	}
 	return strings.TrimSpace(string(output))
 }

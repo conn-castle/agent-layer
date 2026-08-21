@@ -117,7 +117,7 @@ func TestSkillsCommandSurfaceMatchesTheContract(t *testing.T) {
 	for _, sub := range skills.Commands() {
 		got[sub.Name()] = true
 	}
-	for _, want := range []string{"add", "remove", "status", "pull", "reset", "push"} {
+	for _, want := range []string{"add", "remove", "status", "diff", "pull", "reset", "resolve", "push"} {
 		if !got[want] {
 			t.Fatalf("missing subcommand %q", want)
 		}
@@ -125,8 +125,8 @@ func TestSkillsCommandSurfaceMatchesTheContract(t *testing.T) {
 	if got["sync"] {
 		t.Fatal("an al skills sync alias was added")
 	}
-	if len(skills.Commands()) != 6 {
-		t.Fatalf("subcommands = %d, want exactly 6", len(skills.Commands()))
+	if len(skills.Commands()) != 8 {
+		t.Fatalf("subcommands = %d, want exactly 8", len(skills.Commands()))
 	}
 
 	find := func(name string) *cobra.Command {
@@ -171,6 +171,33 @@ func TestSkillsCommandSurfaceMatchesTheContract(t *testing.T) {
 		t.Fatal("al skills status accepted an argument")
 	}
 
+	diff := find("diff")
+	if err := diff.Args(diff, nil); err == nil {
+		t.Fatal("al skills diff accepted no name")
+	}
+	if err := diff.Args(diff, []string{"alpha", "beta"}); err == nil {
+		t.Fatal("al skills diff accepted more than one name")
+	}
+	if diff.Flags().Lookup("from") == nil || diff.Flags().Lookup("to") == nil {
+		t.Fatal("al skills diff is missing --from/--to")
+	}
+	if diff.Flags().Lookup("yes") != nil {
+		t.Fatal("al skills diff should not require confirmation")
+	}
+	var diffHelp bytes.Buffer
+	diff.SetOut(&diffHelp)
+	diff.SetErr(&diffHelp)
+	if err := diff.Help(); err != nil {
+		t.Fatalf("al skills diff --help: %v", err)
+	}
+	help := diffHelp.String()
+	if strings.Contains(help, "(default: local)") || strings.Contains(help, "(default: upstream)") {
+		t.Fatalf("al skills diff --help duplicates pflag defaults:\n%s", help)
+	}
+	if !strings.Contains(help, `(default "local")`) || !strings.Contains(help, `(default "upstream")`) {
+		t.Fatalf("al skills diff --help omitted pflag defaults:\n%s", help)
+	}
+
 	reset := find("reset")
 	if err := reset.Args(reset, nil); err == nil {
 		t.Fatal("al skills reset accepted no name")
@@ -186,6 +213,17 @@ func TestSkillsCommandSurfaceMatchesTheContract(t *testing.T) {
 	}
 	if reset.Flags().Lookup("yes") == nil {
 		t.Fatal("al skills reset is missing --yes")
+	}
+
+	resolve := find("resolve")
+	if err := resolve.Args(resolve, nil); err == nil {
+		t.Fatal("al skills resolve accepted no name")
+	}
+	if err := resolve.Args(resolve, []string{"alpha", "beta"}); err == nil {
+		t.Fatal("al skills resolve accepted more than one name")
+	}
+	if resolve.Flags().Lookup("yes") != nil {
+		t.Fatal("al skills resolve should not require confirmation")
 	}
 
 	push := find("push")

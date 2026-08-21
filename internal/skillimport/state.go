@@ -29,6 +29,9 @@ const (
 	ConditionInvalid Condition = "invalid"
 	// ConditionCollided means a user-managed skill owns the same name.
 	ConditionCollided Condition = "collided"
+	// ConditionConflicted means an active Git conflict workspace still matches
+	// the recorded lock and configuration.
+	ConditionConflicted Condition = "conflicted"
 )
 
 // localSkill is one imported directory's observed state.
@@ -209,11 +212,14 @@ func (s *state) classify(entry skilllock.Entry) Condition {
 		return ConditionMissing
 	case observed.Err != nil:
 		return ConditionInvalid
-	case observed.Tree.Hash() == entry.TreeHash:
-		return ConditionClean
-	default:
-		return ConditionModified
 	}
+	if _, ok := matchingConflictWorkspace(s, entry); ok {
+		return ConditionConflicted
+	}
+	if observed.Tree.Hash() == entry.TreeHash {
+		return ConditionClean
+	}
+	return ConditionModified
 }
 
 // orphanDirectories lists imported directories with no lock entry, sorted.

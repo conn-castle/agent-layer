@@ -858,11 +858,12 @@ type redirectManifestEntry struct {
 
 // pruneDroppedVersionArtifacts records redirects for dropped docs pages, then
 // removes versioned docs and sidebars for each dropped version from the website
-// repository checkout.
-func pruneDroppedVersionArtifacts(repoB string, dropped []string) error {
+// repository checkout. retained is newest-first; its first entry is the docs
+// tree Docusaurus serves at un-prefixed /docs/<slug> routes.
+func pruneDroppedVersionArtifacts(repoB string, retained, dropped []string) error {
 	for _, v := range dropped {
 		versionedDocsPath := filepath.Join(repoB, "versioned_docs", "version-"+v)
-		if err := recordDroppedVersionRedirects(repoB, v, versionedDocsPath); err != nil {
+		if err := recordDroppedVersionRedirects(repoB, v, versionedDocsPath, retained); err != nil {
 			return fmt.Errorf("record redirects for dropped version %s: %w", v, err)
 		}
 
@@ -879,7 +880,7 @@ func pruneDroppedVersionArtifacts(repoB string, dropped []string) error {
 	return nil
 }
 
-func recordDroppedVersionRedirects(repoB, version, versionedDocsPath string) error {
+func recordDroppedVersionRedirects(repoB, version, versionedDocsPath string, retained []string) error {
 	droppedSlugs, err := collectDocSlugs(versionedDocsPath)
 	if err != nil {
 		return err
@@ -888,7 +889,7 @@ func recordDroppedVersionRedirects(repoB, version, versionedDocsPath string) err
 		return nil
 	}
 
-	latestSlugs, err := collectDocSlugs(filepath.Join(repoB, "docs"))
+	latestSlugs, err := collectDocSlugs(latestDocsRoot(repoB, retained))
 	if err != nil {
 		return fmt.Errorf("read latest docs: %w", err)
 	}
@@ -952,6 +953,22 @@ func readRedirectManifest(path string) ([]redirectManifestEntry, error) {
 		}
 	}
 	return entries, nil
+}
+
+// latestDocsRoot is the docs tree served at un-prefixed /docs/<slug> routes.
+// With versioning that is the newest retained version, not repoB/docs (the
+// unpublished current snapshot). Missing versioned docs fall back to docs/.
+func latestDocsRoot(repoB string, retained []string) string {
+	currentDocs := filepath.Join(repoB, "docs")
+	if len(retained) == 0 {
+		return currentDocs
+	}
+	versionedLatest := filepath.Join(repoB, "versioned_docs", "version-"+retained[0])
+	info, err := osStatFunc(versionedLatest)
+	if err != nil || !info.IsDir() {
+		return currentDocs
+	}
+	return versionedLatest
 }
 
 func collectDocSlugs(root string) (map[string]struct{}, error) {
@@ -1133,7 +1150,7 @@ func normalizeVersionsJSON(repoB string) error {
 		return err
 	}
 
-	if err := pruneDroppedVersionArtifacts(repoB, dropped); err != nil {
+	if err := pruneDroppedVersionArtifacts(repoB, retained, dropped); err != nil {
 		return err
 	}
 

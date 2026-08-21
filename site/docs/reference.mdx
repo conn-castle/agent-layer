@@ -16,6 +16,7 @@ Agent Layer is explicit by design. It prefers failing fast over guessing, treats
 - [Configuration](#configuration)
 - [Environment variables](#environment-variables)
 - [CLI guide](#cli-guide)
+- [Dispatch](#dispatch)
 - [Skill import commands](#skill-import-commands)
 
 ## Configuration
@@ -45,8 +46,8 @@ max_depth = 3
 # conversation is still running. Optional; defaults to 30.
 mcp_wait_timeout_minutes = 30
 # Hard bound on every Agent Dispatch MCP tool call, also projected as Codex's
-# per-server `tool_timeout_sec`. Optional; defaults to 40. Must be greater than
-# mcp_wait_timeout_minutes.
+# and Grok's per-server `tool_timeout_sec`. Optional; defaults to 40. Must be
+# greater than mcp_wait_timeout_minutes.
 mcp_tool_timeout_minutes = 40
 
 [notifications]
@@ -191,7 +192,7 @@ Supported agents:
 
 Agent Layer always projects one built-in MCP server, `agent-layer`, into every
 enabled Codex, Claude, Antigravity, VS Code, Copilot CLI, and Grok client. It serves
-the Agent Dispatch tools (see [Agent Dispatch](https://github.com/conn-castle/agent-layer/blob/main/docs/AGENT-DISPATCH.md)),
+the Agent Dispatch tools (see [Agent Dispatch](./agent-dispatch)),
 is derived from your configuration rather than declared in it, and appears in
 generated permission allowlists alongside your own servers. Its `agent-layer`
 ID is reserved and cannot be used by a `[[mcp.servers]]` entry.
@@ -429,6 +430,7 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al wizard` | Interactive configuration plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`). |
 | `al sync` | Regenerate client configs without launching a client. |
 | `al <client>` | Sync and launch a client (agy/claude/codex/copilot/grok/vscode). |
+| `al dispatch options` | List dispatchable agents and their allowed overrides. |
 | `al dispatch start` | Start a headless conversation asynchronously and return its handle. |
 | `al dispatch wait <handle>` | Wait up to eight minutes; return `running` if work continues, otherwise return the terminal result. |
 | `al dispatch continue <handle>` | Start another invocation in a terminal conversation. |
@@ -436,7 +438,9 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al skills add <repository> <selector>... [--yes]` | Import skills from a Git repository and project them. |
 | `al skills remove <repository> <selector> [--yes]` | Remove one configured import selector and recompute the desired set. |
 | `al skills status` | Report local imported-skill state. Local and network-free; `--all` expands it. |
+| `al skills diff <name>` | Compare two live skill sides (`base`, `local`, `upstream`, `destination`) as a Git unified diff. |
 | `al skills pull` | Fetch configured sources, reconcile them with local content, and project the results. |
+| `al skills resolve <name>` | Apply the staged Git index of a conflict workspace from a conflicted pull or push. |
 | `al skills reset <name> [--yes]` | Permanently discard one imported skill's local edits and accept its current configured upstream version. |
 | `al skills push [--yes]` | Publish local imported-skill changes to configured destinations. |
 | `al probe agy` | Run the Antigravity capability probe and print JSON. |
@@ -741,7 +745,13 @@ al vscode --no-sync -- --reuse-window
 
 ### Dispatch
 
-Agent Dispatch is a fully asynchronous, stateful interface.
+Agent Dispatch is a fully asynchronous, stateful interface with two surfaces over
+one backend: MCP tools for agents and `al dispatch` commands for humans and scripts.
+The MCP tools are served by the built-in `agent-layer` MCP server, which `al sync`
+projects into every enabled client. It exposes `dispatch_options`,
+`dispatch_start`, `dispatch_wait`, `dispatch_continue`, and `dispatch_cancel`.
+Valid dispatch targets are `codex`, `claude`, `antigravity`, and `grok`; VS Code
+and Copilot CLI can call the MCP tools but are not dispatch targets.
 
 ```bash
 al dispatch options
@@ -763,10 +773,10 @@ file named by `result_path`. Every successful command returns exactly one JSON
 object; `wait` also writes its terminal JSON result before a non-zero
 failed-invocation exit.
 
-The agent-facing interface contains read-only `options` plus `start`, `wait`,
-`continue`, and `cancel`. Parallel work uses independent conversation handles
-rather than a fanout resource. See `docs/AGENT-DISPATCH.md` in the repository
-for the complete contract.
+The agent-facing interface contains read-only `options` and `wait`, plus
+`start`, `continue`, and `cancel`. Parallel work uses independent conversation
+handles rather than a fanout resource. See [Agent Dispatch](./agent-dispatch)
+for the complete lifecycle, MCP interface, timeout behavior, and configuration.
 
 ### Skill import commands
 
@@ -776,7 +786,9 @@ for the complete contract.
 al skills add https://github.com/example/skills.git skills/reviewer
 al skills add https://github.com/example/skills.git "skills/*" --ref v1.4.0
 al skills status --all
+al skills diff reviewer
 al skills pull
+al skills resolve reviewer
 al skills reset reviewer
 al skills push
 al skills remove https://github.com/example/skills.git skills/reviewer
@@ -790,11 +802,11 @@ Keep imported skills and the lockfile tracked and commit them together so clones
 and CI retain the imported content and publication checkpoints. Agent Layer never
 stages or commits your repository.
 
-`add`, `pull`, `reset`, and `push` contact remote repositories. `remove`
-contacts one whenever the block keeps a selector so newly revealed membership
-can be resolved at the current source target. Removing a block's last positive
-selector is the only `remove` that stays local. `status`, `al sync`, and agent
-launch are always local.
+`add`, `pull`, `reset`, `push`, and `diff` (when a requested side is remote)
+contact remote repositories. `remove` contacts one whenever the block keeps a
+selector so newly revealed membership can be resolved at the current source
+target. Removing a block's last positive selector is the only `remove` that
+stays local. `status`, `resolve`, `al sync`, and agent launch are always local.
 
 **add** validates the selectors you name, creates or extends the one block with
 a matching policy, performs the initial pull for a new block, and projects the
@@ -812,17 +824,33 @@ so `remove` contacts the remote unless it is removing the block's last positive
 selector. A block left without a positive selector is removed.
 
 **status** is local and read-only. Its default output summarizes total, clean,
-modified, missing, invalid, and collided skills plus tracking and write policy
-counts. `--all` expands it to one entry per resolved skill and lists the
-configured exclusions.
+modified, missing, invalid, collided, and conflicted skills plus tracking and
+write policy counts. `--all` expands it to one entry per resolved skill, lists
+the configured exclusions, and includes the Git workspace path of an active
+matching conflict.
+
+**diff** prints an ordinary Git unified diff between two live sides of one
+imported skill. Supported sides are `base` (the locked source tree), `local`
+(the live imported tree), `upstream` (the current configured source target),
+and `destination` (the current configured push destination tree). Defaults are
+local to upstream. Fetch runs only for sides that require it. Identical trees
+produce no output. For a pinned import, `upstream` is the current ref tip even
+though ordinary pull does not follow that tip until the configured ref changes.
+The destination side requires a writable import whose configured branch exists;
+an absent skill path on that branch is an empty tree.
 
 **pull** is the only command that advances tracked imports. It merges the locked
 upstream tree, your current local tree, and the new upstream tree, so local
 edits survive an update. A change on one side applies cleanly; incompatible
 changes to the same path, delete/modify cases, and non-text files changed on
-both sides are reported as conflicts and fail only that skill. Pinned imports
-stay put unless you change the configured ref, which is reconciled as a
-retarget rather than a removal plus addition.
+both sides are reported as conflicts and fail only that skill. Every conflict
+leaves a Git workspace under `.agent-layer/tmp/skill-conflicts/<name>/` with
+`base`, `local`, and `upstream` branches. Finish the merge with ordinary git
+commands, `git add` the result, and run `al skills resolve <name>`. If that
+workspace is stale or unreadable, Agent Layer will not replace it; move or
+remove the directory, then retry pull or push. Pinned imports stay put unless
+you change the configured ref, which is reconciled as a retarget rather than a
+removal plus addition.
 
 Each skill uses its own lock entry as the upstream merge base. Members declared
 together may therefore remain at different commits after partial success.
@@ -839,13 +867,23 @@ commit, stash, copy, or backup. Resetting a pinned branch deliberately repins it
 at the branch's current commit; ordinary pull leaves that new pin fixed. Reset
 prompts before discarding edits; non-interactive callers must pass `--yes`.
 
+**resolve** applies the staged Git index of a conflict workspace. Unmerged
+entries and unstaged tracked changes are refused; untracked mergetool files are
+ignored. A pull resolution writes the staged tree and advances the recorded
+upstream lock. A push resolution writes the staged tree locally and records the
+reconciled destination head as the publication checkpoint without moving the
+source lock; rerun `al skills push` afterwards. Successful resolve removes the
+workspace and projects the imported skill.
+
 **push** publishes local changes to each block's configured destination. It
 never pulls first and never force-pushes. Changes for one destination
 repository and branch are committed and pushed together. For a tracked import,
 push first verifies the source ref is still at the locked commit and tells you
-to run `al skills pull` if it moved. Push prompts before publication;
-non-interactive callers must pass `--yes`. `add` and `remove` use the same
-confirmation pattern before modifying import configuration.
+to run `al skills pull` if it moved. A destination merge conflict leaves the
+same kind of Git workspace as pull, with `base`, `local`, and `destination`
+branches. Push prompts before publication; non-interactive callers must pass
+`--yes`. `add` and `remove` use the same confirmation pattern before modifying
+import configuration.
 
 The first push reconciles against the locked source tree. After publication,
 the lock entry separately records the exact destination commit and tree, which

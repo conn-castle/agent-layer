@@ -126,6 +126,133 @@ func TestPushBranchUsesThePriorPublicationForFollowUpEdits(t *testing.T) {
 	}
 }
 
+func TestPushRecreatesADeletedMergedBranchFromItsPublication(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Original body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"},
+		`tracking = "pinned"`, `write_policy = "branch"`, `push_branch = "skill-updates"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	proj.WriteImportedFile("alpha", "SKILL.md", skillManifest("alpha", "First body"))
+	first, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("first Push: %v\n%s", err, first.Render("push"))
+	}
+	requireOutcome(t, first, "alpha", OutcomePushed)
+	firstPublication := source.Head("skill-updates")
+
+	source.run("merge", "--quiet", "--no-ff", "--no-edit", "skill-updates")
+	source.run("branch", "--delete", "skill-updates")
+	proj.WriteImportedFile("alpha", "SKILL.md", skillManifest("alpha", "Second body"))
+
+	second, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("second Push: %v\n%s", err, second.Render("push"))
+	}
+	requireOutcome(t, second, "alpha", OutcomePushed)
+	if got := source.FileAt("skill-updates", "skills/alpha/SKILL.md"); !strings.Contains(got, "Second body") {
+		t.Fatalf("recreated destination content = %q", got)
+	}
+	entry, _ := proj.Lock().Entry("alpha")
+	if entry.Publication == nil || entry.Publication.Commit == firstPublication {
+		t.Fatalf("publication was not advanced after branch recreation: %+v", entry.Publication)
+	}
+}
+
+// TestPushPreservesADestinationDeletionWhenRecreatingACheckpointedBranch proves
+// that restoring a publication checkpoint is not enough to skip destination
+// reconciliation. After the contribution branch is deleted and the skill is
+// then removed from the default branch, an unchanged local tree must preserve
+// that deletion instead of republishing the checkpointed skill onto a new
+// branch.
+func TestPushPreservesADestinationDeletionWhenRecreatingACheckpointedBranch(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Original body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"},
+		`tracking = "pinned"`, `write_policy = "branch"`, `push_branch = "skill-updates"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	proj.WriteImportedFile("alpha", "SKILL.md", skillManifest("alpha", "First body"))
+	first, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("first Push: %v\n%s", err, first.Render("push"))
+	}
+	requireOutcome(t, first, "alpha", OutcomePushed)
+
+	source.run("merge", "--quiet", "--no-ff", "--no-edit", "skill-updates")
+	source.run("branch", "--delete", "skill-updates")
+	source.RemovePath("skills/alpha")
+	defaultHead := source.Commit("remove alpha from default")
+
+	second, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("second Push: %v\n%s", err, second.Render("push"))
+	}
+	alpha := requireOutcome(t, second, "alpha", OutcomeUnchanged)
+	if !strings.Contains(alpha.Detail, "removal is preserved") {
+		t.Fatalf("alpha detail = %q, want the preserved destination removal", alpha.Detail)
+	}
+	if source.HasPath("skill-updates", "skills/alpha/SKILL.md") {
+		t.Fatal("recreating the branch resurrected a destination-side whole-skill deletion")
+	}
+	if source.Head("main") != defaultHead || source.HasPath("main", "skills/alpha/SKILL.md") {
+		t.Fatal("preserving the deletion changed the default branch")
+	}
+	if !strings.Contains(proj.ImportedFile("alpha", "SKILL.md"), "First body") {
+		t.Fatal("preserving a destination deletion removed the managed local skill")
+	}
+}
+
+func TestPushReportsADeleteModifyConflictWhenRecreatingACheckpointedBranch(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Original body")
+	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"},
+		`tracking = "pinned"`, `write_policy = "branch"`, `push_branch = "skill-updates"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	proj.WriteImportedFile("alpha", "SKILL.md", skillManifest("alpha", "First body"))
+	first, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("first Push: %v\n%s", err, first.Render("push"))
+	}
+	requireOutcome(t, first, "alpha", OutcomePushed)
+
+	source.run("merge", "--quiet", "--no-ff", "--no-edit", "skill-updates")
+	source.run("branch", "--delete", "skill-updates")
+	source.RemovePath("skills/alpha")
+	defaultHead := source.Commit("remove alpha from default")
+
+	proj.WriteImportedFile("alpha", "notes.md", "local change\n")
+
+	second, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("second Push: %v", err)
+	}
+	failed := requireOutcome(t, second, "alpha", OutcomeFailed)
+	if !strings.Contains(failed.Err.Error(), "delete/modify") {
+		t.Fatalf("failure %q does not report the delete/modify conflict", failed.Err)
+	}
+	if source.Head("main") != defaultHead {
+		t.Fatal("a conflicted push still wrote to the destination")
+	}
+	if source.HasPath("skill-updates", "skills/alpha/SKILL.md") {
+		t.Fatal("a conflicted push re-added the deleted skill")
+	}
+}
+
 // TestPushBranchPublishesAReversionToTheSourceVersion proves returning a file
 // to its original source content is still a change relative to what Agent
 // Layer last published. Without publication state, three-way merge treats the

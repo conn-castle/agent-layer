@@ -10,9 +10,16 @@ replies.
 
 ## Workflow
 
-Fetch every comment type and existing native replies from fresh GitHub data.
-Exclude only status or CI messages, factual statements, and verdicts without a
-new request. Stop if no eligible unresolved feedback remains.
+Rerun this command yourself for fresh comment state; do not wait for the caller
+to paste it:
+
+```bash
+bash <skill_dir>/scripts/read-pr-comments.sh --repo <owner/name> --pr <number>
+```
+
+Reason about eligibility and supported replies from that output. Exclude only
+status or CI messages, factual statements, and verdicts without a new request.
+Stop if no eligible unresolved feedback remains.
 
 Validate each remaining comment against the current tree:
 
@@ -28,13 +35,14 @@ Repair accepted root causes and required tests, documentation, or memory. Group
 coupled work and run focused checks. Track deferrals locally without external
 issue creation unless authorized.
 
-Prepare one reply per eligible, unblocked comment:
+Prepare one reply per eligible, unblocked comment, keyed by its stable ID or
+URL:
 
 - **Fixed.** Describe the fix.
 - **No change — `<reason>`.** Give evidence.
 - **Deferred — tracked in `<location>`.** Explain the boundary.
 
 Finish when every eligible comment has a supported disposition and no unblocked
-local work remains. Return counts, stable comment IDs or URLs, dispositions,
-fixes and checks, trackers, proposed replies, blockers, and confirmation that
-nothing was published.
+local work remains. Return dispositions, stable comment IDs or URLs, fixes and
+checks, trackers, proposed replies, blockers, and confirmation that nothing was
+published.

@@ -97,9 +97,10 @@ type Entry struct {
 	// TreeHash is the canonical hash of the upstream skill tree at Commit. It is
 	// the immutable merge base; local edits never replace it.
 	TreeHash string `json:"tree_hash"`
-	// Publication records the last tree Agent Layer successfully published to a
-	// contribution destination. It is independent of the source lock so a later
-	// push can reconcile against its own prior result without changing pull or
+	// Publication records the last destination tree Agent Layer can trust as a
+	// merge base: either a successful push, or a destination state reconciled
+	// during conflict resolution. It is independent of the source lock so a
+	// later push can merge against that destination without changing pull or
 	// local-modification semantics.
 	Publication *Publication `json:"publication,omitempty"`
 }

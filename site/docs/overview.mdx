@@ -10,7 +10,7 @@ Agent Layer is a small CLI that keeps AI-assisted development consistent across 
 
 The payoff is fewer surprises: the same repo behaves the same whether you launch Antigravity, Claude, Codex, Copilot CLI, Grok, or VS Code. No copying configuration between clients. No gradual drift. Just one place to review and refine how your agents work.
 
-Start with [Getting started](./getting-started), then use [Concepts](./concepts) and [Reference](./reference) as you customize. Use [Best Practices](/best-practices) when you are writing skills, CLI skills, or always-loaded instructions, and [Skills approach](./skills-approach) for Agent Layer's own skill model. [Troubleshooting](./troubleshooting) is a fast path when something breaks.
+Start with [Getting started](./getting-started), then use [Concepts](./concepts) and [Reference](./reference) as you customize. Use [Agent Dispatch](./agent-dispatch) when you want to delegate headless provider work through MCP tools or the CLI. Use [Best Practices](/best-practices) when you are writing skills, CLI skills, or always-loaded instructions, and [Skills approach](./skills-approach) for Agent Layer's own skill model. [Troubleshooting](./troubleshooting) is a fast path when something breaks.
 For upgrade policy, compatibility guarantees, and migration rules, use [Upgrades](./upgrades).
 
 ## What you get
@@ -33,11 +33,12 @@ For upgrade policy, compatibility guarantees, and migration rules, use [Upgrades
 1. [Getting started](./getting-started) - run your first agent
 2. [Concepts](./concepts) - learn the mental model and safety boundaries
 3. [Reference](./reference) - config, environment variables, and CLI behavior
-4. [Skills](./skills) - built-in workflows for planning, debugging, shipping, and more
-5. [Skills approach](./skills-approach) - Agent Layer's skill ethos and target root-skill model
-6. [Best Practices](/best-practices) - universal skill, CLI skill, and instruction design guides
-7. [Troubleshooting](./troubleshooting) - common errors and fixes
-8. [Upgrades](./upgrades) - upgrade event model, compatibility guarantees, and migration rules
+4. [Agent Dispatch](./agent-dispatch) - asynchronous, headless provider delegation
+5. [Skills](./skills) - built-in workflows for planning, debugging, shipping, and more
+6. [Skills approach](./skills-approach) - Agent Layer's skill ethos and target root-skill model
+7. [Best Practices](/best-practices) - universal skill, CLI skill, and instruction design guides
+8. [Troubleshooting](./troubleshooting) - common errors and fixes
+9. [Upgrades](./upgrades) - upgrade event model, compatibility guarantees, and migration rules
 
 ## Documentation map
 
@@ -47,11 +48,15 @@ Install Agent Layer, initialize your first repo, and understand what gets genera
 
 ### [Concepts](./concepts)
 
-The mental model and safety boundaries that keep agents consistent. Includes: [Single source of truth](./concepts#single-source-of-truth), [Approvals and safety](./concepts#approvals-and-safety), [MCP servers](./concepts#mcp-servers), [Project memory](./concepts#project-memory), and [Version pinning](./concepts#version-pinning).
+The mental model and safety boundaries that keep agents consistent. Includes: [Single source of truth](./concepts#single-source-of-truth), [Approvals and safety](./concepts#approvals-and-safety), [MCP servers](./concepts#mcp-servers), [Agent Dispatch](./concepts#agent-dispatch), [Project memory](./concepts#project-memory), and [Version pinning](./concepts#version-pinning).
 
 ### [Reference](./reference)
 
 Authoritative configuration, environment variables, and CLI behavior. Includes: [Configuration](./reference#configuration), [Environment variables](./reference#environment-variables), and the [CLI guide](./reference#cli-guide).
+
+### [Agent Dispatch](./agent-dispatch)
+
+Asynchronous, headless provider conversations for agents, people, and scripts. Includes: [MCP tools](./agent-dispatch#mcp-tools), [CLI commands](./agent-dispatch#cli-commands), the [conversation lifecycle](./agent-dispatch#conversation-lifecycle), and [timeouts and cancellation](./agent-dispatch#waiting-and-cancellation).
 
 ### [Skills](./skills)
 

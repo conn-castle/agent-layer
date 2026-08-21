@@ -54,11 +54,11 @@ handler always releases the caller. Both are optional positive integers; when
 omitted they resolve to 30 and 40. The tool timeout must be greater than the
 wait timeout, and an invalid relationship fails configuration validation.
 
-Codex also receives the hard bound natively as `tool_timeout_sec`. Claude Code
-documents only a client-wide `MCP_TOOL_TIMEOUT`, which Agent Layer does not
-change because that would affect every unrelated MCP server; Antigravity
-documents no per-server timeout key. For those clients the server-side guard is
-the recovery bound.
+Codex and Grok also receive the hard bound natively as `tool_timeout_sec`.
+Claude Code documents only a client-wide `MCP_TOOL_TIMEOUT`, which Agent Layer
+does not change because that would affect every unrelated MCP server;
+Antigravity documents no per-server timeout key. For those clients the
+server-side guard is the recovery bound.
 
 ### Cancelling a request is not cancelling a dispatch
 

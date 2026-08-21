@@ -189,7 +189,7 @@ func (e *CommandError) Unwrap() error { return e.Err }
 
 // run executes git in dir and returns its standard output.
 func (r *Runner) run(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	stdout, _, err := r.runAllowExitInput(ctx, dir, nil, nil, args...)
+	stdout, _, err := r.runAllowExitInput(ctx, dir, nil, nil, nil, args...)
 	return stdout, err
 }
 
@@ -197,7 +197,15 @@ func (r *Runner) run(ctx context.Context, dir string, args ...string) ([]byte, e
 // publication uses it to hash exact blob bytes without materializing a remote
 // tree or passing content through checkout filters.
 func (r *Runner) runInput(ctx context.Context, dir string, input []byte, args ...string) ([]byte, error) {
-	stdout, _, err := r.runAllowExitInput(ctx, dir, input, nil, args...)
+	stdout, _, err := r.runAllowExitInput(ctx, dir, input, nil, nil, args...)
+	return stdout, err
+}
+
+// runEnv executes git with extra environment variables overlaid on the runner's
+// fixed non-interactive environment. Workspace commits use it to apply an
+// isolated synthetic identity without changing publication identity.
+func (r *Runner) runEnv(ctx context.Context, dir string, extraEnv []string, args ...string) ([]byte, error) {
+	stdout, _, err := r.runAllowExitInput(ctx, dir, nil, nil, extraEnv, args...)
 	return stdout, err
 }
 
@@ -206,13 +214,34 @@ func (r *Runner) runInput(ctx context.Context, dir string, input []byte, args ..
 // treat a specific exit code as meaningful (for example `git merge-file`
 // reporting conflict counts) use this form.
 func (r *Runner) runAllowExit(ctx context.Context, dir string, allowedExitCodes []int, args ...string) ([]byte, int, error) {
-	return r.runAllowExitInput(ctx, dir, nil, allowedExitCodes, args...)
+	return r.runAllowExitInput(ctx, dir, nil, allowedExitCodes, nil, args...)
+}
+
+// overlayEnv returns base with extra entries taking precedence by variable name.
+func overlayEnv(base []string, extra []string) []string {
+	if len(extra) == 0 {
+		return base
+	}
+	replace := make(map[string]struct{}, len(extra))
+	for _, entry := range extra {
+		name, _, _ := strings.Cut(entry, "=")
+		replace[name] = struct{}{}
+	}
+	out := make([]string, 0, len(base)+len(extra))
+	for _, entry := range base {
+		name, _, _ := strings.Cut(entry, "=")
+		if _, skip := replace[name]; skip {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return append(out, extra...)
 }
 
 // runAllowExitInput is the single process boundary for Git invocation. It
 // applies fixed hook/template protections, optional standard input, redaction,
 // and caller-declared non-zero result handling.
-func (r *Runner) runAllowExitInput(ctx context.Context, dir string, input []byte, allowedExitCodes []int, args ...string) ([]byte, int, error) {
+func (r *Runner) runAllowExitInput(ctx context.Context, dir string, input []byte, allowedExitCodes []int, extraEnv []string, args ...string) ([]byte, int, error) {
 	// These protections apply to every invocation, including `git init`, so a
 	// global template cannot seed hooks into a disposable repository and no Git
 	// command can discover or run repository hooks.
@@ -221,7 +250,7 @@ func (r *Runner) runAllowExitInput(ctx context.Context, dir string, input []byte
 	effectiveArgs = append(effectiveArgs, args...)
 	cmd := exec.CommandContext(ctx, r.path, effectiveArgs...) // #nosec G204 -- args are built from validated configuration and resolved object ids, never a shell string.
 	cmd.Dir = dir
-	cmd.Env = r.env
+	cmd.Env = overlayEnv(r.env, extraEnv)
 	if input != nil {
 		cmd.Stdin = bytes.NewReader(input)
 	}
