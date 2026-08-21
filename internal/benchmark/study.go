@@ -249,19 +249,12 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 	if err != nil {
 		return matrixPreparation{}, err
 	}
-	var bundles []*TreatmentBundle
-	if len(candidates) > 0 {
-		bundles, err = stageStudyBundlesIfNeeded(options.RepoRoot, prepared)
-		if err != nil {
-			return matrixPreparation{}, err
-		}
-		cached, found, err := loadCompleteCachedStudy(options.RepoRoot, prepared, candidates, bundles, tasks, options.TaskConcurrency)
-		if err != nil {
-			return matrixPreparation{}, err
-		}
-		if found {
-			return cached, nil
-		}
+	cached, bundles, found, err := loadCompleteCachedStudy(options.RepoRoot, prepared, candidates, tasks, options.TaskConcurrency)
+	if err != nil {
+		return matrixPreparation{}, err
+	}
+	if found {
+		return cached, nil
 	}
 	if err := preflightBenchmark(selections); err != nil {
 		return matrixPreparation{}, err
@@ -356,6 +349,11 @@ func stageStudyBundlesIfNeeded(repoRoot string, prepared *preparedStudy) ([]*Tre
 
 const maxHistoricalStudyDirectories = 1024
 
+type cachedStudyCandidate struct {
+	stateDir              string
+	reportClaimedComplete bool
+}
+
 type cachedStudyReportDeclaration struct {
 	SchemaVersion string                             `json:"schema_version"`
 	StudyID       string                             `json:"study_id"`
@@ -373,7 +371,7 @@ type cachedStudyExperimentDeclaration struct {
 	RequiredCells           int                      `json:"required_cells"`
 }
 
-func listPlausibleCompletedCachedStudies(repoRoot string, prepared *preparedStudy) ([]string, error) {
+func listPlausibleCompletedCachedStudies(repoRoot string, prepared *preparedStudy) ([]cachedStudyCandidate, error) {
 	root := filepath.Join(repoRoot, ".agent-layer", "state", "benchmarks", "deepswe", "studies")
 	entries, err := os.ReadDir(root)
 	if errors.Is(err, os.ErrNotExist) {
@@ -383,7 +381,7 @@ func listPlausibleCompletedCachedStudies(repoRoot string, prepared *preparedStud
 		return nil, fmt.Errorf("inspect completed study state: %w", err)
 	}
 	var directories int
-	var candidates []string
+	var candidates []cachedStudyCandidate
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -394,22 +392,37 @@ func listPlausibleCompletedCachedStudies(repoRoot string, prepared *preparedStud
 		}
 		stateDir := filepath.Join(root, entry.Name())
 		var report cachedStudyReportDeclaration
-		if err := readStudyJSON(filepath.Join(stateDir, "report", "report.json"), &report); err != nil {
+		if err := readStudyJSON(filepath.Join(stateDir, "report", "report.json"), &report); err == nil && cachedStudyReportMatchesDeclaration(report, prepared, entry.Name()) {
+			candidates = append(candidates, cachedStudyCandidate{stateDir: stateDir, reportClaimedComplete: true})
 			continue
 		}
-		if !cachedStudyReportMatchesDeclaration(report, prepared) {
+		var manifest immutableStudyManifest
+		if err := readStudyJSON(filepath.Join(stateDir, "study-manifest.json"), &manifest); err != nil {
 			continue
 		}
-		candidates = append(candidates, stateDir)
+		if !studyManifestDeclarationCompatible(manifest, prepared) {
+			continue
+		}
+		candidates = append(candidates, cachedStudyCandidate{stateDir: stateDir})
 	}
 	return candidates, nil
 }
 
-func cachedStudyReportMatchesDeclaration(report cachedStudyReportDeclaration, prepared *preparedStudy) bool {
-	if report.SchemaVersion != studyReportSchema || report.SelectionID != prepared.selectionID {
+func cachedStudyReportMatchesDeclaration(report cachedStudyReportDeclaration, prepared *preparedStudy, studyID string) bool {
+	if !cachedStudyReportMatchesIdentity(report, prepared, studyID) {
 		return false
 	}
-	if len(report.Experiments) != len(prepared.experiments) {
+	for _, item := range report.Experiments {
+		if item.CompletedCells != item.RequiredCells {
+			return false
+		}
+	}
+	return true
+}
+
+func cachedStudyReportMatchesIdentity(report cachedStudyReportDeclaration, prepared *preparedStudy, studyID string) bool {
+	if report.SchemaVersion != studyReportSchema || report.StudyID != studyID || report.SelectionID != prepared.selectionID ||
+		len(report.Experiments) != len(prepared.experiments) {
 		return false
 	}
 	required := 0
@@ -425,43 +438,161 @@ func cachedStudyReportMatchesDeclaration(report cachedStudyReportDeclaration, pr
 			item.Model != experiment.model.PublishedIdentifier || item.Reasoning != experiment.effort {
 			return false
 		}
-		if item.RequiredCells != required || item.CompletedCells != item.RequiredCells {
+		if item.RequiredCells != required {
 			return false
 		}
 	}
 	return true
 }
 
-func loadCompleteCachedStudy(repoRoot string, prepared *preparedStudy, candidates []string, bundles []*TreatmentBundle, tasks []benchmarkPlanTask, concurrency int) (matrixPreparation, bool, error) {
-	var matches []matrixPreparation
-	for _, stateDir := range candidates {
-		var manifest immutableStudyManifest
-		if err := readStudyJSON(filepath.Join(stateDir, "study-manifest.json"), &manifest); err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return matrixPreparation{}, false, fmt.Errorf("completed cached study %s is missing its immutable manifest", filepath.Base(stateDir))
-			}
-			return matrixPreparation{}, false, fmt.Errorf("read immutable study manifest %s: %w", filepath.Base(stateDir), err)
-		}
-		if !studyManifestDeclarationCompatible(manifest, prepared) {
-			return matrixPreparation{}, false, fmt.Errorf("completed cached study %s conflicts with its immutable manifest declaration", filepath.Base(stateDir))
-		}
-		if !studyManifestBundleMatches(manifest, bundles) {
+func loadCompleteCachedStudy(repoRoot string, prepared *preparedStudy, candidates []cachedStudyCandidate, tasks []benchmarkPlanTask, concurrency int) (matrixPreparation, []*TreatmentBundle, bool, error) {
+	var reportClaimed, manifestOnly []cachedStudyCandidate
+	for _, candidate := range candidates {
+		if candidate.reportClaimedComplete {
+			reportClaimed = append(reportClaimed, candidate)
 			continue
 		}
-		preparation, err := preparationFromCachedStudy(repoRoot, prepared, manifest, stateDir, bundles, tasks, concurrency)
+		manifestOnly = append(manifestOnly, candidate)
+	}
+	var bundles []*TreatmentBundle
+	var matches []matrixPreparation
+	if len(reportClaimed) > 0 {
+		var err error
+		bundles, err = stageStudyBundlesIfNeeded(repoRoot, prepared)
 		if err != nil {
-			return matrixPreparation{}, false, err
+			return matrixPreparation{}, nil, false, err
 		}
-		matches = append(matches, preparation)
+		for _, candidate := range reportClaimed {
+			preparation, skip, err := loadReportClaimedCachedStudy(repoRoot, prepared, candidate.stateDir, bundles, tasks, concurrency)
+			if err != nil {
+				return matrixPreparation{}, nil, false, err
+			}
+			if skip {
+				continue
+			}
+			matches = append(matches, preparation)
+		}
+	}
+	var completeManifestOnly []cachedStudyCandidate
+	for _, candidate := range manifestOnly {
+		complete, err := manifestOnlyCachedStudyComplete(repoRoot, prepared, candidate.stateDir, tasks, concurrency)
+		if err != nil {
+			return matrixPreparation{}, nil, false, err
+		}
+		if complete {
+			completeManifestOnly = append(completeManifestOnly, candidate)
+		}
+	}
+	if len(completeManifestOnly) > 0 {
+		if bundles == nil {
+			var err error
+			bundles, err = stageStudyBundlesIfNeeded(repoRoot, prepared)
+			if err != nil {
+				return matrixPreparation{}, nil, false, err
+			}
+		}
+		for _, candidate := range completeManifestOnly {
+			var manifest immutableStudyManifest
+			if err := readStudyJSON(filepath.Join(candidate.stateDir, "study-manifest.json"), &manifest); err != nil {
+				return matrixPreparation{}, nil, false, fmt.Errorf("read immutable study manifest %s: %w", filepath.Base(candidate.stateDir), err)
+			}
+			if !studyManifestBundleMatches(manifest, bundles) {
+				continue
+			}
+			preparation, err := preparationFromCachedStudy(repoRoot, prepared, manifest, candidate.stateDir, bundles, tasks, concurrency)
+			if err != nil {
+				return matrixPreparation{}, nil, false, err
+			}
+			matches = append(matches, preparation)
+		}
 	}
 	switch len(matches) {
 	case 0:
-		return matrixPreparation{}, false, nil
+		return matrixPreparation{}, bundles, false, nil
 	case 1:
 		prepared.studyID = filepath.Base(matches[0].stateDir)
-		return matches[0], true, nil
+		return matches[0], bundles, true, nil
 	default:
-		return matrixPreparation{}, false, fmt.Errorf("completed benchmark study matches more than one historical state directory")
+		return matrixPreparation{}, nil, false, fmt.Errorf("completed benchmark study matches more than one historical state directory")
+	}
+}
+
+func loadReportClaimedCachedStudy(repoRoot string, prepared *preparedStudy, stateDir string, bundles []*TreatmentBundle, tasks []benchmarkPlanTask, concurrency int) (matrixPreparation, bool, error) {
+	var manifest immutableStudyManifest
+	if err := readStudyJSON(filepath.Join(stateDir, "study-manifest.json"), &manifest); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return matrixPreparation{}, false, fmt.Errorf("completed cached study %s is missing its immutable manifest", filepath.Base(stateDir))
+		}
+		return matrixPreparation{}, false, fmt.Errorf("read immutable study manifest %s: %w", filepath.Base(stateDir), err)
+	}
+	if !studyManifestDeclarationCompatible(manifest, prepared) {
+		return matrixPreparation{}, false, fmt.Errorf("completed cached study %s conflicts with its immutable manifest declaration", filepath.Base(stateDir))
+	}
+	if !studyManifestBundleMatches(manifest, bundles) {
+		return matrixPreparation{}, true, nil
+	}
+	preparation, err := preparationFromCachedStudy(repoRoot, prepared, manifest, stateDir, bundles, tasks, concurrency)
+	if err != nil {
+		return matrixPreparation{}, false, err
+	}
+	return preparation, false, nil
+}
+
+func manifestOnlyCachedStudyComplete(repoRoot string, prepared *preparedStudy, stateDir string, tasks []benchmarkPlanTask, concurrency int) (bool, error) {
+	var manifest immutableStudyManifest
+	if err := readStudyJSON(filepath.Join(stateDir, "study-manifest.json"), &manifest); err != nil {
+		return false, fmt.Errorf("reread immutable study manifest %s: %w", filepath.Base(stateDir), err)
+	}
+	if !studyManifestDeclarationCompatible(manifest, prepared) {
+		return false, nil
+	}
+	probe := *prepared
+	preparation, err := bindStudyPreparation(repoRoot, &probe, tasks, copyStringMap(manifest.Checksums), copyStringMap(manifest.Environments), historicalBundlesFromManifest(manifest), nil, concurrency)
+	if err != nil {
+		return false, err
+	}
+	if filepath.Base(stateDir) != manifest.StudyID || preparation.stateDir != stateDir {
+		return false, nil
+	}
+	for index := range preparation.arms {
+		arm := &preparation.arms[index]
+		if arm.ID != manifest.Arms[index].ID || arm.Label != manifest.Arms[index].Name {
+			return false, nil
+		}
+	}
+	for index := range preparation.arms {
+		if err := requireStudyArmManifest(prepared.selectionID, tasks, preparation.checksums, &preparation.arms[index]); err != nil {
+			return false, err
+		}
+	}
+	progress, err := studyProgressChecked(preparation)
+	if err != nil {
+		return false, err
+	}
+	return progress.Missing == 0, nil
+}
+
+func historicalBundlesFromManifest(manifest immutableStudyManifest) []*TreatmentBundle {
+	bundles := make([]*TreatmentBundle, len(manifest.Arms))
+	for index, arm := range manifest.Arms {
+		bundles[index] = historicalTreatmentBundle(arm)
+	}
+	return bundles
+}
+
+// historicalTreatmentBundle reconstructs the hashes needed to prove study/arm
+// identity and validate receipts. It is not a staged bundle and must not be
+// used for report generation.
+func historicalTreatmentBundle(contract studyArmContract) *TreatmentBundle {
+	if contract.Bundle == "" && contract.Adapter == "" && contract.Runtime == "" && contract.RuntimeSource == "" && contract.RuntimeVersion == "" {
+		return nil
+	}
+	return &TreatmentBundle{
+		ManifestHash:      contract.Bundle,
+		AdapterSHA256:     contract.Adapter,
+		LinuxBinarySHA256: contract.Runtime,
+		RuntimeSourceKind: contract.RuntimeSource,
+		RuntimeVersion:    contract.RuntimeVersion,
 	}
 }
 
@@ -547,10 +678,13 @@ func preparationFromCachedStudy(repoRoot string, prepared *preparedStudy, manife
 func cachedAuthenticationPreflight(stateDir string, prepared *preparedStudy) (map[string]AuthenticationPreflight, error) {
 	var report cachedStudyReportDeclaration
 	if err := readStudyJSON(filepath.Join(stateDir, "report", "report.json"), &report); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return map[string]AuthenticationPreflight{}, nil
+		}
 		return nil, fmt.Errorf("read completed cached study authentication provenance: %w", err)
 	}
-	if len(report.Experiments) != len(prepared.experiments) {
-		return nil, fmt.Errorf("completed cached study %s report experiments changed during preparation", filepath.Base(stateDir))
+	if !cachedStudyReportMatchesIdentity(report, prepared, filepath.Base(stateDir)) {
+		return nil, fmt.Errorf("completed cached study %s report declaration does not match its immutable study", filepath.Base(stateDir))
 	}
 	authentication := make(map[string]AuthenticationPreflight)
 	for index, item := range report.Experiments {

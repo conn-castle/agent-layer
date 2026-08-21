@@ -738,6 +738,606 @@ func TestRunStudyFailsClosedWhenCompletedReportLacksStudyManifest(t *testing.T) 
 	}
 }
 
+func TestRunStudyRegeneratesCompletedStudyWithoutReportOrAuthentication(t *testing.T) {
+	for _, test := range []struct {
+		name, selection string
+	}{
+		{name: adapterCodex, selection: "luna:low"},
+		{name: providerClaude, selection: "opus:high"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			model, effort, err := ParseModelSelection(test.selection)
+			if err != nil {
+				t.Fatal(err)
+			}
+			root := t.TempDir()
+			writeBareStudy(t, root, model.Name, effort)
+			preparedCalls := stubStudyInfrastructure(t, root)
+			originalAuth := validateBenchmarkAuthentication
+			t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+			validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+				return map[string]AuthenticationPreflight{}, nil
+			}
+			if model.Adapter == adapterCodex {
+				writeJSONCredential(t, filepath.Join(root, ".codex", "auth.json"), []byte(`{"token":"`+authPreflightSecret+`"}`))
+				installAuthCommandStubs(t, successfulCodexStatusScript(), "")
+				validateBenchmarkAuthentication = originalAuth
+			}
+			first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if first.Completed != 2 || first.Missing != 0 || first.JSONPath == "" {
+				t.Fatalf("seeded study=%#v", first)
+			}
+			removeStudyReport(t, root, first.StudyID)
+
+			blockCachedStudySidecars(t)
+			switch model.Adapter {
+			case adapterCodex:
+				if err := os.Remove(filepath.Join(root, ".codex", "auth.json")); err != nil {
+					t.Fatal(err)
+				}
+			case adapterClaudeCode:
+				writeJSONCredential(t, filepath.Join(root, ".claude-config", ".credentials.json"), []byte(`{"token":"`+authPreflightSecret+`"}`))
+			}
+			executor := &studyWorkflowExecutor{}
+			second, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, executor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if *preparedCalls != 1 {
+				t.Fatalf("cached regeneration prepared tasks %d times", *preparedCalls)
+			}
+			if calls := executor.requests(); len(calls) != 0 {
+				t.Fatalf("cached regeneration reached provider execution: %#v", calls)
+			}
+			if second.StudyID != first.StudyID || second.Completed != 2 || second.Missing != 0 || second.JSONPath == "" {
+				t.Fatalf("cached regeneration=%#v", second)
+			}
+			raw, err := os.ReadFile(second.JSONPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(raw), authPreflightSecret) {
+				t.Fatalf("regenerated report leaked credential: %s", raw)
+			}
+			var report StudyReport
+			if err := json.Unmarshal(raw, &report); err != nil {
+				t.Fatal(err)
+			}
+			if report.StudyID != first.StudyID || len(report.Experiments) != 1 || report.Experiments[0].CompletedCells != 2 {
+				t.Fatalf("regenerated report=%#v", report)
+			}
+			if report.Experiments[0].AuthenticationPreflight != nil {
+				t.Fatalf("regenerated report invented authentication provenance: %#v", report.Experiments[0].AuthenticationPreflight)
+			}
+		})
+	}
+}
+
+func TestRunStudyRetainsAuthenticationProvenanceFromIncompletePriorReport(t *testing.T) {
+	root := t.TempDir()
+	writeParsedBareStudy(t, root, "luna:low")
+	preparedCalls := stubStudyInfrastructure(t, root)
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	writeJSONCredential(t, filepath.Join(root, ".codex", "auth.json"), []byte(`{"token":"`+authPreflightSecret+`"}`))
+	installAuthCommandStubs(t, successfulCodexStatusScript(), "")
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var prior StudyReport
+	if err := readStudyJSON(first.JSONPath, &prior); err != nil {
+		t.Fatal(err)
+	}
+	if len(prior.Experiments) != 1 || prior.Experiments[0].AuthenticationPreflight == nil {
+		t.Fatalf("seeded report lacks authentication provenance: %#v", prior.Experiments)
+	}
+	prior.Experiments[0].CompletedCells--
+	if err := writeJSON(first.JSONPath, prior); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, ".codex", "auth.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	blockCachedStudySidecars(t)
+	second, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *preparedCalls != 1 || second.StudyID != first.StudyID || second.Completed != 2 {
+		t.Fatalf("cached regeneration=%#v task preparation calls=%d", second, *preparedCalls)
+	}
+	var regenerated StudyReport
+	if err := readStudyJSON(second.JSONPath, &regenerated); err != nil {
+		t.Fatal(err)
+	}
+	if len(regenerated.Experiments) != 1 || regenerated.Experiments[0].AuthenticationPreflight == nil ||
+		regenerated.Experiments[0].AuthenticationPreflight.AuthenticationMethod != codexAuthMethodChatGPT {
+		t.Fatalf("regenerated report lost authentication provenance: %#v", regenerated.Experiments)
+	}
+}
+
+func TestRunStudyRejectsAuthenticationProvenanceFromUnrelatedPriorReport(t *testing.T) {
+	root := t.TempDir()
+	writeParsedBareStudy(t, root, "luna:low")
+	stubStudyInfrastructure(t, root)
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	writeJSONCredential(t, filepath.Join(root, ".codex", "auth.json"), []byte(`{"token":"`+authPreflightSecret+`"}`))
+	installAuthCommandStubs(t, successfulCodexStatusScript(), "")
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var prior StudyReport
+	if err := readStudyJSON(first.JSONPath, &prior); err != nil {
+		t.Fatal(err)
+	}
+	prior.Experiments[0].Identity = "unrelated-experiment"
+	prior.Experiments[0].CompletedCells--
+	if err := writeJSON(first.JSONPath, prior); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, ".codex", "auth.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	blockCachedStudySidecars(t)
+	_, err = RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err == nil || !strings.Contains(err.Error(), "report declaration does not match its immutable study") {
+		t.Fatalf("error=%v", err)
+	}
+}
+
+func TestRunStudyRegeneratesCompletedTreatmentStudyWithoutReport(t *testing.T) {
+	root := t.TempDir()
+	writeParsedTreatmentStudy(t, root, "luna:low")
+	preparedCalls := stubStudyInfrastructure(t, root)
+	bundle := fakeStudyTreatmentBundle()
+	bundle.TemplatesCommit = "current-templates"
+	originalStage := stageBenchmarkExperimentBundles
+	stageBenchmarkExperimentBundles = func(string, *preparedStudy) ([]*TreatmentBundle, error) {
+		return []*TreatmentBundle{bundle}, nil
+	}
+	t.Cleanup(func() { stageBenchmarkExperimentBundles = originalStage })
+	originalTreatment := preflightTreatmentRuntime
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error { return nil }
+	t.Cleanup(func() { preflightTreatmentRuntime = originalTreatment })
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Completed != 2 || first.Missing != 0 {
+		t.Fatalf("seeded study=%#v", first)
+	}
+	removeStudyReport(t, root, first.StudyID)
+
+	stageCalls := 0
+	stageBenchmarkExperimentBundles = func(string, *preparedStudy) ([]*TreatmentBundle, error) {
+		stageCalls++
+		return []*TreatmentBundle{bundle}, nil
+	}
+	blockCachedStudySidecars(t)
+	executor := &studyWorkflowExecutor{}
+	second, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stageCalls != 1 {
+		t.Fatalf("treatment cache verification staged %d times", stageCalls)
+	}
+	if *preparedCalls != 1 {
+		t.Fatalf("cached regeneration prepared tasks %d times", *preparedCalls)
+	}
+	if calls := executor.requests(); len(calls) != 0 {
+		t.Fatalf("cached regeneration reached provider execution: %#v", calls)
+	}
+	if second.StudyID != first.StudyID || second.Completed != 2 || second.JSONPath == "" {
+		t.Fatalf("cached regeneration=%#v", second)
+	}
+	var report StudyReport
+	if err := readStudyJSON(second.JSONPath, &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Experiments) != 1 || report.Experiments[0].AuthenticationPreflight != nil {
+		t.Fatalf("regenerated report invented authentication provenance: %#v", report.Experiments)
+	}
+	item := report.Experiments[0]
+	if item.LinuxBinarySHA256 != bundle.LinuxBinarySHA256 || item.AdapterSHA256 != bundle.AdapterSHA256 ||
+		item.SourceCommit != bundle.TemplatesCommit || item.BundleManifest == nil || item.BundleManifest.Mode != bundle.Manifest.Mode {
+		t.Fatalf("regenerated report lost current staged bundle provenance: %#v", item)
+	}
+}
+
+func TestRunStudySkipsDeclarationCompatibleSiblingWithDifferentIdentity(t *testing.T) {
+	root := t.TempDir()
+	writeParsedTreatmentStudy(t, root, "luna:low")
+	preparedCalls := stubStudyInfrastructure(t, root)
+	stubFakeStudyTreatmentBundles(t)
+	originalTreatment := preflightTreatmentRuntime
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error { return nil }
+	t.Cleanup(func() { preflightTreatmentRuntime = originalTreatment })
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	removeStudyReport(t, root, first.StudyID)
+	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte("changed-config\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return nil, fmt.Errorf("declaration-compatible sibling reached authentication")
+	}
+	stageBenchmarkExperimentBundles = func(string, *preparedStudy) ([]*TreatmentBundle, error) {
+		return nil, fmt.Errorf("declaration-compatible sibling reached bundle staging")
+	}
+	_, err = RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err == nil || !strings.Contains(err.Error(), "declaration-compatible sibling reached authentication") {
+		t.Fatalf("error=%v", err)
+	}
+	if strings.Contains(err.Error(), "more than one historical state directory") || strings.Contains(err.Error(), "conflicts with its immutable manifest") {
+		t.Fatalf("sibling was not skipped: %v", err)
+	}
+	if *preparedCalls != 1 {
+		t.Fatalf("task preparation ran %d times", *preparedCalls)
+	}
+}
+
+func TestRunStudyFallsThroughWhenCurrentTreatmentPinsDoNotMatch(t *testing.T) {
+	root := t.TempDir()
+	writeParsedTreatmentStudy(t, root, "luna:low")
+	preparedCalls := stubStudyInfrastructure(t, root)
+	bundle := fakeStudyTreatmentBundle()
+	originalStage := stageBenchmarkExperimentBundles
+	stageBenchmarkExperimentBundles = func(string, *preparedStudy) ([]*TreatmentBundle, error) {
+		return []*TreatmentBundle{bundle}, nil
+	}
+	t.Cleanup(func() { stageBenchmarkExperimentBundles = originalStage })
+	originalTreatment := preflightTreatmentRuntime
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error { return nil }
+	t.Cleanup(func() { preflightTreatmentRuntime = originalTreatment })
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	removeStudyReport(t, root, first.StudyID)
+
+	mismatched := *bundle
+	mismatched.ManifestHash = "other-manifest-hash"
+	stageBenchmarkExperimentBundles = func(string, *preparedStudy) ([]*TreatmentBundle, error) {
+		return []*TreatmentBundle{&mismatched}, nil
+	}
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return nil, fmt.Errorf("current pin mismatch reached authentication")
+	}
+	_, err = RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err == nil || !strings.Contains(err.Error(), "current pin mismatch reached authentication") {
+		t.Fatalf("error=%v", err)
+	}
+	if strings.Contains(err.Error(), "execution receipt does not match") || strings.Contains(err.Error(), "inspect immutable study cell") {
+		t.Fatalf("pin mismatch was treated as corruption: %v", err)
+	}
+	if *preparedCalls != 1 {
+		t.Fatalf("task preparation ran %d times", *preparedCalls)
+	}
+}
+
+func TestRunStudyAuthenticatesBeforeStagingIncompleteTreatmentWithoutReport(t *testing.T) {
+	root := t.TempDir()
+	writeParsedTreatmentStudy(t, root, "luna:low")
+	preparedCalls := stubStudyInfrastructure(t, root)
+	stubFakeStudyTreatmentBundles(t)
+	originalTreatment := preflightTreatmentRuntime
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error { return nil }
+	t.Cleanup(func() { preflightTreatmentRuntime = originalTreatment })
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	if _, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), DryRun: true}, &studyWorkflowExecutor{}); err != nil {
+		t.Fatal(err)
+	}
+
+	order := []string{}
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		order = append(order, "auth")
+		return map[string]AuthenticationPreflight{
+			adapterCodex: {Provider: adapterCodex, Check: codexLoginStatusCheck, AuthenticationMethod: codexAuthMethodChatGPT, VerifiedAt: time.Now().UTC()},
+		}, nil
+	}
+	stageBenchmarkExperimentBundles = func(string, *preparedStudy) ([]*TreatmentBundle, error) {
+		order = append(order, "stage")
+		return nil, fmt.Errorf("stop after staging observation")
+	}
+	_, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err == nil || !strings.Contains(err.Error(), "stop after staging observation") {
+		t.Fatalf("error=%v", err)
+	}
+	if strings.Join(order, ",") != "auth,stage" {
+		t.Fatalf("order=%q", order)
+	}
+	if *preparedCalls != 1 {
+		t.Fatalf("task preparation ran %d times", *preparedCalls)
+	}
+}
+
+func TestRunStudyRejectsCorruptManifestOnlyEvidenceWithoutTaskSetup(t *testing.T) {
+	root := t.TempDir()
+	writeParsedBareStudy(t, root, "luna:low")
+	preparedCalls := stubStudyInfrastructure(t, root)
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest immutableStudyManifest
+	if err := readStudyJSON(filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies", first.StudyID, "study-manifest.json"), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	corrupt := armResultPath(filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies", first.StudyID, "arms", manifest.Arms[0].ID), "first-task", 1)
+	if err := os.WriteFile(corrupt, []byte("not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	removeStudyReport(t, root, first.StudyID)
+
+	blockCachedStudySidecars(t)
+	if _, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{}); err == nil || !strings.Contains(err.Error(), "inspect immutable study cell") {
+		t.Fatalf("corrupt cached error=%v", err)
+	}
+	if *preparedCalls != 1 {
+		t.Fatalf("corrupt cached evidence prepared tasks %d times", *preparedCalls)
+	}
+}
+
+func TestRunStudyAuthenticatesWhenManifestOnlyCellsAreMissing(t *testing.T) {
+	root := t.TempDir()
+	writeParsedBareStudy(t, root, "luna:low")
+	preparedCalls := stubStudyInfrastructure(t, root)
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest immutableStudyManifest
+	if err := readStudyJSON(filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies", first.StudyID, "study-manifest.json"), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	missing := armResultPath(filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies", first.StudyID, "arms", manifest.Arms[0].ID), "first-task", 1)
+	if err := os.Remove(missing); err != nil {
+		t.Fatal(err)
+	}
+	removeStudyReport(t, root, first.StudyID)
+
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return nil, fmt.Errorf("missing-cell run reached authentication")
+	}
+	originalStage := stageBenchmarkExperimentBundles
+	t.Cleanup(func() { stageBenchmarkExperimentBundles = originalStage })
+	stageBenchmarkExperimentBundles = func(string, *preparedStudy) ([]*TreatmentBundle, error) {
+		return nil, fmt.Errorf("missing-cell run reached bundle staging")
+	}
+	_, err = RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err == nil || !strings.Contains(err.Error(), "missing-cell run reached authentication") {
+		t.Fatalf("error=%v", err)
+	}
+	if strings.Contains(err.Error(), "missing required cell evidence") {
+		t.Fatalf("missing cells were treated as completed-report corruption: %v", err)
+	}
+	if *preparedCalls != 1 {
+		t.Fatalf("task preparation ran %d times", *preparedCalls)
+	}
+}
+
+func TestManifestOnlyCachedStudyCompleteDoesNotMutateCallerStudyID(t *testing.T) {
+	root := t.TempDir()
+	writeParsedBareStudy(t, root, "luna:low")
+	stubStudyInfrastructure(t, root)
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	removeStudyReport(t, root, first.StudyID)
+	studies := filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies")
+	rejected := filepath.Join(studies, "rejected-identity")
+	if err := os.Rename(filepath.Join(studies, first.StudyID), rejected); err != nil {
+		t.Fatal(err)
+	}
+
+	prepared, err := prepareStudy(StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.cleanupInputs()
+	prepared.studyID = "sentinel-study-id"
+	tasks := make([]benchmarkPlanTask, len(prepared.selection.Tasks))
+	for i, task := range prepared.selection.Tasks {
+		tasks[i] = benchmarkPlanTask{ID: task.ID, RepetitionsPerArm: task.Repetitions}
+	}
+	complete, err := manifestOnlyCachedStudyComplete(root, &prepared, rejected, tasks, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if complete {
+		t.Fatal("identity-mismatched candidate was treated as complete")
+	}
+	if prepared.studyID != "sentinel-study-id" {
+		t.Fatalf("rejected probe mutated studyID to %q", prepared.studyID)
+	}
+}
+
+func TestRunStudyRejectsMultipleCompleteManifestOnlyMatches(t *testing.T) {
+	root := t.TempDir()
+	writeParsedBareStudy(t, root, "luna:low")
+	preparedCalls := stubStudyInfrastructure(t, root)
+	tag := "one"
+	prepareBenchmarkTaskSet = func(_ context.Context, gotRoot string, tasks []benchmarkPlanTask) (map[string]string, map[string]string, error) {
+		*preparedCalls++
+		if gotRoot != root {
+			return nil, nil, fmt.Errorf("unexpected task preparation root %q", gotRoot)
+		}
+		checksums := make(map[string]string, len(tasks))
+		environments := make(map[string]string, len(tasks))
+		for _, task := range tasks {
+			checksums[task.ID] = task.ID + "-checksum-" + tag
+			environments[task.ID] = task.ID + "-env-" + tag
+		}
+		return checksums, environments, nil
+	}
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	studies := filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies")
+	hidden := filepath.Join(t.TempDir(), first.StudyID)
+	if err := os.Rename(filepath.Join(studies, first.StudyID), hidden); err != nil {
+		t.Fatal(err)
+	}
+	tag = "two"
+	second, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.StudyID == first.StudyID {
+		t.Fatalf("second study reused first identity: %#v", second)
+	}
+	if err := os.Rename(hidden, filepath.Join(studies, first.StudyID)); err != nil {
+		t.Fatal(err)
+	}
+	removeStudyReport(t, root, first.StudyID)
+	removeStudyReport(t, root, second.StudyID)
+
+	blockCachedStudySidecars(t)
+	if _, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{}); err == nil || !strings.Contains(err.Error(), "matches more than one historical state directory") {
+		t.Fatalf("error=%v", err)
+	}
+	if *preparedCalls != 2 {
+		t.Fatalf("task preparation ran %d times", *preparedCalls)
+	}
+}
+
+func TestListPlausibleCompletedCachedStudiesDeduplicatesReportAndManifest(t *testing.T) {
+	root := t.TempDir()
+	writeParsedBareStudy(t, root, "luna:low")
+	stubStudyInfrastructure(t, root)
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := prepareStudy(StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.cleanupInputs()
+	candidates, err := listPlausibleCompletedCachedStudies(root, &prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || !candidates[0].reportClaimedComplete || filepath.Base(candidates[0].stateDir) != first.StudyID {
+		t.Fatalf("report+manifest candidates=%#v", candidates)
+	}
+
+	blockCachedStudySidecars(t)
+	executor := &studyWorkflowExecutor{}
+	second, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.StudyID != first.StudyID || second.Completed != 2 || len(executor.requests()) != 0 {
+		t.Fatalf("deduplicated regeneration=%#v calls=%#v", second, executor.requests())
+	}
+
+	removeStudyReport(t, root, first.StudyID)
+	candidates, err = listPlausibleCompletedCachedStudies(root, &prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].reportClaimedComplete || filepath.Base(candidates[0].stateDir) != first.StudyID {
+		t.Fatalf("manifest-only candidates=%#v", candidates)
+	}
+}
+
+func TestRunStudyIgnoresUnrelatedMalformedStateDuringManifestOnlyRecovery(t *testing.T) {
+	root := t.TempDir()
+	writeParsedBareStudy(t, root, "luna:low")
+	preparedCalls := stubStudyInfrastructure(t, root)
+	originalAuth := validateBenchmarkAuthentication
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	removeStudyReport(t, root, first.StudyID)
+	unrelated := filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies", "unrelated")
+	if err := os.MkdirAll(filepath.Join(unrelated, "report"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(unrelated, "report", "report.json"), []byte("not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(unrelated, "study-manifest.json"), []byte("also-not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	blockCachedStudySidecars(t)
+	second, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *preparedCalls != 1 {
+		t.Fatalf("task preparation ran %d times", *preparedCalls)
+	}
+	if second.StudyID != first.StudyID || second.Completed != 2 || second.JSONPath == "" {
+		t.Fatalf("cached regeneration=%#v", second)
+	}
+}
+
 func TestStudyReportOmitsAuthenticationPreflightWhenAbsent(t *testing.T) {
 	item := StudyExperimentReport{Name: "Bare"}
 	data, err := json.Marshal(item)
@@ -802,7 +1402,7 @@ func TestCachedAuthenticationPreflightRejectsExperimentCountMismatch(t *testing.
 		t.Fatal(err)
 	}
 	_, err := cachedAuthenticationPreflight(stateDir, &preparedStudy{})
-	if err == nil || !strings.Contains(err.Error(), "report experiments changed during preparation") {
+	if err == nil || !strings.Contains(err.Error(), "report declaration does not match its immutable study") {
 		t.Fatalf("error=%v", err)
 	}
 }
@@ -859,6 +1459,41 @@ func fakeStudyTreatmentBundle() *TreatmentBundle {
 		RuntimeSourceKind: "release",
 		RuntimeVersion:    "test",
 		Manifest:          TreatmentManifest{Mode: TreatmentInstructionsOnly, AgentTimeoutMultiplier: skillsAgentTimeoutFactor},
+	}
+}
+
+func removeStudyReport(t *testing.T, root, studyID string) {
+	t.Helper()
+	path := filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies", studyID, "report", "report.json")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func blockCachedStudySidecars(t *testing.T) {
+	t.Helper()
+	originalPreflight, originalVerify := preflightBenchmark, verifyBenchmarkPier
+	originalAuth, originalPrepare := validateBenchmarkAuthentication, prepareBenchmarkTaskSet
+	originalTreatment := preflightTreatmentRuntime
+	t.Cleanup(func() {
+		preflightBenchmark, verifyBenchmarkPier = originalPreflight, originalVerify
+		validateBenchmarkAuthentication, prepareBenchmarkTaskSet = originalAuth, originalPrepare
+		preflightTreatmentRuntime = originalTreatment
+	})
+	preflightBenchmark = func([]parsedSelection) error {
+		return fmt.Errorf("cached regeneration reached prerequisite discovery")
+	}
+	verifyBenchmarkPier = func(context.Context) error {
+		return fmt.Errorf("cached regeneration reached Pier verification")
+	}
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return nil, fmt.Errorf("cached regeneration reached authentication")
+	}
+	prepareBenchmarkTaskSet = func(context.Context, string, []benchmarkPlanTask) (map[string]string, map[string]string, error) {
+		return nil, nil, fmt.Errorf("cached regeneration reached task preparation")
+	}
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error {
+		return fmt.Errorf("cached regeneration reached treatment runtime preflight")
 	}
 }
 
