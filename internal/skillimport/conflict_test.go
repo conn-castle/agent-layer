@@ -271,7 +271,7 @@ func TestStatusFailsForCorruptConflictMetadata(t *testing.T) {
 		t.Fatalf("mkdir corrupt workspace: %v", err)
 	}
 	writeProjectFile(t, filepath.Join(workspace, ".git", conflictMetaFile), "{")
-	if _, err := proj.Service().Status(); err == nil || !strings.Contains(err.Error(), ".agent-layer/tmp/skill-conflicts/alpha") || !strings.Contains(err.Error(), "move or remove it") {
+	if _, err := proj.Service().Status(); err == nil || !strings.Contains(err.Error(), filepath.Join(".agent-layer", "tmp", "skill-conflicts", "alpha")) || !strings.Contains(err.Error(), "move or remove it") {
 		t.Fatalf("Status corrupt workspace error = %v", err)
 	}
 }

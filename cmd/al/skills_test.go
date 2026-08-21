@@ -184,6 +184,19 @@ func TestSkillsCommandSurfaceMatchesTheContract(t *testing.T) {
 	if diff.Flags().Lookup("yes") != nil {
 		t.Fatal("al skills diff should not require confirmation")
 	}
+	var diffHelp bytes.Buffer
+	diff.SetOut(&diffHelp)
+	diff.SetErr(&diffHelp)
+	if err := diff.Help(); err != nil {
+		t.Fatalf("al skills diff --help: %v", err)
+	}
+	help := diffHelp.String()
+	if strings.Contains(help, "(default: local)") || strings.Contains(help, "(default: upstream)") {
+		t.Fatalf("al skills diff --help duplicates pflag defaults:\n%s", help)
+	}
+	if !strings.Contains(help, `(default "local")`) || !strings.Contains(help, `(default "upstream")`) {
+		t.Fatalf("al skills diff --help omitted pflag defaults:\n%s", help)
+	}
 
 	reset := find("reset")
 	if err := reset.Args(reset, nil); err == nil {

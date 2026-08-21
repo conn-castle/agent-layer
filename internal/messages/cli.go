@@ -363,8 +363,8 @@ does not follow that tip until the configured ref changes.
 The destination side requires a writable import whose configured branch exists.
 An absent skill path on that branch is treated as an empty tree.`
 
-	SkillsDiffFromFlag = "Source side: base, local, upstream, or destination (default: local)"
-	SkillsDiffToFlag   = "Destination side: base, local, upstream, or destination (default: upstream)"
+	SkillsDiffFromFlag = "Source side: base, local, upstream, or destination"
+	SkillsDiffToFlag   = "Destination side: base, local, upstream, or destination"
 
 	SkillsPullUse   = "pull"
 	SkillsPullShort = "Fetch and reconcile configured skill sources"

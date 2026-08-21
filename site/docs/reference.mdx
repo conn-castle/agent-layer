@@ -773,10 +773,10 @@ file named by `result_path`. Every successful command returns exactly one JSON
 object; `wait` also writes its terminal JSON result before a non-zero
 failed-invocation exit.
 
-The agent-facing interface contains read-only `options` plus `start`, `wait`,
-`continue`, and `cancel`. Parallel work uses independent conversation handles
-rather than a fanout resource. See [Agent Dispatch](./agent-dispatch) for the
-complete lifecycle, MCP interface, timeout behavior, and configuration.
+The agent-facing interface contains read-only `options` and `wait`, plus
+`start`, `continue`, and `cancel`. Parallel work uses independent conversation
+handles rather than a fanout resource. See [Agent Dispatch](./agent-dispatch)
+for the complete lifecycle, MCP interface, timeout behavior, and configuration.
 
 ### Skill import commands
 
@@ -846,9 +846,11 @@ changes to the same path, delete/modify cases, and non-text files changed on
 both sides are reported as conflicts and fail only that skill. Every conflict
 leaves a Git workspace under `.agent-layer/tmp/skill-conflicts/<name>/` with
 `base`, `local`, and `upstream` branches. Finish the merge with ordinary git
-commands, `git add` the result, and run `al skills resolve <name>`. Pinned
-imports stay put unless you change the configured ref, which is reconciled as a
-retarget rather than a removal plus addition.
+commands, `git add` the result, and run `al skills resolve <name>`. If that
+workspace is stale or unreadable, Agent Layer will not replace it; move or
+remove the directory, then retry pull or push. Pinned imports stay put unless
+you change the configured ref, which is reconciled as a retarget rather than a
+removal plus addition.
 
 Each skill uses its own lock entry as the upstream merge base. Members declared
 together may therefore remain at different commits after partial success.

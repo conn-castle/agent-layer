@@ -191,9 +191,12 @@ half-replaced skill.
 A conflict leaves a Git workspace under `.agent-layer/tmp/skill-conflicts/<name>/`.
 Finish the merge with ordinary git commands, `git add` the result, and run
 `al skills resolve <name>`. Agent Layer applies the staged index after verifying
-that the recorded lock and configuration still match. `al skills diff <name>`
-prints an ordinary Git diff of live `base`, `local`, `upstream`, or
-`destination` trees.
+that the recorded lock and configuration still match. If that workspace is stale
+or unreadable — for example after `al skills reset`, or after the lock or
+configuration changed — later pull or push commands refuse to replace it. Move
+or remove `.agent-layer/tmp/skill-conflicts/<name>/`, then retry `al skills pull`
+or `al skills push`. `al skills diff <name>` prints an ordinary Git diff of live
+`base`, `local`, `upstream`, or `destination` trees.
 
 The generated `.agent-layer/.gitignore` ignores only
 `.agent-layer/skills-imported/.staging/`, the transaction scratch space. Keep
