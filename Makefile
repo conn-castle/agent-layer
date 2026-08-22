@@ -12,7 +12,8 @@ GO_CACHE ?= $(CACHE_ROOT)/go-build
 GO_MOD_CACHE ?= $(CACHE_ROOT)/go-mod
 GOLANGCI_LINT_CACHE ?= $(ROOT_DIR)/.cache/golangci-lint
 
-GO_FILES_FIND_CMD := find . -type f -name '*.go' -not -path './.tools/*' -not -path './.cache/*' -not -path './.claude/*' -not -path './.codex/*' -not -path './.gemini/*' -not -path './.agy/*' -not -path './.antigravitycli/*' -not -path './.agents/*' -not -path './.agent-layer/*' -not -path './tmp/*'
+# Prune excluded directory roots before descent; -not -path still traverses them.
+GO_FILES_FIND_CMD := find . \( -path './.git' -o -path './.tools' -o -path './.cache' -o -path './.claude' -o -path './.codex' -o -path './.gemini' -o -path './.agy' -o -path './.antigravitycli' -o -path './.agents' -o -path './.agent-layer' -o -path './tmp' \) -prune -o -type f -name '*.go'
 
 COVERAGE_THRESHOLD ?= 90.0
 
@@ -285,13 +286,9 @@ test-e2e-ci: ## Run e2e tests for CI (online downloads, upgrade scenarios requir
 ci: tidy-check fmt-check lint dead-code coverage test-deepswe-planner test-race test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
 
 .PHONY: dev
-dev: ## Fast local checks during development (format + lint + coverage + release tests)
+dev: ## Fast local formatting and lint loop
 	@$(MAKE) fmt
-	@$(MAKE) fmt-check
 	@$(MAKE) lint
-	@$(MAKE) coverage
-	@$(MAKE) test-deepswe-planner
-	@$(MAKE) test-release
 
 # Local dev targets — run al subcommands against this repo's own .agent-layer using source
 AL_RUN := GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run ./cmd/al

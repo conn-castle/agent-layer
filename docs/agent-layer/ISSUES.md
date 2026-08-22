@@ -29,11 +29,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-08-21 make-dev-slow-execution-time: make dev execution time is excessively slow for local workflows
-    Priority: Medium. Area: developer experience / build tooling
-    Description: `make dev` runs full formatting, linting, global coverage enforcement, DeepSWE verification, and release test suites sequentially, taking several minutes per invocation and slowing local iteration.
-    Next step: Profile individual target durations in `make dev` and evaluate separating fast local iteration from full whole-repo verification.
-
 - Issue 2026-08-05 coverage-remainder-is-error-injection-only: Coverage above ~91.4% requires failure-injection tests
     Priority: Low. Area: test suite / coverage
     Description: After a behavior-focused pass raised total coverage from 90.02% to 91.42%, every remaining uncovered region is a block of 1–5 statements. They are overwhelmingly `if err != nil` wrappers around filesystem, git, and process calls, plus platform-unreachable branches (device/socket nodes in skilltree.describeNode, non-finite floats that `encoding/json` cannot decode, and defensive duplicate-selector checks that config validation already rejects). No untested feature-level behavior remains in a single block larger than 5 statements.
