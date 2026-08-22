@@ -177,12 +177,11 @@ run_dev_loop_consistency_tests() {
     fail "dev-loop: make ci prerequisites changed (got: $ci_prereqs)"
   fi
 
-  dev_recipe=$(printf '%s\n' "$make_db" | awk '
+  dev_recipe=$(awk '
     /^dev:/ { target = 1; next }
-    target && /^#[[:space:]]+commands to execute/ { recipe = 1; next }
-    recipe && /^\t/ { sub(/^\t/, ""); print; next }
-    recipe { exit }
-  ')
+    target && /^\t/ { sub(/^\t/, ""); print; next }
+    target { exit }
+  ' "$ROOT_DIR/Makefile")
   if [[ "$dev_recipe" == $'@$(MAKE) fmt\n@$(MAKE) lint' ]]; then
     pass "dev-loop: make dev runs formatting and lint only"
   else
