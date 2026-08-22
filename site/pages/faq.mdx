@@ -35,10 +35,10 @@ The Codex VS Code extension reads `CODEX_HOME` at startup. Agent Layer sets a re
 
 By default (`agents.codex.local_config_dir` absent or `false`), Agent Layer does not set `CODEX_HOME`; Codex uses its normal global/project config layering and any inherited `CODEX_HOME` remains user-owned. If you prefer global Codex MCP config in VS Code, see [/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex](/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex).
 
-## Why doesn't Claude keep separate sign-ins per repo?
+## Does Claude keep separate sign-ins per repo?
 Claude per-repo settings and caches isolation is opt-in. If you set `local_config_dir = true` under `[agents.claude]` in `config.toml`, Agent Layer sets `CLAUDE_CONFIG_DIR` to a repo-local directory, isolating settings and caches per repository.
 
-**Known upstream limitation:** Claude Code currently stores auth credentials in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`, so authentication is always shared globally. Per-repo login isolation (e.g., separate work and personal accounts) does not work until this is fixed upstream. This has been reported to the Claude Code team.
+Authentication isolation depends on your platform and authentication method. Claude Code stores `/login` credentials in the macOS Keychain on macOS, so those remain shared. On Linux and Windows, it stores them in `.credentials.json` under `CLAUDE_CONFIG_DIR`, so a repo-local directory also isolates those credentials. Environment credentials, `apiKeyHelper`, and cloud-provider authentication can come from external sources. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
 
 For VS Code, keep `[agents.claude_vscode] enabled = true` so the extension receives the repo-local `CLAUDE_CONFIG_DIR`. Without the launcher path, VS Code falls back to global `~/.claude/` behavior.
 

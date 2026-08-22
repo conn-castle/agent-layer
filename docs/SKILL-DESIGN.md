@@ -194,8 +194,9 @@ maintaining the optimal set of tokens during LLM inference" and recommends
 finding "the smallest set of high-signal tokens that maximize the likelihood
 of some desired outcome."
 
-Models have an "attention budget" depleted by each new token. Performance
-falls gradually rather than hitting a hard cliff.
+Models have an "attention budget" depleted by each new token. There is no
+universal pre-limit boundary: performance can degrade gradually or sharply,
+depending on the model and workload.
 
 **Evidence — input length degrades reasoning:**
 - "Same Task, More Tokens" (ACL 2024) [ref 10] demonstrates that LLM reasoning

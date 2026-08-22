@@ -53,7 +53,7 @@ Treat generated client outputs as build artifacts and keep them gitignored.
 
 Treat `.codex/` and `.claude-config/` as sensitive local state and keep them out of Git. The default template ignores both directories; preserve those rules if you customize the managed gitignore block.
 
-Claude Code stores authentication in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`. This upstream limitation means `.claude-config/` does not contain auth tokens.
+Claude Code stores `/login` credentials in the encrypted macOS Keychain on macOS. On Linux and Windows, it stores them in `.credentials.json` under the default config directory, or under `CLAUDE_CONFIG_DIR` when that variable is set. Other authentication modes can use environment API keys or OAuth tokens, `apiKeyHelper`, or external credential sources for Bedrock, Vertex, and Foundry. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
 
 For a full list of generated outputs, see [/docs/reference#sync](/docs/reference#sync).
 

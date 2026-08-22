@@ -4,7 +4,7 @@ description: Install Agent Layer and run your first agent.
 sidebar_position: 1
 ---
 
-Agent Layer gives every agent the same instructions, approvals, and MCP servers by generating each client configuration from `.agent-layer/`. Install `al`, initialize the repo, then run `al <client>` to sync and launch.
+Agent Layer projects instructions, approvals, and MCP servers from one `.agent-layer/` configuration into each client's native format, using the closest behavior that client supports. Approval enforcement is client-dependent and best effort. Install `al`, initialize the repo, then run `al <client>` to sync and launch.
 
 Without that, a prompt fix in one client is easy to miss in another, and an MCP server can be enabled in one place and missing everywhere else. This page gets a consistent setup running first. You can refine it afterward.
 
@@ -12,7 +12,7 @@ After you complete this page, you will have:
 
 - A `.agent-layer/` folder you edit.
 - A small set of generated client outputs you do not edit.
-- A simple habit: run `al <client>` to sync and launch with the same rules every time.
+- A simple habit: run `al <client>` to sync and launch with the latest generated configuration.
 
 Agent Layer does not replace your client, and it does not run as a hosted service. It runs locally and writes files into your repo.
 
@@ -137,7 +137,7 @@ See [Doctor](./reference#doctor) for exactly what it checks.
 
 After `al init`, your repo gains a few new directories and generated files. Edit the files in `.agent-layer/`. Regenerate the client files.
 
-`al init` creates three buckets: configuration, project memory, and generated client files.
+The resulting layout always has configuration and generated client files. Project memory is an optional third bucket, created only when you install the workflow bundle in `al wizard`.
 
 ### Configuration (`.agent-layer/`)
 
@@ -219,7 +219,7 @@ If you change Agent Layer-managed generated values, those edits will be overwrit
 :::note
 The Codex VS Code extension reads `CODEX_HOME` at startup. Repo-local launchers set a per-repo value only when `local_config_dir = true` is enabled under `[agents.codex]`; in that mode you may need to reauthenticate with Codex when opening a different repo. If you enable `local_config_dir = true` under `[agents.claude]` (and `[agents.claude_vscode]` is enabled), the Claude extension also receives a per-repo `CLAUDE_CONFIG_DIR`, isolating settings and caches per repository.
 
-**Known upstream limitation:** Claude Code currently stores auth credentials in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`, so authentication is always shared globally until this is fixed upstream.
+Claude Code stores `/login` credentials in the macOS Keychain on macOS and in `.credentials.json` under `CLAUDE_CONFIG_DIR` on Linux and Windows. Other authentication modes may use external credential sources, so isolation depends on your platform and authentication method. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
 
 If you prefer to launch VS Code without the repo-local launcher, see the Codex and Claude fallback guidance in troubleshooting: [Global MCP server fallback for VS Code (Codex)](./troubleshooting#global-mcp-server-fallback-for-vs-code-codex) and [Global config fallback for VS Code (Claude)](./troubleshooting#global-config-fallback-for-vs-code-claude).
 :::

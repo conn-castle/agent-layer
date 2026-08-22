@@ -99,7 +99,7 @@ If you find yourself carrying many permanent overrides, that is usually a sign t
 
 ## Per-repo isolation {#per-repo-credential-isolation}
 
-Agent Layer gives each repository its own agent configuration so work in one repo never leaks into another. Codex home isolation is opt-in. Claude settings and caches isolation is supported, but Claude auth credential isolation is blocked by an upstream limitation (see below).
+Agent Layer gives each repository its own agent configuration so work in one repo never leaks into another. Codex home isolation is opt-in. Claude settings and caches isolation is supported; whether it also isolates login credentials depends on your platform and authentication method (see below).
 
 ### How it works
 
@@ -125,13 +125,13 @@ local_config_dir = true
 
 When enabled, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local `.claude-config/` directory. For VS Code, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir = true` and `[agents.claude_vscode]` is enabled.
 
-:::caution Known upstream limitation
-Claude Code currently stores auth credentials in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`. This means `local_config_dir` isolates settings and caches but **not** authentication. Per-repo login isolation does not work until this is fixed upstream. This has been reported to the Claude Code team.
+:::caution Authentication isolation varies
+Claude Code stores `/login` credentials in the macOS Keychain on macOS, so `CLAUDE_CONFIG_DIR` does not isolate them there. On Linux and Windows, it stores them in `.credentials.json` under `CLAUDE_CONFIG_DIR`, so a repo-local directory also isolates those credentials. Other authentication modes may use external credential sources. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
 :::
 
 ### Trade-offs
 
-Enabling Codex home isolation means auth, sessions, logs, and other Codex runtime state are scoped to the repository. Enabling Claude isolation means settings and caches are scoped to the repository; auth remains shared globally due to the upstream limitation above.
+Enabling Codex home isolation means auth, sessions, logs, and other Codex runtime state are scoped to the repository. Enabling Claude isolation scopes settings and caches to the repository; authentication isolation depends on the platform and authentication method described above.
 
 Codex and Claude isolation are opt-in (default `false`) because always-on isolation duplicates config and runtime state in every existing repo. Teams that want per-repo state can enable it per repo; teams that prefer shared global config keep the default.
 
