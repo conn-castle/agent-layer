@@ -1,8 +1,10 @@
 package sync
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -178,6 +180,91 @@ func TestCodexTrustedProjectRoot_RejectsEmptyRoot(t *testing.T) {
 	}
 }
 
+func TestCodexTrustedProjectRoot_RejectsMissingRoot(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "missing")
+	if _, err := codexTrustedProjectRoot(root); err == nil || !strings.Contains(err.Error(), "failed to resolve repo root") {
+		t.Fatalf("missing repo root error = %v", err)
+	}
+}
+
+func TestCodexTrustedProjectRoot_ResolvesSymlinks(t *testing.T) {
+	t.Parallel()
+	parent := t.TempDir()
+	realRoot := filepath.Join(parent, "real")
+	if err := os.Mkdir(realRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	linkedRoot := filepath.Join(parent, "linked")
+	if err := os.Symlink(realRoot, linkedRoot); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	got, err := codexTrustedProjectRoot(linkedRoot)
+	if err != nil {
+		t.Fatalf("codexTrustedProjectRoot: %v", err)
+	}
+	want, err := filepath.EvalSymlinks(realRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("trusted root = %q, want canonical path %q", got, want)
+	}
+}
+
+func TestCodexTrustedProjectRoot_RejectsUnsafeSymlinkTarget(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name        string
+		targetName  string
+		wantMessage string
+	}{
+		{name: "control character", targetName: "real\a", wantMessage: "contains a control character"},
+		{name: "invalid UTF-8", targetName: "real\xff", wantMessage: "contains invalid UTF-8 bytes"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			parent := t.TempDir()
+			realRoot := filepath.Join(parent, test.targetName)
+			if err := os.Mkdir(realRoot, 0o700); err != nil {
+				t.Skipf("cannot create unsafe symlink target: %v", err)
+			}
+			linkedRoot := filepath.Join(parent, "linked")
+			if err := os.Symlink(realRoot, linkedRoot); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+
+			if _, err := codexTrustedProjectRoot(linkedRoot); err == nil || !strings.Contains(err.Error(), test.wantMessage) {
+				t.Fatalf("unsafe symlink target error = %v, want message containing %q", err, test.wantMessage)
+			}
+		})
+	}
+}
+
+func TestCodexTrustedProjectRoot_CanonicalizesDarwinPrivateTmp(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS-specific /tmp canonicalization")
+	}
+	root, err := os.MkdirTemp("/tmp", "agent-layer-codex-trust-")
+	if err != nil {
+		t.Skipf("cannot create repository root beneath /tmp: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(root); err != nil {
+			t.Errorf("remove temporary repository root: %v", err)
+		}
+	})
+
+	got, err := codexTrustedProjectRoot(root)
+	if err != nil {
+		t.Fatalf("codexTrustedProjectRoot: %v", err)
+	}
+	want := filepath.Join("/private", root)
+	if got != want {
+		t.Fatalf("trusted root = %q, want macOS canonical path %q", got, want)
+	}
+}
+
 // TestCodexTrustedProjectRoot_RejectsControlChars asserts the fail-loud guard:
 // a repo root containing a control character that fmt %q would escape into an
 // invalid TOML basic-string escape (e.g. \x00, \a, \v, \x1b) must abort with an
@@ -188,10 +275,12 @@ func TestCodexTrustedProjectRoot_RejectsControlChars(t *testing.T) {
 	t.Parallel()
 	base := t.TempDir()
 	for _, ctrl := range []rune{0x00, '\a', '\v', 0x1b, 0x85} {
-		root := filepath.Join(base, "repo"+string(ctrl)+"x")
-		if _, err := codexTrustedProjectRoot(root); err == nil {
-			t.Fatalf("expected error for repo root containing control char U+%04X", ctrl)
-		}
+		t.Run(fmt.Sprintf("U+%04X", ctrl), func(t *testing.T) {
+			root := filepath.Join(base, "repo"+string(ctrl)+"x")
+			if _, err := codexTrustedProjectRoot(root); err == nil || !strings.Contains(err.Error(), "contains a control character") {
+				t.Fatalf("control-character path error = %v", err)
+			}
+		})
 	}
 }
 
@@ -204,8 +293,8 @@ func TestCodexTrustedProjectRoot_RejectsControlChars(t *testing.T) {
 func TestCodexTrustedProjectRoot_RejectsInvalidUTF8(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join(t.TempDir(), "repo\xffx")
-	if _, err := codexTrustedProjectRoot(root); err == nil {
-		t.Fatalf("expected error for repo root containing invalid UTF-8 bytes")
+	if _, err := codexTrustedProjectRoot(root); err == nil || !strings.Contains(err.Error(), "contains invalid UTF-8 bytes") {
+		t.Fatalf("invalid-UTF-8 path error = %v", err)
 	}
 }
 
@@ -216,6 +305,9 @@ func TestCodexTrustedProjectRoot_RejectsInvalidUTF8(t *testing.T) {
 func TestCodexTrustedProjectRoot_AcceptsPrintablePath(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join(t.TempDir(), `repo"quote`)
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	resolved, err := codexTrustedProjectRoot(root)
 	if err != nil {
 		t.Fatalf("unexpected error for printable path: %v", err)

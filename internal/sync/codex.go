@@ -288,6 +288,20 @@ func codexTrustedProjectRoot(root string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf(messages.SyncCodexTrustRootResolveFailedFmt, root, err)
 	}
+	if err := validateCodexTrustedProjectRoot(absRoot); err != nil {
+		return "", err
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(absRoot)
+	if err != nil {
+		return "", fmt.Errorf(messages.SyncCodexTrustRootResolveFailedFmt, absRoot, err)
+	}
+	if err := validateCodexTrustedProjectRoot(canonicalRoot); err != nil {
+		return "", err
+	}
+	return canonicalRoot, nil
+}
+
+func validateCodexTrustedProjectRoot(root string) error {
 	// fmt %q (used to encode the `[projects.<root>]` TOML key) emits Go escapes
 	// for control characters (e.g. \x00, \a, \v, \x1b, \x85) and for invalid
 	// UTF-8 bytes (e.g. \xff) that are NOT valid TOML basic-string escapes. A
@@ -298,14 +312,14 @@ func codexTrustedProjectRoot(root string) (string, error) {
 	// Check invalid UTF-8 first: on Unix, paths are arbitrary byte sequences, and
 	// strings.IndexFunc decodes invalid bytes as utf8.RuneError (which is not a
 	// control rune), so the control-char scan alone would miss them.
-	if !utf8.ValidString(absRoot) {
-		return "", fmt.Errorf(messages.SyncCodexTrustRootInvalidUTF8Fmt, absRoot)
+	if !utf8.ValidString(root) {
+		return fmt.Errorf(messages.SyncCodexTrustRootInvalidUTF8Fmt, root)
 	}
-	if idx := strings.IndexFunc(absRoot, unicode.IsControl); idx >= 0 {
-		bad, _ := utf8.DecodeRuneInString(absRoot[idx:])
-		return "", fmt.Errorf(messages.SyncCodexTrustRootControlCharFmt, absRoot, bad)
+	if idx := strings.IndexFunc(root, unicode.IsControl); idx >= 0 {
+		bad, _ := utf8.DecodeRuneInString(root[idx:])
+		return fmt.Errorf(messages.SyncCodexTrustRootControlCharFmt, root, bad)
 	}
-	return absRoot, nil
+	return nil
 }
 
 func appendCodexTrustedProject(builder *strings.Builder, repoRoot string, agentSpecific map[string]any) error {

@@ -194,9 +194,12 @@ func TestBuildCodexConfigHeaderPrecedesModelSettings(t *testing.T) {
 
 func TestBuildCodexConfigAgentSpecificDifferentProjectDoesNotSuppressTrust(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "repo")
-	absRoot, err := filepath.Abs(root)
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	absRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		t.Fatalf("abs root: %v", err)
+		t.Fatalf("canonical root: %v", err)
 	}
 	otherRoot := absRoot + "-other"
 	project := &config.ProjectConfig{
@@ -249,9 +252,12 @@ func TestBuildCodexConfigAgentSpecificDifferentProjectDoesNotSuppressTrust(t *te
 
 func TestBuildCodexConfigAgentSpecificSameProjectSuppressesManagedTrust(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "repo")
-	absRoot, err := filepath.Abs(root)
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	absRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		t.Fatalf("abs root: %v", err)
+		t.Fatalf("canonical root: %v", err)
 	}
 	project := &config.ProjectConfig{
 		Config: config.Config{

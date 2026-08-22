@@ -335,6 +335,11 @@ func assertFileEquals(t *testing.T, expectedPath string, actualPath string, repo
 		t.Fatalf("read actual %s: %v", actualPath, err)
 	}
 	expectedContent := strings.ReplaceAll(string(expected), "__REPO_ROOT__", repoRoot)
+	canonicalRepoRoot, err := filepath.EvalSymlinks(repoRoot)
+	if err != nil {
+		t.Fatalf("canonicalize repo root: %v", err)
+	}
+	expectedContent = strings.ReplaceAll(expectedContent, "__CANONICAL_REPO_ROOT__", canonicalRepoRoot)
 	if expectedContent != string(actual) {
 		t.Fatalf("mismatch for %s", actualPath)
 	}
