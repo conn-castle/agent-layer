@@ -689,7 +689,7 @@ func TestAppendTemplateDirDiffs_StatError_Permissions(t *testing.T) {
 		t.Fatalf("chmod: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(instrDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
-	testutil.SkipIfWritable(t, instrDir)
+	testutil.SkipIfReadable(t, basePath)
 
 	inst := &installer{root: root, sys: RealSystem{}}
 	dir := templateDir{
@@ -816,7 +816,7 @@ func TestTemplateFileMatches_ReadError(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(blockPath, 0o600) })
-	testutil.SkipIfWritable(t, blockPath)
+	testutil.SkipIfReadable(t, blockPath)
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}

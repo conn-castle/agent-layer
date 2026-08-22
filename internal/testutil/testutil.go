@@ -52,7 +52,7 @@ func ForbidExec(t *testing.T, target *func(string, []string, []string) error) {
 }
 
 // testContext captures the testing hooks needed by the exec seam helpers
-// and the writability probe.
+// and permission probes.
 type testContext interface {
 	Cleanup(func())
 	Fatal(...any)
@@ -172,6 +172,32 @@ func skipIfWritable(t testContext, path string) {
 		return
 	}
 	t.Fatalf("writability probe %s: %v", path, probeErr)
+}
+
+// SkipIfReadable probes path with a real read attempt after a fixture has
+// restricted its mode bits. A successful probe is closed and the test is
+// skipped so elevated privileges cannot bypass a permission-dependent read or
+// traversal error. Permission denied lets the caller proceed. Any other probe
+// error fails with the protected path and the underlying error.
+func SkipIfReadable(t *testing.T, path string) {
+	t.Helper()
+	skipIfReadable(t, path)
+}
+
+func skipIfReadable(t testContext, path string) {
+	t.Helper()
+	file, probeErr := os.Open(path) // #nosec G304 -- path is a test-controlled fixture.
+	if probeErr == nil {
+		if closeErr := file.Close(); closeErr != nil {
+			t.Fatalf("readability probe %s: cleanup: %v", path, closeErr)
+		}
+		t.Skipf("process can read %s despite restrictive mode bits; skipping permission-dependent fixture", path)
+		return
+	}
+	if errors.Is(probeErr, os.ErrPermission) {
+		return
+	}
+	t.Fatalf("readability probe %s: %v", path, probeErr)
 }
 
 // WithWorkingDir runs fn with dir as the current working directory and restores the previous directory.

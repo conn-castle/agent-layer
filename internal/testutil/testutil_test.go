@@ -346,6 +346,59 @@ func TestSkipIfWritableAllowsProtectedDirectory(t *testing.T) {
 	SkipIfWritable(t, dir)
 }
 
+func TestSkipIfReadableSkipsReadablePath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "readable")
+	if err := os.WriteFile(path, []byte("content"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	context := &fakeTestContext{}
+	skipIfReadable(context, path)
+	if context.skipped == "" {
+		t.Fatal("expected skip for readable path")
+	}
+	if !strings.Contains(context.skipped, path) {
+		t.Fatalf("expected skip to name %q, got %q", path, context.skipped)
+	}
+}
+
+func TestSkipIfReadableFailsUnexpectedProbeError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	_, openErr := os.Open(missing) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if openErr == nil {
+		t.Fatal("expected missing path to fail open")
+	}
+	context := &fakeTestContext{}
+	failure := requireTestFailure(t, func() {
+		skipIfReadable(context, missing)
+	})
+	if !strings.Contains(failure.message, missing) {
+		t.Fatalf("expected failure to name %q, got %q", missing, failure.message)
+	}
+	if !strings.Contains(failure.message, "readability probe") {
+		t.Fatalf("expected failure to identify the probe, got %q", failure.message)
+	}
+	if !strings.Contains(failure.message, openErr.Error()) {
+		t.Fatalf("expected failure to include the underlying error %q, got %q", openErr, failure.message)
+	}
+	if context.skipped != "" {
+		t.Fatalf("unexpected skip for probe error: %q", context.skipped)
+	}
+}
+
+func TestSkipIfReadableAllowsProtectedTraversal(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "protected")
+	if err := os.WriteFile(path, []byte("content"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) }) // #nosec G302 -- restore owner access for TempDir cleanup.
+
+	SkipIfReadable(t, path)
+}
+
 func namesOf(entries []os.DirEntry) []string {
 	names := make([]string, len(entries))
 	for i, entry := range entries {
