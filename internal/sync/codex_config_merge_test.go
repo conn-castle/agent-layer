@@ -17,9 +17,9 @@ import (
 func TestWriteCodexConfig_MergesSharedStateAndIsIdempotent(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	absRoot, err := filepath.Abs(root)
+	absRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		t.Fatalf("abs root: %v", err)
+		t.Fatalf("canonical root: %v", err)
 	}
 	writeExistingCodexConfig(t, root, "# user note\n"+codexHeader+`
 model = "old-model"
@@ -178,9 +178,9 @@ func TestWriteCodexConfig_InlineTableProjectsSeedConflictFailsWithActionableErro
 func TestWriteCodexConfig_InlineTableProjectsWithTrustedRootSucceeds(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	absRoot, err := filepath.Abs(root)
+	absRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		t.Fatalf("abs root: %v", err)
+		t.Fatalf("canonical root: %v", err)
 	}
 	// The trusted root is already present in the inline table, so no header is
 	// appended and the config is left valid (no false shape conflict).
@@ -1136,9 +1136,9 @@ func TestWriteCodexConfig_PreservesExistingQuotedProjectTrust(t *testing.T) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatalf("mkdir root: %v", err)
 	}
-	absRoot, err := filepath.Abs(root)
+	absRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		t.Fatalf("abs root: %v", err)
+		t.Fatalf("canonical root: %v", err)
 	}
 	writeExistingCodexConfig(t, root, codexPartialHeader+`
 [projects.`+tomlpatch.FormatKey(absRoot)+`]

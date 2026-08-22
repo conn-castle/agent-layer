@@ -305,7 +305,11 @@ func codexTrustedProjectRoot(root string) (string, error) {
 		bad, _ := utf8.DecodeRuneInString(absRoot[idx:])
 		return "", fmt.Errorf(messages.SyncCodexTrustRootControlCharFmt, absRoot, bad)
 	}
-	return absRoot, nil
+	canonicalRoot, err := filepath.EvalSymlinks(absRoot)
+	if err != nil {
+		return "", fmt.Errorf(messages.SyncCodexTrustRootResolveFailedFmt, absRoot, err)
+	}
+	return canonicalRoot, nil
 }
 
 func appendCodexTrustedProject(builder *strings.Builder, repoRoot string, agentSpecific map[string]any) error {

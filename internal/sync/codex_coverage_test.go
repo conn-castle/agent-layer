@@ -178,6 +178,39 @@ func TestCodexTrustedProjectRoot_RejectsEmptyRoot(t *testing.T) {
 	}
 }
 
+func TestCodexTrustedProjectRoot_RejectsMissingRoot(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "missing")
+	if _, err := codexTrustedProjectRoot(root); err == nil || !strings.Contains(err.Error(), "failed to resolve repo root") {
+		t.Fatalf("missing repo root error = %v", err)
+	}
+}
+
+func TestCodexTrustedProjectRoot_ResolvesSymlinks(t *testing.T) {
+	t.Parallel()
+	parent := t.TempDir()
+	realRoot := filepath.Join(parent, "real")
+	if err := os.Mkdir(realRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	linkedRoot := filepath.Join(parent, "linked")
+	if err := os.Symlink(realRoot, linkedRoot); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	got, err := codexTrustedProjectRoot(linkedRoot)
+	if err != nil {
+		t.Fatalf("codexTrustedProjectRoot: %v", err)
+	}
+	want, err := filepath.EvalSymlinks(realRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("trusted root = %q, want canonical path %q", got, want)
+	}
+}
+
 // TestCodexTrustedProjectRoot_RejectsControlChars asserts the fail-loud guard:
 // a repo root containing a control character that fmt %q would escape into an
 // invalid TOML basic-string escape (e.g. \x00, \a, \v, \x1b) must abort with an
@@ -216,6 +249,9 @@ func TestCodexTrustedProjectRoot_RejectsInvalidUTF8(t *testing.T) {
 func TestCodexTrustedProjectRoot_AcceptsPrintablePath(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join(t.TempDir(), `repo"quote`)
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	resolved, err := codexTrustedProjectRoot(root)
 	if err != nil {
 		t.Fatalf("unexpected error for printable path: %v", err)

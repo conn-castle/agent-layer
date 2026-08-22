@@ -39,12 +39,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: `make dev` runs full formatting, linting, global coverage enforcement, DeepSWE verification, and release test suites sequentially, taking several minutes per invocation and slowing local iteration.
     Next step: Profile individual target durations in `make dev` and evaluate separating fast local iteration from full whole-repo verification.
 
-- Issue 2026-08-18 codex-trust-symlink-path: Codex trust uses a lexical rather than canonical repository path
-    Priority: Low. Area: providers / codex / trust
-    Description: Codex trust seeding uses `filepath.Abs` without resolving symlinks, so a repository opened through a symlink may not match the client-observed canonical path.
-    Next step: Reproduce at the installed Codex boundary and canonicalize the trust key with regression coverage if confirmed.
-    Notes: Found while fixing the equivalent Grok integration defect; outside the Grok change scope.
-
 - Issue 2026-08-05 coverage-remainder-is-error-injection-only: Coverage above ~91.4% requires failure-injection tests
     Priority: Low. Area: test suite / coverage
     Description: After a behavior-focused pass raised total coverage from 90.02% to 91.42%, every remaining uncovered region is a block of 1–5 statements. They are overwhelmingly `if err != nil` wrappers around filesystem, git, and process calls, plus platform-unreachable branches (device/socket nodes in skilltree.describeNode, non-finite floats that `encoding/json` cannot decode, and defensive duplicate-selector checks that config validation already rejects). No untested feature-level behavior remains in a single block larger than 5 statements.

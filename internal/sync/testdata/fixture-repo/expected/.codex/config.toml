@@ -12,7 +12,7 @@ direct_only_tool_namespaces = ['mcp__agent_layer']
 [tui]
 status_line = ['model-with-reasoning', 'context-used', 'weekly-limit', 'thread-id', 'git-branch', 'branch-changes', 'pull-request-number', 'current-dir']
 
-[projects."__REPO_ROOT__"]
+[projects."__CANONICAL_REPO_ROOT__"]
 trust_level = "trusted"
 
 [mcp_servers."agent-layer"]
