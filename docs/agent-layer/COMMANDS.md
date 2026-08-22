@@ -193,16 +193,17 @@ make coverage
 ```
 Run from: repo root  
 Prerequisites: Go 1.26.0+
-Notes: Canonical local/CI parity command for coverage. `make dev` and `make ci` both route through this target, and GitHub Actions runs `make ci`.
+Notes: Canonical local/CI parity command for coverage. `make ci` routes through this target, and GitHub Actions runs `make ci`.
 
 ### Dev
 
-- Primary local test command (format + fmt-check + lint + coverage + release tests)
+- Fast local formatting and lint loop
 ```bash
 make dev
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+, `make tools` has been run
+Notes: Formats Go source and runs golangci-lint. Does not run tests, coverage, or the full CI suite. Use `make test` or `make coverage` for those gates, and `make ci` as the complete local/pre-PR verification command (GitHub Actions also runs `make ci`).
 
 - Run al subcommands against this repo's own .agent-layer using the source tree
 ```bash
@@ -238,13 +239,13 @@ Notes: Prints JSON describing a contained `grok` run under `.agent-layer/tmp/pro
 
 ### CI
 
-- Run CI checks locally
+- Run CI checks locally (complete pre-PR verification gate)
 ```bash
 make ci
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+, `make tools` has been run
-Notes: Includes `make tidy-check`, `make test-race` (race detector on concurrency-critical packages), `make test-release`, `make test-e2e-ci` (online e2e with required upgrade scenarios), and `make docs-cta-check`; requires network access for upgrade binary downloads. `tidy-check` permits an existing intended diff, reports a validation failure when `go mod tidy` changes the module files, and propagates dependency, toolchain, network, and filesystem errors.
+Notes: The complete local/pre-PR verification command; GitHub Actions runs the same target. Includes `make tidy-check`, `make fmt-check`, `make lint`, `make dead-code`, `make coverage`, `make test-deepswe-planner`, `make test-race` (race detector on concurrency-critical packages), `make test-release`, `make test-e2e-harness`, `make test-e2e-ci` (online e2e with required upgrade scenarios), and `make docs-cta-check`; requires network access for upgrade binary downloads. `tidy-check` permits an existing intended diff, reports a validation failure when `go mod tidy` changes the module files, and propagates dependency, toolchain, network, and filesystem errors.
 GitHub Actions also runs a separate website build job using `make website-build-check` against `conn-castle/agent-layer-web`.
 The release workflow runs this target on macOS before importing signing credentials.
 

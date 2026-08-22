@@ -156,3 +156,56 @@ run_workflow_consistency_tests() {
     fail "workflow-consistency: CHANGELOG.md missing (required by release workflow for release notes)"
   fi
 }
+
+run_dev_loop_consistency_tests() {
+  section "Dev Loop Consistency Tests"
+
+  local make_db make_status ci_prereqs dev_recipe fmt_dry
+  if make_db=$(make -C "$ROOT_DIR" -qp --no-builtin-rules --no-builtin-variables 2>/dev/null); then
+    make_status=0
+  else
+    make_status=$?
+  fi
+  if (( make_status > 1 )); then
+    fail "dev-loop: could not inspect the make database (exit $make_status)"
+    return
+  fi
+  ci_prereqs=$(printf '%s\n' "$make_db" | awk '/^ci:/{print; exit}')
+  if [[ "$ci_prereqs" == "ci: tidy-check fmt-check lint dead-code coverage test-deepswe-planner test-race test-release test-e2e-harness test-e2e-ci docs-cta-check" ]]; then
+    pass "dev-loop: make ci retains the complete verification prerequisites"
+  else
+    fail "dev-loop: make ci prerequisites changed (got: $ci_prereqs)"
+  fi
+
+  dev_recipe=$(awk '
+    /^dev:/ { target = 1; next }
+    target && /^\t/ { sub(/^\t/, ""); print; next }
+    target { exit }
+  ' "$ROOT_DIR/Makefile")
+  if [[ "$dev_recipe" == $'@$(MAKE) fmt\n@$(MAKE) lint' ]]; then
+    pass "dev-loop: make dev runs formatting and lint only"
+  else
+    fail "dev-loop: make dev must run formatting and lint only (got: $dev_recipe)"
+  fi
+
+  if ! fmt_dry=$(make -C "$ROOT_DIR" -n --no-builtin-rules --no-builtin-variables fmt 2>&1); then
+    fail "dev-loop: could not inspect make fmt"
+    return
+  fi
+  if [[ "$fmt_dry" != *"-prune"* || "$fmt_dry" == *"-not -path"* ]]; then
+    fail "dev-loop: formatting discovery must prune excluded directory roots"
+  else
+    local root missing_root=""
+    for root in .git .tools .cache .claude .codex .gemini .agy .antigravitycli .agents .agent-layer tmp; do
+      if [[ "$fmt_dry" != *"-path './$root'"* ]]; then
+        missing_root="$root"
+        break
+      fi
+    done
+    if [[ -n "$missing_root" ]]; then
+      fail "dev-loop: formatting discovery does not prune ./$missing_root"
+    else
+      pass "dev-loop: formatting discovery prunes every excluded directory root"
+    fi
+  fi
+}
