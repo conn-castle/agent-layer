@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestScanUnknownRoot_StatError(t *testing.T) {
@@ -146,6 +147,7 @@ func TestHandleUnknowns_DeleteError(t *testing.T) {
 		t.Fatalf("chmod: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(protectedDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
+	testutil.SkipIfWritable(t, protectedDir)
 
 	inst := &installer{
 		root:      root,
@@ -293,6 +295,7 @@ func TestHandleUnknowns_IndividualDeleteError(t *testing.T) {
 		t.Fatalf("chmod: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(protectedDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
+	testutil.SkipIfWritable(t, protectedDir)
 
 	inst := &installer{
 		root:      root,

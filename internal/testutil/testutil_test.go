@@ -18,6 +18,7 @@ type testFailure struct {
 
 type fakeTestContext struct {
 	cleanups []func()
+	skipped  string
 }
 
 func (f *fakeTestContext) Cleanup(cleanup func()) {
@@ -33,6 +34,10 @@ func (f *fakeTestContext) Fatalf(format string, args ...any) {
 }
 
 func (f *fakeTestContext) Helper() {}
+
+func (f *fakeTestContext) Skipf(format string, args ...any) {
+	f.skipped = fmt.Sprintf(format, args...)
+}
 
 func (f *fakeTestContext) runCleanups() {
 	for i := len(f.cleanups) - 1; i >= 0; i-- {
@@ -262,6 +267,144 @@ func TestWriteStubExpectArgHonorsRequiredArg(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected non-zero exit without required arg")
 	}
+}
+
+func TestSkipIfWritableSkipsWritablePathAfterCleanup(t *testing.T) {
+	t.Run("directory", func(t *testing.T) {
+		dir := t.TempDir()
+		context := &fakeTestContext{}
+		skipIfWritable(context, dir)
+		if context.skipped == "" {
+			t.Fatal("expected skip for writable directory")
+		}
+		if !strings.Contains(context.skipped, dir) {
+			t.Fatalf("expected skip to name %q, got %q", dir, context.skipped)
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("readdir: %v", err)
+		}
+		if len(entries) != 0 {
+			t.Fatalf("expected probe file cleanup, found %v", namesOf(entries))
+		}
+	})
+	t.Run("file", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "protected")
+		if err := os.WriteFile(path, []byte("keep"), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		context := &fakeTestContext{}
+		skipIfWritable(context, path)
+		if context.skipped == "" {
+			t.Fatal("expected skip for writable file")
+		}
+		if !strings.Contains(context.skipped, path) {
+			t.Fatalf("expected skip to name %q, got %q", path, context.skipped)
+		}
+		data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		if string(data) != "keep" {
+			t.Fatalf("probe mutated file contents: %q", data)
+		}
+	})
+}
+
+func TestSkipIfWritableFailsUnexpectedProbeError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	_, statErr := os.Stat(missing)
+	if statErr == nil {
+		t.Fatal("expected missing path to fail stat")
+	}
+	context := &fakeTestContext{}
+	failure := requireTestFailure(t, func() {
+		skipIfWritable(context, missing)
+	})
+	if !strings.Contains(failure.message, missing) {
+		t.Fatalf("expected failure to name %q, got %q", missing, failure.message)
+	}
+	if !strings.Contains(failure.message, "writability probe") {
+		t.Fatalf("expected failure to identify the probe, got %q", failure.message)
+	}
+	if !strings.Contains(failure.message, statErr.Error()) {
+		t.Fatalf("expected failure to include the underlying error %q, got %q", statErr, failure.message)
+	}
+	if context.skipped != "" {
+		t.Fatalf("unexpected skip for probe error: %q", context.skipped)
+	}
+}
+
+func TestSkipIfWritableAllowsProtectedDirectory(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o500); err != nil { // #nosec G302 -- restrictive mode exercises the exported permission probe.
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) }) // #nosec G302 -- restore owner access for TempDir cleanup.
+
+	SkipIfWritable(t, dir)
+}
+
+func TestSkipIfReadableSkipsReadablePath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "readable")
+	if err := os.WriteFile(path, []byte("content"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	context := &fakeTestContext{}
+	skipIfReadable(context, path)
+	if context.skipped == "" {
+		t.Fatal("expected skip for readable path")
+	}
+	if !strings.Contains(context.skipped, path) {
+		t.Fatalf("expected skip to name %q, got %q", path, context.skipped)
+	}
+}
+
+func TestSkipIfReadableFailsUnexpectedProbeError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	_, openErr := os.Open(missing) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if openErr == nil {
+		t.Fatal("expected missing path to fail open")
+	}
+	context := &fakeTestContext{}
+	failure := requireTestFailure(t, func() {
+		skipIfReadable(context, missing)
+	})
+	if !strings.Contains(failure.message, missing) {
+		t.Fatalf("expected failure to name %q, got %q", missing, failure.message)
+	}
+	if !strings.Contains(failure.message, "readability probe") {
+		t.Fatalf("expected failure to identify the probe, got %q", failure.message)
+	}
+	if !strings.Contains(failure.message, openErr.Error()) {
+		t.Fatalf("expected failure to include the underlying error %q, got %q", openErr, failure.message)
+	}
+	if context.skipped != "" {
+		t.Fatalf("unexpected skip for probe error: %q", context.skipped)
+	}
+}
+
+func TestSkipIfReadableAllowsProtectedTraversal(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "protected")
+	if err := os.WriteFile(path, []byte("content"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) }) // #nosec G302 -- restore owner access for TempDir cleanup.
+
+	SkipIfReadable(t, path)
+}
+
+func namesOf(entries []os.DirEntry) []string {
+	names := make([]string, len(entries))
+	for i, entry := range entries {
+		names[i] = entry.Name()
+	}
+	return names
 }
 
 func TestBoolPtr(t *testing.T) {

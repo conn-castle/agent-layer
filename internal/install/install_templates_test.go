@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/templates"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestWriteTemplateIfMissingExisting(t *testing.T) {
@@ -240,6 +241,7 @@ func TestWriteTemplateFile_StatError(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
+	testutil.SkipIfWritable(t, dir)
 
 	path := filepath.Join(dir, "config.toml")
 	err := writeTemplateFile(RealSystem{}, path, "config.toml", 0o644, nil)
@@ -297,6 +299,7 @@ func TestWriteTemplateFiles_WriteError(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(alDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
+	testutil.SkipIfWritable(t, alDir)
 
 	inst := &installer{root: root, sys: RealSystem{}}
 	err := inst.templates().writeTemplateFiles()
@@ -323,6 +326,7 @@ func TestWriteTemplateDirs_WriteError(t *testing.T) {
 		t.Fatalf("chmod: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(instrDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
+	testutil.SkipIfWritable(t, instrDir)
 
 	inst := &installer{root: root, sys: RealSystem{}}
 	err := inst.templates().writeTemplateDirs()
@@ -346,6 +350,7 @@ func TestWriteTemplateFile_WriteAfterOverwriteError(t *testing.T) {
 		t.Fatalf("chmod: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(root, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
+	testutil.SkipIfWritable(t, root)
 
 	prompt := func(p string) (bool, error) {
 		return true, nil // Agree to overwrite
@@ -493,6 +498,7 @@ func TestWriteTemplateDirCached_Error(t *testing.T) {
 		t.Fatalf("chmod: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(instrDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
+	testutil.SkipIfWritable(t, instrDir)
 
 	inst := &installer{
 		root:                root,
@@ -683,6 +689,7 @@ func TestAppendTemplateDirDiffs_StatError_Permissions(t *testing.T) {
 		t.Fatalf("chmod: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(instrDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
+	testutil.SkipIfReadable(t, basePath)
 
 	inst := &installer{root: root, sys: RealSystem{}}
 	dir := templateDir{
@@ -809,6 +816,7 @@ func TestTemplateFileMatches_ReadError(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(blockPath, 0o600) })
+	testutil.SkipIfReadable(t, blockPath)
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}

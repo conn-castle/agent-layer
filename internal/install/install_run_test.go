@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/templates"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestRunCreatesStructure(t *testing.T) {
@@ -704,6 +705,7 @@ func TestWriteVersionFile_WriteError(t *testing.T) {
 		t.Fatalf("chmod: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(filepath.Dir(path), 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
+	testutil.SkipIfWritable(t, filepath.Dir(path))
 
 	inst := &installer{root: root, pinVersion: "1.0.0", sys: RealSystem{}}
 	err := inst.writeVersionFile()

@@ -12,6 +12,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/run"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/updatewarn"
 )
@@ -135,6 +136,7 @@ func TestRunSyncError(t *testing.T) {
 	t.Cleanup(func() {
 		_ = os.Chmod(root, 0o700) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 	})
+	testutil.SkipIfWritable(t, root)
 
 	err := Run(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
 		return cfg.Agents.Antigravity.Enabled
