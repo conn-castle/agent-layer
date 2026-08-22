@@ -4,22 +4,22 @@ description: Common questions about Agent Layer.
 ---
 
 ## What problem does Agent Layer solve?
-It keeps instructions, skills, MCP servers, and approvals consistent across multiple agents by generating every client config from one repo-local source of truth.
+It keeps instructions, skills, MCP servers, and approvals consistent across multiple agents by generating every client config from `.agent-layer/`.
 
-If you run more than one client, Agent Layer prevents drift and gives you a single place to review or audit changes.
+If you run more than one client, you edit that folder once and review the same files in git.
 
 ## Does Agent Layer align with the skills standard?
-Yes. Skill parsing and validation align with the [agentskills.io specification](https://agentskills.io/specification), including required canonical uppercase `SKILL.md` naming.
+Yes. Skill parsing and validation follow the [agentskills.io specification](https://agentskills.io/specification), including the required uppercase `SKILL.md` filename.
 
-## Does Agent Layer install Claude/Codex/Antigravity/Copilot CLI/VS Code?
-No. Install client CLIs separately and ensure they are on your `PATH`.
+## Does Agent Layer install Claude, Codex, Antigravity, Copilot CLI, Grok, or VS Code?
+No. Agent Layer does not install clients. Install Claude, Codex, Antigravity (`agy`), Copilot CLI, and Grok yourself and put those CLIs on your `PATH`. Install VS Code separately as an application; `al vscode` requires the `code` command on `PATH`.
 
 ## What do I edit vs what gets generated?
 You edit `.agent-layer/`. Agent Layer generates client-specific outputs in each client's native format when you run `al sync` or `al <client>`.
 
 Rule of thumb: generated files include:
 
-- Instruction shims: `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`
+- Instruction shims: `AGENTS.md`, `.claude/CLAUDE.md`, `.github/copilot-instructions.md`
 - Agent config: `.mcp.json`, `.agy/antigravity-cli/settings.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.copilot/mcp-config.json`
 - Shared skills: `.agents/skills/`
 - Claude skills: `.claude/skills/`
@@ -98,7 +98,7 @@ See [/docs/concepts#version-pinning](/docs/concepts#version-pinning) for the ful
 ## How do I upgrade a repo?
 Upgrade the global CLI first, then run `al upgrade plan` and `al upgrade` inside the repo. This updates the repo pin (`.agent-layer/al.version`) to match the currently installed `al` version.
 
-For the full upgrade contract, compatibility guarantees, and release migration rules, see [/docs/upgrades](/docs/upgrades). For a one-page runbook, use [/docs/upgrade-checklist](/docs/upgrade-checklist).
+For compatibility guarantees and release migration rules, see [/docs/upgrades](/docs/upgrades). For a one-page runbook, use [/docs/upgrade-checklist](/docs/upgrade-checklist).
 
 ## What happens if I edit a generated file?
 It will be overwritten the next time you run `al sync` or `al <client>`. Always edit the source files in `.agent-layer/` instead.
@@ -123,4 +123,4 @@ Files under `.agent-layer/tmp/` (ephemeral agent run artifacts: plans, reports, 
 ## Will rollback restore files I had under .agent-layer/tmp/?
 No. Pre-upgrade snapshots intentionally exclude `.agent-layer/tmp/` so they stay small (tmp can accumulate hundreds of MB of agent run artifacts). `al upgrade rollback <snapshot-id>` will not recreate plans, reports, or scratch files that were under tmp. If you need to keep an in-progress agent artifact across an upgrade, copy it out of `.agent-layer/tmp/` first.
 
-See [/docs/upgrades](/docs/upgrades) for the full contract.
+See [/docs/upgrades](/docs/upgrades) for rollback scope and the rest of the upgrade policy.

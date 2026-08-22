@@ -12,9 +12,9 @@ separates:
 - evidence-backed guidance for agent performance
 - authoring heuristics for maintainable CLI skills
 
-The central rule is simple: **a CLI skill is a router and operating contract,
-not a copied manual**. The skill description routes the agent to the tool; the
-installed CLI's help output supplies the current command reference.
+The central rule is simple: **a CLI skill is a router and a set of operating
+rules, not a copied manual**. The skill description routes the agent to the
+tool; the installed CLI's help output supplies the current command reference.
 
 ---
 
@@ -87,14 +87,14 @@ The major client docs converge on the same behavior:
 - Antigravity shows agents skill names and descriptions first, then has them
   read the relevant instructions [ref 8].
 
-This makes the description the router. A weak description is not a minor polish
-issue; it is an activation bug.
+This makes the description the router. A weak description is an activation
+bug, not a minor polish issue.
 
 ### Description Rules
 
 For a CLI skill, the description must include:
 
-- the CLI name or stable invocation surface
+- the CLI name or stable invocation
 - the task domain it covers
 - trigger conditions in user language
 - at least one adjacent non-goal when another skill, tool, or plain shell
@@ -147,7 +147,7 @@ Reason:
 - The skill description is already included in the agent harness's skill
   catalog context.
 - Duplicating the same routing text in system instructions spends tokens twice.
-- Duplicated routing creates drift: one surface changes, the other goes stale.
+- Duplicated routing goes stale: one copy changes, the other does not.
 - Extra instructions compete for attention. Empirical work on long inputs,
   instruction density, and constraint composition shows that added tokens and
   added rules reduce reliability well before the technical context limit
@@ -170,7 +170,7 @@ skill description and put durable tool workflow in the skill body.
 
 This is intentionally different from function/tool guidance. Tool APIs often
 require the caller to provide tool schemas and system-prompt routing guidance
-because the function list is the available tool surface [ref 13]. Skills already
+because the function list is the available tool set [ref 13]. Skills already
 have a progressive-disclosure router: the description. Duplicating that router
 in system instructions defeats part of the skill model.
 
@@ -189,7 +189,7 @@ Operational rule:
 
 ## Use Live `--help` as the Command Reference
 
-For installed CLIs, `--help` is usually the most accurate, lowest-drift source
+For installed CLIs, `--help` is usually the most accurate, least stale source
 for command syntax.
 
 The standards and ecosystem support this:
@@ -213,7 +213,7 @@ shapes that matter:
 
 Do not copy a full manual into `SKILL.md`. Help text changes as packages and
 project versions change. Copying the manual into the skill creates a second
-source of truth and makes the skill stale by design.
+source of syntax and makes the skill stale by design.
 
 ### What the Skill Body Should Contain Instead
 
@@ -248,10 +248,10 @@ the manual.
 
 MCP servers have real benefits. They can give organizations managed tools,
 centralized configuration, shared authentication, typed schemas, auditability,
-and a consistent integration surface across clients. Those are organizational
+and a consistent integration path across clients. Those are organizational
 and platform-governance benefits.
 
-They are not the same as optimizing for agent performance.
+They are not the same as making the agent more reliable.
 
 For ordinary CLI tools, an MCP wrapper is usually the wrong default because it
 adds an additional tool layer around an interface that already exists:
@@ -260,16 +260,16 @@ adds an additional tool layer around an interface that already exists:
   schemas, and annotations for model-controlled tools [ref 10].
 - Tool definitions and schemas are supplied to the model through tool metadata
   or prompt construction. Anthropic documents tool definitions as part of the
-  prompt surface, and OpenAI function calling similarly requires function
-  schemas to be provided to the model [ref 11, 12, 13].
+  prompt sent to the model, and OpenAI function calling similarly requires
+  function schemas to be provided to the model [ref 11, 12, 13].
 - Anthropic's tool docs count tool-related tokens as part of request usage, and
   examples attached to tool definitions are included alongside the schema in the
-  prompt surface [ref 11, 12].
+  prompt [ref 11, 12].
 - Every wrapped subcommand risks becoming another tool descriptor, another
   schema, and another routing choice.
-- The wrapper duplicates the CLI's own `--help` surface and can drift from the
-  installed binary.
-- The agent has to reason about both the MCP tool contract and the underlying
+- The wrapper duplicates the CLI's own `--help` output and can fall out of date
+  with the installed binary.
+- The agent has to reason about both the MCP tool schema and the underlying
   CLI semantics, increasing instruction and schema load.
 - Tool results are untrusted external data and still require the same
   prompt-injection discipline as shell output [ref 10].
@@ -279,11 +279,11 @@ high-signal, then retrieve precise operational detail only when needed. A CLI
 skill fits that model:
 
 1. Always-loaded payload: one `name` plus one description.
-2. Activated payload: compact workflow and safety contract.
+2. Activated payload: compact workflow and safety rules.
 3. Runtime detail: live `--help` from the installed command.
 
 An MCP wrapper often inverts that budget by putting a larger tool catalog and
-schemas into the tool surface before the agent knows which subcommand matters.
+schemas into the always-visible tool list before the agent knows which subcommand matters.
 
 ### When MCP Is the Right Choice
 
@@ -305,7 +305,7 @@ Use a CLI skill when:
 - the command is installed locally or in the project environment
 - `--help` gives current command and subcommand guidance
 - the agent can run shell commands under the current approval model
-- the CLI's own output is the natural result surface
+- the CLI's own output is the natural result
 - the skill's main value is routing, workflow, safety, and artifact discipline
 - context performance matters more than managed tool inventory
 
@@ -346,7 +346,7 @@ Avoid:
 
 ### 2. Keep `SKILL.md` Lean
 
-The body should be a workflow contract, not a reference manual. Put the minimum
+The body should be a workflow and safety guide, not a reference manual. Put the minimum
 durable instructions needed for reliable use.
 
 Healthy CLI skill bodies usually include:
@@ -436,8 +436,8 @@ Do not maintain a parallel manual in:
 - README examples
 - MCP wrappers
 
-For ordinary CLI syntax, the source of truth is the installed command's help.
-For workflow policy, the source of truth is the skill.
+For ordinary CLI syntax, use the installed command's help.
+For workflow policy, use the skill.
 
 ### 9. Evaluate Activation Boundaries
 
@@ -570,7 +570,7 @@ Before accepting a CLI skill:
 - Output handling treats CLI output as untrusted data.
 - Help probes are labeled as navigation hints, not syntax docs.
 - References contain only material that cannot be discovered from `--help` or
-  other canonical upstream docs at runtime.
+  other current upstream docs at runtime.
 - Activation tests include positive and negative prompts.
 
 ---
@@ -585,12 +585,12 @@ after selection, and resources are loaded as needed [ref 1, 2, 3, 5, 6, 7, 8].
 
 **Implication:** A CLI skill's description is the right place for routing, and
 the skill body is the right place for durable workflow. System instructions
-should not duplicate either surface for a specific CLI.
+should not duplicate either one for a specific CLI.
 
 ### Live Help Is the Lowest-Drift Command Reference
 
 CLI standards and common parser libraries make help output the expected command
-reference surface [ref 15, 16, 17, 18].
+reference [ref 15, 16, 17, 18].
 
 **Implication:** A CLI skill should point the agent to live help rather than
 embedding a stale copy of flags and subcommands.
@@ -603,7 +603,7 @@ services, policy, and typed operations. It is not free for agent performance:
 schemas and tool choices become additional context and routing load.
 
 **Implication:** Use MCP when managed integration is the requirement. Use CLI
-skills when a local CLI and help output already provide the operational surface.
+skills when a local CLI and help output already provide the operational path.
 
 ### Context Load Is a Reliability Cost
 

@@ -17,12 +17,12 @@ Agent Layer is open source and contributions are welcome. If you're unsure where
 - Scope is small and focused
 - Behavior changes are covered by tests
 - Docs are updated when user-facing behavior changes
-- Upgrade-related behavior or guidance updates include corresponding changes to the canonical upgrade contract at `/docs/upgrades`
+- Upgrade-related behavior or guidance updates include corresponding changes to `/docs/upgrades`
 - Commit messages explain the intent (not just the mechanics)
 
 ## Local workflow
 
-The repo is set up for deterministic outputs and CI-aligned tooling. For most changes:
+The repo is set up so generated outputs stay repeatable and CI tooling stays aligned. For most changes:
 
 ```bash
 ./scripts/setup.sh
@@ -46,7 +46,7 @@ go run ../../cmd/al sync
 
 Run from: repo root
 
-This catches accidental drift in generated outputs before CI does.
+This catches unintended changes in generated outputs before CI does.
 
 ## Documentation
 
@@ -61,10 +61,10 @@ For public authoring guidance, use the [Best Practices hub](/best-practices), in
 
 ## Design principles
 
-- Keep the repo-local source of truth explicit
+- Keep repo-local configuration explicit
 - Avoid introducing hidden defaults
 - Fail fast when required inputs are missing
-- Keep generated outputs deterministic
+- Keep generated outputs repeatable from the same inputs
 
 :::tip
 If you improve the docs, include a before/after example. It helps reviewers validate impact quickly.

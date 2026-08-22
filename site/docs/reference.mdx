@@ -9,7 +9,7 @@ This page is the authoritative reference for configuration, environment variable
 If you are setting up Agent Layer for the first time, start with [Getting started](./getting-started).
 For upgrade policy commitments (event model, guarantees, migration rules, and platform matrix), use [Upgrades](./upgrades).
 
-Agent Layer is explicit by design. It prefers failing fast over guessing, treats generated files as disposable outputs, and patches only owned paths in shared client settings. When you need to know exactly what will change on disk, this is the contract.
+Agent Layer is explicit by design. It prefers failing fast over guessing, treats generated files as disposable outputs, and patches only owned paths in shared client settings. Use this page when you need to know exactly what will change on disk.
 
 ## In this page
 
@@ -21,11 +21,11 @@ Agent Layer is explicit by design. It prefers failing fast over guessing, treats
 
 ## Configuration
 
-`.agent-layer/config.toml` is the primary structured configuration file. It is the single source of truth for approvals, dispatch limits, agents, MCP servers, and warning thresholds. If you treat one file as the contract, make it this one—everything else is derived from it.
+`.agent-layer/config.toml` is the primary structured configuration file. It defines approvals, dispatch limits, agents, MCP servers, and warning thresholds. Other inputs such as `.env`, `instructions/`, `skills/`, and `commands.allow` are independent files; they are not derived from `config.toml`.
 
 `al wizard` updates `config.toml` and `.agent-layer/.env`. Everything else is edited by hand.
 
-Most repos only need a few deliberate choices: pick an approvals mode, enable the agents you actually use, and add MCP servers one at a time. The file is validated on every run, so mistakes surface immediately instead of becoming “mystery behavior” later.
+Most repos only need a few deliberate choices: pick an approvals mode, enable the agents you actually use, and add MCP servers one at a time. The file is validated on every run, so mistakes fail immediately instead of becoming later surprises.
 
 :::caution
 Never put secrets in `config.toml`. Secrets belong in `.agent-layer/.env`.
@@ -174,9 +174,29 @@ Codex matching hooks run concurrently. Its first `Stop` can therefore chime befo
 
 Grok authentication and sessions are isolated per repository because managed launches always use `<repo>/.grok-config` as `GROK_HOME`. Grok project passthrough accepts only `[agents.grok.agent_specific.plugins]`; put other Grok settings in the user-level `.grok-config/config.toml`.
 
-Grok's compatibility discovery loads both generated root instruction shims, `AGENTS.md` and `CLAUDE.md`. Their content is intentionally identical for cross-client compatibility, so Grok currently receives the same project instructions twice. Grok also discovers Claude-compatible hooks; Agent Layer's Claude chime handler silently ignores Grok's camelCase hook envelope so the dedicated Grok handler is the only one that chimes.
+Shared project instructions for Grok live in root `AGENTS.md`. The Claude instruction shim is `.claude/CLAUDE.md`. When Grok is enabled, sync sets `[compat.claude] agents = false` in repo-local `.grok-config/config.toml`, and Grok launch, dispatch, and `al vscode` set `GROK_CLAUDE_AGENTS_ENABLED=false`, so Grok does not also load the Claude file. A leftover hand-authored root `CLAUDE.md` can still dual-load in Grok. Grok also discovers Claude-compatible hooks; Agent Layer's Claude chime handler silently ignores Grok's camelCase hook envelope so the dedicated Grok handler is the only one that chimes.
 
-Each agent has an `enabled` flag and optional `model` value. Claude supports `reasoning_effort` (`low`, `medium`, `high`, `xhigh`, `max`); Agent Layer passes the value through to Claude Code regardless of the selected model (including when `model` is unset), and Claude Code applies it where the active model supports it. `max` is session-only and is passed via the `--effort` CLI flag (it is not written to settings.json). Custom values outside the catalog pass through with a sync-time warning so new effort levels work before agent-layer is updated. Codex supports `reasoning_effort` with its own set of options. Copilot CLI supports `model` but not `reasoning_effort`. Grok supports `model` (`grok-4.6`, `grok-4.5`) and `reasoning_effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). Omit `reasoning_effort` (and `model`) to use the client defaults. Codex supports `local_config_dir` (boolean, default `false`); when `true`, `al codex`, Codex dispatch, and `al vscode` set `CODEX_HOME=<repo>/.codex` for per-repo auth, sessions, logs, and runtime state. When absent or false, Agent Layer preserves any inherited `CODEX_HOME`. Claude also supports `local_config_dir` (boolean, default `false`); when `true`, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local directory for per-repo settings and caches isolation. Note: auth credentials are stored globally by Claude Code in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of this setting (upstream limitation). For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir` is `true` and `agents.claude_vscode` is enabled; otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values. When Grok is enabled, `al grok`, Grok dispatch, and `al vscode` always set `GROK_HOME=<repo>/.grok-config` so user credentials stay out of the project `.grok/` directory that Agent Layer writes. `agents.grok.disable_memory = true` force-disables Grok's experimental memory. Sync also writes `[permission] allow` from `commands.allow` and enabled MCP servers. Headless Grok dispatch maps approvals to `--sandbox` (`workspace` when commands are approved, `read-only` otherwise, off under YOLO); interactive `al grok` leaves Grok's sandbox default so a human can still approve writes.
+Each agent has an `enabled` flag and an optional `model` value. Omit `model` and `reasoning_effort` to use the client defaults.
+
+**Reasoning effort**
+
+- Claude supports `reasoning_effort` (`low`, `medium`, `high`, `xhigh`, `max`). Agent Layer passes the value through to Claude Code regardless of the selected model, including when `model` is unset. Claude Code applies it where the active model supports it. `max` is session-only and is passed via the `--effort` CLI flag; it is not written to `settings.json`. Custom values outside the catalog pass through with a sync-time warning so new effort levels work before Agent Layer is updated.
+- Codex supports `reasoning_effort` with its own set of options.
+- Copilot CLI supports `model` but not `reasoning_effort`.
+- Grok supports `model` (`grok-4.6`, `grok-4.5`) and `reasoning_effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`).
+
+**Repo-local isolation**
+
+- Codex supports `local_config_dir` (boolean, default `false`). When `true`, `al codex`, Codex dispatch, and `al vscode` set `CODEX_HOME=<repo>/.codex` for per-repo auth, sessions, logs, and runtime state. When absent or false, Agent Layer preserves any inherited `CODEX_HOME`.
+- Claude also supports `local_config_dir` (boolean, default `false`). When `true`, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local directory for per-repo settings and caches isolation. Auth credentials are stored globally by Claude Code in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of this setting (upstream limitation).
+- For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir` is `true` and `agents.claude_vscode` is enabled. Otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values.
+- When Grok is enabled, `al grok`, Grok dispatch, and `al vscode` always set `GROK_HOME=<repo>/.grok-config` so user credentials stay out of the project `.grok/` directory that Agent Layer writes.
+
+**Grok memory, permissions, and sandbox**
+
+- `agents.grok.disable_memory = true` force-disables Grok's experimental memory.
+- Sync writes `[permission] allow` from `commands.allow` and enabled MCP servers.
+- Headless Grok dispatch maps approvals to `--sandbox`: `workspace` when commands are approved, `read-only` otherwise, and off under YOLO. Interactive `al grok` leaves Grok's sandbox default so a human can still approve writes.
 
 Supported agents:
 
@@ -210,11 +230,11 @@ Optional fields:
 - `headers` for HTTP auth and metadata
 - `command`, `args`, `env` for stdio servers
 
-When a local command already has a useful help surface, compare MCP against a CLI skill before adding a server. The [CLI Skill Design Guide](/cli-skill-design) explains when MCP is the right interface and when live `--help` is the better source of truth.
+When a local command already has useful `--help`, compare MCP against a CLI skill before adding a server. The [CLI Skill Design Guide](/cli-skill-design) explains when MCP is the right interface and when live `--help` is the better place to look up syntax.
 
 #### Secrets, placeholders, and client projection
 
-Agent Layer is designed to keep secrets out of your canonical config and out of any files you might commit:
+Agent Layer is designed to keep secrets out of `config.toml` and out of any files you might commit:
 
 - Put secrets in `.agent-layer/.env` (only `AL_`-prefixed variables are loaded).
 - Reference secrets in `config.toml` using placeholders like `${AL_GITHUB_TOKEN}`.
@@ -349,7 +369,7 @@ Agent Layer validates `config.toml` on every run. Common validation rules:
 
 Agent Layer uses a small set of environment variables for versioning and offline behavior. It also loads secrets from `.agent-layer/.env`.
 
-This surface area is intentionally small. Configuration should live in the repo where it can be reviewed, while environment variables act as escape hatches for CI, offline work, and temporary overrides.
+The set of environment variables is intentionally small. Configuration should live in the repo where it can be reviewed, while environment variables act as escape hatches for CI, offline work, and temporary overrides.
 
 ### Versioning and cache
 
@@ -414,7 +434,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "${AL_REPO_RO
 
 The `al` CLI syncs repo-local configuration and launches your chosen client. This section focuses on behavior, safety, and the files each command touches. Use it as a runbook when you want to know exactly what a command will change. For exact flags, run `al --help` or `al <command> --help`.
 
-The command surface is intentionally small. Most of the time you only need one rhythm: `al init` once, `al <client>` every day, `al doctor` when something feels off.
+The command set is intentionally small. Most of the time you only need one rhythm: `al init` once, `al <client>` every day, `al doctor` when something feels off.
 
 ### Command map
 
@@ -456,7 +476,7 @@ The command surface is intentionally small. Most of the time you only need one r
 
 If `.agent-layer/` already exists, `al init` errors; use `al upgrade plan` and `al upgrade` instead.
 
-It is scaffolding: it creates the files that make behavior explicit and repeatable, so day-to-day work becomes “edit the source of truth, regenerate outputs,” not “hunt for the right config format.”
+It is scaffolding: it creates the files that make behavior explicit and repeatable, so day-to-day work becomes “edit `.agent-layer/`, regenerate outputs,” not “hunt for the right config format.”
 
 **What it does**
 
@@ -502,7 +522,7 @@ In non-interactive environments, the wizard is skipped.
 - Pin file parsing ignores blank lines and `#` comments, and expects exactly one version line.
 - If the pin file is empty, invalid, or contains multiple version lines, dispatch warns and falls back to the current CLI version; run `al upgrade` to rewrite a valid pin.
 - Update checks and pinned downloads require network access unless `AL_NO_NETWORK=1` is set.
-- For upgrade contract details and release-versioned migration notes, see [Upgrades](./upgrades).
+- For upgrade policy details and release-versioned migration notes, see [Upgrades](./upgrades).
 
 ### Upgrade
 
@@ -513,7 +533,7 @@ In non-interactive environments, the wizard is skipped.
 - Updates `.agent-layer/al.version` to match the currently running `al` binary
 - Prompts before overwriting managed template files unless apply flags are explicitly selected
 - Shows a compact per-file summary (path with `+N -M` line stats) before overwrite decisions, and asks "View the full diff?" (default no) before printing unified diff bodies; per-file overwrite prompts always render the full diff
-- Runs `al sync` automatically after a successful upgrade so retired projection paths and freshly-introduced templates are reconciled (sync warnings surface on stderr; sync failures are wrapped and suppress the success banner)
+- Runs `al sync` automatically after a successful upgrade so retired projection paths and freshly-introduced templates are reconciled (sync warnings print on stderr; sync failures are wrapped and suppress the success banner)
 - In the default interactive flow, prompts about unknown files under `.agent-layer/` and `docs/agent-layer/` and only deletes them if you explicitly approve
 - In non-interactive or explicit-category apply (e.g., `--yes --apply-managed-updates`), requires the separate `--apply-deletions` flag before unknown files outside `.agent-layer/tmp/` are eligible for deletion
 - **Treats `.agent-layer/tmp/` as protected ephemeral storage:** files under that directory are never deleted by `--apply-deletions`, never bulk-deleted by the interactive "delete all unknowns?" prompt, and never restored by rollback. Tmp deletion requires either an interactive double-confirm or the dedicated `--apply-tmp-deletions` flag (in addition to `--yes`). See [Ephemeral artifacts under .agent-layer/tmp/](#ephemeral-artifacts-under-agent-layertmp)
@@ -540,7 +560,7 @@ For a concise team/CI runbook, see [Upgrade checklist](./upgrade-checklist).
 
 ### Ephemeral artifacts under .agent-layer/tmp/
 
-`.agent-layer/tmp/` is the canonical scratch directory for agent run artifacts (plans, reports, scratch dumps, intermediate logs). Contents are ephemeral by design — agents are instructed to delete artifacts when no longer needed, and Agent Layer tooling treats the directory as low-value, high-volume state.
+`.agent-layer/tmp/` is the scratch directory for agent run artifacts (plans, reports, scratch dumps, intermediate logs). Contents are ephemeral by design — agents are instructed to delete artifacts when no longer needed, and Agent Layer tooling treats the directory as low-value, high-volume state.
 
 Because tmp can balloon to hundreds of MB across many runs, Agent Layer applies stricter rules than for other unknown files:
 
@@ -615,7 +635,7 @@ Use it when you want to get to a safe, working configuration quickly, or when yo
 - `.agent-layer/config.toml`
 - `.agent-layer/.env`
 
-The wizard rewrites `config.toml` in a deterministic preferred section order and creates backups (`.bak`) before modifying `.agent-layer/config.toml` or `.agent-layer/.env`. Inline comments on modified lines may be moved to leading comments or removed; the original formatting is preserved in the backup files.
+The wizard rewrites `config.toml` in a fixed preferred section order and creates backups (`.bak`) before modifying `.agent-layer/config.toml` or `.agent-layer/.env`. Inline comments on modified lines may be moved to leading comments or removed; the original formatting is preserved in the backup files.
 
 Additional modes:
 
@@ -653,7 +673,7 @@ Think of sync as a build step. You can run it any time you want to refresh gener
 **Steps (high level)**
 
 1. Load and validate `config.toml`, then resolve secrets from `.agent-layer/.env`.
-2. Parse instructions and load both canonical skill tiers into one locked source snapshot.
+2. Parse instructions and load both skill source tiers into one locked source snapshot.
 3. Write generated configs and launchers for enabled clients.
 4. Emit warnings if any thresholds in `[warnings]` are exceeded.
 
@@ -672,7 +692,7 @@ Frontmatter fields:
 
 Validation notes (`al doctor`):
 
-- Name checks are NFKC-normalized and normalization-aware when matching `name` to the canonical source name.
+- Name checks are NFKC-normalized and normalization-aware when matching `name` to the source skill name.
 - Name limits: max 64 Unicode characters, lowercase letters/digits/hyphens only, no leading/trailing/consecutive hyphens.
 - Description limit: max 1024 Unicode characters.
 - Size recommendation: `al doctor` warns when a skill source exceeds 500 lines.
@@ -703,12 +723,12 @@ Common outputs include:
 - `.grok/hooks/agent-layer-chime.json` when `notifications.chime` is enabled
 - `.vscode/mcp.json` and a managed block in `.vscode/settings.json`
 - `.github/copilot-instructions.md`
-- `AGENTS.md`, `CLAUDE.md`
+- `AGENTS.md`, `.claude/CLAUDE.md`
 - repo-local VS Code launchers under `.agent-layer/` when VS Code is enabled (for example `open-vscode.command`, `open-vscode.sh`, and `open-vscode.app/`)
 
 Generated outputs are safe to delete, and `al sync` will recreate them — except the shared-state files it patches in place, `.codex/config.toml` and `.agy/antigravity-cli/settings.json`. Keep both gitignored but do not treat them as disposable: native values (for Antigravity, workspace approval or trust) are preserved there. Managed MCP output remains safe to regenerate.
 
-Agent Layer owns `.agents/skills/` and `.claude/skills/` completely. Each enabled root is replaced from the canonical source snapshot on sync, and each disabled root is removed. Do not edit or independently install content there: direct changes and extra entries are discarded. Skill manifests, including unknown or provider-specific frontmatter, are projected byte-for-byte with no generated header.
+Agent Layer owns `.agents/skills/` and `.claude/skills/` completely. Each enabled root is replaced from the locked source snapshot on sync, and each disabled root is removed. Do not edit or independently install content there: direct changes and extra entries are discarded. Skill manifests, including unknown or provider-specific frontmatter, are projected byte-for-byte with no generated header.
 
 **Warnings**
 
@@ -745,8 +765,8 @@ al vscode --no-sync -- --reuse-window
 
 ### Dispatch
 
-Agent Dispatch is a fully asynchronous, stateful interface with two surfaces over
-one backend: MCP tools for agents and `al dispatch` commands for humans and scripts.
+Agent Dispatch is a fully asynchronous, stateful interface with two ways to use
+the same backend: MCP tools for agents and `al dispatch` commands for humans and scripts.
 The MCP tools are served by the built-in `agent-layer` MCP server, which `al sync`
 projects into every enabled client. It exposes `dispatch_options`,
 `dispatch_start`, `dispatch_wait`, `dispatch_continue`, and `dispatch_cancel`.
@@ -934,7 +954,7 @@ so a placeholder naming anything else is rejected as unresolvable. A referenced
 key that is missing or empty fails the affected import with a message naming the
 variable, rather than contacting a remote with a half-substituted URL.
 
-The placeholder text is what stays canonical. It is what `config.toml` and
+The placeholder text is what is stored. It is what `config.toml` and
 `.agent-layer/skills.lock.json` record, what `al skills status` prints, and what
 identifies the block — so the lockfile remains portable and secret-free. The
 value is resolved only when a Git command runs, and is redacted
@@ -972,7 +992,7 @@ shadow.
 
 `al doctor` validates configuration, checks for missing secrets, and probes enabled MCP servers.
 
-Use it as your early warning system. It is the fastest way to answer “is my config valid,” “are my secrets present,” and “are my tools reachable.”
+Use it to check whether your config is valid, your secrets are present, and your tools are reachable.
 
 **What it does**
 

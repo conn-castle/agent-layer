@@ -4,7 +4,7 @@ description: Fix common install, configuration, and MCP server issues.
 sidebar_position: 7
 ---
 
-Use this page when installs fail, configs do not validate, or MCP servers do not connect. Most issues are configuration or PATH-related, so start with a quick triage before diving deeper. The goal is to get you back to a predictable state without guessing.
+Use this page when installs fail, configs do not validate, or MCP servers do not connect. Most issues are configuration or PATH-related, so start with a quick triage before going deeper.
 
 Quick triage:
 
@@ -71,7 +71,7 @@ Run [`al init`](./reference#init) in the repo to create `.agent-layer/`. To add 
 
 ### Generated files showing up in git
 
-Generated client outputs should stay gitignored. If you see files like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.codex/`, `.copilot/`, `.grok/`, `.grok-config/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.mcp.json`, `.github/copilot-instructions.md`, `AGENTS.md`, or `CLAUDE.md` showing up in `git status`, it usually means one of:
+Generated client outputs should stay gitignored. If you see files like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.claude/CLAUDE.md`, `.codex/`, `.copilot/`, `.grok/`, `.grok-config/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.mcp.json`, `.github/copilot-instructions.md`, `AGENTS.md`, or a leftover root `CLAUDE.md` showing up in `git status`, it usually means one of:
 
 - the repo has not been initialized with Agent Layer's managed `.gitignore` block,
 - the ignore rules were customized,
@@ -169,7 +169,7 @@ If you launch VS Code without Agent Layer's repo-local launcher while `agents.co
 
 Tradeoffs (global Codex home):
 
-- You are no longer using `.agent-layer/config.toml` as the single source of truth for Codex MCP servers.
+- You are no longer using `.agent-layer/config.toml` as the only definition of Codex MCP servers.
 - Codex auth/state is shared across repos (which can be convenient, but is less isolated).
 
 Workflow (best-effort; depends on your Codex client version):
@@ -249,7 +249,7 @@ al upgrade prefetch --version X.Y.Z
 
 ## Still stuck
 
-Run [`al doctor`](./reference#doctor) and read the warnings. It will surface missing secrets, invalid config, and MCP connectivity issues.
+Run [`al doctor`](./reference#doctor) and read the warnings. It reports missing secrets, invalid config, and MCP connectivity issues.
 
 If you still cannot get unstuck, open a GitHub issue and include the details below:
 

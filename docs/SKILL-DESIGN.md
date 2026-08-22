@@ -1,12 +1,12 @@
 # Skill Design Guide
 
-This document is the canonical skill-authoring guide for portable agent skill
+This document is the authoritative skill-authoring guide for portable agent skill
 sources such as `skills/<name>/SKILL.md`.
 
 This guide is the skill-authoring counterpart to `docs/INSTRUCTION-DESIGN.md`,
 which covers instruction-file authoring. The two documents share several
 foundational references (context engineering, instruction density, primacy
-effects) but apply them to different authoring surfaces.
+effects) but apply them to skills versus always-loaded instructions.
 
 For skills that route agents to installed command line tools, use
 `docs/CLI-SKILL-DESIGN.md` as a CLI-specific supplement to this guide.
@@ -89,7 +89,9 @@ explicitly labeled as an authoring heuristic.
 ### 1. Optimize for activation accuracy first
 
 A skill that does not trigger reliably is already broken, even if its body is
-excellent. The Agent Skills spec and Codex skills docs both treat `name` and
+excellent.
+
+The Agent Skills spec and Codex skills docs both treat `name` and
 `description` as the main routing metadata, and OpenAI explicitly recommends
 testing prompts against the description to confirm the right trigger behavior
 [ref 3, 7].
@@ -141,7 +143,7 @@ Authoring guidance:
 | `Review things` | Router cannot disambiguate code review vs plan review | `Review explicit files, directories, diffs, or uncommitted changes and produce a findings report. Use plan-review instead when the target is a design or implementation plan.` |
 
 Philipp Schmid reports "50% improvements just by improving the description"
-[ref 19] — refining a vague description is often the highest-leverage change
+[ref 19] — refining a vague description is often the most effective first change
 available to a skill author.
 
 ### 2. Keep each skill focused on one workflow
@@ -149,25 +151,24 @@ available to a skill author.
 Anthropic recommends simple, composable patterns and routing to specialized
 follow-up tasks [ref 8]. OpenAI's Codex skills docs make the same
 recommendation more directly: keep each skill focused on one job [ref 3]. Both
-sources converge on a fundamental design insight: specialized, focused
-components are easier to route to, reason about, and maintain.
+sources recommend the same thing: a skill that does one job is easier to
+route to, reason about, and maintain.
 
 **Evidence — constraint composition degrades performance:**
 - ComplexBench (NeurIPS 2024) [ref 13] proposes a taxonomy of 4 constraint
   types, 19 constraint dimensions, and 4 composition types (And, Chain,
   Selection, combined). Their results show that flat AND composition scores
   0.881 for GPT-4, but Chain drops to 0.787, Selection to 0.815, and deeply
-  nested compositions collapse catastrophically — combined compositions with
+  nested compositions drop sharply — combined compositions with
   multiple Selection layers score as low as 0.083. Even GPT-4 fails on 20% of
-  complex instructions. This is exactly the kind of branching logic that
+  complex instructions. This is the kind of branching logic that
   multi-mode skills create.
 - IFScale [ref 12] finds three distinct degradation patterns as instruction
   density increases: threshold decay (stable until a critical density, then
   steep decline), linear decay (steady consistent decline), and exponential
   decay (rapid early degradation). Even the best frontier models achieve only
-  68% accuracy at 500 instructions — and importantly, reasoning models that
-  maintain high accuracy at moderate densities still eventually hit performance
-  cliffs.
+  68% accuracy at 500 instructions. Reasoning models that stay accurate at
+  moderate densities still eventually hit performance cliffs.
 - Anthropic's agent guide [ref 8] explicitly recommends the routing pattern
   over mode-switching: classify the input, then dispatch to a specialized
   handler. This avoids the constraint-composition penalty entirely.
@@ -187,24 +188,26 @@ Authoring guidance:
 
 ### 3. Keep the core context lean and high-signal
 
-Context is a finite resource with diminishing marginal returns. Anthropic's
+Context is a finite resource with diminishing returns. Anthropic's
 context engineering guide [ref 9] defines context engineering as "curating and
 maintaining the optimal set of tokens during LLM inference" and recommends
 finding "the smallest set of high-signal tokens that maximize the likelihood
-of some desired outcome." Models have an "attention budget" depleted by each
-new token — performance shows a gradient rather than a hard cliff.
+of some desired outcome."
+
+Models have an "attention budget" depleted by each new token. Performance
+falls gradually rather than hitting a hard cliff.
 
 **Evidence — input length degrades reasoning:**
 - "Same Task, More Tokens" (ACL 2024) [ref 10] demonstrates that LLM reasoning
   performance degrades "at much shorter input lengths than their technical
   maximum." Aggregate accuracy dropped from 0.92 to 0.68 (a 24-point decline)
   as input extended from ~250 to ~3,000 tokens, with significant degradation
-  beginning beyond ~500 tokens. Crucially, even when padding consisted of exact
-  duplicates of the relevant text (no distraction, no search needed), accuracy
-  still decreased — proving that length itself, independent of content quality,
-  degrades reasoning. The paper further shows that perplexity correlates
-  negatively with reasoning (Pearson rho = -0.95, p = 0.01), meaning standard
-  benchmarks mask this degradation.
+  beginning beyond ~500 tokens.
+- The same paper finds that even when padding consisted of exact duplicates of
+  the relevant text (no distraction, no search needed), accuracy still
+  decreased — proving that length itself, independent of content quality,
+  degrades reasoning. Perplexity correlates negatively with reasoning (Pearson
+  rho = -0.95, p = 0.01), meaning standard benchmarks mask this degradation.
 - "Context Rot" (Chroma Research 2025) [ref 16] tests 18 models and finds that
   "models do not use their context uniformly; performance grows increasingly
   unreliable as input length grows." Even simple tasks show degradation, and
@@ -241,28 +244,29 @@ Authoring guidance:
 ### 4. Put critical instructions early
 
 Instructions appearing earlier in the prompt are more reliably followed.
-Multiple independent studies confirm this primacy effect, which has direct
-implications for how skills should be structured.
+Multiple independent studies confirm this primacy effect. Structure skills so
+the rules that must not be dropped come first.
 
 **Evidence — primacy effects are universal:**
 - IFScale [ref 12] computes primacy effects as the ratio of error rates in the
   final third of instructions to error rates in the first third. The finding is
   universal: all 20 models tested show higher error rates for later
   instructions. The primacy effect peaks at moderate densities (150-200
-  instructions), where models begin to struggle under cognitive load. At high
-  densities, error type shifts from modification (attempting but failing) to
-  omission (completely ignoring): weaker models show omission-to-modification
-  ratios of 26-35:1, while reasoning models maintain lower ratios (~6:1) by
-  attempting modifications rather than pure omission.
+  instructions), where models begin to struggle under load.
+- At high densities, error type shifts from modification (attempting but
+  failing) to omission (completely ignoring): weaker models show
+  omission-to-modification ratios of 26-35:1, while reasoning models maintain
+  lower ratios (~6:1) by attempting modifications rather than pure omission.
 - "Lost in the Middle" (TACL 2023) [ref 11] finds a U-shaped performance curve
   in both multi-document QA and key-value retrieval tasks: models perform best
   when relevant information appears at the very beginning (primacy bias) or end
   (recency bias) of the context, with "significant degradation when models must
-  access relevant information in the middle of the input context." In 20-
-  document settings, GPT-3.5-Turbo's accuracy dropped to ~52.9% for middle-
-  positioned information — worse than the 56.1% closed-book baseline, meaning
-  providing the information in the middle actually hurt performance compared to
-  not providing it at all. Beginning/end positions maintained ~80%+ accuracy.
+  access relevant information in the middle of the input context."
+- In 20-document settings, GPT-3.5-Turbo's accuracy dropped to ~52.9% for
+  middle-positioned information — worse than the 56.1% closed-book baseline,
+  meaning providing the information in the middle actually hurt performance
+  compared to not providing it at all. Beginning/end positions maintained
+  ~80%+ accuracy.
 - A separate position-bias study (Zeng et al. 2025) [ref 17] confirms that
   constraint ordering matters: "LLMs often perform better when the constraints
   are presented in a hard-to-easy order" — further evidence that position is
@@ -293,7 +297,8 @@ Authoring guidance:
 Anthropic recommends simple, direct language and clearly separated prompt
 sections [ref 8, 9]. OpenAI's prompt engineering and reasoning guidance
 likewise favors precise instructions, delimiters, and explicit success criteria
-[ref 4, 5]. Skills work best when the model can see the contract, not infer it.
+[ref 4, 5]. Skills work best when the model can see the required inputs,
+outputs, and stop conditions, not infer them.
 
 **Evidence — ambiguity increases constraint violations:**
 - ComplexBench [ref 13] finds that constraint violations increase when
@@ -359,7 +364,7 @@ layer by layer and load more context only when required [ref 9].
   concerns" with detailed search isolated within sub-agents.
 
 Authoring guidance:
-- Keep top-level skills as control planes, not encyclopedias.
+- Keep top-level skills as coordinators, not encyclopedias.
 - Delegate repeated mechanical work to scripts and repeated judgment workflows
   to named sub-skills.
 - Keep delegation shallow. A top-level skill should usually call leaf skills,
@@ -467,7 +472,7 @@ Authoring guidance:
 OpenAI's prompting guide recommends evals for prompt changes [ref 4], and their
 skill-evals guide [ref 7] is even more direct: define success before writing
 the skill, capture traces, and grade both outcomes and process. A skill without
-measurable success criteria is difficult to improve and easy to regress.
+measurable success criteria is hard to improve and easy to regress.
 
 **Evidence — evaluation drives reliability:**
 - OpenAI's eval-skills guide [ref 7] recommends building evaluation suites
@@ -518,8 +523,8 @@ workflow.
 Authoring guidance:
 - Never assume network access, elevated permissions, or non-standard tools
   without saying so.
-- Use `compatibility` for genuine environment constraints, not discoverability
-  or marketing text.
+- Use `compatibility` for genuine environment constraints, not to advertise
+  the skill.
 - Require explicit approval for sensitive or high-impact actions.
 - Keep least-privilege assumptions intact; a skill should guide execution
   within policy, not try to broaden policy.
@@ -597,7 +602,7 @@ Authoring guidance:
 
 ### 14. Retire skills that base models have absorbed
 
-A skill that no longer changes behavior is pure context tax. Philipp Schmid
+A skill that no longer changes behavior only costs context. Philipp Schmid
 [ref 19] observes that capability skills especially become obsolete as base
 models improve — a skill teaching PDF structure to a 2024 model may be
 redundant for a 2026 model. The same applies to preference skills when the
@@ -644,15 +649,15 @@ Authoring guidance:
 
 This order is consistent with OpenAI's recommended prompt structure [ref 4]:
 Identity (what the skill is) → Instructions (rules and constraints) → Examples
-(if any) → Context (variable content loaded at runtime). The skill's opening
-contract and global constraints correspond to Identity and Instructions; the
+(if any) → Context (variable content loaded at runtime). The skill's
+opening contract and global constraints correspond to Identity and Instructions; the
 workflow phases correspond to the operational body; and dynamic context (file
 reads, artifacts) is loaded during execution.
 
 Practical ordering rule:
 - Put routing, defaults, artifacts, and hard constraints before the phased
   workflow. These benefit most from the primacy effect [ref 12].
-- Put explanations and examples after the contract, or move them out of
+- Put explanations and examples after the opening contract, or move them out of
   `SKILL.md` entirely.
 - Put guardrails and final-handoff instructions last. These benefit from the
   recency effect at the tail of the U-shaped attention curve [ref 11].
