@@ -7,9 +7,9 @@ Install Agent Layer once per machine, then initialize each repo you want to use.
 
 ## Requirements
 
-- A supported client installed separately (Antigravity `agy`, Claude, Codex, Copilot CLI, VS Code)
+- A supported client installed separately (Antigravity `agy`, Claude, Codex, Copilot CLI, Grok, or VS Code with the `code` command on `PATH`)
 
-Agent Layer does not install client CLIs for you.
+Agent Layer does not install clients for you.
 
 :::note
 If you manage multiple repos, you still install `al` only once. Each repo gets its own `.agent-layer/` config.
@@ -85,7 +85,7 @@ Update the global CLI:
 Run `al upgrade plan` and then `al upgrade` inside the repo. This updates the repo pin (`.agent-layer/al.version`) and refreshes template-managed files.
 For a concise runbook (interactive + CI), use [/docs/upgrade-checklist](/docs/upgrade-checklist).
 
-For the complete upgrade contract (event model, compatibility guarantees, migration rules, and platform matrix), see [/docs/upgrades](/docs/upgrades).
+For the full upgrade policy (event model, compatibility guarantees, migration rules, and platform matrix), see [/docs/upgrades](/docs/upgrades).
 
 :::caution
 To upgrade a repo safely, use `al upgrade plan` (dry-run) and then `al upgrade` (apply).

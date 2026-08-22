@@ -4,22 +4,22 @@ description: Common questions about Agent Layer.
 ---
 
 ## What problem does Agent Layer solve?
-It keeps instructions, skills, MCP servers, and approvals consistent across multiple agents by generating every client config from one repo-local source of truth.
+It keeps instructions, skills, MCP servers, and approvals consistent across multiple agents by generating every client config from `.agent-layer/`.
 
-If you run more than one client, Agent Layer prevents drift and gives you a single place to review or audit changes.
+If you run more than one client, you edit that folder once and review the same files in git.
 
 ## Does Agent Layer align with the skills standard?
-Yes. Skill parsing and validation align with the [agentskills.io specification](https://agentskills.io/specification), including required canonical uppercase `SKILL.md` naming.
+Yes. Skill parsing and validation follow the [agentskills.io specification](https://agentskills.io/specification), including the required uppercase `SKILL.md` filename.
 
-## Does Agent Layer install Claude/Codex/Antigravity/Copilot CLI/VS Code?
-No. Install client CLIs separately and ensure they are on your `PATH`.
+## Does Agent Layer install Claude, Codex, Antigravity, Copilot CLI, Grok, or VS Code?
+No. Agent Layer does not install clients. Install Claude, Codex, Antigravity (`agy`), Copilot CLI, and Grok yourself and put those CLIs on your `PATH`. Install VS Code separately as an application; `al vscode` requires the `code` command on `PATH`.
 
 ## What do I edit vs what gets generated?
 You edit `.agent-layer/`. Agent Layer generates client-specific outputs in each client's native format when you run `al sync` or `al <client>`.
 
 Rule of thumb: generated files include:
 
-- Instruction shims: `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`
+- Instruction shims: `AGENTS.md`, `.claude/CLAUDE.md`, `.github/copilot-instructions.md`
 - Agent config: `.mcp.json`, `.agy/antigravity-cli/settings.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.copilot/mcp-config.json`
 - Shared skills: `.agents/skills/`
 - Claude skills: `.claude/skills/`
@@ -35,10 +35,10 @@ The Codex VS Code extension reads `CODEX_HOME` at startup. Agent Layer sets a re
 
 By default (`agents.codex.local_config_dir` absent or `false`), Agent Layer does not set `CODEX_HOME`; Codex uses its normal global/project config layering and any inherited `CODEX_HOME` remains user-owned. If you prefer global Codex MCP config in VS Code, see [/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex](/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex).
 
-## Why doesn't Claude keep separate sign-ins per repo?
+## Does Claude keep separate sign-ins per repo?
 Claude per-repo settings and caches isolation is opt-in. If you set `local_config_dir = true` under `[agents.claude]` in `config.toml`, Agent Layer sets `CLAUDE_CONFIG_DIR` to a repo-local directory, isolating settings and caches per repository.
 
-**Known upstream limitation:** Claude Code currently stores auth credentials in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`, so authentication is always shared globally. Per-repo login isolation (e.g., separate work and personal accounts) does not work until this is fixed upstream. This has been reported to the Claude Code team.
+Authentication isolation depends on your platform and authentication method. Claude Code stores `/login` credentials in the macOS Keychain on macOS, so those remain shared. On Linux and Windows, it stores them in `.credentials.json` under `CLAUDE_CONFIG_DIR`, so a repo-local directory also isolates those credentials. Environment credentials, `apiKeyHelper`, and cloud-provider authentication can come from external sources. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
 
 For VS Code, keep `[agents.claude_vscode] enabled = true` so the extension receives the repo-local `CLAUDE_CONFIG_DIR`. Without the launcher path, VS Code falls back to global `~/.claude/` behavior.
 
@@ -98,7 +98,7 @@ See [/docs/concepts#version-pinning](/docs/concepts#version-pinning) for the ful
 ## How do I upgrade a repo?
 Upgrade the global CLI first, then run `al upgrade plan` and `al upgrade` inside the repo. This updates the repo pin (`.agent-layer/al.version`) to match the currently installed `al` version.
 
-For the full upgrade contract, compatibility guarantees, and release migration rules, see [/docs/upgrades](/docs/upgrades). For a one-page runbook, use [/docs/upgrade-checklist](/docs/upgrade-checklist).
+For compatibility guarantees and release migration rules, see [/docs/upgrades](/docs/upgrades). For a one-page runbook, use [/docs/upgrade-checklist](/docs/upgrade-checklist).
 
 ## What happens if I edit a generated file?
 It will be overwritten the next time you run `al sync` or `al <client>`. Always edit the source files in `.agent-layer/` instead.
@@ -123,4 +123,4 @@ Files under `.agent-layer/tmp/` (ephemeral agent run artifacts: plans, reports, 
 ## Will rollback restore files I had under .agent-layer/tmp/?
 No. Pre-upgrade snapshots intentionally exclude `.agent-layer/tmp/` so they stay small (tmp can accumulate hundreds of MB of agent run artifacts). `al upgrade rollback <snapshot-id>` will not recreate plans, reports, or scratch files that were under tmp. If you need to keep an in-progress agent artifact across an upgrade, copy it out of `.agent-layer/tmp/` first.
 
-See [/docs/upgrades](/docs/upgrades) for the full contract.
+See [/docs/upgrades](/docs/upgrades) for rollback scope and the rest of the upgrade policy.

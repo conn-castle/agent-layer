@@ -1,6 +1,6 @@
 # Instruction Design Guide
 
-This document is the canonical instruction-authoring guide for always-loaded
+This document is the authoritative instruction-authoring guide for always-loaded
 agent instruction sources.
 
 Research and sources in this guide were verified on 2026-03-16. The guide
@@ -14,7 +14,7 @@ Participant-terminology sources were checked on 2026-07-04.
 This guide is the instruction-file counterpart to `docs/SKILL-DESIGN.md`,
 which covers skill authoring. The two documents share several foundational
 references (context engineering, instruction density, primacy effects) but
-apply them to different authoring surfaces.
+apply them to always-loaded instructions versus skills.
 
 ## Evidence model
 
@@ -32,7 +32,7 @@ explicitly labeled as an authoring heuristic.
 
 ## Core principle: minimal sufficient context
 
-The single most important principle for instruction design is finding the
+The most important principle for instruction design is finding the
 minimal set of information that fully outlines expected behavior.
 
 > "You should be striving for the minimal set of information that fully
@@ -41,8 +41,7 @@ minimal set of information that fully outlines expected behavior.
 > front to ensure it adheres to the desired behavior.)"
 > — Anthropic, "Effective context engineering for AI agents" [ref 1]
 
-This is not a vague guideline. It is the central finding across multiple
-independent sources:
+This is the central finding across multiple independent sources:
 
 - **Anthropic** [ref 1]: Start with a minimal prompt and the best model, then
   add instructions based on observed failure modes — not preemptively.
@@ -165,7 +164,7 @@ enough to let the model reason about edge cases.
   those emphasizing workflow." Overly detailed prompts (Comprehensive,
   Structured Checklist) cut Task Success from 10.0% to 4.0%.
 - ComplexBench [ref 12]: Nested conditional logic (if X then A, else if Y
-  then B) collapses model performance catastrophically — as low as 8.3% for
+  then B) drops model performance sharply — as low as 8.3% for
   deep Selection compositions.
 
 **Authoring guidance:**
@@ -180,7 +179,7 @@ enough to let the model reason about edge cases.
 
 ### 5. Do not duplicate across instruction files
 
-Each rule should have one canonical home. Duplication across instruction files
+Each rule should have one home. Duplication across instruction files
 creates contradictions when one copy is updated and the other is not, and
 wastes the model's attention budget on redundant content.
 

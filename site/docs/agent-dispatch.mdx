@@ -6,12 +6,12 @@ sidebar_position: 4
 
 Agent Dispatch runs headless provider conversations asynchronously. Use it when one agent needs to delegate a bounded task, or when a person or script needs to start provider work without holding open an interactive session.
 
-It has two surfaces over one backend:
+It has two ways to use the same backend:
 
 - Agents use tools from Agent Layer's built-in MCP server.
 - Humans and scripts use `al dispatch` commands.
 
-Both surfaces use the same conversation handles, states, result files, continuation behavior, and cancellation semantics.
+Both use the same conversation handles, states, result files, continuation behavior, and cancellation semantics.
 
 ## In this page
 
@@ -192,4 +192,4 @@ Codex and Grok also receive the hard tool timeout as per-server `tool_timeout_se
 
 Dispatch honors the repository's configured agents, models, reasoning effort, approvals, environment isolation, and pinned Agent Layer version. Use [`al dispatch options`](./reference#dispatch) to inspect the resolved provider choices before starting work.
 
-For exact configuration fields and CLI summaries, see [Reference](./reference). For the internal implementation contract, see [`docs/AGENT-DISPATCH.md`](https://github.com/conn-castle/agent-layer/blob/main/docs/AGENT-DISPATCH.md).
+For exact configuration fields and CLI summaries, see [Reference](./reference). For internal implementation details, see [`docs/AGENT-DISPATCH.md`](https://github.com/conn-castle/agent-layer/blob/main/docs/AGENT-DISPATCH.md).

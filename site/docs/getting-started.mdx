@@ -4,19 +4,19 @@ description: Install Agent Layer and run your first agent.
 sidebar_position: 1
 ---
 
-Agent Layer gives every agent the same instructions, approvals, and MCP servers by generating each client configuration from a single repo-local source of truth. Think of `al` as the single doorway into consistent agent behavior: set it once, and every client stays aligned.
+Agent Layer projects instructions, approvals, and MCP servers from one `.agent-layer/` configuration into each client's native format, using the closest behavior that client supports. Approval enforcement is client-dependent and best effort. Install `al`, initialize the repo, then run `al <client>` to sync and launch.
 
-Most teams start here because drift is expensive. You fix a prompt in one client and forget another, or an MCP server is enabled in one place and missing everywhere else. This flow gets you to consistency first, then lets you refine safely.
+Without that, a prompt fix in one client is easy to miss in another, and an MCP server can be enabled in one place and missing everywhere else. This page gets a consistent setup running first. You can refine it afterward.
 
 After you complete this page, you will have:
 
-- A `.agent-layer/` folder you edit (the contract).
-- A small set of generated client outputs you do not edit (build artifacts).
-- A simple habit: run `al <client>` to sync and launch with the same rules every time.
+- A `.agent-layer/` folder you edit.
+- A small set of generated client outputs you do not edit.
+- A simple habit: run `al <client>` to sync and launch with the latest generated configuration.
 
-Agent Layer does not replace your client, and it does not run as a hosted service. It runs locally, writes files into your repo, and lets you keep the “source of truth” close to the code it governs.
+Agent Layer does not replace your client, and it does not run as a hosted service. It runs locally and writes files into your repo.
 
-This is enough to be productive immediately. The refinements (custom skills, additional MCP servers, version pinning) can be layered in as your needs grow.
+Custom skills, additional MCP servers, and version pinning can wait until the basics are working.
 
 ## In this page
 
@@ -36,7 +36,7 @@ Quick start is the shortest path to a working agent. You can always refine confi
 
 Agent Layer does not install client CLIs for you. If you already have `al` installed, skip to step 2.
 
-One mental model helps: install `al` once per machine, then run `al init` once per repo.
+Install `al` once per machine, then run `al init` once per repo.
 
 ### 1) Install `al`
 
@@ -93,14 +93,14 @@ Everything is plain text and local to the repo, which makes it easy to review ch
 
 ### 5) Enable an MCP server (optional)
 
-MCP servers unlock additional capability. They allow agents to retrieve current information, search your repository efficiently, and integrate with external systems instead of relying only on model training data and prompt context.
+MCP servers add tools the model can call: current docs, web search, and other external systems.
 
-`al init` creates an empty `[mcp]` section. Run `al wizard` to choose from the embedded MCP catalog, or add server blocks by hand. Two great first picks are:
+`al init` creates an empty `[mcp]` section. Run `al wizard` to choose from the embedded MCP catalog, or add server blocks by hand. Two common first picks are:
 
 - `context7` for up-to-date library docs and examples (requires an API key)
 - `tavily` for web search/research and recency (requires an API key)
 
-See [MCP servers](./concepts#mcp-servers) for the mental model and [MCP servers (configuration)](./reference#mcp-servers) for the exact config fields.
+See [MCP servers](./concepts#mcp-servers) for how they fit in and [MCP servers (configuration)](./reference#mcp-servers) for the exact config fields.
 
 To enable a server, set `enabled = true` and add any required secrets in `.agent-layer/.env`:
 
@@ -135,13 +135,13 @@ See [Doctor](./reference#doctor) for exactly what it checks.
 
 ## Repo layout
 
-After `al init`, your repo gains a few new directories and generated files. Understanding what is canonical vs generated makes it easier to trust changes and avoid drift. The mental model is simple: edit the canonical files, regenerate everything else.
+After `al init`, your repo gains a few new directories and generated files. Edit the files in `.agent-layer/`. Regenerate the client files.
 
-`al init` creates three buckets: configuration, project memory, and generated client files.
+The resulting layout always has configuration and generated client files. Project memory is an optional third bucket, created only when you install the workflow bundle in `al wizard`.
 
 ### Configuration (`.agent-layer/`)
 
-`.agent-layer/` is your single source of truth. Edit these files directly.
+`.agent-layer/` is the folder you edit. Change these files directly.
 
 Typical layout:
 
@@ -160,7 +160,7 @@ Typical layout:
   tmp/                 # agent-only artifacts
 ```
 
-Skill sources follow the [agentskills.io specification](https://agentskills.io/specification). User-managed skills use `.agent-layer/skills/<name>/SKILL.md`; imported skills use `.agent-layer/skills-imported/<name>/SKILL.md`. Both tiers require the uppercase canonical filename; lowercase `skill.md` is rejected.
+Skill sources follow the [agentskills.io specification](https://agentskills.io/specification). User-managed skills use `.agent-layer/skills/<name>/SKILL.md`; imported skills use `.agent-layer/skills-imported/<name>/SKILL.md`. Both require the uppercase `SKILL.md` filename; lowercase `skill.md` is rejected.
 
 ### Project memory (`docs/agent-layer/`)
 
@@ -186,7 +186,7 @@ Different clients require different file formats and conventions. Agent Layer ge
 ```text
 # Instruction shims (generated from .agent-layer/instructions/*.md)
 AGENTS.md
-CLAUDE.md
+.claude/CLAUDE.md
 .github/copilot-instructions.md
 
 # Client configs and artifacts (generated based on enabled clients)
@@ -219,7 +219,7 @@ If you change Agent Layer-managed generated values, those edits will be overwrit
 :::note
 The Codex VS Code extension reads `CODEX_HOME` at startup. Repo-local launchers set a per-repo value only when `local_config_dir = true` is enabled under `[agents.codex]`; in that mode you may need to reauthenticate with Codex when opening a different repo. If you enable `local_config_dir = true` under `[agents.claude]` (and `[agents.claude_vscode]` is enabled), the Claude extension also receives a per-repo `CLAUDE_CONFIG_DIR`, isolating settings and caches per repository.
 
-**Known upstream limitation:** Claude Code currently stores auth credentials in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`, so authentication is always shared globally until this is fixed upstream.
+Claude Code stores `/login` credentials in the macOS Keychain on macOS and in `.credentials.json` under `CLAUDE_CONFIG_DIR` on Linux and Windows. Other authentication modes may use external credential sources, so isolation depends on your platform and authentication method. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
 
 If you prefer to launch VS Code without the repo-local launcher, see the Codex and Claude fallback guidance in troubleshooting: [Global MCP server fallback for VS Code (Codex)](./troubleshooting#global-mcp-server-fallback-for-vs-code-codex) and [Global config fallback for VS Code (Claude)](./troubleshooting#global-config-fallback-for-vs-code-claude).
 :::
@@ -240,7 +240,7 @@ When you are adopting Agent Layer as a team, this is the main choice to make: ke
 
 ### What to commit (recommended)
 
-The default `.gitignore` block is conservative so you can try Agent Layer without changing what your repo tracks. Once you want shared behavior across a team, most repos choose to commit the canonical inputs and keep all generated outputs ignored.
+The default `.gitignore` block is conservative so you can try Agent Layer without changing what your repo tracks. Once you want shared behavior across a team, most repos choose to commit `.agent-layer/` and keep all generated outputs ignored.
 
 Commit:
 
@@ -252,7 +252,7 @@ Do not commit:
 - `.agent-layer/.env` (secrets)
 - `.agent-layer/state/managed-baseline.json` (machine-managed baseline state)
 - `.agent-layer/tmp/` (agent-only artifacts)
-- generated client outputs like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`, `.codex/`, `.copilot/`, `.grok/`, `.grok-config/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`
+- generated client outputs like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.claude/CLAUDE.md`, `.mcp.json`, `.codex/`, `.copilot/`, `.grok/`, `.grok-config/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.github/copilot-instructions.md`, `AGENTS.md`
 
 ## CLI command map
 
@@ -260,7 +260,7 @@ Use this as a quick refresher when you are trying to remember the entry points o
 
 This is a complete map of the CLI entry points. For details, see the [Reference](./reference).
 
-If you only remember one pattern: `al <client>` is the “do the right thing” command because it syncs first, then launches.
+If you only remember one pattern: `al <client>` syncs first, then launches.
 
 | Command | Purpose | Details |
 | --- | --- | --- |
@@ -287,8 +287,8 @@ If you only remember one pattern: `al <client>` is the “do the right thing” 
 
 ## Next steps
 
-- Read [Concepts](./concepts) to understand the mental model, safety boundaries, and how MCP servers fit into the system.
+- Read [Concepts](./concepts) for safety boundaries and how MCP servers fit into the system.
 - Use [Agent Dispatch](./agent-dispatch) to delegate asynchronous, headless provider work through MCP tools or the CLI.
 - Use [Reference](./reference) when you are ready to tune configuration, wire secrets, or understand exactly what a CLI command touches.
-- Read [Upgrades](./upgrades) for the upgrade contract, compatibility guarantees, and migration rules.
+- Read [Upgrades](./upgrades) for compatibility guarantees and migration rules.
 - Visit [Troubleshooting](./troubleshooting) when something does not work; start with `al doctor`.

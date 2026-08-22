@@ -55,7 +55,7 @@ Only add these flags when intentionally applying those categories:
 - `--apply-tmp-deletions` — destructively delete files under `.agent-layer/tmp/` (ephemeral agent run artifacts; not snapshotted, not rollback-restorable). Requires `--yes` and is independent of `--apply-deletions`.
 
 :::warning Tmp deletions are destructive and not rollback-protected
-`--apply-tmp-deletions` permanently removes everything under `.agent-layer/tmp/`. The pre-upgrade snapshot does **not** capture tmp content, so `al upgrade rollback <snapshot-id>` will not bring back deleted plans, reports, or scratch files. Use this flag only when you are sure CI does not host any in-progress agent artifacts you need to keep. See [Ephemeral artifacts under .agent-layer/tmp/](./reference#ephemeral-artifacts-under-agent-layertmp) for the full contract.
+`--apply-tmp-deletions` permanently removes everything under `.agent-layer/tmp/`. The pre-upgrade snapshot does **not** capture tmp content, so `al upgrade rollback <snapshot-id>` will not bring back deleted plans, reports, or scratch files. Use this flag only when you are sure CI does not host any in-progress agent artifacts you need to keep. See [Ephemeral artifacts under .agent-layer/tmp/](./reference#ephemeral-artifacts-under-agent-layertmp) for the full rules.
 :::
 
 ## Shell quick paths (macOS/Linux)

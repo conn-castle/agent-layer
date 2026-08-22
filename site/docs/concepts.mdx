@@ -1,16 +1,16 @@
 ---
 title: Concepts
-description: The mental model and safety boundaries for Agent Layer.
+description: How Agent Layer works, and the safety boundaries that keep agents consistent.
 sidebar_position: 2
 ---
 
-Agent Layer keeps agent behavior consistent across tools by centralizing instructions and projecting them into each client. These concepts explain how the system is designed and why it behaves the way it does. If you only read one section, start with [Single source of truth](#single-source-of-truth).
+Agent Layer keeps agent behavior consistent across tools. You edit instructions, skills, approvals, and MCP servers in `.agent-layer/`, and Agent Layer writes each client's native config from those files.
 
-The through-line is trust: when configuration lives in one place, you can reason about what an agent will do. Each concept below exists to make that reasoning explicit and repeatable.
+If you only read one section, start with [Single source of truth](#single-source-of-truth).
 
-If you have ever thought “it worked in Claude but not in Codex” or “why does VS Code have different tools than my CLI,” you have run into drift. Drift is rarely malicious; it is usually just the natural result of multiple clients, multiple config formats, and multiple places to forget to update. Agent Layer exists to remove the forgetting.
+When every client has its own config format, a change in Claude can miss Codex, and VS Code can end up with different tools than the CLI. Agent Layer exists so you update one place instead of several.
 
-One important design choice follows from that: Agent Layer is repo-local. Different repositories have different safety constraints, different tool needs, and different levels of autonomy you want to grant. Keeping the contract in the repo keeps those decisions explicit and close to the code they affect.
+Agent Layer is repo-local. Each repository can have different safety rules, tools, and autonomy. Putting that configuration in the repo keeps those decisions next to the code they affect.
 
 ## In this page
 
@@ -24,17 +24,17 @@ One important design choice follows from that: Agent Layer is repo-local. Differ
 
 ## Single source of truth
 
-Agent Layer centralizes instructions, skills, approvals, and MCP server configuration under `.agent-layer/`, then projects them into each client's native format. This is the anchor idea behind everything else in the system. It replaces “copy this config everywhere” with “define it once and regenerate.”
+Agent Layer stores instructions, skills, approvals, and MCP server configuration under `.agent-layer/`, then writes them into each client's native format. Define the behavior once and regenerate client files instead of copying config by hand.
 
-Every client expects different config files and conventions. If you edit those files directly, they drift and you lose consistency across tools. With Agent Layer, you edit the canonical inputs once and let the outputs be disposable.
+Every client expects different files and conventions. If you edit those files directly, they fall out of sync. With Agent Layer, you edit `.agent-layer/` and treat the generated client files as disposable.
 
-That sounds simple, but it changes the day-to-day experience: rules become portable across tools, changes become reviewable, and debugging becomes “check the source of truth” instead of “hunt across five config formats.”
+That changes day-to-day work: the same rules apply across tools, changes are reviewable in git, and debugging starts in `.agent-layer/` instead of five client formats.
 
-Agent Layer also pushes you toward explicit intent. If something matters, it is usually spelled out (for example `enabled = true/false`), not left to implicit defaults. That extra clarity is what lets teams trust that “same repo + same version” produces the same behavior.
+Agent Layer also prefers explicit settings. If something matters, it is usually spelled out (for example `enabled = true/false`) rather than left to an implicit default. That is what lets teams trust that the same repo and the same pinned version produce the same behavior.
 
 ### What is canonical
 
-The canonical inputs live in `.agent-layer/`:
+The files you edit live in `.agent-layer/`:
 
 - `config.toml` for structured configuration
 - `instructions/` for agent rules and guidance
@@ -44,7 +44,7 @@ The canonical inputs live in `.agent-layer/`:
 
 Everything else is derived output and can be overwritten at any time.
 
-Treat `.agent-layer/` like a contract: keep it explicit, keep it small, and review changes the same way you would review application configuration.
+Treat `.agent-layer/` as project configuration: keep it explicit, keep it small, and review changes the same way you would review application configuration.
 
 Some teams keep `.agent-layer/` local while experimenting; others commit it so everyone shares the same agent behavior. In either mode, secrets stay out of git: `.agent-layer/.env` is always gitignored and loaded at runtime.
 
@@ -60,19 +60,19 @@ When you run `al sync` or `al <client>`, Agent Layer generates client-specific c
 - `.grok/hooks/agent-layer-chime.json` when `notifications.chime` is enabled
 - `.vscode/mcp.json` and a managed block in `.vscode/settings.json`
 - `AGENTS.md`
-- `CLAUDE.md`
+- `.claude/CLAUDE.md`
 - `.github/copilot-instructions.md`
 - repo-local VS Code launchers under `.agent-layer/` when VS Code is enabled (for example `open-vscode.command`, `open-vscode.sh`, and `open-vscode.app/`)
 
 Generated outputs are safe to delete and regenerate, except for the shared-state files `al sync` patches in place rather than regenerating: `.codex/config.toml` and `.agy/antigravity-cli/settings.json`. The Antigravity file can also hold native workspace approval, trust, and other settings. Keep it gitignored, but preserve it during cleanup; Agent Layer patches only its managed model, `permissions.allow`, and `agent_specific` paths, and never deletes native values it did not set.
 
-This separation is deliberate. It gives you the confidence to wipe outputs and rebuild when something feels off, without losing the source of truth that you actually maintain.
+This split is deliberate. You can wipe generated files and rebuild them when something feels off, without losing the `.agent-layer/` files you maintain.
 
 ### Why this prevents drift
 
-In a manual setup, every client becomes a separate source of truth. You change a rule in one place and forget to update another. That is how approvals diverge, MCP servers go missing, and agents behave inconsistently.
+In a manual setup, every client becomes its own configuration. You change a rule in one place and forget another. Approvals diverge, MCP servers go missing, and agents behave inconsistently.
 
-Agent Layer avoids that by forcing managed values through a single canonical input. Generated outputs are derived and disposable; shared client settings preserve native values outside Agent Layer's managed paths.
+Agent Layer avoids that by writing managed values from `.agent-layer/` only. Generated outputs can be deleted and recreated; shared client settings keep native values outside Agent Layer's managed paths.
 
 ### Anti-patterns to avoid
 
@@ -80,9 +80,9 @@ Agent Layer avoids that by forcing managed values through a single canonical inp
 - Editing Agent Layer-managed files under `.vscode/` (`mcp.json` and the managed block in `settings.json`)
 - Copying instructions manually between clients
 - Maintaining separate MCP configs for each agent
-- Treating generated files as source of truth
+- Treating generated files as the files you edit
 
-If you see drift, move the change into `.agent-layer/` and regenerate.
+If clients disagree, move the change into `.agent-layer/` and regenerate.
 
 ### Agent-specific overrides (escape hatch)
 
@@ -99,7 +99,7 @@ If you find yourself carrying many permanent overrides, that is usually a sign t
 
 ## Per-repo isolation {#per-repo-credential-isolation}
 
-Agent Layer gives each repository its own agent configuration so work in one repo never leaks into another. Codex home isolation is opt-in. Claude settings and caches isolation is supported, but Claude auth credential isolation is blocked by an upstream limitation (see below).
+Agent Layer gives each repository its own agent configuration so work in one repo never leaks into another. Codex home isolation is opt-in. Claude settings and caches isolation is supported; whether it also isolates login credentials depends on your platform and authentication method (see below).
 
 ### How it works
 
@@ -125,13 +125,13 @@ local_config_dir = true
 
 When enabled, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local `.claude-config/` directory. For VS Code, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir = true` and `[agents.claude_vscode]` is enabled.
 
-:::caution Known upstream limitation
-Claude Code currently stores auth credentials in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`. This means `local_config_dir` isolates settings and caches but **not** authentication. Per-repo login isolation does not work until this is fixed upstream. This has been reported to the Claude Code team.
+:::caution Authentication isolation varies
+Claude Code stores `/login` credentials in the macOS Keychain on macOS, so `CLAUDE_CONFIG_DIR` does not isolate them there. On Linux and Windows, it stores them in `.credentials.json` under `CLAUDE_CONFIG_DIR`, so a repo-local directory also isolates those credentials. Other authentication modes may use external credential sources. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
 :::
 
 ### Trade-offs
 
-Enabling Codex home isolation means auth, sessions, logs, and other Codex runtime state are scoped to the repository. Enabling Claude isolation means settings and caches are scoped to the repository; auth remains shared globally due to the upstream limitation above.
+Enabling Codex home isolation means auth, sessions, logs, and other Codex runtime state are scoped to the repository. Enabling Claude isolation scopes settings and caches to the repository; authentication isolation depends on the platform and authentication method described above.
 
 Codex and Claude isolation are opt-in (default `false`) because always-on isolation duplicates config and runtime state in every existing repo. Teams that want per-repo state can enable it per repo; teams that prefer shared global config keep the default.
 
@@ -145,13 +145,11 @@ If none of these apply, the default shared provider config works fine and keeps 
 
 ## Approvals and safety
 
-Approvals control whether an agent can execute shell commands and MCP tools without prompting. They provide a safety layer that allows teams to choose the appropriate autonomy level for each repository.
+Approvals control whether an agent can execute shell commands and MCP tools without prompting. Each repository can choose its own autonomy level.
 
-Approvals keep high-velocity workflows safe. A personal scratch repository can remain permissive, while a production repository can require explicit confirmation. The same CLI supports both modes.
+A personal scratch repository can stay permissive. A production repository can require confirmation. The same CLI supports both.
 
-The best approvals setup is the one you do not have to think about: tight enough to prevent accidents, permissive enough that safe work stays fast.
-
-Approvals are about capability, not intention. A prompt can say “I will be careful,” but approvals are what enforce what the agent can actually do.
+A prompt can say “I will be careful.” Approvals are what actually limit what the agent can do.
 
 ### Approvals modes
 
@@ -168,7 +166,7 @@ mode = "all" # one of: all, mcp, commands, none, yolo
 | `mcp` | prompt/deny | auto-approve | |
 | `commands` | auto-approve | prompt/deny | |
 | `none` | prompt/deny | prompt/deny | |
-| `yolo` | auto-approve | auto-approve | skips all permission prompts where supported (Claude `--dangerously-skip-permissions`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live`, Copilot CLI `--yolo`) |
+| `yolo` | auto-approve | auto-approve | skips all permission prompts where supported (Claude and Antigravity `--dangerously-skip-permissions`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live`, Copilot CLI `--yolo`, Grok `--permission-mode bypassPermissions --always-approve`) |
 
 The default template sets `mode = "all"`. Change it to match your team's security posture.
 
@@ -205,23 +203,23 @@ If a client does not support approvals at all, Agent Layer cannot enforce them. 
 
 ## MCP servers
 
-Agent Layer projects MCP server configuration into each supported client's native format so tools are available everywhere your agents run. MCP (Model Context Protocol) servers are how agents gain real capabilities, so explicit configuration keeps scope intentional and predictable across clients.
+Agent Layer writes MCP server configuration into each supported client's native format so the same tools are available everywhere your agents run. MCP (Model Context Protocol) servers are external tool servers. Configure them explicitly so the tool set stays intentional and consistent across clients.
 
-If approvals are the guardrails, MCP servers are the engine. They let an agent do real work: search code, fetch URLs, call APIs, and integrate with your tooling. Because they can do a lot, you want them configured deliberately.
+MCP servers let an agent search code, fetch URLs, call APIs, and integrate with your tooling. Because they can do a lot, enable them one at a time.
 
-Another benefit of centralizing MCP servers is translation. Each client has its own configuration shape and its own conventions for secrets and headers. Agent Layer lets you think in one format and projects the safest supported representation into each client.
+Each client has its own configuration shape and its own conventions for secrets and headers. You define servers once in `.agent-layer/config.toml`, and Agent Layer writes the safest supported representation into each client.
 
-In practice, this means you can keep credentials in one place (`.agent-layer/.env`), reference them in `config.toml`, and trust that generated outputs will either preserve safe placeholders or be written to gitignored files when a client requires concrete values.
+Keep credentials in `.agent-layer/.env`, reference them in `config.toml`, and let generated outputs either keep safe placeholders or land in gitignored files when a client requires concrete values.
 
 ### When MCP servers change the experience
 
-Instructions and approvals make agents consistent. MCP servers are what make them capable.
+Instructions and approvals make agents consistent. MCP servers add tools the model can call.
 
-Without tools, a model is limited to its training and whatever you paste into context. With tools, it can pull the right information at the moment it is needed: search your repo, read a web page, query an API, or fetch up-to-date documentation. This is where agent output typically gets dramatically more reliable.
+Without tools, a model is limited to its training and whatever you paste into context. With tools, it can search your repo, read a web page, query an API, or fetch current documentation when it needs it.
 
-Two high-leverage examples:
+Two common first examples:
 
-- **Context7**: gives agents access to current library documentation and code examples, which reduces “reasonable sounding” but incorrect API usage. It shines when you are integrating SDKs or frameworks that change quickly.
+- **Context7**: gives agents access to current library documentation and code examples, which reduces “reasonable sounding” but incorrect API usage. Useful when you are integrating SDKs or frameworks that change quickly.
 - **Tavily**: provides web search/research so agents can answer “what is the latest” or “what changed recently” questions with real sources instead of guessing from training data.
 
 ### Why the wizard includes a default MCP library
@@ -230,16 +228,16 @@ Two high-leverage examples:
 
 You do not need all of them. Most repos get the best results by enabling a small, intentional set and expanding only when a real use case shows up.
 
-They are disabled by default because some require sign-ups and secrets, and because tool access is a real capability decision. Enable the minimum set that gives you leverage.
+They are disabled by default because some require sign-ups and secrets, and because tool access is a real capability decision. Enable the smallest set you actually need.
 
 **Catalog servers**
 
 - `context7` - current library docs and examples; requires `AL_CONTEXT7_API_KEY` (sign up) and `npx`.
 - `tavily` - web search/research for recency; requires `AL_TAVILY_API_KEY` (sign up).
 - `fetch` - fetch a URL and return its contents; requires `uvx` (from `uv`). Useful alongside search when you want the agent to read the primary source.
-- `playwright` - browser automation (logins, complex pages, UI flows); requires `npx` and downloads browser dependencies. High leverage for web-focused repos, unnecessary overhead for many others.
+- `playwright` - browser automation (logins, complex pages, UI flows); requires `npx` and downloads browser dependencies. Useful for web-focused repos; skip it when you do not need a browser.
 
-GitHub can still be configured as an optional custom HTTP MCP server when your workflow needs PR/issue/actions tooling. If you are deciding between an MCP wrapper and an installed command-line tool, use [CLI Skill Design](/cli-skill-design) to choose the smaller, lower-drift interface.
+GitHub can still be configured as an optional custom HTTP MCP server when your workflow needs PR/issue/actions tooling. If you are deciding between an MCP wrapper and an installed command-line tool, use [CLI Skill Design](/cli-skill-design) to choose the smaller interface.
 
 ### Where servers are defined
 
@@ -320,22 +318,22 @@ Skills are synced natively to Agent Skills directories with full subdirectory su
 - enabling too many servers and overloading context
 
 :::tip
-Start with one or two servers, verify with `al doctor`, then expand. It is easier to trust your agents when the tool surface is deliberate and scoped.
+Start with one or two servers, verify with `al doctor`, then expand. It is easier to trust your agents when the enabled tools are few and intentional.
 :::
 
 ## Agent Dispatch
 
 Agent Dispatch lets an agent, person, or script start a headless provider conversation and coordinate it asynchronously. Starting work returns a handle immediately; callers use that handle to wait for a result, continue the same conversation, or cancel active work. Independent handles make parallel delegation possible without coupling the conversations. Valid dispatch targets are Codex, Claude, Antigravity, and Grok; other enabled clients can call the tools but are not targets.
 
-Agents access dispatch through Agent Layer's built-in `agent-layer` MCP server, while humans and scripts use matching `al dispatch` commands. Both surfaces share the same lifecycle and results. See [Agent Dispatch](./agent-dispatch) for the tools, commands, states, timeouts, and configuration.
+Agents access dispatch through Agent Layer's built-in `agent-layer` MCP server, while humans and scripts use matching `al dispatch` commands. Both use the same lifecycle and results. See [Agent Dispatch](./agent-dispatch) for the tools, commands, states, timeouts, and configuration.
 
 ## Project memory
 
-The optional workflow bundle creates `docs/agent-layer/` as a place for repo-specific memory files. These files are meant to be long-lived, human-readable context that agents can reference. Treat them as the team's shared recall, not as transient notes, so future changes have context instead of guesswork.
+The optional workflow bundle creates `docs/agent-layer/` for repo-specific memory files. These files are long-lived, human-readable context that agents can reference. Keep them current so later work has context instead of guesswork.
 
-This is less about documentation and more about continuity. Agents work best when you can answer “what are we building,” “what are the constraints,” and “what did we decide last time.” Memory files make that context durable.
+Agents work best when they can answer “what are we building,” “what are the constraints,” and “what did we decide last time.” Memory files store that.
 
-They are also for humans. When a new teammate joins or you return to a repo after months, clear, up-to-date memory is the difference between confidence and archaeology.
+They are also for humans. When a new teammate joins or you return to a repo after months, short current entries are easier to trust than a pile of stale notes.
 
 ### Default memory files
 
@@ -357,7 +355,7 @@ Teams can choose to commit these files or keep them local:
 - Ignore when you want per-developer notes only
 
 :::note
-If you commit them, treat these files as part of your project contract. Keep entries short and current.
+If you commit them, treat these files as shared project context. Keep entries short and current.
 :::
 
 ### How memory is used
@@ -370,15 +368,15 @@ If you add your own memory files, update your instructions to point to them.
 
 - Keep entries short and actionable
 - Record decisions once and link them from tasks
-- Clear resolved issues so the memory stays trustworthy
+- Clear resolved issues so the files stay current
 
 ## Version pinning
 
-Version pinning keeps a repo locked to a specific Agent Layer release so every developer runs the same behavior. It is the simplest way to avoid surprises across laptops, CI, and time, especially when configuration changes have real behavioral impact.
+Version pinning keeps a repo locked to a specific Agent Layer release so every developer runs the same behavior. That avoids surprises across laptops, CI, and time, especially when configuration changes have real behavioral impact.
 
-In practice, pinning acts like a compatibility boundary. When you upgrade, you do it intentionally, you read the release notes, and the whole team moves together.
+When you upgrade, you do it intentionally, you read the release notes, and the whole team moves together.
 
-If you have used lockfiles in other ecosystems, pinning will feel familiar: it keeps “what version am I actually running” from becoming an invisible source of drift.
+If you have used lockfiles in other ecosystems, pinning will feel familiar: it makes the running version explicit instead of whatever happens to be installed.
 
 ### How pinning works
 

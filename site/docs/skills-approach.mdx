@@ -6,7 +6,7 @@ sidebar_position: 6
 
 This page defines Agent Layer's root-skill and workflow architecture.
 
-Document ownership prevents guidance drift:
+Each document owns a distinct topic:
 
 - [Skill Design](/skill-design) owns portable skill design guidance.
 - [CLI Skill Design](/cli-skill-design) owns CLI-skill design.
@@ -36,7 +36,7 @@ The following principles govern every root skill and workflow skill:
   refining hypothetical implementation details.
 
 - Evidence outranks consensus. Repository behavior, tests, specifications, and
-  documented contracts settle questions. Additional agent agreement does not
+  documented requirements settle questions. Additional agent agreement does not
   make established evidence stronger.
 
 - Reasoning should be proportional to risk. Deep reasoning is reserved for
@@ -55,15 +55,14 @@ The following principles govern every root skill and workflow skill:
   its artifact, verdict, or blocker and then yield. It should not create another
   layer of orchestration to strengthen its own conclusion.
 
-- Forward motion is the default. Once a stage’s contract is satisfied, the
-  workflow advances. “More review might find something” is not sufficient
-  reason to remain in place.
+- Forward motion is the default. Once a stage has produced its required
+  result, the workflow advances. “More review might find something” is not
+  sufficient reason to remain in place.
 
-**Deterministic modules, not improvisation.** A skill should make the same
-contract available every time: accepted inputs, required artifacts, stop
-conditions, verification expectations, and final handoff shape. The agent still
-uses judgment inside the task, but the module boundary and terminal
-responsibility should be stable.
+**Stable modules, not improvisation.** A skill should offer the same job every
+time: accepted inputs, required artifacts, stop conditions, verification
+expectations, and final handoff shape. The agent still uses judgment inside the
+task, but the module boundary and terminal responsibility should be stable.
 
 **Skills own bounded jobs and compose only when the boundary is useful.** The
 bundled `implement` skill chooses a direct or planned path and adds independent
@@ -75,7 +74,7 @@ failure or materially changed artifact.
 **Evidence over assertion or consensus.** Skills should push agents toward
 observable evidence: read the code, inspect the diff, run documented checks,
 use real artifacts, and state what was verified. Additional review does not
-override repository behavior, specifications, tests, or documented contracts.
+override repository behavior, specifications, tests, or documented requirements.
 
 **Verification is intentionally placed.** Implementation uses narrow task-local
 checks for feedback and finishes with the smallest credible checks for the final
@@ -136,8 +135,8 @@ A root skill should define:
 - Its distinct stage responsibility and the artifact, verdict, or blocker that
   terminates the stage.
 - Output artifact or report shape, so another skill or workflow can consume it.
-- Any required system source of truth, with a reason the root skill cannot do
-  its own job without it.
+- Any required shared system it depends on, with a reason the root skill cannot
+  do its own job without it.
 - Stop conditions for missing required input or incompatible state.
 - Verification expectations appropriate to its job. Implementation skills may
   run narrow feedback checks, verification skills own completion evidence, and

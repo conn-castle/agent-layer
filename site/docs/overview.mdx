@@ -8,15 +8,14 @@ sidebar_position: 0
 
 Agent Layer is a small CLI that keeps AI-assisted development consistent across tools. You define agent instructions, approvals, and MCP servers once in a repo-local `.agent-layer/` folder, and `al` generates each client's native config on demand.
 
-The payoff is fewer surprises: the same repo behaves the same whether you launch Antigravity, Claude, Codex, Copilot CLI, Grok, or VS Code. No copying configuration between clients. No gradual drift. Just one place to review and refine how your agents work.
+The same repo uses one source configuration whether you launch Antigravity, Claude, Codex, Copilot CLI, Grok, or VS Code. Agent Layer maps it to the closest behavior each client supports; approval enforcement is client-dependent and best effort. You do not copy configuration between clients. You review and refine agent setup in one folder.
 
-Start with [Getting started](./getting-started), then use [Concepts](./concepts) and [Reference](./reference) as you customize. Use [Agent Dispatch](./agent-dispatch) when you want to delegate headless provider work through MCP tools or the CLI. Use [Best Practices](/best-practices) when you are writing skills, CLI skills, or always-loaded instructions, and [Skills approach](./skills-approach) for Agent Layer's own skill model. [Troubleshooting](./troubleshooting) is a fast path when something breaks.
-For upgrade policy, compatibility guarantees, and migration rules, use [Upgrades](./upgrades).
+Follow the recommended path below to set up Agent Layer, customize it, and find detailed guidance when you need it.
 
 ## What you get
 
-- A single source of truth you can treat like code (reviewable, shareable, easy to audit).
-- Deterministic generated outputs that are safe to delete and recreate (apart from a couple of documented shared-state files that `al sync` patches in place).
+- A `.agent-layer/` folder you can treat like code (reviewable, shareable, easy to audit).
+- Generated client files that are safe to delete and recreate (apart from a couple of documented shared-state files that `al sync` patches in place).
 - Guardrails for autonomy: choose what can run automatically and what must be approved.
 - Built-in workflow skills that give agents structured, repeatable processes for planning, debugging, shipping PRs, and more.
 - Optional version pinning so a team stays on the same behavior across machines and CI.
@@ -31,7 +30,7 @@ For upgrade policy, compatibility guarantees, and migration rules, use [Upgrades
 ## Recommended path
 
 1. [Getting started](./getting-started) - run your first agent
-2. [Concepts](./concepts) - learn the mental model and safety boundaries
+2. [Concepts](./concepts) - learn how Agent Layer works and where the safety boundaries are
 3. [Reference](./reference) - config, environment variables, and CLI behavior
 4. [Agent Dispatch](./agent-dispatch) - asynchronous, headless provider delegation
 5. [Skills](./skills) - built-in workflows for planning, debugging, shipping, and more
@@ -48,7 +47,7 @@ Install Agent Layer, initialize your first repo, and understand what gets genera
 
 ### [Concepts](./concepts)
 
-The mental model and safety boundaries that keep agents consistent. Includes: [Single source of truth](./concepts#single-source-of-truth), [Approvals and safety](./concepts#approvals-and-safety), [MCP servers](./concepts#mcp-servers), [Agent Dispatch](./concepts#agent-dispatch), [Project memory](./concepts#project-memory), and [Version pinning](./concepts#version-pinning).
+How Agent Layer keeps agents consistent, and the safety boundaries involved. Includes: [Single source of truth](./concepts#single-source-of-truth), [Approvals and safety](./concepts#approvals-and-safety), [MCP servers](./concepts#mcp-servers), [Agent Dispatch](./concepts#agent-dispatch), [Project memory](./concepts#project-memory), and [Version pinning](./concepts#version-pinning).
 
 ### [Reference](./reference)
 
@@ -77,7 +76,7 @@ Fast fixes for install, config, and MCP issues. Includes: [Install issues](./tro
 
 ### [Upgrades](./upgrades)
 
-Canonical upgrade contract and release migration expectations. Includes: [Upgrade event model](./upgrades#upgrade-event-model), [Compatibility guarantees](./upgrades#compatibility-guarantees), [Migration rules by release](./upgrades#migration-rules-by-release), [docs version retention and access](./upgrades#documentation-version-retention-and-access), and [OS and shell capability matrix](./upgrades#os-and-shell-capability-matrix).
+Upgrade policy and release migration expectations. Includes: [Upgrade event model](./upgrades#upgrade-event-model), [Compatibility guarantees](./upgrades#compatibility-guarantees), [Migration rules by release](./upgrades#migration-rules-by-release), [docs version retention and access](./upgrades#documentation-version-retention-and-access), and [OS and shell capability matrix](./upgrades#os-and-shell-capability-matrix).
 
 ## Other resources
 
@@ -89,5 +88,5 @@ Canonical upgrade contract and release migration expectations. Includes: [Upgrad
 - [Contributing](/contributing)
 
 :::note
-If Agent Layer is useful for your team, consider starring the repository to improve discoverability for new users.
+If Agent Layer is useful, consider starring the repository so new users can find it.
 :::
