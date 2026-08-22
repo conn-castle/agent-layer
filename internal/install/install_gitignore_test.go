@@ -10,6 +10,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/gitenv"
 	"github.com/conn-castle/agent-layer/internal/templates"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestRenderGitignoreBlock_UsesSyncGuidance(t *testing.T) {
@@ -431,6 +432,8 @@ func TestWriteGitignoreBlock_WriteError(t *testing.T) {
 	if err := os.Mkdir(dir, 0o500); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
+	testutil.SkipIfWritable(t, dir)
 	path := filepath.Join(dir, "gitignore.block")
 
 	err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, nil, nil)
@@ -478,6 +481,7 @@ func TestEnsureGitignore_WriteNewError(t *testing.T) {
 		t.Fatalf("chmod: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(root, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
+	testutil.SkipIfWritable(t, root)
 
 	err := EnsureGitignore(RealSystem{}, path, "block")
 	if err == nil {
@@ -498,6 +502,7 @@ func TestEnsureGitignore_WriteUpdateError(t *testing.T) {
 		t.Fatalf("chmod: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(root, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
+	testutil.SkipIfWritable(t, root)
 
 	err := EnsureGitignore(RealSystem{}, path, "new block")
 	if err == nil {
@@ -551,6 +556,7 @@ func TestWriteGitignoreBlock_OverwriteWriteError(t *testing.T) {
 		t.Fatalf("chmod: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(root, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
+	testutil.SkipIfWritable(t, root)
 
 	prompt := func(path string) (bool, error) {
 		return true, nil

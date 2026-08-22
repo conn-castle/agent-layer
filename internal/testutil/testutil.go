@@ -51,12 +51,14 @@ func ForbidExec(t *testing.T, target *func(string, []string, []string) error) {
 	forbidExec(t, target)
 }
 
-// testContext captures the testing hooks needed by the exec seam helpers.
+// testContext captures the testing hooks needed by the exec seam helpers
+// and the writability probe.
 type testContext interface {
 	Cleanup(func())
 	Fatal(...any)
 	Fatalf(string, ...any)
 	Helper()
+	Skipf(string, ...any)
 }
 
 // captureExec installs the capture seam for both production test contexts and
@@ -124,6 +126,52 @@ func WriteStubExpectArg(t *testing.T, dir string, name string, expectedArg strin
 // v is the boolean value to take the address of.
 func BoolPtr(v bool) *bool {
 	return &v
+}
+
+// SkipIfWritable probes path with a real write or create attempt after a
+// fixture has restricted its mode bits. A successful probe is cleaned up and
+// the test is skipped so elevated privileges cannot make a permission-dependent
+// assertion pass or fail for an environment reason. Permission denied lets the
+// caller proceed. Any other probe error fails with the protected path and the
+// underlying error.
+func SkipIfWritable(t *testing.T, path string) {
+	t.Helper()
+	skipIfWritable(t, path)
+}
+
+func skipIfWritable(t testContext, path string) {
+	t.Helper()
+	info, probeErr := os.Stat(path)
+	if probeErr == nil {
+		if info.IsDir() {
+			var file *os.File
+			file, probeErr = os.CreateTemp(path, ".al-writability-probe-*")
+			if probeErr == nil {
+				name := file.Name()
+				closeErr := file.Close()
+				removeErr := os.Remove(name)
+				if closeErr != nil || removeErr != nil {
+					t.Fatalf("writability probe %s: cleanup %s: close: %v remove: %v", path, name, closeErr, removeErr)
+				}
+				t.Skipf("process can write %s despite restrictive mode bits; skipping permission-dependent fixture", path)
+				return
+			}
+		} else {
+			var file *os.File
+			file, probeErr = os.OpenFile(path, os.O_WRONLY, 0) // #nosec G304 -- path is a test-controlled fixture.
+			if probeErr == nil {
+				if closeErr := file.Close(); closeErr != nil {
+					t.Fatalf("writability probe %s: cleanup: %v", path, closeErr)
+				}
+				t.Skipf("process can write %s despite restrictive mode bits; skipping permission-dependent fixture", path)
+				return
+			}
+		}
+	}
+	if errors.Is(probeErr, os.ErrPermission) {
+		return
+	}
+	t.Fatalf("writability probe %s: %v", path, probeErr)
 }
 
 // WithWorkingDir runs fn with dir as the current working directory and restores the previous directory.

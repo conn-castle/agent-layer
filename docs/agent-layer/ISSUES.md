@@ -35,12 +35,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Open question: whether a higher coverage threshold is worth adding fault-injection seams (an injectable filesystem or forced-error hooks) to the packages that currently call `os` directly.
     Notes: `internal/agentdispatch` (~430 missed) and `internal/benchmark` (~300 missed) hold most of the remainder; both are dominated by provider/Docker orchestration failure paths.
 
-- Issue 2026-08-04 permission-based-test-fixtures-assume-non-root: chmod-driven failure fixtures silently pass under root
-    Priority: Low. Area: test suite
-    Description: Pre-existing tests in internal/install and internal/clients drive production error paths by removing a directory's write bit. A process with CAP_DAC_OVERRIDE — root in many containers — writes anyway, so the operation under test succeeds and the assertion fails for an environment reason. CI runs on ubuntu-latest as a non-root user, so nothing currently fails.
-    Next step: If root execution is ever supported, add one shared writability probe helper and apply it to every chmod-based fixture rather than to individual tests.
-    Notes: The skill-import fixtures raised in PR #170 were removed or replaced with deterministic injected failures; this issue now covers only the older remaining fixtures.
-
 - Issue 2026-07-28 dispatch-mcp-start-transport-window: An MCP dispatch_start disconnect can orphan a handle
     Priority: Medium. Area: Agent Dispatch MCP interface
     Description: `dispatch_start` is an RPC acknowledgement rather than a direct write to the caller's terminal. If the transport disconnects after the backend starts but before the client observes the response, the dispatch keeps running durably while the caller never learns its handle. This slice deliberately added no idempotency state and no listing API.
