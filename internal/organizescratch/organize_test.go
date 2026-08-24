@@ -185,16 +185,35 @@ func TestRunRefusesRepositoryRootAndTrackedSubtree(t *testing.T) {
 	git(t, repo, "add", "tracked/evidence.log")
 	git(t, repo, "commit", "-m", "tracked subtree")
 
-	for name, root := range map[string]string{"repository root": repo, "tracked subtree": trackedDir} {
+	for name, tc := range map[string]struct {
+		root string
+		want string
+	}{
+		"repository root": {root: repo, want: "git repository top level"},
+		"tracked subtree": {root: trackedDir, want: "git tracks content at or below"},
+	} {
 		t.Run(name, func(t *testing.T) {
-			_, _, err := runOrganize(t, Options{Root: root, Apply: true})
-			if err == nil || !strings.Contains(err.Error(), "git tracks content at or below") {
+			_, _, err := runOrganize(t, Options{Root: tc.root, Apply: true})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v", err)
 			}
 			requireFile(t, filepath.Join(trackedDir, "evidence.log"))
-			requireNoFile(t, filepath.Join(root, reviewDocName))
+			requireNoFile(t, filepath.Join(tc.root, reviewDocName))
 		})
 	}
+}
+
+func TestRunRefusesUnbornRepositoryRoot(t *testing.T) {
+	repo := t.TempDir()
+	git(t, repo, "init", "--initial-branch=main")
+	writeFileAt(t, filepath.Join(repo, "untracked.log"), "must stay in place")
+
+	_, _, err := runOrganize(t, Options{Root: repo, Apply: true})
+	if err == nil || !strings.Contains(err.Error(), "git repository top level") {
+		t.Fatalf("err = %v", err)
+	}
+	requireFile(t, filepath.Join(repo, "untracked.log"))
+	requireNoFile(t, filepath.Join(repo, reviewDocName))
 }
 
 func TestRunTreatsTrackedRootPathspecAsLiteral(t *testing.T) {
@@ -616,6 +635,23 @@ func TestRunProtectsAndRepairsForeignLinkedWorktree(t *testing.T) {
 	if !strings.Contains(list, canonicalPath(moved)) || strings.Contains(list, "prunable") {
 		t.Fatalf("foreign worktree list = %q", list)
 	}
+}
+
+func TestRunProtectsRegisteredWorktreeWhosePathContainsNewline(t *testing.T) {
+	repo, scratch := newRepoWithScratch(t)
+	name := "foreign\nlinked"
+	linked := filepath.Join(scratch, name)
+	git(t, repo, "worktree", "add", linked, "-b", "newline-path")
+
+	stdout, _, err := runOrganize(t, Options{Root: scratch, Apply: true})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(stdout, "LEFT IN PLACE  "+name) {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	requireFile(t, filepath.Join(linked, ".git"))
+	git(t, linked, "status", "--porcelain")
 }
 
 func TestRunProtectsNestedForeignLinkedWorktree(t *testing.T) {

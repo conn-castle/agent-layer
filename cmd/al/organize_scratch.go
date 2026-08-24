@@ -32,7 +32,8 @@ func newOrganizeScratchCmd() *cobra.Command {
 			"ORGANIZE-REVIEW.md from actual outcomes. Predicted dry-run collisions and actual\n" +
 			"collisions return non-zero, as do move or worktree repair failures.\n\n" +
 			"Roots outside Git repositories and untracked directories inside repositories are\n" +
-			"supported. A root containing tracked content is refused. Directories over 100\n" +
+			"supported. Repository roots and roots containing tracked content are refused.\n" +
+			"Directories over 100\n" +
 			"files or 250 MiB, and files over 250 MiB, always require review. Registered main\n" +
 			"and linked worktrees stay in place unless --move-worktrees is explicit.\n" +
 			"Symlinks are never rewritten; top-level and move-breaking links require review,\n" +

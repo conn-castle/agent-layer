@@ -1034,6 +1034,9 @@ func gatherGitFacts(ctx context.Context, root string, stderr io.Writer) (gitFact
 	}
 	facts.repository = true
 	facts.top = canonicalPath(top)
+	if canonicalPath(root) == facts.top {
+		return facts, fmt.Errorf("refusing to organize %s: requested root is the git repository top level", root)
+	}
 
 	trackedUnder, err := trackedPathsBelow(ctx, facts.top, root)
 	if err != nil {
@@ -1134,14 +1137,12 @@ func parseWorktreeList(output string) map[string]string {
 	registrations := map[string]string{}
 	current := ""
 	for _, field := range strings.Split(output, "\x00") {
-		for _, line := range strings.Split(field, "\n") {
-			switch {
-			case strings.HasPrefix(line, worktreeLinePrefix):
-				current = canonicalPath(strings.TrimPrefix(line, worktreeLinePrefix))
-				registrations[current] = ""
-			case current != "" && strings.HasPrefix(line, "prunable"):
-				registrations[current] = strings.TrimSpace(strings.TrimPrefix(line, "prunable"))
-			}
+		switch {
+		case strings.HasPrefix(field, worktreeLinePrefix):
+			current = canonicalPath(strings.TrimPrefix(field, worktreeLinePrefix))
+			registrations[current] = ""
+		case current != "" && strings.HasPrefix(field, "prunable"):
+			registrations[current] = strings.TrimSpace(strings.TrimPrefix(field, "prunable"))
 		}
 	}
 	return registrations

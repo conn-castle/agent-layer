@@ -182,9 +182,9 @@ Classification is deliberately conservative:
 Git and worktree protection:
 
 - Roots outside a Git repository are supported. An untracked, non-ignored
-  directory inside a repository is also allowed. If Git tracks any content at
-  or below the requested root, the command refuses the root (including a
-  repository root or tracked subtree).
+  directory inside a repository is also allowed. Repository roots are always
+  refused, including empty or unborn repositories. If Git tracks any content
+  at or below another requested root, the command refuses that tracked subtree.
 - Git runs with `LC_ALL=C`. Only Git's genuine “not a git repository” result
   disables repository-backed facts; a missing/broken executable, dubious
   ownership, or failures of `ls-files`/`worktree list` are fatal.
