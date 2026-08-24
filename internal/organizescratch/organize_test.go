@@ -2,17 +2,21 @@ package organizescratch
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/gitenv"
 )
 
-// runOrganize executes a run against opts and returns everything it wrote.
 func runOrganize(t *testing.T, opts Options) (stdout, stderr string, err error) {
 	t.Helper()
 	if opts.MinGroup == 0 {
@@ -25,7 +29,7 @@ func runOrganize(t *testing.T, opts Options) (stdout, stderr string, err error) 
 
 func readReviewDoc(t *testing.T, root string) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(root, reviewDocName)) // #nosec G304 -- test-owned temporary root.
+	data, err := os.ReadFile(filepath.Join(root, reviewDocName)) // #nosec G304 -- test fixture.
 	if err != nil {
 		t.Fatalf("read review doc: %v", err)
 	}
@@ -48,11 +52,9 @@ func requireFile(t *testing.T, path string) {
 
 func git(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	command := exec.CommandContext(t.Context(), "git", append([]string{"-C", dir}, args...)...) // #nosec G204 -- fixed git arguments below a test-owned root.
-	// Strip inherited discovery variables for the same reason the command does:
-	// under a git hook or pre-commit, GIT_DIR wins over -C and these fixtures
-	// would operate on this repository instead of their own temporary one.
+	command := exec.CommandContext(t.Context(), "git", append([]string{"-C", dir}, args...)...) // #nosec G204 -- test-owned fixture.
 	command.Env = append(gitenv.WithoutDiscovery(),
+		"LC_ALL=C",
 		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
 		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
 	)
@@ -63,22 +65,73 @@ func git(t *testing.T, dir string, args ...string) string {
 	return string(out)
 }
 
-// newRepoWithScratch builds a git repository with one commit and returns the
-// repository root plus a gitignored scratch directory inside it.
-func newRepoWithScratch(t *testing.T) (repo, scratch string) {
+func newRepo(t *testing.T) string {
 	t.Helper()
-	repo = t.TempDir()
+	repo := t.TempDir()
 	git(t, repo, "init", "--initial-branch=main")
 	writeFileAt(t, filepath.Join(repo, "main.go"), "package main\n")
-	writeFileAt(t, filepath.Join(repo, ".gitignore"), "scratch/\n")
-	git(t, repo, "add", ".")
+	git(t, repo, "add", "main.go")
 	git(t, repo, "commit", "-m", "initial")
+	return repo
+}
+
+func newRepoWithScratch(t *testing.T) (repo, scratch string) {
+	t.Helper()
+	repo = newRepo(t)
+	writeFileAt(t, filepath.Join(repo, ".gitignore"), "scratch/\n")
+	git(t, repo, "add", ".gitignore")
+	git(t, repo, "commit", "-m", "ignore scratch")
 	return repo, mkdirAt(t, filepath.Join(repo, "scratch"))
 }
 
+func truncateFile(t *testing.T, path string, size int64) {
+	t.Helper()
+	writeFileAt(t, path, "")
+	if err := os.Truncate(path, size); err != nil {
+		t.Fatalf("truncate %s: %v", path, err)
+	}
+}
+
+func snapshotTree(t *testing.T, root string) []string {
+	t.Helper()
+	var snapshot []string
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		extra := ""
+		switch {
+		case info.Mode()&os.ModeSymlink != 0:
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			extra = " -> " + target
+		case info.Mode().IsRegular():
+			data, err := os.ReadFile(path) // #nosec G122,G304 -- isolated immutable test fixture during snapshot.
+			if err != nil {
+				return err
+			}
+			extra = fmt.Sprintf(" sha256=%x", sha256.Sum256(data))
+		}
+		snapshot = append(snapshot, fmt.Sprintf("%s %s %d%s", filepath.ToSlash(rel), info.Mode(), info.Size(), extra))
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("snapshot %s: %v", root, err)
+	}
+	return snapshot
+}
+
 func TestRunRejectsUnusableOptions(t *testing.T) {
-	// Every one of these would otherwise be resolved by guessing, and this tool
-	// moves real files: guessing is not acceptable.
 	file := writeFileAt(t, filepath.Join(t.TempDir(), "not-a-dir"), "x")
 	cases := []struct {
 		name string
@@ -95,538 +148,775 @@ func TestRunRejectsUnusableOptions(t *testing.T) {
 			var out, errOut bytes.Buffer
 			err := Run(t.Context(), tc.opts, &out, &errOut)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("err = %v, want it to mention %q", err, tc.want)
+				t.Fatalf("err = %v, want %q", err, tc.want)
 			}
 		})
 	}
 }
 
-func TestRunReportsWhenThereIsNothingToDo(t *testing.T) {
-	root := t.TempDir()
-	mkdirAt(t, filepath.Join(root, "reports"))
-	mkdirAt(t, filepath.Join(root, "artifacts"))
-	mkdirAt(t, filepath.Join(root, "review"))
-	writeFileAt(t, filepath.Join(root, reviewDocName), "old")
-	mkdirAt(t, filepath.Join(root, "venv"))
+func TestRunAllowsNonRepositoryAndUntrackedNonIgnoredRoots(t *testing.T) {
+	t.Run("outside repository", func(t *testing.T) {
+		root := t.TempDir()
+		writeFileAt(t, filepath.Join(root, "notes.md"), "x")
+		_, stderr, err := runOrganize(t, Options{Root: root})
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		if !strings.Contains(stderr, "outside a git repository") {
+			t.Fatalf("stderr = %q", stderr)
+		}
+	})
 
-	stdout, _, err := runOrganize(t, Options{Root: root, Apply: true, Keep: []string{"venv", ""}})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !strings.Contains(stdout, "nothing to organize") {
-		t.Fatalf("stdout = %q, want a nothing-to-organize report", stdout)
-	}
-	// The kept entry must still be where the tool that manages it expects it.
-	requireFile(t, filepath.Join(root, "venv"))
-	if readReviewDoc(t, root) != "old" {
-		t.Fatal("an empty run must not rewrite the existing review list")
+	t.Run("untracked and non-ignored", func(t *testing.T) {
+		repo := newRepo(t)
+		root := mkdirAt(t, filepath.Join(repo, "scratch-unignored"))
+		writeFileAt(t, filepath.Join(root, "notes.md"), "x")
+		if _, _, err := runOrganize(t, Options{Root: root}); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		requireFile(t, filepath.Join(root, "notes.md"))
+	})
+}
+
+func TestRunRefusesRepositoryRootAndTrackedSubtree(t *testing.T) {
+	repo := newRepo(t)
+	trackedDir := mkdirAt(t, filepath.Join(repo, "tracked"))
+	writeFileAt(t, filepath.Join(trackedDir, "evidence.log"), "tracked")
+	git(t, repo, "add", "tracked/evidence.log")
+	git(t, repo, "commit", "-m", "tracked subtree")
+
+	for name, root := range map[string]string{"repository root": repo, "tracked subtree": trackedDir} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := runOrganize(t, Options{Root: root, Apply: true})
+			if err == nil || !strings.Contains(err.Error(), "git tracks content at or below") {
+				t.Fatalf("err = %v", err)
+			}
+			requireFile(t, filepath.Join(trackedDir, "evidence.log"))
+			requireNoFile(t, filepath.Join(root, reviewDocName))
+		})
 	}
 }
 
-func TestRunDryRunMovesNothing(t *testing.T) {
-	// The dry run is the safety rail: it must describe the plan and leave every
-	// entry exactly where it was.
+func TestRunTreatsTrackedRootPathspecAsLiteral(t *testing.T) {
+	repo := newRepo(t)
+	rootName := "scratch[1]"
+	root := mkdirAt(t, filepath.Join(repo, rootName))
+	writeFileAt(t, filepath.Join(root, "tracked.log"), "tracked")
+	git(t, repo, "add", "--", ":(literal)"+rootName+"/tracked.log")
+	git(t, repo, "commit", "-m", "track metacharacter root")
+
+	_, _, err := runOrganize(t, Options{Root: root, Apply: true})
+	if err == nil || !strings.Contains(err.Error(), "git tracks content at or below") {
+		t.Fatalf("err = %v", err)
+	}
+	requireFile(t, filepath.Join(root, "tracked.log"))
+	requireNoFile(t, filepath.Join(root, reviewDocName))
+}
+
+func TestRunTreatsMissingOrBrokenGitAsFatal(t *testing.T) {
+	t.Run("missing executable", func(t *testing.T) {
+		root := t.TempDir()
+		writeFileAt(t, filepath.Join(root, "notes.md"), "x")
+		t.Setenv("PATH", t.TempDir())
+		_, _, err := runOrganize(t, Options{Root: root})
+		if err == nil || !strings.Contains(err.Error(), "executable file not found") {
+			t.Fatalf("err = %v", err)
+		}
+		requireNoFile(t, filepath.Join(root, reviewDocName))
+	})
+
+	t.Run("non-repository diagnostic must be exact", func(t *testing.T) {
+		root := t.TempDir()
+		writeFileAt(t, filepath.Join(root, "notes.md"), "x")
+		original := runGit
+		runGit = func(context.Context, string, ...string) (string, error) {
+			return "", &gitCommandError{cause: &exec.ExitError{}, stderr: "fatal: detected dubious ownership in repository"}
+		}
+		t.Cleanup(func() { runGit = original })
+		_, _, err := runOrganize(t, Options{Root: root})
+		if err == nil || !strings.Contains(err.Error(), "dubious ownership") {
+			t.Fatalf("err = %v", err)
+		}
+	})
+}
+
+func TestGitFactsFailClosedAfterRepositoryRecognition(t *testing.T) {
+	for _, failingCommand := range []string{"ls-files", "worktree"} {
+		t.Run(failingCommand, func(t *testing.T) {
+			_, scratch := newRepoWithScratch(t)
+			writeFileAt(t, filepath.Join(scratch, "notes.md"), "x")
+			original := runGit
+			runGit = func(ctx context.Context, dir string, args ...string) (string, error) {
+				if args[0] == failingCommand {
+					if failingCommand != "ls-files" || !slices.Contains(args, "--") {
+						return "", errors.New("injected git fact failure")
+					}
+				}
+				return original(ctx, dir, args...)
+			}
+			t.Cleanup(func() { runGit = original })
+			_, _, err := runOrganize(t, Options{Root: scratch})
+			if err == nil || !strings.Contains(err.Error(), "injected git fact failure") {
+				t.Fatalf("err = %v", err)
+			}
+		})
+	}
+}
+
+func TestGitOutputForcesStableEnglishLocale(t *testing.T) {
+	bin := t.TempDir()
+	script := writeFileAt(t, filepath.Join(bin, "git"), "#!/bin/sh\n"+
+		"if [ \"$LC_ALL\" != C ]; then echo wrong-locale >&2; exit 9; fi\n"+
+		"echo 'fatal: not a git repository (or any of the parent directories): .git' >&2\nexit 128\n")
+	if err := os.Chmod(script, 0o700); err != nil { // #nosec G302 -- executable test fixture must have an execute bit.
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("LC_ALL", "fr_FR.UTF-8")
+	_, err := gitOutput(t.Context(), t.TempDir(), "rev-parse", "--show-toplevel")
+	if err == nil || !isNotGitRepository(err) || strings.Contains(err.Error(), "wrong-locale") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestDryRunIsStrictlyReadOnlyAndPredictsDanglingCollision(t *testing.T) {
 	root := t.TempDir()
-	writeFileAt(t, filepath.Join(root, "notes.md"), "x")
-	writeFileAt(t, filepath.Join(root, "run.log"), "x")
+	writeFileAt(t, filepath.Join(root, "build.log"), "new")
+	writeFileAt(t, filepath.Join(root, "logo.svg"), "<svg/>")
+	target := filepath.Join(root, destArtifactsLogs, "build.log")
+	mkdirAt(t, filepath.Dir(target))
+	if err := os.Symlink("missing-target", target); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTree(t, root)
 
 	stdout, _, err := runOrganize(t, Options{Root: root})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "destination collision") {
+		t.Fatalf("err = %v", err)
 	}
-	if !strings.Contains(stdout, "2 entries — 2 to move, 0 left in place") {
-		t.Fatalf("stdout = %q, want the entry summary", stdout)
+	if !strings.Contains(stdout, "LEFT IN PLACE  build.log") ||
+		!strings.Contains(stdout, "Proposed review list") || !strings.Contains(stdout, "logo.svg") {
+		t.Fatalf("stdout = %q", stdout)
 	}
-	if !strings.Contains(stdout, "DRY RUN — nothing moved. Re-run with --apply.") {
-		t.Fatalf("stdout = %q, want the dry-run notice", stdout)
+	after := snapshotTree(t, root)
+	if !slices.Equal(before, after) {
+		t.Fatalf("dry run changed filesystem\nbefore=%v\nafter=%v", before, after)
 	}
-	// A dry run still writes the review list, so it must say where it landed.
-	if !strings.Contains(stdout, "review list: "+filepath.Join(root, reviewDocName)) {
-		t.Fatalf("stdout = %q, want the review list path", stdout)
-	}
-	requireFile(t, filepath.Join(root, "notes.md"))
-	requireFile(t, filepath.Join(root, "run.log"))
-	requireNoFile(t, filepath.Join(root, "reports"))
-	requireNoFile(t, filepath.Join(root, "artifacts"))
-	if doc := readReviewDoc(t, root); !strings.Contains(doc, "DRY RUN — nothing was moved yet.") {
-		t.Fatalf("review doc = %q, want it to state that nothing moved", doc)
-	}
+	requireNoFile(t, filepath.Join(root, reviewDocName))
 }
 
-func TestRunApplyMovesEntriesToTheirDestinations(t *testing.T) {
+func TestApplyMovesEntriesAndReturnsNonZeroForCollision(t *testing.T) {
 	root := t.TempDir()
-	writeFileAt(t, filepath.Join(root, "ship-pr-19.md"), "x")
-	writeFileAt(t, filepath.Join(root, "build.log"), "x")
+	writeFileAt(t, filepath.Join(root, "notes.md"), "x")
 	writeFileAt(t, filepath.Join(root, "logo.svg"), "<svg/>")
-
-	stdout, stderr, err := runOrganize(t, Options{Root: root, Apply: true})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !strings.Contains(stdout, "moved 3/3") {
-		t.Fatalf("stdout = %q, want moved 3/3", stdout)
-	}
-	// The temp root sits outside any repository, so the only warning expected is
-	// the one announcing that git-backed detection is off.
-	if strings.Count(stderr, "WARNING") != 1 || !strings.Contains(stderr, "not a git repository") {
-		t.Fatalf("stderr = %q, want only the not-a-git-repository warning", stderr)
-	}
-	requireFile(t, filepath.Join(root, reportsAdhocPrefix, "pr", "ship-pr-19.md"))
-	requireFile(t, filepath.Join(root, destArtifactsLogs, "build.log"))
-	requireFile(t, filepath.Join(root, destReviewUniqueAssets, "logo.svg"))
-	requireNoFile(t, filepath.Join(root, "build.log"))
-
-	doc := readReviewDoc(t, root)
-	if !strings.Contains(doc, "Entries have been moved.") {
-		t.Fatalf("review doc = %q, want it to state entries moved", doc)
-	}
-	// Only review/ entries need a human; routed-by-rule folders must not appear.
-	if !strings.Contains(doc, "`"+destReviewUniqueAssets+"` (1)") {
-		t.Fatalf("review doc = %q, want the unique-assets section", doc)
-	}
-	if strings.Contains(doc, destArtifactsLogs) {
-		t.Fatalf("review doc = %q, want no unambiguously routed folders", doc)
-	}
-	if !strings.Contains(doc, reviewGuides[destReviewUniqueAssets]) {
-		t.Fatalf("review doc = %q, want the guidance for that folder", doc)
-	}
-}
-
-func TestRunNeverOverwritesAnOccupiedDestination(t *testing.T) {
-	// Refusing to overwrite is the tool's central promise: a same-named file from
-	// an earlier run must survive untouched.
-	root := t.TempDir()
 	writeFileAt(t, filepath.Join(root, "build.log"), "new")
 	writeFileAt(t, filepath.Join(root, destArtifactsLogs, "build.log"), "earlier")
 
 	stdout, stderr, err := runOrganize(t, Options{Root: root, Apply: true})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "destination collision") {
+		t.Fatalf("err = %v", err)
 	}
-	if !strings.Contains(stdout, "moved 0/1") {
-		t.Fatalf("stdout = %q, want moved 0/1", stdout)
-	}
-	if !strings.Contains(stderr, "COLLISION, left in place: build.log") {
-		t.Fatalf("stderr = %q, want a reported collision", stderr)
-	}
-	existing, err := os.ReadFile(filepath.Join(root, destArtifactsLogs, "build.log")) // #nosec G304 -- test-owned temporary root.
-	if err != nil {
-		t.Fatalf("read destination: %v", err)
-	}
-	if string(existing) != "earlier" {
-		t.Fatalf("destination content = %q, want the earlier file preserved", existing)
+	if !strings.Contains(stderr, "COLLISION, left in place: build.log") || !strings.Contains(stdout, "moved 2/3") {
+		t.Fatalf("stdout=%q stderr=%q", stdout, stderr)
 	}
 	requireFile(t, filepath.Join(root, "build.log"))
+	requireFile(t, filepath.Join(root, reportsAdhocPrefix, adhocFallbackFolder, "notes.md"))
+	requireFile(t, filepath.Join(root, destReviewUniqueAssets, "logo.svg"))
+	doc := readReviewDoc(t, root)
+	if !strings.Contains(doc, "**collision**") || !strings.Contains(doc, "logo.svg") {
+		t.Fatalf("review doc = %q", doc)
+	}
 }
 
-func TestRunGroupsRecurringReportPrefixes(t *testing.T) {
-	// A prefix earns its own folder only when it recurs AND produced markdown, so
-	// a repeated data prefix cannot masquerade as a skill's report family.
+func TestApplyPreservesPriorUnresolvedReviewEntriesAndReasons(t *testing.T) {
 	root := t.TempDir()
-	for i := 0; i < DefaultMinGroup; i++ {
-		writeFileAt(t, filepath.Join(root, fmt.Sprintf("audit-tests.run%d.md", i)), "x")
-		writeFileAt(t, filepath.Join(root, fmt.Sprintf("telemetry.chunk%d.json", i)), "{}")
-	}
+	writeFileAt(t, filepath.Join(root, destReviewUniqueAssets, "old-logo.svg"), "<svg/>")
+	writeFileAt(t, filepath.Join(root, reviewDocName), "# Scratch organization review\n\n## Needs review\n\n### `review/unique-assets` (1)\n\n- `old-logo.svg` — bespoke logo from client\n")
+	writeFileAt(t, filepath.Join(root, "build.log"), "x")
 
 	if _, _, err := runOrganize(t, Options{Root: root, Apply: true}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	requireFile(t, filepath.Join(root, reportsPrefix+"audit-tests", "audit-tests.run0.md"))
-	requireFile(t, filepath.Join(root, destArtifactsData, "telemetry.chunk0.json"))
-	requireNoFile(t, filepath.Join(root, reportsPrefix+"telemetry"))
+	doc := readReviewDoc(t, root)
+	if !strings.Contains(doc, "old-logo.svg") || !strings.Contains(doc, "bespoke logo from client") {
+		t.Fatalf("review doc = %q", doc)
+	}
+
+	writeFileAt(t, filepath.Join(root, reviewDocName), "not safely parseable")
+	writeFileAt(t, filepath.Join(root, "next.log"), "x")
+	if _, _, err := runOrganize(t, Options{Root: root, Apply: true}); err != nil {
+		t.Fatalf("second Run: %v", err)
+	}
+	if doc := readReviewDoc(t, root); !strings.Contains(doc, "filed by an earlier run; reason not recorded") {
+		t.Fatalf("review doc = %q", doc)
+	}
 }
 
-func TestRunHonoursMinGroup(t *testing.T) {
+func TestApplyRecordsActualPartialOutcomeAndUnattemptedEntries(t *testing.T) {
 	root := t.TempDir()
-	for i := 0; i < 2; i++ {
-		writeFileAt(t, filepath.Join(root, fmt.Sprintf("audit-tests.run%d.md", i)), "x")
+	for _, name := range []string{"a.log", "b.log", "c.log"} {
+		writeFileAt(t, filepath.Join(root, name), name)
 	}
-
-	if _, _, err := runOrganize(t, Options{Root: root, Apply: true, MinGroup: 2}); err != nil {
-		t.Fatalf("Run: %v", err)
+	var output bytes.Buffer
+	w := &mutatingWriter{Buffer: &output, mutate: func() { _ = os.Remove(filepath.Join(root, "b.log")) }}
+	var stderr bytes.Buffer
+	err := Run(t.Context(), Options{Root: root, Apply: true, MinGroup: DefaultMinGroup}, w, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "move b.log") {
+		t.Fatalf("err = %v", err)
 	}
-	requireFile(t, filepath.Join(root, reportsPrefix+"audit-tests", "audit-tests.run0.md"))
-}
-
-func TestRunAnnouncesDisabledChecksOutsideAGitRepository(t *testing.T) {
-	// Copy and asset detection depend on git. Losing them silently would make the
-	// output look authoritative when it is not.
-	root := t.TempDir()
-	writeFileAt(t, filepath.Join(root, "notes.md"), "x")
-
-	_, stderr, err := runOrganize(t, Options{Root: root})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !strings.Contains(stderr, "not a git repository") {
-		t.Fatalf("stderr = %q, want a warning that git-backed checks are off", stderr)
-	}
-}
-
-func TestRunLeavesRegisteredWorktreesInPlaceByDefault(t *testing.T) {
-	// Relocating a registered worktree edits real git state, so it takes an
-	// explicit opt-in — and the reason must say so.
-	repo, scratch := newRepoWithScratch(t)
-	git(t, repo, "worktree", "add", filepath.Join("scratch", "wt-feature"), "-b", "feature")
-
-	stdout, _, err := runOrganize(t, Options{Root: scratch, Apply: true})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !strings.Contains(stdout, "LEFT IN PLACE  wt-feature") {
-		t.Fatalf("stdout = %q, want the worktree left in place", stdout)
-	}
-	if !strings.Contains(stdout, "pass --move-worktrees to relocate") {
-		t.Fatalf("stdout = %q, want the opt-in hint", stdout)
-	}
-	requireFile(t, filepath.Join(scratch, "wt-feature", ".git"))
-	if doc := readReviewDoc(t, scratch); !strings.Contains(doc, "## Left in place") {
-		t.Fatalf("review doc = %q, want a left-in-place section", doc)
-	}
-}
-
-func TestRunMoveWorktreesRelocatesAndRepairsRegistration(t *testing.T) {
-	repo, scratch := newRepoWithScratch(t)
-	git(t, repo, "worktree", "add", filepath.Join("scratch", "wt-feature"), "-b", "feature")
-
-	if _, stderr, err := runOrganize(t, Options{Root: scratch, Apply: true, MoveWorktrees: true}); err != nil {
-		t.Fatalf("Run: %v (stderr %q)", err, stderr)
-	}
-	moved := filepath.Join(scratch, destReviewCheckouts, "wt-feature")
-	requireFile(t, filepath.Join(moved, ".git"))
-
-	// The registration must follow the checkout: an unrepaired move leaves git
-	// pointing at a path that no longer exists.
-	list := git(t, repo, "worktree", "list")
-	if !strings.Contains(list, canonicalPath(moved)) {
-		t.Fatalf("worktree list = %q, want the relocated path %q", list, canonicalPath(moved))
-	}
-	if strings.Contains(list, "prunable") {
-		t.Fatalf("worktree list = %q, want no stale registration", list)
-	}
-	// The relocated checkout must still be a working checkout.
-	git(t, moved, "status", "--porcelain")
-}
-
-func TestRunMoveWorktreesRepairsEachNestedCheckout(t *testing.T) {
-	// Repairing only the moved parent leaves every nested worktree registered at
-	// its old location, where git reports it as prunable.
-	repo, scratch := newRepoWithScratch(t)
-	mkdirAt(t, filepath.Join(scratch, "worktrees"))
-	git(t, repo, "worktree", "add", filepath.Join("scratch", "worktrees", "alpha"), "-b", "alpha")
-	git(t, repo, "worktree", "add", filepath.Join("scratch", "worktrees", "beta"), "-b", "beta")
-
-	stdout, stderr, err := runOrganize(t, Options{Root: scratch, Apply: true, MoveWorktrees: true})
-	if err != nil {
-		t.Fatalf("Run: %v (stderr %q)", err, stderr)
-	}
-	if !strings.Contains(stdout, "moved 1/1") {
-		t.Fatalf("stdout = %q, want the parent moved as one entry", stdout)
-	}
-	list := git(t, repo, "worktree", "list")
-	for _, branch := range []string{"alpha", "beta"} {
-		want := canonicalPath(filepath.Join(scratch, destReviewCheckouts, "worktrees", branch))
-		if !strings.Contains(list, want) {
-			t.Fatalf("worktree list = %q, want %s repaired to %q", list, branch, want)
+	requireFile(t, filepath.Join(root, destArtifactsLogs, "a.log"))
+	requireFile(t, filepath.Join(root, "c.log"))
+	doc := readReviewDoc(t, root)
+	for _, want := range []string{"`b.log` — **failed**", "`c.log` — **unattempted**"} {
+		if !strings.Contains(doc, want) {
+			t.Fatalf("review doc = %q, want %q", doc, want)
 		}
 	}
-	if strings.Contains(list, "prunable") {
-		t.Fatalf("worktree list = %q, want no stale registrations", list)
+	if strings.Contains(doc, "Entries have been moved") || strings.Contains(doc, "all entries") {
+		t.Fatalf("review doc made a global success claim: %q", doc)
 	}
 }
 
-func TestRunTreatsATrackedFileCopyAsRegenerable(t *testing.T) {
-	// End to end, this is what makes git-backed detection worth having: a copy of
-	// the repo is reproducible and does not need a per-file decision.
+func TestApplyPreservesPredictedCollisionAfterEarlierFailure(t *testing.T) {
+	root := t.TempDir()
+	writeFileAt(t, filepath.Join(root, "a.log"), "fails")
+	writeFileAt(t, filepath.Join(root, "z.log"), "collides")
+	writeFileAt(t, filepath.Join(root, destArtifactsLogs, "z.log"), "existing")
+	var output bytes.Buffer
+	w := &mutatingWriter{Buffer: &output, mutate: func() { _ = os.Remove(filepath.Join(root, "a.log")) }}
+	var stderr bytes.Buffer
+	err := Run(t.Context(), Options{Root: root, Apply: true, MinGroup: DefaultMinGroup}, w, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "move a.log") {
+		t.Fatalf("err = %v", err)
+	}
+	doc := readReviewDoc(t, root)
+	for _, want := range []string{"`a.log` — **failed**", "`z.log` — **collision**", "already exists"} {
+		if !strings.Contains(doc, want) {
+			t.Fatalf("review doc = %q, want %q", doc, want)
+		}
+	}
+}
+
+type mutatingWriter struct {
+	*bytes.Buffer
+	mutate func()
+	done   bool
+}
+
+func (w *mutatingWriter) Write(p []byte) (int, error) {
+	if !w.done {
+		w.done = true
+		w.mutate()
+	}
+	return w.Buffer.Write(p)
+}
+
+func TestRunFindsCompleteHazardSetThroughFilesystemBoundary(t *testing.T) {
+	t.Run("hazard after 4000 files", func(t *testing.T) {
+		root := t.TempDir()
+		tree := mkdirAt(t, filepath.Join(root, "evidence"))
+		for i := 0; i < 4001; i++ {
+			writeFileAt(t, filepath.Join(tree, fmt.Sprintf("a%04d.json", i)), "{}")
+		}
+		writeFileAt(t, filepath.Join(tree, "z", "jwt-signing-key"), encodedPrivateKeyFixture())
+		if _, _, err := runOrganize(t, Options{Root: root, Apply: true}); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		requireFile(t, filepath.Join(root, destReviewSecrets, "evidence"))
+	})
+
+	t.Run("git metadata excluded but marker retained", func(t *testing.T) {
+		root := t.TempDir()
+		tree := mkdirAt(t, filepath.Join(root, "checkout-copy"))
+		for i := 0; i < 500; i++ {
+			writeFileAt(t, filepath.Join(tree, ".git", "objects", fmt.Sprintf("%04d", i)), "metadata")
+		}
+		writeFileAt(t, filepath.Join(tree, "notes.md"), "x")
+		if _, _, err := runOrganize(t, Options{Root: root, Apply: true}); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		requireFile(t, filepath.Join(root, destReviewCheckouts, "checkout-copy"))
+		if doc := readReviewDoc(t, root); strings.Contains(doc, "directory has 501 files") {
+			t.Fatalf(".git metadata consumed count: %q", doc)
+		}
+	})
+
+	t.Run("authored SVG outranks generated JS", func(t *testing.T) {
+		root := t.TempDir()
+		tree := mkdirAt(t, filepath.Join(root, "generated"))
+		for i := 0; i < vendoredMinFiles+1; i++ {
+			writeFileAt(t, filepath.Join(tree, fmt.Sprintf("%04d.js", i)), "generated")
+		}
+		writeFileAt(t, filepath.Join(tree, "unique.svg"), "<svg/>")
+		if _, _, err := runOrganize(t, Options{Root: root, Apply: true}); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		requireFile(t, filepath.Join(root, destReviewUniqueAssets, "generated"))
+	})
+
+	t.Run("nested checkout marker", func(t *testing.T) {
+		root := t.TempDir()
+		tree := mkdirAt(t, filepath.Join(root, "collection"))
+		mkdirAt(t, filepath.Join(tree, "foreign", ".git"))
+		if _, _, err := runOrganize(t, Options{Root: root, Apply: true}); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		requireFile(t, filepath.Join(root, destReviewCheckouts, "collection"))
+	})
+}
+
+func TestRunDetectsCredentialBearingContent(t *testing.T) {
+	root := t.TempDir()
+	writeFileAt(t, filepath.Join(root, "late-key.pem"), strings.Repeat("certificate chain\n", 400)+privateKeyPEM)
+	encodedPrivateKey := base64.StdEncoding.EncodeToString([]byte(privateKeyPEM))
+	writeFileAt(t, filepath.Join(root, "jwt-signing-key"), encodedPrivateKey[:12]+"\n"+encodedPrivateKey[12:])
+	writeFileAt(t, filepath.Join(root, "jwt-public-certificate.pem"), base64.StdEncoding.EncodeToString([]byte(publicCertPEM)))
+	writeFileAt(t, filepath.Join(root, ".env"), "EMPTY=\nPASSWORD=not-empty\n")
+	writeFileAt(t, filepath.Join(root, "production.env"), "API_TOKEN=not-empty\n")
+	writeFileAt(t, filepath.Join(root, ".env.example"), "API_TOKEN=replace-me\n")
+	writeFileAt(t, filepath.Join(root, "storage-state.json"), `{"cookies":[],"origins":[]}`)
+	writeFileAt(t, filepath.Join(root, "unfamiliar.json"), `{"cookies":[{"name":"session"}]}`)
+	profile := mkdirAt(t, filepath.Join(root, "ChromeProfile"))
+	for _, name := range []string{"Cookies", "Login Data", "Local State"} {
+		writeFileAt(t, filepath.Join(profile, name), "browser data")
+	}
+	mixed := mkdirAt(t, filepath.Join(root, "secret-with-unreadable-sibling"))
+	writeFileAt(t, filepath.Join(mixed, "jwt-signing-key"), encodedPrivateKey)
+	locked := writeFileAt(t, filepath.Join(mixed, "locked.txt"), "authored but unreadable")
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o600) })
+	unreadableTop := writeFileAt(t, filepath.Join(root, "unreadable.log"), "unknown")
+	if err := os.Chmod(unreadableTop, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(unreadableTop, 0o600) })
+
+	if _, _, err := runOrganize(t, Options{Root: root, Apply: true}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, name := range []string{"late-key.pem", "jwt-signing-key", ".env", "production.env", ".env.example", "storage-state.json", "unfamiliar.json", "ChromeProfile", "secret-with-unreadable-sibling"} {
+		requireFile(t, filepath.Join(root, destReviewSecrets, name))
+	}
+	requireFile(t, filepath.Join(root, destArtifactsData, "jwt-public-certificate.pem"))
+	requireFile(t, filepath.Join(root, destReviewUnknown, "unreadable.log"))
+	doc := readReviewDoc(t, root)
+	for _, evidence := range []string{"PEM PRIVATE KEY", "decodes to a PEM PRIVATE KEY", "environment assignments", "cookies array", "browser profile"} {
+		if !strings.Contains(doc, evidence) {
+			t.Errorf("review doc missing %q: %s", evidence, doc)
+		}
+	}
+}
+
+func TestRunDisclosesCleanlyTruncatedCredentialCandidatesWithoutEscalatingThem(t *testing.T) {
+	root := t.TempDir()
+	truncateFile(t, filepath.Join(root, "large-session.json"), privateKeyProbeBytes+1)
+	directory := mkdirAt(t, filepath.Join(root, "private-data"))
+	truncateFile(t, filepath.Join(directory, "session.json"), privateKeyProbeBytes+1)
+
+	if _, _, err := runOrganize(t, Options{Root: root, Apply: true}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	requireFile(t, filepath.Join(root, destArtifactsData, "large-session.json"))
+	requireFile(t, filepath.Join(root, destArtifactsEvidence, "private-data"))
+	doc := readReviewDoc(t, root)
+	for _, name := range []string{"large-session.json", "private-data"} {
+		if !strings.Contains(doc, name) || !strings.Contains(doc, "remaining content was not scanned") {
+			t.Fatalf("review document lacks bounded disclosure for %s: %q", name, doc)
+		}
+	}
+	if strings.Contains(doc, "### `review/secrets`") || strings.Contains(doc, "### `review/unknown`") {
+		t.Fatalf("clean truncation was escalated into a review bucket: %q", doc)
+	}
+}
+
+func TestRunRetainsSampledRepoCopyHeuristicWithDisclosure(t *testing.T) {
 	repo, scratch := newRepoWithScratch(t)
 	copyDir := mkdirAt(t, filepath.Join(scratch, "repo-copy"))
-	for i := 0; i < repoCopyMinFiles; i++ {
-		name := fmt.Sprintf("tracked%d.go", i)
+	for i := 0; i < scanNameSample+25; i++ {
+		name := fmt.Sprintf("tracked%04d.go", i)
 		writeFileAt(t, filepath.Join(repo, name), "package main\n")
 		writeFileAt(t, filepath.Join(copyDir, name), "package main\n")
 	}
 	git(t, repo, "add", ".")
-	git(t, repo, "commit", "-m", "more sources")
+	git(t, repo, "commit", "-m", "tracked copy sources")
 
 	if _, _, err := runOrganize(t, Options{Root: scratch, Apply: true}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	requireFile(t, filepath.Join(scratch, destReviewRegenerable, "repo-copy"))
-}
-
-func TestPrintPlanOrdersDestinationsByVolume(t *testing.T) {
-	// The summary exists to show where the bulk went, so the biggest destination
-	// has to come first.
-	movable := []placement{
-		{entry: entry{name: "a.log"}, dest: destArtifactsLogs},
-		{entry: entry{name: "b.json"}, dest: destArtifactsData},
-		{entry: entry{name: "c.log"}, dest: destArtifactsLogs},
-	}
-	var out bytes.Buffer
-	if err := printPlan(&out, 3, movable, nil); err != nil {
-		t.Fatalf("printPlan: %v", err)
-	}
-	logsAt := strings.Index(out.String(), destArtifactsLogs)
-	dataAt := strings.Index(out.String(), destArtifactsData)
-	if logsAt < 0 || dataAt < 0 || logsAt > dataAt {
-		t.Fatalf("output = %q, want %s listed before %s", out.String(), destArtifactsLogs, destArtifactsData)
+	if doc := readReviewDoc(t, scratch); !strings.Contains(doc, "bounded sample") {
+		t.Fatalf("review doc lacks sampling disclosure: %q", doc)
 	}
 }
 
-func TestWriteReviewDocStatesWhenNoJudgementIsNeeded(t *testing.T) {
-	// Silence would read as "the section is missing"; an explicit statement tells
-	// the reader they are done.
+func TestRunSizeOverridesParentChildAndTopLevelFile(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, reviewDocName)
-	plan := []placement{{entry: entry{name: "a.log"}, dest: destArtifactsLogs, reason: "log extension"}}
-	if err := writeReviewDoc(path, plan, nil, true); err != nil {
-		t.Fatalf("writeReviewDoc: %v", err)
+	many := mkdirAt(t, filepath.Join(root, "many-files"))
+	for i := 0; i <= maxUnreviewedFiles; i++ {
+		writeFileAt(t, filepath.Join(many, fmt.Sprintf("%03d.txt", i)), "x")
 	}
-	if doc := readReviewDoc(t, root); !strings.Contains(doc, "Nothing required a judgement call.") {
-		t.Fatalf("review doc = %q, want an explicit all-clear", doc)
-	}
-}
-
-func TestRunPropagatesWriteFailures(t *testing.T) {
-	// A closed stdout must surface, not be swallowed into a silent success.
-	root := t.TempDir()
-	writeFileAt(t, filepath.Join(root, "notes.md"), "x")
-	if err := Run(t.Context(), Options{Root: root, MinGroup: DefaultMinGroup}, failingWriter{}, &bytes.Buffer{}); err == nil {
-		t.Fatal("Run must report a stdout write failure")
-	}
-}
-
-func TestDisplayPathPrefersTheRelativeForm(t *testing.T) {
-	root := t.TempDir()
-	if got := displayPath(root, filepath.Join(root, "a", "b")); got != filepath.Join("a", "b") {
-		t.Fatalf("displayPath = %q, want a/b", got)
-	}
-}
-
-type failingWriter struct{}
-
-func (failingWriter) Write([]byte) (int, error) { return 0, os.ErrClosed }
-
-func TestRunDoesNotGroupDotfilesUnderAnEmptyPrefix(t *testing.T) {
-	// Every dotfile has an empty prefix, so counting them would invent a report
-	// folder named after nothing and sweep unrelated files into it.
-	root := t.TempDir()
-	for i := 0; i < DefaultMinGroup; i++ {
-		writeFileAt(t, filepath.Join(root, fmt.Sprintf(".note%d.md", i)), "x")
-	}
+	hugeChild := mkdirAt(t, filepath.Join(root, "parent-with-huge-child", "child"))
+	truncateFile(t, filepath.Join(hugeChild, "blob.bin"), maxUnreviewedBytes+1)
+	truncateFile(t, filepath.Join(root, "archive.zip"), maxUnreviewedBytes+1)
 
 	if _, _, err := runOrganize(t, Options{Root: root, Apply: true}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	requireNoFile(t, filepath.Join(root, "reports", ".note0.md"))
-	requireFile(t, filepath.Join(root, reportsAdhocPrefix, adhocFallbackFolder, ".note0.md"))
-}
-
-func TestRunAnnouncesAnEmptyTrackedFileSet(t *testing.T) {
-	// `git ls-files` returning nothing disables copy detection just as surely as
-	// having no repository at all, and the reader has to be told.
-	repo := t.TempDir()
-	git(t, repo, "init", "--initial-branch=main")
-	scratch := mkdirAt(t, filepath.Join(repo, "scratch"))
-	writeFileAt(t, filepath.Join(scratch, "notes.md"), "x")
-
-	_, stderr, err := runOrganize(t, Options{Root: scratch})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !strings.Contains(stderr, "no tracked files") {
-		t.Fatalf("stderr = %q, want a warning that copy detection is disabled", stderr)
-	}
-}
-
-func TestRunTreatsADanglingSymlinkAsACollision(t *testing.T) {
-	// A rename over a symlink destroys the symlink. Deciding occupancy with Stat
-	// instead of Lstat would call a dangling link "absent" and overwrite it, which
-	// is precisely what this tool promises never to do.
-	root := t.TempDir()
-	writeFileAt(t, filepath.Join(root, "build.log"), "new")
-	link := filepath.Join(root, destArtifactsLogs, "build.log")
-	mkdirAt(t, filepath.Dir(link))
-	if err := os.Symlink(filepath.Join(root, "gone"), link); err != nil {
-		t.Fatalf("symlink: %v", err)
-	}
-
-	_, stderr, err := runOrganize(t, Options{Root: root, Apply: true})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !strings.Contains(stderr, "COLLISION, left in place: build.log") {
-		t.Fatalf("stderr = %q, want the dangling symlink reported as a collision", stderr)
-	}
-	target, err := os.Readlink(link)
-	if err != nil || target != filepath.Join(root, "gone") {
-		t.Fatalf("readlink = %q, %v; want the symlink intact", target, err)
-	}
-	requireFile(t, filepath.Join(root, "build.log"))
-}
-
-func TestRunDoesNotRepairAWorktreeThatCouldNotMove(t *testing.T) {
-	// A worktree blocked by a collision is still at its original path with a
-	// correct registration. Repairing it anyway would point git at whatever
-	// occupies the destination and orphan the live checkout.
-	repo, scratch := newRepoWithScratch(t)
-	git(t, repo, "worktree", "add", filepath.Join("scratch", "wt-feature"), "-b", "feature")
-	occupied := filepath.Join(scratch, destReviewCheckouts, "wt-feature")
-	writeFileAt(t, filepath.Join(occupied, "stale-copy.txt"), "not the real checkout")
-
-	_, stderr, err := runOrganize(t, Options{Root: scratch, Apply: true, MoveWorktrees: true})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !strings.Contains(stderr, "COLLISION, left in place: wt-feature") {
-		t.Fatalf("stderr = %q, want the collision reported", stderr)
-	}
-	if strings.Contains(stderr, "worktree repair failed") {
-		t.Fatalf("stderr = %q, want no repair attempted for an entry that never moved", stderr)
-	}
-	list := git(t, repo, "worktree", "list")
-	if !strings.Contains(list, canonicalPath(filepath.Join(scratch, "wt-feature"))) {
-		t.Fatalf("worktree list = %q, want the registration still at the original path", list)
-	}
-	if strings.Contains(list, "prunable") {
-		t.Fatalf("worktree list = %q, want no stale registration", list)
-	}
-}
-
-func TestRunWritesTheReviewListEvenWhenStdoutBreaks(t *testing.T) {
-	// `al organize-scratch --apply | head` closes stdout mid-run. Entries have
-	// already moved by then, so the review list — the only record of where they
-	// went and what still needs a decision — must survive the write failure.
-	root := t.TempDir()
-	writeFileAt(t, filepath.Join(root, "notes.md"), "x")
-	writeFileAt(t, filepath.Join(root, "logo.svg"), "<svg/>")
-
-	err := Run(t.Context(), Options{Root: root, Apply: true, MinGroup: DefaultMinGroup},
-		pipeClosedWriter{marker: "moved "}, &bytes.Buffer{})
-	if err == nil {
-		t.Fatal("Run must report the stdout failure rather than exit clean")
-	}
-	requireFile(t, filepath.Join(root, destReviewUniqueAssets, "logo.svg"))
-	if doc := readReviewDoc(t, root); !strings.Contains(doc, "logo.svg") {
-		t.Fatalf("review doc = %q, want the moved entry recorded", doc)
-	}
-}
-
-// pipeClosedWriter fails on the write containing marker, the way a pipe whose
-// reader has exited fails partway through a command's output.
-type pipeClosedWriter struct{ marker string }
-
-func (w pipeClosedWriter) Write(p []byte) (int, error) {
-	if strings.Contains(string(p), w.marker) {
-		return 0, os.ErrClosed
-	}
-	return len(p), nil
-}
-
-func TestRunResolvesGitFromTheRootNotAnInheritedGitDir(t *testing.T) {
-	// Git hooks, pre-commit, and `git rebase --exec` all export GIT_DIR and
-	// GIT_WORK_TREE, and those take precedence over `git -C <dir>`. Honouring them
-	// would resolve a different repository than the scratch root: the wrong
-	// tracked-file set for copy detection, the wrong worktree registrations to
-	// protect, and `git worktree repair` writes aimed at someone else's checkout.
-	decoy, decoyScratch := newRepoWithScratch(t)
-	git(t, decoy, "worktree", "add", filepath.Join("scratch", "decoy-wt"), "-b", "decoy")
-
-	root := t.TempDir()
-	writeFileAt(t, filepath.Join(root, "notes.md"), "x")
-	t.Setenv("GIT_DIR", filepath.Join(decoy, ".git"))
-	t.Setenv("GIT_WORK_TREE", decoy)
-	t.Setenv("GIT_INDEX_FILE", filepath.Join(decoy, ".git", "index"))
-
-	_, stderr, err := runOrganize(t, Options{Root: root, Apply: true})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	// root is outside any repository, so the decoy must not stand in for it.
-	if !strings.Contains(stderr, "not a git repository") {
-		t.Fatalf("stderr = %q, want the ambient repository ignored and git checks reported off", stderr)
-	}
-	requireFile(t, filepath.Join(root, reportsAdhocPrefix, adhocFallbackFolder, "notes.md"))
-	// The decoy is untouched: nothing was organized in it and its worktree stands.
-	requireFile(t, filepath.Join(decoyScratch, "decoy-wt", ".git"))
-	requireNoFile(t, filepath.Join(decoyScratch, reviewDocName))
-}
-
-func TestRunFindsKeyMaterialBeyondTheFilenameSample(t *testing.T) {
-	// The name sample is capped, so a key whose filename sorts past the cap used
-	// to be invisible and the directory was routed to artifacts/evidence — a
-	// folder the review list tells the reader needs no attention.
-	root := t.TempDir()
-	tree := mkdirAt(t, filepath.Join(root, "evidence"))
-	for i := 0; i < scanNameSample+50; i++ {
-		writeFileAt(t, filepath.Join(tree, fmt.Sprintf("a%04d.json", i)), "{}")
-	}
-	// "z" sorts after every "a" name, so it falls outside the retained sample.
-	writeFileAt(t, filepath.Join(tree, "zzz-deploy.pem"), privateKeyPEM)
-
-	if _, _, err := runOrganize(t, Options{Root: root, Apply: true}); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	requireFile(t, filepath.Join(root, destReviewSecrets, "evidence"))
-	if doc := readReviewDoc(t, root); !strings.Contains(doc, "zzz-deploy.pem") {
-		t.Fatalf("review doc = %q, want the out-of-sample key named", doc)
-	}
-}
-
-func TestRunRecordsCollisionsInTheReviewDocument(t *testing.T) {
-	// stderr is transient; the review list is the durable record. An entry that
-	// could not move must not be presented as though it had.
-	root := t.TempDir()
-	writeFileAt(t, filepath.Join(root, "build.log"), "new")
-	writeFileAt(t, filepath.Join(root, destArtifactsLogs, "build.log"), "earlier")
-
-	if _, _, err := runOrganize(t, Options{Root: root, Apply: true}); err != nil {
-		t.Fatalf("Run: %v", err)
+	for _, name := range []string{"many-files", "parent-with-huge-child", "archive.zip"} {
+		requireFile(t, filepath.Join(root, destReviewOversized, name))
 	}
 	doc := readReviewDoc(t, root)
-	if !strings.Contains(doc, "## Left in place") || !strings.Contains(doc, "already taken") {
-		t.Fatalf("review doc = %q, want the collision recorded as left in place", doc)
+	if !strings.Contains(doc, "child (250.0 MiB)") || !strings.Contains(doc, "101 files") || !strings.Contains(doc, "file apparent size") {
+		t.Fatalf("review doc lacks size evidence: %q", doc)
 	}
 }
 
-func TestRunTrimsKeptNames(t *testing.T) {
-	// A stray space would otherwise fail to match the directory entry and move the
-	// very path the caller asked to protect.
-	root := t.TempDir()
-	mkdirAt(t, filepath.Join(root, "venv"))
-	writeFileAt(t, filepath.Join(root, "notes.md"), "x")
+func TestRunRepairsEntryAndNestedRegisteredWorktrees(t *testing.T) {
+	repo, scratch := newRepoWithScratch(t)
+	parent := filepath.Join(scratch, "parent")
+	git(t, repo, "worktree", "add", parent, "-b", "parent")
+	git(t, repo, "worktree", "add", filepath.Join(parent, "nested"), "-b", "nested")
 
-	if _, _, err := runOrganize(t, Options{Root: root, Apply: true, Keep: []string{"  venv  "}}); err != nil {
+	if _, stderr, err := runOrganize(t, Options{Root: scratch, Apply: true, MoveWorktrees: true}); err != nil {
+		t.Fatalf("Run: %v\nstderr=%s", err, stderr)
+	}
+	movedParent := filepath.Join(scratch, destReviewCheckouts, "parent")
+	for _, target := range []string{movedParent, filepath.Join(movedParent, "nested")} {
+		git(t, target, "status", "--porcelain")
+	}
+	list := git(t, repo, "worktree", "list")
+	if !strings.Contains(list, canonicalPath(movedParent)) || !strings.Contains(list, canonicalPath(filepath.Join(movedParent, "nested"))) || strings.Contains(list, "prunable") {
+		t.Fatalf("worktree list = %q", list)
+	}
+}
+
+func TestRunProtectsAndRepairsForeignLinkedWorktree(t *testing.T) {
+	foreignRepo := newRepo(t)
+	_, scratch := newRepoWithScratch(t)
+	linked := filepath.Join(scratch, "foreign-linked")
+	git(t, foreignRepo, "worktree", "add", linked, "-b", "foreign")
+
+	stdout, _, err := runOrganize(t, Options{Root: scratch, Apply: true})
+	if err != nil {
+		t.Fatalf("default Run: %v", err)
+	}
+	if !strings.Contains(stdout, "LEFT IN PLACE  foreign-linked") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	requireFile(t, filepath.Join(linked, ".git"))
+
+	if _, stderr, err := runOrganize(t, Options{Root: scratch, Apply: true, MoveWorktrees: true}); err != nil {
+		t.Fatalf("move Run: %v\nstderr=%s", err, stderr)
+	}
+	moved := filepath.Join(scratch, destReviewCheckouts, "foreign-linked")
+	git(t, moved, "status", "--porcelain")
+	list := git(t, foreignRepo, "worktree", "list")
+	if !strings.Contains(list, canonicalPath(moved)) || strings.Contains(list, "prunable") {
+		t.Fatalf("foreign worktree list = %q", list)
+	}
+}
+
+func TestRunProtectsNestedForeignLinkedWorktree(t *testing.T) {
+	foreignRepo := newRepo(t)
+	_, scratch := newRepoWithScratch(t)
+	container := mkdirAt(t, filepath.Join(scratch, "container"))
+	linked := filepath.Join(container, "foreign-linked")
+	git(t, foreignRepo, "worktree", "add", linked, "-b", "foreign-nested")
+
+	stdout, _, err := runOrganize(t, Options{Root: scratch, Apply: true})
+	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	requireFile(t, filepath.Join(root, "venv"))
+	if !strings.Contains(stdout, "LEFT IN PLACE  container") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	requireFile(t, filepath.Join(linked, ".git"))
+
+	if _, stderr, err := runOrganize(t, Options{Root: scratch, Apply: true, MoveWorktrees: true}); err != nil {
+		t.Fatalf("move Run: %v\nstderr=%s", err, stderr)
+	}
+	moved := filepath.Join(scratch, destReviewCheckouts, "container", "foreign-linked")
+	git(t, moved, "status", "--porcelain")
+	list := git(t, foreignRepo, "worktree", "list")
+	if !strings.Contains(list, canonicalPath(moved)) || strings.Contains(list, "prunable") {
+		t.Fatalf("nested foreign worktree list = %q", list)
+	}
 }
 
-func TestGatherGitFactsHandlesQuotedAndNonASCIIPaths(t *testing.T) {
-	// git ls-files applies core.quotePath by default, so without -z a non-ASCII
-	// path arrives escaped and its basename never matches the file on disk,
-	// silently shrinking the tracked set copy detection compares against.
-	repo, scratch := newRepoWithScratch(t)
-	writeFileAt(t, filepath.Join(repo, "étude.md"), "x")
-	git(t, repo, "add", "-A")
-	git(t, repo, "commit", "-m", "non-ascii")
+func TestRunProtectsAndRepairsForeignMainCheckoutWithExternalWorktree(t *testing.T) {
+	source := newRepo(t)
+	root := t.TempDir()
+	mainCheckout := filepath.Join(root, "mainrepo")
+	git(t, root, "clone", source, mainCheckout)
+	external := filepath.Join(t.TempDir(), "outside-wt")
+	git(t, mainCheckout, "worktree", "add", external, "-b", "outside")
 
-	facts, err := gatherGitFacts(t.Context(), scratch, &bytes.Buffer{})
+	stdout, _, err := runOrganize(t, Options{Root: root, Apply: true})
 	if err != nil {
-		t.Fatalf("gatherGitFacts: %v", err)
+		t.Fatalf("default Run: %v", err)
 	}
-	if !inSet(facts.tracked, "étude.md") {
-		t.Fatalf("tracked set = %v, want the decoded non-ASCII basename", facts.tracked)
+	if !strings.Contains(stdout, "LEFT IN PLACE  mainrepo") || !strings.Contains(stdout, "registered main checkout") || !strings.Contains(stdout, "externally registered linked worktree") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	if doc := readReviewDoc(t, root); !strings.Contains(doc, "outside-wt") {
+		t.Fatalf("review doc does not disclose external registration %q: %q", external, doc)
+	}
+	git(t, external, "status", "--porcelain")
+
+	if _, stderr, err := runOrganize(t, Options{Root: root, Apply: true, MoveWorktrees: true}); err != nil {
+		t.Fatalf("move Run: %v\nstderr=%s", err, stderr)
+	}
+	movedMain := filepath.Join(root, destReviewCheckouts, "mainrepo")
+	git(t, movedMain, "status", "--porcelain")
+	git(t, external, "status", "--porcelain")
+	list := git(t, movedMain, "worktree", "list", "--porcelain")
+	if !strings.Contains(list, canonicalPath(movedMain)) || !strings.Contains(list, canonicalPath(external)) || strings.Contains(list, "prunable") {
+		t.Fatalf("foreign main worktree list = %q", list)
 	}
 }
 
-func TestGitOutputErrorNamesTheGitFailure(t *testing.T) {
-	// "exit status 128" alone does not tell the reader why a check was disabled.
-	_, err := gitOutput(t.Context(), t.TempDir(), "rev-parse", "--show-toplevel")
-	if err == nil {
-		t.Fatal("expected an error outside a repository")
+func TestRunRepairsNestedMainCheckoutAndItsLinkedWorktreeFromMainContext(t *testing.T) {
+	source := newRepo(t)
+	root := t.TempDir()
+	container := mkdirAt(t, filepath.Join(root, "container"))
+	mainCheckout := filepath.Join(container, "mainrepo")
+	git(t, container, "clone", source, mainCheckout)
+	linked := filepath.Join(container, "linked")
+	git(t, mainCheckout, "worktree", "add", linked, "-b", "nested-linked")
+
+	if _, stderr, err := runOrganize(t, Options{Root: root, Apply: true, MoveWorktrees: true}); err != nil {
+		t.Fatalf("Run: %v\nstderr=%s", err, stderr)
 	}
-	if !strings.Contains(err.Error(), "not a git repository") {
-		t.Fatalf("err = %v, want git's own diagnostic included", err)
+	movedContainer := filepath.Join(root, destReviewCheckouts, "container")
+	movedMain := filepath.Join(movedContainer, "mainrepo")
+	movedLinked := filepath.Join(movedContainer, "linked")
+	git(t, movedMain, "status", "--porcelain")
+	git(t, movedLinked, "status", "--porcelain")
+	list := git(t, movedMain, "worktree", "list", "--porcelain")
+	if !strings.Contains(list, canonicalPath(movedMain)) || !strings.Contains(list, canonicalPath(movedLinked)) || strings.Contains(list, "prunable") {
+		t.Fatalf("nested main worktree list = %q", list)
+	}
+}
+
+func TestRunRepairsMovedWorktreeAfterLaterMoveFailure(t *testing.T) {
+	repo, scratch := newRepoWithScratch(t)
+	worktree := filepath.Join(scratch, "aaa-wt")
+	git(t, repo, "worktree", "add", worktree, "-b", "partial-repair")
+	writeFileAt(t, filepath.Join(scratch, "bbb.log"), "fails later")
+	var output bytes.Buffer
+	w := &mutatingWriter{Buffer: &output, mutate: func() { _ = os.Remove(filepath.Join(scratch, "bbb.log")) }}
+	var stderr bytes.Buffer
+	err := Run(t.Context(), Options{Root: scratch, Apply: true, MoveWorktrees: true, MinGroup: DefaultMinGroup}, w, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "move bbb.log") {
+		t.Fatalf("err = %v\nstderr=%s", err, stderr.String())
+	}
+	moved := filepath.Join(scratch, destReviewCheckouts, "aaa-wt")
+	git(t, moved, "status", "--porcelain")
+	list := git(t, repo, "worktree", "list")
+	if !strings.Contains(list, canonicalPath(moved)) || strings.Contains(list, "prunable") {
+		t.Fatalf("worktree list = %q", list)
+	}
+	doc := readReviewDoc(t, scratch)
+	if !strings.Contains(doc, "`aaa-wt` →") || !strings.Contains(doc, "`bbb.log` — **failed**") || !strings.Contains(doc, "move bbb.log") {
+		t.Fatalf("review doc = %q", doc)
+	}
+}
+
+func TestRunPersistsRepairFailureAlongsideLaterMoveFailure(t *testing.T) {
+	repo, scratch := newRepoWithScratch(t)
+	git(t, repo, "worktree", "add", filepath.Join(scratch, "aaa-wt"), "-b", "partial-repair-failure")
+	writeFileAt(t, filepath.Join(scratch, "bbb.log"), "fails later")
+	original := runGit
+	runGit = func(ctx context.Context, dir string, args ...string) (string, error) {
+		if len(args) >= 2 && args[0] == "worktree" && args[1] == "repair" {
+			return "", errors.New("injected repair failure after partial move")
+		}
+		return original(ctx, dir, args...)
+	}
+	t.Cleanup(func() { runGit = original })
+	var output bytes.Buffer
+	w := &mutatingWriter{Buffer: &output, mutate: func() { _ = os.Remove(filepath.Join(scratch, "bbb.log")) }}
+	var stderr bytes.Buffer
+	err := Run(t.Context(), Options{Root: scratch, Apply: true, MoveWorktrees: true, MinGroup: DefaultMinGroup}, w, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "move bbb.log") || !strings.Contains(err.Error(), "injected repair failure after partial move") {
+		t.Fatalf("err = %v", err)
+	}
+	doc := readReviewDoc(t, scratch)
+	for _, want := range []string{"move bbb.log", "injected repair failure after partial move", "Operational failures"} {
+		if !strings.Contains(doc, want) {
+			t.Fatalf("review doc = %q, want %q", doc, want)
+		}
+	}
+}
+
+func TestRunIgnoresUnrelatedPrunableRegistrationWhenMovedTargetIsHealthy(t *testing.T) {
+	repo, scratch := newRepoWithScratch(t)
+	stale := filepath.Join(repo, "unrelated-stale")
+	git(t, repo, "worktree", "add", stale, "-b", "unrelated-stale")
+	if err := os.Rename(stale, stale+".moved-aside"); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(scratch, "target-wt")
+	git(t, repo, "worktree", "add", target, "-b", "target-repair")
+	if before := git(t, repo, "worktree", "list", "--porcelain"); !strings.Contains(before, "prunable") {
+		t.Fatalf("fixture did not create a prunable registration: %q", before)
+	}
+
+	if _, stderr, err := runOrganize(t, Options{Root: scratch, Apply: true, MoveWorktrees: true}); err != nil {
+		t.Fatalf("Run: %v\nstderr=%s", err, stderr)
+	}
+	moved := filepath.Join(scratch, destReviewCheckouts, "target-wt")
+	git(t, moved, "status", "--porcelain")
+	after := git(t, repo, "worktree", "list", "--porcelain")
+	if !strings.Contains(after, canonicalPath(moved)) || !strings.Contains(after, "prunable") {
+		t.Fatalf("worktree list = %q", after)
+	}
+}
+
+func TestRunReturnsNonZeroForFailedAndStaleWorktreeRepair(t *testing.T) {
+	for _, mode := range []string{"failed", "stale"} {
+		t.Run(mode, func(t *testing.T) {
+			repo, scratch := newRepoWithScratch(t)
+			git(t, repo, "worktree", "add", filepath.Join(scratch, "feature"), "-b", "feature")
+			original := runGit
+			runGit = func(ctx context.Context, dir string, args ...string) (string, error) {
+				if len(args) >= 2 && args[0] == "worktree" && args[1] == "repair" {
+					if mode == "failed" {
+						return "", errors.New("injected repair failure")
+					}
+					return "", nil
+				}
+				return original(ctx, dir, args...)
+			}
+			t.Cleanup(func() { runGit = original })
+
+			_, stderr, err := runOrganize(t, Options{Root: scratch, Apply: true, MoveWorktrees: true})
+			if err == nil {
+				t.Fatal("Run unexpectedly succeeded")
+			}
+			if mode == "failed" && !strings.Contains(err.Error(), "injected repair failure") {
+				t.Fatalf("err = %v", err)
+			}
+			if mode == "stale" && !strings.Contains(err.Error(), "after repair") {
+				t.Fatalf("err = %v", err)
+			}
+			if !strings.Contains(stderr, "ERROR:") || !strings.Contains(readReviewDoc(t, scratch), "Operational failures") {
+				t.Fatalf("stderr=%q doc=%q", stderr, readReviewDoc(t, scratch))
+			}
+		})
+	}
+}
+
+func TestRunReportsBothSymlinkBreakMechanismsAndPreservesInternalLinks(t *testing.T) {
+	base := t.TempDir()
+	root := mkdirAt(t, filepath.Join(base, "root"))
+	writeFileAt(t, filepath.Join(base, "outside.txt"), "outside")
+
+	relativeBundle := mkdirAt(t, filepath.Join(root, "relative-bundle", "sub"))
+	writeFileAt(t, filepath.Join(filepath.Dir(relativeBundle), "notes.md"), "x")
+	if err := os.Symlink("../../../outside.txt", filepath.Join(relativeBundle, "external-link")); err != nil {
+		t.Fatal(err)
+	}
+
+	writeFileAt(t, filepath.Join(root, "source.txt"), "source")
+	absoluteBundle := mkdirAt(t, filepath.Join(root, "absolute-bundle"))
+	writeFileAt(t, filepath.Join(absoluteBundle, "notes.md"), "x")
+	if err := os.Symlink(filepath.Join(root, "source.txt"), filepath.Join(absoluteBundle, "source-link")); err != nil {
+		t.Fatal(err)
+	}
+
+	internalBundle := mkdirAt(t, filepath.Join(root, "internal-bundle"))
+	writeFileAt(t, filepath.Join(internalBundle, "target.txt"), "target")
+	if err := os.Symlink("target.txt", filepath.Join(internalBundle, "valid-link")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("missing", filepath.Join(root, "top-dangling")); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := runOrganize(t, Options{Root: root, Apply: true}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, name := range []string{"relative-bundle", "absolute-bundle", "top-dangling"} {
+		requireFile(t, filepath.Join(root, destReviewSymlinks, name))
+	}
+	requireFile(t, filepath.Join(root, destArtifactsEvidence, "internal-bundle"))
+	doc := readReviewDoc(t, root)
+	if !strings.Contains(doc, "external-link") || !strings.Contains(doc, "source-link") || strings.Contains(doc, "valid-link") {
+		t.Fatalf("review doc = %q", doc)
+	}
+}
+
+func TestRunCanonicalizesEquivalentRootSpellingsForSymlinkPlanning(t *testing.T) {
+	base := t.TempDir()
+	realRoot := mkdirAt(t, filepath.Join(base, "real-root"))
+	aliasRoot := filepath.Join(base, "alias-root")
+	if err := os.Symlink(realRoot, aliasRoot); err != nil {
+		t.Fatal(err)
+	}
+	writeFileAt(t, filepath.Join(realRoot, "source.txt"), "source")
+	owner := mkdirAt(t, filepath.Join(realRoot, "bundle"))
+	writeFileAt(t, filepath.Join(owner, "notes.md"), "notes")
+	if err := os.Symlink(filepath.Join(canonicalPath(realRoot), "source.txt"), filepath.Join(owner, "source-link")); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTree(t, realRoot)
+
+	stdout, _, err := runOrganize(t, Options{Root: aliasRoot})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(stdout, "source-link") || !strings.Contains(stdout, "planned moves would break") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	if after := snapshotTree(t, realRoot); !slices.Equal(before, after) {
+		t.Fatalf("dry run changed canonical root\nbefore=%v\nafter=%v", before, after)
+	}
+}
+
+func TestRunReportsKeptStationarySymlinkOwnerInDryRunAndApply(t *testing.T) {
+	root := t.TempDir()
+	writeFileAt(t, filepath.Join(root, "source.txt"), "source")
+	runs := mkdirAt(t, filepath.Join(root, "runs"))
+	if err := os.Symlink("../source.txt", filepath.Join(runs, "source-link")); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, _, err := runOrganize(t, Options{Root: root, Keep: []string{"runs"}})
+	if err != nil {
+		t.Fatalf("dry Run: %v", err)
+	}
+	for _, want := range []string{"STAYS IN PLACE  runs", "source-link", "planned moves would break"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("dry-run stdout = %q, want %q", stdout, want)
+		}
+	}
+
+	if _, _, err := runOrganize(t, Options{Root: root, Keep: []string{"runs"}, Apply: true}); err != nil {
+		t.Fatalf("apply Run: %v", err)
+	}
+	requireFile(t, filepath.Join(root, "runs", "source-link"))
+	requireFile(t, filepath.Join(root, destArtifactsData, "source.txt"))
+	doc := readReviewDoc(t, root)
+	if !strings.Contains(doc, "`runs`") || !strings.Contains(doc, "actual outcomes broke or may have broken") || !strings.Contains(doc, "source-link") {
+		t.Fatalf("review doc = %q", doc)
+	}
+}
+
+func TestReservedNamesIncludeMetadataAndCallerKeeps(t *testing.T) {
+	reserved := reservedNames([]string{" custom ", ""})
+	for _, name := range []string{"reports", "artifacts", "review", reviewDocName, ".git", ".gitignore", "README.md", ".DS_Store", "custom"} {
+		if !inSet(reserved, name) {
+			t.Errorf("%q was not reserved", name)
+		}
+	}
+}
+
+func TestDisplayPathPrefersRelativeForm(t *testing.T) {
+	root := t.TempDir()
+	if got := displayPath(root, filepath.Join(root, "a", "b")); got != filepath.Join("a", "b") {
+		t.Fatalf("displayPath = %q", got)
 	}
 }

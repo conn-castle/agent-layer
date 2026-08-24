@@ -89,57 +89,118 @@ part of the supported CLI surface, and are not documented on the website.
 
 ### `al organize-scratch` — sort a scratch directory for review
 Agent scratch directories accumulate hundreds of reports, logs, checkouts, and
-dependency trees. This command sorts the top level of one into folders that
-encode **how much review each entry needs**, so a later cleanup pass can skip
-whole folders instead of judging every entry:
+dependency trees. This command sorts only the top level into folders that encode
+**how much review each entry needs**. It is the canonical scratch organizer; it
+never deletes, overwrites, merges, or rewrites links. Deletion is a later human
+decision.
 
 | Destination | Meaning |
 | --- | --- |
 | `reports/<prefix>/` | Matched a recurring report-family naming convention. No review. |
 | `reports/adhoc/<topic>/` | Ad-hoc Markdown, grouped by topic (`pr`, `incidents`, `reviews`, `plans-specs`, `misc`). No review. |
 | `artifacts/<kind>/` | Routed purely by file extension (`logs`, `screenshots`, `diffs`, `scripts`, `data`, `evidence`). No review. |
-| `review/…` | Needs a human decision, subdivided by the reason: `checkouts`, `regenerable`, `unique-assets`, `bulk-samples`, `secrets`, `unknown`. |
+| `review/…` | Needs a human decision: `checkouts`, `regenerable`, `unique-assets`, `bulk-samples`, `oversized`, `symlinks`, `secrets`, or `unknown`. |
 
 ```bash
-# Dry run: print the plan, move nothing (default)
+# Strictly read-only preview (default)
 al organize-scratch --root .agent-layer/tmp
 
-# Perform the moves
+# Move entries and write the actual outcome document
 al organize-scratch --root .agent-layer/tmp --apply
 ```
 
 | Flag | Purpose |
 | --- | --- |
 | `--root <dir>` | Directory to organize. Required — the command never picks one itself. |
-| `--apply` | Perform the moves. Without it the run is a dry run. |
-| `--keep <a,b>` | Top-level names to leave in place, for tool-managed paths other software resolves on its own. Repeatable, and accepts comma-separated values. |
+| `--apply` | Perform moves and write `ORGANIZE-REVIEW.md`. Without it the run writes nothing. |
+| `--keep <a,b>` | Top-level names to leave in place, for tool-managed paths other software resolves on its own. Repeatable, accepts comma-separated values, and rejects path separators. |
 | `--move-worktrees` | Also relocate registered Git worktrees, repairing their registration afterwards. |
 | `--min-group <n>` | How many entries a filename prefix needs before it earns its own `reports/<prefix>` folder (default 5). |
 
-Guarantees worth knowing before running it with `--apply`:
+Safety behavior:
+
 - **Nothing is ever deleted, overwritten, or merged.** Entries are only moved. An
   entry whose destination path is already taken is reported as a collision and
-  left where it is. Every removal decision stays with you.
-- Any run that has something to organize writes `ORGANIZE-REVIEW.md` into the
-  root — including a dry run — listing what needs a decision, what to check
-  before removing it, and anything left in place. A run that finds only reserved
-  or kept entries leaves an earlier review list untouched rather than replacing
-  a still-outstanding decision list with "nothing to do".
+  left where it is. Predicted dry-run collisions and actual apply collisions
+  both make the run non-zero, so automation must not interpret a collision-bearing
+  preview as a successful safety check.
+- A dry run is strictly read-only: it creates no destination directories or
+  review document, moves and repairs nothing, predicts collisions with `Lstat`
+  (including dangling destination links), and prints the complete proposed
+  review list to stdout.
+- Apply writes `ORGANIZE-REVIEW.md` from actual outcomes. It preserves entries
+  still present under `review/`, carries forward safely parseable earlier
+  reasons, and explicitly distinguishes moved, collided, failed, and unattempted
+  entries after a partial failure. Unexpected move/filesystem failures stop the
+  mutation sequence immediately and return non-zero.
+- `reports`, `artifacts`, `review`, `ORGANIZE-REVIEW.md`, `.git`, `.gitignore`,
+  `README.md`, `.DS_Store`, and names supplied with `--keep` are never candidates.
 - Entries are moved one at a time, and the destination check is not atomic with
   the move. The no-overwrite guarantee holds against existing files and earlier
   runs, not against another process writing into the scratch root concurrently.
-- Registered Git worktrees, and any directory containing one, are left in place
+
+Classification is deliberately conservative:
+
+- The metadata/hazard walk is complete. It does not descend into `.git`
+  metadata, but every nested `.git` directory or file is recorded. Filename and
+  extension samples remain bounded only for JS-ratio, repo-copy, and bulk-sample
+  heuristics; any sampled verdict says so.
+- Credential candidates go to `review/secrets`: PEM private keys within the
+  first 1 MiB of a candidate; bounded base64 content that decodes to a PEM
+  private-key header (a base64 public certificate alone does not qualify);
+  non-empty assignments in `.env`, `.env.*`, and `*.env` files; JSON with a
+  top-level cookies array; and browser profiles containing `Cookies` with
+  `Login Data` and/or `Local State`. `.env.example` is included, and a non-empty
+  placeholder still requires review even when it is not a live credential.
+  Candidate paths are matched broadly around key/secret/token/credential/JWT/
+  password/private, auth/session, and environment-file names. A cleanly read
+  1 MiB prefix with no signal keeps its normal classification and records a
+  bounded-inspection disclosure; content after that prefix is not inspected.
+  Content under wholly innocuous names is not probed, so a key there and a
+  credential signal appearing only after the bounded prefix remain residual
+  limitations.
+- Authored source assets outrank statistical dependency/repo-copy heuristics,
+  except that explicitly named top-level dependency/cache trees remain
+  `review/regenerable`. Assets below nested dependency/cache directories do not
+  count as authored evidence.
+- Every top-level directory over 100 files or 250 MiB apparent size requires
+  review. An immediate child over either limit forces its parent into review and
+  is named in the reason. Top-level files over 250 MiB also go to
+  `review/oversized`. Existing useful review categories are preserved and gain
+  the size evidence; incomplete inspection also forces review.
+- Every top-level symlink goes to `review/symlinks`, including dangling links.
+  Links inside entries are compared against the complete move plan. Relative
+  links whose relocation changes an outside resolution, and relative or
+  absolute links whose in-tree target moves elsewhere, are reported. Links are
+  never repaired; valid relative links that move with their target as one unit
+  are not reported. Caller-provided `--keep` entries and stable control files
+  are also inspected as stationary link owners, so a kept link into an entry
+  that moves is disclosed in dry-run output and the applied review document.
+  Existing destination trees (`reports`, `artifacts`, and `review`) and Git
+  metadata are not reinterpreted as kept input.
+
+Git and worktree protection:
+
+- Roots outside a Git repository are supported. An untracked, non-ignored
+  directory inside a repository is also allowed. If Git tracks any content at
+  or below the requested root, the command refuses the root (including a
+  repository root or tracked subtree).
+- Git runs with `LC_ALL=C`. Only Git's genuine “not a git repository” result
+  disables repository-backed facts; a missing/broken executable, dubious
+  ownership, or failures of `ls-files`/`worktree list` are fatal.
+- Registered Git main or linked worktrees, and any directory containing one, are left in place
   unless `--move-worktrees` is passed, because relocating one rewrites Git's
-  worktree registration. With the flag, each real worktree path is repaired
-  after the move (repairing only a moved parent would leave nested worktrees
-  registered at their old location as prunable).
-- Value is judged by **reproducibility** — whether a tree is a copy of the repo,
-  a dependency install, or a build cache — not by whether prose sits next to it.
-  A directory of authored assets that exist nowhere else lands in
-  `review/unique-assets`, never in a "probably disposable" bucket.
-- Copy, asset, and worktree detection all depend on Git. When the root is not
-  inside a repository, or `git ls-files` reports nothing, the command says so on
-  stderr rather than silently classifying with those checks switched off.
+  registration. A moved entry that is itself registered and contains nested
+  registered worktrees repairs both target sets. Foreign main checkouts are
+  detected from their `.git` directories and repair every linked registration
+  from the moved main checkout, including registrations outside the scratch.
+  Standalone foreign linked worktrees are detected from their `.git` files and
+  repaired from the moved linked checkout, not through an unrelated scratch-root
+  repository. Every worktree that moved
+  is repaired even if a later entry move fails. A failed repair or a moved
+  target registration that is missing/prunable after repair makes the run
+  non-zero with the exact repair context; unrelated prunable registrations that
+  predated the run do not make this operation fail.
 
 ## Run checks locally
 ```bash
