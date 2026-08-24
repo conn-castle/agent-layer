@@ -37,6 +37,22 @@ func TestOrganizeScratchCommandIsHiddenButRegistered(t *testing.T) {
 	}
 }
 
+func TestOrganizeScratchLongHelpStatesSafetyBoundaries(t *testing.T) {
+	command := newOrganizeScratchCmd()
+	for _, fact := range []string{
+		"strictly read-only",
+		"containing tracked content is refused",
+		"over 100",
+		"250 MiB",
+		"Predicted dry-run collisions",
+		"Symlinks are never rewritten",
+	} {
+		if !strings.Contains(command.Long, fact) {
+			t.Errorf("long help does not state %q:\n%s", fact, command.Long)
+		}
+	}
+}
+
 func TestOrganizeScratchCommandRequiresRoot(t *testing.T) {
 	// This command moves real files, so it must never pick a directory itself.
 	captureOrganizeScratch(t)
@@ -56,7 +72,7 @@ func TestOrganizeScratchCommandPassesFlagsThrough(t *testing.T) {
 	command.SetOut(&bytes.Buffer{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetArgs([]string{
-		"--root", "/tmp/scratch",
+		"--root", "  /tmp/scratch  ",
 		"--apply",
 		"--move-worktrees",
 		"--min-group", "3",
@@ -70,6 +86,21 @@ func TestOrganizeScratchCommandPassesFlagsThrough(t *testing.T) {
 	}
 	if strings.Join(captured.Keep, "|") != "venv|.venv|node_modules" {
 		t.Fatalf("Keep = %v, want the blank field from the doubled comma dropped", captured.Keep)
+	}
+}
+
+func TestOrganizeScratchCommandRejectsNestedKeepPath(t *testing.T) {
+	for _, keep := range []string{"sub/dir", `sub\dir`} {
+		t.Run(keep, func(t *testing.T) {
+			command := newOrganizeScratchCmd()
+			command.SetOut(&bytes.Buffer{})
+			command.SetErr(&bytes.Buffer{})
+			command.SetArgs([]string{"--root", t.TempDir(), "--keep", keep})
+			err := command.Execute()
+			if err == nil || !strings.Contains(err.Error(), "must be a top-level name without path separators") {
+				t.Fatalf("Execute error = %v, want an actionable invalid --keep error", err)
+			}
+		})
 	}
 }
 

@@ -23,10 +23,21 @@ func newOrganizeScratchCmd() *cobra.Command {
 	command := &cobra.Command{
 		Use:   organizeScratchCommandName + " --root <dir>",
 		Short: "Sort a scratch directory into a reviewable structure",
-		Long: "Sort a scratch directory into reports/, artifacts/, and review/ folders.\n\n" +
-			"Nothing is ever deleted, overwritten, or merged: entries are only moved, an\n" +
-			"entry whose destination is already taken is left in place, and every removal\n" +
-			"decision is left to a human via ORGANIZE-REVIEW.md written into the root.",
+		Long: "Sort the top level of a scratch directory into reports/, artifacts/, and\n" +
+			"review/ folders. Nothing is deleted, overwritten, or merged. Anything that may\n" +
+			"be unsafe to remove unexamined stays under review/ or is left in place.\n\n" +
+			"The default dry run is strictly read-only: it creates no directories or review\n" +
+			"document, predicts existing destination collisions (including dangling links),\n" +
+			"and prints the complete proposed review list. --apply performs moves and writes\n" +
+			"ORGANIZE-REVIEW.md from actual outcomes. Predicted dry-run collisions and actual\n" +
+			"collisions return non-zero, as do move or worktree repair failures.\n\n" +
+			"Roots outside Git repositories and untracked directories inside repositories are\n" +
+			"supported. Repository roots and roots containing tracked content are refused.\n" +
+			"Directories over 100\n" +
+			"files or 250 MiB, and files over 250 MiB, always require review. Registered main\n" +
+			"and linked worktrees stay in place unless --move-worktrees is explicit.\n" +
+			"Symlinks are never rewritten; top-level and move-breaking links require review,\n" +
+			"including links under caller-provided --keep entries.",
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -41,7 +52,7 @@ func newOrganizeScratchCmd() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&options.Root, "root", "", "directory to organize (required)")
-	command.Flags().BoolVar(&options.Apply, "apply", false, "perform the moves instead of only printing the plan")
+	command.Flags().BoolVar(&options.Apply, "apply", false, "perform moves and write the outcome review document")
 	command.Flags().StringArrayVar(&keep, "keep", nil,
 		"comma-separated top-level names to leave in place; repeatable")
 	command.Flags().BoolVar(&options.MoveWorktrees, "move-worktrees", false,
