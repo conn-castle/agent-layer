@@ -59,10 +59,18 @@ func TestClassifierConservativeBoundaryBranches(t *testing.T) {
 	})
 
 	t.Run("tracked and tool assets excluded", func(t *testing.T) {
-		scan := treeScan{assets: []string{"wordmark.svg", "tracked.svg", "playwright-logo.svg"}}
+		scan := treeScan{assets: []string{"brand/wordmark.svg", "nested/tracked.svg", "vendor/playwright-logo.svg"}}
 		assets := uniqueAssetNames(scan, newSet("tracked.svg"))
-		if fmt.Sprint(assets) != "[wordmark.svg]" {
+		if fmt.Sprint(assets) != "[brand/wordmark.svg]" {
 			t.Fatalf("assets = %v", assets)
+		}
+	})
+
+	t.Run("slash-normalized credential candidate", func(t *testing.T) {
+		candidate := writeFileAt(t, filepath.Join(t.TempDir(), ".env"), "TOKEN=value\n")
+		finding, unreadable, _ := probeSecret("nested/.env", candidate)
+		if finding == nil || unreadable != "" || finding.path != "nested/.env" {
+			t.Fatalf("finding=%+v unreadable=%q", finding, unreadable)
 		}
 	})
 

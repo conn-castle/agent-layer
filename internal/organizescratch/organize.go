@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	pathpkg "path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -990,7 +991,7 @@ func parsePriorReasons(path string) (map[string]string, error) {
 	for _, line := range strings.Split(string(data), "\n") {
 		if strings.HasPrefix(line, "### `") {
 			rest := strings.TrimPrefix(line, "### `")
-			if dest, _, ok := strings.Cut(rest, "`"); ok && isReviewDestination(dest) && filepath.Clean(dest) == dest {
+			if dest, _, ok := strings.Cut(rest, "`"); ok && isReviewDestination(dest) && pathpkg.Clean(dest) == dest {
 				currentDest = dest
 			} else {
 				currentDest = ""

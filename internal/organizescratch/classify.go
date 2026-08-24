@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -454,7 +455,7 @@ func containsBase64PrivateKey(data []byte) bool {
 }
 
 func probeSecret(rel, path string) (finding *secretFinding, unreadable, disclosure string) {
-	base := filepath.Base(rel)
+	base := pathpkg.Base(rel)
 	if secretNameStrong.MatchString(base) {
 		return &secretFinding{path: filepath.ToSlash(rel), reason: "filename identifies private-key or credential material"}, "", ""
 	}
@@ -507,7 +508,7 @@ func findSecrets(scan treeScan) (findings []secretFinding, unreadable, disclosur
 func uniqueAssetNames(scan treeScan, tracked map[string]struct{}) []string {
 	assets := make([]string, 0, len(scan.assets))
 	for _, rel := range scan.assets {
-		name := filepath.Base(rel)
+		name := pathpkg.Base(rel)
 		if inSet(tracked, name) || toolAsset.MatchString(name) {
 			continue
 		}
