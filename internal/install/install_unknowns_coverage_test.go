@@ -34,7 +34,7 @@ func TestScanUnknownRoot_RootDoesNotExist_ReturnsNil(t *testing.T) {
 		sys:  RealSystem{},
 	}
 
-	err := inst.scanUnknownRoot(filepath.Join(root, ".agent-layer"), map[string]struct{}{})
+	err := inst.scanUnknownRoot(filepath.Join(root, ".agent-layer"), map[string]struct{}{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

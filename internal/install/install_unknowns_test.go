@@ -336,7 +336,7 @@ func TestScanUnknownRoot_WalkDirError(t *testing.T) {
 		filepath.Clean(alDir): {},
 	}
 	// WalkDir may error when trying to enter the unreadable subdir
-	_ = inst.scanUnknownRoot(alDir, known)
+	_ = inst.scanUnknownRoot(alDir, known, nil)
 }
 
 func TestScanUnknownRoot_StatErrorNonNotExist(t *testing.T) {
@@ -352,7 +352,7 @@ func TestScanUnknownRoot_StatErrorNonNotExist(t *testing.T) {
 
 	inst := &installer{root: root, sys: sys}
 	known := make(map[string]struct{})
-	err := inst.scanUnknownRoot(alDir, known)
+	err := inst.scanUnknownRoot(alDir, known, nil)
 	if err == nil {
 		t.Fatalf("expected error for non-ErrNotExist stat failure")
 	}

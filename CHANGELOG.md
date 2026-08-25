@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Codex project trust is now seeded using the physical repository path after symlink resolution, so a repo opened through a symlink matches the managed `[projects."<root>"]` trust key. Trust-root resolution fails explicitly when the path cannot be canonicalized.
+- Nested upgrade keep-list file entries no longer treat ancestor directories as fully kept, so sibling unknown paths remain eligible for deletion.
 
 ## v0.17.1 - 2026-08-21
 

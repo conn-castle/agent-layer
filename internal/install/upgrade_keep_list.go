@@ -67,12 +67,25 @@ func normalizeUpgradeKeepPath(path string) (string, error) {
 	return clean, nil
 }
 
+func normalizeUpgradeRelPath(path string) string {
+	return filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+}
+
 func upgradePathIsKept(path string, kept upgradeKeepList) bool {
-	normalized := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+	normalized := normalizeUpgradeRelPath(path)
 	for keepPath := range kept {
-		if normalized == keepPath ||
-			strings.HasPrefix(normalized, keepPath+"/") ||
-			strings.HasPrefix(keepPath, normalized+"/") {
+		if normalized == keepPath || strings.HasPrefix(normalized, keepPath+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func upgradePathHasKeptDescendant(path string, kept upgradeKeepList) bool {
+	normalized := normalizeUpgradeRelPath(path)
+	prefix := normalized + "/"
+	for keepPath := range kept {
+		if strings.HasPrefix(keepPath, prefix) {
 			return true
 		}
 	}

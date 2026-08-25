@@ -570,7 +570,7 @@ The keep list is a gitignored, repo-local text file. Each non-empty, non-comment
 docs/agent-layer/TEAM.md
 ```
 
-A directory entry keeps its entire subtree. Entries are exact paths—wildcard characters have no special meaning—and paths outside `.agent-layer/` or `docs/agent-layer/` are rejected. Missing entries remain in the file until you edit it; Agent Layer does not prune them. Kept paths are omitted from `al upgrade plan`, interactive deletion prompts, and `--apply-deletions`. The list does not affect managed-template overwrite decisions. `.agent-layer/tmp/` remains outside this mechanism and retains its separate protected cleanup flow.
+A directory entry keeps its entire subtree. Entries are exact paths—wildcard characters have no special meaning—and paths outside `.agent-layer/` or `docs/agent-layer/` are rejected. Keeping a nested file does not keep sibling paths under the same parent. Missing entries remain in the file until you edit it; Agent Layer does not prune them. Kept paths are omitted from `al upgrade plan`, interactive deletion prompts, and `--apply-deletions`. The list does not affect managed-template overwrite decisions. `.agent-layer/tmp/` remains outside this mechanism and retains its separate protected cleanup flow.
 
 ### Ephemeral artifacts under .agent-layer/tmp/
 

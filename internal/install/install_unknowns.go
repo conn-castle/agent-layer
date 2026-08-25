@@ -28,46 +28,30 @@ func (inst *installer) scanUnknowns() error {
 	if err != nil {
 		return err
 	}
-
-	for _, root := range inst.unknownScanRoots() {
-		if err := inst.scanUnknownRoot(root, known); err != nil {
-			return err
-		}
-	}
 	kept, err := inst.loadUpgradeKeepList()
 	if err != nil {
 		return err
+	}
+
+	for _, root := range inst.unknownScanRoots() {
+		if err := inst.scanUnknownRoot(root, known, kept); err != nil {
+			return err
+		}
 	}
 	inst.unknowns = inst.filterKeptAbsolutePaths(inst.unknowns, kept)
 	inst.sortUnknowns()
 	return nil
 }
 
-func (inst *installer) scanUnknownRoot(root string, known map[string]struct{}) error {
-	sys := inst.sys
-	if _, err := sys.Stat(root); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return fmt.Errorf(messages.InstallFailedStatFmt, root, err)
+func (inst *installer) scanUnknownRoot(root string, known map[string]struct{}, kept upgradeKeepList) error {
+	found, err := inst.walkUnknownsInRoot(root, known, kept)
+	if err != nil {
+		return err
 	}
-	return sys.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		clean := filepath.Clean(path)
-		if clean == filepath.Clean(root) {
-			return nil
-		}
-		if _, ok := known[clean]; ok {
-			return nil
-		}
-		inst.recordUnknown(clean)
-		if entry.IsDir() {
-			return filepath.SkipDir
-		}
-		return nil
-	})
+	for _, path := range found {
+		inst.recordUnknown(path)
+	}
+	return nil
 }
 
 // handleUnknowns prompts the user about files under .agent-layer/ and
@@ -234,17 +218,17 @@ func (inst *installer) scanCurrentUnknowns() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	kept, err := inst.loadUpgradeKeepList()
+	if err != nil {
+		return nil, err
+	}
 	var unknowns []string
 	for _, root := range inst.unknownScanRoots() {
-		found, walkErr := inst.walkUnknownsInRoot(root, known)
+		found, walkErr := inst.walkUnknownsInRoot(root, known, kept)
 		if walkErr != nil {
 			return nil, walkErr
 		}
 		unknowns = append(unknowns, found...)
-	}
-	kept, err := inst.loadUpgradeKeepList()
-	if err != nil {
-		return nil, err
 	}
 	unknowns = inst.filterKeptAbsolutePaths(unknowns, kept)
 	sort.Slice(unknowns, func(i, j int) bool {
@@ -253,8 +237,11 @@ func (inst *installer) scanCurrentUnknowns() ([]string, error) {
 	return unknowns, nil
 }
 
-// walkUnknownsInRoot walks a single directory tree and returns paths not in known.
-func (inst *installer) walkUnknownsInRoot(root string, known map[string]struct{}) ([]string, error) {
+// walkUnknownsInRoot walks a single directory tree and returns unknown paths.
+// Known directories are descended. Kept paths are omitted. Directories that
+// contain a nested keep-list entry are descended so sibling unknowns stay
+// visible; other unknown directories are reported as a single path.
+func (inst *installer) walkUnknownsInRoot(root string, known map[string]struct{}, kept upgradeKeepList) ([]string, error) {
 	sys := inst.sys
 	if _, err := sys.Stat(root); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -272,6 +259,16 @@ func (inst *installer) walkUnknownsInRoot(root string, known map[string]struct{}
 			return nil
 		}
 		if _, ok := known[clean]; ok {
+			return nil
+		}
+		rel := inst.relativePath(clean)
+		if upgradePathIsKept(rel, kept) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() && upgradePathHasKeptDescendant(rel, kept) {
 			return nil
 		}
 		unknowns = append(unknowns, clean)
