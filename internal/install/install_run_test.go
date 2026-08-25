@@ -69,8 +69,7 @@ func TestRunUpgradePreservesGitignoreTrackingSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read gitignore block: %v", err)
 	}
-	customized := strings.Replace(string(blockBytes), "/.agent-layer/", "# /.agent-layer/", 1)
-	customized = strings.Replace(customized, "# /docs/agent-layer/", "/docs/agent-layer/", 1)
+	customized := customizeGitignoreTracking(string(blockBytes))
 	if err := os.WriteFile(blockPath, []byte(customized), 0o600); err != nil { // #nosec G703 -- path is constructed from test-controlled inputs.
 		t.Fatalf("customize gitignore block: %v", err)
 	}
@@ -544,6 +543,33 @@ func TestListManagedDiffs_ReportsGitignoreBlockHash(t *testing.T) {
 	}
 	if !slices.Equal(diffs, expected) {
 		t.Fatalf("unexpected diffs: %v", diffs)
+	}
+}
+
+func TestListManagedDiffs_GitignoreBlockTrackingSettingsAreNotDiffs(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	templateBytes, err := templates.Read("gitignore.block")
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+	gitignorePath := filepath.Join(root, ".agent-layer", "gitignore.block")
+	if err := os.WriteFile(gitignorePath, []byte(customizeGitignoreTracking(string(templateBytes))), 0o600); err != nil {
+		t.Fatalf("write gitignore.block: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	diffs, err := inst.templates().listManagedDiffs()
+	if err != nil {
+		t.Fatalf("listManagedDiffs: %v", err)
+	}
+	for _, diff := range diffs {
+		if filepath.ToSlash(diff) == ".agent-layer/gitignore.block" {
+			t.Fatalf("customized tracking settings reported as an update: %v", diffs)
+		}
 	}
 }
 

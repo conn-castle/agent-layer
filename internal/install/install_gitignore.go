@@ -91,19 +91,15 @@ func writeGitignoreBlock(sys System, path string, templatePath string, perm fs.F
 		if readErr != nil {
 			return fmt.Errorf(messages.InstallFailedReadFmt, path, readErr)
 		}
-		settings, parseErr := ParseGitignoreTrackingSettings(string(existing))
-		if parseErr != nil {
-			return fmt.Errorf("parse gitignore tracking settings from %s: %w", path, parseErr)
-		}
 		templateData, templateErr := templates.Read(templatePath)
 		if templateErr != nil {
 			return fmt.Errorf(messages.InstallFailedReadTemplateFmt, templatePath, templateErr)
 		}
-		merged, mergeErr := ApplyGitignoreTrackingSettings(string(templateData), settings)
+		merged, mergeErr := mergeGitignoreBlockTemplate(existing, templateData)
 		if mergeErr != nil {
-			return fmt.Errorf("apply gitignore tracking settings to template %s: %w", templatePath, mergeErr)
+			return fmt.Errorf(messages.InstallGitignoreMergeTrackingFmt, path, mergeErr)
 		}
-		if err := sys.WriteFileAtomic(path, []byte(merged), perm); err != nil {
+		if err := sys.WriteFileAtomic(path, merged, perm); err != nil {
 			return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
 		}
 		return nil
@@ -123,6 +119,21 @@ func writeGitignoreBlock(sys System, path string, templatePath string, perm fs.F
 		return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
 	}
 	return nil
+}
+
+// mergeGitignoreBlockTemplate returns the current template with tracking
+// settings from an existing gitignore.block applied. Match, preview, and
+// overwrite all compare or write this merged target.
+func mergeGitignoreBlockTemplate(existing []byte, templateData []byte) ([]byte, error) {
+	settings, err := ParseGitignoreTrackingSettings(string(existing))
+	if err != nil {
+		return nil, err
+	}
+	merged, err := ApplyGitignoreTrackingSettings(string(templateData), settings)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(merged), nil
 }
 
 // RepairGitignoreBlockOptions controls gitignore-block repair behavior.

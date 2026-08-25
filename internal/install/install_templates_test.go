@@ -617,6 +617,33 @@ func TestTemplateFileMatches_GitignoreBlockMatchesTemplate(t *testing.T) {
 	}
 }
 
+func TestTemplateFileMatches_GitignoreBlockMatchesMergedTrackingSettings(t *testing.T) {
+	root := t.TempDir()
+	alDir := filepath.Join(root, ".agent-layer")
+	if err := os.Mkdir(alDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	templateBytes, err := templates.Read("gitignore.block")
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+	blockPath := filepath.Join(alDir, "gitignore.block")
+	if err := os.WriteFile(blockPath, []byte(customizeGitignoreTracking(string(templateBytes))), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	info, _ := os.Stat(blockPath)
+	inst := &installer{root: root, sys: RealSystem{}}
+	matches, err := inst.templates().matchTemplate(inst.sys, blockPath, "gitignore.block", info)
+	if err != nil {
+		t.Fatalf("matchTemplate error: %v", err)
+	}
+	if !matches {
+		t.Fatalf("expected customized tracking settings to match the merged template")
+	}
+}
+
 func TestTemplateFileMatches_GitignoreBlockNoMatch(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")

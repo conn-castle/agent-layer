@@ -298,8 +298,7 @@ func TestWriteGitignoreBlockMergesTrackingSettingsIntoTemplateUpdate(t *testing.
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
-	customized := strings.Replace(string(templateBytes), AgentLayerGitignorePattern, "# "+AgentLayerGitignorePattern, 1)
-	customized = strings.Replace(customized, "# "+DocsAgentLayerGitignorePattern, DocsAgentLayerGitignorePattern, 1)
+	customized := customizeGitignoreTracking(string(templateBytes))
 	if err := os.WriteFile(path, []byte(customized), 0o600); err != nil {
 		t.Fatalf("write customized block: %v", err)
 	}
@@ -334,6 +333,45 @@ func TestWriteGitignoreBlockMergesTrackingSettingsIntoTemplateUpdate(t *testing.
 	}
 }
 
+func TestWriteGitignoreBlockTrackingOnlyChangeIsNoop(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".agent-layer", "gitignore.block")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	templateBytes, err := templates.Read("gitignore.block")
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+	customized := customizeGitignoreTracking(string(templateBytes))
+	if err := os.WriteFile(path, []byte(customized), 0o600); err != nil {
+		t.Fatalf("write customized block: %v", err)
+	}
+
+	var recorded []string
+	if err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, nil, func(p string) {
+		recorded = append(recorded, p)
+	}); err != nil {
+		t.Fatalf("writeGitignoreBlock error: %v", err)
+	}
+	if len(recorded) != 0 {
+		t.Fatalf("expected no outdated-file preview when merged write is a no-op, got %v", recorded)
+	}
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read gitignore block: %v", err)
+	}
+	if string(data) != customized {
+		t.Fatalf("customized tracking block was rewritten")
+	}
+}
+
+func customizeGitignoreTracking(content string) string {
+	customized := strings.Replace(content, AgentLayerGitignorePattern, "# "+AgentLayerGitignorePattern, 1)
+	return strings.Replace(customized, "# "+DocsAgentLayerGitignorePattern, DocsAgentLayerGitignorePattern, 1)
+}
+
 func TestGitignoreTrackingSettings(t *testing.T) {
 	t.Run("missing patterns are tracked", func(t *testing.T) {
 		settings, err := ParseGitignoreTrackingSettings("# unrelated\n")
@@ -345,13 +383,26 @@ func TestGitignoreTrackingSettings(t *testing.T) {
 		}
 	})
 
-	t.Run("inline active comment remains ignored", func(t *testing.T) {
-		settings, err := ParseGitignoreTrackingSettings(AgentLayerGitignorePattern + " # local reason\n")
+	t.Run("unsupported inline comment is rejected", func(t *testing.T) {
+		content := AgentLayerGitignorePattern + " # local reason\n"
+		if _, err := ParseGitignoreTrackingSettings(content); err == nil ||
+			!strings.Contains(err.Error(), "unsupported inline comment") ||
+			!strings.Contains(err.Error(), AgentLayerGitignorePattern) {
+			t.Fatalf("expected unsupported inline-comment parse error, got %v", err)
+		}
+		if _, err := ApplyGitignoreTrackingSettings(content, GitignoreTrackingSettings{}); err == nil ||
+			!strings.Contains(err.Error(), "unsupported inline comment") {
+			t.Fatalf("expected unsupported inline-comment apply error, got %v", err)
+		}
+	})
+
+	t.Run("full-line comments with extra text stay tracked", func(t *testing.T) {
+		settings, err := ParseGitignoreTrackingSettings("# " + AgentLayerGitignorePattern + " # local reason\n")
 		if err != nil {
 			t.Fatalf("parse settings: %v", err)
 		}
-		if settings.TrackAgentLayerDir {
-			t.Fatal("active pattern with inline comment should remain ignored")
+		if !settings.TrackAgentLayerDir {
+			t.Fatal("a commented pattern should remain tracked")
 		}
 	})
 
@@ -360,8 +411,12 @@ func TestGitignoreTrackingSettings(t *testing.T) {
 			AgentLayerGitignorePattern + "\n# " + AgentLayerGitignorePattern + "\n",
 			DocsAgentLayerGitignorePattern + "\n# " + DocsAgentLayerGitignorePattern + "\n",
 		} {
-			if _, err := ParseGitignoreTrackingSettings(content); err == nil {
+			_, err := ParseGitignoreTrackingSettings(content)
+			if err == nil {
 				t.Fatalf("expected duplicate pattern error for %q", content)
+			}
+			if !strings.Contains(err.Error(), "managed gitignore block") {
+				t.Fatalf("expected managed gitignore block context, got %v", err)
 			}
 		}
 	})
@@ -372,8 +427,12 @@ func TestGitignoreTrackingSettings(t *testing.T) {
 			AgentLayerGitignorePattern + "\n# " + AgentLayerGitignorePattern + "\n",
 			DocsAgentLayerGitignorePattern + "\n# " + DocsAgentLayerGitignorePattern + "\n",
 		} {
-			if _, err := ApplyGitignoreTrackingSettings(content, settings); err == nil {
+			_, err := ApplyGitignoreTrackingSettings(content, settings)
+			if err == nil {
 				t.Fatalf("expected duplicate pattern error for %q", content)
+			}
+			if !strings.Contains(err.Error(), "managed gitignore block") {
+				t.Fatalf("expected managed gitignore block context, got %v", err)
 			}
 		}
 	})
@@ -729,6 +788,35 @@ func TestRepairGitignoreBlock_TemplateReadError(t *testing.T) {
 	root := t.TempDir()
 	if err := RepairGitignoreBlock(root, RepairGitignoreBlockOptions{System: RealSystem{}}); err == nil {
 		t.Fatal("expected template read error")
+	}
+}
+
+func TestGitDoesNotTreatHashAfterPatternAsComment(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(AgentLayerGitignorePattern+" # local reason\n"), 0o600); err != nil {
+		t.Fatalf("write gitignore: %v", err)
+	}
+	probe := filepath.Join(root, ".agent-layer", "probe")
+	if err := os.MkdirAll(filepath.Dir(probe), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(probe, []byte("x\n"), 0o600); err != nil {
+		t.Fatalf("write probe: %v", err)
+	}
+	initCmd := exec.Command("git", "-C", root, "init", "--quiet") // #nosec G204 -- fixed test command and temp path.
+	initCmd.Env = gitenv.WithoutDiscovery()
+	if output, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("initialize gitignore fixture: %v: %s", err, output)
+	}
+	cmd := exec.Command("git", "-C", root, "check-ignore", "--no-index", "--quiet", "--", ".agent-layer/probe") // #nosec G204 -- fixed test command and test-controlled path.
+	cmd.Env = gitenv.WithoutDiscovery()
+	err := cmd.Run()
+	if err == nil {
+		t.Fatal("Git ignored .agent-layer/probe using a # suffix; that suffix is part of the pattern, not a comment")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		t.Fatalf("check ignore status: %v", err)
 	}
 }
 

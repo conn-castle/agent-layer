@@ -6,7 +6,67 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/config"
 )
+
+func TestLoadSourcesRejectsEmptyDeployedSkillDirectory(t *testing.T) {
+	root := newSourcesTestRoot(t)
+	emptyDir := filepath.Join(root, ".agent-layer", "skills", "abandoned")
+	if err := os.Mkdir(emptyDir, 0o750); err != nil {
+		t.Fatalf("create empty skill directory: %v", err)
+	}
+
+	_, err := LoadSources(os.DirFS(root), root)
+	if err == nil || !strings.Contains(err.Error(), "abandoned") || !strings.Contains(err.Error(), "has no SKILL.md") {
+		t.Fatalf("expected LoadSources to reject empty skill directory, got %v", err)
+	}
+	if _, statErr := os.Stat(emptyDir); statErr != nil {
+		t.Fatalf("direct LoadSources must not remove the empty directory: %v", statErr)
+	}
+}
+
+func TestWithLockedProjectRemovesEmptyDeployedSkillDirectoryBeforeLoadingSources(t *testing.T) {
+	root := newSourcesTestRoot(t)
+	emptyDir := filepath.Join(root, ".agent-layer", "skills", "abandoned")
+	if err := os.Mkdir(emptyDir, 0o750); err != nil {
+		t.Fatalf("create empty skill directory: %v", err)
+	}
+
+	if err := WithLockedProject(RealSystem{}, root, func(*config.ProjectConfig) error {
+		return nil
+	}); err != nil {
+		t.Fatalf("WithLockedProject with empty skill directory: %v", err)
+	}
+	if _, err := os.Stat(emptyDir); !os.IsNotExist(err) {
+		t.Fatalf("empty skill directory still exists after locked load: %v", err)
+	}
+}
+
+func TestProjectLockedRemovesEmptyDeployedSkillDirectoryBeforeLoadingSources(t *testing.T) {
+	fixtureRoot := filepath.Join("testdata", "fixture-repo")
+	root := t.TempDir()
+	if err := copyFixtureRepo(fixtureRoot, root); err != nil {
+		t.Fatalf("copy fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", ".env"), []byte("AL_EXAMPLE_TOKEN=token123\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+	writeTemplateToFixtureSource(t, root, "claude-statusline.sh", filepath.Join(".agent-layer", "claude-statusline.sh"), 0o755)
+	writeTemplateToFixtureSource(t, root, "codex-statusline.toml", filepath.Join(".agent-layer", "codex-statusline.toml"), 0o644)
+
+	emptyDir := filepath.Join(root, ".agent-layer", "skills", "abandoned")
+	if err := os.Mkdir(emptyDir, 0o750); err != nil {
+		t.Fatalf("create empty skill directory: %v", err)
+	}
+
+	if _, err := ProjectLocked(RealSystem{}, root); err != nil {
+		t.Fatalf("ProjectLocked with empty skill directory: %v", err)
+	}
+	if _, err := os.Stat(emptyDir); !os.IsNotExist(err) {
+		t.Fatalf("empty skill directory still exists after locked projection: %v", err)
+	}
+}
 
 func TestRunRemovesEmptyDeployedSkillDirectoryBeforeLoadingSources(t *testing.T) {
 	fixtureRoot := filepath.Join("testdata", "fixture-repo")

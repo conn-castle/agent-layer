@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -40,47 +39,12 @@ func RunWithSystemFS(sys System, fsys fs.FS, root string) (*Result, error) {
 		return nil, fmt.Errorf(messages.SyncConfigFSRequired)
 	}
 	return withProjectSyncLock(sys, root, func() (*Result, error) {
-		if err := removeEmptyDeployedSkillDirs(sys, root); err != nil {
-			return nil, err
-		}
-		project, err := LoadSources(fsys, root)
+		project, err := loadLockedProjectSources(sys, fsys, root)
 		if err != nil {
 			return nil, err
 		}
 		return runWithProjectLocked(sys, root, project)
 	})
-}
-
-// removeEmptyDeployedSkillDirs removes empty immediate children from the
-// user-managed skill source directory before source loading validates them.
-// Nonempty directories and every other entry type remain subject to the normal
-// strict skill validation path.
-func removeEmptyDeployedSkillDirs(sys System, root string) error {
-	skillsRoot := filepath.Join(root, ".agent-layer", "skills")
-	entries, err := sys.ReadDir(skillsRoot)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return fmt.Errorf(messages.SyncReadFailedFmt, skillsRoot, err)
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		skillDir := filepath.Join(skillsRoot, entry.Name())
-		children, err := sys.ReadDir(skillDir)
-		if err != nil {
-			return fmt.Errorf(messages.SyncReadFailedFmt, skillDir, err)
-		}
-		if len(children) != 0 {
-			continue
-		}
-		if err := sys.Remove(skillDir); err != nil {
-			return fmt.Errorf(messages.SyncRemoveFailedFmt, skillDir, err)
-		}
-	}
-	return nil
 }
 
 // RunWithProject regenerates outputs using an already loaded project config.

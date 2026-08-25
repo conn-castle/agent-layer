@@ -143,19 +143,18 @@ func gitignorePatternIsTracked(content string, pattern string) (bool, error) {
 	tracked := true
 	matches := 0
 	for _, line := range strings.Split(content, "\n") {
-		commented, exact := gitignorePatternLineStatus(line, pattern)
-		if exact {
-			matches++
-			tracked = commented
+		commented, match, err := inspectGitignorePatternLine(line, pattern)
+		if err != nil {
+			return false, err
+		}
+		if !match {
 			continue
 		}
-		if relatedActiveGitignorePatternLine(strings.TrimSpace(line), pattern) {
-			matches++
-			tracked = false
-		}
+		matches++
+		tracked = commented
 	}
 	if matches > 1 {
-		return false, fmt.Errorf("multiple gitignore entries for %s", pattern)
+		return false, fmt.Errorf(messages.InstallGitignoreDuplicatePatternFmt, pattern)
 	}
 	return tracked, nil
 }
@@ -164,16 +163,11 @@ func setGitignorePatternTracked(content string, pattern string, tracked bool) (s
 	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
 	matches := 0
 	for i, line := range lines {
-		commented, exact := gitignorePatternLineStatus(line, pattern)
-		if !exact {
-			if relatedActiveGitignorePatternLine(strings.TrimSpace(line), pattern) {
-				matches++
-				if tracked {
-					lines[i] = "# " + pattern
-				} else {
-					lines[i] = pattern
-				}
-			}
+		commented, match, err := inspectGitignorePatternLine(line, pattern)
+		if err != nil {
+			return "", err
+		}
+		if !match {
 			continue
 		}
 		matches++
@@ -184,12 +178,23 @@ func setGitignorePatternTracked(content string, pattern string, tracked bool) (s
 		}
 	}
 	if matches > 1 {
-		return "", fmt.Errorf("multiple gitignore entries for %s", pattern)
+		return "", fmt.Errorf(messages.InstallGitignoreDuplicatePatternFmt, pattern)
 	}
 	if matches == 0 && !tracked {
 		lines = append(lines, pattern)
 	}
 	return strings.Join(lines, "\n") + "\n", nil
+}
+
+func inspectGitignorePatternLine(line string, pattern string) (commented bool, match bool, err error) {
+	commented, exact := gitignorePatternLineStatus(line, pattern)
+	if exact {
+		return commented, true, nil
+	}
+	if gitignorePatternHasUnsupportedInlineComment(strings.TrimSpace(line), pattern) {
+		return false, false, fmt.Errorf(messages.InstallGitignoreUnsupportedInlineCommentFmt, pattern, pattern, pattern)
+	}
+	return false, false, nil
 }
 
 func gitignorePatternLineStatus(line string, pattern string) (bool, bool) {
@@ -212,7 +217,7 @@ func gitignorePatternLineStatus(line string, pattern string) (bool, bool) {
 	return true, strings.HasPrefix(trailing, "#") || strings.HasPrefix(trailing, "-")
 }
 
-func relatedActiveGitignorePatternLine(line string, pattern string) bool {
+func gitignorePatternHasUnsupportedInlineComment(line string, pattern string) bool {
 	after, ok := strings.CutPrefix(line, pattern)
 	if !ok {
 		return false

@@ -29,18 +29,23 @@ func TestRun_GitTrackingPromptDefaultsFromManagedGitignoreBlock(t *testing.T) {
 		assert.Empty(t, selected)
 	})
 
-	t.Run("active inline-comment ignore defaults to not tracked", func(t *testing.T) {
-		// An active ignore with an inline trailing comment must default to
-		// ignored (not tracked); otherwise accepting defaults would flip
-		// .agent-layer/ from ignored to tracked and drop the comment.
-		selected := runWizardToGitTrackingPrompt(t, strings.Replace(
+	t.Run("unsupported inline comment fails before prompting", func(t *testing.T) {
+		root := t.TempDir()
+		setupRepo(t, root)
+		configDir := filepath.Join(root, ".agent-layer")
+		override := strings.Replace(
 			readTemplateGitignoreBlock(t),
 			"/.agent-layer/",
 			"/.agent-layer/  # keep generated config ignored",
 			1,
-		))
-		assert.NotContains(t, selected, messages.WizardGitTrackAgentLayerLabel)
-		assert.Contains(t, selected, messages.WizardGitTrackDocsAgentLayerLabel)
+		)
+		require.NoError(t, os.WriteFile(filepath.Join(configDir, "gitignore.block"), []byte(override), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600))
+
+		err := Run(root, &MockUI{}, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported inline comment")
 	})
 }
 
@@ -69,17 +74,25 @@ func TestGitignoreBlockChanges_UpdateManagedSourceAndPreview(t *testing.T) {
 	assert.NotContains(t, block, "# /docs/agent-layer/\n")
 }
 
-func TestGitignoreBlockChanges_NormalizesInlineCommentPatterns(t *testing.T) {
-	content := "/.agent-layer/  # keep generated config ignored\n# /docs/agent-layer/ - track memory docs\n"
+func TestGitignoreBlockChanges_RejectsUnsupportedInlineComment(t *testing.T) {
+	content := "/.agent-layer/  # keep generated config ignored\n# /docs/agent-layer/\n"
+	choices := NewChoices()
+	choices.TrackAgentLayerDir = false
+	choices.TrackDocsAgentLayerDir = true
+	_, err := patchGitignoreBlock(content, choices)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported inline comment")
+}
+
+func TestGitignoreBlockChanges_PreservesCommentedPatternAnnotation(t *testing.T) {
+	content := "/.agent-layer/\n# /docs/agent-layer/ - track memory docs\n"
 
 	choices := NewChoices()
 	choices.TrackAgentLayerDir = false
 	choices.TrackDocsAgentLayerDir = true
-
 	next, err := patchGitignoreBlock(content, choices)
 	require.NoError(t, err)
 	assert.Contains(t, next, "/.agent-layer/\n")
-	assert.NotContains(t, next, "/.agent-layer/  # keep generated config ignored")
 	assert.Contains(t, next, "# /docs/agent-layer/ - track memory docs\n")
 
 	choices.TrackAgentLayerDir = true
