@@ -34,6 +34,11 @@ func (inst *installer) scanUnknowns() error {
 			return err
 		}
 	}
+	kept, err := inst.loadUpgradeKeepList()
+	if err != nil {
+		return err
+	}
+	inst.unknowns = inst.filterKeptAbsolutePaths(inst.unknowns, kept)
 	inst.sortUnknowns()
 	return nil
 }
@@ -91,6 +96,10 @@ func (inst *installer) handleUnknowns() error {
 		return fmt.Errorf(messages.InstallDeleteUnknownPromptRequired)
 	}
 	tmpUnknowns, otherUnknowns := inst.partitionTmpUnknowns(unknowns)
+	otherUnknowns, err = inst.selectUnknownsToKeep(otherUnknowns)
+	if err != nil {
+		return err
+	}
 	if err := inst.handleNonTmpUnknowns(tmpUnknowns, otherUnknowns); err != nil {
 		return err
 	}
@@ -100,6 +109,29 @@ func (inst *installer) handleUnknowns() error {
 		}
 	}
 	return nil
+}
+
+func (inst *installer) selectUnknownsToKeep(unknowns []string) ([]string, error) {
+	if len(unknowns) == 0 {
+		return unknowns, nil
+	}
+	relative := inst.relativePathList(unknowns)
+	response, err := inst.promptRouter().route(promptRequest{kind: promptKindSelectUnknownsToKeep, paths: relative})
+	if err != nil {
+		return nil, err
+	}
+	if len(response.selectedPaths) == 0 {
+		return unknowns, nil
+	}
+	kept, err := inst.loadUpgradeKeepList()
+	if err != nil {
+		return nil, err
+	}
+	kept, err = inst.addUpgradeKeepPaths(kept, response.selectedPaths, relative)
+	if err != nil {
+		return nil, err
+	}
+	return inst.filterKeptAbsolutePaths(unknowns, kept), nil
 }
 
 // handleNonTmpUnknowns runs the bulk-vs-per-file deletion flow for unknowns
@@ -210,6 +242,11 @@ func (inst *installer) scanCurrentUnknowns() ([]string, error) {
 		}
 		unknowns = append(unknowns, found...)
 	}
+	kept, err := inst.loadUpgradeKeepList()
+	if err != nil {
+		return nil, err
+	}
+	unknowns = inst.filterKeptAbsolutePaths(unknowns, kept)
 	sort.Slice(unknowns, func(i, j int) bool {
 		return inst.relativePath(unknowns[i]) < inst.relativePath(unknowns[j])
 	})
@@ -324,6 +361,7 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 		add(file.path)
 	}
 	add(filepath.Join(root, ".agent-layer", "al.version"))
+	add(filepath.Join(root, ".agent-layer", UpgradeKeepListFileName))
 	// Per-project sync lock created under .agent-layer/ by internal/sync. Known so
 	// `al upgrade` never flags it as an unknown file (deleting it while a sync holds
 	// the lock would let a concurrent sync acquire a fresh flock and defeat

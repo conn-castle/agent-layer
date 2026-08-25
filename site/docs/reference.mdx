@@ -534,6 +534,7 @@ In non-interactive environments, the wizard is skipped.
 - Shows a compact per-file summary (path with `+N -M` line stats) before overwrite decisions, and asks "View the full diff?" (default no) before printing unified diff bodies; per-file overwrite prompts always render the full diff
 - Runs `al sync` automatically after a successful upgrade so retired projection paths and freshly-introduced templates are reconciled (sync warnings print on stderr; sync failures are wrapped and suppress the success banner)
 - In the default interactive flow, prompts about unknown files under `.agent-layer/` and `docs/agent-layer/` and only deletes them if you explicitly approve
+- Before deletion prompts, offers to add unknown non-tmp paths to the repo-local `.agent-layer/upgrade-keep-list`; selected paths are omitted from future upgrade prompts and plans
 - In non-interactive or explicit-category apply (e.g., `--yes --apply-managed-updates`), requires the separate `--apply-deletions` flag before unknown files outside `.agent-layer/tmp/` are eligible for deletion
 - **Treats `.agent-layer/tmp/` as protected ephemeral storage:** files under that directory are never deleted by `--apply-deletions`, never bulk-deleted by the interactive "delete all unknowns?" prompt, and never restored by rollback. Tmp deletion requires either an interactive double-confirm or the dedicated `--apply-tmp-deletions` flag (in addition to `--yes`). See [Ephemeral artifacts under .agent-layer/tmp/](#ephemeral-artifacts-under-agent-layertmp)
 - Never overwrites `.agent-layer/config.toml` or `.agent-layer/.env`
@@ -556,6 +557,20 @@ For a concise team/CI runbook, see [Upgrade checklist](./upgrade-checklist).
 | `--apply-tmp-deletions` | Apply destructive deletion of files **under** `.agent-layer/tmp/`. Required (in addition to `--yes`) for any non-interactive tmp deletion. |
 
 `--apply-deletions` and `--apply-tmp-deletions` are independent. Pass both to delete every unknown file non-interactively; pass either alone to scope deletions to one bucket.
+
+### Upgrade keep list
+
+Interactive upgrades with unknown non-tmp paths first ask whether you want to add any of them to `.agent-layer/upgrade-keep-list`. If accepted, a checkbox list lets you select intentional local files or directories. The ordinary deletion flow then continues with the remaining unknown paths. When every detected path is already kept, upgrade shows neither prompt.
+
+The keep list is a gitignored, repo-local text file. Each non-empty, non-comment line is an exact path relative to the repository root:
+
+```text
+.agent-layer/local-tools/
+.agent-layer/project-notes.md
+docs/agent-layer/TEAM.md
+```
+
+A directory entry keeps its entire subtree. Entries are exact paths—wildcard characters have no special meaning—and paths outside `.agent-layer/` or `docs/agent-layer/` are rejected. Missing entries remain in the file until you edit it; Agent Layer does not prune them. Kept paths are omitted from `al upgrade plan`, interactive deletion prompts, and `--apply-deletions`. The list does not affect managed-template overwrite decisions. `.agent-layer/tmp/` remains outside this mechanism and retains its separate protected cleanup flow.
 
 ### Ephemeral artifacts under .agent-layer/tmp/
 

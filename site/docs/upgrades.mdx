@@ -75,6 +75,10 @@ What it does not mean:
 - It is not a guarantee that every repo custom state can be auto-migrated.
 - It does not guarantee one-step upgrades for skipped release lines.
 
+## Repo-local upgrade keep list
+
+When an interactive upgrade finds unknown non-tmp paths under `.agent-layer/` or `docs/agent-layer/`, it offers to record intentional local paths in `.agent-layer/upgrade-keep-list` before continuing to the existing deletion flow. Kept files and directory subtrees are omitted from future upgrade plans and deletion decisions, including non-interactive `--apply-deletions`. The gitignored file uses one exact repo-relative path per line, supports blank lines and `#` comments, does not expand globs, and is never pruned automatically. It does not suppress managed-template updates, and `.agent-layer/tmp/` retains its separate cleanup protections.
+
 ## Ephemeral artifacts and rollback scope
 
 `.agent-layer/tmp/` is a scratch directory for agent run artifacts (plans, reports, scratch dumps). It is treated specially across the upgrade lifecycle:

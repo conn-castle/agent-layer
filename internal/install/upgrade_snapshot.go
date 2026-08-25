@@ -544,7 +544,8 @@ func (inst *installer) handleUnknownsTargetPaths() []string {
 	// rollback would `RemoveAll` tmp paths without any snapshot entry to
 	// restore them — silently wiping tmp content the user never confirmed
 	// for deletion.
-	filtered := make([]string, 0, len(inst.unknowns))
+	filtered := make([]string, 0, len(inst.unknowns)+1)
+	filtered = append(filtered, inst.upgradeKeepListPath())
 	for _, path := range inst.unknowns {
 		if inst.isUnderAgentLayerTmp(path) {
 			continue
@@ -571,6 +572,7 @@ func (inst *installer) upgradeSnapshotTargetPaths() []string {
 
 	add(filepath.Join(root, ".agent-layer", "al.version"))
 	add(filepath.Join(root, ".agent-layer", ".gitignore"))
+	add(filepath.Join(root, ".agent-layer", UpgradeKeepListFileName))
 	for _, file := range inst.templates().managedTemplateFiles() {
 		add(file.path)
 	}

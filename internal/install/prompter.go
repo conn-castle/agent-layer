@@ -47,6 +47,7 @@ type PromptFuncs struct {
 	DeleteUnknownAllFunc           PromptDeleteUnknownAllFunc
 	DeleteUnknownFunc              PromptDeleteUnknownFunc
 	DeleteUnknownTmpAllFunc        PromptDeleteUnknownTmpAllFunc
+	SelectUnknownsToKeepFunc       PromptSelectUnknownsToKeepFunc
 	ConfigSetDefaultFunc           PromptConfigSetDefaultFunc
 	ConfirmSkillsMigrationFunc     PromptConfirmSkillsMigrationFunc
 }
@@ -192,6 +193,7 @@ type promptValidator interface {
 	hasDeleteUnknownAll() bool
 	hasDeleteUnknown() bool
 	hasDeleteUnknownTmpAll() bool
+	hasSelectUnknownsToKeep() bool
 }
 
 // tmpUnknownsPrompter is an optional capability a Prompter can implement to
@@ -205,6 +207,20 @@ type promptValidator interface {
 // untouched. newPromptRouter performs both probes.
 type tmpUnknownsPrompter interface {
 	DeleteUnknownTmpAll(paths []string) (bool, error)
+}
+
+// unknownKeepPrompter is optional so legacy integrations retain their current
+// deletion flow. The interactive CLI wires this capability.
+type unknownKeepPrompter interface {
+	SelectUnknownsToKeep(paths []string) ([]string, error)
+}
+
+// SelectUnknownsToKeep returns no selections when the callback is absent.
+func (p PromptFuncs) SelectUnknownsToKeep(paths []string) ([]string, error) {
+	if p.SelectUnknownsToKeepFunc == nil {
+		return nil, nil
+	}
+	return p.SelectUnknownsToKeepFunc(paths)
 }
 
 func (p PromptFuncs) hasOverwriteAll() bool {
@@ -233,6 +249,10 @@ func (p PromptFuncs) hasDeleteUnknown() bool {
 
 func (p PromptFuncs) hasDeleteUnknownTmpAll() bool {
 	return p.DeleteUnknownTmpAllFunc != nil
+}
+
+func (p PromptFuncs) hasSelectUnknownsToKeep() bool {
+	return p.SelectUnknownsToKeepFunc != nil
 }
 
 func (p PromptFuncs) hasStatuslineSource() bool {
@@ -265,6 +285,7 @@ const (
 	promptKindDeleteUnknownAll
 	promptKindDeleteUnknown
 	promptKindDeleteUnknownTmpAll
+	promptKindSelectUnknownsToKeep
 	promptKindConfigSetDefault
 	promptKindConfirmSkillsMigration
 )
@@ -298,6 +319,7 @@ type promptResponse struct {
 	approved       bool
 	approvedMemory bool
 	value          any
+	selectedPaths  []string
 }
 
 // promptRouter is the single place install/upgrade prompt decisions flow
@@ -308,6 +330,7 @@ type promptRouter struct {
 	prompter      Prompter
 	unified       unifiedOverwritePrompter
 	tmpUnknowns   tmpUnknownsPrompter
+	unknownKeep   unknownKeepPrompter
 	statusline    statuslineSourcePrompter
 	configDefault configSetDefaultPrompter
 	skills        skillsMigrationPrompter
@@ -343,6 +366,15 @@ func newPromptRouter(prompter Prompter) *promptRouter {
 		}
 		if wired {
 			r.tmpUnknowns = grouped
+		}
+	}
+	if keep, ok := prompter.(unknownKeepPrompter); ok {
+		wired := true
+		if validator, vok := prompter.(promptValidator); vok && !validator.hasSelectUnknownsToKeep() {
+			wired = false
+		}
+		if wired {
+			r.unknownKeep = keep
 		}
 	}
 	if statusline, ok := prompter.(statuslineSourcePrompter); ok {
@@ -439,6 +471,12 @@ func (r *promptRouter) route(req promptRequest) (promptResponse, error) {
 		}
 		approved, err := r.tmpUnknowns.DeleteUnknownTmpAll(req.paths)
 		return promptResponse{approved: approved}, err
+	case promptKindSelectUnknownsToKeep:
+		if r.unknownKeep == nil {
+			return promptResponse{}, nil
+		}
+		selected, err := r.unknownKeep.SelectUnknownsToKeep(req.paths)
+		return promptResponse{selectedPaths: selected}, err
 	case promptKindConfigSetDefault:
 		// Missing config-default prompt uses the migration manifest value.
 		if r.configDefault == nil {

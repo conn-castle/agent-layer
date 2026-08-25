@@ -646,6 +646,7 @@ func TestAgentLayerGitignoreTemplateEntries(t *testing.T) {
 		"state/",
 		"sync.lock",
 		"tmp/",
+		UpgradeKeepListFileName,
 		// The import transaction's scratch space is machine-local even though
 		// the imported skills around it are committed.
 		"skills-imported/.staging/",
@@ -697,6 +698,9 @@ func TestAgentLayerGitignoreTemplateEntries(t *testing.T) {
 	}
 	if !isIgnored("skills-imported/.staging/transaction") {
 		t.Error("agent-layer.gitignore template must ignore imported-skill staging content")
+	}
+	if !isIgnored(UpgradeKeepListFileName) {
+		t.Error("agent-layer.gitignore template must ignore the repo-local upgrade keep list")
 	}
 }
 
