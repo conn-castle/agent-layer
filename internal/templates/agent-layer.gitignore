@@ -8,6 +8,7 @@ config.toml.bak
 state/
 sync.lock
 tmp/
+upgrade-keep-list
 
 # Imported skills and skills.lock.json are committed: a clone or CI run then
 # has the exact skill content without a network `al skills pull`. Only the

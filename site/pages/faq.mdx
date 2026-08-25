@@ -116,7 +116,7 @@ Yes, if you configure it accordingly. Set `approvals.mode` to limit automatic ap
 Agent Layer does not install or sandbox MCP servers. It runs exactly what you configure, which makes review and auditing straightforward.
 
 ## Does Agent Layer ever delete files?
-In the default interactive `al upgrade` flow, Agent Layer may prompt about unknown files under `.agent-layer/` and will only delete them if you explicitly approve. For non-interactive or explicit-category apply (e.g., `--yes --apply-managed-updates`), unknown-file deletions require the separate `--apply-deletions` flag.
+In the default interactive `al upgrade` flow, Agent Layer may prompt about unknown files under `.agent-layer/` and `docs/agent-layer/`. Before offering deletion, it lets you add intentional local paths to the gitignored `.agent-layer/upgrade-keep-list`; kept files and directory subtrees are omitted from future plans and deletion prompts. Agent Layer only deletes remaining paths if you explicitly approve. For non-interactive or explicit-category apply (e.g., `--yes --apply-managed-updates`), unknown-file deletions require the separate `--apply-deletions` flag, which also respects the keep list.
 
 Files under `.agent-layer/tmp/` (ephemeral agent run artifacts: plans, reports, scratch dumps) are protected by stricter rules. The interactive prompt requires a destructive **double-confirm** that defaults to "no". Non-interactive deletion requires the dedicated `--apply-tmp-deletions` flag — `--apply-deletions` alone never touches tmp content. The interactive "delete all unknowns?" choice is also scoped to skip tmp; the grouped tmp prompt always fires separately. See [/docs/reference](/docs/reference).
 

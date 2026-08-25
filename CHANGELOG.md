@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Added `review/oversized` for otherwise-cleared entries over 100 files or 250 MiB (including oversized immediate children and top-level files), and `review/symlinks` for top-level or move-breaking links.
+- Interactive upgrades can record intentional unknown files and directories from `.agent-layer/` and `docs/agent-layer/` in a gitignored `.agent-layer/upgrade-keep-list`. Kept paths are omitted from future upgrade plans and deletion flows.
 
 ### Changed
 - Consolidated the hidden `al organize-scratch` safety model around one complete metadata/hazard walk and outcome pipeline. Dry runs are now strictly read-only and print the full proposed review list; apply preserves unresolved prior review entries and records actual moved, collision, failed, and unattempted outcomes. Directory/file size limits, credential-bearing content, authored assets, nested checkout markers, unreadable paths, and move-breaking symlinks now conservatively force review.
@@ -14,6 +15,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Codex project trust is now seeded using the physical repository path after symlink resolution, so a repo opened through a symlink matches the managed `[projects."<root>"]` trust key. Trust-root resolution fails explicitly when the path cannot be canonicalized.
+- Nested upgrade keep-list file entries no longer treat ancestor directories as fully kept, so sibling unknown paths remain eligible for deletion.
 
 ## v0.17.1 - 2026-08-21
 

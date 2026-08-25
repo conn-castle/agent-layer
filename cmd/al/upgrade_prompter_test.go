@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -10,7 +11,25 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/wizard"
 )
+
+type stubUpgradeKeepListUI struct {
+	selected []string
+	title    string
+	options  []string
+	err      error
+}
+
+func (ui *stubUpgradeKeepListUI) MultiSelect(title string, options []string, selected *[]string) error {
+	ui.title = title
+	ui.options = append([]string(nil), options...)
+	if ui.err != nil {
+		return ui.err
+	}
+	*selected = append([]string(nil), ui.selected...)
+	return nil
+}
 
 func TestIsMemoryPreviewPath(t *testing.T) {
 	tests := []struct {
@@ -82,6 +101,89 @@ func TestBuildUpgradePrompter_DeletionPolicyPaths(t *testing.T) {
 	}, nil)
 	if deleteTmp, err := p3.DeleteUnknownTmpAll([]string{"/tmp/x"}); err != nil || !deleteTmp {
 		t.Fatalf("DeleteUnknownTmpAll(yes+applyTmpDeletions) = (%v, %v), want (true, nil)", deleteTmp, err)
+	}
+}
+
+func TestBuildUpgradePrompter_SelectUnknownsToKeepInteractive(t *testing.T) {
+	ui := &stubUpgradeKeepListUI{selected: []string{"docs/agent-layer/NOTES.md"}}
+	original := newUpgradeKeepListUI
+	newUpgradeKeepListUI = func() upgradeKeepListUI { return ui }
+	t.Cleanup(func() { newUpgradeKeepListUI = original })
+
+	cmd := newUpgradeCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString("\n"))
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{interactive: true}, nil)
+	paths := []string{".agent-layer/local", "docs/agent-layer/NOTES.md"}
+	selected, err := p.SelectUnknownsToKeep(paths)
+	if err != nil {
+		t.Fatalf("SelectUnknownsToKeep: %v", err)
+	}
+	if !reflect.DeepEqual(selected, ui.selected) {
+		t.Fatalf("selected = %v, want %v", selected, ui.selected)
+	}
+	if !reflect.DeepEqual(ui.options, paths) || ui.title != messages.UpgradeKeepListSelectTitle {
+		t.Fatalf("UI received title %q and options %v", ui.title, ui.options)
+	}
+	if !strings.Contains(out.String(), "Found 2 unknown paths eligible") {
+		t.Fatalf("output did not describe keep-list candidates: %q", out.String())
+	}
+}
+
+func TestBuildUpgradePrompter_SelectUnknownsToKeepBackContinues(t *testing.T) {
+	ui := &stubUpgradeKeepListUI{err: wizard.ErrBack}
+	original := newUpgradeKeepListUI
+	newUpgradeKeepListUI = func() upgradeKeepListUI { return ui }
+	t.Cleanup(func() { newUpgradeKeepListUI = original })
+
+	cmd := newUpgradeCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString("\n"))
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{interactive: true}, nil)
+	selected, err := p.SelectUnknownsToKeep([]string{".agent-layer/local"})
+	if err != nil || len(selected) != 0 {
+		t.Fatalf("back selection = %v, err = %v; want no selection and no error", selected, err)
+	}
+}
+
+func TestBuildUpgradePrompter_SelectUnknownsToKeepSkippedNonInteractive(t *testing.T) {
+	called := false
+	original := newUpgradeKeepListUI
+	newUpgradeKeepListUI = func() upgradeKeepListUI {
+		called = true
+		return &stubUpgradeKeepListUI{}
+	}
+	t.Cleanup(func() { newUpgradeKeepListUI = original })
+
+	cmd := newUpgradeCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{yes: true, applyDeletions: true}, nil)
+	selected, err := p.SelectUnknownsToKeep([]string{".agent-layer/local"})
+	if err != nil || len(selected) != 0 || called {
+		t.Fatalf("non-interactive selection = %v, err = %v, UI called = %v", selected, err, called)
+	}
+}
+
+func TestBuildUpgradePrompter_SelectUnknownsToKeepSkippedWhenDeletionsExcluded(t *testing.T) {
+	called := false
+	original := newUpgradeKeepListUI
+	newUpgradeKeepListUI = func() upgradeKeepListUI {
+		called = true
+		return &stubUpgradeKeepListUI{}
+	}
+	t.Cleanup(func() { newUpgradeKeepListUI = original })
+
+	cmd := newUpgradeCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{interactive: true, explicitCategory: true, applyManaged: true}, nil)
+	selected, err := p.SelectUnknownsToKeep([]string{".agent-layer/local"})
+	if err != nil || len(selected) != 0 || called {
+		t.Fatalf("managed-only selection = %v, err = %v, UI called = %v", selected, err, called)
 	}
 }
 

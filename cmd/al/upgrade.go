@@ -15,10 +15,17 @@ import (
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
+	"github.com/conn-castle/agent-layer/internal/wizard"
 )
 
 var installRepairGitignoreBlock = install.RepairGitignoreBlock
 var dispatchPrefetchVersion = versiondispatch.PrefetchVersion
+
+type upgradeKeepListUI interface {
+	MultiSelect(title string, options []string, selected *[]string) error
+}
+
+var newUpgradeKeepListUI = func() upgradeKeepListUI { return wizard.NewHuhUI() }
 
 func newUpgradeCmd() *cobra.Command {
 	var yes bool
@@ -292,6 +299,30 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 	stdinReader := bufio.NewReader(cmd.InOrStdin())
 
 	return install.PromptFuncs{
+		SelectUnknownsToKeepFunc: func(paths []string) ([]string, error) {
+			if policy.yes || !policy.interactive || len(paths) == 0 || (policy.explicitCategory && !policy.applyDeletions) {
+				return nil, nil
+			}
+			noun := "path"
+			if len(paths) != 1 {
+				noun = "paths"
+			}
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), messages.UpgradeKeepListCandidatesFmt, len(paths), noun); err != nil {
+				return nil, err
+			}
+			add, err := promptYesNo(stdinReader, cmd.OutOrStdout(), messages.UpgradeAddToKeepListPrompt, true)
+			if err != nil || !add {
+				return nil, err
+			}
+			selected := []string{}
+			if err := newUpgradeKeepListUI().MultiSelect(messages.UpgradeKeepListSelectTitle, paths, &selected); err != nil {
+				if errors.Is(err, wizard.ErrBack) {
+					return nil, nil
+				}
+				return nil, err
+			}
+			return selected, nil
+		},
 		ConfigSetDefaultFunc: func(key string, manifestValue any, rationale string, field *config.FieldDef) (any, error) {
 			if policy.yes {
 				return manifestValue, nil

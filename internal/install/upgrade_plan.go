@@ -192,6 +192,11 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 	additions = filterCoveredUpgradeChanges(additions, migrationPlan.coveredPaths)
 	updates = filterCoveredUpgradeChanges(updates, migrationPlan.coveredPaths)
 	orphans = filterCoveredUpgradeChanges(orphans, migrationPlan.coveredPaths)
+	kept, err := inst.loadUpgradeKeepList()
+	if err != nil {
+		return UpgradePlan{}, err
+	}
+	orphans = filterKeptUpgradeChanges(orphans, kept)
 
 	renames, additions, orphans, err := detectUpgradeRenames(inst, additions, orphans)
 	if err != nil {

@@ -19,13 +19,16 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
+// ErrBack indicates that the user pressed Esc to return from a wizard form.
+var ErrBack = errors.New("wizard back requested")
+
 var (
 	loadDefaultMCPServersFunc = loadDefaultMCPServers
 	loadCLISkillCatalogFunc   = loadCLISkillCatalog
 	loadWarningDefaultsFunc   = loadWarningDefaults
 	loadProjectConfigFunc     = config.LoadProjectConfig
 	loadConfigLenientFunc     = config.LoadConfigLenient
-	errWizardBack             = errors.New("wizard back requested")
+	errWizardBack             = ErrBack
 	errWizardCancelled        = errors.New("wizard cancelled")
 )
 

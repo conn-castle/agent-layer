@@ -29,6 +29,10 @@ type PromptDeleteUnknownFunc func(path string) (bool, error)
 // prompt for that directory's contents.
 type PromptDeleteUnknownTmpAllFunc func(paths []string) (bool, error)
 
+// PromptSelectUnknownsToKeepFunc asks which unknown repo-relative paths should
+// be persisted in the local upgrade keep list.
+type PromptSelectUnknownsToKeepFunc func(paths []string) ([]string, error)
+
 // Options controls installer behavior.
 type Options struct {
 	Overwrite    bool
