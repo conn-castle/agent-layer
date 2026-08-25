@@ -64,7 +64,76 @@ func EnsureGitignore(sys GitignoreSystem, path string, block string) error {
 }
 
 func writeGitignoreBlock(sys System, path string, templatePath string, perm fs.FileMode, shouldOverwrite PromptOverwriteFunc, recordDiff func(string)) error {
-	return writeTemplateFileWithMatch(sys, path, templatePath, perm, shouldOverwrite, recordDiff, fileMatchesTemplateWithInfo)
+	info, err := sys.Stat(path)
+	if err == nil {
+		matches, matchErr := fileMatchesTemplateWithInfo(sys, path, templatePath, info)
+		if matchErr != nil {
+			return matchErr
+		}
+		if matches {
+			return nil
+		}
+		overwrite := false
+		if shouldOverwrite != nil {
+			overwrite, err = shouldOverwrite(path)
+			if err != nil {
+				return err
+			}
+		}
+		if !overwrite {
+			if recordDiff != nil {
+				recordDiff(path)
+			}
+			return nil
+		}
+
+		existing, readErr := sys.ReadFile(path)
+		if readErr != nil {
+			return fmt.Errorf(messages.InstallFailedReadFmt, path, readErr)
+		}
+		templateData, templateErr := templates.Read(templatePath)
+		if templateErr != nil {
+			return fmt.Errorf(messages.InstallFailedReadTemplateFmt, templatePath, templateErr)
+		}
+		merged, mergeErr := mergeGitignoreBlockTemplate(existing, templateData)
+		if mergeErr != nil {
+			return fmt.Errorf(messages.InstallGitignoreMergeTrackingFmt, path, mergeErr)
+		}
+		if err := sys.WriteFileAtomic(path, merged, perm); err != nil {
+			return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
+		}
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf(messages.InstallFailedStatFmt, path, err)
+	}
+
+	templateData, err := templates.Read(templatePath)
+	if err != nil {
+		return fmt.Errorf(messages.InstallFailedReadTemplateFmt, templatePath, err)
+	}
+	if err := sys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf(messages.InstallFailedCreateDirForFmt, path, err)
+	}
+	if err := sys.WriteFileAtomic(path, templateData, perm); err != nil {
+		return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
+	}
+	return nil
+}
+
+// mergeGitignoreBlockTemplate returns the current template with tracking
+// settings from an existing gitignore.block applied. Match, preview, and
+// overwrite all compare or write this merged target.
+func mergeGitignoreBlockTemplate(existing []byte, templateData []byte) ([]byte, error) {
+	settings, err := ParseGitignoreTrackingSettings(string(existing))
+	if err != nil {
+		return nil, err
+	}
+	merged, err := ApplyGitignoreTrackingSettings(string(templateData), settings)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(merged), nil
 }
 
 // RepairGitignoreBlockOptions controls gitignore-block repair behavior.

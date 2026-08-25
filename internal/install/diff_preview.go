@@ -120,6 +120,13 @@ func (inst *installer) buildSingleDiffPreview(entry LabeledPath, templatePathByR
 	if err != nil {
 		return DiffPreview{}, err
 	}
+	if templatePath == templateGitignoreBlock {
+		merged, mergeErr := mergeGitignoreBlockTemplate(localBytes, templateBytes)
+		if mergeErr != nil {
+			return DiffPreview{}, fmt.Errorf(messages.InstallGitignoreMergeTrackingFmt, relPath, mergeErr)
+		}
+		templateBytes = merged
+	}
 
 	fromName := relPath
 	toName := relPath

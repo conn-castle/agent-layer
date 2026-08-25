@@ -39,7 +39,7 @@ func RunWithSystemFS(sys System, fsys fs.FS, root string) (*Result, error) {
 		return nil, fmt.Errorf(messages.SyncConfigFSRequired)
 	}
 	return withProjectSyncLock(sys, root, func() (*Result, error) {
-		project, err := LoadSources(fsys, root)
+		project, err := loadLockedProjectSources(sys, fsys, root)
 		if err != nil {
 			return nil, err
 		}

@@ -20,6 +20,22 @@ const (
 	gitignoreEnd   = "# <<< agent-layer"
 )
 
+const (
+	// AgentLayerGitignorePattern controls whether the repo-local Agent Layer
+	// configuration directory is tracked by git.
+	AgentLayerGitignorePattern = "/.agent-layer/"
+	// DocsAgentLayerGitignorePattern controls whether Agent Layer project memory
+	// is tracked by git.
+	DocsAgentLayerGitignorePattern = "/docs/agent-layer/"
+)
+
+// GitignoreTrackingSettings captures the user-owned tracking choices stored in
+// the managed gitignore block.
+type GitignoreTrackingSettings struct {
+	TrackAgentLayerDir     bool
+	TrackDocsAgentLayerDir bool
+}
+
 const gitignoreHashPrefix = "# Template hash: "
 const (
 	gitignoreHeaderLine1 = "# Managed by Agent Layer. To customize, edit .agent-layer/gitignore.block"
@@ -94,6 +110,119 @@ func ValidateGitignoreBlock(block string, blockPath string) (string, error) {
 		return "", fmt.Errorf(messages.InstallInvalidGitignoreBlockFmt, blockPath)
 	}
 	return normalized, nil
+}
+
+// ParseGitignoreTrackingSettings reads the two user-owned tracking choices from
+// a gitignore block. A missing or commented pattern means the path is tracked.
+func ParseGitignoreTrackingSettings(content string) (GitignoreTrackingSettings, error) {
+	trackAgentLayer, err := gitignorePatternIsTracked(content, AgentLayerGitignorePattern)
+	if err != nil {
+		return GitignoreTrackingSettings{}, err
+	}
+	trackDocsAgentLayer, err := gitignorePatternIsTracked(content, DocsAgentLayerGitignorePattern)
+	if err != nil {
+		return GitignoreTrackingSettings{}, err
+	}
+	return GitignoreTrackingSettings{
+		TrackAgentLayerDir:     trackAgentLayer,
+		TrackDocsAgentLayerDir: trackDocsAgentLayer,
+	}, nil
+}
+
+// ApplyGitignoreTrackingSettings updates the two tracking choices while leaving
+// all unrelated template content intact.
+func ApplyGitignoreTrackingSettings(content string, settings GitignoreTrackingSettings) (string, error) {
+	next, err := setGitignorePatternTracked(content, AgentLayerGitignorePattern, settings.TrackAgentLayerDir)
+	if err != nil {
+		return "", err
+	}
+	return setGitignorePatternTracked(next, DocsAgentLayerGitignorePattern, settings.TrackDocsAgentLayerDir)
+}
+
+func gitignorePatternIsTracked(content string, pattern string) (bool, error) {
+	tracked := true
+	matches := 0
+	for _, line := range strings.Split(content, "\n") {
+		commented, match, err := inspectGitignorePatternLine(line, pattern)
+		if err != nil {
+			return false, err
+		}
+		if !match {
+			continue
+		}
+		matches++
+		tracked = commented
+	}
+	if matches > 1 {
+		return false, fmt.Errorf(messages.InstallGitignoreDuplicatePatternFmt, pattern)
+	}
+	return tracked, nil
+}
+
+func setGitignorePatternTracked(content string, pattern string, tracked bool) (string, error) {
+	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+	matches := 0
+	for i, line := range lines {
+		commented, match, err := inspectGitignorePatternLine(line, pattern)
+		if err != nil {
+			return "", err
+		}
+		if !match {
+			continue
+		}
+		matches++
+		if tracked && !commented {
+			lines[i] = "# " + pattern
+		} else if !tracked && commented {
+			lines[i] = pattern
+		}
+	}
+	if matches > 1 {
+		return "", fmt.Errorf(messages.InstallGitignoreDuplicatePatternFmt, pattern)
+	}
+	if matches == 0 && !tracked {
+		lines = append(lines, pattern)
+	}
+	return strings.Join(lines, "\n") + "\n", nil
+}
+
+func inspectGitignorePatternLine(line string, pattern string) (commented bool, match bool, err error) {
+	commented, exact := gitignorePatternLineStatus(line, pattern)
+	if exact {
+		return commented, true, nil
+	}
+	if gitignorePatternHasUnsupportedInlineComment(strings.TrimSpace(line), pattern) {
+		return false, false, fmt.Errorf(messages.InstallGitignoreUnsupportedInlineCommentFmt, pattern, pattern, pattern)
+	}
+	return false, false, nil
+}
+
+func gitignorePatternLineStatus(line string, pattern string) (bool, bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == pattern {
+		return false, true
+	}
+	if !strings.HasPrefix(trimmed, "#") {
+		return false, false
+	}
+	commented := strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))
+	if commented == pattern {
+		return true, true
+	}
+	after, ok := strings.CutPrefix(commented, pattern)
+	if !ok {
+		return false, false
+	}
+	trailing := strings.TrimSpace(after)
+	return true, strings.HasPrefix(trailing, "#") || strings.HasPrefix(trailing, "-")
+}
+
+func gitignorePatternHasUnsupportedInlineComment(line string, pattern string) bool {
+	after, ok := strings.CutPrefix(line, pattern)
+	if !ok {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(after), "#")
 }
 
 // updateGitignoreContent replaces or appends the managed block in a .gitignore file.

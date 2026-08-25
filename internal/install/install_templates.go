@@ -659,6 +659,13 @@ func fileMatchesTemplate(sys System, path string, templatePath string) (bool, er
 	if err != nil {
 		return false, fmt.Errorf(messages.InstallFailedReadTemplateFmt, templatePath, err)
 	}
+	if templatePath == templateGitignoreBlock {
+		merged, mergeErr := mergeGitignoreBlockTemplate(existing, template)
+		if mergeErr != nil {
+			return false, fmt.Errorf(messages.InstallGitignoreMergeTrackingFmt, path, mergeErr)
+		}
+		template = merged
+	}
 	return normalizeTemplateContent(string(existing)) == normalizeTemplateContent(string(template)), nil
 }
 
