@@ -287,6 +287,109 @@ func TestWriteGitignoreBlockPreservesCustom(t *testing.T) {
 	}
 }
 
+func TestWriteGitignoreBlockMergesTrackingSettingsIntoTemplateUpdate(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".agent-layer", "gitignore.block")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	templateBytes, err := templates.Read("gitignore.block")
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+	customized := strings.Replace(string(templateBytes), AgentLayerGitignorePattern, "# "+AgentLayerGitignorePattern, 1)
+	customized = strings.Replace(customized, "# "+DocsAgentLayerGitignorePattern, DocsAgentLayerGitignorePattern, 1)
+	if err := os.WriteFile(path, []byte(customized), 0o600); err != nil {
+		t.Fatalf("write customized block: %v", err)
+	}
+
+	originalRead := templates.ReadFunc
+	templates.ReadFunc = func(templatePath string) ([]byte, error) {
+		data, readErr := originalRead(templatePath)
+		if readErr != nil || templatePath != "gitignore.block" {
+			return data, readErr
+		}
+		return append(data, []byte("\n/new-generated-output/\n")...), nil
+	}
+	t.Cleanup(func() { templates.ReadFunc = originalRead })
+
+	approve := func(string) (bool, error) { return true, nil }
+	if err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, approve, nil); err != nil {
+		t.Fatalf("writeGitignoreBlock: %v", err)
+	}
+	updated, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read updated block: %v", err)
+	}
+	settings, err := ParseGitignoreTrackingSettings(string(updated))
+	if err != nil {
+		t.Fatalf("parse updated tracking settings: %v", err)
+	}
+	if !settings.TrackAgentLayerDir || settings.TrackDocsAgentLayerDir {
+		t.Fatalf("tracking settings changed: %+v", settings)
+	}
+	if !strings.Contains(string(updated), "/new-generated-output/") {
+		t.Fatalf("template update was not applied:\n%s", updated)
+	}
+}
+
+func TestGitignoreTrackingSettings(t *testing.T) {
+	t.Run("missing patterns are tracked", func(t *testing.T) {
+		settings, err := ParseGitignoreTrackingSettings("# unrelated\n")
+		if err != nil {
+			t.Fatalf("parse settings: %v", err)
+		}
+		if !settings.TrackAgentLayerDir || !settings.TrackDocsAgentLayerDir {
+			t.Fatalf("missing patterns should be tracked: %+v", settings)
+		}
+	})
+
+	t.Run("inline active comment remains ignored", func(t *testing.T) {
+		settings, err := ParseGitignoreTrackingSettings(AgentLayerGitignorePattern + " # local reason\n")
+		if err != nil {
+			t.Fatalf("parse settings: %v", err)
+		}
+		if settings.TrackAgentLayerDir {
+			t.Fatal("active pattern with inline comment should remain ignored")
+		}
+	})
+
+	t.Run("duplicate source patterns fail", func(t *testing.T) {
+		for _, content := range []string{
+			AgentLayerGitignorePattern + "\n# " + AgentLayerGitignorePattern + "\n",
+			DocsAgentLayerGitignorePattern + "\n# " + DocsAgentLayerGitignorePattern + "\n",
+		} {
+			if _, err := ParseGitignoreTrackingSettings(content); err == nil {
+				t.Fatalf("expected duplicate pattern error for %q", content)
+			}
+		}
+	})
+
+	t.Run("duplicate template patterns fail", func(t *testing.T) {
+		settings := GitignoreTrackingSettings{}
+		for _, content := range []string{
+			AgentLayerGitignorePattern + "\n# " + AgentLayerGitignorePattern + "\n",
+			DocsAgentLayerGitignorePattern + "\n# " + DocsAgentLayerGitignorePattern + "\n",
+		} {
+			if _, err := ApplyGitignoreTrackingSettings(content, settings); err == nil {
+				t.Fatalf("expected duplicate pattern error for %q", content)
+			}
+		}
+	})
+
+	t.Run("missing ignored patterns are appended", func(t *testing.T) {
+		next, err := ApplyGitignoreTrackingSettings("# unrelated\n", GitignoreTrackingSettings{})
+		if err != nil {
+			t.Fatalf("apply settings: %v", err)
+		}
+		if !strings.Contains(next, "\n"+AgentLayerGitignorePattern+"\n") ||
+			!strings.Contains(next, "\n"+DocsAgentLayerGitignorePattern+"\n") {
+			t.Fatalf("ignored patterns were not appended:\n%s", next)
+		}
+	})
+}
+
 func TestWriteGitignoreBlockRecordsDiff(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "gitignore.block")

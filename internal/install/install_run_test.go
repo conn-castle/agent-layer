@@ -58,6 +58,56 @@ func TestRunCreatesStructure(t *testing.T) {
 	}
 }
 
+func TestRunUpgradePreservesGitignoreTrackingSettings(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("initialize repo: %v", err)
+	}
+
+	blockPath := filepath.Join(root, ".agent-layer", "gitignore.block")
+	blockBytes, err := os.ReadFile(blockPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read gitignore block: %v", err)
+	}
+	customized := strings.Replace(string(blockBytes), "/.agent-layer/", "# /.agent-layer/", 1)
+	customized = strings.Replace(customized, "# /docs/agent-layer/", "/docs/agent-layer/", 1)
+	if err := os.WriteFile(blockPath, []byte(customized), 0o600); err != nil { // #nosec G703 -- path is constructed from test-controlled inputs.
+		t.Fatalf("customize gitignore block: %v", err)
+	}
+
+	if err := Run(root, Options{
+		System:    RealSystem{},
+		Overwrite: true,
+		Prompter:  autoApprovePrompter(),
+	}); err != nil {
+		t.Fatalf("upgrade repo: %v", err)
+	}
+
+	upgradedBlock, err := os.ReadFile(blockPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read upgraded gitignore block: %v", err)
+	}
+	settings, err := ParseGitignoreTrackingSettings(string(upgradedBlock))
+	if err != nil {
+		t.Fatalf("parse upgraded tracking settings: %v", err)
+	}
+	if !settings.TrackAgentLayerDir || settings.TrackDocsAgentLayerDir {
+		t.Fatalf("tracking settings changed during upgrade: %+v", settings)
+	}
+
+	rootGitignore, err := os.ReadFile(filepath.Join(root, ".gitignore")) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read root gitignore: %v", err)
+	}
+	lines := strings.Split(string(rootGitignore), "\n")
+	if slices.Contains(lines, AgentLayerGitignorePattern) {
+		t.Fatalf("root gitignore unexpectedly ignores %s", AgentLayerGitignorePattern)
+	}
+	if !slices.Contains(lines, DocsAgentLayerGitignorePattern) {
+		t.Fatalf("root gitignore does not ignore %s", DocsAgentLayerGitignorePattern)
+	}
+}
+
 func TestRunDoesNotInspectDisposableClientSkillRoots(t *testing.T) {
 	t.Run("init", func(t *testing.T) {
 		root := t.TempDir()

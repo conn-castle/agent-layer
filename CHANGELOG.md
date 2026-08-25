@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Codex project trust is now seeded using the physical repository path after symlink resolution, so a repo opened through a symlink matches the managed `[projects."<root>"]` trust key. Trust-root resolution fails explicitly when the path cannot be canonicalized.
 - Nested upgrade keep-list file entries no longer treat ancestor directories as fully kept, so sibling unknown paths remain eligible for deletion.
+- Upgrades now preserve the `.agent-layer/` and `docs/agent-layer/` git tracking choices stored in `.agent-layer/gitignore.block` while still applying new managed ignore rules from the release template.
+- Sync now removes empty immediate child directories under `.agent-layer/skills/` before loading skill sources, while retaining strict validation for nonempty or malformed skill directories.
 
 ## v0.17.1 - 2026-08-21
 

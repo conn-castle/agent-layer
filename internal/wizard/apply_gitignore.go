@@ -1,7 +1,6 @@
 package wizard
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,8 +15,8 @@ import (
 const gitignoreBlockRelPath = ".agent-layer/gitignore.block"
 
 const (
-	agentLayerGitignorePattern     = "/.agent-layer/"
-	docsAgentLayerGitignorePattern = "/docs/agent-layer/"
+	agentLayerGitignorePattern     = install.AgentLayerGitignorePattern
+	docsAgentLayerGitignorePattern = install.DocsAgentLayerGitignorePattern
 )
 
 type gitignoreBlockChangeSet struct {
@@ -32,8 +31,12 @@ func initializeGitTrackingChoices(root string, choices *Choices) error {
 	if err != nil {
 		return err
 	}
-	choices.TrackAgentLayerDir = gitignorePatternIsTracked(content, agentLayerGitignorePattern)
-	choices.TrackDocsAgentLayerDir = gitignorePatternIsTracked(content, docsAgentLayerGitignorePattern)
+	settings, err := install.ParseGitignoreTrackingSettings(content)
+	if err != nil {
+		return err
+	}
+	choices.TrackAgentLayerDir = settings.TrackAgentLayerDir
+	choices.TrackDocsAgentLayerDir = settings.TrackDocsAgentLayerDir
 	return nil
 }
 
@@ -115,105 +118,8 @@ func gitignoreBlockSourceContent(root string) (string, bool, error) {
 // patchGitignoreBlock updates the two Agent Layer folder ignore entries to
 // match the wizard choices while leaving unrelated lines untouched.
 func patchGitignoreBlock(content string, choices *Choices) (string, error) {
-	next, err := setGitignorePatternTracked(content, agentLayerGitignorePattern, choices.TrackAgentLayerDir)
-	if err != nil {
-		return "", err
-	}
-	next, err = setGitignorePatternTracked(next, docsAgentLayerGitignorePattern, choices.TrackDocsAgentLayerDir)
-	if err != nil {
-		return "", err
-	}
-	return next, nil
-}
-
-// gitignorePatternIsTracked reports whether pattern is commented out or absent
-// in the managed gitignore block, meaning git can track that path.
-func gitignorePatternIsTracked(content string, pattern string) bool {
-	for _, line := range strings.Split(content, "\n") {
-		commented, ok := gitignorePatternLineStatus(line, pattern)
-		if !ok {
-			// An active entry carrying an inline trailing comment (e.g.
-			// "/.agent-layer/  # keep ignored") is still an active ignore, not
-			// tracked. Mirror setGitignorePatternTracked so the default reflects
-			// the current ignore semantics instead of flipping the path to
-			// tracked when the user accepts defaults.
-			if relatedActiveGitignorePatternLine(strings.TrimSpace(line), pattern) {
-				return false
-			}
-			continue
-		}
-		return commented
-	}
-	return true
-}
-
-// setGitignorePatternTracked comments or uncomments pattern in content. Missing
-// tracked patterns are left absent; missing ignored patterns are appended.
-func setGitignorePatternTracked(content string, pattern string, tracked bool) (string, error) {
-	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
-	matches := 0
-	for i, line := range lines {
-		commented, ok := gitignorePatternLineStatus(line, pattern)
-		if !ok {
-			if relatedActiveGitignorePatternLine(strings.TrimSpace(line), pattern) {
-				matches++
-				if tracked {
-					lines[i] = "# " + pattern
-				} else {
-					lines[i] = pattern
-				}
-			}
-			continue
-		}
-		matches++
-		if tracked && !commented {
-			lines[i] = "# " + pattern
-		} else if !tracked && commented {
-			lines[i] = pattern
-		}
-	}
-	if matches > 1 {
-		return "", fmt.Errorf("multiple gitignore entries for %s in %s", pattern, gitignoreBlockRelPath)
-	}
-	if matches == 0 && !tracked {
-		lines = append(lines, pattern)
-	}
-	return strings.Join(lines, "\n") + "\n", nil
-}
-
-// gitignorePatternLineStatus identifies whether line is an active or commented
-// exact match for pattern.
-func gitignorePatternLineStatus(line string, pattern string) (bool, bool) {
-	trimmed := strings.TrimSpace(line)
-	if activeGitignorePatternLine(trimmed, pattern) {
-		return false, true
-	}
-	if strings.HasPrefix(trimmed, "#") && commentedGitignorePatternLine(strings.TrimSpace(strings.TrimPrefix(trimmed, "#")), pattern) {
-		return true, true
-	}
-	return false, false
-}
-
-func activeGitignorePatternLine(line string, pattern string) bool {
-	return line == pattern
-}
-
-func relatedActiveGitignorePatternLine(line string, pattern string) bool {
-	after, ok := strings.CutPrefix(line, pattern)
-	if !ok {
-		return false
-	}
-	return strings.HasPrefix(strings.TrimSpace(after), "#")
-}
-
-func commentedGitignorePatternLine(line string, pattern string) bool {
-	if line == pattern {
-		return true
-	}
-	after, ok := strings.CutPrefix(line, pattern)
-	if !ok {
-		return false
-	}
-	trailing := strings.TrimSpace(after)
-	return strings.HasPrefix(trailing, "#") || strings.HasPrefix(trailing, "-")
+	return install.ApplyGitignoreTrackingSettings(content, install.GitignoreTrackingSettings{
+		TrackAgentLayerDir:     choices.TrackAgentLayerDir,
+		TrackDocsAgentLayerDir: choices.TrackDocsAgentLayerDir,
+	})
 }
