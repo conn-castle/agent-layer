@@ -1,14 +1,19 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v0.17.2 - 2026-08-25
+
+### Added
+- Added `review/oversized` for otherwise-cleared entries over 100 files or 250 MiB (including oversized immediate children and top-level files), and `review/symlinks` for top-level or move-breaking links.
 
 ### Changed
 - Consolidated the hidden `al organize-scratch` safety model around one complete metadata/hazard walk and outcome pipeline. Dry runs are now strictly read-only and print the full proposed review list; apply preserves unresolved prior review entries and records actual moved, collision, failed, and unattempted outcomes. Directory/file size limits, credential-bearing content, authored assets, nested checkout markers, unreadable paths, and move-breaking symlinks now conservatively force review.
 - `al organize-scratch` now accepts non-repository and untracked/non-ignored roots but always refuses repository roots, including empty or unborn repositories, as well as subtrees containing tracked content. Git fact failures fail closed under stable English diagnostics. Registered entry, nested, foreign main, and foreign linked worktrees are all protected and repaired from the correct repository context, including newline-containing paths and external linked registrations owned by a moved main checkout, with failed or stale repairs returning non-zero. Invalid `--keep` paths now fail explicitly instead of being ignored.
+- `make dev` is now a fast formatting and lint loop (`make fmt` then `make lint`) instead of chaining coverage and release tests. `make ci` remains the complete pre-PR verification gate.
+- Public website pages and best-practice guides were rewritten for clearer, more direct language.
 
-### Added
-- Added `review/oversized` for otherwise-cleared entries over 100 files or 250 MiB (including oversized immediate children and top-level files), and `review/symlinks` for top-level or move-breaking links.
+### Fixed
+- Codex project trust is now seeded using the physical repository path after symlink resolution, so a repo opened through a symlink matches the managed `[projects."<root>"]` trust key. Trust-root resolution fails explicitly when the path cannot be canonicalized.
 
 ## v0.17.1 - 2026-08-21
 
