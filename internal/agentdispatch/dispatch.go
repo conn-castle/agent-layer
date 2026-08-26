@@ -368,8 +368,12 @@ func prepareFresh(project *config.ProjectConfig, target targetMeta, opts runOpti
 	if strings.TrimSpace(opts.Model) != "" && !agentoptions.Supports(target.Name, agentoptions.KindModel) {
 		return targetMeta{}, "", nil, exitError(ExitUsage, fmt.Sprintf("%s does not support --model", target.Name))
 	}
-	if strings.TrimSpace(opts.ReasoningEffort) != "" && !agentoptions.Supports(target.Name, agentoptions.KindReasoningEffort) {
-		return targetMeta{}, "", nil, exitError(ExitUsage, fmt.Sprintf("%s does not support --reasoning-effort", target.Name))
+	if effort := strings.TrimSpace(opts.ReasoningEffort); effort != "" && !agentoptions.Supports(target.Name, agentoptions.KindReasoningEffort) {
+		// Antigravity has no --reasoning-effort flag. Benchmark children still
+		// carry the thinking-tier identity encoded in the exact model slug.
+		if !antigravityEffortMatchesSlug(target.Name, opts.Model, effort) {
+			return targetMeta{}, "", nil, exitError(ExitUsage, fmt.Sprintf("%s does not support --reasoning-effort", target.Name))
+		}
 	}
 	if !targetEnabled(project.Config, target.Name) {
 		return targetMeta{}, "", nil, exitError(ExitConfig, fmt.Sprintf("`al dispatch` target %s is disabled in config", target.Name))

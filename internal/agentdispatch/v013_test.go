@@ -300,6 +300,14 @@ printf 'resumed answer without a provider id'
 	if retained.ProviderSessionID != runtimeSessionID || retained.State != "durable" {
 		t.Fatalf("retained session = %#v", retained)
 	}
+	if err := executeContinueDispatch(dispatchExecRequest{
+		Root:     root,
+		Prompt:   "resume again",
+		Env:      []string{"PATH=" + testPath(binDir)},
+		LookPath: mockLookPath(binDir),
+	}, session.Name); err != nil {
+		t.Fatalf("second continue Antigravity dispatch: %v", err)
+	}
 }
 
 func TestSupportedVersionFixturesReduceOnlyRequiredEvents(t *testing.T) {

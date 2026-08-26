@@ -79,21 +79,34 @@ func TestProviderCommandsUseExactProviderContracts(t *testing.T) {
 	} else {
 		requireDispatchExitCode(t, err, ExitUsage)
 	}
-	antigravityCommand, err := buildProviderCommand(antigravityTarget, project, nil, []byte("prompt"), "gemini-3.5-flash-low", "low", true, dispatchModeFresh, runtimeSessionID, run, io.Discard)
+	antigravityCommand, err := buildProviderCommand(antigravityTarget, project, nil, []byte("prompt"), "gemini-3.5-flash-low", "low", false, dispatchModeFresh, runtimeSessionID, run, io.Discard)
 	if err != nil {
-		t.Fatalf("build pinned Antigravity command: %v", err)
+		t.Fatalf("build slug Antigravity command: %v", err)
 	}
 	antigravityArgs := strings.Join(antigravityCommand.Args, " ")
 	if !antigravityCommand.Structured || antigravityCommand.Plain || antigravityCommand.Effort != "low" || !strings.Contains(antigravityArgs, "--model gemini-3.5-flash-low") || !strings.Contains(antigravityArgs, "--output-format stream-json") || strings.Contains(antigravityArgs, "--effort") {
-		t.Fatalf("pinned Antigravity command = %#v", antigravityCommand)
+		t.Fatalf("slug Antigravity command = %#v", antigravityCommand)
 	}
-	if _, err := buildProviderCommand(antigravityTarget, project, nil, []byte("prompt"), "gemini-3.5-flash-low", "high", true, dispatchModeFresh, runtimeSessionID, run, io.Discard); err == nil {
-		t.Fatal("pinned Antigravity command accepted conflicting effort")
+	conflictRun, err := newDispatchRun(root, AgentAntigravity, supportedProviderVersions[AgentAntigravity], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new Antigravity conflict run: %v", err)
 	}
-	if _, err := buildProviderCommand(antigravityTarget, project, nil, []byte("prompt"), "gemini-3.5-flash", "", true, dispatchModeFresh, runtimeSessionID, run, io.Discard); err == nil {
-		t.Fatal("pinned Antigravity command accepted a model without a thinking-tier slug")
+	if _, err := buildProviderCommand(antigravityTarget, project, nil, []byte("prompt"), "gemini-3.5-flash-low", "high", false, dispatchModeFresh, runtimeSessionID, conflictRun, io.Discard); err == nil {
+		t.Fatal("slug Antigravity command accepted conflicting effort")
 	} else {
 		requireDispatchExitCode(t, err, ExitConfig)
+	}
+	plainRun, err := newDispatchRun(root, AgentAntigravity, supportedProviderVersions[AgentAntigravity], dispatchModeResume)
+	if err != nil {
+		t.Fatalf("new Antigravity resume run: %v", err)
+	}
+	plainCommand, err := buildProviderCommand(antigravityTarget, project, nil, []byte("prompt"), "Gemini 3.5 Flash (High)", "", true, dispatchModeResume, runtimeSessionID, plainRun, io.Discard)
+	if err != nil {
+		t.Fatalf("build durable display-name Antigravity command: %v", err)
+	}
+	plainArgs := strings.Join(plainCommand.Args, " ")
+	if !plainCommand.Plain || plainCommand.Structured || strings.Contains(plainArgs, "--output-format") {
+		t.Fatalf("durable display-name Antigravity command = %#v", plainCommand)
 	}
 
 	grokTarget, ok := lookupTarget(AgentGrok)
@@ -136,6 +149,14 @@ func TestAntigravityDispatchSlugEffortRecognizesEveryPinnedTier(t *testing.T) {
 		if effort, ok := antigravitySlugEffort(test.model); !ok || effort != test.effort {
 			t.Fatalf("antigravitySlugEffort(%q) = %q, %t; want %q, true", test.model, effort, ok, test.effort)
 		}
+		if !antigravityEffortMatchesSlug(AgentAntigravity, test.model, test.effort) {
+			t.Fatalf("antigravityEffortMatchesSlug(%q, %q) = false", test.model, test.effort)
+		}
+	}
+	if antigravityEffortMatchesSlug(AgentAntigravity, "gemini-3.5-flash-low", "high") ||
+		antigravityEffortMatchesSlug(AgentAntigravity, "Gemini 3.5 Flash (High)", "high") ||
+		antigravityEffortMatchesSlug(AgentGrok, "gemini-3.5-flash-low", "low") {
+		t.Fatal("antigravityEffortMatchesSlug accepted a non-identity effort")
 	}
 }
 

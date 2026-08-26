@@ -376,11 +376,13 @@ func buildProviderCommand(
 			args = append(args, "--model", resolvedModel)
 		}
 		command.Model = resolvedModel
-		if targetPinned {
-			derivedEffort, ok := antigravitySlugEffort(resolvedModel)
-			if !ok {
-				return providerCommand{}, exitError(ExitConfig, "Antigravity benchmark dispatch model must be an exact slug ending in -low, -medium, or -high")
-			}
+		if mode == dispatchModeResume {
+			args = append(args, "--conversation", sessionID)
+		}
+		// Thinking-tier slugs, not session TargetPinned, select stream-json.
+		// TargetPinned is set on every durable resume, including ordinary
+		// display-name conversations that must keep historical plain output.
+		if derivedEffort, ok := antigravitySlugEffort(resolvedModel); ok {
 			configured := strings.TrimSpace(effort)
 			if configured != "" && configured != derivedEffort {
 				return providerCommand{}, exitError(ExitConfig, fmt.Sprintf("Antigravity model %q requires reasoning effort %q, got %q", resolvedModel, derivedEffort, configured))
@@ -388,25 +390,18 @@ func buildProviderCommand(
 			// The exact benchmark model slug selects its thinking tier. Passing a
 			// second effort flag risks contradictory client behavior.
 			command.Effort = derivedEffort
+			args = append(args, "--output-format", "stream-json")
+			command.Plain = false
+			command.Structured = true
 		} else {
 			command.Effort = strings.TrimSpace(effort)
-		}
-		if mode == dispatchModeResume {
-			args = append(args, "--conversation", sessionID)
-		}
-		if targetPinned {
-			// Benchmark children need the same bounded, attributable terminal
-			// usage evidence as their coordinator.  Ordinary dispatch retains its
-			// historical plain output behavior.
-			args = append(args, "--output-format", "stream-json")
+			command.Plain = true
 		}
 		args = append(args, "--print-timeout", AntigravityPrintTimeout, "--print", string(prompt))
 		command.Args = args
 		command.Env = antigravity.ConfigureEnvironment(env)
 		command.SessionID = sessionID
 		command.LogPath = logPath
-		command.Plain = !targetPinned
-		command.Structured = targetPinned
 	case AgentGrok:
 		if mode == dispatchModeFresh && sessionID == "" {
 			return providerCommand{}, exitError(ExitConfig, "new Grok dispatch requires a caller-assigned session ID")
@@ -477,6 +472,14 @@ func antigravitySlugEffort(model string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func antigravityEffortMatchesSlug(agent, model, effort string) bool {
+	if agent != AgentAntigravity {
+		return false
+	}
+	derived, ok := antigravitySlugEffort(model)
+	return ok && derived == strings.ToLower(strings.TrimSpace(effort))
 }
 
 func reduceClaudeEvent(expected string, value map[string]any) []providerEvent {
