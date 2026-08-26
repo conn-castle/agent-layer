@@ -1,0 +1,29 @@
+# Agent Layer
+
+> Agent Layer is a repo-local control plane for coding agents. It provides asynchronous cross-provider Agent Dispatch, Git-backed portable Agent Skills, shared MCP and approval configuration, and DeltaSelect benchmark selection.
+
+The canonical source repository is https://github.com/conn-castle/agent-layer. Documentation pages are server-rendered for browsers and also published as Markdown at the `.md` URLs below for agents and text-only clients.
+
+## Start here
+
+- [Agent Dispatch](https://agent-layer.dev/docs/agent-dispatch.md): Delegate asynchronous work to Claude, Codex, Grok, or Antigravity through five MCP tools or matching CLI commands.
+- [Import Agent Skills from Git](https://agent-layer.dev/docs/skill-imports.md): Import, edit, update, reconcile, and contribute portable Agent Skills without losing project changes.
+- [Getting started](https://agent-layer.dev/docs/getting-started.md): Install, initialize a repository, sync configuration, and launch a coding agent.
+- [Reference](https://agent-layer.dev/docs/reference.md): Authoritative configuration, CLI, Agent Dispatch, benchmark runner, and skill-import behavior.
+- [DeltaSelect](https://agent-layer.dev/deltaselect): Select informative AI-agent benchmark tasks within a fixed evaluation budget.
+
+## Core concepts
+
+- [Overview](https://agent-layer.dev/docs/index.md): Product overview and documentation map.
+- [Concepts](https://agent-layer.dev/docs/concepts.md): Source-of-truth model, safety boundaries, MCP servers, dispatch, and version pinning.
+- [Skills](https://agent-layer.dev/docs/skills.md): Agent Skills standard, built-in workflows, authoring, and projection.
+- [Skills approach](https://agent-layer.dev/docs/skills-approach.md): Agent Layer's skill architecture and workflow boundaries.
+- [Security](https://agent-layer.dev/security): Network access, secret handling, generated files, and trust boundaries.
+- [Install](https://agent-layer.dev/install): Supported installation methods for macOS and Linux.
+
+## Additional resources
+
+- [FAQ](https://agent-layer.dev/faq): Direct answers about Agent Dispatch, skill imports, clients, MCP, security, and upgrades.
+- [Troubleshooting](https://agent-layer.dev/docs/troubleshooting.md): Common errors and actionable fixes.
+- [Changelog](https://agent-layer.dev/changelog): Release history.
+- [GitHub repository](https://github.com/conn-castle/agent-layer): Canonical code, README, issues, and source documentation.

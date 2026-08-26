@@ -1,10 +1,19 @@
 ---
 title: Agent Dispatch
-description: Run and coordinate asynchronous, headless agent conversations through MCP tools or the CLI.
+description: Delegate coding tasks across Claude, Codex, Grok, and Antigravity with asynchronous multi-agent orchestration through MCP tools or the CLI.
+keywords:
+  - multi-agent orchestration
+  - AI agent dispatch
+  - delegate coding agents
+  - Claude Code Codex orchestration
+  - asynchronous AI agents
+  - MCP agent tools
 sidebar_position: 4
 ---
 
-Agent Dispatch runs headless provider conversations asynchronously. Use it when one agent needs to delegate a bounded task, or when a person or script needs to start provider work without holding open an interactive session.
+Agent Dispatch is Agent Layer's multi-agent orchestration interface. It lets Claude Code, Codex, Copilot CLI, VS Code, Grok, or Antigravity delegate a bounded coding task to a headless Claude, Codex, Grok, or Antigravity conversation—without blocking the calling agent while that work runs.
+
+Use it to get an independent code review, send research to a model with different strengths, preserve a specialist conversation across follow-ups, or run several independent tasks in parallel. A person or script can drive the same lifecycle without holding open an interactive session.
 
 It has two ways to use the same backend:
 
@@ -13,8 +22,45 @@ It has two ways to use the same backend:
 
 Both use the same conversation handles, states, result files, continuation behavior, and cancellation semantics.
 
+## Why Agent Dispatch
+
+Most coding-agent subagents are tied to one provider and one interactive session. Agent Dispatch adds a provider-neutral boundary around external agent conversations:
+
+- **Delegate across providers.** A Claude session can dispatch Codex, a Codex session can dispatch Claude, and any supported caller can choose Grok or Antigravity when those targets are enabled.
+- **Keep the coordinator responsive.** Starting work returns a handle immediately. The caller can make progress elsewhere and wait only when it needs the result.
+- **Continue real conversations.** Follow-up prompts preserve the target provider, model, reasoning effort, and conversation context.
+- **Use the same contract everywhere.** Agents call five MCP tools; people and CI call matching `al dispatch` commands over the same backend.
+- **Retain durable evidence.** Every completed invocation has an immutable Markdown result, while explicit failure states prevent missing output from looking successful.
+- **Route through reusable skills.** A dispatch can invoke a projected [user-managed or Git-imported Agent Skill](./skill-imports) on the target.
+
+## Quick start for agents
+
+After `al sync`, an enabled agent can discover the available targets and start work with the built-in `agent-layer` MCP server. Tool calls use JSON arguments; `skill` is optional and must name an installed Agent Layer skill.
+
+Call `agent-layer.dispatch_options` with an empty JSON object:
+
+```json
+{}
+```
+
+Then call `agent-layer.dispatch_start` with:
+
+```json
+{
+  "agent": "codex",
+  "skill": "audit-tests",
+  "prompt": "Audit the existing tests for the authentication package."
+}
+```
+
+The start result includes `{"handle":"abc123","state":"running"}`. Call `agent-layer.dispatch_wait` with `{"handle":"abc123"}`. It may return `running`; call it again with the same handle until it returns `completed`, `failed`, or `cancelled`. A completed result includes an absolute `result_path` to the immutable Markdown output.
+
+Start independent conversations for parallel work. When a completed specialist needs a follow-up, use `dispatch_continue` with the same handle and then wait again.
+
 ## In this page
 
+- [Why Agent Dispatch](#why-agent-dispatch)
+- [Quick start for agents](#quick-start-for-agents)
 - [How dispatch works](#how-dispatch-works)
 - [MCP tools](#mcp-tools)
 - [CLI commands](#cli-commands)

@@ -17,6 +17,7 @@ Agent Layer is explicit by design. It prefers failing fast over guessing, treats
 - [Environment variables](#environment-variables)
 - [CLI guide](#cli-guide)
 - [Dispatch](#dispatch)
+- [Benchmark runner](#benchmark-runner)
 - [Skill import commands](#skill-import-commands)
 
 ## Configuration
@@ -454,6 +455,7 @@ The command set is intentionally small. Most of the time you only need one rhyth
 | `al dispatch wait <handle>` | Wait up to eight minutes; return `running` if work continues, otherwise return the terminal result. |
 | `al dispatch continue <handle>` | Start another invocation in a terminal conversation. |
 | `al dispatch cancel <handle>` | Cancel a running invocation. |
+| `al benchmark run <study.toml>` | Validate, run, resume, and report a reproducible DeltaSelect benchmark study. |
 | `al skills add <repository> <selector>... [--yes]` | Import skills from a Git repository and project them. |
 | `al skills remove <repository> <selector> [--yes]` | Remove one configured import selector and recompute the desired set. |
 | `al skills status` | Report local imported-skill state. Local and network-free; `--all` expands it. |
@@ -819,6 +821,23 @@ The agent-facing interface contains read-only `options` and `wait`, plus
 `start`, `continue`, and `cancel`. Parallel work uses independent conversation
 handles rather than a fanout resource. See [Agent Dispatch](./agent-dispatch)
 for the complete lifecycle, MCP interface, timeout behavior, and configuration.
+
+### Benchmark runner
+
+DeltaSelect exports a content-addressed benchmark selection and a matching `study.toml` template. Keep both files together, define explicit baseline and treatment experiments in the template, and validate the complete study before authorizing provider calls:
+
+```bash
+al benchmark run study.toml --dry-run
+al benchmark run study.toml
+```
+
+The study manifest is the reproducibility boundary. Its `selection` points to the exported DeltaSelect JSON, and each `[[experiments]]` entry declares a name, model, reasoning level, and any treatment inputs such as config, instructions, or skills. Every referenced path must be relative to and remain inside the directory containing `study.toml`.
+
+`--dry-run` validates the selection and study, computes cached and missing cells, and performs dependency, environment, and provider-authentication preflight without inference calls. A normal run authorizes paid provider calls for all missing cells. Completed cells are immutable and reusable, so an interrupted study resumes instead of rerunning finished work.
+
+The runner writes content-addressed evidence plus `report.json` and `report.html` under `.agent-layer/state/benchmarks/deepswe/studies/`. Reports compare score, observed cost, workflow conformance, and statistical evidence for the fixed selected task set; they do not claim that the subset represents every task in DeepSWE.
+
+Use `--task-concurrency 1..8` to control parallel cells. The repeatable `--task <id>` flag scopes one invocation to selected tasks without changing study membership or identity. Run `al benchmark run --help` for the exact flags and use [DeltaSelect](/deltaselect) to create the selection and study template.
 
 ### Skill import commands
 

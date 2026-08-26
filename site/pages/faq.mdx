@@ -1,12 +1,26 @@
 ---
 title: FAQ
-description: Common questions about Agent Layer.
+description: Answers about Agent Dispatch, portable Agent Skills, MCP configuration, supported coding agents, security, installation, and upgrades.
+keywords:
+  - Agent Layer FAQ
+  - Agent Dispatch
+  - import Agent Skills
+  - coding agent configuration
 ---
 
 ## What problem does Agent Layer solve?
+
 It keeps instructions, skills, MCP servers, and approvals consistent across multiple agents by generating every client config from `.agent-layer/`.
 
 If you run more than one client, you edit that folder once and review the same files in git.
+
+## Can one coding agent delegate work to another provider?
+
+Yes. [Agent Dispatch](/docs/agent-dispatch) lets any supported caller start asynchronous Claude, Codex, Grok, or Antigravity conversations through built-in MCP tools. People and automation can use matching `al dispatch` CLI commands. The caller receives a handle immediately, waits when it needs the result, and can continue the same provider conversation later.
+
+## Can I import skills from another Git repository?
+
+Yes. [`al skills add`](/docs/skill-imports) imports selected Agent Skills from any reachable Git repository. Imported skills remain editable in your project, project to every enabled client, and use three-way reconciliation so compatible upstream and local changes both survive. You can also configure an explicit branch or fork for contributing improvements back.
 
 ## Does Agent Layer align with the skills standard?
 Yes. Skill parsing and validation follow the [agentskills.io specification](https://agentskills.io/specification), including the required uppercase `SKILL.md` filename.

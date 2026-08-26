@@ -98,12 +98,17 @@ func run() error {
 	if err := publishDeepSWEPlanner(repoA, repoB); err != nil {
 		return fmt.Errorf("failed to copy DeepSWE planner: %w", err)
 	}
-
+	if err := publishAgentDiscoveryFiles(repoA, repoB); err != nil {
+		return fmt.Errorf("failed to copy agent discovery files: %w", err)
+	}
 	// Copy docs staging.
 	dstDocs := filepath.Join(repoB, "docs")
 	fmt.Printf("Copying %s -> %s\n", siteDocs, dstDocs)
 	if err := copyTree(siteDocs, dstDocs); err != nil {
 		return fmt.Errorf("failed to copy docs: %w", err)
+	}
+	if err := publishAgentMarkdownDocs(repoA, repoB); err != nil {
+		return fmt.Errorf("failed to publish agent-readable Markdown docs: %w", err)
 	}
 
 	// Sync canonical changelog into Repo B root for website rendering.
@@ -156,6 +161,53 @@ func publishDeepSWEPlanner(repoA, repoB string) error {
 	destination := filepath.Join(repoB, "static", "deepswe-planner")
 	fmt.Printf("Copying %s -> %s\n", source, destination)
 	return copyTree(source, destination)
+}
+
+// publishAgentDiscoveryFiles copies the exact root-level static files whose
+// contents are canonical in Repo A. Other static website assets remain owned
+// by Repo B.
+func publishAgentDiscoveryFiles(repoA, repoB string) error {
+	for _, name := range []string{"llms.txt"} {
+		source := filepath.Join(repoA, "site", "static", name)
+		info, err := osStatFunc(source)
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", source, err)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("agent discovery source is not a regular file: %s", source)
+		}
+		data, err := osReadFileFunc(source)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", source, err)
+		}
+		destination := filepath.Join(repoB, "static", name)
+		fmt.Printf("Copying %s -> %s\n", source, destination)
+		if err := osWriteFileFunc(destination, data, info.Mode()); err != nil {
+			return fmt.Errorf("write %s: %w", destination, err)
+		}
+	}
+	return nil
+}
+
+// publishAgentMarkdownDocs mirrors the canonical MDX documentation as stable
+// .md assets. The pages are deliberately plain source documents so agents and
+// text-only clients do not need to scrape rendered HTML or run JavaScript.
+func publishAgentMarkdownDocs(repoA, repoB string) error {
+	source := filepath.Join(repoA, "site", "docs")
+	destination := filepath.Join(repoB, "static", "docs")
+	fmt.Printf("Copying agent-readable docs %s -> %s\n", source, destination)
+	if err := copyTree(source, destination); err != nil {
+		return err
+	}
+	return filepathWalkFunc(destination, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() || filepath.Ext(path) != ".mdx" {
+			return nil
+		}
+		return os.Rename(path, strings.TrimSuffix(path, ".mdx")+".md")
+	})
 }
 
 // repoRoot returns Repo A root by searching upwards for go.mod.

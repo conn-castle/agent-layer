@@ -1,6 +1,13 @@
 ---
-title: Agent Layer
-description: Keep instructions, skills, and MCP servers consistent across coding agents from one folder in your repo.
+title: One Control Plane for Multi-Agent Dispatch and Portable Skills
+description: Coordinate Claude, Codex, Grok, and Antigravity with Agent Dispatch. Sync portable Agent Skills, MCP servers, instructions, and approvals from one repo.
+keywords:
+  - multi-agent orchestration
+  - AI agent dispatch
+  - coding agent configuration
+  - Agent Skills
+  - MCP server configuration
+  - Claude Code and Codex
 ---
 
 import Link from '@docusaurus/Link';
@@ -8,16 +15,11 @@ import Link from '@docusaurus/Link';
 <div className="hero-container">
   <img src="/img/branding/header_wordmark.svg" alt="Agent Layer" className="hero-logo hero-logo--light" />
   <img src="/img/branding/header_wordmark_dark.svg" alt="Agent Layer" className="hero-logo hero-logo--dark" />
-  <p className="hero-tagline">
-    Keep every agent you use aligned from one folder in the repo.
-  </p>
+  <h1 className="hero-title">One control plane for multi-agent dispatch and portable skills.</h1>
+  <p className="hero-tagline">Dispatch specialized agents, import portable skills, and keep every coding agent aligned from one folder in your repo.</p>
   <div className="hero-buttons">
-    <a href="/docs" className="hero-button hero-button--primary">
-      Get Started
-    </a>
-    <a href="https://github.com/conn-castle/agent-layer" className="hero-button hero-button--secondary">
-      GitHub
-    </a>
+    <a href="/docs" className="hero-button hero-button--primary">Get Started</a>
+    <a href="https://github.com/conn-castle/agent-layer" className="hero-button hero-button--secondary">GitHub</a>
   </div>
 
   <div className="terminal-window">
@@ -34,6 +36,8 @@ import Link from '@docusaurus/Link';
       <p className="terminal-line"><span className="terminal-prompt">$ </span><span className="terminal-command">al init</span></p>
       <p className="terminal-line"><span className="terminal-comment"># Launch your agent (sync happens automatically)</span></p>
       <p className="terminal-line"><span className="terminal-prompt">$ </span><span className="terminal-command">al claude</span></p>
+      <p className="terminal-line"><span className="terminal-comment"># Or dispatch headless work to another provider</span></p>
+      <p className="terminal-line"><span className="terminal-prompt">$ </span><span className="terminal-command">al dispatch start --agent codex --prompt-file task.md</span></p>
     </div>
   </div>
 </div>
@@ -50,53 +54,47 @@ import Link from '@docusaurus/Link';
 
 <div className="features-section">
   <h2 className="features-title">Why Agent Layer?</h2>
-  <p className="features-subtitle">Edit setup once in <code>.agent-layer/</code>. Agent Layer writes each client's config when you launch.</p>
+  <p className="features-subtitle">Use one repo-local source of truth for Claude Code, Codex, Grok, Antigravity, Copilot CLI, and VS Code.</p>
 
   <div className="features-list">
     <div className="feature-item">
+      <h3 className="feature-title">Agent Dispatch</h3>
+      <p className="feature-description">Let an agent delegate bounded work to Claude, Codex, Grok, or Antigravity through five asynchronous MCP tools. The same handle-based lifecycle is available to people and automation through the CLI. <Link to="/docs/agent-dispatch">Explore Agent Dispatch</Link>.</p>
+    </div>
+
+    <div className="feature-item">
+      <h3 className="feature-title">Git-backed Skill Imports</h3>
+      <p className="feature-description">Import Agent Skills from any reachable Git repository, edit them locally, merge upstream changes, and contribute improvements back—without losing your project-specific work. <Link to="/docs/skill-imports">Import Agent Skills</Link>.</p>
+    </div>
+
+    <div className="feature-item">
       <h3 className="feature-title">Single Source of Truth</h3>
-      <p className="feature-description">Edit <code>.agent-layer/</code> once. Skills align with the <a href="https://agentskills.io/specification">agentskills.io specification</a>, and the <Link to="/best-practices">Best Practices guides</Link> help keep skills and instructions maintainable.</p>
+      <p className="feature-description">Review instructions, skills, approvals, and MCP servers as code under <code>.agent-layer/</code>. Agent Layer writes each client's native configuration when you sync or launch.</p>
     </div>
 
     <div className="feature-item">
-      <h3 className="feature-title">Sync on Run</h3>
-      <p className="feature-description">By default, <code>al &lt;client&gt;</code> regenerates client configs first, then launches the client. VS Code can skip sync with <code>--no-sync</code>.</p>
+      <h3 className="feature-title">DeltaSelect</h3>
+      <p className="feature-description">Design a lower-cost benchmark for instruction and skill experiments by selecting tasks most likely to detect a real effect within your budget. <Link to="/deltaselect">See DeltaSelect</Link>.</p>
     </div>
 
     <div className="feature-item">
-      <h3 className="feature-title">Consistent Approvals</h3>
-      <p className="feature-description">Define safety rules once. Agent Layer projects them into each client that supports approvals.</p>
+      <h3 className="feature-title">Consistent Safety and MCP</h3>
+      <p className="feature-description">Define approval rules and MCP servers once. Agent Layer projects the closest supported behavior into each enabled client and reports capability gaps.</p>
     </div>
 
     <div className="feature-item">
-      <h3 className="feature-title">MCP Everywhere</h3>
-      <p className="feature-description">Configure MCP servers in <code>.agent-layer/config.toml</code>. They appear in each client that supports them.</p>
-    </div>
-
-    <div className="feature-item">
-      <h3 className="feature-title">Version Pinning</h3>
-      <p className="feature-description">Pin the repo to a specific Agent Layer version so every machine runs the same release.</p>
-    </div>
-
-    <div className="feature-item">
-      <h3 className="feature-title">Local & Fast</h3>
-      <p className="feature-description">No telemetry. Network is used only for update checks, version downloads (pinning), and MCP servers you enable. See <a href="/security">Security</a> for details.</p>
+      <h3 className="feature-title">Local, Versioned, and Auditable</h3>
+      <p className="feature-description">Pin Agent Layer per repo, keep team behavior reproducible, and work without product telemetry. See <Link to="/security">Security</Link> for the exact network and secret-handling boundaries.</p>
     </div>
   </div>
 </div>
 
 <div className="cta-section">
   <h2 className="cta-title">Install Agent Layer</h2>
-  <p className="cta-description">
-    Install on macOS or Linux, then run <code>al init</code> in a repo.
-  </p>
+  <p className="cta-description">Install on macOS or Linux, then run <code>al init</code> in a repo.</p>
   <div className="hero-buttons">
-    <a href="/install" className="hero-button hero-button--primary">
-      Install Now
-    </a>
-    <a href="/docs" className="hero-button hero-button--secondary">
-      Read the Docs
-    </a>
+    <a href="/install" className="hero-button hero-button--primary">Install Now</a>
+    <a href="/docs" className="hero-button hero-button--secondary">Read the Docs</a>
   </div>
 </div>
 

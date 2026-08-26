@@ -1,12 +1,17 @@
 ---
 title: Overview
 sidebar_label: Overview
-description: "Start here: what Agent Layer is, how to use it, and where to go next."
+description: "Configure coding agents once, delegate across providers with Agent Dispatch, and share portable Agent Skills from one repository."
+keywords:
+  - coding agent configuration
+  - multi-agent orchestration
+  - Agent Skills
+  - MCP configuration
 slug: /
 sidebar_position: 0
 ---
 
-Agent Layer is a small CLI that keeps AI-assisted development consistent across tools. You define agent instructions, approvals, and MCP servers once in a repo-local `.agent-layer/` folder, and `al` generates each client's native config on demand.
+Agent Layer is a repo-local control plane for AI-assisted development. You define instructions, approvals, MCP servers, and portable Agent Skills once under `.agent-layer/`; `al` generates each client's native config on demand and adds Agent Dispatch for asynchronous work across providers.
 
 The same repo uses one source configuration whether you launch Antigravity, Claude, Codex, Copilot CLI, Grok, or VS Code. Agent Layer maps it to the closest behavior each client supports; approval enforcement is client-dependent and best effort. You do not copy configuration between clients. You review and refine agent setup in one folder.
 
@@ -17,7 +22,9 @@ Follow the recommended path below to set up Agent Layer, customize it, and find 
 - A `.agent-layer/` folder you can treat like code (reviewable, shareable, easy to audit).
 - Generated client files that are safe to delete and recreate (apart from a couple of documented shared-state files that `al sync` patches in place).
 - Guardrails for autonomy: choose what can run automatically and what must be approved.
+- Agent Dispatch for delegating bounded work to headless Claude, Codex, Grok, or Antigravity conversations through MCP or the CLI.
 - Built-in workflow skills that give agents structured, repeatable processes for planning, debugging, shipping PRs, and more.
+- Git-backed skill imports that remain editable, merge upstream changes, and project to every enabled client.
 - Optional version pinning so a team stays on the same behavior across machines and CI.
 
 ## Who this is for
@@ -34,10 +41,11 @@ Follow the recommended path below to set up Agent Layer, customize it, and find 
 3. [Reference](./reference) - config, environment variables, and CLI behavior
 4. [Agent Dispatch](./agent-dispatch) - asynchronous, headless provider delegation
 5. [Skills](./skills) - built-in workflows for planning, debugging, shipping, and more
-6. [Skills approach](./skills-approach) - Agent Layer's skill ethos and target root-skill model
-7. [Best Practices](/best-practices) - universal skill, CLI skill, and instruction design guides
-8. [Troubleshooting](./troubleshooting) - common errors and fixes
-9. [Upgrades](./upgrades) - upgrade event model, compatibility guarantees, and migration rules
+6. [Skill imports](./skill-imports) - import, edit, update, and contribute portable Agent Skills through Git
+7. [Skills approach](./skills-approach) - Agent Layer's skill ethos and target root-skill model
+8. [Best Practices](/best-practices) - universal skill, CLI skill, and instruction design guides
+9. [Troubleshooting](./troubleshooting) - common errors and fixes
+10. [Upgrades](./upgrades) - upgrade event model, compatibility guarantees, and migration rules
 
 ## Documentation map
 
@@ -61,6 +69,10 @@ Asynchronous, headless provider conversations for agents, people, and scripts. I
 
 Built-in workflow skills that give agents structured processes for common tasks. Includes: [The built-in skill library](./skills#built-in-skill-library), [Skill categories](./skills#built-in-skill-library), [Anatomy of a skill](./skills#skill-structure), and [Writing your own skills](./skills#writing-your-own-skills).
 
+### [Skill imports](./skill-imports)
+
+Import portable Agent Skills from Git, project them to every enabled client, preserve local edits while pulling upstream changes, and contribute improvements through explicit branches or forks.
+
 ### [Skills approach](./skills-approach)
 
 Agent Layer's skill ethos, target root modules, workflow boundaries, and mapping
@@ -69,6 +81,10 @@ from conceptual names to current bundled skill names.
 ### [Best Practices](/best-practices)
 
 Research-backed, product-neutral guides for designing [agent skills](/skill-design), [CLI-focused skills](/cli-skill-design), and [always-loaded instructions](/instruction-design).
+
+### [DeltaSelect](/deltaselect)
+
+Select the benchmark tasks most likely to detect an instruction or skill effect within a fixed evaluation budget, then export the selection for Agent Layer's benchmark runner.
 
 ### [Troubleshooting](./troubleshooting)
 
@@ -84,6 +100,7 @@ Upgrade policy and release migration expectations. Includes: [Upgrade event mode
 - [FAQ](/faq)
 - [Security](/security)
 - [Best Practices](/best-practices)
+- [DeltaSelect](/deltaselect)
 - [Changelog](/changelog)
 - [Contributing](/contributing)
 

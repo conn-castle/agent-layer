@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef } from "react";
 import Layout from "@theme/Layout";
+import Link from "@docusaurus/Link";
 import useBaseUrl from "@docusaurus/useBaseUrl";
 import { useColorMode } from "@docusaurus/theme-common";
 
@@ -30,7 +31,7 @@ function PlannerFrame() {
   return (
     <iframe
       ref={frameRef}
-      title="DeepSWE task correlation and cost"
+      title="DeltaSelect DeepSWE benchmark task selection"
       src={plannerUrl}
       style={frameStyle}
       allow="clipboard-write"
@@ -40,7 +41,7 @@ function PlannerFrame() {
 }
 
 /**
- * Render the self-contained DeepSWE task evidence table inside the website
+ * Render the self-contained DeltaSelect task evidence table inside the website
  * shell. The iframe keeps the validated evidence layout isolated from
  * documentation theme styles while preserving same-origin clipboard access.
  *
@@ -49,10 +50,16 @@ function PlannerFrame() {
 export default function DeepSWEPlannerPage() {
   return (
     <Layout
-      title="DeepSWE task evidence"
-      description="Compare DeepSWE task correlation, calibrated composite weight, and estimated published score and price."
+      title="DeepSWE Task Planner"
+      description="Choose DeepSWE benchmark tasks with calibrated weights, expected score, cost, and uncertainty using the interactive Agent Layer planner."
       noFooter
     >
+      <div className="container margin-vert--md">
+        <p>
+          This interactive planner is the DeepSWE application of <Link to="/deltaselect">DeltaSelect</Link>,
+          Agent Layer's method for selecting informative benchmark tasks within a fixed evaluation budget.
+        </p>
+      </div>
       <PlannerFrame />
     </Layout>
   );

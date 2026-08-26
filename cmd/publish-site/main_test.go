@@ -946,6 +946,61 @@ func TestPublishDeepSWEPlanner_ReplacesOnlyOwnedStaticSubtree(t *testing.T) {
 	}
 }
 
+func TestPublishAgentDiscoveryFiles_CopiesOnlyOwnedFiles(t *testing.T) {
+	repoA := t.TempDir()
+	repoB := t.TempDir()
+	writeFile(t, filepath.Join(repoA, "site", "static", "llms.txt"), "# Agent Layer\n")
+	writeFile(t, filepath.Join(repoB, "static", "robots.txt"), "User-agent: *\n")
+
+	if err := publishAgentDiscoveryFiles(repoA, repoB); err != nil {
+		t.Fatalf("publishAgentDiscoveryFiles: %v", err)
+	}
+	contents, err := os.ReadFile(filepath.Join(repoB, "static", "llms.txt")) // #nosec G304 -- test-controlled path.
+	if err != nil || string(contents) != "# Agent Layer\n" {
+		t.Fatalf("llms.txt = %q, %v", string(contents), err)
+	}
+	if _, err := os.Stat(filepath.Join(repoB, "static", "robots.txt")); err != nil {
+		t.Fatalf("unrelated static asset was changed: %v", err)
+	}
+}
+
+func TestPublishAgentDiscoveryFiles_RequiresRegularSource(t *testing.T) {
+	repoA := t.TempDir()
+	repoB := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoA, "site", "static", "llms.txt"), 0o700); err != nil {
+		t.Fatalf("mkdir llms.txt: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(repoB, "static"), 0o700); err != nil {
+		t.Fatalf("mkdir static: %v", err)
+	}
+
+	if err := publishAgentDiscoveryFiles(repoA, repoB); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("expected regular-file error, got %v", err)
+	}
+}
+
+func TestPublishAgentMarkdownDocs_ReplacesOwnedMirror(t *testing.T) {
+	repoA := t.TempDir()
+	repoB := t.TempDir()
+	writeFile(t, filepath.Join(repoA, "site", "docs", "agent-dispatch.mdx"), "# Agent Dispatch\n")
+	writeFile(t, filepath.Join(repoB, "static", "docs", "stale.md"), "stale")
+	writeFile(t, filepath.Join(repoB, "static", "robots.txt"), "User-agent: *\n")
+
+	if err := publishAgentMarkdownDocs(repoA, repoB); err != nil {
+		t.Fatalf("publishAgentMarkdownDocs: %v", err)
+	}
+	contents, err := os.ReadFile(filepath.Join(repoB, "static", "docs", "agent-dispatch.md")) // #nosec G304 -- test-controlled path.
+	if err != nil || string(contents) != "# Agent Dispatch\n" {
+		t.Fatalf("agent-dispatch.md = %q, %v", string(contents), err)
+	}
+	if _, err := os.Stat(filepath.Join(repoB, "static", "docs", "stale.md")); !os.IsNotExist(err) {
+		t.Fatalf("stale agent-readable doc was not removed")
+	}
+	if _, err := os.Stat(filepath.Join(repoB, "static", "robots.txt")); err != nil {
+		t.Fatalf("unrelated static asset was changed: %v", err)
+	}
+}
+
 func TestValidateRepoBRootErrors(t *testing.T) {
 	if err := validateRepoBRoot(filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("expected error for missing repo")
@@ -1693,6 +1748,7 @@ func TestRun(t *testing.T) {
 		t.Fatalf("write doc: %v", err)
 	}
 	writeFile(t, filepath.Join(repoA, "site", "static", "deepswe-planner", "app", "index.html"), "planner")
+	writeFile(t, filepath.Join(repoA, "site", "static", "llms.txt"), "# Agent Layer\n")
 	writeTestGuideInputs(t, repoA)
 
 	if err := os.MkdirAll(filepath.Join(repoB, ".git"), 0o700); err != nil {
@@ -1839,6 +1895,7 @@ func setupRepoA(t *testing.T, opts repoAOptions) string {
 			t.Fatalf("write page: %v", err)
 		}
 		writeFile(t, filepath.Join(repo, "site", "static", "deepswe-planner", "app", "index.html"), "planner")
+		writeFile(t, filepath.Join(repo, "site", "static", "llms.txt"), "# Agent Layer\n")
 	}
 	if opts.withDocs {
 		siteDocs := filepath.Join(repo, "site", "docs")

@@ -1,0 +1,63 @@
+---
+title: DeltaSelect — Cost-Effective AI Agent Benchmark Selection
+description: DeltaSelect selects benchmark tasks most likely to detect instruction or Agent Skill improvements within a fixed evaluation budget.
+keywords:
+  - DeltaSelect
+  - AI agent benchmark
+  - benchmark task selection
+  - LLM evaluation cost
+  - Agent Skills evaluation
+  - instruction evaluation
+---
+
+import Link from '@docusaurus/Link';
+
+# DeltaSelect
+
+DeltaSelect is a benchmark task-selection method for teams that need useful experimental evidence without paying to rerun an entire software-engineering benchmark. It ranks tasks by how reliably they track the full benchmark, accounts for uncertainty and available improvement headroom, and selects the strongest set that fits a fixed budget.
+
+<div className="hero-buttons">
+  <Link to="/deepswe-planner" className="hero-button hero-button--primary">Open DeltaSelect</Link>
+  <Link to="/docs/reference#benchmark-runner" className="hero-button hero-button--secondary">Benchmark runner</Link>
+</div>
+
+:::note[Release status]
+DeltaSelect debuts in Agent Layer v0.18.0. A companion arXiv paper describing the method is in preparation; this page will link to it when it is published.
+:::
+
+{/* Add the companion arXiv paper URL here when it is published. */}
+
+## Why benchmark selection matters
+
+Evaluating an instruction, skill, harness, or model change across every task and repeated run of a major coding benchmark can cost far more than the change itself. A tiny arbitrary subset is cheaper, but it may be noisy, saturated, or unrelated to movement in the complete benchmark.
+
+DeltaSelect turns that tradeoff into an explicit experiment-design problem:
+
+- **Spend only the budget you set.** Tasks are added in evidence-ranked order while expected published-run cost remains within the selected budget.
+- **Prefer informative tasks.** Ranking uses the conservative end of each task's estimated correlation with the complete benchmark rather than a single optimistic point estimate.
+- **Preserve a fixed estimator.** Selected tasks carry calibrated weights so the resulting score is defined before the experiment runs.
+- **Expose exclusions and uncertainty.** Manual exclusions, incomplete evidence, expected score, expected cost, and uncertainty remain visible instead of being hidden behind one recommendation.
+- **Export a reproducible study.** The browser produces a content-addressed selection document and a study template for `al benchmark run`.
+
+## What the current tool does
+
+The first public DeltaSelect application uses a reviewed offline snapshot of repeated [DeepSWE](https://deepswe.datacurve.ai/blog/deepswe) runs. Choose a model, reasoning level, budget, repetition count, and optional minimum headroom. DeltaSelect then shows the selected tasks, normalized weights, expected published score and cost, and the evidence behind every ranking.
+
+An optional comparison configuration estimates how that second published configuration would perform on the same fixed tasks, repetitions, and weights. It is descriptive only and never changes the selection.
+
+## From selection to a real experiment
+
+DeltaSelect connects directly to Agent Layer's [benchmark runner](/docs/reference#benchmark-runner):
+
+1. Build and export a selection from the interactive tool.
+2. Define explicit baseline and treatment experiments in `study.toml`.
+3. Run `al benchmark run <study.toml>` to execute missing cells and preserve immutable evidence.
+4. Compare score, cost, and workflow-conformance results in the generated report.
+
+This makes it practical to test changes such as an always-loaded instruction revision, a new Agent Skill, or an Agent Dispatch workflow against the same declared task set.
+
+## Scope and interpretation
+
+DeltaSelect optimizes evidence for a declared selection and budget. A result applies to those selected tasks; it is not automatically representative of every task in the source benchmark. Historical detectability also cannot predict the effect size of a new treatment. The tool keeps those boundaries explicit so teams can make a proportionate evaluation decision instead of treating a small benchmark as ground truth.
+
+<Link to="/deepswe-planner">Open the interactive DeltaSelect tool →</Link>

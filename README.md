@@ -116,7 +116,10 @@ Universal best practices:
 - [Instruction Design](https://agent-layer.dev/instruction-design) (canonical source: `docs/INSTRUCTION-DESIGN.md`)
 
 Agent Layer approach:
+- [Agent Dispatch](https://agent-layer.dev/docs/agent-dispatch) (canonical source: `site/docs/agent-dispatch.mdx`)
+- [Import Agent Skills from Git](https://agent-layer.dev/docs/skill-imports) (canonical source: `site/docs/skill-imports.mdx`)
 - [Skills approach](https://agent-layer.dev/docs/skills-approach) (canonical source: `site/docs/skills-approach.mdx`)
+- [DeltaSelect](https://agent-layer.dev/deltaselect) (canonical source: `site/pages/deltaselect.mdx`)
 
 ---
 
