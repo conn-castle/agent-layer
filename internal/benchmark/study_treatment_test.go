@@ -208,6 +208,126 @@ for payload in [
 	}
 }
 
+func TestStreamAdapterContractsRequireBoundedSuccessfulTerminalEvidence(t *testing.T) {
+	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents := string(adapter)
+	start := strings.Index(contents, "def _bounded_json_lines")
+	end := strings.Index(contents[start:], "\n\nclass _AgentLayerStreamAgent")
+	if start < 0 || end < 0 {
+		t.Fatal("adapter stream parsers are not available for contract testing")
+	}
+	parsers := contents[start : start+end]
+	script := "import json\nSTREAM_BYTE_CAP = 16 * 1024 * 1024\n" + parsers + `
+antigravity = '{"event":"result","result":{"status":"SUCCESS","conversation_id":"coordinator","response":"answer","usage":{"input_tokens":1}}}\n'
+terminal, usage = parse_antigravity_stream(antigravity)
+assert terminal["conversation_id"] == "coordinator" and usage["input_tokens"] == 1
+grok = '{"type":"usage","usage":{"input_tokens":1,"output_tokens":1}}\n{"type":"end","sessionId":"11111111-1111-4111-8111-111111111111","stopReason":"end_turn"}\n'
+terminal, usage = parse_grok_stream(grok, "11111111-1111-4111-8111-111111111111")
+assert len(usage) == 1 and terminal["stopReason"] == "end_turn"
+for thunk in [
+    lambda: parse_antigravity_stream('{"event":"result","result":{"status":"ERROR","usage":{}}}\n'),
+    lambda: parse_antigravity_stream('{not json}\n'),
+    lambda: parse_grok_stream('{"type":"end","sessionId":"other","stopReason":"end_turn"}\n', "11111111-1111-4111-8111-111111111111"),
+    lambda: parse_grok_stream('{"type":"error","message":"denied"}\n', "11111111-1111-4111-8111-111111111111"),
+    lambda: parse_grok_stream('{"type":"tool_call_update","status":"failed","message":"Denied by permission policy"}\n', "11111111-1111-4111-8111-111111111111"),
+    lambda: parse_grok_stream('{"type":"usage","usage":{}}\n', "11111111-1111-4111-8111-111111111111"),
+]:
+    try: thunk()
+    except RuntimeError: continue
+    raise SystemExit("stream parser accepted malformed/unsuccessful evidence")
+try:
+    parse_antigravity_stream('{"event":"result","result":{"status":"SUCCESS","usage":{}}}\n' * (16 * 1024 * 1024))
+except RuntimeError:
+    pass
+else:
+    raise SystemExit("stream parser accepted oversized evidence")
+`
+	command := exec.CommandContext(t.Context(), "python3", "-c", script) // #nosec G204 -- test-owned embedded adapter source.
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("adapter stream parser contract failed: %v\n%s", err, output)
+	}
+	for _, required := range []string{
+		"ANTIGRAVITY_LINUX_AMD64_SHA512", "GROK_LINUX_AMD64_SHA256", "network_allowlist", "_bounded_provider_capture", "uuid.uuid4()",
+		`grok_home = f"{REMOTE_WORKSPACE}/.grok-config"`, "--trust", "antigravity-mcp-preflight.json", "grok-mcp-preflight.json",
+	} {
+		if !strings.Contains(contents, required) {
+			t.Fatalf("adapter omitted pinned/runtime contract %q", required)
+		}
+	}
+	if strings.Contains(contents, "--sandbox workspace --print-timeout") {
+		t.Fatal("Antigravity adapter passes Grok-style sandbox profile to boolean --sandbox flag")
+	}
+	if !strings.Contains(contents, "await self._snapshot_workspace(environment)") || strings.Contains(contents, `if self._treatment_mode != "bare":\n            await self.exec_as_agent`) {
+		t.Fatal("stream adapter does not snapshot and restore adapter-owned paths for bare and treatment arms")
+	}
+}
+
+func TestPinnedStreamAdaptersImplementPierInstallAndEgressContracts(t *testing.T) {
+	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "pier_agent_layer.py")
+	if err := os.WriteFile(path, adapter, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := `
+import asyncio
+import importlib.util
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location("pier_agent_layer", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+for cls, model, domains in [
+    (module.AgentLayerAntigravity, "gemini-3.5-flash-low", {"storage.googleapis.com", ".googleapis.com"}),
+    (module.AgentLayerGrok, "grok-4.5", {"storage.googleapis.com", "api.x.ai", "auth.x.ai"}),
+]:
+    agent = cls(
+        logs_dir=Path("/tmp/pier-adapter-contract"), model_name=model, version=cls.PINNED_VERSION,
+        treatment_agent=agent_name if (agent_name := cls.name()) else "", treatment_model=model,
+        treatment_reasoning_effort="low", treatment_mode="bare",
+    )
+    install = agent.install_spec()
+    assert install.agent_name == cls.name() and install.version == cls.PINNED_VERSION
+    assert install.verification_command == f"{cls.BINARY} --version"
+    assert install.metadata["network_allowlist"] == ["storage.googleapis.com"]
+    assert set(agent.network_allowlist().domains) == domains
+    command = install.steps[0].run
+    assert "urllib.request.urlretrieve" in command and "sha" in command and "latest" not in command
+    with tempfile.TemporaryDirectory() as directory:
+        out, err = Path(directory) / "stdout", Path(directory) / "stderr"
+        capture = agent._bounded_provider_capture("printf stream; printf diagnostic >&2", str(out), str(err))
+        completed = subprocess.run(capture, shell=True, text=True, capture_output=True)
+        assert completed.returncode == 0, completed.stderr
+        assert out.read_text() == "stream" and err.read_text() == "diagnostic"
+
+commands = []
+async def capture_command(environment, command, **kwargs):
+    commands.append(command)
+agent.exec_as_agent = capture_command
+asyncio.run(agent._snapshot_workspace(object()))
+assert len(commands) == 1
+assert "git ls-files --others -z" in commands[0]
+assert "git config user.email" in commands[0]
+assert "agent-layer-original" in commands[0]
+commands.clear()
+asyncio.run(agent._collect_evidence(object()))
+assert any("for path in" in command and "agent-layer-original" in command for command in commands)
+assert any("git reset -q --pathspec-from-file" in command and "git commit -m" in command for command in commands)
+`
+	command := exec.CommandContext(t.Context(), "uvx", "--from", "datacurve-pier=="+PierVersion, "python", "-c", script, path) // #nosec G204 -- embedded test loads the checked-in adapter against its pinned runtime.
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("pinned Pier adapter contract failed: %v\n%s", err, output)
+	}
+}
+
 func TestStudyTreatmentBundleConfigOnlyStagesRuntimeWithoutWorkflow(t *testing.T) {
 	root := t.TempDir()
 	configPath := writeStudyTreatmentConfig(t, root)

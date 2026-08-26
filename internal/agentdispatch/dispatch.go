@@ -156,9 +156,16 @@ func executeDispatch(request dispatchExecution) error {
 			return finishDispatchFailure(request, err)
 		}
 		if request.Target.Name == AgentAntigravity {
-			id, logErr := antigravitySessionID(command.LogPath)
+			logID, logErr := antigravitySessionID(command.LogPath)
 			if logErr != nil {
 				return finishDispatchFailure(request, wrapExitError(ExitTargetFailure, "read Antigravity dispatch log", logErr))
+			}
+			id := result.SessionID
+			if logID != "" {
+				if id != "" && logID != id {
+					return finishDispatchFailure(request, exitError(ExitTargetFailure, "Antigravity stream and diagnostic log returned different provider conversation IDs"))
+				}
+				id = logID
 			}
 			if id == "" {
 				result.NotResumable = true

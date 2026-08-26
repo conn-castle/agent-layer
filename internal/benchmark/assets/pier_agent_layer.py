@@ -12,14 +12,19 @@ import importlib.metadata
 import inspect
 import json
 import os
+import shlex
 import subprocess
 import tempfile
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
 
 from pier.agents.installed.claude_code import ClaudeCode
 from pier.agents.installed.codex import Codex
+from pier.agents.installed.base import BaseInstalledAgent
+from pier.models.agent.install import AgentInstallSpec, InstallStep
+from pier.models.agent.network import NetworkAllowlist
 from pier.models.trial.paths import EnvironmentPaths
 
 EXPECTED_PIER_VERSION = "0.3.0"
@@ -31,6 +36,8 @@ REMOTE_PROJECT_CODEX_HOME = f"{REMOTE_WORKSPACE}/.codex"
 REMOTE_CODEX_AUTH = f"{REMOTE_CODEX_HOME}/auth.json"
 REMOTE_CODEX_MCP_PREFLIGHT = "/tmp/agent-layer-codex-mcp-preflight.json"
 REMOTE_CLAUDE_MCP_PREFLIGHT = "/tmp/agent-layer-claude-mcp-preflight.txt"
+REMOTE_ANTIGRAVITY_MCP_PREFLIGHT = "/tmp/agent-layer-antigravity-mcp-preflight.json"
+REMOTE_GROK_MCP_PREFLIGHT = "/tmp/agent-layer-grok-mcp-preflight.json"
 REMOTE_DISPATCH_OPTIONS_PREFLIGHT = "/tmp/agent-layer-dispatch-options-preflight.json"
 # "task" is already a derived plan artifact name in the workflow skills.
 REMOTE_SPEC_FILE = f"{REMOTE_WORKSPACE}/.agent-layer/tmp/spec.md"
@@ -41,9 +48,27 @@ PREEXISTING_UNTRACKED = "/tmp/agent-layer-preexisting-untracked"
 PROJECTED_PATHS = (
     ".gitignore AGENTS.md CLAUDE.md .github/copilot-instructions.md "
     ".agent .agents .agent-layer .codex .copilot .gemini .mcp.json "
-    ".agy .claude .claude-config .vscode/mcp.json .vscode/settings.json "
+    ".agy .claude .claude-config .grok .grok-config .vscode/mcp.json .vscode/settings.json "
     "docs/agent-layer"
 )
+
+# These URLs are immutable, versioned Linux/amd64 artifacts.  The Antigravity
+# digest is published in the vendor manifest for 1.1.21.  xAI's installer
+# publishes the immutable Grok artifact URL but no SHA-256 sidecar; the pinned
+# digest below is the SHA-256 recorded from that vendor object on 2026-08-26.
+# Do not replace either with a channel/latest installer.
+ANTIGRAVITY_LINUX_AMD64_URL = (
+    "https://storage.googleapis.com/antigravity-public/antigravity-cli/"
+    "1.1.21-6424454201475072/linux-x64/cli_linux_x64.tar.gz"
+)
+ANTIGRAVITY_LINUX_AMD64_SHA512 = (
+    "3de7552ef089c136c0f570cdc9c04652278e02c1d41ed3911ad5f9f1b8c3bd"
+    "567643aa401a1916060ea32a1b17fbaf90cbb417071db33f467880fcd848868d92"
+)
+GROK_LINUX_AMD64_URL = "https://storage.googleapis.com/grok-build-public-artifacts/cli/grok-1.0.5-linux-x86_64"
+GROK_LINUX_AMD64_SHA256 = "9ba87444e1819e8f6104adbbf4676a870c204380aa5c3e1c38a926c4ea677238"
+STREAM_BYTE_CAP = 16 * 1024 * 1024
+ANTIGRAVITY_PROMPT_BYTE_CAP = 100 * 1024
 
 
 def validate_mcp_initialize_response(
@@ -179,8 +204,8 @@ class _AgentLayerTreatment:
     def __init__(
         self,
         *args,
-        treatment_bundle: str,
-        treatment_mode: str,
+        treatment_bundle: str = "",
+        treatment_mode: str = "bare",
         treatment_agent: str,
         treatment_model: str,
         treatment_reasoning_effort: str,
@@ -189,6 +214,8 @@ class _AgentLayerTreatment:
         preflight_only: bool = False,
         codex_credentials_path: str | None = None,
         claude_credentials_path: str | None = None,
+        grok_credentials_path: str | None = None,
+        antigravity_credentials_path: str | None = None,
         **kwargs,
     ):
         try:
@@ -197,7 +224,7 @@ class _AgentLayerTreatment:
             raise RuntimeError("Pier package metadata is unavailable") from error
         if version != EXPECTED_PIER_VERSION:
             raise RuntimeError(f"Agent Layer benchmark adapter requires Pier {EXPECTED_PIER_VERSION}, got {version}")
-        self._treatment_bundle = Path(treatment_bundle)
+        self._treatment_bundle = Path(treatment_bundle) if treatment_bundle else None
         self._treatment_mode = treatment_mode
         self._treatment_agent = treatment_agent
         self._treatment_model = treatment_model
@@ -205,6 +232,10 @@ class _AgentLayerTreatment:
         self._preflight_only = preflight_only
         self._codex_credentials_path = Path(codex_credentials_path) if codex_credentials_path else None
         self._claude_credentials_path = Path(claude_credentials_path) if claude_credentials_path else None
+        self._grok_credentials_path = Path(grok_credentials_path) if grok_credentials_path else None
+        self._antigravity_credentials_path = (
+            Path(antigravity_credentials_path) if antigravity_credentials_path else None
+        )
         self._required_dispatch_roles = [role for role in required_dispatch_roles.split(",") if role]
         self._credential_names = [name for name in credential_names.split(",") if name]
         self._credential_env = {}
@@ -213,11 +244,16 @@ class _AgentLayerTreatment:
             if not value:
                 raise RuntimeError(f"Configured MCP credential {name} is unavailable")
             self._credential_env[name] = value
-        if not self._treatment_bundle.is_dir():
+        if treatment_mode == "bare":
+            if treatment_bundle or self._required_dispatch_roles or self._credential_names:
+                raise RuntimeError("Bare benchmark adapter received treatment state")
+            super().__init__(*args, **kwargs)
+            return
+        if self._treatment_bundle is None or not self._treatment_bundle.is_dir():
             raise RuntimeError("Agent Layer benchmark treatment bundle is missing")
         if treatment_mode not in {"instructions-only", "instructions-and-skills"}:
             raise RuntimeError(f"Unsupported Agent Layer benchmark treatment mode: {treatment_mode}")
-        if treatment_agent not in {"claude", "codex"} or not treatment_model or not treatment_reasoning_effort:
+        if treatment_agent not in {"claude", "codex", "antigravity", "grok"} or not treatment_model or not treatment_reasoning_effort:
             raise RuntimeError("Agent Layer benchmark workflow target is incomplete")
         self._dispatch_config = None
         if treatment_mode == "instructions-and-skills":
@@ -231,14 +267,9 @@ class _AgentLayerTreatment:
                 raise RuntimeError("Agent Layer benchmark dispatch target schema is invalid")
         super().__init__(*args, **kwargs)
 
-    async def _install_treatment(self, environment):
-        await self.exec_as_agent(
-            environment,
-            command=(
-                f"cd {REMOTE_WORKSPACE} && "
-                f"git ls-files --others -z > {PREEXISTING_UNTRACKED}"
-            ),
-        )
+    async def _stage_treatment(self, environment):
+        if self._treatment_mode == "bare":
+            return
         await environment.upload_dir(self._treatment_bundle, REMOTE_BUNDLE)
         if self._codex_credentials_path:
             if not self._codex_credentials_path.is_file():
@@ -255,22 +286,10 @@ class _AgentLayerTreatment:
                 self._claude_credentials_path,
                 str(EnvironmentPaths.agent_dir / "sessions" / ".credentials.json"),
             )
-        preserve = (
-            "rm -rf /tmp/agent-layer-original && mkdir -p /tmp/agent-layer-original && "
-            f"cd {REMOTE_WORKSPACE} && "
-            f"for path in {PROJECTED_PATHS}; do "
-            "key=$(printf '%s' \"$path\" | tr / _); "
-            "if test -e \"$path\" || test -L \"$path\"; then "
-            "mkdir -p \"/tmp/agent-layer-original/$key\" && cp -a \"$path\" \"/tmp/agent-layer-original/$key/value\"; "
-            "else : > \"/tmp/agent-layer-original/$key.absent\"; fi; done"
-        )
-        await self.exec_as_agent(environment, command=preserve)
         install = (
             f"mkdir -p {REMOTE_WORKSPACE}/docs {REMOTE_WORKSPACE}/.agent-layer/tmp "
             f"&& test ! -f {REMOTE_BUNDLE}/AGENTS.md || cp -a {REMOTE_BUNDLE}/AGENTS.md {REMOTE_WORKSPACE}/AGENTS.md "
             f"&& test ! -d {REMOTE_BUNDLE}/docs/agent-layer || cp -a {REMOTE_BUNDLE}/docs/agent-layer {REMOTE_WORKSPACE}/docs/agent-layer "
-            f"&& git -C {REMOTE_WORKSPACE} config user.email benchmark@local.invalid "
-            f"&& git -C {REMOTE_WORKSPACE} config user.name 'Agent Layer Benchmark' "
             f"&& (git -C {REMOTE_WORKSPACE} show-ref --verify --quiet refs/heads/main || "
             f"git -C {REMOTE_WORKSPACE} branch main HEAD)"
         )
@@ -287,6 +306,25 @@ class _AgentLayerTreatment:
             environment,
             command=install,
         )
+
+    async def _snapshot_workspace(self, environment):
+        """Preserve adapter-owned paths and the task image's untracked baseline."""
+        preserve = (
+            "rm -rf /tmp/agent-layer-original && mkdir -p /tmp/agent-layer-original && "
+            f"cd {REMOTE_WORKSPACE} && "
+            f"git ls-files --others -z > {PREEXISTING_UNTRACKED} && "
+            "git config user.email benchmark@local.invalid && "
+            "git config user.name 'Agent Layer Benchmark' && "
+            f"for path in {PROJECTED_PATHS}; do "
+            "key=$(printf '%s' \"$path\" | tr / _); "
+            "if test -e \"$path\" || test -L \"$path\"; then "
+            "mkdir -p \"/tmp/agent-layer-original/$key\" && cp -a \"$path\" \"/tmp/agent-layer-original/$key/value\"; "
+            "else : > \"/tmp/agent-layer-original/$key.absent\"; fi; done"
+        )
+        await self.exec_as_agent(environment, command=preserve)
+        if self._treatment_mode == "bare":
+            return
+        await self._stage_treatment(environment)
         # Agent Layer resolves configuration placeholders from its normal .env
         # boundary. Upload only the declared names from Pier's child environment
         # before sync; projected-path restoration and host-side sanitization keep
@@ -402,9 +440,11 @@ class _AgentLayerTreatment:
                         f"cd {REMOTE_WORKSPACE} && mkdir -p \"$CODEX_HOME\" && "
                         "if [ -s ~/.nvm/nvm.sh ]; then . ~/.nvm/nvm.sh; fi; "
                         f"codex mcp get agent-layer --json > {REMOTE_CODEX_MCP_PREFLIGHT} && "
-                        f"jq -e '.enabled == true and .transport.type == \"stdio\" "
-                        "and .transport.command == \"al\" "
-                        "and .transport.args == [\"dispatch\", \"mcp-server\"]' "
+                        f"jq -e '.enabled == true and .transport.type == \"stdio\" and "
+                        "((.transport.command == \"al\" and .transport.args == [\"dispatch\", \"mcp-server\"]) or "
+                        "(.transport.command == \"/bin/sh\" and .transport.args[0] == \"-c\" and "
+                        "(.transport.args[1] | contains(\"exec al dispatch mcp-server\")) and "
+                        ".transport.args[2] == \"agent-layer-mcp\" and (.transport.args | length) == 4))' "
                         f"{REMOTE_CODEX_MCP_PREFLIGHT} >/dev/null || "
                         f"{{ echo 'Codex Agent Dispatch MCP preflight failed' >&2; "
                         f"test ! -f {REMOTE_CODEX_MCP_PREFLIGHT} || "
@@ -414,7 +454,7 @@ class _AgentLayerTreatment:
                         {"CODEX_HOME": REMOTE_CODEX_HOME}
                     ),
                 )
-            else:
+            elif self._treatment_agent == "claude":
                 # Unlike Codex's configuration-only inspection, Claude's MCP
                 # command also starts the approved project server and reports
                 # its health. Require the exact shared project entry.
@@ -433,6 +473,50 @@ class _AgentLayerTreatment:
                         f"cat {REMOTE_CLAUDE_MCP_PREFLIGHT} >&2; exit 1; }}"
                     ),
                 )
+            elif self._treatment_agent == "antigravity":
+                # agy 1.1.21's `mcp list` ignores --gemini_dir and therefore
+                # cannot inspect the contained home. Validate the exact file
+                # that agy migrates on first launch; the protocol preflight
+                # below separately starts the configured server.
+                await self.exec_as_agent(
+                    environment,
+                    command=(
+                        f"cd {REMOTE_WORKSPACE} && "
+                        f"cp .agy/antigravity-cli/mcp_config.json {REMOTE_ANTIGRAVITY_MCP_PREFLIGHT} && "
+                        "jq -e '.mcpServers[\"agent-layer\"] as $s | "
+                        "(($s.command == \"al\" and $s.args == [\"dispatch\", \"mcp-server\"]) or "
+                        "($s.command == \"/bin/sh\" and $s.args[0] == \"-c\" and "
+                        "($s.args[1] | contains(\"exec al dispatch mcp-server\")) and "
+                        "$s.args[2] == \"agent-layer-mcp\" and ($s.args | length) == 4))' "
+                        f"{REMOTE_ANTIGRAVITY_MCP_PREFLIGHT} >/dev/null || "
+                        f"{{ echo 'Antigravity Agent Dispatch MCP preflight failed' >&2; "
+                        f"test ! -f {REMOTE_ANTIGRAVITY_MCP_PREFLIGHT} || "
+                        f"cat {REMOTE_ANTIGRAVITY_MCP_PREFLIGHT} >&2; exit 1; }}"
+                    ),
+                )
+            elif self._treatment_agent == "grok":
+                await self.exec_as_agent(
+                    environment,
+                    command=(
+                        f"cd {REMOTE_WORKSPACE} && grok mcp list --json "
+                        f"> {REMOTE_GROK_MCP_PREFLIGHT} && "
+                        "jq -e 'any(.[]?; (.name // .id) == \"agent-layer\" and "
+                        "(((.command // .transport.command // \"\") == \"al\" and "
+                        "(.args // .transport.args) == [\"dispatch\", \"mcp-server\"]) or "
+                        "((.command // .transport.command // \"\") == \"/bin/sh\" and "
+                        "(.args // .transport.args)[0] == \"-c\" and "
+                        "((.args // .transport.args)[1] | contains(\"exec al dispatch mcp-server\")) and "
+                        "(.args // .transport.args)[2] == \"agent-layer-mcp\" and "
+                        "((.args // .transport.args) | length) == 4)))' "
+                        f"{REMOTE_GROK_MCP_PREFLIGHT} >/dev/null || "
+                        f"{{ echo 'Grok Agent Dispatch MCP preflight failed' >&2; "
+                        f"test ! -f {REMOTE_GROK_MCP_PREFLIGHT} || "
+                        f"cat {REMOTE_GROK_MCP_PREFLIGHT} >&2; exit 1; }}"
+                    ),
+                    env=self.build_process_env({"GROK_HOME": f"{REMOTE_WORKSPACE}/.grok-config"}),
+                )
+            else:
+                raise RuntimeError(f"unsupported treatment MCP provider {self._treatment_agent!r}")
             # Exercise the other side of the coordinator/dispatch boundary
             # before a paid trial: the exact bundled Agent Layer binary must
             # expose the configured target. A setup failure is infrastructure,
@@ -572,6 +656,10 @@ for s in json.load(open(p, encoding="utf-8")).get("servers", []):
                 f"cp {REMOTE_CODEX_MCP_PREFLIGHT} {evidence_dir}/codex-mcp-preflight.json; "
                 f"test ! -f {REMOTE_CLAUDE_MCP_PREFLIGHT} || "
                 f"cp {REMOTE_CLAUDE_MCP_PREFLIGHT} {evidence_dir}/claude-mcp-preflight.txt; "
+                f"test ! -f {REMOTE_ANTIGRAVITY_MCP_PREFLIGHT} || "
+                f"cp {REMOTE_ANTIGRAVITY_MCP_PREFLIGHT} {evidence_dir}/antigravity-mcp-preflight.json; "
+                f"test ! -f {REMOTE_GROK_MCP_PREFLIGHT} || "
+                f"cp {REMOTE_GROK_MCP_PREFLIGHT} {evidence_dir}/grok-mcp-preflight.json; "
                 f"test ! -f {REMOTE_DISPATCH_OPTIONS_PREFLIGHT} || "
                 f"cp {REMOTE_DISPATCH_OPTIONS_PREFLIGHT} {evidence_dir}/dispatch-options-preflight.json; "
                 f"if test -d {REMOTE_WORKSPACE}/.agent-layer/tmp/runs; then "
@@ -637,11 +725,350 @@ for s in json.load(open(p, encoding="utf-8")).get("servers", []):
 
     async def _prepare(self, instruction: str, environment) -> str:
         """Install the treatment and return the instruction the agent receives."""
-        await self._install_treatment(environment)
+        await self._snapshot_workspace(environment)
         if self._treatment_mode != "instructions-and-skills":
             return instruction
         await self._write_spec_file(environment, instruction)
         return self._workflow_instruction(instruction)
+
+
+def _bounded_json_lines(payload: str, *, label: str, byte_cap: int = STREAM_BYTE_CAP):
+    """Decode one provider stream without accepting unbounded/malformed output."""
+    if len(payload.encode("utf-8")) > byte_cap:
+        raise RuntimeError(f"{label} stream exceeds {byte_cap} byte limit")
+    for line in payload.splitlines():
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise RuntimeError(f"{label} stream contains malformed JSON") from error
+        if not isinstance(value, dict):
+            raise RuntimeError(f"{label} stream event is not an object")
+        yield value
+
+
+def parse_antigravity_stream(payload: str):
+    """Return terminal API-equivalent usage from exactly one successful result."""
+    terminal = None
+    for event in _bounded_json_lines(payload, label="Antigravity"):
+        if event.get("event") == "result":
+            if terminal is not None:
+                raise RuntimeError("Antigravity stream has multiple terminal result events")
+            terminal = event.get("result")
+            if not isinstance(terminal, dict):
+                raise RuntimeError("Antigravity terminal result is not an object")
+    if terminal is None:
+        raise RuntimeError("Antigravity stream has no terminal result event")
+    if terminal.get("status") != "SUCCESS":
+        detail = terminal.get("error")
+        suffix = f": {detail}" if isinstance(detail, str) and detail else ""
+        raise RuntimeError(f"Antigravity terminal result was unsuccessful{suffix}")
+    usage = terminal.get("usage")
+    if not isinstance(usage, dict):
+        raise RuntimeError("Antigravity terminal result has no usage object")
+    return terminal, usage
+
+
+def parse_grok_stream(payload: str, session_id: str):
+    """Require Grok's caller session, successful end, and request usage events."""
+    terminal = None
+    usage = []
+    for event in _bounded_json_lines(payload, label="Grok"):
+        kind = event.get("type")
+        if kind == "error":
+            raise RuntimeError("Grok reported a provider error")
+        if kind == "tool_call_update" and event.get("status") == "failed":
+            text = json.dumps(event, sort_keys=True)
+            if "Denied by permission policy" in text:
+                raise RuntimeError("Grok denied a tool call")
+        if kind == "usage":
+            usage.append(event)
+        if kind == "end":
+            if terminal is not None:
+                raise RuntimeError("Grok stream has multiple terminal end events")
+            terminal = event
+    if terminal is None:
+        raise RuntimeError("Grok stream has no terminal end event")
+    if terminal.get("sessionId") != session_id:
+        raise RuntimeError("Grok terminal event did not return the caller-assigned session ID")
+    if terminal.get("stopReason") != "end_turn":
+        raise RuntimeError("Grok terminal event was unsuccessful")
+    if not usage:
+        raise RuntimeError("Grok stream has no usage evidence")
+    return terminal, usage
+
+
+class _AgentLayerStreamAgent(_AgentLayerTreatment, BaseInstalledAgent):
+    """Shared deterministic headless runner for the non-native Pier agents."""
+
+    BINARY = ""
+    PINNED_VERSION = ""
+    OUTPUT_NAME = ""
+
+    @staticmethod
+    def name() -> str:
+        raise NotImplementedError
+
+    def get_version_command(self) -> str | None:
+        return f"{self.BINARY} --version"
+
+    def network_allowlist(self) -> NetworkAllowlist:
+        """Declare both the immutable installer host and provider API boundary."""
+        if self.BINARY == "agy":
+            # The contained Gemini API path can contact regional Google API
+            # endpoints. A suffix is necessary; a single endpoint is not a
+            # stable contract for all supported Gemini requests.
+            return NetworkAllowlist(domains=["storage.googleapis.com", ".googleapis.com"])
+        if self.BINARY == "grok":
+            return NetworkAllowlist(domains=["storage.googleapis.com", "api.x.ai", "auth.x.ai"])
+        raise RuntimeError(f"unsupported pinned stream agent binary {self.BINARY!r}")
+
+    def install_spec(self) -> AgentInstallSpec:
+        if self.BINARY == "agy":
+            url, digest, verify, install = (
+                ANTIGRAVITY_LINUX_AMD64_URL,
+                ANTIGRAVITY_LINUX_AMD64_SHA512,
+                "sha512sum",
+                "tar -xzf \"$payload\" -C \"$stage\" antigravity && install -m 0755 \"$stage/antigravity\" /usr/local/bin/agy",
+            )
+            checksum_algorithm = "sha512"
+            checksum_provenance = "vendor linux_amd64 manifest"
+        elif self.BINARY == "grok":
+            url, digest, verify, install = (
+                GROK_LINUX_AMD64_URL,
+                GROK_LINUX_AMD64_SHA256,
+                "sha256sum",
+                "install -m 0755 \"$payload\" /usr/local/bin/grok",
+            )
+            checksum_algorithm = "sha256"
+            checksum_provenance = "sha256 recorded from immutable xAI versioned artifact on 2026-08-26"
+        else:
+            raise RuntimeError(f"unsupported pinned stream agent binary {self.BINARY!r}")
+        # The install step reaches only the one static storage.googleapis.com
+        # object declared in metadata.  It never calls a channel, updater, or
+        # vendor bootstrap script, and it verifies before replacing the binary.
+        command = (
+            "set -eu; stage=$(mktemp -d); trap 'rm -rf \"$stage\"' EXIT; "
+            "payload=\"$stage/payload\"; "
+            # Python is provided by Pier itself. It avoids a mutable package
+            # manager/bootstrap dependency merely to fetch one pinned object.
+            "python3 -c 'import sys, urllib.request; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])' "
+            f"{shlex.quote(url)} \"$payload\"; "
+            f"printf '%s  %s\\n' {shlex.quote(digest)} \"$payload\" | {verify} -c -; "
+            f"{install}; "
+            f"/usr/local/bin/{self.BINARY} --version | grep -F {shlex.quote(self.PINNED_VERSION)} >/dev/null"
+        )
+        return AgentInstallSpec(
+            agent_name=self.name(), version=self.PINNED_VERSION,
+            steps=[InstallStep(user="root", run=command)],
+            verification_command=self.get_version_command(),
+            metadata={
+                "pin": self.PINNED_VERSION,
+                "linux_amd64_artifact": url,
+                "checksum_algorithm": checksum_algorithm,
+                "checksum": digest,
+                "checksum_provenance": checksum_provenance,
+                "network_allowlist": ["storage.googleapis.com"],
+            },
+        )
+
+    def populate_context_post_run(self, context) -> None:
+        # Custom agents do not have a LiteLLM model mapping.  The adapter has
+        # already retained and validated its terminal usage/session evidence;
+        # cost is reconstructed once by the host normalizer.
+        for name, value in (("model_name", self.model_name), ("provider", self.name())):
+            if hasattr(context, name):
+                setattr(context, name, value)
+
+    async def _run_command(self, environment, command: str, env: dict[str, str]):
+        await self.exec_as_agent(environment, command=command, env=env)
+
+    def _bounded_provider_capture(self, provider_command: str, stream_path: str, diagnostics_path: str) -> str:
+        """Capture each provider stream under the evidence byte ceiling.
+
+        Stdout is the structured stream consumed by the normalizer; stderr is
+        diagnostic evidence.  Keeping both bounded prevents a noisy provider
+        failure from bypassing Pier's evidence-size contract.
+        """
+        limiter = (
+            "import sys; cap=" + str(STREAM_BYTE_CAP) + "; total=0; out=sys.stdout.buffer; "
+            "\nfor chunk in iter(lambda: sys.stdin.buffer.read(65536), b''):\n"
+            " total += len(chunk)\n"
+            " if total > cap: raise SystemExit('provider stream exceeds byte limit')\n"
+            " out.write(chunk); out.flush()\n"
+        )
+        capture = (
+            "set -eu; capture=$(mktemp -d); trap 'rm -rf \"$capture\"' EXIT; "
+            "mkfifo \"$capture/stdout\" \"$capture/stderr\"; "
+            f"python3 -c {shlex.quote(limiter)} < \"$capture/stdout\" > {shlex.quote(stream_path)} & stdout_pid=$!; "
+            f"python3 -c {shlex.quote(limiter)} < \"$capture/stderr\" > {shlex.quote(diagnostics_path)} & stderr_pid=$!; "
+            "set +e; "
+            f"( {provider_command} ) > \"$capture/stdout\" 2> \"$capture/stderr\"; provider_status=$?; "
+            "wait \"$stdout_pid\"; stdout_status=$?; wait \"$stderr_pid\"; stderr_status=$?; set -e; "
+            "test \"$provider_status\" -eq 0 && test \"$stdout_status\" -eq 0 && test \"$stderr_status\" -eq 0"
+        )
+        return f"bash -c {shlex.quote(capture)}"
+
+    async def _validate_retained_stream(self, environment, remote_path: str, provider: str, session_id: str = "") -> None:
+        parser = parse_antigravity_stream if provider == "antigravity" else parse_grok_stream
+        source = inspect.getsource(_bounded_json_lines) + inspect.getsource(parser)
+        invocation = "parse_antigravity_stream(payload)" if provider == "antigravity" else f"parse_grok_stream(payload, {session_id!r})"
+        script = (
+            "import json\n"
+            + source
+            + f"\npayload = open({remote_path!r}, encoding='utf-8').read()\n{invocation}\n"
+        )
+        encoded = base64.b64encode(script.encode("utf-8")).decode("ascii")
+        await self.exec_as_agent(
+            environment,
+            command=f"printf '%s' '{encoded}' | base64 -d | python3",
+        )
+
+
+class AgentLayerAntigravity(_AgentLayerStreamAgent):
+    BINARY = "agy"
+    PINNED_VERSION = "1.1.21"
+    OUTPUT_NAME = "antigravity.jsonl"
+
+    @staticmethod
+    def name() -> str:
+        return "antigravity"
+
+    async def run(self, instruction, environment, context):
+        remote_credential = f"{REMOTE_WORKSPACE}/.agy/antigravity-cli/antigravity-oauth-token"
+        try:
+            effective = await self._prepare(self.render_instruction(instruction), environment)
+            if len(effective.encode("utf-8")) > ANTIGRAVITY_PROMPT_BYTE_CAP:
+                raise RuntimeError(
+                    f"Antigravity benchmark prompt exceeds {ANTIGRAVITY_PROMPT_BYTE_CAP} byte limit"
+                )
+            if not self._antigravity_credentials_path or not self._antigravity_credentials_path.is_file():
+                raise RuntimeError("Antigravity benchmark requires the Agent Layer OAuth profile")
+            settings_path = f"{REMOTE_WORKSPACE}/.agy/antigravity-cli/settings.json"
+            settings_script = f'''import json, os
+path = {settings_path!r}
+os.makedirs(os.path.dirname(path), exist_ok=True)
+try:
+    with open(path, encoding="utf-8") as stream:
+        value = json.load(stream)
+except FileNotFoundError:
+    value = {{}}
+if not isinstance(value, dict):
+    raise RuntimeError("Antigravity settings are not a JSON object")
+value.pop("modelProvider", None)
+with open(path, "w", encoding="utf-8") as stream:
+    json.dump(value, stream, indent=2, sort_keys=True)
+    stream.write("\\n")
+'''
+            encoded_settings = base64.b64encode(settings_script.encode("utf-8")).decode("ascii")
+            await self.exec_as_agent(
+                environment,
+                command=f"printf '%s' '{encoded_settings}' | base64 -d | python3",
+            )
+            await environment.upload_file(self._antigravity_credentials_path, remote_credential)
+            await self.exec_as_agent(environment, command=f"chmod 0600 {remote_credential}")
+            if self._preflight_only:
+                models_path = "/tmp/agent-layer-antigravity-models.txt"
+                await self.exec_as_agent(
+                    environment,
+                    command=(
+                        f"AGY_CLI_DISABLE_AUTO_UPDATE=1 agy --gemini_dir={REMOTE_WORKSPACE}/.agy models "
+                        f"> {models_path} && awk -v expected={shlex.quote(self.model_name or '')} "
+                        f"{shlex.quote('$1 == expected { found=1 } END { exit !found }')} {models_path} || "
+                        f"{{ echo 'Antigravity benchmark model is unavailable' >&2; cat {models_path} >&2; exit 1; }}"
+                    ),
+                )
+                return
+            env = self.build_process_env({"AGY_CLI_DISABLE_AUTO_UPDATE": "1"})
+            stream_path = str(EnvironmentPaths.agent_dir / self.OUTPUT_NAME)
+            diagnostics_path = str(EnvironmentPaths.agent_dir / "antigravity.stderr")
+            # Pier owns the hard execution deadline. The long client deadline
+            # prevents agy's five-minute default from preempting that contract.
+            provider_command = (
+                f"agy --gemini_dir={REMOTE_WORKSPACE}/.agy --model {shlex.quote(self.model_name or '')} "
+                "--output-format stream-json "
+                "--dangerously-skip-permissions --print-timeout 24h "
+                f"--print {shlex.quote(effective)}"
+            )
+            command = self._bounded_provider_capture(provider_command, stream_path, diagnostics_path)
+            await self._run_command(environment, command, env)
+            await self._validate_retained_stream(environment, stream_path, "antigravity")
+        finally:
+            try:
+                await self.exec_as_agent(environment, command=f"rm -f {remote_credential}")
+            except Exception:
+                pass
+            await self._collect_evidence(environment)
+
+
+class AgentLayerGrok(_AgentLayerStreamAgent):
+    BINARY = "grok"
+    PINNED_VERSION = "1.0.5"
+    OUTPUT_NAME = "grok.jsonl"
+
+    @staticmethod
+    def name() -> str:
+        return "grok"
+
+    async def run(self, instruction, environment, context):
+        try:
+            effective = await self._prepare(self.render_instruction(instruction), environment)
+            if not self._grok_credentials_path or not self._grok_credentials_path.is_file():
+                raise RuntimeError("Grok benchmark credential file is missing")
+            session = str(uuid.uuid4())
+            prompt_path = "/tmp/agent-layer-grok-prompt.txt"
+            grok_home = f"{REMOTE_WORKSPACE}/.grok-config"
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as stream:
+                stream.write(effective)
+                local_prompt = stream.name
+            try:
+                await self.exec_as_agent(
+                    environment,
+                    command=f"mkdir -p {grok_home} && chmod 0700 {grok_home}",
+                )
+                await environment.upload_file(Path(local_prompt), prompt_path)
+                await environment.upload_file(self._grok_credentials_path, f"{grok_home}/auth.json")
+                await self.exec_as_agent(
+                    environment,
+                    command=f"chmod 0600 {grok_home}/auth.json",
+                )
+            finally:
+                Path(local_prompt).unlink(missing_ok=True)
+            env = self.build_process_env({"GROK_HOME": grok_home, "GROK_MEMORY": "0", "GROK_CLAUDE_AGENTS_ENABLED": "false"})
+            if self._preflight_only:
+                models_path = "/tmp/agent-layer-grok-models.txt"
+                await self.exec_as_agent(
+                    environment,
+                    command=(
+                        f"grok --no-auto-update models > {models_path} && "
+                        f"awk -v expected={shlex.quote(self.model_name or '')} "
+                        f"{shlex.quote('$1 ~ /^[-*]$/ && $2 == expected { found=1 } END { exit !found }')} "
+                        f"{models_path} || "
+                        f"{{ echo 'Grok benchmark model is unavailable' >&2; cat {models_path} >&2; exit 1; }}"
+                    ),
+                    env=env,
+                )
+                return
+            stream_path = str(EnvironmentPaths.agent_dir / self.OUTPUT_NAME)
+            diagnostics_path = str(EnvironmentPaths.agent_dir / "grok.stderr")
+            provider_command = (
+                f"grok --no-auto-update --prompt-file {prompt_path} --output-format streaming-json "
+                f"--session-id {session} --model {shlex.quote(self.model_name or '')} "
+                f"--reasoning-effort {shlex.quote(self._treatment_reasoning_effort)} --no-memory "
+                "--trust --sandbox workspace --permission-mode bypassPermissions --always-approve "
+                ""
+            )
+            command = self._bounded_provider_capture(provider_command, stream_path, diagnostics_path)
+            await self._run_command(environment, command, env)
+            await self._validate_retained_stream(environment, stream_path, "grok", session)
+        finally:
+            # The credential is private process setup state, never run evidence.
+            try:
+                await self.exec_as_agent(environment, command=f"rm -f {REMOTE_WORKSPACE}/.grok-config/auth.json")
+            except Exception:
+                pass
+            await self._collect_evidence(environment)
 
 
 class AgentLayerCodex(_AgentLayerTreatment, Codex):

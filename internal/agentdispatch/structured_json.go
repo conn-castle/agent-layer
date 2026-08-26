@@ -26,6 +26,7 @@ const (
 	jsonStatusKey             = "status"
 	jsonTextKey               = "text"
 	jsonTypeKey               = "type"
+	jsonEventKey              = "event"
 	claudeLineageContentLimit = 256
 )
 
@@ -313,7 +314,7 @@ func (p *selectiveJSONReader) readValue(result map[string]any, path []string, de
 	default:
 		if first == '-' || first >= '0' && first <= '9' {
 			p.setClaudeScalar(path, "", false)
-			return p.readNumber(first)
+			return p.readNumber(first, result, path)
 		}
 		return fmt.Errorf("structured event contains invalid JSON value")
 	}
@@ -511,7 +512,7 @@ func (p *selectiveJSONReader) readLiteral(remainder string) error {
 	return nil
 }
 
-func (p *selectiveJSONReader) readNumber(first byte) error {
+func (p *selectiveJSONReader) readNumber(first byte, result map[string]any, path []string) error {
 	var encoded [64]byte
 	encoded[0] = first
 	length := 1
@@ -539,6 +540,9 @@ func (p *selectiveJSONReader) readNumber(first byte) error {
 	if err := json.Unmarshal(encoded[:length], &number); err != nil {
 		return fmt.Errorf("structured event contains an invalid JSON number: %w", err)
 	}
+	if retainedStructuredPath(path) {
+		setStructuredPath(result, path, number)
+	}
 	return nil
 }
 
@@ -561,7 +565,7 @@ func (p *selectiveJSONReader) readNonSpace() (byte, error) {
 func retainedStructuredPath(path []string) bool {
 	if len(path) == 1 {
 		switch path[0] {
-		case jsonTypeKey, "thread_id", "threadId", "id", jsonMessageKey, jsonTextKey, jsonReasonKey, jsonErrorKey, jsonResultKey, "session_id", "sessionId", "is_error", "subtype", jsonStatusKey, jsonDataKey, "stopReason", "stop_reason":
+		case jsonTypeKey, jsonEventKey, "thread_id", "threadId", "id", jsonMessageKey, jsonTextKey, jsonReasonKey, jsonErrorKey, jsonResultKey, "session_id", "sessionId", "conversation_id", "conversationId", "is_error", "subtype", jsonStatusKey, jsonDataKey, "stopReason", "stop_reason":
 			return true
 		}
 	}
@@ -573,7 +577,9 @@ func retainedStructuredPath(path []string) bool {
 		// presence drives the reducer, which reports whatever name it retained
 		// as an example. An empty list retains nothing and stays a success.
 		return path[0] == permissionDenialsKey ||
-			(path[0] == "event" && path[1] == jsonTypeKey) ||
+			(path[0] == grokUsageEventType && (path[1] == "input_tokens" || path[1] == "output_tokens" || path[1] == "cache_read_input_tokens" || path[1] == "cache_creation_input_tokens" || path[1] == "reasoning_tokens")) ||
+			(path[0] == jsonResultKey && (path[1] == "conversation_id" || path[1] == jsonStatusKey || path[1] == "response" || path[1] == jsonErrorKey)) ||
+			(path[0] == jsonEventKey && path[1] == jsonTypeKey) ||
 			(path[0] == jsonErrorKey && (path[1] == jsonMessageKey || path[1] == jsonReasonKey)) ||
 			(path[0] == "item" && (path[1] == jsonTypeKey || path[1] == jsonMessageKey || path[1] == jsonTextKey)) ||
 			(path[0] == "delta" && (path[1] == jsonTypeKey || path[1] == jsonTextKey))
@@ -581,7 +587,9 @@ func retainedStructuredPath(path []string) bool {
 	if len(path) == 3 && path[0] == jsonContentKey && path[1] == jsonContentKey && path[2] == jsonTextKey {
 		return true
 	}
-	return len(path) == 3 && path[0] == "event" && path[1] == "delta" && (path[2] == jsonTypeKey || path[2] == jsonTextKey)
+	return (len(path) == 3 && path[0] == jsonEventKey && path[1] == "delta" && (path[2] == jsonTypeKey || path[2] == jsonTextKey)) ||
+		(len(path) == 3 && path[0] == jsonResultKey && path[1] == grokUsageEventType &&
+			(path[2] == "input_tokens" || path[2] == "output_tokens" || path[2] == "thinking_tokens" || path[2] == "cache_read_tokens" || path[2] == "total_tokens"))
 }
 
 func setStructuredPath(result map[string]any, path []string, value any) {

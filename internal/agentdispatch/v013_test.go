@@ -212,7 +212,7 @@ func TestAntigravitySuccessfulAnswerWithoutIDIsNotResumable(t *testing.T) {
 	path := filepath.Join(binDir, "agy")
 	stub := `#!/bin/sh
 if [ "${1:-}" = "--version" ]; then
-  printf '1.1.1\n'
+  printf '1.1.21\n'
   exit 0
 fi
 printf 'answer without a provider id'
@@ -236,7 +236,7 @@ printf 'answer without a provider id'
 	if stdout.String() != "answer without a provider id" {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "not resumable · agy 1.1.1 · diagnostics:") {
+	if !strings.Contains(stderr.String(), "not resumable · agy 1.1.21 · diagnostics:") {
 		t.Fatalf("missing not-resumable warning: %q", stderr.String())
 	}
 	sessions, err := listSessions(root)
@@ -277,7 +277,7 @@ func TestAntigravityResumeWithoutParsedIDRetainsDurableMapping(t *testing.T) {
 	path := filepath.Join(binDir, "agy")
 	stub := `#!/bin/sh
 if [ "${1:-}" = "--version" ]; then
-  printf '1.1.1\n'
+  printf '1.1.21\n'
   exit 0
 fi
 printf 'resumed answer without a provider id'

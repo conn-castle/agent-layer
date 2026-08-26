@@ -672,7 +672,7 @@ func writeDispatchStub(t *testing.T, binDir string, name string, outputScript st
 		t.Fatalf("mkdir bin: %v", err)
 	}
 	path := filepath.Join(binDir, name)
-	version := map[string]string{"claude": "2.1.207", "codex": "0.144.1", "agy": "1.1.1", "grok": "1.0.5"}[name]
+	version := map[string]string{"claude": "2.1.207", "codex": "0.144.1", "agy": "1.1.21", "grok": "1.0.5"}[name]
 	content := fmt.Sprintf(`#!/bin/sh
 if [ "${1:-}" = "--version" ]; then
   printf '%%s\n' %q

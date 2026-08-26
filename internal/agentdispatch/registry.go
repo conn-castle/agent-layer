@@ -49,7 +49,7 @@ func targetRegistry() []targetMeta {
 		},
 		{
 			Name:               AgentGrok,
-			Binary:             "grok",
+			Binary:             AgentGrok,
 			SkillPrefix:        "/",
 			SharedSkillProject: true,
 			AnswerText:         answerTextPartial,

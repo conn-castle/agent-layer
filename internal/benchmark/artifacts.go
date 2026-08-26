@@ -14,6 +14,7 @@ import (
 )
 
 const pierExecutionReceiptSchema = "deepswe-pier-execution-v1"
+const credentialKeyName = "key"
 
 type pierExecutionReceipt struct {
 	SchemaVersion       string    `json:"schema_version"`
@@ -44,9 +45,15 @@ func promoteSanitizedPierArtifacts(request ExecutionRequest, stage string) error
 			secrets = append(secrets, []byte(value))
 		}
 	}
+	if data, err := os.ReadFile(filepath.Join(stage, antigravityOAuthStageFile)); err == nil { // #nosec G304 -- fixed file beneath the private execution stage.
+		secrets = append(secrets, credentialSecretValues(data)...)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read staged Antigravity OAuth profile for artifact sanitization: %w", err)
+	}
 	for _, path := range []string{
 		filepath.Join(request.RepoRoot, ".codex", "auth.json"),
 		filepath.Join(request.RepoRoot, ".claude-config", ".credentials.json"),
+		filepath.Join(request.RepoRoot, ".grok-config", "auth.json"),
 	} {
 		if data, err := os.ReadFile(path); err == nil && len(data) > 0 { // #nosec G304 -- fixed repo-local credential paths.
 			secrets = append(secrets, credentialSecretValues(data)...)
@@ -254,6 +261,12 @@ func secretCredentialKey(key string) bool {
 		strings.HasSuffix(value, "secret") ||
 		strings.HasSuffix(value, "password") ||
 		strings.HasSuffix(value, "apikey") ||
+		value == credentialKeyName ||
+		value == "email" ||
+		value == "userid" ||
+		value == "teamid" ||
+		value == "principalid" ||
+		value == "oidcclientid" ||
 		value == "authorization" ||
 		value == "cookie" ||
 		value == "credential"
