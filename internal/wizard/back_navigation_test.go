@@ -65,16 +65,22 @@ func TestPromptWizardFlow_BackFromAgentsReturnsToApprovalStep(t *testing.T) {
 	require.Empty(t, choices.EnabledAgents)
 }
 
-func TestPromptWizardFlow_SkipsWorkflowBundleInstallWhenBundleExists(t *testing.T) {
+func TestPromptWizardFlow_SkipsInstructionSetWhenInstructionFilesExist(t *testing.T) {
 	root := t.TempDir()
 	instructionPath := filepath.Join(root, ".agent-layer", "instructions", "00_rules.md")
 	require.NoError(t, os.MkdirAll(filepath.Dir(instructionPath), 0o750))
-	require.NoError(t, os.WriteFile(instructionPath, []byte("existing workflow evidence"), 0o600))
+	require.NoError(t, os.WriteFile(instructionPath, []byte("existing instruction evidence"), 0o600))
 
 	choices := NewChoices()
 	choices.ApprovalMode = config.ApprovalModeAll
 
 	ui := &MockUI{
+		SelectFunc: func(title string, options []string, current *string) error {
+			if title == messages.WizardInstructionSetTitle {
+				t.Fatal("instruction prompt should be skipped when instruction files exist")
+			}
+			return nil
+		},
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
 			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{}
@@ -82,10 +88,7 @@ func TestPromptWizardFlow_SkipsWorkflowBundleInstallWhenBundleExists(t *testing.
 			return nil
 		},
 		ConfirmFunc: func(title string, value *bool) error {
-			switch title {
-			case messages.WizardEnableAgentLayerPrompt:
-				t.Fatal("workflow bundle prompt should be skipped when bundle evidence exists")
-			case messages.WizardEnableWarningsPrompt:
+			if title == messages.WizardEnableWarningsPrompt {
 				*value = false
 			}
 			return nil
@@ -94,7 +97,42 @@ func TestPromptWizardFlow_SkipsWorkflowBundleInstallWhenBundleExists(t *testing.
 
 	err := promptWizardFlow(root, ui, choices)
 	require.NoError(t, err)
-	require.False(t, choices.InstallWorkflowBundleTouched)
+	require.False(t, choices.InstructionSetTouched)
+}
+
+func TestPromptWizardFlow_ShowsInstructionSetWhenOnlyDevelopmentSkillsExist(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "implement"), 0o750))
+
+	choices := NewChoices()
+	choices.ApprovalMode = config.ApprovalModeAll
+
+	var instructionPrompts int
+	ui := &MockUI{
+		SelectFunc: func(title string, options []string, current *string) error {
+			if title == messages.WizardInstructionSetTitle {
+				instructionPrompts++
+			}
+			return nil
+		},
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
+				*selected = []string{}
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			if title == messages.WizardEnableWarningsPrompt {
+				*value = false
+			}
+			return nil
+		},
+	}
+
+	err := promptWizardFlow(root, ui, choices)
+	require.NoError(t, err)
+	require.Equal(t, 1, instructionPrompts)
+	require.True(t, choices.InstructionSetTouched)
 }
 
 func TestPromptWizardFlow_FirstStepEscapeCancelsWhenConfirmed(t *testing.T) {
@@ -380,6 +418,14 @@ func TestPromptWizardFlow_DisablingCodexClearsAppsChoiceAfterBackNavigation(t *t
 				*current = messages.WizardLeaveBlankOption
 			case messages.WizardCodexReasoningEffortTitle:
 				*current = messages.WizardLeaveBlankOption
+			case messages.WizardInstructionSetTitle:
+				// During the back-navigation pass (mcpCalls > 0 and we have
+				// not yet reached Models again), propagate the back signal so
+				// we reach Models. Once the second Models pass has occurred,
+				// the forward sweep should not loop on Instructions.
+				if mcpCalls > 0 && secondModelCalls == 0 {
+					return errWizardBack
+				}
 			}
 			return nil
 		},
@@ -414,16 +460,7 @@ func TestPromptWizardFlow_DisablingCodexClearsAppsChoiceAfterBackNavigation(t *t
 			return nil
 		},
 		ConfirmFunc: func(title string, value *bool) error {
-			switch title {
-			case messages.WizardEnableAgentLayerPrompt:
-				// During the back-navigation pass (mcpCalls > 0 and we have
-				// not yet reached Models again), propagate the back signal so
-				// we reach Models. Once the second Models pass has occurred,
-				// the forward sweep should not loop on EnableLayer.
-				if mcpCalls > 0 && secondModelCalls == 0 {
-					return errWizardBack
-				}
-			case messages.WizardEnableWarningsPrompt:
+			if title == messages.WizardEnableWarningsPrompt {
 				*value = false
 			}
 			return nil

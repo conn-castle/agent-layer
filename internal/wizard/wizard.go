@@ -48,7 +48,7 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 
 // RunAfterFreshInitWithWriter runs the wizard immediately after `al init`
 // created the bare operational layout. Provider statusline options and the
-// workflow-bundle install prompt uses fresh-setup defaults in this path.
+// instruction-set prompt use fresh-setup defaults in this path.
 func RunAfterFreshInitWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io.Writer) error {
 	return runWithWriter(root, ui, runSync, pinVersion, out, true)
 }
@@ -132,7 +132,7 @@ func runWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 }
 
 func applyFreshSetupDefaults(choices *Choices) {
-	choices.InstallWorkflowBundle = true
+	choices.InstructionSet = InstructionSetRulesAndMemory
 	choices.EnabledAgents[AgentAntigravity] = true
 	choices.AntigravityModel = defaultAntigravityModel
 	// Statusline defaults come from initializeChoices: absent config keys default
@@ -190,7 +190,6 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 		return nil, err
 	}
 	choices.CLISkillsCatalog = cliSkills
-	choices.InstallWorkflowBundle = detectAgentLayerEnabledFromDisk(cfg.Root)
 	for _, entry := range cliSkills {
 		choices.EnabledCLISkills[entry.ID] = catalogSkillIsManagedOnDisk(cfg.Root, entry)
 	}
@@ -413,7 +412,7 @@ const (
 	wizardFlowStepApproval wizardFlowStep = iota
 	wizardFlowStepAgents
 	wizardFlowStepModels
-	wizardFlowStepEnableLayer
+	wizardFlowStepInstructions
 	wizardFlowStepGitTracking
 	wizardFlowStepCLISkills
 	wizardFlowStepMCPDefaults
@@ -428,10 +427,10 @@ func promptWizardFlow(root string, ui UI, choices *Choices) error {
 	if choices.EnabledAgents[AgentAntigravity] {
 		optionCache.prefetchAntigravityModels()
 	}
-	// The workflow-bundle prompt is install-only. Once bundle evidence exists on
-	// disk, the wizard does not offer a refresh action; users who want a full
-	// managed workflow update can use `al upgrade`.
-	skipWorkflowBundleStep := detectAgentLayerEnabledFromDisk(root)
+	// The instruction prompt is install-only. Once instruction or memory files
+	// exist on disk, the wizard does not offer a refresh action; users who want
+	// a full managed update can use `al upgrade`.
+	skipInstructionSetStep := detectInstructionEvidenceFromDisk(root)
 	// The custom-MCP step has nothing to ask when config.toml has no non-catalog
 	// servers. CustomMCPServers is set before the flow and never mutated by it, so
 	// skip the step in both directions to avoid trapping back-navigation on a
@@ -452,8 +451,8 @@ func promptWizardFlow(root string, ui UI, choices *Choices) error {
 			}
 		case wizardFlowStepModels:
 			err = promptModels(ui, choices, optionCache)
-		case wizardFlowStepEnableLayer:
-			err = promptEnableAgentLayer(ui, choices)
+		case wizardFlowStepInstructions:
+			err = promptInstructionSet(ui, choices)
 		case wizardFlowStepGitTracking:
 			err = promptGitTracking(ui, choices)
 		case wizardFlowStepCLISkills:
@@ -475,7 +474,7 @@ func promptWizardFlow(root string, ui UI, choices *Choices) error {
 				return nil
 			}
 			step++
-			if skipWorkflowBundleStep && step == wizardFlowStepEnableLayer {
+			if skipInstructionSetStep && step == wizardFlowStepInstructions {
 				step++
 			}
 			if skipCustomMCPStep && step == wizardFlowStepCustomMCP {
@@ -507,7 +506,7 @@ func promptWizardFlow(root string, ui UI, choices *Choices) error {
 		}
 
 		step--
-		if skipWorkflowBundleStep && step == wizardFlowStepEnableLayer {
+		if skipInstructionSetStep && step == wizardFlowStepInstructions {
 			step--
 		}
 		if step == wizardFlowStepSecrets && !secretsStepHasPrompts(choices) {
@@ -544,15 +543,22 @@ func secretsStepHasPrompts(choices *Choices) bool {
 	return false
 }
 
-// promptEnableAgentLayer asks whether to install the workflow bundle. A no
-// answer is a no-op.
-func promptEnableAgentLayer(ui UI, choices *Choices) error {
-	installWorkflowBundle := choices.InstallWorkflowBundle
-	if err := ui.Confirm(messages.WizardEnableAgentLayerPrompt, &installWorkflowBundle); err != nil {
+// promptInstructionSet asks which always-on instruction files to seed.
+// None is a no-op. Rules and rules-and-memory create missing files only.
+func promptInstructionSet(ui UI, choices *Choices) error {
+	instructionLabel, ok := instructionSetLabelForValue(choices.InstructionSet)
+	if !ok {
+		return fmt.Errorf(messages.WizardUnknownInstructionSetFmt, choices.InstructionSet)
+	}
+	if err := ui.Select(messages.WizardInstructionSetTitle, instructionSetLabels(), &instructionLabel); err != nil {
 		return err
 	}
-	choices.InstallWorkflowBundle = installWorkflowBundle
-	choices.InstallWorkflowBundleTouched = true
+	instructionSet, ok := instructionSetValueForLabel(instructionLabel)
+	if !ok {
+		return fmt.Errorf(messages.WizardUnknownInstructionSetSelectionFmt, instructionLabel)
+	}
+	choices.InstructionSet = instructionSet
+	choices.InstructionSetTouched = true
 	return nil
 }
 
@@ -579,7 +585,7 @@ func promptGitTracking(ui UI, choices *Choices) error {
 	return nil
 }
 
-// promptCLISkills presents the CLI skills catalog multiselect. Each row label
+// promptCLISkills presents the skills catalog multiselect. Each row label
 // is the catalog entry's user-facing Name, while EnabledCLISkills keys use the
 // catalog id. The mapping between names and ids is rebuilt from the catalog so
 // renaming a label in the TOML does not corrupt the selection.

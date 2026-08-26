@@ -23,7 +23,7 @@ Agent Layer is explicit by design. It prefers failing fast over guessing, treats
 
 `.agent-layer/config.toml` is the primary structured configuration file. It defines approvals, dispatch limits, agents, MCP servers, and warning thresholds. Other inputs such as `.env`, `instructions/`, `skills/`, and `commands.allow` are independent files; they are not derived from `config.toml`.
 
-`al wizard` updates `config.toml` and `.agent-layer/.env`. Everything else is edited by hand.
+`al wizard` updates `config.toml` and `.agent-layer/.env`. It can also seed missing instruction and memory files, install or remove catalog skills, rewrite `.agent-layer/gitignore.block`, and seed missing statusline sources. `commands.allow` is edited by hand.
 
 Most repos only need a few deliberate choices: pick an approvals mode, enable the agents you actually use, and add MCP servers one at a time. The file is validated on every run, so mistakes fail immediately instead of becoming later surprises.
 
@@ -481,7 +481,7 @@ It is scaffolding: it creates the files that make behavior explicit and repeatab
 
 - Creates `.agent-layer/` (configuration, instructions, approvals, MCP servers)
 - Installs a managed `.gitignore` block
-- Prompts to run `al wizard` in interactive shells, where the workflow bundle can create `docs/agent-layer/` memory files
+- Prompts to run `al wizard` in interactive shells, where Rules and memory can create `docs/agent-layer/` memory files
 
 **Steps (high level)**
 
@@ -504,7 +504,7 @@ Typical `.agent-layer/` files include:
 
 `.agent-layer/gitignore.block` is the template file. It must contain only ignore patterns and comments (no managed markers and no template hash). Agent Layer copies it verbatim and injects the managed header and template hash only when updating the root `.gitignore`. If the template file contains managed markers or a hash line, `al sync` will error; run `al upgrade` to restore the template file.
 
-The optional workflow bundle creates missing project memory files under `docs/agent-layer/`:
+The wizard's Rules and memory instruction choice creates missing project memory files under `docs/agent-layer/`:
 
 - `ISSUES.md`, `BACKLOG.md`, `DECISIONS.md`, `COMMANDS.md`, `CONTEXT.md`
 
@@ -534,7 +534,7 @@ In non-interactive environments, the wizard is skipped.
 - Shows a compact per-file summary (path with `+N -M` line stats) before overwrite decisions, and asks "View the full diff?" (default no) before printing unified diff bodies; per-file overwrite prompts always render the full diff
 - Runs `al sync` automatically after a successful upgrade so retired projection paths and freshly-introduced templates are reconciled (sync warnings print on stderr; sync failures are wrapped and suppress the success banner)
 - In the default interactive flow, prompts about unknown files under `.agent-layer/` and `docs/agent-layer/` and only deletes them if you explicitly approve
-- Before deletion prompts, offers to add unknown non-tmp paths to the repo-local `.agent-layer/upgrade-keep-list`; selected paths are omitted from future upgrade prompts and plans
+- Before deletion prompts, offers to add unknown paths to the repo-local `.agent-layer/upgrade-keep-list` (`.agent-layer/tmp` is listed last and unchecked); selected paths are omitted from future upgrade prompts and plans
 - In non-interactive or explicit-category apply (e.g., `--yes --apply-managed-updates`), requires the separate `--apply-deletions` flag before unknown files outside `.agent-layer/tmp/` are eligible for deletion
 - **Treats `.agent-layer/tmp/` as protected ephemeral storage:** files under that directory are never deleted by `--apply-deletions`, never bulk-deleted by the interactive "delete all unknowns?" prompt, and never restored by rollback. Tmp deletion requires either an interactive double-confirm or the dedicated `--apply-tmp-deletions` flag (in addition to `--yes`). See [Ephemeral artifacts under .agent-layer/tmp/](#ephemeral-artifacts-under-agent-layertmp)
 - Never overwrites `.agent-layer/config.toml` or `.agent-layer/.env`
@@ -560,17 +560,18 @@ For a concise team/CI runbook, see [Upgrade checklist](./upgrade-checklist).
 
 ### Upgrade keep list
 
-Interactive upgrades with unknown non-tmp paths first ask whether you want to add any of them to `.agent-layer/upgrade-keep-list`. If accepted, a checkbox list lets you select intentional local files or directories. The ordinary deletion flow then continues with the remaining unknown paths. When every detected path is already kept, upgrade shows neither prompt.
+Interactive upgrades with unknown paths first ask whether you want to add any of them to `.agent-layer/upgrade-keep-list`. If accepted, a checkbox list lets you select intentional local files or directories. `.agent-layer/tmp` is listed last and unchecked, rather than as individual tmp files. The ordinary deletion flow then continues with the remaining unknown paths. When every detected path is already kept, upgrade shows neither prompt.
 
 The keep list is a gitignored, repo-local text file. Each non-empty, non-comment line is an exact path relative to the repository root:
 
 ```text
 .agent-layer/local-tools/
 .agent-layer/project-notes.md
+.agent-layer/tmp
 docs/agent-layer/TEAM.md
 ```
 
-A directory entry keeps its entire subtree. Entries are exact paths—wildcard characters have no special meaning—and paths outside `.agent-layer/` or `docs/agent-layer/` are rejected. Keeping a nested file does not keep sibling paths under the same parent. Missing entries remain in the file until you edit it; Agent Layer does not prune them. Kept paths are omitted from `al upgrade plan`, interactive deletion prompts, and `--apply-deletions`. The list does not affect managed-template overwrite decisions. `.agent-layer/tmp/` remains outside this mechanism and retains its separate protected cleanup flow.
+A directory entry keeps its entire subtree. Entries are exact paths—wildcard characters have no special meaning—and paths outside `.agent-layer/` or `docs/agent-layer/` are rejected. Keeping a nested file does not keep sibling paths under the same parent. Missing entries remain in the file until you edit it; Agent Layer does not prune them. Kept paths are omitted from `al upgrade plan`, interactive deletion prompts, `--apply-deletions`, and `--apply-tmp-deletions`. The list does not affect managed-template overwrite decisions. Listing `.agent-layer/tmp` keeps the whole directory and skips the grouped tmp deletion prompt; individual files under tmp cannot be listed. Tmp deletion otherwise retains its separate protected cleanup flow.
 
 ### Ephemeral artifacts under .agent-layer/tmp/
 
@@ -582,7 +583,7 @@ Because tmp can balloon to hundreds of MB across many runs, Agent Layer applies 
 
 **Rollback does not restore tmp.** `al upgrade rollback <snapshot-id>` will not recreate any tmp file the user deleted during the upgrade. If you need to preserve a specific in-progress agent artifact, copy it out of `.agent-layer/tmp/` before running `al upgrade`.
 
-**Interactive deletion requires a destructive double-confirm.** When the upgrade prompt asks `Delete all N file(s) under .agent-layer/tmp/?`, the default is **no**. Answering `y` triggers a second confirmation: `DESTRUCTIVE: deleting .agent-layer/tmp/ permanently removes ephemeral agent run artifacts and may impact ongoing work. Are you absolutely sure?` — also defaulting to `no`. Both prompts must be answered yes to delete tmp content. The "delete all unknowns?" prompt at the top of the unknowns flow does NOT cover tmp; the grouped tmp prompt always fires regardless of how the user answered the top-level prompt.
+**Interactive deletion requires a destructive double-confirm.** When the upgrade prompt asks `Delete all N file(s) under .agent-layer/tmp/?`, the default is **no**. Answering `y` triggers a second confirmation: `DESTRUCTIVE: deleting .agent-layer/tmp/ permanently removes ephemeral agent run artifacts and may impact ongoing work. Are you absolutely sure?` — also defaulting to `no`. Both prompts must be answered yes to delete tmp content. The "delete all unknowns?" prompt at the top of the unknowns flow does NOT cover tmp; the grouped tmp prompt fires separately unless `.agent-layer/tmp` is listed in `.agent-layer/upgrade-keep-list`.
 
 **Non-interactive deletion requires a separate flag.** `al upgrade --yes --apply-deletions` will delete other unknowns but **leaves tmp untouched** and prints `Info: skipping deletions under .agent-layer/tmp/ (pass --apply-tmp-deletions to include them; this is destructive and may impact ongoing agent work)`. To wipe tmp non-interactively, pass `--apply-tmp-deletions` explicitly:
 
@@ -640,7 +641,7 @@ Each diff preview still carries internal ownership metadata (`upstream template 
 
 ### Wizard
 
-`al wizard` guides you through approvals, enabled agents, model selection, MCP servers, and warning thresholds.
+`al wizard` guides you through approvals, enabled agents, model selection, instruction files, skills, MCP servers, and warning thresholds.
 
 Use it when you want to get to a safe, working configuration quickly, or when you would rather answer questions than hand-edit TOML.
 
@@ -648,6 +649,13 @@ Use it when you want to get to a safe, working configuration quickly, or when yo
 
 - `.agent-layer/config.toml`
 - `.agent-layer/.env`
+- `.agent-layer/gitignore.block` (folder tracking)
+- Missing managed instruction files (`00_rules.md`; also `01_memory.md` for Rules and memory)
+- Missing `docs/agent-layer/` memory docs and `.agent-layer/templates/docs/` copies, when Rules and memory is selected
+- Catalog skill directories under `.agent-layer/skills/` (selected rows are added or repaired; deselected catalog-managed rows are removed)
+- Missing statusline source files when a status line is enabled
+
+Instruction and memory seeding creates missing files only and does not refresh existing ones. Catalog skill removal deletes the matching skill directory after preview confirmation. Use `al upgrade` for managed instruction and workflow-skill template updates.
 
 The wizard rewrites `config.toml` in a fixed preferred section order and creates backups (`.bak`) before modifying `.agent-layer/config.toml` or `.agent-layer/.env`. Inline comments on modified lines may be moved to leading comments or removed; the original formatting is preserved in the backup files.
 

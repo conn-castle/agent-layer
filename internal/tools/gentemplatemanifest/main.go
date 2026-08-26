@@ -262,7 +262,8 @@ func catalogSkillPathPrefixes(root string) ([]string, error) {
 	}
 	var catalog struct {
 		CLISkills []struct {
-			ID string `toml:"id"`
+			ID      string   `toml:"id"`
+			Members []string `toml:"members"`
 		} `toml:"cli_skills"`
 	}
 	if err := toml.Unmarshal(data, &catalog); err != nil {
@@ -282,6 +283,9 @@ func catalogSkillPathPrefixes(root string) ([]string, error) {
 			return nil, fmt.Errorf("CLI skills catalog entry %d duplicates id %q", idx, id)
 		}
 		seen[id] = struct{}{}
+		if len(entry.Members) > 0 {
+			continue
+		}
 		out = append(out, ".agent-layer/skills/"+id+"/")
 	}
 	sort.Strings(out)

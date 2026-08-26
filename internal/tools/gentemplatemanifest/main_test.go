@@ -27,6 +27,11 @@ name = "Custom CLI"
 [[cli_skills]]
 id = "another-tool"
 name = "Another Tool"
+
+[[cli_skills]]
+id = "development-skills"
+name = "Development skills"
+members = ["implement", "ship-pr"]
 `), 0o600))
 
 	prefixes, err := catalogSkillPathPrefixes(root)

@@ -90,6 +90,23 @@ func (inst templateManager) managedTemplateDirs() []templateDir {
 	}
 }
 
+// managedInstructionTemplateDirs lists the bundled instruction templates one
+// file at a time so upgrade activation can preserve a Rules-only selection.
+func (inst templateManager) managedInstructionTemplateDirs() []templateDir {
+	root := inst.root
+	return []templateDir{
+		{templateRoot: "instructions/00_rules.md", destRoot: filepath.Join(root, ".agent-layer", instructionsDirName)},
+		{templateRoot: "instructions/01_memory.md", destRoot: filepath.Join(root, ".agent-layer", instructionsDirName)},
+	}
+}
+
+func (inst templateManager) managedMemoryTemplateDirs() []templateDir {
+	return []templateDir{{
+		templateRoot: docsAgentLayerDir,
+		destRoot:     filepath.Join(inst.root, ".agent-layer", "templates", "docs"),
+	}}
+}
+
 // memoryTemplateDirs lists template-managed memory directories under docs/agent-layer.
 func (inst templateManager) memoryTemplateDirs() []templateDir {
 	root := inst.root
@@ -103,18 +120,26 @@ func (inst templateManager) memoryTemplateDirs() []templateDir {
 // on-disk layout.
 func (inst templateManager) activeManagedTemplateDirs() ([]templateDir, error) {
 	dirs := []templateDir{}
-	hasWorkflowBundle, err := inst.workflowBundleEvidenceOnDisk()
+	instructionDirs, err := inst.activeInstructionTemplateDirs()
 	if err != nil {
 		return nil, err
 	}
-	if hasWorkflowBundle {
-		dirs = append(dirs, inst.managedTemplateDirs()...)
+	dirs = append(dirs, instructionDirs...)
+	if hasMemory, err := inst.memoryEvidenceOnDisk(); err != nil {
+		return nil, err
+	} else if hasMemory {
+		dirs = append(dirs, inst.managedMemoryTemplateDirs()...)
 	}
 	catalogDirs, err := inst.installedCatalogSkillTemplateDirs()
 	if err != nil {
 		return nil, err
 	}
 	dirs = append(dirs, catalogDirs...)
+	developmentDirs, err := inst.installedDevelopmentSkillTemplateDirs()
+	if err != nil {
+		return nil, err
+	}
+	dirs = append(dirs, developmentDirs...)
 	return dirs, nil
 }
 
@@ -122,11 +147,11 @@ func (inst templateManager) activeManagedTemplateDirs() ([]templateDir, error) {
 // in install, upgrade, diff, and baseline operations for the current on-disk
 // layout.
 func (inst templateManager) activeMemoryTemplateDirs() ([]templateDir, error) {
-	hasWorkflowBundle, err := inst.workflowBundleEvidenceOnDisk()
+	hasMemory, err := inst.memoryEvidenceOnDisk()
 	if err != nil {
 		return nil, err
 	}
-	if hasWorkflowBundle {
+	if hasMemory {
 		return inst.memoryTemplateDirs(), nil
 	}
 	return nil, nil
@@ -149,13 +174,28 @@ func (inst templateManager) activeAllTemplateDirs() ([]templateDir, error) {
 	return dirs, nil
 }
 
-// workflowBundleEvidenceOnDisk reports whether the repo already has any
-// workflow-bundle surface. Fresh bare repos with only empty instructions/skills
-// dirs stay bare during upgrade; repos with existing bundled instructions,
-// workflow skills, memory templates, or live memory files keep receiving
-// template updates for those surfaces.
-func (inst templateManager) workflowBundleEvidenceOnDisk() (bool, error) {
-	for _, dir := range inst.managedTemplateDirs() {
+// activeInstructionTemplateDirs returns only the managed instruction files
+// already on disk. This keeps Rules-only and Rules-and-memory selections
+// independent during later upgrades.
+func (inst templateManager) activeInstructionTemplateDirs() ([]templateDir, error) {
+	dirs := []templateDir{}
+	for _, dir := range inst.managedInstructionTemplateDirs() {
+		found, err := inst.anyExistingTemplateDirFile(dir)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			dirs = append(dirs, dir)
+		}
+	}
+	return dirs, nil
+}
+
+// memoryEvidenceOnDisk reports whether either half of the Rules-and-memory
+// selection is present. Memory templates and live memory docs are managed as a
+// pair because the wizard seeds them together.
+func (inst templateManager) memoryEvidenceOnDisk() (bool, error) {
+	for _, dir := range inst.managedMemoryTemplateDirs() {
 		found, err := inst.anyExistingTemplateDirFile(dir)
 		if err != nil {
 			return false, err
@@ -196,15 +236,27 @@ func (inst templateManager) anyExistingTemplateDirFile(dir templateDir) (bool, e
 // installedCatalogSkillTemplateDirs returns catalog template dirs only for
 // catalog skills already materialized under .agent-layer/skills/.
 func (inst templateManager) installedCatalogSkillTemplateDirs() ([]templateDir, error) {
+	return inst.installedSkillTemplateDirs("skills-catalog")
+}
+
+// installedDevelopmentSkillTemplateDirs returns grouped development-skill
+// template dirs only for members already materialized under
+// .agent-layer/skills/. They are catalog selections, not evidence that every
+// development skill should be activated.
+func (inst templateManager) installedDevelopmentSkillTemplateDirs() ([]templateDir, error) {
+	return inst.installedSkillTemplateDirs("skills")
+}
+
+func (inst templateManager) installedSkillTemplateDirs(templateRoot string) ([]templateDir, error) {
 	ids := make(map[string]struct{})
-	if err := templates.Walk("skills-catalog", func(path string, entry fs.DirEntry, err error) error {
+	if err := templates.Walk(templateRoot, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if entry.IsDir() {
 			return nil
 		}
-		rel := strings.TrimPrefix(path, "skills-catalog/")
+		rel := strings.TrimPrefix(path, templateRoot+"/")
 		if rel == path {
 			return fmt.Errorf(messages.InstallUnexpectedTemplatePathFmt, path)
 		}
@@ -237,7 +289,7 @@ func (inst templateManager) installedCatalogSkillTemplateDirs() ([]templateDir, 
 			continue
 		}
 		out = append(out, templateDir{
-			templateRoot: "skills-catalog/" + id,
+			templateRoot: templateRoot + "/" + id,
 			destRoot:     destRoot,
 		})
 	}
@@ -532,7 +584,10 @@ func (inst templateManager) templateDirEntries(dir templateDir) ([]templateEntry
 		}
 		rel := strings.TrimPrefix(path, dir.templateRoot+"/")
 		if rel == path {
-			return fmt.Errorf(messages.InstallUnexpectedTemplatePathFmt, path)
+			if path != dir.templateRoot {
+				return fmt.Errorf(messages.InstallUnexpectedTemplatePathFmt, path)
+			}
+			rel = filepath.Base(path)
 		}
 		destPath := filepath.Join(dir.destRoot, rel)
 		entries = append(entries, templateEntry{

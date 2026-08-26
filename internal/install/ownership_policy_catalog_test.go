@@ -85,7 +85,8 @@ func TestCatalogSkillRelPathPrefixesMatchEmbeddedCatalog(t *testing.T) {
 	require.NoError(t, err)
 	var catalog struct {
 		CLISkills []struct {
-			ID string `toml:"id"`
+			ID      string   `toml:"id"`
+			Members []string `toml:"members"`
 		} `toml:"cli_skills"`
 	}
 	require.NoError(t, toml.Unmarshal(data, &catalog))
@@ -94,6 +95,9 @@ func TestCatalogSkillRelPathPrefixesMatchEmbeddedCatalog(t *testing.T) {
 	want := make([]string, 0, len(catalog.CLISkills))
 	for _, entry := range catalog.CLISkills {
 		require.NotEmpty(t, entry.ID)
+		if len(entry.Members) > 0 {
+			continue
+		}
 		want = append(want, ".agent-layer/skills/"+entry.ID+"/")
 	}
 	// Renamed catalog ids keep their old prefix so a repo that has not yet run

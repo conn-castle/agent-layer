@@ -58,7 +58,7 @@ The recommended section order is informed by research on how language models pro
 
 The skill standard defines the format. Agent Layer builds on it with:
 
-- **A workflow-bundle library of 7 focused skills** covering implementation, PR lifecycle, auditing, and autonomous delivery — available when the workflow bundle is installed through the wizard and refreshed through upgrade flows for repos that already have it.
+- **A library of 7 focused development skills** covering implementation, PR lifecycle, auditing, and autonomous delivery — available as the Agent Layer development skills catalog row in the wizard and refreshed through upgrade flows for repos that already have them.
 - **Client projection** — User-managed `.agent-layer/skills/` and Git-managed `.agent-layer/skills-imported/` are the files you edit. `al sync` merges them into one immutable source snapshot, then writes that snapshot to `.agents/skills/` for shared-skill clients and `.claude/skills/` for Claude Code.
 - **Memory integration** — Skills read from and write to project memory files (`ISSUES.md`, `BACKLOG.md`, `DECISIONS.md`, `COMMANDS.md`, `CONTEXT.md`), keeping project context durable across sessions.
 - **Artifact conventions** — Skills keep agent-only plans, reports, and trackers under `.agent-layer/tmp/`, where another agent can pick them up without mixing transient state into product files.
@@ -99,7 +99,7 @@ Skills accept flexible inputs: plain-language descriptions, file paths, constrai
 
 ## Built-in skill library
 
-The Agent Layer workflow bundle includes 7 skills. They are organized here by how you typically use them. Agent Layer also ships optional CLI catalog skills for installed tools; those are listed separately below.
+Agent Layer development skills are 7 skills. They are organized here by how you typically use them. Select **Agent Layer development skills** in `al wizard` to install the set; unchecking that row removes it. Agent Layer also ships optional catalog skills for installed tools; those are listed separately below.
 
 ### Orchestrator skills
 
@@ -124,18 +124,19 @@ These are used by orchestrators or available for fine-grained control when you n
 | `audit-memory` | Audits agent memory files for structure, staleness, placement, consistency, and decision-log bloat, fixing accepted findings. |
 | `interface-audit` | Audits product interfaces as component boundaries, scores complexity and debt, and produces interface cleanup recommendations without implementing changes. |
 
-### Optional CLI catalog skills
+### Optional catalog skills
 
-These skills are installed only when selected through the CLI catalog. They route
-agents to optional tool integrations. Most require the corresponding command to
-be available on `PATH`; `dispatch-agent` uses the built-in Agent Dispatch MCP
-tools and has no external binary requirement.
+These skills are installed only when selected in the wizard catalog. Tool rows
+route agents to optional integrations and usually need that command on `PATH`.
+`dispatch-agent` uses the built-in Agent Dispatch MCP tools. `skill-sync` uses
+the current `al` binary.
 
 | Skill | What it does |
 | --- | --- |
 | `dispatch-agent` | Uses the built-in [Agent Dispatch](./agent-dispatch) MCP tools only when the user names an external dispatch target or another skill explicitly requires dispatch; it has no external binary requirement. |
 | `find-docs` | Uses Context7 for current API and library documentation when local docs or CLI help are insufficient. |
 | `playwright` | Uses `playwright-cli` for browser automation, screenshots, user interface inspection, and Playwright test work. |
+| `skill-sync` | Imports and updates skills from Git. |
 | `tavily-web` | Uses Tavily CLI for web search, URL extraction, site mapping, and cited research. |
 
 ## Writing your own skills

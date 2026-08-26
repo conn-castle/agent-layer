@@ -27,6 +27,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-08-25 dispatch-state-retention: Bound dispatch state and log artifact retention
+    Priority: Medium. Area: dispatch / state / logs
+    Description: Define a safe automatic retention policy that preserves useful completed dispatch results/history while cleaning stale lock files and bounding or archiving old dispatch state, log, and capability-cache records.
+    Acceptance criteria: Dispatch cleanup removes stale zero-byte `.lock` files without affecting active work, retains a documented useful window of completed results/history, and automatically caps or archives older records so `.agent-layer/state/dispatch` and related state/log storage cannot grow without bound.
+    Notes: Observed cleanup found 212 JSON dispatch records paired with 212 zero-byte `.lock` files under `.agent-layer/state/dispatch`, plus dispatch capability-cache state; make retention recoverable and safe for in-flight dispatches.
+
 - Backlog 2026-08-17 grok-live-models: Use `grok models` for wizard and dispatch suggestions
     Priority: Medium. Area: providers / grok / dispatch / wizard
     Description: Replace the hardcoded Grok model catalog (`grok-4.6`, `grok-4.5`) with live `grok models` output so wizard and dispatch suggestions stay current.

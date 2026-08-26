@@ -22,7 +22,8 @@ run_scenario_wizard_cli_catalog_skills() {
   "select": {
     "Approval Mode": "all - Auto-approve shell commands and MCP tool calls (where supported).",
     "Claude Model": "Leave blank (use client default)",
-    "Claude Reasoning Effort": "Leave blank (use client default)"
+    "Claude Reasoning Effort": "Leave blank (use client default)",
+    "Agent instructions": "Rules and memory — rules, plus docs/agent-layer/ (CONTEXT, DECISIONS, ISSUES, BACKLOG, COMMANDS)"
   },
   "multi_select": {
     "Enable Agents": ["claude"],
@@ -35,15 +36,14 @@ run_scenario_wizard_cli_catalog_skills() {
     "Track the following Agent Layer folders in git? (checked = tracked; unchecked = gitignored)": [
       "docs/agent-layer/"
     ],
-    "Enable CLI skills (some require a CLI on PATH; doctor reports missing binaries)": [
+    "Enable skills": [
       "Playwright browser automation",
-      "Agent Layer skill sync"
+      "Skill sync (import and update skills from Git)"
     ],
     "Enable Default MCP Servers": []
   },
   "confirm": {
     "Isolate Claude settings and caches per repo? (auth remains shared globally — upstream limitation)": false,
-    "Install the Agent Layer workflow bundle? (adds missing workflow skills, managed instruction files, and memory docs/templates; existing files are left unchanged)": true,
     "Enable warnings for performance and usage issues?": true,
     "Apply these config, secret, skills, instructions, memory-file, gitignore-source, and statusline-source changes?": true
   }

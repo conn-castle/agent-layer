@@ -328,7 +328,7 @@ func TestWriteTemplateDirs_WriteError(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(instrDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 	testutil.SkipIfWritable(t, instrDir)
 
-	inst := &installer{root: root, sys: RealSystem{}}
+	inst := &installer{root: root, overwrite: true, overwriteAll: true, overwriteAllDecided: true, sys: RealSystem{}}
 	err := inst.templates().writeTemplateDirs()
 	if err == nil {
 		t.Fatalf("expected error from template dir write")

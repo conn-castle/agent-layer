@@ -1,6 +1,7 @@
 package root
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -8,6 +9,57 @@ import (
 	"syscall"
 	"testing"
 )
+
+func TestMain(m *testing.M) {
+	tempRoot, err := rootTestTempRoot()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "prepare isolated root-test temp directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Root discovery intentionally walks to the filesystem root. Keep these
+	// tests independent of legitimate .agent-layer or .git markers that may
+	// exist above the process-wide OS temp directory.
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+		if err := os.Setenv(name, tempRoot); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "set %s for root tests: %v\n", name, err)
+			_ = os.RemoveAll(tempRoot)
+			os.Exit(1)
+		}
+	}
+	code := m.Run()
+	_ = os.RemoveAll(tempRoot)
+	os.Exit(code)
+}
+
+func rootTestTempRoot() (string, error) {
+	candidates := []string{os.TempDir()}
+	if os.PathSeparator == '/' {
+		// /var/tmp is the standard fallback when the shorter-lived temp root is
+		// itself inside an Agent Layer project.
+		candidates = append(candidates, "/var/tmp")
+	}
+	for _, lookup := range []func() (string, error){os.UserCacheDir, os.UserConfigDir, os.UserHomeDir} {
+		if dir, err := lookup(); err == nil && dir != "" {
+			candidates = append(candidates, dir)
+		}
+	}
+	for _, parent := range candidates {
+		if err := os.MkdirAll(parent, 0o700); err != nil {
+			continue
+		}
+		dir, err := os.MkdirTemp(parent, "agent-layer-root-tests-")
+		if err != nil {
+			continue
+		}
+		_, found, findErr := FindAgentLayerRoot(dir)
+		if findErr == nil && !found {
+			return dir, nil
+		}
+		_ = os.RemoveAll(dir)
+	}
+	return "", fmt.Errorf("no writable temp location without an .agent-layer ancestor")
+}
 
 func TestFindAgentLayerRootFound(t *testing.T) {
 	root := t.TempDir()

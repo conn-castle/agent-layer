@@ -84,7 +84,7 @@ func TestBuildUpgradePlan_BareLayoutDoesNotPlanWorkflowBundle(t *testing.T) {
 	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/instructions/01_memory.md"))
 }
 
-func TestBuildUpgradePlan_ManagedInstructionEvidenceIncludesWorkflowBundle(t *testing.T) {
+func TestBuildUpgradePlan_RulesOnlyDoesNotActivateMemoryOrDevelopmentSkills(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "1.2.3"}))
 	rulesPath := filepath.Join(root, ".agent-layer", "instructions", "00_rules.md")
@@ -94,8 +94,25 @@ func TestBuildUpgradePlan_ManagedInstructionEvidenceIncludesWorkflowBundle(t *te
 	require.NoError(t, err)
 
 	assert.NotNil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/instructions/00_rules.md"))
-	assert.NotNil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/instructions/01_memory.md"))
-	assert.NotNil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/implement/SKILL.md"))
+	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/instructions/01_memory.md"))
+	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/implement/SKILL.md"))
+	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, "docs/agent-layer/ISSUES.md"))
+}
+
+func TestBuildUpgradePlan_DevelopmentSkillDoesNotActivateInstructionsOrMemory(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "1.2.3"}))
+	skillPath := filepath.Join(root, ".agent-layer", "skills", "implement", "SKILL.md")
+	require.NoError(t, os.MkdirAll(filepath.Dir(skillPath), 0o750))
+	require.NoError(t, os.WriteFile(skillPath, []byte("custom development skill"), 0o600))
+
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+	require.NoError(t, err)
+
+	assert.NotNil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/skills/implement/SKILL.md"))
+	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/ship-pr/SKILL.md"))
+	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/instructions/00_rules.md"))
+	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, "docs/agent-layer/ISSUES.md"))
 }
 
 func TestBuildUpgradePlan_InstalledCatalogSkillIsUpgradeManaged(t *testing.T) {
