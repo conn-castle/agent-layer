@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Stable release tag to publish (for example v0.18.0)
+        description: Stable release tag to publish (vX.Y.Z)
         required: true
         type: string
 
