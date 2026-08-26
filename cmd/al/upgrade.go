@@ -307,7 +307,8 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 			if len(paths) != 1 {
 				noun = "paths"
 			}
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), messages.UpgradeKeepListCandidatesFmt, len(paths), noun); err != nil {
+			header := fmt.Sprintf(messages.UpgradeKeepListCandidatesFmt, len(paths), noun)
+			if err := printFilePaths(cmd.OutOrStdout(), header, paths); err != nil {
 				return nil, err
 			}
 			add, err := promptYesNo(stdinReader, cmd.OutOrStdout(), messages.UpgradeAddToKeepListPrompt, true)

@@ -71,7 +71,7 @@ const (
 	UpgradeViewDiffPrompt                           = "View the full diff?"
 	UpgradeDeleteUnknownAllPrompt                   = "Delete all unknown files found during upgrade scan (excludes .agent-layer/tmp/, which is prompted separately)?"
 	UpgradeAddToKeepListPrompt                      = "Would you like to add anything to the upgrade keep list?"
-	UpgradeKeepListCandidatesFmt                    = "Found %d unknown %s eligible for the upgrade keep list.\n"
+	UpgradeKeepListCandidatesFmt                    = "Found %d unknown %s eligible for the upgrade keep list:"
 	UpgradeKeepListSelectTitle                      = "Select intentional local paths to keep during future upgrades"
 	UpgradeDeleteUnknownPromptFmt                   = "Delete %s?"
 	UpgradeDeleteUnknownTmpAllPromptFmt             = "Delete all %d file(s) under .agent-layer/tmp/?"
