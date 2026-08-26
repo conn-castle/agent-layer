@@ -128,7 +128,7 @@ func TestComputeSkillsChangeSet_PreservesUserOwnedCatalogPath(t *testing.T) {
 	assert.Equal(t, []string{"skill-sync"}, changes.catalogSkillsToRemove)
 }
 
-func TestComputeSkillsChangeSet_WorkflowBundleNoDoesNotPrune(t *testing.T) {
+func TestComputeSkillsChangeSet_InstructionNoneDoesNotPrune(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "implement"), 0o750))
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "tavily-web"), 0o750))
@@ -149,8 +149,8 @@ func TestComputeSkillsChangeSet_WorkflowBundleNoDoesNotPrune(t *testing.T) {
 	choices := NewChoices()
 	choices.CLISkillsCatalog = []CLISkillCatalogEntry{{ID: "tavily-web", Name: "Tavily"}}
 	choices.EnabledCLISkills["tavily-web"] = true
-	choices.InstallWorkflowBundle = false
-	choices.InstallWorkflowBundleTouched = true
+	choices.InstructionSet = InstructionSetNone
+	choices.InstructionSetTouched = true
 
 	cs, err := computeSkillsChangeSet(root, choices)
 	require.NoError(t, err)
@@ -163,7 +163,7 @@ func TestComputeSkillsChangeSet_WorkflowBundleNoDoesNotPrune(t *testing.T) {
 	assert.Empty(t, cs.catalogSkillsToRemove)
 }
 
-func TestComputeSkillsChangeSet_WorkflowBundleInstallOnlyMissing(t *testing.T) {
+func TestComputeSkillsChangeSet_RulesAndMemoryInstallOnlyMissing(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "implement"), 0o750))
@@ -171,17 +171,99 @@ func TestComputeSkillsChangeSet_WorkflowBundleInstallOnlyMissing(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), []byte("custom rules"), 0o600))
 
 	choices := NewChoices()
-	choices.InstallWorkflowBundle = true
-	choices.InstallWorkflowBundleTouched = true
+	choices.InstructionSet = InstructionSetRulesAndMemory
+	choices.InstructionSetTouched = true
 
 	cs, err := computeSkillsChangeSet(root, choices)
 	require.NoError(t, err)
-	assert.NotContains(t, cs.workflowSkillsToInstall, "implement")
-	assert.Contains(t, cs.workflowSkillsToInstall, "ship-pr")
+	assert.Empty(t, cs.workflowSkillsToInstall)
+	assert.NotContains(t, cs.catalogSkillsToAdd, "implement")
+	assert.NotContains(t, cs.catalogSkillsToAdd, "ship-pr")
 	assert.Contains(t, cs.memoryFilesToCreate, "docs/agent-layer/ISSUES.md")
 	assert.Contains(t, cs.templateMemoryFilesToCreate, ".agent-layer/templates/docs/ISSUES.md")
 	assert.NotContains(t, cs.managedInstructionFilesToCreate, ".agent-layer/instructions/00_rules.md")
 	assert.Contains(t, cs.managedInstructionFilesToCreate, ".agent-layer/instructions/01_memory.md")
+}
+
+func TestComputeSkillsChangeSet_RulesOnlyDoesNotCreateMemory(t *testing.T) {
+	root := t.TempDir()
+	choices := NewChoices()
+	choices.InstructionSet = InstructionSetRules
+	choices.InstructionSetTouched = true
+
+	cs, err := computeSkillsChangeSet(root, choices)
+	require.NoError(t, err)
+	assert.Equal(t, []string{".agent-layer/instructions/00_rules.md"}, cs.managedInstructionFilesToCreate)
+	assert.Empty(t, cs.memoryFilesToCreate)
+	assert.Empty(t, cs.templateMemoryFilesToCreate)
+	assert.Empty(t, cs.catalogSkillsToAdd)
+}
+
+func TestComputeSkillsChangeSet_DevelopmentSkillsAddRepairRemove(t *testing.T) {
+	entry := CLISkillCatalogEntry{
+		ID:      "development-skills",
+		Name:    "Agent Layer development skills",
+		Members: []string{"implement", "ship-pr"},
+	}
+
+	t.Run("selected missing members are added", func(t *testing.T) {
+		root := t.TempDir()
+		choices := NewChoices()
+		choices.CLISkillsCatalog = []CLISkillCatalogEntry{entry}
+		choices.EnabledCLISkills[entry.ID] = true
+
+		cs, err := computeSkillsChangeSet(root, choices)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"implement", "ship-pr"}, cs.catalogSkillsToAdd)
+		assert.Equal(t, "skills/implement", cs.catalogTemplates["implement"])
+		assert.Equal(t, "skills/ship-pr", cs.catalogTemplates["ship-pr"])
+		assert.Empty(t, cs.workflowSkillsToInstall)
+	})
+
+	t.Run("selected existing member with missing files is repaired", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "ship-pr"), 0o750))
+		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "skills", "ship-pr", "SKILL.md"), []byte("custom"), 0o600))
+		choices := NewChoices()
+		choices.CLISkillsCatalog = []CLISkillCatalogEntry{entry}
+		choices.EnabledCLISkills[entry.ID] = true
+
+		cs, err := computeSkillsChangeSet(root, choices)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"implement"}, cs.catalogSkillsToAdd)
+		assert.Equal(t, []string{"ship-pr"}, cs.catalogSkillsToRepair)
+	})
+
+	t.Run("deselected existing members are removed", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "implement"), 0o750))
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "ship-pr"), 0o750))
+		choices := NewChoices()
+		choices.CLISkillsCatalog = []CLISkillCatalogEntry{entry}
+
+		cs, err := computeSkillsChangeSet(root, choices)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"implement", "ship-pr"}, cs.catalogSkillsToRemove)
+		require.NoError(t, applySkillsChanges(root, cs))
+		assert.NoDirExists(t, filepath.Join(root, ".agent-layer", "skills", "implement"))
+		assert.NoDirExists(t, filepath.Join(root, ".agent-layer", "skills", "ship-pr"))
+	})
+}
+
+func TestApplySkillsChanges_DevelopmentSkillsAddCopiesEmbeddedWorkflowFiles(t *testing.T) {
+	root := t.TempDir()
+	changes := skillsChangeSet{
+		catalogSkillsToAdd: []string{"implement"},
+		catalogTemplates:   map[string]string{"implement": "skills/implement"},
+	}
+	require.NoError(t, applySkillsChanges(root, changes))
+
+	skillPath := filepath.Join(root, ".agent-layer", "skills", "implement", "SKILL.md")
+	got, err := os.ReadFile(skillPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	require.NoError(t, err)
+	want, err := templates.Read("skills/implement/SKILL.md")
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
 }
 
 func TestComputeSkillsChangeSet_NoChanges(t *testing.T) {
@@ -456,8 +538,8 @@ func TestComputeSkillsChangeSet_CreateReportsBlockedPaths(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Dir(blocker), 0o750))
 		require.NoError(t, os.WriteFile(blocker, []byte("file blocks memory scan"), 0o600))
 		choices := NewChoices()
-		choices.InstallWorkflowBundleTouched = true
-		choices.InstallWorkflowBundle = true
+		choices.InstructionSetTouched = true
+		choices.InstructionSet = InstructionSetRulesAndMemory
 
 		_, err := computeSkillsChangeSet(root, choices)
 		require.Error(t, err)
@@ -469,8 +551,8 @@ func TestComputeSkillsChangeSet_CreateReportsBlockedPaths(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Dir(blocker), 0o750))
 		require.NoError(t, os.WriteFile(blocker, []byte("file blocks instruction scan"), 0o600))
 		choices := NewChoices()
-		choices.InstallWorkflowBundleTouched = true
-		choices.InstallWorkflowBundle = true
+		choices.InstructionSetTouched = true
+		choices.InstructionSet = InstructionSetRulesAndMemory
 
 		_, err := computeSkillsChangeSet(root, choices)
 		require.Error(t, err)
@@ -494,8 +576,8 @@ func TestListMissingManagedFilesReportStatErrors(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Dir(instructionsDir), 0o750))
 		require.NoError(t, os.WriteFile(instructionsDir, []byte("file blocks instruction scan"), 0o600))
 		choices := NewChoices()
-		choices.InstallWorkflowBundleTouched = true
-		choices.InstallWorkflowBundle = true
+		choices.InstructionSetTouched = true
+		choices.InstructionSet = InstructionSetRulesAndMemory
 
 		_, err := computeSkillsChangeSet(root, choices)
 		require.Error(t, err)
@@ -514,8 +596,8 @@ func TestListMissingManagedFilesReportStatErrors(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), 0o750))
 		choices := NewChoices()
-		choices.InstallWorkflowBundleTouched = true
-		choices.InstallWorkflowBundle = true
+		choices.InstructionSetTouched = true
+		choices.InstructionSet = InstructionSetRulesAndMemory
 
 		_, err := computeSkillsChangeSet(root, choices)
 		require.ErrorContains(t, err, "exists but is not a regular file")
@@ -547,7 +629,7 @@ func TestBuildSkillsPreview(t *testing.T) {
 		assert.Contains(t, preview, "+ .agent-layer/skills/find-docs/")
 		assert.Contains(t, preview, "+ .agent-layer/skills/playwright/  (missing catalog skill files)")
 		assert.Contains(t, preview, "- .agent-layer/skills/tavily-web/")
-		assert.Contains(t, preview, "+ .agent-layer/skills/implement/  (workflow bundle install)")
+		assert.Contains(t, preview, "+ .agent-layer/skills/implement/")
 		assert.Contains(t, preview, "docs/agent-layer/BACKLOG.md  (memory file)")
 		assert.Contains(t, preview, ".agent-layer/templates/docs/BACKLOG.md  (memory template)")
 		assert.Contains(t, preview, ".agent-layer/instructions/00_rules.md  (managed instruction seed)")

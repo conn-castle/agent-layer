@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -31,11 +32,15 @@ type skillsChangeSet struct {
 	// catalogSkillsToRemove holds catalog directory ids that are deselected but
 	// exist on disk. A directory id may be a legacy pre-migration id.
 	catalogSkillsToRemove []string
+	// catalogTemplates maps destination skill ids to their embedded template
+	// root. Grouped catalog members use skills/<id>/; ordinary catalog skills
+	// default to skills-catalog/<id>/ when omitted.
+	catalogTemplates map[string]string
 	// workflowSkillsToInstall holds embedded workflow skill directory names with
 	// missing template files to create. Existing files are preserved.
 	workflowSkillsToInstall []string
 	// memoryFilesToCreate holds missing docs/agent-layer/*.md relative paths to
-	// create because Q1 is yes.
+	// create because the instruction set includes memory.
 	memoryFilesToCreate []string
 	// templateMemoryFilesToCreate holds missing .agent-layer/templates/docs/*.md
 	// relative paths to create because Q1 is yes.
@@ -46,8 +51,8 @@ type skillsChangeSet struct {
 }
 
 // memoryFileBasenames is the canonical set of agent-managed memory files that
-// the workflow-bundle step can create when missing. Other files under
-// docs/agent-layer/ (e.g. user-added notes) are left alone.
+// the rules-and-memory instruction choice can create when missing. Other files
+// under docs/agent-layer/ (e.g. user-added notes) are left alone.
 var memoryFileBasenames = []string{
 	"ISSUES.md",
 	"BACKLOG.md",
@@ -56,8 +61,8 @@ var memoryFileBasenames = []string{
 	"CONTEXT.md",
 }
 
-// standardInstructionBasenames is the current bundled instruction set that the
-// workflow-bundle step seeds when missing.
+// standardInstructionBasenames is the current bundled instruction set. Rules
+// seeds 00_rules.md; rules-and-memory seeds both files.
 var standardInstructionBasenames = []string{
 	"00_rules.md",
 	"01_memory.md",
@@ -65,8 +70,8 @@ var standardInstructionBasenames = []string{
 
 // legacyInstructionBasenames are instruction files shipped by releases before
 // the 0.16.0 consolidation. They are no longer seeded, but their presence still
-// counts as workflow-bundle evidence so a repo that has not run `al upgrade`
-// yet is not re-prompted to install a bundle it already has.
+// counts as instruction evidence so a repo that has not run `al upgrade`
+// yet is not re-prompted to seed instruction files it already has.
 var legacyInstructionBasenames = []string{
 	"01_base.md",
 	"02_memory.md",
@@ -79,13 +84,19 @@ var legacyInstructionBasenames = []string{
 // changes the apply path will perform. Order in each slice is sorted for
 // deterministic preview output.
 func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, error) {
-	out := skillsChangeSet{}
+	out := skillsChangeSet{catalogTemplates: map[string]string{}}
 
 	for _, entry := range choices.CLISkillsCatalog {
+		selected := choices.EnabledCLISkills[entry.ID]
+		if len(entry.Members) > 0 {
+			if err := appendGroupedCatalogChanges(root, entry, selected, &out); err != nil {
+				return skillsChangeSet{}, err
+			}
+			continue
+		}
 		stateID := catalogSkillStateIDOnDisk(root, entry)
 		exists := catalogSkillExistsOnDisk(root, stateID)
 		managed := catalogSkillIsManagedOnDisk(root, entry)
-		selected := choices.EnabledCLISkills[entry.ID]
 		missingFiles := false
 		if selected && exists && !managed {
 			return skillsChangeSet{}, fmt.Errorf(
@@ -114,39 +125,9 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 		}
 	}
 
-	if choices.InstallWorkflowBundleTouched && choices.InstallWorkflowBundle {
-		workflowIDs, err := embeddedWorkflowSkillIDs()
-		if err != nil {
+	if choices.InstructionSetTouched {
+		if err := appendInstructionChanges(root, choices.InstructionSet, &out); err != nil {
 			return skillsChangeSet{}, err
-		}
-		for id := range workflowIDs {
-			missing, err := templateDirHasMissingFiles("skills/"+id, filepath.Join(root, ".agent-layer", "skills", id))
-			if err != nil {
-				return skillsChangeSet{}, err
-			}
-			if missing {
-				out.workflowSkillsToInstall = append(out.workflowSkillsToInstall, id)
-			}
-		}
-		memoryAdds, err := listMissingMemoryFiles(root, filepath.Join(root, "docs", "agent-layer"))
-		if err != nil {
-			return skillsChangeSet{}, err
-		}
-		templateMemoryAdds, err := listMissingMemoryFiles(root, filepath.Join(root, ".agent-layer", "templates", "docs"))
-		if err != nil {
-			return skillsChangeSet{}, err
-		}
-		out.memoryFilesToCreate = memoryAdds
-		out.templateMemoryFilesToCreate = templateMemoryAdds
-		for _, rel := range managedInstructionFiles() {
-			path := filepath.Join(root, filepath.FromSlash(rel))
-			exists, err := regularFileExists(path)
-			if err != nil {
-				return skillsChangeSet{}, err
-			}
-			if !exists {
-				out.managedInstructionFilesToCreate = append(out.managedInstructionFilesToCreate, rel)
-			}
 		}
 	}
 
@@ -160,17 +141,95 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 	return out, nil
 }
 
+func appendGroupedCatalogChanges(root string, entry CLISkillCatalogEntry, selected bool, out *skillsChangeSet) error {
+	for _, member := range entry.Members {
+		templateRoot := "skills/" + member
+		out.catalogTemplates[member] = templateRoot
+		exists := catalogSkillExistsOnDisk(root, member)
+		missingFiles := false
+		if selected && exists {
+			var err error
+			missingFiles, err = templateDirHasMissingFiles(
+				templateRoot,
+				filepath.Join(root, ".agent-layer", "skills", member),
+			)
+			if err != nil {
+				return err
+			}
+		}
+		switch {
+		case selected && !exists:
+			out.catalogSkillsToAdd = append(out.catalogSkillsToAdd, member)
+		case selected && missingFiles:
+			out.catalogSkillsToRepair = append(out.catalogSkillsToRepair, member)
+		case !selected && exists:
+			out.catalogSkillsToRemove = append(out.catalogSkillsToRemove, member)
+		}
+	}
+	return nil
+}
+
+func appendInstructionChanges(root string, set InstructionSet, out *skillsChangeSet) error {
+	switch set {
+	case InstructionSetNone, "":
+		return nil
+	case InstructionSetRules:
+		return appendMissingInstructionFiles(root, []string{"00_rules.md"}, out)
+	case InstructionSetRulesAndMemory:
+		if err := appendMissingInstructionFiles(root, standardInstructionBasenames, out); err != nil {
+			return err
+		}
+		memoryAdds, err := listMissingMemoryFiles(root, filepath.Join(root, "docs", "agent-layer"))
+		if err != nil {
+			return err
+		}
+		templateMemoryAdds, err := listMissingMemoryFiles(root, filepath.Join(root, ".agent-layer", "templates", "docs"))
+		if err != nil {
+			return err
+		}
+		out.memoryFilesToCreate = memoryAdds
+		out.templateMemoryFilesToCreate = templateMemoryAdds
+		return nil
+	default:
+		return fmt.Errorf(messages.WizardUnknownInstructionSetFmt, set)
+	}
+}
+
+func appendMissingInstructionFiles(root string, names []string, out *skillsChangeSet) error {
+	for _, name := range names {
+		rel := filepath.ToSlash(filepath.Join(".agent-layer", "instructions", name))
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		exists, err := regularFileExists(path)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			out.managedInstructionFilesToCreate = append(out.managedInstructionFilesToCreate, rel)
+		}
+	}
+	return nil
+}
+
+func (c skillsChangeSet) skillTemplateRoot(id string) string {
+	if c.catalogTemplates != nil {
+		if root, ok := c.catalogTemplates[id]; ok && root != "" {
+			return root
+		}
+	}
+	return cliSkillsCatalogTemplateRoot + "/" + id
+}
+
 // applySkillsChanges materializes the change set on disk. Each catalog skill
-// addition is copied from the embedded skills-catalog/<id>/ tree; deletions are
-// recursive removes scoped to the targeted directory.
+// addition is copied from its embedded template tree; deletions are recursive
+// removes scoped to the targeted directory.
 func applySkillsChanges(root string, changes skillsChangeSet) error {
 	for _, id := range changes.catalogSkillsToAdd {
-		if err := copyCatalogSkillToDisk(root, id); err != nil {
+		if err := copySkillDirToDisk(root, changes.skillTemplateRoot(id), id); err != nil {
 			return fmt.Errorf("add catalog skill %s: %w", id, err)
 		}
 	}
 	for _, id := range changes.catalogSkillsToRepair {
-		if err := copyCatalogSkillMissingFiles(root, id); err != nil {
+		if err := copySkillDirMissingFiles(root, changes.skillTemplateRoot(id), id); err != nil {
 			return fmt.Errorf("repair catalog skill %s: %w", id, err)
 		}
 	}
@@ -204,14 +263,17 @@ func applySkillsChanges(root string, changes skillsChangeSet) error {
 	return nil
 }
 
-// copyCatalogSkillToDisk copies the embedded catalog skill directory for id to
-// .agent-layer/skills/<id>/. Errors when the embedded directory is missing.
 func copyCatalogSkillToDisk(root string, id string) error {
-	if !isSafeCLISkillCatalogID(id) {
-		return fmt.Errorf("invalid catalog skill id %q", id)
+	return copySkillDirToDisk(root, cliSkillsCatalogTemplateRoot+"/"+id, id)
+}
+
+// copySkillDirToDisk copies the embedded template directory for destID to
+// .agent-layer/skills/<destID>/. Errors when the embedded directory is missing.
+func copySkillDirToDisk(root string, templateRoot string, destID string) error {
+	if !isSafeCLISkillCatalogID(destID) {
+		return fmt.Errorf("invalid catalog skill id %q", destID)
 	}
-	templateRoot := cliSkillsCatalogTemplateRoot + "/" + id
-	destRoot := filepath.Join(root, ".agent-layer", "skills", id)
+	destRoot := filepath.Join(root, ".agent-layer", "skills", destID)
 	wrote := false
 	err := templates.Walk(templateRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -239,20 +301,20 @@ func copyCatalogSkillToDisk(root string, id string) error {
 		return err
 	}
 	if !wrote {
-		return fmt.Errorf("catalog skill %q has no embedded files", id)
+		return fmt.Errorf("catalog skill %q has no embedded files", destID)
 	}
 	return nil
 }
 
-// copyCatalogSkillMissingFiles copies only absent embedded files for id into
-// .agent-layer/skills/<id>/, preserving any existing catalog skill files.
-func copyCatalogSkillMissingFiles(root string, id string) error {
-	if !isSafeCLISkillCatalogID(id) {
-		return fmt.Errorf("invalid catalog skill id %q", id)
+// copySkillDirMissingFiles copies only absent embedded files for destID into
+// .agent-layer/skills/<destID>/, preserving any existing skill files.
+func copySkillDirMissingFiles(root string, templateRoot string, destID string) error {
+	if !isSafeCLISkillCatalogID(destID) {
+		return fmt.Errorf("invalid catalog skill id %q", destID)
 	}
 	return copyTemplateDirMissingWithMode(
-		cliSkillsCatalogTemplateRoot+"/"+id,
-		filepath.Join(root, ".agent-layer", "skills", id),
+		templateRoot,
+		filepath.Join(root, ".agent-layer", "skills", destID),
 		0o600,
 	)
 }
@@ -345,7 +407,7 @@ func regularFileExists(path string) (bool, error) {
 	return true, nil
 }
 
-// embeddedWorkflowSkillIDs returns the workflow-bundle skill ids from the
+// embeddedWorkflowSkillIDs returns the development-skill ids from the
 // embedded skills/ template tree.
 func embeddedWorkflowSkillIDs() (map[string]struct{}, error) {
 	ids := make(map[string]struct{})
@@ -425,15 +487,6 @@ func listMissingMemoryFiles(root string, destRoot string) ([]string, error) {
 	return out, nil
 }
 
-// managedInstructionFiles returns managed bundled instruction file paths.
-func managedInstructionFiles() []string {
-	out := make([]string, 0, len(standardInstructionBasenames))
-	for _, name := range standardInstructionBasenames {
-		out = append(out, filepath.ToSlash(filepath.Join(".agent-layer", "instructions", name)))
-	}
-	return out
-}
-
 // buildSkillsPreview returns a directory-summary preview for the rewrite
 // preview's Skills section. Returns empty string when no skill changes are
 // scheduled.
@@ -456,7 +509,7 @@ func buildSkillsPreview(changes skillsChangeSet) string {
 		lines = append(lines, fmt.Sprintf("  - .agent-layer/skills/%s/", id))
 	}
 	for _, name := range changes.workflowSkillsToInstall {
-		lines = append(lines, fmt.Sprintf("  + .agent-layer/skills/%s/  (workflow bundle install)", name))
+		lines = append(lines, fmt.Sprintf("  + .agent-layer/skills/%s/", name))
 	}
 	for _, rel := range changes.memoryFilesToCreate {
 		lines = append(lines, fmt.Sprintf("  + %s  (memory file)", rel))

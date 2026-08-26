@@ -44,6 +44,14 @@ func catalogSkillStateIDOnDisk(root string, entry CLISkillCatalogEntry) string {
 // entries must contain their marker in SKILL.md so a user-authored same-name
 // skill is not mistaken for catalog-installed content.
 func catalogSkillIsManagedOnDisk(root string, entry CLISkillCatalogEntry) bool {
+	if len(entry.Members) > 0 {
+		for _, member := range entry.Members {
+			if catalogSkillExistsOnDisk(root, member) {
+				return true
+			}
+		}
+		return false
+	}
 	stateID := catalogSkillStateIDOnDisk(root, entry)
 	if !catalogSkillExistsOnDisk(root, stateID) {
 		return false
@@ -58,20 +66,20 @@ func catalogSkillIsManagedOnDisk(root string, entry CLISkillCatalogEntry) bool {
 	return bytes.Contains(data, []byte(entry.OwnershipMarker))
 }
 
-// detectAgentLayerEnabledFromDisk returns true when the workflow bundle appears
-// present in the project — any embedded workflow-bundle skill directory,
-// standard instruction file, managed memory template, or live memory file exists.
-// The function defaults to true when scans fail or the root is unset; an empty
-// `.agent-layer/skills/` directory with no managed bundle files maps to false.
+// detectInstructionEvidenceFromDisk returns true when Agent Layer-managed
+// instruction or canonical memory files already exist. The function defaults
+// to true when scans fail or the root is unset. An empty
+// `.agent-layer/instructions/` directory with no memory files maps to false.
 //
-// The result controls whether the install-only workflow-bundle prompt is shown.
-// Existing bundle evidence suppresses the prompt because the wizard no longer
-// performs workflow-bundle refreshes.
-func detectAgentLayerEnabledFromDisk(root string) bool {
+// The result controls whether the install-only instruction prompt is shown.
+// Standard or legacy managed instruction files, live memory docs, and memory
+// templates suppress the prompt because the wizard does not refresh them.
+// User-authored extra instruction files do not count, so a repo that only
+// has custom fragments can still seed 00_rules.md. Development skills on
+// disk do not count; they are selected independently on the skills catalog
+// screen.
+func detectInstructionEvidenceFromDisk(root string) bool {
 	if root == "" {
-		return true
-	}
-	if hasNonCatalogWorkflowSkill(root) {
 		return true
 	}
 	if hasAnyTemplateMemoryFile(root) {
@@ -82,32 +90,6 @@ func detectAgentLayerEnabledFromDisk(root string) bool {
 	}
 	if hasAnyMemoryFile(root) {
 		return true
-	}
-	return false
-}
-
-func hasNonCatalogWorkflowSkill(root string) bool {
-	skillsDir := filepath.Join(root, ".agent-layer", "skills")
-	entries, err := os.ReadDir(skillsDir)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false
-		}
-		// On any other read error, fall back to true to bias toward keeping the
-		// bundle rather than silently pruning user data.
-		return true
-	}
-	workflowIDs, err := embeddedWorkflowSkillIDs()
-	if err != nil || len(workflowIDs) == 0 {
-		return len(entries) > 0
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		if _, ok := workflowIDs[entry.Name()]; ok {
-			return true
-		}
 	}
 	return false
 }

@@ -81,7 +81,7 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 		return fmt.Errorf(messages.WizardWriteEnvFailedFmt, err)
 	}
 
-	// Skills (catalog adds/removes, workflow bundle missing-file install).
+	// Skills (catalog adds/removes, instruction and memory file seeds).
 	// Run before sync so sync sees the final on-disk layout.
 	skillsChangeSet, err := computeSkillsChangeSet(root, c)
 	if err != nil {

@@ -79,16 +79,17 @@ type Choices struct {
 	GrokDisableMemory        bool
 	GrokDisableMemoryTouched bool
 
-	// Agent Layer workflow bundle install action.
-	// InstallWorkflowBundle=true creates missing bundled workflow files without
-	// overwriting existing files. false is a no-op for workflow-bundle files.
-	InstallWorkflowBundle        bool
-	InstallWorkflowBundleTouched bool
+	// InstructionSet is the always-on instruction choice: none, rules, or
+	// rules_and_memory. Touched is set when the user answers the instruction
+	// step. false leaves existing instruction and memory files unchanged.
+	InstructionSet        InstructionSet
+	InstructionSetTouched bool
 
 	// Catalog CLI skills (Q2).
 	// EnabledCLISkills is keyed by catalog entry id. Apply copies the matching
 	// embedded skill directory into `.agent-layer/skills/<id>/` for ids set true
-	// and removes the on-disk directory for ids set false.
+	// and removes the on-disk directory for ids set false. Grouped entries
+	// (Members) install or remove each member directory instead.
 	EnabledCLISkills map[string]bool
 	CLISkillsCatalog []CLISkillCatalogEntry
 
@@ -133,6 +134,7 @@ type Choices struct {
 // NewChoices returns a Choices struct initialized with defaults.
 func NewChoices() *Choices {
 	return &Choices{
+		InstructionSet:          InstructionSetNone,
 		EnabledAgents:           make(map[string]bool),
 		EnabledCLISkills:        make(map[string]bool),
 		EnabledMCPServers:       make(map[string]bool),
@@ -166,6 +168,9 @@ func cloneCLISkillCatalog(in []CLISkillCatalogEntry) []CLISkillCatalogEntry {
 	}
 	out := make([]CLISkillCatalogEntry, len(in))
 	copy(out, in)
+	for i := range out {
+		out[i].Members = cloneStringSlice(in[i].Members)
+	}
 	return out
 }
 

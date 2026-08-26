@@ -23,11 +23,26 @@ binary = "npx"
 
 [[cli_skills]]
 id = "dispatch-agent"
-name = "Agent dispatch"
+name = "Agent dispatch (cross agent conversations)"
 # dispatch-agent has no external CLI requirement; no binary key.
 
 [[cli_skills]]
 id = "skill-sync"
-name = "Agent Layer skill sync"
+name = "Skill sync (import and update skills from Git)"
 ownership_marker = "<!-- agent-layer-catalog-skill: skill-sync -->"
 # skill-sync uses the current Agent Layer binary; no external binary key.
+
+[[cli_skills]]
+id = "development-skills"
+name = "Agent Layer development skills (/implement, /ship-pr, etc.)"
+# Grouped catalog entry: members are copied from embedded skills/<id>/,
+# not skills-catalog/<id>/. The id itself is not a destination directory.
+members = [
+  "implement",
+  "ship-pr",
+  "auto-skill-loop",
+  "audit-documentation",
+  "audit-memory",
+  "audit-tests",
+  "interface-audit",
+]

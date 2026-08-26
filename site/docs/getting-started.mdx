@@ -60,7 +60,7 @@ This seeds:
 - `.agent-layer/` (your configuration)
 - a managed `.gitignore` block
 
-By default, `al init` prompts to run the setup wizard. The wizard can add the optional workflow bundle, including `docs/agent-layer/` project memory. Skip it with `--no-wizard` if you prefer to configure manually.
+By default, `al init` prompts to run the setup wizard. The wizard can seed instruction files and `docs/agent-layer/` project memory, and can install catalog skills. Skip it with `--no-wizard` if you prefer to configure manually.
 
 `al init` is intended to be run once per repo. If `.agent-layer/` already exists, `al init` errors; use `al upgrade plan` and `al upgrade` to refresh template-managed files.
 
@@ -137,7 +137,7 @@ See [Doctor](./reference#doctor) for exactly what it checks.
 
 After `al init`, your repo gains a few new directories and generated files. Edit the files in `.agent-layer/`. Regenerate the client files.
 
-The resulting layout always has configuration and generated client files. Project memory is an optional third bucket, created only when you install the workflow bundle in `al wizard`.
+The resulting layout always has configuration and generated client files. Project memory is an optional third bucket, created only when you choose Rules and memory in `al wizard`.
 
 ### Configuration (`.agent-layer/`)
 
@@ -164,7 +164,7 @@ Skill sources follow the [agentskills.io specification](https://agentskills.io/s
 
 ### Project memory (`docs/agent-layer/`)
 
-These files are created when you install the workflow bundle in `al wizard`. The bundled memory instructions reference them as long-lived memory for the repo:
+These files are created when you choose Rules and memory in `al wizard`. The bundled memory instructions reference them as long-lived memory for the repo:
 
 ```text
 docs/agent-layer/

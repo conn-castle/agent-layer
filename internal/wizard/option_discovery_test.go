@@ -347,6 +347,13 @@ func TestPromptWizardFlowPrefetchesAntigravityModelsOnceAcrossModelRevisit(t *te
 	var enableLayerPrompts int
 	ui := &MockUI{
 		SelectFunc: func(title string, options []string, _ *string) error {
+			if title == messages.WizardInstructionSetTitle {
+				enableLayerPrompts++
+				if enableLayerPrompts == 1 {
+					return errWizardBack
+				}
+				return nil
+			}
 			if title != messages.WizardAntigravityModelTitle {
 				return nil
 			}
@@ -368,14 +375,7 @@ func TestPromptWizardFlowPrefetchesAntigravityModelsOnceAcrossModelRevisit(t *te
 			return nil
 		},
 		ConfirmFunc: func(title string, value *bool) error {
-			switch title {
-			case messages.WizardEnableAgentLayerPrompt:
-				enableLayerPrompts++
-				if enableLayerPrompts == 1 {
-					return errWizardBack
-				}
-				*value = false
-			case messages.WizardEnableWarningsPrompt:
+			if title == messages.WizardEnableWarningsPrompt {
 				*value = false
 			}
 			return nil
@@ -417,8 +417,7 @@ func TestPromptWizardFlowSkipsAntigravityPrefetchWhenAgentDisabled(t *testing.T)
 			return nil
 		},
 		ConfirmFunc: func(title string, value *bool) error {
-			switch title {
-			case messages.WizardEnableAgentLayerPrompt, messages.WizardEnableWarningsPrompt:
+			if title == messages.WizardEnableWarningsPrompt {
 				*value = false
 			}
 			return nil

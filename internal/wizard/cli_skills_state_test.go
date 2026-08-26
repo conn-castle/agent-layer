@@ -57,23 +57,23 @@ func TestLegacyDispatchAgentDirectoryRemainsCatalogStateUntilMigration(t *testin
 	assert.True(t, catalogSkillIsManagedOnDisk(root, entry))
 }
 
-func TestHasNonCatalogWorkflowSkillHandlesMalformedSkillsDir(t *testing.T) {
-	t.Run("returns true when skills path cannot be read as a directory", func(t *testing.T) {
-		root := t.TempDir()
-		skillsPath := filepath.Join(root, ".agent-layer", "skills")
-		require.NoError(t, os.MkdirAll(filepath.Dir(skillsPath), 0o750))
-		require.NoError(t, os.WriteFile(skillsPath, []byte("not a directory"), 0o600))
+func TestCatalogSkillIsManagedOnDiskGroupedMembers(t *testing.T) {
+	entry := CLISkillCatalogEntry{
+		ID:      "development-skills",
+		Name:    "Agent Layer development skills",
+		Members: []string{"implement", "ship-pr"},
+	}
 
-		assert.True(t, hasNonCatalogWorkflowSkill(root))
+	t.Run("false when no members exist", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills"), 0o750))
+		assert.False(t, catalogSkillIsManagedOnDisk(root, entry))
 	})
 
-	t.Run("ignores non-directory entries", func(t *testing.T) {
+	t.Run("true when any member directory exists", func(t *testing.T) {
 		root := t.TempDir()
-		skillsDir := filepath.Join(root, ".agent-layer", "skills")
-		require.NoError(t, os.MkdirAll(skillsDir, 0o750))
-		require.NoError(t, os.WriteFile(filepath.Join(skillsDir, "README.md"), []byte("not a skill"), 0o600))
-
-		assert.False(t, hasNonCatalogWorkflowSkill(root))
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "implement"), 0o750))
+		assert.True(t, catalogSkillIsManagedOnDisk(root, entry))
 	})
 }
 
@@ -106,64 +106,64 @@ func TestAgentLayerDiskEvidenceTreatsStatErrorsAsPresent(t *testing.T) {
 	})
 }
 
-func TestDetectAgentLayerEnabledFromDisk(t *testing.T) {
+func TestDetectInstructionEvidenceFromDisk(t *testing.T) {
 	t.Run("returns false on empty layout", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills"), 0o750))
 		require.NoError(t, os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o750))
-		assert.False(t, detectAgentLayerEnabledFromDisk(root))
+		assert.False(t, detectInstructionEvidenceFromDisk(root))
 	})
 
-	t.Run("returns true when a workflow skill directory exists", func(t *testing.T) {
+	t.Run("returns false when only a development skill directory exists", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "implement"), 0o750))
-		assert.True(t, detectAgentLayerEnabledFromDisk(root))
+		assert.False(t, detectInstructionEvidenceFromDisk(root))
 	})
 
 	t.Run("returns false when only catalog skill directories exist", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "tavily-web"), 0o750))
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "dispatch-agent"), 0o750))
-		assert.False(t, detectAgentLayerEnabledFromDisk(root))
+		assert.False(t, detectInstructionEvidenceFromDisk(root))
 	})
 
 	t.Run("returns false when only custom skill directories exist", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "custom-user-skill"), 0o750))
-		assert.False(t, detectAgentLayerEnabledFromDisk(root))
+		assert.False(t, detectInstructionEvidenceFromDisk(root))
 	})
 
 	t.Run("returns true when a memory file exists", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o750))
 		require.NoError(t, os.WriteFile(filepath.Join(root, "docs", "agent-layer", "ISSUES.md"), []byte("x"), 0o600))
-		assert.True(t, detectAgentLayerEnabledFromDisk(root))
+		assert.True(t, detectInstructionEvidenceFromDisk(root))
 	})
 
 	t.Run("returns true when a memory template exists", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "templates", "docs"), 0o750))
 		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "templates", "docs", "ISSUES.md"), []byte("x"), 0o600))
-		assert.True(t, detectAgentLayerEnabledFromDisk(root))
+		assert.True(t, detectInstructionEvidenceFromDisk(root))
 	})
 
 	t.Run("returns true when a standard instruction file exists", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
 		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), []byte("x"), 0o600))
-		assert.True(t, detectAgentLayerEnabledFromDisk(root))
+		assert.True(t, detectInstructionEvidenceFromDisk(root))
 	})
 
 	// A repo installed before the 0.16.0 instruction consolidation still holds
 	// the pre-consolidation filenames until `al upgrade` runs. Treating those as
-	// evidence keeps the wizard from offering to install a workflow bundle over
+	// evidence keeps the wizard from offering to seed instruction files over
 	// files the user already has.
 	t.Run("returns true when only a pre-consolidation instruction file exists", func(t *testing.T) {
 		for _, name := range legacyInstructionBasenames {
 			root := t.TempDir()
 			require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
 			require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", name), []byte("legacy instructions"), 0o600))
-			assert.True(t, detectAgentLayerEnabledFromDisk(root), "%s should count as workflow-bundle evidence", name)
+			assert.True(t, detectInstructionEvidenceFromDisk(root), "%s should count as instruction evidence", name)
 		}
 	})
 
@@ -173,23 +173,23 @@ func TestDetectAgentLayerEnabledFromDisk(t *testing.T) {
 		rulesTemplate, err := templates.Read("instructions/00_rules.md")
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), rulesTemplate, 0o600))
-		assert.True(t, detectAgentLayerEnabledFromDisk(root))
+		assert.True(t, detectInstructionEvidenceFromDisk(root))
 	})
 
 	t.Run("returns true when edited managed instruction exists", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
 		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), []byte("custom rules"), 0o600))
-		assert.True(t, detectAgentLayerEnabledFromDisk(root))
+		assert.True(t, detectInstructionEvidenceFromDisk(root))
 	})
 
 	t.Run("returns true on instruction read errors", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), 0o750))
-		assert.True(t, detectAgentLayerEnabledFromDisk(root))
+		assert.True(t, detectInstructionEvidenceFromDisk(root))
 	})
 
 	t.Run("returns true for empty root", func(t *testing.T) {
-		assert.True(t, detectAgentLayerEnabledFromDisk(""))
+		assert.True(t, detectInstructionEvidenceFromDisk(""))
 	})
 }

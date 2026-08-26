@@ -15,6 +15,11 @@ import (
 // upgrade should treat as intentional user-owned content.
 const UpgradeKeepListFileName = "upgrade-keep-list"
 
+// agentLayerTmpKeepPath is the keep-list entry that retains the whole
+// .agent-layer/tmp directory and skips the grouped tmp deletion prompt.
+// Individual files under tmp cannot be listed; tmp cleanup is all-or-nothing.
+const agentLayerTmpKeepPath = ".agent-layer/tmp"
+
 type upgradeKeepList map[string]struct{}
 
 func (inst *installer) upgradeKeepListPath() string {
@@ -58,8 +63,8 @@ func normalizeUpgradeKeepPath(path string) (string, error) {
 	if !strings.HasPrefix(clean, ".agent-layer/") && !strings.HasPrefix(clean, docsAgentLayerDir+"/") {
 		return "", fmt.Errorf("path must be below .agent-layer/ or docs/agent-layer/")
 	}
-	if clean == ".agent-layer/tmp" || strings.HasPrefix(clean, ".agent-layer/tmp/") {
-		return "", fmt.Errorf(".agent-layer/tmp/ uses its own protected cleanup flow")
+	if strings.HasPrefix(clean, agentLayerTmpKeepPath+"/") {
+		return "", fmt.Errorf("individual paths under .agent-layer/tmp/ cannot be kept; list .agent-layer/tmp to keep the whole directory")
 	}
 	if clean == ".agent-layer/"+UpgradeKeepListFileName {
 		return "", fmt.Errorf("the keep list cannot contain itself")

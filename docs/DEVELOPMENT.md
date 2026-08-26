@@ -79,7 +79,7 @@ go run ../../cmd/al agy
 
 Notes:
 - `init` is required once per repo to seed the bare `.agent-layer/` operational scaffold.
-- `init` prompts to run the setup wizard by default; pass `--no-wizard` to skip (non-interactive shells skip automatically). The wizard can install the workflow bundle, including `docs/agent-layer/` memory files/templates and instruction/skill templates.
+- `init` prompts to run the setup wizard by default; pass `--no-wizard` to skip (non-interactive shells skip automatically). The wizard can seed instruction files, `docs/agent-layer/` memory files/templates, and catalog skills (including Agent Layer development skills).
 - `sync` is optional because `al <client>` always syncs before launch.
 - `./scripts/setup.sh` is only for tool + hook setup, not required just to run the CLI.
 
@@ -226,7 +226,7 @@ Note: `make ci` is the complete local/pre-PR verification gate and the same targ
 
 ## Managing bundled instructions
 
-The bundled instruction set is `internal/templates/instructions/00_rules.md` (rules, escalation, and communication style) and `01_memory.md` (the project memory files and how to use them). Both are **managed**: the workflow bundle seeds them when missing, and `al upgrade` updates them, prompting before overwriting local edits. Anything else a user drops into `.agent-layer/instructions/` is their own file and is never touched.
+The bundled instruction set is `internal/templates/instructions/00_rules.md` (rules, escalation, and communication style) and `01_memory.md` (the project memory files and how to use them). Both are **managed**: the wizard seeds them when missing (`00_rules.md` for Rules; both files plus memory docs for Rules and memory), and `al upgrade` updates them, prompting before overwriting local edits. Anything else a user drops into `.agent-layer/instructions/` is their own file and is never touched.
 
 Users tailor instructions by editing these files or adding their own; there is no separate user-owned instruction template.
 

@@ -47,12 +47,16 @@ const (
 	WizardCustomOption                        = "Custom..."
 	WizardCustomPromptFmt                     = "Custom %s"
 
-	// WizardEnableAgentLayerPrompt asks whether to install the Agent Layer
-	// workflow bundle when it is absent. A "no" answer leaves files unchanged.
-	WizardEnableAgentLayerPrompt = "Install the Agent Layer workflow bundle? (adds missing workflow skills, managed instruction files, and memory docs/templates; existing files are left unchanged)" +
-		"\n  See https://agent-layer.dev/best-practices for what each bundle includes."
+	// WizardInstructionSetTitle labels the always-on instruction select screen.
+	WizardInstructionSetTitle = "Agent instructions" +
+		"\n  Always-on project instructions. Independent of the skills list below."
+	WizardInstructionSetNone           = "None — no Agent Layer instruction files"
+	WizardInstructionSetRules          = "Rules — agent artifacts go in .agent-layer/tmp; git safety; when to ask you"
+	WizardInstructionSetRulesAndMemory = "Rules and memory — rules, plus docs/agent-layer/ (CONTEXT, DECISIONS, ISSUES, BACKLOG, COMMANDS)"
 	// WizardEnableCLISkillsTitle labels the catalog multiselect screen.
-	WizardEnableCLISkillsTitle = "Enable CLI skills (some require a CLI on PATH; doctor reports missing binaries)"
+	WizardEnableCLISkillsTitle = "Enable skills" +
+		"\n  Check a row to install it. Uncheck to leave it out." +
+		"\n  Tool rows need their CLI on PATH; `al doctor` reports missing binaries."
 	// WizardGitTrackingTitle labels the multiselect that controls the managed
 	// gitignore block source. Checked folders are left trackable by git; unchecked
 	// folders are written as ignore patterns in .agent-layer/gitignore.block.

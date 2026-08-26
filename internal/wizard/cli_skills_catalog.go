@@ -1,7 +1,9 @@
 package wizard
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"regexp"
 	"strings"
 
@@ -16,10 +18,14 @@ import (
 const cliSkillsCatalogTemplatePath = "cli-skills-catalog.toml"
 
 // CLISkillCatalogEntry describes one wizard-managed CLI skill option.
+// A non-empty Members list is a grouped entry: the catalog id is the
+// checkbox identity only, and each member is a destination directory
+// copied from embedded skills/<member>/ rather than skills-catalog/<id>/.
 type CLISkillCatalogEntry struct {
 	ID              string
 	Name            string
-	OwnershipMarker string `toml:"ownership_marker"`
+	OwnershipMarker string   `toml:"ownership_marker"`
+	Members         []string `toml:"members"`
 }
 
 var cliSkillCatalogIDPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`)
@@ -70,5 +76,48 @@ func loadCLISkillCatalog() ([]CLISkillCatalogEntry, error) {
 		}
 		seenNames[name] = struct{}{}
 	}
+	seenMembers := make(map[string]struct{})
+	for _, entry := range doc.CLISkills {
+		if err := validateCatalogMembers(entry, seen, seenMembers); err != nil {
+			return nil, err
+		}
+	}
 	return doc.CLISkills, nil
+}
+
+func validateCatalogMembers(entry CLISkillCatalogEntry, catalogIDs map[string]struct{}, seenMembers map[string]struct{}) error {
+	if len(entry.Members) == 0 {
+		return nil
+	}
+	for _, member := range entry.Members {
+		if !isSafeCLISkillCatalogID(member) {
+			return fmt.Errorf(messages.WizardCLISkillCatalogEntryInvalidMemberFmt, entry.ID, member)
+		}
+		if _, ok := catalogIDs[member]; ok {
+			return fmt.Errorf(messages.WizardCLISkillCatalogEntryMemberCollidesIDFmt, member, member)
+		}
+		if _, ok := seenMembers[member]; ok {
+			return fmt.Errorf(messages.WizardCLISkillCatalogEntryDuplicateMemberFmt, entry.ID, member)
+		}
+		seenMembers[member] = struct{}{}
+		ok, err := catalogMemberTemplateExists(member)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf(messages.WizardCLISkillCatalogEntryMemberMissingTemplateFmt, member, member)
+		}
+	}
+	return nil
+}
+
+func catalogMemberTemplateExists(member string) (bool, error) {
+	_, err := templates.Read("skills/" + member + "/SKILL.md")
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	return false, err
 }

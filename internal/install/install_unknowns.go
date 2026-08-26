@@ -64,7 +64,8 @@ func (inst *installer) scanUnknownRoot(root string, known map[string]struct{}, k
 // handleTmpUnknowns — they are never deleted via the bulk "delete all" path,
 // nor via the per-file DeleteUnknown loop, so the destructive-action
 // confirmation cannot be bypassed regardless of which top-level option the
-// user picks.
+// user picks. Listing `.agent-layer/tmp` in the upgrade keep list omits those
+// paths from this flow entirely, including the grouped tmp prompt.
 func (inst *installer) handleUnknowns() error {
 	if !inst.overwrite {
 		return nil
@@ -80,10 +81,15 @@ func (inst *installer) handleUnknowns() error {
 		return fmt.Errorf(messages.InstallDeleteUnknownPromptRequired)
 	}
 	tmpUnknowns, otherUnknowns := inst.partitionTmpUnknowns(unknowns)
-	otherUnknowns, err = inst.selectUnknownsToKeep(otherUnknowns)
+	if err := inst.offerUnknownsToKeep(otherUnknowns); err != nil {
+		return err
+	}
+	kept, err := inst.loadUpgradeKeepList()
 	if err != nil {
 		return err
 	}
+	otherUnknowns = inst.filterKeptAbsolutePaths(otherUnknowns, kept)
+	tmpUnknowns = inst.filterKeptAbsolutePaths(tmpUnknowns, kept)
 	if err := inst.handleNonTmpUnknowns(tmpUnknowns, otherUnknowns); err != nil {
 		return err
 	}
@@ -95,11 +101,27 @@ func (inst *installer) handleUnknowns() error {
 	return nil
 }
 
+// offerUnknownsToKeep presents keep-list candidates for non-tmp unknowns, with
+// `.agent-layer/tmp` last unless it is already kept. Tmp contents are not
+// offered individually; keeping the directory retains the whole tree.
+func (inst *installer) offerUnknownsToKeep(otherUnknowns []string) error {
+	kept, err := inst.loadUpgradeKeepList()
+	if err != nil {
+		return err
+	}
+	offered := append([]string(nil), otherUnknowns...)
+	if !upgradePathIsKept(agentLayerTmpKeepPath, kept) {
+		offered = append(offered, inst.agentLayerTmpDir())
+	}
+	_, err = inst.selectUnknownsToKeep(offered)
+	return err
+}
+
 func (inst *installer) selectUnknownsToKeep(unknowns []string) ([]string, error) {
 	if len(unknowns) == 0 {
 		return unknowns, nil
 	}
-	relative := inst.relativePathList(unknowns)
+	relative := inst.keepListCandidateRelPaths(unknowns)
 	response, err := inst.promptRouter().route(promptRequest{kind: promptKindSelectUnknownsToKeep, paths: relative})
 	if err != nil {
 		return nil, err
@@ -309,6 +331,27 @@ func (inst *installer) relativeUnknowns() []string {
 		rel = append(rel, inst.relativePath(path))
 	}
 	sort.Strings(rel)
+	return rel
+}
+
+// keepListCandidateRelPaths converts absolute paths to root-relative keep-list
+// options. Non-tmp paths are sorted; `.agent-layer/tmp` is always last so it
+// appears at the bottom of the checklist.
+func (inst *installer) keepListCandidateRelPaths(paths []string) []string {
+	rel := make([]string, 0, len(paths))
+	var tmpRel string
+	for _, path := range paths {
+		candidate := inst.relativePath(path)
+		if normalizeUpgradeRelPath(candidate) == agentLayerTmpKeepPath {
+			tmpRel = candidate
+			continue
+		}
+		rel = append(rel, candidate)
+	}
+	sort.Strings(rel)
+	if tmpRel != "" {
+		rel = append(rel, tmpRel)
+	}
 	return rel
 }
 

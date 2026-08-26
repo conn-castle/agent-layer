@@ -252,9 +252,9 @@ Run `al wizard` any time to interactively configure the most important settings:
     - Unchecking writes the matching `agent_specific` disable key; re-checking removes it, keeping the client's native default — except Codex **apps**, which defaults unchecked and always writes an explicit `features.apps`.
     - The AskUserQuestion toggle instead writes a typed `agents.claude.disable_question_tool` flag, and `al sync` injects the `permissions.deny` entry plus a `PreToolUse` hook (merged with, never replacing, your own deny/hook entries).
     - Status line checkboxes write explicit `statusline = true` or `statusline = false`; enabling one creates the missing editable source file once and never overwrites an existing source.
-- **Workflow bundle** (yes/no when the bundle is absent — creates missing bundled workflow skills, managed instruction files, and memory docs/templates; existing files are left unchanged. Use `al upgrade` when you want managed workflow updates.)
+- **Instructions** (None, Rules, or Rules and memory when no managed instruction or memory files exist — seeds missing `00_rules.md`, and for Rules and memory also `01_memory.md` plus `docs/agent-layer/` memory docs/templates; existing files are left unchanged. Fresh init defaults to Rules and memory. Use `al upgrade` when you want managed instruction updates.)
 - **Git tracking** (choose whether `.agent-layer/` and `docs/agent-layer/` stay trackable or are ignored through the managed `.agent-layer/gitignore.block` source)
-- **CLI skills** (opt-in catalog: `tavily-web`, `playwright`, `find-docs`, `dispatch-agent`; some require their own CLI on PATH; `al doctor` reports missing binaries without blocking agent launch)
+- **Catalog skills** (opt-in: `tavily-web`, `playwright`, `find-docs`, `dispatch-agent`, `skill-sync`, and Agent Layer development skills; tool rows require their own CLI on PATH; `al doctor` reports missing binaries without blocking agent launch)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
 - **Warnings** (enable/disable warning checks; threshold values use template defaults)
 
@@ -285,14 +285,14 @@ When prompted for required MCP secrets, type `skip` to disable that server for t
 
 ## What gets created in your repo
 
-Bare `al init` creates the operational scaffold. The optional workflow-bundle wizard step creates missing project memory and bundled workflow files, and `al sync` creates generated client files.
+Bare `al init` creates the operational scaffold. The wizard can seed instruction files, project memory, and catalog skills, and `al sync` creates generated client files.
 
 ### User configuration (gitignored by default, but can be committed)
   - `.agent-layer/`
   - `config.toml` (main configuration; human-editable)
   - `al.version` (repo pin; required)
-  - `instructions/` (created empty by bare init; workflow bundle can add numbered `*.md` fragments)
-  - `skills/` (created empty by bare init; workflow bundle and CLI catalog can add `<name>/SKILL.md` directories)
+  - `instructions/` (created empty by bare init; the wizard can add numbered `*.md` fragments)
+  - `skills/` (created empty by bare init; the wizard catalog can add `<name>/SKILL.md` directories)
   - `tmp/runs/` (runtime scratch directory)
   - `commands.allow` (approved shell commands; line-based)
   - `gitignore.block` (managed `.gitignore` block template; customize here)
@@ -302,7 +302,7 @@ Bare `al init` creates the operational scaffold. The optional workflow-bundle wi
 Repo-local launchers and template copies live under `.agent-layer/` and are ignored by `.agent-layer/.gitignore`.
 
 ### Project memory (optional; teams can commit or ignore)
-The workflow bundle creates missing memory docs and templates. Bare init does not create `docs/agent-layer/`.
+The wizard's Rules and memory instruction choice creates missing memory docs and templates. Bare init does not create `docs/agent-layer/`.
 
 Common memory files include:
 - `docs/agent-layer/ISSUES.md`
@@ -327,7 +327,7 @@ Generated outputs are written into the repo in client-specific formats (examples
 
 ## Configuration (human-editable)
 
-You can edit all configuration files by hand. `al wizard` updates `config.toml` (approvals, agents/models, MCP servers, warnings), `.agent-layer/.env` (secrets), and `.agent-layer/gitignore.block` (Agent Layer folder tracking). It can also install missing workflow-bundle files and seed missing statusline source files; it does not refresh existing workflow-bundle files, overwrite existing statusline sources, or touch `commands.allow`.
+You can edit all configuration files by hand. `al wizard` updates `config.toml` (approvals, agents/models, MCP servers, warnings), `.agent-layer/.env` (secrets), and `.agent-layer/gitignore.block` (Agent Layer folder tracking). It can also seed missing instruction and memory files, install or remove catalog skills (including Agent Layer development skills), and seed missing statusline source files; it does not refresh existing instruction files, overwrite existing statusline sources, or touch `commands.allow`.
 
 ### `.agent-layer/config.toml`
 
@@ -820,7 +820,7 @@ To customize the managed block, edit `.agent-layer/gitignore.block` and re-run `
 
 `.agent-layer/.env` is ignored by `.agent-layer/.gitignore`, not the parent repo `.gitignore`.
 
-`docs/agent-layer/` is created by the optional workflow bundle; teams may choose to commit it or ignore it.
+`docs/agent-layer/` is created when the wizard seeds Rules and memory; teams may choose to commit it or ignore it.
 
 ---
 

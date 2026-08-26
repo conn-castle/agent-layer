@@ -614,8 +614,12 @@ func (inst *installer) upgradeSnapshotTargetPaths() []string {
 
 // isUnderAgentLayerTmp reports whether path is the `.agent-layer/tmp` root or
 // a descendant. Path is cleaned internally so callers may pass any form.
+func (inst *installer) agentLayerTmpDir() string {
+	return filepath.Join(inst.root, ".agent-layer", "tmp")
+}
+
 func (inst *installer) isUnderAgentLayerTmp(path string) bool {
-	tmp := filepath.Join(inst.root, ".agent-layer", "tmp")
+	tmp := inst.agentLayerTmpDir()
 	clean := filepath.Clean(path)
 	return clean == tmp || strings.HasPrefix(clean, tmp+string(os.PathSeparator))
 }

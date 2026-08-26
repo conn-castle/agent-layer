@@ -172,7 +172,7 @@ func TestHandleUnknowns_DeletesSiblingOfNestedKeptFile(t *testing.T) {
 		sys:       RealSystem{},
 		prompter: PromptFuncs{
 			SelectUnknownsToKeepFunc: func(paths []string) ([]string, error) {
-				if want := []string{".agent-layer/local/delete.txt"}; !reflect.DeepEqual(paths, want) {
+				if want := []string{".agent-layer/local/delete.txt", ".agent-layer/tmp"}; !reflect.DeepEqual(paths, want) {
 					t.Fatalf("keep options = %v, want %v", paths, want)
 				}
 				return nil, nil
@@ -234,7 +234,7 @@ func TestHandleUnknowns_SelectsKeepPathsThenUsesExistingDeletionFlow(t *testing.
 	if err := inst.handleUnknowns(); err != nil {
 		t.Fatalf("handleUnknowns: %v", err)
 	}
-	if want := []string{".agent-layer/keep-me.txt", "docs/agent-layer/review-me.md"}; !reflect.DeepEqual(offered, want) {
+	if want := []string{".agent-layer/keep-me.txt", "docs/agent-layer/review-me.md", ".agent-layer/tmp"}; !reflect.DeepEqual(offered, want) {
 		t.Fatalf("keep options = %v, want %v", offered, want)
 	}
 	if want := []string{"docs/agent-layer/review-me.md"}; !reflect.DeepEqual(deletionPaths, want) {
@@ -322,6 +322,244 @@ func TestLoadUpgradeKeepList_RejectsInvalidPaths(t *testing.T) {
 				t.Fatalf("loadUpgradeKeepList error = %v", err)
 			}
 		})
+	}
+}
+
+func TestLoadUpgradeKeepList_AcceptsTmpDirectory(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".agent-layer", UpgradeKeepListFileName)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(".agent-layer/tmp/\n"), 0o600); err != nil {
+		t.Fatalf("write keep list: %v", err)
+	}
+	inst := &installer{root: root, sys: RealSystem{}}
+	kept, err := inst.loadUpgradeKeepList()
+	if err != nil {
+		t.Fatalf("loadUpgradeKeepList: %v", err)
+	}
+	if !upgradePathIsKept(".agent-layer/tmp/run.log", kept) {
+		t.Fatal("kept .agent-layer/tmp should retain files under tmp")
+	}
+}
+
+func TestScanUnknowns_KeptTmpDirectorySuppressesTmpUnknowns(t *testing.T) {
+	root := t.TempDir()
+	tmpFile := filepath.Join(root, ".agent-layer", "tmp", "scratch.log")
+	otherFile := filepath.Join(root, ".agent-layer", "unknown.txt")
+	for _, path := range []string{tmpFile, otherFile} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+		if err := os.WriteFile(path, []byte("local\n"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	keepPath := filepath.Join(root, ".agent-layer", UpgradeKeepListFileName)
+	if err := os.WriteFile(keepPath, []byte(".agent-layer/tmp\n"), 0o600); err != nil {
+		t.Fatalf("write keep list: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.scanUnknowns(); err != nil {
+		t.Fatalf("scanUnknowns: %v", err)
+	}
+	if got, want := inst.relativeUnknowns(), []string{".agent-layer/unknown.txt"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("unknowns = %v, want %v", got, want)
+	}
+}
+
+func TestHandleUnknowns_KeptTmpDirectoryAndNoOtherUnknownsDoesNotPrompt(t *testing.T) {
+	root := t.TempDir()
+	tmpFile := filepath.Join(root, ".agent-layer", "tmp", "scratch.log")
+	if err := os.MkdirAll(filepath.Dir(tmpFile), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(tmpFile, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write tmp file: %v", err)
+	}
+	keepPath := filepath.Join(root, ".agent-layer", UpgradeKeepListFileName)
+	if err := os.WriteFile(keepPath, []byte(".agent-layer/tmp\n"), 0o600); err != nil {
+		t.Fatalf("write keep list: %v", err)
+	}
+
+	inst := &installer{
+		root:      root,
+		overwrite: true,
+		sys:       RealSystem{},
+		prompter: PromptFuncs{
+			SelectUnknownsToKeepFunc: func([]string) ([]string, error) {
+				t.Fatal("keep selection should not be prompted when tmp is already kept")
+				return nil, nil
+			},
+			DeleteUnknownAllFunc: func([]string) (bool, error) {
+				t.Fatal("bulk deletion should not be prompted when tmp is already kept")
+				return false, nil
+			},
+			DeleteUnknownTmpAllFunc: func([]string) (bool, error) {
+				t.Fatal("tmp deletion should not be prompted when tmp is already kept")
+				return true, nil
+			},
+			DeleteUnknownFunc: func(string) (bool, error) {
+				t.Fatal("per-path deletion should not be prompted when tmp is already kept")
+				return false, nil
+			},
+		},
+	}
+	if err := inst.handleUnknowns(); err != nil {
+		t.Fatalf("handleUnknowns: %v", err)
+	}
+	if _, err := os.Stat(tmpFile); err != nil {
+		t.Fatalf("kept tmp file was removed: %v", err)
+	}
+}
+
+func TestHandleUnknowns_KeptTmpDirectorySkipsTmpPrompt(t *testing.T) {
+	inst, tmpFile, otherFile := setupTmpAndOtherUnknowns(t)
+	keepPath := filepath.Join(inst.root, ".agent-layer", UpgradeKeepListFileName)
+	if err := os.WriteFile(keepPath, []byte(".agent-layer/tmp\n"), 0o600); err != nil {
+		t.Fatalf("write keep list: %v", err)
+	}
+
+	var keepOptions []string
+	inst.prompter = PromptFuncs{
+		SelectUnknownsToKeepFunc: func(paths []string) ([]string, error) {
+			keepOptions = append([]string(nil), paths...)
+			return nil, nil
+		},
+		DeleteUnknownAllFunc: func([]string) (bool, error) { return false, nil },
+		DeleteUnknownTmpAllFunc: func([]string) (bool, error) {
+			t.Fatal("kept tmp directory should not prompt for tmp deletion")
+			return true, nil
+		},
+		DeleteUnknownFunc: func(string) (bool, error) { return false, nil },
+	}
+	if err := inst.handleUnknowns(); err != nil {
+		t.Fatalf("handleUnknowns: %v", err)
+	}
+	if want := []string{".agent-layer/stray.txt"}; !reflect.DeepEqual(keepOptions, want) {
+		t.Fatalf("keep options = %v, want %v", keepOptions, want)
+	}
+	if _, err := os.Stat(tmpFile); err != nil {
+		t.Fatalf("kept tmp file was removed: %v", err)
+	}
+	if _, err := os.Stat(otherFile); err != nil {
+		t.Fatalf("non-tmp unknown should remain when deletion is declined: %v", err)
+	}
+}
+
+func TestHandleUnknowns_KeepListOffersTmpLastEvenWhenAlphabeticallyEarlier(t *testing.T) {
+	root := t.TempDir()
+	zzz := filepath.Join(root, ".agent-layer", "zzz.txt")
+	if err := os.MkdirAll(filepath.Dir(zzz), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(zzz, []byte("local\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	var keepOptions []string
+	inst := &installer{
+		root:      root,
+		overwrite: true,
+		sys:       RealSystem{},
+		prompter: PromptFuncs{
+			SelectUnknownsToKeepFunc: func(paths []string) ([]string, error) {
+				keepOptions = append([]string(nil), paths...)
+				return nil, nil
+			},
+			DeleteUnknownAllFunc: func([]string) (bool, error) { return false, nil },
+			DeleteUnknownFunc:    func(string) (bool, error) { return false, nil },
+		},
+	}
+	if err := inst.handleUnknowns(); err != nil {
+		t.Fatalf("handleUnknowns: %v", err)
+	}
+	if want := []string{".agent-layer/zzz.txt", ".agent-layer/tmp"}; !reflect.DeepEqual(keepOptions, want) {
+		t.Fatalf("keep options = %v, want tmp last, even though it sorts before zzz.txt", keepOptions)
+	}
+}
+
+func TestHandleUnknowns_SelectingTmpKeepPathSkipsTmpPrompt(t *testing.T) {
+	inst, tmpFile, otherFile := setupTmpAndOtherUnknowns(t)
+
+	var keepOptions []string
+	inst.prompter = PromptFuncs{
+		SelectUnknownsToKeepFunc: func(paths []string) ([]string, error) {
+			keepOptions = append([]string(nil), paths...)
+			return []string{".agent-layer/tmp"}, nil
+		},
+		DeleteUnknownAllFunc: func([]string) (bool, error) { return false, nil },
+		DeleteUnknownTmpAllFunc: func([]string) (bool, error) {
+			t.Fatal("selecting .agent-layer/tmp should skip the tmp deletion prompt")
+			return true, nil
+		},
+		DeleteUnknownFunc: func(string) (bool, error) { return false, nil },
+	}
+	if err := inst.handleUnknowns(); err != nil {
+		t.Fatalf("handleUnknowns: %v", err)
+	}
+	if want := []string{".agent-layer/stray.txt", ".agent-layer/tmp"}; !reflect.DeepEqual(keepOptions, want) {
+		t.Fatalf("keep options = %v, want %v", keepOptions, want)
+	}
+	if _, err := os.Stat(tmpFile); err != nil {
+		t.Fatalf("tmp file was removed after keeping .agent-layer/tmp: %v", err)
+	}
+	if _, err := os.Stat(otherFile); err != nil {
+		t.Fatalf("non-tmp unknown should remain when deletion is declined: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(inst.root, ".agent-layer", UpgradeKeepListFileName)) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read keep list: %v", err)
+	}
+	if got, want := string(data), ".agent-layer/tmp\n"; got != want {
+		t.Fatalf("keep list = %q, want %q", got, want)
+	}
+}
+
+func TestHandleUnknowns_OnlyTmpFiles_OffersTmpDirectoryForKeepList(t *testing.T) {
+	root := t.TempDir()
+	tmpFile := filepath.Join(root, ".agent-layer", "tmp", "scratch.log")
+	if err := os.MkdirAll(filepath.Dir(tmpFile), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(tmpFile, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write tmp file: %v", err)
+	}
+
+	var keepOptions []string
+	inst := &installer{
+		root:      root,
+		overwrite: true,
+		sys:       RealSystem{},
+		prompter: PromptFuncs{
+			SelectUnknownsToKeepFunc: func(paths []string) ([]string, error) {
+				keepOptions = append([]string(nil), paths...)
+				return []string{".agent-layer/tmp"}, nil
+			},
+			DeleteUnknownAllFunc: func([]string) (bool, error) {
+				t.Fatal("non-tmp deletion should not run when only tmp is present and kept")
+				return false, nil
+			},
+			DeleteUnknownTmpAllFunc: func([]string) (bool, error) {
+				t.Fatal("keeping .agent-layer/tmp should skip the tmp deletion prompt")
+				return true, nil
+			},
+			DeleteUnknownFunc: func(string) (bool, error) {
+				t.Fatal("per-file deletion should not run when only tmp is present and kept")
+				return false, nil
+			},
+		},
+	}
+	if err := inst.handleUnknowns(); err != nil {
+		t.Fatalf("handleUnknowns: %v", err)
+	}
+	if want := []string{".agent-layer/tmp"}; !reflect.DeepEqual(keepOptions, want) {
+		t.Fatalf("keep options = %v, want %v", keepOptions, want)
+	}
+	if _, err := os.Stat(tmpFile); err != nil {
+		t.Fatalf("tmp file was removed: %v", err)
 	}
 }
 
