@@ -127,8 +127,21 @@ func TestBuildUpgradePrompter_SelectUnknownsToKeepInteractive(t *testing.T) {
 	if !reflect.DeepEqual(ui.options, paths) || ui.title != messages.UpgradeKeepListSelectTitle {
 		t.Fatalf("UI received title %q and options %v", ui.title, ui.options)
 	}
-	if !strings.Contains(out.String(), "Found 2 unknown paths eligible") {
-		t.Fatalf("output did not describe keep-list candidates: %q", out.String())
+	printed := out.String()
+	if !strings.Contains(printed, "Found 2 unknown paths eligible") {
+		t.Fatalf("output did not describe keep-list candidates: %q", printed)
+	}
+	// The candidate paths must be listed before the yes/no question so the
+	// user can decide with the actual list in view.
+	promptIndex := strings.Index(printed, messages.UpgradeAddToKeepListPrompt)
+	if promptIndex < 0 {
+		t.Fatalf("keep-list question missing from output: %q", printed)
+	}
+	for _, path := range paths {
+		pathIndex := strings.Index(printed, path)
+		if pathIndex < 0 || pathIndex > promptIndex {
+			t.Fatalf("path %q was not listed before the keep-list question: %q", path, printed)
+		}
 	}
 }
 
