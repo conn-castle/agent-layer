@@ -2,6 +2,10 @@
 
 Releases are designed to be predictable and verifiable: the same tag should always produce the same artifacts, checksums, and docs. This section documents the exact steps so the release pipeline remains auditable and repeatable.
 
+## Required version approval
+
+Before changing any release-versioned file, creating or pushing a release tag, dispatching a release workflow, or publishing a release, obtain the user's explicit approval of the exact `vX.Y.Z` version in the current conversation. A general request such as "release" authorizes assessment of release readiness only. It does not authorize choosing a version, and the operator must not infer major, minor, or patch from the changelog or commit history.
+
 ## Preconditions (local repo state)
 - On `main` and up to date with `origin/main`.
 - Clean working tree (`git status --porcelain` is empty).

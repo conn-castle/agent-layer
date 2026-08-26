@@ -251,6 +251,8 @@ The release workflow runs this target on macOS before importing signing credenti
 
 ### Release
 
+Approval gate: before changing release-versioned files, creating or pushing a release tag, dispatching a release workflow, or publishing, obtain the user's explicit approval of the exact `vX.Y.Z` version in the current conversation. A general request such as "release" authorizes readiness assessment only; do not infer major, minor, or patch.
+
 - Install the pinned release vulnerability scanner
 ```bash
 make release-tools
