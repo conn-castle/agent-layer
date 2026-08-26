@@ -156,9 +156,16 @@ func executeDispatch(request dispatchExecution) error {
 			return finishDispatchFailure(request, err)
 		}
 		if request.Target.Name == AgentAntigravity {
-			id, logErr := antigravitySessionID(command.LogPath)
+			logID, logErr := antigravitySessionID(command.LogPath)
 			if logErr != nil {
 				return finishDispatchFailure(request, wrapExitError(ExitTargetFailure, "read Antigravity dispatch log", logErr))
+			}
+			id := result.SessionID
+			if logID != "" {
+				if id != "" && logID != id {
+					return finishDispatchFailure(request, exitError(ExitTargetFailure, "Antigravity stream and diagnostic log returned different provider conversation IDs"))
+				}
+				id = logID
 			}
 			if id == "" {
 				result.NotResumable = true
@@ -361,8 +368,12 @@ func prepareFresh(project *config.ProjectConfig, target targetMeta, opts runOpti
 	if strings.TrimSpace(opts.Model) != "" && !agentoptions.Supports(target.Name, agentoptions.KindModel) {
 		return targetMeta{}, "", nil, exitError(ExitUsage, fmt.Sprintf("%s does not support --model", target.Name))
 	}
-	if strings.TrimSpace(opts.ReasoningEffort) != "" && !agentoptions.Supports(target.Name, agentoptions.KindReasoningEffort) {
-		return targetMeta{}, "", nil, exitError(ExitUsage, fmt.Sprintf("%s does not support --reasoning-effort", target.Name))
+	if effort := strings.TrimSpace(opts.ReasoningEffort); effort != "" && !agentoptions.Supports(target.Name, agentoptions.KindReasoningEffort) {
+		// Antigravity has no --reasoning-effort flag. Benchmark children still
+		// carry the thinking-tier identity encoded in the exact model slug.
+		if !antigravityEffortMatchesSlug(target.Name, opts.Model, effort) {
+			return targetMeta{}, "", nil, exitError(ExitUsage, fmt.Sprintf("%s does not support --reasoning-effort", target.Name))
+		}
 	}
 	if !targetEnabled(project.Config, target.Name) {
 		return targetMeta{}, "", nil, exitError(ExitConfig, fmt.Sprintf("`al dispatch` target %s is disabled in config", target.Name))

@@ -17,8 +17,13 @@ import (
 )
 
 const (
-	codexMCPPreflightEvidence    = "codex-mcp-preflight.json"
-	dispatchOptionsPreflightFile = "dispatch-options-preflight.json"
+	codexMCPPreflightEvidence       = "codex-mcp-preflight.json"
+	antigravityMCPPreflightEvidence = "antigravity-mcp-preflight.json"
+	grokMCPPreflightEvidence        = "grok-mcp-preflight.json"
+	dispatchOptionsPreflightFile    = "dispatch-options-preflight.json"
+	stdoutArtifactExtension         = ".stdout"
+	shortContextBand                = "short_context"
+	longContextBand                 = "long_context"
 )
 
 type pierTaskResult struct {
@@ -89,7 +94,7 @@ func normalizePier(stage string, request ExecutionRequest) (AttemptResult, error
 	if err != nil {
 		return AttemptResult{}, err
 	}
-	if request.Model.Adapter == adapterCodex || request.Arm == ArmTreatment {
+	if request.Model.Adapter == adapterCodex || request.Model.Adapter == adapterAntigravity || request.Model.Adapter == adapterGrok || request.Arm == ArmTreatment {
 		var costs treatmentCost
 		var costErr error
 		switch request.Model.Adapter {
@@ -102,6 +107,16 @@ func normalizePier(stage string, request ExecutionRequest) (AttemptResult, error
 		case adapterClaudeCode:
 			costs, costErr = treatmentClaudeCost(stage, raw.AgentResult.CostUSD)
 			result.CostKind = costKindProviderTotal
+		case adapterAntigravity, adapterGrok:
+			costs, costErr = streamProviderAttemptCost(stage, request.Model.Adapter, request.Model.RuntimeIdentifier)
+			if costs.providerReported {
+				result.CostKind = costKindProviderTotal
+			} else {
+				result.CostKind = costKindProviderUsage
+			}
+			if !costs.providerReported && costs.total.minimum != costs.total.maximum {
+				result.CostKind += "-range"
+			}
 		default:
 			costErr = fmt.Errorf("unsupported treatment cost provider %q", request.Model.Adapter)
 		}
@@ -185,10 +200,11 @@ func validatePierTreatmentPreflight(stage string, request ExecutionRequest) erro
 		return fmt.Errorf("treatment runtime preflight failed: %s", raw.ExceptionInfo)
 	}
 	if request.Bundle != nil && request.Bundle.Manifest.Mode == TreatmentInstructionsAndSkills {
-		required := codexMCPPreflightEvidence
-		if request.Model.Adapter == adapterClaudeCode {
-			required = "claude-mcp-preflight.txt"
+		provider, err := benchmarkProvider(request.Model.Adapter)
+		if err != nil {
+			return err
 		}
+		required := provider.PreflightEvidence
 		evidenceCounts := map[string]int{
 			required:                     0,
 			dispatchOptionsPreflightFile: 0,
@@ -334,9 +350,7 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 			return walkErr
 		}
 		if !entry.IsDir() && filepath.Base(filepath.Dir(path)) == dispatchEvidenceDir &&
-			filepath.Ext(path) == ".json" &&
-			entry.Name() != codexMCPPreflightEvidence &&
-			entry.Name() != dispatchOptionsPreflightFile {
+			filepath.Ext(path) == ".json" && !isDispatchPreflightEvidence(entry.Name()) {
 			paths = append(paths, path)
 		}
 		return nil
@@ -368,7 +382,7 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 		if err := json.Unmarshal(data, &record); err != nil {
 			return false, fmt.Errorf("decode treatment dispatch evidence: %w", err)
 		}
-		if record.ID == "" || record.State != "completed" {
+		if record.ID == "" || record.State != dispatchRunStateCompleted {
 			return false, nil
 		}
 		if seenIDs[record.ID] {
@@ -467,10 +481,11 @@ func (cost *costRange) add(other costRange) {
 }
 
 type treatmentCost struct {
-	total       costRange
-	coordinator costRange
-	child       costRange
-	invocations int
+	total            costRange
+	coordinator      costRange
+	child            costRange
+	invocations      int
+	providerReported bool
 }
 
 func codexAttemptCost(stage string) (treatmentCost, error) {
@@ -555,7 +570,7 @@ func treatmentClaudeCost(stage string, coordinator *float64) (treatmentCost, err
 			return walkErr
 		}
 		if !entry.IsDir() && filepath.Base(filepath.Dir(path)) == dispatchEvidenceDir &&
-			filepath.Ext(path) == ".stdout" {
+			filepath.Ext(path) == stdoutArtifactExtension {
 			paths = append(paths, path)
 		}
 		return nil
@@ -592,6 +607,286 @@ func treatmentClaudeCost(stage string, coordinator *float64) (treatmentCost, err
 	}
 	result.total = result.coordinator
 	result.total.add(result.child)
+	return result, nil
+}
+
+// streamProviderAttemptCost prices the raw, bounded provider streams emitted
+// by the custom Pier adapters.  It intentionally does not use a CLI account or
+// subscription total: Antigravity reports usage rather than subscription cost,
+// and Grok is reconstructed from the provider's request usage records.
+func streamProviderAttemptCost(stage, provider, model string) (treatmentCost, error) {
+	pricing, err := loadBenchmarkPricing()
+	if err != nil {
+		return treatmentCost{}, err
+	}
+	if _, ok := pricing.Providers[provider][model]; !ok {
+		return treatmentCost{}, fmt.Errorf("%s usage has no pricing for model %q", provider, model)
+	}
+	dispatch, err := dispatchProviderSessions(stage)
+	if err != nil {
+		return treatmentCost{}, err
+	}
+	var paths []string
+	err = filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !entry.Type().IsRegular() {
+			return nil
+		}
+		name := entry.Name()
+		inAgentEvidence := strings.Contains(filepath.ToSlash(path), "/agent/")
+		inDispatchEvidence := filepath.Base(filepath.Dir(path)) == dispatchEvidenceDir
+		if (provider == adapterGrok && ((name == "grok.jsonl" && inAgentEvidence) || (filepath.Ext(name) == stdoutArtifactExtension && inDispatchEvidence))) ||
+			(provider == adapterAntigravity && ((name == "antigravity.jsonl" && inAgentEvidence) || (filepath.Ext(name) == stdoutArtifactExtension && inDispatchEvidence))) {
+			paths = append(paths, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return treatmentCost{}, fmt.Errorf("find %s usage evidence: %w", provider, err)
+	}
+	if len(paths) == 0 {
+		return treatmentCost{}, fmt.Errorf("benchmark attempt has no %s provider usage evidence", provider)
+	}
+	result := treatmentCost{providerReported: provider == adapterGrok}
+	seen := map[string]string{}
+	coordinatorSessions := 0
+	for _, path := range paths {
+		id, usage, reportedCost, parseErr := parseStreamProviderUsage(path, provider)
+		if parseErr != nil {
+			return treatmentCost{}, parseErr
+		}
+		encoded, marshalErr := json.Marshal(struct {
+			Usage           []streamTokenUsage `json:"usage"`
+			ReportedCostUSD *float64           `json:"reported_cost_usd,omitempty"`
+		}{usage, reportedCost})
+		if marshalErr != nil {
+			return treatmentCost{}, fmt.Errorf("encode %s provider usage %q: %w", provider, id, marshalErr)
+		}
+		if previous, found := seen[id]; found {
+			// Pier can preserve a coordinator stream in its native location and
+			// copy the same artifact as <run-id>.stdout. Identical bytes are one
+			// session, while divergent evidence is an attribution failure.
+			if previous == string(encoded) {
+				continue
+			}
+			return treatmentCost{}, fmt.Errorf("%s provider usage session %q is duplicated with different usage", provider, id)
+		}
+		seen[id] = string(encoded)
+		child := false
+		if records, dispatched := dispatch[id]; dispatched {
+			if len(records) != 1 {
+				return treatmentCost{}, fmt.Errorf("%s dispatch session %q has %d records; expected exactly one", provider, id, len(records))
+			}
+			if records[0].state != dispatchRunStateCompleted {
+				return treatmentCost{}, fmt.Errorf("%s dispatch session %q is %q, not completed", provider, id, records[0].state)
+			}
+			child = true
+		} else {
+			coordinatorSessions++
+		}
+		if reportedCost != nil {
+			if *reportedCost < 0 || math.IsNaN(*reportedCost) || math.IsInf(*reportedCost, 0) {
+				return treatmentCost{}, fmt.Errorf("%s provider usage %q has invalid reported cost", provider, id)
+			}
+			cost := costRange{minimum: *reportedCost, maximum: *reportedCost}
+			result.total.add(cost)
+			if child {
+				result.child.add(cost)
+			} else {
+				result.coordinator.add(cost)
+			}
+			result.invocations += len(usage)
+			continue
+		}
+		result.providerReported = false
+		for _, item := range usage {
+			cost, priceErr := priceStreamRequest(filepath.Base(path), provider, model, item, pricing)
+			if priceErr != nil {
+				return treatmentCost{}, priceErr
+			}
+			result.total.add(cost)
+			if child {
+				result.child.add(cost)
+			} else {
+				result.coordinator.add(cost)
+			}
+			result.invocations++
+		}
+	}
+	for id := range dispatch {
+		if _, found := seen[id]; !found {
+			return treatmentCost{}, fmt.Errorf("%s dispatch session %q has no captured provider usage evidence", provider, id)
+		}
+	}
+	if coordinatorSessions != 1 {
+		return treatmentCost{}, fmt.Errorf("benchmark attempt has %d %s coordinator usage sessions; expected exactly one", coordinatorSessions, provider)
+	}
+	if result.invocations == 0 {
+		return treatmentCost{}, fmt.Errorf("benchmark attempt has no priced %s requests", provider)
+	}
+	return result, nil
+}
+
+type streamTokenUsage struct {
+	InputTokens          *int `json:"input_tokens"`
+	OutputTokens         *int `json:"output_tokens"`
+	CacheReadInputTokens *int `json:"cache_read_input_tokens"`
+	CacheCreationTokens  *int `json:"cache_creation_input_tokens"`
+	ReasoningTokens      *int `json:"reasoning_tokens"`
+}
+
+func parseStreamProviderUsage(path, provider string) (string, []streamTokenUsage, *float64, error) {
+	file, err := os.Open(path) // #nosec G304 -- path is discovered inside the restricted stage.
+	if err != nil {
+		return "", nil, nil, err
+	}
+	defer func() { _ = file.Close() }()
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	var id string
+	var usage []streamTokenUsage
+	var reportedCost *float64
+	terminals := 0
+	for scanner.Scan() {
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+		var event struct {
+			Event          string           `json:"event"`
+			Type           string           `json:"type"`
+			SessionID      string           `json:"sessionId"`
+			SessionIDSnake string           `json:"session_id"`
+			StopReason     string           `json:"stopReason"`
+			TotalCostUSD   *float64         `json:"total_cost_usd"`
+			Usage          streamTokenUsage `json:"usage"`
+			Result         struct {
+				ConversationID string `json:"conversation_id"`
+				Status         string `json:"status"`
+				Usage          struct {
+					InputTokens     *int `json:"input_tokens"`
+					OutputTokens    *int `json:"output_tokens"`
+					ThinkingTokens  *int `json:"thinking_tokens"`
+					CacheReadTokens *int `json:"cache_read_tokens"`
+				} `json:"usage"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(line, &event); err != nil {
+			return "", nil, nil, fmt.Errorf("decode %s usage %s: %w", provider, filepath.Base(path), err)
+		}
+		switch provider {
+		case adapterGrok:
+			if terminals > 0 {
+				return "", nil, nil, fmt.Errorf("grok usage %s has records after the terminal end event", filepath.Base(path))
+			}
+			if event.Type == "usage" {
+				usage = append(usage, event.Usage)
+			}
+			if event.Type == "end" {
+				terminals++
+				reportedCost = event.TotalCostUSD
+				id = event.SessionID
+				if id == "" {
+					id = event.SessionIDSnake
+				}
+				if event.StopReason != "end_turn" {
+					return "", nil, nil, fmt.Errorf("grok usage %s ended with %q", filepath.Base(path), event.StopReason)
+				}
+			}
+		case adapterAntigravity:
+			if event.Event == "result" {
+				terminals++
+				id = event.Result.ConversationID
+				if event.Result.Status != "SUCCESS" {
+					return "", nil, nil, fmt.Errorf("antigravity usage %s ended with %q", filepath.Base(path), event.Result.Status)
+				}
+				zero := 0
+				usage = append(usage, streamTokenUsage{
+					InputTokens:          event.Result.Usage.InputTokens,
+					OutputTokens:         event.Result.Usage.OutputTokens,
+					CacheReadInputTokens: event.Result.Usage.CacheReadTokens,
+					CacheCreationTokens:  &zero,
+					ReasoningTokens:      event.Result.Usage.ThinkingTokens,
+				})
+			}
+		default:
+			return "", nil, nil, fmt.Errorf("unsupported stream cost provider %q", provider)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", nil, nil, err
+	}
+	if terminals != 1 || id == "" || len(usage) == 0 {
+		return "", nil, nil, fmt.Errorf("%s usage %s has no single successful terminal event with usage", provider, filepath.Base(path))
+	}
+	return id, usage, reportedCost, nil
+}
+
+func priceStreamRequest(label, provider, model string, usage streamTokenUsage, pricing benchmarkPricing) (costRange, error) {
+	entry, ok := pricing.Providers[provider][model]
+	if !ok {
+		return costRange{}, fmt.Errorf("%s usage %s has no pricing for model %q", provider, label, model)
+	}
+	if usage.InputTokens == nil || usage.OutputTokens == nil || *usage.InputTokens < 0 || *usage.OutputTokens < 0 {
+		return costRange{}, fmt.Errorf("%s usage %s has incomplete request-level token evidence", provider, label)
+	}
+	cacheRead, creation, contextKnown := 0, 0, true
+	if usage.CacheReadInputTokens == nil {
+		contextKnown = false
+	} else {
+		cacheRead = *usage.CacheReadInputTokens
+	}
+	if usage.CacheCreationTokens == nil {
+		contextKnown = false
+	} else {
+		creation = *usage.CacheCreationTokens
+	}
+	if cacheRead < 0 || creation < 0 {
+		return costRange{}, fmt.Errorf("%s usage %s has invalid cache token counts", provider, label)
+	}
+	if usage.ReasoningTokens != nil && (*usage.ReasoningTokens < 0 || *usage.ReasoningTokens > *usage.OutputTokens) {
+		return costRange{}, fmt.Errorf("%s usage %s has invalid reasoning tokens", provider, label)
+	}
+	ordinaryInput := *usage.InputTokens
+	if provider == adapterAntigravity {
+		if cacheRead > ordinaryInput {
+			return costRange{}, fmt.Errorf("%s usage %s has more cached than total input tokens", provider, label)
+		}
+		ordinaryInput -= cacheRead
+	}
+	// Grok reports ordinary input and cache reads separately; Antigravity's
+	// input total includes its cache reads. Cache
+	// creation is charged at the ordinary-input rate; it is not subtracted from
+	// input and it is never double counted. Their documented reasoning usage is
+	// a subset of output, so it is validated but not priced separately.
+	return priceUsageBands(provider, label, entry, ordinaryInput, cacheRead, creation, *usage.OutputTokens, contextKnown, pricing.UnitTokens)
+}
+
+func priceUsageBands(provider, label string, entry pricingModel, ordinaryInput, cached, creation, output int, contextKnown bool, unit int) (costRange, error) {
+	bands := []string{shortContextBand}
+	if entry.LongContextThresholdTokens > 0 {
+		if !contextKnown {
+			bands = []string{shortContextBand, longContextBand}
+		} else if ordinaryInput+cached+creation > entry.LongContextThresholdTokens {
+			bands = []string{longContextBand}
+		}
+	}
+	result := costRange{minimum: math.Inf(1), maximum: math.Inf(-1)}
+	for _, band := range bands {
+		rates := entry.Rates[band]
+		inputRate, inputOK := rates["uncached_input_tokens"]
+		cacheRate, cacheOK := rates["cache_read_input_tokens"]
+		creationRate, creationOK := rates["cache_creation_input_tokens"]
+		outputRate, outputOK := rates["output_tokens"]
+		if !inputOK || !cacheOK || !creationOK || !outputOK {
+			return costRange{}, fmt.Errorf("%s usage %s has incomplete %s pricing", provider, label, band)
+		}
+		value := (float64(ordinaryInput)*inputRate + float64(cached)*cacheRate + float64(creation)*creationRate + float64(output)*outputRate) / float64(unit)
+		result.minimum = math.Min(result.minimum, value)
+		result.maximum = math.Max(result.maximum, value)
+	}
 	return result, nil
 }
 
@@ -632,11 +927,16 @@ func parseClaudeSessionCost(path string) (string, float64, error) {
 }
 
 type benchmarkPricing struct {
-	UnitTokens int `yaml:"unit_tokens"`
-	Providers  map[string]map[string]struct {
-		LongContextThresholdTokens int                           `yaml:"long_context_threshold_tokens"`
-		Rates                      map[string]map[string]float64 `yaml:"rates"`
-	} `yaml:"providers"`
+	UnitTokens int                                `yaml:"unit_tokens"`
+	Providers  map[string]map[string]pricingModel `yaml:"providers"`
+}
+
+type pricingModel struct {
+	EffectiveFrom              string                        `yaml:"effective_from"`
+	SourceURL                  string                        `yaml:"source_url"`
+	ReasoningOutput            string                        `yaml:"reasoning_output"`
+	LongContextThresholdTokens int                           `yaml:"long_context_threshold_tokens"`
+	Rates                      map[string]map[string]float64 `yaml:"rates"`
 }
 
 func loadBenchmarkPricing() (benchmarkPricing, error) {
@@ -648,8 +948,16 @@ func loadBenchmarkPricing() (benchmarkPricing, error) {
 	if err := yaml.Unmarshal(data, &pricing); err != nil {
 		return benchmarkPricing{}, fmt.Errorf("decode embedded benchmark pricing: %w", err)
 	}
-	if pricing.UnitTokens != 1_000_000 || len(pricing.Providers[adapterCodex]) == 0 {
+	if pricing.UnitTokens != 1_000_000 || len(pricing.Providers[adapterCodex]) == 0 ||
+		len(pricing.Providers[adapterGrok]) == 0 || len(pricing.Providers[adapterAntigravity]) == 0 {
 		return benchmarkPricing{}, fmt.Errorf("embedded benchmark pricing is incomplete")
+	}
+	for provider, models := range pricing.Providers {
+		for model, entry := range models {
+			if entry.EffectiveFrom == "" || entry.SourceURL == "" || entry.ReasoningOutput != "included_in_output" {
+				return benchmarkPricing{}, fmt.Errorf("embedded benchmark pricing %s/%s is missing source or reasoning provenance", provider, model)
+			}
+		}
 	}
 	return pricing, nil
 }
@@ -666,7 +974,7 @@ func dispatchProviderSessions(stage string) (map[string][]dispatchProviderSessio
 			return walkErr
 		}
 		if entry.IsDir() || filepath.Base(filepath.Dir(path)) != dispatchEvidenceDir ||
-			filepath.Ext(path) != ".json" {
+			filepath.Ext(path) != ".json" || isDispatchPreflightEvidence(entry.Name()) {
 			return nil
 		}
 		data, err := os.ReadFile(path) // #nosec G122,G304 -- path was discovered below the restricted attempt stage.
@@ -691,6 +999,15 @@ func dispatchProviderSessions(stage string) (map[string][]dispatchProviderSessio
 		return nil
 	})
 	return sessions, err
+}
+
+func isDispatchPreflightEvidence(name string) bool {
+	switch name {
+	case codexMCPPreflightEvidence, antigravityMCPPreflightEvidence, grokMCPPreflightEvidence, dispatchOptionsPreflightFile:
+		return true
+	default:
+		return false
+	}
 }
 
 func dispatchRecordsProveCallerCancellation(records []dispatchProviderSession) bool {

@@ -62,9 +62,13 @@ const (
 	thoughtActivity               = "thought"
 	grokToolUpdateType            = "tool_call_update"
 	grokToolFailedStatus          = "failed"
+	grokUsageEventType            = "usage"
 	grokToolDeniedPrefix          = "Tool `"
 	grokPermissionDenied          = " was not executed: Denied by permission policy:"
 	grokToolUpdateTruncatedNotice = "\n\n[Agent Layer truncated this Grok tool update after retaining 512 bytes.]\n"
+	antigravityEffortLow          = "low"
+	antigravityEffortMedium       = "medium"
+	antigravityEffortHigh         = "high"
 )
 
 // codexDispatchSandboxMode resolves the Codex sandbox for a non-YOLO dispatch.
@@ -127,6 +131,10 @@ type providerEvent struct {
 	Answer    string
 	Activity  string
 	Reason    string
+	// Usage is retained in provider.stdout for benchmark attribution.  The
+	// reducer keeps it visible to structured consumers rather than discarding
+	// the only request-level billing evidence.
+	Usage map[string]any
 }
 
 const (
@@ -144,7 +152,7 @@ const (
 var supportedProviderVersions = map[string]string{
 	AgentClaude:      claudeTestedVersion,
 	AgentCodex:       "0.144.1",
-	AgentAntigravity: "1.1.1",
+	AgentAntigravity: "1.1.21",
 	AgentGrok:        grok.SupportedVersion,
 }
 
@@ -371,12 +379,29 @@ func buildProviderCommand(
 		if mode == dispatchModeResume {
 			args = append(args, "--conversation", sessionID)
 		}
+		// Thinking-tier slugs, not session TargetPinned, select stream-json.
+		// TargetPinned is set on every durable resume, including ordinary
+		// display-name conversations that must keep historical plain output.
+		if derivedEffort, ok := antigravitySlugEffort(resolvedModel); ok {
+			configured := strings.TrimSpace(effort)
+			if configured != "" && configured != derivedEffort {
+				return providerCommand{}, exitError(ExitConfig, fmt.Sprintf("Antigravity model %q requires reasoning effort %q, got %q", resolvedModel, derivedEffort, configured))
+			}
+			// The exact benchmark model slug selects its thinking tier. Passing a
+			// second effort flag risks contradictory client behavior.
+			command.Effort = derivedEffort
+			args = append(args, "--output-format", "stream-json")
+			command.Plain = false
+			command.Structured = true
+		} else {
+			command.Effort = strings.TrimSpace(effort)
+			command.Plain = true
+		}
 		args = append(args, "--print-timeout", AntigravityPrintTimeout, "--print", string(prompt))
 		command.Args = args
 		command.Env = antigravity.ConfigureEnvironment(env)
 		command.SessionID = sessionID
 		command.LogPath = logPath
-		command.Plain = true
 	case AgentGrok:
 		if mode == dispatchModeFresh && sessionID == "" {
 			return providerCommand{}, exitError(ExitConfig, "new Grok dispatch requires a caller-assigned session ID")
@@ -438,6 +463,23 @@ func buildProviderCommand(
 		return providerCommand{}, exitError(ExitUsage, fmt.Sprintf("unsupported dispatch provider %q", target.Name))
 	}
 	return command, nil
+}
+
+func antigravitySlugEffort(model string) (string, bool) {
+	for _, effort := range []string{antigravityEffortLow, antigravityEffortMedium, antigravityEffortHigh} {
+		if strings.HasSuffix(strings.TrimSpace(model), "-"+effort) {
+			return effort, true
+		}
+	}
+	return "", false
+}
+
+func antigravityEffortMatchesSlug(agent, model, effort string) bool {
+	if agent != AgentAntigravity {
+		return false
+	}
+	derived, ok := antigravitySlugEffort(model)
+	return ok && derived == strings.ToLower(strings.TrimSpace(effort))
 }
 
 func reduceClaudeEvent(expected string, value map[string]any) []providerEvent {
@@ -547,7 +589,7 @@ func appendRetainedGrokText(dst *strings.Builder, chunk string) {
 	dst.WriteString(chunk)
 }
 
-func reduceGrokEvent(expected string, value map[string]any, textAccumulator *strings.Builder) []providerEvent {
+func reduceGrokEvent(expected string, value map[string]any, textAccumulator *strings.Builder, terminalSeen *bool) []providerEvent {
 	eventType, _ := value[jsonTypeKey].(string)
 	switch eventType {
 	case thoughtActivity:
@@ -558,7 +600,10 @@ func reduceGrokEvent(expected string, value map[string]any, textAccumulator *str
 			appendRetainedGrokText(textAccumulator, chunk)
 		}
 		return []providerEvent{{Kind: eventProgress, Activity: textDeltaActivity}}
-	case "usage":
+	case grokUsageEventType:
+		// The selective reader retains usage and the raw provider.stdout capture
+		// keeps the complete record for benchmark attribution.  It is not a UI
+		// lifecycle event, so ordinary dispatch output remains unchanged.
 		return nil
 	case grokToolUpdateType:
 		if status, _ := value["status"].(string); status == grokToolFailedStatus {
@@ -572,6 +617,12 @@ func reduceGrokEvent(expected string, value map[string]any, textAccumulator *str
 		}
 		return []providerEvent{{Kind: eventProgress, Activity: grokToolUpdateType}}
 	case "end":
+		if terminalSeen != nil && *terminalSeen {
+			return []providerEvent{{Kind: eventFailure, Reason: "Grok stream has multiple terminal end events"}}
+		}
+		if terminalSeen != nil {
+			*terminalSeen = true
+		}
 		id, _ := firstStringV013(value, "session_id", "sessionId")
 		if id == "" || id != expected {
 			return []providerEvent{{Kind: eventFailure, Reason: "Grok terminal result did not return the caller-assigned session ID"}}
@@ -608,11 +659,50 @@ func reduceGrokEvent(expected string, value map[string]any, textAccumulator *str
 	return nil
 }
 
+func reduceAntigravityEvent(value map[string]any, terminalSeen *bool) []providerEvent {
+	eventType, _ := value[jsonEventKey].(string)
+	if eventType != "result" {
+		if eventType == "" {
+			return nil
+		}
+		return []providerEvent{{Kind: eventProgress, Activity: eventType}}
+	}
+	if terminalSeen != nil && *terminalSeen {
+		return []providerEvent{{Kind: eventFailure, Reason: "Antigravity stream has multiple terminal result events"}}
+	}
+	if terminalSeen != nil {
+		*terminalSeen = true
+	}
+	result, _ := value[jsonResultKey].(map[string]any)
+	if result == nil {
+		return []providerEvent{{Kind: eventFailure, Reason: "Antigravity terminal result is not an object"}}
+	}
+	status, _ := result[jsonStatusKey].(string)
+	if status != "SUCCESS" {
+		reason := "Antigravity terminal result was unsuccessful"
+		if providerError, _ := firstStringV013(result, "error"); providerError != "" {
+			reason += ": " + providerError
+		}
+		return []providerEvent{{Kind: eventFailure, Reason: reason}}
+	}
+	id, _ := firstStringV013(result, "conversation_id")
+	answer, _ := firstStringV013(result, "response")
+	if id == "" || answer == "" {
+		return []providerEvent{{Kind: eventFailure, Reason: "Antigravity terminal result has no conversation ID or final answer"}}
+	}
+	usage, _ := result[grokUsageEventType].(map[string]any)
+	if usage == nil {
+		return []providerEvent{{Kind: eventFailure, Reason: "Antigravity terminal result has no usage object"}}
+	}
+	return []providerEvent{{Kind: eventSession, SessionID: id}, {Kind: eventAnswer, Answer: answer}, {Kind: eventProgress, Activity: "usage", Usage: usage}, {Kind: eventComplete}}
+}
+
 func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, claudeLineage bool, consume func(providerEvent) error, consumeLineage func(claudeLineageEvidence) error) error {
 	source := bufio.NewReaderSize(io.TeeReader(reader, rawWriter), structuredJSONBufferBytes)
 	parser := newSelectiveJSONReader()
 	normalizer := claudeLineageNormalizer{ignoredTasks: make(map[string]struct{})}
 	var grokAccumulator strings.Builder
+	var grokTerminalSeen, antigravityTerminalSeen bool
 	emitInvalid := func(reason string) error {
 		if !claudeLineage || consumeLineage == nil {
 			return nil
@@ -681,7 +771,9 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 		case AgentCodex:
 			events = reduceCodexEvent(record.Fields)
 		case AgentGrok:
-			events = reduceGrokEvent(expectedSession, record.Fields, &grokAccumulator)
+			events = reduceGrokEvent(expectedSession, record.Fields, &grokAccumulator, &grokTerminalSeen)
+		case AgentAntigravity:
+			events = reduceAntigravityEvent(record.Fields, &antigravityTerminalSeen)
 		default:
 			return fmt.Errorf("unsupported structured dispatch provider %q", agent)
 		}

@@ -203,6 +203,18 @@ func TestStartPreflightStopsBeforeWorkerLaunch(t *testing.T) {
 	})
 	requireDispatchExitCode(t, err, ExitUsage)
 
+	err = Start(StartOptions{
+		Root: root, Agent: AgentAntigravity, Model: "gemini-3.5-flash-low", ReasoningEffort: "high", Prompt: "Review",
+		Env: []string{"PATH=/missing"}, LookPath: alwaysFound, launchWorker: launcher,
+	})
+	requireDispatchExitCode(t, err, ExitUsage)
+
+	err = Start(StartOptions{
+		Root: root, Agent: AgentAntigravity, Model: "gemini-3.5-flash-low", ReasoningEffort: "low", Prompt: "Review",
+		Env: []string{"PATH=/missing"}, LookPath: alwaysFound, launchWorker: launcher,
+	})
+	requireDispatchExitCode(t, err, ExitUnavailable)
+
 	disableAgentInDispatchConfig(t, root, AgentCodex)
 	err = Start(StartOptions{Root: root, Agent: AgentCodex, Prompt: "Review", Env: []string{}, LookPath: alwaysFound, launchWorker: launcher})
 	requireDispatchExitCode(t, err, ExitConfig)

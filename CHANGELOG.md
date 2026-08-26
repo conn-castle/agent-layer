@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+- `al benchmark run` supports pinned Antigravity 1.1.21 and Grok 1.0.5 coordinators, provider-native Agent Layer treatments, structured coordinator/dispatch evidence, and usage-based API-equivalent cost accounting without running a full benchmark during development.
+- Antigravity and Grok benchmark adapters use the same repo-local subscription OAuth boundaries as their Agent Layer clients. Antigravity prefers its repo-local OAuth fallback and otherwise exports only the native keyring OAuth profile into the contained CLI fallback file; Grok stages only `.grok-config/auth.json`.
+
+### Changed
+- Agent Dispatch's tested Antigravity baseline is now 1.1.21 because benchmark child usage requires that release's structured headless output. Older Antigravity releases fail the existing provider-version preflight instead of running under an unevidenced stream contract.
+
 ## v0.17.2 - 2026-08-25
 
 ### Added

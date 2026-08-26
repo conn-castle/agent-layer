@@ -73,6 +73,7 @@ func studyMCPContract(configBytes []byte, source string) (studyMCPPreflight, []s
 		{"antigravity", config.IsAgentEnabled(cfg.Agents.Antigravity.Enabled), cfg.Agents.Antigravity.AgentSpecific},
 		{"claude", config.IsAgentEnabled(cfg.Agents.Claude.Enabled), cfg.Agents.Claude.AgentSpecific},
 		{"codex", config.IsAgentEnabled(cfg.Agents.Codex.Enabled), cfg.Agents.Codex.AgentSpecific},
+		{adapterGrok, config.IsAgentEnabled(cfg.Agents.Grok.Enabled), cfg.Agents.Grok.AgentSpecific},
 	} {
 		if !agent.enabled {
 			continue
@@ -296,8 +297,8 @@ func secretBearingName(name string) bool {
 	}
 	for index := range len(segments) - 1 {
 		if ((segments[index] == "api" || segments[index] == "access") &&
-			(segments[index+1] == "key" || segments[index+1] == "token")) ||
-			(segments[index] == "private" && segments[index+1] == "key" &&
+			(segments[index+1] == credentialKeyName || segments[index+1] == "token")) ||
+			(segments[index] == "private" && segments[index+1] == credentialKeyName &&
 				(index+2 >= len(segments) || (segments[index+2] != "id" && segments[index+2] != "identifier" && segments[index+2] != studyURLNameSegment))) {
 			return true
 		}

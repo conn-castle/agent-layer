@@ -79,6 +79,35 @@ func TestProviderCommandsUseExactProviderContracts(t *testing.T) {
 	} else {
 		requireDispatchExitCode(t, err, ExitUsage)
 	}
+	antigravityCommand, err := buildProviderCommand(antigravityTarget, project, nil, []byte("prompt"), "gemini-3.5-flash-low", "low", false, dispatchModeFresh, runtimeSessionID, run, io.Discard)
+	if err != nil {
+		t.Fatalf("build slug Antigravity command: %v", err)
+	}
+	antigravityArgs := strings.Join(antigravityCommand.Args, " ")
+	if !antigravityCommand.Structured || antigravityCommand.Plain || antigravityCommand.Effort != "low" || !strings.Contains(antigravityArgs, "--model gemini-3.5-flash-low") || !strings.Contains(antigravityArgs, "--output-format stream-json") || strings.Contains(antigravityArgs, "--effort") {
+		t.Fatalf("slug Antigravity command = %#v", antigravityCommand)
+	}
+	conflictRun, err := newDispatchRun(root, AgentAntigravity, supportedProviderVersions[AgentAntigravity], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new Antigravity conflict run: %v", err)
+	}
+	if _, err := buildProviderCommand(antigravityTarget, project, nil, []byte("prompt"), "gemini-3.5-flash-low", "high", false, dispatchModeFresh, runtimeSessionID, conflictRun, io.Discard); err == nil {
+		t.Fatal("slug Antigravity command accepted conflicting effort")
+	} else {
+		requireDispatchExitCode(t, err, ExitConfig)
+	}
+	plainRun, err := newDispatchRun(root, AgentAntigravity, supportedProviderVersions[AgentAntigravity], dispatchModeResume)
+	if err != nil {
+		t.Fatalf("new Antigravity resume run: %v", err)
+	}
+	plainCommand, err := buildProviderCommand(antigravityTarget, project, nil, []byte("prompt"), "Gemini 3.5 Flash (High)", "", true, dispatchModeResume, runtimeSessionID, plainRun, io.Discard)
+	if err != nil {
+		t.Fatalf("build durable display-name Antigravity command: %v", err)
+	}
+	plainArgs := strings.Join(plainCommand.Args, " ")
+	if !plainCommand.Plain || plainCommand.Structured || strings.Contains(plainArgs, "--output-format") {
+		t.Fatalf("durable display-name Antigravity command = %#v", plainCommand)
+	}
 
 	grokTarget, ok := lookupTarget(AgentGrok)
 	if !ok {
@@ -105,6 +134,29 @@ func TestProviderCommandsUseExactProviderContracts(t *testing.T) {
 	promptContent, err := os.ReadFile(filepath.Join(run.Dir, "prompt.txt"))
 	if err != nil || string(promptContent) != "prompt text" {
 		t.Fatalf("Grok prompt file content = %q, %v", promptContent, err)
+	}
+}
+
+func TestAntigravityDispatchSlugEffortRecognizesEveryPinnedTier(t *testing.T) {
+	for _, test := range []struct {
+		model  string
+		effort string
+	}{
+		{"gemini-3.5-flash-low", "low"},
+		{"gemini-3.5-flash-medium", antigravityEffortMedium},
+		{"gemini-3.5-flash-high", antigravityEffortHigh},
+	} {
+		if effort, ok := antigravitySlugEffort(test.model); !ok || effort != test.effort {
+			t.Fatalf("antigravitySlugEffort(%q) = %q, %t; want %q, true", test.model, effort, ok, test.effort)
+		}
+		if !antigravityEffortMatchesSlug(AgentAntigravity, test.model, test.effort) {
+			t.Fatalf("antigravityEffortMatchesSlug(%q, %q) = false", test.model, test.effort)
+		}
+	}
+	if antigravityEffortMatchesSlug(AgentAntigravity, "gemini-3.5-flash-low", "high") ||
+		antigravityEffortMatchesSlug(AgentAntigravity, "Gemini 3.5 Flash (High)", "high") ||
+		antigravityEffortMatchesSlug(AgentGrok, "gemini-3.5-flash-low", "low") {
+		t.Fatal("antigravityEffortMatchesSlug accepted a non-identity effort")
 	}
 }
 
@@ -775,7 +827,7 @@ func TestGrokStructuredEvents(t *testing.T) {
 		text.WriteString("complete")
 		events := reduceGrokEvent(expectedSession, map[string]any{
 			"type": "end", "sessionId": expectedSession, "stopReason": "end_turn",
-		}, &text)
+		}, &text, new(bool))
 		if len(events) != 3 || events[2].Kind != eventComplete {
 			t.Fatalf("expected completed events, got %#v", events)
 		}
@@ -892,6 +944,66 @@ func TestGrokRunnerReadsStreamingJSONThroughEOF(t *testing.T) {
 	}
 	if result.Answer != "Grok output" || !result.Complete || result.SessionID != runtimeSessionID {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestStructuredProviderStreamsRejectDuplicateTerminalEvents(t *testing.T) {
+	tests := []struct {
+		name     string
+		agent    string
+		expected string
+		stream   string
+	}{
+		{
+			name: "grok", agent: AgentGrok, expected: runtimeSessionID,
+			stream: `{"type":"text","data":"answer"}` + "\n" +
+				`{"type":"end","sessionId":"` + runtimeSessionID + `","stopReason":"end_turn"}` + "\n" +
+				`{"type":"end","sessionId":"` + runtimeSessionID + `","stopReason":"end_turn"}` + "\n",
+		},
+		{
+			name: "antigravity", agent: AgentAntigravity,
+			stream: `{"event":"result","result":{"status":"SUCCESS","conversation_id":"conversation","response":"answer","usage":{"input_tokens":1}}}` + "\n" +
+				`{"event":"result","result":{"status":"SUCCESS","conversation_id":"conversation","response":"answer","usage":{"input_tokens":1}}}` + "\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var events []providerEvent
+			err := readStructuredEventsWithLineage(strings.NewReader(test.stream), io.Discard, test.agent, test.expected, false, func(event providerEvent) error {
+				events = append(events, event)
+				return nil
+			}, nil)
+			if err != nil {
+				t.Fatalf("read structured stream: %v", err)
+			}
+			if len(events) == 0 || events[len(events)-1].Kind != eventFailure || !strings.Contains(events[len(events)-1].Reason, "multiple terminal") {
+				t.Fatalf("duplicate terminal stream events = %#v", events)
+			}
+		})
+	}
+}
+
+func TestAntigravityStructuredEventsRequireSuccessfulUsageBearingTerminal(t *testing.T) {
+	events, err := reduceStructuredTestEvent(AgentAntigravity, "", []byte(`{"event":"result","result":{"status":"SUCCESS","conversation_id":"conversation","response":"answer","usage":{"input_tokens":1,"output_tokens":2,"thinking_tokens":1,"cache_read_tokens":0}}}`))
+	if err != nil {
+		t.Fatalf("read Antigravity terminal: %v", err)
+	}
+	if len(events) != 4 || events[0].Kind != eventSession || events[0].SessionID != "conversation" || events[1].Kind != eventAnswer || events[1].Answer != "answer" || events[2].Kind != eventProgress || events[2].Activity != grokUsageEventType || events[2].Usage["input_tokens"] == nil || events[3].Kind != eventComplete {
+		t.Fatalf("Antigravity terminal events = %#v", events)
+	}
+	for _, raw := range []string{
+		`{"event":"result","result":{"status":"ERROR","conversation_id":"conversation","response":"answer","usage":{}}}`,
+		`{"event":"result","result":{"status":"SUCCESS","conversation_id":"","response":"answer","usage":{}}}`,
+		`{"event":"result","result":{"status":"SUCCESS","conversation_id":"conversation","response":"answer"}}`,
+	} {
+		events, err = reduceStructuredTestEvent(AgentAntigravity, "", []byte(raw))
+		if err != nil || len(events) != 1 || events[0].Kind != eventFailure {
+			t.Fatalf("Antigravity invalid terminal %s = %#v, %v", raw, events, err)
+		}
+	}
+	events, err = reduceStructuredTestEvent(AgentAntigravity, "", []byte(`{"event":"result","result":{"status":"ERROR","error":"invalid model selection","conversation_id":"","response":"","usage":{}}}`))
+	if err != nil || len(events) != 1 || events[0].Kind != eventFailure || !strings.Contains(events[0].Reason, "invalid model selection") {
+		t.Fatalf("Antigravity provider error detail = %#v, %v", events, err)
 	}
 }
 

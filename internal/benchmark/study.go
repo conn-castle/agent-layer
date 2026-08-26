@@ -705,13 +705,23 @@ func cachedAuthenticationPreflight(stateDir string, prepared *preparedStudy) (ma
 }
 
 func validCachedAuthenticationPreflight(adapter string, evidence AuthenticationPreflight) bool {
-	if adapter != adapterCodex || evidence.Provider != adapterCodex || evidence.Check != codexLoginStatusCheck || evidence.VerifiedAt.IsZero() {
+	if evidence.VerifiedAt.IsZero() {
 		return false
 	}
-	for _, method := range codexLoginStatusAllowlist {
-		if evidence.AuthenticationMethod == method.normalized {
-			return true
+	switch adapter {
+	case adapterCodex:
+		if evidence.Provider != adapterCodex || evidence.Check != codexLoginStatusCheck {
+			return false
 		}
+		for _, method := range codexLoginStatusAllowlist {
+			if evidence.AuthenticationMethod == method.normalized {
+				return true
+			}
+		}
+	case adapterAntigravity:
+		return evidence.Provider == adapterAntigravity && evidence.Check == authCheckOAuthProfilePresence && evidence.AuthenticationMethod == authMethodGoogleOAuth
+	case adapterGrok:
+		return evidence.Provider == adapterGrok && evidence.Check == authCheckJSONFilePresence && evidence.AuthenticationMethod == authMethodJSONFile
 	}
 	return false
 }

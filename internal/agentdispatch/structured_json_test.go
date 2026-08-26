@@ -179,8 +179,12 @@ func TestStructuredEventParserRetainsOnlyAllowlistedFields(t *testing.T) {
 	if _, retained := record.Fields["transcript"]; retained {
 		t.Fatalf("unselected provider content was retained: %#v", record.Fields)
 	}
-	if _, retained := record.Fields["usage"]; retained {
-		t.Fatalf("unselected nested object was retained: %#v", record.Fields)
+	usage, retained := record.Fields["usage"].(map[string]any)
+	if !retained || len(usage) != 1 || usage["input_tokens"] == nil {
+		t.Fatalf("allowlisted usage metadata was not retained exactly: %#v", record.Fields)
+	}
+	if _, retained := usage["cache"]; retained {
+		t.Fatalf("unselected usage metadata was retained: %#v", usage)
 	}
 	if record.Fields["type"] != "agent_message" || record.Fields["result"] != "done" ||
 		record.Fields["is_error"] != false {

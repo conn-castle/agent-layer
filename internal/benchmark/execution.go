@@ -3,6 +3,7 @@ package benchmark
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,6 +37,7 @@ var (
 	prepareBenchmarkTaskSet          = prepareBenchmarkTasks
 	verifyBenchmarkPier              = verifyPinnedPier
 	runBenchmarkDockerCommand        = runDockerCommand
+	readAntigravitySystemCredential  = readSystemAntigravityOAuthCredential
 )
 
 const (
@@ -43,6 +46,8 @@ const (
 	codexLoginStatusCheck          = "codex login status"
 	codexAuthMethodChatGPT         = "chatgpt"
 	codexAuthMethodAPIKey          = "api_key"
+	platformDarwin                 = "darwin"
+	platformLinux                  = "linux"
 	dockerFormatFlag               = "--format"
 	dockerImageResource            = "image"
 	dockerNetworkResource          = "network"
@@ -92,6 +97,7 @@ type ExecutionRequest struct {
 	// within the failed invocation.
 	ResumeFailedInfrastructure bool
 	resumedFailedEventIDs      []string
+	antigravityCredentialsPath string
 }
 
 func sameIntMap(left, right map[string]int) bool {
@@ -113,12 +119,12 @@ func preflight(selections []parsedSelection) error {
 		}
 	}
 	for _, selection := range selections {
-		client := adapterCodex
-		if selection.model.Adapter == adapterClaudeCode {
-			client = providerClaude
+		provider, err := benchmarkProvider(selection.model.Adapter)
+		if err != nil {
+			return err
 		}
-		if _, err := exec.LookPath(client); err != nil {
-			return fmt.Errorf("benchmark provider client %s is unavailable: %w", client, err)
+		if _, err := exec.LookPath(provider.Binary); err != nil {
+			return fmt.Errorf("benchmark provider client %s is unavailable: %w", provider.Binary, err)
 		}
 	}
 	command := exec.CommandContext(context.Background(), commandDocker, "info", "--format", "{{.ServerVersion}}") // #nosec G204 -- fixed read-only prerequisite check.
@@ -160,20 +166,27 @@ func validateAuthentication(ctx context.Context, repoRoot string, selections []p
 }
 
 func validateProviderAuthentication(ctx context.Context, repoRoot, adapter string) (AuthenticationPreflight, error) {
-	var path, provider string
-	switch adapter {
-	case adapterCodex:
-		path, provider = filepath.Join(repoRoot, ".codex", "auth.json"), adapterCodex
-	case adapterClaudeCode:
-		path, provider = filepath.Join(repoRoot, ".claude-config", ".credentials.json"), providerClaude
-	default:
-		return AuthenticationPreflight{}, fmt.Errorf("unsupported benchmark provider adapter %q", adapter)
+	provider, err := benchmarkProvider(adapter)
+	if err != nil {
+		return AuthenticationPreflight{}, err
 	}
-	if err := requireJSONCredentialFile(path, provider); err != nil {
+	if adapter == adapterAntigravity {
+		if _, err := benchmarkAntigravityOAuthCredential(ctx, repoRoot); err != nil {
+			return AuthenticationPreflight{}, err
+		}
+		return AuthenticationPreflight{Provider: adapterAntigravity, Check: authCheckOAuthProfilePresence, AuthenticationMethod: authMethodGoogleOAuth, VerifiedAt: time.Now().UTC()}, nil
+	}
+	if err := requireJSONCredentialFile(filepath.Join(repoRoot, provider.CredentialPath), provider.DispatchAgent); err != nil {
 		return AuthenticationPreflight{}, err
 	}
 	if adapter == adapterClaudeCode {
-		return AuthenticationPreflight{}, fmt.Errorf("%s authentication cannot be validated before task setup because no available non-billing command verifies the copied OAuth token", provider)
+		return AuthenticationPreflight{}, fmt.Errorf("%s authentication cannot be validated before task setup because no available non-billing command verifies the copied OAuth token", provider.DispatchAgent)
+	}
+	if adapter == adapterGrok {
+		// Grok has no trustworthy non-billing validity command. Presence proves
+		// only that the minimal boundary exists; a rejected token is immutable
+		// runtime infrastructure evidence rather than a reason to guess.
+		return AuthenticationPreflight{Provider: adapterGrok, Check: authCheckJSONFilePresence, AuthenticationMethod: authMethodJSONFile, VerifiedAt: time.Now().UTC()}, nil
 	}
 	return validateCodexLoginStatus(ctx, repoRoot)
 }
@@ -328,6 +341,16 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 		return AttemptResult{}, fmt.Errorf("create restricted benchmark staging directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(stage) }()
+	if request.Model.Adapter == adapterAntigravity {
+		credential, credentialErr := benchmarkAntigravityOAuthCredential(ctx, request.RepoRoot)
+		if credentialErr != nil {
+			return AttemptResult{}, credentialErr
+		}
+		request.antigravityCredentialsPath = filepath.Join(stage, antigravityOAuthStageFile)
+		if err := os.WriteFile(request.antigravityCredentialsPath, credential, 0o600); err != nil {
+			return AttemptResult{}, fmt.Errorf("stage Antigravity OAuth profile: %w", err)
+		}
+	}
 	startupArguments, err := prepareTaskStartup(checkout, request.Task, stage)
 	if err != nil {
 		return AttemptResult{}, err
@@ -343,7 +366,7 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 		"--include-task-name", request.Task,
 	}
 	arguments = append(arguments, startupArguments...)
-	if request.Arm == ArmTreatment {
+	if request.Arm == ArmTreatment || request.Model.Adapter == adapterAntigravity || request.Model.Adapter == adapterGrok {
 		treatmentArguments, err := treatmentPierArguments(request)
 		if err != nil {
 			return AttemptResult{}, err
@@ -684,49 +707,143 @@ func hasProviderCapacityEvidence(root string) (bool, error) {
 // treatmentPierArguments returns the Pier flags that make the immutable
 // treatment bundle and its execution policy part of the paid run.
 func treatmentPierArguments(request ExecutionRequest) ([]string, error) {
-	if request.Bundle == nil {
+	if request.Bundle == nil && request.Arm == ArmTreatment {
 		return nil, fmt.Errorf("treatment execution requires an immutable treatment bundle")
 	}
-	className := "AgentLayerCodex"
-	if request.Model.Adapter == adapterClaudeCode {
-		className = "AgentLayerClaudeCode"
+	provider, err := benchmarkProvider(request.Model.Adapter)
+	if err != nil {
+		return nil, err
 	}
+	className := provider.PierAgent
 	timeout := request.AgentTimeoutMultiplier
 	if timeout == 0 {
-		timeout = request.Bundle.Manifest.AgentTimeoutMultiplier
+		if request.Bundle != nil {
+			timeout = request.Bundle.Manifest.AgentTimeoutMultiplier
+		}
 	}
 	if timeout <= 0 {
-		return nil, fmt.Errorf("treatment execution requires a positive agent timeout multiplier")
+		return nil, fmt.Errorf("benchmark execution requires a positive agent timeout multiplier")
+	}
+	treatmentMode, bundleRoot, roles, credentials := "bare", "", "", ""
+	if request.Bundle != nil {
+		treatmentMode, bundleRoot = request.Bundle.Manifest.Mode, request.Bundle.Root
+		roles = strings.Join(request.Bundle.Manifest.RequiredRoles, ",")
+		credentials = strings.Join(request.Bundle.CredentialNames, ",")
 	}
 	arguments := []string{
 		"--agent-timeout-multiplier", strconv.FormatFloat(timeout, 'f', -1, 64),
 		"--agent-import-path", "pier_agent_layer:" + className,
-		pierAgentKwarg, "treatment_bundle=" + request.Bundle.Root,
-		pierAgentKwarg, "treatment_mode=" + request.Bundle.Manifest.Mode,
-		pierAgentKwarg, "required_dispatch_roles=" + strings.Join(request.Bundle.Manifest.RequiredRoles, ","),
+		pierAgentKwarg, "treatment_bundle=" + bundleRoot,
+		pierAgentKwarg, "treatment_mode=" + treatmentMode,
+		pierAgentKwarg, "required_dispatch_roles=" + roles,
 		pierAgentKwarg, "treatment_agent=" + dispatchAgent(request.Model),
 		pierAgentKwarg, "treatment_model=" + dispatchModel(request.Model),
 		pierAgentKwarg, "treatment_reasoning_effort=" + request.Effort,
-		pierAgentKwarg, "credential_names=" + strings.Join(request.Bundle.CredentialNames, ","),
+		pierAgentKwarg, "credential_names=" + credentials,
 		"--agent-env", "PATH=/home/dev/.local/bin:/usr/local/bin:/usr/bin:/bin",
 	}
-	if request.Model.Adapter == adapterClaudeCode {
+	switch request.Model.Adapter {
+	case adapterClaudeCode:
 		credentials := filepath.Join(request.RepoRoot, ".claude-config", ".credentials.json")
 		if _, err := os.Stat(credentials); err != nil {
 			return nil, fmt.Errorf("claude authentication is required at %s", credentials)
 		}
 		arguments = append(arguments, pierAgentKwarg, "claude_credentials_path="+credentials)
-	} else {
+	case adapterCodex:
 		credentials := filepath.Join(request.RepoRoot, ".codex", "auth.json")
 		if _, err := os.Stat(credentials); err != nil {
 			return nil, fmt.Errorf("codex authentication is required at %s", credentials)
 		}
 		arguments = append(arguments, pierAgentKwarg, "codex_credentials_path="+credentials)
+	case adapterGrok:
+		credentials := filepath.Join(request.RepoRoot, ".grok-config", "auth.json")
+		if _, err := os.Stat(credentials); err != nil {
+			return nil, fmt.Errorf("grok authentication is required at %s", credentials)
+		}
+		arguments = append(arguments, pierAgentKwarg, "grok_credentials_path="+credentials)
+	case adapterAntigravity:
+		credentials := request.antigravityCredentialsPath
+		if credentials == "" {
+			credentials = filepath.Join(request.RepoRoot, antigravityOAuthRelativePath)
+		}
+		if _, err := os.Stat(credentials); err != nil {
+			return nil, fmt.Errorf("antigravity OAuth authentication is required from the Agent Layer credential boundary: %w", err)
+		}
+		arguments = append(arguments, pierAgentKwarg, "antigravity_credentials_path="+credentials)
+	default:
+		return nil, fmt.Errorf("unsupported benchmark provider adapter %q", request.Model.Adapter)
 	}
 	if request.PreflightOnly {
 		arguments = append(arguments, pierAgentKwarg, "preflight_only=true")
 	}
 	return arguments, nil
+}
+
+func benchmarkAntigravityOAuthCredential(ctx context.Context, repoRoot string) ([]byte, error) {
+	if repoRoot != "" {
+		path := filepath.Join(repoRoot, antigravityOAuthRelativePath)
+		data, err := os.ReadFile(path) // #nosec G304 -- fixed repo-local provider credential boundary.
+		if err == nil {
+			return normalizeAntigravityOAuthCredential(data)
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("read Antigravity OAuth profile at %s: %w", path, err)
+		}
+	}
+	raw, err := readAntigravitySystemCredential(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return normalizeAntigravityOAuthCredential(raw)
+}
+
+func readSystemAntigravityOAuthCredential(ctx context.Context) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, authenticationPreflightTimeout)
+	defer cancel()
+	command, err := antigravityKeyringCommand(ctx, runtime.GOOS)
+	if err != nil {
+		return nil, err
+	}
+	output, err := command.Output()
+	if err != nil {
+		return nil, fmt.Errorf("antigravity OAuth authentication is unavailable from the Agent Layer system keyring; sign in with `al antigravity` or provide %s", antigravityOAuthRelativePath)
+	}
+	return bytes.TrimSpace(output), nil
+}
+
+func antigravityKeyringCommand(ctx context.Context, goos string) (*exec.Cmd, error) {
+	switch goos {
+	case platformDarwin:
+		return exec.CommandContext(ctx, "security", "find-generic-password", "-s", "gemini", "-a", "antigravity", "-w"), nil // #nosec G204 -- fixed native keyring lookup.
+	case platformLinux:
+		return exec.CommandContext(ctx, "secret-tool", "lookup", "service", "gemini", "username", "antigravity"), nil // #nosec G204 -- fixed native keyring lookup.
+	default:
+		return nil, fmt.Errorf("antigravity OAuth benchmark authentication is not supported on %s; provide %s", goos, antigravityOAuthRelativePath)
+	}
+}
+
+func normalizeAntigravityOAuthCredential(raw []byte) ([]byte, error) {
+	const keyringPrefix = "go-keyring-base64:"
+	trimmed := bytes.TrimSpace(raw)
+	if bytes.HasPrefix(trimmed, []byte(keyringPrefix)) {
+		decoded, err := base64.StdEncoding.DecodeString(string(bytes.TrimPrefix(trimmed, []byte(keyringPrefix))))
+		if err != nil {
+			return nil, errors.New("antigravity OAuth profile in the Agent Layer keyring is malformed")
+		}
+		trimmed = decoded
+	}
+	var profile struct {
+		AuthMethod string `json:"auth_method"`
+		Token      struct {
+			AccessToken  string `json:"access_token"`
+			RefreshToken string `json:"refresh_token"`
+		} `json:"token"`
+	}
+	if err := json.Unmarshal(trimmed, &profile); err != nil || profile.AuthMethod == "" ||
+		profile.Token.AccessToken == "" || profile.Token.RefreshToken == "" {
+		return nil, errors.New("antigravity OAuth profile in the Agent Layer credential boundary is invalid")
+	}
+	return append(trimmed, '\n'), nil
 }
 
 func prepareBenchmarkDockerConfig(stage string) (string, error) {
