@@ -36,14 +36,11 @@ type skillsChangeSet struct {
 	// root. Grouped catalog members use skills/<id>/; ordinary catalog skills
 	// default to skills-catalog/<id>/ when omitted.
 	catalogTemplates map[string]string
-	// workflowSkillsToInstall holds embedded workflow skill directory names with
-	// missing template files to create. Existing files are preserved.
-	workflowSkillsToInstall []string
 	// memoryFilesToCreate holds missing docs/agent-layer/*.md relative paths to
 	// create because the instruction set includes memory.
 	memoryFilesToCreate []string
 	// templateMemoryFilesToCreate holds missing .agent-layer/templates/docs/*.md
-	// relative paths to create because Q1 is yes.
+	// relative paths to create because the selected instruction set includes memory.
 	templateMemoryFilesToCreate []string
 	// managedInstructionFilesToCreate holds bundled managed instruction files
 	// that are missing and should be created.
@@ -134,7 +131,6 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 	sort.Strings(out.catalogSkillsToAdd)
 	sort.Strings(out.catalogSkillsToRepair)
 	sort.Strings(out.catalogSkillsToRemove)
-	sort.Strings(out.workflowSkillsToInstall)
 	sort.Strings(out.memoryFilesToCreate)
 	sort.Strings(out.templateMemoryFilesToCreate)
 	sort.Strings(out.managedInstructionFilesToCreate)
@@ -237,11 +233,6 @@ func applySkillsChanges(root string, changes skillsChangeSet) error {
 		dir := filepath.Join(root, ".agent-layer", "skills", id)
 		if err := os.RemoveAll(dir); err != nil {
 			return fmt.Errorf("remove catalog skill %s: %w", id, err)
-		}
-	}
-	for _, id := range changes.workflowSkillsToInstall {
-		if err := copyTemplateDirMissingWithMode("skills/"+id, filepath.Join(root, ".agent-layer", "skills", id), 0o600); err != nil {
-			return fmt.Errorf("install workflow skill %s: %w", id, err)
 		}
 	}
 	if len(changes.memoryFilesToCreate) > 0 {
@@ -494,7 +485,6 @@ func buildSkillsPreview(changes skillsChangeSet) string {
 	lineCapacity := len(changes.catalogSkillsToAdd) +
 		len(changes.catalogSkillsToRepair) +
 		len(changes.catalogSkillsToRemove) +
-		len(changes.workflowSkillsToInstall) +
 		len(changes.memoryFilesToCreate) +
 		len(changes.templateMemoryFilesToCreate) +
 		len(changes.managedInstructionFilesToCreate)
@@ -507,9 +497,6 @@ func buildSkillsPreview(changes skillsChangeSet) string {
 	}
 	for _, id := range changes.catalogSkillsToRemove {
 		lines = append(lines, fmt.Sprintf("  - .agent-layer/skills/%s/", id))
-	}
-	for _, name := range changes.workflowSkillsToInstall {
-		lines = append(lines, fmt.Sprintf("  + .agent-layer/skills/%s/", name))
 	}
 	for _, rel := range changes.memoryFilesToCreate {
 		lines = append(lines, fmt.Sprintf("  + %s  (memory file)", rel))

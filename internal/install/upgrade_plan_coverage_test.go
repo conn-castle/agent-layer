@@ -91,6 +91,13 @@ func TestBuildUpgradePlan_DetectUpgradeRenamesError(t *testing.T) {
 	if err := os.WriteFile(evidencePath, []byte("workflow evidence\n"), 0o600); err != nil {
 		t.Fatalf("write workflow evidence: %v", err)
 	}
+	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
+	if err := os.MkdirAll(filepath.Dir(allowPath), 0o700); err != nil {
+		t.Fatalf("mkdir commands allow: %v", err)
+	}
+	if err := os.WriteFile(allowPath, []byte("custom\n"), 0o600); err != nil {
+		t.Fatalf("write commands allow: %v", err)
+	}
 
 	original := templates.ReadFunc
 	templates.ReadFunc = func(name string) ([]byte, error) {

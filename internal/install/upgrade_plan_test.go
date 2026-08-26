@@ -43,17 +43,23 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 		t.Fatalf("write issues: %v", err)
 	}
 
-	// Simulate a rename candidate by moving one managed template file to an orphan path.
-	implementPath := filepath.Join(root, ".agent-layer", "skills", "implement", "SKILL.md")
-	if err := os.Remove(implementPath); err != nil {
-		t.Fatalf("remove implement skill: %v", err)
+	// Simulate a rename candidate for a selected catalog skill. LICENSE keeps
+	// the directory active after SKILL.md is moved to the orphan path.
+	playwrightDir := filepath.Join(root, ".agent-layer", "skills", "playwright")
+	manager := (&installer{root: root, sys: RealSystem{}}).templates()
+	if err := manager.writeTemplateDirCached(templateDir{templateRoot: "skills-catalog/playwright", destRoot: playwrightDir}); err != nil {
+		t.Fatalf("seed playwright catalog skill: %v", err)
 	}
-	implementTemplate, err := templates.Read("skills/implement/SKILL.md")
+	playwrightPath := filepath.Join(playwrightDir, "SKILL.md")
+	if err := os.Remove(playwrightPath); err != nil {
+		t.Fatalf("remove playwright skill: %v", err)
+	}
+	playwrightTemplate, err := templates.Read("skills-catalog/playwright/SKILL.md")
 	if err != nil {
-		t.Fatalf("read template skill: %v", err)
+		t.Fatalf("read playwright template skill: %v", err)
 	}
-	orphanRenamePath := filepath.Join(root, ".agent-layer", "skills", "implement-legacy.md")
-	if err := os.WriteFile(orphanRenamePath, implementTemplate, 0o600); err != nil {
+	orphanRenamePath := filepath.Join(playwrightDir, "playwright-legacy.md")
+	if err := os.WriteFile(orphanRenamePath, playwrightTemplate, 0o600); err != nil {
 		t.Fatalf("write orphan rename path: %v", err)
 	}
 
@@ -110,10 +116,10 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 		t.Fatalf("expected at least one rename")
 	}
 	rename := plan.TemplateRenames[0]
-	if rename.From != ".agent-layer/skills/implement-legacy.md" {
+	if rename.From != ".agent-layer/skills/playwright/playwright-legacy.md" {
 		t.Fatalf("unexpected rename from path: %s", rename.From)
 	}
-	if rename.To != ".agent-layer/skills/implement/SKILL.md" {
+	if rename.To != ".agent-layer/skills/playwright/SKILL.md" {
 		t.Fatalf("unexpected rename to path: %s", rename.To)
 	}
 	if rename.Confidence != UpgradeRenameConfidenceHigh {
@@ -289,19 +295,20 @@ func TestBuildUpgradePlan_WalkTemplateOrphansErrors(t *testing.T) {
 	}
 
 	instructionsRoot := filepath.Join(root, ".agent-layer", "instructions")
-	sys.statErrs[normalizePath(instructionsRoot)] = errors.New("permission denied")
+	rulesPath := filepath.Join(instructionsRoot, "00_rules.md")
+	if err := os.MkdirAll(instructionsRoot, 0o700); err != nil {
+		t.Fatalf("mkdir instructions: %v", err)
+	}
+	if err := os.WriteFile(rulesPath, []byte("rules"), 0o600); err != nil {
+		t.Fatalf("write instruction evidence: %v", err)
+	}
+	sys.statErrs[normalizePath(rulesPath)] = errors.New("permission denied")
 	_, err = BuildUpgradePlan(root, UpgradePlanOptions{System: sys, TargetPinVersion: "0.7.0"})
 	if err == nil || !strings.Contains(err.Error(), "failed to stat") {
 		t.Fatalf("expected stat error from orphan root, got %v", err)
 	}
 
-	delete(sys.statErrs, normalizePath(instructionsRoot))
-	if err := os.MkdirAll(instructionsRoot, 0o700); err != nil {
-		t.Fatalf("mkdir instructions: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(instructionsRoot, "00_rules.md"), []byte("rules"), 0o600); err != nil {
-		t.Fatalf("write instruction evidence: %v", err)
-	}
+	delete(sys.statErrs, normalizePath(rulesPath))
 	sys.walkErrs[normalizePath(instructionsRoot)] = errors.New("walk failed")
 	_, err = BuildUpgradePlan(root, UpgradePlanOptions{System: sys, TargetPinVersion: "0.7.0"})
 	if err == nil || !strings.Contains(err.Error(), "walk failed") {
