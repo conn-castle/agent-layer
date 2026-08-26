@@ -234,12 +234,13 @@ for thunk in [
     lambda: parse_grok_stream('{"type":"error","message":"denied"}\n', "11111111-1111-4111-8111-111111111111"),
     lambda: parse_grok_stream('{"type":"tool_call_update","status":"failed","message":"Denied by permission policy"}\n', "11111111-1111-4111-8111-111111111111"),
     lambda: parse_grok_stream('{"type":"usage","usage":{}}\n', "11111111-1111-4111-8111-111111111111"),
+    lambda: parse_grok_stream('{"type":"usage","usage":{"input_tokens":1}}\n{"type":"end","sessionId":"11111111-1111-4111-8111-111111111111","stopReason":"end_turn"}\n{"type":"usage","usage":{"input_tokens":1}}\n', "11111111-1111-4111-8111-111111111111"),
 ]:
     try: thunk()
     except RuntimeError: continue
     raise SystemExit("stream parser accepted malformed/unsuccessful evidence")
 try:
-    parse_antigravity_stream('{"event":"result","result":{"status":"SUCCESS","usage":{}}}\n' * (16 * 1024 * 1024))
+    parse_antigravity_stream("x" * (16 * 1024 * 1024 + 1))
 except RuntimeError:
     pass
 else:
@@ -262,6 +263,10 @@ else:
 	}
 	if !strings.Contains(contents, "await self._snapshot_workspace(environment)") || strings.Contains(contents, `if self._treatment_mode != "bare":\n            await self.exec_as_agent`) {
 		t.Fatal("stream adapter does not snapshot and restore adapter-owned paths for bare and treatment arms")
+	}
+	if strings.Contains(contents, "try:\n            effective = await self._prepare") ||
+		!strings.Contains(contents, "effective = await self._prepare(self.render_instruction(instruction), environment)\n        try:") {
+		t.Fatal("stream adapter restores projected paths before snapshot creation succeeds")
 	}
 }
 

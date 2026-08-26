@@ -722,7 +722,7 @@ func treatmentPierArguments(request ExecutionRequest) ([]string, error) {
 		}
 	}
 	if timeout <= 0 {
-		return nil, fmt.Errorf("treatment execution requires a positive agent timeout multiplier")
+		return nil, fmt.Errorf("benchmark execution requires a positive agent timeout multiplier")
 	}
 	treatmentMode, bundleRoot, roles, credentials := "bare", "", "", ""
 	if request.Bundle != nil {

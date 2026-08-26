@@ -248,8 +248,11 @@ func TestAntigravityPierArgumentsUseOAuthProfilePath(t *testing.T) {
 	}
 	request := ExecutionRequest{
 		RepoRoot: repository, Model: model, Effort: effort, Arm: ArmBaseline,
-		AgentTimeoutMultiplier: 1,
 	}
+	if _, err := treatmentPierArguments(request); err == nil || !strings.Contains(err.Error(), "benchmark execution requires a positive agent timeout multiplier") {
+		t.Fatalf("bare Antigravity timeout error = %v", err)
+	}
+	request.AgentTimeoutMultiplier = 1
 	if _, err := treatmentPierArguments(request); err == nil || !strings.Contains(err.Error(), "OAuth authentication is required") {
 		t.Fatalf("missing Antigravity OAuth argument error = %v", err)
 	}
@@ -438,6 +441,7 @@ func TestStreamUsageParsingRejectsMalformedProviderEvidence(t *testing.T) {
 	}{
 		{"malformed JSON", adapterGrok, "{not-json}\n", "decode grok usage"},
 		{"abnormal Grok end", adapterGrok, `{"type":"usage","usage":{"input_tokens":1,"output_tokens":1}}` + "\n" + `{"type":"end","sessionId":"id","stopReason":"error"}` + "\n", "ended with"},
+		{"usage after Grok end", adapterGrok, `{"type":"usage","usage":{"input_tokens":1,"output_tokens":1}}` + "\n" + `{"type":"end","sessionId":"id","stopReason":"end_turn"}` + "\n" + `{"type":"usage","usage":{"input_tokens":1,"output_tokens":1}}` + "\n", "records after the terminal end event"},
 		{"failed Antigravity result", adapterAntigravity, `{"event":"result","result":{"conversation_id":"id","status":"ERROR","usage":{"input_tokens":1,"output_tokens":1,"cache_read_tokens":0}}}` + "\n", "ended with"},
 		{"unsupported provider", "unsupported", "{}\n", "unsupported stream cost provider"},
 	} {

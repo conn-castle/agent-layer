@@ -750,6 +750,10 @@ func parseStreamProviderUsage(path, provider string) (string, []streamTokenUsage
 	var reportedCost *float64
 	terminals := 0
 	for scanner.Scan() {
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 {
+			continue
+		}
 		var event struct {
 			Event          string           `json:"event"`
 			Type           string           `json:"type"`
@@ -769,11 +773,14 @@ func parseStreamProviderUsage(path, provider string) (string, []streamTokenUsage
 				} `json:"usage"`
 			} `json:"result"`
 		}
-		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+		if err := json.Unmarshal(line, &event); err != nil {
 			return "", nil, nil, fmt.Errorf("decode %s usage %s: %w", provider, filepath.Base(path), err)
 		}
 		switch provider {
 		case adapterGrok:
+			if terminals > 0 {
+				return "", nil, nil, fmt.Errorf("grok usage %s has records after the terminal end event", filepath.Base(path))
+			}
 			if event.Type == "usage" {
 				usage = append(usage, event.Usage)
 			}

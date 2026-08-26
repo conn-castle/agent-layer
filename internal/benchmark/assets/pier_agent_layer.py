@@ -775,6 +775,8 @@ def parse_grok_stream(payload: str, session_id: str):
     terminal = None
     usage = []
     for event in _bounded_json_lines(payload, label="Grok"):
+        if terminal is not None:
+            raise RuntimeError("Grok stream has records after the terminal end event")
         kind = event.get("type")
         if kind == "error":
             raise RuntimeError("Grok reported a provider error")
@@ -785,8 +787,6 @@ def parse_grok_stream(payload: str, session_id: str):
         if kind == "usage":
             usage.append(event)
         if kind == "end":
-            if terminal is not None:
-                raise RuntimeError("Grok stream has multiple terminal end events")
             terminal = event
     if terminal is None:
         raise RuntimeError("Grok stream has no terminal end event")
@@ -937,8 +937,8 @@ class AgentLayerAntigravity(_AgentLayerStreamAgent):
 
     async def run(self, instruction, environment, context):
         remote_credential = f"{REMOTE_WORKSPACE}/.agy/antigravity-cli/antigravity-oauth-token"
+        effective = await self._prepare(self.render_instruction(instruction), environment)
         try:
-            effective = await self._prepare(self.render_instruction(instruction), environment)
             if len(effective.encode("utf-8")) > ANTIGRAVITY_PROMPT_BYTE_CAP:
                 raise RuntimeError(
                     f"Antigravity benchmark prompt exceeds {ANTIGRAVITY_PROMPT_BYTE_CAP} byte limit"
@@ -1012,8 +1012,8 @@ class AgentLayerGrok(_AgentLayerStreamAgent):
         return "grok"
 
     async def run(self, instruction, environment, context):
+        effective = await self._prepare(self.render_instruction(instruction), environment)
         try:
-            effective = await self._prepare(self.render_instruction(instruction), environment)
             if not self._grok_credentials_path or not self._grok_credentials_path.is_file():
                 raise RuntimeError("Grok benchmark credential file is missing")
             session = str(uuid.uuid4())
