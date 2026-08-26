@@ -1,7 +1,7 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## v0.18.0 - 2026-08-26
+## Unreleased
 
 ### Added
 - `al benchmark run` supports pinned Antigravity 1.1.21 and Grok 1.0.5 coordinators, provider-native Agent Layer treatments, structured coordinator/dispatch evidence, and usage-based API-equivalent cost accounting without running a full benchmark during development.
