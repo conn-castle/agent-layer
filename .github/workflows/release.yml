@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Stable release tag to publish (for example v0.18.0)
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -12,9 +17,12 @@ permissions:
 jobs:
   build-release:
     runs-on: macos-latest
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
+          ref: ${{ inputs.release_tag || github.ref_name }}
           persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         id: setup-go
@@ -27,17 +35,24 @@ jobs:
           if ! command -v rg >/dev/null 2>&1; then
             brew install ripgrep
           fi
+          if ! command -v uvx >/dev/null 2>&1; then
+            brew install uv
+          fi
+          if ! command -v uvx >/dev/null 2>&1; then
+            echo "::error::uvx is required by the pinned benchmark adapter contract but was not found after installing uv."
+            exit 1
+          fi
       - name: Validate stable release tag format
         run: |
           set -euo pipefail
-          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Unsupported release tag ${GITHUB_REF_NAME}. Release publishing supports stable tags only (vX.Y.Z)."
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unsupported release tag ${RELEASE_TAG}. Release publishing supports stable tags only (vX.Y.Z)."
             exit 1
           fi
       - name: Validate upgrade contract docs
         run: |
           set -euo pipefail
-          make docs-upgrade-check RELEASE_TAG="${GITHUB_REF_NAME}"
+          make docs-upgrade-check RELEASE_TAG="${RELEASE_TAG}"
       - name: Cache pinned tools
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
@@ -72,7 +87,7 @@ jobs:
           AL_REQUIRE_CODESIGN: "1"
         run: |
           set -euo pipefail
-          make release-dist AL_VERSION="${GITHUB_REF_NAME}" DIST_DIR=dist
+          make release-dist AL_VERSION="${RELEASE_TAG}" DIST_DIR=dist
       - name: Scan release binaries for known vulnerable symbols
         run: make release-vuln-check DIST_DIR=dist
       - name: Notarize darwin binaries
@@ -94,7 +109,7 @@ jobs:
         id: changelog
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME}"
+          VERSION="${RELEASE_TAG}"
 
           # Extract section between this version header and the next version header
           # - sed range: from "## vX.Y.Z " to next "## v" line
@@ -131,6 +146,7 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           body: ${{ steps.changelog.outputs.notes }}
           files: |
             dist/*
@@ -138,7 +154,9 @@ jobs:
   publish-website-and-tap:
     needs: build-release
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(inputs.release_tag || github.ref_name, 'v')
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     concurrency:
       group: agent-layer-web-publish
       cancel-in-progress: false
@@ -148,7 +166,7 @@ jobs:
       - name: Checkout agent-layer at tag
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ inputs.release_tag || github.ref_name }}
           fetch-depth: 0
 
       - name: Ensure website publisher exists
@@ -196,7 +214,7 @@ jobs:
         run: |
           set -euo pipefail
           go run ./cmd/publish-site \
-            --tag "${GITHUB_REF_NAME}" \
+            --tag "${RELEASE_TAG}" \
             --repo-b-dir "agent-layer-web"
 
       - name: Build website
@@ -214,7 +232,7 @@ jobs:
             echo "No changes to commit."
             exit 0
           fi
-          git commit -m "Publish site for ${GITHUB_REF_NAME}"
+          git commit -m "Publish site for ${RELEASE_TAG}"
           for attempt in 1 2 3; do
             git pull --rebase origin main
             if git push origin main; then
@@ -252,7 +270,7 @@ jobs:
       - name: Verify release assets are available
         run: |
           set -euo pipefail
-          TAG="${GITHUB_REF_NAME}"
+          TAG="${RELEASE_TAG}"
           SEMVER="${TAG#v}"
           ASSETS=(
             "agent-layer-${SEMVER}.tar.gz"
@@ -280,7 +298,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          TAG="${GITHUB_REF_NAME}"
+          TAG="${RELEASE_TAG}"
 
           if [ ! -f "dist/checksums.txt" ]; then
             echo "::error::dist/checksums.txt not found in workflow artifacts"
@@ -303,8 +321,8 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
           path: homebrew-tap
-          branch: bump-agent-layer-${{ github.ref_name }}
-          commit-message: "agent-layer ${{ github.ref_name }}"
-          title: "agent-layer ${{ github.ref_name }}"
-          body: "Automated formula bump for ${{ github.ref_name }}."
+          branch: bump-agent-layer-${{ env.RELEASE_TAG }}
+          commit-message: "agent-layer ${{ env.RELEASE_TAG }}"
+          title: "agent-layer ${{ env.RELEASE_TAG }}"
+          body: "Automated formula bump for ${{ env.RELEASE_TAG }}."
           base: main
