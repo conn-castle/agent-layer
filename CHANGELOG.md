@@ -1,7 +1,7 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v0.17.7 - 2026-08-27
 
 ### Changed
 - Agent Dispatch now uses structured provider output internally for every supported agent, including Antigravity display-name models, while returning only the extracted plain-text answer to callers.
