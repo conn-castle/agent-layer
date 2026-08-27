@@ -1,6 +1,7 @@
 package benchmark
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -386,6 +387,91 @@ func TestStudyTreatmentBundleConfigOnlyStagesRuntimeWithoutWorkflow(t *testing.T
 	env, err := os.ReadFile(filepath.Join(bundle.Root, ".agent-layer", ".env"))
 	if err != nil || string(env) != "# Intentionally empty; provider authentication is injected separately.\n" {
 		t.Fatalf("config-only bundle env = %q, %v", env, err)
+	}
+}
+
+func TestStudyTreatmentBundleIdentityIsDeterministic(t *testing.T) {
+	root := t.TempDir()
+	configPath := writeStudyTreatmentConfig(t, root)
+	configData, err := os.ReadFile(configPath) // #nosec G304 -- configPath is created inside this test's private temporary directory.
+	if err != nil {
+		t.Fatal(err)
+	}
+	configData = []byte(strings.ReplaceAll(string(configData), "[agents.grok]\nenabled = false", "[agents.grok]\nenabled = true"))
+	if err := os.WriteFile(configPath, configData, 0o600); err != nil { // #nosec G703 -- configPath is the test-owned fixture returned above.
+		t.Fatal(err)
+	}
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	experiment := preparedStudyExperiment{
+		studyExperiment: studyExperiment{Config: filepath.Base(configPath)},
+		model:           model,
+		effort:          effort,
+		inputs:          studyExperimentInputs{Config: configPath},
+	}
+	first, err := BuildStudyTreatmentBundle(root, experiment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(first.Root) })
+	second, err := BuildStudyTreatmentBundle(root, experiment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(second.Root) })
+	if first.ManifestHash != second.ManifestHash ||
+		first.AdapterSHA256 != second.AdapterSHA256 ||
+		first.LinuxBinarySHA256 != second.LinuxBinarySHA256 {
+		t.Fatalf("identical study snapshots produced different bundle identities:\nfirst:  %#v\nsecond: %#v", first, second)
+	}
+	trust, err := os.ReadFile(filepath.Join(first.Root, ".grok-config", "trusted_folders.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(trust), "[folders.\"/app\"]\ntrusted = true\ndecided_at = 0\n") {
+		t.Fatalf("benchmark Grok trust projection is not deterministic:\n%s", trust)
+	}
+}
+
+func TestTreatmentStudyDryRunIdentityIsDeterministicAcrossInvocations(t *testing.T) {
+	root := t.TempDir()
+	writeParsedTreatmentStudy(t, root, "luna:low")
+	stubStudyInfrastructure(t, root)
+
+	originalAuthentication := validateBenchmarkAuthentication
+	originalRuntimePreflight := preflightTreatmentRuntime
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error { return nil }
+	t.Cleanup(func() {
+		validateBenchmarkAuthentication = originalAuthentication
+		preflightTreatmentRuntime = originalRuntimePreflight
+	})
+
+	first, err := RunStudy(context.Background(), StudyOptions{
+		RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), DryRun: true,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := RunStudy(context.Background(), StudyOptions{
+		RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), DryRun: true, TaskConcurrency: 4,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.StudyID != first.StudyID || second.Experiments[0].Identity != first.Experiments[0].Identity {
+		t.Fatalf("identical dry-run preparations changed identity:\nfirst:  %#v\nsecond: %#v", first, second)
+	}
+	studies, err := os.ReadDir(filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(studies) != 1 || studies[0].Name() != first.StudyID {
+		t.Fatalf("identical dry runs created distinct study directories: %#v", studies)
 	}
 }
 

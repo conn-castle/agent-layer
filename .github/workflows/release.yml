@@ -43,7 +43,6 @@ jobs:
             gh run list \
               --workflow release-catalog-certification.yml \
               --branch main \
-              --event workflow_dispatch \
               --commit "${release_commit}" \
               --status success \
               --limit 1 \

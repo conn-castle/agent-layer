@@ -26,7 +26,6 @@ successful_run="$(
   gh run list \
     --workflow "${workflow}" \
     --branch main \
-    --event workflow_dispatch \
     --commit "${head_sha}" \
     --status success \
     --limit 1 \
@@ -43,7 +42,6 @@ active_run="$(
   gh run list \
     --workflow "${workflow}" \
     --branch main \
-    --event workflow_dispatch \
     --commit "${head_sha}" \
     --limit 10 \
     --json databaseId,status \

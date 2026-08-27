@@ -74,6 +74,7 @@ type matrixArm struct {
 	StateDir                       string
 	Loaded                         loadedBenchmarkPlan
 	Bundle                         *TreatmentBundle
+	AdapterSHA256                  string
 	AgentTimeoutMultiplier         float64
 	IgnoreProviderClientInManifest bool
 }
@@ -108,6 +109,7 @@ type studyArmManifest struct {
 	Repetitions            map[string]int    `json:"repetitions"`
 	AgentTimeoutMultiplier float64           `json:"agent_timeout_multiplier"`
 	TreatmentHash          string            `json:"treatment_manifest_hash,omitempty"`
+	AdapterSHA256          string            `json:"adapter_sha256,omitempty"`
 }
 
 type matrixJob struct {
@@ -276,7 +278,7 @@ func expectedStudyArmManifest(selectionID string, tasks []benchmarkPlanTask, che
 	if arm.Bundle != nil {
 		treatmentHash = arm.Bundle.ManifestHash
 	}
-	manifest := studyArmManifest{SchemaVersion: studyArmManifestSchema, SelectionID: selectionID, Label: arm.Label, Mode: arm.Mode, Model: arm.Loaded.Model.PublishedIdentifier, Reasoning: arm.Loaded.Effort, ProviderClient: arm.Loaded.Model.ProviderClientVersion, TaskChecksums: copyStringMap(checksums), Repetitions: repetitionsForTasks(tasks), TreatmentHash: treatmentHash, AgentTimeoutMultiplier: arm.AgentTimeoutMultiplier}
+	manifest := studyArmManifest{SchemaVersion: studyArmManifestSchema, SelectionID: selectionID, Label: arm.Label, Mode: arm.Mode, Model: arm.Loaded.Model.PublishedIdentifier, Reasoning: arm.Loaded.Effort, ProviderClient: arm.Loaded.Model.ProviderClientVersion, TaskChecksums: copyStringMap(checksums), Repetitions: repetitionsForTasks(tasks), TreatmentHash: treatmentHash, AdapterSHA256: arm.AdapterSHA256, AgentTimeoutMultiplier: arm.AgentTimeoutMultiplier}
 	if arm.IgnoreProviderClientInManifest {
 		manifest.ProviderClient = ""
 	}

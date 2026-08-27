@@ -582,6 +582,40 @@ func TestLegacyMatrixArmManifestIsReadOnlyRecoveryInput(t *testing.T) {
 	}
 }
 
+func TestBareCustomAdapterIdentityAndHistoricalManifestBoundary(t *testing.T) {
+	grok, effort, err := ParseModelSelection(modelGrok45 + ":minimal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAdapter, err := embeddedPierAdapterSHA256()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := executionAdapterSHA256(grok, nil); err != nil || got != wantAdapter {
+		t.Fatalf("bare Grok adapter hash = %q, %v", got, err)
+	}
+	luna, _, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := executionAdapterSHA256(luna, nil); err != nil || got != "" {
+		t.Fatalf("native bare adapter hash = %q, %v", got, err)
+	}
+
+	prepared := preparedStudy{experiments: []preparedStudyExperiment{{model: grok, effort: effort}}}
+	matching := immutableStudyManifest{Arms: []studyArmContract{{Adapter: wantAdapter}}}
+	if !studyManifestBundleMatches(matching, &prepared, []*TreatmentBundle{nil}) {
+		t.Fatal("matching bare custom adapter was rejected")
+	}
+	matching.Arms[0].Adapter = ""
+	if studyManifestBundleMatches(matching, &prepared, []*TreatmentBundle{nil}) {
+		t.Fatal("adapter-less historical manifest matched a bare custom arm")
+	}
+	if bundle := historicalTreatmentBundle(studyArmContract{Adapter: wantAdapter}); bundle != nil {
+		t.Fatalf("bare custom adapter was reconstructed as treatment: %#v", bundle)
+	}
+}
+
 func rewriteStudyAttempt(t *testing.T, arm matrixArm, task string, attempt int, checksum string, score, cost float64) {
 	t.Helper()
 	rewriteStudyAttemptConformance(t, arm, task, attempt, checksum, score, cost, true)
@@ -660,6 +694,28 @@ func TestStudyValidatesExplicitInputsAndIdentity(t *testing.T) {
 	}
 	if first != second {
 		t.Fatalf("production v3 study identity changed without an input change: %q != %q", first, second)
+	}
+	tasks := []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 1}, {ID: "second-task", RepetitionsPerArm: 1}}
+	bundles := []*TreatmentBundle{nil, {
+		ManifestHash:      strings.Repeat("c", 64),
+		AdapterSHA256:     strings.Repeat("d", 64),
+		LinuxBinarySHA256: strings.Repeat("e", 64),
+	}}
+	firstBinding, err := bindStudyPreparation(root, &firstPrepared, tasks, checksums, environments, bundles, nil, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondBinding, err := bindStudyPreparation(root, &secondPrepared, tasks, checksums, environments, bundles, nil, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstPrepared.studyID != secondPrepared.studyID || firstBinding.stateDir != secondBinding.stateDir {
+		t.Fatalf("task concurrency changed bound study identity: %q != %q", firstPrepared.studyID, secondPrepared.studyID)
+	}
+	for index := range firstBinding.arms {
+		if firstBinding.arms[index].ID != secondBinding.arms[index].ID {
+			t.Fatalf("task concurrency changed arm %d identity: %q != %q", index, firstBinding.arms[index].ID, secondBinding.arms[index].ID)
+		}
 	}
 	environments["first-task"] = "environment-two"
 	changed, err := identifyStudy(firstPrepared.selectionID, membership, checksums, environments)

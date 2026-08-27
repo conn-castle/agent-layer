@@ -1,9 +1,12 @@
 package benchmark
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -269,6 +272,86 @@ func TestAntigravityPierArgumentsUseOAuthProfilePath(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(arguments, " "), "antigravity_credentials_path="+credentialPath) {
 		t.Fatalf("Antigravity Pier arguments omit OAuth profile: %v", arguments)
+	}
+}
+
+func TestBareCustomProviderStagesEmbeddedPierAdapter(t *testing.T) {
+	stage := t.TempDir()
+	for _, adapter := range []string{adapterGrok, adapterAntigravity} {
+		path, err := stagePierAgentLayerAdapter(ExecutionRequest{
+			Arm: ArmBaseline, Model: Model{Adapter: adapter},
+		}, stage)
+		if err != nil {
+			t.Fatalf("stage bare %s adapter: %v", adapter, err)
+		}
+		if path != stage {
+			t.Fatalf("bare %s adapter path = %q, want %q", adapter, path, stage)
+		}
+		actual, err := os.ReadFile(filepath.Join(path, "pier_agent_layer.py")) // #nosec G304 -- test-owned staging path.
+		if err != nil {
+			t.Fatal(err)
+		}
+		expected, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(actual, expected) {
+			t.Fatalf("bare %s adapter differs from embedded release asset", adapter)
+		}
+	}
+}
+
+func TestBareCustomProviderLoadsThroughPinnedPierFactory(t *testing.T) {
+	stage := t.TempDir()
+	path, err := stagePierAgentLayerAdapter(ExecutionRequest{
+		Arm: ArmBaseline, Model: Model{Adapter: adapterGrok},
+	}, stage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := `
+from pathlib import Path
+from pier.agents.factory import AgentFactory
+
+agent = AgentFactory.create_agent_from_import_path(
+    "pier_agent_layer:AgentLayerGrok",
+    logs_dir=Path("/tmp/agent-layer-pier-factory-test"),
+    model_name="grok-4.5",
+    version="1.0.5",
+    treatment_agent="grok",
+    treatment_model="grok-4.5",
+    treatment_reasoning_effort="low",
+    treatment_mode="bare",
+)
+assert agent.name() == "grok"
+`
+	command := exec.CommandContext(t.Context(), "uvx", "--from", "datacurve-pier=="+PierVersion, "python", "-c", script) // #nosec G204 -- pinned Pier constructs the embedded benchmark adapter.
+	command.Env = replaceEnvValue(os.Environ(), "PYTHONPATH", path)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("pinned Pier failed to construct staged bare adapter: %v\n%s", err, output)
+	}
+}
+
+func TestPierAdapterStagingPreservesNativeAndTreatmentBoundaries(t *testing.T) {
+	stage := t.TempDir()
+	path, err := stagePierAgentLayerAdapter(ExecutionRequest{
+		Arm: ArmBaseline, Model: Model{Adapter: adapterCodex},
+	}, stage)
+	if err != nil || path != "" {
+		t.Fatalf("native bare adapter path = %q, %v", path, err)
+	}
+	if _, err := os.Stat(filepath.Join(stage, "pier_agent_layer.py")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("native bare execution staged a custom adapter: %v", err)
+	}
+
+	bundleRoot := t.TempDir()
+	bundlePath := filepath.Join(bundleRoot, "adapter", "pier_agent_layer.py")
+	path, err = stagePierAgentLayerAdapter(ExecutionRequest{
+		Arm: ArmTreatment, Model: Model{Adapter: adapterCodex},
+		Bundle: &TreatmentBundle{AdapterPath: bundlePath},
+	}, stage)
+	if err != nil || path != filepath.Dir(bundlePath) {
+		t.Fatalf("treatment adapter path = %q, %v", path, err)
 	}
 }
 

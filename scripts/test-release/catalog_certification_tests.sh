@@ -67,4 +67,47 @@ EOF
   fi
 
   rm -rf "$fixture"
+
+  local scope_fixture scope_output
+  scope_fixture="$(mktemp -d)"
+  mkdir -p "$scope_fixture/scripts" "$scope_fixture/docs" "$scope_fixture/internal/benchmark"
+  cp "$ROOT_DIR/scripts/catalog-certification-scope.sh" "$scope_fixture/scripts/"
+  git -C "$scope_fixture" init -q
+  git -C "$scope_fixture" config user.name "Release Test"
+  git -C "$scope_fixture" config user.email "release-test@example.invalid"
+  printf 'module example.invalid/release-test\n\ngo 1.26\n' >"$scope_fixture/go.mod"
+  printf 'baseline\n' >"$scope_fixture/docs/note.md"
+  printf 'package benchmark\n' >"$scope_fixture/internal/benchmark/readiness.go"
+  git -C "$scope_fixture" add .
+  git -C "$scope_fixture" commit -q -m baseline
+
+  scope_output="$(cd "$scope_fixture" && ./scripts/catalog-certification-scope.sh 2>scope-error)"
+  if [[ "$scope_output" == "true" ]] && grep -q 'No prior stable release tag' "$scope_fixture/scope-error"; then
+    pass "catalog-certification-scope: requires full certification without a prior stable tag"
+  else
+    fail "catalog-certification-scope: must fail safe without a prior stable tag"
+  fi
+
+  git -C "$scope_fixture" tag v1.0.0
+  printf 'documentation only\n' >>"$scope_fixture/docs/note.md"
+  git -C "$scope_fixture" add docs/note.md
+  git -C "$scope_fixture" commit -q -m docs
+  scope_output="$(cd "$scope_fixture" && ./scripts/catalog-certification-scope.sh 2>scope-error)"
+  if [[ "$scope_output" == "false" ]] && grep -q 'No catalog-critical paths changed' "$scope_fixture/scope-error"; then
+    pass "catalog-certification-scope: skips full certification for unrelated release changes"
+  else
+    fail "catalog-certification-scope: must skip unrelated release changes"
+  fi
+
+  printf '// changed\n' >>"$scope_fixture/internal/benchmark/readiness.go"
+  git -C "$scope_fixture" add internal/benchmark/readiness.go
+  git -C "$scope_fixture" commit -q -m benchmark
+  scope_output="$(cd "$scope_fixture" && ./scripts/catalog-certification-scope.sh 2>scope-error)"
+  if [[ "$scope_output" == "true" ]] && grep -q 'internal/benchmark/readiness.go changed' "$scope_fixture/scope-error"; then
+    pass "catalog-certification-scope: requires full certification for benchmark changes"
+  else
+    fail "catalog-certification-scope: must require benchmark changes"
+  fi
+
+  rm -rf "$scope_fixture"
 }

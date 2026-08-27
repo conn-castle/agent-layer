@@ -133,9 +133,9 @@ func writeStudyManifest(study *preparedStudy, preparation matrixPreparation) err
 	manifest := immutableStudyManifest{SchemaVersion: "deepswe-study-manifest-v1", StudyID: study.studyID, SelectionID: study.selectionID, Checksums: copyStringMap(preparation.checksums), Environments: copyStringMap(preparation.environments), Resources: studyResourceContract()}
 	for _, arm := range preparation.arms {
 		manifest.Membership = append(manifest.Membership, arm.Label)
-		contract := studyArmContract{Name: arm.Label, ID: arm.ID, Target: arm.Loaded.Model.RuntimeIdentifier + ":" + arm.Loaded.Effort}
+		contract := studyArmContract{Name: arm.Label, ID: arm.ID, Target: arm.Loaded.Model.RuntimeIdentifier + ":" + arm.Loaded.Effort, Adapter: arm.AdapterSHA256}
 		if arm.Bundle != nil {
-			contract.Bundle, contract.Adapter, contract.Runtime, contract.RuntimeSource, contract.RuntimeVersion = arm.Bundle.ManifestHash, arm.Bundle.AdapterSHA256, arm.Bundle.LinuxBinarySHA256, arm.Bundle.RuntimeSourceKind, arm.Bundle.RuntimeVersion
+			contract.Bundle, contract.Runtime, contract.RuntimeSource, contract.RuntimeVersion = arm.Bundle.ManifestHash, arm.Bundle.LinuxBinarySHA256, arm.Bundle.RuntimeSourceKind, arm.Bundle.RuntimeVersion
 		}
 		manifest.Arms = append(manifest.Arms, contract)
 	}
@@ -288,7 +288,8 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 		if err := reuseMatchingEvidence(options.RepoRoot, prepared.selectionID, tasks, checksums, environments, arm); err != nil {
 			return matrixPreparation{}, fmt.Errorf("reuse immutable historical evidence for experiment %q: %w", arm.Label, err)
 		}
-		if arm.Bundle == nil {
+		request := ExecutionRequest{RepoRoot: options.RepoRoot, EvidenceDir: arm.StateDir, Attempt: 1, Model: arm.Loaded.Model, Effort: arm.Loaded.Effort, Arm: arm.Mode, Bundle: arm.Bundle, AgentTimeoutMultiplier: arm.AgentTimeoutMultiplier}
+		if !usesAgentLayerPierAdapter(request) {
 			continue
 		}
 		seen := map[string]bool{}
@@ -301,7 +302,9 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 			if eventErr != nil {
 				return matrixPreparation{}, eventErr
 			}
-			if err := preflightTreatmentRuntime(ctx, ExecutionRequest{RepoRoot: options.RepoRoot, EvidenceDir: arm.StateDir, EventID: eventID, Attempt: 1, Task: task.ID, Model: arm.Loaded.Model, Effort: arm.Loaded.Effort, Arm: arm.Mode, Bundle: arm.Bundle, TaskChecksum: checksums[task.ID], EnvironmentIdentity: environments[task.ID], AgentTimeoutMultiplier: arm.AgentTimeoutMultiplier}); err != nil {
+			request.EventID, request.Task = eventID, task.ID
+			request.TaskChecksum, request.EnvironmentIdentity = checksums[task.ID], environments[task.ID]
+			if err := preflightTreatmentRuntime(ctx, request); err != nil {
 				return matrixPreparation{}, fmt.Errorf("preflight experiment %q task %q runtime: %w", arm.Label, task.ID, err)
 			}
 		}
@@ -496,7 +499,7 @@ func loadCompleteCachedStudy(repoRoot string, prepared *preparedStudy, candidate
 			if err := readStudyJSON(filepath.Join(candidate.stateDir, "study-manifest.json"), &manifest); err != nil {
 				return matrixPreparation{}, nil, false, fmt.Errorf("read immutable study manifest %s: %w", filepath.Base(candidate.stateDir), err)
 			}
-			if !studyManifestBundleMatches(manifest, bundles) {
+			if !studyManifestBundleMatches(manifest, prepared, bundles) {
 				continue
 			}
 			preparation, err := preparationFromCachedStudy(repoRoot, prepared, manifest, candidate.stateDir, bundles, tasks, concurrency)
@@ -528,7 +531,7 @@ func loadReportClaimedCachedStudy(repoRoot string, prepared *preparedStudy, stat
 	if !studyManifestDeclarationCompatible(manifest, prepared) {
 		return matrixPreparation{}, false, fmt.Errorf("completed cached study %s conflicts with its immutable manifest declaration", filepath.Base(stateDir))
 	}
-	if !studyManifestBundleMatches(manifest, bundles) {
+	if !studyManifestBundleMatches(manifest, prepared, bundles) {
 		return matrixPreparation{}, true, nil
 	}
 	preparation, err := preparationFromCachedStudy(repoRoot, prepared, manifest, stateDir, bundles, tasks, concurrency)
@@ -584,7 +587,7 @@ func historicalBundlesFromManifest(manifest immutableStudyManifest) []*Treatment
 // identity and validate receipts. It is not a staged bundle and must not be
 // used for report generation.
 func historicalTreatmentBundle(contract studyArmContract) *TreatmentBundle {
-	if contract.Bundle == "" && contract.Adapter == "" && contract.Runtime == "" && contract.RuntimeSource == "" && contract.RuntimeVersion == "" {
+	if contract.Bundle == "" && contract.Runtime == "" && contract.RuntimeSource == "" && contract.RuntimeVersion == "" {
 		return nil
 	}
 	return &TreatmentBundle{
@@ -620,19 +623,23 @@ func studyManifestDeclarationCompatible(manifest immutableStudyManifest, prepare
 	return true
 }
 
-func studyManifestBundleMatches(manifest immutableStudyManifest, bundles []*TreatmentBundle) bool {
-	if len(manifest.Arms) != len(bundles) {
+func studyManifestBundleMatches(manifest immutableStudyManifest, prepared *preparedStudy, bundles []*TreatmentBundle) bool {
+	if len(manifest.Arms) != len(bundles) || len(prepared.experiments) != len(bundles) {
 		return false
 	}
 	for index, arm := range manifest.Arms {
-		bundle := bundles[index]
+		bundle := bundles[index]                                                                // #nosec G602 -- all three parallel slices have equal lengths by the guard above.
+		adapterSHA256, err := executionAdapterSHA256(prepared.experiments[index].model, bundle) // #nosec G602 -- equal lengths are validated above.
+		if err != nil || arm.Adapter != adapterSHA256 {
+			return false
+		}
 		if bundle == nil {
-			if arm.Bundle != "" || arm.Adapter != "" || arm.Runtime != "" || arm.RuntimeSource != "" || arm.RuntimeVersion != "" {
+			if arm.Bundle != "" || arm.Runtime != "" || arm.RuntimeSource != "" || arm.RuntimeVersion != "" {
 				return false
 			}
 			continue
 		}
-		if arm.Bundle != bundle.ManifestHash || arm.Adapter != bundle.AdapterSHA256 || arm.Runtime != bundle.LinuxBinarySHA256 ||
+		if arm.Bundle != bundle.ManifestHash || arm.Runtime != bundle.LinuxBinarySHA256 ||
 			arm.RuntimeSource != bundle.RuntimeSourceKind || arm.RuntimeVersion != bundle.RuntimeVersion {
 			return false
 		}
@@ -734,7 +741,11 @@ func sameAuthenticationPreflight(left, right AuthenticationPreflight) bool {
 func bindStudyPreparation(repoRoot string, prepared *preparedStudy, tasks []benchmarkPlanTask, checksums, environments map[string]string, bundles []*TreatmentBundle, authentication map[string]AuthenticationPreflight, concurrency int) (matrixPreparation, error) {
 	preparation := matrixPreparation{selection: prepared.selection, selectionID: prepared.selectionID, tasks: tasks, checksums: checksums, environments: environments, authentication: authentication, taskConcurrency: concurrency}
 	for index, experiment := range prepared.experiments {
-		identity, err := studyArmIdentity(prepared.selectionID, experiment.identity, checksums, environments, bundles[index])
+		adapterSHA256, err := executionAdapterSHA256(experiment.model, bundles[index])
+		if err != nil {
+			return matrixPreparation{}, err
+		}
+		identity, err := studyArmIdentity(prepared.selectionID, experiment.identity, checksums, environments, bundles[index], adapterSHA256)
 		if err != nil {
 			return matrixPreparation{}, err
 		}
@@ -744,7 +755,7 @@ func bindStudyPreparation(repoRoot string, prepared *preparedStudy, tasks []benc
 		}
 		loaded := loadedBenchmarkPlan{Model: experiment.model, Effort: experiment.effort}
 		loaded.Plan.Tasks = tasks
-		preparation.arms = append(preparation.arms, matrixArm{ID: identity, Label: experiment.Name, Mode: mode, Loaded: loaded, Bundle: bundles[index], AgentTimeoutMultiplier: skillsAgentTimeoutFactor, IgnoreProviderClientInManifest: true})
+		preparation.arms = append(preparation.arms, matrixArm{ID: identity, Label: experiment.Name, Mode: mode, Loaded: loaded, Bundle: bundles[index], AdapterSHA256: adapterSHA256, AgentTimeoutMultiplier: skillsAgentTimeoutFactor, IgnoreProviderClientInManifest: true})
 	}
 	membership := make([]struct{ Name, Arm string }, len(preparation.arms))
 	for i, arm := range preparation.arms {
@@ -762,16 +773,29 @@ func bindStudyPreparation(repoRoot string, prepared *preparedStudy, tasks []benc
 	return preparation, nil
 }
 
-func studyArmIdentity(selectionID, experimentIdentity string, checksums, environments map[string]string, bundle *TreatmentBundle) (string, error) {
+func executionAdapterSHA256(model Model, bundle *TreatmentBundle) (string, error) {
+	if bundle != nil {
+		if bundle.AdapterSHA256 == "" {
+			return "", fmt.Errorf("benchmark treatment bundle is missing its Pier adapter hash")
+		}
+		return bundle.AdapterSHA256, nil
+	}
+	if model.Adapter == adapterGrok || model.Adapter == adapterAntigravity {
+		return embeddedPierAdapterSHA256()
+	}
+	return "", nil
+}
+
+func studyArmIdentity(selectionID, experimentIdentity string, checksums, environments map[string]string, bundle *TreatmentBundle, adapterSHA256 string) (string, error) {
 	identityInput := struct {
 		Schema, Selection, Experiment          string
 		TaskChecksums, Environments            map[string]string
 		Resource                               map[string]any
 		ManifestHash, AdapterHash, RuntimeHash string
-	}{Schema: "deepswe-study-arm-v2", Selection: selectionID, Experiment: experimentIdentity,
+	}{Schema: "deepswe-study-arm-v2", Selection: selectionID, Experiment: experimentIdentity, AdapterHash: adapterSHA256,
 		TaskChecksums: checksums, Environments: environments, Resource: studyResourceContract()}
 	if bundle != nil {
-		identityInput.ManifestHash, identityInput.AdapterHash, identityInput.RuntimeHash = bundle.ManifestHash, bundle.AdapterSHA256, bundle.LinuxBinarySHA256
+		identityInput.ManifestHash, identityInput.RuntimeHash = bundle.ManifestHash, bundle.LinuxBinarySHA256
 	}
 	return hashCanonical(identityInput)
 }
@@ -868,7 +892,7 @@ func compatibleStudyArmManifest(manifest studyArmManifest, selectionID string, t
 		manifest.Mode == destination.Mode && manifest.Model == destination.Loaded.Model.PublishedIdentifier &&
 		manifest.Reasoning == destination.Loaded.Effort && sameStringMap(manifest.TaskChecksums, checksums) &&
 		sameIntMap(manifest.Repetitions, repetitionsForTasks(tasks)) && manifest.AgentTimeoutMultiplier == destination.AgentTimeoutMultiplier &&
-		manifest.TreatmentHash == bundleManifestHash(destination.Bundle)
+		manifest.TreatmentHash == bundleManifestHash(destination.Bundle) && manifest.AdapterSHA256 == destination.AdapterSHA256
 }
 
 func reusableLegacyMatrixArmManifest(root string) (matrixArmManifest, bool, error) {
@@ -890,7 +914,7 @@ func compatibleLegacyMatrixArmManifest(manifest matrixArmManifest, selectionID s
 		manifest.Mode == destination.Mode && manifest.Model == destination.Loaded.Model.PublishedIdentifier &&
 		manifest.Reasoning == destination.Loaded.Effort && sameStringMap(manifest.TaskChecksums, checksums) &&
 		sameIntMap(manifest.Repetitions, repetitionsForTasks(tasks)) && multiplier == destination.AgentTimeoutMultiplier &&
-		manifest.TreatmentHash == bundleManifestHash(destination.Bundle)
+		manifest.TreatmentHash == bundleManifestHash(destination.Bundle) && (destination.Bundle != nil || destination.AdapterSHA256 == "")
 }
 
 func historicalTreatmentMultiplier(sourceDir, treatmentHash string) float64 {

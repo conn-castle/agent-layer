@@ -1535,6 +1535,78 @@ func writeBareStudy(t *testing.T, root, model, reasoning string) {
 	writeStudyInputFixture(t, root, "study.toml", "selection = \"selection.json\"\n[[experiments]]\nname = \"Bare\"\nmodel = \""+model+"\"\nreasoning = \""+reasoning+"\"\n")
 }
 
+func TestBareCustomProviderDryRunPreflightsAndRecordsAdapter(t *testing.T) {
+	root := t.TempDir()
+	writeBareStudy(t, root, modelGrok45, "minimal")
+	stubStudyInfrastructure(t, root)
+
+	originalAuth := validateBenchmarkAuthentication
+	originalRuntimePreflight := preflightTreatmentRuntime
+	t.Cleanup(func() {
+		validateBenchmarkAuthentication = originalAuth
+		preflightTreatmentRuntime = originalRuntimePreflight
+	})
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{adapterGrok: {
+			Provider: adapterGrok, Check: authCheckJSONFilePresence, AuthenticationMethod: authMethodJSONFile, VerifiedAt: time.Now().UTC(),
+		}}, nil
+	}
+	var preflights []ExecutionRequest
+	preflightTreatmentRuntime = func(_ context.Context, request ExecutionRequest) error {
+		preflights = append(preflights, request)
+		return nil
+	}
+
+	dryExecutor := &studyWorkflowExecutor{}
+	dry, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), DryRun: true}, dryExecutor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dryExecutor.requests()) != 0 {
+		t.Fatalf("dry run reached inference: %#v", dryExecutor.requests())
+	}
+	if len(preflights) != 2 {
+		t.Fatalf("bare custom runtime preflights = %d, want one per task environment", len(preflights))
+	}
+	for _, request := range preflights {
+		if request.Arm != ArmBaseline || request.Bundle != nil || request.Model.Adapter != adapterGrok || request.Task == "" || request.EnvironmentIdentity == "" {
+			t.Fatalf("bare custom runtime preflight = %#v", request)
+		}
+	}
+
+	wantAdapter, err := embeddedPierAdapterSHA256()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies", dry.StudyID, "study-manifest.json")
+	var manifest immutableStudyManifest
+	if err := readStudyJSON(manifestPath, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Arms) != 1 || manifest.Arms[0].Adapter != wantAdapter || manifest.Arms[0].Bundle != "" || manifest.Arms[0].Runtime != "" {
+		t.Fatalf("bare custom study manifest = %#v", manifest.Arms)
+	}
+	var armManifest studyArmManifest
+	if err := readStudyJSON(filepath.Join(filepath.Dir(manifestPath), "arms", manifest.Arms[0].ID, "manifest.json"), &armManifest); err != nil {
+		t.Fatal(err)
+	}
+	if armManifest.AdapterSHA256 != wantAdapter || armManifest.TreatmentHash != "" || armManifest.Mode != ArmBaseline {
+		t.Fatalf("bare custom arm manifest = %#v", armManifest)
+	}
+
+	paid, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report StudyReport
+	if err := readStudyJSON(paid.JSONPath, &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Experiments) != 1 || report.Experiments[0].AdapterSHA256 != wantAdapter || report.Experiments[0].BundleManifest != nil || report.Experiments[0].LinuxBinarySHA256 != "" {
+		t.Fatalf("bare custom experiment report = %#v", report.Experiments)
+	}
+}
+
 func stubStudyInfrastructure(t *testing.T, root string) *int {
 	t.Helper()
 	originalPreflight := preflightBenchmark

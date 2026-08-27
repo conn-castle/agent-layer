@@ -367,7 +367,7 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 		"--include-task-name", request.Task,
 	}
 	arguments = append(arguments, startupArguments...)
-	if request.Arm == ArmTreatment || request.Model.Adapter == adapterAntigravity || request.Model.Adapter == adapterGrok {
+	if usesAgentLayerPierAdapter(request) {
 		treatmentArguments, err := treatmentPierArguments(request)
 		if err != nil {
 			return AttemptResult{}, err
@@ -403,14 +403,18 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 	if err != nil {
 		return AttemptResult{}, err
 	}
+	adapterPath, err := stagePierAgentLayerAdapter(request, stage)
+	if err != nil {
+		return AttemptResult{}, err
+	}
 	command.Env = append(
 		benchmarkProcessEnvironment(credentialValues),
 		"DOCKER_CONFIG="+dockerConfig,
 		"PYTHONDONTWRITEBYTECODE=1",
 	)
 	pythonPaths := make([]string, 0, 2)
-	if request.Bundle != nil {
-		pythonPaths = append(pythonPaths, filepath.Dir(request.Bundle.AdapterPath))
+	if adapterPath != "" {
+		pythonPaths = append(pythonPaths, adapterPath)
 	}
 	if len(startupArguments) > 0 {
 		pythonPaths = append([]string{stage}, pythonPaths...)
@@ -778,6 +782,35 @@ func treatmentPierArguments(request ExecutionRequest) ([]string, error) {
 		arguments = append(arguments, pierAgentKwarg, "preflight_only=true")
 	}
 	return arguments, nil
+}
+
+func usesAgentLayerPierAdapter(request ExecutionRequest) bool {
+	return request.Arm == ArmTreatment || request.Model.Adapter == adapterAntigravity || request.Model.Adapter == adapterGrok
+}
+
+// stagePierAgentLayerAdapter exposes the module named by --agent-import-path.
+// Treatment runs use the content-addressed copy in their immutable bundle.
+// Bare providers that Pier does not implement natively use the matching asset
+// embedded in this executable, without turning the arm into a treatment.
+func stagePierAgentLayerAdapter(request ExecutionRequest, stage string) (string, error) {
+	if !usesAgentLayerPierAdapter(request) {
+		return "", nil
+	}
+	if request.Bundle != nil {
+		if request.Bundle.AdapterPath == "" {
+			return "", fmt.Errorf("benchmark treatment bundle is missing its Pier adapter")
+		}
+		return filepath.Dir(request.Bundle.AdapterPath), nil
+	}
+	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
+	if err != nil {
+		return "", fmt.Errorf("read embedded Pier adapter: %w", err)
+	}
+	path := filepath.Join(stage, "pier_agent_layer.py")
+	if err := os.WriteFile(path, adapter, 0o600); err != nil {
+		return "", fmt.Errorf("stage bare Pier adapter: %w", err)
+	}
+	return stage, nil
 }
 
 func benchmarkAntigravityOAuthCredential(ctx context.Context, repoRoot string) ([]byte, error) {

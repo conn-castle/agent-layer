@@ -64,6 +64,7 @@ required_files=(
   "scripts/codesign-release.sh"
   "scripts/notarize-release.sh"
   "scripts/check-upgrade-docs.sh"
+  "scripts/catalog-certification-scope.sh"
   "scripts/certify-release-catalog.sh"
   "al-install.sh"
 )
@@ -76,7 +77,7 @@ for file in "${required_files[@]}"; do
   fi
 done
 
-for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/notarize-release.sh"; do
+for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/notarize-release.sh" "scripts/catalog-certification-scope.sh"; do
   if [[ -x "$ROOT_DIR/$script" ]]; then
     pass "$script is executable"
   else
@@ -85,7 +86,7 @@ for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/
 done
 
 # Shell syntax validation
-for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/notarize-release.sh" "scripts/check-upgrade-docs.sh" "scripts/certify-release-catalog.sh" "al-install.sh"; do
+for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/notarize-release.sh" "scripts/check-upgrade-docs.sh" "scripts/catalog-certification-scope.sh" "scripts/certify-release-catalog.sh" "al-install.sh"; do
   if bash -n "$ROOT_DIR/$script" 2>/dev/null; then
     pass "$script has valid bash syntax"
   else
@@ -95,7 +96,7 @@ done
 
 # Optional: shellcheck
 if command -v shellcheck >/dev/null 2>&1; then
-  for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/notarize-release.sh" "scripts/check-upgrade-docs.sh" "scripts/certify-release-catalog.sh" "al-install.sh"; do
+  for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/notarize-release.sh" "scripts/check-upgrade-docs.sh" "scripts/catalog-certification-scope.sh" "scripts/certify-release-catalog.sh" "al-install.sh"; do
     if shellcheck -S error "$ROOT_DIR/$script" 2>/dev/null; then
       pass "$script passes shellcheck"
     else
