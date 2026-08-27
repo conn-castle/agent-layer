@@ -115,11 +115,16 @@ func LoadConfigFS(fsys fs.FS, root string, path string) (*Config, error) {
 	return ParseConfig(data, path)
 }
 
-// LoadEnvFS reads .agent-layer/.env from fsys into a key-value map.
+// LoadEnvFS reads .agent-layer/.env from fsys into a key-value map. A missing
+// file is equivalent to an empty environment; malformed or unreadable files
+// fail.
 // root is used for path resolution when path is absolute; path is used for error messages.
 func LoadEnvFS(fsys fs.FS, root string, path string) (map[string]string, error) {
 	data, err := readFileFS(fsys, root, path)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return map[string]string{}, nil
+		}
 		return nil, fmt.Errorf(messages.ConfigMissingEnvFileFmt, path, err)
 	}
 

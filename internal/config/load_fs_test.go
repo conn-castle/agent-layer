@@ -135,6 +135,16 @@ func TestLoadEnvFS_Invalid(t *testing.T) {
 	}
 }
 
+func TestLoadEnvFS_Missing(t *testing.T) {
+	env, err := LoadEnvFS(fstest.MapFS{}, "root", ".agent-layer/.env")
+	if err != nil {
+		t.Fatalf("LoadEnvFS error: %v", err)
+	}
+	if len(env) != 0 {
+		t.Fatalf("expected empty env, got %#v", env)
+	}
+}
+
 func TestLoadInstructionsFS_NoMarkdown(t *testing.T) {
 	fsys := fstest.MapFS{
 		".agent-layer/instructions":            {Mode: fs.ModeDir},
