@@ -136,7 +136,8 @@
 
     code { font-family: var(--mono); font-size: 0.9em; }
 
-    .publication-card {
+    .publication-card,
+    .citation-card {
       margin-top: 20px;
       border: 1px solid var(--border);
       border-left: 4px solid var(--accent);
@@ -145,13 +146,15 @@
       padding: 14px 16px 16px;
     }
 
-    .publication-card h2 {
+    .publication-card h2,
+    .citation-card h2 {
       margin-bottom: 7px;
       color: var(--accent-dark);
       font-size: 0.9rem;
     }
 
-    .publication-card p {
+    .publication-card p,
+    .citation-card p {
       margin: 0;
       color: var(--muted);
       font-size: 0.88rem;
@@ -159,11 +162,10 @@
     }
 
     .publication-card a { color: var(--accent-dark); font-weight: 600; text-underline-offset: 3px; }
-    .citation-label { margin-top: 12px; color: var(--text); font-size: 0.78rem; font-weight: 600; }
 
-    .publication-card pre {
+    .citation-card pre {
       overflow-x: auto;
-      margin: 6px 0 0;
+      margin: 10px 0 0;
       border: 1px solid var(--border);
       border-radius: 6px;
       background: var(--surface);
@@ -842,17 +844,10 @@
         selects 9 tasks.
       </p>
     </div>
-    <!-- Replace the paper URL and provisional citation with the published arXiv metadata before release. -->
+    <!-- Replace the paper URL with the published arXiv URL before release. -->
     <aside class="publication-card" aria-labelledby="publication-title">
       <h2 id="publication-title">Research paper</h2>
       <p><a href="https://arxiv.org/abs/XXXX.XXXXX" target="_blank" rel="noopener noreferrer">Read the DeltaSelect arXiv paper</a> for the method, validation, and limitations.</p>
-      <div class="citation-label">Provisional citation</div>
-      <pre><code>@article{conn2026deltaselect,
-  title   = {DeltaSelect: Budget-Aware Task Selection for Agent Benchmarks},
-  author  = {Conn, Nicholas J.},
-  journal = {arXiv preprint arXiv:XXXX.XXXXX},
-  year    = {2026}
-}</code></pre>
     </aside>
     <section class="method-guide" aria-labelledby="method-guide-title">
       <h2 id="method-guide-title">How to use this tool</h2>
@@ -1012,6 +1007,18 @@
       </div>
     </div>
   </section>
+
+  <!-- Replace this provisional citation with the paper's published arXiv metadata before release. -->
+  <aside class="citation-card" aria-labelledby="citation-title">
+    <h2 id="citation-title">Cite DeltaSelect</h2>
+    <p>Use this provisional BibTeX entry until the paper's final citation is available.</p>
+    <pre><code>@article{conn2026deltaselect,
+  title   = {DeltaSelect: Budget-Aware Task Selection for Agent Benchmarks},
+  author  = {Conn, Nicholas J.},
+  journal = {arXiv preprint arXiv:XXXX.XXXXX},
+  year    = {2026}
+}</code></pre>
+  </aside>
 
   <footer class="provenance"><details id="sourceDetail"></details></footer>
 </main>
