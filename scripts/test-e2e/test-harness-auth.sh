@@ -114,24 +114,7 @@ else
   fail "resolve_latest_release_version should use GH_TOKEN (got rc=$rc, result='$result')"
 fi
 
-# --- Case 3: Without any token, function still attempts (unauthenticated) --
-export MOCK_CURL_MODE="auth-required"
-unset GITHUB_TOKEN 2>/dev/null || true
-unset GH_TOKEN 2>/dev/null || true
-
-result=""
-rc=0
-result=$(resolve_latest_release_version) || rc=$?
-
-if [[ $rc -ne 0 ]]; then
-  pass "resolve_latest_release_version fails without token when API rate-limits"
-else
-  # This is expected: unauthenticated calls may succeed on a real API but
-  # fail when rate-limited. The mock rejects unauthenticated calls.
-  pass "resolve_latest_release_version succeeded without token (unexpected but not wrong)"
-fi
-
-# --- Case 4: Auth fails, fallback to unauthenticated ----------------------
+# --- Case 3: Auth fails, fallback to unauthenticated ----------------------
 export MOCK_CURL_MODE="auth-fails"
 export GITHUB_TOKEN="ghp_test_stale_token_value"
 unset GH_TOKEN 2>/dev/null || true
@@ -144,6 +127,20 @@ if [[ $rc -eq 0 && "$result" == "0.8.8" ]]; then
   pass "resolve_latest_release_version falls back when auth fails"
 else
   fail "resolve_latest_release_version should fall back on auth failure (got rc=$rc, result='$result')"
+fi
+
+# --- Case 4: Without a token, use the unauthenticated API directly --------
+export MOCK_CURL_MODE="unauth-ok"
+unset GITHUB_TOKEN GH_TOKEN 2>/dev/null || true
+
+result=""
+rc=0
+result=$(resolve_latest_release_version) || rc=$?
+
+if [[ $rc -eq 0 && "$result" == "0.8.8" ]]; then
+  pass "resolve_latest_release_version works without a configured token"
+else
+  fail "resolve_latest_release_version should work without a token (got rc=$rc, result='$result')"
 fi
 
 # ---------------------------------------------------------------------------

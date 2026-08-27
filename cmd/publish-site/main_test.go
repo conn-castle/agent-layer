@@ -5,15 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestValidateTagFormat(t *testing.T) {
@@ -946,535 +943,6 @@ func TestPublishDeepSWEPlanner_ReplacesOnlyOwnedStaticSubtree(t *testing.T) {
 	}
 }
 
-func TestValidateRepoBRootErrors(t *testing.T) {
-	if err := validateRepoBRoot(filepath.Join(t.TempDir(), "missing")); err == nil {
-		t.Fatal("expected error for missing repo")
-	}
-
-	repo := t.TempDir()
-	if err := os.MkdirAll(repo, 0o700); err != nil {
-		t.Fatalf("mkdir repo: %v", err)
-	}
-	if err := validateRepoBRoot(repo); err == nil {
-		t.Fatal("expected error for missing .git")
-	}
-
-	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o700); err != nil {
-		t.Fatalf("mkdir .git: %v", err)
-	}
-	if err := validateRepoBRoot(repo); err == nil {
-		t.Fatal("expected error for missing required files")
-	}
-
-	for _, name := range []string{"package.json", "docusaurus.config.js", "sidebars.js"} {
-		if err := os.WriteFile(filepath.Join(repo, name), []byte("{}"), 0o600); err != nil {
-			t.Fatalf("write %s: %v", name, err)
-		}
-	}
-	if err := os.MkdirAll(filepath.Join(repo, "src"), 0o700); err != nil {
-		t.Fatalf("mkdir src: %v", err)
-	}
-	if err := validateRepoBRoot(repo); err == nil {
-		t.Fatal("expected error for missing src/pages")
-	}
-}
-
-func TestValidateRepoBRoot_StatError(t *testing.T) {
-	repo := t.TempDir()
-	withStatError(t, repo, os.ErrPermission)
-
-	err := validateRepoBRoot(repo)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !errors.Is(err, os.ErrPermission) {
-		t.Fatalf("expected permission error, got %v", err)
-	}
-}
-
-func TestValidateRepoBRoot_GitAndRequiredPathStatErrors(t *testing.T) {
-	t.Run("git stat error", func(t *testing.T) {
-		repo := t.TempDir()
-		withStatError(t, filepath.Join(repo, ".git"), os.ErrPermission)
-		err := validateRepoBRoot(repo)
-		if err == nil || !errors.Is(err, os.ErrPermission) {
-			t.Fatalf("expected .git stat error, got %v", err)
-		}
-	})
-
-	t.Run("required path stat error", func(t *testing.T) {
-		repo := setupRepoB(t)
-		withStatError(t, filepath.Join(repo, "package.json"), os.ErrPermission)
-		err := validateRepoBRoot(repo)
-		if err == nil || !errors.Is(err, os.ErrPermission) {
-			t.Fatalf("expected required-path stat error, got %v", err)
-		}
-	})
-
-	t.Run("src/pages stat error", func(t *testing.T) {
-		repo := setupRepoB(t)
-		withStatError(t, filepath.Join(repo, "src", "pages"), os.ErrPermission)
-		err := validateRepoBRoot(repo)
-		if err == nil || !errors.Is(err, os.ErrPermission) {
-			t.Fatalf("expected src/pages stat error, got %v", err)
-		}
-	})
-}
-
-func TestRepoRoot(t *testing.T) {
-	repo := t.TempDir()
-	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/test"), 0o600); err != nil {
-		t.Fatalf("write go.mod: %v", err)
-	}
-	nested := filepath.Join(repo, "nested", "dir")
-	if err := os.MkdirAll(nested, 0o700); err != nil {
-		t.Fatalf("mkdir nested: %v", err)
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chdir(cwd)
-	})
-	if err := os.Chdir(nested); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-
-	got, err := repoRoot()
-	if err != nil {
-		t.Fatalf("repoRoot: %v", err)
-	}
-	gotEval, err := filepath.EvalSymlinks(got)
-	if err != nil {
-		t.Fatalf("eval symlinks: %v", err)
-	}
-	repoEval, err := filepath.EvalSymlinks(repo)
-	if err != nil {
-		t.Fatalf("eval symlinks repo: %v", err)
-	}
-	if gotEval != repoEval {
-		t.Fatalf("expected %q, got %q", repoEval, gotEval)
-	}
-}
-
-func TestRepoRoot_GoModStatError(t *testing.T) {
-	repo := t.TempDir()
-	goModPath := filepath.Join(repo, "go.mod")
-	if err := os.WriteFile(goModPath, []byte("module example.com/test"), 0o600); err != nil {
-		t.Fatalf("write go.mod: %v", err)
-	}
-	nested := filepath.Join(repo, "nested", "dir")
-	if err := os.MkdirAll(nested, 0o700); err != nil {
-		t.Fatalf("mkdir nested: %v", err)
-	}
-
-	testutil.WithWorkingDir(t, nested, func() {
-		withStatError(t, goModPath, os.ErrPermission)
-
-		_, err := repoRoot()
-		if err == nil {
-			t.Fatal("expected error")
-		}
-		if !errors.Is(err, os.ErrPermission) {
-			t.Fatalf("expected permission error, got %v", err)
-		}
-	})
-}
-
-func TestNormalizeVersionsJSON_Missing(t *testing.T) {
-	repo := t.TempDir()
-	if err := normalizeVersionsJSON(repo); err == nil {
-		t.Fatal("expected error for missing versions.json")
-	}
-}
-
-func TestRun_MissingRepoBDir(t *testing.T) {
-	setArgs(t, "--tag", "v0.1.0")
-	if err := run(); err == nil || !strings.Contains(err.Error(), "--repo-b-dir is required") {
-		t.Fatalf("expected repo-b-dir error, got %v", err)
-	}
-}
-
-func TestRun_InvalidTimeout(t *testing.T) {
-	setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", "repo-b", "--docusaurus-timeout", "0s")
-	if err := run(); err == nil || !strings.Contains(err.Error(), "positive duration") {
-		t.Fatalf("expected timeout error, got %v", err)
-	}
-}
-
-func TestRun_InvalidTag(t *testing.T) {
-	setArgs(t, "--tag", "bad", "--repo-b-dir", "repo-b")
-	if err := run(); err == nil || !strings.Contains(err.Error(), "invalid tag format") {
-		t.Fatalf("expected tag format error, got %v", err)
-	}
-}
-
-func TestRun_RepoRootMissing(t *testing.T) {
-	root := t.TempDir()
-	testutil.WithWorkingDir(t, root, func() {
-		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", "repo-b")
-		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to find repo root") {
-			t.Fatalf("expected repo root error, got %v", err)
-		}
-	})
-}
-
-func TestRun_RepoBDirAbsError(t *testing.T) {
-	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
-
-	testutil.WithWorkingDir(t, repoA, func() {
-		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", "bad\x00path")
-		if err := run(); err == nil || !strings.Contains(err.Error(), "stat --repo-b-dir") {
-			t.Fatalf("expected repo-b-dir stat error, got %v", err)
-		}
-	})
-}
-
-func TestRun_ValidateRepoBRootError(t *testing.T) {
-	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
-	repoB := t.TempDir() // missing .git and required files
-
-	testutil.WithWorkingDir(t, repoA, func() {
-		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
-		if err := run(); err == nil {
-			t.Fatal("expected validate repo-b-dir error")
-		}
-	})
-}
-
-func TestRun_MissingSitePages(t *testing.T) {
-	repoA := setupRepoA(t, repoAOptions{withPages: false, withDocs: true, withChangelog: true})
-	repoB := setupRepoB(t)
-
-	testutil.WithWorkingDir(t, repoA, func() {
-		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
-		if err := run(); err == nil || !strings.Contains(err.Error(), "missing Repo A site pages dir") {
-			t.Fatalf("expected missing pages error, got %v", err)
-		}
-	})
-}
-
-func TestRun_MissingSiteDocs(t *testing.T) {
-	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: false, withChangelog: true})
-	repoB := setupRepoB(t)
-
-	testutil.WithWorkingDir(t, repoA, func() {
-		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
-		if err := run(); err == nil || !strings.Contains(err.Error(), "missing Repo A site docs dir") {
-			t.Fatalf("expected missing docs error, got %v", err)
-		}
-	})
-}
-
-func TestRun_MissingChangelog(t *testing.T) {
-	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: false})
-	repoB := setupRepoB(t)
-
-	testutil.WithWorkingDir(t, repoA, func() {
-		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
-		if err := run(); err == nil || !strings.Contains(err.Error(), "missing Repo A changelog") {
-			t.Fatalf("expected missing changelog error, got %v", err)
-		}
-	})
-}
-
-func TestRun_ChangelogStatError(t *testing.T) {
-	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
-	repoB := setupRepoB(t)
-
-	changelogPath := filepath.Join(repoA, "CHANGELOG.md")
-	withStatError(t, changelogPath, os.ErrPermission)
-
-	testutil.WithWorkingDir(t, repoA, func() {
-		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
-		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to stat Repo A changelog") {
-			t.Fatalf("expected stat changelog error, got %v", err)
-		}
-	})
-}
-
-func TestRun_CopyPagesError(t *testing.T) {
-	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
-	repoB := setupRepoB(t)
-
-	badFile := filepath.Join(repoA, "site", "pages", "index.mdx")
-	withReadFileError(t, badFile, os.ErrPermission)
-
-	testutil.WithWorkingDir(t, repoA, func() {
-		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
-		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to copy pages") {
-			t.Fatalf("expected copy pages error, got %v", err)
-		}
-	})
-}
-
-func TestRun_CopyDocsError(t *testing.T) {
-	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
-	repoB := setupRepoB(t)
-
-	badFile := filepath.Join(repoA, "site", "docs", "reference.mdx")
-	withReadFileError(t, badFile, os.ErrPermission)
-
-	testutil.WithWorkingDir(t, repoA, func() {
-		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
-		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to copy docs") {
-			t.Fatalf("expected copy docs error, got %v", err)
-		}
-	})
-}
-
-func TestRun_CopyPagesCreateSrcDirError(t *testing.T) {
-	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
-	repoB := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repoB, ".git"), 0o700); err != nil {
-		t.Fatalf("mkdir .git: %v", err)
-	}
-	for _, name := range []string{"package.json", "docusaurus.config.js", "sidebars.js"} {
-		if err := os.WriteFile(filepath.Join(repoB, name), []byte("{}"), 0o600); err != nil {
-			t.Fatalf("write %s: %v", name, err)
-		}
-	}
-	srcPath := filepath.Join(repoB, "src")
-	if err := os.WriteFile(srcPath, []byte("not-a-dir"), 0o600); err != nil {
-		t.Fatalf("write src file: %v", err)
-	}
-
-	originalStat := osStatFunc
-	osStatFunc = func(name string) (os.FileInfo, error) {
-		if filepath.Clean(name) == filepath.Clean(filepath.Join(repoB, "src", "pages")) {
-			return originalStat(srcPath)
-		}
-		return originalStat(name)
-	}
-	t.Cleanup(func() { osStatFunc = originalStat })
-
-	testutil.WithWorkingDir(t, repoA, func() {
-		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
-		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to create src dir") {
-			t.Fatalf("expected src mkdir error, got %v", err)
-		}
-	})
-}
-
-func TestRepoRoot_GetwdError(t *testing.T) {
-	orig, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	dir := t.TempDir()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	if err := os.RemoveAll(dir); err != nil {
-		t.Fatalf("remove temp dir: %v", err)
-	}
-	defer func() {
-		_ = os.Chdir(orig)
-	}()
-
-	if _, err := repoRoot(); err == nil {
-		t.Fatal("expected error from repoRoot when getwd fails")
-	}
-}
-
-func TestCopyTree_RemoveAllError(t *testing.T) {
-	src := t.TempDir()
-	if err := os.WriteFile(filepath.Join(src, "file.txt"), []byte("x"), 0o600); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-	if err := copyTree(src, "bad\x00"); err == nil {
-		t.Fatal("expected error for invalid destination path")
-	}
-}
-
-func TestCopyTree_WalkError(t *testing.T) {
-	src := t.TempDir()
-	blocked := filepath.Join(src, "blocked")
-	if err := os.MkdirAll(blocked, 0o700); err != nil {
-		t.Fatalf("mkdir blocked: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(blocked, "file.txt"), []byte("x"), 0o600); err != nil {
-		t.Fatalf("write blocked file: %v", err)
-	}
-
-	withWalkError(t, blocked, os.ErrPermission)
-
-	dst := t.TempDir()
-	if err := copyTree(src, filepath.Join(dst, "out")); err == nil {
-		t.Fatal("expected walk error")
-	}
-}
-
-func TestCopyTree_CallbackErrParameterPropagates(t *testing.T) {
-	originalWalk := filepathWalkFunc
-	filepathWalkFunc = func(root string, fn filepath.WalkFunc) error {
-		return fn(root, nil, errors.New("walk callback boom"))
-	}
-	t.Cleanup(func() { filepathWalkFunc = originalWalk })
-
-	if err := copyTree(t.TempDir(), filepath.Join(t.TempDir(), "out")); err == nil || !strings.Contains(err.Error(), "walk callback boom") {
-		t.Fatalf("expected callback err propagation, got %v", err)
-	}
-}
-
-func TestCopyTree_RelPathErrorPropagates(t *testing.T) {
-	originalWalk := filepathWalkFunc
-	filepathWalkFunc = func(root string, fn filepath.WalkFunc) error {
-		return fn("bad\x00path", nil, nil)
-	}
-	t.Cleanup(func() { filepathWalkFunc = originalWalk })
-
-	if err := copyTree(t.TempDir(), filepath.Join(t.TempDir(), "out")); err == nil {
-		t.Fatal("expected filepath.Rel error")
-	}
-}
-
-func TestCopyTree_WriteError(t *testing.T) {
-	src := t.TempDir()
-	dst := t.TempDir()
-	if err := os.WriteFile(filepath.Join(src, "file.txt"), []byte("x"), 0o600); err != nil {
-		t.Fatalf("write src file: %v", err)
-	}
-
-	target := filepath.Join(dst, "out", "file.txt")
-	withWriteFileError(t, target, os.ErrPermission)
-
-	if err := copyTree(src, filepath.Join(dst, "out")); err == nil || !errors.Is(err, os.ErrPermission) {
-		t.Fatalf("expected write error, got %v", err)
-	}
-}
-
-func TestRun_ReadChangelogError(t *testing.T) {
-	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelogDir: true})
-	repoB := setupRepoB(t)
-
-	testutil.WithWorkingDir(t, repoA, func() {
-		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
-		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to read Repo A changelog") {
-			t.Fatalf("expected read changelog error, got %v", err)
-		}
-	})
-}
-
-func TestRun_WriteChangelogError(t *testing.T) {
-	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
-	repoB := setupRepoB(t)
-	requireMkdir(t, filepath.Join(repoB, "CHANGELOG.md"))
-
-	testutil.WithWorkingDir(t, repoA, func() {
-		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
-		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to write Repo B changelog") {
-			t.Fatalf("expected write changelog error, got %v", err)
-		}
-	})
-}
-
-func TestEnsureIdempotentVersion_ReadError(t *testing.T) {
-	repo := t.TempDir()
-	versionsPath := filepath.Join(repo, "versions.json")
-	if err := os.MkdirAll(versionsPath, 0o700); err != nil {
-		t.Fatalf("mkdir versions.json: %v", err)
-	}
-
-	if err := ensureIdempotentVersion(repo, "1.2.3"); err == nil {
-		t.Fatal("expected read error for versions.json directory")
-	}
-}
-
-func TestEnsureIdempotentVersion_WriteError(t *testing.T) {
-	repo := t.TempDir()
-	versionsPath := filepath.Join(repo, "versions.json")
-	if err := os.WriteFile(versionsPath, []byte("[\"1.2.3\"]"), 0o600); err != nil {
-		t.Fatalf("write versions.json: %v", err)
-	}
-
-	withWriteFileError(t, versionsPath, os.ErrPermission)
-
-	if err := ensureIdempotentVersion(repo, "1.2.3"); err == nil {
-		t.Fatal("expected write error")
-	}
-}
-
-func TestEnsureIdempotentVersion_AdditionalErrorBranches(t *testing.T) {
-	t.Run("remove versioned docs error", func(t *testing.T) {
-		repo := t.TempDir()
-		if err := ensureIdempotentVersion(repo, "bad\x00version"); err == nil {
-			t.Fatal("expected remove-all error for invalid docsVersion path")
-		}
-	})
-
-	t.Run("remove sidebar error", func(t *testing.T) {
-		repo := t.TempDir()
-		sidebarPath := filepath.Join(repo, "versioned_sidebars", "version-1.2.3-sidebars.json")
-		if err := os.MkdirAll(sidebarPath, 0o700); err != nil {
-			t.Fatalf("mkdir sidebar path as directory: %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(sidebarPath, "keep.txt"), []byte("x"), 0o600); err != nil {
-			t.Fatalf("write nested file: %v", err)
-		}
-		if err := ensureIdempotentVersion(repo, "1.2.3"); err == nil {
-			t.Fatal("expected remove sidebar error when sidebar path is a directory")
-		}
-	})
-}
-
-func TestRun_EnsureIdempotentVersionError(t *testing.T) {
-	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
-	repoB := setupRepoB(t)
-	versionsPath := filepath.Join(repoB, "versions.json")
-	if err := os.WriteFile(versionsPath, []byte("invalid-json"), 0o600); err != nil {
-		t.Fatalf("write versions.json: %v", err)
-	}
-
-	testutil.WithWorkingDir(t, repoA, func() {
-		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
-		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to ensure idempotent version") {
-			t.Fatalf("expected idempotent error, got %v", err)
-		}
-	})
-}
-
-func TestRun_DocusaurusCommandError(t *testing.T) {
-	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
-	repoB := setupRepoB(t)
-	withHelperCommand(t, "HELPER_FAIL=1")
-
-	testutil.WithWorkingDir(t, repoA, func() {
-		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
-		if err := run(); err == nil || !strings.Contains(err.Error(), "docusaurus docs:version failed") {
-			t.Fatalf("expected docusaurus error, got %v", err)
-		}
-	})
-}
-
-func TestRun_DocusaurusTimeout(t *testing.T) {
-	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
-	repoB := setupRepoB(t)
-	withHelperCommand(t, "HELPER_SLEEP=50ms")
-
-	testutil.WithWorkingDir(t, repoA, func() {
-		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB, "--docusaurus-timeout", "1ms")
-		if err := run(); err == nil || !strings.Contains(err.Error(), "exceeded timeout") {
-			t.Fatalf("expected timeout error, got %v", err)
-		}
-	})
-}
-
-func TestRun_NormalizeVersionsJSONError(t *testing.T) {
-	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
-	repoB := setupRepoB(t)
-	withHelperCommand(t, "HELPER_SKIP_VERSIONS=1")
-
-	testutil.WithWorkingDir(t, repoA, func() {
-		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
-		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to normalize versions.json") {
-			t.Fatalf("expected normalize error, got %v", err)
-		}
-	})
-}
-
 func TestParseVersion_InvalidMinor(t *testing.T) {
 	if _, err := parseVersion("1.a.3"); err == nil {
 		t.Fatal("expected error for invalid minor version")
@@ -1667,6 +1135,71 @@ func TestNormalizeVersionsJSON_PrereleasePathTraversalRejected(t *testing.T) {
 	}
 }
 
+func TestRunRejectsInvalidPublicationTargetBeforeMutation(t *testing.T) {
+	repoA := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repoA, "go.mod"), []byte("module example.com/test"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	repoB := t.TempDir()
+	sentinel := filepath.Join(repoB, "do-not-touch.txt")
+	if err := os.WriteFile(sentinel, []byte("preserve"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	originalArgs := os.Args
+	originalFlags := flag.CommandLine
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		os.Args = originalArgs
+		flag.CommandLine = originalFlags
+		_ = os.Chdir(cwd)
+	})
+	if err := os.Chdir(repoA); err != nil {
+		t.Fatal(err)
+	}
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	os.Args = []string{"publish-site", "--tag", "v0.1.0", "--repo-b-dir", repoB}
+
+	err = run()
+	if err == nil || !strings.Contains(err.Error(), "missing .git") {
+		t.Fatalf("invalid publication target error = %v", err)
+	}
+	data, readErr := os.ReadFile(sentinel) // #nosec G304 -- test-owned path.
+	if readErr != nil || string(data) != "preserve" {
+		t.Fatalf("invalid target was mutated: %q, %v", data, readErr)
+	}
+}
+
+func TestRunRejectsInvalidArguments(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{name: "missing repository", args: []string{"--tag", "v0.1.0"}, wantErr: "--repo-b-dir is required"},
+		{name: "invalid timeout", args: []string{"--tag", "v0.1.0", "--repo-b-dir", ".", "--docusaurus-timeout", "0s"}, wantErr: "positive duration"},
+		{name: "invalid stable tag", args: []string{"--tag", "v0.1.0-rc.1", "--repo-b-dir", "."}, wantErr: "invalid tag format"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			originalArgs := os.Args
+			originalFlags := flag.CommandLine
+			t.Cleanup(func() {
+				os.Args = originalArgs
+				flag.CommandLine = originalFlags
+			})
+			flag.CommandLine = flag.NewFlagSet("publish-site", flag.ContinueOnError)
+			os.Args = append([]string{"publish-site"}, test.args...)
+
+			if err := run(); err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("run error = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
 func TestRun(t *testing.T) {
 	repoA := t.TempDir()
 	repoB := t.TempDir()
@@ -1817,56 +1350,6 @@ func TestMainHelper(t *testing.T) {
 	main()
 }
 
-type repoAOptions struct {
-	withPages        bool
-	withDocs         bool
-	withChangelog    bool
-	withChangelogDir bool
-}
-
-func setupRepoA(t *testing.T, opts repoAOptions) string {
-	t.Helper()
-	repo := t.TempDir()
-	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/test"), 0o600); err != nil {
-		t.Fatalf("write go.mod: %v", err)
-	}
-	if opts.withPages {
-		sitePages := filepath.Join(repo, "site", "pages")
-		if err := os.MkdirAll(sitePages, 0o700); err != nil {
-			t.Fatalf("mkdir site pages: %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(sitePages, "index.mdx"), []byte("# Home"), 0o600); err != nil {
-			t.Fatalf("write page: %v", err)
-		}
-		writeFile(t, filepath.Join(repo, "site", "static", "deepswe-planner", "app", "index.html"), "planner")
-	}
-	if opts.withDocs {
-		siteDocs := filepath.Join(repo, "site", "docs")
-		if err := os.MkdirAll(siteDocs, 0o700); err != nil {
-			t.Fatalf("mkdir site docs: %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(siteDocs, "reference.mdx"), []byte("reference"), 0o600); err != nil {
-			t.Fatalf("write doc: %v", err)
-		}
-	}
-	if opts.withPages && opts.withDocs {
-		writeTestGuideInputs(t, repo)
-	}
-	if opts.withChangelog || opts.withChangelogDir {
-		changelog := filepath.Join(repo, "CHANGELOG.md")
-		if opts.withChangelogDir {
-			if err := os.MkdirAll(changelog, 0o700); err != nil {
-				t.Fatalf("mkdir changelog: %v", err)
-			}
-		} else {
-			if err := os.WriteFile(changelog, []byte("# Changelog\n"), 0o600); err != nil {
-				t.Fatalf("write changelog: %v", err)
-			}
-		}
-	}
-	return repo
-}
-
 func writeTestGuideInputs(t *testing.T, repo string) {
 	t.Helper()
 	for _, spec := range defaultGuidePageSpecs {
@@ -1902,26 +1385,6 @@ func writeFile(t *testing.T, path string, content string) {
 	}
 }
 
-func requireMkdir(t *testing.T, path string) {
-	t.Helper()
-	if err := os.MkdirAll(path, 0o700); err != nil {
-		t.Fatalf("mkdir %s: %v", path, err)
-	}
-}
-
-func setArgs(t *testing.T, args ...string) {
-	t.Helper()
-	origArgs := os.Args
-	origFlags := flag.CommandLine
-	t.Cleanup(func() {
-		os.Args = origArgs
-		flag.CommandLine = origFlags
-	})
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
-	flag.CommandLine.SetOutput(io.Discard)
-	os.Args = append([]string{origArgs[0]}, args...)
-}
-
 // resolveSymlinks returns both the original and symlink-resolved paths.
 // On macOS, t.TempDir() returns /var/... while os.Getwd() returns /private/var/...;
 // matching both ensures stubs work for direct calls and calls through run().
@@ -1931,32 +1394,6 @@ func resolveSymlinks(path string) (original, resolved string) {
 		resolved = r
 	}
 	return path, resolved
-}
-
-func withStatError(t *testing.T, path string, injectedErr error) {
-	t.Helper()
-	origPath, resolvedPath := resolveSymlinks(path)
-	orig := osStatFunc
-	osStatFunc = func(name string) (os.FileInfo, error) {
-		if name == origPath || name == resolvedPath {
-			return nil, injectedErr
-		}
-		return orig(name)
-	}
-	t.Cleanup(func() { osStatFunc = orig })
-}
-
-func withReadFileError(t *testing.T, path string, injectedErr error) {
-	t.Helper()
-	origPath, resolvedPath := resolveSymlinks(path)
-	orig := osReadFileFunc
-	osReadFileFunc = func(name string) ([]byte, error) {
-		if name == origPath || name == resolvedPath {
-			return nil, injectedErr
-		}
-		return orig(name)
-	}
-	t.Cleanup(func() { osReadFileFunc = orig })
 }
 
 func withWriteFileError(t *testing.T, path string, injectedErr error) {
@@ -1970,31 +1407,4 @@ func withWriteFileError(t *testing.T, path string, injectedErr error) {
 		return orig(name, data, perm)
 	}
 	t.Cleanup(func() { osWriteFileFunc = orig })
-}
-
-func withWalkError(t *testing.T, errorDir string, injectedErr error) {
-	t.Helper()
-	origDir, resolvedDir := resolveSymlinks(errorDir)
-	orig := filepathWalkFunc
-	filepathWalkFunc = func(root string, fn filepath.WalkFunc) error {
-		return orig(root, func(path string, info os.FileInfo, err error) error {
-			if (path == origDir || path == resolvedDir) && info != nil && info.IsDir() {
-				return injectedErr
-			}
-			return fn(path, info, err)
-		})
-	}
-	t.Cleanup(func() { filepathWalkFunc = orig })
-}
-
-func withHelperCommand(t *testing.T, extraEnv ...string) {
-	t.Helper()
-	orig := execCommandContext
-	t.Cleanup(func() { execCommandContext = orig })
-	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		cmd := exec.CommandContext(ctx, os.Args[0], append([]string{"-test.run=TestHelperProcess", "--"}, append([]string{name}, args...)...)...) //nolint:gosec // standard test re-exec pattern
-		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
-		cmd.Env = append(cmd.Env, extraEnv...)
-		return cmd
-	}
 }

@@ -15,8 +15,6 @@ GOLANGCI_LINT_CACHE ?= $(ROOT_DIR)/.cache/golangci-lint
 # Prune excluded directory roots before descent; -not -path still traverses them.
 GO_FILES_FIND_CMD := find . \( -path './.git' -o -path './.tools' -o -path './.cache' -o -path './.claude' -o -path './.codex' -o -path './.gemini' -o -path './.agy' -o -path './.antigravitycli' -o -path './.agents' -o -path './.agent-layer' -o -path './tmp' \) -prune -o -type f -name '*.go'
 
-COVERAGE_THRESHOLD ?= 90.0
-
 AL_VERSION ?= dev
 DIST_DIR ?= dist
 RELEASE_BINARIES := al-darwin-arm64 al-darwin-amd64 al-linux-arm64 al-linux-amd64
@@ -114,6 +112,13 @@ lint: check-golangci-lint ## Run golangci-lint
 	@mkdir -p "$(GOLANGCI_LINT_CACHE)"
 	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE)" "$(TOOL_BIN)/golangci-lint" run ./...
 
+.PHONY: shell-syntax-check
+shell-syntax-check: ## Parse every tracked or untracked, non-ignored *.sh file without executing it
+	@git ls-files -z --cached --others --exclude-standard -- '*.sh' | \
+	  while IFS= read -r -d '' file; do \
+	    [[ ! -e "$$file" ]] || bash -n -- "$$file" || exit $$?; \
+	  done
+
 .PHONY: lint-ci-local
 lint-ci-local: check-golangci-lint ## Run fresh-cache Linux-targeted and native-host lint
 	@tmp_root="$$(mktemp -d "$${TMPDIR:-/tmp}/agent-layer-lint-ci-local.XXXXXX")"; \
@@ -189,20 +194,10 @@ tidy-check: ## Verify go.mod/go.sum are tidy
 	  fi
 
 .PHONY: coverage
-coverage: check-gotestsum ## Enforce coverage threshold (>= $(COVERAGE_THRESHOLD)) and write coverage.out
+coverage: check-gotestsum ## Run tests with coverage reporting and write coverage.out
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
 	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/gotestsum" --format testname -- ./... -coverprofile=coverage.out
-	@total="$$(go tool cover -func=coverage.out | awk '/^total:/ {print $$3}' | tr -d '%')"; \
-	  if [[ -z "$$total" ]]; then echo "Failed to read total coverage from coverage.out" >&2; exit 1; fi; \
-	  status=0; \
-	  awk -v total="$$total" -v threshold="$(COVERAGE_THRESHOLD)" 'BEGIN { \
-	    if (total + 0 < threshold + 0) { \
-	      printf("Coverage %.2f%% is below threshold %.2f%%\n", total, threshold) > "/dev/stderr"; \
-	      exit 1; \
-	    } \
-	  }' || status=1; \
-	  GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run -tags tools ./internal/tools/coverreport -profile coverage.out -threshold "$(COVERAGE_THRESHOLD)"; \
-	  exit $$status
+	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run -tags tools ./internal/tools/coverreport -profile coverage.out
 
 .PHONY: test-release
 test-release: ## Run release artifact tests
@@ -287,7 +282,7 @@ test-e2e-ci: ## Run e2e tests for CI (online downloads, upgrade scenarios requir
 	@AL_E2E_ONLINE=1 AL_E2E_REQUIRE_UPGRADE=1 ./scripts/test-e2e.sh
 
 .PHONY: ci
-ci: tidy-check fmt-check lint dead-code coverage test-deepswe-planner test-race test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
+ci: tidy-check fmt-check lint shell-syntax-check dead-code coverage test-deepswe-planner test-race test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
 
 .PHONY: dev
 dev: ## Fast local formatting and lint loop

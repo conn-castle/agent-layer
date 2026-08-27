@@ -2,6 +2,7 @@ package install
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/templates"
@@ -148,6 +150,84 @@ func TestPlanUpgradeMigrations_SourceTooOldSkipsSourceDependent(t *testing.T) {
 	}
 	if len(plan.executable) != 0 {
 		t.Fatalf("expected no executable migrations, got %#v", plan.executable)
+	}
+}
+
+func TestPlanUpgradeMigrationsRecoversSourceVersionWithoutPin(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		version    string
+		wantOrigin UpgradeMigrationSourceOrigin
+		seed       func(*testing.T, string, *installer)
+	}{
+		{
+			name:       "managed baseline",
+			version:    "0.6.0",
+			wantOrigin: UpgradeMigrationSourceBaseline,
+			seed: func(t *testing.T, root string, _ *installer) {
+				t.Helper()
+				now := time.Now().UTC().Format(time.RFC3339)
+				state := managedBaselineState{
+					SchemaVersion: baselineStateSchemaVersion, BaselineVersion: "0.6.0",
+					Source: BaselineStateSourceWrittenByUpgrade, CreatedAt: now, UpdatedAt: now,
+					Files: []manifestFileEntry{{Path: filepath.ToSlash(filepath.Join("docs", "agent-layer", "CONTEXT.md")), FullHashNormalized: "hash"}},
+				}
+				if err := writeManagedBaselineState(root, RealSystem{}, state); err != nil {
+					t.Fatalf("write managed baseline: %v", err)
+				}
+			},
+		},
+		{
+			name:       "latest upgrade snapshot",
+			version:    "0.6.1",
+			wantOrigin: UpgradeMigrationSourceSnapshot,
+			seed: func(t *testing.T, _ string, inst *installer) {
+				t.Helper()
+				dir := inst.upgradeSnapshotDirPath()
+				if err := os.MkdirAll(dir, 0o700); err != nil {
+					t.Fatalf("mkdir snapshot dir: %v", err)
+				}
+				snapshot := upgradeSnapshot{
+					SchemaVersion: upgradeSnapshotSchemaVersion, SnapshotID: "source",
+					CreatedAtUTC: time.Now().UTC().Format(time.RFC3339), Status: upgradeSnapshotStatusApplied,
+					Entries: []upgradeSnapshotEntry{{
+						Path: pinVersionRelPath, Kind: upgradeSnapshotEntryKindFile,
+						ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.6.1\n")),
+					}},
+				}
+				if err := writeUpgradeSnapshotFile(filepath.Join(dir, "source.json"), snapshot, RealSystem{}); err != nil {
+					t.Fatalf("write upgrade snapshot: %v", err)
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			withMigrationManifestOverride(t, "0.7.0", `{
+  "schema_version": 1,
+  "target_version": "0.7.0",
+  "min_prior_version": "0.6.0",
+  "operations": [{
+    "id": "source_dependent",
+    "kind": "delete_file",
+    "rationale": "exercise source-gated migration",
+    "path": "legacy.txt"
+  }]
+}`)
+			inst := &installer{root: root, pinVersion: "0.7.0", sys: RealSystem{}}
+			test.seed(t, root, inst)
+
+			plan, err := inst.planUpgradeMigrations()
+			if err != nil {
+				t.Fatalf("plan migrations: %v", err)
+			}
+			if plan.report.SourceVersion != test.version || plan.report.SourceVersionOrigin != test.wantOrigin {
+				t.Fatalf("source = %q (%q), want %q (%q)", plan.report.SourceVersion, plan.report.SourceVersionOrigin, test.version, test.wantOrigin)
+			}
+			if len(plan.executable) != 1 || plan.executable[0].ID != "source_dependent" {
+				t.Fatalf("source-dependent migration was not planned: %#v", plan.executable)
+			}
+		})
 	}
 }
 
@@ -617,6 +697,33 @@ func TestValidateUpgradeMigrationOperation_ConfigDeleteKeyRequiresValidKey(t *te
 	}
 	if !strings.Contains(err.Error(), "invalid key") {
 		t.Fatalf("expected invalid-key validation error, got %v", err)
+	}
+}
+
+func TestConfigRenameMigrationRejectsConflictingDestinationWithoutMutation(t *testing.T) {
+	root := t.TempDir()
+	content := "[from]\nkey = \"source\"\n[to]\nkey = \"destination\"\n"
+	configPath := filepath.Join(root, ".agent-layer", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	op := upgradeMigrationOperation{
+		ID:        "rename-conflict",
+		Kind:      upgradeMigrationKindConfigRenameKey,
+		Rationale: "move a configuration key",
+		From:      "from.key",
+		To:        "to.key",
+	}
+	changed, err := (&installer{root: root, sys: RealSystem{}}).executeUpgradeMigrationOperation(op)
+	if err == nil || !strings.Contains(err.Error(), "config key rename conflict") || changed {
+		t.Fatalf("conflicting rename = changed %v, error %v", changed, err)
+	}
+	data, readErr := os.ReadFile(configPath) // #nosec G304 -- test-owned path.
+	if readErr != nil || string(data) != content {
+		t.Fatalf("conflicting rename mutated config: %q, %v", data, readErr)
 	}
 }
 
