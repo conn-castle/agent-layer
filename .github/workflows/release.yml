@@ -36,6 +36,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      - name: Initialize Agent Layer for benchmark readiness
+        run: AL_NO_NETWORK=1 go run ./cmd/al init --here --no-wizard
       - name: Certify pinned benchmark catalog
         run: go run ./cmd/al benchmark readiness --task-concurrency 1 --remove-task-images
 

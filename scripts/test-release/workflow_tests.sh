@@ -42,7 +42,12 @@ run_workflow_consistency_tests() {
   catalog_job=$(workflow_job_block "$release_workflow" "catalog-readiness")
   build_job=$(workflow_job_block "$release_workflow" "build-release")
 
-  if [[ -n "$catalog_job" && -n "$build_job" ]] && \
+  local catalog_init_line catalog_readiness_line
+  catalog_init_line=$(grep -n 'go run ./cmd/al init --here --no-wizard' <<<"$catalog_job" | head -n1 | cut -d: -f1 || true)
+  catalog_readiness_line=$(grep -n 'go run ./cmd/al benchmark readiness --task-concurrency 1 --remove-task-images' <<<"$catalog_job" | head -n1 | cut -d: -f1 || true)
+
+  if [[ -n "$catalog_job" && -n "$build_job" && -n "$catalog_init_line" && -n "$catalog_readiness_line" && \
+        "$catalog_init_line" -lt "$catalog_readiness_line" ]] && \
      grep -q 'go run ./cmd/al benchmark readiness --task-concurrency 1 --remove-task-images' <<<"$catalog_job" && \
      grep -q '^    needs: catalog-readiness$' <<<"$build_job"; then
     pass "workflow-consistency: pinned benchmark catalog readiness gates release builds"

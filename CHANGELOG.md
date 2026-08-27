@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - Release preflight now certifies the pinned DeepSWE benchmark catalog before building release artifacts, with bounded Docker image cleanup during the catalog audit.
+- Hosted benchmark readiness now bootstraps a minimal Agent Layer workspace in the release checkout before certification.
 - DeepSWE benchmark selections now translate published provider model identities to the exact canonical identities accepted by the benchmark CLI and report supported models when selectors are invalid.
 - The `.agent-layer/.env` file is optional when no Agent Layer secrets are needed; unreadable or malformed files still fail explicitly.
 - The `implement` skill now limits plan and code-review corrections to the requested input scope.
