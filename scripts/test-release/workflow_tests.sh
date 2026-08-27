@@ -44,26 +44,31 @@ run_workflow_consistency_tests() {
     fail "workflow-consistency: build-release must run on macos-latest for Developer ID signing"
   fi
 
-  local catalog_job build_job certification_job
+  local catalog_job build_job classification_job certification_job
   catalog_job=$(workflow_job_block "$release_workflow" "catalog-readiness")
   build_job=$(workflow_job_block "$release_workflow" "build-release")
+  classification_job=$(workflow_job_block "$certification_workflow" "classify")
   certification_job=$(workflow_job_block "$certification_workflow" "catalog-readiness")
 
-  if [[ -n "$certification_job" ]] && \
+  if [[ -n "$classification_job" && -n "$certification_job" ]] && \
      grep -q '^  workflow_dispatch:$' "$certification_workflow" && \
-     ! grep -q '^  push:$' "$certification_workflow" && \
+     grep -q '^  push:$' "$certification_workflow" && \
+     grep -q '^  schedule:$' "$certification_workflow" && \
      grep -q 'GITHUB_REF.*refs/heads/main' "$certification_workflow" && \
+     grep -q 'fetch-depth: 0' <<<"$classification_job" && \
+     grep -q 'scripts/catalog-certification-scope.sh' <<<"$classification_job" && \
+     grep -q "if: needs.classify.outputs.required == 'true'" <<<"$certification_job" && \
      grep -q 'ref: ${{ github.sha }}' <<<"$certification_job" && \
      grep -q 'timeout-minutes: 30' <<<"$certification_job" && \
-     grep -q 'shard: \[1, 2, 3, 4, 5, 6, 7, 8\]' <<<"$certification_job" && \
+     grep -q 'shard: \[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16\]' <<<"$certification_job" && \
      grep -q -- '--task-concurrency 1' <<<"$certification_job" && \
      grep -q -- '--remove-task-images' <<<"$certification_job" && \
      grep -q -- '--task-shard-index ${{ matrix.shard }}' <<<"$certification_job" && \
-     grep -q -- '--task-shard-count 8' <<<"$certification_job" && \
+     grep -q -- '--task-shard-count 16' <<<"$certification_job" && \
      grep -q -- '--task-timeout 10m' <<<"$certification_job"; then
-    pass "workflow-consistency: pre-tag catalog certification is sharded with bounded disk and time"
+    pass "workflow-consistency: pre-tag catalog certification is change-sensitive and uses sixteen bounded shards"
   else
-    fail "workflow-consistency: pre-tag catalog certification must use eight bounded shards with per-task timeouts"
+    fail "workflow-consistency: pre-tag catalog certification must classify changes and use sixteen bounded shards when required"
   fi
 
   if [[ -n "$catalog_job" && -n "$build_job" ]] && \
@@ -72,7 +77,6 @@ run_workflow_consistency_tests() {
      grep -q 'git rev-parse HEAD' <<<"$catalog_job" && \
      grep -q -- '--workflow release-catalog-certification.yml' <<<"$catalog_job" && \
      grep -q -- '--branch main' <<<"$catalog_job" && \
-     grep -q -- '--event workflow_dispatch' <<<"$catalog_job" && \
      grep -q -- '--commit "${release_commit}"' <<<"$catalog_job" && \
      grep -q -- '--status success' <<<"$catalog_job" && \
      ! grep -q 'benchmark readiness' <<<"$catalog_job" && \

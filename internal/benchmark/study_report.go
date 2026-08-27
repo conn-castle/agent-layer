@@ -207,7 +207,7 @@ func buildStudyReport(study preparedStudy, preparation matrixPreparation) (Study
 
 func buildStudyExperimentReport(experiment preparedStudyExperiment, arm matrixArm, selection matrixSelection, preparation matrixPreparation, workers int) (StudyExperimentReport, error) {
 	item := StudyExperimentReport{Name: experiment.Name, Identity: experiment.identity, Model: experiment.model.PublishedIdentifier, Reasoning: experiment.effort,
-		InputHashes: copyStringMap(experiment.inputHashes), ResourceContract: studyResourceContract()}
+		InputHashes: copyStringMap(experiment.inputHashes), ResourceContract: studyResourceContract(), AdapterSHA256: arm.AdapterSHA256}
 	if evidence, ok := preparation.authentication[experiment.model.Adapter]; ok {
 		evidence.VerifiedAt = evidence.VerifiedAt.UTC()
 		item.AuthenticationPreflight = &evidence
@@ -216,7 +216,6 @@ func buildStudyExperimentReport(experiment preparedStudyExperiment, arm matrixAr
 		manifest := arm.Bundle.Manifest
 		item.BundleManifest = &manifest
 		item.LinuxBinarySHA256 = arm.Bundle.LinuxBinarySHA256
-		item.AdapterSHA256 = arm.Bundle.AdapterSHA256
 		item.SourceCommit = arm.Bundle.TemplatesCommit
 		item.SourceDirty = arm.Bundle.TemplatesDirty
 	}

@@ -35,8 +35,28 @@ var benchmarkReleaseHTTPClient = &http.Client{Timeout: 30 * time.Second}
 var benchmarkReleasesBaseURL = update.ReleasesBaseURL
 var renameStudyTreatmentPin = os.Rename
 
+// benchmarkSyncSystem keeps generated treatment projections content-addressed.
+// Ordinary syncs retain their real trust-decision timestamp; the synthetic
+// benchmark root /app has no user decision time and must be byte-stable.
+type benchmarkSyncSystem struct {
+	sync.RealSystem
+}
+
+func (benchmarkSyncSystem) Now() time.Time {
+	return time.Unix(0, 0).UTC()
+}
+
 //go:embed assets/pier_agent_layer.py assets/al_dispatch_gate.py assets/pricing.yaml
 var treatmentAssets embed.FS
+
+func embeddedPierAdapterSHA256() (string, error) {
+	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
+	if err != nil {
+		return "", fmt.Errorf("read embedded Pier adapter: %w", err)
+	}
+	sum := sha256.Sum256(adapter)
+	return hex.EncodeToString(sum[:]), nil
+}
 
 // TreatmentBundle is the secret-free, immutable effective Agent Layer input.
 type TreatmentBundle struct {
@@ -353,7 +373,7 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 			return nil, err
 		}
 	}
-	if _, err := sync.Run(root); err != nil {
+	if _, err := sync.RunWithSystemFS(benchmarkSyncSystem{}, os.DirFS(root), root); err != nil {
 		return nil, fmt.Errorf("synchronize staged study inputs: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(layer, ".env"), []byte("# Intentionally empty; provider authentication is injected separately.\n"), 0o600); err != nil {
@@ -420,7 +440,10 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	if err != nil {
 		return nil, err
 	}
-	adapterHash := sha256.Sum256(adapter)
+	adapterSHA256, err := embeddedPierAdapterSHA256()
+	if err != nil {
+		return nil, err
+	}
 	commit, dirty, err := verifiedDevelopmentProvenance()
 	if err != nil {
 		return nil, err
@@ -437,19 +460,28 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 		}
 	}
 	cleanup = false
-	return &TreatmentBundle{Root: root, Manifest: manifest, ManifestHash: manifestHash, LinuxArchitecture: targetArch, LinuxBinary: binary, LinuxBinarySHA256: binaryHash, AdapterPath: adapterPath, AdapterSHA256: hex.EncodeToString(adapterHash[:]), TemplatesCommit: commit, TemplatesDirty: dirty, CredentialNames: credentialNames, RuntimeSourceKind: sourceKind, RuntimeVersion: runtimeVersion}, nil
+	return &TreatmentBundle{Root: root, Manifest: manifest, ManifestHash: manifestHash, LinuxArchitecture: targetArch, LinuxBinary: binary, LinuxBinarySHA256: binaryHash, AdapterPath: adapterPath, AdapterSHA256: adapterSHA256, TemplatesCommit: commit, TemplatesDirty: dirty, CredentialNames: credentialNames, RuntimeSourceKind: sourceKind, RuntimeVersion: runtimeVersion}, nil
 }
 
 func rewriteTreatmentProjectionRoot(root, from, to string) error {
 	if strings.TrimSpace(from) == "" || strings.TrimSpace(to) == "" || from == to {
 		return fmt.Errorf("treatment projection root rewrite requires distinct non-empty paths")
 	}
+	canonicalFrom, err := filepath.EvalSymlinks(from)
+	if err != nil {
+		return fmt.Errorf("resolve treatment projection root: %w", err)
+	}
 	restricted, err := os.OpenRoot(root)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = restricted.Close() }()
-	fromBytes, toBytes := []byte(filepath.ToSlash(from)), []byte(filepath.ToSlash(to))
+	fromPaths := [][]byte{[]byte(filepath.ToSlash(from))}
+	if canonical := []byte(filepath.ToSlash(canonicalFrom)); !bytes.Equal(canonical, fromPaths[0]) {
+		fromPaths = append(fromPaths, canonical)
+	}
+	sort.Slice(fromPaths, func(i, j int) bool { return len(fromPaths[i]) > len(fromPaths[j]) })
+	toBytes := []byte(filepath.ToSlash(to))
 	return fs.WalkDir(restricted.FS(), ".", func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -464,7 +496,10 @@ func rewriteTreatmentProjectionRoot(root, from, to string) error {
 		if err != nil {
 			return err
 		}
-		rewritten := bytes.ReplaceAll(data, fromBytes, toBytes)
+		rewritten := data
+		for _, fromBytes := range fromPaths {
+			rewritten = bytes.ReplaceAll(rewritten, fromBytes, toBytes)
+		}
 		if bytes.Equal(data, rewritten) {
 			return nil
 		}
