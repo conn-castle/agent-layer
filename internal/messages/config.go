@@ -10,7 +10,7 @@ const (
 	// ConfigMissingFileFmt formats missing config file errors.
 	ConfigMissingFileFmt        = "missing config file %s: %w"
 	ConfigFailedReadTemplateFmt = "failed to read template config.toml: %w"
-	ConfigMissingEnvFileFmt     = "missing env file %s: %w"
+	ConfigFailedReadEnvFileFmt  = "failed to read env file %s: %w"
 	ConfigInvalidEnvFileFmt     = "invalid env file %s: %w"
 	ConfigInvalidConfigFmt      = "invalid config %s: %w"
 	ConfigFSRequired            = "config filesystem is required"

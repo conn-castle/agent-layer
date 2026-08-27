@@ -46,6 +46,22 @@ func TestLoadEnvMissing(t *testing.T) {
 	}
 }
 
+func TestLoadEnvUnreadable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatalf("mkdir env path: %v", err)
+	}
+
+	_, err := LoadEnv(path)
+	if err == nil {
+		t.Fatal("expected error for unreadable env file")
+	}
+	if !strings.Contains(err.Error(), "failed to read env file") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestLoadEnvInvalidLine(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".env")

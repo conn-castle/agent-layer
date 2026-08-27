@@ -50,7 +50,7 @@ func LoadEnv(path string) (map[string]string, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return map[string]string{}, nil
 		}
-		return nil, fmt.Errorf(messages.ConfigMissingEnvFileFmt, path, err)
+		return nil, fmt.Errorf(messages.ConfigFailedReadEnvFileFmt, path, err)
 	}
 
 	env, err := envfile.Parse(string(data))
