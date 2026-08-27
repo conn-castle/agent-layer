@@ -49,14 +49,14 @@ func TestBenchmarkRunDryRunDoesNotInvokeProviderInference(t *testing.T) {
 func TestBenchmarkReadinessRunsWithoutProviderCalls(t *testing.T) {
 	original := checkReadiness
 	checkReadiness = func(_ context.Context, options bench.ReadinessAuditOptions) (bench.ReadinessAuditOutcome, error) {
-		if options.TaskConcurrency != 4 {
+		if options.TaskConcurrency != 1 || !options.RemoveTaskImages {
 			t.Fatalf("options = %#v", options)
 		}
 		return bench.ReadinessAuditOutcome{DeepSWECommit: strings.Repeat("d", 40), Required: 2, Certified: 2}, nil
 	}
 	t.Cleanup(func() { checkReadiness = original })
 	root := newRootCmd()
-	root.SetArgs([]string{"benchmark", "readiness", "--task-concurrency", "4"})
+	root.SetArgs([]string{"benchmark", "readiness", "--task-concurrency", "1", "--remove-task-images"})
 	var output bytes.Buffer
 	root.SetOut(&output)
 	root.SetErr(&output)

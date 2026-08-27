@@ -26,8 +26,9 @@ const (
 // ReadinessAuditOptions configures the non-paid audit of every task in the
 // pinned DeepSWE checkout.
 type ReadinessAuditOptions struct {
-	RepoRoot        string
-	TaskConcurrency int
+	RepoRoot         string
+	TaskConcurrency  int
+	RemoveTaskImages bool
 }
 
 // ReadinessAuditTask records the preflight result for one DeepSWE task.
@@ -58,6 +59,9 @@ func CheckAllTaskReadiness(ctx context.Context, options ReadinessAuditOptions) (
 	if options.TaskConcurrency < 1 || options.TaskConcurrency > 8 {
 		return ReadinessAuditOutcome{}, errors.New("DeepSWE readiness audit task concurrency must be from 1 to 8")
 	}
+	if options.RemoveTaskImages && options.TaskConcurrency != 1 {
+		return ReadinessAuditOutcome{}, errors.New("DeepSWE readiness audit image removal requires task concurrency 1")
+	}
 	checkout, err := ensurePinnedBenchmarkCheckout(ctx, options.RepoRoot)
 	if err != nil {
 		return ReadinessAuditOutcome{}, err
@@ -81,6 +85,9 @@ func CheckAllTaskReadiness(ctx context.Context, options ReadinessAuditOptions) (
 	}
 	if outcome := summarizeReadinessAudit(results); outcome.Failed > 0 {
 		return outcome, nil
+	}
+	if options.RemoveTaskImages {
+		return checkTaskReadinessWithBoundedDisk(ctx, options.RepoRoot, checkout, tasks, checksums, results)
 	}
 
 	jobs := make(chan int)
@@ -122,6 +129,71 @@ func CheckAllTaskReadiness(ctx context.Context, options ReadinessAuditOptions) (
 	workers.Wait()
 
 	return summarizeReadinessAudit(results), nil
+}
+
+func checkTaskReadinessWithBoundedDisk(ctx context.Context, repoRoot, checkout string, tasks []benchmarkPlanTask, checksums []string, results []ReadinessAuditTask) (ReadinessAuditOutcome, error) {
+	var previous loadedTaskReadiness
+	hasPrevious := false
+	cleanupPrevious := func() error {
+		if !hasPrevious {
+			return nil
+		}
+		err := removeTaskReadinessImages(ctx, previous)
+		hasPrevious = false
+		return err
+	}
+	defer func() { _ = cleanupPrevious() }()
+
+	for index, task := range tasks {
+		readiness, err := loadTaskReadiness(checkout, task.ID)
+		if err != nil {
+			if cleanupErr := cleanupPrevious(); cleanupErr != nil {
+				err = errors.Join(err, fmt.Errorf("reclaim benchmark readiness Docker images: %w", cleanupErr))
+			}
+			return summarizeReadinessAudit(results), err
+		}
+		results[index] = ReadinessAuditTask{Task: task.ID, Status: readinessStatusFailed}
+		auditErr := auditTaskReadiness(ctx, repoRoot, checkout, task.ID, checksums[index])
+		if err := cleanupPrevious(); err != nil {
+			return summarizeReadinessAudit(results), fmt.Errorf("reclaim benchmark readiness Docker images: %w", err)
+		}
+		previous = readiness
+		hasPrevious = true
+		if auditErr == nil {
+			results[index].Status = readinessStatusCertified
+			continue
+		}
+		results[index].Error = auditErr.Error()
+		if !isReadinessInfrastructureFailure(auditErr) {
+			continue
+		}
+		results[index].Status = readinessStatusBlocked
+		for blocked := index + 1; blocked < len(tasks); blocked++ {
+			results[blocked] = ReadinessAuditTask{
+				Task:   tasks[blocked].ID,
+				Status: readinessStatusBlocked,
+				Error:  "audit canceled after a shared infrastructure failure",
+			}
+		}
+		break
+	}
+	if err := cleanupPrevious(); err != nil {
+		return summarizeReadinessAudit(results), fmt.Errorf("reclaim benchmark readiness Docker images: %w", err)
+	}
+	return summarizeReadinessAudit(results), nil
+}
+
+func removeTaskReadinessImages(ctx context.Context, readiness loadedTaskReadiness) error {
+	images := []string{readiness.pinnedImage}
+	if len(readiness.overlay) > 0 {
+		images = append([]string{readiness.agentImage}, images...)
+	}
+	arguments := append([]string{dockerImageResource, "rm", dockerForceFlag}, images...)
+	output, err := runTaskReadinessCommand(ctx, arguments...)
+	if err != nil && !strings.Contains(strings.ToLower(string(output)), "no such image") {
+		return fmt.Errorf("remove exact task images: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 func summarizeReadinessAudit(results []ReadinessAuditTask) ReadinessAuditOutcome {

@@ -572,6 +572,38 @@ test("copied selection matches the benchmark CLI schema", () => {
   );
 });
 
+test("copied selection translates provider model identities for the benchmark CLI", () => {
+  const { snapshot, buildBenchmarkSelection } = loadApplication();
+  const selection = {
+    estimatedSpend: 1,
+    rows: [{
+      id: "selected-task",
+      selected: true,
+      normalizedWeight: 1,
+      calibration: { intercept: 0.1, slope: 0.8 },
+      cell: { meanCost: 1 },
+    }],
+  };
+
+  const grok = snapshot.configurations.find(
+    (configuration) => configuration.model === "grok-4-5",
+  );
+  assert.ok(grok, "fixture snapshot must contain Grok 4.5");
+  assert.equal(
+    buildBenchmarkSelection(selection, grok.id, 1, 1).selector.model,
+    "grok-4.5",
+  );
+
+  const gemini = snapshot.configurations.find(
+    (configuration) => configuration.model === "gemini-3-5-flash",
+  );
+  assert.ok(gemini, "fixture snapshot must contain Gemini 3.5 Flash");
+  assert.equal(
+    buildBenchmarkSelection(selection, gemini.id, 1, 1).selector.model,
+    `gemini-3.5-flash-${gemini.reasoning}`,
+  );
+});
+
 test("benchmark selection identity matches the Go canonical identity", () => {
   const selection = {
     schema: "deepswe-benchmark-selection",

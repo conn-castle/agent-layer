@@ -1689,6 +1689,25 @@ function configurationLabel(configurationId) {
 }
 
 /**
+ * Translate DeepSWE's published model identity to the exact model identity
+ * accepted by the benchmark CLI. Provider CLIs use dotted version numbers,
+ * and Antigravity encodes reasoning in its Gemini model slug.
+ * @param {object} configuration published DeepSWE configuration
+ * @returns {string} benchmark CLI model identity
+ */
+function benchmarkModelForConfiguration(configuration) {
+  if (configuration.model === "grok-4-5") return "grok-4.5";
+  if (configuration.model === "grok-4-6") return "grok-4.6";
+  if (
+    configuration.model === "gemini-3-5-flash" &&
+    ["low", "medium", "high"].includes(configuration.reasoning)
+  ) {
+    return `gemini-3.5-flash-${configuration.reasoning}`;
+  }
+  return configuration.model;
+}
+
+/**
  * Build the benchmark CLI's canonical selection document.
  * @param {object} selection selected rows and expected spend
  * @param {string} configurationId primary published configuration
@@ -1726,7 +1745,7 @@ function buildBenchmarkSelection(
       sha256: SNAPSHOT.source.sha256,
     },
     selector: {
-      model: configuration.model,
+      model: benchmarkModelForConfiguration(configuration),
       reasoning: configuration.reasoning,
       budgetUsd: budget,
       iterationsPerTask: iterations,

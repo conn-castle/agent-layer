@@ -63,6 +63,47 @@ func auditContractsFixture(tasks ...string) fs.FS {
 	return contracts
 }
 
+func TestVersionPinnedAptOverlaysUseImmutableSnapshots(t *testing.T) {
+	root := "readiness/" + DeepSWECommit
+	var pinnedOverlays int
+	err := fs.WalkDir(readinessContracts, root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || entry.Name() != "agent.Dockerfile" {
+			return nil
+		}
+		data, err := fs.ReadFile(readinessContracts, path)
+		if err != nil {
+			return err
+		}
+		contents := string(data)
+		for _, line := range strings.Split(contents, "\n") {
+			if !strings.Contains(line, "apt-get install") || !strings.Contains(line, "=") {
+				continue
+			}
+			pinnedOverlays++
+			for _, required := range []string{
+				"snapshot.debian.org/archive/debian/",
+				"Acquire::Check-Valid-Until",
+				"rm -f /etc/apt/sources.list.d/",
+			} {
+				if !strings.Contains(contents, required) {
+					t.Errorf("version-pinned apt overlay %s does not contain %q", path, required)
+				}
+			}
+			break
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pinnedOverlays == 0 {
+		t.Fatal("pinned catalog contains no version-pinned apt overlay to audit")
+	}
+}
+
 // installAuditCheckout points the audit at a fixture checkout instead of
 // cloning the pinned DeepSWE repository.
 func installAuditCheckout(t *testing.T, checkout string) {
@@ -219,6 +260,7 @@ func TestReadinessAuditRejectsUnusableOptions(t *testing.T) {
 		{"no repository", ReadinessAuditOptions{TaskConcurrency: 1}, "requires a repository root"},
 		{"no workers", ReadinessAuditOptions{RepoRoot: "repo"}, "task concurrency must be from 1 to 8"},
 		{"too many workers", ReadinessAuditOptions{RepoRoot: "repo", TaskConcurrency: 9}, "task concurrency must be from 1 to 8"},
+		{"image removal with parallel workers", ReadinessAuditOptions{RepoRoot: "repo", TaskConcurrency: 2, RemoveTaskImages: true}, "image removal requires task concurrency 1"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if _, err := CheckAllTaskReadiness(context.Background(), test.options); err == nil ||

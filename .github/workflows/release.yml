@@ -15,20 +15,52 @@ permissions:
   contents: write
 
 jobs:
+  catalog-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+    steps:
+      - name: Validate stable release tag format
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unsupported release tag ${RELEASE_TAG}. Release publishing supports stable tags only (vX.Y.Z)."
+            exit 1
+          fi
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Certify pinned benchmark catalog
+        run: go run ./cmd/al benchmark readiness --task-concurrency 1 --remove-task-images
+
   build-release:
+    needs: catalog-readiness
     runs-on: macos-latest
     env:
       RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     steps:
+      - name: Validate stable release tag format
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unsupported release tag ${RELEASE_TAG}. Release publishing supports stable tags only (vX.Y.Z)."
+            exit 1
+          fi
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          ref: ${{ inputs.release_tag || github.ref_name }}
+          ref: refs/tags/${{ env.RELEASE_TAG }}
           persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         id: setup-go
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - name: Install system dependencies
         run: |
           set -euo pipefail
@@ -40,13 +72,6 @@ jobs:
           fi
           if ! command -v uvx >/dev/null 2>&1; then
             echo "::error::uvx is required by the pinned benchmark adapter contract but was not found after installing uv."
-            exit 1
-          fi
-      - name: Validate stable release tag format
-        run: |
-          set -euo pipefail
-          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Unsupported release tag ${RELEASE_TAG}. Release publishing supports stable tags only (vX.Y.Z)."
             exit 1
           fi
       - name: Validate upgrade contract docs

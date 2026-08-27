@@ -49,6 +49,7 @@ const (
 	platformDarwin                 = "darwin"
 	platformLinux                  = "linux"
 	dockerFormatFlag               = "--format"
+	dockerForceFlag                = "--force"
 	dockerImageResource            = "image"
 	dockerNetworkResource          = "network"
 	dockerVolumeResource           = "volume"
@@ -551,9 +552,9 @@ func cleanupPierDockerResources(stage string, request ExecutionRequest) error {
 		removeBase []string
 		validName  *regexp.Regexp
 	}{
-		{name: "container", list: []string{"ps", "--all", dockerFormatFlag, dockerComposeOwnershipIDFormat}, removeBase: []string{"rm", "--force"}, validName: dockerResourceIDPattern},
+		{name: "container", list: []string{"ps", "--all", dockerFormatFlag, dockerComposeOwnershipIDFormat}, removeBase: []string{"rm", dockerForceFlag}, validName: dockerResourceIDPattern},
 		{name: dockerNetworkResource, list: []string{dockerNetworkResource, "ls", dockerFormatFlag, dockerComposeOwnershipIDFormat}, removeBase: []string{dockerNetworkResource, "rm"}, validName: dockerResourceIDPattern},
-		{name: dockerVolumeResource, list: []string{dockerVolumeResource, "ls", dockerFormatFlag, dockerComposeOwnershipNameFormat}, removeBase: []string{dockerVolumeResource, "rm", "--force"}, validName: dockerVolumeNamePattern},
+		{name: dockerVolumeResource, list: []string{dockerVolumeResource, "ls", dockerFormatFlag, dockerComposeOwnershipNameFormat}, removeBase: []string{dockerVolumeResource, "rm", dockerForceFlag}, validName: dockerVolumeNamePattern},
 	} {
 		output, listErr := runBenchmarkDockerCommand(ctx, resource.list...)
 		if listErr != nil {

@@ -60,6 +60,18 @@ func TestStudySelectionRejectsManualExclusionsInSchemaV1(t *testing.T) {
 	}
 }
 
+func TestStudySelectionNamesInvalidSelectorAndSupportedModels(t *testing.T) {
+	selection := matrixSelectionFixture()
+	selection.Selector.Model = "grok-4-5"
+	err := validateMatrixSelection(selection)
+	if err == nil ||
+		!strings.Contains(err.Error(), `model "grok-4-5" with reasoning "low"`) ||
+		!strings.Contains(err.Error(), "grok-4.5") ||
+		!strings.Contains(err.Error(), "supported models:") {
+		t.Fatalf("invalid selector error = %v", err)
+	}
+}
+
 func TestStudySelectionBoundaryRejectsMalformedDocumentsAndTaskScopes(t *testing.T) {
 	selectionData, err := json.Marshal(matrixSelectionFixture())
 	if err != nil {
