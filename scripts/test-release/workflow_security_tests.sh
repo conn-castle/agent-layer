@@ -12,10 +12,22 @@ release_workflow_job() {
   ' "$workflow"
 }
 
+release_workflow_step() {
+  local job="$1"
+  local step="$2"
+  awk -v step="$step" '
+    $0 == "      - name: " step { capture = 1 }
+    capture {
+      if ($0 != "      - name: " step && /^      - /) exit
+      print
+    }
+  ' <<<"$job"
+}
+
 release_step_line() {
   local job="$1"
   local step="$2"
-  grep -nF "name: $step" <<<"$job" | head -n1 | cut -d: -f1 || true
+  awk -v step="$step" '$0 == "      - name: " step { print NR; exit }' <<<"$job"
 }
 
 run_release_workflow_security_tests() {
@@ -41,26 +53,34 @@ run_release_workflow_security_tests() {
     fail "release-security: build-release must require catalog-readiness"
   fi
 
-  if grep -q 'git rev-parse HEAD' <<<"$catalog_job" &&
-     grep -q -- '--workflow release-catalog-certification.yml' <<<"$catalog_job" &&
-     grep -q -- '--branch main' <<<"$catalog_job" &&
-     grep -q -- '--commit "${release_commit}"' <<<"$catalog_job" &&
-     grep -q -- '--status success' <<<"$catalog_job"; then
+  local catalog_check_step
+  catalog_check_step=$(release_workflow_step "$catalog_job" "Verify exact-commit catalog certification")
+  if grep -Eq '^[[:space:]]+release_commit="\$\(git rev-parse HEAD\)"$' <<<"$catalog_check_step" &&
+     grep -Eq '^[[:space:]]+--workflow release-catalog-certification\.yml \\$' <<<"$catalog_check_step" &&
+     grep -Eq '^[[:space:]]+--branch main \\$' <<<"$catalog_check_step" &&
+     grep -Eq '^[[:space:]]+--commit "\$\{release_commit\}" \\$' <<<"$catalog_check_step" &&
+     grep -Eq '^[[:space:]]+--status success \\$' <<<"$catalog_check_step"; then
     pass "release-security: catalog readiness requires successful certification for the exact tag commit"
   else
     fail "release-security: catalog readiness must bind successful certification to the exact tag commit"
   fi
 
-  if grep -Eq 'uses: Apple-Actions/import-codesign-certs@[0-9a-f]{40}([[:space:]]|$)' <<<"$build_job" &&
-     grep -q 'MACOS_CERT_P12_BASE64' <<<"$build_job" &&
-     grep -q 'MACOS_CERT_P12_PASSWORD' <<<"$build_job"; then
+  local certificate_step build_step scan_step
+  certificate_step=$(release_workflow_step "$build_job" "Import Developer ID cert")
+  build_step=$(release_workflow_step "$build_job" "Build release artifacts")
+  scan_step=$(release_workflow_step "$build_job" "Scan release binaries for known vulnerable symbols")
+
+  if grep -Eq '^        uses: Apple-Actions/import-codesign-certs@[0-9a-f]{40}([[:space:]]+#.*)?$' <<<"$certificate_step" &&
+     grep -Eq '^          p12-file-base64: \$\{\{ secrets\.MACOS_CERT_P12_BASE64 \}\}$' <<<"$certificate_step" &&
+     grep -Eq '^          p12-password: \$\{\{ secrets\.MACOS_CERT_P12_PASSWORD \}\}$' <<<"$certificate_step"; then
     pass "release-security: certificate import is commit-pinned and secret-backed"
   else
     fail "release-security: certificate import must be commit-pinned and secret-backed"
   fi
 
-  if grep -q 'AL_REQUIRE_CODESIGN: "1"' <<<"$build_job" &&
-     grep -q 'AL_CODESIGN_IDENTITY:' <<<"$build_job"; then
+  if grep -Eq '^          AL_REQUIRE_CODESIGN: "1"$' <<<"$build_step" &&
+     grep -Eq '^          AL_CODESIGN_IDENTITY: ".+"$' <<<"$build_step" &&
+     grep -Eq '^[[:space:]]+make release-dist AL_VERSION="\$\{RELEASE_TAG\}" DIST_DIR=dist$' <<<"$build_step"; then
     pass "release-security: release artifacts require code signing"
   else
     fail "release-security: release artifacts must require a signing identity"
@@ -82,7 +102,7 @@ run_release_workflow_security_tests() {
 
   if [[ -n "$build_line" && -n "$scan_line" && -n "$notarize_line" && -n "$upload_line" && -n "$publish_line" ]] &&
      (( build_line < scan_line && scan_line < notarize_line && scan_line < upload_line && scan_line < publish_line )) &&
-     grep -q 'make release-vuln-check DIST_DIR=dist' <<<"$build_job"; then
+     grep -Eq '^[[:space:]]+(run:[[:space:]]+)?make release-vuln-check DIST_DIR=dist[[:space:]]*$' <<<"$scan_step"; then
     pass "release-security: vulnerability scanning follows the build and gates every artifact publication path"
   else
     fail "release-security: vulnerability scanning must follow the build and gate notarization, upload, and publication"

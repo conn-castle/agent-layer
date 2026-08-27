@@ -200,7 +200,7 @@ the module files immediately before and after `go mod tidy`.
 make coverage
 ```
 Run from: repo root  
-Prerequisites: Go 1.26.0+
+Prerequisites: Go 1.26.0+, `make tools` has been run
 Notes: Coverage is diagnostic evidence, not a pass/fail target. `make ci` routes through this target so regressions remain visible without incentivizing tests that exist only to execute implementation branches.
 
 ### Dev
