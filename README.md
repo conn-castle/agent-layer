@@ -579,7 +579,7 @@ Agent Layer treats a denial as a failure rather than passing that answer through
 
 ### Secrets: `.agent-layer/.env`
 
-API tokens and other secrets live in `.agent-layer/.env` (always gitignored).
+API tokens and other secrets live in `.agent-layer/.env` (always gitignored). The file is optional: when no secrets are needed, it can be absent.
 
 **Important:** Only environment variables that start with the `AL_` prefix are sourced from `.env` (others are ignored). This convention avoids conflicts with your shell environment and ensures Agent Layer's variables don't override existing environment variables when VS Code terminals inherit the process environment.
 

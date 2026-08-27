@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	pathpkg "path"
@@ -132,6 +133,37 @@ func TestLoadEnvFS_Invalid(t *testing.T) {
 	_, err := LoadEnvFS(fsys, "root", ".agent-layer/.env")
 	if err == nil {
 		t.Fatalf("expected error for invalid env file")
+	}
+}
+
+func TestLoadEnvFS_Missing(t *testing.T) {
+	env, err := LoadEnvFS(fstest.MapFS{}, "root", ".agent-layer/.env")
+	if err != nil {
+		t.Fatalf("LoadEnvFS error: %v", err)
+	}
+	if len(env) != 0 {
+		t.Fatalf("expected empty env, got %#v", env)
+	}
+}
+
+func TestLoadEnvFS_Unreadable(t *testing.T) {
+	fsys := errorFS{
+		FS: fstest.MapFS{
+			".agent-layer/.env": {Data: []byte("AL_OK=1\n")},
+		},
+		errPath: ".agent-layer/.env",
+		err:     fs.ErrPermission,
+	}
+
+	_, err := LoadEnvFS(fsys, "root", ".agent-layer/.env")
+	if err == nil {
+		t.Fatal("expected error when env file cannot be read")
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("unreadable env file was treated as missing: %v", err)
+	}
+	if !strings.Contains(err.Error(), "failed to read env file") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
