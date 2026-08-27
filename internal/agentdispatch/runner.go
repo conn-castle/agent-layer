@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -91,6 +92,9 @@ func executeProvider(
 		return executionResult{}, wrapExitError(ExitConfig, "create dispatch stderr capture", err)
 	}
 	defer func() { _ = providerStderr.Close() }()
+	if run.Record.EventsPath == "" {
+		run.Record.EventsPath = filepath.Join(run.Dir, "provider.events")
+	}
 	events, err := newCaptureWriter(run.Record.EventsPath)
 	if err != nil {
 		return executionResult{}, wrapExitError(ExitConfig, "create dispatch event capture", err)

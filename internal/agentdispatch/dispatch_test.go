@@ -384,6 +384,8 @@ func TestRunAntigravityExactSlugCapturesStructuredEvents(t *testing.T) {
 	if stdout.String() != "agy structured ok" {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
+	assertFileContains(t, logPath, "ARG_3=--model")
+	assertFileContains(t, logPath, "ARG_4=gemini-3.5-flash-low")
 	assertFileContains(t, logPath, "ARG_5=--output-format")
 	assertFileContains(t, logPath, "ARG_6=stream-json")
 }

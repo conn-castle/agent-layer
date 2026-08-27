@@ -673,6 +673,36 @@ func TestRunnerBuffersOnlyCompletedAnswer(t *testing.T) {
 	}
 }
 
+func TestRunnerDerivesMissingEventsPath(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	run.Record.EventsPath = ""
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		t.Fatalf("write legacy run record: %v", err)
+	}
+
+	result, err := executeProvider(providerCommand{
+		Path:      "/bin/sh",
+		Args:      []string{"-c", `printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n{"type":"agent_message","message":"answer"}\n{"type":"turn.completed"}\n'`},
+		Env:       os.Environ(),
+		Provider:  AgentCodex,
+		SessionID: runtimeSessionID,
+	}, []byte("prompt"), run, root, nil, func(string) error { return nil })
+	if err != nil || !result.Complete {
+		t.Fatalf("legacy run result=%#v err=%v", result, err)
+	}
+	wantPath := filepath.Join(run.Dir, "provider.events")
+	if run.Record.EventsPath != wantPath {
+		t.Fatalf("events path = %q, want %q", run.Record.EventsPath, wantPath)
+	}
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Fatalf("stat derived events capture: %v", err)
+	}
+}
+
 func TestClaudeRunnerReadsLineageAndLatestResultThroughEOF(t *testing.T) {
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentClaude, "2.1.212", dispatchModeFresh)
