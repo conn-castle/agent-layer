@@ -98,6 +98,7 @@ func newBenchmarkRunCmd() *cobra.Command {
 
 func newBenchmarkReadinessCmd() *cobra.Command {
 	var taskConcurrency int
+	var removeTaskImages bool
 	command := &cobra.Command{
 		Use:   benchmarkReadinessName,
 		Short: "Preflight every task in the pinned DeepSWE catalog",
@@ -107,7 +108,9 @@ func newBenchmarkReadinessCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			outcome, err := checkReadiness(context.Background(), bench.ReadinessAuditOptions{RepoRoot: root, TaskConcurrency: taskConcurrency})
+			outcome, err := checkReadiness(context.Background(), bench.ReadinessAuditOptions{
+				RepoRoot: root, TaskConcurrency: taskConcurrency, RemoveTaskImages: removeTaskImages,
+			})
 			if err != nil {
 				return err
 			}
@@ -132,5 +135,6 @@ func newBenchmarkReadinessCmd() *cobra.Command {
 		},
 	}
 	command.Flags().IntVar(&taskConcurrency, "task-concurrency", 1, "parallel task readiness checks, from 1 to 8")
+	command.Flags().BoolVar(&removeTaskImages, "remove-task-images", false, "remove exact task images after certification to bound Docker disk usage; requires task concurrency 1")
 	return command
 }

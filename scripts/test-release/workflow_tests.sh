@@ -22,6 +22,14 @@ run_workflow_consistency_tests() {
     fail "workflow-consistency: build-release must run on macos-latest for Developer ID signing"
   fi
 
+  if grep -q '^  catalog-readiness:' "$release_workflow" && \
+     grep -q '^    needs: catalog-readiness' "$release_workflow" && \
+     grep -q 'go run ./cmd/al benchmark readiness --task-concurrency 1 --remove-task-images' "$release_workflow"; then
+    pass "workflow-consistency: pinned benchmark catalog readiness gates release builds"
+  else
+    fail "workflow-consistency: release builds must depend on the bounded-disk pinned catalog readiness audit"
+  fi
+
   if grep -q 'command -v rg' "$release_workflow" && grep -q 'brew install ripgrep' "$release_workflow"; then
     pass "workflow-consistency: release workflow installs ripgrep via Homebrew when needed"
   else

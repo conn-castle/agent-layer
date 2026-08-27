@@ -15,7 +15,23 @@ permissions:
   contents: write
 
 jobs:
+  catalog-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.release_tag || github.ref_name }}
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Certify pinned benchmark catalog
+        run: go run ./cmd/al benchmark readiness --task-concurrency 1 --remove-task-images
+
   build-release:
+    needs: catalog-readiness
     runs-on: macos-latest
     env:
       RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}

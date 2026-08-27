@@ -206,6 +206,14 @@ func modelNameForPublished(identifier string) string {
 	return identifier
 }
 
+func supportedPublishedModelIdentifiers() []string {
+	identifiers := make([]string, 0, len(supportedModels))
+	for _, model := range supportedModels {
+		identifiers = append(identifiers, model.PublishedIdentifier)
+	}
+	return identifiers
+}
+
 func validTaskName(task string) bool {
 	if task == "" || len(task) > 160 {
 		return false

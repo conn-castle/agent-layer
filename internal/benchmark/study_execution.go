@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -214,8 +215,22 @@ func validateMatrixSelection(selection matrixSelection) error {
 		return fmt.Errorf("benchmark selection schema v1 does not support manual exclusions")
 	}
 	model, effort, err := ParseModelSelection(modelNameForPublished(selection.Selector.Model) + ":" + selection.Selector.Reasoning)
-	if err != nil || model.PublishedIdentifier != selection.Selector.Model || effort != selection.Selector.Reasoning {
-		return fmt.Errorf("benchmark selection has an invalid selector configuration")
+	if err != nil {
+		return fmt.Errorf(
+			"benchmark selection selector model %q with reasoning %q is invalid (supported models: %s): %w",
+			selection.Selector.Model,
+			selection.Selector.Reasoning,
+			strings.Join(supportedPublishedModelIdentifiers(), ", "),
+			err,
+		)
+	}
+	if model.PublishedIdentifier != selection.Selector.Model || effort != selection.Selector.Reasoning {
+		return fmt.Errorf(
+			"benchmark selection selector model %q with reasoning %q must use exact canonical spelling (supported models: %s)",
+			selection.Selector.Model,
+			selection.Selector.Reasoning,
+			strings.Join(supportedPublishedModelIdentifiers(), ", "),
+		)
 	}
 	seen, excluded := map[string]bool{}, map[string]bool{}
 	for _, task := range selection.ManualExclusions {

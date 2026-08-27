@@ -1,11 +1,62 @@
 package benchmark
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestReadinessAuditRemovesOnlyAfterTheSuccessorImageIsReady(t *testing.T) {
+	repository, checkout := t.TempDir(), t.TempDir()
+	writeAuditCatalogFixture(t, checkout, "first-task", "second-task")
+	installAuditCheckout(t, checkout)
+	var events []string
+	installReadinessTestBoundaries(t, auditContractsFixture("first-task", "second-task"),
+		func(_ context.Context, arguments ...string) ([]byte, error) {
+			switch {
+			case len(arguments) > 2 && arguments[0] == commandRun:
+				events = append(events, "run:"+arguments[len(arguments)-2])
+			case len(arguments) > 3 && arguments[0] == "image" && arguments[1] == "rm":
+				events = append(events, "remove:"+arguments[3])
+			default:
+				t.Fatalf("unexpected Docker readiness command: %#v", arguments)
+			}
+			return nil, nil
+		})
+
+	outcome, err := CheckAllTaskReadiness(context.Background(), ReadinessAuditOptions{
+		RepoRoot: repository, TaskConcurrency: 1, RemoveTaskImages: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Certified != 2 || outcome.Failed != 0 || outcome.Blocked != 0 {
+		t.Fatalf("audit outcome = %#v", outcome)
+	}
+	want := strings.Join([]string{
+		"run:" + auditTaskImage("first-task") + "@" + testReadinessDigest,
+		"run:" + auditTaskImage("second-task") + "@" + testReadinessDigest,
+		"remove:" + auditTaskImage("first-task") + "@" + testReadinessDigest,
+		"remove:" + auditTaskImage("second-task") + "@" + testReadinessDigest,
+	}, "|")
+	if got := strings.Join(events, "|"); got != want {
+		t.Fatalf("bounded-disk Docker events = %q, want %q", got, want)
+	}
+}
+
+func TestReadinessAuditImageRemovalFailsLoudly(t *testing.T) {
+	installReadinessTestBoundaries(t, auditContractsFixture(),
+		func(context.Context, ...string) ([]byte, error) {
+			return []byte("permission denied"), errors.New("exit status 1")
+		})
+	err := removeTaskReadinessImages(context.Background(), loadedTaskReadiness{pinnedImage: "registry.example/task@sha256:" + strings.Repeat("1", 64)})
+	if err == nil || !strings.Contains(err.Error(), "remove exact task images") || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("image removal error = %v", err)
+	}
+}
 
 func TestListPinnedBenchmarkTasksAllowsCatalogMetadata(t *testing.T) {
 	root := t.TempDir()
