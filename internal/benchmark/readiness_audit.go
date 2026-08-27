@@ -132,13 +132,14 @@ func CheckAllTaskReadiness(ctx context.Context, options ReadinessAuditOptions) (
 }
 
 func checkTaskReadinessWithBoundedDisk(ctx context.Context, repoRoot, checkout string, tasks []benchmarkPlanTask, checksums []string, results []ReadinessAuditTask) (ReadinessAuditOutcome, error) {
-	var previous *loadedTaskReadiness
+	var previous loadedTaskReadiness
+	hasPrevious := false
 	cleanupPrevious := func() error {
-		if previous == nil {
+		if !hasPrevious {
 			return nil
 		}
-		err := removeTaskReadinessImages(ctx, *previous)
-		previous = nil
+		err := removeTaskReadinessImages(ctx, previous)
+		hasPrevious = false
 		return err
 	}
 	defer func() { _ = cleanupPrevious() }()
@@ -153,7 +154,8 @@ func checkTaskReadinessWithBoundedDisk(ctx context.Context, repoRoot, checkout s
 		if err := cleanupPrevious(); err != nil {
 			return summarizeReadinessAudit(results), fmt.Errorf("reclaim benchmark readiness Docker images: %w", err)
 		}
-		previous = &readiness
+		previous = readiness
+		hasPrevious = true
 		if auditErr == nil {
 			results[index].Status = readinessStatusCertified
 			continue

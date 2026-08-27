@@ -11,10 +11,10 @@ import (
 
 func TestReadinessAuditRemovesOnlyAfterTheSuccessorImageIsReady(t *testing.T) {
 	repository, checkout := t.TempDir(), t.TempDir()
-	writeAuditCatalogFixture(t, checkout, "first-task", "second-task")
+	writeAuditCatalogFixture(t, checkout, "first-task", "second-task", "third-task")
 	installAuditCheckout(t, checkout)
 	var events []string
-	installReadinessTestBoundaries(t, auditContractsFixture("first-task", "second-task"),
+	installReadinessTestBoundaries(t, auditContractsFixture("first-task", "second-task", "third-task"),
 		func(_ context.Context, arguments ...string) ([]byte, error) {
 			switch {
 			case len(arguments) > 2 && arguments[0] == commandRun:
@@ -33,14 +33,16 @@ func TestReadinessAuditRemovesOnlyAfterTheSuccessorImageIsReady(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if outcome.Certified != 2 || outcome.Failed != 0 || outcome.Blocked != 0 {
+	if outcome.Certified != 3 || outcome.Failed != 0 || outcome.Blocked != 0 {
 		t.Fatalf("audit outcome = %#v", outcome)
 	}
 	want := strings.Join([]string{
 		"run:" + auditTaskImage("first-task") + "@" + testReadinessDigest,
 		"run:" + auditTaskImage("second-task") + "@" + testReadinessDigest,
 		"remove:" + auditTaskImage("first-task") + "@" + testReadinessDigest,
+		"run:" + auditTaskImage("third-task") + "@" + testReadinessDigest,
 		"remove:" + auditTaskImage("second-task") + "@" + testReadinessDigest,
+		"remove:" + auditTaskImage("third-task") + "@" + testReadinessDigest,
 	}, "|")
 	if got := strings.Join(events, "|"); got != want {
 		t.Fatalf("bounded-disk Docker events = %q, want %q", got, want)
