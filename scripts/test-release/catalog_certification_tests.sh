@@ -99,6 +99,18 @@ EOF
     fail "catalog-certification-scope: must skip unrelated release changes"
   fi
 
+  mkdir -p "$scope_fixture/internal/moved"
+  git -C "$scope_fixture" mv internal/benchmark/readiness.go internal/moved/readiness.go
+  git -C "$scope_fixture" commit -q -m move-benchmark-outside-critical-scope
+  scope_output="$(cd "$scope_fixture" && ./scripts/catalog-certification-scope.sh 2>scope-error)"
+  if [[ "$scope_output" == "true" ]] && grep -q 'internal/benchmark/readiness.go changed' "$scope_fixture/scope-error"; then
+    pass "catalog-certification-scope: requires full certification when a benchmark file moves outside critical scope"
+  else
+    fail "catalog-certification-scope: must treat moving a benchmark file outside critical scope as critical"
+  fi
+
+  git -C "$scope_fixture" mv internal/moved/readiness.go internal/benchmark/readiness.go
+  git -C "$scope_fixture" commit -q -m restore-benchmark-path
   printf '// changed\n' >>"$scope_fixture/internal/benchmark/readiness.go"
   git -C "$scope_fixture" add internal/benchmark/readiness.go
   git -C "$scope_fixture" commit -q -m benchmark

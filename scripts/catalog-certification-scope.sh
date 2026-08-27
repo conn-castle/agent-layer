@@ -34,7 +34,7 @@ while IFS= read -r path; do
       exit 0
       ;;
   esac
-done < <(git diff --name-only "${base_tag}..${head_sha}")
+done < <(git diff --no-renames --name-only "${base_tag}..${head_sha}")
 
 echo "No catalog-critical paths changed since ${base_tag}; full catalog certification is not required." >&2
 echo false
