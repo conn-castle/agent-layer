@@ -285,7 +285,7 @@ func TestWizardCommand(t *testing.T) {
 			t.Fatal("expected wizard to fail in non-interactive test")
 		}
 		if !strings.Contains(err.Error(), "interactive terminal") {
-			t.Logf("got error: %v", err)
+			t.Fatalf("non-interactive wizard error = %v", err)
 		}
 	})
 }

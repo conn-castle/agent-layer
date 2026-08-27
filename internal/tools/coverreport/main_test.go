@@ -61,11 +61,11 @@ func TestWriteSummary(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := writeSummary(&buf, stats, 90.0); err != nil {
+	if err := writeSummary(&buf, stats); err != nil {
 		t.Fatalf("writeSummary failed: %v", err)
 	}
 	got := buf.String()
-	if !strings.Contains(got, "total coverage: 75.00% (threshold 90.00%) FAIL") {
+	if !strings.Contains(got, "total coverage: 75.00%") {
 		t.Fatalf("unexpected summary output: %q", got)
 	}
 }

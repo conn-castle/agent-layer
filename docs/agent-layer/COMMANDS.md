@@ -31,7 +31,7 @@ Notes: <optional constraints or tips>
 ```bash
 ./scripts/setup.sh
 ```
-Run from: repo root  
+Run from: repo root
 Prerequisites: Go 1.26.0+, Make  
 Notes: Installs tools into `.tools/bin`. Go package tools are pinned in `go.mod`; golangci-lint is pinned separately in `Makefile` so its dependencies cannot change the application module graph.
 
@@ -76,6 +76,14 @@ Prerequisites: `make tools` has been run
 Notes: Fails if any files need formatting.
 
 ### Lint
+
+- Check every tracked or untracked, non-ignored shell script for syntax errors
+```bash
+make shell-syntax-check
+```
+Run from: repo root
+Prerequisites: Bash
+Notes: Parses scripts without executing them and is part of `make ci`.
 
 - Run golangci-lint
 ```bash
@@ -187,13 +195,13 @@ the module files immediately before and after `go mod tidy`.
 
 ### Coverage
 
-- Enforce coverage threshold (>= 90%)
+- Run all tests with coverage reporting
 ```bash
 make coverage
 ```
 Run from: repo root  
 Prerequisites: Go 1.26.0+
-Notes: Canonical local/CI parity command for coverage. `make ci` routes through this target, and GitHub Actions runs `make ci`.
+Notes: Coverage is diagnostic evidence, not a pass/fail target. `make ci` routes through this target so regressions remain visible without incentivizing tests that exist only to execute implementation branches.
 
 ### Dev
 
@@ -203,7 +211,7 @@ make dev
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+, `make tools` has been run
-Notes: Formats Go source and runs golangci-lint. Does not run tests, coverage, or the full CI suite. Use `make test` or `make coverage` for those gates, and `make ci` as the complete local/pre-PR verification command (GitHub Actions also runs `make ci`).
+Notes: Formats Go source and runs golangci-lint. Does not run tests, coverage, or the full CI suite. Use `make test` as the test gate, `make coverage` for diagnostic reporting, and `make ci` as the complete local/pre-PR verification command (GitHub Actions also runs `make ci`).
 
 - Run al subcommands against this repo's own .agent-layer using the source tree
 ```bash

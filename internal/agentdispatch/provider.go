@@ -675,7 +675,7 @@ func reduceAntigravityEvent(value map[string]any, terminalSeen *bool) []provider
 		return []providerEvent{{Kind: eventFailure, Reason: reason}}
 	}
 	id, _ := firstStringV013(result, "conversation_id")
-	answer, _ := firstStringV013(result, "response")
+	answer, _ := firstStringV013(result, jsonResponseKey)
 	if id == "" || answer == "" {
 		return []providerEvent{{Kind: eventFailure, Reason: "Antigravity terminal result has no conversation ID or final answer"}}
 	}

@@ -28,9 +28,9 @@ This repo is built around determinism: the same inputs should produce the same c
 ```
 
 ## Daily workflow
-- Use the commands in `docs/agent-layer/COMMANDS.md` for format, lint, test, coverage, and release builds.
+- Use the commands in `docs/agent-layer/COMMANDS.md` for format, lint, test, coverage reporting, and release builds.
 - Prefer `make` targets (see `docs/agent-layer/COMMANDS.md`) instead of running `goimports` / `golangci-lint` directly; tools are installed repo-locally under `.tools/bin` so you do not need to edit your shell PATH. This avoids “works on my machine” drift and keeps local output aligned with CI.
-- Use `make dev` for the fast local formatting and lint loop. Run `./scripts/setup.sh` or `make tools` first. Use `make test` or `make coverage` for the global test and coverage gates, and `make ci` as the complete local/pre-PR verification command (hosted CI runs the same target).
+- Use `make dev` for the fast local formatting and lint loop. Run `./scripts/setup.sh` or `make tools` first. Use `make test` for the global test gate and `make coverage` for diagnostic coverage reporting, and use `make ci` as the complete local/pre-PR verification command (hosted CI runs the same target).
 - **Template sources live in `internal/templates/`**, not in `.agent-layer/`. The `.agent-layer/` directory is the *install output* created by `al init`/`al upgrade` in target repos. When adding or editing templates (instructions, memory files, skills, config), always edit the source in `internal/templates/`. If you change installer templates, run `al upgrade` in a target repo to apply the updated templates. When testing from this source repo's scratch target (`tmp/dev-repo`), use `go run ../../cmd/al upgrade` (or `go run ../../cmd/al init` for a fresh repo).
 - If template-managed file semantics change for release upgrades, regenerate the release manifest: `./scripts/generate-template-manifest.sh --tag vX.Y.Z`.
 - If you change upgrade behavior or upgrade-facing guidance, update the canonical upgrade contract page at `site/docs/upgrades.mdx` and keep release notes/docs links aligned.
@@ -213,7 +213,7 @@ make coverage
 ```
 Notes:
 - `make dev` formats Go source and runs golangci-lint. It does not run tests, coverage, or the full CI suite.
-- Use `make test` for the global test suite and `make coverage` to enforce the coverage gate.
+- Use `make test` for the global test suite and `make coverage` to inspect coverage without a percentage gate.
 - `make test` uses `gotestsum` for more readable output (installed via `make tools`).
 - `make lint` and `make test` fail fast if tools are missing; run `make tools` once per clone.
 

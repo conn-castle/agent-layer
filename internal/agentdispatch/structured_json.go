@@ -22,6 +22,7 @@ const (
 	jsonDataKey               = "data"
 	jsonMessageKey            = "message"
 	jsonReasonKey             = "reason"
+	jsonResponseKey           = "response"
 	jsonResultKey             = "result"
 	jsonStatusKey             = "status"
 	jsonTextKey               = "text"
@@ -399,7 +400,7 @@ func (p *selectiveJSONReader) retainedStructuredStringLimit(path []string) (int,
 	}
 	key := path[len(path)-1]
 	switch key {
-	case jsonResultKey, jsonMessageKey, jsonTextKey, jsonReasonKey, jsonErrorKey:
+	case jsonResultKey, jsonMessageKey, jsonTextKey, jsonReasonKey, jsonErrorKey, jsonResponseKey:
 		return p.retainedStringBytes, true
 	default:
 		return structuredJSONKeyBytes, false
@@ -578,7 +579,7 @@ func retainedStructuredPath(path []string) bool {
 		// as an example. An empty list retains nothing and stays a success.
 		return path[0] == permissionDenialsKey ||
 			(path[0] == grokUsageEventType && (path[1] == "input_tokens" || path[1] == "output_tokens" || path[1] == "cache_read_input_tokens" || path[1] == "cache_creation_input_tokens" || path[1] == "reasoning_tokens")) ||
-			(path[0] == jsonResultKey && (path[1] == "conversation_id" || path[1] == jsonStatusKey || path[1] == "response" || path[1] == jsonErrorKey)) ||
+			(path[0] == jsonResultKey && (path[1] == "conversation_id" || path[1] == jsonStatusKey || path[1] == jsonResponseKey || path[1] == jsonErrorKey)) ||
 			(path[0] == jsonEventKey && path[1] == jsonTypeKey) ||
 			(path[0] == jsonErrorKey && (path[1] == jsonMessageKey || path[1] == jsonReasonKey)) ||
 			(path[0] == "item" && (path[1] == jsonTypeKey || path[1] == jsonMessageKey || path[1] == jsonTextKey)) ||

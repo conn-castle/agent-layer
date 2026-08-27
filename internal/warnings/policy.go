@@ -210,13 +210,6 @@ func isClientTargeted(clients []string, target string) bool { //nolint:unparam /
 	return slices.Contains(clients, target)
 }
 
-func isExplicitClientTargeted(clients []string, target string) bool {
-	if len(clients) == 0 {
-		return false
-	}
-	return slices.Contains(clients, target)
-}
-
 func findSecretInURL(raw string) (string, bool) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {

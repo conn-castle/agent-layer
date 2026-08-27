@@ -190,6 +190,41 @@ func TestValidateConfigErrors(t *testing.T) {
 	}
 }
 
+func TestValidateRequiresEveryCoreAgentEnablementDecision(t *testing.T) {
+	enabled := true
+	base := Config{
+		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
+		Agents: AgentsConfig{
+			Antigravity:  AntigravityConfig{Enabled: &enabled},
+			Claude:       ClaudeConfig{Enabled: &enabled},
+			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
+			Codex:        CodexConfig{Enabled: &enabled},
+			VSCode:       EnableOnlyConfig{Enabled: &enabled},
+			CopilotCLI:   AgentConfig{Enabled: &enabled},
+			Grok:         GrokConfig{Enabled: &enabled},
+		},
+	}
+	for _, test := range []struct {
+		name  string
+		agent string
+		omit  func(*Config)
+	}{
+		{name: "claude", agent: "claude", omit: func(cfg *Config) { cfg.Agents.Claude.Enabled = nil }},
+		{name: "claude vscode", agent: "claude_vscode", omit: func(cfg *Config) { cfg.Agents.ClaudeVSCode.Enabled = nil }},
+		{name: "codex", agent: "codex", omit: func(cfg *Config) { cfg.Agents.Codex.Enabled = nil }},
+		{name: "VS Code", agent: strings.Join([]string{"vs", "code"}, ""), omit: func(cfg *Config) { cfg.Agents.VSCode.Enabled = nil }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := base
+			test.omit(&cfg)
+			key := strings.Join([]string{"agents", test.agent, "enabled"}, ".")
+			if err := cfg.Validate("config.toml"); err == nil || !strings.Contains(err.Error(), key) {
+				t.Fatalf("missing %s error = %v", key, err)
+			}
+		})
+	}
+}
+
 func TestValidateGrokPluginPassthrough(t *testing.T) {
 	cfg := validTimeoutConfig()
 	cfg.Agents.Grok.AgentSpecific = map[string]any{
