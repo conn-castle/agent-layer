@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.17.5 - 2026-08-27
+
+### Fixed
+- Empty MCP preflight contracts now encode `servers` as an array, preserving the benchmark study contract when no MCP servers are enabled.
+
 ## v0.17.4 - 2026-08-26
 
 ### Changed
