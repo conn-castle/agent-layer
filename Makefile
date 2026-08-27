@@ -113,10 +113,10 @@ lint: check-golangci-lint ## Run golangci-lint
 	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE)" "$(TOOL_BIN)/golangci-lint" run ./...
 
 .PHONY: shell-syntax-check
-shell-syntax-check: ## Parse every tracked shell script without executing it
-	@git ls-files -z --cached --others --exclude-standard '*.sh' | \
+shell-syntax-check: ## Parse every tracked or untracked, non-ignored *.sh file without executing it
+	@git ls-files -z --cached --others --exclude-standard -- '*.sh' | \
 	  while IFS= read -r -d '' file; do \
-	    [[ ! -e "$$file" ]] || bash -n "$$file" || exit $$?; \
+	    [[ ! -e "$$file" ]] || bash -n -- "$$file" || exit $$?; \
 	  done
 
 .PHONY: lint-ci-local

@@ -263,6 +263,26 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 	}
 }
 
+func TestStructuredProviderStreamBoundsNestingAndRecovers(t *testing.T) {
+	depth := structuredJSONMaxDepth + 8
+	tooDeep := `{"message":` + strings.Repeat(`{"message":`, depth) + `"deep"` + strings.Repeat(`}`, depth+1)
+	stream := tooDeep + "\n" + `{"type":"turn.completed"}` + "\n"
+	var raw bytes.Buffer
+	var events []providerEvent
+	if err := readStructuredEventsWithLineage(strings.NewReader(stream), &raw, AgentCodex, "", false, func(event providerEvent) error {
+		events = append(events, event)
+		return nil
+	}, nil); err != nil {
+		t.Fatalf("read provider stream: %v", err)
+	}
+	if len(events) != 2 || events[0].Kind != eventProgress || events[0].Activity != "invalid_structured_event" || events[1].Kind != eventComplete {
+		t.Fatalf("bounded stream events = %#v", events)
+	}
+	if raw.String() != stream {
+		t.Fatalf("raw evidence = %q, want %q", raw.String(), stream)
+	}
+}
+
 func TestClaudeStructuredEventsNormalizeBoundedLineageSeparately(t *testing.T) {
 	input := strings.Join([]string{
 		`{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"text","text":"ignored"},{"type":"tool_use","id":"unrelated","name":"Read","input":{"huge":"ignored"}},{"type":"tool_use","id":"parent","name":"Agent","input":{"prompt":"private"}}]}}`,

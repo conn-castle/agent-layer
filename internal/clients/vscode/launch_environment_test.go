@@ -85,7 +85,7 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 			binDir := t.TempDir()
 			envPath := filepath.Join(t.TempDir(), "environment")
 			codePath := filepath.Join(binDir, "code")
-			if err := os.WriteFile(codePath, []byte("#!/bin/sh\n/usr/bin/env > \"$AL_TEST_ENV_FILE\"\n"), 0o755); err != nil { // #nosec G306 -- test-owned executable.
+			if err := os.WriteFile(codePath, []byte("#!/bin/sh\nenv > \"$AL_TEST_ENV_FILE\"\n"), 0o755); err != nil { // #nosec G306 -- test-owned executable.
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))

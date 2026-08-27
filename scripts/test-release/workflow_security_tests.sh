@@ -27,17 +27,28 @@ run_release_workflow_security_tests() {
     return
   fi
 
-  local build_job
+  local catalog_job build_job
+  catalog_job=$(release_workflow_job "$workflow" "catalog-readiness")
   build_job=$(release_workflow_job "$workflow" "build-release")
-  if [[ -z "$build_job" ]]; then
-    fail "release-security: build-release job is missing"
+  if [[ -z "$catalog_job" || -z "$build_job" ]]; then
+    fail "release-security: catalog-readiness or build-release job is missing"
     return
   fi
 
   if grep -q '^    needs: catalog-readiness$' <<<"$build_job"; then
-    pass "release-security: release build requires exact-commit catalog readiness"
+    pass "release-security: release build requires catalog readiness"
   else
     fail "release-security: build-release must require catalog-readiness"
+  fi
+
+  if grep -q 'git rev-parse HEAD' <<<"$catalog_job" &&
+     grep -q -- '--workflow release-catalog-certification.yml' <<<"$catalog_job" &&
+     grep -q -- '--branch main' <<<"$catalog_job" &&
+     grep -q -- '--commit "${release_commit}"' <<<"$catalog_job" &&
+     grep -q -- '--status success' <<<"$catalog_job"; then
+    pass "release-security: catalog readiness requires successful certification for the exact tag commit"
+  else
+    fail "release-security: catalog readiness must bind successful certification to the exact tag commit"
   fi
 
   if grep -Eq 'uses: Apple-Actions/import-codesign-certs@[0-9a-f]{40}([[:space:]]|$)' <<<"$build_job" &&
@@ -55,8 +66,9 @@ run_release_workflow_security_tests() {
     fail "release-security: release artifacts must require a signing identity"
   fi
 
-  local validate_line scan_line notarize_line upload_line publish_line
+  local validate_line build_line scan_line notarize_line upload_line publish_line
   validate_line=$(release_step_line "$build_job" "Validate stable release tag format")
+  build_line=$(release_step_line "$build_job" "Build release artifacts")
   scan_line=$(release_step_line "$build_job" "Scan release binaries for known vulnerable symbols")
   notarize_line=$(release_step_line "$build_job" "Notarize darwin binaries")
   upload_line=$(release_step_line "$build_job" "Upload dist artifacts for downstream jobs")
@@ -68,11 +80,11 @@ run_release_workflow_security_tests() {
     fail "release-security: stable tag validation must precede publication"
   fi
 
-  if [[ -n "$scan_line" && -n "$notarize_line" && -n "$upload_line" && -n "$publish_line" ]] &&
-     (( scan_line < notarize_line && scan_line < upload_line && scan_line < publish_line )) &&
+  if [[ -n "$build_line" && -n "$scan_line" && -n "$notarize_line" && -n "$upload_line" && -n "$publish_line" ]] &&
+     (( build_line < scan_line && scan_line < notarize_line && scan_line < upload_line && scan_line < publish_line )) &&
      grep -q 'make release-vuln-check DIST_DIR=dist' <<<"$build_job"; then
-    pass "release-security: vulnerability scanning gates every artifact publication path"
+    pass "release-security: vulnerability scanning follows the build and gates every artifact publication path"
   else
-    fail "release-security: vulnerability scanning must gate notarization, upload, and publication"
+    fail "release-security: vulnerability scanning must follow the build and gate notarization, upload, and publication"
   fi
 }
