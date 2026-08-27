@@ -147,6 +147,9 @@ func checkTaskReadinessWithBoundedDisk(ctx context.Context, repoRoot, checkout s
 	for index, task := range tasks {
 		readiness, err := loadTaskReadiness(checkout, task.ID)
 		if err != nil {
+			if cleanupErr := cleanupPrevious(); cleanupErr != nil {
+				err = errors.Join(err, fmt.Errorf("reclaim benchmark readiness Docker images: %w", cleanupErr))
+			}
 			return summarizeReadinessAudit(results), err
 		}
 		results[index] = ReadinessAuditTask{Task: task.ID, Status: readinessStatusFailed}

@@ -1,5 +1,21 @@
 # Helper functions for CI/release workflow consistency tests in scripts/test-release.sh.
 
+# Print the YAML block for one GitHub Actions job, from its header through the
+# line before the next top-level job key.
+workflow_job_block() {
+  local file="$1"
+  local job="$2"
+  awk -v job="$job" '
+    $0 == "  " job ":" { grabbing = 1 }
+    grabbing {
+      if ($0 != "  " job ":" && /^  [^[:space:]]/) {
+        exit
+      }
+      print
+    }
+  ' "$file"
+}
+
 run_workflow_consistency_tests() {
   section "Workflow Consistency Tests"
 
@@ -22,12 +38,38 @@ run_workflow_consistency_tests() {
     fail "workflow-consistency: build-release must run on macos-latest for Developer ID signing"
   fi
 
-  if grep -q '^  catalog-readiness:' "$release_workflow" && \
-     grep -q '^    needs: catalog-readiness' "$release_workflow" && \
-     grep -q 'go run ./cmd/al benchmark readiness --task-concurrency 1 --remove-task-images' "$release_workflow"; then
+  local catalog_job build_job
+  catalog_job=$(workflow_job_block "$release_workflow" "catalog-readiness")
+  build_job=$(workflow_job_block "$release_workflow" "build-release")
+
+  if [[ -n "$catalog_job" && -n "$build_job" ]] && \
+     grep -q 'go run ./cmd/al benchmark readiness --task-concurrency 1 --remove-task-images' <<<"$catalog_job" && \
+     grep -q '^    needs: catalog-readiness$' <<<"$build_job"; then
     pass "workflow-consistency: pinned benchmark catalog readiness gates release builds"
   else
     fail "workflow-consistency: release builds must depend on the bounded-disk pinned catalog readiness audit"
+  fi
+
+  local catalog_validate_line catalog_checkout_line catalog_setup_line
+  local build_validate_line build_checkout_line build_setup_line
+  catalog_validate_line=$(grep -n 'name: Validate stable release tag format' <<<"$catalog_job" | head -n1 | cut -d: -f1 || true)
+  catalog_checkout_line=$(grep -n 'uses: actions/checkout@' <<<"$catalog_job" | head -n1 | cut -d: -f1 || true)
+  catalog_setup_line=$(grep -n 'uses: actions/setup-go@' <<<"$catalog_job" | head -n1 | cut -d: -f1 || true)
+  build_validate_line=$(grep -n 'name: Validate stable release tag format' <<<"$build_job" | head -n1 | cut -d: -f1 || true)
+  build_checkout_line=$(grep -n 'uses: actions/checkout@' <<<"$build_job" | head -n1 | cut -d: -f1 || true)
+  build_setup_line=$(grep -n 'uses: actions/setup-go@' <<<"$build_job" | head -n1 | cut -d: -f1 || true)
+
+  if [[ -n "$catalog_validate_line" && -n "$catalog_checkout_line" && -n "$catalog_setup_line" && \
+        -n "$build_validate_line" && -n "$build_checkout_line" && -n "$build_setup_line" && \
+        "$catalog_validate_line" -lt "$catalog_checkout_line" && "$catalog_checkout_line" -lt "$catalog_setup_line" && \
+        "$build_validate_line" -lt "$build_checkout_line" && "$build_checkout_line" -lt "$build_setup_line" ]] && \
+     grep -q 'ref: refs/tags/${{ env.RELEASE_TAG }}' <<<"$catalog_job" && \
+     grep -q 'ref: refs/tags/${{ env.RELEASE_TAG }}' <<<"$build_job" && \
+     awk '/uses: actions\/setup-go@/{found=1} found && /cache: false/{found=0; ok=1} found && /cache: true/{exit 1} END{exit !ok}' <<<"$catalog_job" && \
+     awk '/uses: actions\/setup-go@/{found=1} found && /cache: false/{found=0; ok=1} found && /cache: true/{exit 1} END{exit !ok}' <<<"$build_job"; then
+    pass "workflow-consistency: catalog-readiness and build-release validate the release tag before Go setup and do not cache unvalidated modules"
+  else
+    fail "workflow-consistency: catalog-readiness and build-release must validate the release tag before checkout and disable setup-go caching"
   fi
 
   if grep -q 'command -v rg' "$release_workflow" && grep -q 'brew install ripgrep' "$release_workflow"; then
@@ -40,8 +82,8 @@ run_workflow_consistency_tests() {
   # publish step, otherwise prerelease tags can publish artifacts before
   # failing downstream jobs.
   local stable_tag_check_line publish_release_line
-  stable_tag_check_line=$(grep -n 'name: Validate stable release tag format' "$release_workflow" | head -n1 | cut -d: -f1 || true)
-  publish_release_line=$(grep -n 'name: Publish release' "$release_workflow" | head -n1 | cut -d: -f1 || true)
+  stable_tag_check_line=$(grep -n 'name: Validate stable release tag format' <<<"$build_job" | head -n1 | cut -d: -f1 || true)
+  publish_release_line=$(grep -n 'name: Publish release' <<<"$build_job" | head -n1 | cut -d: -f1 || true)
 
   if [[ -z "$stable_tag_check_line" ]]; then
     fail "workflow-consistency: missing stable release tag validation step"

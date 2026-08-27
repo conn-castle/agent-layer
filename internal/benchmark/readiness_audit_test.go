@@ -49,6 +49,39 @@ func TestReadinessAuditRemovesOnlyAfterTheSuccessorImageIsReady(t *testing.T) {
 	}
 }
 
+func TestReadinessAuditCombinesCleanupFailureWhenLaterLoadFails(t *testing.T) {
+	checkout := t.TempDir()
+	writeAuditCatalogFixture(t, checkout, "first-task", "second-task")
+	installReadinessTestBoundaries(t, auditContractsFixture("first-task"),
+		func(_ context.Context, arguments ...string) ([]byte, error) {
+			if len(arguments) > 3 && arguments[0] == "image" && arguments[1] == "rm" {
+				return []byte("permission denied"), errors.New("exit status 1")
+			}
+			return nil, nil
+		})
+
+	outcome, err := checkTaskReadinessWithBoundedDisk(
+		context.Background(),
+		t.TempDir(),
+		checkout,
+		[]benchmarkPlanTask{{ID: "first-task"}, {ID: "second-task"}},
+		[]string{strings.Repeat("1", 64), strings.Repeat("2", 64)},
+		[]ReadinessAuditTask{
+			{Task: "first-task", Status: readinessStatusValidated},
+			{Task: "second-task", Status: readinessStatusValidated},
+		},
+	)
+	if err == nil ||
+		!strings.Contains(err.Error(), "no mandatory environment readiness contract") ||
+		!strings.Contains(err.Error(), "reclaim benchmark readiness Docker images") ||
+		!strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("combined load and cleanup error = %v", err)
+	}
+	if outcome.Certified != 1 || outcome.Validated != 1 || outcome.Failed != 0 {
+		t.Fatalf("audit outcome = %#v", outcome)
+	}
+}
+
 func TestReadinessAuditImageRemovalFailsLoudly(t *testing.T) {
 	installReadinessTestBoundaries(t, auditContractsFixture(),
 		func(context.Context, ...string) ([]byte, error) {
