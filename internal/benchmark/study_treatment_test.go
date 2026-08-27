@@ -45,6 +45,26 @@ func TestStudyMCPContractRejectsLiteralCookieAndCredentialValues(t *testing.T) {
 	}
 }
 
+func TestStudyMCPContractEncodesNoServersAsArray(t *testing.T) {
+	root := t.TempDir()
+	configPath := writeStudyTreatmentConfig(t, root)
+	data, err := os.ReadFile(configPath) // #nosec G304 -- configPath is a test-owned temporary file.
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, _, err := studyMCPContract(data, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(encoded) != `{"servers":[]}` {
+		t.Fatalf("empty MCP preflight contract = %s, want servers array", encoded)
+	}
+}
+
 func TestStudyMCPContractRejectsLiteralProviderNativeCredentials(t *testing.T) {
 	root := t.TempDir()
 	configPath := writeStudyTreatmentConfig(t, root)

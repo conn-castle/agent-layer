@@ -45,7 +45,7 @@ func studyMCPContract(configBytes []byte, source string) (studyMCPPreflight, []s
 		return studyMCPPreflight{}, nil, err
 	}
 	credentials := map[string]bool{}
-	contract := studyMCPPreflight{}
+	contract := studyMCPPreflight{Servers: []studyMCPServer{}}
 	for _, server := range cfg.MCP.Servers {
 		if server.Enabled == nil || !*server.Enabled {
 			continue
