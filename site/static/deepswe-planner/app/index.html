@@ -136,6 +136,43 @@
 
     code { font-family: var(--mono); font-size: 0.9em; }
 
+    .publication-card {
+      margin-top: 20px;
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--accent);
+      border-radius: 0 8px 8px 0;
+      background: var(--accent-soft);
+      padding: 14px 16px 16px;
+    }
+
+    .publication-card h2 {
+      margin-bottom: 7px;
+      color: var(--accent-dark);
+      font-size: 0.9rem;
+    }
+
+    .publication-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.5;
+    }
+
+    .publication-card a { color: var(--accent-dark); font-weight: 600; text-underline-offset: 3px; }
+    .citation-label { margin-top: 12px; color: var(--text); font-size: 0.78rem; font-weight: 600; }
+
+    .publication-card pre {
+      overflow-x: auto;
+      margin: 6px 0 0;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      padding: 11px 12px;
+      color: var(--text);
+      font-size: 0.76rem;
+      line-height: 1.45;
+    }
+
     .method-guide {
       width: 100%;
       margin-top: 20px;
@@ -797,11 +834,6 @@
         published runs. The approach can work with any benchmark whose tasks are run
         multiple times.
       </p>
-      <!-- Replace this placeholder with the published arXiv URL before release. -->
-      <p>
-        <a href="https://arxiv.org/abs/XXXX.XXXXX" target="_blank" rel="noopener noreferrer">Read the DeltaSelect arXiv paper</a>
-        for the method, validation, and limitations.
-      </p>
       <p>
         DeepSWE uses a custom agent harness, so choose a higher reasoning level
         here than in your own harness to make the comparison more representative.
@@ -810,6 +842,18 @@
         selects 9 tasks.
       </p>
     </div>
+    <!-- Replace the paper URL and provisional citation with the published arXiv metadata before release. -->
+    <aside class="publication-card" aria-labelledby="publication-title">
+      <h2 id="publication-title">Research paper</h2>
+      <p><a href="https://arxiv.org/abs/XXXX.XXXXX" target="_blank" rel="noopener noreferrer">Read the DeltaSelect arXiv paper</a> for the method, validation, and limitations.</p>
+      <div class="citation-label">Provisional citation</div>
+      <pre><code>@article{conn2026deltaselect,
+  title   = {DeltaSelect: Budget-Aware Task Selection for Agent Benchmarks},
+  author  = {Conn, Nicholas J.},
+  journal = {arXiv preprint arXiv:XXXX.XXXXX},
+  year    = {2026}
+}</code></pre>
+    </aside>
     <section class="method-guide" aria-labelledby="method-guide-title">
       <h2 id="method-guide-title">How to use this tool</h2>
       <div class="guide-columns">
