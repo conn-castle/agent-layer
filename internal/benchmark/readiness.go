@@ -183,6 +183,33 @@ func certifyPlanTaskEnvironments(ctx context.Context, repoRoot, checkout string,
 	return identities, nil
 }
 
+// certifyPlanTaskEnvironmentsWithCleanup retains durable receipts but removes
+// task images after each one-time certification. Study execution may pull an
+// image again when it actually needs it; preparation itself cannot become an
+// unbounded Docker cache warmer.
+func certifyPlanTaskEnvironmentsWithCleanup(ctx context.Context, repoRoot, checkout string, tasks []benchmarkPlanTask, checksums map[string]string) (map[string]string, error) {
+	identities := make(map[string]string, len(tasks))
+	var failures []error
+	for _, task := range tasks {
+		readiness, loadErr := loadTaskReadiness(checkout, task.ID)
+		if loadErr != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", task.ID, loadErr))
+			continue
+		}
+		identity, certifyErr := certifyTaskEnvironment(ctx, repoRoot, checkout, task.ID, checksums[task.ID])
+		cleanupErr := removeTaskReadinessImages(ctx, readiness)
+		if err := errors.Join(certifyErr, cleanupErr); err != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", task.ID, err))
+			continue
+		}
+		identities[task.ID] = identity
+	}
+	if len(failures) > 0 {
+		return nil, fmt.Errorf("selected benchmark tasks failed readiness certification:\n%w", errors.Join(failures...))
+	}
+	return identities, nil
+}
+
 func validateTaskEnvironmentParity(tasks []benchmarkPlanTask, baseline, treatment map[string]string) error {
 	if len(baseline) != len(tasks) || len(treatment) != len(tasks) || !sameStringMap(baseline, treatment) {
 		return fmt.Errorf("study task environments do not match the current certified readiness contracts; run benchmark run again")

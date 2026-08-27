@@ -221,8 +221,14 @@ func TestReadinessAuditReportsProgressAndBoundsTaskRuntime(t *testing.T) {
 	if outcome.Blocked != 2 || outcome.Failed != 0 {
 		t.Fatalf("timeout outcome = %#v", outcome)
 	}
-	if len(progress) != 2 || progress[0].Status != readinessStatusChecking || progress[1].Status != readinessStatusBlocked ||
-		progress[1].Completed != 1 || progress[1].Required != 2 {
+	var taskProgress []ReadinessAuditProgress
+	for _, event := range progress {
+		if event.Task != "" {
+			taskProgress = append(taskProgress, event)
+		}
+	}
+	if len(taskProgress) != 2 || taskProgress[0].Status != readinessStatusChecking || taskProgress[1].Status != readinessStatusBlocked ||
+		taskProgress[1].Completed != 1 || taskProgress[1].Required != 2 {
 		t.Fatalf("progress = %#v", progress)
 	}
 }

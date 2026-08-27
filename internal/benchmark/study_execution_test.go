@@ -19,7 +19,7 @@ import (
 func TestStudySchedulerStopsAfterInfrastructureFailure(t *testing.T) {
 	arm, checksums, environments := schedulerArmFixture(t, []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 2}, {ID: "second-task", RepetitionsPerArm: 2}})
 	executor := &schedulerExecutor{failures: map[string]error{"first-task:2": errors.New("task environment unavailable")}}
-	err := executeMatrix(context.Background(), t.TempDir(), checksums, environments, []matrixArm{arm}, nil, 1, executor)
+	err := executeMatrix(context.Background(), t.TempDir(), checksums, environments, []matrixArm{arm}, nil, 1, executor, nil)
 	if err == nil || !strings.Contains(err.Error(), "first-task repetition 2") {
 		t.Fatalf("infrastructure failure = %v", err)
 	}
@@ -35,7 +35,7 @@ func TestStudySchedulerStopsAfterInfrastructureFailure(t *testing.T) {
 func TestStudySchedulerReturnsProviderCapacityWithoutRetrying(t *testing.T) {
 	arm, checksums, environments := schedulerArmFixture(t, []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 2}, {ID: "second-task", RepetitionsPerArm: 1}})
 	executor := &schedulerExecutor{capacityFailures: 1}
-	err := executeMatrix(context.Background(), t.TempDir(), checksums, environments, []matrixArm{arm}, nil, 1, executor)
+	err := executeMatrix(context.Background(), t.TempDir(), checksums, environments, []matrixArm{arm}, nil, 1, executor, nil)
 	if !errors.Is(err, errProviderCapacity) {
 		t.Fatalf("provider capacity error = %v", err)
 	}
@@ -117,7 +117,7 @@ func TestStudySelectionBoundaryRejectsMalformedDocumentsAndTaskScopes(t *testing
 func TestStudySchedulerScopesTasksAndStampsWorkerProvenance(t *testing.T) {
 	arm, checksums, environments := schedulerArmFixture(t, []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 1}, {ID: "second-task", RepetitionsPerArm: 1}})
 	executor := &schedulerExecutor{}
-	if err := executeMatrix(context.Background(), t.TempDir(), checksums, environments, []matrixArm{arm}, []string{"second-task"}, 2, executor); err != nil {
+	if err := executeMatrix(context.Background(), t.TempDir(), checksums, environments, []matrixArm{arm}, []string{"second-task"}, 2, executor, nil); err != nil {
 		t.Fatal(err)
 	}
 	calls := executor.requests()
@@ -142,7 +142,7 @@ func TestStudySchedulerSerializesCompletionNotifications(t *testing.T) {
 		close(executor.barrier)
 	}()
 	var output bytes.Buffer
-	err := executeMatrix(context.Background(), t.TempDir(), checksums, environments, []matrixArm{arm}, nil, 2, executor, func(result AttemptResult) {
+	err := executeMatrix(context.Background(), t.TempDir(), checksums, environments, []matrixArm{arm}, nil, 2, executor, nil, func(result AttemptResult) {
 		// bytes.Buffer is deliberately not synchronized. This mirrors a CLI
 		// writer and makes `go test -race` prove completion callbacks are serial.
 		_, _ = fmt.Fprintf(&output, "%s:%d\n", result.Task, result.Attempt)
@@ -161,7 +161,7 @@ func TestStudyExecutionClaimsStudyBeforeSchedulingPaidWork(t *testing.T) {
 	firstExecutor := &schedulerExecutor{barrier: make(chan struct{}), started: make(chan struct{}, 1)}
 	firstDone := make(chan error, 1)
 	go func() {
-		firstDone <- executeMatrix(context.Background(), repoRoot, checksums, environments, []matrixArm{arm}, nil, 1, firstExecutor)
+		firstDone <- executeMatrix(context.Background(), repoRoot, checksums, environments, []matrixArm{arm}, nil, 1, firstExecutor, nil)
 	}()
 	select {
 	case <-firstExecutor.started:
@@ -190,7 +190,7 @@ func TestStudyExecutionClaimsStudyBeforeSchedulingPaidWork(t *testing.T) {
 	}
 
 	secondExecutor := &schedulerExecutor{}
-	err = executeMatrix(context.Background(), repoRoot, checksums, environments, []matrixArm{arm}, nil, 1, secondExecutor)
+	err = executeMatrix(context.Background(), repoRoot, checksums, environments, []matrixArm{arm}, nil, 1, secondExecutor, nil)
 	if err == nil || !strings.Contains(err.Error(), "already in progress") {
 		t.Fatalf("concurrent execution error = %v", err)
 	}

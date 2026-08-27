@@ -995,10 +995,10 @@
     <section class="export-step">
       <span class="step-number">3</span>
       <div>
-        <h3>Describe the experiments</h3>
-        <p>Save this beside <code>selection.json</code> as <code>study.toml</code>. Edit the model, reasoning, and Agent Layer paths for your project.</p>
+        <h3>Create the study</h3>
+        <p>Run the CLI scaffolder from your project. It generates a benchmark-safe provider config and snapshots the selection, current instructions, and projected skills into a self-contained study.</p>
         <div class="terminal-window">
-          <div class="terminal-header"><span class="terminal-title">study.toml</span><button class="code-copy" id="copyStudy" type="button">Copy</button></div>
+          <div class="terminal-header"><span class="terminal-title">Terminal</span><button class="code-copy" id="copyStudy" type="button">Copy</button></div>
           <pre id="studyTemplate"></pre>
         </div>
       </div>
@@ -1009,8 +1009,8 @@
         <h3>Validate, then run</h3>
         <div class="terminal-window">
           <div class="terminal-header"><span class="terminal-title">Terminal</span><span class="terminal-dots">● ● ●</span></div>
-          <pre>al benchmark run study.toml --dry-run
-al benchmark run study.toml</pre>
+          <pre>al benchmark run benchmark-study/study.toml --dry-run
+al benchmark run benchmark-study/study.toml</pre>
         </div>
         <p>The dry run validates inputs without provider calls. The real run authorizes paid calls and resumes safely if interrupted.</p>
         <p class="report-note">Agent Layer generates <code>report.json</code> and <code>report.html</code> in the study’s state directory, then prints the report path.</p>
@@ -1815,39 +1815,20 @@ function currentExportState() {
     : null;
 }
 
-const STUDY_TEMPLATE = `selection = "selection.json"
-
-[[experiments]]
-name = "bare"
-model = "luna" # luna, terra, sol, sonnet, opus, or fable
-reasoning = "low"
-
-[[experiments]]
-name = "agent-layer"
-model = "luna"
-reasoning = "low"
-config = "treatment/config.toml"
-instructions = "treatment/instructions"
-skills = "treatment/skills"
-entry_prompt = "treatment/prompt.md" # contains exactly one {{task}}`;
+const STUDY_TEMPLATE = `al benchmark init selection.json --directory benchmark-study`;
 
 function agentInstructions(selectionDocument) {
   return `Set up and run an Agent Layer DeepSWE benchmark in this project.
 
 1. Check that the al CLI and Docker are installed and that provider credentials are configured for every model in the study. Stop with an actionable explanation if a prerequisite is missing.
 2. Save the JSON below as selection.json without changing its tasks, weights, calibration, or snapshot identity.
-3. Create study.toml beside it. Compare a bare experiment with this project's Agent Layer instructions and skills. Use supported benchmark model names (luna, terra, sol, sonnet, opus, or fable), actual project-relative input paths, and an entry prompt containing exactly one {{task}} placeholder. Ask me only if the intended experiments or paths are ambiguous.
-4. From the directory containing study.toml, run:
-   al benchmark run study.toml --dry-run
+3. Run \`al benchmark init selection.json --directory benchmark-study\`. The CLI must choose the matching model and reasoning, generate a benchmark-safe provider config, and snapshot this project's current instructions and projected skills.
+4. Run:
+   al benchmark run benchmark-study/study.toml --dry-run
    Do not make provider calls unless this succeeds.
 5. If the dry run passes, explain that the next command authorizes paid provider calls, then run:
-   al benchmark run study.toml
+   al benchmark run benchmark-study/study.toml
 6. The runner resumes safely if interrupted. When it completes, open the generated report.html at the path printed by the CLI, summarize it, and preserve report.json as the reproducible result.
-
-Example study.toml:
-~~~toml
-${STUDY_TEMPLATE}
-~~~
 
 selection.json:
 ~~~json
