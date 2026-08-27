@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const (
@@ -18,6 +19,7 @@ const (
 	taskCatalogManifestFile = "manifest.json"
 
 	readinessStatusFailed    = "failed"
+	readinessStatusChecking  = "checking"
 	readinessStatusValidated = "validated"
 	readinessStatusCertified = "certified"
 	readinessStatusBlocked   = "blocked"
@@ -29,6 +31,20 @@ type ReadinessAuditOptions struct {
 	RepoRoot         string
 	TaskConcurrency  int
 	RemoveTaskImages bool
+	Tasks            []string
+	TaskShardIndex   int
+	TaskShardCount   int
+	TaskTimeout      time.Duration
+	OnTaskProgress   func(ReadinessAuditProgress)
+}
+
+// ReadinessAuditProgress reports observable task-level progress during an
+// audit. Status identifies work that is checking or the task's terminal status.
+type ReadinessAuditProgress struct {
+	Task      string
+	Status    string
+	Completed int
+	Required  int
 }
 
 // ReadinessAuditTask records the preflight result for one DeepSWE task.
@@ -62,11 +78,22 @@ func CheckAllTaskReadiness(ctx context.Context, options ReadinessAuditOptions) (
 	if options.RemoveTaskImages && options.TaskConcurrency != 1 {
 		return ReadinessAuditOutcome{}, errors.New("DeepSWE readiness audit image removal requires task concurrency 1")
 	}
+	if options.TaskTimeout < 0 {
+		return ReadinessAuditOutcome{}, errors.New("DeepSWE readiness audit task timeout cannot be negative")
+	}
+	shardIndex, shardCount, err := normalizeReadinessShard(options.TaskShardIndex, options.TaskShardCount)
+	if err != nil {
+		return ReadinessAuditOutcome{}, err
+	}
 	checkout, err := ensurePinnedBenchmarkCheckout(ctx, options.RepoRoot)
 	if err != nil {
 		return ReadinessAuditOutcome{}, err
 	}
 	tasks, err := listPinnedBenchmarkTasks(checkout)
+	if err != nil {
+		return ReadinessAuditOutcome{}, err
+	}
+	tasks, err = selectReadinessTasks(tasks, options.Tasks, shardIndex, shardCount)
 	if err != nil {
 		return ReadinessAuditOutcome{}, err
 	}
@@ -87,12 +114,22 @@ func CheckAllTaskReadiness(ctx context.Context, options ReadinessAuditOptions) (
 		return outcome, nil
 	}
 	if options.RemoveTaskImages {
-		return checkTaskReadinessWithBoundedDisk(ctx, options.RepoRoot, checkout, tasks, checksums, results)
+		return checkTaskReadinessWithBoundedDisk(ctx, options, checkout, tasks, checksums, results)
 	}
 
 	jobs := make(chan int)
 	var workers sync.WaitGroup
 	var infrastructureAbort atomic.Bool
+	var completed atomic.Int64
+	var progressMu sync.Mutex
+	emitProgress := func(progress ReadinessAuditProgress) {
+		if options.OnTaskProgress == nil {
+			return
+		}
+		progressMu.Lock()
+		defer progressMu.Unlock()
+		options.OnTaskProgress(progress)
+	}
 	auditContext, cancel := context.WithCancel(ctx)
 	defer cancel()
 	workerCount := options.TaskConcurrency
@@ -106,7 +143,8 @@ func CheckAllTaskReadiness(ctx context.Context, options ReadinessAuditOptions) (
 			for index := range jobs {
 				task := tasks[index].ID
 				results[index] = ReadinessAuditTask{Task: task, Status: readinessStatusFailed}
-				if err := auditTaskReadiness(auditContext, options.RepoRoot, checkout, task, checksums[index]); err != nil {
+				emitProgress(ReadinessAuditProgress{Task: task, Status: readinessStatusChecking, Completed: int(completed.Load()), Required: len(tasks)})
+				if err := auditTaskReadinessWithTimeout(auditContext, options, checkout, task, checksums[index]); err != nil {
 					results[index].Error = err.Error()
 					if isReadinessInfrastructureFailure(err) {
 						results[index].Status = readinessStatusBlocked
@@ -116,9 +154,11 @@ func CheckAllTaskReadiness(ctx context.Context, options ReadinessAuditOptions) (
 						results[index].Status = readinessStatusBlocked
 						results[index].Error = "audit canceled after a shared infrastructure failure"
 					}
-					continue
+				} else {
+					results[index].Status = readinessStatusCertified
 				}
-				results[index].Status = readinessStatusCertified
+				finished := int(completed.Add(1))
+				emitProgress(ReadinessAuditProgress{Task: task, Status: results[index].Status, Completed: finished, Required: len(tasks)})
 			}
 		}()
 	}
@@ -131,7 +171,7 @@ func CheckAllTaskReadiness(ctx context.Context, options ReadinessAuditOptions) (
 	return summarizeReadinessAudit(results), nil
 }
 
-func checkTaskReadinessWithBoundedDisk(ctx context.Context, repoRoot, checkout string, tasks []benchmarkPlanTask, checksums []string, results []ReadinessAuditTask) (ReadinessAuditOutcome, error) {
+func checkTaskReadinessWithBoundedDisk(ctx context.Context, options ReadinessAuditOptions, checkout string, tasks []benchmarkPlanTask, checksums []string, results []ReadinessAuditTask) (ReadinessAuditOutcome, error) {
 	var previous loadedTaskReadiness
 	hasPrevious := false
 	cleanupPrevious := func() error {
@@ -153,7 +193,10 @@ func checkTaskReadinessWithBoundedDisk(ctx context.Context, repoRoot, checkout s
 			return summarizeReadinessAudit(results), err
 		}
 		results[index] = ReadinessAuditTask{Task: task.ID, Status: readinessStatusFailed}
-		auditErr := auditTaskReadiness(ctx, repoRoot, checkout, task.ID, checksums[index])
+		if options.OnTaskProgress != nil {
+			options.OnTaskProgress(ReadinessAuditProgress{Task: task.ID, Status: readinessStatusChecking, Completed: index, Required: len(tasks)})
+		}
+		auditErr := auditTaskReadinessWithTimeout(ctx, options, checkout, task.ID, checksums[index])
 		if err := cleanupPrevious(); err != nil {
 			return summarizeReadinessAudit(results), fmt.Errorf("reclaim benchmark readiness Docker images: %w", err)
 		}
@@ -161,21 +204,25 @@ func checkTaskReadinessWithBoundedDisk(ctx context.Context, repoRoot, checkout s
 		hasPrevious = true
 		if auditErr == nil {
 			results[index].Status = readinessStatusCertified
-			continue
-		}
-		results[index].Error = auditErr.Error()
-		if !isReadinessInfrastructureFailure(auditErr) {
-			continue
-		}
-		results[index].Status = readinessStatusBlocked
-		for blocked := index + 1; blocked < len(tasks); blocked++ {
-			results[blocked] = ReadinessAuditTask{
-				Task:   tasks[blocked].ID,
-				Status: readinessStatusBlocked,
-				Error:  "audit canceled after a shared infrastructure failure",
+		} else {
+			results[index].Error = auditErr.Error()
+			if isReadinessInfrastructureFailure(auditErr) {
+				results[index].Status = readinessStatusBlocked
+				for blocked := index + 1; blocked < len(tasks); blocked++ {
+					results[blocked] = ReadinessAuditTask{
+						Task:   tasks[blocked].ID,
+						Status: readinessStatusBlocked,
+						Error:  "audit canceled after a shared infrastructure failure",
+					}
+				}
 			}
 		}
-		break
+		if options.OnTaskProgress != nil {
+			options.OnTaskProgress(ReadinessAuditProgress{Task: task.ID, Status: results[index].Status, Completed: index + 1, Required: len(tasks)})
+		}
+		if results[index].Status == readinessStatusBlocked {
+			break
+		}
 	}
 	if err := cleanupPrevious(); err != nil {
 		return summarizeReadinessAudit(results), fmt.Errorf("reclaim benchmark readiness Docker images: %w", err)
@@ -224,12 +271,67 @@ func isReadinessInfrastructureFailure(err error) bool {
 		"no space left on device",
 		"toomanyrequests",
 		"rate exceeded",
+		"readiness timed out after",
 	} {
 		if strings.Contains(message, marker) {
 			return true
 		}
 	}
 	return false
+}
+
+func normalizeReadinessShard(index, count int) (int, int, error) {
+	if index == 0 && count == 0 {
+		return 1, 1, nil
+	}
+	if count < 1 || count > 32 {
+		return 0, 0, errors.New("DeepSWE readiness audit task shard count must be from 1 to 32")
+	}
+	if index < 1 || index > count {
+		return 0, 0, errors.New("DeepSWE readiness audit task shard index must be from 1 to task shard count")
+	}
+	return index, count, nil
+}
+
+func selectReadinessTasks(catalog []benchmarkPlanTask, requested []string, shardIndex, shardCount int) ([]benchmarkPlanTask, error) {
+	selected := catalog
+	if len(requested) > 0 {
+		wanted := make(map[string]struct{}, len(requested))
+		for _, task := range requested {
+			if !validTaskName(task) {
+				return nil, fmt.Errorf("invalid benchmark readiness task %q", task)
+			}
+			if _, duplicate := wanted[task]; duplicate {
+				return nil, fmt.Errorf("duplicate benchmark readiness task %q", task)
+			}
+			wanted[task] = struct{}{}
+		}
+		selected = make([]benchmarkPlanTask, 0, len(wanted))
+		for _, task := range catalog {
+			if _, ok := wanted[task.ID]; ok {
+				selected = append(selected, task)
+				delete(wanted, task.ID)
+			}
+		}
+		if len(wanted) > 0 {
+			unknown := make([]string, 0, len(wanted))
+			for task := range wanted {
+				unknown = append(unknown, task)
+			}
+			sort.Strings(unknown)
+			return nil, fmt.Errorf("benchmark readiness tasks are not in the pinned catalog: %s", strings.Join(unknown, ", "))
+		}
+	}
+	if shardCount > len(selected) {
+		return nil, fmt.Errorf("DeepSWE readiness audit task shard count %d exceeds selected task count %d", shardCount, len(selected))
+	}
+	shard := make([]benchmarkPlanTask, 0, (len(selected)+shardCount-1)/shardCount)
+	for position, task := range selected {
+		if position%shardCount == shardIndex-1 {
+			shard = append(shard, task)
+		}
+	}
+	return shard, nil
 }
 
 func listPinnedBenchmarkTasks(checkout string) ([]benchmarkPlanTask, error) {
@@ -315,4 +417,17 @@ func auditTaskReadiness(ctx context.Context, repoRoot, checkout, task, checksum 
 		return err
 	}
 	return nil
+}
+
+func auditTaskReadinessWithTimeout(ctx context.Context, options ReadinessAuditOptions, checkout, task, checksum string) error {
+	if options.TaskTimeout == 0 {
+		return auditTaskReadiness(ctx, options.RepoRoot, checkout, task, checksum)
+	}
+	taskContext, cancel := context.WithTimeout(ctx, options.TaskTimeout)
+	defer cancel()
+	err := auditTaskReadiness(taskContext, options.RepoRoot, checkout, task, checksum)
+	if errors.Is(taskContext.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("benchmark task %s readiness timed out after %s: %w", task, options.TaskTimeout, context.DeadlineExceeded)
+	}
+	return err
 }

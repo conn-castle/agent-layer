@@ -256,6 +256,10 @@ release-preflight: ci test-release ## Validate release readiness (set RELEASE_TA
 	fi
 	@./scripts/check-upgrade-docs.sh --tag "$${RELEASE_TAG}"
 
+.PHONY: release-catalog-certify
+release-catalog-certify: ## Certify clean, pushed main for release tagging in hosted CI
+	@./scripts/certify-release-catalog.sh
+
 .PHONY: release-dist
 release-dist: test-release ## Build release artifacts (cross-compile)
 	@AL_VERSION="$(AL_VERSION)" DIST_DIR="$(DIST_DIR)" ./scripts/build-release.sh

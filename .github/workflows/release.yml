@@ -12,12 +12,13 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
   catalog-readiness:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 5
     env:
       RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     steps:
@@ -32,14 +33,29 @@ jobs:
         with:
           ref: refs/tags/${{ env.RELEASE_TAG }}
           persist-credentials: false
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-        with:
-          go-version-file: go.mod
-          cache: false
-      - name: Initialize Agent Layer for benchmark readiness
-        run: AL_NO_NETWORK=1 go run ./cmd/al init --here --no-wizard
-      - name: Certify pinned benchmark catalog
-        run: go run ./cmd/al benchmark readiness --task-concurrency 1 --remove-task-images
+      - name: Verify exact-commit catalog certification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_commit="$(git rev-parse HEAD)"
+          certification_url="$(
+            gh run list \
+              --workflow release-catalog-certification.yml \
+              --branch main \
+              --event workflow_dispatch \
+              --commit "${release_commit}" \
+              --status success \
+              --limit 1 \
+              --json url \
+              --jq '.[0].url // ""'
+          )"
+          if [[ -z "${certification_url}" ]]; then
+            echo "::error::No successful release catalog certification exists for exact tag commit ${release_commit}."
+            echo "::error::Run make release-catalog-certify on clean, pushed main before creating the release tag."
+            exit 1
+          fi
+          echo "Using exact-commit catalog certification: ${certification_url}"
 
   build-release:
     needs: catalog-readiness

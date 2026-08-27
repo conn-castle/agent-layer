@@ -285,6 +285,16 @@ Run from: repo root
 Prerequisites: Go 1.26.0+, `make tools` has been run, `rg` (ripgrep) available on PATH, both manifests committed
 Notes: Runs `make ci` and then validates upgrade-contract docs for the tag. Catches issues that would fail the release workflow. Requires a clean working tree and network access for upgrade binary downloads.
 
+- Certify the exact pushed `main` commit before creating a release tag
+```bash
+make release-catalog-certify
+```
+Run from: repo root on `main`, after committing and pushing the release metadata but before creating the tag
+Prerequisites: GitHub CLI authentication, a clean working tree, and local `HEAD` equal to `origin/main`
+Notes: Reuses an existing successful certification for the exact commit or dispatches `Release Catalog Certification` and waits for it. The hosted workflow divides the pinned catalog into eight isolated bounded-disk shards, reports each task as it starts and finishes, limits each task to 10 minutes, and limits each shard job to 30 minutes. The release workflow only accepts a successful certification for the exact commit resolved by the tag; a result for another commit or branch cannot publish the release.
+
+Release order: prepare and commit the approved version metadata, run `make release-preflight RELEASE_TAG=vX.Y.Z`, push `main`, run `make release-catalog-certify`, and only then create and push `vX.Y.Z`.
+
 - Validate upgrade-contract docs for a target release tag
 ```bash
 make docs-upgrade-check RELEASE_TAG=vX.Y.Z

@@ -1,0 +1,59 @@
+name: Release Catalog Certification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-catalog-certification-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  validate-main:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require the main branch
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "::error::Release catalog certification must be dispatched on main, not ${GITHUB_REF}."
+            exit 1
+          fi
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify the checked-out commit
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+
+  catalog-readiness:
+    needs: validate-main
+    name: catalog-readiness (${{ matrix.shard }}/8)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Initialize Agent Layer for benchmark readiness
+        run: AL_NO_NETWORK=1 go run ./cmd/al init --here --no-wizard
+      - name: Certify pinned benchmark catalog shard
+        run: >-
+          go run ./cmd/al benchmark readiness
+          --task-concurrency 1
+          --remove-task-images
+          --task-shard-index ${{ matrix.shard }}
+          --task-shard-count 8
+          --task-timeout 10m

@@ -261,6 +261,9 @@ func TestReadinessAuditRejectsUnusableOptions(t *testing.T) {
 		{"no workers", ReadinessAuditOptions{RepoRoot: "repo"}, "task concurrency must be from 1 to 8"},
 		{"too many workers", ReadinessAuditOptions{RepoRoot: "repo", TaskConcurrency: 9}, "task concurrency must be from 1 to 8"},
 		{"image removal with parallel workers", ReadinessAuditOptions{RepoRoot: "repo", TaskConcurrency: 2, RemoveTaskImages: true}, "image removal requires task concurrency 1"},
+		{"negative timeout", ReadinessAuditOptions{RepoRoot: "repo", TaskConcurrency: 1, TaskTimeout: -1}, "timeout cannot be negative"},
+		{"shard count without index", ReadinessAuditOptions{RepoRoot: "repo", TaskConcurrency: 1, TaskShardCount: 2}, "shard index"},
+		{"shard index without count", ReadinessAuditOptions{RepoRoot: "repo", TaskConcurrency: 1, TaskShardIndex: 1}, "shard count"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if _, err := CheckAllTaskReadiness(context.Background(), test.options); err == nil ||

@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -99,6 +101,10 @@ func newBenchmarkRunCmd() *cobra.Command {
 func newBenchmarkReadinessCmd() *cobra.Command {
 	var taskConcurrency int
 	var removeTaskImages bool
+	var tasks []string
+	var taskShardIndex int
+	var taskShardCount int
+	var taskTimeout time.Duration
 	command := &cobra.Command{
 		Use:   benchmarkReadinessName,
 		Short: "Preflight every task in the pinned DeepSWE catalog",
@@ -108,9 +114,17 @@ func newBenchmarkReadinessCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			outcome, err := checkReadiness(context.Background(), bench.ReadinessAuditOptions{
+			options := bench.ReadinessAuditOptions{
 				RepoRoot: root, TaskConcurrency: taskConcurrency, RemoveTaskImages: removeTaskImages,
-			})
+				Tasks: tasks, TaskShardIndex: taskShardIndex, TaskShardCount: taskShardCount, TaskTimeout: taskTimeout,
+			}
+			var outputMu sync.Mutex
+			options.OnTaskProgress = func(progress bench.ReadinessAuditProgress) {
+				outputMu.Lock()
+				defer outputMu.Unlock()
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[%d/%d] %s: %s\n", progress.Completed, progress.Required, progress.Task, progress.Status)
+			}
+			outcome, err := checkReadiness(context.Background(), options)
 			if err != nil {
 				return err
 			}
@@ -136,5 +150,9 @@ func newBenchmarkReadinessCmd() *cobra.Command {
 	}
 	command.Flags().IntVar(&taskConcurrency, "task-concurrency", 1, "parallel task readiness checks, from 1 to 8")
 	command.Flags().BoolVar(&removeTaskImages, "remove-task-images", false, "remove exact task images after certification to bound Docker disk usage; requires task concurrency 1")
+	command.Flags().StringArrayVar(&tasks, "task", nil, "certify only this catalog task; repeatable")
+	command.Flags().IntVar(&taskShardIndex, "task-shard-index", 1, "one-based deterministic task shard to certify")
+	command.Flags().IntVar(&taskShardCount, "task-shard-count", 1, "total deterministic task shards, from 1 to 32")
+	command.Flags().DurationVar(&taskTimeout, "task-timeout", 0, "maximum certification time per task; zero disables the per-task timeout")
 	return command
 }

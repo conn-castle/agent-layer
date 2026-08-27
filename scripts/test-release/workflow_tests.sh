@@ -21,6 +21,7 @@ run_workflow_consistency_tests() {
 
   local ci_workflow="$ROOT_DIR/.github/workflows/ci.yml"
   local release_workflow="$ROOT_DIR/.github/workflows/release.yml"
+  local certification_workflow="$ROOT_DIR/.github/workflows/release-catalog-certification.yml"
 
   if [[ ! -f "$ci_workflow" ]]; then
     fail "ci.yml not found"
@@ -32,49 +33,87 @@ run_workflow_consistency_tests() {
     return
   fi
 
+  if [[ ! -f "$certification_workflow" ]]; then
+    fail "release-catalog-certification.yml not found"
+    return
+  fi
+
   if grep -q 'runs-on: macos-latest' "$release_workflow"; then
     pass "workflow-consistency: build-release runs on macos-latest"
   else
     fail "workflow-consistency: build-release must run on macos-latest for Developer ID signing"
   fi
 
-  local catalog_job build_job
+  local catalog_job build_job certification_job
   catalog_job=$(workflow_job_block "$release_workflow" "catalog-readiness")
   build_job=$(workflow_job_block "$release_workflow" "build-release")
+  certification_job=$(workflow_job_block "$certification_workflow" "catalog-readiness")
 
-  local catalog_init_line catalog_readiness_line
-  catalog_init_line=$(grep -n 'go run ./cmd/al init --here --no-wizard' <<<"$catalog_job" | head -n1 | cut -d: -f1 || true)
-  catalog_readiness_line=$(grep -n 'go run ./cmd/al benchmark readiness --task-concurrency 1 --remove-task-images' <<<"$catalog_job" | head -n1 | cut -d: -f1 || true)
-
-  if [[ -n "$catalog_job" && -n "$build_job" && -n "$catalog_init_line" && -n "$catalog_readiness_line" && \
-        "$catalog_init_line" -lt "$catalog_readiness_line" ]] && \
-     grep -q 'go run ./cmd/al benchmark readiness --task-concurrency 1 --remove-task-images' <<<"$catalog_job" && \
-     grep -q '^    needs: catalog-readiness$' <<<"$build_job"; then
-    pass "workflow-consistency: pinned benchmark catalog readiness gates release builds"
+  if [[ -n "$certification_job" ]] && \
+     grep -q '^  workflow_dispatch:$' "$certification_workflow" && \
+     ! grep -q '^  push:$' "$certification_workflow" && \
+     grep -q 'GITHUB_REF.*refs/heads/main' "$certification_workflow" && \
+     grep -q 'ref: ${{ github.sha }}' <<<"$certification_job" && \
+     grep -q 'timeout-minutes: 30' <<<"$certification_job" && \
+     grep -q 'shard: \[1, 2, 3, 4, 5, 6, 7, 8\]' <<<"$certification_job" && \
+     grep -q -- '--task-concurrency 1' <<<"$certification_job" && \
+     grep -q -- '--remove-task-images' <<<"$certification_job" && \
+     grep -q -- '--task-shard-index ${{ matrix.shard }}' <<<"$certification_job" && \
+     grep -q -- '--task-shard-count 8' <<<"$certification_job" && \
+     grep -q -- '--task-timeout 10m' <<<"$certification_job"; then
+    pass "workflow-consistency: pre-tag catalog certification is sharded with bounded disk and time"
   else
-    fail "workflow-consistency: release builds must depend on the bounded-disk pinned catalog readiness audit"
+    fail "workflow-consistency: pre-tag catalog certification must use eight bounded shards with per-task timeouts"
   fi
 
-  local catalog_validate_line catalog_checkout_line catalog_setup_line
+  if [[ -n "$catalog_job" && -n "$build_job" ]] && \
+     grep -q '^  actions: read$' "$release_workflow" && \
+     grep -q 'timeout-minutes: 5' <<<"$catalog_job" && \
+     grep -q 'git rev-parse HEAD' <<<"$catalog_job" && \
+     grep -q -- '--workflow release-catalog-certification.yml' <<<"$catalog_job" && \
+     grep -q -- '--branch main' <<<"$catalog_job" && \
+     grep -q -- '--event workflow_dispatch' <<<"$catalog_job" && \
+     grep -q -- '--commit "${release_commit}"' <<<"$catalog_job" && \
+     grep -q -- '--status success' <<<"$catalog_job" && \
+     ! grep -q 'benchmark readiness' <<<"$catalog_job" && \
+     grep -q '^    needs: catalog-readiness$' <<<"$build_job"; then
+    pass "workflow-consistency: release builds require successful pre-tag certification for the exact tag commit"
+  else
+    fail "workflow-consistency: release builds must verify exact-commit pre-tag catalog certification"
+  fi
+
+  local certification_script="$ROOT_DIR/scripts/certify-release-catalog.sh"
+  if [[ -x "$certification_script" ]] && \
+     grep -q 'git branch --show-current' "$certification_script" && \
+     grep -q 'git status --porcelain' "$certification_script" && \
+     grep -q 'git ls-remote --exit-code origin refs/heads/main' "$certification_script" && \
+     grep -q -- '--commit "${head_sha}"' "$certification_script" && \
+     grep -q 'gh workflow run "${workflow}" --ref main' "$certification_script" && \
+     grep -q 'gh run watch "${active_run}" --exit-status' "$certification_script"; then
+    pass "workflow-consistency: release certification helper requires clean pushed main and waits for its exact-SHA run"
+  else
+    fail "workflow-consistency: release certification helper must bind dispatch and success to clean pushed main"
+  fi
+
+  local catalog_validate_line catalog_checkout_line
   local build_validate_line build_checkout_line build_setup_line
   catalog_validate_line=$(grep -n 'name: Validate stable release tag format' <<<"$catalog_job" | head -n1 | cut -d: -f1 || true)
   catalog_checkout_line=$(grep -n 'uses: actions/checkout@' <<<"$catalog_job" | head -n1 | cut -d: -f1 || true)
-  catalog_setup_line=$(grep -n 'uses: actions/setup-go@' <<<"$catalog_job" | head -n1 | cut -d: -f1 || true)
   build_validate_line=$(grep -n 'name: Validate stable release tag format' <<<"$build_job" | head -n1 | cut -d: -f1 || true)
   build_checkout_line=$(grep -n 'uses: actions/checkout@' <<<"$build_job" | head -n1 | cut -d: -f1 || true)
   build_setup_line=$(grep -n 'uses: actions/setup-go@' <<<"$build_job" | head -n1 | cut -d: -f1 || true)
 
-  if [[ -n "$catalog_validate_line" && -n "$catalog_checkout_line" && -n "$catalog_setup_line" && \
+  if [[ -n "$catalog_validate_line" && -n "$catalog_checkout_line" && \
         -n "$build_validate_line" && -n "$build_checkout_line" && -n "$build_setup_line" && \
-        "$catalog_validate_line" -lt "$catalog_checkout_line" && "$catalog_checkout_line" -lt "$catalog_setup_line" && \
+        "$catalog_validate_line" -lt "$catalog_checkout_line" && \
         "$build_validate_line" -lt "$build_checkout_line" && "$build_checkout_line" -lt "$build_setup_line" ]] && \
      grep -q 'ref: refs/tags/${{ env.RELEASE_TAG }}' <<<"$catalog_job" && \
      grep -q 'ref: refs/tags/${{ env.RELEASE_TAG }}' <<<"$build_job" && \
-     awk '/uses: actions\/setup-go@/{found=1} found && /cache: false/{found=0; ok=1} found && /cache: true/{exit 1} END{exit !ok}' <<<"$catalog_job" && \
+     awk '/uses: actions\/setup-go@/{found=1} found && /cache: false/{found=0; ok=1} found && /cache: true/{exit 1} END{exit !ok}' <<<"$certification_job" && \
      awk '/uses: actions\/setup-go@/{found=1} found && /cache: false/{found=0; ok=1} found && /cache: true/{exit 1} END{exit !ok}' <<<"$build_job"; then
-    pass "workflow-consistency: catalog-readiness and build-release validate the release tag before Go setup and do not cache unvalidated modules"
+    pass "workflow-consistency: release jobs validate before checkout and certification/build jobs do not cache unvalidated modules"
   else
-    fail "workflow-consistency: catalog-readiness and build-release must validate the release tag before checkout and disable setup-go caching"
+    fail "workflow-consistency: release validation must precede checkout and certification/build setup-go caching must be disabled"
   fi
 
   if grep -q 'command -v rg' "$release_workflow" && grep -q 'brew install ripgrep' "$release_workflow"; then
@@ -101,13 +140,13 @@ run_workflow_consistency_tests() {
   fi
 
   local import_cert_line build_release_line release_tools_line vuln_scan_line notarize_line upload_line ci_checks_line
-  import_cert_line=$(grep -n 'name: Import Developer ID cert' "$release_workflow" | head -n1 | cut -d: -f1 || true)
-  build_release_line=$(grep -n 'name: Build release artifacts' "$release_workflow" | head -n1 | cut -d: -f1 || true)
-  release_tools_line=$(grep -n 'name: Install pinned release tools' "$release_workflow" | head -n1 | cut -d: -f1 || true)
-  vuln_scan_line=$(grep -n 'name: Scan release binaries for known vulnerable symbols' "$release_workflow" | head -n1 | cut -d: -f1 || true)
-  notarize_line=$(grep -n 'name: Notarize darwin binaries' "$release_workflow" | head -n1 | cut -d: -f1 || true)
-  upload_line=$(grep -n 'name: Upload dist artifacts for downstream jobs' "$release_workflow" | head -n1 | cut -d: -f1 || true)
-  ci_checks_line=$(grep -n 'name: CI checks' "$release_workflow" | head -n1 | cut -d: -f1 || true)
+  import_cert_line=$(grep -n 'name: Import Developer ID cert' <<<"$build_job" | head -n1 | cut -d: -f1 || true)
+  build_release_line=$(grep -n 'name: Build release artifacts' <<<"$build_job" | head -n1 | cut -d: -f1 || true)
+  release_tools_line=$(grep -n 'name: Install pinned release tools' <<<"$build_job" | head -n1 | cut -d: -f1 || true)
+  vuln_scan_line=$(grep -n 'name: Scan release binaries for known vulnerable symbols' <<<"$build_job" | head -n1 | cut -d: -f1 || true)
+  notarize_line=$(grep -n 'name: Notarize darwin binaries' <<<"$build_job" | head -n1 | cut -d: -f1 || true)
+  upload_line=$(grep -n 'name: Upload dist artifacts for downstream jobs' <<<"$build_job" | head -n1 | cut -d: -f1 || true)
+  ci_checks_line=$(grep -n 'name: CI checks' <<<"$build_job" | head -n1 | cut -d: -f1 || true)
 
   if [[ -n "$ci_checks_line" && -n "$build_release_line" && "$ci_checks_line" -lt "$build_release_line" ]]; then
     pass "workflow-consistency: CI checks run before release build"

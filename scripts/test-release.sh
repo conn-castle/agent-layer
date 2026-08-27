@@ -52,6 +52,7 @@ source "$SCRIPT_DIR/test-release/release_tests.sh"
 source "$SCRIPT_DIR/test-release/tool_tests.sh"
 source "$SCRIPT_DIR/test-release/upgrade_docs_tests.sh"
 source "$SCRIPT_DIR/test-release/workflow_tests.sh"
+source "$SCRIPT_DIR/test-release/catalog_certification_tests.sh"
 
 # -----------------------------------------------------------------------------
 # Static Analysis & Setup
@@ -63,6 +64,7 @@ required_files=(
   "scripts/codesign-release.sh"
   "scripts/notarize-release.sh"
   "scripts/check-upgrade-docs.sh"
+  "scripts/certify-release-catalog.sh"
   "al-install.sh"
 )
 
@@ -83,7 +85,7 @@ for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/
 done
 
 # Shell syntax validation
-for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/notarize-release.sh" "scripts/check-upgrade-docs.sh" "al-install.sh"; do
+for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/notarize-release.sh" "scripts/check-upgrade-docs.sh" "scripts/certify-release-catalog.sh" "al-install.sh"; do
   if bash -n "$ROOT_DIR/$script" 2>/dev/null; then
     pass "$script has valid bash syntax"
   else
@@ -93,7 +95,7 @@ done
 
 # Optional: shellcheck
 if command -v shellcheck >/dev/null 2>&1; then
-  for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/notarize-release.sh" "scripts/check-upgrade-docs.sh" "al-install.sh"; do
+  for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/notarize-release.sh" "scripts/check-upgrade-docs.sh" "scripts/certify-release-catalog.sh" "al-install.sh"; do
     if shellcheck -S error "$ROOT_DIR/$script" 2>/dev/null; then
       pass "$script passes shellcheck"
     else
@@ -149,6 +151,7 @@ expected_version="v1.0.0"
 expected_version_no_v="${expected_version#v}"
 
 run_workflow_consistency_tests
+run_catalog_certification_script_tests
 run_dev_loop_consistency_tests
 run_release_generation_test
 run_build_invocation_details

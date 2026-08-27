@@ -49,21 +49,26 @@ func TestBenchmarkRunDryRunDoesNotInvokeProviderInference(t *testing.T) {
 func TestBenchmarkReadinessRunsWithoutProviderCalls(t *testing.T) {
 	original := checkReadiness
 	checkReadiness = func(_ context.Context, options bench.ReadinessAuditOptions) (bench.ReadinessAuditOutcome, error) {
-		if options.TaskConcurrency != 1 || !options.RemoveTaskImages {
+		if options.TaskConcurrency != 1 || !options.RemoveTaskImages ||
+			strings.Join(options.Tasks, ",") != "first-task,second-task" ||
+			options.TaskShardIndex != 2 || options.TaskShardCount != 8 || options.TaskTimeout.String() != "10m0s" {
 			t.Fatalf("options = %#v", options)
 		}
+		options.OnTaskProgress(bench.ReadinessAuditProgress{Task: "first-task", Status: "checking", Required: 2})
+		options.OnTaskProgress(bench.ReadinessAuditProgress{Task: "first-task", Status: "certified", Completed: 1, Required: 2})
 		return bench.ReadinessAuditOutcome{DeepSWECommit: strings.Repeat("d", 40), Required: 2, Certified: 2}, nil
 	}
 	t.Cleanup(func() { checkReadiness = original })
 	root := newRootCmd()
-	root.SetArgs([]string{"benchmark", "readiness", "--task-concurrency", "1", "--remove-task-images"})
+	root.SetArgs([]string{"benchmark", "readiness", "--task-concurrency", "1", "--remove-task-images", "--task", "first-task", "--task", "second-task", "--task-shard-index", "2", "--task-shard-count", "8", "--task-timeout", "10m"})
 	var output bytes.Buffer
 	root.SetOut(&output)
 	root.SetErr(&output)
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "2 of 2 tasks certified") || !strings.Contains(output.String(), "No provider call was made") {
+	if !strings.Contains(output.String(), "[0/2] first-task: checking") || !strings.Contains(output.String(), "[1/2] first-task: certified") ||
+		!strings.Contains(output.String(), "2 of 2 tasks certified") || !strings.Contains(output.String(), "No provider call was made") {
 		t.Fatalf("output = %q", output.String())
 	}
 }
