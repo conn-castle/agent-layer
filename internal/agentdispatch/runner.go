@@ -16,42 +16,6 @@ type captureWriter struct {
 	mu   sync.Mutex
 }
 
-// answerPrefixBuffer retains a bounded answer prefix while reporting complete
-// writes so the provider's full stdout continues streaming to raw evidence.
-type answerPrefixBuffer struct {
-	buffer    bytes.Buffer
-	limit     int
-	truncated bool
-}
-
-func (w *answerPrefixBuffer) Write(data []byte) (int, error) {
-	received := len(data)
-	limit := w.limit
-	if limit <= 0 {
-		limit = maxRetainedAnswerBytes
-	}
-	remaining := limit - w.buffer.Len()
-	if remaining > 0 {
-		_, _ = w.buffer.Write(data[:min(remaining, received)])
-	}
-	if received > remaining {
-		w.truncated = true
-	}
-	return received, nil
-}
-
-func (w *answerPrefixBuffer) String() string {
-	retained := w.buffer.Bytes()
-	if w.truncated {
-		retained = retained[:validUTF8PrefixLength(retained)]
-	}
-	answer := string(retained)
-	if w.truncated {
-		answer += truncatedAnswerNotice
-	}
-	return answer
-}
-
 func newCaptureWriter(path string) (*captureWriter, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 -- path is in an isolated dispatch run directory.
 	if err != nil {
@@ -81,11 +45,10 @@ func (w *captureWriter) Close() error {
 }
 
 type executionResult struct {
-	SessionID    string
-	Complete     bool
-	AnswerSeen   bool
-	NotResumable bool
-	Answer       string
+	SessionID  string
+	Complete   bool
+	AnswerSeen bool
+	Answer     string
 }
 
 // unprovenProviderTerminationError marks a provider failure whose process
@@ -128,14 +91,11 @@ func executeProvider(
 		return executionResult{}, wrapExitError(ExitConfig, "create dispatch stderr capture", err)
 	}
 	defer func() { _ = providerStderr.Close() }()
-	var events *captureWriter
-	if command.Structured {
-		events, err = newCaptureWriter(run.Record.EventsPath)
-		if err != nil {
-			return executionResult{}, wrapExitError(ExitConfig, "create dispatch event capture", err)
-		}
-		defer func() { _ = events.Close() }()
+	events, err := newCaptureWriter(run.Record.EventsPath)
+	if err != nil {
+		return executionResult{}, wrapExitError(ExitConfig, "create dispatch event capture", err)
 	}
+	defer func() { _ = events.Close() }()
 	var lineage *captureWriter
 	if command.ClaudeLineage {
 		if run.Record.LineagePath == "" {
@@ -154,11 +114,7 @@ func executeProvider(
 		cmd.Dir = root
 	}
 	cmd.Env = command.Env
-	if command.Plain {
-		cmd.Stdin = nil
-	} else {
-		cmd.Stdin = bytes.NewReader(prompt)
-	}
+	cmd.Stdin = bytes.NewReader(prompt)
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return executionResult{}, wrapExitError(ExitTargetFailure, "open dispatch provider stdout", err)
@@ -283,24 +239,6 @@ func executeProvider(
 	streamErr := make(chan error, 1)
 	stderrErr := make(chan error, 1)
 	go func() {
-		if command.Plain {
-			var candidate answerPrefixBuffer
-			_, err := io.Copy(io.MultiWriter(providerStdout, &candidate), stdoutPipe)
-			if err == nil {
-				resultMu.Lock()
-				pendingAnswer = candidate.String()
-				result.AnswerSeen = candidate.buffer.Len() > 0
-				now := time.Now().UTC()
-				run.Record.LastOutputAt = &now
-				run.Record.LastActivityAt = &now
-				resultMu.Unlock()
-			}
-			if err != nil {
-				setFailure(fmt.Errorf("capture provider stdout: %w", err))
-			}
-			streamErr <- err
-			return
-		}
 		err := readStructuredEventsWithLineage(stdoutPipe, providerStdout, command.Provider, command.SessionID, command.ClaudeLineage, func(event providerEvent) error {
 			encoded, marshalErr := json.Marshal(event)
 			if marshalErr != nil {
@@ -382,11 +320,8 @@ func executeProvider(
 			return executionResult{}, exitError(ExitTargetFailure, "antigravity reported terminal failure: Error: timeout waiting for response")
 		}
 	}
-	if command.Structured && (!result.Complete || !result.AnswerSeen || result.SessionID == "") {
+	if !result.Complete || !result.AnswerSeen || result.SessionID == "" {
 		return executionResult{}, exitError(ExitTargetFailure, fmt.Sprintf("%s dispatch completed without required terminal result, session ID, and final answer", command.Provider))
-	}
-	if command.Plain && !result.AnswerSeen {
-		return executionResult{}, exitError(ExitTargetFailure, "antigravity dispatch completed without a final answer")
 	}
 	resultMu.Lock()
 	terminalAnswer := pendingAnswer

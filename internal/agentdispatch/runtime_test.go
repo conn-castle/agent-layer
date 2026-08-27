@@ -73,12 +73,11 @@ func TestRunnerRequiresProviderTerminalEvidence(t *testing.T) {
 		t.Fatalf("new run: %v", err)
 	}
 	_, err = executeProvider(providerCommand{
-		Path:       "/bin/sh",
-		Args:       []string{"-c", `printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n{"type":"agent_message","message":"partial"}\n'`},
-		Env:        os.Environ(),
-		Provider:   AgentCodex,
-		SessionID:  runtimeSessionID,
-		Structured: true,
+		Path:      "/bin/sh",
+		Args:      []string{"-c", `printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n{"type":"agent_message","message":"partial"}\n'`},
+		Env:       os.Environ(),
+		Provider:  AgentCodex,
+		SessionID: runtimeSessionID,
 	}, []byte("prompt"), run, root, nil, func(string) error { return nil })
 	requireDispatchExitCode(t, err, ExitTargetFailure)
 

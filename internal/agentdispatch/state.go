@@ -182,9 +182,7 @@ func newDispatchRun(root string, agent string, version string, mode string) (*di
 		AnswerPath:            filepath.Join(dir, "result.md"),
 		StdoutPath:            filepath.Join(dir, "provider.stdout"),
 		StderrPath:            filepath.Join(dir, "provider.stderr"),
-	}
-	if providerProducesStructuredEvents(agent) {
-		record.EventsPath = filepath.Join(dir, "provider.events")
+		EventsPath:            filepath.Join(dir, "provider.events"),
 	}
 	if claudeLineage {
 		record.LineagePath = filepath.Join(dir, "provider.lineage")
@@ -193,10 +191,6 @@ func newDispatchRun(root string, agent string, version string, mode string) (*di
 		return nil, err
 	}
 	return &dispatchRun{Record: record, Dir: dir}, nil
-}
-
-func providerProducesStructuredEvents(agent string) bool {
-	return agent == AgentClaude || agent == AgentCodex || agent == AgentGrok
 }
 
 func newUUID() (string, error) {

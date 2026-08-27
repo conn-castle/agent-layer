@@ -62,10 +62,10 @@ For a release that changes Agent Dispatch, attach a short evidence record under
 exact `claude --version`, `codex --version`, `agy --version`, and
 `grok --version` values, plus a fresh `start`/`wait` probe and a
 `continue`/`wait` probe for every declared supported provider. A changed or
-missing Antigravity UUID line must also be
-shown to retain diagnostics and fail safe as `not resumable`; do not replace it
-with global/provider-private state lookup. This is release evidence, not a new
-public probe command.
+missing Antigravity structured terminal result must fail without publishing
+plain provider output. The result must carry a conversation ID, final answer,
+and usage evidence; any diagnostic-log UUID that is present must match the
+structured result. This is release evidence, not a new public probe command.
 
 ## GitHub release (automatic)
 1. Tag push triggers the release workflow.

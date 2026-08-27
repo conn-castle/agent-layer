@@ -107,7 +107,7 @@ func TestGrokSessionRoundTripsThroughStateStore(t *testing.T) {
 	}
 }
 
-func TestNewDispatchRunAdvertisesOnlyApplicableEventArtifact(t *testing.T) {
+func TestNewDispatchRunAdvertisesEventsAndOnlyApplicableLineage(t *testing.T) {
 	root := t.TempDir()
 	structured, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 	if err != nil {
@@ -134,19 +134,19 @@ func TestNewDispatchRunAdvertisesOnlyApplicableEventArtifact(t *testing.T) {
 		t.Fatalf("old Claude advertised lineage path %q", oldClaude.Record.LineagePath)
 	}
 
-	plain, err := newDispatchRun(root, AgentAntigravity, supportedProviderVersions[AgentAntigravity], dispatchModeFresh)
+	antigravity, err := newDispatchRun(root, AgentAntigravity, supportedProviderVersions[AgentAntigravity], dispatchModeFresh)
 	if err != nil {
-		t.Fatalf("new plain run: %v", err)
+		t.Fatalf("new Antigravity run: %v", err)
 	}
-	if plain.Record.EventsPath != "" {
-		t.Fatalf("plain provider advertised events path %q", plain.Record.EventsPath)
+	if antigravity.Record.EventsPath != filepath.Join(antigravity.Dir, "provider.events") {
+		t.Fatalf("Antigravity events path = %q", antigravity.Record.EventsPath)
 	}
-	data, err := os.ReadFile(filepath.Join(plain.Dir, dispatchRunFile)) // #nosec G304 -- test-owned run path.
+	data, err := os.ReadFile(filepath.Join(antigravity.Dir, dispatchRunFile)) // #nosec G304 -- test-owned run path.
 	if err != nil {
-		t.Fatalf("read plain run record: %v", err)
+		t.Fatalf("read Antigravity run record: %v", err)
 	}
-	if strings.Contains(string(data), `"events_path"`) {
-		t.Fatalf("plain run record advertised an events artifact: %s", data)
+	if !strings.Contains(string(data), `"events_path"`) {
+		t.Fatalf("Antigravity run record omitted its events artifact: %s", data)
 	}
 }
 
