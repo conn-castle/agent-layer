@@ -70,7 +70,7 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 	}
 
 	preStart := newRun(t)
-	_, err := executeProvider(providerCommand{Path: filepath.Join(root, "missing-provider"), Provider: AgentCodex, Structured: true, SessionID: runtimeSessionID}, nil, preStart, root, nil, func(string) error { return nil })
+	_, err := executeProvider(providerCommand{Path: filepath.Join(root, "missing-provider"), Provider: AgentCodex, SessionID: runtimeSessionID}, nil, preStart, root, nil, func(string) error { return nil })
 	var start *preStartFailure
 	if !errors.As(err, &start) {
 		t.Fatalf("start error = %T: %v", err, err)
@@ -80,12 +80,11 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 	terminationTestDeadline := 3 * providerTerminationGrace
 	failedStarted := time.Now()
 	_, err = executeProvider(providerCommand{
-		Path:       "/bin/sh",
-		Args:       []string{"-c", `trap '' TERM; printf '{"type":"turn.failed","message":"provider refused"}\n'; while :; do sleep 1; done`},
-		Env:        os.Environ(),
-		Provider:   AgentCodex,
-		SessionID:  runtimeSessionID,
-		Structured: true,
+		Path:      "/bin/sh",
+		Args:      []string{"-c", `trap '' TERM; printf '{"type":"turn.failed","message":"provider refused"}\n'; while :; do sleep 1; done`},
+		Env:       os.Environ(),
+		Provider:  AgentCodex,
+		SessionID: runtimeSessionID,
 	}, nil, failedRun, root, nil, func(string) error { return nil })
 	requireDispatchExitCode(t, err, ExitTargetFailure)
 	if elapsed := time.Since(failedStarted); elapsed > terminationTestDeadline {
@@ -95,7 +94,7 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 	publicationRun := newRun(t)
 	publicationStarted := time.Now()
 	_, err = executeProvider(providerCommand{
-		Path: "/bin/sh", Env: os.Environ(), Provider: AgentAntigravity, Plain: true,
+		Path: "/bin/sh", Env: os.Environ(), Provider: AgentCodex, SessionID: runtimeSessionID,
 	}, nil, publicationRun, root, func(string, ...string) *exec.Cmd {
 		current, loadErr := loadRunRecord(root, publicationRun.Record.ID)
 		if loadErr != nil {
@@ -116,7 +115,7 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 	if err := os.WriteFile(timeoutLog, []byte("Error: timeout waiting for response\n"), 0o600); err != nil {
 		t.Fatalf("write timeout log: %v", err)
 	}
-	_, err = executeProvider(providerCommand{Path: "/bin/sh", Args: []string{"-c", `printf answer`}, Env: os.Environ(), Provider: AgentAntigravity, Plain: true, LogPath: timeoutLog}, nil, timeoutRun, root, nil, func(string) error { return nil })
+	_, err = executeProvider(providerCommand{Path: "/bin/sh", Args: []string{"-c", `printf '{"event":"result","result":{"status":"SUCCESS","conversation_id":"conversation","response":"answer","usage":{"input_tokens":1}}}\n'`}, Env: os.Environ(), Provider: AgentAntigravity, LogPath: timeoutLog}, nil, timeoutRun, root, nil, func(string) error { return nil })
 	requireDispatchExitCode(t, err, ExitTargetFailure)
 	if timedOut, readErr := antigravityTimeoutReported(timeoutRun.Record.StderrPath, filepath.Join(root, "missing-log")); readErr == nil || timedOut {
 		t.Fatalf("missing Antigravity diagnostics = timedOut %t, error %v", timedOut, readErr)

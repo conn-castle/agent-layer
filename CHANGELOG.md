@@ -1,6 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Changed
+- Agent Dispatch now uses structured provider output internally for every supported agent, including Antigravity display-name models, while returning only the extracted plain-text answer to callers.
+
+### Fixed
+- Antigravity exact-slug dispatches now allocate their structured event capture before provider execution instead of failing before launch.
+
 ## v0.17.6 - 2026-08-27
 
 ### Changed
