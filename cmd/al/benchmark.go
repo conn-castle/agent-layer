@@ -197,6 +197,9 @@ func newBenchmarkReadinessCmd() *cobra.Command {
 					return err
 				}
 			}
+			if taskConcurrency > 1 && removeTaskImages && !cmd.Flags().Changed("remove-task-images") {
+				removeTaskImages = false
+			}
 			if taskConcurrency == 0 {
 				if removeTaskImages {
 					taskConcurrency = 1
@@ -260,7 +263,7 @@ func newBenchmarkReadinessCmd() *cobra.Command {
 		},
 	}
 	command.Flags().IntVar(&taskConcurrency, "task-concurrency", 0, "parallel task readiness checks, from 1 to 8 (default: automatic)")
-	command.Flags().BoolVar(&removeTaskImages, "remove-task-images", true, "remove exact task images after certification to bound Docker disk usage")
+	command.Flags().BoolVar(&removeTaskImages, "remove-task-images", true, "remove exact task images after certification to bound Docker disk usage; requires task concurrency 1 and is disabled by explicit parallelism")
 	command.Flags().StringVar(&studyPath, "study", "", "certify only tasks selected by this study.toml")
 	command.Flags().StringArrayVar(&tasks, "task", nil, "certify only this catalog task; repeatable")
 	command.Flags().IntVar(&taskShardIndex, "task-shard-index", 1, "one-based deterministic task shard to certify")

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func TestReadinessAuditRemovesOnlyAfterTheSuccessorImageIsReady(t *testing.T) {
+func TestReadinessAuditRemovesEachImageBeforeStartingTheNextTask(t *testing.T) {
 	repository, checkout := t.TempDir(), t.TempDir()
 	writeAuditCatalogFixture(t, checkout, "first-task", "second-task", "third-task")
 	installAuditCheckout(t, checkout)
@@ -39,10 +39,10 @@ func TestReadinessAuditRemovesOnlyAfterTheSuccessorImageIsReady(t *testing.T) {
 	}
 	want := strings.Join([]string{
 		"run:" + auditTaskImage("first-task") + "@" + testReadinessDigest,
-		"run:" + auditTaskImage("second-task") + "@" + testReadinessDigest,
 		"remove:" + auditTaskImage("first-task") + "@" + testReadinessDigest,
-		"run:" + auditTaskImage("third-task") + "@" + testReadinessDigest,
+		"run:" + auditTaskImage("second-task") + "@" + testReadinessDigest,
 		"remove:" + auditTaskImage("second-task") + "@" + testReadinessDigest,
+		"run:" + auditTaskImage("third-task") + "@" + testReadinessDigest,
 		"remove:" + auditTaskImage("third-task") + "@" + testReadinessDigest,
 	}, "|")
 	if got := strings.Join(events, "|"); got != want {
@@ -50,10 +50,10 @@ func TestReadinessAuditRemovesOnlyAfterTheSuccessorImageIsReady(t *testing.T) {
 	}
 }
 
-func TestReadinessAuditCombinesCleanupFailureWhenLaterLoadFails(t *testing.T) {
+func TestReadinessAuditReportsCleanupFailureImmediately(t *testing.T) {
 	checkout := t.TempDir()
 	writeAuditCatalogFixture(t, checkout, "first-task", "second-task")
-	installReadinessTestBoundaries(t, auditContractsFixture("first-task"),
+	installReadinessTestBoundaries(t, auditContractsFixture("first-task", "second-task"),
 		func(_ context.Context, arguments ...string) ([]byte, error) {
 			if len(arguments) > 3 && arguments[0] == "image" && arguments[1] == "rm" {
 				return []byte("permission denied"), errors.New("exit status 1")
@@ -73,7 +73,6 @@ func TestReadinessAuditCombinesCleanupFailureWhenLaterLoadFails(t *testing.T) {
 		},
 	)
 	if err == nil ||
-		!strings.Contains(err.Error(), "no mandatory environment readiness contract") ||
 		!strings.Contains(err.Error(), "reclaim benchmark readiness Docker images") ||
 		!strings.Contains(err.Error(), "permission denied") {
 		t.Fatalf("combined load and cleanup error = %v", err)

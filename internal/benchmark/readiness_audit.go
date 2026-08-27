@@ -135,7 +135,7 @@ func CheckAllTaskReadiness(ctx context.Context, options ReadinessAuditOptions) (
 				pending = append(pending, task)
 			}
 		}
-		if err := preflightReadinessDisk(pending, !options.RemoveTaskImages); err != nil {
+		if err := preflightReadinessDisk(ctx, pending, !options.RemoveTaskImages); err != nil {
 			return ReadinessAuditOutcome{}, err
 		}
 	}
@@ -198,24 +198,9 @@ func CheckAllTaskReadiness(ctx context.Context, options ReadinessAuditOptions) (
 }
 
 func checkTaskReadinessWithBoundedDisk(ctx context.Context, options ReadinessAuditOptions, checkout string, tasks []benchmarkPlanTask, checksums []string, results []ReadinessAuditTask) (ReadinessAuditOutcome, error) {
-	var previous loadedTaskReadiness
-	hasPrevious := false
-	cleanupPrevious := func() error {
-		if !hasPrevious {
-			return nil
-		}
-		err := removeTaskReadinessImages(ctx, previous)
-		hasPrevious = false
-		return err
-	}
-	defer func() { _ = cleanupPrevious() }()
-
 	for index, task := range tasks {
 		readiness, err := loadTaskReadiness(checkout, task.ID)
 		if err != nil {
-			if cleanupErr := cleanupPrevious(); cleanupErr != nil {
-				err = errors.Join(err, fmt.Errorf("reclaim benchmark readiness Docker images: %w", cleanupErr))
-			}
 			return summarizeReadinessAudit(results), err
 		}
 		results[index] = ReadinessAuditTask{Task: task.ID, Status: readinessStatusFailed}
@@ -223,11 +208,6 @@ func checkTaskReadinessWithBoundedDisk(ctx context.Context, options ReadinessAud
 			options.OnTaskProgress(ReadinessAuditProgress{Task: task.ID, Status: readinessStatusChecking, Completed: index, Required: len(tasks)})
 		}
 		auditErr := auditTaskReadinessWithTimeout(ctx, options, checkout, task.ID, checksums[index])
-		if err := cleanupPrevious(); err != nil {
-			return summarizeReadinessAudit(results), fmt.Errorf("reclaim benchmark readiness Docker images: %w", err)
-		}
-		previous = readiness
-		hasPrevious = true
 		if auditErr == nil {
 			results[index].Status = readinessStatusCertified
 		} else {
@@ -246,12 +226,12 @@ func checkTaskReadinessWithBoundedDisk(ctx context.Context, options ReadinessAud
 		if options.OnTaskProgress != nil {
 			options.OnTaskProgress(ReadinessAuditProgress{Task: task.ID, Status: results[index].Status, Completed: index + 1, Required: len(tasks)})
 		}
+		if cleanupErr := removeTaskReadinessImages(ctx, readiness); cleanupErr != nil {
+			return summarizeReadinessAudit(results), errors.Join(auditErr, fmt.Errorf("reclaim benchmark readiness Docker images: %w", cleanupErr))
+		}
 		if results[index].Status == readinessStatusBlocked {
 			break
 		}
-	}
-	if err := cleanupPrevious(); err != nil {
-		return summarizeReadinessAudit(results), fmt.Errorf("reclaim benchmark readiness Docker images: %w", err)
 	}
 	return summarizeReadinessAudit(results), nil
 }

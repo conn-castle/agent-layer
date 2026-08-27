@@ -317,7 +317,7 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 	}
 	if options.ResourcePreflight {
 		emitStudyProgress(options, StudyProgress{Phase: "resources", Message: "Checking Docker disk capacity before image pulls"})
-		if err := preflightReadinessDisk(tasks, false); err != nil {
+		if err := preflightStudyDisk(ctx, tasks, options.ReclaimTaskImages && options.TaskConcurrency == 1); err != nil {
 			return matrixPreparation{}, err
 		}
 	}
@@ -328,6 +328,14 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 	preparation, err := bindStudyPreparation(options.RepoRoot, prepared, tasks, checksums, environments, bundles, authentication, options.TaskConcurrency)
 	if err != nil {
 		return matrixPreparation{}, err
+	}
+	reclaimTaskImages := options.ReclaimTaskImages && preparation.taskConcurrency == 1
+	checkout := ""
+	if reclaimTaskImages {
+		checkout, err = ensurePinnedBenchmarkCheckout(ctx, options.RepoRoot)
+		if err != nil {
+			return matrixPreparation{}, err
+		}
 	}
 	for index := range preparation.arms {
 		arm := &preparation.arms[index]
@@ -353,7 +361,14 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 			}
 			request.EventID, request.Task = eventID, task.ID
 			request.TaskChecksum, request.EnvironmentIdentity = checksums[task.ID], environments[task.ID]
-			if err := preflightTreatmentRuntime(ctx, request); err != nil {
+			var readiness loadedTaskReadiness
+			if reclaimTaskImages {
+				readiness, err = loadTaskReadiness(checkout, task.ID)
+				if err != nil {
+					return matrixPreparation{}, err
+				}
+			}
+			if err := preflightStudyTreatmentRuntime(ctx, request, reclaimTaskImages, readiness); err != nil {
 				return matrixPreparation{}, fmt.Errorf("preflight experiment %q task %q runtime: %w", arm.Label, task.ID, err)
 			}
 		}
@@ -362,6 +377,18 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 		return matrixPreparation{}, err
 	}
 	return preparation, nil
+}
+
+func preflightStudyDisk(ctx context.Context, tasks []benchmarkPlanTask, reclaimTaskImages bool) error {
+	return preflightReadinessDisk(ctx, tasks, !reclaimTaskImages)
+}
+
+func preflightStudyTreatmentRuntime(ctx context.Context, request ExecutionRequest, reclaimTaskImages bool, readiness loadedTaskReadiness) error {
+	preflightErr := preflightTreatmentRuntime(ctx, request)
+	if !reclaimTaskImages {
+		return preflightErr
+	}
+	return errors.Join(preflightErr, removeTaskReadinessImages(ctx, readiness))
 }
 
 func stageStudyExperimentBundles(repoRoot string, prepared *preparedStudy) ([]*TreatmentBundle, error) {

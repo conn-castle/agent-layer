@@ -81,11 +81,11 @@ type dockerDesktopSettings struct {
 
 var readinessDiskCapacity = detectDockerDiskAvailable
 
-func preflightReadinessDisk(tasks []benchmarkPlanTask, keepImages bool) error {
+func preflightReadinessDisk(ctx context.Context, tasks []benchmarkPlanTask, keepImages bool) error {
 	if len(tasks) == 0 {
 		return nil
 	}
-	available, err := readinessDiskCapacity()
+	available, err := readinessDiskCapacity(ctx)
 	if err != nil {
 		return fmt.Errorf("determine Docker disk capacity before pulling benchmark images: %w", err)
 	}
@@ -125,9 +125,9 @@ func taskReadinessAlreadyCertified(repoRoot, checkout, task, checksum string) (b
 	return json.Unmarshal(data, &existing) == nil && existing == receipt, nil
 }
 
-func detectDockerDiskAvailable() (int64, error) {
+func detectDockerDiskAvailable(ctx context.Context) (int64, error) {
 	if runtime.GOOS == "linux" {
-		output, err := exec.CommandContext(context.Background(), commandDocker, "info", "--format", "{{.DockerRootDir}}").Output()
+		output, err := exec.CommandContext(ctx, commandDocker, "info", "--format", "{{.DockerRootDir}}").Output()
 		if err != nil {
 			return 0, err
 		}

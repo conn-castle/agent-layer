@@ -20,7 +20,11 @@ func InitStudy(options InitStudyOptions) (string, error) {
 	if options.RepoRoot == "" || options.SelectionPath == "" || options.Directory == "" {
 		return "", fmt.Errorf("benchmark init requires a selection and destination directory")
 	}
-	destination, err := filepath.Abs(options.Directory)
+	directory := options.Directory
+	if !filepath.IsAbs(directory) {
+		directory = filepath.Join(options.RepoRoot, directory)
+	}
+	destination, err := filepath.Abs(directory)
 	if err != nil {
 		return "", err
 	}
@@ -51,7 +55,7 @@ func InitStudy(options InitStudyOptions) (string, error) {
 			return "", err
 		}
 	}
-	config := scaffoldConfig(model.Adapter, modelNameForPublished(model.PublishedIdentifier), effort)
+	config := scaffoldConfig(model.Adapter, dispatchModel(model), effort)
 	if err := os.WriteFile(filepath.Join(destination, "treatment", "config.toml"), []byte(config), 0o600); err != nil {
 		return "", err
 	}
@@ -86,9 +90,22 @@ required_dispatch_roles = []
 func scaffoldConfig(adapter, model, effort string) string {
 	agent := adapter
 	if agent == adapterClaudeCode {
-		agent = "claude"
+		agent = providerClaude
 	}
-	return fmt.Sprintf("[approvals]\nmode = \"yolo\"\n\n[agents.%s]\nenabled = true\nmodel = %q\nreasoning_effort = %q\n\n[notifications]\nchime = false\n", agent, model, effort)
+	var config strings.Builder
+	config.WriteString("[approvals]\nmode = \"yolo\"\n")
+	for _, name := range []string{adapterAntigravity, providerClaude, "claude_vscode", adapterCodex, "vscode", "copilot_cli", adapterGrok} {
+		fmt.Fprintf(&config, "\n[agents.%s]\nenabled = %t\n", name, name == agent)
+		if name != agent {
+			continue
+		}
+		fmt.Fprintf(&config, "model = %q\n", model)
+		if name != adapterAntigravity {
+			fmt.Fprintf(&config, "reasoning_effort = %q\n", effort)
+		}
+	}
+	config.WriteString("\n[notifications]\nchime = false\n")
+	return config.String()
 }
 
 func copyScaffoldFile(source, destination string) error {
@@ -111,8 +128,11 @@ func copyScaffoldTree(source, destination string) error {
 	if os.IsNotExist(err) {
 		return os.MkdirAll(destination, 0o700)
 	}
-	if err != nil || !info.IsDir() {
+	if err != nil {
 		return fmt.Errorf("snapshot benchmark input %s: %w", source, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("snapshot benchmark input %s: not a directory", source)
 	}
 	return filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {

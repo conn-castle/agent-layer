@@ -74,6 +74,22 @@ func TestBenchmarkReadinessRunsWithoutProviderCalls(t *testing.T) {
 	}
 }
 
+func TestBenchmarkReadinessExplicitParallelismRetainsImages(t *testing.T) {
+	original := checkReadiness
+	checkReadiness = func(_ context.Context, options bench.ReadinessAuditOptions) (bench.ReadinessAuditOutcome, error) {
+		if options.TaskConcurrency != 4 || options.RemoveTaskImages {
+			t.Fatalf("options = %#v", options)
+		}
+		return bench.ReadinessAuditOutcome{DeepSWECommit: strings.Repeat("d", 40)}, nil
+	}
+	t.Cleanup(func() { checkReadiness = original })
+	root := newRootCmd()
+	root.SetArgs([]string{"benchmark", "readiness", "--task-concurrency", "4"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBenchmarkReadinessPrintsActionableTaskFailures(t *testing.T) {
 	original := checkReadiness
 	checkReadiness = func(_ context.Context, _ bench.ReadinessAuditOptions) (bench.ReadinessAuditOutcome, error) {
