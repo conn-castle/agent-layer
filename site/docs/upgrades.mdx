@@ -29,8 +29,8 @@ If guidance in other docs is shorter or summarized, this page is authoritative.
 ## How to upgrade
 
 1. Update the global `al` CLI:
-   - **Homebrew (macOS/Linux):** `brew upgrade conn-castle/tap/agent-layer`
-   - **Script (macOS/Linux):** `curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash`
+   - Run `al update`. It uses Homebrew when Homebrew owns the executable and otherwise reruns the official release installer with the current prefix.
+   - If the installed CLI predates `al update`, update it once with `brew upgrade conn-castle/tap/agent-layer` for Homebrew or rerun the original script install command with the same prefix.
 2. Upgrade the repo: `al upgrade plan` then `al upgrade`.
 
 For a full step-by-step runbook (interactive and CI), see the [upgrade checklist](./upgrade-checklist).

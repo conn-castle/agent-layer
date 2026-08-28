@@ -214,8 +214,14 @@ Overrides:
 ## Updating Agent Layer
 
 Update the global CLI:
-- Homebrew: `brew upgrade conn-castle/tap/agent-layer` (updates the installed formula)
-- Script (macOS/Linux): re-run the install script from Install (downloads and replaces `al`)
+
+```bash
+al update
+```
+
+`al update` detects whether the running release binary is owned by Homebrew. It upgrades the formula when it is, and otherwise downloads and reruns the official installer while preserving the current install prefix.
+
+If the installed CLI predates the `al update` command, update it once with `brew upgrade conn-castle/tap/agent-layer` for Homebrew or by rerunning the original script install command (including the same `--prefix`, if any).
 
 Run `al upgrade plan` and then `al upgrade` inside the repo to apply template-managed updates. This updates `.agent-layer/al.version` to match the currently installed `al` binary and refreshes template-managed files.
 For a concise runbook (interactive + CI), use the one-page [upgrade checklist](https://conn-castle.github.io/agent-layer-web/docs/upgrade-checklist).
@@ -769,6 +775,7 @@ al vscode --no-sync -- --reuse-window
 Other commands:
 
 - `al init` — initialize the bare `.agent-layer/` operational scaffold and `.gitignore`
+- `al update` — update the global CLI through Homebrew or the official release installer, matching the current installation
 - `al upgrade` — apply template-managed updates and update the repo pin (interactive by default; non-interactive requires `--yes` plus one or more apply flags; line-level diff previews shown by default, `--diff-lines N` to raise per-file preview size; automatic snapshot + rollback on failure)
 - `al upgrade plan` — preview plain-language categorized template/pin changes and readiness actions with line-level diff previews (`--diff-lines N` to raise per-file preview size)
 - `al upgrade prefetch` — download and cache a release binary (use `--version X.Y.Z` on dev builds; useful for offline/CI cache warm-up)

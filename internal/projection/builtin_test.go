@@ -206,3 +206,36 @@ func TestEffectiveEnabledServersCountTheBuiltInServerOnce(t *testing.T) {
 		t.Fatalf("no enabled caller must yield no servers, got %v (err=%v)", resolved, err)
 	}
 }
+
+func TestEffectiveServersDoNotDuplicateReservedID(t *testing.T) {
+	on := true
+	cfg := dispatchCallerConfig(ClientCodex)
+	cfg.MCP.Servers = []config.MCPServer{{
+		ID:        BuiltInDispatchServerID,
+		Enabled:   &on,
+		Transport: config.TransportStdio,
+		Command:   "configured-server",
+	}}
+
+	resolved, err := EffectiveMCPServers(cfg, map[string]string{}, ClientCodex, nil)
+	if err != nil {
+		t.Fatalf("resolve effective servers: %v", err)
+	}
+	if len(resolved) != 1 || resolved[0].ID != BuiltInDispatchServerID {
+		t.Fatalf("effective servers = %#v, want one reserved ID", resolved)
+	}
+	if ids := EffectiveServerIDs(cfg, ClientCodex); len(ids) != 1 || ids[0] != BuiltInDispatchServerID {
+		t.Fatalf("effective server IDs = %v, want one reserved ID", ids)
+	}
+
+	resolved, err = ResolveEffectiveEnabledMCPServers(cfg, map[string]string{})
+	if err != nil {
+		t.Fatalf("resolve effective enabled servers: %v", err)
+	}
+	if len(resolved) != 1 || resolved[0].ID != BuiltInDispatchServerID {
+		t.Fatalf("effective enabled servers = %#v, want one reserved ID", resolved)
+	}
+	if ids := EffectiveEnabledServerIDs(cfg); len(ids) != 1 || ids[0] != BuiltInDispatchServerID {
+		t.Fatalf("effective enabled server IDs = %v, want one reserved ID", ids)
+	}
+}

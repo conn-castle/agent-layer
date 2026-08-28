@@ -407,7 +407,7 @@ Pin parser behavior:
 
 ### Upgrading a repo
 
-1. Install the target `al` version (Homebrew upgrade, or re-run the install script).
+1. Run `al update` to update the global release binary through its current installation method. If the installed CLI predates that command, use the [legacy CLI fallback](./upgrades#how-to-upgrade).
 2. Run `al upgrade plan` to preview changes.
 3. Run `al upgrade` to apply changes (for CI-safe non-interactive apply: `al upgrade --yes --apply-managed-updates`).
 

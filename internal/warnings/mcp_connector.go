@@ -16,6 +16,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 // mcpSessionInterface wraps the MCP session for testing.
@@ -68,19 +69,20 @@ const maxToolsToDiscover = 1000
 const mcpDiscoveryTimeout = 30 * time.Second
 
 var mcpAllowedEnvKeys = map[string]struct{}{
-	"HOME":       {},
-	"LANG":       {},
-	"LC_ALL":     {},
-	"LC_CTYPE":   {},
-	pathEnvKey:   {},
-	"SHELL":      {},
-	"SYSTEMROOT": {},
-	"TERM":       {},
-	"TMP":        {},
-	"TMPDIR":     {},
-	"TEMP":       {},
-	"USER":       {},
-	"WINDIR":     {},
+	"HOME":           {},
+	"LANG":           {},
+	"LC_ALL":         {},
+	"LC_CTYPE":       {},
+	pathEnvKey:       {},
+	"SHELL":          {},
+	"SYSTEMROOT":     {},
+	"TERM":           {},
+	"TMP":            {},
+	"TMPDIR":         {},
+	"TEMP":           {},
+	"USER":           {},
+	"WINDIR":         {},
+	"XDG_CACHE_HOME": {},
 }
 
 // RealConnector implements Connector using the SDK.
@@ -242,6 +244,9 @@ func buildMCPCommandEnv(baseEnv []string, serverEnv map[string]string) []string 
 		values[normalized] = value
 	}
 	for key, value := range serverEnv {
+		if strings.EqualFold(key, versiondispatch.EnvShimActive) {
+			continue
+		}
 		if normalized, allowed := normalizeAllowedMCPEnvKey(key); allowed {
 			values[normalized] = value
 			continue
@@ -264,6 +269,12 @@ func buildMCPCommandEnv(baseEnv []string, serverEnv map[string]string) []string 
 
 func normalizeAllowedMCPEnvKey(key string) (string, bool) {
 	upper := strings.ToUpper(key)
+	// AL_SHIM_ACTIVE is scoped to one version-dispatch handoff. Passing it to
+	// the built-in MCP child prevents that child from selecting the repository
+	// pin when the global CLI and pin differ.
+	if upper == versiondispatch.EnvShimActive {
+		return "", false
+	}
 	if _, ok := mcpAllowedEnvKeys[upper]; ok {
 		return upper, true
 	}

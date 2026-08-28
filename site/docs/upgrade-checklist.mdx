@@ -9,8 +9,10 @@ Use this page when you want a repeatable, low-risk upgrade runbook.
 ## Interactive team checklist
 
 1. Update the global `al` CLI.
-   - Homebrew: `brew upgrade conn-castle/tap/agent-layer`
-   - Script: `curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash`
+   If the installed CLI predates `al update`, update it once with `brew upgrade conn-castle/tap/agent-layer` for Homebrew or rerun the original script install command with the same prefix.
+   ```bash
+   al update
+   ```
 2. Confirm the installed version:
    ```bash
    al --version
@@ -60,11 +62,12 @@ Only add these flags when intentionally applying those categories:
 
 ## Shell quick paths (macOS/Linux)
 
+If the installed CLI does not recognize `al update`, first use the [legacy CLI fallback](./upgrades#how-to-upgrade). This applies to both shell paths below.
+
 ### bash / zsh
 
 ```bash
-brew upgrade conn-castle/tap/agent-layer || \
-  curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash
+al update
 al upgrade plan
 al upgrade
 ```
@@ -72,8 +75,7 @@ al upgrade
 ### fish
 
 ```fish
-brew upgrade conn-castle/tap/agent-layer; or \
-  curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash
+al update
 al upgrade plan
 al upgrade
 ```

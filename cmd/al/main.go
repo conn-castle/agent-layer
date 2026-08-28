@@ -120,14 +120,15 @@ func handleRunError(err error, stderr io.Writer, exit func(int), allowDispatched
 }
 
 // shouldBypassDispatch reports whether dispatch should be skipped for this invocation.
-// `al init` and `al upgrade` run through the invoking CLI so upgrade planning is based on
-// the currently installed binary templates, not an older repo-pinned version.
+// `al init`, `al update`, and `al upgrade` run through the invoking CLI. Global updates
+// must operate on the installed binary, while repository upgrade planning must use the
+// invoking binary's templates rather than an older repo-pinned version.
 func shouldBypassDispatch(args []string) bool {
 	if len(args) < 2 {
 		return false
 	}
 	command := firstCommandArg(args[1:])
-	return command == commandInit || command == commandUpgrade || command == "__dispatch-worker"
+	return command == commandInit || command == commandUpdate || command == commandUpgrade || command == "__dispatch-worker"
 }
 
 // firstCommandArg extracts the first non-flag token from root command arguments.

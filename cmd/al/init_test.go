@@ -522,8 +522,8 @@ func TestInitCmd_UpdateWarning(t *testing.T) {
 	if !strings.Contains(output, "Warning: agent-layer update available") {
 		t.Fatalf("expected update warning, got %q", output)
 	}
-	if !strings.Contains(output, "Homebrew: brew upgrade conn-castle/tap/agent-layer") {
-		t.Fatalf("expected Homebrew upgrade command, got %q", output)
+	if !strings.Contains(output, "al update") {
+		t.Fatalf("expected global CLI update command, got %q", output)
 	}
 	if !strings.Contains(output, "al upgrade plan") {
 		t.Fatalf("expected upgrade plan guidance, got %q", output)
