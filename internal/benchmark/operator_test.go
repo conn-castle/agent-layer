@@ -42,6 +42,81 @@ func TestStudyDiskPreflightAccountsForDisabledReclamation(t *testing.T) {
 	}
 }
 
+func TestSerialTaskReclaimingExecutorRetainsImageAcrossTaskCells(t *testing.T) {
+	originalCleanup := reclaimStudyTaskImages
+	t.Cleanup(func() { reclaimStudyTaskImages = originalCleanup })
+	var events []string
+	reclaimStudyTaskImages = func(_ context.Context, readiness loadedTaskReadiness) error {
+		events = append(events, "reclaim:"+readiness.pinnedImage)
+		return nil
+	}
+	delegate := taskExecutorFunc(func(_ context.Context, request ExecutionRequest) (AttemptResult, error) {
+		events = append(events, "execute:"+request.Task)
+		return AttemptResult{}, nil
+	})
+	executor := &serialTaskReclaimingExecutor{
+		delegate: delegate,
+		readiness: map[string]loadedTaskReadiness{
+			"first":  {pinnedImage: "first-image"},
+			"second": {pinnedImage: "second-image"},
+		},
+	}
+	for _, task := range []string{"first", "first", "second", "second"} {
+		if _, err := executor.Execute(context.Background(), ExecutionRequest{Task: task}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := executor.close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(events, ","), "execute:first,execute:first,reclaim:first-image,execute:second,execute:second,reclaim:second-image"; got != want {
+		t.Fatalf("events = %q, want %q", got, want)
+	}
+}
+
+func TestSerialTaskReclaimingExecutorStopsBeforeNextTaskOnCleanupFailure(t *testing.T) {
+	originalCleanup := reclaimStudyTaskImages
+	t.Cleanup(func() { reclaimStudyTaskImages = originalCleanup })
+	cleanupFailure := errors.New("cleanup failed")
+	var executed []string
+	cleanupCalls := 0
+	reclaimStudyTaskImages = func(context.Context, loadedTaskReadiness) error {
+		cleanupCalls++
+		if cleanupCalls == 1 {
+			return cleanupFailure
+		}
+		return nil
+	}
+	executor := &serialTaskReclaimingExecutor{
+		delegate: taskExecutorFunc(func(_ context.Context, request ExecutionRequest) (AttemptResult, error) {
+			executed = append(executed, request.Task)
+			return AttemptResult{}, nil
+		}),
+		readiness: map[string]loadedTaskReadiness{"first": {pinnedImage: "first-image"}},
+	}
+	if _, err := executor.Execute(context.Background(), ExecutionRequest{Task: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := executor.Execute(context.Background(), ExecutionRequest{Task: "second"}); !errors.Is(err, cleanupFailure) {
+		t.Fatalf("transition error = %v", err)
+	}
+	if got := strings.Join(executed, ","); got != "first" {
+		t.Fatalf("executed tasks = %q", got)
+	}
+	if err := executor.close(context.Background()); err != nil {
+		t.Fatalf("retry failed cleanup at close: %v", err)
+	}
+	if cleanupCalls != 2 {
+		t.Fatalf("cleanup calls = %d, want transition attempt plus close retry", cleanupCalls)
+	}
+}
+
+type taskExecutorFunc func(context.Context, ExecutionRequest) (AttemptResult, error)
+
+func (execute taskExecutorFunc) Execute(ctx context.Context, request ExecutionRequest) (AttemptResult, error) {
+	return execute(ctx, request)
+}
+
 func TestReadinessDiskPreflightPropagatesCancellationContext(t *testing.T) {
 	original := readinessDiskCapacity
 	type contextKeyType string
@@ -61,26 +136,237 @@ func TestReadinessDiskPreflightPropagatesCancellationContext(t *testing.T) {
 
 func TestStudyTreatmentPreflightReclaimsImagesEvenOnFailure(t *testing.T) {
 	originalPreflight := preflightTreatmentRuntime
-	originalDocker := runTaskReadinessCommand
+	originalLoad := loadStudyTaskReadiness
+	originalCleanup := reclaimStudyTaskImages
 	t.Cleanup(func() {
 		preflightTreatmentRuntime = originalPreflight
-		runTaskReadinessCommand = originalDocker
+		loadStudyTaskReadiness = originalLoad
+		reclaimStudyTaskImages = originalCleanup
 	})
 	preflightFailure := errors.New("runtime unavailable")
-	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error { return preflightFailure }
-	var arguments []string
-	runTaskReadinessCommand = func(_ context.Context, values ...string) ([]byte, error) {
-		arguments = append([]string(nil), values...)
-		return nil, nil
+	var preflightCalls, cleanupCalls int
+	preflightTreatmentRuntime = func(_ context.Context, request ExecutionRequest) error {
+		preflightCalls++
+		if request.Arm == "second" {
+			return preflightFailure
+		}
+		return nil
 	}
 	readiness := loadedTaskReadiness{pinnedImage: "registry.example/task@sha256:" + strings.Repeat("1", 64)}
-	err := preflightStudyTreatmentRuntime(context.Background(), ExecutionRequest{}, true, readiness)
+	loadStudyTaskReadiness = func(string, string) (loadedTaskReadiness, error) { return readiness, nil }
+	reclaimStudyTaskImages = func(_ context.Context, got loadedTaskReadiness) error {
+		cleanupCalls++
+		if got.pinnedImage != readiness.pinnedImage {
+			t.Fatalf("cleanup readiness = %#v, want %#v", got, readiness)
+		}
+		return nil
+	}
+	completed := 0
+	err := preflightStudyTaskRuntimes(context.Background(), "task", []studyRuntimePreflight{
+		{experiment: "first", request: ExecutionRequest{Arm: "first"}},
+		{experiment: "second", request: ExecutionRequest{Arm: "second"}},
+	}, true, "checkout", &completed, 2, StudyOptions{})
 	if !errors.Is(err, preflightFailure) {
 		t.Fatalf("preflight failure = %v", err)
 	}
-	want := []string{dockerImageResource, "rm", dockerForceFlag, readiness.pinnedImage}
-	if strings.Join(arguments, "|") != strings.Join(want, "|") {
-		t.Fatalf("cleanup arguments = %#v, want %#v", arguments, want)
+	if preflightCalls != 2 || completed != 1 || cleanupCalls != 1 {
+		t.Fatalf("preflights=%d completed=%d cleanup=%d", preflightCalls, completed, cleanupCalls)
+	}
+}
+
+func TestStudyTreatmentPreflightReclaimsImageAfterCancellation(t *testing.T) {
+	originalPreflight := preflightTreatmentRuntime
+	originalLoad := loadStudyTaskReadiness
+	originalCleanup := reclaimStudyTaskImages
+	t.Cleanup(func() {
+		preflightTreatmentRuntime = originalPreflight
+		loadStudyTaskReadiness = originalLoad
+		reclaimStudyTaskImages = originalCleanup
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	preflightTreatmentRuntime = func(ctx context.Context, _ ExecutionRequest) error { return ctx.Err() }
+	loadStudyTaskReadiness = func(string, string) (loadedTaskReadiness, error) {
+		return loadedTaskReadiness{pinnedImage: "task-image"}, nil
+	}
+	cleaned := false
+	reclaimStudyTaskImages = func(ctx context.Context, _ loadedTaskReadiness) error {
+		if err := ctx.Err(); err != nil {
+			t.Fatalf("cleanup inherited canceled context: %v", err)
+		}
+		cleaned = true
+		return nil
+	}
+	completed := 0
+	err := preflightStudyTaskRuntimes(ctx, "task", []studyRuntimePreflight{{experiment: "arm", request: ExecutionRequest{Arm: "arm"}}}, true, "checkout", &completed, 1, StudyOptions{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("preflight cancellation = %v", err)
+	}
+	if !cleaned {
+		t.Fatal("task image was not reclaimed after cancellation")
+	}
+}
+
+func TestStudyRuntimePreflightsGroupArmsByTaskAndReclaimOnce(t *testing.T) {
+	originalPreflight := preflightTreatmentRuntime
+	originalLoad := loadStudyTaskReadiness
+	originalCleanup := reclaimStudyTaskImages
+	t.Cleanup(func() {
+		preflightTreatmentRuntime = originalPreflight
+		loadStudyTaskReadiness = originalLoad
+		reclaimStudyTaskImages = originalCleanup
+	})
+	tasks := []benchmarkPlanTask{{ID: "first"}, {ID: "duplicate"}, {ID: "second"}}
+	checksums := map[string]string{"first": "first-checksum", "duplicate": "duplicate-checksum", "second": "second-checksum"}
+	environments := map[string]string{"first": "shared", "duplicate": "shared", "second": "second"}
+	controlBundle, treatmentBundle := fakeStudyTreatmentBundle(), fakeStudyTreatmentBundle()
+	controlBundle.ManifestHash, treatmentBundle.ManifestHash = "control", "treatment"
+	arms := []matrixArm{
+		{Label: "control", Mode: ArmTreatment, Bundle: controlBundle},
+		{Label: "treatment", Mode: ArmTreatment, Bundle: treatmentBundle},
+	}
+	work := scheduleStudyRuntimePreflights("repo", tasks, checksums, environments, arms)
+	var calls []string
+	preflightTreatmentRuntime = func(_ context.Context, request ExecutionRequest) error {
+		calls = append(calls, request.Bundle.ManifestHash+":"+request.Task)
+		return nil
+	}
+	var loaded, reclaimed []string
+	loadStudyTaskReadiness = func(_ string, task string) (loadedTaskReadiness, error) {
+		loaded = append(loaded, task)
+		return loadedTaskReadiness{pinnedImage: task}, nil
+	}
+	reclaimStudyTaskImages = func(_ context.Context, readiness loadedTaskReadiness) error {
+		reclaimed = append(reclaimed, readiness.pinnedImage)
+		return nil
+	}
+	var progress []StudyProgress
+	err := preflightStudyRuntimes(context.Background(), StudyOptions{OnProgress: func(event StudyProgress) {
+		progress = append(progress, event)
+	}}, tasks, work, true, "checkout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(calls, ","), "control:first,treatment:first,control:second,treatment:second"; got != want {
+		t.Fatalf("runtime preflights = %q, want %q", got, want)
+	}
+	if got := strings.Join(loaded, ","); got != "first,second" {
+		t.Fatalf("readiness loads = %q", got)
+	}
+	if got := strings.Join(reclaimed, ","); got != "first,second" {
+		t.Fatalf("image reclamation = %q", got)
+	}
+	if len(progress) != 5 {
+		t.Fatalf("progress events = %#v", progress)
+	}
+	for index, want := range []struct {
+		task, experiment string
+		completed        int
+	}{
+		{"first", "control", 0}, {"first", "treatment", 1}, {"second", "control", 2}, {"second", "treatment", 3}, {"second", "treatment", 4},
+	} {
+		got := progress[index]
+		if got.Message != "Preflighting benchmark runtime" || got.Task != want.task || got.Experiment != want.experiment || got.Completed != want.completed || got.Required != 4 {
+			t.Fatalf("progress[%d] = %#v", index, got)
+		}
+	}
+}
+
+func TestStudyTaskPreparationEmitsItsOwnStage(t *testing.T) {
+	root := t.TempDir()
+	writeParsedBareStudy(t, root, "luna:low")
+	stubStudyInfrastructure(t, root)
+	originalAuthentication := validateBenchmarkAuthentication
+	originalPrepare := prepareBenchmarkTaskSet
+	originalDiskCapacity := readinessDiskCapacity
+	t.Cleanup(func() {
+		validateBenchmarkAuthentication = originalAuthentication
+		prepareBenchmarkTaskSet = originalPrepare
+		readinessDiskCapacity = originalDiskCapacity
+	})
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	readinessDiskCapacity = func(context.Context) (int64, error) { return 9 << 30, nil }
+	var progress []StudyProgress
+	prepareBenchmarkTaskSet = func(ctx context.Context, gotRoot string, tasks []benchmarkPlanTask) (map[string]string, map[string]string, error) {
+		if len(progress) < 2 || progress[len(progress)-2].Message != "Checking Docker disk capacity before image pulls" || progress[len(progress)-1].Message != "Preparing and certifying task environments" {
+			t.Fatalf("task preparation inherited stale status: %#v", progress)
+		}
+		return originalPrepare(ctx, gotRoot, tasks)
+	}
+	if _, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), DryRun: true, ResourcePreflight: true, OnProgress: func(event StudyProgress) {
+		progress = append(progress, event)
+	}}, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunStudyPreflightsApplicableArmsTaskFirstAndReclaimsOnce(t *testing.T) {
+	root := t.TempDir()
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, err := json.Marshal(matrixSelectionFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeStudyInputFixture(t, root, "selection.json", string(selection))
+	writeStudyTreatmentConfig(t, root)
+	for directory, contents := range map[string]string{"control-instructions": "control instructions\n", "treatment-instructions": "treatment instructions\n"} {
+		if err := os.Mkdir(filepath.Join(root, directory), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, directory, "INSTRUCTIONS.md"), []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeStudyInputFixture(t, root, "study.toml", "selection = \"selection.json\"\n[[experiments]]\nname = \"control\"\nmodel = \""+model.Name+"\"\nreasoning = \""+effort+"\"\nconfig = \"config.toml\"\ninstructions = \"control-instructions\"\n[[experiments]]\nname = \"treatment\"\nmodel = \""+model.Name+"\"\nreasoning = \""+effort+"\"\nconfig = \"config.toml\"\ninstructions = \"treatment-instructions\"\n")
+	stubStudyInfrastructure(t, root)
+	originalAuthentication := validateBenchmarkAuthentication
+	originalBundles := stageBenchmarkExperimentBundles
+	originalCheckout := ensurePinnedBenchmarkCheckout
+	originalPreflight := preflightTreatmentRuntime
+	originalLoad := loadStudyTaskReadiness
+	originalCleanup := reclaimStudyTaskImages
+	t.Cleanup(func() {
+		validateBenchmarkAuthentication = originalAuthentication
+		stageBenchmarkExperimentBundles = originalBundles
+		ensurePinnedBenchmarkCheckout = originalCheckout
+		preflightTreatmentRuntime = originalPreflight
+		loadStudyTaskReadiness = originalLoad
+		reclaimStudyTaskImages = originalCleanup
+	})
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	controlBundle, treatmentBundle := fakeStudyTreatmentBundle(), fakeStudyTreatmentBundle()
+	controlBundle.ManifestHash, treatmentBundle.ManifestHash = "control", "treatment"
+	stageBenchmarkExperimentBundles = func(string, *preparedStudy) ([]*TreatmentBundle, error) {
+		return []*TreatmentBundle{controlBundle, treatmentBundle}, nil
+	}
+	ensurePinnedBenchmarkCheckout = func(context.Context, string) (string, error) { return "checkout", nil }
+	var preflights, reclaimed []string
+	preflightTreatmentRuntime = func(_ context.Context, request ExecutionRequest) error {
+		preflights = append(preflights, request.Bundle.ManifestHash+":"+request.Task)
+		return nil
+	}
+	loadStudyTaskReadiness = func(_ string, task string) (loadedTaskReadiness, error) {
+		return loadedTaskReadiness{pinnedImage: task}, nil
+	}
+	reclaimStudyTaskImages = func(_ context.Context, readiness loadedTaskReadiness) error {
+		reclaimed = append(reclaimed, readiness.pinnedImage)
+		return nil
+	}
+	if _, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), DryRun: true, ReclaimTaskImages: true}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(preflights, ","), "control:first-task,treatment:first-task,control:second-task,treatment:second-task"; got != want {
+		t.Fatalf("runtime preflights = %q, want %q", got, want)
+	}
+	if got, want := strings.Join(reclaimed, ","), "first-task,second-task"; got != want {
+		t.Fatalf("task image reclamation = %q, want %q", got, want)
 	}
 }
 

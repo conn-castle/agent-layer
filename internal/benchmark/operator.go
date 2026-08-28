@@ -24,8 +24,8 @@ const estimatedTaskImageBytes int64 = 4 << 30
 func AutomaticTaskConcurrency(providerCalls bool) int {
 	if providerCalls {
 		// Provider cells are long-running, expensive, and each owns a large task
-		// image. Serial execution lets the CLI reclaim that image after every
-		// durable result and avoids multiplying provider rate-limit pressure.
+		// image. Serial execution lets the CLI reclaim that image after all cells
+		// for one task and avoids multiplying provider rate-limit pressure.
 		return 1
 	}
 	if runtime.GOARCH != benchmarkTaskContainerArchitecture {
@@ -105,8 +105,9 @@ func taskReadinessAlreadyCertified(repoRoot, checkout, task, checksum string) (b
 	if err != nil {
 		return false, err
 	}
-	// Overlay image identities are produced by Docker build and cannot be
-	// reconstructed safely without Docker. Their capacity remains in preflight.
+	// A durable overlay receipt does not imply its locally built image remains;
+	// automatic reclamation commonly removes it. Keep its build capacity in the
+	// resource preflight even though its logical identity is reproducible.
 	if len(readiness.overlay) > 0 {
 		return false, nil
 	}

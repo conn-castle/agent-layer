@@ -5,11 +5,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 )
@@ -472,6 +476,137 @@ func TestTreatmentStudyDryRunIdentityIsDeterministicAcrossInvocations(t *testing
 	}
 	if len(studies) != 1 || studies[0].Name() != first.StudyID {
 		t.Fatalf("identical dry runs created distinct study directories: %#v", studies)
+	}
+}
+
+func TestStudyIdentityIgnoresVolatileOverlayBuildMetadata(t *testing.T) {
+	root, checkout := t.TempDir(), t.TempDir()
+	writeParsedBareStudy(t, root, "luna:low")
+	tasks := []string{"first-task", "second-task"}
+	writeAuditCatalogFixture(t, checkout, tasks...)
+	installAuditCheckout(t, checkout)
+	overlayBuildSequence := 1
+	installReadinessTestBoundaries(t, studyOverlayContractsFixture(tasks...), func(_ context.Context, arguments ...string) ([]byte, error) {
+		switch arguments[0] {
+		case "build":
+			for index, argument := range arguments {
+				if argument == "--iidfile" && index+1 < len(arguments) {
+					buildID := fmt.Sprintf("sha256:%064x", overlayBuildSequence)
+					overlayBuildSequence++
+					return nil, os.WriteFile(arguments[index+1], []byte(buildID+"\n"), 0o600)
+				}
+			}
+			return nil, errors.New("overlay build omitted image ID file")
+		case commandRun, "image":
+			return nil, nil
+		default:
+			return nil, fmt.Errorf("unexpected Docker command: %#v", arguments)
+		}
+	})
+
+	originalPreflight, originalVerify := preflightBenchmark, verifyBenchmarkPier
+	originalAuth, originalRuntime := validateBenchmarkAuthentication, preflightTreatmentRuntime
+	preflightBenchmark = func([]parsedSelection) error { return nil }
+	verifyBenchmarkPier = func(context.Context) error { return nil }
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error { return nil }
+	t.Cleanup(func() {
+		preflightBenchmark, verifyBenchmarkPier = originalPreflight, originalVerify
+		validateBenchmarkAuthentication, preflightTreatmentRuntime = originalAuth, originalRuntime
+	})
+
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), DryRun: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), DryRun: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overlayBuildSequence != 5 {
+		t.Fatalf("overlay builds = %d, want four byte-distinct rebuilds", overlayBuildSequence-1)
+	}
+	if second.StudyID != first.StudyID || second.Experiments[0].Identity != first.Experiments[0].Identity {
+		t.Fatalf("Docker build metadata changed immutable identity:\nfirst:  %#v\nsecond: %#v", first, second)
+	}
+}
+
+func studyOverlayContractsFixture(tasks ...string) fs.FS {
+	contracts := fstest.MapFS{}
+	for _, task := range tasks {
+		root := "readiness/" + DeepSWECommit + "/" + task + "/"
+		contract := fmt.Sprintf(
+			`{"schema":%q,"task":%q,"image":%q,"image_digest":%q,"check":"check.sh","agent_image_overlay":"agent.Dockerfile"}`,
+			readinessContractSchema, task, auditTaskImage(task), testReadinessDigest,
+		)
+		contracts[root+"contract.json"] = &fstest.MapFile{Data: []byte(contract)}
+		contracts[root+"check.sh"] = &fstest.MapFile{Data: []byte("#!/bin/bash\ncheck-tools\n")}
+		contracts[root+"agent.Dockerfile"] = &fstest.MapFile{Data: []byte("FROM " + auditTaskImage(task) + "@" + testReadinessDigest + "\nRUN install-tools\n")}
+	}
+	return contracts
+}
+
+func TestGrokDryRunAndPaidExecutionUseDisposableContainerSandbox(t *testing.T) {
+	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "pier_agent_layer.py")
+	if err := os.WriteFile(path, adapter, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := `
+import asyncio
+import importlib.util
+import sys
+import tempfile
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location("pier_agent_layer", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+class Environment:
+    async def upload_file(self, source, destination):
+        pass
+
+async def rendered_commands(preflight):
+    with tempfile.NamedTemporaryFile() as credential:
+        agent = module.AgentLayerGrok(
+            logs_dir=Path("/tmp/pier-grok-sandbox"), model_name="grok-4.5",
+            version=module.AgentLayerGrok.PINNED_VERSION,
+            treatment_agent="grok", treatment_model="grok-4.5",
+            treatment_reasoning_effort="low", treatment_mode="bare",
+            grok_credentials_path=credential.name, preflight_only=preflight,
+        )
+        commands = []
+        async def capture_exec(environment, command, **kwargs):
+            commands.append(command)
+        async def capture_run(environment, command, env):
+            commands.append(command)
+        async def prepare(instruction, environment):
+            return instruction
+        async def no_op(*args, **kwargs):
+            pass
+        agent.exec_as_agent = capture_exec
+        agent._run_command = capture_run
+        agent._prepare = prepare
+        agent._validate_retained_stream = no_op
+        agent._collect_evidence = no_op
+        await agent.run("task", Environment(), None)
+        return commands
+
+dry_run = asyncio.run(rendered_commands(True))
+paid = asyncio.run(rendered_commands(False))
+assert any("grok --no-auto-update --sandbox devbox models" in command for command in dry_run), dry_run
+assert any("--trust --sandbox devbox --permission-mode bypassPermissions" in command for command in paid), paid
+assert not any("--sandbox workspace" in command for command in dry_run + paid), dry_run + paid
+`
+	command := exec.CommandContext(t.Context(), "uvx", "--from", "datacurve-pier=="+PierVersion, "python", "-c", script, path) // #nosec G204 -- embedded test loads the checked-in adapter against its pinned runtime.
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("render Grok sandbox commands: %v\n%s", err, output)
 	}
 }
 

@@ -133,6 +133,28 @@ func TestStudySchedulerScopesTasksAndStampsWorkerProvenance(t *testing.T) {
 	}
 }
 
+func TestStudySchedulerOrdersSerialJobsByTaskAcrossArmsAndRepetitions(t *testing.T) {
+	tasks := []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 2}, {ID: "second-task", RepetitionsPerArm: 2}}
+	first, checksums, environments := schedulerArmFixture(t, tasks)
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := matrixArmFixture(filepath.Dir(first.StateDir), "second", ArmTreatment, model, effort, tasks)
+	var starts []string
+	err = executeMatrix(context.Background(), t.TempDir(), checksums, environments, []matrixArm{first, second}, nil, 1, &schedulerExecutor{}, func(job matrixJob) {
+		starts = append(starts, fmt.Sprintf("%s:%s:%d", job.arm.Label, job.cell.task, job.cell.attempt))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "scheduler:first-task:1,scheduler:first-task:2,second:first-task:1,second:first-task:2," +
+		"scheduler:second-task:1,scheduler:second-task:2,second:second-task:1,second:second-task:2"
+	if got := strings.Join(starts, ","); got != want {
+		t.Fatalf("serial job order = %q, want %q", got, want)
+	}
+}
+
 func TestStudySchedulerSerializesCompletionNotifications(t *testing.T) {
 	arm, checksums, environments := schedulerArmFixture(t, []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 1}, {ID: "second-task", RepetitionsPerArm: 1}})
 	executor := &schedulerExecutor{barrier: make(chan struct{}), started: make(chan struct{}, 2)}

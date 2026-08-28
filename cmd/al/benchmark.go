@@ -16,13 +16,99 @@ const (
 	benchmarkInitName      = "init"
 	benchmarkRunName       = "run"
 	benchmarkReadinessName = "readiness"
+	benchmarkHeartbeatWait = time.Minute
 )
 
 var (
-	runStudy       = bench.RunStudy
-	checkReadiness = bench.CheckAllTaskReadiness
-	initStudy      = bench.InitStudy
+	runStudy                               = bench.RunStudy
+	checkReadiness                         = bench.CheckAllTaskReadiness
+	initStudy                              = bench.InitStudy
+	benchmarkHeartbeatClock benchmarkClock = wallBenchmarkClock{}
 )
+
+type benchmarkTimer interface {
+	C() <-chan time.Time
+	Reset(time.Duration)
+	Stop()
+}
+
+type benchmarkClock interface {
+	Now() time.Time
+	NewTimer(time.Duration) benchmarkTimer
+}
+
+type wallBenchmarkClock struct{}
+
+func (wallBenchmarkClock) Now() time.Time { return time.Now() }
+
+func (wallBenchmarkClock) NewTimer(wait time.Duration) benchmarkTimer {
+	return wallBenchmarkTimer{Timer: time.NewTimer(wait)}
+}
+
+type wallBenchmarkTimer struct{ *time.Timer }
+
+func (timer wallBenchmarkTimer) C() <-chan time.Time { return timer.Timer.C }
+
+func (timer wallBenchmarkTimer) Reset(wait time.Duration) {
+	if !timer.Timer.Stop() {
+		select {
+		case <-timer.Timer.C:
+		default:
+		}
+	}
+	timer.Timer.Reset(wait)
+}
+
+func (timer wallBenchmarkTimer) Stop() { timer.Timer.Stop() }
+
+func formatBenchmarkStudyProgress(progress bench.StudyProgress) string {
+	if progress.Required == 0 {
+		return fmt.Sprintf("[%s] %s", progress.Phase, progress.Message)
+	}
+	percent := progress.Completed * 100 / progress.Required
+	status := fmt.Sprintf("[%3d%% %d/%d] %s", percent, progress.Completed, progress.Required, progress.Message)
+	if progress.Experiment != "" || progress.Task != "" {
+		status += fmt.Sprintf(": %s %s", progress.Experiment, progress.Task)
+	}
+	return status
+}
+
+// benchmarkHeartbeatShouldEmit gives already-pending activity priority over an
+// expired timer, so a timer/activity race cannot produce a misleading heartbeat.
+func benchmarkHeartbeatShouldEmit(stop <-chan struct{}, activity <-chan struct{}) bool {
+	select {
+	case <-stop:
+		return false
+	default:
+	}
+	select {
+	case <-activity:
+		return false
+	default:
+		return true
+	}
+}
+
+func runBenchmarkInactivityHeartbeat(stop <-chan struct{}, activity <-chan struct{}, clock benchmarkClock, status func() string, output func(string)) {
+	timer := clock.NewTimer(benchmarkHeartbeatWait)
+	defer timer.Stop()
+	started := clock.Now()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-activity:
+			timer.Reset(benchmarkHeartbeatWait)
+		case <-timer.C():
+			if !benchmarkHeartbeatShouldEmit(stop, activity) {
+				timer.Reset(benchmarkHeartbeatWait)
+				continue
+			}
+			output(fmt.Sprintf("[running] %s; elapsed %s.\n", status(), clock.Now().Sub(started).Round(time.Second)))
+			timer.Reset(benchmarkHeartbeatWait)
+		}
+	}
+}
 
 func newBenchmarkCmd() *cobra.Command {
 	command := &cobra.Command{
@@ -79,6 +165,13 @@ func newBenchmarkRunCmd() *cobra.Command {
 			}
 			var outputMu sync.Mutex
 			lastStatus := "setting up benchmark"
+			activity := make(chan struct{}, 1)
+			markActivity := func() {
+				select {
+				case activity <- struct{}{}:
+				default:
+				}
+			}
 			options := bench.StudyOptions{
 				RepoRoot: root, StudyPath: args[0], DryRun: dryRun,
 				TaskConcurrency: taskConcurrency, Tasks: tasks, ResourcePreflight: true, ReclaimTaskImages: true,
@@ -86,21 +179,14 @@ func newBenchmarkRunCmd() *cobra.Command {
 			options.OnProgress = func(progress bench.StudyProgress) {
 				outputMu.Lock()
 				defer outputMu.Unlock()
-				lastStatus = progress.Message
-				if progress.Required > 0 {
-					percent := progress.Completed * 100 / progress.Required
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[%3d%% %d/%d] %s", percent, progress.Completed, progress.Required, progress.Message)
-					if progress.Experiment != "" || progress.Task != "" {
-						_, _ = fmt.Fprintf(cmd.OutOrStdout(), ": %s %s", progress.Experiment, progress.Task)
-					}
-					_, _ = fmt.Fprintln(cmd.OutOrStdout())
-					return
-				}
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[%s] %s\n", progress.Phase, progress.Message)
+				lastStatus = formatBenchmarkStudyProgress(progress)
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), lastStatus)
+				markActivity()
 			}
 			options.OnPrepared = func(outcome bench.StudyOutcome) error {
 				outputMu.Lock()
 				defer outputMu.Unlock()
+				defer markActivity()
 				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Study %.12s: %d of %d cells cached, %d missing.\n", outcome.StudyID, outcome.Completed, outcome.Required, outcome.Missing); err != nil {
 					return err
 				}
@@ -133,24 +219,21 @@ func newBenchmarkRunCmd() *cobra.Command {
 				outputMu.Lock()
 				defer outputMu.Unlock()
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Cumulative observed cost: $%.2f (range $%.2f–$%.2f).\n", cost.Midpoint, cost.Minimum, cost.Maximum)
+				markActivity()
 			}
 			heartbeatStop := make(chan struct{})
 			heartbeatDone := make(chan struct{})
-			started := time.Now()
 			go func() {
 				defer close(heartbeatDone)
-				ticker := time.NewTicker(30 * time.Second)
-				defer ticker.Stop()
-				for {
-					select {
-					case <-heartbeatStop:
-						return
-					case <-ticker.C:
-						outputMu.Lock()
-						_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[running] %s; elapsed %s.\n", lastStatus, time.Since(started).Round(time.Second))
-						outputMu.Unlock()
-					}
-				}
+				runBenchmarkInactivityHeartbeat(heartbeatStop, activity, benchmarkHeartbeatClock, func() string {
+					outputMu.Lock()
+					defer outputMu.Unlock()
+					return lastStatus
+				}, func(message string) {
+					outputMu.Lock()
+					defer outputMu.Unlock()
+					_, _ = fmt.Fprint(cmd.OutOrStdout(), message)
+				})
 			}()
 			outcome, err := runStudy(cmd.Context(), options, nil)
 			close(heartbeatStop)

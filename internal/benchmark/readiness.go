@@ -53,13 +53,14 @@ type taskReadinessCertification struct {
 }
 
 type loadedTaskReadiness struct {
-	contract     taskReadinessContract
-	contractHash string
-	check        []byte
-	pinnedImage  string
-	agentImage   string
-	overlay      []byte
-	agentCheck   []byte
+	contract      taskReadinessContract
+	contractHash  string
+	check         []byte
+	pinnedImage   string
+	agentImage    string
+	imageIdentity string
+	overlay       []byte
+	agentCheck    []byte
 }
 
 var runTaskReadinessCommand = func(ctx context.Context, arguments ...string) ([]byte, error) {
@@ -133,16 +134,23 @@ func loadTaskReadiness(checkout, task string) (loadedTaskReadiness, error) {
 	contractHash := hex.EncodeToString(hash.Sum(nil))
 	pinnedImage := contract.Image + "@" + contract.ImageDigest
 	agentImage := pinnedImage
+	imageIdentity := pinnedImage
 	if len(overlay) > 0 {
 		overlayHash := sha256.New()
 		overlayHash.Write([]byte(pinnedImage))
 		overlayHash.Write([]byte{0})
 		overlayHash.Write(overlay)
-		agentImage = "agent-layer-benchmark/" + task + ":" + hex.EncodeToString(overlayHash.Sum(nil))[:24]
+		overlayDigest := hex.EncodeToString(overlayHash.Sum(nil))
+		agentImage = "agent-layer-benchmark/" + task + ":" + overlayDigest[:24]
+		// Docker image IDs include build metadata that can change between
+		// byte-equivalent rebuilds. Benchmark identity instead follows the
+		// canonical pinned base image and exact embedded overlay source.
+		imageIdentity = "agent-layer-overlay-sha256:" + overlayDigest
 	}
 	return loadedTaskReadiness{
 		contract: contract, contractHash: contractHash, check: check,
-		pinnedImage: pinnedImage, agentImage: agentImage, overlay: overlay, agentCheck: agentCheck,
+		pinnedImage: pinnedImage, agentImage: agentImage, imageIdentity: imageIdentity,
+		overlay: overlay, agentCheck: agentCheck,
 	}, nil
 }
 
@@ -234,7 +242,6 @@ func certifyTaskEnvironment(ctx context.Context, repoRoot, checkout, task, taskC
 	if err != nil {
 		return "", err
 	}
-	readiness.agentImage = agentImage
 	receipt, identity, err := taskEnvironmentCertificationIdentity(readiness, task, taskChecksum)
 	if err != nil {
 		return "", err
@@ -266,7 +273,7 @@ func certifyTaskEnvironment(ctx context.Context, repoRoot, checkout, task, taskC
 	output, runErr := runTaskReadinessCommand(ctx,
 		commandRun, "--rm", "--network", "none",
 		"--mount", "type=bind,source="+checkPath+",target=/opt/agent-layer/readiness.sh,readonly",
-		"--entrypoint", "/bin/bash", readiness.agentImage, "/opt/agent-layer/readiness.sh",
+		"--entrypoint", "/bin/bash", agentImage, "/opt/agent-layer/readiness.sh",
 	)
 	if runErr != nil {
 		return "", fmt.Errorf("benchmark task %s environment readiness failed before provider execution: %w: %s", task, runErr, strings.TrimSpace(string(output)))
@@ -319,7 +326,7 @@ func ensureTaskAgentImage(ctx context.Context, repoRoot, task string, readiness 
 func taskEnvironmentCertificationIdentity(readiness loadedTaskReadiness, task, taskChecksum string) (taskReadinessCertification, string, error) {
 	receipt := taskReadinessCertification{
 		Schema: readinessReceiptSchema, DeepSWECommit: DeepSWECommit, Task: task,
-		TaskChecksum: taskChecksum, ContractHash: readiness.contractHash, PinnedImage: readiness.agentImage,
+		TaskChecksum: taskChecksum, ContractHash: readiness.contractHash, PinnedImage: readiness.imageIdentity,
 	}
 	identity, err := hashCanonical(receipt)
 	if err != nil {

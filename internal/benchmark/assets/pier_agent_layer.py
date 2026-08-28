@@ -1006,6 +1006,10 @@ class AgentLayerGrok(_AgentLayerStreamAgent):
     BINARY = "grok"
     PINNED_VERSION = "1.0.5"
     OUTPUT_NAME = "grok.jsonl"
+    # Pier already runs the agent in a disposable task container. Grok's
+    # built-in devbox profile is designed for that boundary and, unlike the
+    # workspace profile's protected global-hook paths, does not require bwrap.
+    SANDBOX_PROFILE = "devbox"
 
     @staticmethod
     def name() -> str:
@@ -1041,7 +1045,7 @@ class AgentLayerGrok(_AgentLayerStreamAgent):
                 await self.exec_as_agent(
                     environment,
                     command=(
-                        f"grok --no-auto-update models > {models_path} && "
+                        f"grok --no-auto-update --sandbox {self.SANDBOX_PROFILE} models > {models_path} && "
                         f"awk -v expected={shlex.quote(self.model_name or '')} "
                         f"{shlex.quote('$1 ~ /^[-*]$/ && $2 == expected { found=1 } END { exit !found }')} "
                         f"{models_path} || "
@@ -1056,7 +1060,7 @@ class AgentLayerGrok(_AgentLayerStreamAgent):
                 f"grok --no-auto-update --prompt-file {prompt_path} --output-format streaming-json "
                 f"--session-id {session} --model {shlex.quote(self.model_name or '')} "
                 f"--reasoning-effort {shlex.quote(self._treatment_reasoning_effort)} --no-memory "
-                "--trust --sandbox workspace --permission-mode bypassPermissions --always-approve "
+                f"--trust --sandbox {self.SANDBOX_PROFILE} --permission-mode bypassPermissions --always-approve "
                 ""
             )
             command = self._bounded_provider_capture(provider_command, stream_path, diagnostics_path)
