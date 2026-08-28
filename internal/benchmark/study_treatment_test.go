@@ -338,6 +338,14 @@ for cls, model, domains in [
         assert completed.returncode == 0, completed.stderr
         assert out.read_text() == "stream" and err.read_text() == "diagnostic"
 
+        async def execute_validator(environment, command, **kwargs):
+            validated = subprocess.run(command, shell=True, text=True, capture_output=True)
+            assert validated.returncode == 0, validated.stderr
+        agent.exec_as_agent = execute_validator
+        for provider in ("grok", "antigravity"):
+            asyncio.run(agent._preflight_retained_stream_validator(object(), provider))
+            assert not Path(f"/tmp/agent-layer-{provider}-stream-validator-preflight.jsonl").exists()
+
 commands = []
 async def capture_command(environment, command, **kwargs):
     commands.append(command)
@@ -588,21 +596,26 @@ async def rendered_commands(preflight):
             commands.append(command)
         async def prepare(instruction, environment):
             return instruction
+        validations = []
+        async def capture_validation(environment, remote_path, provider, session_id=""):
+            validations.append((remote_path, provider, session_id))
         async def no_op(*args, **kwargs):
             pass
         agent.exec_as_agent = capture_exec
         agent._run_command = capture_run
         agent._prepare = prepare
-        agent._validate_retained_stream = no_op
+        agent._validate_retained_stream = capture_validation
         agent._collect_evidence = no_op
         await agent.run("task", Environment(), None)
-        return commands
+        return commands, validations
 
-dry_run = asyncio.run(rendered_commands(True))
-paid = asyncio.run(rendered_commands(False))
+dry_run, dry_validations = asyncio.run(rendered_commands(True))
+paid, paid_validations = asyncio.run(rendered_commands(False))
 assert any("grok --no-auto-update --sandbox devbox models" in command for command in dry_run), dry_run
 assert any("--trust --sandbox devbox --permission-mode bypassPermissions" in command for command in paid), paid
 assert not any("--sandbox workspace" in command for command in dry_run + paid), dry_run + paid
+assert len(dry_validations) == 1 and dry_validations[0][1] == "grok", dry_validations
+assert len(paid_validations) == 1 and paid_validations[0][1] == "grok", paid_validations
 `
 	command := exec.CommandContext(t.Context(), "uvx", "--from", "datacurve-pier=="+PierVersion, "python", "-c", script, path) // #nosec G204 -- embedded test loads the checked-in adapter against its pinned runtime.
 	if output, err := command.CombinedOutput(); err != nil {
