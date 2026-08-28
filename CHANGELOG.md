@@ -1,6 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.17.8 - 2026-08-27
+
+### Added
+- `al benchmark init <selection.json>` now scaffolds a self-contained bare-versus-Agent-Layer study with a benchmark-safe provider configuration and snapshots of the current instructions and skills. Added `docs/BENCHMARK.md` with the recommended workflow and advanced controls.
+
+### Changed
+- Benchmark run and readiness commands now choose host-aware concurrency automatically, preflight Docker capacity before image pulls, reclaim task images by default, and report stage/task progress with long-running heartbeats. Readiness can target the tasks selected by a study.
+- CI coverage is now behavioral rather than quota-based, and shell syntax validation is part of the complete CI gate; coverage remains available as diagnostic reporting.
+
+### Fixed
+- Antigravity structured terminal responses now retain the complete final answer even when it exceeds the structured metadata key limit.
+
 ## v0.17.7 - 2026-08-27
 
 ### Changed
