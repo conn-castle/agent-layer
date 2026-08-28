@@ -1,6 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.18.0 - 2026-08-28
+
+### Added
+- Added `al update` to update the global CLI through its current installation method: Homebrew formula upgrades use Homebrew, while script installations preserve their existing prefix through the official installer.
+
+### Changed
+- Upgrade guidance now uses `al update` for the global CLI and keeps `al upgrade` as the separate repository migration workflow.
+
+### Fixed
+- MCP discovery now avoids duplicate built-in Agent Dispatch entries and does not pass version-dispatch state into built-in MCP child processes.
+- Global CLI update detection now fails explicitly for development, dispatched, ambiguous, or nonstandard installations instead of risking an unsafe overwrite.
+
 ## v0.17.9 - 2026-08-28
 
 ### Changed
