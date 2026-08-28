@@ -201,7 +201,12 @@ func TestPlanTaskCertificationReturnsOnlyCompleteEnvironmentSet(t *testing.T) {
 func TestTaskReadinessOverlayBuildsAndRunsIdenticallyThroughPier(t *testing.T) {
 	builds := 0
 	readinessRuns := 0
-	immutableImage := "sha256:" + strings.Repeat("b", 64)
+	failReadiness := false
+	buildImageIDs := []string{
+		"sha256:" + strings.Repeat("b", 64),
+		"sha256:" + strings.Repeat("c", 64),
+		"sha256:" + strings.Repeat("d", 64),
+	}
 	installReadinessTestBoundaries(t, readinessOverlayTestFS(), func(_ context.Context, arguments ...string) ([]byte, error) {
 		switch arguments[0] {
 		case "image":
@@ -214,7 +219,7 @@ func TestTaskReadinessOverlayBuildsAndRunsIdenticallyThroughPier(t *testing.T) {
 			}
 			for index, argument := range arguments {
 				if argument == "--iidfile" && index+1 < len(arguments) {
-					if err := os.WriteFile(arguments[index+1], []byte(immutableImage+"\n"), 0o600); err != nil {
+					if err := os.WriteFile(arguments[index+1], []byte(buildImageIDs[builds-1]+"\n"), 0o600); err != nil {
 						t.Fatal(err)
 					}
 					return nil, nil
@@ -224,8 +229,11 @@ func TestTaskReadinessOverlayBuildsAndRunsIdenticallyThroughPier(t *testing.T) {
 			return nil, nil
 		case commandRun:
 			readinessRuns++
-			if builds == 0 || !strings.Contains(strings.Join(arguments, " "), immutableImage) {
+			if builds == 0 || !strings.Contains(strings.Join(arguments, " "), buildImageIDs[builds-1]) {
 				t.Fatalf("overlay readiness arguments = %#v", arguments)
+			}
+			if failReadiness {
+				return []byte("rebuilt overlay is unusable"), errors.New("exit status 1")
 			}
 			return nil, nil
 		default:
@@ -244,15 +252,24 @@ func TestTaskReadinessOverlayBuildsAndRunsIdenticallyThroughPier(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reusedIdentity != identity || builds != 2 || readinessRuns != 1 {
+	if reusedIdentity != identity || builds != 2 || readinessRuns != 2 {
 		t.Fatalf("overlay certification reuse identity=%q builds=%d readiness runs=%d", reusedIdentity, builds, readinessRuns)
+	}
+	failReadiness = true
+	if _, err := certifyTaskEnvironment(context.Background(), repoRoot, checkout, testReadinessTask, strings.Repeat("1", 64)); err == nil ||
+		!strings.Contains(err.Error(), "rebuilt overlay is unusable") {
+		t.Fatalf("rebuilt overlay readiness error = %v", err)
+	}
+	if builds != 3 || readinessRuns != 3 {
+		t.Fatalf("failed rebuilt overlay builds=%d readiness runs=%d, want 3 each", builds, readinessRuns)
 	}
 	var receipt taskReadinessCertification
 	if err := readStudyJSON(filepath.Join(repoRoot, ".agent-layer", "state", "benchmarks", "deepswe", "environment-certifications", identity+".json"), &receipt); err != nil {
 		t.Fatal(err)
 	}
-	if receipt.PinnedImage != immutableImage {
-		t.Fatalf("certified overlay image = %q, want %q", receipt.PinnedImage, immutableImage)
+	if !strings.HasPrefix(receipt.PinnedImage, "agent-layer-overlay-sha256:") ||
+		strings.Contains(receipt.PinnedImage, strings.TrimPrefix(buildImageIDs[0], "sha256:")) {
+		t.Fatalf("certified overlay identity follows Docker build metadata: %#v", receipt)
 	}
 	arguments, err := prepareTaskStartup(checkout, testReadinessTask, t.TempDir())
 	if err != nil {

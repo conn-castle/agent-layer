@@ -210,7 +210,6 @@ func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) 
 	}
 	invocationCost := ObservedCostRange{}
 	completedCells := outcome.Completed
-	var cleanupErrors []error
 	readinessByTask := map[string]loadedTaskReadiness{}
 	if options.ReclaimTaskImages && preparation.taskConcurrency == 1 {
 		checkout, checkoutErr := ensurePinnedBenchmarkCheckout(ctx, options.RepoRoot)
@@ -218,12 +217,17 @@ func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) 
 			return StudyOutcome{}, checkoutErr
 		}
 		for _, task := range preparation.tasks {
-			readiness, loadErr := loadTaskReadiness(checkout, task.ID)
+			readiness, loadErr := loadStudyTaskReadiness(checkout, task.ID)
 			if loadErr != nil {
 				return StudyOutcome{}, loadErr
 			}
 			readinessByTask[task.ID] = readiness
 		}
+	}
+	var reclaimingExecutor *serialTaskReclaimingExecutor
+	if len(readinessByTask) > 0 {
+		reclaimingExecutor = &serialTaskReclaimingExecutor{delegate: executor, readiness: readinessByTask}
+		executor = reclaimingExecutor
 	}
 	executionErr := executeMatrix(ctx, options.RepoRoot, preparation.checksums, preparation.environments, preparation.arms, options.Tasks, preparation.taskConcurrency, executor, func(job matrixJob) {
 		emitStudyProgress(options, StudyProgress{Phase: "run", Message: "Running benchmark cell", Task: job.cell.task, Experiment: job.arm.Label, Completed: completedCells, Required: outcome.Required})
@@ -240,14 +244,14 @@ func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) 
 		}
 		completedCells++
 		emitStudyProgress(options, StudyProgress{Phase: "run", Message: "Completed benchmark cell", Task: result.Task, Completed: completedCells, Required: outcome.Required})
-		if readiness, ok := readinessByTask[result.Task]; ok {
-			if cleanupErr := removeTaskReadinessImages(ctx, readiness); cleanupErr != nil {
-				cleanupErrors = append(cleanupErrors, fmt.Errorf("reclaim task image after %s: %w", result.Task, cleanupErr))
-			}
-		}
 	})
-	if executionErr != nil || len(cleanupErrors) > 0 {
-		return StudyOutcome{}, errors.Join(executionErr, errors.Join(cleanupErrors...))
+	if reclaimingExecutor != nil {
+		cleanupCtx, cancelCleanup := detachedBenchmarkCleanupContext(ctx)
+		executionErr = errors.Join(executionErr, reclaimingExecutor.close(cleanupCtx))
+		cancelCleanup()
+	}
+	if executionErr != nil {
+		return StudyOutcome{}, executionErr
 	}
 	report, jsonPath, htmlPath, err := buildStudyReport(prepared, preparation)
 	if err != nil {
@@ -275,6 +279,61 @@ func emitStudyProgress(options StudyOptions, progress StudyProgress) {
 }
 
 var stageBenchmarkExperimentBundles = stageStudyExperimentBundles
+
+const runtimePreflightProgressMessage = "Preflighting benchmark runtime"
+
+var (
+	loadStudyTaskReadiness = loadTaskReadiness
+	reclaimStudyTaskImages = removeTaskReadinessImages
+)
+
+// serialTaskReclaimingExecutor retains a task image across all of that task's
+// adjacent cells, then reclaims it before the serial scheduler starts the next
+// task. executeMatrix deliberately orders serial jobs by task.
+type serialTaskReclaimingExecutor struct {
+	delegate   TaskExecutor
+	readiness  map[string]loadedTaskReadiness
+	activeTask string
+}
+
+func (executor *serialTaskReclaimingExecutor) Execute(ctx context.Context, request ExecutionRequest) (AttemptResult, error) {
+	if executor.activeTask != "" && executor.activeTask != request.Task {
+		if err := executor.reclaim(ctx); err != nil {
+			return AttemptResult{}, err
+		}
+	}
+	executor.activeTask = request.Task
+	return executor.delegate.Execute(ctx, request)
+}
+
+func (executor *serialTaskReclaimingExecutor) close(ctx context.Context) error {
+	return executor.reclaim(ctx)
+}
+
+func (executor *serialTaskReclaimingExecutor) reclaim(ctx context.Context) error {
+	task := executor.activeTask
+	if task == "" {
+		return nil
+	}
+	readiness, ok := executor.readiness[task]
+	if !ok {
+		return fmt.Errorf("reclaim task image after %s: readiness is unavailable", task)
+	}
+	if err := reclaimStudyTaskImages(ctx, readiness); err != nil {
+		return fmt.Errorf("reclaim task image after %s: %w", task, err)
+	}
+	executor.activeTask = ""
+	return nil
+}
+
+func detachedBenchmarkCleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), benchmarkDockerCleanupTimeout)
+}
+
+type studyRuntimePreflight struct {
+	experiment string
+	request    ExecutionRequest
+}
 
 func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *preparedStudy) (matrixPreparation, error) {
 	if options.TaskConcurrency == 0 {
@@ -321,6 +380,7 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 			return matrixPreparation{}, err
 		}
 	}
+	emitStudyProgress(options, StudyProgress{Phase: "tasks", Message: "Preparing and certifying task environments"})
 	checksums, environments, err := prepareBenchmarkTaskSet(ctx, options.RepoRoot, tasks)
 	if err != nil {
 		return matrixPreparation{}, err
@@ -345,33 +405,10 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 		if err := reuseMatchingEvidence(options.RepoRoot, prepared.selectionID, tasks, checksums, environments, arm); err != nil {
 			return matrixPreparation{}, fmt.Errorf("reuse immutable historical evidence for experiment %q: %w", arm.Label, err)
 		}
-		request := ExecutionRequest{RepoRoot: options.RepoRoot, EvidenceDir: arm.StateDir, Attempt: 1, Model: arm.Loaded.Model, Effort: arm.Loaded.Effort, Arm: arm.Mode, Bundle: arm.Bundle, AgentTimeoutMultiplier: arm.AgentTimeoutMultiplier}
-		if !usesAgentLayerPierAdapter(request) {
-			continue
-		}
-		seen := map[string]bool{}
-		for _, task := range tasks {
-			if seen[environments[task.ID]] {
-				continue
-			}
-			seen[environments[task.ID]] = true
-			eventID, eventErr := NewEventID()
-			if eventErr != nil {
-				return matrixPreparation{}, eventErr
-			}
-			request.EventID, request.Task = eventID, task.ID
-			request.TaskChecksum, request.EnvironmentIdentity = checksums[task.ID], environments[task.ID]
-			var readiness loadedTaskReadiness
-			if reclaimTaskImages {
-				readiness, err = loadTaskReadiness(checkout, task.ID)
-				if err != nil {
-					return matrixPreparation{}, err
-				}
-			}
-			if err := preflightStudyTreatmentRuntime(ctx, request, reclaimTaskImages, readiness); err != nil {
-				return matrixPreparation{}, fmt.Errorf("preflight experiment %q task %q runtime: %w", arm.Label, task.ID, err)
-			}
-		}
+	}
+	work := scheduleStudyRuntimePreflights(options.RepoRoot, tasks, checksums, environments, preparation.arms)
+	if err := preflightStudyRuntimes(ctx, options, tasks, work, reclaimTaskImages, checkout); err != nil {
+		return matrixPreparation{}, err
 	}
 	if err := writeStudyManifest(prepared, preparation); err != nil {
 		return matrixPreparation{}, err
@@ -383,12 +420,83 @@ func preflightStudyDisk(ctx context.Context, tasks []benchmarkPlanTask, reclaimT
 	return preflightReadinessDisk(ctx, tasks, !reclaimTaskImages)
 }
 
-func preflightStudyTreatmentRuntime(ctx context.Context, request ExecutionRequest, reclaimTaskImages bool, readiness loadedTaskReadiness) error {
-	preflightErr := preflightTreatmentRuntime(ctx, request)
-	if !reclaimTaskImages {
-		return preflightErr
+// scheduleStudyRuntimePreflights preserves per-arm environment deduplication,
+// then arranges the resulting work by selected task so serial reclamation can
+// retain each task image for every applicable arm.
+func scheduleStudyRuntimePreflights(repoRoot string, tasks []benchmarkPlanTask, checksums, environments map[string]string, arms []matrixArm) [][]studyRuntimePreflight {
+	work := make([][]studyRuntimePreflight, len(tasks))
+	for armIndex := range arms {
+		arm := &arms[armIndex]
+		request := ExecutionRequest{RepoRoot: repoRoot, EvidenceDir: arm.StateDir, Attempt: 1, Model: arm.Loaded.Model, Effort: arm.Loaded.Effort, Arm: arm.Mode, Bundle: arm.Bundle, AgentTimeoutMultiplier: arm.AgentTimeoutMultiplier}
+		if !usesAgentLayerPierAdapter(request) {
+			continue
+		}
+		seen := map[string]bool{}
+		for taskIndex, task := range tasks {
+			environment := environments[task.ID]
+			if seen[environment] {
+				continue
+			}
+			seen[environment] = true
+			request.Task = task.ID
+			request.TaskChecksum, request.EnvironmentIdentity = checksums[task.ID], environment
+			work[taskIndex] = append(work[taskIndex], studyRuntimePreflight{experiment: arm.Label, request: request})
+		}
 	}
-	return errors.Join(preflightErr, removeTaskReadinessImages(ctx, readiness))
+	return work
+}
+
+func preflightStudyRuntimes(ctx context.Context, options StudyOptions, tasks []benchmarkPlanTask, work [][]studyRuntimePreflight, reclaimTaskImages bool, checkout string) error {
+	required := 0
+	for _, taskWork := range work {
+		required += len(taskWork)
+	}
+	completed := 0
+	var last StudyProgress
+	for taskIndex, taskWork := range work {
+		if len(taskWork) == 0 {
+			continue
+		}
+		if err := preflightStudyTaskRuntimes(ctx, tasks[taskIndex].ID, taskWork, reclaimTaskImages, checkout, &completed, required, options); err != nil {
+			return err
+		}
+		last = StudyProgress{Phase: "runtime-preflight", Message: runtimePreflightProgressMessage, Task: tasks[taskIndex].ID, Experiment: taskWork[len(taskWork)-1].experiment, Completed: completed, Required: required}
+	}
+	if required > 0 {
+		emitStudyProgress(options, last)
+	}
+	return nil
+}
+
+func preflightStudyTaskRuntimes(ctx context.Context, task string, work []studyRuntimePreflight, reclaimTaskImages bool, checkout string, completed *int, required int, options StudyOptions) (err error) {
+	if reclaimTaskImages {
+		readiness, loadErr := loadStudyTaskReadiness(checkout, task)
+		if loadErr != nil {
+			return loadErr
+		}
+		defer func() {
+			cleanupCtx, cancelCleanup := detachedBenchmarkCleanupContext(ctx)
+			cleanupErr := reclaimStudyTaskImages(cleanupCtx, readiness)
+			cancelCleanup()
+			if cleanupErr != nil {
+				cleanupErr = fmt.Errorf("reclaim task images after runtime preflights for %q: %w", task, cleanupErr)
+			}
+			err = errors.Join(err, cleanupErr)
+		}()
+	}
+	for _, item := range work {
+		eventID, eventErr := NewEventID()
+		if eventErr != nil {
+			return fmt.Errorf("create runtime preflight event for experiment %q task %q: %w", item.experiment, task, eventErr)
+		}
+		item.request.EventID = eventID
+		emitStudyProgress(options, StudyProgress{Phase: "runtime-preflight", Message: runtimePreflightProgressMessage, Task: task, Experiment: item.experiment, Completed: *completed, Required: required})
+		if preflightErr := preflightTreatmentRuntime(ctx, item.request); preflightErr != nil {
+			return fmt.Errorf("preflight experiment %q task %q runtime: %w", item.experiment, task, preflightErr)
+		}
+		(*completed)++
+	}
+	return nil
 }
 
 func stageStudyExperimentBundles(repoRoot string, prepared *preparedStudy) ([]*TreatmentBundle, error) {

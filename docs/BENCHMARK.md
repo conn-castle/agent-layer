@@ -62,11 +62,12 @@ This command authorizes paid provider calls for missing cells. Completed cells a
 
 The ordinary workflow requires no tuning:
 
-- Provider cells run serially. This avoids multiplying provider rate-limit pressure and lets the CLI reclaim each task image after its durable result is written.
+- Provider cells run serially. This avoids multiplying provider rate-limit pressure and lets the CLI retain one task image across its arms and repetitions, then reclaim it once the task's durable results are written.
 - Readiness uses one worker when automatic image reclamation is enabled.
 - Before pulling, the CLI checks Docker storage using a conservative 4 GiB budget per simultaneously retained task image. If the plan cannot fit, it stops with required-versus-available capacity instead of filling Docker's disk.
 - Certification-only images are removed automatically; durable readiness receipts remain.
-- Readiness prints task percentages. Study runs print preparation stages, cell percentages, cumulative observed cost, and a heartbeat every 30 seconds during long operations.
+- Grok runs inside Pier's disposable task container with Grok's built-in `devbox` sandbox profile, avoiding a host Bubblewrap dependency while retaining the container boundary. Dry-run and paid command construction use the same profile.
+- Readiness prints task percentages. Study runs print preparation stages, task/arm preflight and cell percentages, and cumulative observed cost. During a silent long-running operation, the CLI prints one heartbeat after 60 seconds of inactivity and at most once per additional silent minute; genuine progress resets that timer.
 - Docker disk exhaustion is identified explicitly in both the task result and final error.
 
 ## Advanced controls
@@ -87,7 +88,7 @@ al benchmark run benchmark-study/study.toml --task first-task
 al benchmark run benchmark-study/study.toml --task-concurrency 2
 ```
 
-`--task` and worker count affect only the current invocation; they do not change study identity or report membership. A run concurrency greater than one is an explicit throughput override and disables per-cell task-image reclamation because concurrent cells may still be using the same image.
+`--task` and worker count affect only the current invocation; they do not change study identity or report membership. A run concurrency greater than one is an explicit throughput override and disables task-image reclamation because concurrent cells may still be using the same image.
 
 Readiness also supports deterministic sharding and per-task timeouts:
 
