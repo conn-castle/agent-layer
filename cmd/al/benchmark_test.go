@@ -9,13 +9,13 @@ import (
 	bench "github.com/conn-castle/agent-layer/internal/benchmark"
 )
 
-func TestBenchmarkOnlyExposesRunAndReadiness(t *testing.T) {
+func TestBenchmarkExposesBrainlessWorkflow(t *testing.T) {
 	command := newBenchmarkCmd()
 	var names []string
 	for _, child := range command.Commands() {
 		names = append(names, child.Name())
 	}
-	if strings.Join(names, ",") != "readiness,run" {
+	if strings.Join(names, ",") != "init,readiness,run" {
 		t.Fatalf("benchmark commands = %v", names)
 	}
 }
@@ -50,6 +50,7 @@ func TestBenchmarkReadinessRunsWithoutProviderCalls(t *testing.T) {
 	original := checkReadiness
 	checkReadiness = func(_ context.Context, options bench.ReadinessAuditOptions) (bench.ReadinessAuditOutcome, error) {
 		if options.TaskConcurrency != 1 || !options.RemoveTaskImages ||
+			!options.ResourcePreflight ||
 			strings.Join(options.Tasks, ",") != "first-task,second-task" ||
 			options.TaskShardIndex != 2 || options.TaskShardCount != 8 || options.TaskTimeout.String() != "10m0s" {
 			t.Fatalf("options = %#v", options)
@@ -67,9 +68,25 @@ func TestBenchmarkReadinessRunsWithoutProviderCalls(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "[0/2] first-task: checking") || !strings.Contains(output.String(), "[1/2] first-task: certified") ||
+	if !strings.Contains(output.String(), "[  0% 0/2] first-task: checking") || !strings.Contains(output.String(), "[ 50% 1/2] first-task: certified") ||
 		!strings.Contains(output.String(), "2 of 2 tasks certified") || !strings.Contains(output.String(), "No provider call was made") {
 		t.Fatalf("output = %q", output.String())
+	}
+}
+
+func TestBenchmarkReadinessExplicitParallelismRetainsImages(t *testing.T) {
+	original := checkReadiness
+	checkReadiness = func(_ context.Context, options bench.ReadinessAuditOptions) (bench.ReadinessAuditOutcome, error) {
+		if options.TaskConcurrency != 4 || options.RemoveTaskImages {
+			t.Fatalf("options = %#v", options)
+		}
+		return bench.ReadinessAuditOutcome{DeepSWECommit: strings.Repeat("d", 40)}, nil
+	}
+	t.Cleanup(func() { checkReadiness = original })
+	root := newRootCmd()
+	root.SetArgs([]string{"benchmark", "readiness", "--task-concurrency", "4"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -94,5 +111,8 @@ func TestBenchmarkReadinessPrintsActionableTaskFailures(t *testing.T) {
 		if !strings.Contains(output.String(), wanted) {
 			t.Fatalf("output = %q, missing %q", output.String(), wanted)
 		}
+	}
+	if !strings.Contains(output.String(), "blocked by Docker disk exhaustion") {
+		t.Fatalf("disk exhaustion was concealed by a generic summary: %q", output.String())
 	}
 }

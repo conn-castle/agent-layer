@@ -660,8 +660,9 @@ test("benchmark handoff offers explicit save actions and current CLI commands", 
   assert.match(html, /id="copySelectionJson"[^>]*>Copy selection</);
   assert.match(html, /id="downloadSelection"[^>]*>Download selection\.json</);
   assert.doesNotMatch(html, /copied to your clipboard/i);
-  assert.match(html, /al benchmark run study\.toml --dry-run/);
-  assert.match(html, /^\s*al benchmark run study\.toml$/m);
+  assert.match(html, /al benchmark init selection\.json --directory benchmark-study/);
+  assert.match(html, /al benchmark run benchmark-study\/study\.toml --dry-run/);
+  assert.match(html, /^\s*al benchmark run benchmark-study\/study\.toml$/m);
   assert.match(html, /Check the prerequisites/);
 });
 

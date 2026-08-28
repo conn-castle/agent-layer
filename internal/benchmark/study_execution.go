@@ -340,7 +340,7 @@ func compareStudyArmManifest(selectionID string, tasks []benchmarkPlanTask, chec
 	return nil
 }
 
-func executeMatrix(ctx context.Context, repoRoot string, checksums, environments map[string]string, arms []matrixArm, tasks []string, concurrency int, executor TaskExecutor, onCellComplete ...func(AttemptResult)) (returnErr error) {
+func executeMatrix(ctx context.Context, repoRoot string, checksums, environments map[string]string, arms []matrixArm, tasks []string, concurrency int, executor TaskExecutor, onCellStart func(matrixJob), onCellComplete ...func(AttemptResult)) (returnErr error) {
 	if concurrency < 1 {
 		return fmt.Errorf("study execution requires at least one task worker, got %d", concurrency)
 	}
@@ -398,6 +398,11 @@ func executeMatrix(ctx context.Context, repoRoot string, checksums, environments
 			for job := range queue {
 				if runCtx.Err() != nil {
 					return
+				}
+				if onCellStart != nil {
+					notifyLock.Lock()
+					onCellStart(job)
+					notifyLock.Unlock()
 				}
 				eventID, eventErr := NewEventID()
 				err := eventErr

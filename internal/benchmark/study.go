@@ -19,11 +19,14 @@ import (
 // StudyOptions configures the single public DeepSWE benchmark workflow.
 // TaskConcurrency and Tasks scope one invocation only; neither affects identity.
 type StudyOptions struct {
-	RepoRoot        string
-	StudyPath       string
-	TaskConcurrency int
-	Tasks           []string
-	DryRun          bool
+	RepoRoot          string
+	StudyPath         string
+	TaskConcurrency   int
+	Tasks             []string
+	DryRun            bool
+	ResourcePreflight bool
+	ReclaimTaskImages bool
+	OnProgress        func(StudyProgress)
 	// OnPrepared receives validated cached/missing progress after the full
 	// runtime preflight and before any inference call.
 	OnPrepared func(StudyOutcome) error
@@ -31,6 +34,12 @@ type StudyOptions struct {
 	// writes stdout, and completed cells remain observable even if a later cell
 	// fails.
 	OnCellComplete func(ObservedCostRange)
+}
+
+// StudyProgress is a serial operator-facing stage or cell update.
+type StudyProgress struct {
+	Phase, Message, Task, Experiment string
+	Completed, Required              int
 }
 
 // StudyOutcome is the user-facing progress summary for a study invocation.
@@ -163,11 +172,13 @@ func writeStudyManifest(study *preparedStudy, preparation matrixPreparation) err
 // RunStudy is intentionally the only paid public entry point. The command itself
 // is authorization; callers must use DryRun when they need the no-inference path.
 func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) (StudyOutcome, error) {
+	emitStudyProgress(options, StudyProgress{Phase: "study", Message: "Validating and snapshotting study inputs"})
 	prepared, err := prepareStudy(options)
 	if err != nil {
 		return StudyOutcome{}, err
 	}
 	defer prepared.cleanupInputs()
+	emitStudyProgress(options, StudyProgress{Phase: "preflight", Message: "Checking tools, authentication, treatment, and task readiness"})
 	preparation, err := prepareStudyExecution(ctx, options, &prepared)
 	if err != nil {
 		return StudyOutcome{}, err
@@ -198,7 +209,25 @@ func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) 
 		return StudyOutcome{}, err
 	}
 	invocationCost := ObservedCostRange{}
-	if err := executeMatrix(ctx, options.RepoRoot, preparation.checksums, preparation.environments, preparation.arms, options.Tasks, preparation.taskConcurrency, executor, func(result AttemptResult) {
+	completedCells := outcome.Completed
+	var cleanupErrors []error
+	readinessByTask := map[string]loadedTaskReadiness{}
+	if options.ReclaimTaskImages && preparation.taskConcurrency == 1 {
+		checkout, checkoutErr := ensurePinnedBenchmarkCheckout(ctx, options.RepoRoot)
+		if checkoutErr != nil {
+			return StudyOutcome{}, checkoutErr
+		}
+		for _, task := range preparation.tasks {
+			readiness, loadErr := loadTaskReadiness(checkout, task.ID)
+			if loadErr != nil {
+				return StudyOutcome{}, loadErr
+			}
+			readinessByTask[task.ID] = readiness
+		}
+	}
+	executionErr := executeMatrix(ctx, options.RepoRoot, preparation.checksums, preparation.environments, preparation.arms, options.Tasks, preparation.taskConcurrency, executor, func(job matrixJob) {
+		emitStudyProgress(options, StudyProgress{Phase: "run", Message: "Running benchmark cell", Task: job.cell.task, Experiment: job.arm.Label, Completed: completedCells, Required: outcome.Required})
+	}, func(result AttemptResult) {
 		minimum, maximum, boundsErr := result.CostBounds()
 		if boundsErr != nil {
 			return
@@ -209,8 +238,16 @@ func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) 
 		if options.OnCellComplete != nil {
 			options.OnCellComplete(addObservedCost(priorCost, invocationCost))
 		}
-	}); err != nil {
-		return StudyOutcome{}, err
+		completedCells++
+		emitStudyProgress(options, StudyProgress{Phase: "run", Message: "Completed benchmark cell", Task: result.Task, Completed: completedCells, Required: outcome.Required})
+		if readiness, ok := readinessByTask[result.Task]; ok {
+			if cleanupErr := removeTaskReadinessImages(ctx, readiness); cleanupErr != nil {
+				cleanupErrors = append(cleanupErrors, fmt.Errorf("reclaim task image after %s: %w", result.Task, cleanupErr))
+			}
+		}
+	})
+	if executionErr != nil || len(cleanupErrors) > 0 {
+		return StudyOutcome{}, errors.Join(executionErr, errors.Join(cleanupErrors...))
 	}
 	report, jsonPath, htmlPath, err := buildStudyReport(prepared, preparation)
 	if err != nil {
@@ -229,6 +266,12 @@ func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) 
 		outcome.Experiments[i].Missing = progress.Arms[i].Missing
 	}
 	return outcome, nil
+}
+
+func emitStudyProgress(options StudyOptions, progress StudyProgress) {
+	if options.OnProgress != nil {
+		options.OnProgress(progress)
+	}
 }
 
 var stageBenchmarkExperimentBundles = stageStudyExperimentBundles
@@ -272,6 +315,12 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 			return matrixPreparation{}, err
 		}
 	}
+	if options.ResourcePreflight {
+		emitStudyProgress(options, StudyProgress{Phase: "resources", Message: "Checking Docker disk capacity before image pulls"})
+		if err := preflightStudyDisk(ctx, tasks, options.ReclaimTaskImages && options.TaskConcurrency == 1); err != nil {
+			return matrixPreparation{}, err
+		}
+	}
 	checksums, environments, err := prepareBenchmarkTaskSet(ctx, options.RepoRoot, tasks)
 	if err != nil {
 		return matrixPreparation{}, err
@@ -279,6 +328,14 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 	preparation, err := bindStudyPreparation(options.RepoRoot, prepared, tasks, checksums, environments, bundles, authentication, options.TaskConcurrency)
 	if err != nil {
 		return matrixPreparation{}, err
+	}
+	reclaimTaskImages := options.ReclaimTaskImages && preparation.taskConcurrency == 1
+	checkout := ""
+	if reclaimTaskImages {
+		checkout, err = ensurePinnedBenchmarkCheckout(ctx, options.RepoRoot)
+		if err != nil {
+			return matrixPreparation{}, err
+		}
 	}
 	for index := range preparation.arms {
 		arm := &preparation.arms[index]
@@ -304,7 +361,14 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 			}
 			request.EventID, request.Task = eventID, task.ID
 			request.TaskChecksum, request.EnvironmentIdentity = checksums[task.ID], environments[task.ID]
-			if err := preflightTreatmentRuntime(ctx, request); err != nil {
+			var readiness loadedTaskReadiness
+			if reclaimTaskImages {
+				readiness, err = loadTaskReadiness(checkout, task.ID)
+				if err != nil {
+					return matrixPreparation{}, err
+				}
+			}
+			if err := preflightStudyTreatmentRuntime(ctx, request, reclaimTaskImages, readiness); err != nil {
 				return matrixPreparation{}, fmt.Errorf("preflight experiment %q task %q runtime: %w", arm.Label, task.ID, err)
 			}
 		}
@@ -313,6 +377,18 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 		return matrixPreparation{}, err
 	}
 	return preparation, nil
+}
+
+func preflightStudyDisk(ctx context.Context, tasks []benchmarkPlanTask, reclaimTaskImages bool) error {
+	return preflightReadinessDisk(ctx, tasks, !reclaimTaskImages)
+}
+
+func preflightStudyTreatmentRuntime(ctx context.Context, request ExecutionRequest, reclaimTaskImages bool, readiness loadedTaskReadiness) error {
+	preflightErr := preflightTreatmentRuntime(ctx, request)
+	if !reclaimTaskImages {
+		return preflightErr
+	}
+	return errors.Join(preflightErr, removeTaskReadinessImages(ctx, readiness))
 }
 
 func stageStudyExperimentBundles(repoRoot string, prepared *preparedStudy) ([]*TreatmentBundle, error) {

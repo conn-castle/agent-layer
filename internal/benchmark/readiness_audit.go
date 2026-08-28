@@ -28,19 +28,22 @@ const (
 // ReadinessAuditOptions configures the non-paid audit of every task in the
 // pinned DeepSWE checkout.
 type ReadinessAuditOptions struct {
-	RepoRoot         string
-	TaskConcurrency  int
-	RemoveTaskImages bool
-	Tasks            []string
-	TaskShardIndex   int
-	TaskShardCount   int
-	TaskTimeout      time.Duration
-	OnTaskProgress   func(ReadinessAuditProgress)
+	RepoRoot          string
+	TaskConcurrency   int
+	RemoveTaskImages  bool
+	Tasks             []string
+	TaskShardIndex    int
+	TaskShardCount    int
+	TaskTimeout       time.Duration
+	ResourcePreflight bool
+	OnTaskProgress    func(ReadinessAuditProgress)
 }
 
 // ReadinessAuditProgress reports observable task-level progress during an
 // audit. Status identifies work that is checking or the task's terminal status.
 type ReadinessAuditProgress struct {
+	Phase     string
+	Message   string
 	Task      string
 	Status    string
 	Completed int
@@ -81,6 +84,12 @@ func CheckAllTaskReadiness(ctx context.Context, options ReadinessAuditOptions) (
 	if options.TaskTimeout < 0 {
 		return ReadinessAuditOutcome{}, errors.New("DeepSWE readiness audit task timeout cannot be negative")
 	}
+	emit := func(phase, message string) {
+		if options.OnTaskProgress != nil {
+			options.OnTaskProgress(ReadinessAuditProgress{Phase: phase, Message: message})
+		}
+	}
+	emit("checkout", "Preparing the pinned DeepSWE catalog")
 	shardIndex, shardCount, err := normalizeReadinessShard(options.TaskShardIndex, options.TaskShardCount)
 	if err != nil {
 		return ReadinessAuditOutcome{}, err
@@ -97,6 +106,7 @@ func CheckAllTaskReadiness(ctx context.Context, options ReadinessAuditOptions) (
 	if err != nil {
 		return ReadinessAuditOutcome{}, err
 	}
+	emit("validate", fmt.Sprintf("Validating %d selected task(s)", len(tasks)))
 
 	results := make([]ReadinessAuditTask, len(tasks))
 	checksums := make([]string, len(tasks))
@@ -112,6 +122,22 @@ func CheckAllTaskReadiness(ctx context.Context, options ReadinessAuditOptions) (
 	}
 	if outcome := summarizeReadinessAudit(results); outcome.Failed > 0 {
 		return outcome, nil
+	}
+	if options.ResourcePreflight {
+		emit("resources", "Checking Docker disk capacity before image pulls")
+		pending := make([]benchmarkPlanTask, 0, len(tasks))
+		for index, task := range tasks {
+			certified, err := taskReadinessAlreadyCertified(options.RepoRoot, checkout, task.ID, checksums[index])
+			if err != nil {
+				return ReadinessAuditOutcome{}, err
+			}
+			if !certified {
+				pending = append(pending, task)
+			}
+		}
+		if err := preflightReadinessDisk(ctx, pending, !options.RemoveTaskImages); err != nil {
+			return ReadinessAuditOutcome{}, err
+		}
 	}
 	if options.RemoveTaskImages {
 		return checkTaskReadinessWithBoundedDisk(ctx, options, checkout, tasks, checksums, results)
@@ -172,24 +198,9 @@ func CheckAllTaskReadiness(ctx context.Context, options ReadinessAuditOptions) (
 }
 
 func checkTaskReadinessWithBoundedDisk(ctx context.Context, options ReadinessAuditOptions, checkout string, tasks []benchmarkPlanTask, checksums []string, results []ReadinessAuditTask) (ReadinessAuditOutcome, error) {
-	var previous loadedTaskReadiness
-	hasPrevious := false
-	cleanupPrevious := func() error {
-		if !hasPrevious {
-			return nil
-		}
-		err := removeTaskReadinessImages(ctx, previous)
-		hasPrevious = false
-		return err
-	}
-	defer func() { _ = cleanupPrevious() }()
-
 	for index, task := range tasks {
 		readiness, err := loadTaskReadiness(checkout, task.ID)
 		if err != nil {
-			if cleanupErr := cleanupPrevious(); cleanupErr != nil {
-				err = errors.Join(err, fmt.Errorf("reclaim benchmark readiness Docker images: %w", cleanupErr))
-			}
 			return summarizeReadinessAudit(results), err
 		}
 		results[index] = ReadinessAuditTask{Task: task.ID, Status: readinessStatusFailed}
@@ -197,11 +208,6 @@ func checkTaskReadinessWithBoundedDisk(ctx context.Context, options ReadinessAud
 			options.OnTaskProgress(ReadinessAuditProgress{Task: task.ID, Status: readinessStatusChecking, Completed: index, Required: len(tasks)})
 		}
 		auditErr := auditTaskReadinessWithTimeout(ctx, options, checkout, task.ID, checksums[index])
-		if err := cleanupPrevious(); err != nil {
-			return summarizeReadinessAudit(results), fmt.Errorf("reclaim benchmark readiness Docker images: %w", err)
-		}
-		previous = readiness
-		hasPrevious = true
 		if auditErr == nil {
 			results[index].Status = readinessStatusCertified
 		} else {
@@ -220,12 +226,12 @@ func checkTaskReadinessWithBoundedDisk(ctx context.Context, options ReadinessAud
 		if options.OnTaskProgress != nil {
 			options.OnTaskProgress(ReadinessAuditProgress{Task: task.ID, Status: results[index].Status, Completed: index + 1, Required: len(tasks)})
 		}
+		if cleanupErr := removeTaskReadinessImages(ctx, readiness); cleanupErr != nil {
+			return summarizeReadinessAudit(results), errors.Join(auditErr, fmt.Errorf("reclaim benchmark readiness Docker images: %w", cleanupErr))
+		}
 		if results[index].Status == readinessStatusBlocked {
 			break
 		}
-	}
-	if err := cleanupPrevious(); err != nil {
-		return summarizeReadinessAudit(results), fmt.Errorf("reclaim benchmark readiness Docker images: %w", err)
 	}
 	return summarizeReadinessAudit(results), nil
 }

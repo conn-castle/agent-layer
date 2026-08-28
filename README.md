@@ -117,6 +117,7 @@ Universal best practices:
 
 Agent Layer approach:
 - [Skills approach](https://agent-layer.dev/docs/skills-approach) (canonical source: `site/docs/skills-approach.mdx`)
+- [DeepSWE benchmark guide](docs/BENCHMARK.md)
 
 ---
 

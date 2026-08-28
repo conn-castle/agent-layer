@@ -21,6 +21,10 @@ then forced to use that digest and reruns the program inside every actual agent
 container before starting the provider. Baseline and treatment therefore share
 the same task environment contract and immutable base-image identity.
 
+The certification receipt is durable; the Docker image is not. Public CLI
+workflows remove certification-only images by default and can reuse the receipt
+without retaining every catalog image.
+
 When an upstream image omits an agent-side system dependency, the contract may
 name `agent_image_overlay` and `agent_check` files. The harness fingerprints and
 builds that overlay for both arms and runs the additional check only in agent

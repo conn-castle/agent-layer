@@ -33,7 +33,7 @@ var (
 	validateBenchmarkAuthentication  = validateAuthentication
 	ensurePinnedBenchmarkCheckout    = ensurePinnedCheckout
 	preflightTaskStartups            = validatePlanTaskStartups
-	certifyBenchmarkTaskEnvironments = certifyPlanTaskEnvironments
+	certifyBenchmarkTaskEnvironments = certifyPlanTaskEnvironmentsWithCleanup
 	prepareBenchmarkTaskSet          = prepareBenchmarkTasks
 	verifyBenchmarkPier              = verifyPinnedPier
 	runBenchmarkDockerCommand        = runDockerCommand
