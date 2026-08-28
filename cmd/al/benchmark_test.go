@@ -200,6 +200,29 @@ func TestBenchmarkExposesBrainlessWorkflow(t *testing.T) {
 	}
 }
 
+func TestFormatBenchmarkStudyProgressIncludesOnlyPresentDetails(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		experiment string
+		task       string
+		want       string
+	}{
+		{name: "both", experiment: "treatment", task: "task-a", want: "[ 50% 1/2] Running cell: treatment task-a"},
+		{name: "experiment only", experiment: "treatment", want: "[ 50% 1/2] Running cell: treatment"},
+		{name: "task only", task: "task-a", want: "[ 50% 1/2] Running cell: task-a"},
+		{name: "neither", want: "[ 50% 1/2] Running cell"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := formatBenchmarkStudyProgress(bench.StudyProgress{
+				Message: "Running cell", Experiment: test.experiment, Task: test.task, Completed: 1, Required: 2,
+			})
+			if got != test.want {
+				t.Fatalf("formatBenchmarkStudyProgress() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestBenchmarkRunDryRunDoesNotInvokeProviderInference(t *testing.T) {
 	original := runStudy
 	runStudy = func(_ context.Context, options bench.StudyOptions, _ bench.TaskExecutor) (bench.StudyOutcome, error) {

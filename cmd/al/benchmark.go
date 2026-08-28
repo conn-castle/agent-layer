@@ -67,8 +67,15 @@ func formatBenchmarkStudyProgress(progress bench.StudyProgress) string {
 	}
 	percent := progress.Completed * 100 / progress.Required
 	status := fmt.Sprintf("[%3d%% %d/%d] %s", percent, progress.Completed, progress.Required, progress.Message)
-	if progress.Experiment != "" || progress.Task != "" {
-		status += fmt.Sprintf(": %s %s", progress.Experiment, progress.Task)
+	details := make([]string, 0, 2)
+	if progress.Experiment != "" {
+		details = append(details, progress.Experiment)
+	}
+	if progress.Task != "" {
+		details = append(details, progress.Task)
+	}
+	if len(details) > 0 {
+		status += ": " + strings.Join(details, " ")
 	}
 	return status
 }

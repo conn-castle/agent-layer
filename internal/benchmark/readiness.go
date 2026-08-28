@@ -249,7 +249,11 @@ func certifyTaskEnvironment(ctx context.Context, repoRoot, checkout, task, taskC
 	receiptPath := filepath.Join(repoRoot, ".agent-layer", "state", "benchmarks", "deepswe", "environment-certifications", identity+".json")
 	if data, readErr := os.ReadFile(receiptPath); readErr == nil { // #nosec G304 -- content-addressed private benchmark state.
 		var existing taskReadinessCertification
-		if json.Unmarshal(data, &existing) == nil && existing == receipt {
+		// Overlay images are rebuilt before this lookup and must be validated
+		// independently of their source-stable certification identity. A
+		// receipt can only bypass the runtime check for the immutable pinned
+		// image used directly by contracts without an overlay.
+		if len(readiness.overlay) == 0 && json.Unmarshal(data, &existing) == nil && existing == receipt {
 			return identity, nil
 		}
 	} else if !errors.Is(readErr, os.ErrNotExist) {
