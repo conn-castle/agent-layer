@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.17.9 - 2026-08-28
+
+### Changed
+- Benchmark study preparation now preflights runtime per task and experiment and retains each task image across its serial cells before reclaiming it, with cleanup preserved after failed or cancelled runs.
+- Benchmark overlay certification now derives identity from the pinned image and exact overlay source while still rebuilding and rechecking overlay images; Grok benchmark execution uses Pier's disposable-container `devbox` sandbox without a host Bubblewrap dependency.
+
+### Fixed
+- Benchmark run heartbeat output now resets on real progress and reports after 60 seconds of inactivity, avoiding misleading duplicate heartbeats.
+
 ## v0.17.8 - 2026-08-27
 
 ### Added
