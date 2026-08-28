@@ -217,7 +217,7 @@ func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) 
 			return StudyOutcome{}, checkoutErr
 		}
 		for _, task := range preparation.tasks {
-			readiness, loadErr := loadTaskReadiness(checkout, task.ID)
+			readiness, loadErr := loadStudyTaskReadiness(checkout, task.ID)
 			if loadErr != nil {
 				return StudyOutcome{}, loadErr
 			}

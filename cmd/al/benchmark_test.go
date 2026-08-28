@@ -331,6 +331,7 @@ func TestBenchmarkRunHeartbeatWaitsForInactivityAndUsesLatestProgress(t *testing
 	if strings.Contains(output.String(), "[running]") {
 		t.Fatalf("cell output did not reset inactivity: %q", output.String())
 	}
+	resetGeneration, _, _ = clock.timerState()
 	clock.Advance(time.Second)
 	waitForBenchmarkHeartbeat(t, output, 1)
 	waitForBenchmarkTimerReset(t, clock, resetGeneration)
