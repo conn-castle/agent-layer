@@ -119,14 +119,35 @@ func ResolveEffectiveEnabledMCPServers(cfg config.Config, env map[string]string)
 	if err != nil {
 		return nil, err
 	}
-	for _, client := range []string{ClientAntigravity, ClientClaude, ClientCodex, ClientCopilot, ClientGrok, ClientVSCode} {
-		if builtIn, ok := BuiltInDispatchServer(cfg, client); ok {
-			resolved = append(resolved, builtIn)
-			sort.Slice(resolved, func(i, j int) bool { return resolved[i].ID < resolved[j].ID })
-			break
-		}
+	if builtIn, ok := effectiveBuiltInDispatchServer(cfg); ok {
+		resolved = append(resolved, builtIn)
+		sort.Slice(resolved, func(i, j int) bool { return resolved[i].ID < resolved[j].ID })
 	}
 	return resolved, nil
+}
+
+// EffectiveEnabledServerIDs returns every server doctor and warning discovery
+// will inspect, including the derived built-in server at most once.
+func EffectiveEnabledServerIDs(cfg config.Config) []string {
+	ids := make([]string, 0, len(cfg.MCP.Servers)+1)
+	for _, server := range cfg.MCP.Servers {
+		if config.IsAgentEnabled(server.Enabled) {
+			ids = append(ids, server.ID)
+		}
+	}
+	if _, ok := effectiveBuiltInDispatchServer(cfg); ok {
+		ids = append(ids, BuiltInDispatchServerID)
+	}
+	return ids
+}
+
+func effectiveBuiltInDispatchServer(cfg config.Config) (ResolvedMCPServer, bool) {
+	for _, client := range []string{ClientAntigravity, ClientClaude, ClientCodex, ClientCopilot, ClientGrok, ClientVSCode} {
+		if builtIn, ok := BuiltInDispatchServer(cfg, client); ok {
+			return builtIn, true
+		}
+	}
+	return ResolvedMCPServer{}, false
 }
 
 func withBuiltInDispatchServer(cfg config.Config, env map[string]string, client string, resolved []ResolvedMCPServer) []ResolvedMCPServer {

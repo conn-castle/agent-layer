@@ -440,6 +440,7 @@ The command set is intentionally small. Most of the time you only need one rhyth
 | Command | Purpose |
 | --- | --- |
 | `al init` | Initialize a repo with Agent Layer templates and memory files. |
+| `al update` | Update the global release CLI through Homebrew when formula-owned, or through the official installer while preserving the current prefix. |
 | `al upgrade` | Apply template-managed updates and update the repo pin (interactive by default; non-interactive requires `--yes` plus one or more apply flags; line-level diff previews shown by default, configurable with `--diff-lines`). |
 | `al upgrade plan` | Show a dry-run, plain-language categorized upgrade plan with line-level diff previews (configurable with `--diff-lines`). |
 | `al upgrade prefetch` | Download and cache a release binary ahead of time (use `--version X.Y.Z` explicitly on dev builds). |

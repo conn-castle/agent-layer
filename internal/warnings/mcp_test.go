@@ -603,13 +603,16 @@ func TestBuildMCPCommandEnv_AllowlistsBaseEnv(t *testing.T) {
 	base := []string{
 		"PATH=/usr/bin",
 		"HOME=/tmp/home",
+		"XDG_CACHE_HOME=/tmp/cache",
 		"AL_TAVILY_API_KEY=abc123",
+		"AL_SHIM_ACTIVE=1",
 		"GITHUB_TOKEN=should-not-pass",
 		"AWS_SECRET_ACCESS_KEY=should-not-pass",
 	}
 	serverEnv := map[string]string{
-		"CUSTOM_TOKEN": "server-value",
-		"PATH":         "/custom/bin",
+		"CUSTOM_TOKEN":   "server-value",
+		"PATH":           "/custom/bin",
+		"AL_SHIM_ACTIVE": "server-value",
 	}
 
 	env := buildMCPCommandEnv(base, serverEnv)
@@ -617,7 +620,9 @@ func TestBuildMCPCommandEnv_AllowlistsBaseEnv(t *testing.T) {
 
 	assert.Contains(t, joined, "PATH=/custom/bin")
 	assert.Contains(t, joined, "HOME=/tmp/home")
+	assert.Contains(t, joined, "XDG_CACHE_HOME=/tmp/cache")
 	assert.Contains(t, joined, "AL_TAVILY_API_KEY=abc123")
+	assert.NotContains(t, joined, "AL_SHIM_ACTIVE")
 	assert.Contains(t, joined, "CUSTOM_TOKEN=server-value")
 	assert.NotContains(t, joined, "GITHUB_TOKEN=should-not-pass")
 	assert.NotContains(t, joined, "AWS_SECRET_ACCESS_KEY=should-not-pass")

@@ -79,8 +79,13 @@ For a safe evaluation, run `al init` in a disposable repository first.
 
 Update the global CLI:
 
-- Homebrew: `brew upgrade conn-castle/tap/agent-layer`
-- macOS/Linux script: re-run the install script above
+```bash
+al update
+```
+
+`al update` detects whether the running release binary is owned by Homebrew. It upgrades the formula when it is, and otherwise downloads and reruns the official installer while preserving the current install prefix.
+
+If the installed CLI predates the `al update` command, update it once with `brew upgrade conn-castle/tap/agent-layer` for Homebrew or by rerunning the original script install command (including the same `--prefix`, if any).
 
 Run `al upgrade plan` and then `al upgrade` inside the repo. This updates the repo pin (`.agent-layer/al.version`) and refreshes template-managed files.
 For a concise runbook (interactive + CI), use [/docs/upgrade-checklist](/docs/upgrade-checklist).

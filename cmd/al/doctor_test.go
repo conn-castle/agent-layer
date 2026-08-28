@@ -17,9 +17,11 @@ func TestEnabledMCPServerIDs(t *testing.T) {
 	enabled := true
 	disabled := false
 	tests := []struct {
-		name    string
-		servers []config.MCPServer
-		want    []string
+		name        string
+		servers     []config.MCPServer
+		enableCodex bool
+		enableGrok  bool
+		want        []string
 	}{
 		{
 			name:    "empty",
@@ -35,10 +37,30 @@ func TestEnabledMCPServerIDs(t *testing.T) {
 			},
 			want: []string{"server-a", "server-b"},
 		},
+		{
+			name:        "includes built-in dispatch server",
+			enableCodex: true,
+			servers: []config.MCPServer{
+				{ID: "server-a", Enabled: &enabled},
+			},
+			want: []string{"server-a", "agent-layer"},
+		},
+		{
+			name:       "includes built-in for another dispatch client",
+			enableGrok: true,
+			want:       []string{"agent-layer"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := enabledMCPServerIDs(tt.servers)
+			cfg := config.Config{MCP: config.MCPConfig{Servers: tt.servers}}
+			if tt.enableCodex {
+				cfg.Agents.Codex.Enabled = &enabled
+			}
+			if tt.enableGrok {
+				cfg.Agents.Grok.Enabled = &enabled
+			}
+			got := enabledMCPServerIDs(cfg)
 			if len(got) != len(tt.want) {
 				t.Errorf("enabledMCPServerIDs() len = %d, want %d", len(got), len(tt.want))
 				return

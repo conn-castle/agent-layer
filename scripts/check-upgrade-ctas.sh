@@ -26,6 +26,7 @@ for file in "${cta_files[@]}"; do
 done
 
 required_patterns=(
+  "al update"
   "al upgrade plan"
   "al upgrade --yes --apply-managed-updates"
   "al upgrade rollback <snapshot-id>"

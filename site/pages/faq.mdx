@@ -96,7 +96,7 @@ Yes. `.agent-layer/al.version` is the repo pin (required). Set it to `X.Y.Z` or 
 See [/docs/concepts#version-pinning](/docs/concepts#version-pinning) for the full model and tradeoffs.
 
 ## How do I upgrade a repo?
-Upgrade the global CLI first, then run `al upgrade plan` and `al upgrade` inside the repo. This updates the repo pin (`.agent-layer/al.version`) to match the currently installed `al` version.
+Run `al update` to update the global CLI through its current installation method, then run `al upgrade plan` and `al upgrade` inside the repo. This updates the repo pin (`.agent-layer/al.version`) to match the currently installed `al` version.
 
 For compatibility guarantees and release migration rules, see [/docs/upgrades](/docs/upgrades). For a one-page runbook, use [/docs/upgrade-checklist](/docs/upgrade-checklist).
 
