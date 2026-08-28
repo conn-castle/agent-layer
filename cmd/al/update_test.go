@@ -197,6 +197,31 @@ func TestDetectHomebrewInstallationFailsForUnqueryableCellarBinary(t *testing.T)
 	}
 }
 
+func TestDetectHomebrewInstallationUsesBrewAssociatedWithExecutableCellar(t *testing.T) {
+	preserveUpdateGlobals(t)
+	updateLookPath = func(string) (string, error) {
+		t.Fatal("PATH brew should not be used for a Cellar-owned executable")
+		return "/usr/local/bin/brew", nil
+	}
+	updateCommandOutput = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if name != "/opt/homebrew/bin/brew" || strings.Join(args, " ") != "--prefix conn-castle/tap/agent-layer" {
+			t.Fatalf("unexpected detection command: %s %v", name, args)
+		}
+		return []byte("/opt/homebrew/opt/agent-layer\n"), nil
+	}
+	updateEvalSymlinks = func(path string) (string, error) {
+		if path == "/opt/homebrew/opt/agent-layer" {
+			return "/opt/homebrew/Cellar/agent-layer/1.2.3", nil
+		}
+		return path, nil
+	}
+
+	isHomebrew, brew, err := detectHomebrewInstallation(context.Background(), "/opt/homebrew/Cellar/agent-layer/1.2.3/bin/al")
+	if err != nil || !isHomebrew || brew != "/opt/homebrew/bin/brew" {
+		t.Fatalf("isHomebrew = %v, brew = %q, err = %v; want associated Apple Silicon Homebrew", isHomebrew, brew, err)
+	}
+}
+
 func TestDetectHomebrewInstallationFailsForCustomUnqueryableCellarBinary(t *testing.T) {
 	preserveUpdateGlobals(t)
 	t.Setenv("HOMEBREW_CELLAR", "/packages/kegs")

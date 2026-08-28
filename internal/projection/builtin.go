@@ -103,7 +103,7 @@ func EffectiveMCPServers(cfg config.Config, env map[string]string, client string
 // actually receives.
 func EffectiveServerIDs(cfg config.Config, client string) []string {
 	ids := EnabledServerIDs(cfg.MCP.Servers, client)
-	if _, ok := BuiltInDispatchServer(cfg, client); ok {
+	if _, ok := BuiltInDispatchServer(cfg, client); ok && !containsServerID(ids, BuiltInDispatchServerID) {
 		ids = append(ids, BuiltInDispatchServerID)
 		sort.Strings(ids)
 	}
@@ -119,7 +119,7 @@ func ResolveEffectiveEnabledMCPServers(cfg config.Config, env map[string]string)
 	if err != nil {
 		return nil, err
 	}
-	if builtIn, ok := effectiveBuiltInDispatchServer(cfg); ok {
+	if builtIn, ok := effectiveBuiltInDispatchServer(cfg); ok && !containsResolvedServerID(resolved, builtIn.ID) {
 		resolved = append(resolved, builtIn)
 		sort.Slice(resolved, func(i, j int) bool { return resolved[i].ID < resolved[j].ID })
 	}
@@ -135,7 +135,7 @@ func EffectiveEnabledServerIDs(cfg config.Config) []string {
 			ids = append(ids, server.ID)
 		}
 	}
-	if _, ok := effectiveBuiltInDispatchServer(cfg); ok {
+	if _, ok := effectiveBuiltInDispatchServer(cfg); ok && !containsServerID(ids, BuiltInDispatchServerID) {
 		ids = append(ids, BuiltInDispatchServerID)
 	}
 	return ids
@@ -152,10 +152,28 @@ func effectiveBuiltInDispatchServer(cfg config.Config) (ResolvedMCPServer, bool)
 
 func withBuiltInDispatchServer(cfg config.Config, env map[string]string, client string, resolved []ResolvedMCPServer) []ResolvedMCPServer {
 	builtIn, ok := RootedBuiltInDispatchServer(cfg, client, env[config.BuiltinRepoRootEnvVar])
-	if !ok {
+	if !ok || containsResolvedServerID(resolved, builtIn.ID) {
 		return resolved
 	}
 	resolved = append(resolved, builtIn)
 	sort.Slice(resolved, func(i, j int) bool { return resolved[i].ID < resolved[j].ID })
 	return resolved
+}
+
+func containsResolvedServerID(servers []ResolvedMCPServer, id string) bool {
+	for _, server := range servers {
+		if server.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func containsServerID(ids []string, id string) bool {
+	for _, existing := range ids {
+		if existing == id {
+			return true
+		}
+	}
+	return false
 }

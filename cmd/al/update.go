@@ -101,12 +101,16 @@ func runUpdate(cmd *cobra.Command) error {
 }
 
 func detectHomebrewInstallation(ctx context.Context, executable string) (bool, string, error) {
-	brew, err := updateLookPath("brew")
-	if err != nil {
-		if looksHomebrewManaged(executable) {
-			return false, "", fmt.Errorf(messages.UpdateHomebrewPrefixErrFmt, err)
+	brew, associatedBrew := homebrewExecutableFor(executable)
+	if !associatedBrew {
+		var err error
+		brew, err = updateLookPath("brew")
+		if err != nil {
+			if looksHomebrewManaged(executable) {
+				return false, "", fmt.Errorf(messages.UpdateHomebrewPrefixErrFmt, err)
+			}
+			return false, "", nil
 		}
-		return false, "", nil
 	}
 	formulaPrefixOutput, err := updateCommandOutput(ctx, brew, "--prefix", homebrewAgentLayerFormula)
 	if err != nil {
@@ -133,6 +137,25 @@ func detectHomebrewInstallation(ctx context.Context, executable string) (bool, s
 		return false, "", nil
 	}
 	return true, brew, nil
+}
+
+func homebrewExecutableFor(executable string) (string, bool) {
+	for directory := filepath.Dir(filepath.Clean(executable)); ; directory = filepath.Dir(directory) {
+		parent := filepath.Dir(directory)
+		if filepath.Base(directory) == agentLayerFormulaName && filepath.Base(parent) == "Cellar" {
+			return filepath.Join(filepath.Dir(parent), "bin", "brew"), true
+		}
+		if parent == directory {
+			break
+		}
+	}
+
+	cellar := strings.TrimSpace(os.Getenv("HOMEBREW_CELLAR"))
+	prefix := strings.TrimSpace(os.Getenv("HOMEBREW_PREFIX"))
+	if cellar != "" && prefix != "" && pathWithin(executable, filepath.Join(cellar, agentLayerFormulaName)) {
+		return filepath.Join(prefix, "bin", "brew"), true
+	}
+	return "", false
 }
 
 func commandOutputError(err error, output []byte) error {
