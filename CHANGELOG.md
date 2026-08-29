@@ -1,6 +1,20 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.18.2 - 2026-08-29
+
+### Added
+- Paid benchmark cells now persist provider-completion checkpoints and support verifier-only replay from the exact retained provider patch without another provider call.
+
+### Changed
+- Benchmark progress now reports the active environment, provider, or verifier phase with elapsed time and its effective timeout.
+- Benchmark cancellation gives Pier a bounded graceful-cleanup window before process-group escalation.
+
+### Fixed
+- Provider streams and patches survive verifier failures, cancellation, cleanup errors, and artifact-promotion failures; failed promotion retains and reports its staging path.
+- Linux cleanup repairs verifier-owned logs for running and stopped containers before removal, including root ownership repair through a temporary container when needed.
+- Failed verifier replays retain their checkpoint and staging evidence instead of becoming resumable paid failures, while sanitization preserves a byte-exact private replay patch.
+
 ## v0.18.1 - 2026-08-28
 
 ### Changed
