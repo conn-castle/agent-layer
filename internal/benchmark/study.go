@@ -474,36 +474,57 @@ func preflightStudyRuntimes(ctx context.Context, options StudyOptions, tasks []b
 	for _, taskWork := range work {
 		required += len(taskWork)
 	}
+	if required == 0 {
+		return nil
+	}
+	hostArchitecture, err := dockerHostArchitecture(ctx)
+	if err != nil {
+		return err
+	}
 	completed := 0
 	var last StudyProgress
 	for taskIndex, taskWork := range work {
 		if len(taskWork) == 0 {
 			continue
 		}
-		if err := preflightStudyTaskRuntimes(ctx, tasks[taskIndex].ID, taskWork, reclaimTaskImages, checkout, &completed, required, options); err != nil {
+		if err := preflightStudyTaskRuntimes(ctx, tasks[taskIndex].ID, taskWork, reclaimTaskImages, checkout, &completed, required, options, hostArchitecture); err != nil {
 			return err
 		}
 		last = StudyProgress{Phase: "runtime-preflight", Message: runtimePreflightProgressMessage, Task: tasks[taskIndex].ID, Experiment: taskWork[len(taskWork)-1].experiment, Completed: completed, Required: required}
 	}
-	if required > 0 {
-		emitStudyProgress(options, last)
+	emitStudyProgress(options, last)
+	return nil
+}
+
+type pendingRuntimePreflightReceipt struct {
+	experiment string
+	path       string
+	receipt    runtimePreflightReceipt
+}
+
+func commitRuntimePreflightReceipts(task string, pending []pendingRuntimePreflightReceipt) error {
+	for _, item := range pending {
+		if err := writeJSON(item.path, item.receipt); err != nil {
+			return fmt.Errorf("record successful runtime preflight for experiment %q task %q: %w", item.experiment, task, err)
+		}
 	}
 	return nil
 }
 
-func preflightStudyTaskRuntimes(ctx context.Context, task string, work []studyRuntimePreflight, reclaimTaskImages bool, checkout string, completed *int, required int, options StudyOptions) (err error) {
+func preflightStudyTaskRuntimes(ctx context.Context, task string, work []studyRuntimePreflight, reclaimTaskImages bool, checkout string, completed *int, required int, options StudyOptions, hostArchitecture string) (err error) {
 	var cleanupReadiness *loadedTaskReadiness
+	var pending []pendingRuntimePreflightReceipt
 	defer func() {
-		if cleanupReadiness == nil {
-			return
+		if cleanupReadiness != nil {
+			cleanupCtx, cancelCleanup := detachedBenchmarkCleanupContext(ctx)
+			cleanupErr := reclaimStudyTaskImages(cleanupCtx, *cleanupReadiness)
+			cancelCleanup()
+			if cleanupErr != nil {
+				err = errors.Join(err, fmt.Errorf("reclaim task images after runtime preflights for %q: %w", task, cleanupErr))
+				return
+			}
 		}
-		cleanupCtx, cancelCleanup := detachedBenchmarkCleanupContext(ctx)
-		cleanupErr := reclaimStudyTaskImages(cleanupCtx, *cleanupReadiness)
-		cancelCleanup()
-		if cleanupErr != nil {
-			cleanupErr = fmt.Errorf("reclaim task images after runtime preflights for %q: %w", task, cleanupErr)
-		}
-		err = errors.Join(err, cleanupErr)
+		err = errors.Join(err, commitRuntimePreflightReceipts(task, pending))
 	}()
 	installCleanup := func() error {
 		if !reclaimTaskImages || cleanupReadiness != nil {
@@ -517,7 +538,7 @@ func preflightStudyTaskRuntimes(ctx context.Context, task string, work []studyRu
 		return nil
 	}
 	for _, item := range work {
-		cached, receipt, receiptPath, receiptErr := completedRuntimePreflight(item.request)
+		cached, receipt, receiptPath, receiptErr := completedRuntimePreflight(item.request, hostArchitecture)
 		if receiptErr != nil {
 			return receiptErr
 		}
@@ -537,21 +558,22 @@ func preflightStudyTaskRuntimes(ctx context.Context, task string, work []studyRu
 		if preflightErr := preflightTreatmentRuntime(ctx, item.request); preflightErr != nil {
 			return fmt.Errorf("preflight experiment %q task %q runtime: %w", item.experiment, task, preflightErr)
 		}
-		if writeErr := writeJSON(receiptPath, receipt); writeErr != nil {
-			return fmt.Errorf("record successful runtime preflight for experiment %q task %q: %w", item.experiment, task, writeErr)
-		}
+		pending = append(pending, pendingRuntimePreflightReceipt{experiment: item.experiment, path: receiptPath, receipt: receipt})
 		(*completed)++
 	}
 	return nil
 }
 
-func completedRuntimePreflight(request ExecutionRequest) (bool, runtimePreflightReceipt, string, error) {
+func completedRuntimePreflight(request ExecutionRequest, hostArchitecture string) (bool, runtimePreflightReceipt, string, error) {
 	if request.EvidenceDir == "" {
 		return false, runtimePreflightReceipt{}, "", errors.New("benchmark runtime preflight requires an evidence directory")
 	}
+	if hostArchitecture == "" {
+		return false, runtimePreflightReceipt{}, "", errors.New("benchmark runtime preflight requires a Docker host architecture")
+	}
 	receipt := runtimePreflightReceipt{
 		Schema: runtimePreflightReceiptSchema, DeepSWECommit: DeepSWECommit, PierVersion: PierVersion,
-		TaskContainerPlatform: benchmarkTaskContainerPlatform, HostOS: runtime.GOOS, HostArchitecture: runtime.GOARCH,
+		TaskContainerPlatform: benchmarkTaskContainerPlatform, HostOS: runtime.GOOS, HostArchitecture: hostArchitecture,
 		Task:         request.Task,
 		TaskChecksum: request.TaskChecksum, EnvironmentIdentity: request.EnvironmentIdentity,
 		Arm: request.Arm, ProviderAdapter: request.Model.Adapter,

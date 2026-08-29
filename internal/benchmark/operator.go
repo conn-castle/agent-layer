@@ -93,7 +93,22 @@ type dockerDesktopSettings struct {
 	DiskSizeMiB int64 `json:"DiskSizeMiB"`
 }
 
-var readinessDiskCapacity = detectDockerDiskAvailable
+var (
+	readinessDiskCapacity  = detectDockerDiskAvailable
+	dockerHostArchitecture = detectDockerHostArchitecture
+)
+
+func detectDockerHostArchitecture(ctx context.Context) (string, error) {
+	output, err := runBenchmarkDockerCommand(ctx, "version", "--format", "{{.Server.Arch}}")
+	if err != nil {
+		return "", fmt.Errorf("determine Docker host architecture: %w: %s", err, string(bytes.TrimSpace(output)))
+	}
+	architecture := string(bytes.TrimSpace(output))
+	if architecture == "" || architecture == "<no value>" {
+		return "", errors.New("docker daemon did not report a server architecture")
+	}
+	return architecture, nil
+}
 
 func preflightReadinessDisk(ctx context.Context, tasks []benchmarkPlanTask, keepImages bool) error {
 	if len(tasks) == 0 {

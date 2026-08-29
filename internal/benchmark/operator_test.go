@@ -177,7 +177,7 @@ func TestStudyTreatmentPreflightReclaimsImagesEvenOnFailure(t *testing.T) {
 	err := preflightStudyTaskRuntimes(context.Background(), "task", []studyRuntimePreflight{
 		{experiment: "first", request: ExecutionRequest{EvidenceDir: evidenceDir, Arm: "first"}},
 		{experiment: "second", request: ExecutionRequest{EvidenceDir: evidenceDir, Arm: "second"}},
-	}, true, "checkout", &completed, 2, StudyOptions{})
+	}, true, "checkout", &completed, 2, StudyOptions{}, "amd64")
 	if !errors.Is(err, preflightFailure) {
 		t.Fatalf("preflight failure = %v", err)
 	}
@@ -188,7 +188,7 @@ func TestStudyTreatmentPreflightReclaimsImagesEvenOnFailure(t *testing.T) {
 	err = preflightStudyTaskRuntimes(context.Background(), "task", []studyRuntimePreflight{
 		{experiment: "first", request: ExecutionRequest{EvidenceDir: evidenceDir, Arm: "first"}},
 		{experiment: "second", request: ExecutionRequest{EvidenceDir: evidenceDir, Arm: "second"}},
-	}, true, "checkout", &completed, 2, StudyOptions{})
+	}, true, "checkout", &completed, 2, StudyOptions{}, "amd64")
 	if !errors.Is(err, preflightFailure) {
 		t.Fatalf("retry preflight failure = %v", err)
 	}
@@ -197,31 +197,91 @@ func TestStudyTreatmentPreflightReclaimsImagesEvenOnFailure(t *testing.T) {
 	}
 }
 
+func TestStudyTreatmentPreflightDoesNotPersistReceiptWhenCleanupFails(t *testing.T) {
+	originalPreflight := preflightTreatmentRuntime
+	originalLoad := loadStudyTaskReadiness
+	originalCleanup := reclaimStudyTaskImages
+	t.Cleanup(func() {
+		preflightTreatmentRuntime = originalPreflight
+		loadStudyTaskReadiness = originalLoad
+		reclaimStudyTaskImages = originalCleanup
+	})
+	cleanupFailure := errors.New("cleanup failed")
+	var preflightCalls, cleanupCalls int
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error {
+		preflightCalls++
+		return nil
+	}
+	loadStudyTaskReadiness = func(string, string) (loadedTaskReadiness, error) {
+		return loadedTaskReadiness{pinnedImage: "task-image"}, nil
+	}
+	reclaimStudyTaskImages = func(context.Context, loadedTaskReadiness) error {
+		cleanupCalls++
+		if cleanupCalls == 1 {
+			return cleanupFailure
+		}
+		return nil
+	}
+	evidenceDir := t.TempDir()
+	request := ExecutionRequest{EvidenceDir: evidenceDir, Arm: "arm", Task: "task"}
+	work := []studyRuntimePreflight{{experiment: "arm", request: request}}
+	completed := 0
+	err := preflightStudyTaskRuntimes(context.Background(), "task", work, true, "checkout", &completed, 1, StudyOptions{}, "amd64")
+	if !errors.Is(err, cleanupFailure) {
+		t.Fatalf("cleanup failure = %v", err)
+	}
+	if preflightCalls != 1 || cleanupCalls != 1 {
+		t.Fatalf("preflights=%d cleanup=%d", preflightCalls, cleanupCalls)
+	}
+	entries, readErr := os.ReadDir(filepath.Join(evidenceDir, "runtime-preflights"))
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		t.Fatal(readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("cleanup failure persisted receipts: %#v", entries)
+	}
+	completed = 0
+	if err := preflightStudyTaskRuntimes(context.Background(), "task", work, true, "checkout", &completed, 1, StudyOptions{}, "amd64"); err != nil {
+		t.Fatal(err)
+	}
+	if preflightCalls != 2 || cleanupCalls != 2 {
+		t.Fatalf("retry preflights=%d cleanup=%d", preflightCalls, cleanupCalls)
+	}
+	cached, _, _, err := completedRuntimePreflight(request, "amd64")
+	if err != nil || !cached {
+		t.Fatalf("successful retry receipt = cached %t err %v", cached, err)
+	}
+}
+
 func TestCompletedRuntimePreflightRejectsMismatchedReceipt(t *testing.T) {
 	request := ExecutionRequest{EvidenceDir: t.TempDir(), Arm: "arm"}
-	cached, receipt, path, err := completedRuntimePreflight(request)
+	cached, receipt, path, err := completedRuntimePreflight(request, "amd64")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cached {
 		t.Fatal("missing receipt was treated as complete")
 	}
-	if receipt.HostOS != runtime.GOOS || receipt.HostArchitecture != runtime.GOARCH {
-		t.Fatalf("host platform = %s/%s, want %s/%s", receipt.HostOS, receipt.HostArchitecture, runtime.GOOS, runtime.GOARCH)
+	if receipt.HostOS != runtime.GOOS || receipt.HostArchitecture != "amd64" {
+		t.Fatalf("host platform = %s/%s, want %s/amd64", receipt.HostOS, receipt.HostArchitecture, runtime.GOOS)
 	}
 	if err := writeJSON(path, receipt); err != nil {
 		t.Fatal(err)
 	}
-	cached, _, _, err = completedRuntimePreflight(request)
+	cached, _, _, err = completedRuntimePreflight(request, "amd64")
 	if err != nil || !cached {
 		t.Fatalf("matching receipt reuse = cached %t err %v", cached, err)
+	}
+	cached, _, _, err = completedRuntimePreflight(request, "arm64")
+	if err != nil || cached {
+		t.Fatalf("different Docker host architecture reused receipt: cached %t err %v", cached, err)
 	}
 	mismatch := receipt
 	mismatch.HostArchitecture = "other"
 	if err := writeJSON(path, mismatch); err != nil {
 		t.Fatal(err)
 	}
-	cached, _, _, err = completedRuntimePreflight(request)
+	cached, _, _, err = completedRuntimePreflight(request, "amd64")
 	if cached || err == nil || !strings.Contains(err.Error(), "does not match its content-addressed identity") {
 		t.Fatalf("mismatched receipt = cached %t err %v", cached, err)
 	}
@@ -251,7 +311,7 @@ func TestStudyTreatmentPreflightReclaimsImageAfterCancellation(t *testing.T) {
 		return nil
 	}
 	completed := 0
-	err := preflightStudyTaskRuntimes(ctx, "task", []studyRuntimePreflight{{experiment: "arm", request: ExecutionRequest{EvidenceDir: t.TempDir(), Arm: "arm"}}}, true, "checkout", &completed, 1, StudyOptions{})
+	err := preflightStudyTaskRuntimes(ctx, "task", []studyRuntimePreflight{{experiment: "arm", request: ExecutionRequest{EvidenceDir: t.TempDir(), Arm: "arm"}}}, true, "checkout", &completed, 1, StudyOptions{}, "amd64")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("preflight cancellation = %v", err)
 	}
@@ -264,11 +324,14 @@ func TestStudyRuntimePreflightsGroupArmsByTaskAndReclaimOnce(t *testing.T) {
 	originalPreflight := preflightTreatmentRuntime
 	originalLoad := loadStudyTaskReadiness
 	originalCleanup := reclaimStudyTaskImages
+	originalArchitecture := dockerHostArchitecture
 	t.Cleanup(func() {
 		preflightTreatmentRuntime = originalPreflight
 		loadStudyTaskReadiness = originalLoad
 		reclaimStudyTaskImages = originalCleanup
+		dockerHostArchitecture = originalArchitecture
 	})
+	dockerHostArchitecture = func(context.Context) (string, error) { return "amd64", nil }
 	tasks := []benchmarkPlanTask{{ID: "first"}, {ID: "duplicate"}, {ID: "second"}}
 	checksums := map[string]string{"first": "first-checksum", "duplicate": "duplicate-checksum", "second": "second-checksum"}
 	environments := map[string]string{"first": "shared", "duplicate": "shared", "second": "second"}
@@ -451,6 +514,83 @@ func TestStudyTaskIDsReadsSelectionWithoutTreatmentSetup(t *testing.T) {
 	}
 	if got := strings.Join(tasks, ","); got != "first-task,second-task" {
 		t.Fatalf("study tasks = %q", got)
+	}
+}
+
+func TestDetectDockerHostArchitecture(t *testing.T) {
+	original := runBenchmarkDockerCommand
+	t.Cleanup(func() { runBenchmarkDockerCommand = original })
+	runBenchmarkDockerCommand = func(context.Context, ...string) ([]byte, error) {
+		return []byte("  arm64\n"), nil
+	}
+	got, err := detectDockerHostArchitecture(context.Background())
+	if err != nil || got != "arm64" {
+		t.Fatalf("architecture = %q err %v", got, err)
+	}
+	runBenchmarkDockerCommand = func(context.Context, ...string) ([]byte, error) {
+		return []byte("denied"), errors.New("daemon unavailable")
+	}
+	if _, err := detectDockerHostArchitecture(context.Background()); err == nil || !strings.Contains(err.Error(), "daemon unavailable") {
+		t.Fatalf("command failure = %v", err)
+	}
+	for _, output := range []string{"\n", "<no value>\n"} {
+		runBenchmarkDockerCommand = func(context.Context, ...string) ([]byte, error) {
+			return []byte(output), nil
+		}
+		if _, err := detectDockerHostArchitecture(context.Background()); err == nil || !strings.Contains(err.Error(), "did not report a server architecture") {
+			t.Fatalf("missing architecture %q = %v", output, err)
+		}
+	}
+}
+
+func TestStudyRuntimePreflightsFailWhenDockerArchitectureIsUnknown(t *testing.T) {
+	originalArchitecture := dockerHostArchitecture
+	originalPreflight := preflightTreatmentRuntime
+	t.Cleanup(func() {
+		dockerHostArchitecture = originalArchitecture
+		preflightTreatmentRuntime = originalPreflight
+	})
+	lookupErr := errors.New("daemon architecture unavailable")
+	dockerHostArchitecture = func(context.Context) (string, error) { return "", lookupErr }
+	called := false
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error {
+		called = true
+		return nil
+	}
+	err := preflightStudyRuntimes(context.Background(), StudyOptions{}, []benchmarkPlanTask{{ID: "task"}}, [][]studyRuntimePreflight{{{
+		experiment: "arm",
+		request:    ExecutionRequest{EvidenceDir: t.TempDir(), Arm: "arm"},
+	}}}, false, "")
+	if !errors.Is(err, lookupErr) {
+		t.Fatalf("architecture failure = %v", err)
+	}
+	if called {
+		t.Fatal("ran runtime preflight without a Docker host architecture")
+	}
+}
+
+func TestStudyRuntimePreflightsKeyReceiptsByDockerHostArchitecture(t *testing.T) {
+	originalArchitecture := dockerHostArchitecture
+	originalPreflight := preflightTreatmentRuntime
+	t.Cleanup(func() {
+		dockerHostArchitecture = originalArchitecture
+		preflightTreatmentRuntime = originalPreflight
+	})
+	dockerHostArchitecture = func(context.Context) (string, error) { return "s390x", nil }
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error { return nil }
+	request := ExecutionRequest{EvidenceDir: t.TempDir(), Arm: "arm", Task: "task"}
+	if err := preflightStudyRuntimes(context.Background(), StudyOptions{}, []benchmarkPlanTask{{ID: "task"}}, [][]studyRuntimePreflight{{{
+		experiment: "arm", request: request,
+	}}}, false, ""); err != nil {
+		t.Fatal(err)
+	}
+	cached, receipt, _, err := completedRuntimePreflight(request, "s390x")
+	if err != nil || !cached || receipt.HostArchitecture != "s390x" {
+		t.Fatalf("docker-host receipt = cached %t arch %q err %v", cached, receipt.HostArchitecture, err)
+	}
+	cached, _, _, err = completedRuntimePreflight(request, "amd64")
+	if err != nil || cached {
+		t.Fatalf("different Docker host architecture reused receipt: cached %t err %v", cached, err)
 	}
 }
 
