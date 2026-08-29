@@ -1,6 +1,7 @@
 package benchmark
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -99,7 +100,7 @@ func retainedGrokStageFixture(t *testing.T, request ExecutionRequest) string {
 	return stage
 }
 
-func TestRetainedProviderEvidenceRequiresCompleteCostAndPatch(t *testing.T) {
+func TestRetainedProviderEvidenceRequiresCompleteCostAndAcceptsEmptyPatch(t *testing.T) {
 	model, effort, err := ParseModelSelection(modelGrok45 + ":low")
 	if err != nil {
 		t.Fatal(err)
@@ -124,8 +125,53 @@ func TestRetainedProviderEvidenceRequiresCompleteCostAndPatch(t *testing.T) {
 	if err := os.WriteFile(patch, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := retainedProviderEvidence(stage, request); err == nil || !strings.Contains(err.Error(), "empty model.patch") {
-		t.Fatalf("empty retained patch error = %v", err)
+	// An agent that completed without committing produces an empty patch. That
+	// is valid provider output, not missing evidence.
+	if patch, _, _, err := retainedProviderEvidence(stage, request); err != nil || filepath.Base(patch) != "model.patch" {
+		t.Fatalf("empty retained patch was rejected: %q, %v", patch, err)
+	}
+}
+
+func TestSanitizationPreservesExactReplayPatchAndExcludesItFromEvidence(t *testing.T) {
+	model, effort, err := ParseModelSelection(modelGrok45 + ":low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ExecutionRequest{
+		RepoRoot: t.TempDir(), EvidenceDir: t.TempDir(), EventID: "event", Attempt: 1,
+		Task: "example-task", TaskChecksum: "task-checksum", Model: model, Effort: effort, Arm: ArmBaseline,
+	}
+	stage := retainedGrokStageFixture(t, request)
+	evidencePatch := filepath.Join(stage, "jobs", "one", "artifacts", "model.patch")
+	exact := []byte("diff --git a/notes.txt b/notes.txt\n+checkout lives at " + request.RepoRoot + "\n")
+	if err := os.WriteFile(evidencePatch, exact, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for pass := 0; pass < 2; pass++ {
+		if err := sanitizePierArtifacts(request, stage); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sanitized, err := os.ReadFile(evidencePatch) // #nosec G304 -- test-owned stage.
+	if err != nil || bytes.Contains(sanitized, []byte(request.RepoRoot)) {
+		t.Fatalf("evidence patch copy was not sanitized: %v", err)
+	}
+	preserved := filepath.Join(stage, replayInputDir, "model.patch")
+	if data, err := os.ReadFile(preserved); err != nil || !bytes.Equal(data, exact) { // #nosec G304 -- test-owned stage.
+		t.Fatalf("exact replay patch was altered or missing after repeated sanitization: %v", err)
+	}
+	if patch, _, _, err := retainedProviderEvidence(stage, request); err != nil || patch != preserved {
+		t.Fatalf("replay input = %q, want exact copy %q: %v", patch, preserved, err)
+	}
+	if err := promoteSanitizedPierArtifacts(request, stage); err != nil {
+		t.Fatal(err)
+	}
+	destination, err := artifactDestination(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(destination, replayInputDir)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unsanitized replay input was promoted into study evidence: %v", err)
 	}
 }
 
@@ -181,6 +227,49 @@ func TestMergeRetainedProviderEvidenceKeepsOriginalAgentAndReplayVerifier(t *tes
 	}
 }
 
+func TestMergeRetainedProviderEvidenceFillsMissingFinishTimeFromReplay(t *testing.T) {
+	model, effort, err := ParseModelSelection(modelGrok45 + ":low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ExecutionRequest{Task: "example-task", TaskChecksum: "task-checksum", Model: model, Effort: effort, Arm: ArmBaseline}
+	originalStage := retainedGrokStageFixture(t, request)
+	originalResultPath, err := findPierResultPath(originalStage, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var originalDocument map[string]json.RawMessage
+	data, err := os.ReadFile(originalResultPath) // #nosec G304 -- path is beneath a test-owned temporary directory.
+	if err != nil || json.Unmarshal(data, &originalDocument) != nil {
+		t.Fatalf("read original result: %v", err)
+	}
+	delete(originalDocument, "finished_at")
+	data, _ = json.Marshal(originalDocument)
+	if err := os.WriteFile(originalResultPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	patch, agent, original, err := retainedProviderEvidence(originalStage, request)
+	if err != nil || original == nil || !original.FinishedAt.IsZero() {
+		t.Fatalf("retained evidence = %#v, %v", original, err)
+	}
+	replayStage := writePierStage(t, request.TaskChecksum, .8, 0)
+	replay, err := readPierTaskResult(replayStage, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := pierExecutionCheckpoint{StartedAt: original.StartedAt, ProviderCompletedAt: original.StartedAt.Add(time.Second)}
+	if err := mergeRetainedProviderEvidence(replayStage, originalStage, agent, patch, original, checkpoint, request); err != nil {
+		t.Fatal(err)
+	}
+	merged, err := readPierTaskResult(replayStage, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !merged.StartedAt.Equal(original.StartedAt) || !merged.FinishedAt.Equal(replay.FinishedAt) {
+		t.Fatalf("merged timing = started %s finished %s; want original start %s and replay finish %s", merged.StartedAt, merged.FinishedAt, original.StartedAt, replay.FinishedAt)
+	}
+}
+
 func TestFindPierResultPathIgnoresAggregateJobResult(t *testing.T) {
 	request := ExecutionRequest{Task: "example-task", TaskChecksum: "task-checksum"}
 	stage := writePierStage(t, request.TaskChecksum, .5, 0)
@@ -219,24 +308,5 @@ func TestVerifierReplayProvenanceIsRecordedOnCanonicalReceipt(t *testing.T) {
 	}
 	if !receipt.VerifierReplayed {
 		t.Fatalf("verifier replay provenance omitted: %#v", receipt)
-	}
-}
-
-func TestFailedVerifierReplayProvenanceIsRecordedOnCanonicalReceipt(t *testing.T) {
-	request := recoveryRequestFixture(t)
-	request.verifierReplay = true
-	if err := writePierExecutionReceipt(request, errors.New("VerifierTimeoutError"), nil); err != nil {
-		t.Fatal(err)
-	}
-	destination, err := artifactDestination(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var receipt pierExecutionReceipt
-	if err := readStudyJSON(filepath.Join(destination, "execution-receipt.json"), &receipt); err != nil {
-		t.Fatal(err)
-	}
-	if receipt.Succeeded || !receipt.VerifierReplayed || !receipt.CleanupSucceeded {
-		t.Fatalf("failed verifier replay receipt = %#v", receipt)
 	}
 }

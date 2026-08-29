@@ -477,26 +477,16 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (resu
 	}
 	progressStop := make(chan struct{})
 	progressDone := make(chan struct{})
-	providerCompleteErr := make(chan error, 1)
 	go func() {
 		defer close(progressDone)
 		watchPierExecutionProgress(stage, timeouts, request.OnProgress, func(completedAt time.Time) {
 			if request.PreflightOnly {
 				return
 			}
-			_, agentDir, original, err := retainedProviderEvidence(stage, request)
-			if err == nil && cleanProviderCompletion(agentDir, original) {
-				if provider, providerErr := readProviderCheckpoint(agentDir); providerErr == nil && !provider.CompletedAt.IsZero() {
-					completedAt = provider.CompletedAt
-				}
-				err = markPierProviderCompleted(request, completedAt)
-			}
-			if err != nil {
-				select {
-				case providerCompleteErr <- err:
-				default:
-				}
-			}
+			// Advisory early mark. Pier may still be writing model.patch or
+			// result.json, so incomplete evidence here is expected and proves
+			// nothing; the authoritative validation runs after Pier exits.
+			_ = markPersistedProviderCompletion(stage, request, completedAt)
 		}, progressStop)
 	}()
 	paidExecutionStarted = !request.PreflightOnly
@@ -505,21 +495,8 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (resu
 	close(progressStop)
 	<-progressDone
 	var durableProviderErr error
-	select {
-	case err := <-providerCompleteErr:
-		durableProviderErr = err
-	default:
-	}
 	if !request.PreflightOnly {
-		if _, agentDir, original, evidenceErr := retainedProviderEvidence(stage, request); evidenceErr == nil && cleanProviderCompletion(agentDir, original) {
-			completedAt := time.Now().UTC()
-			if provider, providerErr := readProviderCheckpoint(agentDir); providerErr == nil && !provider.CompletedAt.IsZero() {
-				completedAt = provider.CompletedAt
-			}
-			if err := markPierProviderCompleted(request, completedAt); err != nil {
-				durableProviderErr = errors.Join(durableProviderErr, err)
-			}
-		}
+		durableProviderErr = provePersistedProviderCompletion(stage, request, time.Now().UTC())
 	}
 	var removeCredentialErr error
 	if request.antigravityCredentialsPath != "" {
@@ -549,13 +526,55 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (resu
 		}
 		return AttemptResult{}, nil
 	}
+	result, durableExecution, returnErr = finalizePierExecution(request, stage, commandErr, cleanupErr)
+	return result, returnErr
+}
+
+// provePersistedProviderCompletion is the authoritative post-run mark. The
+// adapter's completion checkpoint alone proves the paid call finished, so it is
+// honored even when the rest of the evidence is incomplete (an interrupted
+// patch export, an unreadable cost stream): such an event must be retained
+// for operator review rather than recorded as a failed receipt that a later
+// invocation would resume at provider expense. Locating or reading that
+// checkpoint is itself authoritative, so its errors are surfaced.
+func provePersistedProviderCompletion(stage string, request ExecutionRequest, completedAt time.Time) error {
+	provider, found, err := locateProviderCheckpoint(stage)
+	if err != nil {
+		return err
+	}
+	if found {
+		return markPierProviderCompleted(request, provider.CompletedAt)
+	}
+	return markPersistedProviderCompletion(stage, request, completedAt)
+}
+
+// markPersistedProviderCompletion is the advisory mark used while Pier is still
+// running: it records ProviderCompletedAt only once the full retained evidence
+// proves a clean provider completion. Incomplete or unreadable evidence is not
+// an error here because Pier may still be writing it.
+func markPersistedProviderCompletion(stage string, request ExecutionRequest, completedAt time.Time) error {
+	if _, agentDir, original, evidenceErr := retainedProviderEvidence(stage, request); evidenceErr == nil && cleanProviderCompletion(agentDir, original) {
+		if provider, providerErr := readProviderCheckpoint(agentDir); providerErr == nil && !provider.CompletedAt.IsZero() {
+			completedAt = provider.CompletedAt
+		}
+		return markPierProviderCompleted(request, completedAt)
+	}
+	return nil
+}
+
+// finalizePierExecution promotes sanitized evidence for a finished paid Pier
+// run and records its immutable receipt. The returned flag reports whether the
+// event reached a receipt; when it is false the caller must retain the staging
+// directory because the checkpoint still references it for verifier replay.
+func finalizePierExecution(request ExecutionRequest, stage string, commandErr, cleanupErr error) (AttemptResult, bool, error) {
 	if err := promoteSanitizedPierArtifacts(request, stage); err != nil {
-		return AttemptResult{}, err
+		return AttemptResult{}, false, err
 	}
 	artifactRoot, err := artifactDestination(request)
 	if err != nil {
-		return AttemptResult{}, err
+		return AttemptResult{}, false, err
 	}
+	durable := false
 	recordDurableExecution := func(executionErr error) error {
 		if err := writePierExecutionReceipt(request, executionErr, cleanupErr); err != nil {
 			return err
@@ -563,65 +582,71 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (resu
 		if err := removePierExecutionCheckpoint(request); err != nil {
 			return err
 		}
-		durableExecution = true
+		durable = true
 		return nil
 	}
 	if commandErr != nil {
 		if retained, retainedErr := retainPersistedProviderFailure(request, commandErr, cleanupErr); retained {
-			return AttemptResult{}, retainedErr
+			return AttemptResult{}, false, retainedErr
 		}
 		capacity, err := hasProviderCapacityEvidence(artifactRoot)
 		if err != nil {
-			return AttemptResult{}, fmt.Errorf("inspect provider failure evidence: %w", err)
+			return AttemptResult{}, false, fmt.Errorf("inspect provider failure evidence: %w", err)
 		}
 		if capacity {
 			// The provider was invoked, so its failed event must remain in the
 			// immutable receipt chain. A later benchmark invocation can resume
 			// it explicitly; this invocation must not silently retry it.
 			if err := recordDurableExecution(commandErr); err != nil {
-				return AttemptResult{}, err
+				return AttemptResult{}, durable, err
 			}
 			if cleanupErr != nil {
-				return AttemptResult{}, fmt.Errorf("%w: %s; cleanup: %v", errProviderCapacity, providerCapacityMessage, cleanupErr)
+				return AttemptResult{}, true, fmt.Errorf("%w: %s; cleanup: %v", errProviderCapacity, providerCapacityMessage, cleanupErr)
 			}
-			return AttemptResult{}, fmt.Errorf("%w: %s", errProviderCapacity, providerCapacityMessage)
+			return AttemptResult{}, true, fmt.Errorf("%w: %s", errProviderCapacity, providerCapacityMessage)
 		}
 		if err := recordDurableExecution(commandErr); err != nil {
-			return AttemptResult{}, err
+			return AttemptResult{}, durable, err
 		}
-		return AttemptResult{}, fmt.Errorf("pier task execution failed: %w", errors.Join(commandErr, cleanupErr))
+		return AttemptResult{}, true, fmt.Errorf("pier task execution failed: %w", errors.Join(commandErr, cleanupErr))
 	}
 	if cleanupErr != nil {
 		if err := recordDurableExecution(nil); err != nil {
-			return AttemptResult{}, err
+			return AttemptResult{}, durable, err
 		}
-		return AttemptResult{}, fmt.Errorf("clean Pier task environment: %w", cleanupErr)
+		return AttemptResult{}, true, fmt.Errorf("clean Pier task environment: %w", cleanupErr)
 	}
-	var normalizeErr error
-	result, normalizeErr = normalizePier(artifactRoot, request)
-	if normalizeErr != nil {
-		return AttemptResult{}, normalizeErr
+	result, err := normalizePier(artifactRoot, request)
+	if err != nil {
+		return AttemptResult{}, false, err
 	}
 	if result.Status != statusSuccess {
 		verifierErr := fmt.Errorf("pier verifier did not complete successfully: %s", result.Error)
-		if err := recordDurableExecution(verifierErr); err != nil {
-			return AttemptResult{}, err
+		// After a proven provider completion the event stays replayable. A
+		// failed receipt would instead be resumed by the next invocation at
+		// provider expense, which the durable checkpoint exists to prevent.
+		if retained, retainedErr := retainPersistedProviderFailure(request, verifierErr, cleanupErr); retained {
+			return AttemptResult{}, false, retainedErr
 		}
-		return AttemptResult{}, verifierErr
+		if err := recordDurableExecution(verifierErr); err != nil {
+			return AttemptResult{}, durable, err
+		}
+		return AttemptResult{}, true, verifierErr
 	}
 	if err := recordDurableExecution(nil); err != nil {
-		return AttemptResult{}, err
+		return AttemptResult{}, durable, err
 	}
-	return result, nil
+	return result, true, nil
 }
 
-// retainPersistedProviderFailure keeps the paid provider event replayable even
-// when Pier's incomplete result cannot yet be classified. ProviderCompletedAt
-// is written only after the adapter completion checkpoint, patch, and provider
-// cost stream have all been validated, so re-validating a concurrently written
-// result here must not be allowed to demote the event into an ordinary failed
-// receipt and delete its staging tree.
-func retainPersistedProviderFailure(request ExecutionRequest, commandErr, cleanupErr error) (bool, error) {
+// retainPersistedProviderFailure keeps the paid provider event replayable once
+// ProviderCompletedAt proves a clean provider completion, whether Pier was
+// interrupted or its verifier finished unsuccessfully. ProviderCompletedAt is
+// written only after the adapter completion checkpoint, patch, and provider
+// cost stream have all been validated, so a later failure must not demote the
+// event into an ordinary failed receipt, which a subsequent invocation would
+// resume at provider expense, nor delete its staging tree.
+func retainPersistedProviderFailure(request ExecutionRequest, failure, cleanupErr error) (bool, error) {
 	checkpoint, found, err := matchingPierExecutionCheckpoint(request)
 	if err != nil {
 		return true, err
@@ -630,8 +655,8 @@ func retainPersistedProviderFailure(request ExecutionRequest, commandErr, cleanu
 		return false, nil
 	}
 	return true, fmt.Errorf(
-		"pier verifier execution stopped after provider output was persisted: %w; retained staging directory: %s",
-		errors.Join(commandErr, cleanupErr), checkpoint.StagePath,
+		"provider output for Pier event %s is persisted and its verifier did not succeed; the next identical run may replay only the verifier and never makes another provider call: %w; retained staging directory: %s",
+		checkpoint.EventID, errors.Join(failure, cleanupErr), checkpoint.StagePath,
 	)
 }
 
@@ -752,7 +777,7 @@ func cleanupPierDockerResources(stage string, request ExecutionRequest) error {
 					repairOutput, repairErr = runBenchmarkDockerCommand(ctx, "exec", "--user", "0", id, "chown", "-R", owner, "/logs")
 				} else {
 					repairOutput, repairErr = runBenchmarkDockerCommand(
-						ctx, "run", "--rm", "--network", "none", "--volumes-from", id,
+						ctx, "run", "--rm", "--network", "none", "--user", "0", "--volumes-from", id,
 						"--entrypoint", "chown", fields[1], "-R", owner, "/logs",
 					)
 				}

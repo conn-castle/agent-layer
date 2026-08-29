@@ -16,6 +16,7 @@ const (
 	executionPhaseProvider    = "provider"
 	executionPhaseVerifier    = "verifier"
 	benchmarkArtifactsDir     = "artifacts"
+	benchmarkAgentDir         = "agent"
 	benchmarkModelPatchFile   = "model.patch"
 )
 
@@ -84,7 +85,7 @@ func detectPierExecutionPhase(stage string) (string, error) {
 			phase = executionPhaseVerifier
 			return fs.SkipAll
 		}
-		if filepath.Base(filepath.Dir(path)) == "agent" && phase == executionPhaseEnvironment {
+		if filepath.Base(filepath.Dir(path)) == benchmarkAgentDir && phase == executionPhaseEnvironment {
 			phase = executionPhaseProvider
 		}
 		return nil

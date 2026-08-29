@@ -1,7 +1,9 @@
 package benchmark
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -318,7 +320,7 @@ func TestPostProviderFailureRetainsCheckpointAndStageForVerifierReplay(t *testin
 	}
 
 	retained, err := retainPersistedProviderFailure(request, errors.New("signal: interrupt"), nil)
-	if !retained || err == nil || !strings.Contains(err.Error(), "provider output was persisted") ||
+	if !retained || err == nil || !strings.Contains(err.Error(), "is persisted and its verifier did not succeed") ||
 		!strings.Contains(err.Error(), stage) {
 		t.Fatalf("post-provider failure classification = retained=%t err=%v", retained, err)
 	}
@@ -333,6 +335,209 @@ func TestPostProviderFailureRetainsCheckpointAndStageForVerifierReplay(t *testin
 	}
 	if _, statErr := os.Stat(filepath.Join(destination, "execution-receipt.json")); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("post-provider cancellation was finalized as an ordinary receipt: %v", statErr)
+	}
+}
+
+// retainedVerifierFailureFixture stages one finished Grok Pier run whose
+// result carries the given Pier exception and writes its execution checkpoint,
+// mirroring the state Execute reaches after Pier exits.
+func retainedVerifierFailureFixture(t *testing.T, exceptionType string) (ExecutionRequest, string) {
+	t.Helper()
+	model, effort, err := ParseModelSelection(modelGrok45 + ":low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ExecutionRequest{
+		RepoRoot: t.TempDir(), EvidenceDir: t.TempDir(), EventID: "paid-event",
+		Attempt: 1, Task: "example-task", Model: model, Effort: effort, Arm: ArmBaseline,
+		TaskChecksum: strings.Repeat("c", 64), EnvironmentIdentity: strings.Repeat("e", 64),
+		executionCheckpointed: true,
+	}
+	stageRoot := filepath.Join(request.RepoRoot, ".agent-layer", "tmp")
+	if err := os.MkdirAll(stageRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stage, err := os.MkdirTemp(stageRoot, "benchmark-"+request.EventID+"-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := copyRequiredTree(retainedGrokStageFixture(t, request), stage); err != nil {
+		t.Fatal(err)
+	}
+	resultPath := filepath.Join(stage, "jobs", "one", "result.json")
+	var result map[string]any
+	if err := readStudyJSON(resultPath, &result); err != nil {
+		t.Fatal(err)
+	}
+	result["verifier_result"] = nil
+	result["exception_info"] = map[string]any{"exception_type": exceptionType}
+	if verifierFailureType(exceptionType) {
+		started := time.Now().UTC().Add(-time.Minute)
+		result["verifier"] = map[string]any{"started_at": started, "finished_at": started.Add(30 * time.Second)}
+	}
+	if err := writeJSON(resultPath, result); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePierExecutionCheckpoint(request, stage); err != nil {
+		t.Fatal(err)
+	}
+	return request, stage
+}
+
+func TestVerifierFailureAfterProviderCompletionIsRetainedAndNeverRetriedAtProviderExpense(t *testing.T) {
+	request, stage := retainedVerifierFailureFixture(t, "VerifierTimeoutError")
+	exact, err := os.ReadFile(filepath.Join(stage, "jobs", "one", "artifacts", "model.patch")) // #nosec G304 -- test-owned stage.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := provePersistedProviderCompletion(stage, request, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pier exited cleanly but its verifier timed out. The paid event must stay
+	// replayable rather than becoming a failed receipt.
+	_, durable, err := finalizePierExecution(request, stage, nil, nil)
+	if durable || err == nil || !strings.Contains(err.Error(), "never makes another provider call") || !strings.Contains(err.Error(), stage) {
+		t.Fatalf("verifier failure finalization = durable=%t err=%v", durable, err)
+	}
+	destination, err := artifactDestination(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(destination, "execution-receipt.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("verifier failure was finalized as a receipt: %v", err)
+	}
+	checkpoint, found, err := matchingPierExecutionCheckpoint(request)
+	if err != nil || !found || checkpoint.ProviderCompletedAt.IsZero() || checkpoint.ArtifactsSanitizedAt.IsZero() {
+		t.Fatalf("retained checkpoint = %#v found=%t err=%v", checkpoint, found, err)
+	}
+	if preserved, err := os.ReadFile(filepath.Join(stage, replayInputDir, benchmarkModelPatchFile)); err != nil || !bytes.Equal(preserved, exact) { // #nosec G304 -- test-owned stage.
+		t.Fatalf("exact replay patch was not preserved: %v", err)
+	}
+
+	// A later invocation of the same cell, which the scheduler always marks as
+	// allowed to resume failed infrastructure, must route to verifier-only
+	// replay and never start a new paid Pier run.
+	installDockerCleanupStub(t, func(context.Context, ...string) ([]byte, error) { return nil, nil })
+	originalCheckout := ensurePinnedBenchmarkCheckout
+	ensurePinnedBenchmarkCheckout = func(context.Context, string) (string, error) { return t.TempDir(), nil }
+	t.Cleanup(func() { ensurePinnedBenchmarkCheckout = originalCheckout })
+	retry := request
+	retry.EventID = "would-have-called-provider"
+	retry.ResumeFailedInfrastructure = true
+	retry.executionCheckpointed = false
+	_, err = (PierExecutor{}).Execute(context.Background(), retry)
+	if err == nil || !strings.Contains(err.Error(), "retained verifier replay staging directory") {
+		t.Fatalf("subsequent invocation did not take the verifier-only replay path: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(request.RepoRoot, ".agent-layer", "tmp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "benchmark-"+retry.EventID+"-") {
+			t.Fatalf("subsequent invocation staged a new paid Pier run: %s", entry.Name())
+		}
+	}
+	if _, err := os.Stat(stage); err != nil {
+		t.Fatalf("retained provider stage was removed: %v", err)
+	}
+	if checkpoint, found, err := matchingPierExecutionCheckpoint(retry); err != nil || !found || checkpoint.EventID != request.EventID {
+		t.Fatalf("checkpoint after failed replay = %#v found=%t err=%v", checkpoint, found, err)
+	}
+	if failed, err := failedPierExecutionIDs(retry); err != nil || len(failed) != 0 {
+		t.Fatalf("verifier failure became a resumable failed event: %#v, %v", failed, err)
+	}
+}
+
+func TestProviderCheckpointAloneRetainsAnEventInterruptedBeforePatchExport(t *testing.T) {
+	// Cancellation landed after the adapter recorded provider completion but
+	// before Pier exported model.patch: the paid call finished, yet no other
+	// evidence validates.
+	request, stage := retainedVerifierFailureFixture(t, "CancelledError")
+	completedAt := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
+	agentDir := filepath.Join(stage, "jobs", "one", "agent")
+	provider, _ := json.Marshal(map[string]any{
+		"schema": providerCheckpointSchema, "completed_at": completedAt,
+		"agent_result": map[string]any{"cost_usd": nil},
+	})
+	if err := os.WriteFile(filepath.Join(agentDir, providerCheckpointFile), provider, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(stage, "jobs", "one", benchmarkArtifactsDir)); err != nil {
+		t.Fatal(err)
+	}
+
+	// The in-run watcher is advisory: incomplete evidence proves nothing yet.
+	if err := markPersistedProviderCompletion(stage, request, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint, found, err := matchingPierExecutionCheckpoint(request); err != nil || !found || !checkpoint.ProviderCompletedAt.IsZero() {
+		t.Fatalf("advisory watcher marked completion from incomplete evidence: %#v found=%t err=%v", checkpoint, found, err)
+	}
+	// The post-Wait proof honors the adapter checkpoint on its own.
+	if err := provePersistedProviderCompletion(stage, request, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint, found, err := matchingPierExecutionCheckpoint(request); err != nil || !found || !checkpoint.ProviderCompletedAt.Equal(completedAt) {
+		t.Fatalf("authoritative proof ignored the provider checkpoint: %#v found=%t err=%v", checkpoint, found, err)
+	}
+
+	_, durable, err := finalizePierExecution(request, stage, errors.New("signal: interrupt"), nil)
+	if durable || err == nil || !strings.Contains(err.Error(), "is persisted and its verifier did not succeed") {
+		t.Fatalf("interrupted post-provider event was not retained: durable=%t err=%v", durable, err)
+	}
+	destination, err := artifactDestination(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(destination, "execution-receipt.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("completed provider call was recorded as a resumable failed receipt: %v", err)
+	}
+
+	// Without a patch the cell cannot be replayed, and it must still never be
+	// retried at provider expense: a later invocation fails closed.
+	retry := request
+	retry.EventID = "would-have-called-provider"
+	retry.ResumeFailedInfrastructure = true
+	retry.executionCheckpointed = false
+	if _, err := (PierExecutor{}).Execute(context.Background(), retry); err == nil ||
+		!strings.Contains(err.Error(), "validate retained provider evidence") || !strings.Contains(err.Error(), stage) {
+		t.Fatalf("subsequent invocation did not fail closed: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(request.RepoRoot, ".agent-layer", "tmp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "benchmark-"+retry.EventID+"-") {
+			t.Fatalf("subsequent invocation staged a new paid Pier run: %s", entry.Name())
+		}
+	}
+	if failed, err := failedPierExecutionIDs(retry); err != nil || len(failed) != 0 {
+		t.Fatalf("completed provider call became a resumable failed event: %#v, %v", failed, err)
+	}
+}
+
+func TestAgentPhaseFailureStillRecordsAResumableFailedReceipt(t *testing.T) {
+	request, stage := retainedVerifierFailureFixture(t, "AgentTimeoutError")
+	if err := provePersistedProviderCompletion(stage, request, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	_, durable, err := finalizePierExecution(request, stage, nil, nil)
+	if !durable || err == nil || !strings.Contains(err.Error(), "pier verifier did not complete successfully") {
+		t.Fatalf("agent-phase failure finalization = durable=%t err=%v", durable, err)
+	}
+	destination, err := artifactDestination(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt pierExecutionReceipt
+	if err := readStudyJSON(filepath.Join(destination, "execution-receipt.json"), &receipt); err != nil || receipt.Succeeded {
+		t.Fatalf("agent-phase failure receipt = %#v, %v", receipt, err)
+	}
+	if _, found, err := matchingPierExecutionCheckpoint(request); err != nil || found {
+		t.Fatalf("agent-phase failure left a replay checkpoint: found=%t err=%v", found, err)
 	}
 }
 

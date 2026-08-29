@@ -1213,6 +1213,11 @@ class AgentLayerPatchReplay(BaseAgent):
         pass
 
     async def run(self, instruction, environment, context) -> None:
+        if self._replay_patch.stat().st_size == 0:
+            # The provider completed without committing changes. Pier's
+            # pre-artifacts export yields the same empty patch, and git
+            # rejects empty input, so the verifier runs on the base tree.
+            return
         remote_patch = "/tmp/agent-layer-provider.patch"
         await environment.upload_file(self._replay_patch, remote_patch)
         result = await environment.exec(

@@ -18,6 +18,8 @@ const (
 	providerCheckpointFile   = "provider-checkpoint.json"
 	providerCheckpointSchema = "agent-layer-provider-checkpoint-v1"
 	modelInfoJSONKey         = "model_info"
+	resultStartedAtKey       = "started_at"
+	resultFinishedAtKey      = "finished_at"
 )
 
 type providerCheckpoint struct {
@@ -55,6 +57,9 @@ func (PierExecutor) replayVerifier(ctx context.Context, request ExecutionRequest
 	patch, agentDir, original, err := retainedProviderEvidence(checkpoint.StagePath, request)
 	if err != nil {
 		return AttemptResult{}, fmt.Errorf("validate retained provider evidence at %s: %w", checkpoint.StagePath, err)
+	}
+	if !checkpoint.ArtifactsSanitizedAt.IsZero() && filepath.Dir(patch) != filepath.Join(checkpoint.StagePath, replayInputDir) {
+		return AttemptResult{}, fmt.Errorf("retained Pier stage %s was sanitized without preserving the exact provider patch; refusing both replay and a paid retry", checkpoint.StagePath)
 	}
 	if err := cleanupPierDockerResources(checkpoint.StagePath, request); err != nil {
 		return AttemptResult{}, fmt.Errorf("clean retained Pier execution before verifier replay: %w", err)
@@ -173,20 +178,23 @@ func (PierExecutor) replayVerifier(ctx context.Context, request ExecutionRequest
 	if err != nil {
 		return AttemptResult{}, retainedReplayError(replayStage, err)
 	}
-	var verifierErr error
 	if result.Status != statusSuccess {
-		verifierErr = fmt.Errorf("verifier replay did not complete successfully: %s", result.Error)
+		// The checkpoint, the exact provider stage, and this replay stage all
+		// remain: the event is still verifier-only replayable and never
+		// becomes a failed receipt that a later invocation would resume at
+		// provider expense.
+		return AttemptResult{}, retainedReplayError(replayStage, fmt.Errorf(
+			"verifier replay did not complete successfully: %s; retained provider staging directory: %s",
+			result.Error, checkpoint.StagePath,
+		))
 	}
-	if err := writePierExecutionReceipt(request, verifierErr, nil); err != nil {
+	if err := writePierExecutionReceipt(request, nil, nil); err != nil {
 		return AttemptResult{}, retainedReplayError(replayStage, err)
 	}
 	if err := removePierExecutionCheckpoint(request); err != nil {
 		return AttemptResult{}, retainedReplayError(replayStage, err)
 	}
 	replaySucceeded = true
-	if verifierErr != nil {
-		return AttemptResult{}, verifierErr
-	}
 	return result, nil
 }
 
@@ -266,7 +274,7 @@ func retainedProviderEvidence(stage string, request ExecutionRequest) (patch, ag
 				return fmt.Errorf("retained execution has multiple model.patch files")
 			}
 			patch = path
-			agentDir = filepath.Join(filepath.Dir(filepath.Dir(path)), "agent")
+			agentDir = filepath.Join(filepath.Dir(filepath.Dir(path)), benchmarkAgentDir)
 		}
 		return nil
 	})
@@ -276,10 +284,18 @@ func retainedProviderEvidence(stage string, request ExecutionRequest) (patch, ag
 	if patch == "" {
 		return "", "", nil, fmt.Errorf("retained execution has no submitted model.patch")
 	}
-	if info, err := os.Stat(patch); err != nil || !info.Mode().IsRegular() {
-		return "", "", nil, fmt.Errorf("inspect retained model.patch: %w", err)
-	} else if info.Size() == 0 {
-		return "", "", nil, fmt.Errorf("retained execution has an empty model.patch")
+	// Prefer the byte-exact copy preserved before sanitization; the evidence
+	// copy may have had paths or credential bytes rewritten. An empty patch is
+	// valid provider output: the agent completed without committing changes.
+	if preserved := filepath.Join(stage, replayInputDir, benchmarkModelPatchFile); fileExists(preserved) {
+		patch = preserved
+	}
+	info, statErr := os.Stat(patch)
+	if statErr != nil {
+		return "", "", nil, fmt.Errorf("inspect retained model.patch: %w", statErr)
+	}
+	if !info.Mode().IsRegular() {
+		return "", "", nil, fmt.Errorf("retained model.patch %s is not a regular file", patch)
 	}
 	if raw, err := readPierTaskResult(stage, request); err == nil {
 		original = &raw
@@ -317,6 +333,42 @@ func validateRetainedProviderCost(stage, agentDir string, request ExecutionReque
 	}
 }
 
+// locateProviderCheckpoint finds the adapter's completion checkpoint beneath
+// the stage without depending on any other evidence. Exactly one trial runs
+// per stage, so more than one checkpoint is an attribution failure.
+func locateProviderCheckpoint(stage string) (providerCheckpoint, bool, error) {
+	var agentDirs []string
+	err := filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if errors.Is(walkErr, os.ErrNotExist) {
+				return nil
+			}
+			return walkErr
+		}
+		if !entry.IsDir() && entry.Name() == providerCheckpointFile && filepath.Base(filepath.Dir(path)) == benchmarkAgentDir {
+			agentDirs = append(agentDirs, filepath.Dir(path))
+		}
+		return nil
+	})
+	if err != nil {
+		return providerCheckpoint{}, false, fmt.Errorf("locate provider completion checkpoint: %w", err)
+	}
+	if len(agentDirs) == 0 {
+		return providerCheckpoint{}, false, nil
+	}
+	if len(agentDirs) > 1 {
+		return providerCheckpoint{}, false, fmt.Errorf("retained execution has %d provider completion checkpoints; expected one", len(agentDirs))
+	}
+	checkpoint, err := readProviderCheckpoint(agentDirs[0])
+	if err != nil {
+		return providerCheckpoint{}, false, fmt.Errorf("read provider completion checkpoint: %w", err)
+	}
+	if checkpoint.CompletedAt.IsZero() {
+		return providerCheckpoint{}, false, fmt.Errorf("provider completion checkpoint %s has no completion time", filepath.Join(agentDirs[0], providerCheckpointFile))
+	}
+	return checkpoint, true, nil
+}
+
 func readProviderCheckpoint(agentDir string) (providerCheckpoint, error) {
 	var checkpoint providerCheckpoint
 	if err := readStudyJSON(filepath.Join(agentDir, providerCheckpointFile), &checkpoint); err != nil {
@@ -344,7 +396,7 @@ func mergeRetainedProviderEvidence(replayStage, sourceStage, sourceAgent, source
 	if err != nil {
 		return fmt.Errorf("locate verifier replay result: %w", err)
 	}
-	replayAgent := filepath.Join(filepath.Dir(resultPath), "agent")
+	replayAgent := filepath.Join(filepath.Dir(resultPath), benchmarkAgentDir)
 	replayPatch := filepath.Join(filepath.Dir(resultPath), benchmarkArtifactsDir, benchmarkModelPatchFile)
 	sourcePatchData, err := os.ReadFile(sourcePatch) // #nosec G304 -- path was discovered beneath the confined retained stage.
 	if err != nil {
@@ -382,6 +434,15 @@ func mergeRetainedProviderEvidence(replayStage, sourceStage, sourceAgent, source
 		for _, key := range []string{"verifier_result", "verifier", "exception_info"} {
 			merged[key] = replayDocument[key]
 		}
+		// Pier finalizes started_at/finished_at when it writes result.json, but
+		// a retained result missing either would otherwise be normalized into
+		// evidence that fails validation. Only the replay can supply them.
+		for _, key := range []string{resultStartedAtKey, resultFinishedAtKey} {
+			var stamp time.Time
+			if raw, ok := merged[key]; !ok || json.Unmarshal(raw, &stamp) != nil || stamp.IsZero() {
+				merged[key] = replayDocument[key]
+			}
+		}
 	} else {
 		providerInfo, _ := json.Marshal(map[string]any{modelInfoJSONKey: map[string]any{executionPhaseProvider: request.Model.Adapter}})
 		merged["agent_info"] = providerInfo
@@ -389,12 +450,12 @@ func mergeRetainedProviderEvidence(replayStage, sourceStage, sourceAgent, source
 			agentResult, _ := json.Marshal(provider.AgentResult)
 			merged["agent_result"] = agentResult
 		}
-		merged["started_at"], _ = json.Marshal(checkpoint.StartedAt)
-		merged["finished_at"], _ = json.Marshal(checkpoint.ProviderCompletedAt)
+		merged[resultStartedAtKey], _ = json.Marshal(checkpoint.StartedAt)
+		merged[resultFinishedAtKey], _ = json.Marshal(checkpoint.ProviderCompletedAt)
 	}
 	provenance, _ := json.Marshal(map[string]any{
 		"replayed": true, "provider_completed_at": checkpoint.ProviderCompletedAt,
-		"replay_started_at": replayDocument["started_at"], "replay_finished_at": replayDocument["finished_at"],
+		"replay_started_at": replayDocument[resultStartedAtKey], "replay_finished_at": replayDocument[resultFinishedAtKey],
 	})
 	merged["agent_layer_verifier_replay"] = provenance
 	data, err := json.Marshal(merged)
@@ -443,10 +504,18 @@ func findPierResultPath(stage string, request ExecutionRequest) (string, error) 
 		}
 		return nil
 	})
-	if err != nil || len(paths) != 1 {
-		return "", fmt.Errorf("locate retained Pier result for %s: found %d: %w", request.Task, len(paths), err)
+	if err != nil {
+		return "", fmt.Errorf("locate retained Pier result for %s: %w", request.Task, err)
+	}
+	if len(paths) != 1 {
+		return "", fmt.Errorf("locate retained Pier result for %s: found %d matching results; expected one", request.Task, len(paths))
 	}
 	return paths[0], nil
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 func stageEmbeddedPierAdapter(stage string) (string, error) {

@@ -17,6 +17,12 @@ const pierExecutionReceiptSchema = "deepswe-pier-execution-v1"
 const pierExecutionCheckpointSchema = "deepswe-pier-execution-checkpoint-v1"
 const credentialKeyName = "key"
 
+// replayInputDir holds the byte-exact provider patch beneath a staging
+// directory. Sanitization rewrites evidence copies only; the verifier replay
+// must apply exactly what the provider produced, and this copy never leaves
+// the private stage.
+const replayInputDir = "agent-layer-replay"
+
 type pierExecutionCheckpoint struct {
 	SchemaVersion        string    `json:"schema_version"`
 	EventID              string    `json:"event_id"`
@@ -84,6 +90,9 @@ func replacePierArtifactDestination(stage, destination string) error {
 	if err := copyRequiredTree(stage, temporary); err != nil {
 		return err
 	}
+	if err := os.RemoveAll(filepath.Join(temporary, replayInputDir)); err != nil {
+		return fmt.Errorf("exclude replay input from promoted Pier artifacts: %w", err)
+	}
 	checkpointPath := filepath.Join(destination, "execution-checkpoint.json")
 	if _, err := os.Stat(checkpointPath); err == nil {
 		if err := copyRequiredFile(checkpointPath, filepath.Join(temporary, "execution-checkpoint.json")); err != nil {
@@ -121,6 +130,9 @@ func replacePierArtifactDestination(stage, destination string) error {
 }
 
 func sanitizePierArtifacts(request ExecutionRequest, stage string) error {
+	if err := preserveReplayPatch(stage); err != nil {
+		return err
+	}
 	secrets := append([][]byte(nil), request.artifactSecrets...)
 	if values, err := benchmarkCredentialValues(request.RepoRoot, request.Bundle); err != nil {
 		return err
@@ -601,12 +613,55 @@ func uniqueSecretValues(values [][]byte) [][]byte {
 	return unique
 }
 
+// preserveReplayPatch copies the submitted model.patch byte-for-byte into the
+// stage's replay input directory before any sanitization pass can rewrite it.
+// It is idempotent: the first copy is the exact provider output and is never
+// replaced. Stages without exactly one submitted patch are left untouched.
+func preserveReplayPatch(stage string) error {
+	target := filepath.Join(stage, replayInputDir, benchmarkModelPatchFile)
+	if _, err := os.Lstat(target); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect preserved replay patch: %w", err)
+	}
+	var patches []string
+	err := filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if errors.Is(walkErr, os.ErrNotExist) {
+				return nil
+			}
+			return walkErr
+		}
+		if !entry.IsDir() && entry.Type().IsRegular() && entry.Name() == benchmarkModelPatchFile &&
+			filepath.Base(filepath.Dir(path)) == benchmarkArtifactsDir {
+			patches = append(patches, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("find submitted model patch to preserve: %w", err)
+	}
+	if len(patches) != 1 {
+		return nil
+	}
+	if err := copyRequiredFile(patches[0], target); err != nil {
+		return fmt.Errorf("preserve exact replay patch: %w", err)
+	}
+	return nil
+}
+
 func sanitizeArtifacts(root string, secrets [][]byte, paths []string) error {
 	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if entry.IsDir() || !entry.Type().IsRegular() {
+		if entry.IsDir() {
+			if entry.Name() == replayInputDir && filepath.Dir(path) == root {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !entry.Type().IsRegular() {
 			return nil
 		}
 		data, err := os.ReadFile(path) // #nosec G122,G304 -- regular file discovered below the restricted attempt stage.

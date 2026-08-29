@@ -28,7 +28,10 @@ type StudyOptions struct {
 	DryRun            bool
 	ResourcePreflight bool
 	ReclaimTaskImages bool
-	OnProgress        func(StudyProgress)
+	// OnProgress receives stage and cell updates. Cell phase updates arrive
+	// from per-cell watcher goroutines, so with TaskConcurrency above one the
+	// hook may be invoked concurrently and consumers must synchronize.
+	OnProgress func(StudyProgress)
 	// OnPrepared receives validated cached/missing progress after the full
 	// runtime preflight and before any inference call.
 	OnPrepared func(StudyOutcome) error
@@ -38,7 +41,7 @@ type StudyOptions struct {
 	OnCellComplete func(ObservedCostRange)
 }
 
-// StudyProgress is a serial operator-facing stage or cell update.
+// StudyProgress is an operator-facing stage or cell update.
 type StudyProgress struct {
 	Phase, Message, Task, Experiment string
 	Completed, Required              int

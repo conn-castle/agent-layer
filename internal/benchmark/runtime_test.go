@@ -201,7 +201,7 @@ func TestLinuxCleanupRepairsStoppedContainerThroughItsPinnedImage(t *testing.T) 
 		t.Fatal(err)
 	}
 	owner := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
-	want := "run --rm --network none --volumes-from 0123456789ab --entrypoint chown " + image + " -R " + owner + " /logs"
+	want := "run --rm --network none --user 0 --volumes-from 0123456789ab --entrypoint chown " + image + " -R " + owner + " /logs"
 	joined := strings.Join(calls, "\n")
 	if !strings.Contains(joined, want+"\nrm --force 0123456789ab") {
 		t.Fatalf("stopped-container ownership repair did not precede removal: %#v", calls)
