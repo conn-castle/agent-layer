@@ -18,6 +18,20 @@ import (
 
 const estimatedTaskImageBytes int64 = 4 << 30
 
+// TaskContainerEmulationWarning describes the expensive cross-architecture
+// execution path only when the host cannot run the certified task containers
+// natively.
+func TaskContainerEmulationWarning() string {
+	return taskContainerEmulationWarning(runtime.GOARCH)
+}
+
+func taskContainerEmulationWarning(hostArchitecture string) string {
+	if hostArchitecture == benchmarkTaskContainerArchitecture {
+		return ""
+	}
+	return fmt.Sprintf("DeepSWE uses linux/%s task containers. Host architecture %s requires emulation; the first image pulls, builds, and runtime preflights can take 30+ minutes.", benchmarkTaskContainerArchitecture, hostArchitecture)
+}
+
 // AutomaticTaskConcurrency chooses a conservative worker count. DeepSWE's
 // certified amd64 containers are emulated on ARM hosts, where parallel task
 // execution is usually slower and substantially more failure-prone.

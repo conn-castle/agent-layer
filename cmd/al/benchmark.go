@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -20,11 +21,18 @@ const (
 )
 
 var (
-	runStudy                               = bench.RunStudy
-	checkReadiness                         = bench.CheckAllTaskReadiness
-	initStudy                              = bench.InitStudy
-	benchmarkHeartbeatClock benchmarkClock = wallBenchmarkClock{}
+	runStudy                                    = bench.RunStudy
+	checkReadiness                              = bench.CheckAllTaskReadiness
+	initStudy                                   = bench.InitStudy
+	benchmarkArchitectureWarning                = bench.TaskContainerEmulationWarning
+	benchmarkHeartbeatClock      benchmarkClock = wallBenchmarkClock{}
 )
+
+func printBenchmarkArchitectureWarning(out io.Writer) {
+	if warning := benchmarkArchitectureWarning(); warning != "" {
+		_, _ = fmt.Fprintf(out, "[warning] %s\n", warning)
+	}
+}
 
 type benchmarkTimer interface {
 	C() <-chan time.Time
@@ -166,6 +174,7 @@ func newBenchmarkRunCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			printBenchmarkArchitectureWarning(cmd.OutOrStdout())
 			if taskConcurrency == 0 {
 				taskConcurrency = bench.AutomaticTaskConcurrency(true)
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[setup] Automatic task concurrency: %d (host and container architecture aware).\n", taskConcurrency)
@@ -290,6 +299,7 @@ func newBenchmarkReadinessCmd() *cobra.Command {
 			if taskConcurrency > 1 && removeTaskImages && !cmd.Flags().Changed("remove-task-images") {
 				removeTaskImages = false
 			}
+			printBenchmarkArchitectureWarning(cmd.OutOrStdout())
 			if taskConcurrency == 0 {
 				if removeTaskImages {
 					taskConcurrency = 1

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -26,6 +27,16 @@ func TestReadinessDiskPreflightRefusesImpossiblePlanBeforePulls(t *testing.T) {
 	readinessDiskCapacity = func(context.Context) (int64, error) { return 5 << 30, nil }
 	if err := preflightReadinessDisk(context.Background(), tasks, false); err != nil {
 		t.Fatalf("bounded plan rejected: %v", err)
+	}
+}
+
+func TestTaskContainerEmulationWarningOnlyForNonAMD64Hosts(t *testing.T) {
+	if got := taskContainerEmulationWarning("amd64"); got != "" {
+		t.Fatalf("native amd64 warning = %q", got)
+	}
+	got := taskContainerEmulationWarning("arm64")
+	if !strings.Contains(got, "linux/amd64") || !strings.Contains(got, "Host architecture arm64 requires emulation") || !strings.Contains(got, "30+ minutes") {
+		t.Fatalf("arm64 emulation warning = %q", got)
 	}
 }
 
@@ -162,15 +173,57 @@ func TestStudyTreatmentPreflightReclaimsImagesEvenOnFailure(t *testing.T) {
 		return nil
 	}
 	completed := 0
+	evidenceDir := t.TempDir()
 	err := preflightStudyTaskRuntimes(context.Background(), "task", []studyRuntimePreflight{
-		{experiment: "first", request: ExecutionRequest{Arm: "first"}},
-		{experiment: "second", request: ExecutionRequest{Arm: "second"}},
+		{experiment: "first", request: ExecutionRequest{EvidenceDir: evidenceDir, Arm: "first"}},
+		{experiment: "second", request: ExecutionRequest{EvidenceDir: evidenceDir, Arm: "second"}},
 	}, true, "checkout", &completed, 2, StudyOptions{})
 	if !errors.Is(err, preflightFailure) {
 		t.Fatalf("preflight failure = %v", err)
 	}
 	if preflightCalls != 2 || completed != 1 || cleanupCalls != 1 {
 		t.Fatalf("preflights=%d completed=%d cleanup=%d", preflightCalls, completed, cleanupCalls)
+	}
+	completed = 0
+	err = preflightStudyTaskRuntimes(context.Background(), "task", []studyRuntimePreflight{
+		{experiment: "first", request: ExecutionRequest{EvidenceDir: evidenceDir, Arm: "first"}},
+		{experiment: "second", request: ExecutionRequest{EvidenceDir: evidenceDir, Arm: "second"}},
+	}, true, "checkout", &completed, 2, StudyOptions{})
+	if !errors.Is(err, preflightFailure) {
+		t.Fatalf("retry preflight failure = %v", err)
+	}
+	if preflightCalls != 3 || completed != 1 || cleanupCalls != 2 {
+		t.Fatalf("retry preflights=%d completed=%d cleanup=%d", preflightCalls, completed, cleanupCalls)
+	}
+}
+
+func TestCompletedRuntimePreflightRejectsMismatchedReceipt(t *testing.T) {
+	request := ExecutionRequest{EvidenceDir: t.TempDir(), Arm: "arm"}
+	cached, receipt, path, err := completedRuntimePreflight(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cached {
+		t.Fatal("missing receipt was treated as complete")
+	}
+	if receipt.HostOS != runtime.GOOS || receipt.HostArchitecture != runtime.GOARCH {
+		t.Fatalf("host platform = %s/%s, want %s/%s", receipt.HostOS, receipt.HostArchitecture, runtime.GOOS, runtime.GOARCH)
+	}
+	if err := writeJSON(path, receipt); err != nil {
+		t.Fatal(err)
+	}
+	cached, _, _, err = completedRuntimePreflight(request)
+	if err != nil || !cached {
+		t.Fatalf("matching receipt reuse = cached %t err %v", cached, err)
+	}
+	mismatch := receipt
+	mismatch.HostArchitecture = "other"
+	if err := writeJSON(path, mismatch); err != nil {
+		t.Fatal(err)
+	}
+	cached, _, _, err = completedRuntimePreflight(request)
+	if cached || err == nil || !strings.Contains(err.Error(), "does not match its content-addressed identity") {
+		t.Fatalf("mismatched receipt = cached %t err %v", cached, err)
 	}
 }
 
@@ -198,7 +251,7 @@ func TestStudyTreatmentPreflightReclaimsImageAfterCancellation(t *testing.T) {
 		return nil
 	}
 	completed := 0
-	err := preflightStudyTaskRuntimes(ctx, "task", []studyRuntimePreflight{{experiment: "arm", request: ExecutionRequest{Arm: "arm"}}}, true, "checkout", &completed, 1, StudyOptions{})
+	err := preflightStudyTaskRuntimes(ctx, "task", []studyRuntimePreflight{{experiment: "arm", request: ExecutionRequest{EvidenceDir: t.TempDir(), Arm: "arm"}}}, true, "checkout", &completed, 1, StudyOptions{})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("preflight cancellation = %v", err)
 	}
@@ -222,8 +275,8 @@ func TestStudyRuntimePreflightsGroupArmsByTaskAndReclaimOnce(t *testing.T) {
 	controlBundle, treatmentBundle := fakeStudyTreatmentBundle(), fakeStudyTreatmentBundle()
 	controlBundle.ManifestHash, treatmentBundle.ManifestHash = "control", "treatment"
 	arms := []matrixArm{
-		{Label: "control", Mode: ArmTreatment, Bundle: controlBundle},
-		{Label: "treatment", Mode: ArmTreatment, Bundle: treatmentBundle},
+		{Label: "control", Mode: ArmTreatment, StateDir: t.TempDir(), Bundle: controlBundle},
+		{Label: "treatment", Mode: ArmTreatment, StateDir: t.TempDir(), Bundle: treatmentBundle},
 	}
 	work := scheduleStudyRuntimePreflights("repo", tasks, checksums, environments, arms)
 	var calls []string

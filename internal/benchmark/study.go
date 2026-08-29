@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -282,6 +283,28 @@ var stageBenchmarkExperimentBundles = stageStudyExperimentBundles
 
 const runtimePreflightProgressMessage = "Preflighting benchmark runtime"
 
+const runtimePreflightReceiptSchema = "deepswe-runtime-preflight-v1"
+
+type runtimePreflightReceipt struct {
+	Schema                 string  `json:"schema"`
+	DeepSWECommit          string  `json:"deep_swe_commit"`
+	PierVersion            string  `json:"pier_version"`
+	TaskContainerPlatform  string  `json:"task_container_platform"`
+	HostOS                 string  `json:"host_os"`
+	HostArchitecture       string  `json:"host_architecture"`
+	Task                   string  `json:"task"`
+	TaskChecksum           string  `json:"task_checksum"`
+	EnvironmentIdentity    string  `json:"environment_identity"`
+	Arm                    string  `json:"arm"`
+	ProviderAdapter        string  `json:"provider_adapter"`
+	RuntimeModel           string  `json:"runtime_model"`
+	ReasoningEffort        string  `json:"reasoning_effort"`
+	ProviderClientVersion  string  `json:"provider_client_version"`
+	AdapterSHA256          string  `json:"adapter_sha256,omitempty"`
+	TreatmentHash          string  `json:"treatment_manifest_hash,omitempty"`
+	AgentTimeoutMultiplier float64 `json:"agent_timeout_multiplier"`
+}
+
 var (
 	loadStudyTaskReadiness = loadTaskReadiness
 	reclaimStudyTaskImages = removeTaskReadinessImages
@@ -427,7 +450,7 @@ func scheduleStudyRuntimePreflights(repoRoot string, tasks []benchmarkPlanTask, 
 	work := make([][]studyRuntimePreflight, len(tasks))
 	for armIndex := range arms {
 		arm := &arms[armIndex]
-		request := ExecutionRequest{RepoRoot: repoRoot, EvidenceDir: arm.StateDir, Attempt: 1, Model: arm.Loaded.Model, Effort: arm.Loaded.Effort, Arm: arm.Mode, Bundle: arm.Bundle, AgentTimeoutMultiplier: arm.AgentTimeoutMultiplier}
+		request := ExecutionRequest{RepoRoot: repoRoot, EvidenceDir: arm.StateDir, Attempt: 1, Model: arm.Loaded.Model, Effort: arm.Loaded.Effort, Arm: arm.Mode, Bundle: arm.Bundle, AgentTimeoutMultiplier: arm.AgentTimeoutMultiplier, AdapterSHA256: arm.AdapterSHA256}
 		if !usesAgentLayerPierAdapter(request) {
 			continue
 		}
@@ -469,22 +492,42 @@ func preflightStudyRuntimes(ctx context.Context, options StudyOptions, tasks []b
 }
 
 func preflightStudyTaskRuntimes(ctx context.Context, task string, work []studyRuntimePreflight, reclaimTaskImages bool, checkout string, completed *int, required int, options StudyOptions) (err error) {
-	if reclaimTaskImages {
+	var cleanupReadiness *loadedTaskReadiness
+	defer func() {
+		if cleanupReadiness == nil {
+			return
+		}
+		cleanupCtx, cancelCleanup := detachedBenchmarkCleanupContext(ctx)
+		cleanupErr := reclaimStudyTaskImages(cleanupCtx, *cleanupReadiness)
+		cancelCleanup()
+		if cleanupErr != nil {
+			cleanupErr = fmt.Errorf("reclaim task images after runtime preflights for %q: %w", task, cleanupErr)
+		}
+		err = errors.Join(err, cleanupErr)
+	}()
+	installCleanup := func() error {
+		if !reclaimTaskImages || cleanupReadiness != nil {
+			return nil
+		}
 		readiness, loadErr := loadStudyTaskReadiness(checkout, task)
 		if loadErr != nil {
 			return loadErr
 		}
-		defer func() {
-			cleanupCtx, cancelCleanup := detachedBenchmarkCleanupContext(ctx)
-			cleanupErr := reclaimStudyTaskImages(cleanupCtx, readiness)
-			cancelCleanup()
-			if cleanupErr != nil {
-				cleanupErr = fmt.Errorf("reclaim task images after runtime preflights for %q: %w", task, cleanupErr)
-			}
-			err = errors.Join(err, cleanupErr)
-		}()
+		cleanupReadiness = &readiness
+		return nil
 	}
 	for _, item := range work {
+		cached, receipt, receiptPath, receiptErr := completedRuntimePreflight(item.request)
+		if receiptErr != nil {
+			return receiptErr
+		}
+		if cached {
+			(*completed)++
+			continue
+		}
+		if cleanupErr := installCleanup(); cleanupErr != nil {
+			return cleanupErr
+		}
 		eventID, eventErr := NewEventID()
 		if eventErr != nil {
 			return fmt.Errorf("create runtime preflight event for experiment %q task %q: %w", item.experiment, task, eventErr)
@@ -494,9 +537,43 @@ func preflightStudyTaskRuntimes(ctx context.Context, task string, work []studyRu
 		if preflightErr := preflightTreatmentRuntime(ctx, item.request); preflightErr != nil {
 			return fmt.Errorf("preflight experiment %q task %q runtime: %w", item.experiment, task, preflightErr)
 		}
+		if writeErr := writeJSON(receiptPath, receipt); writeErr != nil {
+			return fmt.Errorf("record successful runtime preflight for experiment %q task %q: %w", item.experiment, task, writeErr)
+		}
 		(*completed)++
 	}
 	return nil
+}
+
+func completedRuntimePreflight(request ExecutionRequest) (bool, runtimePreflightReceipt, string, error) {
+	if request.EvidenceDir == "" {
+		return false, runtimePreflightReceipt{}, "", errors.New("benchmark runtime preflight requires an evidence directory")
+	}
+	receipt := runtimePreflightReceipt{
+		Schema: runtimePreflightReceiptSchema, DeepSWECommit: DeepSWECommit, PierVersion: PierVersion,
+		TaskContainerPlatform: benchmarkTaskContainerPlatform, HostOS: runtime.GOOS, HostArchitecture: runtime.GOARCH,
+		Task:         request.Task,
+		TaskChecksum: request.TaskChecksum, EnvironmentIdentity: request.EnvironmentIdentity,
+		Arm: request.Arm, ProviderAdapter: request.Model.Adapter,
+		RuntimeModel: request.Model.RuntimeIdentifier, ReasoningEffort: request.Effort,
+		ProviderClientVersion: request.Model.ProviderClientVersion, AdapterSHA256: request.AdapterSHA256,
+		TreatmentHash: executionTreatmentHash(request), AgentTimeoutMultiplier: request.AgentTimeoutMultiplier,
+	}
+	identity, err := hashCanonical(receipt)
+	if err != nil {
+		return false, runtimePreflightReceipt{}, "", fmt.Errorf("identify benchmark runtime preflight: %w", err)
+	}
+	path := filepath.Join(request.EvidenceDir, "runtime-preflights", identity+".json")
+	var existing runtimePreflightReceipt
+	if err := readStudyJSON(path, &existing); errors.Is(err, os.ErrNotExist) {
+		return false, receipt, path, nil
+	} else if err != nil {
+		return false, runtimePreflightReceipt{}, "", fmt.Errorf("read benchmark runtime preflight receipt: %w", err)
+	}
+	if existing != receipt {
+		return false, runtimePreflightReceipt{}, "", fmt.Errorf("benchmark runtime preflight receipt %s does not match its content-addressed identity", path)
+	}
+	return true, receipt, path, nil
 }
 
 func stageStudyExperimentBundles(repoRoot string, prepared *preparedStudy) ([]*TreatmentBundle, error) {
