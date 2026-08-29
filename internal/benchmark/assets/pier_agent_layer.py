@@ -942,11 +942,11 @@ class _AgentLayerStreamAgent(_AgentLayerTreatment, BaseInstalledAgent):
             raise RuntimeError(f"unsupported retained stream validator provider {provider!r}")
         remote_path = f"/tmp/agent-layer-{provider}-stream-validator-preflight.jsonl"
         encoded = base64.b64encode(payload.encode("utf-8")).decode("ascii")
-        await self.exec_as_agent(
-            environment,
-            command=f"printf '%s' '{encoded}' | base64 -d > {remote_path}",
-        )
         try:
+            await self.exec_as_agent(
+                environment,
+                command=f"printf '%s' '{encoded}' | base64 -d > {remote_path}",
+            )
             await self._validate_retained_stream(environment, remote_path, provider, session_id)
         finally:
             await self.exec_as_agent(environment, command=f"rm -f {remote_path}")

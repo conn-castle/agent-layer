@@ -346,6 +346,24 @@ for cls, model, domains in [
             asyncio.run(agent._preflight_retained_stream_validator(object(), provider))
             assert not Path(f"/tmp/agent-layer-{provider}-stream-validator-preflight.jsonl").exists()
 
+        failed_path = Path("/tmp/agent-layer-grok-stream-validator-preflight.jsonl")
+        failed_commands = []
+        async def fail_validator_write(environment, command, **kwargs):
+            failed_commands.append(command)
+            if command.startswith("printf"):
+                failed_path.write_text("partial")
+                raise RuntimeError("simulated validator write failure")
+            completed = subprocess.run(command, shell=True, text=True, capture_output=True)
+            assert completed.returncode == 0, completed.stderr
+        agent.exec_as_agent = fail_validator_write
+        try:
+            asyncio.run(agent._preflight_retained_stream_validator(object(), "grok"))
+            raise AssertionError("validator write failure was not propagated")
+        except RuntimeError as error:
+            assert str(error) == "simulated validator write failure"
+        assert len(failed_commands) == 2 and failed_commands[-1] == f"rm -f {failed_path}"
+        assert not failed_path.exists()
+
 commands = []
 async def capture_command(environment, command, **kwargs):
     commands.append(command)
