@@ -612,16 +612,11 @@ func verifiedDevelopmentSourceCheckout() (root, commit string, dirty bool, devel
 	}
 	commit = strings.TrimSpace(string(data))
 	if info, ok := debug.ReadBuildInfo(); ok {
-		if info.Main.Version != "" && info.Main.Version != "(devel)" {
-			// A released/distributed binary must never silently rebuild from a
-			// coincidentally available source tree.
-			return "", "", false, false, nil
-		}
 		for _, setting := range info.Settings {
 			if setting.Key == "vcs.revision" && setting.Value != "" && !strings.HasPrefix(commit, setting.Value) {
 				return "", "", false, false, fmt.Errorf("development binary revision %s does not match source checkout %s", setting.Value, commit)
 			}
-			if setting.Key == "vcs.modified" && setting.Value == "true" {
+			if setting.Key == "vcs.modified" && setting.Value == booleanTrue {
 				dirty = true
 			}
 		}

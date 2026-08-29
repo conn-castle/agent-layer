@@ -27,11 +27,19 @@ const (
 )
 
 type pierTaskResult struct {
-	TrialName    string    `json:"trial_name"`
-	TaskChecksum string    `json:"task_checksum"`
-	StartedAt    time.Time `json:"started_at"`
-	FinishedAt   time.Time `json:"finished_at"`
-	AgentInfo    struct {
+	TrialName      string    `json:"trial_name"`
+	TaskChecksum   string    `json:"task_checksum"`
+	StartedAt      time.Time `json:"started_at"`
+	FinishedAt     time.Time `json:"finished_at"`
+	AgentExecution *struct {
+		StartedAt  time.Time `json:"started_at"`
+		FinishedAt time.Time `json:"finished_at"`
+	} `json:"agent_execution"`
+	VerifierExecution *struct {
+		StartedAt  time.Time `json:"started_at"`
+		FinishedAt time.Time `json:"finished_at"`
+	} `json:"verifier"`
+	AgentInfo struct {
 		ModelInfo struct {
 			Provider string `json:"provider"`
 		} `json:"model_info"`
@@ -39,7 +47,7 @@ type pierTaskResult struct {
 	AgentResult struct {
 		CostUSD *float64 `json:"cost_usd"`
 	} `json:"agent_result"`
-	VerifierResult struct {
+	VerifierResult *struct {
 		Rewards struct {
 			Reward    float64 `json:"reward"`
 			F2PTotal  int     `json:"f2p_total"`
@@ -73,6 +81,9 @@ func normalizePier(stage string, request ExecutionRequest) (AttemptResult, error
 		result.Status = statusFailed
 		result.Error = string(raw.ExceptionInfo)
 		return result, nil
+	}
+	if raw.VerifierResult == nil {
+		return AttemptResult{}, fmt.Errorf("pier result for %s is missing verifier_result", request.Task)
 	}
 	duration := raw.FinishedAt.Sub(raw.StartedAt).Seconds()
 	result.Status = statusSuccess
@@ -423,8 +434,8 @@ func submittedPatchBytes(stage string) (int64, error) {
 		if walkErr != nil {
 			return walkErr
 		}
-		if !entry.IsDir() && entry.Name() == "model.patch" &&
-			filepath.Base(filepath.Dir(path)) == "artifacts" {
+		if !entry.IsDir() && entry.Name() == benchmarkModelPatchFile &&
+			filepath.Base(filepath.Dir(path)) == benchmarkArtifactsDir {
 			patches = append(patches, path)
 		}
 		return nil

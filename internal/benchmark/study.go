@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -27,7 +28,10 @@ type StudyOptions struct {
 	DryRun            bool
 	ResourcePreflight bool
 	ReclaimTaskImages bool
-	OnProgress        func(StudyProgress)
+	// OnProgress receives stage and cell updates. Cell phase updates arrive
+	// from per-cell watcher goroutines, so with TaskConcurrency above one the
+	// hook may be invoked concurrently and consumers must synchronize.
+	OnProgress func(StudyProgress)
 	// OnPrepared receives validated cached/missing progress after the full
 	// runtime preflight and before any inference call.
 	OnPrepared func(StudyOutcome) error
@@ -37,10 +41,12 @@ type StudyOptions struct {
 	OnCellComplete func(ObservedCostRange)
 }
 
-// StudyProgress is a serial operator-facing stage or cell update.
+// StudyProgress is an operator-facing stage or cell update.
 type StudyProgress struct {
 	Phase, Message, Task, Experiment string
 	Completed, Required              int
+	StartedAt                        time.Time
+	EffectiveTimeout                 time.Duration
 }
 
 // StudyOutcome is the user-facing progress summary for a study invocation.
@@ -205,6 +211,7 @@ func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) 
 	if executor == nil {
 		executor = PierExecutor{}
 	}
+	executor = &studyProgressExecutor{delegate: executor, options: options}
 	priorCost, err := studyStoredCostChecked(preparation)
 	if err != nil {
 		return StudyOutcome{}, err
@@ -317,6 +324,29 @@ type serialTaskReclaimingExecutor struct {
 	delegate   TaskExecutor
 	readiness  map[string]loadedTaskReadiness
 	activeTask string
+}
+
+type studyProgressExecutor struct {
+	delegate TaskExecutor
+	options  StudyOptions
+}
+
+func (executor *studyProgressExecutor) Execute(ctx context.Context, request ExecutionRequest) (AttemptResult, error) {
+	request.OnProgress = func(progress ExecutionProgress) {
+		message := map[string]string{
+			executionPhaseEnvironment: "Preparing benchmark cell environment",
+			executionPhaseProvider:    "Running provider inference",
+			executionPhaseVerifier:    "Running verifier",
+		}[progress.Phase]
+		if message == "" {
+			message = "Running benchmark cell"
+		}
+		emitStudyProgress(executor.options, StudyProgress{
+			Phase: progress.Phase, Message: message, Task: request.Task, Experiment: request.Experiment,
+			StartedAt: progress.StartedAt, EffectiveTimeout: progress.EffectiveTimeout,
+		})
+	}
+	return executor.delegate.Execute(ctx, request)
 }
 
 func (executor *serialTaskReclaimingExecutor) Execute(ctx context.Context, request ExecutionRequest) (AttemptResult, error) {
@@ -1267,7 +1297,7 @@ func promoteReusableCell(sourcePath string, result AttemptResult, destination *m
 	}
 	defer func() { _ = os.RemoveAll(stage) }()
 	stagedResult := armResultPath(stage, task, attempt)
-	if err := copyRequiredTree(filepath.Join(filepath.Dir(sourcePath), "artifacts", result.EventID), filepath.Join(filepath.Dir(stagedResult), "artifacts", result.EventID)); err != nil {
+	if err := copyRequiredTree(filepath.Join(filepath.Dir(sourcePath), benchmarkArtifactsDir, result.EventID), filepath.Join(filepath.Dir(stagedResult), benchmarkArtifactsDir, result.EventID)); err != nil {
 		return fmt.Errorf("copy reusable artifacts: %w", err)
 	}
 	if err := writeJSON(stagedResult, result); err != nil {
@@ -1278,7 +1308,7 @@ func promoteReusableCell(sourcePath string, result AttemptResult, destination *m
 	if _, _, err := inspectStudyCell(stagedArm, task, attempt, checksum, environment); err != nil {
 		return fmt.Errorf("validate staged reusable cell: %w", err)
 	}
-	if err := copyRequiredTree(filepath.Join(filepath.Dir(stagedResult), "artifacts"), filepath.Join(filepath.Dir(destinationPath), "artifacts")); err != nil {
+	if err := copyRequiredTree(filepath.Join(filepath.Dir(stagedResult), benchmarkArtifactsDir), filepath.Join(filepath.Dir(destinationPath), benchmarkArtifactsDir)); err != nil {
 		return err
 	}
 	// Publish the result last and atomically. Until this succeeds the copied

@@ -311,7 +311,7 @@ func readStudyResult(path, task string, attempt int, checksum, environment strin
 	if result.EnvironmentIdentity != environment {
 		return AttemptResult{}, fmt.Errorf("result environment identity %q does not match certified environment %q", result.EnvironmentIdentity, environment)
 	}
-	receiptPath := filepath.Join(filepath.Dir(path), "artifacts", result.EventID, "execution-receipt.json")
+	receiptPath := filepath.Join(filepath.Dir(path), benchmarkArtifactsDir, result.EventID, "execution-receipt.json")
 	var receipt pierExecutionReceipt
 	if err := readStudyJSON(receiptPath, &receipt); err != nil {
 		if errors.Is(err, os.ErrNotExist) {

@@ -87,6 +87,8 @@ func TestCleanupPierDockerResourcesUsesExactComposeProject(t *testing.T) {
 	stage := writePierStage(t, "task-checksum", .5, 1)
 	request := ExecutionRequest{Task: "example-task", TaskChecksum: "task-checksum"}
 	original := runBenchmarkDockerCommand
+	originalOS := benchmarkHostOS
+	benchmarkHostOS = platformDarwin
 	var calls []string
 	runBenchmarkDockerCommand = func(_ context.Context, arguments ...string) ([]byte, error) {
 		call := strings.Join(arguments, " ")
@@ -108,7 +110,10 @@ func TestCleanupPierDockerResourcesUsesExactComposeProject(t *testing.T) {
 			return nil, fmt.Errorf("unexpected Docker command %q", call)
 		}
 	}
-	t.Cleanup(func() { runBenchmarkDockerCommand = original })
+	t.Cleanup(func() {
+		runBenchmarkDockerCommand = original
+		benchmarkHostOS = originalOS
+	})
 
 	if err := cleanupPierDockerResources(stage, request); err != nil {
 		t.Fatal(err)
@@ -125,6 +130,81 @@ func TestCleanupPierDockerResourcesUsesExactComposeProject(t *testing.T) {
 	}
 	if strings.Join(calls, "\n") != strings.Join(expected, "\n") {
 		t.Fatalf("Docker cleanup calls = %#v", calls)
+	}
+}
+
+func TestLinuxCleanupRepairsLogOwnershipBeforeContainerRemoval(t *testing.T) {
+	stage := writePierStage(t, "task-checksum", .5, 1)
+	request := ExecutionRequest{Task: "example-task", TaskChecksum: "task-checksum"}
+	originalOS := benchmarkHostOS
+	benchmarkHostOS = platformLinux
+	t.Cleanup(func() { benchmarkHostOS = originalOS })
+	var calls []string
+	installDockerCleanupStub(t, func(_ context.Context, arguments ...string) ([]byte, error) {
+		call := strings.Join(arguments, " ")
+		calls = append(calls, call)
+		switch arguments[0] {
+		case "ps":
+			return []byte("0123456789ab\texample-task__abc1234\n"), nil
+		case "inspect":
+			return []byte("true\tsha256:" + strings.Repeat("a", 64) + "\n"), nil
+		case "network", "volume", "image":
+			return nil, nil
+		default:
+			return nil, nil
+		}
+	})
+	if err := cleanupPierDockerResources(stage, request); err != nil {
+		t.Fatal(err)
+	}
+	owner := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+	wantInspect := `inspect --format {{.State.Running}}{{"\t"}}{{.Image}} 0123456789ab`
+	wantRepair := "exec --user 0 0123456789ab chown -R " + owner + " /logs"
+	inspect, repair, removal := -1, -1, -1
+	for index, call := range calls {
+		if call == wantInspect {
+			inspect = index
+		}
+		if call == wantRepair {
+			repair = index
+		}
+		if call == "rm --force 0123456789ab" {
+			removal = index
+		}
+	}
+	if inspect < 0 || repair < 0 || removal < 0 || inspect >= repair || repair >= removal {
+		t.Fatalf("ownership repair did not precede removal: %#v", calls)
+	}
+}
+
+func TestLinuxCleanupRepairsStoppedContainerThroughItsPinnedImage(t *testing.T) {
+	stage := writePierStage(t, "task-checksum", .5, 1)
+	request := ExecutionRequest{Task: "example-task", TaskChecksum: "task-checksum"}
+	originalOS := benchmarkHostOS
+	benchmarkHostOS = platformLinux
+	t.Cleanup(func() { benchmarkHostOS = originalOS })
+	image := "sha256:" + strings.Repeat("a", 64)
+	var calls []string
+	installDockerCleanupStub(t, func(_ context.Context, arguments ...string) ([]byte, error) {
+		call := strings.Join(arguments, " ")
+		calls = append(calls, call)
+		switch arguments[0] {
+		case "ps":
+			return []byte("0123456789ab\texample-task__abc1234\n"), nil
+		case "inspect":
+			return []byte("false\t" + image + "\n"), nil
+		default:
+			return nil, nil
+		}
+	})
+	if err := cleanupPierDockerResources(stage, request); err != nil {
+		t.Fatal(err)
+	}
+	owner := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+	want := "run --rm --network none --user 0 --volumes-from 0123456789ab --entrypoint chown " + image + " -R " + owner + " /logs"
+	joined := strings.Join(calls, "\n")
+	if !strings.Contains(joined, want+"\nrm --force 0123456789ab") {
+		t.Fatalf("stopped-container ownership repair did not precede removal: %#v", calls)
 	}
 }
 
