@@ -472,10 +472,14 @@ func TestTreatmentStudyDryRunIdentityIsDeterministicAcrossInvocations(t *testing
 
 	originalAuthentication := validateBenchmarkAuthentication
 	originalRuntimePreflight := preflightTreatmentRuntime
+	runtimePreflights := 0
 	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
 		return map[string]AuthenticationPreflight{}, nil
 	}
-	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error { return nil }
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error {
+		runtimePreflights++
+		return nil
+	}
 	t.Cleanup(func() {
 		validateBenchmarkAuthentication = originalAuthentication
 		preflightTreatmentRuntime = originalRuntimePreflight
@@ -495,6 +499,9 @@ func TestTreatmentStudyDryRunIdentityIsDeterministicAcrossInvocations(t *testing
 	}
 	if second.StudyID != first.StudyID || second.Experiments[0].Identity != first.Experiments[0].Identity {
 		t.Fatalf("identical dry-run preparations changed identity:\nfirst:  %#v\nsecond: %#v", first, second)
+	}
+	if runtimePreflights != 2 {
+		t.Fatalf("second identical dry run should reuse the first run's preflight receipts: executed %d runtime preflights", runtimePreflights)
 	}
 	studies, err := os.ReadDir(filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies"))
 	if err != nil {

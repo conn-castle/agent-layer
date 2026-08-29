@@ -249,6 +249,83 @@ func TestBenchmarkRunDryRunDoesNotInvokeProviderInference(t *testing.T) {
 	}
 }
 
+func TestBenchmarkCommandsWarnOnlyWhenTaskContainersRequireEmulation(t *testing.T) {
+	originalWarning := benchmarkArchitectureWarning
+	benchmarkArchitectureWarning = func() string {
+		return "DeepSWE uses linux/amd64 task containers. Host architecture arm64 requires emulation; the first wait can take 30+ minutes."
+	}
+	t.Cleanup(func() { benchmarkArchitectureWarning = originalWarning })
+
+	originalRun := runStudy
+	runStudy = func(_ context.Context, options bench.StudyOptions, _ bench.TaskExecutor) (bench.StudyOutcome, error) {
+		return bench.StudyOutcome{}, nil
+	}
+	t.Cleanup(func() { runStudy = originalRun })
+
+	root := newRootCmd()
+	root.SetArgs([]string{"benchmark", "run", "study.toml", "--dry-run", "--task-concurrency", "1"})
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if got := output.String(); !strings.Contains(got, "[warning]") || !strings.Contains(got, "requires emulation") || !strings.Contains(got, "30+ minutes") {
+		t.Fatalf("emulation warning output = %q", got)
+	}
+
+	originalReadiness := checkReadiness
+	checkReadiness = func(_ context.Context, _ bench.ReadinessAuditOptions) (bench.ReadinessAuditOutcome, error) {
+		return bench.ReadinessAuditOutcome{}, nil
+	}
+	t.Cleanup(func() { checkReadiness = originalReadiness })
+	output.Reset()
+	root = newRootCmd()
+	root.SetArgs([]string{"benchmark", "readiness", "--task-concurrency", "1"})
+	root.SetOut(&output)
+	root.SetErr(&output)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if got := output.String(); !strings.Contains(got, "[warning]") || !strings.Contains(got, "requires emulation") {
+		t.Fatalf("readiness emulation warning output = %q", got)
+	}
+
+	benchmarkArchitectureWarning = func() string { return "" }
+	output.Reset()
+	root = newRootCmd()
+	root.SetArgs([]string{"benchmark", "run", "study.toml", "--dry-run", "--task-concurrency", "1"})
+	root.SetOut(&output)
+	root.SetErr(&output)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "[warning]") {
+		t.Fatalf("native architecture output contained warning: %q", output.String())
+	}
+}
+
+func TestBenchmarkReadinessDoesNotWarnBeforeFlagValidation(t *testing.T) {
+	originalWarning := benchmarkArchitectureWarning
+	benchmarkArchitectureWarning = func() string {
+		return "DeepSWE uses linux/amd64 task containers. Host architecture arm64 requires emulation; the first wait can take 30+ minutes."
+	}
+	t.Cleanup(func() { benchmarkArchitectureWarning = originalWarning })
+
+	root := newRootCmd()
+	root.SetArgs([]string{"benchmark", "readiness", "--study", "study.toml", "--task", "first-task"})
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	err := root.Execute()
+	if err == nil || !strings.Contains(err.Error(), "use either --study or --task, not both") {
+		t.Fatalf("error = %v", err)
+	}
+	if strings.Contains(output.String(), "[warning]") {
+		t.Fatalf("usage error was preceded by emulation warning: %q", output.String())
+	}
+}
+
 func TestBenchmarkRunHeartbeatWaitsForInactivityAndUsesLatestProgress(t *testing.T) {
 	originalRun, originalClock := runStudy, benchmarkHeartbeatClock
 	clock := newBenchmarkTestClock()

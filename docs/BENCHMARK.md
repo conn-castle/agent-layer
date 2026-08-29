@@ -48,7 +48,7 @@ This step is optional because `benchmark run` performs the same required task pr
 al benchmark run benchmark-study/study.toml --dry-run
 ```
 
-The dry run validates and snapshots all declared inputs, checks tools and provider authentication, prepares the treatment, certifies missing task environments, and reports cached versus missing cells. It never performs provider inference.
+The dry run validates and snapshots all declared inputs, checks tools and provider authentication, prepares the treatment, certifies missing task environments, and reports cached versus missing cells. Successful task-and-experiment runtime preflights are stored as content-addressed receipts and reused by later identical dry runs. It never performs provider inference.
 
 ### 4. Run or resume
 
@@ -66,6 +66,8 @@ The ordinary workflow requires no tuning:
 - Readiness uses one worker when automatic image reclamation is enabled.
 - Before pulling, the CLI checks Docker storage using a conservative 4 GiB budget per simultaneously retained task image. If the plan cannot fit, it stops with required-versus-available capacity instead of filling Docker's disk.
 - Certification-only images are removed automatically; durable readiness receipts remain.
+- Successful runtime preflight receipts are recorded after any required task-image reclamation succeeds and reused when the Docker host architecture, pinned Pier version, task environment, provider client, adapter, model, reasoning, and treatment inputs still match. Authentication is checked on every invocation.
+- DeepSWE task containers are certified for `linux/amd64`. On a non-amd64 host, the CLI warns that Docker must emulate them and that initial pulls, builds, and preflights can take 30 minutes or longer.
 - Grok runs inside Pier's disposable task container with Grok's built-in `devbox` sandbox profile, avoiding a host Bubblewrap dependency while retaining the container boundary. Dry-run and paid command construction use the same profile.
 - Readiness prints task percentages. Study runs print preparation stages, task/arm preflight and cell percentages, and cumulative observed cost. During a silent long-running operation, the CLI prints one heartbeat after 60 seconds of inactivity and at most once per additional silent minute; genuine progress resets that timer.
 - Docker disk exhaustion is identified explicitly in both the task result and final error.

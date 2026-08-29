@@ -91,6 +91,7 @@ type ExecutionRequest struct {
 	TaskChecksum           string
 	EnvironmentIdentity    string
 	AgentTimeoutMultiplier float64
+	AdapterSHA256          string
 	PreflightOnly          bool
 	// ResumeFailedInfrastructure is set only by the study scheduler for a new
 	// user-authorized benchmark invocation. It permits a fresh event after an
