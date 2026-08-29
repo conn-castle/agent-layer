@@ -1,6 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.18.1 - 2026-08-28
+
+### Changed
+- Benchmark runtime preflights now persist content-addressed receipts and reuse them on later identical invocations; `al benchmark run` and `al benchmark readiness` warn when DeepSWE `linux/amd64` task containers require host emulation.
+
+### Fixed
+- Retained Grok and Antigravity streams are now validated before paid provider calls, and failed stream-preflight artifacts are cleaned up.
+
 ## v0.18.0 - 2026-08-28
 
 ### Added
