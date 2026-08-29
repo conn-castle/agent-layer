@@ -223,6 +223,16 @@ func TestFormatBenchmarkStudyProgressIncludesOnlyPresentDetails(t *testing.T) {
 	}
 }
 
+func TestFormatBenchmarkStudyProgressReportsActivePhaseAndEffectiveTimeout(t *testing.T) {
+	got := formatBenchmarkStudyProgress(bench.StudyProgress{
+		Phase: "verifier", Message: "Running verifier", Experiment: "skills", Task: "task-a",
+		EffectiveTimeout: 30 * time.Minute,
+	})
+	if got != "[verifier] Running verifier (effective timeout 30m0s): skills task-a" {
+		t.Fatalf("phase progress = %q", got)
+	}
+}
+
 func TestBenchmarkRunDryRunDoesNotInvokeProviderInference(t *testing.T) {
 	original := runStudy
 	runStudy = func(_ context.Context, options bench.StudyOptions, _ bench.TaskExecutor) (bench.StudyOutcome, error) {

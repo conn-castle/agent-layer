@@ -411,7 +411,7 @@ func executeMatrix(ctx context.Context, repoRoot string, checksums, environments
 					// A failed paid provider event is immutable evidence.  A fresh
 					// `benchmark run` may explicitly resume it, but this invocation
 					// must return the infrastructure failure rather than retrying it.
-					result, err = executor.Execute(runCtx, ExecutionRequest{RepoRoot: repoRoot, EvidenceDir: job.arm.StateDir, EventID: eventID, Attempt: job.cell.attempt, Task: job.cell.task, Model: job.arm.Loaded.Model, Effort: job.arm.Loaded.Effort, Arm: job.arm.Mode, Bundle: job.arm.Bundle, AgentTimeoutMultiplier: job.arm.AgentTimeoutMultiplier, TaskChecksum: checksums[job.cell.task], EnvironmentIdentity: environments[job.cell.task], ResumeFailedInfrastructure: true})
+					result, err = executor.Execute(runCtx, ExecutionRequest{RepoRoot: repoRoot, EvidenceDir: job.arm.StateDir, EventID: eventID, Attempt: job.cell.attempt, Task: job.cell.task, Experiment: job.arm.Label, Model: job.arm.Loaded.Model, Effort: job.arm.Loaded.Effort, Arm: job.arm.Mode, Bundle: job.arm.Bundle, AgentTimeoutMultiplier: job.arm.AgentTimeoutMultiplier, TaskChecksum: checksums[job.cell.task], EnvironmentIdentity: environments[job.cell.task], ResumeFailedInfrastructure: true})
 					if err == nil && result.Validate() != nil {
 						err = fmt.Errorf("returned invalid evidence")
 					}

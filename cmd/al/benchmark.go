@@ -70,11 +70,6 @@ func (timer wallBenchmarkTimer) Reset(wait time.Duration) {
 func (timer wallBenchmarkTimer) Stop() { timer.Timer.Stop() }
 
 func formatBenchmarkStudyProgress(progress bench.StudyProgress) string {
-	if progress.Required == 0 {
-		return fmt.Sprintf("[%s] %s", progress.Phase, progress.Message)
-	}
-	percent := progress.Completed * 100 / progress.Required
-	status := fmt.Sprintf("[%3d%% %d/%d] %s", percent, progress.Completed, progress.Required, progress.Message)
 	details := make([]string, 0, 2)
 	if progress.Experiment != "" {
 		details = append(details, progress.Experiment)
@@ -82,6 +77,18 @@ func formatBenchmarkStudyProgress(progress bench.StudyProgress) string {
 	if progress.Task != "" {
 		details = append(details, progress.Task)
 	}
+	if progress.Required == 0 {
+		status := fmt.Sprintf("[%s] %s", progress.Phase, progress.Message)
+		if progress.EffectiveTimeout > 0 {
+			status += fmt.Sprintf(" (effective timeout %s)", progress.EffectiveTimeout)
+		}
+		if len(details) > 0 {
+			status += ": " + strings.Join(details, " ")
+		}
+		return status
+	}
+	percent := progress.Completed * 100 / progress.Required
+	status := fmt.Sprintf("[%3d%% %d/%d] %s", percent, progress.Completed, progress.Required, progress.Message)
 	if len(details) > 0 {
 		status += ": " + strings.Join(details, " ")
 	}
@@ -181,6 +188,7 @@ func newBenchmarkRunCmd() *cobra.Command {
 			}
 			var outputMu sync.Mutex
 			lastStatus := "setting up benchmark"
+			var lastPhaseStarted time.Time
 			activity := make(chan struct{}, 1)
 			markActivity := func() {
 				select {
@@ -196,6 +204,7 @@ func newBenchmarkRunCmd() *cobra.Command {
 				outputMu.Lock()
 				defer outputMu.Unlock()
 				lastStatus = formatBenchmarkStudyProgress(progress)
+				lastPhaseStarted = progress.StartedAt
 				_, _ = fmt.Fprintln(cmd.OutOrStdout(), lastStatus)
 				markActivity()
 			}
@@ -244,7 +253,11 @@ func newBenchmarkRunCmd() *cobra.Command {
 				runBenchmarkInactivityHeartbeat(heartbeatStop, activity, benchmarkHeartbeatClock, func() string {
 					outputMu.Lock()
 					defer outputMu.Unlock()
-					return lastStatus
+					status := lastStatus
+					if !lastPhaseStarted.IsZero() {
+						status += fmt.Sprintf("; phase elapsed %s", benchmarkHeartbeatClock.Now().Sub(lastPhaseStarted).Round(time.Second))
+					}
+					return status
 				}, func(message string) {
 					outputMu.Lock()
 					defer outputMu.Unlock()

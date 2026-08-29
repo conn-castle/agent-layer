@@ -18,8 +18,10 @@ import tempfile
 import urllib.error
 import urllib.request
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
+from pier.agents.base import BaseAgent
 from pier.agents.installed.claude_code import ClaudeCode
 from pier.agents.installed.codex import Codex
 from pier.agents.installed.base import BaseInstalledAgent
@@ -266,6 +268,27 @@ class _AgentLayerTreatment:
             if self._dispatch_config.get("schema") != "agent-layer-benchmark-dispatch-v2":
                 raise RuntimeError("Agent Layer benchmark dispatch target schema is invalid")
         super().__init__(*args, **kwargs)
+
+    def _record_provider_checkpoint(self, context) -> None:
+        """Publish agent completion before Pier starts pre-artifacts/verification."""
+        if not getattr(self, "_provider_completed", False) or self._preflight_only:
+            return
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        path = self.logs_dir / "provider-checkpoint.json"
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(
+                {
+                    "schema": "agent-layer-provider-checkpoint-v1",
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "agent_result": context.model_dump(mode="json"),
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(path)
 
     async def _stage_treatment(self, environment):
         if self._treatment_mode == "bare":
@@ -880,6 +903,7 @@ class _AgentLayerStreamAgent(_AgentLayerTreatment, BaseInstalledAgent):
         for name, value in (("model_name", self.model_name), ("provider", self.name())):
             if hasattr(context, name):
                 setattr(context, name, value)
+        self._record_provider_checkpoint(context)
 
     async def _run_command(self, environment, command: str, env: dict[str, str]):
         await self.exec_as_agent(environment, command=command, env=env)
@@ -1021,6 +1045,7 @@ with open(path, "w", encoding="utf-8") as stream:
             command = self._bounded_provider_capture(provider_command, stream_path, diagnostics_path)
             await self._run_command(environment, command, env)
             await self._validate_retained_stream(environment, stream_path, "antigravity")
+            self._provider_completed = True
         finally:
             try:
                 await self.exec_as_agent(environment, command=f"rm -f {remote_credential}")
@@ -1094,6 +1119,7 @@ class AgentLayerGrok(_AgentLayerStreamAgent):
             command = self._bounded_provider_capture(provider_command, stream_path, diagnostics_path)
             await self._run_command(environment, command, env)
             await self._validate_retained_stream(environment, stream_path, "grok", session)
+            self._provider_completed = True
         finally:
             # The credential is private process setup state, never run evidence.
             try:
@@ -1134,9 +1160,15 @@ class AgentLayerCodex(_AgentLayerTreatment, Codex):
             await self._collect_evidence(environment)
             return
         try:
-            return await super().run(effective, environment, context)
+            result = await super().run(effective, environment, context)
+            self._provider_completed = True
+            return result
         finally:
             await self._collect_evidence(environment)
+
+    def populate_context_post_run(self, context) -> None:
+        super().populate_context_post_run(context)
+        self._record_provider_checkpoint(context)
 
 
 class AgentLayerClaudeCode(_AgentLayerTreatment, ClaudeCode):
@@ -1148,6 +1180,49 @@ class AgentLayerClaudeCode(_AgentLayerTreatment, ClaudeCode):
             await self._collect_evidence(environment)
             return
         try:
-            return await super().run(effective, environment, context)
+            result = await super().run(effective, environment, context)
+            self._provider_completed = True
+            return result
         finally:
             await self._collect_evidence(environment)
+
+    def populate_context_post_run(self, context) -> None:
+        super().populate_context_post_run(context)
+        self._record_provider_checkpoint(context)
+
+
+class AgentLayerPatchReplay(BaseAgent):
+    """Apply one retained provider patch, then let Pier run its normal verifier."""
+
+    def __init__(self, *args, replay_patch: str, **kwargs):
+        if importlib.metadata.version("datacurve-pier") != EXPECTED_PIER_VERSION:
+            raise RuntimeError("Agent Layer verifier replay requires the pinned Pier version")
+        self._replay_patch = Path(replay_patch)
+        if not self._replay_patch.is_file():
+            raise RuntimeError("Agent Layer verifier replay patch is missing")
+        super().__init__(*args, **kwargs)
+
+    @staticmethod
+    def name() -> str:
+        return "agent-layer-patch-replay"
+
+    def version(self) -> str:
+        return "1"
+
+    async def setup(self, environment) -> None:
+        pass
+
+    async def run(self, instruction, environment, context) -> None:
+        remote_patch = "/tmp/agent-layer-provider.patch"
+        await environment.upload_file(self._replay_patch, remote_patch)
+        result = await environment.exec(
+            command=(
+                f"git -C {REMOTE_WORKSPACE} config user.email benchmark@local.invalid && "
+                f"git -C {REMOTE_WORKSPACE} config user.name 'Agent Layer Verifier Replay' && "
+                f"git -C {REMOTE_WORKSPACE} apply --binary --index {remote_patch} && "
+                f"git -C {REMOTE_WORKSPACE} commit -m 'Replay retained provider patch'"
+            )
+        )
+        if result.return_code != 0:
+            detail = result.stderr or result.stdout or "no output"
+            raise RuntimeError(f"apply retained provider patch: {detail}")

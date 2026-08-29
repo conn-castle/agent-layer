@@ -7,7 +7,115 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestArtifactPromotionReplacesPriorPartialEventTree(t *testing.T) {
+	request := recoveryRequestFixture(t)
+	destination, err := artifactDestination(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(destination, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(destination, "stale-result.json"), []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := pierExecutionCheckpoint{
+		SchemaVersion: pierExecutionCheckpointSchema, EventID: request.EventID, Attempt: request.Attempt,
+		Task: request.Task, TaskChecksum: request.TaskChecksum, EnvironmentIdentity: request.EnvironmentIdentity,
+		Arm: request.Arm, RuntimeModel: request.Model.RuntimeIdentifier, ReasoningEffort: request.Effort,
+		StagePath: filepath.Join(request.RepoRoot, ".agent-layer", "tmp", "benchmark-"+request.EventID+"-one"),
+		StartedAt: time.Now().UTC(),
+	}
+	if err := writeJSON(filepath.Join(destination, "execution-checkpoint.json"), checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	stage := t.TempDir()
+	if err := os.WriteFile(filepath.Join(stage, "new-evidence.json"), []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := replacePierArtifactDestination(stage, destination); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(destination, "stale-result.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale partial artifact survived replacement: %v", err)
+	}
+	for _, name := range []string{"new-evidence.json", "execution-checkpoint.json"} {
+		if _, err := os.Stat(filepath.Join(destination, name)); err != nil {
+			t.Fatalf("promoted artifact %s is missing: %v", name, err)
+		}
+	}
+}
+
+func TestInterruptedArtifactPromotionScratchSelfHeals(t *testing.T) {
+	for _, scratchName := range []string{"event.previous", ".artifact-promotion-interrupted"} {
+		t.Run(scratchName, func(t *testing.T) {
+			request := recoveryRequestFixture(t)
+			request.EventID = "event"
+			stageRoot := filepath.Join(request.RepoRoot, ".agent-layer", "tmp")
+			if err := os.MkdirAll(stageRoot, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			stage, err := os.MkdirTemp(stageRoot, "benchmark-event-")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := writePierExecutionCheckpoint(request, stage); err != nil {
+				t.Fatal(err)
+			}
+			destination, _ := artifactDestination(request)
+			scratch := filepath.Join(filepath.Dir(destination), scratchName)
+			if err := os.Rename(destination, scratch); err != nil {
+				t.Fatal(err)
+			}
+			checkpoint, found, err := matchingPierExecutionCheckpoint(request)
+			if err != nil || !found || checkpoint.EventID != request.EventID {
+				t.Fatalf("recovered checkpoint = %#v, found=%t, err=%v", checkpoint, found, err)
+			}
+			if _, err := os.Stat(destination); err != nil {
+				t.Fatalf("canonical event directory was not restored: %v", err)
+			}
+			if _, err := os.Stat(scratch); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("promotion scratch survived recovery: %v", err)
+			}
+		})
+	}
+}
+
+func TestSanitizationMarkerIsScopedToRetainedOriginalStage(t *testing.T) {
+	request := recoveryRequestFixture(t)
+	stageRoot := filepath.Join(request.RepoRoot, ".agent-layer", "tmp")
+	if err := os.MkdirAll(stageRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.MkdirTemp(stageRoot, "benchmark-"+request.EventID+"-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writePierExecutionCheckpoint(request, original); err != nil {
+		t.Fatal(err)
+	}
+	replay := t.TempDir()
+	if err := markPierArtifactsSanitized(request, replay, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	destination, _ := artifactDestination(request)
+	var checkpoint pierExecutionCheckpoint
+	if err := readStudyJSON(filepath.Join(destination, "execution-checkpoint.json"), &checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	if !checkpoint.ArtifactsSanitizedAt.IsZero() {
+		t.Fatal("sanitizing a replay copy marked the original stage sanitized")
+	}
+	if err := markPierArtifactsSanitized(request, original, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if err := readStudyJSON(filepath.Join(destination, "execution-checkpoint.json"), &checkpoint); err != nil || checkpoint.ArtifactsSanitizedAt.IsZero() {
+		t.Fatalf("original-stage sanitization was not recorded: %#v, %v", checkpoint, err)
+	}
+}
 
 // promotePierAttempt stages one finished Pier execution into the evidence tree
 // and records the receipt that marks the cell as already paid for.
@@ -173,6 +281,104 @@ func TestPierArtifactsWithoutAReceiptAreNotTreatedAsCompleted(t *testing.T) {
 	}
 }
 
+func TestIncompletePierCheckpointBlocksAnotherPaidAttemptAndReportsStage(t *testing.T) {
+	request := recoveryRequestFixture(t)
+	stage := filepath.Join(request.RepoRoot, ".agent-layer", "tmp", "benchmark-"+request.EventID+"-retained")
+	if err := os.MkdirAll(stage, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePierExecutionCheckpoint(request, stage); err != nil {
+		t.Fatal(err)
+	}
+
+	retry := request
+	retry.EventID = "would-have-called-provider"
+	_, found, err := recoverCompletedPierExecution(retry)
+	if err == nil || found || !strings.Contains(err.Error(), "refusing a paid retry") ||
+		!strings.Contains(err.Error(), stage) {
+		t.Fatalf("incomplete execution recovery = found=%t err=%v", found, err)
+	}
+	if _, err := (PierExecutor{}).Execute(context.Background(), retry); err == nil ||
+		!strings.Contains(err.Error(), stage) {
+		t.Fatalf("executor ignored retained incomplete execution: %v", err)
+	}
+}
+
+func TestPostProviderFailureRetainsCheckpointAndStageForVerifierReplay(t *testing.T) {
+	request := recoveryRequestFixture(t)
+	stage := filepath.Join(request.RepoRoot, ".agent-layer", "tmp", "benchmark-"+request.EventID+"-retained")
+	if err := os.MkdirAll(stage, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePierExecutionCheckpoint(request, stage); err != nil {
+		t.Fatal(err)
+	}
+	if err := markPierProviderCompleted(request, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	retained, err := retainPersistedProviderFailure(request, errors.New("signal: interrupt"), nil)
+	if !retained || err == nil || !strings.Contains(err.Error(), "provider output was persisted") ||
+		!strings.Contains(err.Error(), stage) {
+		t.Fatalf("post-provider failure classification = retained=%t err=%v", retained, err)
+	}
+	destination, destinationErr := artifactDestination(request)
+	if destinationErr != nil {
+		t.Fatal(destinationErr)
+	}
+	for _, path := range []string{stage, filepath.Join(destination, "execution-checkpoint.json")} {
+		if _, statErr := os.Stat(path); statErr != nil {
+			t.Fatalf("replay boundary %s was not retained: %v", path, statErr)
+		}
+	}
+	if _, statErr := os.Stat(filepath.Join(destination, "execution-receipt.json")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("post-provider cancellation was finalized as an ordinary receipt: %v", statErr)
+	}
+}
+
+func TestProviderPhaseFailureKeepsOrdinaryReceiptPath(t *testing.T) {
+	request := recoveryRequestFixture(t)
+	stage := filepath.Join(request.RepoRoot, ".agent-layer", "tmp", "benchmark-"+request.EventID+"-provider")
+	if err := os.MkdirAll(stage, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePierExecutionCheckpoint(request, stage); err != nil {
+		t.Fatal(err)
+	}
+
+	retained, err := retainPersistedProviderFailure(request, errors.New("provider failed"), nil)
+	if retained || err != nil {
+		t.Fatalf("provider-phase failure classification = retained=%t err=%v", retained, err)
+	}
+}
+
+func TestCompletedPierReceiptTakesPrecedenceOverStaleCheckpoint(t *testing.T) {
+	request := recoveryRequestFixture(t)
+	stage := filepath.Join(request.RepoRoot, ".agent-layer", "tmp", "benchmark-"+request.EventID+"-stale")
+	if err := os.MkdirAll(filepath.Dir(stage), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fixture := writePierStage(t, request.TaskChecksum, .5, 1.25)
+	if err := copyRequiredTree(fixture, stage); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePierExecutionCheckpoint(request, stage); err != nil {
+		t.Fatal(err)
+	}
+	if err := promoteSanitizedPierArtifacts(request, stage); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePierExecutionReceipt(request, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	retry := request
+	retry.EventID = "fresh-event"
+	if checkpoint, found, err := matchingPierExecutionCheckpoint(retry); err != nil || found {
+		t.Fatalf("completed receipt left a blocking checkpoint = %#v found=%t err=%v", checkpoint, found, err)
+	}
+}
+
 func TestPierCleanupRefusesResourcesItCannotAttribute(t *testing.T) {
 	for _, test := range []struct {
 		name     string
@@ -233,6 +439,9 @@ func TestPierCleanupSurfacesDockerFailures(t *testing.T) {
 
 	t.Run("removal", func(t *testing.T) {
 		stage := writePierStage(t, "task-checksum", .5, 1)
+		originalOS := benchmarkHostOS
+		benchmarkHostOS = platformDarwin
+		t.Cleanup(func() { benchmarkHostOS = originalOS })
 		installDockerCleanupStub(t, func(_ context.Context, arguments ...string) ([]byte, error) {
 			if arguments[0] == "ps" {
 				return []byte("0123456789ab\texample-task__abc1234\n"), nil
