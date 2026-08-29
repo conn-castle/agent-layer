@@ -915,7 +915,7 @@ class _AgentLayerStreamAgent(_AgentLayerTreatment, BaseInstalledAgent):
         source = inspect.getsource(_bounded_json_lines) + inspect.getsource(parser)
         invocation = "parse_antigravity_stream(payload)" if provider == "antigravity" else f"parse_grok_stream(payload, {session_id!r})"
         script = (
-            "import json\n"
+            f"import json\nSTREAM_BYTE_CAP = {STREAM_BYTE_CAP}\n"
             + source
             + f"\npayload = open({remote_path!r}, encoding='utf-8').read()\n{invocation}\n"
         )
@@ -924,6 +924,32 @@ class _AgentLayerStreamAgent(_AgentLayerTreatment, BaseInstalledAgent):
             environment,
             command=f"printf '%s' '{encoded}' | base64 -d | python3",
         )
+
+    async def _preflight_retained_stream_validator(self, environment, provider: str) -> None:
+        """Execute the exact post-inference validator before a paid provider call."""
+        session_id = "11111111-1111-4111-8111-111111111111"
+        if provider == "antigravity":
+            payload = (
+                '{"event":"result","result":{"status":"SUCCESS",'
+                '"conversation_id":"preflight","usage":{"input_tokens":1,"output_tokens":1}}}\n'
+            )
+        elif provider == "grok":
+            payload = (
+                '{"type":"usage","usage":{"input_tokens":1,"output_tokens":1}}\n'
+                f'{{"type":"end","sessionId":"{session_id}","stopReason":"end_turn"}}\n'
+            )
+        else:
+            raise RuntimeError(f"unsupported retained stream validator provider {provider!r}")
+        remote_path = f"/tmp/agent-layer-{provider}-stream-validator-preflight.jsonl"
+        encoded = base64.b64encode(payload.encode("utf-8")).decode("ascii")
+        try:
+            await self.exec_as_agent(
+                environment,
+                command=f"printf '%s' '{encoded}' | base64 -d > {remote_path}",
+            )
+            await self._validate_retained_stream(environment, remote_path, provider, session_id)
+        finally:
+            await self.exec_as_agent(environment, command=f"rm -f {remote_path}")
 
 
 class AgentLayerAntigravity(_AgentLayerStreamAgent):
@@ -979,6 +1005,7 @@ with open(path, "w", encoding="utf-8") as stream:
                         f"{{ echo 'Antigravity benchmark model is unavailable' >&2; cat {models_path} >&2; exit 1; }}"
                     ),
                 )
+                await self._preflight_retained_stream_validator(environment, "antigravity")
                 return
             env = self.build_process_env({"AGY_CLI_DISABLE_AUTO_UPDATE": "1"})
             stream_path = str(EnvironmentPaths.agent_dir / self.OUTPUT_NAME)
@@ -1053,6 +1080,7 @@ class AgentLayerGrok(_AgentLayerStreamAgent):
                     ),
                     env=env,
                 )
+                await self._preflight_retained_stream_validator(environment, "grok")
                 return
             stream_path = str(EnvironmentPaths.agent_dir / self.OUTPUT_NAME)
             diagnostics_path = str(EnvironmentPaths.agent_dir / "grok.stderr")
