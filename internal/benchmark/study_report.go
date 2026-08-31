@@ -80,6 +80,7 @@ type StudyExperimentReport struct {
 	InvocationCount           int                      `json:"invocation_count"`
 	DispatchConformantRuns    int                      `json:"dispatch_conformant_runs"`
 	WorkflowNoncomplianceRuns int                      `json:"workflow_noncompliance_runs"`
+	VerifierTestTimeoutRuns   int                      `json:"verifier_test_timeout_runs"`
 	Tasks                     []StudyTaskReport        `json:"tasks"`
 	BundleManifest            *TreatmentManifest       `json:"immutable_bundle_manifest,omitempty"`
 	LinuxBinarySHA256         string                   `json:"linux_binary_sha256,omitempty"`
@@ -112,6 +113,7 @@ type StudyTaskReport struct {
 	CalibratedMean       *float64          `json:"calibrated_mean,omitempty"`
 	WeightedContribution *float64          `json:"weighted_contribution,omitempty"`
 	ObservedCost         ObservedCostRange `json:"observed_cost"`
+	VerifierTestTimeouts int               `json:"verifier_test_timeouts"`
 	MissingAttempts      []int             `json:"missing_attempts,omitempty"`
 }
 
@@ -163,6 +165,16 @@ func buildStudyReport(study preparedStudy, preparation matrixPreparation) (Study
 			return StudyReport{}, "", "", err
 		}
 		report.Experiments = append(report.Experiments, item)
+	}
+	testTimeoutRuns := 0
+	for _, experiment := range report.Experiments {
+		testTimeoutRuns += experiment.VerifierTestTimeoutRuns
+	}
+	if testTimeoutRuns > 0 {
+		report.Limitations = append(report.Limitations, fmt.Sprintf(
+			"%d completed run(s) exhausted the candidate test-execution timeout and were recorded explicitly as zero-score verifier outcomes.",
+			testTimeoutRuns,
+		))
 	}
 	if len(report.Experiments) == 1 {
 		report.Limitations = append(report.Limitations, "This study declares one experiment, so there are no pairwise comparisons.")
@@ -247,6 +259,10 @@ func buildStudyExperimentReport(experiment preparedStudyExperiment, arm matrixAr
 			}
 			if !result.DispatchConformant && arm.Bundle != nil {
 				item.WorkflowNoncomplianceRuns++
+			}
+			if result.VerifierOutcome == verifierOutcomeTestTimeout {
+				task.VerifierTestTimeouts++
+				item.VerifierTestTimeoutRuns++
 			}
 			minimum, maximum, costErr := result.CostBounds()
 			if costErr != nil {

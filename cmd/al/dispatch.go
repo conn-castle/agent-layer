@@ -90,7 +90,7 @@ func newDispatchOptionsCmd() *cobra.Command {
 }
 
 func newDispatchStartCmd() *cobra.Command {
-	var agent, model, effort, skill, prompt, promptFile string
+	var agent, model, effort, role, skill, prompt, promptFile string
 	cmd := &cobra.Command{
 		Use:          dispatchStartCommand,
 		Short:        "Start a new asynchronous agent conversation",
@@ -103,7 +103,7 @@ func newDispatchStartCmd() *cobra.Command {
 			}
 			return dispatchCommandError(cmd, agentdispatch.Start(agentdispatch.StartOptions{
 				Root: root, WorkDir: workingDir, Agent: agent, Model: model,
-				ReasoningEffort: effort, Skill: skill, Prompt: prompt, PromptFile: promptFile,
+				ReasoningEffort: effort, Role: role, Skill: skill, Prompt: prompt, PromptFile: promptFile,
 				Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr(), Env: os.Environ(),
 			}))
 		},
@@ -111,6 +111,7 @@ func newDispatchStartCmd() *cobra.Command {
 	cmd.Flags().StringVar(&agent, "agent", "", messages.DispatchAgentFlag)
 	cmd.Flags().StringVar(&model, "model", "", messages.DispatchModelFlag)
 	cmd.Flags().StringVar(&effort, "reasoning-effort", "", messages.DispatchReasoningEffortFlag)
+	cmd.Flags().StringVar(&role, "role", "", messages.DispatchRoleFlag)
 	cmd.Flags().StringVar(&skill, "skill", "", messages.DispatchSkillFlag)
 	addDispatchPromptFlags(cmd, &prompt, &promptFile)
 	return cmd

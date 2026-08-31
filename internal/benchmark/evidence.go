@@ -45,6 +45,7 @@ type AttemptResult struct {
 	ProviderClientVersion string    `json:"provider_client_version"`
 	DispatchConformant    bool      `json:"dispatch_conformant"`
 	PatchBytes            int64     `json:"patch_bytes"`
+	VerifierOutcome       string    `json:"verifier_outcome,omitempty"`
 	VerifierBuildFailed   bool      `json:"verifier_build_failed"`
 	BuildErrorExcerpt     string    `json:"build_error_excerpt,omitempty"`
 	CoordinatorCostUSD    *float64  `json:"coordinator_cost_usd,omitempty"`
@@ -70,6 +71,9 @@ func (result AttemptResult) Validate() error {
 		return fmt.Errorf("attempt result is missing required normalized fields")
 	}
 	if result.Status == statusFailed {
+		if result.VerifierOutcome != "" {
+			return fmt.Errorf("failed attempt result must not record a terminal verifier outcome")
+		}
 		if result.Error == "" {
 			return fmt.Errorf("failed attempt result must record an error")
 		}
@@ -81,6 +85,13 @@ func (result AttemptResult) Validate() error {
 		result.DurationSeconds == nil || *result.DurationSeconds < 0 ||
 		result.CostKind == "" {
 		return fmt.Errorf("successful attempt result has incomplete score, cost, or duration evidence")
+	}
+	if result.VerifierOutcome != "" && result.VerifierOutcome != verifierOutcomeTestTimeout {
+		return fmt.Errorf("successful attempt result has unsupported verifier outcome %q", result.VerifierOutcome)
+	}
+	if result.VerifierOutcome == verifierOutcomeTestTimeout &&
+		(result.F2PPassed != 0 || result.F2PScore != 0 || result.PartialScore != 0 || result.Reward != 0) {
+		return fmt.Errorf("terminal verifier test timeout must have a zero score")
 	}
 	if _, _, err := result.CostBounds(); err != nil {
 		return fmt.Errorf("successful attempt result has invalid cost evidence: %w", err)

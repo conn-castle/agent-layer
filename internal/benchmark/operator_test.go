@@ -605,6 +605,9 @@ func TestInitStudyCreatesSelfContainedSafeSnapshot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, ".agent-layer", "instructions", "rules.md"), []byte("rules\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(repo, ".agent-layer", "instructions", "memory.md"), []byte("Read CONTEXT.md before acting.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(repo, ".agents", "skills", "implement", "SKILL.md"), []byte("skill\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -623,7 +626,11 @@ func TestInitStudyCreatesSelfContainedSafeSnapshot(t *testing.T) {
 	}
 	for _, path := range []string{
 		studyPath, filepath.Join(destination, "selection.json"), filepath.Join(destination, "treatment", "config.toml"),
-		filepath.Join(destination, "treatment", "instructions", "rules.md"), filepath.Join(destination, "treatment", "skills", "implement", "SKILL.md"),
+		filepath.Join(destination, "treatment", "project-instructions", "rules.md"),
+		filepath.Join(destination, "treatment", "project-instructions", "memory.md"),
+		filepath.Join(destination, "treatment", "official-instructions", "00_rules.md"),
+		filepath.Join(destination, "treatment", "project-skills", "implement", "SKILL.md"),
+		filepath.Join(destination, "treatment", "official-skills", "implement", "SKILL.md"),
 		filepath.Join(destination, "treatment", "prompt.md"),
 	} {
 		if _, err := os.Stat(path); err != nil {
@@ -643,8 +650,39 @@ func TestInitStudyCreatesSelfContainedSafeSnapshot(t *testing.T) {
 	if _, _, err := studyMCPContract(config, filepath.Join(destination, "treatment", "config.toml")); err != nil {
 		t.Fatalf("generated Agent Layer config is invalid: %v", err)
 	}
-	if _, err := prepareStudy(StudyOptions{RepoRoot: repo, StudyPath: studyPath}); err != nil {
+	studyData, err := os.ReadFile(studyPath) // #nosec G304 -- test-owned scaffold path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{`required_dispatch_roles = ["plan-reviewer", "implementer", "code-reviewer"]`, `entry_prompt = "treatment/prompt.md"`, `skills = "treatment/official-skills"`, `instructions = "treatment/official-instructions"`} {
+		if !strings.Contains(string(studyData), required) {
+			t.Fatalf("generated study omitted mandatory workflow %q:\n%s", required, studyData)
+		}
+	}
+	prompt, err := os.ReadFile(filepath.Join(destination, "treatment", "prompt.md")) // #nosec G304 -- test-owned scaffold path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(prompt), "requires completed Agent Dispatch plan-reviewer, implementer, and code-reviewer roles") ||
+		!strings.Contains(string(prompt), "dispatch role fields") || strings.Count(string(prompt), "{{task}}") != 1 {
+		t.Fatalf("generated workflow prompt = %q", prompt)
+	}
+	prepared, err := prepareStudy(StudyOptions{RepoRoot: repo, StudyPath: studyPath})
+	if err != nil {
 		t.Fatalf("generated study does not validate: %v", err)
+	}
+	defer prepared.cleanupInputs()
+	if got := strings.Join(prepared.experiments[1].RequiredDispatchRoles, ","); got != "code-reviewer,implementer,plan-reviewer" {
+		t.Fatalf("generated required dispatch roles = %q", got)
+	}
+	outcome := studyProgress(prepared, StudyOptions{})
+	if len(outcome.Experiments) != 2 || !outcome.Experiments[1].AgentLayer || !outcome.Experiments[1].Skills || len(outcome.Experiments[1].DispatchTargets) != 3 {
+		t.Fatalf("generated workflow disclosure = %#v", outcome.Experiments)
+	}
+	for _, target := range outcome.Experiments[1].DispatchTargets {
+		if target.Agent != adapterCodex || target.Model != "gpt-5.6-luna" || target.ReasoningEffort != "low" {
+			t.Fatalf("generated workflow target = %#v", target)
+		}
 	}
 }
 

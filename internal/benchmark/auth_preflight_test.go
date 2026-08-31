@@ -15,6 +15,26 @@ import (
 
 const authPreflightSecret = "super-secret-credential-token"
 
+func TestGrokPaidCredentialLifetimeStopsBeforeInference(t *testing.T) {
+	repository := t.TempDir()
+	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	write := func(expiry time.Time) {
+		t.Helper()
+		writeJSONCredential(t, filepath.Join(repository, ".grok-config", "auth.json"), []byte(
+			`{"https://auth.x.ai::profile":{"expires_at":"`+expiry.Format(time.RFC3339)+`"}}`,
+		))
+	}
+	write(now.Add(31 * time.Minute))
+	if err := validateGrokPaidCredentialLifetime(repository, now); err != nil {
+		t.Fatalf("fresh Grok credential rejected: %v", err)
+	}
+	write(now.Add(30 * time.Minute))
+	if err := validateGrokPaidCredentialLifetime(repository, now); err == nil ||
+		!strings.Contains(err.Error(), "expires too soon") || !strings.Contains(err.Error(), "grok login --device-code") {
+		t.Fatalf("expiring Grok credential = %v", err)
+	}
+}
+
 func TestCodexAuthenticationPreflightUsesRepoLocalStatus(t *testing.T) {
 	repository := t.TempDir()
 	path := writeJSONCredential(t, filepath.Join(repository, ".codex", "auth.json"), []byte(`{"token":"`+authPreflightSecret+`"}`))

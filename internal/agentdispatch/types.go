@@ -97,6 +97,7 @@ type StartOptions struct {
 	Agent           string
 	Model           string
 	ReasoningEffort string
+	Role            string
 	Skill           string
 	Prompt          string
 	PromptFile      string

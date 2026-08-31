@@ -305,6 +305,43 @@ func TestStudyReportUsesWithinCellWelchVarianceAndHolmFamily(t *testing.T) {
 	}
 }
 
+func TestStudyReportDisclosesTerminalVerifierTestTimeouts(t *testing.T) {
+	root := t.TempDir()
+	selection := matrixSelectionFixture()
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks := []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 1}, {ID: "second-task", RepetitionsPerArm: 1}}
+	checksums := map[string]string{"first-task": "first-checksum", "second-task": "second-checksum"}
+	arm := matrixArmFixture(root, "Bare", ArmBaseline, model, effort, tasks)
+	rewriteStudyAttempt(t, arm, "first-task", 1, checksums["first-task"], 0, .25)
+	rewriteStudyAttempt(t, arm, "second-task", 1, checksums["second-task"], .5, .25)
+	path := armResultPath(arm.StateDir, "first-task", 1)
+	var timedOut AttemptResult
+	if err := readStudyJSON(path, &timedOut); err != nil {
+		t.Fatal(err)
+	}
+	timedOut.VerifierOutcome = verifierOutcomeTestTimeout
+	if err := writeJSON(path, timedOut); err != nil {
+		t.Fatal(err)
+	}
+	study := preparedStudy{selection: selection, studyID: strings.Repeat("s", 64), experiments: []preparedStudyExperiment{{studyExperiment: studyExperiment{Name: "Bare"}, model: model, effort: effort, identity: "bare"}}}
+	report, _, _, err := buildStudyReport(study, matrixPreparation{
+		selection: selection, stateDir: filepath.Join(root, "study"), tasks: tasks, checksums: checksums,
+		environments: map[string]string{"first-task": "env-1", "second-task": "env-2"}, arms: []matrixArm{arm}, taskConcurrency: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Experiments[0].VerifierTestTimeoutRuns != 1 || report.Experiments[0].Tasks[0].VerifierTestTimeouts != 1 {
+		t.Fatalf("timeout disclosure counts = %#v", report.Experiments[0])
+	}
+	if !containsString(report.Limitations, "1 completed run(s) exhausted the candidate test-execution timeout and were recorded explicitly as zero-score verifier outcomes.") {
+		t.Fatalf("timeout limitation missing: %#v", report.Limitations)
+	}
+}
+
 func TestStudyReportGatesNoncompliantComparisonsAndKeepsEligibleHolmFamily(t *testing.T) {
 	root := t.TempDir()
 	selection := matrixSelectionFixture()

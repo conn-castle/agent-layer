@@ -262,6 +262,11 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Default treatments assign the same execution target to every role, so target identity alone cannot prove the declared protocol ran.
     Tradeoffs: Prompt-only or skill-less historical dispatches are nonconformant for nonempty role contracts even when agent, model, and effort match.
 
+- Decision 2026-08-30 benchmark-dispatch-role-attribution: Conformance uses an explicit dispatch role, superseding skill-based role inference
+    Decision: `dispatch_start` accepts an optional caller-defined `role` and retains it on `RunRecord`. Required benchmark slots match completed fresh-root records one-to-one on that exact role plus the configured agent, model, and reasoning effort. The benchmark contract supplies `plan-reviewer`, `implementer`, and `code-reviewer` as explicit tool fields; prompt text is not evidence. This supersedes `benchmark-dispatch-slot-skill-match` for new constrained studies.
+    Reason: The consolidated `implement` workflow deliberately dispatches self-contained prompts and removed the old `review-plan`, `implement-plan`, and `review-uncommitted-code` wrapper skills. Requiring those deleted skill names made the benchmark's declared workflow impossible to satisfy and silently classified real plan, implementation, and review dispatches as nonconformant.
+    Tradeoffs: `dispatch_start` gains one small optional schema field. Historical constrained records without `role` remain nonconformant rather than being reclassified from prompt text; unconstrained records remain unaffected.
+
 - Decision 2026-08-20 grok-claude-md-compat: Claude instructions live under `.claude/`; Grok Claude-agents discovery is off
     Decision: `al sync` writes the Claude instruction shim to `.claude/CLAUDE.md` and deletes a generated root `CLAUDE.md`. When Grok is enabled, sync sets `[compat.claude] agents = false` in repo-local `$GROK_HOME/config.toml`, and `al grok`, Grok dispatch, and `al vscode` set `GROK_CLAUDE_AGENTS_ENABLED=false`. Shared instructions stay in root `AGENTS.md`.
     Reason: Grok 1.0.5 loads every matching root instruction name, so identical `AGENTS.md` and `CLAUDE.md` were injected twice. The Claude compat cell does not suppress root `CLAUDE.md`, but it does suppress `.claude/CLAUDE.md`. Claude Code accepts either project location.

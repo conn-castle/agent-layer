@@ -77,21 +77,43 @@ func normalizePier(stage string, request ExecutionRequest) (AttemptResult, error
 		RuntimeModel:   request.Model.RuntimeIdentifier, ReasoningEffort: request.Effort,
 		ProviderClientVersion: request.Model.ProviderClientVersion,
 	}
-	if string(raw.ExceptionInfo) != "" && string(raw.ExceptionInfo) != "null" {
-		result.Status = statusFailed
-		result.Error = string(raw.ExceptionInfo)
-		return result, nil
-	}
-	if raw.VerifierResult == nil {
-		return AttemptResult{}, fmt.Errorf("pier result for %s is missing verifier_result", request.Task)
-	}
 	duration := raw.FinishedAt.Sub(raw.StartedAt).Seconds()
+	hasException := len(bytes.TrimSpace(raw.ExceptionInfo)) > 0 && !bytes.Equal(bytes.TrimSpace(raw.ExceptionInfo), []byte("null"))
+	terminalTimeout := false
+	if hasException {
+		terminalTimeout, err = terminalVerifierTestTimeout(stage, raw)
+		if err != nil {
+			return AttemptResult{}, err
+		}
+		if !terminalTimeout {
+			result.Status = statusFailed
+			result.Error = string(raw.ExceptionInfo)
+			return result, nil
+		}
+	}
+	if !terminalTimeout {
+		terminalTimeout, err = internalVerifierTestTimeout(stage)
+		if err != nil {
+			return AttemptResult{}, err
+		}
+	}
 	result.Status = statusSuccess
-	result.F2PPassed = raw.VerifierResult.Rewards.F2PPassed
-	result.F2PTotal = raw.VerifierResult.Rewards.F2PTotal
-	result.F2PScore = raw.VerifierResult.Rewards.F2P
-	result.PartialScore = raw.VerifierResult.Rewards.Partial
-	result.Reward = raw.VerifierResult.Rewards.Reward
+	if terminalTimeout {
+		result.VerifierOutcome = verifierOutcomeTestTimeout
+		result.F2PTotal, err = pinnedTaskF2PTotal(request)
+		if err != nil {
+			return AttemptResult{}, err
+		}
+	} else {
+		if raw.VerifierResult == nil {
+			return AttemptResult{}, fmt.Errorf("pier result for %s is missing verifier_result", request.Task)
+		}
+		result.F2PPassed = raw.VerifierResult.Rewards.F2PPassed
+		result.F2PTotal = raw.VerifierResult.Rewards.F2PTotal
+		result.F2PScore = raw.VerifierResult.Rewards.F2P
+		result.PartialScore = raw.VerifierResult.Rewards.Partial
+		result.Reward = raw.VerifierResult.Rewards.Reward
+	}
 	result.CostUSD = raw.AgentResult.CostUSD
 	result.CostKind = costKindProviderReported
 	result.DurationSeconds = &duration
@@ -284,8 +306,8 @@ func verifierBuildFailed(stage string) (bool, string, error) {
 			}
 			return nil
 		}
-		if (entry.Name() != "test-stdout.txt" && entry.Name() != "run.log") ||
-			filepath.Base(filepath.Dir(path)) != "verifier" {
+		if (entry.Name() != verifierTestStdoutFile && entry.Name() != verifierRunLogFile) ||
+			filepath.Base(filepath.Dir(path)) != executionPhaseVerifier {
 			return nil
 		}
 		data, err := jobsRoot.ReadFile(path)
@@ -337,7 +359,7 @@ type dispatchConformanceRecord struct {
 	Agent           string `json:"agent"`
 	Model           string `json:"model"`
 	ReasoningEffort string `json:"reasoning_effort"`
-	Skill           string `json:"skill,omitempty"`
+	Role            string `json:"role,omitempty"`
 	Mode            string `json:"mode"`
 	State           string `json:"state"`
 	ParentRunID     string `json:"parent_run_id"`
@@ -424,7 +446,7 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 }
 
 func dispatchRecordMatchesSlot(record dispatchConformanceRecord, slot dispatchSlot) bool {
-	return record.Skill == slot.skill && record.Agent == slot.target.Agent &&
+	return record.Role == slot.role && record.Agent == slot.target.Agent &&
 		record.Model == slot.target.Model && record.ReasoningEffort == slot.target.ReasoningEffort
 }
 

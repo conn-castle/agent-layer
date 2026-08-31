@@ -106,6 +106,7 @@ type ExecutionRequest struct {
 	antigravityCredentialsPath string
 	artifactSecrets            [][]byte
 	executionCheckpointed      bool
+	recoveryOnly               bool
 	verifierReplay             bool
 	OnProgress                 func(ExecutionProgress)
 }
@@ -346,6 +347,11 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (resu
 			request.resumedFailedEventIDs = resumed
 		}
 	}
+	if request.Model.Adapter == adapterGrok && !request.PreflightOnly {
+		if err := validateGrokPaidCredentialLifetime(request.RepoRoot, time.Now().UTC()); err != nil {
+			return AttemptResult{}, err
+		}
+	}
 	checkout, err := ensurePinnedBenchmarkCheckout(ctx, request.RepoRoot)
 	if err != nil {
 		return AttemptResult{}, err
@@ -530,6 +536,39 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (resu
 	return result, returnErr
 }
 
+// validateGrokPaidCredentialLifetime stops before provider inference when a
+// long study has approached the expiry of Grok's copied OAuth credential.
+// Grok exposes no trustworthy non-billing refresh command, so failing before a
+// paid call is safer than discovering expiry inside an isolated task container.
+func validateGrokPaidCredentialLifetime(repoRoot string, now time.Time) error {
+	authPath := filepath.Join(repoRoot, ".grok-config", "auth.json")
+	if err := requireJSONCredentialFile(authPath, "Grok"); err != nil {
+		return err
+	}
+	data, err := os.ReadFile(authPath) // #nosec G304 -- fixed repo-local provider credential path.
+	if err != nil {
+		return fmt.Errorf("read Grok benchmark authentication lifetime: %w", err)
+	}
+	var profiles map[string]struct {
+		ExpiresAt time.Time `json:"expires_at"`
+	}
+	if err := json.Unmarshal(data, &profiles); err != nil {
+		return fmt.Errorf("decode Grok benchmark authentication lifetime: %w", err)
+	}
+	if len(profiles) != 1 {
+		return fmt.Errorf("grok benchmark authentication must contain exactly one profile, found %d", len(profiles))
+	}
+	var expiresAt time.Time
+	for _, profile := range profiles {
+		expiresAt = profile.ExpiresAt
+	}
+	const minimumLifetime = 30 * time.Minute
+	if expiresAt.IsZero() || !expiresAt.After(now.Add(minimumLifetime)) {
+		return fmt.Errorf("grok benchmark authentication expires too soon for another paid cell; run grok login --device-code with GROK_HOME=%s, then resume the study", filepath.Join(repoRoot, ".grok-config"))
+	}
+	return nil
+}
+
 // provePersistedProviderCompletion is the authoritative post-run mark. The
 // adapter's completion checkpoint alone proves the paid call finished, so it is
 // honored even when the rest of the evidence is incomplete (an interrupted
@@ -584,6 +623,21 @@ func finalizePierExecution(request ExecutionRequest, stage string, commandErr, c
 		}
 		durable = true
 		return nil
+	}
+	if commandErr != nil {
+		terminalResult, terminal, terminalErr := normalizeTerminalVerifierTestTimeout(artifactRoot, request)
+		if terminalErr != nil {
+			return AttemptResult{}, false, terminalErr
+		}
+		if terminal && cleanupErr == nil {
+			// Pier exits unsuccessfully for a verifier timeout, but a timeout
+			// proven to have occurred during the candidate test process is a
+			// completed benchmark outcome rather than infrastructure failure.
+			if err := recordDurableExecution(nil); err != nil {
+				return AttemptResult{}, durable, err
+			}
+			return terminalResult, true, nil
+		}
 	}
 	if commandErr != nil {
 		if retained, retainedErr := retainPersistedProviderFailure(request, commandErr, cleanupErr); retained {

@@ -64,6 +64,23 @@ func (PierExecutor) replayVerifier(ctx context.Context, request ExecutionRequest
 	if err := cleanupPierDockerResources(checkpoint.StagePath, request); err != nil {
 		return AttemptResult{}, fmt.Errorf("clean retained Pier execution before verifier replay: %w", err)
 	}
+	if terminalResult, terminal, terminalErr := normalizeTerminalVerifierTestTimeout(checkpoint.StagePath, request); terminalErr != nil {
+		return AttemptResult{}, fmt.Errorf("canonicalize retained verifier test timeout: %w; staging directory: %s", terminalErr, checkpoint.StagePath)
+	} else if terminal {
+		if err := promoteSanitizedPierArtifacts(request, checkpoint.StagePath); err != nil {
+			return AttemptResult{}, fmt.Errorf("promote retained verifier test-timeout evidence: %w; retained staging directory: %s", err, checkpoint.StagePath)
+		}
+		if err := writePierExecutionReceipt(request, nil, nil); err != nil {
+			return AttemptResult{}, err
+		}
+		if err := removePierExecutionCheckpoint(request); err != nil {
+			return AttemptResult{}, err
+		}
+		return terminalResult, nil
+	}
+	if request.recoveryOnly {
+		return AttemptResult{}, fmt.Errorf("retained checkpoint %s is not a terminal verifier test timeout; recovery-only mode refuses verifier replay", checkpoint.EventID)
+	}
 	if original != nil && pierResultSucceeded(*original) {
 		if err := promoteSanitizedPierArtifacts(request, checkpoint.StagePath); err != nil {
 			return AttemptResult{}, fmt.Errorf("promote completed retained Pier execution: %w; retained staging directory: %s", err, checkpoint.StagePath)
@@ -127,7 +144,7 @@ func (PierExecutor) replayVerifier(ctx context.Context, request ExecutionRequest
 		return AttemptResult{}, retainedReplayError(replayStage, err)
 	}
 	if request.OnProgress != nil {
-		request.OnProgress(ExecutionProgress{Phase: executionPhaseVerifier, StartedAt: time.Now().UTC(), EffectiveTimeout: timeouts.Verifier})
+		request.OnProgress(ExecutionProgress{Phase: executionPhaseVerifier, StartedAt: time.Now().UTC(), EffectiveTimeout: timeouts.Verifier, MaximumAttempts: timeouts.VerifierAttempts})
 	}
 	adapterPath, err := stageEmbeddedPierAdapter(replayStage)
 	if err != nil {
@@ -160,41 +177,59 @@ func (PierExecutor) replayVerifier(ctx context.Context, request ExecutionRequest
 	cleanupErr := cleanupPierDockerResources(replayStage, request)
 	removeConfigErr := os.RemoveAll(dockerConfig)
 	_ = os.WriteFile(filepath.Join(replayStage, "pier-command.log"), output.Bytes(), 0o600)
-	if err := errors.Join(commandErr, cleanupErr, removeConfigErr); err != nil {
-		return AttemptResult{}, retainedReplayError(replayStage, fmt.Errorf("verifier-only Pier replay failed: %w: %s", err, strings.TrimSpace(output.String())))
+	replayTerminal := false
+	if raw, rawErr := readPierTaskResult(replayStage, request); rawErr == nil {
+		replayTerminal, err = terminalVerifierTestTimeout(replayStage, raw)
+		if err != nil {
+			return AttemptResult{}, retainedReplayError(replayStage, err)
+		}
 	}
-	if err := mergeRetainedProviderEvidence(replayStage, checkpoint.StagePath, agentDir, patch, original, checkpoint, request); err != nil {
+	if err := errors.Join(cleanupErr, removeConfigErr); err != nil {
+		return AttemptResult{}, retainedReplayError(replayStage, fmt.Errorf("clean verifier-only Pier replay: %w: %s", err, strings.TrimSpace(output.String())))
+	}
+	if commandErr != nil && !replayTerminal {
+		return AttemptResult{}, retainedReplayError(replayStage, fmt.Errorf("verifier-only Pier replay failed: %w: %s", commandErr, strings.TrimSpace(output.String())))
+	}
+	result, err := finalizeVerifierReplayEvidence(replayStage, checkpoint.StagePath, agentDir, patch, original, checkpoint, request)
+	if err != nil {
 		return AttemptResult{}, retainedReplayError(replayStage, err)
+	}
+	replaySucceeded = true
+	return result, nil
+}
+
+func finalizeVerifierReplayEvidence(replayStage, providerStage, agentDir, patch string, original *pierTaskResult, checkpoint pierExecutionCheckpoint, request ExecutionRequest) (AttemptResult, error) {
+	if err := mergeRetainedProviderEvidence(replayStage, providerStage, agentDir, patch, original, checkpoint, request); err != nil {
+		return AttemptResult{}, err
 	}
 	if err := promoteSanitizedPierArtifacts(request, replayStage); err != nil {
-		return AttemptResult{}, retainedReplayError(replayStage, err)
+		return AttemptResult{}, err
 	}
 	request.verifierReplay = true
 	root, err := artifactDestination(request)
 	if err != nil {
-		return AttemptResult{}, retainedReplayError(replayStage, err)
+		return AttemptResult{}, err
 	}
 	result, err := normalizePier(root, request)
 	if err != nil {
-		return AttemptResult{}, retainedReplayError(replayStage, err)
+		return AttemptResult{}, err
 	}
 	if result.Status != statusSuccess {
 		// The checkpoint, the exact provider stage, and this replay stage all
 		// remain: the event is still verifier-only replayable and never
 		// becomes a failed receipt that a later invocation would resume at
 		// provider expense.
-		return AttemptResult{}, retainedReplayError(replayStage, fmt.Errorf(
+		return AttemptResult{}, fmt.Errorf(
 			"verifier replay did not complete successfully: %s; retained provider staging directory: %s",
-			result.Error, checkpoint.StagePath,
-		))
+			result.Error, providerStage,
+		)
 	}
 	if err := writePierExecutionReceipt(request, nil, nil); err != nil {
-		return AttemptResult{}, retainedReplayError(replayStage, err)
+		return AttemptResult{}, err
 	}
 	if err := removePierExecutionCheckpoint(request); err != nil {
-		return AttemptResult{}, retainedReplayError(replayStage, err)
+		return AttemptResult{}, err
 	}
-	replaySucceeded = true
 	return result, nil
 }
 
@@ -249,7 +284,7 @@ func pierExceptionType(result pierTaskResult) string {
 
 func verifierFailureType(exceptionType string) bool {
 	switch exceptionType {
-	case "VerifierTimeoutError", "RewardFileNotFoundError", "RewardFileEmptyError",
+	case verifierTimeoutException, "RewardFileNotFoundError", "RewardFileEmptyError",
 		"VerifierOutputParseError", "AddTestsDirError", "DownloadVerifierDirError":
 		return true
 	default:
@@ -431,7 +466,7 @@ func mergeRetainedProviderEvidence(replayStage, sourceStage, sourceAgent, source
 		if err := json.Unmarshal(originalData, &merged); err != nil {
 			return err
 		}
-		for _, key := range []string{"verifier_result", "verifier", "exception_info"} {
+		for _, key := range []string{"verifier_result", executionPhaseVerifier, "exception_info"} {
 			merged[key] = replayDocument[key]
 		}
 		// Pier finalizes started_at/finished_at when it writes result.json, but

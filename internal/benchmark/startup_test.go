@@ -124,6 +124,86 @@ hidden-test-command
 	}
 }
 
+func TestPrepareVerifierBuildContextPreservesGoBuildEventsBeforeReporterFilter(t *testing.T) {
+	source := t.TempDir()
+	image := "example/verifier:v1"
+	if err := os.WriteFile(filepath.Join(source, "Dockerfile"), []byte("FROM "+image+"\nCOPY test.sh /tests/test.sh\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	verifier := `#!/bin/bash
+export RUN_LOG=/logs/verifier/run.log
+set +e
+go test -json ./... 2>>"$RUN_LOG" \
+  | grep -v '"Action":"build-' \
+  | tee -a "$RUN_LOG" | go-ctrf-json-reporter
+set -e
+`
+	if err := os.WriteFile(filepath.Join(source, "test.sh"), []byte(verifier), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	target := t.TempDir()
+	if err := prepareVerifierBuildContext(source, target, image, image+"@sha256:"+strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := os.ReadFile(filepath.Join(target, "test.sh")) // #nosec G304 -- target is the test-owned temporary verifier context.
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(prepared)
+	buildTee := "tee -a /logs/verifier/build-events.jsonl"
+	if strings.Count(text, buildTee) != 1 || strings.Index(text, buildTee) > strings.Index(text, `grep -v '"Action":"build-'`) {
+		t.Fatalf("build evidence was not preserved before filtering:\n%s", text)
+	}
+	if !strings.Contains(text, ": > /logs/verifier/build-events.jsonl") {
+		t.Fatalf("build evidence was not reset per verifier attempt:\n%s", text)
+	}
+}
+
+func TestInstrumentVerifierBuildEvidenceSupportsPinnedGoPipelineForms(t *testing.T) {
+	forms := map[string]string{
+		"multiline with multiple set toggles": `set +e
+go build ./...
+set -e
+set +e
+go test -json ./... \
+  | grep -v '"Action":"build-' \
+  | tee -a "$RUN_LOG"
+`,
+		"same line": `set +e
+go test -json ./... | grep -v '"Action":"build-' | tee -a "$RUN_LOG" | go-ctrf-json-reporter
+`,
+		"brace group and two suites": `set +e
+{ go test -json ./...; } | grep -v '"Action":"build-' \
+  | tee -a "$RUN_LOG"
+go test -json ./other/... | grep -v '"Action":"build-' | tee -a "$RUN_LOG"
+`,
+	}
+	for name, pipeline := range forms {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "test.sh")
+			original := "#!/bin/bash\nexport RUN_LOG=/logs/verifier/run.log\n" + pipeline
+			if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := instrumentVerifierBuildEvidence(path); err != nil {
+				t.Fatal(err)
+			}
+			prepared, err := os.ReadFile(path) // #nosec G304 -- test-owned temporary path.
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := string(prepared)
+			filters := strings.Count(original, `grep -v '"Action":"build-'`)
+			if got := strings.Count(text, "tee -a /logs/verifier/build-events.jsonl"); got != filters {
+				t.Fatalf("instrumented streams = %d, want %d:\n%s", got, filters, text)
+			}
+			if !strings.Contains(text, "export RUN_LOG=/logs/verifier/run.log\n: > /logs/verifier/build-events.jsonl") {
+				t.Fatalf("build evidence reset is not anchored to run-log initialization:\n%s", text)
+			}
+		})
+	}
+}
+
 func TestPrepareTaskStartupAlwaysCertifiesTaskWithoutExposingVerifier(t *testing.T) {
 	checkout := t.TempDir()
 	task := "expr-try-catch-errors"

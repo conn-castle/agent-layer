@@ -327,6 +327,9 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	if err := copyRequiredFile(config, filepath.Join(layer, "config.toml")); err != nil {
 		return nil, err
 	}
+	if err := validateTreatmentInstructionDependencies(experiment.inputs.Instructions); err != nil {
+		return nil, err
+	}
 	for _, input := range []struct{ name, path string }{{studyInputInstructions, experiment.inputs.Instructions}, {studyInputSkills, experiment.inputs.Skills}} {
 		if input.path == "" {
 			if err := os.MkdirAll(filepath.Join(layer, input.name), 0o700); err != nil {
@@ -461,6 +464,49 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	}
 	cleanup = false
 	return &TreatmentBundle{Root: root, Manifest: manifest, ManifestHash: manifestHash, LinuxArchitecture: targetArch, LinuxBinary: binary, LinuxBinarySHA256: binaryHash, AdapterPath: adapterPath, AdapterSHA256: adapterSHA256, TemplatesCommit: commit, TemplatesDirty: dirty, CredentialNames: credentialNames, RuntimeSourceKind: sourceKind, RuntimeVersion: runtimeVersion}, nil
+}
+
+func validateTreatmentInstructionDependencies(root string) error {
+	if root == "" {
+		return nil
+	}
+	// Treatment manifests deliberately exclude project memory and personal
+	// context. Fail before provider execution when instructions mandate known
+	// project-state documents or persona guides instead of silently giving only
+	// the treatment arm failed reads.
+	projectStateNames := map[string]bool{
+		"backlog.md": true, "commands.md": true, "context.md": true,
+		"decisions.md": true, "issues.md": true, "memory.md": true, "roadmap.md": true,
+	}
+	restricted, err := os.OpenRoot(root)
+	if err != nil {
+		return fmt.Errorf("open study instructions: %w", err)
+	}
+	defer func() { _ = restricted.Close() }()
+	return fs.WalkDir(restricted.FS(), ".", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		data, err := restricted.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, field := range strings.Fields(string(data)) {
+			reference := strings.Trim(field, "`'\",;:()[]{}<>")
+			reference = strings.TrimRight(reference, ".")
+			normalized := strings.ToLower(strings.TrimPrefix(filepath.ToSlash(reference), "./"))
+			if projectStateNames[filepath.Base(normalized)] || strings.HasPrefix(normalized, "guides/") {
+				return fmt.Errorf(
+					"study instructions %s reference excluded project-local file %s; provide self-contained benchmark instructions",
+					filepath.ToSlash(path), reference,
+				)
+			}
+		}
+		return nil
+	})
 }
 
 func rewriteTreatmentProjectionRoot(root, from, to string) error {

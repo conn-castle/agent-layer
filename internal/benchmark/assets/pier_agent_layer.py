@@ -28,6 +28,7 @@ from pier.agents.installed.base import BaseInstalledAgent
 from pier.models.agent.install import AgentInstallSpec, InstallStep
 from pier.models.agent.network import NetworkAllowlist
 from pier.models.trial.paths import EnvironmentPaths
+from pier.trial.trial import Trial
 
 EXPECTED_PIER_VERSION = "0.3.0"
 REMOTE_BUNDLE = "/tmp/agent-layer-benchmark"
@@ -71,6 +72,23 @@ GROK_LINUX_AMD64_URL = "https://storage.googleapis.com/grok-build-public-artifac
 GROK_LINUX_AMD64_SHA256 = "9ba87444e1819e8f6104adbbf4676a870c204380aa5c3e1c38a926c4ea677238"
 STREAM_BYTE_CAP = 16 * 1024 * 1024
 ANTIGRAVITY_PROMPT_BYTE_CAP = 100 * 1024
+
+
+def _pin_single_verifier_attempt() -> None:
+    """Remove Pier's unconditional retry for an exhausted verifier timeout."""
+    version = importlib.metadata.version("datacurve-pier")
+    if version != EXPECTED_PIER_VERSION:
+        raise RuntimeError(
+            f"Agent Layer benchmark adapter requires Pier {EXPECTED_PIER_VERSION}, got {version}"
+        )
+    retrying = Trial._verify_with_retry
+    single_attempt = getattr(retrying, "__wrapped__", None)
+    if single_attempt is None or getattr(single_attempt, "__name__", "") != "_verify_with_retry":
+        raise RuntimeError("Pier verifier retry contract no longer matches the pinned adapter")
+    Trial._verify_with_retry = single_attempt
+
+
+_pin_single_verifier_attempt()
 
 
 def validate_mcp_initialize_response(
@@ -269,19 +287,31 @@ class _AgentLayerTreatment:
                 raise RuntimeError("Agent Layer benchmark dispatch target schema is invalid")
         super().__init__(*args, **kwargs)
 
-    def _record_provider_checkpoint(self, context) -> None:
+    def _record_provider_checkpoint(self, context=None) -> None:
         """Publish agent completion before Pier starts pre-artifacts/verification."""
         if not getattr(self, "_provider_completed", False) or self._preflight_only:
             return
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         path = self.logs_dir / "provider-checkpoint.json"
         temporary = path.with_suffix(".tmp")
+
+        completed_at = datetime.now(timezone.utc).isoformat()
+        if path.is_file():
+            try:
+                existing = json.loads(path.read_text(encoding="utf-8"))
+                if existing.get("schema") == "agent-layer-provider-checkpoint-v1" and existing.get("completed_at"):
+                    completed_at = existing["completed_at"]
+            except (OSError, json.JSONDecodeError):
+                # Replace malformed advisory state atomically. The host still
+                # validates the checkpoint before treating it as authoritative.
+                pass
+        agent_result = context.model_dump(mode="json") if context is not None else {}
         temporary.write_text(
             json.dumps(
                 {
                     "schema": "agent-layer-provider-checkpoint-v1",
-                    "completed_at": datetime.now(timezone.utc).isoformat(),
-                    "agent_result": context.model_dump(mode="json"),
+                    "completed_at": completed_at,
+                    "agent_result": agent_result,
                 },
                 sort_keys=True,
             )
@@ -729,22 +759,29 @@ for s in json.load(open(p, encoding="utf-8")).get("servers", []):
 
     def _workflow_instruction(self, instruction: str) -> str:
         template = (self._treatment_bundle / "workflow-prompt.md").read_text(encoding="utf-8")
-        if template.count("{{task}}") == 1:
-            # Study-owned entry prompts are reproducibility inputs. Do not add
-            # a workflow prefix/suffix or infer task placement.
-            return template.replace("{{task}}", instruction)
-        describe = lambda target: (
-            f"{target['agent']} {target['model']} with "
-            f"{target['reasoning_effort']} reasoning-effort"
+        if template.count("{{task}}") != 1:
+            raise RuntimeError("Agent Layer benchmark workflow prompt must contain exactly one {{task}} placeholder")
+        rendered = template.replace("{{task}}", instruction)
+        if not self._required_dispatch_roles:
+            return rendered
+        describe = lambda target, role: (
+            f"agent={target['agent']}, model={target['model']}, "
+            f"reasoning_effort={target['reasoning_effort']}, role={role}"
         )
         plan_reviewers = self._dispatch_config["plan_reviewers"]
-        return template.format(
-            plan_reviewer_count=len(plan_reviewers),
-            plan_reviewers="; ".join(describe(target) for target in plan_reviewers),
-            implementer=describe(self._dispatch_config["implementer"]),
-            code_reviewer=describe(self._dispatch_config["code_reviewer"]),
-            task=instruction,
+        contract = "\n".join(
+            [
+                "Agent Layer benchmark workflow contract (mandatory):",
+                "Use the implement skill with these exact named Agent Dispatch inputs:",
+                f"- plan_reviewers: [{'; '.join(describe(target, 'plan-reviewer') for target in plan_reviewers)}]",
+                f"- implementer: {describe(self._dispatch_config['implementer'], 'implementer')}",
+                f"- code_reviewer: {describe(self._dispatch_config['code_reviewer'], 'code-reviewer')}",
+                f"Required completed dispatch roles: {', '.join(self._required_dispatch_roles)}.",
+                "Pass the exact role value above in every dispatch_start call; prompt text is not role evidence.",
+                "A direct single-agent implementation is noncompliant. Complete every required role through the dispatch-agent skill before returning.",
+            ]
         )
+        return contract + "\n\n" + rendered
 
     async def _prepare(self, instruction: str, environment) -> str:
         """Install the treatment and return the instruction the agent receives."""
@@ -1052,6 +1089,7 @@ with open(path, "w", encoding="utf-8") as stream:
             except Exception:
                 pass
             await self._collect_evidence(environment)
+            self._record_provider_checkpoint()
 
 
 class AgentLayerGrok(_AgentLayerStreamAgent):
@@ -1127,6 +1165,7 @@ class AgentLayerGrok(_AgentLayerStreamAgent):
             except Exception:
                 pass
             await self._collect_evidence(environment)
+            self._record_provider_checkpoint()
 
 
 class AgentLayerCodex(_AgentLayerTreatment, Codex):
@@ -1165,6 +1204,7 @@ class AgentLayerCodex(_AgentLayerTreatment, Codex):
             return result
         finally:
             await self._collect_evidence(environment)
+            self._record_provider_checkpoint()
 
     def populate_context_post_run(self, context) -> None:
         super().populate_context_post_run(context)
@@ -1185,6 +1225,7 @@ class AgentLayerClaudeCode(_AgentLayerTreatment, ClaudeCode):
             return result
         finally:
             await self._collect_evidence(environment)
+            self._record_provider_checkpoint()
 
     def populate_context_post_run(self, context) -> None:
         super().populate_context_post_run(context)

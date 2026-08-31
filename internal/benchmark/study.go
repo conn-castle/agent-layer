@@ -26,6 +26,7 @@ type StudyOptions struct {
 	TaskConcurrency   int
 	Tasks             []string
 	DryRun            bool
+	RecoveryOnly      bool
 	ResourcePreflight bool
 	ReclaimTaskImages bool
 	// OnProgress receives stage and cell updates. Cell phase updates arrive
@@ -44,9 +45,11 @@ type StudyOptions struct {
 // StudyProgress is an operator-facing stage or cell update.
 type StudyProgress struct {
 	Phase, Message, Task, Experiment string
+	Attempt                          int
 	Completed, Required              int
 	StartedAt                        time.Time
 	EffectiveTimeout                 time.Duration
+	MaximumAttempts                  int
 }
 
 // StudyOutcome is the user-facing progress summary for a study invocation.
@@ -56,6 +59,8 @@ type StudyOutcome struct {
 	Required                 int
 	Completed                int
 	Missing                  int
+	ExecutionTimeoutSum      time.Duration
+	RecoveredCells           int
 	HasBareExperiment        bool
 	BarePublishedEstimateUSD *float64
 	ObservedInvocationCost   ObservedCostRange
@@ -66,11 +71,20 @@ type StudyOutcome struct {
 
 // StudyExperimentProgress reports cached and missing cells for one experiment.
 type StudyExperimentProgress struct {
-	Name      string
-	Identity  string
-	Completed int
-	Required  int
-	Missing   int
+	Name                  string
+	Identity              string
+	AgentLayer            bool
+	Skills                bool
+	RequiredDispatchRoles []string
+	DispatchTargets       []StudyDispatchTargetProgress
+	Completed             int
+	Required              int
+	Missing               int
+}
+
+// StudyDispatchTargetProgress exposes one effective required workflow target.
+type StudyDispatchTargetProgress struct {
+	Role, Agent, Model, ReasoningEffort string
 }
 
 type studyDocument struct {
@@ -146,7 +160,7 @@ type studyArmContract struct {
 }
 
 func writeStudyManifest(study *preparedStudy, preparation matrixPreparation) error {
-	manifest := immutableStudyManifest{SchemaVersion: "deepswe-study-manifest-v1", StudyID: study.studyID, SelectionID: study.selectionID, Checksums: copyStringMap(preparation.checksums), Environments: copyStringMap(preparation.environments), Resources: studyResourceContract()}
+	manifest := immutableStudyManifest{SchemaVersion: immutableStudyManifestSchema, StudyID: study.studyID, SelectionID: study.selectionID, Checksums: copyStringMap(preparation.checksums), Environments: copyStringMap(preparation.environments), Resources: studyResourceContract()}
 	for _, arm := range preparation.arms {
 		manifest.Membership = append(manifest.Membership, arm.Label)
 		contract := studyArmContract{Name: arm.Label, ID: arm.ID, Target: arm.Loaded.Model.RuntimeIdentifier + ":" + arm.Loaded.Effort, Adapter: arm.AdapterSHA256}
@@ -177,8 +191,11 @@ func writeStudyManifest(study *preparedStudy, preparation matrixPreparation) err
 }
 
 // RunStudy is intentionally the only paid public entry point. The command itself
-// is authorization; callers must use DryRun when they need the no-inference path.
+// is authorization unless DryRun or RecoveryOnly selects a no-inference path.
 func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) (StudyOutcome, error) {
+	if options.DryRun && options.RecoveryOnly {
+		return StudyOutcome{}, fmt.Errorf("benchmark study cannot combine dry-run and recovery-only modes")
+	}
 	emitStudyProgress(options, StudyProgress{Phase: "study", Message: "Validating and snapshotting study inputs"})
 	prepared, err := prepareStudy(options)
 	if err != nil {
@@ -200,10 +217,41 @@ func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) 
 		outcome.Experiments[i].Completed = progress.Arms[i].Completed
 		outcome.Experiments[i].Missing = progress.Arms[i].Missing
 	}
+	outcome.ExecutionTimeoutSum, err = missingStudyCellsTimeoutSum(options.RepoRoot, preparation)
+	if err != nil {
+		return StudyOutcome{}, err
+	}
 	if options.OnPrepared != nil {
 		if err := options.OnPrepared(outcome); err != nil {
 			return StudyOutcome{}, err
 		}
+	}
+	if options.RecoveryOnly {
+		recovered, err := recoverTerminalVerifierTimeoutCells(ctx, options.RepoRoot, preparation, options.Tasks)
+		if err != nil {
+			return StudyOutcome{}, err
+		}
+		outcome.RecoveredCells = recovered
+		progress, err = studyProgressChecked(preparation)
+		if err != nil {
+			return StudyOutcome{}, err
+		}
+		outcome.Completed, outcome.Missing = progress.Completed, progress.Missing
+		for i := range outcome.Experiments {
+			outcome.Experiments[i].Completed = progress.Arms[i].Completed
+			outcome.Experiments[i].Missing = progress.Arms[i].Missing
+		}
+		outcome.ExecutionTimeoutSum, err = missingStudyCellsTimeoutSum(options.RepoRoot, preparation)
+		if err != nil {
+			return StudyOutcome{}, err
+		}
+		if outcome.Missing == 0 {
+			_, outcome.JSONPath, outcome.HTMLPath, err = buildStudyReport(prepared, preparation)
+			if err != nil {
+				return StudyOutcome{}, err
+			}
+		}
+		return outcome, nil
 	}
 	if options.DryRun {
 		return outcome, nil
@@ -238,8 +286,8 @@ func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) 
 		executor = reclaimingExecutor
 	}
 	executionErr := executeMatrix(ctx, options.RepoRoot, preparation.checksums, preparation.environments, preparation.arms, options.Tasks, preparation.taskConcurrency, executor, func(job matrixJob) {
-		emitStudyProgress(options, StudyProgress{Phase: "run", Message: "Running benchmark cell", Task: job.cell.task, Experiment: job.arm.Label, Completed: completedCells, Required: outcome.Required})
-	}, func(result AttemptResult) {
+		emitStudyProgress(options, StudyProgress{Phase: "run", Message: "Running benchmark cell", Task: job.cell.task, Experiment: job.arm.Label, Attempt: job.cell.attempt, Completed: completedCells, Required: outcome.Required})
+	}, func(job matrixJob, result AttemptResult) {
 		minimum, maximum, boundsErr := result.CostBounds()
 		if boundsErr != nil {
 			return
@@ -251,7 +299,7 @@ func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) 
 			options.OnCellComplete(addObservedCost(priorCost, invocationCost))
 		}
 		completedCells++
-		emitStudyProgress(options, StudyProgress{Phase: "run", Message: "Completed benchmark cell", Task: result.Task, Completed: completedCells, Required: outcome.Required})
+		emitStudyProgress(options, StudyProgress{Phase: "run", Message: "Completed benchmark cell", Task: result.Task, Experiment: job.arm.Label, Attempt: job.cell.attempt, Completed: completedCells, Required: outcome.Required})
 	})
 	if reclaimingExecutor != nil {
 		cleanupCtx, cancelCleanup := detachedBenchmarkCleanupContext(ctx)
@@ -278,6 +326,75 @@ func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) 
 		outcome.Experiments[i].Missing = progress.Arms[i].Missing
 	}
 	return outcome, nil
+}
+
+func recoverTerminalVerifierTimeoutCells(ctx context.Context, repoRoot string, preparation matrixPreparation, tasks []string) (recovered int, returnErr error) {
+	lock, err := acquireStudyExecutionLock(preparation.arms)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { returnErr = errors.Join(returnErr, lock.release()) }()
+	selected := map[string]bool{}
+	for _, task := range tasks {
+		selected[task] = true
+	}
+	for armIndex := range preparation.arms {
+		arm := &preparation.arms[armIndex]
+		for _, task := range arm.Loaded.Plan.Tasks {
+			if len(selected) > 0 && !selected[task.ID] {
+				continue
+			}
+			for attempt := 1; attempt <= task.RepetitionsPerArm; attempt++ {
+				state, _, err := inspectStudyCell(*arm, task.ID, attempt, preparation.checksums[task.ID], preparation.environments[task.ID])
+				if err != nil {
+					return recovered, err
+				}
+				if state != studyCellMissing {
+					continue
+				}
+				request := ExecutionRequest{
+					RepoRoot: repoRoot, EvidenceDir: arm.StateDir, Attempt: attempt, Task: task.ID,
+					Experiment: arm.Label, Model: arm.Loaded.Model, Effort: arm.Loaded.Effort, Arm: arm.Mode,
+					Bundle: arm.Bundle, AgentTimeoutMultiplier: arm.AgentTimeoutMultiplier,
+					TaskChecksum: preparation.checksums[task.ID], EnvironmentIdentity: preparation.environments[task.ID],
+					ResumeFailedInfrastructure: true,
+				}
+				checkpoint, found, err := matchingPierExecutionCheckpoint(request)
+				if err != nil {
+					return recovered, err
+				}
+				if !found {
+					continue
+				}
+				raw, err := readPierTaskResult(checkpoint.StagePath, request)
+				if err != nil {
+					return recovered, fmt.Errorf("inspect retained checkpoint %s at %s: %w", checkpoint.EventID, checkpoint.StagePath, err)
+				}
+				terminal, err := terminalVerifierTestTimeout(checkpoint.StagePath, raw)
+				if err != nil {
+					return recovered, err
+				}
+				if !terminal {
+					continue
+				}
+				request.EventID = checkpoint.EventID
+				request.executionCheckpointed = true
+				request.recoveryOnly = true
+				result, err := (PierExecutor{}).replayVerifier(ctx, request, checkpoint)
+				if err != nil {
+					return recovered, fmt.Errorf("recover terminal verifier timeout for %s repetition %d: %w", task.ID, attempt, err)
+				}
+				if result.VerifierOutcome != verifierOutcomeTestTimeout || result.Validate() != nil {
+					return recovered, fmt.Errorf("recovery for %s repetition %d returned invalid terminal timeout evidence", task.ID, attempt)
+				}
+				if err := writeJSON(armResultPath(arm.StateDir, task.ID, attempt), result); err != nil {
+					return recovered, err
+				}
+				recovered++
+			}
+		}
+	}
+	return recovered, nil
 }
 
 func emitStudyProgress(options StudyOptions, progress StudyProgress) {
@@ -343,7 +460,8 @@ func (executor *studyProgressExecutor) Execute(ctx context.Context, request Exec
 		}
 		emitStudyProgress(executor.options, StudyProgress{
 			Phase: progress.Phase, Message: message, Task: request.Task, Experiment: request.Experiment,
-			StartedAt: progress.StartedAt, EffectiveTimeout: progress.EffectiveTimeout,
+			Attempt:   request.Attempt,
+			StartedAt: progress.StartedAt, EffectiveTimeout: progress.EffectiveTimeout, MaximumAttempts: progress.MaximumAttempts,
 		})
 	}
 	return executor.delegate.Execute(ctx, request)
@@ -404,6 +522,15 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 	if err != nil {
 		return matrixPreparation{}, err
 	}
+	if options.RecoveryOnly {
+		recoverable, found, err := loadRecoverableCachedStudy(options.RepoRoot, prepared, candidates, tasks, options.TaskConcurrency)
+		if err != nil {
+			return matrixPreparation{}, err
+		}
+		if found {
+			return recoverable, nil
+		}
+	}
 	cached, bundles, found, err := loadCompleteCachedStudy(options.RepoRoot, prepared, candidates, tasks, options.TaskConcurrency)
 	if err != nil {
 		return matrixPreparation{}, err
@@ -417,9 +544,12 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 	if err := verifyBenchmarkPier(ctx); err != nil {
 		return matrixPreparation{}, err
 	}
-	authentication, err := validateBenchmarkAuthentication(ctx, options.RepoRoot, selections)
-	if err != nil {
-		return matrixPreparation{}, err
+	authentication := map[string]AuthenticationPreflight{}
+	if !options.RecoveryOnly {
+		authentication, err = validateBenchmarkAuthentication(ctx, options.RepoRoot, selections)
+		if err != nil {
+			return matrixPreparation{}, err
+		}
 	}
 	if bundles == nil {
 		bundles, err = stageStudyBundlesIfNeeded(options.RepoRoot, prepared)
@@ -427,7 +557,7 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 			return matrixPreparation{}, err
 		}
 	}
-	if options.ResourcePreflight {
+	if options.ResourcePreflight && !options.RecoveryOnly {
 		emitStudyProgress(options, StudyProgress{Phase: "resources", Message: "Checking Docker disk capacity before image pulls"})
 		if err := preflightStudyDisk(ctx, tasks, options.ReclaimTaskImages && options.TaskConcurrency == 1); err != nil {
 			return matrixPreparation{}, err
@@ -459,9 +589,11 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 			return matrixPreparation{}, fmt.Errorf("reuse immutable historical evidence for experiment %q: %w", arm.Label, err)
 		}
 	}
-	work := scheduleStudyRuntimePreflights(options.RepoRoot, tasks, checksums, environments, preparation.arms)
-	if err := preflightStudyRuntimes(ctx, options, tasks, work, reclaimTaskImages, checkout); err != nil {
-		return matrixPreparation{}, err
+	if !options.RecoveryOnly {
+		work := scheduleStudyRuntimePreflights(options.RepoRoot, tasks, checksums, environments, preparation.arms)
+		if err := preflightStudyRuntimes(ctx, options, tasks, work, reclaimTaskImages, checkout); err != nil {
+			return matrixPreparation{}, err
+		}
 	}
 	if err := writeStudyManifest(prepared, preparation); err != nil {
 		return matrixPreparation{}, err
@@ -663,7 +795,10 @@ func stageStudyBundlesIfNeeded(repoRoot string, prepared *preparedStudy) ([]*Tre
 	return stageBenchmarkExperimentBundles(repoRoot, prepared)
 }
 
-const maxHistoricalStudyDirectories = 1024
+const (
+	maxHistoricalStudyDirectories = 1024
+	immutableStudyManifestSchema  = "deepswe-study-manifest-v1"
+)
 
 type cachedStudyCandidate struct {
 	stateDir              string
@@ -833,6 +968,124 @@ func loadCompleteCachedStudy(repoRoot string, prepared *preparedStudy, candidate
 	}
 }
 
+// loadRecoverableCachedStudy binds recovery to immutable historical runtime
+// identity. A candidate binary may carry a newer embedded adapter, which must
+// not redirect recovery into a newly identified study and strand the retained
+// checkpoint it was invoked to canonicalize.
+func loadRecoverableCachedStudy(repoRoot string, prepared *preparedStudy, candidates []cachedStudyCandidate, tasks []benchmarkPlanTask, concurrency int) (matrixPreparation, bool, error) {
+	var matches []matrixPreparation
+	for _, candidate := range candidates {
+		var manifest immutableStudyManifest
+		if err := readStudyJSON(filepath.Join(candidate.stateDir, "study-manifest.json"), &manifest); err != nil {
+			return matrixPreparation{}, false, fmt.Errorf("read recoverable immutable study manifest %s: %w", filepath.Base(candidate.stateDir), err)
+		}
+		if !studyManifestDeclarationCompatible(manifest, prepared) {
+			continue
+		}
+		if filepath.Base(candidate.stateDir) != manifest.StudyID {
+			continue
+		}
+		preparation := recoveryPreparationFromManifest(prepared, manifest, candidate.stateDir, tasks, concurrency)
+		compatible := true
+		for index := range preparation.arms {
+			arm := &preparation.arms[index]
+			if arm.ID != manifest.Arms[index].ID || arm.Label != manifest.Arms[index].Name {
+				compatible = false
+				break
+			}
+			if err := requireStudyArmManifest(prepared.selectionID, tasks, preparation.checksums, arm); err != nil {
+				return matrixPreparation{}, false, err
+			}
+		}
+		if !compatible {
+			continue
+		}
+		count, err := terminalVerifierTimeoutCheckpointCount(repoRoot, preparation)
+		if err != nil {
+			return matrixPreparation{}, false, err
+		}
+		if count > 0 {
+			matches = append(matches, preparation)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return matrixPreparation{}, false, nil
+	case 1:
+		prepared.studyID = filepath.Base(matches[0].stateDir)
+		return matches[0], true, nil
+	default:
+		return matrixPreparation{}, false, fmt.Errorf("terminal verifier timeout recovery matches more than one historical study; narrow or repair retained study state before retrying")
+	}
+}
+
+func recoveryPreparationFromManifest(prepared *preparedStudy, manifest immutableStudyManifest, stateDir string, tasks []benchmarkPlanTask, concurrency int) matrixPreparation {
+	preparation := matrixPreparation{
+		selection: prepared.selection, selectionID: prepared.selectionID, tasks: tasks,
+		checksums: copyStringMap(manifest.Checksums), environments: copyStringMap(manifest.Environments),
+		taskConcurrency: concurrency, stateDir: stateDir,
+	}
+	bundles := historicalBundlesFromManifest(manifest)
+	for index, experiment := range prepared.experiments {
+		mode := ArmBaseline
+		if bundles[index] != nil {
+			mode = ArmTreatment
+		}
+		loaded := loadedBenchmarkPlan{Model: experiment.model, Effort: experiment.effort}
+		loaded.Plan.Tasks = tasks
+		contract := manifest.Arms[index]
+		preparation.arms = append(preparation.arms, matrixArm{
+			ID: contract.ID, Label: contract.Name, Mode: mode, Loaded: loaded, Bundle: bundles[index],
+			AdapterSHA256: contract.Adapter, AgentTimeoutMultiplier: skillsAgentTimeoutFactor,
+			IgnoreProviderClientInManifest: true, StateDir: filepath.Join(stateDir, "arms", contract.ID),
+		})
+	}
+	return preparation
+}
+
+func terminalVerifierTimeoutCheckpointCount(repoRoot string, preparation matrixPreparation) (int, error) {
+	count := 0
+	for armIndex := range preparation.arms {
+		arm := &preparation.arms[armIndex]
+		for _, task := range arm.Loaded.Plan.Tasks {
+			for attempt := 1; attempt <= task.RepetitionsPerArm; attempt++ {
+				state, _, err := inspectStudyCell(*arm, task.ID, attempt, preparation.checksums[task.ID], preparation.environments[task.ID])
+				if err != nil {
+					return 0, err
+				}
+				if state != studyCellMissing {
+					continue
+				}
+				request := ExecutionRequest{
+					RepoRoot: repoRoot, EvidenceDir: arm.StateDir, Attempt: attempt, Task: task.ID,
+					Model: arm.Loaded.Model, Effort: arm.Loaded.Effort, Arm: arm.Mode, Bundle: arm.Bundle,
+					AgentTimeoutMultiplier: arm.AgentTimeoutMultiplier, TaskChecksum: preparation.checksums[task.ID],
+					EnvironmentIdentity: preparation.environments[task.ID],
+				}
+				checkpoint, found, err := matchingPierExecutionCheckpoint(request)
+				if err != nil {
+					return 0, err
+				}
+				if !found {
+					continue
+				}
+				raw, err := readPierTaskResult(checkpoint.StagePath, request)
+				if err != nil {
+					return 0, fmt.Errorf("inspect retained checkpoint %s at %s: %w", checkpoint.EventID, checkpoint.StagePath, err)
+				}
+				terminal, err := terminalVerifierTestTimeout(checkpoint.StagePath, raw)
+				if err != nil {
+					return 0, err
+				}
+				if terminal {
+					count++
+				}
+			}
+		}
+	}
+	return count, nil
+}
+
 func loadReportClaimedCachedStudy(repoRoot string, prepared *preparedStudy, stateDir string, bundles []*TreatmentBundle, tasks []benchmarkPlanTask, concurrency int) (matrixPreparation, bool, error) {
 	var manifest immutableStudyManifest
 	if err := readStudyJSON(filepath.Join(stateDir, "study-manifest.json"), &manifest); err != nil {
@@ -913,7 +1166,7 @@ func historicalTreatmentBundle(contract studyArmContract) *TreatmentBundle {
 }
 
 func studyManifestDeclarationCompatible(manifest immutableStudyManifest, prepared *preparedStudy) bool {
-	if manifest.SchemaVersion != "deepswe-study-manifest-v1" || manifest.SelectionID != prepared.selectionID {
+	if manifest.SchemaVersion != immutableStudyManifestSchema || manifest.SelectionID != prepared.selectionID {
 		return false
 	}
 	if len(manifest.Arms) != len(prepared.experiments) || len(manifest.Membership) != len(prepared.experiments) {
@@ -1327,14 +1580,36 @@ func studyProgress(prepared preparedStudy, _ StudyOptions) StudyOutcome {
 	}
 	outcome := StudyOutcome{StudyID: prepared.studyID, SelectionID: prepared.selectionID}
 	for _, experiment := range prepared.experiments {
-		if experiment.Config == "" && experiment.Instructions == "" && experiment.Skills == "" {
+		agentLayer := experiment.Config != "" || experiment.Instructions != "" || experiment.Skills != ""
+		if !agentLayer {
 			outcome.HasBareExperiment = true
 			if experiment.model.PublishedIdentifier == prepared.selection.Selector.Model && experiment.effort == prepared.selection.Selector.Reasoning {
 				estimate := prepared.selection.EstimatedPublishedSpendUSD
 				outcome.BarePublishedEstimateUSD = &estimate
 			}
 		}
-		outcome.Experiments = append(outcome.Experiments, StudyExperimentProgress{Name: experiment.Name, Identity: experiment.identity, Required: required, Missing: required})
+		workflow := StudyExperimentProgress{
+			Name: experiment.Name, Identity: experiment.identity, AgentLayer: agentLayer, Skills: experiment.Skills != "",
+			RequiredDispatchRoles: append([]string(nil), experiment.RequiredDispatchRoles...), Required: required, Missing: required,
+		}
+		if workflow.Skills && len(workflow.RequiredDispatchRoles) > 0 {
+			config := defaultTreatmentDispatchConfig(experiment.model, experiment.effort)
+			for _, role := range workflow.RequiredDispatchRoles {
+				switch role {
+				case requiredRolePlanReviewer:
+					for _, target := range config.PlanReviewers {
+						workflow.DispatchTargets = append(workflow.DispatchTargets, StudyDispatchTargetProgress{Role: role, Agent: target.Agent, Model: target.Model, ReasoningEffort: target.ReasoningEffort})
+					}
+				case requiredRoleImplementer:
+					target := config.Implementer
+					workflow.DispatchTargets = append(workflow.DispatchTargets, StudyDispatchTargetProgress{Role: role, Agent: target.Agent, Model: target.Model, ReasoningEffort: target.ReasoningEffort})
+				case requiredRoleCodeReviewer:
+					target := config.CodeReviewer
+					workflow.DispatchTargets = append(workflow.DispatchTargets, StudyDispatchTargetProgress{Role: role, Agent: target.Agent, Model: target.Model, ReasoningEffort: target.ReasoningEffort})
+				}
+			}
+		}
+		outcome.Experiments = append(outcome.Experiments, workflow)
 		outcome.Required += required
 		outcome.Missing += required
 	}
