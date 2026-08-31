@@ -102,6 +102,7 @@ func Start(opts StartOptions) error {
 		return err
 	}
 	run.Record.Skill = strings.TrimSpace(opts.Skill)
+	run.Record.Role = strings.TrimSpace(opts.Role)
 	if parent, ok := clients.GetEnv(env, "AL_RUN_ID"); ok {
 		run.Record.ParentRunID = parent
 		if err := writeRunRecord(run.Dir, &run.Record); err != nil {

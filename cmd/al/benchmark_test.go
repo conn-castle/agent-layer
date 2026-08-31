@@ -226,10 +226,28 @@ func TestFormatBenchmarkStudyProgressIncludesOnlyPresentDetails(t *testing.T) {
 func TestFormatBenchmarkStudyProgressReportsActivePhaseAndEffectiveTimeout(t *testing.T) {
 	got := formatBenchmarkStudyProgress(bench.StudyProgress{
 		Phase: "verifier", Message: "Running verifier", Experiment: "skills", Task: "task-a",
-		EffectiveTimeout: 30 * time.Minute,
+		EffectiveTimeout: 30 * time.Minute, MaximumAttempts: 2,
 	})
-	if got != "[verifier] Running verifier (effective timeout 30m0s): skills task-a" {
+	if got != "[verifier] Running verifier (configured timeout budget 30m0s) (up to 2 attempts): skills task-a" {
 		t.Fatalf("phase progress = %q", got)
+	}
+}
+
+func TestBenchmarkProgressStateRetainsActiveSiblingAfterCompletion(t *testing.T) {
+	state := newBenchmarkProgressState()
+	firstStarted := time.Date(2026, 8, 30, 1, 0, 0, 0, time.UTC)
+	state.observe(bench.StudyProgress{Phase: "provider", Message: "Running provider inference", Experiment: "bare", Task: "task-a", Attempt: 1, StartedAt: firstStarted})
+	state.observe(bench.StudyProgress{Phase: "provider", Message: "Running provider inference", Experiment: "agent-layer", Task: "task-b", Attempt: 1, StartedAt: firstStarted.Add(time.Second)})
+	state.observe(bench.StudyProgress{Phase: "run", Message: benchmarkCellCompleted, Experiment: "agent-layer", Task: "task-b", Attempt: 1, Completed: 17, Required: 18})
+
+	got := state.current()
+	if got.Experiment != "bare" || got.Task != "task-a" || got.Phase != "provider" || got.StartedAt != firstStarted {
+		t.Fatalf("current progress = %#v, want remaining active provider cell", got)
+	}
+
+	state.observe(bench.StudyProgress{Phase: "run", Message: benchmarkCellCompleted, Experiment: "bare", Task: "task-a", Attempt: 1, Completed: 18, Required: 18})
+	if got := state.current(); got.Message != benchmarkCellCompleted || got.Completed != 18 {
+		t.Fatalf("terminal progress = %#v", got)
 	}
 }
 
@@ -256,6 +274,87 @@ func TestBenchmarkRunDryRunDoesNotInvokeProviderInference(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "Bare: 0 of 1 cells cached") || !strings.Contains(output.String(), "authorizes paid") || !strings.Contains(output.String(), "No inference call was made") {
 		t.Fatalf("output = %q", output.String())
+	}
+}
+
+func TestFormatBenchmarkWorkflowDisclosesEffectiveContract(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		experiment bench.StudyExperimentProgress
+		want       string
+	}{
+		{name: "bare", experiment: bench.StudyExperimentProgress{}, want: "bare provider; no Agent Layer skills or dispatches"},
+		{name: "treatment without skills", experiment: bench.StudyExperimentProgress{AgentLayer: true}, want: "treatment without skills; no dispatch workflow"},
+		{name: "unconstrained skills", experiment: bench.StudyExperimentProgress{AgentLayer: true, Skills: true}, want: "single-agent execution is allowed"},
+		{name: "mandatory dispatches", experiment: bench.StudyExperimentProgress{
+			AgentLayer: true, Skills: true, RequiredDispatchRoles: []string{"code-reviewer"},
+			DispatchTargets: []bench.StudyDispatchTargetProgress{{Role: "code-reviewer", Agent: "grok", Model: "grok-4.6", ReasoningEffort: "low"}},
+		}, want: "mandatory dispatches: code-reviewer={agent=grok, model=grok-4.6, reasoning=low, dispatch_start role=code-reviewer}"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := formatBenchmarkWorkflow(test.experiment); !strings.Contains(got, test.want) {
+				t.Fatalf("workflow = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestBenchmarkRunDescribesAutomaticPaidConcurrencyAsPolicy(t *testing.T) {
+	original := runStudy
+	runStudy = func(_ context.Context, options bench.StudyOptions, _ bench.TaskExecutor) (bench.StudyOutcome, error) {
+		if options.TaskConcurrency != 1 {
+			t.Fatalf("automatic paid concurrency = %d", options.TaskConcurrency)
+		}
+		outcome := bench.StudyOutcome{Missing: 2, ExecutionTimeoutSum: 3 * time.Hour}
+		if err := options.OnPrepared(outcome); err != nil {
+			return bench.StudyOutcome{}, err
+		}
+		return outcome, nil
+	}
+	t.Cleanup(func() { runStudy = original })
+	root := newRootCmd()
+	root.SetArgs([]string{"benchmark", "run", "study.toml", "--dry-run"})
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	got := output.String()
+	if !strings.Contains(got, "Automatic paid task concurrency: 1 (serialized by safety policy") ||
+		strings.Contains(got, "host and container architecture aware") ||
+		!strings.Contains(got, "Configured timeout sum across missing cells: 3h0m0s at concurrency 1") ||
+		!strings.Contains(got, "not an ETA") {
+		t.Fatalf("automatic paid concurrency output = %q", got)
+	}
+}
+
+func TestBenchmarkRunRecoveryOnlyDoesNotAuthorizeExecution(t *testing.T) {
+	original := runStudy
+	runStudy = func(_ context.Context, options bench.StudyOptions, executor bench.TaskExecutor) (bench.StudyOutcome, error) {
+		if !options.RecoveryOnly || options.DryRun || options.TaskConcurrency != 1 || executor != nil {
+			t.Fatalf("recovery options = %#v executor=%#v", options, executor)
+		}
+		outcome := bench.StudyOutcome{StudyID: strings.Repeat("a", 64), Required: 16, Completed: 1, Missing: 15, RecoveredCells: 1}
+		if err := options.OnPrepared(bench.StudyOutcome{StudyID: outcome.StudyID, Required: 16, Missing: 16}); err != nil {
+			return bench.StudyOutcome{}, err
+		}
+		return outcome, nil
+	}
+	t.Cleanup(func() { runStudy = original })
+	root := newRootCmd()
+	root.SetArgs([]string{"benchmark", "run", "study.toml", "--recover-only"})
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	got := output.String()
+	if !strings.Contains(got, "Recovery-only mode: no provider or verifier process will be started") ||
+		!strings.Contains(got, "1 terminal verifier timeout cell(s) canonicalized") ||
+		strings.Contains(got, "authorizes paid provider calls") {
+		t.Fatalf("recovery-only output = %q", got)
 	}
 }
 

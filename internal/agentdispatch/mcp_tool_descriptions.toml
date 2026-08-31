@@ -12,6 +12,7 @@ description = "Start one asynchronous dispatch. Returns its conversation handle 
 agent = "Provider to dispatch: codex, claude, antigravity, or grok."
 model = "Optional model override; resolve against dispatch_options."
 reasoning_effort = "Optional reasoning-effort override; resolve against dispatch_options."
+role = "Optional caller-defined workflow role retained as dispatch evidence."
 skill = "Optional skill the dispatched agent must run."
 prompt = "Prompt text. Provide exactly one of prompt or prompt_file."
 prompt_file = "Path to a prompt file. Provide exactly one of prompt or prompt_file."

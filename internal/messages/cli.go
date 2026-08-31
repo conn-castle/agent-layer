@@ -286,6 +286,7 @@ const (
 	DispatchModelFlag                    = "Exact provider model"
 	DispatchReasoningEffortFlag          = "Exact provider reasoning effort"
 	DispatchSkillFlag                    = "Portable Agent Layer skill name to invoke in the target"
+	DispatchRoleFlag                     = "Caller-defined workflow role retained as dispatch evidence"
 	DispatchOptionsUse                   = "options"
 	DispatchOptionsShort                 = "List available dispatch agents and override options"
 	DispatchOptionsLong                  = "Write one JSON object describing each dispatch agent's availability, configured defaults, and supported model and reasoning-effort overrides."

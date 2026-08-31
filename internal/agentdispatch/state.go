@@ -73,6 +73,7 @@ type RunRecord struct {
 	ProviderVersion         string     `json:"provider_version"`
 	Model                   string     `json:"model,omitempty"`
 	ReasoningEffort         string     `json:"reasoning_effort,omitempty"`
+	Role                    string     `json:"role,omitempty"`
 	Skill                   string     `json:"skill,omitempty"`
 	Mode                    string     `json:"mode"`
 	State                   string     `json:"state"`

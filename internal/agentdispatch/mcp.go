@@ -69,6 +69,7 @@ type StartInput struct {
 	Agent           string `json:"agent"`
 	Model           string `json:"model,omitempty"`
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	Role            string `json:"role,omitempty"`
 	Skill           string `json:"skill,omitempty"`
 	Prompt          string `json:"prompt,omitempty"`
 	PromptFile      string `json:"prompt_file,omitempty"`
@@ -276,7 +277,7 @@ func (s *dispatchToolServer) handleStart(ctx context.Context, _ *mcp.CallToolReq
 	var out bytes.Buffer
 	err := Start(StartOptions{
 		Root: s.root, WorkDir: s.workDir, Agent: agent, Model: model,
-		ReasoningEffort: effort, Skill: strings.TrimSpace(input.Skill),
+		ReasoningEffort: effort, Role: strings.TrimSpace(input.Role), Skill: strings.TrimSpace(input.Skill),
 		Prompt: input.Prompt, PromptFile: strings.TrimSpace(input.PromptFile),
 		Stdout: &out, Stderr: io.Discard, Env: s.env,
 	})

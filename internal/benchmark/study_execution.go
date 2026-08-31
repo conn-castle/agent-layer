@@ -340,7 +340,7 @@ func compareStudyArmManifest(selectionID string, tasks []benchmarkPlanTask, chec
 	return nil
 }
 
-func executeMatrix(ctx context.Context, repoRoot string, checksums, environments map[string]string, arms []matrixArm, tasks []string, concurrency int, executor TaskExecutor, onCellStart func(matrixJob), onCellComplete ...func(AttemptResult)) (returnErr error) {
+func executeMatrix(ctx context.Context, repoRoot string, checksums, environments map[string]string, arms []matrixArm, tasks []string, concurrency int, executor TaskExecutor, onCellStart func(matrixJob), onCellComplete ...func(matrixJob, AttemptResult)) (returnErr error) {
 	if concurrency < 1 {
 		return fmt.Errorf("study execution requires at least one task worker, got %d", concurrency)
 	}
@@ -354,7 +354,7 @@ func executeMatrix(ctx context.Context, repoRoot string, checksums, environments
 	defer func() {
 		returnErr = errors.Join(returnErr, executionLock.release())
 	}()
-	var notify func(AttemptResult)
+	var notify func(matrixJob, AttemptResult)
 	if len(onCellComplete) > 0 {
 		notify = onCellComplete[0]
 	}
@@ -384,8 +384,12 @@ func executeMatrix(ctx context.Context, repoRoot string, checksums, environments
 	if len(jobs) == 0 {
 		return nil
 	}
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	// Stop assigning new paid cells after the first failure, but let already
+	// running cells finish and persist their provider/verifier evidence. A
+	// sibling infrastructure failure must never turn healthy paid calls into
+	// artificial caller cancellations.
+	scheduleCtx, stopScheduling := context.WithCancel(ctx)
+	defer stopScheduling()
 	queue := make(chan matrixJob)
 	var failures []error
 	var lock sync.Mutex
@@ -396,7 +400,7 @@ func executeMatrix(ctx context.Context, repoRoot string, checksums, environments
 		go func() {
 			defer workers.Done()
 			for job := range queue {
-				if runCtx.Err() != nil {
+				if scheduleCtx.Err() != nil {
 					return
 				}
 				if onCellStart != nil {
@@ -411,7 +415,7 @@ func executeMatrix(ctx context.Context, repoRoot string, checksums, environments
 					// A failed paid provider event is immutable evidence.  A fresh
 					// `benchmark run` may explicitly resume it, but this invocation
 					// must return the infrastructure failure rather than retrying it.
-					result, err = executor.Execute(runCtx, ExecutionRequest{RepoRoot: repoRoot, EvidenceDir: job.arm.StateDir, EventID: eventID, Attempt: job.cell.attempt, Task: job.cell.task, Experiment: job.arm.Label, Model: job.arm.Loaded.Model, Effort: job.arm.Loaded.Effort, Arm: job.arm.Mode, Bundle: job.arm.Bundle, AgentTimeoutMultiplier: job.arm.AgentTimeoutMultiplier, TaskChecksum: checksums[job.cell.task], EnvironmentIdentity: environments[job.cell.task], ResumeFailedInfrastructure: true})
+					result, err = executor.Execute(ctx, ExecutionRequest{RepoRoot: repoRoot, EvidenceDir: job.arm.StateDir, EventID: eventID, Attempt: job.cell.attempt, Task: job.cell.task, Experiment: job.arm.Label, Model: job.arm.Loaded.Model, Effort: job.arm.Loaded.Effort, Arm: job.arm.Mode, Bundle: job.arm.Bundle, AgentTimeoutMultiplier: job.arm.AgentTimeoutMultiplier, TaskChecksum: checksums[job.cell.task], EnvironmentIdentity: environments[job.cell.task], ResumeFailedInfrastructure: true})
 					if err == nil && result.Validate() != nil {
 						err = fmt.Errorf("returned invalid evidence")
 					}
@@ -426,7 +430,7 @@ func executeMatrix(ctx context.Context, repoRoot string, checksums, environments
 							// invocation total. Serialize those completion events so
 							// worker parallelism cannot race accounting or output.
 							notifyLock.Lock()
-							notify(result)
+							notify(job, result)
 							notifyLock.Unlock()
 						}
 					}
@@ -435,7 +439,7 @@ func executeMatrix(ctx context.Context, repoRoot string, checksums, environments
 					lock.Lock()
 					failures = append(failures, fmt.Errorf("%s: %s repetition %d: %w", job.arm.Label, job.cell.task, job.cell.attempt, err))
 					lock.Unlock()
-					cancel()
+					stopScheduling()
 					return
 				}
 			}
@@ -445,7 +449,7 @@ send:
 	for _, job := range jobs {
 		select {
 		case queue <- job:
-		case <-runCtx.Done():
+		case <-scheduleCtx.Done():
 			break send
 		}
 	}

@@ -163,6 +163,44 @@ func TestRunStudyDryRunAndPaidWorkflow(t *testing.T) {
 	}
 }
 
+func TestRecoveryOnlyFailsWithoutPreparingTasksWhenNoRecoverableStudyExists(t *testing.T) {
+	root := t.TempDir()
+	selectionData, err := json.Marshal(matrixSelectionFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeStudyInputFixture(t, root, "selection.json", string(selectionData))
+	writeStudyInputFixture(t, root, "study.toml", "selection = \"selection.json\"\n[[experiments]]\nname = \"Bare\"\nmodel = \"luna\"\nreasoning = \"low\"\n")
+
+	originalPreflight := preflightBenchmark
+	originalVerifyPier := verifyBenchmarkPier
+	originalPrepareTasks := prepareBenchmarkTaskSet
+	preflightBenchmark = func([]parsedSelection) error {
+		t.Fatal("recovery-only ran provider preflight without a recoverable study")
+		return nil
+	}
+	verifyBenchmarkPier = func(context.Context) error {
+		t.Fatal("recovery-only verified Pier without a recoverable study")
+		return nil
+	}
+	prepareBenchmarkTaskSet = func(context.Context, string, []benchmarkPlanTask) (map[string]string, map[string]string, error) {
+		t.Fatal("recovery-only prepared tasks without a recoverable study")
+		return nil, nil, nil
+	}
+	t.Cleanup(func() {
+		preflightBenchmark = originalPreflight
+		verifyBenchmarkPier = originalVerifyPier
+		prepareBenchmarkTaskSet = originalPrepareTasks
+	})
+
+	_, err = RunStudy(context.Background(), StudyOptions{
+		RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), RecoveryOnly: true, ResourcePreflight: true,
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "no retained terminal verifier timeout study to canonicalize") {
+		t.Fatalf("recovery-only without retained study = %v", err)
+	}
+}
+
 func TestRunStudyRejectsMissingManifestBeforeProviderWork(t *testing.T) {
 	executor := &studyWorkflowExecutor{}
 	if _, err := RunStudy(context.Background(), StudyOptions{}, executor); err == nil || !strings.Contains(err.Error(), "requires one study.toml path") {
@@ -302,6 +340,43 @@ func TestStudyReportUsesWithinCellWelchVarianceAndHolmFamily(t *testing.T) {
 	}
 	if comparison.DegreesOfFreedom == nil || math.Abs(*comparison.DegreesOfFreedom-3.469645720438665) > 1e-12 || comparison.RawTwoSidedPValue == nil || comparison.HolmAdjustedPValue == nil {
 		t.Fatalf("Welch/Holm df=%v raw=%v holm=%v", dereference(comparison.DegreesOfFreedom), dereference(comparison.RawTwoSidedPValue), dereference(comparison.HolmAdjustedPValue))
+	}
+}
+
+func TestStudyReportDisclosesTerminalVerifierTestTimeouts(t *testing.T) {
+	root := t.TempDir()
+	selection := matrixSelectionFixture()
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks := []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 1}, {ID: "second-task", RepetitionsPerArm: 1}}
+	checksums := map[string]string{"first-task": "first-checksum", "second-task": "second-checksum"}
+	arm := matrixArmFixture(root, "Bare", ArmBaseline, model, effort, tasks)
+	rewriteStudyAttempt(t, arm, "first-task", 1, checksums["first-task"], 0, .25)
+	rewriteStudyAttempt(t, arm, "second-task", 1, checksums["second-task"], .5, .25)
+	path := armResultPath(arm.StateDir, "first-task", 1)
+	var timedOut AttemptResult
+	if err := readStudyJSON(path, &timedOut); err != nil {
+		t.Fatal(err)
+	}
+	timedOut.VerifierOutcome = verifierOutcomeTestTimeout
+	if err := writeJSON(path, timedOut); err != nil {
+		t.Fatal(err)
+	}
+	study := preparedStudy{selection: selection, studyID: strings.Repeat("s", 64), experiments: []preparedStudyExperiment{{studyExperiment: studyExperiment{Name: "Bare"}, model: model, effort: effort, identity: "bare"}}}
+	report, _, _, err := buildStudyReport(study, matrixPreparation{
+		selection: selection, stateDir: filepath.Join(root, "study"), tasks: tasks, checksums: checksums,
+		environments: map[string]string{"first-task": "env-1", "second-task": "env-2"}, arms: []matrixArm{arm}, taskConcurrency: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Experiments[0].VerifierTestTimeoutRuns != 1 || report.Experiments[0].Tasks[0].VerifierTestTimeouts != 1 {
+		t.Fatalf("timeout disclosure counts = %#v", report.Experiments[0])
+	}
+	if !containsString(report.Limitations, "1 completed run(s) exhausted the candidate test-execution timeout and were recorded explicitly as zero-score verifier outcomes.") {
+		t.Fatalf("timeout limitation missing: %#v", report.Limitations)
 	}
 }
 

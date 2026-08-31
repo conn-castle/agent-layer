@@ -1,6 +1,7 @@
 package benchmark
 
 import (
+	"bytes"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -119,7 +120,37 @@ func prepareVerifierBuildContext(source, target, image, pinnedImage string) erro
 	if !found {
 		return fmt.Errorf("verifier Dockerfile does not derive from certified task image %q", image)
 	}
-	return nil
+	return instrumentVerifierBuildEvidence(filepath.Join(target, "test.sh"))
+}
+
+// instrumentVerifierBuildEvidence preserves structured Go build events before
+// task-owned reporter compatibility filters remove them. The reporter still
+// receives exactly the same filtered stream; the additional artifact is only
+// diagnostic evidence consumed by normalization.
+func instrumentVerifierBuildEvidence(path string) error {
+	data, err := os.ReadFile(path) // #nosec G304 -- path is inside the private copied verifier context.
+	if err != nil {
+		return err
+	}
+	const filter = `grep -v '"Action":"build-'`
+	filterCount := bytes.Count(data, []byte(filter))
+	if filterCount == 0 {
+		return nil
+	}
+	const runLog = "export RUN_LOG=/logs/verifier/run.log\n"
+	if bytes.Count(data, []byte(runLog)) != 1 {
+		return fmt.Errorf("verifier Go build-event filter has no unique run-log initialization")
+	}
+	data = bytes.Replace(data, []byte(runLog), []byte(
+		runLog+": > /logs/verifier/build-events.jsonl 2>/dev/null || true\n",
+	), 1)
+	data = bytes.ReplaceAll(data, []byte(filter), []byte(
+		"tee -a /logs/verifier/build-events.jsonl | "+filter,
+	))
+	if bytes.Count(data, []byte("tee -a /logs/verifier/build-events.jsonl")) != filterCount {
+		return fmt.Errorf("preserve all %d verifier Go build-event streams", filterCount)
+	}
+	return os.WriteFile(path, data, 0o600) // #nosec G304,G703 -- path is inside the private copied verifier context.
 }
 
 // validatePlanTaskStartups parses every selected task's mandatory readiness

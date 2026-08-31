@@ -32,6 +32,30 @@ func TestStudySchedulerStopsAfterInfrastructureFailure(t *testing.T) {
 	}
 }
 
+func TestStudySchedulerLetsInFlightPaidCellFinishAfterSiblingFailure(t *testing.T) {
+	arm, checksums, environments := schedulerArmFixture(t, []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 3}})
+	executor := &inFlightFailureExecutor{started: make(chan struct{}, 2), release: make(chan struct{})}
+	go func() {
+		<-executor.started
+		<-executor.started
+		close(executor.release)
+	}()
+	err := executeMatrix(context.Background(), t.TempDir(), checksums, environments, []matrixArm{arm}, nil, 2, executor, nil)
+	if err == nil || !strings.Contains(err.Error(), "first-task repetition 1") || strings.Contains(err.Error(), "context canceled") {
+		t.Fatalf("in-flight failure = %v", err)
+	}
+	var result AttemptResult
+	if err := readStudyJSON(armResultPath(arm.StateDir, "first-task", 2), &result); err != nil {
+		t.Fatalf("healthy in-flight cell was not persisted: %v", err)
+	}
+	if result.Attempt != 2 || result.InvocationWorkers != 2 {
+		t.Fatalf("healthy in-flight result = %#v", result)
+	}
+	if _, err := os.Stat(armResultPath(arm.StateDir, "first-task", 3)); !os.IsNotExist(err) {
+		t.Fatalf("scheduler started a new cell after failure: %v", err)
+	}
+}
+
 func TestStudySchedulerReturnsProviderCapacityWithoutRetrying(t *testing.T) {
 	arm, checksums, environments := schedulerArmFixture(t, []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 2}, {ID: "second-task", RepetitionsPerArm: 1}})
 	executor := &schedulerExecutor{capacityFailures: 1}
@@ -164,7 +188,7 @@ func TestStudySchedulerSerializesCompletionNotifications(t *testing.T) {
 		close(executor.barrier)
 	}()
 	var output bytes.Buffer
-	err := executeMatrix(context.Background(), t.TempDir(), checksums, environments, []matrixArm{arm}, nil, 2, executor, nil, func(result AttemptResult) {
+	err := executeMatrix(context.Background(), t.TempDir(), checksums, environments, []matrixArm{arm}, nil, 2, executor, nil, func(_ matrixJob, result AttemptResult) {
 		// bytes.Buffer is deliberately not synchronized. This mirrors a CLI
 		// writer and makes `go test -race` prove completion callbacks are serial.
 		_, _ = fmt.Fprintf(&output, "%s:%d\n", result.Task, result.Attempt)
@@ -249,6 +273,29 @@ type schedulerExecutor struct {
 	capacityFailures int
 	barrier          chan struct{}
 	started          chan struct{}
+}
+
+type inFlightFailureExecutor struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (executor *inFlightFailureExecutor) Execute(ctx context.Context, request ExecutionRequest) (AttemptResult, error) {
+	executor.started <- struct{}{}
+	select {
+	case <-executor.release:
+	case <-ctx.Done():
+		return AttemptResult{}, ctx.Err()
+	}
+	if request.Attempt == 1 {
+		return AttemptResult{}, errors.New("simulated provider infrastructure failure")
+	}
+	select {
+	case <-time.After(100 * time.Millisecond):
+		return schedulerResult(request, request.Attempt), nil
+	case <-ctx.Done():
+		return AttemptResult{}, fmt.Errorf("healthy sibling was canceled: %w", ctx.Err())
+	}
 }
 
 func (executor *schedulerExecutor) Execute(ctx context.Context, request ExecutionRequest) (AttemptResult, error) {
