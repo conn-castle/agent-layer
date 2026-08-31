@@ -1,6 +1,21 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.18.3 - 2026-08-30
+
+### Added
+- `al dispatch start --role` and MCP `dispatch_start` `role` retain a caller-defined workflow role as dispatch evidence.
+- `al benchmark run --recover-only` finalizes retained evidence-backed verifier test timeouts without starting a provider or verifier.
+
+### Changed
+- Official `al benchmark init` studies pin embedded benchmark-safe core rules and workflow skills, keep the project's instructions and skills as unreferenced audit snapshots, and require `plan-reviewer`, `implementer`, and `code-reviewer` dispatch roles.
+- Benchmark progress reports configured timeout budgets, attempt limits, concurrent active cells, and each experiment's effective workflow.
+- Paid Grok cells pause before inference when the repo-local OAuth credential has 30 minutes or less remaining.
+
+### Fixed
+- Evidence-backed verifier test timeouts become explicit zero-score `test_timeout` outcomes instead of remaining eligible for verifier replay.
+- A cell failure stops assigning new paid work without cancelling sibling cells that are already running.
+
 ## v0.18.2 - 2026-08-29
 
 ### Added

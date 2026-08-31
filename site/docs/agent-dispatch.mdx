@@ -55,7 +55,7 @@ The server exposes five Agent Dispatch tools:
 | `dispatch_continue` | Start the next invocation in a terminal conversation. |
 | `dispatch_cancel` | Terminate a running invocation. |
 
-`dispatch_start` accepts an `agent`, optional `model`, `reasoning_effort`, and `skill`, plus exactly one of `prompt` or `prompt_file`. `dispatch_continue` accepts a handle and exactly one prompt source. The wait and cancel tools accept a handle.
+`dispatch_start` accepts an `agent`, optional `model`, `reasoning_effort`, `role`, and `skill`, plus exactly one of `prompt` or `prompt_file`. `role` is caller-defined workflow evidence retained on the run record; it does not change provider selection or prompt text. `dispatch_continue` accepts a handle and exactly one prompt source. The wait and cancel tools accept a handle.
 
 The MCP server returns structured results and a serialized text fallback for clients that do not yet consume structured MCP output.
 
@@ -69,6 +69,7 @@ al dispatch options
 al dispatch start --agent codex \
   [--model <model>] \
   [--reasoning-effort <effort>] \
+  [--role <role>] \
   [--skill <skill>] \
   (--prompt <text> | --prompt-file <path>)
 

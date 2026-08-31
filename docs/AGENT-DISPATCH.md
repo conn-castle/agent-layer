@@ -26,8 +26,8 @@ Agent-facing tool and parameter descriptions are maintained in
 | `dispatch_continue` | Start the next invocation in a terminal conversation |
 | `dispatch_cancel` | Terminate a running conversation (destructive) |
 
-`dispatch_start` accepts `agent`, optional `model`, `reasoning_effort`, and
-`skill`, and exactly one of `prompt` or `prompt_file`. `dispatch_continue`
+`dispatch_start` accepts `agent`, optional `model`, `reasoning_effort`, `role`,
+and `skill`, and exactly one of `prompt` or `prompt_file`. `dispatch_continue`
 accepts `handle` and exactly one prompt source. `dispatch_wait` and
 `dispatch_cancel` accept `handle`. Results carry the same `handle`, `state`,
 `result_path`, and `error` fields as the CLI.
@@ -85,7 +85,7 @@ evidence remains under `.agent-layer/tmp/runs/`.
 al dispatch options
 
 al dispatch start --agent <agent> [--model <model>] \
-  [--reasoning-effort <effort>] [--skill <skill>] \
+  [--reasoning-effort <effort>] [--role <role>] [--skill <skill>] \
   (--prompt <text> | --prompt-file <path>)
 
 al dispatch wait <handle>
@@ -102,7 +102,9 @@ defaults, and supported model and reasoning-effort overrides.
 `start` requires an agent and exactly one prompt source. Model and reasoning
 effort are optional overrides. When omitted, Agent Layer uses its configured
 value; when that is also empty, it omits the provider flag so the provider uses
-its own default. `start` returns immediately after durably creating the
+its own default. `--role` is optional caller-defined workflow evidence retained
+on the run record; it does not change provider selection or prompt text.
+`start` returns immediately after durably creating the
 conversation and starting its first invocation.
 
 `continue` uses the conversation's existing agent, model, reasoning effort,
