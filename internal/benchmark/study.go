@@ -971,7 +971,10 @@ func loadCompleteCachedStudy(repoRoot string, prepared *preparedStudy, candidate
 // loadRecoverableCachedStudy binds recovery to immutable historical runtime
 // identity. A candidate binary may carry a newer embedded adapter, which must
 // not redirect recovery into a newly identified study and strand the retained
-// checkpoint it was invoked to canonicalize.
+// checkpoint it was invoked to canonicalize. Historical arm IDs are recomputed
+// from the current experiment identity plus the retained bundle, adapter, and
+// runtime hashes so a same-named experiment with different treatment inputs
+// cannot bind to an unrelated study.
 func loadRecoverableCachedStudy(repoRoot string, prepared *preparedStudy, candidates []cachedStudyCandidate, tasks []benchmarkPlanTask, concurrency int) (matrixPreparation, bool, error) {
 	var matches []matrixPreparation
 	for _, candidate := range candidates {
@@ -989,7 +992,15 @@ func loadRecoverableCachedStudy(repoRoot string, prepared *preparedStudy, candid
 		compatible := true
 		for index := range preparation.arms {
 			arm := &preparation.arms[index]
-			if arm.ID != manifest.Arms[index].ID || arm.Label != manifest.Arms[index].Name {
+			historicalID, err := studyArmIdentity(
+				prepared.selectionID, prepared.experiments[index].identity,
+				manifest.Checksums, manifest.Environments,
+				historicalTreatmentBundle(manifest.Arms[index]), manifest.Arms[index].Adapter,
+			)
+			if err != nil {
+				return matrixPreparation{}, false, err
+			}
+			if historicalID != manifest.Arms[index].ID || arm.Label != manifest.Arms[index].Name {
 				compatible = false
 				break
 			}
@@ -1027,20 +1038,42 @@ func recoveryPreparationFromManifest(prepared *preparedStudy, manifest immutable
 	}
 	bundles := historicalBundlesFromManifest(manifest)
 	for index, experiment := range prepared.experiments {
+		bundle := bundles[index]
+		if bundle != nil {
+			bundle.Manifest = recoveryTreatmentManifest(experiment)
+		}
 		mode := ArmBaseline
-		if bundles[index] != nil {
+		if bundle != nil {
 			mode = ArmTreatment
 		}
 		loaded := loadedBenchmarkPlan{Model: experiment.model, Effort: experiment.effort}
 		loaded.Plan.Tasks = tasks
 		contract := manifest.Arms[index]
 		preparation.arms = append(preparation.arms, matrixArm{
-			ID: contract.ID, Label: contract.Name, Mode: mode, Loaded: loaded, Bundle: bundles[index],
+			ID: contract.ID, Label: contract.Name, Mode: mode, Loaded: loaded, Bundle: bundle,
 			AdapterSHA256: contract.Adapter, AgentTimeoutMultiplier: skillsAgentTimeoutFactor,
 			IgnoreProviderClientInManifest: true, StateDir: filepath.Join(stateDir, "arms", contract.ID),
 		})
 	}
 	return preparation
+}
+
+// recoveryTreatmentManifest restores the workflow contract needed to normalize
+// retained treatment evidence. Historical manifests store only content hashes.
+func recoveryTreatmentManifest(experiment preparedStudyExperiment) TreatmentManifest {
+	mode := TreatmentInstructionsOnly
+	if experiment.Skills != "" {
+		mode = TreatmentInstructionsAndSkills
+	}
+	manifest := TreatmentManifest{
+		Mode:                   mode,
+		AgentTimeoutMultiplier: skillsAgentTimeoutFactor,
+		RequiredRoles:          append([]string(nil), experiment.RequiredDispatchRoles...),
+	}
+	if mode == TreatmentInstructionsAndSkills {
+		manifest.DispatchConfig = defaultTreatmentDispatchConfig(experiment.model, experiment.effort)
+	}
+	return manifest
 }
 
 func terminalVerifierTimeoutCheckpointCount(repoRoot string, preparation matrixPreparation) (int, error) {

@@ -26,8 +26,12 @@ type pierExceptionDetails struct {
 // alone is deliberately insufficient because Pier applies the same timeout to
 // verifier environment startup, artifact upload, test execution, and grading.
 func terminalVerifierTestTimeout(stage string, result pierTaskResult) (bool, error) {
+	exceptionRaw := bytes.TrimSpace(result.ExceptionInfo)
+	if len(exceptionRaw) == 0 || bytes.Equal(exceptionRaw, []byte("null")) {
+		return false, nil
+	}
 	var exception pierExceptionDetails
-	if err := json.Unmarshal(result.ExceptionInfo, &exception); err != nil {
+	if err := json.Unmarshal(exceptionRaw, &exception); err != nil {
 		return false, fmt.Errorf("decode Pier verifier exception: %w", err)
 	}
 	if exception.Type != verifierTimeoutException {
@@ -37,8 +41,10 @@ func terminalVerifierTestTimeout(stage string, result pierTaskResult) (bool, err
 		return false, nil
 	}
 	// Pier 0.3.0 creates test-stdout.txt as the verifier script's stdout
-	// redirection target. The traceback boundary proves the timeout occurred in
-	// that environment exec rather than during environment startup or upload.
+	// redirection target when environment.exec starts. The traceback boundary
+	// proves the timeout occurred in that exec rather than during environment
+	// startup or upload. Count the unique redirection file even when empty:
+	// a hung test process may never emit stdout.
 	if !strings.Contains(exception.Traceback, "pier/verifier/verifier.py") ||
 		!strings.Contains(exception.Traceback, "await self._environment.exec") {
 		return false, nil
@@ -54,13 +60,7 @@ func terminalVerifierTestTimeout(stage string, result pierTaskResult) (bool, err
 		if entry.IsDir() || entry.Name() != verifierTestStdoutFile || filepath.Base(filepath.Dir(path)) != executionPhaseVerifier {
 			return nil
 		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if info.Size() > 0 {
-			stdoutFiles++
-		}
+		stdoutFiles++
 		return nil
 	})
 	if err != nil {
@@ -152,7 +152,10 @@ func pinnedTaskF2PTotal(request ExecutionRequest) (int, error) {
 func normalizeTerminalVerifierTestTimeout(stage string, request ExecutionRequest) (AttemptResult, bool, error) {
 	raw, err := readPierTaskResult(stage, request)
 	if err != nil {
-		return AttemptResult{}, false, nil //nolint:nilerr // no readable result means this optional classifier has no terminal evidence.
+		if pierTaskResultMissing(err) {
+			return AttemptResult{}, false, nil
+		}
+		return AttemptResult{}, false, err
 	}
 	terminal, err := terminalVerifierTestTimeout(stage, raw)
 	if err != nil || !terminal {

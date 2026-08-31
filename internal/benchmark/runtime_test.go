@@ -308,7 +308,7 @@ func TestDispatchConformanceMatchesRequiredTargetMultiset(t *testing.T) {
 	completed := func(id, agent, modelName, reasoning, role string) dispatchConformanceRecord {
 		return dispatchConformanceRecord{
 			ID: id, Agent: agent, Model: modelName, ReasoningEffort: reasoning,
-			Role: role, Mode: "fresh", State: "completed",
+			Role: role, Mode: dispatchRunModeFresh, State: "completed",
 		}
 	}
 	lunaRecord := func(id, role string) dispatchConformanceRecord {

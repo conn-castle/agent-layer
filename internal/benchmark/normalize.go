@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"math"
@@ -15,6 +16,8 @@ import (
 
 	"go.yaml.in/yaml/v3"
 )
+
+var errPierTaskResultAbsent = errors.New("pier task result is absent")
 
 const (
 	codexMCPPreflightEvidence       = "codex-mcp-preflight.json"
@@ -218,10 +221,17 @@ func readPierTaskResult(stage string, request ExecutionRequest) (pierTaskResult,
 		}
 		matches = append(matches, candidate)
 	}
+	if len(matches) == 0 {
+		return pierTaskResult{}, fmt.Errorf("%w: pier produced 0 matching task results for %s; expected one", errPierTaskResultAbsent, request.Task)
+	}
 	if len(matches) != 1 {
 		return pierTaskResult{}, fmt.Errorf("pier produced %d matching task results for %s; expected one", len(matches), request.Task)
 	}
 	return matches[0], nil
+}
+
+func pierTaskResultMissing(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, errPierTaskResultAbsent)
 }
 
 func validatePierTreatmentPreflight(stage string, request ExecutionRequest) error {
@@ -422,7 +432,7 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 			return false, fmt.Errorf("treatment dispatch lifecycle %q is duplicated", record.ID)
 		}
 		seenIDs[record.ID] = true
-		if record.Mode != "fresh" || record.ParentRunID != "" {
+		if record.Mode != dispatchRunModeFresh || record.ParentRunID != "" {
 			continue
 		}
 		eligible = append(eligible, record)

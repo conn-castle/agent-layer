@@ -2,6 +2,7 @@ package benchmark
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -87,7 +88,7 @@ func terminalVerifierTimeoutFixture(t *testing.T) (ExecutionRequest, string) {
 	return request, stage
 }
 
-func TestTerminalVerifierTestTimeoutRequiresExecutionBoundaryAndOutput(t *testing.T) {
+func TestTerminalVerifierTestTimeoutRequiresExecutionBoundaryAndRedirectionFile(t *testing.T) {
 	request, stage := terminalVerifierTimeoutFixture(t)
 	raw, err := readPierTaskResult(stage, request)
 	if err != nil {
@@ -100,8 +101,14 @@ func TestTerminalVerifierTestTimeoutRequiresExecutionBoundaryAndOutput(t *testin
 	if err := os.WriteFile(stdout, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if terminal, err := terminalVerifierTestTimeout(stage, raw); err != nil || !terminal {
+		t.Fatalf("empty redirection file terminal timeout = %t, %v", terminal, err)
+	}
+	if err := os.Remove(stdout); err != nil {
+		t.Fatal(err)
+	}
 	if terminal, err := terminalVerifierTestTimeout(stage, raw); err != nil || terminal {
-		t.Fatalf("empty test output terminal timeout = %t, %v", terminal, err)
+		t.Fatalf("missing redirection file terminal timeout = %t, %v", terminal, err)
 	}
 	if err := os.WriteFile(stdout, []byte("running\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -113,6 +120,57 @@ func TestTerminalVerifierTestTimeoutRequiresExecutionBoundaryAndOutput(t *testin
 	raw.ExceptionInfo = []byte(`{"exception_type":"VerifierTimeoutError","exception_traceback":"pier/verifier/verifier.py: await self._environment.download_dir(output_dir)"}`)
 	if terminal, err := terminalVerifierTestTimeout(stage, raw); err != nil || terminal {
 		t.Fatalf("post-execution download timeout = %t, %v", terminal, err)
+	}
+}
+
+func TestTerminalVerifierTestTimeoutTreatsMissingExceptionAsNonTerminal(t *testing.T) {
+	request, stage := terminalVerifierTimeoutFixture(t)
+	raw, err := readPierTaskResult(stage, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, info := range []json.RawMessage{nil, {}, []byte(""), []byte("null"), []byte("  null\n")} {
+		raw.ExceptionInfo = info
+		if terminal, err := terminalVerifierTestTimeout(stage, raw); err != nil || terminal {
+			t.Fatalf("missing exception_info %q = %t, %v", info, terminal, err)
+		}
+	}
+	raw.ExceptionInfo = []byte(`{"exception_type"`)
+	if _, err := terminalVerifierTestTimeout(stage, raw); err == nil || !strings.Contains(err.Error(), "decode Pier verifier exception") {
+		t.Fatalf("malformed exception_info error = %v", err)
+	}
+}
+
+func TestNormalizeTerminalVerifierTestTimeoutSurfacesCorruptEvidence(t *testing.T) {
+	request, stage := terminalVerifierTimeoutFixture(t)
+	if err := os.RemoveAll(filepath.Join(stage, "jobs")); err != nil {
+		t.Fatal(err)
+	}
+	if _, terminal, err := normalizeTerminalVerifierTestTimeout(stage, request); err != nil || terminal {
+		t.Fatalf("missing jobs evidence = terminal=%t err=%v", terminal, err)
+	}
+
+	request, stage = terminalVerifierTimeoutFixture(t)
+	if err := os.Remove(filepath.Join(stage, "jobs", "one", "result.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, terminal, err := normalizeTerminalVerifierTestTimeout(stage, request); err != nil || terminal {
+		t.Fatalf("missing result evidence = terminal=%t err=%v", terminal, err)
+	}
+
+	request, stage = terminalVerifierTimeoutFixture(t)
+	if err := os.WriteFile(filepath.Join(stage, "jobs", "one", "result.json"), []byte("not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := normalizeTerminalVerifierTestTimeout(stage, request); err == nil || !strings.Contains(err.Error(), "decode Pier result identity") {
+		t.Fatalf("decode error = %v", err)
+	}
+
+	request, stage = terminalVerifierTimeoutFixture(t)
+	mismatched := request
+	mismatched.TaskChecksum = strings.Repeat("0", 64)
+	if _, _, err := normalizeTerminalVerifierTestTimeout(stage, mismatched); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("checksum error = %v", err)
 	}
 }
 
@@ -389,18 +447,23 @@ func TestRecoveryOnlyBindsRetainedStudyBeforeCurrentAdapterIdentity(t *testing.T
 	selection.Tasks = []matrixSelectionTask{{ID: request.Task, Repetitions: 1, Weight: 1}}
 	selectionID := strings.Repeat("s", 64)
 	studyID := strings.Repeat("h", 64)
-	armID := strings.Repeat("a", 64)
 	label := ArmBaseline
+	oldAdapter := strings.Repeat("f", 64)
+	checksums := map[string]string{request.Task: request.TaskChecksum}
+	environments := map[string]string{request.Task: request.EnvironmentIdentity}
+	experimentIdentity := strings.Repeat("i", 64)
+	armID, err := studyArmIdentity(selectionID, experimentIdentity, checksums, environments, nil, oldAdapter)
+	if err != nil {
+		t.Fatal(err)
+	}
 	stateDir := filepath.Join(request.RepoRoot, ".agent-layer", "state", "benchmarks", "deepswe", "studies", studyID)
 	armStateDir := filepath.Join(stateDir, "arms", armID)
 	if err := copyRequiredTree(request.EvidenceDir, armStateDir); err != nil {
 		t.Fatal(err)
 	}
-	oldAdapter := strings.Repeat("f", 64)
 	manifest := immutableStudyManifest{
 		SchemaVersion: immutableStudyManifestSchema, StudyID: studyID, SelectionID: selectionID,
-		Membership: []string{label}, Checksums: map[string]string{request.Task: request.TaskChecksum},
-		Environments: map[string]string{request.Task: request.EnvironmentIdentity}, Resources: studyResourceContract(),
+		Membership: []string{label}, Checksums: checksums, Environments: environments, Resources: studyResourceContract(),
 		Arms: []studyArmContract{{Name: label, ID: armID, Target: request.Model.RuntimeIdentifier + ":" + request.Effort, Adapter: oldAdapter}},
 	}
 	if err := writeJSON(filepath.Join(stateDir, "study-manifest.json"), manifest); err != nil {
@@ -408,7 +471,9 @@ func TestRecoveryOnlyBindsRetainedStudyBeforeCurrentAdapterIdentity(t *testing.T
 	}
 	prepared := preparedStudy{
 		selection: selection, selectionID: selectionID,
-		experiments: []preparedStudyExperiment{{studyExperiment: studyExperiment{Name: label}, model: request.Model, effort: request.Effort}},
+		experiments: []preparedStudyExperiment{{
+			studyExperiment: studyExperiment{Name: label}, model: request.Model, effort: request.Effort, identity: experimentIdentity,
+		}},
 	}
 	historical := recoveryPreparationFromManifest(&prepared, manifest, stateDir, tasks, 1)
 	if err := ensureStudyArmManifest(selectionID, tasks, manifest.Checksums, &historical.arms[0]); err != nil {
@@ -427,5 +492,99 @@ func TestRecoveryOnlyBindsRetainedStudyBeforeCurrentAdapterIdentity(t *testing.T
 	}
 	if prepared.studyID != studyID || loaded.stateDir != stateDir || loaded.arms[0].AdapterSHA256 != oldAdapter {
 		t.Fatalf("historical recovery selected %#v", loaded)
+	}
+
+	prepared.experiments[0].identity = strings.Repeat("x", 64)
+	if _, found, err := loadRecoverableCachedStudy(request.RepoRoot, &prepared, []cachedStudyCandidate{{stateDir: stateDir}}, tasks, 1); err != nil || found {
+		t.Fatalf("mismatched experiment identity bound recovery: found=%t err=%v", found, err)
+	}
+}
+
+func TestRecoveryOnlyReconstructsTreatmentWorkflowForDispatchConformance(t *testing.T) {
+	request, stage := terminalVerifierTimeoutFixture(t)
+	roles := []string{requiredRoleImplementer}
+	config := defaultTreatmentDispatchConfig(request.Model, request.Effort)
+	writeDispatchRecords(t, filepath.Join(stage, "jobs", "one", dispatchEvidenceDir), dispatchConformanceRecord{
+		ID: "run-0", Agent: config.Implementer.Agent, Model: config.Implementer.Model,
+		ReasoningEffort: config.Implementer.ReasoningEffort, Role: requiredRoleImplementer,
+		Mode: dispatchRunModeFresh, State: "completed",
+	})
+	bundleHash := strings.Repeat("b", 64)
+	oldAdapter := strings.Repeat("f", 64)
+	runtimeHash := strings.Repeat("r", 64)
+	request.Arm = ArmTreatment
+	request.Bundle = &TreatmentBundle{ManifestHash: bundleHash, AdapterSHA256: oldAdapter, LinuxBinarySHA256: runtimeHash}
+	if err := os.Remove(filepath.Join(filepath.Dir(armResultPath(request.EvidenceDir, request.Task, request.Attempt)), benchmarkArtifactsDir, request.EventID, "execution-checkpoint.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	if err := writePierExecutionCheckpoint(request, stage); err != nil {
+		t.Fatal(err)
+	}
+	if err := markPierProviderCompleted(request, time.Now().UTC().Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	installDockerCleanupStub(t, func(context.Context, ...string) ([]byte, error) { return nil, nil })
+
+	tasks := []benchmarkPlanTask{{ID: request.Task, RepetitionsPerArm: 1}}
+	selection := matrixSelectionFixture()
+	selection.Tasks = []matrixSelectionTask{{ID: request.Task, Repetitions: 1, Weight: 1}}
+	selectionID := strings.Repeat("s", 64)
+	studyID := strings.Repeat("h", 64)
+	label := "Skills"
+	checksums := map[string]string{request.Task: request.TaskChecksum}
+	environments := map[string]string{request.Task: request.EnvironmentIdentity}
+	experimentIdentity := strings.Repeat("i", 64)
+	historicalBundle := historicalTreatmentBundle(studyArmContract{
+		Bundle: bundleHash, Adapter: oldAdapter, Runtime: runtimeHash,
+	})
+	armID, err := studyArmIdentity(selectionID, experimentIdentity, checksums, environments, historicalBundle, oldAdapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateDir := filepath.Join(request.RepoRoot, ".agent-layer", "state", "benchmarks", "deepswe", "studies", studyID)
+	armStateDir := filepath.Join(stateDir, "arms", armID)
+	if err := copyRequiredTree(request.EvidenceDir, armStateDir); err != nil {
+		t.Fatal(err)
+	}
+	manifest := immutableStudyManifest{
+		SchemaVersion: immutableStudyManifestSchema, StudyID: studyID, SelectionID: selectionID,
+		Membership: []string{label}, Checksums: checksums, Environments: environments, Resources: studyResourceContract(),
+		Arms: []studyArmContract{{
+			Name: label, ID: armID, Target: request.Model.RuntimeIdentifier + ":" + request.Effort,
+			Bundle: bundleHash, Adapter: oldAdapter, Runtime: runtimeHash,
+		}},
+	}
+	if err := writeJSON(filepath.Join(stateDir, "study-manifest.json"), manifest); err != nil {
+		t.Fatal(err)
+	}
+	prepared := preparedStudy{
+		selection: selection, selectionID: selectionID,
+		experiments: []preparedStudyExperiment{{
+			studyExperiment: studyExperiment{
+				Name: label, Skills: "skills", RequiredDispatchRoles: roles,
+			},
+			model: request.Model, effort: request.Effort, identity: experimentIdentity,
+		}},
+	}
+	historical := recoveryPreparationFromManifest(&prepared, manifest, stateDir, tasks, 1)
+	if historical.arms[0].Bundle == nil || historical.arms[0].Bundle.Manifest.Mode != TreatmentInstructionsAndSkills ||
+		len(historical.arms[0].Bundle.Manifest.RequiredRoles) != 1 ||
+		historical.arms[0].Bundle.Manifest.RequiredRoles[0] != requiredRoleImplementer ||
+		historical.arms[0].Bundle.Manifest.DispatchConfig.Implementer != config.Implementer {
+		t.Fatalf("recovered treatment contract = %#v", historical.arms[0].Bundle)
+	}
+	if err := ensureStudyArmManifest(selectionID, tasks, manifest.Checksums, &historical.arms[0]); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := recoverTerminalVerifierTimeoutCells(context.Background(), request.RepoRoot, historical, nil)
+	if err != nil || recovered != 1 {
+		t.Fatalf("treatment recovery = %d, %v", recovered, err)
+	}
+	var result AttemptResult
+	if err := readStudyJSON(armResultPath(historical.arms[0].StateDir, request.Task, 1), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.VerifierOutcome != verifierOutcomeTestTimeout || !result.DispatchConformant {
+		t.Fatalf("recovered treatment timeout = %#v", result)
 	}
 }

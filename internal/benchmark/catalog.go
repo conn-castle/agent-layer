@@ -53,6 +53,7 @@ const (
 	authMethodGoogleOAuth         = "google_oauth"
 	authMethodJSONFile            = "auth_json"
 	dispatchRunStateCompleted     = "completed"
+	dispatchRunModeFresh          = "fresh"
 	dockerBuildxPlugin            = "docker-buildx"
 	dockerComposePlugin           = "docker-compose"
 	requiredRoleCodeReviewer      = "code-reviewer"
