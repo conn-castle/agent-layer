@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/debug"
 	"sort"
@@ -494,10 +495,8 @@ func validateTreatmentInstructionDependencies(root string) error {
 		if err != nil {
 			return err
 		}
-		for _, field := range strings.Fields(string(data)) {
-			reference := strings.Trim(field, "`'\",;:()[]{}<>")
-			reference = strings.TrimRight(reference, ".")
-			normalized := strings.ToLower(strings.TrimPrefix(filepath.ToSlash(reference), "./"))
+		for _, field := range instructionReferenceFields(string(data)) {
+			reference, normalized := normalizeInstructionReference(field)
 			if projectStateNames[filepath.Base(normalized)] || strings.HasPrefix(normalized, "guides/") {
 				return fmt.Errorf(
 					"study instructions %s reference excluded project-local file %s; provide self-contained benchmark instructions",
@@ -507,6 +506,31 @@ func validateTreatmentInstructionDependencies(root string) error {
 		}
 		return nil
 	})
+}
+
+var markdownLinkDestinationPattern = regexp.MustCompile(`\[[^\]]*\]\(\s*<?([^)\s>]+)>?`)
+
+func instructionReferenceFields(data string) []string {
+	fields := strings.Fields(data)
+	matches := markdownLinkDestinationPattern.FindAllStringSubmatch(data, -1)
+	if len(matches) == 0 {
+		return fields
+	}
+	refs := append([]string(nil), fields...)
+	for _, match := range matches {
+		refs = append(refs, match[1])
+	}
+	return refs
+}
+
+func normalizeInstructionReference(field string) (string, string) {
+	reference := strings.Trim(field, "`'\",;:()[]{}<>")
+	reference = strings.TrimRight(reference, ".")
+	if cut := strings.IndexAny(reference, "#?"); cut >= 0 {
+		reference = reference[:cut]
+	}
+	normalized := strings.ToLower(strings.TrimPrefix(filepath.ToSlash(reference), "./"))
+	return reference, normalized
 }
 
 func rewriteTreatmentProjectionRoot(root, from, to string) error {

@@ -772,8 +772,12 @@ func TestStudyTreatmentInstructionsRejectDefaultMemoryAndUnquotedPersonaDependen
 		t.Fatal(err)
 	}
 	for name, body := range map[string]string{
-		"default memory": "Use `docs/agent-layer/CONTEXT.md` and docs/agent-layer/DECISIONS.md as needed.\n",
-		"persona guide":  "First read ./guides/team-persona.md.\n",
+		"default memory":    "Use `docs/agent-layer/CONTEXT.md` and docs/agent-layer/DECISIONS.md as needed.\n",
+		"persona guide":     "First read ./guides/team-persona.md.\n",
+		"markdown link":     "Read [project context](CONTEXT.md) before editing.\n",
+		"file fragment":     "See CONTEXT.md#overview for the working agreement.\n",
+		"markdown fragment": "Follow [context](docs/agent-layer/CONTEXT.md#overview).\n",
+		"guide fragment":    "Read ./guides/team-persona.md#role first.\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(instructions, "rules.md"), []byte(body), 0o600); err != nil {

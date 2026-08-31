@@ -163,6 +163,44 @@ func TestRunStudyDryRunAndPaidWorkflow(t *testing.T) {
 	}
 }
 
+func TestRecoveryOnlyFailsWithoutPreparingTasksWhenNoRecoverableStudyExists(t *testing.T) {
+	root := t.TempDir()
+	selectionData, err := json.Marshal(matrixSelectionFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeStudyInputFixture(t, root, "selection.json", string(selectionData))
+	writeStudyInputFixture(t, root, "study.toml", "selection = \"selection.json\"\n[[experiments]]\nname = \"Bare\"\nmodel = \"luna\"\nreasoning = \"low\"\n")
+
+	originalPreflight := preflightBenchmark
+	originalVerifyPier := verifyBenchmarkPier
+	originalPrepareTasks := prepareBenchmarkTaskSet
+	preflightBenchmark = func([]parsedSelection) error {
+		t.Fatal("recovery-only ran provider preflight without a recoverable study")
+		return nil
+	}
+	verifyBenchmarkPier = func(context.Context) error {
+		t.Fatal("recovery-only verified Pier without a recoverable study")
+		return nil
+	}
+	prepareBenchmarkTaskSet = func(context.Context, string, []benchmarkPlanTask) (map[string]string, map[string]string, error) {
+		t.Fatal("recovery-only prepared tasks without a recoverable study")
+		return nil, nil, nil
+	}
+	t.Cleanup(func() {
+		preflightBenchmark = originalPreflight
+		verifyBenchmarkPier = originalVerifyPier
+		prepareBenchmarkTaskSet = originalPrepareTasks
+	})
+
+	_, err = RunStudy(context.Background(), StudyOptions{
+		RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), RecoveryOnly: true, ResourcePreflight: true,
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "no retained terminal verifier timeout study to canonicalize") {
+		t.Fatalf("recovery-only without retained study = %v", err)
+	}
+}
+
 func TestRunStudyRejectsMissingManifestBeforeProviderWork(t *testing.T) {
 	executor := &studyWorkflowExecutor{}
 	if _, err := RunStudy(context.Background(), StudyOptions{}, executor); err == nil || !strings.Contains(err.Error(), "requires one study.toml path") {

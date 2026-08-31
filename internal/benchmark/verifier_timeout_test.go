@@ -276,8 +276,8 @@ func TestRetainedTerminalVerifierTestTimeoutCanonicalizesWithoutReplay(t *testin
 	if err != nil || result.VerifierOutcome != verifierOutcomeTestTimeout {
 		t.Fatalf("canonicalized timeout = %#v err=%v", result, err)
 	}
-	if _, err := os.Stat(stage); err != nil {
-		t.Fatalf("retained diagnostic stage was removed: %v", err)
+	if _, err := os.Stat(stage); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("retained diagnostic stage remained after terminal timeout finalization: %v", err)
 	}
 	entries, err := os.ReadDir(filepath.Join(request.RepoRoot, ".agent-layer", "tmp"))
 	if err != nil {
@@ -387,8 +387,8 @@ func TestRecoveryOnlyCanonicalizesTerminalTimeoutWithoutSchedulingExecution(t *t
 	if result.VerifierOutcome != verifierOutcomeTestTimeout || result.F2PTotal != 3 {
 		t.Fatalf("recovered result = %#v", result)
 	}
-	if _, err := os.Stat(stage); err != nil {
-		t.Fatalf("recovery-only removed retained diagnostics: %v", err)
+	if _, err := os.Stat(stage); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("recovery-only left retained staging directory: %v", err)
 	}
 	entries, err := os.ReadDir(filepath.Join(request.RepoRoot, ".agent-layer", "tmp"))
 	if err != nil {

@@ -76,6 +76,7 @@ func (PierExecutor) replayVerifier(ctx context.Context, request ExecutionRequest
 		if err := removePierExecutionCheckpoint(request); err != nil {
 			return AttemptResult{}, err
 		}
+		_ = os.RemoveAll(checkpoint.StagePath)
 		return terminalResult, nil
 	}
 	if request.recoveryOnly {

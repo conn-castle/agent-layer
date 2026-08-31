@@ -102,7 +102,7 @@ al benchmark run benchmark-study/study.toml --recover-only
 al benchmark run benchmark-study/study.toml --task-concurrency 2
 ```
 
-`--recover-only` inspects retained checkpoints and finalizes only evidence-backed terminal candidate test timeouts; it skips every ordinary missing cell and every replayable infrastructure/interrupted verifier state. `--task` and worker count affect only the current invocation; they do not change study identity or report membership. A run concurrency greater than one is an explicit throughput override and disables task-image reclamation because concurrent cells may still be using the same image.
+`--recover-only` inspects retained checkpoints and finalizes only evidence-backed terminal candidate test timeouts; it skips every ordinary missing cell and every replayable infrastructure/interrupted verifier state. If no compatible retained study with those checkpoints exists, the command fails instead of certifying task images or creating a new study. `--task` and worker count affect only the current invocation; they do not change study identity or report membership. A run concurrency greater than one is an explicit throughput override and disables task-image reclamation because concurrent cells may still be using the same image.
 
 Readiness also supports deterministic sharding and per-task timeouts:
 

@@ -538,6 +538,9 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 	if found {
 		return cached, nil
 	}
+	if options.RecoveryOnly {
+		return matrixPreparation{}, fmt.Errorf("recovery-only mode found no retained terminal verifier timeout study to canonicalize")
+	}
 	if err := preflightBenchmark(selections); err != nil {
 		return matrixPreparation{}, err
 	}
