@@ -1715,6 +1715,9 @@ function benchmarkModelForConfiguration(configuration) {
  * @param {number} iterations uniform repetitions per selected task
  * @returns {object|null} benchmark selection, or null when incomplete
  */
+const PUBLISHED_VARIANCE_ESTIMATOR = "unbiased-sample-variance";
+const PUBLISHED_VARIANCE_DENOMINATOR = "n-1";
+
 function buildBenchmarkSelection(
   selection,
   configurationId,
@@ -1737,9 +1740,41 @@ function buildBenchmarkSelection(
   ) {
     return null;
   }
+  const exportedTasks = [];
+  for (const row of tasks) {
+    const cell = row.cell;
+    if (
+      !cell ||
+      !Number.isInteger(cell.n) ||
+      cell.n < 2 ||
+      !Number.isFinite(cell.variance) ||
+      cell.variance < 0
+    ) {
+      return null;
+    }
+    exportedTasks.push({
+      id: row.id,
+      repetitions: iterations,
+      weight: row.normalizedWeight,
+      calibration: {
+        intercept: row.calibration.intercept,
+        slope: row.calibration.slope,
+      },
+      publishedMeanCostUsd: cell.meanCost,
+      publishedVariance: {
+        configurationId: configuration.id,
+        publishedModel: configuration.model,
+        publishedReasoning: configuration.reasoning,
+        sampleSize: cell.n,
+        sampleVariance: cell.variance,
+        varianceEstimator: PUBLISHED_VARIANCE_ESTIMATOR,
+        varianceDenominator: PUBLISHED_VARIANCE_DENOMINATOR,
+      },
+    });
+  }
   return {
     schema: "deepswe-benchmark-selection",
-    schemaVersion: 2,
+    schemaVersion: 3,
     snapshot: {
       url: SNAPSHOT.source.url,
       sha256: SNAPSHOT.source.sha256,
@@ -1752,16 +1787,7 @@ function buildBenchmarkSelection(
     },
     estimatedPublishedSpendUsd: selection.estimatedSpend,
     manualExclusions: [...manualExclusions].sort(),
-    tasks: tasks.map((row) => ({
-      id: row.id,
-      repetitions: iterations,
-      weight: row.normalizedWeight,
-      calibration: {
-        intercept: row.calibration.intercept,
-        slope: row.calibration.slope,
-      },
-      publishedMeanCostUsd: row.cell.meanCost,
-    })),
+    tasks: exportedTasks,
   };
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,6 +82,119 @@ func TestStudySelectionRejectsManualExclusionsInSchemaV1(t *testing.T) {
 	historical.ManualExclusions = []string{"excluded-historical-task"}
 	if err := validateMatrixSelection(historical); err == nil || !strings.Contains(err.Error(), "schema v1 does not support manual exclusions") {
 		t.Fatalf("v1 manual exclusions error = %v", err)
+	}
+}
+
+func TestStudySelectionRejectsPublishedVarianceOutsideSchemaV3(t *testing.T) {
+	historical := matrixSelectionFixture()
+	if err := validateMatrixSelection(historical); err != nil {
+		t.Fatalf("schema v2 without published evidence rejected: %v", err)
+	}
+	historical.Tasks[0].PublishedVariance = lunaPublishedVariance(.04)
+	if err := validateMatrixSelection(historical); err == nil || !strings.Contains(err.Error(), "schema v2 does not support published variance evidence") {
+		t.Fatalf("v2 published variance error = %v", err)
+	}
+	v1 := matrixSelectionFixture()
+	v1.SchemaVersion = 1
+	v1.Tasks[0].PublishedVariance = lunaPublishedVariance(.04)
+	if err := validateMatrixSelection(v1); err == nil || !strings.Contains(err.Error(), "schema v1 does not support published variance evidence") {
+		t.Fatalf("v1 published variance error = %v", err)
+	}
+}
+
+func TestStudySelectionSchemaV3RequiresValidPublishedVariance(t *testing.T) {
+	selection := matrixSelectionFixtureV3(.04)
+	if err := validateMatrixSelection(selection); err != nil {
+		t.Fatalf("valid schema v3 rejected: %v", err)
+	}
+	selection.Tasks[0].PublishedVariance = nil
+	if err := validateMatrixSelection(selection); err == nil || !strings.Contains(err.Error(), "requires pinned published variance evidence") {
+		t.Fatalf("missing published evidence error = %v", err)
+	}
+
+	selection = matrixSelectionFixtureV3(.04)
+	selection.Tasks[0].PublishedVariance.SampleVariance = math.NaN()
+	if err := validateMatrixSelection(selection); err == nil || !strings.Contains(err.Error(), "finite and non-negative") {
+		t.Fatalf("non-finite variance error = %v", err)
+	}
+
+	selection = matrixSelectionFixtureV3(.04)
+	selection.Tasks[0].PublishedVariance.SampleVariance = -0.1
+	if err := validateMatrixSelection(selection); err == nil || !strings.Contains(err.Error(), "finite and non-negative") {
+		t.Fatalf("negative variance error = %v", err)
+	}
+
+	selection = matrixSelectionFixtureV3(.04)
+	selection.Tasks[0].PublishedVariance.SampleSize = 1
+	if err := validateMatrixSelection(selection); err == nil || !strings.Contains(err.Error(), "at least 2") {
+		t.Fatalf("sample size error = %v", err)
+	}
+
+	selection = matrixSelectionFixtureV3(0)
+	if err := validateMatrixSelection(selection); err != nil {
+		t.Fatalf("zero published variance rejected: %v", err)
+	}
+
+	selection = matrixSelectionFixtureV3(.04)
+	selection.Tasks[0].PublishedVariance.ConfigurationID = "other::low"
+	if err := validateMatrixSelection(selection); err == nil || !strings.Contains(err.Error(), "incoherent") {
+		t.Fatalf("incoherent configuration error = %v", err)
+	}
+
+	selection = matrixSelectionFixtureV3(.04)
+	selection.Tasks[0].PublishedVariance.PublishedModel = "gpt-5-6-sol"
+	selection.Tasks[0].PublishedVariance.ConfigurationID = "gpt-5-6-sol::low"
+	if err := validateMatrixSelection(selection); err == nil || !strings.Contains(err.Error(), "does not correspond to selector") {
+		t.Fatalf("selector mismatch error = %v", err)
+	}
+
+	selection = matrixSelectionFixtureV3(.04)
+	selection.Selector.Model, selection.Selector.Reasoning = modelGrok46, effortHigh
+	for index := range selection.Tasks {
+		selection.Tasks[index].PublishedVariance.PublishedModel = deepSWEPublishedGrok46
+		selection.Tasks[index].PublishedVariance.PublishedReasoning = effortHigh
+		selection.Tasks[index].PublishedVariance.ConfigurationID = deepSWEPublishedGrok46 + "::" + effortHigh
+	}
+	selection.Tasks[1].PublishedVariance.PublishedModel = modelGrok46
+	selection.Tasks[1].PublishedVariance.ConfigurationID = modelGrok46 + "::" + effortHigh
+	if err := validateMatrixSelection(selection); err == nil || !strings.Contains(err.Error(), "mixes configuration identities") {
+		t.Fatalf("mixed configuration error = %v", err)
+	}
+}
+
+func TestStudySelectionSchemaV3AcceptsPublishedGrokConfigurationMapping(t *testing.T) {
+	selection := matrixSelectionFixtureV3(.04)
+	selection.Selector.Model, selection.Selector.Reasoning = modelGrok46, effortHigh
+	for index := range selection.Tasks {
+		selection.Tasks[index].PublishedVariance.PublishedModel = deepSWEPublishedGrok46
+		selection.Tasks[index].PublishedVariance.PublishedReasoning = effortHigh
+		selection.Tasks[index].PublishedVariance.ConfigurationID = deepSWEPublishedGrok46 + "::" + effortHigh
+	}
+	if err := validateMatrixSelection(selection); err != nil {
+		t.Fatalf("grok published mapping rejected: %v", err)
+	}
+	selection.Selector.Model = modelGrok45
+	if err := validateMatrixSelection(selection); err == nil || !strings.Contains(err.Error(), "does not correspond to selector") {
+		t.Fatalf("grok selector mismatch error = %v", err)
+	}
+}
+
+func TestStudySelectionLoadsSchemaV3PublishedVariance(t *testing.T) {
+	selection := matrixSelectionFixtureV3(.04)
+	data, err := json.Marshal(selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "selection.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, identity, err := loadMatrixSelection(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(identity) != 64 || loaded.SchemaVersion != matrixSelectionSchemaVersion || loaded.Tasks[0].PublishedVariance == nil || loaded.Tasks[0].PublishedVariance.SampleSize != 4 {
+		t.Fatalf("loaded v3 selection identity=%q selection=%#v", identity, loaded)
 	}
 }
 

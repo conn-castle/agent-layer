@@ -101,35 +101,66 @@ type AuthenticationPreflight struct {
 
 // StudyTaskReport records one selected task's repetitions and score evidence.
 type StudyTaskReport struct {
-	Task                 string            `json:"task"`
-	RepetitionsRequired  int               `json:"repetitions_required"`
-	RepetitionsCompleted int               `json:"repetitions_completed"`
-	F2PMean              *float64          `json:"f2p_mean,omitempty"`
-	SampleVariance       *float64          `json:"sample_variance,omitempty"`
-	CalibrationIntercept float64           `json:"calibration_intercept"`
-	CalibrationSlope     float64           `json:"calibration_slope"`
-	Weight               float64           `json:"weight"`
-	EffectiveCoefficient float64           `json:"effective_coefficient"`
-	CalibratedMean       *float64          `json:"calibrated_mean,omitempty"`
-	WeightedContribution *float64          `json:"weighted_contribution,omitempty"`
-	ObservedCost         ObservedCostRange `json:"observed_cost"`
-	VerifierTestTimeouts int               `json:"verifier_test_timeouts"`
-	MissingAttempts      []int             `json:"missing_attempts,omitempty"`
+	Task                 string                  `json:"task"`
+	RepetitionsRequired  int                     `json:"repetitions_required"`
+	RepetitionsCompleted int                     `json:"repetitions_completed"`
+	F2PMean              *float64                `json:"f2p_mean,omitempty"`
+	SampleVariance       *float64                `json:"sample_variance,omitempty"`
+	CalibrationIntercept float64                 `json:"calibration_intercept"`
+	CalibrationSlope     float64                 `json:"calibration_slope"`
+	Weight               float64                 `json:"weight"`
+	EffectiveCoefficient float64                 `json:"effective_coefficient"`
+	CalibratedMean       *float64                `json:"calibrated_mean,omitempty"`
+	WeightedContribution *float64                `json:"weighted_contribution,omitempty"`
+	ObservedCost         ObservedCostRange       `json:"observed_cost"`
+	VerifierTestTimeouts int                     `json:"verifier_test_timeouts"`
+	MissingAttempts      []int                   `json:"missing_attempts,omitempty"`
+	PublishedVariance    *StudyPublishedVariance `json:"published_variance,omitempty"`
 }
+
+// StudyPublishedVariance is pinned published-run evidence copied from a
+// schema-v3 selection. Report generation never fetches planner data.
+type StudyPublishedVariance struct {
+	ConfigurationID     string  `json:"configuration_id"`
+	PublishedModel      string  `json:"published_model"`
+	PublishedReasoning  string  `json:"published_reasoning"`
+	SampleSize          int     `json:"sample_size"`
+	SampleVariance      float64 `json:"sample_variance"`
+	VarianceEstimator   string  `json:"variance_estimator"`
+	VarianceDenominator string  `json:"variance_denominator"`
+}
+
+const (
+	inferenceSourceObserved       = "observed"
+	inferenceSourcePublishedProxy = "published_proxy"
+)
 
 // StudyComparisonReport records the fixed-selection comparison of two experiments.
 type StudyComparisonReport struct {
-	Left               string   `json:"left"`
-	Right              string   `json:"right"`
-	Available          bool     `json:"available"`
-	UnavailableReason  string   `json:"unavailable_reason,omitempty"`
-	Difference         *float64 `json:"difference,omitempty"`
-	Variance           *float64 `json:"variance,omitempty"`
-	StandardError      *float64 `json:"standard_error,omitempty"`
-	DegreesOfFreedom   *float64 `json:"degrees_of_freedom,omitempty"`
-	Statistic          *float64 `json:"statistic,omitempty"`
-	RawTwoSidedPValue  *float64 `json:"raw_two_sided_p_value,omitempty"`
-	HolmAdjustedPValue *float64 `json:"holm_adjusted_p_value,omitempty"`
+	Left               string                         `json:"left"`
+	Right              string                         `json:"right"`
+	Available          bool                           `json:"available"`
+	UnavailableReason  string                         `json:"unavailable_reason,omitempty"`
+	InferenceSource    string                         `json:"inference_source,omitempty"`
+	PublishedProxy     *StudyPublishedProxyProvenance `json:"published_proxy,omitempty"`
+	Difference         *float64                       `json:"difference,omitempty"`
+	Variance           *float64                       `json:"variance,omitempty"`
+	StandardError      *float64                       `json:"standard_error,omitempty"`
+	DegreesOfFreedom   *float64                       `json:"degrees_of_freedom,omitempty"`
+	Statistic          *float64                       `json:"statistic,omitempty"`
+	RawTwoSidedPValue  *float64                       `json:"raw_two_sided_p_value,omitempty"`
+	HolmAdjustedPValue *float64                       `json:"holm_adjusted_p_value,omitempty"`
+}
+
+// StudyPublishedProxyProvenance records the pinned published evidence used for
+// published_proxy pairwise inference.
+type StudyPublishedProxyProvenance struct {
+	ConfigurationID     string `json:"configuration_id"`
+	PublishedModel      string `json:"published_model"`
+	PublishedReasoning  string `json:"published_reasoning"`
+	VarianceEstimator   string `json:"variance_estimator"`
+	VarianceDenominator string `json:"variance_denominator"`
+	SnapshotSHA         string `json:"snapshot_sha256"`
 }
 
 // StudyHolmFamily describes the multiple-comparison adjustment applied to a study.
@@ -153,7 +184,7 @@ func buildStudyReport(study preparedStudy, preparation matrixPreparation) (Study
 			TaskChecksums: copyStringMap(preparation.checksums), Environments: copyStringMap(preparation.environments)},
 		HolmFamily: StudyHolmFamily{Method: "Holm step-down adjustment over available unique experiment pairs"},
 		Limitations: []string{
-			"One repetition is descriptive only. At least two completed independent repetitions in every selected task and experiment enable the declared Welch inference; three or more are preferable for stability.",
+			studyReportRepetitionLimitation(study.selection),
 			"Inference is conditional on this fixed selected task allocation, calibration slopes, and normalized weights. The selected tasks are not a random sample, so cross-task dispersion is not substituted for run variance.",
 			"Published selector evidence is a planning anchor. The selected task is part of its full-configuration target, which induces a small part-whole correlation bias.",
 		},
@@ -191,6 +222,11 @@ func buildStudyReport(study preparedStudy, preparation matrixPreparation) (Study
 		}
 	}
 	report.Comparisons = buildStudyComparisons(&report)
+	if usesPublishedProxy(report.Comparisons) {
+		report.Limitations = append([]string{
+			"published_proxy inference estimates uncertainty from pinned published DeepSWE runs, not from the executed repetitions in this study.",
+		}, report.Limitations...)
+	}
 	members := make([]string, 0)
 	for _, comparison := range report.Comparisons {
 		if comparison.Available {
@@ -234,7 +270,7 @@ func buildStudyExperimentReport(experiment preparedStudyExperiment, arm matrixAr
 	clientSet := map[string]bool{}
 	complete := true
 	for _, selected := range selection.Tasks {
-		task := StudyTaskReport{Task: selected.ID, RepetitionsRequired: selected.Repetitions, CalibrationIntercept: selected.Calibration.Intercept, CalibrationSlope: selected.Calibration.Slope, Weight: selected.Weight, EffectiveCoefficient: selected.Weight * selected.Calibration.Slope}
+		task := StudyTaskReport{Task: selected.ID, RepetitionsRequired: selected.Repetitions, CalibrationIntercept: selected.Calibration.Intercept, CalibrationSlope: selected.Calibration.Slope, Weight: selected.Weight, EffectiveCoefficient: selected.Weight * selected.Calibration.Slope, PublishedVariance: studyPublishedVariance(selected.PublishedVariance)}
 		var scores []float64
 		for attempt := 1; attempt <= selected.Repetitions; attempt++ {
 			state, result, err := inspectStudyCell(arm, selected.ID, attempt, preparation.checksums[selected.ID], preparation.environments[selected.ID])
@@ -302,6 +338,12 @@ func buildStudyExperimentReport(experiment preparedStudyExperiment, arm matrixAr
 	if item.WorkflowNoncomplianceRuns > 0 {
 		item.ComparabilityWarnings = append(item.ComparabilityWarnings, "Workflow-noncompliant completed runs are retained as scored evidence; statistical comparisons involving this experiment are unavailable.")
 	}
+	if item.Model != selection.Selector.Model || item.Reasoning != selection.Selector.Reasoning {
+		item.ComparabilityWarnings = append(item.ComparabilityWarnings, fmt.Sprintf(
+			"Selector/executed mismatch: executed model/reasoning is %s/%s; selector published evidence is from %s/%s.",
+			item.Model, item.Reasoning, selection.Selector.Model, selection.Selector.Reasoning,
+		))
+	}
 	if complete {
 		score := 0.0
 		for _, task := range item.Tasks {
@@ -352,13 +394,13 @@ func buildStudyComparisons(report *StudyReport) []StudyComparisonReport {
 	var comparisons []StudyComparisonReport
 	for i := 0; i < len(report.Experiments); i++ {
 		for j := i + 1; j < len(report.Experiments); j++ {
-			comparisons = append(comparisons, compareStudyExperiments(report.Experiments[i], report.Experiments[j]))
+			comparisons = append(comparisons, compareStudyExperiments(report.Experiments[i], report.Experiments[j], report.Selection))
 		}
 	}
 	return comparisons
 }
 
-func compareStudyExperiments(left, right StudyExperimentReport) StudyComparisonReport {
+func compareStudyExperiments(left, right StudyExperimentReport, selection StudySelectionProvenance) StudyComparisonReport {
 	comparison := StudyComparisonReport{Left: left.Name, Right: right.Name}
 	if left.Score == nil || right.Score == nil {
 		comparison.UnavailableReason = "requires every selected task cell to be complete in both experiments"
@@ -379,54 +421,222 @@ func compareStudyExperiments(left, right StudyExperimentReport) StudyComparisonR
 		comparison.UnavailableReason = fmt.Sprintf("%s %s workflow-noncompliant completed runs; statistical comparison is unavailable while candidate evidence is retained", strings.Join(names, " and "), verb)
 		return comparison
 	}
-	var variance, denominator float64
+	if canUseObservedInference(left, right) {
+		moments, reason := observedWelchMoments(left.Tasks, right.Tasks)
+		return finishStudyComparison(comparison, left, right, inferenceSourceObserved, nil, moments, reason)
+	}
+	if canUsePublishedProxyInference(left, right) {
+		moments, reason := publishedProxyMoments(left.Tasks, right.Tasks)
+		return finishStudyComparison(comparison, left, right, inferenceSourcePublishedProxy, publishedProxyProvenance(left.Tasks, selection), moments, reason)
+	}
+	comparison.UnavailableReason = unavailableInferenceReason(left, right)
+	return comparison
+}
+
+func canUseObservedInference(left, right StudyExperimentReport) bool {
+	if len(left.Tasks) == 0 || len(left.Tasks) != len(right.Tasks) {
+		return false
+	}
+	for index := range left.Tasks {
+		a, b := left.Tasks[index], right.Tasks[index]
+		if a.RepetitionsCompleted < 2 || b.RepetitionsCompleted < 2 || a.SampleVariance == nil || b.SampleVariance == nil {
+			return false
+		}
+	}
+	return true
+}
+
+func canUsePublishedProxyInference(left, right StudyExperimentReport) bool {
+	if len(left.Tasks) == 0 || len(left.Tasks) != len(right.Tasks) {
+		return false
+	}
+	for index := range left.Tasks {
+		a, b := left.Tasks[index], right.Tasks[index]
+		if a.RepetitionsCompleted < 1 || b.RepetitionsCompleted < 1 || !validStudyPublishedVariance(a.PublishedVariance) || !samePublishedVariance(a.PublishedVariance, b.PublishedVariance) {
+			return false
+		}
+	}
+	return true
+}
+
+func validStudyPublishedVariance(evidence *StudyPublishedVariance) bool {
+	return evidence != nil &&
+		evidence.SampleSize >= 2 &&
+		finite(evidence.SampleVariance) && evidence.SampleVariance >= 0 &&
+		evidence.VarianceEstimator == publishedVarianceEstimator &&
+		evidence.VarianceDenominator == publishedVarianceDenominator &&
+		evidence.ConfigurationID != "" && evidence.PublishedModel != "" && evidence.PublishedReasoning != "" &&
+		evidence.ConfigurationID == evidence.PublishedModel+"::"+evidence.PublishedReasoning
+}
+
+func samePublishedVariance(left, right *StudyPublishedVariance) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	return left.ConfigurationID == right.ConfigurationID &&
+		left.PublishedModel == right.PublishedModel &&
+		left.PublishedReasoning == right.PublishedReasoning &&
+		left.SampleSize == right.SampleSize &&
+		left.SampleVariance == right.SampleVariance &&
+		left.VarianceEstimator == right.VarianceEstimator &&
+		left.VarianceDenominator == right.VarianceDenominator
+}
+
+func unavailableInferenceReason(left, right StudyExperimentReport) string {
+	hasPublishedEvidence := false
+	for index := range left.Tasks {
+		if validStudyPublishedVariance(left.Tasks[index].PublishedVariance) || validStudyPublishedVariance(right.Tasks[index].PublishedVariance) {
+			hasPublishedEvidence = true
+			break
+		}
+	}
 	for index := range left.Tasks {
 		a, b := left.Tasks[index], right.Tasks[index]
 		if a.RepetitionsCompleted < 2 {
-			comparison.UnavailableReason = fmt.Sprintf("%s/%s requires at least two completed repetitions", left.Name, a.Task)
-			return comparison
+			if hasPublishedEvidence {
+				return fmt.Sprintf("%s/%s requires at least two completed repetitions, or complete schema-v3 published variance evidence for published_proxy inference", left.Name, a.Task)
+			}
+			return fmt.Sprintf("%s/%s requires at least two completed repetitions", left.Name, a.Task)
 		}
 		if b.RepetitionsCompleted < 2 {
-			comparison.UnavailableReason = fmt.Sprintf("%s/%s requires at least two completed repetitions", right.Name, b.Task)
-			return comparison
+			if hasPublishedEvidence {
+				return fmt.Sprintf("%s/%s requires at least two completed repetitions, or complete schema-v3 published variance evidence for published_proxy inference", right.Name, b.Task)
+			}
+			return fmt.Sprintf("%s/%s requires at least two completed repetitions", right.Name, b.Task)
 		}
+	}
+	return "published_proxy inference requires complete pinned published sample size and variance for every selected task"
+}
+
+type pairwiseMoments struct {
+	variance    float64
+	denominator float64
+}
+
+func observedWelchMoments(left, right []StudyTaskReport) (pairwiseMoments, string) {
+	var moments pairwiseMoments
+	for index := range left {
+		a, b := left[index], right[index]
 		if a.SampleVariance == nil || b.SampleVariance == nil {
-			comparison.UnavailableReason = "missing within-cell sample variance"
-			return comparison
+			return pairwiseMoments{}, "missing within-cell sample variance"
 		}
 		for _, cell := range []StudyTaskReport{a, b} {
 			component := cell.EffectiveCoefficient * cell.EffectiveCoefficient * *cell.SampleVariance / float64(cell.RepetitionsCompleted)
 			if !finite(component) || component < 0 {
-				comparison.UnavailableReason = "non-finite within-cell variance contribution"
-				return comparison
+				return pairwiseMoments{}, "non-finite within-cell variance contribution"
 			}
-			variance += component
-			denominator += component * component / float64(cell.RepetitionsCompleted-1)
+			moments.variance += component
+			moments.denominator += component * component / float64(cell.RepetitionsCompleted-1)
 		}
 	}
-	if !finite(variance) || variance <= 0 {
+	return moments, ""
+}
+
+func publishedProxyMoments(left, right []StudyTaskReport) (pairwiseMoments, string) {
+	var moments pairwiseMoments
+	for index := range left {
+		a, b := left[index], right[index]
+		if a.Task != b.Task {
+			return pairwiseMoments{}, "task identities do not align for published_proxy inference"
+		}
+		if math.Abs(a.EffectiveCoefficient-b.EffectiveCoefficient) > 1e-12 {
+			return pairwiseMoments{}, "task coefficients do not align for published_proxy inference"
+		}
+		if a.RepetitionsCompleted < 1 || b.RepetitionsCompleted < 1 {
+			return pairwiseMoments{}, "published_proxy inference requires at least one completed repetition in each experiment"
+		}
+		if !validStudyPublishedVariance(a.PublishedVariance) || !samePublishedVariance(a.PublishedVariance, b.PublishedVariance) {
+			return pairwiseMoments{}, "published_proxy inference requires complete pinned published sample size and variance for every selected task"
+		}
+		coefficient := a.EffectiveCoefficient
+		combined := coefficient * coefficient * a.PublishedVariance.SampleVariance * (1/float64(a.RepetitionsCompleted) + 1/float64(b.RepetitionsCompleted))
+		if !finite(combined) || combined < 0 {
+			return pairwiseMoments{}, "non-finite published_proxy variance contribution"
+		}
+		moments.variance += combined
+		moments.denominator += combined * combined / float64(a.PublishedVariance.SampleSize-1)
+	}
+	return moments, ""
+}
+
+func publishedProxyProvenance(tasks []StudyTaskReport, selection StudySelectionProvenance) *StudyPublishedProxyProvenance {
+	if len(tasks) == 0 || tasks[0].PublishedVariance == nil {
+		return nil
+	}
+	evidence := tasks[0].PublishedVariance
+	return &StudyPublishedProxyProvenance{
+		ConfigurationID:     evidence.ConfigurationID,
+		PublishedModel:      evidence.PublishedModel,
+		PublishedReasoning:  evidence.PublishedReasoning,
+		VarianceEstimator:   evidence.VarianceEstimator,
+		VarianceDenominator: evidence.VarianceDenominator,
+		SnapshotSHA:         selection.SnapshotSHA,
+	}
+}
+
+func finishStudyComparison(comparison StudyComparisonReport, left, right StudyExperimentReport, source string, provenance *StudyPublishedProxyProvenance, moments pairwiseMoments, reason string) StudyComparisonReport {
+	if reason != "" {
+		comparison.UnavailableReason = reason
+		return comparison
+	}
+	if !finite(moments.variance) || moments.variance <= 0 {
 		comparison.UnavailableReason = "non-positive total variance"
 		return comparison
 	}
-	if !finite(denominator) || denominator <= 0 {
+	if !finite(moments.denominator) || moments.denominator <= 0 {
 		comparison.UnavailableReason = "non-positive Welch-Satterthwaite denominator"
 		return comparison
 	}
-	df := variance * variance / denominator
+	df := moments.variance * moments.variance / moments.denominator
 	if !finite(df) || df <= 0 {
 		comparison.UnavailableReason = "non-finite positive Welch-Satterthwaite degrees of freedom"
 		return comparison
 	}
 	difference := *left.Score - *right.Score
-	standardError := math.Sqrt(variance)
+	standardError := math.Sqrt(moments.variance)
 	statistic := math.Abs(difference) / standardError
 	p := studentTwoSidedP(statistic, df)
 	if !finite(p) {
 		comparison.UnavailableReason = "non-finite two-sided p-value"
 		return comparison
 	}
-	comparison.Available, comparison.Difference, comparison.Variance, comparison.StandardError, comparison.DegreesOfFreedom, comparison.Statistic, comparison.RawTwoSidedPValue = true, &difference, &variance, &standardError, &df, &statistic, &p
+	comparison.Available = true
+	comparison.InferenceSource = source
+	comparison.PublishedProxy = provenance
+	comparison.Difference, comparison.Variance, comparison.StandardError, comparison.DegreesOfFreedom, comparison.Statistic, comparison.RawTwoSidedPValue = &difference, &moments.variance, &standardError, &df, &statistic, &p
 	return comparison
+}
+
+func studyReportRepetitionLimitation(selection matrixSelection) string {
+	if selection.SchemaVersion == matrixSelectionSchemaVersion {
+		return "Observed-repetition Welch inference is used when every required task has at least two completed independent repetitions in both experiments; three or more are preferable for stability. One-repetition studies may use clearly labeled published_proxy inference when the selection pins complete published sample sizes and variances."
+	}
+	return "One repetition is descriptive only. At least two completed independent repetitions in every selected task and experiment enable the declared Welch inference; three or more are preferable for stability."
+}
+
+func usesPublishedProxy(comparisons []StudyComparisonReport) bool {
+	for _, comparison := range comparisons {
+		if comparison.Available && comparison.InferenceSource == inferenceSourcePublishedProxy {
+			return true
+		}
+	}
+	return false
+}
+
+func studyPublishedVariance(evidence *matrixPublishedTaskVariance) *StudyPublishedVariance {
+	if evidence == nil {
+		return nil
+	}
+	copied := StudyPublishedVariance{
+		ConfigurationID:     evidence.ConfigurationID,
+		PublishedModel:      evidence.PublishedModel,
+		PublishedReasoning:  evidence.PublishedReasoning,
+		SampleSize:          evidence.SampleSize,
+		SampleVariance:      evidence.SampleVariance,
+		VarianceEstimator:   evidence.VarianceEstimator,
+		VarianceDenominator: evidence.VarianceDenominator,
+	}
+	return &copied
 }
 
 func applyHolm(comparisons []StudyComparisonReport) {

@@ -56,6 +56,8 @@ type studyReportHTMLView struct {
 	Harness             string
 	TaskConcurrency     int
 	TaskArchitecture    string
+	StatisticalMethod   string
+	InferenceWarnings   []string
 	PlotlyJS            template.JS
 }
 
@@ -88,6 +90,7 @@ type studyComparisonHTMLView struct {
 	AdjustedP       string
 	AdjustedPValue  string
 	Reason          string
+	InferenceSource string
 }
 
 type studyTaskRowHTMLView struct {
@@ -141,6 +144,7 @@ func newStudyReportHTMLView(report StudyReport) studyReportHTMLView {
 		ReproductionCommand: report.Execution.Command, CLI: report.Execution.CLI,
 		Harness:         strings.TrimSpace(report.Execution.Harness + " " + report.Execution.HarnessVersion),
 		TaskConcurrency: report.Execution.TaskConcurrency, TaskArchitecture: report.Execution.TaskContainerArchitecture,
+		StatisticalMethod: studyReportStatisticalMethod(false),
 	}
 	if view.ReproductionCommand == "" {
 		view.ReproductionCommand = "al benchmark run <study.toml>"
@@ -262,6 +266,7 @@ func newStudyReportHTMLView(report StudyReport) studyReportHTMLView {
 			if comparison.HolmAdjustedPValue != nil {
 				item.AdjustedPValue = machineNumber(*comparison.HolmAdjustedPValue)
 			}
+			item.InferenceSource = comparison.InferenceSource
 			view.Comparisons = append(view.Comparisons, item)
 		}
 	}
@@ -289,14 +294,50 @@ func newStudyReportHTMLView(report StudyReport) studyReportHTMLView {
 			if comparison.Difference != nil {
 				difference = formatSignedPoints(*comparison.Difference)
 			}
+			source := comparison.InferenceSource
+			if source == "" {
+				source = inferenceSourceObserved
+			}
 			row.Cells = append(row.Cells, studyPValueCellHTMLView{
 				Value: formatPValue(comparison.HolmAdjustedPValue), Raw: formatPValue(comparison.RawTwoSidedPValue), Class: className,
-				Title: fmt.Sprintf("Row minus column: %s; raw p = %s; adjusted p = %s; Welch df %s", difference, formatPValue(comparison.RawTwoSidedPValue), formatPValue(comparison.HolmAdjustedPValue), formatOptionalFloat(comparison.DegreesOfFreedom, 2)),
+				Title: fmt.Sprintf("Row minus column: %s; raw p = %s; adjusted p = %s; Welch df %s; inference %s", difference, formatPValue(comparison.RawTwoSidedPValue), formatPValue(comparison.HolmAdjustedPValue), formatOptionalFloat(comparison.DegreesOfFreedom, 2), source),
 			})
 		}
 		view.PValueRows = append(view.PValueRows, row)
 	}
+	usesProxy := usesPublishedProxy(report.Comparisons)
+	view.StatisticalMethod = studyReportStatisticalMethod(usesProxy)
+	if usesProxy {
+		view.InferenceWarnings = append(view.InferenceWarnings, "published_proxy inference estimates uncertainty from pinned published DeepSWE runs, not from the executed repetitions in this study.")
+		if provenance := firstPublishedProxyProvenance(report.Comparisons); provenance != nil {
+			view.InferenceWarnings = append(view.InferenceWarnings, fmt.Sprintf(
+				"Published proxy evidence is configuration %s (%s/%s) using %s with denominator %s from snapshot %s.",
+				provenance.ConfigurationID, provenance.PublishedModel, provenance.PublishedReasoning, provenance.VarianceEstimator, provenance.VarianceDenominator, provenance.SnapshotSHA,
+			))
+		}
+	}
+	for _, warning := range view.Warnings {
+		if strings.Contains(warning, "Selector/executed mismatch:") {
+			view.InferenceWarnings = append(view.InferenceWarnings, warning)
+		}
+	}
 	return view
+}
+
+func firstPublishedProxyProvenance(comparisons []StudyComparisonReport) *StudyPublishedProxyProvenance {
+	for _, comparison := range comparisons {
+		if comparison.Available && comparison.InferenceSource == inferenceSourcePublishedProxy && comparison.PublishedProxy != nil {
+			return comparison.PublishedProxy
+		}
+	}
+	return nil
+}
+
+func studyReportStatisticalMethod(usesPublishedProxy bool) string {
+	if usesPublishedProxy {
+		return "Scores combine calibrated task means using the fixed selection weights. This report uses published_proxy inference: the same pinned published sample variance is shared by both experimental arms as combined = (weight × slope)² × s² × (1/rL + 1/rR), with one Satterthwaite term per task. That estimates uncertainty from published runs, not from the executed repetitions. Observed-repetition Welch inference is preferred when every required task has at least two completed repetitions in both experiments. Comparisons use two-sided Student-t p-values and Holm step-down adjustment across all available unique experiment pairs."
+	}
+	return "Scores combine calibrated task means using the fixed selection weights. Pairwise variance is the sum of each task’s observed within-cell sample variance scaled by its weight and calibration slope. Comparisons use Welch–Satterthwaite degrees of freedom, two-sided Student-t p-values, and Holm step-down adjustment across all available unique experiment pairs."
 }
 
 func shortIdentifier(value string) string {
