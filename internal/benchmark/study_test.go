@@ -286,7 +286,6 @@ func (executor *studyWorkflowExecutor) requests() []ExecutionRequest {
 func TestStudyReportUsesWithinCellWelchVarianceAndHolmFamily(t *testing.T) {
 	root := t.TempDir()
 	selection := matrixSelectionFixture()
-	selection.SchemaVersion = matrixSelectionSchemaVersion
 	for index := range selection.Tasks {
 		selection.Tasks[index].Repetitions = 2
 	}
@@ -335,8 +334,8 @@ func TestStudyReportUsesWithinCellWelchVarianceAndHolmFamily(t *testing.T) {
 		t.Fatalf("report membership = %#v", report)
 	}
 	comparison := report.Comparisons[0]
-	if !comparison.Available || comparison.Variance == nil || math.Abs(*comparison.Variance-.0048125) > 1e-12 {
-		t.Fatalf("comparison = %#v, want variance .0048125", comparison)
+	if !comparison.Available || comparison.InferenceSource != inferenceSourceObserved || comparison.Variance == nil || math.Abs(*comparison.Variance-.0048125) > 1e-12 {
+		t.Fatalf("comparison = %#v, want observed variance .0048125", comparison)
 	}
 	if comparison.DegreesOfFreedom == nil || math.Abs(*comparison.DegreesOfFreedom-3.469645720438665) > 1e-12 || comparison.RawTwoSidedPValue == nil || comparison.HolmAdjustedPValue == nil {
 		t.Fatalf("Welch/Holm df=%v raw=%v holm=%v", dereference(comparison.DegreesOfFreedom), dereference(comparison.RawTwoSidedPValue), dereference(comparison.HolmAdjustedPValue))
@@ -383,7 +382,6 @@ func TestStudyReportDisclosesTerminalVerifierTestTimeouts(t *testing.T) {
 func TestStudyReportGatesNoncompliantComparisonsAndKeepsEligibleHolmFamily(t *testing.T) {
 	root := t.TempDir()
 	selection := matrixSelectionFixture()
-	selection.SchemaVersion = matrixSelectionSchemaVersion
 	for index := range selection.Tasks {
 		selection.Tasks[index].Repetitions = 2
 	}
@@ -717,7 +715,6 @@ func rewriteStudyAttemptConformance(t *testing.T, arm matrixArm, task string, at
 func TestStudyValidatesExplicitInputsAndIdentity(t *testing.T) {
 	root := t.TempDir()
 	selection := matrixSelectionFixture()
-	selection.SchemaVersion = matrixSelectionSchemaVersion
 	selectionPath := filepath.Join(root, "selection.json")
 	data, err := json.Marshal(selection)
 	if err != nil {

@@ -18,8 +18,12 @@ import (
 )
 
 const (
-	matrixSelectionSchema        = "deepswe-benchmark-selection"
-	matrixSelectionSchemaVersion = 2
+	matrixSelectionSchema          = "deepswe-benchmark-selection"
+	matrixSelectionSchemaVersionV1 = 1
+	matrixSelectionSchemaVersionV2 = 2
+	matrixSelectionSchemaVersion   = 3
+	publishedVarianceEstimator     = "unbiased-sample-variance"
+	publishedVarianceDenominator   = "n-1"
 	// matrixManifestSchema is retained only to read immutable selection-arm
 	// evidence produced by the predecessor runner.
 	matrixManifestSchema   = "deepswe-matrix-arm-v2"
@@ -52,7 +56,20 @@ type matrixSelectionTask struct {
 		Intercept float64 `json:"intercept"`
 		Slope     float64 `json:"slope"`
 	} `json:"calibration"`
-	PublishedMeanCostUSD float64 `json:"publishedMeanCostUsd"`
+	PublishedMeanCostUSD float64                      `json:"publishedMeanCostUsd"`
+	PublishedVariance    *matrixPublishedTaskVariance `json:"publishedVariance,omitempty"`
+}
+
+// matrixPublishedTaskVariance is the pinned published-run evidence used by
+// schema-v3 selections for published_proxy inference.
+type matrixPublishedTaskVariance struct {
+	ConfigurationID     string  `json:"configurationId"`
+	PublishedModel      string  `json:"publishedModel"`
+	PublishedReasoning  string  `json:"publishedReasoning"`
+	SampleSize          int     `json:"sampleSize"`
+	SampleVariance      float64 `json:"sampleVariance"`
+	VarianceEstimator   string  `json:"varianceEstimator"`
+	VarianceDenominator string  `json:"varianceDenominator"`
 }
 
 type matrixPreparation struct {
@@ -201,9 +218,13 @@ func loadMatrixSelection(path string, data []byte) (matrixSelection, string, err
 	return selection, selectionID, nil
 }
 
+func validMatrixSelectionSchemaVersion(version int) bool {
+	return version == matrixSelectionSchemaVersionV1 || version == matrixSelectionSchemaVersionV2 || version == matrixSelectionSchemaVersion
+}
+
 func validateMatrixSelection(selection matrixSelection) error {
 	if selection.Schema != matrixSelectionSchema ||
-		(selection.SchemaVersion != 1 && selection.SchemaVersion != matrixSelectionSchemaVersion) ||
+		!validMatrixSelectionSchemaVersion(selection.SchemaVersion) ||
 		selection.Snapshot.URL != DeepSWETrialsSourceURL || len(selection.Snapshot.SHA256) != 64 ||
 		selection.Selector.BudgetUSD <= 0 || selection.Selector.IterationsPerTask < 1 ||
 		selection.Selector.IterationsPerTask > 4 || selection.EstimatedPublishedSpendUSD <= 0 ||
@@ -213,7 +234,7 @@ func validateMatrixSelection(selection matrixSelection) error {
 	// Schema v1 is accepted solely for immutable historical selections. The
 	// manual-exclusion extension was introduced with v2, so treating it as v1
 	// would create a new, non-historical selection under the old contract.
-	if selection.SchemaVersion == 1 && len(selection.ManualExclusions) > 0 {
+	if selection.SchemaVersion == matrixSelectionSchemaVersionV1 && len(selection.ManualExclusions) > 0 {
 		return fmt.Errorf("benchmark selection schema v1 does not support manual exclusions")
 	}
 	model, effort, err := ParseModelSelection(modelNameForPublished(selection.Selector.Model) + ":" + selection.Selector.Reasoning)
@@ -242,9 +263,22 @@ func validateMatrixSelection(selection matrixSelection) error {
 		excluded[task] = true
 	}
 	var weight, cost float64
+	var publishedConfigurationID string
 	for _, task := range selection.Tasks {
 		if !validTaskName(task.ID) || seen[task.ID] || excluded[task.ID] || task.Repetitions != selection.Selector.IterationsPerTask || task.Weight <= 0 || !finite(task.Weight) || !finite(task.Calibration.Intercept) || !finite(task.Calibration.Slope) || task.PublishedMeanCostUSD <= 0 || !finite(task.PublishedMeanCostUSD) {
 			return fmt.Errorf("benchmark selection contains an invalid task allocation")
+		}
+		if selection.SchemaVersion == matrixSelectionSchemaVersion {
+			if err := validatePublishedTaskVariance(task.PublishedVariance, selection.Selector.Model, selection.Selector.Reasoning); err != nil {
+				return fmt.Errorf("benchmark selection task %q: %w", task.ID, err)
+			}
+			if publishedConfigurationID == "" {
+				publishedConfigurationID = task.PublishedVariance.ConfigurationID
+			} else if task.PublishedVariance.ConfigurationID != publishedConfigurationID {
+				return fmt.Errorf("benchmark selection published evidence mixes configuration identities %q and %q", publishedConfigurationID, task.PublishedVariance.ConfigurationID)
+			}
+		} else if task.PublishedVariance != nil {
+			return fmt.Errorf("benchmark selection schema v%d does not support published variance evidence", selection.SchemaVersion)
 		}
 		seen[task.ID] = true
 		weight += task.Weight
@@ -254,6 +288,54 @@ func validateMatrixSelection(selection matrixSelection) error {
 		return fmt.Errorf("benchmark selection weights or costs do not reconcile")
 	}
 	return nil
+}
+
+func validatePublishedTaskVariance(evidence *matrixPublishedTaskVariance, selectorModel, selectorReasoning string) error {
+	if evidence == nil {
+		return fmt.Errorf("schema v3 requires pinned published variance evidence")
+	}
+	if evidence.SampleSize < 2 {
+		return fmt.Errorf("published sample size must be at least 2, got %d", evidence.SampleSize)
+	}
+	if !finite(evidence.SampleVariance) || evidence.SampleVariance < 0 {
+		return fmt.Errorf("published sample variance must be finite and non-negative")
+	}
+	if strings.TrimSpace(evidence.PublishedModel) == "" || strings.TrimSpace(evidence.PublishedReasoning) == "" || strings.TrimSpace(evidence.ConfigurationID) == "" {
+		return fmt.Errorf("published configuration identity is invalid")
+	}
+	expectedID := evidence.PublishedModel + "::" + evidence.PublishedReasoning
+	if evidence.ConfigurationID != expectedID {
+		return fmt.Errorf("published configuration identity %q is incoherent with published model %q and reasoning %q", evidence.ConfigurationID, evidence.PublishedModel, evidence.PublishedReasoning)
+	}
+	if evidence.VarianceEstimator != publishedVarianceEstimator || evidence.VarianceDenominator != publishedVarianceDenominator {
+		return fmt.Errorf("published variance estimator must be %s with denominator %s", publishedVarianceEstimator, publishedVarianceDenominator)
+	}
+	if evidence.PublishedReasoning != selectorReasoning || selectorModelForPublishedConfiguration(evidence.PublishedModel, evidence.PublishedReasoning) != selectorModel {
+		return fmt.Errorf("published evidence for %s does not correspond to selector %s/%s", evidence.ConfigurationID, selectorModel, selectorReasoning)
+	}
+	return nil
+}
+
+// selectorModelForPublishedConfiguration maps a DeepSWE published configuration
+// identity onto the exact selector model the benchmark CLI accepts.
+const (
+	deepSWEPublishedGrok45      = "grok-4-5"
+	deepSWEPublishedGrok46      = "grok-4-6"
+	deepSWEPublishedGeminiFlash = "gemini-3-5-flash"
+)
+
+func selectorModelForPublishedConfiguration(publishedModel, reasoning string) string {
+	switch publishedModel {
+	case deepSWEPublishedGrok45:
+		return modelGrok45
+	case deepSWEPublishedGrok46:
+		return modelGrok46
+	case deepSWEPublishedGeminiFlash:
+		if reasoning == effortLow || reasoning == effortMedium || reasoning == effortHigh {
+			return "gemini-3.5-flash-" + reasoning
+		}
+	}
+	return publishedModel
 }
 
 func validateMatrixTaskFilter(selection matrixSelection, tasks []string) error {
