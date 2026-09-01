@@ -450,9 +450,17 @@ func canUsePublishedProxyInference(left, right StudyExperimentReport) bool {
 	if len(left.Tasks) == 0 || len(left.Tasks) != len(right.Tasks) {
 		return false
 	}
+	var reference *StudyPublishedVariance
 	for index := range left.Tasks {
 		a, b := left.Tasks[index], right.Tasks[index]
 		if a.RepetitionsCompleted < 1 || b.RepetitionsCompleted < 1 || !validStudyPublishedVariance(a.PublishedVariance) || !samePublishedVariance(a.PublishedVariance, b.PublishedVariance) {
+			return false
+		}
+		if reference == nil {
+			reference = a.PublishedVariance
+			continue
+		}
+		if !samePublishedConfigurationIdentity(reference, a.PublishedVariance) {
 			return false
 		}
 	}
@@ -482,13 +490,37 @@ func samePublishedVariance(left, right *StudyPublishedVariance) bool {
 		left.VarianceDenominator == right.VarianceDenominator
 }
 
+func samePublishedConfigurationIdentity(left, right *StudyPublishedVariance) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	return left.ConfigurationID == right.ConfigurationID &&
+		left.VarianceEstimator == right.VarianceEstimator &&
+		left.VarianceDenominator == right.VarianceDenominator
+}
+
 func unavailableInferenceReason(left, right StudyExperimentReport) string {
+	if len(left.Tasks) != len(right.Tasks) {
+		return "experiments do not share the same selected task list"
+	}
 	hasPublishedEvidence := false
+	mixedPublishedIdentity := false
+	var reference *StudyPublishedVariance
 	for index := range left.Tasks {
-		if validStudyPublishedVariance(left.Tasks[index].PublishedVariance) || validStudyPublishedVariance(right.Tasks[index].PublishedVariance) {
+		for _, evidence := range []*StudyPublishedVariance{left.Tasks[index].PublishedVariance, right.Tasks[index].PublishedVariance} {
+			if !validStudyPublishedVariance(evidence) {
+				continue
+			}
 			hasPublishedEvidence = true
-			break
+			if reference == nil {
+				reference = evidence
+			} else if !samePublishedConfigurationIdentity(reference, evidence) {
+				mixedPublishedIdentity = true
+			}
 		}
+	}
+	if mixedPublishedIdentity {
+		return "published_proxy inference requires a single published configuration identity across every selected task"
 	}
 	for index := range left.Tasks {
 		a, b := left.Tasks[index], right.Tasks[index]

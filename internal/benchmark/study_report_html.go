@@ -316,11 +316,6 @@ func newStudyReportHTMLView(report StudyReport) studyReportHTMLView {
 			))
 		}
 	}
-	for _, warning := range view.Warnings {
-		if strings.Contains(warning, "Selector/executed mismatch:") {
-			view.InferenceWarnings = append(view.InferenceWarnings, warning)
-		}
-	}
 	return view
 }
 

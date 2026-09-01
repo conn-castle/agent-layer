@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -140,6 +141,12 @@ func TestStudyReportMismatchWarningsAppearInJSONAndHTML(t *testing.T) {
 			t.Errorf("HTML missing %q", needle)
 		}
 	}
+	if got := strings.Count(document, want); got != 1 {
+		t.Fatalf("mismatch warning count = %d, want 1", got)
+	}
+	if strings.Count(document, "Comparability warning") != 1 || strings.Count(document, "Inference warning") != 1 {
+		t.Fatalf("warning section counts drifted in HTML")
+	}
 }
 
 func TestStudyReportPublishedProxyKeepsHolmFamily(t *testing.T) {
@@ -184,9 +191,81 @@ func TestStudyReportPublishedProxyKeepsHolmFamily(t *testing.T) {
 			t.Fatalf("proxy holm comparison = %#v", comparison)
 		}
 	}
-	adjusted := []float64{*report.Comparisons[0].HolmAdjustedPValue, *report.Comparisons[1].HolmAdjustedPValue, *report.Comparisons[2].HolmAdjustedPValue}
-	if adjusted[0] < *report.Comparisons[0].RawTwoSidedPValue-1e-15 {
-		t.Fatalf("holm did not adjust: %#v", report.Comparisons)
+	type pair struct{ raw, adjusted float64 }
+	pairs := make([]pair, 0, 3)
+	for _, comparison := range report.Comparisons {
+		raw, adjusted := *comparison.RawTwoSidedPValue, *comparison.HolmAdjustedPValue
+		if adjusted+1e-15 < raw {
+			t.Fatalf("holm adjusted below raw: %#v", report.Comparisons)
+		}
+		pairs = append(pairs, pair{raw, adjusted})
+	}
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i].raw < pairs[j].raw })
+	raised := false
+	for index, item := range pairs {
+		if index > 0 && item.adjusted+1e-15 < pairs[index-1].adjusted {
+			t.Fatalf("holm adjusted p-values are not non-decreasing: %#v", report.Comparisons)
+		}
+		if item.adjusted > item.raw+1e-15 {
+			raised = true
+		}
+	}
+	if !raised {
+		t.Fatalf("holm did not raise any p-value: %#v", report.Comparisons)
+	}
+}
+
+func TestUnavailableInferenceReasonGuardsMismatchedTaskSlices(t *testing.T) {
+	score := 0.5
+	left := StudyExperimentReport{
+		Name:  "A",
+		Score: &score,
+		Tasks: []StudyTaskReport{{Task: "first-task", RepetitionsCompleted: 1}, {Task: "second-task", RepetitionsCompleted: 1}},
+	}
+	right := StudyExperimentReport{
+		Name:  "B",
+		Score: &score,
+		Tasks: []StudyTaskReport{{Task: "first-task", RepetitionsCompleted: 1}},
+	}
+	if canUseObservedInference(left, right) || canUsePublishedProxyInference(left, right) {
+		t.Fatal("mismatched task lists should not be inferable")
+	}
+	got := unavailableInferenceReason(left, right)
+	if got != "experiments do not share the same selected task list" {
+		t.Fatalf("reason = %q", got)
+	}
+	comparison := compareStudyExperiments(left, right, StudySelectionProvenance{})
+	if comparison.Available || comparison.UnavailableReason != got {
+		t.Fatalf("comparison = %#v", comparison)
+	}
+}
+
+func TestCanUsePublishedProxyInferenceRejectsMixedConfigurationIdentities(t *testing.T) {
+	luna := studyPublishedVariance(lunaPublishedVariance(.04))
+	sol := studyPublishedVariance(lunaPublishedVariance(.09))
+	sol.PublishedModel = "other-published-model"
+	sol.ConfigurationID = "other-published-model::low"
+	score := 0.5
+	left := StudyExperimentReport{
+		Name:  "A",
+		Score: &score,
+		Tasks: []StudyTaskReport{
+			{Task: "first-task", RepetitionsCompleted: 1, EffectiveCoefficient: 1, PublishedVariance: luna},
+			{Task: "second-task", RepetitionsCompleted: 1, EffectiveCoefficient: 1, PublishedVariance: sol},
+		},
+	}
+	right := left
+	right.Name = "B"
+	if canUsePublishedProxyInference(left, right) {
+		t.Fatal("mixed published configuration identities were accepted")
+	}
+	got := unavailableInferenceReason(left, right)
+	if got != "published_proxy inference requires a single published configuration identity across every selected task" {
+		t.Fatalf("reason = %q", got)
+	}
+	comparison := compareStudyExperiments(left, right, StudySelectionProvenance{})
+	if comparison.Available || comparison.UnavailableReason != got {
+		t.Fatalf("comparison = %#v", comparison)
 	}
 }
 
