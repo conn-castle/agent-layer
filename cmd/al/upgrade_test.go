@@ -54,6 +54,28 @@ func TestUpgradeCmd_RequiresTerminalWithoutApplyFlags(t *testing.T) {
 	})
 }
 
+func TestRequireUpgradeTargetCLIAllowsDevelopmentBuild(t *testing.T) {
+	originalVersion := Version
+	Version = "dev"
+	t.Cleanup(func() { Version = originalVersion })
+
+	if err := requireUpgradeTargetCLI("v999.0.0"); err != nil {
+		t.Fatalf("development build rejected newer upgrade target: %v", err)
+	}
+}
+
+func TestRequireUpgradeTargetCLIFormatsNormalizedTarget(t *testing.T) {
+	originalVersion := Version
+	Version = "v0.18.3"
+	t.Cleanup(func() { Version = originalVersion })
+
+	err := requireUpgradeTargetCLI("v0.18.4")
+	if err == nil || !strings.Contains(err.Error(), "CLI v0.18.3 cannot upgrade to v0.18.4") ||
+		strings.Contains(err.Error(), "vv0.18.4") || !strings.Contains(err.Error(), "al --version") {
+		t.Fatalf("normalized target error = %v", err)
+	}
+}
+
 func TestUpgradeCmd_YesWithoutApplyFlagsErrors(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
@@ -699,6 +721,46 @@ func TestUpgradeCmd_VersionFlagValidatesExplicitPin(t *testing.T) {
 	if !calledInstall {
 		t.Fatal("expected installRun to be called")
 	}
+}
+
+func TestUpgradeCmdRejectsTargetNewerThanInvokingCLI(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	originalVersion := Version
+	Version = "v0.18.3"
+	t.Cleanup(func() { Version = originalVersion })
+
+	originalTerminal := isTerminal
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() { isTerminal = originalTerminal })
+
+	originalValidate := validatePinnedReleaseVersionFunc
+	validatePinnedReleaseVersionFunc = func(context.Context, string) error {
+		t.Fatal("newer target reached remote release validation")
+		return nil
+	}
+	t.Cleanup(func() { validatePinnedReleaseVersionFunc = originalValidate })
+
+	originalInstall := installRun
+	installRun = func(string, install.Options) error {
+		t.Fatal("newer target reached installation")
+		return nil
+	}
+	t.Cleanup(func() { installRun = originalInstall })
+
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		cmd.SetArgs([]string{"--yes", "--apply-managed-updates", "--version", "v0.18.4"})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		err := cmd.Execute()
+		if err == nil || !strings.Contains(err.Error(), "CLI v0.18.3 cannot upgrade to v0.18.4") ||
+			!strings.Contains(err.Error(), "al update") || !strings.Contains(err.Error(), "prefetch") {
+			t.Fatalf("newer target error = %v", err)
+		}
+	})
 }
 
 func TestWriteMigrationReportSection_BreakingAnnotation(t *testing.T) {

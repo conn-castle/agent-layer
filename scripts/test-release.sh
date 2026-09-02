@@ -58,12 +58,15 @@ tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 go_log="$tmp_dir/go-invocations.log"
 dist_dir="$tmp_dir/dist"
-expected_version="v1.0.0"
+# Stable release builds require the matching checked-in migration manifest.
+expected_version="v0.18.4"
 expected_version_no_v="${expected_version#v}"
 
 run_catalog_certification_script_tests
 run_release_workflow_security_tests
 run_release_generation_test
+run_missing_migration_manifest_test
+run_release_smoke_rejection_tests
 run_build_invocation_details
 run_artifact_verification
 run_source_tarball_verification

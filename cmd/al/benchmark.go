@@ -348,7 +348,11 @@ func newBenchmarkRunCmd() *cobra.Command {
 				return nil
 			}
 			if recoveryOnly {
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "Recovery completed: %d terminal verifier timeout cell(s) canonicalized; %d of %d cells cached, %d still missing. No provider or verifier process was started.\n", outcome.RecoveredCells, outcome.Completed, outcome.Required, outcome.Missing)
+				report := ""
+				if outcome.JSONPath != "" {
+					report = fmt.Sprintf(" Report: %s.", outcome.JSONPath)
+				}
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "Recovery completed: %d terminal verifier timeout cell(s) canonicalized; %d of %d cells cached, %d still missing.%s No provider or verifier process was started.\n", outcome.RecoveredCells, outcome.Completed, outcome.Required, outcome.Missing, report)
 				return err
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Study %.12s: %d of %d cells cached, $%.2f cumulative observed cost in this invocation (range $%.2f–$%.2f). Report: %s\n", outcome.StudyID, outcome.Completed, outcome.Required, outcome.ObservedInvocationCost.Midpoint, outcome.ObservedInvocationCost.Minimum, outcome.ObservedInvocationCost.Maximum, outcome.JSONPath)
@@ -356,7 +360,7 @@ func newBenchmarkRunCmd() *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&dryRun, "dry-run", false, "validate and preflight without inference calls")
-	command.Flags().BoolVar(&recoveryOnly, "recover-only", false, "finalize retained terminal verifier test timeouts without provider or verifier execution")
+	command.Flags().BoolVar(&recoveryOnly, "recover-only", false, "finalize retained terminal verifier test timeouts or regenerate a completed study report without provider or verifier execution")
 	command.Flags().IntVar(&taskConcurrency, "task-concurrency", 0, "parallel task cells, from 1 to 8 (default: automatic)")
 	command.Flags().StringArrayVar(&tasks, "task", nil, "execute only this selected task; repeatable")
 	return command

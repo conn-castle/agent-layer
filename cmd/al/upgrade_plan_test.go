@@ -232,6 +232,36 @@ func TestUpgradePlanCmd_VersionFlagValidatesExplicitPin(t *testing.T) {
 	}
 }
 
+func TestUpgradePlanCmdRejectsTargetNewerThanInvokingCLI(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	originalVersion := Version
+	Version = "v0.18.3"
+	t.Cleanup(func() { Version = originalVersion })
+
+	originalValidate := validatePinnedReleaseVersionFunc
+	validatePinnedReleaseVersionFunc = func(context.Context, string) error {
+		t.Fatal("newer target reached remote release validation")
+		return nil
+	}
+	t.Cleanup(func() { validatePinnedReleaseVersionFunc = originalValidate })
+
+	testutil.WithWorkingDir(t, root, func() {
+		diffLines := install.DefaultDiffMaxLines
+		cmd := newUpgradePlanCmd(&diffLines)
+		cmd.SetArgs([]string{"--version", "v0.18.4"})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		err := cmd.Execute()
+		if err == nil || !strings.Contains(err.Error(), "CLI v0.18.3 cannot upgrade to v0.18.4") ||
+			!strings.Contains(err.Error(), "al update") || !strings.Contains(err.Error(), "prefetch") {
+			t.Fatalf("newer target error = %v", err)
+		}
+	})
+}
+
 func TestUpgradePlanCmd_VersionFlagValidationError(t *testing.T) {
 	root := prepareUpgradeTestRepo(t)
 

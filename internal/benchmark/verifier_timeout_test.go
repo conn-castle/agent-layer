@@ -509,7 +509,18 @@ func TestRecoveryOnlyReconstructsTreatmentWorkflowForDispatchConformance(t *test
 		ReasoningEffort: config.Implementer.ReasoningEffort, Role: requiredRoleImplementer,
 		Mode: dispatchRunModeFresh, State: "completed",
 	})
-	bundleHash := strings.Repeat("b", 64)
+	pinnedManifest := TreatmentManifest{
+		SchemaVersion:          TreatmentSchemaVersion,
+		Mode:                   TreatmentInstructionsAndSkills,
+		AgentTimeoutMultiplier: skillsAgentTimeoutFactor,
+		Files:                  []TreatmentFile{{Path: "skills/implement/SKILL.md", SHA256: strings.Repeat("a", 64)}},
+		RequiredRoles:          roles,
+		DispatchConfig:         config,
+	}
+	bundleHash, err := hashCanonical(pinnedManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
 	oldAdapter := strings.Repeat("f", 64)
 	runtimeHash := strings.Repeat("r", 64)
 	request.Arm = ArmTreatment
@@ -557,6 +568,13 @@ func TestRecoveryOnlyReconstructsTreatmentWorkflowForDispatchConformance(t *test
 	if err := writeJSON(filepath.Join(stateDir, "study-manifest.json"), manifest); err != nil {
 		t.Fatal(err)
 	}
+	pin := studyTreatmentPin{
+		SchemaVersion: studyTreatmentPinSchema, PinID: bundleHash, Architecture: benchmarkTaskContainerArchitecture,
+		ManifestHash: bundleHash, Manifest: pinnedManifest, LinuxBinarySHA256: runtimeHash, AdapterSHA256: oldAdapter,
+	}
+	if err := writeJSON(filepath.Join(studyTreatmentPinRoot(request.RepoRoot, bundleHash), "pin.json"), pin); err != nil {
+		t.Fatal(err)
+	}
 	prepared := preparedStudy{
 		selection: selection, selectionID: selectionID,
 		experiments: []preparedStudyExperiment{{
@@ -567,21 +585,23 @@ func TestRecoveryOnlyReconstructsTreatmentWorkflowForDispatchConformance(t *test
 		}},
 	}
 	historical := recoveryPreparationFromManifest(&prepared, manifest, stateDir, tasks, 1)
-	if historical.arms[0].Bundle == nil || historical.arms[0].Bundle.Manifest.Mode != TreatmentInstructionsAndSkills ||
-		len(historical.arms[0].Bundle.Manifest.RequiredRoles) != 1 ||
-		historical.arms[0].Bundle.Manifest.RequiredRoles[0] != requiredRoleImplementer ||
-		historical.arms[0].Bundle.Manifest.DispatchConfig.Implementer != config.Implementer {
-		t.Fatalf("recovered treatment contract = %#v", historical.arms[0].Bundle)
-	}
 	if err := ensureStudyArmManifest(selectionID, tasks, manifest.Checksums, &historical.arms[0]); err != nil {
 		t.Fatal(err)
 	}
-	recovered, err := recoverTerminalVerifierTimeoutCells(context.Background(), request.RepoRoot, historical, nil)
+	loaded, found, err := loadRecoverableCachedStudy(request.RepoRoot, &prepared, []cachedStudyCandidate{{stateDir: stateDir}}, tasks, 1)
+	if err != nil || !found {
+		t.Fatalf("load treatment recovery = found=%t err=%v", found, err)
+	}
+	if loaded.arms[0].Bundle == nil || loaded.arms[0].Bundle.Manifest.SchemaVersion != TreatmentSchemaVersion ||
+		len(loaded.arms[0].Bundle.Manifest.Files) != 1 {
+		t.Fatalf("loaded recovery lost pinned treatment provenance: %#v", loaded.arms[0].Bundle)
+	}
+	recovered, err := recoverTerminalVerifierTimeoutCells(context.Background(), request.RepoRoot, loaded, nil)
 	if err != nil || recovered != 1 {
 		t.Fatalf("treatment recovery = %d, %v", recovered, err)
 	}
 	var result AttemptResult
-	if err := readStudyJSON(armResultPath(historical.arms[0].StateDir, request.Task, 1), &result); err != nil {
+	if err := readStudyJSON(armResultPath(loaded.arms[0].StateDir, request.Task, 1), &result); err != nil {
 		t.Fatal(err)
 	}
 	if result.VerifierOutcome != verifierOutcomeTestTimeout || !result.DispatchConformant {

@@ -31,6 +31,7 @@ import (
 const treatmentContainerRoot = "/app"
 
 const studyTreatmentPinSchema = "deepswe-study-treatment-pin-v1"
+const treatmentRuntimeSourceRelease = "release"
 
 var benchmarkReleaseHTTPClient = &http.Client{Timeout: 30 * time.Second}
 var benchmarkReleasesBaseURL = update.ReleasesBaseURL
@@ -133,7 +134,7 @@ func pinStudyTreatmentBundle(repoRoot string, bundle *TreatmentBundle) (*Treatme
 	if err != nil || hash != bundle.ManifestHash {
 		return nil, fmt.Errorf("study treatment bundle content does not match its manifest")
 	}
-	root := filepath.Join(repoRoot, ".agent-layer", "state", "benchmarks", "deepswe", "study-pins", bundle.ManifestHash)
+	root := studyTreatmentPinRoot(repoRoot, bundle.ManifestHash)
 	pinPath := filepath.Join(root, "pin.json")
 	if _, err := os.Stat(pinPath); err == nil {
 		pinned, err := loadPinnedStudyTreatmentBundle(root, bundle)
@@ -174,6 +175,10 @@ func pinStudyTreatmentBundle(repoRoot string, bundle *TreatmentBundle) (*Treatme
 	}
 	_ = os.RemoveAll(stagedRoot)
 	return pinned, nil
+}
+
+func studyTreatmentPinRoot(repoRoot, manifestHash string) string {
+	return filepath.Join(repoRoot, ".agent-layer", "state", "benchmarks", "deepswe", "study-pins", manifestHash)
 }
 
 // loadPinnedStudyTreatmentBundle treats the persisted pin as the authority for
@@ -454,7 +459,7 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	}
 	sourceKind, runtimeVersion := "development", ""
 	if commit == "" {
-		sourceKind = "release"
+		sourceKind = treatmentRuntimeSourceRelease
 		if executable, versionErr := os.Executable(); versionErr == nil {
 			if output, outputErr := exec.CommandContext(context.Background(), executable, "--version").Output(); outputErr == nil { // #nosec G204 -- executable is the current Agent Layer binary.
 				if fields := strings.Fields(string(output)); len(fields) > 0 {
