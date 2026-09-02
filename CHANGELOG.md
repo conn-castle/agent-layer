@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.18.4 - 2026-09-01
+
+### Added
+- DeepSWE planner export schema v3 pins per-task published sample size and variance so one-repetition studies can report labeled `published_proxy` inference when observed Welch variance is unavailable.
+
+### Changed
+- Study reports prefer observed Welch inference when every required task has at least two completed repetitions in both arms. Schema-v3 selections otherwise use shared published-proxy variance; schema-v2 selections without those pins remain unavailable at one repetition.
+- Reports record inference source and published-variance provenance and surface selector versus executed model or reasoning mismatches.
+
 ## v0.18.3 - 2026-08-30
 
 ### Added
