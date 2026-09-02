@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.18.5 - 2026-09-02
+
+### Changed
+- Completed benchmark studies can regenerate reports from their immutable manifests without revalidating current project treatments or starting provider and verifier processes, and recovery-only runs print the regenerated report path.
+- Upgrade commands reject targets newer than the running CLI and direct users to run the target release binary.
+
+### Fixed
+- Release artifact builds now require the target migration manifest and smoke-test upgrade planning and application with the built binary, preventing releases with incomplete embedded upgrade metadata.
+
 ## v0.18.4 - 2026-09-01
 
 ### Added
