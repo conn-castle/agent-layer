@@ -20,6 +20,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/run"
+	"github.com/conn-castle/agent-layer/internal/updatewarn"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
 
@@ -860,5 +861,6 @@ func compatibleTargetVersion(path string, target targetMeta, lookup func(string,
 func dispatchEnvironment(base []string, project *config.ProjectConfig, dispatchRun *dispatchRun, depth int) []string {
 	info := &run.Info{ID: dispatchRun.Record.ID, Dir: dispatchRun.Dir}
 	env := clients.BuildEnv(base, project.Env, info)
-	return clients.SetEnv(env, clients.EnvDispatchActive, fmt.Sprintf("%d", depth))
+	env = clients.SetEnv(env, clients.EnvDispatchActive, fmt.Sprintf("%d", depth))
+	return clients.SetEnv(env, updatewarn.EnvSuppress, "1")
 }
