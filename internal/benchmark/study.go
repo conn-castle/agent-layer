@@ -149,14 +149,16 @@ type immutableStudyManifest struct {
 }
 
 type studyArmContract struct {
-	Name           string `json:"name"`
-	ID             string `json:"id"`
-	Target         string `json:"target"`
-	Bundle         string `json:"bundle_manifest_hash,omitempty"`
-	Adapter        string `json:"adapter_sha256,omitempty"`
-	Runtime        string `json:"runtime_sha256,omitempty"`
-	RuntimeSource  string `json:"runtime_source_kind,omitempty"`
-	RuntimeVersion string `json:"runtime_version,omitempty"`
+	Name            string `json:"name"`
+	ID              string `json:"id"`
+	Target          string `json:"target"`
+	Bundle          string `json:"bundle_manifest_hash,omitempty"`
+	Adapter         string `json:"adapter_sha256,omitempty"`
+	Runtime         string `json:"runtime_sha256,omitempty"`
+	RuntimeSource   string `json:"runtime_source_kind,omitempty"`
+	RuntimeVersion  string `json:"runtime_version,omitempty"`
+	TemplatesCommit string `json:"templates_commit,omitempty"`
+	TemplatesDirty  bool   `json:"templates_dirty,omitempty"`
 }
 
 func writeStudyManifest(study *preparedStudy, preparation matrixPreparation) error {
@@ -166,6 +168,7 @@ func writeStudyManifest(study *preparedStudy, preparation matrixPreparation) err
 		contract := studyArmContract{Name: arm.Label, ID: arm.ID, Target: arm.Loaded.Model.RuntimeIdentifier + ":" + arm.Loaded.Effort, Adapter: arm.AdapterSHA256}
 		if arm.Bundle != nil {
 			contract.Bundle, contract.Runtime, contract.RuntimeSource, contract.RuntimeVersion = arm.Bundle.ManifestHash, arm.Bundle.LinuxBinarySHA256, arm.Bundle.RuntimeSourceKind, arm.Bundle.RuntimeVersion
+			contract.TemplatesCommit, contract.TemplatesDirty = arm.Bundle.TemplatesCommit, arm.Bundle.TemplatesDirty
 		}
 		manifest.Arms = append(manifest.Arms, contract)
 	}
@@ -175,12 +178,11 @@ func writeStudyManifest(study *preparedStudy, preparation matrixPreparation) err
 		if err := readStudyJSON(path, &existing); err != nil {
 			return fmt.Errorf("read immutable study manifest: %w", err)
 		}
-		left, leftErr := hashCanonical(existing)
-		right, rightErr := hashCanonical(manifest)
-		if leftErr != nil || rightErr != nil {
-			return fmt.Errorf("hash immutable study manifest: %w", errors.Join(leftErr, rightErr))
+		same, err := sameImmutableStudyManifest(existing, manifest)
+		if err != nil {
+			return fmt.Errorf("hash immutable study manifest: %w", err)
 		}
-		if left != right {
+		if !same {
 			return fmt.Errorf("study %s conflicts with its immutable manifest", study.studyID)
 		}
 		return nil
@@ -188,6 +190,43 @@ func writeStudyManifest(study *preparedStudy, preparation matrixPreparation) err
 		return fmt.Errorf("inspect immutable study manifest: %w", err)
 	}
 	return writeJSON(path, manifest)
+}
+
+func sameImmutableStudyManifest(existing, next immutableStudyManifest) (bool, error) {
+	left, err := hashCanonical(existing)
+	if err != nil {
+		return false, err
+	}
+	right, err := hashCanonical(next)
+	if err != nil {
+		return false, err
+	}
+	if left == right {
+		return true, nil
+	}
+	if studyManifestHasTemplateProvenance(existing) {
+		return false, nil
+	}
+	stripped := next
+	stripped.Arms = append([]studyArmContract(nil), next.Arms...)
+	for i := range stripped.Arms {
+		stripped.Arms[i].TemplatesCommit = ""
+		stripped.Arms[i].TemplatesDirty = false
+	}
+	right, err = hashCanonical(stripped)
+	if err != nil {
+		return false, err
+	}
+	return left == right, nil
+}
+
+func studyManifestHasTemplateProvenance(manifest immutableStudyManifest) bool {
+	for _, arm := range manifest.Arms {
+		if arm.TemplatesCommit != "" || arm.TemplatesDirty {
+			return true
+		}
+	}
+	return false
 }
 
 // RunStudy is intentionally the only paid public entry point. The command itself
@@ -1071,6 +1110,13 @@ func restoreHistoricalStudyTreatmentProvenance(repoRoot, stateDir string, manife
 			bundle.LinuxBinarySHA256 != contract.Runtime || bundle.RuntimeSourceKind != contract.RuntimeSource ||
 			bundle.RuntimeVersion != contract.RuntimeVersion {
 			return fmt.Errorf("historical study %s treatment pin %s conflicts with its immutable arm contract", filepath.Base(stateDir), contract.Bundle)
+		}
+		if bundle.TemplatesCommit != contract.TemplatesCommit || bundle.TemplatesDirty != contract.TemplatesDirty {
+			if contract.TemplatesCommit != "" || contract.TemplatesDirty {
+				return fmt.Errorf("historical study %s treatment pin %s conflicts with its immutable arm contract", filepath.Base(stateDir), contract.Bundle)
+			}
+			bundle.TemplatesCommit = ""
+			bundle.TemplatesDirty = false
 		}
 		preparation.arms[index].Bundle = bundle
 	}

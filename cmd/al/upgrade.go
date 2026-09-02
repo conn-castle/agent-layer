@@ -691,12 +691,16 @@ func requireUpgradeTargetCLI(targetVersion string) error {
 	if err != nil {
 		return err
 	}
-	comparison, err := version.Compare(currentVersion, targetVersion)
+	normalizedTargetVersion, err := version.Normalize(targetVersion)
+	if err != nil {
+		return err
+	}
+	comparison, err := version.Compare(currentVersion, normalizedTargetVersion)
 	if err != nil {
 		return err
 	}
 	if comparison < 0 {
-		return fmt.Errorf(messages.UpgradeTargetRequiresNewerCLIFmt, currentVersion, targetVersion, targetVersion)
+		return fmt.Errorf(messages.UpgradeTargetRequiresNewerCLIFmt, currentVersion, normalizedTargetVersion, normalizedTargetVersion)
 	}
 	return nil
 }

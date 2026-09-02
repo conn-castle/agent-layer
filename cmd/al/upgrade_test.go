@@ -64,6 +64,18 @@ func TestRequireUpgradeTargetCLIAllowsDevelopmentBuild(t *testing.T) {
 	}
 }
 
+func TestRequireUpgradeTargetCLIFormatsNormalizedTarget(t *testing.T) {
+	originalVersion := Version
+	Version = "v0.18.3"
+	t.Cleanup(func() { Version = originalVersion })
+
+	err := requireUpgradeTargetCLI("v0.18.4")
+	if err == nil || !strings.Contains(err.Error(), "CLI v0.18.3 cannot upgrade to v0.18.4") ||
+		strings.Contains(err.Error(), "vv0.18.4") || !strings.Contains(err.Error(), "al --version") {
+		t.Fatalf("normalized target error = %v", err)
+	}
+}
+
 func TestUpgradeCmd_YesWithoutApplyFlagsErrors(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {

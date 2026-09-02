@@ -14,6 +14,27 @@ import (
 	"time"
 )
 
+func TestSameImmutableStudyManifestAllowsLegacyTemplateProvenance(t *testing.T) {
+	existing := immutableStudyManifest{
+		SchemaVersion: immutableStudyManifestSchema, StudyID: "study", SelectionID: "selection",
+		Membership: []string{"Treatment"},
+		Arms:       []studyArmContract{{Name: "Treatment", ID: "arm", Target: "luna:low", Bundle: "bundle", Adapter: "adapter", Runtime: strings.Repeat("r", 64)}},
+	}
+	next := existing
+	next.Arms = append([]studyArmContract(nil), existing.Arms...)
+	next.Arms[0].TemplatesCommit = strings.Repeat("c", 40)
+	same, err := sameImmutableStudyManifest(existing, next)
+	if err != nil || !same {
+		t.Fatalf("legacy template provenance should remain compatible: same=%t err=%v", same, err)
+	}
+	existing.Arms[0].TemplatesCommit = strings.Repeat("c", 40)
+	next.Arms[0].TemplatesCommit = strings.Repeat("d", 40)
+	same, err = sameImmutableStudyManifest(existing, next)
+	if err != nil || same {
+		t.Fatalf("authenticated template provenance conflict accepted: same=%t err=%v", same, err)
+	}
+}
+
 func TestStudyPublishedBareEstimateRequiresMatchingSelectorTarget(t *testing.T) {
 	selection := matrixSelectionFixture()
 	luna, low, err := ParseModelSelection("luna:low")

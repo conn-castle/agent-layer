@@ -353,8 +353,35 @@ func TestBenchmarkRunRecoveryOnlyDoesNotAuthorizeExecution(t *testing.T) {
 	got := output.String()
 	if !strings.Contains(got, "Recovery-only mode: no provider or verifier process will be started") ||
 		!strings.Contains(got, "1 terminal verifier timeout cell(s) canonicalized") ||
-		strings.Contains(got, "authorizes paid provider calls") {
+		strings.Contains(got, "authorizes paid provider calls") ||
+		strings.Contains(got, "Report:") {
 		t.Fatalf("recovery-only output = %q", got)
+	}
+}
+
+func TestBenchmarkRunRecoveryOnlyPrintsRegeneratedReportPath(t *testing.T) {
+	original := runStudy
+	runStudy = func(_ context.Context, options bench.StudyOptions, executor bench.TaskExecutor) (bench.StudyOutcome, error) {
+		if !options.RecoveryOnly || executor != nil {
+			t.Fatalf("recovery options = %#v executor=%#v", options, executor)
+		}
+		return bench.StudyOutcome{
+			StudyID: strings.Repeat("a", 64), Required: 16, Completed: 16, Missing: 0, JSONPath: "/tmp/report.json",
+		}, nil
+	}
+	t.Cleanup(func() { runStudy = original })
+	root := newRootCmd()
+	root.SetArgs([]string{"benchmark", "run", "study.toml", "--recover-only"})
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	got := output.String()
+	if !strings.Contains(got, "16 of 16 cells cached, 0 still missing. Report: /tmp/report.json.") ||
+		!strings.Contains(got, "No provider or verifier process was started") {
+		t.Fatalf("recovery-only report output = %q", got)
 	}
 }
 
