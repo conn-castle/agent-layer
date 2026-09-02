@@ -18,6 +18,8 @@ import (
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
+const antigravityStructuredOK = `printf '{"event":"result","result":{"status":"SUCCESS","conversation_id":"22222222-2222-4222-8222-222222222222","response":"agy ok","usage":{"input_tokens":1,"output_tokens":2,"thinking_tokens":1,"cache_read_tokens":0}}}\n'`
+
 func TestRunUsesSuppliedRepositoryRootWithoutCreatingWorktree(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	git := func(args ...string) string {
@@ -300,7 +302,7 @@ func TestRunAntigravityUsesConfiguredModel(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{AntigravityModel: "Gemini 3.1 Pro (High)"})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "agy.log")
-	writeDispatchStub(t, binDir, "agy", `printf 'agy ok'`)
+	writeDispatchStub(t, binDir, "agy", antigravityStructuredOK)
 	env := []string{
 		"PATH=" + testPath(binDir),
 		"AL_TEST_LOG=" + logPath,
@@ -323,14 +325,16 @@ func TestRunAntigravityUsesConfiguredModel(t *testing.T) {
 	}
 	assertFileContains(t, logPath, "ARG_3=--model")
 	assertFileContains(t, logPath, "ARG_4=Gemini 3.1 Pro (High)")
-	assertFileContains(t, logPath, "ARG_5=--print-timeout")
+	assertFileContains(t, logPath, "ARG_5=--output-format")
+	assertFileContains(t, logPath, "ARG_6=stream-json")
+	assertFileContains(t, logPath, "ARG_7=--print-timeout")
 }
 
 func TestRunAntigravityUsesModelOverride(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{AntigravityModel: "Gemini 3.1 Pro (High)"})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "agy.log")
-	writeDispatchStub(t, binDir, "agy", `printf 'agy ok'`)
+	writeDispatchStub(t, binDir, "agy", antigravityStructuredOK)
 	env := []string{
 		"PATH=" + testPath(binDir),
 		"AL_TEST_LOG=" + logPath,
@@ -355,6 +359,63 @@ func TestRunAntigravityUsesModelOverride(t *testing.T) {
 	assertFileContains(t, logPath, "ARG_3=--model")
 	assertFileContains(t, logPath, "ARG_4=Gemini 3.5 Flash (High)")
 	assertFileDoesNotContain(t, logPath, "Gemini 3.1 Pro (High)")
+}
+
+func TestRunAntigravityExactSlugCapturesStructuredEvents(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	binDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "agy.log")
+	writeDispatchStub(t, binDir, "agy", `printf '{"event":"result","result":{"status":"SUCCESS","conversation_id":"22222222-2222-4222-8222-222222222222","response":"agy structured ok","usage":{"input_tokens":1,"output_tokens":2,"thinking_tokens":1,"cache_read_tokens":0}}}\n'`)
+	var stdout bytes.Buffer
+	err := executeFreshDispatch(dispatchExecRequest{
+		Root:            root,
+		Agent:           AgentAntigravity,
+		Model:           "gemini-3.5-flash-low",
+		ReasoningEffort: "low",
+		Prompt:          "Review",
+		Env:             []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath},
+		Stdout:          &stdout,
+		Stderr:          &bytes.Buffer{},
+		LookPath:        mockLookPath(binDir),
+	})
+	if err != nil {
+		t.Fatalf("exact-slug dispatch error: %v", err)
+	}
+	if stdout.String() != "agy structured ok" {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	assertFileContains(t, logPath, "ARG_3=--model")
+	assertFileContains(t, logPath, "ARG_4=gemini-3.5-flash-low")
+	assertFileContains(t, logPath, "ARG_5=--output-format")
+	assertFileContains(t, logPath, "ARG_6=stream-json")
+}
+
+func TestRunAntigravityRejectsMismatchedStreamAndDiagnosticIDs(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	binDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "agy.log")
+	writeDispatchStub(t, binDir, "agy", antigravityStructuredOK)
+	var stdout bytes.Buffer
+	err := executeFreshDispatch(dispatchExecRequest{
+		Root:   root,
+		Agent:  AgentAntigravity,
+		Prompt: "Review",
+		Env: []string{
+			"PATH=" + testPath(binDir),
+			"AL_TEST_LOG=" + logPath,
+			"AL_TEST_AGY_LOG_ID=33333333-3333-4333-8333-333333333333",
+		},
+		Stdout:   &stdout,
+		Stderr:   &bytes.Buffer{},
+		LookPath: mockLookPath(binDir),
+	})
+	requireDispatchExitCode(t, err, ExitTargetFailure)
+	if stdout.Len() != 0 {
+		t.Fatalf("mismatched Antigravity answer leaked to caller: %q", stdout.String())
+	}
+	if !strings.Contains(err.Error(), "different provider conversation IDs") {
+		t.Fatalf("mismatch error = %q", err)
+	}
 }
 
 func TestClaudeSkillPromptAndCommandConstruction(t *testing.T) {
@@ -479,7 +540,7 @@ func TestAntigravityCommandConstruction(t *testing.T) {
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "agy.log")
 	promptPath := filepath.Join(t.TempDir(), "agy.prompt")
-	writeDispatchStub(t, binDir, "agy", `printf 'agy ok'`)
+	writeDispatchStub(t, binDir, "agy", antigravityStructuredOK)
 	env := []string{
 		"PATH=" + testPath(binDir),
 		"AL_TEST_LOG=" + logPath,
@@ -502,9 +563,11 @@ func TestAntigravityCommandConstruction(t *testing.T) {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 	assertFileContains(t, logPath, "ARG_0=--gemini_dir="+filepath.Join(root, ".agy"))
-	assertFileContains(t, logPath, "ARG_3=--print-timeout")
-	assertFileContains(t, logPath, "ARG_4="+AntigravityPrintTimeout)
-	assertFileContains(t, logPath, "ARG_5=--print")
+	assertFileContains(t, logPath, "ARG_3=--output-format")
+	assertFileContains(t, logPath, "ARG_4=stream-json")
+	assertFileContains(t, logPath, "ARG_5=--print-timeout")
+	assertFileContains(t, logPath, "ARG_6="+AntigravityPrintTimeout)
+	assertFileContains(t, logPath, "ARG_7=--print")
 	assertFileContains(t, logPath, "AGY_CLI_DISABLE_AUTO_UPDATE=1")
 }
 
@@ -718,7 +781,7 @@ if [ %q = "agy" ]; then
   previous=""
   for arg in "$@"; do
     if [ "$previous" = "log" ]; then
-      printf 'Created conversation 22222222-2222-4222-8222-222222222222\n' > "$arg"
+      printf 'Created conversation %%s\n' "${AL_TEST_AGY_LOG_ID:-22222222-2222-4222-8222-222222222222}" > "$arg"
       previous=""
       continue
     fi

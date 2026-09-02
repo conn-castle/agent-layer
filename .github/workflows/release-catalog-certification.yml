@@ -1,0 +1,89 @@
+name: Release Catalog Certification
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Run the full catalog regardless of changed paths
+        required: false
+        default: false
+        type: boolean
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "17 8 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-catalog-certification-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      required: ${{ steps.scope.outputs.required }}
+    steps:
+      - name: Require the main branch
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "::error::Release catalog certification must be dispatched on main, not ${GITHUB_REF}."
+            exit 1
+          fi
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the checked-out commit
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - name: Classify catalog certification scope
+        id: scope
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "schedule" || "${{ inputs.force || false }}" == "true" ]]; then
+            required=true
+            echo "Full catalog certification was explicitly requested." >&2
+          else
+            required="$(./scripts/catalog-certification-scope.sh)"
+          fi
+          echo "required=${required}" >>"${GITHUB_OUTPUT}"
+          if [[ "${required}" == "true" ]]; then
+            echo "Full catalog certification is required." >>"${GITHUB_STEP_SUMMARY}"
+          else
+            echo "No catalog-critical paths changed since the previous stable release; full catalog certification is skipped." >>"${GITHUB_STEP_SUMMARY}"
+          fi
+
+  catalog-readiness:
+    needs: classify
+    if: needs.classify.outputs.required == 'true'
+    name: catalog-readiness (${{ matrix.shard }}/16)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Initialize Agent Layer for benchmark readiness
+        run: AL_NO_NETWORK=1 go run ./cmd/al init --here --no-wizard
+      - name: Certify pinned benchmark catalog shard
+        run: >-
+          go run ./cmd/al benchmark readiness
+          --task-concurrency 1
+          --remove-task-images
+          --task-shard-index ${{ matrix.shard }}
+          --task-shard-count 16
+          --task-timeout 10m

@@ -111,33 +111,31 @@ func TestEnsureGitignoreAppendsBlock(t *testing.T) {
 	}
 }
 
-func TestEnsureGitignorePartialBlock(t *testing.T) {
-	// A .gitignore with an agent-layer start marker but no matching end marker is
-	// corrupt. Appending a second managed block (the previous behavior) would, on
-	// the next sync, silently delete everything between the orphaned start marker
-	// and the appended block — i.e. the user's "old" line here. EnsureGitignore
-	// must instead fail loud and leave the file untouched.
-	root := t.TempDir()
-	path := filepath.Join(root, ".gitignore")
-	original := "keep\n# >>> agent-layer\nold\n"
-	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
-		t.Fatalf("write gitignore: %v", err)
-	}
-
-	block := "new\n" // No markers - EnsureGitignore adds them
-	err := EnsureGitignore(RealSystem{}, path, block)
-	if err == nil {
-		t.Fatalf("expected error for orphaned start marker, got nil")
-	}
-	if !strings.Contains(err.Error(), "# >>> agent-layer") || !strings.Contains(err.Error(), "# <<< agent-layer") {
-		t.Fatalf("expected error to name both markers, got %v", err)
-	}
-	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read gitignore: %v", err)
-	}
-	if string(data) != original {
-		t.Fatalf("expected file to be left untouched on error, got %q", string(data))
+func TestEnsureGitignoreRejectsCorruptManagedMarkersWithoutMutation(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content string
+	}{
+		{name: "orphaned start", content: "keep\n# >>> agent-layer\nuser-content\n"},
+		{name: "orphaned end", content: "keep\n# <<< agent-layer\nuser-content\n"},
+		{name: "inverted", content: "# <<< agent-layer\nuser-content\n# >>> agent-layer\n"},
+		{name: "duplicate start", content: "# >>> agent-layer\nold\n# >>> agent-layer\nuser-content\n# <<< agent-layer\n"},
+		{name: "duplicate end", content: "# >>> agent-layer\nold\n# <<< agent-layer\nuser-content\n# <<< agent-layer\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), ".gitignore")
+			if err := os.WriteFile(path, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			err := EnsureGitignore(RealSystem{}, path, "new\n")
+			if err == nil || !strings.Contains(err.Error(), "# >>> agent-layer") || !strings.Contains(err.Error(), "# <<< agent-layer") {
+				t.Fatalf("corrupt marker error = %v", err)
+			}
+			data, readErr := os.ReadFile(path) // #nosec G304 -- test-owned path.
+			if readErr != nil || string(data) != test.content {
+				t.Fatalf("corrupt .gitignore changed: %q, %v", data, readErr)
+			}
+		})
 	}
 }
 

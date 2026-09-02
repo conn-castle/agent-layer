@@ -159,6 +159,26 @@ func TestFindAgentLayerRootFileError(t *testing.T) {
 	}
 }
 
+func TestRootDiscoveryFailsOnMarkerSymlinkLoops(t *testing.T) {
+	for _, test := range []struct {
+		marker string
+		find   func(string) error
+	}{
+		{marker: ".agent-layer", find: func(root string) error { _, _, err := FindAgentLayerRoot(root); return err }},
+		{marker: ".git", find: func(root string) error { _, err := FindRepoRoot(root); return err }},
+	} {
+		t.Run(test.marker, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.Symlink(test.marker, filepath.Join(root, test.marker)); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+			if err := test.find(root); err == nil || !strings.Contains(strings.ToLower(err.Error()), "check") {
+				t.Fatalf("marker symlink-loop error = %v", err)
+			}
+		})
+	}
+}
+
 func TestFindRepoRootPrefersAgentLayer(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {

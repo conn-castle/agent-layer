@@ -530,14 +530,14 @@ test("copied selection matches the benchmark CLI schema", () => {
         selected: true,
         normalizedWeight: 1,
         calibration: { intercept: 0.1, slope: 0.8 },
-        cell: { meanCost: 1.25 },
+        cell: { meanCost: 1.25, n: 4, variance: 0.04 },
       },
       {
         id: "not-selected",
         selected: false,
         normalizedWeight: null,
         calibration: { intercept: 0.2, slope: 0.5 },
-        cell: { meanCost: 1 },
+        cell: { meanCost: 1, n: 4, variance: 0.01 },
       },
     ],
   };
@@ -550,7 +550,7 @@ test("copied selection matches the benchmark CLI schema", () => {
   );
 
   assert.equal(document.schema, "deepswe-benchmark-selection");
-  assert.equal(document.schemaVersion, 2);
+  assert.equal(document.schemaVersion, 3);
   assert.equal(document.snapshot.sha256, snapshot.source.sha256);
   assert.deepEqual(
     [document.selector.model, document.selector.reasoning],
@@ -567,8 +567,67 @@ test("copied selection matches the benchmark CLI schema", () => {
         weight: 1,
         calibration: { intercept: 0.1, slope: 0.8 },
         publishedMeanCostUsd: 1.25,
+        publishedVariance: {
+          configurationId: configuration.id,
+          publishedModel: configuration.model,
+          publishedReasoning: configuration.reasoning,
+          sampleSize: 4,
+          sampleVariance: 0.04,
+          varianceEstimator: "unbiased-sample-variance",
+          varianceDenominator: "n-1",
+        },
       },
     ]),
+  );
+  assert.equal(
+    buildBenchmarkSelection(
+      {
+        estimatedSpend: 1.25,
+        rows: [{
+          id: "selected-task",
+          selected: true,
+          normalizedWeight: 1,
+          calibration: { intercept: 0.1, slope: 0.8 },
+          cell: { meanCost: 1.25, n: 1, variance: 0.04 },
+        }],
+      },
+      configuration.id,
+      5,
+      1,
+    ),
+    null,
+  );
+});
+
+test("copied selection translates provider model identities for the benchmark CLI", () => {
+  const { snapshot, buildBenchmarkSelection } = loadApplication();
+  const selection = {
+    estimatedSpend: 1,
+    rows: [{
+      id: "selected-task",
+      selected: true,
+      normalizedWeight: 1,
+      calibration: { intercept: 0.1, slope: 0.8 },
+      cell: { meanCost: 1, n: 4, variance: 0.04 },
+    }],
+  };
+
+  const grok = snapshot.configurations.find(
+    (configuration) => configuration.model === "grok-4-5",
+  );
+  assert.ok(grok, "fixture snapshot must contain Grok 4.5");
+  assert.equal(
+    buildBenchmarkSelection(selection, grok.id, 1, 1).selector.model,
+    "grok-4.5",
+  );
+
+  const gemini = snapshot.configurations.find(
+    (configuration) => configuration.model === "gemini-3-5-flash",
+  );
+  assert.ok(gemini, "fixture snapshot must contain Gemini 3.5 Flash");
+  assert.equal(
+    buildBenchmarkSelection(selection, gemini.id, 1, 1).selector.model,
+    `gemini-3.5-flash-${gemini.reasoning}`,
   );
 });
 
@@ -620,6 +679,63 @@ test("benchmark selection identity matches the Go canonical identity", () => {
   const withExclusion = benchmarkSelectionID(selection);
   selection.manualExclusions = ["different-task"];
   assert.notEqual(benchmarkSelectionID(selection), withExclusion);
+
+  selection.schemaVersion = 3;
+  selection.manualExclusions = [];
+  selection.tasks[0].publishedVariance = {
+    configurationId: "gpt-5-6-luna::low",
+    publishedModel: "gpt-5-6-luna",
+    publishedReasoning: "low",
+    sampleSize: 4,
+    sampleVariance: 0.04,
+    varianceEstimator: "unbiased-sample-variance",
+    varianceDenominator: "n-1",
+  };
+  const withPublished = benchmarkSelectionID(selection);
+  selection.tasks[0].publishedVariance.sampleVariance = 0.05;
+  assert.notEqual(benchmarkSelectionID(selection), withPublished);
+});
+
+test("exported schema v3 pins published sample variance from the selector cell", () => {
+  const {
+    snapshot,
+    buildRows,
+    selectRowsWithinBudget,
+    buildBenchmarkSelection,
+  } = loadApplication();
+  const configuration = snapshot.configurations[0];
+  const selected = selectRowsWithinBudget(
+    buildRows(configuration.id),
+    10_000,
+    1,
+  );
+  const document = buildBenchmarkSelection(
+    selected,
+    configuration.id,
+    10_000,
+    1,
+  );
+  assert.ok(document);
+  assert.equal(document.schemaVersion, 3);
+  assert.ok(document.tasks.length > 0);
+  for (const task of document.tasks) {
+    const cell = snapshot.tasks.find((candidate) => candidate.id === task.id)
+      ?.cells?.[configuration.id];
+    assert.ok(cell);
+    assert.equal(task.publishedVariance.configurationId, configuration.id);
+    assert.equal(task.publishedVariance.publishedModel, configuration.model);
+    assert.equal(
+      task.publishedVariance.publishedReasoning,
+      configuration.reasoning,
+    );
+    assert.equal(task.publishedVariance.sampleSize, cell.n);
+    assert.equal(task.publishedVariance.sampleVariance, cell.variance);
+    assert.equal(
+      task.publishedVariance.varianceEstimator,
+      "unbiased-sample-variance",
+    );
+    assert.equal(task.publishedVariance.varianceDenominator, "n-1");
+  }
 });
 
 test("benchmark handoff offers explicit save actions and current CLI commands", () => {
@@ -628,8 +744,9 @@ test("benchmark handoff offers explicit save actions and current CLI commands", 
   assert.match(html, /id="copySelectionJson"[^>]*>Copy selection</);
   assert.match(html, /id="downloadSelection"[^>]*>Download selection\.json</);
   assert.doesNotMatch(html, /copied to your clipboard/i);
-  assert.match(html, /al benchmark run study\.toml --dry-run/);
-  assert.match(html, /^\s*al benchmark run study\.toml$/m);
+  assert.match(html, /al benchmark init selection\.json --directory benchmark-study/);
+  assert.match(html, /al benchmark run benchmark-study\/study\.toml --dry-run/);
+  assert.match(html, /^\s*al benchmark run benchmark-study\/study\.toml$/m);
   assert.match(html, /Check the prerequisites/);
 });
 

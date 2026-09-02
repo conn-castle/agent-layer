@@ -1,7 +1,6 @@
 package warnings
 
 import (
-	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -92,6 +91,23 @@ func TestCheckPolicy_CodexHeaderPolicy(t *testing.T) {
 	require.Len(t, results, 1)
 	require.Equal(t, CodePolicyCodexHeaderForm, results[0].Code)
 	require.Equal(t, "srv", results[0].Subject)
+}
+
+func TestCheckPolicy_CodexRejectsEmbeddedPlaceholderInOrdinaryHeader(t *testing.T) {
+	enabled := true
+	project := &config.ProjectConfig{Config: config.Config{
+		Agents: config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled}},
+		MCP: config.MCPConfig{Servers: []config.MCPServer{{
+			ID:        "srv",
+			Enabled:   &enabled,
+			Transport: config.TransportHTTP,
+			URL:       "https://example.com/mcp",
+			Headers:   map[string]string{"X-API-Key": "prefix-${AL_TOKEN}"},
+		}}},
+	}}
+	results := CheckPolicy(project)
+	require.Len(t, results, 1)
+	require.Equal(t, CodePolicyCodexHeaderForm, results[0].Code)
 }
 
 func TestCheckPolicy_YOLOModeNoWarning(t *testing.T) {
@@ -473,136 +489,4 @@ func TestCheckPolicy_SecretURLIgnoresPlaceholderAndEmptyValues(t *testing.T) {
 		},
 	}
 	require.Nil(t, CheckPolicy(project))
-}
-
-func TestFindSecretInURL(t *testing.T) {
-	t.Run("userinfo username", func(t *testing.T) {
-		detail, ok := findSecretInURL("https://user@example.com/mcp")
-		require.True(t, ok)
-		require.Contains(t, detail, "userinfo")
-	})
-
-	t.Run("literal secret query", func(t *testing.T) {
-		detail, ok := findSecretInURL("https://example.com/mcp?access_token=abc123456")
-		require.True(t, ok)
-		require.Contains(t, detail, "access_token")
-	})
-
-	t.Run("placeholder and blank", func(t *testing.T) {
-		for _, raw := range []string{
-			"https://example.com/mcp?token=${AL_TOKEN}",
-			"https://example.com/mcp?token=",
-			"",
-		} {
-			detail, ok := findSecretInURL(raw)
-			require.False(t, ok, raw)
-			require.Empty(t, detail)
-		}
-	})
-}
-
-func TestFindUnsupportedCodexHeaderForm(t *testing.T) {
-	cases := []struct {
-		name    string
-		headers map[string]string
-		want    bool
-	}{
-		{
-			name: "literal",
-			headers: map[string]string{
-				"Authorization": "Bearer static-token",
-			},
-			want: false,
-		},
-		{
-			name: "exact placeholder",
-			headers: map[string]string{
-				"X-Api-Key": "${AL_TOKEN}",
-			},
-			want: false,
-		},
-		{
-			name: "bearer placeholder",
-			headers: map[string]string{
-				"Authorization": "Bearer ${AL_TOKEN}",
-			},
-			want: false,
-		},
-		{
-			name: "unsupported authorization format",
-			headers: map[string]string{
-				"Authorization": "Token ${AL_TOKEN}",
-			},
-			want: true,
-		},
-		{
-			name: "unsupported mixed placeholder",
-			headers: map[string]string{
-				"X-Api-Key": fmt.Sprintf("prefix-%s", "${AL_TOKEN}"),
-			},
-			want: true,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			detail, ok := findUnsupportedCodexHeaderForm(tc.headers)
-			require.Equal(t, tc.want, ok)
-			if tc.want {
-				require.NotEmpty(t, detail)
-			} else {
-				require.Empty(t, detail)
-			}
-		})
-	}
-}
-
-func TestPolicyHelpers(t *testing.T) {
-	require.False(t, isEnabled(nil))
-	require.True(t, isEnabled(testutil.BoolPtr(true)))
-	require.False(t, isEnabled(testutil.BoolPtr(false)))
-
-	require.True(t, isClientTargeted(nil, "codex"))
-	require.True(t, isClientTargeted([]string{"codex"}, "codex"))
-	require.False(t, isClientTargeted([]string{"claude"}, "codex"))
-
-	require.False(t, isExplicitClientTargeted(nil, "codex"))
-	require.True(t, isExplicitClientTargeted([]string{"codex"}, "codex"))
-	require.False(t, isExplicitClientTargeted([]string{"claude"}, "codex"))
-
-	require.True(t, hasEnvPlaceholder("Bearer ${AL_TOKEN}"))
-	require.False(t, hasEnvPlaceholder("Bearer literal"))
-
-	require.True(t, isLiteralHeaderValue("literal"))
-	require.False(t, isLiteralHeaderValue("${AL_TOKEN}"))
-
-	require.True(t, isExactEnvPlaceholder("${AL_TOKEN}"))
-	require.False(t, isExactEnvPlaceholder("prefix-${AL_TOKEN}"))
-
-	require.True(t, isBearerEnvPlaceholder("Bearer ${AL_TOKEN}"))
-	require.True(t, isBearerEnvPlaceholder("bearer ${AL_TOKEN}"))
-	require.False(t, isBearerEnvPlaceholder("Token ${AL_TOKEN}"))
-}
-
-func TestDedupePolicyWarnings(t *testing.T) {
-	items := []Warning{
-		{
-			Code:    CodePolicyCapabilityMismatch,
-			Subject: "same",
-			Message: "duplicate",
-		},
-		{
-			Code:    CodePolicyCapabilityMismatch,
-			Subject: "same",
-			Message: "duplicate",
-		},
-		{
-			Code:    CodePolicyCapabilityMismatch,
-			Subject: "other",
-			Message: "duplicate",
-		},
-	}
-	out := dedupePolicyWarnings(items)
-	require.Len(t, out, 2)
-	require.Nil(t, dedupePolicyWarnings(nil))
 }

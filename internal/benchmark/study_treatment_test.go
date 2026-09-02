@@ -1,14 +1,19 @@
 package benchmark
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 )
@@ -42,6 +47,26 @@ func TestStudyMCPContractRejectsLiteralCookieAndCredentialValues(t *testing.T) {
 		Env:     map[string]string{"SERVICE_CREDENTIAL": "${AL_CREDENTIAL}"}, // #nosec G101 -- placeholder reference in a contract test.
 	}); err != nil {
 		t.Fatalf("placeholder credentials rejected: %v", err)
+	}
+}
+
+func TestStudyMCPContractEncodesNoServersAsArray(t *testing.T) {
+	root := t.TempDir()
+	configPath := writeStudyTreatmentConfig(t, root)
+	data, err := os.ReadFile(configPath) // #nosec G304 -- configPath is a test-owned temporary file.
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, _, err := studyMCPContract(data, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(encoded) != `{"servers":[]}` {
+		t.Fatalf("empty MCP preflight contract = %s, want servers array", encoded)
 	}
 }
 
@@ -282,14 +307,45 @@ func TestPinnedStreamAdaptersImplementPierInstallAndEgressContracts(t *testing.T
 	script := `
 import asyncio
 import importlib.util
+import inspect
 import subprocess
 import sys
 import tempfile
+import types
 from pathlib import Path
+from pier.trial.trial import Trial
 
+retrying_verify = Trial._verify_with_retry
+single_verify = getattr(retrying_verify, "__wrapped__", None)
+assert single_verify is not None
 spec = importlib.util.spec_from_file_location("pier_agent_layer", sys.argv[1])
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+assert Trial._verify_with_retry is single_verify
+with tempfile.TemporaryDirectory() as directory:
+    bundle = Path(directory)
+    (bundle / "workflow-prompt.md").write_text("Work from this exact task:\n\n{{task}}\n")
+    fake = types.SimpleNamespace(
+        _treatment_bundle=bundle,
+        _required_dispatch_roles=["code-reviewer", "implementer", "plan-reviewer"],
+        _dispatch_config={
+            "plan_reviewers": [{"agent": "grok", "model": "grok-4.6", "reasoning_effort": "low"}],
+            "implementer": {"agent": "grok", "model": "grok-4.6", "reasoning_effort": "low"},
+            "code_reviewer": {"agent": "grok", "model": "grok-4.6", "reasoning_effort": "low"},
+        },
+    )
+    rendered = module._AgentLayerTreatment._workflow_instruction(fake, "TASK BODY")
+    assert rendered.count("TASK BODY") == 1
+    assert "Agent Layer benchmark workflow contract (mandatory)" in rendered
+    assert "plan_reviewers: [agent=grok, model=grok-4.6, reasoning_effort=low, role=plan-reviewer]" in rendered
+    assert "implementer: agent=grok, model=grok-4.6, reasoning_effort=low, role=implementer" in rendered
+    assert "code_reviewer: agent=grok, model=grok-4.6, reasoning_effort=low, role=code-reviewer" in rendered
+    assert "Pass the exact role value above in every dispatch_start call" in rendered
+    assert "A direct single-agent implementation is noncompliant" in rendered
+from pier.verifier.verifier import Verifier
+verifier_source = inspect.getsource(Verifier.verify)
+assert "await self._environment.exec" in verifier_source
+assert "stdout_path=test_stdout_path" in verifier_source
 for cls, model, domains in [
     (module.AgentLayerAntigravity, "gemini-3.5-flash-low", {"storage.googleapis.com", ".googleapis.com"}),
     (module.AgentLayerGrok, "grok-4.5", {"storage.googleapis.com", "api.x.ai", "auth.x.ai"}),
@@ -312,6 +368,32 @@ for cls, model, domains in [
         completed = subprocess.run(capture, shell=True, text=True, capture_output=True)
         assert completed.returncode == 0, completed.stderr
         assert out.read_text() == "stream" and err.read_text() == "diagnostic"
+
+        async def execute_validator(environment, command, **kwargs):
+            validated = subprocess.run(command, shell=True, text=True, capture_output=True)
+            assert validated.returncode == 0, validated.stderr
+        agent.exec_as_agent = execute_validator
+        for provider in ("grok", "antigravity"):
+            asyncio.run(agent._preflight_retained_stream_validator(object(), provider))
+            assert not Path(f"/tmp/agent-layer-{provider}-stream-validator-preflight.jsonl").exists()
+
+        failed_path = Path("/tmp/agent-layer-grok-stream-validator-preflight.jsonl")
+        failed_commands = []
+        async def fail_validator_write(environment, command, **kwargs):
+            failed_commands.append(command)
+            if command.startswith("printf"):
+                failed_path.write_text("partial")
+                raise RuntimeError("simulated validator write failure")
+            completed = subprocess.run(command, shell=True, text=True, capture_output=True)
+            assert completed.returncode == 0, completed.stderr
+        agent.exec_as_agent = fail_validator_write
+        try:
+            asyncio.run(agent._preflight_retained_stream_validator(object(), "grok"))
+            raise AssertionError("validator write failure was not propagated")
+        except RuntimeError as error:
+            assert str(error) == "simulated validator write failure"
+        assert len(failed_commands) == 2 and failed_commands[-1] == f"rm -f {failed_path}"
+        assert not failed_path.exists()
 
 commands = []
 async def capture_command(environment, command, **kwargs):
@@ -369,6 +451,249 @@ func TestStudyTreatmentBundleConfigOnlyStagesRuntimeWithoutWorkflow(t *testing.T
 	}
 }
 
+func TestStudyTreatmentBundleIdentityIsDeterministic(t *testing.T) {
+	root := t.TempDir()
+	configPath := writeStudyTreatmentConfig(t, root)
+	configData, err := os.ReadFile(configPath) // #nosec G304 -- configPath is created inside this test's private temporary directory.
+	if err != nil {
+		t.Fatal(err)
+	}
+	configData = []byte(strings.ReplaceAll(string(configData), "[agents.grok]\nenabled = false", "[agents.grok]\nenabled = true"))
+	if err := os.WriteFile(configPath, configData, 0o600); err != nil { // #nosec G703 -- configPath is the test-owned fixture returned above.
+		t.Fatal(err)
+	}
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	experiment := preparedStudyExperiment{
+		studyExperiment: studyExperiment{Config: filepath.Base(configPath)},
+		model:           model,
+		effort:          effort,
+		inputs:          studyExperimentInputs{Config: configPath},
+	}
+	first, err := BuildStudyTreatmentBundle(root, experiment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(first.Root) })
+	second, err := BuildStudyTreatmentBundle(root, experiment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(second.Root) })
+	if first.ManifestHash != second.ManifestHash ||
+		first.AdapterSHA256 != second.AdapterSHA256 ||
+		first.LinuxBinarySHA256 != second.LinuxBinarySHA256 {
+		t.Fatalf("identical study snapshots produced different bundle identities:\nfirst:  %#v\nsecond: %#v", first, second)
+	}
+	trust, err := os.ReadFile(filepath.Join(first.Root, ".grok-config", "trusted_folders.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(trust), "[folders.\"/app\"]\ntrusted = true\ndecided_at = 0\n") {
+		t.Fatalf("benchmark Grok trust projection is not deterministic:\n%s", trust)
+	}
+}
+
+func TestTreatmentStudyDryRunIdentityIsDeterministicAcrossInvocations(t *testing.T) {
+	root := t.TempDir()
+	writeParsedTreatmentStudy(t, root, "luna:low")
+	stubStudyInfrastructure(t, root)
+
+	originalAuthentication := validateBenchmarkAuthentication
+	originalRuntimePreflight := preflightTreatmentRuntime
+	runtimePreflights := 0
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error {
+		runtimePreflights++
+		return nil
+	}
+	t.Cleanup(func() {
+		validateBenchmarkAuthentication = originalAuthentication
+		preflightTreatmentRuntime = originalRuntimePreflight
+	})
+
+	first, err := RunStudy(context.Background(), StudyOptions{
+		RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), DryRun: true,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := RunStudy(context.Background(), StudyOptions{
+		RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), DryRun: true, TaskConcurrency: 4,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.StudyID != first.StudyID || second.Experiments[0].Identity != first.Experiments[0].Identity {
+		t.Fatalf("identical dry-run preparations changed identity:\nfirst:  %#v\nsecond: %#v", first, second)
+	}
+	if runtimePreflights != 2 {
+		t.Fatalf("second identical dry run should reuse the first run's preflight receipts: executed %d runtime preflights", runtimePreflights)
+	}
+	studies, err := os.ReadDir(filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(studies) != 1 || studies[0].Name() != first.StudyID {
+		t.Fatalf("identical dry runs created distinct study directories: %#v", studies)
+	}
+}
+
+func TestStudyIdentityIgnoresVolatileOverlayBuildMetadata(t *testing.T) {
+	root, checkout := t.TempDir(), t.TempDir()
+	writeParsedBareStudy(t, root, "luna:low")
+	tasks := []string{"first-task", "second-task"}
+	writeAuditCatalogFixture(t, checkout, tasks...)
+	installAuditCheckout(t, checkout)
+	overlayBuildSequence := 1
+	installReadinessTestBoundaries(t, studyOverlayContractsFixture(tasks...), func(_ context.Context, arguments ...string) ([]byte, error) {
+		switch arguments[0] {
+		case "build":
+			for index, argument := range arguments {
+				if argument == "--iidfile" && index+1 < len(arguments) {
+					buildID := fmt.Sprintf("sha256:%064x", overlayBuildSequence)
+					overlayBuildSequence++
+					return nil, os.WriteFile(arguments[index+1], []byte(buildID+"\n"), 0o600)
+				}
+			}
+			return nil, errors.New("overlay build omitted image ID file")
+		case commandRun, "image":
+			return nil, nil
+		default:
+			return nil, fmt.Errorf("unexpected Docker command: %#v", arguments)
+		}
+	})
+
+	originalPreflight, originalVerify := preflightBenchmark, verifyBenchmarkPier
+	originalAuth, originalRuntime := validateBenchmarkAuthentication, preflightTreatmentRuntime
+	preflightBenchmark = func([]parsedSelection) error { return nil }
+	verifyBenchmarkPier = func(context.Context) error { return nil }
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error { return nil }
+	t.Cleanup(func() {
+		preflightBenchmark, verifyBenchmarkPier = originalPreflight, originalVerify
+		validateBenchmarkAuthentication, preflightTreatmentRuntime = originalAuth, originalRuntime
+	})
+
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), DryRun: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), DryRun: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overlayBuildSequence != 5 {
+		t.Fatalf("overlay builds = %d, want four byte-distinct rebuilds", overlayBuildSequence-1)
+	}
+	if second.StudyID != first.StudyID || second.Experiments[0].Identity != first.Experiments[0].Identity {
+		t.Fatalf("Docker build metadata changed immutable identity:\nfirst:  %#v\nsecond: %#v", first, second)
+	}
+}
+
+func studyOverlayContractsFixture(tasks ...string) fs.FS {
+	contracts := fstest.MapFS{}
+	for _, task := range tasks {
+		root := "readiness/" + DeepSWECommit + "/" + task + "/"
+		contract := fmt.Sprintf(
+			`{"schema":%q,"task":%q,"image":%q,"image_digest":%q,"check":"check.sh","agent_image_overlay":"agent.Dockerfile"}`,
+			readinessContractSchema, task, auditTaskImage(task), testReadinessDigest,
+		)
+		contracts[root+"contract.json"] = &fstest.MapFile{Data: []byte(contract)}
+		contracts[root+"check.sh"] = &fstest.MapFile{Data: []byte("#!/bin/bash\ncheck-tools\n")}
+		contracts[root+"agent.Dockerfile"] = &fstest.MapFile{Data: []byte("FROM " + auditTaskImage(task) + "@" + testReadinessDigest + "\nRUN install-tools\n")}
+	}
+	return contracts
+}
+
+func TestGrokDryRunAndPaidExecutionUseDisposableContainerSandbox(t *testing.T) {
+	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "pier_agent_layer.py")
+	if err := os.WriteFile(path, adapter, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := `
+import asyncio
+import importlib.util
+import json
+import sys
+import tempfile
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location("pier_agent_layer", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+class Environment:
+    async def upload_file(self, source, destination):
+        pass
+
+async def rendered_commands(preflight):
+    with tempfile.NamedTemporaryFile() as credential, tempfile.TemporaryDirectory() as logs:
+        agent = module.AgentLayerGrok(
+            logs_dir=Path(logs), model_name="grok-4.5",
+            version=module.AgentLayerGrok.PINNED_VERSION,
+            treatment_agent="grok", treatment_model="grok-4.5",
+            treatment_reasoning_effort="low", treatment_mode="bare",
+            grok_credentials_path=credential.name, preflight_only=preflight,
+        )
+        commands = []
+        async def capture_exec(environment, command, **kwargs):
+            commands.append(command)
+        async def capture_run(environment, command, env):
+            commands.append(command)
+        async def prepare(instruction, environment):
+            return instruction
+        validations = []
+        async def capture_validation(environment, remote_path, provider, session_id=""):
+            validations.append((remote_path, provider, session_id))
+        async def no_op(*args, **kwargs):
+            pass
+        agent.exec_as_agent = capture_exec
+        agent._run_command = capture_run
+        agent._prepare = prepare
+        agent._validate_retained_stream = capture_validation
+        agent._collect_evidence = no_op
+        await agent.run("task", Environment(), None)
+        checkpoint_path = Path(logs) / "provider-checkpoint.json"
+        checkpoint = json.loads(checkpoint_path.read_text()) if checkpoint_path.exists() else None
+        if checkpoint is not None:
+            class Context:
+                def model_dump(self, mode):
+                    assert mode == "json"
+                    return {"cost_usd": 0.25}
+            agent._record_provider_checkpoint(Context())
+            enriched = json.loads(checkpoint_path.read_text())
+            assert enriched["completed_at"] == checkpoint["completed_at"]
+            assert enriched["agent_result"] == {"cost_usd": 0.25}
+        return commands, validations, checkpoint
+
+dry_run, dry_validations, dry_checkpoint = asyncio.run(rendered_commands(True))
+paid, paid_validations, paid_checkpoint = asyncio.run(rendered_commands(False))
+assert any("grok --no-auto-update --sandbox devbox models" in command for command in dry_run), dry_run
+assert any("--trust --sandbox devbox --permission-mode bypassPermissions" in command for command in paid), paid
+assert not any("--sandbox workspace" in command for command in dry_run + paid), dry_run + paid
+assert len(dry_validations) == 1 and dry_validations[0][1] == "grok", dry_validations
+assert len(paid_validations) == 1 and paid_validations[0][1] == "grok", paid_validations
+assert dry_checkpoint is None
+assert paid_checkpoint["schema"] == "agent-layer-provider-checkpoint-v1"
+assert paid_checkpoint["agent_result"] == {}
+`
+	command := exec.CommandContext(t.Context(), "uvx", "--from", "datacurve-pier=="+PierVersion, "python", "-c", script, path) // #nosec G204 -- embedded test loads the checked-in adapter against its pinned runtime.
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("render Grok sandbox commands: %v\n%s", err, output)
+	}
+}
+
 func TestStudyTreatmentBundleUsesCertifiedAMD64Target(t *testing.T) {
 	if benchmarkTaskContainerPlatform != "linux/amd64" || benchmarkTaskContainerArchitecture != "amd64" {
 		t.Fatalf("certified task platform = %q/%q", benchmarkTaskContainerPlatform, benchmarkTaskContainerArchitecture)
@@ -411,6 +736,58 @@ func TestStudySkillsRequireTheDeclaredEntryPrompt(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "requires entry_prompt") {
 		t.Fatalf("skills bundle silently fell back without an entry prompt: %v", err)
+	}
+}
+
+func TestStudyTreatmentInstructionsRejectExcludedProjectDependencies(t *testing.T) {
+	root := t.TempDir()
+	instructions := filepath.Join(root, "instructions")
+	if err := os.MkdirAll(instructions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(instructions, "prime.md"), []byte(
+		"Read `CONTEXT.md`, `guides/nick-persona.md`, and `MEMORY.md`.\n",
+	), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := validateTreatmentInstructionDependencies(instructions)
+	if err == nil || !strings.Contains(err.Error(), "excluded project-local file") ||
+		!strings.Contains(err.Error(), "self-contained benchmark instructions") {
+		t.Fatalf("project-dependent treatment instructions = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(instructions, "prime.md"), []byte(
+		"Inspect the task repository and complete the requested change.\n",
+	), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateTreatmentInstructionDependencies(instructions); err != nil {
+		t.Fatalf("self-contained treatment instructions: %v", err)
+	}
+}
+
+func TestStudyTreatmentInstructionsRejectDefaultMemoryAndUnquotedPersonaDependencies(t *testing.T) {
+	root := t.TempDir()
+	instructions := filepath.Join(root, "instructions")
+	if err := os.MkdirAll(instructions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"default memory":    "Use `docs/agent-layer/CONTEXT.md` and docs/agent-layer/DECISIONS.md as needed.\n",
+		"persona guide":     "First read ./guides/team-persona.md.\n",
+		"markdown link":     "Read [project context](CONTEXT.md) before editing.\n",
+		"file fragment":     "See CONTEXT.md#overview for the working agreement.\n",
+		"markdown fragment": "Follow [context](docs/agent-layer/CONTEXT.md#overview).\n",
+		"guide fragment":    "Read ./guides/team-persona.md#role first.\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := os.WriteFile(filepath.Join(instructions, "rules.md"), []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := validateTreatmentInstructionDependencies(instructions); err == nil ||
+				!strings.Contains(err.Error(), "excluded project-local file") {
+				t.Fatalf("project-dependent treatment instructions = %v", err)
+			}
+		})
 	}
 }
 

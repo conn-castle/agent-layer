@@ -26,7 +26,7 @@ func TestStartPublishesHandleBeforeAuthorizingWorker(t *testing.T) {
 	}
 	err := Start(StartOptions{
 		Root: root, WorkDir: root, Agent: AgentCodex, Model: "gpt-test",
-		ReasoningEffort: "high", Prompt: "Review this", Stdout: &stdout,
+		ReasoningEffort: "high", Role: "plan-reviewer", Prompt: "Review this", Stdout: &stdout,
 		Env: []string{}, LookPath: alwaysFound,
 		VersionLookup: func(string, string) (string, error) { return supportedProviderVersions[AgentCodex], nil },
 		launchWorker:  launcher,
@@ -52,6 +52,13 @@ func TestStartPublishesHandleBeforeAuthorizingWorker(t *testing.T) {
 	}
 	if session.Model != "gpt-test" || session.ReasoningEffort != "high" {
 		t.Fatalf("conversation settings were not durable: %#v", session)
+	}
+	record, err := loadRunRecord(root, session.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Role != "plan-reviewer" {
+		t.Fatalf("dispatch role = %q", record.Role)
 	}
 }
 

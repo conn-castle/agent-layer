@@ -111,17 +111,6 @@ func WriteStubWithExit(t *testing.T, dir string, name string, exitCode int) {
 	}
 }
 
-// WriteStubExpectArg writes an executable shell stub that succeeds only when expectedArg is present.
-// t is the active test; dir is the output directory; name is the executable file name.
-func WriteStubExpectArg(t *testing.T, dir string, name string, expectedArg string) {
-	t.Helper()
-	path := filepath.Join(dir, name)
-	content := []byte(fmt.Sprintf("#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = \"%s\" ]; then exit 0; fi\ndone\nexit 1\n", expectedArg))
-	if err := os.WriteFile(path, content, 0o755); err != nil {
-		t.Fatalf("write stub: %v", err)
-	}
-}
-
 // BoolPtr returns a pointer to v.
 // v is the boolean value to take the address of.
 func BoolPtr(v bool) *bool {

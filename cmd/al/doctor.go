@@ -14,6 +14,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/doctor"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 	"github.com/conn-castle/agent-layer/internal/warnings"
@@ -148,7 +149,7 @@ func newDoctorCmd() *cobra.Command {
 				instTokens, instSubject, instErr = measureInstructions(root)
 
 				// MCP check (Doctor runs discovery)
-				enabledServerIDs := enabledMCPServerIDs(cfg.Config.MCP.Servers)
+				enabledServerIDs := enabledMCPServerIDs(cfg.Config)
 				progressOut := out
 				if quiet {
 					progressOut = io.Discard
@@ -318,15 +319,10 @@ func renderSizeSummary(out io.Writer, w config.WarningsConfig, instTokens int, i
 	}
 }
 
-// enabledMCPServerIDs returns the configured IDs for enabled MCP servers.
-func enabledMCPServerIDs(servers []config.MCPServer) []string {
-	ids := make([]string, 0, len(servers))
-	for _, server := range servers {
-		if config.IsAgentEnabled(server.Enabled) {
-			ids = append(ids, server.ID)
-		}
-	}
-	return ids
+// enabledMCPServerIDs returns every server doctor will discover, including the
+// derived Agent Dispatch server when at least one dispatch-capable client is enabled.
+func enabledMCPServerIDs(cfg config.Config) []string {
+	return projection.EffectiveEnabledServerIDs(cfg)
 }
 
 // startMCPDiscoveryReporter prints progress events from MCP discovery and returns a reporter + stop function.

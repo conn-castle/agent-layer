@@ -18,14 +18,17 @@ import tempfile
 import urllib.error
 import urllib.request
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
+from pier.agents.base import BaseAgent
 from pier.agents.installed.claude_code import ClaudeCode
 from pier.agents.installed.codex import Codex
 from pier.agents.installed.base import BaseInstalledAgent
 from pier.models.agent.install import AgentInstallSpec, InstallStep
 from pier.models.agent.network import NetworkAllowlist
 from pier.models.trial.paths import EnvironmentPaths
+from pier.trial.trial import Trial
 
 EXPECTED_PIER_VERSION = "0.3.0"
 REMOTE_BUNDLE = "/tmp/agent-layer-benchmark"
@@ -69,6 +72,23 @@ GROK_LINUX_AMD64_URL = "https://storage.googleapis.com/grok-build-public-artifac
 GROK_LINUX_AMD64_SHA256 = "9ba87444e1819e8f6104adbbf4676a870c204380aa5c3e1c38a926c4ea677238"
 STREAM_BYTE_CAP = 16 * 1024 * 1024
 ANTIGRAVITY_PROMPT_BYTE_CAP = 100 * 1024
+
+
+def _pin_single_verifier_attempt() -> None:
+    """Remove Pier's unconditional retry for an exhausted verifier timeout."""
+    version = importlib.metadata.version("datacurve-pier")
+    if version != EXPECTED_PIER_VERSION:
+        raise RuntimeError(
+            f"Agent Layer benchmark adapter requires Pier {EXPECTED_PIER_VERSION}, got {version}"
+        )
+    retrying = Trial._verify_with_retry
+    single_attempt = getattr(retrying, "__wrapped__", None)
+    if single_attempt is None or getattr(single_attempt, "__name__", "") != "_verify_with_retry":
+        raise RuntimeError("Pier verifier retry contract no longer matches the pinned adapter")
+    Trial._verify_with_retry = single_attempt
+
+
+_pin_single_verifier_attempt()
 
 
 def validate_mcp_initialize_response(
@@ -266,6 +286,39 @@ class _AgentLayerTreatment:
             if self._dispatch_config.get("schema") != "agent-layer-benchmark-dispatch-v2":
                 raise RuntimeError("Agent Layer benchmark dispatch target schema is invalid")
         super().__init__(*args, **kwargs)
+
+    def _record_provider_checkpoint(self, context=None) -> None:
+        """Publish agent completion before Pier starts pre-artifacts/verification."""
+        if not getattr(self, "_provider_completed", False) or self._preflight_only:
+            return
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        path = self.logs_dir / "provider-checkpoint.json"
+        temporary = path.with_suffix(".tmp")
+
+        completed_at = datetime.now(timezone.utc).isoformat()
+        if path.is_file():
+            try:
+                existing = json.loads(path.read_text(encoding="utf-8"))
+                if existing.get("schema") == "agent-layer-provider-checkpoint-v1" and existing.get("completed_at"):
+                    completed_at = existing["completed_at"]
+            except (OSError, json.JSONDecodeError):
+                # Replace malformed advisory state atomically. The host still
+                # validates the checkpoint before treating it as authoritative.
+                pass
+        agent_result = context.model_dump(mode="json") if context is not None else {}
+        temporary.write_text(
+            json.dumps(
+                {
+                    "schema": "agent-layer-provider-checkpoint-v1",
+                    "completed_at": completed_at,
+                    "agent_result": agent_result,
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(path)
 
     async def _stage_treatment(self, environment):
         if self._treatment_mode == "bare":
@@ -706,22 +759,29 @@ for s in json.load(open(p, encoding="utf-8")).get("servers", []):
 
     def _workflow_instruction(self, instruction: str) -> str:
         template = (self._treatment_bundle / "workflow-prompt.md").read_text(encoding="utf-8")
-        if template.count("{{task}}") == 1:
-            # Study-owned entry prompts are reproducibility inputs. Do not add
-            # a workflow prefix/suffix or infer task placement.
-            return template.replace("{{task}}", instruction)
-        describe = lambda target: (
-            f"{target['agent']} {target['model']} with "
-            f"{target['reasoning_effort']} reasoning-effort"
+        if template.count("{{task}}") != 1:
+            raise RuntimeError("Agent Layer benchmark workflow prompt must contain exactly one {{task}} placeholder")
+        rendered = template.replace("{{task}}", instruction)
+        if not self._required_dispatch_roles:
+            return rendered
+        describe = lambda target, role: (
+            f"agent={target['agent']}, model={target['model']}, "
+            f"reasoning_effort={target['reasoning_effort']}, role={role}"
         )
         plan_reviewers = self._dispatch_config["plan_reviewers"]
-        return template.format(
-            plan_reviewer_count=len(plan_reviewers),
-            plan_reviewers="; ".join(describe(target) for target in plan_reviewers),
-            implementer=describe(self._dispatch_config["implementer"]),
-            code_reviewer=describe(self._dispatch_config["code_reviewer"]),
-            task=instruction,
+        contract = "\n".join(
+            [
+                "Agent Layer benchmark workflow contract (mandatory):",
+                "Use the implement skill with these exact named Agent Dispatch inputs:",
+                f"- plan_reviewers: [{'; '.join(describe(target, 'plan-reviewer') for target in plan_reviewers)}]",
+                f"- implementer: {describe(self._dispatch_config['implementer'], 'implementer')}",
+                f"- code_reviewer: {describe(self._dispatch_config['code_reviewer'], 'code-reviewer')}",
+                f"Required completed dispatch roles: {', '.join(self._required_dispatch_roles)}.",
+                "Pass the exact role value above in every dispatch_start call; prompt text is not role evidence.",
+                "A direct single-agent implementation is noncompliant. Complete every required role through the dispatch-agent skill before returning.",
+            ]
         )
+        return contract + "\n\n" + rendered
 
     async def _prepare(self, instruction: str, environment) -> str:
         """Install the treatment and return the instruction the agent receives."""
@@ -880,6 +940,7 @@ class _AgentLayerStreamAgent(_AgentLayerTreatment, BaseInstalledAgent):
         for name, value in (("model_name", self.model_name), ("provider", self.name())):
             if hasattr(context, name):
                 setattr(context, name, value)
+        self._record_provider_checkpoint(context)
 
     async def _run_command(self, environment, command: str, env: dict[str, str]):
         await self.exec_as_agent(environment, command=command, env=env)
@@ -915,7 +976,7 @@ class _AgentLayerStreamAgent(_AgentLayerTreatment, BaseInstalledAgent):
         source = inspect.getsource(_bounded_json_lines) + inspect.getsource(parser)
         invocation = "parse_antigravity_stream(payload)" if provider == "antigravity" else f"parse_grok_stream(payload, {session_id!r})"
         script = (
-            "import json\n"
+            f"import json\nSTREAM_BYTE_CAP = {STREAM_BYTE_CAP}\n"
             + source
             + f"\npayload = open({remote_path!r}, encoding='utf-8').read()\n{invocation}\n"
         )
@@ -924,6 +985,32 @@ class _AgentLayerStreamAgent(_AgentLayerTreatment, BaseInstalledAgent):
             environment,
             command=f"printf '%s' '{encoded}' | base64 -d | python3",
         )
+
+    async def _preflight_retained_stream_validator(self, environment, provider: str) -> None:
+        """Execute the exact post-inference validator before a paid provider call."""
+        session_id = "11111111-1111-4111-8111-111111111111"
+        if provider == "antigravity":
+            payload = (
+                '{"event":"result","result":{"status":"SUCCESS",'
+                '"conversation_id":"preflight","usage":{"input_tokens":1,"output_tokens":1}}}\n'
+            )
+        elif provider == "grok":
+            payload = (
+                '{"type":"usage","usage":{"input_tokens":1,"output_tokens":1}}\n'
+                f'{{"type":"end","sessionId":"{session_id}","stopReason":"end_turn"}}\n'
+            )
+        else:
+            raise RuntimeError(f"unsupported retained stream validator provider {provider!r}")
+        remote_path = f"/tmp/agent-layer-{provider}-stream-validator-preflight.jsonl"
+        encoded = base64.b64encode(payload.encode("utf-8")).decode("ascii")
+        try:
+            await self.exec_as_agent(
+                environment,
+                command=f"printf '%s' '{encoded}' | base64 -d > {remote_path}",
+            )
+            await self._validate_retained_stream(environment, remote_path, provider, session_id)
+        finally:
+            await self.exec_as_agent(environment, command=f"rm -f {remote_path}")
 
 
 class AgentLayerAntigravity(_AgentLayerStreamAgent):
@@ -979,6 +1066,7 @@ with open(path, "w", encoding="utf-8") as stream:
                         f"{{ echo 'Antigravity benchmark model is unavailable' >&2; cat {models_path} >&2; exit 1; }}"
                     ),
                 )
+                await self._preflight_retained_stream_validator(environment, "antigravity")
                 return
             env = self.build_process_env({"AGY_CLI_DISABLE_AUTO_UPDATE": "1"})
             stream_path = str(EnvironmentPaths.agent_dir / self.OUTPUT_NAME)
@@ -994,18 +1082,24 @@ with open(path, "w", encoding="utf-8") as stream:
             command = self._bounded_provider_capture(provider_command, stream_path, diagnostics_path)
             await self._run_command(environment, command, env)
             await self._validate_retained_stream(environment, stream_path, "antigravity")
+            self._provider_completed = True
         finally:
             try:
                 await self.exec_as_agent(environment, command=f"rm -f {remote_credential}")
             except Exception:
                 pass
             await self._collect_evidence(environment)
+            self._record_provider_checkpoint()
 
 
 class AgentLayerGrok(_AgentLayerStreamAgent):
     BINARY = "grok"
     PINNED_VERSION = "1.0.5"
     OUTPUT_NAME = "grok.jsonl"
+    # Pier already runs the agent in a disposable task container. Grok's
+    # built-in devbox profile is designed for that boundary and, unlike the
+    # workspace profile's protected global-hook paths, does not require bwrap.
+    SANDBOX_PROFILE = "devbox"
 
     @staticmethod
     def name() -> str:
@@ -1041,7 +1135,7 @@ class AgentLayerGrok(_AgentLayerStreamAgent):
                 await self.exec_as_agent(
                     environment,
                     command=(
-                        f"grok --no-auto-update models > {models_path} && "
+                        f"grok --no-auto-update --sandbox {self.SANDBOX_PROFILE} models > {models_path} && "
                         f"awk -v expected={shlex.quote(self.model_name or '')} "
                         f"{shlex.quote('$1 ~ /^[-*]$/ && $2 == expected { found=1 } END { exit !found }')} "
                         f"{models_path} || "
@@ -1049,6 +1143,7 @@ class AgentLayerGrok(_AgentLayerStreamAgent):
                     ),
                     env=env,
                 )
+                await self._preflight_retained_stream_validator(environment, "grok")
                 return
             stream_path = str(EnvironmentPaths.agent_dir / self.OUTPUT_NAME)
             diagnostics_path = str(EnvironmentPaths.agent_dir / "grok.stderr")
@@ -1056,12 +1151,13 @@ class AgentLayerGrok(_AgentLayerStreamAgent):
                 f"grok --no-auto-update --prompt-file {prompt_path} --output-format streaming-json "
                 f"--session-id {session} --model {shlex.quote(self.model_name or '')} "
                 f"--reasoning-effort {shlex.quote(self._treatment_reasoning_effort)} --no-memory "
-                "--trust --sandbox workspace --permission-mode bypassPermissions --always-approve "
+                f"--trust --sandbox {self.SANDBOX_PROFILE} --permission-mode bypassPermissions --always-approve "
                 ""
             )
             command = self._bounded_provider_capture(provider_command, stream_path, diagnostics_path)
             await self._run_command(environment, command, env)
             await self._validate_retained_stream(environment, stream_path, "grok", session)
+            self._provider_completed = True
         finally:
             # The credential is private process setup state, never run evidence.
             try:
@@ -1069,6 +1165,7 @@ class AgentLayerGrok(_AgentLayerStreamAgent):
             except Exception:
                 pass
             await self._collect_evidence(environment)
+            self._record_provider_checkpoint()
 
 
 class AgentLayerCodex(_AgentLayerTreatment, Codex):
@@ -1102,9 +1199,16 @@ class AgentLayerCodex(_AgentLayerTreatment, Codex):
             await self._collect_evidence(environment)
             return
         try:
-            return await super().run(effective, environment, context)
+            result = await super().run(effective, environment, context)
+            self._provider_completed = True
+            return result
         finally:
             await self._collect_evidence(environment)
+            self._record_provider_checkpoint()
+
+    def populate_context_post_run(self, context) -> None:
+        super().populate_context_post_run(context)
+        self._record_provider_checkpoint(context)
 
 
 class AgentLayerClaudeCode(_AgentLayerTreatment, ClaudeCode):
@@ -1116,6 +1220,55 @@ class AgentLayerClaudeCode(_AgentLayerTreatment, ClaudeCode):
             await self._collect_evidence(environment)
             return
         try:
-            return await super().run(effective, environment, context)
+            result = await super().run(effective, environment, context)
+            self._provider_completed = True
+            return result
         finally:
             await self._collect_evidence(environment)
+            self._record_provider_checkpoint()
+
+    def populate_context_post_run(self, context) -> None:
+        super().populate_context_post_run(context)
+        self._record_provider_checkpoint(context)
+
+
+class AgentLayerPatchReplay(BaseAgent):
+    """Apply one retained provider patch, then let Pier run its normal verifier."""
+
+    def __init__(self, *args, replay_patch: str, **kwargs):
+        if importlib.metadata.version("datacurve-pier") != EXPECTED_PIER_VERSION:
+            raise RuntimeError("Agent Layer verifier replay requires the pinned Pier version")
+        self._replay_patch = Path(replay_patch)
+        if not self._replay_patch.is_file():
+            raise RuntimeError("Agent Layer verifier replay patch is missing")
+        super().__init__(*args, **kwargs)
+
+    @staticmethod
+    def name() -> str:
+        return "agent-layer-patch-replay"
+
+    def version(self) -> str:
+        return "1"
+
+    async def setup(self, environment) -> None:
+        pass
+
+    async def run(self, instruction, environment, context) -> None:
+        if self._replay_patch.stat().st_size == 0:
+            # The provider completed without committing changes. Pier's
+            # pre-artifacts export yields the same empty patch, and git
+            # rejects empty input, so the verifier runs on the base tree.
+            return
+        remote_patch = "/tmp/agent-layer-provider.patch"
+        await environment.upload_file(self._replay_patch, remote_patch)
+        result = await environment.exec(
+            command=(
+                f"git -C {REMOTE_WORKSPACE} config user.email benchmark@local.invalid && "
+                f"git -C {REMOTE_WORKSPACE} config user.name 'Agent Layer Verifier Replay' && "
+                f"git -C {REMOTE_WORKSPACE} apply --binary --index {remote_patch} && "
+                f"git -C {REMOTE_WORKSPACE} commit -m 'Replay retained provider patch'"
+            )
+        )
+        if result.return_code != 0:
+            detail = result.stderr or result.stdout or "no output"
+            raise RuntimeError(f"apply retained provider patch: {detail}")

@@ -31,7 +31,7 @@ Notes: <optional constraints or tips>
 ```bash
 ./scripts/setup.sh
 ```
-Run from: repo root  
+Run from: repo root
 Prerequisites: Go 1.26.0+, Make  
 Notes: Installs tools into `.tools/bin`. Go package tools are pinned in `go.mod`; golangci-lint is pinned separately in `Makefile` so its dependencies cannot change the application module graph.
 
@@ -76,6 +76,14 @@ Prerequisites: `make tools` has been run
 Notes: Fails if any files need formatting.
 
 ### Lint
+
+- Check every tracked or untracked, non-ignored `*.sh` file for syntax errors
+```bash
+make shell-syntax-check
+```
+Run from: repo root
+Prerequisites: Bash
+Notes: Parses scripts without executing them and is part of `make ci`.
 
 - Run golangci-lint
 ```bash
@@ -187,13 +195,13 @@ the module files immediately before and after `go mod tidy`.
 
 ### Coverage
 
-- Enforce coverage threshold (>= 90%)
+- Run all tests with coverage reporting
 ```bash
 make coverage
 ```
 Run from: repo root  
-Prerequisites: Go 1.26.0+
-Notes: Canonical local/CI parity command for coverage. `make ci` routes through this target, and GitHub Actions runs `make ci`.
+Prerequisites: Go 1.26.0+, `make tools` has been run
+Notes: Coverage is diagnostic evidence, not a pass/fail target. `make ci` routes through this target so regressions remain visible without incentivizing tests that exist only to execute implementation branches.
 
 ### Dev
 
@@ -203,7 +211,7 @@ make dev
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+, `make tools` has been run
-Notes: Formats Go source and runs golangci-lint. Does not run tests, coverage, or the full CI suite. Use `make test` or `make coverage` for those gates, and `make ci` as the complete local/pre-PR verification command (GitHub Actions also runs `make ci`).
+Notes: Formats Go source and runs golangci-lint. Does not run tests, coverage, or the full CI suite. Use `make test` as the test gate, `make coverage` for diagnostic reporting, and `make ci` as the complete local/pre-PR verification command (GitHub Actions also runs `make ci`).
 
 - Run al subcommands against this repo's own .agent-layer using the source tree
 ```bash
@@ -245,7 +253,7 @@ make ci
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+, `make tools` has been run
-Notes: The complete local/pre-PR verification command; GitHub Actions runs the same target. Includes `make tidy-check`, `make fmt-check`, `make lint`, `make dead-code`, `make coverage`, `make test-deepswe-planner`, `make test-race` (race detector on concurrency-critical packages), `make test-release`, `make test-e2e-harness`, `make test-e2e-ci` (online e2e with required upgrade scenarios), and `make docs-cta-check`; requires network access for upgrade binary downloads. `tidy-check` permits an existing intended diff, reports a validation failure when `go mod tidy` changes the module files, and propagates dependency, toolchain, network, and filesystem errors.
+Notes: The complete local/pre-PR verification command; GitHub Actions runs the same target. Includes `make tidy-check`, `make fmt-check`, `make lint`, `make shell-syntax-check`, `make dead-code`, `make coverage`, `make test-deepswe-planner`, `make test-race` (race detector on concurrency-critical packages), `make test-release`, `make test-e2e-harness`, `make test-e2e-ci` (online e2e with required upgrade scenarios), and `make docs-cta-check`; requires network access for upgrade binary downloads. `tidy-check` permits an existing intended diff, reports a validation failure when `go mod tidy` changes the module files, and propagates dependency, toolchain, network, and filesystem errors.
 GitHub Actions also runs a separate website build job using `make website-build-check` against `conn-castle/agent-layer-web`.
 The release workflow runs this target on macOS before importing signing credentials.
 
@@ -284,6 +292,16 @@ make release-preflight RELEASE_TAG=vX.Y.Z
 Run from: repo root
 Prerequisites: Go 1.26.0+, `make tools` has been run, `rg` (ripgrep) available on PATH, both manifests committed
 Notes: Runs `make ci` and then validates upgrade-contract docs for the tag. Catches issues that would fail the release workflow. Requires a clean working tree and network access for upgrade binary downloads.
+
+- Certify the exact pushed `main` commit before creating a release tag
+```bash
+make release-catalog-certify
+```
+Run from: repo root on `main`, after committing and pushing the release metadata but before creating the tag
+Prerequisites: GitHub CLI authentication, a clean working tree, and local `HEAD` equal to `origin/main`
+Notes: Reuses an existing successful certification for the exact commit or dispatches `Release Catalog Certification` and waits for it. Every push to `main` starts this workflow, so certification normally overlaps ordinary CI before release preparation reaches this command. The hosted workflow compares the commit with the previous reachable stable release tag. Changes under `internal/benchmark/`, to `cmd/al/benchmark.go`, Go module dependencies, or to the certification workflow/scope classifier require the full pinned catalog; other releases record an exact-commit successful classification without running Docker tasks. Required catalog checks use sixteen isolated bounded-disk shards, report each task as it starts and finishes, limit each task to 10 minutes, and limit each shard job to 30 minutes. A weekly forced run detects external catalog-image drift. The release workflow only accepts a successful certification workflow for the exact commit resolved by the tag; a result for another commit or branch cannot publish the release.
+
+Release order: prepare and commit the approved version metadata, run `make release-preflight RELEASE_TAG=vX.Y.Z`, push `main`, run `make release-catalog-certify`, and only then create and push `vX.Y.Z`.
 
 - Validate upgrade-contract docs for a target release tag
 ```bash
@@ -335,30 +353,30 @@ Notes: Runs `test-release` first to validate release scripts. Local builds stay 
 
 ### Agent Layer skill A/B benchmark
 
-- Preflight every task in the pinned DeepSWE catalog without provider calls
+- Create, validate, and run a website-selected study
 ```bash
-go run ./cmd/al benchmark readiness --task-concurrency 4
+go run ./cmd/al benchmark init selection.json --directory benchmark-study
+go run ./cmd/al benchmark readiness --study benchmark-study/study.toml
+go run ./cmd/al benchmark run benchmark-study/study.toml --dry-run
+go run ./cmd/al benchmark run benchmark-study/study.toml --recover-only
+go run ./cmd/al benchmark run benchmark-study/study.toml
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+, Git, Docker, and network access when the pinned DeepSWE checkout or task images are not cached
-Notes: The catalog is certified against pinned task images and writes content-addressed receipts under `.agent-layer/state/benchmarks/deepswe/`; it never invokes a provider model.
+Prerequisites: Go, Git, Docker, `uvx`, provider authentication, and a website-exported `deepswe-benchmark-selection` JSON.
 
-- Validate or execute one selection-based study
-```bash
-go run ./cmd/al benchmark run study.toml --dry-run --task-concurrency 4
-go run ./cmd/al benchmark run study.toml --task-concurrency 4
-```
-Run from: repo root
-Prerequisites: Go, Git, Docker, `uvx`, provider authentication, a website-exported `deepswe-benchmark-selection` JSON, and readiness receipts for every selected task.
-Notes: `study.toml` is the full reproducibility boundary. It names the selection and one or more experiments, each with explicit `model` and `reasoning`. Every referenced path must be relative to, and remain within, the directory containing `study.toml`; place the study at or above all declared inputs. Agent Layer experiments explicitly name `config`, `instructions`, and/or `skills` paths relative to the study; skill experiments also name a nonempty `entry_prompt` containing exactly one `{{task}}` placeholder and an explicit `required_dispatch_roles` list. That list is the source of truth for required external Agent Dispatch roles (`plan-reviewer`, `implementer`, `code-reviewer`); omit the field only when the experiment has no skills. An explicit `required_dispatch_roles = []` is a valid unconstrained skills contract: the invoked skill may take a direct path with no external dispatch, and the experiment keeps the same identity as today's unconstrained cells. A nonempty list is part of experiment and treatment identity, so a constrained study cannot reuse older unconstrained results. A bare experiment declares none of those paths. The runner accepts historical selection schema v1 and treats v2 (including `manualExclusions`) as canonical. It content-addresses effective input bytes and applies the same versioned 4× agent-timeout resource contract to every arm. `--task` is repeatable invocation scoping only; it never changes study membership or identity.
+Generated workflow: `benchmark init` pins the benchmark-safe core rules and official workflow skills embedded in that Agent Layer binary, and preserves the project's instructions and installed skills separately for auditability. It requires `plan-reviewer`, `implementer`, and `code-reviewer` dispatches for the Agent Layer arm and supplies the exact named provider/model/reasoning targets plus the exact `role` value each `dispatch_start` call must record. Every run prints the effective workflow before inference. An explicit custom `required_dispatch_roles = []` remains supported but is visibly labeled as allowing single-agent execution; the official scaffold never creates that contract.
+
+Notes: `benchmark init` creates a self-contained bare-versus-Agent-Layer study using the selection's model/reasoning, a generated benchmark-safe provider config, the current instruction sources, and the current projected skills. It excludes host-only statusline settings and project memory; declared instructions that reference excluded project-state documents or persona guides fail before inference. Readiness and run choose safe concurrency automatically, print stage/percentage progress, check Docker capacity before pulling, and reclaim certification-only task images by default. Paid execution is serialized by safety policy unless `--task-concurrency` explicitly overrides it. Paid cells additionally report environment/provider/verifier phase, phase elapsed time, the applicable attempt allowance, and the configured timeout budget without mislabeling cleanup overhead as a hard deadline. The pinned adapter removes Pier 0.3.0's unconditional verifier-timeout retry, so each task-declared verifier timeout receives one attempt. Before Pier starts, run records a durable staging checkpoint; provider adapters mark validated provider completion before artifact export and verification. Post-launch failures retain and print their stage and block another paid call. A failed cell stops new scheduling but does not cancel already-running sibling cells, which finish and persist before the invocation returns. When retained evidence proves clean provider completion and an interrupted or infrastructure verifier failure, an identical invocation replays only the verifier from the retained patch. When retained evidence instead proves the verifier test process exhausted its timeout—either at Pier's execution boundary or in preserved structured framework output—the cell is finalized without replay as an explicit zero-score `test_timeout` outcome. Go compiler events are preserved before reporter filtering. `readiness --study` certifies only the study's selected tasks and never invokes a provider. See `docs/BENCHMARK.md` for the operator guide and fail-closed recovery procedure.
+
+`study.toml` is the full reproducibility boundary. It names the selection and one or more experiments, each with explicit `model` and `reasoning`. Every referenced path must be relative to, and remain within, the directory containing `study.toml`; place the study at or above all declared inputs. Agent Layer experiments explicitly name `config`, `instructions`, and/or `skills` paths relative to the study; skill experiments also name a nonempty `entry_prompt` containing exactly one `{{task}}` placeholder and an explicit `required_dispatch_roles` list. That list is the source of truth for required external Agent Dispatch roles (`plan-reviewer`, `implementer`, `code-reviewer`); omit the field only when the experiment has no skills. An explicit `required_dispatch_roles = []` is a valid unconstrained skills contract: the invoked skill may take a direct path with no external dispatch, and the experiment keeps the same identity as today's unconstrained cells. A nonempty list is part of experiment and treatment identity, so a constrained study cannot reuse older unconstrained results. A bare experiment declares none of those paths. The runner accepts historical selection schema v1 and v2 and treats v3 (manual exclusions plus per-task pinned published sample variance) as canonical. It content-addresses effective input bytes and applies the same versioned 4× agent-timeout resource contract to every arm. `--task` is repeatable invocation scoping only; it never changes study membership or identity.
 
 When no completed-report candidate exists, missing-cell runs check each selected provider's repo-local credentials before treatment bundle staging, DeepSWE checkout, and task preparation. Duplicate experiments that share an adapter run one check. Codex is validated with the provider-native non-billing command `codex login status` under `CODEX_HOME=<repo>/.codex`. Claude selections fail closed before task setup: `claude auth status --json` accepts an invalid `CLAUDE_CODE_OAUTH_TOKEN`, and Claude stores credentials in the OS credential store regardless of `CLAUDE_CONFIG_DIR`. Grok uses the same subscription credential as `al grok`: a nonempty JSON `.grok-config/auth.json` boundary whose presence is recorded because Grok has no trustworthy non-billing validity command. Antigravity uses the same Google subscription OAuth profile as `al antigravity`, preferring the repo-local `.agy/antigravity-cli/antigravity-oauth-token` fallback and otherwise reading the native keyring entry (`service=gemini`, `username=antigravity`). Only the decoded OAuth profile is staged at the CLI's headless fallback path; account caches, conversations, keyring metadata, and raw credentials never enter a bundle, receipt, report, or command line. The container preflight runs the non-inference `agy models` command and requires the selected exact Gemini slug, such as `gemini-3.5-flash-low`; the required study reasoning must match its `-low`, `-medium`, or `-high` suffix. Grok uses exact `grok-4.5`/`grok-4.6` IDs and its documented effort vocabulary. Successful checks record sanitized `authentication_preflight` provenance on that experiment in canonical `report/report.json` (provider, check, normalized authentication method, UTC timestamp) without tokens, account identifiers, credential bytes, or raw provider output. Authentication is invocation provenance and does not affect study, arm, or treatment identity.
 
-Antigravity 1.1.21 and Grok 1.0.5 run through pinned Linux/amd64 adapters for both bare and treatment arms. Antigravity usage is normalized from its documented terminal `event: "result"` envelope; cached input is a subset of its reported input total. Grok's terminal `total_cost_usd` is authoritative for each coordinator or dispatched session, with request usage retained for invocation counts and token evidence. If an older Grok stream lacks that total, the normalizer falls back to the pinned pricing table and marks uncertain context-tier pricing as a range. Adapter-owned provider homes, Agent Layer projections, and task-image untracked files are excluded from submitted task patches in both arms.
+Antigravity 1.1.21 and Grok 1.0.5 run through pinned Linux/amd64 adapters for both bare and treatment arms. Antigravity usage is normalized from its documented terminal `event: "result"` envelope; cached input is a subset of its reported input total. Immediately before each paid Grok cell, Agent Layer requires the canonical repo-local OAuth credential to retain more than 30 minutes of lifetime. An expiring credential fails before provider inference with the exact repo-local login command, avoiding a paid in-container authentication failure. Grok's terminal `total_cost_usd` is authoritative for each coordinator or dispatched session, with request usage retained for invocation counts and token evidence. If an older Grok stream lacks that total, the normalizer falls back to the pinned pricing table and marks uncertain context-tier pricing as a range. Adapter-owned provider homes, Agent Layer projections, and task-image untracked files are excluded from submitted task patches in both arms.
 
 A completed study whose immutable manifest uniquely matches the current selection, experiments, and treatments regenerates `report/report.json` without provider authentication, DeepSWE checkout, or inference. Treatment hashes are verified only after a cheap completed-report match, which may stage the current treatment without authentication. If that verification misses, the missing-cell path authenticates and continues. Expired Codex credentials and Claude's fail-closed limitation therefore cannot block report regeneration. Missing cells never take that path: they still authenticate before costly task and environment setup. More than one completed historical match is an error rather than a guessed study.
 
-`--dry-run` validates the study and computes missing work. If any selected cell is missing, it performs the same readiness/dependency preflight, including provider authentication status checks. It never performs provider inference. A normal `benchmark run` is authorization for all missing paid calls: it does not prompt or require `--yes`. The disclosure distinguishes the bare arm's published-data estimate from actual Agent Layer cost, which cannot be estimated reliably in advance. Immutable evidence permits interruption-safe resume; completed studies regenerate their report without calls. One repetition is descriptive only; at least two repetitions permit the declared cell-variance Welch inference and three are preferable for stability. Comparisons apply to the fixed selection, not the full DeepSWE population; calibration also has a small part-whole correlation limitation.
+`--dry-run` validates the study and computes missing work. If any selected cell is missing, it performs the same readiness/dependency preflight, including provider authentication status checks. It never performs provider inference. A normal `benchmark run` is authorization for all missing paid calls: it does not prompt or require `--yes`. The disclosure distinguishes the bare arm's published-data estimate from actual Agent Layer cost, which cannot be estimated reliably in advance. Immutable evidence permits interruption-safe resume; completed studies regenerate their report without calls. An incomplete paid event is different from a missing cell: its durable checkpoint blocks a second provider call. If the evidence proves the provider boundary, resume performs verifier-only replay under pinned Pier while preserving the original stream, patch, cost, duration, and event identity; otherwise it fails closed for operator review. Observed Welch inference is used when every required task has at least two completed repetitions in both arms; schema-v3 selections may use labeled `published_proxy` inference at one repetition from pinned published sample variance, while schema-v2 selections without that evidence remain descriptive. Three observed repetitions are preferable for stability. Comparisons apply to the fixed selection, not the full DeepSWE population; calibration also has a small part-whole correlation limitation.
 
 Example study manifest:
 
@@ -375,16 +393,16 @@ name = "agent-layer"
 model = "luna"
 reasoning = "low"
 config = "treatment/config.toml"
-instructions = "treatment/instructions"
-skills = "treatment/skills"
+instructions = "treatment/official-instructions"
+skills = "treatment/official-skills"
 entry_prompt = "treatment/prompt.md" # exactly one {{task}}
 required_dispatch_roles = ["plan-reviewer", "implementer", "code-reviewer"]
 ```
 
 The canonical `report/report.json` records exactly those declared experiments and every selected task/repetition, including missing cells. It contains the immutable projected bundle manifest and hashes, certified task environments, resource contract, task checksums, observed provider/runtime/worker provenance, normalized authentication preflight evidence, costs, calibrated means and contributions, and the complete Holm family. Provider-client version is evidence provenance, not arm identity, so compatible evidence remains usable after a client upgrade. Authentication preflight is likewise provenance rather than identity. Inputs are staged as a secret-free projection: the pinned `.env` is an empty marker, while only credential names referenced by the effective config are read from the invoking project's `.agent-layer/.env` (or process environment) and injected through Pier's child environment immediately before in-container sync. Literal credentials are never bundled, placed in Pier arguments, or retained in evidence.
 
-Captured Agent Dispatch lifecycle evidence is retained with the candidate score, cost, receipt, and artifacts. A skills run is workflow-noncompliant when the completed fresh-root dispatches do not match the declared role contract one-to-one against the configured targets and each role's workflow skill (`review-plan`, `implement-plan`, `review-uncommitted-code`). Agent Dispatch `RunRecord.skill` is the attribution; records that omit it cannot fill a nonempty role contract. Native-subagent substitution with no dispatch records is noncompliant. Noncompliance does not delete evidence or suppress experiment-level scores. Any statistical comparison involving a noncompliant experiment is unavailable and states why. Conformant and explicitly unconstrained experiments keep the existing comparison behavior. Holm adjustment continues over only the remaining available family.
+Captured Agent Dispatch lifecycle evidence is retained with the candidate score, cost, receipt, and artifacts. A skills run is workflow-noncompliant when the completed fresh-root dispatches do not match the declared role contract one-to-one on the exact `RunRecord.role` plus the configured agent, model, and reasoning effort. Records that omit the role cannot fill a nonempty role contract; role-like prompt text is not attribution. Native-subagent substitution with no dispatch records is noncompliant. Noncompliance does not delete evidence or suppress experiment-level scores. Any statistical comparison involving a noncompliant experiment is unavailable and states why. Conformant and explicitly unconstrained experiments keep the existing comparison behavior. Holm adjustment continues over only the remaining available family.
 
-For an available pair, the report uses the fixed-selection score difference and variance `sum((weight*slope)^2 * (sA²/nA + sB²/nB))`, with Welch-Satterthwaite degrees of freedom. Raw two-sided Student-t p-values are adjusted by Holm step-down: sort the available unique pairs, multiply each raw p-value by the remaining family size, cap at one, and take the cumulative maximum. One repeat is descriptive, two provide within-cell variance, and three or more reduce the fragility of that estimate. Historical selection-based matrix evidence is considered only when its immutable manifest, target, inputs, resources, task/environment receipts, and verifier evidence exactly match; eligible old normalized scores are atomically canonicalized. Private campaign evidence is never scanned or modified.
+For an available pair, observed inference uses the fixed-selection score difference and variance `sum((weight*slope)^2 * (sA²/nA + sB²/nB))` with Welch-Satterthwaite degrees of freedom. `published_proxy` instead shares the pinned published variance as `sum((weight*slope)^2 * s² * (1/rL + 1/rR))` and adds `combined²/(n-1)` once per task. Raw two-sided Student-t p-values are adjusted by Holm step-down: sort the available unique pairs, multiply each raw p-value by the remaining family size, cap at one, and take the cumulative maximum. Report JSON records `inference_source` as `observed` or `published_proxy`. Historical selection-based matrix evidence is considered only when its immutable manifest, target, inputs, resources, task/environment receipts, and verifier evidence exactly match; eligible old normalized scores are atomically canonicalized. Private campaign evidence is never scanned or modified.
 
 arXiv paper forthcoming

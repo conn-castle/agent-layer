@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -62,6 +64,47 @@ func TestWizardCommandGetwdError(t *testing.T) {
 	cmd := newWizardCmd()
 	if err := cmd.RunE(cmd, nil); err == nil {
 		t.Fatal("expected error when getwd fails")
+	}
+}
+
+func TestWizardCommandRejectsProfileAndAnswersTogether(t *testing.T) {
+	originalGetwd := getwd
+	t.Cleanup(func() { getwd = originalGetwd })
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	getwd = func() (string, error) { return root, nil }
+
+	cmd := newWizardCmd()
+	if err := cmd.Flags().Set("profile", "profile.toml"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Flags().Set("answers", "answers.json"); err != nil {
+		t.Fatal(err)
+	}
+	err := cmd.RunE(cmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "--profile and --answers cannot be used together") {
+		t.Fatalf("profile/answers conflict error = %v", err)
+	}
+}
+
+func TestWizardCommandRejectsYesWithoutProfile(t *testing.T) {
+	originalGetwd := getwd
+	t.Cleanup(func() { getwd = originalGetwd })
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	getwd = func() (string, error) { return root, nil }
+
+	cmd := newWizardCmd()
+	if err := cmd.Flags().Set("yes", "true"); err != nil {
+		t.Fatal(err)
+	}
+	err := cmd.RunE(cmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "--yes requires --profile") {
+		t.Fatalf("--yes without --profile error = %v", err)
 	}
 }
 

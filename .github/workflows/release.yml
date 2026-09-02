@@ -12,23 +12,72 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
+  catalog-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+    steps:
+      - name: Validate stable release tag format
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unsupported release tag ${RELEASE_TAG}. Release publishing supports stable tags only (vX.Y.Z)."
+            exit 1
+          fi
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          persist-credentials: false
+      - name: Verify exact-commit catalog certification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_commit="$(git rev-parse HEAD)"
+          certification_url="$(
+            gh run list \
+              --workflow release-catalog-certification.yml \
+              --branch main \
+              --commit "${release_commit}" \
+              --status success \
+              --limit 1 \
+              --json url \
+              --jq '.[0].url // ""'
+          )"
+          if [[ -z "${certification_url}" ]]; then
+            echo "::error::No successful release catalog certification exists for exact tag commit ${release_commit}."
+            echo "::error::Run make release-catalog-certify on clean, pushed main before creating the release tag."
+            exit 1
+          fi
+          echo "Using exact-commit catalog certification: ${certification_url}"
+
   build-release:
+    needs: catalog-readiness
     runs-on: macos-latest
     env:
       RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     steps:
+      - name: Validate stable release tag format
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unsupported release tag ${RELEASE_TAG}. Release publishing supports stable tags only (vX.Y.Z)."
+            exit 1
+          fi
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          ref: ${{ inputs.release_tag || github.ref_name }}
+          ref: refs/tags/${{ env.RELEASE_TAG }}
           persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         id: setup-go
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - name: Install system dependencies
         run: |
           set -euo pipefail
@@ -40,13 +89,6 @@ jobs:
           fi
           if ! command -v uvx >/dev/null 2>&1; then
             echo "::error::uvx is required by the pinned benchmark adapter contract but was not found after installing uv."
-            exit 1
-          fi
-      - name: Validate stable release tag format
-        run: |
-          set -euo pipefail
-          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Unsupported release tag ${RELEASE_TAG}. Release publishing supports stable tags only (vX.Y.Z)."
             exit 1
           fi
       - name: Validate upgrade contract docs

@@ -1,6 +1,129 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.18.5 - 2026-09-02
+
+### Changed
+- Completed benchmark studies can regenerate reports from their immutable manifests without revalidating current project treatments or starting provider and verifier processes, and recovery-only runs print the regenerated report path.
+- Upgrade commands reject targets newer than the running CLI and direct users to run the target release binary.
+
+### Fixed
+- Release artifact builds now require the target migration manifest and smoke-test upgrade planning and application with the built binary, preventing releases with incomplete embedded upgrade metadata.
+
+## v0.18.4 - 2026-09-01
+
+### Added
+- DeepSWE planner export schema v3 pins per-task published sample size and variance so one-repetition studies can report labeled `published_proxy` inference when observed Welch variance is unavailable.
+
+### Changed
+- Study reports prefer observed Welch inference when every required task has at least two completed repetitions in both arms. Schema-v3 selections otherwise use shared published-proxy variance; schema-v2 selections without those pins remain unavailable at one repetition.
+- Reports record inference source and published-variance provenance and surface selector versus executed model or reasoning mismatches.
+
+## v0.18.3 - 2026-08-30
+
+### Added
+- `al dispatch start --role` and MCP `dispatch_start` `role` retain a caller-defined workflow role as dispatch evidence.
+- `al benchmark run --recover-only` finalizes retained evidence-backed verifier test timeouts without starting a provider or verifier.
+
+### Changed
+- Official `al benchmark init` studies pin embedded benchmark-safe core rules and workflow skills, keep the project's instructions and skills as unreferenced audit snapshots, and require `plan-reviewer`, `implementer`, and `code-reviewer` dispatch roles.
+- Benchmark progress reports configured timeout budgets, attempt limits, concurrent active cells, and each experiment's effective workflow.
+- Paid Grok cells pause before inference when the repo-local OAuth credential has 30 minutes or less remaining.
+
+### Fixed
+- Evidence-backed verifier test timeouts become explicit zero-score `test_timeout` outcomes instead of remaining eligible for verifier replay.
+- A cell failure stops assigning new paid work without cancelling sibling cells that are already running.
+
+## v0.18.2 - 2026-08-29
+
+### Added
+- Paid benchmark cells now persist provider-completion checkpoints and support verifier-only replay from the exact retained provider patch without another provider call.
+
+### Changed
+- Benchmark progress now reports the active environment, provider, or verifier phase with elapsed time and its effective timeout.
+- Benchmark cancellation gives Pier a bounded graceful-cleanup window before process-group escalation.
+
+### Fixed
+- Provider streams and patches survive verifier failures, cancellation, cleanup errors, and artifact-promotion failures; failed promotion retains and reports its staging path.
+- Linux cleanup repairs verifier-owned logs for running and stopped containers before removal, including root ownership repair through a temporary container when needed.
+- Failed verifier replays retain their checkpoint and staging evidence instead of becoming resumable paid failures, while sanitization preserves a byte-exact private replay patch.
+
+## v0.18.1 - 2026-08-28
+
+### Changed
+- Benchmark runtime preflights now persist content-addressed receipts and reuse them on later identical invocations; `al benchmark run` and `al benchmark readiness` warn when DeepSWE `linux/amd64` task containers require host emulation.
+
+### Fixed
+- Retained Grok and Antigravity streams are now validated before paid provider calls, and failed stream-preflight artifacts are cleaned up.
+
+## v0.18.0 - 2026-08-28
+
+### Added
+- Added `al update` to update the global CLI through its current installation method: Homebrew formula upgrades use Homebrew, while script installations preserve their existing prefix through the official installer.
+
+### Changed
+- Upgrade guidance now uses `al update` for the global CLI and keeps `al upgrade` as the separate repository migration workflow.
+
+### Fixed
+- MCP discovery now avoids duplicate built-in Agent Dispatch entries and does not pass version-dispatch state into built-in MCP child processes.
+- Global CLI update detection now fails explicitly for development, dispatched, ambiguous, or nonstandard installations instead of risking an unsafe overwrite.
+
+## v0.17.9 - 2026-08-28
+
+### Changed
+- Benchmark study preparation now preflights runtime per task and experiment and retains each task image across its serial cells before reclaiming it, with cleanup preserved after failed or cancelled runs.
+- Benchmark overlay certification now derives identity from the pinned image and exact overlay source while still rebuilding and rechecking overlay images; Grok benchmark execution uses Pier's disposable-container `devbox` sandbox without a host Bubblewrap dependency.
+
+### Fixed
+- Benchmark run heartbeat output now resets on real progress and reports after 60 seconds of inactivity, avoiding misleading duplicate heartbeats.
+
+## v0.17.8 - 2026-08-27
+
+### Added
+- `al benchmark init <selection.json>` now scaffolds a self-contained bare-versus-Agent-Layer study with a benchmark-safe provider configuration and snapshots of the current instructions and skills. Added `docs/BENCHMARK.md` with the recommended workflow and advanced controls.
+
+### Changed
+- Benchmark run and readiness commands now choose host-aware concurrency automatically, preflight Docker capacity before image pulls, reclaim task images by default, and report stage/task progress with long-running heartbeats. Readiness can target the tasks selected by a study.
+- CI coverage is now behavioral rather than quota-based, and shell syntax validation is part of the complete CI gate; coverage remains available as diagnostic reporting.
+
+### Fixed
+- Antigravity structured terminal responses now retain the complete final answer even when it exceeds the structured metadata key limit.
+
+## v0.17.7 - 2026-08-27
+
+### Changed
+- Agent Dispatch now uses structured provider output internally for every supported agent, including Antigravity display-name models, while returning only the extracted plain-text answer to callers.
+
+### Fixed
+- Antigravity exact-slug dispatches now allocate their structured event capture before provider execution instead of failing before launch.
+
+## v0.17.6 - 2026-08-27
+
+### Changed
+- Release catalog certification now runs before tagging in eight isolated, bounded shards. Release publication reuses only a successful certification for the exact tag commit instead of repeating the full Docker audit.
+- Benchmark readiness reports task-level progress and supports deterministic task filtering, sharding, and per-task timeouts.
+
+### Fixed
+- Empty MCP preflight contracts now encode `servers` as an array, preserving the benchmark study contract when no MCP servers are enabled.
+- The `quill-shared-toolbar-focus` readiness image now installs pinned `xauth`, allowing the complete pinned DeepSWE catalog to certify successfully.
+
+## v0.17.5 - 2026-08-27
+
+### Fixed
+- Empty MCP preflight contracts now encode `servers` as an array, preserving the benchmark study contract when no MCP servers are enabled.
+
+## v0.17.4 - 2026-08-26
+
+### Changed
+- Release preflight now certifies the pinned DeepSWE benchmark catalog before building release artifacts, with bounded Docker image cleanup during the catalog audit.
+- Hosted benchmark readiness now bootstraps a minimal Agent Layer workspace in the release checkout before certification.
+- DeepSWE benchmark selections now translate published provider model identities to the exact canonical identities accepted by the benchmark CLI and report supported models when selectors are invalid.
+- The `.agent-layer/.env` file is optional when no Agent Layer secrets are needed; unreadable or malformed files still fail explicitly.
+- The `implement` skill now limits plan and code-review corrections to the requested input scope.
+
+### Fixed
+- Docker cleanup uses the correct force flag for containers, volumes, and task images.
+
 ## v0.17.3 - 2026-08-26
 
 ### Added

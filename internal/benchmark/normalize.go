@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"math"
@@ -16,6 +17,8 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+var errPierTaskResultAbsent = errors.New("pier task result is absent")
+
 const (
 	codexMCPPreflightEvidence       = "codex-mcp-preflight.json"
 	antigravityMCPPreflightEvidence = "antigravity-mcp-preflight.json"
@@ -27,11 +30,19 @@ const (
 )
 
 type pierTaskResult struct {
-	TrialName    string    `json:"trial_name"`
-	TaskChecksum string    `json:"task_checksum"`
-	StartedAt    time.Time `json:"started_at"`
-	FinishedAt   time.Time `json:"finished_at"`
-	AgentInfo    struct {
+	TrialName      string    `json:"trial_name"`
+	TaskChecksum   string    `json:"task_checksum"`
+	StartedAt      time.Time `json:"started_at"`
+	FinishedAt     time.Time `json:"finished_at"`
+	AgentExecution *struct {
+		StartedAt  time.Time `json:"started_at"`
+		FinishedAt time.Time `json:"finished_at"`
+	} `json:"agent_execution"`
+	VerifierExecution *struct {
+		StartedAt  time.Time `json:"started_at"`
+		FinishedAt time.Time `json:"finished_at"`
+	} `json:"verifier"`
+	AgentInfo struct {
 		ModelInfo struct {
 			Provider string `json:"provider"`
 		} `json:"model_info"`
@@ -39,7 +50,7 @@ type pierTaskResult struct {
 	AgentResult struct {
 		CostUSD *float64 `json:"cost_usd"`
 	} `json:"agent_result"`
-	VerifierResult struct {
+	VerifierResult *struct {
 		Rewards struct {
 			Reward    float64 `json:"reward"`
 			F2PTotal  int     `json:"f2p_total"`
@@ -69,18 +80,43 @@ func normalizePier(stage string, request ExecutionRequest) (AttemptResult, error
 		RuntimeModel:   request.Model.RuntimeIdentifier, ReasoningEffort: request.Effort,
 		ProviderClientVersion: request.Model.ProviderClientVersion,
 	}
-	if string(raw.ExceptionInfo) != "" && string(raw.ExceptionInfo) != "null" {
-		result.Status = statusFailed
-		result.Error = string(raw.ExceptionInfo)
-		return result, nil
-	}
 	duration := raw.FinishedAt.Sub(raw.StartedAt).Seconds()
+	hasException := len(bytes.TrimSpace(raw.ExceptionInfo)) > 0 && !bytes.Equal(bytes.TrimSpace(raw.ExceptionInfo), []byte("null"))
+	terminalTimeout := false
+	if hasException {
+		terminalTimeout, err = terminalVerifierTestTimeout(stage, raw)
+		if err != nil {
+			return AttemptResult{}, err
+		}
+		if !terminalTimeout {
+			result.Status = statusFailed
+			result.Error = string(raw.ExceptionInfo)
+			return result, nil
+		}
+	}
+	if !terminalTimeout {
+		terminalTimeout, err = internalVerifierTestTimeout(stage)
+		if err != nil {
+			return AttemptResult{}, err
+		}
+	}
 	result.Status = statusSuccess
-	result.F2PPassed = raw.VerifierResult.Rewards.F2PPassed
-	result.F2PTotal = raw.VerifierResult.Rewards.F2PTotal
-	result.F2PScore = raw.VerifierResult.Rewards.F2P
-	result.PartialScore = raw.VerifierResult.Rewards.Partial
-	result.Reward = raw.VerifierResult.Rewards.Reward
+	if terminalTimeout {
+		result.VerifierOutcome = verifierOutcomeTestTimeout
+		result.F2PTotal, err = pinnedTaskF2PTotal(request)
+		if err != nil {
+			return AttemptResult{}, err
+		}
+	} else {
+		if raw.VerifierResult == nil {
+			return AttemptResult{}, fmt.Errorf("pier result for %s is missing verifier_result", request.Task)
+		}
+		result.F2PPassed = raw.VerifierResult.Rewards.F2PPassed
+		result.F2PTotal = raw.VerifierResult.Rewards.F2PTotal
+		result.F2PScore = raw.VerifierResult.Rewards.F2P
+		result.PartialScore = raw.VerifierResult.Rewards.Partial
+		result.Reward = raw.VerifierResult.Rewards.Reward
+	}
 	result.CostUSD = raw.AgentResult.CostUSD
 	result.CostKind = costKindProviderReported
 	result.DurationSeconds = &duration
@@ -185,10 +221,17 @@ func readPierTaskResult(stage string, request ExecutionRequest) (pierTaskResult,
 		}
 		matches = append(matches, candidate)
 	}
+	if len(matches) == 0 {
+		return pierTaskResult{}, fmt.Errorf("%w: pier produced 0 matching task results for %s; expected one", errPierTaskResultAbsent, request.Task)
+	}
 	if len(matches) != 1 {
 		return pierTaskResult{}, fmt.Errorf("pier produced %d matching task results for %s; expected one", len(matches), request.Task)
 	}
 	return matches[0], nil
+}
+
+func pierTaskResultMissing(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, errPierTaskResultAbsent)
 }
 
 func validatePierTreatmentPreflight(stage string, request ExecutionRequest) error {
@@ -273,8 +316,8 @@ func verifierBuildFailed(stage string) (bool, string, error) {
 			}
 			return nil
 		}
-		if (entry.Name() != "test-stdout.txt" && entry.Name() != "run.log") ||
-			filepath.Base(filepath.Dir(path)) != "verifier" {
+		if (entry.Name() != verifierTestStdoutFile && entry.Name() != verifierRunLogFile) ||
+			filepath.Base(filepath.Dir(path)) != executionPhaseVerifier {
 			return nil
 		}
 		data, err := jobsRoot.ReadFile(path)
@@ -326,7 +369,7 @@ type dispatchConformanceRecord struct {
 	Agent           string `json:"agent"`
 	Model           string `json:"model"`
 	ReasoningEffort string `json:"reasoning_effort"`
-	Skill           string `json:"skill,omitempty"`
+	Role            string `json:"role,omitempty"`
 	Mode            string `json:"mode"`
 	State           string `json:"state"`
 	ParentRunID     string `json:"parent_run_id"`
@@ -389,7 +432,7 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 			return false, fmt.Errorf("treatment dispatch lifecycle %q is duplicated", record.ID)
 		}
 		seenIDs[record.ID] = true
-		if record.Mode != "fresh" || record.ParentRunID != "" {
+		if record.Mode != dispatchRunModeFresh || record.ParentRunID != "" {
 			continue
 		}
 		eligible = append(eligible, record)
@@ -413,7 +456,7 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 }
 
 func dispatchRecordMatchesSlot(record dispatchConformanceRecord, slot dispatchSlot) bool {
-	return record.Skill == slot.skill && record.Agent == slot.target.Agent &&
+	return record.Role == slot.role && record.Agent == slot.target.Agent &&
 		record.Model == slot.target.Model && record.ReasoningEffort == slot.target.ReasoningEffort
 }
 
@@ -423,8 +466,8 @@ func submittedPatchBytes(stage string) (int64, error) {
 		if walkErr != nil {
 			return walkErr
 		}
-		if !entry.IsDir() && entry.Name() == "model.patch" &&
-			filepath.Base(filepath.Dir(path)) == "artifacts" {
+		if !entry.IsDir() && entry.Name() == benchmarkModelPatchFile &&
+			filepath.Base(filepath.Dir(path)) == benchmarkArtifactsDir {
 			patches = append(patches, path)
 		}
 		return nil

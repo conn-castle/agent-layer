@@ -147,19 +147,23 @@ description: test command
 ---
 
 Do it.`
-	if err := os.WriteFile(filepath.Join(paths.SkillsDir, "hello.md"), []byte(cmdContent), 0o600); err != nil {
+	helloDir := filepath.Join(paths.SkillsDir, "hello")
+	if err := os.MkdirAll(helloDir, 0o700); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(helloDir, "SKILL.md"), []byte(cmdContent), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o600); err != nil {
 		t.Fatalf("write commands allow: %v", err)
 	}
 
-	_, err := LoadProjectConfig(root)
-	if err == nil {
-		t.Fatalf("expected missing env error")
+	project, err := LoadProjectConfig(root)
+	if err != nil {
+		t.Fatalf("LoadProjectConfig error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "missing env file") {
-		t.Fatalf("unexpected error: %v", err)
+	if len(project.Env) != 1 || project.Env[BuiltinRepoRootEnvVar] != root {
+		t.Fatalf("expected only built-in env, got %#v", project.Env)
 	}
 }
 

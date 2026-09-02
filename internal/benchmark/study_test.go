@@ -14,6 +14,27 @@ import (
 	"time"
 )
 
+func TestSameImmutableStudyManifestAllowsLegacyTemplateProvenance(t *testing.T) {
+	existing := immutableStudyManifest{
+		SchemaVersion: immutableStudyManifestSchema, StudyID: "study", SelectionID: "selection",
+		Membership: []string{"Treatment"},
+		Arms:       []studyArmContract{{Name: "Treatment", ID: "arm", Target: "luna:low", Bundle: "bundle", Adapter: "adapter", Runtime: strings.Repeat("r", 64)}},
+	}
+	next := existing
+	next.Arms = append([]studyArmContract(nil), existing.Arms...)
+	next.Arms[0].TemplatesCommit = strings.Repeat("c", 40)
+	same, err := sameImmutableStudyManifest(existing, next)
+	if err != nil || !same {
+		t.Fatalf("legacy template provenance should remain compatible: same=%t err=%v", same, err)
+	}
+	existing.Arms[0].TemplatesCommit = strings.Repeat("c", 40)
+	next.Arms[0].TemplatesCommit = strings.Repeat("d", 40)
+	same, err = sameImmutableStudyManifest(existing, next)
+	if err != nil || same {
+		t.Fatalf("authenticated template provenance conflict accepted: same=%t err=%v", same, err)
+	}
+}
+
 func TestStudyPublishedBareEstimateRequiresMatchingSelectorTarget(t *testing.T) {
 	selection := matrixSelectionFixture()
 	luna, low, err := ParseModelSelection("luna:low")
@@ -163,6 +184,44 @@ func TestRunStudyDryRunAndPaidWorkflow(t *testing.T) {
 	}
 }
 
+func TestRecoveryOnlyFailsWithoutPreparingTasksWhenNoRecoverableStudyExists(t *testing.T) {
+	root := t.TempDir()
+	selectionData, err := json.Marshal(matrixSelectionFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeStudyInputFixture(t, root, "selection.json", string(selectionData))
+	writeStudyInputFixture(t, root, "study.toml", "selection = \"selection.json\"\n[[experiments]]\nname = \"Bare\"\nmodel = \"luna\"\nreasoning = \"low\"\n")
+
+	originalPreflight := preflightBenchmark
+	originalVerifyPier := verifyBenchmarkPier
+	originalPrepareTasks := prepareBenchmarkTaskSet
+	preflightBenchmark = func([]parsedSelection) error {
+		t.Fatal("recovery-only ran provider preflight without a recoverable study")
+		return nil
+	}
+	verifyBenchmarkPier = func(context.Context) error {
+		t.Fatal("recovery-only verified Pier without a recoverable study")
+		return nil
+	}
+	prepareBenchmarkTaskSet = func(context.Context, string, []benchmarkPlanTask) (map[string]string, map[string]string, error) {
+		t.Fatal("recovery-only prepared tasks without a recoverable study")
+		return nil, nil, nil
+	}
+	t.Cleanup(func() {
+		preflightBenchmark = originalPreflight
+		verifyBenchmarkPier = originalVerifyPier
+		prepareBenchmarkTaskSet = originalPrepareTasks
+	})
+
+	_, err = RunStudy(context.Background(), StudyOptions{
+		RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), RecoveryOnly: true, ResourcePreflight: true,
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "no retained terminal verifier timeout or complete study to recover") {
+		t.Fatalf("recovery-only without retained study = %v", err)
+	}
+}
+
 func TestRunStudyRejectsMissingManifestBeforeProviderWork(t *testing.T) {
 	executor := &studyWorkflowExecutor{}
 	if _, err := RunStudy(context.Background(), StudyOptions{}, executor); err == nil || !strings.Contains(err.Error(), "requires one study.toml path") {
@@ -248,7 +307,6 @@ func (executor *studyWorkflowExecutor) requests() []ExecutionRequest {
 func TestStudyReportUsesWithinCellWelchVarianceAndHolmFamily(t *testing.T) {
 	root := t.TempDir()
 	selection := matrixSelectionFixture()
-	selection.SchemaVersion = matrixSelectionSchemaVersion
 	for index := range selection.Tasks {
 		selection.Tasks[index].Repetitions = 2
 	}
@@ -297,18 +355,54 @@ func TestStudyReportUsesWithinCellWelchVarianceAndHolmFamily(t *testing.T) {
 		t.Fatalf("report membership = %#v", report)
 	}
 	comparison := report.Comparisons[0]
-	if !comparison.Available || comparison.Variance == nil || math.Abs(*comparison.Variance-.0048125) > 1e-12 {
-		t.Fatalf("comparison = %#v, want variance .0048125", comparison)
+	if !comparison.Available || comparison.InferenceSource != inferenceSourceObserved || comparison.Variance == nil || math.Abs(*comparison.Variance-.0048125) > 1e-12 {
+		t.Fatalf("comparison = %#v, want observed variance .0048125", comparison)
 	}
 	if comparison.DegreesOfFreedom == nil || math.Abs(*comparison.DegreesOfFreedom-3.469645720438665) > 1e-12 || comparison.RawTwoSidedPValue == nil || comparison.HolmAdjustedPValue == nil {
 		t.Fatalf("Welch/Holm df=%v raw=%v holm=%v", dereference(comparison.DegreesOfFreedom), dereference(comparison.RawTwoSidedPValue), dereference(comparison.HolmAdjustedPValue))
 	}
 }
 
+func TestStudyReportDisclosesTerminalVerifierTestTimeouts(t *testing.T) {
+	root := t.TempDir()
+	selection := matrixSelectionFixture()
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks := []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 1}, {ID: "second-task", RepetitionsPerArm: 1}}
+	checksums := map[string]string{"first-task": "first-checksum", "second-task": "second-checksum"}
+	arm := matrixArmFixture(root, "Bare", ArmBaseline, model, effort, tasks)
+	rewriteStudyAttempt(t, arm, "first-task", 1, checksums["first-task"], 0, .25)
+	rewriteStudyAttempt(t, arm, "second-task", 1, checksums["second-task"], .5, .25)
+	path := armResultPath(arm.StateDir, "first-task", 1)
+	var timedOut AttemptResult
+	if err := readStudyJSON(path, &timedOut); err != nil {
+		t.Fatal(err)
+	}
+	timedOut.VerifierOutcome = verifierOutcomeTestTimeout
+	if err := writeJSON(path, timedOut); err != nil {
+		t.Fatal(err)
+	}
+	study := preparedStudy{selection: selection, studyID: strings.Repeat("s", 64), experiments: []preparedStudyExperiment{{studyExperiment: studyExperiment{Name: "Bare"}, model: model, effort: effort, identity: "bare"}}}
+	report, _, _, err := buildStudyReport(study, matrixPreparation{
+		selection: selection, stateDir: filepath.Join(root, "study"), tasks: tasks, checksums: checksums,
+		environments: map[string]string{"first-task": "env-1", "second-task": "env-2"}, arms: []matrixArm{arm}, taskConcurrency: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Experiments[0].VerifierTestTimeoutRuns != 1 || report.Experiments[0].Tasks[0].VerifierTestTimeouts != 1 {
+		t.Fatalf("timeout disclosure counts = %#v", report.Experiments[0])
+	}
+	if !containsString(report.Limitations, "1 completed run(s) exhausted the candidate test-execution timeout and were recorded explicitly as zero-score verifier outcomes.") {
+		t.Fatalf("timeout limitation missing: %#v", report.Limitations)
+	}
+}
+
 func TestStudyReportGatesNoncompliantComparisonsAndKeepsEligibleHolmFamily(t *testing.T) {
 	root := t.TempDir()
 	selection := matrixSelectionFixture()
-	selection.SchemaVersion = matrixSelectionSchemaVersion
 	for index := range selection.Tasks {
 		selection.Tasks[index].Repetitions = 2
 	}
@@ -582,6 +676,40 @@ func TestLegacyMatrixArmManifestIsReadOnlyRecoveryInput(t *testing.T) {
 	}
 }
 
+func TestBareCustomAdapterIdentityAndHistoricalManifestBoundary(t *testing.T) {
+	grok, effort, err := ParseModelSelection(modelGrok45 + ":minimal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAdapter, err := embeddedPierAdapterSHA256()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := executionAdapterSHA256(grok, nil); err != nil || got != wantAdapter {
+		t.Fatalf("bare Grok adapter hash = %q, %v", got, err)
+	}
+	luna, _, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := executionAdapterSHA256(luna, nil); err != nil || got != "" {
+		t.Fatalf("native bare adapter hash = %q, %v", got, err)
+	}
+
+	prepared := preparedStudy{experiments: []preparedStudyExperiment{{model: grok, effort: effort}}}
+	matching := immutableStudyManifest{Arms: []studyArmContract{{Adapter: wantAdapter}}}
+	if !studyManifestBundleMatches(matching, &prepared, []*TreatmentBundle{nil}) {
+		t.Fatal("matching bare custom adapter was rejected")
+	}
+	matching.Arms[0].Adapter = ""
+	if studyManifestBundleMatches(matching, &prepared, []*TreatmentBundle{nil}) {
+		t.Fatal("adapter-less historical manifest matched a bare custom arm")
+	}
+	if bundle := historicalTreatmentBundle(studyArmContract{Adapter: wantAdapter}); bundle != nil {
+		t.Fatalf("bare custom adapter was reconstructed as treatment: %#v", bundle)
+	}
+}
+
 func rewriteStudyAttempt(t *testing.T, arm matrixArm, task string, attempt int, checksum string, score, cost float64) {
 	t.Helper()
 	rewriteStudyAttemptConformance(t, arm, task, attempt, checksum, score, cost, true)
@@ -608,7 +736,6 @@ func rewriteStudyAttemptConformance(t *testing.T, arm matrixArm, task string, at
 func TestStudyValidatesExplicitInputsAndIdentity(t *testing.T) {
 	root := t.TempDir()
 	selection := matrixSelectionFixture()
-	selection.SchemaVersion = matrixSelectionSchemaVersion
 	selectionPath := filepath.Join(root, "selection.json")
 	data, err := json.Marshal(selection)
 	if err != nil {
@@ -660,6 +787,28 @@ func TestStudyValidatesExplicitInputsAndIdentity(t *testing.T) {
 	}
 	if first != second {
 		t.Fatalf("production v3 study identity changed without an input change: %q != %q", first, second)
+	}
+	tasks := []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 1}, {ID: "second-task", RepetitionsPerArm: 1}}
+	bundles := []*TreatmentBundle{nil, {
+		ManifestHash:      strings.Repeat("c", 64),
+		AdapterSHA256:     strings.Repeat("d", 64),
+		LinuxBinarySHA256: strings.Repeat("e", 64),
+	}}
+	firstBinding, err := bindStudyPreparation(root, &firstPrepared, tasks, checksums, environments, bundles, nil, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondBinding, err := bindStudyPreparation(root, &secondPrepared, tasks, checksums, environments, bundles, nil, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstPrepared.studyID != secondPrepared.studyID || firstBinding.stateDir != secondBinding.stateDir {
+		t.Fatalf("task concurrency changed bound study identity: %q != %q", firstPrepared.studyID, secondPrepared.studyID)
+	}
+	for index := range firstBinding.arms {
+		if firstBinding.arms[index].ID != secondBinding.arms[index].ID {
+			t.Fatalf("task concurrency changed arm %d identity: %q != %q", index, firstBinding.arms[index].ID, secondBinding.arms[index].ID)
+		}
 	}
 	environments["first-task"] = "environment-two"
 	changed, err := identifyStudy(firstPrepared.selectionID, membership, checksums, environments)

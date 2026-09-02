@@ -126,17 +126,13 @@ const (
 
 	// CoverReportProfileFlagUsage describes the profile flag.
 	CoverReportProfileFlagUsage      = "path to coverage profile"
-	CoverReportThresholdFlagUsage    = "required coverage threshold (optional)"
 	CoverReportMissingProfileFlag    = "missing required -profile flag"
 	CoverReportParseFailedFmt        = "failed to parse coverage profile: %v\n"
 	CoverReportWriteTableFailedFmt   = "failed to write summary table: %v\n"
 	CoverReportWriteSummaryFailedFmt = "failed to write coverage summary: %v\n"
 	CoverReportTableHeader           = "file\tcover%\tlines_missed"
 	CoverReportTableRowFmt           = "%s\t%.2f\t%d\n"
-	CoverReportTotalWithThresholdFmt = "total coverage: %.2f%% (threshold %.2f%%) %s\n"
 	CoverReportTotalFmt              = "total coverage: %.2f%%\n"
-	CoverReportStatusPass            = "PASS"
-	CoverReportStatusFail            = "FAIL"
 
 	// ExtractChecksumUsageFmt formats extract-checksum usage.
 	ExtractChecksumUsageFmt       = "Usage: %s <checksums-file> <target-filename>\n"

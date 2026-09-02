@@ -14,6 +14,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/version"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 	"github.com/conn-castle/agent-layer/internal/wizard"
 )
@@ -65,6 +66,9 @@ func newUpgradeCmd() *cobra.Command {
 
 			targetPin, err := resolvePinVersionForInit(cmd.Context(), pinVersion, Version)
 			if err != nil {
+				return err
+			}
+			if err := requireUpgradeTargetCLI(targetPin); err != nil {
 				return err
 			}
 			if strings.TrimSpace(pinVersion) != "" && !strings.EqualFold(strings.TrimSpace(pinVersion), "latest") {
@@ -650,6 +654,9 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := requireUpgradeTargetCLI(targetPin); err != nil {
+				return err
+			}
 			if strings.TrimSpace(pinVersion) != "" && !strings.EqualFold(strings.TrimSpace(pinVersion), "latest") {
 				if err := validatePinnedReleaseVersionFunc(cmd.Context(), targetPin); err != nil {
 					return err
@@ -674,6 +681,28 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&pinVersion, "version", "", messages.UpgradeFlagVersion)
 	return cmd
+}
+
+func requireUpgradeTargetCLI(targetVersion string) error {
+	if targetVersion == "" || version.IsDev(Version) {
+		return nil
+	}
+	currentVersion, err := version.Normalize(Version)
+	if err != nil {
+		return err
+	}
+	normalizedTargetVersion, err := version.Normalize(targetVersion)
+	if err != nil {
+		return err
+	}
+	comparison, err := version.Compare(currentVersion, normalizedTargetVersion)
+	if err != nil {
+		return err
+	}
+	if comparison < 0 {
+		return fmt.Errorf(messages.UpgradeTargetRequiresNewerCLIFmt, currentVersion, normalizedTargetVersion, normalizedTargetVersion)
+	}
+	return nil
 }
 
 func renderUpgradePlanText(out io.Writer, plan install.UpgradePlan, previews map[string]install.DiffPreview) error {

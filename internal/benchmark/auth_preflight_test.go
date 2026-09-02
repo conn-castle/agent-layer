@@ -15,6 +15,26 @@ import (
 
 const authPreflightSecret = "super-secret-credential-token"
 
+func TestGrokPaidCredentialLifetimeStopsBeforeInference(t *testing.T) {
+	repository := t.TempDir()
+	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	write := func(expiry time.Time) {
+		t.Helper()
+		writeJSONCredential(t, filepath.Join(repository, ".grok-config", "auth.json"), []byte(
+			`{"https://auth.x.ai::profile":{"expires_at":"`+expiry.Format(time.RFC3339)+`"}}`,
+		))
+	}
+	write(now.Add(31 * time.Minute))
+	if err := validateGrokPaidCredentialLifetime(repository, now); err != nil {
+		t.Fatalf("fresh Grok credential rejected: %v", err)
+	}
+	write(now.Add(30 * time.Minute))
+	if err := validateGrokPaidCredentialLifetime(repository, now); err == nil ||
+		!strings.Contains(err.Error(), "expires too soon") || !strings.Contains(err.Error(), "grok login --device-code") {
+		t.Fatalf("expiring Grok credential = %v", err)
+	}
+}
+
 func TestCodexAuthenticationPreflightUsesRepoLocalStatus(t *testing.T) {
 	repository := t.TempDir()
 	path := writeJSONCredential(t, filepath.Join(repository, ".codex", "auth.json"), []byte(`{"token":"`+authPreflightSecret+`"}`))
@@ -1199,6 +1219,103 @@ func TestManifestOnlyCachedStudyCompleteDoesNotMutateCallerStudyID(t *testing.T)
 	}
 }
 
+func TestRecoveryOnlyRegeneratesCompletedHistoricalTreatmentReportWithoutRestagingCurrentInputs(t *testing.T) {
+	fixture := setupCompletedHistoricalTreatmentStudyForRecovery(t)
+	removeStudyReport(t, fixture.root, fixture.first.StudyID)
+	blockHistoricalTreatmentRestaging(t)
+
+	recovered, err := RunStudy(context.Background(), StudyOptions{
+		RepoRoot: fixture.root, StudyPath: filepath.Join(fixture.root, "study.toml"), RecoveryOnly: true,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *fixture.stageCalls != 1 || *fixture.preparedCalls != 1 {
+		t.Fatalf("historical report regeneration restaged inputs: stage=%d tasks=%d", *fixture.stageCalls, *fixture.preparedCalls)
+	}
+	if recovered.StudyID != fixture.first.StudyID || recovered.Completed != recovered.Required || recovered.Missing != 0 || recovered.JSONPath == "" || recovered.HTMLPath == "" {
+		t.Fatalf("recovered outcome = %#v", recovered)
+	}
+	for _, path := range []string{recovered.JSONPath, recovered.HTMLPath} {
+		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+			t.Fatalf("regenerated report %q: info=%v err=%v", path, info, err)
+		}
+	}
+	var recoveredReport StudyReport
+	if err := readStudyJSON(recovered.JSONPath, &recoveredReport); err != nil {
+		t.Fatal(err)
+	}
+	want, got := fixture.originalReport.Experiments[0], recoveredReport.Experiments[0]
+	if got.BundleManifest == nil || got.BundleManifest.SchemaVersion != want.BundleManifest.SchemaVersion ||
+		len(got.BundleManifest.Files) != 1 || got.BundleManifest.Files[0] != want.BundleManifest.Files[0] ||
+		got.SourceCommit != want.SourceCommit || got.LinuxBinarySHA256 != want.LinuxBinarySHA256 {
+		t.Fatalf("regenerated report lost immutable treatment provenance: want=%#v got=%#v", want, got)
+	}
+}
+
+func TestRecoveryOnlyRejectsPinTemplateProvenanceThatConflictsWithStudyContract(t *testing.T) {
+	fixture := setupCompletedHistoricalTreatmentStudyForRecovery(t)
+	var pin studyTreatmentPin
+	if err := readStudyJSON(filepath.Join(studyTreatmentPinRoot(fixture.root, fixture.bundle.ManifestHash), "pin.json"), &pin); err != nil {
+		t.Fatal(err)
+	}
+	pin.TemplatesCommit = strings.Repeat("d", 40)
+	if err := writeJSON(filepath.Join(studyTreatmentPinRoot(fixture.root, fixture.bundle.ManifestHash), "pin.json"), pin); err != nil {
+		t.Fatal(err)
+	}
+	removeStudyReport(t, fixture.root, fixture.first.StudyID)
+	blockHistoricalTreatmentRestaging(t)
+
+	_, err := RunStudy(context.Background(), StudyOptions{
+		RepoRoot: fixture.root, StudyPath: filepath.Join(fixture.root, "study.toml"), RecoveryOnly: true,
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "conflicts with its immutable arm contract") {
+		t.Fatalf("conflicting pin template provenance = %v", err)
+	}
+}
+
+func TestRecoveryOnlyOmitsUnauthenticatedLegacyTemplateProvenance(t *testing.T) {
+	fixture := setupCompletedHistoricalTreatmentStudyForRecovery(t)
+	hash := fixture.bundle.ManifestHash
+	manifestPath := filepath.Join(fixture.root, ".agent-layer", "state", "benchmarks", "deepswe", "studies", fixture.first.StudyID, "study-manifest.json")
+	var manifest immutableStudyManifest
+	if err := readStudyJSON(manifestPath, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	for i := range manifest.Arms {
+		manifest.Arms[i].TemplatesCommit = ""
+		manifest.Arms[i].TemplatesDirty = false
+	}
+	if err := writeJSON(manifestPath, manifest); err != nil {
+		t.Fatal(err)
+	}
+	var pin studyTreatmentPin
+	if err := readStudyJSON(filepath.Join(studyTreatmentPinRoot(fixture.root, hash), "pin.json"), &pin); err != nil {
+		t.Fatal(err)
+	}
+	pin.TemplatesCommit = strings.Repeat("e", 40)
+	pin.TemplatesDirty = true
+	if err := writeJSON(filepath.Join(studyTreatmentPinRoot(fixture.root, hash), "pin.json"), pin); err != nil {
+		t.Fatal(err)
+	}
+	removeStudyReport(t, fixture.root, fixture.first.StudyID)
+	blockHistoricalTreatmentRestaging(t)
+
+	recovered, err := RunStudy(context.Background(), StudyOptions{
+		RepoRoot: fixture.root, StudyPath: filepath.Join(fixture.root, "study.toml"), RecoveryOnly: true,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recoveredReport StudyReport
+	if err := readStudyJSON(recovered.JSONPath, &recoveredReport); err != nil {
+		t.Fatal(err)
+	}
+	if recoveredReport.Experiments[0].SourceCommit != "" || recoveredReport.Experiments[0].SourceDirty {
+		t.Fatalf("legacy recovery published unauthenticated template provenance: %#v", recoveredReport.Experiments[0])
+	}
+}
+
 func TestRunStudyRejectsMultipleCompleteManifestOnlyMatches(t *testing.T) {
 	root := t.TempDir()
 	writeParsedBareStudy(t, root, "luna:low")
@@ -1456,9 +1573,99 @@ func fakeStudyTreatmentBundle() *TreatmentBundle {
 		ManifestHash:      "treatment-manifest-hash",
 		AdapterSHA256:     "adapter-hash",
 		LinuxBinarySHA256: "runtime-hash",
-		RuntimeSourceKind: "release",
+		RuntimeSourceKind: treatmentRuntimeSourceRelease,
 		RuntimeVersion:    "test",
 		Manifest:          TreatmentManifest{Mode: TreatmentInstructionsOnly, AgentTimeoutMultiplier: skillsAgentTimeoutFactor},
+	}
+}
+
+type completedHistoricalTreatmentRecoveryFixture struct {
+	root           string
+	first          StudyOutcome
+	originalReport StudyReport
+	bundle         *TreatmentBundle
+	stageCalls     *int
+	preparedCalls  *int
+}
+
+func setupCompletedHistoricalTreatmentStudyForRecovery(t *testing.T) completedHistoricalTreatmentRecoveryFixture {
+	t.Helper()
+	root := t.TempDir()
+	selectionData, err := json.Marshal(matrixSelectionFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeStudyInputFixture(t, root, "selection.json", string(selectionData))
+	writeStudyTreatmentConfig(t, root)
+	if err := os.Mkdir(filepath.Join(root, "instructions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeStudyInputFixture(t, filepath.Join(root, "instructions"), "01_prime_directive.md", "Read CONTEXT.md before starting.\n")
+	writeStudyInputFixture(t, root, "study.toml", "selection = \"selection.json\"\n[[experiments]]\nname = \"Treatment\"\nmodel = \"luna\"\nreasoning = \"low\"\nconfig = \"config.toml\"\ninstructions = \"instructions\"\n")
+	if err := validateTreatmentInstructionDependencies(filepath.Join(root, "instructions")); err == nil {
+		t.Fatal("test instructions must be rejected by current treatment staging")
+	}
+
+	preparedCalls := stubStudyInfrastructure(t, root)
+	originalAuth := validateBenchmarkAuthentication
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{}, nil
+	}
+	t.Cleanup(func() { validateBenchmarkAuthentication = originalAuth })
+	originalRuntime := preflightTreatmentRuntime
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error { return nil }
+	t.Cleanup(func() { preflightTreatmentRuntime = originalRuntime })
+	originalBundles := stageBenchmarkExperimentBundles
+	stageCalls := 0
+	manifest := TreatmentManifest{
+		SchemaVersion: TreatmentSchemaVersion,
+		Mode:          TreatmentInstructionsOnly,
+		Files:         []TreatmentFile{{Path: "AGENTS.md", SHA256: strings.Repeat("a", 64)}},
+	}
+	manifestHash, err := hashCanonical(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := &TreatmentBundle{
+		Manifest: manifest, ManifestHash: manifestHash, LinuxArchitecture: benchmarkTaskContainerArchitecture,
+		AdapterSHA256: "adapter-hash", LinuxBinarySHA256: "runtime-hash", TemplatesCommit: strings.Repeat("c", 40),
+		RuntimeSourceKind: treatmentRuntimeSourceRelease, RuntimeVersion: "test",
+	}
+	stageBenchmarkExperimentBundles = func(string, *preparedStudy) ([]*TreatmentBundle, error) {
+		stageCalls++
+		return []*TreatmentBundle{bundle}, nil
+	}
+	t.Cleanup(func() { stageBenchmarkExperimentBundles = originalBundles })
+
+	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var originalReport StudyReport
+	if err := readStudyJSON(first.JSONPath, &originalReport); err != nil {
+		t.Fatal(err)
+	}
+	pinRoot := studyTreatmentPinRoot(root, bundle.ManifestHash)
+	pin := studyTreatmentPin{
+		SchemaVersion: studyTreatmentPinSchema, PinID: bundle.ManifestHash, Architecture: bundle.LinuxArchitecture,
+		ManifestHash: bundle.ManifestHash, Manifest: bundle.Manifest, LinuxBinarySHA256: bundle.LinuxBinarySHA256,
+		AdapterSHA256: bundle.AdapterSHA256, TemplatesCommit: bundle.TemplatesCommit, TemplatesDirty: bundle.TemplatesDirty,
+		RuntimeSourceKind: bundle.RuntimeSourceKind, RuntimeVersion: bundle.RuntimeVersion,
+	}
+	if err := writeJSON(filepath.Join(pinRoot, "pin.json"), pin); err != nil {
+		t.Fatal(err)
+	}
+	return completedHistoricalTreatmentRecoveryFixture{
+		root: root, first: first, originalReport: originalReport, bundle: bundle,
+		stageCalls: &stageCalls, preparedCalls: preparedCalls,
+	}
+}
+
+func blockHistoricalTreatmentRestaging(t *testing.T) {
+	t.Helper()
+	stageBenchmarkExperimentBundles = func(string, *preparedStudy) ([]*TreatmentBundle, error) {
+		t.Fatal("recovery-only restaged mutable treatment inputs")
+		return nil, nil
 	}
 }
 
@@ -1535,14 +1742,88 @@ func writeBareStudy(t *testing.T, root, model, reasoning string) {
 	writeStudyInputFixture(t, root, "study.toml", "selection = \"selection.json\"\n[[experiments]]\nname = \"Bare\"\nmodel = \""+model+"\"\nreasoning = \""+reasoning+"\"\n")
 }
 
+func TestBareCustomProviderDryRunPreflightsAndRecordsAdapter(t *testing.T) {
+	root := t.TempDir()
+	writeBareStudy(t, root, modelGrok45, "minimal")
+	stubStudyInfrastructure(t, root)
+
+	originalAuth := validateBenchmarkAuthentication
+	originalRuntimePreflight := preflightTreatmentRuntime
+	t.Cleanup(func() {
+		validateBenchmarkAuthentication = originalAuth
+		preflightTreatmentRuntime = originalRuntimePreflight
+	})
+	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
+		return map[string]AuthenticationPreflight{adapterGrok: {
+			Provider: adapterGrok, Check: authCheckJSONFilePresence, AuthenticationMethod: authMethodJSONFile, VerifiedAt: time.Now().UTC(),
+		}}, nil
+	}
+	var preflights []ExecutionRequest
+	preflightTreatmentRuntime = func(_ context.Context, request ExecutionRequest) error {
+		preflights = append(preflights, request)
+		return nil
+	}
+
+	dryExecutor := &studyWorkflowExecutor{}
+	dry, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), DryRun: true}, dryExecutor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dryExecutor.requests()) != 0 {
+		t.Fatalf("dry run reached inference: %#v", dryExecutor.requests())
+	}
+	if len(preflights) != 2 {
+		t.Fatalf("bare custom runtime preflights = %d, want one per task environment", len(preflights))
+	}
+	for _, request := range preflights {
+		if request.Arm != ArmBaseline || request.Bundle != nil || request.Model.Adapter != adapterGrok || request.Task == "" || request.EnvironmentIdentity == "" {
+			t.Fatalf("bare custom runtime preflight = %#v", request)
+		}
+	}
+
+	wantAdapter, err := embeddedPierAdapterSHA256()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(root, ".agent-layer", "state", "benchmarks", "deepswe", "studies", dry.StudyID, "study-manifest.json")
+	var manifest immutableStudyManifest
+	if err := readStudyJSON(manifestPath, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Arms) != 1 || manifest.Arms[0].Adapter != wantAdapter || manifest.Arms[0].Bundle != "" || manifest.Arms[0].Runtime != "" {
+		t.Fatalf("bare custom study manifest = %#v", manifest.Arms)
+	}
+	var armManifest studyArmManifest
+	if err := readStudyJSON(filepath.Join(filepath.Dir(manifestPath), "arms", manifest.Arms[0].ID, "manifest.json"), &armManifest); err != nil {
+		t.Fatal(err)
+	}
+	if armManifest.AdapterSHA256 != wantAdapter || armManifest.TreatmentHash != "" || armManifest.Mode != ArmBaseline {
+		t.Fatalf("bare custom arm manifest = %#v", armManifest)
+	}
+
+	paid, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml")}, &studyWorkflowExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report StudyReport
+	if err := readStudyJSON(paid.JSONPath, &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Experiments) != 1 || report.Experiments[0].AdapterSHA256 != wantAdapter || report.Experiments[0].BundleManifest != nil || report.Experiments[0].LinuxBinarySHA256 != "" {
+		t.Fatalf("bare custom experiment report = %#v", report.Experiments)
+	}
+}
+
 func stubStudyInfrastructure(t *testing.T, root string) *int {
 	t.Helper()
 	originalPreflight := preflightBenchmark
 	originalVerifyPier := verifyBenchmarkPier
 	originalPrepareTasks := prepareBenchmarkTaskSet
+	originalArchitecture := dockerHostArchitecture
 	preparedCalls := 0
 	preflightBenchmark = func([]parsedSelection) error { return nil }
 	verifyBenchmarkPier = func(context.Context) error { return nil }
+	dockerHostArchitecture = func(context.Context) (string, error) { return "amd64", nil }
 	prepareBenchmarkTaskSet = func(_ context.Context, gotRoot string, tasks []benchmarkPlanTask) (map[string]string, map[string]string, error) {
 		preparedCalls++
 		if gotRoot != root {
@@ -1560,6 +1841,7 @@ func stubStudyInfrastructure(t *testing.T, root string) *int {
 		preflightBenchmark = originalPreflight
 		verifyBenchmarkPier = originalVerifyPier
 		prepareBenchmarkTaskSet = originalPrepareTasks
+		dockerHostArchitecture = originalArchitecture
 	})
 	return &preparedCalls
 }

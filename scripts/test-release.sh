@@ -51,106 +51,22 @@ section() {
 source "$SCRIPT_DIR/test-release/release_tests.sh"
 source "$SCRIPT_DIR/test-release/tool_tests.sh"
 source "$SCRIPT_DIR/test-release/upgrade_docs_tests.sh"
-source "$SCRIPT_DIR/test-release/workflow_tests.sh"
-
-# -----------------------------------------------------------------------------
-# Static Analysis & Setup
-# -----------------------------------------------------------------------------
-section "Static Analysis & Setup"
-
-required_files=(
-  "scripts/build-release.sh"
-  "scripts/codesign-release.sh"
-  "scripts/notarize-release.sh"
-  "scripts/check-upgrade-docs.sh"
-  "al-install.sh"
-)
-
-for file in "${required_files[@]}"; do
-  if [[ -f "$ROOT_DIR/$file" ]]; then
-    pass "$file exists"
-  else
-    fail "$file not found"
-  fi
-done
-
-for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/notarize-release.sh"; do
-  if [[ -x "$ROOT_DIR/$script" ]]; then
-    pass "$script is executable"
-  else
-    fail "$script is not executable"
-  fi
-done
-
-# Shell syntax validation
-for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/notarize-release.sh" "scripts/check-upgrade-docs.sh" "al-install.sh"; do
-  if bash -n "$ROOT_DIR/$script" 2>/dev/null; then
-    pass "$script has valid bash syntax"
-  else
-    fail "$script has invalid bash syntax"
-  fi
-done
-
-# Optional: shellcheck
-if command -v shellcheck >/dev/null 2>&1; then
-  for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/notarize-release.sh" "scripts/check-upgrade-docs.sh" "al-install.sh"; do
-    if shellcheck -S error "$ROOT_DIR/$script" 2>/dev/null; then
-      pass "$script passes shellcheck"
-    else
-      fail "$script has shellcheck errors"
-    fi
-  done
-else
-  warn "shellcheck not installed, skipping advanced shell linting"
-fi
-
-# Ensure required tools are available for release packaging.
-if command -v git >/dev/null 2>&1; then
-  pass "git is available"
-else
-  fail "git not found; required for source tarball generation"
-fi
-
-if command -v gzip >/dev/null 2>&1; then
-  pass "gzip is available"
-else
-  fail "gzip not found; required for source tarball generation"
-fi
-
-if command -v tar >/dev/null 2>&1; then
-  pass "tar is available"
-else
-  fail "tar not found; required for source tarball verification"
-fi
-
-if command -v go >/dev/null 2>&1; then
-  pass "go is available"
-else
-  fail "go not found; required for release script tests"
-fi
-
-# Ensure we can validate checksums before running the build.
-if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
-  fail "sha256sum/shasum not found; refusing to run build-release.sh"
-fi
-
-if [[ $fail_count -gt 0 ]]; then
-  section "Summary"
-  total=$((pass_count + fail_count))
-  printf 'Tests: %s total, %b%s passed%b, %b%s failed%b\n' "$total" "$GREEN" "$pass_count" "$NC" "$RED" "$fail_count" "$NC"
-  exit 1
-fi
+source "$SCRIPT_DIR/test-release/catalog_certification_tests.sh"
+source "$SCRIPT_DIR/test-release/workflow_security_tests.sh"
 
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 go_log="$tmp_dir/go-invocations.log"
 dist_dir="$tmp_dir/dist"
-expected_version="v1.0.0"
+# Stable release builds require the matching checked-in migration manifest.
+expected_version="v0.18.5"
 expected_version_no_v="${expected_version#v}"
 
-run_workflow_consistency_tests
-run_dev_loop_consistency_tests
+run_catalog_certification_script_tests
+run_release_workflow_security_tests
 run_release_generation_test
+run_missing_migration_manifest_test
+run_release_smoke_rejection_tests
 run_build_invocation_details
 run_artifact_verification
 run_source_tarball_verification

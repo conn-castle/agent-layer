@@ -42,11 +42,15 @@ func LoadTemplateConfig() (*Config, error) {
 	return ParseConfig(data, "template config.toml")
 }
 
-// LoadEnv reads .agent-layer/.env into a key-value map.
+// LoadEnv reads .agent-layer/.env into a key-value map. A missing file is
+// equivalent to an empty environment; malformed or unreadable files fail.
 func LoadEnv(path string) (map[string]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf(messages.ConfigMissingEnvFileFmt, path, err)
+		if errors.Is(err, os.ErrNotExist) {
+			return map[string]string{}, nil
+		}
+		return nil, fmt.Errorf(messages.ConfigFailedReadEnvFileFmt, path, err)
 	}
 
 	env, err := envfile.Parse(string(data))

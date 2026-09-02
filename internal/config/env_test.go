@@ -37,11 +37,27 @@ AL_QUOTED='value with spaces'
 }
 
 func TestLoadEnvMissing(t *testing.T) {
-	_, err := LoadEnv(filepath.Join(t.TempDir(), ".env"))
-	if err == nil {
-		t.Fatalf("expected missing env error")
+	env, err := LoadEnv(filepath.Join(t.TempDir(), ".env"))
+	if err != nil {
+		t.Fatalf("LoadEnv error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "missing env file") {
+	if len(env) != 0 {
+		t.Fatalf("expected empty env, got %#v", env)
+	}
+}
+
+func TestLoadEnvUnreadable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatalf("mkdir env path: %v", err)
+	}
+
+	_, err := LoadEnv(path)
+	if err == nil {
+		t.Fatal("expected error for unreadable env file")
+	}
+	if !strings.Contains(err.Error(), "failed to read env file") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

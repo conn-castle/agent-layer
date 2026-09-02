@@ -26,7 +26,6 @@ type fileStats struct {
 
 func main() {
 	profilePath := flag.String("profile", "", messages.CoverReportProfileFlagUsage)
-	threshold := flag.Float64("threshold", -1, messages.CoverReportThresholdFlagUsage)
 	flag.Parse()
 
 	if *profilePath == "" {
@@ -47,7 +46,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, messages.CoverReportWriteTableFailedFmt, err)
 		os.Exit(1)
 	}
-	if err := writeSummary(os.Stdout, stats, *threshold); err != nil {
+	if err := writeSummary(os.Stdout, stats); err != nil {
 		fmt.Fprintf(os.Stderr, messages.CoverReportWriteSummaryFailedFmt, err)
 		os.Exit(1)
 	}
@@ -159,22 +158,13 @@ func totalCoverage(totalStmts int64, coveredStmts int64) float64 {
 	return 100 * float64(coveredStmts) / float64(totalStmts)
 }
 
-// writeSummary writes a total coverage line and optional threshold status.
-// out is the destination for the summary; stats are per-file results; threshold enables pass/fail output.
-func writeSummary(out io.Writer, stats []fileStats, threshold float64) error {
+// writeSummary writes a total coverage line.
+// out is the destination for the summary; stats are per-file results.
+func writeSummary(out io.Writer, stats []fileStats) error {
 	totalStmts, coveredStmts, _ := summarizeTotals(stats)
 	total := totalCoverage(totalStmts, coveredStmts)
 
 	if _, err := fmt.Fprintln(out); err != nil {
-		return err
-	}
-
-	if threshold >= 0 {
-		status := messages.CoverReportStatusPass
-		if total < threshold {
-			status = messages.CoverReportStatusFail
-		}
-		_, err := fmt.Fprintf(out, messages.CoverReportTotalWithThresholdFmt, total, threshold, status)
 		return err
 	}
 

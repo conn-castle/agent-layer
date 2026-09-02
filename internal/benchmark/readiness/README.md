@@ -21,10 +21,17 @@ then forced to use that digest and reruns the program inside every actual agent
 container before starting the provider. Baseline and treatment therefore share
 the same task environment contract and immutable base-image identity.
 
+The certification receipt is durable; the Docker image is not. Public CLI
+workflows remove certification-only images by default and can reuse the receipt
+without retaining every catalog image.
+
 When an upstream image omits an agent-side system dependency, the contract may
 name `agent_image_overlay` and `agent_check` files. The harness fingerprints and
 builds that overlay for both arms and runs the additional check only in agent
 containers. The verifier continues to use the original digest-pinned image, so
-tool provisioning cannot change scoring behavior.
+tool provisioning cannot change scoring behavior. Overlay certification
+identity is derived from the pinned base image and exact overlay source, not
+Docker's volatile rebuild metadata; the actual rebuilt image must still pass
+readiness before the receipt is recorded or reused.
 
 Adding a task to a benchmark plan without this contract is a harness error.

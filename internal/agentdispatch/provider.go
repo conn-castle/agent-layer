@@ -114,12 +114,10 @@ type providerCommand struct {
 	Args          []string
 	Env           []string
 	WorkDir       string
-	Plain         bool
 	SessionID     string
 	LogPath       string
 	Provider      string
 	RunMode       string
-	Structured    bool
 	Model         string
 	Effort        string
 	ClaudeLineage bool
@@ -302,7 +300,6 @@ func buildProviderCommand(
 		command.Env = clients.UnsetEnv(command.Env, claudePrintBackgroundWaitCeilingEnv)
 		command.Env = clients.SetEnv(command.Env, claudePrintBackgroundWaitCeilingEnv, claudePrintBackgroundWaitCeilingValue)
 		command.SessionID = sessionID
-		command.Structured = true
 		command.ClaudeLineage = lineage
 	case AgentCodex:
 		args := []string{"exec"}
@@ -350,7 +347,6 @@ func buildProviderCommand(
 		command.Args = args
 		command.Env = codex.ConfigureEnvironment(project.Root, env, project.Config.Agents.Codex, diagnostics)
 		command.SessionID = sessionID
-		command.Structured = true
 	case AgentAntigravity:
 		if len(prompt) > AntigravityPromptMaxBytes {
 			return providerCommand{}, exitError(ExitUsage, fmt.Sprintf("antigravity prompt is %d bytes; `al dispatch` caps it at %d bytes because agy --print has no stdin/file path. Use --agent claude or --agent codex for larger prompts.", len(prompt), AntigravityPromptMaxBytes))
@@ -379,9 +375,6 @@ func buildProviderCommand(
 		if mode == dispatchModeResume {
 			args = append(args, "--conversation", sessionID)
 		}
-		// Thinking-tier slugs, not session TargetPinned, select stream-json.
-		// TargetPinned is set on every durable resume, including ordinary
-		// display-name conversations that must keep historical plain output.
 		if derivedEffort, ok := antigravitySlugEffort(resolvedModel); ok {
 			configured := strings.TrimSpace(effort)
 			if configured != "" && configured != derivedEffort {
@@ -390,13 +383,10 @@ func buildProviderCommand(
 			// The exact benchmark model slug selects its thinking tier. Passing a
 			// second effort flag risks contradictory client behavior.
 			command.Effort = derivedEffort
-			args = append(args, "--output-format", "stream-json")
-			command.Plain = false
-			command.Structured = true
 		} else {
 			command.Effort = strings.TrimSpace(effort)
-			command.Plain = true
 		}
+		args = append(args, "--output-format", "stream-json")
 		args = append(args, "--print-timeout", AntigravityPrintTimeout, "--print", string(prompt))
 		command.Args = args
 		command.Env = antigravity.ConfigureEnvironment(env)
@@ -458,7 +448,6 @@ func buildProviderCommand(
 		}
 		command.Env = grok.ConfigureEnvironment(project.Root, env, project.Config.Agents.Grok, diagnostics)
 		command.SessionID = sessionID
-		command.Structured = true
 	default:
 		return providerCommand{}, exitError(ExitUsage, fmt.Sprintf("unsupported dispatch provider %q", target.Name))
 	}
@@ -686,7 +675,7 @@ func reduceAntigravityEvent(value map[string]any, terminalSeen *bool) []provider
 		return []providerEvent{{Kind: eventFailure, Reason: reason}}
 	}
 	id, _ := firstStringV013(result, "conversation_id")
-	answer, _ := firstStringV013(result, "response")
+	answer, _ := firstStringV013(result, jsonResponseKey)
 	if id == "" || answer == "" {
 		return []providerEvent{{Kind: eventFailure, Reason: "Antigravity terminal result has no conversation ID or final answer"}}
 	}

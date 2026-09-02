@@ -14,151 +14,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/conn-castle/agent-layer/internal/clients"
 	clientgrok "github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/config"
 )
-
-func TestProviderCommandsUseExactProviderContracts(t *testing.T) {
-	root := writeDispatchRepo(t, dispatchRepoConfig{ClaudeModel: "configured-model", ClaudeReasoningEffort: "medium"})
-	project, stderr, env, depth, err := loadDispatchProject(root, io.Discard, []string{})
-	if err != nil {
-		t.Fatalf("load project: %v", err)
-	}
-	if stderr != io.Discard || len(env) != 0 || depth != 0 {
-		t.Fatalf("unexpected dispatch context: stderr=%T env=%v depth=%d", stderr, env, depth)
-	}
-	run, err := newDispatchRun(root, AgentClaude, supportedProviderVersions[AgentClaude], "fresh")
-	if err != nil {
-		t.Fatalf("new run: %v", err)
-	}
-
-	claudeTarget, ok := lookupTarget(AgentClaude)
-	if !ok {
-		t.Fatal("Claude target missing from registry")
-	}
-	claudeCommand, err := buildProviderCommand(claudeTarget, project, []string{}, []byte("prompt"), "override", "high", false, "fresh", runtimeSessionID, run, io.Discard)
-	if err != nil {
-		t.Fatalf("build Claude command: %v", err)
-	}
-	claudeArgs := strings.Join(claudeCommand.Args, " ")
-	if !claudeCommand.Structured || !strings.Contains(claudeArgs, "--session-id "+runtimeSessionID) || !strings.Contains(claudeArgs, "--model override") || !strings.Contains(claudeArgs, "--effort high") {
-		t.Fatalf("Claude command = %#v", claudeCommand)
-	}
-
-	codexTarget, ok := lookupTarget(AgentCodex)
-	if !ok {
-		t.Fatal("Codex target missing from registry")
-	}
-	codexCommand, err := buildProviderCommand(codexTarget, project, []string{}, []byte("prompt"), "", "high", false, "resume", runtimeSessionID, run, io.Discard)
-	if err != nil {
-		t.Fatalf("build Codex command: %v", err)
-	}
-	if got := strings.Join(codexCommand.Args, " "); !strings.Contains(got, "exec resume --json "+runtimeSessionID+" -c model_reasoning_effort=high -") {
-		t.Fatalf("Codex command = %q", got)
-	}
-	project.Config.Agents.Codex.Model = "configured-codex"
-	project.Config.Agents.Codex.ReasoningEffort = "medium"
-	project.Config.Approvals.Mode = config.ApprovalModeYOLO
-	codexDefaults, err := buildProviderCommand(codexTarget, project, []string{}, []byte("prompt"), "", "", false, dispatchModeFresh, "", run, io.Discard)
-	if err != nil {
-		t.Fatalf("build Codex defaults command: %v", err)
-	}
-	for _, want := range []string{"--model configured-codex", "model_reasoning_effort=medium", "approval_policy=never", "sandbox_mode=danger-full-access", "web_search=live"} {
-		if got := strings.Join(codexDefaults.Args, " "); !strings.Contains(got, want) {
-			t.Fatalf("Codex defaults command %q omitted %q", got, want)
-		}
-	}
-
-	antigravityTarget, ok := lookupTarget(AgentAntigravity)
-	if !ok {
-		t.Fatal("Antigravity target missing from registry")
-	}
-	if _, err := buildProviderCommand(antigravityTarget, project, []string{}, bytes.Repeat([]byte("x"), AntigravityPromptMaxBytes+1), "", "", false, "fresh", "", run, io.Discard); err == nil {
-		t.Fatal("Antigravity accepted an argv-sized prompt")
-	} else {
-		requireDispatchExitCode(t, err, ExitUsage)
-	}
-	antigravityCommand, err := buildProviderCommand(antigravityTarget, project, nil, []byte("prompt"), "gemini-3.5-flash-low", "low", false, dispatchModeFresh, runtimeSessionID, run, io.Discard)
-	if err != nil {
-		t.Fatalf("build slug Antigravity command: %v", err)
-	}
-	antigravityArgs := strings.Join(antigravityCommand.Args, " ")
-	if !antigravityCommand.Structured || antigravityCommand.Plain || antigravityCommand.Effort != "low" || !strings.Contains(antigravityArgs, "--model gemini-3.5-flash-low") || !strings.Contains(antigravityArgs, "--output-format stream-json") || strings.Contains(antigravityArgs, "--effort") {
-		t.Fatalf("slug Antigravity command = %#v", antigravityCommand)
-	}
-	conflictRun, err := newDispatchRun(root, AgentAntigravity, supportedProviderVersions[AgentAntigravity], dispatchModeFresh)
-	if err != nil {
-		t.Fatalf("new Antigravity conflict run: %v", err)
-	}
-	if _, err := buildProviderCommand(antigravityTarget, project, nil, []byte("prompt"), "gemini-3.5-flash-low", "high", false, dispatchModeFresh, runtimeSessionID, conflictRun, io.Discard); err == nil {
-		t.Fatal("slug Antigravity command accepted conflicting effort")
-	} else {
-		requireDispatchExitCode(t, err, ExitConfig)
-	}
-	plainRun, err := newDispatchRun(root, AgentAntigravity, supportedProviderVersions[AgentAntigravity], dispatchModeResume)
-	if err != nil {
-		t.Fatalf("new Antigravity resume run: %v", err)
-	}
-	plainCommand, err := buildProviderCommand(antigravityTarget, project, nil, []byte("prompt"), "Gemini 3.5 Flash (High)", "", true, dispatchModeResume, runtimeSessionID, plainRun, io.Discard)
-	if err != nil {
-		t.Fatalf("build durable display-name Antigravity command: %v", err)
-	}
-	plainArgs := strings.Join(plainCommand.Args, " ")
-	if !plainCommand.Plain || plainCommand.Structured || strings.Contains(plainArgs, "--output-format") {
-		t.Fatalf("durable display-name Antigravity command = %#v", plainCommand)
-	}
-
-	grokTarget, ok := lookupTarget(AgentGrok)
-	if !ok {
-		t.Fatal("Grok target missing from registry")
-	}
-	grokCommand, err := buildProviderCommand(grokTarget, project, []string{"GROK_HOME=/external"}, []byte("prompt text"), "grok-4.6", "high", false, "fresh", runtimeSessionID, run, io.Discard)
-	if err != nil {
-		t.Fatalf("build Grok command: %v", err)
-	}
-	grokArgs := strings.Join(grokCommand.Args, " ")
-	if !grokCommand.Structured || !slices.Contains(grokCommand.Args, "--no-auto-update") || !strings.Contains(grokArgs, "--session-id "+runtimeSessionID) || !strings.Contains(grokArgs, "--model grok-4.6") || !strings.Contains(grokArgs, "--reasoning-effort high") || !strings.Contains(grokArgs, "--output-format streaming-json") || !strings.Contains(grokArgs, "--permission-mode bypassPermissions --always-approve") {
-		t.Fatalf("Grok command = %#v", grokCommand)
-	}
-	if home, ok := clients.GetEnv(grokCommand.Env, clientgrok.EnvHome); !ok || home != clientgrok.HomeDir(root) {
-		t.Fatalf("Grok dispatch GROK_HOME = %q (present %t), want %q", home, ok, clientgrok.HomeDir(root))
-	}
-	homeInfo, err := os.Lstat(clientgrok.HomeDir(root))
-	if err != nil {
-		t.Fatalf("grok home: %v", err)
-	}
-	if gotMode := homeInfo.Mode().Perm(); gotMode != 0o700 {
-		t.Fatalf("grok home mode = %04o, want 0700", gotMode)
-	}
-	promptContent, err := os.ReadFile(filepath.Join(run.Dir, "prompt.txt"))
-	if err != nil || string(promptContent) != "prompt text" {
-		t.Fatalf("Grok prompt file content = %q, %v", promptContent, err)
-	}
-}
-
-func TestAntigravityDispatchSlugEffortRecognizesEveryPinnedTier(t *testing.T) {
-	for _, test := range []struct {
-		model  string
-		effort string
-	}{
-		{"gemini-3.5-flash-low", "low"},
-		{"gemini-3.5-flash-medium", antigravityEffortMedium},
-		{"gemini-3.5-flash-high", antigravityEffortHigh},
-	} {
-		if effort, ok := antigravitySlugEffort(test.model); !ok || effort != test.effort {
-			t.Fatalf("antigravitySlugEffort(%q) = %q, %t; want %q, true", test.model, effort, ok, test.effort)
-		}
-		if !antigravityEffortMatchesSlug(AgentAntigravity, test.model, test.effort) {
-			t.Fatalf("antigravityEffortMatchesSlug(%q, %q) = false", test.model, test.effort)
-		}
-	}
-	if antigravityEffortMatchesSlug(AgentAntigravity, "gemini-3.5-flash-low", "high") ||
-		antigravityEffortMatchesSlug(AgentAntigravity, "Gemini 3.5 Flash (High)", "high") ||
-		antigravityEffortMatchesSlug(AgentGrok, "gemini-3.5-flash-low", "low") {
-		t.Fatal("antigravityEffortMatchesSlug accepted a non-identity effort")
-	}
-}
 
 func TestClaudeLineageCapabilityGatesFreshAndResumeCommands(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
@@ -199,6 +57,18 @@ func TestClaudeLineageCapabilityGatesFreshAndResumeCommands(t *testing.T) {
 	}
 	if supportedProviderVersions[AgentClaude] != claudeTestedVersion {
 		t.Fatalf("Claude tested baseline changed to %q", supportedProviderVersions[AgentClaude])
+	}
+}
+
+func TestAntigravityRejectsPromptTooLargeForPrintMode(t *testing.T) {
+	target, ok := lookupTarget(AgentAntigravity)
+	if !ok {
+		t.Fatal("Antigravity target missing")
+	}
+	_, err := buildProviderCommand(target, &config.ProjectConfig{}, nil, bytes.Repeat([]byte("x"), AntigravityPromptMaxBytes+1), "", "", false, dispatchModeFresh, "", &dispatchRun{}, io.Discard)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != ExitUsage {
+		t.Fatalf("oversized Antigravity prompt error = %T %v, want ExitUsage", err, err)
 	}
 }
 
@@ -390,6 +260,26 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 	}
 	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 4*1024*1024 {
 		t.Fatalf("parsing %d skipped bytes allocated %d bytes; memory use must not scale with command output", skippedOutputBytes, allocated)
+	}
+}
+
+func TestStructuredProviderStreamBoundsNestingAndRecovers(t *testing.T) {
+	depth := structuredJSONMaxDepth + 8
+	tooDeep := `{"message":` + strings.Repeat(`{"message":`, depth) + `"deep"` + strings.Repeat(`}`, depth+1)
+	stream := tooDeep + "\n" + `{"type":"turn.completed"}` + "\n"
+	var raw bytes.Buffer
+	var events []providerEvent
+	if err := readStructuredEventsWithLineage(strings.NewReader(stream), &raw, AgentCodex, "", false, func(event providerEvent) error {
+		events = append(events, event)
+		return nil
+	}, nil); err != nil {
+		t.Fatalf("read provider stream: %v", err)
+	}
+	if len(events) != 2 || events[0].Kind != eventProgress || events[0].Activity != "invalid_structured_event" || events[1].Kind != eventComplete {
+		t.Fatalf("bounded stream events = %#v", events)
+	}
+	if raw.String() != stream {
+		t.Fatalf("raw evidence = %q, want %q", raw.String(), stream)
 	}
 }
 
@@ -593,17 +483,6 @@ func TestSelectiveJSONReaderTruncatesRetainedAnswerAndConsumesRecord(t *testing.
 	}
 }
 
-func TestAnswerPrefixBufferTruncatesWithoutShortWrite(t *testing.T) {
-	buffer := answerPrefixBuffer{limit: 8}
-	written, err := buffer.Write([]byte("abcdefghijk"))
-	if err != nil || written != len("abcdefghijk") {
-		t.Fatalf("answer prefix write = %d, %v", written, err)
-	}
-	if got := buffer.String(); got != "abcdefgh"+truncatedAnswerNotice {
-		t.Fatalf("truncated plain answer = %q", got)
-	}
-}
-
 func TestRetainedAnswerTruncationDropsIncompleteUTF8Rune(t *testing.T) {
 	parser := newSelectiveJSONReader()
 	parser.retainedStringBytes = 1
@@ -615,14 +494,6 @@ func TestRetainedAnswerTruncationDropsIncompleteUTF8Rune(t *testing.T) {
 	events := reduceCodexEvent(value.Fields)
 	if len(events) != 1 || events[0].Answer != truncatedAnswerNotice {
 		t.Fatalf("UTF-8 structured truncation events = %#v", events)
-	}
-
-	buffer := answerPrefixBuffer{limit: 1}
-	if _, err := buffer.Write([]byte("éx")); err != nil {
-		t.Fatalf("write UTF-8 plain answer: %v", err)
-	}
-	if got := buffer.String(); got != truncatedAnswerNotice {
-		t.Fatalf("UTF-8 plain truncation = %q", got)
 	}
 }
 
@@ -652,12 +523,11 @@ func TestRunnerBuffersOnlyCompletedAnswer(t *testing.T) {
 	}
 	var persisted string
 	result, err := executeProvider(providerCommand{
-		Path:       "/bin/sh",
-		Args:       []string{"-c", `printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n{"type":"agent_message","message":"answer"}\n{"type":"turn.completed"}\n'`},
-		Env:        os.Environ(),
-		Provider:   AgentCodex,
-		SessionID:  runtimeSessionID,
-		Structured: true,
+		Path:      "/bin/sh",
+		Args:      []string{"-c", `printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n{"type":"agent_message","message":"answer"}\n{"type":"turn.completed"}\n'`},
+		Env:       os.Environ(),
+		Provider:  AgentCodex,
+		SessionID: runtimeSessionID,
 	}, []byte("prompt"), successfulRun, root, nil, func(id string) error {
 		persisted = id
 		return nil
@@ -677,12 +547,11 @@ func TestRunnerBuffersOnlyCompletedAnswer(t *testing.T) {
 		t.Fatalf("new incomplete run: %v", err)
 	}
 	_, err = executeProvider(providerCommand{
-		Path:       "/bin/sh",
-		Args:       []string{"-c", `printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n{"type":"agent_message","message":"partial"}\n'`},
-		Env:        os.Environ(),
-		Provider:   AgentCodex,
-		SessionID:  runtimeSessionID,
-		Structured: true,
+		Path:      "/bin/sh",
+		Args:      []string{"-c", `printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n{"type":"agent_message","message":"partial"}\n'`},
+		Env:       os.Environ(),
+		Provider:  AgentCodex,
+		SessionID: runtimeSessionID,
 	}, []byte("prompt"), incompleteRun, root, nil, func(string) error { return nil })
 	requireDispatchExitCode(t, err, ExitTargetFailure)
 	if _, readErr := os.Stat(incompleteRun.Record.AnswerPath); !os.IsNotExist(readErr) {
@@ -691,6 +560,36 @@ func TestRunnerBuffersOnlyCompletedAnswer(t *testing.T) {
 	raw, readErr := os.ReadFile(incompleteRun.Record.StdoutPath)
 	if readErr != nil || !bytes.Contains(raw, []byte("partial")) {
 		t.Fatalf("raw progress evidence = %q, %v", raw, readErr)
+	}
+}
+
+func TestRunnerDerivesMissingEventsPath(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	run.Record.EventsPath = ""
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		t.Fatalf("write legacy run record: %v", err)
+	}
+
+	result, err := executeProvider(providerCommand{
+		Path:      "/bin/sh",
+		Args:      []string{"-c", `printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n{"type":"agent_message","message":"answer"}\n{"type":"turn.completed"}\n'`},
+		Env:       os.Environ(),
+		Provider:  AgentCodex,
+		SessionID: runtimeSessionID,
+	}, []byte("prompt"), run, root, nil, func(string) error { return nil })
+	if err != nil || !result.Complete {
+		t.Fatalf("legacy run result=%#v err=%v", result, err)
+	}
+	wantPath := filepath.Join(run.Dir, "provider.events")
+	if run.Record.EventsPath != wantPath {
+		t.Fatalf("events path = %q, want %q", run.Record.EventsPath, wantPath)
+	}
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Fatalf("stat derived events capture: %v", err)
 	}
 }
 
@@ -710,7 +609,6 @@ func TestClaudeRunnerReadsLineageAndLatestResultThroughEOF(t *testing.T) {
 		Env:           os.Environ(),
 		Provider:      AgentClaude,
 		SessionID:     runtimeSessionID,
-		Structured:    true,
 		ClaudeLineage: true,
 	}, []byte("prompt"), run, root, nil, func(string) error { return nil })
 	if err != nil {
@@ -932,18 +830,60 @@ func TestGrokRunnerReadsStreamingJSONThroughEOF(t *testing.T) {
 		`{"type":"text","data":"Grok output"}` + "\n" +
 		`{"type":"end","sessionId":"` + runtimeSessionID + `","stopReason":"end_turn"}` + "\n"
 	result, err := executeProvider(providerCommand{
-		Path:       "/bin/sh",
-		Args:       []string{"-c", `printf '%s' "$1"`, "sh", fixtureContent},
-		Env:        os.Environ(),
-		Provider:   AgentGrok,
-		SessionID:  runtimeSessionID,
-		Structured: true,
+		Path:      "/bin/sh",
+		Args:      []string{"-c", `printf '%s' "$1"`, "sh", fixtureContent},
+		Env:       os.Environ(),
+		Provider:  AgentGrok,
+		SessionID: runtimeSessionID,
 	}, []byte("prompt"), run, root, nil, func(string) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.Answer != "Grok output" || !result.Complete || result.SessionID != runtimeSessionID {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestAntigravitySuccessfulTerminalReturnsRealisticFinalAnswer(t *testing.T) {
+	stream, err := os.ReadFile(filepath.Join("testdata", "antigravity", "v1.1.21-success.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var emitted struct {
+		Result struct {
+			ConversationID string         `json:"conversation_id"`
+			Response       string         `json:"response"`
+			Usage          map[string]any `json:"usage"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(stream), &emitted); err != nil {
+		t.Fatalf("decode independent provider fixture: %v", err)
+	}
+	if len(emitted.Result.Response) <= structuredJSONKeyBytes {
+		t.Fatalf("fixture response is only %d bytes; it must cross the metadata boundary", len(emitted.Result.Response))
+	}
+
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentAntigravity, supportedProviderVersions[AgentAntigravity], dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(run.Dir, "antigravity.log")
+	if err := os.WriteFile(logPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := executeProvider(providerCommand{
+		Path:     "/bin/sh",
+		Args:     []string{"-c", `printf '%s' "$1"`, "sh", string(stream)},
+		Env:      os.Environ(),
+		Provider: AgentAntigravity,
+		LogPath:  logPath,
+	}, []byte("inspect the image"), run, root, nil, func(string) error { return nil })
+	if err != nil {
+		t.Fatalf("successful Antigravity dispatch failed: %v", err)
+	}
+	if !result.Complete || result.SessionID != emitted.Result.ConversationID || result.Answer != emitted.Result.Response {
+		t.Fatalf("terminal result = %#v, want complete session %q and the provider's full answer", result, emitted.Result.ConversationID)
 	}
 }
 
@@ -1018,12 +958,11 @@ func TestGrokRunnerFailsProviderObservedPermissionDenial(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = executeProvider(providerCommand{
-		Path:       "/bin/sh",
-		Args:       []string{"-c", `printf '%s' "$1"`, "sh", string(streamData)},
-		Env:        os.Environ(),
-		Provider:   AgentGrok,
-		SessionID:  runtimeSessionID,
-		Structured: true,
+		Path:      "/bin/sh",
+		Args:      []string{"-c", `printf '%s' "$1"`, "sh", string(streamData)},
+		Env:       os.Environ(),
+		Provider:  AgentGrok,
+		SessionID: runtimeSessionID,
 	}, []byte("prompt"), run, root, nil, func(string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "Denied by permission policy") {
 		t.Fatalf("denied provider run error = %v", err)

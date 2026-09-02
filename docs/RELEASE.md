@@ -21,9 +21,12 @@ git fetch origin
 git pull --ff-only origin main
 git status --porcelain
 
-# Tag and push
-git tag -a "$VERSION" -m "$VERSION"
+# Push the prepared release commit and wait for its exact-commit certification
 git push origin main
+make release-catalog-certify
+
+# Tag only after certification succeeds
+git tag -a "$VERSION" -m "$VERSION"
 git push origin "$VERSION"
 
 # Release assets are built by the GitHub Actions workflow.
@@ -55,6 +58,8 @@ make release-preflight RELEASE_TAG="$VERSION"
 
 CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>`. The release workflow will fail if either manifest is missing. Run `make release-preflight` locally before tagging to run CI, release-script checks, and upgrade-doc validation before publishing.
 
+After pushing the release commit to `main`, run `make release-catalog-certify` before tagging. A certification workflow starts automatically on every `main` push, so this command reuses it or waits for it instead of adding a serial release step. The exact-commit workflow compares the release commit with the previous reachable stable tag. It runs the complete pinned benchmark catalog when benchmark code, the benchmark command, Go module dependencies, or catalog-certification policy changed. Other releases receive a successful exact-commit classification without pulling benchmark images. Required full checks run in sixteen bounded-disk shards, and a weekly forced run detects external catalog-image drift.
+
 ## Agent Dispatch compatibility evidence
 
 For a release that changes Agent Dispatch, attach a short evidence record under
@@ -62,10 +67,10 @@ For a release that changes Agent Dispatch, attach a short evidence record under
 exact `claude --version`, `codex --version`, `agy --version`, and
 `grok --version` values, plus a fresh `start`/`wait` probe and a
 `continue`/`wait` probe for every declared supported provider. A changed or
-missing Antigravity UUID line must also be
-shown to retain diagnostics and fail safe as `not resumable`; do not replace it
-with global/provider-private state lookup. This is release evidence, not a new
-public probe command.
+missing Antigravity structured terminal result must fail without publishing
+plain provider output. The result must carry a conversation ID, final answer,
+and usage evidence; any diagnostic-log UUID that is present must match the
+structured result. This is release evidence, not a new public probe command.
 
 ## GitHub release (automatic)
 1. Tag push triggers the release workflow.

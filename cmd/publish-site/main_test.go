@@ -1722,6 +1722,71 @@ func TestNormalizeVersionsJSON_PrereleasePathTraversalRejected(t *testing.T) {
 	}
 }
 
+func TestRunRejectsInvalidPublicationTargetBeforeMutation(t *testing.T) {
+	repoA := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repoA, "go.mod"), []byte("module example.com/test"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	repoB := t.TempDir()
+	sentinel := filepath.Join(repoB, "do-not-touch.txt")
+	if err := os.WriteFile(sentinel, []byte("preserve"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	originalArgs := os.Args
+	originalFlags := flag.CommandLine
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		os.Args = originalArgs
+		flag.CommandLine = originalFlags
+		_ = os.Chdir(cwd)
+	})
+	if err := os.Chdir(repoA); err != nil {
+		t.Fatal(err)
+	}
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	os.Args = []string{"publish-site", "--tag", "v0.1.0", "--repo-b-dir", repoB}
+
+	err = run()
+	if err == nil || !strings.Contains(err.Error(), "missing .git") {
+		t.Fatalf("invalid publication target error = %v", err)
+	}
+	data, readErr := os.ReadFile(sentinel) // #nosec G304 -- test-owned path.
+	if readErr != nil || string(data) != "preserve" {
+		t.Fatalf("invalid target was mutated: %q, %v", data, readErr)
+	}
+}
+
+func TestRunRejectsInvalidArguments(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{name: "missing repository", args: []string{"--tag", "v0.1.0"}, wantErr: "--repo-b-dir is required"},
+		{name: "invalid timeout", args: []string{"--tag", "v0.1.0", "--repo-b-dir", ".", "--docusaurus-timeout", "0s"}, wantErr: "positive duration"},
+		{name: "invalid stable tag", args: []string{"--tag", "v0.1.0-rc.1", "--repo-b-dir", "."}, wantErr: "invalid tag format"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			originalArgs := os.Args
+			originalFlags := flag.CommandLine
+			t.Cleanup(func() {
+				os.Args = originalArgs
+				flag.CommandLine = originalFlags
+			})
+			flag.CommandLine = flag.NewFlagSet("publish-site", flag.ContinueOnError)
+			os.Args = append([]string{"publish-site"}, test.args...)
+
+			if err := run(); err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("run error = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
 func TestRun(t *testing.T) {
 	repoA := t.TempDir()
 	repoB := t.TempDir()

@@ -97,6 +97,18 @@ enabled = false
 	assert.Contains(t, strings.Join(block.lines, "\n"), "enabled = true")
 }
 
+func TestPatchConfig_DeduplicatesLegacyAndCanonicalClaudeVSCodeSections(t *testing.T) {
+	content := "[agents.claude-vscode]\nenabled = false\n\n[agents.claude_vscode]\nenabled = true\n"
+	out, err := PatchConfig(content, NewChoices())
+	require.NoError(t, err)
+	if strings.Contains(out, "[agents.claude-vscode]") || strings.Count(out, "[agents.claude_vscode]") != 1 {
+		t.Fatalf("patched aliases were not reduced to one canonical section:\n%s", out)
+	}
+	if !strings.Contains(out, "[agents.claude_vscode]\nenabled = true") {
+		t.Fatalf("canonical section value was not preserved:\n%s", out)
+	}
+}
+
 func TestOrderedWizardSections_UsesPreferredOrderWithTemplateFallback(t *testing.T) {
 	templateOrder := []string{
 		"warnings",

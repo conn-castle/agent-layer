@@ -167,24 +167,16 @@ func executeDispatch(request dispatchExecution) error {
 				}
 				id = logID
 			}
-			if id == "" {
-				result.NotResumable = true
-				request.Run.Record.NotResumable = true
-				if _, err := fmt.Fprintf(request.Stderr, "[%s] antigravity · not resumable · agy %s · diagnostics: %s\n", session.Name, request.Version, command.LogPath); err != nil {
-					return finishDispatchFailure(request, wrapExitError(ExitTargetFailure, "write Antigravity capability warning", err))
-				}
-			} else {
-				if request.Mode == dispatchModeResume && id != session.ProviderSessionID {
-					return finishDispatchFailure(request, exitError(ExitTargetFailure, "Antigravity resume returned a different provider conversation ID"))
-				}
-				if err := persist(id); err != nil {
-					return finishDispatchFailure(request, err)
-				}
-				if err := os.Remove(command.LogPath); err != nil {
-					return finishDispatchFailure(request, wrapExitError(ExitConfig, "remove successful Antigravity dispatch log", err))
-				}
-				request.Run.Record.ProviderLogPath = ""
+			if request.Mode == dispatchModeResume && id != session.ProviderSessionID {
+				return finishDispatchFailure(request, exitError(ExitTargetFailure, "Antigravity resume returned a different provider conversation ID"))
 			}
+			if err := persist(id); err != nil {
+				return finishDispatchFailure(request, err)
+			}
+			if err := os.Remove(command.LogPath); err != nil {
+				return finishDispatchFailure(request, wrapExitError(ExitConfig, "remove successful Antigravity dispatch log", err))
+			}
+			request.Run.Record.ProviderLogPath = ""
 		}
 		return completeDispatchSuccess(request, result, session)
 	}
@@ -201,11 +193,7 @@ func completeDispatchSuccess(request dispatchExecution, result executionResult, 
 	}
 	now := time.Now().UTC()
 	request.Run.Record.State = dispatchStateCompleted
-	if result.NotResumable {
-		request.Run.Record.RecoveryState = recoveryNotResumable
-	} else {
-		request.Run.Record.RecoveryState = recoveryResumeRequired
-	}
+	request.Run.Record.RecoveryState = recoveryResumeRequired
 	request.Run.Record.CompletedAt = &now
 	request.Run.Record.TerminalExitCode = 0
 	request.Run.Record.ProviderSessionID = session.ProviderSessionID

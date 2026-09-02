@@ -115,6 +115,33 @@ func TestParseSkillSource_LongLineDoesNotFail(t *testing.T) {
 	}
 }
 
+func TestParseSkillContentRejectsMalformedFrontMatter(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{name: "empty", want: "is empty"},
+		{name: "missing delimiter", content: "name: alpha\n", want: "missing YAML frontmatter"},
+		{name: "unterminated", content: "---\nname: alpha\n", want: "unterminated YAML frontmatter"},
+		{name: "invalid yaml", content: "---\nname: [\n---\n", want: "parse frontmatter"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := ParseSkillContent("alpha/SKILL.md", []byte(test.content))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("malformed skill error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestParseSkillContentAcceptsUTF8BOM(t *testing.T) {
+	parsed, err := ParseSkillContent("alpha/SKILL.md", []byte("\xef\xbb\xbf---\nname: alpha\ndescription: test\n---\nBody\n"))
+	if err != nil || parsed.Name == nil || *parsed.Name != "alpha" {
+		t.Fatalf("BOM-prefixed skill = %#v, %v", parsed, err)
+	}
+}
+
 func TestValidateParsedSkill_MissingNameWarning(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "alpha.md")

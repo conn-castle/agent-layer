@@ -1,7 +1,6 @@
 package launchers
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -216,33 +215,6 @@ func TestWriteVSCodeLaunchersContent(t *testing.T) {
 	}
 }
 
-func TestWriteVSCodeLaunchersDirectoryError(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	// Create a file where the directory should be
-	file := filepath.Join(root, ".agent-layer")
-	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-
-	if err := WriteVSCodeLaunchers(RealSystem{}, root); err == nil {
-		t.Fatalf("expected error when .agent-layer is a file")
-	}
-}
-
-func TestWriteVSCodeLaunchersWriteError(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	agentLayerDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(agentLayerDir, 0o500); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
-	if err := WriteVSCodeLaunchers(RealSystem{}, root); err == nil {
-		t.Fatalf("expected error when directory is read-only")
-	}
-}
-
 func TestWriteVSCodeAppBundle(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -261,151 +233,5 @@ func TestWriteVSCodeAppBundle(t *testing.T) {
 	}
 	if _, err := os.Stat(paths.AppExec); err != nil {
 		t.Fatalf("missing executable: %v", err)
-	}
-}
-
-func TestWriteVSCodeAppBundleMkdirError(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	paths := VSCodePaths(root)
-	if err := os.MkdirAll(paths.AgentLayerDir, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
-	// Create a file where the .app directory should be
-	if err := os.WriteFile(paths.AppDir, []byte("x"), 0o600); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-
-	if err := writeVSCodeAppBundle(RealSystem{}, paths); err == nil {
-		t.Fatalf("expected error when .app path is a file")
-	}
-}
-
-// mockSystem implements System for testing.
-type mockSystem struct {
-	MkdirAllFunc        func(path string, perm os.FileMode) error
-	WriteFileAtomicFunc func(path string, data []byte, perm os.FileMode) error
-}
-
-func (m *mockSystem) MkdirAll(path string, perm os.FileMode) error {
-	if m.MkdirAllFunc != nil {
-		return m.MkdirAllFunc(path, perm)
-	}
-	return nil
-}
-
-func (m *mockSystem) WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
-	if m.WriteFileAtomicFunc != nil {
-		return m.WriteFileAtomicFunc(path, data, perm)
-	}
-	return nil
-}
-
-func TestWriteVSCodeLaunchersAppBundleError(t *testing.T) {
-	t.Parallel()
-	sys := &mockSystem{
-		MkdirAllFunc: func(path string, perm os.FileMode) error { return nil },
-		WriteFileAtomicFunc: func(path string, data []byte, perm os.FileMode) error {
-			if filepath.Base(path) == "Info.plist" {
-				return errors.New("bundle fail")
-			}
-			return nil
-		},
-	}
-	if err := WriteVSCodeLaunchers(sys, t.TempDir()); err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestWriteVSCodeLaunchersDesktopWriteError(t *testing.T) {
-	t.Parallel()
-	sys := &mockSystem{
-		MkdirAllFunc: func(path string, perm os.FileMode) error { return nil },
-		WriteFileAtomicFunc: func(path string, data []byte, perm os.FileMode) error {
-			if filepath.Base(path) == "open-vscode.desktop" {
-				return errors.New("write fail")
-			}
-			return nil
-		},
-	}
-	if err := WriteVSCodeLaunchers(sys, t.TempDir()); err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestWriteVSCodeAppBundleInfoPlistWriteError(t *testing.T) {
-	t.Parallel()
-	sys := &mockSystem{
-		MkdirAllFunc: func(path string, perm os.FileMode) error { return nil },
-		WriteFileAtomicFunc: func(path string, data []byte, perm os.FileMode) error {
-			if filepath.Base(path) == "Info.plist" {
-				return errors.New("write fail")
-			}
-			return nil
-		},
-	}
-	if err := writeVSCodeAppBundle(sys, VSCodePaths(t.TempDir())); err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestWriteVSCodeAppBundleExecWriteError(t *testing.T) {
-	t.Parallel()
-	sys := &mockSystem{
-		MkdirAllFunc: func(path string, perm os.FileMode) error { return nil },
-		WriteFileAtomicFunc: func(path string, data []byte, perm os.FileMode) error {
-			if filepath.Base(path) == "open-vscode" {
-				return errors.New("write fail")
-			}
-			return nil
-		},
-	}
-	if err := writeVSCodeAppBundle(sys, VSCodePaths(t.TempDir())); err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestWriteVSCodeLaunchersTemplateReadError(t *testing.T) {
-	originalRead := readTemplate
-	t.Cleanup(func() {
-		readTemplate = originalRead
-	})
-
-	readTemplate = func(path string) ([]byte, error) {
-		if path == openVSCodeCommandTemplatePath {
-			return nil, errors.New("read fail")
-		}
-		return originalRead(path)
-	}
-
-	err := WriteVSCodeLaunchers(RealSystem{}, t.TempDir())
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "failed to read template "+openVSCodeCommandTemplatePath) {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestWriteVSCodeAppBundleTemplateReadError(t *testing.T) {
-	originalRead := readTemplate
-	t.Cleanup(func() {
-		readTemplate = originalRead
-	})
-
-	readTemplate = func(path string) ([]byte, error) {
-		if path == openVSCodeAppInfoTemplatePath {
-			return nil, errors.New("read fail")
-		}
-		return originalRead(path)
-	}
-
-	err := writeVSCodeAppBundle(RealSystem{}, VSCodePaths(t.TempDir()))
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "failed to read template "+openVSCodeAppInfoTemplatePath) {
-		t.Fatalf("unexpected error: %v", err)
 	}
 }

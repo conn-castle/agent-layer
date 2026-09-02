@@ -206,7 +206,7 @@ func identityName(t *testing.T, stderr string) string {
 	return trimmed[1:end]
 }
 
-func TestAntigravitySuccessfulAnswerWithoutIDIsNotResumable(t *testing.T) {
+func TestAntigravityPlainOutputIsRejected(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	path := filepath.Join(binDir, "agy")
@@ -221,34 +221,22 @@ printf 'answer without a provider id'
 		t.Fatalf("write agy stub: %v", err)
 	}
 	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	if err := executeFreshDispatch(dispatchExecRequest{
+	err := executeFreshDispatch(dispatchExecRequest{
 		Root:     root,
 		Agent:    AgentAntigravity,
 		Prompt:   "fresh",
 		Env:      []string{"PATH=" + testPath(binDir)},
 		Stdout:   &stdout,
-		Stderr:   &stderr,
+		Stderr:   &bytes.Buffer{},
 		LookPath: mockLookPath(binDir),
-	}); err != nil {
-		t.Fatalf("dispatch Antigravity: %v", err)
-	}
-	if stdout.String() != "answer without a provider id" {
-		t.Fatalf("stdout = %q", stdout.String())
-	}
-	if !strings.Contains(stderr.String(), "not resumable · agy 1.1.21 · diagnostics:") {
-		t.Fatalf("missing not-resumable warning: %q", stderr.String())
-	}
-	sessions, err := listSessions(root)
-	if err != nil {
-		t.Fatalf("list sessions: %v", err)
-	}
-	if len(sessions) != 1 || sessions[0].State != "pending" || sessions[0].ActiveRunID != "" {
-		t.Fatalf("non-resumable history mapping = %#v", sessions)
+	})
+	requireDispatchExitCode(t, err, ExitTargetFailure)
+	if stdout.Len() != 0 {
+		t.Fatalf("plain provider output leaked to caller: %q", stdout.String())
 	}
 }
 
-func TestAntigravityResumeWithoutParsedIDRetainsDurableMapping(t *testing.T) {
+func TestAntigravityResumePlainOutputFailsAndRetainsDurableMapping(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, err := newDispatchRun(root, AgentAntigravity, supportedProviderVersions[AgentAntigravity], dispatchModeFresh)
 	if err != nil {
@@ -290,8 +278,8 @@ printf 'resumed answer without a provider id'
 		Prompt:   "resume",
 		Env:      []string{"PATH=" + testPath(binDir)},
 		LookPath: mockLookPath(binDir),
-	}, session.Name); err != nil {
-		t.Fatalf("continue Antigravity dispatch: %v", err)
+	}, session.Name); err == nil {
+		t.Fatal("continue Antigravity dispatch accepted plain provider output")
 	}
 	retained, err := loadSession(root, session.Name)
 	if err != nil {
@@ -305,8 +293,59 @@ printf 'resumed answer without a provider id'
 		Prompt:   "resume again",
 		Env:      []string{"PATH=" + testPath(binDir)},
 		LookPath: mockLookPath(binDir),
-	}, session.Name); err != nil {
-		t.Fatalf("second continue Antigravity dispatch: %v", err)
+	}, session.Name); err == nil {
+		t.Fatal("second continue Antigravity dispatch accepted plain provider output")
+	}
+}
+
+func TestAntigravityStructuredResumeReturnsPlainAnswerAndRetainsDurableMapping(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	binDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "agy.log")
+	writeDispatchStub(t, binDir, "agy", antigravityStructuredOK)
+	env := []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath}
+
+	var freshErr bytes.Buffer
+	if err := executeFreshDispatch(dispatchExecRequest{
+		Root:     root,
+		Agent:    AgentAntigravity,
+		Prompt:   "fresh",
+		Env:      env,
+		Stderr:   &freshErr,
+		LookPath: mockLookPath(binDir),
+	}); err != nil {
+		t.Fatalf("fresh Antigravity dispatch: %v", err)
+	}
+	name := identityName(t, freshErr.String())
+	if err := os.WriteFile(logPath, nil, 0o600); err != nil {
+		t.Fatalf("reset provider log: %v", err)
+	}
+
+	var resumeOut bytes.Buffer
+	if err := executeContinueDispatch(dispatchExecRequest{
+		Root:     root,
+		Prompt:   "resume",
+		Env:      env,
+		Stdout:   &resumeOut,
+		Stderr:   &bytes.Buffer{},
+		LookPath: mockLookPath(binDir),
+	}, name); err != nil {
+		t.Fatalf("continue Antigravity dispatch: %v", err)
+	}
+	if resumeOut.String() != "agy ok" {
+		t.Fatalf("resume stdout = %q", resumeOut.String())
+	}
+	assertFileContains(t, logPath, "ARG_3=--conversation")
+	assertFileContains(t, logPath, "ARG_4=22222222-2222-4222-8222-222222222222")
+	assertFileContains(t, logPath, "ARG_5=--output-format")
+	assertFileContains(t, logPath, "ARG_6=stream-json")
+
+	retained, err := loadSession(root, name)
+	if err != nil {
+		t.Fatalf("load resumed session: %v", err)
+	}
+	if retained.ProviderSessionID != "22222222-2222-4222-8222-222222222222" || retained.State != "durable" {
+		t.Fatalf("retained session = %#v", retained)
 	}
 }
 

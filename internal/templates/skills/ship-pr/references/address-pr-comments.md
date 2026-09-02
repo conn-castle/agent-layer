@@ -38,9 +38,16 @@ issue creation unless authorized.
 Prepare one reply per eligible, unblocked comment, keyed by its stable ID or
 URL:
 
-- **Fixed.** Describe the fix.
-- **No change — `<reason>`.** Give evidence.
-- **Deferred — tracked in `<location>`.** Explain the boundary.
+- `Fixed.` Describe the fix. This is a proposal marker only; the shipper must
+  replace it with `Fixed in <full commit SHA>.` after pushing the fix.
+- `Disagreed.` Give evidence for not following the reviewer's recommendation,
+  including any alternative fix that addresses the underlying problem.
+- `Deferred.` Name the tracking location and explain the boundary.
+
+The first words are a machine-readable disposition protocol. Do not substitute
+`No change`, `Done`, `Resolved`, or another synonym. Never post the proposal
+marker `Fixed.`; a posted fixed disposition must name the full commit that
+contains the accepted fix.
 
 Finish when every eligible comment has a supported disposition and no unblocked
 local work remains. Return dispositions, stable comment IDs or URLs, fixes and

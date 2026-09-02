@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/debug"
 	"sort"
@@ -30,13 +31,34 @@ import (
 const treatmentContainerRoot = "/app"
 
 const studyTreatmentPinSchema = "deepswe-study-treatment-pin-v1"
+const treatmentRuntimeSourceRelease = "release"
 
 var benchmarkReleaseHTTPClient = &http.Client{Timeout: 30 * time.Second}
 var benchmarkReleasesBaseURL = update.ReleasesBaseURL
 var renameStudyTreatmentPin = os.Rename
 
+// benchmarkSyncSystem keeps generated treatment projections content-addressed.
+// Ordinary syncs retain their real trust-decision timestamp; the synthetic
+// benchmark root /app has no user decision time and must be byte-stable.
+type benchmarkSyncSystem struct {
+	sync.RealSystem
+}
+
+func (benchmarkSyncSystem) Now() time.Time {
+	return time.Unix(0, 0).UTC()
+}
+
 //go:embed assets/pier_agent_layer.py assets/al_dispatch_gate.py assets/pricing.yaml
 var treatmentAssets embed.FS
+
+func embeddedPierAdapterSHA256() (string, error) {
+	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
+	if err != nil {
+		return "", fmt.Errorf("read embedded Pier adapter: %w", err)
+	}
+	sum := sha256.Sum256(adapter)
+	return hex.EncodeToString(sum[:]), nil
+}
 
 // TreatmentBundle is the secret-free, immutable effective Agent Layer input.
 type TreatmentBundle struct {
@@ -112,7 +134,7 @@ func pinStudyTreatmentBundle(repoRoot string, bundle *TreatmentBundle) (*Treatme
 	if err != nil || hash != bundle.ManifestHash {
 		return nil, fmt.Errorf("study treatment bundle content does not match its manifest")
 	}
-	root := filepath.Join(repoRoot, ".agent-layer", "state", "benchmarks", "deepswe", "study-pins", bundle.ManifestHash)
+	root := studyTreatmentPinRoot(repoRoot, bundle.ManifestHash)
 	pinPath := filepath.Join(root, "pin.json")
 	if _, err := os.Stat(pinPath); err == nil {
 		pinned, err := loadPinnedStudyTreatmentBundle(root, bundle)
@@ -153,6 +175,10 @@ func pinStudyTreatmentBundle(repoRoot string, bundle *TreatmentBundle) (*Treatme
 	}
 	_ = os.RemoveAll(stagedRoot)
 	return pinned, nil
+}
+
+func studyTreatmentPinRoot(repoRoot, manifestHash string) string {
+	return filepath.Join(repoRoot, ".agent-layer", "state", "benchmarks", "deepswe", "study-pins", manifestHash)
 }
 
 // loadPinnedStudyTreatmentBundle treats the persisted pin as the authority for
@@ -307,6 +333,9 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	if err := copyRequiredFile(config, filepath.Join(layer, "config.toml")); err != nil {
 		return nil, err
 	}
+	if err := validateTreatmentInstructionDependencies(experiment.inputs.Instructions); err != nil {
+		return nil, err
+	}
 	for _, input := range []struct{ name, path string }{{studyInputInstructions, experiment.inputs.Instructions}, {studyInputSkills, experiment.inputs.Skills}} {
 		if input.path == "" {
 			if err := os.MkdirAll(filepath.Join(layer, input.name), 0o700); err != nil {
@@ -353,7 +382,7 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 			return nil, err
 		}
 	}
-	if _, err := sync.Run(root); err != nil {
+	if _, err := sync.RunWithSystemFS(benchmarkSyncSystem{}, os.DirFS(root), root); err != nil {
 		return nil, fmt.Errorf("synchronize staged study inputs: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(layer, ".env"), []byte("# Intentionally empty; provider authentication is injected separately.\n"), 0o600); err != nil {
@@ -420,14 +449,17 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	if err != nil {
 		return nil, err
 	}
-	adapterHash := sha256.Sum256(adapter)
+	adapterSHA256, err := embeddedPierAdapterSHA256()
+	if err != nil {
+		return nil, err
+	}
 	commit, dirty, err := verifiedDevelopmentProvenance()
 	if err != nil {
 		return nil, err
 	}
 	sourceKind, runtimeVersion := "development", ""
 	if commit == "" {
-		sourceKind = "release"
+		sourceKind = treatmentRuntimeSourceRelease
 		if executable, versionErr := os.Executable(); versionErr == nil {
 			if output, outputErr := exec.CommandContext(context.Background(), executable, "--version").Output(); outputErr == nil { // #nosec G204 -- executable is the current Agent Layer binary.
 				if fields := strings.Fields(string(output)); len(fields) > 0 {
@@ -437,19 +469,94 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 		}
 	}
 	cleanup = false
-	return &TreatmentBundle{Root: root, Manifest: manifest, ManifestHash: manifestHash, LinuxArchitecture: targetArch, LinuxBinary: binary, LinuxBinarySHA256: binaryHash, AdapterPath: adapterPath, AdapterSHA256: hex.EncodeToString(adapterHash[:]), TemplatesCommit: commit, TemplatesDirty: dirty, CredentialNames: credentialNames, RuntimeSourceKind: sourceKind, RuntimeVersion: runtimeVersion}, nil
+	return &TreatmentBundle{Root: root, Manifest: manifest, ManifestHash: manifestHash, LinuxArchitecture: targetArch, LinuxBinary: binary, LinuxBinarySHA256: binaryHash, AdapterPath: adapterPath, AdapterSHA256: adapterSHA256, TemplatesCommit: commit, TemplatesDirty: dirty, CredentialNames: credentialNames, RuntimeSourceKind: sourceKind, RuntimeVersion: runtimeVersion}, nil
+}
+
+func validateTreatmentInstructionDependencies(root string) error {
+	if root == "" {
+		return nil
+	}
+	// Treatment manifests deliberately exclude project memory and personal
+	// context. Fail before provider execution when instructions mandate known
+	// project-state documents or persona guides instead of silently giving only
+	// the treatment arm failed reads.
+	projectStateNames := map[string]bool{
+		"backlog.md": true, "commands.md": true, "context.md": true,
+		"decisions.md": true, "issues.md": true, "memory.md": true, "roadmap.md": true,
+	}
+	restricted, err := os.OpenRoot(root)
+	if err != nil {
+		return fmt.Errorf("open study instructions: %w", err)
+	}
+	defer func() { _ = restricted.Close() }()
+	return fs.WalkDir(restricted.FS(), ".", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		data, err := restricted.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, field := range instructionReferenceFields(string(data)) {
+			reference, normalized := normalizeInstructionReference(field)
+			if projectStateNames[filepath.Base(normalized)] || strings.HasPrefix(normalized, "guides/") {
+				return fmt.Errorf(
+					"study instructions %s reference excluded project-local file %s; provide self-contained benchmark instructions",
+					filepath.ToSlash(path), reference,
+				)
+			}
+		}
+		return nil
+	})
+}
+
+var markdownLinkDestinationPattern = regexp.MustCompile(`\[[^\]]*\]\(\s*<?([^)\s>]+)>?`)
+
+func instructionReferenceFields(data string) []string {
+	fields := strings.Fields(data)
+	matches := markdownLinkDestinationPattern.FindAllStringSubmatch(data, -1)
+	if len(matches) == 0 {
+		return fields
+	}
+	refs := append([]string(nil), fields...)
+	for _, match := range matches {
+		refs = append(refs, match[1])
+	}
+	return refs
+}
+
+func normalizeInstructionReference(field string) (string, string) {
+	reference := strings.Trim(field, "`'\",;:()[]{}<>")
+	reference = strings.TrimRight(reference, ".")
+	if cut := strings.IndexAny(reference, "#?"); cut >= 0 {
+		reference = reference[:cut]
+	}
+	normalized := strings.ToLower(strings.TrimPrefix(filepath.ToSlash(reference), "./"))
+	return reference, normalized
 }
 
 func rewriteTreatmentProjectionRoot(root, from, to string) error {
 	if strings.TrimSpace(from) == "" || strings.TrimSpace(to) == "" || from == to {
 		return fmt.Errorf("treatment projection root rewrite requires distinct non-empty paths")
 	}
+	canonicalFrom, err := filepath.EvalSymlinks(from)
+	if err != nil {
+		return fmt.Errorf("resolve treatment projection root: %w", err)
+	}
 	restricted, err := os.OpenRoot(root)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = restricted.Close() }()
-	fromBytes, toBytes := []byte(filepath.ToSlash(from)), []byte(filepath.ToSlash(to))
+	fromPaths := [][]byte{[]byte(filepath.ToSlash(from))}
+	if canonical := []byte(filepath.ToSlash(canonicalFrom)); !bytes.Equal(canonical, fromPaths[0]) {
+		fromPaths = append(fromPaths, canonical)
+	}
+	sort.Slice(fromPaths, func(i, j int) bool { return len(fromPaths[i]) > len(fromPaths[j]) })
+	toBytes := []byte(filepath.ToSlash(to))
 	return fs.WalkDir(restricted.FS(), ".", func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -464,7 +571,10 @@ func rewriteTreatmentProjectionRoot(root, from, to string) error {
 		if err != nil {
 			return err
 		}
-		rewritten := bytes.ReplaceAll(data, fromBytes, toBytes)
+		rewritten := data
+		for _, fromBytes := range fromPaths {
+			rewritten = bytes.ReplaceAll(rewritten, fromBytes, toBytes)
+		}
 		if bytes.Equal(data, rewritten) {
 			return nil
 		}
@@ -577,16 +687,11 @@ func verifiedDevelopmentSourceCheckout() (root, commit string, dirty bool, devel
 	}
 	commit = strings.TrimSpace(string(data))
 	if info, ok := debug.ReadBuildInfo(); ok {
-		if info.Main.Version != "" && info.Main.Version != "(devel)" {
-			// A released/distributed binary must never silently rebuild from a
-			// coincidentally available source tree.
-			return "", "", false, false, nil
-		}
 		for _, setting := range info.Settings {
 			if setting.Key == "vcs.revision" && setting.Value != "" && !strings.HasPrefix(commit, setting.Value) {
 				return "", "", false, false, fmt.Errorf("development binary revision %s does not match source checkout %s", setting.Value, commit)
 			}
-			if setting.Key == "vcs.modified" && setting.Value == "true" {
+			if setting.Key == "vcs.modified" && setting.Value == booleanTrue {
 				dirty = true
 			}
 		}

@@ -45,7 +45,7 @@ func applyScoreCorrections(result AttemptResult, resultPath string) (AttemptResu
 	if result.Task != obsidianAutoTOCTask || result.TaskChecksum != obsidianAutoTOCChecksum {
 		return result, nil
 	}
-	artifactRoot := filepath.Join(filepath.Dir(resultPath), "artifacts", result.EventID)
+	artifactRoot := filepath.Join(filepath.Dir(resultPath), benchmarkArtifactsDir, result.EventID)
 	gradedPath, err := uniqueArtifactPath(artifactRoot, filepath.Join("verifier", "ctrf.json"))
 	if err != nil {
 		return AttemptResult{}, fmt.Errorf("locate canonical verifier report for score correction: %w", err)

@@ -53,6 +53,7 @@ const (
 	authMethodGoogleOAuth         = "google_oauth"
 	authMethodJSONFile            = "auth_json"
 	dispatchRunStateCompleted     = "completed"
+	dispatchRunModeFresh          = "fresh"
 	dockerBuildxPlugin            = "docker-buildx"
 	dockerComposePlugin           = "docker-compose"
 	requiredRoleCodeReviewer      = "code-reviewer"
@@ -204,6 +205,14 @@ func modelNameForPublished(identifier string) string {
 		}
 	}
 	return identifier
+}
+
+func supportedPublishedModelIdentifiers() []string {
+	identifiers := make([]string, 0, len(supportedModels))
+	for _, model := range supportedModels {
+		identifiers = append(identifiers, model.PublishedIdentifier)
+	}
+	return identifiers
 }
 
 func validTaskName(task string) bool {

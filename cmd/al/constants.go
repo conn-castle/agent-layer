@@ -1,8 +1,11 @@
 package main
 
+import "github.com/conn-castle/agent-layer/internal/messages"
+
 const (
-	commandInit    = "init"
-	commandUpgrade = "upgrade"
+	commandInit    = messages.InitUse
+	commandUpdate  = messages.UpdateUse
+	commandUpgrade = messages.UpgradeUse
 	unknownVersion = "unknown"
 	noSyncFlag     = "--no-sync"
 

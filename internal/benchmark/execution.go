@@ -33,11 +33,12 @@ var (
 	validateBenchmarkAuthentication  = validateAuthentication
 	ensurePinnedBenchmarkCheckout    = ensurePinnedCheckout
 	preflightTaskStartups            = validatePlanTaskStartups
-	certifyBenchmarkTaskEnvironments = certifyPlanTaskEnvironments
+	certifyBenchmarkTaskEnvironments = certifyPlanTaskEnvironmentsWithCleanup
 	prepareBenchmarkTaskSet          = prepareBenchmarkTasks
 	verifyBenchmarkPier              = verifyPinnedPier
 	runBenchmarkDockerCommand        = runDockerCommand
 	readAntigravitySystemCredential  = readSystemAntigravityOAuthCredential
+	benchmarkHostOS                  = runtime.GOOS
 )
 
 const (
@@ -49,10 +50,12 @@ const (
 	platformDarwin                 = "darwin"
 	platformLinux                  = "linux"
 	dockerFormatFlag               = "--format"
+	dockerForceFlag                = "--force"
 	dockerImageResource            = "image"
 	dockerNetworkResource          = "network"
 	dockerVolumeResource           = "volume"
 	commandRun                     = "run"
+	booleanTrue                    = "true"
 	// These formats print one resource identity and its Compose project label
 	// per line. Docker expands the literal \t escape itself. Containers and
 	// networks are addressed by ID; volumes are addressed by name.
@@ -63,6 +66,7 @@ const (
 var (
 	dockerResourceIDPattern = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
 	dockerVolumeNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]+$`)
+	dockerImageIDPattern    = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 )
 
 type parsedSelection struct {
@@ -83,6 +87,7 @@ type ExecutionRequest struct {
 	EventID                string
 	Attempt                int
 	Task                   string
+	Experiment             string
 	Model                  Model
 	Effort                 string
 	Arm                    string
@@ -90,6 +95,7 @@ type ExecutionRequest struct {
 	TaskChecksum           string
 	EnvironmentIdentity    string
 	AgentTimeoutMultiplier float64
+	AdapterSHA256          string
 	PreflightOnly          bool
 	// ResumeFailedInfrastructure is set only by the study scheduler for a new
 	// user-authorized benchmark invocation. It permits a fresh event after an
@@ -98,6 +104,11 @@ type ExecutionRequest struct {
 	ResumeFailedInfrastructure bool
 	resumedFailedEventIDs      []string
 	antigravityCredentialsPath string
+	artifactSecrets            [][]byte
+	executionCheckpointed      bool
+	recoveryOnly               bool
+	verifierReplay             bool
+	OnProgress                 func(ExecutionProgress)
 }
 
 func sameIntMap(left, right map[string]int) bool {
@@ -210,7 +221,8 @@ func validateCodexLoginStatus(ctx context.Context, repoRoot string) (Authenticat
 	ctx, cancel := context.WithTimeout(ctx, authenticationPreflightTimeout)
 	defer cancel()
 	command := exec.CommandContext(ctx, adapterCodex, "login", "status") // #nosec G204 -- provider binary name and arguments are fixed.
-	configureBenchmarkCommandCancellation(command)
+	finishCancellation := configureBenchmarkCommandCancellation(command)
+	defer finishCancellation()
 	command.WaitDelay = 2 * time.Second
 	command.Env = replaceEnvValue(os.Environ(), "CODEX_HOME", filepath.Join(repoRoot, ".codex"))
 	output, err := command.CombinedOutput()
@@ -308,13 +320,20 @@ func (PierExecutor) Preflight(ctx context.Context, request ExecutionRequest) err
 }
 
 // Execute runs one task and promotes sanitized evidence before returning.
-func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (AttemptResult, error) {
+func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (result AttemptResult, returnErr error) {
 	if request.RepoRoot == "" || request.EvidenceDir == "" || request.EventID == "" ||
 		request.Attempt < 1 || !validTaskName(request.Task) ||
 		(request.Arm != ArmBaseline && request.Arm != ArmTreatment) {
 		return AttemptResult{}, fmt.Errorf("invalid Pier execution request")
 	}
 	if !request.PreflightOnly {
+		if checkpoint, found, err := matchingPierExecutionCheckpoint(request); err != nil {
+			return AttemptResult{}, err
+		} else if found {
+			replayRequest := request
+			replayRequest.EventID = checkpoint.EventID
+			return (PierExecutor{}).replayVerifier(ctx, replayRequest, checkpoint)
+		}
 		if recovered, found, err := recoverCompletedPierExecution(request); err != nil {
 			return AttemptResult{}, err
 		} else if found {
@@ -326,6 +345,11 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 				return AttemptResult{}, err
 			}
 			request.resumedFailedEventIDs = resumed
+		}
+	}
+	if request.Model.Adapter == adapterGrok && !request.PreflightOnly {
+		if err := validateGrokPaidCredentialLifetime(request.RepoRoot, time.Now().UTC()); err != nil {
+			return AttemptResult{}, err
 		}
 	}
 	checkout, err := ensurePinnedBenchmarkCheckout(ctx, request.RepoRoot)
@@ -340,18 +364,39 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 	if err != nil {
 		return AttemptResult{}, fmt.Errorf("create restricted benchmark staging directory: %w", err)
 	}
-	defer func() { _ = os.RemoveAll(stage) }()
+	paidExecutionStarted := false
+	durableExecution := false
+	defer func() {
+		if request.PreflightOnly || !paidExecutionStarted || durableExecution {
+			_ = os.RemoveAll(stage)
+			return
+		}
+		if returnErr != nil {
+			if request.antigravityCredentialsPath != "" {
+				_ = os.Remove(request.antigravityCredentialsPath)
+			}
+			if err := sanitizePierArtifacts(request, stage); err != nil {
+				returnErr = errors.Join(returnErr, fmt.Errorf("sanitize retained Pier staging directory: %w", err))
+			}
+			returnErr = fmt.Errorf("%w; retained staging directory: %s", returnErr, stage)
+		}
+	}()
 	if request.Model.Adapter == adapterAntigravity {
 		credential, credentialErr := benchmarkAntigravityOAuthCredential(ctx, request.RepoRoot)
 		if credentialErr != nil {
 			return AttemptResult{}, credentialErr
 		}
 		request.antigravityCredentialsPath = filepath.Join(stage, antigravityOAuthStageFile)
+		request.artifactSecrets = append(request.artifactSecrets, credentialSecretValues(credential)...)
 		if err := os.WriteFile(request.antigravityCredentialsPath, credential, 0o600); err != nil {
 			return AttemptResult{}, fmt.Errorf("stage Antigravity OAuth profile: %w", err)
 		}
 	}
 	startupArguments, err := prepareTaskStartup(checkout, request.Task, stage)
+	if err != nil {
+		return AttemptResult{}, err
+	}
+	timeouts, err := loadBenchmarkTaskTimeouts(checkout, request.Task, request.AgentTimeoutMultiplier)
 	if err != nil {
 		return AttemptResult{}, err
 	}
@@ -366,7 +411,7 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 		"--include-task-name", request.Task,
 	}
 	arguments = append(arguments, startupArguments...)
-	if request.Arm == ArmTreatment || request.Model.Adapter == adapterAntigravity || request.Model.Adapter == adapterGrok {
+	if usesAgentLayerPierAdapter(request) {
 		treatmentArguments, err := treatmentPierArguments(request)
 		if err != nil {
 			return AttemptResult{}, err
@@ -392,7 +437,8 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 	}
 
 	command := exec.CommandContext(ctx, commandUVX, arguments...) // #nosec G204 -- every identity is validated or pinned above.
-	configureBenchmarkCommandCancellation(command)
+	finishCancellation := configureBenchmarkCommandCancellation(command)
+	defer finishCancellation()
 	command.Dir = request.RepoRoot
 	dockerConfig, err := prepareBenchmarkDockerConfig(stage)
 	if err != nil {
@@ -402,14 +448,18 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 	if err != nil {
 		return AttemptResult{}, err
 	}
+	adapterPath, err := stagePierAgentLayerAdapter(request, stage)
+	if err != nil {
+		return AttemptResult{}, err
+	}
 	command.Env = append(
 		benchmarkProcessEnvironment(credentialValues),
 		"DOCKER_CONFIG="+dockerConfig,
 		"PYTHONDONTWRITEBYTECODE=1",
 	)
 	pythonPaths := make([]string, 0, 2)
-	if request.Bundle != nil {
-		pythonPaths = append(pythonPaths, filepath.Dir(request.Bundle.AdapterPath))
+	if adapterPath != "" {
+		pythonPaths = append(pythonPaths, adapterPath)
 	}
 	if len(startupArguments) > 0 {
 		pythonPaths = append([]string{stage}, pythonPaths...)
@@ -417,17 +467,62 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 	if len(pythonPaths) > 0 {
 		command.Env = append(command.Env, "PYTHONPATH="+strings.Join(pythonPaths, string(os.PathListSeparator)))
 	}
-	output, commandErr := command.CombinedOutput()
+	var output bytes.Buffer
+	command.Stdout, command.Stderr = &output, &output
+	if !request.PreflightOnly {
+		if err := writePierExecutionCheckpoint(request, stage); err != nil {
+			return AttemptResult{}, err
+		}
+		request.executionCheckpointed = true
+	}
+	if err := command.Start(); err != nil {
+		if !request.PreflightOnly {
+			_ = removePierExecutionCheckpoint(request)
+		}
+		return AttemptResult{}, err
+	}
+	progressStop := make(chan struct{})
+	progressDone := make(chan struct{})
+	go func() {
+		defer close(progressDone)
+		watchPierExecutionProgress(stage, timeouts, request.OnProgress, func(completedAt time.Time) {
+			if request.PreflightOnly {
+				return
+			}
+			// Advisory early mark. Pier may still be writing model.patch or
+			// result.json, so incomplete evidence here is expected and proves
+			// nothing; the authoritative validation runs after Pier exits.
+			_ = markPersistedProviderCompletion(stage, request, completedAt)
+		}, progressStop)
+	}()
+	paidExecutionStarted = !request.PreflightOnly
+	commandErr := command.Wait()
+	finishCancellation()
+	close(progressStop)
+	<-progressDone
+	var durableProviderErr error
+	if !request.PreflightOnly {
+		durableProviderErr = provePersistedProviderCompletion(stage, request, time.Now().UTC())
+	}
+	var removeCredentialErr error
+	if request.antigravityCredentialsPath != "" {
+		if err := os.Remove(request.antigravityCredentialsPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			removeCredentialErr = fmt.Errorf("remove staged Antigravity OAuth profile: %w", err)
+		}
+	}
 	cleanupErr := cleanupPierDockerResources(stage, request)
+	if err := errors.Join(durableProviderErr, removeCredentialErr); err != nil {
+		return AttemptResult{}, fmt.Errorf("finalize persisted provider output: %w; cleanup: %v", err, cleanupErr)
+	}
 	if err := os.RemoveAll(dockerConfig); err != nil {
 		return AttemptResult{}, fmt.Errorf("remove transient benchmark Docker configuration: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(stage, "pier-command.log"), output, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(stage, "pier-command.log"), output.Bytes(), 0o600); err != nil {
 		return AttemptResult{}, err
 	}
 	if request.PreflightOnly {
 		if commandErr != nil {
-			return AttemptResult{}, fmt.Errorf("pier treatment runtime preflight failed: %w: %s", errors.Join(commandErr, cleanupErr), strings.TrimSpace(string(output)))
+			return AttemptResult{}, fmt.Errorf("pier treatment runtime preflight failed: %w: %s", errors.Join(commandErr, cleanupErr), strings.TrimSpace(output.String()))
 		}
 		if cleanupErr != nil {
 			return AttemptResult{}, fmt.Errorf("clean Pier treatment runtime preflight: %w", cleanupErr)
@@ -437,45 +532,186 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (Atte
 		}
 		return AttemptResult{}, nil
 	}
+	result, durableExecution, returnErr = finalizePierExecution(request, stage, commandErr, cleanupErr)
+	return result, returnErr
+}
+
+// validateGrokPaidCredentialLifetime stops before provider inference when a
+// long study has approached the expiry of Grok's copied OAuth credential.
+// Grok exposes no trustworthy non-billing refresh command, so failing before a
+// paid call is safer than discovering expiry inside an isolated task container.
+func validateGrokPaidCredentialLifetime(repoRoot string, now time.Time) error {
+	authPath := filepath.Join(repoRoot, ".grok-config", "auth.json")
+	if err := requireJSONCredentialFile(authPath, "Grok"); err != nil {
+		return err
+	}
+	data, err := os.ReadFile(authPath) // #nosec G304 -- fixed repo-local provider credential path.
+	if err != nil {
+		return fmt.Errorf("read Grok benchmark authentication lifetime: %w", err)
+	}
+	var profiles map[string]struct {
+		ExpiresAt time.Time `json:"expires_at"`
+	}
+	if err := json.Unmarshal(data, &profiles); err != nil {
+		return fmt.Errorf("decode Grok benchmark authentication lifetime: %w", err)
+	}
+	if len(profiles) != 1 {
+		return fmt.Errorf("grok benchmark authentication must contain exactly one profile, found %d", len(profiles))
+	}
+	var expiresAt time.Time
+	for _, profile := range profiles {
+		expiresAt = profile.ExpiresAt
+	}
+	const minimumLifetime = 30 * time.Minute
+	if expiresAt.IsZero() || !expiresAt.After(now.Add(minimumLifetime)) {
+		return fmt.Errorf("grok benchmark authentication expires too soon for another paid cell; run grok login --device-code with GROK_HOME=%s, then resume the study", filepath.Join(repoRoot, ".grok-config"))
+	}
+	return nil
+}
+
+// provePersistedProviderCompletion is the authoritative post-run mark. The
+// adapter's completion checkpoint alone proves the paid call finished, so it is
+// honored even when the rest of the evidence is incomplete (an interrupted
+// patch export, an unreadable cost stream): such an event must be retained
+// for operator review rather than recorded as a failed receipt that a later
+// invocation would resume at provider expense. Locating or reading that
+// checkpoint is itself authoritative, so its errors are surfaced.
+func provePersistedProviderCompletion(stage string, request ExecutionRequest, completedAt time.Time) error {
+	provider, found, err := locateProviderCheckpoint(stage)
+	if err != nil {
+		return err
+	}
+	if found {
+		return markPierProviderCompleted(request, provider.CompletedAt)
+	}
+	return markPersistedProviderCompletion(stage, request, completedAt)
+}
+
+// markPersistedProviderCompletion is the advisory mark used while Pier is still
+// running: it records ProviderCompletedAt only once the full retained evidence
+// proves a clean provider completion. Incomplete or unreadable evidence is not
+// an error here because Pier may still be writing it.
+func markPersistedProviderCompletion(stage string, request ExecutionRequest, completedAt time.Time) error {
+	if _, agentDir, original, evidenceErr := retainedProviderEvidence(stage, request); evidenceErr == nil && cleanProviderCompletion(agentDir, original) {
+		if provider, providerErr := readProviderCheckpoint(agentDir); providerErr == nil && !provider.CompletedAt.IsZero() {
+			completedAt = provider.CompletedAt
+		}
+		return markPierProviderCompleted(request, completedAt)
+	}
+	return nil
+}
+
+// finalizePierExecution promotes sanitized evidence for a finished paid Pier
+// run and records its immutable receipt. The returned flag reports whether the
+// event reached a receipt; when it is false the caller must retain the staging
+// directory because the checkpoint still references it for verifier replay.
+func finalizePierExecution(request ExecutionRequest, stage string, commandErr, cleanupErr error) (AttemptResult, bool, error) {
 	if err := promoteSanitizedPierArtifacts(request, stage); err != nil {
-		return AttemptResult{}, err
+		return AttemptResult{}, false, err
 	}
 	artifactRoot, err := artifactDestination(request)
 	if err != nil {
-		return AttemptResult{}, err
+		return AttemptResult{}, false, err
+	}
+	durable := false
+	recordDurableExecution := func(executionErr error) error {
+		if err := writePierExecutionReceipt(request, executionErr, cleanupErr); err != nil {
+			return err
+		}
+		if err := removePierExecutionCheckpoint(request); err != nil {
+			return err
+		}
+		durable = true
+		return nil
 	}
 	if commandErr != nil {
+		terminalResult, terminal, terminalErr := normalizeTerminalVerifierTestTimeout(artifactRoot, request)
+		if terminalErr != nil {
+			return AttemptResult{}, false, terminalErr
+		}
+		if terminal && cleanupErr == nil {
+			// Pier exits unsuccessfully for a verifier timeout, but a timeout
+			// proven to have occurred during the candidate test process is a
+			// completed benchmark outcome rather than infrastructure failure.
+			if err := recordDurableExecution(nil); err != nil {
+				return AttemptResult{}, durable, err
+			}
+			return terminalResult, true, nil
+		}
+	}
+	if commandErr != nil {
+		if retained, retainedErr := retainPersistedProviderFailure(request, commandErr, cleanupErr); retained {
+			return AttemptResult{}, false, retainedErr
+		}
 		capacity, err := hasProviderCapacityEvidence(artifactRoot)
 		if err != nil {
-			return AttemptResult{}, fmt.Errorf("inspect provider failure evidence: %w", err)
+			return AttemptResult{}, false, fmt.Errorf("inspect provider failure evidence: %w", err)
 		}
 		if capacity {
 			// The provider was invoked, so its failed event must remain in the
 			// immutable receipt chain. A later benchmark invocation can resume
 			// it explicitly; this invocation must not silently retry it.
-			if err := writePierExecutionReceipt(request, commandErr, cleanupErr); err != nil {
-				return AttemptResult{}, err
+			if err := recordDurableExecution(commandErr); err != nil {
+				return AttemptResult{}, durable, err
 			}
 			if cleanupErr != nil {
-				return AttemptResult{}, fmt.Errorf("%w: %s; cleanup: %v", errProviderCapacity, providerCapacityMessage, cleanupErr)
+				return AttemptResult{}, true, fmt.Errorf("%w: %s; cleanup: %v", errProviderCapacity, providerCapacityMessage, cleanupErr)
 			}
-			return AttemptResult{}, fmt.Errorf("%w: %s", errProviderCapacity, providerCapacityMessage)
+			return AttemptResult{}, true, fmt.Errorf("%w: %s", errProviderCapacity, providerCapacityMessage)
 		}
-	}
-	if err := writePierExecutionReceipt(request, commandErr, cleanupErr); err != nil {
-		return AttemptResult{}, err
-	}
-	result, normalizeErr := normalizePier(artifactRoot, request)
-	if commandErr != nil {
-		return AttemptResult{}, fmt.Errorf("pier task execution failed: %w", errors.Join(commandErr, cleanupErr))
+		if err := recordDurableExecution(commandErr); err != nil {
+			return AttemptResult{}, durable, err
+		}
+		return AttemptResult{}, true, fmt.Errorf("pier task execution failed: %w", errors.Join(commandErr, cleanupErr))
 	}
 	if cleanupErr != nil {
-		return AttemptResult{}, fmt.Errorf("clean Pier task environment: %w", cleanupErr)
+		if err := recordDurableExecution(nil); err != nil {
+			return AttemptResult{}, durable, err
+		}
+		return AttemptResult{}, true, fmt.Errorf("clean Pier task environment: %w", cleanupErr)
 	}
-	if normalizeErr != nil {
-		return AttemptResult{}, normalizeErr
+	result, err := normalizePier(artifactRoot, request)
+	if err != nil {
+		return AttemptResult{}, false, err
 	}
-	return result, nil
+	if result.Status != statusSuccess {
+		verifierErr := fmt.Errorf("pier verifier did not complete successfully: %s", result.Error)
+		// After a proven provider completion the event stays replayable. A
+		// failed receipt would instead be resumed by the next invocation at
+		// provider expense, which the durable checkpoint exists to prevent.
+		if retained, retainedErr := retainPersistedProviderFailure(request, verifierErr, cleanupErr); retained {
+			return AttemptResult{}, false, retainedErr
+		}
+		if err := recordDurableExecution(verifierErr); err != nil {
+			return AttemptResult{}, durable, err
+		}
+		return AttemptResult{}, true, verifierErr
+	}
+	if err := recordDurableExecution(nil); err != nil {
+		return AttemptResult{}, durable, err
+	}
+	return result, true, nil
+}
+
+// retainPersistedProviderFailure keeps the paid provider event replayable once
+// ProviderCompletedAt proves a clean provider completion, whether Pier was
+// interrupted or its verifier finished unsuccessfully. ProviderCompletedAt is
+// written only after the adapter completion checkpoint, patch, and provider
+// cost stream have all been validated, so a later failure must not demote the
+// event into an ordinary failed receipt, which a subsequent invocation would
+// resume at provider expense, nor delete its staging tree.
+func retainPersistedProviderFailure(request ExecutionRequest, failure, cleanupErr error) (bool, error) {
+	checkpoint, found, err := matchingPierExecutionCheckpoint(request)
+	if err != nil {
+		return true, err
+	}
+	if !found || checkpoint.ProviderCompletedAt.IsZero() {
+		return false, nil
+	}
+	return true, fmt.Errorf(
+		"provider output for Pier event %s is persisted and its verifier did not succeed; the next identical run may replay only the verifier and never makes another provider call: %w; retained staging directory: %s",
+		checkpoint.EventID, errors.Join(failure, cleanupErr), checkpoint.StagePath,
+	)
 }
 
 // benchmarkProcessEnvironment preserves non-secret host infrastructure while
@@ -551,9 +787,9 @@ func cleanupPierDockerResources(stage string, request ExecutionRequest) error {
 		removeBase []string
 		validName  *regexp.Regexp
 	}{
-		{name: "container", list: []string{"ps", "--all", dockerFormatFlag, dockerComposeOwnershipIDFormat}, removeBase: []string{"rm", "--force"}, validName: dockerResourceIDPattern},
+		{name: "container", list: []string{"ps", "--all", dockerFormatFlag, dockerComposeOwnershipIDFormat}, removeBase: []string{"rm", dockerForceFlag}, validName: dockerResourceIDPattern},
 		{name: dockerNetworkResource, list: []string{dockerNetworkResource, "ls", dockerFormatFlag, dockerComposeOwnershipIDFormat}, removeBase: []string{dockerNetworkResource, "rm"}, validName: dockerResourceIDPattern},
-		{name: dockerVolumeResource, list: []string{dockerVolumeResource, "ls", dockerFormatFlag, dockerComposeOwnershipNameFormat}, removeBase: []string{dockerVolumeResource, "rm", "--force"}, validName: dockerVolumeNamePattern},
+		{name: dockerVolumeResource, list: []string{dockerVolumeResource, "ls", dockerFormatFlag, dockerComposeOwnershipNameFormat}, removeBase: []string{dockerVolumeResource, "rm", dockerForceFlag}, validName: dockerVolumeNamePattern},
 	} {
 		output, listErr := runBenchmarkDockerCommand(ctx, resource.list...)
 		if listErr != nil {
@@ -577,6 +813,35 @@ func cleanupPierDockerResources(stage string, request ExecutionRequest) error {
 				return fmt.Errorf("inspect Pier %s ownership: Docker returned invalid ID %q for project %s", resource.name, fields[0], owner)
 			}
 			ids = append(ids, fields[0])
+		}
+		if resource.name == "container" && benchmarkHostOS == platformLinux {
+			owner := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+			for _, id := range ids {
+				inspectOutput, inspectErr := runBenchmarkDockerCommand(ctx, "inspect", dockerFormatFlag, `{{.State.Running}}{{"\t"}}{{.Image}}`, id)
+				if inspectErr != nil {
+					return fmt.Errorf("inspect Pier container %s before ownership repair: %w: %s", id, inspectErr, strings.TrimSpace(string(inspectOutput)))
+				}
+				fields := strings.Split(strings.TrimSpace(string(inspectOutput)), "\t")
+				if len(fields) != 2 || (fields[0] != booleanTrue && fields[0] != "false") || !dockerImageIDPattern.MatchString(fields[1]) {
+					return fmt.Errorf("inspect Pier container %s before ownership repair: Docker returned malformed state %q", id, strings.TrimSpace(string(inspectOutput)))
+				}
+				var repairOutput []byte
+				var repairErr error
+				if fields[0] == booleanTrue {
+					repairOutput, repairErr = runBenchmarkDockerCommand(ctx, "exec", "--user", "0", id, "chown", "-R", owner, "/logs")
+				} else {
+					repairOutput, repairErr = runBenchmarkDockerCommand(
+						ctx, "run", "--rm", "--network", "none", "--user", "0", "--volumes-from", id,
+						"--entrypoint", "chown", fields[1], "-R", owner, "/logs",
+					)
+				}
+				if repairErr != nil {
+					return fmt.Errorf(
+						"repair Pier log ownership in container %s for project %s before removal: %w: %s",
+						id, project, repairErr, strings.TrimSpace(string(repairOutput)),
+					)
+				}
+			}
 		}
 		if len(ids) == 0 {
 			continue
@@ -777,6 +1042,35 @@ func treatmentPierArguments(request ExecutionRequest) ([]string, error) {
 		arguments = append(arguments, pierAgentKwarg, "preflight_only=true")
 	}
 	return arguments, nil
+}
+
+func usesAgentLayerPierAdapter(request ExecutionRequest) bool {
+	return request.Arm == ArmTreatment || request.Model.Adapter == adapterAntigravity || request.Model.Adapter == adapterGrok
+}
+
+// stagePierAgentLayerAdapter exposes the module named by --agent-import-path.
+// Treatment runs use the content-addressed copy in their immutable bundle.
+// Bare providers that Pier does not implement natively use the matching asset
+// embedded in this executable, without turning the arm into a treatment.
+func stagePierAgentLayerAdapter(request ExecutionRequest, stage string) (string, error) {
+	if !usesAgentLayerPierAdapter(request) {
+		return "", nil
+	}
+	if request.Bundle != nil {
+		if request.Bundle.AdapterPath == "" {
+			return "", fmt.Errorf("benchmark treatment bundle is missing its Pier adapter")
+		}
+		return filepath.Dir(request.Bundle.AdapterPath), nil
+	}
+	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
+	if err != nil {
+		return "", fmt.Errorf("read embedded Pier adapter: %w", err)
+	}
+	path := filepath.Join(stage, "pier_agent_layer.py")
+	if err := os.WriteFile(path, adapter, 0o600); err != nil {
+		return "", fmt.Errorf("stage bare Pier adapter: %w", err)
+	}
+	return stage, nil
 }
 
 func benchmarkAntigravityOAuthCredential(ctx context.Context, repoRoot string) ([]byte, error) {

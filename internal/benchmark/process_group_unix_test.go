@@ -9,13 +9,13 @@ import (
 	"os/exec"
 	"syscall"
 	"testing"
-	"time"
 )
 
 func TestBenchmarkCommandCancellationTerminatesTheProcessGroup(t *testing.T) {
 	notStarted := exec.CommandContext(context.Background(), "sleep", "30")
-	configureBenchmarkCommandCancellation(notStarted)
-	if notStarted.SysProcAttr == nil || !notStarted.SysProcAttr.Setpgid || notStarted.WaitDelay != 30*time.Second {
+	finishNotStarted := configureBenchmarkCommandCancellation(notStarted)
+	defer finishNotStarted()
+	if notStarted.SysProcAttr == nil || !notStarted.SysProcAttr.Setpgid || notStarted.WaitDelay != benchmarkPierShutdownGrace {
 		t.Fatalf("cancellation configuration=%#v wait=%s", notStarted.SysProcAttr, notStarted.WaitDelay)
 	}
 	if err := notStarted.Cancel(); !errors.Is(err, os.ErrProcessDone) {
@@ -23,7 +23,8 @@ func TestBenchmarkCommandCancellationTerminatesTheProcessGroup(t *testing.T) {
 	}
 
 	command := exec.CommandContext(context.Background(), "sleep", "30")
-	configureBenchmarkCommandCancellation(command)
+	finish := configureBenchmarkCommandCancellation(command)
+	defer finish()
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -35,4 +36,5 @@ func TestBenchmarkCommandCancellationTerminatesTheProcessGroup(t *testing.T) {
 	} else if exit, ok := err.(*exec.ExitError); !ok || exit.ProcessState.Sys().(syscall.WaitStatus).Signal() != syscall.SIGTERM {
 		t.Fatalf("cancelled benchmark process=%v", err)
 	}
+	finish()
 }
