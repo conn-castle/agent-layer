@@ -69,10 +69,10 @@ For detailed behavior, see [Init](./reference#init), [Upgrade](./reference#upgra
 ### 3) Launch an agent
 
 ```bash
-al agy
+al codex
 ```
 
-Any client command (agy/claude/codex/copilot/grok/vscode) will:
+Any enabled client command (`agy`, `claude`, `codex`, `copilot`, `grok`, or `vscode`) will:
 
 1. read `.agent-layer/`
 2. sync client configs
@@ -217,9 +217,9 @@ If you change Agent Layer-managed generated values, those edits will be overwrit
 :::
 
 :::note
-The Codex VS Code extension reads `CODEX_HOME` at startup. Repo-local launchers set a per-repo value only when `local_config_dir = true` is enabled under `[agents.codex]`; in that mode you may need to reauthenticate with Codex when opening a different repo. If you enable `local_config_dir = true` under `[agents.claude]` (and `[agents.claude_vscode]` is enabled), the Claude extension also receives a per-repo `CLAUDE_CONFIG_DIR`, isolating settings and caches per repository.
+The Codex VS Code extension reads `CODEX_HOME` at startup. Repo-local launchers set a per-repo value only when `local_config_dir = true` is enabled under `[agents.codex]`; in that mode you may need to reauthenticate with Codex when opening a different repo. If you enable `local_config_dir = true` under `[agents.claude]` (and `[agents.claude_vscode]` is enabled), the Claude extension also receives a per-repo `CLAUDE_CONFIG_DIR`, isolating settings, caches, and `/login` credentials per repository.
 
-Claude Code stores `/login` credentials in the macOS Keychain on macOS and in `.credentials.json` under `CLAUDE_CONFIG_DIR` on Linux and Windows. Other authentication modes may use external credential sources, so isolation depends on your platform and authentication method. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
+On macOS, Claude Code keys its Keychain entry to `CLAUDE_CONFIG_DIR` and falls back to `.credentials.json` there if the Keychain write fails. Linux and Windows store `/login` credentials in `.credentials.json` under that directory. Other authentication modes may use external credential sources. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
 
 If you prefer to launch VS Code without the repo-local launcher, see the Codex and Claude fallback guidance in troubleshooting: [Global MCP server fallback for VS Code (Codex)](./troubleshooting#global-mcp-server-fallback-for-vs-code-codex) and [Global config fallback for VS Code (Claude)](./troubleshooting#global-config-fallback-for-vs-code-claude).
 :::
@@ -264,7 +264,8 @@ If you only remember one pattern: `al <client>` syncs first, then launches.
 
 | Command | Purpose | Details |
 | --- | --- | --- |
-| `al init` | Seed `.agent-layer/` and project memory. | [Init](./reference#init) |
+| `al init` | Seed the `.agent-layer/` scaffold and optionally open the setup wizard. | [Init](./reference#init) |
+| `al update` | Update the global CLI through its current installation method. | [Upgrade](./reference#upgrade) |
 | `al upgrade` | Apply template-managed updates and update the repo pin with line-level diff previews (use `--diff-lines` to raise per-file preview size). | [Upgrade](./reference#upgrade) |
 | `al upgrade plan` | Preview categorized upgrade changes and line-level diffs without writing files. | [Upgrade plan](./reference#upgrade-plan) |
 | `al upgrade rollback --list` | List available upgrade snapshot IDs and statuses before rollback. | [Upgrade rollback](./reference#upgrade-rollback) |
@@ -282,6 +283,8 @@ If you only remember one pattern: `al <client>` syncs first, then launches.
 | `al copilot` | Sync and launch Copilot CLI. | [Launch a client](./reference#launch-a-client) |
 | `al grok` | Sync and launch Grok. | [Launch a client](./reference#launch-a-client) |
 | `al dispatch` | Start, wait for, continue, or cancel a headless provider conversation. | [Agent Dispatch](./agent-dispatch) |
+| `al benchmark` | Create, preflight, run, and resume DeltaSelect benchmark studies. | [Benchmark runner](./reference#benchmark-runner) |
+| `al skills` | Import, inspect, update, reconcile, and publish Git-backed Agent Skills. | [Skill imports](./skill-imports) |
 | `al --version` | Print the installed version. | [Help and version](./reference#help-and-version) |
 | `al help` | Show help for a command. | [Help and version](./reference#help-and-version) |
 

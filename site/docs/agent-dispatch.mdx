@@ -11,7 +11,9 @@ keywords:
 sidebar_position: 4
 ---
 
-Agent Dispatch is Agent Layer's multi-agent orchestration interface. It lets Claude Code, Codex, Copilot CLI, VS Code, Grok, or Antigravity delegate a bounded coding task to a headless Claude, Codex, Grok, or Antigravity conversation—without blocking the calling agent while that work runs.
+Agent Dispatch is Agent Layer's multi-agent orchestration interface. It lets an agent in a client with working MCP support delegate a bounded coding task to a headless Claude, Codex, Grok, or Antigravity conversation—without blocking the calling agent while that work runs. People and scripts can target the same providers through the CLI.
+
+Agent Layer writes the built-in MCP server into Antigravity's generated configuration, but the current `agy` probe baseline does not expose MCP tools at runtime. Antigravity is therefore available as a dispatch target, while using it as the calling client depends on the installed `agy` version. Run `al probe agy` to check that capability.
 
 Use it to get an independent code review, send research to a model with different strengths, preserve a specialist conversation across follow-ups, or run several independent tasks in parallel. A person or script can drive the same lifecycle without holding open an interactive session.
 
@@ -75,7 +77,7 @@ Starting a dispatch creates a conversation and its first invocation, then immedi
 
 Each conversation has at most one running invocation. Parallel work uses independent conversations and handles; there is no fanout operation.
 
-Dispatch distinguishes callers from targets. Any enabled client can call the MCP tools, but only `codex`, `claude`, `antigravity`, and `grok` are valid targets for `agent` or `--agent`. VS Code and Copilot CLI can call dispatch but cannot be dispatched to. A target must be enabled in `.agent-layer/config.toml`; use `dispatch_options` or `al dispatch options` to see what is currently available.
+Dispatch distinguishes callers from targets. Any enabled client that exposes Agent Layer's generated MCP server can call the tools, but only `codex`, `claude`, `antigravity`, and `grok` are valid targets for `agent` or `--agent`. VS Code and Copilot CLI can call dispatch but cannot be dispatched to. A target must be enabled in `.agent-layer/config.toml`; use `dispatch_options` or `al dispatch options` to see what is currently available.
 
 The public lifecycle is intentionally small:
 

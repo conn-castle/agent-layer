@@ -15,6 +15,11 @@ configuration of every enabled Codex, Claude, Antigravity, VS Code, Copilot
 CLI, and Grok caller. It is derived state, not a `[[mcp.servers]]` entry, and its
 reserved ID cannot be taken by a user-defined server. It exposes five tools:
 
+Projection does not prove that a client exposes MCP tools at runtime. In
+particular, the current Antigravity probe baseline accepts the generated config
+but does not register its servers; use `al probe agy` before treating
+Antigravity as a caller. Antigravity remains available as a dispatch target.
+
 Agent-facing tool and parameter descriptions are maintained in
 `internal/agentdispatch/mcp_tool_descriptions.toml` and embedded at build time.
 

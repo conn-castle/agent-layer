@@ -1,4 +1,4 @@
-# DeepSWE Benchmark Guide
+# DeltaSelect Benchmark Guide
 
 Agent Layer can compare a bare coding agent with the same agent using your project's Agent Layer instructions and skills. The CLI handles study scaffolding, task readiness, Docker capacity checks, safe concurrency, image cleanup, resumable execution, and report generation.
 
@@ -9,7 +9,7 @@ You need:
 - an initialized Agent Layer project;
 - Git, Docker, and `uvx` on `PATH`;
 - the provider CLI and authentication required by the selected model;
-- a `selection.json` exported from the [DeepSWE benchmark planner](https://agent-layer.dev/deepswe-planner).
+- a `selection.json` exported from [DeltaSelect](https://agent-layer.dev/deltaselect-tool).
 
 Run all commands from the project root.
 

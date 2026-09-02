@@ -47,14 +47,14 @@ enabled = true
 # reasoning_effort is optional; Claude Code applies it where the active model supports it.
 # reasoning_effort = "medium" # low | medium | high | xhigh | max (custom values pass through with a warning)
 # Note: "max" is session-only (passed via --effort CLI flag) and is not written to .claude/settings.json.
-# local_config_dir isolates Claude Code settings and caches per repo.
+# local_config_dir isolates Claude Code settings, caches, and /login credentials per repo.
 # When true, al claude sets CLAUDE_CONFIG_DIR=<repo>/.claude-config.
 # For al vscode, CLAUDE_CONFIG_DIR is set when both this and agents.claude_vscode
 # are enabled. Otherwise, al vscode clears only stale repo-local values and
 # preserves user-defined non-repo values.
-# Note: auth credentials are stored globally by Claude Code in the OS credential store
-# (macOS Keychain service "Claude Code-credentials"; Linux libsecret/gnome-keyring)
-# regardless of this setting (upstream limitation).
+# Claude Code keys its macOS Keychain entry to CLAUDE_CONFIG_DIR and falls back
+# to .credentials.json there if the Keychain write fails. Linux and Windows use
+# .credentials.json under CLAUDE_CONFIG_DIR. Other auth modes can use external sources.
 # local_config_dir = false
 # disable_question_tool blocks Claude Code's structured clarification-question (AskUserQuestion) tool.
 # When true, al sync injects permissions.deny + a PreToolUse hook into .claude/settings.json (merged

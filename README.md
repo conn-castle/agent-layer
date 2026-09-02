@@ -14,7 +14,7 @@ Key properties:
 - Local-first, no telemetry
 - Deterministic outputs from canonical inputs
 - Explicit approvals and command allowlists
-- Optional per-repo runtime isolation (Codex auth/sessions/logs; Claude settings and caches with auth pending upstream fix)
+- Optional per-repo runtime isolation (Codex auth, sessions, and logs; Claude settings, caches, and `/login` credentials)
 
 Comparison:
 
@@ -23,7 +23,7 @@ Comparison:
 | duplicate instructions across multiple formats | one canonical source under `.agent-layer/` |
 | inconsistent approvals and command policies | consistent approvals and allowlists |
 | MCP servers added in one client and forgotten in another | generated MCP config for supported MCP clients |
-| shared global state across repos | opt-in per-repo Codex auth/sessions/logs; opt-in Claude settings and caches isolation |
+| shared global state across repos | opt-in per-repo Codex auth/sessions/logs; opt-in Claude settings, caches, and `/login` credential isolation |
 | no single place to review or audit changes | audit in version control |
 
 If Agent Layer improves your workflow, please consider starring the repository. Stars help new users discover the project.
@@ -89,7 +89,7 @@ al init
 Then run an agent:
 
 ```bash
-al agy
+al codex
 ```
 
 Optional health check:
@@ -186,7 +186,7 @@ This keeps a stable non-managed tail position for extension writes.
 
 Version pinning keeps everyone on the same Agent Layer release and lets `al` download the right binary automatically.
 
-Upgrade contract details (event model, compatibility guarantees, migration rules, OS/shell matrix) are maintained in one canonical location: the [upgrade contract](https://conn-castle.github.io/agent-layer-web/docs/upgrades) (source: `site/docs/upgrades.mdx`).
+Upgrade contract details (event model, compatibility guarantees, migration rules, OS/shell matrix) are maintained in one canonical location: the [upgrade contract](https://agent-layer.dev/docs/upgrades) (source: `site/docs/upgrades.mdx`).
 
 When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.6.0`). You can also edit it manually, or set the initial pin with `al init --version X.Y.Z` (or `--version latest`).
 
@@ -227,7 +227,7 @@ al update
 If the installed CLI predates the `al update` command, update it once with `brew upgrade conn-castle/tap/agent-layer` for Homebrew or by rerunning the original script install command (including the same `--prefix`, if any).
 
 Run `al upgrade plan` and then `al upgrade` inside the repo to apply template-managed updates. This updates `.agent-layer/al.version` to match the currently installed `al` binary and refreshes template-managed files.
-For a concise runbook (interactive + CI), use the one-page [upgrade checklist](https://conn-castle.github.io/agent-layer-web/docs/upgrade-checklist).
+For a concise runbook (interactive + CI), use the one-page [upgrade checklist](https://agent-layer.dev/docs/upgrade-checklist).
 
 Each `al upgrade` run writes an automatic snapshot of managed upgrade targets and auto-rolls back if an upgrade step fails. Snapshots are retained under `.agent-layer/state/upgrade-snapshots/` for rollback history.
 To manually restore an applied snapshot, run `al upgrade rollback <snapshot-id>` (use the JSON filename stem from `.agent-layer/state/upgrade-snapshots/` as `<snapshot-id>`).
@@ -238,13 +238,12 @@ To pre-warm a release binary in cache (for offline/air-gapped runs), use `al upg
 
 Upgrade previews now include line-level diffs in both `al upgrade plan` and interactive `al upgrade` prompts. By default, each file preview is truncated to 40 lines; raise this with `--diff-lines N` when needed. In interactive terminals, diff hunks are colorized for scanability; non-interactive and no-color runs stay plain text.
 
-
 `al doctor` always checks for newer releases and warns if you're behind. `al init` also warns when your installed CLI is out of date, unless you set `--version`, `AL_VERSION`, or `AL_NO_NETWORK`.
 
 Compatibility guarantee:
 - Guaranteed upgrade path is sequential release lines only (`N-1` to `N`; example: `0.6.x` to `0.7.x`).
 - Skipping release lines is best effort and may require additional manual migration.
-- See the [upgrade contract](https://conn-castle.github.io/agent-layer-web/docs/upgrades) (source: `site/docs/upgrades.mdx`) for event categories and release-versioned migration rules.
+- See the [upgrade contract](https://agent-layer.dev/docs/upgrades) (source: `site/docs/upgrades.mdx`) for event categories and release-versioned migration rules.
 
 ---
 
@@ -413,6 +412,7 @@ enabled = true
 # [agents.codex.agent_specific]
 # [agents.codex.agent_specific.features]
 # apps = false              # disable built-in Codex apps (GitHub, Gmail, etc.) to reduce tool surface
+# plugins = false           # disable Codex plugins and plugin-provided skills/tools
 # browser_use = false       # disable Codex browser/computer-use tools
 # in_app_browser = false    # disable the in-app browser
 # computer_use = false      # disable screen/computer control
@@ -670,6 +670,9 @@ Agents use the built-in `agent-layer` MCP server, which `al sync` projects into
 every enabled Codex, Claude, Antigravity, VS Code, Copilot CLI, and Grok client. It
 exposes `dispatch_options`, `dispatch_start`, `dispatch_wait`,
 `dispatch_continue`, and `dispatch_cancel`.
+Antigravity's current probe baseline accepts the generated MCP config but does
+not expose its tools at runtime; run `al probe agy` before relying on it as a
+calling client. It remains available as a dispatch target.
 The generated stdio launcher enters the repository root before invoking `al`,
 so the global shim honors that repository's `.agent-layer/al.version` even when
 the MCP client starts servers from another directory. Repositories whose MCP
@@ -709,7 +712,7 @@ settings, see [`docs/AGENT-DISPATCH.md`](docs/AGENT-DISPATCH.md).
 - When `[agents.vscode]` is enabled and `[agents.codex] local_config_dir = true` is set, `CODEX_HOME=<repo>/.codex` is set for the Codex extension. Otherwise Agent Layer preserves any inherited `CODEX_HOME`.
 - When `[agents.grok]` is enabled, `al grok`, Grok dispatch, and `al vscode` set `GROK_HOME=<repo>/.grok-config`. Grok auth and sessions are therefore per repository; a new repo-local home may require login even when global Grok is already authenticated. If Grok is disabled, `al vscode` clears only a stale repo-local `GROK_HOME`.
 - When `[agents.claude_vscode]` is enabled, Claude files (`.mcp.json`, `.claude/settings.json`) are generated. YOLO mode sets `claudeCode.allowDangerouslySkipPermissions` in `.vscode/settings.json`.
-- When `[agents.claude] local_config_dir = true` is set, `al claude` sets `CLAUDE_CONFIG_DIR` for per-repo settings and caches isolation. For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when **both** `local_config_dir = true` and `[agents.claude_vscode]` is enabled; otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values. This is opt-in; when disabled (the default), Claude uses your global `~/.claude/` configuration. For `al claude` only, a user-set `CLAUDE_CONFIG_DIR` pointing outside the repo is preserved even when `local_config_dir` is disabled. Note: Claude Code stores `/login` credentials in the macOS Keychain on macOS and in `.credentials.json` under `CLAUDE_CONFIG_DIR` on Linux and Windows, so login isolation depends on the platform; other authentication modes may use external credential sources. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
+- When `[agents.claude] local_config_dir = true` is set, `al claude` sets `CLAUDE_CONFIG_DIR` for per-repo settings, caches, and `/login` credentials. For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when **both** `local_config_dir = true` and `[agents.claude_vscode]` is enabled; otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values. This is opt-in; when disabled (the default), Claude uses your global `~/.claude/` configuration. For `al claude` only, a user-set `CLAUDE_CONFIG_DIR` pointing outside the repo is preserved even when `local_config_dir` is disabled. On macOS, Claude Code keys its Keychain entry to `CLAUDE_CONFIG_DIR` and falls back to `.credentials.json` there if the Keychain write fails; Linux and Windows use `.credentials.json` under that directory. Other authentication modes may use external credential sources. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
 - VS Code settings are generated when either agent is enabled.
 - Supports `--no-sync` to skip sync before opening VS Code.
 
@@ -728,7 +731,7 @@ If you use the CLI-based launchers, install the `code` command from inside VS Co
 - macOS: Cmd+Shift+P -> "Shell Command: Install 'code' command in PATH"
 - Linux: Ctrl+Shift+P -> "Shell Command: Install 'code' command in PATH"
 
-**Note:** Codex authentication is per repo only when `local_config_dir = true` is enabled under `[agents.codex]`; in that mode each repo uses its own `CODEX_HOME` and may require reauthentication. If `local_config_dir = true` is enabled under `[agents.claude]`, Claude settings and caches are isolated per repo (via `CLAUDE_CONFIG_DIR`). Claude Code stores `/login` credentials in the macOS Keychain on macOS, so those stay shared there; on Linux and Windows it stores them in `.credentials.json` under `CLAUDE_CONFIG_DIR`, so a repo-local directory also isolates them. Other authentication modes may use external credential sources. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
+**Note:** Codex authentication is per repo only when `local_config_dir = true` is enabled under `[agents.codex]`; in that mode each repo uses its own `CODEX_HOME` and may require reauthentication. If `local_config_dir = true` is enabled under `[agents.claude]`, Claude settings, caches, and `/login` credentials are isolated per repo through `CLAUDE_CONFIG_DIR`. On macOS, Claude Code keys its Keychain entry to that directory and falls back to `.credentials.json` there if the Keychain write fails; Linux and Windows use `.credentials.json` under the directory. Other authentication modes may use external credential sources. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
 
 For contributor-level implementation details, see `docs/architecture/vscode-launch.md`.
 
@@ -736,7 +739,7 @@ For contributor-level implementation details, see `docs/architecture/vscode-laun
 
 ## Temporary artifacts (agent-only)
 
-Some workflows write **agent-only** artifacts (plans, task lists, reports). These are not meant for humans to open.
+Some workflows write **agent-only** artifacts such as plans, task lists, and reports. They are working state rather than product documentation, but people can inspect them when reviewing or recovering a run.
 
 Artifacts always live under `.agent-layer/tmp/` and use a unique, concurrency-safe name:
 
@@ -745,7 +748,7 @@ Artifacts always live under `.agent-layer/tmp/` and use a unique, concurrency-sa
 - Multi-file workflows reuse the same `run-id` for all files.
 - Common `type` values: `report`, `plan`, `task`, `context`.
 
-Workflows echo the artifact path in the chat output. There are no path overrides or environment variables for this. Artifacts are agent-only and can be ignored; agents may clean up their own plan/task/context files when a workflow completes. If a run is interrupted, leftover files are harmless and optional to delete.
+Workflows echo the artifact path in the chat output. There are no path overrides or environment variables for this. Leave artifacts in place for later inspection unless a user explicitly asks to remove them. Interrupted-run artifacts are harmless and can help with recovery.
 
 ---
 

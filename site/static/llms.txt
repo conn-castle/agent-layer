@@ -14,7 +14,7 @@ The canonical source repository is https://github.com/conn-castle/agent-layer. D
 
 ## Core concepts
 
-- [Overview](https://agent-layer.dev/docs/index.md): Product overview and documentation map.
+- [Overview](https://agent-layer.dev/docs/overview.md): Product overview and documentation map.
 - [Concepts](https://agent-layer.dev/docs/concepts.md): Source-of-truth model, safety boundaries, MCP servers, dispatch, and version pinning.
 - [Skills](https://agent-layer.dev/docs/skills.md): Agent Skills standard, built-in workflows, authoring, and projection.
 - [Skills approach](https://agent-layer.dev/docs/skills-approach.md): Agent Layer's skill architecture and workflow boundaries.

@@ -99,7 +99,7 @@ If you find yourself carrying many permanent overrides, that is usually a sign t
 
 ## Per-repo isolation {#per-repo-credential-isolation}
 
-Agent Layer gives each repository its own agent configuration so work in one repo never leaks into another. Codex home isolation is opt-in. Claude settings and caches isolation is supported; whether it also isolates login credentials depends on your platform and authentication method (see below).
+Agent Layer gives each repository its own agent configuration so work in one repo never leaks into another. Codex home isolation is opt-in. Claude settings, caches, and `/login` credential isolation are also opt-in; other authentication modes may still use external credential sources.
 
 ### How it works
 
@@ -125,20 +125,20 @@ local_config_dir = true
 
 When enabled, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local `.claude-config/` directory. For VS Code, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir = true` and `[agents.claude_vscode]` is enabled.
 
-:::caution Authentication isolation varies
-Claude Code stores `/login` credentials in the macOS Keychain on macOS, so `CLAUDE_CONFIG_DIR` does not isolate them there. On Linux and Windows, it stores them in `.credentials.json` under `CLAUDE_CONFIG_DIR`, so a repo-local directory also isolates those credentials. Other authentication modes may use external credential sources. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
+:::note Authentication storage
+On macOS, Claude Code keys its Keychain entry to `CLAUDE_CONFIG_DIR` and falls back to `.credentials.json` there if the Keychain write fails. Linux and Windows store `/login` credentials in `.credentials.json` under that directory. Other authentication modes may use external credential sources. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
 :::
 
 ### Trade-offs
 
-Enabling Codex home isolation means auth, sessions, logs, and other Codex runtime state are scoped to the repository. Enabling Claude isolation scopes settings and caches to the repository; authentication isolation depends on the platform and authentication method described above.
+Enabling Codex home isolation means auth, sessions, logs, and other Codex runtime state are scoped to the repository. Enabling Claude isolation scopes settings, caches, and `/login` credentials to the repository; other authentication methods may use external credential sources.
 
 Codex and Claude isolation are opt-in (default `false`) because always-on isolation duplicates config and runtime state in every existing repo. Teams that want per-repo state can enable it per repo; teams that prefer shared global config keep the default.
 
 ### When to enable it
 
 - You want per-repo Codex auth, sessions, logs, or runtime state
-- You want per-repo Claude settings and caches isolation
+- You want per-repo Claude settings, caches, and `/login` credential isolation
 - You want different provider defaults or cache state per repository
 
 If none of these apply, the default shared provider config works fine and keeps one shared profile across repositories.
@@ -323,7 +323,7 @@ Start with one or two servers, verify with `al doctor`, then expand. It is easie
 
 ## Agent Dispatch
 
-Agent Dispatch lets an agent, person, or script start a headless provider conversation and coordinate it asynchronously. Starting work returns a handle immediately; callers use that handle to wait for a result, continue the same conversation, or cancel active work. Independent handles make parallel delegation possible without coupling the conversations. Valid dispatch targets are Codex, Claude, Antigravity, and Grok; other enabled clients can call the tools but are not targets.
+Agent Dispatch lets an agent, person, or script start a headless provider conversation and coordinate it asynchronously. Starting work returns a handle immediately; callers use that handle to wait for a result, continue the same conversation, or cancel active work. Independent handles make parallel delegation possible without coupling the conversations. Valid dispatch targets are Codex, Claude, Antigravity, and Grok; enabled clients can call the tools when their runtime exposes Agent Layer's generated MCP server. Antigravity's current probe baseline does not yet expose those tools, so run `al probe agy` before relying on it as a caller.
 
 Agents access dispatch through Agent Layer's built-in `agent-layer` MCP server, while humans and scripts use matching `al dispatch` commands. Both use the same lifecycle and results. See [Agent Dispatch](./agent-dispatch) for the tools, commands, states, timeouts, and configuration.
 

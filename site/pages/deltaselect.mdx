@@ -60,10 +60,11 @@ You can also compare a second model configuration against the same tasks and wei
 
 DeltaSelect connects directly to Agent Layer's [benchmark runner](/docs/reference#benchmark-runner):
 
-1. Build and export a selection from the interactive tool.
-2. Define explicit baseline and treatment experiments in `study.toml`.
-3. Run `al benchmark run <study.toml>` to execute missing cells and preserve immutable evidence.
-4. Compare score, cost, and workflow-conformance results in the generated report.
+1. Build and export `selection.json` from the interactive tool.
+2. Run `al benchmark init selection.json --directory benchmark-study` to create a self-contained study.
+3. Run `al benchmark run benchmark-study/study.toml --dry-run` to validate inputs, task environments, and provider authentication without inference calls.
+4. Run `al benchmark run benchmark-study/study.toml` to authorize paid calls, execute missing cells, and preserve immutable evidence.
+5. Compare score, cost, workflow conformance, and statistical evidence in the generated report.
 
 Use the same declared task set to test an instruction change, a new Agent Skill, an Agent Dispatch workflow, or another coding-agent improvement.
 
