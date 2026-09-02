@@ -16,6 +16,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/gitenv"
 	"github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/templates"
+	"github.com/conn-castle/agent-layer/internal/updatewarn"
 )
 
 const antigravityStructuredOK = `printf '{"event":"result","result":{"status":"SUCCESS","conversation_id":"22222222-2222-4222-8222-222222222222","response":"agy ok","usage":{"input_tokens":1,"output_tokens":2,"thinking_tokens":1,"cache_read_tokens":0}}}\n'`
@@ -231,6 +232,7 @@ func TestDispatchAllowsNestedDispatchWithinDefaultDepth(t *testing.T) {
 	// via run.Create and exports AL_RUN_DIR / AL_RUN_ID via BuildEnv.
 	assertFileContains(t, logPath, "AL_RUN_DIR=")
 	assertFileContains(t, logPath, "AL_RUN_ID=")
+	assertFileContains(t, logPath, updatewarn.EnvSuppress+"=1")
 	// Negative env-passthrough contract: BuildEnv strips AL_SHIM_ACTIVE so the
 	// shim marker does not leak into the dispatched child env.
 	assertFileDoesNotContain(t, logPath, "AL_SHIM_ACTIVE=")

@@ -31,6 +31,26 @@ func TestWarnIfOutdated_SkipsWhenVersionOverrideSet(t *testing.T) {
 	}
 }
 
+func TestWarnIfOutdated_SkipsWhenSuppressed(t *testing.T) {
+	t.Setenv(EnvSuppress, "1")
+	orig := CheckForUpdate
+	called := 0
+	CheckForUpdate = func(context.Context, string) (update.CheckResult, error) {
+		called++
+		return update.CheckResult{}, nil
+	}
+	t.Cleanup(func() { CheckForUpdate = orig })
+
+	var stderr bytes.Buffer
+	WarnIfOutdated(context.Background(), "v1.0.0", &stderr)
+	if called != 0 {
+		t.Fatalf("expected update check to be skipped, got %d calls", called)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no output, got %q", stderr.String())
+	}
+}
+
 func TestWarnIfOutdated_SkipsWhenNoNetworkSet(t *testing.T) {
 	t.Setenv(versiondispatch.EnvNoNetwork, "1")
 	orig := CheckForUpdate
