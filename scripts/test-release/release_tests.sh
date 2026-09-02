@@ -48,7 +48,27 @@ fi
 printf '%s|%s|%s|%s|%s|%s\n' "${GOOS:-}" "${GOARCH:-}" "${CGO_ENABLED:-}" "$output" "$ldflags" "$pkg" >> "$log_path"
 
 mkdir -p "$(dirname "$output")"
-echo "mock binary: $output" > "$output"
+build_version="${ldflags##*=}"
+cat > "$output" <<MOCK_BINARY
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "\$*" >> "\${MOCK_RELEASE_BINARY_LOG:-/dev/null}"
+case "\${1:-}" in
+  --version)
+    printf '%s\n' "\${MOCK_RELEASE_VERSION_OVERRIDE:-$build_version}"
+    ;;
+  init)
+    mkdir -p .agent-layer
+    printf '%s\n' "\${MOCK_RELEASE_PIN_OVERRIDE:-${build_version#v}}" > .agent-layer/al.version
+    ;;
+  upgrade)
+    [[ "\${2:-}" == "plan" ]]
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+MOCK_BINARY
 chmod +x "$output"
 MOCK_GO
   chmod +x "$mock_bin/go"
@@ -60,6 +80,7 @@ MOCK_GO
   if (
     export PATH="$mock_bin:$PATH"
     export MOCK_GO_LOG="$go_log"
+    export MOCK_RELEASE_BINARY_LOG="$tmp_dir/release-binary.log"
     cd "$ROOT_DIR"
     # Override AL_VERSION and DIST_DIR for testing
     AL_VERSION="$expected_version" DIST_DIR="$dist_dir" ./scripts/build-release.sh
@@ -72,6 +93,70 @@ MOCK_GO
     echo "--- Build Log ---"
     cat "$tmp_dir/build.log"
     echo "-----------------"
+  fi
+}
+
+run_release_smoke_rejection_tests() {
+  section "Release Artifact Smoke Rejection Tests"
+
+  local wrong_version_dist="$tmp_dir/wrong-version-dist"
+  local wrong_version_log="$tmp_dir/wrong-version.log"
+  if (
+    export PATH="$mock_bin:$PATH"
+    export MOCK_GO_LOG="$tmp_dir/wrong-version-go.log"
+    export MOCK_RELEASE_VERSION_OVERRIDE="v0.0.0"
+    cd "$ROOT_DIR"
+    AL_VERSION="$expected_version" DIST_DIR="$wrong_version_dist" ./scripts/build-release.sh
+  ) > "$wrong_version_log" 2>&1; then
+    fail "release build should reject an artifact reporting the wrong version"
+  elif grep -Fq "release binary version is v0.0.0; expected $expected_version" "$wrong_version_log"; then
+    pass "release build rejects an artifact reporting the wrong version"
+  else
+    fail "wrong-version artifact failure was not actionable"
+    cat "$wrong_version_log"
+  fi
+
+  local wrong_pin_dist="$tmp_dir/wrong-pin-dist"
+  local wrong_pin_log="$tmp_dir/wrong-pin.log"
+  if (
+    export PATH="$mock_bin:$PATH"
+    export MOCK_GO_LOG="$tmp_dir/wrong-pin-go.log"
+    export MOCK_RELEASE_PIN_OVERRIDE="0.0.0"
+    cd "$ROOT_DIR"
+    AL_VERSION="$expected_version" DIST_DIR="$wrong_pin_dist" ./scripts/build-release.sh
+  ) > "$wrong_pin_log" 2>&1; then
+    fail "release build should reject an artifact initializing the wrong pin"
+  elif grep -Fq "release binary initialized pin 0.0.0; expected $expected_version_no_v" "$wrong_pin_log"; then
+    pass "release build rejects an artifact initializing the wrong pin"
+  else
+    fail "wrong-pin artifact failure was not actionable"
+    cat "$wrong_pin_log"
+  fi
+}
+
+run_missing_migration_manifest_test() {
+  section "Missing Migration Manifest Test"
+
+  local missing_dist="$tmp_dir/missing-migration-dist"
+  local missing_go_log="$tmp_dir/missing-migration-go.log"
+  local missing_log="$tmp_dir/missing-migration.log"
+  : > "$missing_go_log"
+
+  if (
+    export PATH="$mock_bin:$PATH"
+    export MOCK_GO_LOG="$missing_go_log"
+    export MOCK_RELEASE_BINARY_LOG="$tmp_dir/missing-release-binary.log"
+    cd "$ROOT_DIR"
+    AL_VERSION="v9.9.9" DIST_DIR="$missing_dist" ./scripts/build-release.sh
+  ) > "$missing_log" 2>&1; then
+    fail "stable release build should fail when its migration manifest is missing"
+  elif [[ -s "$missing_go_log" ]]; then
+    fail "stable release build compiled binaries before checking its migration manifest"
+  elif grep -Fq "stable release v9.9.9 is missing migration manifest internal/templates/migrations/9.9.9.json" "$missing_log"; then
+    pass "stable release build fails before compilation when its migration manifest is missing"
+  else
+    fail "missing migration manifest failure was not actionable"
+    cat "$missing_log"
   fi
 }
 
@@ -258,6 +343,14 @@ run_build_invocation_details() {
       pass "Build target present: linux/amd64"
     else
       fail "Missing build target: linux/amd64"
+    fi
+
+    if grep -Fxq -- "--version" "$tmp_dir/release-binary.log" &&
+       grep -Fxq -- "init --here --no-wizard" "$tmp_dir/release-binary.log" &&
+       grep -Fxq -- "upgrade plan" "$tmp_dir/release-binary.log"; then
+      pass "Stable release build smoke-tests the native artifact's version and upgrade path"
+    else
+      fail "Stable release build did not smoke-test the native artifact's version and upgrade path"
     fi
 
   fi

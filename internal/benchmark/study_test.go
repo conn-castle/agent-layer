@@ -196,7 +196,7 @@ func TestRecoveryOnlyFailsWithoutPreparingTasksWhenNoRecoverableStudyExists(t *t
 	_, err = RunStudy(context.Background(), StudyOptions{
 		RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), RecoveryOnly: true, ResourcePreflight: true,
 	}, nil)
-	if err == nil || !strings.Contains(err.Error(), "no retained terminal verifier timeout study to canonicalize") {
+	if err == nil || !strings.Contains(err.Error(), "no retained terminal verifier timeout or complete study to recover") {
 		t.Fatalf("recovery-only without retained study = %v", err)
 	}
 }

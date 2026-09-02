@@ -530,6 +530,14 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 		if found {
 			return recoverable, nil
 		}
+		complete, found, err := loadCompleteCachedStudyForRecovery(options.RepoRoot, prepared, candidates, tasks, options.TaskConcurrency)
+		if err != nil {
+			return matrixPreparation{}, err
+		}
+		if found {
+			return complete, nil
+		}
+		return matrixPreparation{}, fmt.Errorf("recovery-only mode found no retained terminal verifier timeout or complete study to recover")
 	}
 	cached, bundles, found, err := loadCompleteCachedStudy(options.RepoRoot, prepared, candidates, tasks, options.TaskConcurrency)
 	if err != nil {
@@ -538,21 +546,15 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 	if found {
 		return cached, nil
 	}
-	if options.RecoveryOnly {
-		return matrixPreparation{}, fmt.Errorf("recovery-only mode found no retained terminal verifier timeout study to canonicalize")
-	}
 	if err := preflightBenchmark(selections); err != nil {
 		return matrixPreparation{}, err
 	}
 	if err := verifyBenchmarkPier(ctx); err != nil {
 		return matrixPreparation{}, err
 	}
-	authentication := map[string]AuthenticationPreflight{}
-	if !options.RecoveryOnly {
-		authentication, err = validateBenchmarkAuthentication(ctx, options.RepoRoot, selections)
-		if err != nil {
-			return matrixPreparation{}, err
-		}
+	authentication, err := validateBenchmarkAuthentication(ctx, options.RepoRoot, selections)
+	if err != nil {
+		return matrixPreparation{}, err
 	}
 	if bundles == nil {
 		bundles, err = stageStudyBundlesIfNeeded(options.RepoRoot, prepared)
@@ -560,7 +562,7 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 			return matrixPreparation{}, err
 		}
 	}
-	if options.ResourcePreflight && !options.RecoveryOnly {
+	if options.ResourcePreflight {
 		emitStudyProgress(options, StudyProgress{Phase: "resources", Message: "Checking Docker disk capacity before image pulls"})
 		if err := preflightStudyDisk(ctx, tasks, options.ReclaimTaskImages && options.TaskConcurrency == 1); err != nil {
 			return matrixPreparation{}, err
@@ -592,11 +594,9 @@ func prepareStudyExecution(ctx context.Context, options StudyOptions, prepared *
 			return matrixPreparation{}, fmt.Errorf("reuse immutable historical evidence for experiment %q: %w", arm.Label, err)
 		}
 	}
-	if !options.RecoveryOnly {
-		work := scheduleStudyRuntimePreflights(options.RepoRoot, tasks, checksums, environments, preparation.arms)
-		if err := preflightStudyRuntimes(ctx, options, tasks, work, reclaimTaskImages, checkout); err != nil {
-			return matrixPreparation{}, err
-		}
+	work := scheduleStudyRuntimePreflights(options.RepoRoot, tasks, checksums, environments, preparation.arms)
+	if err := preflightStudyRuntimes(ctx, options, tasks, work, reclaimTaskImages, checkout); err != nil {
+		return matrixPreparation{}, err
 	}
 	if err := writeStudyManifest(prepared, preparation); err != nil {
 		return matrixPreparation{}, err
@@ -981,35 +981,9 @@ func loadCompleteCachedStudy(repoRoot string, prepared *preparedStudy, candidate
 func loadRecoverableCachedStudy(repoRoot string, prepared *preparedStudy, candidates []cachedStudyCandidate, tasks []benchmarkPlanTask, concurrency int) (matrixPreparation, bool, error) {
 	var matches []matrixPreparation
 	for _, candidate := range candidates {
-		var manifest immutableStudyManifest
-		if err := readStudyJSON(filepath.Join(candidate.stateDir, "study-manifest.json"), &manifest); err != nil {
-			return matrixPreparation{}, false, fmt.Errorf("read recoverable immutable study manifest %s: %w", filepath.Base(candidate.stateDir), err)
-		}
-		if !studyManifestDeclarationCompatible(manifest, prepared) {
-			continue
-		}
-		if filepath.Base(candidate.stateDir) != manifest.StudyID {
-			continue
-		}
-		preparation := recoveryPreparationFromManifest(prepared, manifest, candidate.stateDir, tasks, concurrency)
-		compatible := true
-		for index := range preparation.arms {
-			arm := &preparation.arms[index]
-			historicalID, err := studyArmIdentity(
-				prepared.selectionID, prepared.experiments[index].identity,
-				manifest.Checksums, manifest.Environments,
-				historicalTreatmentBundle(manifest.Arms[index]), manifest.Arms[index].Adapter,
-			)
-			if err != nil {
-				return matrixPreparation{}, false, err
-			}
-			if historicalID != manifest.Arms[index].ID || arm.Label != manifest.Arms[index].Name {
-				compatible = false
-				break
-			}
-			if err := requireStudyArmManifest(prepared.selectionID, tasks, preparation.checksums, arm); err != nil {
-				return matrixPreparation{}, false, err
-			}
+		preparation, manifest, compatible, err := recoveryPreparationFromCandidate(prepared, candidate.stateDir, tasks, concurrency)
+		if err != nil {
+			return matrixPreparation{}, false, err
 		}
 		if !compatible {
 			continue
@@ -1019,6 +993,9 @@ func loadRecoverableCachedStudy(repoRoot string, prepared *preparedStudy, candid
 			return matrixPreparation{}, false, err
 		}
 		if count > 0 {
+			if err := restoreHistoricalStudyTreatmentProvenance(repoRoot, candidate.stateDir, manifest, &preparation); err != nil {
+				return matrixPreparation{}, false, err
+			}
 			matches = append(matches, preparation)
 		}
 	}
@@ -1033,6 +1010,102 @@ func loadRecoverableCachedStudy(repoRoot string, prepared *preparedStudy, candid
 	}
 }
 
+func loadCompleteCachedStudyForRecovery(repoRoot string, prepared *preparedStudy, candidates []cachedStudyCandidate, tasks []benchmarkPlanTask, concurrency int) (matrixPreparation, bool, error) {
+	var matches []matrixPreparation
+	for _, candidate := range candidates {
+		preparation, manifest, compatible, err := recoveryPreparationFromCandidate(prepared, candidate.stateDir, tasks, concurrency)
+		if err != nil {
+			return matrixPreparation{}, false, err
+		}
+		if !compatible {
+			continue
+		}
+		progress, err := studyProgressChecked(preparation)
+		if err != nil {
+			return matrixPreparation{}, false, err
+		}
+		if progress.Missing > 0 {
+			continue
+		}
+		if err := restoreHistoricalStudyTreatmentProvenance(repoRoot, candidate.stateDir, manifest, &preparation); err != nil {
+			return matrixPreparation{}, false, err
+		}
+		authentication, err := cachedAuthenticationPreflight(candidate.stateDir, prepared)
+		if err != nil {
+			return matrixPreparation{}, false, err
+		}
+		preparation.authentication = authentication
+		matches = append(matches, preparation)
+	}
+	switch len(matches) {
+	case 0:
+		return matrixPreparation{}, false, nil
+	case 1:
+		prepared.studyID = filepath.Base(matches[0].stateDir)
+		return matches[0], true, nil
+	default:
+		return matrixPreparation{}, false, fmt.Errorf("complete benchmark study matches more than one historical state directory")
+	}
+}
+
+func restoreHistoricalStudyTreatmentProvenance(repoRoot, stateDir string, manifest immutableStudyManifest, preparation *matrixPreparation) error {
+	for index, contract := range manifest.Arms {
+		historical := historicalTreatmentBundle(contract)
+		if historical == nil {
+			preparation.arms[index].Bundle = nil
+			continue
+		}
+		if contract.Bundle == "" {
+			return fmt.Errorf("historical study %s arm %q has runtime provenance without a treatment manifest hash", filepath.Base(stateDir), contract.Name)
+		}
+		pinRoot := studyTreatmentPinRoot(repoRoot, contract.Bundle)
+		var pin studyTreatmentPin
+		if err := readStudyJSON(filepath.Join(pinRoot, "pin.json"), &pin); err != nil {
+			return fmt.Errorf("read historical study %s treatment pin %s: %w", filepath.Base(stateDir), contract.Bundle, err)
+		}
+		bundle, err := studyTreatmentBundleFromPin(pinRoot, pin)
+		if err != nil {
+			return fmt.Errorf("validate historical study %s treatment pin %s: %w", filepath.Base(stateDir), contract.Bundle, err)
+		}
+		if bundle.ManifestHash != contract.Bundle || bundle.AdapterSHA256 != contract.Adapter ||
+			bundle.LinuxBinarySHA256 != contract.Runtime || bundle.RuntimeSourceKind != contract.RuntimeSource ||
+			bundle.RuntimeVersion != contract.RuntimeVersion {
+			return fmt.Errorf("historical study %s treatment pin %s conflicts with its immutable arm contract", filepath.Base(stateDir), contract.Bundle)
+		}
+		preparation.arms[index].Bundle = bundle
+	}
+	return nil
+}
+
+func recoveryPreparationFromCandidate(prepared *preparedStudy, stateDir string, tasks []benchmarkPlanTask, concurrency int) (matrixPreparation, immutableStudyManifest, bool, error) {
+	var manifest immutableStudyManifest
+	if err := readStudyJSON(filepath.Join(stateDir, "study-manifest.json"), &manifest); err != nil {
+		return matrixPreparation{}, immutableStudyManifest{}, false, fmt.Errorf("read recovery immutable study manifest %s: %w", filepath.Base(stateDir), err)
+	}
+	if !studyManifestDeclarationCompatible(manifest, prepared) || filepath.Base(stateDir) != manifest.StudyID {
+		return matrixPreparation{}, immutableStudyManifest{}, false, nil
+	}
+	preparation := recoveryPreparationFromManifest(prepared, manifest, stateDir, tasks, concurrency)
+	for index := range preparation.arms {
+		arm := &preparation.arms[index]
+		historicalID, err := studyArmIdentity(
+			prepared.selectionID, prepared.experiments[index].identity,
+			manifest.Checksums, manifest.Environments,
+			historicalTreatmentBundle(manifest.Arms[index]), manifest.Arms[index].Adapter,
+		)
+		if err != nil {
+			return matrixPreparation{}, immutableStudyManifest{}, false, err
+		}
+		if historicalID != manifest.Arms[index].ID || arm.Label != manifest.Arms[index].Name {
+			return matrixPreparation{}, immutableStudyManifest{}, false, nil
+		}
+		if err := requireStudyArmManifest(prepared.selectionID, tasks, preparation.checksums, arm); err != nil {
+			return matrixPreparation{}, immutableStudyManifest{}, false, fmt.Errorf("validate recovery study %s: %w", filepath.Base(stateDir), err)
+		}
+	}
+	return preparation, manifest, true, nil
+}
+
 func recoveryPreparationFromManifest(prepared *preparedStudy, manifest immutableStudyManifest, stateDir string, tasks []benchmarkPlanTask, concurrency int) matrixPreparation {
 	preparation := matrixPreparation{
 		selection: prepared.selection, selectionID: prepared.selectionID, tasks: tasks,
@@ -1042,9 +1115,6 @@ func recoveryPreparationFromManifest(prepared *preparedStudy, manifest immutable
 	bundles := historicalBundlesFromManifest(manifest)
 	for index, experiment := range prepared.experiments {
 		bundle := bundles[index]
-		if bundle != nil {
-			bundle.Manifest = recoveryTreatmentManifest(experiment)
-		}
 		mode := ArmBaseline
 		if bundle != nil {
 			mode = ArmTreatment
@@ -1059,24 +1129,6 @@ func recoveryPreparationFromManifest(prepared *preparedStudy, manifest immutable
 		})
 	}
 	return preparation
-}
-
-// recoveryTreatmentManifest restores the workflow contract needed to normalize
-// retained treatment evidence. Historical manifests store only content hashes.
-func recoveryTreatmentManifest(experiment preparedStudyExperiment) TreatmentManifest {
-	mode := TreatmentInstructionsOnly
-	if experiment.Skills != "" {
-		mode = TreatmentInstructionsAndSkills
-	}
-	manifest := TreatmentManifest{
-		Mode:                   mode,
-		AgentTimeoutMultiplier: skillsAgentTimeoutFactor,
-		RequiredRoles:          append([]string(nil), experiment.RequiredDispatchRoles...),
-	}
-	if mode == TreatmentInstructionsAndSkills {
-		manifest.DispatchConfig = defaultTreatmentDispatchConfig(experiment.model, experiment.effort)
-	}
-	return manifest
 }
 
 func terminalVerifierTimeoutCheckpointCount(repoRoot string, preparation matrixPreparation) (int, error) {
@@ -1185,9 +1237,9 @@ func historicalBundlesFromManifest(manifest immutableStudyManifest) []*Treatment
 	return bundles
 }
 
-// historicalTreatmentBundle reconstructs the hashes needed to prove study/arm
-// identity and validate receipts. It is not a staged bundle and must not be
-// used for report generation.
+// historicalTreatmentBundle reconstructs the metadata needed to prove
+// study/arm identity and normalize retained receipts. Report generation and
+// verifier recovery replace it with the content-addressed historical pin.
 func historicalTreatmentBundle(contract studyArmContract) *TreatmentBundle {
 	if contract.Bundle == "" && contract.Runtime == "" && contract.RuntimeSource == "" && contract.RuntimeVersion == "" {
 		return nil

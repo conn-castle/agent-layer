@@ -356,7 +356,7 @@ func newBenchmarkRunCmd() *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&dryRun, "dry-run", false, "validate and preflight without inference calls")
-	command.Flags().BoolVar(&recoveryOnly, "recover-only", false, "finalize retained terminal verifier test timeouts without provider or verifier execution")
+	command.Flags().BoolVar(&recoveryOnly, "recover-only", false, "finalize retained terminal verifier test timeouts or regenerate a completed study report without provider or verifier execution")
 	command.Flags().IntVar(&taskConcurrency, "task-concurrency", 0, "parallel task cells, from 1 to 8 (default: automatic)")
 	command.Flags().StringArrayVar(&tasks, "task", nil, "execute only this selected task; repeatable")
 	return command
