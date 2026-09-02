@@ -70,11 +70,16 @@ Unless the user narrows the scope, include the entire current working tree.
    creation, stop and report that no feedback was received. If ready, continue
    to step 5. Otherwise, address the full actionable round before committing.
 
-4. Commit and push accepted fixes. Post each supported worker-proposed reply one
-   at a time: reply natively to inline comments; for conversation comments or
-   review summaries, post an issue comment linking the source. Rerun the comment
-   command and correct any missing or unsupported reply. Return to step 3 until
-   ready. If only checks or reviews are pending, wait for the watcher.
+4. Commit and push accepted fixes. Replace every worker proposal beginning
+   `Fixed.` with `Fixed in <full commit SHA>.`, naming the pushed commit that
+   contains that fix; preserve its explanation after the canonical prefix.
+   Post each supported worker-proposed reply one at a time: reply natively to
+   inline comments; for conversation comments or review summaries, post an
+   issue comment linking the source. Posted disposition replies must begin
+   exactly `Fixed in <full commit SHA>.`, `Deferred.`, or `Disagreed.`. Rerun
+   the comment command and correct any missing, noncanonical, or unsupported
+   reply. Return to step 3 until ready. If only checks or reviews are pending,
+   wait for the watcher.
 
 5. Request single-use merge authorization for the exact PR and head. Report any
    substantive findings, a concise comment disposition summary, and readiness
