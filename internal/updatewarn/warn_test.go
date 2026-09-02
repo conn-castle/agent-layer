@@ -4,12 +4,25 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
+
+// TestMain keeps warning tests independent of a dispatched child's
+// AL_SUPPRESS_UPDATE_WARNING inheritance. Tests that exercise suppression
+// set the variable themselves.
+func TestMain(m *testing.M) {
+	if err := os.Unsetenv(EnvSuppress); err != nil {
+		fmt.Fprintf(os.Stderr, "clear %s: %v\n", EnvSuppress, err)
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
 
 func TestWarnIfOutdated_SkipsWhenVersionOverrideSet(t *testing.T) {
 	t.Setenv(versiondispatch.EnvVersionOverride, "1")
