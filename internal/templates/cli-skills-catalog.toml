@@ -33,6 +33,11 @@ ownership_marker = "<!-- agent-layer-catalog-skill: skill-sync -->"
 # skill-sync uses the current Agent Layer binary; no external binary key.
 
 [[cli_skills]]
+id = "benchmark"
+name = "Agent Layer benchmark"
+# benchmark is a guidance skill; no external binary key.
+
+[[cli_skills]]
 id = "development-skills"
 name = "Agent Layer development skills (/implement, /ship-pr, etc.)"
 # Grouped catalog entry: members are copied from embedded skills/<id>/,

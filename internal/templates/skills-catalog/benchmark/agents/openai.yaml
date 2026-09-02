@@ -1,0 +1,4 @@
+interface:
+  display_name: "Benchmark"
+  short_description: "A/B test agent system changes"
+  default_prompt: "Use $benchmark to A/B test a skill or instruction change and explain the score and cost results."
