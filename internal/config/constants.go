@@ -10,4 +10,7 @@ const (
 	skillManifestName    = "SKILL.md"
 	skillsDirName        = "skills"
 	agentLayerServerID   = "agent-layer"
+
+	// MCPAuthOAuth indicates OAuth authentication for an MCP server.
+	MCPAuthOAuth = "oauth"
 )

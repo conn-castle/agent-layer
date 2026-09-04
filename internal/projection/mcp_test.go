@@ -17,6 +17,7 @@ func TestResolveMCPServers(t *testing.T) {
 			Clients:   []string{"antigravity"},
 			Transport: "http",
 			URL:       "https://example.com?token=${TOKEN}",
+			Auth:      config.MCPAuthOAuth,
 			Headers: map[string]string{
 				"Authorization": "Bearer ${TOKEN}",
 			},
@@ -50,6 +51,9 @@ func TestResolveMCPServers(t *testing.T) {
 	}
 	if resolved[0].Headers["Authorization"] != "Bearer abc123" {
 		t.Fatalf("unexpected header: %s", resolved[0].Headers["Authorization"])
+	}
+	if resolved[0].Auth != config.MCPAuthOAuth {
+		t.Fatalf("unexpected auth mode: %s", resolved[0].Auth)
 	}
 	if resolved[1].Args[1] != "abc123" {
 		t.Fatalf("unexpected arg substitution: %s", resolved[1].Args[1])

@@ -62,6 +62,13 @@ id = "local"
 enabled = false
 transport = "stdio"
 command = "tool"
+
+[[mcp.servers]]
+id = "oauth"
+enabled = true
+transport = "http"
+url = "https://example.com/mcp"
+auth = "oauth"
 `
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -88,6 +95,9 @@ command = "tool"
 	}
 	if !NotificationsChimeEnabled(*cfg) {
 		t.Fatal("expected notifications chime to be enabled")
+	}
+	if len(cfg.MCP.Servers) != 2 || cfg.MCP.Servers[1].Auth != MCPAuthOAuth {
+		t.Fatalf("expected OAuth MCP auth mode to load, got %#v", cfg.MCP.Servers)
 	}
 }
 
