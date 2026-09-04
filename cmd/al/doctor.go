@@ -288,8 +288,11 @@ func renderSizeSummary(out io.Writer, w config.WarningsConfig, instTokens int, i
 			_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPSchemaNoLimitFmt, mcp.TotalSchemaTokens)
 		}
 
-		if mcp.ReachableServers < mcp.EnabledServers {
-			_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPPartialFmt, mcp.EnabledServers-mcp.ReachableServers, mcp.EnabledServers)
+		if unreachable := mcp.EnabledServers - mcp.ReachableServers - mcp.OAuthUnvalidatedServers; unreachable > 0 {
+			_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPPartialFmt, unreachable, mcp.EnabledServers)
+		}
+		if mcp.OAuthUnvalidatedServers > 0 {
+			_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPOAuthPartialFmt, mcp.OAuthUnvalidatedServers, mcp.EnabledServers)
 		}
 	}
 
@@ -519,6 +522,8 @@ func (r *mcpDiscoveryReporter) formatLineLocked(serverID string) string {
 	switch r.statusForLocked(serverID) {
 	case warnings.MCPDiscoveryStatusDone:
 		return fmt.Sprintf("  - %s: done", serverID)
+	case warnings.MCPDiscoveryStatusAuthNotValidated:
+		return fmt.Sprintf("  - %s: %s", serverID, messages.WarningsMCPOAuthNotValidated)
 	case warnings.MCPDiscoveryStatusError:
 		if err := r.errors[serverID]; err != nil {
 			return fmt.Sprintf("  - %s: error (%v)", serverID, err)
@@ -552,6 +557,8 @@ func formatMCPDiscoveryEvent(event warnings.MCPDiscoveryEvent) string {
 		return fmt.Sprintf("  - %s: starting", event.ServerID)
 	case warnings.MCPDiscoveryStatusDone:
 		return fmt.Sprintf("  - %s: done", event.ServerID)
+	case warnings.MCPDiscoveryStatusAuthNotValidated:
+		return fmt.Sprintf("  - %s: %s", event.ServerID, messages.WarningsMCPOAuthNotValidated)
 	case warnings.MCPDiscoveryStatusError:
 		if event.Err != nil {
 			return fmt.Sprintf("  - %s: error (%v)", event.ServerID, event.Err)

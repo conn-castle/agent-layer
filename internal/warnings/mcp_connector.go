@@ -91,6 +91,10 @@ type RealConnector struct{}
 // ConnectAndDiscover connects to an MCP server and discovers its tools.
 func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projection.ResolvedMCPServer) DiscoveryResult {
 	res := DiscoveryResult{ServerID: server.ID}
+	if server.Transport == config.TransportHTTP && server.Auth == config.MCPAuthOAuth {
+		res.OAuthUnvalidated = true
+		return res
+	}
 
 	// Create context with timeout for this server
 	ctx, cancel := context.WithTimeout(ctx, mcpDiscoveryTimeout)
@@ -118,7 +122,7 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projectio
 		}
 	case config.TransportHTTP:
 		switch server.HTTPTransport {
-		case "", "sse":
+		case "", config.HTTPTransportSSE:
 			t := &mcp.SSEClientTransport{
 				Endpoint: server.URL,
 			}
@@ -131,7 +135,7 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projectio
 				}
 			}
 			transport = t
-		case "streamable":
+		case config.HTTPTransportStreamable:
 			t := &mcp.StreamableClientTransport{
 				Endpoint: server.URL,
 			}

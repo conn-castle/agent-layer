@@ -88,6 +88,13 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "http_transport must be sse or streamable",
 		},
 		{
+			name: "http invalid auth",
+			cfg: withServers(valid, []MCPServer{
+				{ID: "x", Enabled: &trueVal, Transport: "http", URL: "https://example.com", Auth: "basic"},
+			}),
+			wantErr: "auth must be oauth",
+		},
+		{
 			name: "stdio missing command",
 			cfg: withServers(valid, []MCPServer{
 				{ID: "x", Enabled: &trueVal, Transport: "stdio"},
@@ -552,7 +559,7 @@ func TestValidateSanitizesTransportIncompatibleFields(t *testing.T) {
 		},
 	}
 
-	t.Run("stdio strips headers url and http_transport", func(t *testing.T) {
+	t.Run("stdio strips headers url http_transport and auth", func(t *testing.T) {
 		cfg := base
 		cfg.MCP.Servers = []MCPServer{{
 			ID:            "s1",
@@ -562,6 +569,7 @@ func TestValidateSanitizesTransportIncompatibleFields(t *testing.T) {
 			Headers:       map[string]string{"X-Key": "val"},
 			URL:           "https://leftover.example.com",
 			HTTPTransport: "sse",
+			Auth:          "oauth",
 		}}
 		if err := cfg.Validate("config.toml"); err != nil {
 			t.Fatalf("expected no error, got %v", err)
@@ -576,18 +584,22 @@ func TestValidateSanitizesTransportIncompatibleFields(t *testing.T) {
 		if srv.HTTPTransport != "" {
 			t.Errorf("expected http_transport to be empty, got %q", srv.HTTPTransport)
 		}
+		if srv.Auth != "" {
+			t.Errorf("expected auth to be empty, got %q", srv.Auth)
+		}
 		if srv.Command != "tool" {
 			t.Errorf("expected command to be preserved, got %q", srv.Command)
 		}
 	})
 
-	t.Run("http strips command args and env", func(t *testing.T) {
+	t.Run("http strips command args and env and preserves auth", func(t *testing.T) {
 		cfg := base
 		cfg.MCP.Servers = []MCPServer{{
 			ID:        "s1",
 			Enabled:   &enabled,
 			Transport: "http",
 			URL:       "https://example.com",
+			Auth:      "oauth",
 			Command:   "leftover",
 			Args:      []string{"--flag"},
 			Env:       map[string]string{"TOKEN": "x"},
@@ -607,6 +619,9 @@ func TestValidateSanitizesTransportIncompatibleFields(t *testing.T) {
 		}
 		if srv.URL != "https://example.com" {
 			t.Errorf("expected url to be preserved, got %q", srv.URL)
+		}
+		if srv.Auth != "oauth" {
+			t.Errorf("expected auth to be preserved, got %q", srv.Auth)
 		}
 	})
 }

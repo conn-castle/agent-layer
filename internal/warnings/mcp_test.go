@@ -1235,3 +1235,102 @@ func TestRealConnector_TooManyToolsGuard(t *testing.T) {
 	assert.Contains(t, result.Error.Error(), "too many tools or infinite loop")
 	assert.True(t, mockSession.closeCalled, "session.Close should be called")
 }
+
+func TestRealConnector_OAuthNotVerifiable(t *testing.T) {
+	clientCreated := false
+	original := NewMCPClientFunc
+	NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) mcpClientInterface {
+		clientCreated = true
+		return &mockMCPClient{}
+	}
+	t.Cleanup(func() { NewMCPClientFunc = original })
+
+	connector := &RealConnector{}
+	server := projection.ResolvedMCPServer{
+		ID:            "figma",
+		Transport:     config.TransportHTTP,
+		HTTPTransport: "streamable",
+		URL:           "https://mcp.figma.com/mcp",
+		Auth:          config.MCPAuthOAuth,
+	}
+
+	result := connector.ConnectAndDiscover(context.Background(), server)
+	assert.NoError(t, result.Error)
+	assert.True(t, result.OAuthUnvalidated)
+	assert.False(t, clientCreated, "OAuth discovery must not start a client that cannot use the client-managed credentials")
+}
+
+func TestRealConnector_StdioOAuthDoesNotSkipDiscovery(t *testing.T) {
+	// Doctor's lenient-config fallback skips validation, so a malformed stdio
+	// server can still carry auth = "oauth". Discovery must use the stdio path
+	// rather than treating leftover OAuth as unvalidated HTTP auth.
+	clientCreated := false
+	mockSession := &mockMCPSession{
+		tools: []*mcp.Tool{{Name: "tool1"}},
+	}
+	mockClient := &mockMCPClient{session: mockSession}
+
+	original := NewMCPClientFunc
+	NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) mcpClientInterface {
+		clientCreated = true
+		return mockClient
+	}
+	t.Cleanup(func() { NewMCPClientFunc = original })
+
+	connector := &RealConnector{}
+	server := projection.ResolvedMCPServer{
+		ID:        "malformed-stdio",
+		Transport: config.TransportStdio,
+		Command:   "echo",
+		Auth:      config.MCPAuthOAuth,
+	}
+
+	result := connector.ConnectAndDiscover(context.Background(), server)
+	assert.NoError(t, result.Error)
+	assert.False(t, result.OAuthUnvalidated)
+	assert.True(t, clientCreated, "stdio servers with leftover auth=oauth must still be discovered")
+	assert.Len(t, result.Tools, 1)
+	assert.Equal(t, "tool1", result.Tools[0].Name)
+}
+
+func TestCheckMCPServers_OAuthServerNotValidated(t *testing.T) {
+	trueVal := true
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{
+						ID:            "figma",
+						Enabled:       &trueVal,
+						Transport:     config.TransportHTTP,
+						HTTPTransport: "streamable",
+						URL:           "https://mcp.figma.com/mcp",
+						Auth:          config.MCPAuthOAuth,
+					},
+				},
+			},
+		},
+	}
+
+	var events []MCPDiscoveryEvent
+	statusFn := func(e MCPDiscoveryEvent) {
+		events = append(events, e)
+	}
+
+	warnings, summary, err := CheckMCPServers(context.Background(), cfg, &RealConnector{}, statusFn)
+	require.NoError(t, err)
+	assert.Empty(t, warnings, "OAuth server with AuthStatusNotVerifiable should not produce warnings")
+	assert.True(t, summary.Available)
+	assert.Equal(t, 1, summary.EnabledServers)
+	assert.Equal(t, 0, summary.ReachableServers)
+	assert.Equal(t, 1, summary.OAuthUnvalidatedServers)
+	assert.Equal(t, 0, summary.TotalTools)
+
+	var hasAuthNotValidatedEvent bool
+	for _, e := range events {
+		if e.ServerID == "figma" && e.Status == MCPDiscoveryStatusAuthNotValidated {
+			hasAuthNotValidatedEvent = true
+		}
+	}
+	assert.True(t, hasAuthNotValidatedEvent, "expected MCPDiscoveryStatusAuthNotValidated event")
+}

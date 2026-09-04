@@ -67,6 +67,7 @@ func resolveSingleServer(server config.MCPServer, env map[string]string, resolve
 	entry := ResolvedMCPServer{
 		ID:        server.ID,
 		Transport: server.Transport,
+		Auth:      server.Auth,
 	}
 	repoRoot := env[config.BuiltinRepoRootEnvVar]
 

@@ -227,6 +227,7 @@ Optional fields:
 - `clients` to restrict which clients receive a server (valid values: `antigravity`, `claude`, `vscode`, `codex`, `copilot`, `grok`; note that `claude_vscode` uses the `claude` client)
 - `http_transport` (`sse` or `streamable`) for HTTP servers
 - `headers` for HTTP auth and metadata
+- `auth = "oauth"` for HTTP servers that authenticate through each client's OAuth session (for example, Figma's remote MCP); this tells `al doctor` not to attempt an unauthenticated tool-discovery request
 - `command`, `args`, `env` for stdio servers
 
 When a local command already has useful `--help`, compare MCP against a CLI skill before adding a server. The [CLI Skill Design Guide](/cli-skill-design) explains when MCP is the right interface and when live `--help` is the better place to look up syntax.
@@ -267,6 +268,18 @@ enabled = true
 transport = "http"
 url = "https://example.com/mcp"
 headers = { Authorization = "Bearer ${AL_EXAMPLE_TOKEN}" }
+```
+
+For a server that relies on client-managed OAuth instead of static headers:
+
+```toml
+[[mcp.servers]]
+id = "figma"
+enabled = true
+transport = "http"
+http_transport = "streamable"
+url = "https://mcp.figma.com/mcp"
+auth = "oauth"
 ```
 
 #### Stdio example
@@ -357,8 +370,9 @@ Agent Layer validates `config.toml` on every run. Common validation rules:
 - `enabled` flags must be set for all agents and MCP servers
 - MCP transport must be `http` or `stdio`
 - `http_transport` (when set) must be `sse` or `streamable`
+- `auth` (when set) must be `oauth`
 - HTTP servers cannot set `command` or `args`
-- Stdio servers cannot set `url` or `headers`
+- Stdio servers silently strip `url`, `headers`, and `auth` instead of failing validation
 - `skills.imports[].selectors` must include at least one positive selector, and every selector must be a normalized repository-relative path
 - `skills.imports[].tracking` must be `tracked` or `pinned`; `write_policy` must be `none`, `branch`, or `direct`
 - `write_policy = "branch"` requires an explicit non-primary `push_branch`; other policies must not set one. Configuration validation rejects the conventional primary names; `al skills push` additionally rejects the destination's actual default branch

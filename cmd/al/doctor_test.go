@@ -91,6 +91,11 @@ func TestFormatMCPDiscoveryEvent(t *testing.T) {
 			want:  "  - srv: done",
 		},
 		{
+			name:  "auth not validated",
+			event: warnings.MCPDiscoveryEvent{ServerID: "figma", Status: warnings.MCPDiscoveryStatusAuthNotValidated},
+			want:  "  - figma: OAuth authentication not validated by doctor",
+		},
+		{
 			name:  "error without err",
 			event: warnings.MCPDiscoveryEvent{ServerID: "srv", Status: warnings.MCPDiscoveryStatusError},
 			want:  "  - srv: error",
@@ -121,19 +126,21 @@ type testError struct{ msg string }
 func (e *testError) Error() string { return e.msg }
 
 func TestMCPDiscoveryReporter_Report(t *testing.T) {
-	reporter := newMCPDiscoveryReporter([]string{"server1", "server2"}, false, io.Discard)
+	reporter := newMCPDiscoveryReporter([]string{"server1", "server2", "server3"}, false, io.Discard)
 	reporter.start()
 
 	// Send events
 	reporter.report(warnings.MCPDiscoveryEvent{ServerID: "server1", Status: warnings.MCPDiscoveryStatusDone})
 	reporter.report(warnings.MCPDiscoveryEvent{ServerID: "server2", Status: warnings.MCPDiscoveryStatusError, Err: &testError{"failed"}})
+	reporter.report(warnings.MCPDiscoveryEvent{ServerID: "server3", Status: warnings.MCPDiscoveryStatusAuthNotValidated})
 
 	// Wait for events to be processed
-	var s1, s2 warnings.MCPDiscoveryStatus
+	var s1, s2, s3 warnings.MCPDiscoveryStatus
 	require.Eventually(t, func() bool {
 		s1 = reporter.statusFor("server1")
 		s2 = reporter.statusFor("server2")
-		return s1 == warnings.MCPDiscoveryStatusDone && s2 == warnings.MCPDiscoveryStatusError
+		s3 = reporter.statusFor("server3")
+		return s1 == warnings.MCPDiscoveryStatusDone && s2 == warnings.MCPDiscoveryStatusError && s3 == warnings.MCPDiscoveryStatusAuthNotValidated
 	}, time.Second, 10*time.Millisecond)
 
 	reporter.stop()
@@ -144,6 +151,12 @@ func TestMCPDiscoveryReporter_Report(t *testing.T) {
 	}
 	if s2 != warnings.MCPDiscoveryStatusError {
 		t.Errorf("server2 status = %v, want error", s2)
+	}
+	if s3 != warnings.MCPDiscoveryStatusAuthNotValidated {
+		t.Errorf("server3 status = %v, want auth_not_validated", s3)
+	}
+	if line := reporter.formatLine("server3"); !strings.Contains(line, "OAuth authentication not validated by doctor") {
+		t.Errorf("expected formatLine to include OAuth not validated, got %q", line)
 	}
 }
 

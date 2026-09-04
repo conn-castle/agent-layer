@@ -16,6 +16,7 @@ type ResolvedMCPServer struct {
 	URL           string
 	Headers       map[string]string
 	HTTPTransport string
+	Auth          string
 	Command       string
 	Args          []string
 	Env           map[string]string

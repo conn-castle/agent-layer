@@ -21,9 +21,11 @@ type MCPSummary struct {
 	Available bool
 	// EnabledServers is the count of enabled, resolvable servers.
 	EnabledServers int
-	// ReachableServers is the count of servers discovery succeeded for. When it is less
-	// than EnabledServers, the tool/schema totals exclude the unreachable servers.
+	// ReachableServers is the count of servers whose tools were successfully discovered.
 	ReachableServers int
+	// OAuthUnvalidatedServers is the count of servers using client-managed OAuth, which
+	// doctor cannot authenticate. Tool and schema totals exclude them.
+	OAuthUnvalidatedServers int
 	// TotalTools is the number of tools discovered across reachable servers.
 	TotalTools int
 	// TotalSchemaTokens is the estimated tool-schema token count across reachable servers.
@@ -86,14 +88,21 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 	var totalTools int
 	var totalSchemaTokens int
 	var reachableServers int
+	var oauthUnvalidatedServers int
 	toolNames := make(map[string][]string) // name -> serverIDs
 
 	for _, res := range results {
+		if res.OAuthUnvalidated {
+			oauthUnvalidatedServers++
+			continue
+		}
+
 		if res.Error != nil {
 			source := SourceExternalDependency
 			if transportByServerID[res.ServerID] == config.TransportHTTP {
 				source = SourceNetwork
 			}
+
 			warnings = append(warnings, Warning{
 				Code:     CodeMCPServerUnreachable,
 				Subject:  res.ServerID,
@@ -207,11 +216,12 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 	}
 
 	summary := MCPSummary{
-		Available:         true,
-		EnabledServers:    len(enabledServers),
-		ReachableServers:  reachableServers,
-		TotalTools:        totalTools,
-		TotalSchemaTokens: totalSchemaTokens,
+		Available:               true,
+		EnabledServers:          len(enabledServers),
+		ReachableServers:        reachableServers,
+		OAuthUnvalidatedServers: oauthUnvalidatedServers,
+		TotalTools:              totalTools,
+		TotalSchemaTokens:       totalSchemaTokens,
 	}
 
 	return warnings, summary, nil
@@ -225,10 +235,11 @@ type ToolDef struct {
 
 // DiscoveryResult contains the results of discovering tools from an MCP server.
 type DiscoveryResult struct {
-	ServerID     string
-	Tools        []ToolDef
-	SchemaTokens int
-	Error        error
+	ServerID         string
+	Tools            []ToolDef
+	SchemaTokens     int
+	OAuthUnvalidated bool
+	Error            error
 }
 
 // MCPDiscoveryStatus is the status of a discovery event for an MCP server.
@@ -239,6 +250,8 @@ const (
 	MCPDiscoveryStatusStart MCPDiscoveryStatus = "start"
 	// MCPDiscoveryStatusDone indicates a server discovery completed successfully.
 	MCPDiscoveryStatusDone MCPDiscoveryStatus = "done"
+	// MCPDiscoveryStatusAuthNotValidated indicates that doctor skipped an OAuth server it cannot authenticate.
+	MCPDiscoveryStatusAuthNotValidated MCPDiscoveryStatus = "auth_not_validated"
 	// MCPDiscoveryStatusError indicates a server discovery completed with an error.
 	MCPDiscoveryStatusError MCPDiscoveryStatus = "error"
 )
@@ -282,7 +295,9 @@ func discoverTools(ctx context.Context, servers []projection.ResolvedMCPServer, 
 
 			if statusFn != nil {
 				status := MCPDiscoveryStatusDone
-				if res.Error != nil {
+				if res.OAuthUnvalidated {
+					status = MCPDiscoveryStatusAuthNotValidated
+				} else if res.Error != nil {
 					status = MCPDiscoveryStatusError
 				}
 				statusFn(MCPDiscoveryEvent{ServerID: s.ID, Status: status, Err: res.Error})
