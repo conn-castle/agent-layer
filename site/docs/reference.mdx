@@ -372,7 +372,7 @@ Agent Layer validates `config.toml` on every run. Common validation rules:
 - `http_transport` (when set) must be `sse` or `streamable`
 - `auth` (when set) must be `oauth`
 - HTTP servers cannot set `command` or `args`
-- Stdio servers cannot set `url`, `headers`, or `auth`
+- Stdio servers silently strip `url`, `headers`, and `auth` instead of failing validation
 - `skills.imports[].selectors` must include at least one positive selector, and every selector must be a normalized repository-relative path
 - `skills.imports[].tracking` must be `tracked` or `pinned`; `write_policy` must be `none`, `branch`, or `direct`
 - `write_policy = "branch"` requires an explicit non-primary `push_branch`; other policies must not set one. Configuration validation rejects the conventional primary names; `al skills push` additionally rejects the destination's actual default branch

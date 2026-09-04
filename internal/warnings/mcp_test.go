@@ -1260,6 +1260,39 @@ func TestRealConnector_OAuthNotVerifiable(t *testing.T) {
 	assert.False(t, clientCreated, "OAuth discovery must not start a client that cannot use the client-managed credentials")
 }
 
+func TestRealConnector_StdioOAuthDoesNotSkipDiscovery(t *testing.T) {
+	// Doctor's lenient-config fallback skips validation, so a malformed stdio
+	// server can still carry auth = "oauth". Discovery must use the stdio path
+	// rather than treating leftover OAuth as unvalidated HTTP auth.
+	clientCreated := false
+	mockSession := &mockMCPSession{
+		tools: []*mcp.Tool{{Name: "tool1"}},
+	}
+	mockClient := &mockMCPClient{session: mockSession}
+
+	original := NewMCPClientFunc
+	NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) mcpClientInterface {
+		clientCreated = true
+		return mockClient
+	}
+	t.Cleanup(func() { NewMCPClientFunc = original })
+
+	connector := &RealConnector{}
+	server := projection.ResolvedMCPServer{
+		ID:        "malformed-stdio",
+		Transport: config.TransportStdio,
+		Command:   "echo",
+		Auth:      config.MCPAuthOAuth,
+	}
+
+	result := connector.ConnectAndDiscover(context.Background(), server)
+	assert.NoError(t, result.Error)
+	assert.False(t, result.OAuthUnvalidated)
+	assert.True(t, clientCreated, "stdio servers with leftover auth=oauth must still be discovered")
+	assert.Len(t, result.Tools, 1)
+	assert.Equal(t, "tool1", result.Tools[0].Name)
+}
+
 func TestCheckMCPServers_OAuthServerNotValidated(t *testing.T) {
 	trueVal := true
 	cfg := &config.ProjectConfig{

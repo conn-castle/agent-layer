@@ -91,7 +91,7 @@ type RealConnector struct{}
 // ConnectAndDiscover connects to an MCP server and discovers its tools.
 func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projection.ResolvedMCPServer) DiscoveryResult {
 	res := DiscoveryResult{ServerID: server.ID}
-	if server.Auth == config.MCPAuthOAuth {
+	if server.Transport == config.TransportHTTP && server.Auth == config.MCPAuthOAuth {
 		res.OAuthUnvalidated = true
 		return res
 	}
