@@ -70,6 +70,7 @@ const (
 	antigravityEffortLow          = "low"
 	antigravityEffortMedium       = "medium"
 	antigravityEffortHigh         = "high"
+	antigravityInitEvent          = "init"
 )
 
 // codexDispatchSandboxMode resolves the Codex sandbox for a non-YOLO dispatch.
@@ -651,10 +652,12 @@ func reduceGrokEvent(expected string, value map[string]any, textAccumulator *str
 
 func reduceAntigravityEvent(value map[string]any, terminalSeen *bool) []providerEvent {
 	eventType, _ := value[jsonEventKey].(string)
-	if eventType == "init" {
+	if eventType == antigravityInitEvent {
 		id, _ := firstStringV013(value, "conversation_id")
 		if id == "" {
-			return []providerEvent{{Kind: eventFailure, Reason: "Antigravity init event has no conversation ID"}}
+			// Ignore an incomplete lifecycle notification. The terminal
+			// result invariant still rejects a run without an identity.
+			return []providerEvent{{Kind: eventProgress, Activity: eventType}}
 		}
 		return []providerEvent{{Kind: eventSession, SessionID: id}}
 	}

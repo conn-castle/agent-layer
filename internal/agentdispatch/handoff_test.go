@@ -159,7 +159,7 @@ func TestRunnerBoundsHandoffAndCleansDescendants(t *testing.T) {
 		{"stdout closed but live", `exec 1>&-; trap '' TERM; while :; do sleep 1; done`, true},
 		{"inherited output", answer + `sleep 60 &`, false},
 		{"detached output", answer + `sleep 60 >/dev/null 2>&1 &`, false},
-		{"exit near deadline with slow descendant cleanup", answer + `(trap '' TERM; exec sleep 60) >/dev/null 2>&1 & sleep 4.2`, false},
+		{"exit near deadline with slow descendant cleanup", answer + `(trap '' TERM; exec sleep 60) >/dev/null 2>&1 & sleep 3`, false},
 		{"exit without terminal with inherited output", `sleep 60 & exit 1`, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

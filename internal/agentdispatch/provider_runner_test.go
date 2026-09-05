@@ -923,6 +923,29 @@ func TestStructuredProviderStreamsRejectDuplicateTerminalEvents(t *testing.T) {
 	}
 }
 
+func TestAntigravityIncompleteInitIsProgressAndTerminalStillAuthoritative(t *testing.T) {
+	progress, err := reduceStructuredTestEvent(AgentAntigravity, "", []byte(`{"event":"init"}`))
+	if err != nil || len(progress) != 1 || progress[0].Kind != eventProgress || progress[0].Activity != antigravityInitEvent {
+		t.Fatalf("incomplete init = %#v, %v", progress, err)
+	}
+	session, err := reduceStructuredTestEvent(AgentAntigravity, "", []byte(`{"event":"init","conversation_id":"conversation"}`))
+	if err != nil || len(session) != 1 || session[0].Kind != eventSession || session[0].SessionID != "conversation" {
+		t.Fatalf("valid init = %#v, %v", session, err)
+	}
+	stream := `{"event":"init"}` + "\n" +
+		`{"event":"result","result":{"status":"SUCCESS","conversation_id":"conversation","response":"answer","usage":{"input_tokens":1,"output_tokens":2,"thinking_tokens":1,"cache_read_tokens":0}}}` + "\n"
+	var events []providerEvent
+	if err := readStructuredEventsWithLineage(strings.NewReader(stream), io.Discard, AgentAntigravity, "", false, func(event providerEvent) error {
+		events = append(events, event)
+		return nil
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 5 || events[0].Kind != eventProgress || events[0].Activity != antigravityInitEvent || events[1].Kind != eventSession || events[1].SessionID != "conversation" || events[2].Kind != eventAnswer || events[2].Answer != "answer" || events[3].Kind != eventProgress || events[4].Kind != eventComplete {
+		t.Fatalf("incomplete init plus terminal = %#v", events)
+	}
+}
+
 func TestAntigravityStructuredEventsRequireSuccessfulUsageBearingTerminal(t *testing.T) {
 	events, err := reduceStructuredTestEvent(AgentAntigravity, "", []byte(`{"event":"result","result":{"status":"SUCCESS","conversation_id":"conversation","response":"answer","usage":{"input_tokens":1,"output_tokens":2,"thinking_tokens":1,"cache_read_tokens":0}}}`))
 	if err != nil {
