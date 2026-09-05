@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -165,6 +166,9 @@ func executeProvider(
 	run.Record.PID = cmd.Process.Pid
 	run.Record.ProcessGroupID = cmd.Process.Pid
 	run.Record.ProcessStartIdentity = processStartIdentity(cmd.Process.Pid)
+	leaderPID := run.Record.PID
+	leaderGroupID := run.Record.ProcessGroupID
+	leaderStart := run.Record.ProcessStartIdentity
 	termination, err := newStartedProviderTermination(cmd, run.Record, providerTerminationGrace)
 	if err != nil {
 		// The exec.Cmd is direct proof that this leader is ours, but without a
@@ -198,16 +202,13 @@ func executeProvider(
 			close(stderrDrained)
 		}()
 		termination.request()
-		waited := make(chan error, 1)
-		go func() { waited <- cmd.Wait() }()
-		<-termination.done
+		_, _ = reapDuringTermination(cmd, leaderStart, termination)
 		_ = stdoutPipe.Close()
 		_ = stderrPipe.Close()
 		<-stdoutDrained
 		<-stderrDrained
 		terminationErr := termination.err
 		if terminationErr == nil {
-			<-waited
 			terminationErr = termination.providerStopped()
 		}
 		if terminationErr != nil {
@@ -332,64 +333,10 @@ func executeProvider(
 		stderrErr <- err
 	}()
 
-	waited := make(chan error, 1)
-	go func(done chan<- error) { done <- cmd.Wait() }(waited)
-	var streamResult, stderrResult, waitErr, terminationErr error
-	var shutdownTimer *time.Timer
-	var shutdownDeadline <-chan time.Time
-	startShutdownDeadline := func() {
-		if shutdownTimer == nil && (streamErr != nil || stderrErr != nil || waited != nil) {
-			shutdownTimer = time.NewTimer(providerShutdownGrace)
-			shutdownDeadline = shutdownTimer.C
-		}
-	}
-	defer func() {
-		if shutdownTimer != nil {
-			shutdownTimer.Stop()
-		}
-	}()
-	terminationDone := termination.done
-	for streamErr != nil || stderrErr != nil || waited != nil || terminationDone != nil {
-		if streamErr == nil && stderrErr == nil && waited == nil && shutdownTimer != nil {
-			// Process exit and I/O met their deadline. Group termination has
-			// its own bounded grace/proof windows; do not spend this deadline
-			// a second time on that independent cleanup phase.
-			shutdownTimer.Stop()
-			shutdownDeadline = nil
-		}
-		select {
-		case <-terminal:
-			startShutdownDeadline()
-		case streamResult = <-streamErr:
-			streamErr = nil
-			startShutdownDeadline()
-		case stderrResult = <-stderrErr:
-			stderrErr = nil
-		case waitErr = <-waited:
-			waited = nil
-			startShutdownDeadline()
-			termination.request()
-		case <-terminationDone:
-			terminationDone = nil
-			terminationErr = termination.err
-			startShutdownDeadline()
-			if terminationErr != nil {
-				// Do not hang on an unkillable provider. Retain its active claim
-				// through the unproven-termination error below.
-				waited = nil
-				_ = stdoutPipe.Close()
-				_ = stderrPipe.Close()
-			}
-		case <-shutdownDeadline:
-			shutdownDeadline = nil
-			setFailure(fmt.Errorf("provider did not exit and close output streams within %s of terminal evidence or shutdown", providerShutdownGrace))
-			_ = stdoutPipe.Close()
-			_ = stderrPipe.Close()
-		}
-	}
-	if terminationErr == nil {
-		terminationErr = termination.providerStopped()
-	}
+	streamResult, stderrResult, waitErr, terminationErr := awaitProviderCompletion(
+		cmd, termination, leaderPID, leaderGroupID, leaderStart,
+		stdoutPipe, stderrPipe, streamErr, stderrErr, terminal, setFailure,
+	)
 	signal := caughtSignal()
 	resultMu.Lock()
 	currentSemanticErr := semanticErr
@@ -434,6 +381,160 @@ func executeProvider(
 	resultMu.Unlock()
 	result.Answer = terminalAnswer
 	return result, nil
+}
+
+type providerWaitState struct {
+	cmd              *exec.Cmd
+	termination      *providerTermination
+	leader           RunRecord
+	stdoutPipe       *os.File
+	stderrPipe       *os.File
+	reaped           bool
+	waitErr          error
+	terminationErr   error
+	terminationDone  <-chan struct{}
+	shutdownTimer    *time.Timer
+	shutdownDeadline <-chan time.Time
+}
+
+func awaitProviderCompletion(
+	cmd *exec.Cmd,
+	termination *providerTermination,
+	leaderPID, leaderGroupID int,
+	leaderStart string,
+	stdoutPipe, stderrPipe *os.File,
+	streamErr, stderrErr chan error,
+	terminal <-chan struct{},
+	setFailure func(error),
+) (streamResult, stderrResult, waitErr, terminationErr error) {
+	wait := &providerWaitState{
+		cmd:             cmd,
+		termination:     termination,
+		leader:          RunRecord{PID: leaderPID, ProcessGroupID: leaderGroupID, ProcessStartIdentity: leaderStart},
+		stdoutPipe:      stdoutPipe,
+		stderrPipe:      stderrPipe,
+		terminationDone: termination.done,
+	}
+	startShutdownDeadline := func() {
+		if wait.shutdownTimer == nil && (streamErr != nil || stderrErr != nil || !wait.reaped) {
+			wait.shutdownTimer = time.NewTimer(providerShutdownGrace)
+			wait.shutdownDeadline = wait.shutdownTimer.C
+		}
+	}
+	defer func() {
+		if wait.shutdownTimer != nil {
+			wait.shutdownTimer.Stop()
+		}
+	}()
+	waitPoll := time.NewTicker(providerTerminationPollInterval)
+	defer waitPoll.Stop()
+	for {
+		wait.observeLeader(startShutdownDeadline)
+		needReap := !wait.reaped && wait.terminationErr == nil && wait.cmd.Process != nil && wait.cmd.Process.Pid > 0
+		if streamErr == nil && stderrErr == nil && !needReap && wait.terminationDone == nil {
+			break
+		}
+		if streamErr == nil && stderrErr == nil && wait.reaped && wait.shutdownTimer != nil {
+			// Process exit and I/O met their deadline. Group termination has
+			// its own bounded grace/proof windows; do not spend this deadline
+			// a second time on that independent cleanup phase.
+			wait.shutdownTimer.Stop()
+			wait.shutdownDeadline = nil
+		}
+		select {
+		case <-terminal:
+			startShutdownDeadline()
+		case streamResult = <-streamErr:
+			streamErr = nil
+			startShutdownDeadline()
+		case stderrResult = <-stderrErr:
+			stderrErr = nil
+		case <-wait.terminationDone:
+			wait.terminationDone = nil
+			wait.terminationErr = wait.termination.err
+			startShutdownDeadline()
+			if wait.terminationErr != nil {
+				// Do not hang on an unkillable provider. Retain its active claim
+				// through the unproven-termination error below.
+				wait.abandonUnproven()
+			}
+		case <-wait.shutdownDeadline:
+			wait.shutdownDeadline = nil
+			setFailure(fmt.Errorf("provider did not exit and close output streams within %s of terminal evidence or shutdown", providerShutdownGrace))
+			_ = wait.stdoutPipe.Close()
+			_ = wait.stderrPipe.Close()
+		case <-waitPoll.C:
+		}
+	}
+	if wait.terminationErr == nil {
+		wait.terminationErr = wait.termination.providerStopped()
+	}
+	return streamResult, stderrResult, wait.waitErr, wait.terminationErr
+}
+
+func (wait *providerWaitState) observeLeader(startShutdown func()) {
+	if wait.reaped || wait.cmd.Process == nil || wait.cmd.Process.Pid <= 0 {
+		return
+	}
+	if providerProcessGroupReused(wait.leader) {
+		if wait.terminationErr == nil {
+			wait.terminationErr = errProviderGroupIdentityMismatch
+		}
+		wait.terminationDone = nil
+		releaseUnreapedProvider(wait.cmd)
+		return
+	}
+	zombie := processIsZombie(wait.cmd.Process.Pid)
+	groupDead := providerProcessGroupDead(wait.leader.ProcessGroupID)
+	if !wait.termination.hasRequested() {
+		switch {
+		case zombie && !groupDead:
+			wait.termination.request()
+		case zombie || groupDead:
+			wait.noteReap(reapOwnedProviderLeader(wait.cmd, wait.leader.ProcessStartIdentity))
+			if wait.reaped {
+				startShutdown()
+			}
+			if providerProcessGroupDead(wait.leader.ProcessGroupID) {
+				wait.terminationDone = nil
+			}
+			return
+		default:
+			return
+		}
+	}
+	wait.noteReap(reapOwnedProviderLeader(wait.cmd, wait.leader.ProcessStartIdentity))
+	if wait.reaped {
+		startShutdown()
+	}
+}
+
+func (wait *providerWaitState) noteReap(done bool, err error) {
+	if done {
+		wait.reaped = true
+		wait.waitErr = err
+		return
+	}
+	if err != nil && wait.waitErr == nil {
+		wait.waitErr = err
+	}
+}
+
+func (wait *providerWaitState) abandonUnproven() {
+	if !wait.reaped {
+		done, err := reapOwnedProviderLeader(wait.cmd, wait.leader.ProcessStartIdentity)
+		if done {
+			wait.reaped = true
+			wait.waitErr = err
+		} else {
+			if err != nil && wait.waitErr == nil {
+				wait.waitErr = err
+			}
+			releaseUnreapedProvider(wait.cmd)
+		}
+	}
+	_ = wait.stdoutPipe.Close()
+	_ = wait.stderrPipe.Close()
 }
 
 func antigravityTimeoutReported(stderrPath string, logPath string) (bool, error) {

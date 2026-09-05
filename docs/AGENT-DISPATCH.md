@@ -254,10 +254,15 @@ conversation ID, successful provider exit, and proof that its process group
 has stopped. After terminal evidence, stdout closure, or provider exit, shutdown
 and output draining have a five-second bound; expiry fails the invocation and
 terminates its owned process group. Surviving descendants are also terminated
-after normal leader exit. Output is drained independently of process waiting
-so inherited pipes cannot hide that exit. Failure to prove termination retains
-the active claim rather than permitting overlapping work. The group-termination
-grace and proof windows are separate from the process/I/O shutdown deadline.
+after normal leader exit. Termination signals a group only while the captured
+leader identity still matches or, after that leader is a zombie, descendants
+still reserve the ID; a reused leader is never signalled. The worker reaps the
+leader with a non-blocking wait rather than a background `cmd.Wait` goroutine,
+so unproven termination cannot leak a blocked waiter. Output is drained
+independently of process waiting so inherited pipes cannot hide that exit.
+Failure to prove termination retains the active claim rather than permitting
+overlapping work. The group-termination grace and proof windows are separate
+from the process/I/O shutdown deadline.
 
 If the worker and leader have died but descendants survive, automatic recovery
 retains the claim and reports the group ID. Inspect the saved run evidence and

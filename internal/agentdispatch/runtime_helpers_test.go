@@ -158,6 +158,140 @@ func TestProviderTerminationEscalatesAndUnblocksDescendantPipesAndWait(t *testin
 	stopped = true
 }
 
+func TestTerminateDoesNotSignalReusedProcessGroup(t *testing.T) {
+	unrelated := exec.Command("/bin/sh", "-c", `trap '' TERM; while :; do sleep 1; done`) // #nosec G204 -- fixed test-only shell command.
+	prepareProviderProcessGroup(unrelated)
+	if err := unrelated.Start(); err != nil {
+		t.Fatal(err)
+	}
+	pid := unrelated.Process.Pid
+	defer func() {
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		_ = unrelated.Wait()
+	}()
+	current := processStartIdentity(pid)
+	if current == "" {
+		t.Fatal("process start identity is required for reuse tests")
+	}
+	group := ownedProviderProcessGroup{pid: pid, pgid: pid, start: current + "-other"}
+	if err := group.terminate(50 * time.Millisecond); !errors.Is(err, errProviderGroupIdentityMismatch) {
+		t.Fatalf("reused group terminate = %v, want identity mismatch", err)
+	}
+	if err := syscall.Kill(pid, 0); err != nil {
+		t.Fatalf("reused process group was signalled: %v", err)
+	}
+}
+
+func TestProviderStoppedAfterReapDoesNotSignalWhenGroupDead(t *testing.T) {
+	cmd := exec.Command("/bin/sh", "-c", "exit 0")
+	prepareProviderProcessGroup(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	record := RunRecord{PID: cmd.Process.Pid, ProcessGroupID: cmd.Process.Pid, ProcessStartIdentity: processStartIdentity(cmd.Process.Pid)}
+	termination, err := newStartedProviderTermination(cmd, record, 50*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if err := termination.providerStopped(); err != nil {
+		t.Fatalf("dead group after reap: %v", err)
+	}
+	if termination.hasRequested() {
+		t.Fatal("providerStopped signalled a reaped group with no descendants")
+	}
+}
+
+func TestProviderStoppedAfterReapTerminatesDescendants(t *testing.T) {
+	childPIDPath := filepath.Join(t.TempDir(), "child.pid")
+	cmd := exec.Command("/bin/sh", "-c", `(trap '' TERM; while :; do sleep 1; done) & child=$!; printf '%s\n' "$child" > "$1"; exit 0`, "sh", childPIDPath) // #nosec G204 -- fixed test-only shell command.
+	prepareProviderProcessGroup(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	stopped := false
+	t.Cleanup(func() {
+		if !stopped {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+	})
+	childPID := waitForProviderChildPID(t, childPIDPath)
+	record := RunRecord{PID: cmd.Process.Pid, ProcessGroupID: cmd.Process.Pid, ProcessStartIdentity: processStartIdentity(cmd.Process.Pid)}
+	termination, err := newStartedProviderTermination(cmd, record, 75*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("leader exit: %v", err)
+	}
+	if err := termination.providerStopped(); err != nil {
+		t.Fatal(err)
+	}
+	waitForProviderProcessExit(t, childPID)
+	waitForProviderProcessGroupExit(t, cmd.Process.Pid)
+	stopped = true
+}
+
+func TestReapOwnedProviderLeaderDoesNotWaitOnReusedPID(t *testing.T) {
+	cmd := exec.Command("/bin/sh", "-c", `trap '' TERM; while :; do sleep 1; done`) // #nosec G204 -- fixed test-only shell command.
+	prepareProviderProcessGroup(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	pid := cmd.Process.Pid
+	defer func() {
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		_ = cmd.Wait()
+	}()
+	current := processStartIdentity(pid)
+	if current == "" {
+		t.Fatal("process start identity is required for reuse tests")
+	}
+	reaped, err := reapOwnedProviderLeader(cmd, current+"-other")
+	if reaped || !errors.Is(err, errProviderGroupIdentityMismatch) {
+		t.Fatalf("reap reused pid = %t, %v", reaped, err)
+	}
+	if err := syscall.Kill(pid, 0); err != nil {
+		t.Fatalf("reap collected a reused process: %v", err)
+	}
+}
+
+func TestReapDuringTerminationReleasesUnreapedLeader(t *testing.T) {
+	unrelated := exec.Command("/bin/sh", "-c", `trap '' TERM; while :; do sleep 1; done`) // #nosec G204 -- fixed test-only shell command.
+	prepareProviderProcessGroup(unrelated)
+	if err := unrelated.Start(); err != nil {
+		t.Fatal(err)
+	}
+	pid := unrelated.Process.Pid
+	current := processStartIdentity(pid)
+	if current == "" {
+		t.Fatal("process start identity is required for reuse tests")
+	}
+	defer func() {
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		var status syscall.WaitStatus
+		_, _ = syscall.Wait4(pid, &status, 0, nil)
+	}()
+	group := ownedProviderProcessGroup{pid: pid, pgid: pid, start: current + "-other"}
+	termination := &providerTermination{group: group, grace: 50 * time.Millisecond, done: make(chan struct{})}
+	termination.request()
+	waitErr, reaped := reapDuringTermination(unrelated, current+"-other", termination)
+	if reaped {
+		t.Fatal("reaped a reused process group leader")
+	}
+	if !errors.Is(termination.err, errProviderGroupIdentityMismatch) && !errors.Is(waitErr, errProviderGroupIdentityMismatch) {
+		t.Fatalf("unproven reused termination = wait %v terminate %v", waitErr, termination.err)
+	}
+	if unrelated.Process.Pid > 0 {
+		t.Fatal("unreaped reused leader was not released")
+	}
+	if err := syscall.Kill(pid, 0); err != nil {
+		t.Fatalf("released reused leader was signalled: %v", err)
+	}
+}
+
 func TestProviderTerminationRejectsMismatchedProcessIdentityWithoutSignalling(t *testing.T) {
 	cmd := exec.Command("/bin/sh", "-c", `trap '' TERM; while :; do sleep 1; done`) // #nosec G204 -- fixed test-only shell command.
 	prepareProviderProcessGroup(cmd)

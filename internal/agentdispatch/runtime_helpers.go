@@ -44,25 +44,61 @@ func processStartIdentity(pid int) string {
 	return "ps:" + strings.TrimSpace(string(out))
 }
 
+func procStatFields(content string) []string {
+	closeParen := strings.LastIndex(content, ")")
+	if closeParen == -1 {
+		return nil
+	}
+	return strings.Fields(content[closeParen+1:])
+}
+
+// procStatState extracts state (field 3) from /proc/<pid>/stat. The
+// parenthesized comm field may itself contain spaces or parentheses, so
+// fields are indexed after the last ")": the remainder starts at field 3.
+func procStatState(content string) string {
+	fields := procStatFields(content)
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
+}
+
 // procStatStartTime extracts starttime (field 22) from /proc/<pid>/stat. The
 // parenthesized comm field may itself contain spaces or parentheses, so
 // fields are indexed after the last ")": the remainder starts at field 3
 // (state), putting starttime at remainder index 19.
 func procStatStartTime(content string) string {
-	closeParen := strings.LastIndex(content, ")")
-	if closeParen == -1 {
-		return ""
-	}
-	fields := strings.Fields(content[closeParen+1:])
+	fields := procStatFields(content)
 	if len(fields) <= 19 {
 		return ""
 	}
 	return fields[19]
 }
 
+func processIsZombie(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	if data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil {
+		return procStatState(string(data)) == "Z"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output() // #nosec G204 -- pid is an Agent Layer-owned integer.
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(string(out)), "Z")
+}
+
 const (
 	providerTerminationGrace        = time.Second
 	providerTerminationPollInterval = 10 * time.Millisecond
+)
+
+var (
+	errProviderGroupDead             = errors.New("provider process group is already dead")
+	errProviderGroupIdentityMismatch = errors.New("provider process group ownership identity no longer matches")
 )
 
 type ownedProviderProcessGroup struct {
@@ -123,14 +159,63 @@ func providerProcessGroupReused(record RunRecord) bool {
 	return err == nil && pgid == record.PID
 }
 
+// prepareSignal proves it is still safe to signal this process group.
+// A live leader must match the captured start identity. After that leader
+// becomes a zombie or is reaped, descendants keep the process-group ID
+// reserved until they exit, so a still-live group is safe to signal. A live
+// replacement leader with a different start identity must not be signalled.
+func (group ownedProviderProcessGroup) prepareSignal() error {
+	record := RunRecord{PID: group.pid, ProcessGroupID: group.pgid, ProcessStartIdentity: group.start}
+	if providerProcessGroupReused(record) {
+		return errProviderGroupIdentityMismatch
+	}
+	if providerProcessGroupDead(group.pgid) {
+		return errProviderGroupDead
+	}
+	current := processStartIdentity(group.pid)
+	switch {
+	case current == group.start && current != "":
+		if processIsZombie(group.pid) {
+			return nil
+		}
+		return group.verifyLiveIdentity()
+	case current != "":
+		return errProviderGroupIdentityMismatch
+	default:
+		if providerProcessGroupDead(group.pgid) {
+			return errProviderGroupDead
+		}
+		if current := processStartIdentity(group.pid); current != "" && current != group.start {
+			return errProviderGroupIdentityMismatch
+		}
+		return nil
+	}
+}
+
+func (group ownedProviderProcessGroup) signal(sig syscall.Signal) error {
+	if err := group.prepareSignal(); err != nil {
+		if errors.Is(err, errProviderGroupDead) {
+			return nil
+		}
+		return err
+	}
+	if err := syscall.Kill(-group.pgid, sig); err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 // terminate sends SIGTERM to one verified Agent Layer-owned process group,
 // escalates to SIGKILL after the bounded grace period, and returns only after
 // group death is proven or a second bounded proof window expires.
 func (group ownedProviderProcessGroup) terminate(grace time.Duration) error {
 	var signalErr error
-	if err := syscall.Kill(-group.pgid, syscall.SIGTERM); err != nil {
-		if errors.Is(err, syscall.ESRCH) {
-			return nil
+	if err := group.signal(syscall.SIGTERM); err != nil {
+		if errors.Is(err, errProviderGroupIdentityMismatch) {
+			return err
 		}
 		// Darwin can report EPERM for a group containing only zombies.
 		// Reaping runs concurrently, so retain the error but still allow the
@@ -151,7 +236,10 @@ func (group ownedProviderProcessGroup) terminate(grace time.Duration) error {
 				return nil
 			}
 		case <-timer.C:
-			if err := syscall.Kill(-group.pgid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+			if err := group.signal(syscall.SIGKILL); err != nil {
+				if errors.Is(err, errProviderGroupIdentityMismatch) {
+					return errors.Join(signalErr, err)
+				}
 				signalErr = errors.Join(signalErr, fmt.Errorf("send SIGKILL to provider process group after %s grace: %w", grace, err))
 			}
 			proofTimer := time.NewTimer(grace)
@@ -228,13 +316,134 @@ func (termination *providerTermination) request() {
 	}()
 }
 
-// providerStopped completes the controller after cmd.Wait has reaped the
-// provider leader. It also joins any in-flight escalation before claim release.
+func (termination *providerTermination) hasRequested() bool {
+	termination.mu.Lock()
+	defer termination.mu.Unlock()
+	return termination.requested
+}
+
+// providerStopped joins any in-flight escalation. If termination was not
+// started while the leader identity was still reserved, it signals only when
+// ownership can still be proven; a reused or unprovable group is not signalled.
 func (termination *providerTermination) providerStopped() error {
-	// A reaped leader does not prove that its descendants have exited.
+	if termination.hasRequested() {
+		<-termination.done
+		return termination.err
+	}
+	if err := termination.group.prepareSignal(); err != nil {
+		if errors.Is(err, errProviderGroupDead) {
+			return nil
+		}
+		return err
+	}
 	termination.request()
 	<-termination.done
 	return termination.err
+}
+
+type providerWaitStatusError struct {
+	status syscall.WaitStatus
+}
+
+func (e *providerWaitStatusError) Error() string {
+	if e.status.Exited() {
+		return fmt.Sprintf("exit status %d", e.status.ExitStatus())
+	}
+	if e.status.Signaled() {
+		return fmt.Sprintf("signal: %s", e.status.Signal())
+	}
+	return "process wait failed"
+}
+
+func (e *providerWaitStatusError) ExitCode() int {
+	if e.status.Exited() {
+		return e.status.ExitStatus()
+	}
+	return -1
+}
+
+func waitStatusToError(status syscall.WaitStatus) error {
+	if status.Exited() && status.ExitStatus() == 0 {
+		return nil
+	}
+	return &providerWaitStatusError{status: status}
+}
+
+// reapOwnedProviderLeader reaps the started leader without blocking. It never
+// waits on a PID whose start identity no longer matches, so a reused process
+// is not collected as if it were the provider.
+func reapOwnedProviderLeader(cmd *exec.Cmd, start string) (bool, error) {
+	if cmd == nil || cmd.Process == nil || cmd.Process.Pid <= 0 {
+		return true, nil
+	}
+	pid := cmd.Process.Pid
+	if providerProcessGroupReused(RunRecord{PID: pid, ProcessGroupID: pid, ProcessStartIdentity: start}) {
+		return false, errProviderGroupIdentityMismatch
+	}
+	if current := processStartIdentity(pid); current != "" && start != "" && current != start {
+		return false, errProviderGroupIdentityMismatch
+	}
+	var status syscall.WaitStatus
+	var rusage syscall.Rusage
+	wpid, err := syscall.Wait4(pid, &status, syscall.WNOHANG, &rusage)
+	if err != nil {
+		if errors.Is(err, syscall.ECHILD) {
+			_ = cmd.Process.Release()
+			return true, nil
+		}
+		return false, err
+	}
+	if wpid == 0 {
+		return false, nil
+	}
+	_ = cmd.Process.Release()
+	return true, waitStatusToError(status)
+}
+
+func releaseUnreapedProvider(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil || cmd.Process.Pid <= 0 {
+		return
+	}
+	_ = cmd.Process.Release()
+}
+
+// reapDuringTermination reaps the owned leader concurrently with group
+// termination so a zombie can release the process-group ID. It never starts a
+// blocking cmd.Wait goroutine; if the leader remains live after termination
+// fails, the process handle is released instead of leaking a waiter.
+func reapDuringTermination(cmd *exec.Cmd, start string, termination *providerTermination) (error, bool) {
+	ticker := time.NewTicker(providerTerminationPollInterval)
+	defer ticker.Stop()
+	var waitErr error
+	reaped := false
+	for {
+		if !reaped {
+			done, err := reapOwnedProviderLeader(cmd, start)
+			if done {
+				reaped = true
+				waitErr = err
+			} else if err != nil && waitErr == nil {
+				waitErr = err
+			}
+		}
+		select {
+		case <-termination.done:
+			if !reaped {
+				done, err := reapOwnedProviderLeader(cmd, start)
+				if done {
+					reaped = true
+					waitErr = err
+				} else if err != nil && waitErr == nil {
+					waitErr = err
+				}
+			}
+			if !reaped {
+				releaseUnreapedProvider(cmd)
+			}
+			return waitErr, reaped
+		case <-ticker.C:
+		}
+	}
 }
 
 func installProviderSignalForwarder(requestTermination func()) (caught func() os.Signal, stop func()) {
@@ -285,13 +494,17 @@ func providerStartError(target string, err error) error {
 	return wrapExitError(ExitTargetFailure, fmt.Sprintf("start %s: %v", target, err), err)
 }
 
+type waitExitCoder interface {
+	ExitCode() int
+}
+
 func providerWaitError(target string, err error) error {
 	if err == nil {
 		return nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		code := exitErr.ExitCode()
+	var coder waitExitCoder
+	if errors.As(err, &coder) {
+		code := coder.ExitCode()
 		if code <= 0 {
 			code = 1
 		}
