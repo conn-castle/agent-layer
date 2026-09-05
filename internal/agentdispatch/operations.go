@@ -29,6 +29,12 @@ func reconcileOrphan(root string, record RunRecord) (RunRecord, error) {
 	if invocationOwnership(record) != ownershipDead {
 		return record, nil
 	}
+	if !providerProcessGroupDead(record.ProcessGroupID) && !providerProcessGroupReused(record) {
+		// The worker's latched ownership capability is gone. A dead leader
+		// does not authorize signalling a possibly reused group or releasing
+		// the claim while orphaned descendants may still be doing work.
+		return RunRecord{}, exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s lost its worker and provider leader but process group %d remains; cannot prove termination, so the active claim is retained; inspect surviving processes and verify their ownership before manual recovery (do not signal a group by ID alone)", record.ID, record.ProcessGroupID))
+	}
 	now := time.Now().UTC()
 	record.State = dispatchStateFailed
 	record.RecoveryState = recoveryAcceptanceUnknown

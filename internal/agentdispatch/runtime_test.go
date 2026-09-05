@@ -21,9 +21,15 @@ func TestProcStatStartTimeSurvivesCommWithSpacesAndParens(t *testing.T) {
 		if got := procStatStartTime(content); got != "777" {
 			t.Fatalf("comm %q shifted starttime: got %q", comm, got)
 		}
+		if got := procStatState(content); got != "S" {
+			t.Fatalf("comm %q shifted state: got %q", comm, got)
+		}
 	}
 	if got := procStatStartTime("no stat shape"); got != "" {
 		t.Fatalf("malformed stat produced identity %q", got)
+	}
+	if got := procStatState("no stat shape"); got != "" {
+		t.Fatalf("malformed stat produced state %q", got)
 	}
 }
 

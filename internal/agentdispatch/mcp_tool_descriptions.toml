@@ -18,7 +18,7 @@ prompt = "Prompt text. Provide exactly one of prompt or prompt_file."
 prompt_file = "Path to a prompt file. Provide exactly one of prompt or prompt_file."
 
 [tools.dispatch_wait]
-description = "Wait up to {{wait_minutes}} minutes for one conversation. Returns running while active; completed returns result_path for the Markdown output, failed returns error, and cancelled is terminal. Ending this wait does not stop provider work."
+description = "Wait up to {{wait_minutes}} minutes for one conversation. Returns running with recorded last_activity_at/last_output_at timestamps when available; completed returns result_path for the Markdown output, failed returns error, and cancelled is terminal. Ending this wait does not stop provider work."
 
 [tools.dispatch_wait.parameters]
 handle = "Conversation handle returned by dispatch_start or dispatch_continue."
