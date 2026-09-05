@@ -59,7 +59,7 @@ trap 'rm -rf "$tmp_dir"' EXIT
 go_log="$tmp_dir/go-invocations.log"
 dist_dir="$tmp_dir/dist"
 # Stable release builds require the matching checked-in migration manifest.
-expected_version="v0.18.5"
+expected_version="v0.18.6"
 expected_version_no_v="${expected_version#v}"
 
 run_catalog_certification_script_tests

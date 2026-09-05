@@ -1,6 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.18.6 - 2026-09-05
+
+### Added
+- HTTP MCP servers can declare client-managed OAuth authentication with `auth = "oauth"`; `al doctor` reports these servers without attempting unauthenticated tool discovery.
+
+### Changed
+- Agent Dispatch now preserves provider conversation identity across failed handoffs and continuations, records provider activity timestamps, and requires bounded proof of provider process-group termination before releasing ownership.
+- Dispatched child processes suppress inherited update warnings so machine-oriented dispatch output stays focused on the requested work.
+
+### Fixed
+- MCP validation now rejects unsupported authentication values and safely removes HTTP-only authentication fields from stdio server configuration.
+
 ## v0.18.5 - 2026-09-02
 
 ### Changed
