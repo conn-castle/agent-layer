@@ -426,10 +426,16 @@ func awaitProviderCompletion(
 			wait.shutdownTimer.Stop()
 		}
 	}()
-	waitPoll := time.NewTicker(providerTerminationPollInterval)
+	observeInterval := providerObservePollInterval()
+	waitPoll := time.NewTicker(observeInterval)
 	defer waitPoll.Stop()
+	terminationPolling := observeInterval == providerTerminationPollInterval
 	for {
 		wait.observeLeader(startShutdownDeadline)
+		if !terminationPolling && (wait.termination.hasRequested() || wait.shutdownTimer != nil) {
+			waitPoll.Reset(providerTerminationPollInterval)
+			terminationPolling = true
+		}
 		needReap := !wait.reaped && wait.terminationErr == nil && wait.cmd.Process != nil && wait.cmd.Process.Pid > 0
 		if streamErr == nil && stderrErr == nil && !needReap && wait.terminationDone == nil {
 			break

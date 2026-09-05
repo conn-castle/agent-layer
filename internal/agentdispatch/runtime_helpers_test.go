@@ -6,12 +6,26 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 )
+
+func TestProviderObservePollIntervalIsSlowerOnDarwin(t *testing.T) {
+	got := providerObservePollInterval()
+	if runtime.GOOS == "darwin" {
+		if got <= providerTerminationPollInterval {
+			t.Fatalf("darwin observe interval %s is not slower than termination poll %s", got, providerTerminationPollInterval)
+		}
+		return
+	}
+	if got != providerTerminationPollInterval {
+		t.Fatalf("observe interval = %s, want %s", got, providerTerminationPollInterval)
+	}
+}
 
 func TestProviderTerminationAllowsGracefulProcessGroupExit(t *testing.T) {
 	readyPath := filepath.Join(t.TempDir(), "ready")
@@ -284,8 +298,8 @@ func TestReapDuringTerminationReleasesUnreapedLeader(t *testing.T) {
 	if !errors.Is(termination.err, errProviderGroupIdentityMismatch) && !errors.Is(waitErr, errProviderGroupIdentityMismatch) {
 		t.Fatalf("unproven reused termination = wait %v terminate %v", waitErr, termination.err)
 	}
-	if unrelated.Process.Pid > 0 {
-		t.Fatal("unreaped reused leader was not released")
+	if err := unrelated.Process.Signal(syscall.Signal(0)); err == nil || !strings.Contains(err.Error(), "already released") {
+		t.Fatalf("unreaped reused leader was not released: %v", err)
 	}
 	if err := syscall.Kill(pid, 0); err != nil {
 		t.Fatalf("released reused leader was signalled: %v", err)

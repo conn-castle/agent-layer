@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -94,7 +95,17 @@ func processIsZombie(pid int) bool {
 const (
 	providerTerminationGrace        = time.Second
 	providerTerminationPollInterval = 10 * time.Millisecond
+	// Darwin has no /proc, so identity and zombie probes exec ps. Pre-terminal
+	// observation is much slower there; termination still uses the 10ms poll.
+	darwinProviderObserveInterval = 250 * time.Millisecond
 )
+
+func providerObservePollInterval() time.Duration {
+	if runtime.GOOS == "darwin" {
+		return darwinProviderObserveInterval
+	}
+	return providerTerminationPollInterval
+}
 
 var (
 	errProviderGroupDead             = errors.New("provider process group is already dead")
