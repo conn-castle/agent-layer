@@ -28,10 +28,14 @@ Unless the user narrows the scope, include the entire current working tree.
    and fill `assets/pr-body-template.md`, removing unused sections and
    placeholders.
 
-2. Start one watcher in a managed background session. Keep it running until the
-   PR merges or the workflow stops, then stop it. If it exits after a transient
-   transport failure, refetch authoritative state and restart it with the same
-   append-only log.
+2. Start one watcher in a managed background session and retain its task/session
+   ID. Keep it running while actively monitoring the PR. Before returning to the
+   caller for authorization, a blocker, or any other handoff, stop this watcher
+   through its managed session and verify it has stopped. Antigravity print mode
+   can withhold a saved final response while a managed background task is running.
+   If monitoring resumes, restart the watcher with the same append-only log;
+   refetch authoritative state first, including after a transient transport
+   failure. Stop the watcher when the PR merges or the workflow ends.
 
    ```bash
    bash <skill_dir>/scripts/watch-pr-events.sh \
@@ -81,14 +85,15 @@ Unless the user narrows the scope, include the entire current working tree.
    reply. Return to step 3 until ready. If only checks or reviews are pending,
    wait for the watcher.
 
-5. Request single-use merge authorization for the exact PR and head. Report any
-   substantive findings, a concise comment disposition summary, and readiness
-   evidence.
+5. Stop the watcher and verify it has stopped before returning the single-use
+   merge authorization request for the exact PR and head. Report any substantive
+   findings, a concise comment disposition summary, and readiness evidence.
 
 6. After authorization, refetch the head, checks, mergeability, and comments.
    Confirm the local tree is complete and every eligible comment has a supported
-   posted reply. If anything changed, return to step 3 and obtain new
-   authorization for the resulting PR head; otherwise merge.
+   posted reply. If anything changed, restart the watcher as described in step 2,
+   return to step 3, and obtain new authorization for the resulting PR head;
+   otherwise merge.
 
 7. Confirm the checkout is clean, switch to the default branch, fast-forward it,
    and delete branches or worktrees created by this workflow. Preserve state and

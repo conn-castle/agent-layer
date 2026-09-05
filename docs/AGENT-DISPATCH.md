@@ -30,7 +30,9 @@ Agent-facing tool and parameter descriptions are maintained in
 and `skill`, and exactly one of `prompt` or `prompt_file`. `dispatch_continue`
 accepts `handle` and exactly one prompt source. `dispatch_wait` and
 `dispatch_cancel` accept `handle`. Results carry the same `handle`, `state`,
-`result_path`, and `error` fields as the CLI.
+`result_path`, and `error` fields as the CLI. A wait that returns `running`
+also includes recorded `last_activity_at` and `last_output_at` timestamps when
+available.
 
 Successful results are returned as `structuredContent`; the SDK also emits the
 serialized text fallback required for compatibility with older clients. The
@@ -188,9 +190,13 @@ must omit those flags.
 }
 ```
 
-`wait` returns the same `running` object when its bounded interval expires
+`wait` returns a `running` object when its bounded interval expires
 before the invocation reaches a terminal state. The CLI waits eight minutes;
 `dispatch_wait` waits `dispatch.mcp_wait_timeout_minutes` (30 by default).
+When available, `last_activity_at` is the UTC timestamp of provider startup or
+the most recent normalized stream event, and `last_output_at` is the UTC
+timestamp of the most recent answer event. These are observations, not a health
+check: absence of new events does not prove a provider has stopped working.
 
 `wait` on a completed invocation returns:
 
@@ -234,6 +240,41 @@ interval — eight minutes on the CLI, `dispatch.mcp_wait_timeout_minutes` for
 Repeating it after termination immediately returns the same state and, for a
 completed invocation, the same `result_path` until a successful `continue`
 starts the next invocation.
+
+Continuation requires the recorded provider conversation ID. If a failed or
+cancelled invocation may have reached the provider but no ID was captured,
+`continue` fails rather than silently starting a fresh conversation. Inspect
+the previous run before explicitly choosing `start`. Only a proven pre-start
+failure permits a fresh retry through `continue`. Antigravity's `init` event
+persists its conversation ID before the terminal result, preserving identity
+when a later handoff fails.
+
+Dispatch requires a structured terminal result, a final answer, a consistent
+conversation ID, successful provider exit, and proof that its process group
+has stopped. After terminal evidence, stdout closure, or provider exit, shutdown
+and output draining have a five-second bound; expiry fails the invocation and
+terminates its owned process group. Surviving descendants are also terminated
+after normal leader exit. Output is drained independently of process waiting
+so inherited pipes cannot hide that exit. Failure to prove termination retains
+the active claim rather than permitting overlapping work. The group-termination
+grace and proof windows are separate from the process/I/O shutdown deadline.
+
+If the worker and leader have died but descendants survive, automatic recovery
+retains the claim and reports the group ID. Inspect the saved run evidence and
+the surviving processes to establish ownership before manually stopping any of
+them; never signal a group based solely on its numeric ID. Once the owned group
+is gone, another `wait` reconciles the abandoned run. A verified different start
+identity for a replacement group leader proves ID reuse, allowing recovery
+without signalling the unrelated group. This relies on the
+[POSIX process-ID reuse guarantee](https://pubs.opengroup.org/onlinepubs/009696699/basedefs/xbd_chap04.html#tag_04_12).
+
+This shutdown bound is not an idle-work timeout. In particular, Antigravity may
+save a planner response while withholding its structured terminal result until
+managed background tasks end. A saved transcript is not a completed dispatch.
+The `ship-pr` skill stops its own watcher through its managed task before handing
+control back for authorization or a blocker, and restarts it when monitoring
+resumes. Existing invocations retain their already-loaded instructions; updating
+the skill does not repair them in place.
 
 `cancel` is idempotent only after successful cancellation. Repeating it for a
 cancelled invocation succeeds. It cannot change a completed or failed

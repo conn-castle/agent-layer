@@ -217,8 +217,9 @@ func finishDispatchFailure(request dispatchExecution, cause error) error {
 	var terminationFailure *unprovenProviderTerminationError
 	if errors.As(cause, &terminationFailure) {
 		// The provider group may still be live. Keep both the nonterminal run
-		// evidence and active claim so no replacement can overlap it.
-		return cause
+		// evidence and active claim so no replacement can overlap it. Startup
+		// may have failed before publishing the acquired process identity.
+		return errors.Join(cause, retainUnprovenProviderOwnership(request))
 	}
 	if current, err := loadRunRecord(request.Root, request.Run.Record.ID); err == nil && current.State == dispatchStateCancelled {
 		return finishDispatchCancellation(request)
@@ -254,6 +255,36 @@ func finishDispatchFailure(request dispatchExecution, cause error) error {
 		}
 	}
 	return cause
+}
+
+func retainUnprovenProviderOwnership(request dispatchExecution) error {
+	owned := request.Run.Record
+	if owned.PID == 0 {
+		return nil
+	}
+	return withRunLock(request.Run.Dir, func() error {
+		current, err := loadRunRecord(request.Root, owned.ID)
+		if err != nil {
+			return err
+		}
+		if current.PID != 0 {
+			if current.PID != owned.PID || current.ProcessGroupID != owned.ProcessGroupID || current.ProcessStartIdentity != owned.ProcessStartIdentity {
+				return exitError(ExitUnavailable, "cannot retain unproven provider ownership: recorded process identity conflicts with the started provider")
+			}
+			return nil
+		}
+		// Preserve concurrent cancellation and all newer state. Only add the
+		// owned identity; a stale revision must not erase this safety evidence.
+		current.PID = owned.PID
+		current.ProcessGroupID = owned.ProcessGroupID
+		current.ProcessStartIdentity = owned.ProcessStartIdentity
+		current.Revision++
+		current.UpdatedAt = time.Now().UTC()
+		if err := writeJSONAtomic(filepath.Join(request.Run.Dir, dispatchRunFile), current); err != nil {
+			return wrapExitError(ExitConfig, "retain unproven provider ownership", err)
+		}
+		return nil
+	})
 }
 
 // finishDispatchCancellation is called only by the owning execution after no

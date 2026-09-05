@@ -143,6 +143,9 @@ func Continue(opts ContinueOptions) error {
 	if !terminalDispatchState(current.State) {
 		return exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q is running", session.Name))
 	}
+	if session.ProviderSessionID == "" && current.RecoveryState != recoveryRetrySafe {
+		return exitError(ExitUnavailable, fmt.Sprintf("cannot continue dispatch conversation %q: provider acceptance is unknown and no provider session ID was recorded; inspect the previous run before explicitly starting a new conversation", session.Name))
+	}
 	if current.State == dispatchStateCompleted {
 		if _, err := completedResultPath(current); err != nil {
 			return err

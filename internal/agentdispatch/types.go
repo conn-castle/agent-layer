@@ -129,10 +129,12 @@ type ContinueOptions struct {
 // tools decode that same rendering from a private buffer, so both surfaces
 // report identical handles, states, result paths, and failure text.
 type Result struct {
-	Handle     string `json:"handle"`
-	State      string `json:"state"`
-	ResultPath string `json:"result_path,omitempty"`
-	Error      string `json:"error,omitempty"`
+	Handle         string     `json:"handle"`
+	State          string     `json:"state"`
+	ResultPath     string     `json:"result_path,omitempty"`
+	Error          string     `json:"error,omitempty"`
+	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
+	LastOutputAt   *time.Time `json:"last_output_at,omitempty"`
 }
 
 // WaitRequest identifies one existing dispatch conversation, by handle, to

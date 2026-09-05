@@ -108,15 +108,34 @@ func providerProcessGroupDead(pgid int) bool {
 	return errors.Is(syscall.Kill(-pgid, 0), syscall.ESRCH)
 }
 
+// providerProcessGroupReused proves that a live group leader is a different
+// process. A PID cannot be allocated again while its original process group
+// still reserves that ID. Never signal the new owner's group.
+func providerProcessGroupReused(record RunRecord) bool {
+	if record.PID <= 0 || record.PID != record.ProcessGroupID || record.ProcessStartIdentity == "" {
+		return false
+	}
+	current := processStartIdentity(record.PID)
+	if current == "" || current == record.ProcessStartIdentity {
+		return false
+	}
+	pgid, err := syscall.Getpgid(record.PID)
+	return err == nil && pgid == record.PID
+}
+
 // terminate sends SIGTERM to one verified Agent Layer-owned process group,
 // escalates to SIGKILL after the bounded grace period, and returns only after
 // group death is proven or a second bounded proof window expires.
 func (group ownedProviderProcessGroup) terminate(grace time.Duration) error {
+	var signalErr error
 	if err := syscall.Kill(-group.pgid, syscall.SIGTERM); err != nil {
 		if errors.Is(err, syscall.ESRCH) {
 			return nil
 		}
-		return fmt.Errorf("send SIGTERM to provider process group: %w", err)
+		// Darwin can report EPERM for a group containing only zombies.
+		// Reaping runs concurrently, so retain the error but still allow the
+		// bounded death-proof window. A signal error alone is not that proof.
+		signalErr = fmt.Errorf("send SIGTERM to provider process group: %w", err)
 	}
 	if grace <= 0 {
 		grace = providerTerminationGrace
@@ -133,7 +152,7 @@ func (group ownedProviderProcessGroup) terminate(grace time.Duration) error {
 			}
 		case <-timer.C:
 			if err := syscall.Kill(-group.pgid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
-				return fmt.Errorf("send SIGKILL to provider process group after %s grace: %w", grace, err)
+				signalErr = errors.Join(signalErr, fmt.Errorf("send SIGKILL to provider process group after %s grace: %w", grace, err))
 			}
 			proofTimer := time.NewTimer(grace)
 			defer proofTimer.Stop()
@@ -145,7 +164,7 @@ func (group ownedProviderProcessGroup) terminate(grace time.Duration) error {
 						return nil
 					}
 				case <-proofTimer.C:
-					return fmt.Errorf("provider process group %d remained live %s after SIGKILL", group.pgid, grace)
+					return errors.Join(signalErr, fmt.Errorf("provider process group %d remained live %s after SIGKILL", group.pgid, grace))
 				}
 			}
 		}
@@ -162,10 +181,10 @@ func (group ownedProviderProcessGroup) terminateReverified(grace time.Duration) 
 type providerTermination struct {
 	group     ownedProviderProcessGroup
 	grace     time.Duration
-	done      chan error
+	done      chan struct{}
+	err       error
 	mu        sync.Mutex
 	requested bool
-	completed bool
 }
 
 // newStartedProviderTermination latches process-group ownership after cmd.Start
@@ -192,19 +211,19 @@ func newStartedProviderTermination(cmd *exec.Cmd, record RunRecord, grace time.D
 		return nil, fmt.Errorf("read started provider process group: %w", err)
 	}
 	group := ownedProviderProcessGroup{pid: record.PID, pgid: record.ProcessGroupID, start: record.ProcessStartIdentity}
-	return &providerTermination{group: group, grace: grace, done: make(chan error, 1)}, nil
+	return &providerTermination{group: group, grace: grace, done: make(chan struct{})}, nil
 }
 
 func (termination *providerTermination) request() {
 	termination.mu.Lock()
-	if termination.requested || termination.completed {
+	if termination.requested {
 		termination.mu.Unlock()
 		return
 	}
 	termination.requested = true
 	termination.mu.Unlock()
 	go func() {
-		termination.done <- termination.group.terminate(termination.grace)
+		termination.err = termination.group.terminate(termination.grace)
 		close(termination.done)
 	}()
 }
@@ -212,18 +231,10 @@ func (termination *providerTermination) request() {
 // providerStopped completes the controller after cmd.Wait has reaped the
 // provider leader. It also joins any in-flight escalation before claim release.
 func (termination *providerTermination) providerStopped() error {
-	termination.mu.Lock()
-	if termination.completed {
-		termination.mu.Unlock()
-		return nil
-	}
-	termination.completed = true
-	requested := termination.requested
-	termination.mu.Unlock()
-	if !requested {
-		return nil
-	}
-	return <-termination.done
+	// A reaped leader does not prove that its descendants have exited.
+	termination.request()
+	<-termination.done
+	return termination.err
 }
 
 func installProviderSignalForwarder(requestTermination func()) (caught func() os.Signal, stop func()) {

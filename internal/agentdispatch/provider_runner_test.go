@@ -937,8 +937,13 @@ func TestAntigravityStructuredEventsRequireSuccessfulUsageBearingTerminal(t *tes
 		`{"event":"result","result":{"status":"SUCCESS","conversation_id":"conversation","response":"answer"}}`,
 	} {
 		events, err = reduceStructuredTestEvent(AgentAntigravity, "", []byte(raw))
-		if err != nil || len(events) != 1 || events[0].Kind != eventFailure {
+		if err != nil || len(events) == 0 || events[len(events)-1].Kind != eventFailure {
 			t.Fatalf("Antigravity invalid terminal %s = %#v, %v", raw, events, err)
+		}
+		for _, event := range events {
+			if event.Kind == eventAnswer || event.Kind == eventComplete {
+				t.Fatalf("invalid terminal published an answer or completion: %#v", events)
+			}
 		}
 	}
 	events, err = reduceStructuredTestEvent(AgentAntigravity, "", []byte(`{"event":"result","result":{"status":"ERROR","error":"invalid model selection","conversation_id":"","response":"","usage":{}}}`))

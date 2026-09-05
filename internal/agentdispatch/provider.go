@@ -651,6 +651,13 @@ func reduceGrokEvent(expected string, value map[string]any, textAccumulator *str
 
 func reduceAntigravityEvent(value map[string]any, terminalSeen *bool) []providerEvent {
 	eventType, _ := value[jsonEventKey].(string)
+	if eventType == "init" {
+		id, _ := firstStringV013(value, "conversation_id")
+		if id == "" {
+			return []providerEvent{{Kind: eventFailure, Reason: "Antigravity init event has no conversation ID"}}
+		}
+		return []providerEvent{{Kind: eventSession, SessionID: id}}
+	}
 	if eventType != "result" {
 		if eventType == "" {
 			return nil
@@ -667,24 +674,28 @@ func reduceAntigravityEvent(value map[string]any, terminalSeen *bool) []provider
 	if result == nil {
 		return []providerEvent{{Kind: eventFailure, Reason: "Antigravity terminal result is not an object"}}
 	}
+	id, _ := firstStringV013(result, "conversation_id")
+	var events []providerEvent
+	if id != "" {
+		events = append(events, providerEvent{Kind: eventSession, SessionID: id})
+	}
 	status, _ := result[jsonStatusKey].(string)
 	if status != "SUCCESS" {
 		reason := "Antigravity terminal result was unsuccessful"
 		if providerError, _ := firstStringV013(result, "error"); providerError != "" {
 			reason += ": " + providerError
 		}
-		return []providerEvent{{Kind: eventFailure, Reason: reason}}
+		return append(events, providerEvent{Kind: eventFailure, Reason: reason})
 	}
-	id, _ := firstStringV013(result, "conversation_id")
 	answer, _ := firstStringV013(result, jsonResponseKey)
 	if id == "" || answer == "" {
-		return []providerEvent{{Kind: eventFailure, Reason: "Antigravity terminal result has no conversation ID or final answer"}}
+		return append(events, providerEvent{Kind: eventFailure, Reason: "Antigravity terminal result has no conversation ID or final answer"})
 	}
 	usage, _ := result[grokUsageEventType].(map[string]any)
 	if usage == nil {
-		return []providerEvent{{Kind: eventFailure, Reason: "Antigravity terminal result has no usage object"}}
+		return append(events, providerEvent{Kind: eventFailure, Reason: "Antigravity terminal result has no usage object"})
 	}
-	return []providerEvent{{Kind: eventSession, SessionID: id}, {Kind: eventAnswer, Answer: answer}, {Kind: eventProgress, Activity: "usage", Usage: usage}, {Kind: eventComplete}}
+	return append(events, providerEvent{Kind: eventAnswer, Answer: answer}, providerEvent{Kind: eventProgress, Activity: "usage", Usage: usage}, providerEvent{Kind: eventComplete})
 }
 
 func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, claudeLineage bool, consume func(providerEvent) error, consumeLineage func(claudeLineageEvidence) error) error {

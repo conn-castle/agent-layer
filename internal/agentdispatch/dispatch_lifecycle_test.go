@@ -124,6 +124,15 @@ func TestUnprovenProviderTerminationRetainsRunAndActiveClaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	cause := &unprovenProviderTerminationError{err: exitError(ExitTargetFailure, "provider process group death was not proven")}
+	// Simulate ownership captured by Start but not yet published, including
+	// a stale revision from a concurrent running-state update.
+	current := run.Record
+	if err := writeRunRecord(run.Dir, &current); err != nil {
+		t.Fatal(err)
+	}
+	run.Record.PID = os.Getpid()
+	run.Record.ProcessGroupID = os.Getpid()
+	run.Record.ProcessStartIdentity = processStartIdentity(os.Getpid())
 	if err := finishDispatchFailure(dispatchExecution{Root: root, Run: run, Session: session, Mode: dispatchModeFresh}, cause); !errors.Is(err, cause) {
 		t.Fatalf("finishDispatchFailure error = %v, want unproven termination failure", err)
 	}
@@ -140,6 +149,18 @@ func TestUnprovenProviderTerminationRetainsRunAndActiveClaim(t *testing.T) {
 	}
 	if durable.State != dispatchStateRunning || durable.CompletedAt != nil || durable.TerminalReason != "" {
 		t.Fatalf("unproven termination terminalized run evidence: %#v", durable)
+	}
+	if durable.PID != run.Record.PID || durable.ProcessGroupID != run.Record.ProcessGroupID || durable.ProcessStartIdentity != run.Record.ProcessStartIdentity {
+		t.Fatalf("unproven termination lost unpublished process ownership: %#v", durable)
+	}
+	run.Record.ProcessStartIdentity = "conflicting-owner"
+	err = finishDispatchFailure(dispatchExecution{Root: root, Run: run, Session: session, Mode: dispatchModeFresh}, cause)
+	if !errors.Is(err, cause) || !strings.Contains(err.Error(), "recorded process identity conflicts") {
+		t.Fatalf("conflicting ownership was not reported: %v", err)
+	}
+	unchanged, err := loadRunRecord(root, run.Record.ID)
+	if err != nil || unchanged.ProcessStartIdentity != durable.ProcessStartIdentity || unchanged.Revision != durable.Revision {
+		t.Fatalf("conflicting ownership overwrote durable evidence: %#v, %v", unchanged, err)
 	}
 }
 

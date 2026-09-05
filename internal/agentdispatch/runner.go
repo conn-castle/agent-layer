@@ -52,6 +52,10 @@ type executionResult struct {
 	Answer     string
 }
 
+// After terminal evidence or process exit, only shutdown and output draining
+// remain. This is not an idle timeout for an actively working provider.
+const providerShutdownGrace = 5 * time.Second
+
 // unprovenProviderTerminationError marks a provider failure whose process
 // group may still be live. Failure finalization must preserve the active claim
 // and nonterminal run evidence until a later cancellation or recovery proves
@@ -67,7 +71,7 @@ func (e *unprovenProviderTerminationError) Unwrap() error { return e.err }
 func newUnprovenProviderTerminationError(primary error, message string, proofErr error) *unprovenProviderTerminationError {
 	return &unprovenProviderTerminationError{err: errors.Join(
 		primary,
-		wrapExitError(ExitTargetFailure, message, proofErr),
+		wrapExitError(ExitTargetFailure, fmt.Sprintf("%s: %v", message, proofErr), proofErr),
 	)}
 }
 
@@ -118,19 +122,46 @@ func executeProvider(
 		cmd.Dir = root
 	}
 	cmd.Env = command.Env
-	cmd.Stdin = bytes.NewReader(prompt)
-	stdoutPipe, err := cmd.StdoutPipe()
+	// A file avoids exec's stdin-copy goroutine, which can outlive the leader
+	// when a descendant inherits an unread pipe. Unlink it while open so the
+	// prompt is not left behind as another durable artifact.
+	stdin, err := os.CreateTemp(run.Dir, "provider-stdin-*")
+	if err != nil {
+		return executionResult{}, wrapExitError(ExitConfig, "create dispatch provider stdin", err)
+	}
+	defer func() { _ = stdin.Close() }()
+	if err := os.Remove(stdin.Name()); err != nil {
+		return executionResult{}, wrapExitError(ExitConfig, "unlink dispatch provider stdin", err)
+	}
+	if _, err := stdin.Write(prompt); err != nil {
+		return executionResult{}, wrapExitError(ExitConfig, "write dispatch provider stdin", err)
+	}
+	if _, err := stdin.Seek(0, io.SeekStart); err != nil {
+		return executionResult{}, wrapExitError(ExitConfig, "rewind dispatch provider stdin", err)
+	}
+	cmd.Stdin = stdin
+	// Own the pipes so cmd.Wait can observe process exit independently without
+	// closing output that the structured reader has not consumed yet.
+	stdoutPipe, stdoutWrite, err := os.Pipe()
 	if err != nil {
 		return executionResult{}, wrapExitError(ExitTargetFailure, "open dispatch provider stdout", err)
 	}
-	stderrPipe, err := cmd.StderrPipe()
+	defer func() { _ = stdoutPipe.Close() }()
+	defer func() { _ = stdoutWrite.Close() }()
+	stderrPipe, stderrWrite, err := os.Pipe()
 	if err != nil {
 		return executionResult{}, wrapExitError(ExitTargetFailure, "open dispatch provider stderr", err)
 	}
+	defer func() { _ = stderrPipe.Close() }()
+	defer func() { _ = stderrWrite.Close() }()
+	cmd.Stdout = stdoutWrite
+	cmd.Stderr = stderrWrite
 	prepareProviderProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		return executionResult{}, &preStartFailure{err: providerStartError(command.Provider, err)}
 	}
+	_ = stdoutWrite.Close()
+	_ = stderrWrite.Close()
 	run.Record.PID = cmd.Process.Pid
 	run.Record.ProcessGroupID = cmd.Process.Pid
 	run.Record.ProcessStartIdentity = processStartIdentity(cmd.Process.Pid)
@@ -167,10 +198,18 @@ func executeProvider(
 			close(stderrDrained)
 		}()
 		termination.request()
+		waited := make(chan error, 1)
+		go func() { waited <- cmd.Wait() }()
+		<-termination.done
+		_ = stdoutPipe.Close()
+		_ = stderrPipe.Close()
 		<-stdoutDrained
 		<-stderrDrained
-		_ = cmd.Wait()
-		terminationErr := termination.providerStopped()
+		terminationErr := termination.err
+		if terminationErr == nil {
+			<-waited
+			terminationErr = termination.providerStopped()
+		}
 		if terminationErr != nil {
 			return executionResult{}, newUnprovenProviderTerminationError(
 				err,
@@ -187,6 +226,7 @@ func executeProvider(
 	var pendingAnswer string
 	var resultMu sync.Mutex
 	var semanticErr error
+	terminal := make(chan struct{}, 1)
 	setFailure := func(err error) {
 		if err == nil {
 			return
@@ -217,6 +257,10 @@ func executeProvider(
 				semanticErr = errors.New("provider returned conflicting session IDs")
 				return semanticErr
 			}
+			if command.SessionID != "" && command.SessionID != event.SessionID {
+				semanticErr = errors.New("provider returned a session ID different from the requested conversation")
+				return semanticErr
+			}
 			result.SessionID = event.SessionID
 			run.Record.ProviderSessionID = event.SessionID
 			if err := persist(event.SessionID); err != nil {
@@ -229,6 +273,10 @@ func executeProvider(
 			run.Record.LastOutputAt = &now
 		case eventComplete:
 			result.Complete = true
+			select {
+			case terminal <- struct{}{}:
+			default:
+			}
 		case eventFailure:
 			semanticErr = errors.New(event.Reason)
 			return semanticErr
@@ -284,10 +332,64 @@ func executeProvider(
 		stderrErr <- err
 	}()
 
-	streamResult := <-streamErr
-	stderrResult := <-stderrErr
-	waitErr := cmd.Wait()
-	terminationErr := termination.providerStopped()
+	waited := make(chan error, 1)
+	go func(done chan<- error) { done <- cmd.Wait() }(waited)
+	var streamResult, stderrResult, waitErr, terminationErr error
+	var shutdownTimer *time.Timer
+	var shutdownDeadline <-chan time.Time
+	startShutdownDeadline := func() {
+		if shutdownTimer == nil && (streamErr != nil || stderrErr != nil || waited != nil) {
+			shutdownTimer = time.NewTimer(providerShutdownGrace)
+			shutdownDeadline = shutdownTimer.C
+		}
+	}
+	defer func() {
+		if shutdownTimer != nil {
+			shutdownTimer.Stop()
+		}
+	}()
+	terminationDone := termination.done
+	for streamErr != nil || stderrErr != nil || waited != nil || terminationDone != nil {
+		if streamErr == nil && stderrErr == nil && waited == nil && shutdownTimer != nil {
+			// Process exit and I/O met their deadline. Group termination has
+			// its own bounded grace/proof windows; do not spend this deadline
+			// a second time on that independent cleanup phase.
+			shutdownTimer.Stop()
+			shutdownDeadline = nil
+		}
+		select {
+		case <-terminal:
+			startShutdownDeadline()
+		case streamResult = <-streamErr:
+			streamErr = nil
+			startShutdownDeadline()
+		case stderrResult = <-stderrErr:
+			stderrErr = nil
+		case waitErr = <-waited:
+			waited = nil
+			startShutdownDeadline()
+			termination.request()
+		case <-terminationDone:
+			terminationDone = nil
+			terminationErr = termination.err
+			startShutdownDeadline()
+			if terminationErr != nil {
+				// Do not hang on an unkillable provider. Retain its active claim
+				// through the unproven-termination error below.
+				waited = nil
+				_ = stdoutPipe.Close()
+				_ = stderrPipe.Close()
+			}
+		case <-shutdownDeadline:
+			shutdownDeadline = nil
+			setFailure(fmt.Errorf("provider did not exit and close output streams within %s of terminal evidence or shutdown", providerShutdownGrace))
+			_ = stdoutPipe.Close()
+			_ = stderrPipe.Close()
+		}
+	}
+	if terminationErr == nil {
+		terminationErr = termination.providerStopped()
+	}
 	signal := caughtSignal()
 	resultMu.Lock()
 	currentSemanticErr := semanticErr
@@ -300,12 +402,12 @@ func executeProvider(
 		} else {
 			primaryErr = exitError(ExitSigterm, fmt.Sprintf("%s interrupted by signal SIGTERM", command.Provider))
 		}
+	case currentSemanticErr != nil:
+		primaryErr = exitError(ExitTargetFailure, fmt.Sprintf("%s dispatch did not complete: %v", command.Provider, currentSemanticErr))
 	case streamResult != nil:
 		primaryErr = wrapExitError(ExitTargetFailure, fmt.Sprintf("capture dispatch provider output: %v", streamResult), streamResult)
 	case stderrResult != nil:
 		primaryErr = wrapExitError(ExitTargetFailure, fmt.Sprintf("capture dispatch provider diagnostics: %v", stderrResult), stderrResult)
-	case currentSemanticErr != nil:
-		primaryErr = exitError(ExitTargetFailure, fmt.Sprintf("%s dispatch did not complete: %v", command.Provider, currentSemanticErr))
 	case waitErr != nil:
 		primaryErr = providerWaitError(command.Provider, waitErr)
 	}

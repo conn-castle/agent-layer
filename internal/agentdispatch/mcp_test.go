@@ -344,6 +344,11 @@ func TestMCPWaitRejectsUnknownHandleAsToolError(t *testing.T) {
 func TestMCPContinueStartsTheNextInvocation(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, dispatchSession := newWaitTestRun(t, root)
+	dispatchSession.ProviderSessionID = runtimeSessionID
+	dispatchSession.State = sessionStateDurable
+	if err := persistSession(root, dispatchSession); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(run.Record.AnswerPath, []byte("first"), 0o600); err != nil {
 		t.Fatal(err)
 	}

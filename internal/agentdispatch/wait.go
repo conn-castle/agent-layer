@@ -55,7 +55,10 @@ func Wait(request WaitRequest) error {
 		}
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
-			return writePublicResult(writerOrDiscard(request.Stdout), Result{Handle: session.Name, State: dispatchStateRunning})
+			return writePublicResult(writerOrDiscard(request.Stdout), Result{
+				Handle: session.Name, State: dispatchStateRunning,
+				LastActivityAt: record.LastActivityAt, LastOutputAt: record.LastOutputAt,
+			})
 		}
 		pollDelay := min(interval, remaining)
 		select {
