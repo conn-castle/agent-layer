@@ -174,7 +174,7 @@ fi`)
 		}
 	}
 	got := strings.Join(agy.Model.Suggestions, ",")
-	if got != "live,Live Antigravity Model,backup,Backup Antigravity Model" {
+	if got != "live,backup" {
 		t.Fatalf("antigravity suggestions = %q", got)
 	}
 	assertFileContains(t, logPath, "ARG_0=--gemini_dir="+filepath.Join(root, ".agy"))

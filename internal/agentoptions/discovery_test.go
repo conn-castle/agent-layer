@@ -5,9 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +29,10 @@ func TestMain(m *testing.M) {
 }
 
 func runModelHarness(mode string) {
+	if strings.HasPrefix(mode, "copilot") {
+		runCopilotHarness(mode)
+		return
+	}
 	if mode == "environment" {
 		cwd, _ := os.Getwd()
 		if os.Getenv("GROK_HOME") != filepath.Join(cwd, ".grok-config") || os.Getenv("AL_TEST_PROJECT_VALUE") != "project-value" || os.Getenv("AL_DISPATCH_ACTIVE") != "" {
@@ -126,6 +133,7 @@ func TestDiscoverModelsThroughHarnessProtocols(t *testing.T) {
 		{"claude", "claude", []string{"future-claude"}},
 		{"codex", "codex", []string{"future-codex", "another-codex"}},
 		{"grok", "grok", []string{"future-model", "another-model"}},
+		{"copilot_cli", "copilot", []string{"future-copilot", "another-copilot"}},
 	} {
 		t.Run(tc.agent, func(t *testing.T) {
 			got, err := DiscoverModels(tc.agent, harnessRequest(t, tc.mode))
@@ -166,9 +174,13 @@ func TestDiscoveryUsesProjectLaunchContextWithoutSync(t *testing.T) {
 }
 
 func TestDiscoveryFailuresRemainExplicit(t *testing.T) {
-	for _, tc := range []struct{ agent, mode string }{
-		{"claude", "claude-error"}, {"codex", "codex-error"}, {"codex", "codex-loop"},
-		{"grok", "unauthenticated"}, {"grok", "bad-output"}, {"grok", "exit-error"},
+	for _, tc := range []struct {
+		agent, mode, wantError string
+	}{
+		{"copilot_cli", "copilot-error", "-32603: Failed to list models"},
+		{"copilot_cli", "copilot-empty", ""}, {"copilot_cli", "copilot-malformed", ""}, {"copilot_cli", "copilot-oversized", ""},
+		{"claude", "claude-error", ""}, {"codex", "codex-error", ""}, {"codex", "codex-loop", ""},
+		{"grok", "unauthenticated", ""}, {"grok", "bad-output", ""}, {"grok", "exit-error", ""},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			req := harnessRequest(t, tc.mode)
@@ -177,6 +189,9 @@ func TestDiscoveryFailuresRemainExplicit(t *testing.T) {
 			if option.DiscoveryError == "" || option.Source != "unavailable" || len(option.Suggestions) != 0 {
 				t.Fatalf("false discovery success: %+v", option)
 			}
+			if tc.wantError != "" && !strings.Contains(option.DiscoveryError, tc.wantError) {
+				t.Fatalf("discovery error %q missing %q", option.DiscoveryError, tc.wantError)
+			}
 		})
 	}
 }
@@ -184,7 +199,7 @@ func TestDiscoveryFailuresRemainExplicit(t *testing.T) {
 func TestDiscoveryDeadlineAndOffline(t *testing.T) {
 	req := harnessRequest(t, "hang")
 	req.Timeout = 50 * time.Millisecond
-	for _, agent := range []string{"claude", "codex", "grok", "antigravity"} {
+	for _, agent := range []string{"claude", "codex", "grok", "antigravity", "copilot_cli"} {
 		start := time.Now()
 		if _, err := DiscoverModels(agent, req); err == nil || !strings.Contains(err.Error(), "deadline exceeded") {
 			t.Fatalf("%s timeout error=%v", agent, err)
@@ -231,7 +246,7 @@ func BenchmarkLiveModelDiscovery(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	for _, agent := range []string{"claude", "codex", "grok", "antigravity"} {
+	for _, agent := range []string{"claude", "codex", "grok", "antigravity", "copilot_cli"} {
 		b.Run(agent, func(b *testing.B) {
 			req := DefaultDiscoveryRequest()
 			req.Project = project
@@ -246,4 +261,60 @@ func BenchmarkLiveModelDiscovery(b *testing.B) {
 			}
 		})
 	}
+}
+
+// Decode requests independently with MIME headers to check the actual wire
+// contract, including startup flags and the absence of session/inference calls.
+func runCopilotHarness(mode string) {
+	if strings.Join(os.Args[1:], " ") != "--headless --stdio --no-auto-update" {
+		os.Exit(7)
+	}
+	reader := bufio.NewReader(os.Stdin)
+	headers := textproto.NewReader(reader)
+	for _, method := range []string{"connect", "models.list"} {
+		header, err := headers.ReadMIMEHeader()
+		if err != nil {
+			os.Exit(8)
+		}
+		length, err := strconv.Atoi(header.Get("Content-Length"))
+		if err != nil || length <= 0 || length > 4096 {
+			os.Exit(9)
+		}
+		body := make([]byte, length)
+		if _, err := io.ReadFull(reader, body); err != nil {
+			os.Exit(10)
+		}
+		var request struct {
+			ID      int    `json:"id"`
+			Method  string `json:"method"`
+			JSONRPC string `json:"jsonrpc"`
+		}
+		if json.Unmarshal(body, &request) != nil || request.Method != method || request.JSONRPC != copilotJSONRPCVersion {
+			os.Exit(11)
+		}
+		result := any(map[string]any{"protocolVersion": 3})
+		if method == "models.list" {
+			switch mode {
+			case "copilot-malformed":
+				fmt.Print("Content-Length: nope\r\n\r\n")
+				return
+			case "copilot-oversized":
+				fmt.Printf("Content-Length: %d\r\n\r\n", maxDiscoveryBytes+1)
+				return
+			case "copilot-empty":
+				result = map[string]any{"models": []any{}}
+			default:
+				result = map[string]any{"models": []map[string]string{{"id": "future-copilot", "name": "Future Copilot"}, {"id": "another-copilot"}, {"id": "future-copilot"}}}
+			}
+		}
+		response := map[string]any{"jsonrpc": copilotJSONRPCVersion, "id": request.ID, "result": result}
+		if method == "models.list" && mode == "copilot-error" {
+			delete(response, "result")
+			response["error"] = map[string]any{"code": -32603, "message": "Failed to list models"}
+		}
+		body, _ = json.Marshal(response)
+		fmt.Printf("Content-Length: %d\r\n\r\n%s", len(body), body)
+	}
+	// The discovery caller must cancel/reap an otherwise long-lived server.
+	time.Sleep(time.Minute)
 }

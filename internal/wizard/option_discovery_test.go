@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -45,10 +46,10 @@ func TestModelDiscoveryPrefetchWaitsAndReusesResult(t *testing.T) {
 	timer := time.AfterFunc(30*time.Millisecond, func() { close(release) })
 	defer timer.Stop()
 	ui := &MockUI{SelectFunc: func(_ string, options []string, current *string) error {
-		if !slices.Contains(options, "New Model") {
+		if !slices.Contains(options, "new-model") {
 			t.Errorf("missing discovered model: %v", options)
 		}
-		*current = "New Model"
+		*current = "new-model"
 		return nil
 	}}
 	var selected string
@@ -65,45 +66,91 @@ func TestModelDiscoveryPrefetchWaitsAndReusesResult(t *testing.T) {
 	}
 }
 
-func TestModelDiscoveryFailureStopsPickerWithoutChangingConfiguredValue(t *testing.T) {
+func TestModelDiscoveryFailureAllowsExplicitSelection(t *testing.T) {
 	original := wizardOptionDiscoveryRequestFunc
 	t.Cleanup(func() { wizardOptionDiscoveryRequestFunc = original })
 	wizardOptionDiscoveryRequestFunc = func() agentoptions.DiscoveryRequest {
 		return agentoptions.DiscoveryRequest{Live: true, LookPath: func(string) (string, error) { return "", errors.New("harness missing") }}
 	}
-	ui := &MockUI{
-		SelectFunc: func(_ string, options []string, current *string) error {
-			t.Error("failed discovery opened a picker")
-			return nil
-		},
-	}
-	cache := &wizardOptionDiscoveryCache{}
-	selected := "my-custom-model"
-	for range 2 {
-		if err := cache.selectModel(ui, AgentClaude, messages.WizardClaudeModelTitle, &selected); err == nil || !bytes.Contains([]byte(err.Error()), []byte("harness missing")) {
-			t.Fatalf("expected actionable discovery failure, got %v", err)
+	for _, agent := range []string{AgentCopilotCLI, AgentClaude, AgentCodex, AgentGrok, AgentAntigravity} {
+		for _, selection := range []string{messages.WizardLeaveBlankOption, messages.WizardCustomOption} {
+			t.Run(agent+"/"+selection, func(t *testing.T) {
+				warned := false
+				ui := &MockUI{
+					NoteFunc: func(title, body string) error {
+						warned = true
+						if !strings.Contains(title, agent) || !strings.Contains(body, "harness missing") {
+							t.Fatalf("missing discovery failure context: %s: %s", title, body)
+						}
+						return nil
+					},
+					SelectFunc: func(_ string, options []string, current *string) error {
+						if !warned {
+							t.Fatal("picker opened without surfacing discovery failure")
+						}
+						if !slices.Equal(options, []string{messages.WizardLeaveBlankOption, messages.WizardCustomOption}) {
+							t.Fatalf("unexpected suggestions after failed discovery: %v", options)
+						}
+						*current = selection
+						return nil
+					},
+					InputFunc: func(_ string, current *string) error {
+						if *current != "my-custom-model" {
+							t.Fatalf("lost configured model: %q", *current)
+						}
+						return nil
+					},
+				}
+				cache := &wizardOptionDiscoveryCache{}
+				selected := "my-custom-model"
+				if err := cache.selectModel(ui, agent, "Model", &selected); err != nil {
+					t.Fatal(err)
+				}
+				want := "my-custom-model"
+				if selection == messages.WizardLeaveBlankOption {
+					want = ""
+				}
+				if selected != want {
+					t.Fatalf("selected=%q, want %q", selected, want)
+				}
+			})
 		}
-	}
-	if selected != "my-custom-model" {
-		t.Fatalf("selected=%q", selected)
 	}
 }
 
-func TestPrefetchEnabledModelsRunsConcurrently(t *testing.T) {
+func TestModelDiscoveryFailureNotePreservesNavigation(t *testing.T) {
 	original := wizardOptionDiscoveryRequestFunc
 	t.Cleanup(func() { wizardOptionDiscoveryRequestFunc = original })
-	started := make(chan string, 4)
+	wizardOptionDiscoveryRequestFunc = func() agentoptions.DiscoveryRequest {
+		return agentoptions.DiscoveryRequest{Live: true, LookPath: func(string) (string, error) { return "", errors.New("harness missing") }}
+	}
+	for _, navigation := range []error{errWizardBack, errWizardCancelled} {
+		ui := &MockUI{
+			NoteFunc:   func(string, string) error { return navigation },
+			SelectFunc: func(string, []string, *string) error { t.Fatal("picker opened after navigation"); return nil },
+		}
+		selected := "my-custom-model"
+		cache := &wizardOptionDiscoveryCache{}
+		if err := cache.selectModel(ui, AgentCopilotCLI, "Model", &selected); !errors.Is(err, navigation) {
+			t.Fatalf("error=%v", err)
+		}
+		if selected != "my-custom-model" {
+			t.Fatalf("selected=%q", selected)
+		}
+	}
+}
+
+func TestPrefetchAllModelsRunsConcurrently(t *testing.T) {
+	original := wizardOptionDiscoveryRequestFunc
+	t.Cleanup(func() { wizardOptionDiscoveryRequestFunc = original })
+	started := make(chan string, 5)
 	release := make(chan struct{})
 	wizardOptionDiscoveryRequestFunc = func() agentoptions.DiscoveryRequest {
 		return agentoptions.DiscoveryRequest{Live: true, LookPath: func(name string) (string, error) { started <- name; <-release; return "", os.ErrNotExist }}
 	}
-	choices := NewChoices()
-	for _, agent := range []string{AgentAntigravity, AgentClaude, AgentCodex, AgentGrok} {
-		choices.EnabledAgents[agent] = true
-	}
 	cache := &wizardOptionDiscoveryCache{}
-	cache.prefetchEnabled(choices)
-	for range 4 {
+	cache.prefetchAll()
+	for range 5 {
 		select {
 		case <-started:
 		case <-time.After(time.Second):
@@ -135,5 +182,48 @@ func TestScriptedModelSelectionDoesNotDiscover(t *testing.T) {
 	}
 	if err := ui.AssertComplete(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestWizardStartsDiscoveryBeforeFirstPromptAndCancelsOnExit(t *testing.T) {
+	original := wizardOptionDiscoveryRequestFunc
+	t.Cleanup(func() { wizardOptionDiscoveryRequestFunc = original })
+	executable := filepath.Join(t.TempDir(), "harness")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexec sleep 60\n"), 0o700); err != nil { // #nosec G306 -- executable harness fixture.
+		t.Fatal(err)
+	}
+	started := make(chan string, 5)
+	wizardOptionDiscoveryRequestFunc = func() agentoptions.DiscoveryRequest {
+		return agentoptions.DiscoveryRequest{Live: true, LookPath: func(name string) (string, error) {
+			started <- name
+			return executable, nil
+		}}
+	}
+	cache := &wizardOptionDiscoveryCache{}
+	ui := &MockUI{SelectFunc: func(_ string, _ []string, _ *string) error {
+		for range 5 {
+			select {
+			case <-started:
+			case <-time.After(3 * time.Second):
+				t.Fatal("discovery was not started before the first prompt")
+			}
+		}
+		return errWizardCancelled
+	}}
+	// Even initially disabled agents must be ready if enabled on the next page.
+	choices := NewChoices()
+	choices.ApprovalMode = "all"
+	if err := promptWizardFlow(t.TempDir(), ui, choices, cache); !errors.Is(err, errWizardCancelled) {
+		t.Fatalf("flow error=%v", err)
+	}
+	if cache.ctx.Err() == nil {
+		t.Fatal("wizard exit did not cancel discovery")
+	}
+	for _, entry := range cache.entries {
+		select {
+		case <-entry.done:
+		case <-time.After(3 * time.Second):
+			t.Fatal("discovery worker outlived wizard cancellation")
+		}
 	}
 }

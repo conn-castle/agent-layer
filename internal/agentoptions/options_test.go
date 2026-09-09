@@ -41,7 +41,7 @@ func TestResolveUsesLiveAntigravityModels(t *testing.T) {
 	if options.Configured != "Configured Model" {
 		t.Fatalf("configured = %q, want trimmed configured model", options.Configured)
 	}
-	want := []string{"live", "Live Model", "backup", "Backup Model"}
+	want := []string{"live", "backup"}
 	if !reflect.DeepEqual(options.Suggestions, want) {
 		t.Fatalf("suggestions = %v, want %v", options.Suggestions, want)
 	}

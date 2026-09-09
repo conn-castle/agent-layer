@@ -105,9 +105,9 @@ func (c *wizardOptionDiscoveryCache) prefetch(agent string) *wizardModelDiscover
 	return entry
 }
 
-func (c *wizardOptionDiscoveryCache) prefetchEnabled(choices *Choices) {
+func (c *wizardOptionDiscoveryCache) prefetchAll() {
 	for _, agent := range SupportedAgents() {
-		if choices.EnabledAgents[agent] && agentoptions.HasModelDiscovery(agent) {
+		if agentoptions.HasModelDiscovery(agent) {
 			c.prefetch(agent)
 		}
 	}
@@ -123,7 +123,7 @@ func (c *wizardOptionDiscoveryCache) selectModel(ui UI, agent, title string, val
 		return selectOptionalValue(ui, title, []string{answer}, value)
 	}
 	if !agentoptions.HasModelDiscovery(agent) {
-		// Copilot CLI has no discovery adapter. Offer explicit input only.
+		// Agents without a discovery adapter accept explicit input only.
 		return selectOptionalValue(ui, title, nil, value)
 	}
 	entry := c.prefetch(agent)
@@ -136,7 +136,10 @@ func (c *wizardOptionDiscoveryCache) selectModel(ui UI, agent, title string, val
 		<-entry.done
 	}
 	if entry.option.DiscoveryError != "" {
-		return fmt.Errorf("cannot select %s model: %s; check harness installation, authentication, and connectivity", agent, entry.option.DiscoveryError)
+		if err := ui.Note(fmt.Sprintf("Cannot discover %s models", agent), fmt.Sprintf("%s; check harness installation, authentication, and connectivity. You can still use the client default or enter a custom model.", entry.option.DiscoveryError)); err != nil {
+			return err
+		}
+		return selectOptionalValue(ui, title, nil, value)
 	}
 	return selectOptionalValue(ui, title, entry.option.Suggestions, value)
 }

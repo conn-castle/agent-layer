@@ -28,10 +28,11 @@ const agentAntigravity = "antigravity"
 const modelsCommand = "models"
 const initializeMethod = "initialize"
 const methodKey = "method"
+const paramsKey = "params"
 
 // HasModelDiscovery reports whether the installed harness can supply a catalog.
 func HasModelDiscovery(agent string) bool {
-	return slices.Contains([]string{agentAntigravity, agentClaude, agentCodex, agentGrok}, agent)
+	return slices.Contains([]string{agentAntigravity, agentClaude, agentCodex, agentCopilotCLI, agentGrok}, agent)
 }
 
 // DiscoverModels queries the harness without sync or inference. It uses the same
@@ -122,7 +123,11 @@ func normalizeModels(agent string, models []string) ([]string, error) {
 }
 
 func discoveryCommand(agent string, req DiscoveryRequest) (*exec.Cmd, error) {
-	path, err := req.LookPath(agent)
+	binary := agent
+	if agent == agentCopilotCLI {
+		binary = "copilot"
+	}
+	path, err := req.LookPath(binary)
 	if err != nil {
 		return nil, err
 	}
@@ -149,6 +154,8 @@ func discoveryCommand(agent string, req DiscoveryRequest) (*exec.Cmd, error) {
 			"--settings", `{"disableAllHooks":true}`, "--tools", ""}
 	case agentCodex:
 		args = []string{"app-server"}
+	case agentCopilotCLI:
+		args = []string{"--headless", "--stdio", "--no-auto-update"}
 	}
 	// #nosec G204 -- PATH-resolved harness; fixed discovery arguments, no prompt.
 	cmd := exec.CommandContext(req.Context, path, args...)
@@ -209,6 +216,9 @@ func discoverCommandModels(agent string, req DiscoveryRequest) ([]string, error)
 			return nil, err
 		}
 		return models, nil
+	}
+	if agent == agentCopilotCLI {
+		return readCopilotModels(reader, stdin)
 	}
 	decoder, encoder := json.NewDecoder(reader), json.NewEncoder(stdin)
 	if agent == agentClaude {
@@ -277,7 +287,7 @@ func readClaudeModels(decoder *json.Decoder, encoder *json.Encoder) ([]string, e
 }
 
 func codexRequest(decoder *json.Decoder, encoder *json.Encoder, id int, method string, params any, result any) error {
-	if err := encoder.Encode(map[string]any{"id": id, methodKey: method, "params": params}); err != nil {
+	if err := encoder.Encode(map[string]any{"id": id, methodKey: method, paramsKey: params}); err != nil {
 		return err
 	}
 	for {
@@ -304,7 +314,7 @@ func readCodexModels(decoder *json.Decoder, encoder *json.Encoder) ([]string, er
 	if err := codexRequest(decoder, encoder, 1, initializeMethod, map[string]any{"clientInfo": map[string]string{"name": "agent_layer", "version": "1"}}, &initialized); err != nil {
 		return nil, err
 	}
-	if err := encoder.Encode(map[string]any{methodKey: "initialized", "params": map[string]any{}}); err != nil {
+	if err := encoder.Encode(map[string]any{methodKey: "initialized", paramsKey: map[string]any{}}); err != nil {
 		return nil, err
 	}
 	var models []string

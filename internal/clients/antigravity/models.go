@@ -130,9 +130,7 @@ func ParseModelOutput(output []byte) ([]string, error) {
 		if !ok || strings.TrimSpace(slug) == "" || strings.TrimSpace(label) == "" || strings.Contains(label, "\t") {
 			return nil, errors.New("agy models returned an invalid model row; expected slug<TAB>display name")
 		}
-		model = strings.TrimSpace(label)
 		models = append(models, strings.TrimSpace(slug))
-		models = append(models, model)
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err

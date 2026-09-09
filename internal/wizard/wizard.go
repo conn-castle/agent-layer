@@ -428,6 +428,10 @@ func promptWizardFlow(root string, ui UI, choices *Choices, caches ...*wizardOpt
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	optionCache.ctx = ctx
+	// Start before the first screen, including agents the user may enable later.
+	if _, scripted := ui.(*ScriptedUI); !scripted {
+		optionCache.prefetchAll()
+	}
 	// The instruction prompt is install-only. Once instruction or memory files
 	// exist on disk, the wizard does not offer a refresh action; users who want
 	// a full managed update can use `al upgrade`.
@@ -448,9 +452,6 @@ func promptWizardFlow(root string, ui UI, choices *Choices, caches ...*wizardOpt
 		case wizardFlowStepAgents:
 			err = promptEnabledAgents(ui, choices)
 		case wizardFlowStepModels:
-			if _, scripted := ui.(*ScriptedUI); !scripted {
-				optionCache.prefetchEnabled(choices)
-			}
 			err = promptModels(ui, choices, optionCache)
 		case wizardFlowStepInstructions:
 			err = promptInstructionSet(ui, choices)

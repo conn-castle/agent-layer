@@ -39,17 +39,11 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Acceptance criteria: A completed Grok dispatch retains observed usage when the stream includes it; missing usage stays explicitly absent rather than inferred.
     Notes: Current reducer returns nil for `usage` events.
 
-- Backlog 2026-07-09 copilot-cli-model-discovery: Discover GitHub Copilot CLI models
-    Priority: Medium. Area: providers / copilot-cli / wizard
-    Description: Add a verified native discovery adapter for Copilot CLI to replace manual-only model entry.
-    Acceptance criteria: Suggestions come exclusively from the installed harness through the shared Go discovery boundary; no static catalog or fallback is introduced.
-    Notes: Static Copilot model suggestions were removed. Explicit model values remain supported; Copilot CLI is not a dispatch provider.
-
 - Backlog 2026-06-30 shared-live-options: Discover reasoning-effort suggestions from harnesses
     Priority: Medium. Area: providers / dispatch / wizard
     Description: Replace hard-coded reasoning-effort suggestions with provider-backed discovery where an authoritative source is available.
     Acceptance criteria: Wizard and dispatch share reasoning metadata from harness discovery, retain explicit fallback diagnostics, and preserve custom overrides.
-    Notes: Model discovery is implemented for Claude, Codex, Grok, and Antigravity. Remaining work is reasoning metadata and its model-dependent presentation; Claude initialization and Codex model/list already expose candidate capability fields.
+    Notes: Model discovery is implemented for Claude, Codex, Grok, Antigravity, and Copilot CLI. Remaining work is reasoning metadata and its model-dependent presentation; Claude initialization and Codex model/list already expose candidate capability fields.
 
 - Backlog 2026-06-15 interactive-html-review-skill: Skill to make any HTML output file browser-commentable
     Priority: High. Area: skills / UX

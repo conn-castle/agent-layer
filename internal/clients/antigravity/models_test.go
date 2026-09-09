@@ -64,7 +64,7 @@ printf '\nmedium-id\tGemini 3.5 Flash (Medium)\nhigh-id\tGemini 3.5 Flash (High)
 	if err != nil {
 		t.Fatalf("liveModelOptions error: %v", err)
 	}
-	want := []string{"medium-id", "Gemini 3.5 Flash (Medium)", "high-id", "Gemini 3.5 Flash (High)"}
+	want := []string{"medium-id", "high-id"}
 	if !reflect.DeepEqual(models, want) {
 		t.Fatalf("models = %v, want %v", models, want)
 	}
@@ -103,7 +103,7 @@ func TestParseModelRows(t *testing.T) {
 		want         []string
 		invalid      bool
 	}{
-		{"current", "slug\tDisplay Name\nsecond\tOther Model\n", []string{"slug", "Display Name", "second", "Other Model"}, false},
+		{"current", "slug\tDisplay Name\nsecond\tOther Model\n", []string{"slug", "second"}, false},
 		{"unstructured output", "\nAuthentication failed\n", nil, true},
 		{"missing label", "slug\t\n", nil, true},
 		{"missing slug", "\tDisplay Name\n", nil, true},

@@ -54,3 +54,19 @@ func TestCheckModelsSkipsClientDefaults(t *testing.T) {
 		t.Fatalf("unexpected model checks: %+v", results)
 	}
 }
+
+func TestCheckModelsReportsCopilotDiscoveryFailure(t *testing.T) {
+	enabled := true
+	project := &config.ProjectConfig{Config: config.Config{Agents: config.AgentsConfig{
+		CopilotCLI: config.AgentConfig{Enabled: &enabled, Model: "configured-model"},
+	}}}
+	results := CheckModels(project, agentoptions.DiscoveryRequest{Env: []string{}, LookPath: func(name string) (string, error) {
+		if name != "copilot" {
+			t.Errorf("unexpected executable %q", name)
+		}
+		return "", os.ErrNotExist
+	}})
+	if len(results) != 1 || results[0].CheckName != "copilot_cli models" || results[0].Status != StatusWarn || !strings.Contains(results[0].Message, "model discovery") {
+		t.Fatalf("missing actionable Copilot discovery warning: %+v", results)
+	}
+}
