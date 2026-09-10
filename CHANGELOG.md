@@ -1,6 +1,17 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.20.0 - 2026-09-09
+
+### Added
+- Live harness model discovery for Claude, Codex, Grok, Antigravity, and GitHub Copilot CLI.
+- Wizard prefetches model options across all supported harnesses at startup and falls back gracefully to defaults or custom input if discovery fails.
+- GitHub Copilot CLI headless SDK model discovery and doctor model health checks.
+
+### Changed
+- Standardized Antigravity model parsing to native model IDs.
+- Configuration validation allows dynamically discovered models across all supported agent harnesses while retaining custom model entry.
+
 ## v0.19.0 - 2026-09-07
 
 ### Added
