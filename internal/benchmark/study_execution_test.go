@@ -205,7 +205,7 @@ func TestStudySelectionNamesInvalidSelectorAndSupportedModels(t *testing.T) {
 	if err == nil ||
 		!strings.Contains(err.Error(), `model "grok-4-5" with reasoning "low"`) ||
 		!strings.Contains(err.Error(), "grok-4.5") ||
-		!strings.Contains(err.Error(), "supported models:") {
+		!strings.Contains(err.Error(), "historical identifiers:") {
 		t.Fatalf("invalid selector error = %v", err)
 	}
 }

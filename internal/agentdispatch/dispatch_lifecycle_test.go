@@ -79,6 +79,29 @@ func TestRejectedResumeExposesTerminalPublicationFailure(t *testing.T) {
 	}
 }
 
+func TestRejectedResumePublishesConfirmedPrelaunchTermination(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	attempted, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempted.Record.Name = "short-bright-transistor"
+	if err := writeRunRecord(attempted.Dir, &attempted.Record); err != nil {
+		t.Fatal(err)
+	}
+	claimErr := exitError(ExitUnavailable, "conversation is already active")
+	if err := finishRejectedResume(attempted, claimErr, writeRunRecord); err != claimErr {
+		t.Fatalf("finishRejectedResume error = %v, want claim rejection", err)
+	}
+	durable, err := loadRunRecord(root, attempted.Record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if durable.State != dispatchStateFailed || !durable.LaunchFenced || !durable.TerminationConfirmed || durable.TerminationProof != terminationProofPrelaunchNoIntent {
+		t.Fatalf("rejected resume termination evidence = %#v", durable)
+	}
+}
+
 func TestExecuteDispatchPreservesFailedFreshRunForRecoveryHistory(t *testing.T) {
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], "fresh")
@@ -124,6 +147,15 @@ func TestUnprovenProviderTerminationRetainsRunAndActiveClaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	cause := &unprovenProviderTerminationError{err: exitError(ExitTargetFailure, "provider process group death was not proven")}
+	// Simulate ownership captured by Start but not yet published, including
+	// a stale revision from a concurrent running-state update.
+	current := run.Record
+	if err := writeRunRecord(run.Dir, &current); err != nil {
+		t.Fatal(err)
+	}
+	run.Record.PID = os.Getpid()
+	run.Record.ProcessGroupID = os.Getpid()
+	run.Record.ProcessStartIdentity = processStartIdentity(os.Getpid())
 	if err := finishDispatchFailure(dispatchExecution{Root: root, Run: run, Session: session, Mode: dispatchModeFresh}, cause); !errors.Is(err, cause) {
 		t.Fatalf("finishDispatchFailure error = %v, want unproven termination failure", err)
 	}
@@ -138,12 +170,24 @@ func TestUnprovenProviderTerminationRetainsRunAndActiveClaim(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if durable.State != dispatchStateRunning || durable.CompletedAt != nil || durable.TerminalReason != "" {
-		t.Fatalf("unproven termination terminalized run evidence: %#v", durable)
+	if durable.State != dispatchStateFailed || durable.TerminationConfirmed || durable.TerminalReason == "" {
+		t.Fatalf("unproven termination evidence = %#v", durable)
+	}
+	if durable.PID != run.Record.PID || durable.ProcessGroupID != run.Record.ProcessGroupID || durable.ProcessStartIdentity != run.Record.ProcessStartIdentity {
+		t.Fatalf("unproven termination lost unpublished process ownership: %#v", durable)
+	}
+	run.Record.ProcessStartIdentity = "conflicting-owner"
+	err = finishDispatchFailure(dispatchExecution{Root: root, Run: run, Session: session, Mode: dispatchModeFresh}, cause)
+	if !errors.Is(err, cause) || !strings.Contains(err.Error(), "recorded process identity conflicts") {
+		t.Fatalf("conflicting ownership was not reported: %v", err)
+	}
+	unchanged, err := loadRunRecord(root, run.Record.ID)
+	if err != nil || unchanged.ProcessStartIdentity != durable.ProcessStartIdentity || unchanged.Revision != durable.Revision {
+		t.Fatalf("conflicting ownership overwrote durable evidence: %#v, %v", unchanged, err)
 	}
 }
 
-func TestFailureFinalizationReleasesClaimWhenTerminalWriteFails(t *testing.T) {
+func TestFailureFinalizationRetainsClaimWhenTerminalWriteFails(t *testing.T) {
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 	if err != nil {
@@ -165,8 +209,8 @@ func TestFailureFinalizationReleasesClaimWhenTerminalWriteFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if retained.ActiveRunID != "" {
-		t.Fatalf("terminal-write failure left the claim stuck: %#v", retained)
+	if retained.ActiveRunID != run.Record.ID {
+		t.Fatalf("unconfirmed failed write released the claim: %#v", retained)
 	}
 }
 
@@ -215,8 +259,11 @@ func TestFailedRunRecordPublicationPreservesCallerRevisionForFailureFinalization
 	if terminal.State != dispatchStateFailed || terminal.CompletedAt == nil || terminal.TerminalReason != cause.Error() {
 		t.Fatalf("failure finalization did not persist canonical terminal history: %#v", terminal)
 	}
-	if terminal.Revision != durableBefore.Revision+1 || run.Record.Revision != terminal.Revision || !run.Record.UpdatedAt.Equal(terminal.UpdatedAt) {
+	if run.Record.Revision != terminal.Revision || !run.Record.UpdatedAt.Equal(terminal.UpdatedAt) {
 		t.Fatalf("terminal caller/durable state mismatch: caller = %#v, durable = %#v", run.Record, terminal)
+	}
+	if terminal.Revision <= durableBefore.Revision {
+		t.Fatalf("failure finalization did not advance revision: before %d after %d", durableBefore.Revision, terminal.Revision)
 	}
 }
 
@@ -237,8 +284,15 @@ func TestPreLaunchCancellationAllowsSafeReplacementWithoutProcessIdentity(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claimed.ActiveRunID != run.Record.ID {
-		t.Fatalf("pre-launch cancellation released before its owner ran: %#v", claimed)
+	if claimed.ActiveRunID != "" {
+		t.Fatalf("fenced pre-launch cancellation kept the claim: %#v", claimed)
+	}
+	cancelled, err := loadRunRecord(root, run.Record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cancelled.TerminationConfirmed || !cancelled.LaunchFenced {
+		t.Fatalf("pre-launch cancellation without launch intent was not confirmed: %#v", cancelled)
 	}
 	replacement, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
 	if err != nil {

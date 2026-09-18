@@ -51,6 +51,9 @@ func TestPublishedInvocationIsExecutedExactlyOnceByItsWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	runID := session.RunID
+	if response.InvocationID != runID {
+		t.Fatalf("start invocation ID = %q, want %q", response.InvocationID, runID)
+	}
 	requestPath := filepath.Join(dispatchRunPath(root), runID, workerRequestFile)
 	if _, err := os.Stat(requestPath); err != nil {
 		t.Fatalf("Start did not publish a worker request for the handle it returned: %v", err)
@@ -65,6 +68,16 @@ func TestPublishedInvocationIsExecutedExactlyOnceByItsWorker(t *testing.T) {
 	}
 	if record.State != dispatchStateCompleted {
 		t.Fatalf("worker run state = %q, want the invocation to complete", record.State)
+	}
+	if !record.TerminationConfirmed || record.TerminationConfirmedAt == nil || record.TerminationProof != terminationProofGroupDead {
+		t.Fatalf("worker completion did not persist termination proof: %+v", record)
+	}
+	released, err := loadSession(root, response.Handle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if released.ActiveRunID != "" {
+		t.Fatalf("completed worker retained its active claim: %+v", released)
 	}
 	answer, err := os.ReadFile(record.AnswerPath) // #nosec G304 -- Agent Layer-owned run directory in a test repository.
 	if err != nil || string(answer) != "worker answer" {

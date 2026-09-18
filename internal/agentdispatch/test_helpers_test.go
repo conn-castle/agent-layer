@@ -194,8 +194,6 @@ func dispatchTestConfig(enabledAgents ...string) config.Config {
 	return cfg
 }
 
-func boolPtr(value bool) *bool { return &value }
-
 func alwaysFound(name string) (string, error) { return "/mock/" + name, nil }
 
 type failingWriter struct{}

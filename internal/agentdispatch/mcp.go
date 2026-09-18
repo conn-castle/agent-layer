@@ -17,7 +17,7 @@ import (
 )
 
 // MCP tool names. They are the canonical agent-facing Agent Dispatch surface
-// and are deliberately terse: every enabled caller carries all five schemas in
+// and are deliberately terse: every enabled caller carries all seven schemas in
 // its always-present context.
 const (
 	ToolOptions  = "dispatch_options"
@@ -25,6 +25,8 @@ const (
 	ToolWait     = "dispatch_wait"
 	ToolContinue = "dispatch_continue"
 	ToolCancel   = "dispatch_cancel"
+	ToolInspect  = "dispatch_inspect"
+	ToolOutput   = "dispatch_output"
 )
 
 // mcpServerName identifies this server to MCP clients.
@@ -85,6 +87,26 @@ type ContinueInput struct {
 // HandleInput identifies one conversation by its opaque handle.
 type HandleInput struct {
 	Handle string `json:"handle"`
+}
+
+// SelectorInput identifies one invocation by exactly one of handle or invocation_id.
+type SelectorInput struct {
+	Handle       string `json:"handle,omitempty"`
+	InvocationID string `json:"invocation_id,omitempty"`
+}
+
+// WaitInput waits for one invocation. Condition applies only to wait.
+type WaitInput struct {
+	Handle       string `json:"handle,omitempty"`
+	InvocationID string `json:"invocation_id,omitempty"`
+	Condition    string `json:"condition,omitempty"`
+}
+
+// OutputInput retrieves bounded artifact content for one invocation.
+type OutputInput struct {
+	Handle       string `json:"handle,omitempty"`
+	InvocationID string `json:"invocation_id,omitempty"`
+	Artifact     string `json:"artifact"`
 }
 
 // RunMCPServer serves the Agent Dispatch tools over stdio until the client
@@ -158,7 +180,7 @@ func (s *dispatchToolServer) register(server *mcp.Server) error {
 	if err != nil {
 		return err
 	}
-	waitSchema, err := mcpInputSchema[HandleInput](ToolWait, catalog.Tools[ToolWait])
+	waitSchema, err := mcpInputSchema[WaitInput](ToolWait, catalog.Tools[ToolWait])
 	if err != nil {
 		return err
 	}
@@ -166,7 +188,15 @@ func (s *dispatchToolServer) register(server *mcp.Server) error {
 	if err != nil {
 		return err
 	}
-	cancelSchema, err := mcpInputSchema[HandleInput](ToolCancel, catalog.Tools[ToolCancel])
+	cancelSchema, err := mcpInputSchema[SelectorInput](ToolCancel, catalog.Tools[ToolCancel])
+	if err != nil {
+		return err
+	}
+	inspectSchema, err := mcpInputSchema[SelectorInput](ToolInspect, catalog.Tools[ToolInspect])
+	if err != nil {
+		return err
+	}
+	outputSchema, err := mcpInputSchema[OutputInput](ToolOutput, catalog.Tools[ToolOutput])
 	if err != nil {
 		return err
 	}
@@ -209,6 +239,20 @@ func (s *dispatchToolServer) register(server *mcp.Server) error {
 		InputSchema: cancelSchema,
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: &openWorld},
 	}, withoutPublishedOutputSchema(guard(s.toolTimeout, s.handleCancel)))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        ToolInspect,
+		Description: catalog.Tools[ToolInspect].Description,
+		InputSchema: inspectSchema,
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly, OpenWorldHint: &openWorld},
+	}, withoutPublishedOutputSchema(guard(s.toolTimeout, s.handleInspect)))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        ToolOutput,
+		Description: catalog.Tools[ToolOutput].Description,
+		InputSchema: outputSchema,
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly, OpenWorldHint: &openWorld},
+	}, withoutPublishedOutputSchema(guard(s.toolTimeout, s.handleOutput)))
 	return nil
 }
 
@@ -256,7 +300,7 @@ func (s *dispatchToolServer) handleOptions(ctx context.Context, _ *mcp.CallToolR
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	options, err := BuildOptions(OptionsRequest{Root: s.root, Env: s.env})
+	options, err := BuildOptions(OptionsRequest{Context: ctx, Root: s.root, Env: s.env})
 	if err != nil {
 		return nil, nil, toolError(err)
 	}
@@ -284,7 +328,7 @@ func (s *dispatchToolServer) handleStart(ctx context.Context, _ *mcp.CallToolReq
 	return decodeResult(&out, err)
 }
 
-func (s *dispatchToolServer) handleWait(ctx context.Context, request *mcp.CallToolRequest, input HandleInput) (*mcp.CallToolResult, *Result, error) {
+func (s *dispatchToolServer) handleWait(ctx context.Context, request *mcp.CallToolRequest, input WaitInput) (*mcp.CallToolResult, *Result, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
@@ -292,7 +336,8 @@ func (s *dispatchToolServer) handleWait(ctx context.Context, request *mcp.CallTo
 	defer stop()
 	var out bytes.Buffer
 	err := Wait(WaitRequest{
-		Context: ctx, Root: s.root, ID: strings.TrimSpace(input.Handle),
+		Context: ctx, Root: s.root, Handle: strings.TrimSpace(input.Handle),
+		InvocationID: strings.TrimSpace(input.InvocationID), Condition: strings.TrimSpace(input.Condition),
 		Stdout: &out, Timeout: s.waitTimeout, PollInterval: mcpWaitPollInterval,
 	})
 	return decodeResult(&out, err)
@@ -311,13 +356,64 @@ func (s *dispatchToolServer) handleContinue(ctx context.Context, _ *mcp.CallTool
 	return decodeResult(&out, err)
 }
 
-func (s *dispatchToolServer) handleCancel(ctx context.Context, _ *mcp.CallToolRequest, input HandleInput) (*mcp.CallToolResult, *Result, error) {
+func (s *dispatchToolServer) handleCancel(ctx context.Context, _ *mcp.CallToolRequest, input SelectorInput) (*mcp.CallToolResult, *Result, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
 	var out bytes.Buffer
-	err := Cancel(CancelRequest{Root: s.root, ID: strings.TrimSpace(input.Handle), Stdout: &out})
-	return decodeResult(&out, err)
+	err := Cancel(CancelRequest{
+		Root: s.root, Handle: strings.TrimSpace(input.Handle),
+		InvocationID: strings.TrimSpace(input.InvocationID), Stdout: &out,
+	})
+	return decodeCancelResult(&out, err)
+}
+
+func decodeCancelResult(out *bytes.Buffer, opErr error) (*mcp.CallToolResult, *Result, error) {
+	// Unlike wait, a cancellation error is an operation failure even when
+	// its durable outcome is already cancelled or failed.
+	if opErr != nil {
+		return nil, nil, toolError(opErr)
+	}
+	return decodeResult(out, nil)
+}
+
+func (s *dispatchToolServer) handleInspect(ctx context.Context, _ *mcp.CallToolRequest, input SelectorInput) (*mcp.CallToolResult, *InspectResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	var out bytes.Buffer
+	err := Inspect(InspectRequest{
+		Root: s.root, Handle: strings.TrimSpace(input.Handle),
+		InvocationID: strings.TrimSpace(input.InvocationID), Stdout: &out,
+	})
+	if err != nil {
+		return nil, nil, toolError(err)
+	}
+	var result InspectResult
+	if decodeErr := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &result); decodeErr != nil {
+		return nil, nil, decodeErr
+	}
+	return nil, &result, nil
+}
+
+func (s *dispatchToolServer) handleOutput(ctx context.Context, _ *mcp.CallToolRequest, input OutputInput) (*mcp.CallToolResult, *OutputResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	var out bytes.Buffer
+	err := Output(OutputRequest{
+		Root: s.root, Handle: strings.TrimSpace(input.Handle),
+		InvocationID: strings.TrimSpace(input.InvocationID), Artifact: strings.TrimSpace(input.Artifact),
+		Stdout: &out,
+	})
+	if err != nil {
+		return nil, nil, toolError(err)
+	}
+	var result OutputResult
+	if decodeErr := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &result); decodeErr != nil {
+		return nil, nil, decodeErr
+	}
+	return nil, &result, nil
 }
 
 // decodeResult turns one operation's canonical JSON rendering into the shared

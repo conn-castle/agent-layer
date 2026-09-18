@@ -88,6 +88,11 @@ _init_doctor_wizard_assert_expected_doctor_output() {
     "$phase doctor config check passed"
   assert_output_contains "$output" "Update check skipped because AL_NO_NETWORK is set" \
     "$phase doctor reports expected offline update warning"
+  local provider
+  for provider in claude codex grok antigravity; do
+    assert_output_not_contains "$output" "$provider models" \
+      "$phase doctor does not query $provider models when clients use their defaults"
+  done
   assert_output_contains "$output" "No required secrets found in configuration." \
     "$phase doctor secrets check passed"
   assert_output_contains "$output" "Agent enabled: Claude" \

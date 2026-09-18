@@ -6,15 +6,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/conn-castle/agent-layer/internal/agentoptions"
 )
 
 var errPierTaskResultAbsent = errors.New("pier task result is absent")
@@ -242,6 +246,11 @@ func validatePierTreatmentPreflight(stage string, request ExecutionRequest) erro
 	if string(raw.ExceptionInfo) != "" && string(raw.ExceptionInfo) != "null" {
 		return fmt.Errorf("treatment runtime preflight failed: %s", raw.ExceptionInfo)
 	}
+	if request.Model.Adapter == adapterAntigravity || request.Model.Adapter == adapterGrok {
+		if err := validateRemoteModelDiscovery(stage, request.Model); err != nil {
+			return err
+		}
+	}
 	if request.Bundle != nil && request.Bundle.Manifest.Mode == TreatmentInstructionsAndSkills {
 		provider, err := benchmarkProvider(request.Model.Adapter)
 		if err != nil {
@@ -291,6 +300,48 @@ func validatePierTreatmentPreflight(stage string, request ExecutionRequest) erro
 }
 
 const buildErrorExcerptLines = 20
+
+func validateRemoteModelDiscovery(stage string, model Model) error {
+	root, err := os.OpenRoot(filepath.Join(stage, "jobs"))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	var matches int
+	err = fs.WalkDir(root.FS(), ".", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || entry.Name() != "model-discovery.txt" {
+			return nil
+		}
+		matches++
+		file, err := root.Open(path)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = file.Close() }()
+		output, err := io.ReadAll(io.LimitReader(file, 2*1024*1024+1))
+		if err != nil {
+			return err
+		}
+		models, err := agentoptions.ParseModelCommandOutput(dispatchAgent(model), output)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(models, dispatchModel(model)) {
+			return fmt.Errorf("benchmark model %q is not listed by the executing %s harness", dispatchModel(model), dispatchAgent(model))
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("benchmark model preflight: %w", err)
+	}
+	if matches != 1 {
+		return fmt.Errorf("benchmark model preflight requires exactly one native model list, found %d", matches)
+	}
+	return nil
+}
 
 func verifierBuildFailed(stage string) (bool, string, error) {
 	jobsRoot, err := os.OpenRoot(filepath.Join(stage, "jobs"))

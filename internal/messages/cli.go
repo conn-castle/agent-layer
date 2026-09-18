@@ -282,7 +282,7 @@ const (
 
 	DispatchUse                          = "dispatch"
 	DispatchShort                        = "Run asynchronous headless agent conversations"
-	DispatchLong                         = "Discover targets, or start, wait for, continue, and cancel asynchronous agent conversations. Every successful command emits one JSON object; completed results are durable Markdown files."
+	DispatchLong                         = "Discover targets, or start, wait for, inspect, read output from, continue, and cancel asynchronous agent conversations. Every successful command emits one JSON object; completed results are durable Markdown files."
 	DispatchAgentFlag                    = "Exact target agent"
 	DispatchModelFlag                    = "Exact provider model"
 	DispatchReasoningEffortFlag          = "Exact provider reasoning effort"
@@ -292,7 +292,7 @@ const (
 	DispatchOptionsShort                 = "List available dispatch agents and override options"
 	DispatchOptionsLong                  = "Write one JSON object describing each dispatch agent's availability, configured defaults, and supported model and reasoning-effort overrides."
 	DispatchWaitShort                    = "Wait for a terminal state or bounded-wait expiry"
-	DispatchWaitLong                     = "Block until the current invocation reaches a terminal state, or until the bounded wait expires.\n\nExpiry reports state \"running\" and leaves the invocation untouched: the target is still working, and long invocations legitimately expire many times. Wait again on the same handle for as long as the work takes.\n\nThe terminal states are \"completed\", \"failed\", and \"cancelled\". A terminal result is final: waiting again returns the same JSON object and adds no information. Only `al dispatch continue` starts a new invocation that can be waited on."
+	DispatchWaitLong                     = "Block until the selected invocation reaches a terminal state (default) or confirmed termination, or until the bounded wait expires.\n\nExpiry reports the current observation and condition_met=false without changing the invocation. An invocation ID never follows a later continuation; a handle is resolved once.\n\nThe terminal states are \"completed\", \"failed\", and \"cancelled\". Cancelled is not proof of termination. Inspect and output retrieve evidence without waiting."
 	DispatchPromptOrSkillRequired        = "`al dispatch` requires prompt text, --skill, or both"
 	DispatchUnknownTargetFmt             = "unknown `al dispatch` target %q (supported: codex, claude, antigravity)"
 	DispatchMissingSkillFmt              = "`al dispatch` skill %q was not found in .agent-layer/skills"

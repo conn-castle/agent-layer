@@ -130,7 +130,10 @@ type Model struct {
 	ProviderClientVersion string `json:"provider_client_version"`
 }
 
-var supportedModels = []Model{
+// historicalModels preserves serialized study identities from earlier releases.
+// This is not an availability catalog: new selections use provider/model:effort
+// and the executing harness remains the authority on model support.
+var historicalModels = []Model{
 	{Name: "luna", PublishedIdentifier: publishedLuna, RuntimeIdentifier: "openai/gpt-5.6-luna", Adapter: adapterCodex, ProviderClientVersion: CodexClientVersion},
 	{Name: "terra", PublishedIdentifier: "gpt-5-6-terra", RuntimeIdentifier: "openai/gpt-5.6-terra", Adapter: adapterCodex, ProviderClientVersion: CodexClientVersion},
 	{Name: "sol", PublishedIdentifier: "gpt-5-6-sol", RuntimeIdentifier: "openai/gpt-5.6-sol", Adapter: adapterCodex, ProviderClientVersion: CodexClientVersion},
@@ -152,13 +155,34 @@ var supportedModels = []Model{
 var supportedEfforts = []string{"none", "minimal", effortLow, effortMedium, effortHigh, effortXHigh, effortMax}
 var legacyEfforts = []string{effortLow, effortMedium, effortHigh, effortXHigh, effortMax}
 
-// ParseModelSelection validates the stable family:effort identity.
+// ParseModelSelection parses an explicit provider/model:effort identity or an
+// immutable historical family:effort identity. Parsing is offline; it does not
+// claim that the executing harness supports the selected model.
 func ParseModelSelection(value string) (Model, string, error) {
 	parts := strings.Split(strings.TrimSpace(value), ":")
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return Model{}, "", fmt.Errorf("model %q must be in the form <model>:<effort>", value)
 	}
-	for _, model := range supportedModels {
+	if provider, identifier, qualified := strings.Cut(parts[0], "/"); qualified {
+		adapter := provider
+		if adapter == providerClaude {
+			adapter = adapterClaudeCode
+		}
+		descriptor, err := benchmarkProvider(adapter)
+		if err != nil {
+			return Model{}, "", err
+		}
+		if strings.TrimSpace(identifier) != identifier || identifier == "" || strings.ContainsAny(identifier, "\r\n\t") || strings.TrimSpace(parts[1]) != parts[1] {
+			return Model{}, "", fmt.Errorf("invalid explicit model selection %q", value)
+		}
+		runtimeIdentifier := identifier
+		if adapter == adapterCodex {
+			runtimeIdentifier = "openai/" + identifier
+		}
+		return Model{Name: parts[0], PublishedIdentifier: parts[0], RuntimeIdentifier: runtimeIdentifier,
+			Adapter: adapter, ProviderClientVersion: descriptor.ClientVersion}, parts[1], nil
+	}
+	for _, model := range historicalModels {
 		if model.Name != strings.ToLower(parts[0]) {
 			continue
 		}
@@ -184,7 +208,7 @@ func ParseModelSelection(value string) (Model, string, error) {
 		}
 		return Model{}, "", fmt.Errorf("unsupported reasoning effort %q (supported: %s)", parts[1], strings.Join(legacyEfforts, ", "))
 	}
-	return Model{}, "", fmt.Errorf("unsupported model %q (supported: %s)", parts[0], strings.Join(supportedModelNames(), ", "))
+	return Model{}, "", fmt.Errorf("unsupported model shorthand %q; use <provider>/<model>:<effort> for a model selected from the harness", parts[0])
 }
 
 var grokEfforts = []string{"none", "minimal", effortLow, effortMedium, effortHigh, effortXHigh, effortMax}
@@ -199,7 +223,7 @@ func antigravitySlugEffort(slug string) (string, bool) {
 }
 
 func modelNameForPublished(identifier string) string {
-	for _, model := range supportedModels {
+	for _, model := range historicalModels {
 		if model.PublishedIdentifier == identifier {
 			return model.Name
 		}
@@ -207,9 +231,9 @@ func modelNameForPublished(identifier string) string {
 	return identifier
 }
 
-func supportedPublishedModelIdentifiers() []string {
-	identifiers := make([]string, 0, len(supportedModels))
-	for _, model := range supportedModels {
+func historicalPublishedModelIdentifiers() []string {
+	identifiers := make([]string, 0, len(historicalModels))
+	for _, model := range historicalModels {
 		identifiers = append(identifiers, model.PublishedIdentifier)
 	}
 	return identifiers
@@ -237,14 +261,6 @@ func containsString(values []string, wanted string) bool {
 		}
 	}
 	return false
-}
-
-func supportedModelNames() []string {
-	values := make([]string, 0, len(supportedModels))
-	for _, model := range supportedModels {
-		values = append(values, model.Name)
-	}
-	return values
 }
 
 func validRequiredDispatchRole(role string) bool {

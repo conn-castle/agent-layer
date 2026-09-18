@@ -240,19 +240,19 @@ func validateMatrixSelection(selection matrixSelection) error {
 	model, effort, err := ParseModelSelection(modelNameForPublished(selection.Selector.Model) + ":" + selection.Selector.Reasoning)
 	if err != nil {
 		return fmt.Errorf(
-			"benchmark selection selector model %q with reasoning %q is invalid (supported models: %s): %w",
+			"benchmark selection selector model %q with reasoning %q is invalid (historical identifiers: %s; new identities use provider/model): %w",
 			selection.Selector.Model,
 			selection.Selector.Reasoning,
-			strings.Join(supportedPublishedModelIdentifiers(), ", "),
+			strings.Join(historicalPublishedModelIdentifiers(), ", "),
 			err,
 		)
 	}
 	if model.PublishedIdentifier != selection.Selector.Model || effort != selection.Selector.Reasoning {
 		return fmt.Errorf(
-			"benchmark selection selector model %q with reasoning %q must use exact canonical spelling (supported models: %s)",
+			"benchmark selection selector model %q with reasoning %q must use exact canonical spelling (historical identifiers: %s)",
 			selection.Selector.Model,
 			selection.Selector.Reasoning,
-			strings.Join(supportedPublishedModelIdentifiers(), ", "),
+			strings.Join(historicalPublishedModelIdentifiers(), ", "),
 		)
 	}
 	seen, excluded := map[string]bool{}, map[string]bool{}

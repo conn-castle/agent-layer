@@ -13,6 +13,20 @@ You need:
 
 Run all commands from the project root.
 
+New experiment model identities may use `<provider>/<model>` (for example,
+`codex/<native-model-id>`), with `reasoning` supplied separately. The provider
+is `claude`, `codex`, `grok`, or `antigravity`. This avoids a maintained runtime
+model allowlist. Historical short names remain readable solely to preserve old
+study identities; parsing an identity does not verify current model support.
+Published comparison evidence must still correspond to the selected identity.
+
+Antigravity and Grok runtime preflights capture model lists from the pinned
+harness inside the benchmark container. The host validates those bytes using
+the same Go parsers as Wizard, Doctor, and Dispatch, including authentication
+failure detection. Container transport does not maintain a separate model
+parser or fallback list. These checks run during runtime preflight, not on
+every paid task invocation.
+
 ## Recommended workflow
 
 ### 1. Create the study

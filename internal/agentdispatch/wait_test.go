@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -42,9 +44,26 @@ func TestWaitReturnsDurableCompletedResult(t *testing.T) {
 }
 
 func TestCompletedResultPathRejectsEmptyAndNonFilePaths(t *testing.T) {
-	for _, answerPath := range []string{"", t.TempDir()} {
-		_, err := completedResultPath(RunRecord{AnswerPath: answerPath})
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	run, _ := newWaitTestRun(t, root)
+	for _, answerPath := range []string{"", run.Dir, t.TempDir()} {
+		_, err := completedResultPath(root, RunRecord{ID: run.Record.ID, AnswerPath: answerPath})
 		requireDispatchExitCode(t, err, ExitConfig)
+	}
+}
+
+func TestCompletedResultPathResolvesRelativePathInsideRun(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	run, _ := newWaitTestRun(t, root)
+	if err := os.WriteFile(run.Record.AnswerPath, []byte("done"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path, err := completedResultPath(root, RunRecord{ID: run.Record.ID, AnswerPath: filepath.Base(run.Record.AnswerPath)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != run.Record.AnswerPath {
+		t.Fatalf("completed result path = %q, want %q", path, run.Record.AnswerPath)
 	}
 }
 
@@ -110,6 +129,10 @@ func TestWaitYieldsRunningWithoutChangingInvocation(t *testing.T) {
 	run.Record.State = dispatchStateRunning
 	run.Record.SupervisorPID = os.Getpid()
 	run.Record.SupervisorStartIdentity = processStartIdentity(os.Getpid())
+	activity := time.Now().UTC().Add(-time.Minute)
+	output := activity.Add(-time.Minute)
+	run.Record.LastActivityAt = &activity
+	run.Record.LastOutputAt = &output
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		t.Fatal(err)
 	}
@@ -128,6 +151,9 @@ func TestWaitYieldsRunningWithoutChangingInvocation(t *testing.T) {
 	}
 	if got.Handle != session.Name || got.State != dispatchStateRunning {
 		t.Fatalf("wait result = %#v", got)
+	}
+	if got.LastActivityAt == nil || !got.LastActivityAt.Equal(activity) || got.LastOutputAt == nil || !got.LastOutputAt.Equal(output) {
+		t.Fatalf("wait lost recorded activity timestamps: %#v", got)
 	}
 	current, err := loadRunRecord(root, run.Record.ID)
 	if err != nil {
@@ -228,6 +254,112 @@ func TestWaitFailsInvocationAbandonedBeforeWorkerLaunch(t *testing.T) {
 	}
 	if got.State != dispatchStateFailed || got.Error != "dispatch was interrupted before launching its worker" {
 		t.Fatalf("wait result = %#v", got)
+	}
+}
+
+func TestWaitRetainsOrphanClaimWhileDescendantsSurvive(t *testing.T) {
+	root := t.TempDir()
+	run, session := newWaitTestRun(t, root)
+	childPath := filepath.Join(root, "child.pid")
+	cmd := exec.Command("/bin/sh", "-c", `sleep 60 & echo $! > "$1"`, "sh", childPath) // #nosec G204 -- fixed test command and test-owned path.
+	prepareProviderProcessGroup(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) })
+	waitForProviderChildPID(t, childPath)
+	if err := cmd.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	run.Record.State = dispatchStateRunning
+	run.Record.PID = cmd.Process.Pid
+	run.Record.ProcessGroupID = cmd.Process.Pid
+	run.Record.ProcessStartIdentity = "reaped-leader"
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	if err := Wait(WaitRequest{Root: root, ID: session.Name, Timeout: time.Millisecond, PollInterval: time.Millisecond, Stdout: &stdout}); err != nil {
+		t.Fatal(err)
+	}
+	var waited Result
+	if err := json.Unmarshal(stdout.Bytes(), &waited); err != nil {
+		t.Fatal(err)
+	}
+	if waited.TerminationConfirmed || (waited.ConditionMet != nil && *waited.ConditionMet) {
+		t.Fatalf("wait confirmed a live descendant group: %#v", waited)
+	}
+	observed, err := loadRunRecord(root, run.Record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observed.TerminationObservation != terminationObservationGroupLive || observed.TerminationAttemptError == "" {
+		t.Fatalf("live descendant evidence was not persisted: %#v", observed)
+	}
+	current, err := loadSession(root, session.Name)
+	if err != nil || current.ActiveRunID != run.Record.ID {
+		t.Fatalf("orphan recovery released a live descendant claim: %#v, %v", current, err)
+	}
+	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	waitForProviderProcessGroupExit(t, cmd.Process.Pid)
+	requireDispatchExitCode(t, Wait(WaitRequest{Root: root, ID: session.Name}), ExitTargetFailure)
+	current, err = loadSession(root, session.Name)
+	if err != nil || current.ActiveRunID != "" {
+		t.Fatalf("dead orphan claim was not released: %#v, %v", current, err)
+	}
+}
+
+func TestWaitRecoversReusedProcessGroupWithoutSignallingIt(t *testing.T) {
+	for _, state := range []string{dispatchStateRunning, dispatchStateCancelled} {
+		t.Run(state, func(t *testing.T) {
+			root := t.TempDir()
+			run, session := newWaitTestRun(t, root)
+			unrelated := exec.Command("sleep", "60")
+			prepareProviderProcessGroup(unrelated)
+			if err := unrelated.Start(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = unrelated.Process.Kill(); _ = unrelated.Wait() })
+			run.Record.State = state
+			run.Record.PID = unrelated.Process.Pid
+			run.Record.ProcessGroupID = unrelated.Process.Pid
+			run.Record.ProcessStartIdentity = "previous-owner"
+			if state == dispatchStateCancelled {
+				now := time.Now().UTC()
+				run.Record.CompletedAt = &now
+			}
+			if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+				t.Fatal(err)
+			}
+			err := Wait(WaitRequest{Root: root, ID: session.Name, Timeout: time.Millisecond})
+			if state == dispatchStateRunning {
+				requireDispatchExitCode(t, err, ExitTargetFailure)
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			wantActive := ""
+			if state == dispatchStateCancelled {
+				// Cancelled waits are idempotent reads. A replacement claim is
+				// the boundary that checks whether cancelled work still lives.
+				replacement, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := claimConversation(root, session.Name, replacement.Record.ID); err != nil {
+					t.Fatal(err)
+				}
+				wantActive = replacement.Record.ID
+			}
+			current, err := loadSession(root, session.Name)
+			if err != nil || current.ActiveRunID != wantActive {
+				t.Fatalf("reused group prevented claim recovery: %#v, %v", current, err)
+			}
+			if err := unrelated.Process.Signal(syscall.Signal(0)); err != nil {
+				t.Fatalf("recovery signalled an unrelated process: %v", err)
+			}
+		})
 	}
 }
 

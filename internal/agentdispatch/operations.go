@@ -3,51 +3,90 @@ package agentdispatch
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
 func reconcileOrphan(root string, record RunRecord) (RunRecord, error) {
-	if record.State == dispatchStateCancelled {
-		// Cancellation is terminal user-visible evidence, but the active claim
-		// remains owned until the execution releases it or the recorded wrapper
-		// never acquired process identity or is provably dead. Inspection may
-		// perform that conservative recovery.
-		if !cancelledClaimReleasable(record) {
-			return record, nil
+	return tryReconcileOrphan(root, record)
+}
+
+func tryReconcileOrphan(root string, record RunRecord) (RunRecord, error) {
+	dir := filepathForRun(root, record.ID)
+	var next RunRecord
+	acquired, err := tryWithRunLock(dir, func() error {
+		updated, applyErr := applyRunEvidenceLocked(dir, func(current *RunRecord) error {
+			if terminalDispatchState(current.State) {
+				applyTerminationEvidence(current, nil, true, time.Now().UTC())
+				return nil
+			}
+			if invocationOwnership(*current) != ownershipDead {
+				return nil
+			}
+			if current.ProviderLaunchIntent && current.PID == 0 && current.ProcessStartIdentity == "" {
+				applyTerminationEvidence(current, nil, false, time.Now().UTC())
+				current.TerminationObservation = terminationObservationUncertainLaunch
+				return nil
+			}
+			if current.PID != 0 || current.ProcessGroupID != 0 {
+				if !providerProcessGroupDead(current.ProcessGroupID) && !providerProcessGroupReused(*current) {
+					liveGroupErr := exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s lost its worker and provider leader but process group %d remains; cannot prove termination, so the active claim is retained; inspect surviving processes and verify their ownership before manual recovery (do not signal a group by ID alone)", current.ID, current.ProcessGroupID))
+					applyTerminationEvidence(current, liveGroupErr, false, time.Now().UTC())
+					current.TerminationObservation = terminationObservationGroupLive
+					return nil
+				}
+			} else if !usesLaunchIntentProtocol(*current) {
+				applyTerminationEvidence(current, nil, false, time.Now().UTC())
+				return nil
+			}
+			now := time.Now().UTC()
+			current.State = dispatchStateFailed
+			current.RecoveryState = recoveryAcceptanceUnknown
+			current.CompletedAt = &now
+			current.TerminalReason = "dispatch worker stopped before publishing a terminal result"
+			if current.SupervisorPID == 0 && current.PID == 0 && !current.ProviderLaunchIntent {
+				current.TerminalReason = "dispatch was interrupted before launching its worker"
+			}
+			current.TerminalExitCode = ExitTargetFailure
+			applyTerminationEvidence(current, nil, true, now)
+			return nil
+		})
+		if applyErr != nil {
+			return applyErr
 		}
-		if err := releaseConversation(root, record.Name, record.ID); err != nil {
-			return RunRecord{}, err
+		next = updated
+		return nil
+	})
+	if err != nil {
+		return record, err
+	}
+	if !acquired {
+		current, loadErr := loadRunRecord(root, record.ID)
+		if loadErr != nil {
+			return record, loadErr
 		}
-		return record, nil
+		return current, nil
 	}
-	if terminalDispatchState(record.State) {
-		return record, nil
+	if next.State == dispatchStateFailed {
+		if removeErr := removeWorkerRequest(dir); removeErr != nil {
+			return next, removeErr
+		}
 	}
-	// Only a definitively dead worker/provider is reconciled. Unprovable ownership
-	// (identity capture unavailable) must not terminalize a possibly live run.
-	if invocationOwnership(record) != ownershipDead {
-		return record, nil
+	if next.TerminationConfirmed {
+		if releaseErr := tryReleaseIfConfirmed(root, next); releaseErr != nil {
+			return next, releaseErr
+		}
 	}
-	now := time.Now().UTC()
-	record.State = dispatchStateFailed
-	record.RecoveryState = recoveryAcceptanceUnknown
-	record.CompletedAt = &now
-	record.TerminalReason = "dispatch worker stopped before publishing a terminal result"
-	if record.SupervisorPID == 0 && record.PID == 0 {
-		record.TerminalReason = "dispatch was interrupted before launching its worker"
+	return next, nil
+}
+
+func tryReleaseIfConfirmed(root string, record RunRecord) error {
+	if !record.TerminationConfirmed || record.Name == "" {
+		return nil
 	}
-	record.TerminalExitCode = ExitTargetFailure
-	if err := removeWorkerRequest(filepathForRun(root, record.ID)); err != nil {
-		return RunRecord{}, err
-	}
-	if err := writeRunRecord(filepathForRun(root, record.ID), &record); err != nil {
-		return RunRecord{}, err
-	}
-	if err := releaseConversation(root, record.Name, record.ID); err != nil {
-		return RunRecord{}, err
-	}
-	return record, nil
+	_, err := tryWithSessionLock(root, record.Name, func() error {
+		return releaseConversationLocked(root, record.Name, record.ID)
+	})
+	return err
 }
 
 // invocationOwnership proves an invocation dead only when every process that
@@ -129,32 +168,47 @@ func processOwnership(record RunRecord) string {
 
 // Cancel terminates only the exact Agent Layer-owned process group.
 func Cancel(request CancelRequest) error {
-	id := strings.TrimSpace(request.ID)
-	record, err := resolveRunRecord(request.Root, id)
+	record, err := resolveInvocationSelector(request.Root, request.ID, request.Handle, request.InvocationID)
 	if err != nil {
 		return err
 	}
-	record, ownedGroup, alreadyCancelled, err := beginCancellation(request.Root, record.ID)
+	record, ownedGroup, alreadyConfirmedCancelled, err := beginCancellation(request.Root, record.ID)
 	if err != nil {
 		return err
 	}
-	if alreadyCancelled {
-		return writePublicResult(writerOrDiscard(request.Stdout), Result{Handle: record.Name, State: dispatchStateCancelled})
+	if alreadyConfirmedCancelled {
+		result := publicResult(record)
+		result.Error = ""
+		return writePublicResult(writerOrDiscard(request.Stdout), result)
 	}
+	var terminateErr error
 	if ownedGroup != nil {
-		if err := ownedGroup.terminateReverified(providerTerminationGrace); err != nil {
-			if processOwnership(record) != ownershipDead || !providerProcessGroupDead(record.ProcessGroupID) {
-				return wrapExitError(ExitTargetFailure, "cancel dispatch process group", err)
-			}
+		terminateErr = ownedGroup.terminateReverified(providerTerminationGrace)
+	}
+	confirm := terminateErr == nil
+	updated, persistErr := persistTerminationEvidence(filepathForRun(request.Root, record.ID), terminateErr, confirm)
+	if persistErr != nil {
+		return persistErr
+	}
+	record = updated
+	if terminateErr != nil {
+		if processOwnership(record) != ownershipDead || !providerProcessGroupDead(record.ProcessGroupID) {
+			_ = writePublicResult(writerOrDiscard(request.Stdout), publicResult(record))
+			return wrapExitError(ExitTargetFailure, "cancel dispatch process group", terminateErr)
 		}
-		if err := releaseConversation(request.Root, record.Name, record.ID); err != nil {
-			return err
+		record, persistErr = persistTerminationEvidence(filepathForRun(request.Root, record.ID), terminateErr, true)
+		if persistErr != nil {
+			return persistErr
 		}
 	}
-	// The owning execution releases the claim after its provider wait path has
-	// stopped. Cancel may release it first only after the shared terminator has
-	// proven that the complete process group is gone.
-	return writePublicResult(writerOrDiscard(request.Stdout), Result{Handle: record.Name, State: dispatchStateCancelled})
+	if err := releaseIfConfirmed(request.Root, record); err != nil {
+		return err
+	}
+	result := publicResult(record)
+	if record.State == dispatchStateCancelled {
+		result.Error = ""
+	}
+	return writePublicResult(writerOrDiscard(request.Stdout), result)
 }
 
 // beginCancellation publishes cancellation while holding the run lock. The
@@ -164,7 +218,7 @@ func Cancel(request CancelRequest) error {
 func beginCancellation(root string, id string) (RunRecord, *ownedProviderProcessGroup, bool, error) {
 	var record RunRecord
 	var ownedGroup *ownedProviderProcessGroup
-	alreadyCancelled := false
+	alreadyConfirmedCancelled := false
 	dir := filepathForRun(root, id)
 	err := withRunLock(dir, func() error {
 		current, err := loadRunRecord(root, id)
@@ -173,26 +227,68 @@ func beginCancellation(root string, id string) (RunRecord, *ownedProviderProcess
 		}
 		record = current
 		if terminalDispatchState(current.State) {
-			if current.State == dispatchStateCancelled {
-				alreadyCancelled = true
+			if current.TerminationConfirmed {
+				if current.State == dispatchStateCancelled {
+					alreadyConfirmedCancelled = true
+					return nil
+				}
+				state := current.State
+				if state == dispatchStateInterrupted {
+					state = dispatchStateFailed
+				}
+				return exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q is already %s", current.Name, state))
+			}
+			switch current.State {
+			case dispatchStateCancelled, dispatchStateFailed, dispatchStateInterrupted:
+				candidate := current
+				if applyTerminationConfirmation(&candidate, time.Now().UTC()) {
+					updated, updateErr := applyRunEvidenceLocked(dir, func(record *RunRecord) error {
+						*record = candidate
+						return nil
+					})
+					record = updated
+					return updateErr
+				}
+				group, groupErr := cancellationProcessGroup(current)
+				if groupErr != nil {
+					current.TerminationAttemptError = groupErr.Error()
+					current.Revision++
+					current.UpdatedAt = time.Now().UTC()
+					if err := validateRunRecord(current); err != nil {
+						return err
+					}
+					if err := writeJSONAtomic(filepath.Join(dir, dispatchRunFile), current); err != nil {
+						return wrapExitError(ExitConfig, "write dispatch run evidence", err)
+					}
+					record = current
+					return wrapExitError(ExitUnavailable, fmt.Sprintf("dispatch run %s has no live owned process to cancel", current.ID), groupErr)
+				}
+				ownedGroup = group
 				return nil
+			default:
+				return exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q is already %s", current.Name, current.State))
 			}
-			state := current.State
-			if state == dispatchStateInterrupted {
-				state = dispatchStateFailed
-			}
-			return exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q is already %s", current.Name, state))
 		}
 		switch {
 		case current.State == dispatchStateRunning && current.PID != 0:
-			group, groupErr := verifiedProviderProcessGroup(current)
+			group, groupErr := cancellationProcessGroup(current)
 			if groupErr != nil {
+				current.TerminationAttemptError = groupErr.Error()
+				current.Revision++
+				current.UpdatedAt = time.Now().UTC()
+				if err := validateRunRecord(current); err != nil {
+					return err
+				}
+				if err := writeJSONAtomic(filepath.Join(dir, dispatchRunFile), current); err != nil {
+					return wrapExitError(ExitConfig, "write dispatch run evidence", err)
+				}
+				record = current
 				return wrapExitError(ExitUnavailable, fmt.Sprintf("dispatch run %s has no live owned process to cancel", current.ID), groupErr)
 			}
-			ownedGroup = &group
+			ownedGroup = group
 		case current.State == dispatchStateRunning && current.SupervisorPID != 0:
 			// The worker is launched but no provider process exists yet; the
-			// terminal record alone stops it.
+			// terminal record plus launch fence stop a later Start.
 		case current.State == dispatchStatePending, current.State == dispatchStateStarting:
 		default:
 			return exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s cannot be cancelled from state %s", current.ID, current.State))
@@ -201,8 +297,11 @@ func beginCancellation(root string, id string) (RunRecord, *ownedProviderProcess
 		current.State = dispatchStateCancelled
 		current.RecoveryState = recoveryAcceptanceUnknown
 		current.CompletedAt = &now
-		current.TerminalReason = "cancelled by caller"
+		current.TerminalReason = terminalReasonCancelledByCaller
 		current.TerminalExitCode = ExitTargetFailure
+		if usesLaunchIntentProtocol(current) {
+			current.LaunchFenced = true
+		}
 		current.Revision++
 		current.UpdatedAt = now
 		if err := validateRunRecord(current); err != nil {
@@ -214,20 +313,13 @@ func beginCancellation(root string, id string) (RunRecord, *ownedProviderProcess
 		record = current
 		return nil
 	})
-	return record, ownedGroup, alreadyCancelled, err
+	return record, ownedGroup, alreadyConfirmedCancelled, err
 }
 
-// resolveRunRecord addresses one invocation by run UUID or by conversation
-// handle. Handles resolve through the same active-claim precedence Wait uses,
-// so cancelling a conversation after a continuation always targets the
-// invocation that is actually running rather than a stale compatibility run.
-func resolveRunRecord(root string, id string) (RunRecord, error) {
-	if parseUUID(id) == nil {
-		return loadRunRecord(root, id)
-	}
-	session, err := loadSession(root, id)
+func cancellationProcessGroup(record RunRecord) (*ownedProviderProcessGroup, error) {
+	group, err := verifiedProviderProcessGroup(record)
 	if err != nil {
-		return RunRecord{}, err
+		return nil, err
 	}
-	return currentSessionRun(root, session)
+	return &group, nil
 }

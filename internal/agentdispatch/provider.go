@@ -20,6 +20,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/run"
+	"github.com/conn-castle/agent-layer/internal/updatewarn"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
 
@@ -69,6 +70,7 @@ const (
 	antigravityEffortLow          = "low"
 	antigravityEffortMedium       = "medium"
 	antigravityEffortHigh         = "high"
+	antigravityInitEvent          = "init"
 )
 
 // codexDispatchSandboxMode resolves the Codex sandbox for a non-YOLO dispatch.
@@ -168,10 +170,18 @@ func claudeLineageSupported(providerVersion string) (bool, error) {
 }
 
 func providerVersion(path string, agent string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), providerVersionTimeout)
+	return providerVersionWithContext(context.Background(), path, agent)
+}
+
+func providerVersionWithContext(parent context.Context, path string, agent string) (string, error) {
+	ctx, cancel := context.WithTimeout(parent, providerVersionTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, "--version") // #nosec G204 -- path is resolved from the static provider registry.
+	cmd.WaitDelay = time.Second
 	output, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		return "", fmt.Errorf("read %s version: %w", agent, ctx.Err())
+	}
 	if err != nil {
 		return "", fmt.Errorf("read %s version: %w", agent, err)
 	}
@@ -650,6 +660,15 @@ func reduceGrokEvent(expected string, value map[string]any, textAccumulator *str
 
 func reduceAntigravityEvent(value map[string]any, terminalSeen *bool) []providerEvent {
 	eventType, _ := value[jsonEventKey].(string)
+	if eventType == antigravityInitEvent {
+		id, _ := firstStringV013(value, "conversation_id")
+		if id == "" {
+			// Ignore an incomplete lifecycle notification. The terminal
+			// result invariant still rejects a run without an identity.
+			return []providerEvent{{Kind: eventProgress, Activity: eventType}}
+		}
+		return []providerEvent{{Kind: eventSession, SessionID: id}}
+	}
 	if eventType != "result" {
 		if eventType == "" {
 			return nil
@@ -666,24 +685,28 @@ func reduceAntigravityEvent(value map[string]any, terminalSeen *bool) []provider
 	if result == nil {
 		return []providerEvent{{Kind: eventFailure, Reason: "Antigravity terminal result is not an object"}}
 	}
+	id, _ := firstStringV013(result, "conversation_id")
+	var events []providerEvent
+	if id != "" {
+		events = append(events, providerEvent{Kind: eventSession, SessionID: id})
+	}
 	status, _ := result[jsonStatusKey].(string)
 	if status != "SUCCESS" {
 		reason := "Antigravity terminal result was unsuccessful"
 		if providerError, _ := firstStringV013(result, "error"); providerError != "" {
 			reason += ": " + providerError
 		}
-		return []providerEvent{{Kind: eventFailure, Reason: reason}}
+		return append(events, providerEvent{Kind: eventFailure, Reason: reason})
 	}
-	id, _ := firstStringV013(result, "conversation_id")
 	answer, _ := firstStringV013(result, jsonResponseKey)
 	if id == "" || answer == "" {
-		return []providerEvent{{Kind: eventFailure, Reason: "Antigravity terminal result has no conversation ID or final answer"}}
+		return append(events, providerEvent{Kind: eventFailure, Reason: "Antigravity terminal result has no conversation ID or final answer"})
 	}
 	usage, _ := result[grokUsageEventType].(map[string]any)
 	if usage == nil {
-		return []providerEvent{{Kind: eventFailure, Reason: "Antigravity terminal result has no usage object"}}
+		return append(events, providerEvent{Kind: eventFailure, Reason: "Antigravity terminal result has no usage object"})
 	}
-	return []providerEvent{{Kind: eventSession, SessionID: id}, {Kind: eventAnswer, Answer: answer}, {Kind: eventProgress, Activity: "usage", Usage: usage}, {Kind: eventComplete}}
+	return append(events, providerEvent{Kind: eventAnswer, Answer: answer}, providerEvent{Kind: eventProgress, Activity: "usage", Usage: usage}, providerEvent{Kind: eventComplete})
 }
 
 func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, claudeLineage bool, consume func(providerEvent) error, consumeLineage func(claudeLineageEvidence) error) error {
@@ -860,5 +883,6 @@ func compatibleTargetVersion(path string, target targetMeta, lookup func(string,
 func dispatchEnvironment(base []string, project *config.ProjectConfig, dispatchRun *dispatchRun, depth int) []string {
 	info := &run.Info{ID: dispatchRun.Record.ID, Dir: dispatchRun.Dir}
 	env := clients.BuildEnv(base, project.Env, info)
-	return clients.SetEnv(env, clients.EnvDispatchActive, fmt.Sprintf("%d", depth))
+	env = clients.SetEnv(env, clients.EnvDispatchActive, fmt.Sprintf("%d", depth))
+	return clients.SetEnv(env, updatewarn.EnvSuppress, "1")
 }

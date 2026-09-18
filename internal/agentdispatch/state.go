@@ -22,8 +22,8 @@ import (
 const (
 	dispatchStateDir = "dispatch"
 	dispatchRunFile  = "dispatch.json"
-	// dispatchSessionRetention bounds durable name mappings while leaving
-	// provider-owned conversations and diagnostic run evidence untouched.
+	// dispatchSessionRetention bounds durable mappings and confirmed terminal
+	// evidence while preserving unconfirmed execution evidence.
 	dispatchSessionRetention = 30 * 24 * time.Hour
 )
 
@@ -104,6 +104,14 @@ type RunRecord struct {
 	EventsPath              string     `json:"events_path,omitempty"`
 	LineagePath             string     `json:"lineage_path,omitempty"`
 	ProviderLogPath         string     `json:"provider_log_path,omitempty"`
+	LaunchProtocol          string     `json:"launch_protocol,omitempty"`
+	ProviderLaunchIntent    bool       `json:"provider_launch_intent,omitempty"`
+	LaunchFenced            bool       `json:"launch_fenced,omitempty"`
+	TerminationConfirmed    bool       `json:"termination_confirmed,omitempty"`
+	TerminationConfirmedAt  *time.Time `json:"termination_confirmed_at,omitempty"`
+	TerminationObservation  string     `json:"termination_observation,omitempty"`
+	TerminationAttemptError string     `json:"termination_attempt_error,omitempty"`
+	TerminationProof        string     `json:"termination_proof,omitempty"`
 }
 
 type dispatchRun struct {
@@ -184,6 +192,7 @@ func newDispatchRun(root string, agent string, version string, mode string) (*di
 		StdoutPath:            filepath.Join(dir, "provider.stdout"),
 		StderrPath:            filepath.Join(dir, "provider.stderr"),
 		EventsPath:            filepath.Join(dir, "provider.events"),
+		LaunchProtocol:        launchProtocolIntentBeforeStart,
 	}
 	if claudeLineage {
 		record.LineagePath = filepath.Join(dir, "provider.lineage")
@@ -354,24 +363,28 @@ func downgradeUnstartedSession(root string, name string, runID string) error {
 
 func releaseConversation(root string, name string, runID string) error {
 	return withSessionLock(root, name, func() error {
-		path, err := sessionPath(root, name)
-		if err != nil {
-			return err
-		}
-		var session Session
-		if err := readJSON(path, &session); err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil
-			}
-			return wrapExitError(ExitConfig, "read dispatch mapping for claim release", err)
-		}
-		if session.ActiveRunID != runID {
+		return releaseConversationLocked(root, name, runID)
+	})
+}
+
+func releaseConversationLocked(root string, name string, runID string) error {
+	path, err := sessionPath(root, name)
+	if err != nil {
+		return err
+	}
+	var session Session
+	if err := readJSON(path, &session); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
-		session.ActiveRunID = ""
-		session.ActiveClaimKnown = true
-		return writeJSONAtomic(path, session)
-	})
+		return wrapExitError(ExitConfig, "read dispatch mapping for claim release", err)
+	}
+	if session.ActiveRunID != runID {
+		return nil
+	}
+	session.ActiveRunID = ""
+	session.ActiveClaimKnown = true
+	return writeJSONAtomic(path, session)
 }
 
 func terminalDispatchState(state string) bool {
@@ -383,24 +396,11 @@ func terminalDispatchState(state string) bool {
 	}
 }
 
-// activeClaimBlocksReplacement distinguishes terminal execution evidence from
-// completed ownership. Cancellation is published before a live provider has
-// necessarily stopped, so only a record that never acquired process identity
-// or conservative proof that the recorded process is dead can recover an
-// abandoned cancelled claim. Other terminal states are written by the owning
-// execution after provider termination or a proven pre-start failure.
+// activeClaimBlocksReplacement keeps the conversation owned until termination
+// is durably confirmed. Terminal outcome is independent of that proof: a
+// cancelled or failed invocation may still have a live or uncertain provider.
 func activeClaimBlocksReplacement(record RunRecord) bool {
-	if record.State == dispatchStateCancelled {
-		return !cancelledClaimReleasable(record)
-	}
-	return !terminalDispatchState(record.State)
-}
-
-func cancelledClaimReleasable(record RunRecord) bool {
-	if record.PID == 0 && record.ProcessGroupID == 0 && record.ProcessStartIdentity == "" {
-		return true
-	}
-	return processOwnership(record) == ownershipDead && providerProcessGroupDead(record.ProcessGroupID)
+	return !record.TerminationConfirmed
 }
 
 // sessionOwnerRunID resolves the explicit active claim and the compatibility
@@ -435,7 +435,7 @@ func loadSession(root string, name string) (Session, error) {
 
 // pruneExpiredSessions removes inactive, valid mappings whose last use is
 // older than the retention window. Corrupt mappings are preserved so normal
-// list/inspect diagnostics can report them instead of silently erasing state.
+// diagnostics can report them instead of silently erasing state.
 func pruneExpiredSessions(root string, now time.Time) error {
 	entries, err := os.ReadDir(dispatchStatePath(root))
 	if errors.Is(err, fs.ErrNotExist) {
@@ -473,6 +473,9 @@ func pruneDispatchEvidence(root string, now time.Time) error {
 		if session.RunID != "" {
 			current[session.RunID] = true
 		}
+		if session.ActiveRunID != "" {
+			current[session.ActiveRunID] = true
+		}
 	}
 	cutoff := now.UTC().Add(-dispatchSessionRetention)
 	entries, err := os.ReadDir(dispatchRunPath(root))
@@ -487,7 +490,7 @@ func pruneDispatchEvidence(root string, now time.Time) error {
 			continue
 		}
 		record, loadErr := loadRunRecord(root, entry.Name())
-		if loadErr != nil || !terminalDispatchState(record.State) || record.CompletedAt == nil || !record.CompletedAt.Before(cutoff) {
+		if loadErr != nil || !record.TerminationConfirmed || !terminalDispatchState(record.State) || record.CompletedAt == nil || !record.CompletedAt.Before(cutoff) {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(dispatchRunPath(root), entry.Name())); err != nil {
@@ -548,29 +551,48 @@ func dispatchSessionActive(root string, session Session) bool {
 }
 
 func withSessionLock(root string, name string, fn func() error) error {
-	path, err := lockPath(root, name)
+	acquired, err := withSessionLockMode(root, name, unix.LOCK_EX, fn)
 	if err != nil {
 		return err
 	}
+	if !acquired {
+		return wrapExitError(ExitConfig, "lock dispatch session", errors.New("session lock was not acquired"))
+	}
+	return nil
+}
+
+func tryWithSessionLock(root string, name string, fn func() error) (bool, error) {
+	return withSessionLockMode(root, name, unix.LOCK_EX|unix.LOCK_NB, fn)
+}
+
+func withSessionLockMode(root string, name string, how int, fn func() error) (bool, error) {
+	path, err := lockPath(root, name)
+	if err != nil {
+		return false, err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return wrapExitError(ExitConfig, "create dispatch state directory", err)
+		return false, wrapExitError(ExitConfig, "create dispatch state directory", err)
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- path is validated dispatch state.
 	if err != nil {
-		return wrapExitError(ExitConfig, "open dispatch session lock", err)
+		return false, wrapExitError(ExitConfig, "open dispatch session lock", err)
 	}
 	defer func() { _ = file.Close() }()
 	for {
-		err = unix.Flock(int(file.Fd()), unix.LOCK_EX) //nolint:gosec // supported Unix file descriptor.
-		if !errors.Is(err, unix.EINTR) {
-			break
+		err = unix.Flock(int(file.Fd()), how) //nolint:gosec // supported Unix file descriptor.
+		if errors.Is(err, unix.EINTR) {
+			continue
 		}
+		break
 	}
 	if err != nil {
-		return wrapExitError(ExitConfig, "lock dispatch session", err)
+		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
+			return false, nil
+		}
+		return false, wrapExitError(ExitConfig, "lock dispatch session", err)
 	}
 	defer func() { _ = unix.Flock(int(file.Fd()), unix.LOCK_UN) }() //nolint:gosec // supported Unix file descriptor.
-	return fn()
+	return true, fn()
 }
 
 func writeRunRecord(dir string, record *RunRecord) error {
@@ -612,19 +634,99 @@ func writeRunRecordWithPublisher(dir string, record *RunRecord, publish func(str
 }
 
 func withRunLock(dir string, fn func() error) error {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(filepath.Join(dir, ".record.lock"), os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- dir is an Agent Layer-owned run directory.
+	acquired, err := withRunLockMode(dir, unix.LOCK_EX, fn)
 	if err != nil {
 		return err
 	}
+	if !acquired {
+		return wrapExitError(ExitConfig, "lock dispatch run record", errors.New("run lock was not acquired"))
+	}
+	return nil
+}
+
+func tryWithRunLock(dir string, fn func() error) (bool, error) {
+	return withRunLockMode(dir, unix.LOCK_EX|unix.LOCK_NB, fn)
+}
+
+func withRunLockMode(dir string, how int, fn func() error) (bool, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return false, err
+	}
+	file, err := os.OpenFile(filepath.Join(dir, ".record.lock"), os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- dir is an Agent Layer-owned run directory.
+	if err != nil {
+		return false, wrapExitError(ExitConfig, "open dispatch run lock", err)
+	}
 	defer func() { _ = file.Close() }()
-	if err := unix.Flock(int(file.Fd()), unix.LOCK_EX); err != nil { //nolint:gosec // supported Unix descriptor.
-		return err
+	for {
+		err = unix.Flock(int(file.Fd()), how) //nolint:gosec // supported Unix descriptor.
+		if errors.Is(err, unix.EINTR) {
+			continue
+		}
+		break
+	}
+	if err != nil {
+		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
+			return false, nil
+		}
+		return false, wrapExitError(ExitConfig, "lock dispatch run record", err)
 	}
 	defer func() { _ = unix.Flock(int(file.Fd()), unix.LOCK_UN) }() //nolint:gosec // supported Unix descriptor.
-	return fn()
+	return true, fn()
+}
+
+// updateRunEvidence applies a monotonic evidence mutation under the run lock.
+// It may run after the outcome is terminal. It cannot change a terminal
+// outcome, erase cancellation, un-confirm termination, or lower the launch fence.
+func updateRunEvidence(dir string, apply func(*RunRecord) error) (RunRecord, error) {
+	var next RunRecord
+	err := withRunLock(dir, func() error {
+		var err error
+		next, err = applyRunEvidenceLocked(dir, apply)
+		return err
+	})
+	return next, err
+}
+
+func applyRunEvidenceLocked(dir string, apply func(*RunRecord) error) (RunRecord, error) {
+	path := filepath.Join(dir, dispatchRunFile)
+	var current RunRecord
+	if err := readJSON(path, &current); err != nil {
+		return RunRecord{}, wrapExitError(ExitConfig, "read dispatch run record before evidence update", err)
+	}
+	before := current
+	if err := apply(&current); err != nil {
+		return RunRecord{}, err
+	}
+	if before.TerminationConfirmed && !current.TerminationConfirmed {
+		return RunRecord{}, exitError(ExitConfig, fmt.Sprintf("dispatch run %s cannot retract termination confirmation", before.ID))
+	}
+	if before.LaunchFenced && !current.LaunchFenced {
+		return RunRecord{}, exitError(ExitConfig, fmt.Sprintf("dispatch run %s cannot lower its launch fence", before.ID))
+	}
+	if before.State == dispatchStateCancelled && current.State != dispatchStateCancelled {
+		return RunRecord{}, exitError(ExitConfig, fmt.Sprintf("dispatch run %s cannot erase cancellation", before.ID))
+	}
+	if terminalDispatchState(before.State) && current.State != before.State {
+		return RunRecord{}, exitError(ExitConfig, fmt.Sprintf("dispatch run %s cannot change terminal outcome %s", before.ID, before.State))
+	}
+	if before.TerminationConfirmed {
+		current.TerminationConfirmed = true
+		if current.TerminationConfirmedAt == nil {
+			current.TerminationConfirmedAt = before.TerminationConfirmedAt
+		}
+	}
+	if current == before {
+		return current, nil
+	}
+	current.Revision++
+	current.UpdatedAt = time.Now().UTC()
+	if err := validateRunRecord(current); err != nil {
+		return RunRecord{}, err
+	}
+	if err := writeJSONAtomic(path, current); err != nil {
+		return RunRecord{}, wrapExitError(ExitConfig, "write dispatch run evidence", err)
+	}
+	return current, nil
 }
 
 func loadRunRecord(root string, id string) (RunRecord, error) {
@@ -674,6 +776,18 @@ func validateRunRecord(record RunRecord) error {
 	}
 	if record.RecoveryState == recoveryNotResumable && !record.NotResumable {
 		return exitError(ExitConfig, fmt.Sprintf("dispatch run %q reports not_resumable without provider evidence", record.ID))
+	}
+	if record.LaunchProtocol != "" && record.LaunchProtocol != launchProtocolIntentBeforeStart {
+		return exitError(ExitConfig, fmt.Sprintf("dispatch run %q has unknown launch protocol %q", record.ID, record.LaunchProtocol))
+	}
+	if record.TerminationConfirmed && record.TerminationConfirmedAt == nil {
+		return exitError(ExitConfig, fmt.Sprintf("dispatch run %q is termination-confirmed without a confirmation timestamp", record.ID))
+	}
+	if !record.TerminationConfirmed && record.TerminationConfirmedAt != nil {
+		return exitError(ExitConfig, fmt.Sprintf("dispatch run %q has a confirmation timestamp without termination confirmation", record.ID))
+	}
+	if record.TerminationConfirmed && !record.LaunchFenced {
+		return exitError(ExitConfig, fmt.Sprintf("dispatch run %q is termination-confirmed without a launch fence", record.ID))
 	}
 	return nil
 }

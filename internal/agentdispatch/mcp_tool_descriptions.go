@@ -15,6 +15,7 @@ const (
 	waitMinutesPlaceholder = "{{wait_minutes}}"
 	modelParameter         = "model"
 	handleParameter        = "handle"
+	invocationIDParameter  = "invocation_id"
 )
 
 //go:embed mcp_tool_descriptions.toml
@@ -37,9 +38,11 @@ func loadMCPToolDescriptions() (mcpToolDescriptionCatalog, error) {
 	expected := map[string][]string{
 		ToolOptions:  {},
 		ToolStart:    {"agent", modelParameter, "reasoning_effort", "role", "skill", "prompt", "prompt_file"},
-		ToolWait:     {handleParameter},
+		ToolWait:     {handleParameter, invocationIDParameter, "condition"},
 		ToolContinue: {handleParameter, "prompt", "prompt_file"},
-		ToolCancel:   {handleParameter},
+		ToolCancel:   {handleParameter, invocationIDParameter},
+		ToolInspect:  {handleParameter, invocationIDParameter},
+		ToolOutput:   {handleParameter, invocationIDParameter, "artifact"},
 	}
 	if len(catalog.Tools) != len(expected) {
 		return mcpToolDescriptionCatalog{}, fmt.Errorf(

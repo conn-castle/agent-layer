@@ -1,10 +1,12 @@
 package agentdispatch
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 
 	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -36,6 +38,8 @@ type FieldOption struct {
 	Configured        string   `json:"configured"`
 	Suggestions       []string `json:"suggestions"`
 	AllowCustom       bool     `json:"allow_custom"`
+	Source            string   `json:"source,omitempty"`
+	DiscoveryError    string   `json:"discovery_error,omitempty"`
 }
 
 type targetDiscovery struct {
@@ -68,11 +72,19 @@ func BuildOptions(req OptionsRequest) (*OptionsResponse, error) {
 		return nil, exitError(ExitConfig, err.Error())
 	}
 	versionLookup := req.VersionLookup
-	return &OptionsResponse{Agents: buildTargetOptions(
+	ctx := req.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	options := &OptionsResponse{Agents: buildTargetOptions(
 		project.Config,
-		agentoptions.DiscoveryRequest{Env: env, LookPath: lookPath, Live: true},
+		agentoptions.DiscoveryRequest{Context: ctx, Project: project, Env: env, LookPath: lookPath, Live: true},
 		versionLookup,
-	)}, nil
+	)}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	return options, nil
 }
 
 // WriteOptions renders the discovery contract as one JSON object.
@@ -91,37 +103,49 @@ func buildTargetOptions(cfg config.Config, discovery agentoptions.DiscoveryReque
 		lookup = lookups[0]
 	}
 	targets := targetRegistry()
-	result := make([]AgentOption, 0, len(targets))
-	for _, target := range targets {
-		facts := discoverTarget(cfg, target, discovery.LookPath, rawTargetVersionDiscovery(lookup))
-		fieldDiscovery := discovery
-		if !facts.Fresh.Supported {
-			fieldDiscovery.Live = false
-		} else {
-			resolvedPath := facts.Target.Binary
-			fieldDiscovery.LookPath = func(binary string) (string, error) {
-				if binary == target.Binary {
-					return resolvedPath, nil
-				}
-				return discovery.LookPath(binary)
+	result := make([]AgentOption, len(targets))
+	var workers sync.WaitGroup
+	for i, target := range targets {
+		workers.Go(func() {
+			facts := targetDiscovery{Target: target, Fresh: CapabilityOption{Reason: "disabled in config"}}
+			if targetEnabled(cfg, target.Name) {
+				facts = discoverTarget(cfg, target, discovery.LookPath, rawTargetVersionDiscovery(discovery.Context, lookup))
 			}
-		}
-		result = append(result, AgentOption{
-			Agent:             target.Name,
-			Available:         facts.Fresh.Supported,
-			UnavailableReason: facts.Fresh.Reason,
-			Model:             fieldOptionWithDiscovery(cfg, target, agentoptions.KindModel, fieldDiscovery),
-			ReasoningEffort:   fieldOptionWithDiscovery(cfg, target, agentoptions.KindReasoningEffort, fieldDiscovery),
+			fieldDiscovery := discovery
+			if !facts.Fresh.Supported {
+				fieldDiscovery.Live = false
+			} else {
+				resolvedPath := facts.Target.Binary
+				fieldDiscovery.LookPath = func(binary string) (string, error) {
+					if binary == target.Binary {
+						return resolvedPath, nil
+					}
+					return discovery.LookPath(binary)
+				}
+			}
+			result[i] = AgentOption{
+				Agent:             target.Name,
+				Available:         facts.Fresh.Supported,
+				UnavailableReason: facts.Fresh.Reason,
+				Model:             fieldOptionWithDiscovery(cfg, target, agentoptions.KindModel, fieldDiscovery),
+				ReasoningEffort:   fieldOptionWithDiscovery(cfg, target, agentoptions.KindReasoningEffort, fieldDiscovery),
+			}
 		})
 	}
+	workers.Wait()
 	return result
 }
 
-func rawTargetVersionDiscovery(lookup func(string, string) (string, error)) targetVersionDiscovery {
+func rawTargetVersionDiscovery(ctx context.Context, lookup func(string, string) (string, error)) targetVersionDiscovery {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return func(path string, target targetMeta) (string, string, error) {
 		readVersion := lookup
 		if readVersion == nil {
-			readVersion = providerVersion
+			readVersion = func(path, agent string) (string, error) {
+				return providerVersionWithContext(ctx, path, agent)
+			}
 		}
 		installed, err := readVersion(path, target.Name)
 		if err != nil {
@@ -162,5 +186,5 @@ func discoverTarget(cfg config.Config, target targetMeta, lookPath func(string) 
 
 func fieldOptionWithDiscovery(cfg config.Config, target targetMeta, kind agentoptions.Kind, discovery agentoptions.DiscoveryRequest) FieldOption {
 	resolved := agentoptions.Resolve(cfg, target.Name, kind, discovery)
-	return FieldOption{OverrideSupported: resolved.OverrideSupported, Configured: resolved.Configured, Suggestions: resolved.Suggestions, AllowCustom: resolved.AllowCustom}
+	return FieldOption{OverrideSupported: resolved.OverrideSupported, Configured: resolved.Configured, Suggestions: resolved.Suggestions, AllowCustom: resolved.AllowCustom, Source: resolved.Source, DiscoveryError: resolved.DiscoveryError}
 }

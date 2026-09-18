@@ -11,6 +11,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
+	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/doctor"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -25,6 +26,7 @@ var (
 	measureInstructions = warnings.MeasureInstructions
 	checkMCPServers     = warnings.CheckMCPServers
 	checkPolicy         = warnings.CheckPolicy
+	checkModels         = doctor.CheckModels
 )
 
 func newDoctorCmd() *cobra.Command {
@@ -50,6 +52,15 @@ func newDoctorCmd() *cobra.Command {
 			// 2. Check Config
 			configResults, cfg := doctor.CheckConfig(root)
 			allResults = append(allResults, configResults...)
+			// Start discovery alongside the remaining checks; no sync is needed.
+			modelsDone := make(chan []doctor.Result, 1)
+			if cfg != nil {
+				go func() {
+					req := agentoptions.DefaultDiscoveryRequest()
+					req.Context = cmd.Context()
+					modelsDone <- checkModels(cfg, req)
+				}()
+			}
 
 			updateResult := doctor.Result{CheckName: messages.DoctorCheckNameUpdate}
 			if strings.TrimSpace(os.Getenv(versiondispatch.EnvNoNetwork)) != "" {
@@ -109,6 +120,7 @@ func newDoctorCmd() *cobra.Command {
 
 				// 7. Check CLI Skills (catalog-installed skills' binaries on PATH).
 				allResults = append(allResults, doctor.CheckCLISkills(cfg)...)
+				allResults = append(allResults, <-modelsDone...)
 			}
 
 			hasFail := false
@@ -288,8 +300,11 @@ func renderSizeSummary(out io.Writer, w config.WarningsConfig, instTokens int, i
 			_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPSchemaNoLimitFmt, mcp.TotalSchemaTokens)
 		}
 
-		if mcp.ReachableServers < mcp.EnabledServers {
-			_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPPartialFmt, mcp.EnabledServers-mcp.ReachableServers, mcp.EnabledServers)
+		if unreachable := mcp.EnabledServers - mcp.ReachableServers - mcp.OAuthUnvalidatedServers; unreachable > 0 {
+			_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPPartialFmt, unreachable, mcp.EnabledServers)
+		}
+		if mcp.OAuthUnvalidatedServers > 0 {
+			_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPOAuthPartialFmt, mcp.OAuthUnvalidatedServers, mcp.EnabledServers)
 		}
 	}
 
@@ -519,6 +534,8 @@ func (r *mcpDiscoveryReporter) formatLineLocked(serverID string) string {
 	switch r.statusForLocked(serverID) {
 	case warnings.MCPDiscoveryStatusDone:
 		return fmt.Sprintf("  - %s: done", serverID)
+	case warnings.MCPDiscoveryStatusAuthNotValidated:
+		return fmt.Sprintf("  - %s: %s", serverID, messages.WarningsMCPOAuthNotValidated)
 	case warnings.MCPDiscoveryStatusError:
 		if err := r.errors[serverID]; err != nil {
 			return fmt.Sprintf("  - %s: error (%v)", serverID, err)
@@ -552,6 +569,8 @@ func formatMCPDiscoveryEvent(event warnings.MCPDiscoveryEvent) string {
 		return fmt.Sprintf("  - %s: starting", event.ServerID)
 	case warnings.MCPDiscoveryStatusDone:
 		return fmt.Sprintf("  - %s: done", event.ServerID)
+	case warnings.MCPDiscoveryStatusAuthNotValidated:
+		return fmt.Sprintf("  - %s: %s", event.ServerID, messages.WarningsMCPOAuthNotValidated)
 	case warnings.MCPDiscoveryStatusError:
 		if event.Err != nil {
 			return fmt.Sprintf("  - %s: error (%v)", event.ServerID, event.Err)

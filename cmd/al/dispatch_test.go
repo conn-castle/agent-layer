@@ -51,13 +51,13 @@ func TestDispatchHelpWiresAsyncSurface(t *testing.T) {
 	if !strings.Contains(stdout.String(), messages.DispatchLong) {
 		t.Fatalf("expected DispatchLong in help")
 	}
-	for _, name := range []string{"options", "start", "wait", "continue", "cancel"} {
+	for _, name := range []string{"options", "start", "wait", "continue", "cancel", "inspect", "output"} {
 		child, _, err := cmd.Find([]string{name})
 		if err != nil || child == cmd || child.Name() != name {
 			t.Fatalf("dispatch subcommand %q not wired: child=%v err=%v", name, child, err)
 		}
 	}
-	for _, removed := range []string{"fanout", "resume", "inspect", "history", "list", "delete"} {
+	for _, removed := range []string{"fanout", "resume", "history", "list", "delete"} {
 		if child, _, err := cmd.Find([]string{removed}); err == nil && child != cmd {
 			t.Fatalf("removed dispatch subcommand %q remains public", removed)
 		}

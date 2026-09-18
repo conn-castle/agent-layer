@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -31,8 +32,6 @@ var (
 	errWizardBack             = ErrBack
 	errWizardCancelled        = errors.New("wizard cancelled")
 )
-
-const defaultAntigravityModel = "Gemini 3.5 Flash (High)"
 
 // Run starts the interactive wizard.
 // pinVersion is written to .agent-layer/al.version when install is needed.
@@ -108,7 +107,7 @@ func runWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 		applyFreshSetupDefaults(choices)
 	}
 
-	if err := promptWizardFlow(root, ui, choices); err != nil {
+	if err := promptWizardFlow(root, ui, choices, &wizardOptionDiscoveryCache{project: cfg, out: out}); err != nil {
 		if errors.Is(err, errWizardCancelled) || errors.Is(err, errWizardBack) {
 			if !freshInstall {
 				_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
@@ -134,7 +133,6 @@ func runWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 func applyFreshSetupDefaults(choices *Choices) {
 	choices.InstructionSet = InstructionSetRulesAndMemory
 	choices.EnabledAgents[AgentAntigravity] = true
-	choices.AntigravityModel = defaultAntigravityModel
 	// Statusline defaults come from initializeChoices: absent config keys default
 	// on in the interactive wizard, while explicit false remains off.
 }
@@ -422,10 +420,17 @@ const (
 )
 
 // promptWizardFlow drives the step-by-step prompt loop.
-func promptWizardFlow(root string, ui UI, choices *Choices) error {
+func promptWizardFlow(root string, ui UI, choices *Choices, caches ...*wizardOptionDiscoveryCache) error {
 	optionCache := &wizardOptionDiscoveryCache{}
-	if choices.EnabledAgents[AgentAntigravity] {
-		optionCache.prefetchAntigravityModels()
+	if len(caches) > 0 {
+		optionCache = caches[0]
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	optionCache.ctx = ctx
+	// Start before the first screen, including agents the user may enable later.
+	if _, scripted := ui.(*ScriptedUI); !scripted {
+		optionCache.prefetchAll()
 	}
 	// The instruction prompt is install-only. Once instruction or memory files
 	// exist on disk, the wizard does not offer a refresh action; users who want
@@ -446,9 +451,6 @@ func promptWizardFlow(root string, ui UI, choices *Choices) error {
 			err = promptApprovalMode(ui, choices)
 		case wizardFlowStepAgents:
 			err = promptEnabledAgents(ui, choices)
-			if err == nil && choices.EnabledAgents[AgentAntigravity] {
-				optionCache.prefetchAntigravityModels()
-			}
 		case wizardFlowStepModels:
 			err = promptModels(ui, choices, optionCache)
 		case wizardFlowStepInstructions:
@@ -700,14 +702,13 @@ func confirmWizardExitOnFirstStepEscape(ui UI) (bool, error) {
 
 func promptModels(ui UI, choices *Choices, optionCache *wizardOptionDiscoveryCache) error {
 	if choices.EnabledAgents[AgentAntigravity] {
-		_, scripted := ui.(*ScriptedUI)
-		if err := selectOptionalValue(ui, messages.WizardAntigravityModelTitle, optionCache.antigravityModelOptions(scripted), &choices.AntigravityModel); err != nil {
+		if err := optionCache.selectModel(ui, AgentAntigravity, messages.WizardAntigravityModelTitle, &choices.AntigravityModel); err != nil {
 			return err
 		}
 		choices.AntigravityModelTouched = true
 	}
 	if choices.EnabledAgents[AgentClaude] {
-		if err := selectOptionalValue(ui, messages.WizardClaudeModelTitle, modelOptions(AgentClaude), &choices.ClaudeModel); err != nil {
+		if err := optionCache.selectModel(ui, AgentClaude, messages.WizardClaudeModelTitle, &choices.ClaudeModel); err != nil {
 			return err
 		}
 		choices.ClaudeModelTouched = true
@@ -742,7 +743,7 @@ func promptModels(ui UI, choices *Choices, optionCache *wizardOptionDiscoveryCac
 		}
 	}
 	if choices.EnabledAgents[AgentCodex] {
-		if err := selectOptionalValue(ui, messages.WizardCodexModelTitle, modelOptions(AgentCodex), &choices.CodexModel); err != nil {
+		if err := optionCache.selectModel(ui, AgentCodex, messages.WizardCodexModelTitle, &choices.CodexModel); err != nil {
 			return err
 		}
 		choices.CodexModelTouched = true
@@ -790,13 +791,13 @@ func promptModels(ui UI, choices *Choices, optionCache *wizardOptionDiscoveryCac
 		}
 	}
 	if choices.EnabledAgents[AgentCopilotCLI] {
-		if err := selectOptionalValue(ui, messages.WizardCopilotCLIModelTitle, modelOptions(AgentCopilotCLI), &choices.CopilotCLIModel); err != nil {
+		if err := optionCache.selectModel(ui, AgentCopilotCLI, messages.WizardCopilotCLIModelTitle, &choices.CopilotCLIModel); err != nil {
 			return err
 		}
 		choices.CopilotCLIModelTouched = true
 	}
 	if choices.EnabledAgents[AgentGrok] {
-		if err := selectOptionalValue(ui, messages.WizardGrokModelTitle, modelOptions(AgentGrok), &choices.GrokModel); err != nil {
+		if err := optionCache.selectModel(ui, AgentGrok, messages.WizardGrokModelTitle, &choices.GrokModel); err != nil {
 			return err
 		}
 		choices.GrokModelTouched = true

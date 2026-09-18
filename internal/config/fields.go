@@ -32,8 +32,8 @@ type FieldDef struct {
 }
 
 const (
-	// AntigravityModelFieldKey is the canonical config path for agy's model display
-	// string. Sync projects this typed Agent Layer setting into Antigravity's
+	// AntigravityModelFieldKey is the canonical config path for agy's model
+	// selector (native slug or display name). Sync projects it into Antigravity's
 	// generated settings.json.
 	AntigravityModelFieldKey = "agents.antigravity.model"
 	// ClaudeModelFieldKey is the canonical config path for Claude Code model aliases.
@@ -53,41 +53,9 @@ const (
 )
 
 var (
-	antigravityModelOptions = fieldOptions(
-		"Gemini 3.5 Flash (Medium)",
-		"Gemini 3.5 Flash (High)",
-		"Gemini 3.5 Flash (Low)",
-		"Gemini 3.1 Pro (Low)",
-		"Gemini 3.1 Pro (High)",
-		"Claude Sonnet 4.6 (Thinking)",
-		"Claude Opus 4.6 (Thinking)",
-		"GPT-OSS 120B (Medium)",
-	)
-	claudeModelOptions = fieldOptions(
-		"default",
-		"best",
-		"fable",
-		"sonnet",
-		"opus",
-		"haiku",
-		"sonnet[1m]",
-		"opus[1m]",
-		"opusplan",
-	)
 	claudeReasoningEffortOptions = fieldOptions("low", "medium", "high", "xhigh", "max")
-	codexModelOptions            = fieldOptions(
-		"gpt-5.6-sol",
-		"gpt-5.6-terra",
-		"gpt-5.6-luna",
-		"gpt-5.5",
-		"gpt-5.4",
-		"gpt-5.4-mini",
-		"gpt-5.3-codex-spark",
-	)
-	codexReasoningEffortOptions = fieldOptions("low", "medium", "high", "xhigh", "max", "ultra")
-	copilotCLIModelOptions      = fieldOptions("auto", "claude-sonnet-4.6", "gpt-5.4", "claude-haiku-4.5", "gpt-5.3-codex", "gemini-3.1-pro-preview", "gemini-3.5-flash", "mai-code-1-flash")
-	grokModelOptions            = fieldOptions("grok-4.6", "grok-4.5")
-	grokReasoningEffortOptions  = fieldOptions("none", "minimal", "low", "medium", "high", "xhigh", "max")
+	codexReasoningEffortOptions  = fieldOptions("low", "medium", "high", "xhigh", "max", "ultra")
+	grokReasoningEffortOptions   = fieldOptions("none", "minimal", "low", "medium", "high", "xhigh", "max")
 )
 
 // fields is the canonical ordered registry of all config fields with constrained values.
@@ -112,14 +80,12 @@ var fields = []FieldDef{
 		Key:         AntigravityModelFieldKey,
 		Type:        FieldEnum,
 		AllowCustom: true,
-		Options:     antigravityModelOptions,
 	},
 	{Key: "agents.claude.enabled", Type: FieldBool, Required: true},
 	{
 		Key:         ClaudeModelFieldKey,
 		Type:        FieldEnum,
 		AllowCustom: true,
-		Options:     claudeModelOptions,
 	},
 	{
 		Key:         ClaudeReasoningEffortFieldKey,
@@ -136,7 +102,6 @@ var fields = []FieldDef{
 		Key:         CodexModelFieldKey,
 		Type:        FieldEnum,
 		AllowCustom: true,
-		Options:     codexModelOptions,
 	},
 	{
 		Key:         CodexReasoningEffortFieldKey,
@@ -154,14 +119,12 @@ var fields = []FieldDef{
 		Key:         CopilotCLIModelFieldKey,
 		Type:        FieldEnum,
 		AllowCustom: true,
-		Options:     copilotCLIModelOptions,
 	},
 	{Key: "agents.grok.enabled", Type: FieldBool, Required: true},
 	{
 		Key:         GrokModelFieldKey,
 		Type:        FieldEnum,
 		AllowCustom: true,
-		Options:     grokModelOptions,
 	},
 	{
 		Key:         GrokReasoningEffortFieldKey,

@@ -127,22 +127,51 @@ type ContinueOptions struct {
 // Result is the provider-agnostic public response shared by every Agent
 // Dispatch surface. The CLI encodes it as one JSON line on stdout; the MCP
 // tools decode that same rendering from a private buffer, so both surfaces
-// report identical handles, states, result paths, and failure text.
+// report identical handles, invocation IDs, states, result paths, and failure text.
 type Result struct {
-	Handle     string `json:"handle"`
-	State      string `json:"state"`
-	ResultPath string `json:"result_path,omitempty"`
-	Error      string `json:"error,omitempty"`
+	Handle                 string     `json:"handle"`
+	InvocationID           string     `json:"invocation_id,omitempty"`
+	State                  string     `json:"state"`
+	ResultPath             string     `json:"result_path,omitempty"`
+	Error                  string     `json:"error,omitempty"`
+	LastActivityAt         *time.Time `json:"last_activity_at,omitempty"`
+	LastOutputAt           *time.Time `json:"last_output_at,omitempty"`
+	TerminationConfirmed   bool       `json:"termination_confirmed"`
+	TerminationConfirmedAt *time.Time `json:"termination_confirmed_at,omitempty"`
+	ConditionMet           *bool      `json:"condition_met,omitempty"`
 }
 
-// WaitRequest identifies one existing dispatch conversation, by handle, to
-// await without changing provider work or execution state.
+const (
+	waitConditionTerminal                 = "terminal"
+	waitConditionTerminationConfirmed     = "termination_confirmed"
+	launchProtocolIntentBeforeStart       = "intent-before-start"
+	terminationObservationUncertainLaunch = "launch_intent_without_provider_identity"
+	terminationObservationIncompleteID    = "process_identity_incomplete"
+	terminationObservationGroupLive       = "process_group_live"
+	terminationObservationProviderLive    = "provider_process_not_proven_dead"
+	terminationObservationUnconfirmed     = "termination_not_established"
+	terminationProofGroupDead             = "process_group_dead"
+	terminationProofGroupReused           = "process_group_reused"
+	terminationProofPrelaunchNoIntent     = "prelaunch_no_intent"
+	terminalReasonCancelledByCaller       = "cancelled by caller"
+	artifactFinalAnswer                   = "final_answer"
+	artifactEvents                        = "events"
+)
+
+// WaitRequest identifies one existing dispatch invocation, by handle or
+// invocation ID, to await without changing provider work or execution state.
 type WaitRequest struct {
 	Context context.Context
 	Root    string
-	ID      string
-	Stdout  io.Writer
-	Timeout time.Duration
+	// ID is a single positional selector: a conversation handle or invocation UUID.
+	ID           string
+	Handle       string
+	InvocationID string
+	// Condition selects the wait target. Empty and "terminal" wait for a
+	// terminal outcome. "termination_confirmed" waits for durable termination proof.
+	Condition string
+	Stdout    io.Writer
+	Timeout   time.Duration
 	// PollInterval sets how often this request re-reads run state. The CLI
 	// leaves it zero and keeps the responsive default; a long MCP wait sets a
 	// coarser interval so a 30-minute block does not spend the whole time
@@ -150,15 +179,38 @@ type WaitRequest struct {
 	PollInterval time.Duration
 }
 
-// CancelRequest identifies one active invocation by handle or run UUID.
+// InspectRequest identifies one invocation for a prompt, non-blocking observation.
+type InspectRequest struct {
+	Root         string
+	ID           string
+	Handle       string
+	InvocationID string
+	Stdout       io.Writer
+}
+
+// OutputRequest retrieves bounded final-answer or event text for one invocation.
+type OutputRequest struct {
+	Root         string
+	ID           string
+	Handle       string
+	InvocationID string
+	Artifact     string
+	Stdout       io.Writer
+}
+
+// CancelRequest identifies one active invocation by handle or invocation UUID.
 type CancelRequest struct {
-	Root   string
-	ID     string
-	Stdout io.Writer
+	Root         string
+	ID           string
+	Handle       string
+	InvocationID string
+	Stdout       io.Writer
 }
 
 // OptionsRequest configures an Agent Dispatch options response.
 type OptionsRequest struct {
+	// Lookup callbacks may be invoked concurrently across providers.
+	Context       context.Context
 	Root          string
 	Env           []string
 	Stdout        io.Writer

@@ -64,6 +64,13 @@ func TestRetentionRemovesOnlyExpiredUnreferencedTerminalEvidence(t *testing.T) {
 		return run
 	}
 	expired := makeRecord(dispatchStateCompleted, &old)
+	expired.Record.LaunchFenced = true
+	expired.Record.TerminationConfirmed = true
+	expired.Record.TerminationConfirmedAt = &old
+	if err := writeJSONAtomic(filepath.Join(expired.Dir, dispatchRunFile), expired.Record); err != nil {
+		t.Fatal(err)
+	}
+	unconfirmed := makeRecord(dispatchStateCompleted, &old)
 	active := makeRecord(dispatchStateRunning, nil)
 	current := makeRecord(dispatchStateCompleted, &old)
 	session := Session{Name: "tiny-round-capacitor", Agent: AgentCodex, State: "durable", ProviderSessionID: runtimeSessionID, RunID: current.Record.ID, CreatedAt: now, LastUsedAt: now}
@@ -76,7 +83,7 @@ func TestRetentionRemovesOnlyExpiredUnreferencedTerminalEvidence(t *testing.T) {
 	if _, err := os.Stat(expired.Dir); !os.IsNotExist(err) {
 		t.Fatalf("expired terminal evidence remains: %v", err)
 	}
-	for _, dir := range []string{active.Dir, current.Dir} {
+	for _, dir := range []string{active.Dir, current.Dir, unconfirmed.Dir} {
 		if _, err := os.Stat(dir); err != nil {
 			t.Fatalf("preserved evidence removed: %v", err)
 		}

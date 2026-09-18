@@ -23,6 +23,7 @@ func TestEmbeddedDispatchAgentSkillEncodesAsyncConversationWorkflow(t *testing.T
 	dispatchSkill := string(dispatchTemplate)
 	for _, required := range []string{
 		"dispatch_options", "dispatch_start", "dispatch_wait", "dispatch_continue", "dispatch_cancel",
+		"dispatch_inspect", "dispatch_output",
 		"mcp__agent-layer__dispatch_start", "result_path",
 	} {
 		if !strings.Contains(dispatchSkill, required) {

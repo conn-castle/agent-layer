@@ -820,6 +820,30 @@ func TestRenderSizeSummary(t *testing.T) {
 		}
 	})
 
+	t.Run("partial note when some servers use oauth", func(t *testing.T) {
+		var out bytes.Buffer
+		mcp := warnings.MCPSummary{Available: true, EnabledServers: 2, ReachableServers: 1, OAuthUnvalidatedServers: 1, TotalTools: 5, TotalSchemaTokens: 1000}
+		renderSizeSummary(&out, config.WarningsConfig{}, 0, "AGENTS.md", nil, 0, true, mcp)
+		if !strings.Contains(out.String(), "1 of 2 enabled MCP server(s) use OAuth (not validated by doctor); tool and schema totals exclude them.") {
+			t.Fatalf("expected oauth partial note, got:\n%s", out.String())
+		}
+		if strings.Contains(out.String(), "unreachable") {
+			t.Fatalf("did not expect unreachable note when reachable, got:\n%s", out.String())
+		}
+	})
+
+	t.Run("oauth servers are not double-counted as unreachable", func(t *testing.T) {
+		var out bytes.Buffer
+		mcp := warnings.MCPSummary{Available: true, EnabledServers: 3, ReachableServers: 1, OAuthUnvalidatedServers: 1}
+		renderSizeSummary(&out, config.WarningsConfig{}, 0, "AGENTS.md", nil, 0, true, mcp)
+		if !strings.Contains(out.String(), "1 of 3 enabled MCP server(s) unreachable") {
+			t.Fatalf("expected one unreachable server, got:\n%s", out.String())
+		}
+		if !strings.Contains(out.String(), "1 of 3 enabled MCP server(s) use OAuth") {
+			t.Fatalf("expected one OAuth server, got:\n%s", out.String())
+		}
+	})
+
 	t.Run("skills unavailable excluded from total and named", func(t *testing.T) {
 		var out bytes.Buffer
 		mcp := warnings.MCPSummary{Available: true, EnabledServers: 1, ReachableServers: 1, TotalTools: 2, TotalSchemaTokens: 300}

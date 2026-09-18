@@ -2,17 +2,42 @@ package agentdispatch
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/conn-castle/agent-layer/internal/agentoptions"
 )
+
+func TestOptionsCancellationStopsVersionProbes(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	binary := filepath.Join(t.TempDir(), "slow-provider")
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\nexec sleep 30\n"), 0o700); err != nil { // #nosec G306 -- executable provider fixture.
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	options, err := BuildOptions(OptionsRequest{
+		Root: root, Context: ctx, Env: []string{},
+		LookPath: func(string) (string, error) { return binary, nil },
+	})
+	if !errors.Is(err, context.DeadlineExceeded) || options != nil {
+		t.Fatalf("cancelled options request returned options=%+v err=%v", options, err)
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("version probes outlived request cancellation: %v", elapsed)
+	}
+}
 
 func TestOptionsExposeOnlyStartSelectionFacts(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
@@ -155,11 +180,15 @@ func TestNewerProviderVersionDispatchWarnsOnStderrOnly(t *testing.T) {
 
 func TestBuildOptionsResolvesEachProviderBinaryOnce(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	replaceDispatchConfigText(t, root, "[agents.grok]\nenabled = false", "[agents.grok]\nenabled = true")
 	lookups := map[string]int{}
+	var mu sync.Mutex
 	_, err := BuildOptions(OptionsRequest{
 		Root: root,
 		Env:  []string{},
 		LookPath: func(binary string) (string, error) {
+			mu.Lock()
+			defer mu.Unlock()
 			lookups[binary]++
 			return "/mock/" + binary, nil
 		},
@@ -174,6 +203,51 @@ func TestBuildOptionsResolvesEachProviderBinaryOnce(t *testing.T) {
 		binary := target.Binary
 		if lookups[binary] != 1 {
 			t.Fatalf("LookPath(%q) calls = %d, want 1", binary, lookups[binary])
+		}
+	}
+}
+
+func TestOptionsVersionQueriesRunConcurrently(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	replaceDispatchConfigText(t, root, "[agents.grok]\nenabled = false", "[agents.grok]\nenabled = true")
+	started := make(chan string, 4)
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		_, err := BuildOptions(OptionsRequest{Root: root, Env: []string{"AL_NO_NETWORK=1"}, LookPath: alwaysFound,
+			VersionLookup: func(_ string, agent string) (string, error) {
+				started <- agent
+				<-release
+				return supportedProviderVersions[agent], nil
+			}})
+		done <- err
+	}()
+	for range 4 {
+		select {
+		case <-started:
+		case <-time.After(5 * time.Second):
+			close(release)
+			<-done
+			t.Fatal("provider version queries were serialized")
+		}
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOptionsSkipsDisabledProviderQueries(t *testing.T) {
+	options := buildTargetOptions(dispatchTestConfig(AgentCodex), agentoptions.DiscoveryRequest{Live: true,
+		LookPath: func(binary string) (string, error) {
+			if binary != AgentCodex {
+				t.Errorf("queried disabled provider %s", binary)
+			}
+			return "", os.ErrNotExist
+		}})
+	for _, option := range options {
+		if option.Agent != AgentCodex && (option.Available || option.Model.Source != "not_requested" || len(option.Model.Suggestions) != 0) {
+			t.Errorf("unexpected disabled provider metadata: %+v", option)
 		}
 	}
 }

@@ -98,6 +98,7 @@ const (
 	DoctorSizeMCPSchemaNoLimitFmt        = "  - MCP tool schemas (total): %d tokens (no limit set)\n"
 	DoctorSizeMCPUnavailable             = "  - MCP servers: size unavailable (server discovery failed)\n"
 	DoctorSizeMCPPartialFmt              = "  - Note: %d of %d enabled MCP server(s) unreachable; tool and schema totals exclude them.\n"
+	DoctorSizeMCPOAuthPartialFmt         = "  - Note: %d of %d enabled MCP server(s) use OAuth (not validated by doctor); tool and schema totals exclude them.\n"
 	DoctorSizeTotalFmt                   = "  - Total always-loaded (estimated): ~%d tokens\n"
 	DoctorSizeTotalExcludesFmt           = "  - Total always-loaded (estimated): ~%d tokens (excludes %s)\n"
 

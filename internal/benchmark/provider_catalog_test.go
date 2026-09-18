@@ -44,6 +44,18 @@ func TestProviderCatalogParsesProviderSpecificSelections(t *testing.T) {
 	}
 }
 
+func TestExplicitModelSelectionDoesNotRequireCatalogUpdates(t *testing.T) {
+	for _, provider := range []string{providerClaude, adapterCodex, adapterGrok, adapterAntigravity} {
+		model, effort, err := ParseModelSelection(provider + "/future-model:future-effort")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if dispatchAgent(model) != provider || dispatchModel(model) != "future-model" || effort != "future-effort" {
+			t.Fatalf("incorrect explicit selection: %+v %q", model, effort)
+		}
+	}
+}
+
 func TestProviderCatalogPreservesSlugAndPublishedIdentityCompatibility(t *testing.T) {
 	for _, test := range []struct {
 		slug string
@@ -70,9 +82,9 @@ func TestProviderCatalogPreservesSlugAndPublishedIdentityCompatibility(t *testin
 	// The published catalog is static, but malformed future catalog entries
 	// must still fail as configuration errors instead of silently accepting a
 	// model with an unprovable thinking tier.
-	original := supportedModels
-	supportedModels = append(append([]Model(nil), original...), Model{Name: "invalid-gemini", RuntimeIdentifier: "gemini-3.5-flash", Adapter: adapterAntigravity})
-	t.Cleanup(func() { supportedModels = original })
+	original := historicalModels
+	historicalModels = append(append([]Model(nil), original...), Model{Name: "invalid-gemini", RuntimeIdentifier: "gemini-3.5-flash", Adapter: adapterAntigravity})
+	t.Cleanup(func() { historicalModels = original })
 	if _, _, err := ParseModelSelection("invalid-gemini:low"); err == nil || !strings.Contains(err.Error(), "must be an exact Gemini slug") {
 		t.Fatalf("malformed Antigravity catalog entry was accepted: %v", err)
 	}
@@ -382,7 +394,7 @@ func TestProviderPreflightMapComparisonRejectsMissingOrChangedCapacity(t *testin
 }
 
 func TestBenchmarkProviderRegistryCoversEverySelectableModel(t *testing.T) {
-	for _, model := range supportedModels {
+	for _, model := range historicalModels {
 		provider, err := benchmarkProvider(model.Adapter)
 		if err != nil || provider.Binary == "" || provider.PierAgent == "" || provider.ClientVersion != model.ProviderClientVersion {
 			t.Fatalf("model %#v provider = %#v, %v", model, provider, err)

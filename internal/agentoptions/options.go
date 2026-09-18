@@ -1,12 +1,12 @@
 package agentoptions
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 
-	antigravityclient "github.com/conn-castle/agent-layer/internal/clients/antigravity"
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
@@ -22,6 +22,8 @@ const (
 
 // DiscoveryRequest controls live option discovery.
 type DiscoveryRequest struct {
+	Context  context.Context
+	Project  *config.ProjectConfig
 	Env      []string
 	LookPath func(string) (string, error)
 	Live     bool
@@ -35,22 +37,24 @@ type OptionSet struct {
 	Configured        string
 	Suggestions       []string
 	AllowCustom       bool
+	// Source is harness for discovered models, not_requested when skipped,
+	// unavailable on discovery failure, and catalog for non-model options only.
+	Source         string
+	DiscoveryError string
 }
 
 type fieldProvider struct {
 	key        string
 	configured func(config.Config) string
-	live       func(DiscoveryRequest) []string
 }
 
 var providers = map[string]map[Kind]fieldProvider{
-	"antigravity": {
+	agentAntigravity: {
 		KindModel: {
 			key: config.AntigravityModelFieldKey,
 			configured: func(cfg config.Config) string {
 				return cfg.Agents.Antigravity.Model
 			},
-			live: antigravityModelOptions,
 		},
 	},
 	agentClaude: {
@@ -116,7 +120,7 @@ func DefaultDiscoveryRequest() DiscoveryRequest {
 }
 
 // Resolve returns the option metadata for an agent field, including live
-// suggestions when available and catalog fallback otherwise.
+// suggestions only from the harness. Model discovery never uses a fallback.
 func Resolve(cfg config.Config, agent string, kind Kind, req DiscoveryRequest) OptionSet {
 	provider, ok := lookup(agent, kind)
 	option := OptionSet{
@@ -129,18 +133,28 @@ func Resolve(cfg config.Config, agent string, kind Kind, req DiscoveryRequest) O
 	option.Configured = strings.TrimSpace(provider.configured(cfg))
 	field, _ := config.LookupField(provider.key)
 	option.AllowCustom = field.AllowCustom
-	option.Suggestions = values(provider, field, req)
+	if kind != KindModel {
+		option.Suggestions = values(field)
+		option.Source = "catalog"
+		return option
+	}
+	option.Source = "not_requested"
+	if req.Live {
+		models, err := DiscoverModels(agent, req)
+		if err != nil {
+			option.Source = "unavailable"
+			option.DiscoveryError = err.Error()
+		} else {
+			option.Suggestions = models
+			option.Source = "harness"
+		}
+	}
 	return option
 }
 
 // Values returns suggested values for an agent field.
 func Values(agent string, kind Kind, req DiscoveryRequest) []string {
-	provider, ok := lookup(agent, kind)
-	if !ok {
-		return nil
-	}
-	field, _ := config.LookupField(provider.key)
-	return values(provider, field, req)
+	return Resolve(config.Config{}, agent, kind, req).Suggestions
 }
 
 // Supports reports whether an agent exposes the requested option surface.
@@ -167,23 +181,10 @@ func lookup(agent string, kind Kind) (fieldProvider, bool) {
 	return provider, ok
 }
 
-func values(provider fieldProvider, field config.FieldDef, req DiscoveryRequest) []string {
-	if req.Live && provider.live != nil {
-		if live := provider.live(req); len(live) > 0 {
-			return live
-		}
-	}
+func values(field config.FieldDef) []string {
 	values := make([]string, 0, len(field.Options))
 	for _, option := range field.Options {
 		values = append(values, option.Value)
 	}
 	return values
-}
-
-func antigravityModelOptions(req DiscoveryRequest) []string {
-	return antigravityclient.ModelOptions(antigravityclient.ModelOptionsRequest{
-		Env:      req.Env,
-		LookPath: req.LookPath,
-		Timeout:  req.Timeout,
-	})
 }

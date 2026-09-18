@@ -26,7 +26,7 @@ func newDispatchCmd() *cobra.Command {
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 	}
-	cmd.AddCommand(newDispatchOptionsCmd(), newDispatchStartCmd(), newDispatchWaitCmd(), newDispatchContinueCmd(), newDispatchCancelCmd(), newDispatchMCPServerCmd())
+	cmd.AddCommand(newDispatchOptionsCmd(), newDispatchStartCmd(), newDispatchWaitCmd(), newDispatchContinueCmd(), newDispatchCancelCmd(), newDispatchInspectCmd(), newDispatchOutputCmd(), newDispatchMCPServerCmd())
 	return cmd
 }
 
@@ -83,7 +83,7 @@ func newDispatchOptionsCmd() *cobra.Command {
 				return err
 			}
 			return dispatchCommandError(cmd, agentdispatch.WriteOptions(agentdispatch.OptionsRequest{
-				Root: root, Env: os.Environ(), Stdout: cmd.OutOrStdout(),
+				Context: cmd.Context(), Root: root, Env: os.Environ(), Stdout: cmd.OutOrStdout(),
 			}))
 		},
 	}
@@ -118,17 +118,22 @@ func newDispatchStartCmd() *cobra.Command {
 }
 
 func newDispatchWaitCmd() *cobra.Command {
-	return &cobra.Command{
-		Use: "wait <handle>", Short: messages.DispatchWaitShort, Long: messages.DispatchWaitLong,
+	var condition string
+	cmd := &cobra.Command{
+		Use: "wait <handle-or-invocation-id>", Short: messages.DispatchWaitShort, Long: messages.DispatchWaitLong,
 		Args: cobra.ExactArgs(1), SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {
 				return err
 			}
-			return dispatchCommandError(cmd, agentdispatch.Wait(agentdispatch.WaitRequest{Context: cmd.Context(), Root: root, ID: args[0], Stdout: cmd.OutOrStdout()}))
+			return dispatchCommandError(cmd, agentdispatch.Wait(agentdispatch.WaitRequest{
+				Context: cmd.Context(), Root: root, ID: args[0], Condition: condition, Stdout: cmd.OutOrStdout(),
+			}))
 		},
 	}
+	cmd.Flags().StringVar(&condition, "condition", "", "Wait until terminal (default) or termination_confirmed")
+	return cmd
 }
 
 func newDispatchContinueCmd() *cobra.Command {
@@ -153,7 +158,7 @@ func newDispatchContinueCmd() *cobra.Command {
 
 func newDispatchCancelCmd() *cobra.Command {
 	return &cobra.Command{
-		Use: "cancel <handle>", Short: "Cancel the current running invocation",
+		Use: "cancel <handle-or-invocation-id>", Short: "Cancel one running or unconfirmed invocation",
 		Args: cobra.ExactArgs(1), SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
@@ -163,6 +168,40 @@ func newDispatchCancelCmd() *cobra.Command {
 			return dispatchCommandError(cmd, agentdispatch.Cancel(agentdispatch.CancelRequest{Root: root, ID: args[0], Stdout: cmd.OutOrStdout()}))
 		},
 	}
+}
+
+func newDispatchInspectCmd() *cobra.Command {
+	return &cobra.Command{
+		Use: "inspect <handle-or-invocation-id>", Short: "Observe one invocation without waiting",
+		Args: cobra.ExactArgs(1), SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveRepoRoot()
+			if err != nil {
+				return err
+			}
+			return dispatchCommandError(cmd, agentdispatch.Inspect(agentdispatch.InspectRequest{Root: root, ID: args[0], Stdout: cmd.OutOrStdout()}))
+		},
+	}
+}
+
+func newDispatchOutputCmd() *cobra.Command {
+	var artifact string
+	cmd := &cobra.Command{
+		Use: "output <handle-or-invocation-id>", Short: "Read bounded final or partial output",
+		Args: cobra.ExactArgs(1), SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveRepoRoot()
+			if err != nil {
+				return err
+			}
+			return dispatchCommandError(cmd, agentdispatch.Output(agentdispatch.OutputRequest{
+				Root: root, ID: args[0], Artifact: artifact, Stdout: cmd.OutOrStdout(),
+			}))
+		},
+	}
+	cmd.Flags().StringVar(&artifact, "artifact", "", "Output name (final_answer or events)")
+	_ = cmd.MarkFlagRequired("artifact")
+	return cmd
 }
 
 func addDispatchPromptFlags(cmd *cobra.Command, prompt *string, promptFile *string) {

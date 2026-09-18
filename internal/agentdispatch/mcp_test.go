@@ -104,9 +104,9 @@ func toolResultText(result *mcp.CallToolResult) string {
 }
 
 // TestMCPToolsDeclareTheCanonicalDispatchSurface proves every enabled caller
-// receives exactly the five Agent Dispatch tools, and that operations which
+// receives exactly the seven Agent Dispatch tools, and that operations which
 // can modify the repository or terminate provider work are advertised as
-// destructive while discovery and waiting remain read-only.
+// destructive while discovery, waiting, inspect, and output remain read-only.
 func TestMCPToolsDeclareTheCanonicalDispatchSurface(t *testing.T) {
 	session := newMCPTestSession(t, newMCPTestTools(writeDispatchRepo(t, dispatchRepoConfig{})))
 	listed, err := session.ListTools(context.Background(), nil)
@@ -117,13 +117,13 @@ func TestMCPToolsDeclareTheCanonicalDispatchSurface(t *testing.T) {
 	for _, tool := range listed.Tools {
 		byName[tool.Name] = tool
 	}
-	for _, name := range []string{ToolOptions, ToolStart, ToolWait, ToolContinue, ToolCancel} {
+	for _, name := range []string{ToolOptions, ToolStart, ToolWait, ToolContinue, ToolCancel, ToolInspect, ToolOutput} {
 		if _, ok := byName[name]; !ok {
 			t.Fatalf("tool %q is missing from %v", name, byName)
 		}
 	}
-	if len(byName) != 5 {
-		t.Fatalf("expected exactly five dispatch tools, got %d", len(byName))
+	if len(byName) != 7 {
+		t.Fatalf("expected exactly seven dispatch tools, got %d", len(byName))
 	}
 	for _, name := range []string{ToolStart, ToolContinue, ToolCancel} {
 		annotations := byName[name].Annotations
@@ -132,7 +132,7 @@ func TestMCPToolsDeclareTheCanonicalDispatchSurface(t *testing.T) {
 			t.Fatalf("%s annotations = %#v, want destructive and not read-only", name, annotations)
 		}
 	}
-	for _, name := range []string{ToolOptions, ToolWait} {
+	for _, name := range []string{ToolOptions, ToolWait, ToolInspect, ToolOutput} {
 		annotations := byName[name].Annotations
 		if annotations == nil || !annotations.ReadOnlyHint {
 			t.Fatalf("%s annotations = %#v, want read-only", name, annotations)
@@ -210,7 +210,7 @@ func TestMCPToolDescriptionsComeFromTheEditableCatalog(t *testing.T) {
 // budget is asserted rather than assumed. The ceiling leaves room for concise
 // wording changes but not a verbose schema.
 func TestMCPToolSchemaFootprintStaysSmall(t *testing.T) {
-	const maxSchemaBytes = 3000
+	const maxSchemaBytes = 5500
 	session := newMCPTestSession(t, newMCPTestTools(writeDispatchRepo(t, dispatchRepoConfig{})))
 	listed, err := session.ListTools(context.Background(), nil)
 	if err != nil {
@@ -344,6 +344,11 @@ func TestMCPWaitRejectsUnknownHandleAsToolError(t *testing.T) {
 func TestMCPContinueStartsTheNextInvocation(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, dispatchSession := newWaitTestRun(t, root)
+	dispatchSession.ProviderSessionID = runtimeSessionID
+	dispatchSession.State = sessionStateDurable
+	if err := persistSession(root, dispatchSession); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(run.Record.AnswerPath, []byte("first"), 0o600); err != nil {
 		t.Fatal(err)
 	}

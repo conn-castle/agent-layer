@@ -103,11 +103,11 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 		if writeErr := writeRunRecord(publicationRun.Dir, &current); writeErr != nil {
 			t.Fatal(writeErr)
 		}
-		return exec.Command("/bin/sh", "-c", `trap '' TERM; while :; do sleep 1; done`) // #nosec G204 -- fixed test-only shell command.
+		return exec.Command("/bin/sh", "-c", `printf '{"type":"error","message":"provider refused"}\n'; exit 1`) // #nosec G204 -- fixed test-only shell command.
 	}, func(string) error { return nil })
-	requireDispatchExitCode(t, err, ExitUnavailable)
+	requireDispatchExitCode(t, err, ExitTargetFailure)
 	if elapsed := time.Since(publicationStarted); elapsed > terminationTestDeadline {
-		t.Fatalf("running-state publication failure waited %s for a SIGTERM-ignoring provider", elapsed)
+		t.Fatalf("fenced launch after a concurrent record write waited %s", elapsed)
 	}
 
 	timeoutRun := newRun(t)

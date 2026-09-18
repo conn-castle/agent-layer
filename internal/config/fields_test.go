@@ -81,8 +81,8 @@ func TestLookupField_EnumWithCustom(t *testing.T) {
 	if !f.AllowCustom {
 		t.Error("expected agents.claude.model to allow custom values")
 	}
-	if len(f.Options) == 0 {
-		t.Error("expected agents.claude.model to have options")
+	if len(f.Options) != 0 {
+		t.Error("model suggestions must come from the harness, not the config catalog")
 	}
 }
 
@@ -153,65 +153,9 @@ func TestLookupField_DispatchMaxDepth(t *testing.T) {
 	}
 }
 
-func TestFieldOptionValues_ClaudeModelCatalog(t *testing.T) {
-	values := FieldOptionValues(ClaudeModelFieldKey)
-	want := []string{"default", "best", "fable", "sonnet", "opus", "haiku", "sonnet[1m]", "opus[1m]", "opusplan"}
-	if len(values) != len(want) {
-		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
-	}
-	for i, expected := range want {
-		if values[i] != expected {
-			t.Fatalf("value at index %d = %q, want %q", i, values[i], expected)
-		}
-	}
-}
-
-func TestFieldOptionValues_AntigravityModelCatalog(t *testing.T) {
-	values := FieldOptionValues("agents.antigravity.model")
-	want := []string{
-		"Gemini 3.5 Flash (Medium)",
-		"Gemini 3.5 Flash (High)",
-		"Gemini 3.5 Flash (Low)",
-		"Gemini 3.1 Pro (Low)",
-		"Gemini 3.1 Pro (High)",
-		"Claude Sonnet 4.6 (Thinking)",
-		"Claude Opus 4.6 (Thinking)",
-		"GPT-OSS 120B (Medium)",
-	}
-	if len(values) != len(want) {
-		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
-	}
-	for i, expected := range want {
-		if values[i] != expected {
-			t.Fatalf("value at index %d = %q, want %q", i, values[i], expected)
-		}
-	}
-}
-
 func TestFieldOptionValues_ClaudeReasoningCatalog(t *testing.T) {
 	values := FieldOptionValues(ClaudeReasoningEffortFieldKey)
 	want := []string{"low", "medium", "high", "xhigh", "max"}
-	if len(values) != len(want) {
-		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
-	}
-	for i, expected := range want {
-		if values[i] != expected {
-			t.Fatalf("value at index %d = %q, want %q", i, values[i], expected)
-		}
-	}
-}
-
-func TestFieldOptionValues_CodexModelCatalog(t *testing.T) {
-	values := FieldOptionValues(CodexModelFieldKey)
-	want := []string{
-		"gpt-5.6-sol",
-		"gpt-5.6-terra",
-		"gpt-5.6-luna",
-		"gpt-5.5",
-		"gpt-5.4",
-		"gpt-5.4-mini",
-		"gpt-5.3-codex-spark",
-	}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
 	}
@@ -235,19 +179,6 @@ func TestFieldOptionValues_CodexReasoningCatalog(t *testing.T) {
 	}
 }
 
-func TestFieldOptionValues_CopilotCliModelCatalog(t *testing.T) {
-	values := FieldOptionValues(CopilotCLIModelFieldKey)
-	want := []string{"auto", "claude-sonnet-4.6", "gpt-5.4", "claude-haiku-4.5", "gpt-5.3-codex", "gemini-3.1-pro-preview", "gemini-3.5-flash", "mai-code-1-flash"}
-	if len(values) != len(want) {
-		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
-	}
-	for i, expected := range want {
-		if values[i] != expected {
-			t.Fatalf("value at index %d = %q, want %q", i, values[i], expected)
-		}
-	}
-}
-
 func TestFieldsCopySemantics(t *testing.T) {
 	all := Fields()
 	if len(all) == 0 {
@@ -261,6 +192,14 @@ func TestFieldsCopySemantics(t *testing.T) {
 	}
 	if original.Key == "mutated" {
 		t.Error("mutation of Fields() result affected the registry")
+	}
+}
+
+func TestModelFieldsNeverContainStaticSuggestions(t *testing.T) {
+	for _, field := range Fields() {
+		if strings.HasSuffix(field.Key, ".model") && len(field.Options) != 0 {
+			t.Errorf("%s contains a static model catalog", field.Key)
+		}
 	}
 }
 

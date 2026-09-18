@@ -6,7 +6,7 @@
 description = "List configured providers and their model and reasoning-effort rules."
 
 [tools.dispatch_start]
-description = "Start one asynchronous dispatch. Returns its conversation handle and running state."
+description = "Start one asynchronous dispatch. Returns handle, invocation_id, and running state."
 
 [tools.dispatch_start.parameters]
 agent = "Provider to dispatch: codex, claude, antigravity, or grok."
@@ -18,13 +18,15 @@ prompt = "Prompt text. Provide exactly one of prompt or prompt_file."
 prompt_file = "Path to a prompt file. Provide exactly one of prompt or prompt_file."
 
 [tools.dispatch_wait]
-description = "Wait up to {{wait_minutes}} minutes for one conversation. Returns running while active; completed returns result_path for the Markdown output, failed returns error, and cancelled is terminal. Ending this wait does not stop provider work."
+description = "Wait up to {{wait_minutes}} minutes for one invocation. Default condition is terminal outcome; termination_confirmed waits for durable stop proof. Timeout returns condition_met=false. Ending this wait does not stop provider work."
 
 [tools.dispatch_wait.parameters]
-handle = "Conversation handle returned by dispatch_start or dispatch_continue."
+handle = "Conversation handle. Provide exactly one of handle or invocation_id."
+invocation_id = "Exact invocation UUID. Never follows a later continuation."
+condition = "Wait target: terminal (default) or termination_confirmed."
 
 [tools.dispatch_continue]
-description = "Start the next invocation in one terminal conversation. Returns the same handle and running state."
+description = "Start the next invocation in one terminal conversation. Returns the same handle, a new invocation_id, and running state."
 
 [tools.dispatch_continue.parameters]
 handle = "Terminal conversation handle."
@@ -32,7 +34,23 @@ prompt = "Prompt text. Provide exactly one of prompt or prompt_file."
 prompt_file = "Path to a prompt file. Provide exactly one of prompt or prompt_file."
 
 [tools.dispatch_cancel]
-description = "Permanently stop active provider work for one conversation. Returns its handle and cancelled state."
+description = "Stop provider work for one invocation. Cancelled is not termination proof; inspect termination_confirmed. Repeated cancel retries an unconfirmed stop."
 
 [tools.dispatch_cancel.parameters]
-handle = "Active conversation handle."
+handle = "Conversation handle. Provide exactly one of handle or invocation_id."
+invocation_id = "Exact invocation UUID. Never follows a later continuation."
+
+[tools.dispatch_inspect]
+description = "Prompt observation of one invocation: state, activity timestamps, and termination confirmation. Does not return prompt text or wait."
+
+[tools.dispatch_inspect.parameters]
+handle = "Conversation handle. Provide exactly one of handle or invocation_id."
+invocation_id = "Exact invocation UUID. Never follows a later continuation."
+
+[tools.dispatch_output]
+description = "Read bounded text for a completed final answer or captured events containing partial output."
+
+[tools.dispatch_output.parameters]
+handle = "Conversation handle. Provide exactly one of handle or invocation_id."
+invocation_id = "Exact invocation UUID. Never follows a later continuation."
+artifact = "Output: final_answer or events."

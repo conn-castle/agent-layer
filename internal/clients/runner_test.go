@@ -182,6 +182,7 @@ func TestRunLaunchError(t *testing.T) {
 }
 
 func TestRunWarnsOnUpdateWhenEnabled(t *testing.T) {
+	t.Setenv(updatewarn.EnvSuppress, "")
 	root := t.TempDir()
 	writeMinimalRepo(t, root)
 
@@ -248,6 +249,7 @@ mcp_server_threshold = 5
 }
 
 func TestRunWithStderr_QuietSuppressesOutput(t *testing.T) {
+	t.Setenv(updatewarn.EnvSuppress, "")
 	root := t.TempDir()
 	writeMinimalRepo(t, root)
 
@@ -318,6 +320,7 @@ mcp_server_threshold = 5
 }
 
 func TestRunWithStderr_QuietFromConfigSuppressesOutput(t *testing.T) {
+	t.Setenv(updatewarn.EnvSuppress, "")
 	root := t.TempDir()
 	writeMinimalRepo(t, root)
 

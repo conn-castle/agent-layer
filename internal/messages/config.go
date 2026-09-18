@@ -42,6 +42,7 @@ const (
 	ConfigMcpServerEnabledRequiredFmt             = "%s: mcp.servers[%d].enabled is required"
 	ConfigMcpServerURLRequiredFmt                 = "%s: mcp.servers[%d].url is required for http transport"
 	ConfigMcpServerHTTPTransportInvalidFmt        = "%s: mcp.servers[%d].http_transport must be sse or streamable"
+	ConfigMcpServerAuthInvalidFmt                 = "%s: mcp.servers[%d].auth must be oauth"
 	ConfigMcpServerCommandRequiredFmt             = "%s: mcp.servers[%d].command is required for stdio transport"
 	ConfigMcpServerTransportInvalidFmt            = "%s: mcp.servers[%d].transport must be http or stdio"
 	ConfigMcpServerClientInvalidFmt               = "%s: mcp.servers[%d].clients contains invalid client %q"

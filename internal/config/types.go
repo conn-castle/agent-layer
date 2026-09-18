@@ -167,6 +167,7 @@ type MCPServer struct {
 	HTTPTransport string            `toml:"http_transport"`
 	URL           string            `toml:"url"`
 	Headers       map[string]string `toml:"headers"`
+	Auth          string            `toml:"auth,omitempty"`
 	Command       string            `toml:"command"`
 	Args          []string          `toml:"args"`
 	Env           map[string]string `toml:"env"`

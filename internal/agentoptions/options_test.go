@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 func TestResolveUsesLiveAntigravityModels(t *testing.T) {
 	binDir := t.TempDir()
 	agyPath := filepath.Join(binDir, "agy")
-	script := "#!/bin/sh\nif [ \"$1\" = \"models\" ]; then\n  printf 'Live Model\\nBackup Model\\n'\nfi\n"
+	script := "#!/bin/sh\nif [ \"$1\" = \"models\" ]; then\n  printf 'live\\tLive Model\\nbackup\\tBackup Model\\n'\nfi\n"
 	if err := os.WriteFile(agyPath, []byte(script), 0o700); err != nil { // #nosec G306 -- test writes an executable mock agy stub; the executable bit is required.
 		t.Fatalf("write agy stub: %v", err)
 	}
@@ -40,7 +41,7 @@ func TestResolveUsesLiveAntigravityModels(t *testing.T) {
 	if options.Configured != "Configured Model" {
 		t.Fatalf("configured = %q, want trimmed configured model", options.Configured)
 	}
-	want := []string{"Live Model", "Backup Model"}
+	want := []string{"live", "backup"}
 	if !reflect.DeepEqual(options.Suggestions, want) {
 		t.Fatalf("suggestions = %v, want %v", options.Suggestions, want)
 	}
@@ -49,9 +50,9 @@ func TestResolveUsesLiveAntigravityModels(t *testing.T) {
 	}
 }
 
-func TestValuesFallsBackToCatalogWhenLiveDisabled(t *testing.T) {
+func TestValuesDoesNotInventModelsWhenLiveDisabled(t *testing.T) {
 	got := Values("antigravity", KindModel, DiscoveryRequest{})
-	want := config.FieldOptionValues(config.AntigravityModelFieldKey)
+	want := []string{}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("values = %v, want catalog %v", got, want)
 	}
@@ -64,19 +65,15 @@ func TestValuesUsesSharedStaticFieldCatalog(t *testing.T) {
 		kind  Kind
 		key   string
 	}{
-		{name: "claude model", agent: "claude", kind: KindModel, key: config.ClaudeModelFieldKey},
 		{name: "claude reasoning", agent: "claude", kind: KindReasoningEffort, key: config.ClaudeReasoningEffortFieldKey},
-		{name: "codex model", agent: "codex", kind: KindModel, key: config.CodexModelFieldKey},
 		{name: "codex reasoning", agent: "codex", kind: KindReasoningEffort, key: config.CodexReasoningEffortFieldKey},
-		{name: "copilot cli model", agent: "copilot_cli", kind: KindModel, key: config.CopilotCLIModelFieldKey},
-		{name: "grok model", agent: "grok", kind: KindModel, key: config.GrokModelFieldKey},
 		{name: "grok reasoning", agent: "grok", kind: KindReasoningEffort, key: config.GrokReasoningEffortFieldKey},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Values(tt.agent, tt.kind, DiscoveryRequest{Live: true})
+			got := Values(tt.agent, tt.kind, DiscoveryRequest{})
 			want := config.FieldOptionValues(tt.key)
-			if !reflect.DeepEqual(got, want) {
+			if !slices.Equal(got, want) {
 				t.Fatalf("values = %v, want shared catalog %v", got, want)
 			}
 		})

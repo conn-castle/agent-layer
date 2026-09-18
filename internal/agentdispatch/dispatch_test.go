@@ -16,6 +16,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/gitenv"
 	"github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/templates"
+	"github.com/conn-castle/agent-layer/internal/updatewarn"
 )
 
 const antigravityStructuredOK = `printf '{"event":"result","result":{"status":"SUCCESS","conversation_id":"22222222-2222-4222-8222-222222222222","response":"agy ok","usage":{"input_tokens":1,"output_tokens":2,"thinking_tokens":1,"cache_read_tokens":0}}}\n'`
@@ -112,11 +113,8 @@ func TestBuildOptionsJSONShape(t *testing.T) {
 			claude = target
 		}
 	}
-	if !claude.Model.OverrideSupported || len(claude.Model.Suggestions) == 0 || !claude.Model.AllowCustom {
+	if !claude.Model.OverrideSupported || len(claude.Model.Suggestions) != 0 || !claude.Model.AllowCustom || claude.Model.DiscoveryError == "" || claude.Model.Source != "unavailable" {
 		t.Fatalf("unexpected claude model metadata: %#v", claude.Model)
-	}
-	if want := config.FieldOptionValues(config.ClaudeModelFieldKey); !slices.Equal(claude.Model.Suggestions, want) {
-		t.Fatalf("claude model suggestions = %v, want shared catalog %v", claude.Model.Suggestions, want)
 	}
 	var codex AgentOption
 	for _, target := range options.Agents {
@@ -124,11 +122,8 @@ func TestBuildOptionsJSONShape(t *testing.T) {
 			codex = target
 		}
 	}
-	if !codex.Model.OverrideSupported || !codex.Model.AllowCustom {
+	if !codex.Model.OverrideSupported || len(codex.Model.Suggestions) != 0 || !codex.Model.AllowCustom || codex.Model.DiscoveryError == "" || codex.Model.Source != "unavailable" {
 		t.Fatalf("unexpected codex model metadata: %#v", codex.Model)
-	}
-	if want := config.FieldOptionValues(config.CodexModelFieldKey); !slices.Equal(codex.Model.Suggestions, want) {
-		t.Fatalf("codex model suggestions = %v, want shared catalog %v", codex.Model.Suggestions, want)
 	}
 	if !codex.ReasoningEffort.OverrideSupported || !codex.ReasoningEffort.AllowCustom {
 		t.Fatalf("unexpected codex reasoning effort metadata: %#v", codex.ReasoningEffort)
@@ -145,7 +140,7 @@ func TestBuildOptionsJSONShape(t *testing.T) {
 	if !agy.Model.OverrideSupported || agy.Model.Configured != "Gemini 3.1 Pro (High)" || !agy.Model.AllowCustom {
 		t.Fatalf("unexpected antigravity model metadata: %#v", agy.Model)
 	}
-	if !slices.Contains(agy.Model.Suggestions, "Gemini 3.1 Pro (High)") {
+	if len(agy.Model.Suggestions) != 0 || agy.Model.DiscoveryError == "" {
 		t.Fatalf("unexpected antigravity model suggestions: %#v", agy.Model.Suggestions)
 	}
 	if agy.ReasoningEffort.OverrideSupported {
@@ -157,8 +152,8 @@ func TestBuildOptionsUsesTargetModelSuggestionProvider(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "agy.log")
-	writeDispatchStub(t, binDir, "agy", `if [ "$1" = "models" ]; then
-  printf 'Live Antigravity Model\nBackup Antigravity Model\n'
+	writeDispatchStub(t, binDir, "agy", `if [ "$2" = "models" ]; then
+  printf 'live\tLive Antigravity Model\nbackup\tBackup Antigravity Model\n'
 fi`)
 
 	options, err := BuildOptions(OptionsRequest{
@@ -179,10 +174,11 @@ fi`)
 		}
 	}
 	got := strings.Join(agy.Model.Suggestions, ",")
-	if got != "Live Antigravity Model,Backup Antigravity Model" {
+	if got != "live,backup" {
 		t.Fatalf("antigravity suggestions = %q", got)
 	}
-	assertFileContains(t, logPath, "ARG_0=models")
+	assertFileContains(t, logPath, "ARG_0=--gemini_dir="+filepath.Join(root, ".agy"))
+	assertFileContains(t, logPath, "ARG_1=models")
 	assertFileContains(t, logPath, "AGY_CLI_DISABLE_AUTO_UPDATE=1")
 }
 
@@ -231,6 +227,7 @@ func TestDispatchAllowsNestedDispatchWithinDefaultDepth(t *testing.T) {
 	// via run.Create and exports AL_RUN_DIR / AL_RUN_ID via BuildEnv.
 	assertFileContains(t, logPath, "AL_RUN_DIR=")
 	assertFileContains(t, logPath, "AL_RUN_ID=")
+	assertFileContains(t, logPath, updatewarn.EnvSuppress+"=1")
 	// Negative env-passthrough contract: BuildEnv strips AL_SHIM_ACTIVE so the
 	// shim marker does not leak into the dispatched child env.
 	assertFileDoesNotContain(t, logPath, "AL_SHIM_ACTIVE=")

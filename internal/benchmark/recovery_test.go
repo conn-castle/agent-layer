@@ -754,7 +754,7 @@ func TestTreatmentPierArgumentsRequireAnImmutableBundleAndCredentials(t *testing
 
 func TestBenchmarkAuthenticationRejectsUnusableCredentials(t *testing.T) {
 	repository := t.TempDir()
-	codex := []parsedSelection{{model: supportedModels[0], effort: effortLow}}
+	codex := []parsedSelection{{model: historicalModels[0], effort: effortLow}}
 	path := filepath.Join(repository, ".codex", "auth.json")
 
 	if _, err := validateAuthentication(context.Background(), repository, codex); err == nil ||

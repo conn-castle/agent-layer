@@ -34,7 +34,7 @@ enabled = false
 # Antigravity model selection is projected into .agy/antigravity-cli/settings.json.
 # Run `agy models` for the current CLI surface; some agy model names include
 # effort in the display string.
-# model = "Gemini 3.5 Flash (High)"
+# model = "..."
 # Use agent_specific to inject unmanaged JSON keys into settings.json
 # (deep-merged with Agent Layer-managed permissions). Do not put model here;
 # use agents.antigravity.model above.
@@ -83,7 +83,7 @@ enabled = true
 [agents.codex]
 enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model setting and the client uses its default.
-# model = "gpt-5.6-sol"
+# model = "..."
 # reasoning_effort is optional; when omitted, the client uses its default.
 # reasoning_effort = "xhigh" # codex only
 # local_config_dir sets CODEX_HOME=<repo>/.codex for per-repo auth, sessions,
@@ -122,7 +122,7 @@ enabled = true
 [agents.grok]
 enabled = false
 # model is optional; when omitted, Agent Layer does not pass a model flag and the client uses its default.
-# model = "grok-4.6" # grok-4.6 | grok-4.5
+# model = "..."
 # reasoning_effort is optional; Grok applies it where the active model supports it.
 # reasoning_effort = "high" # none | minimal | low | medium | high | xhigh | max
 # GROK_HOME is always set to <repo>/.grok-config for al grok, dispatch, and al vscode.

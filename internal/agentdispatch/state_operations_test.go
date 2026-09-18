@@ -54,6 +54,36 @@ func TestStateRejectsMalformedMappingsAndRecords(t *testing.T) {
 	}
 }
 
+func TestRunEvidencePersistsTerminalMetadataOnlyChange(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	run.Record.State = dispatchStateFailed
+	run.Record.CompletedAt = &now
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := updateRunEvidence(run.Dir, func(record *RunRecord) error {
+		record.RecoveryState = recoveryAcceptanceUnknown
+		record.TerminalReason = "provider termination was not proven"
+		record.TerminalExitCode = ExitTargetFailure
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	durable, err := loadRunRecord(root, run.Record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if durable.Revision != updated.Revision || durable.RecoveryState != recoveryAcceptanceUnknown || durable.TerminalReason != "provider termination was not proven" || durable.TerminalExitCode != ExitTargetFailure {
+		t.Fatalf("terminal metadata was not persisted: %#v", durable)
+	}
+}
+
 func TestReservationDoesNotOverwriteCollidingName(t *testing.T) {
 	root := t.TempDir()
 	originalSizes, originalShapes, originalElectrical := nameSizes, nameShapes, nameElectrical
@@ -185,12 +215,13 @@ func TestDispatchSessionRetentionPrunesOnlyExpiredInactiveMappings(t *testing.T)
 	if _, err := os.Stat(filepath.Join(dispatchStatePath(root), expired.Name+".json")); !os.IsNotExist(err) {
 		t.Fatalf("expired inactive mapping remains: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dispatchStatePath(root), cancelled.Name+".json")); !os.IsNotExist(err) {
-		t.Fatalf("expired never-launched cancelled mapping remains: %v", err)
+	if _, err := os.Stat(filepath.Join(dispatchStatePath(root), cancelled.Name+".json")); err != nil {
+		t.Fatalf("unconfirmed cancelled mapping was pruned: %v", err)
 	}
 	for _, path := range []string{
 		filepath.Join(dispatchStatePath(root), current.Name+".json"),
 		filepath.Join(dispatchStatePath(root), active.Name+".json"),
+		filepath.Join(dispatchStatePath(root), cancelled.Name+".json"),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("retention removed preserved mapping %s: %v", path, err)

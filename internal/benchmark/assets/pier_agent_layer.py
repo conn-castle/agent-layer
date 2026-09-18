@@ -1056,14 +1056,14 @@ with open(path, "w", encoding="utf-8") as stream:
             await environment.upload_file(self._antigravity_credentials_path, remote_credential)
             await self.exec_as_agent(environment, command=f"chmod 0600 {remote_credential}")
             if self._preflight_only:
-                models_path = "/tmp/agent-layer-antigravity-models.txt"
+                # Transport native output only. The host validates it with
+                # Agent Layer's shared Go model parser before paid execution.
+                models_path = str(EnvironmentPaths.agent_dir / "model-discovery.txt")
                 await self.exec_as_agent(
                     environment,
                     command=(
                         f"AGY_CLI_DISABLE_AUTO_UPDATE=1 agy --gemini_dir={REMOTE_WORKSPACE}/.agy models "
-                        f"> {models_path} && awk -v expected={shlex.quote(self.model_name or '')} "
-                        f"{shlex.quote('$1 == expected { found=1 } END { exit !found }')} {models_path} || "
-                        f"{{ echo 'Antigravity benchmark model is unavailable' >&2; cat {models_path} >&2; exit 1; }}"
+                        f"> {shlex.quote(models_path)}"
                     ),
                 )
                 await self._preflight_retained_stream_validator(environment, "antigravity")
@@ -1131,15 +1131,11 @@ class AgentLayerGrok(_AgentLayerStreamAgent):
                 Path(local_prompt).unlink(missing_ok=True)
             env = self.build_process_env({"GROK_HOME": grok_home, "GROK_MEMORY": "0", "GROK_CLAUDE_AGENTS_ENABLED": "false"})
             if self._preflight_only:
-                models_path = "/tmp/agent-layer-grok-models.txt"
+                models_path = str(EnvironmentPaths.agent_dir / "model-discovery.txt")
                 await self.exec_as_agent(
                     environment,
                     command=(
-                        f"grok --no-auto-update --sandbox {self.SANDBOX_PROFILE} models > {models_path} && "
-                        f"awk -v expected={shlex.quote(self.model_name or '')} "
-                        f"{shlex.quote('$1 ~ /^[-*]$/ && $2 == expected { found=1 } END { exit !found }')} "
-                        f"{models_path} || "
-                        f"{{ echo 'Grok benchmark model is unavailable' >&2; cat {models_path} >&2; exit 1; }}"
+                        f"grok --no-auto-update --sandbox {self.SANDBOX_PROFILE} models > {shlex.quote(models_path)}"
                     ),
                     env=env,
                 )

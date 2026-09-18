@@ -437,7 +437,7 @@ func TestPromptModels_AntigravityModelOptions(t *testing.T) {
 			wantOptions := append([]string{messages.WizardLeaveBlankOption}, config.FieldOptionValues(config.AntigravityModelFieldKey)...)
 			wantOptions = append(wantOptions, messages.WizardCustomOption)
 			assert.Equal(t, wantOptions, options)
-			assert.Equal(t, "Gemini 3.5 Flash (High)", *current)
+			assert.Equal(t, messages.WizardCustomOption, *current)
 			*current = "Gemini 3.1 Pro (High)"
 			return nil
 		},
@@ -741,13 +741,13 @@ func TestInitializeChoices_AntigravityModelReadBack(t *testing.T) {
 	assert.Equal(t, "Gemini 3.5 Flash (High)", choices.AntigravityModel)
 }
 
-func TestApplyFreshSetupDefaults_DefaultsAntigravityModelToHigh(t *testing.T) {
+func TestApplyFreshSetupDefaults_UsesAntigravityClientDefault(t *testing.T) {
 	choices := NewChoices()
 
 	applyFreshSetupDefaults(choices)
 
 	assert.True(t, choices.EnabledAgents[AgentAntigravity])
-	assert.Equal(t, defaultAntigravityModel, choices.AntigravityModel)
+	assert.Empty(t, choices.AntigravityModel)
 }
 
 // TestReadCodexBrowserDisabled covers detecting the Codex browser-disable state.

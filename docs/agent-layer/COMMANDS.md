@@ -118,6 +118,16 @@ Notes: Runs `deadcode -test` from `./cmd/al` and `./cmd/publish-site` roots; use
 
 ### Test
 
+- Benchmark live harness model discovery through the production Go no-sync path
+```bash
+AL_MODEL_DISCOVERY_BENCHMARK_ROOT="$PWD" go test ./internal/agentoptions -run '^$' -bench BenchmarkLiveModelDiscovery -benchtime=3x -count=1
+```
+Run from: repo root
+Prerequisites: Installed, authenticated harnesses and an initialized project.
+Notes: Uses project launch configuration without sync or inference. Each iteration
+starts a harness; upstream caches are not cleared. Authentication/discovery
+failures fail the affected benchmark instead of timing bundled fallback results.
+
 - Run all tests
 ```bash
 make test

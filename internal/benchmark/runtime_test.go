@@ -1140,6 +1140,38 @@ func TestInstructionsOnlyRuntimePreflightDoesNotRequireDispatchEvidence(t *testi
 	}
 }
 
+func TestRuntimePreflightValidatesNativeModelEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		name, provider, output string
+		valid                  bool
+	}{
+		{"agy slug", adapterAntigravity, "future-model\tFuture Display\n", true},
+		{"grok authenticated", adapterGrok, "Available models:\n  - future-model\n", true},
+		{"grok auth fallback", adapterGrok, "You are not authenticated.\nAvailable models:\n  - future-model\n", false},
+		{"unlisted", adapterGrok, "Available models:\n  - another-model\n", false},
+		{"missing", adapterAntigravity, "", false},
+		{"malformed", adapterAntigravity, "unexpected output\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stage := writePierStage(t, "task-checksum", .5, 0)
+			if tc.output != "" {
+				path := filepath.Join(stage, "jobs", "one", "agent", "model-discovery.txt")
+				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(tc.output), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			request := ExecutionRequest{Task: "example-task", TaskChecksum: "task-checksum", Model: Model{Adapter: tc.provider, RuntimeIdentifier: "future-model"}}
+			err := validatePierTreatmentPreflight(stage, request)
+			if (err == nil) != tc.valid {
+				t.Fatalf("preflight error=%v, want valid=%t", err, tc.valid)
+			}
+		})
+	}
+}
+
 func TestPinnedCheckoutValidationRejectsMissingAndWrongRepositoryState(t *testing.T) {
 	root := t.TempDir()
 	checkout := filepath.Join(root, "checkout")

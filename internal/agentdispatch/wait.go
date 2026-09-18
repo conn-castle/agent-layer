@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -17,22 +16,20 @@ const (
 	mcpWaitPollInterval = time.Second
 )
 
-// Wait blocks until the current invocation is terminal or the bounded wait
-// expires. Expiration reports running without changing the invocation.
+// Wait blocks until the selected condition is met or the bounded wait
+// expires. Expiration reports the current observation and whether the
+// requested condition was met. A handle is resolved once; an invocation ID
+// never follows a later continuation.
 func Wait(request WaitRequest) error {
 	ctx := request.Context
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	handle := strings.TrimSpace(request.ID)
-	if handle == "" {
-		return exitError(ExitUsage, "dispatch wait requires a handle")
-	}
-	session, err := loadSession(request.Root, handle)
+	condition, err := waitConditionName(request.Condition)
 	if err != nil {
 		return err
 	}
-	record, err := currentSessionRun(request.Root, session)
+	record, err := resolveInvocationSelector(request.Root, request.ID, request.Handle, request.InvocationID)
 	if err != nil {
 		return err
 	}
@@ -45,17 +42,31 @@ func Wait(request WaitRequest) error {
 		interval = dispatchWaitInterval
 	}
 	deadline := time.Now().Add(timeout)
-	for !terminalDispatchState(record.State) {
-		record, err = reconcileOrphan(request.Root, record)
-		if err != nil {
+	for {
+		if err := ctx.Err(); err != nil {
 			return err
-		}
-		if terminalDispatchState(record.State) {
-			break
 		}
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
-			return writePublicResult(writerOrDiscard(request.Stdout), Result{Handle: session.Name, State: dispatchStateRunning})
+			result := publicResult(record)
+			if !terminalDispatchState(record.State) {
+				result.State = dispatchStateRunning
+				result.Error = ""
+			}
+			result.ConditionMet = boolPtr(false)
+			return writePublicResult(writerOrDiscard(request.Stdout), result)
+		}
+		updated, reconErr := tryReconcileOrphan(request.Root, record)
+		if reconErr != nil {
+			return reconErr
+		}
+		record = updated
+		if waitConditionSatisfied(record, condition) {
+			return writeWaitResult(request.Root, record, condition, writerOrDiscard(request.Stdout))
+		}
+		remaining = time.Until(deadline)
+		if remaining <= 0 {
+			continue
 		}
 		pollDelay := min(interval, remaining)
 		select {
@@ -68,7 +79,6 @@ func Wait(request WaitRequest) error {
 			return err
 		}
 	}
-	return writeWaitResult(session.Name, record, writerOrDiscard(request.Stdout))
 }
 
 func currentSessionRun(root string, session Session) (RunRecord, error) {
@@ -82,21 +92,37 @@ func currentSessionRun(root string, session Session) (RunRecord, error) {
 	return loadRunRecord(root, runID)
 }
 
-func writeWaitResult(handle string, record RunRecord, stdout io.Writer) error {
+func writeWaitResult(root string, record RunRecord, condition string, stdout io.Writer) error {
+	result := publicResult(record)
+	result.ConditionMet = boolPtr(true)
 	switch record.State {
 	case dispatchStateCompleted:
-		path, err := completedResultPath(record)
-		if err != nil {
-			return err
+		if condition == waitConditionTerminal {
+			path, err := completedResultPath(root, record)
+			if err != nil {
+				return err
+			}
+			result.ResultPath = path
+			result.Error = ""
+			return writePublicResult(stdout, result)
 		}
-		return writePublicResult(stdout, Result{Handle: handle, State: dispatchStateCompleted, ResultPath: path})
+		if path, err := completedResultPath(root, record); err == nil {
+			result.ResultPath = path
+			result.Error = ""
+		}
+		return writePublicResult(stdout, result)
 	case dispatchStateFailed, dispatchStateInterrupted:
 		reason := strings.TrimSpace(record.TerminalReason)
 		if reason == "" {
 			reason = "dispatch invocation failed without a recorded reason"
 		}
-		if err := writePublicResult(stdout, Result{Handle: handle, State: dispatchStateFailed, Error: reason}); err != nil {
+		result.State = dispatchStateFailed
+		result.Error = reason
+		if err := writePublicResult(stdout, result); err != nil {
 			return err
+		}
+		if condition == waitConditionTerminationConfirmed {
+			return nil
 		}
 		code := record.TerminalExitCode
 		if code == 0 {
@@ -104,26 +130,33 @@ func writeWaitResult(handle string, record RunRecord, stdout io.Writer) error {
 		}
 		return exitError(code, reason)
 	case dispatchStateCancelled:
-		return writePublicResult(stdout, Result{Handle: handle, State: dispatchStateCancelled})
+		result.Error = ""
+		return writePublicResult(stdout, result)
 	default:
+		if condition == waitConditionTerminationConfirmed && record.TerminationConfirmed {
+			return writePublicResult(stdout, result)
+		}
 		return exitError(ExitConfig, fmt.Sprintf("dispatch invocation %s has unsupported terminal state %q", record.ID, record.State))
 	}
 }
 
-func completedResultPath(record RunRecord) (string, error) {
+func completedResultPath(root string, record RunRecord) (string, error) {
 	if strings.TrimSpace(record.AnswerPath) == "" {
 		return "", exitError(ExitConfig, "completed dispatch result path is empty")
 	}
-	path, err := filepath.Abs(record.AnswerPath)
+	runDir := filepathForRun(root, record.ID)
+	answerPath := record.AnswerPath
+	if !filepath.IsAbs(answerPath) {
+		answerPath = filepath.Join(runDir, answerPath)
+	}
+	file, err := openOwnedRegularFile(runDir, answerPath)
+	if err != nil {
+		return "", wrapExitError(ExitConfig, "open completed dispatch result", err)
+	}
+	_ = file.Close()
+	path, err := filepath.Abs(answerPath)
 	if err != nil {
 		return "", wrapExitError(ExitConfig, "resolve dispatch result path", err)
-	}
-	info, err := os.Stat(path) // #nosec G304 -- path comes from validated Agent Layer run state.
-	if err != nil {
-		return "", wrapExitError(ExitConfig, "stat completed dispatch result", err)
-	}
-	if !info.Mode().IsRegular() {
-		return "", exitError(ExitConfig, "completed dispatch result is not a regular file")
 	}
 	return path, nil
 }

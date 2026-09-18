@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -11,8 +13,39 @@ import (
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
+// TestMain keeps warning tests independent of a dispatched child's
+// AL_SUPPRESS_UPDATE_WARNING inheritance. Tests that exercise suppression
+// set the variable themselves.
+func TestMain(m *testing.M) {
+	if err := os.Unsetenv(EnvSuppress); err != nil {
+		fmt.Fprintf(os.Stderr, "clear %s: %v\n", EnvSuppress, err)
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
+
 func TestWarnIfOutdated_SkipsWhenVersionOverrideSet(t *testing.T) {
 	t.Setenv(versiondispatch.EnvVersionOverride, "1")
+	orig := CheckForUpdate
+	called := 0
+	CheckForUpdate = func(context.Context, string) (update.CheckResult, error) {
+		called++
+		return update.CheckResult{}, nil
+	}
+	t.Cleanup(func() { CheckForUpdate = orig })
+
+	var stderr bytes.Buffer
+	WarnIfOutdated(context.Background(), "v1.0.0", &stderr)
+	if called != 0 {
+		t.Fatalf("expected update check to be skipped, got %d calls", called)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no output, got %q", stderr.String())
+	}
+}
+
+func TestWarnIfOutdated_SkipsWhenSuppressed(t *testing.T) {
+	t.Setenv(EnvSuppress, "1")
 	orig := CheckForUpdate
 	called := 0
 	CheckForUpdate = func(context.Context, string) (update.CheckResult, error) {

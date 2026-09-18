@@ -143,8 +143,11 @@ func Continue(opts ContinueOptions) error {
 	if !terminalDispatchState(current.State) {
 		return exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q is running", session.Name))
 	}
+	if session.ProviderSessionID == "" && current.RecoveryState != recoveryRetrySafe {
+		return exitError(ExitUnavailable, fmt.Sprintf("cannot continue dispatch conversation %q: provider acceptance is unknown and no provider session ID was recorded; inspect the previous run before explicitly starting a new conversation", session.Name))
+	}
 	if current.State == dispatchStateCompleted {
-		if _, err := completedResultPath(current); err != nil {
+		if _, err := completedResultPath(opts.Root, current); err != nil {
 			return err
 		}
 	}
@@ -261,7 +264,11 @@ func publishInvocation(root string, run *dispatchRun, session Session, request w
 		_ = worker.gate.Close()
 		return failBeforePublication(root, run, session, err)
 	}
-	if err := writePublicResult(stdout, Result{Handle: session.Name, State: dispatchStateRunning}); err != nil {
+	result := publicResult(run.Record)
+	result.Handle = session.Name
+	result.State = dispatchStateRunning
+	result.Error = ""
+	if err := writePublicResult(stdout, result); err != nil {
 		_ = worker.gate.Close()
 		return errors.Join(err, removeWorkerRequest(run.Dir))
 	}

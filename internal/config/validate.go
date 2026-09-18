@@ -12,6 +12,9 @@ import (
 const (
 	TransportHTTP  = "http"
 	TransportStdio = "stdio"
+
+	HTTPTransportSSE        = "sse"
+	HTTPTransportStreamable = "streamable"
 )
 
 // isValidApprovalMode checks the value against the config field catalog.
@@ -42,8 +45,8 @@ var validClients = map[string]struct{}{
 }
 
 var validHTTPTransports = map[string]struct{}{
-	"sse":        {},
-	"streamable": {},
+	HTTPTransportSSE:        {},
+	HTTPTransportStreamable: {},
 }
 
 var validWarningNoiseModes = map[string]struct{}{
@@ -137,11 +140,15 @@ func (c *Config) Validate(path string) error {
 					return fmt.Errorf(messages.ConfigMcpServerHTTPTransportInvalidFmt, path, i)
 				}
 			}
+			if server.Auth != "" && server.Auth != MCPAuthOAuth {
+				return fmt.Errorf(messages.ConfigMcpServerAuthInvalidFmt, path, i)
+			}
 		case TransportStdio:
 			// Silently strip HTTP-only fields; they are meaningless for stdio.
 			c.MCP.Servers[i].HTTPTransport = ""
 			c.MCP.Servers[i].URL = ""
 			c.MCP.Servers[i].Headers = nil
+			c.MCP.Servers[i].Auth = ""
 			if server.Command == "" {
 				return fmt.Errorf(messages.ConfigMcpServerCommandRequiredFmt, path, i)
 			}

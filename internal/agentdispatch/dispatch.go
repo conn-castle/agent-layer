@@ -28,6 +28,7 @@ func finishRejectedResume(run *dispatchRun, claimErr error, publish func(string,
 	run.Record.CompletedAt = &now
 	run.Record.TerminalReason = claimErr.Error()
 	run.Record.TerminalExitCode = terminalExitCode(claimErr)
+	applyTerminationEvidence(&run.Record, nil, true, now)
 	if err := publish(run.Dir, &run.Record); err != nil {
 		message := fmt.Sprintf("resume claim rejected (%v); publish rejected resume terminal evidence: %v", claimErr, err)
 		return wrapExitError(ExitConfig, message, errors.Join(claimErr, err))
@@ -197,6 +198,7 @@ func completeDispatchSuccess(request dispatchExecution, result executionResult, 
 	request.Run.Record.CompletedAt = &now
 	request.Run.Record.TerminalExitCode = 0
 	request.Run.Record.ProviderSessionID = session.ProviderSessionID
+	request.Run.Record.LaunchFenced = true
 	if err := writeRunRecord(request.Run.Dir, &request.Run.Record); err != nil {
 		cause := err
 		if removeErr := os.Remove(request.Run.Record.AnswerPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
@@ -204,10 +206,12 @@ func completeDispatchSuccess(request dispatchExecution, result executionResult, 
 		}
 		return finishDispatchFailure(request, cause)
 	}
-	if err := releaseConversation(request.Root, session.Name, request.Run.Record.ID); err != nil {
-		// The completed run record is authoritative and claimConversation can
-		// replace a stale claim that points at a terminal run. Surface cleanup
-		// failure without turning a completed provider turn into a failed child.
+	updated, err := persistConfirmedTermination(request.Run.Dir)
+	if err != nil {
+		return finishDispatchFailure(request, err)
+	}
+	request.Run.Record = updated
+	if err := releaseIfConfirmed(request.Root, updated); err != nil {
 		_, _ = fmt.Fprintf(request.Stderr, "warning: dispatch run %s completed but active claim cleanup failed: %v\n", request.Run.Record.ID, err)
 	}
 	return replayAnswer(request.Run.Record.AnswerPath, request.Stdout)
@@ -216,8 +220,12 @@ func completeDispatchSuccess(request dispatchExecution, result executionResult, 
 func finishDispatchFailure(request dispatchExecution, cause error) error {
 	var terminationFailure *unprovenProviderTerminationError
 	if errors.As(cause, &terminationFailure) {
-		// The provider group may still be live. Keep both the nonterminal run
-		// evidence and active claim so no replacement can overlap it.
+		if err := retainUnprovenProviderOwnership(request); err != nil {
+			return errors.Join(cause, err)
+		}
+		if err := persistUnprovenFailure(request, cause); err != nil {
+			return errors.Join(cause, err)
+		}
 		return cause
 	}
 	if current, err := loadRunRecord(request.Root, request.Run.Record.ID); err == nil && current.State == dispatchStateCancelled {
@@ -236,18 +244,24 @@ func finishDispatchFailure(request dispatchExecution, cause error) error {
 	request.Run.Record.CompletedAt = &now
 	request.Run.Record.TerminalReason = cause.Error()
 	request.Run.Record.TerminalExitCode = terminalExitCode(cause)
-	// Release the active claim even when the terminal write fails, so a
-	// persistence error cannot leave the conversation stuck on a failed run.
+	request.Run.Record.LaunchFenced = true
 	writeErr := writeRunRecord(request.Run.Dir, &request.Run.Record)
-	if err := releaseConversation(request.Root, request.Session.Name, request.Run.Record.ID); err != nil {
-		return err
+	if writeErr == nil {
+		updated, persistErr := persistConfirmedTermination(request.Run.Dir)
+		if persistErr != nil {
+			writeErr = persistErr
+		} else {
+			request.Run.Record = updated
+		}
+	}
+	if request.Run.Record.TerminationConfirmed {
+		if err := releaseConversation(request.Root, request.Session.Name, request.Run.Record.ID); err != nil {
+			return err
+		}
 	}
 	if writeErr != nil {
 		return writeErr
 	}
-	// A proven pre-start failure means the provider never created a
-	// conversation; do not leave a pre-persisted durable mapping (fresh
-	// Claude runs) advertising a session that does not exist.
 	if request.Mode == dispatchModeFresh && request.Run.Record.RecoveryState == recoveryRetrySafe {
 		if err := downgradeUnstartedSession(request.Root, request.Session.Name, request.Run.Record.ID); err != nil {
 			return err
@@ -256,12 +270,71 @@ func finishDispatchFailure(request dispatchExecution, cause error) error {
 	return cause
 }
 
+func persistUnprovenFailure(request dispatchExecution, cause error) error {
+	now := time.Now().UTC()
+	primary := primaryUnprovenError(cause)
+	_, err := updateRunEvidence(request.Run.Dir, func(current *RunRecord) error {
+		if current.State == dispatchStateCancelled {
+			applyTerminationEvidence(current, cause, false, now)
+			if current.TerminalReason == "" {
+				current.TerminalReason = primary.Error()
+			}
+			return nil
+		}
+		if !terminalDispatchState(current.State) {
+			current.State = dispatchStateFailed
+			current.RecoveryState = recoveryAcceptanceUnknown
+			current.CompletedAt = &now
+			current.TerminalReason = primary.Error()
+			current.TerminalExitCode = terminalExitCode(primary)
+		}
+		applyTerminationEvidence(current, cause, false, now)
+		return nil
+	})
+	return err
+}
+
+func retainUnprovenProviderOwnership(request dispatchExecution) error {
+	owned := request.Run.Record
+	if owned.PID == 0 {
+		return nil
+	}
+	return withRunLock(request.Run.Dir, func() error {
+		current, err := loadRunRecord(request.Root, owned.ID)
+		if err != nil {
+			return err
+		}
+		if current.PID != 0 {
+			if current.PID != owned.PID || current.ProcessGroupID != owned.ProcessGroupID || current.ProcessStartIdentity != owned.ProcessStartIdentity {
+				return exitError(ExitUnavailable, "cannot retain unproven provider ownership: recorded process identity conflicts with the started provider")
+			}
+			return nil
+		}
+		// Preserve concurrent cancellation and all newer state. Only add the
+		// owned identity; a stale revision must not erase this safety evidence.
+		current.PID = owned.PID
+		current.ProcessGroupID = owned.ProcessGroupID
+		current.ProcessStartIdentity = owned.ProcessStartIdentity
+		current.Revision++
+		current.UpdatedAt = time.Now().UTC()
+		if err := writeJSONAtomic(filepath.Join(request.Run.Dir, dispatchRunFile), current); err != nil {
+			return wrapExitError(ExitConfig, "retain unproven provider ownership", err)
+		}
+		return nil
+	})
+}
+
 // finishDispatchCancellation is called only by the owning execution after no
 // provider was launched or the provider wait path returned. That ownership
 // boundary, rather than publication of the cancelled state, releases the
 // conversation for another execution.
 func finishDispatchCancellation(request dispatchExecution) error {
-	if err := releaseConversation(request.Root, request.Session.Name, request.Run.Record.ID); err != nil {
+	updated, err := persistTerminationEvidence(request.Run.Dir, nil, true)
+	if err != nil {
+		return err
+	}
+	request.Run.Record = updated
+	if err := releaseIfConfirmed(request.Root, updated); err != nil {
 		return err
 	}
 	return exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled", request.Run.Record.ID))
