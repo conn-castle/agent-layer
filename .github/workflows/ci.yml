@@ -80,4 +80,4 @@ jobs:
           path: agent-layer-web
           persist-credentials: false
       - name: Build published website
-        run: make website-build-check SITE_BUILD_TAG=v0.0.0 WEBSITE_REPO_DIR=agent-layer-web
+        run: make website-build-check SITE_BUILD_TAG=v999.0.0 WEBSITE_REPO_DIR=agent-layer-web

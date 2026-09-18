@@ -107,16 +107,17 @@ There is no manual approval gate anywhere in that chain.
 The `publish-website-and-tap` job publishes website content by running `go run ./cmd/publish-site --tag vX.Y.Z --repo-b-dir agent-layer-web`, then runs `npm run build` in `agent-layer-web`.
 Release publishing currently supports stable tags only (`vX.Y.Z`); prerelease tags are intentionally unsupported.
 That command:
-1. Copies `site/pages/` into `agent-layer-web/src/pages/`, deleting the destination first.
-2. Copies `site/docs/` into `agent-layer-web/docs/`, deleting the destination first.
-3. Overwrites `agent-layer-web/CHANGELOG.md` with this repo’s `CHANGELOG.md`.
-4. Removes any existing versioned docs for this tag, then runs `npx docusaurus docs:version X.Y.Z` to snapshot the docs into `versioned_docs/version-X.Y.Z/` and `versioned_sidebars/version-X.Y.Z-sidebars.json`.
-5. Rewrites `versions.json` (dedupe + newest-first sort), then applies retention:
+1. Stages `site/pages/`, generates the three Best Practices pages from their canonical guides under `docs/`, and replaces `agent-layer-web/src/pages/`.
+2. Replaces the owned `static/deepswe-planner/` application, copies `site/static/llms.txt`, and leaves unrelated website static assets intact.
+3. Replaces `agent-layer-web/docs/` with `site/docs/` and publishes an agent-readable `.md` mirror under `agent-layer-web/static/docs/`.
+4. Overwrites `agent-layer-web/CHANGELOG.md` with this repo’s `CHANGELOG.md`.
+5. Removes any existing versioned docs for this tag, then runs `npx docusaurus docs:version X.Y.Z` to snapshot the docs into `versioned_docs/version-X.Y.Z/` and `versioned_sidebars/version-X.Y.Z-sidebars.json`.
+6. Rewrites `versions.json` (dedupe + newest-first sort), then applies retention:
    - keep the newest 4 patch releases from the newest minor line,
    - keep the newest patch release for each of the newest 4 minor lines (including the newest minor line),
    - keep stable releases only (prereleases are dropped),
    - keep the union of those sets in newest-first order.
-6. Prunes dropped versions from both `versioned_docs/version-<version>/` and `versioned_sidebars/version-<version>-sidebars.json`.
+7. Prunes dropped versions from both `versioned_docs/version-<version>/` and `versioned_sidebars/version-<version>-sidebars.json`.
 
 Historical docs are retained by the policy above. The current tag is always removed/recreated first for idempotency before retention is applied.
 
@@ -125,8 +126,13 @@ After publishing, the workflow runs the Docusaurus production build before commi
 CI also runs the same website build shape on pull requests and pushes to `main` with a synthetic docs tag:
 
 ```bash
-make website-build-check SITE_BUILD_TAG=v0.0.0 WEBSITE_REPO_DIR=agent-layer-web
+make website-build-check SITE_BUILD_TAG=v999.0.0 WEBSITE_REPO_DIR=agent-layer-web
 ```
+
+Use a disposable, clean website checkout and a valid test version newer than the
+versions already listed in `versions.json`. Older test versions can be removed by
+the retention step before the build, which would validate the previous docs instead
+of the files you just published.
 
 Required secrets for the tap PR:
 - `HOMEBREW_TAP_APP_ID`

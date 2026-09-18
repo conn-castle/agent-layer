@@ -1,12 +1,20 @@
 ---
 title: Skills
 description: Structured workflows that give agents repeatable, multi-phase processes for common development tasks.
+keywords:
+  - Agent Skills
+  - portable AI agent skills
+  - Claude Code skills
+  - Codex skills
+  - AI agent workflows
 sidebar_position: 5
 ---
 
 Agent skills are structured Markdown workflows that guide AI coding agents through complex, multi-step tasks. Instead of describing what you want step by step, you invoke a skill and the agent follows a tested process with built-in quality gates.
 
 A skill such as `ship-pr` can audit changes, run CI, wait for review comments, address every one, and confirm CI passes before finishing. You get that whole lifecycle from one invocation instead of restating the steps each time.
+
+Agent Layer also provides a Git-backed package workflow for skills: [import Agent Skills from any reachable repository](./skill-imports), customize them locally, merge upstream changes, and project the same content to every enabled client.
 
 ## The skill standard
 
@@ -168,131 +176,15 @@ For the complete research-backed authoring guide — including empirical studies
 
 ## Importing skills from Git
 
-Agent Layer can import known Agent Skills from any Git repository your existing
-Git authentication can reach, keep them editable locally, pull upstream changes
-without losing your edits, and contribute changes back.
+Agent Layer can import known Agent Skills from any Git repository your existing Git authentication can reach. Imported skills remain editable under `.agent-layer/skills-imported/`, project through ordinary `al sync`, and use recorded source state to preserve compatible local edits when you pull upstream changes.
 
 ```bash
 al skills add https://github.com/example/skills.git skills/reviewer
 al skills status
-al skills diff reviewer
 al skills pull
 ```
 
-Imported skills land in `.agent-layer/skills-imported/<skill-name>/` and are
-projected through ordinary `al sync` exactly like the skills you write in
-`.agent-layer/skills/`. Edit them in place: `al skills pull` merges upstream
-updates against the version you originally imported, so your local changes
-survive. When a change genuinely conflicts, or an upstream skill stops being
-valid, that one skill fails and its content is left untouched — the rest of the
-repository still imports. If a run is interrupted part way through, the next
-`al skills` or `al sync` command rolls it back, so you never end up with a
-half-replaced skill.
-
-A conflict leaves a Git workspace under `.agent-layer/tmp/skill-conflicts/<name>/`.
-Finish the merge with ordinary git commands, `git add` the result, and run
-`al skills resolve <name>`. Agent Layer applies the staged index after verifying
-that the recorded lock and configuration still match. If that workspace is stale
-or unreadable — for example after `al skills reset`, or after the lock or
-configuration changed — later pull or push commands refuse to replace it. Move
-or remove `.agent-layer/tmp/skill-conflicts/<name>/`, then retry `al skills pull`
-or `al skills push`. `al skills diff <name>` prints an ordinary Git diff of live
-`base`, `local`, `upstream`, or `destination` trees.
-
-The generated `.agent-layer/.gitignore` ignores only
-`.agent-layer/skills-imported/.staging/`, the transaction scratch space. Keep
-imported skills and `.agent-layer/skills.lock.json` tracked and commit them
-together so clones and CI retain the imported content and publication checkpoints.
-
-If you want to discard one skill's edits instead, reset it explicitly. This is
-permanent: Agent Layer creates no commit, stash, copy, or backup for you.
-
-```bash
-al skills reset reviewer
-```
-
-Reset accepts the current configured upstream version for that skill only. It
-does not add new wildcard matches, retire other skills, or otherwise reconcile
-membership. Preserve edits yourself before running it if you may want to
-reapply them. Reset prompts before discarding edits; non-interactive callers
-must pass `--yes`.
-
-Import several skills at once with a wildcard, and exclude the ones you do not
-want:
-
-```bash
-al skills add https://github.com/example/skills.git "skills/*" "!skills/internal-only"
-```
-
-Pin an import to a tag or commit when you want it to hold still:
-
-```bash
-al skills add https://github.com/example/skills.git skills/reviewer --ref v1.4.0
-```
-
-To contribute your local edits back, give the import a write policy. Push to an
-explicit branch, or through your own fork:
-
-```bash
-al skills add https://github.com/example/skills.git skills/reviewer \
-  --write branch --push-branch skill-updates
-al skills push
-```
-
-Agent Layer never force-pushes, never invents a branch name, and never opens a
-pull request for you. `al skills push` uses your current files whether or not
-you committed them in your own project, and it never pulls first. Push prompts
-before publication; non-interactive callers must pass `--yes`. The `add` and
-`remove` commands likewise prompt before changing import configuration and
-accept `--yes` for automation.
-
-A missing configured contribution branch starts from the destination's current
-default branch. Pushes use Git objects directly rather than checking out remote
-content, and accept only HTTPS, SSH, Git, file, scp-style SSH, and local-path
-repository transports. Plain HTTP is refused; use HTTPS or SSH instead. If a destination skill contains an ignored artifact,
-symbolic link, submodule, or another unsupported node, Agent Layer names it and
-requires you to remove it from the destination before retrying.
-
-Changes are reconciled against the destination the same way `al skills pull`
-reconciles upstream changes, so a change made on the destination branch is
-preserved rather than overwritten. If the destination branch removed a skill
-entirely, that removal is preserved too: the push reports the skill as
-unchanged when your copy still matches what you imported, and reports a
-conflict when you had also edited it. Finish a destination conflict in its Git
-workspace with `al skills resolve`, then rerun push.
-
-After a successful contribution-branch push, Agent Layer records that exact
-published tree as a separate destination checkpoint. Running `al skills push`
-again therefore adds another commit to the same branch—and updates any open
-pull request for that branch—while treating review-driven edits and reversions
-relative to the prior push. Direct edits made to the destination branch are
-still reconciled and preserved.
-
-A contribution branch first pushed by an older Agent Layer version has no
-publication checkpoint. Its first post-upgrade push still uses the locked
-source as the conservative merge base and can report a conflict when both the
-pending edit and existing branch changed the same lines. It also fails instead
-of claiming success when an apparent reversion would leave the destination
-unchanged; Agent Layer cannot safely infer which destination changes were its
-own. Align the local skill with the destination and push once to establish a
-checkpoint, then reapply the reversion. Once one push succeeds or finds the
-local and destination trees identical, later pushes use the recorded
-checkpoint. If a branch is rebased and its recorded commit disappears, Agent
-Layer discards that obsolete checkpoint and safely falls back to the source
-merge base.
-
-To stop managing an imported skill, remove its selector. A clean copy is
-deleted; a copy you edited is preserved and reported so you can move it into
-`.agent-layer/skills/` and own it yourself.
-
-```bash
-al skills remove https://github.com/example/skills.git skills/reviewer
-```
-
-See the [CLI reference](./reference#skill-import-commands) for the full command
-behavior and [configuration reference](./reference#skill-imports) for every
-`[[skills.imports]]` field.
-
+The dedicated [Import Agent Skills from Git](./skill-imports) guide covers reproducible project state, wildcard selection, local editing, three-way pulls, conflict resolution, and contributing improvements through explicit branches or forks. See the [CLI reference](./reference#skill-import-commands) for every command and the [configuration reference](./reference#skill-imports) for every `[[skills.imports]]` field.
 ## Skills approach
 
 The built-in skills follow an Agent Layer-specific model: root skills with

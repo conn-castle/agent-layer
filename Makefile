@@ -230,11 +230,11 @@ docs-cta-check: ## Validate upgrade CTA syntax in core docs/messages
 .PHONY: website-build-check
 website-build-check: ## Publish site into a website checkout and run Docusaurus build (set SITE_BUILD_TAG=vX.Y.Z WEBSITE_REPO_DIR=path)
 	@if [[ -z "$${SITE_BUILD_TAG:-}" ]]; then \
-	  echo "SITE_BUILD_TAG is required (example: make website-build-check SITE_BUILD_TAG=v0.0.0 WEBSITE_REPO_DIR=agent-layer-web)" >&2; \
+	  echo "SITE_BUILD_TAG is required (example: make website-build-check SITE_BUILD_TAG=v999.0.0 WEBSITE_REPO_DIR=agent-layer-web)" >&2; \
 	  exit 1; \
 	fi
 	@if [[ -z "$${WEBSITE_REPO_DIR:-}" ]]; then \
-	  echo "WEBSITE_REPO_DIR is required (example: make website-build-check SITE_BUILD_TAG=v0.0.0 WEBSITE_REPO_DIR=agent-layer-web)" >&2; \
+	  echo "WEBSITE_REPO_DIR is required (example: make website-build-check SITE_BUILD_TAG=v999.0.0 WEBSITE_REPO_DIR=agent-layer-web)" >&2; \
 	  exit 1; \
 	fi
 	@npm --prefix "$${WEBSITE_REPO_DIR}" ci

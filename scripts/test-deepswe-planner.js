@@ -27,7 +27,7 @@ const themePath = path.join(
   repositoryRoot,
   "site/static/deepswe-planner/app/theme.js",
 );
-const pagePath = path.join(repositoryRoot, "site/pages/deepswe-planner.jsx");
+const pagePath = path.join(repositoryRoot, "site/pages/deltaselect-tool.jsx");
 
 function benchmarkSelectionID(selection) {
   const canonical = {
@@ -801,6 +801,6 @@ test("theme synchronization preserves iframe state and validates same-origin upd
     data: { type: "agent-layer-theme", theme: "light" },
   });
   assert.equal(context.document.documentElement.dataset.theme, "light");
-  assert.match(pageSource, /useRef\(`\$\{plannerBaseUrl\}\?theme=\$\{colorMode\}`\)\.current/);
+  assert.match(pageSource, /useRef\(`\$\{toolBaseUrl\}\?theme=\$\{colorMode\}`\)\.current/);
   assert.match(pageSource, /postMessage\([\s\S]*window\.location\.origin/);
 });

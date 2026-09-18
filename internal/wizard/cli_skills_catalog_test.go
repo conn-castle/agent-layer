@@ -13,19 +13,20 @@ import (
 func TestLoadCLISkillCatalog_EmbeddedHasExpectedEntries(t *testing.T) {
 	entries, err := loadCLISkillCatalog()
 	require.NoError(t, err)
-	require.Len(t, entries, 6)
+	require.Len(t, entries, 7)
 
 	ids := make(map[string]CLISkillCatalogEntry, len(entries))
 	for _, entry := range entries {
 		ids[entry.ID] = entry
 	}
-	for _, want := range []string{"tavily-web", "playwright", "find-docs", "dispatch-agent", "skill-sync", "development-skills"} {
+	for _, want := range []string{"tavily-web", "playwright", "find-docs", "dispatch-agent", "skill-sync", "benchmark", "development-skills"} {
 		_, ok := ids[want]
 		assert.True(t, ok, "catalog should declare %s", want)
 	}
 	assert.Equal(t, "<!-- agent-layer-catalog-skill: skill-sync -->", ids["skill-sync"].OwnershipMarker)
 	assert.Equal(t, "Agent dispatch (cross agent conversations)", ids["dispatch-agent"].Name)
 	assert.Equal(t, "Skill sync (import and update skills from Git)", ids["skill-sync"].Name)
+	assert.Equal(t, "Agent Layer benchmark", ids["benchmark"].Name)
 	assert.Equal(t, "Agent Layer development skills (/implement, /ship-pr, etc.)", ids["development-skills"].Name)
 	assert.Equal(t, []string{
 		"implement",
