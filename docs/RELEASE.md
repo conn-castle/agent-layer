@@ -123,6 +123,24 @@ Historical docs are retained by the policy above. The current tag is always remo
 
 After publishing, the workflow runs the Docusaurus production build before committing and pushing the website changes.
 
+The existing website CI check and release publisher also validate local asset
+references in generated HTML, failing with the referring page and missing path.
+This checks images, scripts, stylesheets, embedded pages, media, and social-image
+metadata against the combined build, without requesting external URLs. It does
+not detect unpublished design intent, CSS or JavaScript-generated URLs, or
+`srcset` candidates; Docusaurus continues to validate page links and anchors.
+The checker requires Python 3.9 or later (available on the hosted Ubuntu runner).
+
+Website releases span two repositories. This publisher does **not** copy navbar
+configuration, theme components, CSS, branding assets, or global metadata from
+a local website checkout. Those files belong to `agent-layer-web` and must be
+reviewed, merged, and deployed there. Before releasing page changes, inspect both
+repositories for pending website work and confirm that every new asset and route
+exists in the website's `main`. Build the combined result and inspect navigation,
+footer, logos, and mobile/dark-mode rendering; a content publish alone does not
+ship website-owned changes. Website-only corrections do not need a new CLI tag.
+
+
 CI also runs the same website build shape on pull requests and pushes to `main` with a synthetic docs tag:
 
 ```bash
