@@ -2,7 +2,7 @@
 
 > Agent Layer is a repo-local control plane for coding agents. It provides asynchronous cross-provider Agent Dispatch, Git-backed portable Agent Skills, shared MCP and approval configuration, and DeltaSelect benchmark selection.
 
-The canonical source repository is https://github.com/conn-castle/agent-layer. Documentation pages are server-rendered for browsers and also published as Markdown at the `.md` URLs below for agents and text-only clients.
+The canonical source repository is https://github.com/conn-castle/agent-layer. Reference documentation under `/docs` is also published as Markdown at the `.md` URLs below for agents and text-only clients. Other links lead to server-rendered website pages.
 
 ## Start here
 

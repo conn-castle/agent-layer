@@ -1,6 +1,17 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.21.0 - 2026-09-18
+
+### Added
+- DeltaSelect website pages and published research citation, with an interactive benchmark task selector and guidance for running studies.
+- Optional benchmark guidance skill for selecting tasks, running studies, and investigating results.
+- Agent-readable documentation discovery through `llms.txt` and Markdown mirrors.
+
+### Changed
+- Refreshed website guidance for Agent Dispatch, Git-backed skill imports, provider isolation, and benchmark workflows.
+- Website CI validates the current staged documentation using a synthetic version retained by the publication policy.
+
 ## v0.20.0 - 2026-09-09
 
 ### Added

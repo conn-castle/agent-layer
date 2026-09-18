@@ -22,21 +22,20 @@ DeltaSelect is for developers who need to measure whether an instruction, Agent 
 </div>
 
 :::note[Research paper]
-The [DeltaSelect arXiv paper](https://arxiv.org/abs/XXXX.XXXXX) describes the method, validation, and limitations. DeltaSelect is available in Agent Layer v0.18.0.
+The [DeltaSelect arXiv paper](https://arxiv.org/abs/2609.19607) describes the method, validation, and limitations. Use Agent Layer v0.18.4 or later to run selections exported by this tool.
 
-**Provisional citation — replace with the paper's published citation before release:**
+**Citation:**
 
 ```bibtex
 @article{conn2026deltaselect,
-  title   = {DeltaSelect: Budget-Aware Task Selection for Agent Benchmarks},
+  title   = {DeltaSelect: Affordable A/B Testing for Coding Agents},
   author  = {Conn, Nicholas J.},
-  journal = {arXiv preprint arXiv:XXXX.XXXXX},
+  journal = {arXiv preprint arXiv:2609.19607},
   year    = {2026}
 }
 ```
 :::
 
-{/* Replace the paper URL and provisional citation above with the published arXiv metadata before release. */}
 
 ## Why select benchmark tasks?
 
@@ -48,7 +47,7 @@ DeltaSelect gives you a more deliberate way to choose:
 - **Choose tasks backed by prior results.** It prefers tasks that have tracked the full benchmark consistently, while accounting for uncertainty and room for improvement.
 - **Define the score before you run.** Each selected task gets a fixed weight, so the scoring method cannot change after results arrive.
 - **See the tradeoffs.** The tool shows excluded tasks, missing data, estimated cost, expected score, and uncertainty.
-- **Repeat the study.** Export the selection and a `study.toml` template for `al benchmark run`.
+- **Repeat the study.** Export `selection.json`, then run `al benchmark init` to generate `study.toml` for `al benchmark run`.
 
 ## Try DeltaSelect
 
