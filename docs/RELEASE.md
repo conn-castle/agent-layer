@@ -123,6 +123,16 @@ Historical docs are retained by the policy above. The current tag is always remo
 
 After publishing, the workflow runs the Docusaurus production build before committing and pushing the website changes.
 
+Website releases span two repositories. This publisher does **not** copy navbar
+configuration, theme components, CSS, branding assets, or global metadata from
+a local website checkout. Those files belong to `agent-layer-web` and must be
+reviewed, merged, and deployed there. Before releasing page changes, inspect both
+repositories for pending website work and confirm that every new asset and route
+exists in the website's `main`. Build the combined result and inspect navigation,
+footer, logos, and mobile/dark-mode rendering; a content publish alone does not
+ship website-owned changes. Website-only corrections do not need a new CLI tag.
+
+
 CI also runs the same website build shape on pull requests and pushes to `main` with a synthetic docs tag:
 
 ```bash
