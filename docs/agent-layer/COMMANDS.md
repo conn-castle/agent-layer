@@ -334,8 +334,8 @@ Notes: Fails on removed/invalid upgrade command surfaces (for example `--force` 
 make website-build-check SITE_BUILD_TAG=vX.Y.Z WEBSITE_REPO_DIR=/path/to/agent-layer-web
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+, Node 22+, npm, and a local `conn-castle/agent-layer-web` git checkout
-Notes: Installs website dependencies, publishes this repo's `site/` content into `WEBSITE_REPO_DIR`, snapshots docs for `SITE_BUILD_TAG`, then runs `npm run build`. The checkout is mutated; use a temporary clone for release previews.
+Prerequisites: Go 1.26.0+, Node 22+, npm, Python 3.9+, and a local `conn-castle/agent-layer-web` git checkout
+Notes: Installs website dependencies, publishes this repo's `site/` content into `WEBSITE_REPO_DIR`, snapshots docs for `SITE_BUILD_TAG`, then runs `npm run build`, the asset checker's fixture tests, and local HTML asset validation. The checkout is mutated; use a temporary clone for release previews.
 
 - Refresh the versioned website DeepSWE planner snapshot
 ```bash

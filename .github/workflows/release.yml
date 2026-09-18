@@ -263,6 +263,9 @@ jobs:
         working-directory: agent-layer-web
         run: npm run build
 
+      - name: Validate website assets
+        run: python3 scripts/check-website-assets.py agent-layer-web/build
+
       - name: Commit and push
         working-directory: agent-layer-web
         run: |

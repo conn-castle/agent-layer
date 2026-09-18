@@ -242,6 +242,8 @@ website-build-check: ## Publish site into a website checkout and run Docusaurus 
 	  --tag "$${SITE_BUILD_TAG}" \
 	  --repo-b-dir "$${WEBSITE_REPO_DIR}"
 	@npm --prefix "$${WEBSITE_REPO_DIR}" run build
+	@python3 scripts/test-check-website-assets.py
+	@python3 scripts/check-website-assets.py "$${WEBSITE_REPO_DIR}/build"
 
 .PHONY: release-preflight
 release-preflight: ci test-release ## Validate release readiness (set RELEASE_TAG=vX.Y.Z)
