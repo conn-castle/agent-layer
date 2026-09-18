@@ -99,7 +99,7 @@ If you find yourself carrying many permanent overrides, that is usually a sign t
 
 ## Per-repo isolation {#per-repo-credential-isolation}
 
-Agent Layer gives each repository its own agent configuration so work in one repo never leaks into another. Codex home isolation is opt-in. Claude settings, caches, and `/login` credential isolation are also opt-in; other authentication modes may still use external credential sources.
+Agent Layer gives each repository its own Agent Layer-managed configuration. Provider configuration and runtime state can otherwise remain shared across repositories. Codex home isolation is opt-in. Claude settings, caches, and `/login` credential isolation are also opt-in; other authentication modes may still use external credential sources.
 
 ### How it works
 

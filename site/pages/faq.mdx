@@ -16,7 +16,9 @@ If you run more than one client, you edit that folder once and review the same f
 
 ## Can one coding agent delegate work to another provider?
 
-Yes. [Agent Dispatch](/docs/agent-dispatch) lets any supported caller start asynchronous Claude, Codex, Grok, or Antigravity conversations through built-in MCP tools. People and automation can use matching `al dispatch` CLI commands. The caller receives a handle immediately, waits when it needs the result, and can continue the same provider conversation later.
+Yes. [Agent Dispatch](/docs/agent-dispatch) lets supported callers with working MCP support start asynchronous Claude, Codex, Grok, or Antigravity conversations through built-in MCP tools. People and automation can use matching `al dispatch` CLI commands. The caller receives a handle immediately, waits when it needs the result, and can continue the same provider conversation later.
+
+Antigravity remains a supported dispatch target, but its current probe baseline does not expose the generated MCP tools at runtime. Run `al probe agy` before relying on Antigravity as an MCP caller.
 
 ## Can I import skills from another Git repository?
 
@@ -50,9 +52,9 @@ The Codex VS Code extension reads `CODEX_HOME` at startup. Agent Layer sets a re
 By default (`agents.codex.local_config_dir` absent or `false`), Agent Layer does not set `CODEX_HOME`; Codex uses its normal global/project config layering and any inherited `CODEX_HOME` remains user-owned. If you prefer global Codex MCP config in VS Code, see [/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex](/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex).
 
 ## Does Claude keep separate sign-ins per repo?
-Claude per-repo settings and caches isolation is opt-in. If you set `local_config_dir = true` under `[agents.claude]` in `config.toml`, Agent Layer sets `CLAUDE_CONFIG_DIR` to a repo-local directory, isolating settings and caches per repository.
+Claude per-repo settings, caches, and `/login` credential isolation is opt-in. If you set `local_config_dir = true` under `[agents.claude]` in `config.toml`, Agent Layer sets `CLAUDE_CONFIG_DIR` to a repo-local directory, isolating settings, caches, and `/login` credentials per repository.
 
-Authentication isolation depends on your platform and authentication method. Claude Code stores `/login` credentials in the macOS Keychain on macOS, so those remain shared. On Linux and Windows, it stores them in `.credentials.json` under `CLAUDE_CONFIG_DIR`, so a repo-local directory also isolates those credentials. Environment credentials, `apiKeyHelper`, and cloud-provider authentication can come from external sources. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
+Authentication isolation depends on your platform and authentication method. On macOS, Claude Code keys its Keychain entry to `CLAUDE_CONFIG_DIR` and falls back to `.credentials.json` there if the Keychain write fails. On Linux and Windows, it stores them in `.credentials.json` under `CLAUDE_CONFIG_DIR`, so a repo-local directory also isolates those credentials. An explicit `CLAUDE_SECURESTORAGE_CONFIG_DIR` can override the credential directory. Environment credentials, `apiKeyHelper`, and cloud-provider authentication can come from external sources. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
 
 For VS Code, keep `[agents.claude_vscode] enabled = true` so the extension receives the repo-local `CLAUDE_CONFIG_DIR`. Without the launcher path, VS Code falls back to global `~/.claude/` behavior.
 
