@@ -56,11 +56,21 @@ class WebsiteAssetsTest(unittest.TestCase):
                                 ['media/logo.svg'])
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_canonical_route_controls_relative_resolution(self):
+    def test_canonical_metadata_does_not_change_asset_resolution(self):
         result = self.run_check(
-            '<link rel="canonical" href="https://agent-layer.dev/docs">'
-            '<img src="logo.svg">', ['logo.svg'])
-        self.assertEqual(result.returncode, 0, result.stderr)
+            '<link rel="canonical" href="https://external.example/docs">'
+            '<img src="missing.svg">')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('missing.svg', result.stderr)
+
+    def test_document_directory_is_not_a_typed_asset(self):
+        for html in ['<script src="/docs/"></script>',
+                     '<img src="/docs/">',
+                     '<link rel="stylesheet" href="/docs/">']:
+            with self.subTest(html=html):
+                result = self.run_check(html)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn('/docs/', result.stderr)
 
     def test_absent_build_fails(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -15,14 +15,11 @@ class AssetParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.references = []
         self.base = None
-        self.canonical = None
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
         if tag == "base" and self.base is None:
             self.base = attrs.get("href")
-        if tag == "link" and attrs.get("rel") == "canonical":
-            self.canonical = attrs.get("href")
         fields = []
         if tag in {"img", "script", "iframe", "source", "audio", "video", "embed"}:
             fields.append("src")
@@ -40,7 +37,7 @@ class AssetParser(HTMLParser):
             fields.append("content")
         for field in fields:
             if attrs.get(field):
-                self.references.append(attrs[field])
+                self.references.append((attrs[field], tag in {"iframe", "object"}))
 
 
 def check(build, site_url):
@@ -55,10 +52,8 @@ def check(build, site_url):
         parser.feed(page.read_text(encoding="utf-8"))
         relative = page.relative_to(build).as_posix()
         page_url = urljoin(site_url.rstrip("/") + "/", relative)
-        if parser.canonical:
-            page_url = urljoin(page_url, parser.canonical)
         base = urljoin(page_url, parser.base) if parser.base else page_url
-        for reference in sorted(set(parser.references)):
+        for reference, document in sorted(set(parser.references)):
             url = urlsplit(urljoin(base, reference))
             if url.scheme not in {"http", "https"} or url.netloc != origin.netloc:
                 continue
@@ -70,7 +65,7 @@ def check(build, site_url):
             target = (build / path[len(prefix):]).resolve()
             if not target.is_relative_to(build):
                 errors.append(f"{relative}: asset {reference!r} escapes build directory")
-            elif not target.is_file() and not (target / "index.html").is_file():
+            elif not target.is_file() and not (document and (target / "index.html").is_file()):
                 errors.append(f"{relative}: missing asset {reference!r} (expected {target})")
     return errors
 
