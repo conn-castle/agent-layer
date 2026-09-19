@@ -270,6 +270,47 @@ func TestUpgradeCmd_PrintsFromAndToVersionsAtStart(t *testing.T) {
 	})
 }
 
+func TestUpgradeCmd_StartVersionsIgnorePinCommentsAndBlankLines(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	pin := "# release pin\n\n1.2.3\n"
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "al.version"), []byte(pin), 0o600); err != nil {
+		t.Fatalf("write pin: %v", err)
+	}
+
+	originalVersion := Version
+	Version = "2.0.0"
+	t.Cleanup(func() { Version = originalVersion })
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return true }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origInstallRun := installRun
+	installRun = func(string, install.Options) error { return nil }
+	t.Cleanup(func() { installRun = origInstallRun })
+	stubSyncRunNoop(t)
+
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		var stdout bytes.Buffer
+		cmd.SetArgs([]string{})
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute upgrade: %v", err)
+		}
+		out := stdout.String()
+		if !strings.HasPrefix(strings.TrimSpace(out), "Upgrading this repository from v1.2.3 to v2.0.0.") {
+			t.Fatalf("expected version banner to use the parsed pin, got %q", out)
+		}
+	})
+}
+
 func TestUpgradeCmd_StartVersionsUseUnknownAndDevWhenUnpinned(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {

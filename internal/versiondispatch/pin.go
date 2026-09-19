@@ -11,6 +11,13 @@ import (
 	"github.com/conn-castle/agent-layer/internal/version"
 )
 
+// ReadPinnedVersion reads and normalizes the pinned version from .agent-layer/al.version.
+// Empty or invalid pin files return ok=false instead of an error so callers can fall
+// through while still receiving the warning text.
+func ReadPinnedVersion(rootDir string) (string, bool, string, error) {
+	return readPinnedVersion(RealSystem{}, rootDir)
+}
+
 // readPinnedVersion reads and normalizes the pinned version from .agent-layer/al.version.
 // Empty or invalid pin files return a warning instead of an error so that dispatch
 // can fall through to the current binary version while surfacing the problem to the user.

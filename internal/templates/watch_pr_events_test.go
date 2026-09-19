@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -26,19 +27,22 @@ func watchPREventsScript(t *testing.T) string {
 
 func oversizedArgJSONBytes(t *testing.T) int {
 	t.Helper()
+	const maxFixture = 3 << 20
 	out, err := exec.Command("getconf", "ARG_MAX").Output()
 	if err != nil {
-		return 3 << 20
+		return maxFixture
 	}
 	argMax, err := strconv.Atoi(strings.TrimSpace(string(out)))
 	if err != nil || argMax < 1<<20 {
-		return 3 << 20
+		return maxFixture
 	}
-	// Exceed ARG_MAX so a single --argjson value cannot be exec'd, but keep
-	// the fixture small enough for CI to generate and parse quickly.
+	// Prefer a payload just over ARG_MAX. When ARG_MAX is larger than
+	// maxFixture, still return maxFixture: a single --argjson value can fail
+	// below ARG_MAX (Linux MAX_ARG_STRLEN). The caller must skip if jq still
+	// accepts the fixture.
 	size := argMax + 256<<10
-	if size > 3<<20 {
-		return 3 << 20
+	if size > maxFixture {
+		return maxFixture
 	}
 	return size
 }
@@ -115,20 +119,48 @@ exit 1
 	return env
 }
 
-func startWatchPREvents(t *testing.T, env []string, args ...string) (*bytes.Buffer, <-chan error) {
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+type watchPREventsProc struct {
+	stderr  *lockedBuffer
+	done    <-chan struct{}
+	waitErr *error
+}
+
+func startWatchPREvents(t *testing.T, env []string, args ...string) *watchPREventsProc {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	t.Cleanup(cancel)
 	cmd := exec.CommandContext(ctx, "bash", append([]string{watchPREventsScript(t)}, args...)...) // #nosec G204 -- test invokes the checked-in watcher with explicit args.
 	cmd.Env = env
-	var stdout, stderr bytes.Buffer
+	var stdout bytes.Buffer
+	stderr := &lockedBuffer{}
 	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start watch-pr-events: %v", err)
 	}
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	done := make(chan struct{})
+	var waitErr error
+	go func() {
+		waitErr = cmd.Wait()
+		close(done)
+	}()
 	t.Cleanup(func() {
 		if cmd.Process != nil {
 			_ = cmd.Process.Signal(syscall.SIGTERM)
@@ -140,16 +172,16 @@ func startWatchPREvents(t *testing.T, env []string, args ...string) (*bytes.Buff
 			<-done
 		}
 	})
-	return &stderr, done
+	return &watchPREventsProc{stderr: stderr, done: done, waitErr: &waitErr}
 }
 
-func waitForWatchLogLine(t *testing.T, logFile string, done <-chan error, stderr *bytes.Buffer) map[string]any {
+func waitForWatchLogLine(t *testing.T, logFile string, proc *watchPREventsProc) map[string]any {
 	t.Helper()
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
-		case err := <-done:
-			t.Fatalf("watch-pr-events exited before logging a change: %v\nstderr=%s", err, stderr.String())
+		case <-proc.done:
+			t.Fatalf("watch-pr-events exited before logging a change: %v\nstderr=%s", *proc.waitErr, proc.stderr.String())
 		default:
 		}
 		data, err := os.ReadFile(logFile) // #nosec G304 -- test-owned watcher log path.
@@ -175,7 +207,7 @@ func waitForWatchLogLine(t *testing.T, logFile string, done <-chan error, stderr
 		}
 		return event
 	}
-	t.Fatalf("timed out waiting for watcher log line\nstderr=%s", stderr.String())
+	t.Fatalf("timed out waiting for watcher log line\nstderr=%s", proc.stderr.String())
 	return nil
 }
 
@@ -224,13 +256,13 @@ func TestWatchPREventsLogsStateChanges(t *testing.T) {
 	})
 	env := watchPREventsGHStubEnv(t, pr1, pr2, comments, comments)
 	logFile := filepath.Join(dir, "events.jsonl")
-	stderr, done := startWatchPREvents(t, env,
+	proc := startWatchPREvents(t, env,
 		"--repo", "acme/widgets",
 		"--pr", "7",
 		"--log-file", logFile,
 		"--interval-seconds", "1",
 	)
-	event := waitForWatchLogLine(t, logFile, done, stderr)
+	event := waitForWatchLogLine(t, logFile, proc)
 	if event["repo"] != "acme/widgets" {
 		t.Fatalf("repo = %v", event["repo"])
 	}
@@ -287,18 +319,18 @@ func TestWatchPREventsSurvivesPayloadsTooLargeForArgJSON(t *testing.T) {
 	}
 	jq := exec.Command("jq", "-n", "--argjson", "pr_state", string(prBytes), "$pr_state") // #nosec G204 -- documents the ARG_MAX failure the watcher must avoid.
 	if err := jq.Run(); err == nil {
-		t.Fatalf("jq --argjson accepted a %d-byte payload; the fixture is too small to detect the bug", len(prBytes))
+		t.Skipf("jq --argjson accepted a %d-byte payload; ARG_MAX is too large to exceed with a practical fixture", len(prBytes))
 	}
 
 	env := watchPREventsGHStubEnv(t, pr1, pr2, comments1, comments2)
 	logFile := filepath.Join(dir, "events.jsonl")
-	stderr, done := startWatchPREvents(t, env,
+	proc := startWatchPREvents(t, env,
 		"--repo", "acme/widgets",
 		"--pr", "7",
 		"--log-file", logFile,
 		"--interval-seconds", "1",
 	)
-	event := waitForWatchLogLine(t, logFile, done, stderr)
+	event := waitForWatchLogLine(t, logFile, proc)
 	state, ok := event["state"].(map[string]any)
 	if !ok {
 		t.Fatalf("state missing: %v", event)

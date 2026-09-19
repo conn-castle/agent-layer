@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -702,15 +700,14 @@ func writeUpgradeVersionBanner(out io.Writer, root, targetPin string) error {
 }
 
 func currentRepoPinVersion(root string) (string, error) {
-	path := filepath.Join(root, ".agent-layer", "al.version")
-	data, err := install.RealSystem{}.ReadFile(path)
+	pinned, ok, _, err := versiondispatch.ReadPinnedVersion(root)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "", nil
-		}
-		return "", fmt.Errorf(messages.InstallFailedReadFmt, path, err)
+		return "", err
 	}
-	return strings.TrimSpace(string(data)), nil
+	if !ok {
+		return "", nil
+	}
+	return pinned, nil
 }
 
 func requireUpgradeTargetCLI(targetVersion string) error {
