@@ -3,14 +3,18 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.21.1 - 2026-09-18
+
 ### Changed
 - Agent Dispatch conversation names keep the three-element `size-shape-electrical` form. Size stays at 37 tokens; the shape list includes colors and other non-size adjectives; the electrical list includes additional real parts.
 - Inactive dispatch mappings and confirmed terminal evidence now expire after `dispatch.session_retention_days` (default 30) instead of a hard-coded 30 days.
 - Name-pool exhaustion reports retained, active, and unreadable occupancy against pool capacity, and recommends shortening `dispatch.session_retention_days` only when retained names exist.
+- Website homepage uses the Grok logo asset instead of a text placeholder.
 
 ### Fixed
 - A failed dispatch name reservation no longer leaves a pending conversation mapping that retention would treat as active and never reclaim.
 - A failed fresh dispatch reservation no longer leaves unpublished pending run evidence that retention would never prune.
+- Website CI and release publishing validate local HTML asset references before publication.
 
 ## v0.21.0 - 2026-09-18
 
