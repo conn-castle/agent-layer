@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Agent Dispatch conversation names keep the three-element `size-shape-electrical` form. Size stays at 37 tokens; the shape list includes colors and other non-size adjectives; the electrical list includes additional real parts.
 - Inactive dispatch mappings and confirmed terminal evidence now expire after `dispatch.session_retention_days` (default 30) instead of a hard-coded 30 days.
-- Name-pool exhaustion reports retained conversation count versus active execution count, pool capacity, and `dispatch.session_retention_days`.
+- Name-pool exhaustion reports retained, active, and unreadable occupancy against pool capacity, and recommends shortening `dispatch.session_retention_days` only when retained names exist.
 
 ## v0.21.0 - 2026-09-18
 

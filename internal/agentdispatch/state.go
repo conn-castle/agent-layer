@@ -349,7 +349,7 @@ func unusedDispatchPoolNames(root string) ([]string, error) {
 		return nil, wrapExitError(ExitConfig, "list dispatch sessions for name allocation", err)
 	}
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+		if !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
 		occupied[strings.TrimSuffix(entry.Name(), ".json")] = struct{}{}
@@ -425,10 +425,28 @@ func dispatchNamePoolExhaustedError(root string, retention time.Duration) error 
 	}
 	days := int(retention / (24 * time.Hour))
 	capacity := dispatchNamePoolCapacity()
+	occupancy := fmt.Sprintf(messages.ConfigDispatchNamePoolExhaustedFmt, retained, active, capacity)
 	if unreadable > 0 {
-		return exitError(ExitConfig, fmt.Sprintf(messages.ConfigDispatchNamePoolExhaustedUnreadableFmt, retained, active, unreadable, capacity, days))
+		occupancy = fmt.Sprintf(messages.ConfigDispatchNamePoolExhaustedUnreadableFmt, retained, active, unreadable, capacity)
 	}
-	return exitError(ExitConfig, fmt.Sprintf(messages.ConfigDispatchNamePoolExhaustedFmt, retained, active, capacity, days))
+	return exitError(ExitConfig, occupancy+dispatchNamePoolExhaustionGuidance(retained, active, unreadable, days))
+}
+
+func dispatchNamePoolExhaustionGuidance(retained, active, unreadable, days int) string {
+	parts := make([]string, 0, 3)
+	if retained > 0 {
+		parts = append(parts, fmt.Sprintf(messages.ConfigDispatchNamePoolRetentionHintFmt, days))
+	}
+	if active > 0 {
+		parts = append(parts, messages.ConfigDispatchNamePoolActiveHint)
+	}
+	if unreadable > 0 {
+		parts = append(parts, messages.ConfigDispatchNamePoolRepairHint)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "; " + strings.Join(parts, "; ")
 }
 
 func classifyDispatchPoolOccupancy(root string) (retained int, active int, unreadable int, err error) {
@@ -440,11 +458,15 @@ func classifyDispatchPoolOccupancy(root string) (retained int, active int, unrea
 		return 0, 0, 0, wrapExitError(ExitConfig, "list dispatch sessions for name allocation", err)
 	}
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+		if !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
 		name := strings.TrimSuffix(entry.Name(), ".json")
 		if !inDispatchNamePool(name) {
+			continue
+		}
+		if entry.IsDir() {
+			unreadable++
 			continue
 		}
 		session, loadErr := loadSession(root, name)

@@ -421,10 +421,56 @@ func TestReserveSessionReportsClassifiedExhaustionForActiveAndRetainedOccupants(
 		"1 active executions",
 		"2-name pool",
 		config.DispatchSessionRetentionDaysFieldKey,
+		"wait for or reconcile active executions",
 	} {
 		if !strings.Contains(message, want) {
 			t.Fatalf("exhaustion error %q missing %q", message, want)
 		}
+	}
+}
+
+func TestReserveSessionActiveOnlyExhaustionDoesNotRecommendShorteningRetention(t *testing.T) {
+	root := t.TempDir()
+	originalSizes, originalShapes, originalElectrical := nameSizes, nameShapes, nameElectrical
+	t.Cleanup(func() { nameSizes, nameShapes, nameElectrical = originalSizes, originalShapes, originalElectrical })
+	nameSizes, nameShapes, nameElectrical = []string{"a"}, []string{"x"}, []string{"y"}
+
+	now := time.Now().UTC()
+	activeRunID := runtimeSessionID
+	active := Session{Name: "a-x-y", Agent: AgentCodex, State: "durable", ProviderSessionID: runtimeSessionID, CreatedAt: now, LastUsedAt: now, RunID: activeRunID, ActiveRunID: activeRunID, ActiveClaimKnown: true}
+	if err := persistSession(root, active); err != nil {
+		t.Fatalf("persist active mapping: %v", err)
+	}
+	runDir := filepath.Join(dispatchRunPath(root), activeRunID)
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatalf("create active run: %v", err)
+	}
+	if err := writeJSONAtomic(filepath.Join(runDir, dispatchRunFile), RunRecord{ID: activeRunID, State: dispatchStateRunning, RecoveryState: recoveryAcceptanceUnknown, PID: os.Getpid(), ProcessStartIdentity: processStartIdentity(os.Getpid())}); err != nil {
+		t.Fatalf("write active run: %v", err)
+	}
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	_, err = reserveSession(root, run, testDispatchSessionRetention)
+	if err == nil {
+		t.Fatal("reserveSession allocated a name from a full active pool")
+	}
+	requireDispatchExitCode(t, err, ExitConfig)
+	message := err.Error()
+	for _, want := range []string{
+		"could not allocate a unique dispatch name",
+		"0 retained conversations",
+		"1 active executions",
+		"1-name pool",
+		"wait for or reconcile active executions",
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("exhaustion error %q missing %q", message, want)
+		}
+	}
+	if strings.Contains(message, config.DispatchSessionRetentionDaysFieldKey) {
+		t.Fatalf("active-only exhaustion recommended shortening retention: %q", message)
 	}
 }
 
@@ -484,10 +530,50 @@ func TestReserveSessionCountsUnreadableOccupantsWithoutFailingClosed(t *testing.
 		"0 active executions",
 		"1 unreadable occupants",
 		"1-name pool",
-		config.DispatchSessionRetentionDaysFieldKey,
+		"repair unreadable occupants",
 	} {
 		if !strings.Contains(message, want) {
 			t.Fatalf("exhaustion error %q missing %q", message, want)
 		}
+	}
+	if strings.Contains(message, config.DispatchSessionRetentionDaysFieldKey) {
+		t.Fatalf("unreadable-only exhaustion recommended shortening retention: %q", message)
+	}
+}
+
+func TestReserveSessionCountsDirectoryOccupantsAsUnreadable(t *testing.T) {
+	root := t.TempDir()
+	originalSizes, originalShapes, originalElectrical := nameSizes, nameShapes, nameElectrical
+	t.Cleanup(func() { nameSizes, nameShapes, nameElectrical = originalSizes, originalShapes, originalElectrical })
+	nameSizes, nameShapes, nameElectrical = []string{"x"}, []string{"y"}, []string{"z"}
+
+	stateDir := dispatchStatePath(root)
+	if err := os.MkdirAll(filepath.Join(stateDir, "x-y-z.json"), 0o700); err != nil {
+		t.Fatalf("create blocking directory: %v", err)
+	}
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	_, err = reserveSession(root, run, testDispatchSessionRetention)
+	if err == nil {
+		t.Fatal("reserveSession allocated a name blocked by a .json directory")
+	}
+	requireDispatchExitCode(t, err, ExitConfig)
+	message := err.Error()
+	for _, want := range []string{
+		"could not allocate a unique dispatch name",
+		"0 retained conversations",
+		"0 active executions",
+		"1 unreadable occupants",
+		"1-name pool",
+		"repair unreadable occupants",
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("exhaustion error %q missing %q", message, want)
+		}
+	}
+	if strings.Contains(message, config.DispatchSessionRetentionDaysFieldKey) {
+		t.Fatalf("directory occupant exhaustion recommended shortening retention: %q", message)
 	}
 }

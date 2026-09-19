@@ -68,15 +68,15 @@ func executeFreshDispatch(req dispatchExecRequest) error {
 	if err := validateSkillProjection(projectionRoot, target, req.Skill); err != nil {
 		return err
 	}
+	retention := config.DispatchSessionRetention(project.Config)
+	if err := pruneDispatchEvidence(req.Root, time.Now(), retention); err != nil {
+		return err
+	}
 	run, err := newDispatchRun(req.Root, target.Name, version, dispatchModeFresh)
 	if err != nil {
 		return err
 	}
 	run.Record.Skill = strings.TrimSpace(req.Skill)
-	retention := config.DispatchSessionRetention(project.Config)
-	if err := pruneDispatchEvidence(req.Root, time.Now(), retention); err != nil {
-		return err
-	}
 	session, err := reserveSession(req.Root, run, retention)
 	if err != nil {
 		return err

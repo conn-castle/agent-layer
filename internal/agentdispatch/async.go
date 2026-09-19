@@ -94,6 +94,10 @@ func Start(opts StartOptions) error {
 	if err != nil {
 		return err
 	}
+	retention := config.DispatchSessionRetention(project.Config)
+	if err := pruneDispatchEvidence(opts.Root, time.Now(), retention); err != nil {
+		return err
+	}
 	run, err := newDispatchRun(opts.Root, target.Name, version, dispatchModeFresh)
 	if err != nil {
 		return err
@@ -105,10 +109,6 @@ func Start(opts StartOptions) error {
 		if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 			return err
 		}
-	}
-	retention := config.DispatchSessionRetention(project.Config)
-	if err := pruneDispatchEvidence(opts.Root, time.Now(), retention); err != nil {
-		return err
 	}
 	session, err := reserveSession(opts.Root, run, retention)
 	if err != nil {

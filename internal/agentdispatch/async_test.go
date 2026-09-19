@@ -159,6 +159,37 @@ func TestResolvePromptSourceNormalizesPathButRejectsWhitespaceOnlySources(t *tes
 	requireDispatchExitCode(t, err, ExitUsage)
 }
 
+func TestStartDoesNotCreateRunWhenRetentionFails(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	stateDir := dispatchStatePath(root)
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "tiny-round-capacitor.json"), []byte("not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := Start(StartOptions{
+		Root: root, WorkDir: root, Agent: AgentCodex, Prompt: "Review this",
+		Env: []string{}, LookPath: alwaysFound,
+		VersionLookup: func(string, string) (string, error) { return supportedProviderVersions[AgentCodex], nil },
+		launchWorker: func(string, string, string) (launchedWorker, error) {
+			t.Fatal("Start launched a worker after retention failed")
+			return launchedWorker{}, errors.New("unreachable")
+		},
+	})
+	if err == nil {
+		t.Fatal("Start ignored a corrupt mapping during retention")
+	}
+	requireDispatchExitCode(t, err, ExitConfig)
+	entries, readErr := os.ReadDir(dispatchRunPath(root))
+	if readErr != nil && !os.IsNotExist(readErr) {
+		t.Fatalf("list dispatch runs: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("Start created run evidence after retention failed: %v", entries)
+	}
+}
+
 func TestStartUsesConfiguredRetentionWhenPruningMappings(t *testing.T) {
 	now := time.Now().UTC()
 	startWithRetention := func(t *testing.T, days int, lastUsed time.Time) string {
