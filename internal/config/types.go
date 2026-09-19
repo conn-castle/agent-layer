@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"time"
 
 	"github.com/conn-castle/agent-layer/internal/skilltree"
@@ -17,6 +18,11 @@ const (
 
 // DefaultDispatchMaxDepth is the maximum dispatch recursion depth when unset.
 const DefaultDispatchMaxDepth = 3
+
+// DefaultDispatchSessionRetentionDays is how long inactive mappings and
+// confirmed terminal evidence are kept when dispatch.session_retention_days is
+// omitted.
+const DefaultDispatchSessionRetentionDays = 30
 
 const (
 	// DefaultDispatchMCPWaitTimeoutMinutes is how long a healthy `dispatch_wait`
@@ -55,9 +61,13 @@ type AgentsConfig struct {
 	Grok         GrokConfig        `toml:"grok"`
 }
 
-// DispatchLimits controls Agent Dispatch recursion and MCP timeout limits.
+// DispatchLimits controls Agent Dispatch recursion, retention, and MCP timeout limits.
 type DispatchLimits struct {
 	MaxDepth *int `toml:"max_depth"`
+	// SessionRetentionDays bounds inactive conversation mappings and confirmed
+	// terminal run evidence. Nil selects DefaultDispatchSessionRetentionDays.
+	// Unconfirmed execution evidence is never expired.
+	SessionRetentionDays *int `toml:"session_retention_days"`
 	// MCPWaitTimeoutMinutes bounds one `dispatch_wait` MCP call. Nil selects
 	// DefaultDispatchMCPWaitTimeoutMinutes.
 	MCPWaitTimeoutMinutes *int `toml:"mcp_wait_timeout_minutes"`
@@ -209,6 +219,27 @@ func DispatchMaxDepth(c Config) int {
 		return DefaultDispatchMaxDepth
 	}
 	return *c.Dispatch.MaxDepth
+}
+
+// DispatchSessionRetention returns how long inactive mappings and confirmed
+// terminal evidence are kept.
+func DispatchSessionRetention(c Config) time.Duration {
+	return time.Duration(dispatchSessionRetentionDays(c.Dispatch)) * 24 * time.Hour
+}
+
+func dispatchSessionRetentionDays(limits DispatchLimits) int {
+	if limits.SessionRetentionDays == nil {
+		return DefaultDispatchSessionRetentionDays
+	}
+	return *limits.SessionRetentionDays
+}
+
+func dispatchSessionRetentionOverflows(days int) bool {
+	if days <= 0 {
+		return false
+	}
+	const nanosPerDay = int64(24 * time.Hour)
+	return int64(days) > math.MaxInt64/nanosPerDay
 }
 
 // DispatchMCPWaitTimeout returns how long one `dispatch_wait` MCP call blocks

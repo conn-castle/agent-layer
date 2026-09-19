@@ -48,12 +48,14 @@ serialized text fallback required for compatibility with older clients. The
 tools omit optional output schemas to keep their always-loaded definitions
 small; their descriptions state the fields callers need.
 
-### Timeouts
+### Timeouts and retention
 
-Two optional settings in `.agent-layer/config.toml` control MCP timing:
+Optional settings in `.agent-layer/config.toml` control MCP timing and how long
+inactive conversations are kept:
 
 ```toml
 [dispatch]
+session_retention_days = 30
 mcp_wait_timeout_minutes = 30
 mcp_tool_timeout_minutes = 40
 ```
@@ -65,8 +67,9 @@ hard server-side bound applied to every Agent Dispatch tool call, so a wedged
 handler always releases the caller. Both are optional positive integers; when
 omitted they resolve to 30 and 40. The tool timeout must be greater than the
 wait timeout, and an invalid relationship fails configuration validation.
-Confirmed terminal evidence and inactive mappings are retained for 30 days.
-Unconfirmed execution evidence is never expired. Older binaries that strictly
+`session_retention_days` bounds inactive conversation mappings and confirmed
+terminal evidence (default 30). Unconfirmed execution evidence is never expired.
+Older binaries that strictly
 decode run records will fail to read records written by this version.
 
 Codex and Grok also receive the hard bound natively as `tool_timeout_sec`.

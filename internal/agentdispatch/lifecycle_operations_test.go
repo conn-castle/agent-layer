@@ -15,7 +15,7 @@ func TestReconcileDoesNotTerminalizeRunWithUnprovableOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := reserveSession(root, run); err != nil {
+	if _, err := reserveSession(root, run, testDispatchSessionRetention); err != nil {
 		t.Fatal(err)
 	}
 	run.Record.State = dispatchStateRunning
@@ -45,7 +45,7 @@ func TestReconcileDoesNotTerminalizeRunWithUnprovableOwnership(t *testing.T) {
 func TestRetentionRemovesOnlyExpiredUnreferencedTerminalEvidence(t *testing.T) {
 	root := t.TempDir()
 	now := time.Now().UTC()
-	old := now.Add(-dispatchSessionRetention - time.Hour)
+	old := now.Add(-testDispatchSessionRetention - time.Hour)
 	makeRecord := func(state string, completed *time.Time) *dispatchRun {
 		run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 		if err != nil {
@@ -77,7 +77,7 @@ func TestRetentionRemovesOnlyExpiredUnreferencedTerminalEvidence(t *testing.T) {
 	if err := persistSession(root, session); err != nil {
 		t.Fatal(err)
 	}
-	if err := pruneDispatchEvidence(root, now); err != nil {
+	if err := pruneDispatchEvidence(root, now, testDispatchSessionRetention); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(expired.Dir); !os.IsNotExist(err) {
@@ -96,7 +96,7 @@ func TestCancelEscalatesButRetainsClaimUntilOwnedProcessIsReaped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := reserveSession(root, run)
+	session, err := reserveSession(root, run, testDispatchSessionRetention)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestRetentionRemovesRetiredFanoutState(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(legacy, "manifest.json"), []byte(`{"id":"old-fanout"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := pruneDispatchEvidence(root, time.Now()); err != nil {
+	if err := pruneDispatchEvidence(root, time.Now(), testDispatchSessionRetention); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "tmp", "fanouts")); !os.IsNotExist(err) {

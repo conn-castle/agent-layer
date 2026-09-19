@@ -238,20 +238,22 @@ Output is UTF-8 text capped at 65,536 bytes and sets `truncated` when more captu
 
 ## Configuration
 
-The optional `[dispatch]` section controls nesting and MCP timeouts:
+The optional `[dispatch]` section controls nesting, retention, and MCP timeouts:
 
 ```toml
 [dispatch]
 max_depth = 3
+session_retention_days = 30
 mcp_wait_timeout_minutes = 30
 mcp_tool_timeout_minutes = 40
 ```
 
 - `max_depth` limits nested dispatch and defaults to 3.
+- `session_retention_days` bounds inactive conversation mappings and confirmed terminal evidence. It defaults to 30. Unconfirmed execution evidence is never expired.
 - `mcp_wait_timeout_minutes` controls how long one `dispatch_wait` call blocks before returning `running`. It defaults to 30.
 - `mcp_tool_timeout_minutes` is the server-side hard limit for every dispatch MCP tool call. It defaults to 40 and must be greater than the wait timeout.
 
-Confirmed terminal evidence and inactive mappings are retained for 30 days. Unconfirmed execution evidence is never expired. Records written by this version are not readable by older binaries that reject unknown run-record fields.
+Records written by this version are not readable by older binaries that reject unknown run-record fields.
 
 Inside an already-dispatched conversation, prefer the client's built-in subagent for further delegation. A blocked nested start fails rather than queuing. `max_depth` counts the initial start, so the default of 3 permits that start and two nested starts.
 

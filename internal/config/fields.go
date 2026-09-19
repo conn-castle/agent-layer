@@ -50,6 +50,9 @@ const (
 	GrokModelFieldKey = "agents.grok.model"
 	// GrokReasoningEffortFieldKey is the canonical config path for Grok reasoning effort.
 	GrokReasoningEffortFieldKey = "agents.grok.reasoning_effort"
+	// DispatchSessionRetentionDaysFieldKey is the canonical config path for
+	// inactive mapping and confirmed-evidence retention.
+	DispatchSessionRetentionDaysFieldKey = "dispatch.session_retention_days"
 )
 
 var (
@@ -74,6 +77,7 @@ var fields = []FieldDef{
 		},
 	},
 	{Key: "dispatch.max_depth", Type: FieldPositiveInt},
+	{Key: DispatchSessionRetentionDaysFieldKey, Type: FieldPositiveInt},
 	{Key: "notifications.chime", Type: FieldBool},
 	{Key: "agents.antigravity.enabled", Type: FieldBool, Required: true},
 	{

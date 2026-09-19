@@ -242,7 +242,7 @@ func TestAntigravityResumePlainOutputFailsAndRetainsDurableMapping(t *testing.T)
 	if err != nil {
 		t.Fatalf("new run: %v", err)
 	}
-	session, err := reserveSession(root, run)
+	session, err := reserveSession(root, run, testDispatchSessionRetention)
 	if err != nil {
 		t.Fatalf("reserve session: %v", err)
 	}

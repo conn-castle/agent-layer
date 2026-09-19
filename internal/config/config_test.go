@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // parseConfigFile reads and parses a config.toml at path, mirroring the
@@ -104,6 +105,12 @@ auth = "oauth"
 func TestDispatchMaxDepthDefaultsToThree(t *testing.T) {
 	if got := DispatchMaxDepth(Config{}); got != DefaultDispatchMaxDepth {
 		t.Fatalf("DispatchMaxDepth = %d, want %d", got, DefaultDispatchMaxDepth)
+	}
+}
+
+func TestDispatchSessionRetentionDefaultsToThirtyDays(t *testing.T) {
+	if got := DispatchSessionRetention(Config{}); got != time.Duration(DefaultDispatchSessionRetentionDays)*24*time.Hour {
+		t.Fatalf("DispatchSessionRetention = %s, want %d days", got, DefaultDispatchSessionRetentionDays)
 	}
 }
 

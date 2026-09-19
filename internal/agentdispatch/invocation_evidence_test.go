@@ -394,7 +394,7 @@ func TestWaitConditionTimeoutReportsConditionMetFalse(t *testing.T) {
 func TestDefaultExpiryRemovesOnlyConfirmedEligibleRecords(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	now := time.Now().UTC()
-	old := now.Add(-dispatchSessionRetention - time.Hour)
+	old := now.Add(-testDispatchSessionRetention - time.Hour)
 	expired, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 	if err != nil {
 		t.Fatal(err)
@@ -419,7 +419,7 @@ func TestDefaultExpiryRemovesOnlyConfirmedEligibleRecords(t *testing.T) {
 	if err := writeJSONAtomic(filepath.Join(uncertain.Dir, dispatchRunFile), uncertain.Record); err != nil {
 		t.Fatal(err)
 	}
-	if err := pruneDispatchEvidence(root, now); err != nil {
+	if err := pruneDispatchEvidence(root, now, testDispatchSessionRetention); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(expired.Dir); !os.IsNotExist(err) {

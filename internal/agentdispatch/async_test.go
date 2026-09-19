@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -157,6 +158,119 @@ func TestResolvePromptSourceNormalizesPathButRejectsWhitespaceOnlySources(t *tes
 	}
 	_, err = resolvePromptSource("", promptPath)
 	requireDispatchExitCode(t, err, ExitUsage)
+}
+
+func TestStartDoesNotCreateRunWhenRetentionFails(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	stateDir := dispatchStatePath(root)
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "tiny-round-capacitor.json"), []byte("not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := Start(StartOptions{
+		Root: root, WorkDir: root, Agent: AgentCodex, Prompt: "Review this",
+		Env: []string{}, LookPath: alwaysFound,
+		VersionLookup: func(string, string) (string, error) { return supportedProviderVersions[AgentCodex], nil },
+		launchWorker: func(string, string, string) (launchedWorker, error) {
+			t.Fatal("Start launched a worker after retention failed")
+			return launchedWorker{}, errors.New("unreachable")
+		},
+	})
+	if err == nil {
+		t.Fatal("Start ignored a corrupt mapping during retention")
+	}
+	requireDispatchExitCode(t, err, ExitConfig)
+	entries, readErr := os.ReadDir(dispatchRunPath(root))
+	if readErr != nil && !os.IsNotExist(readErr) {
+		t.Fatalf("list dispatch runs: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("Start created run evidence after retention failed: %v", entries)
+	}
+}
+
+func TestStartRemovesUnpublishedRunWhenReservationFails(t *testing.T) {
+	originalSizes, originalShapes, originalElectrical := nameSizes, nameShapes, nameElectrical
+	t.Cleanup(func() { nameSizes, nameShapes, nameElectrical = originalSizes, originalShapes, originalElectrical })
+	nameSizes, nameShapes, nameElectrical = []string{"x"}, []string{"y"}, []string{"z"}
+
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	now := time.Now().UTC()
+	if err := persistSession(root, Session{
+		Name: "x-y-z", Agent: AgentCodex, State: sessionStateDurable,
+		ProviderSessionID: runtimeSessionID, CreatedAt: now, LastUsedAt: now,
+	}); err != nil {
+		t.Fatalf("persist occupying mapping: %v", err)
+	}
+	err := Start(StartOptions{
+		Root: root, WorkDir: root, Agent: AgentCodex, Prompt: "Review this",
+		Env: []string{}, LookPath: alwaysFound,
+		VersionLookup: func(string, string) (string, error) { return supportedProviderVersions[AgentCodex], nil },
+		launchWorker: func(string, string, string) (launchedWorker, error) {
+			t.Fatal("Start launched a worker after reservation failed")
+			return launchedWorker{}, errors.New("unreachable")
+		},
+	})
+	if err == nil {
+		t.Fatal("Start allocated a name from a full pool")
+	}
+	requireDispatchExitCode(t, err, ExitConfig)
+	if !strings.Contains(err.Error(), "could not allocate a unique dispatch name") {
+		t.Fatalf("Start error = %v, want name-pool exhaustion", err)
+	}
+	entries, readErr := os.ReadDir(dispatchRunPath(root))
+	if readErr != nil && !os.IsNotExist(readErr) {
+		t.Fatalf("list dispatch runs: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("Start left unpublished run evidence after reservation failed: %v", entries)
+	}
+}
+
+func TestStartUsesConfiguredRetentionWhenPruningMappings(t *testing.T) {
+	now := time.Now().UTC()
+	startWithRetention := func(t *testing.T, days int, lastUsed time.Time) string {
+		t.Helper()
+		root := writeDispatchRepo(t, dispatchRepoConfig{DispatchSessionRetentionDays: days})
+		session := Session{
+			Name: "tiny-round-capacitor", Agent: AgentCodex, State: sessionStateDurable,
+			ProviderSessionID: runtimeSessionID, CreatedAt: lastUsed, LastUsedAt: lastUsed,
+		}
+		if err := persistSession(root, session); err != nil {
+			t.Fatalf("persist planted mapping: %v", err)
+		}
+		var stdout bytes.Buffer
+		launcher := func(string, string, string) (launchedWorker, error) {
+			read, write, err := os.Pipe()
+			if err != nil {
+				return launchedWorker{}, err
+			}
+			go func() { defer func() { _ = read.Close() }(); var token [1]byte; _, _ = read.Read(token[:]) }()
+			return launchedWorker{gate: write, pid: os.Getpid(), startIdentity: processStartIdentity(os.Getpid())}, nil
+		}
+		err := Start(StartOptions{
+			Root: root, WorkDir: root, Agent: AgentCodex, Prompt: "Review this", Stdout: &stdout,
+			Env: []string{}, LookPath: alwaysFound,
+			VersionLookup: func(string, string) (string, error) { return supportedProviderVersions[AgentCodex], nil },
+			launchWorker:  launcher,
+		})
+		if err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		return root
+	}
+
+	shortRoot := startWithRetention(t, 2, now.Add(-10*24*time.Hour))
+	if _, err := os.Stat(filepath.Join(dispatchStatePath(shortRoot), "tiny-round-capacitor.json")); !os.IsNotExist(err) {
+		t.Fatalf("Start did not apply a 2-day retention window: %v", err)
+	}
+
+	longRoot := startWithRetention(t, 60, now.Add(-40*24*time.Hour))
+	if _, err := os.Stat(filepath.Join(dispatchStatePath(longRoot), "tiny-round-capacitor.json")); err != nil {
+		t.Fatalf("Start pruned a mapping still inside a 60-day window: %v", err)
+	}
 }
 
 func TestStartAllowsOmittedOverrides(t *testing.T) {

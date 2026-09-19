@@ -153,6 +153,19 @@ func TestLookupField_DispatchMaxDepth(t *testing.T) {
 	}
 }
 
+func TestLookupField_DispatchSessionRetentionDays(t *testing.T) {
+	f, ok := LookupField(DispatchSessionRetentionDaysFieldKey)
+	if !ok {
+		t.Fatalf("expected %s to be in catalog", DispatchSessionRetentionDaysFieldKey)
+	}
+	if f.Type != FieldPositiveInt {
+		t.Fatalf("%s type = %s, want %s", DispatchSessionRetentionDaysFieldKey, f.Type, FieldPositiveInt)
+	}
+	if f.Required {
+		t.Fatalf("%s should not be required", DispatchSessionRetentionDaysFieldKey)
+	}
+}
+
 func TestFieldOptionValues_ClaudeReasoningCatalog(t *testing.T) {
 	values := FieldOptionValues(ClaudeReasoningEffortFieldKey)
 	want := []string{"low", "medium", "high", "xhigh", "max"}

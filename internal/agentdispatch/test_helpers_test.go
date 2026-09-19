@@ -14,6 +14,8 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
+const testDispatchSessionRetention = 30 * 24 * time.Hour
+
 // dispatchExecRequest configures one in-process engine execution for tests.
 // It mirrors the live pipeline: Start/Continue prepare and publish an
 // invocation, and the detached worker replays it through executeDispatch.
@@ -42,9 +44,6 @@ func executeFreshDispatch(req dispatchExecRequest) error {
 	if err != nil {
 		return err
 	}
-	if err := pruneDispatchEvidence(req.Root, time.Now()); err != nil {
-		return err
-	}
 	if err := checkDispatchDepth(project.Config, depth); err != nil {
 		return err
 	}
@@ -69,14 +68,18 @@ func executeFreshDispatch(req dispatchExecRequest) error {
 	if err := validateSkillProjection(projectionRoot, target, req.Skill); err != nil {
 		return err
 	}
+	retention := config.DispatchSessionRetention(project.Config)
+	if err := pruneDispatchEvidence(req.Root, time.Now(), retention); err != nil {
+		return err
+	}
 	run, err := newDispatchRun(req.Root, target.Name, version, dispatchModeFresh)
 	if err != nil {
 		return err
 	}
 	run.Record.Skill = strings.TrimSpace(req.Skill)
-	session, err := reserveSession(req.Root, run)
+	session, err := reserveSession(req.Root, run, retention)
 	if err != nil {
-		return err
+		return abandonUnpublishedDispatchRun(run.Dir, err)
 	}
 	return executeDispatch(dispatchExecution{
 		Root: req.Root, WorkDir: req.WorkDir, Project: project, Target: target,

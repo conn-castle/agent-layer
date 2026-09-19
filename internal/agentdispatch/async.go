@@ -60,9 +60,6 @@ func Start(opts StartOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := pruneDispatchEvidence(opts.Root, time.Now()); err != nil {
-		return err
-	}
 	requested, ok := lookupTarget(opts.Agent)
 	if !ok {
 		return exitError(ExitUsage, fmt.Sprintf(messages.DispatchUnknownTargetFmt, opts.Agent))
@@ -97,6 +94,10 @@ func Start(opts StartOptions) error {
 	if err != nil {
 		return err
 	}
+	retention := config.DispatchSessionRetention(project.Config)
+	if err := pruneDispatchEvidence(opts.Root, time.Now(), retention); err != nil {
+		return err
+	}
 	run, err := newDispatchRun(opts.Root, target.Name, version, dispatchModeFresh)
 	if err != nil {
 		return err
@@ -109,9 +110,9 @@ func Start(opts StartOptions) error {
 			return err
 		}
 	}
-	session, err := reserveSession(opts.Root, run)
+	session, err := reserveSession(opts.Root, run, retention)
 	if err != nil {
-		return err
+		return abandonUnpublishedDispatchRun(run.Dir, err)
 	}
 	session.Model = opts.Model
 	session.ReasoningEffort = opts.ReasoningEffort
@@ -295,6 +296,13 @@ func removeWorkerRequest(runDir string) error {
 		return wrapExitError(ExitConfig, "remove dispatch worker request", err)
 	}
 	return nil
+}
+
+func abandonUnpublishedDispatchRun(runDir string, cause error) error {
+	if err := os.RemoveAll(runDir); err != nil {
+		return errors.Join(cause, wrapExitError(ExitConfig, "remove unpublished dispatch run", err))
+	}
+	return cause
 }
 
 func restorePreviousInvocation(root string, handle string, rejectedRunID string, previousRunID string) error {
