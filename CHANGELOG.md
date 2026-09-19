@@ -8,6 +8,9 @@ All notable changes to this project will be documented in this file.
 - Inactive dispatch mappings and confirmed terminal evidence now expire after `dispatch.session_retention_days` (default 30) instead of a hard-coded 30 days.
 - Name-pool exhaustion reports retained, active, and unreadable occupancy against pool capacity, and recommends shortening `dispatch.session_retention_days` only when retained names exist.
 
+### Fixed
+- A failed dispatch name reservation no longer leaves a pending conversation mapping that retention would treat as active and never reclaim.
+
 ## v0.21.0 - 2026-09-18
 
 ### Added

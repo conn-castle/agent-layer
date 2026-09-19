@@ -128,6 +128,42 @@ func TestReservationDoesNotOverwriteCollidingName(t *testing.T) {
 	}
 }
 
+func TestReserveSessionRemovesMappingIfRunRecordWriteFails(t *testing.T) {
+	root := t.TempDir()
+	originalSizes, originalShapes, originalElectrical := nameSizes, nameShapes, nameElectrical
+	t.Cleanup(func() { nameSizes, nameShapes, nameElectrical = originalSizes, originalShapes, originalElectrical })
+	nameSizes, nameShapes, nameElectrical = []string{"x"}, []string{"y"}, []string{"z"}
+
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	previousName := run.Record.Name
+	staleRevision := run.Record.Revision
+	run.Record.Revision--
+	_, err = reserveSession(root, run, testDispatchSessionRetention)
+	if err == nil {
+		t.Fatal("reserveSession succeeded after a run-record write failure")
+	}
+	requireDispatchExitCode(t, err, ExitUnavailable)
+	if run.Record.Name != previousName {
+		t.Fatalf("failed reservation left run name %q, want %q", run.Record.Name, previousName)
+	}
+	mapping := filepath.Join(dispatchStatePath(root), "x-y-z.json")
+	if _, statErr := os.Stat(mapping); !os.IsNotExist(statErr) {
+		t.Fatalf("failed reservation left mapping %s: %v", mapping, statErr)
+	}
+
+	run.Record.Revision = staleRevision
+	session, err := reserveSession(root, run, testDispatchSessionRetention)
+	if err != nil {
+		t.Fatalf("reserveSession after rollback: %v", err)
+	}
+	if session.Name != "x-y-z" {
+		t.Fatalf("reserved %q, want x-y-z", session.Name)
+	}
+}
+
 func TestGrokSessionRoundTripsThroughStateStore(t *testing.T) {
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)

@@ -335,8 +335,13 @@ func createExclusiveSession(root string, name string, run *dispatchRun) (Session
 		}
 		return Session{}, false, wrapExitError(ExitConfig, "close pending dispatch mapping", closeErr)
 	}
+	previousName := run.Record.Name
 	run.Record.Name = name
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		run.Record.Name = previousName
+		if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
+			return Session{}, false, errors.Join(err, wrapExitError(ExitConfig, "remove failed dispatch reservation", removeErr))
+		}
 		return Session{}, false, err
 	}
 	return session, true, nil
