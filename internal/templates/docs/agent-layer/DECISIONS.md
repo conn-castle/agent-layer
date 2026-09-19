@@ -3,7 +3,7 @@
 Note: This is an agent-layer memory file. It is primarily for agent use.
 
 ## Purpose
-A rolling log of important, non-obvious decisions that materially affect future work (constraints, deferrals, irreversible tradeoffs). Only record decisions that future developers/agents would not learn just by reading the code. Do not log routine choices or standard best-practice decisions; if it is obvious from the code, leave it out.
+Record otherwise-lost rationale that materially constrains future work. Current architecture belongs in repository documentation; enforceable behavior belongs in code, tests, schemas, or configuration. Add an entry only when its future-guiding rationale cannot be recovered from those canonical sources. Importance alone does not justify duplicating a decision; omit routine choices and standard best practices.
 
 ## Format
 - Keep entries brief and durable (avoid restating obvious defaults).

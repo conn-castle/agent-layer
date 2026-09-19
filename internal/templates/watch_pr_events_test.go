@@ -66,6 +66,9 @@ func watchPREventsGHStubEnv(t *testing.T, prState1, prState2, comments1, comment
 set -euo pipefail
 args="$*"
 mode="${GH_STUB_MODE:-ok}"
+if [[ -n "${GH_FORCE_TTY:-}${CLICOLOR_FORCE:-}" ]]; then
+  printf '\033[31m'
+fi
 if [[ "$mode" == "fail" ]]; then
   printf 'gh: boom\n' >&2
   exit 1
@@ -369,5 +372,116 @@ func TestWatchPREventsFailsOnAPIError(t *testing.T) {
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err == nil || !strings.Contains(stderr.String(), "boom") {
 		t.Fatalf("api failure = %v, stderr %q", err, stderr.String())
+	}
+}
+
+// Exercise the foreground wait through the script boundary: it must return an
+// event on stdout, append the same event to the log, and exit without a signal.
+func runWatchPREventsOnce(t *testing.T, env []string, logFile string, extra ...string) map[string]any {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	args := []string{watchPREventsScript(t), "--repo", "acme/widgets", "--pr", "7",
+		"--log-file", logFile, "--interval-seconds", "1", "--exit-on-change"}
+	cmd := exec.CommandContext(ctx, "bash", append(args, extra...)...)
+	cmd.Env = env
+	cmd.WaitDelay = time.Second
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("foreground wait: %v\nstderr=%s", err, stderr.String())
+	}
+	var event map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &event); err != nil {
+		t.Fatalf("expected exactly one JSON event: %v\nstdout=%s", err, stdout.String())
+	}
+	log, err := os.ReadFile(logFile) // #nosec G304 -- test-owned watcher log.
+	if err != nil || !bytes.HasSuffix(log, stdout.Bytes()) {
+		t.Fatalf("event was not appended to log: %v", err)
+	}
+	return event
+}
+
+func TestWatchPREventsWakesForEditsAndArbitraryChecks(t *testing.T) {
+	requireJQ(t)
+	for _, change := range []string{"inline edit", "review edit", "required check"} {
+		t.Run(change, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			pr1, pr2 := filepath.Join(dir, "pr1.json"), filepath.Join(dir, "pr2.json")
+			comments1, comments2 := filepath.Join(dir, "comments1.json"), filepath.Join(dir, "comments2.json")
+			pr := map[string]any{"headRefOid": "abc", "reviews": []any{map[string]any{"id": 21, "body": "initial"}},
+				"statusCheckRollup": []any{map[string]any{"name": "custom-required-check", "status": "IN_PROGRESS"}}}
+			comments := []any{map[string]any{"id": 11, "body": "initial"}}
+			writeWatchPRJSON(t, pr1, pr)
+			writeWatchPRJSON(t, comments1, comments)
+			switch change {
+			case "inline edit":
+				comments[0].(map[string]any)["body"] = "corrected finding"
+			case "review edit":
+				pr["reviews"].([]any)[0].(map[string]any)["body"] = "corrected finding"
+			case "required check":
+				pr["statusCheckRollup"] = []any{map[string]any{"name": "custom-required-check", "status": "COMPLETED", "conclusion": "SUCCESS"}}
+			}
+			writeWatchPRJSON(t, pr2, pr)
+			writeWatchPRJSON(t, comments2, comments)
+			env := append(watchPREventsGHStubEnv(t, pr1, pr2, comments1, comments2), "GH_FORCE_TTY=120", "CLICOLOR_FORCE=1")
+			event := runWatchPREventsOnce(t, env, filepath.Join(dir, "events.jsonl"))
+			if event["reason"] != "state-change" {
+				t.Fatalf("expected a change notification, got %v", event)
+			}
+		})
+	}
+}
+
+func TestWatchPREventsDeadlineWakesWithoutChanges(t *testing.T) {
+	requireJQ(t)
+	dir := t.TempDir()
+	pr, comments := filepath.Join(dir, "pr.json"), filepath.Join(dir, "comments.json")
+	createdAt := time.Now().UTC().Truncate(time.Second)
+	writeWatchPRJSON(t, pr, map[string]any{"createdAt": createdAt.Format(time.RFC3339), "headRefOid": "abc"})
+	writeWatchPRJSON(t, comments, []any{})
+	env := watchPREventsGHStubEnv(t, pr, pr, comments, comments)
+	// A 60-second polling interval must not delay a deadline two seconds away.
+	event := runWatchPREventsOnce(t, env, filepath.Join(dir, "events.jsonl"),
+		"--interval-seconds", "60", "--review-deadline-seconds", "2")
+	if event["reason"] != "review-deadline" || event["review_deadline_epoch"] != float64(createdAt.Unix()+2) {
+		t.Fatalf("incorrect deadline notification: %v", event)
+	}
+	if time.Now().Before(createdAt.Add(2 * time.Second)) {
+		t.Fatal("deadline notification arrived before the deadline")
+	}
+}
+
+func TestWatchPREventsDoesNotRepeatExpiredDeadlineOnRestart(t *testing.T) {
+	requireJQ(t)
+	dir := t.TempDir()
+	pr1, pr2 := filepath.Join(dir, "pr1.json"), filepath.Join(dir, "pr2.json")
+	comments := filepath.Join(dir, "comments.json")
+	writeWatchPRJSON(t, pr1, map[string]any{"createdAt": "2026-01-01T00:00:00Z", "headRefOid": "abc"})
+	writeWatchPRJSON(t, pr2, map[string]any{"createdAt": "2026-01-01T00:00:00Z", "headRefOid": "def"})
+	writeWatchPRJSON(t, comments, []any{})
+	logFile := filepath.Join(dir, "events.jsonl")
+	first := runWatchPREventsOnce(t, watchPREventsGHStubEnv(t, pr1, pr1, comments, comments), logFile,
+		"--interval-seconds", "60", "--review-deadline-seconds", "600")
+	if first["reason"] != "review-deadline" {
+		t.Fatalf("expired deadline should wake immediately: %v", first)
+	}
+	// The change happened between invocations; there will be no later API change.
+	second := runWatchPREventsOnce(t, watchPREventsGHStubEnv(t, pr2, pr2, comments, comments), logFile,
+		"--interval-seconds", "60", "--review-deadline-seconds", "600")
+	if second["reason"] != "state-change" {
+		t.Fatalf("restart should wait for new state, not repeat the deadline: %v", second)
+	}
+	// Restart again without a gap change. The old deadline must not cause a
+	// busy loop; wait for the next head change observed during polling.
+	third := runWatchPREventsOnce(t, watchPREventsGHStubEnv(t, pr2, pr1, comments, comments), logFile,
+		"--review-deadline-seconds", "600")
+	if third["reason"] != "state-change" {
+		t.Fatalf("deadline repeated instead of waiting for a new change: %v", third)
+	}
+	log, err := os.ReadFile(logFile) // #nosec G304 -- test-owned watcher log.
+	if err != nil || bytes.Count(log, []byte("\n")) != 3 {
+		t.Fatalf("restart did not preserve exactly three events: %v\n%s", err, log)
 	}
 }

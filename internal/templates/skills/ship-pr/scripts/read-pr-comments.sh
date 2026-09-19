@@ -60,6 +60,10 @@ for command in gh jq; do
   fi
 done
 
+# Agent harnesses can force terminal/color output even in JSON pipelines.
+unset GH_FORCE_TTY CLICOLOR_FORCE
+export NO_COLOR=1 GH_PAGER=cat
+
 owner="${repo%%/*}"
 name="${repo##*/}"
 

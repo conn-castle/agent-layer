@@ -44,6 +44,9 @@ func ghStubEnv(t *testing.T, mode string) []string {
 set -euo pipefail
 args="$*"
 mode="${GH_STUB_MODE:-ok}"
+if [[ -n "${GH_FORCE_TTY:-}${CLICOLOR_FORCE:-}" ]]; then
+  printf '\033[31m'
+fi
 if [[ "$mode" == "fail" ]]; then
   printf 'gh: boom\n' >&2
   exit 1
@@ -172,5 +175,14 @@ func TestReadPRCommentsFailsOnAPIAndMalformedJSON(t *testing.T) {
 	_, _, err = runReadPRComments(t, ghStubEnv(t, "malformed"), "--repo", "acme/widgets", "--pr", "7")
 	if err == nil {
 		t.Fatal("malformed JSON succeeded")
+	}
+}
+
+func TestReadPRCommentsHandlesForcedTerminalOutput(t *testing.T) {
+	requireJQ(t)
+	env := append(ghStubEnv(t, "ok"), "GH_FORCE_TTY=120", "CLICOLOR_FORCE=1")
+	out, stderr, err := runReadPRComments(t, env, "--repo", "acme/widgets", "--pr", "7")
+	if err != nil || !strings.Contains(out, "> Please fix this") || strings.Contains(out, "\x1b") {
+		t.Fatalf("forced terminal output: %v\nstderr=%s\nstdout=%s", err, stderr, out)
 	}
 }

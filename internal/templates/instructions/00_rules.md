@@ -19,6 +19,8 @@
 
 ## Workflow Guidelines
 
+- **Continue authorized work:** Complete authorized work without asking the user to say “continue” or reauthorize in-scope fixes. Investigate and resolve reported failures. Existing authorization limits still apply to unrelated work, commits, merges, releases, and destructive operations.
+- **Check before ending a turn:** Check whether the user's request is complete. Continue any authorized work that can proceed, using commentary for progress updates. Stop only when work is complete or requires user action, a substantive decision, or new authorization. If blocked, state why and what the user must do. Before compaction, record remaining work and the next step; resume without a new prompt.
 - **Temporary artifacts:** Use scratch code and temporary files when helpful. Keep **all** agent-only artifacts in `./.agent-layer/tmp` and do not automatically delete them.
 - **Track complex work:** For complex or long-running work with items to revisit, maintain a temporary Markdown tracker in `./.agent-layer/tmp` until completion.
 - **Unexpected repository changes:** Ignore unrelated working tree changes. Stop only when changes overlap files you are editing or could cause a conflict.
@@ -32,7 +34,7 @@
 ## Human Escalation
 
 - **Stop and ask on substantive tradeoffs:** When two or more viable alternatives involve genuine tradeoffs, ask the user to decide. Common cases include architecture, end-user behavior, irreversible data changes, demoting log severity, and silencing errors or warnings.
-- **Evaluate viability first:** Apply the facts, scope, constraints, and repository defaults before escalating. If only one viable path remains, proceed without asking; do not invent weak alternatives merely because the decision falls into a common escalation category.
+- **Resolve routine choices:** Apply the user’s unambiguous stated priorities, scope, and repository conventions before escalating. Make routine implementation decisions directly. Ask only when a material tradeoff remains unresolved.
 
 When escalation is required, present the viable options in plain language using this exact format:
 

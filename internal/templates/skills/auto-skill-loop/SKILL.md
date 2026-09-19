@@ -7,6 +7,11 @@ disable-model-invocation: true
 
 # auto-skill-loop
 
+Continue across PRs until the user stops the loop or step 1 reaches its no-work
+exit condition. A merged PR or a worker's final reply does not complete the loop.
+Report iteration outcomes as progress updates without ending the turn or asking
+whether to continue.
+
 ## Inputs
 
 Required:
@@ -92,4 +97,8 @@ request: <rote_worker merge-authorization request>
 
 4. If authorized, continue the dispatch session from step 2 with the exact
 authorization. If not, continue the dispatch to preserve the PR and return to
-the primary branch without merging. Then return to step 1.
+the primary branch without merging.
+
+5. Wait for the step 4 dispatch to finish merging and cleanup or preserving the
+PR and returning to the primary branch. After either outcome, immediately return
+to step 1 in the same run.
