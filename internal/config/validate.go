@@ -95,6 +95,9 @@ func (c *Config) Validate(path string) error {
 	if c.Dispatch.MaxDepth != nil && *c.Dispatch.MaxDepth <= 0 {
 		return fmt.Errorf(messages.ConfigDispatchMaxDepthInvalidFmt, path)
 	}
+	if err := validateDispatchSessionRetention(path, c.Dispatch); err != nil {
+		return err
+	}
 	if err := validateDispatchMCPTimeouts(path, c.Dispatch); err != nil {
 		return err
 	}
@@ -200,6 +203,19 @@ func validateGrokAgentSpecific(path string, cfg GrokConfig) error {
 	if len(keys) > 0 {
 		sort.Strings(keys)
 		return fmt.Errorf(messages.ConfigGrokAgentSpecificReservedKeyFmt, path, keys[0], "Grok project config only loads plugins; put user-level settings in GROK_HOME/config.toml")
+	}
+	return nil
+}
+
+// validateDispatchSessionRetention rejects non-positive day counts and values
+// that cannot be represented as time.Duration.
+func validateDispatchSessionRetention(path string, limits DispatchLimits) error {
+	if limits.SessionRetentionDays == nil {
+		return nil
+	}
+	days := *limits.SessionRetentionDays
+	if days <= 0 || dispatchSessionRetentionOverflows(days) {
+		return fmt.Errorf(messages.ConfigDispatchSessionRetentionInvalidFmt, path)
 	}
 	return nil
 }

@@ -232,7 +232,7 @@ func TestAntigravityIdentityEvidenceSurvivesPersistenceFailure(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			session, err := reserveSession(root, run)
+			session, err := reserveSession(root, run, testDispatchSessionRetention)
 			if err != nil {
 				t.Fatal(err)
 			}

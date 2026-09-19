@@ -14,6 +14,8 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
+const testDispatchSessionRetention = 30 * 24 * time.Hour
+
 // dispatchExecRequest configures one in-process engine execution for tests.
 // It mirrors the live pipeline: Start/Continue prepare and publish an
 // invocation, and the detached worker replays it through executeDispatch.
@@ -40,9 +42,6 @@ type dispatchExecRequest struct {
 func executeFreshDispatch(req dispatchExecRequest) error {
 	project, stderr, env, depth, err := loadDispatchProject(req.Root, req.Stderr, req.Env)
 	if err != nil {
-		return err
-	}
-	if err := pruneDispatchEvidence(req.Root, time.Now()); err != nil {
 		return err
 	}
 	if err := checkDispatchDepth(project.Config, depth); err != nil {
@@ -74,7 +73,11 @@ func executeFreshDispatch(req dispatchExecRequest) error {
 		return err
 	}
 	run.Record.Skill = strings.TrimSpace(req.Skill)
-	session, err := reserveSession(req.Root, run)
+	retention := config.DispatchSessionRetention(project.Config)
+	if err := pruneDispatchEvidence(req.Root, time.Now(), retention); err != nil {
+		return err
+	}
+	session, err := reserveSession(req.Root, run, retention)
 	if err != nil {
 		return err
 	}

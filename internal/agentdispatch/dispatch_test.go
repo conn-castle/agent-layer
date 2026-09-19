@@ -627,12 +627,13 @@ func TestSyncRunExitErrorAttributesPostWriteCleanupAfterSuccessfulSync(t *testin
 }
 
 type dispatchRepoConfig struct {
-	AntigravityModel      string
-	ClaudeModel           string
-	ClaudeReasoningEffort string
-	ClaudeLocalConfigDir  bool
-	CodexLocalConfigDir   bool
-	DispatchMaxDepth      int
+	AntigravityModel             string
+	ClaudeModel                  string
+	ClaudeReasoningEffort        string
+	ClaudeLocalConfigDir         bool
+	CodexLocalConfigDir          bool
+	DispatchMaxDepth             int
+	DispatchSessionRetentionDays int
 }
 
 func writeDispatchRepo(t *testing.T, repoConfig dispatchRepoConfig) string {
@@ -659,6 +660,9 @@ func writeDispatchRepo(t *testing.T, repoConfig dispatchRepoConfig) string {
 	dispatchBlock := ""
 	if repoConfig.DispatchMaxDepth != 0 {
 		dispatchBlock = fmt.Sprintf("max_depth = %d\n", repoConfig.DispatchMaxDepth)
+	}
+	if repoConfig.DispatchSessionRetentionDays != 0 {
+		dispatchBlock += fmt.Sprintf("session_retention_days = %d\n", repoConfig.DispatchSessionRetentionDays)
 	}
 	configToml := fmt.Sprintf(`
 [dispatch]

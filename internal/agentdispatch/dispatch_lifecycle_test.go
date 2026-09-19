@@ -108,7 +108,7 @@ func TestExecuteDispatchPreservesFailedFreshRunForRecoveryHistory(t *testing.T) 
 	if err != nil {
 		t.Fatalf("new run: %v", err)
 	}
-	session, err := reserveSession(root, run)
+	session, err := reserveSession(root, run, testDispatchSessionRetention)
 	if err != nil {
 		t.Fatalf("reserve session: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestUnprovenProviderTerminationRetainsRunAndActiveClaim(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := reserveSession(root, run)
+	session, err := reserveSession(root, run, testDispatchSessionRetention)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestFailureFinalizationRetainsClaimWhenTerminalWriteFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new run: %v", err)
 	}
-	session, err := reserveSession(root, run)
+	session, err := reserveSession(root, run, testDispatchSessionRetention)
 	if err != nil {
 		t.Fatalf("reserve session: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestFailedRunRecordPublicationPreservesCallerRevisionForFailureFinalization
 	if err != nil {
 		t.Fatalf("new run: %v", err)
 	}
-	session, err := reserveSession(root, run)
+	session, err := reserveSession(root, run, testDispatchSessionRetention)
 	if err != nil {
 		t.Fatalf("reserve session: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestPreLaunchCancellationAllowsSafeReplacementWithoutProcessIdentity(t *tes
 	if err != nil {
 		t.Fatalf("new run: %v", err)
 	}
-	session, err := reserveSession(root, run)
+	session, err := reserveSession(root, run, testDispatchSessionRetention)
 	if err != nil {
 		t.Fatalf("reserve session: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestNeverLaunchedCancelledClaimRecoveryOperations(t *testing.T) {
 		if err != nil {
 			t.Fatalf("new run: %v", err)
 		}
-		session, err := reserveSession(root, run)
+		session, err := reserveSession(root, run, testDispatchSessionRetention)
 		if err != nil {
 			t.Fatalf("reserve session: %v", err)
 		}
@@ -373,7 +373,7 @@ func TestCancellationRevisionRaceIsFinalizedByOwningExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new run: %v", err)
 	}
-	session, err := reserveSession(root, run)
+	session, err := reserveSession(root, run, testDispatchSessionRetention)
 	if err != nil {
 		t.Fatalf("reserve session: %v", err)
 	}
@@ -429,7 +429,7 @@ func TestClaimReplacementBlockedByCompatibilityOwnerWithUnprovableOwnership(t *t
 	if err != nil {
 		t.Fatalf("new run: %v", err)
 	}
-	session, err := reserveSession(root, run)
+	session, err := reserveSession(root, run, testDispatchSessionRetention)
 	if err != nil {
 		t.Fatalf("reserve session: %v", err)
 	}
@@ -475,7 +475,7 @@ func TestPreStartFailureDowngradesUnstartedDurableMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new run: %v", err)
 	}
-	session, err := reserveSession(root, run)
+	session, err := reserveSession(root, run, testDispatchSessionRetention)
 	if err != nil {
 		t.Fatalf("reserve session: %v", err)
 	}

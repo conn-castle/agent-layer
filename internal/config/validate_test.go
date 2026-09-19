@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -122,6 +123,21 @@ func TestValidateConfigErrors(t *testing.T) {
 			name:    "invalid dispatch max depth",
 			cfg:     withDispatchMaxDepth(valid, 0),
 			wantErr: "dispatch.max_depth",
+		},
+		{
+			name:    "non-positive session retention",
+			cfg:     withDispatchSessionRetention(valid, 0),
+			wantErr: DispatchSessionRetentionDaysFieldKey,
+		},
+		{
+			name:    "negative session retention",
+			cfg:     withDispatchSessionRetention(valid, -1),
+			wantErr: DispatchSessionRetentionDaysFieldKey,
+		},
+		{
+			name:    "session retention overflows duration",
+			cfg:     withDispatchSessionRetention(valid, int(math.MaxInt64/int64(24*time.Hour))+1),
+			wantErr: DispatchSessionRetentionDaysFieldKey,
 		},
 		{
 			name:    "non-positive mcp wait timeout",
@@ -287,6 +303,11 @@ func withDispatchMaxDepth(cfg Config, maxDepth int) Config {
 	return cfg
 }
 
+func withDispatchSessionRetention(cfg Config, days int) Config {
+	cfg.Dispatch.SessionRetentionDays = &days
+	return cfg
+}
+
 func withDispatchMCPTimeouts(cfg Config, wait *int, tool *int) Config {
 	cfg.Dispatch.MCPWaitTimeoutMinutes = wait
 	cfg.Dispatch.MCPToolTimeoutMinutes = tool
@@ -294,6 +315,27 @@ func withDispatchMCPTimeouts(cfg Config, wait *int, tool *int) Config {
 }
 
 func ptr(value int) *int { return &value }
+
+func TestDispatchSessionRetentionDefaults(t *testing.T) {
+	var cfg Config
+	if got := DispatchSessionRetention(cfg); got != 30*24*time.Hour {
+		t.Fatalf("default session retention = %s, want 30 days", got)
+	}
+	defaults := validTimeoutConfig()
+	if err := defaults.Validate("config.toml"); err != nil {
+		t.Fatalf("omitted session retention must validate: %v", err)
+	}
+}
+
+func TestDispatchSessionRetentionOverrides(t *testing.T) {
+	cfg := withDispatchSessionRetention(validTimeoutConfig(), 7)
+	if err := cfg.Validate("config.toml"); err != nil {
+		t.Fatalf("valid session retention rejected: %v", err)
+	}
+	if got := DispatchSessionRetention(cfg); got != 7*24*time.Hour {
+		t.Fatalf("session retention = %s, want 7 days", got)
+	}
+}
 
 // TestDispatchMCPTimeoutDefaults proves that a config predating the MCP
 // interface keeps working: both accessors resolve to the documented product

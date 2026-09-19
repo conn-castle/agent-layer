@@ -378,7 +378,7 @@ func newWaitTestRun(t *testing.T, root string) (*dispatchRun, Session) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := reserveSession(root, run)
+	session, err := reserveSession(root, run, testDispatchSessionRetention)
 	if err != nil {
 		t.Fatal(err)
 	}

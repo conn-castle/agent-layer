@@ -17,14 +17,13 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 const (
 	dispatchStateDir = "dispatch"
 	dispatchRunFile  = "dispatch.json"
-	// dispatchSessionRetention bounds durable mappings and confirmed terminal
-	// evidence while preserving unconfirmed execution evidence.
-	dispatchSessionRetention = 30 * 24 * time.Hour
 )
 
 const (
@@ -214,9 +213,38 @@ func newUUID() (string, error) {
 	return fmt.Sprintf("%s-%s-%s-%s-%s", encoded[:8], encoded[8:12], encoded[12:16], encoded[16:20], encoded[20:]), nil
 }
 
-var nameSizes = []string{"big", "small", "tiny", "short", "calm", "compact", "micro", "nimble", "slim", "wide"}
-var nameShapes = []string{"round", "bright", "silent", "rapid", "steady", "curved", "gentle", "linear", "square", "swift"}
-var nameElectrical = []string{"capacitor", "inductor", "resistor", "transistor", "rectifier", "amplifier", "diode", "oscillator", "relay", "transformer"}
+var nameSizes = []string{
+	"big", "small", "tiny", "short", "calm", "compact", "micro", "nimble", "slim",
+	"wide", "tall", "long", "thin", "thick", "dense", "light", "heavy", "vast",
+	"slight", "grand", "mini", "nano", "bulky", "lean", "broad", "narrow", "huge",
+	"modest", "spare", "stout", "faint", "solid", "tight", "loose", "deep", "flat",
+	"mega",
+}
+var nameShapes = []string{
+	"round", "bright", "silent", "rapid", "steady", "curved", "gentle", "linear",
+	"square", "swift", "oval", "sharp", "smooth", "jagged", "planar", "angular",
+	"circular", "spiral", "radial", "quiet", "slow", "still", "vivid", "dim",
+	"even", "bent", "arched", "conical", "cubic", "blunt", "flared", "tapered",
+	"rigid", "polar", "axial", "convex", "concave",
+	"red", "blue", "green", "gold", "silver", "amber", "copper", "bronze",
+	"azure", "coral", "crimson", "indigo", "violet", "orange", "yellow", "purple",
+	"pink", "teal", "navy", "gray", "white", "black", "brown", "scarlet",
+	"lucky", "merry", "jolly", "clever", "eager", "bold", "brave", "wild",
+	"warm", "cool", "quirky", "plucky", "jaunty", "peppy", "zesty", "zippy",
+	"magnetic", "static", "sleek", "shiny", "fiery", "sunny", "playful", "cheery",
+}
+var nameElectrical = []string{
+	"capacitor", "inductor", "resistor", "transistor", "rectifier", "amplifier",
+	"diode", "oscillator", "relay", "transformer", "thyristor", "varistor",
+	"thermistor", "solenoid", "armature", "stator", "rotor", "breaker", "fuse",
+	"switch", "ballast", "coupler", "inverter", "converter", "regulator",
+	"encoder", "decoder", "attenuator", "isolator", "jumper", "terminal", "anode",
+	"cathode", "winding", "coil", "choke", "sensor",
+	"mosfet", "triac", "diac", "zener", "led", "photodiode", "optocoupler",
+	"memristor", "comparator", "multiplexer", "battery", "servo", "stepper",
+	"speaker", "microphone", "buzzer", "crystal", "antenna", "ferrite", "balun",
+	"connector",
+}
 
 func randomDispatchName() (string, error) {
 	pick := func(values []string) (string, error) {
@@ -248,7 +276,7 @@ func randomDispatchName() (string, error) {
 // bigInt is a narrow seam that keeps randomDispatchName's selection readable.
 func bigInt(value int) *big.Int { return big.NewInt(int64(value)) }
 
-func reserveSession(root string, run *dispatchRun) (Session, error) {
+func reserveSession(root string, run *dispatchRun, retention time.Duration) (Session, error) {
 	if err := os.MkdirAll(dispatchStatePath(root), 0o700); err != nil {
 		return Session{}, wrapExitError(ExitConfig, "create dispatch state directory", err)
 	}
@@ -257,35 +285,180 @@ func reserveSession(root string, run *dispatchRun) (Session, error) {
 		if err != nil {
 			return Session{}, wrapExitError(ExitTargetFailure, "generate dispatch name", err)
 		}
-		path, err := sessionPath(root, name)
+		session, reserved, err := createExclusiveSession(root, name, run)
 		if err != nil {
 			return Session{}, err
 		}
-		now := time.Now().UTC()
-		session := Session{Name: name, Agent: run.Record.Agent, CreatedAt: now, LastUsedAt: now, State: sessionStatePending, RunID: run.Record.ID, ActiveRunID: run.Record.ID, ActiveClaimKnown: true}
-		file, openErr := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- name is generated from fixed vocabularies.
-		if errors.Is(openErr, fs.ErrExist) {
-			continue
+		if reserved {
+			return session, nil
 		}
-		if openErr != nil {
-			return Session{}, wrapExitError(ExitConfig, "reserve dispatch name", openErr)
-		}
-		encoderErr := json.NewEncoder(file).Encode(session)
-		closeErr := file.Close()
-		if encoderErr != nil || closeErr != nil {
-			_ = os.Remove(path)
-			if encoderErr != nil {
-				return Session{}, wrapExitError(ExitConfig, "write pending dispatch mapping", encoderErr)
-			}
-			return Session{}, wrapExitError(ExitConfig, "close pending dispatch mapping", closeErr)
-		}
-		run.Record.Name = name
-		if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+	}
+	unused, err := unusedDispatchPoolNames(root)
+	if err != nil {
+		return Session{}, err
+	}
+	if err := shuffleStrings(unused); err != nil {
+		return Session{}, wrapExitError(ExitTargetFailure, "shuffle unused dispatch names", err)
+	}
+	for _, name := range unused {
+		session, reserved, err := createExclusiveSession(root, name, run)
+		if err != nil {
 			return Session{}, err
 		}
-		return session, nil
+		if reserved {
+			return session, nil
+		}
 	}
-	return Session{}, exitError(ExitConfig, "could not allocate a unique dispatch name after 256 attempts")
+	return Session{}, dispatchNamePoolExhaustedError(root, retention)
+}
+
+func createExclusiveSession(root string, name string, run *dispatchRun) (Session, bool, error) {
+	path, err := sessionPath(root, name)
+	if err != nil {
+		return Session{}, false, err
+	}
+	now := time.Now().UTC()
+	session := Session{Name: name, Agent: run.Record.Agent, CreatedAt: now, LastUsedAt: now, State: sessionStatePending, RunID: run.Record.ID, ActiveRunID: run.Record.ID, ActiveClaimKnown: true}
+	file, openErr := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- name is generated from fixed vocabularies.
+	if errors.Is(openErr, fs.ErrExist) {
+		return Session{}, false, nil
+	}
+	if openErr != nil {
+		return Session{}, false, wrapExitError(ExitConfig, "reserve dispatch name", openErr)
+	}
+	encoderErr := json.NewEncoder(file).Encode(session)
+	closeErr := file.Close()
+	if encoderErr != nil || closeErr != nil {
+		_ = os.Remove(path)
+		if encoderErr != nil {
+			return Session{}, false, wrapExitError(ExitConfig, "write pending dispatch mapping", encoderErr)
+		}
+		return Session{}, false, wrapExitError(ExitConfig, "close pending dispatch mapping", closeErr)
+	}
+	run.Record.Name = name
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		return Session{}, false, err
+	}
+	return session, true, nil
+}
+
+func unusedDispatchPoolNames(root string) ([]string, error) {
+	occupied := make(map[string]struct{})
+	entries, err := os.ReadDir(dispatchStatePath(root))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, wrapExitError(ExitConfig, "list dispatch sessions for name allocation", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		occupied[strings.TrimSuffix(entry.Name(), ".json")] = struct{}{}
+	}
+	unused := make([]string, 0, dispatchNamePoolCapacity())
+	for _, size := range nameSizes {
+		for _, shape := range nameShapes {
+			for _, electrical := range nameElectrical {
+				name := size + "-" + shape + "-" + electrical
+				if _, exists := occupied[name]; !exists {
+					unused = append(unused, name)
+				}
+			}
+		}
+	}
+	return unused, nil
+}
+
+func dispatchNamePoolCapacity() int {
+	return len(nameSizes) * len(nameShapes) * len(nameElectrical)
+}
+
+func inDispatchNamePool(name string) bool {
+	size, shape, electrical, ok := splitDispatchName(name)
+	if !ok {
+		return false
+	}
+	return containsString(nameSizes, size) && containsString(nameShapes, shape) && containsString(nameElectrical, electrical)
+}
+
+func splitDispatchName(name string) (string, string, string, bool) {
+	first := strings.IndexByte(name, '-')
+	if first <= 0 {
+		return "", "", "", false
+	}
+	rest := name[first+1:]
+	second := strings.IndexByte(rest, '-')
+	if second <= 0 {
+		return "", "", "", false
+	}
+	electrical := rest[second+1:]
+	if electrical == "" || strings.ContainsRune(electrical, '-') {
+		return "", "", "", false
+	}
+	return name[:first], rest[:second], electrical, true
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func shuffleStrings(values []string) error {
+	for i := len(values) - 1; i > 0; i-- {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
+		if err != nil {
+			return err
+		}
+		j := int(n.Int64())
+		values[i], values[j] = values[j], values[i]
+	}
+	return nil
+}
+
+func dispatchNamePoolExhaustedError(root string, retention time.Duration) error {
+	retained, active, unreadable, err := classifyDispatchPoolOccupancy(root)
+	if err != nil {
+		return err
+	}
+	days := int(retention / (24 * time.Hour))
+	capacity := dispatchNamePoolCapacity()
+	if unreadable > 0 {
+		return exitError(ExitConfig, fmt.Sprintf(messages.ConfigDispatchNamePoolExhaustedUnreadableFmt, retained, active, unreadable, capacity, days))
+	}
+	return exitError(ExitConfig, fmt.Sprintf(messages.ConfigDispatchNamePoolExhaustedFmt, retained, active, capacity, days))
+}
+
+func classifyDispatchPoolOccupancy(root string) (retained int, active int, unreadable int, err error) {
+	entries, err := os.ReadDir(dispatchStatePath(root))
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, 0, 0, nil
+	}
+	if err != nil {
+		return 0, 0, 0, wrapExitError(ExitConfig, "list dispatch sessions for name allocation", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		name := strings.TrimSuffix(entry.Name(), ".json")
+		if !inDispatchNamePool(name) {
+			continue
+		}
+		session, loadErr := loadSession(root, name)
+		if loadErr != nil {
+			unreadable++
+			continue
+		}
+		if dispatchSessionActive(root, session) {
+			active++
+			continue
+		}
+		retained++
+	}
+	return retained, active, unreadable, nil
 }
 
 func persistSession(root string, session Session) error {
@@ -436,7 +609,7 @@ func loadSession(root string, name string) (Session, error) {
 // pruneExpiredSessions removes inactive, valid mappings whose last use is
 // older than the retention window. Corrupt mappings are preserved so normal
 // diagnostics can report them instead of silently erasing state.
-func pruneExpiredSessions(root string, now time.Time) error {
+func pruneExpiredSessions(root string, now time.Time, retention time.Duration) error {
 	entries, err := os.ReadDir(dispatchStatePath(root))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -444,7 +617,7 @@ func pruneExpiredSessions(root string, now time.Time) error {
 	if err != nil {
 		return wrapExitError(ExitConfig, "list dispatch sessions for retention", err)
 	}
-	cutoff := now.UTC().Add(-dispatchSessionRetention)
+	cutoff := now.UTC().Add(-retention)
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -460,8 +633,8 @@ func pruneExpiredSessions(root string, now time.Time) error {
 	return nil
 }
 
-func pruneDispatchEvidence(root string, now time.Time) error {
-	if err := pruneExpiredSessions(root, now); err != nil {
+func pruneDispatchEvidence(root string, now time.Time, retention time.Duration) error {
+	if err := pruneExpiredSessions(root, now, retention); err != nil {
 		return err
 	}
 	sessions, err := listSessions(root)
@@ -477,7 +650,7 @@ func pruneDispatchEvidence(root string, now time.Time) error {
 			current[session.ActiveRunID] = true
 		}
 	}
-	cutoff := now.UTC().Add(-dispatchSessionRetention)
+	cutoff := now.UTC().Add(-retention)
 	entries, err := os.ReadDir(dispatchRunPath(root))
 	if errors.Is(err, fs.ErrNotExist) {
 		return pruneLegacyFanoutState(root)

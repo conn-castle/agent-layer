@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/config"
 )
 
 func TestStateRejectsMalformedMappingsAndRecords(t *testing.T) {
@@ -103,10 +105,22 @@ func TestReservationDoesNotOverwriteCollidingName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new run: %v", err)
 	}
-	if _, err := reserveSession(root, run); err == nil {
+	if _, err := reserveSession(root, run, testDispatchSessionRetention); err == nil {
 		t.Fatal("reserveSession overwrote an existing mapping")
 	} else {
 		requireDispatchExitCode(t, err, ExitConfig)
+		message := err.Error()
+		for _, want := range []string{
+			"could not allocate a unique dispatch name",
+			"1 retained conversations",
+			"0 active executions",
+			"1-name pool",
+			config.DispatchSessionRetentionDaysFieldKey,
+		} {
+			if !strings.Contains(message, want) {
+				t.Fatalf("exhaustion error %q missing %q", message, want)
+			}
+		}
 	}
 	data, err := os.ReadFile(collision) // #nosec G304 -- collision is a test-controlled path inside t.TempDir.
 	if err != nil || string(data) != original {
@@ -120,7 +134,7 @@ func TestGrokSessionRoundTripsThroughStateStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new run: %v", err)
 	}
-	session, err := reserveSession(root, run)
+	session, err := reserveSession(root, run, testDispatchSessionRetention)
 	if err != nil {
 		t.Fatalf("reserve session: %v", err)
 	}
@@ -183,7 +197,7 @@ func TestNewDispatchRunAdvertisesEventsAndOnlyApplicableLineage(t *testing.T) {
 func TestDispatchSessionRetentionPrunesOnlyExpiredInactiveMappings(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
-	old := now.Add(-dispatchSessionRetention - time.Hour)
+	old := now.Add(-testDispatchSessionRetention - time.Hour)
 
 	expired := Session{Name: "tiny-round-capacitor", Agent: AgentCodex, State: "durable", ProviderSessionID: runtimeSessionID, CreatedAt: old, LastUsedAt: old}
 	current := Session{Name: "small-bright-resistor", Agent: AgentClaude, State: "durable", ProviderSessionID: runtimeSessionID, CreatedAt: old, LastUsedAt: now.Add(-time.Hour)}
@@ -209,7 +223,7 @@ func TestDispatchSessionRetentionPrunesOnlyExpiredInactiveMappings(t *testing.T)
 	if err := writeJSONAtomic(filepath.Join(cancelledRunDir, dispatchRunFile), RunRecord{ID: cancelledRunID, State: dispatchStateCancelled, RecoveryState: recoveryAcceptanceUnknown, CompletedAt: &old}); err != nil {
 		t.Fatalf("write cancelled run: %v", err)
 	}
-	if err := pruneExpiredSessions(root, now); err != nil {
+	if err := pruneExpiredSessions(root, now, testDispatchSessionRetention); err != nil {
 		t.Fatalf("pruneExpiredSessions: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dispatchStatePath(root), expired.Name+".json")); !os.IsNotExist(err) {
@@ -232,10 +246,248 @@ func TestDispatchSessionRetentionPrunesOnlyExpiredInactiveMappings(t *testing.T)
 	if err := os.WriteFile(corruptPath, []byte("not-json"), 0o600); err != nil {
 		t.Fatalf("write corrupt mapping: %v", err)
 	}
-	if err := pruneExpiredSessions(root, now); err == nil {
+	if err := pruneExpiredSessions(root, now, testDispatchSessionRetention); err == nil {
 		t.Fatal("retention hid a corrupt mapping")
 	}
 	if _, err := os.Stat(corruptPath); err != nil {
 		t.Fatalf("retention removed corrupt mapping: %v", err)
+	}
+}
+
+func TestDispatchNameVocabularyStaysValidAndLargeEnough(t *testing.T) {
+	assertList := func(t *testing.T, label string, words []string) {
+		t.Helper()
+		seen := make(map[string]bool, len(words))
+		for _, word := range words {
+			if word == "" || strings.Contains(word, "-") {
+				t.Fatalf("%s token %q is empty or contains a hyphen", label, word)
+			}
+			for _, r := range word {
+				if r < 'a' || r > 'z' {
+					t.Fatalf("%s token %q is not [a-z]+", label, word)
+				}
+			}
+			if seen[word] {
+				t.Fatalf("%s duplicate token %q", label, word)
+			}
+			seen[word] = true
+		}
+	}
+	assertList(t, "nameSizes", nameSizes)
+	assertList(t, "nameShapes", nameShapes)
+	assertList(t, "nameElectrical", nameElectrical)
+	if len(nameSizes) != 37 {
+		t.Fatalf("nameSizes length = %d, want 37", len(nameSizes))
+	}
+	if len(nameShapes) <= 37 {
+		t.Fatalf("nameShapes length = %d, want colors and non-size adjectives beyond the original 37", len(nameShapes))
+	}
+	if len(nameElectrical) <= 37 {
+		t.Fatalf("nameElectrical length = %d, want the approved extra parts", len(nameElectrical))
+	}
+	for _, word := range []string{"red", "blue", "gold", "quirky", "lucky"} {
+		if !containsString(nameShapes, word) {
+			t.Fatalf("nameShapes omitted requested non-size token %q", word)
+		}
+	}
+	for _, word := range []string{
+		"mosfet", "triac", "diac", "zener", "led", "photodiode", "optocoupler",
+		"memristor", "comparator", "multiplexer", "battery", "servo", "stepper",
+		"speaker", "microphone", "buzzer", "crystal", "antenna", "ferrite", "balun",
+		"connector",
+	} {
+		if !containsString(nameElectrical, word) {
+			t.Fatalf("nameElectrical omitted approved part %q", word)
+		}
+	}
+	capacity := len(nameSizes) * len(nameShapes) * len(nameElectrical)
+	if capacity < 50000 {
+		t.Fatalf("name pool capacity %d is below 50000", capacity)
+	}
+	name, err := randomDispatchName()
+	if err != nil {
+		t.Fatalf("randomDispatchName: %v", err)
+	}
+	if !validDispatchName(name) {
+		t.Fatalf("randomDispatchName returned invalid name %q", name)
+	}
+	if strings.Count(name, "-") != 2 {
+		t.Fatalf("randomDispatchName %q does not have exactly two hyphens", name)
+	}
+}
+
+func TestConfiguredRetentionPrunesInactiveMappingsEarlierThanThirtyDays(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	retention := 2 * 24 * time.Hour
+	expired := Session{Name: "tiny-round-capacitor", Agent: AgentCodex, State: "durable", ProviderSessionID: runtimeSessionID, CreatedAt: now.Add(-10 * 24 * time.Hour), LastUsedAt: now.Add(-10 * 24 * time.Hour)}
+	current := Session{Name: "small-bright-resistor", Agent: AgentClaude, State: "durable", ProviderSessionID: runtimeSessionID, CreatedAt: now.Add(-time.Hour), LastUsedAt: now.Add(-time.Hour)}
+	for _, session := range []Session{expired, current} {
+		if err := persistSession(root, session); err != nil {
+			t.Fatalf("persist %s: %v", session.Name, err)
+		}
+	}
+	if err := pruneDispatchEvidence(root, now, retention); err != nil {
+		t.Fatalf("pruneDispatchEvidence: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dispatchStatePath(root), expired.Name+".json")); !os.IsNotExist(err) {
+		t.Fatalf("mapping older than the configured window remains: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dispatchStatePath(root), current.Name+".json")); err != nil {
+		t.Fatalf("mapping inside the configured window was pruned: %v", err)
+	}
+}
+
+func TestConfiguredRetentionPrunesConfirmedTerminalEvidenceEarlierThanThirtyDays(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now().UTC()
+	retention := 2 * 24 * time.Hour
+	old := now.Add(-10 * 24 * time.Hour)
+	recent := now.Add(-time.Hour)
+	makeRecord := func(state string, completed time.Time, confirmed bool) *dispatchRun {
+		t.Helper()
+		run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+		if err != nil {
+			t.Fatal(err)
+		}
+		run.Record.State = state
+		if state == dispatchStateCompleted {
+			run.Record.RecoveryState = recoveryResumeRequired
+		} else {
+			run.Record.RecoveryState = recoveryAcceptanceUnknown
+		}
+		run.Record.CompletedAt = &completed
+		if confirmed {
+			run.Record.LaunchFenced = true
+			run.Record.TerminationConfirmed = true
+			run.Record.TerminationConfirmedAt = &completed
+		}
+		if err := writeJSONAtomic(filepath.Join(run.Dir, dispatchRunFile), run.Record); err != nil {
+			t.Fatal(err)
+		}
+		return run
+	}
+	expired := makeRecord(dispatchStateCompleted, old, true)
+	unconfirmed := makeRecord(dispatchStateCompleted, old, false)
+	insideWindow := makeRecord(dispatchStateCompleted, recent, true)
+	if err := pruneDispatchEvidence(root, now, retention); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(expired.Dir); !os.IsNotExist(err) {
+		t.Fatalf("confirmed terminal evidence older than the configured window remains: %v", err)
+	}
+	for _, dir := range []string{unconfirmed.Dir, insideWindow.Dir} {
+		if _, err := os.Stat(dir); err != nil {
+			t.Fatalf("preserved evidence removed: %v", err)
+		}
+	}
+}
+
+func TestReserveSessionReportsClassifiedExhaustionForActiveAndRetainedOccupants(t *testing.T) {
+	root := t.TempDir()
+	originalSizes, originalShapes, originalElectrical := nameSizes, nameShapes, nameElectrical
+	t.Cleanup(func() { nameSizes, nameShapes, nameElectrical = originalSizes, originalShapes, originalElectrical })
+	nameSizes, nameShapes, nameElectrical = []string{"a", "b"}, []string{"x"}, []string{"y"}
+
+	now := time.Now().UTC()
+	activeRunID := runtimeSessionID
+	active := Session{Name: "a-x-y", Agent: AgentCodex, State: "durable", ProviderSessionID: runtimeSessionID, CreatedAt: now, LastUsedAt: now, RunID: activeRunID, ActiveRunID: activeRunID, ActiveClaimKnown: true}
+	retained := Session{Name: "b-x-y", Agent: AgentCodex, State: "durable", ProviderSessionID: runtimeSessionID, CreatedAt: now, LastUsedAt: now}
+	for _, session := range []Session{active, retained} {
+		if err := persistSession(root, session); err != nil {
+			t.Fatalf("persist %s: %v", session.Name, err)
+		}
+	}
+	runDir := filepath.Join(dispatchRunPath(root), activeRunID)
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatalf("create active run: %v", err)
+	}
+	if err := writeJSONAtomic(filepath.Join(runDir, dispatchRunFile), RunRecord{ID: activeRunID, State: dispatchStateRunning, RecoveryState: recoveryAcceptanceUnknown, PID: os.Getpid(), ProcessStartIdentity: processStartIdentity(os.Getpid())}); err != nil {
+		t.Fatalf("write active run: %v", err)
+	}
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	_, err = reserveSession(root, run, testDispatchSessionRetention)
+	if err == nil {
+		t.Fatal("reserveSession allocated a name from a full in-pool set")
+	}
+	requireDispatchExitCode(t, err, ExitConfig)
+	message := err.Error()
+	for _, want := range []string{
+		"could not allocate a unique dispatch name",
+		"1 retained conversations",
+		"1 active executions",
+		"2-name pool",
+		config.DispatchSessionRetentionDaysFieldKey,
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("exhaustion error %q missing %q", message, want)
+		}
+	}
+}
+
+func TestReserveSessionIgnoresOutOfPoolMappingsWhenAllocating(t *testing.T) {
+	root := t.TempDir()
+	originalSizes, originalShapes, originalElectrical := nameSizes, nameShapes, nameElectrical
+	t.Cleanup(func() { nameSizes, nameShapes, nameElectrical = originalSizes, originalShapes, originalElectrical })
+	nameSizes, nameShapes, nameElectrical = []string{"x"}, []string{"y"}, []string{"z"}
+
+	stateDir := dispatchStatePath(root)
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatalf("create state: %v", err)
+	}
+	outsider := filepath.Join(stateDir, "other-valid-name.json")
+	if err := os.WriteFile(outsider, []byte(`{"name":"other-valid-name","agent":"codex"}`), 0o600); err != nil {
+		t.Fatalf("write out-of-pool mapping: %v", err)
+	}
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	session, err := reserveSession(root, run, testDispatchSessionRetention)
+	if err != nil {
+		t.Fatalf("reserveSession treated an out-of-pool mapping as occupying the pool: %v", err)
+	}
+	if session.Name != "x-y-z" {
+		t.Fatalf("reserved %q, want x-y-z", session.Name)
+	}
+}
+
+func TestReserveSessionCountsUnreadableOccupantsWithoutFailingClosed(t *testing.T) {
+	root := t.TempDir()
+	originalSizes, originalShapes, originalElectrical := nameSizes, nameShapes, nameElectrical
+	t.Cleanup(func() { nameSizes, nameShapes, nameElectrical = originalSizes, originalShapes, originalElectrical })
+	nameSizes, nameShapes, nameElectrical = []string{"x"}, []string{"y"}, []string{"z"}
+
+	stateDir := dispatchStatePath(root)
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatalf("create state: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "x-y-z.json"), []byte("not-json"), 0o600); err != nil {
+		t.Fatalf("write unreadable mapping: %v", err)
+	}
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	_, err = reserveSession(root, run, testDispatchSessionRetention)
+	if err == nil {
+		t.Fatal("reserveSession overwrote an unreadable mapping")
+	}
+	requireDispatchExitCode(t, err, ExitConfig)
+	message := err.Error()
+	for _, want := range []string{
+		"could not allocate a unique dispatch name",
+		"0 retained conversations",
+		"0 active executions",
+		"1 unreadable occupants",
+		"1-name pool",
+		config.DispatchSessionRetentionDaysFieldKey,
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("exhaustion error %q missing %q", message, want)
+		}
 	}
 }

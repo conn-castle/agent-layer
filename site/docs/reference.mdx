@@ -43,6 +43,9 @@ mode = "all"
 # Maximum dispatch depth, including the initial `al dispatch start` call.
 # 3 allows two nested `al dispatch start` calls.
 max_depth = 3
+# How long inactive conversation mappings and confirmed terminal run evidence
+# are kept. Unconfirmed execution evidence never expires. Optional; defaults to 30.
+session_retention_days = 30
 # How long one `dispatch_wait` MCP tool call blocks before reporting that the
 # conversation is still running. Optional; defaults to 30.
 mcp_wait_timeout_minutes = 30
@@ -152,7 +155,7 @@ Agent-specific passthrough keys in `agents.codex.agent_specific` or `agents.clau
 | Section | Purpose |
 | --- | --- |
 | `[approvals]` | auto-approval policy for commands and MCP tools |
-| `[dispatch]` | Agent Dispatch nesting depth limit (`max_depth`) and MCP timeouts (`mcp_wait_timeout_minutes`, `mcp_tool_timeout_minutes`) |
+| `[dispatch]` | Agent Dispatch nesting depth (`max_depth`), session retention (`session_retention_days`), and MCP timeouts (`mcp_wait_timeout_minutes`, `mcp_tool_timeout_minutes`) |
 | `[notifications]` | filtered, best-effort local completion chime (`chime`) |
 | `[agents.*]` | enablement and model selection per client |
 | `[[skills.imports]]` | Git-backed Agent Skill imports |
@@ -390,6 +393,7 @@ Agent Layer validates `config.toml` on every run. Common validation rules:
 
 - `approvals.mode` must be one of `all`, `mcp`, `commands`, `none`, `yolo`
 - `dispatch.max_depth` must be a positive integer when set
+- `dispatch.session_retention_days` must be a positive integer representable as a duration when set
 - `enabled` flags must be set for all agents and MCP servers
 - MCP transport must be `http` or `stdio`
 - `http_transport` (when set) must be `sse` or `streamable`

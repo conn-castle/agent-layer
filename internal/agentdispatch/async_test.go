@@ -159,6 +159,50 @@ func TestResolvePromptSourceNormalizesPathButRejectsWhitespaceOnlySources(t *tes
 	requireDispatchExitCode(t, err, ExitUsage)
 }
 
+func TestStartUsesConfiguredRetentionWhenPruningMappings(t *testing.T) {
+	now := time.Now().UTC()
+	startWithRetention := func(t *testing.T, days int, lastUsed time.Time) string {
+		t.Helper()
+		root := writeDispatchRepo(t, dispatchRepoConfig{DispatchSessionRetentionDays: days})
+		session := Session{
+			Name: "tiny-round-capacitor", Agent: AgentCodex, State: sessionStateDurable,
+			ProviderSessionID: runtimeSessionID, CreatedAt: lastUsed, LastUsedAt: lastUsed,
+		}
+		if err := persistSession(root, session); err != nil {
+			t.Fatalf("persist planted mapping: %v", err)
+		}
+		var stdout bytes.Buffer
+		launcher := func(string, string, string) (launchedWorker, error) {
+			read, write, err := os.Pipe()
+			if err != nil {
+				return launchedWorker{}, err
+			}
+			go func() { defer func() { _ = read.Close() }(); var token [1]byte; _, _ = read.Read(token[:]) }()
+			return launchedWorker{gate: write, pid: os.Getpid(), startIdentity: processStartIdentity(os.Getpid())}, nil
+		}
+		err := Start(StartOptions{
+			Root: root, WorkDir: root, Agent: AgentCodex, Prompt: "Review this", Stdout: &stdout,
+			Env: []string{}, LookPath: alwaysFound,
+			VersionLookup: func(string, string) (string, error) { return supportedProviderVersions[AgentCodex], nil },
+			launchWorker:  launcher,
+		})
+		if err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		return root
+	}
+
+	shortRoot := startWithRetention(t, 2, now.Add(-10*24*time.Hour))
+	if _, err := os.Stat(filepath.Join(dispatchStatePath(shortRoot), "tiny-round-capacitor.json")); !os.IsNotExist(err) {
+		t.Fatalf("Start did not apply a 2-day retention window: %v", err)
+	}
+
+	longRoot := startWithRetention(t, 60, now.Add(-40*24*time.Hour))
+	if _, err := os.Stat(filepath.Join(dispatchStatePath(longRoot), "tiny-round-capacitor.json")); err != nil {
+		t.Fatalf("Start pruned a mapping still inside a 60-day window: %v", err)
+	}
+}
+
 func TestStartAllowsOmittedOverrides(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	var stdout bytes.Buffer

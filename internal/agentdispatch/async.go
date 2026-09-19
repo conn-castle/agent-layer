@@ -60,9 +60,6 @@ func Start(opts StartOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := pruneDispatchEvidence(opts.Root, time.Now()); err != nil {
-		return err
-	}
 	requested, ok := lookupTarget(opts.Agent)
 	if !ok {
 		return exitError(ExitUsage, fmt.Sprintf(messages.DispatchUnknownTargetFmt, opts.Agent))
@@ -109,7 +106,11 @@ func Start(opts StartOptions) error {
 			return err
 		}
 	}
-	session, err := reserveSession(opts.Root, run)
+	retention := config.DispatchSessionRetention(project.Config)
+	if err := pruneDispatchEvidence(opts.Root, time.Now(), retention); err != nil {
+		return err
+	}
+	session, err := reserveSession(opts.Root, run, retention)
 	if err != nil {
 		return err
 	}

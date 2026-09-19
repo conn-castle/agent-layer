@@ -12,6 +12,9 @@ mode = "all"
 # Maximum dispatch depth, including the initial `al dispatch start` call.
 # 3 allows two nested `al dispatch start` calls.
 max_depth = 3
+# How long inactive conversation mappings and confirmed terminal run evidence
+# are kept. Unconfirmed execution evidence never expires. Optional; defaults to 30.
+session_retention_days = 30
 # How long one `dispatch_wait` MCP tool call blocks before reporting that the
 # conversation is still running. The dispatch itself keeps running either way.
 mcp_wait_timeout_minutes = 30
