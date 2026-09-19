@@ -76,6 +76,9 @@ func newUpgradeCmd() *cobra.Command {
 					return err
 				}
 			}
+			if err := writeUpgradeVersionBanner(cmd.OutOrStdout(), root, targetPin); err != nil {
+				return err
+			}
 			reviewState := buildUpgradeReviewState(policy)
 			opts := install.Options{
 				Overwrite:    true,
@@ -681,6 +684,30 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&pinVersion, "version", "", messages.UpgradeFlagVersion)
 	return cmd
+}
+
+func writeUpgradeVersionBanner(out io.Writer, root, targetPin string) error {
+	current, err := currentRepoPinVersion(root)
+	if err != nil {
+		return err
+	}
+	target := strings.TrimSpace(targetPin)
+	if target == "" {
+		target = Version
+	}
+	_, err = fmt.Fprintf(out, messages.UpgradeStartFmt, formatCLIVersion(current), formatCLIVersion(target))
+	return err
+}
+
+func currentRepoPinVersion(root string) (string, error) {
+	pinned, ok, _, err := versiondispatch.ReadPinnedVersion(root)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", nil
+	}
+	return pinned, nil
 }
 
 func requireUpgradeTargetCLI(targetVersion string) error {

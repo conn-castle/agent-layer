@@ -86,6 +86,7 @@ const (
 	UpgradeSkipTmpDeletionsInfo                     = "Info: skipping deletions under .agent-layer/tmp/ (pass --apply-tmp-deletions to include them; this is destructive and may impact ongoing agent work)."
 	UpgradeSkipStatuslineSourceUpdatesInfo          = "Info: skipping statusline source replacements; run interactive `al upgrade` to review user-owned statusline source diffs."
 	UpgradeOverwriteStatuslineSourcePromptFmt       = "Replace user-owned statusline source %s with the template version?"
+	UpgradeStartFmt                                 = "Upgrading this repository from %s to %s.\n"
 	UpgradeSuccessful                               = "Upgrade successful."
 	UpgradeReviewSettingsHint                       = "Run `al wizard` to review your settings."
 	UpgradeRunningSync                              = "Running sync..."
@@ -204,7 +205,9 @@ const (
 	UpdateInstallerTempErrFmt         = "create temporary Agent Layer installer: %w"
 	UpdateInstallerWriteErrFmt        = "write temporary Agent Layer installer: %w"
 	UpdateInstallerCloseErrFmt        = "close temporary Agent Layer installer: %w"
-	UpdateComplete                    = "Agent Layer CLI update complete. Run `al upgrade plan` in each initialized repository."
+	UpdateInstalledVersionEmpty       = "installed CLI reported an empty version"
+	UpdateInstalledVersionWarnFmt     = "Warning: could not determine installed CLI version: %v\n"
+	UpdateCompleteFmt                 = "Agent Layer CLI update complete: %s -> %s. Run `al upgrade plan` in each initialized repository.\n"
 
 	UpdateUpgradeBlock = "Upgrade:\n  1) Update the global CLI:\n     al update\n  2) Upgrade this repo:\n     al upgrade plan\n     al upgrade"
 	UpdateSafetyBlock  = "Safety:\n  - Back up local changes before upgrading.\n  - `al upgrade` is the recommended default path.\n  - Non-interactive managed-only apply: `al upgrade --yes --apply-managed-updates`.\n  - Include memory updates/deletions only when explicitly selected with apply flags.\n  - Keep secrets only in `.agent-layer/.env` (AL_* keys) or process environment; do not commit generated files with resolved secrets."

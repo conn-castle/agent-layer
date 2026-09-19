@@ -30,6 +30,7 @@ func preserveUpdateGlobals(t *testing.T) {
 	originalCommandOutput := updateCommandOutput
 	originalRunCommand := updateRunCommand
 	originalHTTPClient := updateHTTPClient
+	originalInstalledVersion := updateInstalledVersion
 	t.Cleanup(func() {
 		Version = originalVersion
 		updateExecutable = originalExecutable
@@ -38,6 +39,7 @@ func preserveUpdateGlobals(t *testing.T) {
 		updateCommandOutput = originalCommandOutput
 		updateRunCommand = originalRunCommand
 		updateHTTPClient = originalHTTPClient
+		updateInstalledVersion = originalInstalledVersion
 	})
 }
 
@@ -68,6 +70,12 @@ func TestUpdateUsesHomebrewForFormulaOwnedExecutable(t *testing.T) {
 		ranArgs = append([]string(nil), args...)
 		return nil
 	}
+	updateInstalledVersion = func(_ context.Context, executable string) (string, error) {
+		if executable != "/opt/homebrew/bin/al" {
+			t.Fatalf("installed version executable = %q, want /opt/homebrew/bin/al", executable)
+		}
+		return "4.5.6", nil
+	}
 
 	command := newUpdateCmd()
 	var output bytes.Buffer
@@ -81,6 +89,9 @@ func TestUpdateUsesHomebrewForFormulaOwnedExecutable(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "Homebrew installation") {
 		t.Fatalf("expected Homebrew-specific output, got %q", output.String())
+	}
+	if !strings.Contains(output.String(), "Agent Layer CLI update complete: v1.2.3 -> v4.5.6.") {
+		t.Fatalf("expected before/after versions in completion message, got %q", output.String())
 	}
 }
 
@@ -115,6 +126,12 @@ func TestUpdateUsesInstallerAndPreservesScriptPrefix(t *testing.T) {
 		}
 		return nil
 	}
+	updateInstalledVersion = func(_ context.Context, got string) (string, error) {
+		if got != executable {
+			t.Fatalf("installed version executable = %q, want %q", got, executable)
+		}
+		return "v4.5.6", nil
+	}
 
 	command := newUpdateCmd()
 	var output bytes.Buffer
@@ -131,6 +148,9 @@ func TestUpdateUsesInstallerAndPreservesScriptPrefix(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "script installation at "+installRoot) {
 		t.Fatalf("expected script-specific output, got %q", output.String())
+	}
+	if !strings.Contains(output.String(), "Agent Layer CLI update complete: v1.2.3 -> v4.5.6.") {
+		t.Fatalf("expected before/after versions in completion message, got %q", output.String())
 	}
 }
 
@@ -304,5 +324,124 @@ func TestDownloadUpdateInstallerRejectsOversizedResponse(t *testing.T) {
 	_, _, err := downloadUpdateInstaller(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "size limit") {
 		t.Fatalf("error = %v, want size-limit failure", err)
+	}
+}
+
+func TestUpdateCompleteFallsBackToPostUpdateResolvedExecutable(t *testing.T) {
+	preserveUpdateGlobals(t)
+	Version = "1.2.3"
+	updateExecutable = func() (string, error) { return "/opt/homebrew/bin/al", nil }
+	resolvedPrefix := "/opt/homebrew/Cellar/agent-layer/1.2.3"
+	updateEvalSymlinks = func(path string) (string, error) {
+		if path == "/opt/homebrew/bin/al" {
+			return resolvedPrefix + "/bin/al", nil
+		}
+		if path == "/opt/homebrew/opt/agent-layer" {
+			return resolvedPrefix, nil
+		}
+		return path, nil
+	}
+	updateLookPath = func(string) (string, error) { return "/opt/homebrew/bin/brew", nil }
+	updateCommandOutput = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if name == "/opt/homebrew/bin/brew" && strings.Join(args, " ") == "--prefix conn-castle/tap/agent-layer" {
+			return []byte("/opt/homebrew/opt/agent-layer\n"), nil
+		}
+		t.Fatalf("unexpected detection command: %s %v", name, args)
+		return nil, nil
+	}
+	updateRunCommand = func(context.Context, io.Reader, io.Writer, io.Writer, string, ...string) error {
+		resolvedPrefix = "/opt/homebrew/Cellar/agent-layer/4.5.6"
+		return nil
+	}
+	var queried []string
+	updateInstalledVersion = func(_ context.Context, executable string) (string, error) {
+		queried = append(queried, executable)
+		if executable == "/opt/homebrew/bin/al" {
+			return "", errors.New("gone")
+		}
+		if executable == "/opt/homebrew/Cellar/agent-layer/4.5.6/bin/al" {
+			return "4.5.6", nil
+		}
+		t.Fatalf("unexpected executable %s", executable)
+		return "", errors.New("unexpected executable")
+	}
+
+	command := newUpdateCmd()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	command.SetOut(&stdout)
+	command.SetErr(&stderr)
+	if err := command.Execute(); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+	if strings.Join(queried, ",") != "/opt/homebrew/bin/al,/opt/homebrew/Cellar/agent-layer/4.5.6/bin/al" {
+		t.Fatalf("queried = %v, want original then post-update resolved executable", queried)
+	}
+	if !strings.Contains(stdout.String(), "Agent Layer CLI update complete: v1.2.3 -> v4.5.6.") {
+		t.Fatalf("expected resolved after version, got %q", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("unexpected stderr: %q", stderr.String())
+	}
+}
+
+func TestUpdateCompleteWarnsWhenInstalledVersionUnavailable(t *testing.T) {
+	preserveUpdateGlobals(t)
+	Version = "1.2.3"
+	updateExecutable = func() (string, error) { return "/opt/homebrew/bin/al", nil }
+	updateEvalSymlinks = func(path string) (string, error) {
+		if path == "/opt/homebrew/bin/al" {
+			return "/opt/homebrew/Cellar/agent-layer/1.2.3/bin/al", nil
+		}
+		if path == "/opt/homebrew/opt/agent-layer" {
+			return "/opt/homebrew/Cellar/agent-layer/1.2.3", nil
+		}
+		return path, nil
+	}
+	updateLookPath = func(string) (string, error) { return "/opt/homebrew/bin/brew", nil }
+	updateCommandOutput = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if name == "/opt/homebrew/bin/brew" && strings.Join(args, " ") == "--prefix conn-castle/tap/agent-layer" {
+			return []byte("/opt/homebrew/opt/agent-layer\n"), nil
+		}
+		t.Fatalf("unexpected detection command: %s %v", name, args)
+		return nil, nil
+	}
+	updateRunCommand = func(context.Context, io.Reader, io.Writer, io.Writer, string, ...string) error {
+		return nil
+	}
+	updateInstalledVersion = func(context.Context, string) (string, error) {
+		return "", errors.New("binary missing")
+	}
+
+	command := newUpdateCmd()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	command.SetOut(&stdout)
+	command.SetErr(&stderr)
+	if err := command.Execute(); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Agent Layer CLI update complete: v1.2.3 -> unknown.") {
+		t.Fatalf("expected unknown after version, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "could not determine installed CLI version: binary missing") {
+		t.Fatalf("expected version warning, got %q", stderr.String())
+	}
+}
+
+func TestReadInstalledCLIVersionUsesVersionFlag(t *testing.T) {
+	preserveUpdateGlobals(t)
+	updateCommandOutput = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if name != "/opt/homebrew/bin/al" || strings.Join(args, " ") != "--version" {
+			t.Fatalf("unexpected version command: %s %v", name, args)
+		}
+		return []byte("4.5.6\n"), nil
+	}
+	got, err := readInstalledCLIVersion(context.Background(), "/opt/homebrew/bin/al")
+	if err != nil {
+		t.Fatalf("read installed version: %v", err)
+	}
+	if got != "4.5.6" {
+		t.Fatalf("version = %q, want 4.5.6", got)
 	}
 }

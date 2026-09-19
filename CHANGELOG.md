@@ -3,6 +3,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+- `al update` reports the CLI version before and after the update in its completion message.
+- `al upgrade` prints the repository pin it starts from and the version it will upgrade to before applying changes.
+
 ## v0.21.1 - 2026-09-18
 
 ### Changed

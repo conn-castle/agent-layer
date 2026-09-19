@@ -27,7 +27,8 @@ syntax.
 
 - No artifact is required for ordinary inspection.
 - Put agent-only scripts, state files, traces, videos, screenshots, and saved
-  snapshots under `.agent-layer/tmp/`.
+  snapshots in the temporary or scratch directory defined by repo instructions
+  or conventions.
 - Report every artifact path created.
 
 ## Global constraints
@@ -54,7 +55,8 @@ syntax.
 - Ask before installing CLI packages, installing browsers, changing browser
   configuration, or using a persistent profile outside an explicit user
   request.
-- Ask before saving or reusing authentication state outside `.agent-layer/tmp/`.
+- Ask before saving or reusing authentication state outside the repo's
+  documented temporary or scratch directory.
 - Ask before leaving a browser session running when the user did not request an
   interactive handoff.
 
@@ -124,8 +126,8 @@ documentation:
 - The installed CLI help was checked for each command shape used.
 - Browser sessions were closed, detached, or intentionally left running with
   that state reported.
-- Generated artifacts were saved only where appropriate and secrets were not
-  committed or exposed.
+- Generated artifacts were saved in the repo's documented temporary or scratch
+  directory and secrets were not committed or exposed.
 - For Playwright test work, the relevant reference file was followed and the
   smallest meaningful test was rerun.
 
