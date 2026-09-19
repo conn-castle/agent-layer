@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - A failed dispatch name reservation no longer leaves a pending conversation mapping that retention would treat as active and never reclaim.
+- A failed fresh dispatch reservation no longer leaves unpublished pending run evidence that retention would never prune.
 
 ## v0.21.0 - 2026-09-18
 

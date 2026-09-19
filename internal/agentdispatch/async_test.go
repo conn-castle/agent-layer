@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -187,6 +188,44 @@ func TestStartDoesNotCreateRunWhenRetentionFails(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("Start created run evidence after retention failed: %v", entries)
+	}
+}
+
+func TestStartRemovesUnpublishedRunWhenReservationFails(t *testing.T) {
+	originalSizes, originalShapes, originalElectrical := nameSizes, nameShapes, nameElectrical
+	t.Cleanup(func() { nameSizes, nameShapes, nameElectrical = originalSizes, originalShapes, originalElectrical })
+	nameSizes, nameShapes, nameElectrical = []string{"x"}, []string{"y"}, []string{"z"}
+
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	now := time.Now().UTC()
+	if err := persistSession(root, Session{
+		Name: "x-y-z", Agent: AgentCodex, State: sessionStateDurable,
+		ProviderSessionID: runtimeSessionID, CreatedAt: now, LastUsedAt: now,
+	}); err != nil {
+		t.Fatalf("persist occupying mapping: %v", err)
+	}
+	err := Start(StartOptions{
+		Root: root, WorkDir: root, Agent: AgentCodex, Prompt: "Review this",
+		Env: []string{}, LookPath: alwaysFound,
+		VersionLookup: func(string, string) (string, error) { return supportedProviderVersions[AgentCodex], nil },
+		launchWorker: func(string, string, string) (launchedWorker, error) {
+			t.Fatal("Start launched a worker after reservation failed")
+			return launchedWorker{}, errors.New("unreachable")
+		},
+	})
+	if err == nil {
+		t.Fatal("Start allocated a name from a full pool")
+	}
+	requireDispatchExitCode(t, err, ExitConfig)
+	if !strings.Contains(err.Error(), "could not allocate a unique dispatch name") {
+		t.Fatalf("Start error = %v, want name-pool exhaustion", err)
+	}
+	entries, readErr := os.ReadDir(dispatchRunPath(root))
+	if readErr != nil && !os.IsNotExist(readErr) {
+		t.Fatalf("list dispatch runs: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("Start left unpublished run evidence after reservation failed: %v", entries)
 	}
 }
 

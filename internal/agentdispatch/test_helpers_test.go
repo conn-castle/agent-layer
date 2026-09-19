@@ -79,7 +79,7 @@ func executeFreshDispatch(req dispatchExecRequest) error {
 	run.Record.Skill = strings.TrimSpace(req.Skill)
 	session, err := reserveSession(req.Root, run, retention)
 	if err != nil {
-		return err
+		return abandonUnpublishedDispatchRun(run.Dir, err)
 	}
 	return executeDispatch(dispatchExecution{
 		Root: req.Root, WorkDir: req.WorkDir, Project: project, Target: target,

@@ -112,7 +112,7 @@ func Start(opts StartOptions) error {
 	}
 	session, err := reserveSession(opts.Root, run, retention)
 	if err != nil {
-		return err
+		return abandonUnpublishedDispatchRun(run.Dir, err)
 	}
 	session.Model = opts.Model
 	session.ReasoningEffort = opts.ReasoningEffort
@@ -296,6 +296,13 @@ func removeWorkerRequest(runDir string) error {
 		return wrapExitError(ExitConfig, "remove dispatch worker request", err)
 	}
 	return nil
+}
+
+func abandonUnpublishedDispatchRun(runDir string, cause error) error {
+	if err := os.RemoveAll(runDir); err != nil {
+		return errors.Join(cause, wrapExitError(ExitConfig, "remove unpublished dispatch run", err))
+	}
+	return cause
 }
 
 func restorePreviousInvocation(root string, handle string, rejectedRunID string, previousRunID string) error {
