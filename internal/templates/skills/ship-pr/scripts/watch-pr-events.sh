@@ -62,7 +62,7 @@ if [[ ! "$interval_seconds" =~ ^[1-9][0-9]*$ ]]; then
   printf 'watch-pr-events: --interval-seconds must be a positive integer\n' >&2
   exit 2
 fi
-for command in gh jq tee; do
+for command in gh jq tee cmp; do
   if ! command -v "$command" >/dev/null 2>&1; then
     printf 'watch-pr-events: required command not found: %s\n' "$command" >&2
     exit 2
@@ -72,6 +72,9 @@ done
 mkdir -p "$(dirname "$log_file")"
 touch "$log_file"
 
+# GitHub PR snapshots can exceed ARG_MAX. Pass them to jq as files; --argjson
+# puts the payload on argv and kills the watcher.
+workdir="$(mktemp -d "${TMPDIR:-/tmp}/watch-pr-events.XXXXXX")"
 stopping="false"
 sleep_pid=""
 stop_watcher() {
@@ -80,35 +83,34 @@ stop_watcher() {
     kill "$sleep_pid" 2>/dev/null || true
   fi
 }
+cleanup() {
+  stop_watcher
+  rm -rf "$workdir"
+}
 trap stop_watcher INT TERM
+trap cleanup EXIT
 
 fetch_state() {
-  local pr_state
-  local inline_comments
+  local dest="$1"
 
-  pr_state="$(
-    gh pr view "$pr_number" \
-      --repo "$repo" \
-      --json headRefOid,mergeable,reviewDecision,updatedAt,comments,reviews,statusCheckRollup
-  )"
-  inline_comments="$(
-    gh api --paginate "repos/${repo}/pulls/${pr_number}/comments?per_page=100" |
-      jq -sc 'add // []'
-  )"
+  gh pr view "$pr_number" \
+    --repo "$repo" \
+    --json headRefOid,mergeable,reviewDecision,updatedAt,comments,reviews,statusCheckRollup \
+    >"$workdir/pr_state.json"
+  gh api --paginate "repos/${repo}/pulls/${pr_number}/comments?per_page=100" |
+    jq -sc 'add // []' \
+    >"$workdir/inline_comments.json"
 
-  jq -S -c -n \
-    --argjson pr_state "$pr_state" \
-    --argjson inline_comments "$inline_comments" \
-    '{
-      pull_request: $pr_state,
-      inline_comments: $inline_comments
-    }'
+  jq -S -c -s '{pull_request: .[0], inline_comments: .[1]}' \
+    "$workdir/pr_state.json" \
+    "$workdir/inline_comments.json" \
+    >"$dest"
 }
 
 printf 'watch-pr-events: polling %s PR #%s every %ss; appending state changes to %s\n' \
   "$repo" "$pr_number" "$interval_seconds" "$log_file" >&2
 
-previous_state="$(fetch_state)"
+fetch_state "$workdir/previous.json"
 
 while [[ "$stopping" != "true" ]]; do
   sleep "$interval_seconds" &
@@ -119,23 +121,23 @@ while [[ "$stopping" != "true" ]]; do
     break
   fi
 
-  current_state="$(fetch_state)"
-  if [[ "$current_state" == "$previous_state" ]]; then
+  fetch_state "$workdir/current.json"
+  if cmp -s "$workdir/current.json" "$workdir/previous.json"; then
     continue
   fi
 
   observed_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-  jq -c -n \
+  jq -c \
     --arg observed_at "$observed_at" \
     --arg repo "$repo" \
     --argjson pr "$pr_number" \
-    --argjson state "$current_state" \
     '{
       observed_at: $observed_at,
       repo: $repo,
       pr: $pr,
-      state: $state
-    }' |
+      state: .
+    }' \
+    "$workdir/current.json" |
     tee -a "$log_file"
-  previous_state="$current_state"
+  mv -f "$workdir/current.json" "$workdir/previous.json"
 done

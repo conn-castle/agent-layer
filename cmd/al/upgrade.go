@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -75,6 +77,9 @@ func newUpgradeCmd() *cobra.Command {
 				if err := validatePinnedReleaseVersionFunc(cmd.Context(), targetPin); err != nil {
 					return err
 				}
+			}
+			if err := writeUpgradeVersionBanner(cmd.OutOrStdout(), root, targetPin); err != nil {
+				return err
 			}
 			reviewState := buildUpgradeReviewState(policy)
 			opts := install.Options{
@@ -681,6 +686,31 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&pinVersion, "version", "", messages.UpgradeFlagVersion)
 	return cmd
+}
+
+func writeUpgradeVersionBanner(out io.Writer, root, targetPin string) error {
+	current, err := currentRepoPinVersion(root)
+	if err != nil {
+		return err
+	}
+	target := strings.TrimSpace(targetPin)
+	if target == "" {
+		target = Version
+	}
+	_, err = fmt.Fprintf(out, messages.UpgradeStartFmt, formatCLIVersion(current), formatCLIVersion(target))
+	return err
+}
+
+func currentRepoPinVersion(root string) (string, error) {
+	path := filepath.Join(root, ".agent-layer", "al.version")
+	data, err := install.RealSystem{}.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", fmt.Errorf(messages.InstallFailedReadFmt, path, err)
+	}
+	return strings.TrimSpace(string(data)), nil
 }
 
 func requireUpgradeTargetCLI(targetVersion string) error {

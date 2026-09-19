@@ -40,7 +40,8 @@ var (
 		command.Stderr = stderr
 		return command.Run()
 	}
-	updateHTTPClient = &http.Client{Timeout: 30 * time.Second}
+	updateHTTPClient       = &http.Client{Timeout: 30 * time.Second}
+	updateInstalledVersion = readInstalledCLIVersion
 )
 
 func newUpdateCmd() *cobra.Command {
@@ -96,8 +97,63 @@ func runUpdate(cmd *cobra.Command) error {
 		}
 	}
 
-	_, _ = fmt.Fprintln(cmd.OutOrStdout(), messages.UpdateComplete)
+	fromVersion := formatCLIVersion(Version)
+	toVersion := unknownVersion
+	installed, err := readUpdatedCLIVersion(cmd.Context(), executable)
+	if err != nil {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), messages.UpdateInstalledVersionWarnFmt, err)
+	} else {
+		toVersion = formatCLIVersion(installed)
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), messages.UpdateCompleteFmt, fromVersion, toVersion)
 	return nil
+}
+
+func readUpdatedCLIVersion(ctx context.Context, executable string) (string, error) {
+	installed, err := updateInstalledVersion(ctx, executable)
+	if err == nil {
+		return installed, nil
+	}
+	resolved, resolveErr := updateEvalSymlinks(executable)
+	if resolveErr != nil || resolved == "" || resolved == executable {
+		return "", err
+	}
+	installed, resolvedErr := updateInstalledVersion(ctx, resolved)
+	if resolvedErr != nil {
+		return "", err
+	}
+	return installed, nil
+}
+
+func readInstalledCLIVersion(ctx context.Context, executable string) (string, error) {
+	output, err := updateCommandOutput(ctx, executable, "--version")
+	if err != nil {
+		return "", commandOutputError(err, output)
+	}
+	line := strings.TrimSpace(strings.SplitN(string(output), "\n", 2)[0])
+	if line == "" {
+		return "", errors.New(messages.UpdateInstalledVersionEmpty)
+	}
+	return line, nil
+}
+
+func formatCLIVersion(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return unknownVersion
+	}
+	token := trimmed
+	if idx := strings.IndexAny(trimmed, " \t("); idx >= 0 {
+		token = trimmed[:idx]
+	}
+	if version.IsDev(token) {
+		return token
+	}
+	normalized, err := version.Normalize(token)
+	if err != nil {
+		return trimmed
+	}
+	return "v" + normalized
 }
 
 func detectHomebrewInstallation(ctx context.Context, executable string) (bool, string, error) {
