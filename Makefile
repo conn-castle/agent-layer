@@ -13,7 +13,7 @@ GO_MOD_CACHE ?= $(CACHE_ROOT)/go-mod
 GOLANGCI_LINT_CACHE ?= $(ROOT_DIR)/.cache/golangci-lint
 
 # Prune excluded directory roots before descent; -not -path still traverses them.
-GO_FILES_FIND_CMD := find . \( -path './.git' -o -path './.tools' -o -path './.cache' -o -path './.claude' -o -path './.codex' -o -path './.gemini' -o -path './.agy' -o -path './.antigravitycli' -o -path './.agents' -o -path './.agent-layer' -o -path './tmp' \) -prune -o -type f -name '*.go'
+GO_FILES_FIND_CMD := find . \( -path './.git' -o -path './.tools' -o -path './.cache' -o -path './.claude' -o -path './.codex' -o -path './.gemini' -o -path './.agy' -o -path './.antigravitycli' -o -path './.agents' -o -path './.agent-layer' -o -path './.muse-config' -o -path './.muse-data' -o -path './tmp' \) -prune -o -type f -name '*.go'
 
 AL_VERSION ?= dev
 DIST_DIR ?= dist
@@ -338,3 +338,7 @@ al-copilot: al-dev-build ## Run al copilot against this repo using current sourc
 .PHONY: al-grok
 al-grok: al-dev-build ## Run al grok against this repo using current source
 	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) "$(AL_DEV_BIN)" grok
+
+.PHONY: al-muse
+al-muse: al-dev-build ## Run al muse against this repo using current source
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) "$(AL_DEV_BIN)" muse

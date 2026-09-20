@@ -24,6 +24,7 @@ func CheckModels(project *config.ProjectConfig, req agentoptions.DiscoveryReques
 		{"grok", project.Config.Agents.Grok.Enabled},
 		{"antigravity", project.Config.Agents.Antigravity.Enabled},
 		{"copilot_cli", project.Config.Agents.CopilotCLI.Enabled},
+		{"muse", project.Config.Agents.Muse.Enabled},
 	}
 	req.Project = project
 	req.Live = true

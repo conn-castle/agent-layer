@@ -19,6 +19,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients/claude"
 	"github.com/conn-castle/agent-layer/internal/clients/codex"
 	"github.com/conn-castle/agent-layer/internal/clients/grok"
+	"github.com/conn-castle/agent-layer/internal/clients/muse"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
@@ -29,10 +30,13 @@ const modelsCommand = "models"
 const initializeMethod = "initialize"
 const methodKey = "method"
 const paramsKey = "params"
+const jsonRPCKey = "jsonrpc"
+const initializedMethod = "initialized"
+const clientNameKey = "name"
 
 // HasModelDiscovery reports whether the installed harness can supply a catalog.
 func HasModelDiscovery(agent string) bool {
-	return slices.Contains([]string{agentAntigravity, agentClaude, agentCodex, agentCopilotCLI, agentGrok}, agent)
+	return slices.Contains([]string{agentAntigravity, agentClaude, agentCodex, agentCopilotCLI, agentGrok, agentMuse}, agent)
 }
 
 // DiscoverModels queries the harness without sync or inference. It uses the same
@@ -117,6 +121,9 @@ func normalizeModels(agent string, models []string) ([]string, error) {
 		}
 	}
 	if len(result) == 0 {
+		if agent == agentMuse {
+			return nil, errors.New("muse model/list returned an empty catalog; this Muse build does not expose model suggestions through MSP")
+		}
 		return nil, fmt.Errorf("%s model discovery returned no models", agent)
 	}
 	return result, nil
@@ -144,6 +151,11 @@ func discoveryCommand(agent string, req DiscoveryRequest) (*exec.Cmd, error) {
 				return nil, err
 			}
 			env = grok.ConfigureEnvironment(project.Root, env, project.Config.Agents.Grok, nil)
+		case agentMuse:
+			if err := muse.EnsureHomes(project.Root); err != nil {
+				return nil, err
+			}
+			env = muse.ConfigureEnvironment(project.Root, env, nil)
 		}
 	}
 	args := []string{modelsCommand}
@@ -156,6 +168,8 @@ func discoveryCommand(agent string, req DiscoveryRequest) (*exec.Cmd, error) {
 		args = []string{"app-server"}
 	case agentCopilotCLI:
 		args = []string{"--headless", "--stdio", "--no-auto-update"}
+	case agentMuse:
+		args = []string{"serve", "--no-session-log"}
 	}
 	// #nosec G204 -- PATH-resolved harness; fixed discovery arguments, no prompt.
 	cmd := exec.CommandContext(req.Context, path, args...)
@@ -221,20 +235,67 @@ func discoverCommandModels(agent string, req DiscoveryRequest) ([]string, error)
 		return readCopilotModels(reader, stdin)
 	}
 	decoder, encoder := json.NewDecoder(reader), json.NewEncoder(stdin)
+	if agent == agentMuse {
+		return readMuseModels(decoder, encoder)
+	}
 	if agent == agentClaude {
 		return readClaudeModels(decoder, encoder)
 	}
 	return readCodexModels(decoder, encoder)
 }
 
+func readMuseModels(decoder *json.Decoder, encoder *json.Encoder) ([]string, error) {
+	if err := encoder.Encode(map[string]any{jsonRPCKey: copilotJSONRPCVersion, "id": 1, methodKey: initializeMethod, paramsKey: map[string]any{"clientInfo": map[string]string{clientNameKey: "agent_layer", "version": "0.0.0"}}}); err != nil {
+		return nil, err
+	}
+	var init map[string]any
+	if err := decoder.Decode(&init); err != nil {
+		return nil, err
+	}
+	if init["error"] != nil || fmt.Sprint(init["id"]) != "1" {
+		return nil, fmt.Errorf("muse initialize failed: %v", init["error"])
+	}
+	if err := encoder.Encode(map[string]any{jsonRPCKey: copilotJSONRPCVersion, methodKey: initializedMethod}); err != nil {
+		return nil, err
+	}
+	if err := encoder.Encode(map[string]any{jsonRPCKey: copilotJSONRPCVersion, "id": 2, methodKey: "model/list", paramsKey: map[string]any{}}); err != nil {
+		return nil, err
+	}
+	var reply struct {
+		ID     any `json:"id"`
+		Result struct {
+			Models *[]struct {
+				ModelID string `json:"modelId"`
+			} `json:"models"`
+		} `json:"result"`
+		Error any `json:"error"`
+	}
+	if err := decoder.Decode(&reply); err != nil {
+		return nil, err
+	}
+	if reply.Error != nil || fmt.Sprint(reply.ID) != "2" {
+		return nil, fmt.Errorf("muse model/list failed: %v", reply.Error)
+	}
+	if reply.Result.Models == nil {
+		return nil, errors.New("muse model/list response omitted result.models")
+	}
+	models := make([]string, 0, len(*reply.Result.Models))
+	for _, row := range *reply.Result.Models {
+		models = append(models, row.ModelID)
+	}
+	return models, nil
+}
+
 func readGrokModels(reader io.Reader) ([]string, error) {
 	scanner := bufio.NewScanner(reader)
 	var models []string
 	inModels := false
+	unauthenticated := false
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if strings.Contains(strings.ToLower(line), "not authenticated") {
-			return nil, errors.New("harness is not authenticated; sign in using al grok")
+			unauthenticated = true
+			continue
 		}
 		if line == "Available models:" {
 			inModels = true
@@ -249,7 +310,13 @@ func readGrokModels(reader io.Reader) ([]string, error) {
 		value := strings.TrimSpace(strings.TrimSuffix(line[2:], " (default)"))
 		models = append(models, value)
 	}
-	return models, scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	if len(models) == 0 && unauthenticated {
+		return nil, errors.New("harness is not authenticated and returned no models; sign in using al grok")
+	}
+	return models, nil
 }
 
 func readClaudeModels(decoder *json.Decoder, encoder *json.Encoder) ([]string, error) {
@@ -311,10 +378,10 @@ func codexRequest(decoder *json.Decoder, encoder *json.Encoder, id int, method s
 
 func readCodexModels(decoder *json.Decoder, encoder *json.Encoder) ([]string, error) {
 	var initialized map[string]any
-	if err := codexRequest(decoder, encoder, 1, initializeMethod, map[string]any{"clientInfo": map[string]string{"name": "agent_layer", "version": "1"}}, &initialized); err != nil {
+	if err := codexRequest(decoder, encoder, 1, initializeMethod, map[string]any{"clientInfo": map[string]string{clientNameKey: "agent_layer", "version": "1"}}, &initialized); err != nil {
 		return nil, err
 	}
-	if err := encoder.Encode(map[string]any{methodKey: "initialized", paramsKey: map[string]any{}}); err != nil {
+	if err := encoder.Encode(map[string]any{methodKey: initializedMethod, paramsKey: map[string]any{}}); err != nil {
 		return nil, err
 	}
 	var models []string

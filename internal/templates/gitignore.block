@@ -19,6 +19,8 @@
 /.gemini/
 /.grok/
 /.grok-config/
+/.muse-config/
+/.muse-data/
 
 # Antigravity workspace marker (auto-created by agy; symlinks store per-user paths)
 /.antigravitycli/

@@ -41,7 +41,7 @@ func readCopilotModels(input io.Reader, output io.Writer) ([]string, error) {
 }
 
 func copilotRequest(reader *bufio.Reader, output io.Writer, id int, method string, result any) error {
-	body, err := json.Marshal(map[string]any{"jsonrpc": copilotJSONRPCVersion, "id": id, "method": method, paramsKey: map[string]any{}})
+	body, err := json.Marshal(map[string]any{jsonRPCKey: copilotJSONRPCVersion, "id": id, methodKey: method, paramsKey: map[string]any{}})
 	if err != nil {
 		return err
 	}

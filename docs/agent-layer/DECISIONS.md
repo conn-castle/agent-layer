@@ -3,7 +3,7 @@
 Note: This is an agent-layer memory file. It is primarily for agent use.
 
 ## Purpose
-A rolling log of important, non-obvious decisions that materially affect future work (constraints, deferrals, irreversible tradeoffs). Only record decisions that future developers/agents would not learn just by reading the code. Do not log routine choices or standard best-practice decisions; if it is obvious from the code, leave it out.
+Record otherwise-lost rationale that materially constrains future work. Current architecture belongs in repository documentation; enforceable behavior belongs in code, tests, schemas, or configuration. Add an entry only when its future-guiding rationale cannot be recovered from those canonical sources. Importance alone does not justify duplicating a decision; omit routine choices and standard best practices.
 
 ## Format
 - Keep entries brief and durable (avoid restating obvious defaults).
@@ -268,7 +268,7 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Tradeoffs: `dispatch_start` gains one small optional schema field. Historical constrained records without `role` remain nonconformant rather than being reclassified from prompt text; unconstrained records remain unaffected.
 
 - Decision 2026-08-20 grok-claude-md-compat: Claude instructions live under `.claude/`; Grok Claude-agents discovery is off
-    Decision: `al sync` writes the Claude instruction shim to `.claude/CLAUDE.md` and deletes a generated root `CLAUDE.md`. When Grok is enabled, sync sets `[compat.claude] agents = false` in repo-local `$GROK_HOME/config.toml`, and `al grok`, Grok dispatch, and `al vscode` set `GROK_CLAUDE_AGENTS_ENABLED=false`. Shared instructions stay in root `AGENTS.md`.
+    Decision: Originally `al sync` wrote the Claude instruction shim to `.claude/CLAUDE.md` and deleted a generated root `CLAUDE.md`. Muse support moves the shim to `.claude/rules/agent-layer.md` because Muse warns about the legacy shim beside `AGENTS.md`. When Grok is enabled, sync sets `[compat.claude] agents = false` in repo-local `$GROK_HOME/config.toml`, and `al grok`, Grok dispatch, and `al vscode` set `GROK_CLAUDE_AGENTS_ENABLED=false`. Shared instructions stay in root `AGENTS.md`.
     Reason: Grok 1.0.5 loads every matching root instruction name, so identical `AGENTS.md` and `CLAUDE.md` were injected twice. The Claude compat cell does not suppress root `CLAUDE.md`, but it does suppress `.claude/CLAUDE.md`. Claude Code accepts either project location.
     Tradeoffs: A leftover hand-authored root `CLAUDE.md` still dual-loads in Grok. Agent Layer launches no longer discover Claude-named files under `~/.claude/` or `.claude/CLAUDE.md`. The compat key is merged into user-owned GROK_HOME config.
 

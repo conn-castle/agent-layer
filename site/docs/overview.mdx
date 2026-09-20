@@ -13,16 +13,16 @@ sidebar_position: 0
 
 Agent Layer is a repo-local control plane for AI-assisted development. You define instructions, approvals, MCP servers, and portable Agent Skills once under `.agent-layer/`; `al` generates each client's native config on demand and adds Agent Dispatch for asynchronous work across providers.
 
-The same repo uses one source configuration whether you launch Antigravity, Claude, Codex, Copilot CLI, Grok, or VS Code. Agent Layer maps it to the closest behavior each client supports; approval enforcement is client-dependent and best effort. You do not copy configuration between clients. You review and refine agent setup in one folder.
+The same repo uses one source configuration whether you launch Antigravity, Claude, Codex, Copilot CLI, Grok, Muse, or VS Code. Agent Layer maps it to the closest behavior each client supports; approval enforcement is client-dependent and best effort. You do not copy configuration between clients. You review and refine agent setup in one folder.
 
 Follow the recommended path below to set up Agent Layer, customize it, and find detailed guidance when you need it.
 
 ## What you get
 
 - A `.agent-layer/` folder you can treat like code (reviewable, shareable, easy to audit).
-- Generated client files that are safe to delete and recreate (apart from a couple of documented shared-state files that `al sync` patches in place).
+- Generated client files that are safe to delete and recreate (apart from documented shared settings and runtime state that `al sync` preserves).
 - Guardrails for autonomy: choose what can run automatically and what must be approved.
-- Agent Dispatch for delegating bounded work to headless Claude, Codex, Grok, or Antigravity conversations through MCP or the CLI.
+- Agent Dispatch for delegating bounded work to headless Claude, Codex, Grok, Muse, or Antigravity conversations through MCP or the CLI.
 - Built-in workflow skills that give agents structured, repeatable processes for implementation, auditing, and shipping pull requests.
 - Git-backed skill imports that remain editable, merge upstream changes, and project to every enabled client.
 - Required per-repo version pinning so a team stays on the same behavior across machines and CI.

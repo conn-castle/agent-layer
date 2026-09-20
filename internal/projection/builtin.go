@@ -19,6 +19,7 @@ const (
 	ClientCodex       = "codex"
 	ClientCopilot     = "copilot"
 	ClientGrok        = "grok"
+	ClientMuse        = "muse"
 	ClientVSCode      = "vscode"
 )
 
@@ -82,6 +83,8 @@ func builtInDispatchClientEnabled(cfg config.Config, client string) bool {
 		return config.IsAgentEnabled(cfg.Agents.CopilotCLI.Enabled)
 	case ClientGrok:
 		return config.IsAgentEnabled(cfg.Agents.Grok.Enabled)
+	case ClientMuse:
+		return config.IsAgentEnabled(cfg.Agents.Muse.Enabled)
 	case ClientVSCode:
 		return config.IsAgentEnabled(cfg.Agents.VSCode.Enabled)
 	default:
@@ -142,7 +145,7 @@ func EffectiveEnabledServerIDs(cfg config.Config) []string {
 }
 
 func effectiveBuiltInDispatchServer(cfg config.Config) (ResolvedMCPServer, bool) {
-	for _, client := range []string{ClientAntigravity, ClientClaude, ClientCodex, ClientCopilot, ClientGrok, ClientVSCode} {
+	for _, client := range []string{ClientAntigravity, ClientClaude, ClientCodex, ClientCopilot, ClientGrok, ClientMuse, ClientVSCode} {
 		if builtIn, ok := BuiltInDispatchServer(cfg, client); ok {
 			return builtIn, true
 		}

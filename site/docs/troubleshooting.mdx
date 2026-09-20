@@ -39,7 +39,7 @@ If you have not installed `al` yet, start with [/install](/install).
 
 ### Missing client CLI
 
-Agent Layer does not install Antigravity, Claude, Codex, Copilot CLI, Grok, or VS Code. Install the target client and ensure it is on your `PATH`.
+Agent Layer does not install Antigravity, Claude, Codex, Copilot CLI, Grok, Muse, or VS Code. Install the target client and ensure it is on your `PATH`.
 
 ### VS Code preflight: `code` command not found
 
@@ -71,7 +71,7 @@ Run [`al init`](./reference#init) in the repo to create `.agent-layer/`. To add 
 
 ### Generated files showing up in git
 
-Generated client outputs should stay gitignored. If you see files like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.claude/CLAUDE.md`, `.codex/`, `.copilot/`, `.grok/`, `.grok-config/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.mcp.json`, `.github/copilot-instructions.md`, or `AGENTS.md` showing up in `git status`, it usually means one of:
+Generated client outputs should stay gitignored. If you see files like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.claude/rules/agent-layer.md`, `.codex/`, `.copilot/`, `.grok/`, `.grok-config/`, `.muse-config/`, `.muse-data/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.mcp.json`, `.github/copilot-instructions.md`, or `AGENTS.md` showing up in `git status`, it usually means one of:
 
 - the repo has not been initialized with Agent Layer's managed `.gitignore` block,
 - the ignore rules were customized,
@@ -83,6 +83,8 @@ A root `CLAUDE.md` is different: current Agent Layer does not generate it, and `
 
 Grok uses the repo-local `.grok-config/` directory as `GROK_HOME` for `al grok`, dispatch, and `al vscode`. Authentication and sessions are therefore isolated per repository; if Grok reports that authentication is missing, authenticate from `al grok` in that repository or provide the client-supported credential environment variable.
 
+Muse uses `.muse-config/` and `.muse-data/` as repo-local XDG roots for `al muse`, model discovery, and dispatch. `HOME` is unchanged, but child tools inherit `XDG_CONFIG_HOME` and `XDG_DATA_HOME`; preserve explicit tool-specific overrides such as `GH_CONFIG_DIR` when needed. A new repository may require Muse login even when the global Muse installation is authenticated.
+
 ### Grok setup and diagnostics
 
 Agent Layer is tested against Grok Build CLI `1.0.5` or newer. Enable Grok with `[agents.grok] enabled = true`, then run `al doctor`: a missing or older `grok` binary is reported as a warning with the tested minimum version. Run `al probe grok` for a contained end-to-end check of Grok's streaming JSON and MCP tool support. The probe prints a JSON result, has a 45-second timeout, and keeps a forensic workspace under `.agent-layer/tmp/probe-grok-TIMESTAMP-SUFFIX/`; clean retained probe artifacts with `al upgrade --apply-tmp-deletions` after reviewing them.
@@ -92,7 +94,7 @@ The credential-bearing `.grok-config/` home must be a real directory rather than
 Agent Layer owns the project `.grok/config.toml` it generates. If that path already contains a user-owned file, sync refuses to overwrite it. Move project plugin settings under `[agents.grok.agent_specific.plugins]` in `.agent-layer/config.toml`; put Grok's user-level UI, memory, model, and terminal settings in `.grok-config/config.toml`. Then move the conflicting `.grok/config.toml` aside and run `al sync` again. Agent Layer also rejects a symlink or special file at `.grok/config.toml` instead of writing through it.
 
 :::caution
-`.codex/config.toml` and `.agy/antigravity-cli/settings.json` are shared state patched by `al sync`, not disposable generated files. Antigravity settings can contain native workspace approval or trust state; Agent Layer patches only its managed model, `permissions.allow`, and `agent_specific` paths. Treat both files as private and keep them gitignored. Antigravity MCP output remains safe to regenerate.
+`.codex/config.toml`, `.agy/antigravity-cli/settings.json`, and `.muse-config/muse/settings.json` are shared state patched by `al sync`, not disposable generated files. They can contain native settings outside Agent Layer's managed paths; `.muse-data/` can also contain non-reproducible sessions. Treat these paths as private and keep them gitignored. Agent Layer-managed MCP output remains safe to regenerate.
 :::
 
 ### "gitignore block must not include managed markers or template hash"
@@ -235,7 +237,7 @@ If `al agy` exits with `antigravity launcher requires \`agy\` on PATH`, install 
 
 ### Client CLI not found
 
-Install the target client CLI (Antigravity `agy`, Claude, Codex, Copilot CLI, Grok, or VS Code) and ensure it is available on your `PATH`.
+Install the target client CLI (Antigravity `agy`, Claude, Codex, Copilot CLI, Grok, Muse, or VS Code) and ensure it is available on your `PATH`.
 
 ## Pinning and offline mode
 
@@ -268,3 +270,11 @@ Include:
 :::note
 If you run `al doctor` with no MCP servers enabled, it will still validate config and instructions.
 :::
+
+## Muse model suggestions and duplicate rules warnings
+
+Muse 1.3.0 can return an empty catalog from its native MSP `model/list` endpoint even when a model is available in the interactive client. Agent Layer reports this limitation; choose the client default or enter your model ID explicitly. An empty catalog does not establish that authentication failed.
+
+Run `al sync` to migrate the generated Claude instruction shim to `.claude/rules/agent-layer.md`. This keeps Claude's instructions while avoiding Muse's warning that `.claude/CLAUDE.md` is ignored beside `AGENTS.md`. Sync preserves hand-written files; if the warning names one of those, merge any needed guidance into `.agent-layer/instructions/` before removing the redundant file yourself.
+
+Grok may print “not authenticated” alongside a valid model catalog. Agent Layer accepts that catalog for model selection; authentication is still required when you run the model. If Grok returns no catalog, discovery reports the failure.

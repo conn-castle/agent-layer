@@ -94,6 +94,19 @@ func TestDispatchGrantsWriteCapabilityOnlyWhenCommandsAreApproved(t *testing.T) 
 			if !strings.Contains(grokArgs, wantGrokMode) {
 				t.Errorf("Grok %s/%s args %q omitted %q", testCase.mode, dispatchMode, grokArgs, wantGrokMode)
 			}
+
+			museArgs := dispatchArgsForMode(t, AgentMuse, testCase.mode, dispatchMode)
+			if !strings.Contains(museArgs, "--approval-judge off") {
+				t.Errorf("Muse %s/%s args %q did not preserve human approval policy", testCase.mode, dispatchMode, museArgs)
+			}
+			if !strings.Contains(museArgs, "--user-input-auto-resolve") {
+				t.Errorf("Muse %s/%s args %q did not bound request_user_input", testCase.mode, dispatchMode, museArgs)
+			}
+			for _, forbidden := range []string{"--yolo", "--disable-approval", "--disable-sandbox"} {
+				if strings.Contains(museArgs, forbidden) {
+					t.Errorf("Muse %s/%s args %q contained %s", testCase.mode, dispatchMode, museArgs, forbidden)
+				}
+			}
 		}
 	}
 }
@@ -128,6 +141,46 @@ func TestYOLODispatchKeepsFullBypassWithoutSandboxDowngrade(t *testing.T) {
 		}
 		if strings.Contains(grokArgs, "--sandbox") {
 			t.Errorf("Grok yolo/%s args %q set a sandbox", dispatchMode, grokArgs)
+		}
+
+		museArgs := dispatchArgsForMode(t, AgentMuse, config.ApprovalModeYOLO, dispatchMode)
+		if !strings.Contains(museArgs, "--yolo") || strings.Contains(museArgs, "--approval-judge") {
+			t.Errorf("Muse yolo/%s args %q did not use only native yolo", dispatchMode, museArgs)
+		}
+		if !strings.Contains(museArgs, "--user-input-auto-resolve") {
+			t.Errorf("Muse yolo/%s args %q did not bound request_user_input", dispatchMode, museArgs)
+		}
+	}
+}
+
+func TestMuseDispatchObservesApprovalsOnlyOutsideYOLO(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	project := loadApprovalsTestProject(t, root)
+	target, ok := lookupTarget(AgentMuse)
+	if !ok {
+		t.Fatal("Muse target missing from registry")
+	}
+	for _, testCase := range []struct {
+		mode string
+		want bool
+	}{
+		{mode: config.ApprovalModeNone, want: true},
+		{mode: config.ApprovalModeMCP, want: true},
+		{mode: config.ApprovalModeCommands, want: true},
+		{mode: config.ApprovalModeAll, want: true},
+		{mode: config.ApprovalModeYOLO, want: false},
+	} {
+		project.Config.Approvals.Mode = testCase.mode
+		run, err := newDispatchRun(root, AgentMuse, supportedProviderVersions[AgentMuse], dispatchModeFresh)
+		if err != nil {
+			t.Fatalf("new %s run: %v", testCase.mode, err)
+		}
+		command, err := buildProviderCommand(target, project, nil, []byte("prompt"), "", "", false, dispatchModeFresh, runtimeSessionID, run, io.Discard)
+		if err != nil {
+			t.Fatalf("build %s Muse command: %v", testCase.mode, err)
+		}
+		if command.ObserveMuseApprovals != testCase.want {
+			t.Errorf("Muse %s approval observer = %t, want %t", testCase.mode, command.ObserveMuseApprovals, testCase.want)
 		}
 	}
 }

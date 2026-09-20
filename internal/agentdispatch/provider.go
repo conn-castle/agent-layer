@@ -17,6 +17,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients/claude"
 	"github.com/conn-castle/agent-layer/internal/clients/codex"
 	"github.com/conn-castle/agent-layer/internal/clients/grok"
+	"github.com/conn-castle/agent-layer/internal/clients/muse"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/run"
@@ -71,6 +72,12 @@ const (
 	antigravityEffortMedium       = "medium"
 	antigravityEffortHigh         = "high"
 	antigravityInitEvent          = "init"
+	execSubcommand                = "exec"
+	jsonRPCKey                    = "jsonrpc"
+	jsonRPCVersion                = "2.0"
+	jsonMethodKey                 = "method"
+	jsonParamsKey                 = "params"
+	jsonSessionIDCamelKey         = "sessionId"
 )
 
 // codexDispatchSandboxMode resolves the Codex sandbox for a non-YOLO dispatch.
@@ -112,17 +119,19 @@ var antigravityCreatedConversation = regexp.MustCompile(`^Created conversation (
 var antigravityPrintConversation = regexp.MustCompile(`^Print mode: conversation=(` + uuidExpression + `), sending message$`)
 
 type providerCommand struct {
-	Path          string
-	Args          []string
-	Env           []string
-	WorkDir       string
-	SessionID     string
-	LogPath       string
-	Provider      string
-	RunMode       string
-	Model         string
-	Effort        string
-	ClaudeLineage bool
+	Path                 string
+	Args                 []string
+	Env                  []string
+	WorkDir              string
+	SessionID            string
+	LogPath              string
+	PromptPath           string
+	Provider             string
+	RunMode              string
+	Model                string
+	Effort               string
+	ClaudeLineage        bool
+	ObserveMuseApprovals bool
 }
 
 type providerEvent struct {
@@ -154,6 +163,7 @@ var supportedProviderVersions = map[string]string{
 	AgentCodex:       "0.144.1",
 	AgentAntigravity: "1.1.21",
 	AgentGrok:        grok.SupportedVersion,
+	AgentMuse:        muse.SupportedVersion,
 }
 
 const (
@@ -312,7 +322,7 @@ func buildProviderCommand(
 		command.SessionID = sessionID
 		command.ClaudeLineage = lineage
 	case AgentCodex:
-		args := []string{"exec"}
+		args := []string{execSubcommand}
 		if mode == dispatchModeResume {
 			args = append(args, "resume")
 		}
@@ -458,6 +468,44 @@ func buildProviderCommand(
 		}
 		command.Env = grok.ConfigureEnvironment(project.Root, env, project.Config.Agents.Grok, diagnostics)
 		command.SessionID = sessionID
+	case AgentMuse:
+		if mode == dispatchModeFresh && sessionID == "" {
+			return providerCommand{}, exitError(ExitConfig, "new Muse dispatch requires a caller-assigned session ID")
+		}
+		promptPath := filepath.Join(run.Dir, "prompt.txt")
+		if err := os.WriteFile(promptPath, prompt, 0o600); err != nil {
+			return providerCommand{}, wrapExitError(ExitConfig, "write Muse dispatch prompt", err)
+		}
+		args := []string{execSubcommand, "--json", "--prompt-file", promptPath, "--workspace", project.Root, "--trust-workspace", "--session-id", sessionID, "--user-input-auto-resolve"}
+		resolvedModel := strings.TrimSpace(model)
+		if resolvedModel == "" && !targetPinned {
+			resolvedModel = strings.TrimSpace(project.Config.Agents.Muse.Model)
+		}
+		if resolvedModel != "" {
+			args = append(args, "--model", resolvedModel)
+		}
+		resolvedEffort := strings.TrimSpace(effort)
+		if resolvedEffort == "" && !targetPinned {
+			resolvedEffort = strings.TrimSpace(project.Config.Agents.Muse.ReasoningEffort)
+		}
+		if resolvedEffort != "" {
+			args = append(args, "--reasoning-effort", resolvedEffort)
+		}
+		if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
+			args = append(args, "--yolo")
+		} else {
+			args = append(args, "--approval-judge", "off")
+			command.ObserveMuseApprovals = true
+		}
+		if err := muse.EnsureHomes(project.Root); err != nil {
+			return providerCommand{}, wrapExitError(ExitConfig, "prepare Muse homes", err)
+		}
+		command.Args = args
+		command.Env = muse.ConfigureEnvironment(project.Root, env, diagnostics)
+		command.SessionID = sessionID
+		command.Model = resolvedModel
+		command.Effort = resolvedEffort
+		command.PromptPath = promptPath
 	default:
 		return providerCommand{}, exitError(ExitUsage, fmt.Sprintf("unsupported dispatch provider %q", target.Name))
 	}
@@ -521,7 +569,7 @@ func reduceClaudeEvent(expected string, value map[string]any) []providerEvent {
 		reason := fmt.Sprintf("Claude denied at least one tool call%s, so the dispatch could not do the requested work. Check the effective Claude permissions before dispatching again: approvals.mode and .agent-layer/commands.allow decide what is allowed, and a deny rule or managed policy overrides both.", example)
 		return append(events, providerEvent{Kind: eventFailure, Reason: reason})
 	}
-	id, _ := firstStringV013(value, "session_id", "sessionId")
+	id, _ := firstStringV013(value, "session_id", jsonSessionIDCamelKey)
 	if id == "" || id != expected {
 		return append(events, providerEvent{Kind: eventFailure, Reason: "Claude terminal result did not return the caller-assigned session ID"})
 	}
@@ -588,6 +636,66 @@ func appendRetainedGrokText(dst *strings.Builder, chunk string) {
 	dst.WriteString(chunk)
 }
 
+type museReducer struct {
+	expectedSession string
+	rootRunID       string
+	terminalSeen    bool
+}
+
+func (m *museReducer) reduce(value map[string]any) []providerEvent {
+	if fmt.Sprint(value["schema_version"]) != "1" {
+		return []providerEvent{{Kind: eventFailure, Reason: "Muse event has unsupported or missing schema_version"}}
+	}
+	stream, _ := mapValueV013(value, "stream")
+	streamKind, _ := stream[jsonKindKey].(string)
+	streamID, _ := stream["id"].(string)
+	if streamKind == "session" && streamID != "" && streamID != m.expectedSession {
+		return []providerEvent{{Kind: eventFailure, Reason: "Muse event returned a different provider session ID"}}
+	}
+	payloadType, _ := value["payload_type"].(string)
+	payload, _ := mapValueV013(value, "payload")
+	commandID, _ := payload["command_id"].(string)
+	runStream, _ := mapValueV013(payload, "run_stream")
+	runKind, _ := runStream[jsonKindKey].(string)
+	runID, _ := runStream["id"].(string)
+	if payloadType == "session.run.linked" {
+		if runKind != "run" || runID == "" || commandID == "" || runID != commandID {
+			return []providerEvent{{Kind: eventFailure, Reason: "Muse root run linkage is invalid"}}
+		}
+		if m.rootRunID != "" && m.rootRunID != runID {
+			return []providerEvent{{Kind: eventFailure, Reason: "Muse stream linked multiple root runs"}}
+		}
+		m.rootRunID = runID
+		return []providerEvent{{Kind: eventSession, SessionID: streamID}, {Kind: eventProgress, Activity: payloadType}}
+	}
+	if !strings.HasPrefix(payloadType, "run.terminal.") {
+		if payloadType != "" {
+			return []providerEvent{{Kind: eventProgress, Activity: payloadType}}
+		}
+		return nil
+	}
+	if m.terminalSeen {
+		return []providerEvent{{Kind: eventFailure, Reason: "Muse stream has multiple root terminal events"}}
+	}
+	if m.rootRunID == "" || runKind != "run" || runID != m.rootRunID || commandID != m.rootRunID {
+		return []providerEvent{{Kind: eventFailure, Reason: "Muse terminal event does not belong to the linked root run"}}
+	}
+	m.terminalSeen = true
+	terminal, _ := payload["terminal"].(string)
+	if payloadType != "run.terminal.completed" || terminal != "completed" {
+		reason, _ := payload[jsonReasonKey].(string)
+		if reason == "" {
+			reason = "Muse reported terminal state " + terminal
+		}
+		return []providerEvent{{Kind: eventFailure, Reason: reason}}
+	}
+	answer, _ := payload[jsonTextKey].(string)
+	if answer == "" {
+		return []providerEvent{{Kind: eventFailure, Reason: "Muse completed without a final answer"}}
+	}
+	return []providerEvent{{Kind: eventAnswer, Answer: answer}, {Kind: eventComplete}}
+}
+
 func reduceGrokEvent(expected string, value map[string]any, textAccumulator *strings.Builder, terminalSeen *bool) []providerEvent {
 	eventType, _ := value[jsonTypeKey].(string)
 	switch eventType {
@@ -622,7 +730,7 @@ func reduceGrokEvent(expected string, value map[string]any, textAccumulator *str
 		if terminalSeen != nil {
 			*terminalSeen = true
 		}
-		id, _ := firstStringV013(value, "session_id", "sessionId")
+		id, _ := firstStringV013(value, "session_id", jsonSessionIDCamelKey)
 		if id == "" || id != expected {
 			return []providerEvent{{Kind: eventFailure, Reason: "Grok terminal result did not return the caller-assigned session ID"}}
 		}
@@ -669,7 +777,7 @@ func reduceAntigravityEvent(value map[string]any, terminalSeen *bool) []provider
 		}
 		return []providerEvent{{Kind: eventSession, SessionID: id}}
 	}
-	if eventType != "result" {
+	if eventType != jsonResultKey {
 		if eventType == "" {
 			return nil
 		}
@@ -715,6 +823,7 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 	normalizer := claudeLineageNormalizer{ignoredTasks: make(map[string]struct{})}
 	var grokAccumulator strings.Builder
 	var grokTerminalSeen, antigravityTerminalSeen bool
+	museState := museReducer{expectedSession: expectedSession}
 	emitInvalid := func(reason string) error {
 		if !claudeLineage || consumeLineage == nil {
 			return nil
@@ -786,6 +895,8 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 			events = reduceGrokEvent(expectedSession, record.Fields, &grokAccumulator, &grokTerminalSeen)
 		case AgentAntigravity:
 			events = reduceAntigravityEvent(record.Fields, &antigravityTerminalSeen)
+		case AgentMuse:
+			events = museState.reduce(record.Fields)
 		default:
 			return fmt.Errorf("unsupported structured dispatch provider %q", agent)
 		}

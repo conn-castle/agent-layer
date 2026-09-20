@@ -96,6 +96,7 @@ var preferredWizardSectionOrder = []string{
 	"agents.vscode",
 	"agents.copilot_cli",
 	"agents.grok",
+	museSection,
 	mcpSection,
 	warningsSection,
 }
@@ -360,6 +361,20 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 			} else {
 				setCommentedKeyLine(block, templateBlock, "disable_memory", anchor)
 			}
+		}
+	case museSection:
+		if choices.EnabledAgentsTouched {
+			setKeyValue(block, templateBlock, enabledKey, formatTomlValue(choices.EnabledAgents[AgentMuse]), "")
+		}
+		if choices.MuseModelTouched {
+			setOptionalKeyValue(block, templateBlock, modelKey, choices.MuseModel, enabledKey)
+		}
+		if choices.MuseReasoningTouched {
+			anchor := modelKey
+			if _, ok := findKeyLine(block.lines, anchor); !ok {
+				anchor = enabledKey
+			}
+			setOptionalKeyValue(block, templateBlock, "reasoning_effort", choices.MuseReasoning, anchor)
 		}
 	case warningsSection:
 		if choices.WarningsEnabledTouched && choices.WarningsEnabled {

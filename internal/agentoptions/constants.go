@@ -5,4 +5,5 @@ const (
 	agentCodex      = "codex"
 	agentCopilotCLI = "copilot_cli"
 	agentGrok       = "grok"
+	agentMuse       = "muse"
 )

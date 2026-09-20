@@ -107,6 +107,10 @@ var providers = map[string]map[Kind]fieldProvider{
 			},
 		},
 	},
+	agentMuse: {
+		KindModel:           {key: config.MuseModelFieldKey, configured: func(cfg config.Config) string { return cfg.Agents.Muse.Model }},
+		KindReasoningEffort: {key: config.MuseReasoningEffortFieldKey, configured: func(cfg config.Config) string { return cfg.Agents.Muse.ReasoningEffort }},
+	},
 }
 
 // DefaultDiscoveryRequest enables live option discovery with the current

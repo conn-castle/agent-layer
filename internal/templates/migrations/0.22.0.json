@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "target_version": "0.22.0",
+  "min_prior_version": "0.10.2",
+  "operations": [
+    {
+      "id": "add-muse-enabled",
+      "kind": "config_set_default",
+      "key": "agents.muse.enabled",
+      "value": false,
+      "rationale": "Muse Code support is now available. Enable if you use Muse Code.",
+      "source_agnostic": true
+    }
+  ]
+}

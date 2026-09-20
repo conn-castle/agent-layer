@@ -1,6 +1,6 @@
 # Agent Skills Client Support Spec
 
-As of 2026-08-05, Agent Layer projects skills from the canonical user-managed tier `.agent-layer/skills/` and Git-imported tier `.agent-layer/skills-imported/` into client discovery locations that support directory-format Agent Skills. Those two source tiers are the single source of truth; client skill roots are disposable sync outputs.
+Agent Layer projects skills from the canonical user-managed tier `.agent-layer/skills/` and Git-imported tier `.agent-layer/skills-imported/` into client discovery locations that support directory-format Agent Skills. Those two source tiers are the single source of truth; client skill roots are disposable sync outputs.
 
 ## Sources
 
@@ -22,10 +22,12 @@ As of 2026-08-05, Agent Layer projects skills from the canonical user-managed ti
 | Antigravity | `.agents/skills/<name>/SKILL.md` | `.agents/skills/<name>/SKILL.md` | Agent Layer launches Antigravity with repo-local config via `agy --gemini_dir=<repo>/.agy`. Agent Layer projects only the shared `.agents/skills/` tier; the per-agy `<gemini_dir>/skills/` tier (visible to `agy` per the probe baseline) is left to user/global ownership. |
 | VS Code / GitHub Copilot | `.github/skills/`, `.claude/skills/`, `.agents/skills/`; configurable with `chat.agentSkillsLocations` | `.agents/skills/<name>/SKILL.md` plus managed `chat.agentSkillsLocations` | Agent Layer enables `.agents/skills/`, disables duplicate generated project locations `.github/skills/` and `.claude/skills/`, and preserves personal skill locations. |
 | GitHub Copilot CLI | `.github/skills/`, `.claude/skills/`, `.agents/skills/` for project skills | `.agents/skills/<name>/SKILL.md` | Copilot CLI also supports resources in the skill directory, so the shared tree preserves scripts, references, assets, and other support files. |
+| Grok | `.agents/skills/<name>/SKILL.md` | `.agents/skills/<name>/SKILL.md` | Uses the shared skill tree. |
+| Muse | `.agents/skills/<name>/SKILL.md` | `.agents/skills/<name>/SKILL.md` | Uses the shared skill tree; no additional Muse copy is generated. |
 
 ## Projection Rules
 
-- Write `.agents/skills/` when at least one shared-skill consumer is enabled: Codex, Antigravity, VS Code/GitHub Copilot, or Copilot CLI.
+- Write `.agents/skills/` when at least one shared-skill consumer is enabled: Codex, Antigravity, Grok, Muse, VS Code/GitHub Copilot, or Copilot CLI.
 - Write `.claude/skills/` when Claude Code or the Claude VS Code extension is enabled.
 - Require an uppercase `SKILL.md` in every source directory. Lowercase `skill.md` is not accepted, and having both spellings is ambiguous.
 - Read each source once under the project lock and project its complete tree byte-for-byte, including hidden and nested files and executable bits. Ignore only `.git`, `.DS_Store`, and `Thumbs.db`.

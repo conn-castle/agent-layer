@@ -58,9 +58,19 @@ type dispatchExecution struct {
 	VersionLookup func(path string, agent string) (string, error)
 }
 
-func executeDispatch(request dispatchExecution) error {
+func executeDispatch(request dispatchExecution) (returnErr error) {
 	if request.Run == nil || request.Project == nil {
 		return exitError(ExitConfig, "dispatch execution was not initialized")
+	}
+	if request.Target.Name == AgentMuse {
+		// Also clean up when construction/persistence/cancellation returns before
+		// executeProvider, including a failed build after the prompt was written.
+		defer func() {
+			path := filepath.Join(request.Run.Dir, "prompt.txt")
+			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				returnErr = errors.Join(returnErr, wrapExitError(ExitConfig, "remove dispatch prompt file", err))
+			}
+		}()
 	}
 	if current, err := loadRunRecord(request.Root, request.Run.Record.ID); err == nil && current.State == dispatchStateCancelled {
 		return finishDispatchCancellation(request)
@@ -147,6 +157,16 @@ func executeDispatch(request dispatchExecution) error {
 			return finishDispatchFailure(request, exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled before provider launch", request.Run.Record.ID)))
 		}
 		result, err := executeProvider(command, request.Prompt, request.Run, request.Root, request.NewCommand, persist)
+		if command.PromptPath != "" {
+			if cleanupErr := os.Remove(command.PromptPath); cleanupErr != nil && !errors.Is(cleanupErr, os.ErrNotExist) {
+				cleanupFailure := wrapExitError(ExitConfig, "remove dispatch prompt file", cleanupErr)
+				if err != nil {
+					err = errors.Join(err, cleanupFailure)
+				} else {
+					err = cleanupFailure
+				}
+			}
+		}
 		if err != nil {
 			if isSafePreStartFailure(err) && attempt == 1 {
 				if cleanupErr := clearPreStartCaptures(request.Run.Record); cleanupErr != nil {
@@ -185,7 +205,7 @@ func executeDispatch(request dispatchExecution) error {
 }
 
 func callerAssignsSessionID(agent string) bool {
-	return agent == AgentClaude || agent == AgentGrok
+	return agent == AgentClaude || agent == AgentGrok || agent == AgentMuse
 }
 
 func completeDispatchSuccess(request dispatchExecution, result executionResult, session Session) error {

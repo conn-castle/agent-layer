@@ -59,6 +59,7 @@ type AgentsConfig struct {
 	VSCode       EnableOnlyConfig  `toml:"vscode"`
 	CopilotCLI   AgentConfig       `toml:"copilot_cli"`
 	Grok         GrokConfig        `toml:"grok"`
+	Muse         AgentConfig       `toml:"muse"`
 }
 
 // DispatchLimits controls Agent Dispatch recursion, retention, and MCP timeout limits.
@@ -283,7 +284,8 @@ func SharedAgentSkillsEnabled(agents AgentsConfig) bool {
 		IsAgentEnabled(agents.Antigravity.Enabled) ||
 		IsAgentEnabled(agents.VSCode.Enabled) ||
 		IsAgentEnabled(agents.CopilotCLI.Enabled) ||
-		IsAgentEnabled(agents.Grok.Enabled)
+		IsAgentEnabled(agents.Grok.Enabled) ||
+		IsAgentEnabled(agents.Muse.Enabled)
 }
 
 // LegacySkillProjection names a retired client-side directory that Agent Layer

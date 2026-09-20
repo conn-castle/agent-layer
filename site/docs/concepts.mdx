@@ -26,9 +26,9 @@ Agent Layer is repo-local. Each repository can have different safety rules, tool
 
 Agent Layer stores instructions, skills, approvals, and MCP server configuration under `.agent-layer/`, then writes them into each client's native format. Define the behavior once and regenerate client files instead of copying config by hand.
 
-Every client expects different files and conventions. If you edit those files directly, they fall out of sync. With Agent Layer, you edit `.agent-layer/` and treat the generated client files as disposable.
+Every client expects different files and conventions. If you edit those files directly, they fall out of sync. With Agent Layer, you edit `.agent-layer/` and treat generated client files as disposable except for documented shared native state.
 
-That changes day-to-day work: the same rules apply across tools, changes are reviewable in git, and debugging starts in `.agent-layer/` instead of five client formats.
+That changes day-to-day work: the same rules apply across tools, changes are reviewable in git, and debugging starts in `.agent-layer/` instead of multiple client formats.
 
 Agent Layer also prefers explicit settings. If something matters, it is usually spelled out (for example `enabled = true/false`) rather than left to an implicit default. That is what lets teams trust that the same repo and the same pinned version produce the same behavior.
 
@@ -42,7 +42,7 @@ The files you edit live in `.agent-layer/`:
 - `commands.allow` for approved shell command prefixes
 - `.env` for secrets
 
-Everything else is derived output and can be overwritten at any time.
+Generated client configuration is derived output. Shared native settings and runtime state, including Muse settings and sessions, must be preserved as described below.
 
 Treat `.agent-layer/` as project configuration: keep it explicit, keep it small, and review changes the same way you would review application configuration.
 
@@ -56,15 +56,16 @@ When you run `al sync` or `al <client>`, Agent Layer generates client-specific c
 - `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`
 - `.agy/antigravity-cli/settings.json` (shared state patched only at Agent Layer-managed paths)
 - `.codex/` (generated config and rules)
+- `.muse-config/muse/settings.json` (managed MCP settings merged with native settings)
 - `.grok/config.toml`
 - `.grok/hooks/agent-layer-chime.json` when `notifications.chime` is enabled
 - `.vscode/mcp.json` and a managed block in `.vscode/settings.json`
 - `AGENTS.md`
-- `.claude/CLAUDE.md`
+- `.claude/rules/agent-layer.md`
 - `.github/copilot-instructions.md`
 - repo-local VS Code launchers under `.agent-layer/` when VS Code is enabled (for example `open-vscode.command`, `open-vscode.sh`, and `open-vscode.app/`)
 
-Generated outputs are safe to delete and regenerate, except for the shared-state files `al sync` patches in place rather than regenerating: `.codex/config.toml` and `.agy/antigravity-cli/settings.json`. The Antigravity file can also hold native workspace approval, trust, and other settings. Keep it gitignored, but preserve it during cleanup; Agent Layer patches only its managed model, `permissions.allow`, and `agent_specific` paths, and never deletes native values it did not set.
+Generated outputs are safe to delete and regenerate, except for shared native state. `al sync` patches `.codex/config.toml`, `.agy/antigravity-cli/settings.json`, and `.muse-config/muse/settings.json` in place while preserving native values it does not manage. Muse sessions and other runtime state under `.muse-data/` are also not reproducible. Keep these paths gitignored, but preserve them during cleanup.
 
 This split is deliberate. You can wipe generated files and rebuild them when something feels off, without losing the `.agent-layer/` files you maintain.
 
@@ -166,7 +167,9 @@ mode = "all" # one of: all, mcp, commands, none, yolo
 | `mcp` | prompt/deny | auto-approve | |
 | `commands` | auto-approve | prompt/deny | |
 | `none` | prompt/deny | prompt/deny | |
-| `yolo` | auto-approve | auto-approve | skips all permission prompts where supported (Claude and Antigravity `--dangerously-skip-permissions`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live`, Copilot CLI `--yolo`, Grok `--permission-mode bypassPermissions --always-approve`) |
+| `yolo` | auto-approve | auto-approve | skips all permission prompts where supported (Claude and Antigravity `--dangerously-skip-permissions`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live`, Copilot CLI and Muse `--yolo`, Grok `--permission-mode bypassPermissions --always-approve`) |
+
+Muse does not project selective command or MCP grants. All non-YOLO modes retain native approvals and sandboxing with `--approval-judge off`; headless dispatch fails if human approval is required.
 
 The default template sets `mode = "all"`. Change it to match your team's security posture.
 
@@ -295,7 +298,7 @@ See [Environment variables](./reference#environment-variables) for how `.env` is
 
 ### Client targeting
 
-Use `clients = ["antigravity", "claude", "codex", "vscode", "copilot", "grok"]` to restrict a server to specific clients. If you omit `clients`, the server is projected to all supported clients.
+Use `clients = ["antigravity", "claude", "codex", "vscode", "copilot", "grok", "muse"]` to restrict a server to specific clients. If you omit `clients`, the server is projected to all supported clients. Muse uses per-client native names and disables shared project entries in its own settings to preserve these filters alongside Claude. See the [Muse notes](./reference#agents).
 
 ### Built-in path placeholder
 
@@ -323,7 +326,7 @@ Start with one or two servers, verify with `al doctor`, then expand. It is easie
 
 ## Agent Dispatch
 
-Agent Dispatch lets an agent, person, or script start a headless provider conversation and coordinate it asynchronously. Starting work returns a handle immediately; callers use that handle to wait for a result, continue the same conversation, or cancel active work. Independent handles make parallel delegation possible without coupling the conversations. Valid dispatch targets are Codex, Claude, Antigravity, and Grok; enabled clients can call the tools when their runtime exposes Agent Layer's generated MCP server. Antigravity's current probe baseline does not yet expose those tools, so run `al probe agy` before relying on it as a caller.
+Agent Dispatch lets an agent, person, or script start a headless provider conversation and coordinate it asynchronously. Starting work returns a handle immediately; callers use that handle to wait for a result, continue the same conversation, or cancel active work. Independent handles make parallel delegation possible without coupling the conversations. Valid dispatch targets are Codex, Claude, Antigravity, Grok, and Muse; enabled clients can call the tools when their runtime exposes Agent Layer's generated MCP server. Antigravity's current probe baseline does not yet expose those tools, so run `al probe agy` before relying on it as a caller.
 
 Agents access dispatch through Agent Layer's built-in `agent-layer` MCP server, while humans and scripts use matching `al dispatch` commands. Both use the same lifecycle and results. See [Agent Dispatch](./agent-dispatch) for the tools, commands, states, timeouts, and configuration.
 

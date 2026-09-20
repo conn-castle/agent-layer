@@ -72,7 +72,7 @@ func TestModelDiscoveryFailureAllowsExplicitSelection(t *testing.T) {
 	wizardOptionDiscoveryRequestFunc = func() agentoptions.DiscoveryRequest {
 		return agentoptions.DiscoveryRequest{Live: true, LookPath: func(string) (string, error) { return "", errors.New("harness missing") }}
 	}
-	for _, agent := range []string{AgentCopilotCLI, AgentClaude, AgentCodex, AgentGrok, AgentAntigravity} {
+	for _, agent := range []string{AgentCopilotCLI, AgentClaude, AgentCodex, AgentGrok, AgentAntigravity, AgentMuse} {
 		for _, selection := range []string{messages.WizardLeaveBlankOption, messages.WizardCustomOption} {
 			t.Run(agent+"/"+selection, func(t *testing.T) {
 				warned := false

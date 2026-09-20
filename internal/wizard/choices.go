@@ -75,6 +75,11 @@ type Choices struct {
 	GrokReasoning        string
 	GrokReasoningTouched bool
 
+	MuseModel            string
+	MuseModelTouched     bool
+	MuseReasoning        string
+	MuseReasoningTouched bool
+
 	// GrokDisableMemory is disable-intent: true writes disable_memory = true.
 	GrokDisableMemory        bool
 	GrokDisableMemoryTouched bool

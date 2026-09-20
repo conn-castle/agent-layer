@@ -150,6 +150,7 @@ func sanitizePierArtifacts(request ExecutionRequest, stage string) error {
 		filepath.Join(request.RepoRoot, ".codex", "auth.json"),
 		filepath.Join(request.RepoRoot, ".claude-config", ".credentials.json"),
 		filepath.Join(request.RepoRoot, ".grok-config", "auth.json"),
+		filepath.Join(request.RepoRoot, ".muse-config", "muse", "auth.json"),
 	} {
 		if data, err := os.ReadFile(path); err == nil && len(data) > 0 { // #nosec G304 -- fixed repo-local credential paths.
 			secrets = append(secrets, credentialSecretValues(data)...)

@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/conn-castle/agent-layer/internal/clients/grok"
+	"github.com/conn-castle/agent-layer/internal/clients/muse"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/skillvalidator"
@@ -392,6 +393,7 @@ func CheckAgents(cfg *config.ProjectConfig) []Result {
 		{"VSCode", cfg.Config.Agents.VSCode.Enabled},
 		{"CopilotCLI", cfg.Config.Agents.CopilotCLI.Enabled},
 		{"Grok", cfg.Config.Agents.Grok.Enabled},
+		{"Muse", cfg.Config.Agents.Muse.Enabled},
 	}
 
 	for _, a := range agents {
@@ -415,7 +417,31 @@ func CheckAgents(cfg *config.ProjectConfig) []Result {
 	if config.IsAgentEnabled(cfg.Config.Agents.Grok.Enabled) {
 		results = append(results, CheckGrokBinary()...)
 	}
+	if config.IsAgentEnabled(cfg.Config.Agents.Muse.Enabled) {
+		results = append(results, CheckMuseBinary()...)
+	}
 	return results
+}
+
+// CheckMuseBinary verifies that Muse exists and meets the tested version floor.
+func CheckMuseBinary() []Result {
+	path, err := lookPathFunc(muse.ExecutableName)
+	if err != nil {
+		return []Result{{Status: StatusWarn, CheckName: messages.DoctorCheckNameAgents, Message: "Muse binary not found", Recommendation: "Install Muse Code 1.3.0 or newer, then run al doctor again."}}
+	}
+	output, err := commandOutputFunc(path, "--version")
+	if err != nil {
+		return []Result{{Status: StatusWarn, CheckName: messages.DoctorCheckNameAgents, Message: fmt.Sprintf("Muse version check failed: %v", err)}}
+	}
+	match := regexp.MustCompile(`\b(\d+\.\d+\.\d+)\b`).FindStringSubmatch(string(output))
+	if len(match) != 2 {
+		return []Result{{Status: StatusWarn, CheckName: messages.DoctorCheckNameAgents, Message: "Muse version could not be parsed"}}
+	}
+	cmp, err := compareDoctorSemver(match[1], muse.SupportedVersion)
+	if err != nil || cmp < 0 {
+		return []Result{{Status: StatusWarn, CheckName: messages.DoctorCheckNameAgents, Message: fmt.Sprintf("Muse %s is older than tested version %s", match[1], muse.SupportedVersion), Recommendation: "Upgrade Muse Code."}}
+	}
+	return []Result{{Status: StatusOK, CheckName: messages.DoctorCheckNameAgents, Message: fmt.Sprintf("Muse %s is installed", match[1])}}
 }
 
 // CheckAntigravityBinary verifies that agy exists and is at least v1.0.0.

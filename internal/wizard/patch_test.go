@@ -75,6 +75,23 @@ enabled = false
 	assert.Less(t, idxMCP, idxWarnings)
 }
 
+func TestPatchConfig_UpdatesMuseSection(t *testing.T) {
+	content := "[agents.muse]\nenabled = false\n# model = \"\"\n# reasoning_effort = \"\"\n"
+	choices := NewChoices()
+	choices.EnabledAgentsTouched = true
+	choices.EnabledAgents[AgentMuse] = true
+	choices.MuseModelTouched = true
+	choices.MuseModel = "muse-spark"
+	choices.MuseReasoningTouched = true
+	choices.MuseReasoning = "high"
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+	assert.Contains(t, out, "[agents.muse]")
+	assert.Contains(t, out, "enabled = true")
+	assert.Contains(t, out, `model = "muse-spark"`)
+	assert.Contains(t, out, `reasoning_effort = "high"`)
+}
+
 func TestPatchConfig_MigratesLegacyClaudeVSCodeSection(t *testing.T) {
 	content := `
 [agents.claude-vscode] # legacy

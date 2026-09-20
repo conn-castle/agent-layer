@@ -3,6 +3,16 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.22.0 - 2026-09-20
+
+### Added
+- Optional Muse Code support for launch, Agent Dispatch, shared instructions and skills, and private repo-local MCP settings and session state. Upgrades ask whether to enable Muse when its enabled setting is absent; the default is disabled and existing choices are preserved.
+
+### Fixed
+- Grok model discovery accepts a valid native catalog even when the CLI also prints an authentication notice. Benchmark preflight still rejects explicit authentication failures.
+- Generated Claude instructions now use `.claude/rules/agent-layer.md`, avoiding Muse's duplicate-rules warning. Sync removes generated or empty legacy Claude shims while preserving hand-written content.
+- Muse model discovery explains when its native MSP endpoint returns an empty catalog; default and custom model selection remain available.
+
 ### Changed
 - `al update` reports the CLI version before and after the update in its completion message.
 - `al upgrade` prints the repository pin it starts from and the version it will upgrade to before applying changes.

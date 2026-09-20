@@ -15,8 +15,9 @@ const instructionHeader = "<!--\n  GENERATED FILE\n  Source: .agent-layer/instru
 // writeInstructionShims generates instruction shims for supported clients.
 // agy (Antigravity), Codex, Copilot, Grok, and other shared-tier clients
 // read AGENTS.md (per the agentskills.io standard) or their client-specific
-// shim. Claude Code reads `.claude/CLAUDE.md` (an equivalent project location
-// to root CLAUDE.md). GEMINI.md is intentionally NOT written: the Gemini CLI
+// shim. Claude Code reads `.claude/rules/agent-layer.md`, avoiding Muse
+// warnings about duplicate CLAUDE.md and AGENTS.md files. GEMINI.md is
+// intentionally NOT written: the Gemini CLI
 // was retired in 0.10.2 and agy reads AGENTS.md. The v0.10.2 migration's
 // `f-delete-orphan-gemini-md` op removes any leftover GEMINI.md from
 // pre-0.10.2 repos.
@@ -24,11 +25,15 @@ func writeInstructionShims(sys System, root string, instructions []config.Instru
 	if err := writeInstructionFile(sys, filepath.Join(root, "AGENTS.md"), instructions); err != nil {
 		return err
 	}
-	claudeDir := filepath.Join(root, ".claude")
+	claudeDir := filepath.Join(root, ".claude", "rules")
 	if err := sys.MkdirAll(claudeDir, 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, claudeDir, err)
 	}
-	if err := writeInstructionFile(sys, filepath.Join(claudeDir, "CLAUDE.md"), instructions); err != nil {
+	if err := writeInstructionFile(sys, filepath.Join(claudeDir, "agent-layer.md"), instructions); err != nil {
+		return err
+	}
+
+	if err := removeGeneratedInstructionShim(sys, filepath.Join(root, ".claude", "CLAUDE.md")); err != nil {
 		return err
 	}
 
@@ -82,13 +87,13 @@ func cleanCodexInstructions(sys System, root string) error {
 }
 
 // cleanClaudeRootInstructions removes a generated root CLAUDE.md. Claude Code
-// reads `.claude/CLAUDE.md`; a leftover root copy is still loaded by Grok.
+// reads `.claude/rules/agent-layer.md`; a leftover root copy is loaded by Grok.
 func cleanClaudeRootInstructions(sys System, root string) error {
 	return removeGeneratedInstructionShim(sys, filepath.Join(root, "CLAUDE.md"))
 }
 
 func removeGeneratedInstructionShim(sys System, path string) error {
-	isGenerated, err := hasGeneratedMarker(sys, path)
+	isGenerated, err := isRemovableInstructionShim(sys, path)
 	if err != nil {
 		return err
 	}
@@ -101,7 +106,7 @@ func removeGeneratedInstructionShim(sys System, path string) error {
 	return nil
 }
 
-func hasGeneratedMarker(sys System, path string) (bool, error) {
+func isRemovableInstructionShim(sys System, path string) (bool, error) {
 	data, err := sys.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -109,5 +114,6 @@ func hasGeneratedMarker(sys System, path string) (bool, error) {
 		}
 		return false, fmt.Errorf(messages.SyncReadFailedFmt, path, err)
 	}
-	return strings.HasPrefix(string(data), instructionHeader), nil
+	// Older syncs wrote an empty shim when no instruction sources existed.
+	return len(data) == 0 || strings.HasPrefix(string(data), instructionHeader), nil
 }

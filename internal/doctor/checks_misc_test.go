@@ -557,6 +557,29 @@ func TestCheckGrokBinary(t *testing.T) {
 	})
 }
 
+func TestCheckMuseBinary(t *testing.T) {
+	originalLookPath := lookPathFunc
+	originalCommandOutput := commandOutputFunc
+	t.Cleanup(func() {
+		lookPathFunc = originalLookPath
+		commandOutputFunc = originalCommandOutput
+	})
+
+	lookPathFunc = func(file string) (string, error) {
+		if file != "muse" {
+			t.Fatalf("lookup = %q", file)
+		}
+		return "/test/bin/muse", nil
+	}
+	commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+		return []byte("muse 1.3.0-R3401.1\n"), nil
+	}
+	results := CheckMuseBinary()
+	if len(results) != 1 || results[0].Status != StatusOK || !strings.Contains(results[0].Message, "Muse 1.3.0") {
+		t.Fatalf("unexpected result: %#v", results)
+	}
+}
+
 func TestParseGrokVersionFormats(t *testing.T) {
 	tests := map[string]string{
 		"1.0.5":                       "1.0.5",

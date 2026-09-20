@@ -3,24 +3,32 @@
 Note: This is an agent-layer memory file. It is primarily for agent use.
 
 ## Purpose
-Persistent project-specific knowledge that does not belong in ISSUES, BACKLOG, DECISIONS, or COMMANDS. Read this file before starting work on a task.
 
-Record three categories of information here:
-1. **Project context** — domain concepts, architectural invariants, naming conventions, external dependencies, environment setup notes, team norms, and any other stable facts an agent needs to work effectively in this repository.
-2. **Project-specific nuances** — non-obvious behaviors, implicit conventions, or user-provided clarifications that an agent would not discover from reading the code alone. When a user corrects a misunderstanding or explains how something actually works in this project, record it here.
-3. **Lessons learned** — repeated mistakes, surprising behaviors, non-obvious gotchas, and corrective patterns discovered during development. When an error recurs or a workaround is needed more than once, record it here so future agents avoid the same mistake.
+Persistent project-specific knowledge that does not belong in ISSUES, BACKLOG,
+DECISIONS, COMMANDS, canonical repository documentation, or the implementation.
+Read this file before starting work on a task.
 
-Do not duplicate information that belongs in other memory files:
+Record only facts, nuances, or lessons that an agent needs across sessions and
+cannot reasonably discover from the repository's canonical documentation,
+code, tests, schemas, or configuration.
+
+Do not duplicate information that belongs elsewhere:
+
+- Current architecture or product behavior → repository documentation
+- Enforceable behavior or invariants → code, tests, schemas, or configuration
+- Otherwise-lost rationale that constrains future work → DECISIONS.md
 - Deferred bugs or tech debt → ISSUES.md
 - Planned features → BACKLOG.md
 - Workflow commands → COMMANDS.md
-- Non-obvious decisions → DECISIONS.md
 
 ## Format
+
 - Organize by topic using headings (`##`, `###`).
 - Prefer concise bullet points. State facts directly; omit hedging language.
-- Before adding an entry, search this file for existing coverage. Merge into or update an existing section instead of creating a near-duplicate.
-- Remove or update entries when the underlying facts change.
+- Before adding an entry, search the repository for existing coverage. Update
+  the canonical source instead of copying it here.
+- Remove or update entries when the underlying facts become documented,
+  implemented, or no longer apply.
 - Insert all content below `<!-- ENTRIES START -->`.
 
 <!-- ENTRIES START -->
@@ -83,7 +91,7 @@ Do not duplicate information that belongs in other memory files:
 
 - Grok uses the `grok` binary. Interactive launch is `al grok`; headless dispatch is `al dispatch start --agent grok`.
 - Project MCP, permissions, and optional `agents.grok.agent_specific.plugins` settings are written to `.grok/config.toml`. Other Grok settings are user-level and are rejected under `agent_specific` because project config would ignore them. That path is Agent Layer-generated output and is gitignored. Grok also discovers root `.mcp.json`, `AGENTS.md`, and `.agents/skills/`.
-- The Claude instruction shim is `.claude/CLAUDE.md`, not root `CLAUDE.md`. When Grok is enabled, sync sets `[compat.claude] agents = false` in `.grok-config/config.toml`, and launch/dispatch/vscode set `GROK_CLAUDE_AGENTS_ENABLED=false`, so Grok does not also load that Claude file. The Claude chime handler recognizes and silently ignores Grok's camelCase compatibility invocation so the dedicated Grok hook remains the single notification path.
+- The Claude instruction shim is `.claude/rules/agent-layer.md`, avoiding Muse warnings about duplicate root instruction files. Sync removes generated legacy `.claude/CLAUDE.md` files and preserves hand-authored ones. When Grok is enabled, sync sets `[compat.claude] agents = false` in `.grok-config/config.toml`, and launch/dispatch/vscode set `GROK_CLAUDE_AGENTS_ENABLED=false`, so Grok skips legacy Claude-named instruction files. The Claude chime handler recognizes and silently ignores Grok's camelCase compatibility invocation so the dedicated Grok hook remains the single notification path.
 - `al grok`, Grok dispatch, and `al vscode` always set `GROK_HOME=<repo>/.grok-config`. If Grok is disabled, `al vscode` clears only a stale repo-local `GROK_HOME`.
 - YOLO maps to `--permission-mode bypassPermissions --always-approve` and leaves sandbox off. Headless dispatch maps non-YOLO approvals to `--sandbox workspace` when commands are approved and `--sandbox read-only` otherwise, plus `acceptEdits`/`dontAsk` and `--allow`. Interactive `al grok` writes `[permission] allow` into `.grok/config.toml` and leaves Grok's own sandbox default so a human can still approve writes.
 - `agents.grok.disable_memory = true` adds `--no-memory` and `GROK_MEMORY=0`. Grok 1.0.5 does not provide a verified project-level mechanism for force-disabling installed user plugins, so Agent Layer exposes no plugin-disable toggle.

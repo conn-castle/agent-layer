@@ -9,7 +9,7 @@ description = "List configured providers and their model and reasoning-effort ru
 description = "Start one asynchronous dispatch. Returns handle, invocation_id, and running state."
 
 [tools.dispatch_start.parameters]
-agent = "Provider to dispatch: codex, claude, antigravity, or grok."
+agent = "Provider to dispatch: codex, claude, antigravity, grok, or muse."
 model = "Optional model override; resolve against dispatch_options."
 reasoning_effort = "Optional reasoning-effort override; resolve against dispatch_options."
 role = "Optional caller-defined workflow role retained as dispatch evidence."

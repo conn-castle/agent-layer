@@ -42,6 +42,7 @@ var validClients = map[string]struct{}{
 	agentCodex:       {},
 	"copilot":        {},
 	agentGrok:        {},
+	agentMuse:        {},
 }
 
 var validHTTPTransports = map[string]struct{}{
