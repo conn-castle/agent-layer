@@ -295,6 +295,58 @@ else:
 	}
 }
 
+func TestGrokRetainedStreamValidatorIsDependencyCompleteAndExecutesOffline(t *testing.T) {
+	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "pier_agent_layer.py")
+	if err := os.WriteFile(path, adapter, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := `
+import asyncio
+import base64
+import importlib.util
+import shlex
+import subprocess
+import sys
+import tempfile
+
+spec = importlib.util.spec_from_file_location("pier_agent_layer", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+commands = []
+class Harness:
+    async def exec_as_agent(self, environment, command, **kwargs):
+        commands.append(command)
+
+session_id = "11111111-1111-4111-8111-111111111111"
+with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as stream:
+    stream.write('{"type":"usage","usage":{"input_tokens":1,"output_tokens":1}}\n')
+    stream.write('{"type":"end","sessionId":"' + session_id + '","stopReason":"end_turn"}\n')
+    stream.flush()
+    asyncio.run(module._AgentLayerStreamAgent._validate_retained_stream(
+        Harness(), object(), stream.name, "grok", session_id,
+    ))
+
+    assert len(commands) == 1
+    parts = shlex.split(commands[0])
+    assert parts[:2] == ["printf", "%s"] and parts[3:] == ["|", "base64", "-d", "|", "python3"], commands[0]
+    validator = base64.b64decode(parts[2]).decode("utf-8")
+    constant = f"STREAM_BYTE_CAP = {module.STREAM_BYTE_CAP}"
+    assert constant in validator
+    assert validator.index(constant) < validator.index("def _bounded_json_lines")
+    completed = subprocess.run(["python3", "-c", validator], text=True, capture_output=True)
+    assert completed.returncode == 0, completed.stderr
+`
+	command := exec.CommandContext(t.Context(), "uvx", "--from", "datacurve-pier=="+PierVersion, "python", "-c", script, path) // #nosec G204 -- embedded test loads the checked-in adapter against its pinned runtime.
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("offline Grok retained-stream validation failed: %v\n%s", err, output)
+	}
+}
+
 func TestPinnedStreamAdaptersImplementPierInstallAndEgressContracts(t *testing.T) {
 	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
 	if err != nil {
