@@ -62,9 +62,10 @@ func executeDispatch(request dispatchExecution) (returnErr error) {
 	if request.Run == nil || request.Project == nil {
 		return exitError(ExitConfig, "dispatch execution was not initialized")
 	}
-	if request.Target.Name == AgentMuse {
+	if request.Target.Name == AgentMuse || request.Target.Name == AgentGrok {
 		// Also clean up when construction/persistence/cancellation returns before
 		// executeProvider, including a failed build after the prompt was written.
+		// Both Muse and Grok stage the prompt in run-local prompt.txt.
 		defer func() {
 			path := filepath.Join(request.Run.Dir, "prompt.txt")
 			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {

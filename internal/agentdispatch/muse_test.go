@@ -347,3 +347,86 @@ func TestMuseDispatchEarlyFailureRemovesPrompt(t *testing.T) {
 		t.Fatalf("prompt survived early failure: %v", err)
 	}
 }
+
+func TestGrokDispatchCommandStagesPromptPath(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	project := loadApprovalsTestProject(t, root)
+	target, ok := lookupTarget(AgentGrok)
+	if !ok {
+		t.Fatal("grok target missing from registry")
+	}
+	run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command, err := buildProviderCommand(target, project, []string{}, []byte("private prompt"), "", "", false, dispatchModeFresh, runtimeSessionID, run, io.Discard)
+	if err != nil {
+		t.Fatalf("build grok command: %v", err)
+	}
+	// executeDispatch removes the staged prompt only via PromptPath; an empty
+	// path would leave the secret prompt behind in the run directory.
+	want := filepath.Join(run.Dir, "prompt.txt")
+	if command.PromptPath != want {
+		t.Fatalf("grok PromptPath = %q, want %q", command.PromptPath, want)
+	}
+	staged, err := os.ReadFile(want) // #nosec G304 -- want is a test-owned run path.
+	if err != nil {
+		t.Fatalf("read staged grok prompt: %v", err)
+	}
+	if string(staged) != "private prompt" {
+		t.Fatalf("staged grok prompt = %q", staged)
+	}
+}
+
+func TestGrokDispatchEarlyFailureRemovesPrompt(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	promptPath := filepath.Join(run.Dir, "prompt.txt")
+	if err := os.WriteFile(promptPath, []byte("private prompt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Deliberately fail session persistence before command execution.
+	badRoot := filepath.Join(root, "file-instead-of-directory")
+	if err := os.WriteFile(badRoot, []byte("occupied"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = executeDispatch(dispatchExecution{Root: badRoot, Project: &config.ProjectConfig{Root: badRoot}, Target: targetMeta{Name: AgentGrok}, Mode: dispatchModeFresh, Run: run})
+	if err == nil {
+		t.Fatal("expected persistence failure")
+	}
+	if _, err := os.Stat(promptPath); !os.IsNotExist(err) {
+		t.Fatalf("prompt survived early failure: %v", err)
+	}
+}
+
+func TestMuseObserverReadinessTimeout(t *testing.T) {
+	previous := museObserverReadyTimeout
+	museObserverReadyTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { museObserverReadyTimeout = previous })
+	root := t.TempDir()
+	providerPath := filepath.Join(root, "fake-muse-silent")
+	// The observer host starts but never answers the initialize handshake.
+	if err := os.WriteFile(providerPath, []byte("#!/bin/sh\nsleep 30\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(providerPath, 0o700); err != nil { // #nosec G302 -- this private test fixture must be executable.
+		t.Fatal(err)
+	}
+	started := time.Now()
+	_, err := startMuseApprovalObserver(providerCommand{
+		Path:                 providerPath,
+		Provider:             AgentMuse,
+		SessionID:            runtimeSessionID,
+		ObserveMuseApprovals: true,
+	}, root)
+	elapsed := time.Since(started)
+	if err == nil || !strings.Contains(err.Error(), "did not complete initialization") {
+		t.Fatalf("observer error = %v, want readiness timeout", err)
+	}
+	if elapsed > 10*time.Second {
+		t.Fatalf("readiness timeout took %s", elapsed)
+	}
+}

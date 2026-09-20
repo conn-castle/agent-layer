@@ -17,6 +17,11 @@ const (
 	museApprovalMaxPollDelay = 5 * time.Second
 )
 
+// museObserverReadyTimeout bounds the initialize handshake with `muse serve`.
+// Without it a started-but-silent observer host blocks dispatch start forever.
+// A var so tests can shrink the bound without waiting out the production value.
+var museObserverReadyTimeout = 30 * time.Second
+
 type museApprovalObserver struct {
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -122,10 +127,22 @@ func startMuseApprovalObserver(command providerCommand, root string) (*museAppro
 			observer.finish(errors.New("muse approval observer exited before dispatch completed"))
 		}
 	}()
-	if err := <-observer.ready; err != nil {
+	select {
+	case err := <-observer.ready:
+		if err != nil {
+			cancel()
+			_ = observer.wait()
+			return nil, err
+		}
+	case <-time.After(museObserverReadyTimeout):
 		cancel()
+		// Close the pipes as well as killing the host: orphaned host
+		// children can keep the pipe write ends open, which would leave
+		// the goroutine blocked in Decode and wait() hung in turn.
+		_ = stdin.Close()
+		_ = stdout.Close()
 		_ = observer.wait()
-		return nil, err
+		return nil, fmt.Errorf("muse approval observer did not complete initialization within %s", museObserverReadyTimeout)
 	}
 	return observer, nil
 }

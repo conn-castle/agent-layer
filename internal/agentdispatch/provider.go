@@ -468,6 +468,7 @@ func buildProviderCommand(
 		}
 		command.Env = grok.ConfigureEnvironment(project.Root, env, project.Config.Agents.Grok, diagnostics)
 		command.SessionID = sessionID
+		command.PromptPath = promptPath
 	case AgentMuse:
 		if mode == dispatchModeFresh && sessionID == "" {
 			return providerCommand{}, exitError(ExitConfig, "new Muse dispatch requires a caller-assigned session ID")
