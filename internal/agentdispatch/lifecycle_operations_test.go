@@ -91,8 +91,16 @@ func TestRetentionRemovesOnlyExpiredUnreferencedTerminalEvidence(t *testing.T) {
 }
 
 func TestCancelEscalatesButRetainsClaimUntilOwnedProcessIsReaped(t *testing.T) {
+	for _, agent := range []string{AgentCodex, AgentMuse} {
+		t.Run(agent, func(t *testing.T) {
+			testCancelEscalatesButRetainsClaimUntilOwnedProcessIsReaped(t, agent)
+		})
+	}
+}
+
+func testCancelEscalatesButRetainsClaimUntilOwnedProcessIsReaped(t *testing.T, agent string) {
 	root := t.TempDir()
-	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	run, err := newDispatchRun(root, agent, supportedProviderVersions[agent], dispatchModeFresh)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +173,7 @@ func TestCancelEscalatesButRetainsClaimUntilOwnedProcessIsReaped(t *testing.T) {
 	if released.ActiveRunID != "" {
 		t.Fatalf("cancel retained the claim after proving process-group death: %#v", released)
 	}
-	replacement, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
+	replacement, err := newDispatchRun(root, agent, supportedProviderVersions[agent], dispatchModeResume)
 	if err != nil {
 		t.Fatal(err)
 	}

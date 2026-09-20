@@ -1137,7 +1137,7 @@ func listSessions(root string) ([]Session, error) {
 }
 
 func isProvider(agent string) bool {
-	return agent == AgentClaude || agent == AgentCodex || agent == AgentAntigravity || agent == AgentGrok
+	return agent == AgentClaude || agent == AgentCodex || agent == AgentAntigravity || agent == AgentGrok || agent == AgentMuse
 }
 
 func processAlive(pid int) string {

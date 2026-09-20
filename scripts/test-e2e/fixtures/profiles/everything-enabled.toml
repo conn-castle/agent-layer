@@ -26,6 +26,9 @@ enabled = true
 [agents.grok]
 enabled = true
 
+[agents.muse]
+enabled = true
+
 [mcp]
 
 [[mcp.servers]]

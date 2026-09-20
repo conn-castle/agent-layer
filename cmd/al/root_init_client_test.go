@@ -179,6 +179,7 @@ func TestClientCommandsMissingConfig(t *testing.T) {
 			newAntigravityCmd(),
 			newClaudeCmd(),
 			newCodexCmd(),
+			newMuseCmd(),
 			newVSCodeCmd(),
 		}
 		for _, cmd := range commands {
@@ -200,6 +201,7 @@ func TestClientCommandsSuccess(t *testing.T) {
 	testutil.WriteStub(t, binDir, "agy")
 	testutil.WriteStub(t, binDir, "claude")
 	testutil.WriteStub(t, binDir, "codex")
+	testutil.WriteStub(t, binDir, "muse")
 	testutil.WriteStub(t, binDir, "code")
 	testutil.WriteStub(t, binDir, "al")
 
@@ -210,6 +212,7 @@ func TestClientCommandsSuccess(t *testing.T) {
 			newAntigravityCmd(),
 			newClaudeCmd(),
 			newCodexCmd(),
+			newMuseCmd(),
 			newVSCodeCmd(),
 		}
 		for _, cmd := range commands {
@@ -305,6 +308,7 @@ func TestCommandsGetwdError(t *testing.T) {
 		newAntigravityCmd(),
 		newClaudeCmd(),
 		newCodexCmd(),
+		newMuseCmd(),
 		newVSCodeCmd(),
 		newDoctorCmd(),
 	}

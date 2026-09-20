@@ -617,6 +617,11 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 			},
 		},
 		{
+			agent:   "muse",
+			enabled: cfg.Agents.Muse.Enabled,
+			files:   []disabledArtifactFileSpec{{path: filepath.Join(inst.root, ".muse-config", "muse", "settings.json"), evidence: hasMuseManagedMCP}},
+		},
+		{
 			agent:   "shared-skills",
 			enabled: boolPtr(config.SharedAgentSkillsEnabled(cfg.Agents)),
 			dirs: []disabledArtifactDirSpec{
@@ -735,6 +740,11 @@ func hasAgentLayerMCPSignature(data []byte) (bool, error) {
 		return true, nil
 	}
 	return false, nil
+}
+
+func hasMuseManagedMCP(data []byte) (bool, error) {
+	content := string(data)
+	return strings.Contains(content, `"mcpServers"`) && (strings.Contains(content, `"agent-layer"`) || strings.Contains(content, `muse-agent-layer"`)), nil
 }
 
 // isJSONObject reports whether data looks like a JSON object.

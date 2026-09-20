@@ -35,6 +35,9 @@ enabled = true
 
 [agents.grok]
 enabled = false
+
+[agents.muse]
+enabled = false
 PROFILE
 
   assert_exit_zero_in "$repo_dir" "al wizard --profile disabled.toml --yes" \
@@ -105,6 +108,17 @@ PROFILE
   # Verify the mock codex binary was NOT invoked
   assert_mock_agent_not_called "$MOCK_AGENT_LOG" \
     "mock codex was not called (agent is disabled)"
+
+  install_mock_agent "$repo_dir" "muse"
+  local muse_output muse_rc=0
+  muse_output=$(cd "$repo_dir" && al muse 2>&1) || muse_rc=$?
+  if [[ $muse_rc -ne 0 ]]; then
+    pass "al muse exits nonzero when disabled"
+  else
+    fail "al muse should fail when disabled, but got exit 0"
+  fi
+  assert_output_contains "$muse_output" "disabled" "muse error says agent is disabled"
+  assert_mock_agent_not_called "$MOCK_AGENT_LOG" "mock muse was not called (agent is disabled)"
 
   # al agy should work (it's enabled)
   install_mock_agent "$repo_dir" "agy"

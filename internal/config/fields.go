@@ -50,6 +50,10 @@ const (
 	GrokModelFieldKey = "agents.grok.model"
 	// GrokReasoningEffortFieldKey is the canonical config path for Grok reasoning effort.
 	GrokReasoningEffortFieldKey = "agents.grok.reasoning_effort"
+	// MuseModelFieldKey is the canonical config path for Muse model selection.
+	MuseModelFieldKey = "agents.muse.model"
+	// MuseReasoningEffortFieldKey is the canonical config path for Muse effort.
+	MuseReasoningEffortFieldKey = "agents.muse.reasoning_effort"
 	// DispatchSessionRetentionDaysFieldKey is the canonical config path for
 	// inactive mapping and confirmed-evidence retention.
 	DispatchSessionRetentionDaysFieldKey = "dispatch.session_retention_days"
@@ -59,6 +63,7 @@ var (
 	claudeReasoningEffortOptions = fieldOptions("low", "medium", "high", "xhigh", "max")
 	codexReasoningEffortOptions  = fieldOptions("low", "medium", "high", "xhigh", "max", "ultra")
 	grokReasoningEffortOptions   = fieldOptions("none", "minimal", "low", "medium", "high", "xhigh", "max")
+	museReasoningEffortOptions   = fieldOptions("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 )
 
 // fields is the canonical ordered registry of all config fields with constrained values.
@@ -136,6 +141,9 @@ var fields = []FieldDef{
 		AllowCustom: true,
 		Options:     grokReasoningEffortOptions,
 	},
+	{Key: "agents.muse.enabled", Type: FieldBool},
+	{Key: MuseModelFieldKey, Type: FieldEnum, AllowCustom: true},
+	{Key: MuseReasoningEffortFieldKey, Type: FieldEnum, AllowCustom: true, Options: museReasoningEffortOptions},
 }
 
 func fieldOptions(values ...string) []FieldOption {

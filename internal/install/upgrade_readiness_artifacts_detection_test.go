@@ -456,6 +456,27 @@ func TestDetectDisabledAgentArtifacts_IgnoresUserOwnedGrokConfig(t *testing.T) {
 	}
 }
 
+func TestDetectDisabledAgentArtifacts_FlagsManagedMuseSettings(t *testing.T) {
+	root := t.TempDir()
+	settingsPath := filepath.Join(root, ".muse-config", "muse", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+		t.Fatalf("mkdir Muse settings: %v", err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(`{"schema_version":1,"mcpServers":{"agent-layer":{"type":"stdio"}}}`), 0o600); err != nil {
+		t.Fatalf("write Muse settings: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	cfg := config.Config{Agents: config.AgentsConfig{Muse: config.AgentConfig{Enabled: testutil.BoolPtr(false)}}}
+	check, err := detectDisabledAgentArtifacts(inst, &cfg)
+	if err != nil {
+		t.Fatalf("detectDisabledAgentArtifacts: %v", err)
+	}
+	if check == nil || !strings.Contains(strings.Join(check.Details, "\n"), ".muse-config/muse/settings.json") {
+		t.Fatalf("expected disabled Muse settings finding, got %#v", check)
+	}
+}
+
 func TestDetectDisabledAgentArtifacts_FlagsSharedSkillsWhenNoConsumerEnabled(t *testing.T) {
 	root := t.TempDir()
 	sharedSkill := filepath.Join(root, ".agents", "skills", "alpha", "SKILL.md")

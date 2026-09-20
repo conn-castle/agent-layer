@@ -16,7 +16,7 @@ If you run more than one client, you edit that folder once and review the same f
 
 ## Can one coding agent delegate work to another provider?
 
-Yes. [Agent Dispatch](/docs/agent-dispatch) lets supported callers with working MCP support start asynchronous Claude, Codex, Grok, or Antigravity conversations through built-in MCP tools. People and automation can use matching `al dispatch` CLI commands. The caller receives a handle immediately, waits when it needs the result, and can continue the same provider conversation later.
+Yes. [Agent Dispatch](/docs/agent-dispatch) lets supported callers with working MCP support start asynchronous Claude, Codex, Grok, Muse, or Antigravity conversations through built-in MCP tools. People and automation can use matching `al dispatch` CLI commands. The caller receives a handle immediately, waits when it needs the result, and can continue the same provider conversation later.
 
 Antigravity remains a supported dispatch target, but its current probe baseline does not expose the generated MCP tools at runtime. Run `al probe agy` before relying on Antigravity as an MCP caller.
 
@@ -27,16 +27,16 @@ Yes. [`al skills add`](/docs/skill-imports) imports selected Agent Skills from a
 ## Does Agent Layer align with the skills standard?
 Yes. Skill parsing and validation follow the [agentskills.io specification](https://agentskills.io/specification), including the required uppercase `SKILL.md` filename.
 
-## Does Agent Layer install Claude, Codex, Antigravity, Copilot CLI, Grok, or VS Code?
-No. Agent Layer does not install clients. Install Claude, Codex, Antigravity (`agy`), Copilot CLI, and Grok yourself and put those CLIs on your `PATH`. Install VS Code separately as an application; `al vscode` requires the `code` command on `PATH`.
+## Does Agent Layer install Claude, Codex, Antigravity, Copilot CLI, Grok, Muse, or VS Code?
+No. Agent Layer does not install clients. Install Claude, Codex, Antigravity (`agy`), Copilot CLI, Grok, and Muse yourself and put those CLIs on your `PATH`. Install VS Code separately as an application; `al vscode` requires the `code` command on `PATH`.
 
 ## What do I edit vs what gets generated?
 You edit `.agent-layer/`. Agent Layer generates client-specific outputs in each client's native format when you run `al sync` or `al <client>`.
 
 Rule of thumb: generated files include:
 
-- Instruction shims: `AGENTS.md`, `.claude/CLAUDE.md`, `.github/copilot-instructions.md`
-- Agent config: `.mcp.json`, `.agy/antigravity-cli/settings.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.copilot/mcp-config.json`
+- Instruction shims: `AGENTS.md`, `.claude/rules/agent-layer.md`, `.github/copilot-instructions.md`
+- Agent config: `.mcp.json`, `.agy/antigravity-cli/settings.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.copilot/mcp-config.json`, `.grok/config.toml`, `.muse-config/muse/settings.json`
 - Shared skills: `.agents/skills/`
 - Claude skills: `.claude/skills/`
 - Codex config and rules: `.codex/`

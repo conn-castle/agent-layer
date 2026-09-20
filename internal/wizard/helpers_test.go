@@ -59,6 +59,7 @@ func TestAgentModelSummary(t *testing.T) {
 	assert.Equal(t, "", agentModelSummary(AgentVSCode, c))
 	assert.Equal(t, "", agentModelSummary("unknown", c))
 	assert.Equal(t, "grok-4.6 (high)", agentModelSummary(AgentGrok, &Choices{GrokModel: "grok-4.6", GrokReasoning: "high"}))
+	assert.Equal(t, "muse-spark (xhigh)", agentModelSummary(AgentMuse, &Choices{MuseModel: "muse-spark", MuseReasoning: "xhigh"}))
 }
 
 func TestGrokHelpers(t *testing.T) {

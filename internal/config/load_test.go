@@ -88,6 +88,9 @@ Do it.`
 	if len(project.CommandsAllow) != 1 || project.CommandsAllow[0] != "git status" {
 		t.Fatalf("unexpected commands allow: %v", project.CommandsAllow)
 	}
+	if project.Config.Agents.Muse.Enabled != nil {
+		t.Fatal("config without [agents.muse] must load with Muse disabled")
+	}
 }
 
 func TestLoadProjectConfigMissingConfig(t *testing.T) {

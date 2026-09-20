@@ -28,6 +28,7 @@ const (
 	jsonTextKey               = "text"
 	jsonTypeKey               = "type"
 	jsonEventKey              = "event"
+	jsonKindKey               = "kind"
 	claudeLineageContentLimit = 256
 )
 
@@ -566,7 +567,7 @@ func (p *selectiveJSONReader) readNonSpace() (byte, error) {
 func retainedStructuredPath(path []string) bool {
 	if len(path) == 1 {
 		switch path[0] {
-		case jsonTypeKey, jsonEventKey, "thread_id", "threadId", "id", jsonMessageKey, jsonTextKey, jsonReasonKey, jsonErrorKey, jsonResultKey, "session_id", "sessionId", "conversation_id", "conversationId", "is_error", "subtype", jsonStatusKey, jsonDataKey, "stopReason", "stop_reason":
+		case jsonTypeKey, jsonEventKey, "schema_version", "payload_type", "thread_id", "threadId", "id", jsonMessageKey, jsonTextKey, jsonReasonKey, jsonErrorKey, jsonResultKey, "session_id", jsonSessionIDCamelKey, "conversation_id", "conversationId", "is_error", "subtype", jsonStatusKey, jsonDataKey, "stopReason", "stop_reason":
 			return true
 		}
 	}
@@ -578,6 +579,8 @@ func retainedStructuredPath(path []string) bool {
 		// presence drives the reducer, which reports whatever name it retained
 		// as an example. An empty list retains nothing and stays a success.
 		return path[0] == permissionDenialsKey ||
+			(path[0] == "stream" && (path[1] == jsonKindKey || path[1] == "id")) ||
+			(path[0] == "payload" && (path[1] == jsonKindKey || path[1] == "command_id" || path[1] == "terminal" || path[1] == jsonTextKey || path[1] == jsonReasonKey)) ||
 			(path[0] == grokUsageEventType && (path[1] == "input_tokens" || path[1] == "output_tokens" || path[1] == "cache_read_input_tokens" || path[1] == "cache_creation_input_tokens" || path[1] == "reasoning_tokens")) ||
 			(path[0] == jsonResultKey && (path[1] == "conversation_id" || path[1] == jsonStatusKey || path[1] == jsonResponseKey || path[1] == jsonErrorKey)) ||
 			(path[0] == jsonEventKey && path[1] == jsonTypeKey) ||
@@ -588,7 +591,8 @@ func retainedStructuredPath(path []string) bool {
 	if len(path) == 3 && path[0] == jsonContentKey && path[1] == jsonContentKey && path[2] == jsonTextKey {
 		return true
 	}
-	return (len(path) == 3 && path[0] == jsonEventKey && path[1] == "delta" && (path[2] == jsonTypeKey || path[2] == jsonTextKey)) ||
+	return (len(path) == 3 && path[0] == "payload" && path[1] == "run_stream" && (path[2] == jsonKindKey || path[2] == "id")) ||
+		(len(path) == 3 && path[0] == jsonEventKey && path[1] == "delta" && (path[2] == jsonTypeKey || path[2] == jsonTextKey)) ||
 		(len(path) == 3 && path[0] == jsonResultKey && path[1] == grokUsageEventType &&
 			(path[2] == "input_tokens" || path[2] == "output_tokens" || path[2] == "thinking_tokens" || path[2] == "cache_read_tokens" || path[2] == "total_tokens"))
 }

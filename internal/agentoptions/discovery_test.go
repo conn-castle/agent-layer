@@ -45,6 +45,10 @@ func runModelHarness(mode string) {
 		fmt.Println("Default model: future-model\n\nAvailable models:\n  * future-model (default)\n  - another-model")
 		return
 	}
+	if mode == "unauthenticated-empty" {
+		fmt.Println("You are not authenticated.")
+		return
+	}
 	if mode == "unauthenticated" {
 		fmt.Println("You are not authenticated.\nAvailable models:\n  * fallback")
 		return
@@ -94,10 +98,28 @@ func runModelHarness(mode string) {
 		}
 		switch msg["method"] {
 		case "initialize":
+			if mode == "muse-noisy" {
+				_ = encoder.Encode(map[string]any{"jsonrpc": copilotJSONRPCVersion, "method": "noise", "params": map[string]any{}})
+			}
 			_ = encoder.Encode(map[string]any{"id": msg["id"], "result": map[string]string{"userAgent": "fixture"}})
 		case "initialized":
 		case "model/list":
 			params := msg["params"].(map[string]any)
+			if mode == "muse" || mode == "muse-noisy" || mode == "muse-empty" || mode == "muse-missing-models" {
+				if mode == "muse-missing-models" {
+					_ = encoder.Encode(map[string]any{"jsonrpc": copilotJSONRPCVersion, "id": msg["id"], "result": map[string]any{"catalog": []any{}}})
+					continue
+				}
+				models := []map[string]string{}
+				if mode == "muse-noisy" {
+					_ = encoder.Encode(map[string]any{"jsonrpc": copilotJSONRPCVersion, "method": "noise", "params": map[string]any{}})
+				}
+				if mode == "muse" || mode == "muse-noisy" {
+					models = append(models, map[string]string{"modelId": "future-muse"}, map[string]string{"modelId": "another-muse"})
+				}
+				_ = encoder.Encode(map[string]any{"jsonrpc": copilotJSONRPCVersion, "id": msg["id"], "result": map[string]any{"models": models}})
+				continue
+			}
 			if mode == "codex-error" {
 				_ = encoder.Encode(map[string]any{"id": msg["id"], "error": map[string]any{"code": -32000}})
 				continue
@@ -133,7 +155,9 @@ func TestDiscoverModelsThroughHarnessProtocols(t *testing.T) {
 		{"claude", "claude", []string{"future-claude"}},
 		{"codex", "codex", []string{"future-codex", "another-codex"}},
 		{"grok", "grok", []string{"future-model", "another-model"}},
+		{"grok", "unauthenticated", []string{"fallback"}},
 		{"copilot_cli", "copilot", []string{"future-copilot", "another-copilot"}},
+		{"muse", "muse", []string{"future-muse", "another-muse"}},
 	} {
 		t.Run(tc.agent, func(t *testing.T) {
 			got, err := DiscoverModels(tc.agent, harnessRequest(t, tc.mode))
@@ -144,6 +168,30 @@ func TestDiscoverModelsThroughHarnessProtocols(t *testing.T) {
 				t.Fatalf("models=%v want=%v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestMuseDiscoveryExplainsEmptyNativeCatalog(t *testing.T) {
+	_, err := DiscoverModels(agentMuse, harnessRequest(t, "muse-empty"))
+	if err == nil || !strings.Contains(err.Error(), "empty catalog") {
+		t.Fatalf("error = %v, want empty catalog explanation", err)
+	}
+}
+
+func TestMuseDiscoveryRejectsMissingModelsMember(t *testing.T) {
+	_, err := DiscoverModels(agentMuse, harnessRequest(t, "muse-missing-models"))
+	if err == nil || !strings.Contains(err.Error(), "omitted result.models") {
+		t.Fatalf("error = %v, want malformed response failure", err)
+	}
+}
+
+func TestMuseDiscoverySkipsUnrelatedMessages(t *testing.T) {
+	got, err := DiscoverModels(agentMuse, harnessRequest(t, "muse-noisy"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"future-muse", "another-muse"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("models=%v want=%v", got, want)
 	}
 }
 
@@ -180,7 +228,7 @@ func TestDiscoveryFailuresRemainExplicit(t *testing.T) {
 		{"copilot_cli", "copilot-error", "-32603: Failed to list models"},
 		{"copilot_cli", "copilot-empty", ""}, {"copilot_cli", "copilot-malformed", ""}, {"copilot_cli", "copilot-oversized", ""},
 		{"claude", "claude-error", ""}, {"codex", "codex-error", ""}, {"codex", "codex-loop", ""},
-		{"grok", "unauthenticated", ""}, {"grok", "bad-output", ""}, {"grok", "exit-error", ""},
+		{"grok", "unauthenticated-empty", "not authenticated"}, {"grok", "bad-output", ""}, {"grok", "exit-error", ""},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			req := harnessRequest(t, tc.mode)

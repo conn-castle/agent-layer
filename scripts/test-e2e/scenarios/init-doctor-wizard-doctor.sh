@@ -89,7 +89,7 @@ _init_doctor_wizard_assert_expected_doctor_output() {
   assert_output_contains "$output" "Update check skipped because AL_NO_NETWORK is set" \
     "$phase doctor reports expected offline update warning"
   local provider
-  for provider in claude codex grok antigravity; do
+  for provider in claude codex grok antigravity muse; do
     assert_output_not_contains "$output" "$provider models" \
       "$phase doctor does not query $provider models when clients use their defaults"
   done
@@ -192,7 +192,7 @@ _init_doctor_wizard_assert_bare_init_files() {
   for rel_path in \
     "AGENTS.md" \
     "CLAUDE.md" \
-    ".claude/CLAUDE.md" \
+    ".claude/rules/agent-layer.md" \
     ".github/copilot-instructions.md" \
     ".codex/AGENTS.md" \
     ".claude/settings.json" \

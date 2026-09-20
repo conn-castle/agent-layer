@@ -51,7 +51,7 @@ PREEXISTING_UNTRACKED = "/tmp/agent-layer-preexisting-untracked"
 PROJECTED_PATHS = (
     ".gitignore AGENTS.md CLAUDE.md .github/copilot-instructions.md "
     ".agent .agents .agent-layer .codex .copilot .gemini .mcp.json "
-    ".agy .claude .claude-config .grok .grok-config .vscode/mcp.json .vscode/settings.json "
+    ".agy .claude .claude-config .grok .grok-config .muse-config .muse-data .vscode/mcp.json .vscode/settings.json "
     "docs/agent-layer"
 )
 

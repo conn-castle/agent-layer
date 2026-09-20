@@ -219,6 +219,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 		{id: AgentVSCode, enabled: cfg.Config.Agents.VSCode.Enabled},
 		{id: AgentCopilotCLI, enabled: cfg.Config.Agents.CopilotCLI.Enabled},
 		{id: AgentGrok, enabled: cfg.Config.Agents.Grok.Enabled},
+		{id: AgentMuse, enabled: cfg.Config.Agents.Muse.Enabled},
 	}
 	setEnabledAgentsFromConfig(choices.EnabledAgents, agentConfigs)
 
@@ -261,6 +262,8 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	choices.CopilotCLIModel = agentoptions.ConfiguredValue(cfg.Config, AgentCopilotCLI, agentoptions.KindModel)
 	choices.GrokModel = agentoptions.ConfiguredValue(cfg.Config, AgentGrok, agentoptions.KindModel)
 	choices.GrokReasoning = agentoptions.ConfiguredValue(cfg.Config, AgentGrok, agentoptions.KindReasoningEffort)
+	choices.MuseModel = agentoptions.ConfiguredValue(cfg.Config, AgentMuse, agentoptions.KindModel)
+	choices.MuseReasoning = agentoptions.ConfiguredValue(cfg.Config, AgentMuse, agentoptions.KindReasoningEffort)
 	if cfg.Config.Agents.Grok.DisableMemory != nil {
 		choices.GrokDisableMemory = *cfg.Config.Agents.Grok.DisableMemory
 	}
@@ -810,6 +813,16 @@ func promptModels(ui UI, choices *Choices, optionCache *wizardOptionDiscoveryCac
 		}); err != nil {
 			return err
 		}
+	}
+	if choices.EnabledAgents[AgentMuse] {
+		if err := optionCache.selectModel(ui, AgentMuse, "Muse Model", &choices.MuseModel); err != nil {
+			return err
+		}
+		choices.MuseModelTouched = true
+		if err := selectOptionalValue(ui, "Muse Reasoning Effort", reasoningEffortOptions(AgentMuse), &choices.MuseReasoning); err != nil {
+			return err
+		}
+		choices.MuseReasoningTouched = true
 	}
 
 	return nil

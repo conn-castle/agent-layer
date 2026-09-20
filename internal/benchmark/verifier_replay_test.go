@@ -310,3 +310,47 @@ func TestVerifierReplayProvenanceIsRecordedOnCanonicalReceipt(t *testing.T) {
 		t.Fatalf("verifier replay provenance omitted: %#v", receipt)
 	}
 }
+
+func TestSanitizationRedactsMuseCredentialsFromOtherProviderArtifacts(t *testing.T) {
+	repo := t.TempDir()
+	stage := t.TempDir()
+	auth := filepath.Join(repo, ".muse-config", "muse", "auth.json")
+	if err := os.MkdirAll(filepath.Dir(auth), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const token = "fixture-muse-secret-not-for-publication" // #nosec G101 -- intentionally fake credential for redaction regression.
+	if err := os.WriteFile(auth, []byte(`{"providers":{"meta":{"access_token":"`+token+`"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	artifact := filepath.Join(stage, "provider.log")
+	if err := os.WriteFile(artifact, []byte("provider output includes "+token), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := sanitizePierArtifacts(ExecutionRequest{RepoRoot: repo}, stage); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(artifact) // #nosec G304 -- artifact is beneath the test-owned temporary directory.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(data, []byte(token)) {
+		t.Fatal("Muse credential leaked into retained benchmark evidence")
+	}
+	if !bytes.Contains(data, []byte("provider output includes")) {
+		t.Fatal("unrelated evidence was lost")
+	}
+}
+
+func TestSanitizationFailsOnUnreadableCredentialFile(t *testing.T) {
+	repo := t.TempDir()
+	stage := t.TempDir()
+	// A directory at a credential path makes os.ReadFile fail with a
+	// non-NotExist error. Sanitization must fail loud rather than continue
+	// without those secrets and retain unredacted credentials in artifacts.
+	if err := os.MkdirAll(filepath.Join(repo, ".codex", "auth.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := sanitizePierArtifacts(ExecutionRequest{RepoRoot: repo}, stage); err == nil || !strings.Contains(err.Error(), "read credential file for artifact sanitization") {
+		t.Fatalf("sanitization error = %v, want credential read failure", err)
+	}
+}

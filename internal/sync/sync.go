@@ -162,6 +162,13 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 		)
 	}
 
+	// Muse suppresses the final shared project MCP entries in its own scope.
+	if config.IsAgentEnabled(agents.Muse.Enabled) {
+		steps = append(steps, func() error { return writeMuseSettings(sys, root, project) })
+	} else {
+		steps = append(steps, func() error { return cleanMuseSettings(sys, root) })
+	}
+
 	codexEnabled := config.IsAgentEnabled(agents.Codex.Enabled)
 	if codexEnabled || vscodeEnabled {
 		steps = append(steps,

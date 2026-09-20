@@ -49,9 +49,10 @@ Agent Layer keeps `.agent-layer/config.toml` free of secret values and uses plac
 Treat generated client outputs as build artifacts and keep them gitignored.
 
 - `.codex/config.toml` may contain resolved MCP server URLs, commands, or environment variables. When `[agents.codex] local_config_dir = true`, `.codex/` is also used as `CODEX_HOME` and may contain Codex auth, sessions, logs, and other runtime state.
+- `.muse-config/muse/settings.json` may contain resolved MCP URLs, headers, and environment values; the surrounding `.muse-config/` root may also contain Muse authentication state. `.muse-data/` contains repo-local Muse sessions and runtime data. Both roots are gitignored and owner-only by default.
 - When `[agents.claude] local_config_dir = true`, `.claude-config/` is used as `CLAUDE_CONFIG_DIR` and may contain user-level settings and caches.
 
-Treat `.codex/` and `.claude-config/` as sensitive local state and keep them out of Git. The default template ignores both directories; preserve those rules if you customize the managed gitignore block.
+Treat `.codex/`, `.claude-config/`, `.muse-config/`, and `.muse-data/` as sensitive local state and keep them out of Git. The default template ignores these directories; preserve those rules if you customize the managed gitignore block.
 
 Claude Code stores `/login` credentials in the encrypted macOS Keychain on macOS. On Linux and Windows, it stores them in `.credentials.json` under the default config directory, or under `CLAUDE_CONFIG_DIR` when that variable is set. Other authentication modes can use environment API keys or OAuth tokens, `apiKeyHelper`, or external credential sources for Bedrock, Vertex, and Foundry. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
 

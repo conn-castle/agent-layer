@@ -6,6 +6,7 @@ const (
 	antigravitySection   = "agents.antigravity"
 	claudeVSCodeSection  = "agents.claude_vscode"
 	codexSection         = "agents.codex"
+	museSection          = "agents.muse"
 	mcpSection           = "mcp"
 	warningsSection      = "warnings"
 	envKey               = "env"
@@ -13,4 +14,6 @@ const (
 	autoMemoryEnabledKey = "autoMemoryEnabled"
 	falseValue           = "false"
 	skipChoice           = "skip"
+	modelKey             = "model"
+	enabledKey           = "enabled"
 )

@@ -236,7 +236,14 @@ func executeProvider(
 	cmd.Stdout = stdoutWrite
 	cmd.Stderr = stderrWrite
 	prepareProviderProcessGroup(cmd)
+	approvalObserver, observerErr := startMuseApprovalObserver(command, root)
+	if observerErr != nil {
+		return executionResult{}, wrapExitError(ExitTargetFailure, "start Muse approval observer", observerErr)
+	}
 	if err := startFencedProvider(root, run, cmd, command.Provider); err != nil {
+		if stopErr := approvalObserver.stop(); stopErr != nil {
+			return executionResult{}, errors.Join(err, stopErr)
+		}
 		return executionResult{}, err
 	}
 	_ = stdoutWrite.Close()
@@ -246,6 +253,7 @@ func executeProvider(
 	leaderStart := run.Record.ProcessStartIdentity
 	termination, err := newStartedProviderTermination(cmd, run.Record, providerTerminationGrace)
 	if err != nil {
+		_ = approvalObserver.stop()
 		// The exec.Cmd is direct proof that this leader is ours, but without a
 		// durable start identity Agent Layer must not signal its process group.
 		// Kill only the directly owned leader. Launch intent plus any published
@@ -329,6 +337,13 @@ func executeProvider(
 		}
 		return nil
 	}
+	if approvalObserver != nil {
+		go func() {
+			if err := approvalObserver.wait(); err != nil {
+				setFailure(err)
+			}
+		}()
+	}
 
 	streamErr := make(chan error, 1)
 	stderrErr := make(chan error, 1)
@@ -378,6 +393,9 @@ func executeProvider(
 		cmd, termination, leaderPID, leaderGroupID, leaderStart,
 		stdoutPipe, stderrPipe, streamErr, stderrErr, terminal, setFailure,
 	)
+	if err := approvalObserver.stop(); err != nil {
+		setFailure(err)
+	}
 	signal := caughtSignal()
 	resultMu.Lock()
 	currentSemanticErr := semanticErr

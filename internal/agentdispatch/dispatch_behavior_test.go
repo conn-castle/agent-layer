@@ -181,6 +181,7 @@ func TestNewerProviderVersionDispatchWarnsOnStderrOnly(t *testing.T) {
 func TestBuildOptionsResolvesEachProviderBinaryOnce(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	replaceDispatchConfigText(t, root, "[agents.grok]\nenabled = false", "[agents.grok]\nenabled = true")
+	replaceDispatchConfigText(t, root, "[agents.muse]\nenabled = false", "[agents.muse]\nenabled = true")
 	lookups := map[string]int{}
 	var mu sync.Mutex
 	_, err := BuildOptions(OptionsRequest{

@@ -47,6 +47,9 @@ enabled = true
 
 [agents.grok]
 enabled = true
+
+[agents.muse]
+enabled = true
 `
 	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)

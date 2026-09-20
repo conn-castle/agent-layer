@@ -6,6 +6,7 @@ const (
 	agentClaude          = "claude"
 	agentAntigravity     = "antigravity"
 	agentGrok            = "grok"
+	agentMuse            = "muse"
 	browserUseFeatureKey = "browser_use"
 	skillManifestName    = "SKILL.md"
 	skillsDirName        = "skills"

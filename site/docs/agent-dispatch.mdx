@@ -1,6 +1,6 @@
 ---
 title: Agent Dispatch
-description: Delegate coding tasks across Claude, Codex, Grok, and Antigravity with asynchronous multi-agent orchestration through MCP tools or the CLI.
+description: Delegate coding tasks across Claude, Codex, Grok, Muse, and Antigravity with asynchronous multi-agent orchestration through MCP tools or the CLI.
 keywords:
   - multi-agent orchestration
   - AI agent dispatch
@@ -11,7 +11,7 @@ keywords:
 sidebar_position: 4
 ---
 
-Agent Dispatch is Agent Layer's multi-agent orchestration interface. It lets an agent in a client with working MCP support delegate a bounded coding task to a headless Claude, Codex, Grok, or Antigravity conversation—without blocking the calling agent while that work runs. People and scripts can target the same providers through the CLI.
+Agent Dispatch is Agent Layer's multi-agent orchestration interface. It lets an agent in a client with working MCP support delegate a bounded coding task to a headless Claude, Codex, Grok, Muse, or Antigravity conversation—without blocking the calling agent while that work runs. People and scripts can target the same providers through the CLI.
 
 Agent Layer writes the built-in MCP server into Antigravity's generated configuration, but the current `agy` probe baseline does not expose MCP tools at runtime. Antigravity is therefore available as a dispatch target, while using it as the calling client depends on the installed `agy` version. Run `al probe agy` to check that capability.
 
@@ -28,7 +28,7 @@ Both use the same conversation handles, states, result files, continuation behav
 
 Most coding-agent subagents are tied to one provider and one interactive session. Agent Dispatch adds a provider-neutral boundary around external agent conversations:
 
-- **Delegate across providers.** A Claude session can dispatch Codex, a Codex session can dispatch Claude, and any supported caller can choose Grok or Antigravity when those targets are enabled.
+- **Delegate across providers.** A Claude session can dispatch Codex, a Codex session can dispatch Claude, and any supported caller can choose Grok, Muse, or Antigravity when those targets are enabled.
 - **Keep the coordinator responsive.** Starting work returns a handle immediately. The caller can make progress elsewhere and wait only when it needs the result.
 - **Continue real conversations.** Follow-up prompts preserve the target provider, model, reasoning effort, and conversation context.
 - **Use the same contract everywhere.** Agents call seven MCP tools; people and CI call matching `al dispatch` commands over the same backend.
@@ -77,7 +77,7 @@ Starting a dispatch creates a conversation and its first invocation, then immedi
 
 Each conversation has at most one running invocation. Parallel work uses independent conversations and handles; there is no fanout operation.
 
-Dispatch distinguishes callers from targets. Any enabled client that exposes Agent Layer's generated MCP server can call the tools, but only `codex`, `claude`, `antigravity`, and `grok` are valid targets for `agent` or `--agent`. VS Code and Copilot CLI can call dispatch but cannot be dispatched to. A target must be enabled in `.agent-layer/config.toml`; use `dispatch_options` or `al dispatch options` to see what is currently available.
+Dispatch distinguishes callers from targets. Any enabled client that exposes Agent Layer's generated MCP server can call the tools, but only `codex`, `claude`, `antigravity`, `grok`, and `muse` are valid targets for `agent` or `--agent`. VS Code and Copilot CLI can call dispatch but cannot be dispatched to. A target must be enabled in `.agent-layer/config.toml`; use `dispatch_options` or `al dispatch options` to see what is currently available.
 
 The public lifecycle is intentionally small:
 
@@ -91,7 +91,7 @@ start -> wait -> completed | failed | cancelled
 
 ## MCP tools
 
-`al sync` projects a built-in MCP server named `agent-layer` into every enabled Codex, Claude, Antigravity, VS Code, Copilot CLI, and Grok client. The server is derived from Agent Layer configuration, not declared as a `[[mcp.servers]]` entry. Its ID is reserved and cannot be used by a custom server.
+`al sync` projects a built-in MCP server named `agent-layer` into every enabled Codex, Claude, Antigravity, VS Code, Copilot CLI, Grok, and Muse client. The server is derived from Agent Layer configuration, not declared as a `[[mcp.servers]]` entry. Its ID is reserved and cannot be used by a custom server. Muse uses a distinct native server name, normally `muse-agent-layer`, to coexist with Claude without changing client filters; see the [reference](./reference#agents).
 
 The server exposes seven Agent Dispatch tools:
 

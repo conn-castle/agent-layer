@@ -18,6 +18,7 @@ const (
 	AgentVSCode       = "vscode"
 	AgentCopilotCLI   = "copilot_cli"
 	AgentGrok         = "grok"
+	AgentMuse         = "muse"
 )
 
 // supportedAgentKeys returns the config field keys for agent enablement in UI order.
@@ -30,6 +31,7 @@ func supportedAgentKeys() []string {
 		"agents.vscode.enabled",
 		"agents.copilot_cli.enabled",
 		"agents.grok.enabled",
+		"agents.muse.enabled",
 	}
 }
 
@@ -136,7 +138,7 @@ func (c *wizardOptionDiscoveryCache) selectModel(ui UI, agent, title string, val
 		<-entry.done
 	}
 	if entry.option.DiscoveryError != "" {
-		if err := ui.Note(fmt.Sprintf("Cannot discover %s models", agent), fmt.Sprintf("%s; check harness installation, authentication, and connectivity. You can still use the client default or enter a custom model.", entry.option.DiscoveryError)); err != nil {
+		if err := ui.Note(fmt.Sprintf("Cannot discover %s models", agent), fmt.Sprintf("%s. You can still use the client default or enter a custom model.", entry.option.DiscoveryError)); err != nil {
 			return err
 		}
 		return selectOptionalValue(ui, title, nil, value)

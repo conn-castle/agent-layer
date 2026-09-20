@@ -64,8 +64,8 @@ After pushing the release commit to `main`, run `make release-catalog-certify` b
 
 For a release that changes Agent Dispatch, attach a short evidence record under
 `docs/release-evidence/` to the release pull request before tagging. Record the
-exact `claude --version`, `codex --version`, `agy --version`, and
-`grok --version` values, plus a fresh `start`/`wait` probe and a
+exact `claude --version`, `codex --version`, `agy --version`,
+`grok --version`, and `muse --version` values, plus a fresh `start`/`wait` probe and a
 `continue`/`wait` probe for every declared supported provider. A changed or
 missing Antigravity structured terminal result must fail without publishing
 plain provider output. The result must carry a conversation ID, final answer,

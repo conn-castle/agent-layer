@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,7 +35,7 @@ func TestWriteInstructionShims(t *testing.T) {
 
 	paths := []string{
 		filepath.Join(root, "AGENTS.md"),
-		filepath.Join(root, ".claude", "CLAUDE.md"),
+		filepath.Join(root, ".claude", "rules", "agent-layer.md"),
 		filepath.Join(root, ".github", "copilot-instructions.md"),
 	}
 	for _, path := range paths {
@@ -170,7 +171,7 @@ func TestWriteInstructionShimsErrorPaths(t *testing.T) {
 				if err := os.Mkdir(filepath.Join(root, ".claude"), 0o700); err != nil {
 					return err
 				}
-				return os.Mkdir(filepath.Join(root, ".claude", "CLAUDE.md"), 0o700)
+				return os.MkdirAll(filepath.Join(root, ".claude", "rules", "agent-layer.md"), 0o700)
 			},
 		},
 		{
@@ -201,5 +202,57 @@ func TestWriteInstructionShimsErrorPaths(t *testing.T) {
 				t.Fatalf("expected error")
 			}
 		})
+	}
+}
+
+func TestWriteInstructionShimsMigratesOnlyGeneratedClaudeFile(t *testing.T) {
+	for _, generated := range []bool{true, false} {
+		t.Run(fmt.Sprint(generated), func(t *testing.T) {
+			root := t.TempDir()
+			old := filepath.Join(root, ".claude", "CLAUDE.md")
+			if err := os.MkdirAll(filepath.Dir(old), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			content := "# Personal guidance\n"
+			instructions := []config.InstructionFile{{Name: "rules.md", Content: "shared rules"}}
+			if generated {
+				content = buildInstructionShim(instructions)
+			}
+			if err := os.WriteFile(old, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := writeInstructionShims(RealSystem{}, root, instructions); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(old) // #nosec G304 -- test-controlled fixture path.
+			if generated {
+				if !os.IsNotExist(err) {
+					t.Fatalf("generated legacy shim remains: %v", err)
+				}
+			} else if err != nil || string(data) != content {
+				t.Fatalf("personal guidance changed: %q, %v", data, err)
+			}
+			data, err = os.ReadFile(filepath.Join(root, ".claude", "rules", "agent-layer.md")) // #nosec G304 -- test-controlled fixture path.
+			if err != nil || !strings.Contains(string(data), "shared rules") {
+				t.Fatalf("Claude rules missing: %q, %v", data, err)
+			}
+		})
+	}
+}
+
+func TestWriteInstructionShimsRemovesEmptyLegacyClaudeFile(t *testing.T) {
+	root := t.TempDir()
+	old := filepath.Join(root, ".claude", "CLAUDE.md")
+	if err := os.MkdirAll(filepath.Dir(old), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(old, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeInstructionShims(RealSystem{}, root, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatalf("empty legacy shim remains: %v", err)
 	}
 }

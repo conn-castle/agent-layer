@@ -15,6 +15,8 @@ The intent is consistency without leakage: define headers once in `.agent-layer/
 | VS Code (Copilot Chat) | `.vscode/mcp.json` | user settings `mcp.json` | `headers` object (supports `${input:...}` indirection) |
 | Codex CLI (+ IDE extension) | `.codex/config.toml` (shared Codex state) | `~/.codex/config.toml` | `bearer_token_env_var`, `env_http_headers`, `http_headers` |
 | Copilot CLI | `.copilot/mcp-config.json` | `~/.copilot/mcp-config.json` | `headers` object on the server entry |
+| Grok | `.grok/config.toml` | `~/.grok/config.toml` | `headers` with `${VAR}` placeholders |
+| Muse | `.muse-config/muse/settings.json` | `~/.config/muse/settings.json` | Resolved `headers` in private `0600` settings; Streamable HTTP only |
 
 ## Client details
 
@@ -179,14 +181,14 @@ headers = { Authorization = "Bearer ${AL_MY_API_TOKEN}", "X-Api-Key" = "${AL_MY_
 
 ### 2) Normalize without leaking secrets
 
-Do **not** resolve `${VAR}` into concrete secret values when writing generated client configs.
+Preserve `${VAR}` placeholders where the client supports them. Muse requires resolved values: Agent Layer uses `FullValueResolver` for its URLs, headers, and environment values and writes them to private `0600` settings. Keep `.muse-config/` gitignored. Muse rejects SSE; select `http_transport = "streamable"` or exclude Muse from that server.
 
 The projection layer uses `ClientPlaceholderResolver` (`internal/projection/resolvers.go`) to preserve placeholders in each client’s native syntax. The resolver takes a format string (e.g., `${%s}` or `${env:%s}`) and returns a function that:
 
 * **Resolves built-in env vars** (like `AL_REPO_ROOT`) to their actual values.
 * **Preserves user env vars** as client-specific placeholders (e.g., `${MY_VAR}` for most clients, `${env:MY_VAR}` for VS Code).
 
-Codex is the exception: because Codex requires distinct config keys for different header types, `splitCodexHeaders()` (`internal/sync/codex.go`) classifies headers into a `codexHeaderSpec` struct with three categories: `BearerTokenEnvVar` (for `Authorization: Bearer ${VAR}`), `EnvHeaders` (full placeholder values), and `HTTPHeaders` (literal values).
+Codex uses a separate mapping: because Codex requires distinct config keys for different header types, `splitCodexHeaders()` (`internal/sync/codex.go`) classifies headers into a `codexHeaderSpec` struct with three categories: `BearerTokenEnvVar` (for `Authorization: Bearer ${VAR}`), `EnvHeaders` (full placeholder values), and `HTTPHeaders` (literal values).
 
 Env vars may still be resolved at runtime for:
 
@@ -202,11 +204,14 @@ Env vars may still be resolved at runtime for:
 
 * `internal/sync` (client writers):
 
-  * Each writer calls `ResolveMCPServers()` with its client syntax, then converts the result into the client’s config format.
+  * Writers obtain effective servers with the appropriate resolver, then convert them into the client’s config format. Muse uses `EffectiveMCPServers()` with `FullValueResolver()` to include the built-in dispatch server and resolve native values.
 
 ### 4) Client projection rules
 
-Each writer receives `ResolvedMCPServer` structs with placeholders already in the target syntax:
+Each writer receives `ResolvedMCPServer` structs with values resolved or placeholders in the target syntax:
+
+* **Muse**: resolve URLs, headers, and environment values into private `0600` settings; require Streamable HTTP.
+* **Grok**: emit `headers` with `${VAR}` placeholders.
 
 * **Antigravity**: emit `headers` map with the raw string (preserve `${VAR}`).
 * **Claude Code**: emit `headers` map with the raw string (preserve `${VAR}` / `${VAR:-default}`).

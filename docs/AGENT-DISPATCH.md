@@ -12,13 +12,17 @@ handles, states, result files, and cancellation semantics.
 
 Agent Layer projects a built-in MCP server, `agent-layer`, into the generated
 configuration of every enabled Codex, Claude, Antigravity, VS Code, Copilot
-CLI, and Grok caller. It is derived state, not a `[[mcp.servers]]` entry, and its
+CLI, Grok, and Muse caller. It is derived state, not a `[[mcp.servers]]` entry, and its
 reserved ID cannot be taken by a user-defined server. It exposes seven tools:
 
 Projection does not prove that a client exposes MCP tools at runtime. In
 particular, the current Antigravity probe baseline accepts the generated config
 but does not register its servers; use `al probe agy` before treating
 Antigravity as a caller. Antigravity remains available as a dispatch target.
+
+Muse suppresses inherited project MCP entries with disabled settings entries and
+projects its selected servers under distinct `muse-` names. Its built-in server
+is required: failure to start it prevents the Muse run from proceeding.
 
 Agent-facing tool and parameter descriptions are maintained in
 `internal/agentdispatch/mcp_tool_descriptions.toml` and embedded at build time.
@@ -72,7 +76,7 @@ terminal evidence (default 30). Unconfirmed execution evidence is never expired.
 Older binaries that strictly
 decode run records will fail to read records written by this version.
 
-Codex and Grok also receive the hard bound natively as `tool_timeout_sec`.
+Codex, Grok, and Muse also receive the hard bound natively as `tool_timeout_sec`.
 Claude Code documents only a client-wide `MCP_TOOL_TIMEOUT`, which Agent Layer
 does not change because that would affect every unrelated MCP server;
 Antigravity documents no per-server timeout key. For those clients the
@@ -123,7 +127,7 @@ al dispatch cancel <handle-or-invocation-id>
 defaults, and supported model and reasoning-effort overrides.
 
 Model suggestions are discovered from the installed Claude, Codex, Grok,
-Antigravity, and Copilot CLI harnesses, concurrently and without sync or an
+Antigravity, Muse, and Copilot CLI harnesses, concurrently and without sync or an
 inference prompt.
 Discovery uses the same project environment and provider configuration helpers
 as launching an agent. Each lookup has a ten-second timeout. Model fields report
@@ -146,7 +150,8 @@ Doctor checks only enabled
 harnesses with configured model overrides and reports discovery
 failures or configured models absent from their lists as warnings. Neither
 operation syncs as part of model discovery. Discovery may create the normal
-repo-local `.agy` and `.grok-config` directories when absent; it does not sync
+repo-local `.agy`, `.grok-config`, `.muse-config`, and `.muse-data`
+directories when absent; it does not sync
 configuration or create dispatch runs.
 
 Each explicit dispatch-options request obtains fresh results; no persistent
@@ -192,6 +197,13 @@ provider, authentication, network, process, or response error. `cancelled`
 means a caller requested cancellation. Neither state proves execution has
 stopped. Continuation requires termination confirmation and sufficient provider
 conversation or pre-start recovery evidence.
+
+Muse dispatch remains available in every approvals mode. Outside `yolo`, it
+retains native approvals and disables the approval judge. A read-only
+`muse serve` observer checks `approval/listPending`; pending approval or user
+input fails the invocation and triggers provider termination. Ordinary tool
+progress does not imply a blocked run. Muse also receives
+`--user-input-auto-resolve` for native user-input requests.
 
 Only one invocation may run for a conversation at a time. Concurrent
 `continue` calls cannot start duplicate work: one may succeed and the others

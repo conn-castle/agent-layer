@@ -696,6 +696,9 @@ enabled = false
 [agents.grok]
 enabled = false
 
+[agents.muse]
+enabled = false
+
 [warnings]
 instruction_token_threshold = 50000
 mcp_server_threshold = 50

@@ -366,9 +366,24 @@ func agentModelSummary(agent string, c *Choices) string {
 		return c.CopilotCLIModel
 	case AgentGrok:
 		return grokModelSummary(c)
+	case AgentMuse:
+		return museModelSummary(c)
 	default:
 		return ""
 	}
+}
+
+func museModelSummary(c *Choices) string {
+	if c.MuseModel != "" && c.MuseReasoning != "" {
+		return fmt.Sprintf(messages.WizardSummaryModelReasoningFmt, c.MuseModel, c.MuseReasoning)
+	}
+	if c.MuseModel != "" {
+		return c.MuseModel
+	}
+	if c.MuseReasoning != "" {
+		return fmt.Sprintf(messages.WizardSummaryReasoningFmt, c.MuseReasoning)
+	}
+	return ""
 }
 
 func grokModelSummary(c *Choices) string {
