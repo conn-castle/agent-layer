@@ -98,17 +98,23 @@ func runModelHarness(mode string) {
 		}
 		switch msg["method"] {
 		case "initialize":
+			if mode == "muse-noisy" {
+				_ = encoder.Encode(map[string]any{"jsonrpc": copilotJSONRPCVersion, "method": "noise", "params": map[string]any{}})
+			}
 			_ = encoder.Encode(map[string]any{"id": msg["id"], "result": map[string]string{"userAgent": "fixture"}})
 		case "initialized":
 		case "model/list":
 			params := msg["params"].(map[string]any)
-			if mode == "muse" || mode == "muse-empty" || mode == "muse-missing-models" {
+			if mode == "muse" || mode == "muse-noisy" || mode == "muse-empty" || mode == "muse-missing-models" {
 				if mode == "muse-missing-models" {
 					_ = encoder.Encode(map[string]any{"jsonrpc": copilotJSONRPCVersion, "id": msg["id"], "result": map[string]any{"catalog": []any{}}})
 					continue
 				}
 				models := []map[string]string{}
-				if mode == "muse" {
+				if mode == "muse-noisy" {
+					_ = encoder.Encode(map[string]any{"jsonrpc": copilotJSONRPCVersion, "method": "noise", "params": map[string]any{}})
+				}
+				if mode == "muse" || mode == "muse-noisy" {
 					models = append(models, map[string]string{"modelId": "future-muse"}, map[string]string{"modelId": "another-muse"})
 				}
 				_ = encoder.Encode(map[string]any{"jsonrpc": copilotJSONRPCVersion, "id": msg["id"], "result": map[string]any{"models": models}})
@@ -176,6 +182,16 @@ func TestMuseDiscoveryRejectsMissingModelsMember(t *testing.T) {
 	_, err := DiscoverModels(agentMuse, harnessRequest(t, "muse-missing-models"))
 	if err == nil || !strings.Contains(err.Error(), "omitted result.models") {
 		t.Fatalf("error = %v, want malformed response failure", err)
+	}
+}
+
+func TestMuseDiscoverySkipsUnrelatedMessages(t *testing.T) {
+	got, err := DiscoverModels(agentMuse, harnessRequest(t, "muse-noisy"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"future-muse", "another-muse"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("models=%v want=%v", got, want)
 	}
 }
 

@@ -75,6 +75,11 @@ func startMuseApprovalObserver(command providerCommand, root string) (*museAppro
 	ctx, cancel := context.WithCancel(context.Background())
 	// #nosec G204 -- command.Path is the already version-checked Muse target binary.
 	cmd := exec.CommandContext(ctx, command.Path, "serve")
+	// Bound Wait after the host exits or is killed: orphaned host children can
+	// keep the observer pipes open, and without this the error-path wait below
+	// hangs the same way the handshake once did. This complements the explicit
+	// pipe closes on the readiness-timeout path.
+	cmd.WaitDelay = providerShutdownGrace
 	cmd.Dir = command.WorkDir
 	if cmd.Dir == "" {
 		cmd.Dir = root

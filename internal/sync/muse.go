@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
@@ -16,6 +17,12 @@ import (
 const (
 	museEnabledKey   = "enabled"
 	museRequiredMode = "required"
+	// agentLayerManagedMcpKey records the exact mcpServers names Agent Layer
+	// wrote during the previous sync, including collision-adjusted names, so
+	// later syncs refresh only those entries and cleanup removes only those
+	// entries. The key name is reserved: a user-owned entry under this name
+	// would be overwritten on sync and removed on cleanup.
+	agentLayerManagedMcpKey = "agentLayerManagedMcpServers"
 )
 
 func writeMuseSettings(sys System, root string, project *config.ProjectConfig) error {
@@ -35,11 +42,12 @@ func writeMuseSettings(sys System, root string, project *config.ProjectConfig) e
 	if err != nil {
 		return err
 	}
-	// Disable the shared project scope in Muse only. Its definitions otherwise
-	// override user settings, even for servers excluded by the Muse client filter.
-	mcpServers := make(map[string]any, len(servers)+len(projectIDs))
+	// owned collects every mcpServers name this sync writes, including
+	// collision-adjusted names, so the run refreshes exactly those entries
+	// and records them for later cleanup.
+	owned := make(map[string]bool, len(servers)+len(projectIDs))
 	for id := range projectIDs {
-		mcpServers[id] = map[string]any{museEnabledKey: false}
+		owned[id] = true
 	}
 	// Keep native names separate from project entries, including user-owned ones.
 	prefix := "muse-"
@@ -55,6 +63,30 @@ func writeMuseSettings(sys System, root string, project *config.ProjectConfig) e
 			break
 		}
 		prefix += "muse-"
+	}
+	for _, server := range servers {
+		owned[prefix+server.ID] = true
+	}
+	// Start from the user's existing entries: settings.json is shared state
+	// patched in place, so user-owned servers must survive the sync. Drop
+	// names Agent Layer tracked previously but no longer owns so removed
+	// servers and resolved collisions do not linger as stale entries. A
+	// present but non-object mcpServers cannot be merged, so replace it.
+	mcpServers := make(map[string]any)
+	if existing, ok := settings["mcpServers"].(map[string]any); ok {
+		for name, value := range existing {
+			mcpServers[name] = value
+		}
+	}
+	for name := range trackedMuseMCPNames(settings) {
+		if !owned[name] {
+			delete(mcpServers, name)
+		}
+	}
+	// Disable the shared project scope in Muse only. Its definitions otherwise
+	// override user settings, even for servers excluded by the Muse client filter.
+	for id := range projectIDs {
+		mcpServers[id] = map[string]any{museEnabledKey: false}
 	}
 	for _, server := range servers {
 		entry := map[string]any{}
@@ -92,6 +124,7 @@ func writeMuseSettings(sys System, root string, project *config.ProjectConfig) e
 	}
 	settings["schema_version"] = 1
 	settings["mcpServers"] = mcpServers
+	settings[agentLayerManagedMcpKey] = ownedMuseMCPNameList(owned)
 	delete(settings, "mcp_servers")
 	data, err := sys.MarshalIndent(settings, "", "  ")
 	if err != nil {
@@ -102,6 +135,35 @@ func writeMuseSettings(sys System, root string, project *config.ProjectConfig) e
 		return fmt.Errorf("write Muse settings %s: %w", path, err)
 	}
 	return nil
+}
+
+// trackedMuseMCPNames returns the mcpServers names a previous sync recorded
+// as Agent Layer-owned. A missing or malformed record means no names are
+// known-owned, in which case callers preserve rather than delete: an absent
+// record is not proof that an entry is unmanaged.
+func trackedMuseMCPNames(settings map[string]any) map[string]bool {
+	tracked := make(map[string]bool)
+	raw, ok := settings[agentLayerManagedMcpKey].([]any)
+	if !ok {
+		return tracked
+	}
+	for _, name := range raw {
+		if id, ok := name.(string); ok && id != "" {
+			tracked[id] = true
+		}
+	}
+	return tracked
+}
+
+// ownedMuseMCPNameList renders the owned-name set as a sorted list so the
+// recorded tracking entry is deterministic across syncs.
+func ownedMuseMCPNameList(owned map[string]bool) []string {
+	names := make([]string, 0, len(owned))
+	for name := range owned {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // museProjectMCPIDs reads names only; Claude's values and secret placeholders
@@ -195,11 +257,42 @@ func cleanMuseSettings(sys System, root string) error {
 	}
 	_, canonical := settings["mcpServers"]
 	_, legacy := settings["mcp_servers"]
-	if !canonical && !legacy {
+	_, tracked := settings[agentLayerManagedMcpKey]
+	if !canonical && !legacy && !tracked {
 		return nil
 	}
-	delete(settings, "mcpServers")
-	delete(settings, "mcp_servers")
+	// Remove only the entries the previous sync recorded as Agent Layer-owned.
+	// Anything else under mcpServers is user-owned native state that must
+	// survive cleanup. A present but non-object mcpServers cannot be merged,
+	// so drop it as before. Skip the write when nothing changed so untouched
+	// native files keep their exact bytes.
+	changed := false
+	if servers, ok := settings["mcpServers"].(map[string]any); ok {
+		for name := range trackedMuseMCPNames(settings) {
+			if _, exists := servers[name]; exists {
+				delete(servers, name)
+				changed = true
+			}
+		}
+		if len(servers) == 0 {
+			delete(settings, "mcpServers")
+			changed = true
+		}
+	} else if canonical {
+		delete(settings, "mcpServers")
+		changed = true
+	}
+	if _, ok := settings["mcp_servers"]; ok {
+		delete(settings, "mcp_servers")
+		changed = true
+	}
+	if _, ok := settings[agentLayerManagedMcpKey]; ok {
+		delete(settings, agentLayerManagedMcpKey)
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
 	if len(settings) == 0 || (len(settings) == 1 && settings["schema_version"] != nil) {
 		if err := sys.Remove(path); err != nil && !os.IsNotExist(err) {
 			return err

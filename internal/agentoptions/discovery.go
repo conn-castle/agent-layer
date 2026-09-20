@@ -248,11 +248,21 @@ func readMuseModels(decoder *json.Decoder, encoder *json.Encoder) ([]string, err
 	if err := encoder.Encode(map[string]any{jsonRPCKey: copilotJSONRPCVersion, "id": 1, methodKey: initializeMethod, paramsKey: map[string]any{"clientInfo": map[string]string{clientNameKey: "agent_layer", "version": "0.0.0"}}}); err != nil {
 		return nil, err
 	}
+	// JSON-RPC permits notifications and unrelated messages before the
+	// matching response, so read until the expected id arrives instead of
+	// assuming the next message answers this request.
 	var init map[string]any
-	if err := decoder.Decode(&init); err != nil {
-		return nil, err
+	for {
+		init = nil
+		if err := decoder.Decode(&init); err != nil {
+			return nil, err
+		}
+		if id, ok := init["id"]; !ok || id == nil || fmt.Sprint(id) != "1" {
+			continue
+		}
+		break
 	}
-	if init["error"] != nil || fmt.Sprint(init["id"]) != "1" {
+	if init["error"] != nil {
 		return nil, fmt.Errorf("muse initialize failed: %v", init["error"])
 	}
 	if err := encoder.Encode(map[string]any{jsonRPCKey: copilotJSONRPCVersion, methodKey: initializedMethod}); err != nil {
@@ -270,10 +280,25 @@ func readMuseModels(decoder *json.Decoder, encoder *json.Encoder) ([]string, err
 		} `json:"result"`
 		Error any `json:"error"`
 	}
-	if err := decoder.Decode(&reply); err != nil {
-		return nil, err
+	for {
+		reply = struct {
+			ID     any `json:"id"`
+			Result struct {
+				Models *[]struct {
+					ModelID string `json:"modelId"`
+				} `json:"models"`
+			} `json:"result"`
+			Error any `json:"error"`
+		}{}
+		if err := decoder.Decode(&reply); err != nil {
+			return nil, err
+		}
+		if reply.ID == nil || fmt.Sprint(reply.ID) != "2" {
+			continue
+		}
+		break
 	}
-	if reply.Error != nil || fmt.Sprint(reply.ID) != "2" {
+	if reply.Error != nil {
 		return nil, fmt.Errorf("muse model/list failed: %v", reply.Error)
 	}
 	if reply.Result.Models == nil {

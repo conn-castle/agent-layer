@@ -152,7 +152,16 @@ func sanitizePierArtifacts(request ExecutionRequest, stage string) error {
 		filepath.Join(request.RepoRoot, ".grok-config", "auth.json"),
 		filepath.Join(request.RepoRoot, ".muse-config", "muse", "auth.json"),
 	} {
-		if data, err := os.ReadFile(path); err == nil && len(data) > 0 { // #nosec G304 -- fixed repo-local credential paths.
+		// Fail loud on unreadable credential files: silently skipping them
+		// would retain artifacts containing unredacted secrets.
+		data, err := os.ReadFile(path) // #nosec G304 -- fixed repo-local credential paths.
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return fmt.Errorf("read credential file for artifact sanitization: %w", err)
+		}
+		if len(data) > 0 {
 			secrets = append(secrets, credentialSecretValues(data)...)
 		}
 	}

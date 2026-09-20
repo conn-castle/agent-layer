@@ -19,7 +19,7 @@ func TestWriteMuseSettingsPreservesNativeKeysAndProjectsMCP(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(`{"schema_version":1,"theme":"native","mcp_servers":{"old":{}}}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"schema_version":1,"theme":"native","mcpServers":{"user-srv":{"type":"stdio","command":"user-tool"}},"mcp_servers":{"old":{}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	project := &config.ProjectConfig{
@@ -50,6 +50,10 @@ func TestWriteMuseSettingsPreservesNativeKeysAndProjectsMCP(t *testing.T) {
 	servers := got["mcpServers"].(map[string]any)
 	if servers["muse-agent-layer"] == nil || servers["muse-local"] == nil {
 		t.Fatalf("missing projected servers: %s", data)
+	}
+	user, ok := servers["user-srv"].(map[string]any)
+	if !ok || user["command"] != "user-tool" {
+		t.Fatalf("user-owned server lost or altered: %s", data)
 	}
 	local := servers["muse-local"].(map[string]any)
 	if local["type"] != "stdio" || local["mode"] != "optional" {
@@ -220,7 +224,8 @@ func TestDisabledMuseCleanupPreservesNativeSettings(t *testing.T) {
 		{"newer schema", `{"schema_version":2,"theme":"dark"}`, false},
 		{"unversioned", `{"theme":"dark"}`, false},
 		{"empty", ``, false},
-		{"managed MCP in newer schema", `{"schema_version":2,"theme":"dark","mcpServers":{"muse-agent-layer":{}}}`, true},
+		{"managed MCP in newer schema", `{"schema_version":2,"theme":"dark","mcpServers":{"muse-agent-layer":{}},"agentLayerManagedMcpServers":["muse-agent-layer"]}`, true},
+		{"untracked MCP preserved", `{"schema_version":2,"theme":"dark","mcpServers":{"muse-agent-layer":{}}}`, false},
 		{"legacy MCP", `{"schema_version":1,"theme":"dark","mcp_servers":{"old":{}}}`, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -260,6 +265,112 @@ func TestDisabledMuseCleanupPreservesNativeSettings(t *testing.T) {
 				t.Fatal("cleanup changed native schema")
 			}
 		})
+	}
+}
+
+func TestDisabledMuseCleanupRemovesOnlyTrackedEntries(t *testing.T) {
+	root := t.TempDir()
+	path := museSettingsPath(root)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	input := `{"schema_version":1,"theme":"dark","mcpServers":{"muse-local":{"type":"stdio","command":"tool"},"user-srv":{"type":"stdio","command":"user-tool"}},"agentLayerManagedMcpServers":["muse-local","muse-stale"]}`
+	if err := os.WriteFile(path, []byte(input), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cleanMuseSettings(RealSystem{}, root); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path) // #nosec G304 -- test-controlled temporary path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	servers, ok := got["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatalf("user-owned mcpServers lost: %s", data)
+	}
+	if len(servers) != 1 {
+		t.Fatalf("cleanup kept unexpected servers: %s", data)
+	}
+	user, ok := servers["user-srv"].(map[string]any)
+	if !ok || user["command"] != "user-tool" {
+		t.Fatalf("user-owned server lost or altered: %s", data)
+	}
+	if got["theme"] != "dark" {
+		t.Fatalf("native key lost: %s", data)
+	}
+	if _, exists := got[agentLayerManagedMcpKey]; exists {
+		t.Fatalf("tracking record retained: %s", data)
+	}
+}
+
+func TestWriteMuseSettingsDropsStaleTrackedEntries(t *testing.T) {
+	root := t.TempDir()
+	mcpServer := func(id string) config.MCPServer {
+		return config.MCPServer{ID: id, Enabled: museEnabled(true), Transport: config.TransportStdio, Command: "tool"}
+	}
+	project := &config.ProjectConfig{
+		Root: root,
+		Env:  map[string]string{config.BuiltinRepoRootEnvVar: root},
+		Config: config.Config{
+			Agents: config.AgentsConfig{Muse: config.AgentConfig{Enabled: museEnabled(true)}},
+			MCP:    config.MCPConfig{Servers: []config.MCPServer{mcpServer("temp")}},
+		},
+	}
+	if err := writeMuseSettings(RealSystem{}, root, project); err != nil {
+		t.Fatal(err)
+	}
+	path := museSettingsPath(root)
+	data, err := os.ReadFile(path) // #nosec G304 -- test-controlled temporary path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A user-owned entry added between syncs must survive the next sync,
+	// while a removed server's tracked entry must not linger.
+	var document map[string]any
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	document["mcpServers"].(map[string]any)["user-srv"] = map[string]any{"type": "stdio", "command": "user-tool"}
+	updated, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, updated, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	project.Config.MCP.Servers = nil
+	if err := writeMuseSettings(RealSystem{}, root, project); err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile(path) // #nosec G304 -- test-controlled temporary path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Servers map[string]map[string]any `json:"mcpServers"`
+		Tracked []string                  `json:"agentLayerManagedMcpServers"`
+	}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Servers["muse-temp"] != nil {
+		t.Fatalf("removed server lingered: %s", data)
+	}
+	if got.Servers["user-srv"] == nil {
+		t.Fatalf("user-owned server lost: %s", data)
+	}
+	if got.Servers["muse-agent-layer"] == nil {
+		t.Fatalf("builtin dispatch server missing: %s", data)
+	}
+	for _, name := range got.Tracked {
+		if name == "muse-temp" {
+			t.Fatalf("stale name still tracked: %s", data)
+		}
 	}
 }
 

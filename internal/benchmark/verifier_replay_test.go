@@ -340,3 +340,17 @@ func TestSanitizationRedactsMuseCredentialsFromOtherProviderArtifacts(t *testing
 		t.Fatal("unrelated evidence was lost")
 	}
 }
+
+func TestSanitizationFailsOnUnreadableCredentialFile(t *testing.T) {
+	repo := t.TempDir()
+	stage := t.TempDir()
+	// A directory at a credential path makes os.ReadFile fail with a
+	// non-NotExist error. Sanitization must fail loud rather than continue
+	// without those secrets and retain unredacted credentials in artifacts.
+	if err := os.MkdirAll(filepath.Join(repo, ".codex", "auth.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := sanitizePierArtifacts(ExecutionRequest{RepoRoot: repo}, stage); err == nil || !strings.Contains(err.Error(), "read credential file for artifact sanitization") {
+		t.Fatalf("sanitization error = %v, want credential read failure", err)
+	}
+}
