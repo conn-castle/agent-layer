@@ -3,6 +3,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.22.0 - 2026-09-21
+
 ### Added
 - Optional, default-disabled Muse Code integration: interactive launch, native model discovery, wizard and doctor support, and Agent Dispatch conversations with continuation and termination evidence.
 - Shared private Claude/Muse MCP output with native client filtering, workspace-scoped owned command policy, and live MCP permission checks that preserve explicit user denies.
