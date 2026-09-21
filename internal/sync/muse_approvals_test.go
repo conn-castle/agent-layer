@@ -121,6 +121,59 @@ func TestMuseApprovalHookRegistrationIsStableAcrossModeAndClientChanges(t *testi
 	}
 }
 
+func TestForgedMusePolicyReceiptDoesNotRetireAnotherWorkspace(t *testing.T) {
+	victimRoot := t.TempDir()
+	native := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", native)
+	enabled := true
+	victim := &config.ProjectConfig{Root: victimRoot, CommandsAllow: []string{"git status"}, Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands}, Agents: config.AgentsConfig{Muse: config.AgentConfig{Enabled: &enabled}}}}
+	require.NoError(t, writeMuseApprovals(RealSystem{}, victimRoot, victim))
+	policy := filepath.Join(native, "muse", "approval-policy.json")
+	require.Equal(t, [][]string{{"git", "status"}}, museOwnedCommandPrefixes(t, policy))
+
+	attackerRoot := t.TempDir()
+	victimCanonical, err := filepath.EvalSymlinks(victimRoot)
+	require.NoError(t, err)
+	victimCanonical, err = filepath.Abs(victimCanonical)
+	require.NoError(t, err)
+	receiptPath := filepath.Join(attackerRoot, ".muse", "agent-layer-policy.json")
+	require.NoError(t, writeMusePolicyReceipt(RealSystem{}, receiptPath, filepath.Join(native, "muse"), victimCanonical))
+	disabled := false
+	attacker := &config.ProjectConfig{Root: attackerRoot, Config: config.Config{Agents: config.AgentsConfig{Muse: config.AgentConfig{Enabled: &disabled}}}}
+	require.ErrorContains(t, writeMuseApprovals(RealSystem{}, attackerRoot, attacker), "workspace_root does not match the current workspace")
+	require.Equal(t, [][]string{{"git", "status"}}, museOwnedCommandPrefixes(t, policy))
+	require.FileExists(t, receiptPath)
+}
+
+func TestForgedMusePolicyReceiptDoesNotRetireAnotherWorkspaceOnEnable(t *testing.T) {
+	victimRoot := t.TempDir()
+	native := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", native)
+	enabled := true
+	victim := &config.ProjectConfig{Root: victimRoot, CommandsAllow: []string{"git status"}, Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands}, Agents: config.AgentsConfig{Muse: config.AgentConfig{Enabled: &enabled}}}}
+	require.NoError(t, writeMuseApprovals(RealSystem{}, victimRoot, victim))
+	policy := filepath.Join(native, "muse", "approval-policy.json")
+	require.Equal(t, [][]string{{"git", "status"}}, museOwnedCommandPrefixes(t, policy))
+
+	attackerRoot := t.TempDir()
+	victimCanonical, err := filepath.EvalSymlinks(victimRoot)
+	require.NoError(t, err)
+	victimCanonical, err = filepath.Abs(victimCanonical)
+	require.NoError(t, err)
+	require.NoError(t, writeMusePolicyReceipt(RealSystem{}, filepath.Join(attackerRoot, ".muse", "agent-layer-policy.json"), filepath.Join(native, "muse"), victimCanonical))
+	attacker := &config.ProjectConfig{Root: attackerRoot, CommandsAllow: []string{"git diff"}, Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands}, Agents: config.AgentsConfig{Muse: config.AgentConfig{Enabled: &enabled}}}}
+	require.NoError(t, writeMuseApprovals(RealSystem{}, attackerRoot, attacker))
+	require.ElementsMatch(t, [][]string{{"git", "status"}, {"git", "diff"}}, museOwnedCommandPrefixes(t, policy))
+	canonical, err := filepath.EvalSymlinks(attackerRoot)
+	require.NoError(t, err)
+	canonical, err = filepath.Abs(canonical)
+	require.NoError(t, err)
+	receipt, err := readMusePolicyReceipt(RealSystem{}, filepath.Join(attackerRoot, ".muse", "agent-layer-policy.json"))
+	require.NoError(t, err)
+	require.Equal(t, canonical, receipt.Root)
+	require.Equal(t, filepath.Join(native, "muse"), receipt.Directory)
+}
+
 func TestDisabledMuseWithoutNativeHomeNeedsNoPolicyStore(t *testing.T) {
 	t.Setenv("HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", "")

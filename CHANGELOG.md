@@ -20,6 +20,8 @@ All notable changes to this project will be documented in this file.
 - Grok dispatch removes staged prompts on success and failure, reports cleanup failures in terminal inspection, and retains completed answers if cleanup fails.
 - Benchmark artifact sanitization fails closed when required credential files cannot be read.
 - Restore Claude instructions at `.claude/CLAUDE.md` and remove only the generated obsolete rules copy, preserving handwritten files and symlinked rules directories.
+- Benchmark artifact sanitization still redacts credentials from historical `.muse-config/muse/auth.json`.
+- Muse command-policy retirement ignores a receipt that names another workspace, so a planted `.muse/agent-layer-policy.json` cannot delete that workspace's grants.
 
 ## v0.21.1 - 2026-09-18
 

@@ -40,6 +40,21 @@ func readMusePolicyReceipt(sys System, path string) (*musePolicyReceipt, error) 
 	return &receipt, nil
 }
 
+// musePolicyRetirementDirectory returns the native policy directory recorded
+// for this workspace. Directory and Root are forgeable local JSON; they are
+// never used as SyncCommands arguments unless Root matches the trusted current
+// workspace. A previous native directory for this same workspace may still be
+// retired after HOME/XDG changes.
+func musePolicyRetirementDirectory(receipt *musePolicyReceipt, root string) (string, error) {
+	if receipt == nil {
+		return "", nil
+	}
+	if filepath.Clean(receipt.Root) != filepath.Clean(root) {
+		return "", fmt.Errorf("workspace_root does not match the current workspace")
+	}
+	return receipt.Directory, nil
+}
+
 func writeMusePolicyReceipt(sys System, path, directory, root string) error {
 	data, err := sys.MarshalIndent(musePolicyReceipt{GeneratedBy: mcpGeneratedBy, Directory: directory, Root: root}, "", "  ")
 	if err != nil {

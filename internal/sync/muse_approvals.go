@@ -107,7 +107,7 @@ func writeMuseApprovals(sys System, root string, project *config.ProjectConfig) 
 		command += museApprovalHookMarker
 		entries = append(entries, map[string]any{matcherKey: "mcp__.*", hooksKey: []any{map[string]any{chimeHandlerTypeKey: chimeHandlerCommandType, chimeHandlerCommandKey: command}}})
 	}
-	// Retire the exact previous location if HOME/XDG or the workspace moved.
+	// Retire a previous native directory only for this trusted workspace root.
 	var nativeDir string
 	if enabled {
 		nativeDir, err = musepolicy.ConfigDir()
@@ -115,8 +115,14 @@ func writeMuseApprovals(sys System, root string, project *config.ProjectConfig) 
 			return fmt.Errorf("resolve Muse approval policy directory: %w", err)
 		}
 	}
-	if receipt != nil && (!enabled || receipt.Directory != nativeDir || receipt.Root != canonical) {
-		if err := musepolicy.SyncCommands(receipt.Directory, receipt.Root, nil); err != nil {
+	target, targetErr := musePolicyRetirementDirectory(receipt, canonical)
+	if targetErr != nil {
+		if !enabled {
+			return fmt.Errorf("invalid Agent Layer Muse policy ownership receipt: %w: %s", targetErr, receiptPath)
+		}
+		// Enabled sync rewrites current grants; do not retire another workspace.
+	} else if target != "" && (!enabled || target != nativeDir) {
+		if err := musepolicy.SyncCommands(target, canonical, nil); err != nil {
 			return fmt.Errorf("retire Muse command approvals: %w", err)
 		}
 	}

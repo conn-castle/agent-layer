@@ -150,6 +150,7 @@ func sanitizePierArtifacts(request ExecutionRequest, stage string) error {
 		filepath.Join(request.RepoRoot, ".codex", "auth.json"),
 		filepath.Join(request.RepoRoot, ".claude-config", ".credentials.json"),
 		filepath.Join(request.RepoRoot, ".grok-config", "auth.json"),
+		filepath.Join(request.RepoRoot, ".muse-config", "muse", "auth.json"),
 	} {
 		// Fail loud on unreadable credential files: silently skipping them
 		// would retain artifacts containing unredacted secrets.
