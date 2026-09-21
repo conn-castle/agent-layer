@@ -56,16 +56,15 @@ When you run `al sync` or `al <client>`, Agent Layer generates client-specific c
 - `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`
 - `.agy/antigravity-cli/settings.json` (shared state patched only at Agent Layer-managed paths)
 - `.codex/` (generated config and rules)
-- `.muse-config/muse/settings.json` (managed MCP settings merged with native settings)
 - `.grok/config.toml`
 - `.grok/hooks/agent-layer-chime.json` when `notifications.chime` is enabled
 - `.vscode/mcp.json` and a managed block in `.vscode/settings.json`
 - `AGENTS.md`
-- `.claude/rules/agent-layer.md`
+- `.claude/CLAUDE.md`
 - `.github/copilot-instructions.md`
 - repo-local VS Code launchers under `.agent-layer/` when VS Code is enabled (for example `open-vscode.command`, `open-vscode.sh`, and `open-vscode.app/`)
 
-Generated outputs are safe to delete and regenerate, except for shared native state. `al sync` patches `.codex/config.toml`, `.agy/antigravity-cli/settings.json`, and `.muse-config/muse/settings.json` in place while preserving native values it does not manage. Muse sessions and other runtime state under `.muse-data/` are also not reproducible. Keep these paths gitignored, but preserve them during cleanup.
+Generated outputs are safe to delete and regenerate, except for shared native state. `al sync` patches `.codex/config.toml` and `.agy/antigravity-cli/settings.json` in place while preserving native values it does not manage. Historical Muse settings and credentials under `.muse-config/`, and sessions under `.muse-data/`, are also not reproducible. Keep these paths gitignored, but preserve them during cleanup.
 
 This split is deliberate. You can wipe generated files and rebuild them when something feels off, without losing the `.agent-layer/` files you maintain.
 
@@ -169,7 +168,7 @@ mode = "all" # one of: all, mcp, commands, none, yolo
 | `none` | prompt/deny | prompt/deny | |
 | `yolo` | auto-approve | auto-approve | skips all permission prompts where supported (Claude and Antigravity `--dangerously-skip-permissions`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live`, Copilot CLI and Muse `--yolo`, Grok `--permission-mode bypassPermissions --always-approve`) |
 
-Muse does not project selective command or MCP grants. All non-YOLO modes retain native approvals and sandboxing with `--approval-judge off`; headless dispatch fails if human approval is required.
+For Muse, Agent Layer writes workspace-scoped native command rules and a project MCP approval hook. `approvals.mode` selects command and MCP grants; user rules and native denials are preserved. All non-YOLO modes retain native approvals and sandboxing with `--approval-judge off`; headless dispatch fails if human approval is required.
 
 The default template sets `mode = "all"`. Change it to match your team's security posture.
 

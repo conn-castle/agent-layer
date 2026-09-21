@@ -431,7 +431,8 @@ func promptWizardFlow(root string, ui UI, choices *Choices, caches ...*wizardOpt
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	optionCache.ctx = ctx
-	// Start before the first screen, including agents the user may enable later.
+	// Start before the first screen. Optional Muse waits for enablement before
+	// accessing its native user home.
 	if _, scripted := ui.(*ScriptedUI); !scripted {
 		optionCache.prefetchAll()
 	}

@@ -142,8 +142,8 @@ enabled = false
 # model and reasoning_effort are optional; Muse uses its native defaults when omitted.
 # model = "..."
 # reasoning_effort = "high" # none | minimal | low | medium | high | xhigh | max | ultra
-# Agent Layer isolates Muse settings and runtime data under .muse-config/ and
-# .muse-data/. HOME is unchanged, but Muse child tools inherit the XDG roots.
+# Muse uses native user storage; Agent Layer does not provide storage isolation.
+# HOME and XDG variables are unchanged. Project MCP shares private .mcp.json.
 
 [skills]
 # Git-backed Agent Skill imports. Each [[skills.imports]] block declares one

@@ -186,7 +186,7 @@ Different clients require different file formats and conventions. Agent Layer ge
 ```text
 # Instruction shims (generated from .agent-layer/instructions/*.md)
 AGENTS.md
-.claude/rules/agent-layer.md
+.claude/CLAUDE.md
 .github/copilot-instructions.md
 
 # Client configs and artifacts (generated based on enabled clients)
@@ -198,7 +198,6 @@ AGENTS.md
 .mcp.json
 .codex/
 .copilot/mcp-config.json
-.muse-config/muse/settings.json
 .grok/config.toml
 .grok/hooks/agent-layer-chime.json
 .vscode/mcp.json
@@ -227,7 +226,7 @@ If you prefer to launch VS Code without the repo-local launcher, see the Codex a
 
 ### Safe to delete
 
-You can delete generated outputs at any time. Running `al sync` or `al <client>` will recreate them from `.agent-layer/`. The exceptions are shared native state: `.codex/config.toml`, `.agy/antigravity-cli/settings.json`, and `.muse-config/muse/settings.json` are patched in place and can contain preserved native values; `.muse-data/` can contain non-reproducible sessions. Keep these paths gitignored, but do not delete them as part of cleanup. Agent Layer-managed MCP output remains disposable.
+You can delete generated outputs at any time. Running `al sync` or `al <client>` will recreate them from `.agent-layer/`. The exceptions are shared native state: `.codex/config.toml` and `.agy/antigravity-cli/settings.json` are patched in place and can contain preserved native values; historical `.muse-config/` and `.muse-data/` can contain credentials, settings, and non-reproducible sessions. Keep these paths gitignored, but do not delete them as part of cleanup. Agent Layer-managed MCP output remains disposable.
 
 If you keep your own files under `.vscode/`, delete only the Agent Layer-managed files (`.vscode/mcp.json` and the managed block in `.vscode/settings.json`). Agent Layer also projects VS Code/GitHub Copilot skills through `.agents/skills/`.
 
@@ -253,7 +252,7 @@ Do not commit:
 - `.agent-layer/.env` (secrets)
 - `.agent-layer/state/managed-baseline.json` (machine-managed baseline state)
 - `.agent-layer/tmp/` (agent-only artifacts)
-- generated client outputs like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.claude/rules/agent-layer.md`, `.mcp.json`, `.codex/`, `.copilot/`, `.grok/`, `.grok-config/`, `.muse-config/`, `.muse-data/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.github/copilot-instructions.md`, `AGENTS.md`
+- generated client outputs like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.claude/CLAUDE.md`, `.mcp.json`, `.codex/`, `.copilot/`, `.grok/`, `.grok-config/`, `.muse-config/`, `.muse-data/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.github/copilot-instructions.md`, `AGENTS.md`
 
 ## CLI command map
 

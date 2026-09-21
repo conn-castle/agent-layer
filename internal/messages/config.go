@@ -52,6 +52,7 @@ const (
 	ConfigMcpServerCommandRequiredFmt             = "%s: mcp.servers[%d].command is required for stdio transport"
 	ConfigMcpServerTransportInvalidFmt            = "%s: mcp.servers[%d].transport must be http or stdio"
 	ConfigMcpServerClientInvalidFmt               = "%s: mcp.servers[%d].clients contains invalid client %q"
+	ConfigMcpServerMuseVSCodeSharedFileFmt        = "%s: MCP server %q enters the shared .mcp.json but excludes client \"vscode\"; VS Code imports shared .mcp.json when agents.muse.enabled and agents.vscode.enabled are true, so include \"vscode\" in mcp.servers[%d].clients or change an enabled integration"
 	ConfigUnrecognizedKeysFmt                     = "%s: unrecognized config keys: %w"
 	ConfigLegacyGeminiUnsupportedFmt              = "%s: agents.gemini is no longer supported; run 'al upgrade' to migrate to agents.antigravity (renames agents.gemini.enabled, drops legacy gemini.model/reasoning_effort keys, and rewrites mcp.servers[].clients gemini→antigravity)"
 	ConfigLegacyDispatchUnsupportedFmt            = "%s: agents.<agent>.dispatch.default_agent is no longer supported; run 'al upgrade' to remove the retired dispatch defaults"

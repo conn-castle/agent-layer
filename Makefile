@@ -158,7 +158,7 @@ refresh-deepswe-planner-data: ## Download the official DeepSWE snapshot and rege
 .PHONY: test-race
 test-race: ## Run race detector for concurrency-critical packages
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go test -race ./internal/agentdispatch/... ./internal/sync/... ./internal/install/... ./internal/warnings/... ./internal/projectlock/... ./internal/skillimport/...
+	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go test -race ./internal/agentdispatch/... ./internal/musepolicy/... ./internal/sync/... ./internal/install/... ./internal/warnings/... ./internal/projectlock/... ./internal/skillimport/...
 
 .PHONY: dead-code
 dead-code: check-deadcode ## Run dead code analysis across all packages (test-aware); fails on findings
@@ -210,6 +210,21 @@ test-e2e: ## Run end-to-end tests (offline — uses cached binaries only)
 .PHONY: test-e2e-online
 test-e2e-online: ## Run e2e tests with online upgrade binary downloads
 	@AL_E2E_ONLINE=1 ./scripts/test-e2e.sh
+
+.PHONY: test-muse-fixture
+test-muse-fixture: ## Verify native fixture isolation and cleanup without launching Muse
+	@python3 scripts/test-muse-fixture.py
+
+.PHONY: test-muse-native
+test-muse-native: test-muse-fixture ## Test pinned native Muse with local fixtures (Linux/macOS, no credentials)
+	@mkdir -p .agent-layer/tmp/muse-native
+	@go build -o .agent-layer/tmp/muse-native/al ./cmd/al
+	@python3 scripts/test-muse-native.py --al .agent-layer/tmp/muse-native/al
+	@python3 scripts/test-muse-native-review.py --al .agent-layer/tmp/muse-native/al
+
+.PHONY: test-codex-mcp-native
+test-codex-mcp-native: al-dev-build ## Verify installed Codex MCP startup and context without inference
+	@python3 scripts/test-codex-mcp-native.py --al $(AL_DEV_BIN_DIR)/al
 
 .PHONY: test-codex-dispatch-wait-live
 test-codex-dispatch-wait-live: al-dev-build ## Run paid local Codex dispatch-wait polling test (never CI)
@@ -284,7 +299,7 @@ test-e2e-ci: ## Run e2e tests for CI (online downloads, upgrade scenarios requir
 	@AL_E2E_ONLINE=1 AL_E2E_REQUIRE_UPGRADE=1 ./scripts/test-e2e.sh
 
 .PHONY: ci
-ci: tidy-check fmt-check lint shell-syntax-check dead-code coverage test-deepswe-planner test-race test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
+ci: tidy-check fmt-check lint shell-syntax-check dead-code coverage test-muse-fixture test-deepswe-planner test-race test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
 
 .PHONY: dev
 dev: ## Fast local formatting and lint loop
@@ -292,7 +307,8 @@ dev: ## Fast local formatting and lint loop
 	@$(MAKE) lint
 
 # Local dev targets — run al subcommands against this repo's own .agent-layer using source
-AL_RUN := GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run ./cmd/al
+# Source commands must bypass release pins even outside an agent dev session.
+AL_RUN := AL_DEV_BYPASS_VERSION_DISPATCH=1 GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run ./cmd/al
 AL_DEV_BIN_DIR := $(ROOT_DIR)/.agent-layer/tmp/dev-bin
 AL_DEV_BIN := $(AL_DEV_BIN_DIR)/al
 AL_DEV_LAUNCH_ENV := PATH="$(AL_DEV_BIN_DIR):$$PATH" AL_DEV_BYPASS_VERSION_DISPATCH=1

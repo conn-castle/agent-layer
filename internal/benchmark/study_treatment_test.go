@@ -15,7 +15,10 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/sync"
 )
 
 func TestStudyMCPContractRejectsLiteralCookieAndCredentialValues(t *testing.T) {
@@ -277,7 +280,7 @@ else:
 	}
 	for _, required := range []string{
 		"ANTIGRAVITY_LINUX_AMD64_SHA512", "GROK_LINUX_AMD64_SHA256", "network_allowlist", "_bounded_provider_capture", "uuid.uuid4()",
-		`grok_home = f"{REMOTE_WORKSPACE}/.grok-config"`, "--trust", "antigravity-mcp-preflight.json", "grok-mcp-preflight.json", ".muse-config .muse-data",
+		`grok_home = f"{REMOTE_WORKSPACE}/.grok-config"`, "--trust", "antigravity-mcp-preflight.json", "grok-mcp-preflight.json",
 	} {
 		if !strings.Contains(contents, required) {
 			t.Fatalf("adapter omitted pinned/runtime contract %q", required)
@@ -500,6 +503,48 @@ func TestStudyTreatmentBundleConfigOnlyStagesRuntimeWithoutWorkflow(t *testing.T
 	env, err := os.ReadFile(filepath.Join(bundle.Root, ".agent-layer", ".env"))
 	if err != nil || string(env) != "# Intentionally empty; provider authentication is injected separately.\n" {
 		t.Fatalf("config-only bundle env = %q, %v", env, err)
+	}
+	claudePath := filepath.Join(bundle.Root, sync.ClaudeInstructionsPath)
+	info, err := os.Lstat(claudePath)
+	require.NoError(t, err)
+	require.True(t, info.Mode().IsRegular(), "transport bundle must materialize the generated alias")
+	claude, err := os.ReadFile(claudePath) // #nosec G304 -- test-owned bundle output.
+	require.NoError(t, err)
+	canonical, err := os.ReadFile(filepath.Join(bundle.Root, "AGENTS.md")) // #nosec G304 -- test-owned bundle output.
+	require.NoError(t, err)
+	require.Equal(t, canonical, claude)
+	hashes := make(map[string]string)
+	for _, file := range bundle.Manifest.Files {
+		hashes[file.Path] = file.SHA256
+	}
+	require.NotEmpty(t, hashes["AGENTS.md"])
+	require.Equal(t, hashes["AGENTS.md"], hashes[sync.ClaudeInstructionsPath])
+}
+
+func TestMaterializedInstructionsKeepRootRewriteAndSymlinkRejection(t *testing.T) {
+	t.Parallel()
+	for _, target := range []string{sync.ClaudeInstructionsTarget, "../unexpected.md"} {
+		t.Run(target, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, sync.ClaudeInstructionsPath)
+			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+			require.NoError(t, os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("Guidance for "+root), 0o600))
+			require.NoError(t, os.Symlink(target, path))
+			require.NoError(t, materializeTreatmentInstructions(root))
+			if target != sync.ClaudeInstructionsTarget {
+				actual, err := os.Readlink(path)
+				require.NoError(t, err)
+				require.Equal(t, target, actual)
+				require.ErrorContains(t, rewriteTreatmentProjectionRoot(root, root, treatmentContainerRoot), "non-regular file")
+				return
+			}
+			require.NoError(t, rewriteTreatmentProjectionRoot(root, root, treatmentContainerRoot))
+			for _, name := range []string{"AGENTS.md", sync.ClaudeInstructionsPath} {
+				data, err := os.ReadFile(filepath.Join(root, name)) // #nosec G304 -- test-owned instruction outputs.
+				require.NoError(t, err)
+				require.Equal(t, "Guidance for "+treatmentContainerRoot, string(data))
+			}
+		})
 	}
 }
 

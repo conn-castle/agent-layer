@@ -19,9 +19,6 @@ func CheckPolicy(project *config.ProjectConfig) []Warning {
 	}
 
 	results := make([]Warning, 0)
-	if config.IsAgentEnabled(project.Config.Agents.Muse.Enabled) && slices.Contains([]string{config.ApprovalModeAll, config.ApprovalModeCommands, config.ApprovalModeMCP}, project.Config.Approvals.Mode) {
-		results = append(results, Warning{Code: CodePolicyMuseApprovalsGap, Subject: "agents.muse", Message: "Muse 1.3.0 has no verified native schema for Agent Layer command or MCP allowlists; selective grants are not projected.", Fix: "Approve requested Muse tools interactively. Headless dispatch remains available, but a blocked approval can fail the dispatch.", Source: SourceInternal, Severity: SeverityWarning})
-	}
 
 	if agentSpecificWarning := codexAgentSpecificOverrideWarning(project.Root, project.Config.Agents.Codex.AgentSpecific); agentSpecificWarning != nil {
 		results = append(results, *agentSpecificWarning)

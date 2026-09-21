@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/gitenv"
 	"github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/update"
@@ -385,6 +386,9 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	if _, err := sync.RunWithSystemFS(benchmarkSyncSystem{}, os.DirFS(root), root); err != nil {
 		return nil, fmt.Errorf("synchronize staged study inputs: %w", err)
 	}
+	if err := materializeTreatmentInstructions(root); err != nil {
+		return nil, fmt.Errorf("materialize bundled instructions: %w", err)
+	}
 	if err := os.WriteFile(filepath.Join(layer, ".env"), []byte("# Intentionally empty; provider authentication is injected separately.\n"), 0o600); err != nil {
 		return nil, err
 	}
@@ -536,6 +540,40 @@ func normalizeInstructionReference(field string) (string, string) {
 	}
 	normalized := strings.ToLower(strings.TrimPrefix(filepath.ToSlash(reference), "./"))
 	return reference, normalized
+}
+
+// materializeTreatmentInstructions keeps the transport bundle regular-file-only.
+// The adapter runs the bundled al sync before the agent, restoring the native
+// instruction link. Unexpected links remain subject to the strict bundle checks.
+func materializeTreatmentInstructions(root string) error {
+	path := filepath.Join(root, sync.ClaudeInstructionsPath)
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return nil
+	}
+	target, err := os.Readlink(path)
+	if err != nil {
+		return err
+	}
+	if target != sync.ClaudeInstructionsTarget {
+		return nil
+	}
+	canonical := filepath.Join(filepath.Dir(path), target)
+	info, err = os.Lstat(canonical)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("canonical treatment instructions must be a regular file: %s", canonical)
+	}
+	data, err := os.ReadFile(canonical) // #nosec G304 -- exact generated target in the private synced staging root.
+	if err != nil {
+		return err
+	}
+	return fsutil.WriteFileAtomic(path, data, 0o600)
 }
 
 func rewriteTreatmentProjectionRoot(root, from, to string) error {

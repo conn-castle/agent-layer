@@ -85,7 +85,7 @@ func inspectResultFromRecord(record RunRecord) InspectResult {
 	}
 	reason := strings.TrimSpace(record.TerminalReason)
 	if state == dispatchStateCancelled {
-		reason = ""
+		reason = strings.TrimSpace(strings.TrimPrefix(reason, terminalReasonCancelledByCaller))
 	}
 	return InspectResult{
 		Handle:                 record.Name,

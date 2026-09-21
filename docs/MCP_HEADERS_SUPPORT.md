@@ -11,12 +11,12 @@ The intent is consistency without leakage: define headers once in `.agent-layer/
 | Client | Repo-local config (recommended) | Also supported (user/global) | Header mechanism |
 |---|---|---|---|
 | Antigravity | `.agy/antigravity-cli/mcp_config.json` | `<gemini_dir>/config/mcp_config.json` after `agy` migration | `headers` object on the server entry |
-| Claude Code | `.mcp.json` | `~/.claude.json` | `headers` object on the server entry (`type: "http"`) |
+| Claude Code | `.mcp.json` | `~/.claude.json` | `headers` object on the server entry (`type: "http"`, or `"streamable-http"` when sharing with Muse) |
 | VS Code (Copilot Chat) | `.vscode/mcp.json` | user settings `mcp.json` | `headers` object (supports `${input:...}` indirection) |
 | Codex CLI (+ IDE extension) | `.codex/config.toml` (shared Codex state) | `~/.codex/config.toml` | `bearer_token_env_var`, `env_http_headers`, `http_headers` |
 | Copilot CLI | `.copilot/mcp-config.json` | `~/.copilot/mcp-config.json` | `headers` object on the server entry |
 | Grok | `.grok/config.toml` | `~/.grok/config.toml` | `headers` with `${VAR}` placeholders |
-| Muse | `.muse-config/muse/settings.json` | `~/.config/muse/settings.json` | Resolved `headers` in private `0600` settings; Streamable HTTP only |
+| Muse | `.mcp.json` | `~/.config/muse/settings.json` | Resolved `headers` in private `0600` project config; Streamable HTTP only |
 
 ## Client details
 
@@ -181,7 +181,7 @@ headers = { Authorization = "Bearer ${AL_MY_API_TOKEN}", "X-Api-Key" = "${AL_MY_
 
 ### 2) Normalize without leaking secrets
 
-Preserve `${VAR}` placeholders where the client supports them. Muse requires resolved values: Agent Layer uses `FullValueResolver` for its URLs, headers, and environment values and writes them to private `0600` settings. Keep `.muse-config/` gitignored. Muse rejects SSE; select `http_transport = "streamable"` or exclude Muse from that server.
+Preserve `${VAR}` placeholders where the client supports them. Muse requires resolved HTTP headers: Agent Layer uses `FullValueResolver` for its URLs, headers, and environment values and writes them to private `0600` project config. Keep `.mcp.json` gitignored. Muse rejects SSE; select `http_transport = "streamable"` or exclude Muse from that server.
 
 The projection layer uses `ClientPlaceholderResolver` (`internal/projection/resolvers.go`) to preserve placeholders in each client’s native syntax. The resolver takes a format string (e.g., `${%s}` or `${env:%s}`) and returns a function that:
 
@@ -210,11 +210,11 @@ Env vars may still be resolved at runtime for:
 
 Each writer receives `ResolvedMCPServer` structs with values resolved or placeholders in the target syntax:
 
-* **Muse**: resolve URLs, headers, and environment values into private `0600` settings; require Streamable HTTP.
+* **Muse**: resolve URLs, headers, and environment values into private `0600` project config; require Streamable HTTP.
 * **Grok**: emit `headers` with `${VAR}` placeholders.
 
 * **Antigravity**: emit `headers` map with the raw string (preserve `${VAR}`).
-* **Claude Code**: emit `headers` map with the raw string (preserve `${VAR}` / `${VAR:-default}`).
+* **Claude Code**: emit `headers` map with the raw string (preserve `${VAR}` / `${VAR:-default}`), except entries shared with enabled Muse use resolved values in a private `0600` `.mcp.json`.
 * **Copilot CLI**: emit `headers` map with the raw string (preserve `${VAR}`).
 * **VS Code**: emit `headers` map using `${env:VAR}` placeholders (does not auto-generate an `inputs` block; see section 3 Notes).
 * **Codex**:
@@ -229,3 +229,40 @@ Do not attempt to infer `VAR` from a resolved secret value.
 Once `${VAR}` has been expanded, the original variable name is lost and you risk writing secrets into generated files.
 
 Keep the raw (unresolved) header string available through the projection pipeline, and only resolve values for runtime validation/launch.
+
+Muse filters generic XDG variables from stdio MCP child environments. For each
+Muse-selected stdio server (including Agent Dispatch), sync supplies native
+runtime defaults `${XDG_CONFIG_HOME:-}`, `${XDG_DATA_HOME:-}`, and
+`${GH_CONFIG_DIR:-}`. Explicit server environment entries take precedence.
+These placeholders forward launch-time selectors; sync does not snapshot them
+or redirect the native home. An unset or empty selector uses the consumer's
+normal default directory. Claude accepts the same defaults on shared entries;
+Claude-only entries receive no additional environment fields.
+
+
+### Shared root discovery with Muse
+
+When Muse is enabled, Grok's generated project config includes full disabled
+server definitions for shared root IDs excluded by `clients`. This masks Grok's
+root-file fallback without disabling unrelated personal or plugin servers.
+`al copilot` passes native `--disable-mcp-server` flags for the corresponding
+Copilot exclusions. These controls are absent when Muse is disabled. Launching
+Copilot directly bypasses the Agent Layer launch flags.
+
+VS Code 1.138 also discovers root `.mcp.json` through its core MCP service,
+independently of `.vscode/mcp.json`, and ignores the root entries' `enabled`
+field. When **both** `agents.muse.enabled` and `agents.vscode.enabled` are true,
+configuration validation rejects enabled servers in the shared file whose
+`clients` exclude `vscode`. This includes Claude-selected entries when either
+Claude integration is enabled. Add `vscode` to the affected server's `clients`
+(or omit `clients` to share with all clients), or disable one of the two
+integrations. Validation happens before generated files are written.
+
+The check does not activate for `claude_vscode` alone or when either Muse or
+VS Code is disabled. Native editor usage outside those enabled integrations
+can still discover the shared file; `.vscode/mcp.json` filtering alone does not
+prevent that import. No internal editor database is modified.
+
+Copilot CLI 1.0.83 documents user, root workspace, and plugin MCP sources, but
+not the generated project `.copilot/mcp-config.json`. Loading that projection
+is a separate existing integration gap; the Muse exclusion flags do not fix it.

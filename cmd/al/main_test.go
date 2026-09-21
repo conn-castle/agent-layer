@@ -540,3 +540,23 @@ func TestVersionString(t *testing.T) {
 		})
 	}
 }
+
+// An absolute source invocation must carry its own executable to MCP children,
+// even when PATH selects an older installed al or a stale override is inherited.
+func TestRunMainExportsInvokingDevelopmentExecutable(t *testing.T) {
+	t.Setenv(versiondispatch.EnvDevelopmentBypassVersionDispatch, "1")
+	t.Setenv(versiondispatch.EnvDevelopmentExecutable, "/stale/al")
+	oldExecute := executeFunc
+	t.Cleanup(func() { executeFunc = oldExecute })
+	want, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	executeFunc = func(context.Context, []string, io.Writer, io.Writer) error {
+		if got := os.Getenv(versiondispatch.EnvDevelopmentExecutable); got != want {
+			t.Fatalf("child executable = %q, want %q", got, want)
+		}
+		return nil
+	}
+	runMain(context.Background(), []string{"al", "--version"}, io.Discard, io.Discard, func(code int) { t.Fatalf("unexpected exit %d", code) })
+}

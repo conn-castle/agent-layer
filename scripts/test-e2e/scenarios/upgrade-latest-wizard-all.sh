@@ -11,6 +11,8 @@ run_scenario_upgrade_latest_wizard_all() {
 
   local repo_dir
   repo_dir="$(setup_scenario_dir)"
+  local XDG_CONFIG_HOME="$repo_dir/native-config"
+  export XDG_CONFIG_HOME
 
   setup_old_version_via_binary "$repo_dir" "$E2E_LATEST_BINARY"
   assert_al_version_content "$repo_dir" "$E2E_LATEST_VERSION"

@@ -61,8 +61,7 @@ type musePendingRequests struct {
 }
 
 type musePendingRequestIDs struct {
-	approvals  map[string]struct{}
-	userInputs map[string]struct{}
+	approvals map[string]struct{}
 }
 
 func startMuseApprovalObserver(command providerCommand, root string) (*museApprovalObserver, error) {
@@ -99,7 +98,7 @@ func startMuseApprovalObserver(command providerCommand, root string) (*museAppro
 		cancel()
 		return nil, fmt.Errorf("start Muse approval observer: %w", err)
 	}
-	observer := &museApprovalObserver{cancel: cancel, done: make(chan struct{}), ready: make(chan error, 1)}
+	observer := &museApprovalObserver{cancel: func() { cancel(); _ = stdin.Close(); _ = stdout.Close() }, done: make(chan struct{}), ready: make(chan error, 1)}
 	go func() {
 		ready := false
 		reportReady := func(err error) {
@@ -209,7 +208,7 @@ func observeMuseApprovals(ctx context.Context, stdin io.Writer, stdout io.Reader
 
 	requestID := 2
 	sessionObserved := false
-	baseline := musePendingRequestIDs{approvals: map[string]struct{}{}, userInputs: map[string]struct{}{}}
+	baseline := musePendingRequestIDs{approvals: map[string]struct{}{}}
 	lastLatency := time.Duration(0)
 	if mode == dispatchModeResume {
 		pending, latency, err := queryMusePendingRequests(encoder, decoder, sessionID, requestID)
@@ -252,9 +251,8 @@ func observeMuseApprovals(ctx context.Context, stdin io.Writer, stdout io.Reader
 			if userInput.UserInputID == "" {
 				return errors.New("muse pending-request response contained user input without an ID")
 			}
-			if _, stale := baseline.userInputs[userInput.UserInputID]; !stale {
-				return fmt.Errorf("muse dispatch is waiting for user input %s", userInput.UserInputID)
-			}
+			// exec --user-input-auto-resolve owns these requests. Observing a
+			// transient pending row must not race its native cancellation.
 		}
 		for _, approval := range pending.Approvals {
 			if approval.ApprovalID == "" {
@@ -297,7 +295,7 @@ func queryMusePendingRequests(encoder *json.Encoder, decoder *json.Decoder, sess
 }
 
 func (pending musePendingRequests) requestIDs() (musePendingRequestIDs, error) {
-	ids := musePendingRequestIDs{approvals: map[string]struct{}{}, userInputs: map[string]struct{}{}}
+	ids := musePendingRequestIDs{approvals: map[string]struct{}{}}
 	for _, approval := range pending.Approvals {
 		if approval.ApprovalID == "" {
 			return musePendingRequestIDs{}, errors.New("muse pending-request response contained approval without an ID")
@@ -308,7 +306,6 @@ func (pending musePendingRequests) requestIDs() (musePendingRequestIDs, error) {
 		if userInput.UserInputID == "" {
 			return musePendingRequestIDs{}, errors.New("muse pending-request response contained user input without an ID")
 		}
-		ids.userInputs[userInput.UserInputID] = struct{}{}
 	}
 	return ids, nil
 }
@@ -347,6 +344,9 @@ func readMuseRPCResponse(decoder *json.Decoder, encoder *json.Encoder, requestID
 				if err := encoder.Encode(map[string]any{jsonRPCKey: jsonRPCVersion, "id": frame.ID, jsonResultKey: map[string]any{}}); err != nil {
 					return museRPCFrame{}, err
 				}
+			}
+			if frame.Method == "userInput/request" {
+				continue
 			}
 			return museRPCFrame{}, fmt.Errorf("muse dispatch is waiting for a human: %s", frame.Method)
 		}

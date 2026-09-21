@@ -34,43 +34,27 @@ If Agent Layer improves your workflow, please consider starring the repository. 
 
 MCP = Model Context Protocol (tool/data servers).
 
-These tables describe Agent Layer's implemented integrations, not every capability of the underlying clients. ✅ = implemented, ◐ = generated configuration with runtime caveats, — = not implemented in Agent Layer. They are not a fresh live compatibility test of every client version.
-
-| Client | Instructions | Skills | MCP servers | Command allowlist projection |
+| Client | Instructions | Skills | MCP servers | Approved commands |
 |---|---:|---:|---:|---:|
-| Antigravity | ✅ | ✅ | ◐¹ | ◐² |
+| Antigravity | ✅ | ✅ | ❌* | ✅** |
 | Claude Code CLI | ✅ | ✅ | ✅ | ✅ |
 | VS Code / Copilot Chat | ✅ | ✅ | ✅ | ✅ |
 | Codex CLI | ✅ | ✅ | ✅ | ✅ |
-| Copilot CLI | ✅ | ✅ | ✅ | —³ |
+| Copilot CLI | ✅ | ✅ | ✅ | ✅ |
 | Grok | ✅ | ✅ | ✅ | ✅ |
-| Meta Muse Code | ✅ | ✅ | ✅⁶ | —⁷ |
-
-| Additional integration | Claude Code CLI | Codex CLI | Antigravity | Grok | Muse | Copilot CLI | VS Code / Copilot Chat |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Repo-local generated configuration | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Repo-local runtime directory override⁴ | Opt-in | Opt-in | ✅ | ✅ | ✅ | — | — |
-| Model selection | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
-| Reasoning-effort setting | ✅ | ✅ | — | ✅ | ✅ | — | — |
-| Live model discovery | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
-| Completion chime⁵ | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| Statusline configuration | ✅ | ✅ | — | — | — | — | — |
-| Call Agent Dispatch through MCP | ✅ | ✅ | ◐¹ | ✅ | ✅⁶ | ✅ | ✅ |
-| Run as an Agent Dispatch target | ✅ | ✅ | ✅ | ✅ | ✅ | — | — |
+| Muse Code (opt-in) | ✅ | ✅ | ✅ | ✅ |
 
 Notes:
-
 - Codex, Antigravity, VS Code/Copilot, Copilot CLI, Grok, and Muse consume shared skills from `.agents/skills/<name>/SKILL.md`.
 - Claude Code consumes skills from `.claude/skills/<name>/SKILL.md`.
 - Claude Code and Codex VS Code extension support is handled through `al vscode`.
 - Auto-approval capabilities vary by client; `approvals.mode` is applied on a best-effort basis.
-- ¹ Antigravity MCP config is written to `.agy/antigravity-cli/mcp_config.json` using the supported `serverUrl` shape. `agy` v1.0.0 migrates that file to `<gemini_dir>/config/mcp_config.json`, but runtime MCP registration has not been observed yet. Do not treat it as a working MCP or dispatch caller on that baseline; it remains a dispatch target. Run `al probe agy` to check the installed version.
-- ² Antigravity approved commands are written to `.agy/antigravity-cli/settings.json` as a managed `permissions.allow` list. User passthrough in `agents.antigravity.agent_specific` can add other settings keys, including `permissions.deny`; runtime enforcement is reported by `al probe agy`.
-- ³ Copilot CLI does not receive `.agent-layer/commands.allow`. Its launcher passes `--allow-all-tools` for `approvals.mode = "all"` and `--yolo` for `"yolo"`; these broad modes are not selective command allowlisting.
-- ⁴ Generated project configuration does not imply isolated credentials or sessions. Claude and Codex offer `local_config_dir` to set `CLAUDE_CONFIG_DIR` and `CODEX_HOME`, respectively; explicit inherited overrides are preserved with a warning. Antigravity launches with repo-local `--gemini_dir`; Grok sets repo-local `GROK_HOME`; Muse sets repo-local `XDG_CONFIG_HOME` and `XDG_DATA_HOME` while preserving `HOME`. This row describes runtime directory selection, not a sandbox or a guarantee that all provider state stays in the repository. The VS Code column refers to Copilot Chat, not the separately configured Claude/Codex extensions.
-- ⁵ Chimes are opt-in through `notifications.chime`, filtered per provider, and best-effort on macOS/Linux. A stop hook does not guarantee that every background task or continuation has finished. See the [configuration reference](https://agent-layer.dev/docs/reference) for filtering details.
-- ⁶ Muse settings are written privately to `.muse-config/muse/settings.json`; native stdio MCP admission and coexistence with Claude are verified on Muse 1.3.0. Agent Layer disables workspace `.mcp.json` entries in Muse's own settings and projects Muse-selected servers under distinct names, preserving `clients` filters, resolved credentials, and timeouts without modifying Claude's file. Stdio and Streamable HTTP are projected; SSE is rejected with a remedy.
-- ⁷ Muse 1.3.0 exposes broad approval modes and named profiles, but Agent Layer has no verified native schema for projecting `.agent-layer/commands.allow` or selective MCP grants. Non-YOLO launches preserve native prompting and turn the approval judge off. Headless dispatch observes Muse's native pending-approval state and fails the dispatch, with provider termination verified, when an action requires a human. `request_user_input` is separately auto-cancelled. Only explicit `yolo` gets `--yolo`.
+- *Antigravity MCP config is written to `.agy/antigravity-cli/mcp_config.json` using the supported `serverUrl` shape. `agy` v1.0.0 migrates that file to `<gemini_dir>/config/mcp_config.json`, but runtime MCP registration has not been observed yet. Run `al probe agy` to see the current capability matrix.
+- **Antigravity approved commands are written to `.agy/antigravity-cli/settings.json` as a managed `permissions.allow` list. User passthrough in `agents.antigravity.agent_specific` can add other settings keys, including `permissions.deny`; runtime enforcement is reported by `al probe agy`.
+
+Muse is optional and disabled by default. Enable `[agents.muse]` with `enabled = true`; optional `model` and `reasoning_effort` select native runtime options. `al muse` launches interactively, and `al dispatch start --agent muse` starts a headless conversation. Model suggestions come from the installed native MSP catalog; an empty catalog is reported explicitly and custom models remain available.
+
+Muse shares generated `.mcp.json` with Claude, using native client filters. When enabled, this file contains resolved credentials and is private (`0600`); sync refuses tracked or unignored output. Muse uses its normal native home without XDG redirection. Command grants are owned, workspace-scoped native policy entries, while a project MCP hook rereads current configuration on every request. Non-YOLO runs select `untrusted`, disable the approval judge, and retain the sandbox and native denies. Headless runs requiring approval fail with termination evidence. The generated `.claude/CLAUDE.md` links to `../AGENTS.md`, avoiding duplicate-instruction warnings while preserving Claude guidance. User-symlinked `.claude` directories retain a regular instruction copy. Both real skill trees stay in place; Muse may report shadow diagnostics while selecting each skill once. See the [Muse reference](site/docs/reference.mdx) for cleanup and historical-storage behavior.
 
 ---
 
@@ -125,7 +109,7 @@ Notes:
 - By default `al init` first walks up for an ancestor `.agent-layer/`, then for an ancestor `.git`. To install a separate Agent Layer in a subfolder of an existing repo (for example a sub-project that needs its own `.agent-layer/`), pass `al init --here` to target the current directory.
 - `al upgrade` is the recommended path. For CI-safe non-interactive apply, use `al upgrade --yes --apply-managed-updates`. Add `--apply-memory-updates` and/or `--apply-deletions` only when you explicitly want those categories. `--apply-deletions` never removes files under `.agent-layer/tmp/`; to clean up those ephemeral agent run artifacts, use `--apply-tmp-deletions` (destructive — requires explicit double confirmation unless combined with `--yes`).
 - `al upgrade` automatically creates a managed-file snapshot and rolls changes back if an upgrade step fails. Snapshots are written under `.agent-layer/state/upgrade-snapshots/`.
-- Agent Layer does not install clients. Install the target client CLI and ensure it is on your `PATH` (Antigravity `agy`, Claude Code CLI, Codex, Copilot CLI, Grok, Muse Code `muse`, VS Code, etc.).
+- Agent Layer does not install clients. Install the target client CLI and ensure it is on your `PATH` (Antigravity `agy`, Claude Code CLI, Codex, Copilot CLI, Grok, VS Code, etc.).
 
 ---
 
@@ -274,7 +258,7 @@ Run `al wizard` any time to interactively configure the most important settings:
 
 - **Approvals Mode** (all, mcp, commands, none, yolo)
 - **Agent Enablement** (Antigravity, Claude, Codex, VS Code, Copilot CLI, Grok, Muse)
-- **Model Selection** (optional; leave blank to use client defaults. Claude, Codex, Grok, Muse, Copilot CLI, and Antigravity suggestions come exclusively from the installed harnesses, queried concurrently without sync. Wizard starts discovery before the first prompt and waits only when a model picker needs the result. Discovery failure is shown and still allows the client default or a custom model; there are no bundled model lists or fallbacks. Scripted answers supply explicit values without discovery. Antigravity and Muse expose native model IDs; Claude, Codex, Grok, and Muse expose reasoning effort separately where supported)
+- **Model Selection** (optional; leave blank to use client defaults. Claude, Codex, Grok, Copilot CLI, and Antigravity suggestions come exclusively from the installed harnesses, queried concurrently without sync. Wizard starts discovery before the first prompt and waits only when a model picker needs the result. Discovery failure is shown and still allows the client default or a custom model; there are no bundled model lists or fallbacks. Scripted answers supply explicit values without discovery. Antigravity exposes native model IDs; Claude, Codex, and Grok expose reasoning effort separately where supported)
 - **Feature toggles** — folded into the model step as three per-agent multi-selects (Claude, Codex, and Grok). Each feature is a checkbox where **checked = keep enabled** and unchecking disables it; checkboxes are pre-checked to match your current config, so re-running the wizard without changes makes no edits.
     - *Claude:* IDE open-file reading, auto-memory, claude.ai connectors, the AskUserQuestion tool, and the Claude status line.
     - *Codex:* built-in apps (GitHub, Gmail, etc.), browser/computer-use, and the Codex status line.
@@ -344,8 +328,8 @@ Common memory files include:
 ### Generated client files (gitignored by default)
 Generated outputs are written into the repo in client-specific formats (examples):
 
-- Instruction shims: `AGENTS.md`, `.claude/rules/agent-layer.md`, `.github/copilot-instructions.md`
-- MCP + client configs: `.mcp.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.codex/`, `.copilot/mcp-config.json`, `.grok/config.toml`, `.muse-config/muse/settings.json`
+- Instruction shims: `AGENTS.md`, `.claude/CLAUDE.md`, `.github/copilot-instructions.md`
+- MCP + client configs: `.mcp.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.codex/`, `.copilot/mcp-config.json`, `.grok/config.toml`
 - Shared Antigravity settings: `.agy/antigravity-cli/settings.json` (Agent Layer patches its managed model, `permissions.allow`, and `agent_specific` paths while preserving native settings)
 - Shared skills: `.agents/skills/`
 - Antigravity notification plugin: `.agents/plugins/agent-layer-chime/`
@@ -462,8 +446,8 @@ enabled = false
 
 [agents.muse]
 enabled = false
-# model = "..."
-# reasoning_effort = "high" # none | minimal | low | medium | high | xhigh | max | ultra
+# Optional model and reasoning_effort use the installed native Muse catalog.
+# Muse uses its normal user home; there is no local_config_dir option.
 
 [mcp]
 # Secrets belong in .agent-layer/.env (never in config.toml).
@@ -534,10 +518,12 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}/."]
 Use the optional `clients` field on an `[[mcp.servers]]` entry to control which clients receive a server. If you omit `clients`, the server is projected to all supported clients.
 
 ```toml
-clients = ["antigravity", "claude", "codex", "copilot", "grok", "muse"]  # omit "vscode" to skip VS Code
+clients = ["antigravity", "claude", "codex", "copilot", "grok", "muse"]  # VS Code excluded; see the shared-file constraint below
 ```
 
 This is useful when a client already covers the capability natively — for example, excluding VS Code/Copilot Chat for a file-search or filesystem server, where an MCP server would only duplicate built-in functionality and increase context window usage.
+
+When both Muse and VS Code are enabled, shared `.mcp.json` entries must also select `vscode`, because VS Code imports that file. This includes Claude-selected entries when either Claude integration is enabled. Include `vscode`, omit `clients` to select all, or disable one of Muse/VS Code. `claude_vscode` alone does not activate this check.
 
 #### HTTP transport (`http_transport`)
 
@@ -546,7 +532,7 @@ For HTTP MCP servers, `http_transport` controls how `al doctor` connects:
 - `sse` (default)
 - `streamable`
 
-Omit `http_transport` to default to `sse`.
+Omit `http_transport` to default to `sse`. Muse-selected HTTP servers require `streamable`; use client selection to exclude Muse from SSE servers.
 
 #### Warning thresholds (`[warnings]`)
 
@@ -565,7 +551,7 @@ These modes control whether the agent is allowed to run shell commands and/or MC
 - `mcp`: auto-approve **only** MCP tool calls; shell commands still require approval (or are restricted)
 - `commands`: auto-approve **only** shell commands; MCP tool calls still require approval
 - `none`: approve **nothing** automatically
-- `yolo`: skip **all** permission prompts where the client supports it (sends `--dangerously-skip-permissions` to Claude and Antigravity, `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live` to Codex, `--yolo` to Copilot CLI and Muse, `--permission-mode bypassPermissions --always-approve` to Grok); intended for sandboxed/ephemeral environments
+- `yolo`: skip **all** permission prompts where the client supports it (sends `--dangerously-skip-permissions` to Claude and Antigravity, `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live` to Codex, `--yolo` to Copilot CLI, `--permission-mode bypassPermissions --always-approve` to Grok, `--yolo` to Muse); intended for sandboxed/ephemeral environments
 
 Client notes:
 - Some clients do not support all approval types; Agent Layer generates the closest supported behavior per client.
@@ -574,8 +560,8 @@ Codex may still deny or override these settings if its `requirements.toml` disal
 
 ##### How approvals reach a dispatched agent
 
-`al dispatch` runs agents headlessly, where no one can answer a prompt. Agent Layer sends
-each provider's supported approval policy on the command line:
+`al dispatch` runs agents headlessly, where no one can answer a prompt. For Codex
+and Claude, Agent Layer sends the approval policy on the command line:
 
 | `approvals.mode` | Codex `sandbox_mode` | Claude `--permission-mode` |
 | --- | --- | --- |
@@ -583,7 +569,7 @@ each provider's supported approval policy on the command line:
 | `commands`, `all` | `workspace-write` | `acceptEdits` |
 | `yolo` | `danger-full-access` | `--dangerously-skip-permissions` |
 
-Muse dispatch uses `muse exec --json --prompt-file ... --workspace ... --trust-workspace`. Under non-YOLO modes it preserves native approval and sandbox behavior and disables the LLM approval judge; selective Agent Layer grants are not projected. A read-only `muse serve` observer checks the dispatch session through Muse's supported `approval/listPending` control method. If an action requires human approval, Agent Layer fails the dispatch and verifies provider termination; it does not use an inactivity deadline or broaden permissions. `request_user_input` is auto-cancelled separately. Only explicit `yolo` adds `--yolo`.
+Muse dispatch uses native approvals and the command/MCP grants projected by sync. Outside `yolo`, it disables the approval judge; pending tool approval fails the invocation and triggers provider termination. Native Muse auto-cancels user-input requests. Only explicit `yolo` adds `--yolo`. See [Agent Dispatch](docs/AGENT-DISPATCH.md) for details.
 
 Editing capability follows command approval, because Codex has no separate edit-approval
 rule: its sandbox is what permits or denies unprompted edits. Under `none` and `mcp` a
@@ -700,9 +686,7 @@ exposes `dispatch_options`, `dispatch_start`, `dispatch_wait`,
 `dispatch_output`.
 Antigravity's current probe baseline accepts the generated MCP config but does
 not expose its tools at runtime; run `al probe agy` before relying on it as a
-calling client. It remains available as a dispatch target. Muse is also available
-as a configured dispatch target, and its settings-based MCP runtime admission is
-verified, including coexistence with Claude as described in note ⁶.
+calling client. It remains available as a dispatch target. Muse is also a supported dispatch target.
 The generated stdio launcher enters the repository root before invoking `al`,
 so the global shim honors that repository's `.agent-layer/al.version` even when
 the MCP client starts servers from another directory. Repositories whose MCP
@@ -861,9 +845,9 @@ Notes:
 
 Installer adds a managed `.gitignore` block that typically ignores:
 - `.agent-layer/` (except if teams choose to commit it)
-- generated client config files/directories (for example `.agents/`, `.agy/`, `.antigravitycli/`, `.claude/`, `.mcp.json`, `.codex/`, `.copilot/`, `.grok/`, `.grok-config/`, `.muse-config/`, `.muse-data/`, `.vscode/mcp.json`, `.vscode/settings.json`, and `.github/copilot-instructions.md`)
+- generated client config files/directories (for example `.agents/`, `.agy/`, `.antigravitycli/`, `.claude/`, `.mcp.json`, `.codex/`, `.copilot/`, `.grok/`, `.grok-config/`, `.vscode/mcp.json`, `.vscode/settings.json`, and `.github/copilot-instructions.md`)
 
-Keep `.agy/antigravity-cli/settings.json` and `.muse-config/muse/settings.json` gitignored, but do not treat them as disposable: they are shared state and can contain preserved native settings. `.muse-data/` can also contain non-reproducible sessions and runtime state. Agent Layer-managed MCP output remains safe to regenerate.
+Keep `.agy/antigravity-cli/settings.json` gitignored, but do not treat it as disposable: it is shared state and can contain native Antigravity settings such as workspace approval or trust. Agent Layer-managed MCP output remains safe to regenerate.
 
 If you choose to commit `.agent-layer/`, keep `.agent-layer/.gitignore` so repo-local launchers, template copies, and backups stay untracked.
 

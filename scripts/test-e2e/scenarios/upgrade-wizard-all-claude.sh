@@ -11,6 +11,8 @@ run_scenario_upgrade_wizard_all_claude() {
 
   local repo_dir
   repo_dir="$(setup_scenario_dir)"
+  local XDG_CONFIG_HOME="$repo_dir/native-config"
+  export XDG_CONFIG_HOME
 
   setup_old_version_via_binary "$repo_dir" "$E2E_OLDEST_BINARY"
   assert_al_version_content "$repo_dir" "$E2E_OLDEST_VERSION"
@@ -114,9 +116,9 @@ ENVEOF
   assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
   assert_generated_artifacts "$repo_dir"
 
-  # Verify .claude/rules/agent-layer.md has instruction content
-  assert_file_contains "$repo_dir/.claude/rules/agent-layer.md" "BEGIN: 00_rules.md" \
-    ".claude/rules/agent-layer.md has instruction blocks after upgrade+wizard+all"
+  # Verify .claude/CLAUDE.md has instruction content
+  assert_file_contains "$repo_dir/.claude/CLAUDE.md" "BEGIN: 00_rules.md" \
+    ".claude/CLAUDE.md has instruction blocks after upgrade+wizard+all"
 
   cleanup_scenario_dir "$repo_dir"
 }

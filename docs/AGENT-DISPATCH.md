@@ -20,9 +20,16 @@ particular, the current Antigravity probe baseline accepts the generated config
 but does not register its servers; use `al probe agy` before treating
 Antigravity as a caller. Antigravity remains available as a dispatch target.
 
-Muse suppresses inherited project MCP entries with disabled settings entries and
-projects its selected servers under distinct `muse-` names. Its built-in server
-is required: failure to start it prevents the Muse run from proceeding.
+Muse reads the shared project `.mcp.json`, with client-specific exclusions.
+Its project schema does not support required-server startup. Command grants
+use workspace-scoped native rules; MCP grants use the project PermissionRequest
+hook, including Agent Dispatch, without saving global MCP permissions.
+
+Codex and Muse filter MCP subprocess environments. Their generated built-in
+server definitions explicitly forward dispatch depth (`AL_DISPATCH_ACTIVE`),
+parent-run metadata (`AL_RUN_ID`, `AL_RUN_DIR`), and development executable
+selection. These are launch-time values, so a later session does not inherit the
+session that ran `al sync`. Muse uses depth zero when the marker is unset.
 
 Agent-facing tool and parameter descriptions are maintained in
 `internal/agentdispatch/mcp_tool_descriptions.toml` and embedded at build time.
@@ -150,7 +157,7 @@ Doctor checks only enabled
 harnesses with configured model overrides and reports discovery
 failures or configured models absent from their lists as warnings. Neither
 operation syncs as part of model discovery. Discovery may create the normal
-repo-local `.agy`, `.grok-config`, `.muse-config`, and `.muse-data`
+repo-local `.agy` and `.grok-config`
 directories when absent; it does not sync
 configuration or create dispatch runs.
 
@@ -199,11 +206,13 @@ stopped. Continuation requires termination confirmation and sufficient provider
 conversation or pre-start recovery evidence.
 
 Muse dispatch remains available in every approvals mode. Outside `yolo`, it
-retains native approvals and disables the approval judge. A read-only
-`muse serve` observer checks `approval/listPending`; pending approval or user
-input fails the invocation and triggers provider termination. Ordinary tool
-progress does not imply a blocked run. Muse also receives
-`--user-input-auto-resolve` for native user-input requests.
+retains native approvals and disables the approval judge. Sync projects the
+selected command and MCP grants; unmatched actions retain native prompting. A read-only
+`muse serve` observer checks `approval/listPending`; pending tool approval
+fails the invocation and triggers provider termination. Ordinary tool progress
+does not imply a blocked run. Muse receives `--user-input-auto-resolve`; native
+Muse cancels user-input requests and continues with that tool result. The observer
+does not race native auto-resolution.
 
 Only one invocation may run for a conversation at a time. Concurrent
 `continue` calls cannot start duplicate work: one may succeed and the others

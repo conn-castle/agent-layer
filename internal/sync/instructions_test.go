@@ -1,14 +1,102 @@
 package sync
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/conn-castle/agent-layer/internal/config"
 )
+
+func TestClaudeInstructionLinkMigrationAndUpdates(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, ".claude", "CLAUDE.md")
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	require.NoError(t, os.WriteFile(path, []byte(instructionHeader+"old generated copy"), 0o600))
+	instructions := []config.InstructionFile{{Name: "rules.md", Content: "Initial guidance"}}
+	require.NoError(t, writeInstructionShims(RealSystem{}, root, instructions))
+	target, err := os.Readlink(path)
+	require.NoError(t, err)
+	require.Equal(t, "../AGENTS.md", target)
+	before, err := os.Lstat(path)
+	require.NoError(t, err)
+	require.NoError(t, writeInstructionShims(RealSystem{}, root, instructions))
+	after, err := os.Lstat(path)
+	require.NoError(t, err)
+	require.True(t, os.SameFile(before, after), "no-op sync must preserve the link")
+
+	for _, content := range []string{"Updated guidance", ""} {
+		instructions = nil
+		if content != "" {
+			instructions = []config.InstructionFile{{Name: "rules.md", Content: content}}
+		}
+		require.NoError(t, writeInstructionShims(RealSystem{}, root, instructions))
+		canonical, err := os.ReadFile(filepath.Join(root, "AGENTS.md")) // #nosec G304 -- test-owned canonical instruction path.
+		require.NoError(t, err)
+		claude, err := os.ReadFile(path) // #nosec G304 -- test-owned instruction path.
+		require.NoError(t, err)
+		require.Equal(t, canonical, claude)
+		if content == "" {
+			require.Empty(t, claude)
+		} else {
+			require.Contains(t, string(claude), content)
+		}
+	}
+	// Older writers use an atomic regular-file replacement. It must replace
+	// the link rather than write through it and corrupt canonical instructions.
+	require.NoError(t, RealSystem{}.WriteFileAtomic(path, []byte("legacy copy"), 0o644))
+	canonical, err := os.ReadFile(filepath.Join(root, "AGENTS.md")) // #nosec G304 -- test-owned canonical instruction path.
+	require.NoError(t, err)
+	require.Empty(t, canonical)
+	info, err := os.Lstat(path)
+	require.NoError(t, err)
+	require.True(t, info.Mode().IsRegular())
+}
+
+func TestClaudeInstructionsInRelocatedDirectory(t *testing.T) {
+	t.Parallel()
+	root, external := t.TempDir(), t.TempDir()
+	require.NoError(t, os.Symlink(external, filepath.Join(root, ".claude")))
+	require.NoError(t, writeInstructionShims(RealSystem{}, root, []config.InstructionFile{{Name: "rules.md", Content: "Project guidance"}}))
+	path := filepath.Join(external, "CLAUDE.md")
+	info, err := os.Lstat(path)
+	require.NoError(t, err)
+	require.True(t, info.Mode().IsRegular(), "a relative link in an external Claude tree would be broken")
+	content, err := os.ReadFile(path) // #nosec G304 -- test-owned external directory.
+	require.NoError(t, err)
+	require.Contains(t, string(content), "Project guidance")
+}
+
+func TestClaudeInstructionPublicationFailurePreservesCopy(t *testing.T) {
+	t.Parallel()
+	for _, stage := range []string{"symlink", "rename"} {
+		t.Run(stage, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, ".claude", "CLAUDE.md")
+			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+			require.NoError(t, os.WriteFile(path, []byte(instructionHeader+"previous guidance"), 0o600))
+			failure := errors.New("injected publication failure")
+			sys := &MockSystem{Fallback: RealSystem{}}
+			if stage == "symlink" {
+				sys.SymlinkFunc = func(_, _ string) error { return failure }
+			} else {
+				sys.RenameFunc = func(_, _ string) error { return failure }
+			}
+			require.ErrorIs(t, writeInstructionShims(sys, root, nil), failure)
+			content, err := os.ReadFile(path) // #nosec G304 -- test-owned instruction path.
+			require.NoError(t, err)
+			require.Equal(t, instructionHeader+"previous guidance", string(content))
+			entries, err := os.ReadDir(filepath.Dir(path))
+			require.NoError(t, err)
+			require.Len(t, entries, 1, "failed publication must not leave a staging link")
+		})
+	}
+}
 
 func TestBuildInstructionShim(t *testing.T) {
 	t.Parallel()
@@ -35,7 +123,7 @@ func TestWriteInstructionShims(t *testing.T) {
 
 	paths := []string{
 		filepath.Join(root, "AGENTS.md"),
-		filepath.Join(root, ".claude", "rules", "agent-layer.md"),
+		filepath.Join(root, ".claude", "CLAUDE.md"),
 		filepath.Join(root, ".github", "copilot-instructions.md"),
 	}
 	for _, path := range paths {
@@ -171,7 +259,7 @@ func TestWriteInstructionShimsErrorPaths(t *testing.T) {
 				if err := os.Mkdir(filepath.Join(root, ".claude"), 0o700); err != nil {
 					return err
 				}
-				return os.MkdirAll(filepath.Join(root, ".claude", "rules", "agent-layer.md"), 0o700)
+				return os.Mkdir(filepath.Join(root, ".claude", "CLAUDE.md"), 0o700)
 			},
 		},
 		{
@@ -205,54 +293,37 @@ func TestWriteInstructionShimsErrorPaths(t *testing.T) {
 	}
 }
 
-func TestWriteInstructionShimsMigratesOnlyGeneratedClaudeFile(t *testing.T) {
-	for _, generated := range []bool{true, false} {
-		t.Run(fmt.Sprint(generated), func(t *testing.T) {
+func TestClaudeInstructionsPreserveUnmanagedPaths(t *testing.T) {
+	t.Parallel()
+	for _, layout := range []string{"regular", "symlink", "relocated directory"} {
+		t.Run(layout, func(t *testing.T) {
 			root := t.TempDir()
-			old := filepath.Join(root, ".claude", "CLAUDE.md")
-			if err := os.MkdirAll(filepath.Dir(old), 0o700); err != nil {
-				t.Fatal(err)
+			dir := filepath.Join(root, ".claude")
+			if layout == "relocated directory" {
+				require.NoError(t, os.Symlink(t.TempDir(), dir))
+			} else {
+				require.NoError(t, os.MkdirAll(dir, 0o700))
 			}
-			content := "# Personal guidance\n"
-			instructions := []config.InstructionFile{{Name: "rules.md", Content: "shared rules"}}
-			if generated {
-				content = buildInstructionShim(instructions)
+			path := filepath.Join(dir, "CLAUDE.md")
+			const guidance = "# Handwritten Claude guidance\n"
+			if layout == "symlink" {
+				external := filepath.Join(t.TempDir(), "instructions.md")
+				require.NoError(t, os.WriteFile(external, []byte(guidance), 0o600))
+				require.NoError(t, os.Symlink(external, path))
+			} else {
+				require.NoError(t, os.WriteFile(path, []byte(guidance), 0o600))
 			}
-			if err := os.WriteFile(old, []byte(content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if err := writeInstructionShims(RealSystem{}, root, instructions); err != nil {
-				t.Fatal(err)
-			}
-			data, err := os.ReadFile(old) // #nosec G304 -- test-controlled fixture path.
-			if generated {
-				if !os.IsNotExist(err) {
-					t.Fatalf("generated legacy shim remains: %v", err)
-				}
-			} else if err != nil || string(data) != content {
-				t.Fatalf("personal guidance changed: %q, %v", data, err)
-			}
-			data, err = os.ReadFile(filepath.Join(root, ".claude", "rules", "agent-layer.md")) // #nosec G304 -- test-controlled fixture path.
-			if err != nil || !strings.Contains(string(data), "shared rules") {
-				t.Fatalf("Claude rules missing: %q, %v", data, err)
-			}
+			before, err := os.Lstat(path)
+			require.NoError(t, err)
+			err = writeInstructionShims(RealSystem{}, root, []config.InstructionFile{{Name: "rules.md", Content: "Generated guidance"}})
+			require.ErrorContains(t, err, "refusing to overwrite unmanaged Claude instructions")
+			require.ErrorContains(t, err, ".agent-layer/instructions/")
+			after, err := os.Lstat(path)
+			require.NoError(t, err)
+			require.True(t, os.SameFile(before, after))
+			data, err := os.ReadFile(path) // #nosec G304 -- test-owned instruction path.
+			require.NoError(t, err)
+			require.Equal(t, guidance, string(data))
 		})
-	}
-}
-
-func TestWriteInstructionShimsRemovesEmptyLegacyClaudeFile(t *testing.T) {
-	root := t.TempDir()
-	old := filepath.Join(root, ".claude", "CLAUDE.md")
-	if err := os.MkdirAll(filepath.Dir(old), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(old, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeInstructionShims(RealSystem{}, root, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(old); !os.IsNotExist(err) {
-		t.Fatalf("empty legacy shim remains: %v", err)
 	}
 }

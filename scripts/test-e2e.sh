@@ -202,7 +202,9 @@ export AL_E2E_BIN_CACHE="${AL_E2E_BIN_CACHE:-$HOME/.cache/al-e2e/bin}"
 E2E_ORIG_HOME="$HOME"
 export E2E_ORIG_HOME
 export HOME="$E2E_TMP_ROOT/home"
-mkdir -p "$HOME"
+export XDG_CONFIG_HOME="$HOME/.config"
+export XDG_DATA_HOME="$HOME/.local/share"
+mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
 
 # ---------------------------------------------------------------------------
 # Auto-discover and source scenarios

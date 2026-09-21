@@ -23,7 +23,7 @@ Agent Layer projects skills from the canonical user-managed tier `.agent-layer/s
 | VS Code / GitHub Copilot | `.github/skills/`, `.claude/skills/`, `.agents/skills/`; configurable with `chat.agentSkillsLocations` | `.agents/skills/<name>/SKILL.md` plus managed `chat.agentSkillsLocations` | Agent Layer enables `.agents/skills/`, disables duplicate generated project locations `.github/skills/` and `.claude/skills/`, and preserves personal skill locations. |
 | GitHub Copilot CLI | `.github/skills/`, `.claude/skills/`, `.agents/skills/` for project skills | `.agents/skills/<name>/SKILL.md` | Copilot CLI also supports resources in the skill directory, so the shared tree preserves scripts, references, assets, and other support files. |
 | Grok | `.agents/skills/<name>/SKILL.md` | `.agents/skills/<name>/SKILL.md` | Uses the shared skill tree. |
-| Muse | `.agents/skills/<name>/SKILL.md` | `.agents/skills/<name>/SKILL.md` | Uses the shared skill tree; no additional Muse copy is generated. |
+| Muse | `.agents/skills/<name>/SKILL.md` | `.agents/skills/<name>/SKILL.md` | Uses the shared skill tree; no additional Muse copy is generated. Native Muse may report shadow diagnostics when Claude’s real skill tree is also present, while selecting each skill once. |
 
 ## Projection Rules
 

@@ -78,7 +78,7 @@ func FindRepoRoot(start string) (string, error) {
 	}
 
 	for _, candidate := range starts {
-		root, found, err := findGitRoot(candidate)
+		root, found, err := FindGitRoot(candidate)
 		if err != nil {
 			return "", err
 		}
@@ -89,7 +89,9 @@ func FindRepoRoot(start string) (string, error) {
 	return physical, nil
 }
 
-func findGitRoot(start string) (string, bool, error) {
+// FindGitRoot walks upward from an absolute directory to locate a .git marker.
+// It recognizes both ordinary repositories and linked-worktree gitfiles.
+func FindGitRoot(start string) (string, bool, error) {
 	dir := start
 	for {
 		candidate := filepath.Join(dir, gitDir)

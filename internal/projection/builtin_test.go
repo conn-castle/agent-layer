@@ -132,7 +132,7 @@ func TestEffectiveDispatchServerCarriesRepoRoot(t *testing.T) {
 	if resolved[0].Command != "/bin/sh" {
 		t.Fatalf("built-in command = %q, want /bin/sh", resolved[0].Command)
 	}
-	want := []string{"-c", `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" && exec al dispatch mcp-server`, "agent-layer-mcp", root}
+	want := []string{"-c", `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" || exit; if [ -n "$AL_DEV_BYPASS_VERSION_DISPATCH" ] && [ -n "$AL_DEV_EXECUTABLE" ]; then exec "$AL_DEV_EXECUTABLE" dispatch mcp-server; else exec al dispatch mcp-server; fi`, "agent-layer-mcp", root}
 	if len(resolved[0].Args) != len(want) {
 		t.Fatalf("built-in args = %q, want %q", resolved[0].Args, want)
 	}
@@ -237,5 +237,41 @@ func TestEffectiveServersDoNotDuplicateReservedID(t *testing.T) {
 	}
 	if ids := EffectiveEnabledServerIDs(cfg); len(ids) != 1 || ids[0] != BuiltInDispatchServerID {
 		t.Fatalf("effective enabled server IDs = %v, want one reserved ID", ids)
+	}
+}
+
+func TestDispatchLauncherDevelopmentExecutableSelection(t *testing.T) {
+	root := t.TempDir()
+	bin := t.TempDir()
+	for name, marker := range map[string]string{"al": "installed", "source al": "development"} {
+		path := filepath.Join(bin, name)
+		if err := os.WriteFile(path, []byte("#!/bin/sh\nprintf '"+marker+"\\n'\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, 0o700); err != nil {
+			t.Fatal(err)
+		} // #nosec G302 -- test-owned executable.
+	}
+	server, _ := RootedBuiltInDispatchServer(dispatchCallerConfig(ClientClaude), ClientClaude, root)
+	for _, tc := range []struct{ name, bypass, executable, want string }{
+		{"development", "1", filepath.Join(bin, "source al"), "development\n"},
+		{"ordinary ignores stale executable", "", filepath.Join(bin, "source al"), "installed\n"},
+		{"direct development client uses PATH", "1", "", "installed\n"},
+		{"missing explicit executable fails", "1", filepath.Join(bin, "missing"), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := exec.Command(server.Command, server.Args...) // #nosec G204 -- generated launcher under test.
+			cmd.Env = []string{"PATH=" + bin, "AL_DEV_BYPASS_VERSION_DISPATCH=" + tc.bypass, "AL_DEV_EXECUTABLE=" + tc.executable}
+			out, err := cmd.Output()
+			if tc.want == "" {
+				if err == nil {
+					t.Fatal("missing development executable must fail")
+				}
+				return
+			}
+			if err != nil || string(out) != tc.want {
+				t.Fatalf("output %q, error %v; want %q", out, err, tc.want)
+			}
+		})
 	}
 }

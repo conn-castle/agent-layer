@@ -60,12 +60,21 @@ skip_if_no_upgrade_manifest() {
 # Scenario isolation
 # ---------------------------------------------------------------------------
 
-# setup_scenario_dir — create an isolated temp directory with a fake .git/
-# dir under $E2E_TMP_ROOT. Prints the path to stdout.
+# Match internal/gitenv.WithoutDiscovery: inherited hook variables must not
+# redirect fixture initialization into the invoking repository.
+init_fixture_git() (
+  unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+    GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CEILING_DIRECTORIES \
+    GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_PREFIX
+  git -c init.templateDir= -c core.hooksPath=/dev/null init --quiet "$1"
+)
+
+# setup_scenario_dir — create a real, isolated Git repository under
+# $E2E_TMP_ROOT so native Git index/ignore checks exercise valid state.
 setup_scenario_dir() {
   local dir
   dir="$(mktemp -d "$E2E_TMP_ROOT/scenario-XXXXXX")"
-  mkdir -p "$dir/.git"
+  init_fixture_git "$dir" || return 1
   (cd "$dir" && pwd -P)
 }
 
@@ -439,7 +448,7 @@ download_or_cache_binary() {
 
 # setup_old_version_via_binary <dir> <binary_path> — run an old release
 # binary's `init --no-wizard` inside <dir> to create authentic .agent-layer/
-# state. Creates .git/ if missing. Returns 1 on failure.
+# state. Initializes a real Git repository if missing. Returns 1 on failure.
 setup_old_version_via_binary() {
   local dir="$1"
   local binary_path="$2"
@@ -449,7 +458,7 @@ setup_old_version_via_binary() {
     return 1
   fi
 
-  mkdir -p "$dir/.git"
+  init_fixture_git "$dir" || return 1
   local init_output
   if ! init_output=$(cd "$dir" && "$binary_path" init --no-wizard 2>&1); then
     fail "old binary init failed: $binary_path"
@@ -712,7 +721,7 @@ assert_al_version_content() {
 # Sync output paths (relative to repo root) — source of truth from
 # internal/sync/*.go. Used by assert_generated_artifacts and idempotency.
 _SYNC_OUTPUT_PATHS=(
-  ".claude/rules/agent-layer.md"
+  ".claude/CLAUDE.md"
   "AGENTS.md"
   ".github/copilot-instructions.md"
   ".claude/settings.json"
@@ -736,12 +745,12 @@ assert_generated_artifacts() {
   assert_file_not_exists "$dir/.codex/AGENTS.md" ".codex/AGENTS.md is not generated after Codex AGENTS.md retirement"
   if _instruction_sources_have_content "$dir"; then
     # Verify managed markers in instruction shims (all use the same header).
-    assert_file_contains "$dir/.claude/rules/agent-layer.md" "GENERATED FILE" ".claude/rules/agent-layer.md has managed marker"
+    assert_file_contains "$dir/.claude/CLAUDE.md" "GENERATED FILE" ".claude/CLAUDE.md has managed marker"
     assert_file_contains "$dir/AGENTS.md" "GENERATED FILE" "AGENTS.md has managed marker"
     assert_file_contains "$dir/.github/copilot-instructions.md" "GENERATED FILE" \
       "copilot-instructions.md has managed marker"
   else
-    assert_file_empty "$dir/.claude/rules/agent-layer.md" ".claude/rules/agent-layer.md is empty without instruction sources"
+    assert_file_empty "$dir/.claude/CLAUDE.md" ".claude/CLAUDE.md is empty without instruction sources"
     assert_file_empty "$dir/AGENTS.md" "AGENTS.md is empty without instruction sources"
     assert_file_empty "$dir/.github/copilot-instructions.md" \
       "copilot-instructions.md is empty without instruction sources"

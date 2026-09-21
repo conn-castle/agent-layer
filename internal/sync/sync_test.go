@@ -46,7 +46,7 @@ func TestRunGolden(t *testing.T) {
 	expectedRoot := filepath.Join(fixtureRoot, "expected")
 	files := []string{
 		"AGENTS.md",
-		".claude/rules/agent-layer.md",
+		".claude/CLAUDE.md",
 		".github/copilot-instructions.md",
 		".codex/config.toml",
 		".grok/config.toml",

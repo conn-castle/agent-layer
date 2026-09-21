@@ -767,6 +767,28 @@ func TestRepairGitignoreBlock(t *testing.T) {
 	}
 }
 
+func TestRepairedGitignoreProtectsMuseGeneratedSecrets(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := RepairGitignoreBlock(root, RepairGitignoreBlockOptions{System: RealSystem{}}); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "-c", "init.templateDir=", "-C", root, "init", "--quiet")
+	cmd.Env = gitenv.WithoutDiscovery()
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	for _, path := range []string{".mcp.json", ".mcp.json.tmp-123456", ".muse/agent-layer-policy.json"} {
+		cmd := exec.Command("git", "-C", root, "check-ignore", "--quiet", "--", path)
+		cmd.Env = gitenv.WithoutDiscovery()
+		if err := cmd.Run(); err != nil {
+			t.Errorf("generated private artifact %s is not ignored: %v", path, err)
+		}
+	}
+}
+
 func TestRepairGitignoreBlock_RequiresRootAndSystem(t *testing.T) {
 	if err := RepairGitignoreBlock("", RepairGitignoreBlockOptions{System: RealSystem{}}); err == nil {
 		t.Fatal("expected error when root is empty")

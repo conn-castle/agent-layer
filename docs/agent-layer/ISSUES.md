@@ -29,6 +29,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-09-20 copilot-native-project-mcp-loading: Copilot CLI no longer documents the generated project MCP path
+    Priority: Medium. Area: Copilot CLI integration
+    Description: Agent Layer generates `.copilot/mcp-config.json`, but installed Copilot CLI 1.0.83 documents workspace `.mcp.json` or `.github/mcp.json`; `al copilot` does not pass the generated file explicitly. Copilot-only entries can therefore be absent from native discovery. This predates the Muse rebuild.
+    Next step: Verify the generated-file loading contract against supported native Copilot versions using an isolated selected-server fixture.
+    Notes: Installed CLI help and startup-source evidence retained in `.agent-layer/tmp/muse-rebuild/other-mcp-audit` and the rebuild worktree's `.agent-layer/tmp/muse-critical`.
+
 - Issue 2026-07-28 dispatch-mcp-start-transport-window: An MCP dispatch_start disconnect can orphan a handle
     Priority: Medium. Area: Agent Dispatch MCP interface
     Description: `dispatch_start` is an RPC acknowledgement rather than a direct write to the caller's terminal. If the transport disconnects after the backend starts but before the client observes the response, the dispatch keeps running durably while the caller never learns its handle. This slice deliberately added no idempotency state and no listing API.

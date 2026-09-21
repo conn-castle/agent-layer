@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/conn-castle/agent-layer/internal/agentoptions"
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
@@ -225,5 +226,41 @@ func TestWizardStartsDiscoveryBeforeFirstPromptAndCancelsOnExit(t *testing.T) {
 		case <-time.After(3 * time.Second):
 			t.Fatal("discovery worker outlived wizard cancellation")
 		}
+	}
+}
+
+func TestDisabledMuseDefersNativeDiscoveryUntilModelPicker(t *testing.T) {
+	original := wizardOptionDiscoveryRequestFunc
+	t.Cleanup(func() { wizardOptionDiscoveryRequestFunc = original })
+	queried := make(chan string, 16)
+	wizardOptionDiscoveryRequestFunc = func() agentoptions.DiscoveryRequest {
+		return agentoptions.DiscoveryRequest{Live: true, LookPath: func(name string) (string, error) { queried <- name; return "", os.ErrNotExist }}
+	}
+	cache := &wizardOptionDiscoveryCache{project: &config.ProjectConfig{}}
+	cache.prefetchAll()
+	for _, entry := range cache.entries {
+		<-entry.done
+	}
+	if cache.entries[AgentMuse] != nil {
+		t.Fatal("disabled Muse was prefetched")
+	}
+	for len(queried) > 0 {
+		if <-queried == AgentMuse {
+			t.Fatal("disabled Muse accessed its native harness")
+		}
+	}
+	// The wizard only opens this picker after the user has selected Muse.
+	ui := &MockUI{NoteFunc: func(string, string) error { return nil }, SelectFunc: func(_ string, options []string, value *string) error { *value = options[0]; return nil }}
+	value := ""
+	if err := cache.selectModel(ui, AgentMuse, "Muse model", &value); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case name := <-queried:
+		if name != AgentMuse {
+			t.Fatalf("queried %s", name)
+		}
+	default:
+		t.Fatal("enabled Muse was not discovered")
 	}
 }

@@ -325,11 +325,6 @@ func validateRemoteModelDiscovery(stage string, model Model) error {
 		if err != nil {
 			return err
 		}
-		// Selecting a model may use an unauthenticated catalog, but a paid
-		// benchmark must reject explicit evidence of missing authentication.
-		if dispatchAgent(model) == adapterGrok && strings.Contains(strings.ToLower(string(output)), "not authenticated") {
-			return fmt.Errorf("executing Grok harness is not authenticated")
-		}
 		models, err := agentoptions.ParseModelCommandOutput(dispatchAgent(model), output)
 		if err != nil {
 			return err

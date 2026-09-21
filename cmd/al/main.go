@@ -87,6 +87,15 @@ func runMain(ctx context.Context, args []string, stdout io.Writer, stderr io.Wri
 			return
 		}
 	}
+	if strings.TrimSpace(os.Getenv(versiondispatch.EnvDevelopmentBypassVersionDispatch)) != "" {
+		executable, err := os.Executable()
+		if err == nil {
+			err = os.Setenv(versiondispatch.EnvDevelopmentExecutable, executable)
+		}
+		if handleRunError(err, stderr, exit, false) {
+			return
+		}
+	}
 	if handleRunError(executeFunc(ctx, args, stdout, stderr), stderr, exit, false) {
 		return
 	}

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-harness-auth.sh — regression test for resolve_latest_release_version
+# test-harness-auth.sh — regression tests for fixture isolation and release
 # authentication. Validates that the function sends an Authorization header
 # when GITHUB_TOKEN (or GH_TOKEN) is available, preventing GitHub API
 # rate-limit failures in CI.
@@ -143,11 +143,48 @@ else
   fail "resolve_latest_release_version should work without a token (got rc=$rc, result='$result')"
 fi
 
+# Fixture Git initialization must remain local even when invoked from a Git hook.
+section "Harness Git: inherited repository discovery"
+if (
+  E2E_TMP_ROOT="$MOCK_BIN_DIR/fixtures"
+  mkdir -p "$E2E_TMP_ROOT" "$MOCK_BIN_DIR/external/worktree" "$MOCK_BIN_DIR/external/objects"
+  init_fixture_git "$MOCK_BIN_DIR/external/worktree" || exit 1
+  printf 'external index sentinel\n' > "$MOCK_BIN_DIR/external/index"
+  printf 'external worktree sentinel\n' > "$MOCK_BIN_DIR/external/worktree/keep"
+  cp -R "$MOCK_BIN_DIR/external" "$MOCK_BIN_DIR/external-before"
+  export GIT_DIR="$MOCK_BIN_DIR/external/worktree/.git"
+  export GIT_WORK_TREE="$MOCK_BIN_DIR/external/worktree"
+  export GIT_COMMON_DIR="$GIT_DIR"
+  export GIT_INDEX_FILE="$MOCK_BIN_DIR/external/index"
+  export GIT_OBJECT_DIRECTORY="$MOCK_BIN_DIR/external/objects"
+  export GIT_ALTERNATE_OBJECT_DIRECTORIES="$GIT_DIR/objects"
+  export GIT_CEILING_DIRECTORIES="$MOCK_BIN_DIR"
+  export GIT_DISCOVERY_ACROSS_FILESYSTEM=0 GIT_PREFIX=external/
+  scenario="$(setup_scenario_dir)" || exit 1
+  [[ -f "$scenario/.git/HEAD" && -f "$scenario/.git/config" ]] || exit 1
+  old="$E2E_TMP_ROOT/old-version"
+  mkdir -p "$old"
+  cat > "$MOCK_BIN_DIR/old-al" <<'OLD_AL'
+#!/usr/bin/env bash
+[[ "$1" == init && "$2" == --no-wizard && -f .git/HEAD && -f .git/config ]]
+OLD_AL
+  chmod +x "$MOCK_BIN_DIR/old-al"
+  setup_old_version_via_binary "$old" "$MOCK_BIN_DIR/old-al" || exit 1
+  # Both public helpers created their own repositories, left the inherited
+  # directory/index/worktree byte-identical, and did not mutate caller state.
+  [[ "$GIT_DIR" == "$MOCK_BIN_DIR/external/worktree/.git" ]] || exit 1
+  diff -r "$MOCK_BIN_DIR/external-before" "$MOCK_BIN_DIR/external"
+); then
+  pass "fixture Git initialization ignores inherited repository paths"
+else
+  fail "fixture Git initialization escaped its scenario or changed external state"
+fi
+
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo ""
-echo "=== Harness Auth Summary ==="
+echo "=== Harness Self-Test Summary ==="
 echo "Tests: $((E2E_PASS_COUNT + E2E_FAIL_COUNT)) total, ${E2E_PASS_COUNT} passed, ${E2E_FAIL_COUNT} failed"
 
 if [[ $E2E_FAIL_COUNT -gt 0 ]]; then

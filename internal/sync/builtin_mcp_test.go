@@ -29,7 +29,7 @@ func wantBuiltInDispatchInvocation(t *testing.T, command string, args []string, 
 	if command != "/bin/sh" {
 		t.Fatalf("built-in dispatch command = %q, want /bin/sh", command)
 	}
-	want := []string{"-c", `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" && exec al dispatch mcp-server`, "agent-layer-mcp", root}
+	want := []string{"-c", `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" || exit; if [ -n "$AL_DEV_BYPASS_VERSION_DISPATCH" ] && [ -n "$AL_DEV_EXECUTABLE" ]; then exec "$AL_DEV_EXECUTABLE" dispatch mcp-server; else exec al dispatch mcp-server; fi`, "agent-layer-mcp", root}
 	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("built-in dispatch args = %q, want %q", args, want)
 	}

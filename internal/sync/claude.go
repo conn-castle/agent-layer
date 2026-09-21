@@ -3,12 +3,16 @@ package sync
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
+
+const claudeDirectory = ".claude"
 
 // writeClaudeSettings generates .claude/settings.json.
 func writeClaudeSettings(sys System, root string, project *config.ProjectConfig) error {
@@ -17,7 +21,7 @@ func writeClaudeSettings(sys System, root string, project *config.ProjectConfig)
 		return err
 	}
 
-	claudeDir := filepath.Join(root, ".claude")
+	claudeDir := filepath.Join(root, claudeDirectory)
 	if err := sys.MkdirAll(claudeDir, 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, claudeDir, err)
 	}
@@ -89,10 +93,59 @@ func buildClaudeSettings(root string, project *config.ProjectConfig) (map[string
 			return nil, err
 		}
 	}
+	if config.IsAgentEnabled(project.Config.Agents.Muse.Enabled) {
+		claudeIDs := make(map[string]bool)
+		for _, id := range projection.EffectiveServerIDs(project.Config, projection.ClientClaude) {
+			claudeIDs[id] = true
+		}
+		var excluded []string
+		for _, id := range projection.EffectiveServerIDs(project.Config, projection.ClientMuse) {
+			if !claudeIDs[id] {
+				excluded = append(excluded, id)
+			}
+		}
+		if len(excluded) > 0 {
+			// Preserve explicit user exclusions while enforcing client filters.
+			existing, err := stringSliceSetting(settings, "disabledMcpjsonServers")
+			if err != nil {
+				return nil, err
+			}
+			for _, id := range excluded {
+				if !slices.Contains(existing, id) {
+					existing = append(existing, id)
+				}
+			}
+			sort.Strings(existing)
+			settings["disabledMcpjsonServers"] = existing
+		}
+	}
 	return settings, nil
 }
 
 // shellSingleQuote returns a POSIX shell single-quoted word.
 func shellSingleQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+// stringSliceSetting validates an agent-specific list before adding managed values.
+func stringSliceSetting(settings map[string]any, key string) ([]string, error) {
+	raw, exists := settings[key]
+	if !exists {
+		return nil, nil
+	}
+	if list, ok := raw.([]string); ok {
+		return slices.Clone(list), nil
+	}
+	if list, ok := raw.([]any); ok {
+		result := make([]string, 0, len(list))
+		for _, item := range list {
+			value, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("agents.claude.agent_specific.%s must be an array of strings", key)
+			}
+			result = append(result, value)
+		}
+		return result, nil
+	}
+	return nil, fmt.Errorf("agents.claude.agent_specific.%s must be an array of strings", key)
 }

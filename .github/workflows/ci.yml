@@ -58,6 +58,45 @@ jobs:
       - name: Build release artifacts (dry run)
         run: make release-dist AL_VERSION=ci DIST_DIR=dist
 
+  native-muse:
+    name: Native Muse (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Cache pinned native Muse
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .agent-layer/tmp/muse-native/bin
+          key: native-muse-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/test-muse-native/release.json') }}
+      - name: Test real Muse with local provider and MCP fixtures
+        run: make test-muse-native
+      - name: Upload native test diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-muse-${{ runner.os }}-${{ runner.arch }}
+          include-hidden-files: true
+          path: |
+            .agent-layer/tmp/muse-native/runs/*/*.json
+            .agent-layer/tmp/muse-native/runs/*/*.jsonl
+            .agent-layer/tmp/muse-native/runs/*/*.log
+            .agent-layer/tmp/muse-native/runs/*/*.txt
+            .agent-layer/tmp/muse-native/*/*.json
+            .agent-layer/tmp/muse-native/*/*.jsonl
+            .agent-layer/tmp/muse-native/*/*.log
+            .agent-layer/tmp/muse-native/*/*.txt
+
   website-build:
     runs-on: ubuntu-latest
     steps:

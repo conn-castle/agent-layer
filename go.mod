@@ -11,6 +11,7 @@ require (
 	github.com/aymanbagabas/go-udiff v0.4.1
 	github.com/fatih/color v1.19.0
 	github.com/google/jsonschema-go v0.4.3
+	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/pelletier/go-toml/v2 v2.4.1
@@ -44,7 +45,6 @@ require (
 	github.com/dnephin/pflag v1.0.7 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
-	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect

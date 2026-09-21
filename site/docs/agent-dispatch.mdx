@@ -91,7 +91,7 @@ start -> wait -> completed | failed | cancelled
 
 ## MCP tools
 
-`al sync` projects a built-in MCP server named `agent-layer` into every enabled Codex, Claude, Antigravity, VS Code, Copilot CLI, Grok, and Muse client. The server is derived from Agent Layer configuration, not declared as a `[[mcp.servers]]` entry. Its ID is reserved and cannot be used by a custom server. Muse uses a distinct native server name, normally `muse-agent-layer`, to coexist with Claude without changing client filters; see the [reference](./reference#agents).
+`al sync` projects a built-in MCP server named `agent-layer` into every enabled Codex, Claude, Antigravity, VS Code, Copilot CLI, Grok, and Muse client. The server is derived from Agent Layer configuration, not declared as a `[[mcp.servers]]` entry. Its ID is reserved and cannot be used by a custom server. Muse shares the project `.mcp.json` with Claude while preserving client filters; see the [reference](./reference#agents).
 
 The server exposes seven Agent Dispatch tools:
 

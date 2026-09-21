@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -155,7 +156,6 @@ func TestDiscoverModelsThroughHarnessProtocols(t *testing.T) {
 		{"claude", "claude", []string{"future-claude"}},
 		{"codex", "codex", []string{"future-codex", "another-codex"}},
 		{"grok", "grok", []string{"future-model", "another-model"}},
-		{"grok", "unauthenticated", []string{"fallback"}},
 		{"copilot_cli", "copilot", []string{"future-copilot", "another-copilot"}},
 		{"muse", "muse", []string{"future-muse", "another-muse"}},
 	} {
@@ -168,30 +168,6 @@ func TestDiscoverModelsThroughHarnessProtocols(t *testing.T) {
 				t.Fatalf("models=%v want=%v", got, tc.want)
 			}
 		})
-	}
-}
-
-func TestMuseDiscoveryExplainsEmptyNativeCatalog(t *testing.T) {
-	_, err := DiscoverModels(agentMuse, harnessRequest(t, "muse-empty"))
-	if err == nil || !strings.Contains(err.Error(), "empty catalog") {
-		t.Fatalf("error = %v, want empty catalog explanation", err)
-	}
-}
-
-func TestMuseDiscoveryRejectsMissingModelsMember(t *testing.T) {
-	_, err := DiscoverModels(agentMuse, harnessRequest(t, "muse-missing-models"))
-	if err == nil || !strings.Contains(err.Error(), "omitted result.models") {
-		t.Fatalf("error = %v, want malformed response failure", err)
-	}
-}
-
-func TestMuseDiscoverySkipsUnrelatedMessages(t *testing.T) {
-	got, err := DiscoverModels(agentMuse, harnessRequest(t, "muse-noisy"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := []string{"future-muse", "another-muse"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("models=%v want=%v", got, want)
 	}
 }
 
@@ -228,7 +204,7 @@ func TestDiscoveryFailuresRemainExplicit(t *testing.T) {
 		{"copilot_cli", "copilot-error", "-32603: Failed to list models"},
 		{"copilot_cli", "copilot-empty", ""}, {"copilot_cli", "copilot-malformed", ""}, {"copilot_cli", "copilot-oversized", ""},
 		{"claude", "claude-error", ""}, {"codex", "codex-error", ""}, {"codex", "codex-loop", ""},
-		{"grok", "unauthenticated-empty", "not authenticated"}, {"grok", "bad-output", ""}, {"grok", "exit-error", ""},
+		{"grok", "unauthenticated", ""}, {"grok", "bad-output", ""}, {"grok", "exit-error", ""},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			req := harnessRequest(t, tc.mode)
@@ -365,4 +341,47 @@ func runCopilotHarness(mode string) {
 	}
 	// The discovery caller must cancel/reap an otherwise long-lived server.
 	time.Sleep(time.Minute)
+}
+
+func TestMuseDiscoveryExplainsEmptyNativeCatalog(t *testing.T) {
+	_, err := DiscoverModels(agentMuse, harnessRequest(t, "muse-empty"))
+	if err == nil || !strings.Contains(err.Error(), "empty catalog") {
+		t.Fatalf("error = %v, want empty catalog explanation", err)
+	}
+}
+
+func TestMuseDiscoveryRejectsMissingModelsMember(t *testing.T) {
+	_, err := DiscoverModels(agentMuse, harnessRequest(t, "muse-missing-models"))
+	if err == nil || !strings.Contains(err.Error(), "omitted result.models") {
+		t.Fatalf("error = %v, want malformed response failure", err)
+	}
+}
+
+func TestMuseDiscoverySkipsUnrelatedMessages(t *testing.T) {
+	got, err := DiscoverModels(agentMuse, harnessRequest(t, "muse-noisy"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"future-muse", "another-muse"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("models=%v want=%v", got, want)
+	}
+}
+
+func TestMuseDiscoveryPreservesNativeEnvironment(t *testing.T) {
+	root := t.TempDir()
+	env := []string{"HOME=/native/home", "XDG_CONFIG_HOME=/native/config", "XDG_DATA_HOME=/native/data"}
+	cmd, err := discoveryCommand(agentMuse, DiscoveryRequest{Context: context.Background(), Project: &config.ProjectConfig{Root: root}, Env: env, LookPath: func(string) (string, error) { return "/fixture/muse", nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range env {
+		if !slices.Contains(cmd.Env, entry) {
+			t.Fatalf("lost environment %s: %v", entry, cmd.Env)
+		}
+	}
+	for _, name := range []string{".muse-config", ".muse-data"} {
+		if _, err := os.Stat(filepath.Join(root, name)); !os.IsNotExist(err) {
+			t.Fatalf("created isolated root: %s", name)
+		}
+	}
 }

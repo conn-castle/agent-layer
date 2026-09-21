@@ -14,11 +14,14 @@
 /.agent/
 /.agents/
 /.mcp.json
+/.mcp.json.tmp-*
 /.codex/
 /.copilot/
 /.gemini/
 /.grok/
 /.grok-config/
+/.muse/hooks.json
+/.muse/agent-layer-policy.json
 /.muse-config/
 /.muse-data/
 

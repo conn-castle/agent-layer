@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 // BuiltInDispatchServerID is the reserved ID of the Agent Layer MCP server that
@@ -28,7 +29,7 @@ const (
 	builtInDispatchSubject = "dispatch"
 	builtInDispatchAction  = "mcp-server"
 	builtInDispatchShell   = "/bin/sh"
-	builtInDispatchScript  = `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" && exec al dispatch mcp-server`
+	builtInDispatchScript  = `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" || exit; if [ -n "$AL_DEV_BYPASS_VERSION_DISPATCH" ] && [ -n "$AL_DEV_EXECUTABLE" ]; then exec "$AL_DEV_EXECUTABLE" dispatch mcp-server; else exec al dispatch mcp-server; fi`
 	builtInDispatchArgZero = "agent-layer-mcp"
 )
 
@@ -179,4 +180,39 @@ func containsServerID(ids []string, id string) bool {
 		}
 	}
 	return false
+}
+
+// MuseSharedMCPExclusions returns generated root .mcp.json IDs that a client
+// must mask while Muse sharing is active. Native personal/plugin servers are
+// deliberately outside this set. Without Muse, retain existing client behavior.
+func MuseSharedMCPExclusions(cfg config.Config, client string) []string {
+	if !config.IsAgentEnabled(cfg.Agents.Muse.Enabled) {
+		return nil
+	}
+	shared := EffectiveServerIDs(cfg, ClientMuse)
+	if config.IsAgentEnabled(cfg.Agents.Claude.Enabled) || config.IsAgentEnabled(cfg.Agents.ClaudeVSCode.Enabled) {
+		shared = append(shared, EffectiveServerIDs(cfg, ClientClaude)...)
+	}
+	selected := EffectiveServerIDs(cfg, client)
+	seen := make(map[string]bool)
+	var excluded []string
+	for _, id := range shared {
+		if !seen[id] && !containsServerID(selected, id) {
+			excluded = append(excluded, id)
+		}
+		seen[id] = true
+	}
+	sort.Strings(excluded)
+	return excluded
+}
+
+// BuiltInDispatchEnvVars lists launch-time context needed by the dispatch server.
+// Clients that filter subprocess environments must forward these names without
+// snapshotting their values into generated configuration.
+func BuiltInDispatchEnvVars() []string {
+	return []string{
+		"AL_DISPATCH_ACTIVE", "AL_RUN_ID", "AL_RUN_DIR",
+		versiondispatch.EnvDevelopmentBypassVersionDispatch,
+		versiondispatch.EnvDevelopmentExecutable,
+	}
 }
