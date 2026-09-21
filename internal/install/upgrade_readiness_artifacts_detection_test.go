@@ -462,7 +462,7 @@ func TestDetectDisabledAgentArtifacts_FlagsManagedMuseSettings(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
 		t.Fatalf("mkdir Muse settings: %v", err)
 	}
-	if err := os.WriteFile(settingsPath, []byte(`{"schema_version":1,"mcpServers":{"agent-layer":{"type":"stdio"}}}`), 0o600); err != nil {
+	if err := os.WriteFile(settingsPath, []byte(`{"schema_version":1,"agentLayerManagedMcpServers":["agent-layer"],"mcpServers":{"agent-layer":{"type":"stdio"}}}`), 0o600); err != nil {
 		t.Fatalf("write Muse settings: %v", err)
 	}
 
@@ -502,5 +502,38 @@ func TestDetectDisabledAgentArtifacts_FlagsSharedSkillsWhenNoConsumerEnabled(t *
 	}
 	if check == nil || !strings.Contains(strings.Join(check.Details, "\n"), ".agents/skills/alpha/SKILL.md") {
 		t.Fatalf("expected stale shared skill finding, got %#v", check)
+	}
+}
+
+func TestMuseProjectMCPIsNotDisabledClaudeArtifact(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".mcp.json"), []byte(`{"_generatedBy":"agent-layer","mcpServers":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{Agents: config.AgentsConfig{Muse: config.AgentConfig{Enabled: testutil.BoolPtr(true)}}}
+	check, err := detectDisabledAgentArtifacts(&installer{root: root, sys: RealSystem{}}, &cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if check != nil {
+		t.Fatalf("active shared MCP misclassified: %#v", check)
+	}
+}
+
+func TestDetectDisabledAgentArtifactsPreservesHandwrittenMuseDispatch(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".muse-config", "muse", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"schema_version":1,"mcpServers":{"agent-layer":{"command":"al","args":["mcp","serve"]}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	check, err := detectDisabledAgentArtifacts(&installer{root: root, sys: RealSystem{}}, &config.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if check != nil {
+		t.Fatalf("unowned settings reported: %#v", check)
 	}
 }

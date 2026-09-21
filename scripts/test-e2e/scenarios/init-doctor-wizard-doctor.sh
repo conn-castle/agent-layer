@@ -192,7 +192,7 @@ _init_doctor_wizard_assert_bare_init_files() {
   for rel_path in \
     "AGENTS.md" \
     "CLAUDE.md" \
-    ".claude/rules/agent-layer.md" \
+    ".claude/CLAUDE.md" \
     ".github/copilot-instructions.md" \
     ".codex/AGENTS.md" \
     ".claude/settings.json" \
@@ -238,7 +238,7 @@ _init_doctor_wizard_assert_post_wizard_files() {
   # Whitespace inside the launcher script is stripped by the compact-JSON
   # helper on both sides; \u0026 is Go's JSON escaping of "&".
   local dispatch_launcher_args
-  dispatch_launcher_args='["-c","AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd \"$1\" \u0026\u0026 exec al dispatch mcp-server","agent-layer-mcp","'"$repo_dir"'"]'
+  dispatch_launcher_args='["-c","AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd \"$1\" || exit; if [ -n \"$AL_DEV_BYPASS_VERSION_DISPATCH\" ] \u0026\u0026 [ -n \"$AL_DEV_EXECUTABLE\" ]; then exec \"$AL_DEV_EXECUTABLE\" dispatch mcp-server; else exec al dispatch mcp-server; fi","agent-layer-mcp","'"$repo_dir"'"]'
   _init_doctor_wizard_assert_compact_json_equals "$repo_dir/.copilot/mcp-config.json" \
     '{"mcpServers":{"agent-layer":{"type":"stdio","command":"/bin/sh","args":'"$dispatch_launcher_args"',"tools":["*"]}}}' \
     "Copilot CLI MCP config includes the built-in Agent Dispatch server"

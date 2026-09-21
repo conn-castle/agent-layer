@@ -12,6 +12,8 @@ import (
 
 func writeTestRepo(t *testing.T, root string) {
 	t.Helper()
+	// This fixture enables Muse, whose workspace-scoped grants live in native user storage.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	paths := config.DefaultPaths(root)
 	if err := os.MkdirAll(paths.InstructionsDir, 0o700); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)

@@ -19,6 +19,9 @@ const (
 	EnvVersionOverride                  = "AL_VERSION"
 	EnvShimActive                       = "AL_SHIM_ACTIVE"
 	EnvDevelopmentBypassVersionDispatch = "AL_DEV_BYPASS_VERSION_DISPATCH" //nolint:gosec // Environment key, not a credential.
+	// EnvDevelopmentExecutable carries the invoking binary through native MCP
+	// clients whose server launcher otherwise resolves a different al on PATH.
+	EnvDevelopmentExecutable = "AL_DEV_EXECUTABLE"
 
 	// sourceCurrent and sourcePin label the origin of the resolved version.
 	sourceCurrent = "current"

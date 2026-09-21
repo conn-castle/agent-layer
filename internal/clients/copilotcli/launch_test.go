@@ -2,6 +2,7 @@ package copilotcli
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -126,4 +127,37 @@ func TestLaunchCopilotCLIAllowAllTools(t *testing.T) {
 	}
 
 	call.AssertCalled(t, copilotPath, []string{"copilot", "--model", "test-model", "--allow-all-tools"})
+}
+
+func TestLaunchCopilotMuseExcludesOnlyUnselectedSharedServers(t *testing.T) {
+	for _, muse := range []bool{false, true} {
+		t.Run(fmt.Sprint(muse), func(t *testing.T) {
+			root := t.TempDir()
+			binary := writeResolvableCopilot(t)
+			call := testutil.CaptureExec(t, &execFunc, nil)
+			enabled := true
+			cfg := &config.ProjectConfig{Root: root, Config: config.Config{Agents: config.AgentsConfig{
+				Muse: config.AgentConfig{Enabled: &muse}, CopilotCLI: config.AgentConfig{Enabled: &enabled}, ClaudeVSCode: config.EnableOnlyConfig{Enabled: &enabled},
+			}}}
+			for id, selected := range map[string][]string{
+				"muse-only": {"muse"}, "claude-only": {"claude"}, "shared": {"muse", "copilot"}, "copilot-only": {"copilot"}, "other": {"grok"},
+			} {
+				cfg.Config.MCP.Servers = append(cfg.Config.MCP.Servers, config.MCPServer{ID: id, Enabled: &enabled, Clients: selected, Transport: "stdio", Command: "fixture"})
+			}
+			env := []string{"CUSTOM=preserved"}
+			err := Launch(cfg, &run.Info{Dir: root}, env, []string{"--disable-mcp-server", "personal-disabled"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []string{"copilot"}
+			if muse {
+				want = append(want, "--disable-mcp-server", "claude-only", "--disable-mcp-server", "muse-only")
+			}
+			want = append(want, "--disable-mcp-server", "personal-disabled")
+			call.AssertCalled(t, binary, want)
+			if !reflect.DeepEqual(call.Env, env) {
+				t.Fatalf("environment changed: %v", call.Env)
+			}
+		})
+	}
 }

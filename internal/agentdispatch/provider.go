@@ -73,6 +73,7 @@ const (
 	antigravityEffortHigh         = "high"
 	antigravityInitEvent          = "init"
 	execSubcommand                = "exec"
+	promptFileFlag                = "--prompt-file"
 	jsonRPCKey                    = "jsonrpc"
 	jsonRPCVersion                = "2.0"
 	jsonMethodKey                 = "method"
@@ -125,7 +126,6 @@ type providerCommand struct {
 	WorkDir              string
 	SessionID            string
 	LogPath              string
-	PromptPath           string
 	Provider             string
 	RunMode              string
 	Model                string
@@ -420,7 +420,7 @@ func buildProviderCommand(
 		if err := os.WriteFile(promptPath, prompt, 0o600); err != nil {
 			return providerCommand{}, wrapExitError(ExitConfig, "write Grok dispatch prompt", err)
 		}
-		args := []string{"--no-auto-update", "--prompt-file", promptPath, "--output-format", "streaming-json"}
+		args := []string{"--no-auto-update", promptFileFlag, promptPath, "--output-format", "streaming-json"}
 		if mode == dispatchModeResume {
 			args = append(args, "--resume", sessionID)
 		} else {
@@ -468,7 +468,6 @@ func buildProviderCommand(
 		}
 		command.Env = grok.ConfigureEnvironment(project.Root, env, project.Config.Agents.Grok, diagnostics)
 		command.SessionID = sessionID
-		command.PromptPath = promptPath
 	case AgentMuse:
 		if mode == dispatchModeFresh && sessionID == "" {
 			return providerCommand{}, exitError(ExitConfig, "new Muse dispatch requires a caller-assigned session ID")
@@ -477,7 +476,7 @@ func buildProviderCommand(
 		if err := os.WriteFile(promptPath, prompt, 0o600); err != nil {
 			return providerCommand{}, wrapExitError(ExitConfig, "write Muse dispatch prompt", err)
 		}
-		args := []string{execSubcommand, "--json", "--prompt-file", promptPath, "--workspace", project.Root, "--trust-workspace", "--session-id", sessionID, "--user-input-auto-resolve"}
+		args := []string{execSubcommand, "--json", promptFileFlag, promptPath, "--workspace", project.Root, "--trust-workspace", "--session-id", sessionID, "--user-input-auto-resolve"}
 		resolvedModel := strings.TrimSpace(model)
 		if resolvedModel == "" && !targetPinned {
 			resolvedModel = strings.TrimSpace(project.Config.Agents.Muse.Model)
@@ -495,18 +494,14 @@ func buildProviderCommand(
 		if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
 			args = append(args, "--yolo")
 		} else {
-			args = append(args, "--approval-judge", "off")
+			args = append(args, "--approval-mode", "untrusted", "--approval-judge", "off")
 			command.ObserveMuseApprovals = true
 		}
-		if err := muse.EnsureHomes(project.Root); err != nil {
-			return providerCommand{}, wrapExitError(ExitConfig, "prepare Muse homes", err)
-		}
 		command.Args = args
-		command.Env = muse.ConfigureEnvironment(project.Root, env, diagnostics)
+		command.Env = env
 		command.SessionID = sessionID
 		command.Model = resolvedModel
 		command.Effort = resolvedEffort
-		command.PromptPath = promptPath
 	default:
 		return providerCommand{}, exitError(ExitUsage, fmt.Sprintf("unsupported dispatch provider %q", target.Name))
 	}
@@ -659,6 +654,9 @@ func (m *museReducer) reduce(value map[string]any) []providerEvent {
 	runStream, _ := mapValueV013(payload, "run_stream")
 	runKind, _ := runStream[jsonKindKey].(string)
 	runID, _ := runStream["id"].(string)
+	if (payloadType == "session.run.linked" || strings.HasPrefix(payloadType, "run.terminal.")) && (streamKind != "session" || streamID != m.expectedSession) {
+		return []providerEvent{{Kind: eventFailure, Reason: "Muse root event omitted the expected session stream"}}
+	}
 	if payloadType == "session.run.linked" {
 		if runKind != "run" || runID == "" || commandID == "" || runID != commandID {
 			return []providerEvent{{Kind: eventFailure, Reason: "Muse root run linkage is invalid"}}

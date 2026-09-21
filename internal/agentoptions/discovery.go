@@ -19,7 +19,6 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients/claude"
 	"github.com/conn-castle/agent-layer/internal/clients/codex"
 	"github.com/conn-castle/agent-layer/internal/clients/grok"
-	"github.com/conn-castle/agent-layer/internal/clients/muse"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
@@ -151,11 +150,6 @@ func discoveryCommand(agent string, req DiscoveryRequest) (*exec.Cmd, error) {
 				return nil, err
 			}
 			env = grok.ConfigureEnvironment(project.Root, env, project.Config.Agents.Grok, nil)
-		case agentMuse:
-			if err := muse.EnsureHomes(project.Root); err != nil {
-				return nil, err
-			}
-			env = muse.ConfigureEnvironment(project.Root, env, nil)
 		}
 	}
 	args := []string{modelsCommand}
@@ -315,12 +309,10 @@ func readGrokModels(reader io.Reader) ([]string, error) {
 	scanner := bufio.NewScanner(reader)
 	var models []string
 	inModels := false
-	unauthenticated := false
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if strings.Contains(strings.ToLower(line), "not authenticated") {
-			unauthenticated = true
-			continue
+			return nil, errors.New("harness is not authenticated; sign in using al grok")
 		}
 		if line == "Available models:" {
 			inModels = true
@@ -335,13 +327,7 @@ func readGrokModels(reader io.Reader) ([]string, error) {
 		value := strings.TrimSpace(strings.TrimSuffix(line[2:], " (default)"))
 		models = append(models, value)
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	if len(models) == 0 && unauthenticated {
-		return nil, errors.New("harness is not authenticated and returned no models; sign in using al grok")
-	}
-	return models, nil
+	return models, scanner.Err()
 }
 
 func readClaudeModels(decoder *json.Decoder, encoder *json.Encoder) ([]string, error) {

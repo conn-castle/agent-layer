@@ -7,6 +7,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/run"
 )
 
@@ -25,6 +26,11 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 		args = append(args, "--yolo")
 	case config.ApprovalModeAll:
 		args = append(args, "--allow-all-tools")
+	}
+	// Native Copilot discovers the shared root file independently of its own
+	// projection. Exclude only generated IDs not selected for this client.
+	for _, id := range projection.MuseSharedMCPExclusions(cfg.Config, projection.ClientCopilot) {
+		args = append(args, "--disable-mcp-server", id)
 	}
 	args = append(args, passArgs...)
 

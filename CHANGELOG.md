@@ -3,19 +3,25 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-## v0.22.0 - 2026-09-20
-
 ### Added
-- Optional Muse Code support for launch, Agent Dispatch, shared instructions and skills, and private repo-local MCP settings and session state. Upgrades ask whether to enable Muse when its enabled setting is absent; the default is disabled and existing choices are preserved.
-
-### Fixed
-- Grok model discovery accepts a valid native catalog even when the CLI also prints an authentication notice. Benchmark preflight still rejects explicit authentication failures.
-- Generated Claude instructions now use `.claude/rules/agent-layer.md`, avoiding Muse's duplicate-rules warning. Sync removes generated or empty legacy Claude shims while preserving hand-written content.
-- Muse model discovery explains when its native MSP endpoint returns an empty catalog; default and custom model selection remain available.
+- Optional, default-disabled Muse Code integration: interactive launch, native model discovery, wizard and doctor support, and Agent Dispatch conversations with continuation and termination evidence.
+- Shared private Claude/Muse MCP output with native client filtering, workspace-scoped owned command policy, and live MCP permission checks that preserve explicit user denies.
+- Pinned native Muse loopback fixtures using synthetic credentials.
 
 ### Changed
+- Grok model discovery treats an explicit unauthenticated diagnostic as an error, including when the CLI also emits fallback models.
+- Configuration validation rejects shared MCP servers excluded from VS Code only when both Muse and VS Code are enabled.
 - `al update` reports the CLI version before and after the update in its completion message.
 - `al upgrade` prints the repository pin it starts from and the version it will upgrade to before applying changes.
+
+### Fixed
+- Codex and Muse preserve MCP dispatch depth, parent-run metadata, and development runtime selection; development MCP startup uses the invoking source binary even when PATH selects an older release.
+- Source Make targets such as `make al-wizard` and `make al-sync` bypass repository release pins without relying on an inherited development environment.
+- Grok dispatch removes staged prompts on success and failure, reports cleanup failures in terminal inspection, and retains completed answers if cleanup fails.
+- Benchmark artifact sanitization fails closed when required credential files cannot be read.
+- Restore Claude instructions at `.claude/CLAUDE.md` and remove only the generated obsolete rules copy, preserving handwritten files and symlinked rules directories.
+- Benchmark artifact sanitization still redacts credentials from historical `.muse-config/muse/auth.json`.
+- Muse command-policy retirement ignores a receipt that names another workspace, so a planted `.muse/agent-layer-policy.json` cannot delete that workspace's grants.
 
 ## v0.21.1 - 2026-09-18
 

@@ -61,9 +61,9 @@ run_scenario_upgrade_wizard_defaults() {
   assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
   assert_generated_artifacts "$repo_dir"
 
-  # Verify .claude/rules/agent-layer.md has real instruction content after full pipeline
-  assert_file_contains "$repo_dir/.claude/rules/agent-layer.md" "BEGIN: 00_rules.md" \
-    ".claude/rules/agent-layer.md has instruction blocks after upgrade+wizard"
+  # Verify .claude/CLAUDE.md has real instruction content after full pipeline
+  assert_file_contains "$repo_dir/.claude/CLAUDE.md" "BEGIN: 00_rules.md" \
+    ".claude/CLAUDE.md has instruction blocks after upgrade+wizard"
 
   cleanup_scenario_dir "$repo_dir"
 }

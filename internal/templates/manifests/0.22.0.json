@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "version": "0.22.0",
-  "generated_at_utc": "2026-09-20T12:18:44Z",
+  "generated_at_utc": "2026-09-21T14:16:34Z",
   "files": [
     {
       "path": ".agent-layer/commands.allow",
@@ -43,7 +43,7 @@
     },
     {
       "path": ".agent-layer/gitignore.block",
-      "full_hash_normalized": "545daf22902a01ddce540923c60a78ec6510c9c8fe25f7c818418627abe85119"
+      "full_hash_normalized": "7b0fc237a76c31c95b98355efad4279c448f637f7a25ac4e03151febd9a4c7d3"
     },
     {
       "path": ".agent-layer/instructions/00_rules.md",
@@ -164,7 +164,7 @@
     },
     {
       "path": ".agent-layer/skills/ship-pr/assets/pr-body-template.md",
-      "full_hash_normalized": "b610473f27697127388e53783ca95f06691b88758473e2bfd993fa3dad41dd90"
+      "full_hash_normalized": "836aa2402735974190b777c62374daaf627f17910ac6fc9a026bd40fb6e07d86"
     },
     {
       "path": ".agent-layer/skills/ship-pr/references/address-pr-comments.md",

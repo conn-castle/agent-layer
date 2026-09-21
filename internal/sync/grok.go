@@ -149,6 +149,36 @@ func buildGrokConfig(project *config.ProjectConfig) (string, error) {
 		}
 	}
 
+	// Grok also imports root .mcp.json. A full native definition is required
+	// for enabled=false to override that fallback; a bare flag is ignored.
+	excluded := projection.MuseSharedMCPExclusions(project.Config, projection.ClientGrok)
+	if len(excluded) > 0 {
+		// Masks need valid native definitions, not Muse's resolved credentials.
+		// Keep the same placeholder projection used by selected Grok servers.
+		shared := make(map[string]projection.ResolvedMCPServer)
+		clients := []string{projection.ClientMuse}
+		if config.IsAgentEnabled(project.Config.Agents.Claude.Enabled) || config.IsAgentEnabled(project.Config.Agents.ClaudeVSCode.Enabled) {
+			clients = append(clients, projection.ClientClaude)
+		}
+		for _, client := range clients {
+			servers, err := projection.EffectiveMCPServers(project.Config, project.Env, client, projection.ClientPlaceholderResolver("${%s}"))
+			if err != nil {
+				return "", err
+			}
+			for _, server := range servers {
+				shared[server.ID] = server
+			}
+		}
+		for _, id := range excluded {
+			server := shared[id]
+			fmt.Fprintf(&builder, "\n[%s.%q]\nenabled = false\n", grokMCPServersKey, id)
+			if server.Transport == config.TransportHTTP {
+				writeGrokHTTPServer(&builder, server)
+			} else {
+				writeGrokStdioServer(&builder, server)
+			}
+		}
+	}
 	return builder.String(), nil
 }
 

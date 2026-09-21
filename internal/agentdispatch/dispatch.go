@@ -58,20 +58,9 @@ type dispatchExecution struct {
 	VersionLookup func(path string, agent string) (string, error)
 }
 
-func executeDispatch(request dispatchExecution) (returnErr error) {
+func executeDispatch(request dispatchExecution) error {
 	if request.Run == nil || request.Project == nil {
 		return exitError(ExitConfig, "dispatch execution was not initialized")
-	}
-	if request.Target.Name == AgentMuse || request.Target.Name == AgentGrok {
-		// Also clean up when construction/persistence/cancellation returns before
-		// executeProvider, including a failed build after the prompt was written.
-		// Both Muse and Grok stage the prompt in run-local prompt.txt.
-		defer func() {
-			path := filepath.Join(request.Run.Dir, "prompt.txt")
-			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-				returnErr = errors.Join(returnErr, wrapExitError(ExitConfig, "remove dispatch prompt file", err))
-			}
-		}()
 	}
 	if current, err := loadRunRecord(request.Root, request.Run.Record.ID); err == nil && current.State == dispatchStateCancelled {
 		return finishDispatchCancellation(request)
@@ -158,18 +147,11 @@ func executeDispatch(request dispatchExecution) (returnErr error) {
 			return finishDispatchFailure(request, exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled before provider launch", request.Run.Record.ID)))
 		}
 		result, err := executeProvider(command, request.Prompt, request.Run, request.Root, request.NewCommand, persist)
-		if command.PromptPath != "" {
-			if cleanupErr := os.Remove(command.PromptPath); cleanupErr != nil && !errors.Is(cleanupErr, os.ErrNotExist) {
-				cleanupFailure := wrapExitError(ExitConfig, "remove dispatch prompt file", cleanupErr)
-				if err != nil {
-					err = errors.Join(err, cleanupFailure)
-				} else {
-					err = cleanupFailure
-				}
-			}
-		}
 		if err != nil {
 			if isSafePreStartFailure(err) && attempt == 1 {
+				if cleanupErr := removeDispatchPrompt(request); cleanupErr != nil {
+					return recordDispatchFailure(request, errors.Join(err, cleanupErr))
+				}
 				if cleanupErr := clearPreStartCaptures(request.Run.Record); cleanupErr != nil {
 					return finishDispatchFailure(request, cleanupErr)
 				}
@@ -205,6 +187,19 @@ func executeDispatch(request dispatchExecution) (returnErr error) {
 	return finishDispatchFailure(request, exitError(ExitTargetFailure, "dispatch retry exhausted"))
 }
 
+// removeDispatchPrompt also covers command construction failing after staging,
+// before buildProviderCommand returns a usable command.
+func removeDispatchPrompt(request dispatchExecution) error {
+	if request.Target.Name != AgentGrok && request.Target.Name != AgentMuse {
+		return nil
+	}
+	path := filepath.Join(request.Run.Dir, "prompt.txt")
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return wrapExitError(ExitConfig, fmt.Sprintf("remove dispatch prompt file %s; private prompt may remain; remove it after correcting filesystem permissions", path), err)
+	}
+	return nil
+}
+
 func callerAssignsSessionID(agent string) bool {
 	return agent == AgentClaude || agent == AgentGrok || agent == AgentMuse
 }
@@ -213,6 +208,11 @@ func completeDispatchSuccess(request dispatchExecution, result executionResult, 
 	if err := writeBytesAtomic(request.Run.Record.AnswerPath, []byte(result.Answer), 0o600); err != nil {
 		return finishDispatchFailure(request, wrapExitError(ExitConfig, "publish dispatch terminal answer", err))
 	}
+	// Keep the validated answer even if removing the private staged prompt fails.
+	if err := removeDispatchPrompt(request); err != nil {
+		return recordDispatchFailure(request, fmt.Errorf("%w; validated answer retained at %s", err, request.Run.Record.AnswerPath))
+	}
+
 	now := time.Now().UTC()
 	request.Run.Record.State = dispatchStateCompleted
 	request.Run.Record.RecoveryState = recoveryResumeRequired
@@ -239,6 +239,13 @@ func completeDispatchSuccess(request dispatchExecution, result executionResult, 
 }
 
 func finishDispatchFailure(request dispatchExecution, cause error) error {
+	if cleanupErr := removeDispatchPrompt(request); cleanupErr != nil {
+		cause = errors.Join(cause, cleanupErr)
+	}
+	return recordDispatchFailure(request, cause)
+}
+
+func recordDispatchFailure(request dispatchExecution, cause error) error {
 	var terminationFailure *unprovenProviderTerminationError
 	if errors.As(cause, &terminationFailure) {
 		if err := retainUnprovenProviderOwnership(request); err != nil {
@@ -298,7 +305,7 @@ func persistUnprovenFailure(request dispatchExecution, cause error) error {
 		if current.State == dispatchStateCancelled {
 			applyTerminationEvidence(current, cause, false, now)
 			if current.TerminalReason == "" {
-				current.TerminalReason = primary.Error()
+				current.TerminalReason = cause.Error()
 			}
 			return nil
 		}
@@ -306,7 +313,7 @@ func persistUnprovenFailure(request dispatchExecution, cause error) error {
 			current.State = dispatchStateFailed
 			current.RecoveryState = recoveryAcceptanceUnknown
 			current.CompletedAt = &now
-			current.TerminalReason = primary.Error()
+			current.TerminalReason = cause.Error()
 			current.TerminalExitCode = terminalExitCode(primary)
 		}
 		applyTerminationEvidence(current, cause, false, now)
@@ -350,15 +357,24 @@ func retainUnprovenProviderOwnership(request dispatchExecution) error {
 // boundary, rather than publication of the cancelled state, releases the
 // conversation for another execution.
 func finishDispatchCancellation(request dispatchExecution) error {
+	cleanupErr := removeDispatchPrompt(request)
+	if cleanupErr != nil {
+		if _, err := updateRunEvidence(request.Run.Dir, func(record *RunRecord) error {
+			record.TerminalReason = strings.TrimSpace(record.TerminalReason + "\n" + cleanupErr.Error())
+			return nil
+		}); err != nil {
+			cleanupErr = errors.Join(cleanupErr, err)
+		}
+	}
 	updated, err := persistTerminationEvidence(request.Run.Dir, nil, true)
 	if err != nil {
-		return err
+		return errors.Join(cleanupErr, err)
 	}
 	request.Run.Record = updated
 	if err := releaseIfConfirmed(request.Root, updated); err != nil {
-		return err
+		return errors.Join(cleanupErr, err)
 	}
-	return exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled", request.Run.Record.ID))
+	return errors.Join(cleanupErr, exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled", request.Run.Record.ID)))
 }
 
 func terminalExitCode(err error) int {

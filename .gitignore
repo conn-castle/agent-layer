@@ -20,7 +20,7 @@ coverage.out
 .playwright-cli/
 
 # >>> agent-layer
-# Template hash: 545daf22902a01ddce540923c60a78ec6510c9c8fe25f7c818418627abe85119
+# Template hash: 7b0fc237a76c31c95b98355efad4279c448f637f7a25ac4e03151febd9a4c7d3
 # Managed by Agent Layer. To customize, edit .agent-layer/gitignore.block
 # and re-run `al sync` to apply changes.
 
@@ -40,11 +40,14 @@ coverage.out
 /.agent/
 /.agents/
 /.mcp.json
+/.mcp.json.tmp-*
 /.codex/
 /.copilot/
 /.gemini/
 /.grok/
 /.grok-config/
+/.muse/hooks.json
+/.muse/agent-layer-policy.json
 /.muse-config/
 /.muse-data/
 

@@ -347,3 +347,19 @@ func TestWizardKeyMap(t *testing.T) {
 		assert.False(t, km.Select.ClearFilter.Enabled())
 	})
 }
+
+func TestHuhUI_EnableAgentsShowsEveryAgent(t *testing.T) {
+	require.Contains(t, SupportedAgents(), AgentMuse)
+	ui := &HuhUI{isTerminal: func() bool { return true }}
+	original := runFormFunc
+	t.Cleanup(func() { runFormFunc = original })
+	runFormFunc = func(form *huh.Form) error {
+		_, _ = form.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+		view := form.View()
+		for _, agent := range SupportedAgents() {
+			require.Contains(t, view, agent, "agent must be visible without scrolling: %s\n%s", agent, view)
+		}
+		return nil
+	}
+	require.NoError(t, promptEnabledAgents(ui, NewChoices()))
+}

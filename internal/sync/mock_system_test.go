@@ -12,6 +12,7 @@ type MockSystem struct {
 	StatFunc            func(name string) (os.FileInfo, error)
 	LstatFunc           func(name string) (os.FileInfo, error)
 	ReadlinkFunc        func(name string) (string, error)
+	SymlinkFunc         func(oldname, newname string) error
 	MkdirAllFunc        func(path string, perm os.FileMode) error
 	WriteFileAtomicFunc func(filename string, data []byte, perm os.FileMode) error
 	MarshalIndentFunc   func(v any, prefix, indent string) ([]byte, error)
@@ -74,6 +75,16 @@ func (m *MockSystem) MkdirAll(path string, perm os.FileMode) error {
 		return m.Fallback.MkdirAll(path, perm)
 	}
 	return errors.New("mock system MkdirAll not implemented")
+}
+
+func (m *MockSystem) Symlink(oldname, newname string) error {
+	if m.SymlinkFunc != nil {
+		return m.SymlinkFunc(oldname, newname)
+	}
+	if m.Fallback != nil {
+		return m.Fallback.Symlink(oldname, newname)
+	}
+	return errors.New("mock system Symlink not implemented")
 }
 
 func (m *MockSystem) WriteFileAtomic(filename string, data []byte, perm os.FileMode) error {

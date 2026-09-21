@@ -71,7 +71,7 @@ Run [`al init`](./reference#init) in the repo to create `.agent-layer/`. To add 
 
 ### Generated files showing up in git
 
-Generated client outputs should stay gitignored. If you see files like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.claude/rules/agent-layer.md`, `.codex/`, `.copilot/`, `.grok/`, `.grok-config/`, `.muse-config/`, `.muse-data/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.mcp.json`, `.github/copilot-instructions.md`, or `AGENTS.md` showing up in `git status`, it usually means one of:
+Generated client outputs should stay gitignored. If you see files like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.claude/CLAUDE.md`, `.codex/`, `.copilot/`, `.grok/`, `.grok-config/`, `.muse-config/`, `.muse-data/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.mcp.json`, `.github/copilot-instructions.md`, or `AGENTS.md` showing up in `git status`, it usually means one of:
 
 - the repo has not been initialized with Agent Layer's managed `.gitignore` block,
 - the ignore rules were customized,
@@ -83,7 +83,9 @@ A root `CLAUDE.md` is different: current Agent Layer does not generate it, and `
 
 Grok uses the repo-local `.grok-config/` directory as `GROK_HOME` for `al grok`, dispatch, and `al vscode`. Authentication and sessions are therefore isolated per repository; if Grok reports that authentication is missing, authenticate from `al grok` in that repository or provide the client-supported credential environment variable.
 
-Muse uses `.muse-config/` and `.muse-data/` as repo-local XDG roots for `al muse`, model discovery, and dispatch. `HOME` is unchanged, but child tools inherit `XDG_CONFIG_HOME` and `XDG_DATA_HOME`; preserve explicit tool-specific overrides such as `GH_CONFIG_DIR` when needed. A new repository may require Muse login even when the global Muse installation is authenticated.
+Muse uses native user storage; Agent Layer leaves `HOME` and XDG variables unchanged. If upgrading from repo-local Muse storage, sign in with `muse login` if native storage is not authenticated. Historical `.muse-config/` and `.muse-data/` are retained, but sessions are not migrated. Start a new dispatch if an old Muse session cannot be resumed. Project MCP is generated in private, gitignored `.mcp.json`, shared with Claude.
+
+If sync reports that a shared MCP server excludes VS Code, both `agents.muse.enabled` and `agents.vscode.enabled` are enabled and the server's `clients` filter cannot be enforced by VS Code's root-file importer. Add `vscode` to that server's `clients` (or omit the list to share with all clients), or disable one of those two integrations. Enabling `claude_vscode` alone does not trigger this check.
 
 ### Grok setup and diagnostics
 
@@ -94,7 +96,7 @@ The credential-bearing `.grok-config/` home must be a real directory rather than
 Agent Layer owns the project `.grok/config.toml` it generates. If that path already contains a user-owned file, sync refuses to overwrite it. Move project plugin settings under `[agents.grok.agent_specific.plugins]` in `.agent-layer/config.toml`; put Grok's user-level UI, memory, model, and terminal settings in `.grok-config/config.toml`. Then move the conflicting `.grok/config.toml` aside and run `al sync` again. Agent Layer also rejects a symlink or special file at `.grok/config.toml` instead of writing through it.
 
 :::caution
-`.codex/config.toml`, `.agy/antigravity-cli/settings.json`, and `.muse-config/muse/settings.json` are shared state patched by `al sync`, not disposable generated files. They can contain native settings outside Agent Layer's managed paths; `.muse-data/` can also contain non-reproducible sessions. Treat these paths as private and keep them gitignored. Agent Layer-managed MCP output remains safe to regenerate.
+`.codex/config.toml` and `.agy/antigravity-cli/settings.json` contain shared native state patched by `al sync`. Historical `.muse-config/` and `.muse-data/` may also contain native settings, credentials, and non-reproducible sessions. Treat these paths as private and keep them gitignored. Agent Layer-managed MCP output remains safe to regenerate.
 :::
 
 ### "gitignore block must not include managed markers or template hash"
@@ -275,6 +277,6 @@ If you run `al doctor` with no MCP servers enabled, it will still validate confi
 
 Muse 1.3.0 can return an empty catalog from its native MSP `model/list` endpoint even when a model is available in the interactive client. Agent Layer reports this limitation; choose the client default or enter your model ID explicitly. An empty catalog does not establish that authentication failed.
 
-Run `al sync` to migrate the generated Claude instruction shim to `.claude/rules/agent-layer.md`. This keeps Claude's instructions while avoiding Muse's warning that `.claude/CLAUDE.md` is ignored beside `AGENTS.md`. Sync preserves hand-written files; if the warning names one of those, merge any needed guidance into `.agent-layer/instructions/` before removing the redundant file yourself.
+Muse reads `AGENTS.md`; the generated `.claude/CLAUDE.md` symlink shares that file with Claude without a duplicate-instruction warning. If `.claude` itself is a user-managed symlink, sync retains a regular instruction copy and Muse may warn that it is ignored. Keep that copy for Claude. Muse can also report shadow diagnostics for the real `.agents/skills/` and `.claude/skills/` trees while selecting each skill once. These diagnostics do not require moving Claude instructions or replacing skill directories with symlinks.
 
-Grok may print “not authenticated” alongside a valid model catalog. Agent Layer accepts that catalog for model selection; authentication is still required when you run the model. If Grok returns no catalog, discovery reports the failure.
+Grok may print “not authenticated” alongside fallback models. Agent Layer treats that diagnostic as a discovery error even when models are returned. Sign in using `al grok`, then retry model discovery. An empty catalog also reports a discovery failure.

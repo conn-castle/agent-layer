@@ -10,6 +10,8 @@ import (
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/musepolicy"
+	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
@@ -79,6 +81,9 @@ func RunLockedProject(sys System, root string, project *config.ProjectConfig) (*
 }
 
 func runWithProjectLocked(sys System, root string, project *config.ProjectConfig) (*Result, error) {
+	if err := preflightMuseApprovals(project); err != nil {
+		return nil, err
+	}
 	agents := project.Config.Agents
 	steps := []func() error{
 		func() error { return updateGitignore(sys, root) },
@@ -146,13 +151,12 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 		steps = append(steps, func() error { return cleanGrokOutputs(sys, root) })
 	}
 
-	// Claude files (.mcp.json, .claude/settings.json, .claude/skills/) fire when claude OR claude_vscode enabled.
+	// Claude settings and skills fire when claude OR claude_vscode is enabled.
 	claudeEnabled := config.IsAgentEnabled(agents.Claude.Enabled)
 	if claudeEnabled || claudeVSCodeEnabled {
 		steps = append(steps,
 			func() error { return writeClaudeStatusline(sys, root, project) },
 			func() error { return writeClaudeSettings(sys, root, project) },
-			func() error { return writeMCPConfig(sys, root, project) },
 			func() error { return WriteClaudeSkills(sys, root, project.Skills) },
 		)
 	} else {
@@ -162,12 +166,15 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 		)
 	}
 
-	// Muse suppresses the final shared project MCP entries in its own scope.
-	if config.IsAgentEnabled(agents.Muse.Enabled) {
-		steps = append(steps, func() error { return writeMuseSettings(sys, root, project) })
+	// The native project MCP file is shared by Claude and Muse. Remove only
+	// tracked entries from the historical Muse settings, retaining user state.
+	if claudeEnabled || claudeVSCodeEnabled || config.IsAgentEnabled(agents.Muse.Enabled) {
+		steps = append(steps, func() error { return writeMCPConfig(sys, root, project) })
 	} else {
-		steps = append(steps, func() error { return cleanMuseSettings(sys, root) })
+		steps = append(steps, func() error { return cleanMCPConfig(sys, root) })
 	}
+	steps = append(steps, func() error { return cleanMuseSettings(sys, root) },
+		func() error { return writeMuseApprovals(sys, root, project) })
 
 	codexEnabled := config.IsAgentEnabled(agents.Codex.Enabled)
 	if codexEnabled || vscodeEnabled {
@@ -197,6 +204,26 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 		Warnings:    filteredWarnings,
 		AllWarnings: rawWarnings,
 	}, nil
+}
+
+// preflightMuseApprovals rejects Muse-specific grants that cannot be safely
+// represented before any generated output or native policy state is written.
+func preflightMuseApprovals(project *config.ProjectConfig) error {
+	if !config.IsAgentEnabled(project.Config.Agents.Muse.Enabled) {
+		return nil
+	}
+	approvals := projection.BuildApprovals(project.Config, project.CommandsAllow)
+	if approvals.AllowCommands {
+		if _, err := musepolicy.ParseCommandPrefixes(project.CommandsAllow); err != nil {
+			return fmt.Errorf("validate Muse commands.allow: %w", err)
+		}
+	}
+	if approvals.AllowMCP {
+		if _, err := musepolicy.MCPPrefixes(project.Config); err != nil {
+			return fmt.Errorf("validate Muse MCP namespaces: %w", err)
+		}
+	}
+	return nil
 }
 
 // collectWarnings gathers all sync-time warnings based on the project config.

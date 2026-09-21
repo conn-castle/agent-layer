@@ -436,6 +436,10 @@ func writeCodexStdioServer(builder *strings.Builder, server projection.ResolvedM
 		fmt.Fprintf(builder, "env = %s\n", tomlInlineTable(resolvedEnv))
 	}
 
+	if server.ID == projection.BuiltInDispatchServerID {
+		fmt.Fprintf(builder, "env_vars = %s\n", tomlStringArray(projection.BuiltInDispatchEnvVars()))
+	}
+
 	// Codex is the only supported client with a documented per-server execution
 	// timeout, so the built-in Agent Dispatch server projects its hard bound
 	// natively. Every other client relies on the server-side guard alone.

@@ -18,7 +18,6 @@ const (
 	CodePolicyCapabilityMismatch     = "POLICY_CLIENT_CAPABILITY_MISMATCH"
 	CodePolicyAgentSpecificOverrides = "POLICY_AGENT_SPECIFIC_OVERRIDES"
 	CodePolicyClaudeReasoningUnknown = "POLICY_CLAUDE_REASONING_EFFORT_UNKNOWN"
-	CodePolicyMuseApprovalsGap       = "POLICY_MUSE_SELECTIVE_APPROVALS_UNSUPPORTED"
 )
 
 // Source labels where a warning originates.

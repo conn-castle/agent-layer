@@ -17,6 +17,7 @@ type System interface {
 	Stat(name string) (os.FileInfo, error)
 	Lstat(name string) (os.FileInfo, error)
 	Readlink(name string) (string, error)
+	Symlink(oldname, newname string) error
 	MkdirAll(path string, perm os.FileMode) error
 	WriteFileAtomic(filename string, data []byte, perm os.FileMode) error
 	MarshalIndent(v any, prefix, indent string) ([]byte, error)
@@ -52,6 +53,11 @@ func (RealSystem) Lstat(name string) (os.FileInfo, error) {
 // Readlink returns the destination of a symbolic link.
 func (RealSystem) Readlink(name string) (string, error) {
 	return os.Readlink(name)
+}
+
+// Symlink creates a symbolic link without following an existing destination.
+func (RealSystem) Symlink(oldname, newname string) error {
+	return os.Symlink(oldname, newname)
 }
 
 // MkdirAll creates a directory named path, along with any necessary parents.

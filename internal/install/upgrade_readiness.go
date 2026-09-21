@@ -2,6 +2,7 @@ package install
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -453,10 +454,10 @@ func detectVSCodeNoSyncStaleness(inst *installer, cfg *config.Config, configPath
 		}
 	}
 
-	// .mcp.json and .claude/settings.json are generated when claude OR claude_vscode is enabled.
-	// The Claude extension in VS Code depends on these, so they must be fresh for --no-sync.
+	// VS Code also imports the shared root MCP file when Muse generates it.
+	// Claude settings remain specific to the Claude integrations.
 	claudeEnabled := config.IsAgentEnabled(cfg.Agents.Claude.Enabled)
-	if claudeEnabled || claudeVSCodeEnabled {
+	if claudeEnabled || claudeVSCodeEnabled || (vscodeEnabled && config.IsAgentEnabled(cfg.Agents.Muse.Enabled)) {
 		claudeMCPPath := filepath.Join(inst.root, ".mcp.json")
 		claudeMCPInfo, err := inst.sys.Stat(claudeMCPPath)
 		if err != nil {
@@ -468,7 +469,8 @@ func detectVSCodeNoSyncStaleness(inst *installer, cfg *config.Config, configPath
 		} else if !claudeMCPInfo.IsDir() {
 			latestGenerated = maxModTime(latestGenerated, claudeMCPInfo.ModTime())
 		}
-
+	}
+	if claudeEnabled || claudeVSCodeEnabled {
 		claudeSettingsPath := filepath.Join(inst.root, ".claude", "settings.json")
 		claudeSettingsInfo, err := inst.sys.Stat(claudeSettingsPath)
 		if err != nil {
@@ -574,7 +576,6 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 			agent:   agentClaude,
 			enabled: combinedBoolOr(cfg.Agents.Claude.Enabled, cfg.Agents.ClaudeVSCode.Enabled),
 			files: []disabledArtifactFileSpec{
-				{path: filepath.Join(inst.root, ".mcp.json"), evidence: hasAgentLayerMCPSignature},
 				{path: filepath.Join(inst.root, ".claude", "settings.json"), evidence: isJSONObject},
 			},
 			dirs: []disabledArtifactDirSpec{
@@ -617,9 +618,18 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 			},
 		},
 		{
+			agent:   "project-mcp",
+			enabled: combinedBoolOr(combinedBoolOr(cfg.Agents.Claude.Enabled, cfg.Agents.ClaudeVSCode.Enabled), cfg.Agents.Muse.Enabled),
+			files:   []disabledArtifactFileSpec{{path: filepath.Join(inst.root, ".mcp.json"), evidence: hasAgentLayerMCPSignature}},
+		},
+		// Historical Muse output is still recognized so upgrades can clean it.
+		{
 			agent:   "muse",
 			enabled: cfg.Agents.Muse.Enabled,
-			files:   []disabledArtifactFileSpec{{path: filepath.Join(inst.root, ".muse-config", "muse", "settings.json"), evidence: hasMuseManagedMCP}},
+			files: []disabledArtifactFileSpec{
+				{path: filepath.Join(inst.root, ".muse-config", "muse", "settings.json"), evidence: hasMuseManagedMCP},
+				{path: filepath.Join(inst.root, ".muse", "hooks.json"), evidence: hasMuseApprovalHook},
+			},
 		},
 		{
 			agent:   "shared-skills",
@@ -742,9 +752,18 @@ func hasAgentLayerMCPSignature(data []byte) (bool, error) {
 	return false, nil
 }
 
+func hasMuseApprovalHook(data []byte) (bool, error) {
+	return strings.Contains(string(data), "al hook muse-mcp ") && strings.Contains(string(data), " # agent-layer-mcp-approvals"), nil
+}
+
 func hasMuseManagedMCP(data []byte) (bool, error) {
-	content := string(data)
-	return strings.Contains(content, `"mcpServers"`) && (strings.Contains(content, `"agent-layer"`) || strings.Contains(content, `muse-agent-layer"`)), nil
+	var document map[string]json.RawMessage
+	if json.Unmarshal(data, &document) != nil {
+		return false, nil //nolint:nilerr // Invalid user JSON is not ownership evidence.
+	}
+	var names []string
+	marker, present := document["agentLayerManagedMcpServers"]
+	return present && json.Unmarshal(marker, &names) == nil && len(names) > 0, nil
 }
 
 // isJSONObject reports whether data looks like a JSON object.

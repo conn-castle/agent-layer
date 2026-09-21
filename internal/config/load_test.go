@@ -600,6 +600,52 @@ mode = "all"
 	}
 }
 
+func TestParseConfigRejectsMuseSharedServerExcludedFromVSCode(t *testing.T) {
+	data := `
+[approvals]
+mode = "all"
+
+[agents.antigravity]
+enabled = false
+[agents.claude]
+enabled = false
+[agents.claude_vscode]
+enabled = false
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+[agents.copilot_cli]
+enabled = false
+[agents.grok]
+enabled = false
+[agents.muse]
+enabled = true
+
+[[mcp.servers]]
+id = "private-server"
+enabled = true
+clients = ["muse"]
+transport = "http"
+url = "https://example.com"
+headers = { Authorization = "secret-value" }
+`
+
+	_, err := ParseConfig([]byte(data), "test config.toml")
+	if err == nil {
+		t.Fatal("expected shared MCP validation error")
+	}
+	if !errors.Is(err, ErrConfigValidation) {
+		t.Fatalf("shared MCP error should match ErrConfigValidation, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "private-server") || !strings.Contains(err.Error(), "VS Code imports shared .mcp.json") {
+		t.Fatalf("shared MCP error is not actionable: %v", err)
+	}
+	if strings.Contains(err.Error(), "secret-value") {
+		t.Fatalf("shared MCP error disclosed a secret: %v", err)
+	}
+}
+
 func TestParseConfig_RejectsUnknownKeys(t *testing.T) {
 	// agents.claude_vscode uses EnableOnlyConfig (no Model field),
 	// so "model" is an unknown key that strict decode must reject.

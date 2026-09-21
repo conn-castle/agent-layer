@@ -289,3 +289,10 @@ func (r *Runner) commandError(args []string, stderr string, err error) *CommandE
 func IsCommitID(value string) bool {
 	return commitIDPattern.MatchString(strings.ToLower(strings.TrimSpace(value)))
 }
+
+// IgnoredWorktreePath reports whether path is untracked and ignored in dir's
+// worktree. Git failures are returned so callers protecting secrets fail closed.
+func (r *Runner) IgnoredWorktreePath(ctx context.Context, dir, path string) (bool, error) {
+	_, code, err := r.runAllowExitInput(ctx, dir, nil, []int{1}, nil, "check-ignore", "--quiet", "--", path)
+	return code == 0, err
+}

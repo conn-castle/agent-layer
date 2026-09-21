@@ -109,6 +109,11 @@ func (c *wizardOptionDiscoveryCache) prefetch(agent string) *wizardModelDiscover
 
 func (c *wizardOptionDiscoveryCache) prefetchAll() {
 	for _, agent := range SupportedAgents() {
+		// Muse is opt-in even for native-home reads. A newly enabled Muse is
+		// discovered when its model picker opens, after the user's selection.
+		if agent == AgentMuse && (c.project == nil || !config.IsAgentEnabled(c.project.Config.Agents.Muse.Enabled)) {
+			continue
+		}
 		if agentoptions.HasModelDiscovery(agent) {
 			c.prefetch(agent)
 		}

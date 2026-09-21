@@ -175,9 +175,13 @@ func TestMuseDispatchObservesApprovalsOnlyOutsideYOLO(t *testing.T) {
 		if err != nil {
 			t.Fatalf("new %s run: %v", testCase.mode, err)
 		}
-		command, err := buildProviderCommand(target, project, nil, []byte("prompt"), "", "", false, dispatchModeFresh, runtimeSessionID, run, io.Discard)
+		env := []string{"XDG_CONFIG_HOME=/native/config", "XDG_DATA_HOME=/native/data"}
+		command, err := buildProviderCommand(target, project, env, []byte("prompt"), "", "", false, dispatchModeFresh, runtimeSessionID, run, io.Discard)
 		if err != nil {
 			t.Fatalf("build %s Muse command: %v", testCase.mode, err)
+		}
+		if strings.Join(command.Env, "\n") != strings.Join(env, "\n") {
+			t.Fatalf("Muse changed caller environment: %v", command.Env)
 		}
 		if command.ObserveMuseApprovals != testCase.want {
 			t.Errorf("Muse %s approval observer = %t, want %t", testCase.mode, command.ObserveMuseApprovals, testCase.want)

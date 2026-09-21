@@ -8,5 +8,5 @@ allow = ["Bash(git status:*)", "Bash(ls:*)", "mcp__agent-layer__*"]
 
 [mcp_servers."agent-layer"]
 command = "/bin/sh"
-args = ["-c", "AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd \"$1\" && exec al dispatch mcp-server", "agent-layer-mcp", "__REPO_ROOT__"]
+args = ["-c", "AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd \"$1\" || exit; if [ -n \"$AL_DEV_BYPASS_VERSION_DISPATCH\" ] && [ -n \"$AL_DEV_EXECUTABLE\" ]; then exec \"$AL_DEV_EXECUTABLE\" dispatch mcp-server; else exec al dispatch mcp-server; fi", "agent-layer-mcp", "__REPO_ROOT__"]
 tool_timeout_sec = 2400

@@ -36,6 +36,41 @@ This repo is built around determinism: the same inputs should produce the same c
 - If you change upgrade behavior or upgrade-facing guidance, update the canonical upgrade contract page at `site/docs/upgrades.mdx` and keep release notes/docs links aligned.
 - If you change VS Code launch behavior, update `docs/architecture/vscode-launch.md` and keep troubleshooting guidance aligned.
 
+Development launches carry `AL_DEV_EXECUTABLE` alongside
+`AL_DEV_BYPASS_VERSION_DISPATCH`. The CLI sets the executable to its own absolute
+path, and the built-in MCP launcher uses it only while the bypass is active.
+This keeps an absolute source invocation from starting an older `al` on `PATH`.
+Generated configuration forwards these values at runtime; it does not record a
+source binary path or bypass project pins for ordinary launches.
+
+`make test-codex-mcp-native` tests installed Codex against generated MCP
+configuration without provider inference. It checks runtime dispatch context,
+the depth guard, unset values, and absolute development launches with an
+incompatible `al` first on `PATH`. Evidence remains in
+`.agent-layer/tmp/codex-mcp-native`.
+
+## Native Muse fixtures
+
+`make test-muse-native` verifies the checksum-pinned Muse binary against loopback
+model and MCP servers with synthetic credentials and isolated HOME/XDG directories.
+It requires Python 3 and `gh` (used to verify selector fallback), in addition to Go,
+Git, and curl. Evidence remains in `.agent-layer/tmp/muse-native`.
+
+For the environment and approval regressions alone, build `al` and run
+`scripts/test-muse-native-review.py --al <binary> --muse <pinned-native-binary>`.
+Add `--claude <claude-binary>` to compare native Claude's shared MCP catalog and
+child environment with Muse disabled. The fixture checks unset, empty, and custom
+selectors; explicit overrides; nested dispatch from a real MCP child; native
+user-input cancellation; and native persistent approval lock/merge behavior.
+No account or external inference is used. A fixture-only executable wrapper forces
+the file credential backend and a synthetic API key for every native launch,
+including nested MCP children; the fixture never saves credentials. HOME/XDG
+isolation alone does not isolate macOS Keychain. The runner handles cancellation
+and parent exit, then cancels unfinished fixture dispatches.
+
+`make test-muse-fixture` checks these isolation and cleanup boundaries using fake
+executables only. It runs in ordinary CI and before the native suite.
+
 ## Go Tooling & Environment
 Agent Layer uses several light shell wrappers and `make` targets around standard Go commands (`go fmt`, `go test`, etc.). This is intentional to ensure consistent behavior across local development and CI (GitHub Actions). It also keeps tool versions explicit, which makes regressions easier to trace.
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -164,7 +165,11 @@ func TestMuseObserverHandlesStartupAndHumanInput(t *testing.T) {
 {"jsonrpc":"2.0","id":3,"result":{"approvals":[{"approvalId":"waiting","toolName":"bash"}],"userInputs":[]}}
 `, "waiting for human approval waiting for tool bash"},
 		{"pending user input", dispatchModeFresh, `{"jsonrpc":"2.0","id":2,"result":{"approvals":[],"userInputs":[{"userInputId":"question"}]}}
-`, "waiting for user input"},
+{"jsonrpc":"2.0","id":3,"result":{"approvals":[{"approvalId":"waiting","toolName":"bash"}],"userInputs":[]}}
+`, "waiting for human approval waiting for tool bash"},
+		{"pushed user input leaves native auto-resolution authoritative", dispatchModeFresh, `{"jsonrpc":"2.0","id":99,"method":"userInput/request","params":{}}
+{"jsonrpc":"2.0","id":2,"result":{"approvals":[{"approvalId":"waiting","toolName":"bash"}],"userInputs":[]}}
+`, "waiting for human approval waiting for tool bash"},
 		{"invalid response", dispatchModeFresh, `{"jsonrpc":"2.0","id":2,"result":{}}
 `, "omitted approvals or userInputs"},
 		{"invalid resume baseline", dispatchModeResume, `{"jsonrpc":"2.0","id":2,"result":{}}
@@ -324,81 +329,32 @@ func TestMuseApprovalPollDelayBounds(t *testing.T) {
 	}
 }
 
-func TestMuseDispatchEarlyFailureRemovesPrompt(t *testing.T) {
-	root := t.TempDir()
+func TestMuseDispatchPreStartFailureRemovesStagedPrompt(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	project := loadApprovalsTestProject(t, root)
+	project.Config.Approvals.Mode = config.ApprovalModeYOLO
 	run, err := newDispatchRun(root, AgentMuse, supportedProviderVersions[AgentMuse], dispatchModeFresh)
 	if err != nil {
 		t.Fatal(err)
 	}
+	session, err := reserveSession(root, run, testDispatchSessionRetention)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, _ := lookupTarget(AgentMuse)
 	promptPath := filepath.Join(run.Dir, "prompt.txt")
-	if err := os.WriteFile(promptPath, []byte("private prompt"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// Deliberately fail session persistence before command execution.
-	badRoot := filepath.Join(root, "file-instead-of-directory")
-	if err := os.WriteFile(badRoot, []byte("occupied"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	err = executeDispatch(dispatchExecution{Root: badRoot, Project: &config.ProjectConfig{Root: badRoot}, Target: targetMeta{Name: AgentMuse}, Mode: dispatchModeFresh, Run: run})
+	err = executeDispatch(dispatchExecution{Root: root, Project: project, Target: target, Version: supportedProviderVersions[AgentMuse], Mode: dispatchModeFresh, Run: run, Session: session, Prompt: []byte("private prompt"), Stdout: io.Discard, Stderr: io.Discard, NewCommand: func(string, ...string) *exec.Cmd {
+		data, err := os.ReadFile(promptPath) // #nosec G304 -- path is contained in this test-owned temporary fixture.
+		if err != nil || string(data) != "private prompt" {
+			t.Fatalf("prompt not staged: %q %v", data, err)
+		}
+		return exec.Command(filepath.Join(root, "missing-provider"))
+	}})
 	if err == nil {
-		t.Fatal("expected persistence failure")
+		t.Fatal("expected pre-start failure")
 	}
 	if _, err := os.Stat(promptPath); !os.IsNotExist(err) {
-		t.Fatalf("prompt survived early failure: %v", err)
-	}
-}
-
-func TestGrokDispatchCommandStagesPromptPath(t *testing.T) {
-	root := writeDispatchRepo(t, dispatchRepoConfig{})
-	project := loadApprovalsTestProject(t, root)
-	target, ok := lookupTarget(AgentGrok)
-	if !ok {
-		t.Fatal("grok target missing from registry")
-	}
-	run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)
-	if err != nil {
-		t.Fatal(err)
-	}
-	command, err := buildProviderCommand(target, project, []string{}, []byte("private prompt"), "", "", false, dispatchModeFresh, runtimeSessionID, run, io.Discard)
-	if err != nil {
-		t.Fatalf("build grok command: %v", err)
-	}
-	// executeDispatch removes the staged prompt only via PromptPath; an empty
-	// path would leave the secret prompt behind in the run directory.
-	want := filepath.Join(run.Dir, "prompt.txt")
-	if command.PromptPath != want {
-		t.Fatalf("grok PromptPath = %q, want %q", command.PromptPath, want)
-	}
-	staged, err := os.ReadFile(want) // #nosec G304 -- want is a test-owned run path.
-	if err != nil {
-		t.Fatalf("read staged grok prompt: %v", err)
-	}
-	if string(staged) != "private prompt" {
-		t.Fatalf("staged grok prompt = %q", staged)
-	}
-}
-
-func TestGrokDispatchEarlyFailureRemovesPrompt(t *testing.T) {
-	root := t.TempDir()
-	run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)
-	if err != nil {
-		t.Fatal(err)
-	}
-	promptPath := filepath.Join(run.Dir, "prompt.txt")
-	if err := os.WriteFile(promptPath, []byte("private prompt"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// Deliberately fail session persistence before command execution.
-	badRoot := filepath.Join(root, "file-instead-of-directory")
-	if err := os.WriteFile(badRoot, []byte("occupied"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	err = executeDispatch(dispatchExecution{Root: badRoot, Project: &config.ProjectConfig{Root: badRoot}, Target: targetMeta{Name: AgentGrok}, Mode: dispatchModeFresh, Run: run})
-	if err == nil {
-		t.Fatal("expected persistence failure")
-	}
-	if _, err := os.Stat(promptPath); !os.IsNotExist(err) {
-		t.Fatalf("prompt survived early failure: %v", err)
+		t.Fatalf("staged prompt survived: %v", err)
 	}
 }
 
