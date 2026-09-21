@@ -28,6 +28,9 @@ const ClaudeInstructionsTarget = "../AGENTS.md"
 // `f-delete-orphan-gemini-md` op removes any leftover GEMINI.md from
 // pre-0.10.2 repos.
 func writeInstructionShims(sys System, root string, instructions []config.InstructionFile) error {
+	if _, err := inspectClaudeInstructionDestination(sys, root); err != nil {
+		return err
+	}
 	if err := writeInstructionFile(sys, filepath.Join(root, "AGENTS.md"), instructions); err != nil {
 		return err
 	}
@@ -60,29 +63,9 @@ func writeInstructionShims(sys System, root string, instructions []config.Instru
 func writeClaudeInstructions(sys System, root string, instructions []config.InstructionFile) error {
 	path := filepath.Join(root, ClaudeInstructionsPath)
 	dir := filepath.Dir(path)
-	existingLink := false
-	if info, err := sys.Lstat(path); err == nil {
-		owned := false
-		if info.Mode()&os.ModeSymlink != 0 {
-			target, err := sys.Readlink(path)
-			if err != nil {
-				return fmt.Errorf("read Claude instruction link %s: %w", path, err)
-			}
-			existingLink = target == ClaudeInstructionsTarget
-			owned = existingLink
-		} else if info.Mode().IsRegular() {
-			data, err := sys.ReadFile(path)
-			if err != nil {
-				return fmt.Errorf("read Claude instructions %s: %w", path, err)
-			}
-			// Older generated copies are empty when there are no instructions.
-			owned = len(data) == 0 || strings.HasPrefix(string(data), instructionHeader)
-		}
-		if !owned {
-			return fmt.Errorf("refusing to overwrite unmanaged Claude instructions at %s: move your guidance into .agent-layer/instructions/ and relocate the existing path before syncing", path)
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("inspect Claude instructions %s: %w", path, err)
+	existingLink, err := inspectClaudeInstructionDestination(sys, root)
+	if err != nil {
+		return err
 	}
 	info, err := sys.Lstat(dir)
 	if err != nil {
@@ -118,6 +101,42 @@ func writeClaudeInstructions(sys System, root string, instructions []config.Inst
 		return fmt.Errorf("publish Claude instruction link %s: %w", path, err)
 	}
 	return nil
+}
+
+// inspectClaudeInstructionDestination reports whether .claude/CLAUDE.md is
+// already the canonical relative link. It does not create, replace, or remove
+// the path. Missing destinations are allowed so callers can abort before
+// mutating AGENTS.md when an existing unmanaged file would block the later
+// write.
+func inspectClaudeInstructionDestination(sys System, root string) (existingLink bool, err error) {
+	path := filepath.Join(root, ClaudeInstructionsPath)
+	info, err := sys.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("inspect Claude instructions %s: %w", path, err)
+	}
+	owned := false
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, err := sys.Readlink(path)
+		if err != nil {
+			return false, fmt.Errorf("read Claude instruction link %s: %w", path, err)
+		}
+		existingLink = target == ClaudeInstructionsTarget
+		owned = existingLink
+	} else if info.Mode().IsRegular() {
+		data, err := sys.ReadFile(path)
+		if err != nil {
+			return false, fmt.Errorf("read Claude instructions %s: %w", path, err)
+		}
+		// Older generated copies are empty when there are no instructions.
+		owned = len(data) == 0 || strings.HasPrefix(string(data), instructionHeader)
+	}
+	if !owned {
+		return false, fmt.Errorf("refusing to overwrite unmanaged Claude instructions at %s: move your guidance into .agent-layer/instructions/ and relocate the existing path before syncing", path)
+	}
+	return existingLink, nil
 }
 
 // Legacy cleanup owns only ordinary repository paths, never user symlinks.
@@ -197,7 +216,19 @@ func removeGeneratedInstructionShim(sys System, path string) error {
 	return nil
 }
 
+// hasGeneratedMarker reports whether path is a regular generated instruction
+// shim. Symlinks and other non-regular paths are never classified as generated.
 func hasGeneratedMarker(sys System, path string) (bool, error) {
+	info, err := sys.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("inspect instruction shim %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return false, nil
+	}
 	data, err := sys.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
