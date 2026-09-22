@@ -66,7 +66,47 @@ For a release that changes Agent Dispatch, attach a short evidence record under
 `docs/release-evidence/` to the release pull request before tagging. Record the
 exact `claude --version`, `codex --version`, `agy --version`,
 `grok --version`, and `muse --version` values, plus a fresh `start`/`wait` probe and a
-`continue`/`wait` probe for every declared supported provider. A changed or
+`continue`/`wait` probe for each locally enabled dispatch provider. List every
+declared supported provider in the evidence, marking disabled or unavailable
+providers as untested with the reason; do not enable them just for the probe.
+
+Run these live probes from the existing local release checkout using its
+`.agent-layer/config.toml`, `.agent-layer/.env`, and normal repo-local provider
+configuration and sign-ins. Preserve the configured models, reasoning efforts,
+and permissions. Do not initialize a scratch project, substitute template
+defaults, redirect provider homes, or copy credentials into a test fixture.
+Disposable projects remain appropriate for install/upgrade tests, which do not
+validate live provider authentication.
+
+Build the candidate with `make al-dev-build`, then run the following in a
+subshell from the repository root (the environment setup matches the development
+launchers in `Makefile`):
+
+```bash
+(
+  unset AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE
+  unset CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE GROK_HOME
+  export PATH="$PWD/.agent-layer/tmp/dev-bin:$PATH"
+  export AL_DEV_BYPASS_VERSION_DISPATCH=1
+  al dispatch options
+  # For each enabled, available provider, use its name from options:
+  al dispatch start --agent <provider> --prompt 'Reply with exactly release-probe-fresh. Do not use tools or modify files.'
+  al dispatch wait <handle>
+  # After successful completion, continue the same handle:
+  al dispatch continue <handle> --prompt 'Reply with exactly release-probe-continue. Do not use tools or modify files.'
+  al dispatch wait <handle>
+)
+```
+
+Replace the angle-bracket placeholders with the selected provider and returned
+handle. Omit model and reasoning overrides so Agent Layer uses the local config.
+Record the effective targets and checkout commit alongside the CLI versions,
+fresh/continuation results, and provider session IDs. Store agent-only probe
+artifacts under `.agent-layer/tmp`. Report authentication or quota failures from
+this local setup explicitly; they are not passing compatibility evidence. Never
+include credentials or account identifiers in the evidence record.
+
+A changed or
 missing Antigravity structured terminal result must fail without publishing
 plain provider output. The result must carry a conversation ID, final answer,
 and usage evidence; any diagnostic-log UUID that is present must match the

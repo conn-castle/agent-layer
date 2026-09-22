@@ -29,6 +29,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-09-21 release-dispatch-probe-fragility: Live release compatibility probes are very fragile
+    Priority: Medium. Area: Release validation / Agent Dispatch
+    Description: Probe outcomes depend on local authentication state and nondeterministic model formatting. Local runs hit a transient Claude OAuth refresh lock; a rerun completed all provider lifecycles but failed Codex's exact-output assertion solely because it added a trailing period. Scratch-project runs also missed repo-local sign-ins.
+    Next step: Revisit the probe acceptance criteria and execution procedure against these observed failures before relying on them as a repeatable release gate.
+    Notes: Local evidence: `.agent-layer/tmp/local-release-probes/report.md` and `.agent-layer/tmp/local-release-probes/retry-20260922T001725Z/report.md`.
+
 - Issue 2026-09-20 copilot-native-project-mcp-loading: Copilot CLI no longer documents the generated project MCP path
     Priority: Medium. Area: Copilot CLI integration
     Description: Agent Layer generates `.copilot/mcp-config.json`, but installed Copilot CLI 1.0.83 documents workspace `.mcp.json` or `.github/mcp.json`; `al copilot` does not pass the generated file explicitly. Copilot-only entries can therefore be absent from native discovery. This predates the Muse rebuild.
