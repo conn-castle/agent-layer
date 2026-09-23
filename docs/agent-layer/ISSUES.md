@@ -31,9 +31,9 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-09-23 cmd-al-tests-exec-truncated: Most cmd/al tests silently never run
     Priority: High. Area: Test suite / cmd/al
-    Description: `internal/clients.ExecHandoff` uses `syscall.Exec`, so `TestClientArgsPassThrough` (the first `cmd/al` test) replaces the test binary with its stub `claude`, which exits 0. `go test` reports `ok` after one of 292 test functions, with no package terminal event; `make test`, `make coverage`, and CI are green without exercising `cmd/al`. Skipping it and `TestClientArgsPassThroughWithSeparator` lets the package complete and exposes a masked failure in `TestOrganizeScratchLongHelpStatesSafetyBoundaries`. Present since b32b1e94 (2026-07-02).
+    Description: `internal/clients.ExecHandoff` uses `syscall.Exec`, so `TestClientArgsPassThrough` (the first `cmd/al` test) replaces the test binary with its stub `claude`, which exits 0. `go test` reports `ok` after one of 292 test functions; test2json attributes the process-exit `pass` (package elapsed time) to that unfinished test instead of emitting a package-level `pass`; `make test`, `make coverage`, and CI are green without exercising `cmd/al`. Skipping it and `TestClientArgsPassThroughWithSeparator` lets the package complete and exposes a masked failure in `TestOrganizeScratchLongHelpStatesSafetyBoundaries`. Present since b32b1e94 (2026-07-02).
     Next step: Make the exec-handoff tests unable to replace the test process, then fix whatever the unmasked `cmd/al` run reports.
-    Notes: Reproduce with `go test -count=1 -json ./cmd/al` (one `run` event, no package `pass`). Coverage totals include the truncated package.
+    Notes: Reproduce with `go test -count=1 -json ./cmd/al` (one `run` event; the only `pass` carries `"Test":"TestClientArgsPassThrough"`). Coverage totals include the truncated package.
 
 - Issue 2026-09-21 release-dispatch-probe-fragility: Live release compatibility probes are very fragile
     Priority: Medium. Area: Release validation / Agent Dispatch
