@@ -206,9 +206,11 @@ coverage: check-gotestsum ## Run tests with coverage reporting and write coverag
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)" "$(TEST_LOG_DIR)"
 	@log_dir="$$(mktemp -d "$(TEST_LOG_DIR)/coverage-$$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"; status=0; \
 	  GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/gotestsum" --format standard-quiet --jsonfile "$$log_dir/go-test.jsonl" -- ./... -coverprofile=coverage.out 2>&1 | tee "$$log_dir/output.log" || status=$$?; \
+	  if [[ $$status -eq 0 ]]; then \
+	    GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run -tags tools ./internal/tools/coverreport -profile coverage.out 2>&1 | tee -a "$$log_dir/output.log" || status=$$?; \
+	  fi; \
 	  echo "Full test logs: $$log_dir (go-test.jsonl: all go test events; output.log: this output)"; \
 	  exit $$status
-	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run -tags tools ./internal/tools/coverreport -profile coverage.out
 
 .PHONY: test-release
 test-release: ## Run release artifact tests
