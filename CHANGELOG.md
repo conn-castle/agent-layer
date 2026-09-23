@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+- `make test` and `make coverage` print per-package results, failures, skips, and errors instead of one line per test, and keep each run's complete `go test` events and printed output under `.agent-layer/tmp/test-logs/`.
+
 ## v0.22.0 - 2026-09-21
 
 ### Added
