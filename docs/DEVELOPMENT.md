@@ -249,7 +249,7 @@ make coverage
 Notes:
 - `make dev` formats Go source and runs golangci-lint. It does not run tests, coverage, or the full CI suite.
 - Use `make test` for the global test suite and `make coverage` to inspect coverage without a percentage gate.
-- `make test` uses `gotestsum` for more readable output (installed via `make tools`).
+- `make test` and `make coverage` use `gotestsum` (installed via `make tools`) to print concise per-package output and the path of that run's complete logs; see `docs/agent-layer/COMMANDS.md`.
 - `make lint` and `make test` fail fast if tools are missing; run `make tools` once per clone.
 
 ## Full local verification (closest CI parity)

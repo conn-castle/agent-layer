@@ -11,6 +11,8 @@ GOLANGCI_LINT_VERSION := v2.12.2
 GO_CACHE ?= $(CACHE_ROOT)/go-build
 GO_MOD_CACHE ?= $(CACHE_ROOT)/go-mod
 GOLANGCI_LINT_CACHE ?= $(ROOT_DIR)/.cache/golangci-lint
+# Each test run keeps its complete go test events and console output in a new directory here.
+TEST_LOG_DIR ?= $(ROOT_DIR)/.agent-layer/tmp/test-logs
 
 # Prune excluded directory roots before descent; -not -path still traverses them.
 GO_FILES_FIND_CMD := find . \( -path './.git' -o -path './.tools' -o -path './.cache' -o -path './.claude' -o -path './.codex' -o -path './.gemini' -o -path './.agy' -o -path './.antigravitycli' -o -path './.agents' -o -path './.agent-layer' -o -path './.muse-config' -o -path './.muse-data' -o -path './tmp' \) -prune -o -type f -name '*.go'
@@ -135,10 +137,16 @@ lint-ci-local: check-golangci-lint ## Run fresh-cache Linux-targeted and native-
 	    GOLANGCI_LINT_CACHE="$$tmp_root/golangci-lint" \
 	    "$(TOOL_BIN)/golangci-lint" run ./...
 
+# standard-quiet drops per-test PASS lines but, unlike pkgname, keeps package-level output
+# visible alongside go stderr, skips, and failures. The JSON file holds every test event; tee
+# keeps the console transcript because go command stderr never reaches the JSON file.
 .PHONY: test
 test: check-gotestsum ## Run tests
-	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/gotestsum" --format testname -- ./...
+	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)" "$(TEST_LOG_DIR)"
+	@log_dir="$$(mktemp -d "$(TEST_LOG_DIR)/test-$$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"; status=0; \
+	  GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/gotestsum" --format standard-quiet --jsonfile "$$log_dir/go-test.jsonl" -- ./... 2>&1 | tee "$$log_dir/output.log" || status=$$?; \
+	  echo "Full test logs: $$log_dir (go-test.jsonl: all go test events; output.log: this output)"; \
+	  exit $$status
 
 .PHONY: test-deepswe-planner
 test-deepswe-planner: ## Verify the website task-correlation evidence
@@ -195,8 +203,11 @@ tidy-check: ## Verify go.mod/go.sum are tidy
 
 .PHONY: coverage
 coverage: check-gotestsum ## Run tests with coverage reporting and write coverage.out
-	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/gotestsum" --format testname -- ./... -coverprofile=coverage.out
+	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)" "$(TEST_LOG_DIR)"
+	@log_dir="$$(mktemp -d "$(TEST_LOG_DIR)/coverage-$$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"; status=0; \
+	  GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/gotestsum" --format standard-quiet --jsonfile "$$log_dir/go-test.jsonl" -- ./... -coverprofile=coverage.out 2>&1 | tee "$$log_dir/output.log" || status=$$?; \
+	  echo "Full test logs: $$log_dir (go-test.jsonl: all go test events; output.log: this output)"; \
+	  exit $$status
 	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run -tags tools ./internal/tools/coverreport -profile coverage.out
 
 .PHONY: test-release

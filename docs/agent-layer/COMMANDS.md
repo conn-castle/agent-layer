@@ -134,7 +134,7 @@ make test
 ```
 Run from: repo root
 Prerequisites: `make tools` has been run
-Notes: Uses `gotestsum` for nicer output.
+Notes: Prints one line per package plus failures, skips, errors, and any package-level or go command output, then the path of a new `.agent-layer/tmp/test-logs/test-<UTC time>-<random>/` directory. That directory holds `go-test.jsonl` (every `go test -json` event, including passing-test output) and `output.log` (the printed output). Logs are never pruned. Replay the full verbose output with `.tools/bin/gotestsum --format standard-verbose --raw-command -- cat <dir>/go-test.jsonl`.
 
 - Run e2e harness self-tests (auth, helpers)
 ```bash
@@ -211,7 +211,7 @@ make coverage
 ```
 Run from: repo root  
 Prerequisites: Go 1.26.0+, `make tools` has been run
-Notes: Coverage is diagnostic evidence, not a pass/fail target. `make ci` routes through this target so regressions remain visible without incentivizing tests that exist only to execute implementation branches.
+Notes: Same concise output and `.agent-layer/tmp/test-logs/coverage-*/` logs as `make test`. Coverage is diagnostic evidence, not a pass/fail target. `make ci` routes through this target so regressions remain visible without incentivizing tests that exist only to execute implementation branches.
 
 ### Dev
 
