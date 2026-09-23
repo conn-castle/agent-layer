@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -14,64 +15,62 @@ import (
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
+// clientLaunchChildRootEnv marks a re-executed test process and names the
+// repository root it launches from. Client launches end in a syscall.Exec
+// handoff that replaces the process, so running one inside the go test process
+// would end the whole package run as soon as the stub client exits.
+const clientLaunchChildRootEnv = "AL_TEST_CLIENT_LAUNCH_ROOT"
+
 func TestClientArgsPassThrough(t *testing.T) {
-	root := t.TempDir()
-	writeTestRepo(t, root)
-
-	binDir := t.TempDir()
-	argsFile := filepath.Join(t.TempDir(), "claude-args.txt")
-	writeArgsStub(t, binDir, "claude", argsFile)
-	testutil.WriteStub(t, binDir, "al")
-
-	t.Setenv("PATH", binDir)
-
-	testutil.WithWorkingDir(t, root, func() {
-		cmd := newRootCmd()
-		cmd.SetArgs([]string{"claude", "--foo", "bar", "--baz=qux"})
-		if err := cmd.Execute(); err != nil {
-			t.Fatalf("execute error: %v", err)
-		}
-	})
-
-	data, err := os.ReadFile(argsFile) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read args file: %v", err)
-	}
-	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	got := launchClientInSubprocess(t, "claude", "claude", "--foo", "bar", "--baz=qux")
 	want := []string{"--foo", "bar", "--baz=qux"}
-	if strings.Join(lines, ",") != strings.Join(want, ",") {
-		t.Fatalf("expected args %v, got %v", want, lines)
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("expected args %v, got %v", want, got)
 	}
 }
 
 func TestClientArgsPassThroughWithSeparator(t *testing.T) {
+	got := launchClientInSubprocess(t, "claude", "claude", "--", "--help")
+	want := []string{"--help"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("expected args %v, got %v", want, got)
+	}
+}
+
+// launchClientInSubprocess runs `al <args>` in a re-executed copy of the
+// calling test and returns the arguments the stub executable received.
+func launchClientInSubprocess(t *testing.T, executable string, args ...string) []string {
+	t.Helper()
+	if root := os.Getenv(clientLaunchChildRootEnv); root != "" {
+		testutil.WithWorkingDir(t, root, func() {
+			cmd := newRootCmd()
+			cmd.SetArgs(args)
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("execute error: %v", err)
+			}
+		})
+		t.Fatal("client launch returned instead of handing off to the client")
+	}
+
 	root := t.TempDir()
 	writeTestRepo(t, root)
 
 	binDir := t.TempDir()
-	argsFile := filepath.Join(t.TempDir(), "claude-args-sep.txt")
-	writeArgsStub(t, binDir, "claude", argsFile)
+	argsFile := filepath.Join(t.TempDir(), "client-args.txt")
+	writeArgsStub(t, binDir, executable, argsFile)
 	testutil.WriteStub(t, binDir, "al")
 
-	t.Setenv("PATH", binDir)
-
-	testutil.WithWorkingDir(t, root, func() {
-		cmd := newRootCmd()
-		cmd.SetArgs([]string{"claude", "--", "--help"})
-		if err := cmd.Execute(); err != nil {
-			t.Fatalf("execute error: %v", err)
-		}
-	})
+	child := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$") //nolint:gosec // standard test re-exec pattern
+	child.Env = append(os.Environ(), "PATH="+binDir, clientLaunchChildRootEnv+"="+root)
+	if out, err := child.CombinedOutput(); err != nil {
+		t.Fatalf("client launch subprocess failed: %v\n%s", err, out)
+	}
 
 	data, err := os.ReadFile(argsFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read args file: %v", err)
 	}
-	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	want := []string{"--help"}
-	if strings.Join(lines, ",") != strings.Join(want, ",") {
-		t.Fatalf("expected args %v, got %v", want, lines)
-	}
+	return strings.Split(strings.TrimSpace(string(data)), "\n")
 }
 
 // TestNoArgsCommandsRejectExtraArgs verifies that commands which take no

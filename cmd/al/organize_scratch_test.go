@@ -41,7 +41,7 @@ func TestOrganizeScratchLongHelpStatesSafetyBoundaries(t *testing.T) {
 	command := newOrganizeScratchCmd()
 	for _, fact := range []string{
 		"strictly read-only",
-		"containing tracked content is refused",
+		"Repository roots and roots containing tracked content are refused",
 		"over 100",
 		"250 MiB",
 		"Predicted dry-run collisions",

@@ -33,9 +33,22 @@ func stubUpdateCheck(t *testing.T, result update.CheckResult, err error) *int {
 	return &calls
 }
 
+// stubNoMCPServerWarnings keeps doctor hermetic: fixtures enable the built-in
+// Agent Dispatch MCP server, whose real discovery would start the host's
+// `al dispatch mcp-server`.
+func stubNoMCPServerWarnings(t *testing.T) {
+	t.Helper()
+	orig := checkMCPServers
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, warnings.MCPSummary, error) {
+		return nil, warnings.MCPSummary{}, nil
+	}
+	t.Cleanup(func() { checkMCPServers = orig })
+}
+
 func TestDoctorCommand(t *testing.T) {
 	root := t.TempDir()
 	calls := stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil)
+	stubNoMCPServerWarnings(t)
 
 	// Test failure (no repo)
 	testutil.WithWorkingDir(t, root, func() {
@@ -282,6 +295,7 @@ func TestDoctorCommand_WithWarnings(t *testing.T) {
 	root := t.TempDir()
 	writeDoctorTestRepoWithWarnings(t, root)
 	calls := stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "2.0.0", Outdated: true}, nil)
+	stubNoMCPServerWarnings(t)
 	testutil.WithWorkingDir(t, root, func() {
 		cmd := newDoctorCmd()
 		err := cmd.RunE(cmd, nil)
@@ -302,6 +316,7 @@ func TestDoctorCommand_QuietNoiseModeStillShowsWarnings(t *testing.T) {
 	root := t.TempDir()
 	writeDoctorTestRepoWithWarnings(t, root)
 	calls := stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "2.0.0", Outdated: true}, nil)
+	stubNoMCPServerWarnings(t)
 
 	configToml := `
 [approvals]
@@ -357,6 +372,7 @@ func TestDoctorCommand_QuietFlagSuppressesWarningNotifications(t *testing.T) {
 	root := t.TempDir()
 	writeDoctorTestRepoWithWarnings(t, root)
 	calls := stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "2.0.0", Outdated: true}, nil)
+	stubNoMCPServerWarnings(t)
 
 	skillDir := filepath.Join(root, ".agent-layer", "skills", "alpha")
 	if err := os.MkdirAll(skillDir, 0o700); err != nil {
@@ -650,6 +666,7 @@ func TestDoctorCommand_MalformedSkill_NoContradictorySkillsOK(t *testing.T) {
 	root := t.TempDir()
 	writeTestRepoLenientConfig(t, root)
 	stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil)
+	stubNoMCPServerWarnings(t)
 
 	// A directory-format skill whose SKILL.md fails to load, so CheckConfig's
 	// lenient fallback emits a Skills FAIL and leaves cfg.Skills empty.
@@ -688,6 +705,7 @@ func TestDoctorCommand_MalformedEnv_NoMissingSecretCascade(t *testing.T) {
 		t.Fatalf("mkdir skills: %v", err)
 	}
 	stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil)
+	stubNoMCPServerWarnings(t)
 
 	// A malformed .env (line without `=`).
 	if err := os.WriteFile(filepath.Join(root, ".agent-layer", ".env"), []byte("AL_NO_EQUALS_HERE\n"), 0o600); err != nil {
