@@ -103,7 +103,7 @@ func TestWizardCommandRejectsYesWithoutProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := cmd.RunE(cmd, nil)
-	if err == nil || !strings.Contains(err.Error(), "--yes requires --profile") {
+	if err == nil || !strings.Contains(err.Error(), "--yes can only be used with --profile") {
 		t.Fatalf("--yes without --profile error = %v", err)
 	}
 }

@@ -29,11 +29,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-09-23 cmd-al-tests-exec-truncated: Most cmd/al tests silently never run
-    Priority: High. Area: Test suite / cmd/al
-    Description: `internal/clients.ExecHandoff` uses `syscall.Exec`, so `TestClientArgsPassThrough` (the first `cmd/al` test) replaces the test binary with its stub `claude`, which exits 0. `go test` reports `ok` after one of 292 test functions; test2json attributes the process-exit `pass` (package elapsed time) to that unfinished test instead of emitting a package-level `pass`; `make test`, `make coverage`, and CI are green without exercising `cmd/al`. Skipping it and `TestClientArgsPassThroughWithSeparator` lets the package complete and exposes a masked failure in `TestOrganizeScratchLongHelpStatesSafetyBoundaries`. Present since b32b1e94 (2026-07-02).
-    Next step: Make the exec-handoff tests unable to replace the test process, then fix whatever the unmasked `cmd/al` run reports.
-    Notes: Reproduce with `go test -count=1 -json ./cmd/al` (one `run` event; the only `pass` carries `"Test":"TestClientArgsPassThrough"`). Coverage totals include the truncated package.
+- Issue 2026-09-23 go-test-truncated-package-undetected: Test runs pass when a test binary is replaced or exits at the syscall level
+    Priority: Low. Area: Test suite / Makefile
+    Description: When a test process is replaced (`syscall.Exec`) or exits through `syscall.Exit` before its package finishes, `go test` still reports `ok` and test2json emits no package-level result; `os.Exit(0)` is caught by `-test.paniconexit0`, but these low-level paths are not. `make test` and `make coverage` (which `make ci` uses) rely on that exit status alone, so the `cmd/al` suite ran 1 of 292 tests from 2026-07-02 to 2026-09-23 without any failure signal.
+    Open question: Is a post-check in `make test` and `make coverage` that fails when a started package lacks a package-level `pass`/`fail`/`skip` event in `go-test.jsonl` worth adding?
+    Notes: The `cmd/al` exec-handoff tests now re-execute the test binary; a full `make test` emits a package-level result for all 49 packages (47 `pass`, 2 `skip` with no test files). `grok` and `copilot_cli` also launch through `clients.ExecHandoff`.
 
 - Issue 2026-09-21 release-dispatch-probe-fragility: Live release compatibility probes are very fragile
     Priority: Medium. Area: Release validation / Agent Dispatch

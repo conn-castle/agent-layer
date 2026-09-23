@@ -193,33 +193,34 @@ func TestClientCommandsMissingConfig(t *testing.T) {
 }
 
 func TestClientCommandsSuccess(t *testing.T) {
-	root := t.TempDir()
-	writeTestRepo(t, root)
 	t.Setenv(config.BuiltinRepoRootEnvVar, "")
 
-	binDir := t.TempDir()
-	testutil.WriteStub(t, binDir, "agy")
-	testutil.WriteStub(t, binDir, "claude")
-	testutil.WriteStub(t, binDir, "codex")
-	testutil.WriteStub(t, binDir, "muse")
-	testutil.WriteStub(t, binDir, "code")
-	testutil.WriteStub(t, binDir, "al")
+	for _, tc := range []struct{ command, executable string }{
+		{command: "agy", executable: "agy"},
+		{command: "claude", executable: "claude"},
+		{command: "codex", executable: "codex"},
+		{command: "muse", executable: "muse"},
+	} {
+		t.Run(tc.command, func(t *testing.T) {
+			launchClientInSubprocess(t, tc.executable, tc.command)
+		})
+	}
 
-	t.Setenv("PATH", binDir)
+	// VS Code starts `code` as a child process instead of an exec handoff.
+	t.Run("vscode", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestRepo(t, root)
+		binDir := t.TempDir()
+		testutil.WriteStub(t, binDir, "code")
+		testutil.WriteStub(t, binDir, "al")
+		t.Setenv("PATH", binDir)
 
-	testutil.WithWorkingDir(t, root, func() {
-		commands := []*cobra.Command{
-			newAntigravityCmd(),
-			newClaudeCmd(),
-			newCodexCmd(),
-			newMuseCmd(),
-			newVSCodeCmd(),
-		}
-		for _, cmd := range commands {
+		testutil.WithWorkingDir(t, root, func() {
+			cmd := newVSCodeCmd()
 			if err := cmd.RunE(cmd, nil); err != nil {
 				t.Fatalf("command %s failed: %v", cmd.Use, err)
 			}
-		}
+		})
 	})
 }
 
