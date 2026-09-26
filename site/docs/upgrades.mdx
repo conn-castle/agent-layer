@@ -29,7 +29,7 @@ If guidance in other docs is shorter or summarized, this page is authoritative.
 ## How to upgrade
 
 1. Update the global `al` CLI:
-   - Run `al update`. It uses Homebrew when Homebrew owns the executable and otherwise reruns the official release installer with the current prefix.
+   - Run `al update`. It uses Homebrew when Homebrew owns the executable and otherwise reruns the official release installer with the current prefix. Completion reports the installed CLI version; repository pins are unchanged.
    - If the installed CLI predates `al update`, update it once with `brew upgrade conn-castle/tap/agent-layer` for Homebrew or rerun the original script install command with the same prefix.
 2. Upgrade the repo: `al upgrade plan` then `al upgrade`.
 

@@ -499,3 +499,19 @@ func TestReadInstalledCLIVersionRejectsNonVersionOutput(t *testing.T) {
 		t.Fatalf("error = %v, want invalid-version diagnostic", err)
 	}
 }
+
+func TestReadInstalledCLIVersionPreservesFailedProbeStdoutAndStderr(t *testing.T) {
+	executable := filepath.Join(t.TempDir(), "al")
+	script := "#!/bin/sh\nprintf 'probe stdout from failed version\\n'\nprintf 'probe stderr from failed version\\n' >&2\nexit 2\n"
+	if err := os.WriteFile(executable, []byte(script), 0o700); err != nil { // #nosec G306 -- test-owned executable fixture.
+		t.Fatalf("write test executable: %v", err)
+	}
+	_, err := readInstalledCLIVersion(context.Background(), executable)
+	if err == nil {
+		t.Fatal("expected failed version probe")
+	}
+	message := err.Error()
+	if !strings.Contains(message, "probe stdout from failed version") || !strings.Contains(message, "probe stderr from failed version") {
+		t.Fatalf("error = %v, want stdout and stderr from the failed probe", err)
+	}
+}
