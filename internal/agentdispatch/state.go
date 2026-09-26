@@ -27,6 +27,7 @@ const (
 )
 
 const (
+	dispatchStateReserved    = "reserved"
 	dispatchStatePending     = "pending"
 	dispatchStateStarting    = "starting"
 	dispatchStateRunning     = "running"
@@ -41,6 +42,7 @@ const (
 	recoveryNotResumable      = "not_resumable"
 	sessionStateDurable       = "durable"
 	sessionStatePending       = "pending"
+	sessionStateReserved      = "reserved"
 )
 
 var errDispatchRunNotFound = errors.New("dispatch run record not found")
@@ -111,6 +113,11 @@ type RunRecord struct {
 	TerminationObservation  string     `json:"termination_observation,omitempty"`
 	TerminationAttemptError string     `json:"termination_attempt_error,omitempty"`
 	TerminationProof        string     `json:"termination_proof,omitempty"`
+	// ReservationExpiresAt marks a record created by `al dispatch reserve`.
+	ReservationExpiresAt *time.Time `json:"reservation_expires_at,omitempty"`
+	// LaunchDigest identifies the launch arguments of the start that claimed
+	// a reservation. It is a digest, never the caller prompt.
+	LaunchDigest string `json:"launch_digest,omitempty"`
 }
 
 type dispatchRun struct {
@@ -153,13 +160,19 @@ func validDispatchName(name string) bool {
 }
 
 func newDispatchRun(root string, agent string, version string, mode string) (*dispatchRun, error) {
-	claudeLineage := false
-	if agent == AgentClaude {
-		var err error
-		claudeLineage, err = claudeLineageSupported(version)
-		if err != nil {
-			return nil, wrapExitError(ExitConfig, "evaluate Claude lineage capability", err)
-		}
+	return createDispatchRun(root, agent, version, mode, nil)
+}
+
+// newReservedDispatchRun creates an invocation record that launches nothing
+// until `al dispatch start --reservation` claims it.
+func newReservedDispatchRun(root string, expiresAt time.Time) (*dispatchRun, error) {
+	return createDispatchRun(root, "", "", dispatchModeFresh, &expiresAt)
+}
+
+func createDispatchRun(root string, agent string, version string, mode string, reservationExpiresAt *time.Time) (*dispatchRun, error) {
+	claudeLineage, err := providerLineageSupported(agent, version)
+	if err != nil {
+		return nil, err
 	}
 	id, err := newUUID()
 	if err != nil {
@@ -193,6 +206,11 @@ func newDispatchRun(root string, agent string, version string, mode string) (*di
 		EventsPath:            filepath.Join(dir, "provider.events"),
 		LaunchProtocol:        launchProtocolIntentBeforeStart,
 	}
+	if reservationExpiresAt != nil {
+		record.State = dispatchStateReserved
+		expires := reservationExpiresAt.UTC()
+		record.ReservationExpiresAt = &expires
+	}
 	if claudeLineage {
 		record.LineagePath = filepath.Join(dir, "provider.lineage")
 	}
@@ -200,6 +218,17 @@ func newDispatchRun(root string, agent string, version string, mode string) (*di
 		return nil, err
 	}
 	return &dispatchRun{Record: record, Dir: dir}, nil
+}
+
+func providerLineageSupported(agent string, version string) (bool, error) {
+	if agent != AgentClaude {
+		return false, nil
+	}
+	supported, err := claudeLineageSupported(version)
+	if err != nil {
+		return false, wrapExitError(ExitConfig, "evaluate Claude lineage capability", err)
+	}
+	return supported, nil
 }
 
 func newUUID() (string, error) {
@@ -318,7 +347,11 @@ func createExclusiveSession(root string, name string, run *dispatchRun) (Session
 		return Session{}, false, err
 	}
 	now := time.Now().UTC()
-	session := Session{Name: name, Agent: run.Record.Agent, CreatedAt: now, LastUsedAt: now, State: sessionStatePending, RunID: run.Record.ID, ActiveRunID: run.Record.ID, ActiveClaimKnown: true}
+	state := sessionStatePending
+	if run.Record.State == dispatchStateReserved {
+		state = sessionStateReserved
+	}
+	session := Session{Name: name, Agent: run.Record.Agent, CreatedAt: now, LastUsedAt: now, State: state, RunID: run.Record.ID, ActiveRunID: run.Record.ID, ActiveClaimKnown: true}
 	file, openErr := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- name is generated from fixed vocabularies.
 	if errors.Is(openErr, fs.ErrExist) {
 		return Session{}, false, nil
@@ -627,7 +660,9 @@ func loadSession(root string, name string) (Session, error) {
 		}
 		return Session{}, wrapExitError(ExitConfig, "read dispatch mapping", err)
 	}
-	if session.Name != name || !validDispatchName(session.Name) || !isProvider(session.Agent) {
+	// A reservation has no agent until `start --reservation` claims it.
+	unclaimedReservation := session.State == sessionStateReserved && session.Agent == ""
+	if session.Name != name || !validDispatchName(session.Name) || (!isProvider(session.Agent) && !unclaimedReservation) {
 		return Session{}, exitError(ExitConfig, fmt.Sprintf("dispatch session %q is invalid", name))
 	}
 	return session, nil
@@ -686,11 +721,16 @@ func pruneDispatchEvidence(root string, now time.Time, retention time.Duration) 
 		return wrapExitError(ExitConfig, "list dispatch evidence for retention", err)
 	}
 	for _, entry := range entries {
-		if !entry.IsDir() || parseUUID(entry.Name()) != nil || current[entry.Name()] {
+		if !entry.IsDir() || parseUUID(entry.Name()) != nil {
 			continue
 		}
 		record, loadErr := loadRunRecord(root, entry.Name())
-		if loadErr != nil || !record.TerminationConfirmed || !terminalDispatchState(record.State) || record.CompletedAt == nil || !record.CompletedAt.Before(cutoff) {
+		if loadErr == nil && record.State == dispatchStateReserved {
+			if record, loadErr = retireExpiredReservation(root, record.ID, now.UTC()); loadErr != nil {
+				return loadErr
+			}
+		}
+		if loadErr != nil || current[entry.Name()] || !record.TerminationConfirmed || !terminalDispatchState(record.State) || record.CompletedAt == nil || !record.CompletedAt.Before(cutoff) {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(dispatchRunPath(root), entry.Name())); err != nil {
@@ -951,10 +991,13 @@ func loadRunRecord(root string, id string) (RunRecord, error) {
 }
 
 func validateRunRecord(record RunRecord) error {
-	validState := map[string]bool{dispatchStatePending: true, dispatchStateStarting: true, dispatchStateRunning: true, dispatchStateCompleted: true, dispatchStateFailed: true, dispatchStateCancelled: true, dispatchStateInterrupted: true}
+	validState := map[string]bool{dispatchStateReserved: true, dispatchStatePending: true, dispatchStateStarting: true, dispatchStateRunning: true, dispatchStateCompleted: true, dispatchStateFailed: true, dispatchStateCancelled: true, dispatchStateInterrupted: true}
 	validRecovery := map[string]bool{recoveryRetrySafe: true, recoveryResumeRequired: true, recoveryAcceptanceUnknown: true, recoveryNotResumable: true}
 	if !validState[record.State] || !validRecovery[record.RecoveryState] {
 		return exitError(ExitConfig, fmt.Sprintf("dispatch run %q has invalid execution/recovery state %q/%q", record.ID, record.State, record.RecoveryState))
+	}
+	if record.State == dispatchStateReserved && record.ReservationExpiresAt == nil {
+		return exitError(ExitConfig, fmt.Sprintf("dispatch run %q is reserved without an expiry", record.ID))
 	}
 	if !terminalDispatchState(record.State) && record.CompletedAt != nil {
 		return exitError(ExitConfig, fmt.Sprintf("dispatch run %q is nonterminal with a completion timestamp", record.ID))

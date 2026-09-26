@@ -51,7 +51,7 @@ func TestDispatchHelpWiresAsyncSurface(t *testing.T) {
 	if !strings.Contains(stdout.String(), messages.DispatchLong) {
 		t.Fatalf("expected DispatchLong in help")
 	}
-	for _, name := range []string{"options", "start", "wait", "continue", "cancel", "inspect", "output"} {
+	for _, name := range []string{"options", "reserve", "start", "wait", "continue", "cancel", "inspect", "output"} {
 		child, _, err := cmd.Find([]string{name})
 		if err != nil || child == cmd || child.Name() != name {
 			t.Fatalf("dispatch subcommand %q not wired: child=%v err=%v", name, child, err)

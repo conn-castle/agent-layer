@@ -34,6 +34,18 @@ const (
 	ExitTargetFailure = 70
 	// ExitNested is the stable dispatch nested-call failure exit code.
 	ExitNested = 75
+	// ExitReservationNotFound means `start --reservation` named no reservation.
+	// Nothing was launched.
+	ExitReservationNotFound = 80
+	// ExitReservationExpired means the reservation expired before it started.
+	// It never launched, and it never will.
+	ExitReservationExpired = 81
+	// ExitReservationMismatch means the reservation already started with
+	// different launch arguments. Nothing new was launched.
+	ExitReservationMismatch = 82
+	// ExitReservationCancelled means the reservation was cancelled before it
+	// started. It never launched, and it never will.
+	ExitReservationCancelled = 83
 	// ExitSigint is the stable dispatch SIGINT exit code.
 	ExitSigint = 130
 	// ExitSigterm is the stable dispatch SIGTERM exit code.
@@ -103,12 +115,21 @@ type StartOptions struct {
 	Skill           string
 	Prompt          string
 	PromptFile      string
-	Stdout          io.Writer
-	Stderr          io.Writer
-	Env             []string
-	LookPath        func(string) (string, error)
-	VersionLookup   func(path string, agent string) (string, error)
-	launchWorker    workerLauncher
+	// Reservation launches an `al dispatch reserve` record (by handle or
+	// invocation ID) instead of creating a new conversation.
+	Reservation   string
+	Stdout        io.Writer
+	Stderr        io.Writer
+	Env           []string
+	LookPath      func(string) (string, error)
+	VersionLookup func(path string, agent string) (string, error)
+	launchWorker  workerLauncher
+}
+
+// ReserveOptions configures one reservation of a not-yet-started conversation.
+type ReserveOptions struct {
+	Root   string
+	Stdout io.Writer
 }
 
 // ContinueOptions configures one asynchronous continuation of a conversation.
@@ -141,6 +162,8 @@ type Result struct {
 	TerminationConfirmed   bool       `json:"termination_confirmed"`
 	TerminationConfirmedAt *time.Time `json:"termination_confirmed_at,omitempty"`
 	ConditionMet           *bool      `json:"condition_met,omitempty"`
+	ReservationExpiresAt   *time.Time `json:"reservation_expires_at,omitempty"`
+	AlreadyStarted         bool       `json:"already_started,omitempty"`
 }
 
 const (

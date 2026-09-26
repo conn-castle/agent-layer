@@ -26,13 +26,13 @@ func newDispatchCmd() *cobra.Command {
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 	}
-	cmd.AddCommand(newDispatchOptionsCmd(), newDispatchStartCmd(), newDispatchWaitCmd(), newDispatchContinueCmd(), newDispatchCancelCmd(), newDispatchInspectCmd(), newDispatchOutputCmd(), newDispatchMCPServerCmd())
+	cmd.AddCommand(newDispatchOptionsCmd(), newDispatchReserveCmd(), newDispatchStartCmd(), newDispatchWaitCmd(), newDispatchContinueCmd(), newDispatchCancelCmd(), newDispatchInspectCmd(), newDispatchOutputCmd(), newDispatchMCPServerCmd())
 	return cmd
 }
 
 // newDispatchMCPServerCmd serves the Agent Dispatch MCP tools over stdio. It is
 // hidden because clients launch it from generated MCP configuration; the public
-// `al dispatch` surface remains the five documented commands.
+// `al dispatch` surface remains the documented commands.
 func newDispatchMCPServerCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          dispatchMCPServerCommand,
@@ -89,8 +89,25 @@ func newDispatchOptionsCmd() *cobra.Command {
 	}
 }
 
+func newDispatchReserveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "reserve",
+		Short:        messages.DispatchReserveShort,
+		Long:         messages.DispatchReserveLong,
+		Args:         cobra.NoArgs,
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			root, err := resolveRepoRoot()
+			if err != nil {
+				return err
+			}
+			return dispatchCommandError(cmd, agentdispatch.Reserve(agentdispatch.ReserveOptions{Root: root, Stdout: cmd.OutOrStdout()}))
+		},
+	}
+}
+
 func newDispatchStartCmd() *cobra.Command {
-	var agent, model, effort, role, skill, prompt, promptFile string
+	var agent, model, effort, role, skill, prompt, promptFile, reservation string
 	cmd := &cobra.Command{
 		Use:          dispatchStartCommand,
 		Short:        "Start a new asynchronous agent conversation",
@@ -104,7 +121,7 @@ func newDispatchStartCmd() *cobra.Command {
 			return dispatchCommandError(cmd, agentdispatch.Start(agentdispatch.StartOptions{
 				Root: root, WorkDir: workingDir, Agent: agent, Model: model,
 				ReasoningEffort: effort, Role: role, Skill: skill, Prompt: prompt, PromptFile: promptFile,
-				Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr(), Env: os.Environ(),
+				Reservation: reservation, Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr(), Env: os.Environ(),
 			}))
 		},
 	}
@@ -113,6 +130,7 @@ func newDispatchStartCmd() *cobra.Command {
 	cmd.Flags().StringVar(&effort, "reasoning-effort", "", messages.DispatchReasoningEffortFlag)
 	cmd.Flags().StringVar(&role, "role", "", messages.DispatchRoleFlag)
 	cmd.Flags().StringVar(&skill, "skill", "", messages.DispatchSkillFlag)
+	cmd.Flags().StringVar(&reservation, "reservation", "", messages.DispatchReservationFlag)
 	addDispatchPromptFlags(cmd, &prompt, &promptFile)
 	return cmd
 }

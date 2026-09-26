@@ -15,6 +15,12 @@ func tryReconcileOrphan(root string, record RunRecord) (RunRecord, error) {
 	var next RunRecord
 	acquired, err := tryWithRunLock(dir, func() error {
 		updated, applyErr := applyRunEvidenceLocked(dir, func(current *RunRecord) error {
+			if current.State == dispatchStateReserved {
+				// A reservation has no worker or provider to reconcile; its
+				// recorded launcher is the reserve command, which exits at once.
+				expireReservation(current, time.Now().UTC())
+				return nil
+			}
 			if terminalDispatchState(current.State) {
 				applyTerminationEvidence(current, nil, true, time.Now().UTC())
 				return nil
@@ -289,13 +295,17 @@ func beginCancellation(root string, id string) (RunRecord, *ownedProviderProcess
 		case current.State == dispatchStateRunning && current.SupervisorPID != 0:
 			// The worker is launched but no provider process exists yet; the
 			// terminal record plus launch fence stop a later Start.
-		case current.State == dispatchStatePending, current.State == dispatchStateStarting:
+		case current.State == dispatchStateReserved, current.State == dispatchStatePending, current.State == dispatchStateStarting:
 		default:
 			return exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s cannot be cancelled from state %s", current.ID, current.State))
 		}
 		now := time.Now().UTC()
+		recovery := recoveryAcceptanceUnknown
+		if current.State == dispatchStateReserved {
+			recovery = recoveryRetrySafe
+		}
 		current.State = dispatchStateCancelled
-		current.RecoveryState = recoveryAcceptanceUnknown
+		current.RecoveryState = recovery
 		current.CompletedAt = &now
 		current.TerminalReason = terminalReasonCancelledByCaller
 		current.TerminalExitCode = ExitTargetFailure

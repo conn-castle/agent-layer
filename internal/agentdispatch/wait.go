@@ -49,7 +49,7 @@ func Wait(request WaitRequest) error {
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
 			result := publicResult(record)
-			if !terminalDispatchState(record.State) {
+			if !terminalDispatchState(record.State) && record.State != dispatchStateReserved {
 				result.State = dispatchStateRunning
 				result.Error = ""
 			}

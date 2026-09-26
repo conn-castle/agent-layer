@@ -67,6 +67,7 @@ inactive conversations are kept:
 ```toml
 [dispatch]
 session_retention_days = 30
+reservation_expiry_days = 7
 mcp_wait_timeout_minutes = 30
 mcp_tool_timeout_minutes = 40
 ```
@@ -80,6 +81,8 @@ omitted they resolve to 30 and 40. The tool timeout must be greater than the
 wait timeout, and an invalid relationship fails configuration validation.
 `session_retention_days` bounds inactive conversation mappings and confirmed
 terminal evidence (default 30). Unconfirmed execution evidence is never expired.
+`reservation_expiry_days` bounds how long an unstarted reservation stays
+startable (default 7); see [Reservations](#reservations).
 Older binaries that strictly
 decode run records will fail to read records written by this version.
 
@@ -114,8 +117,11 @@ the ID is known; evidence remains under `.agent-layer/tmp/runs/`.
 ```text
 al dispatch options
 
+al dispatch reserve
+
 al dispatch start --agent <agent> [--model <model>] \
   [--reasoning-effort <effort>] [--role <role>] [--skill <skill>] \
+  [--reservation <handle-or-invocation-id>] \
   (--prompt <text> | --prompt-file <path>)
 
 al dispatch wait <handle-or-invocation-id> [--condition terminal|termination_confirmed]
@@ -174,6 +180,9 @@ on the run record; it does not change provider selection or prompt text.
 `start` returns immediately after durably creating the
 conversation and starting its first invocation.
 
+`reserve` and `--reservation` are described in [Reservations](#reservations).
+Without `--reservation`, `start` is unchanged.
+
 `continue` uses the conversation's existing agent, model, reasoning effort,
 and provider context. It requires exactly one new prompt source and returns
 immediately after starting the next invocation.
@@ -188,6 +197,10 @@ The current invocation has exactly one public state:
 ```text
 running -> completed | failed | cancelled
 ```
+
+An invocation created by `reserve` starts in `reserved` and moves to
+`running` when `start --reservation` launches it, or to `cancelled` when it is
+cancelled or expires first.
 
 Terminal states are immutable. Continuing a terminal conversation creates a
 new current invocation in `running`; it does not change the previous
@@ -377,6 +390,75 @@ provider until its complete handle response has been written. If a `continue`
 response is interrupted, the caller uses the already-known handle with `wait`
 instead of repeating `continue`.
 
+## Reservations
+
+Reservations make launching idempotent for programmatic callers that may
+repeat a start, such as an at-least-once workflow step that reruns after a
+crash or a lost response. They are CLI only: no MCP tool exposes them, and
+agents should use `dispatch_start`.
+
+```text
+al dispatch reserve
+al dispatch start --reservation <handle-or-invocation-id> --agent <agent> ... (--prompt <text> | --prompt-file <path>)
+```
+
+`reserve` durably creates an invocation in the `reserved` state, with an Agent
+Layer generated handle and invocation ID, and launches nothing. It returns:
+
+```json
+{
+  "handle": "abc123",
+  "invocation_id": "11111111-1111-4111-8111-111111111111",
+  "state": "reserved",
+  "termination_confirmed": false,
+  "reservation_expires_at": "2026-10-02T12:00:00Z"
+}
+```
+
+The caller records the handle, then starts it with `start --reservation`,
+passing the normal launch arguments. Callers never choose identifiers: a
+reservation selector that Agent Layer did not return fails without launching.
+A handle resolves to its conversation's reserved invocation even after later
+continuations; an invocation ID must name the reserved invocation itself.
+
+The first start that reaches the reservation launches it through the normal
+intent-before-start protocol and returns the normal start result. Concurrent
+starts are serialized by the invocation's record lock, so exactly one launches.
+Every later start with the same launch arguments launches nothing and returns
+that invocation in the start result shape, whatever its state, with
+`"already_started": true`. A start interrupted mid-launch is resolved by the
+normal launch recovery (for example `failed` with unknown provider acceptance)
+and is never relaunched. Launch arguments are the agent, model, reasoning
+effort, role, skill, and prompt. The prompt is compared by content, so
+`--prompt` and `--prompt-file` with identical text match; only a digest is
+stored.
+
+`inspect`, `wait`, `output`, and `cancel` accept a reservation's handle or
+invocation ID. `inspect` reports `reserved` and `reservation_expires_at`.
+`wait` on an unstarted reservation waits like any other nonterminal
+invocation. `cancel` retires an unstarted reservation as `cancelled` with
+confirmed termination, without launching. `continue` rejects a reservation
+that never started.
+
+A reservation that is not started within `dispatch.reservation_expiry_days`
+(default 7) is retired as `cancelled` with the error `reservation expired
+before it started`. Retired reservations never launch and are removed by
+normal `session_retention_days` retention.
+
+`start --reservation` fails with these exit codes. None of them launches
+anything:
+
+| Exit code | Meaning |
+| --- | --- |
+| 80 | Not found: the selector names no reservation, for example a typo, an invented value, a handle from a plain `start`, or a reservation already removed by retention. |
+| 81 | Expired: the reservation expired before it started. It never launched and never will; reserve again. |
+| 82 | Mismatch: the reservation already started with different launch arguments. |
+| 83 | Cancelled: the reservation was cancelled before it started. It never launched and never will. |
+
+Other failures keep the ordinary dispatch exit codes. A start that fails
+before it claims the reservation, for example because the agent is disabled
+or unavailable, leaves the reservation startable.
+
 ## Public surface
 
 There is no public fanout resource. Parallel work consists of independent
@@ -391,6 +473,7 @@ and set `truncated` when more captured text exists. Missing, unreadable, invalid
 or unavailable output fails explicitly.
 
 The MCP surface exposes `options`, `start`, `wait`, `continue`, `cancel`, `inspect`,
-and `output` with the `dispatch_` prefix.
+and `output` with the `dispatch_` prefix. `reserve` and `start --reservation`
+are CLI only.
 `al dispatch mcp-server`, which serves those tools over stdio, is a hidden entry
 point for generated client configuration, not a public command.

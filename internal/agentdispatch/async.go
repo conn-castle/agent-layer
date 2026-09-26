@@ -64,33 +64,10 @@ func Start(opts StartOptions) error {
 	if !ok {
 		return exitError(ExitUsage, fmt.Sprintf(messages.DispatchUnknownTargetFmt, opts.Agent))
 	}
-	var project *config.ProjectConfig
-	var target targetMeta
-	var version string
-	var prompt []byte
-	err = sync.WithLockedProject(sync.RealSystem{}, opts.Root, func(loaded *config.ProjectConfig) error {
-		project = loaded
-		if err := checkDispatchDepth(project.Config, depth); err != nil {
-			return err
-		}
-		var prepareErr error
-		target, version, prompt, prepareErr = prepareFresh(project, requested, runOptions{
-			Root: opts.Root, Model: opts.Model, ReasoningEffort: opts.ReasoningEffort,
-			Skill: opts.Skill, Prompt: promptText, LookPath: opts.LookPath,
-			VersionLookup: opts.VersionLookup,
-		})
-		if prepareErr != nil {
-			return prepareErr
-		}
-		if err := prepareProjection(project, opts.Root, stderr); err != nil {
-			return err
-		}
-		projectionRoot, err := prepareTargetProjection(project, opts.Root, opts.WorkDir, target)
-		if err != nil {
-			return err
-		}
-		return validateSkillProjection(projectionRoot, target, opts.Skill)
-	})
+	if strings.TrimSpace(opts.Reservation) != "" {
+		return startReservation(opts, requested, promptText, stderr, env, depth)
+	}
+	project, target, version, prompt, err := prepareStart(opts, requested, promptText, stderr, depth)
 	if err != nil {
 		return err
 	}
@@ -123,6 +100,39 @@ func Start(opts StartOptions) error {
 	return publishInvocation(opts.Root, run, session, request, writerOrDiscard(opts.Stdout), opts.launchWorker)
 }
 
+// prepareStart validates a fresh invocation's target and prompt and refreshes
+// its projections under the project lock.
+func prepareStart(opts StartOptions, requested targetMeta, promptText string, stderr io.Writer, depth int) (*config.ProjectConfig, targetMeta, string, []byte, error) {
+	var project *config.ProjectConfig
+	var target targetMeta
+	var version string
+	var prompt []byte
+	err := sync.WithLockedProject(sync.RealSystem{}, opts.Root, func(loaded *config.ProjectConfig) error {
+		project = loaded
+		if err := checkDispatchDepth(project.Config, depth); err != nil {
+			return err
+		}
+		var prepareErr error
+		target, version, prompt, prepareErr = prepareFresh(project, requested, runOptions{
+			Root: opts.Root, Model: opts.Model, ReasoningEffort: opts.ReasoningEffort,
+			Skill: opts.Skill, Prompt: promptText, LookPath: opts.LookPath,
+			VersionLookup: opts.VersionLookup,
+		})
+		if prepareErr != nil {
+			return prepareErr
+		}
+		if err := prepareProjection(project, opts.Root, stderr); err != nil {
+			return err
+		}
+		projectionRoot, err := prepareTargetProjection(project, opts.Root, opts.WorkDir, target)
+		if err != nil {
+			return err
+		}
+		return validateSkillProjection(projectionRoot, target, opts.Skill)
+	})
+	return project, target, version, prompt, err
+}
+
 // Continue starts the next invocation in an existing terminal conversation.
 func Continue(opts ContinueOptions) error {
 	promptText, err := resolvePromptSource(opts.Prompt, opts.PromptFile)
@@ -136,6 +146,9 @@ func Continue(opts ContinueOptions) error {
 	session, err := loadSession(opts.Root, strings.TrimSpace(opts.Handle))
 	if err != nil {
 		return err
+	}
+	if session.State == sessionStateReserved {
+		return exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q is a reservation that never started; launch it with `al dispatch start --reservation`", session.Name))
 	}
 	current, err := resolveWaitRun(opts.Root, session.Name)
 	if err != nil {
