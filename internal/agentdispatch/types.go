@@ -116,7 +116,7 @@ type StartOptions struct {
 	Prompt          string
 	PromptFile      string
 	// Reservation, when set, launches an `al dispatch reserve` record (by
-	// handle or invocation ID) instead of creating a new conversation. A set
+	// immutable invocation ID) instead of creating a new conversation. A set
 	// but empty selector names no reservation and launches nothing.
 	Reservation   *string
 	Stdout        io.Writer

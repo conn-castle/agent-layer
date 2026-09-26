@@ -66,7 +66,7 @@ check_dispatch_reservations() {
   assert_mock_agent_not_called "$MOCK_DISPATCH_CODEX_LOG" "reserve launches nothing"
 
   local selector
-  for selector in "${reservation}x" "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" "$plain_handle" ""; do
+  for selector in "$reservation" "${reservation}x" "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" "$plain_handle" ""; do
     rc=0
     (cd "$repo_dir" && al dispatch start --reservation "$selector" --agent codex \
       --prompt "Reserved work" >/dev/null 2>&1) || rc=$?
@@ -81,7 +81,7 @@ check_dispatch_reservations() {
   rc=0
   local index pids=()
   for index in {1..8}; do
-    (cd "$repo_dir" && MOCK_DISPATCH_DELAY_SECONDS=0.5 al dispatch start --reservation "$reservation" \
+    (cd "$repo_dir" && MOCK_DISPATCH_DELAY_SECONDS=0.5 al dispatch start --reservation "$reserved_id" \
       --agent codex --prompt "Reserved work" >"$repo_dir/reserved-${index}.json") &
     pids+=("$!")
   done
@@ -117,7 +117,7 @@ check_dispatch_reservations() {
   fi
 
   rc=0
-  (cd "$repo_dir" && al dispatch start --reservation "$reservation" --agent codex \
+  (cd "$repo_dir" && al dispatch start --reservation "$reserved_id" --agent codex \
     --prompt "Different work" >/dev/null 2>&1) || rc=$?
   if [[ $rc -eq 82 ]]; then
     pass "start with different launch arguments exits 82"

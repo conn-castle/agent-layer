@@ -121,7 +121,7 @@ al dispatch reserve
 
 al dispatch start --agent <agent> [--model <model>] \
   [--reasoning-effort <effort>] [--role <role>] [--skill <skill>] \
-  [--reservation <handle-or-invocation-id>] \
+  [--reservation <invocation-id>] \
   (--prompt <text> | --prompt-file <path>)
 
 al dispatch wait <handle-or-invocation-id> [--condition terminal|termination_confirmed]
@@ -400,7 +400,7 @@ agents should use `dispatch_start`.
 
 ```text
 al dispatch reserve
-al dispatch start --reservation <handle-or-invocation-id> --agent <agent> ... (--prompt <text> | --prompt-file <path>)
+al dispatch start --reservation <invocation-id> --agent <agent> ... (--prompt <text> | --prompt-file <path>)
 ```
 
 `reserve` durably creates an invocation in the `reserved` state, with an Agent
@@ -416,20 +416,25 @@ Layer generated handle and invocation ID, and launches nothing. It returns:
 }
 ```
 
-The caller records the handle, then starts it with `start --reservation`,
+The caller records the immutable `invocation_id`, then starts it with
+`start --reservation <invocation-id>`,
 passing the normal launch arguments. Callers never choose identifiers: a
 reservation selector that Agent Layer did not return fails without launching.
-A handle resolves to its conversation's reserved invocation even after later
-continuations; an invocation ID must name the reserved invocation itself.
+Conversation handles are rejected with exit 80: retention can free a handle
+for reuse by another conversation, so a delayed retry must identify the original
+invocation by UUID. The UUID always names the reserved invocation itself, even
+after later continuations.
 
 The first start that reaches the reservation launches it through the normal
 intent-before-start protocol and returns the normal start result. Concurrent
-starts are serialized by the invocation's record lock, so exactly one launches.
+starts are serialized by the invocation's record lock, so at most one launches.
 Every later start with the same launch arguments launches nothing and returns
 that invocation in the start result shape, whatever its state, with
 `"already_started": true`. A start interrupted mid-launch is resolved by the
 normal launch recovery (for example `failed` with unknown provider acceptance)
-and is never relaunched. Launch arguments are the agent, model, reasoning
+and is never relaunched. This guarantees at-most-once launch, not eventual
+execution: a crash after claiming can leave a failed invocation that never
+contacted the provider. Launch arguments are the agent, model, reasoning
 effort, role, skill, and prompt. The agent is compared by its resolved target
 and every argument ignores surrounding whitespace, so `--prompt` and
 `--prompt-file` with the same text match; only a digest is stored.
@@ -455,7 +460,7 @@ anything:
 
 | Exit code | Meaning |
 | --- | --- |
-| 80 | Not found: the selector names no reservation, for example a typo, an invented or empty value, a handle from a plain `start`, or a reservation already removed by retention. |
+| 80 | Not found: the selector names no reservation, for example a typo, an invented or empty value, a conversation handle, or a reservation already removed by retention. |
 | 81 | Expired: the reservation expired before it started. It never launched and never will; reserve again. |
 | 82 | Mismatch: the reservation already started with different launch arguments. |
 | 83 | Cancelled: the reservation was cancelled before it started. It never launched and never will. |

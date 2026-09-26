@@ -231,6 +231,20 @@ func beginCancellation(root string, id string) (RunRecord, *ownedProviderProcess
 		if err != nil {
 			return err
 		}
+		if current.State == dispatchStateReserved {
+			current, err = applyRunEvidenceLocked(dir, func(record *RunRecord) error {
+				expireReservation(record, time.Now().UTC())
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+			if current.State == dispatchStateCancelled {
+				// Let Cancel perform claim cleanup for this newly expired run.
+				record = current
+				return nil
+			}
+		}
 		record = current
 		if terminalDispatchState(current.State) {
 			if current.TerminationConfirmed {

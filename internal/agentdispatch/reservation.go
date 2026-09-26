@@ -20,7 +20,7 @@ import (
 const terminalReasonReservationExpired = "reservation expired before it started"
 
 // Reserve durably creates a named invocation that launches nothing. A caller
-// that checkpoints the returned handle can repeat `start --reservation` after a
+// that checkpoints the returned invocation ID can repeat `start --reservation` after a
 // crash without launching a second agent.
 func Reserve(opts ReserveOptions) error {
 	project, err := sync.LoadLockedSources(sync.RealSystem{}, opts.Root)
@@ -92,7 +92,7 @@ func startReservation(opts StartOptions, requested targetMeta, promptText string
 		return reportClaimedReservation(opts.Root, record, digest, stdout)
 	}
 	run := &dispatchRun{Record: record, Dir: filepathForRun(opts.Root, record.ID)}
-	session, err := claimReservedSession(opts.Root, record.Name, target.Name, opts.Model, opts.ReasoningEffort)
+	session, err := claimReservedSession(opts.Root, record.Name, record.ID, target.Name, opts.Model, opts.ReasoningEffort)
 	if err != nil {
 		return finishDispatchFailure(dispatchExecution{Root: opts.Root, Run: run, Session: Session{Name: record.Name}}, err)
 	}
@@ -114,29 +114,16 @@ func launchDigest(opts StartOptions, agent string, prompt string) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-// resolveReservation finds the record created by `al dispatch reserve`. An
-// invocation ID must name that record itself; a handle resolves to its
-// conversation's first invocation even after later continuations.
+// resolveReservation accepts only the immutable invocation ID returned by
+// reserve. Conversation handles can be reused after retention and cannot
+// safely identify an old reservation on a delayed retry.
 func resolveReservation(root string, selector string) (RunRecord, error) {
 	selector = strings.TrimSpace(selector)
-	notFound := exitError(ExitReservationNotFound, fmt.Sprintf("dispatch reservation %q was not found; nothing was launched", selector))
-	var record RunRecord
-	var err error
-	switch {
-	case parseUUID(selector) == nil:
-		record, err = loadRunRecord(root, selector)
-	case validDispatchName(selector):
-		var session Session
-		session, err = loadSession(root, selector)
-		if err == nil {
-			record, err = currentSessionRun(root, session)
-		}
-		for err == nil && record.PreviousRunID != "" {
-			record, err = loadRunRecord(root, record.PreviousRunID)
-		}
-	default:
+	notFound := exitError(ExitReservationNotFound, fmt.Sprintf("dispatch reservation %q was not found; use the invocation_id returned by reserve; nothing was launched", selector))
+	if parseUUID(selector) != nil {
 		return RunRecord{}, notFound
 	}
+	record, err := loadRunRecord(root, selector)
 	var exitErr *ExitError
 	if errors.As(err, &exitErr) && exitErr.Code == ExitUsage {
 		return RunRecord{}, notFound
@@ -234,27 +221,42 @@ func claimReservation(root string, id string, digest string, launch func(*RunRec
 	return record, false, releaseReservation(root, record)
 }
 
-func claimReservedSession(root string, name string, agent string, model string, effort string) (Session, error) {
+// claimReservedSession keeps the run locked through the mapping update so a
+// cancelled or fenced reservation cannot reopen its conversation. Acquire the
+// session lock first, matching other session operations that reconcile runs.
+func claimReservedSession(root string, name string, runID string, agent string, model string, effort string) (Session, error) {
 	var claimed Session
 	err := withSessionLock(root, name, func() error {
-		session, err := loadSession(root, name)
-		if err != nil {
-			return err
-		}
-		session.Agent = agent
-		session.Model = model
-		session.ReasoningEffort = effort
-		session.State = sessionStatePending
-		session.LastUsedAt = time.Now().UTC()
-		path, err := sessionPath(root, name)
-		if err != nil {
-			return err
-		}
-		if err := writeJSONAtomic(path, session); err != nil {
-			return wrapExitError(ExitConfig, "claim reserved dispatch mapping", err)
-		}
-		claimed = session
-		return nil
+		return withRunLock(filepathForRun(root, runID), func() error {
+			record, err := loadRunRecord(root, runID)
+			if err != nil {
+				return err
+			}
+			if record.State != dispatchStatePending || record.LaunchFenced || record.TerminationConfirmed {
+				return startFencedProviderError(record, exitError(ExitUnavailable, fmt.Sprintf("dispatch reservation %s is no longer pending", runID)))
+			}
+			session, err := loadSession(root, name)
+			if err != nil {
+				return err
+			}
+			if session.RunID != runID || session.ActiveRunID != runID || session.State != sessionStateReserved {
+				return exitError(ExitUnavailable, fmt.Sprintf("dispatch reservation %s no longer owns conversation %q", runID, name))
+			}
+			session.Agent = agent
+			session.Model = model
+			session.ReasoningEffort = effort
+			session.State = sessionStatePending
+			session.LastUsedAt = time.Now().UTC()
+			path, err := sessionPath(root, name)
+			if err != nil {
+				return err
+			}
+			if err := writeJSONAtomic(path, session); err != nil {
+				return wrapExitError(ExitConfig, "claim reserved dispatch mapping", err)
+			}
+			claimed = session
+			return nil
+		})
 	})
 	return claimed, err
 }

@@ -703,7 +703,7 @@ al dispatch options
 al dispatch start --agent codex --prompt-file prompt.md
 al dispatch start --agent muse --prompt-file prompt.md
 al dispatch reserve
-al dispatch start --reservation <handle> --agent codex --prompt-file prompt.md
+al dispatch start --reservation <invocation-id> --agent codex --prompt-file prompt.md
 al dispatch wait <handle-or-invocation-id>
 al dispatch inspect <handle-or-invocation-id>
 al dispatch output <handle-or-invocation-id> --artifact final_answer
@@ -725,6 +725,8 @@ writes its terminal JSON result before a non-zero failed-invocation exit.
 Programmatic callers that may repeat a start (for example at-least-once
 workflow steps) can `reserve` first and then `start --reservation`: the
 reservation launches at most once, and repeats return the same invocation.
+Use the returned `invocation_id` for `--reservation`; handles can be reused
+after retention and are rejected for starting a reservation.
 This is CLI only. For
 the complete contract, including the MCP tool schemas and the
 `dispatch.mcp_wait_timeout_minutes` / `dispatch.mcp_tool_timeout_minutes`

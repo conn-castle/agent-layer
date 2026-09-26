@@ -30,7 +30,7 @@ func TestReservedStartInterruptedMidLaunchIsNeverRelaunched(t *testing.T) {
 	}
 	start := func(stdout *bytes.Buffer, launcher workerLauncher) error {
 		return Start(StartOptions{
-			Root: root, WorkDir: root, Agent: AgentCodex, Prompt: "Reserved work", Reservation: &reservation.Handle,
+			Root: root, WorkDir: root, Agent: AgentCodex, Prompt: "Reserved work", Reservation: &reservation.InvocationID,
 			Stdout: stdout, Env: []string{}, LookPath: mockLookPath(binDir),
 			VersionLookup: func(string, string) (string, error) { return supportedProviderVersions[AgentCodex], nil },
 			launchWorker:  launcher,
@@ -93,7 +93,7 @@ func reserveInTest(t *testing.T, root string) Result {
 	return reservation
 }
 
-// TestReservedStartLaunchesOnce proves exactly-once launch without a built
+// TestReservedStartLaunchesOnce proves one launch for concurrent successful starts without a built
 // binary: concurrent and repeated starts with equivalent launch arguments share
 // one worker launch, and different arguments fail without launching.
 func TestReservedStartLaunchesOnce(t *testing.T) {
@@ -112,7 +112,7 @@ func TestReservedStartLaunchesOnce(t *testing.T) {
 	start := func(agent string, prompt string) (Result, error) {
 		var stdout bytes.Buffer
 		err := Start(StartOptions{
-			Root: root, WorkDir: root, Agent: agent, Prompt: prompt, Reservation: &reservation.Handle,
+			Root: root, WorkDir: root, Agent: agent, Prompt: prompt, Reservation: &reservation.InvocationID,
 			Stdout: &stdout, Env: []string{}, LookPath: alwaysFound,
 			VersionLookup: func(string, string) (string, error) { return supportedProviderVersions[AgentCodex], nil },
 			launchWorker:  launcher,
