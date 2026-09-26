@@ -293,7 +293,7 @@ const (
 	DispatchRoleFlag                     = "Caller-defined workflow role retained as dispatch evidence"
 	DispatchReservationFlag              = "Reservation handle from al dispatch reserve to launch at most once"
 	DispatchReserveShort                 = "Reserve a named invocation for one later start"
-	DispatchReserveLong                  = "Durably create a named invocation in the \"reserved\" state without launching anything, and write its handle and invocation ID as one JSON object.\n\nLaunch it with `al dispatch start --reservation <handle>`; a repeated start errors with guidance to continue. Unstarted reservations expire after dispatch.reservation_expiry_days (default 7)."
+	DispatchReserveLong                  = "Durably create a named invocation in the \"reserved\" state without launching anything, and write its handle and invocation ID as one JSON object.\n\nLaunch it with `al dispatch start --reservation <handle>`; a repeated start errors with guidance to inspect the invocation and continue only when available. Unstarted reservations expire after dispatch.reservation_expiry_days (default 7)."
 	DispatchOptionsUse                   = "options"
 	DispatchOptionsShort                 = "List available dispatch agents and override options"
 	DispatchOptionsLong                  = "Write one JSON object describing each dispatch agent's availability, configured defaults, and supported model and reasoning-effort overrides."

@@ -200,3 +200,40 @@ func TestContinueExplainsInterruptedReservedStart(t *testing.T) {
 		t.Fatalf("continue after an interrupted reserved start = %v", err)
 	}
 }
+
+// TestRepeatedStartAfterInterruptedClaimGuidesInspect covers the crash window
+// after claimReservation and before claimReservedSession: a later start must
+// fail without launching and tell the caller to inspect before continuing.
+func TestRepeatedStartAfterInterruptedClaimGuidesInspect(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	reservation := reserveInTest(t, root)
+	if _, claimed, err := claimReservation(root, reservation.InvocationID, func(current *RunRecord) {
+		current.Agent = AgentCodex
+	}); err != nil || !claimed {
+		t.Fatalf("claim reservation = %t, %v", claimed, err)
+	}
+	var stdout bytes.Buffer
+	err := Start(StartOptions{
+		Root: root, WorkDir: root, Agent: AgentCodex, Prompt: "Reserved work", Reservation: &reservation.Handle,
+		Stdout: &stdout, Env: []string{}, LookPath: alwaysFound,
+		VersionLookup: func(string, string) (string, error) { return supportedProviderVersions[AgentCodex], nil },
+		launchWorker: func(string, string, string) (launchedWorker, error) {
+			t.Fatal("repeated start launched a worker")
+			return launchedWorker{}, nil
+		},
+	})
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != ExitReservationAlreadyStarted {
+		t.Fatalf("repeated start after interrupted claim = %v, want exit %d", err, ExitReservationAlreadyStarted)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("repeated start returned success output: %s", stdout.String())
+	}
+	message := err.Error()
+	if !strings.Contains(message, "already started") || !strings.Contains(message, "`al dispatch inspect "+reservation.Handle+"`") || !strings.Contains(message, "continue only when available") {
+		t.Fatalf("already-started guidance = %q, want inspect-then-continue-when-available", message)
+	}
+	if strings.Contains(message, "wait for it to finish, then use") {
+		t.Fatalf("already-started guidance still promised continue: %q", message)
+	}
+}

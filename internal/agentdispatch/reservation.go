@@ -141,7 +141,7 @@ func resolveReservation(root string, selector string) (RunRecord, error) {
 func reportClaimedReservation(record RunRecord) error {
 	switch {
 	case record.LaunchDigest != "":
-		return exitError(ExitReservationAlreadyStarted, fmt.Sprintf("dispatch reservation %q already started; wait for it to finish, then use `al dispatch continue %s`; nothing new was launched", record.Name, record.Name))
+		return exitError(ExitReservationAlreadyStarted, fmt.Sprintf("dispatch reservation %q already started; inspect it with `al dispatch inspect %s` and continue only when available; nothing new was launched", record.Name, record.Name))
 	case record.State == dispatchStateCancelled && record.TerminalReason == terminalReasonReservationExpired:
 		return exitError(ExitReservationExpired, fmt.Sprintf("dispatch reservation %q expired before it started; it never launched, so reserve again", record.Name))
 	case record.State == dispatchStateCancelled:

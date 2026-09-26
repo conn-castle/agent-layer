@@ -429,8 +429,9 @@ different reservation, so callers must stop retrying before retention ends.
 The first start that reaches the reservation launches it through the normal
 intent-before-start protocol and returns the normal start result. Concurrent
 starts are serialized by the invocation's record lock, so at most one launches.
-Every later start fails with exit 82 and guidance to wait, then continue; it
-launches nothing regardless of the launch arguments. A start interrupted
+Every later start fails with exit 82 and guidance to inspect the invocation
+and continue only when available; it launches nothing regardless of the
+launch arguments. A start interrupted
 mid-launch is resolved by the normal launch recovery (for example `failed`
 with unknown provider acceptance) and is never relaunched. This guarantees
 at-most-once launch while the reservation is retained, not eventual execution:

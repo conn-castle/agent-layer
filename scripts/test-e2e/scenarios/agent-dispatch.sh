@@ -119,10 +119,10 @@ check_dispatch_reservations() {
   (cd "$repo_dir" && al dispatch start --reservation "$reservation" --agent codex \
     --prompt "Reserved work" >"$repeat_file" 2>"$repeat_error") || rc=$?
   if [[ $rc -eq 82 && ! -s "$repeat_file" ]] && grep -q 'already started' "$repeat_error" \
-    && grep -q 'al dispatch continue' "$repeat_error"; then
-    pass "repeated start errors with continue guidance"
+    && grep -q 'al dispatch inspect' "$repeat_error" && grep -q 'continue only when available' "$repeat_error"; then
+    pass "repeated start errors with inspect guidance"
   else
-    fail "repeated start errors with continue guidance (exit code: $rc)"
+    fail "repeated start errors with inspect guidance (exit code: $rc)"
   fi
 
   rc=0

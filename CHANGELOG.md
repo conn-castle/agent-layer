@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 ### Added
-- `al dispatch reserve` creates a named invocation without launching it. `al dispatch start --reservation <handle>` launches it once; repeated starts of a retained reservation error with guidance to wait and continue. Unknown, expired, already-started, and cancelled reservations fail with exit codes 80–83. Unstarted reservations expire after `dispatch.reservation_expiry_days` (default 7). After retention removes a reservation, its three-word handle may be reused. The commands are CLI only, not MCP tools.
+- `al dispatch reserve` creates a named invocation without launching it. `al dispatch start --reservation <handle>` launches it once; repeated starts of a retained reservation error with guidance to inspect the invocation and continue only when available. Unknown, expired, already-started, and cancelled reservations fail with exit codes 80–83. Unstarted reservations expire after `dispatch.reservation_expiry_days` (default 7). After retention removes a reservation, its three-word handle may be reused. The commands are CLI only, not MCP tools.
 
 ### Changed
 - `make test` and `make coverage` print per-package results, failures, skips, and errors instead of one line per test, and keep each run's complete `go test` events and printed output under `.agent-layer/tmp/test-logs/`.

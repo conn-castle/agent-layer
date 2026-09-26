@@ -724,7 +724,7 @@ including partial output on failure or cancellation. Completed output is stored 
 writes its terminal JSON result before a non-zero failed-invocation exit.
 Programmatic callers can `reserve` a conversation name before launching with
 `start --reservation <handle>`. A repeated start of a retained reservation
-errors with guidance to wait and continue; it does not launch again. After
+errors with guidance to inspect the invocation and continue only when available; it does not launch again. After
 retention removes the reservation, its three-word handle can be reused, so
 callers must stop retrying it by then.
 This is CLI only. For
