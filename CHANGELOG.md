@@ -3,11 +3,16 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.23.0 - 2026-09-26
+
 ### Added
 - `al dispatch reserve` creates a named invocation without launching it. `al dispatch start --reservation <handle>` launches it once; repeated starts of a retained reservation error with guidance to inspect the invocation and continue only when available. Unknown, expired, already-started, and cancelled reservations fail with exit codes 80–83. Unstarted reservations expire after `dispatch.reservation_expiry_days` (default 7). After retention removes a reservation, its three-word handle may be reused. The commands are CLI only, not MCP tools.
 
 ### Changed
 - `make test` and `make coverage` print per-package results, failures, skips, and errors instead of one line per test, and keep each run's complete `go test` events and printed output under `.agent-layer/tmp/test-logs/`.
+
+### Fixed
+- `al update` reports the installed global CLI version after updating, even when a repository pin would otherwise intercept `al --version`, and the completion message states that repository pins are unchanged.
 
 ## v0.22.0 - 2026-09-21
 
