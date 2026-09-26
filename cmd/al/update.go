@@ -126,13 +126,25 @@ func readUpdatedCLIVersion(ctx context.Context, executable string) (string, erro
 }
 
 func readInstalledCLIVersion(ctx context.Context, executable string) (string, error) {
-	output, err := updateCommandOutput(ctx, executable, "--version")
+	command := exec.CommandContext(ctx, executable, "--version") //nolint:gosec // executable is the running CLI's installation path.
+	// The version probe must inspect the installed binary itself. A normal
+	// `al --version` inside a repository can dispatch to its pinned CLI.
+	command.Env = append(os.Environ(), versiondispatch.EnvDevelopmentBypassVersionDispatch+"=1")
+	output, err := command.Output()
 	if err != nil {
-		return "", commandOutputError(err, output)
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return "", commandOutputError(err, []byte(fmt.Sprintf("%s\n%s", output, exitErr.Stderr)))
+		}
+		return "", err
 	}
 	line := strings.TrimSpace(strings.SplitN(string(output), "\n", 2)[0])
 	if line == "" {
 		return "", errors.New(messages.UpdateInstalledVersionEmpty)
+	}
+	token := strings.Fields(line)[0]
+	if _, err := version.Normalize(token); err != nil {
+		return "", fmt.Errorf(messages.UpdateInstalledVersionInvalidFmt, line, err)
 	}
 	return line, nil
 }

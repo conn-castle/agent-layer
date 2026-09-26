@@ -7,10 +7,12 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/testutil"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
@@ -92,6 +94,9 @@ func TestUpdateUsesHomebrewForFormulaOwnedExecutable(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "Agent Layer CLI update complete: v1.2.3 -> v4.5.6.") {
 		t.Fatalf("expected before/after versions in completion message, got %q", output.String())
+	}
+	if !strings.Contains(output.String(), "Repository pins are unchanged; run `al upgrade plan`") {
+		t.Fatalf("expected repository upgrade guidance, got %q", output.String())
 	}
 }
 
@@ -429,19 +434,68 @@ func TestUpdateCompleteWarnsWhenInstalledVersionUnavailable(t *testing.T) {
 	}
 }
 
-func TestReadInstalledCLIVersionUsesVersionFlag(t *testing.T) {
+func TestUpdateReportsInstalledVersionInsidePinnedRepository(t *testing.T) {
 	preserveUpdateGlobals(t)
-	updateCommandOutput = func(_ context.Context, name string, args ...string) ([]byte, error) {
-		if name != "/opt/homebrew/bin/al" || strings.Join(args, " ") != "--version" {
-			t.Fatalf("unexpected version command: %s %v", name, args)
+	Version = "0.22.0"
+	t.Setenv(versiondispatch.EnvDevelopmentBypassVersionDispatch, "")
+	t.Setenv(versiondispatch.EnvNoNetwork, "1")
+
+	installRoot := t.TempDir()
+	binDir := filepath.Join(installRoot, "bin")
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
+		t.Fatalf("create install bin directory: %v", err)
+	}
+	executable := filepath.Join(binDir, "al")
+	build := exec.Command("go", "build", "-ldflags=-X main.Version=0.22.0", "-o", executable, ".") //nolint:gosec // Test builds this package into a temporary installation.
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build installed CLI: %v\n%s", err, output)
+	}
+	updateExecutable = func() (string, error) { return executable, nil }
+	updateLookPath = func(string) (string, error) { return "", errors.New("brew not found") }
+	updateHTTPClient = &http.Client{Transport: updateRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("#!/usr/bin/env bash\n")),
+		}, nil
+	})}
+	updateRunCommand = func(context.Context, io.Reader, io.Writer, io.Writer, string, ...string) error {
+		return nil
+	}
+
+	repo := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repo, ".agent-layer"), 0o750); err != nil {
+		t.Fatalf("create pinned repository: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".agent-layer", "al.version"), []byte("0.21.1\n"), 0o600); err != nil {
+		t.Fatalf("write repository pin: %v", err)
+	}
+	testutil.WithWorkingDir(t, repo, func() {
+		command := newUpdateCmd()
+		var stdout, stderr bytes.Buffer
+		command.SetOut(&stdout)
+		command.SetErr(&stderr)
+		if err := command.Execute(); err != nil {
+			t.Fatalf("update failed: %v", err)
 		}
-		return []byte("4.5.6\n"), nil
+		if !strings.Contains(stdout.String(), "Agent Layer CLI update complete: v0.22.0 -> v0.22.0.") {
+			t.Fatalf("completion used repository pin instead of installed CLI: %q", stdout.String())
+		}
+		if !strings.Contains(stdout.String(), "Repository pins are unchanged") {
+			t.Fatalf("missing pin guidance: %q", stdout.String())
+		}
+		if stderr.Len() != 0 {
+			t.Fatalf("unexpected version probe diagnostic: %q", stderr.String())
+		}
+	})
+}
+
+func TestReadInstalledCLIVersionRejectsNonVersionOutput(t *testing.T) {
+	executable := filepath.Join(t.TempDir(), "al")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nprintf 'Agent Layer version source: 0.21.1 (pin)\\n'\n"), 0o700); err != nil { // #nosec G306 -- test-owned executable fixture.
+		t.Fatalf("write test executable: %v", err)
 	}
-	got, err := readInstalledCLIVersion(context.Background(), "/opt/homebrew/bin/al")
-	if err != nil {
-		t.Fatalf("read installed version: %v", err)
-	}
-	if got != "4.5.6" {
-		t.Fatalf("version = %q, want 4.5.6", got)
+	_, err := readInstalledCLIVersion(context.Background(), executable)
+	if err == nil || !strings.Contains(err.Error(), "invalid version") {
+		t.Fatalf("error = %v, want invalid-version diagnostic", err)
 	}
 }
