@@ -200,7 +200,8 @@ running -> completed | failed | cancelled
 
 An invocation created by `reserve` starts in `reserved` and moves to
 `running` when `start --reservation` launches it, or to `cancelled` when it is
-cancelled or expires first.
+cancelled or expires first. A reservation retired that way never ran, so
+`continue` rejects it.
 
 Terminal states are immutable. Continuing a terminal conversation creates a
 new current invocation in `running`; it does not change the previous
@@ -429,28 +430,32 @@ that invocation in the start result shape, whatever its state, with
 `"already_started": true`. A start interrupted mid-launch is resolved by the
 normal launch recovery (for example `failed` with unknown provider acceptance)
 and is never relaunched. Launch arguments are the agent, model, reasoning
-effort, role, skill, and prompt. The prompt is compared by content, so
-`--prompt` and `--prompt-file` with identical text match; only a digest is
-stored.
+effort, role, skill, and prompt. The agent is compared by its resolved target
+and every argument ignores surrounding whitespace, so `--prompt` and
+`--prompt-file` with the same text match; only a digest is stored.
 
 `inspect`, `wait`, `output`, and `cancel` accept a reservation's handle or
 invocation ID. `inspect` reports `reserved` and `reservation_expires_at`.
-`wait` on an unstarted reservation waits like any other nonterminal
-invocation. `cancel` retires an unstarted reservation as `cancelled` with
+`wait` on an unstarted reservation waits for the bounded interval like any
+other nonterminal invocation, but its timeout result reports `reserved` rather
+than `running`, with `condition_met: false`. `cancel` retires an unstarted reservation as `cancelled` with
 confirmed termination, without launching. `continue` rejects a reservation
 that never started.
 
 A reservation that is not started within `dispatch.reservation_expiry_days`
 (default 7) is retired as `cancelled` with the error `reservation expired
 before it started`. Retired reservations never launch and are removed by
-normal `session_retention_days` retention.
+normal `session_retention_days` retention, counted from retirement for both the
+handle and the invocation. Retention also applies to a started reservation: once
+its invocation ended longer ago than the retention window, even while later
+continuations keep the conversation, a repeat start fails with exit 80.
 
 `start --reservation` fails with these exit codes. None of them launches
 anything:
 
 | Exit code | Meaning |
 | --- | --- |
-| 80 | Not found: the selector names no reservation, for example a typo, an invented value, a handle from a plain `start`, or a reservation already removed by retention. |
+| 80 | Not found: the selector names no reservation, for example a typo, an invented or empty value, a handle from a plain `start`, or a reservation already removed by retention. |
 | 81 | Expired: the reservation expired before it started. It never launched and never will; reserve again. |
 | 82 | Mismatch: the reservation already started with different launch arguments. |
 | 83 | Cancelled: the reservation was cancelled before it started. It never launched and never will. |

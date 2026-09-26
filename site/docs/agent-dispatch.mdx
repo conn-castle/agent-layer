@@ -164,7 +164,7 @@ al dispatch reserve
 al dispatch start --reservation abc123 --agent codex --prompt "Summarize docs/AGENT-DISPATCH.md"
 ```
 
-`reserve` creates the invocation with an Agent Layer generated handle and ID and launches nothing. The first `start --reservation` launches it; every repeat with the same launch arguments returns that invocation with `"already_started": true` and never launches again. `inspect`, `wait`, `output`, and `cancel` accept the reserved handle or ID, and cancelling an unstarted reservation retires it without launching. Unstarted reservations expire after `dispatch.reservation_expiry_days` (default 7). `start --reservation` exits 80 for an unknown reservation, 81 for an expired one, 82 when the launch arguments differ from the first start, and 83 for a cancelled one; none of these launches anything. See [Reservations](https://github.com/conn-castle/agent-layer/blob/main/docs/AGENT-DISPATCH.md#reservations) for the full contract.
+`reserve` creates the invocation with an Agent Layer generated handle and ID and launches nothing. The first `start --reservation` launches it; every repeat with the same launch arguments returns that invocation with `"already_started": true` and never launches again. `inspect`, `wait`, `output`, and `cancel` accept the reserved handle or ID. A bounded `wait` that ends before the reservation starts returns `reserved` instead of `running`. Cancelling an unstarted reservation retires it without launching, and `continue` rejects it. Unstarted reservations expire after `dispatch.reservation_expiry_days` (default 7). `start --reservation` exits 80 for an unknown reservation, 81 for an expired one, 82 when the launch arguments differ from the first start, and 83 for a cancelled one; none of these launches anything. See [Reservations](https://github.com/conn-castle/agent-layer/blob/main/docs/AGENT-DISPATCH.md#reservations) for the full contract.
 
 `wait` is bounded rather than “wait until finished.” The CLI returns in at most eight minutes, and the MCP tool returns after `dispatch.mcp_wait_timeout_minutes` (30 by default). If the state is `running`, call `wait` again. Waiting on an already-terminal invocation returns immediately.
 
@@ -175,6 +175,8 @@ An invocation has exactly one public state:
 ```text
 running -> completed | failed | cancelled
 ```
+
+An invocation created by `al dispatch reserve` starts in `reserved`, then moves to `running` when `start --reservation` launches it, or to `cancelled` when it is cancelled or expires first. A reservation that never started cannot be continued.
 
 Terminal states are immutable. Continuing a terminal conversation creates a new invocation in `running`; it does not rewrite the previous invocation.
 

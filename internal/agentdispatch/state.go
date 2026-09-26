@@ -762,6 +762,13 @@ func pruneExpiredSession(root string, name string, cutoff time.Time) error {
 		if lastUsed.IsZero() {
 			lastUsed = session.CreatedAt
 		}
+		if session.State == sessionStateReserved {
+			// A retired reservation's handle is last used when it was retired,
+			// so the handle is kept as long as the invocation evidence.
+			if record, err := loadRunRecord(root, session.RunID); err == nil && record.CompletedAt != nil && record.CompletedAt.After(lastUsed) {
+				lastUsed = *record.CompletedAt
+			}
+		}
 		if lastUsed.IsZero() || !lastUsed.Before(cutoff) || dispatchSessionActive(root, session) {
 			return nil
 		}

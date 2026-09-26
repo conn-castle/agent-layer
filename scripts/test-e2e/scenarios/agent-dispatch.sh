@@ -66,14 +66,14 @@ check_dispatch_reservations() {
   assert_mock_agent_not_called "$MOCK_DISPATCH_CODEX_LOG" "reserve launches nothing"
 
   local selector
-  for selector in "${reservation}x" "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" "$plain_handle"; do
+  for selector in "${reservation}x" "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" "$plain_handle" ""; do
     rc=0
     (cd "$repo_dir" && al dispatch start --reservation "$selector" --agent codex \
       --prompt "Reserved work" >/dev/null 2>&1) || rc=$?
     if [[ $rc -eq 80 ]]; then
-      pass "start rejects non-reservation $selector with exit 80"
+      pass "start rejects non-reservation '$selector' with exit 80"
     else
-      fail "start rejects non-reservation $selector with exit 80 (got: $rc)"
+      fail "start rejects non-reservation '$selector' with exit 80 (got: $rc)"
     fi
   done
   assert_mock_agent_not_called "$MOCK_DISPATCH_CODEX_LOG" "unknown reservations launch nothing"

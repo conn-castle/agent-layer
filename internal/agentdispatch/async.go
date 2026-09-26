@@ -64,7 +64,7 @@ func Start(opts StartOptions) error {
 	if !ok {
 		return exitError(ExitUsage, fmt.Sprintf(messages.DispatchUnknownTargetFmt, opts.Agent))
 	}
-	if strings.TrimSpace(opts.Reservation) != "" {
+	if opts.Reservation != nil {
 		return startReservation(opts, requested, promptText, stderr, env, depth)
 	}
 	project, target, version, prompt, err := prepareStart(opts, requested, promptText, stderr, depth)
@@ -147,12 +147,15 @@ func Continue(opts ContinueOptions) error {
 	if err != nil {
 		return err
 	}
-	if session.State == sessionStateReserved {
-		return exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q is a reservation that never started; launch it with `al dispatch start --reservation`", session.Name))
-	}
 	current, err := resolveWaitRun(opts.Root, session.Name)
 	if err != nil {
 		return err
+	}
+	if session.State == sessionStateReserved {
+		if current.LaunchDigest != "" {
+			return exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q cannot be continued: its reserved start of invocation %s was interrupted before the conversation was recorded; inspect that invocation and start a new conversation", session.Name, current.ID))
+		}
+		return exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q is a reservation that never started; launch it with `al dispatch start --reservation`", session.Name))
 	}
 	if !terminalDispatchState(current.State) {
 		return exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q is running", session.Name))

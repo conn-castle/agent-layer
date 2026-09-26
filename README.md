@@ -715,9 +715,9 @@ al dispatch cancel <handle-or-invocation-id>
 overrides. `start` and `continue` return immediately with a conversation handle
 and immutable `invocation_id`. Use the ID to track that exact invocation across
 continuations. `wait` blocks for a
-bounded interval — eight minutes on the CLI — and returns `running` when it
-expires without changing the invocation, so callers wait again on the same
-invocation. Use `--condition termination_confirmed` to wait for stop confirmation.
+bounded interval — eight minutes on the CLI — and returns `running` (or
+`reserved` for a reservation not yet started) when it expires without changing
+the invocation, so callers wait again on the same invocation. Use `--condition termination_confirmed` to wait for stop confirmation.
 `inspect` returns promptly; `output` retrieves bounded final-answer or event text,
 including partial output on failure or cancellation. Completed output is stored in the immutable Markdown file named by
 `result_path`. Every successful command returns one JSON object; `wait` also

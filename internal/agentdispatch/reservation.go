@@ -49,8 +49,8 @@ func Reserve(opts ReserveOptions) error {
 // returns the invocation the first start claimed, or fails without launching.
 func startReservation(opts StartOptions, requested targetMeta, promptText string, stderr io.Writer, env []string, depth int) error {
 	stdout := writerOrDiscard(opts.Stdout)
-	digest := launchDigest(opts, promptText)
-	record, err := resolveReservation(opts.Root, opts.Reservation)
+	digest := launchDigest(opts, requested.Name, promptText)
+	record, err := resolveReservation(opts.Root, *opts.Reservation)
 	if err != nil {
 		return err
 	}
@@ -101,14 +101,15 @@ func startReservation(opts StartOptions, requested targetMeta, promptText string
 }
 
 // launchDigest identifies a start's launch arguments without retaining the
-// prompt. The prompt is compared by content, so --prompt and --prompt-file
-// with identical text match.
-func launchDigest(opts StartOptions, prompt string) string {
-	fields := []string{opts.Agent, opts.Model, opts.ReasoningEffort, opts.Role, opts.Skill}
+// prompt. The agent is the resolved target name and every field ignores
+// surrounding whitespace, so --prompt and --prompt-file with the same text
+// match.
+func launchDigest(opts StartOptions, agent string, prompt string) string {
+	fields := []string{agent, opts.Model, opts.ReasoningEffort, opts.Role, opts.Skill, prompt}
 	for index := range fields {
 		fields[index] = strings.TrimSpace(fields[index])
 	}
-	encoded, _ := json.Marshal(append(fields, prompt)) // a []string always encodes.
+	encoded, _ := json.Marshal(fields) // a []string always encodes.
 	sum := sha256.Sum256(encoded)
 	return "sha256:" + hex.EncodeToString(sum[:])
 }

@@ -118,11 +118,17 @@ func newDispatchStartCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return dispatchCommandError(cmd, agentdispatch.Start(agentdispatch.StartOptions{
+			opts := agentdispatch.StartOptions{
 				Root: root, WorkDir: workingDir, Agent: agent, Model: model,
 				ReasoningEffort: effort, Role: role, Skill: skill, Prompt: prompt, PromptFile: promptFile,
-				Reservation: reservation, Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr(), Env: os.Environ(),
-			}))
+				Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr(), Env: os.Environ(),
+			}
+			// A present but empty --reservation (such as an unset shell
+			// variable) must fail as unknown, never fall back to a plain start.
+			if cmd.Flags().Changed("reservation") {
+				opts.Reservation = &reservation
+			}
+			return dispatchCommandError(cmd, agentdispatch.Start(opts))
 		},
 	}
 	cmd.Flags().StringVar(&agent, "agent", "", messages.DispatchAgentFlag)
