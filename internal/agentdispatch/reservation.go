@@ -1,9 +1,6 @@
 package agentdispatch
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,10 +15,11 @@ import (
 )
 
 const terminalReasonReservationExpired = "reservation expired before it started"
+const reservationLaunchClaim = "claimed"
 
 // Reserve durably creates a named invocation that launches nothing. A caller
-// that checkpoints the returned invocation ID can repeat `start --reservation` after a
-// crash without launching a second agent.
+// that checkpoints the returned name can repeat `start --reservation` while
+// the reservation is retained without launching a second agent.
 func Reserve(opts ReserveOptions) error {
 	project, err := sync.LoadLockedSources(sync.RealSystem{}, opts.Root)
 	if err != nil {
@@ -46,10 +44,9 @@ func Reserve(opts ReserveOptions) error {
 }
 
 // startReservation launches a reservation at most once. Every later start
-// returns the invocation the first start claimed, or fails without launching.
+// fails without launching.
 func startReservation(opts StartOptions, requested targetMeta, promptText string, stderr io.Writer, env []string, depth int) error {
 	stdout := writerOrDiscard(opts.Stdout)
-	digest := launchDigest(opts, requested.Name, promptText)
 	record, err := resolveReservation(opts.Root, *opts.Reservation)
 	if err != nil {
 		return err
@@ -61,7 +58,7 @@ func startReservation(opts StartOptions, requested targetMeta, promptText string
 		return err
 	}
 	if record.State != dispatchStateReserved {
-		return reportClaimedReservation(opts.Root, record, digest, stdout)
+		return reportClaimedReservation(record)
 	}
 	project, target, version, prompt, err := prepareStart(opts, requested, promptText, stderr, depth)
 	if err != nil {
@@ -75,7 +72,7 @@ func startReservation(opts StartOptions, requested targetMeta, promptText string
 		return err
 	}
 	parent, _ := clients.GetEnv(env, "AL_RUN_ID")
-	record, claimed, err := claimReservation(opts.Root, record.ID, digest, func(current *RunRecord) {
+	record, claimed, err := claimReservation(opts.Root, record.ID, func(current *RunRecord) {
 		current.Agent = target.Name
 		current.ProviderVersion = version
 		current.Skill = strings.TrimSpace(opts.Skill)
@@ -89,7 +86,7 @@ func startReservation(opts StartOptions, requested targetMeta, promptText string
 		return err
 	}
 	if !claimed {
-		return reportClaimedReservation(opts.Root, record, digest, stdout)
+		return reportClaimedReservation(record)
 	}
 	run := &dispatchRun{Record: record, Dir: filepathForRun(opts.Root, record.ID)}
 	session, err := claimReservedSession(opts.Root, record.Name, record.ID, target.Name, opts.Model, opts.ReasoningEffort)
@@ -100,30 +97,15 @@ func startReservation(opts StartOptions, requested targetMeta, promptText string
 	return publishInvocation(opts.Root, run, session, request, stdout, opts.launchWorker)
 }
 
-// launchDigest identifies a start's launch arguments without retaining the
-// prompt. The agent is the resolved target name and every field ignores
-// surrounding whitespace, so --prompt and --prompt-file with the same text
-// match.
-func launchDigest(opts StartOptions, agent string, prompt string) string {
-	fields := []string{agent, opts.Model, opts.ReasoningEffort, opts.Role, opts.Skill, prompt}
-	for index := range fields {
-		fields[index] = strings.TrimSpace(fields[index])
-	}
-	encoded, _ := json.Marshal(fields) // a []string always encodes.
-	sum := sha256.Sum256(encoded)
-	return "sha256:" + hex.EncodeToString(sum[:])
-}
-
-// resolveReservation accepts only the immutable invocation ID returned by
-// reserve. Conversation handles can be reused after retention and cannot
-// safely identify an old reservation on a delayed retry.
+// resolveReservation follows a conversation's invocation history to find the
+// original reserved invocation, even after the conversation was continued.
 func resolveReservation(root string, selector string) (RunRecord, error) {
 	selector = strings.TrimSpace(selector)
-	notFound := exitError(ExitReservationNotFound, fmt.Sprintf("dispatch reservation %q was not found; use the invocation_id returned by reserve; nothing was launched", selector))
-	if parseUUID(selector) != nil {
+	notFound := exitError(ExitReservationNotFound, fmt.Sprintf("dispatch reservation %q was not found; check the name or reserve again; nothing was launched", selector))
+	if !validDispatchName(selector) {
 		return RunRecord{}, notFound
 	}
-	record, err := loadRunRecord(root, selector)
+	session, err := loadSession(root, selector)
 	var exitErr *ExitError
 	if errors.As(err, &exitErr) && exitErr.Code == ExitUsage {
 		return RunRecord{}, notFound
@@ -131,34 +113,35 @@ func resolveReservation(root string, selector string) (RunRecord, error) {
 	if err != nil {
 		return RunRecord{}, err
 	}
-	if record.ReservationExpiresAt == nil {
-		return RunRecord{}, notFound
+	seen := make(map[string]bool)
+	for id := session.RunID; id != ""; {
+		if seen[id] {
+			return RunRecord{}, exitError(ExitConfig, fmt.Sprintf("dispatch conversation %q has cyclic invocation history", selector))
+		}
+		seen[id] = true
+		record, err := loadRunRecord(root, id)
+		if errors.Is(err, errDispatchRunNotFound) {
+			return RunRecord{}, notFound
+		}
+		if err != nil {
+			return RunRecord{}, err
+		}
+		if record.Name != selector {
+			return RunRecord{}, exitError(ExitConfig, fmt.Sprintf("dispatch conversation %q has an invocation with a different name", selector))
+		}
+		if record.ReservationExpiresAt != nil {
+			return record, nil
+		}
+		id = record.PreviousRunID
 	}
-	return record, nil
+	return RunRecord{}, notFound
 }
 
-// reportClaimedReservation answers a start whose reservation is no longer
-// startable: it either returns the invocation an earlier start launched, or
-// explains why the reservation never launched.
-func reportClaimedReservation(root string, record RunRecord, digest string, stdout io.Writer) error {
+// reportClaimedReservation explains why a reservation is no longer startable.
+func reportClaimedReservation(record RunRecord) error {
 	switch {
 	case record.LaunchDigest != "":
-		if record.LaunchDigest != digest {
-			return exitError(ExitReservationMismatch, fmt.Sprintf("dispatch reservation %q already started invocation %s with different launch arguments; nothing new was launched", record.Name, record.ID))
-		}
-		current, err := tryReconcileOrphan(root, record)
-		if err != nil {
-			return err
-		}
-		result := publicResult(current)
-		if !terminalDispatchState(current.State) || current.State == dispatchStateCancelled {
-			result.Error = ""
-		}
-		if !terminalDispatchState(current.State) {
-			result.State = dispatchStateRunning
-		}
-		result.AlreadyStarted = true
-		return writePublicResult(stdout, result)
+		return exitError(ExitReservationAlreadyStarted, fmt.Sprintf("dispatch reservation %q already started; wait for it to finish, then use `al dispatch continue %s`; nothing new was launched", record.Name, record.Name))
 	case record.State == dispatchStateCancelled && record.TerminalReason == terminalReasonReservationExpired:
 		return exitError(ExitReservationExpired, fmt.Sprintf("dispatch reservation %q expired before it started; it never launched, so reserve again", record.Name))
 	case record.State == dispatchStateCancelled:
@@ -197,7 +180,7 @@ func retireExpiredReservation(root string, id string, now time.Time) (RunRecord,
 // reservation: under the run lock, exactly one start moves it from reserved to
 // pending, recording its launch arguments and its own launcher identity for
 // crash recovery.
-func claimReservation(root string, id string, digest string, launch func(*RunRecord)) (RunRecord, bool, error) {
+func claimReservation(root string, id string, launch func(*RunRecord)) (RunRecord, bool, error) {
 	claimed := false
 	record, err := updateRunEvidence(filepathForRun(root, id), func(current *RunRecord) error {
 		now := time.Now().UTC()
@@ -206,7 +189,7 @@ func claimReservation(root string, id string, digest string, launch func(*RunRec
 			return nil
 		}
 		launch(current)
-		current.LaunchDigest = digest
+		current.LaunchDigest = reservationLaunchClaim
 		current.State = dispatchStatePending
 		current.RecoveryState = recoveryRetrySafe
 		current.StartedAt = now

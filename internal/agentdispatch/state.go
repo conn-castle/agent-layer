@@ -115,8 +115,8 @@ type RunRecord struct {
 	TerminationProof        string     `json:"termination_proof,omitempty"`
 	// ReservationExpiresAt marks a record created by `al dispatch reserve`.
 	ReservationExpiresAt *time.Time `json:"reservation_expires_at,omitempty"`
-	// LaunchDigest identifies the launch arguments of the start that claimed
-	// a reservation. It is a digest, never the caller prompt.
+	// LaunchDigest is the durable claim marker for a reservation start. Older
+	// records contain a launch-argument digest; new records use "claimed".
 	LaunchDigest string `json:"launch_digest,omitempty"`
 }
 

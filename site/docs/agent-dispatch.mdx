@@ -153,18 +153,18 @@ al dispatch wait abc123
 # If the state is still running, wait again with the same handle.
 ```
 
-### Idempotent start for workflow engines
+### Reserve a name before starting
 
-Programmatic callers that may repeat a start, such as an at-least-once workflow step, can reserve the invocation first. These commands are CLI only; agents use `dispatch_start`.
+Programmatic callers can reserve a conversation name before launching an agent. Start it once, then use `wait` and `continue` for later steps. Stop retrying that name before the configured retention period ends. These commands are CLI only; agents using MCP use `dispatch_start`.
 
 ```bash
 al dispatch reserve
-# {"handle":"abc123","invocation_id":"...","state":"reserved","termination_confirmed":false,"reservation_expires_at":"..."}
+# {"handle":"small-blue-relay","invocation_id":"...","state":"reserved","termination_confirmed":false,"reservation_expires_at":"..."}
 
-al dispatch start --reservation <invocation-id> --agent codex --prompt "Summarize docs/AGENT-DISPATCH.md"
+al dispatch start --reservation <handle> --agent codex --prompt "Summarize docs/AGENT-DISPATCH.md"
 ```
 
-`reserve` creates the invocation with an Agent Layer generated handle and ID and launches nothing. `start --reservation` requires the immutable `invocation_id`; handles are rejected because retention can recycle them. The first successful start launches it; every repeat with the same launch arguments returns that invocation with `"already_started": true` and never launches again. A crash after claiming can leave a failed invocation without launching; the guarantee is at-most-once launch. `inspect`, `wait`, `output`, and `cancel` accept the reserved handle or ID. A bounded `wait` that ends before the reservation starts returns `reserved` instead of `running`. Cancelling an unstarted reservation retires it without launching, and `continue` rejects it. Unstarted reservations expire after `dispatch.reservation_expiry_days` (default 7). `start --reservation` exits 80 for an unknown reservation, 81 for an expired one, 82 when the launch arguments differ from the first start, and 83 for a cancelled one; none of these launches anything. See [Reservations](https://github.com/conn-castle/agent-layer/blob/main/docs/AGENT-DISPATCH.md#reservations) for the full contract.
+`reserve` creates the invocation with an Agent Layer generated three-word handle and ID and launches nothing. Pass the returned handle to `start --reservation`. The first start claims and launches it. Every later start of that retained reservation errors with guidance to wait and continue; it never launches again, even after the conversation is continued. A crash after claiming can leave a failed invocation without launching. `inspect`, `wait`, `output`, and `cancel` accept the reserved handle or ID. A bounded `wait` that ends before the reservation starts returns `reserved` instead of `running`. Cancelling an unstarted reservation retires it without launching, and `continue` rejects it. Unstarted reservations expire after `dispatch.reservation_expiry_days` (default 7). `start --reservation` exits 80 for an unknown reservation, 81 for an expired one, 82 when it already started, and 83 for a cancelled one. After retention removes a reservation, its name can be reused, so callers must stop retrying it. See [Reservations](https://github.com/conn-castle/agent-layer/blob/main/docs/AGENT-DISPATCH.md#reservations) for the full contract.
 
 `wait` is bounded rather than “wait until finished.” The CLI returns in at most eight minutes, and the MCP tool returns after `dispatch.mcp_wait_timeout_minutes` (30 by default). If the state is `running`, call `wait` again. Waiting on an already-terminal invocation returns immediately.
 

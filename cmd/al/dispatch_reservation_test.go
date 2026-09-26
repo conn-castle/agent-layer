@@ -25,7 +25,6 @@ type dispatchCLIResult struct {
 	Error                string     `json:"error"`
 	TerminationConfirmed bool       `json:"termination_confirmed"`
 	ReservationExpiresAt *time.Time `json:"reservation_expires_at"`
-	AlreadyStarted       bool       `json:"already_started"`
 }
 
 func newReservationTestRepo(t *testing.T, dispatchConfig string) string {
@@ -149,8 +148,8 @@ func TestDispatchStartRejectsUnknownReservationWithoutLaunching(t *testing.T) {
 	root := newReservationTestRepo(t, "")
 	reserved := reserveForTest(t)
 	for _, selector := range []string{
-		reserved.Handle,
 		reserved.Handle + "x",
+		reserved.InvocationID,
 		"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
 		"Not A Handle",
 	} {
@@ -199,7 +198,7 @@ func TestDispatchCancelRetiresReservationWithoutLaunching(t *testing.T) {
 	if code != 0 || waited.State != "cancelled" {
 		t.Fatalf("wait on cancelled reservation = %#v exit %d: %s", waited, code, stderr)
 	}
-	if _, stderr, code := runDispatchCLI(t, reservedStartArgs(reserved.InvocationID)...); code != agentdispatch.ExitReservationCancelled {
+	if _, stderr, code := runDispatchCLI(t, reservedStartArgs(reserved.Handle)...); code != agentdispatch.ExitReservationCancelled {
 		t.Fatalf("start of cancelled reservation exit %d, want %d: %s", code, agentdispatch.ExitReservationCancelled, stderr)
 	}
 	inspected, _, _ := runDispatchCLI(t, "inspect", reserved.Handle)
@@ -217,7 +216,7 @@ func TestDispatchReservationExpiresWithoutLaunchingAndIsCleanedUp(t *testing.T) 
 	rewriteDispatchJSON(t, runFile, func(record map[string]any) { record["reservation_expires_at"] = past })
 
 	for range 2 {
-		_, stderr, code := runDispatchCLI(t, reservedStartArgs(reserved.InvocationID)...)
+		_, stderr, code := runDispatchCLI(t, reservedStartArgs(reserved.Handle)...)
 		if code != agentdispatch.ExitReservationExpired {
 			t.Fatalf("start of expired reservation exit %d, want %d: %s", code, agentdispatch.ExitReservationExpired, stderr)
 		}
@@ -253,7 +252,7 @@ func TestDispatchReservationExpiresWithoutLaunchingAndIsCleanedUp(t *testing.T) 
 	if _, err := os.Stat(reservationSessionPath(root, reserved.Handle)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expired reservation mapping was not cleaned up: %v", err)
 	}
-	if _, stderr, code := runDispatchCLI(t, reservedStartArgs(reserved.InvocationID)...); code != agentdispatch.ExitReservationNotFound {
+	if _, stderr, code := runDispatchCLI(t, reservedStartArgs(reserved.Handle)...); code != agentdispatch.ExitReservationNotFound {
 		t.Fatalf("start of cleaned-up reservation exit %d, want %d: %s", code, agentdispatch.ExitReservationNotFound, stderr)
 	}
 }
@@ -272,11 +271,11 @@ func TestDispatchExpiredReservationHandleIsKeptWithItsInvocation(t *testing.T) {
 		session["created_at"] = old
 		session["last_used_at"] = old
 	})
-	if _, stderr, code := runDispatchCLI(t, reservedStartArgs(reserved.InvocationID)...); code != agentdispatch.ExitReservationExpired {
+	if _, stderr, code := runDispatchCLI(t, reservedStartArgs(reserved.Handle)...); code != agentdispatch.ExitReservationExpired {
 		t.Fatalf("start of expired reservation exit %d, want %d: %s", code, agentdispatch.ExitReservationExpired, stderr)
 	}
 	reserveForTest(t) // prunes evidence
-	if _, stderr, code := runDispatchCLI(t, reservedStartArgs(reserved.InvocationID)...); code != agentdispatch.ExitReservationExpired {
+	if _, stderr, code := runDispatchCLI(t, reservedStartArgs(reserved.Handle)...); code != agentdispatch.ExitReservationExpired {
 		t.Fatalf("start of retained expired reservation exit %d, want %d: %s", code, agentdispatch.ExitReservationExpired, stderr)
 	}
 	for _, selector := range []string{reserved.Handle, reserved.InvocationID} {

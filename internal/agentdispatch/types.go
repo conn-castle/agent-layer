@@ -40,9 +40,9 @@ const (
 	// ExitReservationExpired means the reservation expired before it started.
 	// It never launched, and it never will.
 	ExitReservationExpired = 81
-	// ExitReservationMismatch means the reservation already started with
-	// different launch arguments. Nothing new was launched.
-	ExitReservationMismatch = 82
+	// ExitReservationAlreadyStarted means the reservation already launched or
+	// claimed its one start. Nothing new was launched.
+	ExitReservationAlreadyStarted = 82
 	// ExitReservationCancelled means the reservation was cancelled before it
 	// started. It never launched, and it never will.
 	ExitReservationCancelled = 83
@@ -116,7 +116,7 @@ type StartOptions struct {
 	Prompt          string
 	PromptFile      string
 	// Reservation, when set, launches an `al dispatch reserve` record (by
-	// immutable invocation ID) instead of creating a new conversation. A set
+	// its returned conversation name) instead of creating a new conversation. A set
 	// but empty selector names no reservation and launches nothing.
 	Reservation   *string
 	Stdout        io.Writer
@@ -164,7 +164,6 @@ type Result struct {
 	TerminationConfirmedAt *time.Time `json:"termination_confirmed_at,omitempty"`
 	ConditionMet           *bool      `json:"condition_met,omitempty"`
 	ReservationExpiresAt   *time.Time `json:"reservation_expires_at,omitempty"`
-	AlreadyStarted         bool       `json:"already_started,omitempty"`
 }
 
 const (
