@@ -99,6 +99,9 @@ func (c *Config) Validate(path string) error {
 	if err := validateDispatchSessionRetention(path, c.Dispatch); err != nil {
 		return err
 	}
+	if days := c.Dispatch.ReservationExpiryDays; days != nil && (*days <= 0 || dispatchDaysOverflow(*days)) {
+		return fmt.Errorf(messages.ConfigDispatchReservationExpiryInvalidFmt, path)
+	}
 	if err := validateDispatchMCPTimeouts(path, c.Dispatch); err != nil {
 		return err
 	}
@@ -241,7 +244,7 @@ func validateDispatchSessionRetention(path string, limits DispatchLimits) error 
 		return nil
 	}
 	days := *limits.SessionRetentionDays
-	if days <= 0 || dispatchSessionRetentionOverflows(days) {
+	if days <= 0 || dispatchDaysOverflow(days) {
 		return fmt.Errorf(messages.ConfigDispatchSessionRetentionInvalidFmt, path)
 	}
 	return nil

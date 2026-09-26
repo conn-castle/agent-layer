@@ -46,6 +46,9 @@ max_depth = 3
 # How long inactive conversation mappings and confirmed terminal run evidence
 # are kept. Unconfirmed execution evidence never expires. Optional; defaults to 30.
 session_retention_days = 30
+# How long an `al dispatch reserve` reservation stays startable before it is
+# retired without launching. Optional; defaults to 7.
+reservation_expiry_days = 7
 # How long one `dispatch_wait` MCP tool call blocks before reporting that the
 # conversation is still running. Optional; defaults to 30.
 mcp_wait_timeout_minutes = 30
@@ -160,7 +163,7 @@ Agent-specific passthrough keys in `agents.codex.agent_specific` or `agents.clau
 | Section | Purpose |
 | --- | --- |
 | `[approvals]` | auto-approval policy for commands and MCP tools |
-| `[dispatch]` | Agent Dispatch nesting depth (`max_depth`), session retention (`session_retention_days`), and MCP timeouts (`mcp_wait_timeout_minutes`, `mcp_tool_timeout_minutes`) |
+| `[dispatch]` | Agent Dispatch nesting depth (`max_depth`), session retention (`session_retention_days`), reservation expiry (`reservation_expiry_days`), and MCP timeouts (`mcp_wait_timeout_minutes`, `mcp_tool_timeout_minutes`) |
 | `[notifications]` | filtered, best-effort local completion chime (`chime`) |
 | `[agents.*]` | enablement and model selection per client |
 | `[[skills.imports]]` | Git-backed Agent Skill imports |
@@ -419,6 +422,7 @@ Agent Layer validates `config.toml` on every run. Common validation rules:
 - `approvals.mode` must be one of `all`, `mcp`, `commands`, `none`, `yolo`
 - `dispatch.max_depth` must be a positive integer when set
 - `dispatch.session_retention_days` must be a positive integer representable as a duration when set
+- `dispatch.reservation_expiry_days` must be a positive integer representable as a duration when set
 - `enabled` flags must be set for all agents and MCP servers
 - MCP transport must be `http` or `stdio`
 - `http_transport` (when set) must be `sse` or `streamable`
@@ -517,6 +521,7 @@ The command set is intentionally small. Most of the time you only need one rhyth
 | `al sync` | Regenerate client configs without launching a client. |
 | `al <client>` | Sync and launch a client (agy/claude/codex/copilot/grok/muse/vscode). |
 | `al dispatch options` | List dispatchable agents and their allowed overrides. |
+| `al dispatch reserve` | Create a named invocation that launches nothing until `al dispatch start --reservation` starts it once. |
 | `al dispatch start` | Start a headless conversation asynchronously and return its handle. |
 | `al dispatch wait <handle>` | Wait up to eight minutes; return `running` if work continues, otherwise return the terminal result. |
 | `al dispatch inspect <handle-or-invocation-id>` | Observe one invocation without waiting. |

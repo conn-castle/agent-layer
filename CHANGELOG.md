@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+- `al dispatch reserve` and `al dispatch start --reservation` make dispatch launch idempotent for programmatic callers. A reservation gets an Agent Layer generated handle and invocation ID and launches nothing; `start --reservation` requires its immutable invocation ID because handles can be reused after retention. Launch is at most once, and repeated starts return that invocation with `already_started` instead of launching again. Unknown, expired, mismatched, and cancelled reservations fail with exit codes 80–83. Unstarted reservations expire after `dispatch.reservation_expiry_days` (default 7). The commands are CLI only, not MCP tools.
+
 ### Changed
 - `make test` and `make coverage` print per-package results, failures, skips, and errors instead of one line per test, and keep each run's complete `go test` events and printed output under `.agent-layer/tmp/test-logs/`.
 

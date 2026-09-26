@@ -45,6 +45,94 @@ dispatch_json_field() {
   sed -nE "s/.*\"${field}\":\"([^\"]+)\".*/\1/p" "$path" | head -n 1
 }
 
+# check_dispatch_reservations exercises reserve-then-start against the built
+# binary: every start of one reservation launches the provider at most once.
+check_dispatch_reservations() {
+  local repo_dir="$1"
+  local plain_handle="$2"
+  local reserve_file="$repo_dir/reserve.json"
+  local rc=0
+
+  : > "$MOCK_DISPATCH_CODEX_LOG"
+  (cd "$repo_dir" && al dispatch reserve >"$reserve_file") || rc=$?
+  local reservation reserved_id
+  reservation="$(dispatch_json_field "$reserve_file" handle)"
+  reserved_id="$(dispatch_json_field "$reserve_file" invocation_id)"
+  if [[ $rc -eq 0 ]] && grep -q '"state":"reserved"' "$reserve_file" && [[ -n "$reservation" && -n "$reserved_id" ]]; then
+    pass "dispatch reserve returns a reserved handle and invocation ID"
+  else
+    fail "dispatch reserve returns a reserved handle and invocation ID (exit code: $rc)"
+  fi
+  assert_mock_agent_not_called "$MOCK_DISPATCH_CODEX_LOG" "reserve launches nothing"
+
+  local selector
+  for selector in "$reservation" "${reservation}x" "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" "$plain_handle" ""; do
+    rc=0
+    (cd "$repo_dir" && al dispatch start --reservation "$selector" --agent codex \
+      --prompt "Reserved work" >/dev/null 2>&1) || rc=$?
+    if [[ $rc -eq 80 ]]; then
+      pass "start rejects non-reservation '$selector' with exit 80"
+    else
+      fail "start rejects non-reservation '$selector' with exit 80 (got: $rc)"
+    fi
+  done
+  assert_mock_agent_not_called "$MOCK_DISPATCH_CODEX_LOG" "unknown reservations launch nothing"
+
+  rc=0
+  local index pids=()
+  for index in {1..8}; do
+    (cd "$repo_dir" && MOCK_DISPATCH_DELAY_SECONDS=0.5 al dispatch start --reservation "$reserved_id" \
+      --agent codex --prompt "Reserved work" >"$repo_dir/reserved-${index}.json") &
+    pids+=("$!")
+  done
+  for index in "${pids[@]}"; do
+    wait "$index" || rc=$?
+  done
+  local same_id already
+  same_id="$(grep -l "\"invocation_id\":\"$reserved_id\"" "$repo_dir"/reserved-*.json | wc -l | tr -d ' ')"
+  already="$(grep -l '"already_started":true' "$repo_dir"/reserved-*.json | wc -l | tr -d ' ')"
+  if [[ $rc -eq 0 && "$same_id" -eq 8 && "$already" -eq 7 ]]; then
+    pass "eight concurrent starts of one reservation return its invocation, one launching"
+  else
+    fail "eight concurrent starts of one reservation return its invocation, one launching (exit: $rc, same id: $same_id, already started: $already)"
+  fi
+  local wait_file="$repo_dir/reserved-wait.json"
+  rc=0
+  (cd "$repo_dir" && al dispatch wait "$reservation" >"$wait_file") || rc=$?
+  if [[ $rc -eq 0 ]] && grep -q '"state":"completed"' "$wait_file" && grep -q "\"invocation_id\":\"$reserved_id\"" "$wait_file"; then
+    pass "wait on the reservation handle returns the completed invocation"
+  else
+    fail "wait on the reservation handle returns the completed invocation (exit code: $rc)"
+  fi
+
+  local repeat_file="$repo_dir/reserved-repeat.json"
+  rc=0
+  (cd "$repo_dir" && al dispatch start --reservation "$reserved_id" --agent codex \
+    --prompt "Reserved work" >"$repeat_file") || rc=$?
+  if [[ $rc -eq 0 ]] && grep -q "\"invocation_id\":\"$reserved_id\"" "$repeat_file" \
+    && grep -q '"state":"completed"' "$repeat_file" && grep -q '"already_started":true' "$repeat_file"; then
+    pass "repeated start returns the same completed invocation"
+  else
+    fail "repeated start returns the same completed invocation (exit code: $rc)"
+  fi
+
+  rc=0
+  (cd "$repo_dir" && al dispatch start --reservation "$reserved_id" --agent codex \
+    --prompt "Different work" >/dev/null 2>&1) || rc=$?
+  if [[ $rc -eq 82 ]]; then
+    pass "start with different launch arguments exits 82"
+  else
+    fail "start with different launch arguments exits 82 (got: $rc)"
+  fi
+  local launches
+  launches="$(grep -c -- '---END---' "$MOCK_DISPATCH_CODEX_LOG" || true)"
+  if [[ "$launches" -eq 1 ]]; then
+    pass "a reservation launches the provider exactly once"
+  else
+    fail "a reservation launches the provider exactly once (launches: $launches)"
+  fi
+}
+
 run_scenario_agent_dispatch() {
   section "Agent Dispatch"
 
@@ -185,6 +273,8 @@ SKILL
   else
     fail "repeated cancel is idempotent (exit code: $rc)"
   fi
+
+  check_dispatch_reservations "$repo_dir" "$handle"
 
   sed -i.bak 's/^max_depth = 3$/max_depth = 1/' "$repo_dir/.agent-layer/config.toml"
   rm -f "$repo_dir/.agent-layer/config.toml.bak"

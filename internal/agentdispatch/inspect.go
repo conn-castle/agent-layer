@@ -27,6 +27,7 @@ type InspectResult struct {
 	LastOutputAt           *time.Time `json:"last_output_at,omitempty"`
 	TerminationConfirmed   bool       `json:"termination_confirmed"`
 	TerminationConfirmedAt *time.Time `json:"termination_confirmed_at,omitempty"`
+	ReservationExpiresAt   *time.Time `json:"reservation_expires_at,omitempty"`
 }
 
 // OutputResult contains bounded text from one supported invocation output.
@@ -48,6 +49,7 @@ func Inspect(request InspectRequest) error {
 	dir := filepathForRun(request.Root, record.ID)
 	acquired, lockErr := tryWithRunLock(dir, func() error {
 		updated, persistErr := applyRunEvidenceLocked(dir, func(current *RunRecord) error {
+			expireReservation(current, time.Now().UTC())
 			if !terminalDispatchState(current.State) || current.TerminationConfirmed {
 				return nil
 			}
@@ -87,7 +89,7 @@ func inspectResultFromRecord(record RunRecord) InspectResult {
 	if state == dispatchStateCancelled {
 		reason = strings.TrimSpace(strings.TrimPrefix(reason, terminalReasonCancelledByCaller))
 	}
-	return InspectResult{
+	result := InspectResult{
 		Handle:                 record.Name,
 		InvocationID:           record.ID,
 		State:                  state,
@@ -97,6 +99,10 @@ func inspectResultFromRecord(record RunRecord) InspectResult {
 		TerminationConfirmed:   record.TerminationConfirmed,
 		TerminationConfirmedAt: record.TerminationConfirmedAt,
 	}
+	if record.State == dispatchStateReserved {
+		result.ReservationExpiresAt = record.ReservationExpiresAt
+	}
+	return result
 }
 
 // Output returns bounded text for a completed final answer or the captured

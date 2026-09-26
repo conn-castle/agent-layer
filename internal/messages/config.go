@@ -34,6 +34,7 @@ const (
 	ConfigGrokAgentSpecificReservedKeyFmt         = "%s: agents.grok.agent_specific.%s is not supported; %s"
 	ConfigDispatchMaxDepthInvalidFmt              = "%s: dispatch.max_depth must be greater than zero"
 	ConfigDispatchSessionRetentionInvalidFmt      = "%s: dispatch.session_retention_days must be greater than zero and representable as a duration"
+	ConfigDispatchReservationExpiryInvalidFmt     = "%s: dispatch.reservation_expiry_days must be greater than zero and representable as a duration"
 	ConfigDispatchNamePoolExhaustedFmt            = "could not allocate a unique dispatch name: %d retained conversations and %d active executions occupy the %d-name pool"
 	ConfigDispatchNamePoolExhaustedUnreadableFmt  = "could not allocate a unique dispatch name: %d retained conversations, %d active executions, and %d unreadable occupants occupy the %d-name pool"
 	ConfigDispatchNamePoolRetentionHintFmt        = "shorten dispatch.session_retention_days (currently %d days) to free retained names"

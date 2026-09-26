@@ -702,6 +702,8 @@ The equivalent CLI:
 al dispatch options
 al dispatch start --agent codex --prompt-file prompt.md
 al dispatch start --agent muse --prompt-file prompt.md
+al dispatch reserve
+al dispatch start --reservation <invocation-id> --agent codex --prompt-file prompt.md
 al dispatch wait <handle-or-invocation-id>
 al dispatch inspect <handle-or-invocation-id>
 al dispatch output <handle-or-invocation-id> --artifact final_answer
@@ -713,13 +715,19 @@ al dispatch cancel <handle-or-invocation-id>
 overrides. `start` and `continue` return immediately with a conversation handle
 and immutable `invocation_id`. Use the ID to track that exact invocation across
 continuations. `wait` blocks for a
-bounded interval — eight minutes on the CLI — and returns `running` when it
-expires without changing the invocation, so callers wait again on the same
-invocation. Use `--condition termination_confirmed` to wait for stop confirmation.
+bounded interval — eight minutes on the CLI — and returns `running` (or
+`reserved` for a reservation not yet started) when it expires without changing
+the invocation, so callers wait again on the same invocation. Use `--condition termination_confirmed` to wait for stop confirmation.
 `inspect` returns promptly; `output` retrieves bounded final-answer or event text,
 including partial output on failure or cancellation. Completed output is stored in the immutable Markdown file named by
 `result_path`. Every successful command returns one JSON object; `wait` also
-writes its terminal JSON result before a non-zero failed-invocation exit. For
+writes its terminal JSON result before a non-zero failed-invocation exit.
+Programmatic callers that may repeat a start (for example at-least-once
+workflow steps) can `reserve` first and then `start --reservation`: the
+reservation launches at most once, and repeats return the same invocation.
+Use the returned `invocation_id` for `--reservation`; handles can be reused
+after retention and are rejected for starting a reservation.
+This is CLI only. For
 the complete contract, including the MCP tool schemas and the
 `dispatch.mcp_wait_timeout_minutes` / `dispatch.mcp_tool_timeout_minutes`
 settings, see

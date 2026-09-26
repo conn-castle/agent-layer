@@ -57,6 +57,9 @@ const (
 	// DispatchSessionRetentionDaysFieldKey is the canonical config path for
 	// inactive mapping and confirmed-evidence retention.
 	DispatchSessionRetentionDaysFieldKey = "dispatch.session_retention_days"
+	// DispatchReservationExpiryDaysFieldKey is the canonical config path for
+	// how long an unstarted dispatch reservation remains startable.
+	DispatchReservationExpiryDaysFieldKey = "dispatch.reservation_expiry_days"
 )
 
 var (
@@ -83,6 +86,7 @@ var fields = []FieldDef{
 	},
 	{Key: "dispatch.max_depth", Type: FieldPositiveInt},
 	{Key: DispatchSessionRetentionDaysFieldKey, Type: FieldPositiveInt},
+	{Key: DispatchReservationExpiryDaysFieldKey, Type: FieldPositiveInt},
 	{Key: "notifications.chime", Type: FieldBool},
 	{Key: "agents.antigravity.enabled", Type: FieldBool, Required: true},
 	{

@@ -12,7 +12,7 @@ func publicResult(record RunRecord) Result {
 	if state == dispatchStateInterrupted {
 		state = dispatchStateFailed
 	}
-	return Result{
+	result := Result{
 		Handle:                 record.Name,
 		InvocationID:           record.ID,
 		State:                  state,
@@ -22,6 +22,10 @@ func publicResult(record RunRecord) Result {
 		TerminationConfirmed:   record.TerminationConfirmed,
 		TerminationConfirmedAt: record.TerminationConfirmedAt,
 	}
+	if record.State == dispatchStateReserved {
+		result.ReservationExpiresAt = record.ReservationExpiresAt
+	}
+	return result
 }
 
 func boolPtr(value bool) *bool { return &value }

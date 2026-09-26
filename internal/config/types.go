@@ -24,6 +24,11 @@ const DefaultDispatchMaxDepth = 3
 // omitted.
 const DefaultDispatchSessionRetentionDays = 30
 
+// DefaultDispatchReservationExpiryDays is how long an unstarted dispatch
+// reservation remains startable when dispatch.reservation_expiry_days is
+// omitted.
+const DefaultDispatchReservationExpiryDays = 7
+
 const (
 	// DefaultDispatchMCPWaitTimeoutMinutes is how long a healthy `dispatch_wait`
 	// MCP call blocks before reporting the conversation as still running.
@@ -69,6 +74,9 @@ type DispatchLimits struct {
 	// terminal run evidence. Nil selects DefaultDispatchSessionRetentionDays.
 	// Unconfirmed execution evidence is never expired.
 	SessionRetentionDays *int `toml:"session_retention_days"`
+	// ReservationExpiryDays bounds how long an unstarted reservation remains
+	// startable. Nil selects DefaultDispatchReservationExpiryDays.
+	ReservationExpiryDays *int `toml:"reservation_expiry_days"`
 	// MCPWaitTimeoutMinutes bounds one `dispatch_wait` MCP call. Nil selects
 	// DefaultDispatchMCPWaitTimeoutMinutes.
 	MCPWaitTimeoutMinutes *int `toml:"mcp_wait_timeout_minutes"`
@@ -235,7 +243,16 @@ func dispatchSessionRetentionDays(limits DispatchLimits) int {
 	return *limits.SessionRetentionDays
 }
 
-func dispatchSessionRetentionOverflows(days int) bool {
+// DispatchReservationExpiry returns how long an unstarted reservation remains
+// startable.
+func DispatchReservationExpiry(c Config) time.Duration {
+	if c.Dispatch.ReservationExpiryDays == nil {
+		return time.Duration(DefaultDispatchReservationExpiryDays) * 24 * time.Hour
+	}
+	return time.Duration(*c.Dispatch.ReservationExpiryDays) * 24 * time.Hour
+}
+
+func dispatchDaysOverflow(days int) bool {
 	if days <= 0 {
 		return false
 	}

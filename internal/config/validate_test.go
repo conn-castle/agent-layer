@@ -140,6 +140,16 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: DispatchSessionRetentionDaysFieldKey,
 		},
 		{
+			name:    "non-positive reservation expiry",
+			cfg:     withDispatchReservationExpiry(valid, 0),
+			wantErr: DispatchReservationExpiryDaysFieldKey,
+		},
+		{
+			name:    "reservation expiry overflows duration",
+			cfg:     withDispatchReservationExpiry(valid, int(math.MaxInt64/int64(24*time.Hour))+1),
+			wantErr: DispatchReservationExpiryDaysFieldKey,
+		},
+		{
 			name:    "non-positive mcp wait timeout",
 			cfg:     withDispatchMCPTimeouts(valid, ptr(0), nil),
 			wantErr: "dispatch.mcp_wait_timeout_minutes must be greater than zero",
@@ -383,6 +393,11 @@ func withDispatchSessionRetention(cfg Config, days int) Config {
 	return cfg
 }
 
+func withDispatchReservationExpiry(cfg Config, days int) Config {
+	cfg.Dispatch.ReservationExpiryDays = &days
+	return cfg
+}
+
 func withDispatchMCPTimeouts(cfg Config, wait *int, tool *int) Config {
 	cfg.Dispatch.MCPWaitTimeoutMinutes = wait
 	cfg.Dispatch.MCPToolTimeoutMinutes = tool
@@ -409,6 +424,19 @@ func TestDispatchSessionRetentionOverrides(t *testing.T) {
 	}
 	if got := DispatchSessionRetention(cfg); got != 7*24*time.Hour {
 		t.Fatalf("session retention = %s, want 7 days", got)
+	}
+}
+
+func TestDispatchReservationExpiryDefaultsAndOverrides(t *testing.T) {
+	if got := DispatchReservationExpiry(validTimeoutConfig()); got != 7*24*time.Hour {
+		t.Fatalf("default reservation expiry = %s, want 7 days", got)
+	}
+	cfg := withDispatchReservationExpiry(validTimeoutConfig(), 2)
+	if err := cfg.Validate("config.toml"); err != nil {
+		t.Fatalf("valid reservation expiry rejected: %v", err)
+	}
+	if got := DispatchReservationExpiry(cfg); got != 2*24*time.Hour {
+		t.Fatalf("reservation expiry = %s, want 2 days", got)
 	}
 }
 
