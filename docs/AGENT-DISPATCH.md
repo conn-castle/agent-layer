@@ -121,7 +121,7 @@ al dispatch reserve
 
 al dispatch start --agent <agent> [--model <model>] \
   [--reasoning-effort <effort>] [--role <role>] [--skill <skill>] \
-  [--reservation <invocation-id>] \
+  [--reservation <handle>] \
   (--prompt <text> | --prompt-file <path>)
 
 al dispatch wait <handle-or-invocation-id> [--condition terminal|termination_confirmed]
@@ -393,14 +393,14 @@ instead of repeating `continue`.
 
 ## Reservations
 
-Reservations make launching idempotent for programmatic callers that may
-repeat a start, such as an at-least-once workflow step that reruns after a
-crash or a lost response. They are CLI only: no MCP tool exposes them, and
-agents should use `dispatch_start`.
+Reservations let callers allocate a conversation name before launching. A
+repeated start is rejected, so an at-least-once workflow step cannot launch
+the same retained reservation twice. They are CLI only: no MCP tool exposes
+them, and agents using MCP should use `dispatch_start`.
 
 ```text
 al dispatch reserve
-al dispatch start --reservation <invocation-id> --agent <agent> ... (--prompt <text> | --prompt-file <path>)
+al dispatch start --reservation <handle> --agent <agent> ... (--prompt <text> | --prompt-file <path>)
 ```
 
 `reserve` durably creates an invocation in the `reserved` state, with an Agent
@@ -408,7 +408,7 @@ Layer generated handle and invocation ID, and launches nothing. It returns:
 
 ```json
 {
-  "handle": "abc123",
+  "handle": "small-blue-relay",
   "invocation_id": "11111111-1111-4111-8111-111111111111",
   "state": "reserved",
   "termination_confirmed": false,
@@ -416,28 +416,28 @@ Layer generated handle and invocation ID, and launches nothing. It returns:
 }
 ```
 
-The caller records the immutable `invocation_id`, then starts it with
-`start --reservation <invocation-id>`,
-passing the normal launch arguments. Callers never choose identifiers: a
-reservation selector that Agent Layer did not return fails without launching.
-Conversation handles are rejected with exit 80: retention can free a handle
-for reuse by another conversation, so a delayed retry must identify the original
-invocation by UUID. The UUID always names the reserved invocation itself, even
-after later continuations.
+The caller records the `handle`, then starts it with
+`start --reservation <handle>`, passing the normal launch arguments. Callers
+never choose identifiers: a reservation selector that Agent Layer did not
+return fails without launching. The `invocation_id` remains available for
+tracking an exact invocation; it is not accepted by `start --reservation`. A
+repeated start recognizes the original reserved invocation even after the
+conversation has been continued. After retention removes the reservation, its
+three-word handle can be reused. A retry of that old handle could then start a
+different reservation, so callers must stop retrying before retention ends.
 
 The first start that reaches the reservation launches it through the normal
 intent-before-start protocol and returns the normal start result. Concurrent
 starts are serialized by the invocation's record lock, so at most one launches.
-Every later start with the same launch arguments launches nothing and returns
-that invocation in the start result shape, whatever its state, with
-`"already_started": true`. A start interrupted mid-launch is resolved by the
-normal launch recovery (for example `failed` with unknown provider acceptance)
-and is never relaunched. This guarantees at-most-once launch, not eventual
-execution: a crash after claiming can leave a failed invocation that never
-contacted the provider. Launch arguments are the agent, model, reasoning
-effort, role, skill, and prompt. The agent is compared by its resolved target
-and every argument ignores surrounding whitespace, so `--prompt` and
-`--prompt-file` with the same text match; only a digest is stored.
+Every later start fails with exit 82 and guidance to inspect the invocation
+and continue only when available; it launches nothing regardless of the
+launch arguments. A start interrupted
+mid-launch is resolved by the normal launch recovery (for example `failed`
+with unknown provider acceptance) and is never relaunched. This guarantees
+at-most-once launch while the reservation is retained, not eventual execution:
+a crash after claiming can leave a failed invocation that never contacted the
+provider. In that case, inspect the failed invocation before starting a new
+conversation; continuation may be unavailable.
 
 `inspect`, `wait`, `output`, and `cancel` accept a reservation's handle or
 invocation ID. `inspect` reports `reserved` and `reservation_expires_at`.
@@ -460,9 +460,9 @@ anything:
 
 | Exit code | Meaning |
 | --- | --- |
-| 80 | Not found: the selector names no reservation, for example a typo, an invented or empty value, a conversation handle, or a reservation already removed by retention. |
+| 80 | Not found: the selector names no reservation, for example a typo, an invented or empty value, an invocation ID, a non-reservation handle, or a reservation already removed by retention. |
 | 81 | Expired: the reservation expired before it started. It never launched and never will; reserve again. |
-| 82 | Mismatch: the reservation already started with different launch arguments. |
+| 82 | Already started: this reservation has claimed its one start. Wait for it to finish, then continue if available. |
 | 83 | Cancelled: the reservation was cancelled before it started. It never launched and never will. |
 
 Other failures keep the ordinary dispatch exit codes. A start that fails

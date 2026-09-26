@@ -18,7 +18,7 @@ func TestCancelledReservationCannotReopenSession(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
 			reservation := reserveInTest(t, root)
-			if _, claimed, err := claimReservation(root, reservation.InvocationID, "sha256:test", func(record *RunRecord) {
+			if _, claimed, err := claimReservation(root, reservation.InvocationID, func(record *RunRecord) {
 				record.Agent = AgentCodex
 			}); err != nil || !claimed {
 				t.Fatalf("claim reservation = %t, %v", claimed, err)
@@ -90,7 +90,7 @@ func TestCancelSettlesReservationExpiry(t *testing.T) {
 			if session.ActiveRunID != "" {
 				t.Fatalf("cancel retained active claim %q", session.ActiveRunID)
 			}
-			err = Start(StartOptions{Root: root, WorkDir: root, Agent: AgentCodex, Prompt: "Work", Reservation: &reservation.InvocationID, Env: []string{}, launchWorker: func(string, string, string) (launchedWorker, error) {
+			err = Start(StartOptions{Root: root, WorkDir: root, Agent: AgentCodex, Prompt: "Work", Reservation: &reservation.Handle, Env: []string{}, launchWorker: func(string, string, string) (launchedWorker, error) {
 				t.Fatal("cancelled reservation launched a worker")
 				return launchedWorker{}, nil
 			}})

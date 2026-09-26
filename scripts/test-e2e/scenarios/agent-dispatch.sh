@@ -66,7 +66,7 @@ check_dispatch_reservations() {
   assert_mock_agent_not_called "$MOCK_DISPATCH_CODEX_LOG" "reserve launches nothing"
 
   local selector
-  for selector in "$reservation" "${reservation}x" "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" "$plain_handle" ""; do
+  for selector in "${reservation}x" "$reserved_id" "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" "$plain_handle" ""; do
     rc=0
     (cd "$repo_dir" && al dispatch start --reservation "$selector" --agent codex \
       --prompt "Reserved work" >/dev/null 2>&1) || rc=$?
@@ -78,23 +78,31 @@ check_dispatch_reservations() {
   done
   assert_mock_agent_not_called "$MOCK_DISPATCH_CODEX_LOG" "unknown reservations launch nothing"
 
-  rc=0
-  local index pids=()
+  local index pids=() started=0 already=0
   for index in {1..8}; do
-    (cd "$repo_dir" && MOCK_DISPATCH_DELAY_SECONDS=0.5 al dispatch start --reservation "$reserved_id" \
-      --agent codex --prompt "Reserved work" >"$repo_dir/reserved-${index}.json") &
+    (cd "$repo_dir" && MOCK_DISPATCH_DELAY_SECONDS=0.5 al dispatch start --reservation "$reservation" \
+      --agent codex --prompt "Reserved work" >"$repo_dir/reserved-${index}.json" \
+      2>"$repo_dir/reserved-${index}.stderr") &
     pids+=("$!")
   done
   for index in "${pids[@]}"; do
-    wait "$index" || rc=$?
+    if wait "$index"; then
+      started=$((started + 1))
+    else
+      rc=$?
+      if [[ $rc -eq 82 ]]; then
+        already=$((already + 1))
+      else
+        fail "concurrent reservation start exited $rc, want 0 or 82"
+      fi
+    fi
   done
-  local same_id already
+  local same_id
   same_id="$(grep -l "\"invocation_id\":\"$reserved_id\"" "$repo_dir"/reserved-*.json | wc -l | tr -d ' ')"
-  already="$(grep -l '"already_started":true' "$repo_dir"/reserved-*.json | wc -l | tr -d ' ')"
-  if [[ $rc -eq 0 && "$same_id" -eq 8 && "$already" -eq 7 ]]; then
-    pass "eight concurrent starts of one reservation return its invocation, one launching"
+  if [[ "$started" -eq 1 && "$same_id" -eq 1 && "$already" -eq 7 ]]; then
+    pass "eight concurrent starts launch once and reject seven as already started"
   else
-    fail "eight concurrent starts of one reservation return its invocation, one launching (exit: $rc, same id: $same_id, already started: $already)"
+    fail "eight concurrent starts launch once and reject seven as already started (started: $started, same id: $same_id, already: $already)"
   fi
   local wait_file="$repo_dir/reserved-wait.json"
   rc=0
@@ -106,23 +114,24 @@ check_dispatch_reservations() {
   fi
 
   local repeat_file="$repo_dir/reserved-repeat.json"
+  local repeat_error="$repo_dir/reserved-repeat.stderr"
   rc=0
-  (cd "$repo_dir" && al dispatch start --reservation "$reserved_id" --agent codex \
-    --prompt "Reserved work" >"$repeat_file") || rc=$?
-  if [[ $rc -eq 0 ]] && grep -q "\"invocation_id\":\"$reserved_id\"" "$repeat_file" \
-    && grep -q '"state":"completed"' "$repeat_file" && grep -q '"already_started":true' "$repeat_file"; then
-    pass "repeated start returns the same completed invocation"
+  (cd "$repo_dir" && al dispatch start --reservation "$reservation" --agent codex \
+    --prompt "Reserved work" >"$repeat_file" 2>"$repeat_error") || rc=$?
+  if [[ $rc -eq 82 && ! -s "$repeat_file" ]] && grep -q 'already started' "$repeat_error" \
+    && grep -q 'al dispatch inspect' "$repeat_error" && grep -q 'continue only when available' "$repeat_error"; then
+    pass "repeated start errors with inspect guidance"
   else
-    fail "repeated start returns the same completed invocation (exit code: $rc)"
+    fail "repeated start errors with inspect guidance (exit code: $rc)"
   fi
 
   rc=0
-  (cd "$repo_dir" && al dispatch start --reservation "$reserved_id" --agent codex \
+  (cd "$repo_dir" && al dispatch start --reservation "$reservation" --agent codex \
     --prompt "Different work" >/dev/null 2>&1) || rc=$?
   if [[ $rc -eq 82 ]]; then
-    pass "start with different launch arguments exits 82"
+    pass "repeated start with different arguments also exits 82"
   else
-    fail "start with different launch arguments exits 82 (got: $rc)"
+    fail "repeated start with different arguments also exits 82 (got: $rc)"
   fi
   local launches
   launches="$(grep -c -- '---END---' "$MOCK_DISPATCH_CODEX_LOG" || true)"
@@ -130,6 +139,31 @@ check_dispatch_reservations() {
     pass "a reservation launches the provider exactly once"
   else
     fail "a reservation launches the provider exactly once (launches: $launches)"
+  fi
+
+  local continuation_file="$repo_dir/reserved-continuation.json"
+  rc=0
+  (cd "$repo_dir" && al dispatch continue "$reservation" --prompt "Follow up" >"$continuation_file") || rc=$?
+  if [[ $rc -eq 0 ]]; then
+    pass "reserved conversation can be continued"
+  else
+    fail "reserved conversation can be continued (exit code: $rc)"
+  fi
+  local original_after_continue="$repo_dir/reserved-after-continuation.json"
+  rc=0
+  (cd "$repo_dir" && al dispatch start --reservation "$reservation" --agent codex \
+    --prompt "Reserved work" >"$original_after_continue" 2>"$repeat_error") || rc=$?
+  if [[ $rc -eq 82 && ! -s "$original_after_continue" ]] && grep -q 'already started' "$repeat_error"; then
+    pass "repeated start after continuation still errors as already started"
+  else
+    fail "repeated start after continuation still errors as already started (exit code: $rc)"
+  fi
+  (cd "$repo_dir" && al dispatch wait "$reservation" >/dev/null) || true
+  launches="$(grep -c -- '---END---' "$MOCK_DISPATCH_CODEX_LOG" || true)"
+  if [[ "$launches" -eq 2 ]]; then
+    pass "repeated reservation start after continuation launches nothing"
+  else
+    fail "repeated reservation start after continuation launches nothing (launches: $launches)"
   fi
 }
 
