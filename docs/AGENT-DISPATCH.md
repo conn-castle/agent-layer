@@ -363,6 +363,13 @@ Failure to prove termination retains the active claim rather than permitting
 overlapping work. The group-termination grace and proof windows are separate
 from the process/I/O shutdown deadline.
 
+Muse can complete a turn with empty text while a background workflow is still
+running. Dispatch waits for Muse's background continuation in the same session
+and accepts its final answer; the empty turn does not start the shutdown grace.
+An empty answer at end of stream still fails the invocation. A subsequent run
+must be announced by Muse's `muse-runtime-background-terminal` client before
+its run linkage is accepted.
+
 If the worker and leader have died but descendants survive, automatic recovery
 retains the claim and reports the group ID. Inspect the saved run evidence and
 the surviving processes to establish ownership before manually stopping any of
