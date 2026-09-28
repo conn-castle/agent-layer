@@ -633,9 +633,11 @@ func appendRetainedGrokText(dst *strings.Builder, chunk string) {
 }
 
 type museReducer struct {
-	expectedSession string
-	rootRunID       string
-	terminalSeen    bool
+	expectedSession    string
+	rootRunID          string
+	terminalSeen       bool
+	awaitingBackground bool
+	backgroundRunID    string
 }
 
 func (m *museReducer) reduce(value map[string]any) []providerEvent {
@@ -645,7 +647,7 @@ func (m *museReducer) reduce(value map[string]any) []providerEvent {
 	stream, _ := mapValueV013(value, "stream")
 	streamKind, _ := stream[jsonKindKey].(string)
 	streamID, _ := stream["id"].(string)
-	if streamKind == "session" && streamID != "" && streamID != m.expectedSession {
+	if streamKind == eventSession && streamID != "" && streamID != m.expectedSession {
 		return []providerEvent{{Kind: eventFailure, Reason: "Muse event returned a different provider session ID"}}
 	}
 	payloadType, _ := value["payload_type"].(string)
@@ -654,7 +656,14 @@ func (m *museReducer) reduce(value map[string]any) []providerEvent {
 	runStream, _ := mapValueV013(payload, "run_stream")
 	runKind, _ := runStream[jsonKindKey].(string)
 	runID, _ := runStream["id"].(string)
-	if (payloadType == "session.run.linked" || strings.HasPrefix(payloadType, "run.terminal.")) && (streamKind != "session" || streamID != m.expectedSession) {
+	// A workflow can finish the submitting turn with no text, then submit a
+	// background turn in the same exec invocation to deliver its answer.
+	if payloadType == "runtime.command.accepted" && m.awaitingBackground &&
+		streamKind == eventSession && streamID == m.expectedSession &&
+		payload["client_id"] == "muse-runtime-background-terminal" && payload["command_kind"] == "turn.submit" {
+		m.backgroundRunID = commandID
+	}
+	if (payloadType == "session.run.linked" || strings.HasPrefix(payloadType, "run.terminal.")) && (streamKind != eventSession || streamID != m.expectedSession) {
 		return []providerEvent{{Kind: eventFailure, Reason: "Muse root event omitted the expected session stream"}}
 	}
 	if payloadType == "session.run.linked" {
@@ -662,7 +671,12 @@ func (m *museReducer) reduce(value map[string]any) []providerEvent {
 			return []providerEvent{{Kind: eventFailure, Reason: "Muse root run linkage is invalid"}}
 		}
 		if m.rootRunID != "" && m.rootRunID != runID {
-			return []providerEvent{{Kind: eventFailure, Reason: "Muse stream linked multiple root runs"}}
+			if !m.awaitingBackground || runID != m.backgroundRunID {
+				return []providerEvent{{Kind: eventFailure, Reason: "Muse stream linked multiple root runs without a background continuation"}}
+			}
+			m.terminalSeen = false
+			m.awaitingBackground = false
+			m.backgroundRunID = ""
 		}
 		m.rootRunID = runID
 		return []providerEvent{{Kind: eventSession, SessionID: streamID}, {Kind: eventProgress, Activity: payloadType}}
@@ -690,7 +704,10 @@ func (m *museReducer) reduce(value map[string]any) []providerEvent {
 	}
 	answer, _ := payload[jsonTextKey].(string)
 	if answer == "" {
-		return []providerEvent{{Kind: eventFailure, Reason: "Muse completed without a final answer"}}
+		// This is turn completion, not invocation completion. Do not trigger
+		// termination or the provider shutdown deadline while its workflow runs.
+		m.awaitingBackground = true
+		return []providerEvent{{Kind: eventProgress, Activity: "muse_waiting_for_background_answer"}}
 	}
 	return []providerEvent{{Kind: eventAnswer, Answer: answer}, {Kind: eventComplete}}
 }
@@ -823,6 +840,12 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 	var grokAccumulator strings.Builder
 	var grokTerminalSeen, antigravityTerminalSeen bool
 	museState := museReducer{expectedSession: expectedSession}
+	finish := func() error {
+		if agent == AgentMuse && museState.awaitingBackground {
+			return consume(providerEvent{Kind: eventFailure, Reason: "Muse completed without a final answer"})
+		}
+		return nil
+	}
 	emitInvalid := func(reason string) error {
 		if !claudeLineage || consumeLineage == nil {
 			return nil
@@ -838,7 +861,7 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 				return line.sourceErr
 			}
 			if line.sourceEOF {
-				return nil
+				return finish()
 			}
 			continue
 		}
@@ -856,7 +879,7 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 				return invalidErr
 			}
 			if line.sourceEOF {
-				return nil
+				return finish()
 			}
 			continue
 		}

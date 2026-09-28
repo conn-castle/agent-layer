@@ -580,7 +580,7 @@ func retainedStructuredPath(path []string) bool {
 		// as an example. An empty list retains nothing and stays a success.
 		return path[0] == permissionDenialsKey ||
 			(path[0] == "stream" && (path[1] == jsonKindKey || path[1] == "id")) ||
-			(path[0] == "payload" && (path[1] == jsonKindKey || path[1] == "command_id" || path[1] == "terminal" || path[1] == jsonTextKey || path[1] == jsonReasonKey)) ||
+			(path[0] == "payload" && (path[1] == jsonKindKey || path[1] == "command_id" || path[1] == "client_id" || path[1] == "command_kind" || path[1] == "terminal" || path[1] == jsonTextKey || path[1] == jsonReasonKey)) ||
 			(path[0] == grokUsageEventType && (path[1] == "input_tokens" || path[1] == "output_tokens" || path[1] == "cache_read_input_tokens" || path[1] == "cache_creation_input_tokens" || path[1] == "reasoning_tokens")) ||
 			(path[0] == jsonResultKey && (path[1] == "conversation_id" || path[1] == jsonStatusKey || path[1] == jsonResponseKey || path[1] == jsonErrorKey)) ||
 			(path[0] == jsonEventKey && path[1] == jsonTypeKey) ||

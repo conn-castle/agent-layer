@@ -386,3 +386,80 @@ func TestMuseObserverReadinessTimeout(t *testing.T) {
 		t.Fatalf("readiness timeout took %s", elapsed)
 	}
 }
+
+// Fixture captured from native Muse 1.4.0 with a loopback model endpoint. A
+// workflow returning a constant causes two root turns in one exec invocation.
+func TestMuseBackgroundWorkflowStream(t *testing.T) {
+	raw, err := os.ReadFile("testdata/muse/v1.4.0-background-workflow.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	const session = "01a0e83a-6b1e-7142-bb6f-f4cd1316399d"
+	for _, test := range []struct {
+		name        string
+		stream      string
+		wantFailure string
+	}{
+		{"workflow answer", string(raw), ""},
+		{"empty invocation", strings.Join(lines[:3], "\n"), "without a final answer"},
+		{"empty invocation with malformed trailing line", strings.Join(lines[:3], "\n") + "\n{", "without a final answer"},
+		{"unannounced second run", strings.Join(append(append([]string{}, lines[:3]...), lines[4:]...), "\n"), "without a background continuation"},
+		{"foreign client", strings.Replace(string(raw), `"client_id":"muse-runtime-background-terminal"`, `"client_id":"other-client"`, 1), "without a background continuation"},
+		{"mismatched continuation command", strings.Replace(string(raw), `"command_kind":"turn.submit"`, `"command_kind":"other"`, 2), "without a background continuation"},
+		{"overlapping root", strings.Join(append(append([]string{}, lines[:2]...), lines[3:]...), "\n"), "without a background continuation"},
+		{"duplicate terminal", strings.Join(append(append([]string{}, lines[:3]...), lines[2]), "\n"), "multiple root terminal"},
+		{"background failed", strings.Join(lines[:5], "\n") + "\n" + strings.ReplaceAll(strings.ReplaceAll(lines[5], "completed", "failed"), `"reason":null`, `"reason":"workflow failed"`), "workflow failed"},
+		{"wrong session ID", strings.Join(lines[:3], "\n") + "\n" + strings.ReplaceAll(strings.Join(lines[3:], "\n"), session, "other-session"), "different provider session ID"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var answer string
+			complete := false
+			err := readStructuredEventsWithLineage(strings.NewReader(test.stream), io.Discard, AgentMuse, session, false, func(event providerEvent) error {
+				if event.Kind == eventFailure {
+					return fmt.Errorf("%s", event.Reason)
+				}
+				if event.Kind == eventAnswer {
+					answer = event.Answer
+				}
+				if event.Kind == eventComplete {
+					complete = true
+				}
+				return nil
+			}, nil)
+			if test.wantFailure != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantFailure) || complete || answer != "" {
+					t.Fatalf("error = %v, complete = %v, answer = %q", err, complete, answer)
+				}
+			} else if err != nil || !complete || answer != "Fixture complete" {
+				t.Fatalf("error = %v, complete = %v, answer = %q", err, complete, answer)
+			}
+		})
+	}
+}
+
+func TestMuseDispatchWaitsForBackgroundWorkflow(t *testing.T) {
+	root := t.TempDir()
+	fixture, err := filepath.Abs("testdata/muse/v1.4.0-background-workflow.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerPath := filepath.Join(root, "fake-muse")
+	// A workflow may take longer than the five-second post-terminal shutdown
+	// grace. Its empty submitting turn must neither fail nor start that timer.
+	script := "#!/bin/sh\nsed -n '1,3p' \"$1\"\nsleep 6\nsed -n '4,6p' \"$1\"\n"
+	if err := os.WriteFile(providerPath, []byte(script), 0o700); err != nil { // #nosec G306 -- executable test fixture.
+		t.Fatal(err)
+	}
+	run, err := newDispatchRun(root, AgentMuse, "1.4.0", dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := executeProvider(providerCommand{
+		Path: providerPath, Args: []string{fixture}, Env: os.Environ(), Provider: AgentMuse,
+		SessionID: "01a0e83a-6b1e-7142-bb6f-f4cd1316399d",
+	}, nil, run, root, nil, func(string) error { return nil })
+	if err != nil || !result.Complete || result.Answer != "Fixture complete" {
+		t.Fatalf("result = %#v, error = %v", result, err)
+	}
+}
