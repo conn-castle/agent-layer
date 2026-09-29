@@ -12,7 +12,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
-func TestGrokMuseSharedMCPSelection(t *testing.T) {
+func TestGrokRootMCPSelection(t *testing.T) {
 	for _, claude := range []bool{false, true} {
 		for _, muse := range []bool{false, true} {
 			for _, transport := range []string{"stdio", "http"} {
@@ -64,11 +64,14 @@ func TestGrokMuseSharedMCPSelection(t *testing.T) {
 					}
 					require.ElementsMatch(t, selected, actual)
 					masks := []string{}
+					if muse || claude {
+						masks = append(masks, "claude-muse")
+					}
 					if muse {
-						masks = append(masks, "muse", "claude-muse")
-						if claude {
-							masks = append(masks, "claude")
-						}
+						masks = append(masks, "muse")
+					}
+					if claude {
+						masks = append(masks, "claude")
 					}
 					require.Len(t, got.Servers, len(selected)+len(masks))
 					for _, id := range masks {

@@ -182,14 +182,15 @@ func containsServerID(ids []string, id string) bool {
 	return false
 }
 
-// MuseSharedMCPExclusions returns generated root .mcp.json IDs that a client
-// must mask while Muse sharing is active. Native personal/plugin servers are
-// deliberately outside this set. Without Muse, retain existing client behavior.
-func MuseSharedMCPExclusions(cfg config.Config, client string) []string {
-	if !config.IsAgentEnabled(cfg.Agents.Muse.Enabled) {
-		return nil
+// RootMCPExclusions returns generated root .mcp.json IDs that a client which
+// also discovers that file must mask. The file holds the Claude projection when
+// either Claude integration is enabled and the Muse projection when Muse is
+// enabled. Native personal/plugin servers are deliberately outside this set.
+func RootMCPExclusions(cfg config.Config, client string) []string {
+	var shared []string
+	if config.IsAgentEnabled(cfg.Agents.Muse.Enabled) {
+		shared = append(shared, EffectiveServerIDs(cfg, ClientMuse)...)
 	}
-	shared := EffectiveServerIDs(cfg, ClientMuse)
 	if config.IsAgentEnabled(cfg.Agents.Claude.Enabled) || config.IsAgentEnabled(cfg.Agents.ClaudeVSCode.Enabled) {
 		shared = append(shared, EffectiveServerIDs(cfg, ClientClaude)...)
 	}

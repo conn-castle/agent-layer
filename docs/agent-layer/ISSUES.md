@@ -29,11 +29,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-09-28 copilot-root-mcp-client-filter: Copilot CLI loads Claude-only servers from root `.mcp.json` when Muse is disabled
-    Priority: Medium. Area: Copilot CLI integration
-    Description: Copilot CLI 1.0.83 natively loads workspace `.mcp.json` in trusted folders (verified with an isolated fixture). With Claude enabled, that file holds Claude's projection, but `al copilot` passes `--disable-mcp-server` for unselected IDs only when Muse is enabled, so servers whose `clients` exclude `copilot` still load in Copilot sessions.
-    Open question: Should Copilot exclusions for the root `.mcp.json` apply whenever that file is generated, not only when Muse is enabled?
-    Notes: Exclusions come from `projection.MuseSharedMCPExclusions`; fixture evidence in `.agent-layer/tmp/copilot-mcp-verify/`.
+- Issue 2026-09-28 vscode-root-mcp-client-filter: VS Code loads Claude-only servers from root `.mcp.json` when Muse is disabled
+    Priority: Low. Area: VS Code integration
+    Description: VS Code 1.138 discovers root `.mcp.json` and ignores its `enabled` field. With Claude or Claude VS Code and VS Code enabled, that file holds Claude's projection, but `validateMuseVSCodeSharedMCP` rejects servers whose `clients` exclude `vscode` only when Muse is also enabled, so those servers still load in VS Code.
+    Open question: Should that validation apply whenever root `.mcp.json` is generated, rejecting configurations that currently sync successfully?
+    Notes: Grok and `al copilot` masks were generalized the same way in the `copilot-root-mcp-client-filter` fix; current behavior is documented in docs/MCP_HEADERS_SUPPORT.md.
 
 - Issue 2026-09-23 go-test-truncated-package-undetected: Test runs pass when a test binary is replaced or exits at the syscall level
     Priority: Low. Area: Test suite / Makefile

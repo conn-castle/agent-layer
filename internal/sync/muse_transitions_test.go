@@ -60,9 +60,10 @@ func TestMuseTransitionsPreserveExistingClientOutputs(t *testing.T) {
 			require.NoError(t, toml.Unmarshal(want, &before))
 			require.NoError(t, toml.Unmarshal(got, &after))
 			servers := after["mcp_servers"].(map[string]any)
-			// Only these fixture IDs are added as disabled root-import masks.
-			// Keep permissions, plugins, selected servers and every other field.
-			for _, id := range []string{"example", "muse-only", "shared"} {
+			// Claude-selected root IDs are already masked; enabling Muse adds
+			// only its own. Keep permissions, plugins, selected servers and
+			// every other field.
+			for _, id := range []string{"muse-only"} {
 				entry, ok := servers[id].(map[string]any)
 				require.True(t, ok, id)
 				require.Equal(t, false, entry["enabled"], id)
