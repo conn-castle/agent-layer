@@ -79,6 +79,7 @@ run_go_tool_tests_updateformula
 run_go_tool_tests_updateformula_unit
 run_go_tool_tests_gentemplatemanifest
 run_go_tool_tests_checktestevents
+run_make_test_recipe_status_tests
 
 # -----------------------------------------------------------------------------
 # Summary

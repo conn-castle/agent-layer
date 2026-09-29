@@ -1,9 +1,11 @@
-SHELL := /usr/bin/env bash
-.SHELLFLAGS := -euo pipefail -c
+ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+empty :=
+space := $(empty) $(empty)
+# Make splits SHELL on unescaped spaces, so escape any in the repository path.
+SHELL := $(subst $(space),\ ,$(ROOT_DIR))/scripts/make-shell.sh
 
 .DEFAULT_GOAL := help
 
-ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 GIT_COMMON_DIR := $(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
 CACHE_ROOT ?= $(if $(GIT_COMMON_DIR),$(abspath $(GIT_COMMON_DIR)/../.cache),$(ROOT_DIR)/.cache)
 TOOL_BIN ?= $(ROOT_DIR)/.tools/bin
@@ -142,14 +144,13 @@ lint-ci-local: check-golangci-lint ## Run fresh-cache Linux-targeted and native-
 # keeps the console transcript because go command stderr never reaches the JSON file.
 # go test exits 0 when a test binary is replaced or exits through a raw syscall, so
 # checktestevents fails the run when a started package has no package-level result.
-# Its pipelines set pipefail locally because macOS GNU Make 3.81 ignores .SHELLFLAGS.
 .PHONY: test
 test: check-gotestsum ## Run tests
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)" "$(TEST_LOG_DIR)"
 	@log_dir="$$(mktemp -d "$(TEST_LOG_DIR)/test-$$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"; status=0; \
 	  GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/gotestsum" --format standard-quiet --jsonfile "$$log_dir/go-test.jsonl" -- ./... 2>&1 | tee "$$log_dir/output.log" || status=$$?; \
 	  if [[ $$status -eq 0 ]]; then \
-	    (set -o pipefail; GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run -tags tools ./internal/tools/checktestevents "$$log_dir/go-test.jsonl" 2>&1 | tee -a "$$log_dir/output.log") || status=$$?; \
+	    GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run -tags tools ./internal/tools/checktestevents "$$log_dir/go-test.jsonl" 2>&1 | tee -a "$$log_dir/output.log" || status=$$?; \
 	  fi; \
 	  echo "Full test logs: $$log_dir (go-test.jsonl: all go test events; output.log: this output)"; \
 	  exit $$status
@@ -177,14 +178,14 @@ test-race: ## Run race detector for concurrency-critical packages
 .PHONY: dead-code
 dead-code: check-deadcode ## Run dead code analysis across all packages (test-aware); fails on findings
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@out="$$(GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/deadcode" -test ./... 2>&1)"; rc=$$?; \
+	@rc=0; out="$$(GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/deadcode" -test ./... 2>&1)" || rc=$$?; \
 	  if [[ $$rc -ne 0 ]]; then echo "$$out" >&2; echo "deadcode failed (exit $$rc); see output above" >&2; exit $$rc; fi; \
 	  if [[ -n "$$out" ]]; then echo "$$out" >&2; echo "dead code detected (deadcode always exits 0; non-empty output fails this target)" >&2; exit 1; fi
 
 .PHONY: dead-code-entrypoints
 dead-code-entrypoints: check-deadcode ## Run dead code analysis from CLI entrypoints only; fails on findings
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@out="$$(GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/deadcode" -test ./cmd/al ./cmd/publish-site 2>&1)"; rc=$$?; \
+	@rc=0; out="$$(GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/deadcode" -test ./cmd/al ./cmd/publish-site 2>&1)" || rc=$$?; \
 	  if [[ $$rc -ne 0 ]]; then echo "$$out" >&2; echo "deadcode failed (exit $$rc); see output above" >&2; exit $$rc; fi; \
 	  if [[ -n "$$out" ]]; then echo "$$out" >&2; echo "dead code detected (deadcode always exits 0; non-empty output fails this target)" >&2; exit 1; fi
 
@@ -213,7 +214,7 @@ coverage: check-gotestsum ## Run tests with coverage reporting and write coverag
 	@log_dir="$$(mktemp -d "$(TEST_LOG_DIR)/coverage-$$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"; status=0; \
 	  GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/gotestsum" --format standard-quiet --jsonfile "$$log_dir/go-test.jsonl" -- ./... -coverprofile=coverage.out 2>&1 | tee "$$log_dir/output.log" || status=$$?; \
 	  if [[ $$status -eq 0 ]]; then \
-	    (set -o pipefail; GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run -tags tools ./internal/tools/checktestevents "$$log_dir/go-test.jsonl" 2>&1 | tee -a "$$log_dir/output.log") || status=$$?; \
+	    GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run -tags tools ./internal/tools/checktestevents "$$log_dir/go-test.jsonl" 2>&1 | tee -a "$$log_dir/output.log" || status=$$?; \
 	  fi; \
 	  if [[ $$status -eq 0 ]]; then \
 	    GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run -tags tools ./internal/tools/coverreport -profile coverage.out 2>&1 | tee -a "$$log_dir/output.log" || status=$$?; \

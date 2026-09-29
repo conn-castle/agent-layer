@@ -29,16 +29,10 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-09-29 make-381-ignores-shellflags: macOS system Make hides failing recipes
-    Priority: High. Area: Makefile / local verification
-    Description: macOS `/usr/bin/make` is GNU Make 3.81, which predates `.SHELLFLAGS` (3.82), so recipes run without `-euo pipefail`. `gotestsum ... | tee ... || status=$?` then captures `tee`'s status, and `make test`, `make coverage`, `make ci`, and the `make test` pre-commit hook exit 0 with failing tests; hosted Linux CI is unaffected.
-    Open question: Should the Makefile require GNU Make 3.82+ (macOS contributors install and run `gmake`), or should recipes stop depending on `.SHELLFLAGS`?
-    Notes: Reproduced 2026-09-29 with a two-line Makefile (`false | true` succeeds; `$-` is `hBc`). A wrapper passed as `SHELL=` running `bash -euo pipefail "$@"` restores the intended behavior.
-
 - Issue 2026-09-28 vscode-root-mcp-client-filter: VS Code loads Claude-only servers from root `.mcp.json` when Muse is disabled
     Priority: Low. Area: VS Code integration
     Description: VS Code 1.138 discovers root `.mcp.json` and ignores its `enabled` field. With Claude or Claude VS Code and VS Code enabled, that file holds Claude's projection, but `validateMuseVSCodeSharedMCP` rejects servers whose `clients` exclude `vscode` only when Muse is also enabled, so those servers still load in VS Code.
-    Open question: Should that validation apply whenever root `.mcp.json` is generated, rejecting configurations that currently sync successfully?
+    Next step: Apply that validation whenever root `.mcp.json` is generated for VS Code (decided 2026-09-29, accepting that affected configurations stop syncing), with actionable errors, tests, docs, and a CHANGELOG entry.
     Notes: Grok and `al copilot` masks were generalized the same way in the `copilot-root-mcp-client-filter` fix; current behavior is documented in docs/MCP_HEADERS_SUPPORT.md.
 
 - Issue 2026-07-28 dispatch-mcp-start-transport-window: An MCP dispatch_start disconnect can orphan a handle
