@@ -41,12 +41,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Open question: Is a post-check in `make test` and `make coverage` that fails when a started package lacks a package-level `pass`/`fail`/`skip` event in `go-test.jsonl` worth adding?
     Notes: The `cmd/al` exec-handoff tests now re-execute the test binary; a full `make test` emits a package-level result for all 49 packages (47 `pass`, 2 `skip` with no test files). `grok` and `copilot_cli` also launch through `clients.ExecHandoff`.
 
-- Issue 2026-09-21 release-dispatch-probe-fragility: Live release compatibility probes are very fragile
-    Priority: Medium. Area: Release validation / Agent Dispatch
-    Description: Probe outcomes depend on local authentication state and nondeterministic model formatting. Local runs hit a transient Claude OAuth refresh lock; a rerun completed all provider lifecycles but failed Codex's exact-output assertion solely because it added a trailing period. Scratch-project runs also missed repo-local sign-ins.
-    Next step: Revisit the probe acceptance criteria and execution procedure against these observed failures before relying on them as a repeatable release gate.
-    Notes: Local evidence: `.agent-layer/tmp/local-release-probes/report.md` and `.agent-layer/tmp/local-release-probes/retry-20260922T001725Z/report.md`.
-
 - Issue 2026-07-28 dispatch-mcp-start-transport-window: An MCP dispatch_start disconnect can orphan a handle
     Priority: Medium. Area: Agent Dispatch MCP interface
     Description: `dispatch_start` is an RPC acknowledgement rather than a direct write to the caller's terminal. If the transport disconnects after the backend starts but before the client observes the response, the dispatch keeps running durably while the caller never learns its handle. This slice deliberately added no idempotency state and no listing API.

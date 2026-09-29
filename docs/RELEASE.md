@@ -91,20 +91,46 @@ launchers in `Makefile`):
   al dispatch options
   # For each enabled, available provider, use its name from options:
   al dispatch start --agent <provider> --prompt 'Reply with exactly release-probe-fresh. Do not use tools or modify files.'
-  al dispatch wait <handle>
+  al dispatch wait <handle> --condition termination_confirmed
   # After successful completion, continue the same handle:
   al dispatch continue <handle> --prompt 'Reply with exactly release-probe-continue. Do not use tools or modify files.'
-  al dispatch wait <handle>
+  al dispatch wait <handle> --condition termination_confirmed
 )
 ```
 
 Replace the angle-bracket placeholders with the selected provider and returned
 handle. Omit model and reasoning overrides so Agent Layer uses the local config.
 Record the effective targets and checkout commit alongside the CLI versions,
-fresh/continuation results, and provider session IDs. Store agent-only probe
-artifacts under `.agent-layer/tmp`. Report authentication or quota failures from
-this local setup explicitly; they are not passing compatibility evidence. Never
-include credentials or account identifiers in the evidence record.
+fresh/continuation results, and provider session IDs. Each invocation's
+provider session ID is the `provider_session_id` field of
+`.agent-layer/tmp/runs/<invocation_id>/dispatch.json`. Store agent-only probe
+artifacts under `.agent-layer/tmp`. Never include credentials or account
+identifiers in the evidence record.
+
+A provider passes only when all of the following hold:
+
+- The fresh and continuation invocations each reach `completed` with
+  termination confirmed.
+- The continuation reports the same provider session ID as the fresh
+  invocation.
+- Each final answer contains its requested token (`release-probe-fresh` or
+  `release-probe-continue`). Any other text, whitespace, punctuation, or
+  formatting in the answer is not a failure; record the answer verbatim. A
+  missing token is a failure.
+
+The probes validate the dispatch lifecycle, not the model's formatting
+compliance, so do not rerun a probe to obtain an exact match.
+
+Authentication and quota failures from this local setup are not passing
+compatibility evidence. A failure is transient only when the provider's error
+explicitly reports a temporary condition (for example, a Claude OAuth refresh
+lock); missing, expired, or rejected credentials and exhausted quota are not
+transient. After a transient failure, wait for any delay the error suggests,
+then repeat that provider's fresh and continuation probes once on a
+new handle. Record the failed attempt's invocation ID and error alongside the
+retry result. Report any other failure, or a transient failure that recurs, as
+a failure for that provider. Do not change credentials, sign-ins, or
+configuration to make a probe pass.
 
 A changed or
 missing Antigravity structured terminal result must fail without publishing
