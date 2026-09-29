@@ -29,12 +29,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-09-28 vscode-root-mcp-client-filter: VS Code loads Claude-only servers from root `.mcp.json` when Muse is disabled
-    Priority: Low. Area: VS Code integration
-    Description: VS Code 1.138 discovers root `.mcp.json` and ignores its `enabled` field. With Claude or Claude VS Code and VS Code enabled, that file holds Claude's projection, but `validateMuseVSCodeSharedMCP` rejects servers whose `clients` exclude `vscode` only when Muse is also enabled, so those servers still load in VS Code.
-    Next step: Apply that validation whenever root `.mcp.json` is generated for VS Code (decided 2026-09-29, accepting that affected configurations stop syncing), with actionable errors, tests, docs, and a CHANGELOG entry.
-    Notes: Grok and `al copilot` masks were generalized the same way in the `copilot-root-mcp-client-filter` fix; current behavior is documented in docs/MCP_HEADERS_SUPPORT.md.
-
 - Issue 2026-07-28 dispatch-mcp-start-transport-window: An MCP dispatch_start disconnect can orphan a handle
     Priority: Medium. Area: Agent Dispatch MCP interface
     Description: `dispatch_start` is an RPC acknowledgement rather than a direct write to the caller's terminal. If the transport disconnects after the backend starts but before the client observes the response, the dispatch keeps running durably while the caller never learns its handle. This slice deliberately added no idempotency state and no listing API.

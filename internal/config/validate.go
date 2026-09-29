@@ -169,7 +169,7 @@ func (c *Config) Validate(path string) error {
 			}
 		}
 	}
-	if err := validateMuseVSCodeSharedMCP(path, *c); err != nil {
+	if err := validateVSCodeRootMCP(path, *c); err != nil {
 		return err
 	}
 
@@ -184,24 +184,25 @@ func (c *Config) Validate(path string) error {
 	return nil
 }
 
-// validateMuseVSCodeSharedMCP prevents VS Code from importing servers that its
-// own client selection excludes. Muse and VS Code both consume the generated
-// root .mcp.json while Muse is enabled; that file also contains Claude-selected
-// servers whenever either Claude surface is enabled.
-func validateMuseVSCodeSharedMCP(path string, cfg Config) error {
-	if !IsAgentEnabled(cfg.Agents.Muse.Enabled) || !IsAgentEnabled(cfg.Agents.VSCode.Enabled) {
+// validateVSCodeRootMCP prevents VS Code from importing servers that its own
+// client selection excludes. VS Code discovers the generated root .mcp.json and
+// ignores its enabled fields; that file holds the Claude projection when either
+// Claude integration is enabled and the Muse projection when Muse is enabled.
+func validateVSCodeRootMCP(path string, cfg Config) error {
+	if !IsAgentEnabled(cfg.Agents.VSCode.Enabled) {
 		return nil
 	}
 
+	museConsumesRoot := IsAgentEnabled(cfg.Agents.Muse.Enabled)
 	claudeConsumesRoot := IsAgentEnabled(cfg.Agents.Claude.Enabled) || IsAgentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
 	for i, server := range cfg.MCP.Servers {
 		if !IsAgentEnabled(server.Enabled) || server.AppliesToClient("vscode") {
 			continue
 		}
-		entersSharedRoot := server.AppliesToClient(agentMuse) ||
+		entersRoot := (museConsumesRoot && server.AppliesToClient(agentMuse)) ||
 			(claudeConsumesRoot && server.AppliesToClient(agentClaude))
-		if entersSharedRoot {
-			return fmt.Errorf(messages.ConfigMcpServerMuseVSCodeSharedFileFmt, path, server.ID, i)
+		if entersRoot {
+			return fmt.Errorf(messages.ConfigMcpServerVSCodeRootFileFmt, path, server.ID, i)
 		}
 	}
 	return nil
