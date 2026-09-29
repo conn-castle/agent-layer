@@ -27,6 +27,7 @@ func TestMuseTransitionsPreserveExistingClientOutputs(t *testing.T) {
 	require.NoError(t, runMuseTransition(root, project))
 	// Capture complete existing generated trees, including skills and permissions.
 	baseline := map[string][]byte{}
+	links := map[string]string{}
 	for _, path := range []string{".agents", ".claude", ".codex", ".grok", ".copilot", ".vscode", ".agy", "AGENTS.md", ".github/copilot-instructions.md", ".mcp.json"} {
 		require.NoError(t, filepath.WalkDir(filepath.Join(root, path), func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -39,6 +40,11 @@ func TestMuseTransitionsPreserveExistingClientOutputs(t *testing.T) {
 			if err != nil {
 				return err
 			}
+			if d.Type()&os.ModeSymlink != 0 {
+				target, err := os.Readlink(path)
+				links[rel] = target
+				return err
+			}
 			data, err := os.ReadFile(path) // #nosec G304 G122 -- path is contained in this test-owned temporary fixture.
 			if err != nil {
 				return err
@@ -49,6 +55,13 @@ func TestMuseTransitionsPreserveExistingClientOutputs(t *testing.T) {
 	}
 	project.Config.Agents.Muse.Enabled = &enabled
 	require.NoError(t, runMuseTransition(root, project))
+	for rel, want := range links {
+		got, err := os.Readlink(filepath.Join(root, rel))
+		require.NoError(t, err)
+		require.Equal(t, want, got, rel)
+		_, err = os.Stat(filepath.Join(root, rel))
+		require.NoError(t, err)
+	}
 	for rel, want := range baseline {
 		if rel == ".mcp.json" || rel == ".claude/settings.json" {
 			continue
@@ -90,6 +103,13 @@ func TestMuseTransitionsPreserveExistingClientOutputs(t *testing.T) {
 	require.Contains(t, string(data), "Bash(private:*)")
 	project.Config.Agents.Muse.Enabled = &disabled
 	require.NoError(t, runMuseTransition(root, project))
+	for rel, want := range links {
+		got, err := os.Readlink(filepath.Join(root, rel))
+		require.NoError(t, err)
+		require.Equal(t, want, got, rel)
+		_, err = os.Stat(filepath.Join(root, rel))
+		require.NoError(t, err)
+	}
 	for rel, want := range baseline {
 		got, err := os.ReadFile(filepath.Join(root, rel)) // #nosec G304 -- path is contained in this test-owned temporary fixture.
 		require.NoError(t, err)

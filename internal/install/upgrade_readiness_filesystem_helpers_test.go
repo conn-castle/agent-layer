@@ -67,7 +67,7 @@ func TestListGeneratedFilesWithSuffix_ErrorBranches(t *testing.T) {
 		sys.readErrs[normalizePath(promptPath)] = errors.New("read boom")
 		inst := &installer{root: root, sys: sys}
 
-		_, _, err := listGeneratedFilesWithSuffix(inst, promptRoot, ".prompt.md")
+		_, _, err := listReadinessFilesWithSuffix(inst, promptRoot, ".prompt.md", true)
 		if err == nil || !strings.Contains(err.Error(), "read boom") {
 			t.Fatalf("expected read error, got %v", err)
 		}
@@ -78,7 +78,7 @@ func TestListGeneratedFilesWithSuffix_ErrorBranches(t *testing.T) {
 		sys.statErrs[normalizePath(promptPath)] = errors.New("stat boom")
 		inst := &installer{root: root, sys: sys}
 
-		_, _, err := listGeneratedFilesWithSuffix(inst, promptRoot, ".prompt.md")
+		_, _, err := listReadinessFilesWithSuffix(inst, promptRoot, ".prompt.md", true)
 		if err == nil || !strings.Contains(err.Error(), "stat boom") {
 			t.Fatalf("expected stat error, got %v", err)
 		}
@@ -89,7 +89,7 @@ func TestListGeneratedFilesWithSuffix_ErrorBranches(t *testing.T) {
 		sys.walkErrs[normalizePath(promptRoot)] = errors.New("walk boom")
 		inst := &installer{root: root, sys: sys}
 
-		_, _, err := listGeneratedFilesWithSuffix(inst, promptRoot, ".prompt.md")
+		_, _, err := listReadinessFilesWithSuffix(inst, promptRoot, ".prompt.md", true)
 		if err == nil || !strings.Contains(err.Error(), "walk boom") {
 			t.Fatalf("expected walk error, got %v", err)
 		}
@@ -97,7 +97,7 @@ func TestListGeneratedFilesWithSuffix_ErrorBranches(t *testing.T) {
 
 	t.Run("missing root", func(t *testing.T) {
 		inst := &installer{root: root, sys: RealSystem{}}
-		paths, latest, err := listGeneratedFilesWithSuffix(inst, filepath.Join(root, ".vscode", "missing-prompts"), ".prompt.md")
+		paths, latest, err := listReadinessFilesWithSuffix(inst, filepath.Join(root, ".vscode", "missing-prompts"), ".prompt.md", true)
 		if err != nil {
 			t.Fatalf("listGeneratedFilesWithSuffix: %v", err)
 		}
@@ -113,7 +113,7 @@ func TestListGeneratedFilesWithSuffix_ErrorBranches(t *testing.T) {
 		sys := newFaultSystem(RealSystem{})
 		sys.statErrs[normalizePath(promptRoot)] = errors.New("stat boom")
 		inst := &installer{root: root, sys: sys}
-		_, _, err := listGeneratedFilesWithSuffix(inst, promptRoot, ".prompt.md")
+		_, _, err := listReadinessFilesWithSuffix(inst, promptRoot, ".prompt.md", true)
 		if err == nil || !strings.Contains(err.Error(), "stat boom") {
 			t.Fatalf("expected root stat error, got %v", err)
 		}
@@ -134,7 +134,7 @@ func TestListGeneratedFilesWithSuffix_ErrorBranches(t *testing.T) {
 		}
 
 		inst := &installer{root: root, sys: RealSystem{}}
-		paths, latest, err := listGeneratedFilesWithSuffix(inst, promptRoot, ".prompt.md")
+		paths, latest, err := listReadinessFilesWithSuffix(inst, promptRoot, ".prompt.md", true)
 		if err != nil {
 			t.Fatalf("listGeneratedFilesWithSuffix: %v", err)
 		}

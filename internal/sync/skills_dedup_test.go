@@ -199,6 +199,8 @@ func agentsForSkillsTest(enabled ...string) config.AgentsConfig {
 			agents.VSCode.Enabled = &trueVal
 		case "copilot_cli":
 			agents.CopilotCLI.Enabled = &trueVal
+		case "muse":
+			agents.Muse.Enabled = &trueVal
 		case "grok":
 			agents.Grok.Enabled = &trueVal
 		}
@@ -219,7 +221,7 @@ func countDiscoveredSkills(t *testing.T, root string, paths []string) map[string
 			t.Fatalf("read %s: %v", relDir, err)
 		}
 		for _, entry := range entries {
-			if !entry.IsDir() {
+			if !entry.IsDir() && entry.Type()&os.ModeSymlink == 0 {
 				continue
 			}
 			skillPath := filepath.Join(fullDir, entry.Name(), "SKILL.md")

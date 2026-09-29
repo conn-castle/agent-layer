@@ -17,23 +17,24 @@ Agent Layer projects skills from the canonical user-managed tier `.agent-layer/s
 
 | Client | Documented project skill locations | Agent Layer projection | Notes |
 |---|---|---|---|
-| Claude Code | `.claude/skills/<name>/SKILL.md` | `.claude/skills/<name>/SKILL.md` | Claude documents project, personal, enterprise, and plugin skill scopes. Agent Layer keeps Claude separate because Claude directly documents `.claude/skills/` and its VS Code extension support depends on Claude project files. |
+| Claude Code | `.claude/skills/<name>/SKILL.md` | `.claude/skills/<name>/SKILL.md` | Claude documents project, personal, enterprise, and plugin skill scopes, including symlinked skill directories. When a shared-skill consumer is enabled, each Claude skill directory is a relative symlink to its `.agents/skills/` counterpart; Claude-only configurations receive real copies. |
 | OpenAI Codex | `.agents/skills/<name>/SKILL.md` and Codex-specific metadata under `agents/openai.yaml` | `.agents/skills/<name>/SKILL.md` | Codex `agents/openai.yaml` metadata is deferred to BACKLOG.md item `codex-openai-yaml-skill-metadata`; Agent Layer does not generate it in this slice. |
 | Antigravity | `.agents/skills/<name>/SKILL.md` | `.agents/skills/<name>/SKILL.md` | Agent Layer launches Antigravity with repo-local config via `agy --gemini_dir=<repo>/.agy`. Agent Layer projects only the shared `.agents/skills/` tier; the per-agy `<gemini_dir>/skills/` tier (visible to `agy` per the probe baseline) is left to user/global ownership. |
 | VS Code / GitHub Copilot | `.github/skills/`, `.claude/skills/`, `.agents/skills/`; configurable with `chat.agentSkillsLocations` | `.agents/skills/<name>/SKILL.md` plus managed `chat.agentSkillsLocations` | Agent Layer enables `.agents/skills/`, disables duplicate generated project locations `.github/skills/` and `.claude/skills/`, and preserves personal skill locations. |
 | GitHub Copilot CLI | `.github/skills/`, `.claude/skills/`, `.agents/skills/` for project skills | `.agents/skills/<name>/SKILL.md` | Copilot CLI also supports resources in the skill directory, so the shared tree preserves scripts, references, assets, and other support files. |
 | Grok | `.agents/skills/<name>/SKILL.md` | `.agents/skills/<name>/SKILL.md` | Uses the shared skill tree. |
-| Muse | `.agents/skills/<name>/SKILL.md` | `.agents/skills/<name>/SKILL.md` | Uses the shared skill tree; no additional Muse copy is generated. Native Muse may report shadow diagnostics when Claude’s real skill tree is also present, while selecting each skill once. |
+| Muse | `.agents/skills/<name>/SKILL.md` | `.agents/skills/<name>/SKILL.md` | Uses the shared skill tree; no additional Muse copy is generated. Claude skill symlinks resolve to the same shared files, preventing duplicate discovery and shadow diagnostics. |
 
 ## Projection Rules
 
 - Write `.agents/skills/` when at least one shared-skill consumer is enabled: Codex, Antigravity, Grok, Muse, VS Code/GitHub Copilot, or Copilot CLI.
-- Write `.claude/skills/` when Claude Code or the Claude VS Code extension is enabled.
+- Write `.claude/skills/` when Claude Code or the Claude VS Code extension is enabled. If the shared projection is enabled, populate it with relative per-skill symlinks (`../../.agents/skills/<name>`); otherwise materialize standalone skill trees. If `.claude` itself is a user-relocated symlink, use absolute skill targets so links still resolve to this project.
 - Require an uppercase `SKILL.md` in every source directory. Lowercase `skill.md` is not accepted, and having both spellings is ambiguous.
 - Read each source once under the project lock and project its complete tree byte-for-byte, including hidden and nested files and executable bits. Ignore only `.git`, `.DS_Store`, and `Thumbs.db`.
 - Accept additional frontmatter fields without interpreting or filtering them. Provider-specific fields therefore reach every enabled client projection unchanged.
 - Reject symlinks and every other non-directory, non-regular source node without dereferencing or silently skipping it.
-- Replace each enabled client skill root as one complete staged tree. Direct edits and extra files in a client root are discarded on the next sync.
+- Replace each enabled client skill root as one complete staged tree. If publishing fails, attempt to restore the previous root and report both errors if restoration also fails. Retry rebuilds from canonical sources. Direct edits and extra files in a client root are discarded on the next sync.
+- Publish the shared tree before Claude links. When disabling the shared projection, replace Claude links with standalone copies (or remove Claude output) before removing their shared targets.
 - Remove the entire client skill root when its projection is disabled.
 
 ### Ownership of current projection paths

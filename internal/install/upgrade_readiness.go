@@ -441,8 +441,9 @@ func detectVSCodeNoSyncStaleness(inst *installer, cfg *config.Config, configPath
 			return nil, err
 		}
 		if skillCount > 0 {
+			// Current skill projections preserve source bytes without a generated marker.
 			sharedSkillsDir := filepath.Join(inst.root, ".agents", "skills")
-			skillFiles, newestSkill, skillsErr := listGeneratedFilesWithSuffix(inst, sharedSkillsDir, skillManifestFileName)
+			skillFiles, newestSkill, skillsErr := listReadinessFilesWithSuffix(inst, sharedSkillsDir, skillManifestFileName, false)
 			if skillsErr != nil {
 				return nil, skillsErr
 			}
@@ -546,8 +547,9 @@ type disabledArtifactFileSpec struct {
 }
 
 type disabledArtifactDirSpec struct {
-	root   string
-	suffix string
+	root      string
+	suffix    string
+	exclusive bool // The entire root is managed; no marker or target reads needed.
 }
 
 type disabledAgentArtifactRule struct {
@@ -579,7 +581,7 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 				{path: filepath.Join(inst.root, ".claude", "settings.json"), evidence: isJSONObject},
 			},
 			dirs: []disabledArtifactDirSpec{
-				{root: filepath.Join(inst.root, ".claude", "skills"), suffix: skillManifestFileName},
+				{root: filepath.Join(inst.root, ".claude", "skills"), exclusive: true},
 			},
 		},
 		{
@@ -635,7 +637,7 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 			agent:   "shared-skills",
 			enabled: boolPtr(config.SharedAgentSkillsEnabled(cfg.Agents)),
 			dirs: []disabledArtifactDirSpec{
-				{root: filepath.Join(inst.root, ".agents", "skills"), suffix: skillManifestFileName},
+				{root: filepath.Join(inst.root, ".agents", "skills"), exclusive: true},
 			},
 		},
 		{
@@ -656,7 +658,17 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 			}
 		}
 		for _, dir := range rule.dirs {
-			paths, _, err := listGeneratedFilesWithSuffix(inst, dir.root, dir.suffix)
+			if dir.exclusive {
+				if _, err := inst.sys.Lstat(dir.root); err != nil {
+					if errors.Is(err, os.ErrNotExist) {
+						continue
+					}
+					return nil, readinessErr("lstat", dir.root, err)
+				}
+				details = append(details, fmt.Sprintf("%s: %s", rule.agent, filepath.ToSlash(inst.relativePath(dir.root))))
+				continue
+			}
+			paths, _, err := listReadinessFilesWithSuffix(inst, dir.root, dir.suffix, true)
 			if err != nil {
 				return nil, err
 			}
@@ -818,7 +830,7 @@ func countMarkdownFiles(inst *installer, root string) (int, error) {
 	return count, nil
 }
 
-func listGeneratedFilesWithSuffix(inst *installer, root string, suffix string) ([]string, time.Time, error) {
+func listReadinessFilesWithSuffix(inst *installer, root string, suffix string, requireMarker bool) ([]string, time.Time, error) {
 	if _, err := inst.sys.Stat(root); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, time.Time{}, nil
@@ -838,12 +850,14 @@ func listGeneratedFilesWithSuffix(inst *installer, root string, suffix string) (
 		if !strings.HasSuffix(entry.Name(), suffix) {
 			return nil
 		}
-		data, err := inst.sys.ReadFile(path)
-		if err != nil {
-			return readinessErr("read", path, err)
-		}
-		if !strings.Contains(string(data), generatedFileMarker) {
-			return nil
+		if requireMarker {
+			data, err := inst.sys.ReadFile(path)
+			if err != nil {
+				return readinessErr("read", path, err)
+			}
+			if !strings.Contains(string(data), generatedFileMarker) {
+				return nil
+			}
 		}
 		info, err := inst.sys.Stat(path)
 		if err != nil {
