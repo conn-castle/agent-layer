@@ -817,7 +817,7 @@ Common outputs include:
 - `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`
 - `.agy/antigravity-cli/settings.json` (shared state patched at Agent Layer-managed model, `permissions.allow`, and `agent_specific` paths)
 - `.codex/` (generated config and rules)
-- `.copilot/mcp-config.json`
+- `.copilot/mcp-config.json` (Copilot CLI does not discover this file natively; `al copilot` loads it with `--additional-mcp-config`)
 - `.grok/config.toml`
 - `.grok/hooks/agent-layer-chime.json` when `notifications.chime` is enabled
 - `.mcp.json` also serves Muse when enabled; Muse runtime storage remains native

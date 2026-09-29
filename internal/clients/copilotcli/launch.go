@@ -3,6 +3,7 @@ package copilotcli
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -27,6 +28,9 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	case config.ApprovalModeAll:
 		args = append(args, "--allow-all-tools")
 	}
+	// Native Copilot does not discover the generated project config, so load it
+	// explicitly for this session.
+	args = append(args, "--additional-mcp-config", "@"+filepath.Join(cfg.Root, ".copilot", "mcp-config.json"))
 	// Native Copilot discovers the shared root file independently of its own
 	// projection. Exclude only generated IDs not selected for this client.
 	for _, id := range projection.MuseSharedMCPExclusions(cfg.Config, projection.ClientCopilot) {

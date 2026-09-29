@@ -103,7 +103,7 @@ Notes:
 
 ### 4) Copilot CLI
 
-**File (repo-local):** `.copilot/mcp-config.json`
+**File (repo-local):** `.copilot/mcp-config.json` (loaded by `al copilot` via `--additional-mcp-config`; Copilot CLI does not discover it natively)
 
 **HTTP server with headers:**
 
@@ -262,7 +262,3 @@ The check does not activate for `claude_vscode` alone or when either Muse or
 VS Code is disabled. Native editor usage outside those enabled integrations
 can still discover the shared file; `.vscode/mcp.json` filtering alone does not
 prevent that import. No internal editor database is modified.
-
-Copilot CLI 1.0.83 documents user, root workspace, and plugin MCP sources, but
-not the generated project `.copilot/mcp-config.json`. Loading that projection
-is a separate existing integration gap; the Muse exclusion flags do not fix it.

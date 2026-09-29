@@ -13,6 +13,10 @@ import (
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
+func projectMCPConfigArgs(root string) []string {
+	return []string{"--additional-mcp-config", "@" + filepath.Join(root, ".copilot", "mcp-config.json")}
+}
+
 func writeResolvableCopilot(t *testing.T) string {
 	t.Helper()
 	binDir := t.TempDir()
@@ -40,7 +44,7 @@ func TestLaunchCopilotCLIExecHandoff(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	call.AssertCalled(t, copilotPath, []string{"copilot", "--model", "test-model", "--prompt", "hello"})
+	call.AssertCalled(t, copilotPath, append(append([]string{"copilot", "--model", "test-model"}, projectMCPConfigArgs(root)...), "--prompt", "hello"))
 	if !reflect.DeepEqual(call.Env, env) {
 		t.Fatalf("expected env to pass through unchanged, got %#v want %#v", call.Env, env)
 	}
@@ -104,7 +108,7 @@ func TestLaunchCopilotCLIYOLO(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	call.AssertCalled(t, copilotPath, []string{"copilot", "--model", "test-model", "--yolo"})
+	call.AssertCalled(t, copilotPath, append([]string{"copilot", "--model", "test-model", "--yolo"}, projectMCPConfigArgs(root)...))
 }
 
 func TestLaunchCopilotCLIAllowAllTools(t *testing.T) {
@@ -126,7 +130,7 @@ func TestLaunchCopilotCLIAllowAllTools(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	call.AssertCalled(t, copilotPath, []string{"copilot", "--model", "test-model", "--allow-all-tools"})
+	call.AssertCalled(t, copilotPath, append([]string{"copilot", "--model", "test-model", "--allow-all-tools"}, projectMCPConfigArgs(root)...))
 }
 
 func TestLaunchCopilotMuseExcludesOnlyUnselectedSharedServers(t *testing.T) {
@@ -149,7 +153,7 @@ func TestLaunchCopilotMuseExcludesOnlyUnselectedSharedServers(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := []string{"copilot"}
+			want := append([]string{"copilot"}, projectMCPConfigArgs(root)...)
 			if muse {
 				want = append(want, "--disable-mcp-server", "claude-only", "--disable-mcp-server", "muse-only")
 			}
