@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+- `al copilot` now loads the generated `.copilot/mcp-config.json`, which Copilot CLI does not discover on its own, so Copilot sessions receive their configured MCP servers, including Agent Dispatch.
+
 ## v0.23.0 - 2026-09-26
 
 ### Added

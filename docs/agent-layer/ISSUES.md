@@ -29,6 +29,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-09-28 copilot-root-mcp-client-filter: Copilot CLI loads Claude-only servers from root `.mcp.json` when Muse is disabled
+    Priority: Medium. Area: Copilot CLI integration
+    Description: Copilot CLI 1.0.83 natively loads workspace `.mcp.json` in trusted folders (verified with an isolated fixture). With Claude enabled, that file holds Claude's projection, but `al copilot` passes `--disable-mcp-server` for unselected IDs only when Muse is enabled, so servers whose `clients` exclude `copilot` still load in Copilot sessions.
+    Open question: Should Copilot exclusions for the root `.mcp.json` apply whenever that file is generated, not only when Muse is enabled?
+    Notes: Exclusions come from `projection.MuseSharedMCPExclusions`; fixture evidence in `.agent-layer/tmp/copilot-mcp-verify/`.
+
 - Issue 2026-09-23 go-test-truncated-package-undetected: Test runs pass when a test binary is replaced or exits at the syscall level
     Priority: Low. Area: Test suite / Makefile
     Description: When a test process is replaced (`syscall.Exec`) or exits through `syscall.Exit` before its package finishes, `go test` still reports `ok` and test2json emits no package-level result; `os.Exit(0)` is caught by `-test.paniconexit0`, but these low-level paths are not. `make test` and `make coverage` (which `make ci` uses) rely on that exit status alone, so the `cmd/al` suite ran 1 of 292 tests from 2026-07-02 to 2026-09-23 without any failure signal.
@@ -40,12 +46,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: Probe outcomes depend on local authentication state and nondeterministic model formatting. Local runs hit a transient Claude OAuth refresh lock; a rerun completed all provider lifecycles but failed Codex's exact-output assertion solely because it added a trailing period. Scratch-project runs also missed repo-local sign-ins.
     Next step: Revisit the probe acceptance criteria and execution procedure against these observed failures before relying on them as a repeatable release gate.
     Notes: Local evidence: `.agent-layer/tmp/local-release-probes/report.md` and `.agent-layer/tmp/local-release-probes/retry-20260922T001725Z/report.md`.
-
-- Issue 2026-09-20 copilot-native-project-mcp-loading: Copilot CLI no longer documents the generated project MCP path
-    Priority: Medium. Area: Copilot CLI integration
-    Description: Agent Layer generates `.copilot/mcp-config.json`, but installed Copilot CLI 1.0.83 documents workspace `.mcp.json` or `.github/mcp.json`; `al copilot` does not pass the generated file explicitly. Copilot-only entries can therefore be absent from native discovery. This predates the Muse rebuild.
-    Next step: Verify the generated-file loading contract against supported native Copilot versions using an isolated selected-server fixture.
-    Notes: Installed CLI help and startup-source evidence retained in `.agent-layer/tmp/muse-rebuild/other-mcp-audit` and the rebuild worktree's `.agent-layer/tmp/muse-critical`.
 
 - Issue 2026-07-28 dispatch-mcp-start-transport-window: An MCP dispatch_start disconnect can orphan a handle
     Priority: Medium. Area: Agent Dispatch MCP interface
