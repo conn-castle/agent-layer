@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 ### Changed
-- Configuration validation rejects enabled MCP servers that enter the generated root `.mcp.json` but exclude `vscode` whenever VS Code is enabled, including Claude-selected servers when Muse is disabled; previously this applied only while Muse and VS Code were both enabled, so VS Code loaded those servers. Affected configurations stop syncing until the server selects `vscode` or the conflicting integration is disabled.
+- Configuration validation rejects enabled MCP servers that enter the generated root `.mcp.json` but exclude `vscode` whenever VS Code is enabled, including Claude-selected servers when Muse is disabled; previously this applied only while Muse and VS Code were both enabled, so VS Code loaded those servers. Affected configurations stop syncing until the server selects `vscode` or every enabled Muse, Claude, or Claude VS Code integration selecting it is disabled.
 
 ### Fixed
 - `al copilot` now loads the generated `.copilot/mcp-config.json`, which Copilot CLI does not discover on its own, so Copilot sessions receive their configured MCP servers, including Agent Dispatch.

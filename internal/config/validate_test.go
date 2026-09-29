@@ -317,7 +317,7 @@ func TestValidateVSCodeRootMCPSelection(t *testing.T) {
 				if err == nil {
 					t.Fatal("expected root MCP validation error")
 				}
-				for _, want := range []string{"private-server", "VS Code imports root .mcp.json", "include \"vscode\"", "change an enabled integration"} {
+				for _, want := range []string{"private-server", "VS Code imports root .mcp.json", "include \"vscode\"", "disable every enabled Muse, Claude, or Claude VS Code integration selecting this server"} {
 					if !strings.Contains(err.Error(), want) {
 						t.Fatalf("error %q does not contain %q", err, want)
 					}

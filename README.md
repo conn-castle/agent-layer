@@ -523,7 +523,7 @@ clients = ["antigravity", "codex", "copilot", "grok"]  # VS Code excluded; see t
 
 This is useful when a client already covers the capability natively — for example, excluding VS Code/Copilot Chat for a file-search or filesystem server, where an MCP server would only duplicate built-in functionality and increase context window usage.
 
-When VS Code is enabled, entries in the generated root `.mcp.json` must also select `vscode`, because VS Code imports that file. That file holds Claude-selected entries when either Claude integration is enabled and Muse-selected entries when Muse is enabled. Include `vscode`, omit `clients` to select all, or disable the conflicting integration.
+When VS Code is enabled, entries in the generated root `.mcp.json` must also select `vscode`, because VS Code imports that file. That file holds Claude-selected entries when either Claude integration is enabled and Muse-selected entries when Muse is enabled. Include `vscode`, omit `clients` to select all, or disable every enabled Muse, Claude, or Claude VS Code integration selecting the server.
 
 #### HTTP transport (`http_transport`)
 

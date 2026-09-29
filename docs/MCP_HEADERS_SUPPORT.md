@@ -257,7 +257,8 @@ field. When `agents.vscode.enabled` is true, configuration validation rejects
 enabled servers in the root file whose `clients` exclude `vscode`: Muse-selected
 entries when Muse is enabled and Claude-selected entries when either Claude
 integration is enabled. Add `vscode` to the affected server's `clients` (or omit
-`clients` to share with all clients), or disable the conflicting integration.
+`clients` to share with all clients), or disable every enabled Muse, Claude, or
+Claude VS Code integration selecting the server.
 Validation happens before generated files are written.
 
 The check does not activate when VS Code is disabled. Native editor usage
