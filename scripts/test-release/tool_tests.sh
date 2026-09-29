@@ -255,8 +255,8 @@ run_go_tool_tests_checktestevents() {
     fail "checktestevents tests failed"
   fi
 
-  # macOS ships GNU Make 3.81, which ignores .SHELLFLAGS. Exercise the real
-  # recipes with a successful gotestsum run whose package never finishes.
+  # Exercise the real recipes with a successful gotestsum run whose package
+  # never finishes.
   local mock_bin="$tmp_dir/checktestevents-mock-bin"
   mkdir -p "$mock_bin"
   cat > "$mock_bin/gotestsum" <<'EOF'
@@ -304,5 +304,66 @@ EOF
     else
       pass "make $target rejects an unfinished package"
     fi
+  done
+}
+
+run_make_test_recipe_status_tests() {
+  section "Make test recipe exit status"
+
+  # The recipes pipe gotestsum through tee. macOS ships GNU Make 3.81, which
+  # ignores .SHELLFLAGS, so run the real recipes with whichever make is on PATH
+  # and require gotestsum's exit status to survive the pipeline.
+  local mock_bin="$tmp_dir/make-status-mock-bin"
+  mkdir -p "$mock_bin"
+  cat > "$mock_bin/gotestsum" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+json_file=
+while [[ $# -gt 0 ]]; do
+  if [[ $1 == --jsonfile ]]; then
+    json_file=$2
+    break
+  fi
+  shift
+done
+printf '%s\n' '{"Action":"start","Package":"example/pkg"}' '{"Action":"pass","Package":"example/pkg"}' > "$json_file"
+echo "mock gotestsum exit $MAKE_STATUS_GOTESTSUM_EXIT"
+exit "$MAKE_STATUS_GOTESTSUM_EXIT"
+EOF
+  cat > "$mock_bin/go" <<'EOF'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [[ $arg == ./internal/tools/coverreport ]]; then
+    echo "mock coverreport"
+    exit 0
+  fi
+done
+exec "$MAKE_STATUS_REAL_GO" "$@"
+EOF
+  chmod +x "$mock_bin/gotestsum" "$mock_bin/go"
+
+  local target gotestsum_exit run_log_dir output make_status real_go
+  real_go="$(command -v go)"
+  for target in test coverage; do
+    for gotestsum_exit in 0 1; do
+      run_log_dir="$tmp_dir/make-status-$target-$gotestsum_exit-logs"
+      output="$tmp_dir/make-status-$target-$gotestsum_exit-output.log"
+      make_status=0
+      (cd "$ROOT_DIR" && PATH="$mock_bin:$PATH" \
+        MAKE_STATUS_REAL_GO="$real_go" \
+        MAKE_STATUS_GOTESTSUM_EXIT="$gotestsum_exit" \
+        make "$target" TOOL_BIN="$mock_bin" TEST_LOG_DIR="$run_log_dir") > "$output" 2>&1 || make_status=$?
+      if [[ $gotestsum_exit -eq 0 && $make_status -ne 0 ]]; then
+        fail "make $target failed after gotestsum passed (exit $make_status)"
+      elif [[ $gotestsum_exit -ne 0 && $make_status -eq 0 ]]; then
+        fail "make $target passed after gotestsum failed"
+      elif ! grep -Fq "mock gotestsum exit $gotestsum_exit" "$output" || \
+           ! grep -Fq "mock gotestsum exit $gotestsum_exit" "$run_log_dir"/*/output.log || \
+           ! grep -Fq 'Full test logs:' "$output"; then
+        fail "make $target did not keep gotestsum output in both outputs"
+      else
+        pass "make $target exit status follows gotestsum exit $gotestsum_exit"
+      fi
+    done
   done
 }
