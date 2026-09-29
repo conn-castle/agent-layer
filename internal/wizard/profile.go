@@ -75,7 +75,7 @@ func RunProfile(root string, runSync syncer, pinVersion string, profilePath stri
 	if err != nil {
 		return err
 	}
-	configBackupPath := configPath + ".bak"
+	configBackupPath := backupPath(root, configBackupName)
 	if _, err := writeBackup(configBackupPath, currentConfig, configPerm); err != nil {
 		return fmt.Errorf(messages.WizardBackupConfigFailedFmt, err)
 	}
@@ -104,12 +104,33 @@ func RunProfile(root string, runSync syncer, pinVersion string, profilePath stri
 // CleanupBackups removes wizard backup files and returns removed paths relative to repo root.
 func CleanupBackups(root string) ([]string, error) {
 	candidates := []string{
-		filepath.Join(root, ".agent-layer", "config.toml.bak"),
-		filepath.Join(root, ".agent-layer", ".env.bak"),
+		filepath.Join(root, ".agent-layer", configBackupName),
+		filepath.Join(root, ".agent-layer", envBackupName),
+	}
+
+	entries, err := os.ReadDir(filepath.Dir(backupPath(root, configBackupName)))
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	for _, entry := range entries {
+		if isBackupName(entry.Name()) {
+			candidates = append(candidates, backupPath(root, entry.Name()))
+		}
 	}
 
 	removed := make([]string, 0, len(candidates))
+
 	for _, path := range candidates {
+		info, err := os.Lstat(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("inspect wizard backup %s: %w", path, err)
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("wizard backup %s must be a regular file", path)
+		}
 		if err := os.Remove(path); err != nil {
 			if os.IsNotExist(err) {
 				continue

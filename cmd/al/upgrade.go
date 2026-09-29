@@ -93,6 +93,9 @@ func newUpgradeCmd() *cobra.Command {
 			if err := runPostUpgradeSync(cmd.OutOrStdout(), cmd.ErrOrStderr(), root); err != nil {
 				return err
 			}
+			if err := wizard.MigrateBackups(root); err != nil {
+				return err
+			}
 			if _, writeErr := fmt.Fprintln(cmd.OutOrStdout(), messages.UpgradeSuccessful); writeErr != nil {
 				return writeErr
 			}

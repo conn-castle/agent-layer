@@ -34,6 +34,7 @@ mode = "none"
 		envPath := filepath.Join(tmpDir, ".env")
 		require.NoError(t, os.WriteFile(configPath, []byte(initialConfig), 0600))
 		require.NoError(t, os.WriteFile(envPath, []byte(initialEnv), 0600))
+		require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, ".agent-layer", "state", "wizard-backups"), 0700))
 		return tmpDir, configPath, envPath
 	}
 
@@ -52,8 +53,8 @@ mode = "none"
 		assert.True(t, syncCalled)
 
 		// Verify backups
-		assert.FileExists(t, configPath+".bak")
-		assert.FileExists(t, envPath+".bak")
+		assert.FileExists(t, filepath.Join(filepath.Dir(configPath), ".agent-layer", "state", "wizard-backups", "config.toml.bak"))
+		assert.FileExists(t, filepath.Join(filepath.Dir(envPath), ".agent-layer", "state", "wizard-backups", ".env.bak"))
 
 		// Verify updates
 		newConfig, _ := os.ReadFile(configPath)
@@ -67,7 +68,7 @@ mode = "none"
 		tmpDir, configPath, envPath := setup(t)
 
 		// Create a directory at configPath.bak to cause WriteFile to fail
-		err := os.Mkdir(configPath+".bak", 0700)
+		err := os.Mkdir(filepath.Join(filepath.Dir(configPath), ".agent-layer", "state", "wizard-backups", "config.toml.bak"), 0700)
 		require.NoError(t, err)
 
 		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
@@ -81,7 +82,7 @@ mode = "none"
 		tmpDir, configPath, envPath := setup(t)
 
 		// Create a directory at envPath.bak to cause WriteFile to fail
-		err := os.Mkdir(envPath+".bak", 0700)
+		err := os.Mkdir(filepath.Join(filepath.Dir(envPath), ".agent-layer", "state", "wizard-backups", ".env.bak"), 0700)
 		require.NoError(t, err)
 
 		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
@@ -91,7 +92,7 @@ mode = "none"
 		assert.Contains(t, err.Error(), "failed to backup .env")
 
 		// Verify config backup was removed (rollback)
-		assert.NoFileExists(t, configPath+".bak")
+		assert.NoFileExists(t, filepath.Join(filepath.Dir(configPath), ".agent-layer", "state", "wizard-backups", "config.toml.bak"))
 	})
 
 	t.Run("sync failure", func(t *testing.T) {
@@ -119,9 +120,9 @@ mode = "none"
 		require.NoError(t, err)
 
 		// Config backup should exist
-		assert.FileExists(t, configPath+".bak")
+		assert.FileExists(t, filepath.Join(filepath.Dir(configPath), ".agent-layer", "state", "wizard-backups", "config.toml.bak"))
 		// Env backup should NOT exist (since no original env)
-		assert.NoFileExists(t, envPath+".bak")
+		assert.NoFileExists(t, filepath.Join(filepath.Dir(envPath), ".agent-layer", "state", "wizard-backups", ".env.bak"))
 
 		// New env file should be created
 		assert.FileExists(t, envPath)
@@ -132,15 +133,15 @@ mode = "none"
 	t.Run("backup exists", func(t *testing.T) {
 		tmpDir, configPath, envPath := setup(t)
 		// Pre-create backups
-		require.NoError(t, os.WriteFile(configPath+".bak", []byte("old-backup"), 0600))
-		require.NoError(t, os.WriteFile(envPath+".bak", []byte("old-backup"), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(configPath), ".agent-layer", "state", "wizard-backups", "config.toml.bak"), []byte("old-backup"), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(envPath), ".agent-layer", "state", "wizard-backups", ".env.bak"), []byte("old-backup"), 0600))
 
 		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 		err := applyChanges(tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 		require.NoError(t, err)
 
 		// writeBackup always overwrites; it only returns whether the backup was new.
-		bakData, _ := os.ReadFile(configPath + ".bak")
+		bakData, _ := os.ReadFile(filepath.Join(filepath.Dir(configPath), ".agent-layer", "state", "wizard-backups", "config.toml.bak"))
 		assert.Equal(t, initialConfig, string(bakData))
 	})
 
@@ -185,7 +186,7 @@ mode = "none"
 		err := applyChanges(tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 		assert.Error(t, err)
 		// Config backup should be cleaned up
-		assert.NoFileExists(t, configPath+".bak")
+		assert.NoFileExists(t, filepath.Join(filepath.Dir(configPath), ".agent-layer", "state", "wizard-backups", "config.toml.bak"))
 	})
 
 	t.Run("env read error cleans config backup", func(t *testing.T) {
@@ -198,7 +199,7 @@ mode = "none"
 		err := applyChanges(tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 		assert.Error(t, err)
 		// Config backup should be cleaned up
-		assert.NoFileExists(t, configPath+".bak")
+		assert.NoFileExists(t, filepath.Join(filepath.Dir(configPath), ".agent-layer", "state", "wizard-backups", "config.toml.bak"))
 	})
 
 	t.Run("config write error", func(t *testing.T) {
@@ -274,7 +275,7 @@ mode = "none"
 		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 		err := applyChanges(tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 		assert.Error(t, err)
-		assert.NoFileExists(t, configPath+".bak")
+		assert.NoFileExists(t, filepath.Join(filepath.Dir(configPath), ".agent-layer", "state", "wizard-backups", "config.toml.bak"))
 	})
 }
 

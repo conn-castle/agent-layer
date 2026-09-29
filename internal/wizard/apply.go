@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/fatih/color"
 
@@ -34,7 +35,7 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 		return err
 	}
 	// Backup
-	configBackupPath := configPath + ".bak"
+	configBackupPath := backupPath(root, configBackupName)
 	configBackupCreated, err := writeBackup(configBackupPath, rawConfig, configPerm)
 	if err != nil {
 		return fmt.Errorf(messages.WizardBackupConfigFailedFmt, err)
@@ -56,7 +57,7 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 		return permErr
 	}
 	if err == nil {
-		envBackupPath := envPath + ".bak"
+		envBackupPath := backupPath(root, envBackupName)
 		if _, err := writeBackup(envBackupPath, rawEnv, envPerm); err != nil {
 			if configBackupCreated {
 				_ = os.Remove(configBackupPath)
@@ -141,13 +142,15 @@ func filePermOr(path string, fallback os.FileMode) (os.FileMode, error) {
 // writeBackup writes a backup file and reports whether a new backup was created.
 // path is the backup file path; data is the source content; perm is the file mode to apply.
 func writeBackup(path string, data []byte, perm os.FileMode) (bool, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return false, err
+	}
 	_, err := os.Stat(path)
 	backupExists := err == nil
 	if err != nil && !os.IsNotExist(err) {
 		return false, err
 	}
-	// #nosec G703 -- callers provide backup paths derived from the validated project config paths.
-	if err := os.WriteFile(path, data, perm); err != nil {
+	if err := fsutil.WriteFileAtomic(path, data, perm); err != nil {
 		return false, err
 	}
 	return !backupExists, nil
