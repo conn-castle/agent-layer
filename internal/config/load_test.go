@@ -638,7 +638,7 @@ headers = { Authorization = "secret-value" }
 	if !errors.Is(err, ErrConfigValidation) {
 		t.Fatalf("shared MCP error should match ErrConfigValidation, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "private-server") || !strings.Contains(err.Error(), "VS Code imports shared .mcp.json") {
+	if !strings.Contains(err.Error(), "private-server") || !strings.Contains(err.Error(), "VS Code imports root .mcp.json") {
 		t.Fatalf("shared MCP error is not actionable: %v", err)
 	}
 	if strings.Contains(err.Error(), "secret-value") {

@@ -85,7 +85,7 @@ Grok uses the repo-local `.grok-config/` directory as `GROK_HOME` for `al grok`,
 
 Muse uses native user storage; Agent Layer leaves `HOME` and XDG variables unchanged. If upgrading from repo-local Muse storage, sign in with `muse login` if native storage is not authenticated. Historical `.muse-config/` and `.muse-data/` are retained, but sessions are not migrated. Start a new dispatch if an old Muse session cannot be resumed. Project MCP is generated in private, gitignored `.mcp.json`, shared with Claude.
 
-If sync reports that a shared MCP server excludes VS Code, both `agents.muse.enabled` and `agents.vscode.enabled` are enabled and the server's `clients` filter cannot be enforced by VS Code's root-file importer. Add `vscode` to that server's `clients` (or omit the list to share with all clients), or disable one of those two integrations. Enabling `claude_vscode` alone does not trigger this check.
+If sync reports that an MCP server in the generated root `.mcp.json` excludes VS Code, `agents.vscode.enabled` is true and the server is selected for Claude (with `claude` or `claude_vscode` enabled) or Muse (with Muse enabled), so VS Code's root-file importer cannot enforce its `clients` filter. Add `vscode` to that server's `clients` (or omit the list to share with all clients), or disable every enabled Muse, Claude, or Claude VS Code integration selecting the server.
 
 ### Grok setup and diagnostics
 

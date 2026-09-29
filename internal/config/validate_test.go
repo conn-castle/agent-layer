@@ -258,7 +258,7 @@ func TestValidateRequiresEveryCoreAgentEnablementDecision(t *testing.T) {
 	}
 }
 
-func TestValidateMuseVSCodeSharedMCPSelection(t *testing.T) {
+func TestValidateVSCodeRootMCPSelection(t *testing.T) {
 	enabled := true
 	disabled := false
 
@@ -273,18 +273,19 @@ func TestValidateMuseVSCodeSharedMCPSelection(t *testing.T) {
 		wantError     bool
 	}{
 		{name: "Muse and VS Code reject Muse-only server", muse: &enabled, vscode: &enabled, clients: []string{"muse"}, serverEnabled: true, wantError: true},
-		{name: "Muse false retains previous behavior", muse: &disabled, vscode: &enabled, clients: []string{"muse"}, serverEnabled: true},
-		{name: "Muse absent retains previous behavior", muse: nil, vscode: &enabled, clients: []string{"muse"}, serverEnabled: true},
-		{name: "VS Code false retains previous behavior", muse: &enabled, vscode: &disabled, clients: []string{"muse"}, serverEnabled: true},
-		{name: "both flags false retain previous behavior", muse: &disabled, vscode: &disabled, clients: []string{"muse"}, serverEnabled: true},
-		{name: "explicit VS Code permission is valid", muse: &enabled, vscode: &enabled, clients: []string{"muse", "vscode"}, serverEnabled: true},
-		{name: "empty clients selects all clients", muse: &enabled, vscode: &enabled, clients: nil, serverEnabled: true},
-		{name: "disabled shared server is ignored", muse: &enabled, vscode: &enabled, clients: []string{"muse"}, serverEnabled: false},
-		{name: "server excluded from both root consumers is ignored", muse: &enabled, vscode: &enabled, clients: []string{"codex"}, serverEnabled: true},
+		{name: "Muse-only server stays out when Muse false", muse: &disabled, vscode: &enabled, claude: true, clients: []string{"muse"}, serverEnabled: true},
+		{name: "Muse-only server stays out when Muse absent", muse: nil, vscode: &enabled, clients: []string{"muse"}, serverEnabled: true},
+		{name: "VS Code false ignores Muse-only server", muse: &enabled, vscode: &disabled, clients: []string{"muse"}, serverEnabled: true},
+		{name: "VS Code false ignores Claude-only server", muse: &enabled, vscode: &disabled, claude: true, claudeVSCode: true, clients: []string{"claude"}, serverEnabled: true},
+		{name: "explicit VS Code permission is valid", muse: &enabled, vscode: &enabled, claude: true, clients: []string{"claude", "muse", "vscode"}, serverEnabled: true},
+		{name: "empty clients selects all clients", muse: &enabled, vscode: &enabled, claude: true, clients: nil, serverEnabled: true},
+		{name: "disabled shared server is ignored", muse: &enabled, vscode: &enabled, claude: true, clients: []string{"claude", "muse"}, serverEnabled: false},
+		{name: "server excluded from both root consumers is ignored", muse: &enabled, vscode: &enabled, claude: true, clients: []string{"codex"}, serverEnabled: true},
 		{name: "Claude-only server enters root for Claude", muse: &enabled, vscode: &enabled, claude: true, clients: []string{"claude"}, serverEnabled: true, wantError: true},
 		{name: "Claude-only server enters root for Claude VS Code", muse: &enabled, vscode: &enabled, claudeVSCode: true, clients: []string{"claude"}, serverEnabled: true, wantError: true},
-		{name: "Claude-only server stays out when both consumers disabled", muse: &enabled, vscode: &enabled, clients: []string{"claude"}, serverEnabled: true},
-		{name: "Claude VS Code alone does not activate guard", muse: nil, vscode: &enabled, claudeVSCode: true, clients: []string{"claude"}, serverEnabled: true},
+		{name: "Claude-only server stays out when both Claude integrations disabled", muse: &enabled, vscode: &enabled, clients: []string{"claude"}, serverEnabled: true},
+		{name: "Claude without Muse rejects Claude-only server", muse: &disabled, vscode: &enabled, claude: true, clients: []string{"claude"}, serverEnabled: true, wantError: true},
+		{name: "Claude VS Code without Muse rejects Claude-only server", muse: nil, vscode: &enabled, claudeVSCode: true, clients: []string{"claude"}, serverEnabled: true, wantError: true},
 	}
 
 	for _, test := range tests {
@@ -314,9 +315,9 @@ func TestValidateMuseVSCodeSharedMCPSelection(t *testing.T) {
 			err := cfg.Validate("config.toml")
 			if test.wantError {
 				if err == nil {
-					t.Fatal("expected shared MCP validation error")
+					t.Fatal("expected root MCP validation error")
 				}
-				for _, want := range []string{"private-server", "VS Code imports shared .mcp.json", "include \"vscode\"", "change an enabled integration"} {
+				for _, want := range []string{"private-server", "VS Code imports root .mcp.json", "include \"vscode\"", "disable every enabled Muse, Claude, or Claude VS Code integration selecting this server"} {
 					if !strings.Contains(err.Error(), want) {
 						t.Fatalf("error %q does not contain %q", err, want)
 					}

@@ -253,14 +253,15 @@ Agent Layer launch flags.
 
 VS Code 1.138 also discovers root `.mcp.json` through its core MCP service,
 independently of `.vscode/mcp.json`, and ignores the root entries' `enabled`
-field. When **both** `agents.muse.enabled` and `agents.vscode.enabled` are true,
-configuration validation rejects enabled servers in the shared file whose
-`clients` exclude `vscode`. This includes Claude-selected entries when either
-Claude integration is enabled. Add `vscode` to the affected server's `clients`
-(or omit `clients` to share with all clients), or disable one of the two
-integrations. Validation happens before generated files are written.
+field. When `agents.vscode.enabled` is true, configuration validation rejects
+enabled servers in the root file whose `clients` exclude `vscode`: Muse-selected
+entries when Muse is enabled and Claude-selected entries when either Claude
+integration is enabled. Add `vscode` to the affected server's `clients` (or omit
+`clients` to share with all clients), or disable every enabled Muse, Claude, or
+Claude VS Code integration selecting the server.
+Validation happens before generated files are written.
 
-The check does not activate for `claude_vscode` alone or when either Muse or
-VS Code is disabled. Native editor usage outside those enabled integrations
-can still discover the shared file; `.vscode/mcp.json` filtering alone does not
-prevent that import. No internal editor database is modified.
+The check does not activate when VS Code is disabled. Native editor usage
+outside that enabled integration can still discover the root file;
+`.vscode/mcp.json` filtering alone does not prevent that import. No internal
+editor database is modified.
