@@ -3,6 +3,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.23.1 - 2026-09-29
+
 ### Changed
 - Configuration validation rejects enabled MCP servers that enter the generated root `.mcp.json` but exclude `vscode` whenever VS Code is enabled, including Claude-selected servers when Muse is disabled; previously this applied only while Muse and VS Code were both enabled, so VS Code loaded those servers. Affected configurations stop syncing until the server selects `vscode` or every enabled Muse, Claude, or Claude VS Code integration selecting it is disabled.
 
