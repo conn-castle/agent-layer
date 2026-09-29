@@ -12,6 +12,8 @@ import (
 	"github.com/conn-castle/agent-layer/internal/run"
 )
 
+const flagYOLO = "--yolo"
+
 // execFunc is overridable for tests; on success it never returns.
 var execFunc = clients.ExecHandoff
 
@@ -24,7 +26,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	}
 	switch cfg.Config.Approvals.Mode {
 	case config.ApprovalModeYOLO:
-		args = append(args, "--yolo")
+		args = append(args, flagYOLO)
 	case config.ApprovalModeAll:
 		args = append(args, "--allow-all-tools")
 	}
@@ -36,7 +38,10 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	for _, id := range projection.RootMCPExclusions(cfg.Config, projection.ClientCopilot) {
 		args = append(args, "--disable-mcp-server", id)
 	}
-	args = append(args, passArgs...)
+	// Native `copilot --help` documents both MCP options as repeatable. New
+	// entries augment the generated config/exclusions instead of replacing them.
+	args = clients.MergeArgs(args, passArgs, map[string]string{"--allow-all": flagYOLO},
+		"--additional-mcp-config", "--disable-mcp-server")
 
 	path, err := exec.LookPath(executableName)
 	if err != nil {

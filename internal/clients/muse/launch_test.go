@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestBaseArgsOnlyYoloDisablesSafety(t *testing.T) {
@@ -55,4 +56,20 @@ func TestLaunchPreservesNativeEnvironment(t *testing.T) {
 			t.Fatalf("unexpected isolated root %s: %v", name, err)
 		}
 	}
+}
+
+func TestLaunchExplicitOptionsReplaceDefaults(t *testing.T) {
+	root := t.TempDir()
+	binDir := t.TempDir()
+	testutil.WriteStub(t, binDir, "muse")
+	t.Setenv("PATH", binDir)
+	call := testutil.CaptureExec(t, &execFunc, nil)
+	cfg := &config.ProjectConfig{Root: root, Config: config.Config{
+		Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
+		Agents:    config.AgentsConfig{Muse: config.AgentConfig{Model: "default-model", ReasoningEffort: "high"}},
+	}}
+	if err := Launch(cfg, nil, nil, []string{"--workspace", "custom", "--trust-workspace", "--model", "chosen", "--reasoning-effort", "low", "--yolo"}); err != nil {
+		t.Fatal(err)
+	}
+	call.AssertCalled(t, filepath.Join(binDir, "muse"), []string{"muse", "--workspace", "custom", "--trust-workspace", "--model", "chosen", "--reasoning-effort", "low", "--yolo"})
 }

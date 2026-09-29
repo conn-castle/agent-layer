@@ -12,6 +12,11 @@ import (
 )
 
 const (
+	flagTrustWorkspace = "--trust-workspace"
+	flagWorkspace      = "--workspace"
+)
+
+const (
 	// ExecutableName is the Muse Code CLI binary.
 	ExecutableName = "muse"
 	// SupportedVersion is the Muse Code version covered by integration evidence.
@@ -22,7 +27,7 @@ var execFunc = clients.ExecHandoff
 
 // BaseArgs returns common interactive Muse flags for trust and approvals.
 func BaseArgs(root string, cfg config.Config) []string {
-	args := []string{"--workspace", root, "--trust-workspace"}
+	args := []string{flagWorkspace, root, flagTrustWorkspace}
 	if model := strings.TrimSpace(cfg.Agents.Muse.Model); model != "" {
 		args = append(args, "--model", model)
 	}
@@ -44,7 +49,7 @@ func Launch(project *config.ProjectConfig, _ *run.Info, env []string, passArgs [
 		return fmt.Errorf(messages.ClientsExecLookupErrorFmt, ExecutableName, err)
 	}
 	args := BaseArgs(project.Root, project.Config)
-	args = append(args, passArgs...)
+	args = clients.MergeArgs(args, passArgs, nil)
 	if err := execFunc(path, append([]string{ExecutableName}, args...), env); err != nil {
 		return fmt.Errorf(messages.ClientsExecHandoffErrorFmt, ExecutableName, err)
 	}

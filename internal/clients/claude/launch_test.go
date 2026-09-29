@@ -379,3 +379,19 @@ func TestLaunchClaudePreservesUserClaudeConfigDir(t *testing.T) {
 		t.Fatalf("expected user CLAUDE_CONFIG_DIR to be preserved, got %#v", call.Env)
 	}
 }
+
+func TestLaunchExplicitOptionsReplaceDefaults(t *testing.T) {
+	root := t.TempDir()
+	binDir := t.TempDir()
+	testutil.WriteStub(t, binDir, "claude")
+	t.Setenv("PATH", binDir)
+	call := testutil.CaptureExec(t, &execFunc, nil)
+	cfg := &config.ProjectConfig{Root: root, Config: config.Config{
+		Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
+		Agents:    config.AgentsConfig{Claude: config.ClaudeConfig{Model: "default-model", ReasoningEffort: "high"}},
+	}}
+	if err := Launch(cfg, nil, nil, []string{"--model=chosen", "--effort", "low", "--dangerously-skip-permissions"}); err != nil {
+		t.Fatal(err)
+	}
+	call.AssertCalled(t, filepath.Join(binDir, "claude"), []string{"claude", "--model=chosen", "--effort", "low", "--dangerously-skip-permissions"})
+}

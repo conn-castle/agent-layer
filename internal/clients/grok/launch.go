@@ -17,6 +17,11 @@ import (
 )
 
 const (
+	flagModel  = "--model"
+	flagEffort = "--effort"
+)
+
+const (
 	executableName = "grok"
 	// SupportedVersion is the Grok CLI version Agent Layer tests against.
 	SupportedVersion = "1.0.5"
@@ -77,7 +82,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	args := []string{}
 	model := strings.TrimSpace(cfg.Config.Agents.Grok.Model)
 	if model != "" {
-		args = append(args, "--model", model)
+		args = append(args, flagModel, model)
 	}
 
 	effort := strings.TrimSpace(cfg.Config.Agents.Grok.ReasoningEffort)
@@ -91,7 +96,11 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	if cfg.Config.Approvals.Mode == config.ApprovalModeYOLO {
 		args = append(args, "--permission-mode", "bypassPermissions", "--always-approve")
 	}
-	args = append(args, passArgs...)
+	args = clients.MergeArgs(args, passArgs, map[string]string{
+		"-m": flagModel, flagEffort: "--reasoning-effort",
+		// Grok's valueless short options may precede -m in a cluster.
+		"-c": "", "-h": "", "-v": "",
+	})
 
 	path, err := exec.LookPath(executableName)
 	if err != nil {

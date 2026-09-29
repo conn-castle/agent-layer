@@ -259,3 +259,28 @@ func TestGrokContractHelpers(t *testing.T) {
 		t.Fatalf("YOLO sandbox args = %v, want nil", got)
 	}
 }
+
+func TestLaunchExplicitOptionsReplaceDefaults(t *testing.T) {
+	root := t.TempDir()
+	binDir := t.TempDir()
+	testutil.WriteStub(t, binDir, "grok")
+	t.Setenv("PATH", binDir)
+	cfg := &config.ProjectConfig{Root: root, Config: config.Config{
+		Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
+		Agents:    config.AgentsConfig{Grok: config.GrokConfig{Model: "default-model", ReasoningEffort: "high"}},
+	}}
+	for _, passed := range [][]string{
+		{"--model", "chosen", "--reasoning-effort=low"},
+		{"-m", "chosen", "--effort", "low"},
+		{"-mchosen", "--effort=low"},
+		{"-cm", "chosen", "--effort", "low"},
+		{"-cmchosen", "--effort", "low"},
+	} {
+		passed = append(passed, "--permission-mode", "plan", "--always-approve")
+		call := testutil.CaptureExec(t, &execFunc, nil)
+		if err := Launch(cfg, nil, nil, passed); err != nil {
+			t.Fatal(err)
+		}
+		call.AssertCalled(t, filepath.Join(binDir, "grok"), append([]string{"grok"}, passed...))
+	}
+}

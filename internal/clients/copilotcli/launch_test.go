@@ -174,3 +174,41 @@ func TestLaunchCopilotExcludesOnlyUnselectedRootServers(t *testing.T) {
 		})
 	}
 }
+
+func TestLaunchExplicitOptionsReplaceDefaults(t *testing.T) {
+	root := t.TempDir()
+	binDir := t.TempDir()
+	testutil.WriteStub(t, binDir, "copilot")
+	t.Setenv("PATH", binDir)
+	cfg := &config.ProjectConfig{Root: root, Config: config.Config{
+		Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
+		Agents:    config.AgentsConfig{CopilotCLI: config.AgentConfig{Model: "default-model"}},
+	}}
+	for _, approval := range []string{"--yolo", "--allow-all"} {
+		passed := []string{"--model", "chosen", approval, "--additional-mcp-config", "custom"}
+		call := testutil.CaptureExec(t, &execFunc, nil)
+		if err := Launch(cfg, nil, nil, passed); err != nil {
+			t.Fatal(err)
+		}
+		want := append([]string{"copilot"}, projectMCPConfigArgs(root)...)
+		want = append(want, passed...)
+		call.AssertCalled(t, filepath.Join(binDir, "copilot"), want)
+	}
+
+}
+
+func TestLaunchDeduplicatesGeneratedMCPEntries(t *testing.T) {
+	root := t.TempDir()
+	binary := writeResolvableCopilot(t)
+	call := testutil.CaptureExec(t, &execFunc, nil)
+	enabled := true
+	cfg := &config.ProjectConfig{Root: root, Config: config.Config{
+		Agents: config.AgentsConfig{Claude: config.ClaudeConfig{Enabled: &enabled}, CopilotCLI: config.AgentConfig{Enabled: &enabled}},
+		MCP:    config.MCPConfig{Servers: []config.MCPServer{{ID: "claude-only", Enabled: &enabled, Clients: []string{"claude"}, Transport: "stdio", Command: "fixture"}}},
+	}}
+	passed := []string{"--additional-mcp-config=@" + filepath.Join(root, ".copilot", "mcp-config.json"), "--disable-mcp-server=claude-only", "--disable-mcp-server", "personal"}
+	if err := Launch(cfg, nil, nil, passed); err != nil {
+		t.Fatal(err)
+	}
+	call.AssertCalled(t, binary, append([]string{"copilot"}, passed...))
+}

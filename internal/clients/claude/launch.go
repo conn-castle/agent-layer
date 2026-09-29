@@ -35,7 +35,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	if cfg.Config.Approvals.Mode == config.ApprovalModeYOLO {
 		args = append(args, "--dangerously-skip-permissions")
 	}
-	args = append(args, passArgs...)
+	args = clients.MergeArgs(args, passArgs, nil)
 
 	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Claude, os.Stderr)
 

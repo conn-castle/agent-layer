@@ -139,3 +139,19 @@ func TestLaunchAntigravityMissingBinary(t *testing.T) {
 		t.Fatalf("expected no .agy/ directory after missing-binary failure, got stat err = %v", statErr)
 	}
 }
+
+func TestLaunchExplicitOptionsReplaceDefaults(t *testing.T) {
+	root := t.TempDir()
+	binDir := t.TempDir()
+	testutil.WriteStub(t, binDir, "agy")
+	t.Setenv("PATH", binDir)
+	call := testutil.CaptureExec(t, &execFunc, nil)
+	cfg := &config.ProjectConfig{Root: root, Config: config.Config{
+		Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
+		Agents:    config.AgentsConfig{},
+	}}
+	if err := Launch(cfg, nil, nil, []string{"--gemini_dir=custom", "--dangerously-skip-permissions"}); err != nil {
+		t.Fatal(err)
+	}
+	call.AssertCalled(t, filepath.Join(binDir, "agy"), []string{"agy", "--gemini_dir=custom", "--dangerously-skip-permissions"})
+}
