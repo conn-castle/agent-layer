@@ -96,23 +96,19 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 	}
 
 	sharedSkills := config.SharedAgentSkillsEnabled(agents)
-	if sharedSkills {
-		steps = append(steps, func() error { return WriteAgentSkills(sys, root, project.Skills) })
-	}
-
-	// Keep the dependent skill projections together: unrelated client failures
-	// must not leave old Claude links pointing at removed or renamed skills.
 	claudeEnabled := config.IsAgentEnabled(agents.Claude.Enabled)
 	claudeVSCodeEnabled := config.IsAgentEnabled(agents.ClaudeVSCode.Enabled)
-	if claudeEnabled || claudeVSCodeEnabled {
-		steps = append(steps, func() error {
-			if sharedSkills {
-				return writeClaudeSkillLinks(sys, root, project.Skills)
-			}
-			return WriteClaudeSkills(sys, root, project.Skills)
-		})
+	if sharedSkills && (claudeEnabled || claudeVSCodeEnabled) {
+		steps = append(steps, func() error { return writeLinkedSkillRoots(sys, root, project.Skills) })
 	} else {
-		steps = append(steps, func() error { return cleanClaudeSkills(sys, root) })
+		if sharedSkills {
+			steps = append(steps, func() error { return WriteAgentSkills(sys, root, project.Skills) })
+		}
+		if claudeEnabled || claudeVSCodeEnabled {
+			steps = append(steps, func() error { return WriteClaudeSkills(sys, root, project.Skills) })
+		} else {
+			steps = append(steps, func() error { return cleanClaudeSkills(sys, root) })
+		}
 	}
 
 	// Replace Claude links with standalone copies (or remove them) before

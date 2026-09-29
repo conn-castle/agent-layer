@@ -34,7 +34,7 @@ Agent Layer projects skills from the canonical user-managed tier `.agent-layer/s
 - Accept additional frontmatter fields without interpreting or filtering them. Provider-specific fields therefore reach every enabled client projection unchanged.
 - Reject symlinks and every other non-directory, non-regular source node without dereferencing or silently skipping it.
 - Replace each enabled client skill root as one complete staged tree. If publishing fails, attempt to restore the previous root and report both errors if restoration also fails. Retry rebuilds from canonical sources. Direct edits and extra files in a client root are discarded on the next sync.
-- Publish the shared tree before Claude links. When disabling the shared projection, replace Claude links with standalone copies (or remove Claude output) before removing their shared targets.
+- Publish the shared tree before Claude links and retain the previous shared tree until Claude publication succeeds. If Claude publication fails, restore the previous shared tree so existing links remain readable, including when a skill was renamed or removed. When disabling the shared projection, replace Claude links with standalone copies (or remove Claude output) before removing their shared targets.
 - Remove the entire client skill root when its projection is disabled.
 
 ### Ownership of current projection paths

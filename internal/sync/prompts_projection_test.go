@@ -384,53 +384,118 @@ func TestClaudeSharedSkillTransitions(t *testing.T) {
 }
 
 func TestClaudeLinksRemainReadableAfterSyncFailure(t *testing.T) {
-	for _, failure := range []string{"shared publish", "Claude publish", "link creation", "disable shared"} {
-		t.Run(failure, func(t *testing.T) {
-			root := t.TempDir()
-			writeGitignoreBlockForSkillsDedupTest(t, root)
-			project := &config.ProjectConfig{Root: root, Config: config.Config{
-				Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
-				Agents:    agentsForSkillsTest("claude", "muse"),
-			}, Skills: []config.Skill{projectionSkill(t, "alpha", projectionManifest("alpha"))}}
-			if _, err := RunWithProject(RealSystem{}, root, project); err != nil {
-				t.Fatal(err)
+	for _, change := range []struct {
+		name   string
+		skills []string
+	}{
+		{name: "rename", skills: []string{"beta"}},
+		{name: "remove"},
+	} {
+		for _, failure := range []string{"shared publish", "Claude publish", "link creation", "disable shared"} {
+			if change.name == "remove" && failure == "link creation" {
+				continue
 			}
-			injected := errors.New("injected projection failure")
-			sys := &MockSystem{Fallback: RealSystem{}}
-			if failure == "link creation" {
-				sys.SymlinkFunc = func(target, path string) error {
-					if strings.Contains(path, "skills.al-stage") {
-						return injected
+			t.Run(change.name+"/"+failure, func(t *testing.T) {
+				root := t.TempDir()
+				writeGitignoreBlockForSkillsDedupTest(t, root)
+				project := &config.ProjectConfig{Root: root, Config: config.Config{
+					Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+					Agents:    agentsForSkillsTest("claude", "muse"),
+				}, Skills: []config.Skill{projectionSkill(t, "alpha", projectionManifest("alpha"))}}
+				if _, err := RunWithProject(RealSystem{}, root, project); err != nil {
+					t.Fatal(err)
+				}
+				project.Skills = nil
+				for _, name := range change.skills {
+					project.Skills = append(project.Skills, projectionSkill(t, name, projectionManifest(name)))
+				}
+				injected := errors.New("injected projection failure")
+				sys := &MockSystem{Fallback: RealSystem{}}
+				if failure == "link creation" {
+					sys.SymlinkFunc = func(target, path string) error {
+						if strings.Contains(path, "skills.al-stage") {
+							return injected
+						}
+						return os.Symlink(target, path)
 					}
-					return os.Symlink(target, path)
-				}
-			} else {
-				parent := ".claude"
-				if failure == "shared publish" {
-					parent = ".agents"
-				}
-				live := filepath.Join(root, parent, "skills")
-				sys.RenameFunc = func(oldpath, newpath string) error {
-					if oldpath == live+projectionStageSuffix {
-						return injected
+				} else {
+					parent := ".claude"
+					if failure == "shared publish" {
+						parent = ".agents"
 					}
-					return os.Rename(oldpath, newpath)
+					live := filepath.Join(root, parent, "skills")
+					sys.RenameFunc = func(oldpath, newpath string) error {
+						if oldpath == live+projectionStageSuffix {
+							return injected
+						}
+						return os.Rename(oldpath, newpath)
+					}
 				}
+				if failure == "disable shared" {
+					project.Config.Agents = agentsForSkillsTest("claude")
+				}
+				if _, err := RunWithProject(sys, root, project); !errors.Is(err, injected) {
+					t.Fatalf("sync failure = %v", err)
+				}
+				manifest := filepath.Join(root, ".claude", "skills", "alpha", "SKILL.md")
+				if got, err := os.ReadFile(manifest); err != nil || string(got) != string(projectionManifest("alpha")) { // #nosec G304 -- test-owned projection path.
+					t.Fatalf("failed sync broke Claude's existing skill: %q, %v", got, err)
+				}
+				shared := filepath.Join(root, ".agents", "skills")
+				if got, err := os.ReadFile(filepath.Join(shared, "alpha", "SKILL.md")); err != nil || string(got) != string(projectionManifest("alpha")) { // #nosec G304 -- test-owned projection path.
+					t.Fatalf("failed sync changed previous shared skill: %q, %v", got, err)
+				}
+				if _, err := os.Lstat(filepath.Join(shared, "beta")); !os.IsNotExist(err) {
+					t.Fatalf("failed sync retained new shared skill: %v", err)
+				}
+				if _, err := RunWithProject(RealSystem{}, root, project); err != nil {
+					t.Fatalf("retry: %v", err)
+				}
+				if _, err := os.Lstat(filepath.Join(root, ".claude", "skills", "alpha")); !os.IsNotExist(err) {
+					t.Fatalf("retry retained removed Claude skill: %v", err)
+				}
+				for _, name := range change.skills {
+					if got, err := os.ReadFile(filepath.Join(root, ".claude", "skills", name, "SKILL.md")); err != nil || string(got) != string(projectionManifest(name)) { // #nosec G304 -- test-owned projection path.
+						t.Fatalf("retry did not publish Claude skill %s: %q, %v", name, got, err)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestClaudeDiscardCleanupFailureKeepsPublishedLinksReadable(t *testing.T) {
+	root := t.TempDir()
+	writeGitignoreBlockForSkillsDedupTest(t, root)
+	project := &config.ProjectConfig{Root: root, Config: config.Config{
+		Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+		Agents:    agentsForSkillsTest("claude", "muse"),
+	}, Skills: []config.Skill{projectionSkill(t, "alpha", projectionManifest("alpha"))}}
+	if _, err := RunWithProject(RealSystem{}, root, project); err != nil {
+		t.Fatal(err)
+	}
+	project.Skills = []config.Skill{projectionSkill(t, "beta", projectionManifest("beta"))}
+	claudeDiscard := filepath.Join(root, ".claude", "skills") + projectionDiscardSuffix
+	injected := errors.New("injected discard cleanup failure")
+	sys := &MockSystem{Fallback: RealSystem{}, RemoveAllFunc: func(path string) error {
+		if path == claudeDiscard {
+			if _, err := os.Lstat(filepath.Join(root, ".claude", "skills", "beta")); err == nil {
+				return injected
 			}
-			if failure == "disable shared" {
-				project.Config.Agents = agentsForSkillsTest("claude")
-			}
-			if _, err := RunWithProject(sys, root, project); !errors.Is(err, injected) {
-				t.Fatalf("sync failure = %v", err)
-			}
-			manifest := filepath.Join(root, ".claude", "skills", "alpha", "SKILL.md")
-			if got, err := os.ReadFile(manifest); err != nil || string(got) != string(projectionManifest("alpha")) { // #nosec G304 -- test-owned projection path.
-				t.Fatalf("failed sync broke Claude's existing skill: %q, %v", got, err)
-			}
-			if _, err := RunWithProject(RealSystem{}, root, project); err != nil {
-				t.Fatalf("retry: %v", err)
-			}
-		})
+		}
+		return os.RemoveAll(path)
+	}}
+	if _, err := RunWithProject(sys, root, project); !errors.Is(err, injected) {
+		t.Fatalf("sync cleanup failure = %v", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(root, ".claude", "skills", "beta", "SKILL.md")); err != nil || string(got) != string(projectionManifest("beta")) { // #nosec G304 -- test-owned projection path.
+		t.Fatalf("failed cleanup broke published Claude skill: %q, %v", got, err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, ".claude", "skills", "alpha")); !os.IsNotExist(err) {
+		t.Fatalf("old Claude skill survived publication: %v", err)
+	}
+	if _, err := RunWithProject(RealSystem{}, root, project); err != nil {
+		t.Fatalf("retry: %v", err)
 	}
 }
 

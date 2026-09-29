@@ -20,18 +20,22 @@ const (
 // WriteAgentSkills replaces the exclusively owned .agents/skills projection
 // with the complete canonical skill snapshot.
 func WriteAgentSkills(sys System, root string, skills []config.Skill) error {
-	return writeSkillRoot(sys, filepath.Join(root, ".agents", "skills"), skills, "")
+	return writeSkillRoot(sys, filepath.Join(root, ".agents", "skills"), skills, "", false)
 }
 
 // WriteClaudeSkills replaces the exclusively owned .claude/skills projection
 // with the complete canonical skill snapshot.
 func WriteClaudeSkills(sys System, root string, skills []config.Skill) error {
-	return writeSkillRoot(sys, filepath.Join(root, ".claude", "skills"), skills, "")
+	return writeSkillRoot(sys, filepath.Join(root, ".claude", "skills"), skills, "", false)
 }
 
 // writeClaudeSkillLinks shares the already-published shared projection with Claude.
 // Relative per-skill links remain valid when the staging root is published.
 func writeClaudeSkillLinks(sys System, root string, skills []config.Skill) error {
+	return writeClaudeSkillLinksWithDiscard(sys, root, skills, false)
+}
+
+func writeClaudeSkillLinksWithDiscard(sys System, root string, skills []config.Skill, retainPrevious bool) error {
 	claudeDir := filepath.Join(root, ".claude")
 	linkRoot := filepath.Join("..", "..", ".agents", "skills")
 	info, err := sys.Lstat(claudeDir)
@@ -45,13 +49,66 @@ func writeClaudeSkillLinks(sys System, root string, skills []config.Skill) error
 			return fmt.Errorf("resolve shared skill directory: %w", err)
 		}
 	}
-	return writeSkillRoot(sys, filepath.Join(claudeDir, "skills"), skills, linkRoot)
+	return writeSkillRoot(sys, filepath.Join(claudeDir, "skills"), skills, linkRoot, retainPrevious)
+}
+
+// writeLinkedSkillRoots retains the old shared root while Claude links are
+// replaced, so a failed Claude write can restore their previous targets.
+func writeLinkedSkillRoots(sys System, root string, skills []config.Skill) error {
+	sharedRoot := filepath.Join(root, ".agents", "skills")
+	if err := writeSkillRoot(sys, sharedRoot, skills, "", true); err != nil {
+		return err
+	}
+	if err := writeClaudeSkillLinksWithDiscard(sys, root, skills, true); err != nil {
+		if restoreErr := restoreSkillRoot(sys, sharedRoot); restoreErr != nil {
+			return errors.Join(err, restoreErr)
+		}
+		return err
+	}
+	if err := sys.RemoveAll(sharedRoot + projectionDiscardSuffix); err != nil {
+		return fmt.Errorf(messages.SyncRemoveFailedFmt, sharedRoot+projectionDiscardSuffix, err)
+	}
+	claudeRoot := filepath.Join(root, ".claude", "skills")
+	if err := sys.RemoveAll(claudeRoot + projectionDiscardSuffix); err != nil {
+		return fmt.Errorf(messages.SyncRemoveFailedFmt, claudeRoot+projectionDiscardSuffix, err)
+	}
+	return nil
+}
+
+func restoreSkillRoot(sys System, liveRoot string) error {
+	discardRoot := liveRoot + projectionDiscardSuffix
+	_, err := sys.Lstat(discardRoot)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf(messages.SyncReadFailedFmt, discardRoot, err)
+	}
+	if os.IsNotExist(err) {
+		if err := sys.RemoveAll(liveRoot); err != nil {
+			return fmt.Errorf(messages.SyncRemoveFailedFmt, liveRoot, err)
+		}
+		return nil
+	}
+
+	stageRoot := liveRoot + projectionStageSuffix
+	if err := sys.Rename(liveRoot, stageRoot); err != nil {
+		return fmt.Errorf(messages.SyncRenameFailedFmt, liveRoot, stageRoot, err)
+	}
+	if err := sys.Rename(discardRoot, liveRoot); err != nil {
+		restoreErr := fmt.Errorf("restore skill root %s: %w", liveRoot, err)
+		if replaceErr := sys.Rename(stageRoot, liveRoot); replaceErr != nil {
+			return errors.Join(restoreErr, fmt.Errorf("recover published skill root %s: %w", liveRoot, replaceErr))
+		}
+		return restoreErr
+	}
+	if err := sys.RemoveAll(stageRoot); err != nil {
+		return fmt.Errorf(messages.SyncRemoveFailedFmt, stageRoot, err)
+	}
+	return nil
 }
 
 // writeSkillRoot builds a complete sibling staging tree before it touches the
 // live root. A failed publish restores the previous root so existing Claude links
 // remain usable. Retry rebuilds disposable staging and discard directories.
-func writeSkillRoot(sys System, liveRoot string, skills []config.Skill, linkRoot string) error {
+func writeSkillRoot(sys System, liveRoot string, skills []config.Skill, linkRoot string, retainPrevious bool) error {
 	validated, err := validateProjectionSkills(skills)
 	if err != nil {
 		return err
@@ -104,8 +161,10 @@ func writeSkillRoot(sys System, liveRoot string, skills []config.Skill, linkRoot
 		}
 		return publishErr
 	}
-	if err := sys.RemoveAll(discardRoot); err != nil {
-		return fmt.Errorf(messages.SyncRemoveFailedFmt, discardRoot, err)
+	if !retainPrevious {
+		if err := sys.RemoveAll(discardRoot); err != nil {
+			return fmt.Errorf(messages.SyncRemoveFailedFmt, discardRoot, err)
+		}
 	}
 	return nil
 }
