@@ -242,3 +242,16 @@ run_go_tool_tests_gentemplatemanifest() {
     fail "gentemplatemanifest tests failed"
   fi
 }
+
+run_go_tool_tests_checktestevents() {
+  section "Go Tool Tests: checktestevents"
+
+  # The checktestevents package (and its tests) are guarded by the `tools`
+  # build tag, so `go test ./...` (used by make coverage) skips them. Run them
+  # explicitly here so the truncated-package check actually executes in CI.
+  if (cd "$ROOT_DIR" && go test -tags tools ./internal/tools/checktestevents/); then
+    pass "checktestevents tests passed"
+  else
+    fail "checktestevents tests failed"
+  fi
+}

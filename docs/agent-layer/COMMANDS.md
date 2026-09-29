@@ -134,7 +134,7 @@ make test
 ```
 Run from: repo root
 Prerequisites: `make tools` has been run
-Notes: Prints one line per package plus failures, skips, errors, and any package-level or go command output, then the path of a new `.agent-layer/tmp/test-logs/test-<UTC time>-<random>/` directory. That directory holds `go-test.jsonl` (every `go test -json` event, including passing-test output) and `output.log` (the printed output). Logs are never pruned. Replay the full verbose output with `.tools/bin/gotestsum --format standard-verbose --raw-command -- cat <dir>/go-test.jsonl`.
+Notes: Prints one line per package plus failures, skips, errors, and any package-level or go command output, then the path of a new `.agent-layer/tmp/test-logs/test-<UTC time>-<random>/` directory. That directory holds `go-test.jsonl` (every `go test -json` event, including passing-test output) and `output.log` (the printed output). Logs are never pruned. Replay the full verbose output with `.tools/bin/gotestsum --format standard-verbose --raw-command -- cat <dir>/go-test.jsonl`. After a passing run, fails if any started package has no package-level `pass`, `fail`, or `skip` event (a test binary that was replaced or exited through a raw syscall).
 
 - Run e2e harness self-tests (auth, helpers)
 ```bash
