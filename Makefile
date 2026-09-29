@@ -140,11 +140,17 @@ lint-ci-local: check-golangci-lint ## Run fresh-cache Linux-targeted and native-
 # standard-quiet drops per-test PASS lines but, unlike pkgname, keeps package-level output
 # visible alongside go stderr, skips, and failures. The JSON file holds every test event; tee
 # keeps the console transcript because go command stderr never reaches the JSON file.
+# go test exits 0 when a test binary is replaced or exits through a raw syscall, so
+# checktestevents fails the run when a started package has no package-level result.
+# Its pipelines set pipefail locally because macOS GNU Make 3.81 ignores .SHELLFLAGS.
 .PHONY: test
 test: check-gotestsum ## Run tests
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)" "$(TEST_LOG_DIR)"
 	@log_dir="$$(mktemp -d "$(TEST_LOG_DIR)/test-$$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"; status=0; \
 	  GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/gotestsum" --format standard-quiet --jsonfile "$$log_dir/go-test.jsonl" -- ./... 2>&1 | tee "$$log_dir/output.log" || status=$$?; \
+	  if [[ $$status -eq 0 ]]; then \
+	    (set -o pipefail; GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run -tags tools ./internal/tools/checktestevents "$$log_dir/go-test.jsonl" 2>&1 | tee -a "$$log_dir/output.log") || status=$$?; \
+	  fi; \
 	  echo "Full test logs: $$log_dir (go-test.jsonl: all go test events; output.log: this output)"; \
 	  exit $$status
 
@@ -206,6 +212,9 @@ coverage: check-gotestsum ## Run tests with coverage reporting and write coverag
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)" "$(TEST_LOG_DIR)"
 	@log_dir="$$(mktemp -d "$(TEST_LOG_DIR)/coverage-$$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"; status=0; \
 	  GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/gotestsum" --format standard-quiet --jsonfile "$$log_dir/go-test.jsonl" -- ./... -coverprofile=coverage.out 2>&1 | tee "$$log_dir/output.log" || status=$$?; \
+	  if [[ $$status -eq 0 ]]; then \
+	    (set -o pipefail; GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run -tags tools ./internal/tools/checktestevents "$$log_dir/go-test.jsonl" 2>&1 | tee -a "$$log_dir/output.log") || status=$$?; \
+	  fi; \
 	  if [[ $$status -eq 0 ]]; then \
 	    GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run -tags tools ./internal/tools/coverreport -profile coverage.out 2>&1 | tee -a "$$log_dir/output.log" || status=$$?; \
 	  fi; \

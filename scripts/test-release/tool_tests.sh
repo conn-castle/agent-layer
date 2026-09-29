@@ -242,3 +242,67 @@ run_go_tool_tests_gentemplatemanifest() {
     fail "gentemplatemanifest tests failed"
   fi
 }
+
+run_go_tool_tests_checktestevents() {
+  section "Go Tool Tests: checktestevents"
+
+  # The checktestevents package (and its tests) are guarded by the `tools`
+  # build tag, so `go test ./...` (used by make coverage) skips them. Run them
+  # explicitly here so the truncated-package check actually executes in CI.
+  if (cd "$ROOT_DIR" && go test -tags tools ./internal/tools/checktestevents/); then
+    pass "checktestevents tests passed"
+  else
+    fail "checktestevents tests failed"
+  fi
+
+  # macOS ships GNU Make 3.81, which ignores .SHELLFLAGS. Exercise the real
+  # recipes with a successful gotestsum run whose package never finishes.
+  local mock_bin="$tmp_dir/checktestevents-mock-bin"
+  mkdir -p "$mock_bin"
+  cat > "$mock_bin/gotestsum" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+json_file=
+while [[ $# -gt 0 ]]; do
+  if [[ $1 == --jsonfile ]]; then
+    json_file=$2
+    break
+  fi
+  shift
+done
+printf '%s\n' '{"Action":"start","Package":"example/truncated"}' > "$json_file"
+EOF
+  cat > "$mock_bin/go" <<'EOF'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [[ $arg == ./internal/tools/coverreport ]]; then
+    : > "$CHECKTESTEVENTS_COVERREPORT_MARKER"
+    exit 70
+  fi
+done
+exec "$CHECKTESTEVENTS_REAL_GO" "$@"
+EOF
+  chmod +x "$mock_bin/gotestsum" "$mock_bin/go"
+
+  local target run_log_dir output coverreport_marker real_go
+  real_go="$(command -v go)"
+  for target in test coverage; do
+    run_log_dir="$tmp_dir/checktestevents-$target-logs"
+    output="$tmp_dir/checktestevents-$target-output.log"
+    coverreport_marker="$tmp_dir/checktestevents-coverreport-called"
+    rm -f "$coverreport_marker"
+    if (cd "$ROOT_DIR" && PATH="$mock_bin:$PATH" \
+        CHECKTESTEVENTS_REAL_GO="$real_go" \
+        CHECKTESTEVENTS_COVERREPORT_MARKER="$coverreport_marker" \
+        make "$target" TOOL_BIN="$mock_bin" TEST_LOG_DIR="$run_log_dir") > "$output" 2>&1; then
+      fail "make $target accepts an unfinished package"
+    elif ! grep -Fq 'example/truncated' "$output" || \
+         ! grep -Fq 'example/truncated' "$run_log_dir"/*/output.log; then
+      fail "make $target did not report the unfinished package in both outputs"
+    elif [[ $target == coverage && -e $coverreport_marker ]]; then
+      fail "make coverage ran coverreport after the checker failed"
+    else
+      pass "make $target rejects an unfinished package"
+    fi
+  done
+}

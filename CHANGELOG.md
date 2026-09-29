@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - `al copilot` now loads the generated `.copilot/mcp-config.json`, which Copilot CLI does not discover on its own, so Copilot sessions receive their configured MCP servers, including Agent Dispatch.
 - Grok and `al copilot` no longer load root `.mcp.json` servers whose `clients` exclude them when Claude is enabled without Muse; previously these exclusions applied only while Muse was enabled.
+- `make test` and `make coverage` fail when a package's test run starts but never reports a package-level result, which previously passed when a test binary was replaced or exited through a raw syscall.
 
 ## v0.23.0 - 2026-09-26
 

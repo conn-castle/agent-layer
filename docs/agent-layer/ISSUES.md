@@ -29,17 +29,23 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-09-29 make-381-ignores-shellflags: macOS system Make hides failing recipes
+    Priority: High. Area: Makefile / local verification
+    Description: macOS `/usr/bin/make` is GNU Make 3.81, which predates `.SHELLFLAGS` (3.82), so recipes run without `-euo pipefail`. `gotestsum ... | tee ... || status=$?` then captures `tee`'s status, and `make test`, `make coverage`, `make ci`, and the `make test` pre-commit hook exit 0 with failing tests; hosted Linux CI is unaffected.
+    Open question: Should the Makefile require GNU Make 3.82+ (macOS contributors install and run `gmake`), or should recipes stop depending on `.SHELLFLAGS`?
+    Notes: Reproduced 2026-09-29 with a two-line Makefile (`false | true` succeeds; `$-` is `hBc`). A wrapper passed as `SHELL=` running `bash -euo pipefail "$@"` restores the intended behavior.
+
+- Issue 2026-09-29 cmd-al-macos-tempdir-symlink: Three `cmd/al` tests fail on macOS
+    Priority: Medium. Area: Test suite
+    Description: `TestRootedMCPWorkingDir`, `TestWizardCommandInteractiveRunsWizard`, and `TestWizardCommandProfileModeNonInteractive` compare an unresolved `t.TempDir()` path with a symlink-resolved root (`/var/...` vs `/private/var/...`), so they fail on macOS regardless of `TMPDIR`.
+    Next step: Confirm the symlink-resolved root is intended, then align the assertions with it.
+    Notes: Hidden locally by `make-381-ignores-shellflags`; Linux CI has no symlinked temp dir.
+
 - Issue 2026-09-28 vscode-root-mcp-client-filter: VS Code loads Claude-only servers from root `.mcp.json` when Muse is disabled
     Priority: Low. Area: VS Code integration
     Description: VS Code 1.138 discovers root `.mcp.json` and ignores its `enabled` field. With Claude or Claude VS Code and VS Code enabled, that file holds Claude's projection, but `validateMuseVSCodeSharedMCP` rejects servers whose `clients` exclude `vscode` only when Muse is also enabled, so those servers still load in VS Code.
     Open question: Should that validation apply whenever root `.mcp.json` is generated, rejecting configurations that currently sync successfully?
     Notes: Grok and `al copilot` masks were generalized the same way in the `copilot-root-mcp-client-filter` fix; current behavior is documented in docs/MCP_HEADERS_SUPPORT.md.
-
-- Issue 2026-09-23 go-test-truncated-package-undetected: Test runs pass when a test binary is replaced or exits at the syscall level
-    Priority: Low. Area: Test suite / Makefile
-    Description: When a test process is replaced (`syscall.Exec`) or exits through `syscall.Exit` before its package finishes, `go test` still reports `ok` and test2json emits no package-level result; `os.Exit(0)` is caught by `-test.paniconexit0`, but these low-level paths are not. `make test` and `make coverage` (which `make ci` uses) rely on that exit status alone, so the `cmd/al` suite ran 1 of 292 tests from 2026-07-02 to 2026-09-23 without any failure signal.
-    Open question: Is a post-check in `make test` and `make coverage` that fails when a started package lacks a package-level `pass`/`fail`/`skip` event in `go-test.jsonl` worth adding?
-    Notes: The `cmd/al` exec-handoff tests now re-execute the test binary; a full `make test` emits a package-level result for all 49 packages (47 `pass`, 2 `skip` with no test files). `grok` and `copilot_cli` also launch through `clients.ExecHandoff`.
 
 - Issue 2026-07-28 dispatch-mcp-start-transport-window: An MCP dispatch_start disconnect can orphan a handle
     Priority: Medium. Area: Agent Dispatch MCP interface

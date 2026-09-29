@@ -135,6 +135,12 @@ const (
 	CoverReportTableRowFmt           = "%s\t%.2f\t%d\n"
 	CoverReportTotalFmt              = "total coverage: %.2f%%\n"
 
+	// CheckTestEventsUsageFmt formats checktestevents usage.
+	CheckTestEventsUsageFmt             = "Usage: %s <go-test-jsonl-file>\n"
+	CheckTestEventsReadFailedFmt        = "failed to read test events %s: %v\n"
+	CheckTestEventsUnfinishedHeader     = "go test exited successfully, but these packages started without a package-level pass, fail, or skip event (a test binary was replaced or exited early):"
+	CheckTestEventsUnfinishedPackageFmt = "  %s\n"
+
 	// ExtractChecksumUsageFmt formats extract-checksum usage.
 	ExtractChecksumUsageFmt       = "Usage: %s <checksums-file> <target-filename>\n"
 	ExtractChecksumFileMissingFmt = "Error: %s not found\n"

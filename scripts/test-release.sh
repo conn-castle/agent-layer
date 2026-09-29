@@ -78,6 +78,7 @@ run_go_tool_tests_extractchecksum
 run_go_tool_tests_updateformula
 run_go_tool_tests_updateformula_unit
 run_go_tool_tests_gentemplatemanifest
+run_go_tool_tests_checktestevents
 
 # -----------------------------------------------------------------------------
 # Summary
