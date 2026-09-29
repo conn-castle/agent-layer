@@ -88,13 +88,21 @@ launchers in `Makefile`):
   unset CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE GROK_HOME
   export PATH="$PWD/.agent-layer/tmp/dev-bin:$PATH"
   export AL_DEV_BYPASS_VERSION_DISPATCH=1
-  al dispatch options
+  al dispatch options || exit 1
+  wait_for_termination() {
+    local result
+    result="$(al dispatch wait "$1" --condition termination_confirmed)" || return 1
+    printf '%s\n' "$result"
+    python3 -c 'import json, sys
+result = json.load(sys.stdin)
+sys.exit(0 if result.get("condition_met") is True and result.get("termination_confirmed") is True and result.get("state") == "completed" else 1)' <<<"$result"
+  }
   # For each enabled, available provider, use its name from options:
-  al dispatch start --agent <provider> --prompt 'Reply with exactly release-probe-fresh. Do not use tools or modify files.'
-  al dispatch wait <handle> --condition termination_confirmed
+  al dispatch start --agent <provider> --prompt 'Reply with exactly release-probe-fresh. Do not use tools or modify files.' || exit 1
+  wait_for_termination <handle> || exit 1
   # After successful completion, continue the same handle:
-  al dispatch continue <handle> --prompt 'Reply with exactly release-probe-continue. Do not use tools or modify files.'
-  al dispatch wait <handle> --condition termination_confirmed
+  al dispatch continue <handle> --prompt 'Reply with exactly release-probe-continue. Do not use tools or modify files.' || exit 1
+  wait_for_termination <handle> || exit 1
 )
 ```
 
