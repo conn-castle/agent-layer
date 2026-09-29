@@ -170,6 +170,8 @@ Follow the [skill structure](#skill-structure) outlined above. Keep the body foc
 
 Run `al sync` to project the new skill into all enabled clients.
 
+When both projections are enabled, each `.claude/skills/<name>` directory is a symlink to `.agents/skills/<name>`. This lets Claude and Muse discover the same files without Muse reporting shadowed skills. Claude-only configurations receive standalone copies.
+
 The two client skill roots are Agent Layer-owned disposable output. Do not edit or install skills directly in `.agents/skills/` or `.claude/skills/`; sync replaces each enabled root wholesale and removes all extra content. `SKILL.md` bytes, unknown/provider-specific frontmatter, nested resources, and executable bits are preserved exactly. Lowercase `skill.md` is rejected. Every source-tree node must be a real directory or regular file; symlinks and all other node types are rejected, including symlinked skill directories and `SKILL.md` files.
 
 For the complete research-backed authoring guide — including empirical studies on instruction-following, context length effects, and constraint composition — see [Skill Design Guide](/skill-design). For command-line tool workflows, use [CLI Skill Design Guide](/cli-skill-design) so live `--help` stays the place to look up syntax.

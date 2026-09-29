@@ -255,7 +255,7 @@ func TestDetectDisabledAgentArtifacts_FlagsClaudeAndGeminiSkillDirs(t *testing.T
 	}
 	joined := strings.Join(check.Details, "\n")
 	for _, expected := range []string{
-		".claude/skills/deploy/SKILL.md",
+		"claude: .claude/skills",
 		".gemini/skills/deploy/SKILL.md",
 	} {
 		if !strings.Contains(joined, expected) {
@@ -483,7 +483,7 @@ func TestDetectDisabledAgentArtifacts_FlagsSharedSkillsWhenNoConsumerEnabled(t *
 	if err := os.MkdirAll(filepath.Dir(sharedSkill), 0o700); err != nil {
 		t.Fatalf("mkdir shared skill dir: %v", err)
 	}
-	if err := os.WriteFile(sharedSkill, []byte("<!--\n  GENERATED FILE\n-->\n"), 0o600); err != nil {
+	if err := os.WriteFile(sharedSkill, []byte("---\nname: alpha\ndescription: Example.\n---\n"), 0o600); err != nil {
 		t.Fatalf("write shared skill: %v", err)
 	}
 
@@ -500,7 +500,7 @@ func TestDetectDisabledAgentArtifacts_FlagsSharedSkillsWhenNoConsumerEnabled(t *
 	if err != nil {
 		t.Fatalf("detectDisabledAgentArtifacts: %v", err)
 	}
-	if check == nil || !strings.Contains(strings.Join(check.Details, "\n"), ".agents/skills/alpha/SKILL.md") {
+	if check == nil || !strings.Contains(strings.Join(check.Details, "\n"), "shared-skills: .agents/skills") {
 		t.Fatalf("expected stale shared skill finding, got %#v", check)
 	}
 }
@@ -535,5 +535,61 @@ func TestDetectDisabledAgentArtifactsPreservesHandwrittenMuseDispatch(t *testing
 	}
 	if check != nil {
 		t.Fatalf("unowned settings reported: %#v", check)
+	}
+}
+
+func TestDetectDisabledAgentArtifacts_ClaudeOwnedSkillRoot(t *testing.T) {
+	for _, layout := range []string{"copy", "link", "dangling link", "empty", "absent"} {
+		t.Run(layout, func(t *testing.T) {
+			root := t.TempDir()
+			claudeRoot := filepath.Join(root, ".claude", "skills")
+			if layout != "absent" {
+				if err := os.MkdirAll(claudeRoot, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if layout == "copy" || layout == "link" {
+				skill := filepath.Join(claudeRoot, "alpha")
+				if layout == "link" {
+					skill = filepath.Join(root, ".agents", "skills", "alpha")
+				}
+				if err := os.MkdirAll(skill, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				// Current projections preserve source bytes and have no generated marker.
+				if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("---\nname: alpha\ndescription: Example.\n---\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if layout == "link" || layout == "dangling link" {
+				if err := os.Symlink("../../.agents/skills/alpha", filepath.Join(claudeRoot, "alpha")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			inst := &installer{root: root, sys: RealSystem{}}
+			cfg := config.Config{Agents: config.AgentsConfig{
+				Claude:       config.ClaudeConfig{Enabled: testutil.BoolPtr(false)},
+				ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)},
+				Muse:         config.AgentConfig{Enabled: testutil.BoolPtr(true)},
+			}}
+			check, err := detectDisabledAgentArtifacts(inst, &cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if layout == "absent" {
+				if check != nil {
+					t.Fatalf("absent root reported: %+v", check)
+				}
+				return
+			}
+			if check == nil || !strings.Contains(strings.Join(check.Details, "\n"), "claude: .claude/skills") {
+				t.Fatalf("owned Claude root not reported: %+v", check)
+			}
+			cfg.Agents.ClaudeVSCode.Enabled = testutil.BoolPtr(true)
+			check, err = detectDisabledAgentArtifacts(inst, &cfg)
+			if err != nil || check != nil {
+				t.Fatalf("enabled Claude root reported: %+v, %v", check, err)
+			}
+		})
 	}
 }

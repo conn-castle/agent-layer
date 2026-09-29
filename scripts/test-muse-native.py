@@ -426,8 +426,12 @@ def exercise(al, muse, output, version, custom_xdg, claude=None):
                                  "--trust-workspace", "--json"], work, env, case / "skills"))
         require(sum(skill["name"] == "native-fixture" for skill in skills["skills"]) == 1,
                 "Muse selected a generated skill more than once")
+        require(not any(item["code"] == "skill-shadowed" for item in skills["diagnostics"]),
+                "Muse reported shadowed generated skills")
+        require((work / ".claude/skills/native-fixture").is_symlink(),
+                "Claude skill must link to the shared projection")
         for tree in (work / ".agents/skills", work / ".claude/skills"):
-            require(tree.is_dir() and not tree.is_symlink(), "Existing real skill trees were changed")
+            require(tree.is_dir() and not tree.is_symlink(), "Generated skill roots must remain real directories")
         claude_instructions = work / ".claude/CLAUDE.md"
         require(claude_instructions.is_symlink() and claude_instructions.readlink() == Path("../AGENTS.md"),
                 "Claude must share canonical project instructions through the relative link")

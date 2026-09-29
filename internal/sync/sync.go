@@ -95,9 +95,25 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 		func() error { return cleanLegacySkillOutputs(sys, root) },
 	}
 
-	if config.SharedAgentSkillsEnabled(agents) {
-		steps = append(steps, func() error { return WriteAgentSkills(sys, root, project.Skills) })
+	sharedSkills := config.SharedAgentSkillsEnabled(agents)
+	claudeEnabled := config.IsAgentEnabled(agents.Claude.Enabled)
+	claudeVSCodeEnabled := config.IsAgentEnabled(agents.ClaudeVSCode.Enabled)
+	if sharedSkills && (claudeEnabled || claudeVSCodeEnabled) {
+		steps = append(steps, func() error { return writeLinkedSkillRoots(sys, root, project.Skills) })
 	} else {
+		if sharedSkills {
+			steps = append(steps, func() error { return WriteAgentSkills(sys, root, project.Skills) })
+		}
+		if claudeEnabled || claudeVSCodeEnabled {
+			steps = append(steps, func() error { return WriteClaudeSkills(sys, root, project.Skills) })
+		} else {
+			steps = append(steps, func() error { return cleanClaudeSkills(sys, root) })
+		}
+	}
+
+	// Replace Claude links with standalone copies (or remove them) before
+	// deleting their shared targets. On failure, leave those targets available.
+	if !sharedSkills {
 		steps = append(steps, func() error { return cleanSharedAgentSkills(sys, root) })
 	}
 
@@ -105,7 +121,6 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 	// writeVSCodeSettings fires for vscode OR claude_vscode.
 	// writeVSCodeMCPConfig and WriteVSCodeLaunchers fire for vscode only.
 	vscodeEnabled := config.IsAgentEnabled(agents.VSCode.Enabled)
-	claudeVSCodeEnabled := config.IsAgentEnabled(agents.ClaudeVSCode.Enabled)
 
 	if vscodeEnabled || claudeVSCodeEnabled {
 		steps = append(steps,
@@ -151,18 +166,15 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 		steps = append(steps, func() error { return cleanGrokOutputs(sys, root) })
 	}
 
-	// Claude settings and skills fire when claude OR claude_vscode is enabled.
-	claudeEnabled := config.IsAgentEnabled(agents.Claude.Enabled)
+	// Claude settings fire when claude OR claude_vscode is enabled.
 	if claudeEnabled || claudeVSCodeEnabled {
 		steps = append(steps,
 			func() error { return writeClaudeStatusline(sys, root, project) },
 			func() error { return writeClaudeSettings(sys, root, project) },
-			func() error { return WriteClaudeSkills(sys, root, project.Skills) },
 		)
 	} else {
 		steps = append(steps,
 			func() error { return cleanClaudeChimeHook(sys, root) },
-			func() error { return cleanClaudeSkills(sys, root) },
 		)
 	}
 
