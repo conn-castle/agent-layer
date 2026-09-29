@@ -17,8 +17,10 @@ import (
 )
 
 const (
-	flagModel  = "--model"
-	flagEffort = "--effort"
+	flagModel           = "--model"
+	flagEffort          = "--effort"
+	flagReasoningEffort = "--reasoning-effort"
+	flagPermissionMode  = "--permission-mode"
 )
 
 const (
@@ -87,20 +89,20 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 
 	effort := strings.TrimSpace(cfg.Config.Agents.Grok.ReasoningEffort)
 	if effort != "" {
-		args = append(args, "--reasoning-effort", effort)
+		args = append(args, flagReasoningEffort, effort)
 	}
 
 	if config.GrokDisableMemory(cfg.Config.Agents.Grok) {
 		args = append(args, "--no-memory")
 	}
 	if cfg.Config.Approvals.Mode == config.ApprovalModeYOLO {
-		args = append(args, "--permission-mode", "bypassPermissions", "--always-approve")
+		args = append(args, flagPermissionMode, "bypassPermissions", "--always-approve")
 	}
 	args = clients.MergeArgs(args, passArgs, map[string]string{
-		"-m": flagModel, flagEffort: "--reasoning-effort",
+		"-m": flagModel, flagEffort: flagReasoningEffort,
 		// Grok's valueless short options may precede -m in a cluster.
 		"-c": "", "-h": "", "-v": "",
-	})
+	}, []string{flagModel, flagReasoningEffort, flagPermissionMode})
 
 	path, err := exec.LookPath(executableName)
 	if err != nil {

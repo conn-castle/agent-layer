@@ -59,6 +59,24 @@ func TestLaunchGrokExecHandoff(t *testing.T) {
 	}
 }
 
+func TestLaunchGrokOverridesFlagShapedModel(t *testing.T) {
+	root := t.TempDir()
+	grokPath := writeResolvableGrok(t)
+	call := testutil.CaptureExec(t, &execFunc, nil)
+	cfg := &config.ProjectConfig{
+		Config: config.Config{Agents: config.AgentsConfig{
+			Grok: config.GrokConfig{Model: "-custom", ReasoningEffort: "-deep"},
+		}},
+		Root: root,
+	}
+
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, nil, []string{"--model", "chosen"}); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	call.AssertCalled(t, grokPath, []string{"grok", "--reasoning-effort", "-deep", "--model", "chosen"})
+}
+
 func TestLaunchGrokYOLO(t *testing.T) {
 	root := t.TempDir()
 	grokPath := writeResolvableGrok(t)

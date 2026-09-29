@@ -37,7 +37,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	if err != nil {
 		return err
 	}
-	args = clients.MergeArgs(args, passArgs, nil)
+	args = clients.MergeArgs(args, passArgs, nil, nil)
 	env = ConfigureEnvironment(env)
 
 	argv := append([]string{executableName}, args...)

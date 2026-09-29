@@ -12,8 +12,12 @@ import (
 )
 
 const (
-	flagTrustWorkspace = "--trust-workspace"
-	flagWorkspace      = "--workspace"
+	flagTrustWorkspace  = "--trust-workspace"
+	flagWorkspace       = "--workspace"
+	flagModel           = "--model"
+	flagReasoningEffort = "--reasoning-effort"
+	flagApprovalMode    = "--approval-mode"
+	flagApprovalJudge   = "--approval-judge"
 )
 
 const (
@@ -29,15 +33,15 @@ var execFunc = clients.ExecHandoff
 func BaseArgs(root string, cfg config.Config) []string {
 	args := []string{flagWorkspace, root, flagTrustWorkspace}
 	if model := strings.TrimSpace(cfg.Agents.Muse.Model); model != "" {
-		args = append(args, "--model", model)
+		args = append(args, flagModel, model)
 	}
 	if effort := strings.TrimSpace(cfg.Agents.Muse.ReasoningEffort); effort != "" {
-		args = append(args, "--reasoning-effort", effort)
+		args = append(args, flagReasoningEffort, effort)
 	}
 	if cfg.Approvals.Mode == config.ApprovalModeYOLO {
 		args = append(args, "--yolo")
 	} else {
-		args = append(args, "--approval-mode", "untrusted", "--approval-judge", "off")
+		args = append(args, flagApprovalMode, "untrusted", flagApprovalJudge, "off")
 	}
 	return args
 }
@@ -49,7 +53,8 @@ func Launch(project *config.ProjectConfig, _ *run.Info, env []string, passArgs [
 		return fmt.Errorf(messages.ClientsExecLookupErrorFmt, ExecutableName, err)
 	}
 	args := BaseArgs(project.Root, project.Config)
-	args = clients.MergeArgs(args, passArgs, nil)
+	args = clients.MergeArgs(args, passArgs, nil,
+		[]string{flagWorkspace, flagModel, flagReasoningEffort, flagApprovalMode, flagApprovalJudge})
 	if err := execFunc(path, append([]string{ExecutableName}, args...), env); err != nil {
 		return fmt.Errorf(messages.ClientsExecHandoffErrorFmt, ExecutableName, err)
 	}

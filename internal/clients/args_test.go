@@ -27,6 +27,10 @@ func TestMergeArgs(t *testing.T) {
 		{"list after terminator", []string{"--disable-mcp-server", "a"}, []string{"--", "--disable-mcp-server=a"}, []string{"--disable-mcp-server", "a", "--", "--disable-mcp-server=a"}},
 		{"joined default separate caller", []string{"--model=default"}, []string{"--model", "chosen"}, []string{"--model", "chosen"}},
 		{"separate default joined caller", []string{"--model", "default"}, []string{"--model=chosen"}, []string{"--model=chosen"}},
+		{"flag-shaped generated value overridden", []string{"--model", "-preview", "--effort", "high"}, []string{"--model", "chosen"}, []string{"--effort", "high", "--model", "chosen"}},
+		{"flag-shaped generated value retained", []string{"--model", "-preview", "--reasoning-effort", "high"}, []string{"--effort", "low"}, []string{"--model", "-preview", "--effort", "low"}},
+		{"option-shaped generated value overridden", []string{"--model", "--preview", "--effort", "high"}, []string{"--model=chosen"}, []string{"--effort", "high", "--model=chosen"}},
+		{"flag-shaped additive value deduplicated", []string{"--disable-mcp-server", "-local"}, []string{"--disable-mcp-server=-local"}, []string{"--disable-mcp-server=-local"}},
 		{"empty scalar", []string{"--model", "default"}, []string{"--model="}, []string{"--model="}},
 		{"short cluster", []string{"--model", "default"}, []string{"-cm", "chosen"}, []string{"-cm", "chosen"}},
 		{"short cluster attached", []string{"--model", "default"}, []string{"-cmchosen"}, []string{"-cmchosen"}},
@@ -36,7 +40,8 @@ func TestMergeArgs(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			defaults, passed := slices.Clone(tc.defaults), slices.Clone(tc.passed)
-			got := MergeArgs(tc.defaults, tc.passed, map[string]string{"-m": "--model", "--effort": "--reasoning-effort", "-c": ""}, "--disable-mcp-server")
+			got := MergeArgs(tc.defaults, tc.passed, map[string]string{"-m": "--model", "--effort": "--reasoning-effort", "-c": ""},
+				[]string{"--model", "--effort", "--reasoning-effort", "--disable-mcp-server"}, "--disable-mcp-server")
 			if !slices.Equal(got, tc.want) {
 				t.Fatalf("got %q, want %q", got, tc.want)
 			}

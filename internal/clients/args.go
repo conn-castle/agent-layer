@@ -7,14 +7,14 @@ import (
 
 // MergeArgs removes generated options explicitly supplied by the caller before
 // appending passArgs unchanged. defaults must contain only options, with values
-// either joined by '=' or in a following non-option token. aliases maps native
+// either joined by '=' or following options named in valueOptions. aliases maps native
 // alternative spellings to the generated spelling; an empty mapping marks a
 // valueless short option that can precede a value option in a cluster.
 // additive explicitly names native repeatable value options: retain their generated entries unless the
 // caller supplies the same value. Repeated caller options remain unchanged.
-// This is not a full native argument parser: flag-shaped separate option values
-// can be mistaken for options. Use --option=value for such literal values.
-func MergeArgs(defaults, passArgs []string, aliases map[string]string, additive ...string) []string {
+// This is not a full native argument parser: flag-shaped separate caller values
+// may still be mistaken for options. Use --option=value for such literal values.
+func MergeArgs(defaults, passArgs []string, aliases map[string]string, valueOptions []string, additive ...string) []string {
 	provided := make(map[string][]string)
 	for i, arg := range passArgs {
 		if arg == "--" {
@@ -47,7 +47,7 @@ func MergeArgs(defaults, passArgs []string, aliases map[string]string, additive 
 		start := i
 		name, value, joined := strings.Cut(defaults[i], "=")
 		i++
-		if !joined && i < len(defaults) && !strings.HasPrefix(defaults[i], "-") {
+		if !joined && slices.Contains(valueOptions, name) && i < len(defaults) {
 			value = defaults[i]
 			i++
 		}
