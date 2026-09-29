@@ -33,7 +33,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	args = append(args, "--additional-mcp-config", "@"+filepath.Join(cfg.Root, ".copilot", "mcp-config.json"))
 	// Native Copilot discovers the shared root file independently of its own
 	// projection. Exclude only generated IDs not selected for this client.
-	for _, id := range projection.MuseSharedMCPExclusions(cfg.Config, projection.ClientCopilot) {
+	for _, id := range projection.RootMCPExclusions(cfg.Config, projection.ClientCopilot) {
 		args = append(args, "--disable-mcp-server", id)
 	}
 	args = append(args, passArgs...)

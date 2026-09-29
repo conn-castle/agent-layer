@@ -151,12 +151,15 @@ func buildGrokConfig(project *config.ProjectConfig) (string, error) {
 
 	// Grok also imports root .mcp.json. A full native definition is required
 	// for enabled=false to override that fallback; a bare flag is ignored.
-	excluded := projection.MuseSharedMCPExclusions(project.Config, projection.ClientGrok)
+	excluded := projection.RootMCPExclusions(project.Config, projection.ClientGrok)
 	if len(excluded) > 0 {
 		// Masks need valid native definitions, not Muse's resolved credentials.
 		// Keep the same placeholder projection used by selected Grok servers.
 		shared := make(map[string]projection.ResolvedMCPServer)
-		clients := []string{projection.ClientMuse}
+		var clients []string
+		if config.IsAgentEnabled(project.Config.Agents.Muse.Enabled) {
+			clients = append(clients, projection.ClientMuse)
+		}
 		if config.IsAgentEnabled(project.Config.Agents.Claude.Enabled) || config.IsAgentEnabled(project.Config.Agents.ClaudeVSCode.Enabled) {
 			clients = append(clients, projection.ClientClaude)
 		}

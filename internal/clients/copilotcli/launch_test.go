@@ -2,7 +2,6 @@ package copilotcli
 
 import (
 	"errors"
-	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -133,18 +132,28 @@ func TestLaunchCopilotCLIAllowAllTools(t *testing.T) {
 	call.AssertCalled(t, copilotPath, append([]string{"copilot", "--model", "test-model", "--allow-all-tools"}, projectMCPConfigArgs(root)...))
 }
 
-func TestLaunchCopilotMuseExcludesOnlyUnselectedSharedServers(t *testing.T) {
-	for _, muse := range []bool{false, true} {
-		t.Run(fmt.Sprint(muse), func(t *testing.T) {
+func TestLaunchCopilotExcludesOnlyUnselectedRootServers(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		claude, muse bool
+		excluded     []string
+	}{
+		{name: "neither"},
+		{name: "claude", claude: true, excluded: []string{"claude-only"}},
+		{name: "muse", muse: true, excluded: []string{"muse-only"}},
+		{name: "claude and muse", claude: true, muse: true, excluded: []string{"claude-only", "muse-only"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
 			binary := writeResolvableCopilot(t)
 			call := testutil.CaptureExec(t, &execFunc, nil)
 			enabled := true
+			claude, muse := tc.claude, tc.muse
 			cfg := &config.ProjectConfig{Root: root, Config: config.Config{Agents: config.AgentsConfig{
-				Muse: config.AgentConfig{Enabled: &muse}, CopilotCLI: config.AgentConfig{Enabled: &enabled}, ClaudeVSCode: config.EnableOnlyConfig{Enabled: &enabled},
+				Muse: config.AgentConfig{Enabled: &muse}, CopilotCLI: config.AgentConfig{Enabled: &enabled}, ClaudeVSCode: config.EnableOnlyConfig{Enabled: &claude},
 			}}}
 			for id, selected := range map[string][]string{
-				"muse-only": {"muse"}, "claude-only": {"claude"}, "shared": {"muse", "copilot"}, "copilot-only": {"copilot"}, "other": {"grok"},
+				"muse-only": {"muse"}, "claude-only": {"claude"}, "shared": {"claude", "muse", "copilot"}, "copilot-only": {"copilot"}, "other": {"grok"},
 			} {
 				cfg.Config.MCP.Servers = append(cfg.Config.MCP.Servers, config.MCPServer{ID: id, Enabled: &enabled, Clients: selected, Transport: "stdio", Command: "fixture"})
 			}
@@ -154,8 +163,8 @@ func TestLaunchCopilotMuseExcludesOnlyUnselectedSharedServers(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := append([]string{"copilot"}, projectMCPConfigArgs(root)...)
-			if muse {
-				want = append(want, "--disable-mcp-server", "claude-only", "--disable-mcp-server", "muse-only")
+			for _, id := range tc.excluded {
+				want = append(want, "--disable-mcp-server", id)
 			}
 			want = append(want, "--disable-mcp-server", "personal-disabled")
 			call.AssertCalled(t, binary, want)

@@ -240,14 +240,16 @@ normal default directory. Claude accepts the same defaults on shared entries;
 Claude-only entries receive no additional environment fields.
 
 
-### Shared root discovery with Muse
+### Shared root discovery
 
-When Muse is enabled, Grok's generated project config includes full disabled
-server definitions for shared root IDs excluded by `clients`. This masks Grok's
-root-file fallback without disabling unrelated personal or plugin servers.
-`al copilot` passes native `--disable-mcp-server` flags for the corresponding
-Copilot exclusions. These controls are absent when Muse is disabled. Launching
-Copilot directly bypasses the Agent Layer launch flags.
+Root `.mcp.json` holds the Claude projection when either Claude integration is
+enabled and the Muse projection when Muse is enabled. Grok and Copilot CLI also
+discover that file. Grok's generated project config includes full disabled
+server definitions for root IDs excluded from Grok by `clients`. This masks
+Grok's root-file fallback without disabling unrelated personal or plugin
+servers. `al copilot` passes native `--disable-mcp-server` flags for the
+corresponding Copilot exclusions. Launching Copilot directly bypasses the
+Agent Layer launch flags.
 
 VS Code 1.138 also discovers root `.mcp.json` through its core MCP service,
 independently of `.vscode/mcp.json`, and ignores the root entries' `enabled`
