@@ -31,8 +31,8 @@ func TestWizardCommandInteractiveRunsWizard(t *testing.T) {
 	wizardCalled := false
 	runWizard = func(root string, _ string) error {
 		wizardCalled = true
-		if root != wantRoot {
-			t.Fatalf("expected root %q, got %q", wantRoot, root)
+		if root != canonicalPath(wantRoot) {
+			t.Fatalf("expected root %q, got %q", canonicalPath(wantRoot), root)
 		}
 		return nil
 	}
@@ -148,8 +148,8 @@ enabled = true
 	called := false
 	runWizardProfile = func(gotRoot string, _ string, gotPath string, apply bool, _ io.Writer) error {
 		called = true
-		if gotRoot != root {
-			t.Fatalf("expected root %q, got %q", root, gotRoot)
+		if gotRoot != canonicalPath(root) {
+			t.Fatalf("expected root %q, got %q", canonicalPath(root), gotRoot)
 		}
 		if gotPath != profilePath {
 			t.Fatalf("expected profile %q, got %q", profilePath, gotPath)
