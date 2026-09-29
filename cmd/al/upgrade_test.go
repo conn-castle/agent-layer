@@ -353,6 +353,12 @@ func TestUpgradeCmd_SuccessMessageOnCompletion(t *testing.T) {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
+	for _, name := range []string{"config.toml.bak", ".env.bak"} {
+		if err := os.WriteFile(filepath.Join(root, ".agent-layer", name), []byte("previous"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	origIsTerminal := isTerminal
 	isTerminal = func() bool { return true }
 	t.Cleanup(func() { isTerminal = origIsTerminal })
@@ -373,6 +379,19 @@ func TestUpgradeCmd_SuccessMessageOnCompletion(t *testing.T) {
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("execute upgrade: %v", err)
 		}
+		for _, name := range []string{"config.toml.bak", ".env.bak"} {
+			// #nosec G304 -- fixed backup names inside the test temporary repository.
+			data, err := os.ReadFile(filepath.Join(root, ".agent-layer", "state", "wizard-backups", name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(data) != "previous" {
+				t.Fatalf("backup changed: %s", name)
+			}
+			if _, err := os.Stat(filepath.Join(root, ".agent-layer", name)); !os.IsNotExist(err) {
+				t.Fatalf("legacy backup remains: %v", err)
+			}
+		}
 		if !strings.Contains(stdout.String(), messages.UpgradeSuccessful) {
 			t.Fatalf("expected %q in stdout, got %q", messages.UpgradeSuccessful, stdout.String())
 		}
@@ -386,6 +405,11 @@ func TestUpgradeCmd_NoSuccessMessageOnError(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	legacy := filepath.Join(root, ".agent-layer", ".env.bak")
+	if err := os.WriteFile(legacy, []byte("recovery"), 0600); err != nil {
+		t.Fatal(err)
 	}
 
 	origIsTerminal := isTerminal
@@ -405,6 +429,18 @@ func TestUpgradeCmd_NoSuccessMessageOnError(t *testing.T) {
 		cmd.SetIn(bytes.NewBufferString(""))
 
 		err := cmd.Execute()
+		// #nosec G304 -- fixed legacy backup path inside the test temporary repository.
+		data, readErr := os.ReadFile(legacy)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if string(data) != "recovery" {
+			t.Fatal("legacy backup changed during failed upgrade")
+		}
+		if _, statErr := os.Stat(filepath.Join(root, ".agent-layer", "state", "wizard-backups", ".env.bak")); !os.IsNotExist(statErr) {
+			t.Fatalf("backup migrated during failed upgrade: %v", statErr)
+		}
+
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -513,6 +549,11 @@ func TestUpgradeCmd_SyncFailureWrappedNonFatalLoud(t *testing.T) {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
+	legacy := filepath.Join(root, ".agent-layer", ".env.bak")
+	if err := os.WriteFile(legacy, []byte("recovery"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
 	origIsTerminal := isTerminal
 	isTerminal = func() bool { return false }
 	t.Cleanup(func() { isTerminal = origIsTerminal })
@@ -537,6 +578,18 @@ func TestUpgradeCmd_SyncFailureWrappedNonFatalLoud(t *testing.T) {
 		cmd.SetIn(bytes.NewBufferString(""))
 
 		err := cmd.Execute()
+		// #nosec G304 -- fixed legacy backup path inside the test temporary repository.
+		data, readErr := os.ReadFile(legacy)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if string(data) != "recovery" {
+			t.Fatal("legacy backup changed during failed upgrade")
+		}
+		if _, statErr := os.Stat(filepath.Join(root, ".agent-layer", "state", "wizard-backups", ".env.bak")); !os.IsNotExist(statErr) {
+			t.Fatalf("backup migrated during failed upgrade: %v", statErr)
+		}
+
 		if err == nil {
 			t.Fatal("expected error from upgrade when sync fails")
 		}
@@ -1047,6 +1100,50 @@ func TestUpgradeCmd_VersionFlagValidationError(t *testing.T) {
 		err := cmd.Execute()
 		if !errors.Is(err, sentinel) {
 			t.Fatalf("expected sentinel error, got %v", err)
+		}
+	})
+}
+
+func TestUpgradeCmd_BackupMigrationFailure(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(root, ".agent-layer", ".env.bak")
+	if err := os.WriteFile(legacy, []byte("recovery"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "state"), []byte("blocked"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+	origInstallRun := installRun
+	installRun = func(string, install.Options) error { return nil }
+	t.Cleanup(func() { installRun = origInstallRun })
+	stubSyncRunNoop(t)
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		var stdout bytes.Buffer
+		cmd.SetArgs([]string{"--yes", "--apply-managed-updates"})
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+		err := cmd.Execute()
+		if err == nil || !strings.Contains(err.Error(), "create wizard backup directory") {
+			t.Fatalf("expected backup migration failure, got %v", err)
+		}
+		if strings.Contains(stdout.String(), messages.UpgradeSuccessful) {
+			t.Fatal("success message printed on migration failure")
+		}
+		// #nosec G304 -- fixed legacy backup path inside the test temporary repository.
+		data, readErr := os.ReadFile(legacy)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if string(data) != "recovery" {
+			t.Fatal("legacy backup lost on migration failure")
 		}
 	})
 }

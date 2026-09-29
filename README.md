@@ -272,6 +272,8 @@ Run `al wizard` any time to interactively configure the most important settings:
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
 - **Warnings** (enable/disable warning checks; threshold values use template defaults)
 
+Wizard backups are stored in `.agent-layer/state/wizard-backups/`. Each wizard apply replaces the latest backup for the files it writes. After a successful upgrade and sync, `al upgrade` moves legacy `.agent-layer/config.toml.bak` and `.agent-layer/.env.bak` files there, retaining conflicts with numbered `.legacy-N` suffixes. Explicit cleanup removes both current and legacy backups.
+
 Non-interactive profile mode is also available:
 
 ```bash

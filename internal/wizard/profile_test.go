@@ -62,7 +62,7 @@ func TestRunProfile_Apply(t *testing.T) {
 	updated, err := os.ReadFile(configPath)
 	require.NoError(t, err)
 	require.Contains(t, string(updated), `mode = "all"`)
-	if _, err := os.Stat(configPath + ".bak"); err != nil {
+	if _, err := os.Stat(backupPath(root, "config.toml.bak")); err != nil {
 		t.Fatalf("expected profile apply backup: %v", err)
 	}
 }
@@ -235,13 +235,13 @@ func TestRunProfile_BackupAndWriteErrors(t *testing.T) {
 	require.NoError(t, os.WriteFile(profilePath, []byte(profile), 0o600))
 
 	t.Run("backup write failure", func(t *testing.T) {
-		require.NoError(t, os.Mkdir(configPath+".bak", 0o700))
+		require.NoError(t, os.MkdirAll(backupPath(root, "config.toml.bak"), 0o700))
 		err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", profilePath, true, nil)
 		require.ErrorContains(t, err, "failed to backup config")
 	})
 
 	t.Run("write config failure", func(t *testing.T) {
-		require.NoError(t, os.RemoveAll(configPath+".bak"))
+		require.NoError(t, os.RemoveAll(backupPath(root, "config.toml.bak")))
 		origWrite := writeFileAtomic
 		t.Cleanup(func() { writeFileAtomic = origWrite })
 		writeFileAtomic = func(path string, data []byte, perm os.FileMode) error {

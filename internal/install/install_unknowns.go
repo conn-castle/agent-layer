@@ -396,6 +396,10 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 	add(filepath.Join(root, ".agent-layer", "tmp"))
 	add(filepath.Join(root, ".agent-layer", "tmp", "runs"))
 
+	// Preserve legacy wizard backups until post-upgrade migration relocates them.
+	add(filepath.Join(root, ".agent-layer", "config.toml.bak"))
+	add(filepath.Join(root, ".agent-layer", ".env.bak"))
+
 	// Root-level managed files.
 	for _, file := range inst.templates().knownTemplateFiles() {
 		add(file.path)

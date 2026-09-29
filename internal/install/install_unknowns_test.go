@@ -886,3 +886,23 @@ func TestBuildKnownPaths_PreservesImportedSkillState(t *testing.T) {
 		t.Fatalf("imported skill state was classified as unknown: %v", rel)
 	}
 }
+
+func TestScanUnknowns_WizardBackupsArePreserved(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"config.toml.bak", ".env.bak", "state/wizard-backups/config.toml.bak", "state/wizard-backups/.env.bak.legacy-1"} {
+		path := filepath.Join(root, ".agent-layer", filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("recovery"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.scanUnknowns(); err != nil {
+		t.Fatal(err)
+	}
+	if paths := inst.relativeUnknowns(); len(paths) != 0 {
+		t.Fatalf("backups offered for deletion: %v", paths)
+	}
+}

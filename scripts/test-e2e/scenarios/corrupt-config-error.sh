@@ -83,7 +83,7 @@ run_scenario_corrupt_config_error() {
     "no panic in wizard output"
 
   # Wizard should have created a backup of the corrupt config
-  assert_file_exists "$repo_dir/.agent-layer/config.toml.bak" \
+  assert_file_exists "$repo_dir/.agent-layer/state/wizard-backups/config.toml.bak" \
     "wizard created backup of corrupt config"
 
   # The overwritten config should now be valid TOML (matches profile)
