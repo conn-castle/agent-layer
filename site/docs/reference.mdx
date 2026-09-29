@@ -850,7 +850,15 @@ These commands read `.agent-layer/`, regenerate client outputs, and then launch 
 
 This is the default workflow for day-to-day use: you get a clean regenerate and a launch in one command, which keeps behavior consistent even when you switch tools.
 
-`al <client>` forwards any extra arguments to the underlying client. If you need to use Agent Layer flags as well, place `--` before the client arguments. `--no-sync` is supported by `al vscode` and `al muse` and must appear before `--`. For an explicit false value, use `--no-sync=false` (space-separated values like `--no-sync false` are not supported and will be passed through).
+`al <client>` forwards any extra arguments to the underlying client.
+
+Explicit client options replace matching Agent Layer-generated command-line defaults, so `al grok --model MODEL` sends only your model flag. This also applies to reasoning effort and other generated options, including `--option=value` syntax and supported native aliases. Known repeatable list options remain additive: Copilot’s `--additional-mcp-config` and `--disable-mcp-server` keep distinct generated entries and omit generated entries whose exact value you supply. Repeatable options are explicitly identified per client, not inferred from repeated use. Caller-supplied arguments (including repeated options) remain unchanged.
+
+Replacement matches the same option or a supported alias; it does not resolve conflicts between differently named approval flags (for example, `--yolo` and `--approval-mode`). The merge is not a full native argument parser: for literal option values that look like flags, use the native `--option=value` form (for example, `--append-system-prompt=--dangerously-skip-permissions`) so the value is not mistaken for an override.
+
+Codex and Antigravity model defaults live in generated configuration files and are overridden by their native CLI options.
+
+If you need to use Agent Layer flags as well, place `--` before the client arguments. `--no-sync` is supported by `al vscode` and `al muse` and must appear before `--`. For an explicit false value, use `--no-sync=false` (space-separated values like `--no-sync false` are not supported and will be passed through).
 
 `al vscode` preflight now fails fast with clear guidance when:
 

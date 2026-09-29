@@ -17,12 +17,17 @@ import (
 // execFunc is overridable for tests; on success it never returns.
 var execFunc = clients.ExecHandoff
 
+const (
+	flagModel  = "--model"
+	flagEffort = "--effort"
+)
+
 // Launch starts the Claude Code CLI with the configured options.
 func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
 	args := []string{}
 	model := cfg.Config.Agents.Claude.Model
 	if model != "" {
-		args = append(args, "--model", model)
+		args = append(args, flagModel, model)
 	}
 	// Pass --effort only when there is no agent_specific effortLevel override.
 	// agent_specific.effortLevel is written to settings.json and CLI args take
@@ -30,12 +35,12 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	// Trim so " max " is forwarded as "max".
 	effort := strings.TrimSpace(cfg.Config.Agents.Claude.ReasoningEffort)
 	if effort != "" && !config.HasProviderPassthroughKey(cfg.Config.Agents.Claude.AgentSpecific, "effortLevel") {
-		args = append(args, "--effort", effort)
+		args = append(args, flagEffort, effort)
 	}
 	if cfg.Config.Approvals.Mode == config.ApprovalModeYOLO {
 		args = append(args, "--dangerously-skip-permissions")
 	}
-	args = append(args, passArgs...)
+	args = clients.MergeArgs(args, passArgs, nil, []string{flagModel, flagEffort})
 
 	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Claude, os.Stderr)
 

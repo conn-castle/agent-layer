@@ -59,6 +59,24 @@ func TestLaunchGrokExecHandoff(t *testing.T) {
 	}
 }
 
+func TestLaunchGrokOverridesFlagShapedModel(t *testing.T) {
+	root := t.TempDir()
+	grokPath := writeResolvableGrok(t)
+	call := testutil.CaptureExec(t, &execFunc, nil)
+	cfg := &config.ProjectConfig{
+		Config: config.Config{Agents: config.AgentsConfig{
+			Grok: config.GrokConfig{Model: "-custom", ReasoningEffort: "-deep"},
+		}},
+		Root: root,
+	}
+
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, nil, []string{"--model", "chosen"}); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	call.AssertCalled(t, grokPath, []string{"grok", "--reasoning-effort", "-deep", "--model", "chosen"})
+}
+
 func TestLaunchGrokYOLO(t *testing.T) {
 	root := t.TempDir()
 	grokPath := writeResolvableGrok(t)
@@ -257,5 +275,30 @@ func TestGrokContractHelpers(t *testing.T) {
 	yolo := config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO}}
 	if got := SandboxArgs(yolo, nil); got != nil {
 		t.Fatalf("YOLO sandbox args = %v, want nil", got)
+	}
+}
+
+func TestLaunchExplicitOptionsReplaceDefaults(t *testing.T) {
+	root := t.TempDir()
+	binDir := t.TempDir()
+	testutil.WriteStub(t, binDir, "grok")
+	t.Setenv("PATH", binDir)
+	cfg := &config.ProjectConfig{Root: root, Config: config.Config{
+		Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
+		Agents:    config.AgentsConfig{Grok: config.GrokConfig{Model: "default-model", ReasoningEffort: "high"}},
+	}}
+	for _, passed := range [][]string{
+		{"--model", "chosen", "--reasoning-effort=low"},
+		{"-m", "chosen", "--effort", "low"},
+		{"-mchosen", "--effort=low"},
+		{"-cm", "chosen", "--effort", "low"},
+		{"-cmchosen", "--effort", "low"},
+	} {
+		passed = append(passed, "--permission-mode", "plan", "--always-approve")
+		call := testutil.CaptureExec(t, &execFunc, nil)
+		if err := Launch(cfg, nil, nil, passed); err != nil {
+			t.Fatal(err)
+		}
+		call.AssertCalled(t, filepath.Join(binDir, "grok"), append([]string{"grok"}, passed...))
 	}
 }
