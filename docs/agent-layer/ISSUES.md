@@ -35,12 +35,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Open question: Should the Makefile require GNU Make 3.82+ (macOS contributors install and run `gmake`), or should recipes stop depending on `.SHELLFLAGS`?
     Notes: Reproduced 2026-09-29 with a two-line Makefile (`false | true` succeeds; `$-` is `hBc`). A wrapper passed as `SHELL=` running `bash -euo pipefail "$@"` restores the intended behavior.
 
-- Issue 2026-09-29 cmd-al-macos-tempdir-symlink: Three `cmd/al` tests fail on macOS
-    Priority: Medium. Area: Test suite
-    Description: `TestRootedMCPWorkingDir`, `TestWizardCommandInteractiveRunsWizard`, and `TestWizardCommandProfileModeNonInteractive` compare an unresolved `t.TempDir()` path with a symlink-resolved root (`/var/...` vs `/private/var/...`), so they fail on macOS regardless of `TMPDIR`.
-    Next step: Confirm the symlink-resolved root is intended, then align the assertions with it.
-    Notes: Hidden locally by `make-381-ignores-shellflags`; Linux CI has no symlinked temp dir.
-
 - Issue 2026-09-28 vscode-root-mcp-client-filter: VS Code loads Claude-only servers from root `.mcp.json` when Muse is disabled
     Priority: Low. Area: VS Code integration
     Description: VS Code 1.138 discovers root `.mcp.json` and ignores its `enabled` field. With Claude or Claude VS Code and VS Code enabled, that file holds Claude's projection, but `validateMuseVSCodeSharedMCP` rejects servers whose `clients` exclude `vscode` only when Muse is also enabled, so those servers still load in VS Code.

@@ -13,11 +13,14 @@ import (
 )
 
 func TestRootedMCPWorkingDir(t *testing.T) {
-	root := t.TempDir()
-	if err := os.Mkdir(filepath.Join(root, ".agent-layer"), 0o750); err != nil {
+	// Production passes the symlink-resolved root from resolveRepoRootAndWorkingDir,
+	// while the client's cwd may still use the logical path (e.g. macOS /var vs /private/var).
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".agent-layer"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	subdir := filepath.Join(root, "nested")
+	root := canonicalPath(dir)
+	subdir := filepath.Join(dir, "nested")
 	if err := os.Mkdir(subdir, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +34,7 @@ func TestRootedMCPWorkingDir(t *testing.T) {
 	if got := rootedMCPWorkingDir(root, root, "relative"); got != root {
 		t.Fatalf("relative working dir = %q, want fallback %q", got, root)
 	}
-	spaced := filepath.Join(root, "nested ")
+	spaced := filepath.Join(dir, "nested ")
 	if err := os.Mkdir(spaced, 0o750); err != nil {
 		t.Fatal(err)
 	}
