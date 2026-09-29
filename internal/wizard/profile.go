@@ -108,13 +108,23 @@ func CleanupBackups(root string) ([]string, error) {
 		filepath.Join(root, ".agent-layer", envBackupName),
 	}
 
-	entries, err := os.ReadDir(filepath.Dir(backupPath(root, configBackupName)))
+	backupDir := filepath.Dir(backupPath(root, configBackupName))
+	info, err := os.Lstat(backupDir)
 	if err != nil && !os.IsNotExist(err) {
-		return nil, err
+		return nil, fmt.Errorf("inspect wizard backup directory %s: %w", backupDir, err)
 	}
-	for _, entry := range entries {
-		if isBackupName(entry.Name()) {
-			candidates = append(candidates, backupPath(root, entry.Name()))
+	if err == nil {
+		if !info.IsDir() {
+			return nil, fmt.Errorf("wizard backup directory %s must be a real directory", backupDir)
+		}
+		entries, err := os.ReadDir(backupDir)
+		if err != nil {
+			return nil, fmt.Errorf("read wizard backup directory %s: %w", backupDir, err)
+		}
+		for _, entry := range entries {
+			if isBackupName(entry.Name()) {
+				candidates = append(candidates, backupPath(root, entry.Name()))
+			}
 		}
 	}
 

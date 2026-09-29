@@ -16,6 +16,8 @@ const (
 	envBackupName    = ".env.bak"
 )
 
+var syncBackupDir = fsutil.SyncDir
+
 func backupPath(root, name string) string {
 	return filepath.Join(root, ".agent-layer", "state", "wizard-backups", name)
 }
@@ -57,7 +59,7 @@ func MigrateBackups(root string) error {
 			return fmt.Errorf("read wizard backup %s: %w", source, err)
 		}
 		target := backupPath(root, name)
-		if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		if err := fsutil.EnsurePrivateDir(filepath.Dir(target)); err != nil {
 			return fmt.Errorf("create wizard backup directory: %w", err)
 		}
 		for n := 0; ; n++ {
@@ -106,6 +108,9 @@ func copyBackupExclusive(destination string, data []byte, perm os.FileMode) (err
 	if err != nil {
 		return err
 	}
+	if err := syncBackupDir(filepath.Dir(destination)); err != nil {
+		return err
+	}
 	complete = true
-	return fsutil.SyncDir(filepath.Dir(destination))
+	return nil
 }

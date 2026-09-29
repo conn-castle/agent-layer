@@ -734,13 +734,13 @@ Use it when you want to get to a safe, working configuration quickly, or when yo
 
 Instruction and memory seeding creates missing files only and does not refresh existing ones. Catalog skill removal deletes the matching skill directory after preview confirmation. Use `al upgrade` for managed instruction and workflow-skill template updates.
 
-The wizard rewrites `config.toml` in a fixed preferred section order and creates backups (`.bak`) before modifying `.agent-layer/config.toml` or `.agent-layer/.env`. Inline comments on modified lines may be moved to leading comments or removed; the original formatting is preserved in the backup files.
+The wizard rewrites `config.toml` in a fixed preferred section order and creates backups in `.agent-layer/state/wizard-backups/` before modifying `.agent-layer/config.toml` or `.agent-layer/.env`. Inline comments on modified lines may be moved to leading comments or removed; the original formatting is preserved in the backup files. After a successful upgrade and sync, `al upgrade` moves older backups from `.agent-layer/` into this directory, retaining conflicts with numbered `.legacy-N` suffixes.
 
 Additional modes:
 
 - `al wizard --profile /path/to/profile.toml`: preview-only profile rewrite diff
 - `al wizard --profile /path/to/profile.toml --yes`: apply profile and run sync
-- `al wizard --cleanup-backups`: delete `.agent-layer/config.toml.bak` and `.agent-layer/.env.bak`
+- `al wizard --cleanup-backups`: delete wizard backups from `.agent-layer/state/wizard-backups/`, including migrated `.legacy-N` files, and any backups remaining at the older `.agent-layer/` paths
 
 **Navigation**
 

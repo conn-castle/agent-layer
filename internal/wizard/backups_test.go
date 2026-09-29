@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -75,6 +76,26 @@ func TestMigrateBackupsFailurePreservesSource(t *testing.T) {
 	require.Equal(t, "secret", string(data))
 }
 
+func TestMigrateBackupsRetriesAfterDirectorySyncFailure(t *testing.T) {
+	root := t.TempDir()
+	legacy := filepath.Join(root, ".agent-layer", configBackupName)
+	require.NoError(t, os.MkdirAll(filepath.Dir(legacy), 0700))
+	require.NoError(t, os.WriteFile(legacy, []byte("recovery"), 0600))
+
+	originalSync := syncBackupDir
+	syncBackupDir = func(string) error { return errors.New("sync failed") }
+	t.Cleanup(func() { syncBackupDir = originalSync })
+	require.ErrorContains(t, MigrateBackups(root), "sync failed")
+	require.FileExists(t, legacy)
+	require.NoFileExists(t, backupPath(root, configBackupName))
+
+	syncBackupDir = originalSync
+	require.NoError(t, MigrateBackups(root))
+	require.NoFileExists(t, legacy)
+	require.FileExists(t, backupPath(root, configBackupName))
+	require.NoFileExists(t, backupPath(root, configBackupName)+".legacy-1")
+}
+
 func TestBackupsRejectNonRegularFiles(t *testing.T) {
 	for _, operation := range []string{"migrate", "cleanup"} {
 		for _, kind := range []string{"directory", "symlink"} {
@@ -126,4 +147,62 @@ func TestWriteBackupReplacesPermissionsAndPreservesLinkedFile(t *testing.T) {
 	original, err := os.ReadFile(linked)
 	require.NoError(t, err)
 	require.Equal(t, "old", string(original))
+}
+
+func TestBackupOperationsRejectSymlinkedDirectory(t *testing.T) {
+	for _, operation := range []string{"write", "migrate", "cleanup"} {
+		t.Run(operation, func(t *testing.T) {
+			root := t.TempDir()
+			external := t.TempDir()
+			backupDir := filepath.Dir(backupPath(root, configBackupName))
+			require.NoError(t, os.MkdirAll(filepath.Dir(backupDir), 0700))
+			require.NoError(t, os.Symlink(external, backupDir))
+			externalBackup := filepath.Join(external, configBackupName)
+			require.NoError(t, os.WriteFile(externalBackup, []byte("external"), 0600))
+			legacy := filepath.Join(root, ".agent-layer", configBackupName)
+			if operation != "write" {
+				require.NoError(t, os.WriteFile(legacy, []byte("legacy"), 0600))
+			}
+
+			var err error
+			switch operation {
+			case "write":
+				_, err = writeBackup(backupPath(root, configBackupName), []byte("new"), 0600)
+			case "migrate":
+				err = MigrateBackups(root)
+			case "cleanup":
+				_, err = CleanupBackups(root)
+			}
+			require.Error(t, err)
+			contents, readErr := os.ReadFile(externalBackup)
+			require.NoError(t, readErr)
+			require.Equal(t, "external", string(contents))
+			if operation != "write" {
+				require.FileExists(t, legacy)
+			}
+		})
+	}
+}
+
+func TestBackupOperationsTightenDirectoryPermissions(t *testing.T) {
+	for _, operation := range []string{"write", "migrate"} {
+		t.Run(operation, func(t *testing.T) {
+			root := t.TempDir()
+			backupDir := filepath.Dir(backupPath(root, configBackupName))
+			// #nosec G301 -- deliberately broad permissions verify they are tightened.
+			require.NoError(t, os.MkdirAll(backupDir, 0755))
+			require.NoError(t, os.Chmod(backupDir, 0755)) // #nosec G302 -- deliberately broad permissions verify they are tightened.
+			if operation == "write" {
+				_, err := writeBackup(backupPath(root, configBackupName), []byte("new"), 0600)
+				require.NoError(t, err)
+			} else {
+				legacy := filepath.Join(root, ".agent-layer", configBackupName)
+				require.NoError(t, os.WriteFile(legacy, []byte("legacy"), 0600))
+				require.NoError(t, MigrateBackups(root))
+			}
+			info, err := os.Stat(backupDir)
+			require.NoError(t, err)
+			require.Equal(t, os.FileMode(0700), info.Mode().Perm())
+		})
+	}
 }

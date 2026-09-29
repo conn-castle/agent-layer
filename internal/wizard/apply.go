@@ -142,7 +142,7 @@ func filePermOr(path string, fallback os.FileMode) (os.FileMode, error) {
 // writeBackup writes a backup file and reports whether a new backup was created.
 // path is the backup file path; data is the source content; perm is the file mode to apply.
 func writeBackup(path string, data []byte, perm os.FileMode) (bool, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	if err := fsutil.EnsurePrivateDir(filepath.Dir(path)); err != nil {
 		return false, err
 	}
 	_, err := os.Stat(path)
