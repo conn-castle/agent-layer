@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+- `al wizard` keeps section-style MCP server sub-tables such as `[mcp.servers.headers]` and `[mcp.servers.env]` with the server they belong to, and removes transport-incompatible ones while repairing server entries; previously applying the wizard moved them to the last server and dropped repeated ones, which could send one server's credentials to another server.
+
 ## v0.23.1 - 2026-09-29
 
 ### Changed
