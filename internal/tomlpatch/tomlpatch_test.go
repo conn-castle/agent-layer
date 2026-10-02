@@ -1,6 +1,7 @@
 package tomlpatch
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -170,6 +171,143 @@ func TestParseDocument_IgnoresHeadersInsideMultilineStrings(t *testing.T) {
 	joinedPreamble := strings.Join(doc.Preamble, "\n")
 	if !strings.Contains(joinedPreamble, "[hooks.state]") || !strings.Contains(joinedPreamble, `last = "x"`) {
 		t.Fatalf("expected multiline string body kept intact, got:\n%s", joinedPreamble)
+	}
+}
+
+func TestParseDocument_AttachesArrayChildHeaders(t *testing.T) {
+	t.Parallel()
+	first := `[[mcp.servers]]
+id = "alpha"
+notes = """
+[unrelated]
+[[mcp.servers]]
+"""
+[mcp.servers.env]
+AL_A = "1"
+[mcp.servers.env.nested]
+keep = true
+[[mcp.servers.extra]]
+name = "one"
+[[mcp.servers.extra]]
+name = "two"`
+	second := `[[mcp.servers]]
+id = "beta"
+[ mcp . "servers" . env ]
+AL_B = "2"`
+	doc := ParseDocument(first + "\n" + second + "\n[other]\nkeep = true\n[a]\nvalue = 1\n[a.b]\nvalue = 2")
+	blocks := doc.Arrays["mcp.servers"]
+	if len(blocks) != 2 || len(doc.Arrays) != 1 {
+		t.Fatalf("expected only two server array blocks, got %#v", doc.Arrays)
+	}
+	for i, want := range []string{first, second} {
+		if got := strings.Join(blocks[i].Lines, "\n"); got != want {
+			t.Fatalf("block %d = %q, want %q", i, got, want)
+		}
+	}
+	if len(doc.Sections) != 3 || !slices.Equal(doc.Order, []string{"other", "a", "a.b"}) {
+		t.Fatalf("expected unrelated and plain child sections only, got %#v, order %#v", doc.Sections, doc.Order)
+	}
+}
+
+func TestParseDocument_AttachesChildHeadersAfterUnrelatedTables(t *testing.T) {
+	t.Parallel()
+	doc := ParseDocument(`[[mcp.servers]]
+id = "alpha"
+[[mcp.servers]]
+id = "beta"
+[mcp]
+note = true
+[mcp.servers.env]
+AL_B = "2"
+[other]
+keep = true`)
+	blocks := doc.Arrays["mcp.servers"]
+	if len(blocks) != 2 {
+		t.Fatalf("expected two server blocks, got %#v", doc.Arrays)
+	}
+	if got := strings.Join(blocks[0].Lines, "\n"); got != "[[mcp.servers]]\nid = \"alpha\"" {
+		t.Fatalf("alpha block = %q", got)
+	}
+	if got := strings.Join(blocks[1].Lines, "\n"); got != "[[mcp.servers]]\nid = \"beta\"\n[mcp.servers.env]\nAL_B = \"2\"" {
+		t.Fatalf("beta block = %q", got)
+	}
+	if !slices.Equal(doc.Order, []string{"mcp", "other"}) {
+		t.Fatalf("expected only unrelated sections, got order %#v", doc.Order)
+	}
+}
+
+func TestParseDocument_ArrayChildPathComparison(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		parent string
+		child  string
+		attach bool
+	}{
+		{"quoted parent", `"mcp" . 'servers'`, `mcp.servers.env`, true},
+		{"escaped segment", `"m\u0063p".servers`, `mcp.servers.env`, true},
+		{"same path", `mcp.servers`, `mcp."servers"`, false},
+		{"different segment", `mcp.servers`, `mcp.servers_other.env`, false},
+		{"invalid parent", `mcp..servers`, `mcp.servers.env`, false},
+		{"invalid child", `mcp.servers`, `mcp.servers..env`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			doc := ParseDocument("[[" + tt.parent + "]]\nid = \"alpha\"\n[" + tt.child + "]\nvalue = true")
+			_, separate := doc.Sections[tt.child]
+			if separate == tt.attach {
+				t.Fatalf("child section present = %v, want attachment = %v", separate, tt.attach)
+			}
+		})
+	}
+}
+
+func TestBlockKeyHelpers_IgnoreAttachedSubTables(t *testing.T) {
+	t.Parallel()
+	lines := strings.Split(`[[mcp.servers]]
+notes = """
+[fake.header]
+"""
+command = "own"
+[mcp.servers.env]
+command = "child command"
+url = "child url"
+id = "child id"
+enabled = "child enabled"
+transport = "child transport"`, "\n")
+	for _, key := range []string{"url", "id", "enabled", "transport"} {
+		if got := ExtractBlockKeyValue(lines, key); got != "" {
+			t.Errorf("ExtractBlockKeyValue(%q) read child value %q", key, got)
+		}
+		if _, ok := FindKeyLine(lines, key); ok {
+			t.Errorf("FindKeyLine(%q) found a child key", key)
+		}
+		if got := FindInsertIndex(lines, key); got != 1 {
+			t.Errorf("FindInsertIndex(%q) = %d, want 1", key, got)
+		}
+	}
+	if got := ExtractBlockKeyValue(lines, "command"); got != "own" {
+		t.Fatalf("expected own command after multiline string, got %q", got)
+	}
+	childLines := CloneLines(lines[5:])
+	block := &Block{Name: "mcp.servers", Lines: CloneLines(lines)}
+	RemoveKeyFromBlock(block, "command")
+	if !slices.Equal(block.Lines[4:], childLines) {
+		t.Fatalf("removal changed child lines: %#v", block.Lines)
+	}
+	ReplaceOrInsertLine(block, "command", `command = "new"`, "url")
+	if block.Lines[1] != `command = "new"` || !slices.Equal(block.Lines[5:], childLines) {
+		t.Fatalf("insertion changed child lines: %#v", block.Lines)
+	}
+	ReplaceOrInsertLine(block, "command", `command = "replaced"`, "")
+	if block.Lines[1] != `command = "replaced"` || !slices.Equal(block.Lines[5:], childLines) {
+		t.Fatalf("replacement changed child lines: %#v", block.Lines)
+	}
+	block = &Block{Name: "mcp.servers", Lines: append([]string{"[[mcp.servers]]", `id = "alpha"`}, childLines...)}
+	SetKeyValue(block, nil, "enabled", "false", "id")
+	if block.Lines[2] != "enabled = false" || !slices.Equal(block.Lines[3:], childLines) {
+		t.Fatalf("enabled was not inserted in own lines: %#v", block.Lines)
 	}
 }
 

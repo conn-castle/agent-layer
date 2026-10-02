@@ -9,6 +9,8 @@ import (
 	"github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/conn-castle/agent-layer/internal/config"
 )
 
 func TestPatchConfig_Errors(t *testing.T) {
@@ -1705,51 +1707,207 @@ func TestRemoveKeyFromBlock_EscapedTripleQuoteMultiline(t *testing.T) {
 	assert.Contains(t, joined, `enabled = true`)
 }
 
-func TestSanitizeMCPServerBlock_SectionStyleSubTableNotInBlock(t *testing.T) {
-	// Section-style sub-tables like [mcp.servers.env] are parsed as separate
-	// sections by the line-based parser — they are NOT part of the [[mcp.servers]]
-	// block. This means sanitizeMCPServerBlock cannot reach them.
-	//
-	// This is a known limitation of the line-based parser. In practice, agent-layer
-	// templates use inline tables (env = { KEY = "val" }), and go-toml validation
-	// will still reject the config if section-style sub-tables contain transport-
-	// incompatible fields. The wizard just can't auto-remove them.
-	//
-	// This test verifies that sanitization works correctly on the server block
-	// itself when a section-style sub-table exists — no crash, no corruption.
-	content := `
-[mcp]
+func TestSanitizeMCPServerBlock_SectionStyleSubTables(t *testing.T) {
+	env := `[ mcp . "servers" . env ]
+KEY = "val"
+url = "child url"
+notes = """
+[mcp.servers.headers]
+"""
+[mcp.servers.env.nested]
+keep = true
+[[mcp.servers.env.extra]]
+name = "child"
+# env comment
 
-[[mcp.servers]]
-id = "myserver"
-enabled = true
+`
+	headers := `[mcp.servers.headers]
+Authorization = "Bearer token"
+command = "child command"
+notes = '''
+[mcp.servers.env]
+'''
+[mcp.servers.headers.nested]
+keep = true
+[[mcp.servers.headers.extra]]
+name = "child"
+# headers comment
+
+`
+	for _, transport := range []string{"http", "stdio"} {
+		t.Run(transport, func(t *testing.T) {
+			own := fmt.Sprintf("[[mcp.servers]]\nid = \"myserver\"\ntransport = %q\n", transport)
+			content := own + "command = \"own command\"\nurl = \"https://api.example.com\"\n" + env + headers
+			doc := parseTomlDocument(content)
+			require.Empty(t, doc.sections)
+			require.Len(t, doc.arrays[mcpServersSection], 1)
+			block := doc.arrays[mcpServersSection][0]
+			require.Equal(t, content, strings.Join(block.lines, "\n"))
+			sanitizeMCPServerBlock(block)
+			// A removed segment's trailing comments describe what follows, so they stay.
+			want := own + "command = \"own command\"\n" + env + "# headers comment\n\n"
+			if transport == "http" {
+				want = own + "url = \"https://api.example.com\"\n" + "# env comment\n\n" + headers
+			}
+			assert.Equal(t, want, strings.Join(block.lines, "\n"))
+		})
+	}
+}
+
+func TestPatchConfig_PreservesMCPSubTableAttachment(t *testing.T) {
+	type serverTables struct {
+		env     map[string]string
+		headers map[string]string
+	}
+	stdio := `[[mcp.servers]]
+id = "alpha"
+transport = "stdio"
+command = "a"
+# alpha env
+[mcp.servers.env] # attached to alpha
+AL_A = "1"
+`
+	secondStdio := `[[mcp.servers]]
+id = "beta"
+transport = "stdio"
+command = "b"
+[mcp.servers.env]
+AL_B = "2"
+`
+	fieldNames := map[string]string{
+		"command": "child command", "url": "child url", "id": "child id",
+		"enabled": "child enabled", "transport": "child transport",
+	}
+	tests := []struct {
+		name    string
+		content string
+		choices *Choices
+		want    map[string]serverTables
+		enabled map[string]bool
+	}{
+		{
+			name:    "two stdio servers unchanged",
+			content: stdio + secondStdio,
+			choices: &Choices{},
+			want: map[string]serverTables{
+				"alpha": {env: map[string]string{"AL_A": "1"}},
+				"beta":  {env: map[string]string{"AL_B": "2"}},
+			},
+		},
+		{
+			name: "http headers unchanged",
+			content: `[[mcp.servers]]
+id = "alpha"
 transport = "http"
 url = "https://api.example.com"
-command = "leftover"
-
+[mcp.servers.headers]
+Authorization = "Bearer token"
+`,
+			choices: &Choices{},
+			want: map[string]serverTables{
+				"alpha": {headers: map[string]string{"Authorization": "Bearer token"}},
+			},
+		},
+		{
+			name:    "enable absent catalog server",
+			content: stdio + secondStdio,
+			choices: &Choices{
+				DefaultMCPServers:        []DefaultMCPServer{{ID: "tavily"}},
+				EnabledMCPServersTouched: true,
+				EnabledMCPServers:        map[string]bool{"tavily": true},
+			},
+			want: map[string]serverTables{
+				"alpha":  {env: map[string]string{"AL_A": "1"}},
+				"beta":   {env: map[string]string{"AL_B": "2"}},
+				"tavily": {},
+			},
+			enabled: map[string]bool{"tavily": true},
+		},
+		{
+			name: "sub-table after an unrelated table",
+			content: stdio + `[[mcp.servers]]
+id = "fetch"
+transport = "stdio"
+command = "uvx"
+[interlude]
+value = 1
 [mcp.servers.env]
-KEY = "val"
-`
-	doc := parseTomlDocument(content)
-
-	// The section-style sub-table should be parsed as a separate section.
-	require.Contains(t, doc.sections, "mcp.servers.env",
-		"section-style sub-table should be a separate section in the line-based parser")
-
-	// The [[mcp.servers]] block should NOT contain the env key-value.
-	require.Contains(t, doc.arrays, "mcp.servers")
-	require.Len(t, doc.arrays["mcp.servers"], 1)
-	serverBlock := doc.arrays["mcp.servers"][0]
-	joined := strings.Join(serverBlock.lines, "\n")
-	assert.NotContains(t, joined, "KEY =",
-		"section-style env sub-table should not be inside the server block")
-
-	// Sanitize the server block — it should remove "command" (http-incompatible).
-	tb := tomlBlock{name: serverBlock.name, lines: cloneLines(serverBlock.lines)}
-	sanitizeMCPServerBlock(&tb)
-	sanitized := strings.Join(tb.lines, "\n")
-	assert.NotContains(t, sanitized, "command")
-	assert.Contains(t, sanitized, `url = "https://api.example.com"`)
+AL_FETCH = "3"
+`,
+			choices: &Choices{},
+			want: map[string]serverTables{
+				"alpha": {env: map[string]string{"AL_A": "1"}},
+				"fetch": {env: map[string]string{"AL_FETCH": "3"}},
+			},
+		},
+		{
+			name:    "disable custom server",
+			content: stdio + "enabled = \"child enabled\"\n",
+			choices: &Choices{
+				CustomMCPServersTouched: true,
+				CustomMCPServersEnabled: map[string]bool{"alpha": false},
+			},
+			want:    map[string]serverTables{"alpha": {env: map[string]string{"AL_A": "1", "enabled": "child enabled"}}},
+			enabled: map[string]bool{"alpha": false},
+		},
+		{
+			name: "sub-table keys named like server fields",
+			content: `[[mcp.servers]]
+id = "alpha"
+transport = "stdio"
+command = "a"
+[mcp.servers.env]
+command = "child command"
+url = "child url"
+id = "child id"
+enabled = "child enabled"
+transport = "child transport"
+[[mcp.servers]]
+id = "beta"
+transport = "http"
+url = "https://api.example.com"
+[mcp.servers.headers]
+command = "child command"
+url = "child url"
+id = "child id"
+enabled = "child enabled"
+transport = "child transport"
+`,
+			choices: &Choices{},
+			want: map[string]serverTables{
+				"alpha": {env: fieldNames},
+				"beta":  {headers: fieldNames},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := "[mcp]\n" + tt.content + "[warnings]\ninstruction_token_threshold = 123\n[skills]\nenabled = true\n[other]\nkeep = true\n"
+			out, err := PatchConfig(content, tt.choices)
+			require.NoError(t, err)
+			var parsed config.Config
+			require.NoError(t, toml.Unmarshal([]byte(out), &parsed))
+			got := make(map[string]serverTables)
+			for _, server := range parsed.MCP.Servers {
+				require.NotContains(t, got, server.ID, "duplicate server id")
+				got[server.ID] = serverTables{env: server.Env, headers: server.Headers}
+				if enabled, ok := tt.enabled[server.ID]; ok {
+					require.NotNil(t, server.Enabled, "server %s must have its own enabled key", server.ID)
+					assert.Equal(t, enabled, *server.Enabled, "server %s", server.ID)
+				} else {
+					assert.Nil(t, server.Enabled, "sub-table enabled must not become a server field")
+				}
+			}
+			assert.Equal(t, tt.want, got)
+			trailing := strings.Index(out, "[warnings]")
+			require.NotEqual(t, -1, trailing)
+			assert.NotContains(t, out[trailing:], "[mcp.servers.")
+			assert.Contains(t, out, "[other]\nkeep = true")
+			if strings.Contains(tt.content, "# alpha env") {
+				assert.Contains(t, out, "# alpha env\n[mcp.servers.env] # attached to alpha\nAL_A = \"1\"")
+			}
+		})
+	}
 }
 
 func TestPatchConfig_ClaudeLocalConfigDirEnabled(t *testing.T) {

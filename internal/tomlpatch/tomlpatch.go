@@ -33,7 +33,8 @@ func FormatString(value string) (string, error) {
 	return strings.TrimPrefix(line, prefix), nil
 }
 
-// Block is a contiguous TOML table or array-of-table block.
+// Block is a contiguous TOML table or array-of-table block. Array blocks include
+// their section-style sub-tables and nested arrays.
 type Block struct {
 	Name  string
 	Lines []string
@@ -223,10 +224,26 @@ func WalkLinesOutsideMultiline(lines []string, fn func(i int, line string, state
 	}
 }
 
-// ExtractBlockKeyValue returns the unquoted value for a key in a TOML block.
+// blockOwnEnd returns the end of a block's lines before any attached header.
+func blockOwnEnd(lines []string) int {
+	end := len(lines)
+	WalkLinesOutsideMultiline(lines, func(i int, line string, _ StringState) LineWalkResult {
+		if i > 0 {
+			if _, _, ok := ParseHeader(line); ok {
+				end = i
+				return LineWalkResult{Stop: true}
+			}
+		}
+		return LineWalkResult{}
+	})
+	return end
+}
+
+// ExtractBlockKeyValue returns the unquoted value for a block's own key,
+// excluding assignments in attached sub-tables.
 func ExtractBlockKeyValue(lines []string, key string) string {
 	value := ""
-	WalkLinesOutsideMultiline(lines, func(_ int, line string, state StringState) LineWalkResult {
+	WalkLinesOutsideMultiline(lines[:blockOwnEnd(lines)], func(_ int, line string, state StringState) LineWalkResult {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			return LineWalkResult{}
@@ -241,18 +258,20 @@ func ExtractBlockKeyValue(lines []string, key string) string {
 	return value
 }
 
-// RemoveKeyFromBlock removes all uncommented lines for key from block,
+// RemoveKeyFromBlock removes all uncommented lines for a block's own key,
 // including multiline continuation lines and dotted sub-key assignments.
+// Assignments in attached sub-tables are preserved.
 func RemoveKeyFromBlock(block *Block, key string) {
 	type lineRange struct{ start, end int }
 	var ranges []lineRange
-	WalkLinesOutsideMultiline(block.Lines, func(i int, line string, state StringState) LineWalkResult {
+	ownLines := block.Lines[:blockOwnEnd(block.Lines)]
+	WalkLinesOutsideMultiline(ownLines, func(i int, line string, state StringState) LineWalkResult {
 		parsed, ok := ParseKeyLineWithState(line, key, state)
 		if !ok {
 			parsed, ok = ParseDottedPrefixLine(line, key)
 		}
 		if ok && !parsed.Commented {
-			endIdx := MultilineValueEndIndex(block.Lines, i)
+			endIdx := MultilineValueEndIndex(ownLines, i)
 			ranges = append(ranges, lineRange{i, endIdx})
 			return LineWalkResult{AdvanceTo: endIdx}
 		}
@@ -498,11 +517,11 @@ func SetCommentedKeyLine(block *Block, templateBlock *Block, key string, afterKe
 	}
 }
 
-// FindKeyLine searches lines for a key/value assignment.
+// FindKeyLine searches a block's own lines for a key/value assignment.
 func FindKeyLine(lines []string, key string) (KeyLine, bool) {
 	result := KeyLine{}
 	found := false
-	WalkLinesOutsideMultiline(lines, func(_ int, line string, state StringState) LineWalkResult {
+	WalkLinesOutsideMultiline(lines[:blockOwnEnd(lines)], func(_ int, line string, state StringState) LineWalkResult {
 		parsed, ok := ParseKeyLineWithState(line, key, state)
 		if ok {
 			result = parsed
@@ -576,11 +595,12 @@ func EnsureCommented(line string) string {
 	return indent + "# " + strings.TrimLeft(line[indentLen:], " \t")
 }
 
-// ReplaceOrInsertLine replaces an existing key line or inserts a new line.
+// ReplaceOrInsertLine replaces an existing key line or inserts a new line
+// within a block's own lines, before any attached sub-tables.
 func ReplaceOrInsertLine(block *Block, key string, newLine string, afterKey string) {
 	var matches []int
 	uncommentedIndex := -1
-	WalkLinesOutsideMultiline(block.Lines, func(i int, line string, state StringState) LineWalkResult {
+	WalkLinesOutsideMultiline(block.Lines[:blockOwnEnd(block.Lines)], func(i int, line string, state StringState) LineWalkResult {
 		parsed, ok := ParseKeyLineWithState(line, key, state)
 		if !ok {
 			return LineWalkResult{}
@@ -609,8 +629,10 @@ func ReplaceOrInsertLine(block *Block, key string, newLine string, afterKey stri
 	block.Lines = append(block.Lines[:insertAt], append([]string{newLine}, block.Lines[insertAt:]...)...)
 }
 
-// FindInsertIndex returns the line index to insert a new key line after afterKey.
+// FindInsertIndex returns the line index to insert a new key line after afterKey
+// within a block's own lines, before any attached sub-tables.
 func FindInsertIndex(lines []string, afterKey string) int {
+	lines = lines[:blockOwnEnd(lines)]
 	if len(lines) == 0 {
 		return 0
 	}
@@ -644,28 +666,53 @@ func FormatValue(value any) string {
 	}
 }
 
-// ParseDocument splits TOML content into a line-aware document.
+// ParseDocument splits TOML content into a line-aware document. Headers whose
+// key paths extend an earlier array-of-tables path belong to that array's most
+// recent element, as in TOML, so they stay in that element's block with their
+// contents even when unrelated tables appear in between.
 func ParseDocument(content string) Document {
 	lines := strings.Split(content, "\n")
 	sections := make(map[string]*Block)
 	arrays := make(map[string][]*Block)
+	type arrayElement struct {
+		path  []string
+		block *Block
+	}
+	var lastElements []arrayElement
 	var order []string
 	var preamble []string
 	var current *Block
-	var currentIsArray bool
+	var currentIsSection bool
 
 	flush := func() {
 		if current == nil {
 			return
 		}
-		if currentIsArray {
-			arrays[current.Name] = append(arrays[current.Name], current)
-		} else if _, exists := sections[current.Name]; !exists {
-			sections[current.Name] = current
-			order = append(order, current.Name)
+		if currentIsSection {
+			if _, exists := sections[current.Name]; !exists {
+				sections[current.Name] = current
+				order = append(order, current.Name)
+			}
 		}
 		current = nil
-		currentIsArray = false
+		currentIsSection = false
+	}
+
+	// owningElement returns the most recent array element whose path is the
+	// longest strict prefix of path, or nil when no array element owns it.
+	owningElement := func(path []string) *Block {
+		var owner *arrayElement
+		for i := range lastElements {
+			element := &lastElements[i]
+			if len(path) > len(element.path) && slices.Equal(path[:len(element.path)], element.path) &&
+				(owner == nil || len(element.path) > len(owner.path)) {
+				owner = element
+			}
+		}
+		if owner == nil {
+			return nil
+		}
+		return owner.block
 	}
 
 	state := StateNone
@@ -684,9 +731,26 @@ func ParseDocument(content string) Document {
 		}
 		name, isArray, ok := ParseHeader(line)
 		if ok {
+			path, pathOK := ParseKeyPath(name)
+			if owner := owningElement(path); pathOK && owner != nil {
+				flush()
+				current = owner
+				current.Lines = append(current.Lines, line)
+				_, state = ScanLineForComment(line, state)
+				continue
+			}
 			flush()
 			current = &Block{Name: name, Lines: []string{line}}
-			currentIsArray = isArray
+			currentIsSection = !isArray
+			if isArray {
+				arrays[name] = append(arrays[name], current)
+				if pathOK {
+					lastElements = slices.DeleteFunc(lastElements, func(element arrayElement) bool {
+						return slices.Equal(element.path, path)
+					})
+					lastElements = append(lastElements, arrayElement{path: path, block: current})
+				}
+			}
 			_, state = ScanLineForComment(line, state)
 			continue
 		}

@@ -344,7 +344,7 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 		if choices.GrokReasoningTouched {
 			anchor := "model"
 			if _, ok := findKeyLine(block.lines, "model"); !ok {
-				anchor = "enabled"
+				anchor = enabledKey
 			}
 			setOptionalKeyValue(block, templateBlock, "reasoning_effort", choices.GrokReasoning, anchor)
 		}
@@ -353,7 +353,7 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 			if _, ok := findKeyLine(block.lines, anchor); !ok {
 				anchor = "model"
 				if _, ok := findKeyLine(block.lines, anchor); !ok {
-					anchor = "enabled"
+					anchor = enabledKey
 				}
 			}
 			if choices.GrokDisableMemory {
@@ -489,21 +489,67 @@ func buildMCPServerBlocks(currentDoc tomlDocument, catalogDoc tomlDocument, choi
 	return ordered, nil
 }
 
-// sanitizeMCPServerBlock removes transport-incompatible fields from a server block.
+// sanitizeMCPServerBlock removes transport-incompatible fields and section-style
+// sub-tables from a server block.
 // This allows the wizard to repair configs where, for example, a stdio server
 // has leftover headers from a previous configuration.
 func sanitizeMCPServerBlock(block *tomlBlock) {
 	transport := extractMCPBlockKeyValue(block.lines, "transport")
+	var incompatibleKeys []string
 	switch transport {
-	case "stdio":
-		for _, key := range stdioIncompatibleKeys {
-			removeKeyFromBlock(block, key)
-		}
-	case "http":
-		for _, key := range httpIncompatibleKeys {
-			removeKeyFromBlock(block, key)
-		}
+	case config.TransportStdio:
+		incompatibleKeys = stdioIncompatibleKeys
+	case config.TransportHTTP:
+		incompatibleKeys = httpIncompatibleKeys
+	default:
+		return
 	}
+	for _, key := range incompatibleKeys {
+		removeKeyFromBlock(block, key)
+	}
+	removeMCPSubTables(block, incompatibleKeys)
+}
+
+// removeMCPSubTables removes attached header segments for the given server keys.
+// Blank and comment lines that end a removed segment are kept because they
+// precede, and usually describe, the next table or server.
+func removeMCPSubTables(block *tomlBlock, keys []string) {
+	var kept []string
+	segmentStart := 0
+	remove := false
+	outsideMultiline := make([]bool, len(block.lines))
+	serverPath, _ := tomlpatch.ParseKeyPath(mcpServersSection)
+	closeSegment := func(end int) {
+		if !remove {
+			kept = append(kept, block.lines[segmentStart:end]...)
+			return
+		}
+		tail := end
+		for tail > segmentStart+1 && outsideMultiline[tail-1] && isBlankOrCommentLine(block.lines[tail-1]) {
+			tail--
+		}
+		kept = append(kept, block.lines[tail:end]...)
+	}
+	walkTomlLinesOutsideMultiline(block.lines, func(i int, line string, _ tomlStringState) tomlLineWalkResult {
+		outsideMultiline[i] = true
+		name, _, ok := tomlpatch.ParseHeader(line)
+		if i == 0 || !ok {
+			return tomlLineWalkResult{}
+		}
+		closeSegment(i)
+		segmentStart = i
+		path, ok := tomlpatch.ParseKeyPath(name)
+		remove = ok && len(path) > len(serverPath) && slices.Equal(path[:len(serverPath)], serverPath) &&
+			slices.Contains(keys, path[len(serverPath)])
+		return tomlLineWalkResult{}
+	})
+	closeSegment(len(block.lines))
+	block.lines = kept
+}
+
+func isBlankOrCommentLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return trimmed == "" || strings.HasPrefix(trimmed, "#")
 }
 
 type tomlLineWalkResult struct {
