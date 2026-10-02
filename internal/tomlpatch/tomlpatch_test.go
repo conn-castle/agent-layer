@@ -494,6 +494,8 @@ func TestParseDocument_AttachesNestedHeadersToOwningArrayElement(t *testing.T) {
 		``,
 		`[mcp]`,
 		`enabled = true`,
+		`[mcp.servers_extra]`,
+		`enabled = false`,
 	}, "\n")
 
 	doc := ParseDocument(content)
@@ -523,8 +525,48 @@ func TestParseDocument_AttachesNestedHeadersToOwningArrayElement(t *testing.T) {
 	if len(doc.Arrays) != 1 {
 		t.Fatalf("nested array-of-tables must not become a top-level array: %#v", doc.Arrays)
 	}
-	if strings.Join(doc.Order, ",") != "warnings,mcp" {
+	if len(doc.Sections) != 3 || doc.Sections["mcp"] == nil || doc.Sections["mcp.servers_extra"] == nil || doc.Sections["warnings"] == nil {
+		t.Fatalf("expected only ordinary top-level sections: %#v", doc.Sections)
+	}
+	if strings.Join(doc.Order, ",") != "warnings,mcp,mcp.servers_extra" {
 		t.Fatalf("nested headers must not become top-level sections, order: %#v", doc.Order)
+	}
+}
+
+func TestParseDocument_ArrayPathsWithNULKeepOwnDescendants(t *testing.T) {
+	t.Parallel()
+	content := `[[extra."a\u0000b"]]
+id = "quoted-first"
+[[extra.a.b]]
+id = "dotted-first"
+[[extra."a\u0000b"]]
+id = "quoted-last"
+[[extra.a.b]]
+id = "dotted-last"
+[extra."a\u0000b".meta]
+owner = "quoted-last"
+[extra.a.b.meta]
+owner = "dotted-last"
+`
+	doc := ParseDocument(content)
+	for _, tt := range []struct {
+		name string
+		body string
+	}{
+		{name: `extra."a\u0000b"`, body: `owner = "quoted-last"`},
+		{name: "extra.a.b", body: `owner = "dotted-last"`},
+	} {
+		blocks := doc.Arrays[tt.name]
+		if len(blocks) != 2 {
+			t.Fatalf("expected two %s elements, got %#v", tt.name, blocks)
+		}
+		if len(blocks[0].SubTables) != 0 || len(blocks[1].SubTables) != 1 {
+			t.Fatalf("descendant must belong only to the latest %s element: %#v", tt.name, blocks)
+		}
+		subTable := blocks[1].SubTables[0]
+		if subTable.Name != tt.name+".meta" || strings.TrimSpace(strings.Join(subTable.Lines[1:], "\n")) != tt.body {
+			t.Fatalf("wrong descendant for %s: %#v", tt.name, subTable)
+		}
 	}
 }
 

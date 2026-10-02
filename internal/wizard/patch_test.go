@@ -1728,7 +1728,8 @@ Authorization = "Bearer ${AL_BETA}"
 		content string
 		choices func() *Choices
 		// expect adjusts the decoded input into the expected decoded output.
-		expect func(decoded map[string]any)
+		expect          func(decoded map[string]any)
+		wantServerOrder []string
 	}{
 		{name: "http headers", content: twoHTTPServers},
 		{
@@ -1768,16 +1769,8 @@ command = "beta"
 `,
 		},
 		{
-			name: "catalog default followed by custom server",
+			name: "custom server reordered after catalog default",
 			content: `
-[[mcp.servers]]
-id = "tavily"
-enabled = true
-transport = "http"
-url = "https://mcp.tavily.com/mcp/"
-[mcp.servers.headers]
-Authorization = "Bearer ${AL_TAVILY_API_KEY}"
-
 [[mcp.servers]]
 id = "beta"
 enabled = true
@@ -1785,7 +1778,16 @@ transport = "http"
 url = "https://b.example"
 [mcp.servers.headers]
 Authorization = "Bearer ${AL_BETA}"
+
+[[mcp.servers]]
+id = "tavily"
+enabled = true
+transport = "http"
+url = "https://mcp.tavily.com/mcp/"
+[mcp.servers.headers]
+Authorization = "Bearer ${AL_TAVILY_API_KEY}"
 `,
+			wantServerOrder: []string{"tavily", "beta"},
 		},
 		{
 			name: "catalog default disabled",
@@ -1880,10 +1882,53 @@ owner = "two"
 				tt.expect(want)
 			}
 			if mcp, ok := want["mcp"].(map[string]any); ok {
-				assert.Equal(t, mcp["servers"], got["mcp"].(map[string]any)["servers"])
+				serversByID := func(servers any) map[string]any {
+					byID := make(map[string]any)
+					for _, server := range servers.([]any) {
+						id := server.(map[string]any)["id"].(string)
+						require.NotContains(t, byID, id)
+						byID[id] = server
+					}
+					return byID
+				}
+				gotServers := got["mcp"].(map[string]any)["servers"]
+				assert.Equal(t, serversByID(mcp["servers"]), serversByID(gotServers))
+				if tt.wantServerOrder != nil {
+					var ids []string
+					for _, server := range gotServers.([]any) {
+						ids = append(ids, server.(map[string]any)["id"].(string))
+					}
+					assert.Equal(t, tt.wantServerOrder, ids)
+				}
+			}
+			if warnings, ok := want["warnings"]; ok {
+				assert.Equal(t, warnings, got["warnings"])
 			}
 			assert.Equal(t, want["extra"], got["extra"])
 		})
+	}
+}
+
+func TestPatchConfig_MCPTableAfterServersKeepsUserKey(t *testing.T) {
+	content := `[[mcp.servers]]
+id = "alpha"
+transport = "http"
+url = "https://a.example"
+[mcp.servers.headers]
+Authorization = "Bearer ${AL_ALPHA}"
+
+[mcp]
+user_key = "keep"
+`
+	out, err := PatchConfig(content, NewChoices())
+	require.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(out, `user_key = "keep"`))
+	var decoded map[string]any
+	require.NoError(t, toml.Unmarshal([]byte(out), &decoded))
+	mcp := decoded["mcp"].(map[string]any)
+	assert.Equal(t, "keep", mcp["user_key"])
+	for _, server := range mcp["servers"].([]any) {
+		assert.NotContains(t, server.(map[string]any), "user_key")
 	}
 }
 

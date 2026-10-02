@@ -744,9 +744,15 @@ func owningArrayElement(latestArrayElements map[string]*Block, path []string) *B
 	return nil
 }
 
-// keyPathID joins key path segments into an unambiguous map key.
+// keyPathID encodes key path segments into an unambiguous map key.
 func keyPathID(path []string) string {
-	return strings.Join(path, "\x00")
+	var id strings.Builder
+	for _, segment := range path {
+		id.WriteString(strconv.Itoa(len(segment)))
+		id.WriteByte(':')
+		id.WriteString(segment)
+	}
+	return id.String()
 }
 
 // ParseHeader detects a TOML table header and extracts its name.
