@@ -335,9 +335,15 @@ func TestConcurrentRetentionPassesShareExpiredMappings(t *testing.T) {
 
 func TestPruneExpiredSessionTreatsRemovedMappingAsPruned(t *testing.T) {
 	root := t.TempDir()
-	if err := pruneExpiredSession(root, "tiny-round-capacitor", time.Now()); err != nil {
+	name := "tiny-round-capacitor"
+	if err := pruneExpiredSession(root, name, time.Now()); err != nil {
 		t.Fatalf("pruneExpiredSession on an already removed mapping: %v", err)
 	}
+	_, err := loadSession(root, name)
+	if !errors.Is(err, errDispatchSessionNotFound) || err.Error() != `dispatch session "tiny-round-capacitor" was not found` {
+		t.Fatalf("loadSession on a removed mapping = %v, want the unchanged not-found error", err)
+	}
+	requireDispatchExitCode(t, err, ExitUsage)
 }
 
 func TestReservationsNeverExposePartialMappingsToRetention(t *testing.T) {
@@ -444,6 +450,49 @@ func TestLoadSessionNamesUnreadableMapping(t *testing.T) {
 		t.Fatalf("loadSession on an empty mapping = %v, want a named read failure", err)
 	}
 	requireDispatchExitCode(t, err, ExitConfig)
+}
+
+func TestDanglingDispatchMappingRemainsCorruptAndOccupied(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(dispatchStatePath(root), 0o700); err != nil {
+		t.Fatalf("create state: %v", err)
+	}
+	name := "tiny-round-capacitor"
+	path := filepath.Join(dispatchStatePath(root), name+".json")
+	target := filepath.Join(root, "missing.json")
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatalf("create dangling mapping: %v", err)
+	}
+	for _, operation := range []struct {
+		name string
+		run  func() error
+	}{
+		{"load", func() error { _, err := loadSession(root, name); return err }},
+		{"list", func() error { _, err := listSessions(root); return err }},
+		{"retention", func() error { return pruneExpiredSessions(root, time.Now(), testDispatchSessionRetention) }},
+	} {
+		t.Run(operation.name, func(t *testing.T) {
+			err := operation.run()
+			if err == nil || err.Error() != `read dispatch mapping "`+name+`"` || errors.Is(err, errDispatchSessionNotFound) {
+				t.Fatalf("dangling mapping = %v, want a named read failure", err)
+			}
+			requireDispatchExitCode(t, err, ExitConfig)
+		})
+	}
+	retained, active, unreadable, err := classifyDispatchPoolOccupancy(root)
+	if err != nil || retained != 0 || active != 0 || unreadable != 1 {
+		t.Fatalf("dangling mapping occupancy = %d retained, %d active, %d unreadable, %v; want 0, 0, 1, nil", retained, active, unreadable, err)
+	}
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	if _, reserved, err := createExclusiveSession(root, name, run); err != nil || reserved {
+		t.Fatalf("createExclusiveSession over a dangling mapping = reserved %v, err %v", reserved, err)
+	}
+	if got, err := os.Readlink(path); err != nil || got != target {
+		t.Fatalf("dangling mapping changed: target %q, err %v; want %q", got, err, target)
+	}
 }
 
 func TestDispatchNameVocabularyStaysValidAndLargeEnough(t *testing.T) {

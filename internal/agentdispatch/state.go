@@ -654,7 +654,11 @@ func loadSession(root string, name string) (Session, error) {
 	var session Session
 	if err := readJSON(path, &session); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return Session{}, wrapExitError(ExitUsage, fmt.Sprintf("dispatch session %q was not found", name), errDispatchSessionNotFound)
+			// Opening a dangling symlink also returns not-exist. Only a
+			// missing directory entry means the mapping was removed.
+			if _, statErr := os.Lstat(path); errors.Is(statErr, fs.ErrNotExist) {
+				return Session{}, wrapExitError(ExitUsage, fmt.Sprintf("dispatch session %q was not found", name), errDispatchSessionNotFound)
+			}
 		}
 		return Session{}, wrapExitError(ExitConfig, fmt.Sprintf("read dispatch mapping %q", name), err)
 	}
