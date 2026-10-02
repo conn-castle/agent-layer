@@ -753,50 +753,81 @@ func TestWriteCodexConfig_AgentSpecificEmptyStopOverChimeOnly(t *testing.T) {
 
 func TestWriteCodexConfig_AgentSpecificArrayTablesReplaceDottedSibling(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
-	writeExistingCodexConfig(t, root, `custom.note = "keep"
-[[custom.items]]
-name = "a"
+	values := []struct {
+		name  string
+		value any
+	}{
+		{name: "array tables", value: []any{map[string]any{"name": "c"}}},
+		{name: "empty array", value: []any{}},
+		{name: "scalar array", value: []any{"c", "d"}},
+		{name: "scalar", value: "c"},
+	}
+	contexts := []struct {
+		name     string
+		preamble string
+		path     []string
+	}{
+		{name: "root", preamble: "custom.note = \"keep\"\n", path: []string{"custom", "items"}},
+		{name: "unrelated table", preamble: "custom.note = \"keep\"\n[before]\nk = 2\n", path: []string{"custom", "items"}},
+		{name: "ancestor table", preamble: "[outer]\ncustom.note = \"keep\"\n[before]\nk = 2\n", path: []string{"outer", "custom", "items"}},
+		{name: "deepest ancestor table", preamble: "[outer]\nk = 3\n[outer.inner]\ncustom.note = \"keep\"\n[before]\nk = 2\n", path: []string{"outer", "inner", "custom", "items"}},
+	}
+	for _, context := range contexts {
+		for _, desired := range values {
+			t.Run(context.name+"/"+desired.name, func(t *testing.T) {
+				t.Parallel()
+				root := t.TempDir()
+				header := "[[" + tomlpatch.FormatDottedKeyPath(context.path) + "]]\n"
+				writeExistingCodexConfig(t, root, context.preamble+header+`name = "a"
 # between elements
-[[custom.items]]
-name = "b"
+`+header+`name = "b"
 # about other
 [other]
 k = 1
 `)
-	desired := []any{map[string]any{"name": "c"}}
-	project := &config.ProjectConfig{
-		Config: config.Config{Agents: config.AgentsConfig{
-			Codex: config.CodexConfig{AgentSpecific: map[string]any{
-				"custom": map[string]any{"items": desired},
-			}},
-		}},
-		Env: map[string]string{},
-	}
-	var previous string
-	for i := 0; i < 3; i++ {
-		if i == 2 {
-			project.Config.Agents.Codex.AgentSpecific = nil
+				agentSpecific := map[string]any{"items": desired.value}
+				for i := len(context.path) - 2; i >= 0; i-- {
+					agentSpecific = map[string]any{context.path[i]: agentSpecific}
+				}
+				project := &config.ProjectConfig{
+					Config: config.Config{Agents: config.AgentsConfig{
+						Codex: config.CodexConfig{AgentSpecific: agentSpecific},
+					}},
+					Env: map[string]string{},
+				}
+				var previous string
+				for i := 0; i < 3; i++ {
+					if i == 2 {
+						project.Config.Agents.Codex.AgentSpecific = nil
+					}
+					if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+						t.Fatalf("sync %d: %v", i, err)
+					}
+					content := readCodexConfig(t, root)
+					parsed := parseCodexConfig(t, content)
+					value, _ := valueAtPath(parsed, context.path)
+					notePath := append(slices.Clone(context.path[:len(context.path)-1]), "note")
+					note, _ := valueAtPath(parsed, notePath)
+					if !reflect.DeepEqual(value, desired.value) || note != "keep" {
+						t.Fatalf("expected replaced items %#v and preserved dotted sibling, got %#v, %#v", desired.value, value, note)
+					}
+					parentHeader := "[" + tomlpatch.FormatDottedKeyPath(context.path[:len(context.path)-1]) + "]"
+					if strings.Contains(content, "# between elements") || strings.Contains(content, "\n"+parentHeader+"\n") {
+						t.Fatalf("expected inter-element comment removed without adding a parent header, got:\n%s", content)
+					}
+					if !strings.Contains(content, "# about other\n[other]\nk = 1") {
+						t.Fatalf("expected following table and comment preserved, got:\n%s", content)
+					}
+					if strings.Contains(context.preamble, "[before]") && !strings.Contains(content, "[before]\nk = 2") {
+						t.Fatalf("expected preceding unrelated table preserved, got:\n%s", content)
+					}
+					if i > 0 && content != previous {
+						t.Fatalf("expected byte-identical sync, including after removing passthrough config\nfirst:\n%s\nsecond:\n%s", previous, content)
+					}
+					previous = content
+				}
+			})
 		}
-		if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
-			t.Fatalf("sync %d: %v", i, err)
-		}
-		content := readCodexConfig(t, root)
-		parsed := parseCodexConfig(t, content)
-		custom := parsed["custom"].(map[string]any)
-		if !reflect.DeepEqual(custom["items"], desired) || custom["note"] != "keep" {
-			t.Fatalf("expected replaced items and preserved dotted sibling, got %#v", custom)
-		}
-		if strings.Contains(content, "# between elements") || strings.Contains(content, "\n[custom]\n") {
-			t.Fatalf("expected inter-element comment removed without adding a parent header, got:\n%s", content)
-		}
-		if !strings.Contains(content, "# about other\n[other]\nk = 1") {
-			t.Fatalf("expected following table and comment preserved, got:\n%s", content)
-		}
-		if i > 0 && content != previous {
-			t.Fatalf("expected byte-identical sync, including after removing passthrough config\nfirst:\n%s\nsecond:\n%s", previous, content)
-		}
-		previous = content
 	}
 }
 

@@ -296,7 +296,7 @@ func (e *codexTomlEditor) setPathValue(path []string, literal string, value any)
 		return
 	}
 	// A value stored as [[path]] array tables has no assignment line. Replace those
-	// tables (and their descendants) in place; other value shapes are re-inserted below.
+	// tables (and their descendants) in place, without declaring a parent table.
 	if ranges := e.rangesForArrayTablePath(path); len(ranges) > 0 {
 		first := ranges[0].start
 		e.removeRanges(ranges)
@@ -304,6 +304,22 @@ func (e *codexTomlEditor) setPathValue(path []string, literal string, value any)
 			e.lines = replaceLineRange(e.lines, first, first, replacement)
 			return
 		}
+		// Empty arrays and scalars need an assignment in an existing ancestor's
+		// context, or at the root. A new parent header could redeclare a table
+		// already defined by a dotted sibling assignment.
+		tableStart, prefixLen := -1, 0
+		for _, header := range e.headerLines() {
+			if header.parsed && len(header.path) > prefixLen && len(header.path) < len(path) && pathHasPrefix(path, header.path) {
+				tableStart, prefixLen = header.index, len(header.path)
+			}
+		}
+		line := tomlpatch.FormatDottedKeyPath(path[prefixLen:]) + " = " + literal
+		if tableStart >= 0 {
+			e.lines = replaceLineRange(e.lines, tableStart+1, tableStart+1, []string{line})
+		} else {
+			e.insertRootLine(line)
+		}
+		return
 	}
 	if len(path) == 1 {
 		e.insertRootLine(tomlpatch.FormatDottedKeyPath(path) + " = " + literal)
