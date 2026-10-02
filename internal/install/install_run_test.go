@@ -1,6 +1,7 @@
 package install
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -622,6 +623,35 @@ func TestWriteVersionFile_ExistingCorrupt_AutoRepairs(t *testing.T) {
 	}
 	if string(data) != "1.0.0\n" {
 		t.Fatalf("expected 1.0.0, got %q", string(data))
+	}
+}
+
+func TestWriteVersionFile_CommentedMatchingPinUnchanged(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	content := "# team pin\n\nv1.0.0\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	var warnings bytes.Buffer
+	inst := &installer{root: root, pinVersion: "1.0.0", overwrite: true, sys: RealSystem{}, warnWriter: &warnings}
+	if err := inst.writeVersionFile(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read pin: %v", err)
+	}
+	if string(data) != content {
+		t.Fatalf("expected commented pin to remain unchanged, got %q", string(data))
+	}
+	if warnings.Len() != 0 {
+		t.Fatalf("expected no auto-repair warning, got %q", warnings.String())
 	}
 }
 

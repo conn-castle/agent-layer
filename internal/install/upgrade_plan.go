@@ -535,12 +535,11 @@ func (inst templateManager) pinVersionDiff() (UpgradePinVersionDiff, error) {
 			return UpgradePinVersionDiff{}, fmt.Errorf(messages.InstallFailedReadFmt, path, err)
 		}
 	} else {
+		// A valid pin (or one with no version line) reports its parsed version;
+		// an invalid pin keeps its raw text so the plan shows what is replaced.
 		current = strings.TrimSpace(string(data))
-		if current != "" {
-			normalized, normalizeErr := version.Normalize(current)
-			if normalizeErr == nil {
-				current = normalized
-			}
+		if normalized, _, parseErr := version.ParsePin(data); parseErr == nil {
+			current = normalized
 		}
 	}
 

@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Concurrent `al dispatch start` and `al dispatch reserve` calls no longer fail with `dispatch session "<name>" was not found` or `read dispatch mapping` when they prune expired sessions at the same time or one of them is creating a new session. Session mappings are now published only once complete, so a process that dies while reserving a name no longer leaves an empty mapping that fails every later start. Unreadable-mapping errors now name the affected session.
+- `al init` and `al upgrade` now read `.agent-layer/al.version` as documented, ignoring blank lines and `#` comments like version dispatch already did. Previously a commented pin was treated as invalid, so `al upgrade` could not determine the starting version on a fresh clone and skipped version-gated migrations, `al upgrade plan` could fail with `invalid pin version`, and an already-matching pin was rewritten with an auto-repair warning.
 
 ## v0.23.1 - 2026-09-29
 
