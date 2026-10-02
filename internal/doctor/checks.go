@@ -202,9 +202,11 @@ func instructionsReferencePath(root string, relPath string) (bool, error) {
 // by later checks: a DoctorCheckNameSecrets FAIL when .env is malformed (so
 // CheckSecrets is not run on top of an unreadable .env) and a
 // DoctorCheckNameSkills FAIL when skills loading fails (so CheckSkills does not
-// add a contradictory "No skills configured" line). The doctor orchestrator
-// uses HasFailResultForCheck to skip the corresponding standalone check when one
-// of these results is present.
+// add a contradictory "No skills configured" line). On both paths it also
+// combines the imported skill tier into the returned config the way sync does,
+// emitting a DoctorCheckNameSkills FAIL when that tier cannot be combined.
+// The doctor orchestrator uses HasFailResultForCheck to skip the corresponding
+// standalone check when one of these results is present.
 func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 	var results []Result
 	cfg, err := config.LoadProjectConfig(root)
@@ -316,6 +318,9 @@ func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 				partial.Skills = skills
 			}
 		}
+		if !HasFailResultForCheck(results, messages.DoctorCheckNameSkills) {
+			results = appendImportedSkills(results, partial)
+		}
 
 		return results, partial
 	}
@@ -325,7 +330,27 @@ func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 		CheckName: messages.DoctorCheckNameConfig,
 		Message:   messages.DoctorConfigLoaded,
 	})
-	return results, cfg
+	return appendImportedSkills(results, cfg), cfg
+}
+
+// appendImportedSkills adds the imported skill tier to cfg.Skills with the same
+// ownership and name-collision rules sync applies, so skill validation and the
+// catalog budget cover every projected skill. When the tier cannot be combined
+// it leaves cfg.Skills unchanged and appends a Skills FAIL, which makes the
+// doctor orchestrator skip CheckSkills and report skill size as unavailable.
+func appendImportedSkills(results []Result, cfg *config.ProjectConfig) []Result {
+	skills, err := config.CombineImportedSkillsFS(os.DirFS(cfg.Root), cfg.Root, cfg.Skills)
+	if err != nil {
+		importedRelPath := relPathForDoctor(cfg.Root, config.DefaultPaths(cfg.Root).ImportedSkillsDir)
+		return append(results, Result{
+			Status:         StatusFail,
+			CheckName:      messages.DoctorCheckNameSkills,
+			Message:        fmt.Sprintf(messages.DoctorSkillsLoadFailedFmt, importedRelPath, err),
+			Recommendation: messages.DoctorImportedSkillsRecommend,
+		})
+	}
+	cfg.Skills = skills
+	return results
 }
 
 // CheckSecrets scans the configuration for missing environment variables.
@@ -693,13 +718,17 @@ func CheckSkills(cfg *config.ProjectConfig) []Result {
 
 	results := make([]Result, 0)
 	for _, skill := range skills {
+		recommendation := messages.DoctorSkillValidationRecommend
+		if skill.Imported {
+			recommendation = messages.DoctorImportedSkillsRecommend
+		}
 		parsed, err := skillvalidator.ParseSkillSource(skill.SourcePath)
 		if err != nil {
 			results = append(results, Result{
 				Status:         StatusFail,
 				CheckName:      messages.DoctorCheckNameSkills,
 				Message:        fmt.Sprintf(messages.DoctorSkillValidationFailedFmt, relPathForDoctor(cfg.Root, skill.SourcePath), err),
-				Recommendation: messages.DoctorSkillValidationRecommend,
+				Recommendation: recommendation,
 			})
 			continue
 		}
@@ -712,7 +741,7 @@ func CheckSkills(cfg *config.ProjectConfig) []Result {
 				Status:         StatusWarn,
 				CheckName:      messages.DoctorCheckNameSkills,
 				Message:        fmt.Sprintf(messages.DoctorSkillValidationWarnFmt, relPathForDoctor(cfg.Root, finding.Path), finding.Message),
-				Recommendation: messages.DoctorSkillValidationRecommend,
+				Recommendation: recommendation,
 			})
 		}
 	}

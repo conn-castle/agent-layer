@@ -59,6 +59,7 @@ const (
 	DoctorSkillsNoneConfigured     = "No skills configured for validation."
 	DoctorSkillValidationWarnFmt   = "%s: %s"
 	DoctorSkillValidationRecommend = "Update skill frontmatter/path conventions in .agent-layer/skills to match agentskills.io recommendations."
+	DoctorImportedSkillsRecommend  = "Resolve the reported imported-skill problem in .agent-layer/skills-imported or .agent-layer/skills.lock.json; manage imported skills with 'al skills' commands such as 'al skills status'."
 	DoctorSkillValidationFailedFmt = "Failed to validate skill %s: %v"
 	DoctorSkillsLoadFailedFmt      = "Failed to load skills from %s: %v"
 	DoctorSkillCatalogTooLargeFmt  = "Skill catalog metadata exceeds %d tokens (%d across %d skills)"
