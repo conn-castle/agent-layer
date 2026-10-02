@@ -471,6 +471,63 @@ func TestMutationHelpers_FallbackBranches(t *testing.T) {
 	}
 }
 
+func TestParseDocument_AttachesNestedHeadersToOwningArrayElement(t *testing.T) {
+	t.Parallel()
+	content := strings.Join([]string{
+		`[[mcp.servers]]`,
+		`id = "alpha"`,
+		`[mcp.servers.headers]`,
+		`Authorization = "alpha"`,
+		``,
+		`[[mcp.servers]]`,
+		`id = "beta"`,
+		`[ mcp . servers . "headers" ]`,
+		`Authorization = "beta"`,
+		``,
+		`[warnings]`,
+		`enabled = true`,
+		``,
+		`[mcp.servers.env]`,
+		`TOKEN = "beta"`,
+		`[[mcp.servers.extra]]`,
+		`name = "nested"`,
+		``,
+		`[mcp]`,
+		`enabled = true`,
+	}, "\n")
+
+	doc := ParseDocument(content)
+
+	servers := doc.Arrays["mcp.servers"]
+	if len(servers) != 2 {
+		t.Fatalf("expected two mcp.servers elements, got %#v", servers)
+	}
+	subTableText := func(block *Block) []string {
+		var out []string
+		for _, subTable := range block.SubTables {
+			out = append(out, strings.TrimSpace(strings.Join(subTable.Lines, "\n")))
+		}
+		return out
+	}
+	if got := subTableText(servers[0]); len(got) != 1 || got[0] != "[mcp.servers.headers]\nAuthorization = \"alpha\"" {
+		t.Fatalf("unexpected alpha sub-tables: %#v", got)
+	}
+	want := []string{
+		"[ mcp . servers . \"headers\" ]\nAuthorization = \"beta\"",
+		"[mcp.servers.env]\nTOKEN = \"beta\"",
+		"[[mcp.servers.extra]]\nname = \"nested\"",
+	}
+	if got := subTableText(servers[1]); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("unexpected beta sub-tables: %#v", got)
+	}
+	if len(doc.Arrays) != 1 {
+		t.Fatalf("nested array-of-tables must not become a top-level array: %#v", doc.Arrays)
+	}
+	if strings.Join(doc.Order, ",") != "warnings,mcp" {
+		t.Fatalf("nested headers must not become top-level sections, order: %#v", doc.Order)
+	}
+}
+
 func TestParseDocument_DuplicateSectionsAndArrays(t *testing.T) {
 	t.Parallel()
 	doc := ParseDocument("[a]\nfirst = true\n\n[a]\nsecond = true\n\n[[mcp.servers]]\nid = \"one\"\n\n[[mcp.servers]]\nid = \"two\"\n")

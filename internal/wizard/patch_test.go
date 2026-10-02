@@ -1705,51 +1705,197 @@ func TestRemoveKeyFromBlock_EscapedTripleQuoteMultiline(t *testing.T) {
 	assert.Contains(t, joined, `enabled = true`)
 }
 
-func TestSanitizeMCPServerBlock_SectionStyleSubTableNotInBlock(t *testing.T) {
-	// Section-style sub-tables like [mcp.servers.env] are parsed as separate
-	// sections by the line-based parser — they are NOT part of the [[mcp.servers]]
-	// block. This means sanitizeMCPServerBlock cannot reach them.
-	//
-	// This is a known limitation of the line-based parser. In practice, agent-layer
-	// templates use inline tables (env = { KEY = "val" }), and go-toml validation
-	// will still reject the config if section-style sub-tables contain transport-
-	// incompatible fields. The wizard just can't auto-remove them.
-	//
-	// This test verifies that sanitization works correctly on the server block
-	// itself when a section-style sub-table exists — no crash, no corruption.
-	content := `
-[mcp]
+func TestPatchConfig_ArraySubTablesStayWithOwningElement(t *testing.T) {
+	twoHTTPServers := `
+[[mcp.servers]]
+id = "alpha"
+enabled = true
+transport = "http"
+url = "https://a.example"
+[mcp.servers.headers]
+Authorization = "Bearer ${AL_ALPHA}"
 
 [[mcp.servers]]
-id = "myserver"
+id = "beta"
 enabled = true
+transport = "http"
+url = "https://b.example"
+[mcp.servers.headers]
+Authorization = "Bearer ${AL_BETA}"
+`
+	tests := []struct {
+		name    string
+		content string
+		choices func() *Choices
+		// expect adjusts the decoded input into the expected decoded output.
+		expect func(decoded map[string]any)
+	}{
+		{name: "http headers", content: twoHTTPServers},
+		{
+			name: "stdio env followed by another server",
+			content: `
+[[mcp.servers]]
+id = "alpha"
+transport = "stdio"
+command = "alpha"
+[mcp.servers.env]
+ALPHA_TOKEN = "${AL_ALPHA}"
+
+[[mcp.servers]]
+id = "beta"
+transport = "stdio"
+command = "beta"
+`,
+		},
+		{
+			name: "sub-table after an unrelated table",
+			content: `
+[[mcp.servers]]
+id = "alpha"
+transport = "stdio"
+command = "alpha"
+
+[warnings]
+instruction_token_threshold = 50000
+
+[mcp.servers.env]
+ALPHA_TOKEN = "${AL_ALPHA}"
+
+[[mcp.servers]]
+id = "beta"
+transport = "stdio"
+command = "beta"
+`,
+		},
+		{
+			name: "non-MCP array",
+			content: `
+[[extra.items]]
+name = "one"
+[extra.items.meta]
+owner = "one"
+
+[[extra.items]]
+name = "two"
+[extra.items.meta]
+owner = "two"
+`,
+		},
+		{
+			name:    "custom server disabled",
+			content: twoHTTPServers,
+			choices: func() *Choices {
+				choices := NewChoices()
+				choices.CustomMCPServersTouched = true
+				choices.CustomMCPServersEnabled = map[string]bool{"alpha": false}
+				return choices
+			},
+			expect: func(decoded map[string]any) {
+				servers := decoded["mcp"].(map[string]any)["servers"].([]any)
+				servers[0].(map[string]any)["enabled"] = false
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			choices := NewChoices()
+			if tt.choices != nil {
+				choices = tt.choices()
+			}
+			out, err := PatchConfig(tt.content, choices)
+			require.NoError(t, err)
+
+			var want, got map[string]any
+			require.NoError(t, toml.Unmarshal([]byte(tt.content), &want))
+			require.NoError(t, toml.Unmarshal([]byte(out), &got))
+			if tt.expect != nil {
+				tt.expect(want)
+			}
+			if mcp, ok := want["mcp"].(map[string]any); ok {
+				assert.Equal(t, mcp["servers"], got["mcp"].(map[string]any)["servers"])
+			}
+			assert.Equal(t, want["extra"], got["extra"])
+		})
+	}
+}
+
+func TestPatchConfig_ArraySubTablesKeepOriginalSpacing(t *testing.T) {
+	server := `[[mcp.servers]]
+id = "alpha"
+transport = "http"
+url = "https://a.example"
+
+# auth for alpha
+[mcp.servers.headers]
+Authorization = "Bearer ${AL_ALPHA}"
+X-Team = "alpha"`
+
+	out, err := PatchConfig(server+"\n", NewChoices())
+	require.NoError(t, err)
+	assert.Contains(t, out, server)
+}
+
+func TestSanitizeMCPServerBlock_SectionStyleSubTables(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		wantKept []string
+		wantGone []string
+	}{
+		{
+			name: "stdio drops headers sub-tables and keeps env",
+			content: `
+[[mcp.servers]]
+id = "local"
+transport = "stdio"
+command = "tool"
+url = "https://leftover.example"
+[mcp.servers.headers]
+Authorization = "leftover"
+[mcp.servers.env]
+TOKEN = "keep"
+[mcp.servers.headers.extra]
+X = "leftover"
+`,
+			wantKept: []string{"mcp.servers.env"},
+			wantGone: []string{"url ="},
+		},
+		{
+			name: "http drops env sub-table and keeps headers",
+			content: `
+[[mcp.servers]]
+id = "remote"
 transport = "http"
 url = "https://api.example.com"
 command = "leftover"
-
 [mcp.servers.env]
-KEY = "val"
-`
-	doc := parseTomlDocument(content)
+KEY = "leftover"
+[mcp.servers.headers]
+Authorization = "keep"
+`,
+			wantKept: []string{"mcp.servers.headers"},
+			wantGone: []string{"command ="},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			doc := parseTomlDocument(tt.content)
+			require.Len(t, doc.arrays[mcpServersSection], 1)
+			block := cloneBlock(doc.arrays[mcpServersSection][0])
 
-	// The section-style sub-table should be parsed as a separate section.
-	require.Contains(t, doc.sections, "mcp.servers.env",
-		"section-style sub-table should be a separate section in the line-based parser")
+			sanitizeMCPServerBlock(block)
 
-	// The [[mcp.servers]] block should NOT contain the env key-value.
-	require.Contains(t, doc.arrays, "mcp.servers")
-	require.Len(t, doc.arrays["mcp.servers"], 1)
-	serverBlock := doc.arrays["mcp.servers"][0]
-	joined := strings.Join(serverBlock.lines, "\n")
-	assert.NotContains(t, joined, "KEY =",
-		"section-style env sub-table should not be inside the server block")
-
-	// Sanitize the server block — it should remove "command" (http-incompatible).
-	tb := tomlBlock{name: serverBlock.name, lines: cloneLines(serverBlock.lines)}
-	sanitizeMCPServerBlock(&tb)
-	sanitized := strings.Join(tb.lines, "\n")
-	assert.NotContains(t, sanitized, "command")
-	assert.Contains(t, sanitized, `url = "https://api.example.com"`)
+			var kept []string
+			for _, subTable := range block.subTables {
+				kept = append(kept, subTable.name)
+			}
+			assert.Equal(t, tt.wantKept, kept)
+			joined := strings.Join(block.lines, "\n")
+			for _, gone := range tt.wantGone {
+				assert.NotContains(t, joined, gone)
+			}
+		})
+	}
 }
 
 func TestPatchConfig_ClaudeLocalConfigDirEnabled(t *testing.T) {
