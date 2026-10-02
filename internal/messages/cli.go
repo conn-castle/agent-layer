@@ -17,6 +17,10 @@ const (
 	VersionTemplate   = "{{.Version}}\n"
 	VersionRequired   = "version is required"
 	VersionInvalidFmt = "version %q must be in the form vX.Y.Z or X.Y.Z"
+	// VersionPinMultipleLinesFmt reports a pin file with more than one version line.
+	VersionPinMultipleLinesFmt = "multiple version lines (%d and %d)"
+	// VersionPinInvalidLineFmt reports the pin file line holding an invalid version.
+	VersionPinInvalidLineFmt = "line %d: %w"
 
 	// InitUse is the init command name.
 	InitUse   = "init"

@@ -353,6 +353,17 @@ func TestPinVersionDiff_EdgeCases(t *testing.T) {
 	if diff.Action != UpgradePinActionUpdate {
 		t.Fatalf("expected update action for corrupt pin, got %s", diff.Action)
 	}
+
+	if err := os.WriteFile(path, []byte("# team pin\nv1.2.2\n"), 0o600); err != nil {
+		t.Fatalf("write commented pin: %v", err)
+	}
+	diff, err = inst.templates().pinVersionDiff()
+	if err != nil {
+		t.Fatalf("pinVersionDiff commented file: %v", err)
+	}
+	if diff.Current != "1.2.2" || diff.Action != UpgradePinActionUpdate {
+		t.Fatalf("expected update from 1.2.2 for commented pin, got current %q action %s", diff.Current, diff.Action)
+	}
 }
 
 func TestDetectUpgradeRenames_ErrorAndAmbiguityPaths(t *testing.T) {

@@ -345,11 +345,11 @@ func (inst *installer) writeVersionFile() error {
 	path := filepath.Join(inst.root, ".agent-layer", "al.version")
 	existingBytes, err := sys.ReadFile(path)
 	if err == nil {
-		existing := strings.TrimSpace(string(existingBytes))
-		normalized, normErr := version.Normalize(existing)
+		normalized, ok, parseErr := version.ParsePin(existingBytes)
 		switch {
-		case existing == "" || normErr != nil:
+		case !ok || parseErr != nil:
 			// Empty or corrupt pin file: auto-repair by falling through to write.
+			existing := strings.TrimSpace(string(existingBytes))
 			_, _ = fmt.Fprintf(inst.warnOutput(), messages.InstallAutoRepairPinWarningFmt, path, existing, inst.pinVersion)
 		case normalized == inst.pinVersion:
 			return nil

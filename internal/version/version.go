@@ -25,6 +25,37 @@ func Normalize(raw string) (string, error) {
 	return fmt.Sprintf("%s.%s.%s", match[1], match[2], match[3]), nil
 }
 
+// ParsePin extracts the pinned version from .agent-layer/al.version contents.
+// Blank lines and lines starting with "#" are ignored, and exactly one version
+// line is expected. It returns ok=false with a nil error when the contents hold
+// no version line, and an error when there are multiple version lines or the
+// version line is invalid.
+func ParsePin(data []byte) (string, bool, error) {
+	var (
+		versionLine       string
+		versionLineNumber int
+	)
+	for idx, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if versionLineNumber != 0 {
+			return "", false, fmt.Errorf(messages.VersionPinMultipleLinesFmt, versionLineNumber, idx+1)
+		}
+		versionLine = trimmed
+		versionLineNumber = idx + 1
+	}
+	if versionLineNumber == 0 {
+		return "", false, nil
+	}
+	normalized, err := Normalize(versionLine)
+	if err != nil {
+		return "", false, fmt.Errorf(messages.VersionPinInvalidLineFmt, versionLineNumber, err)
+	}
+	return normalized, true, nil
+}
+
 // IsDev reports whether the version string represents a dev build.
 func IsDev(raw string) bool {
 	return strings.TrimSpace(raw) == developmentVersion

@@ -466,6 +466,34 @@ func TestBuildCurrentTemplateManifest_MalformedPinFails(t *testing.T) {
 	}
 }
 
+func TestReadCurrentPinVersion_IgnoresCommentsAndBlankLines(t *testing.T) {
+	root := t.TempDir()
+	pinPath := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
+		t.Fatalf("mkdir pin dir: %v", err)
+	}
+	if err := os.WriteFile(pinPath, []byte("# team pin\n\nv0.21.0\n"), 0o600); err != nil {
+		t.Fatalf("write pin: %v", err)
+	}
+	if got, err := readCurrentPinVersion(root, RealSystem{}); err != nil || got != "0.21.0" {
+		t.Fatalf("readCurrentPinVersion(commented pin) = %q, %v; want 0.21.0, nil", got, err)
+	}
+
+	// Upgrades on a fresh clone (no managed baseline) must still start from the commented pin.
+	inst := &installer{root: root, sys: RealSystem{}}
+	resolution := inst.resolveUpgradeMigrationSourceVersion()
+	if resolution.origin != UpgradeMigrationSourcePin || resolution.version != "0.21.0" {
+		t.Fatalf("source resolution = %q from %q; want 0.21.0 from %q", resolution.version, resolution.origin, UpgradeMigrationSourcePin)
+	}
+
+	if err := os.WriteFile(pinPath, []byte("0.20.0\n0.21.0\n"), 0o600); err != nil {
+		t.Fatalf("write multi-line pin: %v", err)
+	}
+	if _, err := readCurrentPinVersion(root, RealSystem{}); err == nil || !strings.Contains(err.Error(), "invalid pin version") {
+		t.Fatalf("readCurrentPinVersion(multiple version lines) error = %v, want invalid pin version", err)
+	}
+}
+
 func TestReadCurrentPinVersion_ErrorPaths(t *testing.T) {
 	if _, err := readCurrentPinVersion(t.TempDir(), nil); err == nil {
 		t.Fatal("expected nil system error")
