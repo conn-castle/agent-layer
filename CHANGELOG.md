@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+- Codex dispatches survive transient stream retries such as `Reconnecting... 2/5 (request timed out)`. Previously Agent Layer treated every Codex `error` event as fatal and stopped a run that Codex would have recovered. Codex dispatches still fail on `turn.failed`, `turn.aborted`, a nonzero provider exit, or an exit without a completed turn; when no turn failure event reports a reason, the failure message includes the last Codex error.
+
 ## v0.23.1 - 2026-09-29
 
 ### Changed

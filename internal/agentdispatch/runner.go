@@ -274,6 +274,10 @@ func executeProvider(
 
 	var result executionResult
 	var pendingAnswer string
+	// lastDiagnostic keeps the latest non-terminal provider error, such as a
+	// Codex error event, so a run that then exits without a terminal failure
+	// event still reports why it failed.
+	var lastDiagnostic string
 	var resultMu sync.Mutex
 	var semanticErr error
 	terminal := make(chan struct{}, 1)
@@ -316,6 +320,10 @@ func executeProvider(
 			if err := persist(event.SessionID); err != nil {
 				semanticErr = err
 				return err
+			}
+		case eventProgress:
+			if event.Reason != "" {
+				lastDiagnostic = event.Reason
 			}
 		case eventAnswer:
 			pendingAnswer = event.Answer
@@ -399,6 +407,7 @@ func executeProvider(
 	signal := caughtSignal()
 	resultMu.Lock()
 	currentSemanticErr := semanticErr
+	diagnostic := lastDiagnostic
 	resultMu.Unlock()
 	var primaryErr error
 	switch {
@@ -415,7 +424,7 @@ func executeProvider(
 	case stderrResult != nil:
 		primaryErr = wrapExitError(ExitTargetFailure, fmt.Sprintf("capture dispatch provider diagnostics: %v", stderrResult), stderrResult)
 	case waitErr != nil:
-		primaryErr = providerWaitError(command.Provider, waitErr)
+		primaryErr = withProviderDiagnostic(providerWaitError(command.Provider, waitErr), diagnostic)
 	}
 	if terminationErr != nil {
 		return executionResult{}, newUnprovenProviderTerminationError(primaryErr, "terminate dispatch provider process group", terminationErr)
@@ -433,7 +442,7 @@ func executeProvider(
 		}
 	}
 	if !result.Complete || !result.AnswerSeen || result.SessionID == "" {
-		return executionResult{}, exitError(ExitTargetFailure, fmt.Sprintf("%s dispatch completed without required terminal result, session ID, and final answer", command.Provider))
+		return executionResult{}, withProviderDiagnostic(exitError(ExitTargetFailure, fmt.Sprintf("%s dispatch completed without required terminal result, session ID, and final answer", command.Provider)), diagnostic)
 	}
 	resultMu.Lock()
 	terminalAnswer := pendingAnswer

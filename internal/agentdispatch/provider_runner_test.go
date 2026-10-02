@@ -206,9 +206,13 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 	if err != nil || len(failureEvents) != 1 || failureEvents[0].Kind != eventFailure || failureEvents[0].Reason != "model quota exhausted" {
 		t.Fatalf("Codex nested failure events = %#v, %v", failureEvents, err)
 	}
-	stringFailureEvents, err := reduceStructuredTestEvent(AgentCodex, "", []byte(`{"type":"error","error":"quota exhausted"}`))
+	stringFailureEvents, err := reduceStructuredTestEvent(AgentCodex, "", []byte(`{"type":"turn.failed","error":"quota exhausted"}`))
 	if err != nil || len(stringFailureEvents) != 1 || stringFailureEvents[0].Kind != eventFailure || stringFailureEvents[0].Reason != "quota exhausted" {
 		t.Fatalf("Codex string failure events = %#v, %v", stringFailureEvents, err)
+	}
+	diagnosticEvents, err := reduceStructuredTestEvent(AgentCodex, "", []byte(`{"type":"error","error":{"message":"Reconnecting... 2/5 (request timed out)"}}`))
+	if err != nil || len(diagnosticEvents) != 1 || diagnosticEvents[0].Kind != eventProgress || diagnosticEvents[0].Reason != "Reconnecting... 2/5 (request timed out)" {
+		t.Fatalf("Codex error diagnostic events = %#v, %v", diagnosticEvents, err)
 	}
 	var raw bytes.Buffer
 	var recovered []providerEvent

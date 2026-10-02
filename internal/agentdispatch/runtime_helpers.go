@@ -523,3 +523,13 @@ func providerWaitError(target string, err error) error {
 	}
 	return wrapExitError(ExitTargetFailure, fmt.Sprintf("wait for %s: %v", target, err), err)
 }
+
+// withProviderDiagnostic appends the provider's last reported error to a
+// failure that otherwise carries no provider explanation.
+func withProviderDiagnostic(err error, diagnostic string) error {
+	var exit *ExitError
+	if diagnostic == "" || !errors.As(err, &exit) {
+		return err
+	}
+	return &ExitError{Code: exit.Code, Message: exit.Error() + "; last provider error: " + diagnostic, Err: exit.Err}
+}
