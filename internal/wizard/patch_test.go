@@ -1768,6 +1768,74 @@ command = "beta"
 `,
 		},
 		{
+			name: "catalog default followed by custom server",
+			content: `
+[[mcp.servers]]
+id = "tavily"
+enabled = true
+transport = "http"
+url = "https://mcp.tavily.com/mcp/"
+[mcp.servers.headers]
+Authorization = "Bearer ${AL_TAVILY_API_KEY}"
+
+[[mcp.servers]]
+id = "beta"
+enabled = true
+transport = "http"
+url = "https://b.example"
+[mcp.servers.headers]
+Authorization = "Bearer ${AL_BETA}"
+`,
+		},
+		{
+			name: "catalog default disabled",
+			content: `
+[[mcp.servers]]
+id = "tavily"
+enabled = true
+transport = "http"
+url = "https://mcp.tavily.com/mcp/"
+[mcp.servers.headers]
+Authorization = "Bearer ${AL_TAVILY_API_KEY}"
+
+[[mcp.servers]]
+id = "beta"
+enabled = true
+transport = "http"
+url = "https://b.example"
+[mcp.servers.headers]
+Authorization = "Bearer ${AL_BETA}"
+`,
+			choices: func() *Choices {
+				choices := NewChoices()
+				choices.DefaultMCPServers = []DefaultMCPServer{{ID: "tavily"}}
+				choices.EnabledMCPServersTouched = true
+				choices.EnabledMCPServers = map[string]bool{"tavily": false}
+				return choices
+			},
+			expect: func(decoded map[string]any) {
+				servers := decoded["mcp"].(map[string]any)["servers"].([]any)
+				servers[0].(map[string]any)["enabled"] = false
+			},
+		},
+		{
+			name: "stdio drops incompatible headers sub-table",
+			content: `
+[[mcp.servers]]
+id = "alpha"
+transport = "stdio"
+command = "alpha"
+[mcp.servers.headers]
+Authorization = "Bearer ${AL_ALPHA}"
+[mcp.servers.env]
+ALPHA_TOKEN = "${AL_ALPHA}"
+`,
+			expect: func(decoded map[string]any) {
+				servers := decoded["mcp"].(map[string]any)["servers"].([]any)
+				delete(servers[0].(map[string]any), "headers")
+			},
+		},
+		{
 			name: "non-MCP array",
 			content: `
 [[extra.items]]
@@ -1833,6 +1901,26 @@ X-Team = "alpha"`
 	out, err := PatchConfig(server+"\n", NewChoices())
 	require.NoError(t, err)
 	assert.Contains(t, out, server)
+}
+
+func TestPatchConfig_DroppedSubTableKeepsNextServerComment(t *testing.T) {
+	content := `[[mcp.servers]]
+id = "alpha"
+transport = "stdio"
+command = "alpha"
+[mcp.servers.headers]
+X = "leftover"
+
+# beta: internal tools
+[[mcp.servers]]
+id = "beta"
+transport = "stdio"
+command = "beta"
+`
+	out, err := PatchConfig(content, NewChoices())
+	require.NoError(t, err)
+	assert.NotContains(t, out, "leftover")
+	assert.Contains(t, out, "command = \"alpha\"\n\n# beta: internal tools\n")
 }
 
 func TestSanitizeMCPServerBlock_SectionStyleSubTables(t *testing.T) {

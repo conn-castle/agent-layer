@@ -516,10 +516,38 @@ func sanitizeMCPServerBlock(block *tomlBlock) {
 	for _, key := range incompatibleKeys {
 		removeKeyFromBlock(block, key)
 	}
-	block.subTables = slices.DeleteFunc(block.subTables, func(subTable *tomlBlock) bool {
+	kept := make([]*tomlBlock, 0, len(block.subTables))
+	for _, subTable := range block.subTables {
 		path, ok := tomlpatch.ParseKeyPath(subTable.name)
-		return ok && len(path) > 2 && path[0] == "mcp" && path[1] == "servers" && slices.Contains(incompatibleKeys, path[2])
-	})
+		if !ok || len(path) <= 2 || path[0] != mcpSection || path[1] != "servers" || !slices.Contains(incompatibleKeys, path[2]) {
+			kept = append(kept, subTable)
+			continue
+		}
+		// The parser assigns comments and blank lines preceding the next header
+		// to this sub-table; keep them so dropping it does not drop the next
+		// block's leading comment.
+		trailing := trailingCommentLines(subTable.lines)
+		if len(kept) > 0 {
+			kept[len(kept)-1].lines = append(kept[len(kept)-1].lines, trailing...)
+		} else {
+			block.lines = append(block.lines, trailing...)
+		}
+	}
+	block.subTables = kept
+}
+
+// trailingCommentLines returns the comment and blank lines after the last
+// content line of a block.
+func trailingCommentLines(lines []string) []string {
+	end := len(lines)
+	for end > 0 {
+		trimmed := strings.TrimSpace(lines[end-1])
+		if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+			break
+		}
+		end--
+	}
+	return lines[end:]
 }
 
 type tomlLineWalkResult struct {
