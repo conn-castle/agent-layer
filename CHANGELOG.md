@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+- Concurrent `al dispatch start` and `al dispatch reserve` calls no longer fail with `dispatch session "<name>" was not found` or `read dispatch mapping` when they prune expired sessions at the same time or one of them is creating a new session. Session mappings are now published only once complete, so a process that dies while reserving a name no longer leaves an empty mapping that fails every later start. Unreadable-mapping errors now name the affected session.
+
 ## v0.23.1 - 2026-09-29
 
 ### Changed

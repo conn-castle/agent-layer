@@ -45,7 +45,10 @@ const (
 	sessionStateReserved      = "reserved"
 )
 
-var errDispatchRunNotFound = errors.New("dispatch run record not found")
+var (
+	errDispatchRunNotFound     = errors.New("dispatch run record not found")
+	errDispatchSessionNotFound = errors.New("dispatch session not found")
+)
 
 // Session is the durable, name-keyed mapping owned by Agent Layer. Provider
 // transcripts remain provider-owned; this record contains only the alias
@@ -352,21 +355,12 @@ func createExclusiveSession(root string, name string, run *dispatchRun) (Session
 		state = sessionStateReserved
 	}
 	session := Session{Name: name, Agent: run.Record.Agent, CreatedAt: now, LastUsedAt: now, State: state, RunID: run.Record.ID, ActiveRunID: run.Record.ID, ActiveClaimKnown: true}
-	file, openErr := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- name is generated from fixed vocabularies.
-	if errors.Is(openErr, fs.ErrExist) {
+	reserved, err := createJSONExclusive(path, session)
+	if err != nil {
+		return Session{}, false, wrapExitError(ExitConfig, "reserve dispatch name", err)
+	}
+	if !reserved {
 		return Session{}, false, nil
-	}
-	if openErr != nil {
-		return Session{}, false, wrapExitError(ExitConfig, "reserve dispatch name", openErr)
-	}
-	encoderErr := json.NewEncoder(file).Encode(session)
-	closeErr := file.Close()
-	if encoderErr != nil || closeErr != nil {
-		_ = os.Remove(path)
-		if encoderErr != nil {
-			return Session{}, false, wrapExitError(ExitConfig, "write pending dispatch mapping", encoderErr)
-		}
-		return Session{}, false, wrapExitError(ExitConfig, "close pending dispatch mapping", closeErr)
 	}
 	previousName := run.Record.Name
 	run.Record.Name = name
@@ -508,6 +502,10 @@ func classifyDispatchPoolOccupancy(root string) (retained int, active int, unrea
 			continue
 		}
 		session, loadErr := loadSession(root, name)
+		if errors.Is(loadErr, errDispatchSessionNotFound) {
+			// A concurrent retention pass removed it after the listing.
+			continue
+		}
 		if loadErr != nil {
 			unreadable++
 			continue
@@ -656,9 +654,13 @@ func loadSession(root string, name string) (Session, error) {
 	var session Session
 	if err := readJSON(path, &session); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return Session{}, exitError(ExitUsage, fmt.Sprintf("dispatch session %q was not found", name))
+			// Opening a dangling symlink also returns not-exist. Only a
+			// missing directory entry means the mapping was removed.
+			if _, statErr := os.Lstat(path); errors.Is(statErr, fs.ErrNotExist) {
+				return Session{}, wrapExitError(ExitUsage, fmt.Sprintf("dispatch session %q was not found", name), errDispatchSessionNotFound)
+			}
 		}
-		return Session{}, wrapExitError(ExitConfig, "read dispatch mapping", err)
+		return Session{}, wrapExitError(ExitConfig, fmt.Sprintf("read dispatch mapping %q", name), err)
 	}
 	// A reservation has no agent until `start --reservation` claims it.
 	unclaimedReservation := session.State == sessionStateReserved && session.Agent == ""
@@ -754,6 +756,10 @@ func pruneLegacyFanoutState(root string) error {
 func pruneExpiredSession(root string, name string, cutoff time.Time) error {
 	return withSessionLock(root, name, func() error {
 		session, err := loadSession(root, name)
+		if errors.Is(err, errDispatchSessionNotFound) {
+			// A concurrent retention pass already removed it.
+			return nil
+		}
 		if err != nil {
 			// Retention must not hide or erase corrupt state.
 			return err
@@ -1061,6 +1067,24 @@ func parseUUID(value string) error {
 }
 
 func writeJSONAtomic(path string, value any) error {
+	return publishJSON(path, value, os.Rename)
+}
+
+// createJSONExclusive publishes value at path only if path does not exist yet.
+// link(2) never replaces an existing name, so concurrent creators of the same
+// path lose with false, and readers never observe an empty or partial file,
+// even if this process dies mid-write.
+func createJSONExclusive(path string, value any) (bool, error) {
+	err := publishJSON(path, value, os.Link)
+	if errors.Is(err, fs.ErrExist) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// publishJSON writes value to a synced temporary file beside path, then
+// exposes it at path with publish.
+func publishJSON(path string, value any, publish func(oldpath, newpath string) error) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -1086,7 +1110,7 @@ func writeJSONAtomic(path string, value any) error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	return os.Rename(temp, path) // #nosec G703 -- path and temp share the caller-selected Agent Layer state directory.
+	return publish(temp, path)
 }
 
 func writeBytesAtomic(path string, data []byte, mode fs.FileMode) error {
@@ -1177,6 +1201,10 @@ func listSessions(root string) ([]Session, error) {
 			return nil, exitError(ExitConfig, fmt.Sprintf("invalid dispatch state file %q", entry.Name()))
 		}
 		session, err := loadSession(root, name)
+		if errors.Is(err, errDispatchSessionNotFound) {
+			// A concurrent retention pass removed it after the listing.
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
