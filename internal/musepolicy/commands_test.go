@@ -112,6 +112,16 @@ func TestCommandPolicyRejectsShellPrograms(t *testing.T) {
 	}
 }
 
+func TestCommandPrefixRejectsCommentsThatWouldWidenIt(t *testing.T) {
+	for _, command := range []string{"git push origin #123", "git log # recent", "echo #", "git\t#x"} {
+		_, err := ParseCommandPrefixes([]string{command})
+		require.ErrorContains(t, err, "# comment", command)
+	}
+	prefixes, err := ParseCommandPrefixes([]string{`git commit -m "#1"`, `git push origin '#123'`, `git push origin \#123`, "git log a#b", `git log "a"#b`})
+	require.NoError(t, err)
+	require.Equal(t, [][]string{{"git", "commit", "-m", "#1"}, {"git", "push", "origin", "#123"}, {"git", "push", "origin", "#123"}, {"git", "log", "a#b"}, {"git", "log", "a#b"}}, prefixes)
+}
+
 func TestCommandCleanupIgnoresUnownedNativeSchema(t *testing.T) {
 	dir := t.TempDir()
 	root := t.TempDir()
