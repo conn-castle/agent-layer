@@ -202,6 +202,14 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 	if err != nil {
 		return UpgradePlan{}, err
 	}
+	unknownDeletions, err := inst.planUnknownDeletions(orphans, renames, migrationPlan.executable, kept)
+	if err != nil {
+		return UpgradePlan{}, err
+	}
+	orphans = append(orphans, unknownDeletions...)
+	sort.Slice(orphans, func(i, j int) bool {
+		return orphans[i].path < orphans[j].path
+	})
 	statuslineAdditions, statuslineUpdates, err := inst.planStatuslineSourceChanges(migrationPlan)
 	if err != nil {
 		return UpgradePlan{}, err
@@ -233,6 +241,187 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 		PinVersionChange:          pinDiff,
 		ReadinessChecks:           readinessChecks,
 	}, nil
+}
+
+// planUnknownDeletions mirrors the non-tmp --apply-deletions set, skipping
+// paths already represented by template orphans or renames. Apply scans for
+// unknown paths after migrations run, so the plan classifies the paths the
+// planned migrations will leave, using the rules of walkUnknownsInRoot.
+func (inst *installer) planUnknownDeletions(existing []upgradeChangeWithTemplate, renames []UpgradeRename, ops []upgradeMigrationOperation, kept upgradeKeepList) ([]upgradeChangeWithTemplate, error) {
+	known, err := inst.buildKnownPaths()
+	if err != nil {
+		return nil, err
+	}
+	paths, err := inst.pathsAfterMigrations(ops)
+	if err != nil {
+		return nil, err
+	}
+	represented := make(map[string]struct{})
+	addRepresented := func(path string) {
+		for path != "." && path != "" {
+			represented[filepath.ToSlash(path)] = struct{}{}
+			path = filepath.Dir(path)
+		}
+	}
+	for _, change := range existing {
+		addRepresented(change.path)
+	}
+	for _, rename := range renames {
+		addRepresented(rename.From)
+	}
+	isKnown := func(rel string) bool {
+		_, ok := known[filepath.Join(inst.root, filepath.FromSlash(rel))]
+		return ok
+	}
+	units := make(map[string]struct{})
+	for rel, isDir := range paths {
+		if unit, ok := unknownDeletionUnit(rel, isDir, isKnown, kept); ok {
+			if _, skip := represented[unit]; !skip {
+				units[unit] = struct{}{}
+			}
+		}
+	}
+	changes := make([]upgradeChangeWithTemplate, 0, len(units))
+	for unit := range units {
+		ownership, err := inst.classifyRemovalOwnership(unit)
+		if err != nil {
+			return nil, err
+		}
+		changes = append(changes, upgradeChangeWithTemplate{path: unit, ownership: ownership})
+	}
+	return changes, nil
+}
+
+// unknownDeletionUnit returns the path walkUnknownsInRoot would report for rel:
+// its first ancestor (or rel itself) that is neither known nor a directory
+// holding a kept descendant. It reports nothing for kept paths.
+func unknownDeletionUnit(rel string, isDir bool, isKnown func(string) bool, kept upgradeKeepList) (string, bool) {
+	parts := strings.Split(rel, "/")
+	rootParts := 0
+	switch {
+	case strings.HasPrefix(rel, ".agent-layer/"):
+		rootParts = 1
+	case strings.HasPrefix(rel, docsAgentLayerDir+"/"):
+		rootParts = len(strings.Split(docsAgentLayerDir, "/"))
+	default:
+		return "", false
+	}
+	for i := rootParts + 1; i <= len(parts); i++ {
+		path := strings.Join(parts[:i], "/")
+		if isKnown(path) {
+			continue
+		}
+		if upgradePathIsKept(path, kept) {
+			return "", false
+		}
+		if (i < len(parts) || isDir) && upgradePathHasKeptDescendant(path, kept) {
+			continue
+		}
+		return path, true
+	}
+	return "", false
+}
+
+// pathsAfterMigrations lists every path under the unknown-scan roots, except
+// .agent-layer/tmp, as it will exist after ops run in order. The value reports
+// whether the path is a directory. It models only the file effects that can
+// change which paths are unknown; a rename onto an occupied destination, which
+// fails the upgrade, is modelled as a merge.
+func (inst *installer) pathsAfterMigrations(ops []upgradeMigrationOperation) (map[string]bool, error) {
+	paths := make(map[string]bool)
+	for _, root := range inst.unknownScanRoots() {
+		if _, err := inst.sys.Stat(root); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf(messages.InstallFailedStatFmt, root, err)
+		}
+		err := inst.sys.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			rel := filepath.ToSlash(inst.relativePath(path))
+			if rel == agentLayerTmpKeepPath {
+				return filepath.SkipDir
+			}
+			paths[rel] = entry.IsDir()
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	under := func(path, root string) (string, bool) {
+		if path == root {
+			return "", true
+		}
+		rest, ok := strings.CutPrefix(path, root+"/")
+		return "/" + rest, ok
+	}
+	clean := func(path string) string {
+		return normalizeRelPath(filepath.Clean(filepath.FromSlash(path)))
+	}
+	for _, op := range ops {
+		switch op.Kind {
+		case upgradeMigrationKindDeleteFile:
+			target := clean(op.Path)
+			for path := range paths {
+				if _, ok := under(path, target); ok {
+					delete(paths, path)
+				}
+			}
+		case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
+			from, to := clean(op.From), clean(op.To)
+			if _, ok := paths[from]; !ok || from == to {
+				continue
+			}
+			moved := make(map[string]bool)
+			for path, isDir := range paths {
+				if rest, ok := under(path, from); ok {
+					moved[to+rest] = isDir
+					delete(paths, path)
+				}
+			}
+			for path, isDir := range moved {
+				paths[path] = isDir
+			}
+		case upgradeMigrationKindMigrateSkillsFormat:
+			dir := clean(op.Path)
+			for path, isDir := range paths {
+				name, ok := strings.CutPrefix(path, dir+"/")
+				if !ok || isDir || strings.Contains(name, "/") || strings.HasPrefix(name, ".") || !strings.HasSuffix(name, ".md") {
+					continue
+				}
+				delete(paths, path)
+				skillDir := dir + "/" + strings.TrimSuffix(name, ".md")
+				paths[skillDir] = true
+				paths[skillDir+"/"+skillManifestFileName] = false
+			}
+		case upgradeMigrationKindAppendToFile:
+			target := clean(op.Path)
+			if _, ok := paths[target]; !ok {
+				paths[target] = false
+			}
+		}
+	}
+	return paths, nil
+}
+
+func (inst *installer) classifyRemovalOwnership(rel string) (ownershipClassification, error) {
+	path := filepath.Join(inst.root, filepath.FromSlash(rel))
+	unknown := unknownOwnershipClassification(nil, []string{ownershipReasonBaselineMissing})
+	info, err := inst.sys.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		// A path a migration has yet to create has no content to classify.
+		return unknown, nil
+	}
+	if err != nil {
+		return ownershipClassification{}, fmt.Errorf(messages.InstallFailedStatFmt, path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return unknown, nil
+	}
+	return inst.ownership().classifyOrphanOwnershipDetail(rel)
 }
 
 func filterCoveredUpgradeChanges(
@@ -341,7 +530,7 @@ func (inst templateManager) templateOrphans(templateEntries []templatedPath) ([]
 
 	orphans := make([]upgradeChangeWithTemplate, 0, len(orphanSet))
 	for relPath := range orphanSet {
-		ownership, err := inst.ownership().classifyOrphanOwnershipDetail(relPath)
+		ownership, err := inst.classifyRemovalOwnership(relPath)
 		if err != nil {
 			return nil, err
 		}
@@ -402,6 +591,13 @@ func detectUpgradeRenames(
 	orphansByHash := make(map[string][]int)
 	for idx, orphan := range orphans {
 		path := filepath.Join(inst.root, filepath.FromSlash(orphan.path))
+		info, err := inst.sys.Lstat(path)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf(messages.InstallFailedStatFmt, path, err)
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
 		data, err := inst.sys.ReadFile(path)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf(messages.InstallFailedReadFmt, path, err)

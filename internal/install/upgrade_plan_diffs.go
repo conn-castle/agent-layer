@@ -1,7 +1,9 @@
 package install
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -108,6 +110,18 @@ func (inst *installer) buildPlanChangeDiffPreview(change UpgradeChange, mode pla
 		}, nil
 	case planDiffModeRemoval:
 		localPath := filepath.Join(inst.root, filepath.FromSlash(change.Path))
+		// A directory, a symlink, or a path a migration has yet to create has
+		// no file content to preview.
+		info, err := inst.sys.Lstat(localPath)
+		if errors.Is(err, os.ErrNotExist) {
+			return DiffPreview{Path: change.Path, Ownership: change.Ownership}, nil
+		}
+		if err != nil {
+			return DiffPreview{}, err
+		}
+		if !info.Mode().IsRegular() {
+			return DiffPreview{Path: change.Path, Ownership: change.Ownership}, nil
+		}
 		localBytes, err := inst.sys.ReadFile(localPath)
 		if err != nil {
 			return DiffPreview{}, err
