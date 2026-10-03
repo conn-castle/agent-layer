@@ -109,6 +109,37 @@ func TestNoArgsCommandsRejectExtraArgs(t *testing.T) {
 	}
 }
 
+// TestParentCommandsRejectUnknownSubcommands verifies that a mistyped
+// subcommand fails instead of printing help and exiting 0. It runs through the
+// root command because cobra only applies the legacy unknown-command check to a
+// root, so a parent tested on its own would pass even without the fix.
+func TestParentCommandsRejectUnknownSubcommands(t *testing.T) {
+	for _, parent := range []string{"dispatch", "benchmark", "probe", "hook"} {
+		t.Run(parent, func(t *testing.T) {
+			root := newRootCmd()
+			root.SetArgs([]string{parent, "bogus"})
+			root.SetOut(io.Discard)
+			root.SetErr(io.Discard)
+			err := root.Execute()
+			if err == nil || !strings.Contains(err.Error(), `unknown command "bogus"`) {
+				t.Fatalf("al %s bogus returned %v; want unknown command error", parent, err)
+			}
+
+			var out strings.Builder
+			root = newRootCmd()
+			root.SetArgs([]string{parent})
+			root.SetOut(&out)
+			root.SetErr(io.Discard)
+			if err := root.Execute(); err != nil {
+				t.Fatalf("al %s returned %v; want help", parent, err)
+			}
+			if !strings.Contains(out.String(), "Usage:") {
+				t.Fatalf("al %s output = %q; want help", parent, out.String())
+			}
+		})
+	}
+}
+
 func TestSplitQuietArgs(t *testing.T) {
 	tests := []struct {
 		name      string
