@@ -229,9 +229,12 @@ func findSecretInURL(raw string) (string, bool) {
 // hasLiteralUserinfo reports whether the URL authority carries a literal
 // password, or a literal username without a placeholder password beside it.
 func hasLiteralUserinfo(rawURL string) bool {
-	_, rest, ok := strings.Cut(rawURL, "://")
+	rest, ok := strings.CutPrefix(rawURL, "//")
 	if !ok {
-		return false
+		_, rest, ok = strings.Cut(rawURL, "://")
+		if !ok {
+			return false
+		}
 	}
 	authority := rest
 	if end := strings.IndexAny(rest, "/?#"); end >= 0 {
