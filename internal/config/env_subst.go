@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -73,6 +74,25 @@ func WithBuiltInEnv(env map[string]string, repoRoot string) map[string]string {
 	}
 	if repoRoot != "" {
 		merged[BuiltinRepoRootEnvVar] = repoRoot
+	}
+	return merged
+}
+
+// PlaceholderEnv returns the values ${VAR} placeholders resolve against: a
+// non-empty process environment value takes precedence over
+// .agent-layer/.env, and built-in values always win. Use it only for
+// placeholder lookup; child process environments must keep using Env.
+func (p *ProjectConfig) PlaceholderEnv() map[string]string {
+	merged := make(map[string]string, len(p.Env))
+	for key, value := range p.Env {
+		merged[key] = value
+	}
+	for _, entry := range os.Environ() {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok || key == "" || value == "" || IsBuiltInEnvVar(key) {
+			continue
+		}
+		merged[key] = value
 	}
 	return merged
 }

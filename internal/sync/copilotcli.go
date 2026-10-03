@@ -58,7 +58,7 @@ func buildCopilotMCPConfig(project *config.ProjectConfig) (*copilotMCPConfig, er
 
 	resolved, err := projection.EffectiveMCPServers(
 		project.Config,
-		project.Env,
+		project.PlaceholderEnv(),
 		projection.ClientCopilot,
 		projection.ClientPlaceholderResolver("${%s}"),
 	)

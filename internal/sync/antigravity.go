@@ -317,7 +317,7 @@ func buildAntigravityMCPConfig(project *config.ProjectConfig) (*antigravityMCPCo
 	// guard is the recovery bound here too.
 	resolved, err := projection.EffectiveMCPServers(
 		project.Config,
-		project.Env,
+		project.PlaceholderEnv(),
 		antigravityClientID,
 		projection.ClientPlaceholderResolver("${%s}"),
 	)
