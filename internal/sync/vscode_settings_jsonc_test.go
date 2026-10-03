@@ -840,6 +840,46 @@ func TestRenderVSCodeSettingsContentMovesUserSettingsOutOfManagedBlock(t *testin
 			existing: "{\n" + header + "  \"a\": 1\n  , \"b\": 2\n  // <<< agent-layer\n}\n",
 			want:     "{\n" + header + managed + ",\n  // <<< agent-layer\n  \"a\": 1,\n  \"b\": 2\n}\n",
 		},
+		{
+			name:     "separator after the end marker",
+			existing: "{\n" + header + "  \"a\": 1\n  // <<< agent-layer\n  , \"b\": 2\n}\n",
+			want:     "{\n" + header + managed + ",\n  // <<< agent-layer\n  \"a\": 1\n  , \"b\": 2\n}\n",
+		},
+		{
+			name: "separator after comments following the end marker",
+			existing: "{\n" + header +
+				"  // first setting\n  \"a\": 1, // first\n  \"c\": 3 // last\n" +
+				"  // dangling note\n  // <<< agent-layer\n" +
+				"  // outside comment with ,\n  /* another ,\n     comment */ , \"b\": 2\n}\n",
+			want: "{\n" + header + managed + ",\n  // <<< agent-layer\n" +
+				"  // first setting\n  \"a\": 1, // first\n  \"c\": 3 // last\n" +
+				"  // dangling note\n  // outside comment with ,\n" +
+				"  /* another ,\n     comment */ , \"b\": 2\n}\n",
+		},
+		{
+			name:     "separator after a block containing only managed properties",
+			existing: "{\n" + header + managed + "\n  // <<< agent-layer\n  , \"b\": 2\n}\n",
+			want:     "{\n" + header + managed + "\n  // <<< agent-layer\n  , \"b\": 2\n}\n",
+		},
+		{
+			name:     "missing comma between properties and a bare literal",
+			existing: "{\n" + header + "  \"a\": nonstandard\n  \"b\": false\n  // <<< agent-layer\n}\n",
+			want:     "{\n" + header + managed + ",\n  // <<< agent-layer\n  \"a\": nonstandard,\n  \"b\": false\n}\n",
+		},
+		{
+			name:     "nested missing comma and bare literals remain verbatim",
+			existing: "{\n" + header + "  \"chat.tools.terminal.autoApprove\": false,\n  \"a\": {\"b\": nonstandard \"c\": [NaN, undefined]}\n  // <<< agent-layer\n}\n",
+			want:     "{\n" + header + managed + ",\n  // <<< agent-layer\n  \"a\": {\"b\": nonstandard \"c\": [NaN, undefined]}\n}\n",
+		},
+		{
+			name: "nested JSONC comments, strings, and trailing commas remain verbatim",
+			existing: "{\n" + header + "  \"a\": [\n" +
+				"    {}, [], {\"b\" /* key */: /* value */ [true, \"a\\\"}b\",],}, // item\n" +
+				"    {\"c\": null /* end */},\n  ]\n  // <<< agent-layer\n}\n",
+			want: "{\n" + header + managed + ",\n  // <<< agent-layer\n  \"a\": [\n" +
+				"    {}, [], {\"b\" /* key */: /* value */ [true, \"a\\\"}b\",],}, // item\n" +
+				"    {\"c\": null /* end */},\n  ]\n}\n",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -910,11 +950,31 @@ func TestRenderVSCodeSettingsContentRejectsInvalidManagedBlockContent(t *testing
 		"  \"a\": 1,,",
 		"  editor: 1",
 		"  \"a\":",
+		`  "a": {"b": }`,
+		`  "a": {"b": /* no value */}`,
+		`  "a": [{"b": }]`,
+		`  "a": {"b": 1, "c": }`,
+		`  "a": {"b": 1,, "c": 2}`,
+		`  "a": {"b" 1}`,
+		`  "a": {b: 1}`,
+		`  "a": {"b": tru e}`,
+		`  "a": {"b": [1,,2]}`,
+		`  "a": [,1]`,
+		`  "a": [1 2]`,
+		`  "a": ["b": 1]`,
+		`  "a": {"b": "bad\q"}`,
+		`  "a": {"bad\q": 1}`,
 	} {
-		existing := "{\n  // >>> agent-layer\n" + inner + "\n  // <<< agent-layer\n}\n"
-		_, err := renderVSCodeSettingsContent(RealSystem{}, existing, &vscodeSettings{})
-		if !errors.Is(err, errInvalidVSCodeSettings) {
-			t.Fatalf("block %q: expected invalid settings error, got %v", inner, err)
-		}
+		t.Run(inner, func(t *testing.T) {
+			t.Parallel()
+			existing := "{\n  // >>> agent-layer\n" + inner + "\n  // <<< agent-layer\n}\n"
+			updated, err := renderVSCodeSettingsContent(RealSystem{}, existing, &vscodeSettings{})
+			if !errors.Is(err, errInvalidVSCodeSettings) {
+				t.Fatalf("block %q: expected invalid settings error, got %v", inner, err)
+			}
+			if updated != "" {
+				t.Fatalf("expected no rewritten content on error, got %q", updated)
+			}
+		})
 	}
 }
