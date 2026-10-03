@@ -1359,8 +1359,11 @@ func TestCheckMCPServers_OAuthServerNotValidated(t *testing.T) {
 	}
 
 	var events []MCPDiscoveryEvent
+	var mu sync.Mutex
 	statusFn := func(e MCPDiscoveryEvent) {
+		mu.Lock()
 		events = append(events, e)
+		mu.Unlock()
 	}
 
 	warnings, summary, err := CheckMCPServers(context.Background(), cfg, &MockConnector{Next: &RealConnector{}}, statusFn)
