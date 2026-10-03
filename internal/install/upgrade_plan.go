@@ -329,6 +329,8 @@ func unknownDeletionUnit(rel string, isDir bool, isKnown func(string) bool, kept
 // fails the upgrade, is modelled as a merge.
 func (inst *installer) pathsAfterMigrations(ops []upgradeMigrationOperation) (map[string]bool, error) {
 	paths := make(map[string]bool)
+	// Chained renames must stat the original path while planning leaves the tree untouched.
+	origins := make(map[string]string)
 	for _, root := range inst.unknownScanRoots() {
 		if _, err := inst.sys.Stat(root); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -345,6 +347,7 @@ func (inst *installer) pathsAfterMigrations(ops []upgradeMigrationOperation) (ma
 				return filepath.SkipDir
 			}
 			paths[rel] = entry.IsDir()
+			origins[rel] = path
 			return nil
 		})
 		if err != nil {
@@ -368,6 +371,7 @@ func (inst *installer) pathsAfterMigrations(ops []upgradeMigrationOperation) (ma
 			for path := range paths {
 				if _, ok := under(path, target); ok {
 					delete(paths, path)
+					delete(origins, path)
 				}
 			}
 		case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
@@ -375,15 +379,27 @@ func (inst *installer) pathsAfterMigrations(ops []upgradeMigrationOperation) (ma
 			if _, ok := paths[from]; !ok || from == to {
 				continue
 			}
+			if origin := origins[from]; origin != "" {
+				if _, err := inst.sys.Stat(origin); err != nil {
+					if errors.Is(err, os.ErrNotExist) {
+						continue
+					}
+					return nil, fmt.Errorf(messages.InstallFailedStatFmt, origin, err)
+				}
+			}
 			moved := make(map[string]bool)
+			movedOrigins := make(map[string]string)
 			for path, isDir := range paths {
 				if rest, ok := under(path, from); ok {
 					moved[to+rest] = isDir
+					movedOrigins[to+rest] = origins[path]
 					delete(paths, path)
+					delete(origins, path)
 				}
 			}
 			for path, isDir := range moved {
 				paths[path] = isDir
+				origins[path] = movedOrigins[path]
 			}
 		case upgradeMigrationKindMigrateSkillsFormat:
 			dir := clean(op.Path)
@@ -393,9 +409,12 @@ func (inst *installer) pathsAfterMigrations(ops []upgradeMigrationOperation) (ma
 					continue
 				}
 				delete(paths, path)
+				delete(origins, path)
 				skillDir := dir + "/" + strings.TrimSuffix(name, ".md")
 				paths[skillDir] = true
 				paths[skillDir+"/"+skillManifestFileName] = false
+				delete(origins, skillDir)
+				delete(origins, skillDir+"/"+skillManifestFileName)
 			}
 		case upgradeMigrationKindAppendToFile:
 			target := clean(op.Path)

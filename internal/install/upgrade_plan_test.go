@@ -199,6 +199,78 @@ func TestBuildUpgradePlan_ListsRenamedSkillThatApplyWouldDelete(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestBuildUpgradePlan_ListsDanglingRenameSourceThatApplyWouldDelete(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "0.12.0"}))
+	require.NoError(t, os.Remove(filepath.Join(root, ".agent-layer", "config.toml")))
+	source := ".agent-layer/skills/review-scope"
+	sourcePath := filepath.Join(root, filepath.FromSlash(source))
+	require.NoError(t, os.Symlink("missing-target", sourcePath))
+
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+	require.NoError(t, err)
+	require.NotNil(t, findUpgradeChange(plan.TemplateRemovalsOrOrphans, source))
+	require.Nil(t, findUpgradeChange(plan.TemplateRemovalsOrOrphans, ".agent-layer/skills/review-uncommitted-code"))
+	previews, err := BuildUpgradePlanDiffPreviews(root, plan, UpgradePlanDiffPreviewOptions{System: RealSystem{}})
+	require.NoError(t, err)
+	require.Contains(t, previews, source)
+	require.Empty(t, previews[source].UnifiedDiff)
+
+	var deleted []string
+	prompter := autoApprovePrompter()
+	prompter.DeleteUnknownAllFunc = func(paths []string) (bool, error) {
+		deleted = append(deleted, paths...)
+		return true, nil
+	}
+	require.NoError(t, Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: prompter}))
+	require.Contains(t, deleted, source)
+	_, err = os.Lstat(sourcePath)
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestPathsAfterMigrations_RenameSourceStatSemantics(t *testing.T) {
+	for _, kind := range []upgradeMigrationOperationKind{upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact} {
+		t.Run(string(kind), func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, ".agent-layer", "skills", "old")
+			require.NoError(t, os.MkdirAll(dir, 0o700))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "target"), []byte("local\n"), 0o600))
+			require.NoError(t, os.Symlink("target", filepath.Join(dir, "valid")))
+			require.NoError(t, os.Symlink("missing-target", filepath.Join(dir, "dangling")))
+			ops := []upgradeMigrationOperation{
+				{Kind: kind, From: ".agent-layer/skills/old", To: ".agent-layer/skills/moved"},
+				{Kind: kind, From: ".agent-layer/skills/moved/dangling", To: ".agent-layer/skills/destination"},
+				{Kind: kind, From: ".agent-layer/skills/moved/valid", To: ".agent-layer/skills/moved/renamed"},
+				{Kind: kind, From: ".agent-layer/skills/moved/renamed", To: ".agent-layer/skills/moved/final"},
+			}
+			inst := &installer{root: root, sys: RealSystem{}}
+			paths, err := inst.pathsAfterMigrations(ops)
+			require.NoError(t, err)
+			require.Contains(t, paths, ".agent-layer/skills/moved/dangling")
+			require.NotContains(t, paths, ".agent-layer/skills/destination")
+			require.Contains(t, paths, ".agent-layer/skills/moved/final")
+			require.NotContains(t, paths, ".agent-layer/skills/moved/valid")
+			require.NotContains(t, paths, ".agent-layer/skills/moved/renamed")
+
+			failure := errors.New("stat denied")
+			sys := newFaultSystem(RealSystem{})
+			sys.statErrs[filepath.Join(dir, "dangling")] = failure
+			inst.sys = sys
+			_, err = inst.pathsAfterMigrations(ops)
+			require.ErrorIs(t, err, failure)
+
+			inst.sys = RealSystem{}
+			for _, op := range ops {
+				_, err = inst.executeRenameMigration(op.From, op.To)
+				require.NoError(t, err)
+			}
+			actual, err := inst.pathsAfterMigrations(nil)
+			require.NoError(t, err)
+			require.Equal(t, actual, paths)
+		})
+	}
+}
+
 func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 	root := t.TempDir()
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.2.3"}); err != nil {
