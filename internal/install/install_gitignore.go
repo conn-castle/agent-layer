@@ -141,8 +141,9 @@ type RepairGitignoreBlockOptions struct {
 	System System
 }
 
-// RepairGitignoreBlock rewrites `.agent-layer/gitignore.block` from embedded templates
-// and then reapplies the managed block to the repository root `.gitignore`.
+// RepairGitignoreBlock rewrites `.agent-layer/gitignore.block` from embedded templates,
+// keeping any tracking choice the existing block states, and then reapplies the
+// managed block to the repository root `.gitignore`.
 func RepairGitignoreBlock(root string, opts RepairGitignoreBlockOptions) error {
 	if root == "" {
 		return fmt.Errorf(messages.InstallRootRequired)
@@ -151,11 +152,19 @@ func RepairGitignoreBlock(root string, opts RepairGitignoreBlockOptions) error {
 	if sys == nil {
 		return fmt.Errorf(messages.InstallSystemRequired)
 	}
-	blockBytes, err := templates.Read(templateGitignoreBlock)
+	templateData, err := templates.Read(templateGitignoreBlock)
 	if err != nil {
 		return fmt.Errorf(messages.InstallFailedReadTemplateFmt, templateGitignoreBlock, err)
 	}
 	blockPath := filepath.Join(root, ".agent-layer", templateGitignoreBlock)
+	existing, err := sys.ReadFile(blockPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf(messages.InstallFailedReadFmt, blockPath, err)
+	}
+	blockBytes, err := keepGitignoreTrackingChoices(templateData, existing)
+	if err != nil {
+		return err
+	}
 	if err := sys.WriteFileAtomic(blockPath, blockBytes, 0o644); err != nil {
 		return fmt.Errorf(messages.InstallFailedWriteFmt, blockPath, err)
 	}
@@ -164,4 +173,23 @@ func RepairGitignoreBlock(root string, opts RepairGitignoreBlockOptions) error {
 		return err
 	}
 	return EnsureGitignore(sys, filepath.Join(root, ".gitignore"), block)
+}
+
+// keepGitignoreTrackingChoices applies each tracking choice that the existing
+// block states with exactly one commented or uncommented pattern line to the
+// template. A missing or ambiguous pattern keeps the template default, so a
+// mangled block never un-ignores .agent-layer/ without evidence.
+func keepGitignoreTrackingChoices(templateData []byte, existing []byte) ([]byte, error) {
+	block := string(templateData)
+	for _, pattern := range []string{AgentLayerGitignorePattern, DocsAgentLayerGitignorePattern} {
+		tracked, present, err := gitignorePatternIsTracked(string(existing), pattern)
+		if err != nil || !present {
+			continue
+		}
+		block, err = setGitignorePatternTracked(block, pattern, tracked)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return []byte(block), nil
 }

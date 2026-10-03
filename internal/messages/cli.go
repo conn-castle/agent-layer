@@ -46,7 +46,7 @@ const (
 	UpgradePrefetchVersionRequired        = "prefetch requires a release version; pass --version X.Y.Z when running a dev build"
 	UpgradePrefetchDoneFmt                = "Prefetched Agent Layer version %s into the local cache.\n"
 	UpgradeRepairGitignoreUse             = "repair-gitignore-block"
-	UpgradeRepairGitignoreShort           = "Restore `.agent-layer/gitignore.block` and reapply the root `.gitignore` managed block"
+	UpgradeRepairGitignoreShort           = "Restore `.agent-layer/gitignore.block`, keeping tracking choices, and reapply the root `.gitignore` managed block"
 	UpgradeRepairGitignoreDone            = "Repaired `.agent-layer/gitignore.block` and updated root `.gitignore`.\n"
 	UpgradeRollbackUse                    = "rollback <snapshot-id>"
 	UpgradeRollbackShort                  = "Restore a managed-file upgrade snapshot"

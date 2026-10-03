@@ -516,7 +516,7 @@ The command set is intentionally small. Most of the time you only need one rhyth
 | `al upgrade prefetch` | Download and cache a release binary ahead of time (use `--version X.Y.Z` explicitly on dev builds). |
 | `al upgrade rollback --list` | List available upgrade snapshot IDs and statuses before rollback. |
 | `al upgrade rollback <snapshot-id>` | Restore an applied upgrade snapshot by ID (snapshot IDs are JSON filename stems under `.agent-layer/state/upgrade-snapshots/`). |
-| `al upgrade repair-gitignore-block` | Restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block. |
+| `al upgrade repair-gitignore-block` | Restore `.agent-layer/gitignore.block` from templates, keeping your tracking choices, and reapply the root `.gitignore` managed block. |
 | `al wizard` | Interactive configuration plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`). |
 | `al sync` | Regenerate client configs without launching a client. |
 | `al <client>` | Sync and launch a client (agy/claude/codex/copilot/grok/muse/vscode). |
@@ -690,7 +690,7 @@ Use this only when you are sure no agent run artifacts you care about live under
 
 ### Repair gitignore block
 
-`al upgrade repair-gitignore-block` restores `.agent-layer/gitignore.block` to the embedded template and reapplies the root `.gitignore` managed block.
+`al upgrade repair-gitignore-block` restores `.agent-layer/gitignore.block` to the embedded template and reapplies the root `.gitignore` managed block. It keeps whether `/.agent-layer/` and `/docs/agent-layer/` are ignored when the old block contains exactly one line for that pattern, commented or not; otherwise that entry gets the template default. Other customizations are discarded.
 
 Use this when `.agent-layer/gitignore.block` is invalid (for example it accidentally includes managed markers or template-hash lines).
 
