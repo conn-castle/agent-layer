@@ -20,7 +20,7 @@ coverage.out
 .playwright-cli/
 
 # >>> agent-layer
-# Template hash: 7b0fc237a76c31c95b98355efad4279c448f637f7a25ac4e03151febd9a4c7d3
+# Template hash: a6de0183df8460754b7093220d8b8b9e1b99f2baceb620d35cef704e92474678
 # Managed by Agent Layer. To customize, edit .agent-layer/gitignore.block
 # and re-run `al sync` to apply changes.
 
@@ -32,7 +32,6 @@ coverage.out
 
 # Agent Layer-generated instruction shims
 /AGENTS.md
-/CLAUDE.md
 /.github/copilot-instructions.md
 
 # Agent Layer-generated client configs + artifacts
