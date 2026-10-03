@@ -736,6 +736,35 @@ func TestRunRepairsNestedMainCheckoutAndItsLinkedWorktreeFromMainContext(t *test
 	}
 }
 
+func TestRunRepairsSiblingMainCheckoutAndLinkedWorktreeMovedTogether(t *testing.T) {
+	for _, test := range []struct {
+		name, main, linked string
+	}{
+		{name: "main sorts first", main: "repo", linked: "repo-wt"},
+		{name: "linked sorts first", main: "b-repo", linked: "a-wt"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source := newRepo(t)
+			root := t.TempDir()
+			mainCheckout := filepath.Join(root, test.main)
+			git(t, root, "clone", source, mainCheckout)
+			git(t, mainCheckout, "worktree", "add", filepath.Join(root, test.linked), "-b", "sibling-linked")
+
+			if _, stderr, err := runOrganize(t, Options{Root: root, Apply: true, MoveWorktrees: true}); err != nil {
+				t.Fatalf("Run: %v\nstderr=%s", err, stderr)
+			}
+			movedMain := filepath.Join(root, destReviewCheckouts, test.main)
+			movedLinked := filepath.Join(root, destReviewCheckouts, test.linked)
+			git(t, movedMain, "status", "--porcelain")
+			git(t, movedLinked, "status", "--porcelain")
+			list := git(t, movedMain, "worktree", "list", "--porcelain")
+			if !strings.Contains(list, canonicalPath(movedMain)) || !strings.Contains(list, canonicalPath(movedLinked)) || strings.Contains(list, "prunable") {
+				t.Fatalf("sibling worktree list = %q", list)
+			}
+		})
+	}
+}
+
 func TestRunRepairsMovedWorktreeAfterLaterMoveFailure(t *testing.T) {
 	repo, scratch := newRepoWithScratch(t)
 	worktree := filepath.Join(scratch, "aaa-wt")
