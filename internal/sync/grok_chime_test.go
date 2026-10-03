@@ -56,6 +56,41 @@ func TestGrokChimeHookRejectsUnsafePathsAndCleanupConflicts(t *testing.T) {
 		}
 	})
 
+	t.Run("cleanup ignores symlinked hooks directory without chime", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, ".grok"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(t.TempDir(), filepath.Join(root, ".grok", "hooks")); err != nil {
+			t.Fatal(err)
+		}
+		if err := cleanGrokChimeHook(RealSystem{}, root); err != nil {
+			t.Fatalf("cleanGrokChimeHook: %v", err)
+		}
+	})
+
+	t.Run("cleanup refuses to remove chime through symlinked hooks directory", func(t *testing.T) {
+		root := t.TempDir()
+		outside := t.TempDir()
+		outsideHook := filepath.Join(outside, grokChimeHookFileName)
+		if err := os.WriteFile(outsideHook, grokChimeHookContents(), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(root, ".grok"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outside, filepath.Join(root, ".grok", "hooks")); err != nil {
+			t.Fatal(err)
+		}
+		err := cleanGrokChimeHook(RealSystem{}, root)
+		if err == nil || !strings.Contains(err.Error(), "must be a real file") {
+			t.Fatalf("expected symlink cleanup error, got %v", err)
+		}
+		if _, err := os.Stat(outsideHook); err != nil {
+			t.Fatalf("outside chime hook must remain: %v", err)
+		}
+	})
+
 	t.Run("cleanup preserves conflict by failing", func(t *testing.T) {
 		root := t.TempDir()
 		path := grokChimeHookPath(root)

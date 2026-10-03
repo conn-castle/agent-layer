@@ -181,15 +181,18 @@ func setManagedCodexPath(editor *codexTomlEditor, existing map[string]any, path 
 
 // cleanCodexChimeHook removes only Agent Layer-owned Codex chime hooks from
 // .codex/config.toml. It is used when Codex is disabled, so the normal Codex
-// config merge path will not run.
+// config merge path will not run. A symlinked config path is left alone unless
+// it holds the hook, which fails instead of rewriting a file outside the
+// repository.
 func cleanCodexChimeHook(sys System, root string) error {
-	path, mode, exists, err := existingChimeCleanupTarget(sys, root, ".codex", "config.toml")
+	target, exists, err := existingChimeCleanupTarget(sys, root, ".codex", "config.toml")
 	if err != nil {
 		return err
 	}
 	if !exists {
 		return nil
 	}
+	path := target.path
 	existing, err := readExistingCodexConfig(sys, path)
 	if err != nil {
 		return err
@@ -205,12 +208,15 @@ func cleanCodexChimeHook(sys System, root string) error {
 	if !changed {
 		return nil
 	}
+	if err := target.checkWritable(); err != nil {
+		return err
+	}
 	out := editor.render()
 	var renderCheck map[string]any
 	if err := toml.Unmarshal([]byte(out), &renderCheck); err != nil {
 		return fmt.Errorf("merged Codex config is invalid TOML: %w", err)
 	}
-	if err := sys.WriteFileAtomic(path, []byte(out), mode); err != nil {
+	if err := sys.WriteFileAtomic(path, []byte(out), target.mode); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
 	return nil
