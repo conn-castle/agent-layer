@@ -3,6 +3,7 @@ package skilltree
 import (
 	"bytes"
 	"fmt"
+	"path"
 	"sort"
 	"unicode/utf8"
 )
@@ -20,6 +21,9 @@ const (
 	ConflictBinary ConflictKind = "binary"
 	// ConflictMode means both sides changed the executable bit differently.
 	ConflictMode ConflictKind = "mode"
+	// ConflictFileDirectory means one side has a file where the other side
+	// has files beneath a same-named directory.
+	ConflictFileDirectory ConflictKind = "file/directory"
 )
 
 // Conflict reports one unmergeable path.
@@ -105,6 +109,7 @@ func Merge(base, local, remote Tree, mergeText TextMerger) (Tree, []Conflict, er
 			merged = append(merged, File{Path: filePath, Data: mergedData, Executable: localFile.Executable})
 		}
 	}
+	conflicts = append(conflicts, fileDirectoryConflicts(merged)...)
 
 	if len(conflicts) > 0 {
 		sort.Slice(conflicts, func(i, j int) bool { return conflicts[i].Path < conflicts[j].Path })
@@ -115,6 +120,28 @@ func Merge(base, local, remote Tree, mergeText TextMerger) (Tree, []Conflict, er
 		return Tree{}, nil, err
 	}
 	return tree, nil, nil
+}
+
+// fileDirectoryConflicts reports each merged file that is also a parent
+// directory of another merged file. Paths are reconciled independently, so a
+// file added on one side and a same-named directory added on the other both
+// survive the per-path merge but cannot coexist on disk or in a Git tree.
+func fileDirectoryConflicts(files []File) []Conflict {
+	filePaths := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		filePaths[file.Path] = struct{}{}
+	}
+	var conflicts []Conflict
+	for _, file := range files {
+		for dir := path.Dir(file.Path); dir != "." && dir != "/"; dir = path.Dir(dir) {
+			if _, isFile := filePaths[dir]; isFile {
+				// Report each colliding file once.
+				delete(filePaths, dir)
+				conflicts = append(conflicts, Conflict{Path: dir, Kind: ConflictFileDirectory})
+			}
+		}
+	}
+	return conflicts
 }
 
 // Diff reports the paths added, modified, and deleted going from base to next.

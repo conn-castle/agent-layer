@@ -992,8 +992,9 @@ an absent skill path on that branch is an empty tree.
 **pull** is the only command that advances tracked imports. It merges the locked
 upstream tree, your current local tree, and the new upstream tree, so local
 edits survive an update. A change on one side applies cleanly; incompatible
-changes to the same path, delete/modify cases, and non-text files changed on
-both sides are reported as conflicts and fail only that skill. Every conflict
+changes to the same path, delete/modify cases, non-text files changed on both
+sides, and a file on one side where the other side has a same-named directory
+are reported as conflicts and fail only that skill. Every conflict
 leaves a Git workspace under `.agent-layer/tmp/skill-conflicts/<name>/` with
 `base`, `local`, and `upstream` branches. Finish the merge with ordinary git
 commands, `git add` the result, and run `al skills resolve <name>`. If that
