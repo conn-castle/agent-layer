@@ -472,6 +472,7 @@ Only variables prefixed with `AL_` are loaded from `.agent-layer/.env`.
 Rules:
 
 - Your existing process environment takes precedence, both in launched agents and when `al sync` resolves MCP `${VAR}` placeholders
+- `.env` fills only keys that are missing or empty in your process environment
 - Empty values in `.env` are ignored
 - `.env` is always gitignored
 

@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/run"
@@ -44,6 +45,37 @@ func TestBuildEnvDoesNotOverrideBaseWithEmptyProjectValue(t *testing.T) {
 
 	if value, ok := GetEnv(env, "TOKEN"); !ok || value != "real" {
 		t.Fatalf("expected TOKEN to remain from base env, got %v", value)
+	}
+}
+
+func TestBuildEnvFillsEmptyBaseValue(t *testing.T) {
+	base := []string{"TOKEN=", "PATH=/bin"}
+	projectEnv := map[string]string{"TOKEN": "abc"}
+
+	env := BuildEnv(base, projectEnv, nil)
+
+	if value, ok := GetEnv(env, "TOKEN"); !ok || value != "abc" {
+		t.Fatalf("expected TOKEN from project env, got %q", value)
+	}
+	count := 0
+	for _, entry := range env {
+		if strings.HasPrefix(entry, "TOKEN=") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected one TOKEN entry, got %d in %v", count, env)
+	}
+}
+
+func TestBuildEnvKeepsEmptyBaseValueWithEmptyProjectValue(t *testing.T) {
+	base := []string{"TOKEN="}
+	projectEnv := map[string]string{"TOKEN": ""}
+
+	env := BuildEnv(base, projectEnv, nil)
+
+	if value, ok := GetEnv(env, "TOKEN"); !ok || value != "" {
+		t.Fatalf("expected empty TOKEN to remain, got %q (present=%v)", value, ok)
 	}
 }
 

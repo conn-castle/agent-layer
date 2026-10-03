@@ -14,6 +14,8 @@ const (
 )
 
 // BuildEnv merges base env with project env and run metadata.
+// A non-empty base value wins; a non-empty project value fills a key that is
+// missing or empty in base, matching config.PlaceholderEnv.
 // It strips AL_SHIM_ACTIVE because child processes are new execution
 // contexts that should be free to dispatch independently; the dispatch
 // guard is only meaningful for the exec replacement chain. It also strips
@@ -90,7 +92,7 @@ func mergeEnvFillMissing(base []string, additions map[string]string) []string {
 		if value == "" {
 			continue
 		}
-		if _, ok := GetEnv(base, key); ok {
+		if existing, ok := GetEnv(base, key); ok && existing != "" {
 			continue
 		}
 		base = SetEnv(base, key, value)
