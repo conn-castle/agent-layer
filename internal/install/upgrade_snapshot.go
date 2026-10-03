@@ -573,6 +573,12 @@ func (inst *installer) upgradeSnapshotTargetPaths() []string {
 	add(filepath.Join(root, ".agent-layer", "al.version"))
 	add(filepath.Join(root, ".agent-layer", ".gitignore"))
 	add(filepath.Join(root, ".agent-layer", UpgradeKeepListFileName))
+	// The managed baseline is rewritten after the transaction to the target
+	// version, so a manual rollback must restore (or remove) it alongside the
+	// pin. Otherwise later upgrades would trust a baseline newer than the
+	// restored files and skip migrations or misclassify templates. Only the file
+	// is captured: the state directory also holds upgrade-snapshots/.
+	add(filepath.Join(root, filepath.FromSlash(baselineStateRelPath)))
 	for _, file := range inst.templates().managedTemplateFiles() {
 		add(file.path)
 	}

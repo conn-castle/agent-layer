@@ -434,6 +434,63 @@ func TestRollbackUpgradeSnapshot_RestoresCreatedSnapshot(t *testing.T) {
 	}
 }
 
+func TestRollbackUpgradeSnapshot_RestoresManagedBaseline(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		removeBaseline bool
+	}{
+		{name: "existing baseline restored"},
+		{name: "absent baseline removed", removeBaseline: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.5.0"}); err != nil {
+				t.Fatalf("seed repo: %v", err)
+			}
+			baselinePath := filepath.Join(root, filepath.FromSlash(baselineStateRelPath))
+			if tc.removeBaseline {
+				if err := os.Remove(baselinePath); err != nil {
+					t.Fatalf("remove seeded baseline: %v", err)
+				}
+			}
+			before, beforeErr := os.ReadFile(baselinePath) // #nosec G304 -- path is constructed from test-controlled inputs.
+			if !tc.removeBaseline && beforeErr != nil {
+				t.Fatalf("read seeded baseline: %v", beforeErr)
+			}
+
+			if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.6.0"}); err != nil {
+				t.Fatalf("upgrade run: %v", err)
+			}
+			upgraded, err := readManagedBaselineState(root, RealSystem{})
+			if err != nil {
+				t.Fatalf("read upgraded baseline: %v", err)
+			}
+			if upgraded.BaselineVersion != "0.6.0" {
+				t.Fatalf("upgraded baseline version = %q, want %q", upgraded.BaselineVersion, "0.6.0")
+			}
+
+			snapshot := latestSnapshot(t, root)
+			if err := RollbackUpgradeSnapshot(root, snapshot.SnapshotID, RollbackUpgradeSnapshotOptions{System: RealSystem{}}); err != nil {
+				t.Fatalf("manual rollback: %v", err)
+			}
+
+			after, afterErr := os.ReadFile(baselinePath) // #nosec G304 -- path is constructed from test-controlled inputs.
+			if tc.removeBaseline {
+				if !errors.Is(afterErr, os.ErrNotExist) {
+					t.Fatalf("expected rollback to remove baseline created by upgrade, read err = %v", afterErr)
+				}
+				return
+			}
+			if afterErr != nil {
+				t.Fatalf("read restored baseline: %v", afterErr)
+			}
+			if !bytes.Equal(after, before) {
+				t.Fatalf("restored baseline = %s, want pre-upgrade %s", after, before)
+			}
+		})
+	}
+}
+
 func TestRollbackUpgradeSnapshot_RejectsNonRollbackableStatuses(t *testing.T) {
 	root := t.TempDir()
 	inst := &installer{root: root, sys: RealSystem{}}
