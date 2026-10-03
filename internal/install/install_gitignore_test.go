@@ -789,6 +789,39 @@ func TestRepairedGitignoreProtectsMuseGeneratedSecrets(t *testing.T) {
 	}
 }
 
+func TestRepairedGitignoreKeepsHandAuthoredRootClaudeTracked(t *testing.T) {
+	root := t.TempDir()
+	blockPath := filepath.Join(root, ".agent-layer", "gitignore.block")
+	if err := os.MkdirAll(filepath.Dir(blockPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// The Claude shim moved in v0.17.1. Blocks written before that release
+	// still ignore root CLAUDE.md.
+	if err := os.WriteFile(blockPath, []byte("/.agent-layer/\n/AGENTS.md\n/CLAUDE.md\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RepairGitignoreBlock(root, RepairGitignoreBlockOptions{System: RealSystem{}}); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "-c", "init.templateDir=", "-C", root, "init", "--quiet")
+	cmd.Env = gitenv.WithoutDiscovery()
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	checkIgnore := func(path string) error {
+		cmd := exec.Command("git", "-c", "core.excludesFile=", "-C", root, "check-ignore", "--quiet", "--", path) // #nosec G204 -- fixed test command and test-controlled path.
+		cmd.Env = gitenv.WithoutDiscovery()
+		return cmd.Run()
+	}
+	if err := checkIgnore("AGENTS.md"); err != nil {
+		t.Fatalf("generated AGENTS.md is not ignored: %v", err)
+	}
+	var exitErr *exec.ExitError
+	if err := checkIgnore("CLAUDE.md"); !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		t.Fatalf("expected hand-authored root CLAUDE.md not to be ignored (check-ignore exit 1), got %v", err)
+	}
+}
+
 func TestRepairGitignoreBlock_RequiresRootAndSystem(t *testing.T) {
 	if err := RepairGitignoreBlock("", RepairGitignoreBlockOptions{System: RealSystem{}}); err == nil {
 		t.Fatal("expected error when root is empty")
