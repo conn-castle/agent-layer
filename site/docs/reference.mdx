@@ -1128,15 +1128,15 @@ Use it to check whether your config is valid, your secrets are present, and your
 **What it does**
 
 - Validates `.agent-layer/config.toml`
-- Reports missing `AL_` secrets referenced by your config
-- Connects to each enabled MCP server and lists tools
+- Reports missing `AL_` secrets referenced by MCP servers that an enabled client receives
+- Connects to each enabled MCP server that at least one enabled client receives, and lists its tools. A server that `al sync` writes into no enabled client's config, such as one whose `clients` list names only disabled clients, is skipped.
 - Evaluates MCP warning thresholds from `[warnings]`
 - Checks for newer releases and warns if you are behind
 
 **Steps (high level)**
 
 1. Validate configuration and resolve secrets from the process environment, falling back to `.agent-layer/.env`.
-2. Probe each enabled MCP server and collect tool metadata.
+2. Probe each MCP server an enabled client receives and collect tool metadata.
 3. Compute warning thresholds and report any overages.
 4. Check for release updates (unless networking is disabled).
 

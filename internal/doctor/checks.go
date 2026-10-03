@@ -18,6 +18,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients/muse"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/skillvalidator"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
@@ -354,16 +355,10 @@ func appendImportedSkills(results []Result, cfg *config.ProjectConfig) []Result 
 }
 
 // CheckSecrets scans the configuration for missing environment variables.
-// Only enabled MCP servers are considered; disabled servers are skipped.
+// Only enabled MCP servers that an enabled client receives are considered.
 func CheckSecrets(cfg *config.ProjectConfig) []Result {
 	var results []Result
-	var enabled []config.MCPServer
-	for _, s := range cfg.Config.MCP.Servers {
-		if config.IsAgentEnabled(s.Enabled) {
-			enabled = append(enabled, s)
-		}
-	}
-	required := config.RequiredEnvVarsForMCPServers(enabled)
+	required := config.RequiredEnvVarsForMCPServers(projection.ReceivedMCPServers(cfg.Config))
 
 	// Scan .env for missing values
 	for _, secret := range required {

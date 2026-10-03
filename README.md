@@ -141,7 +141,7 @@ If a server fails to start with “No such file or directory,” verify the `com
 
 ### Doctor MCP checks
 
-`al doctor` connects to each enabled MCP server and lists tools. It waits up to **30 seconds per server** before warning about connectivity, and prints a short progress indicator while checks run.
+`al doctor` connects to each enabled MCP server that at least one enabled client receives, and lists its tools. It waits up to **30 seconds per server** before warning about connectivity, and prints a short progress indicator while checks run.
 When config validation fails due to unrecognized keys, `al doctor` reports the detected key paths, schema hints (allowed keys where applicable), and repair options (`al upgrade`, `al wizard`, or manual edits).
 When agents are enabled, it verifies generated client configs (for example `.mcp.json`, `.agy/antigravity-cli/settings.json`) are in sync; run `al sync` if they are missing or stale.
 

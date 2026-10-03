@@ -22,9 +22,12 @@ import (
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
-// MockConnector implements Connector for testing.
+// MockConnector implements Connector for testing. Servers missing from
+// Results go to Next when set; the built-in Agent Dispatch server otherwise
+// reports reachable with no tools so tests never launch al.
 type MockConnector struct {
 	Results map[string]DiscoveryResult
+	Next    Connector
 }
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -37,7 +40,21 @@ func (m *MockConnector) ConnectAndDiscover(ctx context.Context, server projectio
 	if res, ok := m.Results[server.ID]; ok {
 		return res
 	}
+	if server.ID == projection.BuiltInDispatchServerID {
+		return DiscoveryResult{ServerID: server.ID}
+	}
+	if m.Next != nil {
+		return m.Next.ConnectAndDiscover(ctx, server)
+	}
 	return DiscoveryResult{ServerID: server.ID, Error: fmt.Errorf("mock not found")}
+}
+
+// receivingAgents enables a client so user-configured servers reach generated
+// config. It also adds the built-in Agent Dispatch server, which MockConnector
+// reports as reachable with no tools.
+func receivingAgents() config.AgentsConfig {
+	on := true
+	return config.AgentsConfig{Claude: config.ClaudeConfig{Enabled: &on}}
 }
 
 // TestCheckMCPServers_NoEnabledServers verifies that a config whose servers are
@@ -73,6 +90,7 @@ func TestCheckMCPServers(t *testing.T) {
 	enabled := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
+			Agents: receivingAgents(),
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
 					{ID: "s1", Enabled: &enabled, Transport: "stdio", Command: "echo", Args: []string{"hello"}},
@@ -108,8 +126,8 @@ func TestCheckMCPServers(t *testing.T) {
 	assert.Empty(t, warnings)
 
 	assert.True(t, summary.Available)
-	assert.Equal(t, 2, summary.EnabledServers)
-	assert.Equal(t, 2, summary.ReachableServers)
+	assert.Equal(t, 3, summary.EnabledServers, "s1, s2, and the built-in server")
+	assert.Equal(t, 3, summary.ReachableServers)
 	assert.Equal(t, 2, summary.TotalTools)
 	assert.Equal(t, 200, summary.TotalSchemaTokens)
 }
@@ -118,6 +136,7 @@ func TestCheckMCPServers_SummaryExcludesUnreachableServers(t *testing.T) {
 	enabled := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
+			Agents: receivingAgents(),
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
 					{ID: "s1", Enabled: &enabled, Transport: "stdio", Command: "echo"},
@@ -137,8 +156,8 @@ func TestCheckMCPServers_SummaryExcludesUnreachableServers(t *testing.T) {
 	_, summary, err := CheckMCPServers(context.Background(), cfg, mock, nil)
 	require.NoError(t, err)
 	assert.True(t, summary.Available)
-	assert.Equal(t, 2, summary.EnabledServers)
-	assert.Equal(t, 1, summary.ReachableServers)
+	assert.Equal(t, 3, summary.EnabledServers, "s1, s2, and the built-in server")
+	assert.Equal(t, 2, summary.ReachableServers)
 	assert.Equal(t, 1, summary.TotalTools)
 	assert.Equal(t, 100, summary.TotalSchemaTokens)
 }
@@ -162,7 +181,8 @@ func TestCheckMCPServers_Warnings(t *testing.T) {
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
-			MCP: config.MCPConfig{Servers: servers},
+			Agents: receivingAgents(),
+			MCP:    config.MCPConfig{Servers: servers},
 			Warnings: config.WarningsConfig{
 				MCPServerThreshold:             &serverThreshold,
 				MCPServerToolsThreshold:        &serverToolsThreshold,
@@ -244,6 +264,7 @@ func TestCheckMCPServers_ToolNameCollisionWarningsDeterministicOrder(t *testing.
 	enabled := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
+			Agents: receivingAgents(),
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
 					{ID: "s2", Enabled: &enabled, Transport: "stdio", Command: "echo"},
@@ -292,6 +313,7 @@ func TestCheckMCPServers_ThresholdsDisabled(t *testing.T) {
 	enabled := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
+			Agents: receivingAgents(),
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
 					{ID: "s1", Enabled: &enabled, Transport: "stdio", Command: "echo"},
@@ -341,6 +363,7 @@ func TestCheckMCPServers_ResolveServerError(t *testing.T) {
 	enabled := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
+			Agents: receivingAgents(),
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
 					{ID: "bad-server", Enabled: &enabled, Transport: "http", URL: "${XYZZY_NONEXISTENT_VAR_12345}"},
@@ -366,6 +389,7 @@ func TestCheckMCPServers_ResolvesProcessEnv(t *testing.T) {
 	enabled := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
+			Agents: receivingAgents(),
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
 					{ID: "remote", Enabled: &enabled, Transport: "http", URL: "https://example.com/mcp?token=${AL_PROCESS_TOKEN}"},
@@ -1318,6 +1342,7 @@ func TestCheckMCPServers_OAuthServerNotValidated(t *testing.T) {
 	trueVal := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
+			Agents: receivingAgents(),
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
 					{
@@ -1338,12 +1363,12 @@ func TestCheckMCPServers_OAuthServerNotValidated(t *testing.T) {
 		events = append(events, e)
 	}
 
-	warnings, summary, err := CheckMCPServers(context.Background(), cfg, &RealConnector{}, statusFn)
+	warnings, summary, err := CheckMCPServers(context.Background(), cfg, &MockConnector{Next: &RealConnector{}}, statusFn)
 	require.NoError(t, err)
 	assert.Empty(t, warnings, "OAuth server with AuthStatusNotVerifiable should not produce warnings")
 	assert.True(t, summary.Available)
-	assert.Equal(t, 1, summary.EnabledServers)
-	assert.Equal(t, 0, summary.ReachableServers)
+	assert.Equal(t, 2, summary.EnabledServers, "figma and the built-in server")
+	assert.Equal(t, 1, summary.ReachableServers, "only the built-in server")
 	assert.Equal(t, 1, summary.OAuthUnvalidatedServers)
 	assert.Equal(t, 0, summary.TotalTools)
 
