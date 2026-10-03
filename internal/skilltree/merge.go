@@ -133,7 +133,7 @@ func fileDirectoryConflicts(files []File) []Conflict {
 	}
 	var conflicts []Conflict
 	for _, file := range files {
-		for dir := path.Dir(file.Path); dir != "."; dir = path.Dir(dir) {
+		for dir := path.Dir(file.Path); dir != "." && dir != "/"; dir = path.Dir(dir) {
 			if _, isFile := filePaths[dir]; isFile {
 				// Report each colliding file once.
 				delete(filePaths, dir)

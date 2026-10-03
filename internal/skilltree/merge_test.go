@@ -160,6 +160,12 @@ func TestMergeReportsIncompatibleChanges(t *testing.T) {
 			remote: []File{file("SKILL.md", "x"), file("scripts", "remote")},
 			want:   ConflictFileDirectory,
 		},
+		{
+			name:   "absolute file where remote adds a directory",
+			local:  []File{file("/scripts", "local")},
+			remote: []File{file("/scripts/lib/run.sh", "remote"), file("/scripts/other.sh", "remote")},
+			want:   ConflictFileDirectory,
+		},
 	}
 
 	for _, tt := range tests {
@@ -177,6 +183,29 @@ func TestMergeReportsIncompatibleChanges(t *testing.T) {
 			}
 			if !merged.IsEmpty() {
 				t.Fatal("a conflicted merge must not return partial content")
+			}
+		})
+	}
+}
+
+// TestMergeTerminatesForAbsolutePaths proves the ancestor traversal stops at
+// the slash root even for paths that NewTree accepts without validation.
+func TestMergeTerminatesForAbsolutePaths(t *testing.T) {
+	t.Parallel()
+	for _, filePath := range []string{"/", "/x", "/x/nested.md"} {
+		t.Run(filePath, func(t *testing.T) {
+			t.Parallel()
+			local := mustTree(t, []File{file(filePath, "local")})
+
+			merged, conflicts, err := Merge(Tree{}, local, Tree{}, lineMerger)
+			if err != nil {
+				t.Fatalf("Merge: %v", err)
+			}
+			if len(conflicts) != 0 {
+				t.Fatalf("unexpected conflicts: %v", conflicts)
+			}
+			if !merged.Equal(local) {
+				t.Fatalf("merged tree = %v, want the local tree", merged.Files())
 			}
 		})
 	}
