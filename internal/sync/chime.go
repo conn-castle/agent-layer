@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -91,13 +92,34 @@ func containsExactChimeCommand(value any, commands map[string]struct{}) bool {
 	return false
 }
 
+// containsChimeCommandText reports whether JSON content mentions a managed
+// chime command, either raw or with any valid JSON string escaping.
+// It remains a pre-check; structural matching decides which hooks to remove.
 func containsChimeCommandText(content string, command string) bool {
-	for variant := range managedChimeCommandVariants(command) {
+	variants := managedChimeCommandVariants(command)
+	for variant := range variants {
 		if strings.Contains(content, variant) {
 			return true
 		}
+		escaped, err := json.Marshal(variant)
+		if err == nil && strings.Contains(content, strings.Trim(string(escaped), `"`)) {
+			return true
+		}
 	}
-	return false
+	decoder := json.NewDecoder(strings.NewReader(content))
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			return false
+		}
+		if value, ok := token.(string); ok {
+			for variant := range variants {
+				if strings.Contains(value, variant) {
+					return true
+				}
+			}
+		}
+	}
 }
 
 func chimeHandler(command string) map[string]any {

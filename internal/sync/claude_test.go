@@ -1089,6 +1089,9 @@ func TestCleanClaudeChimeHookRemovesOnlyManagedHandler(t *testing.T) {
 	if strings.Contains(updated, "agent-layer-chime") {
 		t.Fatalf("expected managed chime removed, got:\n%s", updated)
 	}
+	if strings.Contains(updated, "/usr/bin/afplay") {
+		t.Fatalf("expected managed legacy chime command removed, got:\n%s", updated)
+	}
 	for _, want := range []string{`"command": "echo user"`, `"theme": "keep"`} {
 		if !strings.Contains(updated, want) {
 			t.Fatalf("expected %q preserved, got:\n%s", want, updated)
@@ -1100,6 +1103,122 @@ func TestCleanClaudeChimeHookRemovesOnlyManagedHandler(t *testing.T) {
 	}
 	if got := info.Mode().Perm(); got != 0o600 {
 		t.Fatalf("cleaned settings mode = %04o, want preserved 0600", got)
+	}
+}
+
+func TestCleanClaudeChimeHookRemovesHookWrittenBySync(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Notifications: config.NotificationsConfig{Chime: &enabled},
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{AgentSpecific: map[string]any{
+					"hooks": map[string]any{"Stop": []any{
+						map[string]any{"hooks": []any{map[string]any{"type": "command", "command": "echo user", "timeout": int64(3)}}},
+					}},
+				}},
+			},
+		},
+	}
+	if err := writeClaudeSettings(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeClaudeSettings: %v", err)
+	}
+	settingsPath := filepath.Join(root, ".claude", "settings.json")
+	if written := readFileForTest(t, settingsPath); !strings.Contains(written, agentLayerChimeMarker) {
+		t.Fatalf("expected sync to write the chime hook, got:\n%s", written)
+	}
+
+	if err := cleanClaudeChimeHook(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanClaudeChimeHook: %v", err)
+	}
+	updated := readFileForTest(t, settingsPath)
+	if strings.Contains(updated, agentLayerChimeMarker) {
+		t.Fatalf("expected managed chime removed, got:\n%s", updated)
+	}
+	if strings.Contains(updated, "al hook chime claude") {
+		t.Fatalf("expected managed chime command removed, got:\n%s", updated)
+	}
+	if !strings.Contains(updated, `"command": "echo user"`) {
+		t.Fatalf("expected user Stop hook preserved, got:\n%s", updated)
+	}
+}
+
+func TestCleanClaudeChimeHookRemovesMixedEscapingHandler(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"current":          agentLayerClaudeChimeCommand,
+		"unmarked current": strings.TrimSuffix(agentLayerClaudeChimeCommand, " # "+agentLayerChimeMarker),
+		"legacy":           legacyAgentLayerClaudeChimeCommand,
+		"unmarked legacy":  strings.TrimSuffix(legacyAgentLayerClaudeChimeCommand, " # "+agentLayerChimeMarker),
+		"unicode prefix":   strings.ReplaceAll(agentLayerClaudeChimeCommand, "a", `\u0061`),
+	}
+	for name, command := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			settingsPath := filepath.Join(root, ".claude", "settings.json")
+			if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+				t.Fatalf("mkdir .claude: %v", err)
+			}
+			// Escape only >, leaving & raw; uppercase hex is also valid JSON.
+			escape := `\u003e`
+			if name == "unicode prefix" {
+				escape = `\u003E`
+			}
+			escaped := strings.ReplaceAll(command, ">", escape)
+			content := `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"` + escaped +
+				`","timeout":5},{"type":"command","command":"echo user","timeout":3}]}]},"theme":"keep"}`
+			if err := os.WriteFile(settingsPath, []byte(content), 0o600); err != nil {
+				t.Fatalf("write settings: %v", err)
+			}
+
+			if err := cleanClaudeChimeHook(RealSystem{}, root); err != nil {
+				t.Fatalf("cleanClaudeChimeHook: %v", err)
+			}
+			updated := readFileForTest(t, settingsPath)
+			for _, unwanted := range []string{agentLayerChimeMarker, "al hook chime claude", "afplay", escape} {
+				if strings.Contains(updated, unwanted) {
+					t.Fatalf("expected managed chime removed, found %q in:\n%s", unwanted, updated)
+				}
+			}
+			for _, want := range []string{`"command": "echo user"`, `"timeout": 3`, `"theme": "keep"`} {
+				if !strings.Contains(updated, want) {
+					t.Fatalf("expected %q preserved, got:\n%s", want, updated)
+				}
+			}
+		})
+	}
+}
+
+func TestCleanClaudeChimeHookRemovesEscapedLegacyHandler(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	settingsPath := filepath.Join(root, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	unmarkedLegacy := strings.TrimSuffix(legacyAgentLayerClaudeChimeCommand, " # "+agentLayerChimeMarker)
+	settings := map[string]any{"hooks": map[string]any{"Stop": []any{
+		map[string]any{"hooks": []any{chimeHandler(unmarkedLegacy)}},
+	}}}
+	content, err := RealSystem{}.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal settings: %v", err)
+	}
+	if strings.Contains(string(content), unmarkedLegacy) {
+		t.Fatalf("expected Go JSON encoding to escape the legacy command, got:\n%s", content)
+	}
+	if err := os.WriteFile(settingsPath, content, 0o600); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+
+	if err := cleanClaudeChimeHook(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanClaudeChimeHook: %v", err)
+	}
+	if updated := readFileForTest(t, settingsPath); strings.Contains(updated, "afplay") {
+		t.Fatalf("expected escaped legacy chime removed, got:\n%s", updated)
 	}
 }
 
@@ -1287,6 +1406,10 @@ func TestCleanClaudeChimeHookNoopWhenChimeTextIsOutsideHooks(t *testing.T) {
 		"scalar Stop entry": `{"hooks":{"Stop":["keep scalar entry"]},"note":"` + agentLayerClaudeChimeCommand + `"}`,
 		"group without hooks": `{"hooks":{"Stop":[{"matcher":"keep group"}]},"note":"` +
 			agentLayerClaudeChimeCommand + `"}`,
+		"escaped command": `{"hooks":{},"note":"` +
+			strings.NewReplacer(">", `\u003e`, "&", `\u0026`).Replace(agentLayerClaudeChimeCommand) + `"}`,
+		"mixed escaping": `{"hooks":{},"note":"` +
+			strings.ReplaceAll(agentLayerClaudeChimeCommand, ">", `\u003e`) + `"}`,
 	}
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {
