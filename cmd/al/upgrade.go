@@ -14,7 +14,6 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/version"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 	"github.com/conn-castle/agent-layer/internal/wizard"
 )
@@ -717,28 +716,7 @@ func currentRepoPinVersion(root string) (string, error) {
 // requireUpgradeTargetCLI rejects a release-build upgrade target other than the
 // running CLI version, because only this version's templates are embedded.
 func requireUpgradeTargetCLI(targetVersion string) error {
-	if targetVersion == "" || version.IsDev(Version) {
-		return nil
-	}
-	currentVersion, err := version.Normalize(Version)
-	if err != nil {
-		return err
-	}
-	normalizedTargetVersion, err := version.Normalize(targetVersion)
-	if err != nil {
-		return err
-	}
-	comparison, err := version.Compare(currentVersion, normalizedTargetVersion)
-	if err != nil {
-		return err
-	}
-	if comparison < 0 {
-		return fmt.Errorf(messages.UpgradeTargetRequiresNewerCLIFmt, currentVersion, normalizedTargetVersion, normalizedTargetVersion)
-	}
-	if comparison > 0 {
-		return fmt.Errorf(messages.UpgradeTargetOlderThanCLIFmt, currentVersion, normalizedTargetVersion, currentVersion, normalizedTargetVersion)
-	}
-	return nil
+	return requireTargetCLI(targetVersion, messages.UpgradeTargetRequiresNewerCLIFmt, messages.UpgradeTargetOlderThanCLIFmt)
 }
 
 func renderUpgradePlanText(out io.Writer, plan install.UpgradePlan, previews map[string]install.DiffPreview) error {

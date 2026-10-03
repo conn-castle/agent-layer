@@ -402,7 +402,7 @@ Pin parser behavior:
 ### How to set a pin
 
 - `al init` writes a pin when you are running a release build
-- or pass `--version X.Y.Z` to `al init`
+- or pass `--version X.Y.Z` to `al init` (a release build accepts only its own version)
 - `al upgrade` updates the pin to match the currently running `al` binary
 - or edit `.agent-layer/al.version` directly
 - `al upgrade prefetch --version X.Y.Z` pre-warms a specific release binary in cache for offline or CI workflows
