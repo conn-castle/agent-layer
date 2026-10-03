@@ -25,6 +25,9 @@ func newDispatchCmd() *cobra.Command {
 		Long:         messages.DispatchLong,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
 	}
 	cmd.AddCommand(newDispatchOptionsCmd(), newDispatchReserveCmd(), newDispatchStartCmd(), newDispatchWaitCmd(), newDispatchContinueCmd(), newDispatchCancelCmd(), newDispatchInspectCmd(), newDispatchOutputCmd(), newDispatchMCPServerCmd())
 	return cmd
