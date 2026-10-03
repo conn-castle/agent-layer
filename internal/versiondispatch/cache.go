@@ -173,6 +173,9 @@ func downloadToFileWithSystem(ctx context.Context, sys System, url string, dest 
 				continue
 			}
 			if isTimeoutError(err) {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return fmt.Errorf("%s: %w", fmt.Sprintf(messages.DispatchDownloadTimeoutFmt, url), ctxErr)
+				}
 				return fmt.Errorf(messages.DispatchDownloadTimeoutFmt, url)
 			}
 			return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
@@ -243,6 +246,9 @@ func fetchChecksumWithSystem(ctx context.Context, sys System, version string, as
 				continue
 			}
 			if isTimeoutError(err) {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return "", fmt.Errorf("%s: %w", fmt.Sprintf(messages.DispatchDownloadTimeoutFmt, url), ctxErr)
+				}
 				return "", fmt.Errorf(messages.DispatchDownloadTimeoutFmt, url)
 			}
 			return "", fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)

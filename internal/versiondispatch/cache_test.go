@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 type failingRoundTripper struct {
@@ -1059,6 +1061,90 @@ func TestFetchChecksum_Timeout_ActionableMessage(t *testing.T) {
 	}
 	if !strings.Contains(msg, "Remediation") {
 		t.Errorf("expected Remediation guidance in error, got: %s", msg)
+	}
+}
+
+func TestRequestTimeout_ContextIdentity(t *testing.T) {
+	for _, operation := range []string{"download", "checksum"} {
+		for _, parentDeadline := range []bool{true, false} {
+			name := "client_timeout"
+			if parentDeadline {
+				name = "parent_deadline"
+			}
+			t.Run(operation+"/"+name, func(t *testing.T) {
+				url := fmt.Sprintf("%s/download/v1.0.0/checksums.txt", releaseBaseURL)
+				var dest *os.File
+				if operation == "download" {
+					url = "https://example.invalid/file"
+					var err error
+					dest, err = os.Create(filepath.Join(t.TempDir(), "file")) // #nosec G304 -- path is constructed from test-controlled inputs.
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer func() { _ = dest.Close() }()
+				}
+
+				requests := 0
+				sys := &testSystem{
+					HTTPClientFunc: func() *http.Client {
+						return &http.Client{
+							Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+								requests++
+								if err := req.Context().Err(); err != nil {
+									t.Fatalf("context expired before request started: %v", err)
+								}
+								<-req.Context().Done()
+								return nil, req.Context().Err()
+							}),
+						}
+					},
+					GetenvFunc: func(key string) string {
+						if key == "AL_DOWNLOAD_TIMEOUT" && !parentDeadline {
+							return "10ms"
+						}
+						return ""
+					},
+					SleepFunc: func(time.Duration) {
+						if parentDeadline {
+							t.Fatal("parent deadline scheduled a retry")
+						}
+					},
+				}
+				ctx := context.Background()
+				if parentDeadline {
+					var cancel context.CancelFunc
+					ctx, cancel = context.WithTimeout(ctx, 50*time.Millisecond)
+					defer cancel()
+				}
+
+				var err error
+				if operation == "download" {
+					err = downloadToFileWithSystem(ctx, sys, url, dest)
+				} else {
+					_, err = fetchChecksumWithSystem(ctx, sys, "1.0.0", "some-asset")
+				}
+				if err == nil {
+					t.Fatal("expected timeout error")
+				}
+				wantMessage := fmt.Sprintf(messages.DispatchDownloadTimeoutFmt, url)
+				wantRequests := downloadRetryCount + 1
+				if parentDeadline {
+					wantMessage += ": " + context.DeadlineExceeded.Error()
+					wantRequests = 1
+				} else if ctx.Err() != nil {
+					t.Fatalf("client timeout expired parent context: %v", ctx.Err())
+				}
+				if errors.Is(err, context.DeadlineExceeded) != parentDeadline {
+					t.Fatalf("deadline identity = %v, want %v: %v", errors.Is(err, context.DeadlineExceeded), parentDeadline, err)
+				}
+				if err.Error() != wantMessage {
+					t.Fatalf("error = %q, want %q", err, wantMessage)
+				}
+				if requests != wantRequests {
+					t.Fatalf("requests = %d, want %d", requests, wantRequests)
+				}
+			})
+		}
 	}
 }
 
