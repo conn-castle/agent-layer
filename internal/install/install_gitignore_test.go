@@ -808,7 +808,7 @@ func TestRepairedGitignoreKeepsHandAuthoredRootClaudeTracked(t *testing.T) {
 		t.Fatalf("git init: %v: %s", err, output)
 	}
 	checkIgnore := func(path string) error {
-		cmd := exec.Command("git", "-C", root, "check-ignore", "--quiet", "--", path) // #nosec G204 -- fixed test command and test-controlled path.
+		cmd := exec.Command("git", "-c", "core.excludesFile=", "-C", root, "check-ignore", "--quiet", "--", path) // #nosec G204 -- fixed test command and test-controlled path.
 		cmd.Env = gitenv.WithoutDiscovery()
 		return cmd.Run()
 	}
