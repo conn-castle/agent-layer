@@ -484,11 +484,11 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 		}
 		candidate.SyncLocal = !merged.IsEmpty() && !merged.Equal(candidate.Local)
 		candidate.Local = merged
-		// A non-empty merged tree is either published or, when it already matches
-		// the destination, written back to the imported tier, so it must be a
-		// valid skill either way. A preserved deletion skips validation and
-		// reports unchanged instead of failing on an empty tree.
-		if !merged.IsEmpty() {
+		// A merged tree is either published or, when it already matches the
+		// destination, written back to the imported tier, so it must be a valid
+		// skill either way. Only an empty result already equal to the destination
+		// preserves a whole-skill deletion and skips validation as unchanged.
+		if !merged.IsEmpty() || !merged.Equal(destinationTree) {
 			if _, validateErr := skilltree.ValidateSkill(merged, candidate.Entry.SelectedPath); validateErr != nil {
 				result.Outcome = OutcomeFailed
 				result.Err = fmt.Errorf("the result for %s would not be a valid skill: %w", group.Repository, validateErr)

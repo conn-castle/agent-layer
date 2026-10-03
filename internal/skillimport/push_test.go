@@ -1090,6 +1090,94 @@ func TestPushRefusesToPublishAnInvalidMergedTree(t *testing.T) {
 	}
 }
 
+// TestPushRefusesAnEmptyMergeFromComplementaryDeletions proves an empty merge
+// still requires validation when it would delete the destination's remaining
+// files. A failing skill keeps its local content and checkpoint, while a valid
+// sibling can still publish in the same group.
+func TestPushRefusesAnEmptyMergeFromComplementaryDeletions(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		editSibling bool
+	}{
+		{name: "without sibling changes"},
+		{name: "with sibling changes", editSibling: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := newGitRepo(t, "main")
+			source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+			source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
+			source.WriteSkill("skills/beta", "beta", "Beta body")
+			source.Commit("add grouped skills")
+
+			proj := newProject(t)
+			proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha", "skills/beta"},
+				`write_policy = "branch"`, `push_branch = "skill-updates"`))
+			if _, err := proj.Service().Pull(context.Background()); err != nil {
+				t.Fatalf("pull: %v", err)
+			}
+			proj.WriteImportedFile("beta", "notes.md", "initial note\n")
+			first, err := proj.Service().Push(context.Background())
+			if err != nil {
+				t.Fatalf("first Push: %v\n%s", err, first.Render("push"))
+			}
+			requireOutcome(t, first, "alpha", OutcomeUnchanged)
+			requireOutcome(t, first, "beta", OutcomePushed)
+			alphaBefore, _ := proj.Lock().Entry("alpha")
+			if alphaBefore.Publication == nil {
+				t.Fatal("the initial push did not establish alpha's publication checkpoint")
+			}
+
+			// Each side deletes a different file, producing an empty merged tree
+			// even though the destination still contains notes.md.
+			source.Checkout("skill-updates", false)
+			source.RemovePath("skills/alpha/SKILL.md")
+			destinationHead := source.Commit("drop alpha manifest downstream")
+			source.Checkout("main", false)
+			if err := os.Remove(filepath.Join(proj.paths.ImportedSkillsDir, "alpha", "notes.md")); err != nil {
+				t.Fatalf("remove local notes: %v", err)
+			}
+			localAlphaHash := importedTreeHash(t, proj, "alpha")
+			if tc.editSibling {
+				proj.WriteImportedFile("beta", "notes.md", "updated note\n")
+			}
+
+			second, err := proj.Service().Push(context.Background())
+			if err != nil {
+				t.Fatalf("second Push: %v\n%s", err, second.Render("push"))
+			}
+			failed := requireOutcome(t, second, "alpha", OutcomeFailed)
+			wantError := "the result for " + source.URL() + " would not be a valid skill: skill skills/alpha has no SKILL.md"
+			if failed.Err == nil || failed.Err.Error() != wantError {
+				t.Fatalf("failure = %v, want %q", failed.Err, wantError)
+			}
+			if got := importedTreeHash(t, proj, "alpha"); got != localAlphaHash {
+				t.Fatal("the failed empty merge changed the imported skill")
+			}
+			alphaAfter, _ := proj.Lock().Entry("alpha")
+			if !reflect.DeepEqual(alphaAfter, alphaBefore) {
+				t.Fatalf("alpha lock entry = %+v, want it unchanged at %+v", alphaAfter, alphaBefore)
+			}
+			if got := source.FileAt("skill-updates", "skills/alpha/notes.md"); got != "shared" {
+				t.Fatalf("destination alpha notes = %q, want them preserved", got)
+			}
+			if source.HasPath("skill-updates", "skills/alpha/SKILL.md") {
+				t.Fatal("the failed empty merge restored the destination manifest")
+			}
+			if tc.editSibling {
+				requireOutcome(t, second, "beta", OutcomePushed)
+				if got := source.FileAt("skill-updates", "skills/beta/notes.md"); got != "updated note" {
+					t.Fatalf("destination beta notes = %q, want the sibling edit published", got)
+				}
+			} else {
+				requireOutcome(t, second, "beta", OutcomeUnchanged)
+				if source.Head("skill-updates") != destinationHead {
+					t.Fatal("the failed empty merge moved the contribution branch")
+				}
+			}
+		})
+	}
+}
+
 // TestPushDoesNotSyncAnInvalidDestinationSkillLocally proves an unchanged push
 // still validates the destination content it writes back to the imported tier:
 // an invalid skill there would otherwise break every later sync and launch.
