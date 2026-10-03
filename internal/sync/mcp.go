@@ -79,7 +79,7 @@ func buildMCPConfig(project *config.ProjectConfig) (*mcpConfig, error) {
 	var resolved []projection.ResolvedMCPServer
 	if config.IsAgentEnabled(project.Config.Agents.Claude.Enabled) || config.IsAgentEnabled(project.Config.Agents.ClaudeVSCode.Enabled) {
 		var err error
-		resolved, err = projection.EffectiveMCPServers(project.Config, project.Env, projection.ClientClaude, projection.ClientPlaceholderResolver("${%s}"))
+		resolved, err = projection.EffectiveMCPServers(project.Config, project.PlaceholderEnv(), projection.ClientClaude, projection.ClientPlaceholderResolver("${%s}"))
 		if err != nil {
 			return nil, err
 		}
@@ -87,7 +87,8 @@ func buildMCPConfig(project *config.ProjectConfig) (*mcpConfig, error) {
 	museEnabled := config.IsAgentEnabled(project.Config.Agents.Muse.Enabled)
 	museIDs := make(map[string]bool)
 	if museEnabled {
-		museServers, err := projection.EffectiveMCPServers(project.Config, project.Env, projection.ClientMuse, projection.FullValueResolver(project.Env))
+		museEnv := project.PlaceholderEnv()
+		museServers, err := projection.EffectiveMCPServers(project.Config, museEnv, projection.ClientMuse, projection.FullValueResolver(museEnv))
 		if err != nil {
 			return nil, err
 		}

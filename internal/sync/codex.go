@@ -166,6 +166,7 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		appendCodexChimeBlock(&builder)
 	}
 
+	placeholderEnv := project.PlaceholderEnv()
 	var resolved []projection.ResolvedMCPServer
 	if config.HasProviderPassthroughKey(agentSpecific, config.CodexMCPServersKey) {
 		builtIn, ok := projection.RootedBuiltInDispatchServer(project.Config, projection.ClientCodex, root)
@@ -184,7 +185,7 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		var err error
 		resolved, err = projection.EffectiveMCPServers(
 			project.Config,
-			project.Env,
+			placeholderEnv,
 			projection.ClientCodex,
 			projection.ClientPlaceholderResolver("${%s}"),
 		)
@@ -204,11 +205,11 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		fmt.Fprintf(&builder, "[mcp_servers.%q]\n", server.ID)
 		switch server.Transport {
 		case config.TransportHTTP:
-			if err := writeCodexHTTPServer(&builder, server, project.Env); err != nil {
+			if err := writeCodexHTTPServer(&builder, server, placeholderEnv); err != nil {
 				return codexManagedConfig{}, err
 			}
 		case config.TransportStdio:
-			if err := writeCodexStdioServer(&builder, server, project.Env); err != nil {
+			if err := writeCodexStdioServer(&builder, server, placeholderEnv); err != nil {
 				return codexManagedConfig{}, err
 			}
 		default:

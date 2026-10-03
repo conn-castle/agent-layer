@@ -471,7 +471,7 @@ Only variables prefixed with `AL_` are loaded from `.agent-layer/.env`.
 
 Rules:
 
-- Your existing process environment takes precedence
+- Your existing process environment takes precedence, both in launched agents and when `al sync` resolves MCP `${VAR}` placeholders
 - Empty values in `.env` are ignored
 - `.env` is always gitignored
 
@@ -771,7 +771,7 @@ Think of sync as a build step. You can run it any time you want to refresh gener
 
 **Steps (high level)**
 
-1. Load and validate `config.toml`, then resolve secrets from `.agent-layer/.env`.
+1. Load and validate `config.toml`, then resolve secrets from the process environment, falling back to `.agent-layer/.env`.
 2. Parse instructions and load both skill source tiers into one locked source snapshot.
 3. Write generated configs and launchers for enabled clients.
 4. Emit warnings if any thresholds in `[warnings]` are exceeded.
@@ -1135,7 +1135,7 @@ Use it to check whether your config is valid, your secrets are present, and your
 
 **Steps (high level)**
 
-1. Validate configuration and resolve secrets from `.agent-layer/.env`.
+1. Validate configuration and resolve secrets from the process environment, falling back to `.agent-layer/.env`.
 2. Probe each enabled MCP server and collect tool metadata.
 3. Compute warning thresholds and report any overages.
 4. Check for release updates (unless networking is disabled).

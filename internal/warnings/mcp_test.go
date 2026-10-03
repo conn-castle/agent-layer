@@ -361,6 +361,27 @@ func TestCheckMCPServers_ResolveServerError(t *testing.T) {
 	assert.Equal(t, SeverityCritical, warnings[0].Severity)
 }
 
+func TestCheckMCPServers_ResolvesProcessEnv(t *testing.T) {
+	t.Setenv("AL_PROCESS_TOKEN", "from-shell")
+	enabled := true
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{ID: "remote", Enabled: &enabled, Transport: "http", URL: "https://example.com/mcp?token=${AL_PROCESS_TOKEN}"},
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	mock := &MockConnector{Results: map[string]DiscoveryResult{"remote": {ServerID: "remote"}}}
+	warnings, summary, err := CheckMCPServers(context.Background(), cfg, mock, nil)
+	require.NoError(t, err)
+	assert.Empty(t, warnings)
+	assert.True(t, summary.Available)
+}
+
 func TestDiscoverTools(t *testing.T) {
 	servers := []projection.ResolvedMCPServer{
 		{ID: "s1"},
