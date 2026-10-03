@@ -146,6 +146,20 @@ func TestMergeReportsIncompatibleChanges(t *testing.T) {
 			remote: []File{{Path: "run.sh", Data: []byte("remote")}},
 			want:   ConflictMode,
 		},
+		{
+			name:   "local file where remote adds a directory",
+			base:   []File{file("SKILL.md", "x")},
+			local:  []File{file("SKILL.md", "x"), file("scripts", "local")},
+			remote: []File{file("SKILL.md", "x"), file("scripts/run.sh", "remote")},
+			want:   ConflictFileDirectory,
+		},
+		{
+			name:   "remote file where local adds a nested directory",
+			base:   []File{file("SKILL.md", "x")},
+			local:  []File{file("SKILL.md", "x"), file("scripts/lib/run.sh", "local")},
+			remote: []File{file("SKILL.md", "x"), file("scripts", "remote")},
+			want:   ConflictFileDirectory,
+		},
 	}
 
 	for _, tt := range tests {
@@ -165,6 +179,26 @@ func TestMergeReportsIncompatibleChanges(t *testing.T) {
 				t.Fatal("a conflicted merge must not return partial content")
 			}
 		})
+	}
+}
+
+// TestMergeAllowsOneSidedFileToDirectoryReplacement proves the
+// file/directory check flags only collisions in the merged result, not a side
+// that replaced its own file with a directory.
+func TestMergeAllowsOneSidedFileToDirectoryReplacement(t *testing.T) {
+	t.Parallel()
+	base := mustTree(t, []File{file("scripts", "old")})
+	local := mustTree(t, []File{file("scripts/run.sh", "new")})
+
+	merged, conflicts, err := Merge(base, local, base, lineMerger)
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	if len(conflicts) != 0 {
+		t.Fatalf("unexpected conflicts: %v", conflicts)
+	}
+	if !merged.Equal(local) {
+		t.Fatalf("merged tree = %v, want the local replacement", merged.Files())
 	}
 }
 

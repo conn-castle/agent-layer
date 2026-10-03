@@ -224,6 +224,55 @@ func TestPullConflictPreservesLocalContentAndLock(t *testing.T) {
 	}
 }
 
+// TestPullReportsAFileDirectoryCollisionAsAConflict proves a local file and an
+// upstream directory of the same name fail only that skill with a resolution
+// workspace, instead of failing the whole pull when the merged tree is written.
+func TestPullReportsAFileDirectoryCollisionAsAConflict(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteSkill("skills/beta", "beta", "Beta body")
+	source.Commit("add skills")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/*"}))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("initial pull: %v", err)
+	}
+	lockedAlpha, _ := proj.Lock().Entry("alpha")
+
+	proj.WriteImportedFile("alpha", "scripts", "local file\n")
+	source.WriteFile("skills/alpha/scripts/run.sh", "upstream script\n", 0o644)
+	source.WriteSkill("skills/beta", "beta", "Beta body updated")
+	advanced := source.Commit("diverge")
+
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatalf("Pull returned a fatal error for a per-skill conflict: %v\n%s", err, report.Render("pull"))
+	}
+	failed := requireOutcome(t, report, "alpha", OutcomeFailed)
+	if !strings.Contains(failed.Err.Error(), "scripts (file/directory)") || !strings.Contains(failed.Err.Error(), "al skills resolve alpha") {
+		t.Fatalf("conflict error %q does not name the collision and resolution", failed.Err)
+	}
+	requireOutcome(t, report, "beta", OutcomeUpdated)
+
+	if got := proj.ImportedFile("alpha", "scripts"); got != "local file\n" {
+		t.Fatalf("conflicted skill's local content was overwritten: %q", got)
+	}
+	if entry, _ := proj.Lock().Entry("alpha"); entry.Commit != lockedAlpha.Commit {
+		t.Fatalf("conflicted skill's lock advanced from %s to %s", lockedAlpha.Commit, entry.Commit)
+	}
+	if entry, _ := proj.Lock().Entry("beta"); entry.Commit != advanced {
+		t.Fatalf("beta locked at %s, want %s", entry.Commit, advanced)
+	}
+	workspace, err := conflictWorkspace(proj.root, "alpha")
+	if err != nil {
+		t.Fatalf("conflict workspace path: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(workspace, ".git")); err != nil {
+		t.Fatalf("conflict workspace was not written: %v", err)
+	}
+}
+
 // TestResolveAppliesAConflictedPull proves the conflict workspace is the public
 // handoff between pull and resolve, without a snapshot or second fetch.
 func TestResolveAppliesAConflictedPull(t *testing.T) {
