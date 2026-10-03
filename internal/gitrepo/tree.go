@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/skilltree"
@@ -24,6 +25,9 @@ func (r *Runner) DiffTrees(ctx context.Context, fromName string, from skilltree.
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	if _, err := r.run(ctx, dir, "init", "--quiet"); err != nil {
+		return nil, err
+	}
+	if err := writeNeutralAttributes(dir); err != nil {
 		return nil, err
 	}
 	fromTree, err := r.writeSkillTree(ctx, dir, from)
@@ -51,6 +55,23 @@ func (r *Runner) DiffTrees(ctx context.Context, fromName string, from skilltree.
 func validateDiffSideName(name string) error {
 	if name == "" || strings.ContainsAny(name, "/\\ \t\r\n") {
 		return fmt.Errorf("invalid diff side label %q", name)
+	}
+	return nil
+}
+
+// writeNeutralAttributes makes Git ignore attributes from the skill and the
+// user's attributes file in the synthetic repository at dir. info/attributes
+// outranks both. Unspecified merge/diff/eol keep Git's defaults so a skill
+// cannot select a globally configured custom driver or hide a change as
+// binary; -text/-ident/-filter still disable conversion and ident expansion.
+func writeNeutralAttributes(dir string) error {
+	infoDir := filepath.Join(dir, ".git", "info")
+	if err := os.MkdirAll(infoDir, 0o750); err != nil {
+		return fmt.Errorf("failed to create git attributes directory: %w", err)
+	}
+	attributes := []byte("* -text -ident -filter !eol !merge !diff\n")
+	if err := os.WriteFile(filepath.Join(infoDir, "attributes"), attributes, 0o600); err != nil {
+		return fmt.Errorf("failed to write git attributes: %w", err)
 	}
 	return nil
 }
