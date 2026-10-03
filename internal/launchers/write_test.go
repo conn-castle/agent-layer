@@ -1,8 +1,11 @@
 package launchers
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -207,12 +210,112 @@ func TestWriteVSCodeLaunchersContent(t *testing.T) {
 	if !strings.Contains(desktopStr, "open-vscode.sh") {
 		t.Fatal("Linux desktop entry must delegate to open-vscode.sh")
 	}
-	if !strings.Contains(desktopStr, "%k") {
-		t.Fatal("Linux desktop entry missing path (%k)")
-	}
 	if !strings.Contains(desktopStr, "Terminal=true") {
 		t.Fatal("Linux desktop entry should use terminal for script output")
 	}
+}
+
+// TestVSCodeDesktopEntryExecRunsShellScript parses the generated Exec key the
+// way the Desktop Entry Specification requires and runs it, so a quoting error
+// that stops GLib-based launchers from finding open-vscode.sh fails here.
+func TestVSCodeDesktopEntryExecRunsShellScript(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("desktop entries run through sh on Linux")
+	}
+	root := filepath.Join(t.TempDir(), "my repo")
+	if err := WriteVSCodeLaunchers(RealSystem{}, root); err != nil {
+		t.Fatalf("WriteVSCodeLaunchers error: %v", err)
+	}
+	paths := VSCodePaths(root)
+	marker := filepath.Join(paths.AgentLayerDir, "ran")
+	stub := "#!/bin/sh\nprintf ran > \"$(dirname \"$0\")/ran\"\n"
+	if err := os.WriteFile(paths.Shell, []byte(stub), 0o755); err != nil { // #nosec G306 -- test stub must be executable.
+		t.Fatalf("write stub open-vscode.sh: %v", err)
+	}
+
+	content, err := os.ReadFile(paths.Desktop) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read .desktop file: %v", err)
+	}
+	var execValue string
+	for _, line := range strings.Split(string(content), "\n") {
+		if value, ok := strings.CutPrefix(line, "Exec="); ok {
+			execValue = value
+		}
+	}
+	argv, err := parseDesktopExec(execValue, paths.Desktop)
+	if err != nil {
+		t.Fatalf("parse Exec %q: %v", execValue, err)
+	}
+
+	cmd := exec.Command(argv[0], argv[1:]...) // #nosec G204 -- argv comes from the embedded launcher template.
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("run Exec %q: %v\n%s", argv, err, out)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("Exec did not run open-vscode.sh: %v", err)
+	}
+}
+
+// parseDesktopExec splits a Desktop Entry Exec value into argv per the Desktop
+// Entry Specification, substituting desktopFile for the %k field code. It
+// rejects reserved characters outside double quotes and field codes inside
+// them, both of which the specification forbids.
+func parseDesktopExec(value string, desktopFile string) ([]string, error) {
+	// Exec is a string value, so its general escape sequences apply first.
+	value = strings.NewReplacer(`\\`, `\`, `\s`, " ", `\t`, "\t", `\n`, "\n", `\r`, "\r").Replace(value)
+
+	var argv []string
+	var arg strings.Builder
+	inArg, inQuote := false, false
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		switch {
+		case inQuote && c == '\\':
+			i++
+			if i == len(value) || !strings.ContainsRune("\"`$\\", rune(value[i])) {
+				return nil, fmt.Errorf("invalid escape at offset %d", i)
+			}
+			arg.WriteByte(value[i])
+		case inQuote && c == '"':
+			inQuote = false
+		case inQuote && c == '%':
+			return nil, fmt.Errorf("field code inside quotes at offset %d", i)
+		case inQuote:
+			arg.WriteByte(c)
+		case c == '"':
+			inQuote, inArg = true, true
+		case c == ' ':
+			if inArg {
+				argv = append(argv, arg.String())
+				arg.Reset()
+				inArg = false
+			}
+		case strings.ContainsRune("\t\n'\\><~|&;$*?#()`", rune(c)):
+			return nil, fmt.Errorf("reserved character %q outside quotes at offset %d", c, i)
+		default:
+			arg.WriteByte(c)
+			inArg = true
+		}
+	}
+	if inQuote {
+		return nil, fmt.Errorf("unterminated quote")
+	}
+	if inArg {
+		argv = append(argv, arg.String())
+	}
+	for i, a := range argv {
+		if a == "%k" {
+			argv[i] = desktopFile
+		} else if strings.Contains(a, "%") {
+			return nil, fmt.Errorf("unsupported field code in argument %q", a)
+		}
+	}
+	if len(argv) == 0 {
+		return nil, fmt.Errorf("empty Exec")
+	}
+	return argv, nil
 }
 
 func TestWriteVSCodeAppBundle(t *testing.T) {
