@@ -122,8 +122,71 @@ func TestRunProfile_InstallFailureWhenConfigMissing(t *testing.T) {
 	profilePath := filepath.Join(root, "profile.toml")
 	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o600))
 
-	err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "not-a-version", profilePath, false, nil)
+	err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "not-a-version", profilePath, true, nil)
 	require.ErrorContains(t, err, "install failed")
+}
+
+func TestRunProfile_PreviewWithoutInstallWritesNothing(t *testing.T) {
+	root := t.TempDir()
+	profilePath := filepath.Join(t.TempDir(), "profile.toml")
+	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o600))
+
+	var out bytes.Buffer
+	err := RunProfile(root, func(string) (*alsync.Result, error) {
+		t.Fatal("preview must not run sync")
+		return nil, nil
+	}, "0.0.0", profilePath, false, &out)
+	require.NoError(t, err)
+
+	entries, err := os.ReadDir(root)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+	require.Contains(t, out.String(), messages.WizardProfileInstallPreviewNote)
+	require.Contains(t, out.String(), "+mode = \"none\"")
+	require.Contains(t, out.String(), messages.WizardProfilePreviewOnly)
+}
+
+func TestRunProfile_ApplyInstallsWhenConfigMissing(t *testing.T) {
+	root := t.TempDir()
+	profilePath := filepath.Join(t.TempDir(), "profile.toml")
+	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o600))
+
+	syncCalled := false
+	err := RunProfile(root, func(string) (*alsync.Result, error) {
+		syncCalled = true
+		return &alsync.Result{}, nil
+	}, "0.0.0", profilePath, true, nil)
+	require.NoError(t, err)
+	require.True(t, syncCalled)
+
+	written, err := os.ReadFile(filepath.Join(root, ".agent-layer", "config.toml"))
+	require.NoError(t, err)
+	require.Equal(t, basicAgentConfig(), string(written))
+}
+
+func TestRunProfile_UnreadableOrInvalidProfileDoesNotInstall(t *testing.T) {
+	profileDir := t.TempDir()
+	invalidPath := filepath.Join(profileDir, "invalid.toml")
+	require.NoError(t, os.WriteFile(invalidPath, []byte("[approvals"), 0o600))
+
+	for _, tc := range []struct {
+		name        string
+		profilePath string
+		wantErr     string
+	}{
+		{name: "missing", profilePath: filepath.Join(profileDir, "missing.toml"), wantErr: "failed to read profile"},
+		{name: "invalid", profilePath: invalidPath, wantErr: "invalid profile"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "0.0.0", tc.profilePath, true, nil)
+			require.ErrorContains(t, err, tc.wantErr)
+
+			entries, err := os.ReadDir(root)
+			require.NoError(t, err)
+			require.Empty(t, entries)
+		})
+	}
 }
 
 func TestRunProfile_ConfigStatError(t *testing.T) {
