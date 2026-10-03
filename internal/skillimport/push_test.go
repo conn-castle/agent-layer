@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -1086,6 +1087,61 @@ func TestPushRefusesToPublishAnInvalidMergedTree(t *testing.T) {
 	}
 	if source.Head("skill-updates") != destinationHead {
 		t.Fatal("an invalid merged tree was published")
+	}
+}
+
+// TestPushDoesNotSyncAnInvalidDestinationSkillLocally proves an unchanged push
+// still validates the destination content it writes back to the imported tier:
+// an invalid skill there would otherwise break every later sync and launch.
+func TestPushDoesNotSyncAnInvalidDestinationSkillLocally(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteSkill("skills/beta", "beta", "Beta body")
+	source.Commit("add grouped skills")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha", "skills/beta"},
+		`write_policy = "branch"`, `push_branch = "skill-updates"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	proj.WriteImportedFile("alpha", "notes.md", "local note\n")
+	first, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("first Push: %v\n%s", err, first.Render("push"))
+	}
+	requireOutcome(t, first, "alpha", OutcomePushed)
+	betaBefore, _ := proj.Lock().Entry("beta")
+	localBeta := proj.ImportedFile("beta", "SKILL.md")
+
+	// A reviewer makes a valid edit to alpha and drops beta's description.
+	source.Checkout("skill-updates", false)
+	source.WriteFile("skills/alpha/notes.md", "reviewed note\n", 0o644)
+	source.WriteFile("skills/beta/SKILL.md", "---\nname: beta\n---\nBeta body\n", 0o644)
+	destinationHead := source.Commit("review edits")
+	source.Checkout("main", false)
+
+	second, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("second Push: %v\n%s", err, second.Render("push"))
+	}
+	requireOutcome(t, second, "alpha", OutcomeUnchanged)
+	if got := proj.ImportedFile("alpha", "notes.md"); got != "reviewed note\n" {
+		t.Fatalf("local alpha notes = %q, want the valid destination edit", got)
+	}
+	failed := requireOutcome(t, second, "beta", OutcomeFailed)
+	if !strings.Contains(failed.Err.Error(), "would not be a valid skill") {
+		t.Fatalf("failure %q does not report the invalid result", failed.Err)
+	}
+	if got := proj.ImportedFile("beta", "SKILL.md"); got != localBeta {
+		t.Fatalf("local beta manifest = %q, want it unchanged at %q", got, localBeta)
+	}
+	betaAfter, _ := proj.Lock().Entry("beta")
+	if !reflect.DeepEqual(betaAfter, betaBefore) {
+		t.Fatalf("beta lock entry = %+v, want it unchanged at %+v", betaAfter, betaBefore)
+	}
+	if source.Head("skill-updates") != destinationHead {
+		t.Fatal("an unchanged push moved the contribution branch")
 	}
 }
 

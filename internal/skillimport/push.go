@@ -484,19 +484,23 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 		}
 		candidate.SyncLocal = !merged.IsEmpty() && !merged.Equal(candidate.Local)
 		candidate.Local = merged
-		// Equality is settled before validation so a preserved deletion reports
-		// unchanged instead of failing validation on an empty tree.
+		// A non-empty merged tree is either published or, when it already matches
+		// the destination, written back to the imported tier, so it must be a
+		// valid skill either way. A preserved deletion skips validation and
+		// reports unchanged instead of failing on an empty tree.
+		if !merged.IsEmpty() {
+			if _, validateErr := skilltree.ValidateSkill(merged, candidate.Entry.SelectedPath); validateErr != nil {
+				result.Outcome = OutcomeFailed
+				result.Err = fmt.Errorf("the result for %s would not be a valid skill: %w", group.Repository, validateErr)
+				report.Add(result)
+				continue
+			}
+		}
 		if merged.Equal(destinationTree) {
 			result.Outcome = OutcomeUnchanged
 			result.Detail = unchangedDetail(group, candidate, merged)
 			unchanged = append(unchanged, result)
 			unchangedCandidates = append(unchangedCandidates, candidate)
-			continue
-		}
-		if _, validateErr := skilltree.ValidateSkill(merged, candidate.Entry.SelectedPath); validateErr != nil {
-			result.Outcome = OutcomeFailed
-			result.Err = fmt.Errorf("the result for %s would not be a valid skill: %w", group.Repository, validateErr)
-			report.Add(result)
 			continue
 		}
 		updates = append(updates, gitrepo.Update{Path: candidate.Entry.SelectedPath, Tree: merged})
