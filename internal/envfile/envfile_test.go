@@ -35,7 +35,70 @@ func TestPatch_AllEmptyValues(t *testing.T) {
 
 func TestPatch_EmptyContentWithUpdate(t *testing.T) {
 	result := Patch("", map[string]string{"NEW": "value"})
-	assert.Equal(t, "NEW=value", result)
+	assert.Equal(t, "NEW=value\n", result)
+}
+
+func TestPatch_FinalNewline(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		updates map[string]string
+		want    string
+	}{
+		{
+			name:    "append keeps final newline",
+			input:   "A=1\n",
+			updates: map[string]string{"B": "2"},
+			want:    "A=1\n\nB=2\n",
+		},
+		{
+			name:    "append adds final newline",
+			input:   "A=1",
+			updates: map[string]string{"B": "2"},
+			want:    "A=1\n\nB=2\n",
+		},
+		{
+			name:    "replace keeps final newline",
+			input:   "A=1\n",
+			updates: map[string]string{"A": "2"},
+			want:    "A=2\n",
+		},
+		{
+			name:    "replace keeps missing final newline",
+			input:   "A=1",
+			updates: map[string]string{"A": "2"},
+			want:    "A=2",
+		},
+		{
+			name:    "no updates keep final newline",
+			input:   "A=1\n",
+			updates: map[string]string{"B": ""},
+			want:    "A=1\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, Patch(tt.input, tt.updates))
+		})
+	}
+}
+
+func TestPatch_AppendsNewKeysInSortedOrder(t *testing.T) {
+	updates := map[string]string{"C": "3", "A": "1", "B": "2", "D": "4"}
+	for range 20 {
+		assert.Equal(t, "X=0\n\nA=1\n\nB=2\n\nC=3\n\nD=4\n", Patch("X=0\n", updates))
+	}
+}
+
+func TestPatch_ShellAppendKeepsKeysSeparate(t *testing.T) {
+	content := Patch("", map[string]string{"AL_TAVILY_API_KEY": "tvly-1"})
+	parsed, err := Parse(content + "AL_GITHUB_PERSONAL_ACCESS_TOKEN=ghp\n")
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{
+		"AL_TAVILY_API_KEY":               "tvly-1",
+		"AL_GITHUB_PERSONAL_ACCESS_TOKEN": "ghp",
+	}, parsed)
 }
 
 func TestParseLine_CommentLine(t *testing.T) {
