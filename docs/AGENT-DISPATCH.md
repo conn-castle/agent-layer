@@ -112,11 +112,14 @@ provider work remains active while the caller never learns its handle.
 `dispatch_inspect` and `dispatch_output` can read that invocation by ID when
 the ID is known; evidence remains under `.agent-layer/tmp/runs/`.
 
-A `dispatch_start` or `dispatch_continue` request that is cancelled, or
-reaches the server's hard tool timeout, before its worker is launched fails
-without contacting the provider; a cancelled `dispatch_continue` keeps the
-conversation's current invocation. A cancellation that arrives after the
-worker is launched can still return an error while the agent runs.
+After preparation, `dispatch_start` and `dispatch_continue` check the request
+context once at the start of publication, before writing the worker request or
+launching the worker. If cancellation or the server's hard tool timeout is
+observed at that checkpoint, the request fails without launching a worker or
+contacting the provider; `dispatch_continue` keeps the conversation's current
+invocation. Cancellation or timeout after that check, including in the gap
+before the launch call, can still return an error to the caller while the
+worker launches and the agent runs.
 
 ## Commands
 

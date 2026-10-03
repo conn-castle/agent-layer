@@ -383,8 +383,8 @@ func TestContinueFailureBeforeResponsePreservesCurrentInvocation(t *testing.T) {
 	}
 }
 
-// TestStartCancelledDuringPreparationLaunchesNothing proves an MCP caller that
-// gives up before its handle response is delivered leaves no worker behind.
+// TestStartCancelledDuringPreparationLaunchesNothing proves cancellation during
+// version lookup is observed at the publication check and no worker is launched.
 func TestStartCancelledDuringPreparationLaunchesNothing(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -421,9 +421,9 @@ func TestStartCancelledDuringPreparationLaunchesNothing(t *testing.T) {
 	}
 }
 
-// TestContinueCancelledDuringPreparationKeepsCurrentInvocation proves a
-// cancelled continuation launches nothing and leaves the conversation ready
-// for a retry.
+// TestContinueCancelledDuringPreparationKeepsCurrentInvocation proves cancellation
+// during version lookup is observed at the publication check, launches no worker,
+// and keeps the current invocation available for a retry.
 func TestContinueCancelledDuringPreparationKeepsCurrentInvocation(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	current, session := terminalConversationForAsyncTest(t, root)
