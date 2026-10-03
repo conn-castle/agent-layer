@@ -713,6 +713,8 @@ func currentRepoPinVersion(root string) (string, error) {
 	return pinned, nil
 }
 
+// requireUpgradeTargetCLI rejects a release-build upgrade target other than the
+// running CLI version, because only this version's templates are embedded.
 func requireUpgradeTargetCLI(targetVersion string) error {
 	if targetVersion == "" || version.IsDev(Version) {
 		return nil
@@ -731,6 +733,9 @@ func requireUpgradeTargetCLI(targetVersion string) error {
 	}
 	if comparison < 0 {
 		return fmt.Errorf(messages.UpgradeTargetRequiresNewerCLIFmt, currentVersion, normalizedTargetVersion, normalizedTargetVersion)
+	}
+	if comparison > 0 {
+		return fmt.Errorf(messages.UpgradeTargetOlderThanCLIFmt, currentVersion, normalizedTargetVersion, currentVersion, normalizedTargetVersion)
 	}
 	return nil
 }

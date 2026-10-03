@@ -65,8 +65,9 @@ const (
 	UpgradeFlagApplyMemoryUpdates         = "Apply memory file updates without prompts"
 	UpgradeFlagApplyDeletions             = "Apply unknown file deletions outside .agent-layer/tmp/ (requires explicit confirmation unless combined with --yes; does NOT delete files under .agent-layer/tmp/)"
 	UpgradeFlagApplyTmpDeletions          = "Apply destructive deletion of files under .agent-layer/tmp/ (ephemeral agent run artifacts; requires explicit double confirmation unless combined with --yes)"
-	UpgradeFlagVersion                    = "Target Agent Layer version for the upgrade (vX.Y.Z, X.Y.Z, or latest)"
-	UpgradeTargetRequiresNewerCLIFmt      = "the Agent Layer CLI v%s cannot upgrade to v%s because the target release templates are not embedded in this executable; run 'al update', verify 'al --version' reports v%s or newer, then retry. 'al upgrade prefetch' only caches a binary and does not update the invoking CLI"
+	UpgradeFlagVersion                    = "Target Agent Layer version for the upgrade (vX.Y.Z, X.Y.Z, or latest); a release CLI can target only its own version"
+	UpgradeTargetRequiresNewerCLIFmt      = "the Agent Layer CLI v%s cannot upgrade to v%s because the target release templates are not embedded in this executable; run 'al update', verify 'al --version' reports v%s or newer, then retry without --version to target that CLI's version. 'al upgrade prefetch' only caches a binary and does not update the invoking CLI"
+	UpgradeTargetOlderThanCLIFmt          = "the Agent Layer CLI v%s cannot upgrade to older v%s because only the v%s release templates are embedded in this executable; run 'al upgrade' with the v%s CLI instead, or restore an earlier upgrade snapshot with 'al upgrade rollback <snapshot-id>' (list IDs with 'al upgrade rollback --list')"
 
 	UpgradeOverwritePromptFmt                       = "Overwrite %s with the template version?"
 	UpgradeOverwriteAllPrompt                       = "Overwrite all existing managed files with template versions and update the pin if needed?"
