@@ -136,6 +136,19 @@ func (r *Report) Failed() bool {
 	return false
 }
 
+// discardUnapplied keeps only failed skill results. Add and remove commit all
+// of their changes or none, so once they abort every other result would report
+// a change that never happened.
+func (r *Report) discardUnapplied() {
+	failed := r.Skills[:0]
+	for _, skill := range r.Skills {
+		if skill.Outcome == OutcomeFailed {
+			failed = append(failed, skill)
+		}
+	}
+	r.Skills = failed
+}
+
 // Succeeded returns the number of skills whose work completed.
 func (r *Report) Succeeded() int {
 	count := 0
