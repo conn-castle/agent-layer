@@ -1117,6 +1117,53 @@ func TestCleanCodexChimeHookRejectsSymlinkConfigDir(t *testing.T) {
 	}
 }
 
+func TestCleanCodexChimeHookIgnoresSymlinkedConfigWithoutChime(t *testing.T) {
+	t.Parallel()
+	const userConfig = "model = \"gpt\"\n\n[mcp_servers.docs]\ncommand = \"docs\"\n"
+	for _, tc := range []struct {
+		name       string
+		config     string
+		linkedFile bool
+	}{
+		{name: "missing config"},
+		{name: "config without chime", config: userConfig},
+		{name: "linked config file without chime", config: userConfig, linkedFile: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			outside := t.TempDir()
+			outsideConfig := filepath.Join(outside, "config.toml")
+			if tc.config != "" {
+				if err := os.WriteFile(outsideConfig, []byte(tc.config), 0o600); err != nil {
+					t.Fatalf("write outside config: %v", err)
+				}
+			}
+			if tc.linkedFile {
+				if err := os.MkdirAll(filepath.Join(root, ".codex"), 0o700); err != nil {
+					t.Fatalf("mkdir .codex: %v", err)
+				}
+				if err := os.Symlink(outsideConfig, filepath.Join(root, ".codex", "config.toml")); err != nil {
+					t.Fatalf("seed config symlink: %v", err)
+				}
+			} else if err := os.Symlink(outside, filepath.Join(root, ".codex")); err != nil {
+				t.Fatalf("seed .codex symlink: %v", err)
+			}
+
+			if err := cleanCodexChimeHook(RealSystem{}, root); err != nil {
+				t.Fatalf("cleanCodexChimeHook: %v", err)
+			}
+			if tc.config == "" {
+				if _, err := os.Stat(outsideConfig); !os.IsNotExist(err) {
+					t.Fatalf("outside config created: %v", err)
+				}
+			} else if got := readFileForTest(t, outsideConfig); got != tc.config {
+				t.Fatalf("outside config changed: %q", got)
+			}
+		})
+	}
+}
+
 func TestCleanCodexChimeHookRejectsSymlinkConfigFile(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
