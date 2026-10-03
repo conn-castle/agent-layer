@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -55,6 +56,31 @@ func TestPrefetchVersion_DownloadsToConfiguredCache(t *testing.T) {
 	}
 	if !strings.Contains(progress.String(), "Downloading al v1.2.3") {
 		t.Fatalf("expected progress output, got %q", progress.String())
+	}
+}
+
+func TestPrefetchVersion_CanceledWithCachedBinary(t *testing.T) {
+	cacheRoot := t.TempDir()
+	t.Setenv(EnvCacheDir, cacheRoot)
+
+	version := "1.2.3"
+	binPath := filepath.Join(cacheRoot, "versions", version, runtime.GOOS+"-"+runtime.GOARCH, assetName(runtime.GOOS, runtime.GOARCH))
+	if err := os.MkdirAll(filepath.Dir(binPath), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binPath, []byte("cached"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var progress bytes.Buffer
+	err := PrefetchVersion(ctx, version, &progress)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+	if progress.Len() != 0 {
+		t.Fatalf("expected no download progress for cached binary, got %q", progress.String())
 	}
 }
 

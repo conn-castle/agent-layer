@@ -25,5 +25,8 @@ func PrefetchVersion(ctx context.Context, versionInput string, progressOut io.Wr
 		return err
 	}
 	_, err = ensureCachedBinaryWithSystem(ctx, sys, cacheRoot, normalized, progressOut)
-	return err
+	if err != nil {
+		return err
+	}
+	return ctx.Err()
 }
