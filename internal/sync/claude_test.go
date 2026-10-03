@@ -1089,6 +1089,9 @@ func TestCleanClaudeChimeHookRemovesOnlyManagedHandler(t *testing.T) {
 	if strings.Contains(updated, "agent-layer-chime") {
 		t.Fatalf("expected managed chime removed, got:\n%s", updated)
 	}
+	if strings.Contains(updated, "/usr/bin/afplay") {
+		t.Fatalf("expected managed legacy chime command removed, got:\n%s", updated)
+	}
 	for _, want := range []string{`"command": "echo user"`, `"theme": "keep"`} {
 		if !strings.Contains(updated, want) {
 			t.Fatalf("expected %q preserved, got:\n%s", want, updated)
@@ -1134,8 +1137,58 @@ func TestCleanClaudeChimeHookRemovesHookWrittenBySync(t *testing.T) {
 	if strings.Contains(updated, agentLayerChimeMarker) {
 		t.Fatalf("expected managed chime removed, got:\n%s", updated)
 	}
+	if strings.Contains(updated, "al hook chime claude") {
+		t.Fatalf("expected managed chime command removed, got:\n%s", updated)
+	}
 	if !strings.Contains(updated, `"command": "echo user"`) {
 		t.Fatalf("expected user Stop hook preserved, got:\n%s", updated)
+	}
+}
+
+func TestCleanClaudeChimeHookRemovesMixedEscapingHandler(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"current":          agentLayerClaudeChimeCommand,
+		"unmarked current": strings.TrimSuffix(agentLayerClaudeChimeCommand, " # "+agentLayerChimeMarker),
+		"legacy":           legacyAgentLayerClaudeChimeCommand,
+		"unmarked legacy":  strings.TrimSuffix(legacyAgentLayerClaudeChimeCommand, " # "+agentLayerChimeMarker),
+		"unicode prefix":   strings.ReplaceAll(agentLayerClaudeChimeCommand, "a", `\u0061`),
+	}
+	for name, command := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			settingsPath := filepath.Join(root, ".claude", "settings.json")
+			if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+				t.Fatalf("mkdir .claude: %v", err)
+			}
+			// Escape only >, leaving & raw; uppercase hex is also valid JSON.
+			escape := `\u003e`
+			if name == "unicode prefix" {
+				escape = `\u003E`
+			}
+			escaped := strings.ReplaceAll(command, ">", escape)
+			content := `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"` + escaped +
+				`","timeout":5},{"type":"command","command":"echo user","timeout":3}]}]},"theme":"keep"}`
+			if err := os.WriteFile(settingsPath, []byte(content), 0o600); err != nil {
+				t.Fatalf("write settings: %v", err)
+			}
+
+			if err := cleanClaudeChimeHook(RealSystem{}, root); err != nil {
+				t.Fatalf("cleanClaudeChimeHook: %v", err)
+			}
+			updated := readFileForTest(t, settingsPath)
+			for _, unwanted := range []string{agentLayerChimeMarker, "al hook chime claude", "afplay", escape} {
+				if strings.Contains(updated, unwanted) {
+					t.Fatalf("expected managed chime removed, found %q in:\n%s", unwanted, updated)
+				}
+			}
+			for _, want := range []string{`"command": "echo user"`, `"timeout": 3`, `"theme": "keep"`} {
+				if !strings.Contains(updated, want) {
+					t.Fatalf("expected %q preserved, got:\n%s", want, updated)
+				}
+			}
+		})
 	}
 }
 
@@ -1355,6 +1408,8 @@ func TestCleanClaudeChimeHookNoopWhenChimeTextIsOutsideHooks(t *testing.T) {
 			agentLayerClaudeChimeCommand + `"}`,
 		"escaped command": `{"hooks":{},"note":"` +
 			strings.NewReplacer(">", `\u003e`, "&", `\u0026`).Replace(agentLayerClaudeChimeCommand) + `"}`,
+		"mixed escaping": `{"hooks":{},"note":"` +
+			strings.ReplaceAll(agentLayerClaudeChimeCommand, ">", `\u003e`) + `"}`,
 	}
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {
