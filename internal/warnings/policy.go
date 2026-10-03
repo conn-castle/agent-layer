@@ -2,7 +2,6 @@ package warnings
 
 import (
 	"fmt"
-	"net/url"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -210,40 +209,47 @@ func isClientTargeted(clients []string, target string) bool { //nolint:unparam /
 	return slices.Contains(clients, target)
 }
 
+// findSecretInURL scans the raw URL text rather than parsing it, because
+// url.Parse rejects a `${...}` placeholder in the host or userinfo and a parse
+// failure would otherwise hide a literal secret elsewhere in the same URL.
 func findSecretInURL(raw string) (string, bool) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return "", false
 	}
-	parsed, err := url.Parse(trimmed)
-	if err != nil {
-		return "", false
+	if hasLiteralUserinfo(trimmed) {
+		return "URL contains inline userinfo credentials", true
 	}
-	if parsed.User != nil {
-		username := strings.TrimSpace(parsed.User.Username())
-		password, hasPassword := parsed.User.Password()
-		if username != "" || (hasPassword && strings.TrimSpace(password) != "") {
-			return "URL contains inline userinfo credentials", true
-		}
+	if key, found := envref.LiteralSecretQueryKey(trimmed); found {
+		return fmt.Sprintf("query parameter %q contains a literal secret-like value", key), true
 	}
-
-	query := parsed.Query()
-	for key, values := range query {
-		if !envref.IsSecretQueryKey(strings.TrimSpace(key)) {
-			continue
-		}
-		for _, value := range values {
-			if strings.TrimSpace(value) == "" {
-				continue
-			}
-			if hasEnvPlaceholder(value) {
-				continue
-			}
-			return fmt.Sprintf("query parameter %q contains a literal secret-like value", key), true
-		}
-	}
-
 	return "", false
+}
+
+// hasLiteralUserinfo reports whether the URL authority carries a literal
+// password, or a literal username without a placeholder password beside it.
+func hasLiteralUserinfo(rawURL string) bool {
+	_, rest, ok := strings.Cut(rawURL, "://")
+	if !ok {
+		return false
+	}
+	authority := rest
+	if end := strings.IndexAny(rest, "/?#"); end >= 0 {
+		authority = rest[:end]
+	}
+	// Userinfo ends at the last "@" in the authority, so a literal "@" inside a
+	// password is not mistaken for the host separator.
+	at := strings.LastIndex(authority, "@")
+	if at < 0 {
+		return false
+	}
+	username, password, _ := strings.Cut(authority[:at], ":")
+	username = strings.TrimSpace(username)
+	password = strings.TrimSpace(password)
+	if password != "" {
+		return !envref.IsEntirelyPlaceholders(password)
+	}
+	return username != "" && !envref.IsEntirelyPlaceholders(username)
 }
 
 func findUnsupportedCodexHeaderForm(headers map[string]string) (string, bool) {

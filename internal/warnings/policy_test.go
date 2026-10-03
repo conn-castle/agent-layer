@@ -490,3 +490,44 @@ func TestCheckPolicy_SecretURLIgnoresPlaceholderAndEmptyValues(t *testing.T) {
 	}
 	require.Nil(t, CheckPolicy(project))
 }
+
+func TestCheckPolicy_SecretURLWithPlaceholderHostOrUserinfo(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want bool
+	}{
+		{name: "literal query secret with placeholder host", url: "https://${AL_MCP_HOST}/mcp?api_key=sk-live", want: true},
+		{name: "literal password with placeholder host", url: "https://user:literal@${AL_HOST}/mcp", want: true},
+		{name: "literal username only with placeholder host", url: "https://token@${AL_HOST}/mcp", want: true},
+		{name: "literal query secret beside placeholder password", url: "https://user:${AL_P}@example.com/mcp?token=literal", want: true},
+		{name: "query secret partly literal", url: "https://example.com/mcp?token=abc${AL_X}", want: true},
+		{name: "placeholder host and query secret", url: "https://${AL_HOST}/mcp?api_key=${AL_K}", want: false},
+		{name: "placeholder userinfo and host", url: "https://${AL_U}:${AL_P}@${AL_HOST}/mcp", want: false},
+		{name: "literal username with placeholder password", url: "https://user:${AL_P}@example.com/mcp", want: false},
+		{name: "at sign after the authority", url: "https://example.com/mcp?q=a@b", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			project := &config.ProjectConfig{
+				Config: config.Config{
+					MCP: config.MCPConfig{
+						Servers: []config.MCPServer{{
+							ID:      "srv",
+							Enabled: testutil.BoolPtr(true),
+							URL:     tt.url,
+						}},
+					},
+				},
+			}
+			results := CheckPolicy(project)
+			if !tt.want {
+				require.Nil(t, results)
+				return
+			}
+			require.Len(t, results, 1)
+			require.Equal(t, CodePolicySecretInURL, results[0].Code)
+			require.Equal(t, SeverityCritical, results[0].Severity)
+		})
+	}
+}
