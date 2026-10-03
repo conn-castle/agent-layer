@@ -598,7 +598,7 @@ Example keys:
 - `AL_TAVILY_API_KEY`
 - `AL_GITHUB_PERSONAL_ACCESS_TOKEN` (only when using the optional GitHub MCP server)
 
-Your existing process environment takes precedence. `.agent-layer/.env` fills missing keys only, and empty values in `.agent-layer/.env` are ignored (so template entries cannot override real tokens). This behavior is consistent whether launching via `al` commands or repo-local launchers like `open-vscode.app`, `open-vscode.sh`, or `open-vscode.command`.
+Non-empty values in your existing process environment take precedence. `.agent-layer/.env` fills only keys that are missing or empty in your environment, and empty values in `.agent-layer/.env` are ignored (so template entries cannot override real tokens). This behavior is consistent whether launching via `al` commands or repo-local launchers like `open-vscode.app`, `open-vscode.sh`, or `open-vscode.command`.
 
 ### Instructions: `.agent-layer/instructions/`
 
