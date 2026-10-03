@@ -40,6 +40,7 @@ func newUpgradeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   messages.UpgradeUse,
 		Short: messages.UpgradeShort,
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if diffLines <= 0 {
 				return fmt.Errorf(messages.UpgradeDiffLinesInvalidFmt, diffLines)

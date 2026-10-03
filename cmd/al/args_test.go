@@ -140,6 +140,49 @@ func TestParentCommandsRejectUnknownSubcommands(t *testing.T) {
 	}
 }
 
+// TestUpgradeRejectsUnknownSubcommand verifies that a mistyped upgrade
+// subcommand such as `al upgrade rollbak` fails instead of running a real
+// upgrade. --diff-lines 0 makes the test fail if the upgrade's own validation
+// is reached, so only the argument check can produce the expected error.
+func TestUpgradeRejectsUnknownSubcommand(t *testing.T) {
+	root := newRootCmd()
+	root.SetArgs([]string{"upgrade", "rollbak", "--diff-lines", "0"})
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+	err := root.Execute()
+	if err == nil || !strings.Contains(err.Error(), `unknown command "rollbak"`) {
+		t.Fatalf("al upgrade rollbak returned %v; want unknown command error", err)
+	}
+}
+
+// TestRunnableCommandsDeclareArgs walks the command tree so that a new
+// command cannot silently ignore stray positional arguments. Cobra only
+// rejects unknown words on the root, so a runnable command without an Args
+// validator runs with a mistyped subcommand, and a parent without RunE prints
+// help and exits 0 for one.
+func TestRunnableCommandsDeclareArgs(t *testing.T) {
+	// Client launchers forward their arguments to the client, and mcp-prompts
+	// is a deprecated no-op stub.
+	passThrough := map[string]bool{
+		"al claude": true, "al codex": true, "al vscode": true, "al agy": true,
+		"al copilot": true, "al grok": true, "al muse": true, "al mcp-prompts": true,
+	}
+	var walk func(cmd *cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		for _, child := range cmd.Commands() {
+			path := child.CommandPath()
+			if child.HasSubCommands() && !child.Runnable() {
+				t.Errorf("%s has subcommands but no RunE, so a mistyped subcommand prints help and exits 0", path)
+			}
+			if child.Runnable() && child.Args == nil && !passThrough[path] {
+				t.Errorf("%s has no Args validator, so it ignores stray positional arguments", path)
+			}
+			walk(child)
+		}
+	}
+	walk(newRootCmd())
+}
+
 func TestSplitQuietArgs(t *testing.T) {
 	tests := []struct {
 		name      string
