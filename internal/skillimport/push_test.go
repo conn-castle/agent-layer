@@ -1096,11 +1096,13 @@ func TestPushRefusesToPublishAnInvalidMergedTree(t *testing.T) {
 // sibling can still publish in the same group.
 func TestPushRefusesAnEmptyMergeFromComplementaryDeletions(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		editSibling bool
+		name                   string
+		editSibling            bool
+		publicationUnavailable bool
 	}{
 		{name: "without sibling changes"},
 		{name: "with sibling changes", editSibling: true},
+		{name: "with unavailable publication and sibling changes", editSibling: true, publicationUnavailable: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			source := newGitRepo(t, "main")
@@ -1126,6 +1128,12 @@ func TestPushRefusesAnEmptyMergeFromComplementaryDeletions(t *testing.T) {
 			if alphaBefore.Publication == nil {
 				t.Fatal("the initial push did not establish alpha's publication checkpoint")
 			}
+			if tc.publicationUnavailable {
+				// Keep the checkpoint fetchable, but remove it from the branch's
+				// ancestry so the next push falls back to the locked source.
+				source.run("tag", "keep-old-publication", alphaBefore.Publication.Commit)
+				source.run("branch", "--force", "skill-updates", "main")
+			}
 
 			// Each side deletes a different file, producing an empty merged tree
 			// even though the destination still contains notes.md.
@@ -1150,6 +1158,16 @@ func TestPushRefusesAnEmptyMergeFromComplementaryDeletions(t *testing.T) {
 			if failed.Err == nil || failed.Err.Error() != wantError {
 				t.Fatalf("failure = %v, want %q", failed.Err, wantError)
 			}
+			if tc.editSibling {
+				requireOutcome(t, second, "beta", OutcomePushed)
+				if source.Head("skill-updates") == destinationHead {
+					t.Fatal("the valid sibling did not move the contribution branch")
+				}
+				betaAfter, _ := proj.Lock().Entry("beta")
+				if betaAfter.Publication == nil || betaAfter.Publication.Commit != source.Head("skill-updates") {
+					t.Fatalf("beta publication = %+v, want the sibling's successful publication recorded", betaAfter.Publication)
+				}
+			}
 			if got := importedTreeHash(t, proj, "alpha"); got != localAlphaHash {
 				t.Fatal("the failed empty merge changed the imported skill")
 			}
@@ -1164,7 +1182,6 @@ func TestPushRefusesAnEmptyMergeFromComplementaryDeletions(t *testing.T) {
 				t.Fatal("the failed empty merge restored the destination manifest")
 			}
 			if tc.editSibling {
-				requireOutcome(t, second, "beta", OutcomePushed)
 				if got := source.FileAt("skill-updates", "skills/beta/notes.md"); got != "updated note" {
 					t.Fatalf("destination beta notes = %q, want the sibling edit published", got)
 				}

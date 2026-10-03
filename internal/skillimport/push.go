@@ -429,9 +429,9 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 		// for recreating the contribution branch. Unreachable or rewritten history
 		// falls back to the locked source below.
 		mergeBase, checkpointed, baseErr := publicationMergeBase(ctx, destination, group, candidate, head)
-		if errors.Is(baseErr, errPublicationUnavailable) {
+		publicationUnavailable := errors.Is(baseErr, errPublicationUnavailable)
+		if publicationUnavailable {
 			candidate.Entry.Publication = nil
-			txn.SetLockEntry(candidate.Entry)
 			mergeBase = candidate.Base
 			baseErr = nil
 		}
@@ -495,6 +495,11 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 				report.Add(result)
 				continue
 			}
+		}
+		// A rejected candidate must not leave a checkpoint reset for a
+		// successful sibling to commit through the shared transaction.
+		if publicationUnavailable {
+			txn.SetLockEntry(candidate.Entry)
 		}
 		if merged.Equal(destinationTree) {
 			result.Outcome = OutcomeUnchanged
