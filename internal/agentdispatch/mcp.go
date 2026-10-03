@@ -320,7 +320,7 @@ func (s *dispatchToolServer) handleStart(ctx context.Context, _ *mcp.CallToolReq
 	}
 	var out bytes.Buffer
 	err := Start(StartOptions{
-		Root: s.root, WorkDir: s.workDir, Agent: agent, Model: model,
+		Context: ctx, Root: s.root, WorkDir: s.workDir, Agent: agent, Model: model,
 		ReasoningEffort: effort, Role: strings.TrimSpace(input.Role), Skill: strings.TrimSpace(input.Skill),
 		Prompt: input.Prompt, PromptFile: strings.TrimSpace(input.PromptFile),
 		Stdout: &out, Stderr: io.Discard, Env: s.env,
@@ -349,7 +349,7 @@ func (s *dispatchToolServer) handleContinue(ctx context.Context, _ *mcp.CallTool
 	}
 	var out bytes.Buffer
 	err := Continue(ContinueOptions{
-		Root: s.root, WorkDir: s.workDir, Handle: strings.TrimSpace(input.Handle),
+		Context: ctx, Root: s.root, WorkDir: s.workDir, Handle: strings.TrimSpace(input.Handle),
 		Prompt: input.Prompt, PromptFile: strings.TrimSpace(input.PromptFile),
 		Stdout: &out, Stderr: io.Discard, Env: s.env,
 	})
