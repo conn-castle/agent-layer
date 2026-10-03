@@ -385,6 +385,16 @@ func recoverCompletedPierExecution(request ExecutionRequest) (AttemptResult, boo
 				selected.receipt.EventID, err,
 			)
 		}
+		// Study readers accept a result only beside a receipt whose cleanup
+		// succeeded, so record the recovered cleanup before returning a result.
+		receipt := selected.receipt
+		receipt.CleanupSucceeded = true
+		if err := writeJSON(filepath.Join(selected.root, "execution-receipt.json"), receipt); err != nil {
+			return AttemptResult{}, false, fmt.Errorf(
+				"record recovered cleanup for completed Pier execution %s: %w",
+				selected.receipt.EventID, err,
+			)
+		}
 	}
 	result, err := normalizePier(selected.root, recoveredRequest)
 	if err != nil {
