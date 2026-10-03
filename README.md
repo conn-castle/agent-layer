@@ -819,7 +819,7 @@ Other commands:
 - `al upgrade plan` — preview plain-language categorized template/pin changes and readiness actions with line-level diff previews (`--diff-lines N` to raise per-file preview size)
 - `al upgrade prefetch` — download and cache a release binary (use `--version X.Y.Z` on dev builds; useful for offline/CI cache warm-up)
 - `al upgrade rollback <snapshot-id>` — restore an applied upgrade snapshot (snapshot IDs are JSON filenames in `.agent-layer/state/upgrade-snapshots/`; use `al upgrade rollback --list` to discover available IDs)
-- `al upgrade repair-gitignore-block` — restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block
+- `al upgrade repair-gitignore-block` — restore `.agent-layer/gitignore.block` from templates, keeping your `/.agent-layer/` and `/docs/agent-layer/` tracking choices, and reapply the root `.gitignore` managed block
 - `al sync` — regenerate configs without launching a client
 - `al probe agy` — run the Antigravity capability probe and print JSON
 - `al probe grok` — run the Grok capability probe and print JSON

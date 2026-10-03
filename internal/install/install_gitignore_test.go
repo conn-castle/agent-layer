@@ -915,7 +915,7 @@ func TestAgentLayerGitignoreTemplateEntries(t *testing.T) {
 	}
 }
 
-func TestRepairGitignoreBlock_WriteBlockError(t *testing.T) {
+func TestRepairGitignoreBlock_ReadBlockError(t *testing.T) {
 	root := t.TempDir()
 	blockPath := filepath.Join(root, ".agent-layer", "gitignore.block")
 	if err := os.MkdirAll(blockPath, 0o700); err != nil {
@@ -923,6 +923,138 @@ func TestRepairGitignoreBlock_WriteBlockError(t *testing.T) {
 	}
 
 	if err := RepairGitignoreBlock(root, RepairGitignoreBlockOptions{System: RealSystem{}}); err == nil {
-		t.Fatal("expected write error when block path is a directory")
+		t.Fatal("expected read error when block path is a directory")
+	}
+}
+
+func TestRepairGitignoreBlock_WriteBlockError(t *testing.T) {
+	root := t.TempDir()
+	blockPath := filepath.Join(root, ".agent-layer", "gitignore.block")
+	sys := newFaultSystem(RealSystem{})
+	sys.writeErrs[normalizePath(blockPath)] = errors.New("write failed")
+
+	if err := RepairGitignoreBlock(root, RepairGitignoreBlockOptions{System: sys}); err == nil {
+		t.Fatal("expected block write error")
+	}
+}
+
+func TestRepairGitignoreBlock_KeepsStatedTrackingChoices(t *testing.T) {
+	templateBytes, err := templates.Read("gitignore.block")
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+	template := string(templateBytes)
+	privateMemory, err := ApplyGitignoreTrackingSettings(template, GitignoreTrackingSettings{TrackAgentLayerDir: true})
+	if err != nil {
+		t.Fatalf("apply tracking settings: %v", err)
+	}
+	trackedConfig, err := ApplyGitignoreTrackingSettings(template, GitignoreTrackingSettings{TrackAgentLayerDir: true, TrackDocsAgentLayerDir: true})
+	if err != nil {
+		t.Fatalf("apply tracking settings: %v", err)
+	}
+	ignoredMemory, err := ApplyGitignoreTrackingSettings(template, GitignoreTrackingSettings{})
+	if err != nil {
+		t.Fatalf("apply tracking settings: %v", err)
+	}
+
+	cases := []struct {
+		name          string
+		block         string
+		noBlock       bool
+		want          string
+		ignoredConfig bool
+		ignoredMemory bool
+	}{
+		{
+			name:          "pasted managed block keeps both stated choices",
+			block:         "# >>> agent-layer\r\n# Template hash: abc\r\n# " + AgentLayerGitignorePattern + "\r\n" + DocsAgentLayerGitignorePattern + "\r\n# <<< agent-layer\r\n",
+			want:          privateMemory,
+			ignoredConfig: false,
+			ignoredMemory: true,
+		},
+		{
+			// A missing pattern is not evidence that .agent-layer/ should be
+			// tracked; it holds .env, so the template default must win.
+			name:          "missing patterns keep template defaults",
+			block:         "# >>> agent-layer\nbad\n",
+			want:          template,
+			ignoredConfig: true,
+			ignoredMemory: false,
+		},
+		{
+			name:          "ambiguous pattern keeps its template default only",
+			block:         AgentLayerGitignorePattern + "\n# " + AgentLayerGitignorePattern + "\n# " + DocsAgentLayerGitignorePattern + "\n",
+			want:          template,
+			ignoredConfig: true,
+			ignoredMemory: false,
+		},
+		{
+			name:          "unsupported inline comment keeps its template default only",
+			block:         DocsAgentLayerGitignorePattern + "\n" + AgentLayerGitignorePattern + " # reason\n",
+			want:          ignoredMemory,
+			ignoredConfig: true,
+			ignoredMemory: true,
+		},
+		{
+			name:          "one stated choice is kept beside an ambiguous one",
+			block:         "# " + AgentLayerGitignorePattern + "\n" + DocsAgentLayerGitignorePattern + "\n# " + DocsAgentLayerGitignorePattern + "\n",
+			want:          trackedConfig,
+			ignoredConfig: false,
+			ignoredMemory: false,
+		},
+		{
+			name:          "missing block uses template",
+			noBlock:       true,
+			want:          template,
+			ignoredConfig: true,
+			ignoredMemory: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			blockPath := filepath.Join(root, ".agent-layer", "gitignore.block")
+			if err := os.MkdirAll(filepath.Dir(blockPath), 0o700); err != nil {
+				t.Fatalf("mkdir .agent-layer: %v", err)
+			}
+			if !tc.noBlock {
+				if err := os.WriteFile(blockPath, []byte(tc.block), 0o600); err != nil {
+					t.Fatalf("write block: %v", err)
+				}
+			}
+
+			if err := RepairGitignoreBlock(root, RepairGitignoreBlockOptions{System: RealSystem{}}); err != nil {
+				t.Fatalf("RepairGitignoreBlock: %v", err)
+			}
+
+			got, err := os.ReadFile(blockPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+			if err != nil {
+				t.Fatalf("read repaired block: %v", err)
+			}
+			if string(got) != tc.want {
+				t.Fatalf("repaired block mismatch:\n%s", got)
+			}
+
+			cmd := exec.Command("git", "-c", "init.templateDir=", "-C", root, "init", "--quiet")
+			cmd.Env = gitenv.WithoutDiscovery()
+			if output, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("git init: %v: %s", err, output)
+			}
+			for path, wantIgnored := range map[string]bool{
+				".agent-layer/.env":          tc.ignoredConfig,
+				"docs/agent-layer/ISSUES.md": tc.ignoredMemory,
+			} {
+				cmd := exec.Command("git", "-C", root, "check-ignore", "--no-index", "--quiet", "--", path) // #nosec G204 -- fixed test command and test-controlled path.
+				cmd.Env = gitenv.WithoutDiscovery()
+				err := cmd.Run()
+				var exitErr *exec.ExitError
+				if err != nil && (!errors.As(err, &exitErr) || exitErr.ExitCode() != 1) {
+					t.Fatalf("check ignore status for %s: %v", path, err)
+				}
+				if ignored := err == nil; ignored != wantIgnored {
+					t.Errorf("%s ignored = %v, want %v", path, ignored, wantIgnored)
+				}
+			}
+		})
 	}
 }
