@@ -126,6 +126,9 @@ type runOptions struct {
 
 // StartOptions configures the first asynchronous invocation of a conversation.
 type StartOptions struct {
+	// Context, when set, is the caller's request. A start whose caller is gone
+	// before its worker is launched fails without contacting the provider.
+	Context         context.Context
 	Root            string
 	WorkDir         string
 	Agent           string
@@ -155,6 +158,8 @@ type ReserveOptions struct {
 
 // ContinueOptions configures one asynchronous continuation of a conversation.
 type ContinueOptions struct {
+	// Context, when set, is the caller's request; see StartOptions.Context.
+	Context       context.Context
 	Root          string
 	WorkDir       string
 	Handle        string

@@ -2,6 +2,7 @@ package agentdispatch
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -379,6 +380,89 @@ func TestContinueFailureBeforeResponsePreservesCurrentInvocation(t *testing.T) {
 	}
 	if retained.RunID != current.Record.ID || retained.ActiveRunID != "" {
 		t.Fatalf("failed continue replaced current invocation: %#v", retained)
+	}
+}
+
+// TestStartCancelledDuringPreparationLaunchesNothing proves an MCP caller that
+// gives up before its handle response is delivered leaves no worker behind.
+func TestStartCancelledDuringPreparationLaunchesNothing(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var stdout bytes.Buffer
+	err := Start(StartOptions{
+		Context: ctx, Root: root, WorkDir: root, Agent: AgentCodex, Prompt: "Review this", Stdout: &stdout,
+		Env: []string{}, LookPath: alwaysFound,
+		VersionLookup: func(string, string) (string, error) {
+			cancel()
+			return supportedProviderVersions[AgentCodex], nil
+		},
+		launchWorker: func(string, string, string) (launchedWorker, error) {
+			t.Fatal("cancelled start launched a worker")
+			return launchedWorker{}, nil
+		},
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Start error = %v, want context cancellation", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("cancelled start published a response: %s", stdout.String())
+	}
+	runs, err := os.ReadDir(dispatchRunPath(root))
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("dispatch runs = %v, %v; want the one failed start", runs, err)
+	}
+	record, err := loadRunRecord(root, runs[0].Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.State != dispatchStateFailed {
+		t.Fatalf("cancelled start state = %q, want failed", record.State)
+	}
+}
+
+// TestContinueCancelledDuringPreparationKeepsCurrentInvocation proves a
+// cancelled continuation launches nothing and leaves the conversation ready
+// for a retry.
+func TestContinueCancelledDuringPreparationKeepsCurrentInvocation(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	current, session := terminalConversationForAsyncTest(t, root)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	options := ContinueOptions{
+		Context: ctx, Root: root, WorkDir: root, Handle: session.Name, Prompt: "Continue",
+		Env: []string{}, LookPath: alwaysFound,
+		VersionLookup: func(string, string) (string, error) {
+			cancel()
+			return supportedProviderVersions[AgentCodex], nil
+		},
+		launchWorker: func(string, string, string) (launchedWorker, error) {
+			t.Fatal("cancelled continue launched a worker")
+			return launchedWorker{}, nil
+		},
+	}
+	if err := Continue(options); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Continue error = %v, want context cancellation", err)
+	}
+	retained, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retained.RunID != current.Record.ID || retained.ActiveRunID != "" {
+		t.Fatalf("cancelled continue replaced the current invocation: %#v", retained)
+	}
+
+	options.Context = nil
+	options.launchWorker = func(string, string, string) (launchedWorker, error) {
+		read, write, err := os.Pipe()
+		if err != nil {
+			return launchedWorker{}, err
+		}
+		go func() { defer func() { _ = read.Close() }(); var token [1]byte; _, _ = read.Read(token[:]) }()
+		return launchedWorker{gate: write, pid: os.Getpid(), startIdentity: processStartIdentity(os.Getpid())}, nil
+	}
+	if err := Continue(options); err != nil {
+		t.Fatalf("retried continue failed: %v", err)
 	}
 }
 
