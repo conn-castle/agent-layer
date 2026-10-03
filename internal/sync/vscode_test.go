@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -415,24 +416,51 @@ func TestWriteVSCodeSettingsError(t *testing.T) {
 
 func TestWriteVSCodeSettingsInvalidJSONC(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
-	vscodeDir := filepath.Join(root, ".vscode")
-	if err := os.MkdirAll(vscodeDir, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	existing := "{\n  \"editor.tabSize\": 2,\n"
-	if err := os.WriteFile(filepath.Join(vscodeDir, "settings.json"), []byte(existing), 0o600); err != nil {
-		t.Fatalf("write settings.json: %v", err)
-	}
-
-	project := &config.ProjectConfig{
-		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+	for _, tt := range []struct {
+		name     string
+		existing string
+	}{
+		{
+			name:     "unterminated root",
+			existing: "{\n  \"editor.tabSize\": 2,\n",
 		},
-	}
+		{
+			name:     "missing nested property value",
+			existing: "{\n  // >>> agent-layer\n  \"a\": {\"b\": }\n  // <<< agent-layer\n}\n",
+		},
+		{
+			name:     "missing value inside nested array",
+			existing: "{\n  // >>> agent-layer\n  \"a\": [{\"b\": }]\n  // <<< agent-layer\n}\n",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			vscodeDir := filepath.Join(root, ".vscode")
+			if err := os.MkdirAll(vscodeDir, 0o700); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			path := filepath.Join(vscodeDir, "settings.json")
+			if err := os.WriteFile(path, []byte(tt.existing), 0o600); err != nil {
+				t.Fatalf("write settings.json: %v", err)
+			}
 
-	if err := writeVSCodeSettings(RealSystem{}, root, project); err == nil {
-		t.Fatalf("expected error")
+			project := &config.ProjectConfig{
+				Config: config.Config{
+					Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+				},
+			}
+			if err := writeVSCodeSettings(RealSystem{}, root, project); !errors.Is(err, errInvalidVSCodeSettings) {
+				t.Fatalf("expected invalid settings error, got %v", err)
+			}
+			unchanged, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
+			if err != nil {
+				t.Fatalf("read settings.json: %v", err)
+			}
+			if string(unchanged) != tt.existing {
+				t.Fatalf("invalid settings file was rewritten:\n%s", unchanged)
+			}
+		})
 	}
 }
 

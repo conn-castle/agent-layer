@@ -164,26 +164,11 @@ A metric whose threshold is omitted shows `(no limit set)` rather than a default
 
 If MCP servers that use `npx` are failing in VS Code, your GUI environment may not see a user-directory Node install. Install Node via Homebrew (`brew install node`) so VS Code can find `node` and `npx`, and avoid per-user installs that only exist in shell profiles.
 
-### Why did some VS Code settings disappear after `al sync`?
+### Why did a VS Code setting move or change after `al sync`?
 
-Some VS Code extensions (for example Peacock) write settings through the VS Code configuration API in a way that can land inside the Agent Layer-managed block in `.vscode/settings.json`.
+Agent Layer owns only the settings it writes inside the managed block (`// >>> agent-layer` to `// <<< agent-layer`) in `.vscode/settings.json`: `chat.tools.terminal.autoApprove`, `chat.agentSkillsLocations`, and `claudeCode.allowDangerouslySkipPermissions`. `al sync` regenerates them from `.agent-layer/config.toml` and `.agent-layer/commands.allow`, so edit those files instead of the block.
 
-If that happens, Agent Layer will replace that managed block on the next `al sync`, and those extension-written settings will be removed.
-
-Fix:
-1. Manually edit `.vscode/settings.json` and move extension-owned settings outside the managed marker block (`// >>> agent-layer` to `// <<< agent-layer`).
-2. If the managed block is currently the last block in the file, add a user-owned tail anchor key after it:
-
-```jsonc
-{
-  // >>> agent-layer
-  // ... Agent Layer managed settings ...
-  // <<< agent-layer
-  "__settingsTailAnchor": 0
-}
-```
-
-This keeps a stable non-managed tail position for extension writes.
+VS Code and some extensions (for example Peacock) add a new setting after the last property in the file, which can be inside the managed block. On the next `al sync`, Agent Layer moves every setting it does not own, with its comments, to just after the block. If text inside the block can't be read as settings, `al sync` fails instead of discarding it; fix or remove that text and run `al sync` again.
 
 ---
 
