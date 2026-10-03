@@ -605,6 +605,9 @@ func markFailure(outcomes []moveOutcome, failed int, detail string) {
 type worktreeRepair struct {
 	context string
 	target  string
+	// linked marks a linked worktree repairing itself. That repair needs a
+	// valid link to its main checkout, so it runs after main-checkout repairs.
+	linked bool
 }
 
 func resolveCheckoutWorktrees(ctx context.Context, plan []placement) error {
@@ -650,9 +653,7 @@ func resolveCheckoutWorktrees(ctx context.Context, plan []placement) error {
 				continue
 			}
 			markRegisteredWorktree(candidate, rel, "linked worktree", target)
-			if !repairTargets(candidate.worktreeRepairs, target) {
-				candidate.worktreeRepairs = append(candidate.worktreeRepairs, worktreeRepair{context: target, target: target})
-			}
+			candidate.worktreeRepairs = append(candidate.worktreeRepairs, worktreeRepair{context: target, target: target, linked: true})
 		}
 		sort.Strings(candidate.worktreeTargets)
 	}
@@ -740,21 +741,35 @@ func containsString(values []string, wanted string) bool {
 
 func repairWorktrees(ctx context.Context, root string, outcomes []moveOutcome, stderr io.Writer) error {
 	var failures []error
-	var repairs []worktreeRepair
+	var repairs, linkedRepairs []worktreeRepair
 	for _, outcome := range outcomes {
 		if outcome.status != statusMoved || !outcome.worktree {
 			continue
 		}
-		movedTo := filepath.Join(root, outcome.dest, outcome.name)
 		for _, repair := range outcome.worktreeRepairs {
-			repair.context = relocatedPath(outcome.abs, movedTo, repair.context)
-			repair.target = relocatedPath(outcome.abs, movedTo, repair.target)
-			repairs = append(repairs, repair)
-			if _, err := runGit(ctx, repair.context, "worktree", "repair", repair.target); err != nil {
-				failure := fmt.Errorf("repair worktree %s: run `git -C %s worktree repair %s`: %w", repair.target, repair.context, repair.target, err)
-				failures = append(failures, failure)
-				_, _ = fmt.Fprintf(stderr, "ERROR: %v\n", failure)
+			// A repair can name paths inside other moved entries, such as a
+			// sibling linked worktree, so translate through every move.
+			repair.context = movedPath(root, outcomes, repair.context)
+			repair.target = movedPath(root, outcomes, repair.target)
+			if repair.linked {
+				linkedRepairs = append(linkedRepairs, repair)
+			} else {
+				repairs = append(repairs, repair)
 			}
+		}
+	}
+	// Repairing from the main checkout relinks both directions, so a linked
+	// worktree repairs itself only when its main checkout did not cover it.
+	for _, repair := range linkedRepairs {
+		if !repairTargets(repairs, repair.target) {
+			repairs = append(repairs, repair)
+		}
+	}
+	for _, repair := range repairs {
+		if _, err := runGit(ctx, repair.context, "worktree", "repair", repair.target); err != nil {
+			failure := fmt.Errorf("repair worktree %s: run `git -C %s worktree repair %s`: %w", repair.target, repair.context, repair.target, err)
+			failures = append(failures, failure)
+			_, _ = fmt.Fprintf(stderr, "ERROR: %v\n", failure)
 		}
 	}
 	for _, repair := range repairs {
@@ -778,6 +793,16 @@ func repairWorktrees(ctx context.Context, root string, outcomes []moveOutcome, s
 		}
 	}
 	return errors.Join(failures...)
+}
+
+// movedPath returns where path is after the successful moves in outcomes.
+func movedPath(root string, outcomes []moveOutcome, path string) string {
+	for _, outcome := range outcomes {
+		if outcome.status == statusMoved && pathWithin(outcome.abs, path) {
+			return relocatedPath(outcome.abs, filepath.Join(root, outcome.dest, outcome.name), path)
+		}
+	}
+	return path
 }
 
 func relocatedPath(originalRoot, movedRoot, path string) string {
