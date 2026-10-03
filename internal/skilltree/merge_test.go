@@ -140,11 +140,49 @@ func TestMergeReportsIncompatibleChanges(t *testing.T) {
 			want:   ConflictBinary,
 		},
 		{
-			name:   "executable bit changed differently",
-			base:   []File{file("run.sh", "x")},
-			local:  []File{{Path: "run.sh", Data: []byte("local"), Executable: true}},
-			remote: []File{{Path: "run.sh", Data: []byte("remote")}},
+			name:   "both sides add a file with different executable bits",
+			local:  []File{{Path: "run.sh", Data: []byte("x"), Executable: true}},
+			remote: []File{file("run.sh", "x")},
 			want:   ConflictMode,
+		},
+		{
+			name:   "both sides add different text with different executable bits",
+			local:  []File{{Path: "run.sh", Data: []byte("local\n"), Executable: true}},
+			remote: []File{file("run.sh", "remote\n")},
+			want:   ConflictMode,
+		},
+		{
+			name:   "both sides add identical binary bytes with different executable bits",
+			local:  []File{{Path: "a.bin", Data: []byte{0, 1}, Executable: true}},
+			remote: []File{{Path: "a.bin", Data: []byte{0, 1}}},
+			want:   ConflictMode,
+		},
+		{
+			name:   "both sides add different binary bytes with different executable bits",
+			local:  []File{{Path: "a.bin", Data: []byte{0, 1}, Executable: true}},
+			remote: []File{{Path: "a.bin", Data: []byte{0, 2}}},
+			want:   ConflictBinary,
+		},
+		{
+			name:   "incompatible text change beside a one-sided mode change",
+			base:   []File{file("run.sh", "one\n")},
+			local:  []File{{Path: "run.sh", Data: []byte("local\n"), Executable: true}},
+			remote: []File{file("run.sh", "remote\n")},
+			want:   ConflictContent,
+		},
+		{
+			name:   "binary changed on both sides beside a one-sided mode change",
+			base:   []File{{Path: "a.bin", Data: []byte{0, 1}}},
+			local:  []File{{Path: "a.bin", Data: []byte{0, 2}}},
+			remote: []File{{Path: "a.bin", Data: []byte{0, 3}, Executable: true}},
+			want:   ConflictBinary,
+		},
+		{
+			name:   "local deletes what remote only made executable",
+			base:   []File{file("run.sh", "x")},
+			local:  nil,
+			remote: []File{{Path: "run.sh", Data: []byte("x"), Executable: true}},
+			want:   ConflictDeleteModify,
 		},
 		{
 			name:   "local file where remote adds a directory",
@@ -183,6 +221,83 @@ func TestMergeReportsIncompatibleChanges(t *testing.T) {
 			}
 			if !merged.IsEmpty() {
 				t.Fatal("a conflicted merge must not return partial content")
+			}
+		})
+	}
+}
+
+// TestMergeCombinesContentAndModeChanges proves a file's content and
+// executable bit merge independently, as in Git, so a mode change on one side
+// never blocks a content change on the other.
+func TestMergeCombinesContentAndModeChanges(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		base   File
+		local  File
+		remote File
+		want   File
+	}{
+		{
+			name:   "local edits text while remote makes it executable",
+			base:   file("run.sh", "a\nb\nc\n"),
+			local:  file("run.sh", "a\nB\nc\n"),
+			remote: File{Path: "run.sh", Data: []byte("a\nb\nc\n"), Executable: true},
+			want:   File{Path: "run.sh", Data: []byte("a\nB\nc\n"), Executable: true},
+		},
+		{
+			name:   "remote edits text while local clears the executable bit",
+			base:   File{Path: "run.sh", Data: []byte("a\nb\nc\n"), Executable: true},
+			local:  file("run.sh", "a\nb\nc\n"),
+			remote: File{Path: "run.sh", Data: []byte("a\nB\nc\n"), Executable: true},
+			want:   file("run.sh", "a\nB\nc\n"),
+		},
+		{
+			name:   "compatible text edits on both sides while remote makes it executable",
+			base:   file("run.sh", "a\nb\nc\n"),
+			local:  file("run.sh", "A\nb\nc\n"),
+			remote: File{Path: "run.sh", Data: []byte("a\nb\nC\n"), Executable: true},
+			want:   File{Path: "run.sh", Data: []byte("A\nb\nC\n"), Executable: true},
+		},
+		{
+			name:   "local changes binary bytes while remote makes it executable",
+			base:   File{Path: "tool.bin", Data: []byte{0, 1}},
+			local:  File{Path: "tool.bin", Data: []byte{0, 2}},
+			remote: File{Path: "tool.bin", Data: []byte{0, 1}, Executable: true},
+			want:   File{Path: "tool.bin", Data: []byte{0, 2}, Executable: true},
+		},
+		{
+			name:   "remote changes binary bytes while local makes it executable",
+			base:   File{Path: "tool.bin", Data: []byte{0, 1}},
+			local:  File{Path: "tool.bin", Data: []byte{0, 1}, Executable: true},
+			remote: File{Path: "tool.bin", Data: []byte{0, 3}},
+			want:   File{Path: "tool.bin", Data: []byte{0, 3}, Executable: true},
+		},
+		{
+			name:   "both sides make the same text edit while local makes it executable",
+			base:   file("run.sh", "one\n"),
+			local:  File{Path: "run.sh", Data: []byte("two\n"), Executable: true},
+			remote: file("run.sh", "two\n"),
+			want:   File{Path: "run.sh", Data: []byte("two\n"), Executable: true},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			base := mustTree(t, []File{tt.base})
+			local := mustTree(t, []File{tt.local})
+			remote := mustTree(t, []File{tt.remote})
+
+			merged, conflicts, err := Merge(base, local, remote, lineMerger)
+			if err != nil {
+				t.Fatalf("Merge: %v", err)
+			}
+			if len(conflicts) != 0 {
+				t.Fatalf("unexpected conflicts: %v", conflicts)
+			}
+			if want := mustTree(t, []File{tt.want}); !merged.Equal(want) {
+				t.Fatalf("merged tree = %v, want %v", merged.Files(), want.Files())
 			}
 		})
 	}
