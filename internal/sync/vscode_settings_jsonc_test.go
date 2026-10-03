@@ -773,3 +773,148 @@ func TestHasJSONCContentBetweenStringEscapeBackslash(t *testing.T) {
 		t.Fatalf("expected content with escaped backslash in string")
 	}
 }
+
+func TestRenderVSCodeSettingsContentMovesUserSettingsOutOfManagedBlock(t *testing.T) {
+	t.Parallel()
+	settings := &vscodeSettings{
+		ChatToolsTerminalAutoApprove: OrderedMap[bool]{"/^git(\\b.*)?$/": true},
+	}
+	header := "  // >>> agent-layer\n" +
+		"  // Managed by Agent Layer. To customize, edit .agent-layer/config.toml\n" +
+		"  // and .agent-layer/commands.allow, then re-run `al sync`.\n" +
+		"  //\n"
+	managed := "  \"chat.tools.terminal.autoApprove\": {\n" +
+		"    \"/^git(\\\\b.*)?$/\": true\n" +
+		"  }"
+
+	tests := []struct {
+		name     string
+		existing string
+		want     string
+	}{
+		{
+			name:     "setting appended by VS Code after the last managed property",
+			existing: "{\n" + header + managed + ",\n  \"editor.formatOnSave\": true\n  // <<< agent-layer\n}\n",
+			want:     "{\n" + header + managed + ",\n  // <<< agent-layer\n  \"editor.formatOnSave\": true\n}\n",
+		},
+		{
+			name: "settings with comments, nested values, and content after the block",
+			existing: "{\n" + header +
+				"  // stale note on a managed key\n" +
+				"  \"chat.tools.terminal.autoApprove\": {\"/^old(\\\\b.*)?$/\": true},\n" +
+				"  \"chat.tools.global.autoApprove\": true,\n" +
+				"  // Peacock color\n" +
+				"  \"peacock.color\": \"#123\", // tint\n" +
+				"  \"files.exclude\": {\n" +
+				"    \"**/x\": true, // not // a } comment\n" +
+				"    \"a}b\": [\"//\", {\"c\": null}]\n" +
+				"  } /* end */\n" +
+				"  // dangling note\n" +
+				"  // <<< agent-layer\n" +
+				"  \"editor.tabSize\": 2\n" +
+				"}\n",
+			want: "{\n" + header + managed + ",\n" +
+				"  // <<< agent-layer\n" +
+				"  // Peacock color\n" +
+				"  \"peacock.color\": \"#123\", // tint\n" +
+				"  \"files.exclude\": {\n" +
+				"    \"**/x\": true, // not // a } comment\n" +
+				"    \"a}b\": [\"//\", {\"c\": null}]\n" +
+				"  }, /* end */\n" +
+				"  // dangling note\n" +
+				"  \"editor.tabSize\": 2\n" +
+				"}\n",
+		},
+		{
+			name:     "properties sharing a line with a trailing comma",
+			existing: "{\n" + header + "  \"a\": 1, \"chat.agentSkillsLocations\": {}, \"b\": false,\n  // <<< agent-layer\n}\n",
+			want:     "{\n" + header + managed + ",\n  // <<< agent-layer\n  \"a\": 1,\n  \"b\": false\n}\n",
+		},
+		{
+			name:     "comment before the header",
+			existing: "{\n  // >>> agent-layer\n  // mine\n" + header[len("  // >>> agent-layer\n"):] + "  \"a\": 1\n  // <<< agent-layer\n}\n",
+			want:     "{\n" + header + managed + ",\n  // <<< agent-layer\n  // mine\n  \"a\": 1\n}\n",
+		},
+		{
+			name:     "comma on the next line",
+			existing: "{\n" + header + "  \"a\": 1\n  , \"b\": 2\n  // <<< agent-layer\n}\n",
+			want:     "{\n" + header + managed + ",\n  // <<< agent-layer\n  \"a\": 1,\n  \"b\": 2\n}\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			updated, err := renderVSCodeSettingsContent(RealSystem{}, tt.existing, settings)
+			if err != nil {
+				t.Fatalf("renderVSCodeSettingsContent error: %v", err)
+			}
+			if updated != tt.want {
+				t.Fatalf("unexpected output:\n%s\nwant:\n%s", updated, tt.want)
+			}
+			again, err := renderVSCodeSettingsContent(RealSystem{}, updated, settings)
+			if err != nil {
+				t.Fatalf("second renderVSCodeSettingsContent error: %v", err)
+			}
+			if again != updated {
+				t.Fatalf("second sync changed output:\n%s", again)
+			}
+		})
+	}
+}
+
+func TestRenderVSCodeSettingsContentMovesUserSettingsWithBOMAndCRLF(t *testing.T) {
+	t.Parallel()
+	existing := "\ufeff{\r\n  // >>> agent-layer\r\n  \"editor.formatOnSave\": true\r\n  // <<< agent-layer\r\n}\r\n"
+	want := "\ufeff{\r\n  // >>> agent-layer\r\n" +
+		"  // Managed by Agent Layer. To customize, edit .agent-layer/config.toml\r\n" +
+		"  // and .agent-layer/commands.allow, then re-run `al sync`.\r\n" +
+		"  //\r\n" +
+		"  // <<< agent-layer\r\n  \"editor.formatOnSave\": true\r\n}\r\n"
+
+	updated, err := renderVSCodeSettingsContent(RealSystem{}, existing, &vscodeSettings{})
+	if err != nil {
+		t.Fatalf("renderVSCodeSettingsContent error: %v", err)
+	}
+	if updated != want {
+		t.Fatalf("unexpected output:\n%q\nwant:\n%q", updated, want)
+	}
+}
+
+func TestRenderVSCodeSettingsContentMovesUserSettingsFromEmptyManagedBlock(t *testing.T) {
+	t.Parallel()
+	existing := "{\n  // >>> agent-layer\n  \"a\": 1\n  // note\n  // <<< agent-layer\n  \"b\": 2\n}\n"
+	want := "{\n  // >>> agent-layer\n" +
+		"  // Managed by Agent Layer. To customize, edit .agent-layer/config.toml\n" +
+		"  // and .agent-layer/commands.allow, then re-run `al sync`.\n" +
+		"  //\n" +
+		"  // <<< agent-layer\n  \"a\": 1,\n  // note\n  \"b\": 2\n}\n"
+
+	updated, err := renderVSCodeSettingsContent(RealSystem{}, existing, &vscodeSettings{})
+	if err != nil {
+		t.Fatalf("renderVSCodeSettingsContent error: %v", err)
+	}
+	if updated != want {
+		t.Fatalf("unexpected output:\n%s\nwant:\n%s", updated, want)
+	}
+}
+
+func TestRenderVSCodeSettingsContentRejectsInvalidManagedBlockContent(t *testing.T) {
+	t.Parallel()
+	for _, inner := range []string{
+		"  \"a\": tru e",
+		"  \"a\" 1",
+		"  \"a\": {\"b\": 1]",
+		"  \"a\": \"unterminated",
+		"  /* unterminated",
+		"  , \"a\": 1",
+		"  \"a\": 1,,",
+		"  editor: 1",
+		"  \"a\":",
+	} {
+		existing := "{\n  // >>> agent-layer\n" + inner + "\n  // <<< agent-layer\n}\n"
+		_, err := renderVSCodeSettingsContent(RealSystem{}, existing, &vscodeSettings{})
+		if !errors.Is(err, errInvalidVSCodeSettings) {
+			t.Fatalf("block %q: expected invalid settings error, got %v", inner, err)
+		}
+	}
+}
