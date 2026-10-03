@@ -2,6 +2,7 @@ package agentdispatch
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -473,8 +474,8 @@ func TestDanglingDispatchMappingRemainsCorruptAndOccupied(t *testing.T) {
 	} {
 		t.Run(operation.name, func(t *testing.T) {
 			err := operation.run()
-			if err == nil || err.Error() != `read dispatch mapping "`+name+`"` || errors.Is(err, errDispatchSessionNotFound) {
-				t.Fatalf("dangling mapping = %v, want a named read failure", err)
+			if err == nil || !strings.HasPrefix(err.Error(), `read dispatch mapping "`+name+`": `) || !errors.Is(err, fs.ErrNotExist) || errors.Is(err, errDispatchSessionNotFound) {
+				t.Fatalf("dangling mapping = %v, want a named read failure with its cause", err)
 			}
 			requireDispatchExitCode(t, err, ExitConfig)
 		})
