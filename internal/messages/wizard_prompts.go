@@ -41,6 +41,7 @@ const (
 	WizardWarningFmt                          = "Warning: %s\n"
 	WizardProfilePreviewHeader                = "Profile rewrite preview (.agent-layer/config.toml):"
 	WizardProfilePreviewOnly                  = "Profile preview only. Re-run with --yes to apply."
+	WizardProfileInstallPreviewNote           = "No .agent-layer/config.toml found; --yes will install Agent Layer templates before writing the profile."
 	WizardProfileNoConfigChanges              = "Profile matches current config; no config changes are required."
 	WizardProfileExistingConfigInvalidWarnFmt = "Warning: existing .agent-layer/config.toml is invalid TOML and will be replaced by the profile: %v"
 	WizardLeaveBlankOption                    = "Leave blank (use client default)"

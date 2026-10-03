@@ -19,21 +19,13 @@ import (
 // RunProfile applies a non-interactive wizard profile from a TOML config file.
 // root is the repo root; runSync executes sync after writes; pinVersion is used when install is required.
 // profilePath points to a TOML file; apply controls whether writes are performed or preview-only output is shown.
+// The profile is validated before any write, and a missing install is performed only when apply is true.
 func RunProfile(root string, runSync syncer, pinVersion string, profilePath string, apply bool, out io.Writer) error {
 	if out == nil {
 		out = os.Stdout
 	}
 	if strings.TrimSpace(profilePath) == "" {
 		return fmt.Errorf(messages.WizardProfilePathRequired)
-	}
-
-	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		if err := install.Run(root, install.Options{Overwrite: false, PinVersion: pinVersion, System: install.RealSystem{}}); err != nil {
-			return fmt.Errorf(messages.WizardInstallFailedFmt, err)
-		}
-	} else if err != nil {
-		return err
 	}
 
 	profileBytes, err := os.ReadFile(profilePath) // #nosec G304 -- profilePath is an explicit wizard profile input intentionally read by this command.
@@ -44,12 +36,31 @@ func RunProfile(root string, runSync syncer, pinVersion string, profilePath stri
 		return fmt.Errorf(messages.WizardProfileInvalidFmt, err)
 	}
 
-	currentConfig, err := os.ReadFile(configPath) // #nosec G304 -- configPath is the caller-resolved .agent-layer/config.toml path used as the profile merge target.
-	if err != nil {
+	configPath := filepath.Join(root, ".agent-layer", "config.toml")
+	installed := true
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		if apply {
+			if err := install.Run(root, install.Options{Overwrite: false, PinVersion: pinVersion, System: install.RealSystem{}}); err != nil {
+				return fmt.Errorf(messages.WizardInstallFailedFmt, err)
+			}
+		} else {
+			// Preview against an empty config so preview mode writes nothing.
+			installed = false
+			_, _ = fmt.Fprintln(out, messages.WizardProfileInstallPreviewNote)
+		}
+	} else if err != nil {
 		return err
 	}
-	if _, err := config.ParseConfigLenient(currentConfig, configPath); err != nil {
-		_, _ = fmt.Fprintf(out, messages.WizardProfileExistingConfigInvalidWarnFmt+"\n", err)
+
+	var currentConfig []byte
+	if installed {
+		currentConfig, err = os.ReadFile(configPath) // #nosec G304 -- configPath is the caller-resolved .agent-layer/config.toml path used as the profile merge target.
+		if err != nil {
+			return err
+		}
+		if _, err := config.ParseConfigLenient(currentConfig, configPath); err != nil {
+			_, _ = fmt.Fprintf(out, messages.WizardProfileExistingConfigInvalidWarnFmt+"\n", err)
+		}
 	}
 
 	preview := strings.TrimSpace(udiff.Unified(
