@@ -178,7 +178,7 @@ Version pinning keeps everyone on the same Agent Layer release and lets `al` dow
 
 Upgrade contract details (event model, compatibility guarantees, migration rules, OS/shell matrix) are maintained in one canonical location: the [upgrade contract](https://agent-layer.dev/docs/upgrades) (source: `site/docs/upgrades.mdx`).
 
-When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.6.0`). You can also edit it manually, or set the initial pin with `al init --version X.Y.Z` (or `--version latest`).
+When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.6.0`). You can also edit it manually, or set the initial pin with `al init --version X.Y.Z` (or `--version latest`). A release build of `al init` writes only its own templates, so it accepts only its own version; to pin a different release, run `al init` with that release's CLI.
 
 When you run `al` inside a repo, it locates `.agent-layer/`, reads the pinned version when present, and dispatches to that version automatically. `al init` and `al upgrade` are exceptions: they run on the invoking CLI version so pin updates and upgrade planning are not blocked by an older repo pin.
 

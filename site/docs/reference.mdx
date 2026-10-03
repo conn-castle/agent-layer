@@ -593,7 +593,7 @@ In non-interactive environments, the wizard is skipped.
 **Version pinning and network**
 
 - If you are running a release build, `al init` writes `.agent-layer/al.version`.
-- You can set the initial pin explicitly with `--version X.Y.Z` (or `--version latest`).
+- You can set the initial pin explicitly with `--version X.Y.Z` (or `--version latest`). A release build accepts only its own version, because it writes only its own templates; to pin a different release, run `al init` with that release's CLI.
 - `.agent-layer/al.version` is required for supported usage. If it is missing or invalid, run `al upgrade` to repair it.
 - Pin file parsing ignores blank lines and `#` comments, and expects exactly one version line.
 - If the pin file is empty, invalid, or contains multiple version lines, dispatch warns and falls back to the current CLI version; run `al upgrade` to rewrite a valid pin.

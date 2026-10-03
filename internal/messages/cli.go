@@ -185,6 +185,9 @@ const (
 	InitResolveLatestVersionFmt  = "resolve latest version: %w"
 	InitLatestVersionMissing     = "latest release check returned an empty version"
 
+	InitTargetRequiresNewerCLIFmt = "the Agent Layer CLI v%s cannot initialize a repository pinned to v%s because the target release templates are not embedded in this executable; run 'al update', verify 'al --version' reports v%s or newer, then retry 'al init' without --version to pin that CLI's version"
+	InitTargetOlderThanCLIFmt     = "the Agent Layer CLI v%s cannot initialize a repository pinned to older v%s because only the v%s release templates are embedded in this executable; run 'al init' with the v%s CLI instead"
+
 	InitCreateReleaseValidationRequestFmt = "create release validation request: %w"
 	InitValidateReleaseVersionRequestFmt  = "validate requested release v%s: %w"
 	InitValidateReleaseVersionStatusFmt   = "validate requested release v%s: unexpected status %s"

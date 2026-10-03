@@ -82,6 +82,9 @@ func newInitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := requireTargetCLI(pinned, messages.InitTargetRequiresNewerCLIFmt, messages.InitTargetOlderThanCLIFmt); err != nil {
+				return err
+			}
 			if strings.TrimSpace(pinVersion) != "" && !strings.EqualFold(strings.TrimSpace(pinVersion), "latest") {
 				if err := validatePinnedReleaseVersionFunc(cmd.Context(), pinned); err != nil {
 					return err
@@ -176,6 +179,35 @@ func resolvePinVersionForInit(ctx context.Context, flagValue string, buildVersio
 		return latest, nil
 	}
 	return resolvePinVersion(flag, buildVersion)
+}
+
+// requireTargetCLI rejects a release-build target version other than the running
+// CLI version, because only this version's templates are embedded. newerFmt
+// receives the current, target, and target versions; olderFmt receives the
+// current, target, current, and target versions.
+func requireTargetCLI(targetVersion string, newerFmt string, olderFmt string) error {
+	if targetVersion == "" || version.IsDev(Version) {
+		return nil
+	}
+	currentVersion, err := version.Normalize(Version)
+	if err != nil {
+		return err
+	}
+	normalizedTargetVersion, err := version.Normalize(targetVersion)
+	if err != nil {
+		return err
+	}
+	comparison, err := version.Compare(currentVersion, normalizedTargetVersion)
+	if err != nil {
+		return err
+	}
+	if comparison < 0 {
+		return fmt.Errorf(newerFmt, currentVersion, normalizedTargetVersion, normalizedTargetVersion)
+	}
+	if comparison > 0 {
+		return fmt.Errorf(olderFmt, currentVersion, normalizedTargetVersion, currentVersion, normalizedTargetVersion)
+	}
+	return nil
 }
 
 // validatePinnedReleaseVersion checks that a requested pin version exists upstream.
