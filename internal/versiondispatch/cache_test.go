@@ -2,7 +2,9 @@ package versiondispatch
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -14,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 type failingRoundTripper struct {
@@ -80,7 +84,7 @@ func TestEnsureCachedBinary(t *testing.T) {
 	cacheRoot := t.TempDir()
 
 	// 3. Run test - First time (download)
-	path, err := ensureCachedBinary(cacheRoot, version, io.Discard)
+	path, err := ensureCachedBinary(context.Background(), cacheRoot, version, io.Discard)
 	if err != nil {
 		t.Fatalf("ensureCachedBinary failed: %v", err)
 	}
@@ -101,7 +105,7 @@ func TestEnsureCachedBinary(t *testing.T) {
 	// Stop server to ensure we don't hit network
 	server.Close()
 
-	path2, err := ensureCachedBinary(cacheRoot, version, io.Discard)
+	path2, err := ensureCachedBinary(context.Background(), cacheRoot, version, io.Discard)
 	if err != nil {
 		t.Fatalf("ensureCachedBinary cached failed: %v", err)
 	}
@@ -138,7 +142,7 @@ func TestEnsureCachedBinary_ChecksumMismatch(t *testing.T) {
 
 	cacheRoot := t.TempDir()
 
-	_, err := ensureCachedBinary(cacheRoot, version, io.Discard)
+	_, err := ensureCachedBinary(context.Background(), cacheRoot, version, io.Discard)
 	if err == nil {
 		t.Fatal("expected error due to checksum mismatch, got nil")
 	}
@@ -158,7 +162,7 @@ func TestEnsureCachedBinary_Download404(t *testing.T) {
 
 	cacheRoot := t.TempDir()
 
-	_, err := ensureCachedBinary(cacheRoot, version, io.Discard)
+	_, err := ensureCachedBinary(context.Background(), cacheRoot, version, io.Discard)
 	if err == nil {
 		t.Fatal("expected error due to 404, got nil")
 	}
@@ -168,7 +172,7 @@ func TestEnsureCachedBinary_NoNetwork(t *testing.T) {
 	t.Setenv(EnvNoNetwork, "1")
 	cacheRoot := t.TempDir()
 
-	_, err := ensureCachedBinary(cacheRoot, "1.0.0", io.Discard)
+	_, err := ensureCachedBinary(context.Background(), cacheRoot, "1.0.0", io.Discard)
 	if err == nil {
 		t.Fatal("expected error when network is disabled and binary missing")
 	}
@@ -181,7 +185,7 @@ func TestEnsureCachedBinary_PlatformError(t *testing.T) {
 		},
 	}
 
-	_, err := ensureCachedBinaryWithSystem(sys, t.TempDir(), "1.0.0", io.Discard)
+	_, err := ensureCachedBinaryWithSystem(context.Background(), sys, t.TempDir(), "1.0.0", io.Discard)
 	if err == nil {
 		t.Fatal("expected error from platformStrings")
 	}
@@ -219,7 +223,7 @@ func TestEnsureCachedBinary_ChmodError(t *testing.T) {
 		},
 	}
 
-	_, err := ensureCachedBinaryWithSystem(sys, t.TempDir(), version, io.Discard)
+	_, err := ensureCachedBinaryWithSystem(context.Background(), sys, t.TempDir(), version, io.Discard)
 	if err == nil {
 		t.Fatal("expected error from chmod")
 	}
@@ -232,7 +236,7 @@ func TestEnsureCachedBinary_StatError(t *testing.T) {
 		},
 	}
 
-	_, err := ensureCachedBinaryWithSystem(sys, t.TempDir(), "1.0.0", io.Discard)
+	_, err := ensureCachedBinaryWithSystem(context.Background(), sys, t.TempDir(), "1.0.0", io.Discard)
 	if err == nil {
 		t.Fatal("expected error from stat")
 	}
@@ -259,7 +263,7 @@ func TestEnsureCachedBinary_RaceCondition(t *testing.T) {
 	cacheRoot := t.TempDir()
 	version := "1.0.0"
 
-	path, err := ensureCachedBinaryWithSystem(sys, cacheRoot, version, io.Discard)
+	path, err := ensureCachedBinaryWithSystem(context.Background(), sys, cacheRoot, version, io.Discard)
 	if err != nil {
 		t.Fatalf("ensureCachedBinary race condition failed: %v", err)
 	}
@@ -289,7 +293,7 @@ func TestEnsureCachedBinary_InternalStatError(t *testing.T) {
 		},
 	}
 
-	_, err := ensureCachedBinaryWithSystem(sys, t.TempDir(), "1.0.0", io.Discard)
+	_, err := ensureCachedBinaryWithSystem(context.Background(), sys, t.TempDir(), "1.0.0", io.Discard)
 	if err == nil {
 		t.Fatal("expected error from internal stat")
 	}
@@ -323,7 +327,7 @@ func TestEnsureCachedBinary_RenameError(t *testing.T) {
 		},
 	}
 
-	_, err := ensureCachedBinaryWithSystem(sys, t.TempDir(), version, io.Discard)
+	_, err := ensureCachedBinaryWithSystem(context.Background(), sys, t.TempDir(), version, io.Discard)
 	if err == nil {
 		t.Fatal("expected error from rename")
 	}
@@ -362,7 +366,7 @@ func TestEnsureCachedBinary_MkdirError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := ensureCachedBinary(cacheRoot, version, io.Discard)
+	_, err := ensureCachedBinary(context.Background(), cacheRoot, version, io.Discard)
 	if err == nil {
 		t.Fatal("expected error from MkdirAll")
 	}
@@ -386,7 +390,7 @@ func TestEnsureCachedBinary_LockCreationError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := ensureCachedBinary(cacheRoot, version, io.Discard)
+	_, err := ensureCachedBinary(context.Background(), cacheRoot, version, io.Discard)
 	if err == nil {
 		t.Fatal("expected error when lock path is a directory")
 	}
@@ -411,7 +415,7 @@ func TestEnsureCachedBinary_DownloadStatusError(t *testing.T) {
 
 	cacheRoot := t.TempDir()
 
-	_, err := ensureCachedBinary(cacheRoot, version, io.Discard)
+	_, err := ensureCachedBinary(context.Background(), cacheRoot, version, io.Discard)
 	if err == nil {
 		t.Fatal("expected error due to 500 status")
 	}
@@ -433,7 +437,7 @@ func TestEnsureCachedBinary_NoNetwork_Exists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := ensureCachedBinary(cacheRoot, version, io.Discard)
+	got, err := ensureCachedBinary(context.Background(), cacheRoot, version, io.Discard)
 	if err != nil {
 		t.Fatalf("expected success when binary exists even if no network, got %v", err)
 	}
@@ -443,7 +447,7 @@ func TestEnsureCachedBinary_NoNetwork_Exists(t *testing.T) {
 }
 
 func TestEnsureCachedBinaryWithSystem_RequiresSystem(t *testing.T) {
-	_, err := ensureCachedBinaryWithSystem(nil, t.TempDir(), "1.0.0", io.Discard)
+	_, err := ensureCachedBinaryWithSystem(context.Background(), nil, t.TempDir(), "1.0.0", io.Discard)
 	if err == nil {
 		t.Fatal("expected error for nil system")
 	}
@@ -465,7 +469,7 @@ func TestDownloadToFile_CopyError(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	err = downloadToFile(server.URL, f)
+	err = downloadToFile(context.Background(), server.URL, f)
 
 	if err == nil {
 		t.Fatal("expected error on short read")
@@ -480,7 +484,7 @@ func TestDownloadToFileWithSystem_RequiresSystem(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	err = downloadToFileWithSystem(nil, "https://example.invalid/file", f)
+	err = downloadToFileWithSystem(context.Background(), nil, "https://example.invalid/file", f)
 	if err == nil {
 		t.Fatal("expected error for nil system")
 	}
@@ -501,7 +505,7 @@ func TestFetchChecksum_ScannerError(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := fetchChecksum(version, asset)
+	_, err := fetchChecksum(context.Background(), version, asset)
 	if err == nil {
 		t.Fatal("expected error when checksum not found")
 	}
@@ -520,7 +524,7 @@ func TestFetchChecksum_StatusError(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := fetchChecksum(version, asset)
+	_, err := fetchChecksum(context.Background(), version, asset)
 	if err == nil {
 		t.Fatal("expected error on 500 status")
 	}
@@ -565,7 +569,7 @@ func TestEnsureCachedBinaryWithSystem_ChecksumUsesProvidedSystemTimeout(t *testi
 	}
 
 	cacheRoot := t.TempDir()
-	if _, err := ensureCachedBinaryWithSystem(sys, cacheRoot, version, io.Discard); err != nil {
+	if _, err := ensureCachedBinaryWithSystem(context.Background(), sys, cacheRoot, version, io.Discard); err != nil {
 		t.Fatalf("ensureCachedBinaryWithSystem failed: %v", err)
 	}
 }
@@ -613,7 +617,7 @@ func TestFetchChecksum_NotFound(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := fetchChecksum(version, asset)
+	_, err := fetchChecksum(context.Background(), version, asset)
 	if err == nil {
 		t.Fatal("expected error when checksum not found in file")
 	}
@@ -635,7 +639,7 @@ func TestDownloadToFile_ClientGetError(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	err = downloadToFileWithSystem(sys, "https://example.invalid/file", f)
+	err = downloadToFileWithSystem(context.Background(), sys, "https://example.invalid/file", f)
 	if err == nil {
 		t.Fatal("expected error from client.Get")
 	}
@@ -654,7 +658,7 @@ func TestFetchChecksum_ClientGetError(t *testing.T) {
 	releaseBaseURL = "http://invalid.test.invalid:99999"
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := fetchChecksumWithSystem(sys, "1.0.0", "some-asset")
+	_, err := fetchChecksumWithSystem(context.Background(), sys, "1.0.0", "some-asset")
 	if err == nil {
 		t.Fatal("expected error from client.Get")
 	}
@@ -676,7 +680,7 @@ func TestFetchChecksum_PathPrefixes(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	got, err := fetchChecksum(version, asset)
+	got, err := fetchChecksum(context.Background(), version, asset)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -701,7 +705,7 @@ func TestFetchChecksum_StarPrefix(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	got, err := fetchChecksum(version, asset)
+	got, err := fetchChecksum(context.Background(), version, asset)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -720,7 +724,7 @@ func TestEnsureCachedBinary_CreateTempError(t *testing.T) {
 		},
 	}
 
-	_, err := ensureCachedBinaryWithSystem(sys, t.TempDir(), "1.0.0", io.Discard)
+	_, err := ensureCachedBinaryWithSystem(context.Background(), sys, t.TempDir(), "1.0.0", io.Discard)
 	if err == nil {
 		t.Fatal("expected error from CreateTemp")
 	}
@@ -783,7 +787,7 @@ func TestEnsureCachedBinary_SyncSuccess(t *testing.T) {
 
 	// This test verifies the happy path completes (Sync doesn't fail in normal case).
 	cacheRoot := t.TempDir()
-	_, err := ensureCachedBinaryWithSystem(sys, cacheRoot, version, io.Discard)
+	_, err := ensureCachedBinaryWithSystem(context.Background(), sys, cacheRoot, version, io.Discard)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -817,7 +821,7 @@ func TestEnsureCachedBinary_DownloadError(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := ensureCachedBinaryWithSystem(sys, t.TempDir(), "1.0.0", io.Discard)
+	_, err := ensureCachedBinaryWithSystem(context.Background(), sys, t.TempDir(), "1.0.0", io.Discard)
 	if err == nil {
 		t.Fatal("expected error from download")
 	}
@@ -846,7 +850,7 @@ func TestEnsureCachedBinary_FetchChecksumError(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := ensureCachedBinary(t.TempDir(), version, io.Discard)
+	_, err := ensureCachedBinary(context.Background(), t.TempDir(), version, io.Discard)
 	if err == nil {
 		t.Fatal("expected error from fetchChecksum")
 	}
@@ -879,7 +883,7 @@ func TestDownloadToFile_404_ActionableMessage(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	err = downloadToFile(server.URL+"/download/v99.0.0/al-darwin-arm64", f)
+	err = downloadToFile(context.Background(), server.URL+"/download/v99.0.0/al-darwin-arm64", f)
 	if err == nil {
 		t.Fatal("expected error for 404")
 	}
@@ -933,7 +937,7 @@ func TestDownloadToFile_Timeout_ActionableMessage(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	err = downloadToFileWithSystem(sys, "https://example.invalid/file", f)
+	err = downloadToFileWithSystem(context.Background(), sys, "https://example.invalid/file", f)
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
@@ -959,7 +963,7 @@ func TestFetchChecksum_404_ActionableMessage(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := fetchChecksum("99.0.0", "some-asset")
+	_, err := fetchChecksum(context.Background(), "99.0.0", "some-asset")
 	if err == nil {
 		t.Fatal("expected error for 404")
 	}
@@ -996,7 +1000,7 @@ func TestEnsureCachedBinary_ProgressOutput(t *testing.T) {
 	defer func() { releaseBaseURL = oldURL }()
 
 	var buf bytes.Buffer
-	_, err := ensureCachedBinary(t.TempDir(), version, &buf)
+	_, err := ensureCachedBinary(context.Background(), t.TempDir(), version, &buf)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1024,7 +1028,7 @@ func TestEnsureCachedBinary_NoProgressOnCacheHit(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	_, err := ensureCachedBinary(cacheRoot, version, &buf)
+	_, err := ensureCachedBinary(context.Background(), cacheRoot, version, &buf)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1047,7 +1051,7 @@ func TestFetchChecksum_Timeout_ActionableMessage(t *testing.T) {
 	releaseBaseURL = "https://example.invalid"
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := fetchChecksumWithSystem(sys, "1.0.0", "some-asset")
+	_, err := fetchChecksumWithSystem(context.Background(), sys, "1.0.0", "some-asset")
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
@@ -1057,6 +1061,90 @@ func TestFetchChecksum_Timeout_ActionableMessage(t *testing.T) {
 	}
 	if !strings.Contains(msg, "Remediation") {
 		t.Errorf("expected Remediation guidance in error, got: %s", msg)
+	}
+}
+
+func TestRequestTimeout_ContextIdentity(t *testing.T) {
+	for _, operation := range []string{"download", "checksum"} {
+		for _, parentDeadline := range []bool{true, false} {
+			name := "client_timeout"
+			if parentDeadline {
+				name = "parent_deadline"
+			}
+			t.Run(operation+"/"+name, func(t *testing.T) {
+				url := fmt.Sprintf("%s/download/v1.0.0/checksums.txt", releaseBaseURL)
+				var dest *os.File
+				if operation == "download" {
+					url = "https://example.invalid/file"
+					var err error
+					dest, err = os.Create(filepath.Join(t.TempDir(), "file")) // #nosec G304 -- path is constructed from test-controlled inputs.
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer func() { _ = dest.Close() }()
+				}
+
+				requests := 0
+				sys := &testSystem{
+					HTTPClientFunc: func() *http.Client {
+						return &http.Client{
+							Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+								requests++
+								if err := req.Context().Err(); err != nil {
+									t.Fatalf("context expired before request started: %v", err)
+								}
+								<-req.Context().Done()
+								return nil, req.Context().Err()
+							}),
+						}
+					},
+					GetenvFunc: func(key string) string {
+						if key == "AL_DOWNLOAD_TIMEOUT" && !parentDeadline {
+							return "10ms"
+						}
+						return ""
+					},
+					SleepFunc: func(time.Duration) {
+						if parentDeadline {
+							t.Fatal("parent deadline scheduled a retry")
+						}
+					},
+				}
+				ctx := context.Background()
+				if parentDeadline {
+					var cancel context.CancelFunc
+					ctx, cancel = context.WithTimeout(ctx, 50*time.Millisecond)
+					defer cancel()
+				}
+
+				var err error
+				if operation == "download" {
+					err = downloadToFileWithSystem(ctx, sys, url, dest)
+				} else {
+					_, err = fetchChecksumWithSystem(ctx, sys, "1.0.0", "some-asset")
+				}
+				if err == nil {
+					t.Fatal("expected timeout error")
+				}
+				wantMessage := fmt.Sprintf(messages.DispatchDownloadTimeoutFmt, url)
+				wantRequests := downloadRetryCount + 1
+				if parentDeadline {
+					wantMessage += ": " + context.DeadlineExceeded.Error()
+					wantRequests = 1
+				} else if ctx.Err() != nil {
+					t.Fatalf("client timeout expired parent context: %v", ctx.Err())
+				}
+				if errors.Is(err, context.DeadlineExceeded) != parentDeadline {
+					t.Fatalf("deadline identity = %v, want %v: %v", errors.Is(err, context.DeadlineExceeded), parentDeadline, err)
+				}
+				if err.Error() != wantMessage {
+					t.Fatalf("error = %q, want %q", err, wantMessage)
+				}
+				if requests != wantRequests {
+					t.Fatalf("requests = %d, want %d", requests, wantRequests)
+				}
+			})
+		}
 	}
 }
 
@@ -1074,7 +1162,7 @@ func TestDownloadToFile_TooLarge(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	err = downloadToFile(server.URL, f)
+	err = downloadToFile(context.Background(), server.URL, f)
 	if err == nil {
 		t.Fatal("expected size-limit error")
 	}
@@ -1111,11 +1199,74 @@ func TestDownloadToFile_RetryOnTransientError(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	if err := downloadToFileWithSystem(sys, "https://example.invalid/file", f); err != nil {
+	if err := downloadToFileWithSystem(context.Background(), sys, "https://example.invalid/file", f); err != nil {
 		t.Fatalf("expected retry to succeed, got %v", err)
 	}
 	if attempt != 2 {
 		t.Fatalf("expected 2 attempts, got %d", attempt)
+	}
+}
+
+// cancelingTestSystem returns a system whose HTTP requests cancel ctx and then
+// wait for their own context, failing the test if a retry is scheduled.
+func cancelingTestSystem(t *testing.T, cancel context.CancelFunc, requests *int) *testSystem {
+	t.Helper()
+	return &testSystem{
+		HTTPClientFunc: func() *http.Client {
+			return &http.Client{
+				Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+					*requests++
+					cancel()
+					select {
+					case <-req.Context().Done():
+						return nil, req.Context().Err()
+					case <-time.After(5 * time.Second):
+						return nil, errors.New("request context not canceled")
+					}
+				}),
+			}
+		},
+		SleepFunc: func(time.Duration) { t.Fatal("canceled request waited to retry") },
+	}
+}
+
+func TestFetchChecksum_CanceledRequestIsNotRetried(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	requests := 0
+	sys := cancelingTestSystem(t, cancel, &requests)
+
+	if _, err := fetchChecksumWithSystem(ctx, sys, "1.0.0", "al-linux-amd64"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want 1", requests)
+	}
+}
+
+func TestEnsureCachedBinary_CanceledDownloadIsNotRetried(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	requests := 0
+	sys := cancelingTestSystem(t, cancel, &requests)
+
+	cacheDir := t.TempDir()
+	path, err := ensureCachedBinaryWithSystem(ctx, sys, cacheDir, "1.0.0", io.Discard)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got path %q, err %v", path, err)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want 1", requests)
+	}
+	osName, arch, _ := platformStrings()
+	entries, err := os.ReadDir(filepath.Join(cacheDir, "versions", "1.0.0", osName+"-"+arch))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".lock") {
+			t.Fatalf("unexpected cache entry after canceled download: %s", entry.Name())
+		}
 	}
 }
 
@@ -1152,7 +1303,7 @@ func TestDownloadToFile_RetryOnCopyErrorResetsDestination(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	if err := downloadToFileWithSystem(sys, "https://example.invalid/file", f); err != nil {
+	if err := downloadToFileWithSystem(context.Background(), sys, "https://example.invalid/file", f); err != nil {
 		t.Fatalf("expected retry to succeed, got %v", err)
 	}
 	if attempt != 2 {
@@ -1189,7 +1340,7 @@ func TestDownloadToFileWithSystem_TooLargeFromSystemEnv(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	err = downloadToFileWithSystem(sys, server.URL, f)
+	err = downloadToFileWithSystem(context.Background(), sys, server.URL, f)
 	if err == nil {
 		t.Fatal("expected size-limit error")
 	}
