@@ -99,13 +99,12 @@ func IsSecretQueryKey(key string) bool {
 // reference whose scheme or host is itself a placeholder. Keys are percent-
 // decoded so an encoded key cannot slip past the vocabulary above.
 func LiteralSecretQueryKey(rawURL string) (string, bool) {
+	// Remove the fragment first: a "?" after "#" is not a query delimiter.
+	rawURL, _, _ = strings.Cut(rawURL, "#")
 	_, query, hasQuery := strings.Cut(rawURL, "?")
 	if !hasQuery {
 		return "", false
 	}
-	// A fragment is not part of the query and never carries a git credential.
-	query, _, _ = strings.Cut(query, "#")
-
 	for _, pair := range strings.Split(query, "&") {
 		key, value, hasValue := strings.Cut(pair, "=")
 		if !hasValue {
