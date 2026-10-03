@@ -324,6 +324,44 @@ instruction_token_threshold = 100
 	assert.NotContains(t, out, "[warnings]")
 }
 
+func TestPatchConfig_WarningsDisabledKeepsNonThresholdKeys(t *testing.T) {
+	content := `
+[warnings]
+version_update_on_sync = true
+noise_mode = "quiet"
+instruction_token_threshold = 100
+mcp_server_threshold = 15
+mcp_tools_total_threshold = 60
+mcp_server_tools_threshold = 25
+mcp_schema_tokens_total_threshold = 30000
+mcp_schema_tokens_server_threshold = 20000
+`
+	choices := NewChoices()
+	choices.WarningsEnabledTouched = true
+	choices.WarningsEnabled = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	var parsed struct {
+		Warnings map[string]any `toml:"warnings"`
+	}
+	require.NoError(t, toml.Unmarshal([]byte(out), &parsed))
+	assert.Equal(t, map[string]any{"version_update_on_sync": true, "noise_mode": "quiet"}, parsed.Warnings)
+}
+
+func TestPatchConfig_WarningsDisabledWithoutSectionAddsNone(t *testing.T) {
+	choices := NewChoices()
+	choices.WarningsEnabledTouched = true
+	choices.WarningsEnabled = false
+
+	out, err := PatchConfig("[approvals]\nmode = \"all\"\n", choices)
+	require.NoError(t, err)
+
+	assert.NotContains(t, out, "[warnings]")
+	assert.NotContains(t, out, "version_update_on_sync")
+}
+
 func TestPatchConfig_PreservesLeadingComments(t *testing.T) {
 	content := `
 [approvals]
