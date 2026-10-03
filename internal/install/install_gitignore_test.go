@@ -795,7 +795,8 @@ func TestRepairedGitignoreKeepsHandAuthoredRootClaudeTracked(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(blockPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	// Blocks written before v0.17.1 moved the Claude shim still ignore root CLAUDE.md.
+	// The Claude shim moved in v0.17.1. Blocks written before that release
+	// still ignore root CLAUDE.md.
 	if err := os.WriteFile(blockPath, []byte("/.agent-layer/\n/AGENTS.md\n/CLAUDE.md\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
