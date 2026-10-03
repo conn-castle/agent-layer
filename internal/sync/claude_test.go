@@ -1103,6 +1103,72 @@ func TestCleanClaudeChimeHookRemovesOnlyManagedHandler(t *testing.T) {
 	}
 }
 
+func TestCleanClaudeChimeHookRemovesHookWrittenBySync(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Notifications: config.NotificationsConfig{Chime: &enabled},
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{AgentSpecific: map[string]any{
+					"hooks": map[string]any{"Stop": []any{
+						map[string]any{"hooks": []any{map[string]any{"type": "command", "command": "echo user", "timeout": int64(3)}}},
+					}},
+				}},
+			},
+		},
+	}
+	if err := writeClaudeSettings(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeClaudeSettings: %v", err)
+	}
+	settingsPath := filepath.Join(root, ".claude", "settings.json")
+	if written := readFileForTest(t, settingsPath); !strings.Contains(written, agentLayerChimeMarker) {
+		t.Fatalf("expected sync to write the chime hook, got:\n%s", written)
+	}
+
+	if err := cleanClaudeChimeHook(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanClaudeChimeHook: %v", err)
+	}
+	updated := readFileForTest(t, settingsPath)
+	if strings.Contains(updated, agentLayerChimeMarker) {
+		t.Fatalf("expected managed chime removed, got:\n%s", updated)
+	}
+	if !strings.Contains(updated, `"command": "echo user"`) {
+		t.Fatalf("expected user Stop hook preserved, got:\n%s", updated)
+	}
+}
+
+func TestCleanClaudeChimeHookRemovesEscapedLegacyHandler(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	settingsPath := filepath.Join(root, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	unmarkedLegacy := strings.TrimSuffix(legacyAgentLayerClaudeChimeCommand, " # "+agentLayerChimeMarker)
+	settings := map[string]any{"hooks": map[string]any{"Stop": []any{
+		map[string]any{"hooks": []any{chimeHandler(unmarkedLegacy)}},
+	}}}
+	content, err := RealSystem{}.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal settings: %v", err)
+	}
+	if strings.Contains(string(content), unmarkedLegacy) {
+		t.Fatalf("expected Go JSON encoding to escape the legacy command, got:\n%s", content)
+	}
+	if err := os.WriteFile(settingsPath, content, 0o600); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+
+	if err := cleanClaudeChimeHook(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanClaudeChimeHook: %v", err)
+	}
+	if updated := readFileForTest(t, settingsPath); strings.Contains(updated, "afplay") {
+		t.Fatalf("expected escaped legacy chime removed, got:\n%s", updated)
+	}
+}
+
 func TestCleanClaudeChimeHookRejectsSymlinkSettingsDir(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -1287,6 +1353,8 @@ func TestCleanClaudeChimeHookNoopWhenChimeTextIsOutsideHooks(t *testing.T) {
 		"scalar Stop entry": `{"hooks":{"Stop":["keep scalar entry"]},"note":"` + agentLayerClaudeChimeCommand + `"}`,
 		"group without hooks": `{"hooks":{"Stop":[{"matcher":"keep group"}]},"note":"` +
 			agentLayerClaudeChimeCommand + `"}`,
+		"escaped command": `{"hooks":{},"note":"` +
+			strings.NewReplacer(">", `\u003e`, "&", `\u0026`).Replace(agentLayerClaudeChimeCommand) + `"}`,
 	}
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -91,9 +92,16 @@ func containsExactChimeCommand(value any, commands map[string]struct{}) bool {
 	return false
 }
 
+// containsChimeCommandText reports whether JSON content mentions a managed
+// chime command, either raw or in the escaped form Go's JSON encoder writes
+// (for example, ">" as \u003e and "&" as \u0026).
 func containsChimeCommandText(content string, command string) bool {
 	for variant := range managedChimeCommandVariants(command) {
 		if strings.Contains(content, variant) {
+			return true
+		}
+		escaped, err := json.Marshal(variant)
+		if err == nil && strings.Contains(content, strings.Trim(string(escaped), `"`)) {
 			return true
 		}
 	}
