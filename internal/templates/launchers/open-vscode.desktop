@@ -2,6 +2,6 @@
 Type=Application
 Name=Open VS Code
 Comment=Open this repo in VS Code with CLAUDE_CONFIG_DIR, CODEX_HOME, and AL_* environment variables
-Exec=sh -c "exec \\"\\$(dirname \\"\\$1\\")/open-vscode.sh\\"" _ %k
+Exec=sh -c "if [ -n \\"\\$2\\" ]; then exec \\"\\$(dirname \\"\\$2\\")/open-vscode.sh\\"; else exec \\"\\$1\\"; fi" _ "__OPEN_VSCODE_SHELL__" %k
 Terminal=true
 Categories=Development;IDE;

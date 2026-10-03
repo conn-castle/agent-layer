@@ -1,6 +1,7 @@
 package launchers
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWriteVSCodeLaunchers(t *testing.T) {
@@ -215,53 +217,153 @@ func TestWriteVSCodeLaunchersContent(t *testing.T) {
 	}
 }
 
-// TestVSCodeDesktopEntryExecRunsShellScript parses the generated Exec key the
-// way the Desktop Entry Specification requires and runs it, so a quoting error
-// that stops GLib-based launchers from finding open-vscode.sh fails here.
+// TestVSCodeDesktopEntryExecRunsShellScript covers both known and unknown %k
+// locations, and checks real GLib expansion when gio is installed.
 func TestVSCodeDesktopEntryExecRunsShellScript(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("desktop entries run through sh on Linux")
 	}
-	root := filepath.Join(t.TempDir(), "my repo")
-	if err := WriteVSCodeLaunchers(RealSystem{}, root); err != nil {
-		t.Fatalf("WriteVSCodeLaunchers error: %v", err)
-	}
-	paths := VSCodePaths(root)
-	marker := filepath.Join(paths.AgentLayerDir, "ran")
-	stub := "#!/bin/sh\nprintf ran > \"$(dirname \"$0\")/ran\"\n"
-	if err := os.WriteFile(paths.Shell, []byte(stub), 0o755); err != nil { // #nosec G306 -- test stub must be executable.
-		t.Fatalf("write stub open-vscode.sh: %v", err)
-	}
+	for _, tc := range []struct {
+		name     string
+		repo     string
+		relative bool
+	}{
+		{name: "spaces", repo: "my repo"},
+		{name: "reserved", repo: "repo 'single' \"double\" \\ $cash `tick` 100% %k"},
+		{name: "whitespace", repo: "repo\nwith\ttabs"},
+		{name: "relative", repo: "relative repo", relative: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), tc.repo)
+			writeRoot := root
+			if tc.relative {
+				cwd, err := os.Getwd()
+				if err != nil {
+					t.Fatal(err)
+				}
+				writeRoot, err = filepath.Rel(cwd, root)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := WriteVSCodeLaunchers(RealSystem{}, writeRoot); err != nil {
+				t.Fatalf("WriteVSCodeLaunchers error: %v", err)
+			}
+			paths := VSCodePaths(root)
+			marker := filepath.Join(paths.AgentLayerDir, "ran")
+			stub := "#!/bin/sh\nprintf ran > \"$(dirname \"$0\")/ran\"\n"
+			if err := os.WriteFile(paths.Shell, []byte(stub), 0o755); err != nil { // #nosec G306 -- test stub must be executable.
+				t.Fatalf("write stub open-vscode.sh: %v", err)
+			}
 
-	content, err := os.ReadFile(paths.Desktop) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read .desktop file: %v", err)
-	}
-	var execValue string
-	for _, line := range strings.Split(string(content), "\n") {
-		if value, ok := strings.CutPrefix(line, "Exec="); ok {
-			execValue = value
-		}
-	}
-	argv, err := parseDesktopExec(execValue, paths.Desktop)
-	if err != nil {
-		t.Fatalf("parse Exec %q: %v", execValue, err)
-	}
+			content, err := os.ReadFile(paths.Desktop) // #nosec G304 -- path is constructed from test-controlled inputs.
+			if err != nil {
+				t.Fatalf("read .desktop file: %v", err)
+			}
+			var execValue string
+			for _, line := range strings.Split(string(content), "\n") {
+				if value, ok := strings.CutPrefix(line, "Exec="); ok {
+					execValue = value
+				}
+			}
+			callerDir := t.TempDir()
+			for _, expansion := range []string{"known", "omitted", "empty-argument"} {
+				t.Run(expansion, func(t *testing.T) {
+					desktopFile := paths.Desktop
+					if expansion != "known" {
+						desktopFile = ""
+					}
+					argv, err := parseDesktopExec(execValue, desktopFile)
+					if err != nil {
+						t.Fatalf("parse Exec %q: %v", execValue, err)
+					}
+					if expansion == "empty-argument" {
+						argv = append(argv, "")
+					}
+					cmd := exec.Command(argv[0], argv[1:]...) // #nosec G204 -- argv comes from the embedded launcher template.
+					cmd.Dir = callerDir
+					if out, err := cmd.CombinedOutput(); err != nil {
+						t.Fatalf("run Exec %q: %v\n%s", argv, err, out)
+					}
+					if err := os.Remove(marker); err != nil {
+						t.Fatalf("Exec did not run open-vscode.sh: %v", err)
+					}
+				})
+			}
 
-	cmd := exec.Command(argv[0], argv[1:]...) // #nosec G204 -- argv comes from the embedded launcher template.
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("run Exec %q: %v\n%s", argv, err, out)
-	}
-	if _, err := os.Stat(marker); err != nil {
-		t.Fatalf("Exec did not run open-vscode.sh: %v", err)
+			t.Run("desktop-file-validate", func(t *testing.T) {
+				validator, err := exec.LookPath("desktop-file-validate")
+				if err != nil {
+					t.Skip("desktop-file-validate is not installed")
+				}
+				if out, err := exec.Command(validator, paths.Desktop).CombinedOutput(); err != nil { // #nosec G204 -- validator and desktop path are test-controlled.
+					t.Fatalf("desktop-file-validate: %v\n%s", err, out)
+				}
+			})
+			t.Run("gio", func(t *testing.T) {
+				if runtime.GOOS != "linux" {
+					t.Skip("gio launch is only supported on Linux")
+				}
+				gio, err := exec.LookPath("gio")
+				if err != nil {
+					t.Skip("gio is not installed")
+				}
+				// Test the actual Exec parser and field expansion without needing
+				// a graphical terminal. The generated entry keeps Terminal=true.
+				desktop := filepath.Join(paths.AgentLayerDir, "gio.desktop")
+				headless := strings.ReplaceAll(string(content), "Terminal=true", "Terminal=false")
+				if err := os.WriteFile(desktop, []byte(headless), 0o600); err != nil { // #nosec G703 -- path is constructed from test-controlled inputs.
+					t.Fatal(err)
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				cmd := exec.CommandContext(ctx, gio, "launch", desktop) // #nosec G204 -- gio and desktop path are test-controlled.
+				cmd.Dir = callerDir
+				if out, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("gio launch: %v\n%s", err, out)
+				}
+				// gio can return before the launched application finishes.
+				for {
+					if err := os.Remove(marker); err == nil {
+						break
+					} else if !os.IsNotExist(err) {
+						t.Fatal(err)
+					}
+					select {
+					case <-ctx.Done():
+						t.Fatal("gio did not run open-vscode.sh")
+					case <-time.After(10 * time.Millisecond):
+					}
+				}
+			})
+			t.Run("moved-with-known-location", func(t *testing.T) {
+				movedRoot := filepath.Join(t.TempDir(), tc.repo)
+				if err := os.Rename(root, movedRoot); err != nil {
+					t.Fatal(err)
+				}
+				movedPaths := VSCodePaths(movedRoot)
+				argv, err := parseDesktopExec(execValue, movedPaths.Desktop)
+				if err != nil {
+					t.Fatal(err)
+				}
+				cmd := exec.Command(argv[0], argv[1:]...) // #nosec G204 -- argv comes from the embedded launcher template.
+				cmd.Dir = callerDir
+				if out, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("run moved Exec %q: %v\n%s", argv, err, out)
+				}
+				if _, err := os.Stat(filepath.Join(movedPaths.AgentLayerDir, "ran")); err != nil {
+					t.Fatalf("Exec did not run the moved sibling script: %v", err)
+				}
+			})
+		})
 	}
 }
 
 // parseDesktopExec splits a Desktop Entry Exec value into argv per the Desktop
-// Entry Specification, substituting desktopFile for the %k field code. It
-// rejects reserved characters outside double quotes and field codes inside
-// them, both of which the specification forbids.
+// Entry Specification, substituting desktopFile for the %k field code (or
+// omitting it when the location is unknown). It rejects reserved characters
+// outside double quotes and field codes inside them, while allowing literal %%.
 func parseDesktopExec(value string, desktopFile string) ([]string, error) {
 	// Exec is a string value, so its general escape sequences apply first.
 	value = strings.NewReplacer(`\\`, `\`, `\s`, " ", `\t`, "\t", `\n`, "\n", `\r`, "\r").Replace(value)
@@ -280,6 +382,10 @@ func parseDesktopExec(value string, desktopFile string) ([]string, error) {
 			arg.WriteByte(value[i])
 		case inQuote && c == '"':
 			inQuote = false
+		case c == '%' && i+1 < len(value) && value[i+1] == '%':
+			arg.WriteString("%%")
+			inArg = true
+			i++
 		case inQuote && c == '%':
 			return nil, fmt.Errorf("field code inside quotes at offset %d", i)
 		case inQuote:
@@ -305,13 +411,19 @@ func parseDesktopExec(value string, desktopFile string) ([]string, error) {
 	if inArg {
 		argv = append(argv, arg.String())
 	}
-	for i, a := range argv {
+	expanded := argv[:0]
+	for _, a := range argv {
 		if a == "%k" {
-			argv[i] = desktopFile
-		} else if strings.Contains(a, "%") {
+			if desktopFile != "" {
+				expanded = append(expanded, desktopFile)
+			}
+		} else if strings.Contains(strings.ReplaceAll(a, "%%", ""), "%") {
 			return nil, fmt.Errorf("unsupported field code in argument %q", a)
+		} else {
+			expanded = append(expanded, strings.ReplaceAll(a, "%%", "%"))
 		}
 	}
+	argv = expanded
 	if len(argv) == 0 {
 		return nil, fmt.Errorf("empty Exec")
 	}
