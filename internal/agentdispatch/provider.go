@@ -577,6 +577,36 @@ func reduceClaudeEvent(expected string, value map[string]any) []providerEvent {
 	return events
 }
 
+// claudeTaskTracker withholds completion from a successful Claude result while
+// a Claude-managed task is still running. Headless Claude waits for that work
+// (see claudePrintBackgroundWaitCeilingEnv) and reports a later result, so an
+// earlier result must not start the shutdown grace that would kill the work.
+type claudeTaskTracker struct {
+	outstanding       map[string]struct{}
+	completionPending bool
+}
+
+func (t *claudeTaskTracker) reduce(record structuredRecord, events []providerEvent) []providerEvent {
+	eventType, _ := record.Fields[jsonTypeKey].(string)
+	if eventType == claudeSystemEventType && record.Claude.TaskID.Valid && strings.TrimSpace(record.Claude.TaskID.Value) != "" {
+		switch subtype, _ := record.Fields["subtype"].(string); subtype {
+		case "task_started":
+			t.outstanding[record.Claude.TaskID.Value] = struct{}{}
+		case "task_notification":
+			delete(t.outstanding, record.Claude.TaskID.Value)
+		}
+		return events
+	}
+	if len(events) == 0 || events[len(events)-1].Kind != eventComplete {
+		return events
+	}
+	t.completionPending = len(t.outstanding) > 0
+	if t.completionPending {
+		events[len(events)-1] = providerEvent{Kind: eventProgress, Activity: "claude_waiting_for_background_tasks"}
+	}
+	return events
+}
+
 func reduceCodexEvent(value map[string]any) []providerEvent {
 	eventType, _ := value[jsonTypeKey].(string)
 	switch eventType {
@@ -840,9 +870,15 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 	var grokAccumulator strings.Builder
 	var grokTerminalSeen, antigravityTerminalSeen bool
 	museState := museReducer{expectedSession: expectedSession}
+	claudeTasks := claudeTaskTracker{outstanding: make(map[string]struct{})}
 	finish := func() error {
 		if agent == AgentMuse && museState.awaitingBackground {
 			return consume(providerEvent{Kind: eventFailure, Reason: "Muse completed without a final answer"})
+		}
+		if agent == AgentClaude && claudeTasks.completionPending {
+			// The stream ended without a later result, so the latest
+			// successful result is the final answer.
+			return consume(providerEvent{Kind: eventComplete})
 		}
 		return nil
 	}
@@ -910,7 +946,7 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 					lineageEvents = normalizer.reduce(record)
 				}
 			}
-			events = reduceClaudeEvent(expectedSession, record.Fields)
+			events = claudeTasks.reduce(record, reduceClaudeEvent(expectedSession, record.Fields))
 		case AgentCodex:
 			events = reduceCodexEvent(record.Fields)
 		case AgentGrok:

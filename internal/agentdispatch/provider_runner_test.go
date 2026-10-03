@@ -641,6 +641,71 @@ func TestClaudeRunnerReadsLineageAndLatestResultThroughEOF(t *testing.T) {
 	}
 }
 
+func TestClaudeResultWaitsForOutstandingTasksBeforeCompleting(t *testing.T) {
+	result := func(answer string) string {
+		return `{"type":"result","session_id":"` + runtimeSessionID + `","is_error":false,"result":"` + answer + `"}` + "\n"
+	}
+	started := func(id, taskType string) string {
+		return `{"type":"system","subtype":"task_started","task_id":"` + id + `","tool_use_id":"tool-` + id + `","task_type":"` + taskType + `","is_backgrounded":true}` + "\n"
+	}
+	notified := func(id string) string {
+		return `{"type":"system","subtype":"task_notification","task_id":"` + id + `","status":"completed"}` + "\n"
+	}
+	for _, test := range []struct {
+		name   string
+		stream string
+		want   []string
+	}{
+		{
+			name:   "background bash completes before the final result",
+			stream: started("bash", "local_bash") + result("ci is running in the background") + notified("bash") + result("ci passed"),
+			want:   []string{"answer:ci is running in the background", "answer:ci passed", "complete"},
+		},
+		{
+			name:   "background agent completes before the final result",
+			stream: started("agent", "local_agent") + result("review is running") + notified("agent") + result("review done"),
+			want:   []string{"answer:review is running", "answer:review done", "complete"},
+		},
+		{
+			name:   "task finished before the result",
+			stream: started("bash", "local_bash") + notified("bash") + result("done"),
+			want:   []string{"answer:done", "complete"},
+		},
+		{
+			name:   "stream ends while a task is outstanding",
+			stream: started("bash", "local_bash") + result("interim"),
+			want:   []string{"answer:interim", "complete"},
+		},
+		{
+			name:   "error result while a task is outstanding",
+			stream: started("bash", "local_bash") + `{"type":"result","session_id":"` + runtimeSessionID + `","is_error":true,"result":"boom"}` + "\n",
+			want:   []string{"failure:boom"},
+		},
+	} {
+		for _, lineage := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/lineage=%t", test.name, lineage), func(t *testing.T) {
+				var got []string
+				if err := readStructuredEventsWithLineage(strings.NewReader(test.stream), io.Discard, AgentClaude, runtimeSessionID, lineage, func(event providerEvent) error {
+					switch event.Kind {
+					case eventAnswer:
+						got = append(got, "answer:"+event.Answer)
+					case eventComplete:
+						got = append(got, "complete")
+					case eventFailure:
+						got = append(got, "failure:"+event.Reason)
+					}
+					return nil
+				}, func(claudeLineageEvidence) error { return nil }); err != nil {
+					t.Fatal(err)
+				}
+				if !slices.Equal(got, test.want) {
+					t.Fatalf("events = %q, want %q", got, test.want)
+				}
+			})
+		}
+	}
+}
+
 func TestAntigravityLogIDIsStrictAndVersionGateFailsLoudly(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "antigravity.log")
 	if err := os.WriteFile(logPath, []byte("I0712 19:00:00.123456 42 logger.go] Created conversation AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA\n"), 0o600); err != nil {

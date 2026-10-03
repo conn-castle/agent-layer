@@ -379,6 +379,13 @@ An empty answer at end of stream still fails the invocation. A subsequent run
 must be announced by Muse's `muse-runtime-background-terminal` client before
 its run linkage is accepted.
 
+Claude can report a successful result while a task it started, such as a
+background command or subagent, is still running. Dispatch records that answer
+but waits for the task's notification and Claude's later result; the earlier
+result does not start the shutdown grace. If the stream ends first, the latest
+successful result is the final answer. A task that never ends, such as a
+development server, keeps the dispatch running until it is cancelled.
+
 If the worker and leader have died but descendants survive, automatic recovery
 retains the claim and reports the group ID. Inspect the saved run evidence and
 the surviving processes to establish ownership before manually stopping any of
