@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/templates"
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
@@ -158,6 +159,84 @@ func assertFileContent(t *testing.T, path string, want string) {
 	if string(data) != want {
 		t.Fatalf("%s content = %q, want %q", path, string(data), want)
 	}
+}
+
+func TestRunUpgradeWritesVSCodeLaunchersOnlyWhenVSCodeEnabled(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		enabled bool
+	}{
+		{name: "enabled", enabled: true},
+		{name: "disabled", enabled: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.5.0"}); err != nil {
+				t.Fatalf("seed repo: %v", err)
+			}
+			if !tc.enabled {
+				configPath := filepath.Join(root, ".agent-layer", "config.toml")
+				data, err := os.ReadFile(configPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+				if err != nil {
+					t.Fatalf("read config: %v", err)
+				}
+				updated := strings.Replace(string(data), "[agents.vscode]\nenabled = true", "[agents.vscode]\nenabled = false", 1)
+				if updated == string(data) {
+					t.Fatal("seeded config has no enabled [agents.vscode] table")
+				}
+				if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil { // #nosec G703 -- path is constructed from test-controlled inputs.
+					t.Fatalf("write config: %v", err)
+				}
+			}
+			launcherPaths := launchers.VSCodePaths(root).All()
+			for _, path := range launcherPaths {
+				if err := os.RemoveAll(path); err != nil {
+					t.Fatalf("remove launcher %s: %v", path, err)
+				}
+			}
+
+			if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.6.0"}); err != nil {
+				t.Fatalf("upgrade: %v", err)
+			}
+
+			for _, path := range launcherPaths {
+				_, err := os.Stat(path)
+				if tc.enabled && err != nil {
+					t.Fatalf("expected launcher %s after upgrade: %v", path, err)
+				}
+				if !tc.enabled && !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("expected no launcher %s with VS Code disabled, got err=%v", path, err)
+				}
+			}
+		})
+	}
+}
+
+func TestWriteVSCodeLaunchers_ConfigBranches(t *testing.T) {
+	t.Run("missing config is a no-op", func(t *testing.T) {
+		root := t.TempDir()
+		if err := (&installer{root: root, sys: RealSystem{}}).writeVSCodeLaunchers(); err != nil {
+			t.Fatalf("writeVSCodeLaunchers: %v", err)
+		}
+		if _, err := os.Stat(launchers.VSCodePaths(root).Command); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("expected no launcher without config, got err=%v", err)
+		}
+	})
+
+	t.Run("invalid config fails", func(t *testing.T) {
+		root := t.TempDir()
+		configPath := filepath.Join(root, ".agent-layer", "config.toml")
+		if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+			t.Fatalf("mkdir config dir: %v", err)
+		}
+		if err := os.WriteFile(configPath, []byte("[agents.vscode\n"), 0o600); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+		err := (&installer{root: root, sys: RealSystem{}}).writeVSCodeLaunchers()
+		if err == nil || !strings.Contains(err.Error(), "config") {
+			t.Fatalf("expected config load error, got %v", err)
+		}
+	})
 }
 
 func TestRunWritesPinVersion(t *testing.T) {
