@@ -87,6 +87,38 @@ func TestUpgradePlanCmd_TextOutputIncludesPlainSections(t *testing.T) {
 	})
 }
 
+func TestUpgradePlanCmd_TextOutputIncludesUnknownDirectoryRemoval(t *testing.T) {
+	root := t.TempDir()
+	if err := install.Run(root, install.Options{System: install.RealSystem{}}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	skillPath := filepath.Join(root, ".agent-layer", "skills", "my-workflow")
+	if err := os.MkdirAll(skillPath, 0o700); err != nil {
+		t.Fatalf("mkdir user skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillPath, "SKILL.md"), []byte("my workflow\n"), 0o600); err != nil {
+		t.Fatalf("write user skill: %v", err)
+	}
+	testutil.WithWorkingDir(t, root, func() {
+		diffLines := install.DefaultDiffMaxLines
+		cmd := newUpgradePlanCmd(&diffLines)
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute upgrade plan: %v", err)
+		}
+		for _, snippet := range []string{
+			"files to review for removal: 1",
+			"Files to review for removal:\n  - .agent-layer/skills/my-workflow\n",
+		} {
+			if !strings.Contains(out.String(), snippet) {
+				t.Fatalf("expected output to contain %q\noutput:\n%s", snippet, out.String())
+			}
+		}
+	})
+}
+
 func TestUpgradePlanCmd_TextOutputHidesOwnershipDiagnostics(t *testing.T) {
 	root := t.TempDir()
 	if err := install.Run(root, install.Options{System: install.RealSystem{}}); err != nil {

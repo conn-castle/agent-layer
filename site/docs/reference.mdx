@@ -706,7 +706,7 @@ Use it before `al upgrade` to understand what would change:
 - Template additions
 - Template updates
 - Template renames (heuristic, confidence-annotated)
-- Template removals/orphans
+- Template removals/orphans and unknown files and directories under `.agent-layer/` and `docs/agent-layer/` that `--apply-deletions` would delete, excluding `.agent-layer/tmp/` and paths listed in `.agent-layer/upgrade-keep-list`
 - Config key migrations (when migration manifests are present)
 - Pin version change (`current -> target`)
 - Readiness checks (for example unresolved placeholders, process-env vs `.env` collisions, ignored empty `.env` assignments, path-expansion anomalies, stale VS Code `--no-sync` outputs, floating dependency specs, and stale disabled-agent artifacts)
