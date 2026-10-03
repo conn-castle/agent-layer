@@ -1,6 +1,7 @@
 package versiondispatch
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -11,8 +12,9 @@ import (
 
 // PrefetchVersion ensures the requested release binary is cached locally.
 // It validates the version, resolves the cache root, downloads the binary when missing,
-// and writes download progress to progressOut.
-func PrefetchVersion(versionInput string, progressOut io.Writer) error {
+// and writes download progress to progressOut. Canceling ctx stops a pending
+// download or cache-lock wait.
+func PrefetchVersion(ctx context.Context, versionInput string, progressOut io.Writer) error {
 	normalized, err := version.Normalize(strings.TrimSpace(versionInput))
 	if err != nil {
 		return fmt.Errorf(messages.DispatchInvalidEnvVersionFmt, "version", err)
@@ -22,6 +24,6 @@ func PrefetchVersion(versionInput string, progressOut io.Writer) error {
 	if err != nil {
 		return err
 	}
-	_, err = ensureCachedBinaryWithSystem(sys, cacheRoot, normalized, progressOut)
+	_, err = ensureCachedBinaryWithSystem(ctx, sys, cacheRoot, normalized, progressOut)
 	return err
 }

@@ -1,6 +1,7 @@
 package versiondispatch
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -19,8 +20,8 @@ type fileLock struct {
 const lockPollEvery = 100 * time.Millisecond
 
 // withFileLock acquires a lock for path, runs fn, and releases the lock.
-func withFileLock(sys System, path string, waitTimeout time.Duration, fn func() error) error {
-	lock, err := acquireFileLock(sys, path, waitTimeout)
+func withFileLock(ctx context.Context, sys System, path string, waitTimeout time.Duration, fn func() error) error {
+	lock, err := acquireFileLock(ctx, sys, path, waitTimeout)
 	if err != nil {
 		return err
 	}
@@ -31,12 +32,12 @@ func withFileLock(sys System, path string, waitTimeout time.Duration, fn func() 
 }
 
 // acquireFileLock opens or creates path and acquires an exclusive lock.
-func acquireFileLock(sys System, path string, waitTimeout time.Duration) (*fileLock, error) {
+func acquireFileLock(ctx context.Context, sys System, path string, waitTimeout time.Duration) (*fileLock, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644) // #nosec G304,G302 -- lock file path is built from the dispatch cache layout (binPath+".lock"), not user input; 0o644 matches the cached binary perms so the file is visible to debug tooling but only writable by the owner.
 	if err != nil {
 		return nil, fmt.Errorf(messages.DispatchOpenLockFmt, path, err)
 	}
-	if err := lockFile(sys, file, waitTimeout); err != nil {
+	if err := lockFile(ctx, sys, file, waitTimeout); err != nil {
 		_ = file.Close()
 		return nil, fmt.Errorf(messages.DispatchLockFmt, path, err)
 	}
@@ -55,8 +56,9 @@ func (l *fileLock) release() error {
 	return l.file.Close()
 }
 
-// lockFile acquires an exclusive advisory lock on the file.
-func lockFile(sys System, file *os.File, waitTimeout time.Duration) error {
+// lockFile acquires an exclusive advisory lock on the file, giving up when ctx
+// is canceled while another process holds it.
+func lockFile(ctx context.Context, sys System, file *os.File, waitTimeout time.Duration) error {
 	deadline := time.Now().Add(waitTimeout)
 	for {
 		err := sys.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB) //nolint:gosec // Unix file descriptors are small non-negative ints; cast is safe on all supported platforms
@@ -64,6 +66,9 @@ func lockFile(sys System, file *os.File, waitTimeout time.Duration) error {
 			return nil
 		}
 		if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if time.Now().After(deadline) {

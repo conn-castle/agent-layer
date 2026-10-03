@@ -183,7 +183,7 @@ func newUpgradePrefetchCmd() *cobra.Command {
 			if targetVersion == "" {
 				return fmt.Errorf(messages.UpgradePrefetchVersionRequired)
 			}
-			if err := dispatchPrefetchVersion(targetVersion, cmd.ErrOrStderr()); err != nil {
+			if err := dispatchPrefetchVersion(cmd.Context(), targetVersion, cmd.ErrOrStderr()); err != nil {
 				return err
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), messages.UpgradePrefetchDoneFmt, targetVersion)

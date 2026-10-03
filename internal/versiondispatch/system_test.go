@@ -1,6 +1,7 @@
 package versiondispatch
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"testing"
@@ -39,7 +40,7 @@ func TestRealSystem_ExecBinary(t *testing.T) {
 }
 
 func TestMaybeExecWithSystem_NilSystem(t *testing.T) {
-	err := MaybeExecWithSystem(nil, []string{"cmd"}, "1.0.0", ".", func(int) {})
+	err := MaybeExecWithSystem(context.Background(), nil, []string{"cmd"}, "1.0.0", ".", func(int) {})
 	if err == nil {
 		t.Fatalf("expected error for nil system")
 	}

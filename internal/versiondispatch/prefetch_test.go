@@ -2,6 +2,7 @@ package versiondispatch
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"net/http"
@@ -40,7 +41,7 @@ func TestPrefetchVersion_DownloadsToConfiguredCache(t *testing.T) {
 	t.Cleanup(func() { releaseBaseURL = origReleaseBaseURL })
 
 	var progress bytes.Buffer
-	if err := PrefetchVersion("v1.2.3", &progress); err != nil {
+	if err := PrefetchVersion(context.Background(), "v1.2.3", &progress); err != nil {
 		t.Fatalf("PrefetchVersion: %v", err)
 	}
 
@@ -58,7 +59,7 @@ func TestPrefetchVersion_DownloadsToConfiguredCache(t *testing.T) {
 }
 
 func TestPrefetchVersion_InvalidVersion(t *testing.T) {
-	err := PrefetchVersion("not-a-version", &bytes.Buffer{})
+	err := PrefetchVersion(context.Background(), "not-a-version", &bytes.Buffer{})
 	if err == nil {
 		t.Fatal("expected invalid version error")
 	}
