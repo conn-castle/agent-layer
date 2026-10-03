@@ -160,6 +160,15 @@ func TestResolvePromptSourceNormalizesPathButRejectsWhitespaceOnlySources(t *tes
 	requireDispatchExitCode(t, err, ExitUsage)
 }
 
+func TestResolvePromptSourceMissingFileReportsCause(t *testing.T) {
+	promptPath := filepath.Join(t.TempDir(), "missing.md")
+	_, err := resolvePromptSource("", promptPath)
+	requireDispatchExitCode(t, err, ExitUsage)
+	if !strings.HasPrefix(err.Error(), "read dispatch prompt file: ") || !strings.Contains(err.Error(), promptPath) {
+		t.Fatalf("missing prompt file error = %q, want the read failure and its path", err)
+	}
+}
+
 func TestStartDoesNotCreateRunWhenRetentionFails(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	stateDir := dispatchStatePath(root)

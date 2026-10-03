@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -52,26 +53,39 @@ const (
 	ExitSigterm = 143
 )
 
-// ExitError carries a dispatch-owned exit category and the message already
-// written or intended for stderr by the CLI wrapper.
+// ExitError carries a dispatch-owned exit category and the text the CLI
+// wrapper writes to stderr, the MCP server returns, and failed run evidence
+// records.
 type ExitError struct {
 	Code    int
 	Message string
 	Err     error
+	// classifyOnly marks Err as a sentinel for errors.Is alone, so its text is
+	// not appended to Message.
+	classifyOnly bool
 }
 
-// Error returns the user-facing dispatch error text.
+// Error returns the user-facing dispatch error text: Message followed by the
+// wrapped cause, so a caller can act on the underlying failure. A cause that
+// Message already contains is not repeated.
 func (e *ExitError) Error() string {
 	if e == nil {
 		return ""
 	}
-	if e.Message != "" {
+	if e.Message == "" {
+		if e.Err != nil {
+			return e.Err.Error()
+		}
+		return fmt.Sprintf("dispatch exit %d", e.Code)
+	}
+	if e.Err == nil || e.classifyOnly {
 		return e.Message
 	}
-	if e.Err != nil {
-		return e.Err.Error()
+	cause := e.Err.Error()
+	if cause == "" || strings.Contains(e.Message, cause) {
+		return e.Message
 	}
-	return fmt.Sprintf("dispatch exit %d", e.Code)
+	return e.Message + ": " + cause
 }
 
 // Unwrap returns the wrapped lower-level error.
@@ -88,6 +102,12 @@ func exitError(code int, message string) *ExitError {
 
 func wrapExitError(code int, message string, err error) *ExitError {
 	return &ExitError{Code: code, Message: message, Err: err}
+}
+
+// notFoundExitError reports a missing dispatch object with message alone while
+// sentinel still classifies the failure for errors.Is.
+func notFoundExitError(message string, sentinel error) *ExitError {
+	return &ExitError{Code: ExitUsage, Message: message, Err: sentinel, classifyOnly: true}
 }
 
 // runOptions carries one prepared invocation's target and override inputs

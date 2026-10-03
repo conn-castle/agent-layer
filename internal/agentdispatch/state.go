@@ -657,7 +657,7 @@ func loadSession(root string, name string) (Session, error) {
 			// Opening a dangling symlink also returns not-exist. Only a
 			// missing directory entry means the mapping was removed.
 			if _, statErr := os.Lstat(path); errors.Is(statErr, fs.ErrNotExist) {
-				return Session{}, wrapExitError(ExitUsage, fmt.Sprintf("dispatch session %q was not found", name), errDispatchSessionNotFound)
+				return Session{}, notFoundExitError(fmt.Sprintf("dispatch session %q was not found", name), errDispatchSessionNotFound)
 			}
 		}
 		return Session{}, wrapExitError(ExitConfig, fmt.Sprintf("read dispatch mapping %q", name), err)
@@ -990,7 +990,7 @@ func loadRunRecord(root string, id string) (RunRecord, error) {
 	var record RunRecord
 	if err := readJSON(filepath.Join(dir, dispatchRunFile), &record); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return RunRecord{}, wrapExitError(ExitUsage, fmt.Sprintf("dispatch run %q was not found", id), errDispatchRunNotFound)
+			return RunRecord{}, notFoundExitError(fmt.Sprintf("dispatch run %q was not found", id), errDispatchRunNotFound)
 		}
 		return RunRecord{}, wrapExitError(ExitConfig, "read dispatch run record", err)
 	}
