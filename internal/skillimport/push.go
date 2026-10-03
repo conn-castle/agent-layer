@@ -429,9 +429,9 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 		// for recreating the contribution branch. Unreachable or rewritten history
 		// falls back to the locked source below.
 		mergeBase, checkpointed, baseErr := publicationMergeBase(ctx, destination, group, candidate, head)
-		if errors.Is(baseErr, errPublicationUnavailable) {
+		publicationUnavailable := errors.Is(baseErr, errPublicationUnavailable)
+		if publicationUnavailable {
 			candidate.Entry.Publication = nil
-			txn.SetLockEntry(candidate.Entry)
 			mergeBase = candidate.Base
 			baseErr = nil
 		}
@@ -484,19 +484,28 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 		}
 		candidate.SyncLocal = !merged.IsEmpty() && !merged.Equal(candidate.Local)
 		candidate.Local = merged
-		// Equality is settled before validation so a preserved deletion reports
-		// unchanged instead of failing validation on an empty tree.
+		// A merged tree is either published or, when it already matches the
+		// destination, written back to the imported tier, so it must be a valid
+		// skill either way. Only an empty result already equal to the destination
+		// preserves a whole-skill deletion and skips validation as unchanged.
+		if !merged.IsEmpty() || !merged.Equal(destinationTree) {
+			if _, validateErr := skilltree.ValidateSkill(merged, candidate.Entry.SelectedPath); validateErr != nil {
+				result.Outcome = OutcomeFailed
+				result.Err = fmt.Errorf("the result for %s would not be a valid skill: %w", group.Repository, validateErr)
+				report.Add(result)
+				continue
+			}
+		}
+		// A rejected candidate must not leave a checkpoint reset for a
+		// successful sibling to commit through the shared transaction.
+		if publicationUnavailable {
+			txn.SetLockEntry(candidate.Entry)
+		}
 		if merged.Equal(destinationTree) {
 			result.Outcome = OutcomeUnchanged
 			result.Detail = unchangedDetail(group, candidate, merged)
 			unchanged = append(unchanged, result)
 			unchangedCandidates = append(unchangedCandidates, candidate)
-			continue
-		}
-		if _, validateErr := skilltree.ValidateSkill(merged, candidate.Entry.SelectedPath); validateErr != nil {
-			result.Outcome = OutcomeFailed
-			result.Err = fmt.Errorf("the result for %s would not be a valid skill: %w", group.Repository, validateErr)
-			report.Add(result)
 			continue
 		}
 		updates = append(updates, gitrepo.Update{Path: candidate.Entry.SelectedPath, Tree: merged})
