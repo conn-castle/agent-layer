@@ -26,6 +26,7 @@ const (
 	defaultMaxDownloadBytes  = int64(100 * 1024 * 1024) // 100 MiB
 	maxChecksumResponseBytes = int64(1 << 20)           // 1 MiB — checksums.txt is a few KB at most
 	defaultDownloadTimeout   = 30 * time.Second
+	defaultDownloadCeiling   = 10 * time.Minute
 	downloadRetryCount       = 1
 	downloadRetryBackoff     = 250 * time.Millisecond
 	cacheLockWorkHeadroom    = 5 * time.Second
@@ -159,65 +160,63 @@ func downloadToFileWithSystem(ctx context.Context, sys System, url string, dest 
 	if sys == nil {
 		return fmt.Errorf(messages.DispatchSystemRequired)
 	}
+	return downloadToFileWithLimits(ctx, sys, url, dest, downloadLimitsWithSystem(sys))
+}
+
+func downloadToFileWithLimits(ctx context.Context, sys System, url string, dest *os.File, limits downloadLimits) error {
+	opCtx, cancel := context.WithTimeout(ctx, limits.ceiling)
+	defer cancel()
 	client := downloadHTTPClientWithSystem(sys)
 	maxBytes := maxDownloadBytesWithSystem(sys)
 	for attempt := 0; attempt <= downloadRetryCount; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
+		if ctx.Err() != nil || opCtx.Err() != nil {
+			_, err := classifyAttemptFailure(ctx, opCtx, opCtx, attempt, opCtx.Err(), url, messages.DispatchDownloadFailedFmt)
+			return err
 		}
-		resp, err := client.Do(req) // #nosec G704 -- callers construct URLs from the fixed release base URL and validated release asset names.
-		if err != nil {
-			if shouldRetryDownload(ctx, attempt, err, 0) {
-				sys.Sleep(downloadRetryBackoff)
-				continue
+		retry, err := func() (bool, error) {
+			attemptCtx, watchdog, stop := startDownloadAttempt(opCtx, limits.stall)
+			defer stop()
+			req, err := http.NewRequestWithContext(attemptCtx, http.MethodGet, url, nil)
+			if err != nil {
+				return false, fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
 			}
-			if isTimeoutError(err) {
-				if ctxErr := ctx.Err(); ctxErr != nil {
-					return fmt.Errorf("%s: %w", fmt.Sprintf(messages.DispatchDownloadTimeoutFmt, url), ctxErr)
+			resp, err := client.Do(req) // #nosec G704 -- callers construct URLs from the fixed release base URL and validated release asset names.
+			if err != nil {
+				return classifyAttemptFailure(ctx, opCtx, attemptCtx, attempt, err, url, messages.DispatchDownloadFailedFmt)
+			}
+			watchdog.reset()
+			defer func() { _ = resp.Body.Close() }()
+
+			if resp.StatusCode == http.StatusNotFound {
+				return false, fmt.Errorf(messages.DispatchDownload404Fmt, url, releaseBaseURL)
+			}
+			if resp.StatusCode != http.StatusOK {
+				if shouldRetryDownload(opCtx, attempt, nil, resp.StatusCode) {
+					return true, nil
 				}
-				return fmt.Errorf(messages.DispatchDownloadTimeoutFmt, url)
+				return false, fmt.Errorf(messages.DispatchDownloadUnexpectedStatusFmt, url, resp.Status)
 			}
-			return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
-		}
 
-		if resp.StatusCode == http.StatusNotFound {
-			_ = resp.Body.Close()
-			return fmt.Errorf(messages.DispatchDownload404Fmt, url, releaseBaseURL)
-		}
-		if resp.StatusCode != http.StatusOK {
-			status := resp.StatusCode
-			statusText := resp.Status
-			_ = resp.Body.Close()
-			if shouldRetryDownload(ctx, attempt, nil, status) {
-				sys.Sleep(downloadRetryBackoff)
-				continue
+			if err := dest.Truncate(0); err != nil {
+				return false, fmt.Errorf(messages.DispatchTruncateTempFileFmt, err)
 			}
-			return fmt.Errorf(messages.DispatchDownloadUnexpectedStatusFmt, url, statusText)
-		}
-
-		if err := dest.Truncate(0); err != nil {
-			_ = resp.Body.Close()
-			return fmt.Errorf(messages.DispatchTruncateTempFileFmt, err)
-		}
-		if _, err := dest.Seek(0, io.SeekStart); err != nil {
-			_ = resp.Body.Close()
-			return fmt.Errorf(messages.DispatchResetTempFileOffsetFmt, err)
-		}
-
-		n, copyErr := io.Copy(dest, io.LimitReader(resp.Body, maxBytes+1))
-		_ = resp.Body.Close()
-		if copyErr != nil {
-			if shouldRetryDownload(ctx, attempt, copyErr, 0) {
-				sys.Sleep(downloadRetryBackoff)
-				continue
+			if _, err := dest.Seek(0, io.SeekStart); err != nil {
+				return false, fmt.Errorf(messages.DispatchResetTempFileOffsetFmt, err)
 			}
-			return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, copyErr)
+
+			n, copyErr := io.Copy(dest, io.LimitReader(stallReader{r: resp.Body, w: watchdog}, maxBytes+1))
+			if copyErr != nil {
+				return classifyAttemptFailure(ctx, opCtx, attemptCtx, attempt, copyErr, url, messages.DispatchDownloadFailedFmt)
+			}
+			if n > maxBytes {
+				return false, fmt.Errorf(messages.DispatchDownloadTooLargeFmt, url, n, maxBytes)
+			}
+			return false, nil
+		}()
+		if !retry {
+			return err
 		}
-		if n > maxBytes {
-			return fmt.Errorf(messages.DispatchDownloadTooLargeFmt, url, n, maxBytes)
-		}
-		return nil
+		sys.Sleep(downloadRetryBackoff)
 	}
 	return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, errors.New("retry budget exhausted"))
 }
@@ -232,71 +231,142 @@ func fetchChecksumWithSystem(ctx context.Context, sys System, version string, as
 	if sys == nil {
 		return "", fmt.Errorf(messages.DispatchSystemRequired)
 	}
+	return fetchChecksumWithLimits(ctx, sys, version, asset, downloadLimitsWithSystem(sys))
+}
+
+func fetchChecksumWithLimits(ctx context.Context, sys System, version string, asset string, limits downloadLimits) (string, error) {
+	opCtx, cancel := context.WithTimeout(ctx, limits.ceiling)
+	defer cancel()
 	url := fmt.Sprintf("%s/download/v%s/checksums.txt", releaseBaseURL, version)
 	client := downloadHTTPClientWithSystem(sys)
 	for attempt := 0; attempt <= downloadRetryCount; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return "", fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
+		if ctx.Err() != nil || opCtx.Err() != nil {
+			_, err := classifyAttemptFailure(ctx, opCtx, opCtx, attempt, opCtx.Err(), url, messages.DispatchDownloadFailedFmt)
+			return "", err
 		}
-		resp, err := client.Do(req) // #nosec G704 -- URL uses the fixed release base URL and a validated semantic version.
-		if err != nil {
-			if shouldRetryDownload(ctx, attempt, err, 0) {
-				sys.Sleep(downloadRetryBackoff)
-				continue
+		checksum, retry, err := func() (string, bool, error) {
+			attemptCtx, watchdog, stop := startDownloadAttempt(opCtx, limits.stall)
+			defer stop()
+			req, err := http.NewRequestWithContext(attemptCtx, http.MethodGet, url, nil)
+			if err != nil {
+				return "", false, fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
 			}
-			if isTimeoutError(err) {
-				if ctxErr := ctx.Err(); ctxErr != nil {
-					return "", fmt.Errorf("%s: %w", fmt.Sprintf(messages.DispatchDownloadTimeoutFmt, url), ctxErr)
+			resp, err := client.Do(req) // #nosec G704 -- URL uses the fixed release base URL and a validated semantic version.
+			if err != nil {
+				retry, err := classifyAttemptFailure(ctx, opCtx, attemptCtx, attempt, err, url, messages.DispatchDownloadFailedFmt)
+				return "", retry, err
+			}
+			watchdog.reset()
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode == http.StatusNotFound {
+				return "", false, fmt.Errorf(messages.DispatchDownload404Fmt, url, releaseBaseURL)
+			}
+			if resp.StatusCode != http.StatusOK {
+				if shouldRetryDownload(opCtx, attempt, nil, resp.StatusCode) {
+					return "", true, nil
 				}
-				return "", fmt.Errorf(messages.DispatchDownloadTimeoutFmt, url)
+				return "", false, fmt.Errorf(messages.DispatchDownloadUnexpectedStatusFmt, url, resp.Status)
 			}
-			return "", fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
-		}
-		if resp.StatusCode == http.StatusNotFound {
-			_ = resp.Body.Close()
-			return "", fmt.Errorf(messages.DispatchDownload404Fmt, url, releaseBaseURL)
-		}
-		if resp.StatusCode != http.StatusOK {
-			status := resp.StatusCode
-			statusText := resp.Status
-			_ = resp.Body.Close()
-			if shouldRetryDownload(ctx, attempt, nil, status) {
-				sys.Sleep(downloadRetryBackoff)
-				continue
-			}
-			return "", fmt.Errorf(messages.DispatchDownloadUnexpectedStatusFmt, url, statusText)
-		}
 
-		scanner := bufio.NewScanner(io.LimitReader(resp.Body, maxChecksumResponseBytes))
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" {
-				continue
+			scanner := bufio.NewScanner(io.LimitReader(stallReader{r: resp.Body, w: watchdog}, maxChecksumResponseBytes))
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if line == "" {
+					continue
+				}
+				fields := strings.Fields(line)
+				if len(fields) < 2 {
+					continue
+				}
+				path := strings.TrimPrefix(fields[1], "./")
+				path = strings.TrimPrefix(path, "*")
+				if path == asset {
+					return fields[0], false, nil
+				}
 			}
-			fields := strings.Fields(line)
-			if len(fields) < 2 {
-				continue
+			if err := scanner.Err(); err != nil {
+				retry, err := classifyAttemptFailure(ctx, opCtx, attemptCtx, attempt, err, url, messages.DispatchReadFailedFmt)
+				return "", retry, err
 			}
-			path := strings.TrimPrefix(fields[1], "./")
-			path = strings.TrimPrefix(path, "*")
-			if path == asset {
-				_ = resp.Body.Close()
-				return fields[0], nil
-			}
+			return "", false, fmt.Errorf(messages.DispatchChecksumNotFoundFmt, asset, url)
+		}()
+		if !retry {
+			return checksum, err
 		}
-		if err := scanner.Err(); err != nil {
-			_ = resp.Body.Close()
-			if shouldRetryDownload(ctx, attempt, err, 0) {
-				sys.Sleep(downloadRetryBackoff)
-				continue
-			}
-			return "", fmt.Errorf(messages.DispatchReadFailedFmt, url, err)
-		}
-		_ = resp.Body.Close()
-		return "", fmt.Errorf(messages.DispatchChecksumNotFoundFmt, asset, url)
+		sys.Sleep(downloadRetryBackoff)
 	}
 	return "", fmt.Errorf(messages.DispatchDownloadFailedFmt, url, errors.New("retry budget exhausted"))
+}
+
+var errDownloadStalled = errors.New("download stalled")
+
+type downloadLimits struct {
+	stall, ceiling time.Duration
+}
+
+func downloadLimitsWithSystem(sys System) downloadLimits {
+	stall := downloadTimeoutWithSystem(sys)
+	ceiling := max(defaultDownloadCeiling, time.Duration(downloadRetryCount+1)*stall+time.Duration(downloadRetryCount)*downloadRetryBackoff)
+	return downloadLimits{stall: stall, ceiling: ceiling}
+}
+
+type downloadWatchdog struct {
+	timer *time.Timer
+	stall time.Duration
+}
+
+func startDownloadAttempt(ctx context.Context, stall time.Duration) (context.Context, *downloadWatchdog, context.CancelFunc) {
+	attemptCtx, cancel := context.WithCancelCause(ctx)
+	watchdog := &downloadWatchdog{
+		timer: time.AfterFunc(stall, func() { cancel(errDownloadStalled) }),
+		stall: stall,
+	}
+	return attemptCtx, watchdog, func() {
+		watchdog.timer.Stop()
+		cancel(nil)
+	}
+}
+
+func (w *downloadWatchdog) reset() {
+	w.timer.Reset(w.stall)
+}
+
+type stallReader struct {
+	r io.Reader
+	w *downloadWatchdog
+}
+
+func (r stallReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	if n > 0 {
+		r.w.reset()
+	}
+	return n, err
+}
+
+func classifyAttemptFailure(ctx, opCtx, attemptCtx context.Context, attempt int, err error, url, genericFmt string) (bool, error) {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		if ctxErr == context.DeadlineExceeded {
+			return false, fmt.Errorf("%s: %w", fmt.Sprintf(messages.DispatchDownloadTimeoutFmt, url), ctxErr)
+		}
+		if !errors.Is(err, ctxErr) {
+			err = ctxErr
+		}
+		return false, fmt.Errorf(genericFmt, url, err)
+	}
+	if opCtx.Err() != nil {
+		return false, fmt.Errorf(messages.DispatchDownloadTimeoutFmt, url)
+	}
+	if errors.Is(context.Cause(attemptCtx), errDownloadStalled) || isTimeoutError(err) {
+		if attempt < downloadRetryCount {
+			return true, nil
+		}
+		return false, fmt.Errorf(messages.DispatchDownloadTimeoutFmt, url)
+	}
+	if shouldRetryDownload(opCtx, attempt, err, 0) {
+		return true, nil
+	}
+	return false, fmt.Errorf(genericFmt, url, err)
 }
 
 // isTimeoutError reports whether err is a network timeout.
@@ -345,14 +415,10 @@ func downloadTimeoutWithSystem(sys System) time.Duration {
 	return timeout
 }
 
-// cacheLockWaitTimeoutWithSystem covers the holder's complete download and
-// checksum retry budget, plus local-work and polling headroom for the waiter.
+// cacheLockWaitTimeoutWithSystem covers the holder's binary and checksum
+// operation ceilings, plus local-work and polling headroom for the waiter.
 func cacheLockWaitTimeoutWithSystem(sys System) time.Duration {
-	attemptsPerOperation := downloadRetryCount + 1
-	const operations = 2 // binary and checksum downloads run sequentially.
-	return time.Duration(operations*attemptsPerOperation)*downloadTimeoutWithSystem(sys) +
-		time.Duration(operations*downloadRetryCount)*downloadRetryBackoff +
-		cacheLockWorkHeadroom
+	return 2*downloadLimitsWithSystem(sys).ceiling + cacheLockWorkHeadroom
 }
 
 func downloadHTTPClientWithSystem(sys System) *http.Client {
@@ -363,12 +429,11 @@ func downloadHTTPClientWithSystem(sys System) *http.Client {
 	if client == nil {
 		client = defaultHTTPClient
 	}
-	timeout := downloadTimeoutWithSystem(sys)
-	if client.Timeout == timeout {
+	if client.Timeout == 0 {
 		return client
 	}
 	clientCopy := *client
-	clientCopy.Timeout = timeout
+	clientCopy.Timeout = 0
 	return &clientCopy
 }
 
