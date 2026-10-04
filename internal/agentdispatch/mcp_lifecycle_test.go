@@ -85,8 +85,10 @@ func TestMCPLifecycleRealTransport(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			if ending == "deadline" {
+				// Outlast Connect, discovery, dispatch_start, and the start
+				// record. This deadline is what stops the server.
 				var stop context.CancelFunc
-				ctx, stop = context.WithTimeout(ctx, 300*time.Millisecond)
+				ctx, stop = context.WithTimeout(ctx, 2*time.Second)
 				defer stop()
 			}
 			input, clientWriter := io.Pipe()
