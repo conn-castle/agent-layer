@@ -176,49 +176,6 @@ func StateInMultiline(state StringState) bool {
 	return state == StateMultiBasic || state == StateMultiLiteral
 }
 
-// InlineCommentForLine extracts a TOML inline comment on a specific line.
-func InlineCommentForLine(lines []string, lineIndex int) string {
-	if lineIndex < 0 || lineIndex >= len(lines) {
-		return ""
-	}
-	state := StateNone
-	for i, line := range lines {
-		commentPos, nextState := ScanLineForComment(line, state)
-		if i == lineIndex && commentPos >= 0 {
-			return strings.TrimSpace(line[commentPos+1:])
-		}
-		state = nextState
-	}
-	return ""
-}
-
-// CommentForLine collects contiguous leading comment lines and any inline
-// comment on a line.
-func CommentForLine(lines []string, lineIndex int) string {
-	if lineIndex < 0 || lineIndex >= len(lines) {
-		return ""
-	}
-	var commentLines []string
-	for i := lineIndex - 1; i >= 0; i-- {
-		trimmed := strings.TrimSpace(lines[i])
-		if trimmed == "" {
-			break
-		}
-		if !strings.HasPrefix(trimmed, "#") {
-			break
-		}
-		commentLines = append(commentLines, strings.TrimSpace(strings.TrimPrefix(trimmed, "#")))
-	}
-	slices.Reverse(commentLines)
-	if inline := InlineCommentForLine(lines, lineIndex); inline != "" {
-		commentLines = append(commentLines, inline)
-	}
-	if len(commentLines) == 0 {
-		return ""
-	}
-	return strings.Join(commentLines, "\n")
-}
-
 // WalkLinesOutsideMultiline walks lines while skipping callbacks inside
 // multiline TOML string bodies.
 func WalkLinesOutsideMultiline(lines []string, fn func(i int, line string, state StringState) LineWalkResult) {
@@ -271,7 +228,7 @@ func RemoveKeyFromBlock(block *Block, key string) {
 	WalkLinesOutsideMultiline(block.Lines, func(i int, line string, state StringState) LineWalkResult {
 		parsed, ok := ParseKeyLineWithState(line, key, state)
 		if !ok {
-			parsed, ok = ParseDottedPrefixLine(line, key)
+			parsed, ok = parseDottedPrefixLine(line, key)
 		}
 		if ok && !parsed.Commented {
 			endIdx := MultilineValueEndIndex(block.Lines, i)
@@ -286,8 +243,8 @@ func RemoveKeyFromBlock(block *Block, key string) {
 	}
 }
 
-// ParseDottedPrefixLine checks if line defines a dotted sub-key of key.
-func ParseDottedPrefixLine(line string, key string) (KeyLine, bool) {
+// parseDottedPrefixLine checks if line defines a dotted sub-key of key.
+func parseDottedPrefixLine(line string, key string) (KeyLine, bool) {
 	indentLen := len(line) - len(strings.TrimLeft(line, " \t"))
 	indent := line[:indentLen]
 	trimmed := strings.TrimLeft(line[indentLen:], " \t")
@@ -327,11 +284,11 @@ func MultilineValueEndIndex(lines []string, startIdx int) int {
 
 	if strings.HasPrefix(valuePart, tripleBasicQuote) {
 		rest := valuePart[3:]
-		if ContainsUnescapedTripleQuote(rest) {
+		if containsUnescapedTripleQuote(rest) {
 			return startIdx
 		}
 		for i := startIdx + 1; i < len(lines); i++ {
-			if ContainsUnescapedTripleQuote(lines[i]) {
+			if containsUnescapedTripleQuote(lines[i]) {
 				return i
 			}
 		}
@@ -443,9 +400,9 @@ func countBracketDepth(s string, opener, closer byte, state StringState) (int, S
 	return depth, state
 }
 
-// ContainsUnescapedTripleQuote reports whether s contains an unescaped basic
+// containsUnescapedTripleQuote reports whether s contains an unescaped basic
 // multiline-string delimiter.
-func ContainsUnescapedTripleQuote(s string) bool {
+func containsUnescapedTripleQuote(s string) bool {
 	for search := s; ; {
 		idx := strings.Index(search, tripleBasicQuote)
 		if idx < 0 {
@@ -559,12 +516,12 @@ func ParseKeyLineWithState(line string, key string, state StringState) (KeyLine,
 	if !ok || !slices.Equal(path, wantPath) {
 		return KeyLine{}, false
 	}
-	inlineComment := ExtractInlineCommentWithState(trimmed, state)
+	inlineComment := extractInlineCommentWithState(trimmed, state)
 	return KeyLine{Raw: line, Indent: indent, Commented: commented, InlineComment: inlineComment}, true
 }
 
-// ExtractInlineCommentWithState returns the inline comment portion.
-func ExtractInlineCommentWithState(line string, state StringState) string {
+// extractInlineCommentWithState returns the inline comment portion.
+func extractInlineCommentWithState(line string, state StringState) string {
 	commentPos, _ := ScanLineForComment(line, state)
 	if commentPos < 0 {
 		return ""
