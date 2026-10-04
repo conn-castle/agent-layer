@@ -9,6 +9,8 @@ import (
 	"github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/conn-castle/agent-layer/internal/tomlpatch"
 )
 
 func TestPatchConfig_Errors(t *testing.T) {
@@ -103,15 +105,15 @@ enabled = false
 	out, err := PatchConfig(content, NewChoices())
 	require.NoError(t, err)
 
-	doc := parseTomlDocument(out)
-	if _, exists := doc.sections["agents.claude-vscode"]; exists {
+	doc := tomlpatch.ParseDocument(out)
+	if _, exists := doc.Sections["agents.claude-vscode"]; exists {
 		t.Fatal("expected legacy section to be removed")
 	}
-	block, exists := doc.sections["agents.claude_vscode"]
+	block, exists := doc.Sections["agents.claude_vscode"]
 	require.True(t, exists, "expected canonical section to exist")
-	require.NotEmpty(t, block.lines)
-	assert.Equal(t, "[agents.claude_vscode] # legacy", strings.TrimSpace(block.lines[0]))
-	assert.Contains(t, strings.Join(block.lines, "\n"), "enabled = true")
+	require.NotEmpty(t, block.Lines)
+	assert.Equal(t, "[agents.claude_vscode] # legacy", strings.TrimSpace(block.Lines[0]))
+	assert.Contains(t, strings.Join(block.Lines, "\n"), "enabled = true")
 }
 
 func TestPatchConfig_DeduplicatesLegacyAndCanonicalClaudeVSCodeSections(t *testing.T) {
@@ -282,12 +284,12 @@ model = "Gemini 3.1 Pro (High)"
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
 
-	doc := parseTomlDocument(out)
-	antigravityBlock := doc.sections["agents.antigravity"]
+	doc := tomlpatch.ParseDocument(out)
+	antigravityBlock := doc.Sections["agents.antigravity"]
 	require.NotNil(t, antigravityBlock)
-	modelLine, ok := findKeyLine(antigravityBlock.lines, "model")
+	modelLine, ok := tomlpatch.FindKeyLine(antigravityBlock.Lines, "model")
 	require.True(t, ok)
-	assert.True(t, modelLine.commented, "blank selection should comment the typed model line")
+	assert.True(t, modelLine.Commented, "blank selection should comment the typed model line")
 }
 
 func TestPatchConfig_AntigravityModelSkippedWhenAntigravityDisabled(t *testing.T) {
@@ -793,243 +795,6 @@ func TestPatchConfig_Idempotent(t *testing.T) {
 	}
 }
 
-func TestParseTomlDocument_EmptyContent(t *testing.T) {
-	doc := parseTomlDocument("")
-
-	assert.Empty(t, doc.sections)
-	assert.Empty(t, doc.arrays)
-	assert.Empty(t, doc.order)
-}
-
-func TestParseTomlDocument_PreambleOnly(t *testing.T) {
-	content := `# This is a preamble comment
-# Another line`
-
-	doc := parseTomlDocument(content)
-
-	assert.Len(t, doc.preamble, 2)
-	assert.Contains(t, doc.preamble[0], "preamble comment")
-	assert.Empty(t, doc.sections)
-}
-
-func TestParseTomlDocument_SingleSection(t *testing.T) {
-	content := `[section]
-key = "value"`
-
-	doc := parseTomlDocument(content)
-
-	require.Contains(t, doc.sections, "section")
-	assert.Len(t, doc.sections["section"].lines, 2)
-	assert.Equal(t, []string{"section"}, doc.order)
-}
-
-func TestParseTomlDocument_ArrayOfTables(t *testing.T) {
-	content := `[[array]]
-id = "first"
-
-[[array]]
-id = "second"`
-
-	doc := parseTomlDocument(content)
-
-	require.Contains(t, doc.arrays, "array")
-	assert.Len(t, doc.arrays["array"], 2)
-}
-
-func TestParseTomlDocument_MixedContent(t *testing.T) {
-	content := `# preamble
-[section1]
-a = 1
-
-[[array]]
-id = "item"
-
-[section2]
-b = 2`
-
-	doc := parseTomlDocument(content)
-
-	assert.Len(t, doc.preamble, 1)
-	require.Contains(t, doc.sections, "section1")
-	require.Contains(t, doc.sections, "section2")
-	require.Contains(t, doc.arrays, "array")
-	assert.Equal(t, []string{"section1", "section2"}, doc.order)
-}
-
-func TestParseTomlHeader_ValidHeaders(t *testing.T) {
-	tests := []struct {
-		line    string
-		name    string
-		isArray bool
-		ok      bool
-	}{
-		{"[section]", "section", false, true},
-		{"[[array]]", "array", true, true},
-		{"[dotted.name]", "dotted.name", false, true},
-		{"[[dotted.array]]", "dotted.array", true, true},
-		{"  [indented]  ", "indented", false, true},
-		{"# comment", "", false, false},
-		{"", "", false, false},
-		{"key = value", "", false, false},
-		// Inline comments on headers
-		{"[section] # comment", "section", false, true},
-		{"[[array]] # inline comment", "array", true, true},
-		{"[dotted.name] # with comment", "dotted.name", false, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.line, func(t *testing.T) {
-			name, isArray, ok := parseTomlHeader(tt.line)
-			assert.Equal(t, tt.name, name)
-			assert.Equal(t, tt.isArray, isArray)
-			assert.Equal(t, tt.ok, ok)
-		})
-	}
-}
-
-func TestExtractMCPServerID(t *testing.T) {
-	t.Run("finds id", func(t *testing.T) {
-		lines := []string{
-			"[[mcp.servers]]",
-			`id = "github"`,
-			"enabled = true",
-		}
-		id := extractMCPServerID(lines)
-		assert.Equal(t, "github", id)
-	})
-
-	t.Run("skips comments", func(t *testing.T) {
-		lines := []string{
-			"[[mcp.servers]]",
-			`# id = "commented"`,
-			`id = "actual"`,
-		}
-		id := extractMCPServerID(lines)
-		assert.Equal(t, "actual", id)
-	})
-
-	t.Run("no id", func(t *testing.T) {
-		lines := []string{
-			"[[mcp.servers]]",
-			"enabled = true",
-		}
-		id := extractMCPServerID(lines)
-		assert.Equal(t, "", id)
-	})
-
-	t.Run("ignores id inside multiline string", func(t *testing.T) {
-		// This test verifies that content inside multiline strings is not
-		// incorrectly parsed as a key-value pair.
-		lines := []string{
-			"[[mcp.servers]]",
-			`description = """`,
-			`id = "fake-id"`,
-			`"""`,
-			`id = "real-id"`,
-		}
-		id := extractMCPServerID(lines)
-		assert.Equal(t, "real-id", id)
-	})
-
-	t.Run("ignores id inside multiline literal string", func(t *testing.T) {
-		lines := []string{
-			"[[mcp.servers]]",
-			`description = '''`,
-			`id = "fake-id"`,
-			`'''`,
-			`id = "real-id"`,
-		}
-		id := extractMCPServerID(lines)
-		assert.Equal(t, "real-id", id)
-	})
-}
-
-func TestFindKeyLine_IgnoresMultilineContent(t *testing.T) {
-	lines := []string{
-		"[section]",
-		`description = """`,
-		`key = "fake"`,
-		`"""`,
-		`key = "real"`,
-	}
-
-	result, ok := findKeyLine(lines, "key")
-	require.True(t, ok)
-	assert.Contains(t, result.raw, `key = "real"`)
-	assert.NotContains(t, result.raw, "fake")
-}
-
-func TestFormatTomlValue(t *testing.T) {
-	tests := []struct {
-		input    interface{}
-		expected string
-	}{
-		{"hello", `"hello"`},
-		{true, "true"},
-		{false, "false"},
-		{42, "42"},
-		{3.14, "3.14"},
-	}
-
-	for _, tt := range tests {
-		t.Run(fmt.Sprintf("%v", tt.input), func(t *testing.T) {
-			result := formatTomlValue(tt.input)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestReplaceOrInsertLine_RemovesDuplicates(t *testing.T) {
-	block := &tomlBlock{
-		name: "test",
-		lines: []string{
-			"[test]",
-			"key = 1",
-			"# key = commented",
-			"key = 2",
-		},
-	}
-
-	replaceOrInsertLine(block, "key", "key = 3", "")
-
-	count := 0
-	for _, line := range block.lines {
-		if strings.Contains(line, "key") && !strings.HasPrefix(strings.TrimSpace(line), "[") {
-			count++
-		}
-	}
-	assert.Equal(t, 1, count, "should have only one key line after replacement")
-	assert.Contains(t, block.lines, "key = 3")
-}
-
-func TestReplaceOrInsertLine_InsertsAfterKey(t *testing.T) {
-	block := &tomlBlock{
-		name: "test",
-		lines: []string{
-			"[test]",
-			"first = 1",
-			"third = 3",
-		},
-	}
-
-	replaceOrInsertLine(block, "second", "second = 2", "first")
-
-	firstIdx := -1
-	secondIdx := -1
-	for i, line := range block.lines {
-		if strings.HasPrefix(line, "first") {
-			firstIdx = i
-		}
-		if strings.HasPrefix(line, "second") {
-			secondIdx = i
-		}
-	}
-
-	require.NotEqual(t, -1, firstIdx)
-	require.NotEqual(t, -1, secondIdx)
-	assert.Equal(t, firstIdx+1, secondIdx, "second should be inserted right after first")
-}
-
 func TestPatchConfig_PreservesCustomArrayOfTables(t *testing.T) {
 	content := `
 [approvals]
@@ -1080,16 +845,16 @@ mode = "mcp"
 }
 
 func TestExtraArrayBlocks(t *testing.T) {
-	arrays := map[string][]*tomlBlock{
+	arrays := map[string][]*tomlpatch.Block{
 		"mcp.servers": {
-			{name: "mcp.servers", lines: []string{"[[mcp.servers]]", `id = "test"`}},
+			{Name: "mcp.servers", Lines: []string{"[[mcp.servers]]", `id = "test"`}},
 		},
 		"custom.items": {
-			{name: "custom.items", lines: []string{"[[custom.items]]", "a = 1"}},
-			{name: "custom.items", lines: []string{"[[custom.items]]", "b = 2"}},
+			{Name: "custom.items", Lines: []string{"[[custom.items]]", "a = 1"}},
+			{Name: "custom.items", Lines: []string{"[[custom.items]]", "b = 2"}},
 		},
 		"another": {
-			{name: "another", lines: []string{"[[another]]", "x = 1"}},
+			{Name: "another", Lines: []string{"[[another]]", "x = 1"}},
 		},
 	}
 
@@ -1097,7 +862,7 @@ func TestExtraArrayBlocks(t *testing.T) {
 
 	// Should not include mcp.servers
 	for _, block := range extra {
-		assert.NotEqual(t, "mcp.servers", block.name)
+		assert.NotEqual(t, "mcp.servers", block.Name)
 	}
 
 	// Should include custom.items (2 blocks) and another (1 block)
@@ -1106,7 +871,7 @@ func TestExtraArrayBlocks(t *testing.T) {
 	// Should be sorted by name
 	names := make([]string, len(extra))
 	for i, block := range extra {
-		names[i] = block.name
+		names[i] = block.Name
 	}
 	assert.True(t, sort.SliceIsSorted(names, func(i, j int) bool {
 		return names[i] < names[j]
@@ -1114,21 +879,21 @@ func TestExtraArrayBlocks(t *testing.T) {
 }
 
 func TestAssembleCanonicalConfig_SkipsNilBlock(t *testing.T) {
-	current := tomlDocument{
-		preamble: []string{"# current preamble"},
-		sections: map[string]*tomlBlock{},
-		arrays:   map[string][]*tomlBlock{},
+	current := tomlpatch.Document{
+		Preamble: []string{"# current preamble"},
+		Sections: map[string]*tomlpatch.Block{},
+		Arrays:   map[string][]*tomlpatch.Block{},
 	}
-	template := tomlDocument{
-		preamble: []string{"# template preamble"},
-		sections: map[string]*tomlBlock{"missing": nil},
-		arrays:   map[string][]*tomlBlock{},
-		order:    []string{"missing"},
+	template := tomlpatch.Document{
+		Preamble: []string{"# template preamble"},
+		Sections: map[string]*tomlpatch.Block{"missing": nil},
+		Arrays:   map[string][]*tomlpatch.Block{},
+		Order:    []string{"missing"},
 	}
 
-	catalog := tomlDocument{
-		sections: map[string]*tomlBlock{},
-		arrays:   map[string][]*tomlBlock{},
+	catalog := tomlpatch.Document{
+		Sections: map[string]*tomlpatch.Block{},
+		Arrays:   map[string][]*tomlpatch.Block{},
 	}
 	out, err := assembleCanonicalConfig(current, template, catalog, NewChoices())
 	require.NoError(t, err)
@@ -1147,98 +912,10 @@ func TestDefaultServerIDs_SkipsEmptyIDs(t *testing.T) {
 	assert.Equal(t, []string{"github"}, ids)
 }
 
-func TestParseKeyValueWithState_EdgeCases(t *testing.T) {
-	key, value, ok := parseKeyValueWithState(`id = "x" # trailing comment`, "id", tomlStateNone)
-	require.True(t, ok)
-	assert.Equal(t, "id", key)
-	assert.Equal(t, `"x"`, value)
-
-	_, _, ok = parseKeyValueWithState(`id "x"`, "id", tomlStateNone)
-	assert.False(t, ok)
-}
-
-func TestSetCommentedKeyLine_CommentsExistingLineWhenTemplateMissing(t *testing.T) {
-	block := &tomlBlock{
-		name:  "agents.antigravity",
-		lines: []string{"[agents.antigravity]", `model = "custom"`},
-	}
-	setCommentedKeyLine(block, nil, "model", "enabled")
-	assert.Contains(t, strings.Join(block.lines, "\n"), "# model =")
-}
-
-func TestSetKeyValue_UsesExistingLineAndInsertsWhenMissing(t *testing.T) {
-	t.Run("updates existing line", func(t *testing.T) {
-		block := &tomlBlock{
-			name:  "agents.claude",
-			lines: []string{"[agents.claude]", "enabled = false"},
-		}
-		setKeyValue(block, nil, "enabled", "true", "")
-		assert.Contains(t, strings.Join(block.lines, "\n"), "enabled = true")
-	})
-
-	t.Run("inserts when missing", func(t *testing.T) {
-		block := &tomlBlock{
-			name:  "agents.claude",
-			lines: []string{"[agents.claude]"},
-		}
-		setKeyValue(block, nil, "enabled", "true", "")
-		assert.Contains(t, strings.Join(block.lines, "\n"), "enabled = true")
-	})
-}
-
-func TestFindKeyLine_KeyMissingReturnsFalse(t *testing.T) {
-	_, ok := findKeyLine([]string{"[section]", `present = "yes"`}, "missing")
-	assert.False(t, ok)
-}
-
-func TestBuildKeyLine_CommentAndInlineComment(t *testing.T) {
-	line := buildKeyLine(keyLine{indent: "  ", inlineComment: "# note"}, "model", `"x"`, true)
-	assert.Equal(t, `  # model = "x" # note`, line)
-}
-
-func TestEnsureCommented_AddsCommentAfterIndent(t *testing.T) {
-	line := ensureCommented("\tmodel = \"x\"")
-	assert.Equal(t, "\t# model = \"x\"", line)
-}
-
-func TestReplaceOrInsertLine_SkipsMultilineStringContent(t *testing.T) {
-	block := &tomlBlock{
-		name: "test",
-		lines: []string{
-			"[test]",
-			`description = """`,
-			`key = "fake"`,
-			`"""`,
-			`key = "real"`,
-		},
-	}
-
-	replaceOrInsertLine(block, "key", `key = "new"`, "")
-
-	joined := strings.Join(block.lines, "\n")
-	assert.Contains(t, joined, `key = "fake"`) // inside multiline string content
-	assert.Contains(t, joined, `key = "new"`)
-	assert.NotContains(t, joined, `key = "real"`)
-}
-
-func TestFindInsertIndex_EdgeCases(t *testing.T) {
-	assert.Equal(t, 0, findInsertIndex(nil, "after"))
-
-	lines := []string{
-		"[test]",
-		`description = """`,
-		`after = "fake"`,
-		`"""`,
-		"other = 1",
-	}
-	assert.Equal(t, 1, findInsertIndex(lines, "after"))
-	assert.Equal(t, 1, findInsertIndex([]string{"[test]", "x = 1"}, ""))
-}
-
 func TestSanitizeMCPServerBlock_StdioRemovesHeaders(t *testing.T) {
-	block := &tomlBlock{
-		name: "mcp.servers",
-		lines: []string{
+	block := &tomlpatch.Block{
+		Name: "mcp.servers",
+		Lines: []string{
 			"[[mcp.servers]]",
 			`id = "myserver"`,
 			`enabled = true`,
@@ -1251,7 +928,7 @@ func TestSanitizeMCPServerBlock_StdioRemovesHeaders(t *testing.T) {
 
 	sanitizeMCPServerBlock(block)
 
-	joined := strings.Join(block.lines, "\n")
+	joined := strings.Join(block.Lines, "\n")
 	assert.NotContains(t, joined, "headers")
 	assert.Contains(t, joined, `transport = "stdio"`)
 	assert.Contains(t, joined, `command = "npx"`)
@@ -1259,9 +936,9 @@ func TestSanitizeMCPServerBlock_StdioRemovesHeaders(t *testing.T) {
 }
 
 func TestSanitizeMCPServerBlock_StdioRemovesURLAndHTTPTransport(t *testing.T) {
-	block := &tomlBlock{
-		name: "mcp.servers",
-		lines: []string{
+	block := &tomlpatch.Block{
+		Name: "mcp.servers",
+		Lines: []string{
 			"[[mcp.servers]]",
 			`id = "broken"`,
 			`enabled = true`,
@@ -1274,16 +951,16 @@ func TestSanitizeMCPServerBlock_StdioRemovesURLAndHTTPTransport(t *testing.T) {
 
 	sanitizeMCPServerBlock(block)
 
-	joined := strings.Join(block.lines, "\n")
+	joined := strings.Join(block.Lines, "\n")
 	assert.NotContains(t, joined, "url =")
 	assert.NotContains(t, joined, "http_transport")
 	assert.Contains(t, joined, `command = "run"`)
 }
 
 func TestSanitizeMCPServerBlock_HTTPRemovesCommandArgsEnv(t *testing.T) {
-	block := &tomlBlock{
-		name: "mcp.servers",
-		lines: []string{
+	block := &tomlpatch.Block{
+		Name: "mcp.servers",
+		Lines: []string{
 			"[[mcp.servers]]",
 			`id = "httpserver"`,
 			`enabled = true`,
@@ -1297,7 +974,7 @@ func TestSanitizeMCPServerBlock_HTTPRemovesCommandArgsEnv(t *testing.T) {
 
 	sanitizeMCPServerBlock(block)
 
-	joined := strings.Join(block.lines, "\n")
+	joined := strings.Join(block.Lines, "\n")
 	assert.NotContains(t, joined, "command =")
 	assert.NotContains(t, joined, "args =")
 	assert.NotContains(t, joined, "env =")
@@ -1305,9 +982,9 @@ func TestSanitizeMCPServerBlock_HTTPRemovesCommandArgsEnv(t *testing.T) {
 }
 
 func TestSanitizeMCPServerBlock_PreservesCommentedLines(t *testing.T) {
-	block := &tomlBlock{
-		name: "mcp.servers",
-		lines: []string{
+	block := &tomlpatch.Block{
+		Name: "mcp.servers",
+		Lines: []string{
 			"[[mcp.servers]]",
 			`id = "myserver"`,
 			`transport = "stdio"`,
@@ -1319,7 +996,7 @@ func TestSanitizeMCPServerBlock_PreservesCommentedLines(t *testing.T) {
 
 	sanitizeMCPServerBlock(block)
 
-	joined := strings.Join(block.lines, "\n")
+	joined := strings.Join(block.Lines, "\n")
 	// Uncommented headers line should be removed.
 	assert.NotContains(t, joined, `Authorization`)
 	// Commented headers line should be preserved.
@@ -1327,9 +1004,9 @@ func TestSanitizeMCPServerBlock_PreservesCommentedLines(t *testing.T) {
 }
 
 func TestSanitizeMCPServerBlock_NoTransportDoesNothing(t *testing.T) {
-	block := &tomlBlock{
-		name: "mcp.servers",
-		lines: []string{
+	block := &tomlpatch.Block{
+		Name: "mcp.servers",
+		Lines: []string{
 			"[[mcp.servers]]",
 			`id = "notransport"`,
 			`enabled = true`,
@@ -1339,14 +1016,14 @@ func TestSanitizeMCPServerBlock_NoTransportDoesNothing(t *testing.T) {
 
 	sanitizeMCPServerBlock(block)
 
-	joined := strings.Join(block.lines, "\n")
+	joined := strings.Join(block.Lines, "\n")
 	assert.Contains(t, joined, `headers = { X = "kept" }`)
 }
 
 func TestSanitizeMCPServerBlock_StdioRemovesDottedHeaders(t *testing.T) {
-	block := &tomlBlock{
-		name: "mcp.servers",
-		lines: []string{
+	block := &tomlpatch.Block{
+		Name: "mcp.servers",
+		Lines: []string{
 			"[[mcp.servers]]",
 			`id = "myserver"`,
 			`enabled = true`,
@@ -1359,7 +1036,7 @@ func TestSanitizeMCPServerBlock_StdioRemovesDottedHeaders(t *testing.T) {
 
 	sanitizeMCPServerBlock(block)
 
-	joined := strings.Join(block.lines, "\n")
+	joined := strings.Join(block.Lines, "\n")
 	assert.NotContains(t, joined, "headers")
 	assert.NotContains(t, joined, "Authorization")
 	assert.NotContains(t, joined, "X-Custom")
@@ -1369,9 +1046,9 @@ func TestSanitizeMCPServerBlock_StdioRemovesDottedHeaders(t *testing.T) {
 }
 
 func TestSanitizeMCPServerBlock_HTTPRemovesDottedEnv(t *testing.T) {
-	block := &tomlBlock{
-		name: "mcp.servers",
-		lines: []string{
+	block := &tomlpatch.Block{
+		Name: "mcp.servers",
+		Lines: []string{
 			"[[mcp.servers]]",
 			`id = "myhttp"`,
 			`enabled = true`,
@@ -1384,7 +1061,7 @@ func TestSanitizeMCPServerBlock_HTTPRemovesDottedEnv(t *testing.T) {
 
 	sanitizeMCPServerBlock(block)
 
-	joined := strings.Join(block.lines, "\n")
+	joined := strings.Join(block.Lines, "\n")
 	assert.NotContains(t, joined, "env")
 	assert.NotContains(t, joined, "TOKEN")
 	assert.NotContains(t, joined, "PATH")
@@ -1456,7 +1133,7 @@ headers = { Authorization = "Bearer ${TOKEN}" }
 
 func TestPatchConfig_SanitizesDottedHeadersOnStdioServer(t *testing.T) {
 	// Regression: dotted-key headers (headers.Foo = "bar") were invisible
-	// to removeKeyFromBlock because parseKeyLineWithState only matched
+	// to tomlpatch.RemoveKeyFromBlock because tomlpatch.ParseKeyLineWithState only matched
 	// "key = value" format, not "key.subkey = value".
 	content := `
 [mcp]
@@ -1518,254 +1195,6 @@ env.PATH = "/usr/bin"
 
 	parseErr := toml.Unmarshal([]byte(out), &map[string]any{})
 	require.NoError(t, parseErr, "patched output must be valid TOML")
-}
-
-func TestExtractMCPBlockKeyValue(t *testing.T) {
-	t.Run("extracts transport value", func(t *testing.T) {
-		lines := []string{
-			"[[mcp.servers]]",
-			`id = "test"`,
-			`transport = "stdio"`,
-		}
-		assert.Equal(t, "stdio", extractMCPBlockKeyValue(lines, "transport"))
-	})
-
-	t.Run("returns empty for missing key", func(t *testing.T) {
-		lines := []string{
-			"[[mcp.servers]]",
-			`id = "test"`,
-		}
-		assert.Equal(t, "", extractMCPBlockKeyValue(lines, "transport"))
-	})
-
-	t.Run("skips commented lines", func(t *testing.T) {
-		lines := []string{
-			"[[mcp.servers]]",
-			`# transport = "http"`,
-			`transport = "stdio"`,
-		}
-		assert.Equal(t, "stdio", extractMCPBlockKeyValue(lines, "transport"))
-	})
-}
-
-func TestRemoveKeyFromBlock(t *testing.T) {
-	t.Run("removes uncommented key", func(t *testing.T) {
-		block := &tomlBlock{
-			name: "test",
-			lines: []string{
-				"[[mcp.servers]]",
-				`id = "test"`,
-				`headers = { X = "remove" }`,
-				`command = "keep"`,
-			},
-		}
-		removeKeyFromBlock(block, "headers")
-		joined := strings.Join(block.lines, "\n")
-		assert.NotContains(t, joined, "headers")
-		assert.Contains(t, joined, "command")
-	})
-
-	t.Run("preserves commented key", func(t *testing.T) {
-		block := &tomlBlock{
-			name: "test",
-			lines: []string{
-				"[[mcp.servers]]",
-				`# headers = { old = "commented" }`,
-				`headers = { new = "active" }`,
-			},
-		}
-		removeKeyFromBlock(block, "headers")
-		joined := strings.Join(block.lines, "\n")
-		assert.Contains(t, joined, `# headers = { old = "commented" }`)
-		assert.NotContains(t, joined, `new = "active"`)
-	})
-
-	t.Run("noop when key absent", func(t *testing.T) {
-		block := &tomlBlock{
-			name:  "test",
-			lines: []string{"[[mcp.servers]]", `id = "test"`},
-		}
-		before := len(block.lines)
-		removeKeyFromBlock(block, "headers")
-		assert.Equal(t, before, len(block.lines))
-	})
-
-	t.Run("removes multiline array", func(t *testing.T) {
-		block := &tomlBlock{
-			name: "test",
-			lines: []string{
-				"[[mcp.servers]]",
-				`id = "test"`,
-				`args = [`,
-				`    "--flag1",`,
-				`    "--flag2",`,
-				`]`,
-				`command = "keep"`,
-			},
-		}
-		removeKeyFromBlock(block, "args")
-		joined := strings.Join(block.lines, "\n")
-		assert.NotContains(t, joined, "args")
-		assert.NotContains(t, joined, "--flag1")
-		assert.NotContains(t, joined, "--flag2")
-		assert.Contains(t, joined, `command = "keep"`)
-		assert.Contains(t, joined, `id = "test"`)
-	})
-
-	t.Run("removes multiline array with brackets in strings", func(t *testing.T) {
-		block := &tomlBlock{
-			name: "test",
-			lines: []string{
-				"[[mcp.servers]]",
-				`id = "test"`,
-				`args = [`,
-				`    "value with ] bracket",`,
-				`    "--other",`,
-				`]`,
-				`command = "keep"`,
-			},
-		}
-		removeKeyFromBlock(block, "args")
-		joined := strings.Join(block.lines, "\n")
-		assert.NotContains(t, joined, "args")
-		assert.NotContains(t, joined, "bracket")
-		assert.NotContains(t, joined, "--other")
-		assert.Contains(t, joined, `command = "keep"`)
-	})
-
-	t.Run("removes multiline inline table", func(t *testing.T) {
-		block := &tomlBlock{
-			name: "test",
-			lines: []string{
-				"[[mcp.servers]]",
-				`id = "test"`,
-				`env = {`,
-				`    KEY1 = "val1",`,
-				`    KEY2 = "val2",`,
-				`}`,
-				`command = "keep"`,
-			},
-		}
-		removeKeyFromBlock(block, "env")
-		joined := strings.Join(block.lines, "\n")
-		assert.NotContains(t, joined, "env")
-		assert.NotContains(t, joined, "KEY1")
-		assert.NotContains(t, joined, "KEY2")
-		assert.Contains(t, joined, `command = "keep"`)
-	})
-
-	t.Run("removes multiline triple-quoted string", func(t *testing.T) {
-		block := &tomlBlock{
-			name: "test",
-			lines: []string{
-				"[[mcp.servers]]",
-				`id = "test"`,
-				`command = """`,
-				`/usr/local/bin/`,
-				`my-server`,
-				`"""`,
-				`enabled = true`,
-			},
-		}
-		removeKeyFromBlock(block, "command")
-		joined := strings.Join(block.lines, "\n")
-		assert.NotContains(t, joined, "command")
-		assert.NotContains(t, joined, "my-server")
-		assert.Contains(t, joined, `enabled = true`)
-	})
-
-	t.Run("handles single-line array correctly", func(t *testing.T) {
-		block := &tomlBlock{
-			name: "test",
-			lines: []string{
-				"[[mcp.servers]]",
-				`id = "test"`,
-				`args = ["-y", "pkg@1.0"]`,
-				`command = "keep"`,
-			},
-		}
-		removeKeyFromBlock(block, "args")
-		joined := strings.Join(block.lines, "\n")
-		assert.NotContains(t, joined, "args")
-		assert.Contains(t, joined, `command = "keep"`)
-	})
-
-	t.Run("removes dotted sub-keys", func(t *testing.T) {
-		block := &tomlBlock{
-			name: "test",
-			lines: []string{
-				"[[mcp.servers]]",
-				`id = "test"`,
-				`headers.Authorization = "Bearer token"`,
-				`headers."X-Custom" = "value"`,
-				`command = "keep"`,
-			},
-		}
-		removeKeyFromBlock(block, "headers")
-		joined := strings.Join(block.lines, "\n")
-		assert.NotContains(t, joined, "headers")
-		assert.NotContains(t, joined, "Authorization")
-		assert.NotContains(t, joined, "X-Custom")
-		assert.Contains(t, joined, `command = "keep"`)
-	})
-
-	t.Run("preserves commented dotted sub-keys", func(t *testing.T) {
-		block := &tomlBlock{
-			name: "test",
-			lines: []string{
-				"[[mcp.servers]]",
-				`# headers.Authorization = "Bearer old"`,
-				`headers.Authorization = "Bearer active"`,
-				`command = "keep"`,
-			},
-		}
-		removeKeyFromBlock(block, "headers")
-		joined := strings.Join(block.lines, "\n")
-		assert.Contains(t, joined, `# headers.Authorization = "Bearer old"`)
-		assert.NotContains(t, joined, `Bearer active`)
-		assert.Contains(t, joined, `command = "keep"`)
-	})
-
-	t.Run("removes mix of inline table and dotted keys", func(t *testing.T) {
-		block := &tomlBlock{
-			name: "test",
-			lines: []string{
-				"[[mcp.servers]]",
-				`id = "test"`,
-				`env.TOKEN = "secret"`,
-				`env.PATH = "/usr/bin"`,
-				`command = "keep"`,
-			},
-		}
-		removeKeyFromBlock(block, "env")
-		joined := strings.Join(block.lines, "\n")
-		assert.NotContains(t, joined, "env")
-		assert.NotContains(t, joined, "TOKEN")
-		assert.NotContains(t, joined, "PATH")
-		assert.Contains(t, joined, `command = "keep"`)
-	})
-}
-
-func TestRemoveKeyFromBlock_EscapedTripleQuoteMultiline(t *testing.T) {
-	block := &tomlBlock{
-		name: "test",
-		lines: []string{
-			"[[mcp.servers]]",
-			`id = "test"`,
-			`command = """`,
-			`path with \""" embedded`,
-			`still going`,
-			`"""`,
-			`enabled = true`,
-		},
-	}
-	removeKeyFromBlock(block, "command")
-	joined := strings.Join(block.lines, "\n")
-	assert.NotContains(t, joined, "command")
-	assert.NotContains(t, joined, "path with")
-	assert.NotContains(t, joined, "still going")
-	assert.Contains(t, joined, `id = "test"`)
-	assert.Contains(t, joined, `enabled = true`)
 }
 
 func TestPatchConfig_ArraySubTablesStayWithOwningElement(t *testing.T) {
@@ -2116,18 +1545,18 @@ Authorization = "keep"
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			doc := parseTomlDocument(tt.content)
-			require.Len(t, doc.arrays[mcpServersSection], 1)
-			block := cloneBlock(doc.arrays[mcpServersSection][0])
+			doc := tomlpatch.ParseDocument(tt.content)
+			require.Len(t, doc.Arrays[mcpServersSection], 1)
+			block := cloneBlock(doc.Arrays[mcpServersSection][0])
 
 			sanitizeMCPServerBlock(block)
 
 			var kept []string
-			for _, subTable := range block.subTables {
-				kept = append(kept, subTable.name)
+			for _, subTable := range block.SubTables {
+				kept = append(kept, subTable.Name)
 			}
 			assert.Equal(t, tt.wantKept, kept)
-			joined := strings.Join(block.lines, "\n")
+			joined := strings.Join(block.Lines, "\n")
 			for _, gone := range tt.wantGone {
 				assert.NotContains(t, joined, gone)
 			}
@@ -2148,8 +1577,8 @@ enabled = true
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
 
-	doc := parseTomlDocument(out)
-	section := strings.Join(doc.sections["agents.claude"].lines, "\n")
+	doc := tomlpatch.ParseDocument(out)
+	section := strings.Join(doc.Sections["agents.claude"].Lines, "\n")
 	assert.Contains(t, section, "local_config_dir = true")
 	assert.NotContains(t, section, "# local_config_dir")
 }
@@ -2167,8 +1596,8 @@ local_config_dir = true
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
 
-	doc := parseTomlDocument(out)
-	section := strings.Join(doc.sections["agents.claude"].lines, "\n")
+	doc := tomlpatch.ParseDocument(out)
+	section := strings.Join(doc.Sections["agents.claude"].Lines, "\n")
 	assert.Contains(t, section, "# local_config_dir")
 	assert.NotContains(t, section, "local_config_dir = true")
 }
@@ -2186,8 +1615,8 @@ enabled = true
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
 
-	doc := parseTomlDocument(out)
-	section := strings.Join(doc.sections["agents.codex"].lines, "\n")
+	doc := tomlpatch.ParseDocument(out)
+	section := strings.Join(doc.Sections["agents.codex"].Lines, "\n")
 	assert.Contains(t, section, "local_config_dir = true")
 	assert.NotContains(t, section, "# local_config_dir")
 }
@@ -2205,8 +1634,8 @@ local_config_dir = true
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
 
-	doc := parseTomlDocument(out)
-	section := strings.Join(doc.sections["agents.codex"].lines, "\n")
+	doc := tomlpatch.ParseDocument(out)
+	section := strings.Join(doc.Sections["agents.codex"].Lines, "\n")
 	assert.Contains(t, section, "# local_config_dir")
 	assert.NotContains(t, section, "local_config_dir = true")
 }
@@ -2231,7 +1660,7 @@ reasoning_effort = "high"
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
 
-	lines := parseTomlDocument(out).sections["agents.codex"].lines
+	lines := tomlpatch.ParseDocument(out).Sections["agents.codex"].Lines
 	enabledIdx, reasoningIdx, statuslineIdx := -1, -1, -1
 	for i, l := range lines {
 		switch trimmed := strings.TrimSpace(l); {
@@ -2514,9 +1943,9 @@ enabled = true
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
 
-	block, exists := parseTomlDocument(out).sections[codexSection]
+	block, exists := tomlpatch.ParseDocument(out).Sections[codexSection]
 	require.True(t, exists)
-	assert.False(t, hasUncommentedKeyLine(block.lines, "statusline"))
+	assert.False(t, hasUncommentedKeyLine(block.Lines, "statusline"))
 }
 
 func TestPatchConfig_CodexAppsUntouchedPreservesExistingValue(t *testing.T) {
@@ -2689,18 +2118,6 @@ func TestReadCodexPluginsEnabledDefaultsToNativeEnabled(t *testing.T) {
 	assert.True(t, readCodexPluginsEnabled(nil))
 	assert.True(t, readCodexPluginsEnabled(map[string]any{"features": map[string]any{"plugins": true}}))
 	assert.False(t, readCodexPluginsEnabled(map[string]any{"features": map[string]any{"plugins": false}}))
-}
-
-func TestPatchHelpers_EdgeCases(t *testing.T) {
-	assert.Nil(t, cloneBlock(nil))
-	assert.Nil(t, cloneLines(nil))
-
-	output := []string{"[section]"}
-	appendBlock(&output, []string{"", "  ", ""})
-	assert.Equal(t, []string{"[section]"}, output)
-
-	assert.Equal(t, []string{"a"}, trimEmptyLines([]string{"", "a", ""}))
-	assert.Equal(t, []string{"a"}, trimTrailingEmptyLines([]string{"a", "", "  "}))
 }
 
 func TestPatchConfig_CodexBrowserDisabledOnFreshConfig(t *testing.T) {
@@ -3132,4 +2549,82 @@ features.multi_agent = true
 	assert.Contains(t, out, "features.browser_use = false")
 	assert.Contains(t, out, "features.multi_agent = true")
 	assert.NotContains(t, out, "[agents.codex.agent_specific.features]")
+}
+
+func TestCloneBlock_Nil(t *testing.T) {
+	assert.Nil(t, cloneBlock(nil))
+}
+
+// Assembly must leave source documents intact when mutating selected sections,
+// catalog defaults, custom servers, and the nested tables of those servers.
+func TestAssembleCanonicalConfig_DoesNotMutateSourceDocuments(t *testing.T) {
+	currentContent := `[approvals]
+mode = "mcp"
+[warnings]
+instruction_token_threshold = 1
+noise_mode = "keep"
+[mcp]
+[[mcp.servers]]
+id = "default"
+enabled = true
+transport = "stdio"
+headers = { old = "remove" }
+[mcp.servers.env]
+KEEP = "value"
+[mcp.servers.headers]
+Old = "remove"
+# keep default comment
+[[mcp.servers]]
+id = "custom"
+enabled = true
+transport = "stdio"
+command = "run"
+[mcp.servers.headers]
+Old = "remove"
+# keep custom comment
+`
+	templateContent := `[approvals]
+mode = "all"
+[agents.claude]
+enabled = false
+model = "template"
+[warnings]
+instruction_token_threshold = 10
+[mcp]
+`
+	catalogContent := `[[mcp.servers]]
+id = "default"
+enabled = true
+[[mcp.servers]]
+id = "missing"
+enabled = false
+transport = "stdio"
+headers = { old = "remove" }
+[mcp.servers.env]
+KEEP = "value"
+[mcp.servers.headers]
+Old = "remove"
+# keep catalog comment
+`
+	current := tomlpatch.ParseDocument(currentContent)
+	template := tomlpatch.ParseDocument(templateContent)
+	catalog := tomlpatch.ParseDocument(catalogContent)
+	choices := NewChoices()
+	choices.ApprovalModeTouched, choices.ApprovalMode = true, "all"
+	choices.EnabledAgentsTouched = true
+	choices.EnabledAgents[AgentClaude] = true
+	choices.ClaudeModelTouched, choices.ClaudeModel = true, "updated"
+	choices.WarningsEnabledTouched, choices.WarningsEnabled = true, false
+	choices.DefaultMCPServers = []DefaultMCPServer{{ID: "default"}, {ID: "missing"}}
+	choices.EnabledMCPServersTouched = true
+	choices.EnabledMCPServers = map[string]bool{"default": false, "missing": true}
+	choices.CustomMCPServersTouched = true
+	choices.CustomMCPServersEnabled = map[string]bool{"custom": false}
+
+	output, err := assembleCanonicalConfig(current, template, catalog, choices)
+	require.NoError(t, err)
+	assert.Contains(t, strings.Join(output, "\n"), `model = "updated"`)
+	assert.Equal(t, tomlpatch.ParseDocument(currentContent), current)
+	assert.Equal(t, tomlpatch.ParseDocument(templateContent), template)
+	assert.Equal(t, tomlpatch.ParseDocument(catalogContent), catalog)
 }

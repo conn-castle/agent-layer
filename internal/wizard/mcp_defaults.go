@@ -8,6 +8,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
+	"github.com/conn-castle/agent-layer/internal/tomlpatch"
 )
 
 // catalogTemplatePath is the embedded MCP server catalog used by the wizard.
@@ -60,15 +61,15 @@ func loadCatalogMCPServers() ([]config.MCPServer, error) {
 	return doc.MCP.Servers, nil
 }
 
-// loadCatalogDocument returns the parsed line-based tomlDocument for the wizard catalog file.
+// loadCatalogDocument returns the parsed line-based TOML document for the wizard catalog file.
 // The wizard uses this document to source default-shaped [[mcp.servers]] blocks while preserving
 // comments and formatting. Errors loudly when the catalog is missing or unreadable.
-func loadCatalogDocument() (tomlDocument, error) {
+func loadCatalogDocument() (tomlpatch.Document, error) {
 	data, err := templates.Read(catalogTemplatePath)
 	if err != nil {
-		return tomlDocument{}, fmt.Errorf(messages.WizardLoadMCPCatalogFailedFmt, err)
+		return tomlpatch.Document{}, fmt.Errorf(messages.WizardLoadMCPCatalogFailedFmt, err)
 	}
-	return parseTomlDocument(string(data)), nil
+	return tomlpatch.ParseDocument(string(data)), nil
 }
 
 // customMCPServers returns config MCP servers whose id is not a catalog default,
