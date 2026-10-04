@@ -268,13 +268,8 @@ func TestUpgradeCmd_NonInteractiveYesApplyManagedRunsInstallWithPrompter(t *test
 	if captured.Prompter == nil {
 		t.Fatal("captured opts.Prompter = nil, want non-nil")
 	}
-	promptFuncs, ok := captured.Prompter.(install.PromptFuncs)
-	if !ok {
-		t.Fatalf("captured opts.Prompter = %T, want install.PromptFuncs", captured.Prompter)
-	}
-	if promptFuncs.OverwriteAllPreviewFunc == nil ||
-		promptFuncs.OverwriteAllMemoryPreviewFunc == nil ||
-		promptFuncs.OverwriteAllUnifiedPreviewFunc == nil ||
+	promptFuncs := captured.Prompter
+	if promptFuncs.OverwriteAllUnifiedPreviewFunc == nil ||
 		promptFuncs.OverwritePreviewFunc == nil ||
 		promptFuncs.DeleteUnknownAllFunc == nil ||
 		promptFuncs.DeleteUnknownFunc == nil ||
@@ -282,13 +277,10 @@ func TestUpgradeCmd_NonInteractiveYesApplyManagedRunsInstallWithPrompter(t *test
 		t.Fatalf("expected all prompt callbacks to be wired: %+v", promptFuncs)
 	}
 
-	if overwriteManaged, err := promptFuncs.OverwriteAll(nil); err != nil || !overwriteManaged {
-		t.Fatalf("OverwriteAll = (%v, %v), want (true, nil)", overwriteManaged, err)
+	if managed, memory, err := promptFuncs.OverwriteAllUnifiedPreviewFunc(nil, nil); err != nil || !managed || memory {
+		t.Fatalf("unified overwrite = (%v, %v, %v), want (true, false, nil)", managed, memory, err)
 	}
-	if overwriteMemory, err := promptFuncs.OverwriteAllMemory(nil); err != nil || overwriteMemory {
-		t.Fatalf("OverwriteAllMemory = (%v, %v), want (false, nil)", overwriteMemory, err)
-	}
-	if deleteAll, err := promptFuncs.DeleteUnknownAll(nil); err != nil || deleteAll {
+	if deleteAll, err := promptFuncs.DeleteUnknownAllFunc(nil); err != nil || deleteAll {
 		t.Fatalf("DeleteUnknownAll = (%v, %v), want (false, nil)", deleteAll, err)
 	}
 }
@@ -753,13 +745,8 @@ func TestUpgradeCmd_InteractiveWiresPrompter(t *testing.T) {
 	if captured.Prompter == nil {
 		t.Fatal("captured opts.Prompter = nil, want non-nil")
 	}
-	promptFuncs, ok := captured.Prompter.(install.PromptFuncs)
-	if !ok {
-		t.Fatalf("captured opts.Prompter = %T, want install.PromptFuncs", captured.Prompter)
-	}
-	if promptFuncs.OverwriteAllPreviewFunc == nil ||
-		promptFuncs.OverwriteAllMemoryPreviewFunc == nil ||
-		promptFuncs.OverwriteAllUnifiedPreviewFunc == nil ||
+	promptFuncs := captured.Prompter
+	if promptFuncs.OverwriteAllUnifiedPreviewFunc == nil ||
 		promptFuncs.OverwritePreviewFunc == nil ||
 		promptFuncs.DeleteUnknownAllFunc == nil ||
 		promptFuncs.DeleteUnknownFunc == nil ||
@@ -811,17 +798,11 @@ func TestUpgradeCmd_InteractiveApplyManagedAutoApprovesOnlyManaged(t *testing.T)
 		}
 	})
 
-	promptFuncs, ok := captured.Prompter.(install.PromptFuncs)
-	if !ok {
-		t.Fatalf("captured opts.Prompter = %T, want install.PromptFuncs", captured.Prompter)
+	promptFuncs := captured.Prompter
+	if managed, memory, err := promptFuncs.OverwriteAllUnifiedPreviewFunc(nil, nil); err != nil || !managed || memory {
+		t.Fatalf("unified overwrite = (%v, %v, %v), want (true, false, nil)", managed, memory, err)
 	}
-	if overwriteManaged, err := promptFuncs.OverwriteAll(nil); err != nil || !overwriteManaged {
-		t.Fatalf("OverwriteAll = (%v, %v), want (true, nil)", overwriteManaged, err)
-	}
-	if overwriteMemory, err := promptFuncs.OverwriteAllMemory(nil); err != nil || overwriteMemory {
-		t.Fatalf("OverwriteAllMemory = (%v, %v), want (false, nil)", overwriteMemory, err)
-	}
-	if deleteAll, err := promptFuncs.DeleteUnknownAll(nil); err != nil || deleteAll {
+	if deleteAll, err := promptFuncs.DeleteUnknownAllFunc(nil); err != nil || deleteAll {
 		t.Fatalf("DeleteUnknownAll = (%v, %v), want (false, nil)", deleteAll, err)
 	}
 }

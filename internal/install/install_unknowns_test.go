@@ -103,7 +103,7 @@ func setupUnknownFile(t *testing.T) (*installer, string) {
 
 func TestHandleUnknowns_PromptDeleteAllError(t *testing.T) {
 	inst, _ := setupUnknownFile(t)
-	inst.prompter = PromptFuncs{
+	inst.prompter = &PromptFuncs{
 		DeleteUnknownAllFunc: func([]string) (bool, error) {
 			return false, errors.New("boom")
 		},
@@ -115,7 +115,7 @@ func TestHandleUnknowns_PromptDeleteAllError(t *testing.T) {
 
 func TestHandleUnknowns_PromptDeleteError(t *testing.T) {
 	inst, _ := setupUnknownFile(t)
-	inst.prompter = PromptFuncs{
+	inst.prompter = &PromptFuncs{
 		DeleteUnknownAllFunc: func([]string) (bool, error) {
 			return false, nil
 		},
@@ -153,7 +153,7 @@ func TestHandleUnknowns_DeleteError(t *testing.T) {
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
+		prompter: &PromptFuncs{
 			DeleteUnknownAllFunc: func([]string) (bool, error) { return true, nil },
 			DeleteUnknownFunc:    func(string) (bool, error) { return true, nil },
 		},
@@ -245,7 +245,7 @@ func TestRelativeUnknowns_WithPaths(t *testing.T) {
 func TestHandleUnknowns_IndividualDelete(t *testing.T) {
 	inst, unknownFile := setupUnknownFile(t)
 	deleteCalled := false
-	inst.prompter = PromptFuncs{
+	inst.prompter = &PromptFuncs{
 		DeleteUnknownAllFunc: func([]string) (bool, error) {
 			return false, nil
 		},
@@ -267,7 +267,7 @@ func TestHandleUnknowns_IndividualDelete(t *testing.T) {
 
 func TestHandleUnknowns_MissingIndividualPrompt(t *testing.T) {
 	inst, _ := setupUnknownFile(t)
-	inst.prompter = PromptFuncs{
+	inst.prompter = &PromptFuncs{
 		DeleteUnknownAllFunc: func([]string) (bool, error) { return false, nil },
 		// Missing DeleteUnknownFunc
 	}
@@ -301,7 +301,7 @@ func TestHandleUnknowns_IndividualDeleteError(t *testing.T) {
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
+		prompter: &PromptFuncs{
 			DeleteUnknownAllFunc: func([]string) (bool, error) {
 				return false, nil // Don't delete all
 			},
@@ -443,7 +443,7 @@ func TestHandleUnknowns_DocsAgentLayerOrphan_DetectedAndDeleted(t *testing.T) {
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
+		prompter: &PromptFuncs{
 			DeleteUnknownAllFunc: func(paths []string) (bool, error) {
 				promptedPaths = paths
 				return true, nil
@@ -554,7 +554,7 @@ func TestHandleUnknowns_DeleteAll_DoesNotBypassTmpGuard(t *testing.T) {
 	// top level.
 	inst, tmpFile, otherFile := setupTmpAndOtherUnknowns(t)
 	tmpPromptCalls := 0
-	inst.prompter = PromptFuncs{
+	inst.prompter = &PromptFuncs{
 		DeleteUnknownAllFunc: func([]string) (bool, error) { return true, nil },
 		DeleteUnknownTmpAllFunc: func([]string) (bool, error) {
 			tmpPromptCalls++
@@ -585,7 +585,7 @@ func TestHandleUnknowns_TmpGroupedPrompt_DeletesAllTmp(t *testing.T) {
 	tmpPromptCalls := 0
 	perFileCalls := 0
 	var perFilePaths []string
-	inst.prompter = PromptFuncs{
+	inst.prompter = &PromptFuncs{
 		DeleteUnknownAllFunc: func([]string) (bool, error) { return false, nil },
 		DeleteUnknownTmpAllFunc: func(paths []string) (bool, error) {
 			tmpPromptCalls++
@@ -622,7 +622,7 @@ func TestHandleUnknowns_TmpGroupedPrompt_DeletesAllTmp(t *testing.T) {
 func TestHandleUnknowns_TmpGroupedPrompt_DeclinedKeepsTmp(t *testing.T) {
 	inst, tmpFile, _ := setupTmpAndOtherUnknowns(t)
 
-	inst.prompter = PromptFuncs{
+	inst.prompter = &PromptFuncs{
 		DeleteUnknownAllFunc:    func([]string) (bool, error) { return false, nil },
 		DeleteUnknownTmpAllFunc: func([]string) (bool, error) { return false, nil },
 		DeleteUnknownFunc:       func(string) (bool, error) { return false, nil },
@@ -639,7 +639,7 @@ func TestHandleUnknowns_TmpGroupedPrompt_DeclinedKeepsTmp(t *testing.T) {
 func TestHandleUnknowns_NoTmpFiles_TmpPromptNotCalled(t *testing.T) {
 	inst, _ := setupUnknownFile(t)
 	tmpCalled := false
-	inst.prompter = PromptFuncs{
+	inst.prompter = &PromptFuncs{
 		DeleteUnknownAllFunc: func([]string) (bool, error) { return false, nil },
 		DeleteUnknownTmpAllFunc: func([]string) (bool, error) {
 			tmpCalled = true
@@ -672,7 +672,7 @@ func TestHandleUnknowns_OnlyTmpFiles_NoPerFileLoop(t *testing.T) {
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
+		prompter: &PromptFuncs{
 			DeleteUnknownAllFunc:    func([]string) (bool, error) { return false, nil },
 			DeleteUnknownTmpAllFunc: func([]string) (bool, error) { return true, nil },
 			DeleteUnknownFunc: func(string) (bool, error) {
@@ -717,7 +717,7 @@ func TestHandleUnknowns_TopLevelSummaryCollapsesTmp(t *testing.T) {
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
+		prompter: &PromptFuncs{
 			DeleteUnknownAllFunc: func(paths []string) (bool, error) {
 				captured = paths
 				return true, nil
@@ -750,64 +750,16 @@ func TestHandleUnknowns_TopLevelSummaryCollapsesTmp(t *testing.T) {
 	}
 }
 
-func TestHandleUnknowns_TmpFallback_LegacyPrompterPreservesTmp(t *testing.T) {
-	// Tmp deletion is destructive (snapshots do not capture tmp). When the
-	// prompter does not implement the grouped tmpUnknownsPrompter capability,
-	// tmp paths must be left untouched rather than falling back to per-file
-	// prompts — the destructive double-confirm only exists in the grouped
-	// path, so the per-file fallback would silently bypass the safety guard.
-	inst, tmpFile, otherFile := setupTmpAndOtherUnknowns(t)
-	var perFilePaths []string
-	inst.prompter = legacyDeleteOnlyPrompter{
-		deleteAll: func([]string) (bool, error) { return false, nil },
-		deleteOne: func(path string) (bool, error) {
-			perFilePaths = append(perFilePaths, path)
-			return true, nil
-		},
-	}
-	if err := inst.handleUnknowns(); err != nil {
-		t.Fatalf("handleUnknowns: %v", err)
-	}
-	if len(perFilePaths) != 1 {
-		t.Fatalf("expected per-file prompt only for non-tmp unknown, got %v", perFilePaths)
-	}
-	if _, err := os.Stat(tmpFile); err != nil {
-		t.Fatalf("tmp file must be preserved when grouped prompter is absent, stat err=%v", err)
-	}
-	if _, err := os.Stat(otherFile); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("expected non-tmp file to be deleted, stat err=%v", err)
-	}
-}
-
-// legacyDeleteOnlyPrompter satisfies Prompter without implementing the
-// optional tmpUnknownsPrompter interface, modelling a stale Prompter
-// implementation that only handles the original DeleteUnknown(All) prompts.
-type legacyDeleteOnlyPrompter struct {
-	deleteAll func([]string) (bool, error)
-	deleteOne func(string) (bool, error)
-}
-
-func (legacyDeleteOnlyPrompter) OverwriteAll([]DiffPreview) (bool, error)       { return false, nil }
-func (legacyDeleteOnlyPrompter) OverwriteAllMemory([]DiffPreview) (bool, error) { return false, nil }
-func (legacyDeleteOnlyPrompter) Overwrite(DiffPreview) (bool, error)            { return false, nil }
-func (p legacyDeleteOnlyPrompter) DeleteUnknownAll(paths []string) (bool, error) {
-	return p.deleteAll(paths)
-}
-func (p legacyDeleteOnlyPrompter) DeleteUnknown(path string) (bool, error) {
-	return p.deleteOne(path)
-}
-
 func TestHandleUnknowns_TmpFallback_PromptFuncsWithoutTmpAllFuncPreservesTmp(t *testing.T) {
-	// PromptFuncs always satisfies tmpUnknownsPrompter (the method is defined
-	// on the struct), but a caller may construct it without wiring
-	// DeleteUnknownTmpAllFunc. In that case handleTmpUnknowns must preserve
+	// A caller may construct PromptFuncs without wiring DeleteUnknownTmpAllFunc.
+	// In that case handleTmpUnknowns must preserve
 	// tmp content rather than surfacing the "prompt required" error or
 	// silently routing tmp through the per-file path: the destructive
 	// double-confirm exists only in the grouped path, and routing tmp
 	// elsewhere would bypass it.
 	inst, tmpFile, otherFile := setupTmpAndOtherUnknowns(t)
 	var perFilePaths []string
-	inst.prompter = PromptFuncs{
+	inst.prompter = &PromptFuncs{
 		DeleteUnknownAllFunc: func([]string) (bool, error) { return false, nil },
 		DeleteUnknownFunc: func(path string) (bool, error) {
 			perFilePaths = append(perFilePaths, path)

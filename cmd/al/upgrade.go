@@ -79,14 +79,13 @@ func newUpgradeCmd() *cobra.Command {
 			if err := writeUpgradeVersionBanner(cmd.OutOrStdout(), root, targetPin); err != nil {
 				return err
 			}
-			reviewState := buildUpgradeReviewState(policy)
 			opts := install.Options{
 				Overwrite:    true,
 				PinVersion:   targetPin,
 				DiffMaxLines: diffLines,
 				System:       install.RealSystem{},
 			}
-			opts.Prompter = buildUpgradePrompter(cmd, policy, reviewState)
+			opts.Prompter = buildUpgradePrompter(cmd, policy)
 			if err := installRun(root, opts); err != nil {
 				return err
 			}
@@ -261,25 +260,6 @@ type upgradeApplyPolicy struct {
 	applyTmpDeletions bool
 }
 
-type upgradeReviewState struct {
-	enabled                       bool
-	prompted                      bool
-	statuslineSourceSkipAnnounced bool
-	managedPreviews               []install.DiffPreview
-	memoryPreviews                []install.DiffPreview
-	applyManaged                  bool
-	applyMemory                   bool
-}
-
-func buildUpgradeReviewState(policy upgradeApplyPolicy) *upgradeReviewState {
-	state := &upgradeReviewState{enabled: false}
-	if !policy.interactive || policy.explicitCategory {
-		return state
-	}
-	state.enabled = true
-	return state
-}
-
 func resolveUpgradeApplyPolicy(in upgradeApplyInputs) (upgradeApplyPolicy, error) {
 	if in.yes && !in.hasAnyApply() {
 		return upgradeApplyPolicy{}, fmt.Errorf(messages.UpgradeYesRequiresApply)
@@ -301,14 +281,16 @@ func resolveUpgradeApplyPolicy(in upgradeApplyInputs) (upgradeApplyPolicy, error
 	}, nil
 }
 
-func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewState *upgradeReviewState) install.PromptFuncs {
+func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy) *install.PromptFuncs {
 	// Shared buffered reader for all prompts in this upgrade session. Creating
 	// a single reader prevents buffered stdin bytes from being lost when
 	// multiple prompts are issued sequentially (e.g., chained config_set_default
 	// migration operations).
 	stdinReader := bufio.NewReader(cmd.InOrStdin())
 
-	return install.PromptFuncs{
+	statuslineSourceSkipAnnounced := false
+
+	return &install.PromptFuncs{
 		SelectUnknownsToKeepFunc: func(paths []string) ([]string, error) {
 			if policy.yes || !policy.interactive || len(paths) == 0 || (policy.explicitCategory && !policy.applyDeletions) {
 				return nil, nil
@@ -355,41 +337,9 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 			}
 			return nil, fmt.Errorf(messages.UpgradeDeclinedRequiredKeyFmt, key)
 		},
-		OverwriteAllPreviewFunc: func(previews []install.DiffPreview) (bool, error) {
-			if policy.explicitCategory {
-				return policy.applyManaged, nil
-			}
-			if reviewState != nil && reviewState.enabled {
-				if err := promptUnifiedUpgradeReview(cmd, stdinReader, reviewState); err != nil {
-					return false, err
-				}
-				return reviewState.applyManaged, nil
-			}
-			return promptOverwriteSection(stdinReader, cmd.OutOrStdout(), messages.UpgradeOverwriteManagedHeader, previews, messages.UpgradeOverwriteAllPrompt, true)
-		},
-		OverwriteAllMemoryPreviewFunc: func(previews []install.DiffPreview) (bool, error) {
-			if policy.explicitCategory {
-				return policy.applyMemory, nil
-			}
-			if reviewState != nil && reviewState.enabled {
-				if err := promptUnifiedUpgradeReview(cmd, stdinReader, reviewState); err != nil {
-					return false, err
-				}
-				return reviewState.applyMemory, nil
-			}
-			return promptOverwriteSection(stdinReader, cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryHeader, previews, messages.UpgradeOverwriteMemoryAllPrompt, false)
-		},
 		OverwriteAllUnifiedPreviewFunc: func(managedPreviews []install.DiffPreview, memoryPreviews []install.DiffPreview) (bool, bool, error) {
 			if policy.explicitCategory {
 				return policy.applyManaged, policy.applyMemory, nil
-			}
-			if reviewState != nil && reviewState.enabled {
-				reviewState.managedPreviews = managedPreviews
-				reviewState.memoryPreviews = memoryPreviews
-				if err := promptUnifiedUpgradeReview(cmd, stdinReader, reviewState); err != nil {
-					return false, false, err
-				}
-				return reviewState.applyManaged, reviewState.applyMemory, nil
 			}
 			return promptUnifiedOverwriteSections(stdinReader, cmd.OutOrStdout(), managedPreviews, memoryPreviews)
 		},
@@ -408,11 +358,11 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 		},
 		StatuslineSourcePreviewFunc: func(preview install.DiffPreview) (bool, error) {
 			if policy.yes || !policy.interactive {
-				if reviewState != nil && !reviewState.statuslineSourceSkipAnnounced {
+				if !statuslineSourceSkipAnnounced {
 					if _, err := fmt.Fprintln(cmd.ErrOrStderr(), messages.UpgradeSkipStatuslineSourceUpdatesInfo); err != nil {
 						return false, err
 					}
-					reviewState.statuslineSourceSkipAnnounced = true
+					statuslineSourceSkipAnnounced = true
 				}
 				return false, nil
 			}
@@ -498,20 +448,6 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 	}
 }
 
-func promptUnifiedUpgradeReview(cmd *cobra.Command, in io.Reader, state *upgradeReviewState) error {
-	if state.prompted {
-		return nil
-	}
-	applyManaged, applyMemory, err := promptUnifiedOverwriteSections(in, cmd.OutOrStdout(), state.managedPreviews, state.memoryPreviews)
-	if err != nil {
-		return err
-	}
-	state.applyManaged = applyManaged
-	state.applyMemory = applyMemory
-	state.prompted = true
-	return nil
-}
-
 // promptUnifiedOverwriteSections prints summary lists for both managed and
 // memory previews, asks once whether to view the full diffs (default no),
 // optionally renders them, and then asks the apply prompt for each section.
@@ -545,24 +481,6 @@ func promptUnifiedOverwriteSections(in io.Reader, out io.Writer, managedPreviews
 		}
 	}
 	return applyManaged, applyMemory, nil
-}
-
-// promptOverwriteSection renders the file list (with +/- stats), asks if the
-// user wants to view the full diff (default no), optionally renders the diff
-// bodies, and finally asks the apply prompt. Returns false with no prompts
-// when previews is empty.
-func promptOverwriteSection(in io.Reader, out io.Writer, header string, previews []install.DiffPreview, applyPrompt string, applyDefault bool) (bool, error) {
-	if len(previews) == 0 {
-		return false, nil
-	}
-	reader := bufferedReader(in)
-	if err := printDiffPreviewSummary(out, header, previews); err != nil {
-		return false, err
-	}
-	if err := promptOptionalViewDiff(reader, out, previews); err != nil {
-		return false, err
-	}
-	return promptYesNo(reader, out, applyPrompt, applyDefault)
 }
 
 // bufferedReader returns a *bufio.Reader for in, reusing it if in is already

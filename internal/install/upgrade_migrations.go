@@ -837,17 +837,11 @@ func (inst *installer) executeConfigSetDefaultMigration(op upgradeMigrationOpera
 	if f, found := config.LookupField(keyPath); found {
 		fieldPtr = &f
 	}
-	resp, promptErr := inst.promptRouter().route(promptRequest{
-		kind:          promptKindConfigSetDefault,
-		configKey:     keyPath,
-		manifestValue: decoded,
-		rationale:     op.Rationale,
-		field:         fieldPtr,
-	})
+	value, promptErr := inst.prompter.configSetDefault(keyPath, decoded, op.Rationale, fieldPtr)
 	if promptErr != nil {
 		return false, fmt.Errorf("prompt for config key %s: %w", keyPath, promptErr)
 	}
-	decoded = resp.value
+	decoded = value
 	if setErr := setNestedConfigValue(cfg, parts, decoded, true); setErr != nil {
 		return false, setErr
 	}

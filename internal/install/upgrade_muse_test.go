@@ -45,7 +45,7 @@ enabled = false
 			inst := &installer{root: root, pinVersion: "0.22.0", sys: RealSystem{}, warnWriter: &warn}
 			prompts := 0
 			if tc.interactive {
-				inst.prompter = PromptFuncs{ConfigSetDefaultFunc: func(key string, value any, _ string, field *config.FieldDef) (any, error) {
+				inst.prompter = &PromptFuncs{ConfigSetDefaultFunc: func(key string, value any, _ string, field *config.FieldDef) (any, error) {
 					prompts++
 					if key != "agents.muse.enabled" || value != false || field == nil {
 						t.Fatalf("unexpected choice: %s %v %v", key, value, field)

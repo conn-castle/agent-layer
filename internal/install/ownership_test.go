@@ -35,7 +35,7 @@ func TestOwnershipLabelState_Mappings(t *testing.T) {
 	}
 }
 
-func TestShouldOverwriteAllManaged_FormatsOwnershipLabels(t *testing.T) {
+func TestResolveOverwriteAllDecisions_FormatsManagedOwnershipLabels(t *testing.T) {
 	root := t.TempDir()
 	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
 	if err := os.MkdirAll(filepath.Dir(allowPath), 0o700); err != nil {
@@ -50,18 +50,17 @@ func TestShouldOverwriteAllManaged_FormatsOwnershipLabels(t *testing.T) {
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
-			OverwriteAllPreviewFunc: func(previews []DiffPreview) (bool, error) {
+		prompter: &PromptFuncs{
+			OverwriteAllUnifiedPreviewFunc: func(previews, memory []DiffPreview) (bool, bool, error) {
 				promptPreviews = append(promptPreviews, previews...)
-				return false, nil
+				return false, false, nil
 			},
-			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return false, nil },
-			OverwritePreviewFunc:          func(preview DiffPreview) (bool, error) { return false, nil },
+			OverwritePreviewFunc: func(preview DiffPreview) (bool, error) { return false, nil },
 		},
 	}
 
-	if _, err := inst.shouldOverwriteAllManaged(); err != nil {
-		t.Fatalf("shouldOverwriteAllManaged: %v", err)
+	if err := inst.resolveOverwriteAllDecisions(); err != nil {
+		t.Fatalf("resolveOverwriteAllDecisions: %v", err)
 	}
 	if len(promptPreviews) == 0 {
 		t.Fatalf("expected prompt previews")
@@ -71,7 +70,7 @@ func TestShouldOverwriteAllManaged_FormatsOwnershipLabels(t *testing.T) {
 	}
 }
 
-func TestShouldOverwriteAllMemory_FormatsOwnershipLabels(t *testing.T) {
+func TestResolveOverwriteAllDecisions_FormatsMemoryOwnershipLabels(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
@@ -94,18 +93,17 @@ func TestShouldOverwriteAllMemory_FormatsOwnershipLabels(t *testing.T) {
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
-			OverwriteAllPreviewFunc: func([]DiffPreview) (bool, error) { return false, nil },
-			OverwriteAllMemoryPreviewFunc: func(previews []DiffPreview) (bool, error) {
+		prompter: &PromptFuncs{
+			OverwriteAllUnifiedPreviewFunc: func(managed, previews []DiffPreview) (bool, bool, error) {
 				promptPreviews = append(promptPreviews, previews...)
-				return false, nil
+				return false, false, nil
 			},
 			OverwritePreviewFunc: func(preview DiffPreview) (bool, error) { return false, nil },
 		},
 	}
 
-	if _, err := inst.shouldOverwriteAllMemory(); err != nil {
-		t.Fatalf("shouldOverwriteAllMemory: %v", err)
+	if err := inst.resolveOverwriteAllDecisions(); err != nil {
+		t.Fatalf("resolveOverwriteAllDecisions: %v", err)
 	}
 	if len(promptPreviews) == 0 {
 		t.Fatalf("expected prompt previews")
