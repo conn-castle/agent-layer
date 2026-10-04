@@ -421,6 +421,7 @@ For compatibility guarantees, upgrade event categories, and release-versioned mi
 | --- | --- |
 | `AL_VERSION` | force a version (overrides the repo pin) |
 | `AL_NO_NETWORK` | disable downloads (fails if the pinned version is not cached) |
+| `AL_DOWNLOAD_TIMEOUT` | how long a pinned-version download may go without receiving data before it fails (default `30s`); each download may run for 10 minutes, or longer when this is 5 minutes or more |
 | `AL_CACHE_DIR` | override the cache location |
 
 ### Why pinning is required

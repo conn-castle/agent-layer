@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1385,10 +1387,11 @@ func TestCacheLockWaitTimeoutWithSystemCoversCompleteDownloadBudget(t *testing.T
 		raw  string
 		want time.Duration
 	}{
-		{name: "default", raw: "", want: 125_500 * time.Millisecond},
-		{name: "invalid fallback", raw: "invalid", want: 125_500 * time.Millisecond},
-		{name: "non-positive fallback", raw: "0s", want: 125_500 * time.Millisecond},
-		{name: "override", raw: "60s", want: 245_500 * time.Millisecond},
+		{name: "default", raw: "", want: 20*time.Minute + 5*time.Second},
+		{name: "invalid fallback", raw: "invalid", want: 20*time.Minute + 5*time.Second},
+		{name: "non-positive fallback", raw: "0s", want: 20*time.Minute + 5*time.Second},
+		{name: "override", raw: "60s", want: 20*time.Minute + 5*time.Second},
+		{name: "long stall", raw: "15m", want: time.Hour + 5500*time.Millisecond},
 	}
 
 	for _, tt := range tests {
@@ -1406,21 +1409,355 @@ func TestCacheLockWaitTimeoutWithSystemCoversCompleteDownloadBudget(t *testing.T
 	}
 }
 
-func TestDownloadHTTPClientWithSystem_UsesConfiguredTimeout(t *testing.T) {
-	sys := &testSystem{
-		GetenvFunc: func(key string) string {
-			if key == "AL_DOWNLOAD_TIMEOUT" {
-				return "90s"
+func TestDownloadHTTPClientWithSystem_NoRequestTimeout(t *testing.T) {
+	t.Parallel()
+	for _, timeout := range []time.Duration{0, time.Second} {
+		t.Run(timeout.String(), func(t *testing.T) {
+			transport := &http.Transport{}
+			baseClient := &http.Client{Timeout: timeout, Transport: transport}
+			sys := &testSystem{
+				HTTPClientFunc: func() *http.Client { return baseClient },
+				GetenvFunc:     func(string) string { return "90s" },
 			}
-			return ""
+			client := downloadHTTPClientWithSystem(sys)
+			if client.Timeout != 0 {
+				t.Fatalf("client timeout = %v, want 0", client.Timeout)
+			}
+			if (client == baseClient) != (timeout == 0) {
+				t.Fatal("expected a client copy only when the base timeout is nonzero")
+			}
+			if baseClient.Timeout != timeout || client.Transport != transport {
+				t.Fatal("base client was changed or transport was not preserved")
+			}
+		})
+	}
+	if defaultHTTPClient.Timeout != 0 {
+		t.Fatalf("default client timeout = %v, want 0", defaultHTTPClient.Timeout)
+	}
+	for _, sys := range []System{nil, &testSystem{HTTPClientFunc: func() *http.Client { return nil }}} {
+		if downloadHTTPClientWithSystem(sys) != defaultHTTPClient {
+			t.Fatal("expected fallback to the shared default client")
+		}
+	}
+}
+
+func TestDownloadLimitsWithSystem(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		raw  string
+		want downloadLimits
+	}{
+		{raw: "", want: downloadLimits{stall: 30 * time.Second, ceiling: 10 * time.Minute}},
+		{raw: "90s", want: downloadLimits{stall: 90 * time.Second, ceiling: 10 * time.Minute}},
+		{raw: "15m", want: downloadLimits{stall: 15 * time.Minute, ceiling: 30*time.Minute + 250*time.Millisecond}},
+		{raw: "invalid", want: downloadLimits{stall: 30 * time.Second, ceiling: 10 * time.Minute}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.raw, func(t *testing.T) {
+			sys := &testSystem{GetenvFunc: func(string) string { return tt.raw }}
+			if got := downloadLimitsWithSystem(sys); got != tt.want {
+				t.Fatalf("limits = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDownloadTimeoutBudgetsSaturate(t *testing.T) {
+	t.Parallel()
+	const maxDuration = time.Duration(math.MaxInt64)
+	tests := []struct {
+		name        string
+		raw         string
+		wantCeiling time.Duration
+	}{
+		{name: "ceiling multiplication", raw: "2000000h", wantCeiling: maxDuration},
+		{name: "ceiling addition", raw: (maxDuration / 2).String(), wantCeiling: maxDuration},
+		{name: "lock multiplication", raw: "1000000h", wantCeiling: 2000000*time.Hour + downloadRetryBackoff},
+		// Twice this ceiling fits, but adding the lock headroom overflows.
+		{name: "lock addition", raw: (maxDuration/4 - downloadRetryBackoff/2).String(), wantCeiling: maxDuration/2 - time.Nanosecond},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stall, err := time.ParseDuration(tt.raw)
+			if err != nil {
+				t.Fatalf("test timeout must parse: %v", err)
+			}
+			sys := &testSystem{GetenvFunc: func(key string) string {
+				if key == "AL_DOWNLOAD_TIMEOUT" {
+					return tt.raw
+				}
+				return ""
+			}}
+			want := downloadLimits{stall: stall, ceiling: tt.wantCeiling}
+			if got := downloadLimitsWithSystem(sys); got != want {
+				t.Errorf("limits = %v, want %v", got, want)
+			}
+			if got := cacheLockWaitTimeoutWithSystem(sys); got != maxDuration {
+				t.Errorf("cache lock wait = %v, want %v", got, maxDuration)
+			}
+		})
+	}
+}
+
+func downloadTestDestination(t *testing.T) *os.File {
+	t.Helper()
+	dest, err := os.Create(filepath.Join(t.TempDir(), "file")) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dest.Close() })
+	return dest
+}
+
+func downloadServerTestSystem(server *httptest.Server) *testSystem {
+	return &testSystem{
+		HTTPClientFunc: func() *http.Client {
+			return &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				req = req.Clone(req.Context())
+				req.URL.Scheme = "http"
+				req.URL.Host = server.Listener.Addr().String()
+				return server.Client().Transport.RoundTrip(req)
+			})}
 		},
+		GetenvFunc: func(string) string { return "" },
 	}
-	client := downloadHTTPClientWithSystem(sys)
-	if client.Timeout != 90*time.Second {
-		t.Fatalf("client timeout = %v, want 90s", client.Timeout)
+}
+
+func TestDownloadToFile_SlowSteadyStream(t *testing.T) {
+	t.Parallel()
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		for i := 0; i < 8; i++ {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(60 * time.Millisecond):
+			}
+			_, _ = w.Write([]byte("chunk"))
+			w.(http.Flusher).Flush()
+		}
+	}))
+	defer server.Close()
+	sys := downloadServerTestSystem(server)
+	sys.SleepFunc = func(time.Duration) { t.Fatal("steady stream scheduled a retry") }
+	dest := downloadTestDestination(t)
+	limits := downloadLimits{stall: 200 * time.Millisecond, ceiling: 2 * time.Second}
+	if err := downloadToFileWithLimits(context.Background(), sys, server.URL, dest, limits); err != nil {
+		t.Fatal(err)
 	}
-	baseClient := sys.HTTPClient()
-	if client == baseClient {
-		t.Fatal("expected downloadHTTPClientWithSystem to return a client copy when timeout differs")
+	data, err := os.ReadFile(dest.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != strings.Repeat("chunk", 8) || requests.Load() != 1 {
+		t.Fatalf("data = %q, requests = %d", data, requests.Load())
+	}
+}
+
+func TestDownloadBodyStall_TimeoutMessage(t *testing.T) {
+	t.Parallel()
+	for _, operation := range []string{"download", "checksum"} {
+		t.Run(operation, func(t *testing.T) {
+			t.Parallel()
+			var requests atomic.Int32
+			cleanup := make(chan struct{})
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				content := "partial-long"
+				if requests.Add(1) > 1 {
+					content = "ok"
+				}
+				_, _ = w.Write([]byte(content))
+				w.(http.Flusher).Flush()
+				select {
+				case <-r.Context().Done():
+				case <-cleanup:
+				}
+			}))
+			defer server.Close()
+			defer close(cleanup)
+			sys := downloadServerTestSystem(server)
+			sleeps := 0
+			sys.SleepFunc = func(d time.Duration) {
+				sleeps++
+				if d != downloadRetryBackoff {
+					t.Fatalf("backoff = %v, want %v", d, downloadRetryBackoff)
+				}
+			}
+			limits := downloadLimits{stall: 100 * time.Millisecond, ceiling: 2 * time.Second}
+			url := server.URL
+			var err error
+			dest := downloadTestDestination(t)
+			if operation == "download" {
+				err = downloadToFileWithLimits(context.Background(), sys, url, dest, limits)
+				data, readErr := os.ReadFile(dest.Name())
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				if string(data) != "ok" {
+					t.Fatalf("retried content did not replace partial bytes: %q", data)
+				}
+			} else {
+				url = fmt.Sprintf("%s/download/v1.0.0/checksums.txt", releaseBaseURL)
+				_, err = fetchChecksumWithLimits(context.Background(), sys, "1.0.0", "asset", limits)
+			}
+			if err == nil || err.Error() != fmt.Sprintf(messages.DispatchDownloadTimeoutFmt, url) {
+				t.Fatalf("expected plain timeout message, got %v", err)
+			}
+			if errors.Is(err, context.DeadlineExceeded) || requests.Load() != 2 || sleeps != 1 {
+				t.Fatalf("deadline identity = %v, requests = %d, sleeps = %d", errors.Is(err, context.DeadlineExceeded), requests.Load(), sleeps)
+			}
+		})
+	}
+}
+
+func TestDownloadOperationCeiling(t *testing.T) {
+	t.Parallel()
+	for _, operation := range []string{"download", "checksum"} {
+		for _, backoff := range []bool{false, true} {
+			name := "steady_stream"
+			if backoff {
+				name = "during_backoff"
+			}
+			t.Run(operation+"/"+name, func(t *testing.T) {
+				t.Parallel()
+				var requests atomic.Int32
+				cleanup := make(chan struct{})
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests.Add(1)
+					if backoff {
+						w.WriteHeader(http.StatusServiceUnavailable)
+						return
+					}
+					for {
+						_, _ = w.Write([]byte("x"))
+						w.(http.Flusher).Flush()
+						select {
+						case <-r.Context().Done():
+							return
+						case <-cleanup:
+							return
+						case <-time.After(20 * time.Millisecond):
+						}
+					}
+				}))
+				defer server.Close()
+				defer close(cleanup)
+				sys := downloadServerTestSystem(server)
+				sleeps := 0
+				sys.SleepFunc = func(time.Duration) {
+					sleeps++
+					if !backoff {
+						t.Fatal("ceiling expiry scheduled a retry")
+					}
+					time.Sleep(time.Second)
+				}
+				limits := downloadLimits{stall: time.Second, ceiling: 300 * time.Millisecond}
+				url := server.URL
+				var err error
+				if operation == "download" {
+					err = downloadToFileWithLimits(context.Background(), sys, url, downloadTestDestination(t), limits)
+				} else {
+					url = fmt.Sprintf("%s/download/v1.0.0/checksums.txt", releaseBaseURL)
+					_, err = fetchChecksumWithLimits(context.Background(), sys, "1.0.0", "asset", limits)
+				}
+				if err == nil || err.Error() != fmt.Sprintf(messages.DispatchDownloadTimeoutFmt, url) {
+					t.Fatalf("expected plain timeout message, got %v", err)
+				}
+				wantSleeps := 0
+				if backoff {
+					wantSleeps = 1
+				}
+				if errors.Is(err, context.DeadlineExceeded) || requests.Load() != 1 || sleeps != wantSleeps {
+					t.Fatalf("deadline identity = %v, requests = %d, sleeps = %d", errors.Is(err, context.DeadlineExceeded), requests.Load(), sleeps)
+				}
+			})
+		}
+	}
+}
+
+type readerFunc func([]byte) (int, error)
+
+func (f readerFunc) Read(p []byte) (int, error) {
+	return f(p)
+}
+
+func TestDownloadBodyFailure_ParentContextIdentity(t *testing.T) {
+	t.Parallel()
+	for _, operation := range []string{"download", "checksum"} {
+		for _, failure := range []string{"deadline", "stall_then_cancel", "cancel_with_read_error", "already_canceled"} {
+			t.Run(operation+"/"+failure, func(t *testing.T) {
+				t.Parallel()
+				ctx, cancel := context.WithCancel(context.Background())
+				if failure == "deadline" {
+					cancel()
+					ctx, cancel = context.WithTimeout(context.Background(), 50*time.Millisecond)
+				}
+				defer cancel()
+				if failure == "already_canceled" {
+					cancel()
+				}
+				requests := 0
+				sys := &testSystem{
+					HTTPClientFunc: func() *http.Client {
+						return &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+							requests++
+							return &http.Response{
+								StatusCode: http.StatusOK,
+								Body: io.NopCloser(readerFunc(func([]byte) (int, error) {
+									if failure == "cancel_with_read_error" {
+										cancel()
+										return 0, net.ErrClosed
+									}
+									<-req.Context().Done()
+									if failure == "stall_then_cancel" {
+										if !errors.Is(context.Cause(req.Context()), errDownloadStalled) {
+											t.Fatal("expected stall before parent cancellation")
+										}
+										cancel()
+									}
+									return 0, context.Cause(req.Context())
+								})),
+							}, nil
+						})}
+					},
+					SleepFunc:  func(time.Duration) { t.Fatal("parent context failure scheduled a retry") },
+					GetenvFunc: func(string) string { return "" },
+				}
+				limits := downloadLimits{stall: 200 * time.Millisecond, ceiling: time.Second}
+				if failure == "stall_then_cancel" {
+					limits.stall = 20 * time.Millisecond
+				}
+				url := "https://example.invalid/file"
+				genericFmt := messages.DispatchDownloadFailedFmt
+				var err error
+				if operation == "download" {
+					err = downloadToFileWithLimits(ctx, sys, url, downloadTestDestination(t), limits)
+				} else {
+					url = fmt.Sprintf("%s/download/v1.0.0/checksums.txt", releaseBaseURL)
+					genericFmt = messages.DispatchReadFailedFmt
+					if failure == "already_canceled" {
+						genericFmt = messages.DispatchDownloadFailedFmt
+					}
+					_, err = fetchChecksumWithLimits(ctx, sys, "1.0.0", "asset", limits)
+				}
+				wantIdentity := context.Canceled
+				wantMessage := fmt.Errorf(genericFmt, url, context.Canceled).Error()
+				if failure == "deadline" {
+					wantIdentity = context.DeadlineExceeded
+					wantMessage = fmt.Sprintf(messages.DispatchDownloadTimeoutFmt, url) + ": " + context.DeadlineExceeded.Error()
+				}
+				if !errors.Is(err, wantIdentity) || err.Error() != wantMessage {
+					t.Fatalf("expected %v identity and message %q, got %v", wantIdentity, wantMessage, err)
+				}
+				wantRequests := 1
+				if failure == "already_canceled" {
+					wantRequests = 0
+				}
+				if requests != wantRequests {
+					t.Fatalf("requests = %d, want %d", requests, wantRequests)
+				}
+			})
+		}
 	}
 }

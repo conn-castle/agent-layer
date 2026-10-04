@@ -450,6 +450,7 @@ The set of environment variables is intentionally small. Configuration should li
 | --- | --- |
 | `AL_VERSION` | force a version (overrides the repo pin) |
 | `AL_NO_NETWORK` | disable update checks and downloads |
+| `AL_DOWNLOAD_TIMEOUT` | how long a pinned-version download may go without receiving data before it fails (default `30s`); each download may run for 10 minutes, or longer when this is 5 minutes or more |
 | `AL_CACHE_DIR` | override the pinned-version cache directory |
 
 These variables only affect version dispatch, update checks, and downloads. They do not disable MCP server networking.
