@@ -913,6 +913,140 @@ func TestRollbackUpgradeSnapshotState_AllowsTargetThroughInternalSymlinkAncestor
 	}
 }
 
+func TestRollbackUpgradeSnapshotState_RestoresEntriesUnderSymlinkedDirectory(t *testing.T) {
+	root := t.TempDir()
+	sharedDir := filepath.Join(root, "shared-skills")
+	originalSkill := filepath.Join(sharedDir, "debug-issue", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(originalSkill), 0o700); err != nil {
+		t.Fatalf("mkdir shared skill: %v", err)
+	}
+	if err := os.WriteFile(originalSkill, []byte("user skill\n"), 0o600); err != nil {
+		t.Fatalf("write shared skill: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	skillsLink := filepath.Join(root, ".agent-layer", "skills")
+	if err := os.Symlink("../shared-skills", skillsLink); err != nil {
+		t.Fatalf("create skills symlink: %v", err)
+	}
+	targets := []string{
+		skillsLink,
+		filepath.Join(skillsLink, "debug-issue"),
+		filepath.Join(skillsLink, "debug-and-fix-issue"),
+	}
+	inst := &installer{root: root, sys: RealSystem{}}
+	entries := make(map[string]upgradeSnapshotEntry)
+	for _, target := range targets {
+		if err := inst.captureUpgradeSnapshotTarget(target, entries); err != nil {
+			t.Fatalf("capture %s: %v", target, err)
+		}
+	}
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "symlinked-skills-dir",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+	}
+	for _, entry := range entries {
+		snapshot.Entries = append(snapshot.Entries, entry)
+	}
+
+	// Simulate a migration that renamed the skill through the symlink.
+	renamedSkill := filepath.Join(sharedDir, "debug-and-fix-issue", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(renamedSkill), 0o700); err != nil {
+		t.Fatalf("mkdir renamed skill: %v", err)
+	}
+	if err := os.Rename(originalSkill, renamedSkill); err != nil {
+		t.Fatalf("rename skill: %v", err)
+	}
+	if err := os.Remove(filepath.Dir(originalSkill)); err != nil {
+		t.Fatalf("remove original skill dir: %v", err)
+	}
+
+	// The second run proves a retry converges on the same captured state.
+	for attempt := 1; attempt <= 2; attempt++ {
+		if err := rollbackUpgradeSnapshotState(root, RealSystem{}, snapshot, targets); err != nil {
+			t.Fatalf("rollback attempt %d: %v", attempt, err)
+		}
+		linkTarget, err := os.Readlink(skillsLink)
+		if err != nil {
+			t.Fatalf("attempt %d: readlink restored skills: %v", attempt, err)
+		}
+		if linkTarget != "../shared-skills" {
+			t.Fatalf("attempt %d: skills link target = %q, want ../shared-skills", attempt, linkTarget)
+		}
+		content, err := os.ReadFile(originalSkill) // #nosec G304 -- path is constructed from test-controlled inputs.
+		if err != nil {
+			t.Fatalf("attempt %d: read restored skill: %v", attempt, err)
+		}
+		if string(content) != "user skill\n" {
+			t.Fatalf("attempt %d: restored skill = %q, want user skill", attempt, content)
+		}
+		if _, err := os.Lstat(filepath.Dir(renamedSkill)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("attempt %d: renamed skill dir still exists, lstat error = %v", attempt, err)
+		}
+	}
+}
+
+func TestRestoreUpgradeSnapshotEntriesAtRoot_RejectsWritesThroughRestoredExternalSymlink(t *testing.T) {
+	escaped := base64.StdEncoding.EncodeToString([]byte("escaped\n"))
+	tests := []struct {
+		name    string
+		entries func(outside string) []upgradeSnapshotEntry
+	}{
+		{
+			name: "absolute link target",
+			entries: func(outside string) []upgradeSnapshotEntry {
+				return []upgradeSnapshotEntry{
+					{Path: "link", Kind: upgradeSnapshotEntryKindSymlink, LinkTarget: outside},
+					{Path: "link/escaped", Kind: upgradeSnapshotEntryKindFile, ContentBase64: escaped},
+				}
+			},
+		},
+		{
+			// The link dangles until the directory pass creates "x", so a check
+			// made before directories exist would accept it.
+			name: "link resolving only after directory restore",
+			entries: func(string) []upgradeSnapshotEntry {
+				return []upgradeSnapshotEntry{
+					{Path: "link", Kind: upgradeSnapshotEntryKindSymlink, LinkTarget: "x/../../outside"},
+					{Path: "x", Kind: upgradeSnapshotEntryKindDir},
+					{Path: "link/escaped", Kind: upgradeSnapshotEntryKindFile, ContentBase64: escaped},
+				}
+			},
+		},
+		{
+			name: "nested symlink",
+			entries: func(outside string) []upgradeSnapshotEntry {
+				return []upgradeSnapshotEntry{
+					{Path: "link", Kind: upgradeSnapshotEntryKindSymlink, LinkTarget: outside},
+					{Path: "link/escaped", Kind: upgradeSnapshotEntryKindSymlink, LinkTarget: "anywhere"},
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base := t.TempDir()
+			root := filepath.Join(base, "repo")
+			outside := filepath.Join(base, "outside")
+			for _, dir := range []string{root, outside} {
+				if err := os.Mkdir(dir, 0o700); err != nil {
+					t.Fatalf("mkdir %s: %v", dir, err)
+				}
+			}
+			err := restoreUpgradeSnapshotEntriesAtRoot(root, RealSystem{}, tt.entries(outside))
+			if err == nil || !strings.Contains(err.Error(), "ancestor that resolves outside repo root") {
+				t.Fatalf("restore through external symlink error = %v, want containment rejection", err)
+			}
+			if _, err := os.Lstat(filepath.Join(outside, "escaped")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("path written outside repo root, lstat error = %v", err)
+			}
+		})
+	}
+}
+
 func TestRollbackUpgradeSnapshotState_PreparesUpgradeCreatedDirectoriesBeforeReset(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "captured")

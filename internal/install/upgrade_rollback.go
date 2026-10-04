@@ -338,24 +338,62 @@ func restoreUpgradeSnapshotEntriesAtRoot(root string, sys System, entries []upgr
 		rel := normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path)))
 		return rel, strings.Count(rel, "/")
 	}
-	sort.Slice(dirs, func(i, j int) bool {
-		leftRel, leftDepth := directorySortKey(dirs[i])
-		rightRel, rightDepth := directorySortKey(dirs[j])
-		if leftDepth == rightDepth {
-			return leftRel < rightRel
+	shallowFirst := func(entries []upgradeSnapshotEntry) func(i, j int) bool {
+		return func(i, j int) bool {
+			leftRel, leftDepth := directorySortKey(entries[i])
+			rightRel, rightDepth := directorySortKey(entries[j])
+			if leftDepth == rightDepth {
+				return leftRel < rightRel
+			}
+			return leftDepth < rightDepth
 		}
-		return leftDepth < rightDepth
-	})
+	}
+	sort.Slice(dirs, shallowFirst(dirs))
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].Path < files[j].Path
 	})
-	sort.Slice(symlinks, func(i, j int) bool {
-		return symlinks[i].Path < symlinks[j].Path
-	})
+	// Restore links shallow-first so a link nested under another restored link
+	// is created through its parent.
+	sort.Slice(symlinks, shallowFirst(symlinks))
+	// A restored link can redirect later writes, and a link may only resolve
+	// once a directory it passes through is restored, so check each path's
+	// ancestors immediately before writing it.
+	validateAncestors := func(absPath string) error {
+		return validateRollbackTargetAncestors(root, sys, []string{absPath})
+	}
 
+	// Restore symlinks before directories and files. Capture follows symlinked
+	// ancestors, so a snapshot can hold a link and entries beneath it; those
+	// entries must be written through the restored link instead of into a
+	// placeholder directory that replacing it with the link would delete.
+	for _, entry := range symlinks {
+		absPath, err := snapshotEntryAbsPath(root, entry.Path)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(entry.LinkTarget) == "" {
+			return fmt.Errorf("symlink snapshot entry %s requires link_target", entry.Path)
+		}
+		if err := validateAncestors(absPath); err != nil {
+			return err
+		}
+		if err := sys.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+			return fmt.Errorf(messages.InstallFailedCreateDirForFmt, absPath, err)
+		}
+		// Defensively remove any pre-existing file/symlink at the target path.
+		// The rollback reset phase should have already cleared it, but this
+		// prevents EEXIST if the function is called outside a full rollback flow.
+		_ = sys.RemoveAll(absPath)
+		if err := sys.Symlink(entry.LinkTarget, absPath); err != nil {
+			return fmt.Errorf(messages.InstallFailedRestoreSymlinkFmt, entry.Path, err)
+		}
+	}
 	for _, entry := range dirs {
 		absPath, err := snapshotEntryAbsPath(root, entry.Path)
 		if err != nil {
+			return err
+		}
+		if err := validateAncestors(absPath); err != nil {
 			return err
 		}
 		temporaryMode := permFromSnapshot(entry.Perm, 0o755) | 0o700
@@ -381,30 +419,14 @@ func restoreUpgradeSnapshotEntriesAtRoot(root string, sys System, entries []upgr
 		if err != nil {
 			return fmt.Errorf("decode content for %s: %w", entry.Path, err)
 		}
+		if err := validateAncestors(absPath); err != nil {
+			return err
+		}
 		if err := sys.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
 			return fmt.Errorf(messages.InstallFailedCreateDirForFmt, absPath, err)
 		}
 		if err := sys.WriteFileAtomic(absPath, content, permFromSnapshot(entry.Perm, 0o644)); err != nil {
 			return fmt.Errorf(messages.InstallFailedWriteFmt, absPath, err)
-		}
-	}
-	for _, entry := range symlinks {
-		absPath, err := snapshotEntryAbsPath(root, entry.Path)
-		if err != nil {
-			return err
-		}
-		if strings.TrimSpace(entry.LinkTarget) == "" {
-			return fmt.Errorf("symlink snapshot entry %s requires link_target", entry.Path)
-		}
-		if err := sys.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
-			return fmt.Errorf(messages.InstallFailedCreateDirForFmt, absPath, err)
-		}
-		// Defensively remove any pre-existing file/symlink at the target path.
-		// The rollback reset phase should have already cleared it, but this
-		// prevents EEXIST if the function is called outside a full rollback flow.
-		_ = sys.RemoveAll(absPath)
-		if err := sys.Symlink(entry.LinkTarget, absPath); err != nil {
-			return fmt.Errorf(messages.InstallFailedRestoreSymlinkFmt, entry.Path, err)
 		}
 	}
 	// Apply final directory modes only after every descendant is restored. The
