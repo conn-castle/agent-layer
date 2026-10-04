@@ -28,22 +28,22 @@ func TestProjectedChimeCommandsFailOpen(t *testing.T) {
 					dir := t.TempDir()
 					argsPath := filepath.Join(dir, "args")
 					inputPath := filepath.Join(dir, "input")
-					pathValue := dir
+					command := tc.command
 					if mode != "missing" {
-						script := "#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$CAPTURE_ARGS\"\n/bin/cat > \"$CAPTURE_INPUT\"\n"
+						// A shell function avoids executing a freshly written file,
+						// which can fail with ETXTBSY when parallel forks inherit
+						// its writable descriptor. The subshell keeps exit local
+						// to the stub so the projected fallback still runs.
+						script := "al() (\nprintf '%s\\n' \"$*\" > \"$CAPTURE_ARGS\"\n/bin/cat > \"$CAPTURE_INPUT\"\n"
 						if mode == "failure" {
 							script += "echo 'stub handler failed' >&2\nexit 1\n"
 						} else if tc.successOutput != "" {
 							script += "printf '%s' '" + strings.ReplaceAll(tc.successOutput, "'", "'\\''") + "'\n"
 						}
-						if err := os.WriteFile(filepath.Join(dir, "al"), []byte(script), 0o700); err != nil { // #nosec G306 -- executable test stub requires owner execute permission.
-							t.Fatalf("write al stub: %v", err)
-						}
-					} else {
-						pathValue = ""
+						command = script + ")\n" + command
 					}
-					cmd := exec.Command("/bin/sh", "-c", tc.command) // #nosec G204 -- repository-owned fixed command under test.
-					cmd.Env = append(os.Environ(), "PATH="+pathValue, "CAPTURE_ARGS="+argsPath, "CAPTURE_INPUT="+inputPath)
+					cmd := exec.Command("/bin/sh", "-c", command) // #nosec G204 -- repository-owned fixed command and test stub.
+					cmd.Env = append(os.Environ(), "PATH=", "CAPTURE_ARGS="+argsPath, "CAPTURE_INPUT="+inputPath)
 					cmd.Stdin = strings.NewReader(`{"fixture":true}`)
 					var stdout, stderr bytes.Buffer
 					cmd.Stdout = &stdout
@@ -57,7 +57,7 @@ func TestProjectedChimeCommandsFailOpen(t *testing.T) {
 					if mode == "success" {
 						args, err := os.ReadFile(argsPath) // #nosec G304 -- test-owned path.
 						if err != nil || string(args) != "hook chime "+tc.provider+"\n" {
-							t.Fatalf("stub args = %q, err=%v", args, err)
+							t.Fatalf("stub args = %q, err=%v; stderr=%q", args, err, stderr.String())
 						}
 						input, err := os.ReadFile(inputPath) // #nosec G304 -- test-owned path.
 						if err != nil || string(input) != `{"fixture":true}` {
