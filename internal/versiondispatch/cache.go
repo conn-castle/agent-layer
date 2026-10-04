@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -306,8 +307,28 @@ type downloadLimits struct {
 
 func downloadLimitsWithSystem(sys System) downloadLimits {
 	stall := downloadTimeoutWithSystem(sys)
-	ceiling := max(defaultDownloadCeiling, time.Duration(downloadRetryCount+1)*stall+time.Duration(downloadRetryCount)*downloadRetryBackoff)
+	attemptBudget := saturatingDurationMul(stall, downloadRetryCount+1)
+	backoffBudget := saturatingDurationMul(downloadRetryBackoff, downloadRetryCount)
+	ceiling := max(defaultDownloadCeiling, saturatingDurationAdd(attemptBudget, backoffBudget))
 	return downloadLimits{stall: stall, ceiling: ceiling}
+}
+
+// saturatingDurationMul multiplies a nonnegative duration by a nonnegative factor,
+// capping the result at the largest representable time.Duration.
+func saturatingDurationMul(d time.Duration, factor int) time.Duration {
+	if factor > 0 && d > time.Duration(math.MaxInt64)/time.Duration(factor) {
+		return time.Duration(math.MaxInt64)
+	}
+	return d * time.Duration(factor)
+}
+
+// saturatingDurationAdd adds nonnegative durations, capping the result at the
+// largest representable time.Duration.
+func saturatingDurationAdd(a, b time.Duration) time.Duration {
+	if a > time.Duration(math.MaxInt64)-b {
+		return time.Duration(math.MaxInt64)
+	}
+	return a + b
 }
 
 type downloadWatchdog struct {
@@ -418,7 +439,8 @@ func downloadTimeoutWithSystem(sys System) time.Duration {
 // cacheLockWaitTimeoutWithSystem covers the holder's binary and checksum
 // operation ceilings, plus local-work and polling headroom for the waiter.
 func cacheLockWaitTimeoutWithSystem(sys System) time.Duration {
-	return 2*downloadLimitsWithSystem(sys).ceiling + cacheLockWorkHeadroom
+	wait := saturatingDurationMul(downloadLimitsWithSystem(sys).ceiling, 2)
+	return saturatingDurationAdd(wait, cacheLockWorkHeadroom)
 }
 
 func downloadHTTPClientWithSystem(sys System) *http.Client {

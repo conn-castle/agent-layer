@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -1456,6 +1457,43 @@ func TestDownloadLimitsWithSystem(t *testing.T) {
 			sys := &testSystem{GetenvFunc: func(string) string { return tt.raw }}
 			if got := downloadLimitsWithSystem(sys); got != tt.want {
 				t.Fatalf("limits = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDownloadTimeoutBudgetsSaturate(t *testing.T) {
+	t.Parallel()
+	const maxDuration = time.Duration(math.MaxInt64)
+	tests := []struct {
+		name        string
+		raw         string
+		wantCeiling time.Duration
+	}{
+		{name: "ceiling multiplication", raw: "2000000h", wantCeiling: maxDuration},
+		{name: "ceiling addition", raw: (maxDuration / 2).String(), wantCeiling: maxDuration},
+		{name: "lock multiplication", raw: "1000000h", wantCeiling: 2000000*time.Hour + downloadRetryBackoff},
+		// Twice this ceiling fits, but adding the lock headroom overflows.
+		{name: "lock addition", raw: (maxDuration/4 - downloadRetryBackoff/2).String(), wantCeiling: maxDuration/2 - time.Nanosecond},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stall, err := time.ParseDuration(tt.raw)
+			if err != nil {
+				t.Fatalf("test timeout must parse: %v", err)
+			}
+			sys := &testSystem{GetenvFunc: func(key string) string {
+				if key == "AL_DOWNLOAD_TIMEOUT" {
+					return tt.raw
+				}
+				return ""
+			}}
+			want := downloadLimits{stall: stall, ceiling: tt.wantCeiling}
+			if got := downloadLimitsWithSystem(sys); got != want {
+				t.Errorf("limits = %v, want %v", got, want)
+			}
+			if got := cacheLockWaitTimeoutWithSystem(sys); got != maxDuration {
+				t.Errorf("cache lock wait = %v, want %v", got, maxDuration)
 			}
 		})
 	}
