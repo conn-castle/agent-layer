@@ -73,8 +73,8 @@ func TestUpdateUsesHomebrewForFormulaOwnedExecutable(t *testing.T) {
 		return nil
 	}
 	updateInstalledVersion = func(_ context.Context, executable string) (string, error) {
-		if executable != "/opt/homebrew/bin/al" {
-			t.Fatalf("installed version executable = %q, want /opt/homebrew/bin/al", executable)
+		if executable != "/opt/homebrew/opt/agent-layer/bin/al" {
+			t.Fatalf("installed version executable = %q, want /opt/homebrew/opt/agent-layer/bin/al", executable)
 		}
 		return "4.5.6", nil
 	}
@@ -216,7 +216,7 @@ func TestDetectHomebrewInstallationFailsForUnqueryableCellarBinary(t *testing.T)
 	updateCommandOutput = func(context.Context, string, ...string) ([]byte, error) {
 		return []byte("Error: tap is unavailable\n"), errors.New("broken brew")
 	}
-	_, _, err := detectHomebrewInstallation(context.Background(), "/opt/homebrew/Cellar/agent-layer/1.2.3/bin/al")
+	_, err := detectHomebrewInstallation(context.Background(), "/opt/homebrew/Cellar/agent-layer/1.2.3/bin/al")
 	if err == nil || !strings.Contains(err.Error(), "appears Homebrew-managed") || !strings.Contains(err.Error(), "tap is unavailable") {
 		t.Fatalf("error = %v, want actionable Homebrew detection failure", err)
 	}
@@ -241,9 +241,9 @@ func TestDetectHomebrewInstallationUsesBrewAssociatedWithExecutableCellar(t *tes
 		return path, nil
 	}
 
-	isHomebrew, brew, err := detectHomebrewInstallation(context.Background(), "/opt/homebrew/Cellar/agent-layer/1.2.3/bin/al")
-	if err != nil || !isHomebrew || brew != "/opt/homebrew/bin/brew" {
-		t.Fatalf("isHomebrew = %v, brew = %q, err = %v; want associated Apple Silicon Homebrew", isHomebrew, brew, err)
+	homebrew, err := detectHomebrewInstallation(context.Background(), "/opt/homebrew/Cellar/agent-layer/1.2.3/bin/al")
+	if err != nil || homebrew == nil || homebrew.brew != "/opt/homebrew/bin/brew" || homebrew.formulaPrefix != "/opt/homebrew/opt/agent-layer" {
+		t.Fatalf("homebrew = %+v, err = %v; want associated Apple Silicon Homebrew", homebrew, err)
 	}
 }
 
@@ -254,7 +254,7 @@ func TestDetectHomebrewInstallationFailsForCustomUnqueryableCellarBinary(t *test
 	updateCommandOutput = func(context.Context, string, ...string) ([]byte, error) {
 		return []byte("Error: formula unavailable\n"), errors.New("broken brew")
 	}
-	_, _, err := detectHomebrewInstallation(context.Background(), "/packages/kegs/agent-layer/1.2.3/bin/al")
+	_, err := detectHomebrewInstallation(context.Background(), "/packages/kegs/agent-layer/1.2.3/bin/al")
 	if err == nil || !strings.Contains(err.Error(), "appears Homebrew-managed") {
 		t.Fatalf("error = %v, want custom-Cellar protection", err)
 	}
@@ -272,7 +272,7 @@ func TestDetectHomebrewInstallationRejectsInactiveCellarKeg(t *testing.T) {
 		}
 		return path, nil
 	}
-	_, _, err := detectHomebrewInstallation(context.Background(), "/opt/homebrew/Cellar/agent-layer/1.2.3/bin/al")
+	_, err := detectHomebrewInstallation(context.Background(), "/opt/homebrew/Cellar/agent-layer/1.2.3/bin/al")
 	if err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
 		t.Fatalf("error = %v, want inactive-keg protection", err)
 	}
@@ -290,9 +290,9 @@ func TestDetectHomebrewInstallationTreatsNonFormulaExecutableAsScriptInstall(t *
 		}
 		return path, nil
 	}
-	isHomebrew, _, err := detectHomebrewInstallation(context.Background(), "/home/user/.local/bin/al")
-	if err != nil || isHomebrew {
-		t.Fatalf("isHomebrew = %v, err = %v; want script installation", isHomebrew, err)
+	homebrew, err := detectHomebrewInstallation(context.Background(), "/home/user/.local/bin/al")
+	if err != nil || homebrew != nil {
+		t.Fatalf("homebrew = %+v, err = %v; want script installation", homebrew, err)
 	}
 }
 
@@ -338,7 +338,7 @@ func TestUpdateCompleteFallsBackToPostUpdateResolvedExecutable(t *testing.T) {
 	updateExecutable = func() (string, error) { return "/opt/homebrew/bin/al", nil }
 	resolvedPrefix := "/opt/homebrew/Cellar/agent-layer/1.2.3"
 	updateEvalSymlinks = func(path string) (string, error) {
-		if path == "/opt/homebrew/bin/al" {
+		if path == "/opt/homebrew/bin/al" || path == "/opt/homebrew/opt/agent-layer/bin/al" {
 			return resolvedPrefix + "/bin/al", nil
 		}
 		if path == "/opt/homebrew/opt/agent-layer" {
@@ -361,7 +361,7 @@ func TestUpdateCompleteFallsBackToPostUpdateResolvedExecutable(t *testing.T) {
 	var queried []string
 	updateInstalledVersion = func(_ context.Context, executable string) (string, error) {
 		queried = append(queried, executable)
-		if executable == "/opt/homebrew/bin/al" {
+		if executable == "/opt/homebrew/opt/agent-layer/bin/al" {
 			return "", errors.New("gone")
 		}
 		if executable == "/opt/homebrew/Cellar/agent-layer/4.5.6/bin/al" {
@@ -379,11 +379,67 @@ func TestUpdateCompleteFallsBackToPostUpdateResolvedExecutable(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatalf("update failed: %v", err)
 	}
-	if strings.Join(queried, ",") != "/opt/homebrew/bin/al,/opt/homebrew/Cellar/agent-layer/4.5.6/bin/al" {
+	if strings.Join(queried, ",") != "/opt/homebrew/opt/agent-layer/bin/al,/opt/homebrew/Cellar/agent-layer/4.5.6/bin/al" {
 		t.Fatalf("queried = %v, want original then post-update resolved executable", queried)
 	}
 	if !strings.Contains(stdout.String(), "Agent Layer CLI update complete: v1.2.3 -> v4.5.6.") {
 		t.Fatalf("expected resolved after version, got %q", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("unexpected stderr: %q", stderr.String())
+	}
+}
+
+func TestUpdateReportsUpgradedLinuxbrewVersionWhenExecutableIsResolvedKeg(t *testing.T) {
+	preserveUpdateGlobals(t)
+	Version = "1.2.3"
+	// On Linux, os.Executable returns the resolved keg path, not the bin/al symlink.
+	oldKegExecutable := "/home/linuxbrew/.linuxbrew/Cellar/agent-layer/1.2.3/bin/al"
+	updateExecutable = func() (string, error) { return oldKegExecutable, nil }
+	activeKeg := "/home/linuxbrew/.linuxbrew/Cellar/agent-layer/1.2.3"
+	updateEvalSymlinks = func(path string) (string, error) {
+		if path == "/home/linuxbrew/.linuxbrew/opt/agent-layer" {
+			return activeKeg, nil
+		}
+		return path, nil
+	}
+	updateLookPath = func(string) (string, error) {
+		t.Fatal("PATH brew should not be used for a Cellar-owned executable")
+		return "", nil
+	}
+	updateCommandOutput = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if name != "/home/linuxbrew/.linuxbrew/bin/brew" || strings.Join(args, " ") != "--prefix conn-castle/tap/agent-layer" {
+			t.Fatalf("unexpected detection command: %s %v", name, args)
+		}
+		return []byte("/home/linuxbrew/.linuxbrew/opt/agent-layer\n"), nil
+	}
+	updateRunCommand = func(context.Context, io.Reader, io.Writer, io.Writer, string, ...string) error {
+		activeKeg = "/home/linuxbrew/.linuxbrew/Cellar/agent-layer/4.5.6"
+		return nil
+	}
+	updateInstalledVersion = func(_ context.Context, executable string) (string, error) {
+		switch executable {
+		case oldKegExecutable:
+			// Homebrew without cleanup leaves the old keg in place.
+			return "1.2.3", nil
+		case "/home/linuxbrew/.linuxbrew/opt/agent-layer/bin/al":
+			return "4.5.6", nil
+		default:
+			t.Fatalf("unexpected executable %s", executable)
+			return "", errors.New("unexpected executable")
+		}
+	}
+
+	command := newUpdateCmd()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	command.SetOut(&stdout)
+	command.SetErr(&stderr)
+	if err := command.Execute(); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Agent Layer CLI update complete: v1.2.3 -> v4.5.6.") {
+		t.Fatalf("expected upgraded after version, got %q", stdout.String())
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("unexpected stderr: %q", stderr.String())
