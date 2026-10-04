@@ -69,13 +69,18 @@ func runUpdate(cmd *cobra.Command) error {
 		return fmt.Errorf(messages.UpdateResolveExecutableLinkErrFmt, err)
 	}
 
-	isHomebrew, brew, err := detectHomebrewInstallation(cmd.Context(), resolvedExecutable)
+	homebrew, err := detectHomebrewInstallation(cmd.Context(), resolvedExecutable)
 	if err != nil {
 		return err
 	}
-	if isHomebrew {
+	versionProbe := executable
+	if homebrew != nil {
+		// On Linux, os.Executable already resolves to the pre-upgrade keg,
+		// which brew upgrade removes or leaves at the old version. The formula
+		// prefix is Homebrew's opt link, which the upgrade repoints to the new keg.
+		versionProbe = filepath.Join(homebrew.formulaPrefix, "bin", "al")
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), messages.UpdateHomebrewStart)
-		if err := updateRunCommand(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), brew, "upgrade", homebrewAgentLayerFormula); err != nil {
+		if err := updateRunCommand(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), homebrew.brew, "upgrade", homebrewAgentLayerFormula); err != nil {
 			return fmt.Errorf(messages.UpdateHomebrewRunErrFmt, err)
 		}
 	} else {
@@ -99,7 +104,7 @@ func runUpdate(cmd *cobra.Command) error {
 
 	fromVersion := formatCLIVersion(Version)
 	toVersion := unknownVersion
-	installed, err := readUpdatedCLIVersion(cmd.Context(), executable)
+	installed, err := readUpdatedCLIVersion(cmd.Context(), versionProbe)
 	if err != nil {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), messages.UpdateInstalledVersionWarnFmt, err)
 	} else {
@@ -168,43 +173,50 @@ func formatCLIVersion(raw string) string {
 	return "v" + normalized
 }
 
-func detectHomebrewInstallation(ctx context.Context, executable string) (bool, string, error) {
+type homebrewInstallation struct {
+	brew          string
+	formulaPrefix string
+}
+
+// detectHomebrewInstallation returns nil when executable does not belong to the
+// active agent-layer keg.
+func detectHomebrewInstallation(ctx context.Context, executable string) (*homebrewInstallation, error) {
 	brew, associatedBrew := homebrewExecutableFor(executable)
 	if !associatedBrew {
 		var err error
 		brew, err = updateLookPath("brew")
 		if err != nil {
 			if looksHomebrewManaged(executable) {
-				return false, "", fmt.Errorf(messages.UpdateHomebrewPrefixErrFmt, err)
+				return nil, fmt.Errorf(messages.UpdateHomebrewPrefixErrFmt, err)
 			}
-			return false, "", nil
+			return nil, nil
 		}
 	}
 	formulaPrefixOutput, err := updateCommandOutput(ctx, brew, "--prefix", homebrewAgentLayerFormula)
 	if err != nil {
 		if looksHomebrewManaged(executable) {
-			return false, "", fmt.Errorf(messages.UpdateHomebrewPrefixErrFmt, commandOutputError(err, formulaPrefixOutput))
+			return nil, fmt.Errorf(messages.UpdateHomebrewPrefixErrFmt, commandOutputError(err, formulaPrefixOutput))
 		}
-		return false, "", nil
+		return nil, nil
 	}
 	formulaPrefix := strings.TrimSpace(string(formulaPrefixOutput))
 	if formulaPrefix == "" {
-		return false, "", nil
+		return nil, nil
 	}
 	resolvedFormulaPrefix, err := updateEvalSymlinks(formulaPrefix)
 	if err != nil {
 		if looksHomebrewManaged(executable) {
-			return false, "", fmt.Errorf(messages.UpdateHomebrewPrefixErrFmt, err)
+			return nil, fmt.Errorf(messages.UpdateHomebrewPrefixErrFmt, err)
 		}
-		return false, "", nil
+		return nil, nil
 	}
 	if !pathWithin(executable, resolvedFormulaPrefix) {
 		if looksHomebrewManaged(executable) {
-			return false, "", errors.New(messages.UpdateHomebrewOwnershipMismatch)
+			return nil, errors.New(messages.UpdateHomebrewOwnershipMismatch)
 		}
-		return false, "", nil
+		return nil, nil
 	}
-	return true, brew, nil
+	return &homebrewInstallation{brew: brew, formulaPrefix: formulaPrefix}, nil
 }
 
 func homebrewExecutableFor(executable string) (string, bool) {
