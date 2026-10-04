@@ -12,17 +12,17 @@ import (
 
 // copilotMCPConfig mirrors the Copilot CLI mcp-config.json structure.
 type copilotMCPConfig struct {
-	Servers OrderedMap[copilotMCPServer] `json:"mcpServers"`
+	Servers map[string]copilotMCPServer `json:"mcpServers"`
 }
 
 type copilotMCPServer struct {
-	Type    string             `json:"type"`
-	Command string             `json:"command,omitempty"`
-	Args    []string           `json:"args,omitempty"`
-	Env     OrderedMap[string] `json:"env,omitempty"`
-	URL     string             `json:"url,omitempty"`
-	Headers OrderedMap[string] `json:"headers,omitempty"`
-	Tools   []string           `json:"tools,omitempty"`
+	Type    string            `json:"type"`
+	Command string            `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Tools   []string          `json:"tools,omitempty"`
 }
 
 // writeCopilotMCPConfig generates .copilot/mcp-config.json for GitHub Copilot CLI.
@@ -53,7 +53,7 @@ func writeCopilotMCPConfig(sys System, root string, project *config.ProjectConfi
 
 func buildCopilotMCPConfig(project *config.ProjectConfig) (*copilotMCPConfig, error) {
 	cfg := &copilotMCPConfig{
-		Servers: make(OrderedMap[copilotMCPServer]),
+		Servers: make(map[string]copilotMCPServer),
 	}
 
 	resolved, err := projection.EffectiveMCPServers(
@@ -71,22 +71,10 @@ func buildCopilotMCPConfig(project *config.ProjectConfig) (*copilotMCPConfig, er
 			Type:    server.Transport,
 			Command: server.Command,
 			Args:    server.Args,
+			Env:     server.Env,
 			URL:     server.URL,
+			Headers: server.Headers,
 			Tools:   []string{"*"},
-		}
-		if len(server.Headers) > 0 {
-			headers := make(OrderedMap[string], len(server.Headers))
-			for key, value := range server.Headers {
-				headers[key] = value
-			}
-			entry.Headers = headers
-		}
-		if len(server.Env) > 0 {
-			envMap := make(OrderedMap[string], len(server.Env))
-			for key, value := range server.Env {
-				envMap[key] = value
-			}
-			entry.Env = envMap
 		}
 		cfg.Servers[server.ID] = entry
 	}
