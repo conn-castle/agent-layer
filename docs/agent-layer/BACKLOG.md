@@ -163,7 +163,7 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Priority: Low. Area: templates / conventions
     Description: Add `<!-- ENTRIES START -->` markers to `04_conventions.md` so that users and agents can add project-specific conventions below the marker, matching the pattern used by memory files. Keep the header and preamble above the marker as managed content.
     Acceptance criteria: `04_conventions.md` template has entry markers; `al init` and `al upgrade` preserve user entries below the marker; existing conventions in deployed repos are not lost on upgrade.
-    Notes: Requires ownership policy update in `ownership_policy.go` and manifest generator in `gentemplatemanifest/main.go` to treat this file as section-aware.
+    Notes: Requires an ownership policy update in `internal/install/ownership_policy.go` (the release manifest generator reuses it) to treat this file as section-aware.
 
 - Backlog 2026-03-06 skill-line-width-warning: Warn on long lines in skill files
     Priority: Low. Area: skills / validator
