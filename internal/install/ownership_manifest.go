@@ -394,10 +394,20 @@ func readCurrentPinVersion(root string, sys System) (string, error) {
 	}
 	normalized, _, err := version.ParsePin(data)
 	if err != nil {
-		return "", fmt.Errorf(messages.InstallInvalidPinVersionFmt, err)
+		return "", invalidPinError{err: err}
 	}
 	return normalized, nil
 }
+
+// invalidPinError reports a pin file that was read but does not parse, so
+// callers can tell a broken pin apart from a failed read.
+type invalidPinError struct{ err error }
+
+func (e invalidPinError) Error() string {
+	return fmt.Errorf(messages.InstallInvalidPinVersionFmt, e.err).Error()
+}
+
+func (e invalidPinError) Unwrap() error { return e.err }
 
 func (inst *installer) writeManagedBaselineIfConsistent(source BaselineStateSource) error {
 	if inst == nil || inst.sys == nil {

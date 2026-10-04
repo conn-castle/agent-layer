@@ -259,8 +259,9 @@ func (inst ownershipClassifier) resolveBaselineComparable(relPath string, localC
 		return ownershipComparable{}, baselineMetadata{}, err
 	}
 
+	// A broken pin counts as no pin so the plan can still preview its repair.
 	pinVersion, pinErr := readCurrentPinVersion(inst.root, inst.sys)
-	if pinErr != nil {
+	if pinErr != nil && !errors.As(pinErr, new(invalidPinError)) {
 		return ownershipComparable{}, baselineMetadata{}, pinErr
 	}
 	if pinVersion != "" {
