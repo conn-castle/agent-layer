@@ -115,11 +115,11 @@ func ValidateGitignoreBlock(block string, blockPath string) (string, error) {
 // ParseGitignoreTrackingSettings reads the two user-owned tracking choices from
 // a gitignore block. A missing or commented pattern means the path is tracked.
 func ParseGitignoreTrackingSettings(content string) (GitignoreTrackingSettings, error) {
-	trackAgentLayer, err := gitignorePatternIsTracked(content, AgentLayerGitignorePattern)
+	trackAgentLayer, _, err := gitignorePatternIsTracked(content, AgentLayerGitignorePattern)
 	if err != nil {
 		return GitignoreTrackingSettings{}, err
 	}
-	trackDocsAgentLayer, err := gitignorePatternIsTracked(content, DocsAgentLayerGitignorePattern)
+	trackDocsAgentLayer, _, err := gitignorePatternIsTracked(content, DocsAgentLayerGitignorePattern)
 	if err != nil {
 		return GitignoreTrackingSettings{}, err
 	}
@@ -139,13 +139,15 @@ func ApplyGitignoreTrackingSettings(content string, settings GitignoreTrackingSe
 	return setGitignorePatternTracked(next, DocsAgentLayerGitignorePattern, settings.TrackDocsAgentLayerDir)
 }
 
-func gitignorePatternIsTracked(content string, pattern string) (bool, error) {
-	tracked := true
+// gitignorePatternIsTracked reports whether pattern is tracked and whether a
+// commented or uncommented line for it exists at all.
+func gitignorePatternIsTracked(content string, pattern string) (tracked bool, present bool, err error) {
+	tracked = true
 	matches := 0
 	for _, line := range strings.Split(content, "\n") {
 		commented, match, err := inspectGitignorePatternLine(line, pattern)
 		if err != nil {
-			return false, err
+			return false, false, err
 		}
 		if !match {
 			continue
@@ -154,9 +156,9 @@ func gitignorePatternIsTracked(content string, pattern string) (bool, error) {
 		tracked = commented
 	}
 	if matches > 1 {
-		return false, fmt.Errorf(messages.InstallGitignoreDuplicatePatternFmt, pattern)
+		return false, false, fmt.Errorf(messages.InstallGitignoreDuplicatePatternFmt, pattern)
 	}
-	return tracked, nil
+	return tracked, matches == 1, nil
 }
 
 func setGitignorePatternTracked(content string, pattern string, tracked bool) (string, error) {

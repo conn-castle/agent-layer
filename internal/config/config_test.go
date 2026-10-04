@@ -165,6 +165,34 @@ func TestSubstituteEnvVars_EmptyValueReturnsMissingError(t *testing.T) {
 	}
 }
 
+func TestPlaceholderEnvPrefersNonEmptyProcessValues(t *testing.T) {
+	t.Setenv("AL_SHELL_ONLY", "shell-only")
+	t.Setenv("AL_BOTH", "from-shell")
+	t.Setenv("AL_EMPTY_IN_SHELL", "")
+	t.Setenv(BuiltinRepoRootEnvVar, "/shell/root")
+	project := &ProjectConfig{Env: WithBuiltInEnv(map[string]string{
+		"AL_BOTH":           "from-dotenv",
+		"AL_EMPTY_IN_SHELL": "dotenv-fallback",
+	}, "/repo")}
+
+	env := project.PlaceholderEnv()
+
+	want := map[string]string{
+		"AL_SHELL_ONLY":       "shell-only",
+		"AL_BOTH":             "from-shell",
+		"AL_EMPTY_IN_SHELL":   "dotenv-fallback",
+		BuiltinRepoRootEnvVar: "/repo",
+	}
+	for key, value := range want {
+		if env[key] != value {
+			t.Fatalf("%s = %q, want %q", key, env[key], value)
+		}
+	}
+	if project.Env["AL_BOTH"] != "from-dotenv" || project.Env["AL_SHELL_ONLY"] != "" {
+		t.Fatalf("project env was modified: %v", project.Env)
+	}
+}
+
 func TestLoadConfigStdioWithDottedHeaders(t *testing.T) {
 	// Regression: configs with dotted-key headers (headers.Foo = "bar") on
 	// stdio servers must load successfully. Validate() strips the headers

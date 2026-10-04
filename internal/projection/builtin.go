@@ -69,9 +69,15 @@ func RootedBuiltInDispatchServer(cfg config.Config, client string, repoRoot stri
 }
 
 // builtInDispatchClientEnabled reports whether a client surface actually acts
-// as an Agent Dispatch caller. Claude Code's terminal and Visual Studio Code
-// surfaces share one project MCP configuration, so either one enables it.
+// as an Agent Dispatch caller.
 func builtInDispatchClientEnabled(cfg config.Config, client string) bool {
+	return clientAgentEnabled(cfg, client)
+}
+
+// clientAgentEnabled reports whether the agent behind an MCP client is enabled.
+// Claude Code's terminal and Visual Studio Code surfaces share one project MCP
+// configuration, so either one enables the Claude client.
+func clientAgentEnabled(cfg config.Config, client string) bool {
 	switch client {
 	case ClientCodex:
 		return config.IsAgentEnabled(cfg.Agents.Codex.Enabled)
@@ -119,7 +125,7 @@ func EffectiveServerIDs(cfg config.Config, client string) []string {
 // server. Warning and doctor accounting use it so the tools Agent Layer itself
 // adds are measured alongside user-configured servers.
 func ResolveEffectiveEnabledMCPServers(cfg config.Config, env map[string]string) ([]ResolvedMCPServer, error) {
-	resolved, err := ResolveEnabledMCPServers(cfg.MCP.Servers, env)
+	resolved, err := ResolveEnabledMCPServers(ReceivedMCPServers(cfg), env)
 	if err != nil {
 		return nil, err
 	}
@@ -133,11 +139,10 @@ func ResolveEffectiveEnabledMCPServers(cfg config.Config, env map[string]string)
 // EffectiveEnabledServerIDs returns every server doctor and warning discovery
 // will inspect, including the derived built-in server at most once.
 func EffectiveEnabledServerIDs(cfg config.Config) []string {
-	ids := make([]string, 0, len(cfg.MCP.Servers)+1)
-	for _, server := range cfg.MCP.Servers {
-		if config.IsAgentEnabled(server.Enabled) {
-			ids = append(ids, server.ID)
-		}
+	received := ReceivedMCPServers(cfg)
+	ids := make([]string, 0, len(received)+1)
+	for _, server := range received {
+		ids = append(ids, server.ID)
 	}
 	if _, ok := effectiveBuiltInDispatchServer(cfg); ok && !containsServerID(ids, BuiltInDispatchServerID) {
 		ids = append(ids, BuiltInDispatchServerID)
@@ -145,8 +150,41 @@ func EffectiveEnabledServerIDs(cfg config.Config) []string {
 	return ids
 }
 
+// ReceivedMCPServers returns the enabled user-configured MCP servers that sync
+// projects to at least one enabled client, in configuration order. A server
+// limited by `clients` to disabled clients reaches no generated config, so
+// doctor neither requires its secrets nor probes it.
+func ReceivedMCPServers(cfg config.Config) []config.MCPServer {
+	var received []config.MCPServer
+	for _, server := range cfg.MCP.Servers {
+		if !config.IsAgentEnabled(server.Enabled) {
+			continue
+		}
+		for _, client := range mcpClients {
+			if userServersReachClient(cfg, client) && server.AppliesToClient(client) {
+				received = append(received, server)
+				break
+			}
+		}
+	}
+	return received
+}
+
+var mcpClients = []string{ClientAntigravity, ClientClaude, ClientCodex, ClientCopilot, ClientGrok, ClientMuse, ClientVSCode}
+
+// userServersReachClient mirrors sync's gating of each client's generated MCP
+// config. Codex config is also written for VS Code, but an
+// agents.codex.agent_specific.mcp_servers table replaces the projected servers.
+func userServersReachClient(cfg config.Config, client string) bool {
+	if client == ClientCodex {
+		written := config.IsAgentEnabled(cfg.Agents.Codex.Enabled) || config.IsAgentEnabled(cfg.Agents.VSCode.Enabled)
+		return written && !config.HasProviderPassthroughKey(cfg.Agents.Codex.AgentSpecific, config.CodexMCPServersKey)
+	}
+	return clientAgentEnabled(cfg, client)
+}
+
 func effectiveBuiltInDispatchServer(cfg config.Config) (ResolvedMCPServer, bool) {
-	for _, client := range []string{ClientAntigravity, ClientClaude, ClientCodex, ClientCopilot, ClientGrok, ClientMuse, ClientVSCode} {
+	for _, client := range mcpClients {
 		if builtIn, ok := BuiltInDispatchServer(cfg, client); ok {
 			return builtIn, true
 		}

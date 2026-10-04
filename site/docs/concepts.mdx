@@ -305,7 +305,7 @@ Use `clients = ["antigravity", "claude", "codex", "vscode", "copilot", "grok", "
 
 ### Doctor checks
 
-`al doctor` connects to each enabled MCP server, lists available tools, and warns about common issues. It waits up to 30 seconds per server before timing out.
+`al doctor` connects to each enabled MCP server that at least one enabled client receives, lists available tools, and warns about common issues. It waits up to 30 seconds per server before timing out.
 For the full checklist, see [Doctor](./reference#doctor).
 
 ### Skill sync
@@ -402,7 +402,7 @@ Pin parser behavior:
 ### How to set a pin
 
 - `al init` writes a pin when you are running a release build
-- or pass `--version X.Y.Z` to `al init`
+- or pass `--version X.Y.Z` to `al init` (a release build accepts only its own version)
 - `al upgrade` updates the pin to match the currently running `al` binary
 - or edit `.agent-layer/al.version` directly
 - `al upgrade prefetch --version X.Y.Z` pre-warms a specific release binary in cache for offline or CI workflows
@@ -421,6 +421,7 @@ For compatibility guarantees, upgrade event categories, and release-versioned mi
 | --- | --- |
 | `AL_VERSION` | force a version (overrides the repo pin) |
 | `AL_NO_NETWORK` | disable downloads (fails if the pinned version is not cached) |
+| `AL_DOWNLOAD_TIMEOUT` | how long a pinned-version download may go without receiving data before it fails (default `30s`); each download may run for 10 minutes, or longer when this is 5 minutes or more |
 | `AL_CACHE_DIR` | override the cache location |
 
 ### Why pinning is required

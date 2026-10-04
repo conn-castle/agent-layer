@@ -338,24 +338,108 @@ func restoreUpgradeSnapshotEntriesAtRoot(root string, sys System, entries []upgr
 		rel := normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path)))
 		return rel, strings.Count(rel, "/")
 	}
-	sort.Slice(dirs, func(i, j int) bool {
-		leftRel, leftDepth := directorySortKey(dirs[i])
-		rightRel, rightDepth := directorySortKey(dirs[j])
-		if leftDepth == rightDepth {
-			return leftRel < rightRel
+	shallowFirst := func(entries []upgradeSnapshotEntry) func(i, j int) bool {
+		return func(i, j int) bool {
+			leftRel, leftDepth := directorySortKey(entries[i])
+			rightRel, rightDepth := directorySortKey(entries[j])
+			if leftDepth == rightDepth {
+				return leftRel < rightRel
+			}
+			return leftDepth < rightDepth
 		}
-		return leftDepth < rightDepth
-	})
+	}
+	sort.Slice(dirs, shallowFirst(dirs))
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].Path < files[j].Path
 	})
-	sort.Slice(symlinks, func(i, j int) bool {
-		return symlinks[i].Path < symlinks[j].Path
-	})
+	// Restore links shallow-first so a link nested under another restored link
+	// is created through its parent.
+	sort.Slice(symlinks, shallowFirst(symlinks))
+	// A restored link can redirect later writes, and a link may only resolve
+	// once a directory it passes through is restored, so check each path's
+	// ancestors immediately before writing it.
+	validateAncestors := func(absPath string) error {
+		return validateRollbackTargetAncestors(root, sys, []string{absPath})
+	}
 
-	for _, entry := range dirs {
+	// Prefer links in shallow-first order, but recreate captured directories
+	// when the next link's parent is dangling. A directory beneath a pending
+	// link must wait so it is created through that link rather than deleted
+	// when the link replaces a placeholder directory.
+	pendingDirs := append([]upgradeSnapshotEntry(nil), dirs...)
+	pendingSymlinks := symlinks
+	for len(pendingSymlinks) > 0 || len(pendingDirs) > 0 {
+		var entry upgradeSnapshotEntry
+		dirIndex := -1
+		if len(pendingSymlinks) > 0 {
+			entry = pendingSymlinks[0]
+			absPath, err := snapshotEntryAbsPath(root, entry.Path)
+			if err != nil {
+				return err
+			}
+			ready, err := rollbackRestoreAncestorsReady(root, sys, absPath)
+			if err != nil {
+				return err
+			}
+			if !ready {
+				entry = upgradeSnapshotEntry{}
+			}
+		}
+		if entry.Kind == "" {
+		findDirectory:
+			for i, dir := range pendingDirs {
+				absPath, err := snapshotEntryAbsPath(root, dir.Path)
+				if err != nil {
+					return err
+				}
+				for _, link := range pendingSymlinks {
+					linkPath, err := snapshotEntryAbsPath(root, link.Path)
+					if err != nil {
+						return err
+					}
+					if pathWithinRoot(linkPath, absPath) {
+						continue findDirectory
+					}
+				}
+				ready, err := rollbackRestoreAncestorsReady(root, sys, absPath)
+				if err != nil {
+					return err
+				}
+				if ready {
+					entry = dir
+					dirIndex = i
+					break
+				}
+			}
+		}
+		if entry.Kind == "" {
+			return fmt.Errorf("restore snapshot entries: unresolved symlink ancestors")
+		}
 		absPath, err := snapshotEntryAbsPath(root, entry.Path)
 		if err != nil {
+			return err
+		}
+		if entry.Kind == upgradeSnapshotEntryKindSymlink {
+			if strings.TrimSpace(entry.LinkTarget) == "" {
+				return fmt.Errorf("symlink snapshot entry %s requires link_target", entry.Path)
+			}
+			if err := validateAncestors(absPath); err != nil {
+				return err
+			}
+			if err := sys.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+				return fmt.Errorf(messages.InstallFailedCreateDirForFmt, absPath, err)
+			}
+			// Defensively remove any pre-existing file/symlink at the target path.
+			// The rollback reset phase should have already cleared it, but this
+			// prevents EEXIST if the function is called outside a full rollback flow.
+			_ = sys.RemoveAll(absPath)
+			if err := sys.Symlink(entry.LinkTarget, absPath); err != nil {
+				return fmt.Errorf(messages.InstallFailedRestoreSymlinkFmt, entry.Path, err)
+			}
+			pendingSymlinks = pendingSymlinks[1:]
+			continue
+		}
+		if err := validateAncestors(absPath); err != nil {
 			return err
 		}
 		temporaryMode := permFromSnapshot(entry.Perm, 0o755) | 0o700
@@ -371,6 +455,7 @@ func restoreUpgradeSnapshotEntriesAtRoot(root string, sys System, entries []upgr
 		if err := sys.Chmod(absPath, temporaryMode); err != nil {
 			return fmt.Errorf("make directory %s writable for restore: %w", entry.Path, err)
 		}
+		pendingDirs = append(pendingDirs[:dirIndex], pendingDirs[dirIndex+1:]...)
 	}
 	for _, entry := range files {
 		absPath, err := snapshotEntryAbsPath(root, entry.Path)
@@ -381,30 +466,14 @@ func restoreUpgradeSnapshotEntriesAtRoot(root string, sys System, entries []upgr
 		if err != nil {
 			return fmt.Errorf("decode content for %s: %w", entry.Path, err)
 		}
+		if err := validateAncestors(absPath); err != nil {
+			return err
+		}
 		if err := sys.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
 			return fmt.Errorf(messages.InstallFailedCreateDirForFmt, absPath, err)
 		}
 		if err := sys.WriteFileAtomic(absPath, content, permFromSnapshot(entry.Perm, 0o644)); err != nil {
 			return fmt.Errorf(messages.InstallFailedWriteFmt, absPath, err)
-		}
-	}
-	for _, entry := range symlinks {
-		absPath, err := snapshotEntryAbsPath(root, entry.Path)
-		if err != nil {
-			return err
-		}
-		if strings.TrimSpace(entry.LinkTarget) == "" {
-			return fmt.Errorf("symlink snapshot entry %s requires link_target", entry.Path)
-		}
-		if err := sys.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
-			return fmt.Errorf(messages.InstallFailedCreateDirForFmt, absPath, err)
-		}
-		// Defensively remove any pre-existing file/symlink at the target path.
-		// The rollback reset phase should have already cleared it, but this
-		// prevents EEXIST if the function is called outside a full rollback flow.
-		_ = sys.RemoveAll(absPath)
-		if err := sys.Symlink(entry.LinkTarget, absPath); err != nil {
-			return fmt.Errorf(messages.InstallFailedRestoreSymlinkFmt, entry.Path, err)
 		}
 	}
 	// Apply final directory modes only after every descendant is restored. The
@@ -424,6 +493,34 @@ func restoreUpgradeSnapshotEntriesAtRoot(root string, sys System, entries []upgr
 		}
 	}
 	return nil
+}
+
+// rollbackRestoreAncestorsReady distinguishes a missing ordinary parent, which
+// MkdirAll can create, from a dangling symlink parent, which needs its target
+// restored first. Lstat follows ancestors, so the deepest existing directory
+// also proves that all links above it currently resolve.
+func rollbackRestoreAncestorsReady(root string, sys System, target string) (bool, error) {
+	for ancestor := filepath.Dir(target); filepath.Clean(ancestor) != filepath.Clean(root) && pathWithinRoot(root, ancestor); ancestor = filepath.Dir(ancestor) {
+		info, err := sys.Lstat(ancestor)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return false, fmt.Errorf("inspect rollback restore ancestor %s: %w", rollbackDisplayPath(root, ancestor), err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			if _, err := sys.EvalSymlinks(ancestor); err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					// A dangling child can hide an already-resolved external
+					// ancestor. Reject that escape rather than waiting for it.
+					return false, validateRollbackTargetAncestors(root, sys, []string{target})
+				}
+				return false, fmt.Errorf("resolve rollback restore ancestor %s: %w", rollbackDisplayPath(root, ancestor), err)
+			}
+		}
+		return true, nil
+	}
+	return true, nil
 }
 
 // validateRestoreDirectory prevents mode changes from following an unexpected

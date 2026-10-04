@@ -541,6 +541,96 @@ func TestAgentPhaseFailureStillRecordsAResumableFailedReceipt(t *testing.T) {
 	}
 }
 
+func TestVerifierFailureWithCleanupFailureStaysReplayable(t *testing.T) {
+	request, stage := retainedVerifierFailureFixture(t, "VerifierTimeoutError")
+	exact, err := os.ReadFile(filepath.Join(stage, "jobs", "one", "artifacts", "model.patch")) // #nosec G304 -- test-owned stage.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := provePersistedProviderCompletion(stage, request, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	// A cleanup failure must not turn a failed verifier into a succeeded
+	// receipt, which would discard the replay patch and block the cell.
+	_, durable, err := finalizePierExecution(request, stage, nil, errors.New("docker daemon unavailable"))
+	if durable || err == nil || !strings.Contains(err.Error(), "never makes another provider call") || !strings.Contains(err.Error(), "docker daemon unavailable") {
+		t.Fatalf("verifier and cleanup failure finalization = durable=%t err=%v", durable, err)
+	}
+	destination, err := artifactDestination(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(destination, "execution-receipt.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("verifier failure was finalized as a receipt: %v", err)
+	}
+	if checkpoint, found, err := matchingPierExecutionCheckpoint(request); err != nil || !found || checkpoint.ProviderCompletedAt.IsZero() {
+		t.Fatalf("retained checkpoint = %#v found=%t err=%v", checkpoint, found, err)
+	}
+	if preserved, err := os.ReadFile(filepath.Join(stage, replayInputDir, benchmarkModelPatchFile)); err != nil || !bytes.Equal(preserved, exact) { // #nosec G304 -- test-owned stage.
+		t.Fatalf("exact replay patch was not preserved: %v", err)
+	}
+}
+
+func TestAgentPhaseFailureWithCleanupFailureRecordsAResumableFailedReceipt(t *testing.T) {
+	request, stage := retainedVerifierFailureFixture(t, "AgentTimeoutError")
+	if err := provePersistedProviderCompletion(stage, request, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	_, durable, err := finalizePierExecution(request, stage, nil, errors.New("docker daemon unavailable"))
+	if !durable || err == nil || !strings.Contains(err.Error(), "pier verifier did not complete successfully") || !strings.Contains(err.Error(), "docker daemon unavailable") {
+		t.Fatalf("agent-phase and cleanup failure finalization = durable=%t err=%v", durable, err)
+	}
+	destination, err := artifactDestination(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt pierExecutionReceipt
+	if err := readStudyJSON(filepath.Join(destination, "execution-receipt.json"), &receipt); err != nil || receipt.Succeeded || receipt.CleanupSucceeded {
+		t.Fatalf("agent-phase and cleanup failure receipt = %#v, %v", receipt, err)
+	}
+	if failed, err := failedPierExecutionIDs(request); err != nil || len(failed) != 1 || failed[0] != request.EventID {
+		t.Fatalf("failed events = %#v, %v", failed, err)
+	}
+}
+
+func TestSuccessfulVerifierWithCleanupFailureRecordsASucceededReceipt(t *testing.T) {
+	model, effort, err := ParseModelSelection("fable:high")
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalOS := benchmarkHostOS
+	benchmarkHostOS = platformDarwin
+	t.Cleanup(func() { benchmarkHostOS = originalOS })
+	request := recoveryRequestFixture(t)
+	request.Model, request.Effort = model, effort
+	stage := filepath.Join(request.RepoRoot, ".agent-layer", "tmp", "benchmark-"+request.EventID+"-success")
+	if err := copyRequiredTree(writePierStage(t, request.TaskChecksum, .5, 1.25), stage); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePierExecutionCheckpoint(request, stage); err != nil {
+		t.Fatal(err)
+	}
+
+	// The result is already paid and verified, so the receipt keeps it and a
+	// later invocation retries only the cleanup.
+	_, durable, err := finalizePierExecution(request, stage, nil, errors.New("docker daemon unavailable"))
+	if !durable || err == nil || !strings.Contains(err.Error(), "clean Pier task environment") {
+		t.Fatalf("cleanup failure finalization = durable=%t err=%v", durable, err)
+	}
+	destination, err := artifactDestination(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt pierExecutionReceipt
+	if err := readStudyJSON(filepath.Join(destination, "execution-receipt.json"), &receipt); err != nil || !receipt.Succeeded || receipt.CleanupSucceeded {
+		t.Fatalf("cleanup failure receipt = %#v, %v", receipt, err)
+	}
+	if _, found, err := matchingPierExecutionCheckpoint(request); err != nil || found {
+		t.Fatalf("cleanup failure left a replay checkpoint: found=%t err=%v", found, err)
+	}
+}
+
 func TestProviderPhaseFailureKeepsOrdinaryReceiptPath(t *testing.T) {
 	request := recoveryRequestFixture(t)
 	stage := filepath.Join(request.RepoRoot, ".agent-layer", "tmp", "benchmark-"+request.EventID+"-provider")

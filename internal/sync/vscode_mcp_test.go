@@ -157,7 +157,7 @@ func TestWriteVSCodeMCPConfigMissingEnv(t *testing.T) {
 						ID:        "example",
 						Enabled:   &enabled,
 						Transport: "http",
-						URL:       "https://example.com?token=${TOKEN}",
+						URL:       "https://example.com?token=${AL_SYNC_TEST_TOKEN}",
 					},
 				},
 			},

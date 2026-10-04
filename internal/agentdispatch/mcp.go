@@ -113,11 +113,9 @@ type OutputInput struct {
 // disconnects or ctx is cancelled. Nothing but the SDK ever writes to stdout:
 // every dispatch operation renders into a private buffer.
 func RunMCPServer(ctx context.Context, opts MCPServerOptions) error {
-	server, err := newDispatchMCPServer(opts)
-	if err != nil {
-		return err
-	}
-	return server.Run(ctx, &mcp.StdioTransport{})
+	stop := suppressMCPSIGPIPE()
+	defer stop()
+	return runMCPServer(ctx, opts, os.Stdin, os.Stdout, os.Stderr)
 }
 
 func newDispatchMCPServer(opts MCPServerOptions) (*mcp.Server, error) {
@@ -320,7 +318,7 @@ func (s *dispatchToolServer) handleStart(ctx context.Context, _ *mcp.CallToolReq
 	}
 	var out bytes.Buffer
 	err := Start(StartOptions{
-		Root: s.root, WorkDir: s.workDir, Agent: agent, Model: model,
+		Context: ctx, Root: s.root, WorkDir: s.workDir, Agent: agent, Model: model,
 		ReasoningEffort: effort, Role: strings.TrimSpace(input.Role), Skill: strings.TrimSpace(input.Skill),
 		Prompt: input.Prompt, PromptFile: strings.TrimSpace(input.PromptFile),
 		Stdout: &out, Stderr: io.Discard, Env: s.env,
@@ -349,7 +347,7 @@ func (s *dispatchToolServer) handleContinue(ctx context.Context, _ *mcp.CallTool
 	}
 	var out bytes.Buffer
 	err := Continue(ContinueOptions{
-		Root: s.root, WorkDir: s.workDir, Handle: strings.TrimSpace(input.Handle),
+		Context: ctx, Root: s.root, WorkDir: s.workDir, Handle: strings.TrimSpace(input.Handle),
 		Prompt: input.Prompt, PromptFile: strings.TrimSpace(input.PromptFile),
 		Stdout: &out, Stderr: io.Discard, Env: s.env,
 	})

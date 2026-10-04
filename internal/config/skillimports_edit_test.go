@@ -348,6 +348,86 @@ ref = "v1"
 	}
 }
 
+// TestSetSkillImportSelectorsRejectsImportsWithoutTableHeaders proves valid
+// TOML spellings the line editor cannot see fail loudly. Removing would
+// otherwise return the content unchanged and report success, and adding would
+// append a block that conflicts with the existing declaration.
+func TestSetSkillImportSelectorsRejectsImportsWithoutTableHeaders(t *testing.T) {
+	t.Parallel()
+	identity := SkillImport{Repository: "https://example.test/skills.git"}.Identity()
+	cases := map[string]string{
+		"inline single-line": baseConfigTOML + `
+[skills]
+imports = [{ repository = "https://example.test/skills.git", selectors = ["skills/a"] }]
+`,
+		"inline multi-line": baseConfigTOML + `
+[skills]
+imports = [
+  { repository = "https://example.test/skills.git", selectors = ["skills/a"] },
+]
+`,
+		"quoted-key header": baseConfigTOML + `
+[[skills."imports"]]
+repository = "https://example.test/skills.git"
+selectors = ["skills/a"]
+`,
+		"one plain header beside a quoted-key header": baseConfigTOML + `
+[[skills.imports]]
+repository = "https://example.test/other.git"
+selectors = ["skills/b"]
+
+[[skills."imports"]]
+repository = "https://example.test/skills.git"
+selectors = ["skills/a"]
+`,
+	}
+	for name, content := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := ParseConfig([]byte(content), "config.toml"); err != nil {
+				t.Fatalf("fixture must be a valid config: %v", err)
+			}
+			for _, selectors := range [][]string{nil, {"skills/a", "skills/c"}} {
+				updated, err := SetSkillImportSelectors(content, identity, selectors)
+				if err == nil {
+					t.Fatalf("selectors %v: expected an error, got content:\n%s", selectors, updated)
+				}
+				if !strings.Contains(err.Error(), "[[skills.imports]] header") {
+					t.Fatalf("selectors %v: error = %v", selectors, err)
+				}
+			}
+		})
+	}
+}
+
+// TestSetSkillImportSelectorsEditsAroundOtherQuotedKeyImports proves the
+// rejection is limited to the targeted import: a quoted-key block for another
+// repository still lets a new block be appended and an absent removal no-op.
+func TestSetSkillImportSelectorsEditsAroundOtherQuotedKeyImports(t *testing.T) {
+	t.Parallel()
+	content := baseConfigTOML + `
+[[skills."imports"]]
+repository = "https://example.test/other.git"
+selectors = ["skills/b"]
+`
+	identity := SkillImport{Repository: "https://example.test/skills.git"}.Identity()
+	updated, err := SetSkillImportSelectors(content, identity, nil)
+	if err != nil || updated != content {
+		t.Fatalf("absent removal: err = %v, changed = %t", err, updated != content)
+	}
+	updated, err = SetSkillImportSelectors(content, identity, []string{"skills/a"})
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	cfg, err := ParseConfig([]byte(updated), "config.toml")
+	if err != nil {
+		t.Fatalf("updated config does not parse: %v", err)
+	}
+	if len(cfg.Skills.Imports) != 2 || strings.Join(cfg.Skills.Imports[1].Selectors, ",") != "skills/a" {
+		t.Fatalf("imports = %+v", cfg.Skills.Imports)
+	}
+}
+
 // TestSetSkillImportSelectorsScansArrayDelimitersOutsideStringsAndComments
 // proves a selector edit finds the true end of the array. A `]` inside a
 // quoted selector, an escaped quote, a literal string, or a trailing comment

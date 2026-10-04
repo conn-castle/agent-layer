@@ -42,7 +42,7 @@ func FullValueResolver(_ map[string]string) EnvVarResolver {
 }
 
 // ResolveEnabledMCPServers resolves all enabled MCP servers without client filtering.
-// This is useful for operations like doctor checks that need to connect to all servers.
+// Callers that need only the servers clients receive pass ReceivedMCPServers.
 func ResolveEnabledMCPServers(servers []config.MCPServer, env map[string]string) ([]ResolvedMCPServer, error) {
 	resolver := FullValueResolver(env)
 

@@ -1,8 +1,6 @@
 package sync
 
 import (
-	"sort"
-
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
@@ -25,11 +23,7 @@ func buildPermissionsBlock(cfg config.Config, commandsAllow []string, enabledSer
 	}
 
 	if approvals.AllowMCP {
-		ids := append([]string(nil), enabledServerIDs...)
-		sort.Strings(ids)
-		for _, id := range ids {
-			allow = append(allow, renderer.RenderMCP(id))
-		}
+		allow = append(allow, projection.MCPRules(enabledServerIDs, renderer.RenderMCP)...)
 	}
 
 	if len(allow) == 0 {

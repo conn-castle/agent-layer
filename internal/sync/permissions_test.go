@@ -21,6 +21,8 @@ func TestClaudeAllowRulesMatchGeneratedSettings(t *testing.T) {
 	cfg.MCP.Servers = []config.MCPServer{
 		{ID: "zeta", Enabled: &enabled, Transport: config.TransportHTTP, URL: "https://example.com"},
 		{ID: "alpha", Enabled: &enabled, Transport: config.TransportHTTP, URL: "https://example.com"},
+		{ID: "docs.internal", Enabled: &enabled, Transport: config.TransportHTTP, URL: "https://example.com"},
+		{ID: "docs_internal", Enabled: &enabled, Transport: config.TransportHTTP, URL: "https://example.com"},
 	}
 	commands := []string{"git status", "npm test"}
 	serverIDs := projection.EffectiveServerIDs(cfg, projection.ClientClaude)
@@ -177,9 +179,8 @@ func TestBuildPermissionsBlock(t *testing.T) {
 }
 
 // TestBuildPermissionsBlock_StableMCPOrder pins the sort guarantee on MCP
-// IDs so callers can rely on deterministic output. Documented in
-// permissions.go via the explicit sort.Strings call; the test makes the
-// guarantee enforceable.
+// IDs so callers can rely on deterministic output. Documented on
+// projection.MCPRules; the test makes the guarantee enforceable.
 func TestBuildPermissionsBlock_StableMCPOrder(t *testing.T) {
 	t.Parallel()
 	cfg := config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeMCP}}

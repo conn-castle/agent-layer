@@ -43,7 +43,7 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 	}
 
 	// 1. Identify enabled servers
-	enabledServers, err := projection.ResolveEffectiveEnabledMCPServers(cfg.Config, cfg.Env)
+	enabledServers, err := projection.ResolveEffectiveEnabledMCPServers(cfg.Config, cfg.PlaceholderEnv())
 	if err != nil {
 		subject := mcpServersKey
 		var resolveErr *projection.MCPServerResolveError

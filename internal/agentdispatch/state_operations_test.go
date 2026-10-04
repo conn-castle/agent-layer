@@ -1,9 +1,12 @@
 package agentdispatch
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -287,6 +290,209 @@ func TestDispatchSessionRetentionPrunesOnlyExpiredInactiveMappings(t *testing.T)
 	}
 	if _, err := os.Stat(corruptPath); err != nil {
 		t.Fatalf("retention removed corrupt mapping: %v", err)
+	}
+}
+
+func TestConcurrentRetentionPassesShareExpiredMappings(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	old := now.Add(-testDispatchSessionRetention - time.Hour)
+	var names []string
+	for _, shape := range nameShapes {
+		for _, electrical := range nameElectrical {
+			if len(names) == 60 {
+				break
+			}
+			name := nameSizes[0] + "-" + shape + "-" + electrical
+			names = append(names, name)
+			if err := persistSession(root, Session{Name: name, Agent: AgentCodex, State: sessionStateDurable, ProviderSessionID: runtimeSessionID, CreatedAt: old, LastUsedAt: old}); err != nil {
+				t.Fatalf("persist %s: %v", name, err)
+			}
+		}
+	}
+
+	// Every pass lists the same expired mappings before the others remove them.
+	errs := make([]error, 8)
+	var wg sync.WaitGroup
+	for i := range errs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = pruneDispatchEvidence(root, now, testDispatchSessionRetention)
+		}()
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("retention pass %d failed: %v", i, err)
+		}
+	}
+	for _, name := range names {
+		if _, err := os.Stat(filepath.Join(dispatchStatePath(root), name+".json")); !os.IsNotExist(err) {
+			t.Fatalf("expired mapping %s remains: %v", name, err)
+		}
+	}
+}
+
+func TestPruneExpiredSessionTreatsRemovedMappingAsPruned(t *testing.T) {
+	root := t.TempDir()
+	name := "tiny-round-capacitor"
+	if err := pruneExpiredSession(root, name, time.Now()); err != nil {
+		t.Fatalf("pruneExpiredSession on an already removed mapping: %v", err)
+	}
+	_, err := loadSession(root, name)
+	if !errors.Is(err, errDispatchSessionNotFound) || err.Error() != `dispatch session "tiny-round-capacitor" was not found` {
+		t.Fatalf("loadSession on a removed mapping = %v, want the unchanged not-found error", err)
+	}
+	requireDispatchExitCode(t, err, ExitUsage)
+}
+
+func TestReservationsNeverExposePartialMappingsToRetention(t *testing.T) {
+	root := t.TempDir()
+	const reservations = 100
+	done := make(chan struct{})
+	listErr := make(chan error, 1)
+	go func() {
+		defer close(listErr)
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			if _, err := listSessions(root); err != nil {
+				listErr <- err
+				return
+			}
+		}
+	}()
+	stopLister := sync.OnceValue(func() error {
+		close(done)
+		return <-listErr
+	})
+	t.Cleanup(func() { _ = stopLister() })
+	for i := 0; i < reservations; i++ {
+		run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+		if err != nil {
+			t.Fatalf("new run: %v", err)
+		}
+		if _, err := reserveSession(root, run, testDispatchSessionRetention); err != nil {
+			t.Fatalf("reserve session %d: %v", i, err)
+		}
+	}
+	if err := stopLister(); err != nil {
+		t.Fatalf("listSessions observed a partial mapping: %v", err)
+	}
+	sessions, err := listSessions(root)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != reservations {
+		t.Fatalf("listed %d sessions, want %d", len(sessions), reservations)
+	}
+	entries, err := os.ReadDir(dispatchStatePath(root))
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".tmp") {
+			t.Fatalf("reservation left temporary file %s", entry.Name())
+		}
+	}
+}
+
+func TestCreateExclusiveSessionKeepsExistingMapping(t *testing.T) {
+	root := t.TempDir()
+	existing := Session{Name: "tiny-round-capacitor", Agent: AgentClaude, State: sessionStateDurable, ProviderSessionID: runtimeSessionID, CreatedAt: time.Now().UTC(), LastUsedAt: time.Now().UTC()}
+	if err := persistSession(root, existing); err != nil {
+		t.Fatalf("persist existing: %v", err)
+	}
+	path := filepath.Join(dispatchStatePath(root), existing.Name+".json")
+	before, err := os.ReadFile(path) // #nosec G304 -- path is inside the test-owned temporary state directory.
+	if err != nil {
+		t.Fatalf("read existing: %v", err)
+	}
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	if _, reserved, err := createExclusiveSession(root, existing.Name, run); err != nil || reserved {
+		t.Fatalf("createExclusiveSession over an existing name = reserved %v, err %v", reserved, err)
+	}
+	after, err := os.ReadFile(path) // #nosec G304 -- path is inside the test-owned temporary state directory.
+	if err != nil {
+		t.Fatalf("read existing after collision: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("collision rewrote the existing mapping:\n%s\nwant:\n%s", after, before)
+	}
+	entries, err := os.ReadDir(dispatchStatePath(root))
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".tmp") {
+			t.Fatalf("collision left temporary file %s", entry.Name())
+		}
+	}
+}
+
+func TestLoadSessionNamesUnreadableMapping(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(dispatchStatePath(root), 0o700); err != nil {
+		t.Fatalf("create state: %v", err)
+	}
+	name := "tiny-round-capacitor"
+	if err := os.WriteFile(filepath.Join(dispatchStatePath(root), name+".json"), nil, 0o600); err != nil {
+		t.Fatalf("write empty mapping: %v", err)
+	}
+	_, err := loadSession(root, name)
+	if err == nil || !strings.Contains(err.Error(), name) || errors.Is(err, errDispatchSessionNotFound) {
+		t.Fatalf("loadSession on an empty mapping = %v, want a named read failure", err)
+	}
+	requireDispatchExitCode(t, err, ExitConfig)
+}
+
+func TestDanglingDispatchMappingRemainsCorruptAndOccupied(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(dispatchStatePath(root), 0o700); err != nil {
+		t.Fatalf("create state: %v", err)
+	}
+	name := "tiny-round-capacitor"
+	path := filepath.Join(dispatchStatePath(root), name+".json")
+	target := filepath.Join(root, "missing.json")
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatalf("create dangling mapping: %v", err)
+	}
+	for _, operation := range []struct {
+		name string
+		run  func() error
+	}{
+		{"load", func() error { _, err := loadSession(root, name); return err }},
+		{"list", func() error { _, err := listSessions(root); return err }},
+		{"retention", func() error { return pruneExpiredSessions(root, time.Now(), testDispatchSessionRetention) }},
+	} {
+		t.Run(operation.name, func(t *testing.T) {
+			err := operation.run()
+			if err == nil || !strings.HasPrefix(err.Error(), `read dispatch mapping "`+name+`": `) || !errors.Is(err, fs.ErrNotExist) || errors.Is(err, errDispatchSessionNotFound) {
+				t.Fatalf("dangling mapping = %v, want a named read failure with its cause", err)
+			}
+			requireDispatchExitCode(t, err, ExitConfig)
+		})
+	}
+	retained, active, unreadable, err := classifyDispatchPoolOccupancy(root)
+	if err != nil || retained != 0 || active != 0 || unreadable != 1 {
+		t.Fatalf("dangling mapping occupancy = %d retained, %d active, %d unreadable, %v; want 0, 0, 1, nil", retained, active, unreadable, err)
+	}
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	if _, reserved, err := createExclusiveSession(root, name, run); err != nil || reserved {
+		t.Fatalf("createExclusiveSession over a dangling mapping = reserved %v, err %v", reserved, err)
+	}
+	if got, err := os.Readlink(path); err != nil || got != target {
+		t.Fatalf("dangling mapping changed: target %q, err %v; want %q", got, err, target)
 	}
 }
 

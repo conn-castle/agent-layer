@@ -47,9 +47,28 @@ func ParseCommandPrefixes(commands []string) ([][]string, error) {
 		if err != nil || len(argv) == 0 || argv[0] == "" || strings.Contains(argv[0], "=") {
 			return nil, fmt.Errorf("invalid Muse command prefix %q: expected a nonempty quoted argv prefix", command)
 		}
+		// Split drops an unquoted word-initial # and the rest of the line as a
+		// comment, which would approve a shorter, broader prefix. The tokenizer
+		// still returns that comment, so any extra token reveals one.
+		if commandTokenCount(command) != len(argv) {
+			return nil, fmt.Errorf("muse command prefix %q contains a # comment; quote a literal # argument", command)
+		}
 		prefixes = append(prefixes, argv)
 	}
 	return prefixes, nil
+}
+
+// commandTokenCount counts shlex words and comments in a command that Split
+// already accepted.
+func commandTokenCount(command string) int {
+	tokenizer := shlex.NewTokenizer(strings.NewReader(command))
+	count := 0
+	for {
+		if _, err := tokenizer.Next(); err != nil {
+			return count
+		}
+		count++
+	}
 }
 
 // SyncCommands replaces only this workspace's Agent Layer-owned allow rules.

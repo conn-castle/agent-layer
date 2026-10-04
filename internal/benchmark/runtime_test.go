@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -80,6 +82,74 @@ func TestCompletedPierExecutionIsRecoveredWithoutProviderRetry(t *testing.T) {
 	retry.EnvironmentIdentity = "changed-environment"
 	if _, found, err := recoverCompletedPierExecution(retry); err != nil || found {
 		t.Fatalf("changed environment recovered old cell: found=%t err=%v", found, err)
+	}
+}
+
+func TestRecoveredCleanupProducesAcceptedStudyResult(t *testing.T) {
+	model, effort, err := ParseModelSelection("fable:high")
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalOS := benchmarkHostOS
+	benchmarkHostOS = platformDarwin
+	t.Cleanup(func() { benchmarkHostOS = originalOS })
+	evidence := t.TempDir()
+	request := ExecutionRequest{
+		RepoRoot: t.TempDir(), EvidenceDir: evidence, EventID: "first-event",
+		Attempt: 1, Task: "example-task", Model: model, Effort: effort,
+		Arm: ArmBaseline, TaskChecksum: "task-checksum", EnvironmentIdentity: "environment-one",
+	}
+	if err := promoteSanitizedPierArtifacts(request, writePierStage(t, "task-checksum", .5, 3.5)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePierExecutionReceipt(request, nil, errors.New("docker daemon unavailable")); err != nil {
+		t.Fatal(err)
+	}
+	receiptPath := filepath.Join(evidence, "attempts", "1", "tasks", "example-task", benchmarkArtifactsDir, "first-event", "execution-receipt.json")
+	var original pierExecutionReceipt
+	if err := readStudyJSON(receiptPath, &original); err != nil {
+		t.Fatal(err)
+	}
+	retry := request
+	retry.EventID = "would-have-called-provider"
+
+	installDockerCleanupStub(t, func(context.Context, ...string) ([]byte, error) {
+		return []byte("Cannot connect to the Docker daemon"), errors.New("exit status 1")
+	})
+	if _, _, err := recoverCompletedPierExecution(retry); err == nil || !strings.Contains(err.Error(), "without a provider retry") {
+		t.Fatalf("failed cleanup retry error = %v", err)
+	}
+	var unchanged pierExecutionReceipt
+	if err := readStudyJSON(receiptPath, &unchanged); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(unchanged, original) {
+		t.Fatalf("failed cleanup retry rewrote receipt: %#v", unchanged)
+	}
+
+	installDockerCleanupStub(t, func(context.Context, ...string) ([]byte, error) { return nil, nil })
+	result, found, err := recoverCompletedPierExecution(retry)
+	if err != nil || !found || result.EventID != "first-event" {
+		t.Fatalf("recovered result = %#v, found = %t, err = %v", result, found, err)
+	}
+	var recovered pierExecutionReceipt
+	if err := readStudyJSON(receiptPath, &recovered); err != nil {
+		t.Fatal(err)
+	}
+	expected := original
+	expected.CleanupSucceeded = true
+	if !reflect.DeepEqual(recovered, expected) {
+		t.Fatalf("recovered receipt = %#v, want %#v", recovered, expected)
+	}
+	// The study writes the recovered result as the cell's result; every later
+	// progress check and report must accept it rather than report corruption.
+	resultPath := armResultPath(evidence, "example-task", 1)
+	if err := writeJSON(resultPath, result); err != nil {
+		t.Fatal(err)
+	}
+	arm := matrixArm{Mode: ArmBaseline, Loaded: loadedBenchmarkPlan{Model: model, Effort: effort}}
+	if _, err := readStudyResult(resultPath, "example-task", 1, "task-checksum", "environment-one", arm); err != nil {
+		t.Fatalf("study rejected recovered result: %v", err)
 	}
 }
 

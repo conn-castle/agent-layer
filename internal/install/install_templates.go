@@ -247,7 +247,7 @@ func (inst templateManager) installedDevelopmentSkillTemplateDirs() ([]templateD
 	return inst.installedSkillTemplateDirs("skills")
 }
 
-func (inst templateManager) installedSkillTemplateDirs(templateRoot string) ([]templateDir, error) {
+func (inst templateManager) skillTemplateDirs(templateRoot string) ([]templateDir, error) {
 	ids := make(map[string]struct{})
 	if err := templates.Walk(templateRoot, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -278,22 +278,48 @@ func (inst templateManager) installedSkillTemplateDirs(templateRoot string) ([]t
 	out := make([]templateDir, 0, len(sortedIDs))
 	for _, id := range sortedIDs {
 		destRoot := filepath.Join(inst.root, ".agent-layer", "skills", id)
-		info, err := inst.sys.Stat(destRoot)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-			return nil, fmt.Errorf(messages.InstallFailedStatFmt, destRoot, err)
-		}
-		if !info.IsDir() {
-			continue
-		}
 		out = append(out, templateDir{
 			templateRoot: templateRoot + "/" + id,
 			destRoot:     destRoot,
 		})
 	}
 	return out, nil
+}
+
+func (inst templateManager) installedSkillTemplateDirs(templateRoot string) ([]templateDir, error) {
+	dirs, err := inst.skillTemplateDirs(templateRoot)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]templateDir, 0, len(dirs))
+	for _, dir := range dirs {
+		info, err := inst.sys.Stat(dir.destRoot)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf(messages.InstallFailedStatFmt, dir.destRoot, err)
+		}
+		if info.IsDir() {
+			out = append(out, dir)
+		}
+	}
+	return out, nil
+}
+
+// ungatedTemplatePathByRel includes destinations that migrations may activate.
+func (inst templateManager) ungatedTemplatePathByRel() (map[string]string, error) {
+	dirs := inst.managedInstructionTemplateDirs()
+	dirs = append(dirs, inst.managedMemoryTemplateDirs()...)
+	for _, root := range []string{"skills-catalog", "skills"} {
+		skillDirs, err := inst.skillTemplateDirs(root)
+		if err != nil {
+			return nil, err
+		}
+		dirs = append(dirs, skillDirs...)
+	}
+	dirs = append(dirs, inst.memoryTemplateDirs()...)
+	return inst.templatePathByRel(dirs, true)
 }
 
 // listManagedDiffs returns relative paths for managed files that differ from templates.

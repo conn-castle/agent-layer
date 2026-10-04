@@ -76,6 +76,69 @@ func TestRequireUpgradeTargetCLIFormatsNormalizedTarget(t *testing.T) {
 	}
 }
 
+func TestRequireUpgradeTargetCLIAcceptsRunningVersion(t *testing.T) {
+	originalVersion := Version
+	Version = "v0.23.1"
+	t.Cleanup(func() { Version = originalVersion })
+
+	for _, target := range []string{"0.23.1", "v0.23.1"} {
+		if err := requireUpgradeTargetCLI(target); err != nil {
+			t.Fatalf("requireUpgradeTargetCLI(%q) = %v", target, err)
+		}
+	}
+}
+
+func TestRequireUpgradeTargetCLIRejectsOlderTarget(t *testing.T) {
+	originalVersion := Version
+	Version = "v0.23.1"
+	t.Cleanup(func() { Version = originalVersion })
+
+	err := requireUpgradeTargetCLI("v0.21.0")
+	if err == nil || !strings.Contains(err.Error(), "CLI v0.23.1 cannot upgrade to older v0.21.0") ||
+		!strings.Contains(err.Error(), "al upgrade rollback") {
+		t.Fatalf("older target error = %v", err)
+	}
+}
+
+func TestUpgradeCmdRejectsTargetOlderThanInvokingCLI(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	originalVersion := Version
+	Version = "v0.23.1"
+	t.Cleanup(func() { Version = originalVersion })
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	originalValidate := validatePinnedReleaseVersionFunc
+	validatePinnedReleaseVersionFunc = func(context.Context, string) error {
+		t.Fatal("older target reached remote release validation")
+		return nil
+	}
+	t.Cleanup(func() { validatePinnedReleaseVersionFunc = originalValidate })
+
+	origInstallRun := installRun
+	installRun = func(string, install.Options) error {
+		t.Fatal("older target reached install")
+		return nil
+	}
+	t.Cleanup(func() { installRun = origInstallRun })
+
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		cmd.SetArgs([]string{"--version", "0.21.0", "--yes", "--apply-managed-updates"})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		err := cmd.Execute()
+		if err == nil || !strings.Contains(err.Error(), "cannot upgrade to older v0.21.0") {
+			t.Fatalf("older target error = %v", err)
+		}
+	})
+}
+
 func TestUpgradeCmd_YesWithoutApplyFlagsErrors(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {

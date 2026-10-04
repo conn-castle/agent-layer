@@ -155,6 +155,8 @@ func TestRunnerTreatsCodexErrorEventsAsDiagnostics(t *testing.T) {
 		name, script, wantErr string
 	}{
 		{"recovered retry", prefix + `printf '{"type":"agent_message","message":"final"}\n{"type":"turn.completed"}\n'`, ""},
+		{"aborted turn without reason", prefix + `printf '{"type":"turn.aborted"}\n'`, "codex dispatch did not complete: Codex reported a terminal failure"},
+		{"latest diagnostic survives empty progress", prefix + `printf '{"type":"error","message":"Reconnecting... 3/5 (connection reset)"}\n{"type":"error"}\n{"type":"turn.started"}\n'; exit 1`, "codex exited with code 1; `al dispatch` exiting 70; last provider error: Reconnecting... 3/5 (connection reset)"},
 		{"turn failure", prefix + `printf '{"type":"turn.failed","error":{"message":"quota exhausted"}}\n'`, "codex dispatch did not complete: quota exhausted"},
 		{"nonzero exit after completed turn", prefix + `printf '{"type":"agent_message","message":"final"}\n{"type":"turn.completed"}\n'; exit 1`, "codex exited with code 1; `al dispatch` exiting 70; last provider error: Reconnecting... 2/5 (request timed out)"},
 		{"exit without terminal event", prefix + `exit 1`, "codex exited with code 1; `al dispatch` exiting 70; last provider error: Reconnecting... 2/5 (request timed out)"},
@@ -180,6 +182,18 @@ func TestRunnerTreatsCodexErrorEventsAsDiagnostics(t *testing.T) {
 				t.Fatalf("error = %q, want %q", err.Error(), tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestProviderDiagnosticPreservesWrappedFailure(t *testing.T) {
+	cause := errors.New("provider wait failed")
+	err := withProviderDiagnostic(providerWaitError(AgentCodex, cause), "retry notice")
+	requireDispatchExitCode(t, err, ExitTargetFailure)
+	if !errors.Is(err, cause) {
+		t.Fatalf("wrapped wait cause was not preserved: %v", err)
+	}
+	if want := "wait for codex: provider wait failed; last provider error: retry notice"; err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
 	}
 }
 
