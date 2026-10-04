@@ -8,6 +8,11 @@ const (
 	commandUpgrade = messages.UpgradeUse
 	unknownVersion = "unknown"
 	noSyncFlag     = "--no-sync"
+	noSyncPrefix   = "--no-sync="
+
+	flagQuiet       = "--quiet"
+	flagQuietShort  = "-q"
+	flagQuietPrefix = "--quiet="
 
 	issueUnrecognizedConfigKeys          = "unrecognized_config_keys"
 	issueUnresolvedConfigPlaceholders    = "unresolved_config_placeholders"

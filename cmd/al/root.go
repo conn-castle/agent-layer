@@ -43,13 +43,9 @@ func newRootCmd() *cobra.Command {
 		newProbeMCPFixtureCmd(),
 		newDispatchCmd(),
 		newDispatchWorkerCmd(),
-		newClaudeCmd(),
-		newCodexCmd(),
-		newVSCodeCmd(),
-		newAntigravityCmd(),
-		newCopilotCmd(),
-		newGrokCmd(),
-		newMuseCmd(),
+	)
+	root.AddCommand(newLaunchCmds()...)
+	root.AddCommand(
 		newDoctorCmd(),
 		newWizardCmd(),
 		newBenchmarkCmd(),
