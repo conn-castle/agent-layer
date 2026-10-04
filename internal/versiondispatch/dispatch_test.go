@@ -280,35 +280,28 @@ func TestCacheRootDir(t *testing.T) {
 
 func TestMaybeExec_NoDispatchNeeded(t *testing.T) {
 	cwd := t.TempDir()
-	err := MaybeExec(context.Background(), []string{"cmd"}, "1.0.0", cwd, io.Discard, func(int) {})
+	err := MaybeExec(context.Background(), []string{"cmd"}, "1.0.0", cwd, io.Discard)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
 }
 
 func TestMaybeExec_MissingArgs(t *testing.T) {
-	err := MaybeExec(context.Background(), []string{}, "1.0.0", ".", io.Discard, func(int) {})
+	err := MaybeExec(context.Background(), []string{}, "1.0.0", ".", io.Discard)
 	if err == nil || err.Error() != "missing argv[0]" {
 		t.Fatalf("expected missing argv[0], got %v", err)
 	}
 }
 
 func TestMaybeExec_MissingCwd(t *testing.T) {
-	err := MaybeExec(context.Background(), []string{"cmd"}, "1.0.0", "", io.Discard, func(int) {})
+	err := MaybeExec(context.Background(), []string{"cmd"}, "1.0.0", "", io.Discard)
 	if err == nil || err.Error() != "working directory is required" {
 		t.Fatalf("expected working directory required, got %v", err)
 	}
 }
 
-func TestMaybeExec_MissingExit(t *testing.T) {
-	err := MaybeExec(context.Background(), []string{"cmd"}, "1.0.0", ".", io.Discard, nil)
-	if err == nil || err.Error() != "exit handler is required" {
-		t.Fatalf("expected exit handler required, got %v", err)
-	}
-}
-
 func TestMaybeExec_InvalidCurrentVersion(t *testing.T) {
-	err := MaybeExec(context.Background(), []string{"cmd"}, "invalid-version", ".", io.Discard, func(int) {})
+	err := MaybeExec(context.Background(), []string{"cmd"}, "invalid-version", ".", io.Discard)
 	if err == nil {
 		t.Fatal("expected error for invalid current version")
 	}
@@ -318,7 +311,7 @@ func TestMaybeExec_DispatchAlreadyActive(t *testing.T) {
 	t.Setenv(EnvShimActive, "1")
 	t.Setenv(EnvVersionOverride, "1.1.0") // Different from current
 
-	err := MaybeExec(context.Background(), []string{"cmd"}, "1.0.0", t.TempDir(), io.Discard, func(int) {})
+	err := MaybeExec(context.Background(), []string{"cmd"}, "1.0.0", t.TempDir(), io.Discard)
 	if err == nil {
 		t.Fatal("expected error when dispatch active")
 	}
@@ -354,7 +347,7 @@ func TestMaybeExec_DispatchSuccess(t *testing.T) {
 	var execCalled bool
 	var execPath string
 	sys := &testSystem{
-		ExecBinaryFunc: func(path string, args []string, env []string, exit func(int)) error {
+		ExecBinaryFunc: func(path string, args []string, env []string) error {
 			execCalled = true
 			execPath = path
 			return nil // Simulate success (process replaced)
@@ -367,13 +360,13 @@ func TestMaybeExec_DispatchSuccess(t *testing.T) {
 	t.Setenv(EnvCacheDir, cacheDir)
 
 	// Call MaybeExec
-	err := MaybeExecWithSystem(context.Background(), sys, []string{"cmd"}, "0.9.0", ".", func(int) {})
+	err := maybeExec(context.Background(), sys, []string{"cmd"}, "0.9.0", ".")
 	if err != ErrDispatched {
 		t.Fatalf("expected ErrDispatched, got %v", err)
 	}
 
 	if !execCalled {
-		t.Fatal("expected execBinary to be called")
+		t.Fatal("expected ExecBinary to be called")
 	}
 
 	expectedPath := filepath.Join(cacheDir, "versions", version, osName+"-"+arch, asset)
@@ -392,7 +385,7 @@ func TestMaybeExec_CanceledWhileWaitingForCacheLockDoesNotExec(t *testing.T) {
 			waits++
 			cancel()
 		},
-		ExecBinaryFunc: func(string, []string, []string, func(int)) error {
+		ExecBinaryFunc: func(string, []string, []string) error {
 			t.Fatal("ExecBinary called after cancellation")
 			return nil
 		},
@@ -401,7 +394,7 @@ func TestMaybeExec_CanceledWhileWaitingForCacheLockDoesNotExec(t *testing.T) {
 	t.Setenv(EnvCacheDir, t.TempDir())
 	t.Setenv("AL_DOWNLOAD_TIMEOUT", "1ms")
 
-	err := MaybeExecWithSystem(ctx, sys, []string{"al", "doctor"}, "0.9.0", ".", func(int) {})
+	err := maybeExec(ctx, sys, []string{"al", "doctor"}, "0.9.0", ".")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}
@@ -424,7 +417,7 @@ func TestMaybeExec_CanceledWithCachedBinaryDoesNotExec(t *testing.T) {
 	t.Setenv(EnvVersionOverride, version)
 	t.Setenv(EnvCacheDir, cacheDir)
 	sys := &testSystem{
-		ExecBinaryFunc: func(string, []string, []string, func(int)) error {
+		ExecBinaryFunc: func(string, []string, []string) error {
 			t.Fatal("ExecBinary called after cancellation")
 			return nil
 		},
@@ -432,7 +425,7 @@ func TestMaybeExec_CanceledWithCachedBinaryDoesNotExec(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := MaybeExecWithSystem(ctx, sys, []string{"al", "doctor"}, "0.9.0", ".", func(int) {})
+	err := maybeExec(ctx, sys, []string{"al", "doctor"}, "0.9.0", ".")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}
@@ -441,7 +434,7 @@ func TestMaybeExec_CanceledWithCachedBinaryDoesNotExec(t *testing.T) {
 func TestMaybeExec_OverrideSameAsCurrent(t *testing.T) {
 	t.Setenv(EnvVersionOverride, "1.0.0")
 	// If requested == current, it returns nil (no dispatch)
-	err := MaybeExecWithSystem(context.Background(), RealSystem{}, []string{"cmd"}, "1.0.0", ".", func(int) {})
+	err := maybeExec(context.Background(), RealSystem{}, []string{"cmd"}, "1.0.0", ".")
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -468,7 +461,7 @@ func TestMaybeExec_OverrideWarnsWhenPinExists(t *testing.T) {
 		},
 	}
 
-	err := MaybeExecWithSystem(context.Background(), sys, []string{"cmd"}, "1.0.0", root, func(int) {})
+	err := maybeExec(context.Background(), sys, []string{"cmd"}, "1.0.0", root)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -506,7 +499,7 @@ func TestMaybeExec_OverrideReadsPinOnce(t *testing.T) {
 		},
 	}
 
-	err := MaybeExecWithSystem(context.Background(), sys, []string{"cmd"}, "1.0.0", root, func(int) {})
+	err := maybeExec(context.Background(), sys, []string{"cmd"}, "1.0.0", root)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -520,7 +513,7 @@ func TestMaybeExec_OverrideReadsPinOnce(t *testing.T) {
 
 func TestMaybeExec_InvalidOverride(t *testing.T) {
 	t.Setenv(EnvVersionOverride, "invalid-version")
-	err := MaybeExecWithSystem(context.Background(), RealSystem{}, []string{"cmd"}, "1.0.0", ".", func(int) {})
+	err := maybeExec(context.Background(), RealSystem{}, []string{"cmd"}, "1.0.0", ".")
 	if err == nil {
 		t.Fatal("expected error for invalid override")
 	}
@@ -544,7 +537,7 @@ func TestMaybeExec_ReadPinnedVersionError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := MaybeExecWithSystem(context.Background(), RealSystem{}, []string{"cmd"}, "0.9.0", root, func(int) {})
+	err := maybeExec(context.Background(), RealSystem{}, []string{"cmd"}, "0.9.0", root)
 	if err == nil {
 		t.Fatal("expected error reading pinned version")
 	}
@@ -552,7 +545,7 @@ func TestMaybeExec_ReadPinnedVersionError(t *testing.T) {
 
 func TestMaybeExec_DevTarget(t *testing.T) {
 	t.Setenv(EnvVersionOverride, "dev")
-	err := MaybeExecWithSystem(context.Background(), RealSystem{}, []string{"cmd"}, "1.0.0", t.TempDir(), func(int) {})
+	err := maybeExec(context.Background(), RealSystem{}, []string{"cmd"}, "1.0.0", t.TempDir())
 	if err == nil {
 		t.Fatal("expected error when dispatching to dev")
 	}
@@ -587,14 +580,14 @@ func TestMaybeExec_ExecBinaryError(t *testing.T) {
 	defer func() { releaseBaseURL = oldURL }()
 
 	sys := &testSystem{
-		ExecBinaryFunc: func(path string, args []string, env []string, exit func(int)) error {
+		ExecBinaryFunc: func(path string, args []string, env []string) error {
 			return errors.New("exec failed")
 		},
 	}
 
 	t.Setenv(EnvCacheDir, t.TempDir())
 
-	err := MaybeExecWithSystem(context.Background(), sys, []string{"cmd"}, "0.9.0", ".", func(int) {})
+	err := maybeExec(context.Background(), sys, []string{"cmd"}, "0.9.0", ".")
 	if err == nil || err.Error() != "exec failed" {
 		t.Fatalf("expected exec failed, got %v", err)
 	}
@@ -606,7 +599,7 @@ func TestMaybeExec_EnsureCachedBinaryError(t *testing.T) {
 
 	// No mock server -> download fails
 
-	err := MaybeExecWithSystem(context.Background(), RealSystem{}, []string{"cmd"}, "0.9.0", ".", func(int) {})
+	err := maybeExec(context.Background(), RealSystem{}, []string{"cmd"}, "0.9.0", ".")
 	if err == nil {
 		t.Fatal("expected error from ensureCachedBinary")
 	}
@@ -637,7 +630,7 @@ func TestMaybeExec_CacheRootDirError(t *testing.T) {
 	t.Setenv(EnvCacheDir, "")
 	t.Setenv(EnvVersionOverride, "1.0.0")
 
-	err := MaybeExecWithSystem(context.Background(), sys, []string{"cmd"}, "0.9.0", ".", func(int) {})
+	err := maybeExec(context.Background(), sys, []string{"cmd"}, "0.9.0", ".")
 	if err == nil {
 		t.Fatal("expected error from MaybeExec when cacheRootDir fails")
 	}
@@ -646,7 +639,7 @@ func TestMaybeExec_CacheRootDirError(t *testing.T) {
 func TestMaybeExec_CurrentIsDev(t *testing.T) {
 	// Use an isolated cwd so repository pin files do not influence this test.
 	cwd := t.TempDir()
-	err := MaybeExec(context.Background(), []string{"cmd"}, "dev", cwd, io.Discard, func(int) {})
+	err := MaybeExec(context.Background(), []string{"cmd"}, "dev", cwd, io.Discard)
 	if err != nil {
 		t.Fatalf("expected nil error for dev current version, got %v", err)
 	}
@@ -666,7 +659,7 @@ func TestMaybeExec_DevelopmentBypassSkipsVersionResolution(t *testing.T) {
 		},
 	}
 
-	err := MaybeExecWithSystem(context.Background(), sys, []string{"al", "dispatch"}, "dev", t.TempDir(), func(int) {})
+	err := maybeExec(context.Background(), sys, []string{"al", "dispatch"}, "dev", t.TempDir())
 	if err != nil {
 		t.Fatalf("expected development bypass to keep the source binary, got %v", err)
 	}
@@ -693,7 +686,7 @@ func TestMaybeExec_CorruptPinFallsThroughToCurrentVersion(t *testing.T) {
 	}
 
 	// Current version is 1.0.0, corrupt pin falls through → requested == current → no dispatch
-	err := MaybeExecWithSystem(context.Background(), sys, []string{"cmd"}, "1.0.0", root, func(int) {})
+	err := maybeExec(context.Background(), sys, []string{"cmd"}, "1.0.0", root)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -731,7 +724,7 @@ func TestMaybeExec_DispatchSuppressesVersionSource(t *testing.T) {
 
 	var stderr bytes.Buffer
 	sys := &testSystem{
-		ExecBinaryFunc: func(path string, args []string, env []string, exit func(int)) error {
+		ExecBinaryFunc: func(path string, args []string, env []string) error {
 			return nil
 		},
 		StderrFunc: func() io.Writer {
@@ -742,7 +735,7 @@ func TestMaybeExec_DispatchSuppressesVersionSource(t *testing.T) {
 	t.Setenv(EnvVersionOverride, version)
 	t.Setenv(EnvCacheDir, t.TempDir())
 
-	err := MaybeExecWithSystem(context.Background(), sys, []string{"cmd"}, "0.9.0", ".", func(int) {})
+	err := maybeExec(context.Background(), sys, []string{"cmd"}, "0.9.0", ".")
 	if err != ErrDispatched {
 		t.Fatalf("expected ErrDispatched, got %v", err)
 	}
@@ -771,7 +764,7 @@ func TestMaybeExec_PinMatchPrintsVersionSourceOnce(t *testing.T) {
 		StderrFunc: func() io.Writer { return &stderr },
 	}
 
-	err := MaybeExecWithSystem(context.Background(), sys, []string{"cmd"}, "1.0.0", root, func(int) {})
+	err := maybeExec(context.Background(), sys, []string{"cmd"}, "1.0.0", root)
 	if err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
@@ -825,7 +818,7 @@ func TestMaybeExec_DispatchRoundTrip_PrintsVersionSourceOnce(t *testing.T) {
 			return root, true, nil
 		},
 		StderrFunc: func() io.Writer { return &stderr },
-		ExecBinaryFunc: func(path string, args []string, env []string, exit func(int)) error {
+		ExecBinaryFunc: func(path string, args []string, env []string) error {
 			// Simulate the dispatched binary: it runs MaybeExec with
 			// current == pinned (1.0.0) and AL_SHIM_ACTIVE=1 in the env.
 			childSys := &testSystem{
@@ -840,7 +833,7 @@ func TestMaybeExec_DispatchRoundTrip_PrintsVersionSourceOnce(t *testing.T) {
 					return ""
 				},
 			}
-			err := MaybeExecWithSystem(context.Background(), childSys, args, "1.0.0", root, exit)
+			err := maybeExec(context.Background(), childSys, args, "1.0.0", root)
 			if err != nil {
 				t.Errorf("dispatched binary MaybeExec failed: %v", err)
 			}
@@ -850,7 +843,7 @@ func TestMaybeExec_DispatchRoundTrip_PrintsVersionSourceOnce(t *testing.T) {
 
 	t.Setenv(EnvCacheDir, t.TempDir())
 
-	err := MaybeExecWithSystem(context.Background(), sys, []string{"cmd"}, "0.9.0", root, func(int) {})
+	err := maybeExec(context.Background(), sys, []string{"cmd"}, "0.9.0", root)
 	if err != ErrDispatched {
 		t.Fatalf("expected ErrDispatched, got %v", err)
 	}
@@ -913,7 +906,7 @@ func TestMaybeExec_DispatchRoundTrip_OverrideWithPin_PrintsOnce(t *testing.T) {
 				return ""
 			}
 		},
-		ExecBinaryFunc: func(path string, args []string, env []string, exit func(int)) error {
+		ExecBinaryFunc: func(path string, args []string, env []string) error {
 			// Dispatched binary: current=1.0.0, AL_VERSION=1.0.0, AL_SHIM_ACTIVE=1
 			childSys := &testSystem{
 				FindAgentLayerRootFunc: func(string) (string, bool, error) {
@@ -931,7 +924,7 @@ func TestMaybeExec_DispatchRoundTrip_OverrideWithPin_PrintsOnce(t *testing.T) {
 					}
 				},
 			}
-			err := MaybeExecWithSystem(context.Background(), childSys, args, "1.0.0", root, exit)
+			err := maybeExec(context.Background(), childSys, args, "1.0.0", root)
 			if err != nil {
 				t.Errorf("dispatched binary MaybeExec failed: %v", err)
 			}
@@ -939,7 +932,7 @@ func TestMaybeExec_DispatchRoundTrip_OverrideWithPin_PrintsOnce(t *testing.T) {
 		},
 	}
 
-	err := MaybeExecWithSystem(context.Background(), sys, []string{"cmd"}, "0.9.0", root, func(int) {})
+	err := maybeExec(context.Background(), sys, []string{"cmd"}, "0.9.0", root)
 	if err != ErrDispatched {
 		t.Fatalf("expected ErrDispatched, got %v", err)
 	}
@@ -985,12 +978,12 @@ func TestMaybeExec_ExecReturnsDispatched(t *testing.T) {
 	defer func() { releaseBaseURL = oldURL }()
 
 	sys := &testSystem{
-		ExecBinaryFunc: func(path string, args []string, env []string, exit func(int)) error {
+		ExecBinaryFunc: func(path string, args []string, env []string) error {
 			return ErrDispatched
 		},
 	}
 
-	err := MaybeExecWithSystem(context.Background(), sys, []string{"cmd"}, "0.9.0", ".", func(int) {})
+	err := maybeExec(context.Background(), sys, []string{"cmd"}, "0.9.0", ".")
 	if err != ErrDispatched {
 		t.Fatalf("expected ErrDispatched, got %v", err)
 	}
@@ -1099,7 +1092,7 @@ func TestMaybeExec_UsesProvidedStderr(t *testing.T) {
 	}
 
 	var stderr bytes.Buffer
-	err := MaybeExec(context.Background(), []string{"al"}, "1.0.0", root, &stderr, func(int) {})
+	err := MaybeExec(context.Background(), []string{"al"}, "1.0.0", root, &stderr)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -1134,7 +1127,6 @@ func TestMaybeExec_UsesPinFromRealRootOfSymlinkedDescendant(t *testing.T) {
 		"1.0.0",
 		filepath.Join(linkedRepo, "packages", "service"),
 		&stderr,
-		func(int) {},
 	)
 	if err != nil {
 		t.Fatalf("MaybeExec error: %v", err)

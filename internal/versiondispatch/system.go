@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -21,7 +22,7 @@ type System interface {
 	ReadFile(name string) ([]byte, error)
 	Getenv(key string) string
 	Environ() []string
-	ExecBinary(path string, args []string, env []string, exit func(int)) error
+	ExecBinary(path string, args []string, env []string) error
 	FindAgentLayerRoot(start string) (string, bool, error)
 	Stderr() io.Writer
 	Stat(name string) (os.FileInfo, error)
@@ -65,8 +66,8 @@ func (RealSystem) Environ() []string {
 }
 
 // ExecBinary replaces the current process with the provided binary.
-func (RealSystem) ExecBinary(path string, args []string, env []string, exit func(int)) error {
-	return execBinary(path, args, env, exit)
+func (RealSystem) ExecBinary(path string, args []string, env []string) error {
+	return syscall.Exec(path, args, env) // #nosec G204 -- path is the checksum-verified cached release binary resolved by dispatch.
 }
 
 // FindAgentLayerRoot searches upwards from start for an .agent-layer directory.

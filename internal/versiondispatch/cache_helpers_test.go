@@ -3,7 +3,6 @@ package versiondispatch
 import (
 	"context"
 	"io"
-	"os"
 	"runtime"
 )
 
@@ -16,14 +15,4 @@ func ensureCachedBinary(ctx context.Context, cacheRoot string, version string, p
 // platformStrings returns the supported OS and architecture strings for release assets.
 func platformStrings() (string, string, error) {
 	return checkPlatform(runtime.GOOS, runtime.GOARCH)
-}
-
-// downloadToFile fetches url and writes it to dest.
-func downloadToFile(ctx context.Context, url string, dest *os.File) error {
-	return downloadToFileWithSystem(ctx, RealSystem{}, url, dest)
-}
-
-// fetchChecksum retrieves the expected checksum for the asset from checksums.txt.
-func fetchChecksum(ctx context.Context, version string, asset string) (string, error) {
-	return fetchChecksumWithSystem(ctx, RealSystem{}, version, asset)
 }

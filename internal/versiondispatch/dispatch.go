@@ -37,25 +37,19 @@ var ErrDispatched = errors.New(messages.DispatchErrDispatched)
 // MaybeExec checks for a pinned version and dispatches to it when needed.
 // It returns ErrDispatched if execution was handed off. Canceling ctx stops a
 // pending download or cache-lock wait and prevents the hand-off.
-func MaybeExec(ctx context.Context, args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
-	return MaybeExecWithSystem(ctx, RealSystem{StderrWriter: stderr}, args, currentVersion, cwd, exit)
+func MaybeExec(ctx context.Context, args []string, currentVersion string, cwd string, stderr io.Writer) error {
+	return maybeExec(ctx, RealSystem{StderrWriter: stderr}, args, currentVersion, cwd)
 }
 
-// MaybeExecWithSystem checks for a pinned version and dispatches to it when needed.
+// maybeExec checks for a pinned version and dispatches to it when needed.
 // It returns ErrDispatched if execution was handed off. Canceling ctx stops a
 // pending download or cache-lock wait and prevents the hand-off.
-func MaybeExecWithSystem(ctx context.Context, sys System, args []string, currentVersion string, cwd string, exit func(int)) error {
-	if sys == nil {
-		return fmt.Errorf(messages.DispatchSystemRequired)
-	}
+func maybeExec(ctx context.Context, sys System, args []string, currentVersion string, cwd string) error {
 	if len(args) == 0 {
 		return fmt.Errorf(messages.DispatchMissingArgv0)
 	}
 	if cwd == "" {
 		return fmt.Errorf(messages.DispatchWorkingDirRequired)
-	}
-	if exit == nil {
-		return fmt.Errorf(messages.DispatchExitHandlerRequired)
 	}
 
 	current, err := normalizeCurrentVersion(currentVersion)
@@ -116,7 +110,7 @@ func MaybeExecWithSystem(ctx context.Context, sys System, args []string, current
 	dispatchArgs := argsForRequestedVersion(args, requested)
 	env := append(sys.Environ(), fmt.Sprintf("%s=1", EnvShimActive))
 	execArgs := append([]string{path}, dispatchArgs[1:]...)
-	if err := sys.ExecBinary(path, execArgs, env, exit); err != nil {
+	if err := sys.ExecBinary(path, execArgs, env); err != nil {
 		return err
 	}
 	return ErrDispatched
