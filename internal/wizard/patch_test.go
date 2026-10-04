@@ -450,6 +450,31 @@ foo = "bar"
 	assert.Contains(t, out, `foo = "bar"`)
 }
 
+func TestPatchConfig_PreservesSectionsAfterStringEndingInQuotes(t *testing.T) {
+	content := `
+[custom_section]
+quote = """"This," she said, "is just a pointless statement.""""
+notes = """
+[fake_section]
+"""
+
+[approvals]
+mode = "none"
+`
+	choices := NewChoices()
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	var parsed map[string]any
+	require.NoError(t, toml.Unmarshal([]byte(out), &parsed))
+	custom := parsed["custom_section"].(map[string]any)
+	assert.Equal(t, `"This," she said, "is just a pointless statement."`, custom["quote"])
+	assert.Equal(t, "[fake_section]\n", custom["notes"])
+	assert.Equal(t, "none", parsed["approvals"].(map[string]any)["mode"])
+	assert.NotContains(t, parsed, "fake_section")
+}
+
 func TestPatchConfig_PreservesCodexAgentSpecificFeatures(t *testing.T) {
 	content := `
 [approvals]
