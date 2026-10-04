@@ -16,28 +16,15 @@ func (inst *installer) shouldOverwrite(path string) (bool, error) {
 	if !inst.overwrite {
 		return false, nil
 	}
-	router := inst.promptRouter()
-	if router.hasUnifiedOverwrite() && (!inst.overwriteAllDecided || !inst.overwriteMemoryAllDecided) {
-		if err := inst.resolveUnifiedOverwriteAllDecisions(); err != nil {
-			return false, err
-		}
+	if err := inst.resolveOverwriteAllDecisions(); err != nil {
+		return false, err
 	}
 	if inst.isMemoryPath(path) {
-		overwriteAll, err := inst.shouldOverwriteAllMemory()
-		if err != nil {
-			return false, err
-		}
-		if overwriteAll {
+		if inst.overwriteMemoryAll {
 			return true, nil
 		}
-	} else {
-		overwriteAll, err := inst.shouldOverwriteAllManaged()
-		if err != nil {
-			return false, err
-		}
-		if overwriteAll {
-			return true, nil
-		}
+	} else if inst.overwriteAll {
+		return true, nil
 	}
 	if inst.prompter == nil {
 		return false, fmt.Errorf(messages.InstallOverwritePromptRequired)
@@ -52,19 +39,14 @@ func (inst *installer) shouldOverwrite(path string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	resp, err := router.route(promptRequest{kind: promptKindOverwrite, preview: preview})
-	if err != nil {
-		return false, err
-	}
-	return resp.approved, nil
+	return inst.prompter.overwrite(preview)
 }
 
-func (inst *installer) resolveUnifiedOverwriteAllDecisions() error {
-	if inst.overwriteAllDecided && inst.overwriteMemoryAllDecided {
+func (inst *installer) resolveOverwriteAllDecisions() error {
+	if inst.overwriteAllDecided {
 		return nil
 	}
-	router := inst.promptRouter()
-	if !router.hasUnifiedOverwrite() {
+	if inst.prompter == nil || inst.prompter.OverwriteAllUnifiedPreviewFunc == nil {
 		return fmt.Errorf(messages.InstallOverwritePromptRequired)
 	}
 
@@ -92,98 +74,17 @@ func (inst *installer) resolveUnifiedOverwriteAllDecisions() error {
 		inst.overwriteAll = false
 		inst.overwriteMemoryAll = false
 		inst.overwriteAllDecided = true
-		inst.overwriteMemoryAllDecided = true
 		return nil
 	}
 
-	resp, err := router.route(promptRequest{
-		kind:           promptKindOverwriteAllUnified,
-		previews:       managedPreviews,
-		memoryPreviews: memoryPreviews,
-	})
+	managed, memory, err := inst.prompter.OverwriteAllUnifiedPreviewFunc(managedPreviews, memoryPreviews)
 	if err != nil {
 		return err
 	}
-	inst.overwriteAll = resp.approved
-	inst.overwriteMemoryAll = resp.approvedMemory
+	inst.overwriteAll = managed
+	inst.overwriteMemoryAll = memory
 	inst.overwriteAllDecided = true
-	inst.overwriteMemoryAllDecided = true
 	return nil
-}
-
-// shouldOverwriteAllManaged resolves the "overwrite all managed files" decision.
-func (inst *installer) shouldOverwriteAllManaged() (bool, error) {
-	return inst.resolveOverwriteAllDecision(
-		&inst.overwriteAllDecided,
-		&inst.overwriteAll,
-		promptKindOverwriteAll,
-		func() ([]DiffPreview, error) {
-			diffs, err := inst.templates().listManagedLabeledDiffs()
-			if err != nil {
-				return nil, err
-			}
-			previews, index, err := inst.buildManagedDiffPreviews(diffs)
-			if err != nil {
-				return nil, err
-			}
-			inst.managedDiffPreviews = index
-			return previews, nil
-		},
-	)
-}
-
-// shouldOverwriteAllMemory resolves the "overwrite all memory files" decision.
-func (inst *installer) shouldOverwriteAllMemory() (bool, error) {
-	return inst.resolveOverwriteAllDecision(
-		&inst.overwriteMemoryAllDecided,
-		&inst.overwriteMemoryAll,
-		promptKindOverwriteAllMemory,
-		func() ([]DiffPreview, error) {
-			diffs, err := inst.templates().listMemoryLabeledDiffs()
-			if err != nil {
-				return nil, err
-			}
-			previews, index, err := inst.buildMemoryDiffPreviews(diffs)
-			if err != nil {
-				return nil, err
-			}
-			inst.memoryDiffPreviews = index
-			return previews, nil
-		},
-	)
-}
-
-func (inst *installer) resolveOverwriteAllDecision(
-	decided *bool,
-	decision *bool,
-	kind promptKind,
-	buildPreviews func() ([]DiffPreview, error),
-) (bool, error) {
-	if *decided {
-		return *decision, nil
-	}
-	router := inst.promptRouter()
-	if router.hasUnifiedOverwrite() {
-		if err := inst.resolveUnifiedOverwriteAllDecisions(); err != nil {
-			return false, err
-		}
-		return *decision, nil
-	}
-	if inst.prompter == nil {
-		return false, fmt.Errorf(messages.InstallOverwritePromptRequired)
-	}
-
-	previews, err := buildPreviews()
-	if err != nil {
-		return false, err
-	}
-	resp, err := router.route(promptRequest{kind: kind, previews: previews})
-	if err != nil {
-		return false, err
-	}
-	*decision = resp.approved
-	*decided = true
-	return resp.approved, nil
 }
 
 // isMemoryPath reports whether the path is under docs/agent-layer.

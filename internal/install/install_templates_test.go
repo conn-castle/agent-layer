@@ -1061,10 +1061,8 @@ func TestWriteSectionAwareTemplateFile_OverwriteBranches(t *testing.T) {
 			root:      root,
 			sys:       RealSystem{},
 			overwrite: true,
-			prompter: PromptFuncs{
-				OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) {
-					return false, errors.New("prompt boom")
-				},
+			prompter: &PromptFuncs{
+				OverwriteAllUnifiedPreviewFunc: func([]DiffPreview, []DiffPreview) (bool, bool, error) { return false, false, errors.New("prompt boom") },
 			},
 		}
 		err := inst.templates().writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
@@ -1078,9 +1076,9 @@ func TestWriteSectionAwareTemplateFile_OverwriteBranches(t *testing.T) {
 			root:      root,
 			sys:       RealSystem{},
 			overwrite: true,
-			prompter: PromptFuncs{
-				OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return false, nil },
-				OverwritePreviewFunc:          func(DiffPreview) (bool, error) { return false, nil },
+			prompter: &PromptFuncs{
+				OverwriteAllUnifiedPreviewFunc: func([]DiffPreview, []DiffPreview) (bool, bool, error) { return false, false, nil },
+				OverwritePreviewFunc:           func(DiffPreview) (bool, error) { return false, nil },
 			},
 		}
 		err := inst.templates().writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
@@ -1099,9 +1097,9 @@ func TestWriteSectionAwareTemplateFile_OverwriteBranches(t *testing.T) {
 			root:      root,
 			sys:       sys,
 			overwrite: true,
-			prompter: PromptFuncs{
-				OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return true, nil },
-				OverwritePreviewFunc:          func(DiffPreview) (bool, error) { return true, nil },
+			prompter: &PromptFuncs{
+				OverwriteAllUnifiedPreviewFunc: func([]DiffPreview, []DiffPreview) (bool, bool, error) { return false, true, nil },
+				OverwritePreviewFunc:           func(DiffPreview) (bool, error) { return true, nil },
 			},
 		}
 		err := inst.templates().writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)

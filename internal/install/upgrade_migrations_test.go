@@ -517,12 +517,11 @@ func TestExecuteConfigSetDefaultMigration_CallsPrompt(t *testing.T) {
 	var promptedKey string
 	var promptedValue any
 	var promptedRationale string
-	prompter := PromptFuncs{
-		OverwriteAllPreviewFunc:       func([]DiffPreview) (bool, error) { return true, nil },
-		OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return true, nil },
-		OverwritePreviewFunc:          func(DiffPreview) (bool, error) { return true, nil },
-		DeleteUnknownAllFunc:          func([]string) (bool, error) { return true, nil },
-		DeleteUnknownFunc:             func(string) (bool, error) { return true, nil },
+	prompter := &PromptFuncs{
+		OverwriteAllUnifiedPreviewFunc: func([]DiffPreview, []DiffPreview) (bool, bool, error) { return true, true, nil },
+		OverwritePreviewFunc:           func(DiffPreview) (bool, error) { return true, nil },
+		DeleteUnknownAllFunc:           func([]string) (bool, error) { return true, nil },
+		DeleteUnknownFunc:              func(string) (bool, error) { return true, nil },
 		ConfigSetDefaultFunc: func(key string, manifestValue any, rationale string, field *config.FieldDef) (any, error) {
 			promptedKey = key
 			promptedValue = manifestValue
@@ -1484,7 +1483,7 @@ func TestMigration_0_10_2_MigratesGeminiConfigToAntigravity(t *testing.T) {
 			// from 0.10.1 to 0.10.2.
 			writePinForTest(t, root, "0.10.1")
 			var warn bytes.Buffer
-			inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+			inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}, warnWriter: &warn, prompter: &PromptFuncs{}}
 			if err := inst.prepareUpgradeMigrations(); err != nil {
 				t.Fatalf("prepareUpgradeMigrations: %v", err)
 			}
@@ -1523,7 +1522,7 @@ func TestMigration_0_10_2_MigratesGeminiConfigToAntigravity(t *testing.T) {
 			// source-gated skip, and the user's enable value must survive
 			// unchanged (F-B2-1 regression guard).
 			writePinForTest(t, root, "0.10.2")
-			inst2 := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+			inst2 := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}, warnWriter: &warn, prompter: &PromptFuncs{}}
 			if err := inst2.prepareUpgradeMigrations(); err != nil {
 				t.Fatalf("prepareUpgradeMigrations (rerun): %v", err)
 			}
@@ -1711,7 +1710,7 @@ func TestMigration_0_10_2_UnknownSourceUpgradePath(t *testing.T) {
 	// Deliberately no pin / baseline written: source resolution must fall
 	// through to "unknown" so source-agnostic ops carry the migration.
 	var warn bytes.Buffer
-	inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+	inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}, warnWriter: &warn, prompter: &PromptFuncs{}}
 	if err := inst.prepareUpgradeMigrations(); err != nil {
 		t.Fatalf("prepareUpgradeMigrations (unknown source): %v", err)
 	}
@@ -1775,7 +1774,7 @@ func TestMigration_0_10_2_UnknownSourceKeepsCurrentAntigravity(t *testing.T) {
 	}, "\n"))
 
 	var warn bytes.Buffer
-	inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+	inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}, warnWriter: &warn, prompter: &PromptFuncs{}}
 	if err := inst.prepareUpgradeMigrations(); err != nil {
 		t.Fatalf("prepareUpgradeMigrations: %v", err)
 	}
@@ -3041,7 +3040,7 @@ func TestExecuteMigrateSkillsFormat_BasicMigration(t *testing.T) {
 	}
 
 	var warn bytes.Buffer
-	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn, prompter: &PromptFuncs{}}
 	changed, err := inst.executeMigrateSkillsFormat(".agent-layer/skills")
 	if err != nil {
 		t.Fatalf("executeMigrateSkillsFormat: %v", err)
@@ -3090,7 +3089,7 @@ func TestExecuteMigrateSkillsFormat_NoFlatFiles(t *testing.T) {
 	}
 
 	var warn bytes.Buffer
-	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn, prompter: &PromptFuncs{}}
 	changed, err := inst.executeMigrateSkillsFormat(".agent-layer/skills")
 	if err != nil {
 		t.Fatalf("executeMigrateSkillsFormat: %v", err)
@@ -3103,7 +3102,7 @@ func TestExecuteMigrateSkillsFormat_NoFlatFiles(t *testing.T) {
 func TestExecuteMigrateSkillsFormat_SkillsDirMissing(t *testing.T) {
 	root := t.TempDir()
 	var warn bytes.Buffer
-	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn, prompter: &PromptFuncs{}}
 	changed, err := inst.executeMigrateSkillsFormat(".agent-layer/skills")
 	if err != nil {
 		t.Fatalf("executeMigrateSkillsFormat: %v", err)
@@ -3129,7 +3128,7 @@ func TestExecuteMigrateSkillsFormat_ConflictDifferentContent(t *testing.T) {
 	}
 
 	var warn bytes.Buffer
-	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn, prompter: &PromptFuncs{}}
 	_, err := inst.executeMigrateSkillsFormat(".agent-layer/skills")
 	if err == nil || !strings.Contains(err.Error(), "conflict") {
 		t.Fatalf("expected conflict error, got %v", err)
@@ -3151,7 +3150,7 @@ func TestExecuteMigrateSkillsFormat_DuplicateContentCleansUp(t *testing.T) {
 	}
 
 	var warn bytes.Buffer
-	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn, prompter: &PromptFuncs{}}
 	changed, err := inst.executeMigrateSkillsFormat(".agent-layer/skills")
 	if err != nil {
 		t.Fatalf("executeMigrateSkillsFormat: %v", err)
@@ -3193,7 +3192,7 @@ func TestExecuteMigrateSkillsFormat_UserCancels(t *testing.T) {
 	}
 
 	var warn bytes.Buffer
-	prompter := PromptFuncs{
+	prompter := &PromptFuncs{
 		ConfirmSkillsMigrationFunc: func(flatSkills []string, conflicts []SkillsMigrationConflict) (bool, error) {
 			return false, nil // user declines
 		},
@@ -3295,7 +3294,7 @@ func TestExecuteMigrateSkillsFormat_PathNotDirectory(t *testing.T) {
 		t.Fatalf("write skills path: %v", err)
 	}
 
-	inst := &installer{root: root, sys: RealSystem{}, prompter: PromptFuncs{}}
+	inst := &installer{root: root, sys: RealSystem{}, prompter: &PromptFuncs{}}
 	_, err := inst.executeMigrateSkillsFormat(".agent-layer/skills")
 	if err == nil {
 		t.Fatal("expected error when skills path is not a directory")
@@ -3865,12 +3864,11 @@ func TestRun_SkillsMigrationDeclinedBeforeMutations(t *testing.T) {
 	// Track exactly what the prompter callback receives.
 	var promptedSkills []string
 	var promptedConflicts []SkillsMigrationConflict
-	prompter := PromptFuncs{
-		OverwriteAllPreviewFunc:       func([]DiffPreview) (bool, error) { return true, nil },
-		OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return true, nil },
-		OverwritePreviewFunc:          func(DiffPreview) (bool, error) { return true, nil },
-		DeleteUnknownAllFunc:          func([]string) (bool, error) { return true, nil },
-		DeleteUnknownFunc:             func(string) (bool, error) { return true, nil },
+	prompter := &PromptFuncs{
+		OverwriteAllUnifiedPreviewFunc: func([]DiffPreview, []DiffPreview) (bool, bool, error) { return true, true, nil },
+		OverwritePreviewFunc:           func(DiffPreview) (bool, error) { return true, nil },
+		DeleteUnknownAllFunc:           func([]string) (bool, error) { return true, nil },
+		DeleteUnknownFunc:              func(string) (bool, error) { return true, nil },
 		ConfirmSkillsMigrationFunc: func(flatSkills []string, conflicts []SkillsMigrationConflict) (bool, error) {
 			promptedSkills = flatSkills
 			promptedConflicts = conflicts
@@ -3999,12 +3997,11 @@ func TestRun_SkillsMigrationBlockedByConflict(t *testing.T) {
 	// The ConfirmSkillsMigrationFunc should NOT be called — conflicts abort
 	// before reaching the confirmation prompt.
 	promptCalled := false
-	prompter := PromptFuncs{
-		OverwriteAllPreviewFunc:       func([]DiffPreview) (bool, error) { return true, nil },
-		OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return true, nil },
-		OverwritePreviewFunc:          func(DiffPreview) (bool, error) { return true, nil },
-		DeleteUnknownAllFunc:          func([]string) (bool, error) { return true, nil },
-		DeleteUnknownFunc:             func(string) (bool, error) { return true, nil },
+	prompter := &PromptFuncs{
+		OverwriteAllUnifiedPreviewFunc: func([]DiffPreview, []DiffPreview) (bool, bool, error) { return true, true, nil },
+		OverwritePreviewFunc:           func(DiffPreview) (bool, error) { return true, nil },
+		DeleteUnknownAllFunc:           func([]string) (bool, error) { return true, nil },
+		DeleteUnknownFunc:              func(string) (bool, error) { return true, nil },
 		ConfirmSkillsMigrationFunc: func(flatSkills []string, conflicts []SkillsMigrationConflict) (bool, error) {
 			promptCalled = true
 			return true, nil

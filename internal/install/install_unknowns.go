@@ -122,18 +122,18 @@ func (inst *installer) selectUnknownsToKeep(unknowns []string) ([]string, error)
 		return unknowns, nil
 	}
 	relative := inst.keepListCandidateRelPaths(unknowns)
-	response, err := inst.promptRouter().route(promptRequest{kind: promptKindSelectUnknownsToKeep, paths: relative})
+	selected, err := inst.prompter.selectUnknownsToKeep(relative)
 	if err != nil {
 		return nil, err
 	}
-	if len(response.selectedPaths) == 0 {
+	if len(selected) == 0 {
 		return unknowns, nil
 	}
 	kept, err := inst.loadUpgradeKeepList()
 	if err != nil {
 		return nil, err
 	}
-	kept, err = inst.addUpgradeKeepPaths(kept, response.selectedPaths, relative)
+	kept, err = inst.addUpgradeKeepPaths(kept, selected, relative)
 	if err != nil {
 		return nil, err
 	}
@@ -148,22 +148,21 @@ func (inst *installer) handleNonTmpUnknowns(tmpUnknowns, otherUnknowns []string)
 	if len(otherUnknowns) == 0 {
 		return nil
 	}
-	router := inst.promptRouter()
 	rel := inst.collapsedRelativePathList(tmpUnknowns, otherUnknowns)
-	deleteAll, err := router.route(promptRequest{kind: promptKindDeleteUnknownAll, paths: rel})
+	deleteAll, err := inst.prompter.deleteUnknownAll(rel)
 	if err != nil {
 		return err
 	}
-	if deleteAll.approved {
+	if deleteAll {
 		return inst.deleteUnknowns(otherUnknowns)
 	}
 	for _, path := range otherUnknowns {
 		relPath := inst.relativePath(path)
-		deletePath, err := router.route(promptRequest{kind: promptKindDeleteUnknown, path: relPath})
+		deletePath, err := inst.prompter.deleteUnknown(relPath)
 		if err != nil {
 			return err
 		}
-		if deletePath.approved {
+		if deletePath {
 			if err := inst.sys.RemoveAll(path); err != nil {
 				return fmt.Errorf(messages.InstallDeleteUnknownFailedFmt, relPath, err)
 			}
@@ -175,21 +174,20 @@ func (inst *installer) handleNonTmpUnknowns(tmpUnknowns, otherUnknowns []string)
 // handleTmpUnknowns asks one grouped yes/no question for every unknown path
 // under `.agent-layer/tmp/`. Tmp deletion is destructive (it can wipe
 // in-progress agent run artifacts) so it requires an affirmative grouped
-// answer; when the router reports the grouped tmp capability as unavailable
-// (see newPromptRouter) the routed prompt returns "not approved" and tmp paths
-// are left untouched rather than falling back to per-file prompts. This
-// guarantees no code path can delete tmp content without going through the
-// dedicated destructive-action confirmation in the grouped prompt.
+// answer. Without a grouped callback, tmp paths are left untouched rather
+// than falling back to per-file prompts. This guarantees no code path can
+// delete tmp content without going through the dedicated destructive-action
+// confirmation in the grouped prompt.
 func (inst *installer) handleTmpUnknowns(tmpUnknowns []string) error {
 	if len(tmpUnknowns) == 0 {
 		return nil
 	}
 	rel := inst.relativePathList(tmpUnknowns)
-	deleteTmp, err := inst.promptRouter().route(promptRequest{kind: promptKindDeleteUnknownTmpAll, paths: rel})
+	deleteTmp, err := inst.prompter.deleteUnknownTmpAll(rel)
 	if err != nil {
 		return err
 	}
-	if !deleteTmp.approved {
+	if !deleteTmp {
 		return nil
 	}
 	return inst.deleteUnknowns(tmpUnknowns)

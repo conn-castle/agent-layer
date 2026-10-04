@@ -159,11 +159,10 @@ func TestRunWithOverwrite_RollbackRestoresDeletedUnknownPath(t *testing.T) {
 	err := Run(root, Options{
 		System:    RealSystem{},
 		Overwrite: true,
-		Prompter: PromptFuncs{
-			OverwriteAllPreviewFunc:       func([]DiffPreview) (bool, error) { return true, nil },
-			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return true, nil },
-			OverwritePreviewFunc:          func(DiffPreview) (bool, error) { return true, nil },
-			DeleteUnknownAllFunc:          func([]string) (bool, error) { return false, nil },
+		Prompter: &PromptFuncs{
+			OverwriteAllUnifiedPreviewFunc: func([]DiffPreview, []DiffPreview) (bool, bool, error) { return true, true, nil },
+			OverwritePreviewFunc:           func(DiffPreview) (bool, error) { return true, nil },
+			DeleteUnknownAllFunc:           func([]string) (bool, error) { return false, nil },
 			DeleteUnknownFunc: func(path string) (bool, error) {
 				deletePromptCount++
 				if strings.HasSuffix(path, "a-unknown.txt") {

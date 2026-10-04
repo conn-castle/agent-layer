@@ -72,11 +72,9 @@ func TestUpgrade_RenamedCustomizedFileReview(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		fixture renamedReviewFixture
-		unified bool
 	}{
-		{"UnifiedFile", renamedMemoryFixture, true},
-		{"NonUnifiedFile", renamedMemoryFixture, false},
-		{"Directory", renamedSkillFixture, true},
+		{"UnifiedFile", renamedMemoryFixture},
+		{"Directory", renamedSkillFixture},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := seedRenamedReview(t, tc.fixture, true)
@@ -85,16 +83,9 @@ func TestUpgrade_RenamedCustomizedFileReview(t *testing.T) {
 			}
 			var captured []DiffPreview
 			prompter := autoApprovePrompter()
-			if tc.unified {
-				prompter.OverwriteAllUnifiedPreviewFunc = func(managed, memory []DiffPreview) (bool, bool, error) {
-					captured = managed
-					return true, false, nil
-				}
-			} else {
-				prompter.OverwriteAllPreviewFunc = func(previews []DiffPreview) (bool, error) {
-					captured = previews
-					return true, nil
-				}
+			prompter.OverwriteAllUnifiedPreviewFunc = func(managed, memory []DiffPreview) (bool, bool, error) {
+				captured = managed
+				return true, false, nil
 			}
 			if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.23.1", Overwrite: true, Prompter: prompter}); err != nil {
 				t.Fatalf("upgrade: %v", err)
@@ -317,7 +308,7 @@ func TestUpgrade_RenamedReviewSelectiveDeclineGuard(t *testing.T) {
 	}
 	prompted := make(map[string]bool)
 	prompter := autoApprovePrompter()
-	prompter.OverwriteAllPreviewFunc = func([]DiffPreview) (bool, error) { return false, nil }
+	prompter.OverwriteAllUnifiedPreviewFunc = func([]DiffPreview, []DiffPreview) (bool, bool, error) { return false, true, nil }
 	prompter.OverwritePreviewFunc = func(preview DiffPreview) (bool, error) {
 		prompted[preview.Path] = true
 		return preview.Path == ".agent-layer/commands.allow", nil
