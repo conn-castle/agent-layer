@@ -3,7 +3,6 @@ package skillimport
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
@@ -13,18 +12,12 @@ import (
 // with the current configured upstream tree. It does not reconcile any other
 // selector membership.
 func (s *Service) Reset(ctx context.Context, name string) (*Report, error) {
-	report := &Report{}
-	err := s.withLockedState(func(st *state) error {
+	return s.withLockedReport(func(st *state, report *Report) error {
 		return s.resetLocked(ctx, st, name, report)
 	})
-	report.Sort()
-	return report, err
 }
 
 func (s *Service) resetLocked(ctx context.Context, st *state, name string, report *Report) error {
-	if err := failOnOrphans(st); err != nil {
-		return err
-	}
 	entry, ok := st.lock.Entry(name)
 	if !ok {
 		return fmt.Errorf("imported skill %q has no lock entry; pass the exact name shown by 'al skills status --all'", name)
@@ -44,15 +37,11 @@ func (s *Service) resetLocked(ctx context.Context, st *state, name string, repor
 		return fmt.Errorf("user-managed skill %s already owns the name %q; remove the collision before resetting", relativeTo(st.paths.Root, dir), entry.Name)
 	}
 
-	runner, err := s.newRunner(st.env)
+	runner, workRoot, cleanup, err := s.gitWorkspace(st, "reset")
 	if err != nil {
 		return err
 	}
-	workRoot, err := os.MkdirTemp("", "al-skill-reset-")
-	if err != nil {
-		return fmt.Errorf("failed to create a git working directory: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(workRoot) }()
+	defer cleanup()
 
 	blockCtx, err := s.openBlock(ctx, runner, workRoot, blockIndex, block)
 	if err != nil {

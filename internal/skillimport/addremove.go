@@ -3,7 +3,6 @@ package skillimport
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
@@ -40,18 +39,12 @@ func (o AddOptions) identity() config.SkillImportBlockIdentity {
 // together. A projection failure afterwards is reported without discarding that
 // valid source state.
 func (s *Service) Add(ctx context.Context, opts AddOptions) (*Report, error) {
-	report := &Report{}
-	err := s.withLockedState(func(st *state) error {
+	return s.withLockedReport(func(st *state, report *Report) error {
 		return s.addLocked(ctx, st, opts, report)
 	})
-	report.Sort()
-	return report, err
 }
 
 func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, report *Report) error {
-	if err := failOnOrphans(st); err != nil {
-		return err
-	}
 	if len(opts.Selectors) == 0 {
 		return fmt.Errorf("at least one selector is required")
 	}
@@ -92,100 +85,33 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 	if !ok {
 		return fmt.Errorf("the updated configuration does not contain the expected skills.imports block")
 	}
+	lockedEntries := []skilllock.Entry{}
 	if hasExisting {
 		blockIndex = existingIndex
+		lockedEntries = st.entriesForBlock(existing)
 	}
 
 	txn := s.newTransaction(pathSetFor(st), st.lock)
 	txn.SetConfig(nextConfig)
-
-	runner, err := s.newRunner(st.env)
-	if err != nil {
-		return err
-	}
-	workRoot, err := os.MkdirTemp("", "al-skill-add-")
-	if err != nil {
-		return fmt.Errorf("failed to create a git working directory: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(workRoot) }()
-
-	blockCtx, err := s.openBlock(ctx, runner, workRoot, blockIndex, block)
-	if err != nil {
-		return err
-	}
-	commit := blockCtx.Resolution.Commit
-	desired, failures, err := resolveBlock(ctx, blockCtx.Source, blockIndex, block, commit)
-	if err != nil {
-		return err
-	}
-	lockedEntries := []skilllock.Entry{}
-	if hasExisting {
-		lockedEntries = st.entriesForBlock(existing)
-	}
-	lockedByPath := make(map[string]skilllock.Entry, len(lockedEntries))
-	for _, entry := range lockedEntries {
-		lockedByPath[entry.SelectedPath] = entry
-	}
-	newFailures := failuresForNewPaths(failures, lockedByPath, block)
-	if len(newFailures) > 0 {
-		// `al skills add` validates and preflights the entire old-to-new
-		// desired-set change before any local state changes, so one unusable
-		// newly selected match fails the command rather than importing part of it.
-		return fmt.Errorf("no local state was changed: %w", candidateFailureError(newFailures))
-	}
-	prospective := prospectiveSelectorEdit(blockIndex, block, desired, lockedEntries)
-	if err := validateDesiredSet(combineWithOtherEntries(st, block, lockedEntries, st.lock.Skills, prospective)); err != nil {
-		return err
-	}
-	if len(prospective) == 0 {
-		return fmt.Errorf("the requested selectors resolve to no valid skills at %s; no local state was changed", shortCommit(commit))
-	}
-
-	for _, entry := range lockedEntries {
-		selector, still := selectingPositiveSelector(block, entry.SelectedPath)
-		if !still {
-			retire(st, txn, entry, report)
-			continue
-		}
-		updated := entry
-		updated.Selector = selector
-		txn.SetLockEntry(updated)
-		report.Add(SkillResult{Name: entry.Name, Repository: entry.Repository, SelectedPath: entry.SelectedPath, Outcome: OutcomeUnchanged})
-	}
-	for _, skill := range desired {
-		if _, locked := lockedByPath[skill.SelectedPath]; locked {
-			continue
-		}
-		s.importNewAt(st, txn, blockCtx, skill, commit, report)
-	}
-
-	if report.Failed() {
-		return abortUnapplied(report)
-	}
-	if err := txn.Commit(); err != nil {
-		report.discardUnapplied()
-		return err
-	}
-	s.project(report)
-	return nil
+	return s.applySelectorEdit(ctx, st, txn, selectorEdit{
+		op:            "add",
+		blockIndex:    blockIndex,
+		block:         block,
+		lockedEntries: lockedEntries,
+		requireSkills: true,
+	}, report)
 }
 
 // Remove drops one configured positive or exclusion selector, keeps each
 // existing entry on its own lock evidence, imports newly revealed membership
 // at the current resolved target, and projects the result.
 func (s *Service) Remove(ctx context.Context, repository string, selector string) (*Report, error) {
-	report := &Report{}
-	err := s.withLockedState(func(st *state) error {
+	return s.withLockedReport(func(st *state, report *Report) error {
 		return s.removeLocked(ctx, st, repository, selector, report)
 	})
-	report.Sort()
-	return report, err
 }
 
 func (s *Service) removeLocked(ctx context.Context, st *state, repository string, selector string, report *Report) error {
-	if err := failOnOrphans(st); err != nil {
-		return err
-	}
 	if err := config.ValidateSkillSelectorPath(config.SkillExclusionPath(selector)); err != nil {
 		return fmt.Errorf("invalid selector %q: %w", selector, err)
 	}
@@ -226,63 +152,83 @@ func (s *Service) removeLocked(ctx context.Context, st *state, repository string
 		for _, entry := range lockedEntries {
 			retire(st, txn, entry, report)
 		}
-		if report.Failed() {
-			return abortUnapplied(report)
-		}
-		if err := txn.Commit(); err != nil {
-			report.discardUnapplied()
-			return err
-		}
-		s.project(report)
-		return nil
+		return s.commitSelectorEdit(txn, report)
 	}
 
 	nextBlock, _, ok := findBlockByIdentity(proposed, block.Identity())
 	if !ok {
 		return fmt.Errorf("the updated configuration does not contain the expected skills.imports block")
 	}
+	return s.applySelectorEdit(ctx, st, txn, selectorEdit{
+		op:            "remove",
+		blockIndex:    blockIndex,
+		block:         nextBlock,
+		lockedEntries: lockedEntries,
+	}, report)
+}
 
-	runner, err := s.newRunner(st.env)
+// selectorEdit describes one block's add or remove selector change.
+type selectorEdit struct {
+	// op names the operation in its temporary Git working directory.
+	op         string
+	blockIndex int
+	// block is the block as the edited configuration declares it.
+	block config.SkillImport
+	// lockedEntries are the block's lock entries before the edit.
+	lockedEntries []skilllock.Entry
+	// requireSkills fails an edit whose block would select no valid skill.
+	requireSkills bool
+}
+
+// applySelectorEdit resolves an edited block at its current target, keeps or
+// retires each existing entry on its own lock evidence, imports newly selected
+// membership, and commits configuration, imported skills, and lock state
+// together.
+//
+// The entire old-to-new desired-set change is validated and preflighted before
+// any local state changes, so one unusable newly selected match fails the
+// command rather than applying part of it.
+func (s *Service) applySelectorEdit(ctx context.Context, st *state, txn *transaction, edit selectorEdit, report *Report) error {
+	runner, workRoot, cleanup, err := s.gitWorkspace(st, edit.op)
 	if err != nil {
 		return err
 	}
-	workRoot, err := os.MkdirTemp("", "al-skill-remove-")
-	if err != nil {
-		return fmt.Errorf("failed to create a git working directory: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(workRoot) }()
+	defer cleanup()
 
-	blockCtx, err := s.openBlock(ctx, runner, workRoot, blockIndex, nextBlock)
+	block := edit.block
+	blockCtx, err := s.openBlock(ctx, runner, workRoot, edit.blockIndex, block)
 	if err != nil {
 		return err
 	}
 	commit := blockCtx.Resolution.Commit
-	desired, failures, err := resolveBlock(ctx, blockCtx.Source, blockIndex, nextBlock, commit)
+	desired, failures, err := resolveBlock(ctx, blockCtx.Source, edit.blockIndex, block, commit)
 	if err != nil {
 		return err
 	}
-	lockedByPath := make(map[string]skilllock.Entry, len(lockedEntries))
-	for _, entry := range lockedEntries {
+	lockedByPath := make(map[string]skilllock.Entry, len(edit.lockedEntries))
+	for _, entry := range edit.lockedEntries {
 		lockedByPath[entry.SelectedPath] = entry
 	}
-	newFailures := failuresForNewPaths(failures, lockedByPath, nextBlock)
+	newFailures := failuresForNewPaths(failures, lockedByPath, block)
 	if len(newFailures) > 0 {
-		// Like add, remove leaves prior state unchanged when either step fails.
 		return fmt.Errorf("no local state was changed: %w", candidateFailureError(newFailures))
 	}
-	prospective := prospectiveSelectorEdit(blockIndex, nextBlock, desired, lockedEntries)
-	if err := validateDesiredSet(combineWithOtherEntries(st, nextBlock, lockedEntries, st.lock.Skills, prospective)); err != nil {
+	prospective := prospectiveSelectorEdit(edit.blockIndex, block, desired, edit.lockedEntries)
+	if err := validateDesiredSet(combineWithOtherEntries(st, block, edit.lockedEntries, st.lock.Skills, prospective)); err != nil {
 		return err
 	}
+	if edit.requireSkills && len(prospective) == 0 {
+		return fmt.Errorf("the requested selectors resolve to no valid skills at %s; no local state was changed", shortCommit(commit))
+	}
 
-	for _, entry := range lockedEntries {
-		selectedBy, still := selectingPositiveSelector(nextBlock, entry.SelectedPath)
+	for _, entry := range edit.lockedEntries {
+		selector, still := selectingPositiveSelector(block, entry.SelectedPath)
 		if !still {
 			retire(st, txn, entry, report)
 			continue
 		}
 		updated := entry
-		updated.Selector = selectedBy
+		updated.Selector = selector
 		txn.SetLockEntry(updated)
 		report.Add(SkillResult{Name: entry.Name, Repository: entry.Repository, SelectedPath: entry.SelectedPath, Outcome: OutcomeUnchanged})
 	}
@@ -290,10 +236,16 @@ func (s *Service) removeLocked(ctx context.Context, st *state, repository string
 		if _, locked := lockedByPath[skill.SelectedPath]; locked {
 			continue
 		}
-		// Removing an exclusion reveals a skill at the operation's current target.
+		// A new path was introduced by an added selector or revealed by a
+		// removed exclusion; it imports at the operation's current target.
 		s.importNewAt(st, txn, blockCtx, skill, commit, report)
 	}
+	return s.commitSelectorEdit(txn, report)
+}
 
+// commitSelectorEdit commits a preflighted add or remove and projects the
+// result, or aborts without writing when any skill failed.
+func (s *Service) commitSelectorEdit(txn *transaction, report *Report) error {
 	if report.Failed() {
 		return abortUnapplied(report)
 	}

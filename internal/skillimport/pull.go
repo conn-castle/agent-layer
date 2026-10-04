@@ -3,7 +3,6 @@ package skillimport
 import (
 	"context"
 	"fmt"
-	"os"
 	"path"
 	"sort"
 	"strings"
@@ -20,32 +19,21 @@ import (
 // It is the only command that advances tracked imports. Pinned imports stay at
 // their locked commits unless the configured ref itself changed.
 func (s *Service) Pull(ctx context.Context) (*Report, error) {
-	report := &Report{}
-	err := s.withLockedState(func(st *state) error {
+	return s.withLockedReport(func(st *state, report *Report) error {
 		return s.pullLocked(ctx, st, report)
 	})
-	report.Sort()
-	return report, err
 }
 
 func (s *Service) pullLocked(ctx context.Context, st *state, report *Report) error {
-	if err := failOnOrphans(st); err != nil {
-		return err
-	}
-
 	txn := newTransaction(pathSetFor(st), st.lock)
 	adoptMissingImports(st, txn, report)
 
 	if len(st.cfg.Skills.Imports) > 0 {
-		runner, err := s.newRunner(st.env)
+		runner, workRoot, cleanup, err := s.gitWorkspace(st, "pull")
 		if err != nil {
 			return err
 		}
-		workRoot, err := os.MkdirTemp("", "al-skill-pull-")
-		if err != nil {
-			return fmt.Errorf("failed to create a git working directory: %w", err)
-		}
-		defer func() { _ = os.RemoveAll(workRoot) }()
+		defer cleanup()
 
 		for index, block := range st.cfg.Skills.Imports {
 			s.pullBlock(ctx, runner, workRoot, st, txn, index, block, report)
@@ -176,7 +164,7 @@ func (s *Service) pullBlock(ctx context.Context, runner *gitrepo.Runner, workRoo
 		if _, locked := lockedByPath[skill.SelectedPath]; locked {
 			continue
 		}
-		s.importNew(st, txn, blockCtx, skill, report)
+		s.importNewAt(st, txn, blockCtx, skill, blockCtx.TargetCommit, report)
 	}
 }
 
@@ -233,7 +221,7 @@ func reportBlockedBlockSkills(report *Report, st *state, txn *transaction, block
 // desiredSkillAtCommit reconstructs one existing entry from its own locked
 // commit. It is used only when an unchanged pin deliberately stays behind the
 // operation's current source target.
-func desiredSkillAtCommit(ctx context.Context, source treeReader, blockIndex int, block config.SkillImport, entry skilllock.Entry, commit string) (desiredSkill, error) {
+func desiredSkillAtCommit(ctx context.Context, source *gitrepo.Source, blockIndex int, block config.SkillImport, entry skilllock.Entry, commit string) (desiredSkill, error) {
 	selector, selected := selectingPositiveSelector(block, entry.SelectedPath)
 	if !selected {
 		return desiredSkill{}, fmt.Errorf("selected path %s is no longer selected", entry.SelectedPath)
@@ -247,11 +235,6 @@ func desiredSkillAtCommit(ctx context.Context, source treeReader, blockIndex int
 		return desiredSkill{}, fmt.Errorf("locked source commit %s no longer provides a valid merge base for %s: %w", shortCommit(commit), entry.SelectedPath, err)
 	}
 	return desiredSkill{BlockIndex: blockIndex, Block: block, Selector: selector, SelectedPath: entry.SelectedPath, Name: info.Name, Tree: tree}, nil
-}
-
-// importNew imports a newly desired skill at the block's target commit.
-func (s *Service) importNew(st *state, txn *transaction, blockCtx *blockContext, skill desiredSkill, report *Report) {
-	s.importNewAt(st, txn, blockCtx, skill, blockCtx.TargetCommit, report)
 }
 
 // importNewAt imports a skill whose upstream tree was resolved at commit.

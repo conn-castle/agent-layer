@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -66,19 +65,12 @@ type pushGroup struct {
 // Push performs the configured upstream writes. It never pulls first and never
 // force-pushes.
 func (s *Service) Push(ctx context.Context) (*Report, error) {
-	report := &Report{}
-	err := s.withLockedState(func(st *state) error {
+	return s.withLockedReport(func(st *state, report *Report) error {
 		return s.pushLocked(ctx, st, report)
 	})
-	report.Sort()
-	return report, err
 }
 
 func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) error {
-	if err := failOnOrphans(st); err != nil {
-		return err
-	}
-
 	writable := make([]config.SkillImport, 0, len(st.cfg.Skills.Imports))
 	for _, block := range st.cfg.Skills.Imports {
 		if block.WriteEnabled() {
@@ -89,15 +81,11 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 		return nil
 	}
 
-	runner, err := s.newRunner(st.env)
+	runner, workRoot, cleanup, err := s.gitWorkspace(st, "push")
 	if err != nil {
 		return err
 	}
-	workRoot, err := os.MkdirTemp("", "al-skill-push-")
-	if err != nil {
-		return fmt.Errorf("failed to create a git working directory: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(workRoot) }()
+	defer cleanup()
 
 	groups := map[string]*pushGroup{}
 	var order []string
@@ -736,17 +724,9 @@ func rejectOverlappingDestinationPaths(group *pushGroup) error {
 	for _, candidate := range group.Candidates {
 		paths = append(paths, candidate.Entry.SelectedPath)
 	}
-	sort.Strings(paths)
-	accepted := make(map[string]struct{}, len(paths))
-	for _, current := range paths {
-		for ancestor := current; ancestor != "." && ancestor != "/" && ancestor != ""; ancestor = path.Dir(ancestor) {
-			if _, exists := accepted[ancestor]; !exists {
-				continue
-			}
-			return fmt.Errorf("destination paths %s and %s overlap in %s branch %s; narrow one selector or route the blocks to different destinations",
-				ancestor, current, group.Repository, group.Branch)
-		}
-		accepted[current] = struct{}{}
+	if ancestor, current, overlaps := skilllock.FindOverlap(paths); overlaps {
+		return fmt.Errorf("destination paths %s and %s overlap in %s branch %s; narrow one selector or route the blocks to different destinations",
+			ancestor, current, group.Repository, group.Branch)
 	}
 	return nil
 }
