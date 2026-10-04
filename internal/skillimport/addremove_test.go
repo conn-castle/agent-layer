@@ -286,31 +286,79 @@ func TestRemoveExclusionRevealsSkillAtCurrentTarget(t *testing.T) {
 }
 
 // TestRemoveModifiedSkillLeavesPriorStateUnchanged proves a retirement failure
-// during remove aborts the whole operation rather than half-applying it.
+// during remove aborts the whole operation rather than half-applying it, and
+// that the report claims no retirement it did not perform.
 func TestRemoveModifiedSkillLeavesPriorStateUnchanged(t *testing.T) {
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
-	source.Commit("add alpha")
+	source.WriteSkill("skills/beta", "beta", "Beta body")
+	source.Commit("add alpha and beta")
 
 	proj := newProject(t)
 	service := proj.Service()
-	if _, err := service.Add(context.Background(), AddOptions{Repository: source.URL(), Selectors: []string{"skills/alpha"}}); err != nil {
+	if _, err := service.Add(context.Background(), AddOptions{Repository: source.URL(), Selectors: []string{"skills/*"}}); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 	proj.WriteImportedFile("alpha", "local.md", "work in progress\n")
 	before := proj.ConfigContent()
 
-	if _, err := service.Remove(context.Background(), source.URL(), "skills/alpha"); err == nil {
+	report, err := service.Remove(context.Background(), source.URL(), "skills/*")
+	if err == nil {
 		t.Fatal("expected removing a modified skill to fail")
 	}
+	assertOnlyFailures(t, report, err, "al skills remove", "alpha")
 	if proj.ConfigContent() != before {
 		t.Fatal("a failed remove modified configuration")
 	}
-	if !proj.ImportedExists("alpha") {
-		t.Fatal("a failed remove deleted local work")
+	for _, name := range []string{"alpha", "beta"} {
+		if !proj.ImportedExists(name) {
+			t.Fatalf("a failed remove deleted %s", name)
+		}
+		if _, ok := proj.Lock().Entry(name); !ok {
+			t.Fatalf("a failed remove pruned the lock entry for %s", name)
+		}
 	}
-	if _, ok := proj.Lock().Entry("alpha"); !ok {
-		t.Fatal("a failed remove pruned lock state")
+}
+
+// TestAddBlockedSkillImportsNothing proves one skill blocked by a user-managed
+// skill aborts the whole add, and that the report claims no import it did not
+// perform.
+func TestAddBlockedSkillImportsNothing(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteSkill("skills/beta", "beta", "Beta body")
+	source.Commit("add alpha and beta")
+
+	proj := newProject(t)
+	proj.WriteUserSkill("beta")
+	before := proj.ConfigContent()
+
+	report, err := proj.Service().Add(context.Background(), AddOptions{Repository: source.URL(), Selectors: []string{"skills/*"}})
+	if err == nil {
+		t.Fatal("expected an add blocked by a user-managed skill to fail")
+	}
+	assertOnlyFailures(t, report, err, "al skills add", "beta")
+	if proj.ConfigContent() != before {
+		t.Fatal("a failed add modified configuration")
+	}
+	if proj.ImportedExists("alpha") {
+		t.Fatal("a failed add imported alpha")
+	}
+}
+
+// assertOnlyFailures checks that an aborted add or remove reports exactly the
+// failed skills, renders as a total failure, and keeps its error short rather
+// than repeating the report the command already prints.
+func assertOnlyFailures(t *testing.T, report *Report, err error, operation string, failed string) {
+	t.Helper()
+	if len(report.Skills) != 1 || report.Skills[0].Name != failed || report.Skills[0].Outcome != OutcomeFailed {
+		t.Fatalf("report skills = %+v, want only %s failed", report.Skills, failed)
+	}
+	if rendered := report.Render(operation); !strings.HasSuffix(rendered, operation+" failed\n") {
+		t.Fatalf("report %q does not end as a total failure", rendered)
+	}
+	if !strings.Contains(err.Error(), "no local state was changed") || strings.Contains(err.Error(), failed) {
+		t.Fatalf("error %q should state nothing changed without repeating the report", err)
 	}
 }
 
