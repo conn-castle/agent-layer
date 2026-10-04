@@ -146,6 +146,57 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 	}
 }
 
+// TestRunnerTreatsCodexErrorEventsAsDiagnostics proves a Codex error event,
+// which Codex also emits for stream retries it recovers from, does not end the
+// dispatch; the turn outcome or exit decides, and the error explains failures.
+func TestRunnerTreatsCodexErrorEventsAsDiagnostics(t *testing.T) {
+	const prefix = `printf '{"type":"thread.started","thread_id":"` + runtimeSessionID + `"}\n{"type":"turn.started"}\n{"type":"error","message":"Reconnecting... 2/5 (request timed out)"}\n'; `
+	for _, tc := range []struct {
+		name, script, wantErr string
+	}{
+		{"recovered retry", prefix + `printf '{"type":"agent_message","message":"final"}\n{"type":"turn.completed"}\n'`, ""},
+		{"aborted turn without reason", prefix + `printf '{"type":"turn.aborted"}\n'`, "codex dispatch did not complete: Codex reported a terminal failure"},
+		{"latest diagnostic survives empty progress", prefix + `printf '{"type":"error","message":"Reconnecting... 3/5 (connection reset)"}\n{"type":"error"}\n{"type":"turn.started"}\n'; exit 1`, "codex exited with code 1; `al dispatch` exiting 70; last provider error: Reconnecting... 3/5 (connection reset)"},
+		{"turn failure", prefix + `printf '{"type":"turn.failed","error":{"message":"quota exhausted"}}\n'`, "codex dispatch did not complete: quota exhausted"},
+		{"nonzero exit after completed turn", prefix + `printf '{"type":"agent_message","message":"final"}\n{"type":"turn.completed"}\n'; exit 1`, "codex exited with code 1; `al dispatch` exiting 70; last provider error: Reconnecting... 2/5 (request timed out)"},
+		{"exit without terminal event", prefix + `exit 1`, "codex exited with code 1; `al dispatch` exiting 70; last provider error: Reconnecting... 2/5 (request timed out)"},
+		{"clean exit without terminal event", prefix, "codex dispatch completed without required terminal result, session ID, and final answer; last provider error: Reconnecting... 2/5 (request timed out)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := executeProvider(providerCommand{
+				Path: "/bin/sh", Args: []string{"-c", tc.script}, Env: os.Environ(), Provider: AgentCodex,
+			}, nil, run, root, nil, func(string) error { return nil })
+			if tc.wantErr == "" {
+				if err != nil || result.Answer != "final" {
+					t.Fatalf("recovered Codex retry = %#v, %v", result, err)
+				}
+				return
+			}
+			requireDispatchExitCode(t, err, ExitTargetFailure)
+			if err.Error() != tc.wantErr {
+				t.Fatalf("error = %q, want %q", err.Error(), tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestProviderDiagnosticPreservesWrappedFailure(t *testing.T) {
+	cause := errors.New("provider wait failed")
+	err := withProviderDiagnostic(providerWaitError(AgentCodex, cause), "retry notice")
+	requireDispatchExitCode(t, err, ExitTargetFailure)
+	if !errors.Is(err, cause) {
+		t.Fatalf("wrapped wait cause was not preserved: %v", err)
+	}
+	if want := "wait for codex: provider wait failed; last provider error: retry notice"; err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
+	}
+}
+
 func TestCaptureWriterPreservesProviderOutput(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "answer")
 	writer, err := newCaptureWriter(path)
