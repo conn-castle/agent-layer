@@ -92,6 +92,12 @@ func (e ownershipComparableError) Unwrap() error {
 }
 
 func ownershipPolicyForPath(relPath string) string {
+	return ownershipPolicyForCatalog(relPath, catalogSkillRelPathPrefixes)
+}
+
+// ownershipPolicyForCatalog classifies relPath, treating catalogSkillPrefixes
+// as the complete set of catalog-skill path prefixes.
+func ownershipPolicyForCatalog(relPath string, catalogSkillPrefixes []string) string {
 	if relPath == commandsAllowRelPath {
 		return ownershipPolicyAllowlist
 	}
@@ -101,7 +107,7 @@ func ownershipPolicyForPath(relPath string) string {
 	if _, ok := memoryEntriesPaths[relPath]; ok {
 		return ownershipPolicyMemoryEntries
 	}
-	for _, prefix := range catalogSkillRelPathPrefixes {
+	for _, prefix := range catalogSkillPrefixes {
 		if strings.HasPrefix(relPath, prefix) {
 			return ownershipPolicyCatalogSkills
 		}
@@ -110,7 +116,10 @@ func ownershipPolicyForPath(relPath string) string {
 }
 
 func buildOwnershipComparable(relPath string, content []byte) (ownershipComparable, error) {
-	policyID := ownershipPolicyForPath(relPath)
+	return ownershipComparableForPolicy(ownershipPolicyForPath(relPath), content)
+}
+
+func ownershipComparableForPolicy(policyID string, content []byte) (ownershipComparable, error) {
 	normalizedContent := normalizeTemplateContent(string(content))
 	out := ownershipComparable{
 		PolicyID: policyID,
