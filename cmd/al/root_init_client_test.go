@@ -175,14 +175,7 @@ func TestClientCommandsMissingConfig(t *testing.T) {
 
 	root := t.TempDir()
 	testutil.WithWorkingDir(t, root, func() {
-		commands := []*cobra.Command{
-			newAntigravityCmd(),
-			newClaudeCmd(),
-			newCodexCmd(),
-			newMuseCmd(),
-			newVSCodeCmd(),
-		}
-		for _, cmd := range commands {
+		for _, cmd := range newLaunchCmds() {
 			cmd.SetContext(context.Background())
 			err := cmd.RunE(cmd, nil)
 			if err == nil {
@@ -216,7 +209,7 @@ func TestClientCommandsSuccess(t *testing.T) {
 		t.Setenv("PATH", binDir)
 
 		testutil.WithWorkingDir(t, root, func() {
-			cmd := newVSCodeCmd()
+			cmd := launchCmdNamed(t, "vscode")
 			if err := cmd.RunE(cmd, nil); err != nil {
 				t.Fatalf("command %s failed: %v", cmd.Use, err)
 			}
@@ -306,13 +299,9 @@ func TestCommandsGetwdError(t *testing.T) {
 	commands := []*cobra.Command{
 		newInitCmd(),
 		newSyncCmd(),
-		newAntigravityCmd(),
-		newClaudeCmd(),
-		newCodexCmd(),
-		newMuseCmd(),
-		newVSCodeCmd(),
 		newDoctorCmd(),
 	}
+	commands = append(commands, newLaunchCmds()...)
 	for _, cmd := range commands {
 		cmd.SetContext(context.Background())
 		if err := cmd.RunE(cmd, nil); err == nil {

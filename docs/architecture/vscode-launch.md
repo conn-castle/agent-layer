@@ -17,7 +17,7 @@ This architecture covers:
 
 User-facing launch entry points:
 
-- `al vscode` (`cmd/al/vscode.go`)
+- `al vscode` (`cmd/al/launch_cmd.go`)
 - `.agent-layer/open-vscode.command`, `.agent-layer/open-vscode.sh`, `.agent-layer/open-vscode.app` (templates in `internal/templates/launchers/`)
 
 Launcher scripts call `al vscode --no-sync` after checking that `al` and `code` are available on `PATH`.
@@ -25,8 +25,8 @@ Launcher scripts call `al vscode --no-sync` after checking that `al` and `code` 
 ## End-to-end flow
 
 1. User runs `al vscode` (or a repo-local launcher that calls `al vscode --no-sync`).
-2. `cmd/al/vscode.go` parses `--no-sync` and pass-through args.
-3. Launch mode (dispatched via `cmd/al/no_sync_args.go`):
+2. `cmd/al/launch_cmd.go` parses `--no-sync` and pass-through args.
+3. Launch mode (dispatched in `cmd/al/launch_cmd.go`):
    - default mode: `clients.RunWithStderr(...)` performs config load, sync, warnings, then launch
    - no-sync mode: `clients.RunNoSyncWithStderr(...)` performs config load and launch only
 4. `internal/clients/vscode/launch.go` runs preflight checks:
