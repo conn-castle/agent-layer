@@ -264,249 +264,259 @@ func buildProviderCommand(
 	command := providerCommand{Path: target.Binary, Env: env, Provider: target.Name, RunMode: mode}
 	switch target.Name {
 	case AgentClaude:
-		if mode == dispatchModeFresh && sessionID == "" {
-			return providerCommand{}, exitError(ExitConfig, "new Claude dispatch requires a caller-assigned session ID")
-		}
-		lineage, err := claudeLineageSupported(run.Record.ProviderVersion)
-		if err != nil {
-			return providerCommand{}, exitError(ExitConfig, err.Error())
-		}
-		args := []string{"--print", "--output-format", "stream-json", "--verbose", "--include-partial-messages"}
-		if lineage {
-			args = append(args, "--forward-subagent-text")
-		}
-		if mode == dispatchModeResume {
-			args = append(args, "--resume", sessionID)
-		} else {
-			args = append(args, "--session-id", sessionID)
-		}
-		resolvedModel := strings.TrimSpace(model)
-		if resolvedModel == "" && !targetPinned {
-			resolvedModel = strings.TrimSpace(project.Config.Agents.Claude.Model)
-		}
-		if resolvedModel != "" {
-			args = append(args, "--model", resolvedModel)
-		}
-		resolvedEffort := strings.TrimSpace(effort)
-		if resolvedEffort == "" && !targetPinned && !config.HasProviderPassthroughKey(project.Config.Agents.Claude.AgentSpecific, "effortLevel") {
-			resolvedEffort = strings.TrimSpace(project.Config.Agents.Claude.ReasoningEffort)
-		}
-		if resolvedEffort != "" {
-			args = append(args, "--effort", resolvedEffort)
-		}
-		command.Model = resolvedModel
-		command.Effort = resolvedEffort
-		if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
-			args = append(args, "--dangerously-skip-permissions")
-		} else {
-			if !claudeDefaultPermissionModePinned(project.Config.Agents.Claude.AgentSpecific) {
-				args = append(args, "--permission-mode", claudeDispatchPermissionMode(project.Config, project.CommandsAllow))
-			}
-			// Claude ignores a project's permissions.allow rules until the
-			// workspace trust dialog is accepted, and that dialog never appears
-			// under --print. The generated settings file alone would leave every
-			// approval inert, so the same rules are delivered on the command line.
-			// The flag repeats rather than joining on "," so a command pattern
-			// containing a comma cannot corrupt the list.
-			for _, rule := range projection.ClaudeAllowRules(
-				project.Config,
-				project.CommandsAllow,
-				projection.EffectiveServerIDs(project.Config, projection.ClientClaude),
-			) {
-				args = append(args, "--allowedTools", rule)
-			}
-		}
-		command.Args = args
-		command.Env = claude.ConfigureEnvironment(project.Root, env, project.Config.Agents.Claude, diagnostics)
-		command.Env = clients.UnsetEnv(command.Env, claudePrintBackgroundWaitCeilingEnv)
-		command.Env = clients.SetEnv(command.Env, claudePrintBackgroundWaitCeilingEnv, claudePrintBackgroundWaitCeilingValue)
-		command.SessionID = sessionID
-		command.ClaudeLineage = lineage
+		return buildClaudeCommand(command, project, model, effort, targetPinned, mode, sessionID, run, diagnostics)
 	case AgentCodex:
-		args := []string{execSubcommand}
-		if mode == dispatchModeResume {
-			args = append(args, "resume")
-		}
-		args = append(args, "--json")
-		if mode == dispatchModeResume {
-			args = append(args, sessionID)
-		}
-		resolvedModel := strings.TrimSpace(model)
-		if resolvedModel == "" && !targetPinned && !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexModelKey) {
-			resolvedModel = strings.TrimSpace(project.Config.Agents.Codex.Model)
-		}
-		if resolvedModel != "" {
-			args = append(args, "--model", resolvedModel)
-		}
-		resolvedEffort := strings.TrimSpace(effort)
-		if resolvedEffort == "" && !targetPinned && !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexReasoningEffortKey) {
-			resolvedEffort = strings.TrimSpace(project.Config.Agents.Codex.ReasoningEffort)
-		}
-		if resolvedEffort != "" {
-			args = append(args, "-c", "model_reasoning_effort="+resolvedEffort)
-		}
-		command.Model = resolvedModel
-		command.Effort = resolvedEffort
-		if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
-			if !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexApprovalPolicyKey) {
-				args = append(args, "-c", "approval_policy=never")
-			}
-			if !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexSandboxModeKey) {
-				args = append(args, "-c", config.CodexSandboxModeKey+"="+config.CodexSandboxDangerFullAccess)
-			}
-			if !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexWebSearchKey) {
-				args = append(args, "-c", "web_search=live")
-			}
-		} else if !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexSandboxModeKey) {
-			// `codex exec` defaults to a read-only sandbox, unlike the interactive
-			// TUI, which starts a version-controlled folder at workspace-write.
-			// Without this the sandbox silently contradicts approvals.mode: an
-			// allowlisted command is approved and then fails on its first write.
-			args = append(args, "-c", config.CodexSandboxModeKey+"="+codexDispatchSandboxMode(project.Config, project.CommandsAllow))
-		}
-		args = append(args, "-")
-		command.Args = args
-		command.Env = codex.ConfigureEnvironment(project.Root, env, project.Config.Agents.Codex, diagnostics)
-		command.SessionID = sessionID
+		return buildCodexCommand(command, project, model, effort, targetPinned, mode, sessionID, diagnostics)
 	case AgentAntigravity:
-		if len(prompt) > AntigravityPromptMaxBytes {
-			return providerCommand{}, exitError(ExitUsage, fmt.Sprintf("antigravity prompt is %d bytes; `al dispatch` caps it at %d bytes because agy --print has no stdin/file path. Use --agent claude or --agent codex for larger prompts.", len(prompt), AntigravityPromptMaxBytes))
-		}
-		args, err := antigravity.BaseArgs(project.Root, project.Config)
-		if err != nil {
-			return providerCommand{}, wrapExitError(ExitConfig, "prepare Antigravity launch", err)
-		}
-		logPath := filepath.Join(run.Dir, "antigravity.log")
-		file, err := os.OpenFile(logPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 -- path is inside an isolated UUID run directory.
-		if err != nil {
-			return providerCommand{}, wrapExitError(ExitConfig, "create Antigravity dispatch log", err)
-		}
-		if closeErr := file.Close(); closeErr != nil {
-			return providerCommand{}, wrapExitError(ExitConfig, "close Antigravity dispatch log", closeErr)
-		}
-		args = append(args, "--log-file", logPath)
-		resolvedModel := strings.TrimSpace(model)
-		if resolvedModel == "" {
-			resolvedModel = strings.TrimSpace(project.Config.Agents.Antigravity.Model)
-		}
-		if resolvedModel != "" {
-			args = append(args, "--model", resolvedModel)
-		}
-		command.Model = resolvedModel
-		if mode == dispatchModeResume {
-			args = append(args, "--conversation", sessionID)
-		}
-		if derivedEffort, ok := antigravitySlugEffort(resolvedModel); ok {
-			configured := strings.TrimSpace(effort)
-			if configured != "" && configured != derivedEffort {
-				return providerCommand{}, exitError(ExitConfig, fmt.Sprintf("Antigravity model %q requires reasoning effort %q, got %q", resolvedModel, derivedEffort, configured))
-			}
-			// The exact benchmark model slug selects its thinking tier. Passing a
-			// second effort flag risks contradictory client behavior.
-			command.Effort = derivedEffort
-		} else {
-			command.Effort = strings.TrimSpace(effort)
-		}
-		args = append(args, "--output-format", "stream-json")
-		args = append(args, "--print-timeout", AntigravityPrintTimeout, "--print", string(prompt))
-		command.Args = args
-		command.Env = antigravity.ConfigureEnvironment(env)
-		command.SessionID = sessionID
-		command.LogPath = logPath
+		return buildAntigravityCommand(command, project, prompt, model, effort, mode, sessionID, run)
 	case AgentGrok:
-		if mode == dispatchModeFresh && sessionID == "" {
-			return providerCommand{}, exitError(ExitConfig, "new Grok dispatch requires a caller-assigned session ID")
-		}
-		promptPath := filepath.Join(run.Dir, "prompt.txt")
-		if err := os.WriteFile(promptPath, prompt, 0o600); err != nil {
-			return providerCommand{}, wrapExitError(ExitConfig, "write Grok dispatch prompt", err)
-		}
-		args := []string{"--no-auto-update", promptFileFlag, promptPath, "--output-format", "streaming-json"}
-		if mode == dispatchModeResume {
-			args = append(args, "--resume", sessionID)
-		} else {
-			args = append(args, "--session-id", sessionID)
-		}
-		resolvedModel := strings.TrimSpace(model)
-		if resolvedModel == "" && !targetPinned {
-			resolvedModel = strings.TrimSpace(project.Config.Agents.Grok.Model)
-		}
-		if resolvedModel != "" {
-			args = append(args, "--model", resolvedModel)
-		}
-		resolvedEffort := strings.TrimSpace(effort)
-		if resolvedEffort == "" && !targetPinned {
-			resolvedEffort = strings.TrimSpace(project.Config.Agents.Grok.ReasoningEffort)
-		}
-		if resolvedEffort != "" {
-			args = append(args, "--reasoning-effort", resolvedEffort)
-		}
-		command.Model = resolvedModel
-		command.Effort = resolvedEffort
-		if config.GrokDisableMemory(project.Config.Agents.Grok) {
-			args = append(args, "--no-memory")
-		}
-		args = append(args, grok.SandboxArgs(project.Config, project.CommandsAllow)...)
-		if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
-			args = append(args, "--permission-mode", "bypassPermissions", "--always-approve")
-		} else {
-			if projection.BuildApprovals(project.Config, project.CommandsAllow).AllowCommands {
-				args = append(args, "--permission-mode", claudePermissionModeAcceptEdits)
-			} else {
-				args = append(args, "--permission-mode", claudePermissionModeDontAsk)
-			}
-			for _, rule := range projection.GrokAllowRules(
-				project.Config,
-				project.CommandsAllow,
-				projection.EffectiveServerIDs(project.Config, projection.ClientGrok),
-			) {
-				args = append(args, "--allow", rule)
-			}
-		}
-		command.Args = args
-		if err := grok.EnsureHome(project.Root); err != nil {
-			return providerCommand{}, wrapExitError(ExitConfig, "prepare Grok home", err)
-		}
-		command.Env = grok.ConfigureEnvironment(project.Root, env, project.Config.Agents.Grok, diagnostics)
-		command.SessionID = sessionID
+		return buildGrokCommand(command, project, prompt, model, effort, targetPinned, mode, sessionID, run, diagnostics)
 	case AgentMuse:
-		if mode == dispatchModeFresh && sessionID == "" {
-			return providerCommand{}, exitError(ExitConfig, "new Muse dispatch requires a caller-assigned session ID")
-		}
-		promptPath := filepath.Join(run.Dir, "prompt.txt")
-		if err := os.WriteFile(promptPath, prompt, 0o600); err != nil {
-			return providerCommand{}, wrapExitError(ExitConfig, "write Muse dispatch prompt", err)
-		}
-		args := []string{execSubcommand, "--json", promptFileFlag, promptPath, "--workspace", project.Root, "--trust-workspace", "--session-id", sessionID, "--user-input-auto-resolve"}
-		resolvedModel := strings.TrimSpace(model)
-		if resolvedModel == "" && !targetPinned {
-			resolvedModel = strings.TrimSpace(project.Config.Agents.Muse.Model)
-		}
-		if resolvedModel != "" {
-			args = append(args, "--model", resolvedModel)
-		}
-		resolvedEffort := strings.TrimSpace(effort)
-		if resolvedEffort == "" && !targetPinned {
-			resolvedEffort = strings.TrimSpace(project.Config.Agents.Muse.ReasoningEffort)
-		}
-		if resolvedEffort != "" {
-			args = append(args, "--reasoning-effort", resolvedEffort)
-		}
-		if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
-			args = append(args, "--yolo")
-		} else {
-			args = append(args, "--approval-mode", "untrusted", "--approval-judge", "off")
-			command.ObserveMuseApprovals = true
-		}
-		command.Args = args
-		command.Env = env
-		command.SessionID = sessionID
-		command.Model = resolvedModel
-		command.Effort = resolvedEffort
+		return buildMuseCommand(command, project, prompt, model, effort, targetPinned, mode, sessionID, run)
 	default:
 		return providerCommand{}, exitError(ExitUsage, fmt.Sprintf("unsupported dispatch provider %q", target.Name))
 	}
+}
+
+func buildClaudeCommand(command providerCommand, project *config.ProjectConfig, model, effort string, targetPinned bool, mode, sessionID string, run *dispatchRun, diagnostics io.Writer) (providerCommand, error) {
+	if err := requireFreshSessionID("Claude", mode, sessionID); err != nil {
+		return providerCommand{}, err
+	}
+	lineage, err := claudeLineageSupported(run.Record.ProviderVersion)
+	if err != nil {
+		return providerCommand{}, exitError(ExitConfig, err.Error())
+	}
+	args := []string{"--print", "--output-format", "stream-json", "--verbose", "--include-partial-messages"}
+	if lineage {
+		args = append(args, "--forward-subagent-text")
+	}
+	if mode == dispatchModeResume {
+		args = append(args, "--resume", sessionID)
+	} else {
+		args = append(args, "--session-id", sessionID)
+	}
+	resolvedModel := resolveSetting(model, project.Config.Agents.Claude.Model, !targetPinned)
+	args = appendFlag(args, "--model", resolvedModel)
+	resolvedEffort := resolveSetting(effort, project.Config.Agents.Claude.ReasoningEffort, !targetPinned && !config.HasProviderPassthroughKey(project.Config.Agents.Claude.AgentSpecific, "effortLevel"))
+	args = appendFlag(args, "--effort", resolvedEffort)
+	command.Model = resolvedModel
+	command.Effort = resolvedEffort
+	if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
+		args = append(args, "--dangerously-skip-permissions")
+	} else {
+		if !claudeDefaultPermissionModePinned(project.Config.Agents.Claude.AgentSpecific) {
+			args = append(args, "--permission-mode", claudeDispatchPermissionMode(project.Config, project.CommandsAllow))
+		}
+		// Claude ignores a project's permissions.allow rules until the
+		// workspace trust dialog is accepted, and that dialog never appears
+		// under --print. The generated settings file alone would leave every
+		// approval inert, so the same rules are delivered on the command line.
+		// The flag repeats rather than joining on "," so a command pattern
+		// containing a comma cannot corrupt the list.
+		for _, rule := range projection.ClaudeAllowRules(
+			project.Config,
+			project.CommandsAllow,
+			projection.EffectiveServerIDs(project.Config, projection.ClientClaude),
+		) {
+			args = append(args, "--allowedTools", rule)
+		}
+	}
+	command.Args = args
+	command.Env = claude.ConfigureEnvironment(project.Root, command.Env, project.Config.Agents.Claude, diagnostics)
+	command.Env = clients.UnsetEnv(command.Env, claudePrintBackgroundWaitCeilingEnv)
+	command.Env = clients.SetEnv(command.Env, claudePrintBackgroundWaitCeilingEnv, claudePrintBackgroundWaitCeilingValue)
+	command.SessionID = sessionID
+	command.ClaudeLineage = lineage
 	return command, nil
+}
+
+func buildCodexCommand(command providerCommand, project *config.ProjectConfig, model, effort string, targetPinned bool, mode, sessionID string, diagnostics io.Writer) (providerCommand, error) {
+	args := []string{execSubcommand}
+	if mode == dispatchModeResume {
+		args = append(args, "resume")
+	}
+	args = append(args, "--json")
+	if mode == dispatchModeResume {
+		args = append(args, sessionID)
+	}
+	resolvedModel := resolveSetting(model, project.Config.Agents.Codex.Model, !targetPinned && !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexModelKey))
+	args = appendFlag(args, "--model", resolvedModel)
+	resolvedEffort := resolveSetting(effort, project.Config.Agents.Codex.ReasoningEffort, !targetPinned && !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexReasoningEffortKey))
+	if resolvedEffort != "" {
+		args = append(args, "-c", "model_reasoning_effort="+resolvedEffort)
+	}
+	command.Model = resolvedModel
+	command.Effort = resolvedEffort
+	if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
+		if !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexApprovalPolicyKey) {
+			args = append(args, "-c", "approval_policy=never")
+		}
+		if !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexSandboxModeKey) {
+			args = append(args, "-c", config.CodexSandboxModeKey+"="+config.CodexSandboxDangerFullAccess)
+		}
+		if !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexWebSearchKey) {
+			args = append(args, "-c", "web_search=live")
+		}
+	} else if !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexSandboxModeKey) {
+		// `codex exec` defaults to a read-only sandbox, unlike the interactive
+		// TUI, which starts a version-controlled folder at workspace-write.
+		// Without this the sandbox silently contradicts approvals.mode: an
+		// allowlisted command is approved and then fails on its first write.
+		args = append(args, "-c", config.CodexSandboxModeKey+"="+codexDispatchSandboxMode(project.Config, project.CommandsAllow))
+	}
+	args = append(args, "-")
+	command.Args = args
+	command.Env = codex.ConfigureEnvironment(project.Root, command.Env, project.Config.Agents.Codex, diagnostics)
+	command.SessionID = sessionID
+	return command, nil
+}
+
+func buildAntigravityCommand(command providerCommand, project *config.ProjectConfig, prompt []byte, model, effort, mode, sessionID string, run *dispatchRun) (providerCommand, error) {
+	if len(prompt) > AntigravityPromptMaxBytes {
+		return providerCommand{}, exitError(ExitUsage, fmt.Sprintf("antigravity prompt is %d bytes; `al dispatch` caps it at %d bytes because agy --print has no stdin/file path. Use --agent claude or --agent codex for larger prompts.", len(prompt), AntigravityPromptMaxBytes))
+	}
+	args, err := antigravity.BaseArgs(project.Root, project.Config)
+	if err != nil {
+		return providerCommand{}, wrapExitError(ExitConfig, "prepare Antigravity launch", err)
+	}
+	logPath := filepath.Join(run.Dir, "antigravity.log")
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 -- path is inside an isolated UUID run directory.
+	if err != nil {
+		return providerCommand{}, wrapExitError(ExitConfig, "create Antigravity dispatch log", err)
+	}
+	if closeErr := file.Close(); closeErr != nil {
+		return providerCommand{}, wrapExitError(ExitConfig, "close Antigravity dispatch log", closeErr)
+	}
+	args = append(args, "--log-file", logPath)
+	resolvedModel := resolveSetting(model, project.Config.Agents.Antigravity.Model, true)
+	args = appendFlag(args, "--model", resolvedModel)
+	command.Model = resolvedModel
+	if mode == dispatchModeResume {
+		args = append(args, "--conversation", sessionID)
+	}
+	if derivedEffort, ok := antigravitySlugEffort(resolvedModel); ok {
+		configured := strings.TrimSpace(effort)
+		if configured != "" && configured != derivedEffort {
+			return providerCommand{}, exitError(ExitConfig, fmt.Sprintf("Antigravity model %q requires reasoning effort %q, got %q", resolvedModel, derivedEffort, configured))
+		}
+		// The exact benchmark model slug selects its thinking tier. Passing a
+		// second effort flag risks contradictory client behavior.
+		command.Effort = derivedEffort
+	} else {
+		command.Effort = strings.TrimSpace(effort)
+	}
+	args = append(args, "--output-format", "stream-json")
+	args = append(args, "--print-timeout", AntigravityPrintTimeout, "--print", string(prompt))
+	command.Args = args
+	command.Env = antigravity.ConfigureEnvironment(command.Env)
+	command.SessionID = sessionID
+	command.LogPath = logPath
+	return command, nil
+}
+
+func buildGrokCommand(command providerCommand, project *config.ProjectConfig, prompt []byte, model, effort string, targetPinned bool, mode, sessionID string, run *dispatchRun, diagnostics io.Writer) (providerCommand, error) {
+	if err := requireFreshSessionID("Grok", mode, sessionID); err != nil {
+		return providerCommand{}, err
+	}
+	promptPath, err := writeDispatchPromptFile(run, prompt, "Grok")
+	if err != nil {
+		return providerCommand{}, err
+	}
+	args := []string{"--no-auto-update", promptFileFlag, promptPath, "--output-format", "streaming-json"}
+	if mode == dispatchModeResume {
+		args = append(args, "--resume", sessionID)
+	} else {
+		args = append(args, "--session-id", sessionID)
+	}
+	resolvedModel := resolveSetting(model, project.Config.Agents.Grok.Model, !targetPinned)
+	args = appendFlag(args, "--model", resolvedModel)
+	resolvedEffort := resolveSetting(effort, project.Config.Agents.Grok.ReasoningEffort, !targetPinned)
+	args = appendFlag(args, "--reasoning-effort", resolvedEffort)
+	command.Model = resolvedModel
+	command.Effort = resolvedEffort
+	if config.GrokDisableMemory(project.Config.Agents.Grok) {
+		args = append(args, "--no-memory")
+	}
+	args = append(args, grok.SandboxArgs(project.Config, project.CommandsAllow)...)
+	if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
+		args = append(args, "--permission-mode", "bypassPermissions", "--always-approve")
+	} else {
+		if projection.BuildApprovals(project.Config, project.CommandsAllow).AllowCommands {
+			args = append(args, "--permission-mode", claudePermissionModeAcceptEdits)
+		} else {
+			args = append(args, "--permission-mode", claudePermissionModeDontAsk)
+		}
+		for _, rule := range projection.GrokAllowRules(
+			project.Config,
+			project.CommandsAllow,
+			projection.EffectiveServerIDs(project.Config, projection.ClientGrok),
+		) {
+			args = append(args, "--allow", rule)
+		}
+	}
+	command.Args = args
+	if err := grok.EnsureHome(project.Root); err != nil {
+		return providerCommand{}, wrapExitError(ExitConfig, "prepare Grok home", err)
+	}
+	command.Env = grok.ConfigureEnvironment(project.Root, command.Env, project.Config.Agents.Grok, diagnostics)
+	command.SessionID = sessionID
+	return command, nil
+}
+
+func buildMuseCommand(command providerCommand, project *config.ProjectConfig, prompt []byte, model, effort string, targetPinned bool, mode, sessionID string, run *dispatchRun) (providerCommand, error) {
+	if err := requireFreshSessionID("Muse", mode, sessionID); err != nil {
+		return providerCommand{}, err
+	}
+	promptPath, err := writeDispatchPromptFile(run, prompt, "Muse")
+	if err != nil {
+		return providerCommand{}, err
+	}
+	args := []string{execSubcommand, "--json", promptFileFlag, promptPath, "--workspace", project.Root, "--trust-workspace", "--session-id", sessionID, "--user-input-auto-resolve"}
+	resolvedModel := resolveSetting(model, project.Config.Agents.Muse.Model, !targetPinned)
+	args = appendFlag(args, "--model", resolvedModel)
+	resolvedEffort := resolveSetting(effort, project.Config.Agents.Muse.ReasoningEffort, !targetPinned)
+	args = appendFlag(args, "--reasoning-effort", resolvedEffort)
+	if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
+		args = append(args, "--yolo")
+	} else {
+		args = append(args, "--approval-mode", "untrusted", "--approval-judge", "off")
+		command.ObserveMuseApprovals = true
+	}
+	command.Args = args
+	command.SessionID = sessionID
+	command.Model = resolvedModel
+	command.Effort = resolvedEffort
+	return command, nil
+}
+
+func resolveSetting(explicit, configured string, inherit bool) string {
+	value := strings.TrimSpace(explicit)
+	if value == "" && inherit {
+		value = strings.TrimSpace(configured)
+	}
+	return value
+}
+
+func appendFlag(args []string, flag, value string) []string {
+	if value != "" {
+		args = append(args, flag, value)
+	}
+	return args
+}
+
+func requireFreshSessionID(provider string, mode, sessionID string) error {
+	if mode == dispatchModeFresh && sessionID == "" {
+		return exitError(ExitConfig, "new "+provider+" dispatch requires a caller-assigned session ID")
+	}
+	return nil
+}
+
+func writeDispatchPromptFile(run *dispatchRun, prompt []byte, provider string) (string, error) {
+	path := filepath.Join(run.Dir, "prompt.txt")
+	if err := os.WriteFile(path, prompt, 0o600); err != nil {
+		return "", wrapExitError(ExitConfig, "write "+provider+" dispatch prompt", err)
+	}
+	return path, nil
 }
 
 func antigravitySlugEffort(model string) (string, bool) {

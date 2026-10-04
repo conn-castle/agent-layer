@@ -316,6 +316,64 @@ func TestStartAllowsOmittedOverrides(t *testing.T) {
 	}
 }
 
+func TestContinueUsesWorkDirForWorkerRequestAndTargetProjection(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	workDir := t.TempDir()
+	_, session := terminalConversationForAsyncTest(t, root)
+	skillDir := filepath.Join(root, ".agent-layer", "skills", "snapshot")
+	if err := os.MkdirAll(skillDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	manifest := []byte("---\nname: snapshot\ndescription: Continuation snapshot.\n---\nshared bytes")
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), manifest, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	launched := false
+	launcher := func(workerRoot string, runID string, _ string) (launchedWorker, error) {
+		launched = true
+		data, err := os.ReadFile(filepath.Join(filepathForRun(workerRoot, runID), workerRequestFile)) // #nosec G304 -- test-owned run path.
+		if err != nil {
+			t.Fatal(err)
+		}
+		var request workerRequest
+		if err := json.Unmarshal(data, &request); err != nil {
+			t.Fatal(err)
+		}
+		if workerRoot != root || request.Root != root || request.WorkDir != workDir || request.Mode != dispatchModeResume {
+			t.Fatalf("continuation worker request = %#v at %s", request, workerRoot)
+		}
+		projected, err := os.ReadFile(filepath.Join(workDir, ".agents", "skills", "snapshot", "SKILL.md")) // #nosec G304 -- test-owned projection path.
+		if err != nil || !bytes.Equal(projected, manifest) {
+			t.Fatalf("continuation target projection = %q, %v", projected, err)
+		}
+		read, write, err := os.Pipe()
+		if err != nil {
+			return launchedWorker{}, err
+		}
+		go func() {
+			defer func() { _ = read.Close() }()
+			var token [1]byte
+			_, _ = read.Read(token[:])
+		}()
+		return launchedWorker{gate: write, pid: os.Getpid(), startIdentity: processStartIdentity(os.Getpid())}, nil
+	}
+	var stdout bytes.Buffer
+	if err := Continue(ContinueOptions{
+		Root: root, WorkDir: workDir, Handle: session.Name, Prompt: "Continue", Stdout: &stdout,
+		Env: []string{}, LookPath: alwaysFound, launchWorker: launcher,
+		VersionLookup: func(string, string) (string, error) { return supportedProviderVersions[AgentCodex], nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var result Result
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !launched || result.Handle != session.Name || result.State != dispatchStateRunning {
+		t.Fatalf("continuation response = %#v, launched = %t", result, launched)
+	}
+}
+
 func TestConcurrentContinueStartsOnlyOneInvocation(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	_, session := terminalConversationForAsyncTest(t, root)

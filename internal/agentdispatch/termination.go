@@ -58,7 +58,7 @@ func observeTermination(record RunRecord) (confirmed bool, observation string, p
 		case providerProcessGroupDead(record.ProcessGroupID):
 			// The provider can leave its original group. Group death alone
 			// cannot establish that the owned provider process stopped.
-			if processOwnership(record) != ownershipDead {
+			if ownershipForIdentity(record.PID, record.ProcessStartIdentity) != ownershipDead {
 				return false, terminationObservationProviderLive, ""
 			}
 			proof = terminationProofGroupDead

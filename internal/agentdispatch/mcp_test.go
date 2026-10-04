@@ -673,6 +673,25 @@ func TestMCPHardGuardReleasesAWedgedHandler(t *testing.T) {
 	}
 }
 
+func TestMCPGuardDoesNotCallHandlerWithCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	called := make(chan struct{}, 1)
+	handler := guard(time.Second, func(context.Context, *mcp.CallToolRequest, OptionsInput) (*mcp.CallToolResult, *OptionsResponse, error) {
+		called <- struct{}{}
+		return nil, &OptionsResponse{}, nil
+	})
+	result, output, err := handler(ctx, nil, OptionsInput{})
+	if result != nil || output != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled guard returned %v, %v, %v", result, output, err)
+	}
+	select {
+	case <-called:
+		t.Fatal("guard called handler with a cancelled context")
+	case <-time.After(25 * time.Millisecond):
+	}
+}
+
 // TestMCPHardGuardBoundsAContextFreeHandler proves the guard itself releases
 // callers even when an operation cannot observe context cancellation.
 func TestMCPHardGuardBoundsAContextFreeHandler(t *testing.T) {

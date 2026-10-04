@@ -114,6 +114,7 @@ func notFoundExitError(message string, sentinel error) *ExitError {
 // between Start/Continue and the shared preparation helpers.
 type runOptions struct {
 	Root            string
+	WorkDir         string
 	Model           string
 	ReasoningEffort string
 	Skill           string
