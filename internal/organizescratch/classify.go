@@ -45,6 +45,9 @@ const (
 	adhocFallbackFolder   = "misc"
 
 	reasonSkillConvention = "skill naming convention"
+
+	gitMetadataName = ".git"
+	entryRootLabel  = "<entry root>"
 )
 
 const (
@@ -140,8 +143,14 @@ type placement struct {
 	worktreeRepairs []worktreeRepair
 	gitDirTargets   []string
 	gitFileTargets  []string
-	links           []scannedLink
-	sampled         bool
+	// gitRepoTargets are git directories not named .git, such as a bare
+	// clone. Their work tree, if any, lives elsewhere.
+	gitRepoTargets []string
+	// immovable entries hold a git directory whose work tree Git cannot
+	// reconnect after a move, so they stay in place even with --move-worktrees.
+	immovable bool
+	links     []scannedLink
+	sampled   bool
 }
 
 type classifyContext struct {
@@ -167,6 +176,7 @@ type treeScan struct {
 	gitMarkers       []string
 	gitDirTargets    []string
 	gitFileTargets   []string
+	gitRepoTargets   []string
 	unreadable       []string
 	symlinks         []scannedLink
 	immediate        map[string]treeMeasure
@@ -238,8 +248,8 @@ func firstComponent(rel string) string {
 }
 
 // scanTree walks every metadata entry without following symlinks. .git markers
-// are recorded, but .git directories are not descended into and therefore do
-// not inflate counts or samples with repository metadata.
+// and other git directories, such as bare clones, are recorded but not
+// descended into, so repository metadata does not inflate counts or samples.
 func scanTree(dir string) treeScan {
 	scan := treeScan{
 		byExt:            map[string]int{},
@@ -258,6 +268,15 @@ func scanTree(dir string) treeScan {
 			scan.unreadable = append(scan.unreadable, fmt.Sprintf("%s: %v", rel, walkErr))
 			return nil
 		}
+		if d.IsDir() && d.Name() != gitMetadataName && looksLikeGitDir(path) {
+			marker, target := filepath.ToSlash(rel), rel
+			if rel == "." {
+				marker, target = entryRootLabel, ""
+			}
+			scan.gitMarkers = append(scan.gitMarkers, marker)
+			scan.gitRepoTargets = append(scan.gitRepoTargets, target)
+			return filepath.SkipDir
+		}
 		if rel == "." {
 			return nil
 		}
@@ -268,7 +287,7 @@ func scanTree(dir string) treeScan {
 		}
 		childrenByDir[parent][d.Name()] = struct{}{}
 
-		if d.Name() == ".git" {
+		if d.Name() == gitMetadataName {
 			scan.gitMarkers = append(scan.gitMarkers, filepath.ToSlash(rel))
 			if d.IsDir() {
 				target := filepath.Dir(rel)
@@ -347,7 +366,7 @@ func scanTree(dir string) treeScan {
 		_, localState := names["Local State"]
 		if cookies && (loginData || localState) {
 			if rel == "." {
-				rel = "<entry root>"
+				rel = entryRootLabel
 			}
 			scan.browserProfiles = append(scan.browserProfiles, filepath.ToSlash(rel))
 		}
@@ -356,8 +375,30 @@ func scanTree(dir string) treeScan {
 	sort.Strings(scan.gitMarkers)
 	sort.Strings(scan.gitFileTargets)
 	sort.Strings(scan.gitDirTargets)
+	sort.Strings(scan.gitRepoTargets)
 	sort.Strings(scan.browserProfiles)
 	return scan
+}
+
+// looksLikeGitDir applies the layout Git itself requires of a repository
+// directory: a HEAD file beside objects/ and refs/ directories. A .git child
+// wins, as it does in Git's discovery, so a work tree that happens to hold
+// that layout keeps its checkout marker.
+func looksLikeGitDir(dir string) bool {
+	if _, err := os.Lstat(filepath.Join(dir, gitMetadataName)); err == nil {
+		return false
+	}
+	head, err := os.Stat(filepath.Join(dir, "HEAD"))
+	if err != nil || !head.Mode().IsRegular() {
+		return false
+	}
+	for _, name := range []string{"objects", "refs"} {
+		info, err := os.Stat(filepath.Join(dir, name))
+		if err != nil || !info.IsDir() {
+			return false
+		}
+	}
+	return true
 }
 
 func secretCandidatePath(rel string) bool {
@@ -672,9 +713,10 @@ func classifyDir(item entry, ctx classifyContext) placement {
 	result.worktree = len(targets) > 0
 	result.gitDirTargets = scan.gitDirTargets
 	result.gitFileTargets = scan.gitFileTargets
+	result.gitRepoTargets = scan.gitRepoTargets
 	result.links = scan.symlinks
 	if len(findings) > 0 && (len(targets) > 0 || len(scan.gitMarkers) > 0) {
-		result.reason += fmt.Sprintf("; checkout evidence also requires review (%d registered worktree target(s), %d .git marker(s))", len(targets), len(scan.gitMarkers))
+		result.reason += fmt.Sprintf("; checkout evidence also requires review (%d registered worktree target(s), %d git marker(s))", len(targets), len(scan.gitMarkers))
 	}
 	if result.sampled && scan.files > scan.sampleFiles {
 		result.reason += fmt.Sprintf(" (statistical verdict used a bounded sample of %d of %d files)", scan.sampleFiles, scan.files)

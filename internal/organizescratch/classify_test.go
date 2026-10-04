@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -154,6 +155,38 @@ func TestCompleteWalkFindsLateHazardsWithoutDescendingIntoGitMetadata(t *testing
 	got := classify(item, emptyContext())
 	if got.dest != destReviewSecrets || !strings.Contains(got.reason, "jwt-signing-key") {
 		t.Fatalf("dest=%q reason=%q, want late secret", got.dest, got.reason)
+	}
+}
+
+func TestGitDirectoryLayoutIsCheckoutEvidenceAtEntryRootAndNested(t *testing.T) {
+	writeGitDir := func(dir string) {
+		writeFileAt(t, filepath.Join(dir, "HEAD"), "ref: refs/heads/main\n")
+		writeFileAt(t, filepath.Join(dir, "objects", "pack", "pack-1.pack"), "metadata")
+		mkdirAt(t, filepath.Join(dir, "refs", "heads"))
+	}
+	root := t.TempDir()
+	bare := dirEntry(t, root, "proj.git")
+	writeGitDir(bare.abs)
+	nested := dirEntry(t, root, "remotes")
+	writeGitDir(filepath.Join(nested.abs, "proj.git"))
+	writeFileAt(t, filepath.Join(nested.abs, "notes.txt"), "user file")
+
+	for _, test := range []struct {
+		item      entry
+		marker    string
+		target    string
+		wantFiles int
+	}{
+		{item: bare, marker: "<entry root>", target: "", wantFiles: 0},
+		{item: nested, marker: "proj.git", target: "proj.git", wantFiles: 1},
+	} {
+		scan := scanTree(test.item.abs)
+		if !slices.Equal(scan.gitMarkers, []string{test.marker}) || !slices.Equal(scan.gitRepoTargets, []string{test.target}) || scan.files != test.wantFiles {
+			t.Fatalf("%s: markers=%q targets=%q files=%d", test.item.name, scan.gitMarkers, scan.gitRepoTargets, scan.files)
+		}
+		if got := classify(test.item, emptyContext()); got.dest != destReviewCheckouts {
+			t.Fatalf("%s: dest=%q reason=%q, want %q", test.item.name, got.dest, got.reason, destReviewCheckouts)
+		}
 	}
 }
 

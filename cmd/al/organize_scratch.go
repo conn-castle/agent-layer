@@ -35,7 +35,9 @@ func newOrganizeScratchCmd() *cobra.Command {
 			"supported. Repository roots and roots containing tracked content are refused.\n" +
 			"Directories over 100\n" +
 			"files or 250 MiB, and files over 250 MiB, always require review. Registered main\n" +
-			"and linked worktrees stay in place unless --move-worktrees is explicit.\n" +
+			"and linked worktrees, including bare repositories, stay in place unless\n" +
+			"--move-worktrees is explicit. A non-bare git directory outside its work tree\n" +
+			"is never moved.\n" +
 			"Symlinks are never rewritten; top-level and move-breaking links require review,\n" +
 			"including links under caller-provided --keep entries.",
 		Hidden: true,

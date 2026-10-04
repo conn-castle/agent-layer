@@ -765,6 +765,130 @@ func TestRunRepairsSiblingMainCheckoutAndLinkedWorktreeMovedTogether(t *testing.
 	}
 }
 
+func TestRunProtectsAndRepairsBareRepositoryWithExternalWorktree(t *testing.T) {
+	source := newRepo(t)
+	root := t.TempDir()
+	bare := filepath.Join(root, "proj.git")
+	git(t, root, "clone", "--bare", source, bare)
+	external := filepath.Join(t.TempDir(), "outside-wt")
+	git(t, bare, "worktree", "add", external, "-b", "outside")
+
+	stdout, _, err := runOrganize(t, Options{Root: root, Apply: true})
+	if err != nil {
+		t.Fatalf("default Run: %v", err)
+	}
+	if !strings.Contains(stdout, "LEFT IN PLACE  proj.git") || !strings.Contains(stdout, "registered bare repository") || !strings.Contains(stdout, "externally registered linked worktree") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	requireFile(t, filepath.Join(bare, "HEAD"))
+	git(t, external, "status", "--porcelain")
+
+	if _, stderr, err := runOrganize(t, Options{Root: root, Apply: true, MoveWorktrees: true}); err != nil {
+		t.Fatalf("move Run: %v\nstderr=%s", err, stderr)
+	}
+	movedBare := filepath.Join(root, destReviewCheckouts, "proj.git")
+	git(t, external, "status", "--porcelain")
+	list := git(t, movedBare, "worktree", "list", "--porcelain")
+	if !strings.Contains(list, canonicalPath(movedBare)) || !strings.Contains(list, canonicalPath(external)) || strings.Contains(list, "prunable") {
+		t.Fatalf("bare worktree list = %q", list)
+	}
+}
+
+func TestRunRepairsNestedBareRepositoryAndSiblingLinkedWorktreeMovedTogether(t *testing.T) {
+	source := newRepo(t)
+	root := t.TempDir()
+	bare := filepath.Join(root, "remotes", "proj.git")
+	git(t, root, "clone", "--bare", source, bare)
+	linked := filepath.Join(root, "proj-wt")
+	git(t, bare, "worktree", "add", linked, "-b", "sibling-linked")
+
+	if _, stderr, err := runOrganize(t, Options{Root: root, Apply: true, MoveWorktrees: true}); err != nil {
+		t.Fatalf("Run: %v\nstderr=%s", err, stderr)
+	}
+	movedBare := filepath.Join(root, destReviewCheckouts, "remotes", "proj.git")
+	movedLinked := filepath.Join(root, destReviewCheckouts, "proj-wt")
+	git(t, movedLinked, "status", "--porcelain")
+	list := git(t, movedBare, "worktree", "list", "--porcelain")
+	if !strings.Contains(list, canonicalPath(movedBare)) || !strings.Contains(list, canonicalPath(movedLinked)) || strings.Contains(list, "prunable") {
+		t.Fatalf("bare worktree list = %q", list)
+	}
+}
+
+func TestRunNeverMovesSeparatedGitDirectory(t *testing.T) {
+	root := t.TempDir()
+	gitDir := filepath.Join(root, "gd")
+	workTree := filepath.Join(t.TempDir(), "work")
+	git(t, root, "init", "--initial-branch=main", "--separate-git-dir", gitDir, workTree)
+	git(t, workTree, "commit", "--allow-empty", "-m", "initial")
+
+	stdout, stderr, err := runOrganize(t, Options{Root: root, Apply: true, MoveWorktrees: true})
+	if err != nil {
+		t.Fatalf("Run: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "LEFT IN PLACE  gd") || !strings.Contains(stdout, "non-bare git directory") || strings.Contains(stdout, "pass --move-worktrees") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	requireFile(t, filepath.Join(gitDir, "HEAD"))
+	git(t, workTree, "status", "--porcelain")
+}
+
+func TestRunLeavesBareRepositoryRefusedBySafeBareRepositoryInPlace(t *testing.T) {
+	source := newRepo(t)
+	root := t.TempDir()
+	bare := filepath.Join(root, "proj.git")
+	git(t, root, "clone", "--bare", source, bare)
+	external := filepath.Join(t.TempDir(), "outside-wt")
+	git(t, bare, "worktree", "add", external, "-b", "outside")
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "safe.bareRepository")
+	t.Setenv("GIT_CONFIG_VALUE_0", "explicit")
+
+	stdout, stderr, err := runOrganize(t, Options{Root: root, Apply: true, MoveWorktrees: true})
+	if err != nil {
+		t.Fatalf("Run: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "LEFT IN PLACE  proj.git") || !strings.Contains(stdout, "safe.bareRepository") || strings.Contains(stdout, "pass --move-worktrees") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	requireFile(t, filepath.Join(bare, "HEAD"))
+	git(t, external, "status", "--porcelain")
+}
+
+func TestRunKeepsCheckoutWhoseWorkTreeHoldsGitDirectoryLayout(t *testing.T) {
+	source := newRepo(t)
+	root := t.TempDir()
+	mainCheckout := filepath.Join(root, "proj")
+	git(t, root, "clone", source, mainCheckout)
+	writeFileAt(t, filepath.Join(mainCheckout, "HEAD"), "not a ref\n")
+	writeFileAt(t, filepath.Join(mainCheckout, "objects", "x"), "x")
+	writeFileAt(t, filepath.Join(mainCheckout, "refs", "y"), "y")
+	git(t, mainCheckout, "worktree", "add", filepath.Join(t.TempDir(), "outside-wt"), "-b", "outside")
+
+	stdout, _, err := runOrganize(t, Options{Root: root})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(stdout, "LEFT IN PLACE  proj") || !strings.Contains(stdout, "registered main checkout") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+}
+
+func TestRunReviewsGitDirectoryLayoutThatGitDoesNotOpen(t *testing.T) {
+	_, scratch := newRepoWithScratch(t)
+	fake := mkdirAt(t, filepath.Join(scratch, "fake"))
+	writeFileAt(t, filepath.Join(fake, "HEAD"), "not a ref\n")
+	mkdirAt(t, filepath.Join(fake, "objects"))
+	mkdirAt(t, filepath.Join(fake, "refs"))
+
+	stdout, _, err := runOrganize(t, Options{Root: scratch})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(stdout, destReviewCheckouts) || strings.Contains(stdout, "LEFT IN PLACE") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+}
+
 func TestRunRepairsMovedWorktreeAfterLaterMoveFailure(t *testing.T) {
 	repo, scratch := newRepoWithScratch(t)
 	worktree := filepath.Join(scratch, "aaa-wt")
