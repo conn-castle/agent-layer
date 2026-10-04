@@ -1,6 +1,7 @@
 package versiondispatch
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -16,7 +17,7 @@ func TestWithFileLock(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "test.lock")
 
-	err := withFileLock(RealSystem{}, path, time.Second, func() error {
+	err := withFileLock(context.Background(), RealSystem{}, path, time.Second, func() error {
 		return nil
 	})
 	if err != nil {
@@ -36,7 +37,7 @@ func TestWithFileLock_OpenError(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	err := withFileLock(RealSystem{}, path, time.Second, func() error {
+	err := withFileLock(context.Background(), RealSystem{}, path, time.Second, func() error {
 		return nil
 	})
 	if err == nil {
@@ -49,7 +50,7 @@ func TestWithFileLock_FnError(t *testing.T) {
 	path := filepath.Join(tmp, "test.lock")
 
 	expectedErr := fmt.Errorf("callback error")
-	err := withFileLock(RealSystem{}, path, time.Second, func() error {
+	err := withFileLock(context.Background(), RealSystem{}, path, time.Second, func() error {
 		return expectedErr
 	})
 	if err != expectedErr {
@@ -80,7 +81,7 @@ func TestAcquireFileLock_LockError(t *testing.T) {
 		},
 	}
 
-	lock, err := acquireFileLock(sys, path, time.Second)
+	lock, err := acquireFileLock(context.Background(), sys, path, time.Second)
 	if lock != nil {
 		t.Fatalf("expected nil lock on error, got %+v", lock)
 	}
@@ -120,7 +121,7 @@ func TestLockFile_Timeout(t *testing.T) {
 
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "test.lock")
-	lock, err := acquireFileLock(sys, path, time.Nanosecond)
+	lock, err := acquireFileLock(context.Background(), sys, path, time.Nanosecond)
 	if lock != nil {
 		t.Fatalf("expected no lock on timeout, got %+v", lock)
 	}

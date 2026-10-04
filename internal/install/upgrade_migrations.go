@@ -134,11 +134,12 @@ type sourceVersionResolution struct {
 }
 
 type migrationPlan struct {
-	report           UpgradeMigrationReport
-	executable       []upgradeMigrationOperation
-	rollbackTargets  []string
-	coveredPaths     map[string]struct{}
-	configMigrations []ConfigKeyMigration
+	report                    UpgradeMigrationReport
+	executable                []upgradeMigrationOperation
+	rollbackTargets           []string
+	coveredPaths              map[string]struct{}
+	postMigrationCoveredPaths map[string]struct{}
+	configMigrations          []ConfigKeyMigration
 }
 
 func (inst *installer) prepareUpgradeMigrations() error {
@@ -148,7 +149,7 @@ func (inst *installer) prepareUpgradeMigrations() error {
 	}
 	inst.pendingMigrationOps = plan.executable
 	inst.migrationRollbackTargets = plan.rollbackTargets
-	inst.migrationManifestCoverage = plan.coveredPaths
+	inst.migrationManifestCoverage = plan.postMigrationCoveredPaths
 	inst.migrationConfigMigrations = plan.configMigrations
 	inst.migrationReport = plan.report
 	inst.migrationsPrepared = true
@@ -162,7 +163,8 @@ func (inst *installer) planUpgradeMigrations() (migrationPlan, error) {
 			SourceVersionOrigin: UpgradeMigrationSourceUnknown,
 			Entries:             []UpgradeMigrationEntry{},
 		},
-		coveredPaths: make(map[string]struct{}),
+		coveredPaths:              make(map[string]struct{}),
+		postMigrationCoveredPaths: make(map[string]struct{}),
 	}
 	resolution := inst.resolveUpgradeMigrationSourceVersion()
 
@@ -272,6 +274,9 @@ func (inst *installer) planUpgradeMigrations() (migrationPlan, error) {
 				rollbackTargets = append(rollbackTargets, absPath)
 				if migrationWillCoverPath(inst.sys, inst.root, op, relPath) {
 					plan.coveredPaths[relPath] = struct{}{}
+					if !isRenameMigrationKind(op.Kind) {
+						plan.postMigrationCoveredPaths[relPath] = struct{}{}
+					}
 				}
 			}
 			if isConfigMigrationKind(op.Kind) {
@@ -1344,6 +1349,35 @@ func configMigrationFromOperation(op upgradeMigrationOperation) (ConfigKeyMigrat
 	default:
 		return ConfigKeyMigration{}, false
 	}
+}
+
+func isRenameMigrationKind(kind upgradeMigrationOperationKind) bool {
+	return kind == upgradeMigrationKindRenameFile || kind == upgradeMigrationKindRenameGeneratedArtifact
+}
+
+func hasRenameMigration(ops []upgradeMigrationOperation) bool {
+	for _, op := range ops {
+		if isRenameMigrationKind(op.Kind) {
+			return true
+		}
+	}
+	return false
+}
+
+// plannedOperationsFromReport preserves the migration execution order.
+func plannedOperationsFromReport(report UpgradeMigrationReport) []upgradeMigrationOperation {
+	ops := make([]upgradeMigrationOperation, 0)
+	for _, entry := range report.Entries {
+		if entry.Status == UpgradeMigrationStatusPlanned {
+			ops = append(ops, upgradeMigrationOperation{
+				Kind: upgradeMigrationOperationKind(entry.Kind),
+				From: entry.From,
+				To:   entry.To,
+				Path: entry.Path,
+			})
+		}
+	}
+	return ops
 }
 
 func migrationEntryFromOperation(op upgradeMigrationOperation) UpgradeMigrationEntry {

@@ -455,6 +455,9 @@ func TestBuildGrokConfigWritesPermissionAllow(t *testing.T) {
 			Agents: config.AgentsConfig{
 				Grok: config.GrokConfig{Enabled: &enabled},
 			},
+			MCP: config.MCPConfig{Servers: []config.MCPServer{
+				{ID: "docs.internal", Enabled: &enabled, Transport: config.TransportStdio, Command: "docs-mcp"},
+			}},
 		},
 		CommandsAllow: []string{"git status", "go test"},
 		Env:           map[string]string{},
@@ -472,6 +475,11 @@ func TestBuildGrokConfigWritesPermissionAllow(t *testing.T) {
 	}
 	if !strings.Contains(content, `mcp__agent-layer__*`) {
 		t.Fatalf("expected built-in dispatch MCP allow rule, got:\n%s", content)
+	}
+	// Grok's server-name normalization is unconfirmed, so its rules keep the
+	// configured ID rather than Claude's normalized spelling.
+	if !strings.Contains(content, `mcp__docs.internal__*`) {
+		t.Fatalf("expected raw-ID MCP allow rule, got:\n%s", content)
 	}
 	if !strings.Contains(content, `tool_timeout_sec = 2400`) {
 		t.Fatalf("expected built-in dispatch MCP timeout, got:\n%s", content)

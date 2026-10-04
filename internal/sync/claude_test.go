@@ -1243,6 +1243,62 @@ func TestCleanClaudeChimeHookRejectsSymlinkSettingsDir(t *testing.T) {
 	}
 }
 
+func TestCleanClaudeChimeHookIgnoresSymlinkedSettingsWithoutChime(t *testing.T) {
+	t.Parallel()
+	const userSettings = `{"model":"opus","hooks":{"Stop":[{"hooks":[{"type":"command","command":"say done"}]}]}}`
+	for _, tc := range []struct {
+		name string
+		seed func(t *testing.T, root string, outside string)
+	}{
+		{name: "missing settings", seed: func(t *testing.T, root string, outside string) {
+			if err := os.Symlink(outside, filepath.Join(root, ".claude")); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "dangling directory", seed: func(t *testing.T, root string, outside string) {
+			if err := os.Symlink(filepath.Join(outside, "missing"), filepath.Join(root, ".claude")); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "linked directory", seed: func(t *testing.T, root string, outside string) {
+			if err := os.WriteFile(filepath.Join(outside, "settings.json"), []byte(userSettings), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(outside, filepath.Join(root, ".claude")); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "linked file", seed: func(t *testing.T, root string, outside string) {
+			if err := os.WriteFile(filepath.Join(outside, "settings.json"), []byte(userSettings), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join(outside, "settings.json"), filepath.Join(root, ".claude", "settings.json")); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			outside := t.TempDir()
+			tc.seed(t, root, outside)
+
+			if err := cleanClaudeChimeHook(RealSystem{}, root); err != nil {
+				t.Fatalf("cleanClaudeChimeHook: %v", err)
+			}
+			outsideSettings := filepath.Join(outside, "settings.json")
+			if _, err := os.Stat(outsideSettings); err == nil {
+				if got := readFileForTest(t, outsideSettings); got != userSettings {
+					t.Fatalf("outside settings changed: %q", got)
+				}
+			}
+		})
+	}
+}
+
 func TestCleanClaudeChimeHookRejectsSymlinkSettingsFile(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

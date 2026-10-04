@@ -113,11 +113,9 @@ type OutputInput struct {
 // disconnects or ctx is cancelled. Nothing but the SDK ever writes to stdout:
 // every dispatch operation renders into a private buffer.
 func RunMCPServer(ctx context.Context, opts MCPServerOptions) error {
-	server, err := newDispatchMCPServer(opts)
-	if err != nil {
-		return err
-	}
-	return server.Run(ctx, &mcp.StdioTransport{})
+	stop := suppressMCPSIGPIPE()
+	defer stop()
+	return runMCPServer(ctx, opts, os.Stdin, os.Stdout, os.Stderr)
 }
 
 func newDispatchMCPServer(opts MCPServerOptions) (*mcp.Server, error) {

@@ -96,7 +96,7 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 		blockIndex = existingIndex
 	}
 
-	txn := newTransaction(pathSetFor(st), st.lock)
+	txn := s.newTransaction(pathSetFor(st), st.lock)
 	txn.SetConfig(nextConfig)
 
 	runner, err := s.newRunner(st.env)
@@ -218,7 +218,7 @@ func (s *Service) removeLocked(ctx context.Context, st *state, repository string
 		return err
 	}
 
-	txn := newTransaction(pathSetFor(st), st.lock)
+	txn := s.newTransaction(pathSetFor(st), st.lock)
 	txn.SetConfig(nextConfig)
 	lockedEntries := st.entriesForBlock(block)
 

@@ -1,7 +1,9 @@
 package install
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -43,11 +45,39 @@ func BuildUpgradePlanDiffPreviews(root string, plan UpgradePlan, opts UpgradePla
 		return nil, err
 	}
 
+	var origins map[string]string
+	var ungatedTemplatePaths map[string]string
+	ops := plannedOperationsFromReport(plan.MigrationReport)
+	if hasRenameMigration(ops) {
+		ungatedTemplatePaths, err = inst.templates().ungatedTemplatePathByRel()
+		if err != nil {
+			return nil, err
+		}
+		origins, err = inst.templateOriginsAfterMigrations(ops, ungatedTemplatePaths)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	previews := make(map[string]DiffPreview)
 
 	addPlanChanges := func(changes []UpgradeChange, mode planDiffMode) error {
 		for _, change := range changes {
-			preview, previewErr := inst.buildPlanChangeDiffPreview(change, mode, templatePathByRel)
+			var preview DiffPreview
+			var previewErr error
+			origin := origins[change.Path]
+			if mode == planDiffModeUpdate && origin != "" && origin != filepath.Join(root, filepath.FromSlash(change.Path)) {
+				if templatePathByRel[change.Path] == "" {
+					templatePathByRel[change.Path] = ungatedTemplatePaths[change.Path]
+				}
+				localBytes, err := inst.sys.ReadFile(origin)
+				if err != nil {
+					return err
+				}
+				preview, previewErr = inst.buildSingleDiffPreviewFromBytes(LabeledPath{Path: change.Path, Ownership: change.Ownership}, templatePathByRel, localBytes)
+			} else {
+				preview, previewErr = inst.buildPlanChangeDiffPreview(change, mode, templatePathByRel)
+			}
 			if previewErr != nil {
 				return previewErr
 			}
@@ -108,6 +138,18 @@ func (inst *installer) buildPlanChangeDiffPreview(change UpgradeChange, mode pla
 		}, nil
 	case planDiffModeRemoval:
 		localPath := filepath.Join(inst.root, filepath.FromSlash(change.Path))
+		// A directory, a symlink, or a path a migration has yet to create has
+		// no file content to preview.
+		info, err := inst.sys.Lstat(localPath)
+		if errors.Is(err, os.ErrNotExist) {
+			return DiffPreview{Path: change.Path, Ownership: change.Ownership}, nil
+		}
+		if err != nil {
+			return DiffPreview{}, err
+		}
+		if !info.Mode().IsRegular() {
+			return DiffPreview{Path: change.Path, Ownership: change.Ownership}, nil
+		}
 		localBytes, err := inst.sys.ReadFile(localPath)
 		if err != nil {
 			return DiffPreview{}, err

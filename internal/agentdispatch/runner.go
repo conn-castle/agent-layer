@@ -57,6 +57,13 @@ type executionResult struct {
 // remain. This is not an idle timeout for an actively working provider.
 const providerShutdownGrace = 5 * time.Second
 
+// Each run-record write is locked and fsynced, and token-level progress events
+// can outpace it. Persisting every one stalls the stream reader until a
+// finished provider misses providerShutdownGrace, so progress-only activity is
+// persisted at most this often. The in-memory timestamp stays current for the
+// next write.
+const progressActivityPersistInterval = time.Second
+
 // unprovenProviderTerminationError marks a provider failure whose process
 // group may still be live. Failure finalization must preserve the active claim
 // and nonterminal run evidence until a later cancellation or recovery proves
@@ -276,6 +283,7 @@ func executeProvider(
 	var pendingAnswer string
 	var resultMu sync.Mutex
 	var semanticErr error
+	var lastPersisted time.Time
 	terminal := make(chan struct{}, 1)
 	setFailure := func(err error) {
 		if err == nil {
@@ -331,10 +339,14 @@ func executeProvider(
 			semanticErr = errors.New(event.Reason)
 			return semanticErr
 		}
+		if event.Kind == eventProgress && now.Sub(lastPersisted) < progressActivityPersistInterval {
+			return nil
+		}
 		if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 			semanticErr = err
 			return err
 		}
+		lastPersisted = now
 		return nil
 	}
 	if approvalObserver != nil {

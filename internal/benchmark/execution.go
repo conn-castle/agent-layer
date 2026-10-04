@@ -664,15 +664,12 @@ func finalizePierExecution(request ExecutionRequest, stage string, commandErr, c
 		}
 		return AttemptResult{}, true, fmt.Errorf("pier task execution failed: %w", errors.Join(commandErr, cleanupErr))
 	}
-	if cleanupErr != nil {
-		if err := recordDurableExecution(nil); err != nil {
-			return AttemptResult{}, durable, err
-		}
-		return AttemptResult{}, true, fmt.Errorf("clean Pier task environment: %w", cleanupErr)
-	}
+	// The verifier outcome decides the event's fate before a cleanup failure
+	// does: a succeeded receipt would discard the staged replay patch of a
+	// failed verifier and permanently report the cell as an execution failure.
 	result, err := normalizePier(artifactRoot, request)
 	if err != nil {
-		return AttemptResult{}, false, err
+		return AttemptResult{}, false, errors.Join(err, cleanupErr)
 	}
 	if result.Status != statusSuccess {
 		verifierErr := fmt.Errorf("pier verifier did not complete successfully: %s", result.Error)
@@ -685,7 +682,13 @@ func finalizePierExecution(request ExecutionRequest, stage string, commandErr, c
 		if err := recordDurableExecution(verifierErr); err != nil {
 			return AttemptResult{}, durable, err
 		}
-		return AttemptResult{}, true, verifierErr
+		return AttemptResult{}, true, errors.Join(verifierErr, cleanupErr)
+	}
+	if cleanupErr != nil {
+		if err := recordDurableExecution(nil); err != nil {
+			return AttemptResult{}, durable, err
+		}
+		return AttemptResult{}, true, fmt.Errorf("clean Pier task environment: %w", cleanupErr)
 	}
 	if err := recordDurableExecution(nil); err != nil {
 		return AttemptResult{}, durable, err

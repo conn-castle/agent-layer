@@ -161,28 +161,13 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 			}
 			return UpgradePlan{}, fmt.Errorf(messages.InstallFailedStatFmt, absPath, err)
 		}
-		matches, err := inst.templates().matchTemplate(inst.sys, absPath, entry.templatePath, info)
+		update, changed, err := inst.templateUpdate(entry.relPath, absPath, entry.templatePath, info)
 		if err != nil {
 			return UpgradePlan{}, err
 		}
-		if matches {
-			continue
+		if changed {
+			updates = append(updates, update)
 		}
-		// For section-aware files, only the managed section (above the marker)
-		// determines upgrade eligibility. User entries below the marker are
-		// expected to differ and do not require an upgrade action.
-		if sectionMatch, sErr := inst.templates().sectionAwareTemplateMatch(entry.relPath, absPath, entry.templatePath); sErr == nil && sectionMatch {
-			continue
-		}
-		ownership, err := inst.ownership().classifyOwnershipDetail(entry.relPath, entry.templatePath)
-		if err != nil {
-			return UpgradePlan{}, err
-		}
-		updates = append(updates, upgradeChangeWithTemplate{
-			path:         entry.relPath,
-			templatePath: entry.templatePath,
-			ownership:    ownership,
-		})
 	}
 
 	orphans, err := inst.templates().templateOrphans(templateEntries)
@@ -192,6 +177,10 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 	additions = filterCoveredUpgradeChanges(additions, migrationPlan.coveredPaths)
 	updates = filterCoveredUpgradeChanges(updates, migrationPlan.coveredPaths)
 	orphans = filterCoveredUpgradeChanges(orphans, migrationPlan.coveredPaths)
+	additions, updates, err = inst.movedFileUpdates(migrationPlan, additions, updates)
+	if err != nil {
+		return UpgradePlan{}, err
+	}
 	kept, err := inst.loadUpgradeKeepList()
 	if err != nil {
 		return UpgradePlan{}, err
@@ -202,6 +191,14 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 	if err != nil {
 		return UpgradePlan{}, err
 	}
+	unknownDeletions, err := inst.planUnknownDeletions(orphans, renames, migrationPlan.executable, kept)
+	if err != nil {
+		return UpgradePlan{}, err
+	}
+	orphans = append(orphans, unknownDeletions...)
+	sort.Slice(orphans, func(i, j int) bool {
+		return orphans[i].path < orphans[j].path
+	})
 	statuslineAdditions, statuslineUpdates, err := inst.planStatuslineSourceChanges(migrationPlan)
 	if err != nil {
 		return UpgradePlan{}, err
@@ -233,6 +230,363 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 		PinVersionChange:          pinDiff,
 		ReadinessChecks:           readinessChecks,
 	}, nil
+}
+
+// templateUpdate reports whether the file at absPath differs from relPath's
+// template and classifies that difference against relPath's baseline.
+func (inst *installer) templateUpdate(relPath, absPath, templatePath string, info fs.FileInfo) (upgradeChangeWithTemplate, bool, error) {
+	matches, err := inst.templates().matchTemplate(inst.sys, absPath, templatePath, info)
+	if err != nil || matches {
+		return upgradeChangeWithTemplate{}, false, err
+	}
+	// For section-aware files, only the managed section (above the marker)
+	// determines upgrade eligibility. User entries below the marker are
+	// expected to differ and do not require an upgrade action.
+	if sectionMatch, sErr := inst.templates().sectionAwareTemplateMatch(relPath, absPath, templatePath); sErr == nil && sectionMatch {
+		return upgradeChangeWithTemplate{}, false, nil
+	}
+	localBytes, err := inst.sys.ReadFile(absPath)
+	if err != nil {
+		return upgradeChangeWithTemplate{}, false, err
+	}
+	templateBytes, err := templates.Read(templatePath)
+	if err != nil {
+		return upgradeChangeWithTemplate{}, false, err
+	}
+	ownership, err := inst.ownership().classifyAgainstBaseline(relPath, localBytes, templateBytes, false)
+	if err != nil {
+		return upgradeChangeWithTemplate{}, false, err
+	}
+	return upgradeChangeWithTemplate{path: relPath, templatePath: templatePath, ownership: ownership}, true, nil
+}
+
+// movedFileUpdates compares post-migration destinations with their current bytes.
+func (inst *installer) movedFileUpdates(plan migrationPlan, additions, updates []upgradeChangeWithTemplate) ([]upgradeChangeWithTemplate, []upgradeChangeWithTemplate, error) {
+	if !hasRenameMigration(plan.executable) {
+		return additions, updates, nil
+	}
+	templatePaths, err := inst.templates().ungatedTemplatePathByRel()
+	if err != nil {
+		return nil, nil, err
+	}
+	origins, err := inst.templateOriginsAfterMigrations(plan.executable, templatePaths)
+	if err != nil {
+		return nil, nil, err
+	}
+	renameOnlyCovered := make(map[string]struct{})
+	for path := range plan.coveredPaths {
+		if _, covered := plan.postMigrationCoveredPaths[path]; !covered {
+			renameOnlyCovered[path] = struct{}{}
+		}
+	}
+	paths := make([]string, 0, len(origins))
+	for path := range origins {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	removePath := func(changes []upgradeChangeWithTemplate, path string) []upgradeChangeWithTemplate {
+		out := changes[:0]
+		for _, change := range changes {
+			if change.path != path {
+				out = append(out, change)
+			}
+		}
+		return out
+	}
+	for _, path := range paths {
+		origin := origins[path]
+		templatePath := templatePaths[path]
+		if templatePath == "" || isCoveredByMigration(path, plan.postMigrationCoveredPaths) {
+			continue
+		}
+		if origin == filepath.Join(inst.root, filepath.FromSlash(path)) && !isCoveredByMigration(path, renameOnlyCovered) {
+			continue
+		}
+		// Stat follows symlinks, as apply does when it diffs the moved file.
+		info, err := inst.sys.Stat(origin)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, nil, fmt.Errorf(messages.InstallFailedStatFmt, origin, err)
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		additions = removePath(additions, path)
+		updates = removePath(updates, path)
+		update, changed, err := inst.templateUpdate(path, origin, templatePath, info)
+		if err != nil {
+			return nil, nil, err
+		}
+		if changed {
+			updates = append(updates, update)
+		}
+	}
+	sort.Slice(updates, func(i, j int) bool { return updates[i].path < updates[j].path })
+	return additions, updates, nil
+}
+
+// templateOriginsAfterMigrations supplements the non-following path walk with
+// known template files. Trace rename prefixes in reverse execution order so a file
+// beneath a symlinked parent is read at its original location, including chains.
+// Keep these extra origins separate from the unknown-deletion walk's path set.
+func (inst *installer) templateOriginsAfterMigrations(ops []upgradeMigrationOperation, templatePaths map[string]string) (map[string]string, error) {
+	_, origins, err := inst.pathsAfterMigrations(ops)
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(templatePaths))
+	for path := range templatePaths {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		if origins[path] != "" {
+			continue
+		}
+		originPath := path
+		renamed := false
+		for i := len(ops) - 1; i >= 0 && originPath != ""; i-- {
+			op := ops[i]
+			if isRenameMigrationKind(op.Kind) {
+				from := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.From)))
+				to := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.To)))
+				if from == to {
+					continue
+				}
+				switch {
+				case originPath == to:
+					originPath = from
+					renamed = true
+				case strings.HasPrefix(originPath, to+"/"):
+					originPath = from + strings.TrimPrefix(originPath, to)
+					renamed = true
+				case originPath == from || strings.HasPrefix(originPath, from+"/"):
+					originPath = ""
+				}
+			} else if op.Kind == upgradeMigrationKindDeleteFile {
+				target := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.Path)))
+				if originPath == target || strings.HasPrefix(originPath, target+"/") {
+					originPath = ""
+				}
+			}
+		}
+		if originPath == "" || !renamed {
+			continue
+		}
+		origin := filepath.Join(inst.root, filepath.FromSlash(originPath))
+		// Stat follows directory symlinks, while absent source files remain hidden.
+		if _, err := inst.sys.Stat(origin); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf(messages.InstallFailedStatFmt, origin, err)
+		}
+		origins[path] = origin
+	}
+	return origins, nil
+}
+
+// planUnknownDeletions mirrors the non-tmp --apply-deletions set, skipping
+// paths already represented by template orphans or renames. Apply scans for
+// unknown paths after migrations run, so the plan classifies the paths the
+// planned migrations will leave, using the rules of walkUnknownsInRoot.
+func (inst *installer) planUnknownDeletions(existing []upgradeChangeWithTemplate, renames []UpgradeRename, ops []upgradeMigrationOperation, kept upgradeKeepList) ([]upgradeChangeWithTemplate, error) {
+	known, err := inst.buildKnownPaths()
+	if err != nil {
+		return nil, err
+	}
+	paths, _, err := inst.pathsAfterMigrations(ops)
+	if err != nil {
+		return nil, err
+	}
+	represented := make(map[string]struct{})
+	addRepresented := func(path string) {
+		for path != "." && path != "" {
+			represented[filepath.ToSlash(path)] = struct{}{}
+			path = filepath.Dir(path)
+		}
+	}
+	for _, change := range existing {
+		addRepresented(change.path)
+	}
+	for _, rename := range renames {
+		addRepresented(rename.From)
+	}
+	isKnown := func(rel string) bool {
+		_, ok := known[filepath.Join(inst.root, filepath.FromSlash(rel))]
+		return ok
+	}
+	units := make(map[string]struct{})
+	for rel, isDir := range paths {
+		if unit, ok := unknownDeletionUnit(rel, isDir, isKnown, kept); ok {
+			if _, skip := represented[unit]; !skip {
+				units[unit] = struct{}{}
+			}
+		}
+	}
+	changes := make([]upgradeChangeWithTemplate, 0, len(units))
+	for unit := range units {
+		ownership, err := inst.classifyRemovalOwnership(unit)
+		if err != nil {
+			return nil, err
+		}
+		changes = append(changes, upgradeChangeWithTemplate{path: unit, ownership: ownership})
+	}
+	return changes, nil
+}
+
+// unknownDeletionUnit returns the path walkUnknownsInRoot would report for rel:
+// its first ancestor (or rel itself) that is neither known nor a directory
+// holding a kept descendant. It reports nothing for kept paths.
+func unknownDeletionUnit(rel string, isDir bool, isKnown func(string) bool, kept upgradeKeepList) (string, bool) {
+	parts := strings.Split(rel, "/")
+	rootParts := 0
+	switch {
+	case strings.HasPrefix(rel, ".agent-layer/"):
+		rootParts = 1
+	case strings.HasPrefix(rel, docsAgentLayerDir+"/"):
+		rootParts = len(strings.Split(docsAgentLayerDir, "/"))
+	default:
+		return "", false
+	}
+	for i := rootParts + 1; i <= len(parts); i++ {
+		path := strings.Join(parts[:i], "/")
+		if isKnown(path) {
+			continue
+		}
+		if upgradePathIsKept(path, kept) {
+			return "", false
+		}
+		if (i < len(parts) || isDir) && upgradePathHasKeptDescendant(path, kept) {
+			continue
+		}
+		return path, true
+	}
+	return "", false
+}
+
+// pathsAfterMigrations lists every path under the unknown-scan roots, except
+// .agent-layer/tmp, as it will exist after ops run in order. The value reports
+// whether the path is a directory; origins maps paths to their current absolute
+// location. It models only the file effects that can change which paths are
+// unknown; a rename onto an occupied destination, which fails the upgrade, is
+// modelled as a merge.
+func (inst *installer) pathsAfterMigrations(ops []upgradeMigrationOperation) (map[string]bool, map[string]string, error) {
+	paths := make(map[string]bool)
+	// Chained renames must stat the original path while planning leaves the tree untouched.
+	origins := make(map[string]string)
+	for _, root := range inst.unknownScanRoots() {
+		if _, err := inst.sys.Stat(root); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, nil, fmt.Errorf(messages.InstallFailedStatFmt, root, err)
+		}
+		err := inst.sys.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			rel := filepath.ToSlash(inst.relativePath(path))
+			if rel == agentLayerTmpKeepPath {
+				return filepath.SkipDir
+			}
+			paths[rel] = entry.IsDir()
+			origins[rel] = path
+			return nil
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	under := func(path, root string) (string, bool) {
+		if path == root {
+			return "", true
+		}
+		rest, ok := strings.CutPrefix(path, root+"/")
+		return "/" + rest, ok
+	}
+	clean := func(path string) string {
+		return normalizeRelPath(filepath.Clean(filepath.FromSlash(path)))
+	}
+	for _, op := range ops {
+		switch op.Kind {
+		case upgradeMigrationKindDeleteFile:
+			target := clean(op.Path)
+			for path := range paths {
+				if _, ok := under(path, target); ok {
+					delete(paths, path)
+					delete(origins, path)
+				}
+			}
+		case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
+			from, to := clean(op.From), clean(op.To)
+			if _, ok := paths[from]; !ok || from == to {
+				continue
+			}
+			if origin := origins[from]; origin != "" {
+				if _, err := inst.sys.Stat(origin); err != nil {
+					if errors.Is(err, os.ErrNotExist) {
+						continue
+					}
+					return nil, nil, fmt.Errorf(messages.InstallFailedStatFmt, origin, err)
+				}
+			}
+			moved := make(map[string]bool)
+			movedOrigins := make(map[string]string)
+			for path, isDir := range paths {
+				if rest, ok := under(path, from); ok {
+					moved[to+rest] = isDir
+					movedOrigins[to+rest] = origins[path]
+					delete(paths, path)
+					delete(origins, path)
+				}
+			}
+			for path, isDir := range moved {
+				paths[path] = isDir
+				origins[path] = movedOrigins[path]
+			}
+		case upgradeMigrationKindMigrateSkillsFormat:
+			dir := clean(op.Path)
+			for path, isDir := range paths {
+				name, ok := strings.CutPrefix(path, dir+"/")
+				if !ok || isDir || strings.Contains(name, "/") || strings.HasPrefix(name, ".") || !strings.HasSuffix(name, ".md") {
+					continue
+				}
+				delete(paths, path)
+				delete(origins, path)
+				skillDir := dir + "/" + strings.TrimSuffix(name, ".md")
+				paths[skillDir] = true
+				paths[skillDir+"/"+skillManifestFileName] = false
+				delete(origins, skillDir)
+				delete(origins, skillDir+"/"+skillManifestFileName)
+			}
+		case upgradeMigrationKindAppendToFile:
+			target := clean(op.Path)
+			if _, ok := paths[target]; !ok {
+				paths[target] = false
+			}
+		}
+	}
+	return paths, origins, nil
+}
+
+func (inst *installer) classifyRemovalOwnership(rel string) (ownershipClassification, error) {
+	path := filepath.Join(inst.root, filepath.FromSlash(rel))
+	unknown := unknownOwnershipClassification(nil, []string{ownershipReasonBaselineMissing})
+	info, err := inst.sys.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		// A path a migration has yet to create has no content to classify.
+		return unknown, nil
+	}
+	if err != nil {
+		return ownershipClassification{}, fmt.Errorf(messages.InstallFailedStatFmt, path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return unknown, nil
+	}
+	return inst.ownership().classifyOrphanOwnershipDetail(rel)
 }
 
 func filterCoveredUpgradeChanges(
@@ -341,7 +695,7 @@ func (inst templateManager) templateOrphans(templateEntries []templatedPath) ([]
 
 	orphans := make([]upgradeChangeWithTemplate, 0, len(orphanSet))
 	for relPath := range orphanSet {
-		ownership, err := inst.ownership().classifyOrphanOwnershipDetail(relPath)
+		ownership, err := inst.classifyRemovalOwnership(relPath)
 		if err != nil {
 			return nil, err
 		}
@@ -402,6 +756,13 @@ func detectUpgradeRenames(
 	orphansByHash := make(map[string][]int)
 	for idx, orphan := range orphans {
 		path := filepath.Join(inst.root, filepath.FromSlash(orphan.path))
+		info, err := inst.sys.Lstat(path)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf(messages.InstallFailedStatFmt, path, err)
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
 		data, err := inst.sys.ReadFile(path)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf(messages.InstallFailedReadFmt, path, err)

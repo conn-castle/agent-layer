@@ -22,11 +22,14 @@ type Service struct {
 	// receives the AL_-filtered `.agent-layer/.env` map every repository
 	// reference resolves its `${AL_*}` placeholders from.
 	newRunner func(env map[string]string) (*gitrepo.Runner, error)
+	// newTransaction lets add/remove tests inject publication failures into a
+	// real transaction while retaining its journal and rollback behavior.
+	newTransaction func(pathSet, *skilllock.File) *transaction
 }
 
 // New returns a service bound to a repository root.
 func New(root string) *Service {
-	return &Service{root: root, sys: sync.RealSystem{}, newRunner: gitrepo.NewRunner}
+	return &Service{root: root, sys: sync.RealSystem{}, newRunner: gitrepo.NewRunner, newTransaction: newTransaction}
 }
 
 // blockContext is one import block's resolved source access for an operation.

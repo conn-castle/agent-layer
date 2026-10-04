@@ -440,6 +440,74 @@ func TestScanLineForComment_StateTransitions(t *testing.T) {
 	}
 }
 
+// TOML allows one or two quotes just inside a multiline closing delimiter, so
+// a run of four or five quotes is content followed by the delimiter.
+func TestScanLineForComment_MultilineEndsWithExtraQuotes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		line string
+		in   StringState
+	}{
+		{name: "basic one extra quote", line: `x = """say "ok"""" # note`, in: StateNone},
+		{name: "basic two extra quotes", line: `x = """say ""ok""""" # note`, in: StateNone},
+		{name: "basic only a quote", line: `x = """"""" # note`, in: StateNone},
+		{name: "basic continuation", line: `end with "quote"""" # note`, in: StateMultiBasic},
+		{name: "basic escaped quote before extra quote", line: `end \""""" # note`, in: StateMultiBasic},
+		{name: "literal one extra quote", line: `x = '''it'''' # note`, in: StateNone},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			comment, state := ScanLineForComment(tt.line, tt.in)
+			if state != StateNone {
+				t.Fatalf("state = %v, want none", state)
+			}
+			if comment < 0 || tt.line[comment:] != "# note" {
+				t.Fatalf("comment position = %d, want the trailing # note", comment)
+			}
+		})
+	}
+}
+
+func TestParseDocument_MultilineEndingInQuotesBeforeLaterMultiline(t *testing.T) {
+	t.Parallel()
+	for _, quote := range []string{`"`, `'`} {
+		triple := strings.Repeat(quote, 3)
+		content := "[a]\n" +
+			"x = " + triple + "Reply " + quote + "ok" + quote + triple + "\n" +
+			"y = " + triple + "\n[[fake]]\n" + triple + "\n" +
+			"[b]\nk = 1\n"
+		var parsed map[string]any
+		if err := toml.Unmarshal([]byte(content), &parsed); err != nil {
+			t.Fatalf("fixture must be valid TOML: %v\n%s", err, content)
+		}
+
+		doc := ParseDocument(content)
+
+		if strings.Join(doc.Order, ",") != "a,b" {
+			t.Fatalf("quote %s: Order = %v, want [a b]\n%s", quote, doc.Order, content)
+		}
+		if len(doc.Arrays) != 0 {
+			t.Fatalf("quote %s: header inside later string became an array table: %#v", quote, doc.Arrays)
+		}
+	}
+}
+
+func TestMultilineValueEndIndex_ArrayWithStringEndingInQuotes(t *testing.T) {
+	t.Parallel()
+	lines := []string{
+		`x = [ """say "ok""""`,
+		`, """`,
+		`]`,
+		`""" ]`,
+		`next = 1`,
+	}
+	if got := MultilineValueEndIndex(lines, 0); got != 3 {
+		t.Fatalf("MultilineValueEndIndex = %d, want 3", got)
+	}
+}
+
 func TestMutationHelpers_FallbackBranches(t *testing.T) {
 	t.Parallel()
 	block := &Block{Name: "root", Lines: []string{"[root]", "enabled = true"}}
@@ -468,6 +536,105 @@ func TestMutationHelpers_FallbackBranches(t *testing.T) {
 	}
 	if got := FormatValue(1.25); got != "1.25" {
 		t.Fatalf("unexpected fallback literal %q", got)
+	}
+}
+
+func TestParseDocument_AttachesNestedHeadersToOwningArrayElement(t *testing.T) {
+	t.Parallel()
+	content := strings.Join([]string{
+		`[[mcp.servers]]`,
+		`id = "alpha"`,
+		`[mcp.servers.headers]`,
+		`Authorization = "alpha"`,
+		``,
+		`[[mcp.servers]]`,
+		`id = "beta"`,
+		`[ mcp . servers . "headers" ]`,
+		`Authorization = "beta"`,
+		``,
+		`[warnings]`,
+		`enabled = true`,
+		``,
+		`[mcp.servers.env]`,
+		`TOKEN = "beta"`,
+		`[[mcp.servers.extra]]`,
+		`name = "nested"`,
+		``,
+		`[mcp]`,
+		`enabled = true`,
+		`[mcp.servers_extra]`,
+		`enabled = false`,
+	}, "\n")
+
+	doc := ParseDocument(content)
+
+	servers := doc.Arrays["mcp.servers"]
+	if len(servers) != 2 {
+		t.Fatalf("expected two mcp.servers elements, got %#v", servers)
+	}
+	subTableText := func(block *Block) []string {
+		var out []string
+		for _, subTable := range block.SubTables {
+			out = append(out, strings.TrimSpace(strings.Join(subTable.Lines, "\n")))
+		}
+		return out
+	}
+	if got := subTableText(servers[0]); len(got) != 1 || got[0] != "[mcp.servers.headers]\nAuthorization = \"alpha\"" {
+		t.Fatalf("unexpected alpha sub-tables: %#v", got)
+	}
+	want := []string{
+		"[ mcp . servers . \"headers\" ]\nAuthorization = \"beta\"",
+		"[mcp.servers.env]\nTOKEN = \"beta\"",
+		"[[mcp.servers.extra]]\nname = \"nested\"",
+	}
+	if got := subTableText(servers[1]); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("unexpected beta sub-tables: %#v", got)
+	}
+	if len(doc.Arrays) != 1 {
+		t.Fatalf("nested array-of-tables must not become a top-level array: %#v", doc.Arrays)
+	}
+	if len(doc.Sections) != 3 || doc.Sections["mcp"] == nil || doc.Sections["mcp.servers_extra"] == nil || doc.Sections["warnings"] == nil {
+		t.Fatalf("expected only ordinary top-level sections: %#v", doc.Sections)
+	}
+	if strings.Join(doc.Order, ",") != "warnings,mcp,mcp.servers_extra" {
+		t.Fatalf("nested headers must not become top-level sections, order: %#v", doc.Order)
+	}
+}
+
+func TestParseDocument_ArrayPathsWithNULKeepOwnDescendants(t *testing.T) {
+	t.Parallel()
+	content := `[[extra."a\u0000b"]]
+id = "quoted-first"
+[[extra.a.b]]
+id = "dotted-first"
+[[extra."a\u0000b"]]
+id = "quoted-last"
+[[extra.a.b]]
+id = "dotted-last"
+[extra."a\u0000b".meta]
+owner = "quoted-last"
+[extra.a.b.meta]
+owner = "dotted-last"
+`
+	doc := ParseDocument(content)
+	for _, tt := range []struct {
+		name string
+		body string
+	}{
+		{name: `extra."a\u0000b"`, body: `owner = "quoted-last"`},
+		{name: "extra.a.b", body: `owner = "dotted-last"`},
+	} {
+		blocks := doc.Arrays[tt.name]
+		if len(blocks) != 2 {
+			t.Fatalf("expected two %s elements, got %#v", tt.name, blocks)
+		}
+		if len(blocks[0].SubTables) != 0 || len(blocks[1].SubTables) != 1 {
+			t.Fatalf("descendant must belong only to the latest %s element: %#v", tt.name, blocks)
+		}
+		subTable := blocks[1].SubTables[0]
+		if subTable.Name != tt.name+".meta" || strings.TrimSpace(strings.Join(subTable.Lines[1:], "\n")) != tt.body {
+			t.Fatalf("wrong descendant for %s: %#v", tt.name, subTable)
+		}
 	}
 }
 

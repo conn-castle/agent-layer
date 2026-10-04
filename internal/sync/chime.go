@@ -164,32 +164,70 @@ func numericEquals(value any, want int) bool {
 	}
 }
 
-// existingChimeCleanupTarget returns an existing provider config path only when
-// both its parent directory and the file itself are real in-repo filesystem
-// entries. Missing paths are reported as not existing so cleanup remains
-// idempotent for disabled providers.
-func existingChimeCleanupTarget(sys System, root string, dirName string, fileName string) (string, os.FileMode, bool, error) {
+// chimeCleanupTarget is an existing provider config file that may hold an
+// Agent Layer chime hook.
+type chimeCleanupTarget struct {
+	path string
+	mode os.FileMode
+	// linked is the symlinked directory or file through which path was
+	// reached, or empty when both are real in-repo entries.
+	linked string
+}
+
+// checkWritable refuses to rewrite a config reached through a symlink, which
+// may live outside the repository.
+func (t chimeCleanupTarget) checkWritable() error {
+	if t.linked != "" {
+		return fmt.Errorf(messages.SyncChimePathConflictFmt, t.linked)
+	}
+	return nil
+}
+
+// existingChimeCleanupTarget returns an existing provider config file whose
+// parent is a directory and which is itself a regular file, following
+// user-managed symlinks so cleanup can inspect content it must not rewrite.
+// Missing paths and dangling symlinks are reported as not existing so cleanup
+// remains idempotent for disabled providers.
+func existingChimeCleanupTarget(sys System, root string, dirName string, fileName string) (chimeCleanupTarget, bool, error) {
 	dir := filepath.Join(root, dirName)
-	path := filepath.Join(dir, fileName)
-	dirInfo, err := sys.Lstat(dir)
+	target := chimeCleanupTarget{path: filepath.Join(dir, fileName)}
+	dirInfo, dirLinked, err := statChimeCleanupEntry(sys, dir)
+	if err != nil || dirInfo == nil {
+		return target, false, err
+	}
+	if !dirInfo.IsDir() {
+		return target, false, fmt.Errorf(messages.SyncChimePathConflictFmt, dir)
+	}
+	fileInfo, fileLinked, err := statChimeCleanupEntry(sys, target.path)
+	if err != nil || fileInfo == nil {
+		return target, false, err
+	}
+	if !fileInfo.Mode().IsRegular() {
+		return target, false, fmt.Errorf(messages.SyncChimePathConflictFmt, target.path)
+	}
+	target.mode = fileInfo.Mode().Perm()
+	switch {
+	case dirLinked:
+		target.linked = dir
+	case fileLinked:
+		target.linked = target.path
+	}
+	return target, true, nil
+}
+
+// statChimeCleanupEntry describes path, following a symlink and reporting
+// that it did. A missing path or dangling symlink returns nil info.
+func statChimeCleanupEntry(sys System, path string) (os.FileInfo, bool, error) {
+	info, err := sys.Lstat(path)
+	linked := err == nil && info.Mode()&os.ModeSymlink != 0
+	if linked {
+		info, err = sys.Stat(path)
+	}
 	if err != nil {
 		if os.IsNotExist(err) {
-			return path, 0, false, nil
+			return nil, linked, nil
 		}
-		return path, 0, false, fmt.Errorf(messages.InstallFailedStatFmt, dir, err)
+		return nil, linked, fmt.Errorf(messages.InstallFailedStatFmt, path, err)
 	}
-	if dirInfo.Mode()&os.ModeSymlink != 0 || !dirInfo.IsDir() {
-		return path, 0, false, fmt.Errorf(messages.SyncChimePathConflictFmt, dir)
-	}
-	fileInfo, err := sys.Lstat(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return path, 0, false, nil
-		}
-		return path, 0, false, fmt.Errorf(messages.InstallFailedStatFmt, path, err)
-	}
-	if fileInfo.Mode()&os.ModeSymlink != 0 || !fileInfo.Mode().IsRegular() {
-		return path, 0, false, fmt.Errorf(messages.SyncChimePathConflictFmt, path)
-	}
-	return path, fileInfo.Mode().Perm(), true, nil
+	return info, linked, nil
 }

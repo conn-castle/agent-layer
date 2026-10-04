@@ -221,6 +221,8 @@ If `mcp_runtime_discovery` is still false, the generated config exists but Antig
 
 If `al agy` exits with `antigravity launcher requires \`agy\` on PATH`, install Antigravity from [antigravity.google](https://antigravity.google) and ensure the `agy` binary is on your `PATH`. Run `al probe agy` as a single-step diagnostic: it confirms `agy` is discoverable, captures the version, and reports the observed capability matrix. The probe writes a forensic workspace under `.agent-layer/tmp/probe-antigravity-TIMESTAMP-SUFFIX/` which you can attach to a bug report; `al upgrade --apply-tmp-deletions` cleans these up.
 
+`agy` keeps its auth, logs, and conversations in `.agy/`, which must be a real directory rather than a symlink. Agent Layer creates it with owner-only permissions and tightens an existing `.agy/` that is too open. If `al sync` or `al agy` rejects a symlinked `.agy/`, replace the link with a real directory.
+
 ### Client CLI not found
 
 Install the target client CLI (Antigravity `agy`, Claude, Codex, Copilot CLI, Grok, Muse, or VS Code) and ensure it is available on your `PATH`.
