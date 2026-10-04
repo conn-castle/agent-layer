@@ -1472,6 +1472,56 @@ func TestCheckMCPServers_RedactsResolvedSecretsFromDiscoveryErrors(t *testing.T)
 	assert.Contains(t, messages["local"], repoRoot+"/bin/server")
 }
 
+// TestCheckMCPServers_RedactsNormalizedSecretPaths covers the command and args
+// after projection expands and cleans them, including a real exec failure.
+func TestCheckMCPServers_RedactsNormalizedSecretPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		path      string
+		pathValue string
+		argument  bool
+		connector Connector
+	}{
+		{name: "repo command exec failure", path: "${AL_REPO_ROOT}/${AL_PATH_TOKEN}", pathValue: "private/../topsecret", connector: &MockConnector{Next: &RealConnector{}}},
+		{name: "home command", path: "~/${AL_PATH_TOKEN}", pathValue: "private/../topsecret", connector: echoingConnector{}},
+		{name: "repo argument", path: "${AL_REPO_ROOT}/${AL_PATH_TOKEN}", pathValue: "private/../topsecret", argument: true, connector: echoingConnector{}},
+		{name: "home argument", path: "~/${AL_PATH_TOKEN}", pathValue: "private/../topsecret", argument: true, connector: echoingConnector{}},
+		{name: "parent traversal argument", path: "${AL_REPO_ROOT}/prefix/${AL_PATH_TOKEN}", pathValue: "private/../../topsecret", argument: true, connector: echoingConnector{}},
+		{name: "quoted command", path: "${AL_REPO_ROOT}/${AL_PATH_TOKEN}", pathValue: "private/../topsecret\"suffix", connector: echoingConnector{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			enabled := true
+			server := config.MCPServer{ID: "local", Enabled: &enabled, Transport: config.TransportStdio, Command: tc.path}
+			if tc.argument {
+				server.Command = "server"
+				server.Args = []string{tc.path}
+			}
+			cfg := &config.ProjectConfig{
+				Config: config.Config{Agents: receivingAgents(), MCP: config.MCPConfig{Servers: []config.MCPServer{server}}},
+				Env: map[string]string{
+					config.BuiltinRepoRootEnvVar: t.TempDir(),
+					"AL_PATH_TOKEN":              tc.pathValue,
+				},
+			}
+			var eventErr error
+			statusFn := func(event MCPDiscoveryEvent) {
+				if event.ServerID == server.ID && event.Status == MCPDiscoveryStatusError {
+					eventErr = event.Err
+				}
+			}
+			warnings, _, err := CheckMCPServers(context.Background(), cfg, tc.connector, statusFn)
+			require.NoError(t, err)
+			require.Len(t, warnings, 1)
+			assert.Equal(t, CodeMCPServerUnreachable, warnings[0].Code)
+			require.Error(t, eventErr)
+			for _, text := range []string{eventErr.Error(), warnings[0].Message} {
+				assert.NotContains(t, text, "topsecret")
+				assert.Contains(t, text, "${AL_PATH_TOKEN}")
+			}
+		})
+	}
+}
+
 // TestCheckMCPServers_KeepsErrorsWithoutResolvedValues proves redaction leaves
 // an error that echoes no resolved value untouched, chain included.
 func TestCheckMCPServers_KeepsErrorsWithoutResolvedValues(t *testing.T) {
