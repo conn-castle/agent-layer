@@ -6,7 +6,6 @@
 
 # Agent Layer-generated instruction shims
 /AGENTS.md
-/CLAUDE.md
 /.github/copilot-instructions.md
 
 # Agent Layer-generated client configs + artifacts

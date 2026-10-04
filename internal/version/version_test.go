@@ -1,6 +1,9 @@
 package version
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestNormalize(t *testing.T) {
 	tests := []struct {
@@ -30,6 +33,41 @@ func TestNormalize(t *testing.T) {
 		if got != tt.want {
 			t.Fatalf("Normalize(%q) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+func TestParsePin(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantOK  bool
+		wantErr string
+	}{
+		{name: "bare", input: "0.21.0\n", want: "0.21.0", wantOK: true},
+		{name: "comments and blanks", input: "\n# team pin\n\n  v0.21.0  \n# trailing\n", want: "0.21.0", wantOK: true},
+		{name: "crlf", input: "# pin\r\n0.21.0\r\n", want: "0.21.0", wantOK: true},
+		{name: "empty", input: ""},
+		{name: "comments only", input: "# no version yet\n\n"},
+		{name: "multiple version lines", input: "0.20.0\n# note\n0.21.0\n", wantErr: "multiple version lines (1 and 3)"},
+		{name: "invalid", input: "# pin\nnot-a-version\n", wantErr: "line 2: "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok, err := ParsePin([]byte(tt.input))
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("ParsePin(%q) error = %v, want containing %q", tt.input, err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParsePin(%q) error: %v", tt.input, err)
+			}
+			if got != tt.want || ok != tt.wantOK {
+				t.Fatalf("ParsePin(%q) = %q, %v; want %q, %v", tt.input, got, ok, tt.want, tt.wantOK)
+			}
+		})
 	}
 }
 

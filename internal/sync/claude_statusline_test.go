@@ -140,35 +140,49 @@ func TestWriteClaudeStatusline_BothSourcesUsesNewAndLeavesLegacy(t *testing.T) {
 	}
 }
 
-// When enabled, a stale legacy projection (.claude/statusline.sh from before the
-// rename) is removed so the rename never leaves two scripts behind.
-func TestWriteClaudeStatusline_EnabledRemovesStaleLegacyProjection(t *testing.T) {
+// .claude/statusline.sh was never projected by a release, so it is user-owned
+// (for example, wired through agent_specific.statusLine) and sync must keep it
+// whether the managed statusline is enabled or disabled.
+func TestWriteClaudeStatusline_PreservesUserStatuslineScript(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
-	writeSourceStatusline(t, root, "#!/usr/bin/env bash\necho current\n")
-	claudeDir := filepath.Join(root, ".claude")
-	if err := os.MkdirAll(claudeDir, 0o700); err != nil {
-		t.Fatalf("mkdir .claude: %v", err)
+	disabled := false
+	cases := map[string]*config.ProjectConfig{
+		"enabled":  enabledStatuslineProject(),
+		"disabled": statuslineProject(&disabled),
+		"absent":   statuslineProject(nil),
 	}
-	legacyProjection := filepath.Join(claudeDir, "statusline.sh")
-	if err := os.WriteFile(legacyProjection, []byte("#!/usr/bin/env bash\necho stale legacy\n"), 0o600); err != nil {
-		t.Fatalf("seed legacy projection: %v", err)
-	}
+	for name, project := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			writeSourceStatusline(t, root, "#!/usr/bin/env bash\necho current\n")
+			claudeDir := filepath.Join(root, ".claude")
+			if err := os.MkdirAll(claudeDir, 0o700); err != nil {
+				t.Fatalf("mkdir .claude: %v", err)
+			}
+			const userScript = "#!/usr/bin/env bash\necho user owned\n"
+			userPath := filepath.Join(claudeDir, "statusline.sh")
+			if err := os.WriteFile(userPath, []byte(userScript), 0o600); err != nil {
+				t.Fatalf("seed user script: %v", err)
+			}
 
-	if err := writeClaudeStatusline(RealSystem{}, root, enabledStatuslineProject()); err != nil {
-		t.Fatalf("writeClaudeStatusline: %v", err)
-	}
+			if err := writeClaudeStatusline(RealSystem{}, root, project); err != nil {
+				t.Fatalf("writeClaudeStatusline: %v", err)
+			}
 
-	if _, err := os.Stat(filepath.Join(claudeDir, "claude-statusline.sh")); err != nil {
-		t.Fatalf("new projection should exist: %v", err)
-	}
-	if _, err := os.Stat(legacyProjection); !os.IsNotExist(err) {
-		t.Fatalf("expected stale legacy projection removed, stat err=%v", err)
+			got, err := os.ReadFile(userPath) // #nosec G304 -- test-controlled path.
+			if err != nil {
+				t.Fatalf("user script should be preserved: %v", err)
+			}
+			if string(got) != userScript {
+				t.Fatalf("user script changed: %q", got)
+			}
+		})
 	}
 }
 
 // When disabled, a previously generated copy is removed so no stale script lingers.
-func TestWriteClaudeStatusline_DisabledRemovesStaleCopiesAndPreservesSource(t *testing.T) {
+func TestWriteClaudeStatusline_DisabledRemovesStaleCopyAndPreservesSource(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	writeSourceStatusline(t, root, "#!/usr/bin/env bash\necho keep me\n")
@@ -176,20 +190,17 @@ func TestWriteClaudeStatusline_DisabledRemovesStaleCopiesAndPreservesSource(t *t
 	if err := os.MkdirAll(claudeDir, 0o700); err != nil {
 		t.Fatalf("mkdir .claude: %v", err)
 	}
-	for _, name := range []string{"claude-statusline.sh", "statusline.sh"} {
-		if err := os.WriteFile(filepath.Join(claudeDir, name), []byte("stale"), 0o600); err != nil {
-			t.Fatalf("seed stale copy %s: %v", name, err)
-		}
+	staleCopy := filepath.Join(claudeDir, "claude-statusline.sh")
+	if err := os.WriteFile(staleCopy, []byte("stale"), 0o600); err != nil {
+		t.Fatalf("seed stale copy: %v", err)
 	}
 
 	disabled := false
 	if err := writeClaudeStatusline(RealSystem{}, root, statuslineProject(&disabled)); err != nil {
 		t.Fatalf("writeClaudeStatusline disabled: %v", err)
 	}
-	for _, name := range []string{"claude-statusline.sh", "statusline.sh"} {
-		if _, err := os.Stat(filepath.Join(claudeDir, name)); !os.IsNotExist(err) {
-			t.Fatalf("expected stale copy %s removed, stat err=%v", name, err)
-		}
+	if _, err := os.Stat(staleCopy); !os.IsNotExist(err) {
+		t.Fatalf("expected stale copy removed, stat err=%v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "claude-statusline.sh")); err != nil {
 		t.Fatalf("source should be preserved: %v", err)

@@ -1,6 +1,7 @@
 package versiondispatch
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -34,14 +35,16 @@ const (
 var ErrDispatched = errors.New(messages.DispatchErrDispatched)
 
 // MaybeExec checks for a pinned version and dispatches to it when needed.
-// It returns ErrDispatched if execution was handed off.
-func MaybeExec(args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
-	return MaybeExecWithSystem(RealSystem{StderrWriter: stderr}, args, currentVersion, cwd, exit)
+// It returns ErrDispatched if execution was handed off. Canceling ctx stops a
+// pending download or cache-lock wait and prevents the hand-off.
+func MaybeExec(ctx context.Context, args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
+	return MaybeExecWithSystem(ctx, RealSystem{StderrWriter: stderr}, args, currentVersion, cwd, exit)
 }
 
 // MaybeExecWithSystem checks for a pinned version and dispatches to it when needed.
-// It returns ErrDispatched if execution was handed off.
-func MaybeExecWithSystem(sys System, args []string, currentVersion string, cwd string, exit func(int)) error {
+// It returns ErrDispatched if execution was handed off. Canceling ctx stops a
+// pending download or cache-lock wait and prevents the hand-off.
+func MaybeExecWithSystem(ctx context.Context, sys System, args []string, currentVersion string, cwd string, exit func(int)) error {
 	if sys == nil {
 		return fmt.Errorf(messages.DispatchSystemRequired)
 	}
@@ -102,8 +105,11 @@ func MaybeExecWithSystem(sys System, args []string, currentVersion string, cwd s
 	if err != nil {
 		return err
 	}
-	path, err := ensureCachedBinaryWithSystem(sys, cacheRoot, requested, sys.Stderr())
+	path, err := ensureCachedBinaryWithSystem(ctx, sys, cacheRoot, requested, sys.Stderr())
 	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 

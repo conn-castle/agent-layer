@@ -11,6 +11,7 @@ const (
 	lineageKindInvalid      = "invalid"
 	claudeTaskTypeAgent     = "local_agent"
 	claudeTaskStatusStopped = "stopped"
+	claudeSystemEventType   = "system"
 
 	lineageReasonEvidenceMalformed     = "lineage_evidence_malformed"
 	lineageReasonStructureInvalid      = "lineage_structure_invalid"
@@ -66,7 +67,7 @@ func (n *claudeLineageNormalizer) reduce(record structuredRecord) []claudeLineag
 			result = append(result, claudeLineageEvidence{Kind: lineageKindToolUse, ToolUseID: block.ID.Value, ParentToolUseID: projection.ParentToolUseID.Value})
 		}
 		return result
-	case eventType == "system" && subtype == "task_started":
+	case eventType == claudeSystemEventType && subtype == "task_started":
 		if !projection.TaskType.Present || strings.TrimSpace(projection.TaskType.Value) == "" {
 			return []claudeLineageEvidence{{Kind: lineageKindInvalid, Reason: lineageReasonTaskTypeMissing}}
 		}
@@ -81,7 +82,7 @@ func (n *claudeLineageNormalizer) reduce(record structuredRecord) []claudeLineag
 			return []claudeLineageEvidence{{Kind: lineageKindInvalid, Reason: lineageReasonTaskTypeUnknown}}
 		}
 		return []claudeLineageEvidence{{Kind: lineageKindTaskStarted, TaskID: projection.TaskID.Value, ToolUseID: projection.ToolUseID.Value, TaskType: projection.TaskType.Value}}
-	case eventType == "system" && subtype == "task_notification":
+	case eventType == claudeSystemEventType && subtype == "task_notification":
 		if _, ignored := n.ignoredTasks[projection.TaskID.Value]; ignored {
 			return nil
 		}

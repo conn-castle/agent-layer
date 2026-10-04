@@ -141,7 +141,7 @@ If a server fails to start with “No such file or directory,” verify the `com
 
 ### Doctor MCP checks
 
-`al doctor` connects to each enabled MCP server and lists tools. It waits up to **30 seconds per server** before warning about connectivity, and prints a short progress indicator while checks run.
+`al doctor` connects to each enabled MCP server that at least one enabled client receives, and lists its tools. It waits up to **30 seconds per server** before warning about connectivity, and prints a short progress indicator while checks run.
 When config validation fails due to unrecognized keys, `al doctor` reports the detected key paths, schema hints (allowed keys where applicable), and repair options (`al upgrade`, `al wizard`, or manual edits).
 When agents are enabled, it verifies generated client configs (for example `.mcp.json`, `.agy/antigravity-cli/settings.json`) are in sync; run `al sync` if they are missing or stale.
 
@@ -164,26 +164,11 @@ A metric whose threshold is omitted shows `(no limit set)` rather than a default
 
 If MCP servers that use `npx` are failing in VS Code, your GUI environment may not see a user-directory Node install. Install Node via Homebrew (`brew install node`) so VS Code can find `node` and `npx`, and avoid per-user installs that only exist in shell profiles.
 
-### Why did some VS Code settings disappear after `al sync`?
+### Why did a VS Code setting move or change after `al sync`?
 
-Some VS Code extensions (for example Peacock) write settings through the VS Code configuration API in a way that can land inside the Agent Layer-managed block in `.vscode/settings.json`.
+Agent Layer owns only the settings it writes inside the managed block (`// >>> agent-layer` to `// <<< agent-layer`) in `.vscode/settings.json`: `chat.tools.terminal.autoApprove`, `chat.agentSkillsLocations`, and `claudeCode.allowDangerouslySkipPermissions`. `al sync` regenerates them from `.agent-layer/config.toml` and `.agent-layer/commands.allow`, so edit those files instead of the block.
 
-If that happens, Agent Layer will replace that managed block on the next `al sync`, and those extension-written settings will be removed.
-
-Fix:
-1. Manually edit `.vscode/settings.json` and move extension-owned settings outside the managed marker block (`// >>> agent-layer` to `// <<< agent-layer`).
-2. If the managed block is currently the last block in the file, add a user-owned tail anchor key after it:
-
-```jsonc
-{
-  // >>> agent-layer
-  // ... Agent Layer managed settings ...
-  // <<< agent-layer
-  "__settingsTailAnchor": 0
-}
-```
-
-This keeps a stable non-managed tail position for extension writes.
+VS Code and some extensions (for example Peacock) add a new setting after the last property in the file, which can be inside the managed block. On the next `al sync`, Agent Layer moves every setting it does not own, with its comments, to just after the block. If text inside the block can't be read as settings, `al sync` fails instead of discarding it; fix or remove that text and run `al sync` again.
 
 ---
 
@@ -193,7 +178,7 @@ Version pinning keeps everyone on the same Agent Layer release and lets `al` dow
 
 Upgrade contract details (event model, compatibility guarantees, migration rules, OS/shell matrix) are maintained in one canonical location: the [upgrade contract](https://agent-layer.dev/docs/upgrades) (source: `site/docs/upgrades.mdx`).
 
-When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.6.0`). You can also edit it manually, or set the initial pin with `al init --version X.Y.Z` (or `--version latest`).
+When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.6.0`). You can also edit it manually, or set the initial pin with `al init --version X.Y.Z` (or `--version latest`). A release build of `al init` writes only its own templates, so it accepts only its own version; to pin a different release, run `al init` with that release's CLI.
 
 When you run `al` inside a repo, it locates `.agent-layer/`, reads the pinned version when present, and dispatches to that version automatically. `al init` and `al upgrade` are exceptions: they run on the invoking CLI version so pin updates and upgrade planning are not blocked by an older repo pin.
 
@@ -216,6 +201,7 @@ Cache location (per user):
 Overrides:
 - `AL_VERSION=0.6.0` forces a version (overrides the repo pin)
 - `AL_NO_NETWORK=1` disables downloads (fails if the pinned version is missing)
+- `AL_DOWNLOAD_TIMEOUT=2m` sets how long a pinned-version download may go without receiving data before it fails (default `30s`); each download may run for 10 minutes, or longer when this is 5 minutes or more
 
 ---
 
@@ -613,7 +599,7 @@ Example keys:
 - `AL_TAVILY_API_KEY`
 - `AL_GITHUB_PERSONAL_ACCESS_TOKEN` (only when using the optional GitHub MCP server)
 
-Your existing process environment takes precedence. `.agent-layer/.env` fills missing keys only, and empty values in `.agent-layer/.env` are ignored (so template entries cannot override real tokens). This behavior is consistent whether launching via `al` commands or repo-local launchers like `open-vscode.app`, `open-vscode.sh`, or `open-vscode.command`.
+Non-empty values in your existing process environment take precedence. `.agent-layer/.env` fills only keys that are missing or empty in your environment, and empty values in `.agent-layer/.env` are ignored (so template entries cannot override real tokens). This behavior is consistent whether launching via `al` commands or repo-local launchers like `open-vscode.app`, `open-vscode.sh`, or `open-vscode.command`.
 
 ### Instructions: `.agent-layer/instructions/`
 
@@ -819,7 +805,7 @@ Other commands:
 - `al upgrade plan` — preview plain-language categorized template/pin changes and readiness actions with line-level diff previews (`--diff-lines N` to raise per-file preview size)
 - `al upgrade prefetch` — download and cache a release binary (use `--version X.Y.Z` on dev builds; useful for offline/CI cache warm-up)
 - `al upgrade rollback <snapshot-id>` — restore an applied upgrade snapshot (snapshot IDs are JSON filenames in `.agent-layer/state/upgrade-snapshots/`; use `al upgrade rollback --list` to discover available IDs)
-- `al upgrade repair-gitignore-block` — restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block
+- `al upgrade repair-gitignore-block` — restore `.agent-layer/gitignore.block` from templates, keeping your `/.agent-layer/` and `/docs/agent-layer/` tracking choices, and reapply the root `.gitignore` managed block
 - `al sync` — regenerate configs without launching a client
 - `al probe agy` — run the Antigravity capability probe and print JSON
 - `al probe grok` — run the Grok capability probe and print JSON

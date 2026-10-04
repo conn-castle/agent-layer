@@ -17,6 +17,10 @@ const (
 	VersionTemplate   = "{{.Version}}\n"
 	VersionRequired   = "version is required"
 	VersionInvalidFmt = "version %q must be in the form vX.Y.Z or X.Y.Z"
+	// VersionPinMultipleLinesFmt reports a pin file with more than one version line.
+	VersionPinMultipleLinesFmt = "multiple version lines (%d and %d)"
+	// VersionPinInvalidLineFmt reports the pin file line holding an invalid version.
+	VersionPinInvalidLineFmt = "line %d: %w"
 
 	// InitUse is the init command name.
 	InitUse   = "init"
@@ -42,7 +46,7 @@ const (
 	UpgradePrefetchVersionRequired        = "prefetch requires a release version; pass --version X.Y.Z when running a dev build"
 	UpgradePrefetchDoneFmt                = "Prefetched Agent Layer version %s into the local cache.\n"
 	UpgradeRepairGitignoreUse             = "repair-gitignore-block"
-	UpgradeRepairGitignoreShort           = "Restore `.agent-layer/gitignore.block` and reapply the root `.gitignore` managed block"
+	UpgradeRepairGitignoreShort           = "Restore `.agent-layer/gitignore.block`, keeping tracking choices, and reapply the root `.gitignore` managed block"
 	UpgradeRepairGitignoreDone            = "Repaired `.agent-layer/gitignore.block` and updated root `.gitignore`.\n"
 	UpgradeRollbackUse                    = "rollback <snapshot-id>"
 	UpgradeRollbackShort                  = "Restore a managed-file upgrade snapshot"
@@ -61,8 +65,9 @@ const (
 	UpgradeFlagApplyMemoryUpdates         = "Apply memory file updates without prompts"
 	UpgradeFlagApplyDeletions             = "Apply unknown file deletions outside .agent-layer/tmp/ (requires explicit confirmation unless combined with --yes; does NOT delete files under .agent-layer/tmp/)"
 	UpgradeFlagApplyTmpDeletions          = "Apply destructive deletion of files under .agent-layer/tmp/ (ephemeral agent run artifacts; requires explicit double confirmation unless combined with --yes)"
-	UpgradeFlagVersion                    = "Target Agent Layer version for the upgrade (vX.Y.Z, X.Y.Z, or latest)"
-	UpgradeTargetRequiresNewerCLIFmt      = "the Agent Layer CLI v%s cannot upgrade to v%s because the target release templates are not embedded in this executable; run 'al update', verify 'al --version' reports v%s or newer, then retry. 'al upgrade prefetch' only caches a binary and does not update the invoking CLI"
+	UpgradeFlagVersion                    = "Target Agent Layer version for the upgrade (vX.Y.Z, X.Y.Z, or latest); a release CLI can target only its own version"
+	UpgradeTargetRequiresNewerCLIFmt      = "the Agent Layer CLI v%s cannot upgrade to v%s because the target release templates are not embedded in this executable; run 'al update', verify 'al --version' reports v%s or newer, then retry without --version to target that CLI's version. 'al upgrade prefetch' only caches a binary and does not update the invoking CLI"
+	UpgradeTargetOlderThanCLIFmt          = "the Agent Layer CLI v%s cannot upgrade to older v%s because only the v%s release templates are embedded in this executable; run 'al upgrade' with the v%s CLI instead, or restore an earlier upgrade snapshot with 'al upgrade rollback <snapshot-id>' (list IDs with 'al upgrade rollback --list')"
 
 	UpgradeOverwritePromptFmt                       = "Overwrite %s with the template version?"
 	UpgradeOverwriteAllPrompt                       = "Overwrite all existing managed files with template versions and update the pin if needed?"
@@ -180,6 +185,9 @@ const (
 	InitResolveLatestVersionFmt  = "resolve latest version: %w"
 	InitLatestVersionMissing     = "latest release check returned an empty version"
 
+	InitTargetRequiresNewerCLIFmt = "the Agent Layer CLI v%s cannot initialize a repository pinned to v%s because the target release templates are not embedded in this executable; run 'al update', verify 'al --version' reports v%s or newer, then retry 'al init' without --version to pin that CLI's version"
+	InitTargetOlderThanCLIFmt     = "the Agent Layer CLI v%s cannot initialize a repository pinned to older v%s because only the v%s release templates are embedded in this executable; run 'al init' with the v%s CLI instead"
+
 	InitCreateReleaseValidationRequestFmt = "create release validation request: %w"
 	InitValidateReleaseVersionRequestFmt  = "validate requested release v%s: %w"
 	InitValidateReleaseVersionStatusFmt   = "validate requested release v%s: unexpected status %s"
@@ -255,7 +263,6 @@ const (
 	AntigravityUse                         = "agy"
 	AntigravityShort                       = "Sync and launch Antigravity"
 	AntigravityLong                        = "Sync project state for the Antigravity client (writes .agy/antigravity-cli/settings.json and mcp_config.json) and launch `agy --gemini_dir=<repo>/.agy`.\n\nThe launcher sets AGY_CLI_DISABLE_AUTO_UPDATE=1 so the pinned agy binary is not silently upgraded under Agent Layer. Requires `agy` (>= 1.0.0) on PATH. Run `al probe agy` to verify the install."
-	ClientsAntigravityMkdirFailedFmt       = "failed to create Antigravity config dir %s: %w"
 	ClientsAntigravityRelativeGeminiDirFmt = "antigravity requires an absolute --gemini_dir path; got %s"
 	ClientsAntigravityRelativeRootFmt      = "antigravity requires an absolute project root; got %s"
 	ClientsAntigravityBinaryNotFoundFmt    = "antigravity launcher requires `agy` on PATH: %w (install Antigravity from https://antigravity.google and ensure `agy` is on PATH)"

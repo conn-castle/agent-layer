@@ -31,8 +31,7 @@ func finishRejectedResume(run *dispatchRun, claimErr error, publish func(string,
 	run.Record.TerminalExitCode = terminalExitCode(claimErr)
 	applyTerminationEvidence(&run.Record, nil, true, now)
 	if err := publish(run.Dir, &run.Record); err != nil {
-		message := fmt.Sprintf("resume claim rejected (%v); publish rejected resume terminal evidence: %v", claimErr, err)
-		return wrapExitError(ExitConfig, message, errors.Join(claimErr, err))
+		return wrapExitError(ExitConfig, "resume claim rejected; publish rejected resume terminal evidence", errors.Join(claimErr, err))
 	}
 	return claimErr
 }

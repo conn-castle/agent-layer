@@ -21,6 +21,10 @@ func newHookCmd() *cobra.Command {
 		Use:    commandHook,
 		Short:  "Internal provider hook handlers",
 		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
 	}
 	cmd.AddCommand(newHookChimeCmd())
 	cmd.AddCommand(newHookHerdRCmd())

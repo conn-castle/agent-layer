@@ -29,21 +29,23 @@ func TestEnabledMCPServerIDs(t *testing.T) {
 			want:    []string{},
 		},
 		{
-			name: "preserves order",
+			name: "omits servers no enabled client receives",
+			servers: []config.MCPServer{
+				{ID: "server-a", Enabled: &enabled},
+			},
+			want: []string{},
+		},
+		{
+			name:        "preserves order and includes built-in dispatch server",
+			enableCodex: true,
 			servers: []config.MCPServer{
 				{ID: "server-a", Enabled: &enabled},
 				{ID: "server-b", Enabled: &enabled},
 				{ID: "server-c", Enabled: &disabled},
+				{ID: "server-d"},
+				{ID: "server-e", Enabled: &enabled, Clients: []string{"grok"}},
 			},
-			want: []string{"server-a", "server-b"},
-		},
-		{
-			name:        "includes built-in dispatch server",
-			enableCodex: true,
-			servers: []config.MCPServer{
-				{ID: "server-a", Enabled: &enabled},
-			},
-			want: []string{"server-a", "agent-layer"},
+			want: []string{"server-a", "server-b", "agent-layer"},
 		},
 		{
 			name:       "includes built-in for another dispatch client",

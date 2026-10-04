@@ -1,7 +1,10 @@
 package sync
 
 import (
+	"encoding/json"
 	"fmt"
+	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -43,10 +46,30 @@ func renderVSCodeSettingsContent(sys System, existing string, settings *vscodeSe
 		}
 		indentUnit := indentBase
 		needsTrailingComma := hasJSONCContentBetween(lines, blockEnd+1, 0, len(lines)-1, len(lines[len(lines)-1])-1)
+		// Reuse a separator after the marker for the last moved property, or for the
+		// regenerated managed block when no user properties move.
+		following := strings.Join(lines[blockEnd+1:], "\n")
+		firstToken, triviaErr := skipJSONCTrivia(following, 0)
+		if triviaErr == nil && firstToken < len(following) && following[firstToken] == ',' {
+			needsTrailingComma = false
+		}
 
-		blockLines, err := buildVSCodeManagedBlock(sys, settings, indentBase, indentUnit, needsTrailingComma)
+		// VS Code appends new settings after the last property, which lands them inside a
+		// trailing managed block; keep them by moving them to just after the block.
+		userEntries, movesProperty, err := extractVSCodeUserEntries(strings.Join(lines[blockStart+1:blockEnd], "\n"))
+		if err != nil {
+			return "", invalidVSCodeSettingsError("managed block: " + err.Error())
+		}
+
+		blockLines, err := buildVSCodeManagedBlock(sys, settings, indentBase, indentUnit, needsTrailingComma || movesProperty)
 		if err != nil {
 			return "", err
+		}
+		blockLines = append(blockLines, renderVSCodeUserEntries(userEntries, indentBase, needsTrailingComma)...)
+		// A property before a comment-only block needs no comma until the block gains content.
+		blockText := strings.Join(blockLines, "\n")
+		if hasJSONCNonTrivia(blockText, 0, len(blockText)) {
+			separateJSONCContentBefore(lines, blockStart)
 		}
 		lines = replaceVSCodeManagedBlock(lines, blockStart, blockEnd, blockLines)
 		updated := bom + strings.Join(lines, "\n")
@@ -455,6 +478,59 @@ func hasJSONCContentBetween(lines []string, startLine, startCol, endLine, endCol
 	return false
 }
 
+// separateJSONCContentBefore adds a ',' after the last JSONC token before a line when that
+// token ends a value, so content inserted at that line starts a new property.
+// Args: lines are normalized content lines, updated in place; line is the index content is inserted at.
+func separateJSONCContentBefore(lines []string, line int) {
+	prefix := strings.Join(lines[:line], "\n")
+	last := lastJSONCTokenIndex(prefix)
+	if last == -1 || strings.IndexByte("{[,:", prefix[last]) != -1 {
+		return
+	}
+	lineIdx, col := indexToLineCol(prefix, last)
+	lines[lineIdx] = lines[lineIdx][:col+1] + "," + lines[lineIdx][col+1:]
+}
+
+// lastJSONCTokenIndex finds the last character outside whitespace and comments.
+// Args: text is normalized JSONC.
+// Returns: the index of that character (a string's closing quote), or -1 if there is none
+// or a string is unterminated.
+func lastJSONCTokenIndex(text string) int {
+	last := -1
+	for i := 0; i < len(text); i++ {
+		switch {
+		case text[i] == ' ' || text[i] == '\t' || text[i] == '\n':
+		case strings.HasPrefix(text[i:], "//"):
+			end := strings.IndexByte(text[i:], '\n')
+			if end == -1 {
+				return last
+			}
+			i += end
+		case strings.HasPrefix(text[i:], "/*"):
+			end := strings.Index(text[i+2:], "*/")
+			if end == -1 {
+				return last
+			}
+			i += end + 3
+		case text[i] == '"':
+			i++
+			for i < len(text) && text[i] != '"' && text[i] != '\n' {
+				if text[i] == '\\' {
+					i++
+				}
+				i++
+			}
+			if i >= len(text) || text[i] != '"' {
+				return -1
+			}
+			last = i
+		default:
+			last = i
+		}
+	}
+	return last
+}
+
 // leadingWhitespace returns the leading spaces or tabs from a line.
 // Args: line is a single content line.
 // Returns: the leading whitespace substring.
@@ -517,6 +593,343 @@ func buildVSCodeManagedBlock(sys System, settings *vscodeSettings, indentBase, i
 	block = append(block, indentBase+vscodeSettingsManagedEnd)
 
 	return block, nil
+}
+
+// vscodeBlockEntry is user content found inside the managed block: a property with its
+// comments, or comments that no property follows.
+type vscodeBlockEntry struct {
+	comments []string // leading comment lines, verbatim
+	property string   // `"key": value` source text; empty for a comment-only entry
+	trailing string   // comment after the value on the same line
+}
+
+// extractVSCodeUserEntries scans the lines between the managed block markers and returns
+// the content Agent Layer does not own, in source order.
+// Args: text is the normalized block content without the marker lines.
+// Returns: the user entries, whether any of them is a property, or an error if the content
+// is not a sequence of JSONC object properties.
+func extractVSCodeUserEntries(text string) ([]vscodeBlockEntry, bool, error) {
+	managedKeys := vscodeManagedKeys()
+	var entries []vscodeBlockEntry
+	hasProperty := false
+	first := true
+	needsComma := false
+	var leading strings.Builder
+	pos := 0
+	for {
+		start := pos
+		next, err := skipJSONCTrivia(text, pos)
+		if err != nil {
+			return nil, false, err
+		}
+		leading.WriteString(text[start:next])
+		pos = next
+		if pos == len(text) {
+			break
+		}
+		if text[pos] == ',' {
+			if !needsComma {
+				return nil, false, fmt.Errorf("unexpected ','")
+			}
+			needsComma = false
+			pos++
+			continue
+		}
+		if text[pos] != '"' {
+			return nil, false, fmt.Errorf("expected property name")
+		}
+
+		keyEnd, err := scanJSONCString(text, pos)
+		if err != nil {
+			return nil, false, err
+		}
+		var key string
+		if err := json.Unmarshal([]byte(text[pos:keyEnd]), &key); err != nil {
+			return nil, false, fmt.Errorf("invalid property name %s", text[pos:keyEnd])
+		}
+		colon, err := skipJSONCTrivia(text, keyEnd)
+		if err != nil {
+			return nil, false, err
+		}
+		if colon == len(text) || text[colon] != ':' {
+			return nil, false, fmt.Errorf("expected ':' after property %q", key)
+		}
+		valueStart, err := skipJSONCTrivia(text, colon+1)
+		if err != nil {
+			return nil, false, err
+		}
+		valueEnd, err := scanJSONCValue(text, valueStart)
+		if err != nil {
+			return nil, false, fmt.Errorf("property %q: %w", key, err)
+		}
+		trailing, hadComma, after, err := scanJSONCTrailing(text, valueEnd)
+		if err != nil {
+			return nil, false, err
+		}
+
+		comments := vscodeCommentLines(leading.String(), first)
+		if !managedKeys[key] {
+			entries = append(entries, vscodeBlockEntry{comments: comments, property: text[pos:valueEnd], trailing: trailing})
+			hasProperty = true
+		}
+		leading.Reset()
+		first = false
+		needsComma = !hadComma
+		pos = after
+	}
+
+	if comments := vscodeCommentLines(leading.String(), first); len(comments) > 0 {
+		entries = append(entries, vscodeBlockEntry{comments: comments})
+	}
+	return entries, hasProperty, nil
+}
+
+// renderVSCodeUserEntries renders user entries moved out of the managed block.
+// Args: entries are the moved entries, indent is the root-level indent, needsTrailingComma
+// reports whether the last moved property needs a separator added for following content.
+// Returns: the lines to place after the managed block end marker.
+func renderVSCodeUserEntries(entries []vscodeBlockEntry, indent string, needsTrailingComma bool) []string {
+	lastProperty := -1
+	for i, entry := range entries {
+		if entry.property != "" {
+			lastProperty = i
+		}
+	}
+	var out []string
+	for i, entry := range entries {
+		out = append(out, entry.comments...)
+		if entry.property == "" {
+			continue
+		}
+		property := indent + entry.property
+		if i < lastProperty || needsTrailingComma {
+			property += ","
+		}
+		if entry.trailing != "" {
+			property += " " + entry.trailing
+		}
+		out = append(out, strings.Split(property, "\n")...)
+	}
+	return out
+}
+
+// vscodeManagedKeys returns the setting keys the managed block owns: every field Agent Layer
+// writes plus the retired keys earlier releases wrote.
+func vscodeManagedKeys() map[string]bool {
+	keys := make(map[string]bool)
+	settingsType := reflect.TypeOf(vscodeSettings{})
+	for i := 0; i < settingsType.NumField(); i++ {
+		name, _, _ := strings.Cut(settingsType.Field(i).Tag.Get("json"), ",")
+		keys[name] = true
+	}
+	for _, key := range vscodeRetiredManagedKeys {
+		keys[key] = true
+	}
+	return keys
+}
+
+// vscodeCommentLines converts trivia before a block entry into comment lines to keep.
+// Args: trivia is whitespace and comments; stripHeader removes the managed block header lines,
+// which precede the first entry.
+// Returns: the trivia lines without surrounding blank lines, or nil if only whitespace remains.
+func vscodeCommentLines(trivia string, stripHeader bool) []string {
+	lines := strings.Split(trivia, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if stripHeader && slices.Contains(vscodeSettingsManagedHeader, strings.TrimSpace(line)) {
+			continue
+		}
+		kept = append(kept, strings.TrimRight(line, " \t"))
+	}
+	for len(kept) > 0 && kept[0] == "" {
+		kept = kept[1:]
+	}
+	for len(kept) > 0 && kept[len(kept)-1] == "" {
+		kept = kept[:len(kept)-1]
+	}
+	if len(kept) == 0 {
+		return nil
+	}
+	return kept
+}
+
+// skipJSONCTrivia skips whitespace and comments.
+// Args: text is normalized JSONC, pos is the start index.
+// Returns: the index of the next token or len(text), or an error for an unterminated comment.
+func skipJSONCTrivia(text string, pos int) (int, error) {
+	for pos < len(text) {
+		switch {
+		case text[pos] == ' ' || text[pos] == '\t' || text[pos] == '\n':
+			pos++
+		case strings.HasPrefix(text[pos:], "//"):
+			end := strings.IndexByte(text[pos:], '\n')
+			if end == -1 {
+				return len(text), nil
+			}
+			pos += end
+		case strings.HasPrefix(text[pos:], "/*"):
+			end := strings.Index(text[pos+2:], "*/")
+			if end == -1 {
+				return 0, fmt.Errorf("unterminated block comment")
+			}
+			pos += end + 4
+		default:
+			return pos, nil
+		}
+	}
+	return pos, nil
+}
+
+// scanJSONCTrailing scans what follows a property value on its line: an optional comma and comments.
+// Args: text is normalized JSONC, pos is the index after the value.
+// Returns: the trailing comments, whether a comma was consumed, the index where the next entry's
+// trivia starts, or an error for an unterminated comment.
+func scanJSONCTrailing(text string, pos int) (string, bool, int, error) {
+	var comment strings.Builder
+	hadComma := false
+	for pos < len(text) {
+		switch {
+		case text[pos] == ' ' || text[pos] == '\t':
+			comment.WriteByte(text[pos])
+			pos++
+		case text[pos] == ',' && !hadComma:
+			hadComma = true
+			pos++
+		case strings.HasPrefix(text[pos:], "//"):
+			end := strings.IndexByte(text[pos:], '\n')
+			if end == -1 {
+				end = len(text) - pos
+			}
+			comment.WriteString(text[pos : pos+end])
+			pos += end
+		case strings.HasPrefix(text[pos:], "/*"):
+			end := strings.Index(text[pos+2:], "*/")
+			if end == -1 {
+				return "", false, 0, fmt.Errorf("unterminated block comment")
+			}
+			comment.WriteString(text[pos : pos+end+4])
+			pos += end + 4
+		default:
+			if text[pos] == '\n' {
+				pos++
+			}
+			return strings.TrimSpace(comment.String()), hadComma, pos, nil
+		}
+	}
+	return strings.TrimSpace(comment.String()), hadComma, pos, nil
+}
+
+// scanJSONCString scans and validates a string token.
+// Args: text is normalized JSONC, pos is the index of the opening quote.
+// Returns: the index after the closing quote, or an error if the string is invalid or unterminated.
+func scanJSONCString(text string, pos int) (int, error) {
+	for i := pos + 1; i < len(text); i++ {
+		switch text[i] {
+		case '\\':
+			i++
+		case '"':
+			if !json.Valid([]byte(text[pos : i+1])) {
+				return 0, fmt.Errorf("invalid string")
+			}
+			return i + 1, nil
+		case '\n':
+			return 0, fmt.Errorf("unterminated string")
+		}
+	}
+	return 0, fmt.Errorf("unterminated string")
+}
+
+// scanJSONCValue scans one JSONC value: a string, an object or array, or a bare literal.
+// Args: text is normalized JSONC, pos is the index of the value's first character.
+// Returns: the index after the value, or an error if no complete value starts at pos.
+func scanJSONCValue(text string, pos int) (int, error) {
+	if pos == len(text) {
+		return 0, fmt.Errorf("missing value")
+	}
+	switch text[pos] {
+	case '"':
+		return scanJSONCString(text, pos)
+	case '{', '[':
+		return scanJSONCContainer(text, pos)
+	case ',', '}', ']':
+		return 0, fmt.Errorf("missing value")
+	}
+	end := pos
+	for end < len(text) && !strings.ContainsRune(" \t\n,:{}[]\"/", rune(text[end])) {
+		end++
+	}
+	if end == pos {
+		return 0, fmt.Errorf("unexpected %q", text[pos])
+	}
+	return end, nil
+}
+
+// scanJSONCContainer validates the properties or elements of an object or array.
+// Args: text is normalized JSONC, pos is the opening brace or bracket.
+// Returns: the index after the closing delimiter, or an error for malformed entries.
+// Comments, trailing commas, bare literals, and missing commas between object properties
+// are accepted; the source text is left untouched.
+func scanJSONCContainer(text string, pos int) (int, error) {
+	object := text[pos] == '{'
+	closer := byte(']')
+	if object {
+		closer = '}'
+	}
+	pos++
+	for {
+		next, err := skipJSONCTrivia(text, pos)
+		if err != nil {
+			return 0, err
+		}
+		pos = next
+		if pos == len(text) {
+			return 0, fmt.Errorf("unterminated value")
+		}
+		if text[pos] == closer {
+			return pos + 1, nil
+		}
+		if object {
+			if text[pos] != '"' {
+				return 0, fmt.Errorf("expected property name")
+			}
+			keyEnd, err := scanJSONCString(text, pos)
+			if err != nil {
+				return 0, err
+			}
+			colon, err := skipJSONCTrivia(text, keyEnd)
+			if err != nil {
+				return 0, err
+			}
+			if colon == len(text) || text[colon] != ':' {
+				return 0, fmt.Errorf("expected ':' after property name")
+			}
+			pos, err = skipJSONCTrivia(text, colon+1)
+			if err != nil {
+				return 0, err
+			}
+		}
+		end, err := scanJSONCValue(text, pos)
+		if err != nil {
+			return 0, err
+		}
+		pos, err = skipJSONCTrivia(text, end)
+		if err != nil {
+			return 0, err
+		}
+		if pos == len(text) {
+			return 0, fmt.Errorf("unterminated value")
+		}
+		switch text[pos] {
+		case closer:
+			return pos + 1, nil
+		case ',':
+			pos++
+		default:
+			if !object || text[pos] != '"' {
+				return 0, fmt.Errorf("expected ',' or %q", closer)
+			}
+		}
+	}
 }
 
 // replaceVSCodeManagedBlock replaces the existing managed block with updated lines.

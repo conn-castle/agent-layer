@@ -6,6 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pelletier/go-toml/v2"
+
+	"github.com/conn-castle/agent-layer/internal/config"
 )
 
 func TestHerdRCommandPinsDevelopmentExecutableAtSync(t *testing.T) {
@@ -242,14 +246,10 @@ func TestRunHerdRCleanupPreservesExistingProviderSymlinkPolicy(t *testing.T) {
 			if err := os.WriteFile(sentinel, []byte("preserve"), 0o600); err != nil {
 				t.Fatal(err)
 			}
+			// Chime cleanup skips a linked provider directory that holds no
+			// managed hook; recovery cleanup must not introduce a failure.
 			if _, err := Run(root); err != nil {
-				// Grok's pre-existing chime cleanup rejects this shared directory.
-				// Recovery cleanup must not introduce an earlier/different failure.
-				if directory != filepath.Join(".grok", "hooks") || !strings.Contains(err.Error(), "cleaning Agent Layer chime hooks") {
-					t.Fatalf("recovery cleanup changed the existing symlink policy: %v", err)
-				}
-			} else if directory == filepath.Join(".grok", "hooks") {
-				t.Fatal("expected existing Grok chime symlink policy to remain enforced")
+				t.Fatalf("recovery cleanup changed the existing symlink policy: %v", err)
 			}
 			got, err := os.ReadFile(sentinel) // #nosec G304 -- fixed sentinel inside the test-owned fixture.
 			if err != nil || string(got) != "preserve" {
@@ -267,5 +267,154 @@ func TestHerdRHookCanonicalRootMatchesLogicalAndPhysicalLaunch(t *testing.T) {
 	}
 	if got, want := herdrCommand("codex", link), herdrCommand("codex", root); got != want {
 		t.Fatalf("logical root changes trusted hook: got %q want %q", got, want)
+	}
+}
+
+func TestHerdRHooksLeaveSymlinkedHookFilesUntouched(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		path  string
+		write func(root string) error
+		clean func(root string) error
+	}{
+		{
+			name:  "antigravity",
+			path:  filepath.Join(".agy", "config", "hooks.json"),
+			write: func(root string) error { return writeAgyHerdRHook(RealSystem{}, root) },
+			clean: func(root string) error { return cleanAgyHerdRHook(RealSystem{}, root) },
+		},
+		{
+			name: "grok",
+			path: filepath.Join(".grok", "hooks", "agent-layer-herdr.json"),
+			write: func(root string) error {
+				return writeProviderHerdRHook(RealSystem{}, root, herdrGrokProvider, "SessionStart", "exec al hook herdr grok")
+			},
+			clean: func(root string) error { return cleanProviderHerdRHook(RealSystem{}, root, herdrGrokProvider) },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			target := filepath.Join(t.TempDir(), "user-hooks.json")
+			content := `{"` + agentLayerHerdRMarker + `":{"enabled":true},"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"exec al hook herdr # ` + agentLayerHerdRMarker + `"}]}]}}`
+			if err := os.WriteFile(target, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			link := filepath.Join(root, tc.path)
+			if err := os.MkdirAll(filepath.Dir(link), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, link); err != nil {
+				t.Fatal(err)
+			}
+			if err := tc.write(root); err == nil {
+				t.Fatal("HerdR hook writer accepted a symlinked hook file")
+			}
+			if err := tc.clean(root); err != nil {
+				t.Fatalf("HerdR cleanup failed on a symlinked hook file: %v", err)
+			}
+			if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+				t.Fatalf("symlinked hook file was replaced or removed: info=%v err=%v", info, err)
+			}
+			if got, err := os.ReadFile(target); err != nil || string(got) != content { // #nosec G304 -- test-owned path.
+				t.Fatalf("linked hook file changed: %q %v", got, err)
+			}
+		})
+	}
+}
+
+func TestCleanAgyHerdRHookIgnoresUnownedUnparseableFile(t *testing.T) {
+	for _, content := range []string{"", "{not json"} {
+		root := t.TempDir()
+		path := filepath.Join(root, ".agy", "config", "hooks.json")
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := cleanAgyHerdRHook(RealSystem{}, root); err != nil {
+			t.Fatalf("cleanup of unowned hooks.json %q failed: %v", content, err)
+		}
+		if got, err := os.ReadFile(path); err != nil || string(got) != content { // #nosec G304 -- test-owned path.
+			t.Fatalf("unowned hooks.json changed: %q %v", got, err)
+		}
+	}
+}
+
+func TestCodexHerdRExpandsExistingSessionStartAssignment(t *testing.T) {
+	root := t.TempDir()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Agents:        config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled}},
+			Notifications: config.NotificationsConfig{Chime: &enabled},
+		},
+		Env: map[string]string{},
+	}
+	writeExistingCodexConfig(t, root, codexPartialHeader+`
+[hooks]
+SessionStart = [{ matcher = "startup", hooks = [{ type = "command", command = "echo user-start", timeout = 3 }] }]
+`)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeCodexConfig: %v", err)
+	}
+	first := readCodexConfig(t, root)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("second writeCodexConfig: %v", err)
+	}
+	if second := readCodexConfig(t, root); second != first {
+		t.Fatalf("expected idempotent merge\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+	sessionStart, ok := parseCodexConfig(t, first)[hooksKey].(map[string]any)["SessionStart"].([]any)
+	if !ok || len(sessionStart) != 2 {
+		t.Fatalf("expected user and HerdR SessionStart groups:\n%s", first)
+	}
+	user := sessionStart[0].(map[string]any)
+	userHook := user[hooksKey].([]any)[0].(map[string]any)
+	if user["matcher"] != "startup" || userHook["command"] != "echo user-start" || userHook["timeout"] != int64(3) {
+		t.Fatalf("user SessionStart group changed: %#v", user)
+	}
+	if !isHerdRHandler(sessionStart[1].(map[string]any)[hooksKey].([]any)[0]) {
+		t.Fatalf("managed HerdR SessionStart group missing: %#v", sessionStart[1])
+	}
+}
+
+func TestCodexHerdRIgnoresMarkersInsideMultilineStrings(t *testing.T) {
+	notes := strings.Join([]string{
+		`notes = """`,
+		codexHerdRBeginMarker,
+		"user text",
+		codexHerdREndMarker,
+		`"""`,
+	}, "\n")
+	managedEditor := newCodexTomlEditor("")
+	if _, err := managedEditor.applyCodexHerdRHook("config.toml", true); err != nil {
+		t.Fatal(err)
+	}
+	managed := managedEditor.render()
+	for name, content := range map[string]string{
+		"string only":        notes,
+		"string and managed": notes + "\n\n" + managed,
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, enabled := range []bool{true, false} {
+				editor := newCodexTomlEditor(content)
+				if _, err := editor.applyCodexHerdRHook("config.toml", enabled); err != nil {
+					t.Fatalf("enabled=%t: %v", enabled, err)
+				}
+				output := editor.render()
+				if !strings.HasPrefix(output, notes+"\n") {
+					t.Fatalf("enabled=%t: multiline string content changed:\n%s", enabled, output)
+				}
+				var parsed map[string]any
+				if err := toml.Unmarshal([]byte(output), &parsed); err != nil {
+					t.Fatalf("enabled=%t: invalid TOML: %v\n%s", enabled, err, output)
+				}
+				_, hasHooks := parsed[hooksKey]
+				if hasHooks != enabled {
+					t.Fatalf("enabled=%t: managed hook presence = %t:\n%s", enabled, hasHooks, output)
+				}
+			}
+		})
 	}
 }

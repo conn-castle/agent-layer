@@ -39,8 +39,9 @@ const (
 	// AntigravityPrintTimeout keeps a headless dispatch alive long enough for
 	// a normal agent turn while the runner remains responsible for cancellation.
 	AntigravityPrintTimeout = "24h"
-	// claudePrintBackgroundWaitCeilingEnv keeps headless Claude dispatches alive
-	// for Claude-managed background work; interactive Claude launches do not use it.
+	// claudePrintBackgroundWaitCeilingEnv removes headless Claude's wait limit
+	// for background subagents and workflows. Bash has a separate exit grace;
+	// interactive Claude launches do not use this override.
 	claudePrintBackgroundWaitCeilingEnv   = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
 	claudePrintBackgroundWaitCeilingValue = "0"
 	truncatedAnswerNotice                 = "\n\n[Agent Layer truncated this final answer after retaining 256 MiB. Resume the conversation and ask the agent to summarize the final answer in another turn.]\n"
@@ -454,7 +455,7 @@ func buildProviderCommand(
 			} else {
 				args = append(args, "--permission-mode", claudePermissionModeDontAsk)
 			}
-			for _, rule := range projection.ClaudeAllowRules(
+			for _, rule := range projection.GrokAllowRules(
 				project.Config,
 				project.CommandsAllow,
 				projection.EffectiveServerIDs(project.Config, projection.ClientGrok),
@@ -577,6 +578,59 @@ func reduceClaudeEvent(expected string, value map[string]any) []providerEvent {
 	return events
 }
 
+// claudeTaskTracker withholds completion from a successful Claude result while
+// a Claude-managed task is still running, so an earlier result must not start
+// the shutdown grace that would kill the work. Claude can stop background Bash
+// at exit even with claudePrintBackgroundWaitCeilingEnv set to zero; an earlier
+// answer cannot stand as success if a task then stops or fails without a reply.
+type claudeTaskTracker struct {
+	outstanding        map[string]struct{}
+	completionPending  bool
+	pendingTaskFailure string
+}
+
+func (t *claudeTaskTracker) reduce(record structuredRecord, events []providerEvent) []providerEvent {
+	eventType, _ := record.Fields[jsonTypeKey].(string)
+	if eventType == claudeSystemEventType && record.Claude.TaskID.Valid && strings.TrimSpace(record.Claude.TaskID.Value) != "" {
+		switch subtype, _ := record.Fields["subtype"].(string); subtype {
+		case "task_started":
+			t.outstanding[record.Claude.TaskID.Value] = struct{}{}
+		case "task_notification":
+			t.finishTask(record.Claude.TaskID.Value, record.Claude.Status.Value)
+		case "task_updated":
+			if patch, ok := mapValueV013(record.Fields, "patch"); ok {
+				status, _ := patch[jsonStatusKey].(string)
+				switch status {
+				case dispatchStateCompleted, dispatchStateFailed, claudeTaskStatusStopped, "killed":
+					if status == "killed" {
+						status = claudeTaskStatusStopped
+					}
+					t.finishTask(record.Claude.TaskID.Value, status)
+				}
+			}
+		}
+		return events
+	}
+	if len(events) == 0 || events[len(events)-1].Kind != eventComplete {
+		return events
+	}
+	// A later validated result can acknowledge the failure or report recovery.
+	t.pendingTaskFailure = ""
+	t.completionPending = len(t.outstanding) > 0
+	if t.completionPending {
+		events[len(events)-1] = providerEvent{Kind: eventProgress, Activity: "claude_waiting_for_background_tasks"}
+	}
+	return events
+}
+
+func (t *claudeTaskTracker) finishTask(id, status string) {
+	_, tracked := t.outstanding[id]
+	if tracked && t.completionPending && (status == dispatchStateFailed || status == claudeTaskStatusStopped) {
+		t.pendingTaskFailure = status
+	}
+	delete(t.outstanding, id)
+}
+
 func reduceCodexEvent(value map[string]any) []providerEvent {
 	eventType, _ := value[jsonTypeKey].(string)
 	switch eventType {
@@ -591,17 +645,18 @@ func reduceCodexEvent(value map[string]any) []providerEvent {
 		return []providerEvent{{Kind: eventSession, SessionID: id}}
 	case "turn.completed":
 		return []providerEvent{{Kind: eventComplete}}
-	case "turn.failed", "turn.aborted", jsonErrorKey:
-		reason, _ := firstStringV013(value, jsonMessageKey, jsonReasonKey, jsonErrorKey)
-		if reason == "" {
-			if details, ok := mapValueV013(value, jsonErrorKey); ok {
-				reason, _ = firstStringV013(details, jsonMessageKey, jsonReasonKey)
-			}
-		}
+	case "turn.failed", "turn.aborted":
+		reason := codexEventReason(value)
 		if reason == "" {
 			reason = "Codex reported a terminal failure"
 		}
 		return []providerEvent{{Kind: eventFailure, Reason: reason}}
+	case jsonErrorKey:
+		// Codex also emits error events for stream retries it recovers from
+		// ("Reconnecting... 2/5 (request timed out)"). A fatal error still ends
+		// the turn with turn.failed or a nonzero exit, so the error is kept as a
+		// diagnostic for those failure paths instead of ending the dispatch.
+		return []providerEvent{{Kind: eventProgress, Activity: eventType, Reason: codexEventReason(value)}}
 	case codexAgentMessageType:
 		if answer, ok := firstStringV013(value, jsonMessageKey, jsonTextKey); ok {
 			return []providerEvent{{Kind: eventAnswer, Answer: answer}}
@@ -619,6 +674,16 @@ func reduceCodexEvent(value map[string]any) []providerEvent {
 		return []providerEvent{{Kind: eventProgress, Activity: eventType}}
 	}
 	return nil
+}
+
+func codexEventReason(value map[string]any) string {
+	reason, _ := firstStringV013(value, jsonMessageKey, jsonReasonKey, jsonErrorKey)
+	if reason == "" {
+		if details, ok := mapValueV013(value, jsonErrorKey); ok {
+			reason, _ = firstStringV013(details, jsonMessageKey, jsonReasonKey)
+		}
+	}
+	return reason
 }
 
 func appendRetainedGrokText(dst *strings.Builder, chunk string) {
@@ -840,9 +905,18 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 	var grokAccumulator strings.Builder
 	var grokTerminalSeen, antigravityTerminalSeen bool
 	museState := museReducer{expectedSession: expectedSession}
+	claudeTasks := claudeTaskTracker{outstanding: make(map[string]struct{})}
 	finish := func() error {
 		if agent == AgentMuse && museState.awaitingBackground {
 			return consume(providerEvent{Kind: eventFailure, Reason: "Muse completed without a final answer"})
+		}
+		if agent == AgentClaude && claudeTasks.completionPending {
+			if claudeTasks.pendingTaskFailure != "" {
+				return consume(providerEvent{Kind: eventFailure, Reason: fmt.Sprintf("Claude background task reported %s after the latest successful result; Claude exited without a later result", claudeTasks.pendingTaskFailure)})
+			}
+			// The stream ended without a later result, so the latest
+			// successful result is the final answer.
+			return consume(providerEvent{Kind: eventComplete})
 		}
 		return nil
 	}
@@ -910,7 +984,7 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 					lineageEvents = normalizer.reduce(record)
 				}
 			}
-			events = reduceClaudeEvent(expectedSession, record.Fields)
+			events = claudeTasks.reduce(record, reduceClaudeEvent(expectedSession, record.Fields))
 		case AgentCodex:
 			events = reduceCodexEvent(record.Fields)
 		case AgentGrok:

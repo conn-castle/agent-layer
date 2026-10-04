@@ -2,12 +2,12 @@ package antigravity
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/herdr"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/run"
@@ -55,14 +55,15 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 
 // BaseArgs prepares the documented Antigravity configuration arguments shared
 // by interactive launch and headless dispatch. It creates only the provider's
-// repository-local configuration directory.
+// repository-local configuration directory, or tightens an existing one, as
+// owner-only because agy stores auth and conversation state there.
 func BaseArgs(root string, cfg config.Config) ([]string, error) {
 	if !filepath.IsAbs(root) {
 		return nil, fmt.Errorf(messages.ClientsAntigravityRelativeRootFmt, root)
 	}
 	geminiDir := filepath.Join(root, ".agy")
-	if err := os.MkdirAll(geminiDir, 0o700); err != nil {
-		return nil, fmt.Errorf(messages.ClientsAntigravityMkdirFailedFmt, geminiDir, err)
+	if err := fsutil.EnsurePrivateDir(geminiDir); err != nil {
+		return nil, fmt.Errorf(messages.SyncAntigravityHomeEnsureFailedFmt, err)
 	}
 	args := []string{"--gemini_dir=" + geminiDir}
 	if cfg.Approvals.Mode == config.ApprovalModeYOLO {

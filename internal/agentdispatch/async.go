@@ -97,7 +97,7 @@ func Start(opts StartOptions) error {
 		return finishDispatchFailure(dispatchExecution{Root: opts.Root, Run: run, Session: session}, err)
 	}
 	request := workerRequest{Root: opts.Root, WorkDir: opts.WorkDir, RunID: run.Record.ID, Mode: dispatchModeFresh, Prompt: prompt, Depth: depth + 1, Model: opts.Model, Effort: opts.ReasoningEffort, Skill: opts.Skill}
-	return publishInvocation(opts.Root, run, session, request, writerOrDiscard(opts.Stdout), opts.launchWorker)
+	return publishInvocation(opts.Context, opts.Root, run, session, request, writerOrDiscard(opts.Stdout), opts.launchWorker)
 }
 
 // prepareStart validates a fresh invocation's target and prompt and refreshes
@@ -231,7 +231,7 @@ func Continue(opts ContinueOptions) error {
 		mode = dispatchModeFresh
 	}
 	request := workerRequest{Root: opts.Root, WorkDir: opts.WorkDir, RunID: run.Record.ID, Mode: mode, Prompt: prompt, Depth: depth + 1, Model: session.Model, Effort: session.ReasoningEffort, TargetPinned: session.TargetPinned}
-	return publishInvocation(opts.Root, run, session, request, writerOrDiscard(opts.Stdout), opts.launchWorker)
+	return publishInvocation(opts.Context, opts.Root, run, session, request, writerOrDiscard(opts.Stdout), opts.launchWorker)
 }
 
 func resolvePromptSource(prompt string, promptFile string) (string, error) {
@@ -261,7 +261,12 @@ func resolvePromptSource(prompt string, promptFile string) (string, error) {
 	return string(data), nil
 }
 
-func publishInvocation(root string, run *dispatchRun, session Session, request workerRequest, stdout io.Writer, launcher workerLauncher) error {
+func publishInvocation(ctx context.Context, root string, run *dispatchRun, session Session, request workerRequest, stdout io.Writer, launcher workerLauncher) error {
+	// An MCP caller that cancelled or timed out during preparation never
+	// receives the handle, so its worker must not be launched.
+	if ctx != nil && ctx.Err() != nil {
+		return failBeforePublication(root, run, session, wrapExitError(ExitUnavailable, "dispatch request ended before the agent was started; nothing was sent to the provider", ctx.Err()))
+	}
 	requestPath := filepath.Join(run.Dir, workerRequestFile)
 	if err := writeJSONAtomic(requestPath, request); err != nil {
 		return failBeforePublication(root, run, session, wrapExitError(ExitConfig, "write dispatch worker request", err))

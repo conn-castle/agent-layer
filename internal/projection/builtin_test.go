@@ -275,3 +275,88 @@ func TestDispatchLauncherDevelopmentExecutableSelection(t *testing.T) {
 		})
 	}
 }
+
+// TestReceivedMCPServersFollowSyncClientGating proves doctor and warning
+// accounting see a user server only when sync writes it into the generated MCP
+// config of at least one enabled client.
+func TestReceivedMCPServersFollowSyncClientGating(t *testing.T) {
+	on, off := true, false
+	tests := []struct {
+		name    string
+		clients []string
+		enabled *bool
+		agents  func(*config.AgentsConfig)
+		want    bool
+	}{
+		{name: "no enabled client", want: false},
+		{name: "unrestricted server", agents: func(a *config.AgentsConfig) { a.Grok.Enabled = &on }, want: true},
+		{name: "disabled server", enabled: &off, agents: func(a *config.AgentsConfig) { a.Claude.Enabled = &on }, want: false},
+		{name: "limited to a disabled client", clients: []string{ClientCodex}, agents: func(a *config.AgentsConfig) { a.Claude.Enabled = &on }, want: false},
+		{name: "codex config written for VS Code", clients: []string{ClientCodex}, agents: func(a *config.AgentsConfig) { a.VSCode.Enabled = &on }, want: true},
+		{name: "codex mcp_servers passthrough replaces projected servers", clients: []string{ClientCodex}, agents: func(a *config.AgentsConfig) {
+			a.Codex.Enabled = &on
+			a.Codex.AgentSpecific = config.ProviderPassthrough{config.CodexMCPServersKey: map[string]any{}}
+		}, want: false},
+		{name: "claude via the Claude VS Code surface", clients: []string{ClientClaude}, agents: func(a *config.AgentsConfig) { a.ClaudeVSCode.Enabled = &on }, want: true},
+		{name: "vscode is not written for Claude VS Code", clients: []string{ClientVSCode}, agents: func(a *config.AgentsConfig) { a.ClaudeVSCode.Enabled = &on }, want: false},
+		{name: "muse", clients: []string{ClientMuse}, agents: func(a *config.AgentsConfig) { a.Muse.Enabled = &on }, want: true},
+		{name: "vscode", clients: []string{ClientVSCode}, agents: func(a *config.AgentsConfig) { a.VSCode.Enabled = &on }, want: true},
+		{name: "copilot", clients: []string{ClientCopilot}, agents: func(a *config.AgentsConfig) { a.CopilotCLI.Enabled = &on }, want: true},
+		{name: "grok", clients: []string{ClientGrok}, agents: func(a *config.AgentsConfig) { a.Grok.Enabled = &on }, want: true},
+		{name: "codex mcp_servers passthrough also applies for VS Code", clients: []string{ClientCodex}, agents: func(a *config.AgentsConfig) {
+			a.VSCode.Enabled = &on
+			a.Codex.AgentSpecific = config.ProviderPassthrough{config.CodexMCPServersKey: map[string]any{}}
+		}, want: false},
+		{name: "one of several clients enabled", clients: []string{ClientCopilot, ClientAntigravity}, agents: func(a *config.AgentsConfig) { a.Antigravity.Enabled = &on }, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			enabled := tt.enabled
+			if enabled == nil {
+				enabled = &on
+			}
+			cfg := config.Config{MCP: config.MCPConfig{Servers: []config.MCPServer{{
+				ID:        "user-server",
+				Enabled:   enabled,
+				Clients:   tt.clients,
+				Transport: config.TransportStdio,
+				Command:   "user-server",
+			}}}}
+			if tt.agents != nil {
+				tt.agents(&cfg.Agents)
+			}
+
+			received := len(ReceivedMCPServers(cfg)) == 1
+			if received != tt.want {
+				t.Fatalf("ReceivedMCPServers includes server = %v, want %v", received, tt.want)
+			}
+			if got := containsServerID(EffectiveEnabledServerIDs(cfg), "user-server"); got != tt.want {
+				t.Fatalf("EffectiveEnabledServerIDs includes server = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestEffectiveEnabledServersSkipUnresolvableUnreceivedServer proves a server
+// no enabled client receives cannot fail resolution for the servers that are
+// received, even when its placeholder has no value.
+func TestEffectiveEnabledServersSkipUnresolvableUnreceivedServer(t *testing.T) {
+	on := true
+	cfg := dispatchCallerConfig(ClientClaude)
+	cfg.MCP.Servers = []config.MCPServer{
+		{ID: "codex-only", Enabled: &on, Clients: []string{ClientCodex}, Transport: config.TransportHTTP, URL: "https://example.com/mcp?token=${AL_UNSET_TOKEN}"},
+		{ID: "shared", Enabled: &on, Transport: config.TransportStdio, Command: "shared"},
+	}
+
+	resolved, err := ResolveEffectiveEnabledMCPServers(cfg, map[string]string{})
+	if err != nil {
+		t.Fatalf("resolve effective enabled servers: %v", err)
+	}
+	var ids []string
+	for _, server := range resolved {
+		ids = append(ids, server.ID)
+	}
+	if strings.Join(ids, ",") != BuiltInDispatchServerID+",shared" {
+		t.Fatalf("resolved server IDs = %v, want [%s shared]", ids, BuiltInDispatchServerID)
+	}
+}

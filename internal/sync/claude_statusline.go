@@ -23,10 +23,6 @@ func claudeStatuslinePath(root string) string {
 	return filepath.Join(root, ".claude", claudeStatuslineSourceName)
 }
 
-func legacyClaudeStatuslinePath(root string) string {
-	return filepath.Join(root, ".claude", legacyClaudeStatuslineSourceName)
-}
-
 // claudeStatuslineSourcePath returns the absolute path to the editable
 // source-of-truth status line under .agent-layer.
 func claudeStatuslineSourcePath(root string) string {
@@ -40,14 +36,13 @@ func legacyClaudeStatuslineSourcePath(root string) string {
 // writeClaudeStatusline projects the editable .agent-layer/claude-statusline.sh
 // source into .claude/claude-statusline.sh when the status line is explicitly
 // enabled. When disabled or absent, it removes any previously generated copy so
-// a stale script does not linger.
+// a stale script does not linger. No release projected .claude/statusline.sh, so
+// that path is user-owned and never removed.
 func writeClaudeStatusline(sys System, root string, project *config.ProjectConfig) error {
 	dest := claudeStatuslinePath(root)
 	if !config.ClaudeStatuslineEnabled(project.Config.Agents.Claude) {
-		for _, stalePath := range []string{dest, legacyClaudeStatuslinePath(root)} {
-			if err := sys.Remove(stalePath); err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf(messages.SyncRemoveFailedFmt, stalePath, err)
-			}
+		if err := sys.Remove(dest); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf(messages.SyncRemoveFailedFmt, dest, err)
 		}
 		return nil
 	}
@@ -55,13 +50,6 @@ func writeClaudeStatusline(sys System, root string, project *config.ProjectConfi
 	data, err := ensureStatuslineSource(sys, root)
 	if err != nil {
 		return err
-	}
-	// Remove a stale legacy projection (.claude/statusline.sh) left by a prior
-	// version so the rename does not leave two scripts behind when enabled.
-	if legacy := legacyClaudeStatuslinePath(root); legacy != dest {
-		if err := sys.Remove(legacy); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf(messages.SyncRemoveFailedFmt, legacy, err)
-		}
 	}
 	if err := sys.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, filepath.Dir(dest), err)

@@ -89,19 +89,23 @@ func writeGrokChimeHook(sys System, root string, project *config.ProjectConfig) 
 }
 
 func cleanGrokChimeHook(sys System, root string) error {
-	path, _, exists, err := existingChimeCleanupTarget(sys, root, filepath.Join(".grok", "hooks"), grokChimeHookFileName)
+	target, exists, err := existingChimeCleanupTarget(sys, root, filepath.Join(".grok", "hooks"), grokChimeHookFileName)
 	if err != nil {
 		return err
 	}
 	if !exists {
 		return nil
 	}
+	path := target.path
 	data, err := sys.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf(messages.SyncReadFailedFmt, path, err)
 	}
 	if !grokChimeHookIsManaged(data) {
 		return fmt.Errorf(messages.SyncGrokChimeHookConflictFmt, path)
+	}
+	if err := target.checkWritable(); err != nil {
+		return err
 	}
 	if err := sys.Remove(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf(messages.SyncRemoveFailedFmt, path, err)

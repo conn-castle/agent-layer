@@ -239,9 +239,13 @@ func resolveLaunchContext(root, provider string) (launchContext, bool, error) {
 	return launchContext{}, false, nil
 }
 
+// readDirFunc is overridable for tests that remove a run between the outer
+// run snapshot and the per-run scan.
+var readDirFunc = os.ReadDir
+
 func runRecordPaths(runsDir string, names map[string]bool) (map[string][]string, error) {
 	paths := map[string][]string{}
-	entries, err := os.ReadDir(runsDir)
+	entries, err := readDirFunc(runsDir)
 	if os.IsNotExist(err) {
 		return paths, nil
 	}
@@ -253,7 +257,11 @@ func runRecordPaths(runsDir string, names map[string]bool) (map[string][]string,
 			continue
 		}
 		directory := filepath.Join(runsDir, entry.Name())
-		records, err := os.ReadDir(directory)
+		records, err := readDirFunc(directory)
+		if os.IsNotExist(err) {
+			// A concurrent cleanup removed this run after the outer snapshot.
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}

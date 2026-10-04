@@ -24,6 +24,12 @@ const (
 	vscodeSettingsManagedEnd   = "// <<< agent-layer"
 )
 
+// vscodeRetiredManagedKeys lists settings that earlier releases wrote inside the managed block.
+// Sync drops them from the block instead of preserving them as user settings.
+var vscodeRetiredManagedKeys = []string{
+	"chat.tools.global.autoApprove",
+}
+
 var vscodeSettingsManagedHeader = []string{
 	"// Managed by Agent Layer. To customize, edit .agent-layer/config.toml",
 	"// and .agent-layer/commands.allow, then re-run `al sync`.",
@@ -117,10 +123,12 @@ func buildVSCodeAgentSkillsLocations() OrderedMap[bool] {
 }
 
 // formatVSCodeAutoApprovePattern builds a VS Code regex literal string for a command.
+// The pattern matches the command alone or followed by a space or tab and arguments,
+// so `git` does not approve `git-filter-repo` and `go test ./...` still approves added flags.
 // Args: cmd is the allowed command string.
-// Returns: a regex literal string like `/^<escaped>(\b.*)?$/` safe for JSONC.
+// Returns: a regex literal string like `/^<escaped>([ \t].*)?$/` safe for JSONC.
 func formatVSCodeAutoApprovePattern(cmd string) string {
 	escaped := regexp.QuoteMeta(cmd)
 	escaped = strings.ReplaceAll(escaped, "/", "\\/")
-	return fmt.Sprintf("/^%s(\\b.*)?$/", escaped)
+	return fmt.Sprintf("/^%s([ \\t].*)?$/", escaped)
 }

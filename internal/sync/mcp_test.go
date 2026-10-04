@@ -139,7 +139,7 @@ func TestBuildMCPConfigMissingEnv(t *testing.T) {
 						ID:        "example",
 						Enabled:   &enabled,
 						Transport: "http",
-						URL:       "https://example.com?token=${TOKEN}",
+						URL:       "https://example.com?token=${AL_SYNC_TEST_TOKEN}",
 					},
 				},
 			},
@@ -151,6 +151,52 @@ func TestBuildMCPConfigMissingEnv(t *testing.T) {
 	_, err := buildMCPConfig(project)
 	if err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestBuildMCPConfigResolvesProcessEnv(t *testing.T) {
+	t.Setenv("AL_PROCESS_TOKEN", "from-shell")
+	t.Setenv("AL_SHELL_ONLY_TOKEN", "shell-only")
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{Enabled: &enabled},
+				Muse:   config.AgentConfig{Enabled: &enabled},
+			},
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{
+						ID:        "claude-only",
+						Enabled:   &enabled,
+						Clients:   []string{"claude"},
+						Transport: "http",
+						URL:       "https://example.com/claude?token=${AL_SHELL_ONLY_TOKEN}",
+					},
+					{
+						ID:            "muse-only",
+						Enabled:       &enabled,
+						Clients:       []string{"muse"},
+						Transport:     "http",
+						HTTPTransport: config.HTTPTransportStreamable,
+						URL:           "https://example.com/muse?token=${AL_PROCESS_TOKEN}",
+					},
+				},
+			},
+		},
+		Env:  map[string]string{"AL_PROCESS_TOKEN": "from-dotenv"},
+		Root: t.TempDir(),
+	}
+
+	cfg, err := buildMCPConfig(project)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := cfg.Servers["claude-only"].URL; got != "https://example.com/claude?token=${AL_SHELL_ONLY_TOKEN}" {
+		t.Fatalf("Claude URL = %q, want placeholder preserved", got)
+	}
+	if got := cfg.Servers["muse-only"].URL; got != "https://example.com/muse?token=from-shell" {
+		t.Fatalf("Muse URL = %q, want process env value", got)
 	}
 }
 
@@ -224,10 +270,10 @@ func TestWriteMCPConfigMarshalError(t *testing.T) {
 func TestSharedMuseClaudeMCP(t *testing.T) {
 	root := t.TempDir()
 	enabled := true
-	project := &config.ProjectConfig{Root: root, Env: map[string]string{"TOKEN": "private-value"}, Config: config.Config{
+	project := &config.ProjectConfig{Root: root, Env: map[string]string{"AL_SYNC_TEST_TOKEN": "private-value"}, Config: config.Config{
 		Agents: config.AgentsConfig{Muse: config.AgentConfig{Enabled: &enabled}, Claude: config.ClaudeConfig{Enabled: &enabled}},
 		MCP: config.MCPConfig{Servers: []config.MCPServer{
-			{ID: "shared", Enabled: &enabled, Transport: config.TransportHTTP, HTTPTransport: config.HTTPTransportStreamable, URL: "https://example.test/mcp", Headers: map[string]string{"Authorization": "Bearer ${TOKEN}"}},
+			{ID: "shared", Enabled: &enabled, Transport: config.TransportHTTP, HTTPTransport: config.HTTPTransportStreamable, URL: "https://example.test/mcp", Headers: map[string]string{"Authorization": "Bearer ${AL_SYNC_TEST_TOKEN}"}},
 			{ID: "claude-only", Enabled: &enabled, Clients: []string{"claude"}, Transport: config.TransportStdio, Command: "claude-tool"},
 			{ID: "muse-only", Enabled: &enabled, Clients: []string{"muse"}, Transport: config.TransportStdio, Command: "muse-tool"},
 		}}}}

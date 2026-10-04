@@ -351,7 +351,11 @@ func printPlan(w io.Writer, outcomes []moveOutcome) error {
 	for _, outcome := range outcomes {
 		switch outcome.status {
 		case statusSkipped:
-			out.printf("\nLEFT IN PLACE  %s\n   %s (pass --move-worktrees to relocate)\n", outcome.name, outcome.reason)
+			hint := " (pass --move-worktrees to relocate)"
+			if outcome.immovable {
+				hint = ""
+			}
+			out.printf("\nLEFT IN PLACE  %s\n   %s%s\n", outcome.name, outcome.reason, hint)
 		case statusStationary:
 			out.printf("\nSTAYS IN PLACE  %s\n   %s\n", outcome.name, outcome.reason)
 		case statusCollision:
@@ -367,6 +371,12 @@ func predictOutcomes(root string, plan []placement, moveWorktrees bool) ([]moveO
 		outcome := moveOutcome{placement: candidate, status: statusPlanned}
 		if candidate.stationary {
 			outcome.status = statusStationary
+			outcomes = append(outcomes, outcome)
+			continue
+		}
+		if candidate.immovable {
+			outcome.status = statusSkipped
+			outcome.detail = "git directory cannot be moved safely; classification: " + candidate.reason
 			outcomes = append(outcomes, outcome)
 			continue
 		}
@@ -422,8 +432,8 @@ func validateDestinationComponents(root, dest string) error {
 	return nil
 }
 
-// The bounded convergence loop is required because routing one link owner into
-// review/symlinks changes the planned layout used to evaluate every other link.
+// The bounded convergence loop is required because rerouting or holding one
+// link owner changes the planned layout used to evaluate every other link.
 func applySymlinkSafety(root string, plan []placement, moveWorktrees bool) ([]placement, []moveOutcome, error) {
 	for range len(plan) + 1 {
 		outcomes, err := predictOutcomes(root, plan, moveWorktrees)
@@ -433,7 +443,18 @@ func applySymlinkSafety(root string, plan []placement, moveWorktrees bool) ([]pl
 		warnings := symlinkWarnings(root, outcomes)
 		changed := false
 		for index := range plan {
-			if plan[index].stationary || len(warnings[index]) == 0 || strings.HasPrefix(plan[index].dest, reviewPrefix) {
+			if plan[index].stationary || len(warnings[index]) == 0 {
+				continue
+			}
+			if len(plan[index].gitRepoTargets) > 0 && outcomes[index].status == statusPlanned {
+				// Persist both the hold and its cause: cancelling the move may
+				// remove the warning on the next pass, but must not permit it again.
+				plan[index].immovable = true
+				plan[index].reason += "; git directory left in place because moving it would break symlink(s): " + strings.Join(firstN(warnings[index], examplesShown), "; ")
+				changed = true
+				continue
+			}
+			if strings.HasPrefix(plan[index].dest, reviewPrefix) {
 				continue
 			}
 			plan[index].dest = destReviewSymlinks
@@ -605,6 +626,9 @@ func markFailure(outcomes []moveOutcome, failed int, detail string) {
 type worktreeRepair struct {
 	context string
 	target  string
+	// linked marks a linked worktree repairing itself. That repair needs a
+	// valid link to its main checkout, so it runs after main-checkout repairs.
+	linked bool
 }
 
 func resolveCheckoutWorktrees(ctx context.Context, plan []placement) error {
@@ -619,22 +643,29 @@ func resolveCheckoutWorktrees(ctx context.Context, plan []placement) error {
 			if registrations == nil {
 				continue
 			}
-			if _, registered := registrations[canonicalPath(target)]; !registered {
-				continue
+			markMainRepository(candidate, rel, "main checkout", target, registrations)
+		}
+		for _, rel := range candidate.gitRepoTargets {
+			target := checkoutTarget(candidate.abs, rel)
+			kind, err := inspectGitDir(ctx, target)
+			if err != nil {
+				return fmt.Errorf("inspect git directory at %s: %w", target, err)
 			}
-			markRegisteredWorktree(candidate, rel, "main checkout", target)
-			registeredPaths := sortedRegistrationPaths(registrations)
-			var external []string
-			for _, registered := range registeredPaths {
-				if registrations[registered] == "" {
-					candidate.worktreeRepairs = appendUniqueRepair(candidate.worktreeRepairs, worktreeRepair{context: target, target: registered})
+			switch kind {
+			case separatedGitDir:
+				// Git records no path from a separated git directory back to its
+				// work tree, so nothing could repair that tree's .git file.
+				candidate.immovable = true
+				candidate.reason += fmt.Sprintf("; non-bare git directory at %s may serve a separate work tree that Git cannot reconnect after a move — relocate both by hand", displayPath(candidate.abs, target))
+			case refusedBareGitDir:
+				candidate.immovable = true
+				candidate.reason += fmt.Sprintf("; safe.bareRepository stops Git from opening the bare repository at %s, so its linked worktrees cannot be checked or repaired — relocate it by hand", displayPath(candidate.abs, target))
+			case bareGitDir:
+				registrations, err := worktreeRegistrations(ctx, target)
+				if err != nil {
+					return fmt.Errorf("inspect bare repository at %s: %w", target, err)
 				}
-				if !pathWithin(candidate.abs, registered) {
-					external = append(external, displayPath(candidate.abs, registered))
-				}
-			}
-			if len(external) > 0 {
-				candidate.reason += fmt.Sprintf("; main checkout has %d externally registered linked worktree(s): %s", len(external), strings.Join(firstN(external, examplesShown), ", "))
+				markMainRepository(candidate, rel, "bare repository", target, registrations)
 			}
 		}
 		for _, rel := range candidate.gitFileTargets {
@@ -650,13 +681,32 @@ func resolveCheckoutWorktrees(ctx context.Context, plan []placement) error {
 				continue
 			}
 			markRegisteredWorktree(candidate, rel, "linked worktree", target)
-			if !repairTargets(candidate.worktreeRepairs, target) {
-				candidate.worktreeRepairs = append(candidate.worktreeRepairs, worktreeRepair{context: target, target: target})
-			}
+			candidate.worktreeRepairs = append(candidate.worktreeRepairs, worktreeRepair{context: target, target: target, linked: true})
 		}
 		sort.Strings(candidate.worktreeTargets)
 	}
 	return nil
+}
+
+// markMainRepository protects a repository that owns the worktree registry at
+// target and plans repairs for every live registration after a move.
+func markMainRepository(candidate *placement, rel, kind, target string, registrations map[string]string) {
+	if _, registered := registrations[canonicalPath(target)]; !registered {
+		return
+	}
+	markRegisteredWorktree(candidate, rel, kind, target)
+	var external []string
+	for _, registered := range sortedRegistrationPaths(registrations) {
+		if registrations[registered] == "" {
+			candidate.worktreeRepairs = appendUniqueRepair(candidate.worktreeRepairs, worktreeRepair{context: target, target: registered})
+		}
+		if !pathWithin(candidate.abs, registered) {
+			external = append(external, displayPath(candidate.abs, registered))
+		}
+	}
+	if len(external) > 0 {
+		candidate.reason += fmt.Sprintf("; %s has %d externally registered linked worktree(s): %s", kind, len(external), strings.Join(firstN(external, examplesShown), ", "))
+	}
 }
 
 func sortedRegistrationPaths(registrations map[string]string) []string {
@@ -687,11 +737,51 @@ func checkoutRegistrations(ctx context.Context, target string) (map[string]strin
 		}
 		return nil, err
 	}
+	return worktreeRegistrations(ctx, target)
+}
+
+func worktreeRegistrations(ctx context.Context, target string) (map[string]string, error) {
 	list, err := runGit(ctx, target, "worktree", "list", "--porcelain", "-z")
 	if err != nil {
 		return nil, fmt.Errorf("list worktrees: %w", err)
 	}
 	return parseWorktreeList(list), nil
+}
+
+type gitDirKind int
+
+const (
+	notGitDir gitDirKind = iota
+	bareGitDir
+	separatedGitDir
+	// refusedBareGitDir is a bare repository that the user's
+	// safe.bareRepository setting stops Git from opening by discovery.
+	refusedBareGitDir
+)
+
+// inspectGitDir reports how Git opens target. Git prints a --git-dir of "."
+// only when target itself is the repository directory, not an enclosing
+// repository found by discovery.
+func inspectGitDir(ctx context.Context, target string) (gitDirKind, error) {
+	out, err := runGit(ctx, target, "rev-parse", "--git-dir", "--is-bare-repository")
+	if err != nil {
+		var commandErr *gitCommandError
+		switch {
+		case isNotGitRepository(err):
+			return notGitDir, nil
+		case errors.As(err, &commandErr) && strings.Contains(commandErr.stderr, "cannot use bare repository"):
+			return refusedBareGitDir, nil
+		}
+		return notGitDir, err
+	}
+	dir, bare, _ := strings.Cut(out, "\n")
+	switch {
+	case dir != ".":
+		return notGitDir, nil
+	case strings.TrimSpace(bare) == "true":
+		return bareGitDir, nil
+	}
+	return separatedGitDir, nil
 }
 
 func markRegisteredWorktree(candidate *placement, rel, kind, target string) {
@@ -740,21 +830,35 @@ func containsString(values []string, wanted string) bool {
 
 func repairWorktrees(ctx context.Context, root string, outcomes []moveOutcome, stderr io.Writer) error {
 	var failures []error
-	var repairs []worktreeRepair
+	var repairs, linkedRepairs []worktreeRepair
 	for _, outcome := range outcomes {
 		if outcome.status != statusMoved || !outcome.worktree {
 			continue
 		}
-		movedTo := filepath.Join(root, outcome.dest, outcome.name)
 		for _, repair := range outcome.worktreeRepairs {
-			repair.context = relocatedPath(outcome.abs, movedTo, repair.context)
-			repair.target = relocatedPath(outcome.abs, movedTo, repair.target)
-			repairs = append(repairs, repair)
-			if _, err := runGit(ctx, repair.context, "worktree", "repair", repair.target); err != nil {
-				failure := fmt.Errorf("repair worktree %s: run `git -C %s worktree repair %s`: %w", repair.target, repair.context, repair.target, err)
-				failures = append(failures, failure)
-				_, _ = fmt.Fprintf(stderr, "ERROR: %v\n", failure)
+			// A repair can name paths inside other moved entries, such as a
+			// sibling linked worktree, so translate through every move.
+			repair.context = movedPath(root, outcomes, repair.context)
+			repair.target = movedPath(root, outcomes, repair.target)
+			if repair.linked {
+				linkedRepairs = append(linkedRepairs, repair)
+			} else {
+				repairs = append(repairs, repair)
 			}
+		}
+	}
+	// Repairing from the main checkout relinks both directions, so a linked
+	// worktree repairs itself only when its main checkout did not cover it.
+	for _, repair := range linkedRepairs {
+		if !repairTargets(repairs, repair.target) {
+			repairs = append(repairs, repair)
+		}
+	}
+	for _, repair := range repairs {
+		if _, err := runGit(ctx, repair.context, "worktree", "repair", repair.target); err != nil {
+			failure := fmt.Errorf("repair worktree %s: run `git -C %s worktree repair %s`: %w", repair.target, repair.context, repair.target, err)
+			failures = append(failures, failure)
+			_, _ = fmt.Fprintf(stderr, "ERROR: %v\n", failure)
 		}
 	}
 	for _, repair := range repairs {
@@ -778,6 +882,16 @@ func repairWorktrees(ctx context.Context, root string, outcomes []moveOutcome, s
 		}
 	}
 	return errors.Join(failures...)
+}
+
+// movedPath returns where path is after the successful moves in outcomes.
+func movedPath(root string, outcomes []moveOutcome, path string) string {
+	for _, outcome := range outcomes {
+		if outcome.status == statusMoved && pathWithin(outcome.abs, path) {
+			return relocatedPath(outcome.abs, filepath.Join(root, outcome.dest, outcome.name), path)
+		}
+	}
+	return path
 }
 
 func relocatedPath(originalRoot, movedRoot, path string) string {

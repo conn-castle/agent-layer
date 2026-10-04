@@ -214,7 +214,7 @@ Project MCP uses native Muse startup behavior. The project schema does not accep
 
 **Migrating from repo-local Muse storage:** sync removes only tracked MCP entries from `.muse-config/muse/settings.json`. It preserves user settings, credentials, and `.muse-data/` sessions. After upgrading, launch from your original terminal shell: processes already running under old XDG redirects retain those values. Native storage may require `muse login` if it is not already authenticated. Historical sessions are not automatically moved and cannot be resumed through the new default storage. Do not delete the historical directories as generated output. Model discovery and the dispatch approval observer now use native user state.
 
-Muse command approvals are projected as workspace-scoped argv-prefix rules in `$XDG_CONFIG_HOME/muse/approval-policy.json` (or `~/.config/muse/approval-policy.json`). Sync replaces only Agent Layer-owned rules for this workspace and preserves native user rules and other workspaces. MCP approvals use a project `PermissionRequest` hook in `.muse/hooks.json`; it rereads canonical configuration on every permission request and approves only enabled Muse-selected servers (including Agent Dispatch), and never persists global MCP grants. Outside YOLO, native denials remain authoritative. Muse MCP approval server IDs must use ASCII letters, digits, hyphens or underscores and have distinct normalized names without adjacent, leading, or trailing underscores; sync rejects ambiguous server names, and ambiguous tool names retain native approval prompts. Command entries must be literal argv prefixes, not shell programs or assignments. MCP revocation takes effect on the next permission request, including existing sessions. Command policy changes take effect after sync. A private `.muse/agent-layer-policy.json` receipt records the owned native policy directory for this workspace. Cleanup retires Agent Layer command rules only for the current workspace root, including a previous native directory after HOME or XDG changes. A receipt that names another workspace is not used as a retirement target; disabling Muse fails until that receipt is removed. If this workspace directory itself moved, leftover rules keyed to the old path remain in native storage. Projects that never enabled Muse do not inspect native Muse storage. Keep that receipt until disabling and syncing; deleting a workspace without cleanup leaves its scoped rules in native storage. Non-YOLO runs keep native approvals and sandboxing, pass `--approval-mode untrusted --approval-judge off`, and never receive `--disable-approval`; only explicit `approvals.mode = "yolo"` receives `--yolo`. Headless dispatch remains available under every approval mode. A read-only `muse serve` observer checks the dispatch session through Muse's supported `approval/listPending` method; when an action requires human approval, Agent Layer fails the dispatch and verifies provider termination without an inactivity deadline or broader permissions. Muse's separate `request_user_input` tool is auto-cancelled in headless dispatch with `--user-input-auto-resolve`. Completion chime and statusline projection are unsupported because no sufficiently precise native completion-hook/statusline contract was established.
+Muse command approvals are projected as workspace-scoped argv-prefix rules in `$XDG_CONFIG_HOME/muse/approval-policy.json` (or `~/.config/muse/approval-policy.json`). Sync replaces only Agent Layer-owned rules for this workspace and preserves native user rules and other workspaces. MCP approvals use a project `PermissionRequest` hook in `.muse/hooks.json`; it rereads canonical configuration on every permission request and approves only enabled Muse-selected servers (including Agent Dispatch), and never persists global MCP grants. Outside YOLO, native denials remain authoritative. Muse MCP approval server IDs must use ASCII letters, digits, hyphens or underscores and have distinct normalized names without adjacent, leading, or trailing underscores; sync rejects ambiguous server names, and ambiguous tool names retain native approval prompts. Command entries must be literal argv prefixes, not shell programs, assignments, or trailing `#` comments; quote a literal `#` argument, such as `git push origin '#123'`. MCP revocation takes effect on the next permission request, including existing sessions. Command policy changes take effect after sync. A private `.muse/agent-layer-policy.json` receipt records the owned native policy directory for this workspace. Cleanup retires Agent Layer command rules only for the current workspace root, including a previous native directory after HOME or XDG changes. A receipt that names another workspace is not used as a retirement target; disabling Muse fails until that receipt is removed. If this workspace directory itself moved, leftover rules keyed to the old path remain in native storage. Projects that never enabled Muse do not inspect native Muse storage. Keep that receipt until disabling and syncing; deleting a workspace without cleanup leaves its scoped rules in native storage. Non-YOLO runs keep native approvals and sandboxing, pass `--approval-mode untrusted --approval-judge off`, and never receive `--disable-approval`; only explicit `approvals.mode = "yolo"` receives `--yolo`. Headless dispatch remains available under every approval mode. A read-only `muse serve` observer checks the dispatch session through Muse's supported `approval/listPending` method; when an action requires human approval, Agent Layer fails the dispatch and verifies provider termination without an inactivity deadline or broader permissions. Muse's separate `request_user_input` tool is auto-cancelled in headless dispatch with `--user-input-auto-resolve`. Completion chime and statusline projection are unsupported because no sufficiently precise native completion-hook/statusline contract was established.
 
 Each agent has an `enabled` flag and an optional `model` value. Omit `model` and `reasoning_effort` to use the client defaults.
 
@@ -398,6 +398,10 @@ Selector rules:
   validate the whole change first and leave local state untouched.
 - Each repository-and-selector pair must be unique across the whole file, so
   `al skills remove` always identifies exactly one selector.
+- `al skills add` and `al skills remove` edit `config.toml` in place, so the
+  import they change must use its own `[[skills.imports]]` header. They stop,
+  without changing anything, when that import is declared in an inline array
+  under `[skills]` or under a quoted key such as `[[skills."imports"]]`.
 - Ancestor and descendant selected paths from one repository are rejected
   because they would create overlapping editable owners.
 
@@ -456,6 +460,7 @@ The set of environment variables is intentionally small. Configuration should li
 | --- | --- |
 | `AL_VERSION` | force a version (overrides the repo pin) |
 | `AL_NO_NETWORK` | disable update checks and downloads |
+| `AL_DOWNLOAD_TIMEOUT` | how long a pinned-version download may go without receiving data before it fails (default `30s`); each download may run for 10 minutes, or longer when this is 5 minutes or more |
 | `AL_CACHE_DIR` | override the pinned-version cache directory |
 
 These variables only affect version dispatch, update checks, and downloads. They do not disable MCP server networking.
@@ -481,7 +486,8 @@ Only variables prefixed with `AL_` are loaded from `.agent-layer/.env`.
 
 Rules:
 
-- Your existing process environment takes precedence
+- Non-empty values in your existing process environment take precedence, both in launched agents and when `al sync` resolves MCP `${VAR}` placeholders
+- `.env` fills only keys that are missing or empty in your process environment
 - Empty values in `.env` are ignored
 - `.env` is always gitignored
 
@@ -526,7 +532,7 @@ The command set is intentionally small. Most of the time you only need one rhyth
 | `al upgrade prefetch` | Download and cache a release binary ahead of time (use `--version X.Y.Z` explicitly on dev builds). |
 | `al upgrade rollback --list` | List available upgrade snapshot IDs and statuses before rollback. |
 | `al upgrade rollback <snapshot-id>` | Restore an applied upgrade snapshot by ID (snapshot IDs are JSON filename stems under `.agent-layer/state/upgrade-snapshots/`). |
-| `al upgrade repair-gitignore-block` | Restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block. |
+| `al upgrade repair-gitignore-block` | Restore `.agent-layer/gitignore.block` from templates, keeping your tracking choices, and reapply the root `.gitignore` managed block. |
 | `al wizard` | Interactive configuration plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`). |
 | `al sync` | Regenerate client configs without launching a client. |
 | `al <client>` | Sync and launch a client (agy/claude/codex/copilot/grok/muse/vscode). |
@@ -603,7 +609,7 @@ In non-interactive environments, the wizard is skipped.
 **Version pinning and network**
 
 - If you are running a release build, `al init` writes `.agent-layer/al.version`.
-- You can set the initial pin explicitly with `--version X.Y.Z` (or `--version latest`).
+- You can set the initial pin explicitly with `--version X.Y.Z` (or `--version latest`). A release build accepts only its own version, because it writes only its own templates; to pin a different release, run `al init` with that release's CLI.
 - `.agent-layer/al.version` is required for supported usage. If it is missing or invalid, run `al upgrade` to repair it.
 - Pin file parsing ignores blank lines and `#` comments, and expects exactly one version line.
 - If the pin file is empty, invalid, or contains multiple version lines, dispatch warns and falls back to the current CLI version; run `al upgrade` to rewrite a valid pin.
@@ -700,7 +706,7 @@ Use this only when you are sure no agent run artifacts you care about live under
 
 ### Repair gitignore block
 
-`al upgrade repair-gitignore-block` restores `.agent-layer/gitignore.block` to the embedded template and reapplies the root `.gitignore` managed block.
+`al upgrade repair-gitignore-block` restores `.agent-layer/gitignore.block` to the embedded template and reapplies the root `.gitignore` managed block. It keeps whether `/.agent-layer/` and `/docs/agent-layer/` are ignored when the old block contains exactly one line for that pattern, commented or not; otherwise that entry gets the template default. Other customizations are discarded.
 
 Use this when `.agent-layer/gitignore.block` is invalid (for example it accidentally includes managed markers or template-hash lines).
 
@@ -715,7 +721,7 @@ Use it before `al upgrade` to understand what would change:
 - Template additions
 - Template updates
 - Template renames (heuristic, confidence-annotated)
-- Template removals/orphans
+- Template removals/orphans and unknown files and directories under `.agent-layer/` and `docs/agent-layer/` that `--apply-deletions` would delete, excluding `.agent-layer/tmp/` and paths listed in `.agent-layer/upgrade-keep-list`
 - Config key migrations (when migration manifests are present)
 - Pin version change (`current -> target`)
 - Readiness checks (for example unresolved placeholders, process-env vs `.env` collisions, ignored empty `.env` assignments, path-expansion anomalies, stale VS Code `--no-sync` outputs, floating dependency specs, and stale disabled-agent artifacts)
@@ -781,7 +787,7 @@ Think of sync as a build step. You can run it any time you want to refresh gener
 
 **Steps (high level)**
 
-1. Load and validate `config.toml`, then resolve secrets from `.agent-layer/.env`.
+1. Load and validate `config.toml`, then resolve secrets from the process environment, falling back to `.agent-layer/.env`.
 2. Parse instructions and load both skill source tiers into one locked source snapshot.
 3. Write generated configs and launchers for enabled clients.
 4. Emit warnings if any thresholds in `[warnings]` are exceeded.
@@ -1002,8 +1008,9 @@ an absent skill path on that branch is an empty tree.
 **pull** is the only command that advances tracked imports. It merges the locked
 upstream tree, your current local tree, and the new upstream tree, so local
 edits survive an update. A change on one side applies cleanly; incompatible
-changes to the same path, delete/modify cases, and non-text files changed on
-both sides are reported as conflicts and fail only that skill. Every conflict
+changes to the same path, delete/modify cases, non-text files changed on both
+sides, and a file on one side where the other side has a same-named directory
+are reported as conflicts and fail only that skill. Every conflict
 leaves a Git workspace under `.agent-layer/tmp/skill-conflicts/<name>/` with
 `base`, `local`, and `upstream` branches. Finish the merge with ordinary git
 commands, `git add` the result, and run `al skills resolve <name>`. If that
@@ -1039,7 +1046,9 @@ workspace and projects the imported skill.
 never pulls first and never force-pushes. Changes for one destination
 repository and branch are committed and pushed together. For a tracked import,
 push first verifies the source ref is still at the locked commit and tells you
-to run `al skills pull` if it moved. A destination merge conflict leaves the
+to run `al skills pull` if it moved. A skill that an exclusion deselected is
+reported as skipped and never published; `al skills pull` applies its
+retirement rules. A destination merge conflict leaves the
 same kind of Git workspace as pull, with `base`, `local`, and `destination`
 branches. Push prompts before publication; non-interactive callers must pass
 `--yes`. `add` and `remove` use the same confirmation pattern before modifying
@@ -1137,15 +1146,15 @@ Use it to check whether your config is valid, your secrets are present, and your
 **What it does**
 
 - Validates `.agent-layer/config.toml`
-- Reports missing `AL_` secrets referenced by your config
-- Connects to each enabled MCP server and lists tools
+- Reports missing `AL_` secrets referenced by MCP servers that an enabled client receives
+- Connects to each enabled MCP server that at least one enabled client receives, and lists its tools. A server that `al sync` writes into no enabled client's config, such as one whose `clients` list names only disabled clients, is skipped.
 - Evaluates MCP warning thresholds from `[warnings]`
 - Checks for newer releases and warns if you are behind
 
 **Steps (high level)**
 
-1. Validate configuration and resolve secrets from `.agent-layer/.env`.
-2. Probe each enabled MCP server and collect tool metadata.
+1. Validate configuration and resolve secrets from the process environment, falling back to `.agent-layer/.env`.
+2. Probe each MCP server an enabled client receives and collect tool metadata.
 3. Compute warning thresholds and report any overages.
 4. Check for release updates (unless networking is disabled).
 

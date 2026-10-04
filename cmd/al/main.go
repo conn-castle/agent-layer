@@ -83,7 +83,7 @@ func runMain(ctx context.Context, args []string, stdout io.Writer, stderr io.Wri
 		dispatchStderr = io.Discard
 	}
 	if !shouldBypassDispatch(args) {
-		if handleRunError(maybeExecFunc(args, Version, cwd, dispatchStderr, exit), stderr, exit, true) {
+		if handleRunError(maybeExecFunc(ctx, args, Version, cwd, dispatchStderr, exit), stderr, exit, true) {
 			return
 		}
 	}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/herdr"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/tomlpatch"
 )
 
 const (
@@ -137,10 +138,11 @@ func removeManagedHandlers(value any) ([]any, error) {
 }
 
 func cleanClaudeHerdRHook(sys System, root string) error {
-	path, mode, exists, err := existingChimeCleanupTarget(sys, root, ".claude", "settings.json")
+	target, exists, err := existingChimeCleanupTarget(sys, root, ".claude", "settings.json")
 	if err != nil || !exists {
 		return err
 	}
+	path := target.path
 	data, err := sys.ReadFile(path)
 	if err != nil || !strings.Contains(string(data), agentLayerHerdRMarker) {
 		return err
@@ -165,11 +167,14 @@ func cleanClaudeHerdRHook(sys System, root string) error {
 	if len(hooks) == 0 {
 		delete(settings, hooksKey)
 	}
+	if err := target.checkWritable(); err != nil {
+		return err
+	}
 	output, err := sys.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
 	}
-	return sys.WriteFileAtomic(path, append(output, '\n'), mode)
+	return sys.WriteFileAtomic(path, append(output, '\n'), target.mode)
 }
 
 func writeAgyHerdRHook(sys System, root string) error {
@@ -201,8 +206,8 @@ func writeAgyHerdRHook(sys System, root string) error {
 func cleanAgyHerdRHook(sys System, root string) error {
 	path := filepath.Join(root, ".agy", "config", "hooks.json")
 	if err := ensureHerdRHookPathContained(sys, root, path); err != nil {
-		// Never follow or remove an unmanaged symlinked provider directory.
-		if errors.Is(err, errHerdRHookDirectoryConflict) {
+		// Never follow, rewrite, or remove a user-managed symlinked path.
+		if errors.Is(err, errHerdRHookPathConflict) {
 			return nil
 		}
 		return err
@@ -213,6 +218,9 @@ func cleanAgyHerdRHook(sys System, root string) error {
 	}
 	if err != nil {
 		return err
+	}
+	if !strings.Contains(string(data), agentLayerHerdRMarker) {
+		return nil
 	}
 	var document map[string]any
 	if err := json.Unmarshal(data, &document); err != nil {
@@ -244,11 +252,6 @@ func writeProviderHerdRHook(sys System, root, provider, event, command string) e
 	if err := ensureHerdRHookPathContained(sys, root, path); err != nil {
 		return err
 	}
-	if info, err := sys.Lstat(path); err == nil && (!info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0) {
-		return fmt.Errorf("HerdR hook path conflict: %s", path)
-	} else if err != nil && !os.IsNotExist(err) {
-		return err
-	}
 	document := map[string]any{}
 	data, err := sys.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
@@ -275,8 +278,8 @@ func writeProviderHerdRHook(sys System, root, provider, event, command string) e
 func cleanProviderHerdRHook(sys System, root, provider string) error {
 	path := providerHerdRHookPath(root, provider)
 	if err := ensureHerdRHookPathContained(sys, root, path); err != nil {
-		// Never follow or remove an unmanaged symlinked provider directory.
-		if errors.Is(err, errHerdRHookDirectoryConflict) {
+		// Never follow, rewrite, or remove a user-managed symlinked path.
+		if errors.Is(err, errHerdRHookPathConflict) {
 			return nil
 		}
 		return err
@@ -330,8 +333,11 @@ func cleanProviderHerdRHook(sys System, root, provider string) error {
 	return sys.WriteFileAtomic(path, append(encoded, '\n'), 0o600)
 }
 
-var errHerdRHookDirectoryConflict = errors.New("HerdR hook directory conflict")
+var errHerdRHookPathConflict = errors.New("HerdR hook path conflict")
 
+// ensureHerdRHookPathContained rejects a hook path outside root, or one reached
+// through a symlinked or non-directory parent, or whose existing final entry is
+// a symlink or non-regular file, so writes and cleanup never follow user links.
 func ensureHerdRHookPathContained(sys System, root, path string) error {
 	root = filepath.Clean(root)
 	path = filepath.Clean(path)
@@ -347,8 +353,18 @@ func ensureHerdRHookPathContained(sys System, root, path string) error {
 			return fmt.Errorf(messages.InstallFailedStatFmt, directory, err)
 		}
 		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-			return fmt.Errorf("%w: %s", errHerdRHookDirectoryConflict, directory)
+			return fmt.Errorf("%w: %s", errHerdRHookPathConflict, directory)
 		}
+	}
+	info, err := sys.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf(messages.InstallFailedStatFmt, path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%w: %s", errHerdRHookPathConflict, path)
 	}
 	return nil
 }
@@ -388,20 +404,28 @@ func injectMuseHerdRHook(document map[string]any, enabled bool, root string) err
 func errorsNew(message string) error { return fmt.Errorf("%s", message) }
 
 func (e *codexTomlEditor) applyCodexHerdRHook(path string, enabled bool, root ...string) (bool, error) {
+	// Markers inside multiline strings are user content, not an owned block.
 	start, end := -1, -1
-	for index, line := range e.lines {
+	var markerErr error
+	tomlpatch.WalkLinesOutsideMultiline(e.lines, func(index int, line string, _ tomlpatch.StringState) tomlpatch.LineWalkResult {
 		switch strings.TrimSpace(line) {
 		case codexHerdRBeginMarker:
 			if start >= 0 {
-				return false, fmt.Errorf("duplicate HerdR hook markers in %s", path)
+				markerErr = fmt.Errorf("duplicate HerdR hook markers in %s", path)
+				return tomlpatch.LineWalkResult{Stop: true}
 			}
 			start = index
 		case codexHerdREndMarker:
 			if start < 0 || end >= 0 {
-				return false, fmt.Errorf("invalid HerdR hook markers in %s", path)
+				markerErr = fmt.Errorf("invalid HerdR hook markers in %s", path)
+				return tomlpatch.LineWalkResult{Stop: true}
 			}
 			end = index
 		}
+		return tomlpatch.LineWalkResult{}
+	})
+	if markerErr != nil {
+		return false, markerErr
 	}
 	if start >= 0 && end < 0 {
 		return false, fmt.Errorf("unterminated HerdR hook marker in %s", path)

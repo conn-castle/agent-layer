@@ -3,6 +3,8 @@ package launchers
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -56,21 +58,34 @@ func WriteVSCodeLaunchers(sys System, root string) error {
 		return err
 	}
 
-	writes := []struct {
-		destPath     string
-		templatePath string
-		perm         os.FileMode
-	}{
-		{paths.Shell, openVSCodeShellTemplatePath, 0o755},
-		{paths.Desktop, openVSCodeDesktopTemplatePath, 0o755},
+	if err := writeTemplateFile(sys, paths.Shell, openVSCodeShellTemplatePath, 0o755); err != nil {
+		return err
 	}
 
-	for _, w := range writes {
-		if err := writeTemplateFile(sys, w.destPath, w.templatePath, w.perm); err != nil {
-			return err
-		}
-	}
+	return writeVSCodeDesktopEntry(sys, paths)
+}
 
+// writeVSCodeDesktopEntry embeds a fallback for launchers that cannot expand %k.
+// Keep the path in a separate argument so it is never interpreted as shell code.
+func writeVSCodeDesktopEntry(sys System, paths VSCodeLauncherPaths) error {
+	data, err := readTemplate(openVSCodeDesktopTemplatePath)
+	if err != nil {
+		return fmt.Errorf(messages.SyncReadTemplateFailedFmt, openVSCodeDesktopTemplatePath, err)
+	}
+	shellPath, err := filepath.Abs(paths.Shell)
+	if err != nil {
+		return fmt.Errorf("resolve VS Code launcher path: %w", err)
+	}
+	// Escape the quoted Exec argument, then the desktop string value. Literal
+	// percent signs must be doubled so they are not expanded as field codes.
+	escapedPath := strings.NewReplacer(
+		`\`, `\\\\`, `"`, `\\"`, "`", "\\\\`", `$`, `\\$`, `%`, `%%`,
+		"\n", `\n`, "\r", `\r`, "\t", `\t`,
+	).Replace(shellPath)
+	data = []byte(strings.ReplaceAll(string(data), "__OPEN_VSCODE_SHELL__", escapedPath))
+	if err := sys.WriteFileAtomic(paths.Desktop, data, 0o755); err != nil {
+		return fmt.Errorf(messages.SyncWriteFileFailedFmt, paths.Desktop, err)
+	}
 	return nil
 }
 

@@ -105,7 +105,7 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 
 	for index, block := range writable {
 		repository := config.NormalizeSkillRepository(block.Repository)
-		entries := st.entriesForBlock(block)
+		entries := selectedPushEntries(report, block, st.entriesForBlock(block))
 		if len(entries) == 0 {
 			continue
 		}
@@ -203,6 +203,31 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 		}
 	}
 	return nil
+}
+
+// selectedPushEntries keeps the entries the block still selects after its
+// exclusions. Lock ownership follows an entry's recorded selector, so an entry
+// a later `!` exclusion deselected still belongs to the block; it has left the
+// desired set, though, and publishing it would push content the user chose to
+// stop sharing. Pull applies its retirement rules instead. Excluded entries
+// are filtered before any block-level step so they cannot block the block,
+// trigger a source freshness check, or decide its destination grouping.
+func selectedPushEntries(report *Report, block config.SkillImport, entries []skilllock.Entry) []skilllock.Entry {
+	selected := make([]skilllock.Entry, 0, len(entries))
+	for _, entry := range entries {
+		if _, ok := selectingPositiveSelector(block, entry.SelectedPath); ok {
+			selected = append(selected, entry)
+			continue
+		}
+		report.Add(SkillResult{
+			Name:         entry.Name,
+			Repository:   entry.Repository,
+			SelectedPath: entry.SelectedPath,
+			Outcome:      OutcomeSkipped,
+			Detail:       "no longer selected by its import block; run 'al skills pull' to apply retirement rules",
+		})
+	}
+	return selected
 }
 
 // resolveTrackedSourceCommit resolves the block's source ref once when any of
@@ -429,9 +454,9 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 		// for recreating the contribution branch. Unreachable or rewritten history
 		// falls back to the locked source below.
 		mergeBase, checkpointed, baseErr := publicationMergeBase(ctx, destination, group, candidate, head)
-		if errors.Is(baseErr, errPublicationUnavailable) {
+		publicationUnavailable := errors.Is(baseErr, errPublicationUnavailable)
+		if publicationUnavailable {
 			candidate.Entry.Publication = nil
-			txn.SetLockEntry(candidate.Entry)
 			mergeBase = candidate.Base
 			baseErr = nil
 		}
@@ -484,19 +509,28 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 		}
 		candidate.SyncLocal = !merged.IsEmpty() && !merged.Equal(candidate.Local)
 		candidate.Local = merged
-		// Equality is settled before validation so a preserved deletion reports
-		// unchanged instead of failing validation on an empty tree.
+		// A merged tree is either published or, when it already matches the
+		// destination, written back to the imported tier, so it must be a valid
+		// skill either way. Only an empty result already equal to the destination
+		// preserves a whole-skill deletion and skips validation as unchanged.
+		if !merged.IsEmpty() || !merged.Equal(destinationTree) {
+			if _, validateErr := skilltree.ValidateSkill(merged, candidate.Entry.SelectedPath); validateErr != nil {
+				result.Outcome = OutcomeFailed
+				result.Err = fmt.Errorf("the result for %s would not be a valid skill: %w", group.Repository, validateErr)
+				report.Add(result)
+				continue
+			}
+		}
+		// A rejected candidate must not leave a checkpoint reset for a
+		// successful sibling to commit through the shared transaction.
+		if publicationUnavailable {
+			txn.SetLockEntry(candidate.Entry)
+		}
 		if merged.Equal(destinationTree) {
 			result.Outcome = OutcomeUnchanged
 			result.Detail = unchangedDetail(group, candidate, merged)
 			unchanged = append(unchanged, result)
 			unchangedCandidates = append(unchangedCandidates, candidate)
-			continue
-		}
-		if _, validateErr := skilltree.ValidateSkill(merged, candidate.Entry.SelectedPath); validateErr != nil {
-			result.Outcome = OutcomeFailed
-			result.Err = fmt.Errorf("the result for %s would not be a valid skill: %w", group.Repository, validateErr)
-			report.Add(result)
 			continue
 		}
 		updates = append(updates, gitrepo.Update{Path: candidate.Entry.SelectedPath, Tree: merged})

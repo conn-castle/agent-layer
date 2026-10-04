@@ -231,9 +231,13 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 	if err != nil || len(failureEvents) != 1 || failureEvents[0].Kind != eventFailure || failureEvents[0].Reason != "model quota exhausted" {
 		t.Fatalf("Codex nested failure events = %#v, %v", failureEvents, err)
 	}
-	stringFailureEvents, err := reduceStructuredTestEvent(AgentCodex, "", []byte(`{"type":"error","error":"quota exhausted"}`))
+	stringFailureEvents, err := reduceStructuredTestEvent(AgentCodex, "", []byte(`{"type":"turn.failed","error":"quota exhausted"}`))
 	if err != nil || len(stringFailureEvents) != 1 || stringFailureEvents[0].Kind != eventFailure || stringFailureEvents[0].Reason != "quota exhausted" {
 		t.Fatalf("Codex string failure events = %#v, %v", stringFailureEvents, err)
+	}
+	diagnosticEvents, err := reduceStructuredTestEvent(AgentCodex, "", []byte(`{"type":"error","error":{"message":"Reconnecting... 2/5 (request timed out)"}}`))
+	if err != nil || len(diagnosticEvents) != 1 || diagnosticEvents[0].Kind != eventProgress || diagnosticEvents[0].Activity != jsonErrorKey || diagnosticEvents[0].Reason != "Reconnecting... 2/5 (request timed out)" {
+		t.Fatalf("Codex error diagnostic events = %#v, %v", diagnosticEvents, err)
 	}
 	var raw bytes.Buffer
 	var recovered []providerEvent
@@ -666,6 +670,217 @@ func TestClaudeRunnerReadsLineageAndLatestResultThroughEOF(t *testing.T) {
 	}
 }
 
+func TestClaudeResultWaitsForOutstandingTasksBeforeCompleting(t *testing.T) {
+	result := func(answer string) string {
+		return `{"type":"result","session_id":"` + runtimeSessionID + `","is_error":false,"result":"` + answer + `"}` + "\n"
+	}
+	started := func(id, taskType string) string {
+		return `{"type":"system","subtype":"task_started","task_id":"` + id + `","tool_use_id":"tool-` + id + `","task_type":"` + taskType + `","is_backgrounded":true}` + "\n"
+	}
+	notifiedWithStatus := func(id, status string) string {
+		return `{"type":"system","subtype":"task_notification","task_id":"` + id + `","status":"` + status + `"}` + "\n"
+	}
+	notified := func(id string) string {
+		return notifiedWithStatus(id, dispatchStateCompleted)
+	}
+	updated := func(id, status string) string {
+		return `{"type":"system","subtype":"task_updated","task_id":"` + id + `","patch":{"status":"` + status + `"}}` + "\n"
+	}
+	for _, test := range []struct {
+		name        string
+		stream      string
+		want        []string
+		wantWaiting int
+	}{
+		{
+			name:        "background bash completes before the final result",
+			stream:      started("bash", "local_bash") + result("ci is running in the background") + notified("bash") + result("ci passed"),
+			want:        []string{"answer:ci is running in the background", "answer:ci passed", "complete"},
+			wantWaiting: 1,
+		},
+		{
+			name:        "background agent completes before the final result",
+			stream:      started("agent", "local_agent") + result("review is running") + notified("agent") + result("review done"),
+			want:        []string{"answer:review is running", "answer:review done", "complete"},
+			wantWaiting: 1,
+		},
+		{
+			name:        "task finished before the result",
+			stream:      started("bash", "local_bash") + notified("bash") + result("done"),
+			want:        []string{"answer:done", "complete"},
+			wantWaiting: 0,
+		},
+		{
+			name:        "task killed before the result without a notification",
+			stream:      started("bash", "local_bash") + updated("bash", "killed") + result("server stopped as requested"),
+			want:        []string{"answer:server stopped as requested", "complete"},
+			wantWaiting: 0,
+		},
+		{
+			name:        "task completed update without a notification",
+			stream:      started("agent", "local_agent") + result("review is running") + updated("agent", dispatchStateCompleted) + result("review done"),
+			want:        []string{"answer:review is running", "answer:review done", "complete"},
+			wantWaiting: 1,
+		},
+		{
+			name:        "task failed update without a notification",
+			stream:      started("agent", "local_agent") + result("review is running") + updated("agent", dispatchStateFailed),
+			want:        []string{"answer:review is running", "failure:Claude background task reported failed after the latest successful result; Claude exited without a later result"},
+			wantWaiting: 1,
+		},
+		{
+			name:        "task killed update without a notification",
+			stream:      started("bash", "local_bash") + result("ci is running") + updated("bash", "killed"),
+			want:        []string{"answer:ci is running", "failure:Claude background task reported stopped after the latest successful result; Claude exited without a later result"},
+			wantWaiting: 1,
+		},
+		{
+			name:        "task stopped update without a notification",
+			stream:      started("bash", "local_bash") + result("ci is running") + updated("bash", claudeTaskStatusStopped),
+			want:        []string{"answer:ci is running", "failure:Claude background task reported stopped after the latest successful result; Claude exited without a later result"},
+			wantWaiting: 1,
+		},
+		{
+			name:        "nonterminal update still waits for the task",
+			stream:      started("bash", "local_bash") + updated("bash", "running") + result("ci is running") + notified("bash") + result("ci passed"),
+			want:        []string{"answer:ci is running", "answer:ci passed", "complete"},
+			wantWaiting: 1,
+		},
+		{
+			name:        "stream ends while a task is outstanding",
+			stream:      started("bash", "local_bash") + result("interim"),
+			want:        []string{"answer:interim", "complete"},
+			wantWaiting: 1,
+		},
+		{
+			name:        "Claude stops background bash at exit without a later result",
+			stream:      started("bash", "local_bash") + result("ci is running in the background") + notifiedWithStatus("bash", claudeTaskStatusStopped),
+			want:        []string{"answer:ci is running in the background", "failure:Claude background task reported stopped after the latest successful result; Claude exited without a later result"},
+			wantWaiting: 1,
+		},
+		{
+			name:        "background agent fails without a later result",
+			stream:      started("agent", "local_agent") + result("review is running") + notifiedWithStatus("agent", dispatchStateFailed),
+			want:        []string{"answer:review is running", "failure:Claude background task reported failed after the latest successful result; Claude exited without a later result"},
+			wantWaiting: 1,
+		},
+		{
+			name:        "another task completing does not hide a stopped task",
+			stream:      started("bash", "local_bash") + started("agent", "local_agent") + result("work is running") + notifiedWithStatus("bash", claudeTaskStatusStopped) + notified("agent"),
+			want:        []string{"answer:work is running", "failure:Claude background task reported stopped after the latest successful result; Claude exited without a later result"},
+			wantWaiting: 1,
+		},
+		{
+			name:        "completed task without a later result retains the answer",
+			stream:      started("bash", "local_bash") + result("interim") + notified("bash"),
+			want:        []string{"answer:interim", "complete"},
+			wantWaiting: 1,
+		},
+		{
+			name:        "later result acknowledges a stopped task",
+			stream:      started("bash", "local_bash") + result("ci is running") + notifiedWithStatus("bash", claudeTaskStatusStopped) + result("ci retried in the foreground and passed"),
+			want:        []string{"answer:ci is running", "answer:ci retried in the foreground and passed", "complete"},
+			wantWaiting: 1,
+		},
+		{
+			name:        "later pending result acknowledges a failed task",
+			stream:      started("bash", "local_bash") + started("agent", "local_agent") + result("work is running") + notifiedWithStatus("bash", dispatchStateFailed) + result("ci retried and passed; review is running") + notified("agent"),
+			want:        []string{"answer:work is running", "answer:ci retried and passed; review is running", "complete"},
+			wantWaiting: 2,
+		},
+		{
+			name:        "untracked stopped notification does not invalidate the answer",
+			stream:      started("bash", "local_bash") + result("interim") + notifiedWithStatus("unknown", claudeTaskStatusStopped) + notified("bash"),
+			want:        []string{"answer:interim", "complete"},
+			wantWaiting: 1,
+		},
+		{
+			name:        "error result while a task is outstanding",
+			stream:      started("bash", "local_bash") + `{"type":"result","session_id":"` + runtimeSessionID + `","is_error":true,"result":"boom"}` + "\n",
+			want:        []string{"failure:boom"},
+			wantWaiting: 0,
+		},
+	} {
+		for _, lineage := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/lineage=%t", test.name, lineage), func(t *testing.T) {
+				var got []string
+				var waiting int
+				if err := readStructuredEventsWithLineage(strings.NewReader(test.stream), io.Discard, AgentClaude, runtimeSessionID, lineage, func(event providerEvent) error {
+					switch event.Kind {
+					case eventAnswer:
+						got = append(got, "answer:"+event.Answer)
+					case eventComplete:
+						got = append(got, "complete")
+					case eventFailure:
+						got = append(got, "failure:"+event.Reason)
+					case eventProgress:
+						if event.Activity == "claude_waiting_for_background_tasks" {
+							waiting++
+						}
+					}
+					return nil
+				}, func(claudeLineageEvidence) error { return nil }); err != nil {
+					t.Fatal(err)
+				}
+				if !slices.Equal(got, test.want) {
+					t.Fatalf("events = %q, want %q", got, test.want)
+				}
+				if waiting != test.wantWaiting {
+					t.Fatalf("waiting events = %d, want %d", waiting, test.wantWaiting)
+				}
+			})
+		}
+	}
+}
+
+func TestClaudeRunnerRejectsStoppedBackgroundBashWithoutLaterResult(t *testing.T) {
+	// Claude 2.1.288 emits this sequence with the wait ceiling set to zero:
+	// Bash has its own exit grace and is stopped without another result.
+	stream := `{"type":"system","subtype":"task_started","task_id":"bash","tool_use_id":"tool-bash","task_type":"local_bash","is_backgrounded":true}` + "\n" +
+		`{"type":"result","session_id":"` + runtimeSessionID + `","is_error":false,"result":"Background command started."}` + "\n" +
+		`{"type":"system","subtype":"task_updated","task_id":"bash","patch":{"status":"killed"}}` + "\n" +
+		`{"type":"system","subtype":"task_notification","task_id":"bash","status":"stopped"}` + "\n"
+	for _, lineage := range []bool{false, true} {
+		t.Run(fmt.Sprintf("lineage=%t", lineage), func(t *testing.T) {
+			root := t.TempDir()
+			providerVersion := claudeTestedVersion
+			if lineage {
+				providerVersion = "2.1.288"
+			}
+			run, err := newDispatchRun(root, AgentClaude, providerVersion, dispatchModeFresh)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fixture := filepath.Join(root, "claude.jsonl")
+			if err := os.WriteFile(fixture, []byte(stream), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			result, err := executeProvider(providerCommand{
+				Path:          "/bin/sh",
+				Args:          []string{"-c", `cat "$1"`, "sh", fixture},
+				Env:           os.Environ(),
+				Provider:      AgentClaude,
+				SessionID:     runtimeSessionID,
+				ClaudeLineage: lineage,
+			}, []byte("prompt"), run, root, nil, func(string) error { return nil })
+			requireDispatchExitCode(t, err, ExitTargetFailure)
+			if !strings.Contains(err.Error(), "background task reported stopped") {
+				t.Fatalf("failure lost the stopped task evidence: %v", err)
+			}
+			if result.Complete || result.Answer != "" {
+				t.Fatalf("stopped task result = %#v", result)
+			}
+			var unproven *unprovenProviderTerminationError
+			if errors.As(err, &unproven) {
+				t.Fatalf("provider termination was not proven: %v", err)
+			}
+			if _, err := os.Stat(run.Record.AnswerPath); !os.IsNotExist(err) {
+				t.Fatalf("stopped task published an answer: %v", err)
+			}
+		})
+	}
+}
+
 func TestAntigravityLogIDIsStrictAndVersionGateFailsLoudly(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "antigravity.log")
 	if err := os.WriteFile(logPath, []byte("I0712 19:00:00.123456 42 logger.go] Created conversation AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA\n"), 0o600); err != nil {
@@ -866,6 +1081,40 @@ func TestGrokRunnerReadsStreamingJSONThroughEOF(t *testing.T) {
 	}
 	if result.Answer != "Grok output" || !result.Complete || result.SessionID != runtimeSessionID {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestRunnerThrottlesProgressRecordWritesForTokenStreams(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentGrok, clientgrok.SupportedVersion, dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	startRevision := run.Record.Revision
+	const chunks = 5000
+	fixture := strings.Repeat(`{"type":"text","data":"x"}`+"\n", chunks) +
+		`{"type":"end","sessionId":"` + runtimeSessionID + `","stopReason":"end_turn"}` + "\n"
+	fixturePath := filepath.Join(t.TempDir(), "stream.jsonl")
+	if err := os.WriteFile(fixturePath, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := executeProvider(providerCommand{
+		Path:      "/bin/sh",
+		Args:      []string{"-c", `cat "$1"`, "sh", fixturePath},
+		Env:       os.Environ(),
+		Provider:  AgentGrok,
+		SessionID: runtimeSessionID,
+	}, []byte("prompt"), run, root, nil, func(string) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Complete || result.Answer != strings.Repeat("x", chunks) {
+		t.Fatalf("complete = %v, answer length = %d", result.Complete, len(result.Answer))
+	}
+	// A record write per token stalled this stream past providerShutdownGrace;
+	// a bounded count proves progress writes are throttled without timing them.
+	if writes := run.Record.Revision - startRevision; writes > 50 {
+		t.Fatalf("run record written %d times for %d progress events", writes, chunks)
 	}
 }
 

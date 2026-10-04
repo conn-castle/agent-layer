@@ -225,6 +225,43 @@ func TestLaunchContextLookupSupportsLiteralGlobCharactersInProjectRoot(t *testin
 	}
 }
 
+func TestLaunchContextLookupIgnoresRunRemovedDuringScan(t *testing.T) {
+	root := t.TempDir()
+	runsDir := filepath.Join(root, ".agent-layer", "tmp", "runs")
+	vanished := filepath.Join(runsDir, "a-removed-dispatch")
+	live := filepath.Join(runsDir, "b-live")
+	for _, directory := range []string{vanished, live} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	canonicalRoot, err := canonicalDirectory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, start, err := processLineage(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	context := launchContext{Version: 1, PID: os.Getpid(), ProcessStart: start, ProjectRoot: canonicalRoot, Provider: providerMuse, SocketPath: "/tmp/herdr.sock", PaneID: "w1:p1"}
+	writeLaunchContextFixture(t, filepath.Join(live, launchContextName(os.Getpid(), start)), context)
+	original := readDirFunc
+	t.Cleanup(func() { readDirFunc = original })
+	readDirFunc = func(name string) ([]os.DirEntry, error) {
+		entries, err := original(name)
+		if filepath.Base(name) == "runs" {
+			// Simulate an unrelated dispatch cleanup after the run snapshot.
+			if removeErr := os.RemoveAll(vanished); removeErr != nil {
+				t.Fatal(removeErr)
+			}
+		}
+		return entries, err
+	}
+	if _, found, err := resolveLaunchContext(root, providerMuse); err != nil || !found {
+		t.Fatalf("run removed during scan blocked lookup: found=%t err=%v", found, err)
+	}
+}
+
 func TestMuseLaunchContextConcurrentSameProject(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".agent-layer", "tmp", "runs"), 0o700); err != nil {
