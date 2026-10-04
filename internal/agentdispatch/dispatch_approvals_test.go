@@ -199,11 +199,10 @@ func TestClaudeDispatchDeliversApprovalsOnCommandLine(t *testing.T) {
 	enabled := true
 	project.Config.Approvals.Mode = config.ApprovalModeAll
 	project.CommandsAllow = []string{"git status", "npm test"}
-	project.Config.MCP.Servers = append(project.Config.MCP.Servers, config.MCPServer{
-		ID:      "custom-server",
-		Enabled: &enabled,
-		Command: "custom-mcp",
-	})
+	project.Config.MCP.Servers = append(project.Config.MCP.Servers,
+		config.MCPServer{ID: "custom-server", Enabled: &enabled, Command: "custom-mcp"},
+		config.MCPServer{ID: "docs.internal", Enabled: &enabled, Command: "docs-mcp"},
+	)
 
 	target, ok := lookupTarget(AgentClaude)
 	if !ok {
@@ -218,7 +217,9 @@ func TestClaudeDispatchDeliversApprovalsOnCommandLine(t *testing.T) {
 		t.Fatalf("build Claude command: %v", err)
 	}
 
-	for _, want := range []string{"Bash(git status:*)", "Bash(npm test:*)", "mcp__custom-server__*"} {
+	// Claude names a server's tools with its normalized name, so the dotted ID
+	// must be granted as docs_internal for the rule to match.
+	for _, want := range []string{"Bash(git status:*)", "Bash(npm test:*)", "mcp__custom-server__*", "mcp__docs_internal__*"} {
 		if !argPairPresent(command.Args, "--allowedTools", want) {
 			t.Errorf("Claude args %v omitted --allowedTools %q", command.Args, want)
 		}
@@ -234,6 +235,34 @@ func TestClaudeDispatchDeliversApprovalsOnCommandLine(t *testing.T) {
 	}
 	if !argPairPresent(command.Args, "--allowedTools", "Bash(awk -F, {print}:*)") {
 		t.Errorf("Claude args %v split a comma-bearing command pattern", command.Args)
+	}
+}
+
+// TestGrokDispatchKeepsConfiguredMCPServerIDs keeps Grok's --allow rules on
+// the configured ID; Claude's server-name normalization is unconfirmed for Grok.
+func TestGrokDispatchKeepsConfiguredMCPServerIDs(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	project := loadApprovalsTestProject(t, root)
+	enabled := true
+	project.Config.Approvals.Mode = config.ApprovalModeMCP
+	project.Config.MCP.Servers = append(project.Config.MCP.Servers,
+		config.MCPServer{ID: "docs.internal", Enabled: &enabled, Command: "docs-mcp"},
+	)
+
+	target, ok := lookupTarget(AgentGrok)
+	if !ok {
+		t.Fatal("Grok target missing from registry")
+	}
+	run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	command, err := buildProviderCommand(target, project, []string{}, []byte("prompt"), "", "", false, dispatchModeFresh, runtimeSessionID, run, io.Discard)
+	if err != nil {
+		t.Fatalf("build Grok command: %v", err)
+	}
+	if !argPairPresent(command.Args, "--allow", "mcp__docs.internal__*") {
+		t.Errorf("Grok args %v omitted --allow mcp__docs.internal__*", command.Args)
 	}
 }
 
