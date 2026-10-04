@@ -216,6 +216,15 @@ func validate(file *File, source string) error {
 // rejectOverlappingPaths refuses duplicate or ancestor/descendant selected
 // paths in one repository, because they describe overlapping editable owners
 // that no import operation can reconcile.
+func rejectOverlappingPaths(paths []string) error {
+	if ancestor, current, overlaps := FindOverlap(paths); overlaps {
+		return fmt.Errorf("selected paths %s and %s overlap", ancestor, current)
+	}
+	return nil
+}
+
+// FindOverlap returns the first pair of paths where ancestor is current itself
+// (a duplicate) or one of its ancestor directories.
 //
 // Comparing sorted neighbours is not enough: every byte below '/' sorts ahead
 // of it, so a sibling such as "skills-old" lands between "skills" and
@@ -223,28 +232,19 @@ func validate(file *File, source string) error {
 // every path already accepted, by walking its own ancestor prefixes. Sorting
 // guarantees an ancestor is accepted before any of its descendants, because an
 // ancestor is a strict prefix and therefore sorts first.
-func rejectOverlappingPaths(paths []string) error {
+func FindOverlap(paths []string) (ancestor string, current string, overlaps bool) {
 	sorted := append([]string{}, paths...)
 	sort.Strings(sorted)
 	accepted := make(map[string]struct{}, len(sorted))
-	for _, current := range sorted {
-		if conflict, overlaps := findOverlap(accepted, current); overlaps {
-			return fmt.Errorf("selected paths %s and %s overlap", conflict, current)
+	for _, candidate := range sorted {
+		for prefix := candidate; prefix != "." && prefix != "/" && prefix != ""; prefix = path.Dir(prefix) {
+			if _, exists := accepted[prefix]; exists {
+				return prefix, candidate, true
+			}
 		}
-		accepted[current] = struct{}{}
+		accepted[candidate] = struct{}{}
 	}
-	return nil
-}
-
-// findOverlap returns an already-accepted path that is candidate itself or one
-// of its ancestors.
-func findOverlap(accepted map[string]struct{}, candidate string) (string, bool) {
-	for current := candidate; current != "." && current != "/" && current != ""; current = path.Dir(current) {
-		if _, exists := accepted[current]; exists {
-			return current, true
-		}
-	}
-	return "", false
+	return "", "", false
 }
 
 // ValidateRepository rejects a repository reference that embeds a literal

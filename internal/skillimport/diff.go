@@ -34,9 +34,6 @@ func (s *Service) Diff(ctx context.Context, name string, from string, to string)
 
 	var output []byte
 	err := s.withLockedState(func(st *state) error {
-		if err := failOnOrphans(st); err != nil {
-			return err
-		}
 		entry, ok := st.lock.Entry(name)
 		if !ok {
 			return fmt.Errorf("imported skill %q has no lock entry", name)
@@ -68,15 +65,11 @@ func validateDiffSide(side string) error {
 }
 
 func (s *Service) diffLocked(ctx context.Context, st *state, entry skilllock.Entry, from string, to string) ([]byte, error) {
-	runner, err := s.newRunner(st.env)
+	runner, workRoot, cleanup, err := s.gitWorkspace(st, "diff")
 	if err != nil {
 		return nil, err
 	}
-	workRoot, err := os.MkdirTemp("", "al-skill-diff-")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create a git working directory: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(workRoot) }()
+	defer cleanup()
 
 	fromTree, err := s.resolveDiffSide(ctx, runner, workRoot, st, entry, from)
 	if err != nil {

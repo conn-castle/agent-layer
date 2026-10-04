@@ -27,13 +27,6 @@ type desiredSkill struct {
 	Tree         skilltree.Tree
 }
 
-// treeReader reads a repository path's exact content at a commit.
-type treeReader interface {
-	ReadTree(ctx context.Context, commit string, repoPath string) (skilltree.Tree, error)
-	ListDirectories(ctx context.Context, commit string) ([]string, error)
-	PathExists(ctx context.Context, commit string, repoPath string) (bool, bool, error)
-}
-
 // candidateFailure is one selector match that cannot be accepted as an import.
 //
 // It is kept separate from a source-level error because the two have different
@@ -59,7 +52,7 @@ func (f candidateFailure) Name() string { return path.Base(f.Path) }
 // becomes one entry. An unreadable or invalid matched skill root is returned as
 // a per-candidate failure rather than an error, so callers decide whether it
 // blocks only that skill (pull) or the whole change (add and remove).
-func resolveBlock(ctx context.Context, source treeReader, blockIndex int, block config.SkillImport, commit string) ([]desiredSkill, []candidateFailure, error) {
+func resolveBlock(ctx context.Context, source *gitrepo.Source, blockIndex int, block config.SkillImport, commit string) ([]desiredSkill, []candidateFailure, error) {
 	candidates, failures, err := expandPositiveSelectors(ctx, source, block, commit)
 	if err != nil {
 		return nil, nil, err
@@ -128,7 +121,7 @@ type selectorCandidate struct {
 // path matched by several selectors into the first match in configuration
 // order. An exact selector that names nothing is a failure of that selector
 // alone; only a failure to read the source at all blocks the block.
-func expandPositiveSelectors(ctx context.Context, source treeReader, block config.SkillImport, commit string) ([]selectorCandidate, []candidateFailure, error) {
+func expandPositiveSelectors(ctx context.Context, source *gitrepo.Source, block config.SkillImport, commit string) ([]selectorCandidate, []candidateFailure, error) {
 	var directories []string
 	seen := make(map[string]struct{})
 	var candidates []selectorCandidate
@@ -270,27 +263,14 @@ func validateDesiredSet(desired []desiredSkill) error {
 
 // rejectOverlappingPaths fails when one selected path is an ancestor or
 // descendant of another, because that would create overlapping editable owners.
-//
-// Comparing sorted neighbours is not enough: every byte below '/' sorts ahead
-// of it, so "a/b-x" lands between "a/b" and "a/b/c" and would hide that pair.
-// Each path is instead checked against every path already accepted, by walking
-// its own ancestor prefixes. Sorting guarantees an ancestor is accepted before
-// any of its descendants, because an ancestor is a strict prefix.
 func rejectOverlappingPaths(skills []desiredSkill, scope string) error {
 	paths := make([]string, 0, len(skills))
 	for _, skill := range skills {
 		paths = append(paths, skill.SelectedPath)
 	}
-	sort.Strings(paths)
-	accepted := make(map[string]struct{}, len(paths))
-	for _, current := range paths {
-		for ancestor := current; ancestor != "." && ancestor != "/" && ancestor != ""; ancestor = path.Dir(ancestor) {
-			if _, exists := accepted[ancestor]; exists {
-				return fmt.Errorf("selected paths %s and %s overlap within %s; overlapping editable owners are not supported",
-					ancestor, current, scope)
-			}
-		}
-		accepted[current] = struct{}{}
+	if ancestor, current, overlaps := skilllock.FindOverlap(paths); overlaps {
+		return fmt.Errorf("selected paths %s and %s overlap within %s; overlapping editable owners are not supported",
+			ancestor, current, scope)
 	}
 	return nil
 }

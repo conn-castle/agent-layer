@@ -601,3 +601,26 @@ func TestParseAcceptsPlaceholderRepositories(t *testing.T) {
 		})
 	}
 }
+
+func TestFindOverlap(t *testing.T) {
+	cases := []struct {
+		name             string
+		paths            []string
+		ancestor, nested string
+		overlaps         bool
+	}{
+		{name: "disjoint", paths: []string{"skills/beta", "skills/alpha"}},
+		{name: "duplicate", paths: []string{"skills/alpha", "skills/alpha"}, ancestor: "skills/alpha", nested: "skills/alpha", overlaps: true},
+		{name: "ancestor listed last", paths: []string{"skills/alpha", "skills"}, ancestor: "skills", nested: "skills/alpha", overlaps: true},
+		// "skills-old" sorts between "skills" and "skills/alpha".
+		{name: "ancestor separated by a sibling", paths: []string{"skills/alpha", "skills-old", "skills"}, ancestor: "skills", nested: "skills/alpha", overlaps: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ancestor, nested, overlaps := FindOverlap(tc.paths)
+			if ancestor != tc.ancestor || nested != tc.nested || overlaps != tc.overlaps {
+				t.Fatalf("FindOverlap(%q) = (%q, %q, %v), want (%q, %q, %v)", tc.paths, ancestor, nested, overlaps, tc.ancestor, tc.nested, tc.overlaps)
+			}
+		})
+	}
+}
