@@ -66,6 +66,11 @@ func renderVSCodeSettingsContent(sys System, existing string, settings *vscodeSe
 			return "", err
 		}
 		blockLines = append(blockLines, renderVSCodeUserEntries(userEntries, indentBase, needsTrailingComma)...)
+		// A property before a comment-only block needs no comma until the block gains content.
+		blockText := strings.Join(blockLines, "\n")
+		if hasJSONCNonTrivia(blockText, 0, len(blockText)) {
+			separateJSONCContentBefore(lines, blockStart)
+		}
 		lines = replaceVSCodeManagedBlock(lines, blockStart, blockEnd, blockLines)
 		updated := bom + strings.Join(lines, "\n")
 		if !strings.HasSuffix(updated, "\n") {
@@ -471,6 +476,59 @@ func hasJSONCContentBetween(lines []string, startLine, startCol, endLine, endCol
 	}
 
 	return false
+}
+
+// separateJSONCContentBefore adds a ',' after the last JSONC token before a line when that
+// token ends a value, so content inserted at that line starts a new property.
+// Args: lines are normalized content lines, updated in place; line is the index content is inserted at.
+func separateJSONCContentBefore(lines []string, line int) {
+	prefix := strings.Join(lines[:line], "\n")
+	last := lastJSONCTokenIndex(prefix)
+	if last == -1 || strings.IndexByte("{[,:", prefix[last]) != -1 {
+		return
+	}
+	lineIdx, col := indexToLineCol(prefix, last)
+	lines[lineIdx] = lines[lineIdx][:col+1] + "," + lines[lineIdx][col+1:]
+}
+
+// lastJSONCTokenIndex finds the last character outside whitespace and comments.
+// Args: text is normalized JSONC.
+// Returns: the index of that character (a string's closing quote), or -1 if there is none
+// or a string is unterminated.
+func lastJSONCTokenIndex(text string) int {
+	last := -1
+	for i := 0; i < len(text); i++ {
+		switch {
+		case text[i] == ' ' || text[i] == '\t' || text[i] == '\n':
+		case strings.HasPrefix(text[i:], "//"):
+			end := strings.IndexByte(text[i:], '\n')
+			if end == -1 {
+				return last
+			}
+			i += end
+		case strings.HasPrefix(text[i:], "/*"):
+			end := strings.Index(text[i+2:], "*/")
+			if end == -1 {
+				return last
+			}
+			i += end + 3
+		case text[i] == '"':
+			i++
+			for i < len(text) && text[i] != '"' && text[i] != '\n' {
+				if text[i] == '\\' {
+					i++
+				}
+				i++
+			}
+			if i >= len(text) || text[i] != '"' {
+				return -1
+			}
+			last = i
+		default:
+			last = i
+		}
+	}
+	return last
 }
 
 // leadingWhitespace returns the leading spaces or tabs from a line.

@@ -978,3 +978,91 @@ func TestRenderVSCodeSettingsContentRejectsInvalidManagedBlockContent(t *testing
 		})
 	}
 }
+
+func TestRenderVSCodeSettingsContentSeparatesPropertyBeforeManagedBlock(t *testing.T) {
+	t.Parallel()
+	skip := true
+	settings := &vscodeSettings{ClaudeCodeAllowDangerouslySkipPerms: &skip}
+	block := "  // >>> agent-layer\n" +
+		"  // Managed by Agent Layer. To customize, edit .agent-layer/config.toml\n" +
+		"  // and .agent-layer/commands.allow, then re-run `al sync`.\n" +
+		"  //\n"
+	managed := "  \"claudeCode.allowDangerouslySkipPermissions\": true\n  // <<< agent-layer\n}\n"
+
+	tests := []struct {
+		name     string
+		existing string
+		want     string
+	}{
+		{
+			name:     "property without a comma",
+			existing: "{\n  \"editor.fontSize\": 14\n" + block + "  // <<< agent-layer\n}\n",
+			want:     "{\n  \"editor.fontSize\": 14,\n" + block + managed,
+		},
+		{
+			name:     "file broken by an earlier sync",
+			existing: "{\n  \"editor.fontSize\": 14\n" + block + managed,
+			want:     "{\n  \"editor.fontSize\": 14,\n" + block + managed,
+		},
+		{
+			name:     "comma goes before a trailing comment",
+			existing: "{\n  \"a\": \"x // \\\"y\" // note, with comma\n  /* block, comment */\n" + block + "  // <<< agent-layer\n}\n",
+			want:     "{\n  \"a\": \"x // \\\"y\", // note, with comma\n  /* block, comment */\n" + block + managed,
+		},
+		{
+			name:     "string ending in an escaped backslash",
+			existing: "{\n  \"a\": \"x\\\\\"\n" + block + "  // <<< agent-layer\n}\n",
+			want:     "{\n  \"a\": \"x\\\\\",\n" + block + managed,
+		},
+		{
+			name:     "nested value",
+			existing: "{\n  \"a\": {\"b\": [1]}\n" + block + "  // <<< agent-layer\n}\n",
+			want:     "{\n  \"a\": {\"b\": [1]},\n" + block + managed,
+		},
+		{
+			name:     "existing comma",
+			existing: "{\n  \"a\": 1, // note\n" + block + "  // <<< agent-layer\n}\n",
+			want:     "{\n  \"a\": 1, // note\n" + block + managed,
+		},
+		{
+			name:     "block after the root brace",
+			existing: "{ // settings\n" + block + "  // <<< agent-layer\n}\n",
+			want:     "{ // settings\n" + block + managed,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			updated, err := renderVSCodeSettingsContent(RealSystem{}, tt.existing, settings)
+			if err != nil {
+				t.Fatalf("renderVSCodeSettingsContent error: %v", err)
+			}
+			if updated != tt.want {
+				t.Fatalf("unexpected output:\n%s\nwant:\n%s", updated, tt.want)
+			}
+			again, err := renderVSCodeSettingsContent(RealSystem{}, updated, settings)
+			if err != nil {
+				t.Fatalf("second renderVSCodeSettingsContent error: %v", err)
+			}
+			if again != updated {
+				t.Fatalf("second sync changed output:\n%s", again)
+			}
+		})
+	}
+}
+
+func TestRenderVSCodeSettingsContentKeepsPropertyBeforeEmptyManagedBlock(t *testing.T) {
+	t.Parallel()
+	existing := "{\n  \"editor.fontSize\": 14\n  // >>> agent-layer\n" +
+		"  // Managed by Agent Layer. To customize, edit .agent-layer/config.toml\n" +
+		"  // and .agent-layer/commands.allow, then re-run `al sync`.\n" +
+		"  //\n  // <<< agent-layer\n}\n"
+
+	updated, err := renderVSCodeSettingsContent(RealSystem{}, existing, &vscodeSettings{})
+	if err != nil {
+		t.Fatalf("renderVSCodeSettingsContent error: %v", err)
+	}
+	if updated != existing {
+		t.Fatalf("unexpected output:\n%s", updated)
+	}
+}
