@@ -37,7 +37,8 @@ func newOrganizeScratchCmd() *cobra.Command {
 			"files or 250 MiB, and files over 250 MiB, always require review. Registered main\n" +
 			"and linked worktrees, including bare repositories, stay in place unless\n" +
 			"--move-worktrees is explicit. A non-bare git directory outside its work tree\n" +
-			"is never moved.\n" +
+			"is never moved, and neither is a git directory when the move would break a\n" +
+			"symlink inside it.\n" +
 			"Symlinks are never rewritten; top-level and move-breaking links require review,\n" +
 			"including links under caller-provided --keep entries.",
 		Hidden: true,

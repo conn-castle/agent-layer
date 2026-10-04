@@ -889,6 +889,120 @@ func TestRunReviewsGitDirectoryLayoutThatGitDoesNotOpen(t *testing.T) {
 	}
 }
 
+func TestRunHoldsGitDirectoryLayoutsWithMoveBreakingLinks(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		bare          bool
+		moveWorktrees bool
+	}{
+		{name: "bare", bare: true, moveWorktrees: true},
+		{name: "lookalike", moveWorktrees: true},
+		{name: "lookalike-default"},
+	} {
+		for _, nested := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/nested=%t", test.name, nested), func(t *testing.T) {
+				root := t.TempDir()
+				name := "proj.git"
+				if nested {
+					name = "remotes"
+				}
+				gitDir := filepath.Join(root, name)
+				if nested {
+					gitDir = filepath.Join(gitDir, "proj.git")
+				}
+				if test.bare {
+					git(t, root, "clone", "--bare", newRepo(t), gitDir)
+				} else {
+					writeFileAt(t, filepath.Join(gitDir, "HEAD"), "not a ref\n")
+					mkdirAt(t, filepath.Join(gitDir, "refs"))
+					mkdirAt(t, filepath.Join(gitDir, "objects"))
+				}
+				store := filepath.Join(root, "object-store")
+				if err := os.Rename(filepath.Join(gitDir, "objects"), store); err != nil {
+					t.Fatal(err)
+				}
+				target, err := filepath.Rel(gitDir, store)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, filepath.Join(gitDir, "objects")); err != nil {
+					t.Fatal(err)
+				}
+				var head string
+				if test.bare {
+					head = git(t, gitDir, "rev-parse", "HEAD")
+				}
+				before := snapshotTree(t, root)
+				opts := Options{Root: root, MoveWorktrees: test.moveWorktrees, Keep: []string{"object-store"}}
+				stdout, stderr, err := runOrganize(t, opts)
+				if err != nil {
+					t.Fatalf("dry Run: %v\nstderr=%s", err, stderr)
+				}
+				for _, want := range []string{"LEFT IN PLACE  " + name, "moving it would break symlink(s)", "objects -> " + target} {
+					if !strings.Contains(stdout, want) {
+						t.Fatalf("stdout = %q, want %q", stdout, want)
+					}
+				}
+				if strings.Contains(stdout, "pass --move-worktrees") {
+					t.Fatalf("stdout offers relocation of held entry: %q", stdout)
+				}
+				if after := snapshotTree(t, root); !slices.Equal(before, after) {
+					t.Fatalf("dry run changed root\nbefore=%v\nafter=%v", before, after)
+				}
+				opts.Apply = true
+				stdout, stderr, err = runOrganize(t, opts)
+				if err != nil {
+					t.Fatalf("apply Run: %v\nstderr=%s", err, stderr)
+				}
+				requireFile(t, filepath.Join(gitDir, "HEAD"))
+				requireNoFile(t, filepath.Join(root, destReviewCheckouts, name))
+				if test.bare && git(t, gitDir, "rev-parse", "HEAD") != head {
+					t.Fatal("bare repository HEAD changed")
+				}
+				doc := readReviewDoc(t, root)
+				for _, output := range []string{stdout, doc} {
+					if !strings.Contains(output, "moving it would break symlink(s)") || !strings.Contains(output, "objects -> "+target) || strings.Contains(output, "pass --move-worktrees") || strings.Contains(output, "actual outcomes broke or may have broken") {
+						t.Fatalf("held entry lost its explanation or reports a broken link: %q", output)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestRunMovesBareRepositoryWithInternalObjectSymlinkAndRepairsWorktree(t *testing.T) {
+	root := t.TempDir()
+	bare := filepath.Join(root, "proj.git")
+	git(t, root, "clone", "--bare", newRepo(t), bare)
+	if err := os.Rename(filepath.Join(bare, "objects"), filepath.Join(bare, "objects-local")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("objects-local", filepath.Join(bare, "objects")); err != nil {
+		t.Fatal(err)
+	}
+	head := git(t, bare, "rev-parse", "HEAD")
+	external := filepath.Join(t.TempDir(), "outside-wt")
+	git(t, bare, "worktree", "add", external, "-b", "outside")
+
+	stdout, stderr, err := runOrganize(t, Options{Root: root, Apply: true, MoveWorktrees: true})
+	if err != nil {
+		t.Fatalf("Run: %v\nstderr=%s", err, stderr)
+	}
+	if strings.Contains(stdout, "LEFT IN PLACE") || strings.Contains(readReviewDoc(t, root), "break symlink") {
+		t.Fatalf("safe internal link blocked relocation: %q", stdout)
+	}
+	moved := filepath.Join(root, destReviewCheckouts, "proj.git")
+	requireNoFile(t, bare)
+	if git(t, moved, "rev-parse", "HEAD") != head {
+		t.Fatal("moved bare repository HEAD changed")
+	}
+	git(t, external, "status", "--porcelain")
+	list := git(t, moved, "worktree", "list", "--porcelain")
+	if !strings.Contains(list, canonicalPath(moved)) || !strings.Contains(list, canonicalPath(external)) || strings.Contains(list, "prunable") {
+		t.Fatalf("bare worktree list = %q", list)
+	}
+}
+
 func TestRunRepairsMovedWorktreeAfterLaterMoveFailure(t *testing.T) {
 	repo, scratch := newRepoWithScratch(t)
 	worktree := filepath.Join(scratch, "aaa-wt")

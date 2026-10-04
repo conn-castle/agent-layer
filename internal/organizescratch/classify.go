@@ -146,8 +146,8 @@ type placement struct {
 	// gitRepoTargets are git directories not named .git, such as a bare
 	// clone. Their work tree, if any, lives elsewhere.
 	gitRepoTargets []string
-	// immovable entries hold a git directory whose work tree Git cannot
-	// reconnect after a move, so they stay in place even with --move-worktrees.
+	// immovable entries hold a git directory that cannot be safely relocated,
+	// so they stay in place even with --move-worktrees.
 	immovable bool
 	links     []scannedLink
 	sampled   bool
@@ -248,8 +248,9 @@ func firstComponent(rel string) string {
 }
 
 // scanTree walks every metadata entry without following symlinks. .git markers
-// and other git directories, such as bare clones, are recorded but not
-// descended into, so repository metadata does not inflate counts or samples.
+// are recorded but not descended into. Other git directories, such as bare
+// clones, are scanned only for symlinks, so repository metadata does not inflate
+// counts or samples while links remain available for move-safety analysis.
 func scanTree(dir string) treeScan {
 	scan := treeScan{
 		byExt:            map[string]int{},
@@ -275,6 +276,7 @@ func scanTree(dir string) treeScan {
 			}
 			scan.gitMarkers = append(scan.gitMarkers, marker)
 			scan.gitRepoTargets = append(scan.gitRepoTargets, target)
+			scanGitDirSymlinks(dir, path, &scan)
 			return filepath.SkipDir
 		}
 		if rel == "." {
@@ -378,6 +380,35 @@ func scanTree(dir string) treeScan {
 	sort.Strings(scan.gitRepoTargets)
 	sort.Strings(scan.browserProfiles)
 	return scan
+}
+
+// scanGitDirSymlinks preserves safety evidence even for layouts Git later rejects.
+// It never follows symlinked directories or adds repository metadata to samples.
+func scanGitDirSymlinks(entryRoot, gitDir string, scan *treeScan) {
+	err := filepath.WalkDir(gitDir, func(path string, d os.DirEntry, walkErr error) error {
+		rel, relErr := filepath.Rel(entryRoot, path)
+		if relErr != nil {
+			scan.unreadable = append(scan.unreadable, fmt.Sprintf("%s: %v", path, relErr))
+			return nil
+		}
+		if walkErr != nil {
+			scan.unreadable = append(scan.unreadable, fmt.Sprintf("%s: %v", rel, walkErr))
+			return nil
+		}
+		if d.Type()&os.ModeSymlink == 0 {
+			return nil
+		}
+		target, readErr := os.Readlink(path)
+		if readErr != nil {
+			scan.unreadable = append(scan.unreadable, fmt.Sprintf("%s: read link: %v", rel, readErr))
+			target = unreadableLinkTarget
+		}
+		scan.symlinks = append(scan.symlinks, scannedLink{rel: rel, target: target})
+		return nil
+	})
+	if err != nil {
+		scan.unreadable = append(scan.unreadable, err.Error())
+	}
 }
 
 // looksLikeGitDir applies the layout Git itself requires of a repository

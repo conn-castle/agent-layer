@@ -432,8 +432,8 @@ func validateDestinationComponents(root, dest string) error {
 	return nil
 }
 
-// The bounded convergence loop is required because routing one link owner into
-// review/symlinks changes the planned layout used to evaluate every other link.
+// The bounded convergence loop is required because rerouting or holding one
+// link owner changes the planned layout used to evaluate every other link.
 func applySymlinkSafety(root string, plan []placement, moveWorktrees bool) ([]placement, []moveOutcome, error) {
 	for range len(plan) + 1 {
 		outcomes, err := predictOutcomes(root, plan, moveWorktrees)
@@ -443,7 +443,18 @@ func applySymlinkSafety(root string, plan []placement, moveWorktrees bool) ([]pl
 		warnings := symlinkWarnings(root, outcomes)
 		changed := false
 		for index := range plan {
-			if plan[index].stationary || len(warnings[index]) == 0 || strings.HasPrefix(plan[index].dest, reviewPrefix) {
+			if plan[index].stationary || len(warnings[index]) == 0 {
+				continue
+			}
+			if len(plan[index].gitRepoTargets) > 0 && outcomes[index].status == statusPlanned {
+				// Persist both the hold and its cause: cancelling the move may
+				// remove the warning on the next pass, but must not permit it again.
+				plan[index].immovable = true
+				plan[index].reason += "; git directory left in place because moving it would break symlink(s): " + strings.Join(firstN(warnings[index], examplesShown), "; ")
+				changed = true
+				continue
+			}
+			if strings.HasPrefix(plan[index].dest, reviewPrefix) {
 				continue
 			}
 			plan[index].dest = destReviewSymlinks
