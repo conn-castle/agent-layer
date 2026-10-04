@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -464,6 +465,50 @@ func TestBuildUpgradePlan_UnknownNoBaselineForManagedDiff(t *testing.T) {
 	}
 	if !foundBaselineMissing {
 		t.Fatalf("expected baseline_missing reason, got %#v", allowUpdate.OwnershipReasonCodes)
+	}
+}
+
+func TestBuildUpgradePlan_InvalidPinWithoutBaselinePreviewsRepair(t *testing.T) {
+	cases := map[string]string{
+		"conflict markers": "<<<<<<< HEAD\n0.23.0\n=======\n0.23.1\n>>>>>>> branch\n",
+		"non-semver":       "not-a-version\n",
+	}
+	for name, pin := range cases {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := Run(root, Options{System: RealSystem{}}); err != nil {
+				t.Fatalf("seed repo: %v", err)
+			}
+			if err := os.Remove(filepath.Join(root, ".agent-layer", "state", "managed-baseline.json")); err != nil {
+				t.Fatalf("remove canonical baseline: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(root, ".agent-layer", "al.version"), []byte(pin), 0o600); err != nil {
+				t.Fatalf("write invalid pin: %v", err)
+			}
+			allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
+			if err := os.WriteFile(allowPath, []byte("# custom allowlist\n"), 0o600); err != nil {
+				t.Fatalf("write custom allowlist: %v", err)
+			}
+
+			plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}, TargetPinVersion: "0.7.0"})
+			if err != nil {
+				t.Fatalf("build upgrade plan: %v", err)
+			}
+			allowUpdate := findUpgradeChange(plan.TemplateUpdates, commandsAllowRelPath)
+			if allowUpdate == nil {
+				t.Fatal("expected commands.allow update in plan")
+			}
+			if allowUpdate.Ownership != OwnershipUnknownNoBaseline {
+				t.Fatalf("expected unknown ownership, got %s", allowUpdate.Ownership)
+			}
+			if !slices.Contains(allowUpdate.OwnershipReasonCodes, ownershipReasonBaselineMissing) {
+				t.Fatalf("expected baseline_missing reason, got %#v", allowUpdate.OwnershipReasonCodes)
+			}
+			want := UpgradePinVersionDiff{Current: strings.TrimSpace(pin), Target: "0.7.0", Action: UpgradePinActionUpdate}
+			if plan.PinVersionChange != want {
+				t.Fatalf("pin change = %#v, want %#v", plan.PinVersionChange, want)
+			}
+		})
 	}
 }
 
