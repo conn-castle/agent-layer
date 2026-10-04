@@ -60,7 +60,7 @@ func TestRejectedResumeExposesTerminalPublicationFailure(t *testing.T) {
 		return publicationErr
 	})
 	requireDispatchExitCode(t, err, ExitConfig)
-	if !errors.Is(err, publicationErr) || !strings.Contains(err.Error(), "already active in run "+active.Record.ID) {
+	if !errors.Is(err, publicationErr) || strings.Count(err.Error(), "already active in run "+active.Record.ID) != 1 || strings.Count(err.Error(), publicationErr.Error()) != 1 {
 		t.Fatalf("rejected resume error = %v, want claim rejection and publication failure", err)
 	}
 	retained, err := loadSession(root, session.Name)

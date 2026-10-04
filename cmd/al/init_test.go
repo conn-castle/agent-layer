@@ -484,6 +484,90 @@ func TestInitCmd_VersionValidationFailureBlocksInstall(t *testing.T) {
 	}
 }
 
+// stubInitReleaseTarget runs init in a fresh repository as release CLI v0.23.1,
+// returning the pin passed to install or failing when install is not expected.
+func stubInitReleaseTarget(t *testing.T, expectInstall bool) *string {
+	t.Helper()
+	origGetwd := getwd
+	origIsTerminal := isTerminal
+	origInstallRun := installRun
+	origValidate := validatePinnedReleaseVersionFunc
+	origResolveLatestPinVersion := resolveLatestPinVersion
+	originalVersion := Version
+	t.Cleanup(func() {
+		getwd = origGetwd
+		isTerminal = origIsTerminal
+		installRun = origInstallRun
+		validatePinnedReleaseVersionFunc = origValidate
+		resolveLatestPinVersion = origResolveLatestPinVersion
+		Version = originalVersion
+	})
+
+	tmpDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	getwd = func() (string, error) { return tmpDir, nil }
+	isTerminal = func() bool { return false }
+	Version = "v0.23.1"
+
+	var pinned string
+	validatePinnedReleaseVersionFunc = func(context.Context, string) error {
+		if !expectInstall {
+			t.Fatal("rejected target reached remote release validation")
+		}
+		return nil
+	}
+	installRun = func(_ string, opts install.Options) error {
+		if !expectInstall {
+			t.Fatal("rejected target reached install")
+		}
+		pinned = opts.PinVersion
+		return nil
+	}
+	return &pinned
+}
+
+func TestInitCmdRejectsTargetOlderThanInvokingCLI(t *testing.T) {
+	stubInitReleaseTarget(t, false)
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--no-wizard", "--version", "0.16.0"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "CLI v0.23.1 cannot initialize a repository pinned to older v0.16.0") ||
+		!strings.Contains(err.Error(), "with the v0.16.0 CLI") {
+		t.Fatalf("older target error = %v", err)
+	}
+}
+
+func TestInitCmdRejectsLatestNewerThanInvokingCLI(t *testing.T) {
+	stubInitReleaseTarget(t, false)
+	resolveLatestPinVersion = func(context.Context, string) (string, error) {
+		return "0.24.0", nil
+	}
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--no-wizard", "--version", "latest"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "CLI v0.23.1 cannot initialize a repository pinned to v0.24.0") ||
+		!strings.Contains(err.Error(), "al update") {
+		t.Fatalf("newer target error = %v", err)
+	}
+}
+
+func TestInitCmdAcceptsInvokingCLIVersion(t *testing.T) {
+	pinned := stubInitReleaseTarget(t, true)
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--no-wizard", "--version", "v0.23.1"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("init --version matching the CLI failed: %v", err)
+	}
+	if *pinned != "0.23.1" {
+		t.Fatalf("expected pinned version 0.23.1, got %q", *pinned)
+	}
+}
+
 func TestInitCmd_UpdateWarning(t *testing.T) {
 	origGetwd := getwd
 	origIsTerminal := isTerminal

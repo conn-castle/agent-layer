@@ -392,13 +392,9 @@ func readCurrentPinVersion(root string, sys System) (string, error) {
 		}
 		return "", fmt.Errorf(messages.InstallFailedReadFmt, path, err)
 	}
-	trimmed := strings.TrimSpace(string(data))
-	if trimmed == "" {
-		return "", nil
-	}
-	normalized, normalizeErr := version.Normalize(trimmed)
-	if normalizeErr != nil {
-		return "", fmt.Errorf(messages.InstallInvalidPinVersionFmt, normalizeErr)
+	normalized, _, err := version.ParsePin(data)
+	if err != nil {
+		return "", fmt.Errorf(messages.InstallInvalidPinVersionFmt, err)
 	}
 	return normalized, nil
 }

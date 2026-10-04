@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -666,6 +667,95 @@ func TestPushChecksSourceAdvancementForEveryEntry(t *testing.T) {
 	}
 }
 
+// TestPushNeverPublishesASkillAnExclusionDeselected proves a `!` exclusion
+// takes a skill out of push even though its lock entry still records a
+// configured positive selector. Its local edits stay local whether or not a
+// pull has already reported the retirement, and selected siblings still push.
+func TestPushNeverPublishesASkillAnExclusionDeselected(t *testing.T) {
+	for _, pullFirst := range []bool{false, true} {
+		name := "push without pull"
+		if pullFirst {
+			name = "push after pull"
+		}
+		t.Run(name, func(t *testing.T) {
+			source := newGitRepo(t, "main")
+			source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+			source.WriteSkill("skills/secret", "secret", "Secret body")
+			source.Commit("add skills")
+
+			proj := newProject(t)
+			proj.AppendConfig(importBlock(source.URL(), []string{"skills/*"}, `write_policy = "direct"`))
+			if _, err := proj.Service().Pull(context.Background()); err != nil {
+				t.Fatalf("pull: %v", err)
+			}
+			proj.WriteImportedFile("alpha", "notes.md", "shared note\n")
+			proj.WriteImportedFile("secret", "private.md", "private note\n")
+			proj.ReplaceInConfig(`selectors = ["skills/*"]`, `selectors = ["skills/*", "!skills/secret"]`)
+			if pullFirst {
+				report, err := proj.Service().Pull(context.Background())
+				if err != nil {
+					t.Fatalf("pull: %v", err)
+				}
+				requireOutcome(t, report, "secret", OutcomeFailed)
+			}
+			locked, _ := proj.Lock().Entry("secret")
+
+			report, err := proj.Service().Push(context.Background())
+			if err != nil {
+				t.Fatalf("Push: %v\n%s", err, report.Render("push"))
+			}
+			skipped := requireOutcome(t, report, "secret", OutcomeSkipped)
+			if !strings.Contains(skipped.Detail, "al skills pull") {
+				t.Fatalf("skip detail %q does not direct the user to pull", skipped.Detail)
+			}
+			requireOutcome(t, report, "alpha", OutcomePushed)
+			if source.HasPath("main", "skills/secret/private.md") {
+				t.Fatal("an excluded skill's local edit was published")
+			}
+			if got := source.FileAt("main", "skills/alpha/notes.md"); got != "shared note" {
+				t.Fatalf("selected sibling destination content = %q", got)
+			}
+			if after, _ := proj.Lock().Entry("secret"); !reflect.DeepEqual(after, locked) {
+				t.Fatalf("push changed the excluded lock entry:\nbefore %+v\nafter  %+v", locked, after)
+			}
+			if got := proj.ImportedFile("secret", "private.md"); got != "private note\n" {
+				t.Fatalf("excluded local edit = %q", got)
+			}
+		})
+	}
+}
+
+// TestPushIgnoresABlockWhoseEveryEntryIsExcluded proves excluded entries are
+// dropped before block-level work. A stale tracked source would otherwise fail
+// the push and direct the user to pull a skill they no longer select.
+func TestPushIgnoresABlockWhoseEveryEntryIsExcluded(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/secret", "secret", "Secret body")
+	source.Commit("add secret")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/*"}, `write_policy = "direct"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	proj.WriteImportedFile("secret", "private.md", "private note\n")
+	proj.ReplaceInConfig(`selectors = ["skills/*"]`, `selectors = ["skills/*", "!skills/sec*"]`)
+	source.WriteFile("skills/secret/upstream.md", "upstream note\n", 0o644)
+	head := source.Commit("advance upstream")
+
+	report, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	if report.Failed() {
+		t.Fatalf("an excluded block failed the push:\n%s", report.Render("push"))
+	}
+	requireOutcome(t, report, "secret", OutcomeSkipped)
+	if source.Head("main") != head {
+		t.Fatal("an excluded block wrote upstream")
+	}
+}
+
 // TestPushRefusesToWriteToADestinationDefaultBranchUnderBranchPolicy proves the
 // non-primary requirement is enforced against the destination's actual default
 // branch, not just the conventional names static validation can recognize.
@@ -1086,6 +1176,166 @@ func TestPushRefusesToPublishAnInvalidMergedTree(t *testing.T) {
 	}
 	if source.Head("skill-updates") != destinationHead {
 		t.Fatal("an invalid merged tree was published")
+	}
+}
+
+// TestPushRefusesAnEmptyMergeFromComplementaryDeletions proves an empty merge
+// still requires validation when it would delete the destination's remaining
+// files. A failing skill keeps its local content and checkpoint, while a valid
+// sibling can still publish in the same group.
+func TestPushRefusesAnEmptyMergeFromComplementaryDeletions(t *testing.T) {
+	for _, tc := range []struct {
+		name                   string
+		editSibling            bool
+		publicationUnavailable bool
+	}{
+		{name: "without sibling changes"},
+		{name: "with sibling changes", editSibling: true},
+		{name: "with unavailable publication and sibling changes", editSibling: true, publicationUnavailable: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := newGitRepo(t, "main")
+			source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+			source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
+			source.WriteSkill("skills/beta", "beta", "Beta body")
+			source.Commit("add grouped skills")
+
+			proj := newProject(t)
+			proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha", "skills/beta"},
+				`write_policy = "branch"`, `push_branch = "skill-updates"`))
+			if _, err := proj.Service().Pull(context.Background()); err != nil {
+				t.Fatalf("pull: %v", err)
+			}
+			proj.WriteImportedFile("beta", "notes.md", "initial note\n")
+			first, err := proj.Service().Push(context.Background())
+			if err != nil {
+				t.Fatalf("first Push: %v\n%s", err, first.Render("push"))
+			}
+			requireOutcome(t, first, "alpha", OutcomeUnchanged)
+			requireOutcome(t, first, "beta", OutcomePushed)
+			alphaBefore, _ := proj.Lock().Entry("alpha")
+			if alphaBefore.Publication == nil {
+				t.Fatal("the initial push did not establish alpha's publication checkpoint")
+			}
+			if tc.publicationUnavailable {
+				// Keep the checkpoint fetchable, but remove it from the branch's
+				// ancestry so the next push falls back to the locked source.
+				source.run("tag", "keep-old-publication", alphaBefore.Publication.Commit)
+				source.run("branch", "--force", "skill-updates", "main")
+			}
+
+			// Each side deletes a different file, producing an empty merged tree
+			// even though the destination still contains notes.md.
+			source.Checkout("skill-updates", false)
+			source.RemovePath("skills/alpha/SKILL.md")
+			destinationHead := source.Commit("drop alpha manifest downstream")
+			source.Checkout("main", false)
+			if err := os.Remove(filepath.Join(proj.paths.ImportedSkillsDir, "alpha", "notes.md")); err != nil {
+				t.Fatalf("remove local notes: %v", err)
+			}
+			localAlphaHash := importedTreeHash(t, proj, "alpha")
+			if tc.editSibling {
+				proj.WriteImportedFile("beta", "notes.md", "updated note\n")
+			}
+
+			second, err := proj.Service().Push(context.Background())
+			if err != nil {
+				t.Fatalf("second Push: %v\n%s", err, second.Render("push"))
+			}
+			failed := requireOutcome(t, second, "alpha", OutcomeFailed)
+			wantError := "the result for " + source.URL() + " would not be a valid skill: skill skills/alpha has no SKILL.md"
+			if failed.Err == nil || failed.Err.Error() != wantError {
+				t.Fatalf("failure = %v, want %q", failed.Err, wantError)
+			}
+			if tc.editSibling {
+				requireOutcome(t, second, "beta", OutcomePushed)
+				if source.Head("skill-updates") == destinationHead {
+					t.Fatal("the valid sibling did not move the contribution branch")
+				}
+				betaAfter, _ := proj.Lock().Entry("beta")
+				if betaAfter.Publication == nil || betaAfter.Publication.Commit != source.Head("skill-updates") {
+					t.Fatalf("beta publication = %+v, want the sibling's successful publication recorded", betaAfter.Publication)
+				}
+			}
+			if got := importedTreeHash(t, proj, "alpha"); got != localAlphaHash {
+				t.Fatal("the failed empty merge changed the imported skill")
+			}
+			alphaAfter, _ := proj.Lock().Entry("alpha")
+			if !reflect.DeepEqual(alphaAfter, alphaBefore) {
+				t.Fatalf("alpha lock entry = %+v, want it unchanged at %+v", alphaAfter, alphaBefore)
+			}
+			if got := source.FileAt("skill-updates", "skills/alpha/notes.md"); got != "shared" {
+				t.Fatalf("destination alpha notes = %q, want them preserved", got)
+			}
+			if source.HasPath("skill-updates", "skills/alpha/SKILL.md") {
+				t.Fatal("the failed empty merge restored the destination manifest")
+			}
+			if tc.editSibling {
+				if got := source.FileAt("skill-updates", "skills/beta/notes.md"); got != "updated note" {
+					t.Fatalf("destination beta notes = %q, want the sibling edit published", got)
+				}
+			} else {
+				requireOutcome(t, second, "beta", OutcomeUnchanged)
+				if source.Head("skill-updates") != destinationHead {
+					t.Fatal("the failed empty merge moved the contribution branch")
+				}
+			}
+		})
+	}
+}
+
+// TestPushDoesNotSyncAnInvalidDestinationSkillLocally proves an unchanged push
+// still validates the destination content it writes back to the imported tier:
+// an invalid skill there would otherwise break every later sync and launch.
+func TestPushDoesNotSyncAnInvalidDestinationSkillLocally(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteSkill("skills/beta", "beta", "Beta body")
+	source.Commit("add grouped skills")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha", "skills/beta"},
+		`write_policy = "branch"`, `push_branch = "skill-updates"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	proj.WriteImportedFile("alpha", "notes.md", "local note\n")
+	first, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("first Push: %v\n%s", err, first.Render("push"))
+	}
+	requireOutcome(t, first, "alpha", OutcomePushed)
+	betaBefore, _ := proj.Lock().Entry("beta")
+	localBeta := proj.ImportedFile("beta", "SKILL.md")
+
+	// A reviewer makes a valid edit to alpha and drops beta's description.
+	source.Checkout("skill-updates", false)
+	source.WriteFile("skills/alpha/notes.md", "reviewed note\n", 0o644)
+	source.WriteFile("skills/beta/SKILL.md", "---\nname: beta\n---\nBeta body\n", 0o644)
+	destinationHead := source.Commit("review edits")
+	source.Checkout("main", false)
+
+	second, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("second Push: %v\n%s", err, second.Render("push"))
+	}
+	requireOutcome(t, second, "alpha", OutcomeUnchanged)
+	if got := proj.ImportedFile("alpha", "notes.md"); got != "reviewed note\n" {
+		t.Fatalf("local alpha notes = %q, want the valid destination edit", got)
+	}
+	failed := requireOutcome(t, second, "beta", OutcomeFailed)
+	if !strings.Contains(failed.Err.Error(), "would not be a valid skill") {
+		t.Fatalf("failure %q does not report the invalid result", failed.Err)
+	}
+	if got := proj.ImportedFile("beta", "SKILL.md"); got != localBeta {
+		t.Fatalf("local beta manifest = %q, want it unchanged at %q", got, localBeta)
+	}
+	betaAfter, _ := proj.Lock().Entry("beta")
+	if !reflect.DeepEqual(betaAfter, betaBefore) {
+		t.Fatalf("beta lock entry = %+v, want it unchanged at %+v", betaAfter, betaBefore)
+	}
+	if source.Head("skill-updates") != destinationHead {
+		t.Fatal("an unchanged push moved the contribution branch")
 	}
 }
 

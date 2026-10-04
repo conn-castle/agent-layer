@@ -94,7 +94,7 @@ func startReservation(opts StartOptions, requested targetMeta, promptText string
 		return finishDispatchFailure(dispatchExecution{Root: opts.Root, Run: run, Session: Session{Name: record.Name}}, err)
 	}
 	request := workerRequest{Root: opts.Root, WorkDir: opts.WorkDir, RunID: record.ID, Mode: dispatchModeFresh, Prompt: prompt, Depth: depth + 1, Model: opts.Model, Effort: opts.ReasoningEffort, Skill: opts.Skill}
-	return publishInvocation(opts.Root, run, session, request, stdout, opts.launchWorker)
+	return publishInvocation(opts.Context, opts.Root, run, session, request, stdout, opts.launchWorker)
 }
 
 // resolveReservation follows a conversation's invocation history to find the

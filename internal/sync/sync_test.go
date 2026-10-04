@@ -149,6 +149,71 @@ func TestRunPreservesUnchangedClientConfigurationFiles(t *testing.T) {
 func TestRunWithAntigravityDisabledPreservesMalformedSettingsAndCleansMCP(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
+	writeAllAgentsDisabledProject(t, root)
+	agyDir := filepath.Join(root, ".agy", "antigravity-cli")
+	if err := os.MkdirAll(agyDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(agyDir, "settings.json")
+	before := []byte(`{"malformed":`)
+	if err := os.WriteFile(settingsPath, before, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mcpPath := filepath.Join(agyDir, "mcp_config.json")
+	if err := os.WriteFile(mcpPath, []byte(`{"mcpServers":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(root); err != nil {
+		t.Fatalf("disabled sync parsed retained settings: %v", err)
+	}
+	after, err := os.ReadFile(settingsPath) // #nosec G304 -- test-owned path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("settings changed: %q", after)
+	}
+	if _, err := os.Stat(mcpPath); !os.IsNotExist(err) {
+		t.Fatalf("managed MCP config was not removed: %v", err)
+	}
+}
+
+func TestRunWithAgentsDisabledIgnoresChimeFreeSymlinkedConfigDirs(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeAllAgentsDisabledProject(t, root)
+	outsideClaude := t.TempDir()
+	outsideCodex := t.TempDir()
+	claudeSettings := filepath.Join(outsideClaude, "settings.json")
+	codexConfig := filepath.Join(outsideCodex, "config.toml")
+	if err := os.WriteFile(claudeSettings, []byte(`{"model":"opus"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(codexConfig, []byte("model = \"gpt\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outsideClaude, filepath.Join(root, ".claude")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outsideCodex, filepath.Join(root, ".codex")); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Run(root); err != nil {
+		t.Fatalf("disabled sync rejected chime-free symlinked config dirs: %v", err)
+	}
+	if got := readFileForTest(t, claudeSettings); got != `{"model":"opus"}` {
+		t.Fatalf("outside Claude settings changed: %q", got)
+	}
+	if got := readFileForTest(t, codexConfig); got != "model = \"gpt\"\n" {
+		t.Fatalf("outside Codex config changed: %q", got)
+	}
+}
+
+// writeAllAgentsDisabledProject seeds a minimal project in root with every
+// agent disabled.
+func writeAllAgentsDisabledProject(t *testing.T, root string) {
+	t.Helper()
 	agentLayer := filepath.Join(root, ".agent-layer")
 	for _, dir := range []string{agentLayer, filepath.Join(agentLayer, "instructions"), filepath.Join(agentLayer, "skills")} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -183,32 +248,6 @@ enabled = false
 	}
 	if err := os.WriteFile(filepath.Join(agentLayer, "gitignore.block"), []byte("# test\n"), 0o600); err != nil {
 		t.Fatal(err)
-	}
-	agyDir := filepath.Join(root, ".agy", "antigravity-cli")
-	if err := os.MkdirAll(agyDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	settingsPath := filepath.Join(agyDir, "settings.json")
-	before := []byte(`{"malformed":`)
-	if err := os.WriteFile(settingsPath, before, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	mcpPath := filepath.Join(agyDir, "mcp_config.json")
-	if err := os.WriteFile(mcpPath, []byte(`{"mcpServers":{}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Run(root); err != nil {
-		t.Fatalf("disabled sync parsed retained settings: %v", err)
-	}
-	after, err := os.ReadFile(settingsPath) // #nosec G304 -- test-owned path.
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(after) != string(before) {
-		t.Fatalf("settings changed: %q", after)
-	}
-	if _, err := os.Stat(mcpPath); !os.IsNotExist(err) {
-		t.Fatalf("managed MCP config was not removed: %v", err)
 	}
 }
 

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -630,6 +632,338 @@ func TestWriteCodexConfig_ChimePreservesAgentSpecificStopHooks(t *testing.T) {
 	assertValidTOML(t, merged)
 }
 
+func TestWriteCodexConfig_AgentSpecificStopResync(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		existing string
+		chime    []bool
+	}{
+		{name: "off then on", chime: []bool{false, true, true, true}},
+		{name: "unrelated existing file", existing: "[notice]\nhide = true\n", chime: []bool{true, true, true}},
+		{name: "fresh file", chime: []bool{true, true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			if tt.existing != "" {
+				writeExistingCodexConfig(t, root, tt.existing)
+			}
+			project := &config.ProjectConfig{
+				Config: config.Config{Agents: config.AgentsConfig{
+					Codex: config.CodexConfig{AgentSpecific: codexAgentSpecificStopForTest("echo user")},
+				}},
+				Env: map[string]string{},
+			}
+			var previous string
+			for i, chime := range tt.chime {
+				project.Config.Notifications.Chime = &chime
+				if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+					t.Fatalf("sync %d: %v", i, err)
+				}
+				content := readCodexConfig(t, root)
+				assertCodexStopEntries(t, content, "echo user", chime)
+				if i > 0 && chime == tt.chime[i-1] && content != previous {
+					t.Fatalf("sync %d changed converged content\nprevious:\n%s\ncurrent:\n%s", i, previous, content)
+				}
+				if tt.existing != "" {
+					notice := parseCodexConfig(t, content)["notice"].(map[string]any)
+					if notice["hide"] != true {
+						t.Fatalf("expected notice preserved, got %#v", notice)
+					}
+				}
+				previous = content
+			}
+		})
+	}
+}
+
+func TestWriteCodexConfig_AgentSpecificStopEdit(t *testing.T) {
+	t.Parallel()
+	for _, chime := range []bool{false, true} {
+		t.Run(fmt.Sprintf("chime %t", chime), func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			project := &config.ProjectConfig{
+				Config: config.Config{
+					Notifications: config.NotificationsConfig{Chime: &chime},
+					Agents: config.AgentsConfig{
+						Codex: config.CodexConfig{AgentSpecific: codexAgentSpecificStopForTest("echo one")},
+					},
+				},
+				Env: map[string]string{},
+			}
+			if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+				t.Fatalf("initial sync: %v", err)
+			}
+			assertCodexStopEntries(t, readCodexConfig(t, root), "echo one", chime)
+			project.Config.Agents.Codex.AgentSpecific = codexAgentSpecificStopForTest("echo two")
+			if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+				t.Fatalf("sync after edit: %v", err)
+			}
+			first := readCodexConfig(t, root)
+			assertCodexStopEntries(t, first, "echo two", chime)
+			if strings.Contains(first, "echo one") {
+				t.Fatalf("expected old hook removed, got:\n%s", first)
+			}
+			if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+				t.Fatalf("sync after replacement: %v", err)
+			}
+			second := readCodexConfig(t, root)
+			assertCodexStopEntries(t, second, "echo two", chime)
+			if first != second {
+				t.Fatalf("expected byte-identical sync after edit\nfirst:\n%s\nsecond:\n%s", first, second)
+			}
+		})
+	}
+}
+
+func TestWriteCodexConfig_AgentSpecificEmptyStopOverChimeOnly(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeExistingCodexConfig(t, root, codexChimeBlockForTest())
+	project := &config.ProjectConfig{
+		Config: config.Config{Agents: config.AgentsConfig{
+			Codex: config.CodexConfig{AgentSpecific: map[string]any{
+				"hooks": map[string]any{"Stop": []any{}},
+			}},
+		}},
+		Env: map[string]string{},
+	}
+	var previous string
+	for i := 0; i < 2; i++ {
+		if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+			t.Fatalf("sync %d: %v", i, err)
+		}
+		content := readCodexConfig(t, root)
+		stop, ok := valueAtPath(parseCodexConfig(t, content), []string{"hooks", "Stop"})
+		if !ok || !reflect.DeepEqual(stop, []any{}) {
+			t.Fatalf("expected explicit empty Stop array, got %#v", stop)
+		}
+		if strings.Contains(content, codexChimeBeginMarker) || strings.Contains(content, agentLayerChimeMarker) {
+			t.Fatalf("expected chime removed, got:\n%s", content)
+		}
+		if i > 0 && content != previous {
+			t.Fatalf("expected byte-identical empty Stop sync\nfirst:\n%s\nsecond:\n%s", previous, content)
+		}
+		previous = content
+	}
+}
+
+func TestWriteCodexConfig_AgentSpecificArrayTablesReplaceDottedSibling(t *testing.T) {
+	t.Parallel()
+	values := []struct {
+		name  string
+		value any
+	}{
+		{name: "array tables", value: []any{map[string]any{"name": "c"}}},
+		{name: "empty array", value: []any{}},
+		{name: "scalar array", value: []any{"c", "d"}},
+		{name: "scalar", value: "c"},
+	}
+	contexts := []struct {
+		name     string
+		preamble string
+		path     []string
+	}{
+		{name: "root", preamble: "custom.note = \"keep\"\n", path: []string{"custom", "items"}},
+		{name: "unrelated table", preamble: "custom.note = \"keep\"\n[before]\nk = 2\n", path: []string{"custom", "items"}},
+		{name: "ancestor table", preamble: "[outer]\ncustom.note = \"keep\"\n[before]\nk = 2\n", path: []string{"outer", "custom", "items"}},
+		{name: "deepest ancestor table", preamble: "[outer]\nk = 3\n[outer.inner]\ncustom.note = \"keep\"\n[before]\nk = 2\n", path: []string{"outer", "inner", "custom", "items"}},
+	}
+	for _, context := range contexts {
+		for _, desired := range values {
+			t.Run(context.name+"/"+desired.name, func(t *testing.T) {
+				t.Parallel()
+				root := t.TempDir()
+				header := "[[" + tomlpatch.FormatDottedKeyPath(context.path) + "]]\n"
+				writeExistingCodexConfig(t, root, context.preamble+header+`name = "a"
+# between elements
+`+header+`name = "b"
+# about other
+[other]
+k = 1
+`)
+				agentSpecific := map[string]any{"items": desired.value}
+				for i := len(context.path) - 2; i >= 0; i-- {
+					agentSpecific = map[string]any{context.path[i]: agentSpecific}
+				}
+				project := &config.ProjectConfig{
+					Config: config.Config{Agents: config.AgentsConfig{
+						Codex: config.CodexConfig{AgentSpecific: agentSpecific},
+					}},
+					Env: map[string]string{},
+				}
+				var previous string
+				for i := 0; i < 3; i++ {
+					if i == 2 {
+						project.Config.Agents.Codex.AgentSpecific = nil
+					}
+					if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+						t.Fatalf("sync %d: %v", i, err)
+					}
+					content := readCodexConfig(t, root)
+					parsed := parseCodexConfig(t, content)
+					value, _ := valueAtPath(parsed, context.path)
+					notePath := append(slices.Clone(context.path[:len(context.path)-1]), "note")
+					note, _ := valueAtPath(parsed, notePath)
+					if !reflect.DeepEqual(value, desired.value) || note != "keep" {
+						t.Fatalf("expected replaced items %#v and preserved dotted sibling, got %#v, %#v", desired.value, value, note)
+					}
+					parentHeader := "[" + tomlpatch.FormatDottedKeyPath(context.path[:len(context.path)-1]) + "]"
+					if strings.Contains(content, "# between elements") || strings.Contains(content, "\n"+parentHeader+"\n") {
+						t.Fatalf("expected inter-element comment removed without adding a parent header, got:\n%s", content)
+					}
+					if !strings.Contains(content, "# about other\n[other]\nk = 1") {
+						t.Fatalf("expected following table and comment preserved, got:\n%s", content)
+					}
+					if strings.Contains(context.preamble, "[before]") && !strings.Contains(content, "[before]\nk = 2") {
+						t.Fatalf("expected preceding unrelated table preserved, got:\n%s", content)
+					}
+					if i > 0 && content != previous {
+						t.Fatalf("expected byte-identical sync, including after removing passthrough config\nfirst:\n%s\nsecond:\n%s", previous, content)
+					}
+					previous = content
+				}
+			})
+		}
+	}
+}
+
+func TestWriteCodexConfig_AgentSpecificStopRepairsDuplicatedHooks(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	userGroup := "[[hooks.Stop]]\n[[hooks.Stop.hooks]]\ncommand = \"echo user\"\ntimeout = 2\ntype = \"command\"\n"
+	unmarkedChime := fmt.Sprintf("[[hooks.Stop]]\n[[hooks.Stop.hooks]]\ncommand = %q\ntimeout = 5\ntype = \"command\"\n", agentLayerCodexChimeCommand)
+	// Shape left by earlier releases: duplicated user groups split by another table,
+	// an unmarked chime copy, and the marked chime block.
+	writeExistingCodexConfig(t, root, codexPartialHeader+"\n[hooks]\n"+userGroup+"\n[notice]\nhide = true\n\n"+
+		userGroup+"\n"+userGroup+unmarkedChime+"\n"+codexChimeBlockForTest())
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Notifications: config.NotificationsConfig{Chime: &enabled},
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{AgentSpecific: codexAgentSpecificStopForTest("echo user")},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("repair sync: %v", err)
+	}
+	first := readCodexConfig(t, root)
+	assertCodexStopEntries(t, first, "echo user", true)
+	if notice, _ := parseCodexConfig(t, first)["notice"].(map[string]any); notice["hide"] != true {
+		t.Fatalf("expected notice preserved, got:\n%s", first)
+	}
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("second sync: %v", err)
+	}
+	if second := readCodexConfig(t, root); second != first {
+		t.Fatalf("expected byte-identical sync after repair\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+}
+
+func TestCodexTomlEditor_ArrayTableReplacementRemovesWholeMultilineValue(t *testing.T) {
+	t.Parallel()
+	const existing = `[[x.y]]
+name = "a"
+script = '''
+echo hi
+# done'''
+[other]
+k = 1
+`
+	editor := newCodexTomlEditor(existing)
+	value := []any{map[string]any{"name": "c"}}
+	if err := setManagedCodexPath(editor, parseCodexConfig(t, existing), []string{"x", "y"}, value); err != nil {
+		t.Fatalf("replace array tables: %v", err)
+	}
+	content := editor.render()
+	if strings.Contains(content, "done") || strings.Contains(content, "echo hi") {
+		t.Fatalf("expected the whole multiline value replaced, got:\n%s", content)
+	}
+	if got, _ := valueAtPath(parseCodexConfig(t, content), []string{"x", "y"}); !reflect.DeepEqual(got, value) {
+		t.Fatalf("expected replacement %#v, got %#v", value, got)
+	}
+}
+
+func TestCodexTomlEditor_SetManagedPathReplacesArrayTablesAndDescendants(t *testing.T) {
+	t.Parallel()
+	const existing = `[[x.y]]
+name = "a"
+[[x.y.z]]
+old = true
+[[x.y]]
+name = "b"
+[other]
+k = 1
+notes = """
+[[x.y.fake]]
+"""
+[x.y.extra]
+old = true
+# trailing note
+`
+	parsed := parseCodexConfig(t, existing)
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{name: "array tables", value: []any{
+			map[string]any{"name": "c", "quoted key": map[string]any{"enabled": true}, "z": []any{map[string]any{"new": true}}},
+			map[string]any{"name": "d"},
+		}},
+		{name: "empty array", value: []any{}},
+		{name: "scalar array", value: []any{"c", "d"}},
+		{name: "scalar", value: "c"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			editor := newCodexTomlEditor(existing)
+			if err := setManagedCodexPath(editor, parsed, []string{"x", "y"}, tt.value); err != nil {
+				t.Fatalf("replace array tables: %v", err)
+			}
+			content := editor.render()
+			result := parseCodexConfig(t, content)
+			value, ok := valueAtPath(result, []string{"x", "y"})
+			if !ok || !reflect.DeepEqual(value, tt.value) {
+				t.Fatalf("expected replacement %#v, got %#v", tt.value, value)
+			}
+			if !reflect.DeepEqual(result["other"], parsed["other"]) || !strings.Contains(content, "# trailing note") {
+				t.Fatalf("expected unrelated table and trailing comment preserved, got:\n%s", content)
+			}
+			if !strings.Contains(content, "[other]\nk = 1\nnotes = \"\"\"\n[[x.y.fake]]\n\"\"\"") {
+				t.Fatalf("expected unrelated table text untouched, got:\n%s", content)
+			}
+			arrayHeaders := 0
+			for _, header := range editor.headerLines() {
+				if !header.parsed || !pathHasPrefix(header.path, []string{"x", "y"}) {
+					continue
+				}
+				if !header.isArray || !slices.Equal(header.path, []string{"x", "y"}) {
+					t.Fatalf("unexpected descendant header remaining: %#v", header)
+				}
+				arrayHeaders++
+			}
+			wantHeaders := 0
+			if tt.name == "array tables" {
+				wantHeaders = 2
+				if strings.Contains(content, "\n[x]\n") || !strings.HasPrefix(content, "[[x.y]]\n") {
+					t.Fatalf("expected array tables replaced in place without parent header, got:\n%s", content)
+				}
+			}
+			if arrayHeaders != wantHeaders {
+				t.Fatalf("expected %d replacement headers, got %d", wantHeaders, arrayHeaders)
+			}
+		})
+	}
+}
+
 func TestWriteCodexConfig_ChimeDisabledRemovesOnlyManagedBlock(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -780,6 +1114,53 @@ func TestCleanCodexChimeHookRejectsSymlinkConfigDir(t *testing.T) {
 	}
 	if got := readFileForTest(t, outsideConfig); !strings.Contains(got, agentLayerChimeMarker) {
 		t.Fatalf("outside config must not be rewritten, got:\n%s", got)
+	}
+}
+
+func TestCleanCodexChimeHookIgnoresSymlinkedConfigWithoutChime(t *testing.T) {
+	t.Parallel()
+	const userConfig = "model = \"gpt\"\n\n[mcp_servers.docs]\ncommand = \"docs\"\n"
+	for _, tc := range []struct {
+		name       string
+		config     string
+		linkedFile bool
+	}{
+		{name: "missing config"},
+		{name: "config without chime", config: userConfig},
+		{name: "linked config file without chime", config: userConfig, linkedFile: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			outside := t.TempDir()
+			outsideConfig := filepath.Join(outside, "config.toml")
+			if tc.config != "" {
+				if err := os.WriteFile(outsideConfig, []byte(tc.config), 0o600); err != nil {
+					t.Fatalf("write outside config: %v", err)
+				}
+			}
+			if tc.linkedFile {
+				if err := os.MkdirAll(filepath.Join(root, ".codex"), 0o700); err != nil {
+					t.Fatalf("mkdir .codex: %v", err)
+				}
+				if err := os.Symlink(outsideConfig, filepath.Join(root, ".codex", "config.toml")); err != nil {
+					t.Fatalf("seed config symlink: %v", err)
+				}
+			} else if err := os.Symlink(outside, filepath.Join(root, ".codex")); err != nil {
+				t.Fatalf("seed .codex symlink: %v", err)
+			}
+
+			if err := cleanCodexChimeHook(RealSystem{}, root); err != nil {
+				t.Fatalf("cleanCodexChimeHook: %v", err)
+			}
+			if tc.config == "" {
+				if _, err := os.Stat(outsideConfig); !os.IsNotExist(err) {
+					t.Fatalf("outside config created: %v", err)
+				}
+			} else if got := readFileForTest(t, outsideConfig); got != tc.config {
+				t.Fatalf("outside config changed: %q", got)
+			}
+		})
 	}
 }
 
@@ -1416,6 +1797,54 @@ func parseCodexConfig(t *testing.T, content string) map[string]any {
 func assertValidTOML(t *testing.T, content string) {
 	t.Helper()
 	_ = parseCodexConfig(t, content)
+}
+
+func codexAgentSpecificStopForTest(command string) map[string]any {
+	return map[string]any{"hooks": map[string]any{"Stop": []any{
+		map[string]any{"hooks": []any{map[string]any{"type": "command", "command": command, "timeout": 2}}},
+	}}}
+}
+
+func assertCodexStopEntries(t *testing.T, content string, command string, chime bool) {
+	t.Helper()
+	value, ok := valueAtPath(parseCodexConfig(t, content), []string{"hooks", "Stop"})
+	entries, array := value.([]any)
+	wantChime := 0
+	if chime {
+		wantChime = 1
+	}
+	if !ok || !array || len(entries) != 1+wantChime {
+		t.Fatalf("expected %d Stop entries, got %#v", 1+wantChime, value)
+	}
+	userCount, chimeCount := 0, 0
+	for _, entry := range entries {
+		group, ok := entry.(map[string]any)
+		if !ok {
+			t.Fatalf("expected Stop table, got %#v", entry)
+		}
+		hooks, ok := group["hooks"].([]any)
+		if !ok || len(hooks) != 1 {
+			t.Fatalf("expected one handler per Stop entry, got %#v", group)
+		}
+		handler, ok := hooks[0].(map[string]any)
+		if !ok {
+			t.Fatalf("expected hook table, got %#v", hooks[0])
+		}
+		if reflect.DeepEqual(handler, map[string]any{"type": "command", "command": command, "timeout": int64(2)}) {
+			userCount++
+		}
+		if chimeHandlerMatchesAny(handler, managedChimeCommandVariants(agentLayerCodexChimeCommand)) {
+			chimeCount++
+		}
+	}
+	if userCount != 1 || chimeCount != wantChime {
+		t.Fatalf("expected one user handler and %d chime handlers, got %d and %d", wantChime, userCount, chimeCount)
+	}
+	for _, marker := range []string{codexChimeBeginMarker, codexChimeEndMarker} {
+		if count := strings.Count(content, marker); count != wantChime {
+			t.Fatalf("expected %d %q markers, got %d", wantChime, marker, count)
+		}
+	}
 }
 
 func codexChimeBlockForTest() string {

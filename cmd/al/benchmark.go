@@ -193,6 +193,9 @@ func newBenchmarkCmd() *cobra.Command {
 		Use:   benchmarkCommandName,
 		Short: "Run a reproducible DeepSWE comparison",
 		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
 	}
 	command.AddCommand(newBenchmarkInitCmd(), newBenchmarkRunCmd(), newBenchmarkReadinessCmd())
 	return command

@@ -80,9 +80,9 @@ func TestBuildCodexConfigHTTP(t *testing.T) {
 						Enabled:   &enabled,
 						Clients:   []string{"codex"},
 						Transport: "http",
-						URL:       "https://example.com?token=${TOKEN}",
+						URL:       "https://example.com?token=${AL_SYNC_TEST_TOKEN}",
 						Headers: map[string]string{
-							"Authorization": "Bearer ${TOKEN}",
+							"Authorization": "Bearer ${AL_SYNC_TEST_TOKEN}",
 							"X-Api-Key":     "${API_KEY}",
 							"X-Toolsets":    "actions,issues",
 						},
@@ -90,14 +90,14 @@ func TestBuildCodexConfigHTTP(t *testing.T) {
 				},
 			},
 		},
-		Env: map[string]string{"TOKEN": "abc", "API_KEY": "def"},
+		Env: map[string]string{"AL_SYNC_TEST_TOKEN": "abc", "API_KEY": "def"},
 	}
 
 	output, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(output, "bearer_token_env_var = \"TOKEN\"") {
+	if !strings.Contains(output, "bearer_token_env_var = \"AL_SYNC_TEST_TOKEN\"") {
 		t.Fatalf("missing bearer_token_env_var in output:\n%s", output)
 	}
 	if !strings.Contains(output, `env_http_headers = { "X-Api-Key" = "API_KEY" }`) {
@@ -127,14 +127,14 @@ func TestBuildCodexConfigStdio(t *testing.T) {
 						Transport: "stdio",
 						Command:   "tool",
 						Args:      []string{"--flag", "value"},
-						Env: map[string]string{
-							"TOKEN": "${TOKEN}",
+						Env: map[string]string{ //nolint:gosec // test data with placeholder syntax
+							"TOKEN": "${AL_SYNC_TEST_TOKEN}",
 						},
 					},
 				},
 			},
 		},
-		Env: map[string]string{"TOKEN": "abc"},
+		Env: map[string]string{"AL_SYNC_TEST_TOKEN": "abc"},
 	}
 
 	output, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
@@ -150,6 +150,49 @@ func TestBuildCodexConfigStdio(t *testing.T) {
 	// Env should have resolved value (not placeholder) since Codex doesn't support ${VAR} in env vars.
 	if !strings.Contains(output, `env = { "TOKEN" = "abc" }`) {
 		t.Fatalf("missing env in output:\n%s", output)
+	}
+}
+
+func TestBuildCodexConfigResolvesProcessEnvBeforeDotenv(t *testing.T) {
+	t.Setenv("AL_PROCESS_TOKEN", "from-shell")
+	t.Setenv("AL_PROCESS_URL_TOKEN", "url-from-shell")
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
+			Agents:    config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled}},
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{
+						ID:        "local",
+						Enabled:   &enabled,
+						Clients:   []string{"codex"},
+						Transport: "stdio",
+						Command:   "tool",
+						Env:       map[string]string{"TOKEN": "${AL_PROCESS_TOKEN}"}, //nolint:gosec // test data with placeholder syntax
+					},
+					{
+						ID:        "remote",
+						Enabled:   &enabled,
+						Clients:   []string{"codex"},
+						Transport: "http",
+						URL:       "https://example.com/mcp?token=${AL_PROCESS_URL_TOKEN}",
+					},
+				},
+			},
+		},
+		Env: map[string]string{"AL_PROCESS_TOKEN": "from-dotenv"},
+	}
+
+	output, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(output, `env = { "TOKEN" = "from-shell" }`) {
+		t.Fatalf("expected process env value to win over .env:\n%s", output)
+	}
+	if !strings.Contains(output, `url = "https://example.com/mcp?token=url-from-shell"`) {
+		t.Fatalf("expected process-only URL secret to resolve:\n%s", output)
 	}
 }
 
@@ -971,7 +1014,7 @@ func TestBuildCodexConfigMissingEnv(t *testing.T) {
 						Enabled:   &enabled,
 						Clients:   []string{"codex"},
 						Transport: "http",
-						URL:       "https://example.com?token=${TOKEN}",
+						URL:       "https://example.com?token=${AL_SYNC_TEST_TOKEN}",
 					},
 				},
 			},

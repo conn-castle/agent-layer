@@ -23,6 +23,10 @@ func newProbeCmd() *cobra.Command {
 		Use:   messages.ProbeUse,
 		Short: messages.ProbeShort,
 		Long:  messages.ProbeLong,
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
 	}
 	cmd.AddCommand(newProbeAntigravityCmd())
 	cmd.AddCommand(newProbeGrokCmd())

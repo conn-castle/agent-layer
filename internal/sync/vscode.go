@@ -24,6 +24,12 @@ const (
 	vscodeSettingsManagedEnd   = "// <<< agent-layer"
 )
 
+// vscodeRetiredManagedKeys lists settings that earlier releases wrote inside the managed block.
+// Sync drops them from the block instead of preserving them as user settings.
+var vscodeRetiredManagedKeys = []string{
+	"chat.tools.global.autoApprove",
+}
+
 var vscodeSettingsManagedHeader = []string{
 	"// Managed by Agent Layer. To customize, edit .agent-layer/config.toml",
 	"// and .agent-layer/commands.allow, then re-run `al sync`.",

@@ -180,6 +180,9 @@ func assembleCanonicalConfig(currentDoc tomlDocument, templateDoc tomlDocument, 
 
 	for _, name := range orderedWizardSections(templateDoc.order) {
 		if name == warningsSection && removeWarnings {
+			if block := disabledWarningsBlock(currentDoc.sections[name]); block != nil {
+				appendBlock(&output, block.lines)
+			}
 			continue
 		}
 		block := selectSectionBlock(currentDoc.sections[name], templateDoc.sections[name])
@@ -219,6 +222,33 @@ func assembleCanonicalConfig(currentDoc tomlDocument, templateDoc tomlDocument, 
 	}
 
 	return trimTrailingEmptyLines(output), nil
+}
+
+// warningThresholdKeys are the [warnings] keys controlled by the wizard's warnings prompt.
+var warningThresholdKeys = []string{
+	"instruction_token_threshold",
+	"mcp_server_threshold",
+	"mcp_tools_total_threshold",
+	"mcp_server_tools_threshold",
+	"mcp_schema_tokens_total_threshold",
+	"mcp_schema_tokens_server_threshold",
+}
+
+// disabledWarningsBlock returns current with the warning thresholds removed, or nil when current is
+// absent or keeps no other keys. Declining warnings must not drop unrelated settings such as
+// noise_mode and version_update_on_sync, nor seed them from the template.
+func disabledWarningsBlock(current *tomlBlock) *tomlBlock {
+	if current == nil {
+		return nil
+	}
+	updated := cloneBlock(current)
+	for _, key := range warningThresholdKeys {
+		removeKeyFromBlock(updated, key)
+	}
+	if !hasUncommentedKeyWithPrefix(updated.lines, "") {
+		return nil
+	}
+	return updated
 }
 
 // choosePreamble returns the preamble lines to keep before the first table.

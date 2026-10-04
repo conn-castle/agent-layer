@@ -71,16 +71,8 @@ func (r *Runner) CreateConflictWorkspace(ctx context.Context, dir string, spec C
 			return err
 		}
 	}
-	infoDir := filepath.Join(dir, ".git", "info")
-	if err := os.MkdirAll(infoDir, 0o750); err != nil {
-		return fmt.Errorf("failed to create conflict workspace attributes directory: %w", err)
-	}
-	// info/attributes outranks in-tree .gitattributes. Unspecified merge/diff/eol
-	// keep Git's defaults so a skill cannot select a globally configured custom
-	// driver; -text/-ident/-filter still disable conversion and ident expansion.
-	attributes := []byte("* -text -ident -filter !eol !merge !diff\n")
-	if err := os.WriteFile(filepath.Join(infoDir, "attributes"), attributes, 0o600); err != nil {
-		return fmt.Errorf("failed to write conflict workspace attributes: %w", err)
+	if err := writeNeutralAttributes(dir); err != nil {
+		return err
 	}
 
 	baseTree, err := r.writeSkillTree(ctx, dir, spec.Base)

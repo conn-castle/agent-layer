@@ -14,7 +14,6 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/version"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 	"github.com/conn-castle/agent-layer/internal/wizard"
 )
@@ -40,6 +39,7 @@ func newUpgradeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   messages.UpgradeUse,
 		Short: messages.UpgradeShort,
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if diffLines <= 0 {
 				return fmt.Errorf(messages.UpgradeDiffLinesInvalidFmt, diffLines)
@@ -183,7 +183,7 @@ func newUpgradePrefetchCmd() *cobra.Command {
 			if targetVersion == "" {
 				return fmt.Errorf(messages.UpgradePrefetchVersionRequired)
 			}
-			if err := dispatchPrefetchVersion(targetVersion, cmd.ErrOrStderr()); err != nil {
+			if err := dispatchPrefetchVersion(cmd.Context(), targetVersion, cmd.ErrOrStderr()); err != nil {
 				return err
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), messages.UpgradePrefetchDoneFmt, targetVersion)
@@ -713,26 +713,10 @@ func currentRepoPinVersion(root string) (string, error) {
 	return pinned, nil
 }
 
+// requireUpgradeTargetCLI rejects a release-build upgrade target other than the
+// running CLI version, because only this version's templates are embedded.
 func requireUpgradeTargetCLI(targetVersion string) error {
-	if targetVersion == "" || version.IsDev(Version) {
-		return nil
-	}
-	currentVersion, err := version.Normalize(Version)
-	if err != nil {
-		return err
-	}
-	normalizedTargetVersion, err := version.Normalize(targetVersion)
-	if err != nil {
-		return err
-	}
-	comparison, err := version.Compare(currentVersion, normalizedTargetVersion)
-	if err != nil {
-		return err
-	}
-	if comparison < 0 {
-		return fmt.Errorf(messages.UpgradeTargetRequiresNewerCLIFmt, currentVersion, normalizedTargetVersion, normalizedTargetVersion)
-	}
-	return nil
+	return requireTargetCLI(targetVersion, messages.UpgradeTargetRequiresNewerCLIFmt, messages.UpgradeTargetOlderThanCLIFmt)
 }
 
 func renderUpgradePlanText(out io.Writer, plan install.UpgradePlan, previews map[string]install.DiffPreview) error {

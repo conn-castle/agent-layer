@@ -56,7 +56,7 @@ func buildVSCodeMCPConfig(project *config.ProjectConfig) (*vscodeMCPConfig, erro
 	// Transform to VS Code env syntax - VS Code resolves ${env:VAR} at runtime.
 	resolved, err := projection.EffectiveMCPServers(
 		project.Config,
-		project.Env,
+		project.PlaceholderEnv(),
 		projection.ClientVSCode,
 		projection.ClientPlaceholderResolver("${env:%s}"),
 	)

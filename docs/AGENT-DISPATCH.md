@@ -112,6 +112,15 @@ provider work remains active while the caller never learns its handle.
 `dispatch_inspect` and `dispatch_output` can read that invocation by ID when
 the ID is known; evidence remains under `.agent-layer/tmp/runs/`.
 
+After preparation, `dispatch_start` and `dispatch_continue` check the request
+context once at the start of publication, before writing the worker request or
+launching the worker. If cancellation or the server's hard tool timeout is
+observed at that checkpoint, the request fails without launching a worker or
+contacting the provider; `dispatch_continue` keeps the conversation's current
+invocation. Cancellation or timeout after that check, including in the gap
+before the launch call, can still return an error to the caller while the
+worker launches and the agent runs.
+
 ## Commands
 
 ```text
@@ -286,8 +295,11 @@ before the invocation reaches a terminal state. The CLI waits eight minutes;
 `dispatch_wait` waits `dispatch.mcp_wait_timeout_minutes` (30 by default).
 When available, `last_activity_at` is the UTC timestamp of provider startup or
 the most recent normalized stream event, and `last_output_at` is the UTC
-timestamp of the most recent answer event. These are observations, not a health
-check: absence of new events does not prove a provider has stopped working.
+timestamp of the most recent answer event. While a provider streams only
+progress events, such as text deltas, the recorded `last_activity_at` is
+refreshed at most once per second, so it can trail the latest event by up to a
+second. These are observations, not a health check: absence of new events does
+not prove a provider has stopped working.
 
 `wait` on a completed invocation returns:
 
@@ -369,6 +381,25 @@ and accepts its final answer; the empty turn does not start the shutdown grace.
 An empty answer at end of stream still fails the invocation. A subsequent run
 must be announced by Muse's `muse-runtime-background-terminal` client before
 its run linkage is accepted.
+
+Claude can report a successful result while a task it started, such as a
+background command or subagent, is still running. Dispatch records that answer
+but waits for a terminal `task_notification` or `task_updated` record and
+Claude's later result; the earlier result does not start the shutdown grace.
+Terminal updates clear the task even if Claude omits the notification; updates
+whose status is `pending`, `running`, or `paused` keep it outstanding. If the
+stream ends first, the latest successful result is the final answer unless a
+tracked task reported `stopped`, `killed`, or `failed` after it. In that case,
+dispatch fails rather than returning the earlier answer as success; a later
+successful result can acknowledge the task failure or report recovery.
+
+Dispatch sets `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`, removing Claude's idle
+wait limit for background subagents and workflows. A subagent or workflow that
+never ends keeps the dispatch running until it is cancelled. Claude's separate
+Bash exit grace still applies: with stdin closed and no subagent or workflow
+keeping the session open, Claude can stop background Bash about five seconds
+after its result, even with this override. Run commands whose completion is
+required, such as `make ci`, in the foreground.
 
 If the worker and leader have died but descendants survive, automatic recovery
 retains the claim and reports the group ID. Inspect the saved run evidence and

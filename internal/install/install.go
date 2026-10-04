@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/version"
@@ -298,7 +299,20 @@ func (inst upgradeOrchestrator) ensureBaseDirs() error {
 	return nil
 }
 
+// writeVSCodeLaunchers writes the VS Code launchers only when agents.vscode is
+// enabled, matching sync. Upgrade runs it after migrations, so it reads the
+// post-migration config.
 func (inst *installer) writeVSCodeLaunchers() error {
+	cfg, err := config.LoadConfigLenient(filepath.Join(inst.root, ".agent-layer", configFileName))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if !config.IsAgentEnabled(cfg.Agents.VSCode.Enabled) {
+		return nil
+	}
 	return launchers.WriteVSCodeLaunchers(inst.sys, inst.root)
 }
 
@@ -345,11 +359,11 @@ func (inst *installer) writeVersionFile() error {
 	path := filepath.Join(inst.root, ".agent-layer", "al.version")
 	existingBytes, err := sys.ReadFile(path)
 	if err == nil {
-		existing := strings.TrimSpace(string(existingBytes))
-		normalized, normErr := version.Normalize(existing)
+		normalized, ok, parseErr := version.ParsePin(existingBytes)
 		switch {
-		case existing == "" || normErr != nil:
+		case !ok || parseErr != nil:
 			// Empty or corrupt pin file: auto-repair by falling through to write.
+			existing := strings.TrimSpace(string(existingBytes))
 			_, _ = fmt.Fprintf(inst.warnOutput(), messages.InstallAutoRepairPinWarningFmt, path, existing, inst.pinVersion)
 		case normalized == inst.pinVersion:
 			return nil

@@ -33,11 +33,11 @@ const (
 
 // ensureCachedBinary returns the cached binary path, downloading and verifying it if missing.
 // Progress lines are written to progressOut when a download is required.
-func ensureCachedBinary(cacheRoot string, version string, progressOut io.Writer) (string, error) {
-	return ensureCachedBinaryWithSystem(RealSystem{}, cacheRoot, version, progressOut)
+func ensureCachedBinary(ctx context.Context, cacheRoot string, version string, progressOut io.Writer) (string, error) {
+	return ensureCachedBinaryWithSystem(ctx, RealSystem{}, cacheRoot, version, progressOut)
 }
 
-func ensureCachedBinaryWithSystem(sys System, cacheRoot string, version string, progressOut io.Writer) (string, error) {
+func ensureCachedBinaryWithSystem(ctx context.Context, sys System, cacheRoot string, version string, progressOut io.Writer) (string, error) {
 	if sys == nil {
 		return "", fmt.Errorf(messages.DispatchSystemRequired)
 	}
@@ -62,7 +62,7 @@ func ensureCachedBinaryWithSystem(sys System, cacheRoot string, version string, 
 		return "", fmt.Errorf(messages.DispatchCreateCacheDirFmt, err)
 	}
 
-	if err := withFileLock(sys, lockPath, cacheLockWaitTimeoutWithSystem(sys), func() error {
+	if err := withFileLock(ctx, sys, lockPath, cacheLockWaitTimeoutWithSystem(sys), func() error {
 		if _, err := sys.Stat(binPath); err == nil {
 			return nil
 		} else if err != nil && !os.IsNotExist(err) {
@@ -83,7 +83,7 @@ func ensureCachedBinaryWithSystem(sys System, cacheRoot string, version string, 
 
 		_, _ = fmt.Fprintf(progressOut, messages.DispatchDownloadingFmt, version)
 		url := fmt.Sprintf("%s/download/v%s/%s", releaseBaseURL, version, asset)
-		if err := downloadToFileWithSystem(sys, url, tmp); err != nil {
+		if err := downloadToFileWithSystem(ctx, sys, url, tmp); err != nil {
 			_ = tmp.Close()
 			return err
 		}
@@ -95,7 +95,7 @@ func ensureCachedBinaryWithSystem(sys System, cacheRoot string, version string, 
 			return fmt.Errorf(messages.DispatchCloseTempFileFmt, err)
 		}
 
-		expected, err := fetchChecksumWithSystem(sys, version, asset)
+		expected, err := fetchChecksumWithSystem(ctx, sys, version, asset)
 		if err != nil {
 			return err
 		}
@@ -151,28 +151,31 @@ func noNetworkWithSystem(sys System) bool {
 }
 
 // downloadToFile fetches url and writes it to dest.
-func downloadToFile(url string, dest *os.File) error {
-	return downloadToFileWithSystem(RealSystem{}, url, dest)
+func downloadToFile(ctx context.Context, url string, dest *os.File) error {
+	return downloadToFileWithSystem(ctx, RealSystem{}, url, dest)
 }
 
-func downloadToFileWithSystem(sys System, url string, dest *os.File) error {
+func downloadToFileWithSystem(ctx context.Context, sys System, url string, dest *os.File) error {
 	if sys == nil {
 		return fmt.Errorf(messages.DispatchSystemRequired)
 	}
 	client := downloadHTTPClientWithSystem(sys)
 	maxBytes := maxDownloadBytesWithSystem(sys)
 	for attempt := 0; attempt <= downloadRetryCount; attempt++ {
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
 		}
 		resp, err := client.Do(req) // #nosec G704 -- callers construct URLs from the fixed release base URL and validated release asset names.
 		if err != nil {
-			if shouldRetryDownload(attempt, err, 0) {
+			if shouldRetryDownload(ctx, attempt, err, 0) {
 				sys.Sleep(downloadRetryBackoff)
 				continue
 			}
 			if isTimeoutError(err) {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return fmt.Errorf("%s: %w", fmt.Sprintf(messages.DispatchDownloadTimeoutFmt, url), ctxErr)
+				}
 				return fmt.Errorf(messages.DispatchDownloadTimeoutFmt, url)
 			}
 			return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
@@ -186,7 +189,7 @@ func downloadToFileWithSystem(sys System, url string, dest *os.File) error {
 			status := resp.StatusCode
 			statusText := resp.Status
 			_ = resp.Body.Close()
-			if shouldRetryDownload(attempt, nil, status) {
+			if shouldRetryDownload(ctx, attempt, nil, status) {
 				sys.Sleep(downloadRetryBackoff)
 				continue
 			}
@@ -205,7 +208,7 @@ func downloadToFileWithSystem(sys System, url string, dest *os.File) error {
 		n, copyErr := io.Copy(dest, io.LimitReader(resp.Body, maxBytes+1))
 		_ = resp.Body.Close()
 		if copyErr != nil {
-			if shouldRetryDownload(attempt, copyErr, 0) {
+			if shouldRetryDownload(ctx, attempt, copyErr, 0) {
 				sys.Sleep(downloadRetryBackoff)
 				continue
 			}
@@ -220,29 +223,32 @@ func downloadToFileWithSystem(sys System, url string, dest *os.File) error {
 }
 
 // fetchChecksum retrieves the expected checksum for the asset from checksums.txt.
-func fetchChecksum(version string, asset string) (string, error) {
-	return fetchChecksumWithSystem(RealSystem{}, version, asset)
+func fetchChecksum(ctx context.Context, version string, asset string) (string, error) {
+	return fetchChecksumWithSystem(ctx, RealSystem{}, version, asset)
 }
 
 // fetchChecksumWithSystem retrieves the expected checksum using the provided system for timeout/env resolution.
-func fetchChecksumWithSystem(sys System, version string, asset string) (string, error) {
+func fetchChecksumWithSystem(ctx context.Context, sys System, version string, asset string) (string, error) {
 	if sys == nil {
 		return "", fmt.Errorf(messages.DispatchSystemRequired)
 	}
 	url := fmt.Sprintf("%s/download/v%s/checksums.txt", releaseBaseURL, version)
 	client := downloadHTTPClientWithSystem(sys)
 	for attempt := 0; attempt <= downloadRetryCount; attempt++ {
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return "", fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
 		}
 		resp, err := client.Do(req) // #nosec G704 -- URL uses the fixed release base URL and a validated semantic version.
 		if err != nil {
-			if shouldRetryDownload(attempt, err, 0) {
+			if shouldRetryDownload(ctx, attempt, err, 0) {
 				sys.Sleep(downloadRetryBackoff)
 				continue
 			}
 			if isTimeoutError(err) {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return "", fmt.Errorf("%s: %w", fmt.Sprintf(messages.DispatchDownloadTimeoutFmt, url), ctxErr)
+				}
 				return "", fmt.Errorf(messages.DispatchDownloadTimeoutFmt, url)
 			}
 			return "", fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
@@ -255,7 +261,7 @@ func fetchChecksumWithSystem(sys System, version string, asset string) (string, 
 			status := resp.StatusCode
 			statusText := resp.Status
 			_ = resp.Body.Close()
-			if shouldRetryDownload(attempt, nil, status) {
+			if shouldRetryDownload(ctx, attempt, nil, status) {
 				sys.Sleep(downloadRetryBackoff)
 				continue
 			}
@@ -281,7 +287,7 @@ func fetchChecksumWithSystem(sys System, version string, asset string) (string, 
 		}
 		if err := scanner.Err(); err != nil {
 			_ = resp.Body.Close()
-			if shouldRetryDownload(attempt, err, 0) {
+			if shouldRetryDownload(ctx, attempt, err, 0) {
 				sys.Sleep(downloadRetryBackoff)
 				continue
 			}
@@ -302,8 +308,10 @@ func isTimeoutError(err error) bool {
 	return false
 }
 
-func shouldRetryDownload(attempt int, err error, statusCode int) bool {
-	if attempt >= downloadRetryCount {
+func shouldRetryDownload(ctx context.Context, attempt int, err error, statusCode int) bool {
+	// A canceled request surfaces as a *url.Error, which is a net.Error, so
+	// check the context itself rather than the error type.
+	if attempt >= downloadRetryCount || ctx.Err() != nil {
 		return false
 	}
 	if err != nil {

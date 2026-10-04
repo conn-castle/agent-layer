@@ -52,7 +52,7 @@ The shared `.agents/skills/` projection is also written when VS Code (or any oth
 - `// >>> agent-layer`
 - `// <<< agent-layer`
 
-When markers exist, sync replaces only the managed block. When missing, sync inserts a managed block into the root JSONC object. Launch preflight now fails fast if markers are malformed (duplicate/mismatched order) so users get repair guidance before VS Code starts.
+When markers exist, sync regenerates only the managed block. Agent Layer owns only the `vscodeSettings` keys and the retired keys in `vscodeRetiredManagedKeys`; sync moves any other property found inside the block, with its comments, to just after the end marker, and fails rather than discarding block content it cannot parse as properties. When missing, sync inserts a managed block into the root JSONC object. Launch preflight now fails fast if markers are malformed (duplicate/mismatched order) so users get repair guidance before VS Code starts.
 
 ## Preflight diagnostics
 

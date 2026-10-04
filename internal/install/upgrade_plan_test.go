@@ -4,11 +4,272 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
+
+func TestBuildUpgradePlan_ListsUserPathsAndPreviewsNonRegularRemovals(t *testing.T) {
+	for _, active := range []bool{false, true} {
+		name := "bare layout"
+		if active {
+			name = "active template roots"
+		}
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "1.2.3"}))
+			if active {
+				seedWorkflowBundleForTest(t, root)
+			}
+			skill := ".agent-layer/skills/my-workflow"
+			instruction := ".agent-layer/instructions/10_project.md"
+			link := ".agent-layer/instructions/local-link"
+			skillPath := filepath.Join(root, filepath.FromSlash(skill))
+			require.NoError(t, os.MkdirAll(skillPath, 0o700))
+			require.NoError(t, os.WriteFile(filepath.Join(skillPath, "SKILL.md"), []byte("my workflow\n"), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(root, filepath.FromSlash(instruction)), []byte("project rules\n"), 0o600))
+			linkPath := filepath.Join(root, filepath.FromSlash(link))
+			require.NoError(t, os.Symlink("missing-target", linkPath))
+			// Neither ownership classification nor previews may read non-regular paths.
+			sys := newFaultSystem(RealSystem{})
+			sys.readErrs[skillPath] = errors.New("directory must not be read")
+			sys.readErrs[linkPath] = errors.New("symlink must not be read")
+			if active {
+				// Ensure rename detection runs while the dangling orphan link exists.
+				require.NoError(t, os.Remove(filepath.Join(root, ".agent-layer", "commands.allow")))
+			}
+
+			plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: sys})
+			require.NoError(t, err)
+			for _, path := range []string{skill, instruction, link} {
+				change := findUpgradeChange(plan.TemplateRemovalsOrOrphans, path)
+				require.NotNil(t, change, "missing removal %s", path)
+				require.Equal(t, OwnershipUnknownNoBaseline, change.Ownership)
+				require.Contains(t, change.OwnershipReasonCodes, ownershipReasonBaselineMissing)
+			}
+			require.Nil(t, findUpgradeChange(plan.TemplateRemovalsOrOrphans, skill+"/SKILL.md"))
+			previews, err := BuildUpgradePlanDiffPreviews(root, plan, UpgradePlanDiffPreviewOptions{System: sys})
+			require.NoError(t, err)
+			for _, path := range []string{skill, link} {
+				preview, ok := previews[path]
+				require.True(t, ok, "missing preview %s", path)
+				require.Equal(t, path, preview.Path)
+				require.Equal(t, OwnershipUnknownNoBaseline, preview.Ownership)
+				require.Empty(t, preview.UnifiedDiff)
+			}
+			require.Contains(t, previews[instruction].UnifiedDiff, "-project rules")
+		})
+	}
+}
+
+func TestBuildUpgradePlan_UnknownDeletionsMatchApplyScan(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+	require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "1.2.3"}))
+	for _, path := range []string{
+		".agent-layer/skills/my-workflow/SKILL.md",
+		".agent-layer/instructions/10_project.md",
+		".agent-layer/tmp/run.log",
+		"docs/agent-layer/NOTES.md",
+		".agent-layer/skills/kept-skill/SKILL.md",
+		".agent-layer/skills/partly-kept/keep.md",
+		".agent-layer/skills/partly-kept/remove.md",
+		".agent-layer/state/local-runtime.json",
+		".agent-layer/skills-imported/imported-skill/SKILL.md",
+	} {
+		abs := filepath.Join(root, filepath.FromSlash(path))
+		require.NoError(t, os.MkdirAll(filepath.Dir(abs), 0o700))
+		require.NoError(t, os.WriteFile(abs, []byte("local\n"), 0o600))
+	}
+	keepData := ".agent-layer/skills/kept-skill\n.agent-layer/skills/partly-kept/keep.md\n"
+	require.NoError(t, os.WriteFile(inst.upgradeKeepListPath(), []byte(keepData), 0o600))
+	unknowns, err := inst.scanCurrentUnknowns()
+	require.NoError(t, err)
+	tmp, nonTmp := inst.partitionTmpUnknowns(unknowns)
+	require.Len(t, tmp, 1)
+	expected := make([]string, 0, len(nonTmp))
+	for _, path := range nonTmp {
+		expected = append(expected, filepath.ToSlash(inst.relativePath(path)))
+	}
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+	require.NoError(t, err)
+	actual := make([]string, 0, len(plan.TemplateRemovalsOrOrphans))
+	for _, change := range plan.TemplateRemovalsOrOrphans {
+		actual = append(actual, change.Path)
+	}
+	require.Equal(t, expected, actual)
+	require.True(t, sort.StringsAreSorted(actual))
+	require.Equal(t, []string{
+		".agent-layer/instructions/10_project.md",
+		".agent-layer/skills/my-workflow",
+		".agent-layer/skills/partly-kept/remove.md",
+		"docs/agent-layer/NOTES.md",
+	}, actual)
+}
+
+func TestPlanUnknownDeletions_ExcludesRepresentedDeletedKeptAndKnownPaths(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+	paths := []string{
+		".agent-layer/skills/orphan-dir/file.md",
+		".agent-layer/skills/rename-dir/file.md",
+		".agent-layer/instructions/orphan.md",
+		".agent-layer/instructions/rename.md",
+		".agent-layer/instructions/migrated.md",
+		".agent-layer/instructions/legacy-allow.md",
+		".agent-layer/instructions/kept.md",
+	}
+	for _, path := range paths {
+		abs := filepath.Join(root, filepath.FromSlash(path))
+		require.NoError(t, os.MkdirAll(filepath.Dir(abs), 0o700))
+		require.NoError(t, os.WriteFile(abs, []byte("local\n"), 0o600))
+	}
+	changes, err := inst.planUnknownDeletions(
+		[]upgradeChangeWithTemplate{{path: paths[0]}, {path: paths[2]}},
+		[]UpgradeRename{{From: paths[1]}, {From: paths[3]}},
+		[]upgradeMigrationOperation{
+			{Kind: upgradeMigrationKindDeleteFile, Path: paths[4]},
+			{Kind: upgradeMigrationKindRenameFile, From: paths[5], To: ".agent-layer/commands.allow"},
+		},
+		upgradeKeepList{paths[6]: {}},
+	)
+	require.NoError(t, err)
+	require.Empty(t, changes)
+}
+
+func TestPlanUnknownDeletions_ReportsWhereMigrationsLeaveUnknownPaths(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+	for _, path := range []string{
+		".agent-layer/skills/old-name/SKILL.md",
+		".agent-layer/skills/new-name/SKILL.md",
+		".agent-layer/skills/playwright-cli/SKILL.md",
+		".agent-layer/skills/playwright-cli/my-notes.md",
+		".agent-layer/skills/kept-old/SKILL.md",
+		".agent-layer/skills/flat.md",
+		".agent-layer/instructions/appended.md",
+	} {
+		abs := filepath.Join(root, filepath.FromSlash(path))
+		require.NoError(t, os.MkdirAll(filepath.Dir(abs), 0o700))
+		require.NoError(t, os.WriteFile(abs, []byte("local\n"), 0o600))
+	}
+	changes, err := inst.planUnknownDeletions(nil, nil, []upgradeMigrationOperation{
+		// A chained rename onto an existing unknown path is reported once.
+		{Kind: upgradeMigrationKindRenameFile, From: ".agent-layer/skills/old-name", To: ".agent-layer/skills/mid-name"},
+		{Kind: upgradeMigrationKindRenameFile, From: ".agent-layer/skills/mid-name", To: ".agent-layer/skills/new-name"},
+		// A rename into a known catalog directory leaves its user file unknown.
+		{Kind: upgradeMigrationKindRenameFile, From: ".agent-layer/skills/playwright-cli", To: ".agent-layer/skills/playwright"},
+		// Keeping a path does not keep the destination a migration moves it to.
+		{Kind: upgradeMigrationKindRenameFile, From: ".agent-layer/skills/kept-old", To: ".agent-layer/skills/kept-new"},
+		{Kind: upgradeMigrationKindMigrateSkillsFormat, Path: ".agent-layer/skills"},
+		{Kind: upgradeMigrationKindAppendToFile, Path: ".agent-layer/instructions/appended.md"},
+		{Kind: upgradeMigrationKindAppendToFile, Path: ".agent-layer/instructions/04_conventions.md"},
+	}, upgradeKeepList{".agent-layer/skills/kept-old": {}})
+	require.NoError(t, err)
+	paths := make([]string, 0, len(changes))
+	for _, change := range changes {
+		paths = append(paths, change.path)
+	}
+	require.ElementsMatch(t, []string{
+		".agent-layer/instructions/04_conventions.md",
+		".agent-layer/instructions/appended.md",
+		".agent-layer/skills/flat",
+		".agent-layer/skills/kept-new",
+		".agent-layer/skills/new-name",
+		".agent-layer/skills/playwright/my-notes.md",
+	}, paths)
+}
+
+func TestBuildUpgradePlan_ListsRenamedSkillThatApplyWouldDelete(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "0.12.0"}))
+	skill := filepath.Join(root, ".agent-layer", "skills", "review-scope", "SKILL.md")
+	require.NoError(t, os.MkdirAll(filepath.Dir(skill), 0o700))
+	require.NoError(t, os.WriteFile(skill, []byte("legacy review skill\n"), 0o600))
+
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+	require.NoError(t, err)
+	require.NotNil(t, findUpgradeChange(plan.TemplateRemovalsOrOrphans, ".agent-layer/skills/review-uncommitted-code"))
+	require.Nil(t, findUpgradeChange(plan.TemplateRemovalsOrOrphans, ".agent-layer/skills/review-scope"))
+	_, err = BuildUpgradePlanDiffPreviews(root, plan, UpgradePlanDiffPreviewOptions{System: RealSystem{}})
+	require.NoError(t, err)
+}
+
+func TestBuildUpgradePlan_ListsDanglingRenameSourceThatApplyWouldDelete(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "0.12.0"}))
+	require.NoError(t, os.Remove(filepath.Join(root, ".agent-layer", "config.toml")))
+	source := ".agent-layer/skills/review-scope"
+	sourcePath := filepath.Join(root, filepath.FromSlash(source))
+	require.NoError(t, os.Symlink("missing-target", sourcePath))
+
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+	require.NoError(t, err)
+	require.NotNil(t, findUpgradeChange(plan.TemplateRemovalsOrOrphans, source))
+	require.Nil(t, findUpgradeChange(plan.TemplateRemovalsOrOrphans, ".agent-layer/skills/review-uncommitted-code"))
+	previews, err := BuildUpgradePlanDiffPreviews(root, plan, UpgradePlanDiffPreviewOptions{System: RealSystem{}})
+	require.NoError(t, err)
+	require.Contains(t, previews, source)
+	require.Empty(t, previews[source].UnifiedDiff)
+
+	var deleted []string
+	prompter := autoApprovePrompter()
+	prompter.DeleteUnknownAllFunc = func(paths []string) (bool, error) {
+		deleted = append(deleted, paths...)
+		return true, nil
+	}
+	require.NoError(t, Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: prompter}))
+	require.Contains(t, deleted, source)
+	_, err = os.Lstat(sourcePath)
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestPathsAfterMigrations_RenameSourceStatSemantics(t *testing.T) {
+	for _, kind := range []upgradeMigrationOperationKind{upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact} {
+		t.Run(string(kind), func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, ".agent-layer", "skills", "old")
+			require.NoError(t, os.MkdirAll(dir, 0o700))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "target"), []byte("local\n"), 0o600))
+			require.NoError(t, os.Symlink("target", filepath.Join(dir, "valid")))
+			require.NoError(t, os.Symlink("missing-target", filepath.Join(dir, "dangling")))
+			ops := []upgradeMigrationOperation{
+				{Kind: kind, From: ".agent-layer/skills/old", To: ".agent-layer/skills/moved"},
+				{Kind: kind, From: ".agent-layer/skills/moved/dangling", To: ".agent-layer/skills/destination"},
+				{Kind: kind, From: ".agent-layer/skills/moved/valid", To: ".agent-layer/skills/moved/renamed"},
+				{Kind: kind, From: ".agent-layer/skills/moved/renamed", To: ".agent-layer/skills/moved/final"},
+			}
+			inst := &installer{root: root, sys: RealSystem{}}
+			paths, err := inst.pathsAfterMigrations(ops)
+			require.NoError(t, err)
+			require.Contains(t, paths, ".agent-layer/skills/moved/dangling")
+			require.NotContains(t, paths, ".agent-layer/skills/destination")
+			require.Contains(t, paths, ".agent-layer/skills/moved/final")
+			require.NotContains(t, paths, ".agent-layer/skills/moved/valid")
+			require.NotContains(t, paths, ".agent-layer/skills/moved/renamed")
+
+			failure := errors.New("stat denied")
+			sys := newFaultSystem(RealSystem{})
+			sys.statErrs[filepath.Join(dir, "dangling")] = failure
+			inst.sys = sys
+			_, err = inst.pathsAfterMigrations(ops)
+			require.ErrorIs(t, err, failure)
+
+			inst.sys = RealSystem{}
+			for _, op := range ops {
+				_, err = inst.executeRenameMigration(op.From, op.To)
+				require.NoError(t, err)
+			}
+			actual, err := inst.pathsAfterMigrations(nil)
+			require.NoError(t, err)
+			require.Equal(t, actual, paths)
+		})
+	}
+}
 
 func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 	root := t.TempDir()
@@ -353,6 +614,17 @@ func TestPinVersionDiff_EdgeCases(t *testing.T) {
 	if diff.Action != UpgradePinActionUpdate {
 		t.Fatalf("expected update action for corrupt pin, got %s", diff.Action)
 	}
+
+	if err := os.WriteFile(path, []byte("# team pin\nv1.2.2\n"), 0o600); err != nil {
+		t.Fatalf("write commented pin: %v", err)
+	}
+	diff, err = inst.templates().pinVersionDiff()
+	if err != nil {
+		t.Fatalf("pinVersionDiff commented file: %v", err)
+	}
+	if diff.Current != "1.2.2" || diff.Action != UpgradePinActionUpdate {
+		t.Fatalf("expected update from 1.2.2 for commented pin, got current %q action %s", diff.Current, diff.Action)
+	}
 }
 
 func TestDetectUpgradeRenames_ErrorAndAmbiguityPaths(t *testing.T) {
@@ -490,5 +762,52 @@ func TestPinVersionDiff_RemoveNoneAndReadError(t *testing.T) {
 	inst.sys = readFault
 	if _, err := inst.templates().pinVersionDiff(); err == nil {
 		t.Fatal("expected read error")
+	}
+}
+
+func TestBuildUpgradePlan_RemovalsMatchApplyDeletionsAcrossMigrations(t *testing.T) {
+	for _, source := range []string{"0.8.0", "0.12.0", "0.14.0"} {
+		t.Run(source, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: source}))
+			// Current config keys conflict with old config migrations; file parity does not need config.
+			require.NoError(t, os.Remove(filepath.Join(root, ".agent-layer", "config.toml")))
+			for _, path := range []string{
+				".agent-layer/skills/my-workflow/SKILL.md",
+				".agent-layer/skills/flat-user.md",
+				".agent-layer/skills/review-scope/SKILL.md",
+				".agent-layer/skills/playwright-cli/my-notes.md",
+				".agent-layer/instructions/10_project.md",
+				".agent-layer/tmp/run.log",
+			} {
+				abs := filepath.Join(root, filepath.FromSlash(path))
+				require.NoError(t, os.MkdirAll(filepath.Dir(abs), 0o700))
+				require.NoError(t, os.WriteFile(abs, []byte("local\n"), 0o600))
+			}
+			keep := filepath.Join(root, ".agent-layer", UpgradeKeepListFileName)
+			require.NoError(t, os.WriteFile(keep, []byte(".agent-layer/skills/review-scope\n"), 0o600))
+
+			plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+			require.NoError(t, err)
+			planned := make([]string, 0, len(plan.TemplateRemovalsOrOrphans))
+			for _, change := range plan.TemplateRemovalsOrOrphans {
+				planned = append(planned, change.Path)
+			}
+
+			var deleted []string
+			prompter := autoApprovePrompter()
+			prompter.DeleteUnknownAllFunc = func(paths []string) (bool, error) {
+				for _, path := range paths {
+					if !strings.HasPrefix(path, ".agent-layer/tmp/") {
+						deleted = append(deleted, path)
+					}
+				}
+				return true, nil
+			}
+			prompter.ConfirmSkillsMigrationFunc = func([]string, []SkillsMigrationConflict) (bool, error) { return true, nil }
+			require.NoError(t, Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: prompter}))
+			require.ElementsMatch(t, deleted, planned)
+			require.NotEmpty(t, planned)
+		})
 	}
 }

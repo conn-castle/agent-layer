@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -214,9 +215,12 @@ func TestUpgradeRollbackCmd_ListRejectsPositionalArgs(t *testing.T) {
 }
 
 func TestUpgradePrefetchCmd_UsesVersionFlagAndCallsDispatch(t *testing.T) {
+	type ctxKey struct{}
 	origPrefetch := dispatchPrefetchVersion
 	var gotVersion string
-	dispatchPrefetchVersion = func(versionInput string, progressOut io.Writer) error {
+	var gotCtx context.Context
+	dispatchPrefetchVersion = func(ctx context.Context, versionInput string, progressOut io.Writer) error {
+		gotCtx = ctx
 		gotVersion = versionInput
 		return nil
 	}
@@ -229,11 +233,14 @@ func TestUpgradePrefetchCmd_UsesVersionFlagAndCallsDispatch(t *testing.T) {
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetIn(bytes.NewBufferString(""))
 
-	if err := cmd.Execute(); err != nil {
+	if err := cmd.ExecuteContext(context.WithValue(context.Background(), ctxKey{}, "root")); err != nil {
 		t.Fatalf("execute upgrade prefetch: %v", err)
 	}
 	if gotVersion != "1.2.3" {
 		t.Fatalf("prefetch version = %q, want 1.2.3", gotVersion)
+	}
+	if gotCtx == nil || gotCtx.Value(ctxKey{}) != "root" {
+		t.Fatal("prefetch did not receive the command context")
 	}
 	if !strings.Contains(out.String(), "1.2.3") {
 		t.Fatalf("expected success output to include version, got %q", out.String())
