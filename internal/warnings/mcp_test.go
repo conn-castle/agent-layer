@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/envref"
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
@@ -421,7 +422,7 @@ func TestDiscoverTools(t *testing.T) {
 		},
 	}
 
-	results := discoverTools(context.Background(), servers, mock, nil)
+	results := discoverTools(context.Background(), servers, mock, nil, nil)
 	require.Len(t, results, 3)
 
 	// Results should be in order
@@ -435,7 +436,7 @@ func TestDiscoverTools(t *testing.T) {
 
 func TestDiscoverTools_Empty(t *testing.T) {
 	mock := &MockConnector{Results: map[string]DiscoveryResult{}}
-	results := discoverTools(context.Background(), nil, mock, nil)
+	results := discoverTools(context.Background(), nil, mock, nil, nil)
 	assert.Empty(t, results)
 }
 
@@ -460,7 +461,7 @@ func TestDiscoverTools_EmitsDiscoveryEvents(t *testing.T) {
 		mu.Unlock()
 	}
 
-	_ = discoverTools(context.Background(), servers, mock, statusFn)
+	_ = discoverTools(context.Background(), servers, mock, statusFn, nil)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -544,7 +545,7 @@ func TestDiscoverTools_ConcurrencyLimit(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		_ = discoverTools(context.Background(), servers, connector, nil)
+		_ = discoverTools(context.Background(), servers, connector, nil, nil)
 		close(done)
 	}()
 
@@ -1382,4 +1383,235 @@ func TestCheckMCPServers_OAuthServerNotValidated(t *testing.T) {
 		}
 	}
 	assert.True(t, hasAuthNotValidatedEvent, "expected MCPDiscoveryStatusAuthNotValidated event")
+}
+
+// echoingConnector fails every user-configured server with an error that quotes
+// each resolved field, the way transport and SDK errors echo request URLs.
+type echoingConnector struct{}
+
+func (echoingConnector) ConnectAndDiscover(_ context.Context, server projection.ResolvedMCPServer) DiscoveryResult {
+	if server.ID == projection.BuiltInDispatchServerID {
+		return DiscoveryResult{ServerID: server.ID}
+	}
+	return DiscoveryResult{ServerID: server.ID, Error: fmt.Errorf("url=%q headers=%v command=%q args=%v env=%v",
+		server.URL, server.Headers, server.Command, server.Args, server.Env)}
+}
+
+// TestCheckMCPServers_RedactsResolvedSecretsFromDiscoveryErrors proves doctor
+// never prints a resolved secret: both the progress event and the
+// MCP_SERVER_UNREACHABLE warning show the configured placeholder instead.
+func TestCheckMCPServers_RedactsResolvedSecretsFromDiscoveryErrors(t *testing.T) {
+	t.Setenv("AL_SHELL_TOKEN", "shell-secret-value")
+	enabled := true
+	repoRoot := t.TempDir()
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: receivingAgents(),
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{
+						ID: "remote", Enabled: &enabled, Transport: config.TransportHTTP,
+						URL:     "https://mcp.example.test/mcp?apiKey=${AL_URL_KEY}&shell=${AL_SHELL_TOKEN}",
+						Headers: map[string]string{"Authorization": "Bearer ${AL_HEADER_TOKEN}"},
+					},
+					{
+						ID: "local", Enabled: &enabled, Transport: config.TransportStdio,
+						Command: "${AL_REPO_ROOT}/bin/server",
+						Args:    []string{"--key=${AL_ARG_KEY}"},
+						Env:     map[string]string{"TOKEN": "${AL_ENV_TOKEN}"}, // #nosec G101 -- placeholder reference in a redaction test.
+					},
+				},
+			},
+		},
+		Env: map[string]string{
+			"AL_URL_KEY":      "url-secret-value",
+			"AL_HEADER_TOKEN": "header-secret-value",
+			"AL_ARG_KEY":      "arg-secret",
+			// Contains AL_ARG_KEY's value, so the longer value must win.
+			"AL_ENV_TOKEN":               "arg-secret-and-more",
+			config.BuiltinRepoRootEnvVar: repoRoot,
+		},
+	}
+
+	var mu sync.Mutex
+	eventErrs := map[string]string{}
+	statusFn := func(event MCPDiscoveryEvent) {
+		if event.Err == nil {
+			return
+		}
+		mu.Lock()
+		eventErrs[event.ServerID] = event.Err.Error()
+		mu.Unlock()
+	}
+
+	warnings, _, err := CheckMCPServers(context.Background(), cfg, echoingConnector{}, statusFn)
+	require.NoError(t, err)
+
+	messages := map[string]string{}
+	for _, w := range warnings {
+		if w.Code == CodeMCPServerUnreachable {
+			messages[w.Subject] = w.Message
+		}
+	}
+	require.Len(t, messages, 2)
+
+	secrets := []string{"url-secret-value", "shell-secret-value", "header-secret-value", "arg-secret", "and-more"}
+	for _, id := range []string{"remote", "local"} {
+		for _, text := range []string{eventErrs[id], messages[id]} {
+			for _, secret := range secrets {
+				assert.NotContains(t, text, secret, "server %s", id)
+			}
+		}
+	}
+	assert.Contains(t, messages["remote"], "apiKey=${AL_URL_KEY}&shell=${AL_SHELL_TOKEN}")
+	assert.Contains(t, messages["remote"], "Bearer ${AL_HEADER_TOKEN}")
+	assert.Contains(t, eventErrs["remote"], "apiKey=${AL_URL_KEY}")
+	assert.Contains(t, messages["local"], "--key=${AL_ARG_KEY}")
+	assert.Contains(t, messages["local"], "TOKEN:${AL_ENV_TOKEN}")
+	// The repo root is a built-in, non-secret path and stays readable.
+	assert.Contains(t, messages["local"], repoRoot+"/bin/server")
+}
+
+// TestCheckMCPServers_RedactsNormalizedSecretPaths covers the command and args
+// after projection expands and cleans them, including a real exec failure.
+func TestCheckMCPServers_RedactsNormalizedSecretPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		path      string
+		pathValue string
+		argument  bool
+		connector Connector
+	}{
+		{name: "repo command exec failure", path: "${AL_REPO_ROOT}/${AL_PATH_TOKEN}", pathValue: "private/../topsecret", connector: &MockConnector{Next: &RealConnector{}}},
+		{name: "home command", path: "~/${AL_PATH_TOKEN}", pathValue: "private/../topsecret", connector: echoingConnector{}},
+		{name: "repo argument", path: "${AL_REPO_ROOT}/${AL_PATH_TOKEN}", pathValue: "private/../topsecret", argument: true, connector: echoingConnector{}},
+		{name: "home argument", path: "~/${AL_PATH_TOKEN}", pathValue: "private/../topsecret", argument: true, connector: echoingConnector{}},
+		{name: "parent traversal argument", path: "${AL_REPO_ROOT}/prefix/${AL_PATH_TOKEN}", pathValue: "private/../../topsecret", argument: true, connector: echoingConnector{}},
+		{name: "quoted command", path: "${AL_REPO_ROOT}/${AL_PATH_TOKEN}", pathValue: "private/../topsecret\"suffix", connector: echoingConnector{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			enabled := true
+			server := config.MCPServer{ID: "local", Enabled: &enabled, Transport: config.TransportStdio, Command: tc.path}
+			if tc.argument {
+				server.Command = "server"
+				server.Args = []string{tc.path}
+			}
+			cfg := &config.ProjectConfig{
+				Config: config.Config{Agents: receivingAgents(), MCP: config.MCPConfig{Servers: []config.MCPServer{server}}},
+				Env: map[string]string{
+					config.BuiltinRepoRootEnvVar: t.TempDir(),
+					"AL_PATH_TOKEN":              tc.pathValue,
+				},
+			}
+			var eventErr error
+			statusFn := func(event MCPDiscoveryEvent) {
+				if event.ServerID == server.ID && event.Status == MCPDiscoveryStatusError {
+					eventErr = event.Err
+				}
+			}
+			warnings, _, err := CheckMCPServers(context.Background(), cfg, tc.connector, statusFn)
+			require.NoError(t, err)
+			require.Len(t, warnings, 1)
+			assert.Equal(t, CodeMCPServerUnreachable, warnings[0].Code)
+			require.Error(t, eventErr)
+			for _, text := range []string{eventErr.Error(), warnings[0].Message} {
+				assert.NotContains(t, text, "topsecret")
+				assert.Contains(t, text, "${AL_PATH_TOKEN}")
+			}
+		})
+	}
+}
+
+// TestCheckMCPServers_KeepsErrorsWithoutResolvedValues proves redaction leaves
+// an error that echoes no resolved value untouched, chain included.
+func TestCheckMCPServers_KeepsErrorsWithoutResolvedValues(t *testing.T) {
+	enabled := true
+	cause := fmt.Errorf("dial: %w", context.DeadlineExceeded)
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: receivingAgents(),
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{ID: "remote", Enabled: &enabled, Transport: config.TransportHTTP, URL: "https://mcp.example.test/mcp?token=${AL_TOKEN}"},
+				},
+			},
+		},
+		Env: map[string]string{"AL_TOKEN": "secret-token"},
+	}
+
+	var mu sync.Mutex
+	var eventErr error
+	statusFn := func(event MCPDiscoveryEvent) {
+		if event.Err != nil {
+			mu.Lock()
+			eventErr = event.Err
+			mu.Unlock()
+		}
+	}
+	mock := &MockConnector{Results: map[string]DiscoveryResult{"remote": {ServerID: "remote", Error: cause}}}
+	warnings, _, err := CheckMCPServers(context.Background(), cfg, mock, statusFn)
+	require.NoError(t, err)
+	require.Len(t, warnings, 1)
+	assert.Equal(t, fmt.Sprintf("cannot connect, initialize, or list tools: %v", cause), warnings[0].Message)
+	assert.Same(t, cause, eventErr)
+}
+
+// TestCheckMCPServers_RedactsRealHTTPConnectionError drives the real SDK
+// transport against a closed port: Go's HTTP client quotes the full request
+// URL in its error, and the query-string secret must not survive into output.
+func TestCheckMCPServers_RedactsRealHTTPConnectionError(t *testing.T) {
+	closed := httptest.NewServer(http.NotFoundHandler())
+	baseURL := closed.URL
+	closed.Close()
+
+	enabled := true
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: receivingAgents(),
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{ID: "streamable", Enabled: &enabled, Transport: config.TransportHTTP, HTTPTransport: config.HTTPTransportStreamable, URL: baseURL + "/mcp/?tavilyApiKey=${AL_TAVILY_API_KEY}"},
+					{ID: "sse", Enabled: &enabled, Transport: config.TransportHTTP, URL: baseURL + "/sse?tavilyApiKey=${AL_TAVILY_API_KEY}"},
+				},
+			},
+		},
+		Env: map[string]string{"AL_TAVILY_API_KEY": "tvly-SUPERSECRET123"},
+	}
+
+	warnings, _, err := CheckMCPServers(context.Background(), cfg, &MockConnector{Next: &RealConnector{}}, nil)
+	require.NoError(t, err)
+	var unreachable int
+	for _, w := range warnings {
+		if w.Code != CodeMCPServerUnreachable {
+			continue
+		}
+		unreachable++
+		assert.NotContains(t, w.Message, "tvly-SUPERSECRET123", "server %s", w.Subject)
+		assert.Contains(t, w.Message, "tavilyApiKey=${AL_TAVILY_API_KEY}", "server %s", w.Subject)
+	}
+	assert.Equal(t, 2, unreachable)
+}
+
+// TestMCPSecretPlaceholdersCoversEncodedForms proves a secret still redacts
+// when a transport error quotes it or re-encodes it inside a URL.
+func TestMCPSecretPlaceholdersCoversEncodedForms(t *testing.T) {
+	enabled := true
+	servers := []config.MCPServer{{
+		ID: "remote", Enabled: &enabled, Transport: config.TransportHTTP,
+		URL: "https://${AL_USER}@mcp.example.test/mcp?k=${AL_KEY}",
+	}}
+	placeholders := mcpSecretPlaceholders(servers, map[string]string{
+		"AL_USER": "us%40er",
+		"AL_KEY":  `a"b\c d`,
+	})
+	for _, text := range []string{
+		`Get "https://us@er@mcp.example.test/mcp?k=a\"b\\c d"`, // %q of the decoded URL
+		"https://us%2540er@mcp.example.test/mcp?k=a%22b%5Cc+d", // query-escaped
+		"path a%22b%5Cc%20d", // path-escaped
+	} {
+		redacted := envref.Redact(text, placeholders)
+		for _, leak := range []string{"us@er", "us%40er", "40er", `b\c`, `b\\c`, "b%5Cc"} {
+			assert.NotContains(t, redacted, leak, "text %q", text)
+		}
+	}
 }
