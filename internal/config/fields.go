@@ -179,15 +179,6 @@ func LookupField(key string) (FieldDef, bool) {
 	return copyFieldDef(fields[i]), true
 }
 
-// Fields returns a copy of all registered field definitions in catalog order.
-func Fields() []FieldDef {
-	out := make([]FieldDef, len(fields))
-	for i, f := range fields {
-		out[i] = copyFieldDef(f)
-	}
-	return out
-}
-
 // FieldOptionValues returns the option values for a field as a plain string slice.
 // Returns nil when the key is not in the catalog or has no options.
 func FieldOptionValues(key string) []string {

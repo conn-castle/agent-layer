@@ -260,12 +260,11 @@ const (
 	WizardCleanupBackupsPathFmt  = "  - %s\n"
 	WizardCleanupBackupsNone     = "No wizard backup files found."
 
-	AntigravityUse                         = "agy"
-	AntigravityShort                       = "Sync and launch Antigravity"
-	AntigravityLong                        = "Sync project state for the Antigravity client (writes .agy/antigravity-cli/settings.json and mcp_config.json) and launch `agy --gemini_dir=<repo>/.agy`.\n\nThe launcher sets AGY_CLI_DISABLE_AUTO_UPDATE=1 so the pinned agy binary is not silently upgraded under Agent Layer. Requires `agy` (>= 1.0.0) on PATH. Run `al probe agy` to verify the install."
-	ClientsAntigravityRelativeGeminiDirFmt = "antigravity requires an absolute --gemini_dir path; got %s"
-	ClientsAntigravityRelativeRootFmt      = "antigravity requires an absolute project root; got %s"
-	ClientsAntigravityBinaryNotFoundFmt    = "antigravity launcher requires `agy` on PATH: %w (install Antigravity from https://antigravity.google and ensure `agy` is on PATH)"
+	AntigravityUse                      = "agy"
+	AntigravityShort                    = "Sync and launch Antigravity"
+	AntigravityLong                     = "Sync project state for the Antigravity client (writes .agy/antigravity-cli/settings.json and mcp_config.json) and launch `agy --gemini_dir=<repo>/.agy`.\n\nThe launcher sets AGY_CLI_DISABLE_AUTO_UPDATE=1 so the pinned agy binary is not silently upgraded under Agent Layer. Requires `agy` (>= 1.0.0) on PATH. Run `al probe agy` to verify the install."
+	ClientsAntigravityRelativeRootFmt   = "antigravity requires an absolute project root; got %s"
+	ClientsAntigravityBinaryNotFoundFmt = "antigravity launcher requires `agy` on PATH: %w (install Antigravity from https://antigravity.google and ensure `agy` is on PATH)"
 
 	ClaudeUse   = "claude"
 	ClaudeShort = "Sync and launch Claude Code CLI"
@@ -334,10 +333,6 @@ const (
 	ClientsCodexHomeWarningFmt       = "Warning: CODEX_HOME is set to %s; expected %s\n"
 	ClientsClaudeConfigDirWarningFmt = "Warning: CLAUDE_CONFIG_DIR is set to %s; expected %s\n"
 	ClientsGrokHomeWarningFmt        = "Warning: overriding inherited GROK_HOME=%s with repo-local %s\n"
-
-	// StubShortFmt formats stub command descriptions.
-	StubShortFmt          = "%s (not implemented yet)"
-	StubNotImplementedFmt = "%s is not implemented in this phase"
 )
 
 // Skill import command messages.

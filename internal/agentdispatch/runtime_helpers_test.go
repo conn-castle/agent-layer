@@ -275,7 +275,7 @@ func TestReapOwnedProviderLeaderDoesNotWaitOnReusedPID(t *testing.T) {
 	}
 }
 
-func TestReapDuringTerminationReleasesUnreapedLeader(t *testing.T) {
+func TestReleaseUnreapedProviderAfterIdentityMismatch(t *testing.T) {
 	unrelated := exec.Command("/bin/sh", "-c", `trap '' TERM; while :; do sleep 1; done`) // #nosec G204 -- fixed test-only shell command.
 	prepareProviderProcessGroup(unrelated)
 	if err := unrelated.Start(); err != nil {
@@ -294,10 +294,12 @@ func TestReapDuringTerminationReleasesUnreapedLeader(t *testing.T) {
 	group := ownedProviderProcessGroup{pid: pid, pgid: pid, start: current + "-other"}
 	termination := &providerTermination{group: group, grace: 50 * time.Millisecond, done: make(chan struct{})}
 	termination.request()
-	waitErr, reaped := reapDuringTermination(unrelated, current+"-other", termination)
+	<-termination.done
+	reaped, waitErr := reapOwnedProviderLeader(unrelated, current+"-other")
 	if reaped {
 		t.Fatal("reaped a reused process group leader")
 	}
+	releaseUnreapedProvider(unrelated)
 	if !errors.Is(termination.err, errProviderGroupIdentityMismatch) && !errors.Is(waitErr, errProviderGroupIdentityMismatch) {
 		t.Fatalf("unproven reused termination = wait %v terminate %v", waitErr, termination.err)
 	}

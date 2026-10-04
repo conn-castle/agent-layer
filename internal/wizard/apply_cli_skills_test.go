@@ -307,24 +307,24 @@ func TestApplySkillsChanges_CatalogRepairCopiesOnlyMissingFiles(t *testing.T) {
 	assert.FileExists(t, filepath.Join(skillDir, "LICENSE"))
 }
 
-func TestCopyCatalogSkillToDiskErrorBranches(t *testing.T) {
+func TestCopySkillDirToDiskErrorBranches(t *testing.T) {
 	root := t.TempDir()
 
-	err := copyCatalogSkillToDisk(root, "../bad")
+	err := copySkillDirToDisk(root, cliSkillsCatalogTemplateRoot+"/../bad", "../bad")
 	require.ErrorContains(t, err, `invalid catalog skill id "../bad"`)
 
-	err = copyCatalogSkillToDisk(root, "missing-skill")
+	err = copySkillDirToDisk(root, cliSkillsCatalogTemplateRoot+"/missing-skill", "missing-skill")
 	require.Error(t, err)
 
 	rootFile := filepath.Join(t.TempDir(), "not-a-directory")
 	require.NoError(t, os.WriteFile(rootFile, []byte("x"), 0o600))
-	err = copyCatalogSkillToDisk(rootFile, "tavily-web")
+	err = copySkillDirToDisk(rootFile, cliSkillsCatalogTemplateRoot+"/tavily-web", "tavily-web")
 	require.Error(t, err)
 
 	blockedRoot := t.TempDir()
 	blockedSkillFile := filepath.Join(blockedRoot, ".agent-layer", "skills", "tavily-web", "SKILL.md")
 	require.NoError(t, os.MkdirAll(blockedSkillFile, 0o750))
-	err = copyCatalogSkillToDisk(blockedRoot, "tavily-web")
+	err = copySkillDirToDisk(blockedRoot, cliSkillsCatalogTemplateRoot+"/tavily-web", "tavily-web")
 	require.Error(t, err)
 }
 

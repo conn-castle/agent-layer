@@ -308,10 +308,6 @@ func (e *codexTomlEditor) leadingPreambleEnd() int {
 	return len(e.lines)
 }
 
-func (e *codexTomlEditor) setPath(path []string, literal string) {
-	e.setPathValue(path, literal, nil)
-}
-
 func (e *codexTomlEditor) setPathValue(path []string, literal string, value any) {
 	if len(path) > 1 && e.mutateRootInlineTable(path[0], func(table map[string]any) {
 		setNestedValue(table, path[1:], literalValue{literal: literal})

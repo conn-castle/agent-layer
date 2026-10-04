@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -32,12 +31,6 @@ const (
 	downloadRetryBackoff     = 250 * time.Millisecond
 	cacheLockWorkHeadroom    = 5 * time.Second
 )
-
-// ensureCachedBinary returns the cached binary path, downloading and verifying it if missing.
-// Progress lines are written to progressOut when a download is required.
-func ensureCachedBinary(ctx context.Context, cacheRoot string, version string, progressOut io.Writer) (string, error) {
-	return ensureCachedBinaryWithSystem(ctx, RealSystem{}, cacheRoot, version, progressOut)
-}
 
 func ensureCachedBinaryWithSystem(ctx context.Context, sys System, cacheRoot string, version string, progressOut io.Writer) (string, error) {
 	if sys == nil {
@@ -121,11 +114,6 @@ func ensureCachedBinaryWithSystem(ctx context.Context, sys System, cacheRoot str
 	return binPath, nil
 }
 
-// platformStrings returns the supported OS and architecture strings for release assets.
-func platformStrings() (string, string, error) {
-	return checkPlatform(runtime.GOOS, runtime.GOARCH)
-}
-
 func checkPlatform(osName, arch string) (string, string, error) {
 	switch osName {
 	case osDarwin, osLinux:
@@ -150,11 +138,6 @@ func assetName(osName string, arch string) string {
 // noNetworkWithSystem reports whether downloads are disabled via AL_NO_NETWORK.
 func noNetworkWithSystem(sys System) bool {
 	return strings.TrimSpace(sys.Getenv(EnvNoNetwork)) != ""
-}
-
-// downloadToFile fetches url and writes it to dest.
-func downloadToFile(ctx context.Context, url string, dest *os.File) error {
-	return downloadToFileWithSystem(ctx, RealSystem{}, url, dest)
 }
 
 func downloadToFileWithSystem(ctx context.Context, sys System, url string, dest *os.File) error {
@@ -220,11 +203,6 @@ func downloadToFileWithLimits(ctx context.Context, sys System, url string, dest 
 		sys.Sleep(downloadRetryBackoff)
 	}
 	return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, errors.New("retry budget exhausted"))
-}
-
-// fetchChecksum retrieves the expected checksum for the asset from checksums.txt.
-func fetchChecksum(ctx context.Context, version string, asset string) (string, error) {
-	return fetchChecksumWithSystem(ctx, RealSystem{}, version, asset)
 }
 
 // fetchChecksumWithSystem retrieves the expected checksum using the provided system for timeout/env resolution.

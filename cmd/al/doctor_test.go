@@ -139,9 +139,11 @@ func TestMCPDiscoveryReporter_Report(t *testing.T) {
 	// Wait for events to be processed
 	var s1, s2, s3 warnings.MCPDiscoveryStatus
 	require.Eventually(t, func() bool {
-		s1 = reporter.statusFor("server1")
-		s2 = reporter.statusFor("server2")
-		s3 = reporter.statusFor("server3")
+		reporter.mu.RLock()
+		defer reporter.mu.RUnlock()
+		s1 = reporter.statusForLocked("server1")
+		s2 = reporter.statusForLocked("server2")
+		s3 = reporter.statusForLocked("server3")
 		return s1 == warnings.MCPDiscoveryStatusDone && s2 == warnings.MCPDiscoveryStatusError && s3 == warnings.MCPDiscoveryStatusAuthNotValidated
 	}, time.Second, 10*time.Millisecond)
 

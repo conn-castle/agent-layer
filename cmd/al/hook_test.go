@@ -45,7 +45,7 @@ func TestHookHerdRRejectsLifecycleArguments(t *testing.T) {
 func TestHookChimeCommandWiresStreams(t *testing.T) {
 	original := chimeSoundRunner
 	plays := 0
-	chimeSoundRunner = chime.SoundRunnerFunc(func() error {
+	chimeSoundRunner = soundRunnerFunc(func() error {
 		plays++
 		return nil
 	})
@@ -81,3 +81,8 @@ func TestHookHerdRRequiresProjectRoot(t *testing.T) {
 		t.Fatal("rootless hook must not use ambient pane identity")
 	}
 }
+
+// soundRunnerFunc adapts a test function to chime.SoundRunner.
+type soundRunnerFunc func() error
+
+func (f soundRunnerFunc) Play() error { return f() }

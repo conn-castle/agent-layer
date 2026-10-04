@@ -132,12 +132,12 @@ func TestClassifyOrphanOwnership_DocsAgentLayer_UsesBaseline(t *testing.T) {
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	ownership, err := inst.ownership().classifyOrphanOwnership("docs/agent-layer/ROADMAP.md")
+	ownership, err := inst.ownership().classifyOrphanOwnershipDetail("docs/agent-layer/ROADMAP.md")
 	if err != nil {
-		t.Fatalf("classifyOrphanOwnership: %v", err)
+		t.Fatalf("classifyOrphanOwnershipDetail: %v", err)
 	}
-	if ownership != OwnershipUpstreamTemplateDelta {
-		t.Fatalf("ownership = %s, want %s", ownership, OwnershipUpstreamTemplateDelta)
+	if ownership.Label != OwnershipUpstreamTemplateDelta {
+		t.Fatalf("ownership = %s, want %s", ownership.Label, OwnershipUpstreamTemplateDelta)
 	}
 }
 
@@ -152,12 +152,12 @@ func TestClassifyOrphanOwnership_TemplatesDocs_AlwaysUpstream(t *testing.T) {
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	ownership, err := inst.ownership().classifyOrphanOwnership(".agent-layer/templates/docs/ROADMAP.md")
+	ownership, err := inst.ownership().classifyOrphanOwnershipDetail(".agent-layer/templates/docs/ROADMAP.md")
 	if err != nil {
-		t.Fatalf("classifyOrphanOwnership: %v", err)
+		t.Fatalf("classifyOrphanOwnershipDetail: %v", err)
 	}
-	if ownership != OwnershipUpstreamTemplateDelta {
-		t.Fatalf("ownership = %s, want %s", ownership, OwnershipUpstreamTemplateDelta)
+	if ownership.Label != OwnershipUpstreamTemplateDelta {
+		t.Fatalf("ownership = %s, want %s", ownership.Label, OwnershipUpstreamTemplateDelta)
 	}
 }
 
@@ -179,20 +179,20 @@ func TestClassifyOrphanOwnership_DocsMissingBaselineAndDefaultFallback(t *testin
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	ownership, err := inst.ownership().classifyOrphanOwnership("docs/agent-layer/ISSUES.md")
+	ownership, err := inst.ownership().classifyOrphanOwnershipDetail("docs/agent-layer/ISSUES.md")
 	if err != nil {
-		t.Fatalf("classifyOrphanOwnership docs: %v", err)
+		t.Fatalf("classifyOrphanOwnershipDetail docs: %v", err)
 	}
-	if ownership != OwnershipUnknownNoBaseline {
-		t.Fatalf("docs missing baseline ownership = %s, want %s", ownership, OwnershipUnknownNoBaseline)
+	if ownership.Label != OwnershipUnknownNoBaseline {
+		t.Fatalf("docs missing baseline ownership = %s, want %s", ownership.Label, OwnershipUnknownNoBaseline)
 	}
 
-	ownership, err = inst.ownership().classifyOrphanOwnership(".agent-layer/skills/local-orphan.md")
+	ownership, err = inst.ownership().classifyOrphanOwnershipDetail(".agent-layer/skills/local-orphan.md")
 	if err != nil {
-		t.Fatalf("classifyOrphanOwnership default: %v", err)
+		t.Fatalf("classifyOrphanOwnershipDetail default: %v", err)
 	}
-	if ownership != OwnershipUnknownNoBaseline {
-		t.Fatalf("default fallback ownership = %s, want %s", ownership, OwnershipUnknownNoBaseline)
+	if ownership.Label != OwnershipUnknownNoBaseline {
+		t.Fatalf("default fallback ownership = %s, want %s", ownership.Label, OwnershipUnknownNoBaseline)
 	}
 }
 

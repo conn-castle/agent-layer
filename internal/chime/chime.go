@@ -33,12 +33,6 @@ type SoundRunner interface {
 	Play() error
 }
 
-// SoundRunnerFunc adapts a function to SoundRunner.
-type SoundRunnerFunc func() error
-
-// Play starts the function-backed notification sound.
-func (f SoundRunnerFunc) Play() error { return f() }
-
 // SystemSoundRunner starts the supported system notification sound asynchronously.
 type SystemSoundRunner struct{}
 

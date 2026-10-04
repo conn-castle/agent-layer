@@ -418,45 +418,6 @@ func releaseUnreapedProvider(cmd *exec.Cmd) {
 	_ = cmd.Process.Release()
 }
 
-// reapDuringTermination reaps the owned leader concurrently with group
-// termination so a zombie can release the process-group ID. It never starts a
-// blocking cmd.Wait goroutine; if the leader remains live after termination
-// fails, the process handle is released instead of leaking a waiter.
-func reapDuringTermination(cmd *exec.Cmd, start string, termination *providerTermination) (error, bool) {
-	ticker := time.NewTicker(providerTerminationPollInterval)
-	defer ticker.Stop()
-	var waitErr error
-	reaped := false
-	for {
-		if !reaped {
-			done, err := reapOwnedProviderLeader(cmd, start)
-			if done {
-				reaped = true
-				waitErr = err
-			} else if err != nil && waitErr == nil {
-				waitErr = err
-			}
-		}
-		select {
-		case <-termination.done:
-			if !reaped {
-				done, err := reapOwnedProviderLeader(cmd, start)
-				if done {
-					reaped = true
-					waitErr = err
-				} else if err != nil && waitErr == nil {
-					waitErr = err
-				}
-			}
-			if !reaped {
-				releaseUnreapedProvider(cmd)
-			}
-			return waitErr, reaped
-		case <-ticker.C:
-		}
-	}
-}
-
 func installProviderSignalForwarder(requestTermination func()) (caught func() os.Signal, stop func()) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)

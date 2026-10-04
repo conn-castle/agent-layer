@@ -254,10 +254,6 @@ func applySkillsChanges(root string, changes skillsChangeSet) error {
 	return nil
 }
 
-func copyCatalogSkillToDisk(root string, id string) error {
-	return copySkillDirToDisk(root, cliSkillsCatalogTemplateRoot+"/"+id, id)
-}
-
 // copySkillDirToDisk copies the embedded template directory for destID to
 // .agent-layer/skills/<destID>/. Errors when the embedded directory is missing.
 func copySkillDirToDisk(root string, templateRoot string, destID string) error {
@@ -396,27 +392,6 @@ func regularFileExists(path string) (bool, error) {
 		return false, fmt.Errorf("%s exists but is not a regular file", path)
 	}
 	return true, nil
-}
-
-// embeddedWorkflowSkillIDs returns the development-skill ids from the
-// embedded skills/ template tree.
-func embeddedWorkflowSkillIDs() (map[string]struct{}, error) {
-	ids := make(map[string]struct{})
-	err := templates.Walk("skills", func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil || entry.IsDir() {
-			return walkErr
-		}
-		rel := strings.TrimPrefix(path, "skills/")
-		id := strings.Split(rel, "/")[0]
-		if id != "" && id != rel {
-			ids[id] = struct{}{}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return ids, nil
 }
 
 // templateDirHasMissingFiles reports whether any embedded file in templateRoot

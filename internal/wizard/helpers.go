@@ -3,7 +3,6 @@ package wizard
 import (
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -11,7 +10,7 @@ import (
 
 // buildSummary returns a formatted summary of wizard choices.
 // c is the current choices; returns the summary text.
-// Assumes c.DefaultMCPServers has been populated (see wizard.Run).
+// Assumes c.DefaultMCPServers has been populated (see RunWithWriter).
 func buildSummary(c *Choices) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, messages.WizardSummaryApprovalsFmt, c.ApprovalMode)
@@ -312,25 +311,6 @@ func promptFeatureToggles(ui UI, title string, toggles []featureToggle) error {
 		*t.field = checked
 		*t.touched = true
 	}
-	return nil
-}
-
-// promptPositiveInt asks for a positive integer, defaulting to the current value.
-// ui is the wizard UI; title is the prompt label; value holds the default and receives the parsed value.
-func promptPositiveInt(ui UI, title string, value *int) error {
-	input := strconv.Itoa(*value)
-	if err := ui.Input(title, &input); err != nil {
-		return err
-	}
-	input = strings.TrimSpace(input)
-	if input == "" {
-		return nil
-	}
-	parsed, err := strconv.Atoi(input)
-	if err != nil || parsed <= 0 {
-		return fmt.Errorf(messages.WizardPositiveIntRequiredFmt, title)
-	}
-	*value = parsed
 	return nil
 }
 

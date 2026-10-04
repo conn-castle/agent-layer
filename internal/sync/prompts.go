@@ -29,12 +29,6 @@ func WriteClaudeSkills(sys System, root string, skills []config.Skill) error {
 	return writeSkillRoot(sys, filepath.Join(root, ".claude", "skills"), skills, "", false)
 }
 
-// writeClaudeSkillLinks shares the already-published shared projection with Claude.
-// Relative per-skill links remain valid when the staging root is published.
-func writeClaudeSkillLinks(sys System, root string, skills []config.Skill) error {
-	return writeClaudeSkillLinksWithDiscard(sys, root, skills, false)
-}
-
 func writeClaudeSkillLinksWithDiscard(sys System, root string, skills []config.Skill, retainPrevious bool) error {
 	claudeDir := filepath.Join(root, ".claude")
 	linkRoot := filepath.Join("..", "..", ".agents", "skills")

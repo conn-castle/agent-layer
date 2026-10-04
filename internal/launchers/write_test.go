@@ -16,7 +16,7 @@ func TestWriteVSCodeLaunchers(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 
-	if err := WriteVSCodeLaunchers(RealSystem{}, root); err != nil {
+	if err := WriteVSCodeLaunchers(testSystem{}, root); err != nil {
 		t.Fatalf("WriteVSCodeLaunchers error: %v", err)
 	}
 
@@ -75,7 +75,7 @@ func TestWriteVSCodeLaunchersContent(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 
-	if err := WriteVSCodeLaunchers(RealSystem{}, root); err != nil {
+	if err := WriteVSCodeLaunchers(testSystem{}, root); err != nil {
 		t.Fatalf("WriteVSCodeLaunchers error: %v", err)
 	}
 
@@ -247,7 +247,7 @@ func TestVSCodeDesktopEntryExecRunsShellScript(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if err := WriteVSCodeLaunchers(RealSystem{}, writeRoot); err != nil {
+			if err := WriteVSCodeLaunchers(testSystem{}, writeRoot); err != nil {
 				t.Fatalf("WriteVSCodeLaunchers error: %v", err)
 			}
 			paths := VSCodePaths(root)
@@ -438,7 +438,7 @@ func TestWriteVSCodeAppBundle(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	if err := writeVSCodeAppBundle(RealSystem{}, paths); err != nil {
+	if err := writeVSCodeAppBundle(testSystem{}, paths); err != nil {
 		t.Fatalf("writeVSCodeAppBundle error: %v", err)
 	}
 
