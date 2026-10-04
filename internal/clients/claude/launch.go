@@ -10,6 +10,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/herdr"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/run"
 )
@@ -42,6 +43,11 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	}
 	args = clients.MergeArgs(args, passArgs, nil, []string{flagModel, flagEffort})
 
+	if runInfo != nil {
+		if err := herdr.CaptureLaunch(cfg.Root, runInfo.Dir, env, "claude"); err != nil {
+			return fmt.Errorf("prepare Claude HerdR recovery: %w", err)
+		}
+	}
 	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Claude, os.Stderr)
 
 	path, err := exec.LookPath(executableName)

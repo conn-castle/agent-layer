@@ -32,6 +32,7 @@ func writeMuseApprovals(sys System, root string, project *config.ProjectConfig) 
 		return err
 	}
 	path := filepath.Join(dir, "hooks.json")
+	herdROwned := false
 	receiptPath := filepath.Join(dir, "agent-layer-policy.json")
 	_, receiptErr := sys.Lstat(receiptPath)
 	if receiptErr != nil && !os.IsNotExist(receiptErr) {
@@ -40,7 +41,13 @@ func writeMuseApprovals(sys System, root string, project *config.ProjectConfig) 
 	if !enabled && os.IsNotExist(receiptErr) {
 		owned, err := museLocalOwnershipEvidence(sys, path, "al hook muse-mcp ", museApprovalHookMarker)
 		if err != nil || !owned {
-			return err
+			if err != nil {
+				return err
+			}
+			herdROwned, err = museLocalOwnershipEvidence(sys, path, agentLayerHerdRMarker)
+			if err != nil || !herdROwned {
+				return err
+			}
 		}
 	}
 	receipt, err := readMusePolicyReceipt(sys, receiptPath)
@@ -91,7 +98,7 @@ func writeMuseApprovals(sys System, root string, project *config.ProjectConfig) 
 			}
 		}
 	}
-	if !enabled && !owned && receipt == nil {
+	if !enabled && !owned && !herdROwned && receipt == nil {
 		return nil
 	}
 	canonical, err := filepath.EvalSymlinks(root)
@@ -162,6 +169,9 @@ func writeMuseApprovals(sys System, root string, project *config.ProjectConfig) 
 		document[hooksKey] = hooks
 	} else {
 		delete(document, hooksKey)
+	}
+	if err := injectMuseHerdRHook(document, enabled, canonical); err != nil {
+		return err
 	}
 	if len(document) == 0 {
 		if err = sys.Remove(path); err != nil && !os.IsNotExist(err) {

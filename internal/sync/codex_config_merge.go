@@ -34,8 +34,10 @@ const (
 type codexManagedConfig struct {
 	Content       string
 	TrustedRoot   string
+	ProjectRoot   string
 	AgentSpecific map[string]any
 	ChimeEnabled  bool
+	HerdREnabled  bool
 }
 
 type codexTomlEditor struct {
@@ -143,6 +145,9 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 	if _, err := editor.applyCodexChimeHook(path, managed.ChimeEnabled); err != nil {
 		return "", err
 	}
+	if _, err := editor.applyCodexHerdRHook(path, managed.HerdREnabled, managed.ProjectRoot); err != nil {
+		return "", err
+	}
 	if fragment := extractNamespaceLines(managed.Content, []string{config.CodexMCPServersKey}); len(fragment) > 0 {
 		editor.appendBlock(fragment)
 	}
@@ -189,6 +194,11 @@ func cleanCodexChimeHook(sys System, root string) error {
 	changed, err := editor.applyCodexChimeHook(path, false)
 	if err != nil {
 		return err
+	}
+	if herdRChanged, herdRErr := editor.applyCodexHerdRHook(path, false); herdRErr != nil {
+		return herdRErr
+	} else {
+		changed = changed || herdRChanged
 	}
 	if !changed {
 		return nil

@@ -20,7 +20,7 @@ func TestMuseApprovalsSyncPreservesUserHooksAndRevokesOwnedRules(t *testing.T) {
 	project := &config.ProjectConfig{Root: root, CommandsAllow: []string{"git status"}, Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll}, Agents: config.AgentsConfig{Muse: config.AgentConfig{Enabled: &enabled}}}}
 	path := filepath.Join(root, ".muse", "hooks.json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
-	require.NoError(t, os.WriteFile(path, []byte(`{"hooks":{"PermissionRequest":[{"matcher":".*","hooks":[{"type":"command","command":"user-review-hook"}]}],"Stop":[{"hooks":[{"type":"command","command":"user-stop-hook"}]}]}}`), 0o600))
+	require.NoError(t, os.WriteFile(path, []byte(`{"hooks":{"PermissionRequest":[{"matcher":".*","hooks":[{"type":"command","command":"user-review-hook"}]}],"Stop":[{"hooks":[{"type":"command","command":"user-stop-hook"}]}],"SessionStart":[{"hooks":[{"type":"command","command":"user-session-hook"}]}],"UserPromptSubmit":[{"hooks":[{"type":"command","command":"user-prompt-hook"}]}]}}`), 0o600))
 	for range 2 {
 		require.NoError(t, writeMuseApprovals(RealSystem{}, root, project))
 	}
@@ -31,6 +31,9 @@ func TestMuseApprovalsSyncPreservesUserHooksAndRevokesOwnedRules(t *testing.T) {
 	require.Len(t, doc["hooks"].(map[string]any)["PermissionRequest"], 2)
 	require.Contains(t, string(data), "user-review-hook")
 	require.Contains(t, string(data), "user-stop-hook")
+	require.Contains(t, string(data), "user-session-hook")
+	require.Contains(t, string(data), "user-prompt-hook")
+	require.Equal(t, 2, strings.Count(string(data), agentLayerHerdRMarker))
 	policy := filepath.Join(native, "muse", "approval-policy.json")
 	require.Equal(t, [][]string{{"git", "status"}}, museOwnedCommandPrefixes(t, policy))
 	project.Config.Approvals.Mode = config.ApprovalModeNone
@@ -41,8 +44,11 @@ func TestMuseApprovalsSyncPreservesUserHooksAndRevokesOwnedRules(t *testing.T) {
 	data, err = os.ReadFile(path) // #nosec G304 -- test-controlled temporary path.
 	require.NoError(t, err)
 	require.NotContains(t, string(data), "al hook muse-mcp")
+	require.NotContains(t, string(data), agentLayerHerdRMarker)
 	require.Contains(t, string(data), "user-review-hook")
 	require.Contains(t, string(data), "user-stop-hook")
+	require.Contains(t, string(data), "user-session-hook")
+	require.Contains(t, string(data), "user-prompt-hook")
 }
 
 func TestMuseApprovalsRejectsSymlinkAndMalformedHooks(t *testing.T) {

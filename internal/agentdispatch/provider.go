@@ -1016,6 +1016,20 @@ func compatibleTargetVersion(path string, target targetMeta, lookup func(string,
 func dispatchEnvironment(base []string, project *config.ProjectConfig, dispatchRun *dispatchRun, depth int) []string {
 	info := &run.Info{ID: dispatchRun.Record.ID, Dir: dispatchRun.Dir}
 	env := clients.BuildEnv(base, project.Env, info)
+	// A dispatched worker belongs to its own conversation, never the caller's
+	// HerdR pane. Remove the complete HerdR namespace before the native child
+	// and its hooks can inherit it.
+	env = withoutHerdREnvironment(env)
 	env = clients.SetEnv(env, clients.EnvDispatchActive, fmt.Sprintf("%d", depth))
 	return clients.SetEnv(env, updatewarn.EnvSuppress, "1")
+}
+
+func withoutHerdREnvironment(environment []string) []string {
+	result := make([]string, 0, len(environment))
+	for _, entry := range environment {
+		if !strings.HasPrefix(entry, "HERDR_") {
+			result = append(result, entry)
+		}
+	}
+	return result
 }

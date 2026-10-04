@@ -14,6 +14,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/herdr"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/sync"
 )
@@ -145,6 +146,9 @@ func executeDispatch(request dispatchExecution) error {
 		}
 		if current, err := loadRunRecord(request.Root, request.Run.Record.ID); err == nil && current.State == dispatchStateCancelled {
 			return finishDispatchFailure(request, exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled before provider launch", request.Run.Record.ID)))
+		}
+		if err := herdr.WriteBoundary(request.Root, request.Run.Dir); err != nil {
+			return finishDispatchFailure(request, fmt.Errorf("create HerdR dispatch boundary: %w", err))
 		}
 		result, err := executeProvider(command, request.Prompt, request.Run, request.Root, request.NewCommand, persist)
 		if err != nil {

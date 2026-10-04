@@ -8,6 +8,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/herdr"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/run"
 )
@@ -38,6 +39,11 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 		return err
 	}
 	args = clients.MergeArgs(args, passArgs, nil, nil)
+	if runInfo != nil {
+		if err := herdr.CaptureLaunch(cfg.Root, runInfo.Dir, env, "agy"); err != nil {
+			return fmt.Errorf("prepare Antigravity HerdR recovery: %w", err)
+		}
+	}
 	env = ConfigureEnvironment(env)
 
 	argv := append([]string{executableName}, args...)

@@ -85,6 +85,11 @@ func buildClaudeSettings(root string, project *config.ProjectConfig) (map[string
 			return nil, err
 		}
 	}
+	if config.IsAgentEnabled(project.Config.Agents.Claude.Enabled) {
+		if err := injectClaudeHerdRHookAtRoot(settings, root); err != nil {
+			return nil, err
+		}
+	}
 
 	// Inject the AskUserQuestion block last so it unions with (rather than is
 	// replaced by) any user-supplied agent_specific deny / PreToolUse entries.

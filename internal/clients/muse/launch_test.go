@@ -4,9 +4,11 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/run"
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
@@ -72,4 +74,34 @@ func TestLaunchExplicitOptionsReplaceDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	call.AssertCalled(t, filepath.Join(binDir, "muse"), []string{"muse", "--workspace", "custom", "--trust-workspace", "--model", "chosen", "--reasoning-effort", "low", "--yolo"})
+}
+
+func TestLaunchRecordsMuseSourceIdentityWithoutFlags(t *testing.T) {
+	oldExec := execFunc
+	t.Cleanup(func() { execFunc = oldExec })
+	execFunc = func(_ string, _ []string, _ []string) error { return nil }
+
+	root := t.TempDir()
+	binDir := t.TempDir()
+	testutil.WriteStub(t, binDir, "muse")
+	t.Setenv("PATH", binDir)
+	runInfo, err := run.Create(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := &config.ProjectConfig{Root: root, Config: config.Config{Agents: config.AgentsConfig{Muse: config.AgentConfig{Model: "repository-model"}}}}
+	if err = Launch(project, runInfo, []string{"HERDR_ENV=1", "HERDR_SOCKET_PATH=/herdr.sock", "HERDR_PANE_ID=w1:p1"}, []string{"--prompt", "never-store-this"}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(runInfo.Dir)
+	if err != nil || len(entries) != 1 || !strings.HasPrefix(entries[0].Name(), "herdr-launch-") {
+		t.Fatalf("launch context entries=%v err=%v", entries, err)
+	}
+	data, err := os.ReadFile(filepath.Join(runInfo.Dir, entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "never-store-this") || strings.Contains(string(data), "repository-model") || strings.Contains(string(data), "options") {
+		t.Fatalf("launch context retained launch flags or configuration: %s", data)
+	}
 }

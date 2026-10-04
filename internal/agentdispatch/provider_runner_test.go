@@ -11,9 +11,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/clients"
 	clientgrok "github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/config"
 )
@@ -92,6 +94,7 @@ func TestClaudeDispatchPrintBackgroundWaitCeilingIsAuthoritative(t *testing.T) {
 		baseEnv       []string
 		projectValue  string
 		inputKeyCount int
+		depth         int
 	}{
 		{
 			name:          "fresh replaces project value",
@@ -106,6 +109,16 @@ func TestClaudeDispatchPrintBackgroundWaitCeilingIsAuthoritative(t *testing.T) {
 			projectValue:  "900000",
 			inputKeyCount: 2,
 		},
+		{
+			name:    "depth two dispatch removes every HerdR value",
+			baseEnv: []string{"HERDR_ENV=1", "HERDR_SOCKET_PATH=/socket", "HERDR_PANE_ID=w1:p1", "HERDR_OTHER=fixture"},
+			depth:   2,
+		},
+		{
+			name:    "depth three dispatch removes every HerdR value",
+			baseEnv: []string{"HERDR_ENV=1", "HERDR_SOCKET_PATH=/socket", "HERDR_PANE_ID=w1:p1", "HERDR_OTHER=fixture"},
+			depth:   3,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -114,7 +127,19 @@ func TestClaudeDispatchPrintBackgroundWaitCeilingIsAuthoritative(t *testing.T) {
 			if err != nil {
 				t.Fatalf("new dispatch run: %v", err)
 			}
-			childEnv := dispatchEnvironment(tt.baseEnv, project, run, 1)
+			depth := tt.depth
+			if depth == 0 {
+				depth = 1
+			}
+			childEnv := dispatchEnvironment(tt.baseEnv, project, run, depth)
+			for _, entry := range childEnv {
+				if strings.HasPrefix(entry, "HERDR_") {
+					t.Fatalf("dispatched environment retained HerdR value %q", entry)
+				}
+			}
+			if got := envValues(childEnv, clients.EnvDispatchActive); len(got) != 1 || got[0] != strconv.Itoa(depth) {
+				t.Fatalf("dispatch depth marker = %#v, want %d", got, depth)
+			}
 			if got := len(envValues(childEnv, claudePrintBackgroundWaitCeilingEnv)); got != tt.inputKeyCount {
 				t.Fatalf("dispatch environment %q entries = %d, want %d: %#v", claudePrintBackgroundWaitCeilingEnv, got, tt.inputKeyCount, childEnv)
 			}
