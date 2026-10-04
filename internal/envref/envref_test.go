@@ -131,6 +131,11 @@ func TestLiteralSecretQueryKeySeparatesLiteralsFromReferences(t *testing.T) {
 		{name: "encoded key", rawURL: "https://example.test/s.git?access%5Ftoken=literal", wantKey: "access_token"},
 		// A fragment is not part of the query.
 		{name: "fragment only", rawURL: "https://example.test/s.git#token=literal"},
+		{name: "query marker in fragment", rawURL: "https://example.test/s.git#docs?token=literal"},
+		{name: "fragment after safe query", rawURL: "https://example.test/s.git?depth=1#docs?token=literal"},
+		{name: "fragment after placeholder query", rawURL: "https://example.test/s.git?token=${AL_TOKEN}#docs?api_key=literal"},
+		{name: "literal query before fragment", rawURL: "https://example.test/s.git?token=literal#docs?api_key=other", wantKey: "token"},
+		{name: "encoded fragment delimiter", rawURL: "https://example.test/s.git%23docs?token=literal", wantKey: "token"},
 		// Partly-literal values still carry real secret text.
 		{name: "partly literal", rawURL: "https://example.test/s.git?token=${AL_TOKEN}x", wantKey: "token"},
 	}

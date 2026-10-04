@@ -490,3 +490,96 @@ func TestCheckPolicy_SecretURLIgnoresPlaceholderAndEmptyValues(t *testing.T) {
 	}
 	require.Nil(t, CheckPolicy(project))
 }
+
+func TestCheckPolicy_SecretURLWithPlaceholderHostOrUserinfo(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want bool
+	}{
+		{name: "literal query secret with placeholder host", url: "https://${AL_MCP_HOST}/mcp?api_key=sk-live", want: true},
+		{name: "literal password with placeholder host", url: "https://user:literal@${AL_HOST}/mcp", want: true},
+		{name: "literal username only with placeholder host", url: "https://token@${AL_HOST}/mcp", want: true},
+		{name: "literal query secret beside placeholder password", url: "https://user:${AL_P}@example.com/mcp?token=literal", want: true},
+		{name: "query secret partly literal", url: "https://example.com/mcp?token=abc${AL_X}", want: true},
+		{name: "placeholder host and query secret", url: "https://${AL_HOST}/mcp?api_key=${AL_K}", want: false},
+		{name: "placeholder userinfo and host", url: "https://${AL_U}:${AL_P}@${AL_HOST}/mcp", want: false},
+		{name: "literal username with placeholder password", url: "https://user:${AL_P}@example.com/mcp", want: false},
+		{name: "at sign after the authority", url: "https://example.com/mcp?q=a@b", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			project := &config.ProjectConfig{
+				Config: config.Config{
+					MCP: config.MCPConfig{
+						Servers: []config.MCPServer{{
+							ID:      "srv",
+							Enabled: testutil.BoolPtr(true),
+							URL:     tt.url,
+						}},
+					},
+				},
+			}
+			results := CheckPolicy(project)
+			if !tt.want {
+				require.Nil(t, results)
+				return
+			}
+			require.Len(t, results, 1)
+			require.Equal(t, CodePolicySecretInURL, results[0].Code)
+			require.Equal(t, SeverityCritical, results[0].Severity)
+		})
+	}
+}
+
+func TestCheckPolicy_SecretURLDelimiterBoundaries(t *testing.T) {
+	const userinfoDetail = "URL contains inline userinfo credentials"
+	tests := []struct {
+		name       string
+		url        string
+		wantDetail string
+	}{
+		{name: "query marker in fragment", url: "https://example.com/mcp#docs?token=literal"},
+		{name: "review fragment example", url: "https://example.com/mcp#docs?token=example"},
+		{name: "fragment after safe query", url: "https://example.com/mcp?depth=1#docs?token=literal"},
+		{name: "literal query before fragment", url: "https://example.com/mcp?token=literal#docs?api_key=other", wantDetail: `query parameter "token" contains a literal secret-like value`},
+		{name: "scheme relative password", url: "//user:secret@example.com/mcp", wantDetail: userinfoDetail},
+		{name: "scheme relative password only", url: "//:secret@example.com/mcp", wantDetail: userinfoDetail},
+		{name: "scheme relative username only", url: "//user@example.com/mcp", wantDetail: userinfoDetail},
+		{name: "scheme relative empty password", url: "//user:@example.com/mcp", wantDetail: userinfoDetail},
+		{name: "scheme relative placeholder host", url: "//user:secret@${AL_HOST}/mcp", wantDetail: userinfoDetail},
+		{name: "scheme relative partly literal password", url: "//user:abc${AL_P}@example.com/mcp", wantDetail: userinfoDetail},
+		{name: "scheme relative placeholder password", url: "//user:${AL_P}@example.com/mcp"},
+		{name: "scheme relative placeholder userinfo and host", url: "//${AL_U}:${AL_P}@${AL_HOST}/mcp"},
+		{name: "scheme relative placeholder username", url: "//${AL_U}@example.com/mcp"},
+		{name: "scheme relative empty userinfo", url: "//:@example.com/mcp"},
+		{name: "at sign in scheme relative path", url: "//example.com/user:secret@other"},
+		{name: "at sign in scheme relative query", url: "//example.com?user:secret@other"},
+		{name: "at sign in scheme relative fragment", url: "//example.com#user:secret@other"},
+		{name: "scheme delimiter in scheme relative path", url: "//example.com/https://user:secret@other"}, // #nosec G101 -- invented credentials test that the path is not scanned as userinfo.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			project := &config.ProjectConfig{
+				Config: config.Config{
+					MCP: config.MCPConfig{
+						Servers: []config.MCPServer{{
+							ID:      "srv",
+							Enabled: testutil.BoolPtr(true),
+							URL:     tt.url,
+						}},
+					},
+				},
+			}
+			results := CheckPolicy(project)
+			if tt.wantDetail == "" {
+				require.Nil(t, results)
+				return
+			}
+			require.Len(t, results, 1)
+			require.Equal(t, CodePolicySecretInURL, results[0].Code)
+			require.Equal(t, SeverityCritical, results[0].Severity)
+			require.Equal(t, []string{tt.wantDetail}, results[0].Details)
+		})
+	}
+}
