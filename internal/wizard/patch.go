@@ -34,6 +34,9 @@ import (
 type tomlBlock struct {
 	name  string
 	lines []string
+	// subTables are the headers TOML nests under this array-of-tables element
+	// (for example [mcp.servers.env]); they render directly after lines.
+	subTables []*tomlBlock
 }
 
 type tomlDocument struct {
@@ -67,16 +70,24 @@ func fromSharedKeyLine(line tomlpatch.KeyLine) keyLine {
 	}
 }
 
+func fromSharedBlock(block *tomlpatch.Block) *tomlBlock {
+	converted := &tomlBlock{name: block.Name, lines: cloneLines(block.Lines)}
+	for _, subTable := range block.SubTables {
+		converted.subTables = append(converted.subTables, fromSharedBlock(subTable))
+	}
+	return converted
+}
+
 func fromSharedDocument(doc tomlpatch.Document) tomlDocument {
 	sections := make(map[string]*tomlBlock, len(doc.Sections))
 	for name, block := range doc.Sections {
-		sections[name] = &tomlBlock{name: block.Name, lines: cloneLines(block.Lines)}
+		sections[name] = fromSharedBlock(block)
 	}
 	arrays := make(map[string][]*tomlBlock, len(doc.Arrays))
 	for name, blocks := range doc.Arrays {
 		arrays[name] = make([]*tomlBlock, 0, len(blocks))
 		for _, block := range blocks {
-			arrays[name] = append(arrays[name], &tomlBlock{name: block.Name, lines: cloneLines(block.Lines)})
+			arrays[name] = append(arrays[name], fromSharedBlock(block))
 		}
 	}
 	return tomlDocument{
@@ -194,7 +205,7 @@ func assembleCanonicalConfig(currentDoc tomlDocument, templateDoc tomlDocument, 
 				return nil, err
 			}
 			for _, serverBlock := range serverBlocks {
-				appendBlock(&output, serverBlock.lines)
+				appendBlock(&output, renderedBlockLines(&serverBlock))
 			}
 		}
 	}
@@ -207,7 +218,7 @@ func assembleCanonicalConfig(currentDoc tomlDocument, templateDoc tomlDocument, 
 	// Preserve non-mcp.servers array-of-table blocks.
 	extraArrays := extraArrayBlocks(currentDoc.arrays)
 	for _, block := range extraArrays {
-		appendBlock(&output, block.lines)
+		appendBlock(&output, renderedBlockLines(block))
 	}
 
 	return trimTrailingEmptyLines(output), nil
@@ -419,8 +430,9 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 }
 
 type mcpBlock struct {
-	id    string
-	lines []string
+	id        string
+	lines     []string
+	subTables []*tomlBlock
 }
 
 // stdioIncompatibleKeys are TOML keys that are not valid for stdio transport MCP servers.
@@ -500,7 +512,7 @@ func buildMCPServerBlocks(currentDoc tomlDocument, catalogDoc tomlDocument, choi
 				continue
 			}
 		}
-		tb := tomlBlock{name: mcpServersSection, lines: cloneLines(block.lines)}
+		tb := tomlBlock{name: mcpServersSection, lines: cloneLines(block.lines), subTables: cloneBlocks(block.subTables)}
 		// Honor the custom-server keep/disable decision. Unlike catalog defaults,
 		// a custom server has no template to restore from, so disabling sets
 		// enabled = false rather than pruning the block. Untouched configs pass
@@ -519,21 +531,53 @@ func buildMCPServerBlocks(currentDoc tomlDocument, catalogDoc tomlDocument, choi
 	return ordered, nil
 }
 
-// sanitizeMCPServerBlock removes transport-incompatible fields from a server block.
+// sanitizeMCPServerBlock removes transport-incompatible fields from a server block,
+// including section-style sub-tables such as [mcp.servers.headers].
 // This allows the wizard to repair configs where, for example, a stdio server
 // has leftover headers from a previous configuration.
 func sanitizeMCPServerBlock(block *tomlBlock) {
-	transport := extractMCPBlockKeyValue(block.lines, "transport")
-	switch transport {
+	var incompatibleKeys []string
+	switch extractMCPBlockKeyValue(block.lines, "transport") {
 	case "stdio":
-		for _, key := range stdioIncompatibleKeys {
-			removeKeyFromBlock(block, key)
-		}
+		incompatibleKeys = stdioIncompatibleKeys
 	case "http":
-		for _, key := range httpIncompatibleKeys {
-			removeKeyFromBlock(block, key)
+		incompatibleKeys = httpIncompatibleKeys
+	}
+	for _, key := range incompatibleKeys {
+		removeKeyFromBlock(block, key)
+	}
+	kept := make([]*tomlBlock, 0, len(block.subTables))
+	for _, subTable := range block.subTables {
+		path, ok := tomlpatch.ParseKeyPath(subTable.name)
+		if !ok || len(path) <= 2 || path[0] != mcpSection || path[1] != "servers" || !slices.Contains(incompatibleKeys, path[2]) {
+			kept = append(kept, subTable)
+			continue
+		}
+		// The parser assigns comments and blank lines preceding the next header
+		// to this sub-table; keep them so dropping it does not drop the next
+		// block's leading comment.
+		trailing := trailingCommentLines(subTable.lines)
+		if len(kept) > 0 {
+			kept[len(kept)-1].lines = append(kept[len(kept)-1].lines, trailing...)
+		} else {
+			block.lines = append(block.lines, trailing...)
 		}
 	}
+	block.subTables = kept
+}
+
+// trailingCommentLines returns the comment and blank lines after the last
+// content line of a block.
+func trailingCommentLines(lines []string) []string {
+	end := len(lines)
+	for end > 0 {
+		trimmed := strings.TrimSpace(lines[end-1])
+		if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+			break
+		}
+		end--
+	}
+	return lines[end:]
 }
 
 type tomlLineWalkResult struct {
@@ -569,7 +613,7 @@ func removeKeyFromBlock(block *tomlBlock, key string) {
 // updateMCPEnabled applies the enabled toggle to a server block when requested.
 // block holds the current server text; templateBlock provides canonical formatting; id identifies the server.
 func updateMCPEnabled(block mcpBlock, templateBlock mcpBlock, choices *Choices, id string) tomlBlock {
-	updated := tomlBlock{name: mcpServersSection, lines: cloneLines(block.lines)}
+	updated := tomlBlock{name: mcpServersSection, lines: cloneLines(block.lines), subTables: cloneBlocks(block.subTables)}
 	if choices.EnabledMCPServersTouched {
 		tpl := (*tomlBlock)(nil)
 		if len(templateBlock.lines) > 0 {
@@ -607,7 +651,7 @@ func parseMCPBlocks(blocks []*tomlBlock) []mcpBlock {
 	result := make([]mcpBlock, 0, len(blocks))
 	for _, block := range blocks {
 		id := extractMCPServerID(block.lines)
-		result = append(result, mcpBlock{id: id, lines: cloneLines(block.lines)})
+		result = append(result, mcpBlock{id: id, lines: cloneLines(block.lines), subTables: cloneBlocks(block.subTables)})
 	}
 	return result
 }
@@ -1134,12 +1178,37 @@ func parseTomlHeader(line string) (string, bool, bool) {
 	return tomlpatch.ParseHeader(line)
 }
 
-// cloneBlock returns a deep copy of a block, including its lines.
+// cloneBlock returns a deep copy of a block, including its lines and sub-tables.
 func cloneBlock(block *tomlBlock) *tomlBlock {
 	if block == nil {
 		return nil
 	}
-	return &tomlBlock{name: block.name, lines: cloneLines(block.lines)}
+	return &tomlBlock{name: block.name, lines: cloneLines(block.lines), subTables: cloneBlocks(block.subTables)}
+}
+
+// cloneBlocks returns deep copies of blocks.
+func cloneBlocks(blocks []*tomlBlock) []*tomlBlock {
+	if len(blocks) == 0 {
+		return nil
+	}
+	cloned := make([]*tomlBlock, 0, len(blocks))
+	for _, block := range blocks {
+		cloned = append(cloned, cloneBlock(block))
+	}
+	return cloned
+}
+
+// renderedBlockLines returns a block's lines followed by its sub-tables' lines,
+// keeping each array element and its nested tables together as one unit.
+func renderedBlockLines(block *tomlBlock) []string {
+	if len(block.subTables) == 0 {
+		return block.lines
+	}
+	lines := cloneLines(block.lines)
+	for _, subTable := range block.subTables {
+		lines = append(lines, subTable.lines...)
+	}
+	return lines
 }
 
 // cloneLines returns a copy of the provided line slice.
