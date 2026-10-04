@@ -3,6 +3,7 @@ package envfile
 import (
 	"bufio"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -39,10 +40,14 @@ func Parse(content string) (map[string]string, error) {
 
 // Patch updates .env content with the provided key/value pairs.
 // content is the existing file content; updates supplies key/value pairs to merge.
+// New keys are appended in sorted order and leave the result ending in a newline,
+// so a later shell append cannot merge onto the last value; otherwise the input's
+// final-newline state is kept.
 func Patch(content string, updates map[string]string) string {
+	finalNewline := strings.HasSuffix(content, "\n")
 	var lines []string
 	if content != "" {
-		lines = strings.Split(content, "\n")
+		lines = strings.Split(strings.TrimSuffix(content, "\n"), "\n")
 	}
 
 	firstIndex := make(map[string]int)
@@ -56,8 +61,15 @@ func Patch(content string, updates map[string]string) string {
 		}
 	}
 
+	keys := make([]string, 0, len(updates))
+	for key := range updates {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
 	updatedKeys := make(map[string]bool)
-	for key, value := range updates {
+	for _, key := range keys {
+		value := updates[key]
 		if value == "" {
 			continue
 		}
@@ -76,12 +88,9 @@ func Patch(content string, updates map[string]string) string {
 			}
 			lines = append(lines, fmt.Sprintf("%s=%s", key, encodedValue))
 			firstIndex[key] = len(lines) - 1
+			finalNewline = true
 		}
 		updatedKeys[key] = true
-	}
-
-	if len(updatedKeys) == 0 {
-		return strings.Join(lines, "\n")
 	}
 
 	filtered := make([]string, 0, len(lines))
@@ -93,7 +102,11 @@ func Patch(content string, updates map[string]string) string {
 		filtered = append(filtered, line)
 	}
 
-	return strings.Join(filtered, "\n")
+	result := strings.Join(filtered, "\n")
+	if finalNewline {
+		result += "\n"
+	}
+	return result
 }
 
 // parseLine parses a single .env line and returns key/value when present.

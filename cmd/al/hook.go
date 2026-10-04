@@ -16,6 +16,10 @@ func newHookCmd() *cobra.Command {
 		Use:    commandHook,
 		Short:  "Internal provider hook handlers",
 		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
 	}
 	cmd.AddCommand(newHookChimeCmd())
 	museCmd := &cobra.Command{Use: "muse-mcp <project-root>", Hidden: true, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {

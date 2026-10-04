@@ -131,27 +131,11 @@ Common causes:
 
 Run `al doctor` to see structured config errors.
 
-### VS Code settings disappear after sync
+### VS Code setting moved or replaced after sync
 
-Some VS Code extensions (for example Peacock) write settings through the VS Code configuration API in a way that can land inside the Agent Layer-managed block in `.vscode/settings.json`.
+Agent Layer owns only the settings it writes inside the managed block (`// >>> agent-layer` to `// <<< agent-layer`) in `.vscode/settings.json`: `chat.tools.terminal.autoApprove`, `chat.agentSkillsLocations`, and `claudeCode.allowDangerouslySkipPermissions`. `al sync` regenerates them from `.agent-layer/config.toml` and `.agent-layer/commands.allow`, so edit those files instead of the block.
 
-If that happens, Agent Layer replaces the managed block on the next `al sync`, so extension-written settings inside that block are removed.
-
-Fix:
-
-1. Manually edit `.vscode/settings.json` and move extension-owned settings outside the managed marker block (`// >>> agent-layer` to `// <<< agent-layer`).
-2. If the managed block is currently the last block in the file, add a user-owned tail anchor key after it:
-
-```jsonc
-{
-  // >>> agent-layer
-  // ... Agent Layer managed settings ...
-  // <<< agent-layer
-  "__settingsTailAnchor": 0
-}
-```
-
-This creates a stable non-managed tail position for extension writes.
+VS Code and some extensions (for example Peacock) add a new setting after the last property in the file, which can be inside the managed block. On the next `al sync`, Agent Layer moves every setting it does not own, with its comments, to just after the block. If text inside the block can't be read as settings, `al sync` fails instead of discarding it; fix or remove that text and run `al sync` again.
 
 ## MCP server issues
 
@@ -236,6 +220,8 @@ If `mcp_runtime_discovery` is still false, the generated config exists but Antig
 ### `al agy` fails to launch or `agy` is not found
 
 If `al agy` exits with `antigravity launcher requires \`agy\` on PATH`, install Antigravity from [antigravity.google](https://antigravity.google) and ensure the `agy` binary is on your `PATH`. Run `al probe agy` as a single-step diagnostic: it confirms `agy` is discoverable, captures the version, and reports the observed capability matrix. The probe writes a forensic workspace under `.agent-layer/tmp/probe-antigravity-TIMESTAMP-SUFFIX/` which you can attach to a bug report; `al upgrade --apply-tmp-deletions` cleans these up.
+
+`agy` keeps its auth, logs, and conversations in `.agy/`, which must be a real directory rather than a symlink. Agent Layer creates it with owner-only permissions and tightens an existing `.agy/` that is too open. If `al sync` or `al agy` rejects a symlinked `.agy/`, replace the link with a real directory.
 
 ### Client CLI not found
 

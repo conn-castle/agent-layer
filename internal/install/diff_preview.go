@@ -48,9 +48,9 @@ func (inst *installer) buildManagedDiffPreviews(entries []LabeledPath) ([]DiffPr
 	return previews, indexDiffPreviews(previews), nil
 }
 
-// filterMigrationCoveredDiffs removes entries whose paths are covered by planned
-// migrations, preventing noisy diffs for files that the migration subsystem will
-// handle (e.g., skill content updates bundled with a format migration).
+// filterMigrationCoveredDiffs removes non-rename migration coverage from reviews
+// built after migrations run. Rename sources are gone; destination diffs describe
+// pending template overwrites and must remain visible.
 func (inst *installer) filterMigrationCoveredDiffs(entries []LabeledPath) []LabeledPath {
 	if len(inst.migrationManifestCoverage) == 0 || len(entries) == 0 {
 		return entries
@@ -106,16 +106,27 @@ func (inst *installer) buildSingleDiffPreview(entry LabeledPath, templatePathByR
 		return inst.pinVersionDiffPreview(relPath, entry.Ownership)
 	}
 
-	templatePath := templatePathByRel[relPath]
-	if strings.TrimSpace(templatePath) == "" {
+	// Report a missing mapping before any read error for the local file.
+	if strings.TrimSpace(templatePathByRel[relPath]) == "" {
 		return DiffPreview{}, fmt.Errorf(messages.InstallMissingTemplatePathMappingFmt, relPath)
 	}
-
 	localPath := filepath.Join(inst.root, filepath.FromSlash(relPath))
 	localBytes, err := inst.sys.ReadFile(localPath)
 	if err != nil {
 		return DiffPreview{}, err
 	}
+	return inst.buildSingleDiffPreviewFromBytes(entry, templatePathByRel, localBytes)
+}
+
+// buildSingleDiffPreviewFromBytes renders entry's template diff against
+// localBytes, which may come from a path a migration will move to entry.Path.
+func (inst *installer) buildSingleDiffPreviewFromBytes(entry LabeledPath, templatePathByRel map[string]string, localBytes []byte) (DiffPreview, error) {
+	relPath := filepath.ToSlash(entry.Path)
+	templatePath := templatePathByRel[relPath]
+	if strings.TrimSpace(templatePath) == "" {
+		return DiffPreview{}, fmt.Errorf(messages.InstallMissingTemplatePathMappingFmt, relPath)
+	}
+
 	templateBytes, err := templates.Read(templatePath)
 	if err != nil {
 		return DiffPreview{}, err

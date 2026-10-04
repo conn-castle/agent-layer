@@ -155,3 +155,47 @@ func TestLaunchExplicitOptionsReplaceDefaults(t *testing.T) {
 	}
 	call.AssertCalled(t, filepath.Join(binDir, "agy"), []string{"agy", "--gemini_dir=custom", "--dangerously-skip-permissions"})
 }
+
+func TestBaseArgsKeepsAgyOwnerOnly(t *testing.T) {
+	root := t.TempDir()
+	geminiDir := filepath.Join(root, ".agy")
+	if _, err := BaseArgs(root, config.Config{}); err != nil {
+		t.Fatalf("BaseArgs fresh: %v", err)
+	}
+	assertMode(t, geminiDir, 0o700)
+
+	if err := os.Chmod(geminiDir, 0o755); err != nil { // #nosec G302 -- fixture starts too open so production can tighten it.
+		t.Fatal(err)
+	}
+	if _, err := BaseArgs(root, config.Config{}); err != nil {
+		t.Fatalf("BaseArgs existing: %v", err)
+	}
+	assertMode(t, geminiDir, 0o700)
+}
+
+func TestBaseArgsRejectsSymlinkedAgy(t *testing.T) {
+	root := t.TempDir()
+	target := t.TempDir()
+	if err := os.Chmod(target, 0o755); err != nil { // #nosec G302 -- fixture verifies the symlink target is not tightened.
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(root, ".agy")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := BaseArgs(root, config.Config{})
+	if err == nil || !strings.Contains(err.Error(), "must be a real directory") {
+		t.Fatalf("expected symlinked .agy to fail, got %v", err)
+	}
+	assertMode(t, target, 0o755)
+}
+
+func assertMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("%s mode = %04o, want %04o", path, got, want)
+	}
+}

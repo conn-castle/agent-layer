@@ -126,7 +126,7 @@ func buildGrokConfig(project *config.ProjectConfig) (string, error) {
 
 	resolved, err := projection.EffectiveMCPServers(
 		project.Config,
-		project.Env,
+		project.PlaceholderEnv(),
 		projection.ClientGrok,
 		projection.ClientPlaceholderResolver("${%s}"),
 	)
@@ -164,7 +164,7 @@ func buildGrokConfig(project *config.ProjectConfig) (string, error) {
 			clients = append(clients, projection.ClientClaude)
 		}
 		for _, client := range clients {
-			servers, err := projection.EffectiveMCPServers(project.Config, project.Env, client, projection.ClientPlaceholderResolver("${%s}"))
+			servers, err := projection.EffectiveMCPServers(project.Config, project.PlaceholderEnv(), client, projection.ClientPlaceholderResolver("${%s}"))
 			if err != nil {
 				return "", err
 			}
@@ -209,7 +209,7 @@ func writeGrokStdioServer(builder *strings.Builder, server projection.ResolvedMC
 }
 
 func writeGrokPermission(builder *strings.Builder, project *config.ProjectConfig) {
-	rules := projection.ClaudeAllowRules(
+	rules := projection.GrokAllowRules(
 		project.Config,
 		project.CommandsAllow,
 		projection.EffectiveServerIDs(project.Config, projection.ClientGrok),

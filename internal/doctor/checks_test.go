@@ -114,6 +114,7 @@ func TestCheckSecretsUsesRequiredEnvVars(t *testing.T) {
 	enabled := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
+			Agents: config.AgentsConfig{Claude: config.ClaudeConfig{Enabled: &enabled}},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
 					{
@@ -166,12 +167,19 @@ func TestCheckSecretsSkipsDisabledServers(t *testing.T) {
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
+			Agents: config.AgentsConfig{Claude: config.ClaudeConfig{Enabled: &enabled}},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
 					{
 						ID:      "enabled-server",
 						Enabled: &enabled,
 						URL:     "https://example.com/${ENABLED_TOKEN}",
+					},
+					{
+						ID:      "disabled-client-server",
+						Enabled: &enabled,
+						Clients: []string{"codex"},
+						URL:     "https://example.com/${DISABLED_CLIENT_TOKEN}",
 					},
 					{
 						ID:      "disabled-server",
@@ -190,9 +198,9 @@ func TestCheckSecretsSkipsDisabledServers(t *testing.T) {
 
 	results := CheckSecrets(cfg)
 
-	// Only the enabled server's secret should appear.
+	// Only the secret of the enabled server an enabled client receives should appear.
 	if len(results) != 1 {
-		t.Fatalf("expected 1 result for single enabled server, got %d: %v", len(results), results)
+		t.Fatalf("expected 1 result for the single received server, got %d: %v", len(results), results)
 	}
 	wantMsg := fmt.Sprintf(messages.DoctorMissingSecretFmt, "ENABLED_TOKEN")
 	if results[0].Message != wantMsg {

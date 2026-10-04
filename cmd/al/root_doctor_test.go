@@ -569,21 +569,6 @@ func TestPrintRecommendation_MultiLineIndent(t *testing.T) {
 	}
 }
 
-func TestCountEnabledMCPServers(t *testing.T) {
-	enabled := true
-	disabled := false
-	servers := []config.MCPServer{
-		{ID: "a", Enabled: &enabled},
-		{ID: "b", Enabled: &disabled},
-		{ID: "c", Enabled: &enabled},
-		{ID: "d", Enabled: nil},
-	}
-
-	if got := len(enabledMCPServerIDs(config.Config{MCP: config.MCPConfig{Servers: servers}})); got != 2 {
-		t.Fatalf("expected 2 enabled servers, got %d", got)
-	}
-}
-
 func TestDoctorCommand_FlatSkillsDetectedEvenWhenConfigFails(t *testing.T) {
 	root := t.TempDir()
 	// Set up a repo with invalid config (cfg will be nil) and flat-format skills.

@@ -603,7 +603,7 @@ func TestBuildUpgradePlan_SuppressesKeptOrphans(t *testing.T) {
 		t.Fatalf("BuildUpgradePlan: %v", err)
 	}
 	for _, change := range plan.TemplateRemovalsOrOrphans {
-		if change.Path == ".agent-layer/skills/local-skill/SKILL.md" || change.Path == "docs/agent-layer/NOTES.md" {
+		if change.Path == ".agent-layer/skills/local-skill" || change.Path == ".agent-layer/skills/local-skill/SKILL.md" || change.Path == "docs/agent-layer/NOTES.md" {
 			t.Fatalf("kept path still appeared in plan: %s", change.Path)
 		}
 	}

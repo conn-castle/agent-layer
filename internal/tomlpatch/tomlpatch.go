@@ -37,10 +37,17 @@ func FormatString(value string) (string, error) {
 type Block struct {
 	Name  string
 	Lines []string
+	// SubTables holds the table and array-of-table headers that TOML nests
+	// under this array-of-tables element, in source order, each with its own
+	// header line and body. Only top-level array elements carry sub-tables, and
+	// the list is flat: every descendant attaches to the owning element.
+	SubTables []*Block
 }
 
 // Document is a lightweight line-based TOML split into preamble, table blocks,
-// and array-of-table blocks.
+// and array-of-table blocks. Sections, Arrays, and Order exclude headers nested
+// under an array-of-tables element; those appear only in the owning element's
+// SubTables.
 type Document struct {
 	Preamble []string
 	Sections map[string]*Block
@@ -131,22 +138,37 @@ func ScanLineForComment(line string, state StringState) (commentPos int, nextSta
 			}
 
 		case StateMultiBasic:
-			if ch == '"' && len(line) > i+2 && line[i:i+3] == tripleBasicQuote {
+			if n := multilineCloseLen(line, i, '"'); n > 0 {
 				state = StateNone
-				i += 3
+				i += n
 				continue
 			}
 
 		case StateMultiLiteral:
-			if ch == '\'' && len(line) > i+2 && line[i:i+3] == tripleLiteralQuote {
+			if n := multilineCloseLen(line, i, '\''); n > 0 {
 				state = StateNone
-				i += 3
+				i += n
 				continue
 			}
 		}
 		i++
 	}
 	return -1, state
+}
+
+// multilineCloseLen returns the number of bytes in s[i:] that end a multiline
+// string delimited by quote, or 0 when s[i:] does not close it. TOML allows one
+// or two quote characters just before the closing delimiter, so a run of four
+// or five quotes is content followed by the delimiter.
+func multilineCloseLen(s string, i int, quote byte) int {
+	n := 0
+	for i+n < len(s) && n < 5 && s[i+n] == quote {
+		n++
+	}
+	if n < 3 {
+		return 0
+	}
+	return n
 }
 
 // StateInMultiline returns true if state is inside a multiline string.
@@ -404,15 +426,15 @@ func countBracketDepth(s string, opener, closer byte, state StringState) (int, S
 				state = StateNone
 			}
 		case StateMultiBasic:
-			if ch == '"' && len(s) > i+2 && s[i:i+3] == tripleBasicQuote {
+			if n := multilineCloseLen(s, i, '"'); n > 0 {
 				state = StateNone
-				i += 3
+				i += n
 				continue
 			}
 		case StateMultiLiteral:
-			if ch == '\'' && len(s) > i+2 && s[i:i+3] == tripleLiteralQuote {
+			if n := multilineCloseLen(s, i, '\''); n > 0 {
 				state = StateNone
-				i += 3
+				i += n
 				continue
 			}
 		}
@@ -645,27 +667,39 @@ func FormatValue(value any) string {
 }
 
 // ParseDocument splits TOML content into a line-aware document.
+// A header nested under an array-of-tables path (for example
+// [mcp.servers.env] after [[mcp.servers]]) belongs to the most recent element
+// of that array, as in TOML, even when unrelated tables appear in between, so
+// it is attached to that element's SubTables.
 func ParseDocument(content string) Document {
 	lines := strings.Split(content, "\n")
 	sections := make(map[string]*Block)
 	arrays := make(map[string][]*Block)
+	latestArrayElements := make(map[string]*Block)
 	var order []string
 	var preamble []string
 	var current *Block
 	var currentIsArray bool
+	var currentParent *Block
 
 	flush := func() {
 		if current == nil {
 			return
 		}
-		if currentIsArray {
+		switch {
+		case currentParent != nil:
+			currentParent.SubTables = append(currentParent.SubTables, current)
+		case currentIsArray:
 			arrays[current.Name] = append(arrays[current.Name], current)
-		} else if _, exists := sections[current.Name]; !exists {
-			sections[current.Name] = current
-			order = append(order, current.Name)
+		default:
+			if _, exists := sections[current.Name]; !exists {
+				sections[current.Name] = current
+				order = append(order, current.Name)
+			}
 		}
 		current = nil
 		currentIsArray = false
+		currentParent = nil
 	}
 
 	state := StateNone
@@ -687,6 +721,13 @@ func ParseDocument(content string) Document {
 			flush()
 			current = &Block{Name: name, Lines: []string{line}}
 			currentIsArray = isArray
+			path, pathOK := ParseKeyPath(name)
+			if pathOK {
+				currentParent = owningArrayElement(latestArrayElements, path)
+			}
+			if isArray && currentParent == nil && pathOK {
+				latestArrayElements[keyPathID(path)] = current
+			}
 			_, state = ScanLineForComment(line, state)
 			continue
 		}
@@ -705,6 +746,28 @@ func ParseDocument(content string) Document {
 		Arrays:   arrays,
 		Order:    order,
 	}
+}
+
+// owningArrayElement returns the latest top-level array element whose path is
+// the longest proper prefix of path, or nil when path is not nested under one.
+func owningArrayElement(latestArrayElements map[string]*Block, path []string) *Block {
+	for n := len(path) - 1; n > 0; n-- {
+		if element, ok := latestArrayElements[keyPathID(path[:n])]; ok {
+			return element
+		}
+	}
+	return nil
+}
+
+// keyPathID encodes key path segments into an unambiguous map key.
+func keyPathID(path []string) string {
+	var id strings.Builder
+	for _, segment := range path {
+		id.WriteString(strconv.Itoa(len(segment)))
+		id.WriteByte(':')
+		id.WriteString(segment)
+	}
+	return id.String()
 }
 
 // ParseHeader detects a TOML table header and extracts its name.

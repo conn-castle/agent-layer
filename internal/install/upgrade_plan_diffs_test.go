@@ -1,6 +1,7 @@
 package install
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -297,22 +298,27 @@ func TestBuildPlanChangeDiffPreview_AdditionTemplateReadError(t *testing.T) {
 
 func TestBuildPlanChangeDiffPreview_RemovalReadError(t *testing.T) {
 	root := t.TempDir()
-	dirAsFile := filepath.Join(root, ".agent-layer", "dir-as-file")
-	if err := os.MkdirAll(dirAsFile, 0o700); err != nil {
-		t.Fatalf("mkdir dir-as-file: %v", err)
+	path := filepath.Join(root, ".agent-layer", "local.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
 	}
+	if err := os.WriteFile(path, []byte("local\n"), 0o600); err != nil {
+		t.Fatalf("write local file: %v", err)
+	}
+	sys := newFaultSystem(RealSystem{})
+	sys.readErrs[path] = fmt.Errorf("forced removal read failure")
 
 	inst := &installer{
 		root:         root,
-		sys:          RealSystem{},
+		sys:          sys,
 		diffMaxLines: 20,
 	}
 	_, err := inst.buildPlanChangeDiffPreview(UpgradeChange{
-		Path:      ".agent-layer/dir-as-file",
+		Path:      ".agent-layer/local.md",
 		Ownership: OwnershipLocalCustomization,
 	}, planDiffModeRemoval, nil)
-	if err == nil {
-		t.Fatalf("expected removal read error for directory path")
+	if err == nil || !strings.Contains(err.Error(), "forced removal read failure") {
+		t.Fatalf("expected removal read error, got %v", err)
 	}
 }
 
@@ -420,23 +426,36 @@ func TestBuildUpgradePlanDiffPreviews_PropagatesSectionAwareUpdateError(t *testi
 
 func TestBuildUpgradePlanDiffPreviews_PropagatesTemplateRemovalError(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer", "dir-as-file"), 0o700); err != nil {
-		t.Fatalf("mkdir dir-as-file: %v", err)
-	}
+	sys := newFaultSystem(RealSystem{})
+	failure := errors.New("forced removal stat failure")
+	sys.lstatErrs[filepath.Join(root, ".agent-layer", "local.md")] = failure
 	plan := UpgradePlan{
 		TemplateRemovalsOrOrphans: []UpgradeChange{
 			{
-				Path:      ".agent-layer/dir-as-file",
+				Path:      ".agent-layer/local.md",
 				Ownership: OwnershipLocalCustomization,
 			},
 		},
 	}
 	_, err := BuildUpgradePlanDiffPreviews(root, plan, UpgradePlanDiffPreviewOptions{
-		System:       RealSystem{},
+		System:       sys,
 		MaxDiffLines: 20,
 	})
-	if err == nil {
-		t.Fatalf("expected removal preview read error")
+	if !errors.Is(err, failure) {
+		t.Fatalf("expected removal preview stat error, got %v", err)
+	}
+}
+
+func TestBuildUpgradePlanDiffPreviews_RemovalOfPathNotYetCreatedHasNoDiff(t *testing.T) {
+	plan := UpgradePlan{
+		TemplateRemovalsOrOrphans: []UpgradeChange{{Path: ".agent-layer/skills/renamed", Ownership: OwnershipUnknownNoBaseline}},
+	}
+	previews, err := BuildUpgradePlanDiffPreviews(t.TempDir(), plan, UpgradePlanDiffPreviewOptions{System: RealSystem{}, MaxDiffLines: 20})
+	if err != nil {
+		t.Fatalf("BuildUpgradePlanDiffPreviews: %v", err)
+	}
+	if preview := previews[".agent-layer/skills/renamed"]; preview.Path != ".agent-layer/skills/renamed" || preview.UnifiedDiff != "" {
+		t.Fatalf("unexpected preview %#v", preview)
 	}
 }
 

@@ -181,15 +181,18 @@ func setManagedCodexPath(editor *codexTomlEditor, existing map[string]any, path 
 
 // cleanCodexChimeHook removes only Agent Layer-owned Codex chime hooks from
 // .codex/config.toml. It is used when Codex is disabled, so the normal Codex
-// config merge path will not run.
+// config merge path will not run. A symlinked config path is left alone unless
+// it holds the hook, which fails instead of rewriting a file outside the
+// repository.
 func cleanCodexChimeHook(sys System, root string) error {
-	path, mode, exists, err := existingChimeCleanupTarget(sys, root, ".codex", "config.toml")
+	target, exists, err := existingChimeCleanupTarget(sys, root, ".codex", "config.toml")
 	if err != nil {
 		return err
 	}
 	if !exists {
 		return nil
 	}
+	path := target.path
 	existing, err := readExistingCodexConfig(sys, path)
 	if err != nil {
 		return err
@@ -205,12 +208,15 @@ func cleanCodexChimeHook(sys System, root string) error {
 	if !changed {
 		return nil
 	}
+	if err := target.checkWritable(); err != nil {
+		return err
+	}
 	out := editor.render()
 	var renderCheck map[string]any
 	if err := toml.Unmarshal([]byte(out), &renderCheck); err != nil {
 		return fmt.Errorf("merged Codex config is invalid TOML: %w", err)
 	}
-	if err := sys.WriteFileAtomic(path, []byte(out), mode); err != nil {
+	if err := sys.WriteFileAtomic(path, []byte(out), target.mode); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
 	return nil
@@ -327,7 +333,20 @@ func (e *codexTomlEditor) setPathValue(path []string, literal string, value any)
 	}
 	tablePath := path[:len(path)-1]
 	key := path[len(path)-1]
-	tableStart := e.ensureTable(tablePath)
+	tableStart, ok := e.tableHeaderIndex(tablePath)
+	if !ok {
+		// A [tablePath] header would redeclare a table that dotted keys already
+		// define, so extend those dotted keys in their own context instead.
+		if sibling, ok := e.dottedAncestorAssignment(tablePath); ok {
+			startLine := e.lines[sibling.start]
+			indent := startLine[:len(startLine)-len(strings.TrimLeft(startLine, " \t"))]
+			line := indent + tomlpatch.FormatDottedKeyPath(path[len(sibling.tablePath):]) + " = " + literal
+			e.lines = replaceLineRange(e.lines, sibling.end+1, sibling.end+1, []string{line})
+			return
+		}
+		e.appendBlock([]string{"[" + tomlpatch.FormatDottedKeyPath(tablePath) + "]"})
+		tableStart = len(e.lines) - 1
+	}
 	insertAt := tableStart + 1
 	e.lines = append(e.lines[:insertAt], append([]string{tomlpatch.FormatKey(key) + " = " + literal}, e.lines[insertAt:]...)...)
 }
@@ -778,18 +797,45 @@ func (e *codexTomlEditor) firstTableIndex() int {
 	return len(e.lines)
 }
 
-func (e *codexTomlEditor) ensureTable(path []string) int {
+func (e *codexTomlEditor) tableHeaderIndex(path []string) (int, bool) {
 	for _, header := range e.headerLines() {
 		if header.isArray || !header.parsed {
 			continue
 		}
 		if slices.Equal(header.path, path) {
-			return header.index
+			return header.index, true
 		}
 	}
-	header := "[" + tomlpatch.FormatDottedKeyPath(path) + "]"
-	e.appendBlock([]string{header})
-	return len(e.lines) - 1
+	return 0, false
+}
+
+// dottedAncestorAssignment finds an assignment whose dotted key defines
+// tablePath or one of its ancestors, such as `features.multi_agent = true` at
+// the root for tablePath [features]. Only the context of the deepest ancestor
+// header (or the root) can hold one, because a dotted key in a shallower
+// context cannot define a table that a deeper header declares.
+func (e *codexTomlEditor) dottedAncestorAssignment(tablePath []string) (assignmentInfo, bool) {
+	var context []string
+	for _, header := range e.headerLines() {
+		if header.parsed && !header.isArray && len(header.path) > len(context) && len(header.path) < len(tablePath) && pathHasPrefix(tablePath, header.path) {
+			context = header.path
+		}
+	}
+	var found assignmentInfo
+	ok := false
+	e.walkAssignments(func(info assignmentInfo) {
+		if ok || !info.standardContext || !slices.Equal(info.tablePath, context) {
+			return
+		}
+		depth := len(info.tablePath)
+		for depth < len(tablePath) && depth < len(info.fullPath)-1 && info.fullPath[depth] == tablePath[depth] {
+			depth++
+		}
+		if depth > len(info.tablePath) {
+			found, ok = info, true
+		}
+	})
+	return found, ok
 }
 
 func (e *codexTomlEditor) rangesForExactPath(path []string) []lineRange {
@@ -910,6 +956,7 @@ func (e *codexTomlEditor) removeRanges(ranges []lineRange) {
 
 func (e *codexTomlEditor) walkAssignments(fn func(assignmentInfo)) {
 	var tablePath []string
+	standardContext := true
 	state := tomlpatch.StateNone
 	for i := 0; i < len(e.lines); i++ {
 		line := e.lines[i]
@@ -917,12 +964,10 @@ func (e *codexTomlEditor) walkAssignments(fn func(assignmentInfo)) {
 			_, state = tomlpatch.ScanLineForComment(line, state)
 			continue
 		}
-		if name, _, ok := tomlpatch.ParseHeader(line); ok {
-			if parsed, parsedOK := tomlpatch.ParseKeyPath(name); parsedOK {
-				tablePath = parsed
-			} else {
-				tablePath = nil
-			}
+		if name, isArray, ok := tomlpatch.ParseHeader(line); ok {
+			var parsedOK bool
+			tablePath, parsedOK = tomlpatch.ParseKeyPath(name)
+			standardContext = parsedOK && !isArray
 			_, state = tomlpatch.ScanLineForComment(line, state)
 			continue
 		}
@@ -933,7 +978,7 @@ func (e *codexTomlEditor) walkAssignments(fn func(assignmentInfo)) {
 		}
 		end := tomlpatch.MultilineValueEndIndex(e.lines, i)
 		fullPath := append(append([]string(nil), tablePath...), keyPath...)
-		fn(assignmentInfo{start: i, end: end, fullPath: fullPath, keyPath: keyPath, tablePath: tablePath})
+		fn(assignmentInfo{start: i, end: end, fullPath: fullPath, keyPath: keyPath, tablePath: tablePath, standardContext: standardContext})
 		for j := i; j <= end && j < len(e.lines); j++ {
 			_, state = tomlpatch.ScanLineForComment(e.lines[j], state)
 		}
@@ -1029,6 +1074,9 @@ type assignmentInfo struct {
 	fullPath  []string
 	keyPath   []string
 	tablePath []string
+	// standardContext reports that the assignment is at the root or under a
+	// parsed [table] header, not an array table or an unparsable header.
+	standardContext bool
 }
 
 type lineRange struct {
