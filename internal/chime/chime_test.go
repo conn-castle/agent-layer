@@ -40,7 +40,7 @@ func TestHandleProviderFilters(t *testing.T) {
 			t.Parallel()
 			plays := 0
 			var stdout, stderr bytes.Buffer
-			err := Handle(tc.provider, strings.NewReader(tc.input), &stdout, &stderr, SoundRunnerFunc(func() error {
+			err := Handle(tc.provider, strings.NewReader(tc.input), &stdout, &stderr, soundRunnerFunc(func() error {
 				plays++
 				return nil
 			}))
@@ -96,7 +96,7 @@ func TestHandleRejectsMalformedOrIncompleteEvents(t *testing.T) {
 			t.Parallel()
 			plays := 0
 			var stdout bytes.Buffer
-			err := Handle(tc.provider, strings.NewReader(tc.input), &stdout, &bytes.Buffer{}, SoundRunnerFunc(func() error {
+			err := Handle(tc.provider, strings.NewReader(tc.input), &stdout, &bytes.Buffer{}, soundRunnerFunc(func() error {
 				plays++
 				return nil
 			}))
@@ -115,7 +115,7 @@ func TestHandleAcceptsExactMaximumInput(t *testing.T) {
 	input := `{"hook_event_name":"Stop","stop_hook_active":false}`
 	input += strings.Repeat(" ", maxHookEventBytes-len(input))
 	plays := 0
-	if err := Handle(ProviderClaude, strings.NewReader(input), io.Discard, io.Discard, SoundRunnerFunc(func() error {
+	if err := Handle(ProviderClaude, strings.NewReader(input), io.Discard, io.Discard, soundRunnerFunc(func() error {
 		plays++
 		return nil
 	})); err != nil {
@@ -129,7 +129,7 @@ func TestHandleAcceptsExactMaximumInput(t *testing.T) {
 func TestHandleSoundFailureStillAllowsProvider(t *testing.T) {
 	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	err := Handle(ProviderCodex, strings.NewReader(`{"hook_event_name":"Stop","stop_hook_active":false}`), &stdout, &stderr, SoundRunnerFunc(func() error {
+	err := Handle(ProviderCodex, strings.NewReader(`{"hook_event_name":"Stop","stop_hook_active":false}`), &stdout, &stderr, soundRunnerFunc(func() error {
 		return errors.New("audio unavailable")
 	}))
 	if err != nil {
@@ -155,7 +155,7 @@ func TestHandleReportsProviderResponseWriteFailure(t *testing.T) {
 		strings.NewReader(`{"hook_event_name":"Stop","stop_hook_active":true}`),
 		failingWriter{err: writeErr},
 		io.Discard,
-		SoundRunnerFunc(func() error { return nil }),
+		soundRunnerFunc(func() error { return nil }),
 	)
 	if !errors.Is(err, writeErr) || !strings.Contains(err.Error(), "write codex hook response") {
 		t.Fatalf("Handle error = %v, want wrapped response write failure", err)

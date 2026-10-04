@@ -320,18 +320,6 @@ func (inst *installer) sortUnknowns() {
 	})
 }
 
-func (inst *installer) relativeUnknowns() []string {
-	if len(inst.unknowns) == 0 {
-		return nil
-	}
-	rel := make([]string, 0, len(inst.unknowns))
-	for _, path := range inst.unknowns {
-		rel = append(rel, inst.relativePath(path))
-	}
-	sort.Strings(rel)
-	return rel
-}
-
 // keepListCandidateRelPaths converts absolute paths to root-relative keep-list
 // options. Non-tmp paths are sorted; `.agent-layer/tmp` is always last so it
 // appears at the bottom of the checklist.

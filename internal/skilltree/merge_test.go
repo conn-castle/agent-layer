@@ -355,34 +355,6 @@ func TestMergeRequiresATextMerger(t *testing.T) {
 	}
 }
 
-// TestCompareReportsFileLevelDelta proves push derives an accurate delta from
-// the locked base to current local content.
-func TestCompareReportsFileLevelDelta(t *testing.T) {
-	t.Parallel()
-	base := mustTree(t, []File{file("keep.md", "same"), file("gone.md", "x"), file("edit.md", "one")})
-	next := mustTree(t, []File{file("keep.md", "same"), file("edit.md", "two"), file("new.md", "y")})
-	diff := Compare(base, next)
-
-	if strings.Join(diff.Added, ",") != "new.md" {
-		t.Fatalf("added = %v", diff.Added)
-	}
-	if strings.Join(diff.Modified, ",") != "edit.md" {
-		t.Fatalf("modified = %v", diff.Modified)
-	}
-	if strings.Join(diff.Deleted, ",") != "gone.md" {
-		t.Fatalf("deleted = %v", diff.Deleted)
-	}
-	if diff.IsEmpty() {
-		t.Fatal("a changed tree reported an empty diff")
-	}
-	if !Compare(base, base).IsEmpty() {
-		t.Fatal("identical trees reported a non-empty diff")
-	}
-	if strings.Join(diff.Changed(), ",") != "edit.md,gone.md,new.md" {
-		t.Fatalf("changed = %v", diff.Changed())
-	}
-}
-
 // TestMergeSurfacesTextMergerFailures proves a merger that cannot run at all is
 // reported as an error rather than treated as a conflict or a clean merge.
 func TestMergeSurfacesTextMergerFailures(t *testing.T) {

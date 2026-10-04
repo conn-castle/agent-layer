@@ -214,11 +214,11 @@ func TestLaunchClaudeYOLO(t *testing.T) {
 	call.AssertCalled(t, claudePath, []string{"claude", "--model", "test-model", "--dangerously-skip-permissions"})
 }
 
-func TestEnsureClaudeConfigDirSetsDefault(t *testing.T) {
+func TestEnsureClaudeConfigDirWithWarningSetsDefault(t *testing.T) {
 	root := t.TempDir()
 	env := []string{}
 
-	env = ensureClaudeConfigDir(root, env)
+	env = ensureClaudeConfigDirWithWarning(root, env, os.Stderr)
 
 	expected := filepath.Join(root, ".claude-config")
 	value, ok := clients.GetEnv(env, "CLAUDE_CONFIG_DIR")
@@ -227,12 +227,12 @@ func TestEnsureClaudeConfigDirSetsDefault(t *testing.T) {
 	}
 }
 
-func TestEnsureClaudeConfigDirKeepsMatching(t *testing.T) {
+func TestEnsureClaudeConfigDirWithWarningKeepsMatching(t *testing.T) {
 	root := t.TempDir()
 	expected := filepath.Join(root, ".claude-config")
 	env := []string{"CLAUDE_CONFIG_DIR=" + expected}
 
-	env = ensureClaudeConfigDir(root, env)
+	env = ensureClaudeConfigDirWithWarning(root, env, os.Stderr)
 
 	value, ok := clients.GetEnv(env, "CLAUDE_CONFIG_DIR")
 	if !ok || value != expected {
@@ -240,7 +240,7 @@ func TestEnsureClaudeConfigDirKeepsMatching(t *testing.T) {
 	}
 }
 
-func TestEnsureClaudeConfigDirWarnsOnMismatch(t *testing.T) {
+func TestEnsureClaudeConfigDirWithWarningWarnsOnMismatch(t *testing.T) {
 	root := t.TempDir()
 	current := filepath.Join(t.TempDir(), "other")
 	env := []string{"CLAUDE_CONFIG_DIR=" + current}
@@ -254,7 +254,7 @@ func TestEnsureClaudeConfigDirWarnsOnMismatch(t *testing.T) {
 	os.Stderr = w
 	t.Cleanup(func() { os.Stderr = origStderr })
 
-	out := ensureClaudeConfigDir(root, env)
+	out := ensureClaudeConfigDirWithWarning(root, env, os.Stderr)
 	if err := w.Close(); err != nil {
 		t.Fatalf("close pipe writer: %v", err)
 	}

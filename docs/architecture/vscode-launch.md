@@ -27,8 +27,8 @@ Launcher scripts call `al vscode --no-sync` after checking that `al` and `code` 
 1. User runs `al vscode` (or a repo-local launcher that calls `al vscode --no-sync`).
 2. `cmd/al/vscode.go` parses `--no-sync` and pass-through args.
 3. Launch mode (dispatched via `cmd/al/no_sync_args.go`):
-   - default mode: `clients.Run(...)` performs config load, sync, warnings, then launch
-   - no-sync mode: `clients.RunNoSync(...)` performs config load and launch only
+   - default mode: `clients.RunWithStderr(...)` performs config load, sync, warnings, then launch
+   - no-sync mode: `clients.RunNoSyncWithStderr(...)` performs config load and launch only
 4. `internal/clients/vscode/launch.go` runs preflight checks:
    - `code` command exists on `PATH`
    - `.vscode/settings.json` managed markers are not malformed/duplicated

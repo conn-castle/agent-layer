@@ -76,32 +76,6 @@ func gitignoreBlockHash(block string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// gitignoreBlockMatchesHash reports whether the embedded hash matches the block content.
-// block is the rendered block; returns true when the hash matches.
-func gitignoreBlockMatchesHash(block string) bool {
-	hash, stripped := stripGitignoreHash(block)
-	if hash == "" {
-		return false
-	}
-	return gitignoreBlockHash(stripped) == hash
-}
-
-// stripGitignoreHash removes the hash line and returns the hash and remaining block content.
-// block is the rendered block; returns the hash and stripped block.
-func stripGitignoreHash(block string) (string, string) {
-	lines := strings.Split(strings.TrimRight(block, "\n"), "\n")
-	var hash string
-	remaining := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if hash == "" && strings.HasPrefix(line, gitignoreHashPrefix) {
-			hash = strings.TrimSpace(strings.TrimPrefix(line, gitignoreHashPrefix))
-			continue
-		}
-		remaining = append(remaining, line)
-	}
-	return hash, strings.Join(remaining, "\n") + "\n"
-}
-
 // ValidateGitignoreBlock normalizes and validates a gitignore block template.
 // It returns the normalized block or an error if managed markers or a template hash are present.
 func ValidateGitignoreBlock(block string, blockPath string) (string, error) {

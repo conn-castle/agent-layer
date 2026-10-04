@@ -6,10 +6,6 @@ import (
 	"time"
 )
 
-func reconcileOrphan(root string, record RunRecord) (RunRecord, error) {
-	return tryReconcileOrphan(root, record)
-}
-
 func tryReconcileOrphan(root string, record RunRecord) (RunRecord, error) {
 	dir := filepathForRun(root, record.ID)
 	var next RunRecord

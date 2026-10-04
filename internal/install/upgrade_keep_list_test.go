@@ -33,7 +33,7 @@ func TestScanUnknowns_UpgradeKeepListSuppressesFilesAndDirectories(t *testing.T)
 	if err := inst.scanUnknowns(); err != nil {
 		t.Fatalf("scanUnknowns: %v", err)
 	}
-	if got, want := inst.relativeUnknowns(), []string{".agent-layer/unknown.txt"}; !reflect.DeepEqual(got, want) {
+	if got, want := inst.relativePathList(inst.unknowns), []string{".agent-layer/unknown.txt"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("unknowns = %v, want %v", got, want)
 	}
 }
@@ -79,7 +79,7 @@ func TestScanUnknowns_NestedKeptFileProtectsUnknownParentDirectory(t *testing.T)
 	if err := inst.scanUnknowns(); err != nil {
 		t.Fatalf("scanUnknowns: %v", err)
 	}
-	if got := inst.relativeUnknowns(); len(got) != 0 {
+	if got := inst.relativePathList(inst.unknowns); len(got) != 0 {
 		t.Fatalf("unknowns = %v, want parent directory protected by nested keep entry", got)
 	}
 }
@@ -106,7 +106,7 @@ func TestScanUnknowns_NestedKeptFileDoesNotSuppressSiblingUnknowns(t *testing.T)
 	if err := inst.scanUnknowns(); err != nil {
 		t.Fatalf("scanUnknowns: %v", err)
 	}
-	if got, want := inst.relativeUnknowns(), []string{".agent-layer/local/delete.txt", ".agent-layer/local/other"}; !reflect.DeepEqual(got, want) {
+	if got, want := inst.relativePathList(inst.unknowns), []string{".agent-layer/local/delete.txt", ".agent-layer/local/other"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("unknowns = %v, want %v", got, want)
 	}
 }
@@ -365,7 +365,7 @@ func TestScanUnknowns_KeptTmpDirectorySuppressesTmpUnknowns(t *testing.T) {
 	if err := inst.scanUnknowns(); err != nil {
 		t.Fatalf("scanUnknowns: %v", err)
 	}
-	if got, want := inst.relativeUnknowns(), []string{".agent-layer/unknown.txt"}; !reflect.DeepEqual(got, want) {
+	if got, want := inst.relativePathList(inst.unknowns), []string{".agent-layer/unknown.txt"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("unknowns = %v, want %v", got, want)
 	}
 }

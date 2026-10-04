@@ -489,8 +489,8 @@ func TestDestinationPublishesWithoutForce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenDestination: %v", err)
 	}
-	if destination.Repository() != repo.dir {
-		t.Fatalf("Repository() = %q", destination.Repository())
+	if destination.repository.String() != repo.dir {
+		t.Fatalf("destination.repository = %q", destination.repository.String())
 	}
 	branch, err := destination.DefaultBranch(ctx)
 	if err != nil || branch != "main" {

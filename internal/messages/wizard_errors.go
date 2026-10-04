@@ -25,12 +25,9 @@ const (
 	WizardProfileReadFailedFmt              = "failed to read profile %s: %w"
 	WizardProfileInvalidFmt                 = "invalid profile config: %w"
 	WizardCustomValueRequiredFmt            = "custom value required for %s"
-	WizardPositiveIntRequiredFmt            = "%s must be a positive integer"
 	WizardParseConfigFailedFmt              = "parse config: %w"
 	WizardCodexInlineFeaturesUnsupported    = "agents.codex.agent_specific.features uses inline table syntax; expand it to [agents.codex.agent_specific.features] before changing Codex features with al wizard"
 	WizardDefaultMCPServersRequired         = "default MCP servers are required to patch config"
 	WizardRenderConfigFailedFmt             = "render config: %w"
-	WizardFormatConfigFailedFmt             = "format config: %w"
-	WizardTOMLUnterminatedMultiline         = "unterminated multiline string in TOML output"
 	WizardApplySkillsFailedFmt              = "failed to apply skill changes: %w"
 )

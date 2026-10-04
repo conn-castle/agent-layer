@@ -511,47 +511,6 @@ func TestWriteGitignoreBlockTemplateReadError(t *testing.T) {
 	}
 }
 
-func TestGitignoreBlockMatchesHashValid(t *testing.T) {
-	// Create a block with valid hash.
-	block := "# comment\ntest content\n"
-	hash := gitignoreBlockHash(block)
-	blockWithHash := "# comment\n" + gitignoreHashPrefix + hash + "\ntest content\n"
-
-	if !gitignoreBlockMatchesHash(blockWithHash) {
-		t.Fatalf("expected hash to match")
-	}
-}
-
-func TestGitignoreBlockMatchesHashInvalid(t *testing.T) {
-	// Block with wrong hash.
-	blockWithBadHash := "# comment\n" + gitignoreHashPrefix + "badhash\ntest content\n"
-
-	if gitignoreBlockMatchesHash(blockWithBadHash) {
-		t.Fatalf("expected hash to not match")
-	}
-}
-
-func TestGitignoreBlockMatchesHashNoHash(t *testing.T) {
-	// Block without any hash line.
-	block := "# comment\ntest content\n"
-
-	if gitignoreBlockMatchesHash(block) {
-		t.Fatalf("expected no match when hash is missing")
-	}
-}
-
-func TestStripGitignoreHashNoHash(t *testing.T) {
-	block := "# comment\ntest content\n"
-	hash, stripped := stripGitignoreHash(block)
-
-	if hash != "" {
-		t.Fatalf("expected empty hash, got %s", hash)
-	}
-	if stripped != block {
-		t.Fatalf("expected stripped to equal original block")
-	}
-}
-
 func TestSplitLinesEmpty(t *testing.T) {
 	lines := splitLines("")
 	if len(lines) != 0 {

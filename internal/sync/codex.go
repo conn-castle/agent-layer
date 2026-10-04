@@ -45,11 +45,6 @@ const (
 	codexDirectOnlyToolNamespacesKey = "direct_only_tool_namespaces"
 )
 
-// writeCodexConfig patches Agent Layer-owned entries in .codex/config.toml.
-func writeCodexConfig(sys System, root string, project *config.ProjectConfig) error {
-	return writeCodexConfigWithCLISettings(sys, root, project, true)
-}
-
 // writeCodexConfigWithCLISettings projects shared Codex configuration while
 // allowing callers to exclude terminal-only settings for IDE-only use.
 func writeCodexConfigWithCLISettings(sys System, root string, project *config.ProjectConfig, includeCLISettings bool) error {
@@ -91,15 +86,6 @@ func writeCodexRules(sys System, root string, project *config.ProjectConfig) err
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
 	return nil
-}
-
-//nolint:unparam // Kept aligned with buildCodexManagedConfigWithSystem so tests can exercise source reads through System.
-func buildCodexConfigWithSystem(sys System, root string, project *config.ProjectConfig) (string, error) {
-	managed, err := buildCodexManagedConfigWithSystem(sys, root, project, true)
-	if err != nil {
-		return "", err
-	}
-	return managed.Content, nil
 }
 
 func buildCodexManagedConfigWithSystem(sys System, root string, project *config.ProjectConfig, includeCLISettings bool) (codexManagedConfig, error) {

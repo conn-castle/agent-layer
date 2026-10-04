@@ -549,12 +549,6 @@ func (r *mcpDiscoveryReporter) formatLineLocked(serverID string) string {
 	}
 }
 
-func (r *mcpDiscoveryReporter) statusFor(serverID string) warnings.MCPDiscoveryStatus {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.statusForLocked(serverID)
-}
-
 func (r *mcpDiscoveryReporter) statusForLocked(serverID string) warnings.MCPDiscoveryStatus {
 	if status, ok := r.statuses[serverID]; ok {
 		return status

@@ -52,10 +52,6 @@ func OpenDestination(ctx context.Context, runner *Runner, workDir string, reposi
 	return &Destination{runner: runner, dir: dir, repository: repository}, nil
 }
 
-// Repository returns the configured destination repository reference, with any
-// placeholder text intact.
-func (d *Destination) Repository() string { return d.repository.String() }
-
 // DefaultBranch resolves the destination repository's default branch name.
 func (d *Destination) DefaultBranch(ctx context.Context) (string, error) {
 	output, err := d.runner.run(ctx, d.dir, "ls-remote", "--symref", "--", d.repository.git, "HEAD")

@@ -114,15 +114,6 @@ func (inst ownershipClassifier) classifyOwnershipDetail(relPath string, template
 	return inst.classifyAgainstBaseline(relPath, localBytes, templateBytes, false)
 }
 
-// classifyOrphanOwnership classifies template orphans and returns a user-facing label.
-func (inst ownershipClassifier) classifyOrphanOwnership(relPath string) (OwnershipLabel, error) {
-	result, err := inst.classifyOrphanOwnershipDetail(relPath)
-	if err != nil {
-		return "", err
-	}
-	return result.Label, nil
-}
-
 // classifyOrphanOwnershipDetail classifies template orphans and returns rich ownership metadata.
 func (inst ownershipClassifier) classifyOrphanOwnershipDetail(relPath string) (ownershipClassification, error) {
 	localPath := filepath.Join(inst.root, filepath.FromSlash(relPath))

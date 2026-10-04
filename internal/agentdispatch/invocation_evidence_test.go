@@ -474,7 +474,7 @@ func TestDeadSupervisorWithLiveProcessGroupStaysUnconfirmed(t *testing.T) {
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		t.Fatal(err)
 	}
-	record, err := reconcileOrphan(root, run.Record)
+	record, err := tryReconcileOrphan(root, run.Record)
 	if err != nil {
 		t.Fatal(err)
 	}

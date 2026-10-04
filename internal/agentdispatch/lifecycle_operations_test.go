@@ -26,9 +26,9 @@ func TestReconcileDoesNotTerminalizeRunWithUnprovableOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	record, err := reconcileOrphan(root, run.Record)
+	record, err := tryReconcileOrphan(root, run.Record)
 	if err != nil {
-		t.Fatalf("reconcileOrphan: %v", err)
+		t.Fatalf("tryReconcileOrphan: %v", err)
 	}
 	if record.State != dispatchStateRunning {
 		t.Fatalf("unprovable ownership was terminalized to %q", record.State)

@@ -25,12 +25,12 @@ func writeResolvableCodex(t *testing.T) string {
 	return filepath.Join(binDir, "codex")
 }
 
-func TestConfigureCodexHomeSetsDefaultWhenEnabled(t *testing.T) {
+func TestConfigureEnvironmentCodexHomeSetsDefaultWhenEnabled(t *testing.T) {
 	root := t.TempDir()
 	env := []string{}
 	localConfigDir := true
 
-	env = configureCodexHome(root, env, config.CodexConfig{LocalConfigDir: &localConfigDir})
+	env = ConfigureEnvironment(root, env, config.CodexConfig{LocalConfigDir: &localConfigDir}, os.Stderr)
 
 	expected := filepath.Join(root, ".codex")
 	value, ok := clients.GetEnv(env, "CODEX_HOME")
@@ -39,7 +39,7 @@ func TestConfigureCodexHomeSetsDefaultWhenEnabled(t *testing.T) {
 	}
 }
 
-func TestConfigureCodexHomeNoopWhenDisabled(t *testing.T) {
+func TestConfigureEnvironmentCodexHomeNoopWhenDisabled(t *testing.T) {
 	root := t.TempDir()
 
 	cases := []struct {
@@ -68,7 +68,7 @@ func TestConfigureCodexHomeNoopWhenDisabled(t *testing.T) {
 
 			want := append([]string(nil), tc.env...)
 			// Empty CodexConfig => LocalConfigDir nil => opt-in disabled.
-			out := configureCodexHome(root, tc.env, config.CodexConfig{})
+			out := ConfigureEnvironment(root, tc.env, config.CodexConfig{}, os.Stderr)
 
 			if err := w.Close(); err != nil {
 				t.Fatalf("close pipe writer: %v", err)
@@ -186,7 +186,7 @@ func TestLaunchCodexMissingBinary(t *testing.T) {
 	}
 }
 
-func TestConfigureCodexHomeWarnsOnMismatchWhenEnabled(t *testing.T) {
+func TestConfigureEnvironmentCodexHomeWarnsOnMismatchWhenEnabled(t *testing.T) {
 	root := t.TempDir()
 	current := filepath.Join(t.TempDir(), "other")
 	env := []string{"CODEX_HOME=" + current}
@@ -201,7 +201,7 @@ func TestConfigureCodexHomeWarnsOnMismatchWhenEnabled(t *testing.T) {
 	os.Stderr = w
 	t.Cleanup(func() { os.Stderr = origStderr })
 
-	out := configureCodexHome(root, env, config.CodexConfig{LocalConfigDir: &localConfigDir})
+	out := ConfigureEnvironment(root, env, config.CodexConfig{LocalConfigDir: &localConfigDir}, os.Stderr)
 	if err := w.Close(); err != nil {
 		t.Fatalf("close pipe writer: %v", err)
 	}

@@ -508,7 +508,7 @@ func TestClaudeSkillLinksSupportRelocatedClaudeDirectory(t *testing.T) {
 	if err := WriteAgentSkills(RealSystem{}, root, skills); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeClaudeSkillLinks(RealSystem{}, root, skills); err != nil {
+	if err := writeClaudeSkillLinksWithDiscard(RealSystem{}, root, skills, false); err != nil {
 		t.Fatal(err)
 	}
 	shared, err := os.Stat(filepath.Join(root, ".agents", "skills", "alpha", "SKILL.md"))

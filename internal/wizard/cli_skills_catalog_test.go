@@ -2,6 +2,8 @@ package wizard
 
 import (
 	"errors"
+	"io/fs"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -48,7 +50,18 @@ func TestLoadCLISkillCatalog_DevelopmentSkillsMembersMatchEmbeddedWorkflowSkills
 			members = append(members, entry.Members...)
 		}
 	}
-	embedded, err := embeddedWorkflowSkillIDs()
+	embedded := make(map[string]struct{})
+	err = templates.Walk("skills", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() {
+			return walkErr
+		}
+		rel := strings.TrimPrefix(path, "skills/")
+		id := strings.Split(rel, "/")[0]
+		if id != "" && id != rel {
+			embedded[id] = struct{}{}
+		}
+		return nil
+	})
 	require.NoError(t, err)
 	assert.Len(t, members, len(embedded))
 	for _, member := range members {
