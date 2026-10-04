@@ -206,9 +206,13 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 	if err != nil || len(failureEvents) != 1 || failureEvents[0].Kind != eventFailure || failureEvents[0].Reason != "model quota exhausted" {
 		t.Fatalf("Codex nested failure events = %#v, %v", failureEvents, err)
 	}
-	stringFailureEvents, err := reduceStructuredTestEvent(AgentCodex, "", []byte(`{"type":"error","error":"quota exhausted"}`))
+	stringFailureEvents, err := reduceStructuredTestEvent(AgentCodex, "", []byte(`{"type":"turn.failed","error":"quota exhausted"}`))
 	if err != nil || len(stringFailureEvents) != 1 || stringFailureEvents[0].Kind != eventFailure || stringFailureEvents[0].Reason != "quota exhausted" {
 		t.Fatalf("Codex string failure events = %#v, %v", stringFailureEvents, err)
+	}
+	diagnosticEvents, err := reduceStructuredTestEvent(AgentCodex, "", []byte(`{"type":"error","error":{"message":"Reconnecting... 2/5 (request timed out)"}}`))
+	if err != nil || len(diagnosticEvents) != 1 || diagnosticEvents[0].Kind != eventProgress || diagnosticEvents[0].Activity != jsonErrorKey || diagnosticEvents[0].Reason != "Reconnecting... 2/5 (request timed out)" {
+		t.Fatalf("Codex error diagnostic events = %#v, %v", diagnosticEvents, err)
 	}
 	var raw bytes.Buffer
 	var recovered []providerEvent
@@ -1052,6 +1056,40 @@ func TestGrokRunnerReadsStreamingJSONThroughEOF(t *testing.T) {
 	}
 	if result.Answer != "Grok output" || !result.Complete || result.SessionID != runtimeSessionID {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestRunnerThrottlesProgressRecordWritesForTokenStreams(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentGrok, clientgrok.SupportedVersion, dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	startRevision := run.Record.Revision
+	const chunks = 5000
+	fixture := strings.Repeat(`{"type":"text","data":"x"}`+"\n", chunks) +
+		`{"type":"end","sessionId":"` + runtimeSessionID + `","stopReason":"end_turn"}` + "\n"
+	fixturePath := filepath.Join(t.TempDir(), "stream.jsonl")
+	if err := os.WriteFile(fixturePath, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := executeProvider(providerCommand{
+		Path:      "/bin/sh",
+		Args:      []string{"-c", `cat "$1"`, "sh", fixturePath},
+		Env:       os.Environ(),
+		Provider:  AgentGrok,
+		SessionID: runtimeSessionID,
+	}, []byte("prompt"), run, root, nil, func(string) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Complete || result.Answer != strings.Repeat("x", chunks) {
+		t.Fatalf("complete = %v, answer length = %d", result.Complete, len(result.Answer))
+	}
+	// A record write per token stalled this stream past providerShutdownGrace;
+	// a bounded count proves progress writes are throttled without timing them.
+	if writes := run.Record.Revision - startRevision; writes > 50 {
+		t.Fatalf("run record written %d times for %d progress events", writes, chunks)
 	}
 }
 

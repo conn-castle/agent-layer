@@ -57,6 +57,13 @@ type executionResult struct {
 // remain. This is not an idle timeout for an actively working provider.
 const providerShutdownGrace = 5 * time.Second
 
+// Each run-record write is locked and fsynced, and token-level progress events
+// can outpace it. Persisting every one stalls the stream reader until a
+// finished provider misses providerShutdownGrace, so progress-only activity is
+// persisted at most this often. The in-memory timestamp stays current for the
+// next write.
+const progressActivityPersistInterval = time.Second
+
 // unprovenProviderTerminationError marks a provider failure whose process
 // group may still be live. Failure finalization must preserve the active claim
 // and nonterminal run evidence until a later cancellation or recovery proves
@@ -274,8 +281,13 @@ func executeProvider(
 
 	var result executionResult
 	var pendingAnswer string
+	// lastDiagnostic keeps the latest non-terminal provider error, such as a
+	// Codex error event, so a run that then exits without a terminal failure
+	// event still includes the last reported diagnostic.
+	var lastDiagnostic string
 	var resultMu sync.Mutex
 	var semanticErr error
+	var lastPersisted time.Time
 	terminal := make(chan struct{}, 1)
 	setFailure := func(err error) {
 		if err == nil {
@@ -317,6 +329,10 @@ func executeProvider(
 				semanticErr = err
 				return err
 			}
+		case eventProgress:
+			if event.Reason != "" {
+				lastDiagnostic = event.Reason
+			}
 		case eventAnswer:
 			pendingAnswer = event.Answer
 			result.AnswerSeen = true
@@ -331,10 +347,14 @@ func executeProvider(
 			semanticErr = errors.New(event.Reason)
 			return semanticErr
 		}
+		if event.Kind == eventProgress && now.Sub(lastPersisted) < progressActivityPersistInterval {
+			return nil
+		}
 		if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 			semanticErr = err
 			return err
 		}
+		lastPersisted = now
 		return nil
 	}
 	if approvalObserver != nil {
@@ -399,6 +419,7 @@ func executeProvider(
 	signal := caughtSignal()
 	resultMu.Lock()
 	currentSemanticErr := semanticErr
+	diagnostic := lastDiagnostic
 	resultMu.Unlock()
 	var primaryErr error
 	switch {
@@ -415,7 +436,7 @@ func executeProvider(
 	case stderrResult != nil:
 		primaryErr = wrapExitError(ExitTargetFailure, fmt.Sprintf("capture dispatch provider diagnostics: %v", stderrResult), stderrResult)
 	case waitErr != nil:
-		primaryErr = providerWaitError(command.Provider, waitErr)
+		primaryErr = withProviderDiagnostic(providerWaitError(command.Provider, waitErr), diagnostic)
 	}
 	if terminationErr != nil {
 		return executionResult{}, newUnprovenProviderTerminationError(primaryErr, "terminate dispatch provider process group", terminationErr)
@@ -433,7 +454,7 @@ func executeProvider(
 		}
 	}
 	if !result.Complete || !result.AnswerSeen || result.SessionID == "" {
-		return executionResult{}, exitError(ExitTargetFailure, fmt.Sprintf("%s dispatch completed without required terminal result, session ID, and final answer", command.Provider))
+		return executionResult{}, withProviderDiagnostic(exitError(ExitTargetFailure, fmt.Sprintf("%s dispatch completed without required terminal result, session ID, and final answer", command.Provider)), diagnostic)
 	}
 	resultMu.Lock()
 	terminalAnswer := pendingAnswer

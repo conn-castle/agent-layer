@@ -37,7 +37,7 @@ const (
 	DispatchChecksumMismatchFmt         = "checksum mismatch for %s (expected %s, got %s)"
 
 	DispatchDownload404Fmt     = "download %s: release not found (HTTP 404)\n\nThe requested version may not exist or may have been removed.\nRemediation:\n  - Verify the version exists at %s\n  - If this repo is pinned to a bad version, install a valid `al` release and run: al upgrade\n  - Or edit .agent-layer/al.version to a valid version (X.Y.Z)"
-	DispatchDownloadTimeoutFmt = "download %s: request timed out\n\nRemediation:\n  - Check your internet connection\n  - If behind a proxy, ensure HTTP_PROXY/HTTPS_PROXY are set\n  - Retry the command\n  - To work offline with a previously cached version, set AL_NO_NETWORK=1"
+	DispatchDownloadTimeoutFmt = "download %s: request timed out\n\nRemediation:\n  - Check your internet connection\n  - If behind a proxy, ensure HTTP_PROXY/HTTPS_PROXY are set\n  - Retry the command\n  - On a slow connection, set AL_DOWNLOAD_TIMEOUT to how long a download may go without receiving data (default 30s, e.g. AL_DOWNLOAD_TIMEOUT=2m); each download may run for 10 minutes, or longer when AL_DOWNLOAD_TIMEOUT is 5m or more\n  - To work offline with a previously cached version, set AL_NO_NETWORK=1"
 
 	DispatchDownloadingFmt = "Downloading al v%s...\n"
 	DispatchDownloadedFmt  = "Downloaded al v%s\n"

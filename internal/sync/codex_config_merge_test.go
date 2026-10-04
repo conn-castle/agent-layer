@@ -325,6 +325,39 @@ x = 1
 	}
 }
 
+// A multiline string may end with one or two quotes before its delimiter. The
+// namespace scan must still see the later string's body as content and remove
+// the stale mcp_servers table.
+func TestCodexTomlEditor_RemoveNamespaceAfterStringEndingInQuotes(t *testing.T) {
+	t.Parallel()
+	editor := newCodexTomlEditor(`developer_instructions = """Always end with "Done.""""
+
+[profiles.review]
+model_instructions = """
+[mcp_servers.example]
+"""
+
+[mcp_servers.old]
+command = "old-tool"
+`)
+
+	editor.removeNamespace([]string{config.CodexMCPServersKey})
+	out := editor.render()
+
+	if strings.Contains(out, "old-tool") {
+		t.Fatalf("expected stale mcp_servers table removed, got:\n%s", out)
+	}
+	parsed := parseCodexConfig(t, out)
+	if got := parsed["developer_instructions"]; got != `Always end with "Done."` {
+		t.Fatalf("developer_instructions = %q, want trailing quote preserved\n%s", got, out)
+	}
+	profiles, _ := parsed["profiles"].(map[string]any)
+	review, _ := profiles["review"].(map[string]any)
+	if got, _ := review["model_instructions"].(string); !strings.Contains(got, "[mcp_servers.example]") {
+		t.Fatalf("expected later multiline string body preserved, got %#v\n%s", review, out)
+	}
+}
+
 // firstTableIndex picks where root scalars are inserted; it must skip header-
 // looking lines inside a leading multiline string so the value lands at root.
 func TestCodexTomlEditor_RootInsertSkipsMultilineStringHeaders(t *testing.T) {
@@ -394,9 +427,9 @@ func TestCodexTomlEditor_RootInsertPreservesFirstTableLeadingComments(t *testing
 	}
 }
 
-// ensureTable locates or creates a managed table; it must not match a header-
-// looking line inside a multiline string when adding a nested key.
-func TestCodexTomlEditor_EnsureTableSkipsMultilineStringHeaders(t *testing.T) {
+// tableHeaderIndex locates a managed table; it must not match a header-looking
+// line inside a multiline string when adding a nested key.
+func TestCodexTomlEditor_TableHeaderSkipsMultilineStringHeaders(t *testing.T) {
 	t.Parallel()
 	editor := newCodexTomlEditor(`notes = """
 [tui]
@@ -831,6 +864,120 @@ k = 1
 	}
 }
 
+// A table defined only by dotted keys cannot take a [table] header, so a new
+// managed key must extend the dotted keys in their own context.
+func TestWriteCodexConfig_InsertsBesideDottedKeysThatDefineTable(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name          string
+		existing      string
+		agentSpecific map[string]any
+		path          []string
+		keepPath      []string
+		wantLine      string
+	}{
+		{
+			name:          "managed feature beside root dotted feature",
+			existing:      "features.multi_agent = true\n",
+			agentSpecific: map[string]any{"features": map[string]any{"apps": false}},
+			path:          []string{"features", "apps"},
+			keepPath:      []string{"features", "multi_agent"},
+			wantLine:      "features.multi_agent = true\nfeatures.apps = false\n",
+		},
+		{
+			name:          "passthrough beside root dotted provider",
+			existing:      "model_providers.foo.name = \"Foo\"\n[other]\nk = 1\n",
+			agentSpecific: map[string]any{"model_providers": map[string]any{"foo": map[string]any{"base_url": "https://foo.example"}}},
+			path:          []string{"model_providers", "foo", "base_url"},
+			keepPath:      []string{"model_providers", "foo", "name"},
+			wantLine:      "model_providers.foo.name = \"Foo\"\nmodel_providers.foo.base_url = \"https://foo.example\"\n",
+		},
+		{
+			name:          "indented dotted key under ancestor table",
+			existing:      "[outer]\n  inner.note = \"keep\"\n[other]\nk = 1\n",
+			agentSpecific: map[string]any{"outer": map[string]any{"inner": map[string]any{"items": "c"}}},
+			path:          []string{"outer", "inner", "items"},
+			keepPath:      []string{"outer", "inner", "note"},
+			wantLine:      "[outer]\n  inner.note = \"keep\"\n  inner.items = \"c\"\n",
+		},
+		{
+			name:          "dotted key defines only an ancestor",
+			existing:      "a.b.note = \"keep\"\n",
+			agentSpecific: map[string]any{"a": map[string]any{"b": map[string]any{"c": map[string]any{"key": "v"}}}},
+			path:          []string{"a", "b", "c", "key"},
+			keepPath:      []string{"a", "b", "note"},
+			wantLine:      "a.b.note = \"keep\"\na.b.c.key = \"v\"\n",
+		},
+		{
+			name:          "existing table header wins over dotted ancestor",
+			existing:      "a.b.note = \"keep\"\n[a.b.c]\nother = 1\n",
+			agentSpecific: map[string]any{"a": map[string]any{"b": map[string]any{"c": map[string]any{"key": "v"}}}},
+			path:          []string{"a", "b", "c", "key"},
+			keepPath:      []string{"a", "b", "note"},
+			wantLine:      "[a.b.c]\nkey = \"v\"\nother = 1\n",
+		},
+		{
+			name:          "dotted key beside managed feature under table",
+			existing:      "[features]\ncode_mode.enabled = true\n",
+			agentSpecific: map[string]any{"features": map[string]any{"code_mode": map[string]any{"custom": "x"}}},
+			path:          []string{"features", "code_mode", "custom"},
+			keepPath:      []string{"features", "code_mode", "enabled"},
+			wantLine:      "code_mode.enabled = true\ncode_mode.custom = \"x\"\n",
+		},
+		{
+			name:          "deeper ancestor header wins over shallower dotted key",
+			existing:      "model_providers.bar.name = \"Bar\"\n\n[model_providers.foo]\nname = \"Foo\"\n",
+			agentSpecific: map[string]any{"model_providers": map[string]any{"foo": map[string]any{"http_headers": map[string]any{"X": "y"}}}},
+			path:          []string{"model_providers", "foo", "http_headers", "X"},
+			keepPath:      []string{"model_providers", "bar", "name"},
+			wantLine:      "[model_providers.foo.http_headers]\nX = \"y\"\n",
+		},
+		{
+			name:          "dotted key under unparsed header is not mistaken for root",
+			existing:      "[\"\"]\nfeatures.multi_agent = true\n",
+			agentSpecific: map[string]any{"features": map[string]any{"apps": false}},
+			path:          []string{"features", "apps"},
+			keepPath:      []string{"", "features", "multi_agent"},
+			wantLine:      "[features]\napps = false\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			writeExistingCodexConfig(t, root, tc.existing)
+			project := &config.ProjectConfig{
+				Config: config.Config{Agents: config.AgentsConfig{
+					Codex: config.CodexConfig{AgentSpecific: tc.agentSpecific},
+				}},
+				Env: map[string]string{},
+			}
+			var previous string
+			for i := 0; i < 2; i++ {
+				if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+					t.Fatalf("sync %d: %v", i, err)
+				}
+				content := readCodexConfig(t, root)
+				parsed := parseCodexConfig(t, content)
+				want, _ := valueAtPath(tc.agentSpecific, tc.path)
+				if got, _ := valueAtPath(parsed, tc.path); !reflect.DeepEqual(got, want) {
+					t.Fatalf("expected managed value %#v, got %#v\n%s", want, got, content)
+				}
+				if _, ok := valueAtPath(parsed, tc.keepPath); !ok {
+					t.Fatalf("expected user value %v preserved, got:\n%s", tc.keepPath, content)
+				}
+				if !strings.Contains(content, tc.wantLine) {
+					t.Fatalf("expected %q in:\n%s", tc.wantLine, content)
+				}
+				if i > 0 && content != previous {
+					t.Fatalf("expected byte-identical sync\nfirst:\n%s\nsecond:\n%s", previous, content)
+				}
+				previous = content
+			}
+		})
+	}
+}
+
 func TestWriteCodexConfig_AgentSpecificStopRepairsDuplicatedHooks(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -1114,6 +1261,53 @@ func TestCleanCodexChimeHookRejectsSymlinkConfigDir(t *testing.T) {
 	}
 	if got := readFileForTest(t, outsideConfig); !strings.Contains(got, agentLayerChimeMarker) {
 		t.Fatalf("outside config must not be rewritten, got:\n%s", got)
+	}
+}
+
+func TestCleanCodexChimeHookIgnoresSymlinkedConfigWithoutChime(t *testing.T) {
+	t.Parallel()
+	const userConfig = "model = \"gpt\"\n\n[mcp_servers.docs]\ncommand = \"docs\"\n"
+	for _, tc := range []struct {
+		name       string
+		config     string
+		linkedFile bool
+	}{
+		{name: "missing config"},
+		{name: "config without chime", config: userConfig},
+		{name: "linked config file without chime", config: userConfig, linkedFile: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			outside := t.TempDir()
+			outsideConfig := filepath.Join(outside, "config.toml")
+			if tc.config != "" {
+				if err := os.WriteFile(outsideConfig, []byte(tc.config), 0o600); err != nil {
+					t.Fatalf("write outside config: %v", err)
+				}
+			}
+			if tc.linkedFile {
+				if err := os.MkdirAll(filepath.Join(root, ".codex"), 0o700); err != nil {
+					t.Fatalf("mkdir .codex: %v", err)
+				}
+				if err := os.Symlink(outsideConfig, filepath.Join(root, ".codex", "config.toml")); err != nil {
+					t.Fatalf("seed config symlink: %v", err)
+				}
+			} else if err := os.Symlink(outside, filepath.Join(root, ".codex")); err != nil {
+				t.Fatalf("seed .codex symlink: %v", err)
+			}
+
+			if err := cleanCodexChimeHook(RealSystem{}, root); err != nil {
+				t.Fatalf("cleanCodexChimeHook: %v", err)
+			}
+			if tc.config == "" {
+				if _, err := os.Stat(outsideConfig); !os.IsNotExist(err) {
+					t.Fatalf("outside config created: %v", err)
+				}
+			} else if got := readFileForTest(t, outsideConfig); got != tc.config {
+				t.Fatalf("outside config changed: %q", got)
+			}
+		})
 	}
 }
 

@@ -667,6 +667,95 @@ func TestPushChecksSourceAdvancementForEveryEntry(t *testing.T) {
 	}
 }
 
+// TestPushNeverPublishesASkillAnExclusionDeselected proves a `!` exclusion
+// takes a skill out of push even though its lock entry still records a
+// configured positive selector. Its local edits stay local whether or not a
+// pull has already reported the retirement, and selected siblings still push.
+func TestPushNeverPublishesASkillAnExclusionDeselected(t *testing.T) {
+	for _, pullFirst := range []bool{false, true} {
+		name := "push without pull"
+		if pullFirst {
+			name = "push after pull"
+		}
+		t.Run(name, func(t *testing.T) {
+			source := newGitRepo(t, "main")
+			source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+			source.WriteSkill("skills/secret", "secret", "Secret body")
+			source.Commit("add skills")
+
+			proj := newProject(t)
+			proj.AppendConfig(importBlock(source.URL(), []string{"skills/*"}, `write_policy = "direct"`))
+			if _, err := proj.Service().Pull(context.Background()); err != nil {
+				t.Fatalf("pull: %v", err)
+			}
+			proj.WriteImportedFile("alpha", "notes.md", "shared note\n")
+			proj.WriteImportedFile("secret", "private.md", "private note\n")
+			proj.ReplaceInConfig(`selectors = ["skills/*"]`, `selectors = ["skills/*", "!skills/secret"]`)
+			if pullFirst {
+				report, err := proj.Service().Pull(context.Background())
+				if err != nil {
+					t.Fatalf("pull: %v", err)
+				}
+				requireOutcome(t, report, "secret", OutcomeFailed)
+			}
+			locked, _ := proj.Lock().Entry("secret")
+
+			report, err := proj.Service().Push(context.Background())
+			if err != nil {
+				t.Fatalf("Push: %v\n%s", err, report.Render("push"))
+			}
+			skipped := requireOutcome(t, report, "secret", OutcomeSkipped)
+			if !strings.Contains(skipped.Detail, "al skills pull") {
+				t.Fatalf("skip detail %q does not direct the user to pull", skipped.Detail)
+			}
+			requireOutcome(t, report, "alpha", OutcomePushed)
+			if source.HasPath("main", "skills/secret/private.md") {
+				t.Fatal("an excluded skill's local edit was published")
+			}
+			if got := source.FileAt("main", "skills/alpha/notes.md"); got != "shared note" {
+				t.Fatalf("selected sibling destination content = %q", got)
+			}
+			if after, _ := proj.Lock().Entry("secret"); !reflect.DeepEqual(after, locked) {
+				t.Fatalf("push changed the excluded lock entry:\nbefore %+v\nafter  %+v", locked, after)
+			}
+			if got := proj.ImportedFile("secret", "private.md"); got != "private note\n" {
+				t.Fatalf("excluded local edit = %q", got)
+			}
+		})
+	}
+}
+
+// TestPushIgnoresABlockWhoseEveryEntryIsExcluded proves excluded entries are
+// dropped before block-level work. A stale tracked source would otherwise fail
+// the push and direct the user to pull a skill they no longer select.
+func TestPushIgnoresABlockWhoseEveryEntryIsExcluded(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/secret", "secret", "Secret body")
+	source.Commit("add secret")
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/*"}, `write_policy = "direct"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	proj.WriteImportedFile("secret", "private.md", "private note\n")
+	proj.ReplaceInConfig(`selectors = ["skills/*"]`, `selectors = ["skills/*", "!skills/sec*"]`)
+	source.WriteFile("skills/secret/upstream.md", "upstream note\n", 0o644)
+	head := source.Commit("advance upstream")
+
+	report, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	if report.Failed() {
+		t.Fatalf("an excluded block failed the push:\n%s", report.Render("push"))
+	}
+	requireOutcome(t, report, "secret", OutcomeSkipped)
+	if source.Head("main") != head {
+		t.Fatal("an excluded block wrote upstream")
+	}
+}
+
 // TestPushRefusesToWriteToADestinationDefaultBranchUnderBranchPolicy proves the
 // non-primary requirement is enforced against the destination's actual default
 // branch, not just the conventional names static validation can recognize.

@@ -64,15 +64,18 @@ func appendClaudeChimeStopHook(existing any) []any {
 
 // cleanClaudeChimeHook removes only Agent Layer's generated chime handler from
 // .claude/settings.json. It is used when both Claude surfaces are disabled, so
-// the normal settings regeneration path will not run.
+// the normal settings regeneration path will not run. A symlinked settings
+// path is left alone unless it holds the hook, which fails instead of
+// rewriting a file outside the repository.
 func cleanClaudeChimeHook(sys System, root string) error {
-	path, mode, exists, err := existingChimeCleanupTarget(sys, root, ".claude", "settings.json")
+	target, exists, err := existingChimeCleanupTarget(sys, root, ".claude", "settings.json")
 	if err != nil {
 		return err
 	}
 	if !exists {
 		return nil
 	}
+	path := target.path
 	data, err := sys.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf(messages.SyncReadFailedFmt, path, err)
@@ -91,12 +94,15 @@ func cleanClaudeChimeHook(sys System, root string) error {
 	if !changed {
 		return nil
 	}
+	if err := target.checkWritable(); err != nil {
+		return err
+	}
 	out, err := sys.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return fmt.Errorf(messages.SyncMarshalClaudeSettingsFailedFmt, err)
 	}
 	out = append(out, '\n')
-	if err := sys.WriteFileAtomic(path, out, mode); err != nil {
+	if err := sys.WriteFileAtomic(path, out, target.mode); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
 	return nil

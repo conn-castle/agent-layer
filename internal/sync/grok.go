@@ -209,7 +209,7 @@ func writeGrokStdioServer(builder *strings.Builder, server projection.ResolvedMC
 }
 
 func writeGrokPermission(builder *strings.Builder, project *config.ProjectConfig) {
-	rules := projection.ClaudeAllowRules(
+	rules := projection.GrokAllowRules(
 		project.Config,
 		project.CommandsAllow,
 		projection.EffectiveServerIDs(project.Config, projection.ClientGrok),

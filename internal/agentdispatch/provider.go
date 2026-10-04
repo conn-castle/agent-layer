@@ -455,7 +455,7 @@ func buildProviderCommand(
 			} else {
 				args = append(args, "--permission-mode", claudePermissionModeDontAsk)
 			}
-			for _, rule := range projection.ClaudeAllowRules(
+			for _, rule := range projection.GrokAllowRules(
 				project.Config,
 				project.CommandsAllow,
 				projection.EffectiveServerIDs(project.Config, projection.ClientGrok),
@@ -645,17 +645,18 @@ func reduceCodexEvent(value map[string]any) []providerEvent {
 		return []providerEvent{{Kind: eventSession, SessionID: id}}
 	case "turn.completed":
 		return []providerEvent{{Kind: eventComplete}}
-	case "turn.failed", "turn.aborted", jsonErrorKey:
-		reason, _ := firstStringV013(value, jsonMessageKey, jsonReasonKey, jsonErrorKey)
-		if reason == "" {
-			if details, ok := mapValueV013(value, jsonErrorKey); ok {
-				reason, _ = firstStringV013(details, jsonMessageKey, jsonReasonKey)
-			}
-		}
+	case "turn.failed", "turn.aborted":
+		reason := codexEventReason(value)
 		if reason == "" {
 			reason = "Codex reported a terminal failure"
 		}
 		return []providerEvent{{Kind: eventFailure, Reason: reason}}
+	case jsonErrorKey:
+		// Codex also emits error events for stream retries it recovers from
+		// ("Reconnecting... 2/5 (request timed out)"). A fatal error still ends
+		// the turn with turn.failed or a nonzero exit, so the error is kept as a
+		// diagnostic for those failure paths instead of ending the dispatch.
+		return []providerEvent{{Kind: eventProgress, Activity: eventType, Reason: codexEventReason(value)}}
 	case codexAgentMessageType:
 		if answer, ok := firstStringV013(value, jsonMessageKey, jsonTextKey); ok {
 			return []providerEvent{{Kind: eventAnswer, Answer: answer}}
@@ -673,6 +674,16 @@ func reduceCodexEvent(value map[string]any) []providerEvent {
 		return []providerEvent{{Kind: eventProgress, Activity: eventType}}
 	}
 	return nil
+}
+
+func codexEventReason(value map[string]any) string {
+	reason, _ := firstStringV013(value, jsonMessageKey, jsonReasonKey, jsonErrorKey)
+	if reason == "" {
+		if details, ok := mapValueV013(value, jsonErrorKey); ok {
+			reason, _ = firstStringV013(details, jsonMessageKey, jsonReasonKey)
+		}
+	}
+	return reason
 }
 
 func appendRetainedGrokText(dst *strings.Builder, chunk string) {
