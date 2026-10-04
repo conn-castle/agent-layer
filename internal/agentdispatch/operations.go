@@ -102,18 +102,22 @@ func invocationOwnership(record RunRecord) string {
 			return supervisor
 		}
 		if record.PID != 0 {
-			return processOwnership(record)
+			return ownershipForIdentity(record.PID, record.ProcessStartIdentity)
 		}
 		return ownershipDead
 	}
 	if record.PID != 0 {
-		return processOwnership(record)
+		return ownershipForIdentity(record.PID, record.ProcessStartIdentity)
 	}
 	// No worker or provider identity was ever published: only the recorded
 	// launcher's death proves the invocation was abandoned pre-publication.
 	return ownershipForIdentity(record.LauncherPID, record.LauncherStartIdentity)
 }
 
+// ownershipForIdentity reports whether the recorded process is provably ours
+// (owned), provably gone (dead), or unprovable either way (unknown), for
+// example when start-identity capture is unavailable in this environment.
+// An alive PID with a different start identity is a reused PID.
 func ownershipForIdentity(pid int, startIdentity string) string {
 	switch processAlive(pid) {
 	case processStatusAlive:
@@ -143,31 +147,6 @@ const (
 	ownershipUnknown = "unknown"
 )
 
-// processOwnership reports whether the recorded wrapper is provably ours
-// (owned), provably gone (dead), or unprovable either way (unknown), for
-// example when start-identity capture is unavailable in this environment.
-func processOwnership(record RunRecord) string {
-	switch processAlive(record.PID) {
-	case processStatusAlive:
-	case processStatusDead:
-		return ownershipDead
-	default:
-		return ownershipUnknown
-	}
-	if record.ProcessStartIdentity == "" {
-		return ownershipUnknown
-	}
-	current := processStartIdentity(record.PID)
-	if current == "" {
-		return ownershipUnknown
-	}
-	if current == record.ProcessStartIdentity {
-		return ownershipOwned
-	}
-	// An alive PID with a different start identity is a reused PID.
-	return ownershipDead
-}
-
 // Cancel terminates only the exact Agent Layer-owned process group.
 func Cancel(request CancelRequest) error {
 	record, err := resolveInvocationSelector(request.Root, request.ID, request.Handle, request.InvocationID)
@@ -181,7 +160,7 @@ func Cancel(request CancelRequest) error {
 	if alreadyConfirmedCancelled {
 		result := publicResult(record)
 		result.Error = ""
-		return writePublicResult(writerOrDiscard(request.Stdout), result)
+		return writeJSONResult(writerOrDiscard(request.Stdout), result)
 	}
 	var terminateErr error
 	if ownedGroup != nil {
@@ -194,8 +173,8 @@ func Cancel(request CancelRequest) error {
 	}
 	record = updated
 	if terminateErr != nil {
-		if processOwnership(record) != ownershipDead || !providerProcessGroupDead(record.ProcessGroupID) {
-			_ = writePublicResult(writerOrDiscard(request.Stdout), publicResult(record))
+		if ownershipForIdentity(record.PID, record.ProcessStartIdentity) != ownershipDead || !providerProcessGroupDead(record.ProcessGroupID) {
+			_ = writeJSONResult(writerOrDiscard(request.Stdout), publicResult(record))
 			return wrapExitError(ExitTargetFailure, "cancel dispatch process group", terminateErr)
 		}
 		record, persistErr = persistTerminationEvidence(filepathForRun(request.Root, record.ID), terminateErr, true)
@@ -210,7 +189,7 @@ func Cancel(request CancelRequest) error {
 	if record.State == dispatchStateCancelled {
 		result.Error = ""
 	}
-	return writePublicResult(writerOrDiscard(request.Stdout), result)
+	return writeJSONResult(writerOrDiscard(request.Stdout), result)
 }
 
 // beginCancellation publishes cancellation while holding the run lock. The

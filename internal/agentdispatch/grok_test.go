@@ -39,6 +39,10 @@ func TestGrokDispatchCommandStagesPromptPath(t *testing.T) {
 	if string(staged) != "private prompt" {
 		t.Fatalf("staged grok prompt = %q", staged)
 	}
+	info, err := os.Stat(want)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("staged grok prompt permissions: %v, %v", info, err)
+	}
 }
 
 func TestGrokDispatchEarlyFailureRemovesPrompt(t *testing.T) {

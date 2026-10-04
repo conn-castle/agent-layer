@@ -40,7 +40,7 @@ func Reserve(opts ReserveOptions) error {
 	}
 	result := publicResult(run.Record)
 	result.Handle = session.Name
-	return writePublicResult(writerOrDiscard(opts.Stdout), result)
+	return writeJSONResult(writerOrDiscard(opts.Stdout), result)
 }
 
 // startReservation launches a reservation at most once. Every later start
@@ -60,7 +60,7 @@ func startReservation(opts StartOptions, requested targetMeta, promptText string
 	if record.State != dispatchStateReserved {
 		return reportClaimedReservation(record)
 	}
-	project, target, version, prompt, err := prepareStart(opts, requested, promptText, stderr, depth)
+	project, target, version, prompt, err := prepareStart(opts.runOptions(promptText), requested, stderr, depth)
 	if err != nil {
 		return err
 	}

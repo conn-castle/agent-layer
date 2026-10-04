@@ -54,7 +54,7 @@ func Wait(request WaitRequest) error {
 				result.Error = ""
 			}
 			result.ConditionMet = boolPtr(false)
-			return writePublicResult(writerOrDiscard(request.Stdout), result)
+			return writeJSONResult(writerOrDiscard(request.Stdout), result)
 		}
 		updated, reconErr := tryReconcileOrphan(request.Root, record)
 		if reconErr != nil {
@@ -104,13 +104,13 @@ func writeWaitResult(root string, record RunRecord, condition string, stdout io.
 			}
 			result.ResultPath = path
 			result.Error = ""
-			return writePublicResult(stdout, result)
+			return writeJSONResult(stdout, result)
 		}
 		if path, err := completedResultPath(root, record); err == nil {
 			result.ResultPath = path
 			result.Error = ""
 		}
-		return writePublicResult(stdout, result)
+		return writeJSONResult(stdout, result)
 	case dispatchStateFailed, dispatchStateInterrupted:
 		reason := strings.TrimSpace(record.TerminalReason)
 		if reason == "" {
@@ -118,7 +118,7 @@ func writeWaitResult(root string, record RunRecord, condition string, stdout io.
 		}
 		result.State = dispatchStateFailed
 		result.Error = reason
-		if err := writePublicResult(stdout, result); err != nil {
+		if err := writeJSONResult(stdout, result); err != nil {
 			return err
 		}
 		if condition == waitConditionTerminationConfirmed {
@@ -131,10 +131,10 @@ func writeWaitResult(root string, record RunRecord, condition string, stdout io.
 		return exitError(code, reason)
 	case dispatchStateCancelled:
 		result.Error = ""
-		return writePublicResult(stdout, result)
+		return writeJSONResult(stdout, result)
 	default:
 		if condition == waitConditionTerminationConfirmed && record.TerminationConfirmed {
-			return writePublicResult(stdout, result)
+			return writeJSONResult(stdout, result)
 		}
 		return exitError(ExitConfig, fmt.Sprintf("dispatch invocation %s has unsupported terminal state %q", record.ID, record.State))
 	}

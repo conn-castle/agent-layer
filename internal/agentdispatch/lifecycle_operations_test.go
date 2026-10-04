@@ -151,7 +151,7 @@ func testCancelEscalatesButRetainsClaimUntilOwnedProcessIsReaped(t *testing.T, a
 	if err != nil {
 		t.Fatal(err)
 	}
-	if retainedDuringGrace.ActiveRunID != run.Record.ID || processOwnership(record) != ownershipOwned {
+	if retainedDuringGrace.ActiveRunID != run.Record.ID || ownershipForIdentity(record.PID, record.ProcessStartIdentity) != ownershipOwned {
 		t.Fatalf("cancel released a claim during the graceful shutdown window: session = %#v, record = %#v", retainedDuringGrace, record)
 	}
 	select {
