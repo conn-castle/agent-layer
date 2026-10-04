@@ -34,7 +34,7 @@ func TestMainVersion(t *testing.T) {
 func TestRunMainSuccess(t *testing.T) {
 	orig := maybeExecFunc
 	defer func() { maybeExecFunc = orig }()
-	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
+	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer) error {
 		return nil
 	}
 
@@ -51,7 +51,7 @@ func TestRunMainSuccess(t *testing.T) {
 func TestRunMainError(t *testing.T) {
 	orig := maybeExecFunc
 	defer func() { maybeExecFunc = orig }()
-	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
+	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer) error {
 		return nil
 	}
 
@@ -70,7 +70,7 @@ func TestRunMainError(t *testing.T) {
 
 func TestRunWithSignalContextCancelsAndRestoresSignals(t *testing.T) {
 	originalMaybeExec := maybeExecFunc
-	maybeExecFunc = func(context.Context, []string, string, string, io.Writer, func(int)) error { return nil }
+	maybeExecFunc = func(context.Context, []string, string, string, io.Writer) error { return nil }
 	t.Cleanup(func() { maybeExecFunc = originalMaybeExec })
 
 	tests := []struct {
@@ -139,7 +139,7 @@ func TestRunWithSignalContextCancelsAndRestoresSignals(t *testing.T) {
 func TestRunWithSignalContextCancelsVersionDispatch(t *testing.T) {
 	originalMaybeExec := maybeExecFunc
 	started := make(chan struct{})
-	maybeExecFunc = func(ctx context.Context, _ []string, _ string, _ string, _ io.Writer, _ func(int)) error {
+	maybeExecFunc = func(ctx context.Context, _ []string, _ string, _ string, _ io.Writer) error {
 		close(started)
 		<-ctx.Done()
 		return ctx.Err()
@@ -204,7 +204,7 @@ func TestRunMain_GetwdError(t *testing.T) {
 func TestRunMain_DispatchError(t *testing.T) {
 	orig := maybeExecFunc
 	defer func() { maybeExecFunc = orig }()
-	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
+	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer) error {
 		return errors.New("dispatch failed")
 	}
 
@@ -223,7 +223,7 @@ func TestRunMain_DispatchError(t *testing.T) {
 func TestRunMain_Dispatched(t *testing.T) {
 	orig := maybeExecFunc
 	defer func() { maybeExecFunc = orig }()
-	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
+	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer) error {
 		return versiondispatch.ErrDispatched
 	}
 
@@ -244,7 +244,7 @@ func TestRunMain_InitBypassesDispatch(t *testing.T) {
 	orig := maybeExecFunc
 	defer func() { maybeExecFunc = orig }()
 	dispatchCalled := false
-	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
+	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer) error {
 		dispatchCalled = true
 		return errors.New("dispatch should be bypassed for init")
 	}
@@ -267,7 +267,7 @@ func TestRunMain_UpgradeBypassesDispatch(t *testing.T) {
 	orig := maybeExecFunc
 	defer func() { maybeExecFunc = orig }()
 	dispatchCalled := false
-	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
+	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer) error {
 		dispatchCalled = true
 		return errors.New("dispatch should be bypassed for upgrade")
 	}
@@ -290,7 +290,7 @@ func TestRunMain_UpdateBypassesDispatch(t *testing.T) {
 	orig := maybeExecFunc
 	defer func() { maybeExecFunc = orig }()
 	dispatchCalled := false
-	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
+	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer) error {
 		dispatchCalled = true
 		return errors.New("dispatch should be bypassed for update")
 	}
@@ -387,7 +387,7 @@ func TestRunMain_QuietDispatchUsesDiscard(t *testing.T) {
 	orig := maybeExecFunc
 	defer func() { maybeExecFunc = orig }()
 	var gotDiscard bool
-	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
+	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer) error {
 		gotDiscard = stderr == io.Discard
 		return nil
 	}
@@ -402,7 +402,7 @@ func TestRunMain_QuietDispatchUsesDiscard(t *testing.T) {
 func TestRunMain_SilentExitError(t *testing.T) {
 	orig := maybeExecFunc
 	defer func() { maybeExecFunc = orig }()
-	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
+	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer) error {
 		return &SilentExitError{Code: 3}
 	}
 
@@ -420,7 +420,7 @@ func TestRunMain_SilentExitError(t *testing.T) {
 func TestRunMain_DispatchWrappedExitErrorPropagatesCode(t *testing.T) {
 	orig := maybeExecFunc
 	defer func() { maybeExecFunc = orig }()
-	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
+	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer) error {
 		return fmt.Errorf("dispatch failed: %w", wrappedExitError(t, 42))
 	}
 
@@ -437,7 +437,7 @@ func TestRunMain_DispatchWrappedExitErrorPropagatesCode(t *testing.T) {
 
 func TestRunMain_ExecuteWrappedExitErrorPropagatesCode(t *testing.T) {
 	origMaybeExec := maybeExecFunc
-	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
+	maybeExecFunc = func(_ context.Context, args []string, currentVersion string, cwd string, stderr io.Writer) error {
 		return nil
 	}
 	t.Cleanup(func() { maybeExecFunc = origMaybeExec })
@@ -469,7 +469,7 @@ func TestRunMainCancellationReachesContextAwareCommand(t *testing.T) {
 	t.Cleanup(func() { getwd = originalGetwd })
 
 	originalMaybeExec := maybeExecFunc
-	maybeExecFunc = func(context.Context, []string, string, string, io.Writer, func(int)) error { return nil }
+	maybeExecFunc = func(context.Context, []string, string, string, io.Writer) error { return nil }
 	t.Cleanup(func() { maybeExecFunc = originalMaybeExec })
 
 	started := make(chan struct{})

@@ -1,14 +1,12 @@
 package versiondispatch
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"testing"
 )
 
-// TestRealSystem_ExecBinary verifies that RealSystem.ExecBinary calls execBinary.
-// This test uses a subprocess pattern similar to TestExecBinary in exec_unix_coverage_test.go.
+// TestRealSystem_ExecBinary verifies that RealSystem.ExecBinary replaces the subprocess via syscall.Exec.
 func TestRealSystem_ExecBinary(t *testing.T) {
 	if os.Getenv("GO_TEST_REALSYSTEM_EXECBINARY_SUBPROCESS") == "1" {
 		// Inside the subprocess.
@@ -18,7 +16,7 @@ func TestRealSystem_ExecBinary(t *testing.T) {
 		}
 
 		sys := RealSystem{}
-		err = sys.ExecBinary(bin, []string{"true"}, os.Environ(), nil)
+		err = sys.ExecBinary(bin, []string{"true"}, os.Environ())
 		// If ExecBinary returns, it failed.
 		if err != nil {
 			os.Exit(1)
@@ -36,12 +34,5 @@ func TestRealSystem_ExecBinary(t *testing.T) {
 	// If ExecBinary succeeded, "true" exit code is 0.
 	if err != nil {
 		t.Fatalf("subprocess failed: %v", err)
-	}
-}
-
-func TestMaybeExecWithSystem_NilSystem(t *testing.T) {
-	err := MaybeExecWithSystem(context.Background(), nil, []string{"cmd"}, "1.0.0", ".", func(int) {})
-	if err == nil {
-		t.Fatalf("expected error for nil system")
 	}
 }

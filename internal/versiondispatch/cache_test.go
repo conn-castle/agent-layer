@@ -448,13 +448,6 @@ func TestEnsureCachedBinary_NoNetwork_Exists(t *testing.T) {
 	}
 }
 
-func TestEnsureCachedBinaryWithSystem_RequiresSystem(t *testing.T) {
-	_, err := ensureCachedBinaryWithSystem(context.Background(), nil, t.TempDir(), "1.0.0", io.Discard)
-	if err == nil {
-		t.Fatal("expected error for nil system")
-	}
-}
-
 func TestDownloadToFile_CopyError(t *testing.T) {
 	// Simulate connection close during body read
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -471,24 +464,10 @@ func TestDownloadToFile_CopyError(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	err = downloadToFile(context.Background(), server.URL, f)
+	err = downloadToFile(context.Background(), RealSystem{}, server.URL, f, downloadLimitsWithSystem(RealSystem{}))
 
 	if err == nil {
 		t.Fatal("expected error on short read")
-	}
-}
-
-func TestDownloadToFileWithSystem_RequiresSystem(t *testing.T) {
-	tmp := filepath.Join(t.TempDir(), "file")
-	f, err := os.Create(tmp) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = f.Close() }()
-
-	err = downloadToFileWithSystem(context.Background(), nil, "https://example.invalid/file", f)
-	if err == nil {
-		t.Fatal("expected error for nil system")
 	}
 }
 
@@ -507,7 +486,7 @@ func TestFetchChecksum_ScannerError(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := fetchChecksum(context.Background(), version, asset)
+	_, err := fetchChecksum(context.Background(), RealSystem{}, version, asset, downloadLimitsWithSystem(RealSystem{}))
 	if err == nil {
 		t.Fatal("expected error when checksum not found")
 	}
@@ -526,7 +505,7 @@ func TestFetchChecksum_StatusError(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := fetchChecksum(context.Background(), version, asset)
+	_, err := fetchChecksum(context.Background(), RealSystem{}, version, asset, downloadLimitsWithSystem(RealSystem{}))
 	if err == nil {
 		t.Fatal("expected error on 500 status")
 	}
@@ -619,7 +598,7 @@ func TestFetchChecksum_NotFound(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := fetchChecksum(context.Background(), version, asset)
+	_, err := fetchChecksum(context.Background(), RealSystem{}, version, asset, downloadLimitsWithSystem(RealSystem{}))
 	if err == nil {
 		t.Fatal("expected error when checksum not found in file")
 	}
@@ -641,7 +620,7 @@ func TestDownloadToFile_ClientGetError(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	err = downloadToFileWithSystem(context.Background(), sys, "https://example.invalid/file", f)
+	err = downloadToFile(context.Background(), sys, "https://example.invalid/file", f, downloadLimitsWithSystem(sys))
 	if err == nil {
 		t.Fatal("expected error from client.Get")
 	}
@@ -660,7 +639,7 @@ func TestFetchChecksum_ClientGetError(t *testing.T) {
 	releaseBaseURL = "http://invalid.test.invalid:99999"
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := fetchChecksumWithSystem(context.Background(), sys, "1.0.0", "some-asset")
+	_, err := fetchChecksum(context.Background(), sys, "1.0.0", "some-asset", downloadLimitsWithSystem(sys))
 	if err == nil {
 		t.Fatal("expected error from client.Get")
 	}
@@ -682,7 +661,7 @@ func TestFetchChecksum_PathPrefixes(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	got, err := fetchChecksum(context.Background(), version, asset)
+	got, err := fetchChecksum(context.Background(), RealSystem{}, version, asset, downloadLimitsWithSystem(RealSystem{}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -707,7 +686,7 @@ func TestFetchChecksum_StarPrefix(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	got, err := fetchChecksum(context.Background(), version, asset)
+	got, err := fetchChecksum(context.Background(), RealSystem{}, version, asset, downloadLimitsWithSystem(RealSystem{}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -885,7 +864,7 @@ func TestDownloadToFile_404_ActionableMessage(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	err = downloadToFile(context.Background(), server.URL+"/download/v99.0.0/al-darwin-arm64", f)
+	err = downloadToFile(context.Background(), RealSystem{}, server.URL+"/download/v99.0.0/al-darwin-arm64", f, downloadLimitsWithSystem(RealSystem{}))
 	if err == nil {
 		t.Fatal("expected error for 404")
 	}
@@ -939,7 +918,7 @@ func TestDownloadToFile_Timeout_ActionableMessage(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	err = downloadToFileWithSystem(context.Background(), sys, "https://example.invalid/file", f)
+	err = downloadToFile(context.Background(), sys, "https://example.invalid/file", f, downloadLimitsWithSystem(sys))
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
@@ -965,7 +944,7 @@ func TestFetchChecksum_404_ActionableMessage(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := fetchChecksum(context.Background(), "99.0.0", "some-asset")
+	_, err := fetchChecksum(context.Background(), RealSystem{}, "99.0.0", "some-asset", downloadLimitsWithSystem(RealSystem{}))
 	if err == nil {
 		t.Fatal("expected error for 404")
 	}
@@ -1053,7 +1032,7 @@ func TestFetchChecksum_Timeout_ActionableMessage(t *testing.T) {
 	releaseBaseURL = "https://example.invalid"
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := fetchChecksumWithSystem(context.Background(), sys, "1.0.0", "some-asset")
+	_, err := fetchChecksum(context.Background(), sys, "1.0.0", "some-asset", downloadLimitsWithSystem(sys))
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
@@ -1121,9 +1100,9 @@ func TestRequestTimeout_ContextIdentity(t *testing.T) {
 
 				var err error
 				if operation == "download" {
-					err = downloadToFileWithSystem(ctx, sys, url, dest)
+					err = downloadToFile(ctx, sys, url, dest, downloadLimitsWithSystem(sys))
 				} else {
-					_, err = fetchChecksumWithSystem(ctx, sys, "1.0.0", "some-asset")
+					_, err = fetchChecksum(ctx, sys, "1.0.0", "some-asset", downloadLimitsWithSystem(sys))
 				}
 				if err == nil {
 					t.Fatal("expected timeout error")
@@ -1164,7 +1143,7 @@ func TestDownloadToFile_TooLarge(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	err = downloadToFile(context.Background(), server.URL, f)
+	err = downloadToFile(context.Background(), RealSystem{}, server.URL, f, downloadLimitsWithSystem(RealSystem{}))
 	if err == nil {
 		t.Fatal("expected size-limit error")
 	}
@@ -1201,7 +1180,7 @@ func TestDownloadToFile_RetryOnTransientError(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	if err := downloadToFileWithSystem(context.Background(), sys, "https://example.invalid/file", f); err != nil {
+	if err := downloadToFile(context.Background(), sys, "https://example.invalid/file", f, downloadLimitsWithSystem(sys)); err != nil {
 		t.Fatalf("expected retry to succeed, got %v", err)
 	}
 	if attempt != 2 {
@@ -1238,7 +1217,7 @@ func TestFetchChecksum_CanceledRequestIsNotRetried(t *testing.T) {
 	requests := 0
 	sys := cancelingTestSystem(t, cancel, &requests)
 
-	if _, err := fetchChecksumWithSystem(ctx, sys, "1.0.0", "al-linux-amd64"); !errors.Is(err, context.Canceled) {
+	if _, err := fetchChecksum(ctx, sys, "1.0.0", "al-linux-amd64", downloadLimitsWithSystem(sys)); !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}
 	if requests != 1 {
@@ -1305,7 +1284,7 @@ func TestDownloadToFile_RetryOnCopyErrorResetsDestination(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	if err := downloadToFileWithSystem(context.Background(), sys, "https://example.invalid/file", f); err != nil {
+	if err := downloadToFile(context.Background(), sys, "https://example.invalid/file", f, downloadLimitsWithSystem(sys)); err != nil {
 		t.Fatalf("expected retry to succeed, got %v", err)
 	}
 	if attempt != 2 {
@@ -1342,7 +1321,7 @@ func TestDownloadToFileWithSystem_TooLargeFromSystemEnv(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	err = downloadToFileWithSystem(context.Background(), sys, server.URL, f)
+	err = downloadToFile(context.Background(), sys, server.URL, f, downloadLimitsWithSystem(sys))
 	if err == nil {
 		t.Fatal("expected size-limit error")
 	}
@@ -1434,10 +1413,8 @@ func TestDownloadHTTPClientWithSystem_NoRequestTimeout(t *testing.T) {
 	if defaultHTTPClient.Timeout != 0 {
 		t.Fatalf("default client timeout = %v, want 0", defaultHTTPClient.Timeout)
 	}
-	for _, sys := range []System{nil, &testSystem{HTTPClientFunc: func() *http.Client { return nil }}} {
-		if downloadHTTPClientWithSystem(sys) != defaultHTTPClient {
-			t.Fatal("expected fallback to the shared default client")
-		}
+	if downloadHTTPClientWithSystem(&testSystem{HTTPClientFunc: func() *http.Client { return nil }}) != defaultHTTPClient {
+		t.Fatal("expected fallback to the shared default client")
 	}
 }
 
@@ -1543,7 +1520,7 @@ func TestDownloadToFile_SlowSteadyStream(t *testing.T) {
 	sys.SleepFunc = func(time.Duration) { t.Fatal("steady stream scheduled a retry") }
 	dest := downloadTestDestination(t)
 	limits := downloadLimits{stall: 200 * time.Millisecond, ceiling: 2 * time.Second}
-	if err := downloadToFileWithLimits(context.Background(), sys, server.URL, dest, limits); err != nil {
+	if err := downloadToFile(context.Background(), sys, server.URL, dest, limits); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(dest.Name())
@@ -1589,7 +1566,7 @@ func TestDownloadBodyStall_TimeoutMessage(t *testing.T) {
 			var err error
 			dest := downloadTestDestination(t)
 			if operation == "download" {
-				err = downloadToFileWithLimits(context.Background(), sys, url, dest, limits)
+				err = downloadToFile(context.Background(), sys, url, dest, limits)
 				data, readErr := os.ReadFile(dest.Name())
 				if readErr != nil {
 					t.Fatal(readErr)
@@ -1599,7 +1576,7 @@ func TestDownloadBodyStall_TimeoutMessage(t *testing.T) {
 				}
 			} else {
 				url = fmt.Sprintf("%s/download/v1.0.0/checksums.txt", releaseBaseURL)
-				_, err = fetchChecksumWithLimits(context.Background(), sys, "1.0.0", "asset", limits)
+				_, err = fetchChecksum(context.Background(), sys, "1.0.0", "asset", limits)
 			}
 			if err == nil || err.Error() != fmt.Sprintf(messages.DispatchDownloadTimeoutFmt, url) {
 				t.Fatalf("expected plain timeout message, got %v", err)
@@ -1656,10 +1633,10 @@ func TestDownloadOperationCeiling(t *testing.T) {
 				url := server.URL
 				var err error
 				if operation == "download" {
-					err = downloadToFileWithLimits(context.Background(), sys, url, downloadTestDestination(t), limits)
+					err = downloadToFile(context.Background(), sys, url, downloadTestDestination(t), limits)
 				} else {
 					url = fmt.Sprintf("%s/download/v1.0.0/checksums.txt", releaseBaseURL)
-					_, err = fetchChecksumWithLimits(context.Background(), sys, "1.0.0", "asset", limits)
+					_, err = fetchChecksum(context.Background(), sys, "1.0.0", "asset", limits)
 				}
 				if err == nil || err.Error() != fmt.Sprintf(messages.DispatchDownloadTimeoutFmt, url) {
 					t.Fatalf("expected plain timeout message, got %v", err)
@@ -1732,14 +1709,14 @@ func TestDownloadBodyFailure_ParentContextIdentity(t *testing.T) {
 				genericFmt := messages.DispatchDownloadFailedFmt
 				var err error
 				if operation == "download" {
-					err = downloadToFileWithLimits(ctx, sys, url, downloadTestDestination(t), limits)
+					err = downloadToFile(ctx, sys, url, downloadTestDestination(t), limits)
 				} else {
 					url = fmt.Sprintf("%s/download/v1.0.0/checksums.txt", releaseBaseURL)
 					genericFmt = messages.DispatchReadFailedFmt
 					if failure == "already_canceled" {
 						genericFmt = messages.DispatchDownloadFailedFmt
 					}
-					_, err = fetchChecksumWithLimits(ctx, sys, "1.0.0", "asset", limits)
+					_, err = fetchChecksum(ctx, sys, "1.0.0", "asset", limits)
 				}
 				wantIdentity := context.Canceled
 				wantMessage := fmt.Errorf(genericFmt, url, context.Canceled).Error()

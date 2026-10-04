@@ -39,7 +39,7 @@ type testSystem struct {
 	ReadFileFunc           func(name string) ([]byte, error)
 	GetenvFunc             func(key string) string
 	EnvironFunc            func() []string
-	ExecBinaryFunc         func(path string, args []string, env []string, exit func(int)) error
+	ExecBinaryFunc         func(path string, args []string, env []string) error
 	FindAgentLayerRootFunc func(start string) (string, bool, error)
 	StderrFunc             func() io.Writer
 	StatFunc               func(name string) (os.FileInfo, error)
@@ -81,9 +81,9 @@ func (s *testSystem) Environ() []string {
 	return s.RealSystem.Environ()
 }
 
-func (s *testSystem) ExecBinary(path string, args []string, env []string, exit func(int)) error {
+func (s *testSystem) ExecBinary(path string, args []string, env []string) error {
 	if s.ExecBinaryFunc != nil {
-		return s.ExecBinaryFunc(path, args, env, exit)
+		return s.ExecBinaryFunc(path, args, env)
 	}
 	return fmt.Errorf("%w: ExecBinary", errNotMocked)
 }
