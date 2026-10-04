@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -154,6 +155,86 @@ func TestCompleteWalkFindsLateHazardsWithoutDescendingIntoGitMetadata(t *testing
 	got := classify(item, emptyContext())
 	if got.dest != destReviewSecrets || !strings.Contains(got.reason, "jwt-signing-key") {
 		t.Fatalf("dest=%q reason=%q, want late secret", got.dest, got.reason)
+	}
+}
+
+func TestGitDirectoryLayoutIsCheckoutEvidenceAtEntryRootAndNested(t *testing.T) {
+	writeGitDir := func(dir string) {
+		writeFileAt(t, filepath.Join(dir, "HEAD"), "ref: refs/heads/main\n")
+		writeFileAt(t, filepath.Join(dir, "objects", "pack", "pack-1.pack"), "metadata")
+		mkdirAt(t, filepath.Join(dir, "refs", "heads"))
+	}
+	root := t.TempDir()
+	bare := dirEntry(t, root, "proj.git")
+	writeGitDir(bare.abs)
+	nested := dirEntry(t, root, "remotes")
+	writeGitDir(filepath.Join(nested.abs, "proj.git"))
+	writeFileAt(t, filepath.Join(nested.abs, "notes.txt"), "user file")
+
+	for _, test := range []struct {
+		item      entry
+		marker    string
+		target    string
+		wantFiles int
+	}{
+		{item: bare, marker: "<entry root>", target: "", wantFiles: 0},
+		{item: nested, marker: "proj.git", target: "proj.git", wantFiles: 1},
+	} {
+		scan := scanTree(test.item.abs)
+		if !slices.Equal(scan.gitMarkers, []string{test.marker}) || !slices.Equal(scan.gitRepoTargets, []string{test.target}) || scan.files != test.wantFiles {
+			t.Fatalf("%s: markers=%q targets=%q files=%d", test.item.name, scan.gitMarkers, scan.gitRepoTargets, scan.files)
+		}
+		if got := classify(test.item, emptyContext()); got.dest != destReviewCheckouts {
+			t.Fatalf("%s: dest=%q reason=%q, want %q", test.item.name, got.dest, got.reason, destReviewCheckouts)
+		}
+	}
+}
+
+func TestGitDirectoryScanFindsSymlinksWithoutCountingMetadata(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		t.Run(fmt.Sprintf("nested=%t", nested), func(t *testing.T) {
+			root := t.TempDir()
+			item := dirEntry(t, root, "remotes")
+			gitDir := item.abs
+			prefix := ""
+			objectsTarget := "../object-store"
+			if nested {
+				gitDir = mkdirAt(t, filepath.Join(item.abs, "proj.git"))
+				prefix = "proj.git"
+				objectsTarget = "../../object-store"
+			}
+			writeFileAt(t, filepath.Join(gitDir, "HEAD"), "ref: refs/heads/main\n")
+			mkdirAt(t, filepath.Join(gitDir, "refs", "heads"))
+			store := mkdirAt(t, filepath.Join(root, "object-store"))
+			if err := os.Symlink(objectsTarget, filepath.Join(gitDir, "objects")); err != nil {
+				t.Fatal(err)
+			}
+			// A symlinked directory is recorded without following it.
+			writeFileAt(t, filepath.Join(store, "jwt-signing-key"), encodedPrivateKeyFixture())
+			for i := 0; i <= scanNameSample; i++ {
+				writeFileAt(t, filepath.Join(gitDir, "objects-local", fmt.Sprintf("%04d.svg", i)), "metadata")
+			}
+			writeFileAt(t, filepath.Join(gitDir, "credentials", "jwt-signing-key"), encodedPrivateKeyFixture())
+			writeFileAt(t, filepath.Join(gitDir, "profile", "Cookies"), "metadata")
+			writeFileAt(t, filepath.Join(gitDir, "profile", "Login Data"), "metadata")
+			if err := os.Symlink("../../HEAD", filepath.Join(gitDir, "refs", "heads", "z-link")); err != nil {
+				t.Fatal(err)
+			}
+			scan := scanTree(item.abs)
+			wantLinks := []scannedLink{
+				{rel: filepath.Join(prefix, "objects"), target: objectsTarget},
+				{rel: filepath.Join(prefix, "refs", "heads", "z-link"), target: "../../HEAD"},
+			}
+			if !slices.Equal(scan.symlinks, wantLinks) {
+				t.Fatalf("symlinks = %v, want %v", scan.symlinks, wantLinks)
+			}
+			if scan.files != 0 || scan.apparentBytes != 0 || scan.sampleFiles != 0 || len(scan.names) != 0 || len(scan.byExt) != 0 || len(scan.immediate) != 0 || len(scan.assets) != 0 || len(scan.secretCandidates) != 0 || len(scan.browserProfiles) != 0 {
+				t.Fatalf("metadata affected classification statistics: %+v", scan)
+			}
+			if got := classify(item, emptyContext()); got.dest != destReviewCheckouts {
+				t.Fatalf("dest=%q reason=%q, want %q", got.dest, got.reason, destReviewCheckouts)
+			}
+		})
 	}
 }
 
