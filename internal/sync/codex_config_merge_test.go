@@ -394,9 +394,9 @@ func TestCodexTomlEditor_RootInsertPreservesFirstTableLeadingComments(t *testing
 	}
 }
 
-// ensureTable locates or creates a managed table; it must not match a header-
-// looking line inside a multiline string when adding a nested key.
-func TestCodexTomlEditor_EnsureTableSkipsMultilineStringHeaders(t *testing.T) {
+// tableHeaderIndex locates a managed table; it must not match a header-looking
+// line inside a multiline string when adding a nested key.
+func TestCodexTomlEditor_TableHeaderSkipsMultilineStringHeaders(t *testing.T) {
 	t.Parallel()
 	editor := newCodexTomlEditor(`notes = """
 [tui]
@@ -828,6 +828,120 @@ k = 1
 				}
 			})
 		}
+	}
+}
+
+// A table defined only by dotted keys cannot take a [table] header, so a new
+// managed key must extend the dotted keys in their own context.
+func TestWriteCodexConfig_InsertsBesideDottedKeysThatDefineTable(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name          string
+		existing      string
+		agentSpecific map[string]any
+		path          []string
+		keepPath      []string
+		wantLine      string
+	}{
+		{
+			name:          "managed feature beside root dotted feature",
+			existing:      "features.multi_agent = true\n",
+			agentSpecific: map[string]any{"features": map[string]any{"apps": false}},
+			path:          []string{"features", "apps"},
+			keepPath:      []string{"features", "multi_agent"},
+			wantLine:      "features.multi_agent = true\nfeatures.apps = false\n",
+		},
+		{
+			name:          "passthrough beside root dotted provider",
+			existing:      "model_providers.foo.name = \"Foo\"\n[other]\nk = 1\n",
+			agentSpecific: map[string]any{"model_providers": map[string]any{"foo": map[string]any{"base_url": "https://foo.example"}}},
+			path:          []string{"model_providers", "foo", "base_url"},
+			keepPath:      []string{"model_providers", "foo", "name"},
+			wantLine:      "model_providers.foo.name = \"Foo\"\nmodel_providers.foo.base_url = \"https://foo.example\"\n",
+		},
+		{
+			name:          "indented dotted key under ancestor table",
+			existing:      "[outer]\n  inner.note = \"keep\"\n[other]\nk = 1\n",
+			agentSpecific: map[string]any{"outer": map[string]any{"inner": map[string]any{"items": "c"}}},
+			path:          []string{"outer", "inner", "items"},
+			keepPath:      []string{"outer", "inner", "note"},
+			wantLine:      "[outer]\n  inner.note = \"keep\"\n  inner.items = \"c\"\n",
+		},
+		{
+			name:          "dotted key defines only an ancestor",
+			existing:      "a.b.note = \"keep\"\n",
+			agentSpecific: map[string]any{"a": map[string]any{"b": map[string]any{"c": map[string]any{"key": "v"}}}},
+			path:          []string{"a", "b", "c", "key"},
+			keepPath:      []string{"a", "b", "note"},
+			wantLine:      "a.b.note = \"keep\"\na.b.c.key = \"v\"\n",
+		},
+		{
+			name:          "existing table header wins over dotted ancestor",
+			existing:      "a.b.note = \"keep\"\n[a.b.c]\nother = 1\n",
+			agentSpecific: map[string]any{"a": map[string]any{"b": map[string]any{"c": map[string]any{"key": "v"}}}},
+			path:          []string{"a", "b", "c", "key"},
+			keepPath:      []string{"a", "b", "note"},
+			wantLine:      "[a.b.c]\nkey = \"v\"\nother = 1\n",
+		},
+		{
+			name:          "dotted key beside managed feature under table",
+			existing:      "[features]\ncode_mode.enabled = true\n",
+			agentSpecific: map[string]any{"features": map[string]any{"code_mode": map[string]any{"custom": "x"}}},
+			path:          []string{"features", "code_mode", "custom"},
+			keepPath:      []string{"features", "code_mode", "enabled"},
+			wantLine:      "code_mode.enabled = true\ncode_mode.custom = \"x\"\n",
+		},
+		{
+			name:          "deeper ancestor header wins over shallower dotted key",
+			existing:      "model_providers.bar.name = \"Bar\"\n\n[model_providers.foo]\nname = \"Foo\"\n",
+			agentSpecific: map[string]any{"model_providers": map[string]any{"foo": map[string]any{"http_headers": map[string]any{"X": "y"}}}},
+			path:          []string{"model_providers", "foo", "http_headers", "X"},
+			keepPath:      []string{"model_providers", "bar", "name"},
+			wantLine:      "[model_providers.foo.http_headers]\nX = \"y\"\n",
+		},
+		{
+			name:          "dotted key under unparsed header is not mistaken for root",
+			existing:      "[\"\"]\nfeatures.multi_agent = true\n",
+			agentSpecific: map[string]any{"features": map[string]any{"apps": false}},
+			path:          []string{"features", "apps"},
+			keepPath:      []string{"", "features", "multi_agent"},
+			wantLine:      "[features]\napps = false\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			writeExistingCodexConfig(t, root, tc.existing)
+			project := &config.ProjectConfig{
+				Config: config.Config{Agents: config.AgentsConfig{
+					Codex: config.CodexConfig{AgentSpecific: tc.agentSpecific},
+				}},
+				Env: map[string]string{},
+			}
+			var previous string
+			for i := 0; i < 2; i++ {
+				if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+					t.Fatalf("sync %d: %v", i, err)
+				}
+				content := readCodexConfig(t, root)
+				parsed := parseCodexConfig(t, content)
+				want, _ := valueAtPath(tc.agentSpecific, tc.path)
+				if got, _ := valueAtPath(parsed, tc.path); !reflect.DeepEqual(got, want) {
+					t.Fatalf("expected managed value %#v, got %#v\n%s", want, got, content)
+				}
+				if _, ok := valueAtPath(parsed, tc.keepPath); !ok {
+					t.Fatalf("expected user value %v preserved, got:\n%s", tc.keepPath, content)
+				}
+				if !strings.Contains(content, tc.wantLine) {
+					t.Fatalf("expected %q in:\n%s", tc.wantLine, content)
+				}
+				if i > 0 && content != previous {
+					t.Fatalf("expected byte-identical sync\nfirst:\n%s\nsecond:\n%s", previous, content)
+				}
+				previous = content
+			}
+		})
 	}
 }
 
