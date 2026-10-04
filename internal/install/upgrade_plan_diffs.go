@@ -45,11 +45,39 @@ func BuildUpgradePlanDiffPreviews(root string, plan UpgradePlan, opts UpgradePla
 		return nil, err
 	}
 
+	var origins map[string]string
+	var ungatedTemplatePaths map[string]string
+	ops := plannedOperationsFromReport(plan.MigrationReport)
+	if hasRenameMigration(ops) {
+		_, origins, err = inst.pathsAfterMigrations(ops)
+		if err != nil {
+			return nil, err
+		}
+		ungatedTemplatePaths, err = inst.templates().ungatedTemplatePathByRel()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	previews := make(map[string]DiffPreview)
 
 	addPlanChanges := func(changes []UpgradeChange, mode planDiffMode) error {
 		for _, change := range changes {
-			preview, previewErr := inst.buildPlanChangeDiffPreview(change, mode, templatePathByRel)
+			var preview DiffPreview
+			var previewErr error
+			origin := origins[change.Path]
+			if mode == planDiffModeUpdate && origin != "" && origin != filepath.Join(root, filepath.FromSlash(change.Path)) {
+				if templatePathByRel[change.Path] == "" {
+					templatePathByRel[change.Path] = ungatedTemplatePaths[change.Path]
+				}
+				localBytes, err := inst.sys.ReadFile(origin)
+				if err != nil {
+					return err
+				}
+				preview, previewErr = inst.buildSingleDiffPreviewFromBytes(LabeledPath{Path: change.Path, Ownership: change.Ownership}, templatePathByRel, localBytes)
+			} else {
+				preview, previewErr = inst.buildPlanChangeDiffPreview(change, mode, templatePathByRel)
+			}
 			if previewErr != nil {
 				return previewErr
 			}

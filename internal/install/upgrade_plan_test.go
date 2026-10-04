@@ -244,7 +244,7 @@ func TestPathsAfterMigrations_RenameSourceStatSemantics(t *testing.T) {
 				{Kind: kind, From: ".agent-layer/skills/moved/renamed", To: ".agent-layer/skills/moved/final"},
 			}
 			inst := &installer{root: root, sys: RealSystem{}}
-			paths, err := inst.pathsAfterMigrations(ops)
+			paths, _, err := inst.pathsAfterMigrations(ops)
 			require.NoError(t, err)
 			require.Contains(t, paths, ".agent-layer/skills/moved/dangling")
 			require.NotContains(t, paths, ".agent-layer/skills/destination")
@@ -256,7 +256,7 @@ func TestPathsAfterMigrations_RenameSourceStatSemantics(t *testing.T) {
 			sys := newFaultSystem(RealSystem{})
 			sys.statErrs[filepath.Join(dir, "dangling")] = failure
 			inst.sys = sys
-			_, err = inst.pathsAfterMigrations(ops)
+			_, _, err = inst.pathsAfterMigrations(ops)
 			require.ErrorIs(t, err, failure)
 
 			inst.sys = RealSystem{}
@@ -264,7 +264,7 @@ func TestPathsAfterMigrations_RenameSourceStatSemantics(t *testing.T) {
 				_, err = inst.executeRenameMigration(op.From, op.To)
 				require.NoError(t, err)
 			}
-			actual, err := inst.pathsAfterMigrations(nil)
+			actual, _, err := inst.pathsAfterMigrations(nil)
 			require.NoError(t, err)
 			require.Equal(t, actual, paths)
 		})

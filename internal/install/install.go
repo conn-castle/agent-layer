@@ -63,6 +63,7 @@ type installer struct {
 	memoryDiffPreviews        map[string]DiffPreview
 	pendingMigrationOps       []upgradeMigrationOperation
 	migrationRollbackTargets  []string
+	// Non-rename coverage filters managed reviews built after migrations run.
 	migrationManifestCoverage map[string]struct{}
 	migrationConfigMigrations []ConfigKeyMigration
 	migrationReport           UpgradeMigrationReport
