@@ -25,8 +25,9 @@ var codexManagedRootScalarKeys = []string{
 }
 
 const (
-	codexStopKey = "Stop"
-	codexTUIKey  = "tui"
+	codexStopKey         = "Stop"
+	codexSessionStartKey = "SessionStart"
+	codexTUIKey          = "tui"
 )
 
 type codexManagedConfig struct {
@@ -82,6 +83,11 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 	// Strip the managed chime before comparing managed paths so hooks.Stop compares
 	// only user entries and [[hooks.Stop]] replacement cannot split a marker region.
 	if _, err := editor.removeCodexChimeHook(path); err != nil {
+		return "", err
+	}
+	// Strip the managed HerdR block for the same reason: hooks.SessionStart then
+	// compares only user entries, and the block is re-appended below.
+	if _, err := editor.applyCodexHerdRHook(path, false); err != nil {
 		return "", err
 	}
 	existingMap = nil
@@ -140,6 +146,9 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 		if slices.Equal(item.path, []string{hooksKey, codexStopKey}) {
 			value = withoutCodexChimeStopEntries(value)
 		}
+		if slices.Equal(item.path, []string{hooksKey, codexSessionStartKey}) {
+			value = withoutCodexHerdRSessionStartEntries(value)
+		}
 		if err := setManagedCodexPath(editor, existingMap, item.path, value); err != nil {
 			return "", err
 		}
@@ -155,7 +164,7 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 	if managed.HerdREnabled {
 		// Expand before the chime block is appended so user SessionStart groups
 		// keep a stable position ahead of both managed hook blocks.
-		if err := editor.expandCodexHookAssignment(path, "SessionStart"); err != nil {
+		if err := editor.expandCodexHookAssignment(path, codexSessionStartKey); err != nil {
 			return "", err
 		}
 	}
@@ -764,6 +773,16 @@ func withoutCodexChimeStopEntries(value any) any {
 		}
 	}
 	return filtered
+}
+
+// withoutCodexHerdRSessionStartEntries drops managed HerdR handlers merged into
+// managed.Content so agent-specific SessionStart writes only user entries.
+func withoutCodexHerdRSessionStartEntries(value any) any {
+	entries, err := removeManagedHandlers(value)
+	if err != nil {
+		return value
+	}
+	return entries
 }
 
 func (e *codexTomlEditor) insertRootLine(line string) {
