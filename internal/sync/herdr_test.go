@@ -2,6 +2,7 @@ package sync
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -414,6 +415,100 @@ func TestCodexHerdRIgnoresMarkersInsideMultilineStrings(t *testing.T) {
 				if hasHooks != enabled {
 					t.Fatalf("enabled=%t: managed hook presence = %t:\n%s", enabled, hasHooks, output)
 				}
+			}
+		})
+	}
+}
+
+func TestCodexHerdRPreservesAgentSpecificSessionStartAcrossResyncs(t *testing.T) {
+	for _, chime := range []bool{false, true} {
+		t.Run(fmt.Sprintf("chime %t", chime), func(t *testing.T) {
+			root := t.TempDir()
+			enabled := true
+			userSessionStart := func(command string) map[string]any {
+				return map[string]any{hooksKey: map[string]any{"SessionStart": []any{map[string]any{
+					"matcher": "startup",
+					hooksKey:  []any{map[string]any{"type": "command", "command": command, "timeout": int64(3)}},
+				}}}}
+			}
+			project := &config.ProjectConfig{
+				Config: config.Config{
+					Agents: config.AgentsConfig{Codex: config.CodexConfig{
+						Enabled:       &enabled,
+						AgentSpecific: userSessionStart("echo user-start"),
+					}},
+					Notifications: config.NotificationsConfig{Chime: &chime},
+				},
+				Env: map[string]string{},
+			}
+			assertSessionStart := func(t *testing.T, content, userCommand string) {
+				t.Helper()
+				sessionStart, ok := parseCodexConfig(t, content)[hooksKey].(map[string]any)["SessionStart"].([]any)
+				if !ok {
+					t.Fatalf("expected SessionStart groups:\n%s", content)
+				}
+				herdRHandlers := 0
+				var userGroups []map[string]any
+				for _, raw := range sessionStart {
+					group := raw.(map[string]any)
+					managed := false
+					for _, handler := range group[hooksKey].([]any) {
+						if isHerdRHandler(handler) {
+							herdRHandlers++
+							managed = true
+						}
+					}
+					if !managed {
+						userGroups = append(userGroups, group)
+					}
+				}
+				if herdRHandlers != 1 {
+					t.Fatalf("expected exactly one HerdR handler, got %d:\n%s", herdRHandlers, content)
+				}
+				if len(userGroups) != 1 {
+					t.Fatalf("expected exactly one user SessionStart group, got %d:\n%s", len(userGroups), content)
+				}
+				userHook := userGroups[0][hooksKey].([]any)[0].(map[string]any)
+				if userGroups[0]["matcher"] != "startup" || userHook["command"] != userCommand || userHook["timeout"] != int64(3) {
+					t.Fatalf("user SessionStart group changed: %#v\n%s", userGroups[0], content)
+				}
+				if got := strings.Count(content, codexHerdRBeginMarker); got != 1 {
+					t.Fatalf("expected one HerdR begin marker, got %d:\n%s", got, content)
+				}
+				if got := strings.Count(content, codexHerdREndMarker); got != 1 {
+					t.Fatalf("expected one HerdR end marker, got %d:\n%s", got, content)
+				}
+			}
+
+			var previous string
+			for i := range 3 {
+				if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+					t.Fatalf("sync %d: %v", i, err)
+				}
+				content := readCodexConfig(t, root)
+				assertValidTOML(t, content)
+				assertSessionStart(t, content, "echo user-start")
+				if i > 0 && content != previous {
+					t.Fatalf("sync %d changed converged content\nprevious:\n%s\ncurrent:\n%s", i, previous, content)
+				}
+				previous = content
+			}
+
+			project.Config.Agents.Codex.AgentSpecific = userSessionStart("echo user-edited")
+			for i := range 2 {
+				if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+					t.Fatalf("edited sync %d: %v", i, err)
+				}
+				content := readCodexConfig(t, root)
+				assertValidTOML(t, content)
+				assertSessionStart(t, content, "echo user-edited")
+				if strings.Contains(content, "echo user-start") {
+					t.Fatalf("stale user command remained after edit:\n%s", content)
+				}
+				if i > 0 && content != previous {
+					t.Fatalf("edited sync %d changed converged content\nprevious:\n%s\ncurrent:\n%s", i, previous, content)
+				}
+				previous = content
 			}
 		})
 	}
