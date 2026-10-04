@@ -265,11 +265,11 @@ func (inst *installer) movedFileUpdates(plan migrationPlan, additions, updates [
 	if !hasRenameMigration(plan.executable) {
 		return additions, updates, nil
 	}
-	_, origins, err := inst.pathsAfterMigrations(plan.executable)
+	templatePaths, err := inst.templates().ungatedTemplatePathByRel()
 	if err != nil {
 		return nil, nil, err
 	}
-	templatePaths, err := inst.templates().ungatedTemplatePathByRel()
+	origins, err := inst.templateOriginsAfterMigrations(plan.executable, templatePaths)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -325,6 +325,67 @@ func (inst *installer) movedFileUpdates(plan migrationPlan, additions, updates [
 	}
 	sort.Slice(updates, func(i, j int) bool { return updates[i].path < updates[j].path })
 	return additions, updates, nil
+}
+
+// templateOriginsAfterMigrations supplements the non-following path walk with
+// known template files. Trace rename prefixes in reverse execution order so a file
+// beneath a symlinked parent is read at its original location, including chains.
+// Keep these extra origins separate from the unknown-deletion walk's path set.
+func (inst *installer) templateOriginsAfterMigrations(ops []upgradeMigrationOperation, templatePaths map[string]string) (map[string]string, error) {
+	_, origins, err := inst.pathsAfterMigrations(ops)
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(templatePaths))
+	for path := range templatePaths {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		if origins[path] != "" {
+			continue
+		}
+		originPath := path
+		renamed := false
+		for i := len(ops) - 1; i >= 0 && originPath != ""; i-- {
+			op := ops[i]
+			if isRenameMigrationKind(op.Kind) {
+				from := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.From)))
+				to := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.To)))
+				if from == to {
+					continue
+				}
+				switch {
+				case originPath == to:
+					originPath = from
+					renamed = true
+				case strings.HasPrefix(originPath, to+"/"):
+					originPath = from + strings.TrimPrefix(originPath, to)
+					renamed = true
+				case originPath == from || strings.HasPrefix(originPath, from+"/"):
+					originPath = ""
+				}
+			} else if op.Kind == upgradeMigrationKindDeleteFile {
+				target := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.Path)))
+				if originPath == target || strings.HasPrefix(originPath, target+"/") {
+					originPath = ""
+				}
+			}
+		}
+		if originPath == "" || !renamed {
+			continue
+		}
+		origin := filepath.Join(inst.root, filepath.FromSlash(originPath))
+		// Stat follows directory symlinks, while absent source files remain hidden.
+		if _, err := inst.sys.Stat(origin); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf(messages.InstallFailedStatFmt, origin, err)
+		}
+		origins[path] = origin
+	}
+	return origins, nil
 }
 
 // planUnknownDeletions mirrors the non-tmp --apply-deletions set, skipping

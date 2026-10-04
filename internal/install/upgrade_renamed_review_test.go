@@ -160,6 +160,94 @@ func TestBuildUpgradePlan_RenamedSymlinkedSourceReview(t *testing.T) {
 	}
 }
 
+func TestUpgrade_RenamedDirectorySymlinkReview(t *testing.T) {
+	for name, fixture := range map[string]renamedReviewFixture{"Instructions": renamedMemoryFixture, "Skill": renamedSkillFixture} {
+		for _, chained := range []bool{false, true} {
+			for _, customized := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/chained=%t/customized=%t", name, chained, customized), func(t *testing.T) {
+					root := seedRenamedReview(t, fixture, customized)
+					sourceDir := filepath.Dir(filepath.Join(root, filepath.FromSlash(fixture.source)))
+					external := filepath.Join(t.TempDir(), "linked-directory")
+					if err := os.Rename(sourceDir, external); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Symlink(external, sourceDir); err != nil {
+						t.Fatal(err)
+					}
+					targetVersion := "0.23.1"
+					if chained {
+						from, to := fixture.source, fixture.target
+						if name == "Skill" {
+							from, to = filepath.ToSlash(filepath.Dir(from)), filepath.ToSlash(filepath.Dir(to))
+						}
+						withMigrationManifestOverride(t, "0.16.0", fmt.Sprintf(`{
+  "schema_version": 1,
+  "target_version": "0.16.0",
+  "min_prior_version": "0.15.0",
+  "operations": [
+    {"id": "a-first", "kind": "rename_file", "rationale": "First move", "source_agnostic": true,
+     "from": %q, "to": ".agent-layer/intermediate"},
+    {"id": "b-second", "kind": "rename_generated_artifact", "rationale": "Second move", "source_agnostic": true,
+     "from": ".agent-layer/intermediate", "to": %q}
+  ]
+}`, from, to))
+						targetVersion = "0.16.0"
+					}
+					plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: targetVersion, System: RealSystem{}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					updates := append(append([]UpgradeChange{}, plan.TemplateUpdates...), plan.SectionAwareUpdates...)
+					if got := findUpgradeChange(updates, fixture.target); (got != nil) != customized {
+						t.Fatalf("destination update must reflect customized content: %#v", got)
+					}
+					for _, changes := range [][]UpgradeChange{plan.TemplateAdditions, updates, plan.TemplateRemovalsOrOrphans} {
+						if findUpgradeChange(changes, fixture.source) != nil {
+							t.Fatal("rename source must stay hidden")
+						}
+					}
+					if findUpgradeChange(plan.TemplateAdditions, fixture.target) != nil {
+						t.Fatal("renamed destination must not be an addition")
+					}
+					previews, err := BuildUpgradePlanDiffPreviews(root, plan, UpgradePlanDiffPreviewOptions{System: RealSystem{}, MaxDiffLines: 1000})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if customized {
+						assertRenamedReviewPreview(t, previews, fixture)
+					} else if _, ok := previews[fixture.target]; ok {
+						t.Fatal("template-equal destination must not have a preview")
+					}
+					// Known template resolution must not add symlink children to the
+					// filesystem walk used to plan unknown deletions.
+					inst := &installer{root: root, sys: RealSystem{}}
+					paths, _, err := inst.pathsAfterMigrations(plannedOperationsFromReport(plan.MigrationReport))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, ok := paths[fixture.target]; ok {
+						t.Fatal("unknown-deletion walk must not follow directory symlinks")
+					}
+					var captured []DiffPreview
+					prompter := autoApprovePrompter()
+					prompter.OverwriteAllUnifiedPreviewFunc = func(managed, memory []DiffPreview) (bool, bool, error) {
+						captured = managed
+						return true, false, nil
+					}
+					if err := Run(root, Options{System: RealSystem{}, PinVersion: targetVersion, Overwrite: true, Prompter: prompter}); err != nil {
+						t.Fatal(err)
+					}
+					if customized {
+						assertRenamedReviewPreview(t, indexDiffPreviews(captured), fixture)
+					} else if _, ok := indexDiffPreviews(captured)[fixture.target]; ok {
+						t.Fatal("template-equal destination must not appear in apply review")
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestBuildUpgradePlanDiffPreviews_RenamedCustomizedFileReview(t *testing.T) {
 	for name, fixture := range map[string]renamedReviewFixture{"File": renamedMemoryFixture, "Directory": renamedSkillFixture} {
 		t.Run(name, func(t *testing.T) {
@@ -174,6 +262,49 @@ func TestBuildUpgradePlanDiffPreviews_RenamedCustomizedFileReview(t *testing.T) 
 			}
 			assertRenamedReviewPreview(t, previews, fixture)
 		})
+	}
+}
+
+func TestUpgrade_RenamedDirectorySymlinkMissingSourceGuard(t *testing.T) {
+	root := seedRenamedReview(t, renamedSkillFixture, true)
+	source := filepath.Join(root, filepath.FromSlash(renamedSkillFixture.source))
+	if err := os.Remove(source); err != nil {
+		t.Fatal(err)
+	}
+	external := filepath.Join(t.TempDir(), "linked-skill")
+	if err := os.Rename(filepath.Dir(source), external); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(external, filepath.Dir(source)); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "0.23.1", System: RealSystem{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, changes := range [][]UpgradeChange{plan.TemplateAdditions, plan.TemplateUpdates, plan.SectionAwareUpdates} {
+		if findUpgradeChange(changes, renamedSkillFixture.target) != nil {
+			t.Fatal("new template under renamed directory must remain hidden when its source is absent")
+		}
+	}
+	previews, err := BuildUpgradePlanDiffPreviews(root, plan, UpgradePlanDiffPreviewOptions{System: RealSystem{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := previews[renamedSkillFixture.target]; ok {
+		t.Fatal("absent source must not have a plan preview")
+	}
+	var captured []DiffPreview
+	prompter := autoApprovePrompter()
+	prompter.OverwriteAllUnifiedPreviewFunc = func(managed, memory []DiffPreview) (bool, bool, error) {
+		captured = managed
+		return true, false, nil
+	}
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.23.1", Overwrite: true, Prompter: prompter}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := indexDiffPreviews(captured)[renamedSkillFixture.target]; ok {
+		t.Fatal("absent source must not appear in apply review")
 	}
 }
 
