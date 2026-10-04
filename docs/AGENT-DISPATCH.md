@@ -525,3 +525,66 @@ and `output` with the `dispatch_` prefix. `reserve` and `start --reservation`
 are CLI only.
 `al dispatch mcp-server`, which serves those tools over stdio, is a hidden entry
 point for generated client configuration, not a public command.
+
+## MCP server lifecycle diagnostics
+
+Every client using the built-in Agent Dispatch stdio server shares the same
+lifecycle recording path. Each server instance exclusively creates
+`<Root>/.agent-layer/state/dispatch-mcp/<connection-id>.jsonl`. The directory is
+created with mode `0700` and each file with mode `0600`. Records are appended
+and synced synchronously: `start` before configuration and tool registration,
+`error` for startup failures, observed transport failures, or unclassified
+serving errors, and `stop` when serving returns.
+The connection ID is a fresh random identifier, independent of dispatch handles
+and invocation IDs. Every record includes schema `1`, UTC `timestamp`,
+`connection_id`, Agent Layer `version`, the original `pid`, and the current
+`parent_pid`.
+
+Lifecycle files contain only these identity fields and fixed categories:
+`event`, `phase` (`startup`, `transport`, `serving`), `operation` (`configure`,
+`connect`, `read`, `write`, `run`), `condition`, `client_eof`, `input_eof`,
+`context_condition`, and `uncertain`. Raw error strings, prompts, protocol
+messages, tool request/response bodies, credentials, and environment values
+are excluded. Errors still reach the caller through the existing error path;
+that output is separate from lifecycle evidence. MCP stdout remains exclusively
+protocol traffic. A diagnostics write failure emits a fixed warning on stderr
+and serving continues best effort.
+
+| Stop condition | Observed evidence |
+| --- | --- |
+| `startup_error` | Configuration/registration or transport connection failed. |
+| `transport_error` | A read or write begun while open failed; uncertainty indicates local closure may have caused it. Partial JSON followed by input EOF is an error. |
+| `client_eof` | Both physical input EOF and clean framed EOF were observed before local closure. |
+| `context_cancelled` / `context_deadline` | The serving context ended without competing input EOF or a stronger failure. |
+| `uncertain` | Input EOF and context termination were observed; clean framing or their causal order may be unknown. |
+| `run_error` | Serving returned an error without an established cause. |
+| `completion_unknown` | Serving returned without a stronger observation; the shutdown cause is unknown. |
+
+`input_eof` retains physical input EOF observed before local closure;
+`client_eof` additionally requires clean framed EOF observed before closure.
+A latched physical EOF survives overlapping Close, but the SDK may then return
+its closed-channel EOF while a partial frame remains undecoded. That retains
+`input_eof: true` with `client_eof: false` and explicit uncertainty.
+`context_condition` retains observed cancellation/deadline even when another
+condition takes precedence. Failures from reads/writes begun while open survive
+overlapping Close with `uncertain: true`: they establish an observed failure,
+not that the peer caused it. Pure context cancellation with only local-close
+EOF remains certain cancellation. Unknown causes and competing input
+EOF/cancellation are uncertain. None of these records establishes a graceful
+shutdown. SIGTERM/SIGINT normally cancel the CLI serving context.
+On Unix, the MCP server temporarily handles SIGPIPE so a broken stdout pipe
+can be recorded as a write failure instead of killing the process immediately.
+
+Lifecycle files have no automatic expiry and are independent of invocation and
+conversation retention/cleanup. They survive idle intervals and process exit;
+remove files manually when the evidence is no longer needed, preferably after
+the relevant server has stopped. Observed read/write errors are synced before
+waiting for in-flight work to finish, but a stop record requires the server to
+return.
+SIGKILL, an out-of-memory kill, or another abrupt termination cannot emit a
+final record. A missing stop record, or a trailing partial JSON line, never
+establishes a graceful shutdown. A missing file can mean failure before the
+common server path (including root resolution or CLI preflight), failure to
+persist diagnostics, or termination before the initial sync. These records do
+not provide external exit observation, automatic retries, or client transport
+reconnection.
