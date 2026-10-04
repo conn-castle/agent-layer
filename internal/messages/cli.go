@@ -263,7 +263,6 @@ const (
 	AntigravityUse                         = "agy"
 	AntigravityShort                       = "Sync and launch Antigravity"
 	AntigravityLong                        = "Sync project state for the Antigravity client (writes .agy/antigravity-cli/settings.json and mcp_config.json) and launch `agy --gemini_dir=<repo>/.agy`.\n\nThe launcher sets AGY_CLI_DISABLE_AUTO_UPDATE=1 so the pinned agy binary is not silently upgraded under Agent Layer. Requires `agy` (>= 1.0.0) on PATH. Run `al probe agy` to verify the install."
-	ClientsAntigravityMkdirFailedFmt       = "failed to create Antigravity config dir %s: %w"
 	ClientsAntigravityRelativeGeminiDirFmt = "antigravity requires an absolute --gemini_dir path; got %s"
 	ClientsAntigravityRelativeRootFmt      = "antigravity requires an absolute project root; got %s"
 	ClientsAntigravityBinaryNotFoundFmt    = "antigravity launcher requires `agy` on PATH: %w (install Antigravity from https://antigravity.google and ensure `agy` is on PATH)"

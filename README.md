@@ -201,6 +201,7 @@ Cache location (per user):
 Overrides:
 - `AL_VERSION=0.6.0` forces a version (overrides the repo pin)
 - `AL_NO_NETWORK=1` disables downloads (fails if the pinned version is missing)
+- `AL_DOWNLOAD_TIMEOUT=2m` sets how long a pinned-version download may go without receiving data before it fails (default `30s`); each download may run for 10 minutes, or longer when this is 5 minutes or more
 
 ---
 

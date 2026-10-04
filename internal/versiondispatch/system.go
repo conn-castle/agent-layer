@@ -37,7 +37,7 @@ type System interface {
 
 // defaultHTTPClient is the shared HTTP client for production use.
 // It is created once and reused across calls for connection pooling.
-var defaultHTTPClient = &http.Client{Timeout: 30 * time.Second}
+var defaultHTTPClient = &http.Client{}
 
 // RealSystem implements System using the OS and root finder.
 type RealSystem struct {

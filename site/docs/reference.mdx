@@ -388,6 +388,10 @@ Selector rules:
   validate the whole change first and leave local state untouched.
 - Each repository-and-selector pair must be unique across the whole file, so
   `al skills remove` always identifies exactly one selector.
+- `al skills add` and `al skills remove` edit `config.toml` in place, so the
+  import they change must use its own `[[skills.imports]]` header. They stop,
+  without changing anything, when that import is declared in an inline array
+  under `[skills]` or under a quoted key such as `[[skills."imports"]]`.
 - Ancestor and descendant selected paths from one repository are rejected
   because they would create overlapping editable owners.
 
@@ -446,6 +450,7 @@ The set of environment variables is intentionally small. Configuration should li
 | --- | --- |
 | `AL_VERSION` | force a version (overrides the repo pin) |
 | `AL_NO_NETWORK` | disable update checks and downloads |
+| `AL_DOWNLOAD_TIMEOUT` | how long a pinned-version download may go without receiving data before it fails (default `30s`); each download may run for 10 minutes, or longer when this is 5 minutes or more |
 | `AL_CACHE_DIR` | override the pinned-version cache directory |
 
 These variables only affect version dispatch, update checks, and downloads. They do not disable MCP server networking.

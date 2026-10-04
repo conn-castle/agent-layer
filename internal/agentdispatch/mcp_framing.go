@@ -1,0 +1,125 @@
+package agentdispatch
+
+import (
+	"sync"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+const (
+	mcpProtocol20241105 = "2024-11-05"
+	mcpProtocol20250326 = "2025-03-26"
+	mcpProtocol20250618 = "2025-06-18"
+	mcpProtocol20251125 = "2025-11-25"
+)
+
+// The SDK's stdio connection has a package-private sessionUpdated hook. A
+// Connection decorator cannot forward it. Preserve its negotiated batching
+// restriction using frame shape only, leaving parsing and validation to the
+// SDK. This observer never buffers protocol bytes or field values.
+type mcpFrameObserver struct {
+	mu          sync.Mutex
+	depth       int
+	quoted      bool
+	escaped     bool
+	batch       bool
+	itemStarted bool
+	items       int
+	frames      []mcpFrame
+	remaining   int
+}
+
+type mcpFrame struct {
+	batch bool
+	items int
+}
+
+func (f *mcpFrameObserver) read(data []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, b := range data {
+		if f.quoted {
+			switch {
+			case f.escaped:
+				f.escaped = false
+			case b == '\\':
+				f.escaped = true
+			case b == '"':
+				f.quoted = false
+			}
+			continue
+		}
+		if b == ' ' || b == '\n' || b == '\r' || b == '\t' {
+			continue
+		}
+		if f.depth == 0 {
+			// Every valid JSON-RPC frame is an object or array. The SDK rejects
+			// all other values, so they need no frame metadata.
+			if b != '{' && b != '[' {
+				continue
+			}
+			f.batch, f.itemStarted, f.items = b == '[', false, 0
+		} else if f.batch && f.depth == 1 {
+			if b == ',' {
+				f.itemStarted = false
+			} else if b != ']' && !f.itemStarted {
+				f.items++
+				f.itemStarted = true
+			}
+		}
+		switch b {
+		case '"':
+			f.quoted = true
+		case '{', '[':
+			f.depth++
+		case '}', ']':
+			f.depth--
+			if f.depth == 0 {
+				items := f.items
+				if !f.batch {
+					items = 1
+				}
+				f.frames = append(f.frames, mcpFrame{f.batch, items})
+			}
+		}
+	}
+}
+
+// next returns true once for the first decoded message in each batch. Older
+// protocol versions expand a batch into several consecutive SDK Read results.
+func (f *mcpFrameObserver) next() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.remaining > 0 {
+		f.remaining--
+		return false
+	}
+	if len(f.frames) == 0 {
+		return false
+	}
+	frame := f.frames[0]
+	f.frames = f.frames[1:]
+	f.remaining = frame.items - 1
+	return frame.batch
+}
+
+func mcpBatchProtocolVersion(server *mcp.Server) string {
+	for session := range server.Sessions() {
+		params := session.InitializeParams()
+		if params == nil {
+			return mcpProtocol20250326
+		}
+		// These are the SDK's supported versions preceding the batch ban. An
+		// empty version uses its 2025-03-26 default; unsupported versions
+		// negotiate to a newer version. Read the authoritative session state.
+		switch params.ProtocolVersion {
+		case "":
+			return mcpProtocol20250326
+		case mcpProtocol20241105, mcpProtocol20250326, mcpProtocol20250618, mcpProtocol20251125:
+			return params.ProtocolVersion
+		default:
+			return mcpProtocol20251125
+		}
+	}
+	return mcpProtocol20250326
+}

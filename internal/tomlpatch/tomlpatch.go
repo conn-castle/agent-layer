@@ -138,22 +138,37 @@ func ScanLineForComment(line string, state StringState) (commentPos int, nextSta
 			}
 
 		case StateMultiBasic:
-			if ch == '"' && len(line) > i+2 && line[i:i+3] == tripleBasicQuote {
+			if n := multilineCloseLen(line, i, '"'); n > 0 {
 				state = StateNone
-				i += 3
+				i += n
 				continue
 			}
 
 		case StateMultiLiteral:
-			if ch == '\'' && len(line) > i+2 && line[i:i+3] == tripleLiteralQuote {
+			if n := multilineCloseLen(line, i, '\''); n > 0 {
 				state = StateNone
-				i += 3
+				i += n
 				continue
 			}
 		}
 		i++
 	}
 	return -1, state
+}
+
+// multilineCloseLen returns the number of bytes in s[i:] that end a multiline
+// string delimited by quote, or 0 when s[i:] does not close it. TOML allows one
+// or two quote characters just before the closing delimiter, so a run of four
+// or five quotes is content followed by the delimiter.
+func multilineCloseLen(s string, i int, quote byte) int {
+	n := 0
+	for i+n < len(s) && n < 5 && s[i+n] == quote {
+		n++
+	}
+	if n < 3 {
+		return 0
+	}
+	return n
 }
 
 // StateInMultiline returns true if state is inside a multiline string.
@@ -411,15 +426,15 @@ func countBracketDepth(s string, opener, closer byte, state StringState) (int, S
 				state = StateNone
 			}
 		case StateMultiBasic:
-			if ch == '"' && len(s) > i+2 && s[i:i+3] == tripleBasicQuote {
+			if n := multilineCloseLen(s, i, '"'); n > 0 {
 				state = StateNone
-				i += 3
+				i += n
 				continue
 			}
 		case StateMultiLiteral:
-			if ch == '\'' && len(s) > i+2 && s[i:i+3] == tripleLiteralQuote {
+			if n := multilineCloseLen(s, i, '\''); n > 0 {
 				state = StateNone
-				i += 3
+				i += n
 				continue
 			}
 		}

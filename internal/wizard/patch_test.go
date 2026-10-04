@@ -450,6 +450,31 @@ foo = "bar"
 	assert.Contains(t, out, `foo = "bar"`)
 }
 
+func TestPatchConfig_PreservesSectionsAfterStringEndingInQuotes(t *testing.T) {
+	content := `
+[custom_section]
+quote = """"This," she said, "is just a pointless statement.""""
+notes = """
+[fake_section]
+"""
+
+[approvals]
+mode = "none"
+`
+	choices := NewChoices()
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	var parsed map[string]any
+	require.NoError(t, toml.Unmarshal([]byte(out), &parsed))
+	custom := parsed["custom_section"].(map[string]any)
+	assert.Equal(t, `"This," she said, "is just a pointless statement."`, custom["quote"])
+	assert.Equal(t, "[fake_section]\n", custom["notes"])
+	assert.Equal(t, "none", parsed["approvals"].(map[string]any)["mode"])
+	assert.NotContains(t, parsed, "fake_section")
+}
+
 func TestPatchConfig_PreservesCodexAgentSpecificFeatures(t *testing.T) {
 	content := `
 [approvals]
@@ -1761,6 +1786,12 @@ url = "https://b.example"
 [mcp.servers.headers]
 Authorization = "Bearer ${AL_BETA}"
 `
+	multilineHeaders := func(quote string, extraQuotes int) string {
+		triple := strings.Repeat(quote, 3)
+		headers := "Authorization = " + triple + "Bearer ${AL_ALPHA}" + strings.Repeat(quote, extraQuotes) + triple + "\n" +
+			"Notes = " + triple + "\n[[mcp.servers]]\n[mcp.servers.headers]\n" + triple
+		return strings.Replace(twoHTTPServers, `Authorization = "Bearer ${AL_ALPHA}"`, headers, 1)
+	}
 	tests := []struct {
 		name    string
 		content string
@@ -1770,6 +1801,10 @@ Authorization = "Bearer ${AL_BETA}"
 		wantServerOrder []string
 	}{
 		{name: "http headers", content: twoHTTPServers},
+		{name: "basic header string closes with four quotes", content: multilineHeaders(`"`, 1)},
+		{name: "basic header string closes with five quotes", content: multilineHeaders(`"`, 2)},
+		{name: "literal header string closes with four quotes", content: multilineHeaders(`'`, 1)},
+		{name: "literal header string closes with five quotes", content: multilineHeaders(`'`, 2)},
 		{
 			name: "stdio env followed by another server",
 			content: `
