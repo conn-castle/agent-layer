@@ -134,11 +134,11 @@ func detectPierExecutionPhase(stage string) (string, error) {
 		if entry.IsDir() {
 			return nil
 		}
-		if entry.Name() == benchmarkModelPatchFile && filepath.Base(filepath.Dir(path)) == benchmarkArtifactsDir {
+		if isSubmittedModelPatch(path, entry) {
 			phase = executionPhaseVerifier
 			return fs.SkipAll
 		}
-		if filepath.Base(filepath.Dir(path)) == benchmarkAgentDir && phase == executionPhaseEnvironment {
+		if parentDirIs(path, benchmarkAgentDir) && phase == executionPhaseEnvironment {
 			phase = executionPhaseProvider
 		}
 		return nil

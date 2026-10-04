@@ -185,15 +185,8 @@ func normalizePier(stage string, request ExecutionRequest) (AttemptResult, error
 }
 
 func readPierTaskResult(stage string, request ExecutionRequest) (pierTaskResult, error) {
-	var paths []string
-	err := filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if !entry.IsDir() && entry.Name() == "result.json" && filepath.Base(filepath.Dir(path)) != "jobs" {
-			paths = append(paths, path)
-		}
-		return nil
+	paths, err := stageJobFiles(stage, false, func(path string, entry fs.DirEntry) bool {
+		return entry.Name() == "result.json" && !parentDirIs(path, "jobs")
 	})
 	if err != nil {
 		return pierTaskResult{}, fmt.Errorf("find Pier task result: %w", err)
@@ -257,21 +250,15 @@ func validatePierTreatmentPreflight(stage string, request ExecutionRequest) erro
 			return err
 		}
 		required := provider.PreflightEvidence
-		evidenceCounts := map[string]int{
-			required:                     0,
-			dispatchOptionsPreflightFile: 0,
-		}
-		err = filepath.WalkDir(filepath.Join(stage, "jobs"), func(_ string, entry fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if !entry.IsDir() {
-				evidenceCounts[entry.Name()]++
-			}
-			return nil
+		evidence, err := stageJobFiles(stage, false, func(_ string, entry fs.DirEntry) bool {
+			return entry.Name() == required || entry.Name() == dispatchOptionsPreflightFile
 		})
 		if err != nil {
 			return fmt.Errorf("inspect runtime preflight evidence: %w", err)
+		}
+		evidenceCounts := make(map[string]int, 2)
+		for _, path := range evidence {
+			evidenceCounts[filepath.Base(path)]++
 		}
 		for _, name := range []string{required, dispatchOptionsPreflightFile} {
 			if evidenceCounts[name] != 1 {
@@ -279,21 +266,14 @@ func validatePierTreatmentPreflight(stage string, request ExecutionRequest) erro
 			}
 		}
 	}
-	var providerSessions int
-	err = filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if !entry.IsDir() && filepath.Ext(path) == ".jsonl" &&
-			strings.Contains(path, string(filepath.Separator)+"agent"+string(filepath.Separator)+"sessions"+string(filepath.Separator)) {
-			providerSessions++
-		}
-		return nil
+	providerSessions, err := stageJobFiles(stage, false, func(path string, _ fs.DirEntry) bool {
+		return filepath.Ext(path) == ".jsonl" &&
+			strings.Contains(path, string(filepath.Separator)+"agent"+string(filepath.Separator)+"sessions"+string(filepath.Separator))
 	})
 	if err != nil {
 		return fmt.Errorf("inspect runtime preflight provider sessions: %w", err)
 	}
-	if providerSessions != 0 {
+	if len(providerSessions) != 0 {
 		return fmt.Errorf("treatment runtime preflight unexpectedly invoked the provider")
 	}
 	return nil
@@ -438,17 +418,7 @@ func dispatchConformance(stage string, request ExecutionRequest) (bool, error) {
 	if request.Bundle.Manifest.Mode == TreatmentInstructionsAndSkills && len(required) == 0 {
 		return true, nil
 	}
-	var paths []string
-	err := filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if !entry.IsDir() && filepath.Base(filepath.Dir(path)) == dispatchEvidenceDir &&
-			filepath.Ext(path) == ".json" && !isDispatchPreflightEvidence(entry.Name()) {
-			paths = append(paths, path)
-		}
-		return nil
-	})
+	paths, err := stageJobFiles(stage, false, isDispatchRecord)
 	if err != nil {
 		return false, fmt.Errorf("find treatment dispatch-conformance evidence: %w", err)
 	}
@@ -512,17 +482,7 @@ func dispatchRecordMatchesSlot(record dispatchConformanceRecord, slot dispatchSl
 }
 
 func submittedPatchBytes(stage string) (int64, error) {
-	var patches []string
-	err := filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if !entry.IsDir() && entry.Name() == benchmarkModelPatchFile &&
-			filepath.Base(filepath.Dir(path)) == benchmarkArtifactsDir {
-			patches = append(patches, path)
-		}
-		return nil
-	})
+	patches, err := stageJobFiles(stage, false, isSubmittedModelPatch)
 	if err != nil {
 		return 0, fmt.Errorf("find submitted model patch: %w", err)
 	}
@@ -587,16 +547,8 @@ func codexAttemptCost(stage string) (treatmentCost, error) {
 	if err != nil {
 		return treatmentCost{}, err
 	}
-	var sessions []string
-	err = filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if !entry.IsDir() && filepath.Ext(path) == ".jsonl" &&
-			strings.Contains(filepath.ToSlash(path), "/agent/sessions/") {
-			sessions = append(sessions, path)
-		}
-		return nil
+	sessions, err := stageJobFiles(stage, false, func(path string, _ fs.DirEntry) bool {
+		return filepath.Ext(path) == ".jsonl" && strings.Contains(filepath.ToSlash(path), "/agent/sessions/")
 	})
 	if err != nil {
 		return treatmentCost{}, fmt.Errorf("find Codex provider sessions: %w", err)
@@ -658,16 +610,8 @@ func treatmentClaudeCost(stage string, coordinator *float64) (treatmentCost, err
 	if err != nil {
 		return treatmentCost{}, err
 	}
-	var paths []string
-	err = filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if !entry.IsDir() && filepath.Base(filepath.Dir(path)) == dispatchEvidenceDir &&
-			filepath.Ext(path) == stdoutArtifactExtension {
-			paths = append(paths, path)
-		}
-		return nil
+	paths, err := stageJobFiles(stage, false, func(path string, _ fs.DirEntry) bool {
+		return parentDirIs(path, dispatchEvidenceDir) && filepath.Ext(path) == stdoutArtifactExtension
 	})
 	if err != nil {
 		return treatmentCost{}, fmt.Errorf("find Claude dispatch billing evidence: %w", err)
@@ -720,22 +664,20 @@ func streamProviderAttemptCost(stage, provider, model string) (treatmentCost, er
 	if err != nil {
 		return treatmentCost{}, err
 	}
-	var paths []string
-	err = filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() || !entry.Type().IsRegular() {
-			return nil
+	var agentLog string
+	switch provider {
+	case adapterGrok:
+		agentLog = "grok.jsonl"
+	case adapterAntigravity:
+		agentLog = "antigravity.jsonl"
+	}
+	paths, err := stageJobFiles(stage, false, func(path string, entry fs.DirEntry) bool {
+		if agentLog == "" || !entry.Type().IsRegular() {
+			return false
 		}
 		name := entry.Name()
-		inAgentEvidence := strings.Contains(filepath.ToSlash(path), "/agent/")
-		inDispatchEvidence := filepath.Base(filepath.Dir(path)) == dispatchEvidenceDir
-		if (provider == adapterGrok && ((name == "grok.jsonl" && inAgentEvidence) || (filepath.Ext(name) == stdoutArtifactExtension && inDispatchEvidence))) ||
-			(provider == adapterAntigravity && ((name == "antigravity.jsonl" && inAgentEvidence) || (filepath.Ext(name) == stdoutArtifactExtension && inDispatchEvidence))) {
-			paths = append(paths, path)
-		}
-		return nil
+		return (name == agentLog && strings.Contains(filepath.ToSlash(path), "/agent/")) ||
+			(filepath.Ext(name) == stdoutArtifactExtension && parentDirIs(path, dispatchEvidenceDir))
 	})
 	if err != nil {
 		return treatmentCost{}, fmt.Errorf("find %s usage evidence: %w", provider, err)
@@ -1063,12 +1005,8 @@ type dispatchProviderSession struct {
 
 func dispatchProviderSessions(stage string) (map[string][]dispatchProviderSession, error) {
 	sessions := make(map[string][]dispatchProviderSession)
-	err := filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() || filepath.Base(filepath.Dir(path)) != dispatchEvidenceDir ||
-			filepath.Ext(path) != ".json" || isDispatchPreflightEvidence(entry.Name()) {
+	err := walkStageJobFiles(stage, false, func(path string, entry fs.DirEntry) error {
+		if !isDispatchRecord(path, entry) {
 			return nil
 		}
 		data, err := os.ReadFile(path) // #nosec G122,G304 -- path was discovered below the restricted attempt stage.

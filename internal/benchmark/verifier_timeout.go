@@ -3,7 +3,6 @@ package benchmark
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -49,24 +48,13 @@ func terminalVerifierTestTimeout(stage string, result pierTaskResult) (bool, err
 		!strings.Contains(exception.Traceback, "await self._environment.exec") {
 		return false, nil
 	}
-	stdoutFiles := 0
-	err := filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			if errors.Is(walkErr, os.ErrNotExist) {
-				return nil
-			}
-			return walkErr
-		}
-		if entry.IsDir() || entry.Name() != verifierTestStdoutFile || filepath.Base(filepath.Dir(path)) != executionPhaseVerifier {
-			return nil
-		}
-		stdoutFiles++
-		return nil
+	stdoutFiles, err := stageJobFiles(stage, true, func(path string, entry fs.DirEntry) bool {
+		return entry.Name() == verifierTestStdoutFile && parentDirIs(path, executionPhaseVerifier)
 	})
 	if err != nil {
 		return false, fmt.Errorf("inspect verifier test-timeout evidence: %w", err)
 	}
-	return stdoutFiles == 1, nil
+	return len(stdoutFiles) == 1, nil
 }
 
 // internalVerifierTestTimeout recognizes a test framework's own terminal

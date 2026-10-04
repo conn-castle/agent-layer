@@ -644,19 +644,8 @@ func preserveReplayPatch(stage string) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect preserved replay patch: %w", err)
 	}
-	var patches []string
-	err := filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			if errors.Is(walkErr, os.ErrNotExist) {
-				return nil
-			}
-			return walkErr
-		}
-		if !entry.IsDir() && entry.Type().IsRegular() && entry.Name() == benchmarkModelPatchFile &&
-			filepath.Base(filepath.Dir(path)) == benchmarkArtifactsDir {
-			patches = append(patches, path)
-		}
-		return nil
+	patches, err := stageJobFiles(stage, true, func(path string, entry fs.DirEntry) bool {
+		return entry.Type().IsRegular() && isSubmittedModelPatch(path, entry)
 	})
 	if err != nil {
 		return fmt.Errorf("find submitted model patch to preserve: %w", err)
