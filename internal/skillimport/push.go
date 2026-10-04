@@ -105,7 +105,7 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 
 	for index, block := range writable {
 		repository := config.NormalizeSkillRepository(block.Repository)
-		entries := st.entriesForBlock(block)
+		entries := selectedPushEntries(report, block, st.entriesForBlock(block))
 		if len(entries) == 0 {
 			continue
 		}
@@ -203,6 +203,31 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 		}
 	}
 	return nil
+}
+
+// selectedPushEntries keeps the entries the block still selects after its
+// exclusions. Lock ownership follows an entry's recorded selector, so an entry
+// a later `!` exclusion deselected still belongs to the block; it has left the
+// desired set, though, and publishing it would push content the user chose to
+// stop sharing. Pull applies its retirement rules instead. Excluded entries
+// are filtered before any block-level step so they cannot block the block,
+// trigger a source freshness check, or decide its destination grouping.
+func selectedPushEntries(report *Report, block config.SkillImport, entries []skilllock.Entry) []skilllock.Entry {
+	selected := make([]skilllock.Entry, 0, len(entries))
+	for _, entry := range entries {
+		if _, ok := selectingPositiveSelector(block, entry.SelectedPath); ok {
+			selected = append(selected, entry)
+			continue
+		}
+		report.Add(SkillResult{
+			Name:         entry.Name,
+			Repository:   entry.Repository,
+			SelectedPath: entry.SelectedPath,
+			Outcome:      OutcomeSkipped,
+			Detail:       "no longer selected by its import block; run 'al skills pull' to apply retirement rules",
+		})
+	}
+	return selected
 }
 
 // resolveTrackedSourceCommit resolves the block's source ref once when any of

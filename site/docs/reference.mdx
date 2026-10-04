@@ -1031,7 +1031,9 @@ workspace and projects the imported skill.
 never pulls first and never force-pushes. Changes for one destination
 repository and branch are committed and pushed together. For a tracked import,
 push first verifies the source ref is still at the locked commit and tells you
-to run `al skills pull` if it moved. A destination merge conflict leaves the
+to run `al skills pull` if it moved. A skill that an exclusion deselected is
+reported as skipped and never published; `al skills pull` applies its
+retirement rules. A destination merge conflict leaves the
 same kind of Git workspace as pull, with `base`, `local`, and `destination`
 branches. Push prompts before publication; non-interactive callers must pass
 `--yes`. `add` and `remove` use the same confirmation pattern before modifying
