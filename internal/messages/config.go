@@ -95,6 +95,8 @@ const (
 	ConfigSkillImportDuplicateBlockFmt               = "%s: skills.imports[%d] duplicates the repository, ref, tracking, write policy, and push destination of skills.imports[%d]; keep one block per unique policy and list its selectors together"
 	ConfigSkillImportDuplicateSelectorFmt            = "%s: skills.imports[%d] repeats selector %q already declared by skills.imports[%d]; each repository and selector pair must be unique across configuration"
 	ConfigSkillImportBlockUnparsableFmt              = "failed to parse a [[skills.imports]] block: %w"
+	ConfigSkillImportsDocumentUnparsableFmt          = "failed to parse config.toml before editing skills.imports: %w"
+	ConfigSkillImportWithoutTableHeaderFmt           = "config.toml declares the skills.imports entry for %s without its own [[skills.imports]] header; al skills add and al skills remove can edit only entries declared that way, so rewrite the inline or quoted-key entry as a [[skills.imports]] table and retry"
 	ConfigSkillImportSelectorsAssignmentMissing      = "[[skills.imports]] block has no selectors assignment"
 	ConfigSkillImportSelectorsAssignmentUnterminated = "[[skills.imports]] selectors array is unterminated"
 	ConfigSkillImportRepositoryInvalidFmt            = "%s: skills.imports[%d].repository is invalid: %w"

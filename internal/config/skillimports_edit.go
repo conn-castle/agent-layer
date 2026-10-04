@@ -28,6 +28,8 @@ type skillImportBlockSpan struct {
 // An empty selectors slice removes the matching block. A non-empty slice with
 // no matching block appends a new block built from identity. Selector order is
 // preserved as given so callers control the recorded configuration order.
+// A matching import declared without its own `[[skills.imports]]` header is
+// rejected rather than edited.
 func SetSkillImportSelectors(content string, identity SkillImportBlockIdentity, selectors []string) (string, error) {
 	lines := strings.Split(content, "\n")
 	spans, err := findSkillImportBlocks(lines)
@@ -44,6 +46,9 @@ func SetSkillImportSelectors(content string, identity SkillImportBlockIdentity, 
 	}
 
 	if match < 0 {
+		if err := rejectHiddenSkillImport(content, identity); err != nil {
+			return "", err
+		}
 		if len(selectors) == 0 {
 			return content, nil
 		}
@@ -100,6 +105,24 @@ func findSkillImportBlocks(lines []string) ([]skillImportBlockSpan, error) {
 		spans = append(spans, skillImportBlockSpan{start: header.index, end: end, parsed: parsed})
 	}
 	return spans, nil
+}
+
+// rejectHiddenSkillImport fails when the document declares the identity's
+// import without a `[[skills.imports]]` header the line editor can see, such
+// as an inline array under `[skills]` or a quoted-key `[[skills."imports"]]`
+// header. Otherwise a removal would leave the selectors configured and an
+// addition would append a block that conflicts with the declaration.
+func rejectHiddenSkillImport(content string, identity SkillImportBlockIdentity) error {
+	var cfg Config
+	if err := toml.Unmarshal([]byte(content), &cfg); err != nil {
+		return fmt.Errorf(messages.ConfigSkillImportsDocumentUnparsableFmt, err)
+	}
+	for _, imp := range cfg.Skills.Imports {
+		if imp.Identity() == identity {
+			return fmt.Errorf(messages.ConfigSkillImportWithoutTableHeaderFmt, identity.Repository)
+		}
+	}
+	return nil
 }
 
 // decodeSkillImportBlock decodes one isolated block into a SkillImport.
