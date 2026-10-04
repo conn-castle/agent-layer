@@ -14,9 +14,9 @@ import (
 )
 
 type vscodeSettings struct {
-	ChatToolsTerminalAutoApprove        OrderedMap[bool] `json:"chat.tools.terminal.autoApprove,omitempty"`
-	ChatAgentSkillsLocations            OrderedMap[bool] `json:"chat.agentSkillsLocations,omitempty"`
-	ClaudeCodeAllowDangerouslySkipPerms *bool            `json:"claudeCode.allowDangerouslySkipPermissions,omitempty"`
+	ChatToolsTerminalAutoApprove        map[string]bool `json:"chat.tools.terminal.autoApprove,omitempty"`
+	ChatAgentSkillsLocations            map[string]bool `json:"chat.agentSkillsLocations,omitempty"`
+	ClaudeCodeAllowDangerouslySkipPerms *bool           `json:"claudeCode.allowDangerouslySkipPermissions,omitempty"`
 }
 
 const (
@@ -91,7 +91,7 @@ func buildVSCodeSettings(project *config.ProjectConfig) (*vscodeSettings, error)
 		settings.ChatAgentSkillsLocations = buildVSCodeAgentSkillsLocations()
 
 		if approvals.AllowCommands {
-			autoApprove := make(OrderedMap[bool])
+			autoApprove := make(map[string]bool)
 			for _, cmd := range approvals.Commands {
 				pattern := formatVSCodeAutoApprovePattern(cmd)
 				autoApprove[pattern] = true
@@ -111,8 +111,8 @@ func buildVSCodeSettings(project *config.ProjectConfig) (*vscodeSettings, error)
 	return settings, nil
 }
 
-func buildVSCodeAgentSkillsLocations() OrderedMap[bool] {
-	return OrderedMap[bool]{
+func buildVSCodeAgentSkillsLocations() map[string]bool {
+	return map[string]bool{
 		".agents/skills":    true,
 		githubSkillsDir:     false,
 		".claude/skills":    false,

@@ -9,7 +9,7 @@ import (
 func TestRenderVSCodeSettingsContentPreservesBOMAndNewlines(t *testing.T) {
 	t.Parallel()
 	settings := &vscodeSettings{
-		ChatToolsTerminalAutoApprove: OrderedMap[bool]{"/^git(\\b.*)?$/": true},
+		ChatToolsTerminalAutoApprove: map[string]bool{"/^git(\\b.*)?$/": true},
 	}
 	existing := "\ufeff\r\n"
 
@@ -49,7 +49,7 @@ func TestRenderVSCodeSettingsContentReplaceManagedBlockFallbackIndent(t *testing
 	t.Parallel()
 	existing := "{\n// >>> agent-layer\n// Managed by Agent Layer. To customize, edit .agent-layer/config.toml\n// and .agent-layer/commands.allow, then re-run `al sync`.\n//\n\"chat.tools.terminal.autoApprove\": {\n  \"/^old(\\\\b.*)?$/\": true\n}\n// <<< agent-layer\n}\n"
 	settings := &vscodeSettings{
-		ChatToolsTerminalAutoApprove: OrderedMap[bool]{"/^git(\\b.*)?$/": true},
+		ChatToolsTerminalAutoApprove: map[string]bool{"/^git(\\b.*)?$/": true},
 	}
 
 	updated, err := renderVSCodeSettingsContent(RealSystem{}, existing, settings)
@@ -68,7 +68,7 @@ func TestRenderVSCodeSettingsContentInsertBlockComplexJSONC(t *testing.T) {
 	t.Parallel()
 	existing := "{\n  // line comment\n  \"path\": \"C:\\tmp\\\"{\\\"}\",\n  /* block comment { } */\n  \"nested\": {\"inner\": \"value\"}\n}\n"
 	settings := &vscodeSettings{
-		ChatToolsTerminalAutoApprove: OrderedMap[bool]{"/^git(\\b.*)?$/": true},
+		ChatToolsTerminalAutoApprove: map[string]bool{"/^git(\\b.*)?$/": true},
 	}
 
 	updated, err := renderVSCodeSettingsContent(RealSystem{}, existing, settings)
@@ -362,7 +362,7 @@ func TestHasJSONCNonTrivia(t *testing.T) {
 func TestBuildVSCodeManagedBlockTrailingComma(t *testing.T) {
 	t.Parallel()
 	settings := &vscodeSettings{
-		ChatToolsTerminalAutoApprove: OrderedMap[bool]{"/^git(\\b.*)?$/": true},
+		ChatToolsTerminalAutoApprove: map[string]bool{"/^git(\\b.*)?$/": true},
 	}
 	block, err := buildVSCodeManagedBlock(RealSystem{}, settings, "  ", "  ", true)
 	if err != nil {
@@ -657,7 +657,7 @@ func TestRenderVSCodeSettingsTrailingCommaNeeded(t *testing.T) {
 	t.Parallel()
 	existing := "{\n  \"editor.tabSize\": 2\n}\n"
 	settings := &vscodeSettings{
-		ChatToolsTerminalAutoApprove: OrderedMap[bool]{"/^git(\\b.*)?$/": true},
+		ChatToolsTerminalAutoApprove: map[string]bool{"/^git(\\b.*)?$/": true},
 	}
 	updated, err := renderVSCodeSettingsContent(RealSystem{}, existing, settings)
 	if err != nil {
@@ -753,7 +753,7 @@ func TestRenderVSCodeSettingsExistingBlockNoIndent(t *testing.T) {
 	t.Parallel()
 	existing := "{\n// >>> agent-layer\n// <<< agent-layer\n}\n"
 	settings := &vscodeSettings{
-		ChatToolsTerminalAutoApprove: OrderedMap[bool]{"/^git(\\b.*)?$/": true},
+		ChatToolsTerminalAutoApprove: map[string]bool{"/^git(\\b.*)?$/": true},
 	}
 	updated, err := renderVSCodeSettingsContent(RealSystem{}, existing, settings)
 	if err != nil {
@@ -777,7 +777,7 @@ func TestHasJSONCContentBetweenStringEscapeBackslash(t *testing.T) {
 func TestRenderVSCodeSettingsContentMovesUserSettingsOutOfManagedBlock(t *testing.T) {
 	t.Parallel()
 	settings := &vscodeSettings{
-		ChatToolsTerminalAutoApprove: OrderedMap[bool]{"/^git(\\b.*)?$/": true},
+		ChatToolsTerminalAutoApprove: map[string]bool{"/^git(\\b.*)?$/": true},
 	}
 	header := "  // >>> agent-layer\n" +
 		"  // Managed by Agent Layer. To customize, edit .agent-layer/config.toml\n" +
