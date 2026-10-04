@@ -388,6 +388,10 @@ Selector rules:
   validate the whole change first and leave local state untouched.
 - Each repository-and-selector pair must be unique across the whole file, so
   `al skills remove` always identifies exactly one selector.
+- `al skills add` and `al skills remove` edit `config.toml` in place, so the
+  import they change must use its own `[[skills.imports]]` header. They stop,
+  without changing anything, when that import is declared in an inline array
+  under `[skills]` or under a quoted key such as `[[skills."imports"]]`.
 - Ancestor and descendant selected paths from one repository are rejected
   because they would create overlapping editable owners.
 

@@ -314,6 +314,37 @@ func TestRemoveModifiedSkillLeavesPriorStateUnchanged(t *testing.T) {
 	}
 }
 
+// TestRemoveRejectsAnImportWithoutATableHeader proves remove fails without
+// retiring anything when config.toml declares the block under an equivalent
+// spelling the editor cannot rewrite, instead of reporting success while the
+// selector stays configured for the next pull to re-import.
+func TestRemoveRejectsAnImportWithoutATableHeader(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.Commit("add alpha")
+
+	proj := newProject(t)
+	service := proj.Service()
+	if _, err := service.Add(context.Background(), AddOptions{Repository: source.URL(), Selectors: []string{"skills/alpha"}}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	proj.ReplaceInConfig("[[skills.imports]]", `[[skills."imports"]]`)
+	before := proj.ConfigContent()
+
+	if _, err := service.Remove(context.Background(), source.URL(), "skills/alpha"); err == nil {
+		t.Fatal("expected remove to refuse an import without a [[skills.imports]] header")
+	}
+	if proj.ConfigContent() != before {
+		t.Fatal("a failed remove modified configuration")
+	}
+	if !proj.ImportedExists("alpha") {
+		t.Fatal("a failed remove retired the skill")
+	}
+	if _, ok := proj.Lock().Entry("alpha"); !ok {
+		t.Fatal("a failed remove pruned lock state")
+	}
+}
+
 // TestRemoveUnknownSelectorFails proves the command identifies exactly one
 // configured selector or refuses.
 func TestRemoveUnknownSelectorFails(t *testing.T) {
