@@ -283,6 +283,9 @@ func TestWriteAntigravitySettingsRejectsInvalidStateBeforeWrite(t *testing.T) {
 			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 				t.Fatal(err)
 			}
+			if err := os.Chmod(filepath.Join(root, ".agy"), 0o755); err != nil { // #nosec G302 -- fixture verifies failed sync still tightens the home.
+				t.Fatal(err)
+			}
 			before := []byte(tc.seed)
 			if err := os.WriteFile(path, before, 0o600); err != nil {
 				t.Fatal(err)
@@ -293,6 +296,7 @@ func TestWriteAntigravitySettingsRejectsInvalidStateBeforeWrite(t *testing.T) {
 			if err := writeAntigravitySettings(RealSystem{}, root, project); err == nil {
 				t.Fatal("expected error")
 			}
+			assertAgyMode(t, root)
 			after, err := os.ReadFile(path) // #nosec G304 -- test-owned path.
 			if err != nil {
 				t.Fatal(err)
@@ -356,6 +360,9 @@ func TestWriteAntigravitySettingsReadErrorDoesNotWrite(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(filepath.Join(root, ".agy"), 0o755); err != nil { // #nosec G302 -- fixture verifies failed sync still tightens the home.
+		t.Fatal(err)
+	}
 	before := []byte(`{"trust":true}`)
 	if err := os.WriteFile(path, before, 0o600); err != nil {
 		t.Fatal(err)
@@ -374,6 +381,7 @@ func TestWriteAntigravitySettingsReadErrorDoesNotWrite(t *testing.T) {
 	if err := writeAntigravitySettings(sys, root, &config.ProjectConfig{}); err == nil || !strings.Contains(err.Error(), "permission denied") {
 		t.Fatalf("expected read error, got %v", err)
 	}
+	assertAgyMode(t, root)
 	if wrote {
 		t.Fatal("write attempted after read failure")
 	}
@@ -383,6 +391,40 @@ func TestWriteAntigravitySettingsReadErrorDoesNotWrite(t *testing.T) {
 	}
 	if !bytes.Equal(after, before) {
 		t.Fatalf("file changed on read failure: %q", after)
+	}
+}
+
+func TestWriteAntigravitySettingsMarshalErrorKeepsAgyOwnerOnly(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(root, ".agy"), 0o755); err != nil { // #nosec G302 -- fixture verifies failed sync still tightens the home.
+		t.Fatal(err)
+	}
+	before := []byte(`{"trust":true}`)
+	if err := os.WriteFile(path, before, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wantErr := errors.New("marshal failed")
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		MarshalIndentFunc: func(any, string, string) ([]byte, error) {
+			return nil, wantErr
+		},
+		WriteFileAtomicFunc: func(string, []byte, os.FileMode) error {
+			t.Fatal("write attempted after marshal failure")
+			return nil
+		},
+	}
+	if err := writeAntigravitySettings(sys, root, &config.ProjectConfig{}); !errors.Is(err, wantErr) {
+		t.Fatalf("expected marshal error, got %v", err)
+	}
+	assertAgyMode(t, root)
+	if after := readFileForTest(t, path); after != string(before) {
+		t.Fatalf("file changed on marshal failure: %q", after)
 	}
 }
 

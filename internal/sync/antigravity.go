@@ -47,6 +47,11 @@ func writeAntigravitySettings(sys System, root string, project *config.ProjectCo
 	if err := ensureAntigravityPathRealParentContained(root, path); err != nil {
 		return err
 	}
+	// Tighten the home before settings processing can abort sync and prevent
+	// launch from repairing permissions around existing native state.
+	if err := ensureAntigravityHome(root); err != nil {
+		return err
+	}
 	existing, err := readAntigravitySettings(sys, path)
 	if err != nil {
 		return err
@@ -60,9 +65,6 @@ func writeAntigravitySettings(sys System, root string, project *config.ProjectCo
 		return fmt.Errorf(messages.SyncMarshalAntigravitySettingsFailedFmt, err)
 	}
 	data = append(data, '\n')
-	if err := ensureAntigravityHome(root); err != nil {
-		return err
-	}
 	if err := sys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, filepath.Dir(path), err)
 	}
