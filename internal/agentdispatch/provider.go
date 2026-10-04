@@ -455,7 +455,7 @@ func buildProviderCommand(
 			} else {
 				args = append(args, "--permission-mode", claudePermissionModeDontAsk)
 			}
-			for _, rule := range projection.ClaudeAllowRules(
+			for _, rule := range projection.GrokAllowRules(
 				project.Config,
 				project.CommandsAllow,
 				projection.EffectiveServerIDs(project.Config, projection.ClientGrok),
