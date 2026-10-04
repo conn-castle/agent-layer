@@ -440,6 +440,74 @@ func TestScanLineForComment_StateTransitions(t *testing.T) {
 	}
 }
 
+// TOML allows one or two quotes just inside a multiline closing delimiter, so
+// a run of four or five quotes is content followed by the delimiter.
+func TestScanLineForComment_MultilineEndsWithExtraQuotes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		line string
+		in   StringState
+	}{
+		{name: "basic one extra quote", line: `x = """say "ok"""" # note`, in: StateNone},
+		{name: "basic two extra quotes", line: `x = """say ""ok""""" # note`, in: StateNone},
+		{name: "basic only a quote", line: `x = """"""" # note`, in: StateNone},
+		{name: "basic continuation", line: `end with "quote"""" # note`, in: StateMultiBasic},
+		{name: "basic escaped quote before extra quote", line: `end \""""" # note`, in: StateMultiBasic},
+		{name: "literal one extra quote", line: `x = '''it'''' # note`, in: StateNone},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			comment, state := ScanLineForComment(tt.line, tt.in)
+			if state != StateNone {
+				t.Fatalf("state = %v, want none", state)
+			}
+			if comment < 0 || tt.line[comment:] != "# note" {
+				t.Fatalf("comment position = %d, want the trailing # note", comment)
+			}
+		})
+	}
+}
+
+func TestParseDocument_MultilineEndingInQuotesBeforeLaterMultiline(t *testing.T) {
+	t.Parallel()
+	for _, quote := range []string{`"`, `'`} {
+		triple := strings.Repeat(quote, 3)
+		content := "[a]\n" +
+			"x = " + triple + "Reply " + quote + "ok" + quote + triple + "\n" +
+			"y = " + triple + "\n[[fake]]\n" + triple + "\n" +
+			"[b]\nk = 1\n"
+		var parsed map[string]any
+		if err := toml.Unmarshal([]byte(content), &parsed); err != nil {
+			t.Fatalf("fixture must be valid TOML: %v\n%s", err, content)
+		}
+
+		doc := ParseDocument(content)
+
+		if strings.Join(doc.Order, ",") != "a,b" {
+			t.Fatalf("quote %s: Order = %v, want [a b]\n%s", quote, doc.Order, content)
+		}
+		if len(doc.Arrays) != 0 {
+			t.Fatalf("quote %s: header inside later string became an array table: %#v", quote, doc.Arrays)
+		}
+	}
+}
+
+func TestMultilineValueEndIndex_ArrayWithStringEndingInQuotes(t *testing.T) {
+	t.Parallel()
+	lines := []string{
+		`x = [ """say "ok""""`,
+		`, """`,
+		`]`,
+		`""" ]`,
+		`next = 1`,
+	}
+	if got := MultilineValueEndIndex(lines, 0); got != 3 {
+		t.Fatalf("MultilineValueEndIndex = %d, want 3", got)
+	}
+}
+
 func TestMutationHelpers_FallbackBranches(t *testing.T) {
 	t.Parallel()
 	block := &Block{Name: "root", Lines: []string{"[root]", "enabled = true"}}

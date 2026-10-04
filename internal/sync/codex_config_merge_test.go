@@ -325,6 +325,39 @@ x = 1
 	}
 }
 
+// A multiline string may end with one or two quotes before its delimiter. The
+// namespace scan must still see the later string's body as content and remove
+// the stale mcp_servers table.
+func TestCodexTomlEditor_RemoveNamespaceAfterStringEndingInQuotes(t *testing.T) {
+	t.Parallel()
+	editor := newCodexTomlEditor(`developer_instructions = """Always end with "Done.""""
+
+[profiles.review]
+model_instructions = """
+[mcp_servers.example]
+"""
+
+[mcp_servers.old]
+command = "old-tool"
+`)
+
+	editor.removeNamespace([]string{config.CodexMCPServersKey})
+	out := editor.render()
+
+	if strings.Contains(out, "old-tool") {
+		t.Fatalf("expected stale mcp_servers table removed, got:\n%s", out)
+	}
+	parsed := parseCodexConfig(t, out)
+	if got := parsed["developer_instructions"]; got != `Always end with "Done."` {
+		t.Fatalf("developer_instructions = %q, want trailing quote preserved\n%s", got, out)
+	}
+	profiles, _ := parsed["profiles"].(map[string]any)
+	review, _ := profiles["review"].(map[string]any)
+	if got, _ := review["model_instructions"].(string); !strings.Contains(got, "[mcp_servers.example]") {
+		t.Fatalf("expected later multiline string body preserved, got %#v\n%s", review, out)
+	}
+}
+
 // firstTableIndex picks where root scalars are inserted; it must skip header-
 // looking lines inside a leading multiline string so the value lands at root.
 func TestCodexTomlEditor_RootInsertSkipsMultilineStringHeaders(t *testing.T) {
