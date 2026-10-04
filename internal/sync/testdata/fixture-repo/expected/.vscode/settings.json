@@ -4,8 +4,8 @@
   // and .agent-layer/commands.allow, then re-run `al sync`.
   //
   "chat.tools.terminal.autoApprove": {
-    "/^git status(\\s.*)?$/": true,
-    "/^ls(\\s.*)?$/": true
+    "/^git status([ \\t].*)?$/": true,
+    "/^ls([ \\t].*)?$/": true
   },
   "chat.agentSkillsLocations": {
     ".agents/skills": true,

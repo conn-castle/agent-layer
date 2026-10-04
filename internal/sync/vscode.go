@@ -123,12 +123,12 @@ func buildVSCodeAgentSkillsLocations() OrderedMap[bool] {
 }
 
 // formatVSCodeAutoApprovePattern builds a VS Code regex literal string for a command.
-// The pattern matches the command alone or followed by whitespace and arguments,
+// The pattern matches the command alone or followed by a space or tab and arguments,
 // so `git` does not approve `git-filter-repo` and `go test ./...` still approves added flags.
 // Args: cmd is the allowed command string.
-// Returns: a regex literal string like `/^<escaped>(\s.*)?$/` safe for JSONC.
+// Returns: a regex literal string like `/^<escaped>([ \t].*)?$/` safe for JSONC.
 func formatVSCodeAutoApprovePattern(cmd string) string {
 	escaped := regexp.QuoteMeta(cmd)
 	escaped = strings.ReplaceAll(escaped, "/", "\\/")
-	return fmt.Sprintf("/^%s(\\s.*)?$/", escaped)
+	return fmt.Sprintf("/^%s([ \\t].*)?$/", escaped)
 }

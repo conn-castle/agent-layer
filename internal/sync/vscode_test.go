@@ -81,7 +81,7 @@ func TestBuildVSCodeSettingsEscapesSlash(t *testing.T) {
 		t.Fatalf("buildVSCodeSettings error: %v", err)
 	}
 
-	expected := "/^scripts\\/dev\\.sh(\\s.*)?$/"
+	expected := "/^scripts\\/dev\\.sh([ \\t].*)?$/"
 	if _, ok := settings.ChatToolsTerminalAutoApprove[expected]; !ok {
 		t.Fatalf("expected escaped pattern %q", expected)
 	}
@@ -96,12 +96,21 @@ func TestFormatVSCodeAutoApprovePatternMatchesCommandPrefix(t *testing.T) {
 	}{
 		{entry: "git", command: "git", want: true},
 		{entry: "git", command: "git log --oneline", want: true},
+		{entry: "git", command: "git\tlog --oneline", want: true},
+		{entry: "git", command: "git \tlog --oneline", want: true},
+		{entry: "git", command: "git\nrm -rf /", want: false},
+		{entry: "git", command: "git\r\nrm -rf /", want: false},
+		{entry: "git", command: "git\rrm -rf /", want: false},
+		{entry: "git", command: "git\frm -rf /", want: false},
+		{entry: "git", command: "git\vrm -rf /", want: false},
 		{entry: "git", command: "git-filter-repo --force", want: false},
 		{entry: "node", command: "node-gyp rebuild", want: false},
 		{entry: "make", command: "make.sh", want: false},
 		{entry: "git status", command: "git status --short", want: true},
 		{entry: "git status", command: "git status-all", want: false},
 		{entry: "go test ./...", command: "go test ./... -run TestFoo", want: true},
+		{entry: "go test ./...", command: "go test ./...\t-run TestFoo", want: true},
+		{entry: "go test ./...", command: "go test ./...\nrm -rf /", want: false},
 		{entry: "scripts/dev.sh", command: "scripts/dev.sh --watch", want: true},
 	}
 	for _, tt := range tests {
@@ -339,7 +348,7 @@ func TestWriteVSCodeSettingsReplacesManagedBlock(t *testing.T) {
 	if strings.Contains(updated, "/^old(\\\\b.*)?$/") {
 		t.Fatalf("expected old managed entry to be replaced")
 	}
-	if !strings.Contains(updated, "/^git status(\\\\s.*)?$/") {
+	if !strings.Contains(updated, "/^git status([ \\\\t].*)?$/") {
 		t.Fatalf("expected new managed entry to be present")
 	}
 	if !strings.Contains(updated, "},\n  // <<< agent-layer") {
