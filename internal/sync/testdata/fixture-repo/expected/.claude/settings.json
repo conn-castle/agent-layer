@@ -1,4 +1,17 @@
 {
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "exec al hook herdr claude '__CANONICAL_REPO_ROOT__' # agent-layer-herdr",
+            "timeout": 35,
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Bash(git status:*)",

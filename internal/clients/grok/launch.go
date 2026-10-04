@@ -11,6 +11,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/herdr"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/run"
@@ -110,6 +111,11 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	}
 	if err := EnsureHome(cfg.Root); err != nil {
 		return err
+	}
+	if runInfo != nil {
+		if err := herdr.CaptureLaunch(cfg.Root, runInfo.Dir, env, "grok"); err != nil {
+			return fmt.Errorf("prepare Grok HerdR recovery: %w", err)
+		}
 	}
 	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Grok, os.Stderr)
 

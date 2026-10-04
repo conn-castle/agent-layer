@@ -7,6 +7,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/herdr"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/run"
 )
@@ -47,7 +48,7 @@ func BaseArgs(root string, cfg config.Config) []string {
 }
 
 // Launch replaces the current process with Muse Code for the project.
-func Launch(project *config.ProjectConfig, _ *run.Info, env []string, passArgs []string) error {
+func Launch(project *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
 	path, err := exec.LookPath(ExecutableName)
 	if err != nil {
 		return fmt.Errorf(messages.ClientsExecLookupErrorFmt, ExecutableName, err)
@@ -55,6 +56,13 @@ func Launch(project *config.ProjectConfig, _ *run.Info, env []string, passArgs [
 	args := BaseArgs(project.Root, project.Config)
 	args = clients.MergeArgs(args, passArgs, nil,
 		[]string{flagWorkspace, flagModel, flagReasoningEffort, flagApprovalMode, flagApprovalJudge})
+	if runInfo != nil {
+		// The sanitised native hooks need the pane and source identity. Recovery
+		// reruns canonical project configuration; it never replays launch flags.
+		if err := herdr.CaptureLaunch(project.Root, runInfo.Dir, env, "muse"); err != nil {
+			return fmt.Errorf("prepare Muse HerdR recovery: %w", err)
+		}
+	}
 	if err := execFunc(path, append([]string{ExecutableName}, args...), env); err != nil {
 		return fmt.Errorf(messages.ClientsExecHandoffErrorFmt, ExecutableName, err)
 	}

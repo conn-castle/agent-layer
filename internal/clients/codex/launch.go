@@ -9,6 +9,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/herdr"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/run"
 )
@@ -20,6 +21,11 @@ var execFunc = clients.ExecHandoff
 func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
 	args := append([]string{}, passArgs...)
 
+	if runInfo != nil {
+		if err := herdr.CaptureLaunch(cfg.Root, runInfo.Dir, env, "codex"); err != nil {
+			return fmt.Errorf("prepare Codex HerdR recovery: %w", err)
+		}
+	}
 	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Codex, os.Stderr)
 
 	path, err := exec.LookPath("codex")

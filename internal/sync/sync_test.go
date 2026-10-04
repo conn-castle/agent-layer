@@ -12,6 +12,8 @@ import (
 const generatedMarkerFixture = "<!--\n  GENERATED FILE\n  Source: .agent-layer/skills/alpha/SKILL.md\n  Regenerate: al sync\n-->\n"
 
 func TestRunGolden(t *testing.T) {
+	t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", "")
+	t.Setenv("AL_DEV_EXECUTABLE", "")
 	fixtureRoot := filepath.Join("testdata", "fixture-repo")
 	root := t.TempDir()
 	if err := copyFixtureRepo(fixtureRoot, root); err != nil {
@@ -94,6 +96,8 @@ func TestRunGolden(t *testing.T) {
 }
 
 func TestRunPreservesUnchangedClientConfigurationFiles(t *testing.T) {
+	t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", "")
+	t.Setenv("AL_DEV_EXECUTABLE", "")
 	fixtureRoot := filepath.Join("testdata", "fixture-repo")
 	root := t.TempDir()
 	if err := copyFixtureRepo(fixtureRoot, root); err != nil {

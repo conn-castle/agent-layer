@@ -25,17 +25,17 @@ var codexManagedRootScalarKeys = []string{
 }
 
 const (
-	codexStopKey            = "Stop"
-	codexHooksStopPath      = "hooks.Stop"
-	codexHooksStopHooksPath = "hooks.Stop.hooks"
-	codexTUIKey             = "tui"
+	codexStopKey = "Stop"
+	codexTUIKey  = "tui"
 )
 
 type codexManagedConfig struct {
 	Content       string
 	TrustedRoot   string
+	ProjectRoot   string
 	AgentSpecific map[string]any
 	ChimeEnabled  bool
+	HerdREnabled  bool
 }
 
 type codexTomlEditor struct {
@@ -152,7 +152,17 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 	if err := editor.appendMissingProjects(path, existingMap, managedMap); err != nil {
 		return "", err
 	}
+	if managed.HerdREnabled {
+		// Expand before the chime block is appended so user SessionStart groups
+		// keep a stable position ahead of both managed hook blocks.
+		if err := editor.expandCodexHookAssignment(path, "SessionStart"); err != nil {
+			return "", err
+		}
+	}
 	if _, err := editor.applyCodexChimeHook(path, managed.ChimeEnabled); err != nil {
+		return "", err
+	}
+	if _, err := editor.applyCodexHerdRHook(path, managed.HerdREnabled, managed.ProjectRoot); err != nil {
 		return "", err
 	}
 	if fragment := extractNamespaceLines(managed.Content, []string{config.CodexMCPServersKey}); len(fragment) > 0 {
@@ -204,6 +214,11 @@ func cleanCodexChimeHook(sys System, root string) error {
 	changed, err := editor.applyCodexChimeHook(path, false)
 	if err != nil {
 		return err
+	}
+	if herdRChanged, herdRErr := editor.applyCodexHerdRHook(path, false); herdRErr != nil {
+		return herdRErr
+	} else {
+		changed = changed || herdRChanged
 	}
 	if !changed {
 		return nil
@@ -424,7 +439,7 @@ func (e *codexTomlEditor) applyCodexChimeHook(path string, enabled bool) (bool, 
 	if !enabled {
 		return changed, nil
 	}
-	if err := e.expandCodexStopAssignment(path); err != nil {
+	if err := e.expandCodexHookAssignment(path, codexStopKey); err != nil {
 		return false, err
 	}
 	if e.rootInlineTableExists(hooksKey) {
@@ -436,14 +451,16 @@ func (e *codexTomlEditor) applyCodexChimeHook(path string, enabled bool) (bool, 
 	return true, nil
 }
 
-// expandCodexStopAssignment converts an existing hooks.Stop assignment into
-// array-table blocks so the managed chime block can be appended without
-// creating a duplicate TOML path.
-func (e *codexTomlEditor) expandCodexStopAssignment(path string) error {
+// expandCodexHookAssignment converts an existing hooks.<event> assignment into
+// array-table blocks so a managed hook block can be appended without creating a
+// duplicate TOML path.
+func (e *codexTomlEditor) expandCodexHookAssignment(path string, event string) error {
+	eventPath := hooksKey + "." + event
+	eventHooksPath := eventPath + "." + hooksKey
 	var assignment assignmentInfo
 	var found bool
 	e.walkAssignments(func(info assignmentInfo) {
-		if slices.Equal(info.fullPath, []string{hooksKey, codexStopKey}) {
+		if slices.Equal(info.fullPath, []string{hooksKey, event}) {
 			assignment = info
 			found = true
 		}
@@ -459,15 +476,15 @@ func (e *codexTomlEditor) expandCodexStopAssignment(path string) error {
 	value, _ := valueAtPath(parsed, assignment.keyPath)
 	entries, ok := value.([]any)
 	if !ok {
-		return fmt.Errorf(messages.SyncCodexExistingConfigShapeConflictFmt, path, codexHooksStopPath)
+		return fmt.Errorf(messages.SyncCodexExistingConfigShapeConflictFmt, path, eventPath)
 	}
 	var lines []string
 	for _, entry := range entries {
 		entryMap, ok := entry.(map[string]any)
 		if !ok {
-			return fmt.Errorf(messages.SyncCodexExistingConfigShapeConflictFmt, path, codexHooksStopPath)
+			return fmt.Errorf(messages.SyncCodexExistingConfigShapeConflictFmt, path, eventPath)
 		}
-		lines = append(lines, "[["+codexHooksStopPath+"]]")
+		lines = append(lines, "[["+eventPath+"]]")
 		entryKeys := make([]string, 0, len(entryMap))
 		for key := range entryMap {
 			if key != hooksKey {
@@ -481,7 +498,7 @@ func (e *codexTomlEditor) expandCodexStopAssignment(path string) error {
 		if hooksValue, ok := entryMap[hooksKey]; ok {
 			hooks, ok := hooksValue.([]any)
 			if !ok {
-				return fmt.Errorf(messages.SyncCodexExistingConfigShapeConflictFmt, path, codexHooksStopHooksPath)
+				return fmt.Errorf(messages.SyncCodexExistingConfigShapeConflictFmt, path, eventHooksPath)
 			}
 			if len(hooks) == 0 {
 				lines = append(lines, hooksKey+" = []")
@@ -490,9 +507,9 @@ func (e *codexTomlEditor) expandCodexStopAssignment(path string) error {
 			for _, hook := range hooks {
 				hookMap, ok := hook.(map[string]any)
 				if !ok {
-					return fmt.Errorf(messages.SyncCodexExistingConfigShapeConflictFmt, path, codexHooksStopHooksPath)
+					return fmt.Errorf(messages.SyncCodexExistingConfigShapeConflictFmt, path, eventHooksPath)
 				}
-				lines = append(lines, "[["+codexHooksStopHooksPath+"]]")
+				lines = append(lines, "[["+eventHooksPath+"]]")
 				hookKeys := make([]string, 0, len(hookMap))
 				for key := range hookMap {
 					hookKeys = append(hookKeys, key)

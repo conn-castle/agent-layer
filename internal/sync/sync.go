@@ -147,11 +147,13 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 			func() error { return writeAntigravitySettings(sys, root, project) },
 			func() error { return writeAntigravityMCPConfig(sys, root, project) },
 			func() error { return writeAntigravityChimePlugin(sys, root, project) },
+			func() error { return writeAgyHerdRHook(sys, root) },
 		)
 	} else {
 		steps = append(steps,
 			func() error { return cleanAntigravityOutputs(sys, root) },
 			func() error { return cleanAntigravityChimePlugin(sys, root) },
+			func() error { return cleanAgyHerdRHook(sys, root) },
 		)
 	}
 
@@ -161,9 +163,12 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 			func() error { return writeGrokTrustedFolders(sys, root) },
 			func() error { return writeGrokHomeClaudeCompat(sys, root) },
 			func() error { return writeGrokChimeHook(sys, root, project) },
+			func() error {
+				return writeProviderHerdRHook(sys, root, "grok", "SessionStart", herdrCommand("grok", root))
+			},
 		)
 	} else {
-		steps = append(steps, func() error { return cleanGrokOutputs(sys, root) })
+		steps = append(steps, func() error { return cleanGrokOutputs(sys, root) }, func() error { return cleanProviderHerdRHook(sys, root, "grok") })
 	}
 
 	// Claude settings fire when claude OR claude_vscode is enabled.
@@ -175,6 +180,7 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 	} else {
 		steps = append(steps,
 			func() error { return cleanClaudeChimeHook(sys, root) },
+			func() error { return cleanClaudeHerdRHook(sys, root) },
 		)
 	}
 

@@ -24,6 +24,22 @@ func TestHookCommandIsHidden(t *testing.T) {
 	if !child.Hidden {
 		t.Fatal("hook chime command must be hidden")
 	}
+	herdr, _, err := root.Find([]string{"hook", "herdr"})
+	if err != nil {
+		t.Fatalf("find hook herdr command: %v", err)
+	}
+	if !herdr.Hidden {
+		t.Fatal("hook HerdR command must be hidden")
+	}
+}
+
+func TestHookHerdRRejectsLifecycleArguments(t *testing.T) {
+	cmd := newHookHerdRCmd()
+	cmd.SetArgs([]string{"copilot", t.TempDir(), "status", "working"})
+	cmd.SetIn(strings.NewReader(`{"hookEventName":"userPromptSubmitted","sessionId":"id"}`))
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("lifecycle arguments must not be accepted")
+	}
 }
 
 func TestHookChimeCommandWiresStreams(t *testing.T) {
@@ -55,5 +71,13 @@ func TestHookChimeCommandPropagatesHandlerErrors(t *testing.T) {
 	cmd.SetIn(strings.NewReader(`{}`))
 	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "unsupported provider") {
 		t.Fatalf("Execute error = %v, want unsupported provider", err)
+	}
+}
+
+func TestHookHerdRRequiresProjectRoot(t *testing.T) {
+	cmd := newHookHerdRCmd()
+	cmd.SetArgs([]string{"muse"})
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("rootless hook must not use ambient pane identity")
 	}
 }

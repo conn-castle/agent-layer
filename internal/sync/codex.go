@@ -165,6 +165,16 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		appendCodexSectionBreak(&builder)
 		appendCodexChimeBlock(&builder)
 	}
+	if config.IsAgentEnabled(project.Config.Agents.Codex.Enabled) {
+		appendCodexSectionBreak(&builder)
+		builder.WriteString(codexHerdRBeginMarker)
+		builder.WriteByte('\n')
+		builder.WriteString("[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\n")
+		builder.WriteString(`type = "command"` + "\n")
+		fmt.Fprintf(&builder, "command = %q\n", herdrCommand("codex", root))
+		fmt.Fprintf(&builder, "timeout = %d\n", herdrTimeout)
+		builder.WriteString(codexHerdREndMarker + "\n")
+	}
 
 	placeholderEnv := project.PlaceholderEnv()
 	var resolved []projection.ResolvedMCPServer
@@ -220,8 +230,10 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 	return codexManagedConfig{
 		Content:       builder.String(),
 		TrustedRoot:   trustedRoot,
+		ProjectRoot:   root,
 		AgentSpecific: agentSpecific,
 		ChimeEnabled:  chimeEnabled,
+		HerdREnabled:  config.IsAgentEnabled(project.Config.Agents.Codex.Enabled),
 	}, nil
 }
 

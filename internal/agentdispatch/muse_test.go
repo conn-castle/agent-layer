@@ -356,6 +356,19 @@ func TestMuseDispatchPreStartFailureRemovesStagedPrompt(t *testing.T) {
 	if _, err := os.Stat(promptPath); !os.IsNotExist(err) {
 		t.Fatalf("staged prompt survived: %v", err)
 	}
+	entries, err := os.ReadDir(run.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundBoundary := false
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "herdr-dispatch-boundary-") {
+			foundBoundary = true
+		}
+	}
+	if !foundBoundary {
+		t.Fatal("dispatch worker did not create a HerdR ancestry boundary before starting the provider")
+	}
 }
 
 func TestMuseObserverReadinessTimeout(t *testing.T) {

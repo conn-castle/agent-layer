@@ -15,6 +15,14 @@ status_line = ['model-with-reasoning', 'context-used', 'weekly-limit', 'thread-i
 [projects."__CANONICAL_REPO_ROOT__"]
 trust_level = "trusted"
 
+# BEGIN Agent Layer-managed HerdR recovery hook.
+[[hooks.SessionStart]]
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "exec al hook herdr codex '__CANONICAL_REPO_ROOT__' # agent-layer-herdr"
+timeout = 35
+# END Agent Layer-managed HerdR recovery hook.
+
 [mcp_servers."agent-layer"]
 command = "/bin/sh"
 args = ["-c", "AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd \"$1\" || exit; if [ -n \"$AL_DEV_BYPASS_VERSION_DISPATCH\" ] && [ -n \"$AL_DEV_EXECUTABLE\" ]; then exec \"$AL_DEV_EXECUTABLE\" dispatch mcp-server; else exec al dispatch mcp-server; fi", "agent-layer-mcp", "__REPO_ROOT__"]
