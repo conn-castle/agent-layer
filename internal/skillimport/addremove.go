@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
@@ -97,7 +96,7 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 		blockIndex = existingIndex
 	}
 
-	txn := newTransaction(pathSetFor(st), st.lock)
+	txn := s.newTransaction(pathSetFor(st), st.lock)
 	txn.SetConfig(nextConfig)
 
 	runner, err := s.newRunner(st.env)
@@ -161,9 +160,10 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 	}
 
 	if report.Failed() {
-		return fmt.Errorf("no local state was changed: %s", strings.TrimSpace(report.Render("al skills add")))
+		return abortUnapplied(report)
 	}
 	if err := txn.Commit(); err != nil {
+		report.discardUnapplied()
 		return err
 	}
 	s.project(report)
@@ -218,7 +218,7 @@ func (s *Service) removeLocked(ctx context.Context, st *state, repository string
 		return err
 	}
 
-	txn := newTransaction(pathSetFor(st), st.lock)
+	txn := s.newTransaction(pathSetFor(st), st.lock)
 	txn.SetConfig(nextConfig)
 	lockedEntries := st.entriesForBlock(block)
 
@@ -227,9 +227,10 @@ func (s *Service) removeLocked(ctx context.Context, st *state, repository string
 			retire(st, txn, entry, report)
 		}
 		if report.Failed() {
-			return fmt.Errorf("no local state was changed: %s", strings.TrimSpace(report.Render("al skills remove")))
+			return abortUnapplied(report)
 		}
 		if err := txn.Commit(); err != nil {
+			report.discardUnapplied()
 			return err
 		}
 		s.project(report)
@@ -294,13 +295,22 @@ func (s *Service) removeLocked(ctx context.Context, st *state, repository string
 	}
 
 	if report.Failed() {
-		return fmt.Errorf("no local state was changed: %s", strings.TrimSpace(report.Render("al skills remove")))
+		return abortUnapplied(report)
 	}
 	if err := txn.Commit(); err != nil {
+		report.discardUnapplied()
 		return err
 	}
 	s.project(report)
 	return nil
+}
+
+// abortUnapplied ends an add or remove whose preflight found skill failures.
+// Nothing was written, so the report keeps only the failures, and the error
+// stays short because the caller prints that report.
+func abortUnapplied(report *Report) error {
+	report.discardUnapplied()
+	return fmt.Errorf("no local state was changed because %d skill(s) failed", len(report.Skills))
 }
 
 // findBlockByIdentity returns the configured block with a policy identity.
