@@ -1055,6 +1055,40 @@ func TestGrokRunnerReadsStreamingJSONThroughEOF(t *testing.T) {
 	}
 }
 
+func TestRunnerThrottlesProgressRecordWritesForTokenStreams(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentGrok, clientgrok.SupportedVersion, dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	startRevision := run.Record.Revision
+	const chunks = 5000
+	fixture := strings.Repeat(`{"type":"text","data":"x"}`+"\n", chunks) +
+		`{"type":"end","sessionId":"` + runtimeSessionID + `","stopReason":"end_turn"}` + "\n"
+	fixturePath := filepath.Join(t.TempDir(), "stream.jsonl")
+	if err := os.WriteFile(fixturePath, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := executeProvider(providerCommand{
+		Path:      "/bin/sh",
+		Args:      []string{"-c", `cat "$1"`, "sh", fixturePath},
+		Env:       os.Environ(),
+		Provider:  AgentGrok,
+		SessionID: runtimeSessionID,
+	}, []byte("prompt"), run, root, nil, func(string) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Complete || result.Answer != strings.Repeat("x", chunks) {
+		t.Fatalf("complete = %v, answer length = %d", result.Complete, len(result.Answer))
+	}
+	// A record write per token stalled this stream past providerShutdownGrace;
+	// a bounded count proves progress writes are throttled without timing them.
+	if writes := run.Record.Revision - startRevision; writes > 50 {
+		t.Fatalf("run record written %d times for %d progress events", writes, chunks)
+	}
+}
+
 func TestAntigravitySuccessfulTerminalReturnsRealisticFinalAnswer(t *testing.T) {
 	stream, err := os.ReadFile(filepath.Join("testdata", "antigravity", "v1.1.21-success.jsonl"))
 	if err != nil {

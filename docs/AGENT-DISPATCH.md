@@ -295,8 +295,11 @@ before the invocation reaches a terminal state. The CLI waits eight minutes;
 `dispatch_wait` waits `dispatch.mcp_wait_timeout_minutes` (30 by default).
 When available, `last_activity_at` is the UTC timestamp of provider startup or
 the most recent normalized stream event, and `last_output_at` is the UTC
-timestamp of the most recent answer event. These are observations, not a health
-check: absence of new events does not prove a provider has stopped working.
+timestamp of the most recent answer event. While a provider streams only
+progress events, such as text deltas, the recorded `last_activity_at` is
+refreshed at most once per second, so it can trail the latest event by up to a
+second. These are observations, not a health check: absence of new events does
+not prove a provider has stopped working.
 
 `wait` on a completed invocation returns:
 
