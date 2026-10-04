@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -41,6 +42,35 @@ func Names(input string) []string {
 		}
 	}
 	return names
+}
+
+// Redact replaces every occurrence of each resolved value in text with the
+// placeholder text that named it, so a diagnostic that echoes a resolved value
+// shows `${AL_TOKEN}` rather than the secret. placeholders maps a resolved
+// value to its placeholder; empty values are ignored.
+//
+// Longer values are replaced first so a value that contains another cannot be
+// left partly exposed by an earlier replacement.
+func Redact(text string, placeholders map[string]string) string {
+	if text == "" || len(placeholders) == 0 {
+		return text
+	}
+	values := make([]string, 0, len(placeholders))
+	for value := range placeholders {
+		if value != "" {
+			values = append(values, value)
+		}
+	}
+	sort.Slice(values, func(i, j int) bool {
+		if len(values[i]) != len(values[j]) {
+			return len(values[i]) > len(values[j])
+		}
+		return values[i] < values[j]
+	})
+	for _, value := range values {
+		text = strings.ReplaceAll(text, value, placeholders[value])
+	}
+	return text
 }
 
 // IsAgentLayerName reports whether a placeholder name can resolve from
