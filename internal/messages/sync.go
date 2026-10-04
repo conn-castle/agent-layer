@@ -46,6 +46,7 @@ const (
 	SyncCodexStatuslineSourceMissingFmt             = "agents.codex.statusline is true but %s is missing; run `al wizard` to create the source file, run interactive `al upgrade` to review statusline sources, or create the file manually"
 	SyncMarshalAntigravitySettingsFailedFmt         = "failed to marshal antigravity settings: %w"
 	SyncMarshalAntigravityMCPConfigFailedFmt        = "failed to marshal antigravity MCP config: %w"
+	SyncAntigravityHomeEnsureFailedFmt              = "antigravity home directory: %w"
 	SyncMarshalCopilotMCPConfigFailedFmt            = "failed to marshal copilot mcp config: %w"
 	SyncInvalidVSCodeSettingsFmt                    = "invalid vscode settings %s: %w"
 	SyncReadTemplateFailedFmt                       = "failed to read template %s: %w"

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
@@ -59,6 +60,9 @@ func writeAntigravitySettings(sys System, root string, project *config.ProjectCo
 		return fmt.Errorf(messages.SyncMarshalAntigravitySettingsFailedFmt, err)
 	}
 	data = append(data, '\n')
+	if err := ensureAntigravityHome(root); err != nil {
+		return err
+	}
 	if err := sys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, filepath.Dir(path), err)
 	}
@@ -224,11 +228,25 @@ func writeAntigravityMCPConfig(sys System, root string, project *config.ProjectC
 	if err := ensureAntigravityPathRealParentContained(root, path); err != nil {
 		return err
 	}
+	if err := ensureAntigravityHome(root); err != nil {
+		return err
+	}
 	if err := sys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, filepath.Dir(path), err)
 	}
 	if err := sys.WriteFileAtomic(path, data, 0o644); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
+	}
+	return nil
+}
+
+// ensureAntigravityHome creates or tightens the repo-local --gemini_dir to
+// owner-only permissions before sync creates anything beneath it, because agy
+// keeps auth, logs, and conversation state there and MkdirAll never tightens
+// an existing directory.
+func ensureAntigravityHome(root string) error {
+	if err := fsutil.EnsurePrivateDir(filepath.Join(root, ".agy")); err != nil {
+		return fmt.Errorf(messages.SyncAntigravityHomeEnsureFailedFmt, err)
 	}
 	return nil
 }

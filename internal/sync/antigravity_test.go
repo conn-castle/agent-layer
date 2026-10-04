@@ -712,6 +712,57 @@ func TestWriteAntigravityMCPConfigRejectsEscapedDirectMigratedParent(t *testing.
 	}
 }
 
+func TestWriteAntigravityOutputsKeepAgyOwnerOnly(t *testing.T) {
+	t.Parallel()
+	writers := map[string]func(System, string, *config.ProjectConfig) error{
+		"settings":   writeAntigravitySettings,
+		"mcp config": writeAntigravityMCPConfig,
+	}
+	for name, write := range writers {
+		t.Run(name+" creates owner-only home", func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			if err := write(RealSystem{}, root, &config.ProjectConfig{}); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			assertAgyMode(t, root)
+		})
+		t.Run(name+" tightens existing home", func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			agy := filepath.Join(root, ".agy")
+			if err := os.Mkdir(agy, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(agy, 0o755); err != nil { // #nosec G302 -- fixture starts too open so production can tighten it.
+				t.Fatal(err)
+			}
+			native := filepath.Join(agy, "antigravity-oauth-token")
+			if err := os.WriteFile(native, []byte("token"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := write(RealSystem{}, root, &config.ProjectConfig{}); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			assertAgyMode(t, root)
+			if got := readFileForTest(t, native); got != "token" {
+				t.Fatalf("native agy state changed: %q", got)
+			}
+		})
+	}
+}
+
+func assertAgyMode(t *testing.T, root string) {
+	t.Helper()
+	info, err := os.Lstat(filepath.Join(root, ".agy"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf(".agy mode = %04o, want 0700", got)
+	}
+}
+
 func TestWriteAntigravitySettingsRejectsEscapedAgyRoot(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
