@@ -322,7 +322,7 @@ func agentSummaryLines(c *Choices) []string {
 		if !c.EnabledAgents[agent] {
 			continue
 		}
-		modelSummary := agentModelSummary(agent, c)
+		modelSummary := agentModelSummary(c.AgentModels[agent])
 		if modelSummary == "" {
 			agents = append(agents, fmt.Sprintf(messages.WizardSummaryAgentFmt, agent))
 			continue
@@ -332,77 +332,16 @@ func agentSummaryLines(c *Choices) []string {
 	return agents
 }
 
-// agentModelSummary returns the model summary for a given agent.
-// agent identifies the agent; c holds wizard choices; returns summary text.
-func agentModelSummary(agent string, c *Choices) string {
-	switch agent {
-	case AgentAntigravity:
-		return c.AntigravityModel
-	case AgentClaude:
-		return claudeModelSummary(c)
-	case AgentCodex:
-		return codexModelSummary(c)
-	case AgentCopilotCLI:
-		return c.CopilotCLIModel
-	case AgentGrok:
-		return grokModelSummary(c)
-	case AgentMuse:
-		return museModelSummary(c)
-	default:
-		return ""
+// agentModelSummary returns the combined model and reasoning summary.
+func agentModelSummary(choice AgentModelChoice) string {
+	if choice.Model != "" && choice.Reasoning != "" {
+		return fmt.Sprintf(messages.WizardSummaryModelReasoningFmt, choice.Model, choice.Reasoning)
 	}
-}
-
-func museModelSummary(c *Choices) string {
-	if c.MuseModel != "" && c.MuseReasoning != "" {
-		return fmt.Sprintf(messages.WizardSummaryModelReasoningFmt, c.MuseModel, c.MuseReasoning)
+	if choice.Model != "" {
+		return choice.Model
 	}
-	if c.MuseModel != "" {
-		return c.MuseModel
-	}
-	if c.MuseReasoning != "" {
-		return fmt.Sprintf(messages.WizardSummaryReasoningFmt, c.MuseReasoning)
-	}
-	return ""
-}
-
-func grokModelSummary(c *Choices) string {
-	if c.GrokModel != "" && c.GrokReasoning != "" {
-		return fmt.Sprintf(messages.WizardSummaryModelReasoningFmt, c.GrokModel, c.GrokReasoning)
-	}
-	if c.GrokModel != "" {
-		return c.GrokModel
-	}
-	if c.GrokReasoning != "" {
-		return fmt.Sprintf(messages.WizardSummaryReasoningFmt, c.GrokReasoning)
-	}
-	return ""
-}
-
-func claudeModelSummary(c *Choices) string {
-	if c.ClaudeModel != "" && c.ClaudeReasoning != "" {
-		return fmt.Sprintf(messages.WizardSummaryModelReasoningFmt, c.ClaudeModel, c.ClaudeReasoning)
-	}
-	if c.ClaudeModel != "" {
-		return c.ClaudeModel
-	}
-	if c.ClaudeReasoning != "" {
-		return fmt.Sprintf(messages.WizardSummaryReasoningFmt, c.ClaudeReasoning)
-	}
-	return ""
-}
-
-// codexModelSummary returns the combined Codex model and reasoning summary.
-// c holds wizard choices; returns the summary text.
-func codexModelSummary(c *Choices) string {
-	if c.CodexModel != "" && c.CodexReasoning != "" {
-		return fmt.Sprintf(messages.WizardSummaryModelReasoningFmt, c.CodexModel, c.CodexReasoning)
-	}
-	if c.CodexModel != "" {
-		return c.CodexModel
-	}
-	if c.CodexReasoning != "" {
-		return fmt.Sprintf(messages.WizardSummaryReasoningFmt, c.CodexReasoning)
+	if choice.Reasoning != "" {
+		return fmt.Sprintf(messages.WizardSummaryReasoningFmt, choice.Reasoning)
 	}
 	return ""
 }

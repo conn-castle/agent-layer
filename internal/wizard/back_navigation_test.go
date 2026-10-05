@@ -254,7 +254,7 @@ func TestPromptWizardFlow_ClaudeReasoningPromptedForNonOpusModel(t *testing.T) {
 func TestPromptWizardFlow_ClaudeReasoningPreservedWhenSwitchingToNonOpusModel(t *testing.T) {
 	choices := NewChoices()
 	choices.ApprovalMode = config.ApprovalModeAll
-	choices.ClaudeReasoning = "high" // existing value from previous wizard run
+	choices.AgentModels[AgentClaude] = AgentModelChoice{Reasoning: "high"} // existing value from previous wizard run
 
 	allLabel, ok := approvalModeLabelForValue(config.ApprovalModeAll)
 	require.True(t, ok)
@@ -293,8 +293,8 @@ func TestPromptWizardFlow_ClaudeReasoningPreservedWhenSwitchingToNonOpusModel(t 
 
 	err := promptWizardFlow(t.TempDir(), ui, choices)
 	require.NoError(t, err)
-	require.Equal(t, "high", choices.ClaudeReasoning, "reasoning should be preserved when switching to a non-opus model")
-	require.True(t, choices.ClaudeReasoningTouched, "reasoning touched flag should be set after the prompt")
+	require.Equal(t, "high", choices.AgentModels[AgentClaude].Reasoning, "reasoning should be preserved when switching to a non-opus model")
+	require.True(t, choices.AgentModels[AgentClaude].ReasoningTouched, "reasoning touched flag should be set after the prompt")
 }
 
 func TestPromptWizardFlow_ClaudeReasoningPromptedForOpusModel(t *testing.T) {
@@ -391,10 +391,10 @@ func TestPromptWizardFlow_BackFromModelsRollsBackPartialModelState(t *testing.T)
 	err := promptWizardFlow(t.TempDir(), ui, choices)
 	require.NoError(t, err)
 	require.Equal(t, 2, agentCalls, "expected back from models to revisit agent selection")
-	require.Equal(t, "", choices.CodexModel)
-	require.False(t, choices.CodexModelTouched)
-	require.Equal(t, "", choices.CodexReasoning)
-	require.False(t, choices.CodexReasoningTouched)
+	require.Equal(t, "", choices.AgentModels[AgentCodex].Model)
+	require.False(t, choices.AgentModels[AgentCodex].ModelTouched)
+	require.Equal(t, "", choices.AgentModels[AgentCodex].Reasoning)
+	require.False(t, choices.AgentModels[AgentCodex].ReasoningTouched)
 }
 
 func TestPromptWizardFlow_DisablingCodexClearsAppsChoiceAfterBackNavigation(t *testing.T) {

@@ -224,6 +224,22 @@ func selectSectionBlock(current *tomlpatch.Block, template *tomlpatch.Block) *to
 	return template
 }
 
+// applyAgentModelUpdates writes the touched model and reasoning_effort keys for
+// one agent section. reasoning_effort is anchored after model, or after enabled
+// when the block has no model line.
+func applyAgentModelUpdates(block, templateBlock *tomlpatch.Block, choice AgentModelChoice) {
+	if choice.ModelTouched {
+		setOptionalKeyValue(block, templateBlock, modelKey, choice.Model, enabledKey)
+	}
+	if choice.ReasoningTouched {
+		anchor := modelKey
+		if _, ok := tomlpatch.FindKeyLine(block.Lines, anchor); !ok {
+			anchor = enabledKey
+		}
+		setOptionalKeyValue(block, templateBlock, "reasoning_effort", choice.Reasoning, anchor)
+	}
+}
+
 // applySectionUpdates mutates the block in place based on wizard choices.
 // name identifies the section; templateBlock provides canonical formatting for inserted keys.
 func applySectionUpdates(name string, block *tomlpatch.Block, templateBlock *tomlpatch.Block, choices *Choices) {
@@ -236,19 +252,14 @@ func applySectionUpdates(name string, block *tomlpatch.Block, templateBlock *tom
 		if choices.EnabledAgentsTouched {
 			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentAntigravity]), "")
 		}
-		if choices.AntigravityModelTouched && (!choices.EnabledAgentsTouched || choices.EnabledAgents[AgentAntigravity]) {
-			setOptionalKeyValue(block, templateBlock, "model", choices.AntigravityModel, "enabled")
+		if !choices.EnabledAgentsTouched || choices.EnabledAgents[AgentAntigravity] {
+			applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentAntigravity])
 		}
 	case claudeSection:
 		if choices.EnabledAgentsTouched {
 			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentClaude]), "")
 		}
-		if choices.ClaudeModelTouched {
-			setOptionalKeyValue(block, templateBlock, "model", choices.ClaudeModel, "enabled")
-		}
-		if choices.ClaudeReasoningTouched {
-			setOptionalKeyValue(block, templateBlock, "reasoning_effort", choices.ClaudeReasoning, "model")
-		}
+		applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentClaude])
 		if choices.ClaudeLocalConfigDirTouched {
 			if choices.ClaudeLocalConfigDir {
 				tomlpatch.SetKeyValue(block, templateBlock, "local_config_dir", tomlpatch.FormatValue(true), "model")
@@ -274,12 +285,7 @@ func applySectionUpdates(name string, block *tomlpatch.Block, templateBlock *tom
 		if choices.EnabledAgentsTouched {
 			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentCodex]), "")
 		}
-		if choices.CodexModelTouched {
-			setOptionalKeyValue(block, templateBlock, "model", choices.CodexModel, "enabled")
-		}
-		if choices.CodexReasoningTouched {
-			setOptionalKeyValue(block, templateBlock, "reasoning_effort", choices.CodexReasoning, "model")
-		}
+		applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentCodex])
 		if choices.CodexLocalConfigDirTouched {
 			if choices.CodexLocalConfigDir {
 				tomlpatch.SetKeyValue(block, templateBlock, "local_config_dir", tomlpatch.FormatValue(true), "reasoning_effort")
@@ -306,23 +312,12 @@ func applySectionUpdates(name string, block *tomlpatch.Block, templateBlock *tom
 		if choices.EnabledAgentsTouched {
 			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentCopilotCLI]), "")
 		}
-		if choices.CopilotCLIModelTouched {
-			setOptionalKeyValue(block, templateBlock, "model", choices.CopilotCLIModel, "enabled")
-		}
+		applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentCopilotCLI])
 	case "agents.grok":
 		if choices.EnabledAgentsTouched {
 			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentGrok]), "")
 		}
-		if choices.GrokModelTouched {
-			setOptionalKeyValue(block, templateBlock, "model", choices.GrokModel, "enabled")
-		}
-		if choices.GrokReasoningTouched {
-			anchor := "model"
-			if _, ok := tomlpatch.FindKeyLine(block.Lines, "model"); !ok {
-				anchor = "enabled"
-			}
-			setOptionalKeyValue(block, templateBlock, "reasoning_effort", choices.GrokReasoning, anchor)
-		}
+		applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentGrok])
 		if choices.GrokDisableMemoryTouched {
 			anchor := "reasoning_effort"
 			if _, ok := tomlpatch.FindKeyLine(block.Lines, anchor); !ok {
@@ -341,16 +336,7 @@ func applySectionUpdates(name string, block *tomlpatch.Block, templateBlock *tom
 		if choices.EnabledAgentsTouched {
 			tomlpatch.SetKeyValue(block, templateBlock, enabledKey, tomlpatch.FormatValue(choices.EnabledAgents[AgentMuse]), "")
 		}
-		if choices.MuseModelTouched {
-			setOptionalKeyValue(block, templateBlock, modelKey, choices.MuseModel, enabledKey)
-		}
-		if choices.MuseReasoningTouched {
-			anchor := modelKey
-			if _, ok := tomlpatch.FindKeyLine(block.Lines, anchor); !ok {
-				anchor = enabledKey
-			}
-			setOptionalKeyValue(block, templateBlock, "reasoning_effort", choices.MuseReasoning, anchor)
-		}
+		applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentMuse])
 	case warningsSection:
 		if choices.WarningsEnabledTouched && choices.WarningsEnabled {
 			tomlpatch.SetKeyValue(block, templateBlock, "instruction_token_threshold", tomlpatch.FormatValue(choices.InstructionTokenThreshold), "")
