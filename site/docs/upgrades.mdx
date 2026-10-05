@@ -181,7 +181,7 @@ How to access older docs:
 
 ### Upgrade baseline and manifest policy
 
-Upgrade planning uses offline evidence and does not call GitHub/tag APIs:
+Baseline evidence validation and migration source-version detection use local and embedded evidence without calling GitHub/tag APIs. Target-version resolution is separate: `al upgrade plan --version latest` requests the latest GitHub release, and an explicit `--version` validates that release on GitHub.
 
 - Release manifests are committed in-repo under `internal/templates/manifests/<version>.json`.
 - Backfill manifests are committed for `v0.6.0`, `v0.6.1`, and `v0.7.0`.
@@ -190,7 +190,9 @@ Upgrade planning uses offline evidence and does not call GitHub/tag APIs:
 
 Migration source-version detection checks, in order, the repository pin, the baseline's recorded version, upgrade snapshots, and full-hash matching of local memory files against embedded release manifests. These identify the source release for migration selection.
 
-When a managed file differs from its template, `al upgrade plan` and the `al upgrade` overwrite review also read the evidence recorded for that file (the repo-local baseline, the pinned release manifest, or a legacy docs snapshot) and stop with an error if that evidence is unreadable or malformed. `al upgrade plan` does the same for each file it would remove. A memory file whose section marker is missing or duplicated skips this check.
+When a managed file differs from its template, `al upgrade plan` and the `al upgrade` overwrite review also read the evidence recorded for that file (the repo-local baseline, the pinned release manifest, or a legacy docs snapshot) and stop with an error if that evidence is unreadable or malformed. A memory file whose section marker is missing or duplicated skips baseline evidence reads.
+
+`al upgrade plan` also validates removal candidates. Template orphans are checked before migration coverage, keep-list, and rename filtering, so a candidate can trigger an evidence error even if it would be excluded from the final removal list. Unknown deletion candidates are checked after those exclusions. Directories and other non-regular paths skip baseline evidence reads; legacy `.agent-layer/templates/docs/` files are read but skip baseline evidence validation.
 
 Section-aware memory updates compare each file's managed section with the embedded template; the comparison does not use the baseline. User entries below the section marker are preserved.
 
