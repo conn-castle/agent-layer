@@ -78,7 +78,8 @@ Unless the user narrows the scope, include the entire current working tree.
    - At least one agent or human reviewer has posted feedback as a formal review
      or comment.
    - Every required check and repository gate is green.
-   - Every eligible comment has a validated reply.
+   - Every eligible request has a supported posted reply, including one
+     embedded in an automated approval, review summary, or pre-merge checklist.
    - If the optional repository policy exists, every merge criterion it defines
      is met.
 
@@ -99,15 +100,21 @@ Unless the user narrows the scope, include the entire current working tree.
    reply. Return to step 3 until ready. If only checks or reviews are pending,
    wait for the next watcher event as described in step 2.
 
-5. Stop the watcher and verify it has stopped before returning the single-use
-   merge authorization request for the exact PR and head. Report any substantive
-   findings, a concise comment disposition summary, and readiness evidence.
+5. Rerun the comment command and reconcile a request ledger against its
+   output. List each eligible request with its source link and request text,
+   its disposition and evidence (fixing commit, disagreement evidence, or
+   deferral tracker), and its posted reply link; requests with the same
+   disposition may share a reply that supports each. If any eligible request
+   lacks a supported posted reply, return to step 3 and name those requests to
+   `pr_worker`. Then stop the watcher and verify it has stopped before
+   returning the single-use merge authorization request for the exact PR and
+   head with the ledger, any substantive findings, and readiness evidence.
 
 6. After authorization, refetch the head, checks, mergeability, and comments.
-   Confirm the local tree is complete and every eligible comment has a supported
-   posted reply. If anything changed, restart the watcher as described in step 2,
-   return to step 3, and obtain new authorization for the resulting PR head;
-   otherwise merge.
+   Confirm the local tree is complete and every eligible request in the fresh
+   comments appears in the ledger with a supported posted reply. If anything
+   changed, restart the watcher as described in step 2, return to step 3, and
+   obtain new authorization for the resulting PR head; otherwise merge.
 
 7. Confirm the checkout is clean, switch to the default branch, fast-forward it,
    and delete branches or worktrees created by this workflow. Preserve state and
