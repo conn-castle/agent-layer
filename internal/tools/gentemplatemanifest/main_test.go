@@ -44,8 +44,8 @@ func repoRootForTest(t *testing.T) string {
 // that partition lives implicitly inside collectTemplateSources' hardcoded
 // rootFiles/dirs lists, with nothing asserting it stays exhaustive. A newly
 // added upgrade-managed template that someone forgets to wire in would silently
-// degrade to the runtime OwnershipUnknownNoBaseline fallback (a user-facing
-// "unknown" prompt) instead of being tracked.
+// be absent from the release manifest used for offline upgrade source-version
+// inference.
 //
 // This test independently re-derives the partition by walking the real template
 // tree and classifying every template file as managed or excluded via an

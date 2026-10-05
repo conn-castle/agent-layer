@@ -181,3 +181,54 @@ func TestValidatePolicyPayload_PassThrough(t *testing.T) {
 		t.Fatalf("validatePolicyPayload: %v", err)
 	}
 }
+
+func TestComparableFromManifestEntry_ErrorPaths(t *testing.T) {
+	_, err := comparableFromManifestEntry(manifestFileEntry{Path: "x", FullHashNormalized: "abc", PolicyID: "unknown_policy"})
+	if err == nil {
+		t.Fatal("expected unknown policy error")
+	}
+
+	_, err = comparableFromManifestEntry(manifestFileEntry{Path: "x", FullHashNormalized: "abc", PolicyID: ownershipPolicyAllowlist})
+	if err == nil {
+		t.Fatal("expected allowlist payload error")
+	}
+
+	payload, marshalErr := json.Marshal(memoryPolicyPayload{Marker: ownershipMarkerEntriesStart, ManagedSectionHash: "hash"})
+	if marshalErr != nil {
+		t.Fatalf("marshal payload: %v", marshalErr)
+	}
+	_, err = comparableFromManifestEntry(manifestFileEntry{Path: "x", FullHashNormalized: "abc", PolicyID: ownershipPolicyMemoryRoadmap, PolicyPayload: payload})
+	if err == nil {
+		t.Fatal("expected marker mismatch error")
+	}
+}
+
+func TestParseAllowlistPolicyPayload_ErrorPaths(t *testing.T) {
+	_, err := parseAllowlistPolicyPayload(nil)
+	if err == nil {
+		t.Fatal("expected empty payload error")
+	}
+
+	badHashPayload, marshalErr := json.Marshal(allowlistPolicyPayload{
+		UpstreamSet:     []string{"git status"},
+		UpstreamSetHash: "invalid",
+	})
+	if marshalErr != nil {
+		t.Fatalf("marshal payload: %v", marshalErr)
+	}
+	_, err = parseAllowlistPolicyPayload(badHashPayload)
+	if err == nil {
+		t.Fatal("expected hash mismatch error")
+	}
+}
+
+func TestOwnershipComparableError_ErrorAndUnwrap(t *testing.T) {
+	inner := errors.New("boom")
+	err := ownershipComparableError{reasonCode: ownershipReasonPolicyPayloadInvalid, err: inner}
+	if err.Error() != "boom" {
+		t.Fatalf("Error() = %q", err.Error())
+	}
+	if !errors.Is(err, inner) {
+		t.Fatal("expected wrapped error")
+	}
+}

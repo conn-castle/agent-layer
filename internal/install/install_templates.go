@@ -324,15 +324,6 @@ func (inst templateManager) ungatedTemplatePathByRel() (map[string]string, error
 
 // listManagedDiffs returns relative paths for managed files that differ from templates.
 func (inst templateManager) listManagedDiffs() ([]string, error) {
-	labeled, err := inst.listManagedLabeledDiffs()
-	if err != nil {
-		return nil, err
-	}
-	return labeledDiffPaths(labeled), nil
-}
-
-// listManagedLabeledDiffs returns managed diffs with ownership labels.
-func (inst templateManager) listManagedLabeledDiffs() ([]LabeledPath, error) {
 	diffs := make(map[string]struct{})
 	if err := inst.appendTemplateFileDiffs(diffs, inst.managedTemplateFiles()); err != nil {
 		return nil, err
@@ -346,35 +337,19 @@ func (inst templateManager) listManagedLabeledDiffs() ([]LabeledPath, error) {
 			return nil, err
 		}
 	}
+	paths := sortedKeys(diffs)
 	templatePathByRel, err := inst.managedTemplatePathByRel()
 	if err != nil {
 		return nil, err
 	}
-	return inst.buildLabeledDiffs(sortedKeys(diffs), templatePathByRel)
+	if err := inst.checkDiffEvidence(paths, templatePathByRel); err != nil {
+		return nil, err
+	}
+	return paths, nil
 }
 
 // listMemoryDiffs returns relative paths for memory files that differ from templates.
 func (inst templateManager) listMemoryDiffs() ([]string, error) {
-	labeled, err := inst.listMemoryLabeledDiffs()
-	if err != nil {
-		return nil, err
-	}
-	return labeledDiffPaths(labeled), nil
-}
-
-func labeledDiffPaths(labeled []LabeledPath) []string {
-	if len(labeled) == 0 {
-		return nil
-	}
-	paths := make([]string, 0, len(labeled))
-	for _, entry := range labeled {
-		paths = append(paths, entry.Path)
-	}
-	return paths
-}
-
-// listMemoryLabeledDiffs returns memory diffs with ownership labels.
-func (inst templateManager) listMemoryLabeledDiffs() ([]LabeledPath, error) {
 	diffs := make(map[string]struct{})
 	dirs, err := inst.activeMemoryTemplateDirs()
 	if err != nil {
@@ -385,11 +360,29 @@ func (inst templateManager) listMemoryLabeledDiffs() ([]LabeledPath, error) {
 			return nil, err
 		}
 	}
+	paths := sortedKeys(diffs)
 	templatePathByRel, err := inst.memoryTemplatePathByRel()
 	if err != nil {
 		return nil, err
 	}
-	return inst.buildLabeledDiffs(sortedKeys(diffs), templatePathByRel)
+	if err := inst.checkDiffEvidence(paths, templatePathByRel); err != nil {
+		return nil, err
+	}
+	return paths, nil
+}
+
+// checkDiffEvidence validates the recorded evidence for each differing path
+// that has a template mapping, in sorted order.
+func (inst templateManager) checkDiffEvidence(paths []string, templatePathByRel map[string]string) error {
+	for _, path := range paths {
+		relPath := normalizeRelPath(path)
+		if templatePath := templatePathByRel[relPath]; templatePath != "" {
+			if err := inst.checkTemplateDiffEvidence(relPath, templatePath); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // appendTemplateFileDiffs adds relative paths for files that differ from templates.
@@ -464,30 +457,6 @@ func sortedKeys(entries map[string]struct{}) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-func (inst templateManager) buildLabeledDiffs(paths []string, templatePathByRel map[string]string) ([]LabeledPath, error) {
-	if len(paths) == 0 {
-		return nil, nil
-	}
-	out := make([]LabeledPath, 0, len(paths))
-	for _, path := range paths {
-		relPath := normalizeRelPath(path)
-		templatePath := templatePathByRel[relPath]
-		ownership := OwnershipLocalCustomization
-		if templatePath != "" {
-			classified, err := inst.ownership().classifyOwnership(relPath, templatePath)
-			if err != nil {
-				return nil, err
-			}
-			ownership = classified
-		}
-		out = append(out, LabeledPath{
-			Path:      relPath,
-			Ownership: ownership,
-		})
-	}
-	return out, nil
 }
 
 func (inst templateManager) managedTemplatePathByRel() (map[string]string, error) {

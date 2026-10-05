@@ -148,21 +148,13 @@ func (inst *installer) buildStatuslineSourceDiffPreview(source StatuslineSourceT
 	if err != nil {
 		return DiffPreview{}, fmt.Errorf(messages.InstallFailedReadTemplateFmt, source.TemplatePath, err)
 	}
-	rendered, truncated, added, removed := renderTruncatedUnifiedDiff(
+	return inst.renderDiffPreview(
+		source.RelPath,
 		source.RelPath+" (current)",
 		source.RelPath+" (template)",
 		normalizeTemplateContent(string(localBytes)),
 		normalizeTemplateContent(string(templateBytes)),
-		inst.diffMaxLines,
-	)
-	return DiffPreview{
-		Path:         source.RelPath,
-		Ownership:    OwnershipLocalCustomization,
-		UnifiedDiff:  rendered,
-		Truncated:    truncated,
-		LinesAdded:   added,
-		LinesRemoved: removed,
-	}, nil
+	), nil
 }
 
 func (inst *installer) writeStatuslineSourcesTargetPaths() []string {
@@ -215,10 +207,6 @@ func statuslineSourceUpgradeChange(source StatuslineSourceTemplate) upgradeChang
 	return upgradeChangeWithTemplate{
 		path:         source.RelPath,
 		templatePath: source.TemplatePath,
-		ownership: ownershipClassification{
-			Label: OwnershipLocalCustomization,
-			State: OwnershipStateLocalCustomization,
-		},
 	}
 }
 

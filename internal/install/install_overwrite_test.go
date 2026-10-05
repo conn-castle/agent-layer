@@ -2,6 +2,7 @@ package install
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -262,7 +263,7 @@ func TestResolveOverwriteAllDecisions_UnifiedPromptError(t *testing.T) {
 	}
 }
 
-func TestLookupDiffPreview_FallbackPinUsesUpstreamOwnership(t *testing.T) {
+func TestLookupDiffPreview_FallbackPinPreview(t *testing.T) {
 	root := t.TempDir()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
 	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
@@ -280,9 +281,6 @@ func TestLookupDiffPreview_FallbackPinUsesUpstreamOwnership(t *testing.T) {
 	preview, err := inst.lookupDiffPreview(pinVersionRelPath)
 	if err != nil {
 		t.Fatalf("lookupDiffPreview: %v", err)
-	}
-	if preview.Ownership != OwnershipUpstreamTemplateDelta {
-		t.Fatalf("preview ownership = %q, want %q", preview.Ownership, OwnershipUpstreamTemplateDelta)
 	}
 	if preview.Path != pinVersionRelPath {
 		t.Fatalf("preview path = %q, want %s", preview.Path, pinVersionRelPath)
@@ -302,8 +300,7 @@ func TestLookupDiffPreview_UsesManagedPreviewCache(t *testing.T) {
 		sys:  RealSystem{},
 		managedDiffPreviews: map[string]DiffPreview{
 			".agent-layer/commands.allow": {
-				Path:      ".agent-layer/commands.allow",
-				Ownership: OwnershipLocalCustomization,
+				Path: ".agent-layer/commands.allow",
 			},
 		},
 	}
@@ -323,8 +320,7 @@ func TestLookupDiffPreview_UsesMemoryPreviewCache(t *testing.T) {
 		sys:  RealSystem{},
 		memoryDiffPreviews: map[string]DiffPreview{
 			"docs/agent-layer/ISSUES.md": {
-				Path:      "docs/agent-layer/ISSUES.md",
-				Ownership: OwnershipLocalCustomization,
+				Path: "docs/agent-layer/ISSUES.md",
 			},
 		},
 	}
@@ -339,9 +335,14 @@ func TestLookupDiffPreview_UsesMemoryPreviewCache(t *testing.T) {
 }
 
 func TestLookupDiffPreview_MissingTemplateMapping(t *testing.T) {
-	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
-	if _, err := inst.lookupDiffPreview(".agent-layer/unknown.file"); err == nil {
-		t.Fatalf("expected missing-template-mapping error")
+	root := t.TempDir()
+	sys := newFaultSystem(RealSystem{})
+	path := ".agent-layer/unknown.file"
+	sys.readErrs[filepath.Join(root, filepath.FromSlash(path))] = errors.New("must report mapping error before reading")
+	inst := &installer{root: root, sys: sys}
+	_, err := inst.lookupDiffPreview(path)
+	if err == nil || err.Error() != fmt.Sprintf(messages.InstallMissingTemplatePathMappingFmt, path) {
+		t.Fatalf("expected missing-template-mapping error before read, got %v", err)
 	}
 }
 
@@ -353,11 +354,8 @@ func TestLookupDiffPreview_NotExistFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lookupDiffPreview: %v", err)
 	}
-	if preview.Path != ".agent-layer/commands.allow" {
-		t.Fatalf("preview path = %q", preview.Path)
-	}
-	if preview.Ownership != OwnershipLocalCustomization {
-		t.Fatalf("preview ownership = %q, want %q", preview.Ownership, OwnershipLocalCustomization)
+	if preview != (DiffPreview{Path: commandsAllowRelPath}) {
+		t.Fatalf("expected bare preview, got %#v", preview)
 	}
 }
 
@@ -384,41 +382,6 @@ func TestLookupDiffPreview_MemoryTemplateMappingError(t *testing.T) {
 	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
 	if _, err := inst.lookupDiffPreview("docs/agent-layer/ISSUES.md"); err == nil {
 		t.Fatalf("expected memory template mapping error")
-	}
-}
-
-func TestDiffPreviewEntry_MissingTemplateMapping(t *testing.T) {
-	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
-	if _, err := inst.diffPreviewEntry(".agent-layer/missing.file", map[string]string{}); err == nil {
-		t.Fatalf("expected missing template mapping error")
-	}
-}
-
-func TestDiffPreviewEntry_OwnershipFallsBackOnNotExist(t *testing.T) {
-	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
-	entry, err := inst.diffPreviewEntry(".agent-layer/commands.allow", map[string]string{
-		".agent-layer/commands.allow": "commands.allow",
-	})
-	if err != nil {
-		t.Fatalf("diffPreviewEntry: %v", err)
-	}
-	if entry.Ownership != OwnershipLocalCustomization {
-		t.Fatalf("ownership = %q, want %q", entry.Ownership, OwnershipLocalCustomization)
-	}
-}
-
-func TestDiffPreviewEntry_ClassifyOwnershipError(t *testing.T) {
-	root := t.TempDir()
-	commandsAllowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(commandsAllowPath, 0o700); err != nil {
-		t.Fatalf("mkdir commands.allow directory: %v", err)
-	}
-
-	inst := &installer{root: root, sys: RealSystem{}}
-	if _, err := inst.diffPreviewEntry(".agent-layer/commands.allow", map[string]string{
-		".agent-layer/commands.allow": "commands.allow",
-	}); err == nil {
-		t.Fatalf("expected ownership classification error")
 	}
 }
 
@@ -685,5 +648,84 @@ func TestResolveOverwriteAllDecisions_PreviewErrorsBeforePrompt(t *testing.T) {
 				t.Fatal("failed preview must not cache a decision")
 			}
 		})
+	}
+}
+
+func TestResolveOverwriteAllDecisions_PassesManagedPreviews(t *testing.T) {
+	root := t.TempDir()
+	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
+	if err := os.MkdirAll(filepath.Dir(allowPath), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(allowPath, []byte("custom allow\n"), 0o600); err != nil {
+		t.Fatalf("write allowlist: %v", err)
+	}
+
+	var promptPreviews []DiffPreview
+	inst := &installer{
+		root:      root,
+		overwrite: true,
+		sys:       RealSystem{},
+		prompter: &PromptFuncs{
+			OverwriteAllUnifiedPreviewFunc: func(previews, memory []DiffPreview) (bool, bool, error) {
+				promptPreviews = append(promptPreviews, previews...)
+				return false, false, nil
+			},
+			OverwritePreviewFunc: func(preview DiffPreview) (bool, error) { return false, nil },
+		},
+	}
+
+	if err := inst.resolveOverwriteAllDecisions(); err != nil {
+		t.Fatalf("resolveOverwriteAllDecisions: %v", err)
+	}
+	if len(promptPreviews) == 0 {
+		t.Fatalf("expected prompt previews")
+	}
+	if promptPreviews[0].Path != commandsAllowRelPath || promptPreviews[0].UnifiedDiff == "" {
+		t.Fatalf("expected commands.allow diff preview, got %#v", promptPreviews[0])
+	}
+}
+
+func TestResolveOverwriteAllDecisions_PassesMemoryPreviews(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o700); err != nil {
+		t.Fatalf("mkdir docs: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer", "templates", "docs"), 0o700); err != nil {
+		t.Fatalf("mkdir baseline docs: %v", err)
+	}
+	content := []byte("# ISSUES\n\nLegacy header\n\n<!-- ENTRIES START -->\n")
+	docPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
+	if err := os.WriteFile(docPath, content, 0o600); err != nil {
+		t.Fatalf("write doc: %v", err)
+	}
+
+	baselinePath := filepath.Join(root, ".agent-layer", "templates", "docs", "ISSUES.md")
+	if err := os.WriteFile(baselinePath, content, 0o600); err != nil {
+		t.Fatalf("write baseline doc: %v", err)
+	}
+
+	var promptPreviews []DiffPreview
+	inst := &installer{
+		root:      root,
+		overwrite: true,
+		sys:       RealSystem{},
+		prompter: &PromptFuncs{
+			OverwriteAllUnifiedPreviewFunc: func(managed, previews []DiffPreview) (bool, bool, error) {
+				promptPreviews = append(promptPreviews, previews...)
+				return false, false, nil
+			},
+			OverwritePreviewFunc: func(preview DiffPreview) (bool, error) { return false, nil },
+		},
+	}
+
+	if err := inst.resolveOverwriteAllDecisions(); err != nil {
+		t.Fatalf("resolveOverwriteAllDecisions: %v", err)
+	}
+	if len(promptPreviews) == 0 {
+		t.Fatalf("expected prompt previews")
+	}
+	if promptPreviews[0].Path != "docs/agent-layer/ISSUES.md" || promptPreviews[0].UnifiedDiff == "" {
+		t.Fatalf("expected ISSUES.md diff preview, got %#v", promptPreviews[0])
 	}
 }

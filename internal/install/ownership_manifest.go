@@ -37,10 +37,6 @@ const (
 	BaselineStateSourceWrittenByUpgrade BaselineStateSource = "written_by_overwrite"
 	// BaselineStateSourceWrittenByOverwrite is a legacy name for BaselineStateSourceWrittenByUpgrade.
 	BaselineStateSourceWrittenByOverwrite BaselineStateSource = BaselineStateSourceWrittenByUpgrade
-	// BaselineStateSourceInferredFromPinManifest indicates baseline was inferred from a pinned release manifest.
-	BaselineStateSourceInferredFromPinManifest BaselineStateSource = "inferred_from_pin_manifest"
-	// BaselineStateSourceMigratedFromLegacyDocsSnapshot indicates baseline was inferred from legacy docs snapshot files.
-	BaselineStateSourceMigratedFromLegacyDocsSnapshot BaselineStateSource = "migrated_from_legacy_docs_snapshot"
 )
 
 type manifestFileEntry struct {

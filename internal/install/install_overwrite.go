@@ -50,7 +50,7 @@ func (inst *installer) resolveOverwriteAllDecisions() error {
 		return fmt.Errorf(messages.InstallOverwritePromptRequired)
 	}
 
-	managedDiffs, err := inst.templates().listManagedLabeledDiffs()
+	managedDiffs, err := inst.templates().listManagedDiffs()
 	if err != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ func (inst *installer) resolveOverwriteAllDecisions() error {
 	}
 	inst.managedDiffPreviews = managedIndex
 
-	memoryDiffs, err := inst.templates().listMemoryLabeledDiffs()
+	memoryDiffs, err := inst.templates().listMemoryDiffs()
 	if err != nil {
 		return err
 	}
@@ -136,11 +136,16 @@ func (inst *installer) lookupDiffPreview(relPath string) (DiffPreview, error) {
 			return DiffPreview{}, err
 		}
 	}
-	entry, err := inst.diffPreviewEntry(relPath, templatePathByRel)
-	if err != nil {
-		return DiffPreview{}, err
+	if relPath != pinVersionRelPath {
+		templatePath := templatePathByRel[relPath]
+		if strings.TrimSpace(templatePath) == "" {
+			return DiffPreview{}, fmt.Errorf(messages.InstallMissingTemplatePathMappingFmt, relPath)
+		}
+		if err := inst.checkTemplateDiffEvidence(relPath, templatePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return DiffPreview{}, err
+		}
 	}
-	preview, err := inst.buildSingleDiffPreview(entry, templatePathByRel)
+	preview, err := inst.buildSingleDiffPreview(relPath, templatePathByRel)
 	if err == nil {
 		return preview, nil
 	}
@@ -148,31 +153,6 @@ func (inst *installer) lookupDiffPreview(relPath string) (DiffPreview, error) {
 		return DiffPreview{}, err
 	}
 	return DiffPreview{
-		Path:      relPath,
-		Ownership: entry.Ownership,
-	}, nil
-}
-
-func (inst *installer) diffPreviewEntry(relPath string, templatePathByRel map[string]string) (LabeledPath, error) {
-	if relPath == pinVersionRelPath {
-		return LabeledPath{
-			Path:      relPath,
-			Ownership: OwnershipUpstreamTemplateDelta,
-		}, nil
-	}
-	templatePath := templatePathByRel[relPath]
-	if strings.TrimSpace(templatePath) == "" {
-		return LabeledPath{}, fmt.Errorf(messages.InstallMissingTemplatePathMappingFmt, relPath)
-	}
-	ownership, err := inst.ownership().classifyOwnership(relPath, templatePath)
-	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return LabeledPath{}, err
-		}
-		ownership = OwnershipLocalCustomization
-	}
-	return LabeledPath{
-		Path:      relPath,
-		Ownership: ownership,
+		Path: relPath,
 	}, nil
 }

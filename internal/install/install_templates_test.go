@@ -63,48 +63,23 @@ func TestWriteSectionAwareTemplateFile_CreatesMissingFile(t *testing.T) {
 	}
 }
 
-func TestBuildLabeledDiffs_NormalizesRelativePath(t *testing.T) {
-	inst := &installer{}
-	labeled, err := inst.templates().buildLabeledDiffs([]string{".agent-layer\\commands.allow"}, map[string]string{})
-	if err != nil {
-		t.Fatalf("buildLabeledDiffs: %v", err)
-	}
-	if len(labeled) != 1 {
-		t.Fatalf("expected 1 labeled path, got %d", len(labeled))
-	}
-	if labeled[0].Path != ".agent-layer/commands.allow" {
-		t.Fatalf("expected slash-normalized path, got %q", labeled[0].Path)
-	}
-	if labeled[0].Ownership != OwnershipLocalCustomization {
-		t.Fatalf("expected default ownership local customization, got %q", labeled[0].Ownership)
-	}
-}
-
-func TestBuildLabeledDiffs_UsesSlashNormalizedTemplateMapping(t *testing.T) {
+func TestAppendTemplateFileDiffs_NormalizesRelativePath(t *testing.T) {
 	root := t.TempDir()
-	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(filepath.Dir(allowPath), 0o700); err != nil {
-		t.Fatalf("mkdir .agent-layer: %v", err)
+	path := filepath.Join(root, `.agent-layer\commands.allow`)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
 	}
-	if err := os.WriteFile(allowPath, []byte("custom allowlist\n"), 0o600); err != nil {
-		t.Fatalf("write commands.allow: %v", err)
+	if err := os.WriteFile(path, []byte("custom allowlist\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-
-	inst := &installer{
-		root: root,
-		sys:  RealSystem{},
+	inst := &installer{root: root, sys: RealSystem{}}
+	diffs := make(map[string]struct{})
+	if err := inst.templates().appendTemplateFileDiffs(diffs, []templateFile{{path: path, template: "commands.allow"}}); err != nil {
+		t.Fatal(err)
 	}
-	_, err := inst.templates().buildLabeledDiffs(
-		[]string{".agent-layer\\commands.allow"},
-		map[string]string{
-			".agent-layer/commands.allow": "missing-template",
-		},
-	)
-	if err == nil {
-		t.Fatal("expected template-read error when slash-normalized mapping is used")
-	}
-	if !strings.Contains(err.Error(), "missing-template") {
-		t.Fatalf("expected missing-template error, got %v", err)
+	paths := sortedKeys(diffs)
+	if len(paths) != 1 || paths[0] != commandsAllowRelPath {
+		t.Fatalf("expected slash-normalized commands.allow path, got %v", paths)
 	}
 }
 
@@ -1254,5 +1229,33 @@ func TestWriteTemplateFiles_OverwritePolicyPerFileClass(t *testing.T) {
 				t.Fatalf("diffs = %v, want %v", inst.diffs, wantDiffs)
 			}
 		})
+	}
+}
+
+func TestCheckDiffEvidence_UsesSlashNormalizedTemplateMapping(t *testing.T) {
+	root := t.TempDir()
+	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
+	if err := os.MkdirAll(filepath.Dir(allowPath), 0o700); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	if err := os.WriteFile(allowPath, []byte("custom allowlist\n"), 0o600); err != nil {
+		t.Fatalf("write commands.allow: %v", err)
+	}
+
+	inst := &installer{
+		root: root,
+		sys:  RealSystem{},
+	}
+	err := inst.templates().checkDiffEvidence(
+		[]string{".agent-layer\\commands.allow"},
+		map[string]string{
+			".agent-layer/commands.allow": "missing-template",
+		},
+	)
+	if err == nil {
+		t.Fatal("expected template-read error when slash-normalized mapping is used")
+	}
+	if !strings.Contains(err.Error(), "missing-template") {
+		t.Fatalf("expected missing-template error, got %v", err)
 	}
 }

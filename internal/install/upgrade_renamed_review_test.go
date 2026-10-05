@@ -112,8 +112,8 @@ func TestBuildUpgradePlan_RenamedCustomizedFileReview(t *testing.T) {
 			}
 			updates := append(append([]UpgradeChange{}, plan.TemplateUpdates...), plan.SectionAwareUpdates...)
 			change := findUpgradeChange(updates, fixture.target)
-			if change == nil || change.Ownership == "" {
-				t.Fatalf("missing labeled destination update %s: %#v", fixture.target, updates)
+			if change == nil {
+				t.Fatalf("missing destination update %s: %#v", fixture.target, updates)
 			}
 			if findUpgradeChange(plan.TemplateAdditions, fixture.target) != nil {
 				t.Fatal("renamed destination must not be an addition")
@@ -373,7 +373,7 @@ func TestBuildUpgradePlan_RenamedReviewNonRenameCoverageGuard(t *testing.T) {
 	if err := inst.prepareUpgradeMigrations(); err != nil {
 		t.Fatal(err)
 	}
-	if previews := inst.filterMigrationCoveredDiffs([]LabeledPath{{Path: renamedSkillFixture.target}}); len(previews) != 0 {
+	if previews := inst.filterMigrationCoveredDiffs([]string{renamedSkillFixture.target}); len(previews) != 0 {
 		t.Fatal("non-rename coverage must also hide apply-time destination review")
 	}
 }

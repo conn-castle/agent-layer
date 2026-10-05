@@ -101,8 +101,7 @@ func TestBuildPlanChangeDiffPreview_Modes(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			preview, err := inst.buildPlanChangeDiffPreview(UpgradeChange{
-				Path:      tc.path,
-				Ownership: OwnershipUpstreamTemplateDelta,
+				Path: tc.path,
 			}, tc.mode, templatePathByRel)
 			if err != nil {
 				t.Fatalf("buildPlanChangeDiffPreview(%s): %v", tc.mode, err)
@@ -133,16 +132,14 @@ func TestBuildPlanChangeDiffPreview_Errors(t *testing.T) {
 	}
 
 	_, err = inst.buildPlanChangeDiffPreview(UpgradeChange{
-		Path:      "missing/path.md",
-		Ownership: OwnershipUpstreamTemplateDelta,
+		Path: "missing/path.md",
 	}, planDiffModeAddition, templatePathByRel)
 	if err == nil || !strings.Contains(err.Error(), "missing template path mapping") {
 		t.Fatalf("expected missing template path mapping error, got: %v", err)
 	}
 
 	_, err = inst.buildPlanChangeDiffPreview(UpgradeChange{
-		Path:      ".agent-layer/commands.allow",
-		Ownership: OwnershipUpstreamTemplateDelta,
+		Path: ".agent-layer/commands.allow",
 	}, planDiffMode("unknown"), templatePathByRel)
 	if err == nil || !strings.Contains(err.Error(), "unknown plan diff mode") {
 		t.Fatalf("expected unknown mode error, got: %v", err)
@@ -182,8 +179,7 @@ func TestBuildUpgradePlanDiffPreviews_PropagatesChangeError(t *testing.T) {
 	plan := UpgradePlan{
 		TemplateAdditions: []UpgradeChange{
 			{
-				Path:      fmt.Sprintf("missing-%d.md", 1),
-				Ownership: OwnershipUpstreamTemplateDelta,
+				Path: fmt.Sprintf("missing-%d.md", 1),
 			},
 		},
 	}
@@ -211,26 +207,22 @@ func TestBuildUpgradePlanDiffPreviews_CoversAllCollectionsWithoutPinDiff(t *test
 	plan := UpgradePlan{
 		TemplateAdditions: []UpgradeChange{
 			{
-				Path:      ".agent-layer/instructions/01_memory.md",
-				Ownership: OwnershipUpstreamTemplateDelta,
+				Path: ".agent-layer/instructions/01_memory.md",
 			},
 		},
 		TemplateUpdates: []UpgradeChange{
 			{
-				Path:      ".agent-layer/commands.allow",
-				Ownership: OwnershipLocalCustomization,
+				Path: ".agent-layer/commands.allow",
 			},
 		},
 		SectionAwareUpdates: []UpgradeChange{
 			{
-				Path:      "docs/agent-layer/ISSUES.md",
-				Ownership: OwnershipLocalCustomization,
+				Path: "docs/agent-layer/ISSUES.md",
 			},
 		},
 		TemplateRemovalsOrOrphans: []UpgradeChange{
 			{
-				Path:      ".agent-layer/templates/docs/BACKLOG.md",
-				Ownership: OwnershipLocalCustomization,
+				Path: ".agent-layer/templates/docs/BACKLOG.md",
 			},
 		},
 		PinVersionChange: UpgradePinVersionDiff{
@@ -288,8 +280,7 @@ func TestBuildPlanChangeDiffPreview_AdditionTemplateReadError(t *testing.T) {
 	t.Cleanup(func() { templates.ReadFunc = originalRead })
 
 	_, err = inst.buildPlanChangeDiffPreview(UpgradeChange{
-		Path:      ".agent-layer/commands.allow",
-		Ownership: OwnershipUpstreamTemplateDelta,
+		Path: ".agent-layer/commands.allow",
 	}, planDiffModeAddition, templatePathByRel)
 	if err == nil || !strings.Contains(err.Error(), "forced template read failure") {
 		t.Fatalf("expected forced template read failure, got: %v", err)
@@ -314,8 +305,7 @@ func TestBuildPlanChangeDiffPreview_RemovalReadError(t *testing.T) {
 		diffMaxLines: 20,
 	}
 	_, err := inst.buildPlanChangeDiffPreview(UpgradeChange{
-		Path:      ".agent-layer/local.md",
-		Ownership: OwnershipLocalCustomization,
+		Path: ".agent-layer/local.md",
 	}, planDiffModeRemoval, nil)
 	if err == nil || !strings.Contains(err.Error(), "forced removal read failure") {
 		t.Fatalf("expected removal read error, got %v", err)
@@ -388,8 +378,7 @@ func TestBuildUpgradePlanDiffPreviews_PropagatesTemplateUpdateError(t *testing.T
 	plan := UpgradePlan{
 		TemplateUpdates: []UpgradeChange{
 			{
-				Path:      "missing/update/path.md",
-				Ownership: OwnershipUpstreamTemplateDelta,
+				Path: "missing/update/path.md",
 			},
 		},
 	}
@@ -410,8 +399,7 @@ func TestBuildUpgradePlanDiffPreviews_PropagatesSectionAwareUpdateError(t *testi
 	plan := UpgradePlan{
 		SectionAwareUpdates: []UpgradeChange{
 			{
-				Path:      "missing/section-aware/path.md",
-				Ownership: OwnershipUpstreamTemplateDelta,
+				Path: "missing/section-aware/path.md",
 			},
 		},
 	}
@@ -432,8 +420,7 @@ func TestBuildUpgradePlanDiffPreviews_PropagatesTemplateRemovalError(t *testing.
 	plan := UpgradePlan{
 		TemplateRemovalsOrOrphans: []UpgradeChange{
 			{
-				Path:      ".agent-layer/local.md",
-				Ownership: OwnershipLocalCustomization,
+				Path: ".agent-layer/local.md",
 			},
 		},
 	}
@@ -448,7 +435,7 @@ func TestBuildUpgradePlanDiffPreviews_PropagatesTemplateRemovalError(t *testing.
 
 func TestBuildUpgradePlanDiffPreviews_RemovalOfPathNotYetCreatedHasNoDiff(t *testing.T) {
 	plan := UpgradePlan{
-		TemplateRemovalsOrOrphans: []UpgradeChange{{Path: ".agent-layer/skills/renamed", Ownership: OwnershipUnknownNoBaseline}},
+		TemplateRemovalsOrOrphans: []UpgradeChange{{Path: ".agent-layer/skills/renamed"}},
 	}
 	previews, err := BuildUpgradePlanDiffPreviews(t.TempDir(), plan, UpgradePlanDiffPreviewOptions{System: RealSystem{}, MaxDiffLines: 20})
 	if err != nil {
