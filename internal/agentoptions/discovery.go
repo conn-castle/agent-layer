@@ -25,6 +25,7 @@ import (
 const discoveryTimeout = 10 * time.Second
 const maxDiscoveryBytes = 2 * 1024 * 1024
 const agentAntigravity = "antigravity"
+const antigravityBinary = "agy"
 const modelsCommand = "models"
 const initializeMethod = "initialize"
 const methodKey = "method"
@@ -68,15 +69,7 @@ func DiscoverModels(agent string, req DiscoveryRequest) ([]string, error) {
 	ctx, cancel := context.WithTimeout(req.Context, req.Timeout)
 	defer cancel()
 	req.Context = ctx
-	var models []string
-	var err error
-	if agent == agentAntigravity {
-		models, err = antigravity.DiscoverModels(antigravity.ModelOptionsRequest{
-			Context: ctx, Project: req.Project, Env: req.Env, LookPath: req.LookPath, Timeout: req.Timeout,
-		})
-	} else {
-		models, err = discoverCommandModels(agent, req)
-	}
+	models, err := discoverCommandModels(agent, req)
 	if ctx.Err() != nil {
 		return nil, fmt.Errorf("%s model discovery: %w", agent, ctx.Err())
 	}
@@ -96,7 +89,7 @@ func ParseModelCommandOutput(agent string, output []byte) ([]string, error) {
 	var err error
 	switch agent {
 	case agentAntigravity:
-		models, err = antigravity.ParseModelOutput(output)
+		models, err = readAntigravityModels(output)
 	case agentGrok:
 		models, err = readGrokModels(bytes.NewReader(output))
 	default:
@@ -130,17 +123,28 @@ func normalizeModels(agent string, models []string) ([]string, error) {
 
 func discoveryCommand(agent string, req DiscoveryRequest) (*exec.Cmd, error) {
 	binary := agent
-	if agent == agentCopilotCLI {
+	switch agent {
+	case agentAntigravity:
+		binary = antigravityBinary
+	case agentCopilotCLI:
 		binary = "copilot"
 	}
+	// Resolve the binary before provider setup so a missing harness creates no
+	// project state such as the Antigravity home.
 	path, err := req.LookPath(binary)
 	if err != nil {
 		return nil, err
 	}
 	env := slices.Clone(req.Env)
+	args := []string{modelsCommand}
 	if project := req.Project; project != nil {
 		env = clients.BuildEnv(env, project.Env, nil)
 		switch agent {
+		case agentAntigravity:
+			if args, err = antigravity.BaseArgs(project.Root, project.Config); err != nil {
+				return nil, err
+			}
+			args = append(args, modelsCommand)
 		case agentClaude:
 			env = claude.ConfigureEnvironment(project.Root, env, project.Config.Agents.Claude, nil)
 		case agentCodex:
@@ -152,8 +156,9 @@ func discoveryCommand(agent string, req DiscoveryRequest) (*exec.Cmd, error) {
 			env = grok.ConfigureEnvironment(project.Root, env, project.Config.Agents.Grok, nil)
 		}
 	}
-	args := []string{modelsCommand}
 	switch agent {
+	case agentAntigravity:
+		env = antigravity.ConfigureEnvironment(env)
 	case agentClaude:
 		args = []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
 			"--no-session-persistence", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`,
@@ -189,27 +194,57 @@ func discoverCommandModels(agent string, req DiscoveryRequest) ([]string, error)
 	if err != nil {
 		return nil, err
 	}
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, err
+	// agy models takes no input, so it keeps the null-device stdin of a nil cmd.Stdin.
+	var stdin io.WriteCloser
+	if agent != agentAntigravity {
+		if stdin, err = cmd.StdinPipe(); err != nil {
+			return nil, err
+		}
+	}
+	closeStdin := func() {
+		if stdin != nil {
+			_ = stdin.Close()
+		}
 	}
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
 	stopClose := context.AfterFunc(ctx, func() {
 		_ = stdout.Close()
-		_ = stdin.Close()
+		closeStdin()
 	})
 	defer stopClose()
 	waited := false
 	defer func() {
-		_ = stdin.Close()
+		closeStdin()
 		cancel()
 		if !waited {
 			_ = cmd.Wait()
 		}
 	}()
 	reader := &io.LimitedReader{R: stdout, N: maxDiscoveryBytes + 1}
+	if agent == agentAntigravity {
+		output, err := io.ReadAll(reader)
+		if err != nil {
+			return nil, err
+		}
+		if reader.N == 0 {
+			return nil, errors.New("agy models output exceeded size limit")
+		}
+		err = cmd.Wait()
+		waited = true
+		if err != nil {
+			return nil, err
+		}
+		models, err := readAntigravityModels(output)
+		if err != nil {
+			return nil, err
+		}
+		if len(models) == 0 {
+			return nil, errors.New("agy models returned no model options")
+		}
+		return models, nil
+	}
 	if agent == agentGrok {
 		models, err := readGrokModels(reader)
 		if err != nil {
@@ -328,6 +363,28 @@ func readGrokModels(reader io.Reader) ([]string, error) {
 		models = append(models, value)
 	}
 	return models, scanner.Err()
+}
+
+// readAntigravityModels requires the native slug<TAB>display format so arbitrary
+// stdout, such as an authentication message, never becomes a model suggestion.
+func readAntigravityModels(output []byte) ([]string, error) {
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+	models := make([]string, 0)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		slug, label, ok := strings.Cut(line, "\t")
+		if !ok || strings.TrimSpace(slug) == "" || strings.TrimSpace(label) == "" || strings.Contains(label, "\t") {
+			return nil, errors.New("agy models returned an invalid model row; expected slug<TAB>display name")
+		}
+		models = append(models, strings.TrimSpace(slug))
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return models, nil
 }
 
 func readClaudeModels(decoder *json.Decoder, encoder *json.Encoder) ([]string, error) {
