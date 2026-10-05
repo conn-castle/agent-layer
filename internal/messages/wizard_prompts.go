@@ -19,6 +19,8 @@ const (
 	WizardCopilotCLIModelTitle       = "Copilot CLI Model"
 	WizardGrokModelTitle             = "Grok Model"
 	WizardGrokReasoningEffortTitle   = "Grok Reasoning Effort"
+	WizardMuseModelTitle             = "Muse Model"
+	WizardMuseReasoningEffortTitle   = "Muse Reasoning Effort"
 	WizardGrokFeatureMemoryLabel     = "Experimental memory"
 	WizardGrokFeaturesTitle          = "Grok features (checked = keep enabled; uncheck to disable)" +
 		"\n  Experimental memory: Grok memory is off by default; uncheck to force --no-memory even if enabled elsewhere."

@@ -82,10 +82,7 @@ func TestPatchConfig_UpdatesMuseSection(t *testing.T) {
 	choices := NewChoices()
 	choices.EnabledAgentsTouched = true
 	choices.EnabledAgents[AgentMuse] = true
-	choices.MuseModelTouched = true
-	choices.MuseModel = "muse-spark"
-	choices.MuseReasoningTouched = true
-	choices.MuseReasoning = "high"
+	choices.AgentModels[AgentMuse] = AgentModelChoice{ModelTouched: true, Model: "muse-spark", ReasoningTouched: true, Reasoning: "high"}
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
 	assert.Contains(t, out, "[agents.muse]")
@@ -213,8 +210,7 @@ enabled = true
 model = "custom"
 `
 	choices := NewChoices()
-	choices.ClaudeModelTouched = true
-	choices.ClaudeModel = ""
+	choices.AgentModels[AgentClaude] = AgentModelChoice{ModelTouched: true, Model: ""}
 
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
@@ -241,8 +237,7 @@ func TestPatchConfig_AntigravityModelWritesModel(t *testing.T) {
 enabled = true
 `
 	choices := NewChoices()
-	choices.AntigravityModelTouched = true
-	choices.AntigravityModel = "Gemini 3.5 Flash (High)"
+	choices.AgentModels[AgentAntigravity] = AgentModelChoice{ModelTouched: true, Model: "Gemini 3.5 Flash (High)"}
 
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
@@ -260,8 +255,7 @@ enabled = true
 other = true
 `
 	choices := NewChoices()
-	choices.AntigravityModelTouched = true
-	choices.AntigravityModel = "Gemini 3.1 Pro (High)"
+	choices.AgentModels[AgentAntigravity] = AgentModelChoice{ModelTouched: true, Model: "Gemini 3.1 Pro (High)"}
 
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
@@ -278,8 +272,7 @@ enabled = true
 model = "Gemini 3.1 Pro (High)"
 `
 	choices := NewChoices()
-	choices.AntigravityModelTouched = true
-	choices.AntigravityModel = ""
+	choices.AgentModels[AgentAntigravity] = AgentModelChoice{ModelTouched: true, Model: ""}
 
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
@@ -300,8 +293,7 @@ enabled = true
 	choices := NewChoices()
 	choices.EnabledAgentsTouched = true
 	choices.EnabledAgents[AgentAntigravity] = false
-	choices.AntigravityModelTouched = true
-	choices.AntigravityModel = "Gemini 3.5 Flash (High)"
+	choices.AgentModels[AgentAntigravity] = AgentModelChoice{ModelTouched: true, Model: "Gemini 3.5 Flash (High)"}
 
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
@@ -499,10 +491,7 @@ prevent_idle_sleep = true
 	choices.ApprovalMode = "all"
 	choices.EnabledAgentsTouched = true
 	choices.EnabledAgents = map[string]bool{AgentCodex: true}
-	choices.CodexModelTouched = true
-	choices.CodexModel = "gpt-5.3-codex"
-	choices.CodexReasoningTouched = true
-	choices.CodexReasoning = "xhigh"
+	choices.AgentModels[AgentCodex] = AgentModelChoice{ModelTouched: true, Model: "gpt-5.3-codex", ReasoningTouched: true, Reasoning: "xhigh"}
 
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
@@ -620,8 +609,7 @@ func TestPatchConfig_SetModel(t *testing.T) {
 enabled = true
 `
 	choices := NewChoices()
-	choices.CodexModelTouched = true
-	choices.CodexModel = "gpt-5"
+	choices.AgentModels[AgentCodex] = AgentModelChoice{ModelTouched: true, Model: "gpt-5"}
 
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
@@ -629,20 +617,20 @@ enabled = true
 	assert.Contains(t, out, `model = "gpt-5"`)
 }
 
-func TestPatchConfig_SetClaudeReasoningEffort(t *testing.T) {
-	content := `
-[agents.claude]
-enabled = true
-model = "opus"
-`
-	choices := NewChoices()
-	choices.ClaudeReasoningTouched = true
-	choices.ClaudeReasoning = "high"
+func TestPatchConfig_SetReasoningEffortAfterModel(t *testing.T) {
+	for _, agent := range []string{AgentClaude, AgentCodex} {
+		for _, modelLine := range []string{`model = "existing"`, `# model = "existing"`} {
+			t.Run(agent+"/"+modelLine, func(t *testing.T) {
+				content := fmt.Sprintf("[agents.%s]\nenabled = true\n%s\n", agent, modelLine)
+				choices := NewChoices()
+				choices.AgentModels[agent] = AgentModelChoice{ReasoningTouched: true, Reasoning: "high"}
 
-	out, err := PatchConfig(content, choices)
-	require.NoError(t, err)
-
-	assert.Contains(t, out, `reasoning_effort = "high"`)
+				out, err := PatchConfig(content, choices)
+				require.NoError(t, err)
+				assert.Contains(t, out, modelLine+"\nreasoning_effort = \"high\"")
+			})
+		}
+	}
 }
 
 func TestPatchConfig_EnableWarnings(t *testing.T) {
@@ -722,10 +710,7 @@ func TestPatchConfig_Idempotent(t *testing.T) {
 			content: "[agents.codex]\nenabled = true\n",
 			choices: func() *Choices {
 				c := NewChoices()
-				c.CodexModelTouched = true
-				c.CodexModel = "gpt-5"
-				c.CodexReasoningTouched = true
-				c.CodexReasoning = "high"
+				c.AgentModels[AgentCodex] = AgentModelChoice{ModelTouched: true, Model: "gpt-5", ReasoningTouched: true, Reasoning: "high"}
 				return c
 			}(),
 		},
@@ -2613,7 +2598,7 @@ Old = "remove"
 	choices.ApprovalModeTouched, choices.ApprovalMode = true, "all"
 	choices.EnabledAgentsTouched = true
 	choices.EnabledAgents[AgentClaude] = true
-	choices.ClaudeModelTouched, choices.ClaudeModel = true, "updated"
+	choices.AgentModels[AgentClaude] = AgentModelChoice{ModelTouched: true, Model: "updated"}
 	choices.WarningsEnabledTouched, choices.WarningsEnabled = true, false
 	choices.DefaultMCPServers = []DefaultMCPServer{{ID: "default"}, {ID: "missing"}}
 	choices.EnabledMCPServersTouched = true
