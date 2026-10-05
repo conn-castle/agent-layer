@@ -1,4 +1,4 @@
-package wizard
+package templates
 
 import (
 	"errors"
@@ -10,69 +10,71 @@ import (
 	toml "github.com/pelletier/go-toml/v2"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
-// cliSkillsCatalogTemplatePath is the embedded CLI skills catalog used by the wizard.
-// It is internal-only: read from the embedded FS, never written to a user repo.
-const cliSkillsCatalogTemplatePath = "cli-skills-catalog.toml"
+// cliSkillsCatalogPath is the embedded CLI skills catalog shared by the wizard
+// and doctor. It is internal-only: read from the embedded FS, never written to
+// a user repo.
+const cliSkillsCatalogPath = "cli-skills-catalog.toml"
 
-// CLISkillCatalogEntry describes one wizard-managed CLI skill option.
+// CLISkillCatalogEntry describes one CLI skill catalog option.
 // A non-empty Members list is a grouped entry: the catalog id is the
 // checkbox identity only, and each member is a destination directory
 // copied from embedded skills/<member>/ rather than skills-catalog/<id>/.
+// Binary names the external CLI the skill requires, if any.
 type CLISkillCatalogEntry struct {
 	ID              string
 	Name            string
+	Binary          string   `toml:"binary"`
 	OwnershipMarker string   `toml:"ownership_marker"`
 	Members         []string `toml:"members"`
 }
 
 var cliSkillCatalogIDPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`)
 
-// isSafeCLISkillCatalogID returns true for single-segment catalog ids that can
+// IsSafeCLISkillCatalogID returns true for single-segment catalog ids that can
 // be used as .agent-layer/skills/<id>/ directory names.
-func isSafeCLISkillCatalogID(id string) bool {
+func IsSafeCLISkillCatalogID(id string) bool {
 	return cliSkillCatalogIDPattern.MatchString(id) && !strings.Contains(id, "/") && !strings.Contains(id, `\`)
 }
 
-// loadCLISkillCatalog parses the embedded cli-skills-catalog.toml file into typed
+// LoadCLISkillCatalog parses the embedded cli-skills-catalog.toml file into typed
 // catalog entries. Errors loudly when the catalog is missing, malformed, contains
-// no entries, or contains an entry with an empty id or name. The catalog is the
-// authoritative source for the wizard's CLI-skill multiselect.
-func loadCLISkillCatalog() ([]CLISkillCatalogEntry, error) {
-	data, err := templates.Read(cliSkillsCatalogTemplatePath)
+// no entries, or contains an entry with an invalid or duplicate id, name, or
+// member.
+func LoadCLISkillCatalog() ([]CLISkillCatalogEntry, error) {
+	data, err := Read(cliSkillsCatalogPath)
 	if err != nil {
-		return nil, fmt.Errorf(messages.WizardLoadCLISkillsCatalogFailedFmt, err)
+		return nil, fmt.Errorf(messages.TemplatesLoadCLISkillsCatalogFailedFmt, err)
 	}
 	var doc struct {
 		CLISkills []CLISkillCatalogEntry `toml:"cli_skills"`
 	}
 	if err := toml.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf(messages.WizardLoadCLISkillsCatalogFailedFmt, err)
+		return nil, fmt.Errorf(messages.TemplatesLoadCLISkillsCatalogFailedFmt, err)
 	}
 	if len(doc.CLISkills) == 0 {
-		return nil, fmt.Errorf(messages.WizardCatalogNoCLISkills)
+		return nil, fmt.Errorf(messages.TemplatesCatalogNoCLISkills)
 	}
 	seen := make(map[string]struct{}, len(doc.CLISkills))
 	seenNames := make(map[string]struct{}, len(doc.CLISkills))
 	for idx, entry := range doc.CLISkills {
 		if entry.ID == "" {
-			return nil, fmt.Errorf(messages.WizardCLISkillCatalogEntryMissingIDFmt, idx)
+			return nil, fmt.Errorf(messages.TemplatesCLISkillCatalogEntryMissingIDFmt, idx)
 		}
-		if !isSafeCLISkillCatalogID(entry.ID) {
-			return nil, fmt.Errorf(messages.WizardCLISkillCatalogEntryInvalidIDFmt, idx, entry.ID)
+		if !IsSafeCLISkillCatalogID(entry.ID) {
+			return nil, fmt.Errorf(messages.TemplatesCLISkillCatalogEntryInvalidIDFmt, idx, entry.ID)
 		}
 		if _, ok := seen[entry.ID]; ok {
-			return nil, fmt.Errorf(messages.WizardCLISkillCatalogEntryDuplicateIDFmt, idx, entry.ID)
+			return nil, fmt.Errorf(messages.TemplatesCLISkillCatalogEntryDuplicateIDFmt, idx, entry.ID)
 		}
 		seen[entry.ID] = struct{}{}
 		name := strings.TrimSpace(entry.Name)
 		if name == "" {
-			return nil, fmt.Errorf(messages.WizardCLISkillCatalogEntryMissingNameFmt, entry.ID)
+			return nil, fmt.Errorf(messages.TemplatesCLISkillCatalogEntryMissingNameFmt, entry.ID)
 		}
 		if _, ok := seenNames[name]; ok {
-			return nil, fmt.Errorf(messages.WizardCLISkillCatalogEntryDuplicateNameFmt, idx, name)
+			return nil, fmt.Errorf(messages.TemplatesCLISkillCatalogEntryDuplicateNameFmt, idx, name)
 		}
 		seenNames[name] = struct{}{}
 	}
@@ -90,14 +92,14 @@ func validateCatalogMembers(entry CLISkillCatalogEntry, catalogIDs map[string]st
 		return nil
 	}
 	for _, member := range entry.Members {
-		if !isSafeCLISkillCatalogID(member) {
-			return fmt.Errorf(messages.WizardCLISkillCatalogEntryInvalidMemberFmt, entry.ID, member)
+		if !IsSafeCLISkillCatalogID(member) {
+			return fmt.Errorf(messages.TemplatesCLISkillCatalogEntryInvalidMemberFmt, entry.ID, member)
 		}
 		if _, ok := catalogIDs[member]; ok {
-			return fmt.Errorf(messages.WizardCLISkillCatalogEntryMemberCollidesIDFmt, member, member)
+			return fmt.Errorf(messages.TemplatesCLISkillCatalogEntryMemberCollidesIDFmt, member, member)
 		}
 		if _, ok := seenMembers[member]; ok {
-			return fmt.Errorf(messages.WizardCLISkillCatalogEntryDuplicateMemberFmt, entry.ID, member)
+			return fmt.Errorf(messages.TemplatesCLISkillCatalogEntryDuplicateMemberFmt, entry.ID, member)
 		}
 		seenMembers[member] = struct{}{}
 		ok, err := catalogMemberTemplateExists(member)
@@ -105,14 +107,14 @@ func validateCatalogMembers(entry CLISkillCatalogEntry, catalogIDs map[string]st
 			return err
 		}
 		if !ok {
-			return fmt.Errorf(messages.WizardCLISkillCatalogEntryMemberMissingTemplateFmt, member, member)
+			return fmt.Errorf(messages.TemplatesCLISkillCatalogEntryMemberMissingTemplateFmt, member, member)
 		}
 	}
 	return nil
 }
 
 func catalogMemberTemplateExists(member string) (bool, error) {
-	_, err := templates.Read("skills/" + member + "/SKILL.md")
+	_, err := Read("skills/" + member + "/SKILL.md")
 	if err == nil {
 		return true, nil
 	}

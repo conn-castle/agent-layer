@@ -21,7 +21,7 @@ func TestCheckCLISkills_NilConfigReturnsNil(t *testing.T) {
 
 func TestCheckCLISkills_CatalogLoadFailureEmitsSingleFail(t *testing.T) {
 	original := loadCLISkillCatalogFunc
-	loadCLISkillCatalogFunc = func() ([]cliSkillCatalogEntry, error) {
+	loadCLISkillCatalogFunc = func() ([]templates.CLISkillCatalogEntry, error) {
 		return nil, errors.New("mock catalog load failure")
 	}
 	t.Cleanup(func() { loadCLISkillCatalogFunc = original })
@@ -35,8 +35,8 @@ func TestCheckCLISkills_CatalogLoadFailureEmitsSingleFail(t *testing.T) {
 
 func TestCheckCLISkills_AbsentSkillDirEmitsNothing(t *testing.T) {
 	originalCatalog := loadCLISkillCatalogFunc
-	loadCLISkillCatalogFunc = func() ([]cliSkillCatalogEntry, error) {
-		return []cliSkillCatalogEntry{{ID: "tavily-web", Binary: "tvly"}}, nil
+	loadCLISkillCatalogFunc = func() ([]templates.CLISkillCatalogEntry, error) {
+		return []templates.CLISkillCatalogEntry{{ID: "tavily-web", Binary: "tvly"}}, nil
 	}
 	t.Cleanup(func() { loadCLISkillCatalogFunc = originalCatalog })
 
@@ -47,8 +47,8 @@ func TestCheckCLISkills_AbsentSkillDirEmitsNothing(t *testing.T) {
 
 func TestCheckCLISkills_NoBinaryEntrySkipped(t *testing.T) {
 	originalCatalog := loadCLISkillCatalogFunc
-	loadCLISkillCatalogFunc = func() ([]cliSkillCatalogEntry, error) {
-		return []cliSkillCatalogEntry{{ID: "dispatch-agent"}}, nil
+	loadCLISkillCatalogFunc = func() ([]templates.CLISkillCatalogEntry, error) {
+		return []templates.CLISkillCatalogEntry{{ID: "dispatch-agent"}}, nil
 	}
 	t.Cleanup(func() { loadCLISkillCatalogFunc = originalCatalog })
 
@@ -61,8 +61,8 @@ func TestCheckCLISkills_NoBinaryEntrySkipped(t *testing.T) {
 
 func TestCheckCLISkills_BinaryFoundEmitsOK(t *testing.T) {
 	originalCatalog := loadCLISkillCatalogFunc
-	loadCLISkillCatalogFunc = func() ([]cliSkillCatalogEntry, error) {
-		return []cliSkillCatalogEntry{{ID: "tavily-web", Binary: "tvly"}}, nil
+	loadCLISkillCatalogFunc = func() ([]templates.CLISkillCatalogEntry, error) {
+		return []templates.CLISkillCatalogEntry{{ID: "tavily-web", Binary: "tvly"}}, nil
 	}
 	t.Cleanup(func() { loadCLISkillCatalogFunc = originalCatalog })
 
@@ -86,8 +86,8 @@ func TestCheckCLISkills_BinaryFoundEmitsOK(t *testing.T) {
 
 func TestCheckCLISkills_BinaryMissingEmitsFail(t *testing.T) {
 	originalCatalog := loadCLISkillCatalogFunc
-	loadCLISkillCatalogFunc = func() ([]cliSkillCatalogEntry, error) {
-		return []cliSkillCatalogEntry{{ID: "tavily-web", Binary: "tvly"}}, nil
+	loadCLISkillCatalogFunc = func() ([]templates.CLISkillCatalogEntry, error) {
+		return []templates.CLISkillCatalogEntry{{ID: "tavily-web", Binary: "tvly"}}, nil
 	}
 	t.Cleanup(func() { loadCLISkillCatalogFunc = originalCatalog })
 
@@ -107,49 +107,10 @@ func TestCheckCLISkills_BinaryMissingEmitsFail(t *testing.T) {
 	assert.NotEmpty(t, results[0].Recommendation)
 }
 
-func TestCheckCLISkills_EmbeddedCatalogLoads(t *testing.T) {
-	// The default loadCLISkillCatalogFunc reads the embedded TOML. Exercise it
-	// here and pin the renamed skill id to its unchanged command surface.
-	entries, err := loadCLISkillCatalogFunc()
-	require.NoError(t, err)
-	assert.NotEmpty(t, entries)
-	assert.Contains(t, entries, cliSkillCatalogEntry{ID: "playwright", Binary: "playwright-cli"})
-}
-
-func TestLoadCLISkillCatalogForDoctor_InvalidID(t *testing.T) {
-	original := templates.ReadFunc
-	templates.ReadFunc = func(path string) ([]byte, error) {
-		if path == cliSkillCatalogTemplatePath {
-			return []byte("[[cli_skills]]\nid = \"../escape\"\nbinary = \"tvly\"\n"), nil
-		}
-		return original(path)
-	}
-	t.Cleanup(func() { templates.ReadFunc = original })
-
-	_, err := loadCLISkillCatalogFunc()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid id")
-}
-
-func TestLoadCLISkillCatalogForDoctor_DuplicateID(t *testing.T) {
-	original := templates.ReadFunc
-	templates.ReadFunc = func(path string) ([]byte, error) {
-		if path == cliSkillCatalogTemplatePath {
-			return []byte("[[cli_skills]]\nid = \"tavily-web\"\nbinary = \"tvly\"\n\n[[cli_skills]]\nid = \"tavily-web\"\nbinary = \"tvly\"\n"), nil
-		}
-		return original(path)
-	}
-	t.Cleanup(func() { templates.ReadFunc = original })
-
-	_, err := loadCLISkillCatalogFunc()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "duplicates id")
-}
-
 func TestCheckCLISkills_PathPointsAtFileEmitsNoResult(t *testing.T) {
 	originalCatalog := loadCLISkillCatalogFunc
-	loadCLISkillCatalogFunc = func() ([]cliSkillCatalogEntry, error) {
-		return []cliSkillCatalogEntry{{ID: "tavily-web", Binary: "tvly"}}, nil
+	loadCLISkillCatalogFunc = func() ([]templates.CLISkillCatalogEntry, error) {
+		return []templates.CLISkillCatalogEntry{{ID: "tavily-web", Binary: "tvly"}}, nil
 	}
 	t.Cleanup(func() { loadCLISkillCatalogFunc = originalCatalog })
 
