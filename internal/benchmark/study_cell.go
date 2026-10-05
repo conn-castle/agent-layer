@@ -94,13 +94,9 @@ func studyStoredCostChecked(preparation matrixPreparation) (ObservedCostRange, e
 				if state == studyCellMissing {
 					continue
 				}
-				minimum, maximum, err := result.CostBounds()
-				if err != nil {
+				if err := total.add(result); err != nil {
 					return ObservedCostRange{}, err
 				}
-				total.Midpoint += *result.CostUSD
-				total.Minimum += minimum
-				total.Maximum += maximum
 			}
 		}
 	}

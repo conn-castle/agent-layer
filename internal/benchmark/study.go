@@ -247,14 +247,8 @@ func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) 
 		return StudyOutcome{}, err
 	}
 	outcome := studyProgress(prepared, options)
-	progress, err := studyProgressChecked(preparation)
-	if err != nil {
+	if err := refreshStudyProgress(&outcome, preparation); err != nil {
 		return StudyOutcome{}, err
-	}
-	outcome.Completed, outcome.Missing = progress.Completed, progress.Missing
-	for i := range outcome.Experiments {
-		outcome.Experiments[i].Completed = progress.Arms[i].Completed
-		outcome.Experiments[i].Missing = progress.Arms[i].Missing
 	}
 	outcome.ExecutionTimeoutSum, err = missingStudyCellsTimeoutSum(options.RepoRoot, preparation)
 	if err != nil {
@@ -271,14 +265,8 @@ func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) 
 			return StudyOutcome{}, err
 		}
 		outcome.RecoveredCells = recovered
-		progress, err = studyProgressChecked(preparation)
-		if err != nil {
+		if err := refreshStudyProgress(&outcome, preparation); err != nil {
 			return StudyOutcome{}, err
-		}
-		outcome.Completed, outcome.Missing = progress.Completed, progress.Missing
-		for i := range outcome.Experiments {
-			outcome.Experiments[i].Completed = progress.Arms[i].Completed
-			outcome.Experiments[i].Missing = progress.Arms[i].Missing
 		}
 		outcome.ExecutionTimeoutSum, err = missingStudyCellsTimeoutSum(options.RepoRoot, preparation)
 		if err != nil {
@@ -327,13 +315,9 @@ func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) 
 	executionErr := executeMatrix(ctx, options.RepoRoot, preparation.checksums, preparation.environments, preparation.arms, options.Tasks, preparation.taskConcurrency, executor, func(job matrixJob) {
 		emitStudyProgress(options, StudyProgress{Phase: "run", Message: "Running benchmark cell", Task: job.cell.task, Experiment: job.arm.Label, Attempt: job.cell.attempt, Completed: completedCells, Required: outcome.Required})
 	}, func(job matrixJob, result AttemptResult) {
-		minimum, maximum, boundsErr := result.CostBounds()
-		if boundsErr != nil {
+		if invocationCost.add(result) != nil {
 			return
 		}
-		invocationCost.Midpoint += *result.CostUSD
-		invocationCost.Minimum += minimum
-		invocationCost.Maximum += maximum
 		if options.OnCellComplete != nil {
 			options.OnCellComplete(addObservedCost(priorCost, invocationCost))
 		}
@@ -353,18 +337,26 @@ func RunStudy(ctx context.Context, options StudyOptions, executor TaskExecutor) 
 		return StudyOutcome{}, err
 	}
 	outcome = studyProgress(prepared, options)
-	progress, err = studyProgressChecked(preparation)
-	if err != nil {
+	if err := refreshStudyProgress(&outcome, preparation); err != nil {
 		return StudyOutcome{}, err
 	}
-	outcome.Completed, outcome.Missing = progress.Completed, progress.Missing
 	outcome.JSONPath, outcome.HTMLPath = jsonPath, htmlPath
 	outcome.ObservedInvocationCost = subtractObservedCost(studyReportCost(report), priorCost)
+	return outcome, nil
+}
+
+// refreshStudyProgress copies the current per-cell completion state into outcome.
+func refreshStudyProgress(outcome *StudyOutcome, preparation matrixPreparation) error {
+	progress, err := studyProgressChecked(preparation)
+	if err != nil {
+		return err
+	}
+	outcome.Completed, outcome.Missing = progress.Completed, progress.Missing
 	for i := range outcome.Experiments {
 		outcome.Experiments[i].Completed = progress.Arms[i].Completed
 		outcome.Experiments[i].Missing = progress.Arms[i].Missing
 	}
-	return outcome, nil
+	return nil
 }
 
 func recoverTerminalVerifierTimeoutCells(ctx context.Context, repoRoot string, preparation matrixPreparation, tasks []string) (recovered int, returnErr error) {
@@ -377,63 +369,72 @@ func recoverTerminalVerifierTimeoutCells(ctx context.Context, repoRoot string, p
 	for _, task := range tasks {
 		selected[task] = true
 	}
+	err = forEachTerminalVerifierTimeoutCell(repoRoot, preparation, selected, func(request ExecutionRequest, checkpoint pierExecutionCheckpoint) error {
+		request.EventID = checkpoint.EventID
+		request.ResumeFailedInfrastructure = true
+		request.executionCheckpointed = true
+		request.recoveryOnly = true
+		result, err := (PierExecutor{}).replayVerifier(ctx, request, checkpoint)
+		if err != nil {
+			return fmt.Errorf("recover terminal verifier timeout for %s repetition %d: %w", request.Task, request.Attempt, err)
+		}
+		if result.VerifierOutcome != verifierOutcomeTestTimeout || result.Validate() != nil {
+			return fmt.Errorf("recovery for %s repetition %d returned invalid terminal timeout evidence", request.Task, request.Attempt)
+		}
+		if err := writeJSON(armResultPath(request.EvidenceDir, request.Task, request.Attempt), result); err != nil {
+			return err
+		}
+		recovered++
+		return nil
+	})
+	return recovered, err
+}
+
+// forEachTerminalVerifierTimeoutCell visits, in arm-major plan order, each
+// missing cell whose retained Pier checkpoint ended in a terminal verifier test
+// timeout. An empty selection visits every task.
+func forEachTerminalVerifierTimeoutCell(repoRoot string, preparation matrixPreparation, selected map[string]bool, visit func(ExecutionRequest, pierExecutionCheckpoint) error) error {
 	for armIndex := range preparation.arms {
 		arm := &preparation.arms[armIndex]
 		for _, task := range arm.Loaded.Plan.Tasks {
 			if len(selected) > 0 && !selected[task.ID] {
 				continue
 			}
+			checksum, environment := preparation.checksums[task.ID], preparation.environments[task.ID]
 			for attempt := 1; attempt <= task.RepetitionsPerArm; attempt++ {
-				state, _, err := inspectStudyCell(*arm, task.ID, attempt, preparation.checksums[task.ID], preparation.environments[task.ID])
+				state, _, err := inspectStudyCell(*arm, task.ID, attempt, checksum, environment)
 				if err != nil {
-					return recovered, err
+					return err
 				}
 				if state != studyCellMissing {
 					continue
 				}
-				request := ExecutionRequest{
-					RepoRoot: repoRoot, EvidenceDir: arm.StateDir, Attempt: attempt, Task: task.ID,
-					Experiment: arm.Label, Model: arm.Loaded.Model, Effort: arm.Loaded.Effort, Arm: arm.Mode,
-					Bundle: arm.Bundle, AgentTimeoutMultiplier: arm.AgentTimeoutMultiplier,
-					TaskChecksum: preparation.checksums[task.ID], EnvironmentIdentity: preparation.environments[task.ID],
-					ResumeFailedInfrastructure: true,
-				}
+				request := studyCellRequest(repoRoot, arm, task.ID, attempt, checksum, environment)
 				checkpoint, found, err := matchingPierExecutionCheckpoint(request)
 				if err != nil {
-					return recovered, err
+					return err
 				}
 				if !found {
 					continue
 				}
 				raw, err := readPierTaskResult(checkpoint.StagePath, request)
 				if err != nil {
-					return recovered, fmt.Errorf("inspect retained checkpoint %s at %s: %w", checkpoint.EventID, checkpoint.StagePath, err)
+					return fmt.Errorf("inspect retained checkpoint %s at %s: %w", checkpoint.EventID, checkpoint.StagePath, err)
 				}
 				terminal, err := terminalVerifierTestTimeout(checkpoint.StagePath, raw)
 				if err != nil {
-					return recovered, err
+					return err
 				}
 				if !terminal {
 					continue
 				}
-				request.EventID = checkpoint.EventID
-				request.executionCheckpointed = true
-				request.recoveryOnly = true
-				result, err := (PierExecutor{}).replayVerifier(ctx, request, checkpoint)
-				if err != nil {
-					return recovered, fmt.Errorf("recover terminal verifier timeout for %s repetition %d: %w", task.ID, attempt, err)
+				if err := visit(request, checkpoint); err != nil {
+					return err
 				}
-				if result.VerifierOutcome != verifierOutcomeTestTimeout || result.Validate() != nil {
-					return recovered, fmt.Errorf("recovery for %s repetition %d returned invalid terminal timeout evidence", task.ID, attempt)
-				}
-				if err := writeJSON(armResultPath(arm.StateDir, task.ID, attempt), result); err != nil {
-					return recovered, err
-				}
-				recovered++
 			}
 		}
 	}
-	return recovered, nil
+	return nil
 }
 
 func emitStudyProgress(options StudyOptions, progress StudyProgress) {
@@ -999,15 +1000,11 @@ func loadCompleteCachedStudy(repoRoot string, prepared *preparedStudy, candidate
 			matches = append(matches, preparation)
 		}
 	}
-	switch len(matches) {
-	case 0:
-		return matrixPreparation{}, bundles, false, nil
-	case 1:
-		prepared.studyID = filepath.Base(matches[0].stateDir)
-		return matches[0], bundles, true, nil
-	default:
-		return matrixPreparation{}, nil, false, fmt.Errorf("completed benchmark study matches more than one historical state directory")
+	selected, found, err := selectCachedStudy(prepared, matches, "completed benchmark study matches more than one historical state directory")
+	if err != nil {
+		return matrixPreparation{}, nil, false, err
 	}
+	return selected, bundles, found, nil
 }
 
 // loadRecoverableCachedStudy binds recovery to immutable historical runtime
@@ -1027,26 +1024,18 @@ func loadRecoverableCachedStudy(repoRoot string, prepared *preparedStudy, candid
 		if !compatible {
 			continue
 		}
-		count, err := terminalVerifierTimeoutCheckpointCount(repoRoot, preparation)
+		recoverable, err := hasTerminalVerifierTimeoutCell(repoRoot, preparation)
 		if err != nil {
 			return matrixPreparation{}, false, err
 		}
-		if count > 0 {
+		if recoverable {
 			if err := restoreHistoricalStudyTreatmentProvenance(repoRoot, candidate.stateDir, manifest, &preparation); err != nil {
 				return matrixPreparation{}, false, err
 			}
 			matches = append(matches, preparation)
 		}
 	}
-	switch len(matches) {
-	case 0:
-		return matrixPreparation{}, false, nil
-	case 1:
-		prepared.studyID = filepath.Base(matches[0].stateDir)
-		return matches[0], true, nil
-	default:
-		return matrixPreparation{}, false, fmt.Errorf("terminal verifier timeout recovery matches more than one historical study; narrow or repair retained study state before retrying")
-	}
+	return selectCachedStudy(prepared, matches, "terminal verifier timeout recovery matches more than one historical study; narrow or repair retained study state before retrying")
 }
 
 func loadCompleteCachedStudyForRecovery(repoRoot string, prepared *preparedStudy, candidates []cachedStudyCandidate, tasks []benchmarkPlanTask, concurrency int) (matrixPreparation, bool, error) {
@@ -1076,6 +1065,12 @@ func loadCompleteCachedStudyForRecovery(repoRoot string, prepared *preparedStudy
 		preparation.authentication = authentication
 		matches = append(matches, preparation)
 	}
+	return selectCachedStudy(prepared, matches, "complete benchmark study matches more than one historical state directory")
+}
+
+// selectCachedStudy binds prepared to the single matching historical study and
+// rejects ambiguous matches with conflict.
+func selectCachedStudy(prepared *preparedStudy, matches []matrixPreparation, conflict string) (matrixPreparation, bool, error) {
 	switch len(matches) {
 	case 0:
 		return matrixPreparation{}, false, nil
@@ -1083,7 +1078,7 @@ func loadCompleteCachedStudyForRecovery(repoRoot string, prepared *preparedStudy
 		prepared.studyID = filepath.Base(matches[0].stateDir)
 		return matches[0], true, nil
 	default:
-		return matrixPreparation{}, false, fmt.Errorf("complete benchmark study matches more than one historical state directory")
+		return matrixPreparation{}, false, errors.New(conflict)
 	}
 }
 
@@ -1177,47 +1172,16 @@ func recoveryPreparationFromManifest(prepared *preparedStudy, manifest immutable
 	return preparation
 }
 
-func terminalVerifierTimeoutCheckpointCount(repoRoot string, preparation matrixPreparation) (int, error) {
-	count := 0
-	for armIndex := range preparation.arms {
-		arm := &preparation.arms[armIndex]
-		for _, task := range arm.Loaded.Plan.Tasks {
-			for attempt := 1; attempt <= task.RepetitionsPerArm; attempt++ {
-				state, _, err := inspectStudyCell(*arm, task.ID, attempt, preparation.checksums[task.ID], preparation.environments[task.ID])
-				if err != nil {
-					return 0, err
-				}
-				if state != studyCellMissing {
-					continue
-				}
-				request := ExecutionRequest{
-					RepoRoot: repoRoot, EvidenceDir: arm.StateDir, Attempt: attempt, Task: task.ID,
-					Model: arm.Loaded.Model, Effort: arm.Loaded.Effort, Arm: arm.Mode, Bundle: arm.Bundle,
-					AgentTimeoutMultiplier: arm.AgentTimeoutMultiplier, TaskChecksum: preparation.checksums[task.ID],
-					EnvironmentIdentity: preparation.environments[task.ID],
-				}
-				checkpoint, found, err := matchingPierExecutionCheckpoint(request)
-				if err != nil {
-					return 0, err
-				}
-				if !found {
-					continue
-				}
-				raw, err := readPierTaskResult(checkpoint.StagePath, request)
-				if err != nil {
-					return 0, fmt.Errorf("inspect retained checkpoint %s at %s: %w", checkpoint.EventID, checkpoint.StagePath, err)
-				}
-				terminal, err := terminalVerifierTestTimeout(checkpoint.StagePath, raw)
-				if err != nil {
-					return 0, err
-				}
-				if terminal {
-					count++
-				}
-			}
-		}
-	}
-	return count, nil
+// hasTerminalVerifierTimeoutCell deliberately scans every cell rather than
+// stopping at the first match, so later cells' errors and checkpoint scratch
+// recovery still apply before a study is bound for recovery.
+func hasTerminalVerifierTimeoutCell(repoRoot string, preparation matrixPreparation) (bool, error) {
+	found := false
+	err := forEachTerminalVerifierTimeoutCell(repoRoot, preparation, nil, func(ExecutionRequest, pierExecutionCheckpoint) error {
+		found = true
+		return nil
+	})
+	return found, err
 }
 
 func loadReportClaimedCachedStudy(repoRoot string, prepared *preparedStudy, stateDir string, bundles []*TreatmentBundle, tasks []benchmarkPlanTask, concurrency int) (matrixPreparation, bool, error) {

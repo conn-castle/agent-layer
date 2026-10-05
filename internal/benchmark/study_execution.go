@@ -422,6 +422,16 @@ func compareStudyArmManifest(selectionID string, tasks []benchmarkPlanTask, chec
 	return nil
 }
 
+// studyCellRequest identifies one study cell for execution or checkpoint matching.
+func studyCellRequest(repoRoot string, arm *matrixArm, task string, attempt int, checksum, environment string) ExecutionRequest {
+	return ExecutionRequest{
+		RepoRoot: repoRoot, EvidenceDir: arm.StateDir, Attempt: attempt, Task: task,
+		Experiment: arm.Label, Model: arm.Loaded.Model, Effort: arm.Loaded.Effort, Arm: arm.Mode,
+		Bundle: arm.Bundle, AgentTimeoutMultiplier: arm.AgentTimeoutMultiplier,
+		TaskChecksum: checksum, EnvironmentIdentity: environment,
+	}
+}
+
 func executeMatrix(ctx context.Context, repoRoot string, checksums, environments map[string]string, arms []matrixArm, tasks []string, concurrency int, executor TaskExecutor, onCellStart func(matrixJob), onCellComplete ...func(matrixJob, AttemptResult)) (returnErr error) {
 	if concurrency < 1 {
 		return fmt.Errorf("study execution requires at least one task worker, got %d", concurrency)
@@ -497,7 +507,10 @@ func executeMatrix(ctx context.Context, repoRoot string, checksums, environments
 					// A failed paid provider event is immutable evidence.  A fresh
 					// `benchmark run` may explicitly resume it, but this invocation
 					// must return the infrastructure failure rather than retrying it.
-					result, err = executor.Execute(ctx, ExecutionRequest{RepoRoot: repoRoot, EvidenceDir: job.arm.StateDir, EventID: eventID, Attempt: job.cell.attempt, Task: job.cell.task, Experiment: job.arm.Label, Model: job.arm.Loaded.Model, Effort: job.arm.Loaded.Effort, Arm: job.arm.Mode, Bundle: job.arm.Bundle, AgentTimeoutMultiplier: job.arm.AgentTimeoutMultiplier, TaskChecksum: checksums[job.cell.task], EnvironmentIdentity: environments[job.cell.task], ResumeFailedInfrastructure: true})
+					request := studyCellRequest(repoRoot, job.arm, job.cell.task, job.cell.attempt, checksums[job.cell.task], environments[job.cell.task])
+					request.EventID = eventID
+					request.ResumeFailedInfrastructure = true
+					result, err = executor.Execute(ctx, request)
 					if err == nil && result.Validate() != nil {
 						err = fmt.Errorf("returned invalid evidence")
 					}
