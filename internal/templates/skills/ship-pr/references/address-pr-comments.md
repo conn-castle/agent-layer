@@ -19,9 +19,13 @@ bash <skill_dir>/scripts/read-pr-comments.sh --repo <owner/name> --pr <number>
 
 Reason about eligibility and supported replies from that output. Exclude only
 status or CI messages, factual statements, and verdicts without a new request.
-Stop if no eligible unresolved feedback remains.
+Read every review body, including automated approvals, review summaries, and
+pre-merge checklists: a request embedded there is eligible regardless of review
+state or a no-actionable-comments verdict. A bot's threshold, such as a coverage
+percentage, is not repository policy; validate its request like any other. Stop
+if no eligible unresolved feedback remains.
 
-Validate each remaining comment against the current tree:
+Validate each remaining request against the current tree:
 
 - `fix`: in scope and addresses a material correctness, security, safety,
   reliability, maintainability, or contract-completion problem
@@ -35,8 +39,9 @@ Repair accepted root causes and required tests, documentation, or memory. Group
 coupled work and run focused checks. Track deferrals locally without external
 issue creation unless authorized.
 
-Prepare one reply per eligible, unblocked comment, keyed by its stable ID or
-URL:
+Prepare a reply for each eligible, unblocked request, keyed by its source's
+stable ID or URL. Requests with the same disposition may share one reply that
+addresses each:
 
 - `Fixed.` Describe the fix. This is a proposal marker only; the shipper must
   replace it with `Fixed in <full commit SHA>.` after pushing the fix.
@@ -49,7 +54,7 @@ The first words are a machine-readable disposition protocol. Do not substitute
 marker `Fixed.`; a posted fixed disposition must name the full commit that
 contains the accepted fix.
 
-Finish when every eligible comment has a supported disposition and no unblocked
-local work remains. Return dispositions, stable comment IDs or URLs, fixes and
-checks, trackers, proposed replies, blockers, and confirmation that nothing was
-published.
+Finish when every eligible request has a supported disposition and no unblocked
+local work remains. Return each eligible request with its source URL, request
+text, disposition, and proposed reply, plus fixes and checks, trackers,
+blockers, and confirmation that nothing was published.
