@@ -312,7 +312,7 @@ func (inst *installer) writeVSCodeLaunchers() error {
 func (inst templateManager) writeTemplateFiles() error {
 	// User-owned required files: seed only when missing; never overwrite.
 	for _, file := range inst.userOwnedSeedFiles() {
-		if err := writeTemplateIfMissing(inst.sys, file.path, file.template, file.perm); err != nil {
+		if err := inst.writeTemplateFile(file.path, file.template, file.perm, nil, nil); err != nil {
 			return err
 		}
 	}
@@ -320,20 +320,14 @@ func (inst templateManager) writeTemplateFiles() error {
 	// Agent-owned internal files: always overwrite to enforce safety invariants.
 	alwaysOverwrite := func(string) (bool, error) { return true, nil }
 	for _, file := range inst.agentOnlyFiles() {
-		if err := writeTemplateFile(inst.sys, file.path, file.template, file.perm, alwaysOverwrite); err != nil {
+		if err := inst.writeTemplateFile(file.path, file.template, file.perm, alwaysOverwrite, nil); err != nil {
 			return err
 		}
 	}
 
 	// Upgrade-managed files: overwrite behavior is controlled by init/upgrade flags.
 	for _, file := range inst.managedTemplateFiles() {
-		if file.template == templateGitignoreBlock {
-			if err := writeGitignoreBlock(inst.sys, file.path, file.template, file.perm, inst.shouldOverwrite, inst.recordDiff); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := writeTemplateFileWithMatch(inst.sys, file.path, file.template, file.perm, inst.shouldOverwrite, inst.recordDiff, inst.matchTemplate); err != nil {
+		if err := inst.writeTemplateFile(file.path, file.template, file.perm, inst.shouldOverwrite, inst.recordDiff); err != nil {
 			return err
 		}
 	}

@@ -12,15 +12,16 @@ import (
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
-func TestWriteTemplateIfMissingExisting(t *testing.T) {
+func TestWriteTemplateFile_NoPromptPreservesExisting(t *testing.T) {
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	path := filepath.Join(root, "config.toml")
 	if err := os.WriteFile(path, []byte("custom"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
-	if err := writeTemplateIfMissing(RealSystem{}, path, "config.toml", 0o644); err != nil {
-		t.Fatalf("writeTemplateIfMissing error: %v", err)
+	if err := inst.templates().writeTemplateFile(path, "config.toml", 0o644, nil, nil); err != nil {
+		t.Fatalf("writeTemplateFile error: %v", err)
 	}
 	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
@@ -31,10 +32,11 @@ func TestWriteTemplateIfMissingExisting(t *testing.T) {
 	}
 }
 
-func TestWriteTemplateIfMissingInvalidTemplate(t *testing.T) {
+func TestWriteTemplateFile_NoPromptInvalidTemplate(t *testing.T) {
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	path := filepath.Join(root, "config.toml")
-	err := writeTemplateIfMissing(RealSystem{}, path, "missing-template", 0o644)
+	err := inst.templates().writeTemplateFile(path, "missing-template", 0o644, nil, nil)
 	if err == nil {
 		t.Fatalf("expected error for missing template")
 	}
@@ -106,20 +108,21 @@ func TestBuildLabeledDiffs_UsesSlashNormalizedTemplateMapping(t *testing.T) {
 	}
 }
 
-func TestWriteTemplateIfMissingStatError(t *testing.T) {
+func TestWriteTemplateFile_ParentIsFileStatError(t *testing.T) {
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	file := filepath.Join(root, "file")
 	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
 	path := filepath.Join(file, "config.toml")
-	if err := writeTemplateIfMissing(RealSystem{}, path, "config.toml", 0o644); err == nil {
+	if err := inst.templates().writeTemplateFile(path, "config.toml", 0o644, nil, nil); err == nil {
 		t.Fatalf("expected error for stat failure")
 	}
 }
 
-func TestWriteTemplateFileWithMatch_UsesCache(t *testing.T) {
+func TestWriteTemplateFile_UsesCache(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "config.toml")
 	templateBytes, err := templates.Read("config.toml")
@@ -135,7 +138,7 @@ func TestWriteTemplateFileWithMatch_UsesCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat config.toml: %v", err)
 	}
-	if _, err := inst.templates().matchTemplate(RealSystem{}, path, "config.toml", info); err != nil {
+	if _, err := inst.templates().matchTemplate(path, "config.toml", info); err != nil {
 		t.Fatalf("prime cache: %v", err)
 	}
 
@@ -145,7 +148,7 @@ func TestWriteTemplateFileWithMatch_UsesCache(t *testing.T) {
 	}
 	t.Cleanup(func() { templates.ReadFunc = original })
 
-	if err := writeTemplateFileWithMatch(RealSystem{}, path, "config.toml", 0o644, nil, nil, inst.templates().matchTemplate); err != nil {
+	if err := inst.templates().writeTemplateFile(path, "config.toml", 0o644, nil, nil); err != nil {
 		t.Fatalf("expected cached match to skip template read: %v", err)
 	}
 }
@@ -172,23 +175,24 @@ func TestFileMatchesTemplateReadError(t *testing.T) {
 	}
 }
 
-func TestWriteTemplateFile_FileMatchesError(t *testing.T) {
+func TestWriteTemplateFile_ReadExistingError(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "config.toml")
 	if err := os.WriteFile(path, []byte("existing"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	matchTemplate := func(sys System, path string, templatePath string, info fs.FileInfo) (bool, error) {
-		return false, errors.New("match error")
-	}
-	err := writeTemplateFileWithMatch(RealSystem{}, path, "config.toml", 0o644, nil, nil, matchTemplate)
-	if err == nil {
-		t.Fatalf("expected error")
+	sys := newFaultSystem(RealSystem{})
+	sys.readErrs[normalizePath(path)] = errors.New("read error")
+	inst := &installer{sys: sys}
+	err := inst.templates().writeTemplateFile(path, "config.toml", 0o644, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "failed to read") {
+		t.Fatalf("expected existing-file read error, got %v", err)
 	}
 }
 
 func TestWriteTemplateFile_OverwritePromptError(t *testing.T) {
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	path := filepath.Join(root, "config.toml")
 	if err := os.WriteFile(path, []byte("different"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
@@ -197,9 +201,9 @@ func TestWriteTemplateFile_OverwritePromptError(t *testing.T) {
 	prompt := func(path string) (bool, error) {
 		return false, errors.New("prompt error")
 	}
-	err := writeTemplateFile(RealSystem{}, path, "config.toml", 0o644, prompt)
-	if err == nil {
-		t.Fatalf("expected error from prompt")
+	err := inst.templates().writeTemplateFile(path, "config.toml", 0o644, prompt, nil)
+	if err == nil || !strings.Contains(err.Error(), "prompt error") {
+		t.Fatalf("expected prompt error, got %v", err)
 	}
 }
 
@@ -236,6 +240,7 @@ func TestWriteTemplateFile_StatError(t *testing.T) {
 		t.Skip("skipping permissions test on windows")
 	}
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	dir := filepath.Join(root, "locked")
 	if err := os.Mkdir(dir, 0o000); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -244,7 +249,7 @@ func TestWriteTemplateFile_StatError(t *testing.T) {
 	testutil.SkipIfWritable(t, dir)
 
 	path := filepath.Join(dir, "config.toml")
-	err := writeTemplateFile(RealSystem{}, path, "config.toml", 0o644, nil)
+	err := inst.templates().writeTemplateFile(path, "config.toml", 0o644, nil, nil)
 	if err == nil {
 		t.Fatalf("expected error for stat failure")
 	}
@@ -252,13 +257,14 @@ func TestWriteTemplateFile_StatError(t *testing.T) {
 
 func TestWriteTemplateFile_MkdirError(t *testing.T) {
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	// Create a file where directory should be
 	blocker := filepath.Join(root, "blocker")
 	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	path := filepath.Join(blocker, "subdir", "config.toml")
-	err := writeTemplateFile(RealSystem{}, path, "config.toml", 0o644, nil)
+	err := inst.templates().writeTemplateFile(path, "config.toml", 0o644, nil, nil)
 	if err == nil {
 		t.Fatalf("expected error for mkdir failure")
 	}
@@ -340,6 +346,7 @@ func TestWriteTemplateFile_WriteAfterOverwriteError(t *testing.T) {
 		t.Skip("skipping permissions test on windows")
 	}
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	path := filepath.Join(root, "config.toml")
 	// Write existing file with different content
 	if err := os.WriteFile(path, []byte("old content"), 0o600); err != nil {
@@ -355,7 +362,7 @@ func TestWriteTemplateFile_WriteAfterOverwriteError(t *testing.T) {
 	prompt := func(p string) (bool, error) {
 		return true, nil // Agree to overwrite
 	}
-	err := writeTemplateFile(RealSystem{}, path, "config.toml", 0o644, prompt)
+	err := inst.templates().writeTemplateFile(path, "config.toml", 0o644, prompt, nil)
 	if err == nil {
 		t.Fatalf("expected error for write failure")
 	}
@@ -363,15 +370,17 @@ func TestWriteTemplateFile_WriteAfterOverwriteError(t *testing.T) {
 
 func TestWriteTemplateFile_ReadTemplateError(t *testing.T) {
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	path := filepath.Join(root, "file.toml")
-	err := writeTemplateFile(RealSystem{}, path, "nonexistent-template", 0o644, nil)
-	if err == nil {
-		t.Fatalf("expected error for template read failure")
+	err := inst.templates().writeTemplateFile(path, "nonexistent-template", 0o644, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "failed to read template") {
+		t.Fatalf("expected template read error, got %v", err)
 	}
 }
 
 func TestWriteTemplateFile_ExactMatch(t *testing.T) {
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	path := filepath.Join(root, "config.toml")
 
 	// First write the template
@@ -389,7 +398,7 @@ func TestWriteTemplateFile_ExactMatch(t *testing.T) {
 		overwriteCalled = true
 		return false, nil
 	}
-	err = writeTemplateFile(RealSystem{}, path, "config.toml", 0o644, prompt)
+	err = inst.templates().writeTemplateFile(path, "config.toml", 0o644, prompt, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -542,53 +551,6 @@ func TestTemplateDirEntries_Cached(t *testing.T) {
 	}
 }
 
-func TestMatchTemplate_NilSys(t *testing.T) {
-	root := t.TempDir()
-	configPath := filepath.Join(root, "config.toml")
-	templateBytes, err := templates.Read("config.toml")
-	if err != nil {
-		t.Fatalf("read template: %v", err)
-	}
-	if err := os.WriteFile(configPath, templateBytes, 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	inst := &installer{root: root, sys: RealSystem{}}
-	info, _ := os.Stat(configPath)
-
-	// Call with nil sys - should use inst.sys
-	matches, err := inst.templates().matchTemplate(nil, configPath, "config.toml", info)
-	if err != nil {
-		t.Fatalf("matchTemplate error: %v", err)
-	}
-	if !matches {
-		t.Fatalf("expected file to match template")
-	}
-}
-
-func TestMatchTemplate_NoInfo(t *testing.T) {
-	root := t.TempDir()
-	configPath := filepath.Join(root, "config.toml")
-	templateBytes, err := templates.Read("config.toml")
-	if err != nil {
-		t.Fatalf("read template: %v", err)
-	}
-	if err := os.WriteFile(configPath, templateBytes, 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	inst := &installer{root: root, sys: RealSystem{}}
-
-	// Call with nil info - should still work, just not use cache
-	matches, err := inst.templates().matchTemplate(RealSystem{}, configPath, "config.toml", nil)
-	if err != nil {
-		t.Fatalf("matchTemplate error: %v", err)
-	}
-	if !matches {
-		t.Fatalf("expected file to match template")
-	}
-}
-
 func TestTemplateFileMatches_GitignoreBlockMatchesTemplate(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
@@ -608,7 +570,7 @@ func TestTemplateFileMatches_GitignoreBlockMatchesTemplate(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	matches, err := inst.templates().matchTemplate(inst.sys, blockPath, "gitignore.block", info)
+	matches, err := inst.templates().matchTemplate(blockPath, "gitignore.block", info)
 	if err != nil {
 		t.Fatalf("matchTemplate error: %v", err)
 	}
@@ -635,7 +597,7 @@ func TestTemplateFileMatches_GitignoreBlockMatchesMergedTrackingSettings(t *test
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	matches, err := inst.templates().matchTemplate(inst.sys, blockPath, "gitignore.block", info)
+	matches, err := inst.templates().matchTemplate(blockPath, "gitignore.block", info)
 	if err != nil {
 		t.Fatalf("matchTemplate error: %v", err)
 	}
@@ -659,7 +621,7 @@ func TestTemplateFileMatches_GitignoreBlockNoMatch(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	matches, err := inst.templates().matchTemplate(inst.sys, blockPath, "gitignore.block", info)
+	matches, err := inst.templates().matchTemplate(blockPath, "gitignore.block", info)
 	if err != nil {
 		t.Fatalf("matchTemplate error: %v", err)
 	}
@@ -793,40 +755,6 @@ func TestTemplateDirEntries_UnexpectedPath(t *testing.T) {
 	}
 }
 
-func TestWriteTemplateFileWithMatch_NilMatchTemplate(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "test.toml")
-	templateBytes, err := templates.Read("config.toml")
-	if err != nil {
-		t.Fatalf("read template: %v", err)
-	}
-	if err := os.WriteFile(path, templateBytes, 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-
-	// Call with nil matchTemplate - should use default
-	err = writeTemplateFileWithMatch(RealSystem{}, path, "config.toml", 0o644, nil, nil, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestWriteTemplateFileWithMatch_MkdirAllError(t *testing.T) {
-	root := t.TempDir()
-	// Create a file that will block directory creation
-	blocker := filepath.Join(root, "blocker")
-	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-
-	// Try to write to a path where the parent can't be created
-	path := filepath.Join(blocker, "subdir", "config.toml")
-	err := writeTemplateFileWithMatch(RealSystem{}, path, "config.toml", 0o644, nil, nil, nil)
-	if err == nil {
-		t.Fatalf("expected error for mkdir failure")
-	}
-}
-
 func TestTemplateFileMatches_ReadError(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("skipping permissions test on windows")
@@ -847,7 +775,7 @@ func TestTemplateFileMatches_ReadError(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	_, err := inst.templates().matchTemplate(inst.sys, blockPath, "gitignore.block", info)
+	_, err := inst.templates().matchTemplate(blockPath, "gitignore.block", info)
 	if err == nil {
 		t.Fatalf("expected error from read failure")
 	}
@@ -876,7 +804,7 @@ func TestTemplateFileMatches_TemplateReadError(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	_, err := inst.templates().matchTemplate(inst.sys, blockPath, "gitignore.block", info)
+	_, err := inst.templates().matchTemplate(blockPath, "gitignore.block", info)
 	if err == nil {
 		t.Fatalf("expected error from template read failure")
 	}
@@ -1119,14 +1047,160 @@ func TestWriteSectionAwareTemplateFile_OverwriteBranches(t *testing.T) {
 	})
 }
 
-func TestWriteTemplateFileWithMatch_MkdirAllErrorAfterNotExist(t *testing.T) {
+func TestWriteTemplateFile_MkdirAllErrorAfterNotExist(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "nested", "config.toml")
 	sys := newFaultSystem(RealSystem{})
 	sys.mkdirErrs[normalizePath(filepath.Dir(path))] = errors.New("mkdir boom")
+	inst := &installer{sys: sys}
 
-	err := writeTemplateFileWithMatch(sys, path, "config.toml", 0o644, nil, nil, nil)
+	err := inst.templates().writeTemplateFile(path, "config.toml", 0o644, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "failed to create directory for") {
 		t.Fatalf("expected mkdir error, got %v", err)
+	}
+}
+
+func TestWriteTemplateFiles_UnreadableSeedFails(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".agent-layer", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("custom"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	sys := newFaultSystem(RealSystem{})
+	sys.readErrs[normalizePath(path)] = errors.New("seed read failed")
+	inst := &installer{root: root, sys: sys}
+	if err := inst.templates().writeTemplateFiles(); err == nil || !strings.Contains(err.Error(), "failed to read "+path+": seed read failed") {
+		t.Fatalf("expected seed read error, got %v", err)
+	}
+}
+
+func TestWriteTemplateFile_OverwriteReadOrder(t *testing.T) {
+	for _, templatePath := range []string{"config.toml", "gitignore.block"} {
+		t.Run(templatePath, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), templatePath)
+			if err := os.WriteFile(path, []byte("custom"), 0o600); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			sys := &promptReadErrorSystem{System: RealSystem{}, path: path, failAt: 2, err: errors.New("second read failed")}
+			inst := &installer{sys: sys}
+			approve := func(string) (bool, error) { return true, nil }
+			err := inst.templates().writeTemplateFile(path, templatePath, 0o644, approve, nil)
+			if templatePath == "gitignore.block" {
+				if err == nil || !strings.Contains(err.Error(), "failed to read "+path+": second read failed") {
+					t.Fatalf("expected overwrite read error, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("overwrite: %v", err)
+			}
+			got, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
+			if err != nil {
+				t.Fatalf("read updated file: %v", err)
+			}
+			want, err := templates.Read(templatePath)
+			if err != nil {
+				t.Fatalf("read template: %v", err)
+			}
+			if string(got) != string(want) {
+				t.Fatalf("overwrite did not write raw template")
+			}
+		})
+	}
+}
+
+func TestWriteTemplateFile_MissingWritesRawTemplate(t *testing.T) {
+	for _, tc := range []struct {
+		template string
+		perm     fs.FileMode
+	}{{"env", 0o600}, {"gitignore.block", 0o644}} {
+		t.Run(tc.template, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "nested", tc.template)
+			inst := &installer{sys: RealSystem{}}
+			unexpected := func(string) (bool, error) {
+				t.Fatal("missing file should not prompt")
+				return false, nil
+			}
+			if err := inst.templates().writeTemplateFile(path, tc.template, tc.perm, unexpected, func(string) { t.Fatal("missing file should not record a diff") }); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			got, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			want, err := templates.Read(tc.template)
+			if err != nil {
+				t.Fatalf("read template: %v", err)
+			}
+			if string(got) != string(want) {
+				t.Fatal("missing file should receive raw template")
+			}
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatalf("stat: %v", err)
+			}
+			if os.PathSeparator != '\\' && info.Mode().Perm() != tc.perm {
+				t.Fatalf("permissions = %o, want %o", info.Mode().Perm(), tc.perm)
+			}
+		})
+	}
+}
+
+func TestWriteTemplateFiles_OverwritePolicyPerFileClass(t *testing.T) {
+	for _, overwrite := range []bool{false, true} {
+		t.Run(map[bool]string{false: "keep", true: "overwrite"}[overwrite], func(t *testing.T) {
+			root := t.TempDir()
+			inst := &installer{root: root, sys: RealSystem{}, overwrite: overwrite, overwriteAll: true, overwriteAllDecided: true}
+			tm := inst.templates()
+			seed, agentOnly, managed := tm.userOwnedSeedFiles(), tm.agentOnlyFiles(), tm.managedTemplateFiles()
+			for _, files := range [][]templateFile{seed, agentOnly, managed} {
+				for _, file := range files {
+					if err := os.MkdirAll(filepath.Dir(file.path), 0o700); err != nil {
+						t.Fatalf("mkdir: %v", err)
+					}
+					if err := os.WriteFile(file.path, []byte("custom\n"), 0o600); err != nil {
+						t.Fatalf("write %s: %v", file.path, err)
+					}
+				}
+			}
+
+			if err := tm.writeTemplateFiles(); err != nil {
+				t.Fatalf("writeTemplateFiles: %v", err)
+			}
+
+			matchesTemplate := func(file templateFile) bool {
+				t.Helper()
+				matches, err := fileMatchesTemplate(RealSystem{}, file.path, file.template)
+				if err != nil {
+					t.Fatalf("match %s: %v", file.path, err)
+				}
+				return matches
+			}
+			for _, file := range seed {
+				if matchesTemplate(file) {
+					t.Fatalf("seed file %s was overwritten", file.path)
+				}
+			}
+			for _, file := range agentOnly {
+				if !matchesTemplate(file) {
+					t.Fatalf("agent-only file %s was not restored", file.path)
+				}
+			}
+			var wantDiffs []string
+			for _, file := range managed {
+				if matchesTemplate(file) != overwrite {
+					t.Fatalf("managed file %s overwritten = %v, want %v", file.path, !overwrite, overwrite)
+				}
+				if !overwrite {
+					wantDiffs = append(wantDiffs, file.path)
+				}
+			}
+			if strings.Join(inst.diffs, "\n") != strings.Join(wantDiffs, "\n") {
+				t.Fatalf("diffs = %v, want %v", inst.diffs, wantDiffs)
+			}
+		})
 	}
 }

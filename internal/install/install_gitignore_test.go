@@ -233,8 +233,9 @@ func TestUpdateGitignoreRejectsManagedMarkers(t *testing.T) {
 	}
 }
 
-func TestWriteGitignoreBlockKeepsTemplateVerbatim(t *testing.T) {
+func TestWriteTemplateFile_GitignoreBlockKeepsTemplateVerbatim(t *testing.T) {
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	path := filepath.Join(root, ".agent-layer", "gitignore.block")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -249,8 +250,8 @@ func TestWriteGitignoreBlockKeepsTemplateVerbatim(t *testing.T) {
 		t.Fatalf("write template: %v", err)
 	}
 
-	if err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, nil, nil); err != nil {
-		t.Fatalf("writeGitignoreBlock error: %v", err)
+	if err := inst.templates().writeTemplateFile(path, "gitignore.block", 0o644, nil, nil); err != nil {
+		t.Fatalf("writeTemplateFile error: %v", err)
 	}
 	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
@@ -261,8 +262,9 @@ func TestWriteGitignoreBlockKeepsTemplateVerbatim(t *testing.T) {
 	}
 }
 
-func TestWriteGitignoreBlockPreservesCustom(t *testing.T) {
+func TestWriteTemplateFile_GitignoreBlockPreservesCustom(t *testing.T) {
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	path := filepath.Join(root, ".agent-layer", "gitignore.block")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -273,8 +275,8 @@ func TestWriteGitignoreBlockPreservesCustom(t *testing.T) {
 		t.Fatalf("write custom: %v", err)
 	}
 
-	if err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, nil, nil); err != nil {
-		t.Fatalf("writeGitignoreBlock error: %v", err)
+	if err := inst.templates().writeTemplateFile(path, "gitignore.block", 0o644, nil, nil); err != nil {
+		t.Fatalf("writeTemplateFile error: %v", err)
 	}
 	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
@@ -285,8 +287,9 @@ func TestWriteGitignoreBlockPreservesCustom(t *testing.T) {
 	}
 }
 
-func TestWriteGitignoreBlockMergesTrackingSettingsIntoTemplateUpdate(t *testing.T) {
+func TestWriteTemplateFile_GitignoreBlockMergesTrackingSettingsIntoTemplateUpdate(t *testing.T) {
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	path := filepath.Join(root, ".agent-layer", "gitignore.block")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -312,8 +315,8 @@ func TestWriteGitignoreBlockMergesTrackingSettingsIntoTemplateUpdate(t *testing.
 	t.Cleanup(func() { templates.ReadFunc = originalRead })
 
 	approve := func(string) (bool, error) { return true, nil }
-	if err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, approve, nil); err != nil {
-		t.Fatalf("writeGitignoreBlock: %v", err)
+	if err := inst.templates().writeTemplateFile(path, "gitignore.block", 0o644, approve, nil); err != nil {
+		t.Fatalf("writeTemplateFile: %v", err)
 	}
 	updated, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
@@ -331,8 +334,9 @@ func TestWriteGitignoreBlockMergesTrackingSettingsIntoTemplateUpdate(t *testing.
 	}
 }
 
-func TestWriteGitignoreBlockTrackingOnlyChangeIsNoop(t *testing.T) {
+func TestWriteTemplateFile_GitignoreBlockTrackingOnlyChangeIsNoop(t *testing.T) {
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	path := filepath.Join(root, ".agent-layer", "gitignore.block")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -348,10 +352,10 @@ func TestWriteGitignoreBlockTrackingOnlyChangeIsNoop(t *testing.T) {
 	}
 
 	var recorded []string
-	if err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, nil, func(p string) {
+	if err := inst.templates().writeTemplateFile(path, "gitignore.block", 0o644, nil, func(p string) {
 		recorded = append(recorded, p)
 	}); err != nil {
-		t.Fatalf("writeGitignoreBlock error: %v", err)
+		t.Fatalf("writeTemplateFile error: %v", err)
 	}
 	if len(recorded) != 0 {
 		t.Fatalf("expected no outdated-file preview when merged write is a no-op, got %v", recorded)
@@ -447,8 +451,9 @@ func TestGitignoreTrackingSettings(t *testing.T) {
 	})
 }
 
-func TestWriteGitignoreBlockRecordsDiff(t *testing.T) {
+func TestWriteTemplateFile_GitignoreBlockRecordsDiff(t *testing.T) {
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	path := filepath.Join(root, ".agent-layer", "gitignore.block")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -466,48 +471,12 @@ func TestWriteGitignoreBlockRecordsDiff(t *testing.T) {
 	}
 
 	// Call without overwrite - should record diff.
-	if err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, nil, recordDiff); err != nil {
-		t.Fatalf("writeGitignoreBlock error: %v", err)
+	if err := inst.templates().writeTemplateFile(path, "gitignore.block", 0o644, nil, recordDiff); err != nil {
+		t.Fatalf("writeTemplateFile error: %v", err)
 	}
 
 	if len(recorded) != 1 || recorded[0] != path {
 		t.Fatalf("expected diff to be recorded, got %v", recorded)
-	}
-}
-
-func TestWriteGitignoreBlockReadError(t *testing.T) {
-	root := t.TempDir()
-	// Create a directory where we expect a file, causing ReadFile to fail
-	path := filepath.Join(root, ".agent-layer", "gitignore.block")
-	if err := os.MkdirAll(path, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
-	err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, nil, nil)
-	if err == nil {
-		t.Fatalf("expected error for read failure")
-	}
-	if !strings.Contains(err.Error(), "failed to read") {
-		t.Fatalf("expected read error, got %v", err)
-	}
-}
-
-func TestWriteGitignoreBlockTemplateReadError(t *testing.T) {
-	original := templates.ReadFunc
-	templates.ReadFunc = func(path string) ([]byte, error) {
-		return nil, errors.New("mock read error")
-	}
-	t.Cleanup(func() { templates.ReadFunc = original })
-
-	root := t.TempDir()
-	path := filepath.Join(root, "gitignore.block")
-
-	err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, nil, nil)
-	if err == nil {
-		t.Fatalf("expected error for template read failure")
-	}
-	if !strings.Contains(err.Error(), "failed to read template") {
-		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -528,25 +497,12 @@ func TestSplitLinesCarriageReturn(t *testing.T) {
 	}
 }
 
-func TestWriteGitignoreBlock_MkdirError(t *testing.T) {
-	root := t.TempDir()
-	// Block directory creation by creating a file at parent path
-	path := filepath.Join(root, ".agent-layer", "gitignore.block")
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer"), []byte("file"), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-
-	err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, nil, nil)
-	if err == nil {
-		t.Fatalf("expected error for mkdir failure")
-	}
-}
-
-func TestWriteGitignoreBlock_WriteError(t *testing.T) {
+func TestWriteTemplateFile_GitignoreBlock_WriteError(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("skipping permissions test on windows")
 	}
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	dir := filepath.Join(root, ".agent-layer")
 	if err := os.Mkdir(dir, 0o500); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -555,25 +511,9 @@ func TestWriteGitignoreBlock_WriteError(t *testing.T) {
 	testutil.SkipIfWritable(t, dir)
 	path := filepath.Join(dir, "gitignore.block")
 
-	err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, nil, nil)
+	err := inst.templates().writeTemplateFile(path, "gitignore.block", 0o644, nil, nil)
 	if err == nil {
 		t.Fatalf("expected error for write failure")
-	}
-}
-
-func TestWriteGitignoreBlock_OverwritePromptError(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "gitignore.block")
-	if err := os.WriteFile(path, []byte("custom"), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-
-	prompt := func(path string) (bool, error) {
-		return false, errors.New("prompt error")
-	}
-	err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, prompt, nil)
-	if err == nil {
-		t.Fatalf("expected error from prompt")
 	}
 }
 
@@ -629,8 +569,9 @@ func TestEnsureGitignore_WriteUpdateError(t *testing.T) {
 	}
 }
 
-func TestWriteGitignoreBlock_MatchingTemplate(t *testing.T) {
+func TestWriteTemplateFile_GitignoreBlock_MatchingTemplate(t *testing.T) {
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	path := filepath.Join(root, "gitignore.block")
 	// Write content that matches the template exactly
 	templateBytes, err := templates.Read("gitignore.block")
@@ -641,30 +582,32 @@ func TestWriteGitignoreBlock_MatchingTemplate(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	err = writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, nil, nil)
+	err = inst.templates().writeTemplateFile(path, "gitignore.block", 0o644, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestWriteGitignoreBlock_ReadExistingError(t *testing.T) {
+func TestWriteTemplateFile_GitignoreBlock_ReadExistingError(t *testing.T) {
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	path := filepath.Join(root, "gitignore.block")
 	if err := os.Mkdir(path, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, nil, nil)
-	if err == nil {
-		t.Fatalf("expected error for read failure")
+	err := inst.templates().writeTemplateFile(path, "gitignore.block", 0o644, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "failed to read "+path) {
+		t.Fatalf("expected read error, got %v", err)
 	}
 }
 
-func TestWriteGitignoreBlock_OverwriteWriteError(t *testing.T) {
+func TestWriteTemplateFile_GitignoreBlock_OverwriteWriteError(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("skipping permissions test on windows")
 	}
 	root := t.TempDir()
+	inst := &installer{sys: RealSystem{}}
 	path := filepath.Join(root, "gitignore.block")
 	// Write custom content to force overwrite.
 	if err := os.WriteFile(path, []byte("custom\n"), 0o600); err != nil {
@@ -680,7 +623,7 @@ func TestWriteGitignoreBlock_OverwriteWriteError(t *testing.T) {
 	prompt := func(path string) (bool, error) {
 		return true, nil
 	}
-	err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, prompt, nil)
+	err := inst.templates().writeTemplateFile(path, "gitignore.block", 0o644, prompt, nil)
 	if err == nil {
 		t.Fatalf("expected error for write failure")
 	}

@@ -403,7 +403,7 @@ func (inst templateManager) appendTemplateFileDiffs(diffs map[string]struct{}, f
 			}
 			return fmt.Errorf(messages.InstallFailedStatFmt, file.path, err)
 		}
-		matches, err := inst.matchTemplate(sys, file.path, file.template, info)
+		matches, err := inst.matchTemplate(file.path, file.template, info)
 		if err != nil {
 			return err
 		}
@@ -442,7 +442,7 @@ func (inst templateManager) appendTemplateDirDiffs(diffs map[string]struct{}, di
 			diffs[relPath] = struct{}{}
 			continue
 		}
-		matches, err := inst.matchTemplate(sys, entry.destPath, entry.templatePath, info)
+		matches, err := inst.matchTemplate(entry.destPath, entry.templatePath, info)
 		if err != nil {
 			return err
 		}
@@ -530,7 +530,6 @@ func (inst templateManager) writeTemplateDirCached(dir templateDir) error {
 	if err != nil {
 		return err
 	}
-	sys := inst.sys
 	for _, entry := range entries {
 		relPath := normalizeRelPath(inst.relativePath(entry.destPath))
 		if marker, ok := sectionAwareMarkerForPath(relPath); ok {
@@ -539,7 +538,7 @@ func (inst templateManager) writeTemplateDirCached(dir templateDir) error {
 			}
 			continue
 		}
-		if err := writeTemplateFileWithMatch(sys, entry.destPath, entry.templatePath, entry.perm, inst.shouldOverwrite, inst.recordDiff, inst.matchTemplate); err != nil {
+		if err := inst.writeTemplateFile(entry.destPath, entry.templatePath, entry.perm, inst.shouldOverwrite, inst.recordDiff); err != nil {
 			return err
 		}
 	}
@@ -589,7 +588,7 @@ func (inst templateManager) writeSectionAwareTemplateFile(path string, templateP
 	if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf(messages.InstallFailedStatFmt, path, err)
 	}
-	return writeTemplateFileWithMatch(inst.sys, path, templatePath, perm, inst.shouldOverwrite, inst.recordDiff, inst.matchTemplate)
+	return inst.writeTemplateFile(path, templatePath, perm, inst.shouldOverwrite, inst.recordDiff)
 }
 
 func (inst templateManager) templateDirEntries(dir templateDir) ([]templateEntry, error) {
@@ -634,29 +633,22 @@ func normalizeRelPath(path string) string {
 	return strings.ReplaceAll(filepath.ToSlash(path), "\\", "/")
 }
 
-func (inst templateManager) matchTemplate(sys System, path string, templatePath string, info fs.FileInfo) (bool, error) {
-	if sys == nil {
-		sys = inst.sys
+func (inst templateManager) matchTemplate(path string, templatePath string, info fs.FileInfo) (bool, error) {
+	key := inst.matchCacheKey(path, templatePath)
+	if cached, ok := inst.templateMatchCache[key]; ok && cached.size == info.Size() && cached.modTime == info.ModTime().UnixNano() {
+		return cached.matches, nil
 	}
-	if info != nil && inst.templateMatchCache != nil {
-		key := inst.matchCacheKey(path, templatePath)
-		if cached, ok := inst.templateMatchCache[key]; ok && cached.size == info.Size() && cached.modTime == info.ModTime().UnixNano() {
-			return cached.matches, nil
-		}
-	}
-	matches, err := fileMatchesTemplate(sys, path, templatePath)
+	matches, err := fileMatchesTemplate(inst.sys, path, templatePath)
 	if err != nil {
 		return false, err
 	}
-	if info != nil {
-		if inst.templateMatchCache == nil {
-			inst.templateMatchCache = make(map[string]matchCacheEntry)
-		}
-		inst.templateMatchCache[inst.matchCacheKey(path, templatePath)] = matchCacheEntry{
-			matches: matches,
-			size:    info.Size(),
-			modTime: info.ModTime().UnixNano(),
-		}
+	if inst.templateMatchCache == nil {
+		inst.templateMatchCache = make(map[string]matchCacheEntry)
+	}
+	inst.templateMatchCache[key] = matchCacheEntry{
+		matches: matches,
+		size:    info.Size(),
+		modTime: info.ModTime().UnixNano(),
 	}
 	return matches, nil
 }
@@ -665,36 +657,18 @@ func (inst templateManager) matchCacheKey(path string, templatePath string) stri
 	return path + "\n" + templatePath
 }
 
-func writeTemplateIfMissing(sys System, path string, templatePath string, perm fs.FileMode) error {
-	return writeTemplateFile(sys, path, templatePath, perm, nil)
-}
-
-// MatchTemplateFunc compares a destination file to a template.
-type MatchTemplateFunc func(sys System, path string, templatePath string, info fs.FileInfo) (bool, error)
-
-func fileMatchesTemplateWithInfo(sys System, path string, templatePath string, _ fs.FileInfo) (bool, error) {
-	return fileMatchesTemplate(sys, path, templatePath)
-}
-
-func writeTemplateFile(sys System, path string, templatePath string, perm fs.FileMode, shouldOverwrite PromptOverwriteFunc) error {
-	return writeTemplateFileWithMatch(sys, path, templatePath, perm, shouldOverwrite, nil, fileMatchesTemplateWithInfo)
-}
-
-func writeTemplateFileWithMatch(
-	sys System,
-	path string,
-	templatePath string,
-	perm fs.FileMode,
-	shouldOverwrite PromptOverwriteFunc,
-	recordDiff func(string),
-	matchTemplate MatchTemplateFunc,
-) error {
-	if matchTemplate == nil {
-		matchTemplate = fileMatchesTemplateWithInfo
+// writeTemplateFile writes templatePath to path when the file is missing. An
+// existing file that differs from the template is overwritten only when
+// shouldOverwrite approves; otherwise it is reported to recordDiff.
+func (inst templateManager) writeTemplateFile(path string, templatePath string, perm fs.FileMode, shouldOverwrite PromptOverwriteFunc, recordDiff func(string)) error {
+	info, err := inst.sys.Stat(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf(messages.InstallFailedStatFmt, path, err)
 	}
-	info, err := sys.Stat(path)
+	// An overwritten gitignore.block keeps the existing file's tracking choices.
+	mergeTracking := false
 	if err == nil {
-		matches, err := matchTemplate(sys, path, templatePath, info)
+		matches, err := inst.matchTemplate(path, templatePath, info)
 		if err != nil {
 			return err
 		}
@@ -714,18 +688,29 @@ func writeTemplateFileWithMatch(
 			}
 			return nil
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf(messages.InstallFailedStatFmt, path, err)
+		mergeTracking = templatePath == templateGitignoreBlock
 	}
 
-	data, err := templates.Read(templatePath)
-	if err != nil {
-		return fmt.Errorf(messages.InstallFailedReadTemplateFmt, templatePath, err)
+	var data []byte
+	if mergeTracking {
+		existing, readErr := inst.sys.ReadFile(path)
+		if readErr != nil {
+			return fmt.Errorf(messages.InstallFailedReadFmt, path, readErr)
+		}
+		data, err = templateTarget(path, templatePath, existing)
+		if err != nil {
+			return err
+		}
+	} else {
+		data, err = templates.Read(templatePath)
+		if err != nil {
+			return fmt.Errorf(messages.InstallFailedReadTemplateFmt, templatePath, err)
+		}
 	}
-	if err := sys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := inst.sys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf(messages.InstallFailedCreateDirForFmt, path, err)
 	}
-	if err := sys.WriteFileAtomic(path, data, perm); err != nil {
+	if err := inst.sys.WriteFileAtomic(path, data, perm); err != nil {
 		return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
 	}
 	return nil
@@ -736,18 +721,29 @@ func fileMatchesTemplate(sys System, path string, templatePath string) (bool, er
 	if err != nil {
 		return false, fmt.Errorf(messages.InstallFailedReadFmt, path, err)
 	}
+	target, err := templateTarget(path, templatePath, existing)
+	if err != nil {
+		return false, err
+	}
+	return normalizeTemplateContent(string(existing)) == normalizeTemplateContent(string(target)), nil
+}
+
+// templateTarget returns the template content an existing file at path is
+// compared against and overwritten with. gitignore.block keeps the existing
+// file's tracking choices.
+func templateTarget(path string, templatePath string, existing []byte) ([]byte, error) {
 	template, err := templates.Read(templatePath)
 	if err != nil {
-		return false, fmt.Errorf(messages.InstallFailedReadTemplateFmt, templatePath, err)
+		return nil, fmt.Errorf(messages.InstallFailedReadTemplateFmt, templatePath, err)
 	}
 	if templatePath == templateGitignoreBlock {
 		merged, mergeErr := mergeGitignoreBlockTemplate(existing, template)
 		if mergeErr != nil {
-			return false, fmt.Errorf(messages.InstallGitignoreMergeTrackingFmt, path, mergeErr)
+			return nil, fmt.Errorf(messages.InstallGitignoreMergeTrackingFmt, path, mergeErr)
 		}
-		template = merged
+		return merged, nil
 	}
-	return normalizeTemplateContent(string(existing)) == normalizeTemplateContent(string(template)), nil
+	return template, nil
 }
 
 func normalizeTemplateContent(content string) string {

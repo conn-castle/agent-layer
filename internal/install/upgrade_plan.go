@@ -235,7 +235,7 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 // templateUpdate reports whether the file at absPath differs from relPath's
 // template and classifies that difference against relPath's baseline.
 func (inst *installer) templateUpdate(relPath, absPath, templatePath string, info fs.FileInfo) (upgradeChangeWithTemplate, bool, error) {
-	matches, err := inst.templates().matchTemplate(inst.sys, absPath, templatePath, info)
+	matches, err := inst.templates().matchTemplate(absPath, templatePath, info)
 	if err != nil || matches {
 		return upgradeChangeWithTemplate{}, false, err
 	}
