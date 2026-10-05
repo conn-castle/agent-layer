@@ -9,6 +9,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 func TestPromptWizardFlow_BackFromAgentsReturnsToApprovalStep(t *testing.T) {
@@ -399,7 +400,7 @@ func TestPromptWizardFlow_BackFromModelsRollsBackPartialModelState(t *testing.T)
 func TestPromptWizardFlow_DisablingCodexClearsAppsChoiceAfterBackNavigation(t *testing.T) {
 	choices := NewChoices()
 	choices.ApprovalMode = config.ApprovalModeAll
-	choices.CLISkillsCatalog = []CLISkillCatalogEntry{{ID: "tavily-web", Name: "Tavily"}}
+	choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{{ID: "tavily-web", Name: "Tavily"}}
 
 	allLabel, ok := approvalModeLabelForValue(config.ApprovalModeAll)
 	require.True(t, ok)

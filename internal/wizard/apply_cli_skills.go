@@ -137,7 +137,7 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 	return out, nil
 }
 
-func appendGroupedCatalogChanges(root string, entry CLISkillCatalogEntry, selected bool, out *skillsChangeSet) error {
+func appendGroupedCatalogChanges(root string, entry templates.CLISkillCatalogEntry, selected bool, out *skillsChangeSet) error {
 	for _, member := range entry.Members {
 		templateRoot := "skills/" + member
 		out.catalogTemplates[member] = templateRoot
@@ -257,7 +257,7 @@ func applySkillsChanges(root string, changes skillsChangeSet) error {
 // copySkillDirToDisk copies the embedded template directory for destID to
 // .agent-layer/skills/<destID>/. Errors when the embedded directory is missing.
 func copySkillDirToDisk(root string, templateRoot string, destID string) error {
-	if !isSafeCLISkillCatalogID(destID) {
+	if !templates.IsSafeCLISkillCatalogID(destID) {
 		return fmt.Errorf("invalid catalog skill id %q", destID)
 	}
 	destRoot := filepath.Join(root, ".agent-layer", "skills", destID)
@@ -296,7 +296,7 @@ func copySkillDirToDisk(root string, templateRoot string, destID string) error {
 // copySkillDirMissingFiles copies only absent embedded files for destID into
 // .agent-layer/skills/<destID>/, preserving any existing skill files.
 func copySkillDirMissingFiles(root string, templateRoot string, destID string) error {
-	if !isSafeCLISkillCatalogID(destID) {
+	if !templates.IsSafeCLISkillCatalogID(destID) {
 		return fmt.Errorf("invalid catalog skill id %q", destID)
 	}
 	return copyTemplateDirMissingWithMode(

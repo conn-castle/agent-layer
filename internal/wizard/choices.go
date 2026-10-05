@@ -1,5 +1,7 @@
 package wizard
 
+import "github.com/conn-castle/agent-layer/internal/templates"
+
 // Choices tracks user selections in the wizard.
 type Choices struct {
 	// Approvals
@@ -96,7 +98,7 @@ type Choices struct {
 	// and removes the on-disk directory for ids set false. Grouped entries
 	// (Members) install or remove each member directory instead.
 	EnabledCLISkills map[string]bool
-	CLISkillsCatalog []CLISkillCatalogEntry
+	CLISkillsCatalog []templates.CLISkillCatalogEntry
 
 	// Git tracking for Agent Layer-owned folders. The managed source of truth is
 	// `.agent-layer/gitignore.block`; these fields are derived from that file at
@@ -167,11 +169,11 @@ func (c *Choices) Clone() *Choices {
 	return &clone
 }
 
-func cloneCLISkillCatalog(in []CLISkillCatalogEntry) []CLISkillCatalogEntry {
+func cloneCLISkillCatalog(in []templates.CLISkillCatalogEntry) []templates.CLISkillCatalogEntry {
 	if len(in) == 0 {
 		return nil
 	}
-	out := make([]CLISkillCatalogEntry, len(in))
+	out := make([]templates.CLISkillCatalogEntry, len(in))
 	copy(out, in)
 	for i := range out {
 		out[i].Members = cloneStringSlice(in[i].Members)

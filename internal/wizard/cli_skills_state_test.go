@@ -24,7 +24,7 @@ func TestCatalogSkillExistsOnDisk(t *testing.T) {
 
 func TestCatalogSkillIsManagedOnDiskRequiresConfiguredOwnershipMarker(t *testing.T) {
 	root := t.TempDir()
-	entry := CLISkillCatalogEntry{
+	entry := templates.CLISkillCatalogEntry{
 		ID:              "skill-sync",
 		Name:            "Agent Layer skill sync",
 		OwnershipMarker: "<!-- agent-layer-catalog-skill: skill-sync -->",
@@ -43,7 +43,7 @@ func TestCatalogSkillIsManagedOnDiskRequiresConfiguredOwnershipMarker(t *testing
 
 func TestLegacyDispatchAgentDirectoryRemainsCatalogStateUntilMigration(t *testing.T) {
 	root := t.TempDir()
-	entry := CLISkillCatalogEntry{ID: "dispatch-agent", Name: "Agent dispatch"}
+	entry := templates.CLISkillCatalogEntry{ID: "dispatch-agent", Name: "Agent dispatch"}
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", legacyDispatchAgentCatalogID), 0o750))
 
 	assert.Equal(t, legacyDispatchAgentCatalogID, catalogSkillStateIDOnDisk(root, entry))
@@ -58,7 +58,7 @@ func TestLegacyDispatchAgentDirectoryRemainsCatalogStateUntilMigration(t *testin
 }
 
 func TestCatalogSkillIsManagedOnDiskGroupedMembers(t *testing.T) {
-	entry := CLISkillCatalogEntry{
+	entry := templates.CLISkillCatalogEntry{
 		ID:      "development-skills",
 		Name:    "Agent Layer development skills",
 		Members: []string{"implement", "ship-pr"},

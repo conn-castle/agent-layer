@@ -18,6 +18,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 // ErrBack indicates that the user pressed Esc to return from a wizard form.
@@ -25,7 +26,6 @@ var ErrBack = errors.New("wizard back requested")
 
 var (
 	loadDefaultMCPServersFunc = loadDefaultMCPServers
-	loadCLISkillCatalogFunc   = loadCLISkillCatalog
 	loadWarningDefaultsFunc   = loadWarningDefaults
 	loadProjectConfigFunc     = config.LoadProjectConfig
 	loadConfigLenientFunc     = config.LoadConfigLenient
@@ -177,7 +177,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	}
 	choices.DefaultMCPServers = defaultServers
 
-	cliSkills, err := loadCLISkillCatalogFunc()
+	cliSkills, err := templates.LoadCLISkillCatalog()
 	if err != nil {
 		return nil, err
 	}

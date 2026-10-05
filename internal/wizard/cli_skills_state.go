@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+
+	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 const (
@@ -16,7 +18,7 @@ const (
 // present at .agent-layer/skills/<id>/. It is used both for default-from-state
 // in initializeChoices and for the apply path's add/remove diff.
 func catalogSkillExistsOnDisk(root string, id string) bool {
-	if root == "" || !isSafeCLISkillCatalogID(id) {
+	if root == "" || !templates.IsSafeCLISkillCatalogID(id) {
 		return false
 	}
 	dir := filepath.Join(root, ".agent-layer", "skills", id)
@@ -31,7 +33,7 @@ func catalogSkillExistsOnDisk(root string, id string) bool {
 // a catalog entry. Repositories installed before 0.16 keep the dispatch skill
 // under its legacy id until the upgrade migration renames it. The wizard must
 // preserve that state instead of creating the renamed directory alongside it.
-func catalogSkillStateIDOnDisk(root string, entry CLISkillCatalogEntry) string {
+func catalogSkillStateIDOnDisk(root string, entry templates.CLISkillCatalogEntry) string {
 	if entry.ID == dispatchAgentCatalogID && catalogSkillExistsOnDisk(root, legacyDispatchAgentCatalogID) {
 		return legacyDispatchAgentCatalogID
 	}
@@ -45,7 +47,7 @@ func catalogSkillStateIDOnDisk(root string, entry CLISkillCatalogEntry) string {
 // retain the legacy directory-presence behavior. Marked entries must contain
 // their marker in SKILL.md so a user-authored same-name skill is not mistaken
 // for catalog-installed content.
-func catalogSkillIsManagedOnDisk(root string, entry CLISkillCatalogEntry) bool {
+func catalogSkillIsManagedOnDisk(root string, entry templates.CLISkillCatalogEntry) bool {
 	if len(entry.Members) > 0 {
 		for _, member := range entry.Members {
 			if catalogSkillExistsOnDisk(root, member) {
