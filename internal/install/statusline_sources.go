@@ -88,7 +88,7 @@ func (inst *installer) writeStatuslineSource(source StatuslineSourceTemplate) er
 	if info.IsDir() {
 		return fmt.Errorf(messages.InstallFailedReadFmt, path, errors.New("is a directory"))
 	}
-	matches, err := inst.templates().matchTemplate(inst.sys, path, source.TemplatePath, info)
+	matches, err := inst.templates().matchTemplate(path, source.TemplatePath, info)
 	if err != nil {
 		return err
 	}
@@ -200,7 +200,7 @@ func (inst *installer) planStatuslineSourceChanges(plan migrationPlan) ([]upgrad
 		if info.IsDir() {
 			continue
 		}
-		matches, err := inst.templates().matchTemplate(inst.sys, path, source.TemplatePath, info)
+		matches, err := inst.templates().matchTemplate(path, source.TemplatePath, info)
 		if err != nil {
 			return nil, nil, err
 		}

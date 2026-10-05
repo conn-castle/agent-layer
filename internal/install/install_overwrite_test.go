@@ -566,7 +566,7 @@ func TestTemplateFileMatches_ReadFileError(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	_, err := inst.templates().matchTemplate(inst.sys, blockPath, "gitignore.block", info)
+	_, err := inst.templates().matchTemplate(blockPath, "gitignore.block", info)
 	if err == nil {
 		t.Fatalf("expected error reading gitignore.block")
 	}
@@ -592,7 +592,7 @@ func TestTemplateFileMatches_ReadTemplateError(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	_, err := inst.templates().matchTemplate(inst.sys, blockPath, "gitignore.block", info)
+	_, err := inst.templates().matchTemplate(blockPath, "gitignore.block", info)
 	if err == nil {
 		t.Fatalf("expected error from template read")
 	}
