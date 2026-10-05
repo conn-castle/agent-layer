@@ -7,104 +7,33 @@ import (
 	"testing"
 )
 
-func TestParseSkillSource_Flat(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "alpha.md")
-	content := `---
-name: alpha
+func TestParseSkillSource_Directory(t *testing.T) {
+	path := writeSkill(t, "beta", `---
+name: beta
 description: test
+compatibility: requires git
 ---
 Body.
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write flat skill: %v", err)
-	}
+`)
 
 	parsed, err := ParseSkillSource(path)
 	if err != nil {
 		t.Fatalf("ParseSkillSource: %v", err)
 	}
-	if parsed.SourceFormat != SourceFormatFlat {
-		t.Fatalf("source format = %q, want %q", parsed.SourceFormat, SourceFormatFlat)
+	if parsed.CanonicalName != "beta" {
+		t.Fatalf("canonical name = %q, want %q", parsed.CanonicalName, "beta")
 	}
-	if parsed.CanonicalName != "alpha" {
-		t.Fatalf("canonical name = %q, want %q", parsed.CanonicalName, "alpha")
-	}
-	if parsed.Name == nil || *parsed.Name != "alpha" {
-		t.Fatalf("parsed name = %#v, want alpha", parsed.Name)
+	if parsed.Name == nil || *parsed.Name != "beta" {
+		t.Fatalf("parsed name = %#v, want beta", parsed.Name)
 	}
 	if parsed.Description == nil || *parsed.Description != "test" {
 		t.Fatalf("parsed description = %#v, want test", parsed.Description)
 	}
 }
 
-func TestParseSkillSource_Directory(t *testing.T) {
-	root := t.TempDir()
-	dir := filepath.Join(root, "beta")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatalf("mkdir beta: %v", err)
-	}
-	path := filepath.Join(dir, "SKILL.md")
-	content := `---
-name: beta
-description: test
-compatibility: requires git
----
-Body.
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write directory skill: %v", err)
-	}
-
-	parsed, err := ParseSkillSource(path)
-	if err != nil {
-		t.Fatalf("ParseSkillSource: %v", err)
-	}
-	if parsed.SourceFormat != SourceFormatDirectory {
-		t.Fatalf("source format = %q, want %q", parsed.SourceFormat, SourceFormatDirectory)
-	}
-	if parsed.CanonicalName != "beta" {
-		t.Fatalf("canonical name = %q, want %q", parsed.CanonicalName, "beta")
-	}
-}
-
-func TestParseSkillSource_DirectoryLowercaseSkillFile(t *testing.T) {
-	root := t.TempDir()
-	dir := filepath.Join(root, "beta")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatalf("mkdir beta: %v", err)
-	}
-	path := filepath.Join(dir, "skill.md")
-	content := `---
-name: beta
-description: test
----
-Body.
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write directory skill: %v", err)
-	}
-
-	parsed, err := ParseSkillSource(path)
-	if err != nil {
-		t.Fatalf("ParseSkillSource: %v", err)
-	}
-	if parsed.SourceFormat != SourceFormatDirectory {
-		t.Fatalf("source format = %q, want %q", parsed.SourceFormat, SourceFormatDirectory)
-	}
-	if parsed.CanonicalName != "beta" {
-		t.Fatalf("canonical name = %q, want %q", parsed.CanonicalName, "beta")
-	}
-}
-
 func TestParseSkillSource_LongLineDoesNotFail(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "alpha.md")
 	longLine := strings.Repeat("a", 70*1024)
-	content := "---\nname: alpha\ndescription: test\n---\n" + longLine + "\n"
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write skill: %v", err)
-	}
+	path := writeSkill(t, "alpha", "---\nname: alpha\ndescription: test\n---\n"+longLine+"\n")
 
 	parsed, err := ParseSkillSource(path)
 	if err != nil {
@@ -124,7 +53,12 @@ func TestParseSkillContentRejectsMalformedFrontMatter(t *testing.T) {
 		{name: "empty", want: "is empty"},
 		{name: "missing delimiter", content: "name: alpha\n", want: "missing YAML frontmatter"},
 		{name: "unterminated", content: "---\nname: alpha\n", want: "unterminated YAML frontmatter"},
-		{name: "invalid yaml", content: "---\nname: [\n---\n", want: "parse frontmatter"},
+		{name: "invalid yaml", content: "---\nname: [\n---\n", want: "parse frontmatter for alpha/SKILL.md: yaml:"},
+		{name: "non-mapping root", content: "---\n- item1\n- item2\n---\n", want: "parse frontmatter for alpha/SKILL.md: front matter must be a mapping"},
+		{name: "duplicate key", content: "---\nname: first\nname: second\n---\n", want: "parse frontmatter for alpha/SKILL.md: duplicate key \"name\""},
+		{name: "non-string name", content: "---\nname: 42\n---\n", want: "parse frontmatter for alpha/SKILL.md: field \"name\" must be a string"},
+		{name: "non-string description", content: "---\ndescription: true\n---\n", want: "parse frontmatter for alpha/SKILL.md: field \"description\" must be a string"},
+		{name: "non-scalar name", content: "---\nname:\n  - alpha\n---\n", want: "parse frontmatter for alpha/SKILL.md: field \"name\" must be a string"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := ParseSkillContent("alpha/SKILL.md", []byte(test.content))
@@ -142,72 +76,88 @@ func TestParseSkillContentAcceptsUTF8BOM(t *testing.T) {
 	}
 }
 
+func TestParseSkillContent_AcceptsStringScalarStyles(t *testing.T) {
+	for _, test := range []struct {
+		name            string
+		frontMatter     string
+		wantName        string
+		wantDescription string
+	}{
+		{name: "quoted", frontMatter: "name: \"alpha\"\ndescription: 'test'\n", wantName: "alpha", wantDescription: "test"},
+		{name: "literal block", frontMatter: "description: |\n  line one\n  line two\nname: |-\n  alpha\n", wantName: "alpha", wantDescription: "line one\nline two\n"},
+		{name: "folded block", frontMatter: "name: >-\n  alpha\ndescription: >-\n  a\n  b\n", wantName: "alpha", wantDescription: "a b"},
+		{name: "explicit str tag", frontMatter: "name: !!str 42\ndescription: !!str true\n", wantName: "42", wantDescription: "true"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			parsed, err := ParseSkillContent("alpha/SKILL.md", []byte("---\n"+test.frontMatter+"---\n"))
+			if err != nil {
+				t.Fatalf("ParseSkillContent: %v", err)
+			}
+			if parsed.Name == nil || *parsed.Name != test.wantName {
+				t.Fatalf("name = %v, want %q", parsed.Name, test.wantName)
+			}
+			if parsed.Description == nil || *parsed.Description != test.wantDescription {
+				t.Fatalf("description = %v, want %q", parsed.Description, test.wantDescription)
+			}
+		})
+	}
+}
+
+func TestParseSkillContent_RequiredFieldKeysMatchExactly(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content string
+	}{
+		{name: "empty front matter", content: "---\n---\n"},
+		{name: "whitespace-only front matter", content: "---\n   \n\t\n---\n"},
+		{name: "whitespace-bearing keys", content: "---\n\" name \": alpha\n\" description \": test\n---\n"},
+		{name: "empty keys", content: "---\n\"\": ignored\n---\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			parsed, err := ParseSkillContent("alpha/SKILL.md", []byte(test.content))
+			if err != nil {
+				t.Fatalf("ParseSkillContent: %v", err)
+			}
+			if parsed.Name != nil || parsed.Description != nil {
+				t.Fatalf("required fields populated: name=%v description=%v", parsed.Name, parsed.Description)
+			}
+		})
+	}
+}
+
 func TestValidateParsedSkill_MissingNameWarning(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "alpha.md")
-	content := `---
+	findings := parseAndValidate(t, "alpha", `---
 description: test
 ---
 Body.
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write skill: %v", err)
-	}
-
-	parsed, err := ParseSkillSource(path)
-	if err != nil {
-		t.Fatalf("ParseSkillSource: %v", err)
-	}
-	findings := ValidateParsedSkill(parsed)
+`)
 	if !hasFinding(findings, FindingCodeNameMissing) {
 		t.Fatalf("expected %s finding, got %#v", FindingCodeNameMissing, findings)
 	}
 }
 
 func TestValidateParsedSkill_NullNameDescriptionWarns(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "alpha.md")
-	content := `---
-name: null
-description: null
----
-Body.
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write skill: %v", err)
-	}
-
-	parsed, err := ParseSkillSource(path)
-	if err != nil {
-		t.Fatalf("ParseSkillSource: %v", err)
-	}
-	findings := ValidateParsedSkill(parsed)
-	if !hasFinding(findings, FindingCodeNameMissing) {
-		t.Fatalf("expected %s finding, got %#v", FindingCodeNameMissing, findings)
-	}
-	if !hasFinding(findings, FindingCodeDescriptionMissing) {
-		t.Fatalf("expected %s finding, got %#v", FindingCodeDescriptionMissing, findings)
+	for _, content := range []string{
+		"---\nname: null\ndescription: null\n---\nBody.\n",
+		"---\nname:\ndescription: ~\n---\nBody.\n",
+	} {
+		findings := parseAndValidate(t, "alpha", content)
+		if !hasFinding(findings, FindingCodeNameMissing) {
+			t.Fatalf("expected %s finding for %q, got %#v", FindingCodeNameMissing, content, findings)
+		}
+		if !hasFinding(findings, FindingCodeDescriptionMissing) {
+			t.Fatalf("expected %s finding for %q, got %#v", FindingCodeDescriptionMissing, content, findings)
+		}
 	}
 }
 
 func TestValidateParsedSkill_ConsecutiveHyphenOnly(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "my--skill.md")
-	content := `---
+	findings := parseAndValidate(t, "my--skill", `---
 name: my--skill
 description: test
 ---
 Body.
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write skill: %v", err)
-	}
-
-	parsed, err := ParseSkillSource(path)
-	if err != nil {
-		t.Fatalf("ParseSkillSource: %v", err)
-	}
-	findings := ValidateParsedSkill(parsed)
+`)
 	if hasFinding(findings, FindingCodeNameInvalid) {
 		t.Fatalf("consecutive hyphens should not trigger %s (separate finding exists), got %#v", FindingCodeNameInvalid, findings)
 	}
@@ -217,142 +167,82 @@ Body.
 }
 
 func TestValidateParsedSkill_NameAllowsDigits(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "pdf-2-text.md")
-	content := `---
+	findings := parseAndValidate(t, "pdf-2-text", `---
 name: pdf-2-text
 description: test
 ---
 Body.
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write skill: %v", err)
-	}
-
-	parsed, err := ParseSkillSource(path)
-	if err != nil {
-		t.Fatalf("ParseSkillSource: %v", err)
-	}
-	findings := ValidateParsedSkill(parsed)
+`)
 	if hasFinding(findings, FindingCodeNameInvalid) || hasFinding(findings, FindingCodeNameConsecutiveHyphens) {
 		t.Fatalf("expected no name-format finding, got %#v", findings)
 	}
 }
 
 func TestValidateParsedSkill_NameAllowsUnicodeLowercaseLetters(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "naïve-2.md")
-	content := `---
+	findings := parseAndValidate(t, "naïve-2", `---
 name: naïve-2
 description: test
 ---
 Body.
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write skill: %v", err)
-	}
-
-	parsed, err := ParseSkillSource(path)
-	if err != nil {
-		t.Fatalf("ParseSkillSource: %v", err)
-	}
-	findings := ValidateParsedSkill(parsed)
+`)
 	if hasFinding(findings, FindingCodeNameInvalid) {
 		t.Fatalf("expected unicode lowercase name to be valid, got %#v", findings)
 	}
 }
 
 func TestValidateParsedSkill_NameRejectsUppercaseUnicodeLetters(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "éclair.md")
-	content := `---
+	findings := parseAndValidate(t, "éclair", `---
 name: Éclair
 description: test
 ---
 Body.
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write skill: %v", err)
-	}
-
-	parsed, err := ParseSkillSource(path)
-	if err != nil {
-		t.Fatalf("ParseSkillSource: %v", err)
-	}
-	findings := ValidateParsedSkill(parsed)
+`)
 	if !hasFinding(findings, FindingCodeNameInvalid) {
 		t.Fatalf("expected %s finding, got %#v", FindingCodeNameInvalid, findings)
 	}
 }
 
 func TestValidateParsedSkill_AcceptsUnknownFields(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "alpha.md")
-	content := `---
+	findings := parseAndValidate(t, "alpha", `---
 name: alpha
 description: test
 foo: bar
+license:
+  - item
+metadata:
+  owner:
+    nested: true
+"": ignored
 ---
 Body.
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write skill: %v", err)
-	}
-
-	parsed, err := ParseSkillSource(path)
-	if err != nil {
-		t.Fatalf("ParseSkillSource: %v", err)
-	}
-	findings := ValidateParsedSkill(parsed)
+`)
 	if len(findings) != 0 {
 		t.Fatalf("unknown fields must pass through without findings, got %#v", findings)
 	}
 }
 
 func TestValidateParsedSkill_AllowsClaudeInvocationPolicy(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "alpha.md")
-	content := `---
+	findings := parseAndValidate(t, "alpha", `---
 name: alpha
 description: test
 disable-model-invocation: true
 ---
 Body.
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write skill: %v", err)
-	}
-
-	parsed, err := ParseSkillSource(path)
-	if err != nil {
-		t.Fatalf("ParseSkillSource: %v", err)
-	}
-	findings := ValidateParsedSkill(parsed)
+`)
 	if len(findings) != 0 {
 		t.Fatalf("Claude invocation policy should pass through without findings, got %#v", findings)
 	}
 }
 
 func TestValidateParsedSkill_LengthConstraints(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "alpha.md")
 	descriptionTooLong := strings.Repeat("界", MaxDescriptionLength+1)
-	content := `---
+	findings := parseAndValidate(t, "alpha", `---
 name: alpha
-description: ` + descriptionTooLong + `
-compatibility: ` + strings.Repeat("漢", 2000) + `
+description: `+descriptionTooLong+`
+compatibility: `+strings.Repeat("漢", 2000)+`
 ---
 Body.
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write skill: %v", err)
-	}
-
-	parsed, err := ParseSkillSource(path)
-	if err != nil {
-		t.Fatalf("ParseSkillSource: %v", err)
-	}
-	findings := ValidateParsedSkill(parsed)
+`)
 	if !hasFinding(findings, FindingCodeDescriptionTooLong) {
 		t.Fatalf("expected %s finding, got %#v", FindingCodeDescriptionTooLong, findings)
 	}
@@ -364,13 +254,11 @@ Body.
 func TestValidateParsedSkill_NameLengthCountsRunes(t *testing.T) {
 	longName := strings.Repeat("é", MaxSkillNameLength+1)
 	parsed := ParsedSkill{
-		SourcePath:      "/tmp/test/" + longName + ".md",
-		CanonicalName:   longName,
-		SourceFormat:    SourceFormatFlat,
-		LineCount:       5,
-		FrontMatterKeys: []string{"description", "name"},
-		Name:            strPtr(longName),
-		Description:     strPtr("test"),
+		SourcePath:    "/tmp/test/" + longName + "/SKILL.md",
+		CanonicalName: longName,
+		LineCount:     5,
+		Name:          strPtr(longName),
+		Description:   strPtr("test"),
 	}
 	findings := ValidateParsedSkill(parsed)
 	if !hasFinding(findings, FindingCodeNameTooLong) {
@@ -379,80 +267,30 @@ func TestValidateParsedSkill_NameLengthCountsRunes(t *testing.T) {
 }
 
 func TestValidateParsedSkill_NamePathMismatch(t *testing.T) {
-	root := t.TempDir()
-	dir := filepath.Join(root, "beta")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatalf("mkdir beta: %v", err)
-	}
-	path := filepath.Join(dir, "SKILL.md")
-	content := `---
+	findings := parseAndValidate(t, "beta", `---
 name: alpha
 description: test
 ---
 Body.
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write skill: %v", err)
-	}
-
-	parsed, err := ParseSkillSource(path)
-	if err != nil {
-		t.Fatalf("ParseSkillSource: %v", err)
-	}
-	findings := ValidateParsedSkill(parsed)
+`)
 	if !hasFinding(findings, FindingCodeNamePathMismatch) {
 		t.Fatalf("expected %s finding, got %#v", FindingCodeNamePathMismatch, findings)
 	}
 }
 
 func TestValidateParsedSkill_NamePathMatchUsesNFKCNormalization(t *testing.T) {
-	root := t.TempDir()
-	dir := filepath.Join(root, "café")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatalf("mkdir café: %v", err)
-	}
-	path := filepath.Join(dir, "SKILL.md")
-	content := `---
-name: café
-description: test
----
-Body.
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write skill: %v", err)
-	}
-
-	parsed, err := ParseSkillSource(path)
-	if err != nil {
-		t.Fatalf("ParseSkillSource: %v", err)
-	}
-	findings := ValidateParsedSkill(parsed)
+	findings := parseAndValidate(t, "caf\u00e9", "---\nname: cafe\u0301\ndescription: test\n---\nBody.\n")
 	if hasFinding(findings, FindingCodeNamePathMismatch) {
 		t.Fatalf("expected no %s finding for canonically equivalent names, got %#v", FindingCodeNamePathMismatch, findings)
 	}
 }
 
 func TestValidateParsedSkill_SizeRecommendation(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "alpha.md")
-	var bodyBuilder strings.Builder
-	for i := 0; i < MaxRecommendedSkillLines+1; i++ {
-		bodyBuilder.WriteString("line\n")
-	}
-	content := `---
+	findings := parseAndValidate(t, "alpha", `---
 name: alpha
 description: test
 ---
-` + bodyBuilder.String()
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write skill: %v", err)
-	}
-
-	parsed, err := ParseSkillSource(path)
-	if err != nil {
-		t.Fatalf("ParseSkillSource: %v", err)
-	}
-	findings := ValidateParsedSkill(parsed)
+`+strings.Repeat("line\n", MaxRecommendedSkillLines+1))
 	if !hasFinding(findings, FindingCodeSizeRecommendation) {
 		t.Fatalf("expected %s finding, got %#v", FindingCodeSizeRecommendation, findings)
 	}
@@ -461,13 +299,11 @@ description: test
 func TestValidateParsedSkill_NameTooLong(t *testing.T) {
 	longName := strings.Repeat("a", MaxSkillNameLength+1)
 	parsed := ParsedSkill{
-		SourcePath:      "/tmp/test/" + longName + ".md",
-		CanonicalName:   longName,
-		SourceFormat:    SourceFormatFlat,
-		LineCount:       5,
-		FrontMatterKeys: []string{"description", "name"},
-		Name:            strPtr(longName),
-		Description:     strPtr("test"),
+		SourcePath:    "/tmp/test/" + longName + "/SKILL.md",
+		CanonicalName: longName,
+		LineCount:     5,
+		Name:          strPtr(longName),
+		Description:   strPtr("test"),
 	}
 	findings := ValidateParsedSkill(parsed)
 	if !hasFinding(findings, FindingCodeNameTooLong) {
@@ -477,12 +313,10 @@ func TestValidateParsedSkill_NameTooLong(t *testing.T) {
 
 func TestValidateParsedSkill_DescriptionMissing(t *testing.T) {
 	parsed := ParsedSkill{
-		SourcePath:      "/tmp/test/alpha.md",
-		CanonicalName:   "alpha",
-		SourceFormat:    SourceFormatFlat,
-		LineCount:       5,
-		FrontMatterKeys: []string{"name"},
-		Name:            strPtr("alpha"),
+		SourcePath:    "/tmp/test/alpha/SKILL.md",
+		CanonicalName: "alpha",
+		LineCount:     5,
+		Name:          strPtr("alpha"),
 	}
 	findings := ValidateParsedSkill(parsed)
 	if !hasFinding(findings, FindingCodeDescriptionMissing) {
@@ -490,68 +324,56 @@ func TestValidateParsedSkill_DescriptionMissing(t *testing.T) {
 	}
 }
 
-func TestValidateParsedSkill_DirectorySkillFileName(t *testing.T) {
-	parsed := ParsedSkill{
-		SourcePath:      "/tmp/test/alpha/skill.md",
-		CanonicalName:   "alpha",
-		SourceFormat:    SourceFormatDirectory,
-		LineCount:       5,
-		FrontMatterKeys: []string{"description", "name"},
-		Name:            strPtr("alpha"),
-		Description:     strPtr("test"),
-	}
-	findings := ValidateParsedSkill(parsed)
-	if !hasFinding(findings, FindingCodeDirectorySkillFileName) {
-		t.Fatalf("expected %s finding, got %#v", FindingCodeDirectorySkillFileName, findings)
-	}
-}
-
 func TestValidateParsedSkill_DeterministicOrder(t *testing.T) {
-	parsed := ParsedSkill{
-		SourcePath:      "/tmp/test/alpha.md",
-		CanonicalName:   "alpha",
-		SourceFormat:    SourceFormatFlat,
-		LineCount:       MaxRecommendedSkillLines + 1,
-		FrontMatterKeys: []string{"description", "foo"},
-		Description:     strPtr("test"),
-	}
-	findings := ValidateParsedSkill(parsed)
-	if len(findings) < 2 {
-		t.Fatalf("expected multiple findings, got %#v", findings)
-	}
-	for i := 1; i < len(findings); i++ {
-		if findings[i-1].Code > findings[i].Code {
-			t.Fatalf("findings are not sorted by code: %#v", findings)
+	for _, parsed := range []ParsedSkill{
+		{
+			SourcePath:    "/tmp/test/alpha/SKILL.md",
+			CanonicalName: "alpha",
+			LineCount:     MaxRecommendedSkillLines + 1,
+			Description:   strPtr("test"),
+		},
+		{
+			SourcePath:    "/tmp/test/alpha/SKILL.md",
+			CanonicalName: "alpha",
+			Name:          strPtr(""),
+			Description:   strPtr(""),
+		},
+	} {
+		findings := ValidateParsedSkill(parsed)
+		if len(findings) < 2 {
+			t.Fatalf("expected multiple findings, got %#v", findings)
+		}
+		for i := 1; i < len(findings); i++ {
+			prev := findings[i-1]
+			next := findings[i]
+			if prev.Code > next.Code || (prev.Code == next.Code && prev.Message > next.Message) {
+				t.Fatalf("findings are not sorted by code then message: %#v", findings)
+			}
 		}
 	}
 }
 
-func TestValidateMetadata_DeterministicOrder(t *testing.T) {
-	parsed := ParsedSkill{
-		SourcePath:      "/tmp/test/alpha.md",
-		CanonicalName:   "alpha",
-		SourceFormat:    SourceFormatFlat,
-		FrontMatterKeys: []string{"zeta", "description", "name", "alpha"},
-		Name:            strPtr(""),
-		Description:     strPtr(""),
+// writeSkill writes content to <tempdir>/<dirName>/SKILL.md and returns its path.
+func writeSkill(t *testing.T, dirName string, content string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), dirName)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir %s: %v", dirName, err)
 	}
-	findings := ValidateMetadata(parsed)
-	if len(findings) < 2 {
-		t.Fatalf("expected multiple findings, got %#v", findings)
+	path := filepath.Join(dir, "SKILL.md")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write skill: %v", err)
 	}
-	for i := 1; i < len(findings); i++ {
-		prev := findings[i-1]
-		next := findings[i]
-		if prev.Path > next.Path {
-			t.Fatalf("findings are not sorted by path: %#v", findings)
-		}
-		if prev.Path == next.Path && prev.Code > next.Code {
-			t.Fatalf("findings are not sorted by code: %#v", findings)
-		}
-		if prev.Path == next.Path && prev.Code == next.Code && prev.Message > next.Message {
-			t.Fatalf("findings are not sorted by message: %#v", findings)
-		}
+	return path
+}
+
+func parseAndValidate(t *testing.T, dirName string, content string) []Finding {
+	t.Helper()
+	parsed, err := ParseSkillSource(writeSkill(t, dirName, content))
+	if err != nil {
+		t.Fatalf("ParseSkillSource: %v", err)
 	}
+	return ValidateParsedSkill(parsed)
 }
 
 func hasFinding(findings []Finding, code string) bool {

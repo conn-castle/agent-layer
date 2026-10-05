@@ -3,14 +3,13 @@ package skillvalidator
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/conn-castle/agent-layer/internal/skillfrontmatter"
+	yaml "go.yaml.in/yaml/v3"
 )
 
 var (
@@ -20,6 +19,11 @@ var (
 const (
 	skillSourceScannerInitialBufferSize = 64 * 1024
 	skillSourceScannerMaxTokenSize      = 8 * 1024 * 1024
+)
+
+const (
+	yamlTagStr  = "!!str"
+	yamlTagNull = "!!null"
 )
 
 const (
@@ -46,50 +50,29 @@ const (
 	FindingCodeDescriptionMissing = "SKILL_DESCRIPTION_MISSING"
 	// FindingCodeDescriptionTooLong reports descriptions that exceed MaxDescriptionLength.
 	FindingCodeDescriptionTooLong = "SKILL_DESCRIPTION_TOO_LONG"
-	// FindingCodeDirectorySkillFileName reports non-canonical directory skill filenames.
-	FindingCodeDirectorySkillFileName = "SKILL_DIRECTORY_FILENAME"
 	// FindingCodeSizeRecommendation reports SKILL.md files that exceed MaxRecommendedSkillLines.
 	FindingCodeSizeRecommendation = "SKILL_SIZE_RECOMMENDATION"
 )
 
-// Severity indicates validation finding severity.
-type Severity string
-
-const (
-	// SeverityWarn indicates a non-blocking standards warning.
-	SeverityWarn Severity = "warn"
-)
-
-// SourceFormat describes how a source skill is represented on disk.
-type SourceFormat string
-
-const (
-	// SourceFormatFlat is `.agent-layer/skills/<name>.md`.
-	SourceFormatFlat SourceFormat = "flat"
-	// SourceFormatDirectory is `.agent-layer/skills/<name>/SKILL.md`.
-	SourceFormatDirectory SourceFormat = "directory"
-)
-
 // Finding is a single deterministic validator diagnostic.
 type Finding struct {
-	Code     string
-	Severity Severity
-	Path     string
-	Message  string
+	Code    string
+	Path    string
+	Message string
 }
 
 // ParsedSkill is a parsed skill source used as validation input.
 type ParsedSkill struct {
-	SourcePath      string
-	CanonicalName   string
-	SourceFormat    SourceFormat
-	LineCount       int
-	FrontMatterKeys []string
-	Name            *string
-	Description     *string
+	SourcePath    string
+	CanonicalName string
+	LineCount     int
+	// Name and Description are nil when the field is absent or null.
+	Name        *string
+	Description *string
 }
 
-// ParseSkillSource reads and parses a skill source file into validator input.
+// ParseSkillSource reads and parses a <name>/SKILL.md source file into
+// validator input.
 func ParseSkillSource(path string) (ParsedSkill, error) {
 	raw, err := os.ReadFile(path) // #nosec G304 -- skill source path is provided by the al CLI which resolved it from a configured templates directory, not user input.
 	if err != nil {
@@ -98,11 +81,11 @@ func ParseSkillSource(path string) (ParsedSkill, error) {
 	return ParseSkillContent(path, raw)
 }
 
-// ParseSkillContent parses already-read skill source bytes into validator
-// input. path supplies the canonical name and source format and is used for
-// error context; it does not have to exist on the local filesystem, so callers
-// holding a skill tree in memory (imports, merges, upstream comparisons)
-// validate through exactly the same rules as on-disk sources.
+// ParseSkillContent parses already-read <name>/SKILL.md bytes into validator
+// input. path supplies the canonical name from its parent directory and is
+// used for error context; it does not have to exist on the local filesystem,
+// so callers holding a skill tree in memory (imports, merges, upstream
+// comparisons) validate through exactly the same rules as on-disk sources.
 func ParseSkillContent(path string, raw []byte) (ParsedSkill, error) {
 	content := string(bytes.TrimPrefix(raw, utf8BOM))
 	lineCount := countLines(content)
@@ -133,44 +116,87 @@ func ParseSkillContent(path string, raw []byte) (ParsedSkill, error) {
 		return ParsedSkill{}, fmt.Errorf("skill source %s has unterminated YAML frontmatter", path)
 	}
 
-	doc, err := skillfrontmatter.Parse(strings.Join(fmLines, "\n"))
+	name, description, err := parseFrontMatter(strings.Join(fmLines, "\n"))
 	if err != nil {
 		return ParsedSkill{}, fmt.Errorf("parse frontmatter for %s: %w", path, err)
 	}
-	keys := make([]string, 0, len(doc.Keys))
-	keys = append(keys, doc.Keys...)
-	sort.Strings(keys)
 
-	name, format := canonicalNameForPath(path)
 	return ParsedSkill{
-		SourcePath:      path,
-		CanonicalName:   name,
-		SourceFormat:    format,
-		LineCount:       lineCount,
-		FrontMatterKeys: keys,
-		Name:            presentFieldValue(doc.Name),
-		Description:     presentFieldValue(doc.Description),
+		SourcePath:    path,
+		CanonicalName: canonicalNameForPath(path),
+		LineCount:     lineCount,
+		Name:          name,
+		Description:   description,
 	}, nil
 }
 
-// presentFieldValue maps a structural field to the validator policy view:
-// absent and present-null fields are both nil, so null values keep raising
-// the existing missing-field findings.
-func presentFieldValue(field skillfrontmatter.Field) *string {
-	if field.State != skillfrontmatter.FieldValue {
-		return nil
+// parseFrontMatter extracts the required name and description fields from
+// SKILL.md YAML front matter. Additional fields remain opaque so callers can
+// preserve and project their original bytes without imposing provider policy.
+// Absent and null fields are both returned as nil.
+func parseFrontMatter(content string) (name *string, description *string, err error) {
+	if strings.TrimSpace(content) == "" {
+		return nil, nil, nil
 	}
-	value := field.Value
-	return &value
+
+	var root yaml.Node
+	// Decoding into a yaml.Node never reports *yaml.TypeError; only syntax
+	// errors reach this branch.
+	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
+		return nil, nil, err
+	}
+	if len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
+		return nil, nil, errors.New("front matter must be a mapping")
+	}
+
+	mapping := root.Content[0]
+	seen := make(map[string]bool)
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		key := mapping.Content[i].Value
+		valueNode := mapping.Content[i+1]
+		if key == "" {
+			continue
+		}
+		if seen[key] {
+			return nil, nil, fmt.Errorf("duplicate key %q", key)
+		}
+		seen[key] = true
+
+		switch key {
+		case "name":
+			if name, err = stringField(key, valueNode); err != nil {
+				return nil, nil, err
+			}
+		case "description":
+			if description, err = stringField(key, valueNode); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	return name, description, nil
 }
 
-// ValidateMetadata validates frontmatter-level skill requirements.
-func ValidateMetadata(parsed ParsedSkill) []Finding {
+func stringField(key string, node *yaml.Node) (*string, error) {
+	if node.Kind != yaml.ScalarNode {
+		return nil, fmt.Errorf("field %q must be a string", key)
+	}
+	if node.Tag == yamlTagNull {
+		return nil, nil
+	}
+	if node.Tag != "" && node.Tag != yamlTagStr {
+		return nil, fmt.Errorf("field %q must be a string", key)
+	}
+	value := node.Value
+	return &value, nil
+}
+
+// ValidateParsedSkill validates all configured skill rules for a parsed source.
+func ValidateParsedSkill(parsed ParsedSkill) []Finding {
 	findings := make([]Finding, 0)
 	if parsed.Name == nil {
 		findings = append(findings, warning(FindingCodeNameMissing, parsed.SourcePath, "missing required frontmatter field \"name\""))
 	} else {
-		name := normalizeSkillName(*parsed.Name)
+		name := NormalizeName(*parsed.Name)
 		if name == "" {
 			findings = append(findings, warning(FindingCodeNameMissing, parsed.SourcePath, "frontmatter field \"name\" must be non-empty"))
 		} else {
@@ -196,6 +222,13 @@ func ValidateMetadata(parsed ParsedSkill) []Finding {
 					"frontmatter field \"name\" must not contain consecutive hyphens",
 				))
 			}
+			if name != NormalizeName(parsed.CanonicalName) {
+				findings = append(findings, warning(
+					FindingCodeNamePathMismatch,
+					parsed.SourcePath,
+					fmt.Sprintf("frontmatter field \"name\" (%q) must match canonical source name %q", strings.TrimSpace(*parsed.Name), parsed.CanonicalName),
+				))
+			}
 		}
 	}
 
@@ -214,42 +247,6 @@ func ValidateMetadata(parsed ParsedSkill) []Finding {
 		}
 	}
 
-	sortFindings(findings)
-	return findings
-}
-
-// ValidateDirectory validates source-path and directory-format conventions.
-func ValidateDirectory(parsed ParsedSkill) []Finding {
-	findings := make([]Finding, 0)
-	if parsed.SourceFormat == SourceFormatDirectory && filepath.Base(parsed.SourcePath) != "SKILL.md" {
-		findings = append(findings, warning(
-			FindingCodeDirectorySkillFileName,
-			parsed.SourcePath,
-			"directory-format skill sources must use SKILL.md",
-		))
-	}
-
-	if parsed.Name != nil {
-		name := normalizeSkillName(*parsed.Name)
-		canonical := normalizeSkillName(parsed.CanonicalName)
-		if name != "" && name != canonical {
-			findings = append(findings, warning(
-				FindingCodeNamePathMismatch,
-				parsed.SourcePath,
-				fmt.Sprintf("frontmatter field \"name\" (%q) must match canonical source name %q", strings.TrimSpace(*parsed.Name), parsed.CanonicalName),
-			))
-		}
-	}
-
-	sortFindings(findings)
-	return findings
-}
-
-// ValidateParsedSkill validates all configured skill rules for a parsed source.
-func ValidateParsedSkill(parsed ParsedSkill) []Finding {
-	findings := make([]Finding, 0)
-	findings = append(findings, ValidateMetadata(parsed)...)
-	findings = append(findings, ValidateDirectory(parsed)...)
 	if parsed.LineCount > MaxRecommendedSkillLines {
 		findings = append(findings, warning(
 			FindingCodeSizeRecommendation,
