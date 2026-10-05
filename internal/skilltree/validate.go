@@ -6,8 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"golang.org/x/text/unicode/norm"
-
 	"github.com/conn-castle/agent-layer/internal/skillvalidator"
 )
 
@@ -55,7 +53,6 @@ func ValidateSkill(tree Tree, sourcePath string) (SkillInfo, error) {
 // metadata rules without constructing a second tree. sourcePath names the
 // skill root.
 func ValidateManifest(manifest []byte, sourcePath string) (SkillInfo, error) {
-	expected := path.Base(sourcePath)
 	parsed, err := skillvalidator.ParseSkillContent(path.Join(sourcePath, SkillManifestName), manifest)
 	if err != nil {
 		return SkillInfo{}, fmt.Errorf("invalid skill %s: %w", sourcePath, err)
@@ -73,11 +70,7 @@ func ValidateManifest(manifest []byte, sourcePath string) (SkillInfo, error) {
 		return SkillInfo{}, fmt.Errorf("invalid skill %s: %s", sourcePath, strings.Join(blocking, "; "))
 	}
 
-	name := normalizeName(*parsed.Name)
-	if name != normalizeName(expected) {
-		return SkillInfo{}, fmt.Errorf("skill %s declares name %q, expected %q to match its directory", sourcePath, name, expected)
-	}
-	return SkillInfo{Name: name, Description: strings.TrimSpace(*parsed.Description)}, nil
+	return SkillInfo{Name: skillvalidator.NormalizeName(*parsed.Name), Description: strings.TrimSpace(*parsed.Description)}, nil
 }
 
 // findCaseVariantManifest reports a root-level manifest that differs from the
@@ -103,8 +96,4 @@ func HasManifest(tree Tree) bool {
 
 // NormalizeName applies the same Unicode normalization used when comparing
 // skill names across configuration, imports, and user-managed sources.
-func NormalizeName(value string) string { return normalizeName(value) }
-
-func normalizeName(value string) string {
-	return strings.TrimSpace(norm.NFKC.String(value))
-}
+func NormalizeName(value string) string { return skillvalidator.NormalizeName(value) }
