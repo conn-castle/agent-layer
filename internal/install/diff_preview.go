@@ -21,9 +21,7 @@ const (
 // DiffPreview is a user-facing, per-file diff preview used by upgrade prompts and plans.
 type DiffPreview struct {
 	Path         string
-	Ownership    OwnershipLabel
 	UnifiedDiff  string
-	Truncated    bool
 	LinesAdded   int
 	LinesRemoved int
 }
@@ -35,7 +33,7 @@ func normalizeDiffMaxLines(value int) int {
 	return value
 }
 
-func (inst *installer) buildManagedDiffPreviews(entries []LabeledPath) ([]DiffPreview, map[string]DiffPreview, error) {
+func (inst *installer) buildManagedDiffPreviews(entries []string) ([]DiffPreview, map[string]DiffPreview, error) {
 	templatePathByRel, err := inst.templates().managedTemplatePathByRel()
 	if err != nil {
 		return nil, nil, err
@@ -51,13 +49,13 @@ func (inst *installer) buildManagedDiffPreviews(entries []LabeledPath) ([]DiffPr
 // filterMigrationCoveredDiffs removes non-rename migration coverage from reviews
 // built after migrations run. Rename sources are gone; destination diffs describe
 // pending template overwrites and must remain visible.
-func (inst *installer) filterMigrationCoveredDiffs(entries []LabeledPath) []LabeledPath {
+func (inst *installer) filterMigrationCoveredDiffs(entries []string) []string {
 	if len(inst.migrationManifestCoverage) == 0 || len(entries) == 0 {
 		return entries
 	}
-	filtered := make([]LabeledPath, 0, len(entries))
+	filtered := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if isCoveredByMigration(entry.Path, inst.migrationManifestCoverage) {
+		if isCoveredByMigration(entry, inst.migrationManifestCoverage) {
 			continue
 		}
 		filtered = append(filtered, entry)
@@ -65,7 +63,7 @@ func (inst *installer) filterMigrationCoveredDiffs(entries []LabeledPath) []Labe
 	return filtered
 }
 
-func (inst *installer) buildMemoryDiffPreviews(entries []LabeledPath) ([]DiffPreview, map[string]DiffPreview, error) {
+func (inst *installer) buildMemoryDiffPreviews(entries []string) ([]DiffPreview, map[string]DiffPreview, error) {
 	templatePathByRel, err := inst.templates().memoryTemplatePathByRel()
 	if err != nil {
 		return nil, nil, err
@@ -85,7 +83,7 @@ func indexDiffPreviews(previews []DiffPreview) map[string]DiffPreview {
 	return index
 }
 
-func (inst *installer) buildDiffPreviews(entries []LabeledPath, templatePathByRel map[string]string) ([]DiffPreview, error) {
+func (inst *installer) buildDiffPreviews(entries []string, templatePathByRel map[string]string) ([]DiffPreview, error) {
 	out := make([]DiffPreview, 0, len(entries))
 	for _, entry := range entries {
 		preview, err := inst.buildSingleDiffPreview(entry, templatePathByRel)
@@ -97,13 +95,13 @@ func (inst *installer) buildDiffPreviews(entries []LabeledPath, templatePathByRe
 	return out, nil
 }
 
-func (inst *installer) buildSingleDiffPreview(entry LabeledPath, templatePathByRel map[string]string) (DiffPreview, error) {
-	relPath := filepath.ToSlash(entry.Path)
+func (inst *installer) buildSingleDiffPreview(relPath string, templatePathByRel map[string]string) (DiffPreview, error) {
+	relPath = filepath.ToSlash(relPath)
 	if relPath == "" {
 		return DiffPreview{}, fmt.Errorf(messages.InstallDiffPreviewPathRequired)
 	}
 	if relPath == pinVersionRelPath {
-		return inst.pinVersionDiffPreview(relPath, entry.Ownership)
+		return inst.pinVersionDiffPreview(relPath)
 	}
 
 	// Report a missing mapping before any read error for the local file.
@@ -115,13 +113,13 @@ func (inst *installer) buildSingleDiffPreview(entry LabeledPath, templatePathByR
 	if err != nil {
 		return DiffPreview{}, err
 	}
-	return inst.buildSingleDiffPreviewFromBytes(entry, templatePathByRel, localBytes)
+	return inst.buildSingleDiffPreviewFromBytes(relPath, templatePathByRel, localBytes)
 }
 
-// buildSingleDiffPreviewFromBytes renders entry's template diff against
-// localBytes, which may come from a path a migration will move to entry.Path.
-func (inst *installer) buildSingleDiffPreviewFromBytes(entry LabeledPath, templatePathByRel map[string]string, localBytes []byte) (DiffPreview, error) {
-	relPath := filepath.ToSlash(entry.Path)
+// buildSingleDiffPreviewFromBytes renders relPath's template diff against
+// localBytes, which may come from a path a migration will move to relPath.
+func (inst *installer) buildSingleDiffPreviewFromBytes(relPath string, templatePathByRel map[string]string, localBytes []byte) (DiffPreview, error) {
+	relPath = filepath.ToSlash(relPath)
 	templatePath := templatePathByRel[relPath]
 	if strings.TrimSpace(templatePath) == "" {
 		return DiffPreview{}, fmt.Errorf(messages.InstallMissingTemplatePathMappingFmt, relPath)
@@ -159,18 +157,10 @@ func (inst *installer) buildSingleDiffPreviewFromBytes(entry LabeledPath, templa
 		toContent = normalizeTemplateContent(templateManaged)
 	}
 
-	rendered, truncated, added, removed := renderTruncatedUnifiedDiff(fromName, toName, fromContent, toContent, inst.diffMaxLines)
-	return DiffPreview{
-		Path:         relPath,
-		Ownership:    entry.Ownership,
-		UnifiedDiff:  rendered,
-		Truncated:    truncated,
-		LinesAdded:   added,
-		LinesRemoved: removed,
-	}, nil
+	return inst.renderDiffPreview(relPath, fromName, toName, fromContent, toContent), nil
 }
 
-func (inst *installer) pinVersionDiffPreview(relPath string, ownership OwnershipLabel) (DiffPreview, error) {
+func (inst *installer) pinVersionDiffPreview(relPath string) (DiffPreview, error) {
 	path := filepath.Join(inst.root, ".agent-layer", "al.version")
 	current := ""
 	if data, err := inst.sys.ReadFile(path); err == nil {
@@ -187,44 +177,48 @@ func (inst *installer) pinVersionDiffPreview(relPath string, ownership Ownership
 		to = target + "\n"
 	}
 
-	rendered, truncated, added, removed := renderTruncatedUnifiedDiff(
+	return inst.renderDiffPreview(
+		relPath,
 		pinVersionRelPath+" (current)",
 		pinVersionRelPath+" (target)",
 		from,
 		to,
-		inst.diffMaxLines,
-	)
+	), nil
+}
+
+// renderDiffPreview renders path's diff preview from fromContent to toContent,
+// capped at the installer's per-file diff line limit.
+func (inst *installer) renderDiffPreview(path string, fromName string, toName string, fromContent string, toContent string) DiffPreview {
+	rendered, added, removed := renderTruncatedUnifiedDiff(fromName, toName, fromContent, toContent, inst.diffMaxLines)
 	return DiffPreview{
-		Path:         relPath,
-		Ownership:    ownership,
+		Path:         path,
 		UnifiedDiff:  rendered,
-		Truncated:    truncated,
 		LinesAdded:   added,
 		LinesRemoved: removed,
-	}, nil
+	}
 }
 
 // renderTruncatedUnifiedDiff renders a normalized unified diff capped at
 // maxLines, and also reports the full added/removed line counts (computed
 // before truncation so callers can show accurate stats even when the diff
 // body itself is shortened).
-func renderTruncatedUnifiedDiff(fromName string, toName string, fromContent string, toContent string, maxLines int) (string, bool, int, int) {
+func renderTruncatedUnifiedDiff(fromName string, toName string, fromContent string, toContent string, maxLines int) (string, int, int) {
 	if equivalentNormalizedLineMultisets(fromContent, toContent) {
-		return "", false, 0, 0
+		return "", 0, 0
 	}
 	limit := normalizeDiffMaxLines(maxLines)
 	diff := normalizeUnifiedDiffPreview(udiff.Unified(fromName, toName, fromContent, toContent))
 	lines := splitDiffLines(diff)
 	added, removed := countDiffLineStats(lines)
 	if len(lines) <= limit {
-		return ensureTrailingNewline(strings.Join(lines, "\n")), false, added, removed
+		return ensureTrailingNewline(strings.Join(lines, "\n")), added, removed
 	}
 	truncated := lines[:limit]
 	truncated = append(
 		truncated,
 		fmt.Sprintf("... (truncated to %d lines; rerun with %s <n> to see more)", limit, diffLineCapFlagName),
 	)
-	return ensureTrailingNewline(strings.Join(truncated, "\n")), true, added, removed
+	return ensureTrailingNewline(strings.Join(truncated, "\n")), added, removed
 }
 
 // equivalentNormalizedLineMultisets reports whether two complete files differ

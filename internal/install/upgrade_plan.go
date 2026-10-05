@@ -15,15 +15,6 @@ import (
 	"github.com/conn-castle/agent-layer/internal/version"
 )
 
-const (
-	// UpgradeRenameConfidenceHigh is emitted when rename detection is a unique exact content match.
-	UpgradeRenameConfidenceHigh = "high"
-	// UpgradeRenameDetectionUniqueExactHash identifies rename detection by unique exact normalized hash.
-	UpgradeRenameDetectionUniqueExactHash = "unique_exact_normalized_hash"
-	// UpgradePlanSchemaVersion is the JSON schema version for `al upgrade plan` output.
-	UpgradePlanSchemaVersion = 1
-)
-
 // UpgradePinAction identifies the pin transition kind in an upgrade plan.
 type UpgradePinAction string
 
@@ -44,10 +35,8 @@ type UpgradePlanOptions struct {
 	System           System
 }
 
-// UpgradePlan is the machine-readable output of `al upgrade plan`.
+// UpgradePlan is the dry-run plan rendered by `al upgrade plan`.
 type UpgradePlan struct {
-	SchemaVersion             int                     `json:"schema_version"`
-	DryRun                    bool                    `json:"dry_run"`
 	TemplateAdditions         []UpgradeChange         `json:"template_additions"`
 	TemplateUpdates           []UpgradeChange         `json:"template_updates"`
 	StatuslineSourceAdditions []UpgradeChange         `json:"statusline_source_additions"`
@@ -63,25 +52,13 @@ type UpgradePlan struct {
 
 // UpgradeChange describes a single template delta entry.
 type UpgradeChange struct {
-	Path                    string               `json:"path"`
-	Ownership               OwnershipLabel       `json:"ownership"`
-	OwnershipState          OwnershipState       `json:"ownership_state"`
-	OwnershipConfidence     *OwnershipConfidence `json:"ownership_confidence,omitempty"`
-	OwnershipBaselineSource *BaselineStateSource `json:"ownership_baseline_source,omitempty"`
-	OwnershipReasonCodes    []string             `json:"ownership_reason_codes,omitempty"`
+	Path string `json:"path"`
 }
 
 // UpgradeRename describes a rename detected by the dry-run planner.
 type UpgradeRename struct {
-	From                    string               `json:"from"`
-	To                      string               `json:"to"`
-	Ownership               OwnershipLabel       `json:"ownership"`
-	OwnershipState          OwnershipState       `json:"ownership_state"`
-	OwnershipConfidence     *OwnershipConfidence `json:"ownership_confidence,omitempty"`
-	OwnershipBaselineSource *BaselineStateSource `json:"ownership_baseline_source,omitempty"`
-	OwnershipReasonCodes    []string             `json:"ownership_reason_codes,omitempty"`
-	Confidence              string               `json:"confidence"`
-	Detection               string               `json:"detection"`
+	From string `json:"from"`
+	To   string `json:"to"`
 }
 
 // ConfigKeyMigration is reserved for explicit config migrations.
@@ -106,7 +83,6 @@ type templatedPath struct {
 type upgradeChangeWithTemplate struct {
 	path         string
 	templatePath string
-	ownership    ownershipClassification
 }
 
 // BuildUpgradePlan computes a dry-run upgrade plan against the running binary's embedded templates.
@@ -152,10 +128,6 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 				additions = append(additions, upgradeChangeWithTemplate{
 					path:         entry.relPath,
 					templatePath: entry.templatePath,
-					ownership: ownershipClassification{
-						Label: OwnershipUpstreamTemplateDelta,
-						State: OwnershipStateUpstreamTemplateDelta,
-					},
 				})
 				continue
 			}
@@ -216,8 +188,6 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 	}
 
 	return UpgradePlan{
-		SchemaVersion:             UpgradePlanSchemaVersion,
-		DryRun:                    true,
 		TemplateAdditions:         toUpgradeChanges(additions),
 		TemplateUpdates:           toUpgradeChanges(regularUpdates),
 		StatuslineSourceAdditions: toUpgradeChanges(statuslineAdditions),
@@ -233,7 +203,7 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 }
 
 // templateUpdate reports whether the file at absPath differs from relPath's
-// template and classifies that difference against relPath's baseline.
+// template, comparing only the managed section for section-aware files.
 func (inst *installer) templateUpdate(relPath, absPath, templatePath string, info fs.FileInfo) (upgradeChangeWithTemplate, bool, error) {
 	matches, err := inst.templates().matchTemplate(absPath, templatePath, info)
 	if err != nil || matches {
@@ -253,11 +223,10 @@ func (inst *installer) templateUpdate(relPath, absPath, templatePath string, inf
 	if err != nil {
 		return upgradeChangeWithTemplate{}, false, err
 	}
-	ownership, err := inst.ownership().classifyAgainstBaseline(relPath, localBytes, templateBytes, false)
-	if err != nil {
+	if err := inst.checkOwnershipEvidence(relPath, localBytes, templateBytes, false); err != nil {
 		return upgradeChangeWithTemplate{}, false, err
 	}
-	return upgradeChangeWithTemplate{path: relPath, templatePath: templatePath, ownership: ownership}, true, nil
+	return upgradeChangeWithTemplate{path: relPath, templatePath: templatePath}, true, nil
 }
 
 // movedFileUpdates compares post-migration destinations with their current bytes.
@@ -428,11 +397,10 @@ func (inst *installer) planUnknownDeletions(existing []upgradeChangeWithTemplate
 	}
 	changes := make([]upgradeChangeWithTemplate, 0, len(units))
 	for unit := range units {
-		ownership, err := inst.classifyRemovalOwnership(unit)
-		if err != nil {
+		if err := inst.checkRemovalEvidence(unit); err != nil {
 			return nil, err
 		}
-		changes = append(changes, upgradeChangeWithTemplate{path: unit, ownership: ownership})
+		changes = append(changes, upgradeChangeWithTemplate{path: unit})
 	}
 	return changes, nil
 }
@@ -572,23 +540,6 @@ func (inst *installer) pathsAfterMigrations(ops []upgradeMigrationOperation) (ma
 	return paths, origins, nil
 }
 
-func (inst *installer) classifyRemovalOwnership(rel string) (ownershipClassification, error) {
-	path := filepath.Join(inst.root, filepath.FromSlash(rel))
-	unknown := unknownOwnershipClassification(nil, []string{ownershipReasonBaselineMissing})
-	info, err := inst.sys.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		// A path a migration has yet to create has no content to classify.
-		return unknown, nil
-	}
-	if err != nil {
-		return ownershipClassification{}, fmt.Errorf(messages.InstallFailedStatFmt, path, err)
-	}
-	if !info.Mode().IsRegular() {
-		return unknown, nil
-	}
-	return inst.ownership().classifyOrphanOwnershipDetail(rel)
-}
-
 func filterCoveredUpgradeChanges(
 	changes []upgradeChangeWithTemplate,
 	covered map[string]struct{},
@@ -628,12 +579,7 @@ func toUpgradeChanges(changes []upgradeChangeWithTemplate) []UpgradeChange {
 	out := make([]UpgradeChange, 0, len(changes))
 	for _, change := range changes {
 		out = append(out, UpgradeChange{
-			Path:                    change.path,
-			Ownership:               change.ownership.Label,
-			OwnershipState:          change.ownership.State,
-			OwnershipConfidence:     change.ownership.Confidence,
-			OwnershipBaselineSource: change.ownership.BaselineSource,
-			OwnershipReasonCodes:    change.ownership.ReasonCodes,
+			Path: change.path,
 		})
 	}
 	return out
@@ -695,14 +641,10 @@ func (inst templateManager) templateOrphans(templateEntries []templatedPath) ([]
 
 	orphans := make([]upgradeChangeWithTemplate, 0, len(orphanSet))
 	for relPath := range orphanSet {
-		ownership, err := inst.classifyRemovalOwnership(relPath)
-		if err != nil {
+		if err := inst.checkRemovalEvidence(relPath); err != nil {
 			return nil, err
 		}
-		orphans = append(orphans, upgradeChangeWithTemplate{
-			path:      relPath,
-			ownership: ownership,
-		})
+		orphans = append(orphans, upgradeChangeWithTemplate{path: relPath})
 	}
 	sort.Slice(orphans, func(i, j int) bool {
 		return orphans[i].path < orphans[j].path
@@ -792,12 +734,8 @@ func detectUpgradeRenames(
 		usedAdditions[addIdx] = struct{}{}
 		usedOrphans[orphanIdx] = struct{}{}
 		renames = append(renames, UpgradeRename{
-			From:           orphan.path,
-			To:             addition.path,
-			Ownership:      OwnershipUpstreamTemplateDelta,
-			OwnershipState: OwnershipStateUpstreamTemplateDelta,
-			Confidence:     UpgradeRenameConfidenceHigh,
-			Detection:      UpgradeRenameDetectionUniqueExactHash,
+			From: orphan.path,
+			To:   addition.path,
 		})
 	}
 
@@ -845,19 +783,11 @@ func (inst templateManager) sectionAwareTemplateMatch(relPath string, absPath st
 		return false, err
 	}
 
-	parseComparable := func(content []byte) (ownershipComparable, bool) {
-		comp, _, err := classifyComparable(relPath, content)
-		if err != nil {
-			return ownershipComparable{}, false
-		}
-		return comp, true
-	}
-
-	localComp, ok := parseComparable(localBytes)
+	localComp, ok := parseOwnershipComparable(relPath, localBytes)
 	if !ok {
-		return false, nil // parse error; fall through to full classification
+		return false, nil // parse error; report a template update
 	}
-	targetComp, ok := parseComparable(templateBytes)
+	targetComp, ok := parseOwnershipComparable(relPath, templateBytes)
 	if !ok {
 		return false, nil
 	}

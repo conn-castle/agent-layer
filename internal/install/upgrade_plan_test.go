@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -35,7 +34,7 @@ func TestBuildUpgradePlan_ListsUserPathsAndPreviewsNonRegularRemovals(t *testing
 			require.NoError(t, os.WriteFile(filepath.Join(root, filepath.FromSlash(instruction)), []byte("project rules\n"), 0o600))
 			linkPath := filepath.Join(root, filepath.FromSlash(link))
 			require.NoError(t, os.Symlink("missing-target", linkPath))
-			// Neither ownership classification nor previews may read non-regular paths.
+			// Previews must not read non-regular paths.
 			sys := newFaultSystem(RealSystem{})
 			sys.readErrs[skillPath] = errors.New("directory must not be read")
 			sys.readErrs[linkPath] = errors.New("symlink must not be read")
@@ -49,8 +48,6 @@ func TestBuildUpgradePlan_ListsUserPathsAndPreviewsNonRegularRemovals(t *testing
 			for _, path := range []string{skill, instruction, link} {
 				change := findUpgradeChange(plan.TemplateRemovalsOrOrphans, path)
 				require.NotNil(t, change, "missing removal %s", path)
-				require.Equal(t, OwnershipUnknownNoBaseline, change.Ownership)
-				require.Contains(t, change.OwnershipReasonCodes, ownershipReasonBaselineMissing)
 			}
 			require.Nil(t, findUpgradeChange(plan.TemplateRemovalsOrOrphans, skill+"/SKILL.md"))
 			previews, err := BuildUpgradePlanDiffPreviews(root, plan, UpgradePlanDiffPreviewOptions{System: sys})
@@ -59,7 +56,6 @@ func TestBuildUpgradePlan_ListsUserPathsAndPreviewsNonRegularRemovals(t *testing
 				preview, ok := previews[path]
 				require.True(t, ok, "missing preview %s", path)
 				require.Equal(t, path, preview.Path)
-				require.Equal(t, OwnershipUnknownNoBaseline, preview.Ownership)
 				require.Empty(t, preview.UnifiedDiff)
 			}
 			require.Contains(t, previews[instruction].UnifiedDiff, "-project rules")
@@ -272,24 +268,25 @@ func TestPathsAfterMigrations_RenameSourceStatSemantics(t *testing.T) {
 	}
 }
 
-func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
+func TestBuildUpgradePlan_DetectsCategoriesAndRename(t *testing.T) {
 	root := t.TempDir()
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.2.3"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
 	seedWorkflowBundleForTest(t, root)
-	if err := os.Remove(filepath.Join(root, ".agent-layer", "state", "managed-baseline.json")); err != nil {
+	if err := os.Remove(filepath.Join(root, filepath.FromSlash(baselineStateRelPath))); err != nil {
 		t.Fatalf("remove canonical baseline: %v", err)
 	}
 
-	// Simulate an unchanged local docs file relative to the prior managed baseline,
+	// Simulate an unchanged local docs file relative to its legacy snapshot,
 	// while the embedded template has since changed.
 	oldBacklog := []byte("# BACKLOG\n\nLegacy header\n\n<!-- ENTRIES START -->\n")
 	backlogPath := filepath.Join(root, "docs", "agent-layer", "BACKLOG.md")
-	baselineBacklogPath := filepath.Join(root, ".agent-layer", "templates", "docs", "BACKLOG.md")
 	if err := os.WriteFile(backlogPath, oldBacklog, 0o600); err != nil {
 		t.Fatalf("write backlog: %v", err)
 	}
+
+	baselineBacklogPath := filepath.Join(root, ".agent-layer", "templates", "docs", "BACKLOG.md")
 	if err := os.WriteFile(baselineBacklogPath, oldBacklog, 0o600); err != nil {
 		t.Fatalf("write baseline backlog: %v", err)
 	}
@@ -333,12 +330,6 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 		t.Fatalf("build upgrade plan: %v", err)
 	}
 
-	if !plan.DryRun {
-		t.Fatalf("expected dry-run plan")
-	}
-	if plan.SchemaVersion != UpgradePlanSchemaVersion {
-		t.Fatalf("expected schema version %d, got %d", UpgradePlanSchemaVersion, plan.SchemaVersion)
-	}
 	if len(plan.ConfigKeyMigrations) != 0 {
 		t.Fatalf("expected empty config migrations, got %d", len(plan.ConfigKeyMigrations))
 	}
@@ -352,18 +343,6 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 	backlogUpdate := findUpgradeChange(plan.SectionAwareUpdates, "docs/agent-layer/BACKLOG.md")
 	if backlogUpdate == nil {
 		t.Fatalf("expected backlog update in section-aware updates")
-	}
-	if backlogUpdate.Ownership != OwnershipUpstreamTemplateDelta {
-		t.Fatalf("expected upstream ownership for backlog, got %s", backlogUpdate.Ownership)
-	}
-	if backlogUpdate.OwnershipState != OwnershipStateUpstreamTemplateDelta {
-		t.Fatalf("expected upstream ownership_state for backlog, got %s", backlogUpdate.OwnershipState)
-	}
-	if backlogUpdate.OwnershipConfidence == nil || *backlogUpdate.OwnershipConfidence != OwnershipConfidenceLow {
-		t.Fatalf("expected low ownership_confidence for backlog, got %#v", backlogUpdate.OwnershipConfidence)
-	}
-	if backlogUpdate.OwnershipBaselineSource == nil || *backlogUpdate.OwnershipBaselineSource != BaselineStateSourceMigratedFromLegacyDocsSnapshot {
-		t.Fatalf("expected migrated legacy baseline source for backlog, got %#v", backlogUpdate.OwnershipBaselineSource)
 	}
 
 	// ISSUES.md has a user entry below the marker but its managed section matches
@@ -383,15 +362,6 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 	}
 	if rename.To != ".agent-layer/skills/playwright/SKILL.md" {
 		t.Fatalf("unexpected rename to path: %s", rename.To)
-	}
-	if rename.Confidence != UpgradeRenameConfidenceHigh {
-		t.Fatalf("unexpected rename confidence: %s", rename.Confidence)
-	}
-	if rename.Detection != UpgradeRenameDetectionUniqueExactHash {
-		t.Fatalf("unexpected rename detection: %s", rename.Detection)
-	}
-	if rename.OwnershipState != OwnershipStateUpstreamTemplateDelta {
-		t.Fatalf("unexpected rename ownership_state: %s", rename.OwnershipState)
 	}
 }
 
@@ -426,45 +396,60 @@ func TestBuildUpgradePlan_ValidationErrors(t *testing.T) {
 	}
 }
 
-func TestBuildUpgradePlan_UnknownNoBaselineForManagedDiff(t *testing.T) {
-	root := t.TempDir()
-	if err := Run(root, Options{System: RealSystem{}}); err != nil {
-		t.Fatalf("seed repo: %v", err)
-	}
-	if err := os.Remove(filepath.Join(root, ".agent-layer", "state", "managed-baseline.json")); err != nil {
-		t.Fatalf("remove canonical baseline: %v", err)
-	}
-	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.WriteFile(allowPath, []byte("# custom allowlist\n"), 0o600); err != nil {
-		t.Fatalf("write custom allowlist: %v", err)
-	}
-
-	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
-	if err != nil {
-		t.Fatalf("build upgrade plan: %v", err)
-	}
-	allowUpdate := findUpgradeChange(plan.TemplateUpdates, commandsAllowRelPath)
-	if allowUpdate == nil {
-		t.Fatal("expected commands.allow update in plan")
-	}
-	if allowUpdate.Ownership != OwnershipUnknownNoBaseline {
-		t.Fatalf("expected unknown ownership, got %s", allowUpdate.Ownership)
-	}
-	if allowUpdate.OwnershipState != OwnershipStateUnknownNoBaseline {
-		t.Fatalf("expected unknown ownership_state, got %s", allowUpdate.OwnershipState)
-	}
-	if allowUpdate.OwnershipConfidence != nil {
-		t.Fatalf("expected nil ownership confidence for unknown baseline, got %#v", allowUpdate.OwnershipConfidence)
-	}
-	foundBaselineMissing := false
-	for _, reason := range allowUpdate.OwnershipReasonCodes {
-		if reason == ownershipReasonBaselineMissing {
-			foundBaselineMissing = true
-			break
-		}
-	}
-	if !foundBaselineMissing {
-		t.Fatalf("expected baseline_missing reason, got %#v", allowUpdate.OwnershipReasonCodes)
+func TestUpgradeEvidence_ManagedDiffBaselineValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		baseline string
+	}{
+		{name: "valid"},
+		{name: "corrupt", baseline: "{bad-json"},
+		{name: "invalid", baseline: `{"schema_version":99}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, Run(root, Options{System: RealSystem{}}))
+			require.NoError(t, os.WriteFile(filepath.Join(root, filepath.FromSlash(commandsAllowRelPath)), []byte("custom command\n"), 0o600))
+			if tc.baseline != "" {
+				require.NoError(t, os.WriteFile(filepath.Join(root, filepath.FromSlash(baselineStateRelPath)), []byte(tc.baseline), 0o600))
+			}
+			_, baselineErr := readManagedBaselineState(root, RealSystem{})
+			promptCalled := false
+			inst := &installer{
+				root: root, sys: RealSystem{},
+				prompter: &PromptFuncs{
+					OverwriteAllUnifiedPreviewFunc: func(managed, memory []DiffPreview) (bool, bool, error) {
+						promptCalled = true
+						require.Len(t, managed, 1)
+						require.Equal(t, commandsAllowRelPath, managed[0].Path)
+						require.Contains(t, managed[0].UnifiedDiff, "-custom command")
+						return false, false, nil
+					},
+				},
+			}
+			plan, planErr := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+			_, listErr := inst.templates().listManagedDiffs()
+			_, lookupErr := inst.lookupDiffPreview(commandsAllowRelPath)
+			reviewErr := inst.resolveOverwriteAllDecisions()
+			writeErr := inst.writeManagedBaselineIfConsistent(BaselineStateSourceWrittenByOverwrite)
+			if tc.baseline != "" {
+				require.Error(t, baselineErr)
+				if tc.name == "corrupt" {
+					require.Contains(t, baselineErr.Error(), "decode managed baseline state")
+				}
+				for _, err := range []error{planErr, listErr, lookupErr, reviewErr, writeErr} {
+					require.EqualError(t, err, baselineErr.Error())
+				}
+				require.False(t, promptCalled)
+				require.False(t, inst.overwriteAllDecided)
+			} else {
+				require.NoError(t, planErr)
+				require.NotNil(t, findUpgradeChange(plan.TemplateUpdates, commandsAllowRelPath))
+				for _, err := range []error{listErr, lookupErr, reviewErr, writeErr} {
+					require.NoError(t, err)
+				}
+				require.True(t, promptCalled)
+			}
+		})
 	}
 }
 
@@ -498,75 +483,11 @@ func TestBuildUpgradePlan_InvalidPinWithoutBaselinePreviewsRepair(t *testing.T) 
 			if allowUpdate == nil {
 				t.Fatal("expected commands.allow update in plan")
 			}
-			if allowUpdate.Ownership != OwnershipUnknownNoBaseline {
-				t.Fatalf("expected unknown ownership, got %s", allowUpdate.Ownership)
-			}
-			if !slices.Contains(allowUpdate.OwnershipReasonCodes, ownershipReasonBaselineMissing) {
-				t.Fatalf("expected baseline_missing reason, got %#v", allowUpdate.OwnershipReasonCodes)
-			}
 			want := UpgradePinVersionDiff{Current: strings.TrimSpace(pin), Target: "0.7.0", Action: UpgradePinActionUpdate}
 			if plan.PinVersionChange != want {
 				t.Fatalf("pin change = %#v, want %#v", plan.PinVersionChange, want)
 			}
 		})
-	}
-}
-
-func TestBuildUpgradePlan_PinManifestCredibleInference(t *testing.T) {
-	root := t.TempDir()
-	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.7.0"}); err != nil {
-		t.Fatalf("seed repo: %v", err)
-	}
-	if err := os.Remove(filepath.Join(root, ".agent-layer", "state", "managed-baseline.json")); err != nil {
-		t.Fatalf("remove canonical baseline: %v", err)
-	}
-
-	manifest, err := loadTemplateManifestByVersion("0.7.0")
-	if err != nil {
-		t.Fatalf("load 0.7.0 manifest: %v", err)
-	}
-	allowEntry, ok := manifestFileMap(manifest.Files)[commandsAllowRelPath]
-	if !ok {
-		t.Fatal("0.7.0 manifest missing commands.allow")
-	}
-	payload, err := parseAllowlistPolicyPayload(allowEntry.PolicyPayload)
-	if err != nil {
-		t.Fatalf("parse allowlist payload: %v", err)
-	}
-
-	currentTemplate, err := templates.Read("commands.allow")
-	if err != nil {
-		t.Fatalf("read current commands.allow template: %v", err)
-	}
-	currentComp, err := buildOwnershipComparable(commandsAllowRelPath, currentTemplate)
-	if err != nil {
-		t.Fatalf("build current allowlist comparable: %v", err)
-	}
-	if currentComp.AllowHash == payload.UpstreamSetHash {
-		t.Skip("current commands.allow matches 0.7.0 manifest allowlist; cannot exercise upstream delta inference")
-	}
-
-	localContent := strings.Join(payload.UpstreamSet, "\n") + "\n"
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "commands.allow"), []byte(localContent), 0o600); err != nil {
-		t.Fatalf("write local commands.allow from manifest set: %v", err)
-	}
-
-	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}, TargetPinVersion: "0.7.0"})
-	if err != nil {
-		t.Fatalf("build upgrade plan: %v", err)
-	}
-	change := findUpgradeChange(plan.TemplateUpdates, commandsAllowRelPath)
-	if change == nil {
-		t.Fatal("expected commands.allow update in plan")
-	}
-	if change.Ownership != OwnershipUpstreamTemplateDelta {
-		t.Fatalf("expected upstream ownership, got %s", change.Ownership)
-	}
-	if change.OwnershipConfidence == nil || *change.OwnershipConfidence != OwnershipConfidenceMedium {
-		t.Fatalf("expected medium ownership_confidence, got %#v", change.OwnershipConfidence)
-	}
-	if change.OwnershipBaselineSource == nil || *change.OwnershipBaselineSource != BaselineStateSourceInferredFromPinManifest {
-		t.Fatalf("expected inferred pin baseline source, got %#v", change.OwnershipBaselineSource)
 	}
 }
 
@@ -680,10 +601,6 @@ func TestDetectUpgradeRenames_ErrorAndAmbiguityPaths(t *testing.T) {
 		[]upgradeChangeWithTemplate{{path: ".agent-layer/config.toml", templatePath: "missing-template.md"}},
 		[]upgradeChangeWithTemplate{{
 			path: ".agent-layer/orphan.md",
-			ownership: ownershipClassification{
-				Label: OwnershipLocalCustomization,
-				State: OwnershipStateLocalCustomization,
-			},
 		}},
 	)
 	if err == nil {
@@ -712,10 +629,6 @@ func TestDetectUpgradeRenames_ErrorAndAmbiguityPaths(t *testing.T) {
 		[]upgradeChangeWithTemplate{{path: ".agent-layer/config.toml", templatePath: "config.toml"}},
 		[]upgradeChangeWithTemplate{{
 			path: ".agent-layer/orphan.md",
-			ownership: ownershipClassification{
-				Label: OwnershipLocalCustomization,
-				State: OwnershipStateLocalCustomization,
-			},
 		}},
 	)
 	if err == nil || !strings.Contains(err.Error(), "failed to read") {
@@ -738,17 +651,9 @@ func TestDetectUpgradeRenames_ErrorAndAmbiguityPaths(t *testing.T) {
 		[]upgradeChangeWithTemplate{
 			{
 				path: ".agent-layer/orphan.md",
-				ownership: ownershipClassification{
-					Label: OwnershipLocalCustomization,
-					State: OwnershipStateLocalCustomization,
-				},
 			},
 			{
 				path: ".agent-layer/orphan-2.md",
-				ownership: ownershipClassification{
-					Label: OwnershipLocalCustomization,
-					State: OwnershipStateLocalCustomization,
-				},
 			},
 		},
 	)
@@ -855,4 +760,140 @@ func TestBuildUpgradePlan_RemovalsMatchApplyDeletionsAcrossMigrations(t *testing
 			require.NotEmpty(t, planned)
 		})
 	}
+}
+
+func TestUpgradeChangeAt_OutOfRange(t *testing.T) {
+	changes := []upgradeChangeWithTemplate{{path: "a"}}
+	if _, ok := upgradeChangeAt(changes, -1); ok {
+		t.Fatal("expected out-of-range for negative index")
+	}
+	if _, ok := upgradeChangeAt(changes, 1); ok {
+		t.Fatal("expected out-of-range for index past end")
+	}
+}
+
+func TestBuildUpgradePlan_ManagedDiffWithPinnedManifestEvidence(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.7.0"}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	if err := os.Remove(filepath.Join(root, ".agent-layer", "state", "managed-baseline.json")); err != nil {
+		t.Fatalf("remove canonical baseline: %v", err)
+	}
+
+	manifest, err := loadTemplateManifestByVersion("0.7.0")
+	if err != nil {
+		t.Fatalf("load 0.7.0 manifest: %v", err)
+	}
+	allowEntry, ok := manifestFileMap(manifest.Files)[commandsAllowRelPath]
+	if !ok {
+		t.Fatal("0.7.0 manifest missing commands.allow")
+	}
+	payload, err := parseAllowlistPolicyPayload(allowEntry.PolicyPayload)
+	if err != nil {
+		t.Fatalf("parse allowlist payload: %v", err)
+	}
+
+	currentTemplate, err := templates.Read("commands.allow")
+	if err != nil {
+		t.Fatalf("read current commands.allow template: %v", err)
+	}
+	currentComp, err := buildOwnershipComparable(commandsAllowRelPath, currentTemplate)
+	if err != nil {
+		t.Fatalf("build current allowlist comparable: %v", err)
+	}
+	if currentComp.AllowHash == payload.UpstreamSetHash {
+		t.Skip("current commands.allow matches 0.7.0 manifest allowlist; cannot exercise upstream delta inference")
+	}
+
+	localContent := strings.Join(payload.UpstreamSet, "\n") + "\n"
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "commands.allow"), []byte(localContent), 0o600); err != nil {
+		t.Fatalf("write local commands.allow from manifest set: %v", err)
+	}
+
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}, TargetPinVersion: "0.7.0"})
+	if err != nil {
+		t.Fatalf("build upgrade plan: %v", err)
+	}
+	change := findUpgradeChange(plan.TemplateUpdates, commandsAllowRelPath)
+	if change == nil {
+		t.Fatal("expected commands.allow update in plan")
+	}
+}
+
+func TestBuildUpgradePlan_ManagedDiffWithoutBaseline(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	if err := os.Remove(filepath.Join(root, ".agent-layer", "state", "managed-baseline.json")); err != nil {
+		t.Fatalf("remove canonical baseline: %v", err)
+	}
+	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
+	if err := os.WriteFile(allowPath, []byte("# custom allowlist\n"), 0o600); err != nil {
+		t.Fatalf("write custom allowlist: %v", err)
+	}
+
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+	if err != nil {
+		t.Fatalf("build upgrade plan: %v", err)
+	}
+	allowUpdate := findUpgradeChange(plan.TemplateUpdates, commandsAllowRelPath)
+	if allowUpdate == nil {
+		t.Fatal("expected commands.allow update in plan")
+	}
+}
+
+func TestBuildUpgradePlan_RemovalEvidenceFailuresBeforeFiltering(t *testing.T) {
+	for _, path := range []string{".agent-layer/instructions/local.md", ".agent-layer/local.txt"} {
+		for _, operation := range []string{"lstat", "read"} {
+			t.Run(path+"/"+operation, func(t *testing.T) {
+				root := t.TempDir()
+				require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "1.2.3"}))
+				seedWorkflowBundleForTest(t, root)
+				absPath := filepath.Join(root, filepath.FromSlash(path))
+				require.NoError(t, os.WriteFile(absPath, []byte("local\n"), 0o600))
+				inst := &installer{root: root, sys: RealSystem{}}
+				entries, err := inst.templates().currentTemplateEntries()
+				require.NoError(t, err)
+				for _, entry := range entries {
+					_, err := os.Stat(filepath.Join(root, filepath.FromSlash(entry.relPath)))
+					require.NoError(t, err, "must have no additions so rename detection cannot cause the failure")
+				}
+				failure := errors.New(operation + " denied")
+				sys := newFaultSystem(RealSystem{})
+				if operation == "lstat" {
+					sys.lstatErrs[normalizePath(absPath)] = failure
+				} else {
+					sys.readErrs[normalizePath(absPath)] = failure
+				}
+				_, err = BuildUpgradePlan(root, UpgradePlanOptions{System: sys})
+				require.ErrorIs(t, err, failure)
+				if operation == "read" {
+					require.EqualError(t, err, failure.Error())
+				} else {
+					require.Contains(t, err.Error(), "failed to stat")
+				}
+				// Orphans are checked before the keep list filters them out.
+				if strings.HasPrefix(path, ".agent-layer/instructions/") {
+					require.NoError(t, os.WriteFile(inst.upgradeKeepListPath(), []byte(path+"\n"), 0o600))
+					_, err = BuildUpgradePlan(root, UpgradePlanOptions{System: sys})
+					require.ErrorIs(t, err, failure)
+				}
+			})
+		}
+	}
+}
+
+func TestBuildUpgradePlan_TemplateDocsOrphanShortcut(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "1.2.3"}))
+	seedWorkflowBundleForTest(t, root)
+	path := ".agent-layer/templates/docs/local.md"
+	require.NoError(t, os.WriteFile(filepath.Join(root, filepath.FromSlash(path)), []byte("local snapshot\n"), 0o600))
+	// Legacy template snapshots skip baseline evidence, so a corrupt baseline is not read for them.
+	require.NoError(t, os.WriteFile(filepath.Join(root, filepath.FromSlash(baselineStateRelPath)), []byte("{bad-json"), 0o600))
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+	require.NoError(t, err)
+	require.NotNil(t, findUpgradeChange(plan.TemplateRemovalsOrOrphans, path))
 }

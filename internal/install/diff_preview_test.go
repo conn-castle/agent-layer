@@ -24,10 +24,7 @@ func TestNormalizeDiffMaxLines_DefaultAndPositive(t *testing.T) {
 func TestRenderTruncatedUnifiedDiff(t *testing.T) {
 	from := "a\nb\nc\n"
 	to := "a\nx\ny\nz\n"
-	diff, truncated, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 2)
-	if !truncated {
-		t.Fatal("expected truncated diff")
-	}
+	diff, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 2)
 	if !strings.Contains(diff, "truncated to 2 lines") {
 		t.Fatalf("expected truncation note in diff:\n%s", diff)
 	}
@@ -45,10 +42,7 @@ func TestRenderTruncatedUnifiedDiff_IgnoresTrailingWhitespaceOnlyChanges(t *test
 	from := "stable\nline with spaces   \n"
 	to := "stable\nline with spaces\n"
 
-	diff, truncated, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
-	if truncated {
-		t.Fatal("did not expect truncation")
-	}
+	diff, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
 	if strings.Contains(diff, "-line with spaces") || strings.Contains(diff, "+line with spaces") {
 		t.Fatalf("expected trailing-whitespace-only lines to be suppressed, got:\n%s", diff)
 	}
@@ -61,10 +55,7 @@ func TestRenderTruncatedUnifiedDiff_CollapsesEquivalentMovedLines(t *testing.T) 
 	from := "/.gemini/\n/.claude/\n"
 	to := "/.claude/\n/.gemini/\n"
 
-	diff, truncated, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
-	if truncated {
-		t.Fatal("did not expect truncation")
-	}
+	diff, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
 	if diff != "" {
 		t.Fatalf("expected fully equivalent move-only diff to collapse to empty output, got:\n%s", diff)
 	}
@@ -81,10 +72,7 @@ func TestRenderTruncatedUnifiedDiff_ReorderWithEditRemainsVisible(t *testing.T) 
 	from := "alpha\nbeta\ngamma\n"
 	to := "gamma\nalpha\nbeta edited\n"
 
-	diff, truncated, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
-	if truncated {
-		t.Fatal("did not expect truncation")
-	}
+	diff, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
 	if diff == "" || added == 0 || removed == 0 {
 		t.Fatalf("reorder plus edit was hidden: diff=%q stats=(+%d, -%d)", diff, added, removed)
 	}
@@ -94,7 +82,7 @@ func TestRenderTruncatedUnifiedDiff_ReorderWithAdditionRemainsVisible(t *testing
 	from := "alpha\nbeta\n"
 	to := "beta\nalpha\ngamma\n"
 
-	diff, _, added, _ := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
+	diff, added, _ := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
 	if diff == "" || added == 0 {
 		t.Fatalf("reorder plus addition was hidden: diff=%q added=%d", diff, added)
 	}
@@ -104,7 +92,7 @@ func TestRenderTruncatedUnifiedDiff_DuplicateMultiplicityMismatchRemainsVisible(
 	from := "alpha\nalpha\nbeta\n"
 	to := "beta\nalpha\n"
 
-	diff, _, _, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
+	diff, _, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
 	if diff == "" || removed == 0 {
 		t.Fatalf("duplicate removal was hidden: diff=%q removed=%d", diff, removed)
 	}
@@ -114,9 +102,9 @@ func TestRenderTruncatedUnifiedDiff_EquivalentDuplicatesInDifferentOrderAreSuppr
 	from := "alpha\nbeta\nalpha\n"
 	to := "alpha\nalpha\nbeta\n"
 
-	diff, truncated, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
-	if diff != "" || truncated || added != 0 || removed != 0 {
-		t.Fatalf("equivalent duplicate reorder was visible: diff=%q truncated=%t stats=(+%d, -%d)", diff, truncated, added, removed)
+	diff, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
+	if diff != "" || added != 0 || removed != 0 {
+		t.Fatalf("equivalent duplicate reorder was visible: diff=%q stats=(+%d, -%d)", diff, added, removed)
 	}
 }
 
@@ -124,9 +112,9 @@ func TestRenderTruncatedUnifiedDiff_ReorderNormalizesTrailingHorizontalWhitespac
 	from := "alpha  \nbeta\t\n"
 	to := "beta\nalpha\n"
 
-	diff, truncated, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
-	if diff != "" || truncated || added != 0 || removed != 0 {
-		t.Fatalf("normalized reorder was visible: diff=%q truncated=%t stats=(+%d, -%d)", diff, truncated, added, removed)
+	diff, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
+	if diff != "" || added != 0 || removed != 0 {
+		t.Fatalf("normalized reorder was visible: diff=%q stats=(+%d, -%d)", diff, added, removed)
 	}
 }
 
@@ -277,7 +265,7 @@ func TestSplitSectionAwareContent_PreservesRawUserSection(t *testing.T) {
 
 func TestDiffPreviewErrorsUseMessageConstants(t *testing.T) {
 	inst := &installer{root: "/tmp", sys: RealSystem{}}
-	_, err := inst.buildSingleDiffPreview(LabeledPath{}, map[string]string{})
+	_, err := inst.buildSingleDiffPreview("", map[string]string{})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -316,14 +304,8 @@ func TestBuildManagedAndMemoryDiffPreviews(t *testing.T) {
 		diffMaxLines: 20,
 	}
 
-	managedEntries := []LabeledPath{{
-		Path:      ".agent-layer/commands.allow",
-		Ownership: OwnershipUpstreamTemplateDelta,
-	}}
-	memoryEntries := []LabeledPath{{
-		Path:      "docs/agent-layer/BACKLOG.md",
-		Ownership: OwnershipUpstreamTemplateDelta,
-	}}
+	managedEntries := []string{".agent-layer/commands.allow"}
+	memoryEntries := []string{"docs/agent-layer/BACKLOG.md"}
 
 	managedPreviews, managedIndex, err := inst.buildManagedDiffPreviews(managedEntries)
 	if err != nil {
@@ -353,18 +335,12 @@ func TestBuildManagedAndMemoryDiffPreviews_Errors(t *testing.T) {
 		diffMaxLines: 20,
 	}
 
-	_, _, err := inst.buildManagedDiffPreviews([]LabeledPath{{
-		Path:      ".agent-layer/not-managed",
-		Ownership: OwnershipUpstreamTemplateDelta,
-	}})
+	_, _, err := inst.buildManagedDiffPreviews([]string{".agent-layer/not-managed"})
 	if err == nil || !strings.Contains(err.Error(), "missing template path mapping") {
 		t.Fatalf("expected managed preview mapping error, got %v", err)
 	}
 
-	_, _, err = inst.buildMemoryDiffPreviews([]LabeledPath{{
-		Path:      "docs/agent-layer/not-managed.md",
-		Ownership: OwnershipUpstreamTemplateDelta,
-	}})
+	_, _, err = inst.buildMemoryDiffPreviews([]string{"docs/agent-layer/not-managed.md"})
 	if err == nil || !strings.Contains(err.Error(), "missing template path mapping") {
 		t.Fatalf("expected memory preview mapping error, got %v", err)
 	}
@@ -376,7 +352,7 @@ func TestBuildDiffPreviews_PropagatesSinglePreviewError(t *testing.T) {
 		sys:          RealSystem{},
 		diffMaxLines: 20,
 	}
-	_, err := inst.buildDiffPreviews([]LabeledPath{{Path: ""}}, map[string]string{})
+	_, err := inst.buildDiffPreviews([]string{""}, map[string]string{})
 	if err == nil || err.Error() != messages.InstallDiffPreviewPathRequired {
 		t.Fatalf("expected diff preview path required error, got %v", err)
 	}
@@ -394,10 +370,7 @@ func TestBuildSingleDiffPreview_EdgeCases(t *testing.T) {
 		pinVersion:   "1.1.0",
 	}
 
-	pinPreview, err := inst.buildSingleDiffPreview(LabeledPath{
-		Path:      pinVersionRelPath,
-		Ownership: OwnershipUpstreamTemplateDelta,
-	}, map[string]string{})
+	pinPreview, err := inst.buildSingleDiffPreview(pinVersionRelPath, map[string]string{})
 	if err != nil {
 		t.Fatalf("buildSingleDiffPreview pin path: %v", err)
 	}
@@ -405,10 +378,7 @@ func TestBuildSingleDiffPreview_EdgeCases(t *testing.T) {
 		t.Fatalf("pin preview path = %q, want %q", pinPreview.Path, pinVersionRelPath)
 	}
 
-	_, err = inst.buildSingleDiffPreview(LabeledPath{
-		Path:      ".agent-layer/missing.file",
-		Ownership: OwnershipUpstreamTemplateDelta,
-	}, map[string]string{})
+	_, err = inst.buildSingleDiffPreview(".agent-layer/missing.file", map[string]string{})
 	if err == nil || !strings.Contains(err.Error(), "missing template path mapping") {
 		t.Fatalf("expected missing template mapping error, got %v", err)
 	}
@@ -435,10 +405,7 @@ func TestBuildSingleDiffPreview_SectionAwareMarkerError(t *testing.T) {
 		t.Fatalf("memoryTemplatePathByRel: %v", err)
 	}
 
-	_, err = inst.buildSingleDiffPreview(LabeledPath{
-		Path:      "docs/agent-layer/BACKLOG.md",
-		Ownership: OwnershipUpstreamTemplateDelta,
-	}, templatePathByRel)
+	_, err = inst.buildSingleDiffPreview("docs/agent-layer/BACKLOG.md", templatePathByRel)
 	if err == nil || !strings.Contains(err.Error(), "missing in") {
 		t.Fatalf("expected section-aware marker missing error, got %v", err)
 	}
