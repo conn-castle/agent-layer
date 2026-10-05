@@ -153,6 +153,58 @@ func TestWriteTemplateFile_UsesCache(t *testing.T) {
 	}
 }
 
+func TestWriteTemplateFile_OverwriteWithSameMetadataWritesBaseline(t *testing.T) {
+	for _, templatePath := range []string{commandsAllowName, templateGitignoreBlock, "instructions/00_rules.md"} {
+		t.Run(templatePath, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, ".agent-layer", filepath.FromSlash(templatePath))
+			target, err := templates.Read(templatePath)
+			if err != nil {
+				t.Fatalf("read template: %v", err)
+			}
+			// Change a comment without changing the size or gitignore tracking choices.
+			existing := append([]byte(nil), target...)
+			existing[1] = 'X'
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			if err := os.WriteFile(path, existing, 0o600); err != nil {
+				t.Fatalf("write existing file: %v", err)
+			}
+			before, err := os.Stat(path)
+			if err != nil {
+				t.Fatalf("stat existing file: %v", err)
+			}
+			inst := &installer{root: root, sys: RealSystem{}}
+			approve := func(string) (bool, error) { return true, nil }
+			if err := inst.templates().writeTemplateFile(path, templatePath, 0o644, approve, nil); err != nil {
+				t.Fatalf("overwrite: %v", err)
+			}
+			// Simulate replacement on a filesystem whose timestamp did not advance.
+			if err := os.Chtimes(path, before.ModTime(), before.ModTime()); err != nil {
+				t.Fatalf("restore timestamp: %v", err)
+			}
+			after, err := os.Stat(path)
+			if err != nil {
+				t.Fatalf("stat replacement: %v", err)
+			}
+			if after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime()) {
+				t.Fatal("replacement must retain size and timestamp to exercise the cached mismatch")
+			}
+			if err := inst.writeManagedBaselineIfConsistent(BaselineStateSourceWrittenByUpgrade); err != nil {
+				t.Fatalf("write baseline: %v", err)
+			}
+			state, err := readManagedBaselineState(root, inst.sys)
+			if err != nil {
+				t.Fatalf("baseline must be written after overwrite: %v", err)
+			}
+			if state.Source != BaselineStateSourceWrittenByUpgrade {
+				t.Fatalf("baseline source = %q, want %q", state.Source, BaselineStateSourceWrittenByUpgrade)
+			}
+		})
+	}
+}
+
 func TestFileMatchesTemplateReadError(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "config.toml")

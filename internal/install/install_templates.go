@@ -713,6 +713,8 @@ func (inst templateManager) writeTemplateFile(path string, templatePath string, 
 	if err := inst.sys.WriteFileAtomic(path, data, perm); err != nil {
 		return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
 	}
+	// Replacement may preserve size and mtime, so discard the pre-write match.
+	delete(inst.templateMatchCache, inst.matchCacheKey(path, templatePath))
 	return nil
 }
 
