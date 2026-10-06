@@ -457,8 +457,10 @@ func TestWriteSinglePreviewBlock_ColorizedWhenInteractive(t *testing.T) {
 
 	var buf bytes.Buffer
 	preview := install.DiffPreview{Path: "file-a.txt", UnifiedDiff: "--- a\n+++ b\n-old\n+new\n"}
-	if err := writeSinglePreviewBlock(&buf, preview); err != nil {
-		t.Fatalf("writeSinglePreviewBlock colorized: %v", err)
+	ew := &errWriter{w: &buf}
+	writeSinglePreviewBlock(ew, preview)
+	if ew.err != nil {
+		t.Fatalf("writeSinglePreviewBlock colorized: %v", ew.err)
 	}
 	output := buf.String()
 	if !strings.Contains(output, "\x1b[") {
@@ -469,20 +471,19 @@ func TestWriteSinglePreviewBlock_ColorizedWhenInteractive(t *testing.T) {
 	}
 }
 
-func TestWriteConfigMigrationSection_WithEntries(t *testing.T) {
+func TestRenderUpgradePlanText_ConfigMigrationEntries(t *testing.T) {
 	var buf bytes.Buffer
-	migrations := []install.ConfigKeyMigration{
-		{Key: "mcp.timeout", From: "30s", To: "60s"},
+	plan := install.UpgradePlan{
+		ConfigKeyMigrations: []install.ConfigKeyMigration{
+			{Key: "mcp.timeout", From: "30s", To: "60s"},
+		},
 	}
-	if err := writeConfigMigrationSection(&buf, "Config updates", migrations); err != nil {
-		t.Fatalf("writeConfigMigrationSection: %v", err)
+	if err := renderUpgradePlanText(&buf, plan, nil); err != nil {
+		t.Fatalf("renderUpgradePlanText: %v", err)
 	}
 	output := buf.String()
-	if !strings.Contains(output, "mcp.timeout") {
-		t.Fatalf("expected migration key in output:\n%s", output)
-	}
-	if !strings.Contains(output, "30s") || !strings.Contains(output, "60s") {
-		t.Fatalf("expected from/to values in output:\n%s", output)
+	if !strings.Contains(output, "\nConfig updates:\n  - mcp.timeout: 30s -> 60s\n") {
+		t.Fatalf("expected config migration entry under its section title:\n%s", output)
 	}
 }
 
@@ -502,8 +503,10 @@ func TestWriteMigrationReportSection_WithEntries(t *testing.T) {
 			},
 		},
 	}
-	if err := writeMigrationReportSection(&buf, "Migrations", report); err != nil {
-		t.Fatalf("writeMigrationReportSection: %v", err)
+	ew := &errWriter{w: &buf}
+	writeMigrationReportSection(ew, report)
+	if ew.err != nil {
+		t.Fatalf("writeMigrationReportSection: %v", ew.err)
 	}
 	output := buf.String()
 	if !strings.Contains(output, "Migrations:") {
@@ -630,8 +633,10 @@ func TestWriteReadinessSection_TruncatesDetails(t *testing.T) {
 		},
 	}
 
-	if err := writeReadinessSection(&buf, checks); err != nil {
-		t.Fatalf("writeReadinessSection: %v", err)
+	ew := &errWriter{w: &buf}
+	writeReadinessSection(ew, checks)
+	if ew.err != nil {
+		t.Fatalf("writeReadinessSection: %v", ew.err)
 	}
 	output := buf.String()
 	if !strings.Contains(output, "check summary") {
@@ -655,8 +660,10 @@ func TestWriteUpgradeSummary_NoReadinessWarnings(t *testing.T) {
 			},
 		},
 	}
-	if err := writeUpgradeSummary(&buf, plan); err != nil {
-		t.Fatalf("writeUpgradeSummary: %v", err)
+	ew := &errWriter{w: &buf}
+	writeUpgradeSummary(ew, plan)
+	if ew.err != nil {
+		t.Fatalf("writeUpgradeSummary: %v", ew.err)
 	}
 	output := buf.String()
 	if !strings.Contains(output, "migrations planned: 1") {

@@ -1004,8 +1004,10 @@ func TestWriteMigrationReportSection_BreakingAnnotation(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := writeMigrationReportSection(&buf, "Migrations", report); err != nil {
-		t.Fatalf("writeMigrationReportSection: %v", err)
+	ew := &errWriter{w: &buf}
+	writeMigrationReportSection(ew, report)
+	if ew.err != nil {
+		t.Fatalf("writeMigrationReportSection: %v", ew.err)
 	}
 
 	out := buf.String()
@@ -1036,8 +1038,10 @@ func TestWriteMigrationReportSection_NonBreakingNoAnnotation(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := writeMigrationReportSection(&buf, "Migrations", report); err != nil {
-		t.Fatalf("writeMigrationReportSection: %v", err)
+	ew := &errWriter{w: &buf}
+	writeMigrationReportSection(ew, report)
+	if ew.err != nil {
+		t.Fatalf("writeMigrationReportSection: %v", ew.err)
 	}
 
 	out := buf.String()
@@ -1065,8 +1069,10 @@ func TestWriteMigrationReportSection_SkippedBreakingNoAnnotation(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := writeMigrationReportSection(&buf, "Migrations", report); err != nil {
-		t.Fatalf("writeMigrationReportSection: %v", err)
+	ew := &errWriter{w: &buf}
+	writeMigrationReportSection(ew, report)
+	if ew.err != nil {
+		t.Fatalf("writeMigrationReportSection: %v", ew.err)
 	}
 
 	out := buf.String()
@@ -1097,8 +1103,10 @@ func TestWriteMigrationReportSection_SkippedSourceTooOldBreakingNoAnnotation(t *
 	}
 
 	var buf bytes.Buffer
-	if err := writeMigrationReportSection(&buf, "Migrations", report); err != nil {
-		t.Fatalf("writeMigrationReportSection: %v", err)
+	ew := &errWriter{w: &buf}
+	writeMigrationReportSection(ew, report)
+	if ew.err != nil {
+		t.Fatalf("writeMigrationReportSection: %v", ew.err)
 	}
 
 	out := buf.String()
