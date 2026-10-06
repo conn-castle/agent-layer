@@ -88,9 +88,6 @@ func claudeReasoningEffortUnknownWarning(effort string) *Warning {
 // managed keys. The `projects` key only collides when the user's map contains the
 // managed exact-path entry (the resolved repo root); other paths coexist without override.
 func codexAgentSpecificOverrideWarning(repoRoot string, agentSpecific map[string]any) *Warning {
-	if len(agentSpecific) == 0 {
-		return nil
-	}
 	var keys []string
 	for _, key := range config.CodexManagedTopLevelKeys() {
 		value, present := agentSpecific[key]
@@ -102,19 +99,7 @@ func codexAgentSpecificOverrideWarning(repoRoot string, agentSpecific map[string
 		}
 		keys = append(keys, key)
 	}
-	if len(keys) == 0 {
-		return nil
-	}
-	slices.Sort(keys)
-	return &Warning{
-		Code:     CodePolicyAgentSpecificOverrides,
-		Subject:  "agents.codex.agent_specific",
-		Message:  fmt.Sprintf(messages.WarningsPolicyAgentSpecificOverridesFmt, "codex"),
-		Fix:      messages.WarningsPolicyAgentSpecificOverridesFix,
-		Details:  []string{fmt.Sprintf("overridden keys: %s", strings.Join(keys, ", "))},
-		Source:   SourceInternal,
-		Severity: SeverityWarning,
-	}
+	return agentSpecificOverrideWarning("codex", keys)
 }
 
 // codexProjectsCollides reports whether the user's agent_specific.projects value
@@ -137,62 +122,57 @@ func codexProjectsCollides(value any, repoRoot string) bool {
 }
 
 func claudeAgentSpecificOverrideWarning(agentSpecific map[string]any) *Warning {
-	if len(agentSpecific) == 0 {
-		return nil
-	}
 	var keys []string
 	if _, ok := agentSpecific["effortLevel"]; ok {
 		keys = append(keys, "effortLevel")
 	}
-	if permissions, ok := agentSpecific[permissionsKey]; ok {
-		permissionsMap, mapOK := permissions.(map[string]any)
-		if !mapOK {
-			keys = append(keys, permissionsKey)
-		} else if _, ok := permissionsMap["allow"]; ok {
-			keys = append(keys, permissionsKey+".allow")
-		}
+	if key, ok := permissionsAllowOverride(agentSpecific); ok {
+		keys = append(keys, key)
 	}
+	return agentSpecificOverrideWarning("claude", keys)
+}
+
+// antigravityAgentSpecificOverrideWarning shares the Claude permissions check
+// because .agy/antigravity-cli/settings.json shares Claude's permissions shape.
+func antigravityAgentSpecificOverrideWarning(agentSpecific map[string]any) *Warning {
+	var keys []string
+	if key, ok := permissionsAllowOverride(agentSpecific); ok {
+		keys = append(keys, key)
+	}
+	return agentSpecificOverrideWarning("antigravity", keys)
+}
+
+// permissionsAllowOverride returns the overridden key when agent-specific
+// config collides with the managed `permissions.allow`: a non-map `permissions`
+// replaces it outright, while a user `permissions.deny` is additive.
+func permissionsAllowOverride(agentSpecific map[string]any) (string, bool) {
+	permissions, ok := agentSpecific[permissionsKey]
+	if !ok {
+		return "", false
+	}
+	permissionsMap, ok := permissions.(map[string]any)
+	if !ok {
+		return permissionsKey, true
+	}
+	if _, ok := permissionsMap["allow"]; ok {
+		return permissionsKey + ".allow", true
+	}
+	return "", false
+}
+
+// agentSpecificOverrideWarning reports the overridden managed keys for client,
+// or nil when there are none.
+func agentSpecificOverrideWarning(client string, keys []string) *Warning {
 	if len(keys) == 0 {
 		return nil
 	}
 	slices.Sort(keys)
 	return &Warning{
 		Code:     CodePolicyAgentSpecificOverrides,
-		Subject:  "agents.claude.agent_specific",
-		Message:  fmt.Sprintf(messages.WarningsPolicyAgentSpecificOverridesFmt, "claude"),
+		Subject:  "agents." + client + ".agent_specific",
+		Message:  fmt.Sprintf(messages.WarningsPolicyAgentSpecificOverridesFmt, client),
 		Fix:      messages.WarningsPolicyAgentSpecificOverridesFix,
 		Details:  []string{fmt.Sprintf("overridden keys: %s", strings.Join(keys, ", "))},
-		Source:   SourceInternal,
-		Severity: SeverityWarning,
-	}
-}
-
-// antigravityAgentSpecificOverrideWarning mirrors the Claude variant because
-// .agy/antigravity-cli/settings.json shares Claude's permissions shape: the
-// managed `permissions.allow` collides if the user supplies their own, while
-// `permissions.deny` is additive.
-func antigravityAgentSpecificOverrideWarning(agentSpecific map[string]any) *Warning {
-	if len(agentSpecific) == 0 {
-		return nil
-	}
-	overriddenKey := ""
-	if permissions, ok := agentSpecific[permissionsKey]; ok {
-		permissionsMap, mapOK := permissions.(map[string]any)
-		if !mapOK {
-			overriddenKey = permissionsKey
-		} else if _, ok := permissionsMap["allow"]; ok {
-			overriddenKey = permissionsKey + ".allow"
-		}
-	}
-	if overriddenKey == "" {
-		return nil
-	}
-	return &Warning{
-		Code:     CodePolicyAgentSpecificOverrides,
-		Subject:  "agents.antigravity.agent_specific",
-		Message:  fmt.Sprintf(messages.WarningsPolicyAgentSpecificOverridesFmt, "antigravity"),
-		Fix:      messages.WarningsPolicyAgentSpecificOverridesFix,
-		Details:  []string{fmt.Sprintf("overridden keys: %s", overriddenKey)},
 		Source:   SourceInternal,
 		Severity: SeverityWarning,
 	}
