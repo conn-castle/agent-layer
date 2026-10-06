@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/conn-castle/agent-layer/internal/templates"
+	"github.com/conn-castle/agent-layer/internal/version"
 )
 
 func TestLoadTemplateManifestByVersion_BackfillTags(t *testing.T) {
@@ -190,6 +191,49 @@ func TestValidateTemplateManifest_ErrorPaths(t *testing.T) {
 	dupPath.Files = append(dupPath.Files, dupPath.Files[0])
 	if err := validateTemplateManifest(dupPath); err == nil {
 		t.Fatal("expected duplicate path validation error")
+	}
+}
+
+func TestValidateManifestVersionFields_ExactErrors(t *testing.T) {
+	_, invalidErr := version.Normalize("not-semver")
+	if invalidErr == nil {
+		t.Fatal("expected normalize error for not-semver")
+	}
+	validate := map[string]func(string) error{
+		"version": func(raw string) error {
+			return validateTemplateManifest(templateManifest{
+				SchemaVersion: templateManifestSchemaVersion,
+				Version:       raw,
+				GeneratedAt:   "2026-02-09T00:00:00Z",
+			})
+		},
+		"target_version": func(raw string) error {
+			return validateUpgradeMigrationManifest(upgradeMigrationManifest{
+				SchemaVersion:   upgradeMigrationManifestSchemaVersion,
+				TargetVersion:   raw,
+				MinPriorVersion: "0.6.0",
+			})
+		},
+		"min_prior_version": func(raw string) error {
+			return validateUpgradeMigrationManifest(upgradeMigrationManifest{
+				SchemaVersion:   upgradeMigrationManifestSchemaVersion,
+				TargetVersion:   "0.7.0",
+				MinPriorVersion: raw,
+			})
+		},
+	}
+	for field, fn := range validate {
+		for raw, want := range map[string]string{
+			"":           field + " is required",
+			"  ":         field + " is required",
+			"not-semver": `invalid ` + field + ` "not-semver": ` + invalidErr.Error(),
+			"v0.7.0":     field + ` "v0.7.0" must be normalized to X.Y.Z`,
+			" 0.7.0":     field + ` " 0.7.0" must be normalized to X.Y.Z`,
+		} {
+			if err := fn(raw); err == nil || err.Error() != want {
+				t.Fatalf("%s=%q error = %v, want %q", field, raw, err, want)
+			}
+		}
 	}
 }
 
