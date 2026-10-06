@@ -3,10 +3,12 @@ package install
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -58,6 +60,68 @@ func floatingPackageToken(t *testing.T, packageToken string) string {
 		t.Fatalf("package token %q does not include a pinned version", packageToken)
 	}
 	return packageToken[:versionStart+1] + "latest"
+}
+
+func TestNewReadinessCheck_TextForEachID(t *testing.T) {
+	// Assert each ID maps to its SPECIFIC summary/action constant. A bare
+	// non-empty check would pass even if two entries were swapped.
+	cases := []struct {
+		id          string
+		wantSummary string
+		wantAction  string
+	}{
+		{readinessCheckUnrecognizedConfigKeys, messages.UpgradeReadinessUnrecognizedKeys, messages.UpgradeReadinessActionUnrecognizedKeys},
+		{readinessCheckUnresolvedPlaceholders, messages.UpgradeReadinessUnresolvedPlaceholder, messages.UpgradeReadinessActionUnresolvedPlaceholder},
+		{readinessCheckProcessEnvOverridesDotenv, messages.UpgradeReadinessProcessEnvOverrides, messages.UpgradeReadinessActionProcessEnvOverrides},
+		{readinessCheckIgnoredEmptyDotenvAssignments, messages.UpgradeReadinessEmptyDotenv, messages.UpgradeReadinessActionEmptyDotenv},
+		{readinessCheckPathExpansionAnomalies, messages.UpgradeReadinessPathExpansion, messages.UpgradeReadinessActionPathExpansion},
+		{readinessCheckVSCodeNoSyncStaleOutput, messages.UpgradeReadinessVSCodeStale, messages.UpgradeReadinessActionVSCodeStale},
+		{readinessCheckFloatingDependencies, messages.UpgradeReadinessFloatingDeps, messages.UpgradeReadinessActionFloatingDeps},
+		{readinessCheckDisabledArtifacts, messages.UpgradeReadinessStaleDisabledAgents, messages.UpgradeReadinessActionStaleDisabledAgents},
+		{readinessCheckMissingRequiredConfigFields, messages.UpgradeReadinessMissingRequiredFields, messages.UpgradeReadinessActionMissingRequiredFields},
+	}
+	if len(cases) != len(readinessCheckText) {
+		t.Fatalf("readinessCheckText has %d entries, test covers %d", len(readinessCheckText), len(cases))
+	}
+	for _, tc := range cases {
+		check := newReadinessCheck(tc.id, []string{"b", "a"})
+		if check == nil {
+			t.Fatalf("newReadinessCheck(%q) = nil, want check", tc.id)
+		}
+		if check.ID != tc.id || check.Summary != tc.wantSummary || check.Action != tc.wantAction {
+			t.Fatalf("newReadinessCheck(%q) = %+v, want summary %q action %q", tc.id, *check, tc.wantSummary, tc.wantAction)
+		}
+		if !reflect.DeepEqual(check.Details, []string{"a", "b"}) {
+			t.Fatalf("newReadinessCheck(%q) details = %v, want sorted [a b]", tc.id, check.Details)
+		}
+	}
+}
+
+func TestNewReadinessCheck_NoDetailsReturnsNil(t *testing.T) {
+	if check := newReadinessCheck(readinessCheckFloatingDependencies, nil); check != nil {
+		t.Fatalf("newReadinessCheck(nil details) = %+v, want nil", *check)
+	}
+	if check := newReadinessCheck(readinessCheckFloatingDependencies, []string{}); check != nil {
+		t.Fatalf("newReadinessCheck(empty details) = %+v, want nil", *check)
+	}
+}
+
+func TestBuildUpgradeReadinessChecks_MissingConfig(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+	checks, err := buildUpgradeReadinessChecks(inst)
+	if err != nil {
+		t.Fatalf("buildUpgradeReadinessChecks: %v", err)
+	}
+	want := []UpgradeReadinessCheck{{
+		ID:      readinessCheckUnrecognizedConfigKeys,
+		Summary: messages.UpgradeReadinessUnrecognizedKeys,
+		Action:  messages.UpgradeReadinessActionUnrecognizedKeys,
+		Details: []string{".agent-layer/config.toml"},
+	}}
+	if !reflect.DeepEqual(checks, want) {
+		t.Fatalf("checks = %+v, want %+v", checks, want)
+	}
 }
 
 func TestBuildUpgradeReadinessChecks_UnrecognizedConfigKeys(t *testing.T) {
