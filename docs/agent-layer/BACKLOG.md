@@ -27,6 +27,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-10-06 copilot-review-context: Evaluate repository context for Copilot reviews
+    Priority: Low. Area: review tooling / skills / MCP
+    Description: Evaluate a review-focused `code-review` agent skill and relevant MCP context so Copilot reviews can use repository-specific review guidance.
+    Acceptance criteria: Assess GitHub's agent-skills/MCP review documentation, identify useful context, and demonstrate its use through review attributions or session logs before adopting a setup in separately scoped work.
+    Notes: New review tooling outside #313; no skill installation or GitHub/Copilot service configuration in #350. Source: https://github.com/conn-castle/agent-layer/pull/350#pullrequestreview-5424998042 ; Docs: https://docs.github.com/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review?tool=webui#mcp-servers-and-agent-skills
+
 - Backlog 2026-08-25 dispatch-state-retention: Bound dispatch state and log artifact retention
     Priority: Medium. Area: dispatch / state / logs
     Description: Define a safe automatic retention policy that preserves useful completed dispatch results/history while cleaning stale lock files and bounding or archiving old dispatch state, log, and capability-cache records.
