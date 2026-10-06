@@ -407,6 +407,13 @@ func exchangeMCPBatch(t *testing.T, handshake string, serve func(context.Context
 	if err := json.Unmarshal(batch, &responses); err != nil || len(responses) != 2 {
 		t.Fatalf("batch responses: %+v %v", responses, err)
 	}
+	gotIDs := map[int]bool{}
+	for _, response := range responses {
+		gotIDs[response.ID] = true
+	}
+	if !gotIDs[2] || !gotIDs[3] {
+		t.Fatalf("batch response IDs: %+v", responses)
+	}
 	send(`{"jsonrpc":"2.0","id":4,"method":"tools/list"}`)
 	var response struct {
 		ID int `json:"id"`
