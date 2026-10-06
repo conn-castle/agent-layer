@@ -33,19 +33,7 @@ func TestClientPlaceholderResolverVSCode(t *testing.T) {
 	}
 }
 
-func TestFullValueResolver(t *testing.T) {
-	env := map[string]string{"TOKEN": "from-env"}
-
-	resolver := FullValueResolver(env)
-
-	// Value from env map
-	result := resolver("TOKEN", "from-env")
-	if result != "from-env" {
-		t.Fatalf("expected from-env, got %s", result)
-	}
-}
-
-func TestResolveEnabledMCPServers(t *testing.T) {
+func TestResolveEffectiveEnabledMCPServers(t *testing.T) {
 	enabled := true
 	disabled := false
 	servers := []config.MCPServer{
@@ -74,26 +62,29 @@ func TestResolveEnabledMCPServers(t *testing.T) {
 		"API_KEY": "key123",
 	}
 
-	resolved, err := ResolveEnabledMCPServers(servers, env)
+	cfg := dispatchCallerConfig(ClientCodex)
+	cfg.MCP.Servers = servers
+
+	resolved, err := ResolveEffectiveEnabledMCPServers(cfg, env)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Should only have 2 servers (disabled one excluded)
-	if len(resolved) != 2 {
-		t.Fatalf("expected 2 servers, got %d", len(resolved))
+	// The disabled server is excluded and the built-in server is added.
+	if len(resolved) != 3 || resolved[0].ID != BuiltInDispatchServerID || resolved[1].ID != "server1" || resolved[2].ID != "server3" {
+		t.Fatalf("unexpected servers: %#v", resolved)
 	}
 
 	// Check values are fully resolved
-	if resolved[0].Args[1] != "secret" {
-		t.Fatalf("expected secret, got %s", resolved[0].Args[1])
+	if resolved[1].Args[1] != "secret" {
+		t.Fatalf("expected secret, got %s", resolved[1].Args[1])
 	}
-	if resolved[1].URL != "https://example.com?key=key123" {
-		t.Fatalf("expected resolved URL, got %s", resolved[1].URL)
+	if resolved[2].URL != "https://example.com?key=key123" {
+		t.Fatalf("expected resolved URL, got %s", resolved[2].URL)
 	}
 }
 
-func TestResolveEnabledMCPServers_DefaultHTTPTransport(t *testing.T) {
+func TestResolveServers_DefaultHTTPTransport(t *testing.T) {
 	enabled := true
 	servers := []config.MCPServer{
 		{
@@ -111,7 +102,7 @@ func TestResolveEnabledMCPServers_DefaultHTTPTransport(t *testing.T) {
 		},
 	}
 
-	resolved, err := ResolveEnabledMCPServers(servers, map[string]string{})
+	resolved, err := resolveServers(servers, map[string]string{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -138,7 +129,7 @@ func TestMCPServerResolveError_Unwrap(t *testing.T) {
 	}
 }
 
-func TestResolveEnabledMCPServers_UnknownTransportFails(t *testing.T) {
+func TestResolveServers_UnknownTransportFails(t *testing.T) {
 	enabled := true
 	servers := []config.MCPServer{
 		{
@@ -147,7 +138,7 @@ func TestResolveEnabledMCPServers_UnknownTransportFails(t *testing.T) {
 			Transport: "ftp",
 		},
 	}
-	_, err := ResolveEnabledMCPServers(servers, map[string]string{})
+	_, err := resolveServers(servers, map[string]string{}, nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}

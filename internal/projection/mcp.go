@@ -1,10 +1,6 @@
 package projection
 
-import (
-	"sort"
-
-	"github.com/conn-castle/agent-layer/internal/config"
-)
+import "github.com/conn-castle/agent-layer/internal/config"
 
 // EnvVarResolver returns a replacement string for a resolved env var.
 type EnvVarResolver = config.EnvVarReplacer
@@ -26,50 +22,14 @@ type ResolvedMCPServer struct {
 	ToolTimeoutSeconds int
 }
 
-// EnabledServerIDs returns sorted MCP server ids enabled for the client.
-func EnabledServerIDs(servers []config.MCPServer, client string) []string {
-	var ids []string
+// clientServers returns the enabled servers that apply to client, in
+// configuration order.
+func clientServers(servers []config.MCPServer, client string) []config.MCPServer {
+	var matched []config.MCPServer
 	for _, server := range servers {
-		if server.Enabled == nil || !*server.Enabled {
-			continue
-		}
-		if !server.AppliesToClient(client) {
-			continue
-		}
-		ids = append(ids, server.ID)
-	}
-	sort.Strings(ids)
-	return ids
-}
-
-// ResolveMCPServers filters and resolves MCP servers for a client.
-func ResolveMCPServers(servers []config.MCPServer, env map[string]string, client string, resolver EnvVarResolver) ([]ResolvedMCPServer, error) {
-	if resolver == nil {
-		resolver = func(_ string, value string) string {
-			return value
+		if config.IsAgentEnabled(server.Enabled) && server.AppliesToClient(client) {
+			matched = append(matched, server)
 		}
 	}
-
-	var resolved []ResolvedMCPServer
-	for _, server := range servers {
-		if server.Enabled == nil || !*server.Enabled {
-			continue
-		}
-		if !server.AppliesToClient(client) {
-			continue
-		}
-
-		entry, err := resolveSingleServer(server, env, resolver)
-		if err != nil {
-			return nil, &MCPServerResolveError{ServerID: server.ID, Err: err}
-		}
-
-		resolved = append(resolved, entry)
-	}
-
-	sort.Slice(resolved, func(i, j int) bool {
-		return resolved[i].ID < resolved[j].ID
-	})
-
-	return resolved, nil
+	return matched
 }

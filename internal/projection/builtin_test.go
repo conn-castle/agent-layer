@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -330,7 +331,7 @@ func TestReceivedMCPServersFollowSyncClientGating(t *testing.T) {
 			if received != tt.want {
 				t.Fatalf("ReceivedMCPServers includes server = %v, want %v", received, tt.want)
 			}
-			if got := containsServerID(EffectiveEnabledServerIDs(cfg), "user-server"); got != tt.want {
+			if got := slices.Contains(EffectiveEnabledServerIDs(cfg), "user-server"); got != tt.want {
 				t.Fatalf("EffectiveEnabledServerIDs includes server = %v, want %v", got, tt.want)
 			}
 		})
