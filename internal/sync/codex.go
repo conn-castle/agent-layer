@@ -3,6 +3,7 @@ package sync
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -137,9 +138,12 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		}
 	}
 
+	herdREnabled := config.IsAgentEnabled(project.Config.Agents.Codex.Enabled)
+
 	// Write agent-specific root keys/tables before managed MCP tables so any
 	// scalar overrides remain at the TOML root.
-	if err := appendCodexAgentSpecific(&builder, agentSpecific); err != nil {
+	managedHookEvents := codexManagedHookEvents(chimeEnabled, herdREnabled)
+	if err := appendCodexAgentSpecific(&builder, withoutEmptyCodexHookEvents(agentSpecific, managedHookEvents)); err != nil {
 		return codexManagedConfig{}, err
 	}
 
@@ -151,7 +155,7 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		appendCodexSectionBreak(&builder)
 		appendCodexChimeBlock(&builder)
 	}
-	if config.IsAgentEnabled(project.Config.Agents.Codex.Enabled) {
+	if herdREnabled {
 		appendCodexSectionBreak(&builder)
 		builder.WriteString(codexHerdRBeginMarker)
 		builder.WriteByte('\n')
@@ -219,8 +223,59 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		ProjectRoot:   root,
 		AgentSpecific: agentSpecific,
 		ChimeEnabled:  chimeEnabled,
-		HerdREnabled:  config.IsAgentEnabled(project.Config.Agents.Codex.Enabled),
+		HerdREnabled:  herdREnabled,
 	}, nil
+}
+
+// codexManagedHookEvents lists the hook events that receive a managed
+// [[hooks.<event>]] array table: Stop for the chime and SessionStart for HerdR.
+func codexManagedHookEvents(chimeEnabled bool, herdREnabled bool) []string {
+	var events []string
+	if chimeEnabled {
+		events = append(events, codexStopKey)
+	}
+	if herdREnabled {
+		events = append(events, codexSessionStartKey)
+	}
+	return events
+}
+
+// isEmptyCodexHookList reports whether value is an explicitly empty hook list.
+func isEmptyCodexHookList(value any) bool {
+	entries, ok := value.([]any)
+	return ok && len(entries) == 0
+}
+
+// withoutEmptyCodexHookEvents returns agentSpecific without explicitly empty
+// hooks.<event> lists for events that also receive a managed [[hooks.<event>]]
+// array table. TOML cannot declare `<event> = []` alongside that array table,
+// and an empty user list contributes no handlers, so the managed entry alone is
+// the combined list. agentSpecific itself is left unchanged for the merge path.
+func withoutEmptyCodexHookEvents(agentSpecific map[string]any, events []string) map[string]any {
+	hooks, ok := agentSpecific[hooksKey].(map[string]any)
+	if !ok {
+		return agentSpecific
+	}
+	var filtered map[string]any
+	for _, event := range events {
+		if !isEmptyCodexHookList(hooks[event]) {
+			continue
+		}
+		if filtered == nil {
+			filtered = maps.Clone(hooks)
+		}
+		delete(filtered, event)
+	}
+	if filtered == nil {
+		return agentSpecific
+	}
+	out := maps.Clone(agentSpecific)
+	if len(filtered) == 0 {
+		delete(out, hooksKey)
+	} else {
+		out[hooksKey] = filtered
+	}
+	return out
 }
 
 // injectCodexAgentLayerDirectToolNamespace keeps Agent Dispatch outside Codex

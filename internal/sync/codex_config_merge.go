@@ -135,6 +135,7 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 		editor.removePath(statuslinePath)
 	}
 
+	managedHookEvents := codexManagedHookEvents(managed.ChimeEnabled, managed.HerdREnabled)
 	for _, item := range agentSpecificLeafValues(managed.AgentSpecific) {
 		if codexPathHandledElsewhere(item.path) {
 			continue
@@ -148,6 +149,13 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 		}
 		if slices.Equal(item.path, []string{hooksKey, codexSessionStartKey}) {
 			value = withoutCodexHerdRSessionStartEntries(value)
+		}
+		// An empty user list beside a managed hook block adds nothing; writing it
+		// would only declare a [hooks] parent that the expansion below leaves empty.
+		if len(item.path) == 2 && item.path[0] == hooksKey && slices.Contains(managedHookEvents, item.path[1]) && isEmptyCodexHookList(value) {
+			if _, exists := valueAtPath(existingMap, item.path); !exists {
+				continue
+			}
 		}
 		if err := setManagedCodexPath(editor, existingMap, item.path, value); err != nil {
 			return "", err
