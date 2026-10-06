@@ -376,7 +376,7 @@ func injectMuseHerdRHook(document map[string]any, enabled bool, root string) err
 		var ok bool
 		hooks, ok = raw.(map[string]any)
 		if !ok {
-			return errorsNew("muse hooks must be an object")
+			return errors.New("muse hooks must be an object")
 		}
 	}
 	for _, event := range []string{herdrMuseEvent, herdrMuseFirstTurnEvent} {
@@ -400,8 +400,6 @@ func injectMuseHerdRHook(document map[string]any, enabled bool, root string) err
 	}
 	return nil
 }
-
-func errorsNew(message string) error { return fmt.Errorf("%s", message) }
 
 func (e *codexTomlEditor) applyCodexHerdRHook(path string, enabled bool, root ...string) (bool, error) {
 	// Markers inside multiline strings are user content, not an owned block.
