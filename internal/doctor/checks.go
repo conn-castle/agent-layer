@@ -20,6 +20,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/skillvalidator"
+	"github.com/conn-castle/agent-layer/internal/version"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
@@ -92,15 +93,19 @@ var agyVersionRE = regexp.MustCompile(`(?m)^agy(?:\s+version)?\s+v?(\d+\.\d+\.\d
 // X.Y.Z triple.
 var bareSemverVersionRE = regexp.MustCompile(`^v?(\d+\.\d+\.\d+)$`)
 
-// parseAgyVersion extracts the bare X.Y.Z version from `agy --version` output.
-// It accepts both the bare form the current CLI prints (`1.0.2`) and the
-// `agy`-prefixed line shape, returning "" when neither yields a confident
+// museVersionRE matches the first X.Y.Z triple anywhere in `muse --version`
+// output.
+var museVersionRE = regexp.MustCompile(`\b(\d+\.\d+\.\d+)\b`)
+
+// parseCLIVersion extracts the bare X.Y.Z version from a CLI's `--version`
+// output. It accepts both the bare form (`1.0.2`) and the binary-prefixed line
+// shape matched by prefixedRE, returning "" when neither yields a confident
 // match so the caller can surface an explicit "could not parse" failure.
-func parseAgyVersion(output string) string {
+func parseCLIVersion(output string, prefixedRE *regexp.Regexp) string {
 	if match := bareSemverVersionRE.FindStringSubmatch(strings.TrimSpace(output)); len(match) >= 2 {
 		return match[1]
 	}
-	if match := agyVersionRE.FindStringSubmatch(output); len(match) >= 2 {
+	if match := prefixedRE.FindStringSubmatch(output); len(match) >= 2 {
 		return match[1]
 	}
 	return ""
@@ -453,11 +458,11 @@ func CheckMuseBinary() []Result {
 	if err != nil {
 		return []Result{{Status: StatusWarn, CheckName: messages.DoctorCheckNameAgents, Message: fmt.Sprintf("Muse version check failed: %v", err)}}
 	}
-	match := regexp.MustCompile(`\b(\d+\.\d+\.\d+)\b`).FindStringSubmatch(string(output))
+	match := museVersionRE.FindStringSubmatch(string(output))
 	if len(match) != 2 {
 		return []Result{{Status: StatusWarn, CheckName: messages.DoctorCheckNameAgents, Message: "Muse version could not be parsed"}}
 	}
-	cmp, err := compareDoctorSemver(match[1], muse.SupportedVersion)
+	cmp, err := version.Compare(match[1], muse.SupportedVersion)
 	if err != nil || cmp < 0 {
 		return []Result{{Status: StatusWarn, CheckName: messages.DoctorCheckNameAgents, Message: fmt.Sprintf("Muse %s is older than tested version %s", match[1], muse.SupportedVersion), Recommendation: "Upgrade Muse Code."}}
 	}
@@ -485,10 +490,9 @@ func CheckAntigravityBinary() []Result {
 		}}
 	}
 	versionText := string(output)
-	// parseAgyVersion strips any optional `v` prefix and accepts both the bare
-	// (`1.0.2`) and `agy`-prefixed output shapes before the value is passed to
-	// compareDoctorSemver (which expects a bare X.Y.Z triple).
-	versionValue := parseAgyVersion(versionText)
+	// parseCLIVersion strips any optional `v` prefix and accepts both the bare
+	// (`1.0.2`) and `agy`-prefixed output shapes, yielding a bare X.Y.Z triple.
+	versionValue := parseCLIVersion(versionText, agyVersionRE)
 	if versionValue == "" {
 		return []Result{{
 			Status:         StatusFail,
@@ -497,7 +501,7 @@ func CheckAntigravityBinary() []Result {
 			Recommendation: messages.DoctorAntigravityInstallRecommend,
 		}}
 	}
-	cmp, err := compareDoctorSemver(versionValue, "1.0.0")
+	cmp, err := version.Compare(versionValue, "1.0.0")
 	if err != nil {
 		return []Result{{
 			Status:         StatusFail,
@@ -523,16 +527,6 @@ func CheckAntigravityBinary() []Result {
 
 var grokVersionRE = regexp.MustCompile(`(?m)^grok(?:\s+version)?\s+v?(\d+\.\d+\.\d+)\b`)
 
-func parseGrokVersion(output string) string {
-	if match := bareSemverVersionRE.FindStringSubmatch(strings.TrimSpace(output)); len(match) >= 2 {
-		return match[1]
-	}
-	if match := grokVersionRE.FindStringSubmatch(output); len(match) >= 2 {
-		return match[1]
-	}
-	return ""
-}
-
 // CheckGrokBinary verifies that grok exists and is at least the tested pin.
 // Missing or old binaries are warnings: Grok remains usable to configure, and
 // the user can still install or upgrade the CLI.
@@ -556,7 +550,7 @@ func CheckGrokBinary() []Result {
 		}}
 	}
 	versionText := string(output)
-	versionValue := parseGrokVersion(versionText)
+	versionValue := parseCLIVersion(versionText, grokVersionRE)
 	if versionValue == "" {
 		return []Result{{
 			Status:         StatusWarn,
@@ -565,8 +559,15 @@ func CheckGrokBinary() []Result {
 			Recommendation: grokInstallRecommend(),
 		}}
 	}
-	cmp, err := compareDoctorSemver(versionValue, grok.SupportedVersion)
+	cmp, err := version.Compare(versionValue, grok.SupportedVersion)
 	if err != nil {
+		// parseCLIVersion only yields digit triples, so the only possible
+		// failure is a segment overflowing int. Report the bare strconv error
+		// without version.Compare's segment wrapper so the message is unchanged.
+		var segmentErr *strconv.NumError
+		if errors.As(err, &segmentErr) {
+			err = segmentErr
+		}
 		return []Result{{
 			Status:         StatusWarn,
 			CheckName:      messages.DoctorCheckNameAgents,
@@ -591,50 +592,6 @@ func CheckGrokBinary() []Result {
 
 func grokInstallRecommend() string {
 	return fmt.Sprintf(messages.DoctorGrokInstallRecommendFmt, grok.SupportedVersion)
-}
-
-func compareDoctorSemver(a string, b string) (int, error) {
-	av, err := parseDoctorSemver(a)
-	if err != nil {
-		return 0, err
-	}
-	bv, err := parseDoctorSemver(b)
-	if err != nil {
-		return 0, err
-	}
-	if av[0] != bv[0] {
-		return compareDoctorInt(av[0], bv[0]), nil
-	}
-	if av[1] != bv[1] {
-		return compareDoctorInt(av[1], bv[1]), nil
-	}
-	return compareDoctorInt(av[2], bv[2]), nil
-}
-
-func compareDoctorInt(a int, b int) int {
-	if a < b {
-		return -1
-	}
-	if a > b {
-		return 1
-	}
-	return 0
-}
-
-func parseDoctorSemver(raw string) ([3]int, error) {
-	parts := strings.Split(raw, ".")
-	if len(parts) != 3 {
-		return [3]int{}, fmt.Errorf("invalid semantic version %q", raw)
-	}
-	var parsed [3]int
-	for i, part := range parts {
-		value, err := strconv.Atoi(part)
-		if err != nil {
-			return [3]int{}, err
-		}
-		parsed[i] = value
-	}
-	return parsed, nil
 }
 
 // CheckFlatFormatSkills scans .agent-layer/skills/ for stale flat-format .md files
