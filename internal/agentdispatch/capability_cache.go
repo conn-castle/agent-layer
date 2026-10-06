@@ -6,17 +6,24 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
+
+// capabilityCacheMaxAge bounds how long a cached provider version is reused.
+// The binary fingerprint cannot see launchers (such as Muse's) that update and
+// run a separate binary without changing themselves, so entries also expire.
+const capabilityCacheMaxAge = time.Hour
 
 type capabilityCache struct {
 	Entries map[string]capabilityCacheEntry `json:"entries"`
 }
 
 type capabilityCacheEntry struct {
-	Identity string `json:"identity"`
-	Version  string `json:"version"`
+	Identity  string    `json:"identity"`
+	Version   string    `json:"version"`
+	CheckedAt time.Time `json:"checked_at"`
 }
 
 func compatibleTargetVersionCached(root string, path string, target targetMeta, lookup func(string, string) (string, error)) (targetMeta, string, error) {
@@ -37,16 +44,19 @@ func compatibleTargetVersionCached(root string, path string, target targetMeta, 
 		if cache.Entries == nil {
 			cache.Entries = map[string]capabilityCacheEntry{}
 		}
+		now := time.Now().UTC()
 		if entry, ok := cache.Entries[target.Name]; ok && entry.Identity == identity {
-			version = entry.Version
-			return nil
+			if age := now.Sub(entry.CheckedAt); age >= 0 && age < capabilityCacheMaxAge {
+				version = entry.Version
+				return nil
+			}
 		}
 		resolved, resolveErr := requireSupportedVersion(path, target.Name, nil)
 		if resolveErr != nil {
 			return resolveErr
 		}
 		version = resolved
-		cache.Entries[target.Name] = capabilityCacheEntry{Identity: identity, Version: resolved}
+		cache.Entries[target.Name] = capabilityCacheEntry{Identity: identity, Version: resolved, CheckedAt: now}
 		if err := writeJSONAtomic(cachePath, cache); err != nil {
 			return wrapExitError(ExitConfig, "publish dispatch capability cache", err)
 		}
