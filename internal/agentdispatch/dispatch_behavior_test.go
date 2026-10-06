@@ -101,6 +101,39 @@ func TestOptionsReportExactUnsupportedInstalledVersion(t *testing.T) {
 	t.Fatal("claude target missing from options")
 }
 
+func TestOptionsReportUnavailableProviderReasons(t *testing.T) {
+	const unverified = "provider version could not be verified"
+	found := func(string) (string, error) { return "/mock/codex", nil }
+	unexpectedLookup := func(string, string) (string, error) {
+		t.Error("version lookup called without a provider binary")
+		return "", nil
+	}
+	for _, tc := range []struct {
+		name     string
+		lookPath func(string) (string, error)
+		lookup   func(string, string) (string, error)
+		want     string
+	}{
+		{"missing binary", func(string) (string, error) { return "", exec.ErrNotFound }, unexpectedLookup, "provider binary not found"},
+		{"version error", found, func(string, string) (string, error) { return "1.0.0", errors.New("probe failed") }, unverified},
+		{"empty version", found, func(string, string) (string, error) { return "", nil }, unverified},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			options := buildTargetOptions(dispatchTestConfig(AgentCodex), agentoptions.DiscoveryRequest{LookPath: tc.lookPath}, tc.lookup)
+			for _, option := range options {
+				if option.Agent != AgentCodex {
+					continue
+				}
+				if option.Available || option.UnavailableReason != tc.want {
+					t.Fatalf("availability = %#v, want reason %q", option, tc.want)
+				}
+				return
+			}
+			t.Fatal("codex target missing from options")
+		})
+	}
+}
+
 func TestNewerProviderVersionsRemainDispatchable(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	parts := strings.Split(supportedProviderVersions[AgentCodex], ".")
@@ -245,9 +278,9 @@ func TestOptionsSkipsDisabledProviderQueries(t *testing.T) {
 				t.Errorf("queried disabled provider %s", binary)
 			}
 			return "", os.ErrNotExist
-		}})
+		}}, nil)
 	for _, option := range options {
-		if option.Agent != AgentCodex && (option.Available || option.Model.Source != "not_requested" || len(option.Model.Suggestions) != 0) {
+		if option.Agent != AgentCodex && (option.Available || option.UnavailableReason != "disabled in config" || option.Model.Source != "not_requested" || len(option.Model.Suggestions) != 0) {
 			t.Errorf("unexpected disabled provider metadata: %+v", option)
 		}
 	}
