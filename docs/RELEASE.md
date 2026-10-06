@@ -69,6 +69,9 @@ exact `claude --version`, `codex --version`, `agy --version`,
 `continue`/`wait` probe for each locally enabled dispatch provider. List every
 declared supported provider in the evidence, marking disabled or unavailable
 providers as untested with the reason; do not enable them just for the probe.
+Dispatch reuses a probed provider version for up to ten minutes per unchanged
+provider command, so a provider updated behind an unchanged launcher can appear
+in dispatch records with its previous version until that bound passes.
 
 Run these live probes from the existing local release checkout using its
 `.agent-layer/config.toml`, `.agent-layer/.env`, and normal repo-local provider
