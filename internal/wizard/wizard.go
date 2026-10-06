@@ -1099,83 +1099,20 @@ func redactEnvPreviewSide(content string, thisValues map[string]string, otherVal
 	}
 	lines := strings.Split(content, "\n")
 	for i, line := range lines {
-		prefix, key, suffix, ok := parseEnvPreviewLine(line)
-		if !ok {
+		// redactEnvPreviewContent already ran envfile.Parse on content, so err is always nil.
+		assignment, ok, err := envfile.ParseLine(line)
+		if err != nil || !ok {
 			continue
 		}
-		thisValue, thisOK := thisValues[key]
-		otherValue, otherOK := otherValues[key]
-		lines[i] = fmt.Sprintf("%s%s=%q%s", prefix, key, redactedEnvPreviewValue(thisValue, thisOK, otherValue, otherOK, currentSide), suffix)
+		prefix := ""
+		if assignment.Export {
+			prefix = "export "
+		}
+		thisValue, thisOK := thisValues[assignment.Key]
+		otherValue, otherOK := otherValues[assignment.Key]
+		lines[i] = fmt.Sprintf("%s%s=%q%s", prefix, assignment.Key, redactedEnvPreviewValue(thisValue, thisOK, otherValue, otherOK, currentSide), assignment.Comment)
 	}
 	return strings.Join(lines, "\n")
-}
-
-func parseEnvPreviewLine(line string) (string, string, string, bool) {
-	trimmed := strings.TrimSpace(line)
-	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-		return "", "", "", false
-	}
-	prefix := ""
-	if strings.HasPrefix(trimmed, "export ") {
-		prefix = "export "
-		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "export "))
-	}
-	idx := strings.Index(trimmed, "=")
-	if idx <= 0 {
-		return "", "", "", false
-	}
-	key := strings.TrimSpace(trimmed[:idx])
-	if key == "" {
-		return "", "", "", false
-	}
-	return prefix, key, envPreviewTrailingComment(trimmed[idx+1:]), true
-}
-
-func envPreviewTrailingComment(rawValue string) string {
-	value := strings.TrimSpace(rawValue)
-	if len(value) < 2 {
-		return ""
-	}
-
-	var closing int
-	switch value[0] {
-	case '"':
-		closing = findEnvPreviewClosingDoubleQuote(value)
-	case '\'':
-		closingOffset := strings.IndexByte(value[1:], '\'')
-		if closingOffset < 0 {
-			return ""
-		}
-		closing = 1 + closingOffset
-	default:
-		return ""
-	}
-
-	if closing < 0 {
-		return ""
-	}
-	suffix := value[closing+1:]
-	if strings.HasPrefix(strings.TrimSpace(suffix), "#") {
-		return suffix
-	}
-	return ""
-}
-
-func findEnvPreviewClosingDoubleQuote(value string) int {
-	escaped := false
-	for i := 1; i < len(value); i++ {
-		if escaped {
-			escaped = false
-			continue
-		}
-		switch value[i] {
-		case '\\':
-			escaped = true
-		case '"':
-			return i
-		}
-	}
-	return -1
 }
 
 func redactedEnvPreviewValue(thisValue string, thisOK bool, otherValue string, otherOK bool, currentSide bool) string {
