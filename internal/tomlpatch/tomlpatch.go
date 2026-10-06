@@ -95,55 +95,64 @@ type KeyLine struct {
 // ScanLineForComment scans a TOML line and returns the position of any inline
 // comment, or -1 if none, plus the next parser state for multiline strings.
 func ScanLineForComment(line string, state StringState) (commentPos int, nextState StringState) {
+	// NUL never affects string state, so the discarded depth is the only effect
+	// of using it as the opener and closer.
+	commentPos, _, nextState = scanLine(line, state, 0, 0)
+	return commentPos, nextState
+}
+
+// scanLine is the TOML string state machine shared by comment detection and
+// bracket counting. It returns the position of any inline comment (or -1), the
+// net opener/closer depth seen outside strings before that comment, and the
+// state carried into the next line.
+func scanLine(line string, state StringState, opener, closer byte) (commentPos int, depth int, nextState StringState) {
 	i := 0
 	for i < len(line) {
 		ch := line[i]
-
 		if state == StateBasic || state == StateMultiBasic {
 			if ch == '\\' && i+1 < len(line) {
 				i += 2
 				continue
 			}
 		}
-
 		switch state {
 		case StateNone:
-			if ch == '#' {
-				return i, state
-			}
-			if ch == '"' {
+			switch ch {
+			case '#':
+				return i, depth, state
+			case '"':
 				if len(line) > i+2 && line[i:i+3] == tripleBasicQuote {
 					state = StateMultiBasic
 					i += 3
 					continue
 				}
 				state = StateBasic
-			} else if ch == '\'' {
+			case '\'':
 				if len(line) > i+2 && line[i:i+3] == tripleLiteralQuote {
 					state = StateMultiLiteral
 					i += 3
 					continue
 				}
 				state = StateLiteral
+			case opener:
+				depth++
+			case closer:
+				depth--
 			}
-
 		case StateBasic:
 			if ch == '"' {
 				state = StateNone
 			}
-
 		case StateLiteral:
 			if ch == '\'' {
 				state = StateNone
 			}
-
 		case StateMultiBasic:
 			if n := multilineCloseLen(line, i, '"'); n > 0 {
 				state = StateNone
 				i += n
 				continue
 			}
-
 		case StateMultiLiteral:
 			if n := multilineCloseLen(line, i, '\''); n > 0 {
 				state = StateNone
@@ -153,7 +162,7 @@ func ScanLineForComment(line string, state StringState) (commentPos int, nextSta
 		}
 		i++
 	}
-	return -1, state
+	return -1, depth, state
 }
 
 // multilineCloseLen returns the number of bytes in s[i:] that end a multiline
@@ -282,26 +291,19 @@ func MultilineValueEndIndex(lines []string, startIdx int) int {
 	}
 	valuePart := strings.TrimSpace(line[eqIdx+1:])
 
-	if strings.HasPrefix(valuePart, tripleBasicQuote) {
-		rest := valuePart[3:]
-		if containsUnescapedTripleQuote(rest) {
-			return startIdx
-		}
-		for i := startIdx + 1; i < len(lines); i++ {
-			if containsUnescapedTripleQuote(lines[i]) {
-				return i
-			}
-		}
-		return startIdx
+	var closesString func(string) bool
+	switch {
+	case strings.HasPrefix(valuePart, tripleBasicQuote):
+		closesString = containsUnescapedTripleQuote
+	case strings.HasPrefix(valuePart, tripleLiteralQuote):
+		closesString = func(s string) bool { return strings.Contains(s, tripleLiteralQuote) }
 	}
-
-	if strings.HasPrefix(valuePart, tripleLiteralQuote) {
-		rest := valuePart[3:]
-		if strings.Contains(rest, tripleLiteralQuote) {
+	if closesString != nil {
+		if closesString(valuePart[3:]) {
 			return startIdx
 		}
 		for i := startIdx + 1; i < len(lines); i++ {
-			if strings.Contains(lines[i], tripleLiteralQuote) {
+			if closesString(lines[i]) {
 				return i
 			}
 		}
@@ -326,78 +328,13 @@ func MultilineValueEndIndex(lines []string, startIdx int) int {
 			from = eqIdx + 1
 		}
 		var delta int
-		delta, state = countBracketDepth(lines[i][from:], opener, closer, state)
+		_, delta, state = scanLine(lines[i][from:], state, opener, closer)
 		depth += delta
 		if depth <= 0 {
 			return i
 		}
 	}
 	return startIdx
-}
-
-// countBracketDepth returns the net bracket-depth delta for opener/closer in s,
-// carrying TOML string state (including triple-quoted multiline strings) across
-// lines so brackets and comment markers inside string bodies are ignored. It
-// shares the string state machine used by ScanLineForComment.
-func countBracketDepth(s string, opener, closer byte, state StringState) (int, StringState) {
-	depth := 0
-	i := 0
-	for i < len(s) {
-		ch := s[i]
-		if state == StateBasic || state == StateMultiBasic {
-			if ch == '\\' && i+1 < len(s) {
-				i += 2
-				continue
-			}
-		}
-		switch state {
-		case StateNone:
-			switch ch {
-			case '#':
-				return depth, state
-			case '"':
-				if len(s) > i+2 && s[i:i+3] == tripleBasicQuote {
-					state = StateMultiBasic
-					i += 3
-					continue
-				}
-				state = StateBasic
-			case '\'':
-				if len(s) > i+2 && s[i:i+3] == tripleLiteralQuote {
-					state = StateMultiLiteral
-					i += 3
-					continue
-				}
-				state = StateLiteral
-			case opener:
-				depth++
-			case closer:
-				depth--
-			}
-		case StateBasic:
-			if ch == '"' {
-				state = StateNone
-			}
-		case StateLiteral:
-			if ch == '\'' {
-				state = StateNone
-			}
-		case StateMultiBasic:
-			if n := multilineCloseLen(s, i, '"'); n > 0 {
-				state = StateNone
-				i += n
-				continue
-			}
-		case StateMultiLiteral:
-			if n := multilineCloseLen(s, i, '\''); n > 0 {
-				state = StateNone
-				i += n
-				continue
-			}
-		}
-		i++
-	}
-	return depth, state
 }
 
 // containsUnescapedTripleQuote reports whether s contains an unescaped basic
@@ -452,12 +389,6 @@ func SetKeyValue(block *Block, templateBlock *Block, key string, value string, a
 			base = existingLine
 		}
 	}
-	if base.Raw == "" {
-		newLine := BuildKeyLine(KeyLine{Indent: ""}, key, value, false)
-		ReplaceOrInsertLine(block, key, newLine, afterKey)
-		return
-	}
-
 	newLine := BuildKeyLine(base, key, value, false)
 	ReplaceOrInsertLine(block, key, newLine, afterKey)
 }

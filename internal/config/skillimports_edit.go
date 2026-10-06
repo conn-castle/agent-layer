@@ -77,17 +77,12 @@ func findSkillImportBlocks(lines []string) ([]skillImportBlockSpan, error) {
 	}
 
 	var headers []headerAt
-	state := tomlpatch.StateNone
-	for i, line := range lines {
-		if tomlpatch.StateInMultiline(state) {
-			_, state = tomlpatch.ScanLineForComment(line, state)
-			continue
-		}
+	tomlpatch.WalkLinesOutsideMultiline(lines, func(i int, line string, _ tomlpatch.StringState) tomlpatch.LineWalkResult {
 		if name, isArray, ok := tomlpatch.ParseHeader(line); ok {
 			headers = append(headers, headerAt{index: i, name: name, array: isArray})
 		}
-		_, state = tomlpatch.ScanLineForComment(line, state)
-	}
+		return tomlpatch.LineWalkResult{}
+	})
 
 	var spans []skillImportBlockSpan
 	for i, header := range headers {
