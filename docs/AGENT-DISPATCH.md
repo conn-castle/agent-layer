@@ -181,6 +181,13 @@ model cache is used. Provider-version queries also run concurrently. Launch,
 sync, and dispatch start/continue do not run model queries just to pass through
 an explicit configuration value or use the harness default.
 
+Dispatch start and continue cache each provider's version in
+`.agent-layer/state/dispatch-capabilities/cache.json`, keyed on the resolved
+command's file identity and the identity of the directory that contains it.
+Entries are re-probed after 10 minutes even when that identity is unchanged, so
+a launcher that updates a separate binary in place is recorded at its new
+version within that bound.
+
 `start` requires an agent and exactly one prompt source. Model and reasoning
 effort are optional overrides. When omitted, Agent Layer uses its configured
 value; when that is also empty, it omits the provider flag so the provider uses
