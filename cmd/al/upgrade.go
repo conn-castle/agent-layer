@@ -943,12 +943,11 @@ func writeReadinessSection(out io.Writer, checks []install.UpgradeReadinessCheck
 		return err
 	}
 	for _, check := range checks {
-		if _, err := fmt.Fprintf(out, messages.UpgradePlanReadinessItemFmt, color.YellowString("%s", readinessSummary(check))); err != nil {
+		if _, err := fmt.Fprintf(out, messages.UpgradePlanReadinessItemFmt, color.YellowString("%s", check.Summary)); err != nil {
 			return err
 		}
-		action := readinessAction(check.ID)
-		if action != "" {
-			if _, err := fmt.Fprintf(out, messages.UpgradePlanReadinessRecommendationFmt, action); err != nil {
+		if check.Action != "" {
+			if _, err := fmt.Fprintf(out, messages.UpgradePlanReadinessRecommendationFmt, check.Action); err != nil {
 				return err
 			}
 		}
@@ -1023,56 +1022,6 @@ func writeHighlightedSummaryLine(out io.Writer, highlight bool, format string, a
 	}
 	_, err := fmt.Fprintf(out, "  - "+format+"\n", a...)
 	return err
-}
-
-func readinessSummary(check install.UpgradeReadinessCheck) string {
-	switch check.ID {
-	case issueUnrecognizedConfigKeys:
-		return messages.UpgradeReadinessUnrecognizedKeys
-	case issueUnresolvedConfigPlaceholders:
-		return messages.UpgradeReadinessUnresolvedPlaceholder
-	case issueProcessEnvOverridesDotenv:
-		return messages.UpgradeReadinessProcessEnvOverrides
-	case issueIgnoredEmptyDotenvAssignments:
-		return messages.UpgradeReadinessEmptyDotenv
-	case issuePathExpansionAnomalies:
-		return messages.UpgradeReadinessPathExpansion
-	case issueVSCodeNoSyncOutputsStale:
-		return messages.UpgradeReadinessVSCodeStale
-	case issueFloatingExternalDependencySpecs:
-		return messages.UpgradeReadinessFloatingDeps
-	case issueStaleDisabledAgentArtifacts:
-		return messages.UpgradeReadinessStaleDisabledAgents
-	case issueMissingRequiredConfigFields:
-		return messages.UpgradeReadinessMissingRequiredFields
-	default:
-		return check.Summary
-	}
-}
-
-func readinessAction(id string) string {
-	switch id {
-	case issueUnrecognizedConfigKeys:
-		return messages.UpgradeReadinessActionUnrecognizedKeys
-	case issueUnresolvedConfigPlaceholders:
-		return messages.UpgradeReadinessActionUnresolvedPlaceholder
-	case issueProcessEnvOverridesDotenv:
-		return messages.UpgradeReadinessActionProcessEnvOverrides
-	case issueIgnoredEmptyDotenvAssignments:
-		return messages.UpgradeReadinessActionEmptyDotenv
-	case issuePathExpansionAnomalies:
-		return messages.UpgradeReadinessActionPathExpansion
-	case issueVSCodeNoSyncOutputsStale:
-		return messages.UpgradeReadinessActionVSCodeStale
-	case issueFloatingExternalDependencySpecs:
-		return messages.UpgradeReadinessActionFloatingDeps
-	case issueStaleDisabledAgentArtifacts:
-		return messages.UpgradeReadinessActionStaleDisabledAgents
-	case issueMissingRequiredConfigFields:
-		return messages.UpgradeReadinessActionMissingRequiredFields
-	default:
-		return ""
-	}
 }
 
 // promptConfigChoice presents a type-aware numbered choice prompt for a config field.
