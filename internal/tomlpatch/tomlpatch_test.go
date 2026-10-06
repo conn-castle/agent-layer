@@ -413,6 +413,9 @@ func TestScanLineForComment_StateTransitions(t *testing.T) {
 	if comment, state := ScanLineForComment(`close''' # note`, StateMultiLiteral); comment < 0 || state != StateNone {
 		t.Fatalf("multiline literal closing parse = (%d, %v), want comment and none", comment, state)
 	}
+	if comment, state := ScanLineForComment("a\x00\"b\x00\" # note", StateNone); comment != 7 || state != StateNone {
+		t.Fatalf("NUL bytes parse = (%d, %v), want (7, none)", comment, state)
+	}
 }
 
 // TOML allows one or two quotes just inside a multiline closing delimiter, so

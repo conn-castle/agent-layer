@@ -997,33 +997,22 @@ func (e *codexTomlEditor) removeRanges(ranges []lineRange) {
 func (e *codexTomlEditor) walkAssignments(fn func(assignmentInfo)) {
 	var tablePath []string
 	standardContext := true
-	state := tomlpatch.StateNone
-	for i := 0; i < len(e.lines); i++ {
-		line := e.lines[i]
-		if tomlpatch.StateInMultiline(state) {
-			_, state = tomlpatch.ScanLineForComment(line, state)
-			continue
-		}
+	tomlpatch.WalkLinesOutsideMultiline(e.lines, func(i int, line string, state tomlpatch.StringState) tomlpatch.LineWalkResult {
 		if name, isArray, ok := tomlpatch.ParseHeader(line); ok {
 			var parsedOK bool
 			tablePath, parsedOK = tomlpatch.ParseKeyPath(name)
 			standardContext = parsedOK && !isArray
-			_, state = tomlpatch.ScanLineForComment(line, state)
-			continue
+			return tomlpatch.LineWalkResult{}
 		}
 		keyPath, ok := assignmentKeyPath(line, state)
 		if !ok {
-			_, state = tomlpatch.ScanLineForComment(line, state)
-			continue
+			return tomlpatch.LineWalkResult{}
 		}
 		end := tomlpatch.MultilineValueEndIndex(e.lines, i)
 		fullPath := append(append([]string(nil), tablePath...), keyPath...)
 		fn(assignmentInfo{start: i, end: end, fullPath: fullPath, keyPath: keyPath, tablePath: tablePath, standardContext: standardContext})
-		for j := i; j <= end && j < len(e.lines); j++ {
-			_, state = tomlpatch.ScanLineForComment(e.lines[j], state)
-		}
-		i = end
-	}
+		return tomlpatch.LineWalkResult{AdvanceTo: end}
+	})
 }
 
 func (e *codexTomlEditor) mutateRootInlineTable(top string, mutate func(map[string]any)) bool {
