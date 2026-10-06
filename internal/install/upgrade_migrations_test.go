@@ -3608,6 +3608,34 @@ func TestCollectMigrationChain(t *testing.T) {
 			t.Fatalf("chain entry = %q, want 0.7.0", chain[0].manifest.TargetVersion)
 		}
 	})
+
+	t.Run("start_inclusive_target_inclusive", func(t *testing.T) {
+		chain, err := collectMigrationChainFromVersionThroughTarget("0.6.1", "0.7.0")
+		if err != nil {
+			t.Fatalf("collectMigrationChainFromVersionThroughTarget: %v", err)
+		}
+		if len(chain) != 2 {
+			t.Fatalf("expected 2 manifests in chain, got %d", len(chain))
+		}
+		if chain[0].manifest.TargetVersion != "0.6.1" || chain[1].manifest.TargetVersion != "0.7.0" {
+			t.Fatalf("chain = [%q %q], want [0.6.1 0.7.0]", chain[0].manifest.TargetVersion, chain[1].manifest.TargetVersion)
+		}
+	})
+
+	t.Run("lower_bound_compare_error_names_bound", func(t *testing.T) {
+		_, cmpErr := version.Compare("0.6.0", "bad")
+		if cmpErr == nil {
+			t.Fatal("expected compare error for invalid version")
+		}
+		_, err := collectMigrationChain("bad", "0.7.0")
+		if want := "compare migration version 0.6.0 with source bad: " + cmpErr.Error(); err == nil || err.Error() != want {
+			t.Fatalf("collectMigrationChain error = %v, want %q", err, want)
+		}
+		_, err = collectMigrationChainFromVersionThroughTarget("bad", "0.7.0")
+		if want := "compare migration version 0.6.0 with start bad: " + cmpErr.Error(); err == nil || err.Error() != want {
+			t.Fatalf("collectMigrationChainFromVersionThroughTarget error = %v, want %q", err, want)
+		}
+	})
 }
 
 func TestPlanUpgradeMigrations_ChainsIntermediateManifests(t *testing.T) {

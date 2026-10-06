@@ -143,19 +143,28 @@ func loadAllTemplateManifests() (map[string]templateManifest, error) {
 	return cloned, nil
 }
 
+// validateNormalizedVersionField requires a manifest version field to be a
+// non-blank, already normalized X.Y.Z version.
+func validateNormalizedVersionField(field string, value string) error {
+	if strings.TrimSpace(value) == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	normalized, err := version.Normalize(value)
+	if err != nil {
+		return fmt.Errorf("invalid %s %q: %w", field, value, err)
+	}
+	if normalized != value {
+		return fmt.Errorf("%s %q must be normalized to X.Y.Z", field, value)
+	}
+	return nil
+}
+
 func validateTemplateManifest(manifest templateManifest) error {
 	if manifest.SchemaVersion != templateManifestSchemaVersion {
 		return fmt.Errorf("unsupported schema_version %d", manifest.SchemaVersion)
 	}
-	if strings.TrimSpace(manifest.Version) == "" {
-		return fmt.Errorf("version is required")
-	}
-	normalized, err := version.Normalize(manifest.Version)
-	if err != nil {
-		return fmt.Errorf("invalid version %q: %w", manifest.Version, err)
-	}
-	if normalized != manifest.Version {
-		return fmt.Errorf("version %q must be normalized to X.Y.Z", manifest.Version)
+	if err := validateNormalizedVersionField("version", manifest.Version); err != nil {
+		return err
 	}
 	if strings.TrimSpace(manifest.GeneratedAt) == "" {
 		return fmt.Errorf("generated_at_utc is required")

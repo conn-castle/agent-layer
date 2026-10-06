@@ -1570,18 +1570,31 @@ func listMigrationManifestVersions() ([]string, error) {
 // collectMigrationChain loads all migration manifests between sourceVersion
 // (exclusive) and targetVersion (inclusive), returning them in ascending order.
 func collectMigrationChain(sourceVersion string, targetVersion string) ([]chainedManifest, error) {
+	return collectMigrationChainThroughTarget("source", sourceVersion, false, targetVersion)
+}
+
+// collectMigrationChainFromVersionThroughTarget loads all migration manifests
+// between startVersion and targetVersion (both inclusive) in ascending order.
+func collectMigrationChainFromVersionThroughTarget(startVersion string, targetVersion string) ([]chainedManifest, error) {
+	return collectMigrationChainThroughTarget("start", startVersion, true, targetVersion)
+}
+
+// collectMigrationChainThroughTarget loads migration manifests above
+// lowerVersion, or also at it when includeLower is set, through targetVersion
+// (inclusive) in ascending order. lowerLabel names lowerVersion in errors.
+func collectMigrationChainThroughTarget(lowerLabel string, lowerVersion string, includeLower bool, targetVersion string) ([]chainedManifest, error) {
 	allVersions, err := listMigrationManifestVersions()
 	if err != nil {
 		return nil, err
 	}
 	var chain []chainedManifest
 	for _, ver := range allVersions {
-		cmpSource, cmpErr := version.Compare(ver, sourceVersion)
+		cmpLower, cmpErr := version.Compare(ver, lowerVersion)
 		if cmpErr != nil {
-			return nil, fmt.Errorf("compare migration version %s with source %s: %w", ver, sourceVersion, cmpErr)
+			return nil, fmt.Errorf("compare migration version %s with %s %s: %w", ver, lowerLabel, lowerVersion, cmpErr)
 		}
-		if cmpSource <= 0 {
-			continue // skip versions <= source
+		if cmpLower < 0 || (cmpLower == 0 && !includeLower) {
+			continue
 		}
 		cmpTarget, cmpErr := version.Compare(ver, targetVersion)
 		if cmpErr != nil {
@@ -1599,59 +1612,15 @@ func collectMigrationChain(sourceVersion string, targetVersion string) ([]chaine
 	return chain, nil
 }
 
-func collectMigrationChainFromVersionThroughTarget(startVersion string, targetVersion string) ([]chainedManifest, error) {
-	allVersions, err := listMigrationManifestVersions()
-	if err != nil {
-		return nil, err
-	}
-	var chain []chainedManifest
-	for _, ver := range allVersions {
-		cmpStart, cmpErr := version.Compare(ver, startVersion)
-		if cmpErr != nil {
-			return nil, fmt.Errorf("compare migration version %s with start %s: %w", ver, startVersion, cmpErr)
-		}
-		if cmpStart < 0 {
-			continue
-		}
-		cmpTarget, cmpErr := version.Compare(ver, targetVersion)
-		if cmpErr != nil {
-			return nil, fmt.Errorf("compare migration version %s with target %s: %w", ver, targetVersion, cmpErr)
-		}
-		if cmpTarget > 0 {
-			break
-		}
-		manifest, manifestPath, loadErr := loadUpgradeMigrationManifestByVersion(ver)
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		chain = append(chain, chainedManifest{manifest: manifest, path: manifestPath})
-	}
-	return chain, nil
-}
-
 func validateUpgradeMigrationManifest(manifest upgradeMigrationManifest) error {
 	if manifest.SchemaVersion != upgradeMigrationManifestSchemaVersion {
 		return fmt.Errorf("unsupported schema_version %d", manifest.SchemaVersion)
 	}
-	if strings.TrimSpace(manifest.TargetVersion) == "" {
-		return fmt.Errorf("target_version is required")
+	if err := validateNormalizedVersionField("target_version", manifest.TargetVersion); err != nil {
+		return err
 	}
-	normalizedTarget, err := version.Normalize(manifest.TargetVersion)
-	if err != nil {
-		return fmt.Errorf("invalid target_version %q: %w", manifest.TargetVersion, err)
-	}
-	if normalizedTarget != manifest.TargetVersion {
-		return fmt.Errorf("target_version %q must be normalized to X.Y.Z", manifest.TargetVersion)
-	}
-	if strings.TrimSpace(manifest.MinPriorVersion) == "" {
-		return fmt.Errorf("min_prior_version is required")
-	}
-	normalizedMin, err := version.Normalize(manifest.MinPriorVersion)
-	if err != nil {
-		return fmt.Errorf("invalid min_prior_version %q: %w", manifest.MinPriorVersion, err)
-	}
-	if normalizedMin != manifest.MinPriorVersion {
-		return fmt.Errorf("min_prior_version %q must be normalized to X.Y.Z", manifest.MinPriorVersion)
+	if err := validateNormalizedVersionField("min_prior_version", manifest.MinPriorVersion); err != nil {
+		return err
 	}
 
 	seenIDs := make(map[string]struct{}, len(manifest.Operations))
