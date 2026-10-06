@@ -125,13 +125,15 @@ func TestPlanUnknownDeletions_ExcludesRepresentedDeletedKeptAndKnownPaths(t *tes
 		require.NoError(t, os.MkdirAll(filepath.Dir(abs), 0o700))
 		require.NoError(t, os.WriteFile(abs, []byte("local\n"), 0o600))
 	}
+	effects, err := inst.planMigrationPathEffects([]upgradeMigrationOperation{
+		{Kind: upgradeMigrationKindDeleteFile, Path: paths[4]},
+		{Kind: upgradeMigrationKindRenameFile, From: paths[5], To: ".agent-layer/commands.allow"},
+	})
+	require.NoError(t, err)
 	changes, err := inst.planUnknownDeletions(
 		[]upgradeChangeWithTemplate{{path: paths[0]}, {path: paths[2]}},
 		[]UpgradeRename{{From: paths[1]}, {From: paths[3]}},
-		[]upgradeMigrationOperation{
-			{Kind: upgradeMigrationKindDeleteFile, Path: paths[4]},
-			{Kind: upgradeMigrationKindRenameFile, From: paths[5], To: ".agent-layer/commands.allow"},
-		},
+		effects,
 		upgradeKeepList{paths[6]: {}},
 	)
 	require.NoError(t, err)
@@ -154,7 +156,7 @@ func TestPlanUnknownDeletions_ReportsWhereMigrationsLeaveUnknownPaths(t *testing
 		require.NoError(t, os.MkdirAll(filepath.Dir(abs), 0o700))
 		require.NoError(t, os.WriteFile(abs, []byte("local\n"), 0o600))
 	}
-	changes, err := inst.planUnknownDeletions(nil, nil, []upgradeMigrationOperation{
+	effects, err := inst.planMigrationPathEffects([]upgradeMigrationOperation{
 		// A chained rename onto an existing unknown path is reported once.
 		{Kind: upgradeMigrationKindRenameFile, From: ".agent-layer/skills/old-name", To: ".agent-layer/skills/mid-name"},
 		{Kind: upgradeMigrationKindRenameFile, From: ".agent-layer/skills/mid-name", To: ".agent-layer/skills/new-name"},
@@ -165,7 +167,9 @@ func TestPlanUnknownDeletions_ReportsWhereMigrationsLeaveUnknownPaths(t *testing
 		{Kind: upgradeMigrationKindMigrateSkillsFormat, Path: ".agent-layer/skills"},
 		{Kind: upgradeMigrationKindAppendToFile, Path: ".agent-layer/instructions/appended.md"},
 		{Kind: upgradeMigrationKindAppendToFile, Path: ".agent-layer/instructions/04_conventions.md"},
-	}, upgradeKeepList{".agent-layer/skills/kept-old": {}})
+	})
+	require.NoError(t, err)
+	changes, err := inst.planUnknownDeletions(nil, nil, effects, upgradeKeepList{".agent-layer/skills/kept-old": {}})
 	require.NoError(t, err)
 	paths := make([]string, 0, len(changes))
 	for _, change := range changes {
@@ -225,7 +229,7 @@ func TestBuildUpgradePlan_ListsDanglingRenameSourceThatApplyWouldDelete(t *testi
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
-func TestPathsAfterMigrations_RenameSourceStatSemantics(t *testing.T) {
+func TestPlanMigrationPathEffects_RenameSourceStatSemantics(t *testing.T) {
 	for _, kind := range []upgradeMigrationOperationKind{upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact} {
 		t.Run(string(kind), func(t *testing.T) {
 			root := t.TempDir()
@@ -241,19 +245,19 @@ func TestPathsAfterMigrations_RenameSourceStatSemantics(t *testing.T) {
 				{Kind: kind, From: ".agent-layer/skills/moved/renamed", To: ".agent-layer/skills/moved/final"},
 			}
 			inst := &installer{root: root, sys: RealSystem{}}
-			paths, _, err := inst.pathsAfterMigrations(ops)
+			effects, err := inst.planMigrationPathEffects(ops)
 			require.NoError(t, err)
-			require.Contains(t, paths, ".agent-layer/skills/moved/dangling")
-			require.NotContains(t, paths, ".agent-layer/skills/destination")
-			require.Contains(t, paths, ".agent-layer/skills/moved/final")
-			require.NotContains(t, paths, ".agent-layer/skills/moved/valid")
-			require.NotContains(t, paths, ".agent-layer/skills/moved/renamed")
+			require.Contains(t, effects.tree, ".agent-layer/skills/moved/dangling")
+			require.NotContains(t, effects.tree, ".agent-layer/skills/destination")
+			require.Contains(t, effects.tree, ".agent-layer/skills/moved/final")
+			require.NotContains(t, effects.tree, ".agent-layer/skills/moved/valid")
+			require.NotContains(t, effects.tree, ".agent-layer/skills/moved/renamed")
 
 			failure := errors.New("stat denied")
 			sys := newFaultSystem(RealSystem{})
 			sys.statErrs[filepath.Join(dir, "dangling")] = failure
 			inst.sys = sys
-			_, _, err = inst.pathsAfterMigrations(ops)
+			_, err = inst.planMigrationPathEffects(ops)
 			require.ErrorIs(t, err, failure)
 
 			inst.sys = RealSystem{}
@@ -261,9 +265,9 @@ func TestPathsAfterMigrations_RenameSourceStatSemantics(t *testing.T) {
 				_, err = inst.executeRenameMigration(op.From, op.To)
 				require.NoError(t, err)
 			}
-			actual, _, err := inst.pathsAfterMigrations(nil)
+			actual, err := inst.planMigrationPathEffects(nil)
 			require.NoError(t, err)
-			require.Equal(t, actual, paths)
+			require.Equal(t, actual.tree, effects.tree)
 		})
 	}
 }
