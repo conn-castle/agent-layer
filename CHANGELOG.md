@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+- Agent Dispatch run records now report the provider version that actually ran after a launcher updates the binary it starts. Before each `start` or `continue`, Agent Dispatch checks the provider's version against its tested version and caches the result in `.agent-layer/state/dispatch-capabilities/cache.json`. Previously a cached version stayed in use as long as the command on `PATH` was unchanged, so with Muse's installed `~/.local/bin/muse` launcher, which updates a separate binary beside itself, run records kept reporting the old version (for example `1.4.0` while `muse --version` printed `1.4.3`), and the tested-version check used that stale value. Cached versions now expire after one hour, so dispatch reports an updated provider version within an hour of the update. Cache entries written by earlier Agent Layer versions are checked again on the next dispatch.
+
 ## v0.24.0 - 2026-10-05
 
 ### Added
