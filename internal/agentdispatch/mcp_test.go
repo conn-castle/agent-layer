@@ -7,7 +7,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -230,6 +232,10 @@ func TestMCPToolSchemaFootprintStaysSmall(t *testing.T) {
 // live discovery the CLI uses rather than a second static catalog.
 func TestMCPOptionsReportsDiscovery(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	binDir := t.TempDir()
+	writeDispatchStub(t, binDir, "agy", `if [ "$2" = "models" ]; then printf 'live\tLive Model\n'; fi`)
+	t.Setenv("PATH", testPath(binDir))
+	t.Setenv("AL_TEST_LOG", filepath.Join(t.TempDir(), "agy.log"))
 	session := newMCPTestSession(t, newMCPTestTools(root))
 	result := callMCPTool(t, session, ToolOptions, map[string]any{})
 	if result.IsError {
@@ -253,6 +259,15 @@ func TestMCPOptionsReportsDiscovery(t *testing.T) {
 	if len(response.Agents) != len(expected.Agents) {
 		t.Fatalf("dispatch_options returned %d agents, CLI discovery returned %d",
 			len(response.Agents), len(expected.Agents))
+	}
+	for i, agent := range response.Agents {
+		if agent.Available != expected.Agents[i].Available || agent.Available != (agent.Agent == AgentAntigravity) {
+			t.Fatalf("%s availability = %v, CLI discovery = %v; want only the stub agy available",
+				agent.Agent, agent.Available, expected.Agents[i].Available)
+		}
+		if agent.Agent == AgentAntigravity && !slices.Equal(agent.Model.Suggestions, []string{"live"}) {
+			t.Fatalf("agy model suggestions = %v, want live discovery from the stub", agent.Model.Suggestions)
+		}
 	}
 }
 
@@ -370,6 +385,11 @@ func TestMCPContinueStartsTheNextInvocation(t *testing.T) {
 	t.Setenv("PATH", testPath(binDir))
 	env := append(os.Environ(), "AL_TEST_LOG="+logPath, "AL_TEST_PROMPT="+promptPath)
 	session := newMCPTestSession(t, newMCPTestTools(root, env...))
+	t.Cleanup(func() {
+		if current, err := resolveWaitRun(root, dispatchSession.Name); err == nil && current.SupervisorPID != 0 {
+			waitForDetachedWorker(t, current.SupervisorPID)
+		}
+	})
 
 	started := decodeToolResult(t, callMCPTool(t, session, ToolContinue, ContinueInput{
 		Handle: dispatchSession.Name,
@@ -388,6 +408,37 @@ func TestMCPContinueStartsTheNextInvocation(t *testing.T) {
 	cancelled := decodeToolResult(t, callMCPTool(t, session, ToolCancel, HandleInput{Handle: dispatchSession.Name}))
 	if cancelled.State != dispatchStateCancelled {
 		t.Fatalf("dispatch_cancel result = %#v, want cancelled cleanup", cancelled)
+	}
+}
+
+// waitForDetachedWorker reaps a real detached worker so it cannot outlive the
+// test. The worker is a released child of the test binary, so it is reaped
+// directly rather than probed, which would report its zombie as alive.
+func waitForDetachedWorker(t *testing.T, pid int) {
+	t.Helper()
+	if pid <= 0 {
+		t.Errorf("detached worker PID = %d", pid)
+		return
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var status syscall.WaitStatus
+		reaped, err := syscall.Wait4(pid, &status, syscall.WNOHANG, nil)
+		switch {
+		case errors.Is(err, syscall.EINTR):
+			continue
+		case err != nil:
+			t.Errorf("wait for detached worker %d: %v", pid, err)
+			return
+		case reaped == pid:
+			return
+		case time.Now().After(deadline):
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+			_, _ = syscall.Wait4(pid, &status, 0, nil)
+			t.Errorf("detached worker %d did not exit within 10s", pid)
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
