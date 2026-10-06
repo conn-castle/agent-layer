@@ -706,149 +706,91 @@ func (inst *installer) executeConfigRenameKeyMigration(fromKey string, toKey str
 	if strings.TrimSpace(fromKey) == strings.TrimSpace(toKey) {
 		return false, nil
 	}
-	cfg, cfgPath, exists, err := inst.readMigrationConfigMap()
-	if err != nil {
-		return false, err
-	}
-	if !exists {
-		return false, nil
-	}
-	fromParts, err := splitMigrationKeyPath(fromKey)
-	if err != nil {
-		return false, err
-	}
-	toParts, err := splitMigrationKeyPath(toKey)
-	if err != nil {
-		return false, err
-	}
-	fromValue, fromExists, err := getNestedConfigValue(cfg, fromParts)
-	if err != nil {
-		return false, err
-	}
-	toValue, toExists, err := getNestedConfigValue(cfg, toParts)
-	if err != nil {
-		return false, err
-	}
-	if !fromExists {
-		return false, nil
-	}
-	if toExists {
-		if reflect.DeepEqual(fromValue, toValue) {
-			removed, removeErr := deleteNestedConfigValue(cfg, fromParts)
-			if removeErr != nil {
-				return false, removeErr
-			}
-			if !removed {
-				return false, nil
-			}
-			if writeErr := inst.writeMigrationConfigMap(cfgPath, cfg); writeErr != nil {
-				return false, writeErr
-			}
-			return true, nil
+	return inst.mutateMigrationConfig(func(cfg map[string]any) (bool, error) {
+		fromParts, err := splitMigrationKeyPath(fromKey)
+		if err != nil {
+			return false, err
 		}
-		return false, fmt.Errorf("config key rename conflict: destination key %s already exists", toKey)
-	}
-	if setErr := setNestedConfigValue(cfg, toParts, fromValue, true); setErr != nil {
-		return false, setErr
-	}
-	if _, removeErr := deleteNestedConfigValue(cfg, fromParts); removeErr != nil {
-		return false, removeErr
-	}
-	if writeErr := inst.writeMigrationConfigMap(cfgPath, cfg); writeErr != nil {
-		return false, writeErr
-	}
-	return true, nil
+		toParts, err := splitMigrationKeyPath(toKey)
+		if err != nil {
+			return false, err
+		}
+		fromValue, fromExists, err := getNestedConfigValue(cfg, fromParts)
+		if err != nil {
+			return false, err
+		}
+		toValue, toExists, err := getNestedConfigValue(cfg, toParts)
+		if err != nil {
+			return false, err
+		}
+		if !fromExists {
+			return false, nil
+		}
+		if toExists {
+			if reflect.DeepEqual(fromValue, toValue) {
+				return deleteNestedConfigValue(cfg, fromParts)
+			}
+			return false, fmt.Errorf("config key rename conflict: destination key %s already exists", toKey)
+		}
+		if setErr := setNestedConfigValue(cfg, toParts, fromValue, true); setErr != nil {
+			return false, setErr
+		}
+		if _, removeErr := deleteNestedConfigValue(cfg, fromParts); removeErr != nil {
+			return false, removeErr
+		}
+		return true, nil
+	})
 }
 
 func (inst *installer) executeConfigDeleteKeyMigration(key string) (bool, error) {
-	cfg, cfgPath, exists, err := inst.readMigrationConfigMap()
-	if err != nil {
-		return false, err
-	}
-	if !exists {
-		return false, nil
-	}
-	parts, err := splitMigrationKeyPath(key)
-	if err != nil {
-		return false, err
-	}
-	removed, err := deleteNestedConfigValue(cfg, parts)
-	if err != nil {
-		return false, err
-	}
-	if !removed {
-		return false, nil
-	}
-	if writeErr := inst.writeMigrationConfigMap(cfgPath, cfg); writeErr != nil {
-		return false, writeErr
-	}
-	return true, nil
+	return inst.mutateMigrationConfig(func(cfg map[string]any) (bool, error) {
+		parts, err := splitMigrationKeyPath(key)
+		if err != nil {
+			return false, err
+		}
+		return deleteNestedConfigValue(cfg, parts)
+	})
 }
 
 func (inst *installer) executeConfigReplaceStringMigration(op upgradeMigrationOperation) (bool, error) {
-	cfg, cfgPath, exists, err := inst.readMigrationConfigMap()
-	if err != nil {
-		return false, err
-	}
-	if !exists {
-		return false, nil
-	}
-	parts, err := splitMigrationValuePath(op.Key)
-	if err != nil {
-		return false, err
-	}
-	changed, err := replaceStringAtMigrationValuePath(cfg, parts, op.From, op.To)
-	if err != nil {
-		return false, err
-	}
-	if !changed {
-		return false, nil
-	}
-	if writeErr := inst.writeMigrationConfigMap(cfgPath, cfg); writeErr != nil {
-		return false, writeErr
-	}
-	return true, nil
+	return inst.mutateMigrationConfig(func(cfg map[string]any) (bool, error) {
+		parts, err := splitMigrationValuePath(op.Key)
+		if err != nil {
+			return false, err
+		}
+		return replaceStringAtMigrationValuePath(cfg, parts, op.From, op.To)
+	})
 }
 
 func (inst *installer) executeConfigSetDefaultMigration(op upgradeMigrationOperation) (bool, error) {
 	keyPath := op.Key
-	rawValue := op.Value
-	cfg, cfgPath, exists, err := inst.readMigrationConfigMap()
-	if err != nil {
-		return false, err
-	}
-	if !exists {
-		return false, nil
-	}
-	parts, err := splitMigrationKeyPath(keyPath)
-	if err != nil {
-		return false, err
-	}
-	if _, keyExists, getErr := getNestedConfigValue(cfg, parts); getErr != nil {
-		return false, getErr
-	} else if keyExists {
-		return false, nil
-	}
-	var decoded any
-	if unmarshalErr := json.Unmarshal(rawValue, &decoded); unmarshalErr != nil {
-		return false, fmt.Errorf("decode default value for key %s: %w", keyPath, unmarshalErr)
-	}
-	var fieldPtr *config.FieldDef
-	if f, found := config.LookupField(keyPath); found {
-		fieldPtr = &f
-	}
-	value, promptErr := inst.prompter.configSetDefault(keyPath, decoded, op.Rationale, fieldPtr)
-	if promptErr != nil {
-		return false, fmt.Errorf("prompt for config key %s: %w", keyPath, promptErr)
-	}
-	decoded = value
-	if setErr := setNestedConfigValue(cfg, parts, decoded, true); setErr != nil {
-		return false, setErr
-	}
-	if writeErr := inst.writeMigrationConfigMap(cfgPath, cfg); writeErr != nil {
-		return false, writeErr
-	}
-	return true, nil
+	return inst.mutateMigrationConfig(func(cfg map[string]any) (bool, error) {
+		parts, err := splitMigrationKeyPath(keyPath)
+		if err != nil {
+			return false, err
+		}
+		if _, keyExists, getErr := getNestedConfigValue(cfg, parts); getErr != nil {
+			return false, getErr
+		} else if keyExists {
+			return false, nil
+		}
+		var decoded any
+		if unmarshalErr := json.Unmarshal(op.Value, &decoded); unmarshalErr != nil {
+			return false, fmt.Errorf("decode default value for key %s: %w", keyPath, unmarshalErr)
+		}
+		var fieldPtr *config.FieldDef
+		if f, found := config.LookupField(keyPath); found {
+			fieldPtr = &f
+		}
+		value, promptErr := inst.prompter.configSetDefault(keyPath, decoded, op.Rationale, fieldPtr)
+		if promptErr != nil {
+			return false, fmt.Errorf("prompt for config key %s: %w", keyPath, promptErr)
+		}
+		if setErr := setNestedConfigValue(cfg, parts, value, true); setErr != nil {
+			return false, setErr
+		}
+		return true, nil
+	})
 }
 
 // executeAppendToFile appends content to a file. The content is JSON-encoded
@@ -920,41 +862,43 @@ func (inst *installer) executeAppendToFile(op upgradeMigrationOperation) (bool, 
 	return true, nil
 }
 
-func (inst *installer) readMigrationConfigMap() (map[string]any, string, bool, error) {
+// mutateMigrationConfig applies mutate to the decoded config.toml map and
+// writes the result back when mutate reports a change. A missing config file
+// is a no-op and mutate is not called.
+// NOTE: The write uses tomlv2.Marshal which does not preserve user comments
+// or key ordering. This destructive formatting is currently intentional to ensure
+// deterministic migration output.
+func (inst *installer) mutateMigrationConfig(mutate func(cfg map[string]any) (bool, error)) (bool, error) {
 	cfgPath := filepath.Join(inst.root, filepath.FromSlash(upgradeMigrationConfigPath))
 	data, err := inst.sys.ReadFile(cfgPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, cfgPath, false, nil
+			return false, nil
 		}
-		return nil, cfgPath, false, fmt.Errorf(messages.InstallFailedReadFmt, cfgPath, err)
+		return false, fmt.Errorf(messages.InstallFailedReadFmt, cfgPath, err)
 	}
 	var cfg map[string]any
 	if unmarshalErr := tomlv2.Unmarshal(data, &cfg); unmarshalErr != nil {
-		return nil, cfgPath, false, fmt.Errorf("decode config %s for migration: %w", cfgPath, unmarshalErr)
+		return false, fmt.Errorf("decode config %s for migration: %w", cfgPath, unmarshalErr)
 	}
 	if cfg == nil {
 		cfg = make(map[string]any)
 	}
-	return cfg, cfgPath, true, nil
-}
-
-// writeMigrationConfigMap writes the updated config map back to config.toml.
-// NOTE: This currently uses tomlv2.Marshal which does not preserve user comments
-// or key ordering. This destructive formatting is currently intentional to ensure
-// deterministic migration output.
-func (inst *installer) writeMigrationConfigMap(cfgPath string, cfg map[string]any) error {
+	changed, err := mutate(cfg)
+	if err != nil || !changed {
+		return false, err
+	}
 	encoded, err := tomlv2.Marshal(cfg)
 	if err != nil {
-		return fmt.Errorf("encode config migration output: %w", err)
+		return false, fmt.Errorf("encode config migration output: %w", err)
 	}
 	if len(encoded) == 0 || encoded[len(encoded)-1] != '\n' {
 		encoded = append(encoded, '\n')
 	}
 	if writeErr := inst.sys.WriteFileAtomic(cfgPath, encoded, 0o644); writeErr != nil {
-		return fmt.Errorf(messages.InstallFailedWriteFmt, cfgPath, writeErr)
+		return false, fmt.Errorf(messages.InstallFailedWriteFmt, cfgPath, writeErr)
 	}
-	return nil
+	return true, nil
 }
 
 func getNestedConfigValue(cfg map[string]any, parts []string) (any, bool, error) {

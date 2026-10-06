@@ -726,6 +726,49 @@ func TestConfigRenameMigrationRejectsConflictingDestinationWithoutMutation(t *te
 	}
 }
 
+func TestConfigRenameMigrationDropsSourceWhenDestinationMatches(t *testing.T) {
+	root := t.TempDir()
+	cfgPath := writeMigrationConfigForTest(t, root, "[from]\nkey = \"same\"\n[to]\nkey = \"same\"\n")
+	changed, err := (&installer{root: root, sys: RealSystem{}}).executeConfigRenameKeyMigration("from.key", "to.key")
+	if err != nil || !changed {
+		t.Fatalf("matching rename = changed %v, error %v", changed, err)
+	}
+	data, err := os.ReadFile(cfgPath) // #nosec G304 -- test-owned path.
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if got := string(data); strings.Contains(got, "from") || !strings.Contains(got, "[to]") {
+		t.Fatalf("expected source removed and destination kept, got:\n%s", got)
+	}
+}
+
+func TestConfigMigrationsSkipMissingConfig(t *testing.T) {
+	ops := []upgradeMigrationOperation{
+		// Invalid key paths pin that the missing-file check precedes key parsing.
+		{Kind: upgradeMigrationKindConfigRenameKey, From: "a..b", To: "c"},
+		{Kind: upgradeMigrationKindConfigDeleteKey, Key: "a..b"},
+		{Kind: upgradeMigrationKindConfigReplaceString, Key: "a..b", From: "gemini", To: "antigravity"},
+		{Kind: upgradeMigrationKindConfigSetDefault, Key: "a..b", Value: []byte(`false`)},
+	}
+	for _, op := range ops {
+		t.Run(string(op.Kind), func(t *testing.T) {
+			root := t.TempDir()
+			prompter := autoApprovePrompter()
+			prompter.ConfigSetDefaultFunc = func(string, any, string, *config.FieldDef) (any, error) {
+				t.Fatal("unexpected config default prompt")
+				return nil, nil
+			}
+			changed, err := (&installer{root: root, prompter: prompter, sys: RealSystem{}}).executeUpgradeMigrationOperation(op)
+			if err != nil || changed {
+				t.Fatalf("missing config = changed %v, error %v", changed, err)
+			}
+			if _, statErr := os.Stat(filepath.Join(root, ".agent-layer")); !os.IsNotExist(statErr) {
+				t.Fatalf("expected no config directory to be created, stat err = %v", statErr)
+			}
+		})
+	}
+}
+
 func TestValidateUpgradeMigrationOperation_ConfigReplaceString(t *testing.T) {
 	validOp := upgradeMigrationOperation{
 		ID:        "replace-client",
