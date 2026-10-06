@@ -111,29 +111,7 @@ func removeManagedHandlers(value any) ([]any, error) {
 	if !ok {
 		return nil, fmt.Errorf("must be an array")
 	}
-	result := make([]any, 0, len(entries))
-	for _, value := range entries {
-		entry, ok := value.(map[string]any)
-		if !ok {
-			result = append(result, value)
-			continue
-		}
-		handlers, ok := entry[hooksKey].([]any)
-		if !ok {
-			result = append(result, value)
-			continue
-		}
-		kept := make([]any, 0, len(handlers))
-		for _, handler := range handlers {
-			if !isHerdRHandler(handler) {
-				kept = append(kept, handler)
-			}
-		}
-		if len(kept) > 0 || len(entry) > 1 {
-			entry[hooksKey] = kept
-			result = append(result, entry)
-		}
-	}
+	result, _, _ := filterHookGroupHandlers(entries, isHerdRHandler, nil)
 	return result, nil
 }
 

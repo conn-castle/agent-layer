@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -193,26 +192,6 @@ func antigravityChimePluginIsManaged(sys System, dir string) error {
 }
 
 func ensureAntigravityChimePathContained(sys System, root string, target string) error {
-	pluginsRoot := filepath.Clean(filepath.Join(root, ".agents", "plugins"))
-	cleanTarget := filepath.Clean(target)
-	if cleanTarget != pluginsRoot && !strings.HasPrefix(cleanTarget, pluginsRoot+string(os.PathSeparator)) {
-		return fmt.Errorf("antigravity chime plugin path points outside .agents/plugins: %s", target)
-	}
-	for _, path := range []string{
-		filepath.Join(root, ".agents"),
-		pluginsRoot,
-		cleanTarget,
-	} {
-		info, err := sys.Lstat(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return fmt.Errorf(messages.InstallFailedStatFmt, path, err)
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf(messages.SyncAntigravityChimePluginConflictFmt, path)
-		}
-	}
-	return nil
+	return ensureChimePathContained(sys, root, target, ".agents", "plugins",
+		"antigravity chime plugin path points outside .agents/plugins: %s", messages.SyncAntigravityChimePluginConflictFmt)
 }
