@@ -26,6 +26,10 @@ type capabilityCacheEntry struct {
 	CheckedAt time.Time `json:"checked_at"`
 }
 
+// compatibleTargetVersionCached resolves a supported provider version, reusing
+// matching cache entries only while their check time is less than one hour old.
+// Missing or future check times force a fresh probe; an injected lookup bypasses
+// the cache.
 func compatibleTargetVersionCached(root string, path string, target targetMeta, lookup func(string, string) (string, error)) (targetMeta, string, error) {
 	if lookup != nil {
 		return compatibleTargetVersion(path, target, lookup)

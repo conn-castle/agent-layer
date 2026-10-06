@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+// TestCapabilityCacheReprobesDelegatedBinaryAfterMaxAge verifies that an unchanged
+// launcher can retain a delegated binary's old version only until the cache expires.
 func TestCapabilityCacheReprobesDelegatedBinaryAfterMaxAge(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
@@ -56,6 +58,8 @@ func TestCapabilityCacheReprobesDelegatedBinaryAfterMaxAge(t *testing.T) {
 	}
 }
 
+// writeExecutable creates or replaces an executable test stub, failing the test
+// if the file cannot be written.
 func writeExecutable(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o700); err != nil { // #nosec G306 -- test stub must be executable.
