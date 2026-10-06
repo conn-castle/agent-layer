@@ -45,14 +45,14 @@ func renderVSCodeSettingsContent(sys System, existing string, settings *vscodeSe
 			indentBase = "  "
 		}
 		indentUnit := indentBase
-		needsTrailingComma := hasJSONCContentBetween(lines, blockEnd+1, 0, len(lines)-1, len(lines[len(lines)-1])-1)
-		// Reuse a separator after the marker for the last moved property, or for the
-		// regenerated managed block when no user properties move.
+		// A property after the block needs a separator, unless one already follows the end
+		// marker; that separator serves the last moved property or the regenerated block.
 		following := strings.Join(lines[blockEnd+1:], "\n")
-		firstToken, triviaErr := skipJSONCTrivia(following, 0)
-		if triviaErr == nil && firstToken < len(following) && following[firstToken] == ',' {
-			needsTrailingComma = false
+		next, err := skipJSONCTrivia(following, 0)
+		if err != nil {
+			return "", invalidVSCodeSettingsError("after managed block: " + err.Error())
 		}
+		needsTrailingComma := next < len(following) && following[next] != ',' && following[next] != '}'
 
 		// VS Code appends new settings after the last property, which lands them inside a
 		// trailing managed block; keep them by moving them to just after the block.
@@ -68,8 +68,10 @@ func renderVSCodeSettingsContent(sys System, existing string, settings *vscodeSe
 		blockLines = append(blockLines, renderVSCodeUserEntries(userEntries, indentBase, needsTrailingComma)...)
 		// A property before a comment-only block needs no comma until the block gains content.
 		blockText := strings.Join(blockLines, "\n")
-		if hasJSONCNonTrivia(blockText, 0, len(blockText)) {
-			separateJSONCContentBefore(lines, blockStart)
+		if blockToken, err := skipJSONCTrivia(blockText, 0); err != nil || blockToken < len(blockText) {
+			if err := separateJSONCContentBefore(lines, blockStart); err != nil {
+				return "", invalidVSCodeSettingsError("before managed block: " + err.Error())
+			}
 		}
 		lines = replaceVSCodeManagedBlock(lines, blockStart, blockEnd, blockLines)
 		updated := bom + strings.Join(lines, "\n")
@@ -83,21 +85,20 @@ func renderVSCodeSettingsContent(sys System, existing string, settings *vscodeSe
 	if err != nil {
 		return "", invalidVSCodeSettingsError(err.Error())
 	}
-	if hasJSONCNonTrivia(normalized, 0, startIdx) {
-		return "", invalidVSCodeSettingsError("unexpected content before root object")
-	}
-	if hasJSONCNonTrivia(normalized, endIdx+1, len(normalized)) {
-		return "", invalidVSCodeSettingsError("unexpected content after root object")
-	}
 	startLine, startCol := indexToLineCol(normalized, startIdx)
-	endLine, endCol := indexToLineCol(normalized, endIdx)
+	endLine, _ := indexToLineCol(normalized, endIdx)
 
 	indentBase := detectVSCodeIndent(lines, startLine, endLine)
 	if indentBase == "" {
 		indentBase = "  "
 	}
 	indentUnit := indentBase
-	needsTrailingComma := hasJSONCContentBetween(lines, startLine, startCol+1, endLine, endCol)
+	// The root object is validated, so its first token is a property name or its closing brace.
+	firstToken, err := skipJSONCTrivia(normalized, startIdx+1)
+	if err != nil {
+		return "", invalidVSCodeSettingsError(err.Error())
+	}
+	needsTrailingComma := normalized[firstToken] != '}'
 
 	blockLines, err := buildVSCodeManagedBlock(sys, settings, indentBase, indentUnit, needsTrailingComma)
 	if err != nil {
@@ -154,154 +155,33 @@ func stripUTF8BOM(content string) (string, string) {
 	return "", content
 }
 
-// findJSONCRootBounds locates the root object bounds in JSONC content.
+// findJSONCRootBounds locates and validates the root object in JSONC content.
 // Args: content is normalized JSONC text.
-// Returns: start and end indices for the root object, or an error if invalid.
+// Returns: indices of the root '{' and its closing '}', or an error unless the content is one
+// valid root object surrounded only by whitespace and comments.
 func findJSONCRootBounds(content string) (int, int, error) {
-	start := -1
-	depth := 0
-	inString := false
-	inLineComment := false
-	inBlockComment := false
-	escaped := false
-
-	for i := 0; i < len(content); i++ {
-		ch := content[i]
-		next := byte(0)
-		if i+1 < len(content) {
-			next = content[i+1]
-		}
-
-		if inString {
-			if escaped {
-				escaped = false
-				continue
-			}
-			if ch == '\\' {
-				escaped = true
-				continue
-			}
-			if ch == '"' {
-				inString = false
-			}
-			continue
-		}
-
-		if inLineComment {
-			if ch == '\n' {
-				inLineComment = false
-			}
-			continue
-		}
-
-		if inBlockComment {
-			if ch == '*' && next == '/' {
-				inBlockComment = false
-				i++
-			}
-			continue
-		}
-
-		if ch == '"' {
-			inString = true
-			continue
-		}
-		if ch == '/' && next == '/' {
-			inLineComment = true
-			i++
-			continue
-		}
-		if ch == '/' && next == '*' {
-			inBlockComment = true
-			i++
-			continue
-		}
-
-		if ch == '{' {
-			if start == -1 {
-				start = i
-				depth = 1
-				continue
-			}
-			depth++
-			continue
-		}
-		if ch == '}' {
-			if start == -1 {
-				continue
-			}
-			depth--
-			if depth == 0 {
-				return start, i, nil
-			}
-			if depth < 0 {
-				return -1, -1, fmt.Errorf("unexpected closing brace")
-			}
-		}
+	start, err := skipJSONCTrivia(content, 0)
+	if err != nil {
+		return -1, -1, err
 	}
-
-	if start == -1 {
+	if start == len(content) {
 		return -1, -1, fmt.Errorf("missing root object")
 	}
-	return -1, -1, fmt.Errorf("unterminated root object")
-}
-
-// hasJSONCNonTrivia reports whether non-whitespace, non-comment tokens exist in the range.
-// Args: content is normalized JSONC text; start/end bound the scan range (end is exclusive).
-// Returns: true if any non-comment, non-whitespace character is found.
-func hasJSONCNonTrivia(content string, start, end int) bool {
-	if start < 0 {
-		start = 0
+	if content[start] != '{' {
+		return -1, -1, fmt.Errorf("unexpected content before root object")
 	}
-	if end > len(content) {
-		end = len(content)
+	end, err := scanJSONCContainer(content, start)
+	if err != nil {
+		return -1, -1, fmt.Errorf("root object: %w", err)
 	}
-	if end <= start {
-		return false
+	next, err := skipJSONCTrivia(content, end)
+	if err != nil {
+		return -1, -1, err
 	}
-
-	inLineComment := false
-	inBlockComment := false
-	for i := start; i < end; i++ {
-		ch := content[i]
-		next := byte(0)
-		if i+1 < end {
-			next = content[i+1]
-		}
-
-		if inLineComment {
-			if ch == '\n' {
-				inLineComment = false
-			}
-			continue
-		}
-		if inBlockComment {
-			if ch == '*' && next == '/' {
-				inBlockComment = false
-				i++
-			}
-			continue
-		}
-
-		if ch == '/' && next == '/' {
-			inLineComment = true
-			i++
-			continue
-		}
-		if ch == '/' && next == '*' {
-			inBlockComment = true
-			i++
-			continue
-		}
-
-		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
-			continue
-		}
-
-		return true
+	if next < len(content) {
+		return -1, -1, fmt.Errorf("unexpected content after root object")
 	}
-
-	return false
+	return start, end - 1, nil
 }
 
 // indexToLineCol converts a byte index to line and column positions.
@@ -384,151 +264,46 @@ func detectVSCodeIndent(lines []string, startLine, endLine int) string {
 	return ""
 }
 
-// hasJSONCContentBetween checks for non-comment content between two positions.
-// Args: lines are normalized content lines; startLine/startCol and endLine/endCol bound the scan region.
-// Returns: true if a non-comment, non-whitespace token other than ',' or '}' appears before a '}' token.
-func hasJSONCContentBetween(lines []string, startLine, startCol, endLine, endCol int) bool {
-	if len(lines) == 0 {
-		return false
-	}
-	if startLine < 0 {
-		startLine = 0
-	}
-	if endLine >= len(lines) {
-		endLine = len(lines) - 1
-	}
-	if endLine < startLine {
-		return false
-	}
-
-	inBlockComment := false
-	inString := false
-	escaped := false
-	for lineIdx := startLine; lineIdx <= endLine; lineIdx++ {
-		line := lines[lineIdx]
-		lineStart := 0
-		lineEnd := len(line)
-		if lineIdx == startLine && startCol > lineStart {
-			if startCol >= lineEnd {
-				continue
-			}
-			lineStart = startCol
-		}
-		if lineIdx == endLine && endCol >= 0 && endCol < lineEnd {
-			lineEnd = endCol + 1
-		}
-		if lineStart >= lineEnd {
-			continue
-		}
-		for i := lineStart; i < lineEnd; i++ {
-			ch := line[i]
-			next := byte(0)
-			if i+1 < lineEnd {
-				next = line[i+1]
-			}
-
-			if inString {
-				if escaped {
-					escaped = false
-					continue
-				}
-				if ch == '\\' {
-					escaped = true
-					continue
-				}
-				if ch == '"' {
-					inString = false
-				}
-				continue
-			}
-
-			if inBlockComment {
-				if ch == '*' && next == '/' {
-					inBlockComment = false
-					i++
-				}
-				continue
-			}
-
-			if ch == '/' && next == '*' {
-				inBlockComment = true
-				i++
-				continue
-			}
-			if ch == '/' && next == '/' {
-				break
-			}
-			if ch == '"' {
-				inString = true
-				continue
-			}
-			if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' {
-				continue
-			}
-			if ch == ',' {
-				continue
-			}
-			if ch == '}' {
-				return false
-			}
-			return true
-		}
-	}
-
-	return false
-}
-
 // separateJSONCContentBefore adds a ',' after the last JSONC token before a line when that
 // token ends a value, so content inserted at that line starts a new property.
 // Args: lines are normalized content lines, updated in place; line is the index content is inserted at.
-func separateJSONCContentBefore(lines []string, line int) {
+// Returns: an error if the content before the line has an unterminated comment or invalid string.
+func separateJSONCContentBefore(lines []string, line int) error {
 	prefix := strings.Join(lines[:line], "\n")
-	last := lastJSONCTokenIndex(prefix)
+	last, err := lastJSONCTokenIndex(prefix)
+	if err != nil {
+		return err
+	}
 	if last == -1 || strings.IndexByte("{[,:", prefix[last]) != -1 {
-		return
+		return nil
 	}
 	lineIdx, col := indexToLineCol(prefix, last)
 	lines[lineIdx] = lines[lineIdx][:col+1] + "," + lines[lineIdx][col+1:]
+	return nil
 }
 
 // lastJSONCTokenIndex finds the last character outside whitespace and comments.
 // Args: text is normalized JSONC.
-// Returns: the index of that character (a string's closing quote), or -1 if there is none
-// or a string is unterminated.
-func lastJSONCTokenIndex(text string) int {
+// Returns: the index of that character (a string's closing quote), or -1 if there is none;
+// or an error for an unterminated comment or invalid string.
+func lastJSONCTokenIndex(text string) (int, error) {
 	last := -1
-	for i := 0; i < len(text); i++ {
-		switch {
-		case text[i] == ' ' || text[i] == '\t' || text[i] == '\n':
-		case strings.HasPrefix(text[i:], "//"):
-			end := strings.IndexByte(text[i:], '\n')
-			if end == -1 {
-				return last
-			}
-			i += end
-		case strings.HasPrefix(text[i:], "/*"):
-			end := strings.Index(text[i+2:], "*/")
-			if end == -1 {
-				return last
-			}
-			i += end + 3
-		case text[i] == '"':
-			i++
-			for i < len(text) && text[i] != '"' && text[i] != '\n' {
-				if text[i] == '\\' {
-					i++
-				}
-				i++
-			}
-			if i >= len(text) || text[i] != '"' {
-				return -1
-			}
-			last = i
-		default:
-			last = i
+	for pos := 0; ; {
+		next, err := skipJSONCTrivia(text, pos)
+		if err != nil {
+			return -1, err
 		}
+		if next == len(text) {
+			return last, nil
+		}
+		pos = next + 1
+		if text[next] == '"' {
+			if pos, err = scanJSONCString(text, next); err != nil {
+				return -1, err
+			}
+		}
+		last = pos - 1
 	}
-	return last
 }
 
 // leadingWhitespace returns the leading spaces or tabs from a line.
@@ -758,24 +533,15 @@ func vscodeCommentLines(trivia string, stripHeader bool) []string {
 // Returns: the index of the next token or len(text), or an error for an unterminated comment.
 func skipJSONCTrivia(text string, pos int) (int, error) {
 	for pos < len(text) {
-		switch {
-		case text[pos] == ' ' || text[pos] == '\t' || text[pos] == '\n':
+		if ch := text[pos]; ch == ' ' || ch == '\t' || ch == '\n' {
 			pos++
-		case strings.HasPrefix(text[pos:], "//"):
-			end := strings.IndexByte(text[pos:], '\n')
-			if end == -1 {
-				return len(text), nil
-			}
-			pos += end
-		case strings.HasPrefix(text[pos:], "/*"):
-			end := strings.Index(text[pos+2:], "*/")
-			if end == -1 {
-				return 0, fmt.Errorf("unterminated block comment")
-			}
-			pos += end + 4
-		default:
-			return pos, nil
+			continue
 		}
+		end, ok, err := scanJSONCComment(text, pos)
+		if err != nil || !ok {
+			return pos, err
+		}
+		pos = end
 	}
 	return pos, nil
 }
@@ -795,28 +561,43 @@ func scanJSONCTrailing(text string, pos int) (string, bool, int, error) {
 		case text[pos] == ',' && !hadComma:
 			hadComma = true
 			pos++
-		case strings.HasPrefix(text[pos:], "//"):
-			end := strings.IndexByte(text[pos:], '\n')
-			if end == -1 {
-				end = len(text) - pos
-			}
-			comment.WriteString(text[pos : pos+end])
-			pos += end
-		case strings.HasPrefix(text[pos:], "/*"):
-			end := strings.Index(text[pos+2:], "*/")
-			if end == -1 {
-				return "", false, 0, fmt.Errorf("unterminated block comment")
-			}
-			comment.WriteString(text[pos : pos+end+4])
-			pos += end + 4
 		default:
-			if text[pos] == '\n' {
-				pos++
+			end, ok, err := scanJSONCComment(text, pos)
+			if err != nil {
+				return "", false, 0, err
 			}
-			return strings.TrimSpace(comment.String()), hadComma, pos, nil
+			if !ok {
+				if text[pos] == '\n' {
+					pos++
+				}
+				return strings.TrimSpace(comment.String()), hadComma, pos, nil
+			}
+			comment.WriteString(text[pos:end])
+			pos = end
 		}
 	}
 	return strings.TrimSpace(comment.String()), hadComma, pos, nil
+}
+
+// scanJSONCComment scans a comment that starts at pos.
+// Args: text is normalized JSONC, pos is the index to scan from.
+// Returns: the index after the comment (a line comment ends before its newline), whether a
+// comment starts at pos, or an error for an unterminated block comment.
+func scanJSONCComment(text string, pos int) (int, bool, error) {
+	switch {
+	case strings.HasPrefix(text[pos:], "//"):
+		if end := strings.IndexByte(text[pos:], '\n'); end != -1 {
+			return pos + end, true, nil
+		}
+		return len(text), true, nil
+	case strings.HasPrefix(text[pos:], "/*"):
+		end := strings.Index(text[pos+2:], "*/")
+		if end == -1 {
+			return 0, true, fmt.Errorf("unterminated block comment")
+		}
+		return pos + end + 4, true, nil
+	}
+	return pos, false, nil
 }
 
 // scanJSONCString scans and validates a string token.
