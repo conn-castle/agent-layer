@@ -47,6 +47,22 @@ func runModelHarness(mode string) {
 		fmt.Println("Default model: future-model\n\nAvailable models:\n  * future-model (default)\n  - another-model")
 		return
 	}
+	if mode == "grok-expired-session" {
+		// Real Grok prints its stale status, then persists a silent refresh
+		// before listing models; only a completed run saves the refresh.
+		marker := os.Getenv("AL_TEST_GROK_REFRESHED")
+		if _, err := os.Stat(marker); err == nil { // #nosec G703 -- marker path is inside the test-owned temporary directory.
+			fmt.Println("You are logged in with grok.com.\n\nAvailable models:\n  * refreshed-model (default)")
+			return
+		}
+		fmt.Println("You are not authenticated.")
+		time.Sleep(200 * time.Millisecond)
+		if err := os.WriteFile(marker, nil, 0o600); err != nil { // #nosec G703 -- marker path is inside the test-owned temporary directory.
+			os.Exit(3)
+		}
+		fmt.Println("\nAvailable models:\n  * refreshed-model (default)")
+		return
+	}
 	if mode == "unauthenticated-empty" {
 		fmt.Println("You are not authenticated.")
 		return
@@ -54,6 +70,10 @@ func runModelHarness(mode string) {
 	if mode == "unauthenticated" {
 		fmt.Println("You are not authenticated.\nAvailable models:\n  * fallback")
 		return
+	}
+	if mode == "unauthenticated-exit-error" {
+		fmt.Println("You are not authenticated.\nAvailable models:\n  unexpected")
+		os.Exit(1)
 	}
 	if mode == "bad-output" {
 		fmt.Println("unexpected output")
@@ -198,6 +218,18 @@ func TestDiscoverModelsThroughHarnessProtocols(t *testing.T) {
 	}
 }
 
+func TestGrokDiscoveryReportsSilentlyRefreshedSession(t *testing.T) {
+	req := harnessRequest(t, "grok-expired-session")
+	req.Env = append(req.Env, "AL_TEST_GROK_REFRESHED="+filepath.Join(t.TempDir(), "refreshed"))
+	got, err := DiscoverModels("grok", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"refreshed-model"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("models=%v want=%v", got, want)
+	}
+}
+
 func TestDiscoveryUsesProjectLaunchContextWithoutSync(t *testing.T) {
 	for _, agent := range []string{"grok", "antigravity"} {
 		t.Run(agent, func(t *testing.T) {
@@ -231,7 +263,7 @@ func TestDiscoveryFailuresRemainExplicit(t *testing.T) {
 		{"copilot_cli", "copilot-error", "-32603: Failed to list models"},
 		{"copilot_cli", "copilot-empty", ""}, {"copilot_cli", "copilot-malformed", ""}, {"copilot_cli", "copilot-oversized", ""},
 		{"claude", "claude-error", ""}, {"codex", "codex-error", ""}, {"codex", "codex-loop", ""},
-		{"grok", "unauthenticated", ""}, {"grok", "bad-output", ""}, {"grok", "exit-error", ""},
+		{"grok", "unauthenticated", "sign in using al grok"}, {"grok", "unauthenticated-exit-error", "sign in using al grok"}, {"grok", "bad-output", ""}, {"grok", "exit-error", ""},
 		{"antigravity", "bad-output", "invalid model row"}, {"antigravity", "exit-error", "exit status 2"},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {

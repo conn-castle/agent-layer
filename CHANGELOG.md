@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+- Grok model discovery in `al dispatch options`, the Agent Dispatch `dispatch_options` MCP tool, the wizard, and `al doctor` no longer reports `harness is not authenticated; sign in using al grok` when your Grok sign-in is valid but its access token has expired. `grok models` prints its sign-in status before it refreshes an expired token, and Agent Layer stopped reading at that status line and ended the process before the refresh finished. Discovery kept failing until a Grok session or dispatch refreshed the token. Discovery now lets `grok models` finish, and when the status line says you are not signed in, it runs `grok models` once more to read the refreshed state. The error now appears only when Grok still reports that you are not signed in after its refresh attempt.
+
 ## v0.24.0 - 2026-10-05
 
 ### Added

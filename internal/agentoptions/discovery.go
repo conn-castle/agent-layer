@@ -34,6 +34,8 @@ const jsonRPCKey = "jsonrpc"
 const initializedMethod = "initialized"
 const clientNameKey = "name"
 
+var errGrokUnauthenticated = errors.New("harness is not authenticated; sign in using al grok")
+
 // HasModelDiscovery reports whether the installed harness can supply a catalog.
 func HasModelDiscovery(agent string) bool {
 	return slices.Contains([]string{agentAntigravity, agentClaude, agentCodex, agentCopilotCLI, agentGrok, agentMuse}, agent)
@@ -70,6 +72,11 @@ func DiscoverModels(agent string, req DiscoveryRequest) ([]string, error) {
 	defer cancel()
 	req.Context = ctx
 	models, err := discoverCommandModels(agent, req)
+	if errors.Is(err, errGrokUnauthenticated) {
+		// Grok prints its authentication status before it silently refreshes an
+		// expired session, so a second run reports the refresh the first persisted.
+		models, err = discoverCommandModels(agent, req)
+	}
 	if ctx.Err() != nil {
 		return nil, fmt.Errorf("%s model discovery: %w", agent, ctx.Err())
 	}
@@ -246,19 +253,21 @@ func discoverCommandModels(agent string, req DiscoveryRequest) ([]string, error)
 		return models, nil
 	}
 	if agent == agentGrok {
+		// An unauthenticated status still waits for exit: killing Grok early would
+		// abort the session refresh that the retry depends on. That status also
+		// outranks the exit status, which a failed refresh may make nonzero.
 		models, err := readGrokModels(reader)
-		if err != nil {
+		if err != nil && !errors.Is(err, errGrokUnauthenticated) {
 			return nil, err
 		}
 		if reader.N == 0 {
 			return nil, errors.New("model discovery output exceeded size limit")
 		}
-		err = cmd.Wait()
 		waited = true
-		if err != nil {
-			return nil, err
+		if waitErr := cmd.Wait(); waitErr != nil && err == nil {
+			return nil, waitErr
 		}
-		return models, nil
+		return models, err
 	}
 	if agent == agentCopilotCLI {
 		return readCopilotModels(reader, stdin)
@@ -344,10 +353,14 @@ func readGrokModels(reader io.Reader) ([]string, error) {
 	scanner := bufio.NewScanner(reader)
 	var models []string
 	inModels := false
+	unauthenticated := false
+	var parseErr error
+	// Read to EOF so Grok can finish a silent refresh after its status line.
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if strings.Contains(strings.ToLower(line), "not authenticated") {
-			return nil, errors.New("harness is not authenticated; sign in using al grok")
+			unauthenticated = true
+			continue
 		}
 		if line == "Available models:" {
 			inModels = true
@@ -357,12 +370,22 @@ func readGrokModels(reader io.Reader) ([]string, error) {
 			continue
 		}
 		if !strings.HasPrefix(line, "* ") && !strings.HasPrefix(line, "- ") {
-			return nil, errors.New("unrecognized grok models output")
+			parseErr = errors.New("unrecognized grok models output")
+			continue
 		}
 		value := strings.TrimSpace(strings.TrimSuffix(line[2:], " (default)"))
 		models = append(models, value)
 	}
-	return models, scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	if unauthenticated {
+		return nil, errGrokUnauthenticated
+	}
+	if parseErr != nil {
+		return nil, parseErr
+	}
+	return models, nil
 }
 
 // readAntigravityModels requires the native slug<TAB>display format so arbitrary
