@@ -133,18 +133,18 @@ func TestStripUTF8BOM(t *testing.T) {
 
 func TestFindJSONCRootBoundsErrors(t *testing.T) {
 	t.Parallel()
-	if _, _, err := findJSONCRootBounds("// comment\n"); err == nil {
+	if _, _, err := findJSONCRootBounds("// comment\n", jsoncStrict); err == nil {
 		t.Fatalf("expected error for missing root object")
 	}
-	if _, _, err := findJSONCRootBounds("{\n  \"a\": 1\n"); err == nil {
+	if _, _, err := findJSONCRootBounds("{\n  \"a\": 1\n", jsoncStrict); err == nil {
 		t.Fatalf("expected error for unterminated root object")
 	}
 }
 
 func TestFindJSONCRootBoundsWithCommentsAndStrings(t *testing.T) {
 	t.Parallel()
-	content := "// leading comment\n{\n  \"value\": \"brace { inside } and escaped \\\\\"quote\\\\\"\",\n  /* block { comment } */\n  \"nested\": {\"inner\": \"x\"}\n}\n"
-	start, end, err := findJSONCRootBounds(content)
+	content := "// leading comment\n{\n  \"value\": \"brace { inside } and escaped \\\"quote\\\" \\\\\",\n  /* block { comment } */\n  \"nested\": {\"inner\": \"x\"}\n}\n"
+	start, end, err := findJSONCRootBounds(content, jsoncStrict)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -275,87 +275,6 @@ func TestDetectVSCodeIndentBounds(t *testing.T) {
 	indent := detectVSCodeIndent(lines, -5, 99)
 	if indent != "\t" {
 		t.Fatalf("expected tab indent, got %q", indent)
-	}
-}
-
-func TestHasJSONCContentBetween(t *testing.T) {
-	t.Parallel()
-	lines := []string{
-		"{",
-		"  // comment",
-		"}",
-	}
-	if hasJSONCContentBetween(lines, 0, 1, 2, 0) {
-		t.Fatalf("expected no content between braces")
-	}
-
-	lines = []string{
-		"{",
-		"  \"editor.tabSize\": 2",
-		"}",
-	}
-	if !hasJSONCContentBetween(lines, 0, 1, 2, 0) {
-		t.Fatalf("expected content between braces")
-	}
-
-	lines = []string{
-		"{",
-		"  \"editor.wordWrap\": \"before } after\"",
-		"}",
-	}
-	if !hasJSONCContentBetween(lines, 0, 1, 2, 0) {
-		t.Fatalf("expected string content to be ignored for closing brace detection")
-	}
-}
-
-func TestHasJSONCContentBetweenBlockComment(t *testing.T) {
-	t.Parallel()
-	lines := []string{
-		"{",
-		"  /* comment */",
-		"}",
-	}
-	if hasJSONCContentBetween(lines, 0, 1, 2, 0) {
-		t.Fatalf("expected block comments to be ignored")
-	}
-}
-
-func TestHasJSONCContentBetweenBounds(t *testing.T) {
-	t.Parallel()
-	lines := []string{"{", "}"}
-	if hasJSONCContentBetween(lines, 1, 0, 0, 0) {
-		t.Fatalf("expected false when endLine < startLine")
-	}
-	if hasJSONCContentBetween(lines, 0, 5, 1, 0) {
-		t.Fatalf("expected false when startCol is past line end")
-	}
-}
-
-func TestHasJSONCContentBetweenBraceCloses(t *testing.T) {
-	t.Parallel()
-	lines := []string{
-		"{",
-		"  }",
-	}
-	if hasJSONCContentBetween(lines, 0, 1, 1, 2) {
-		t.Fatalf("expected false when closing brace encountered")
-	}
-}
-
-func TestHasJSONCNonTrivia(t *testing.T) {
-	t.Parallel()
-	content := "// comment\n/* block */\n"
-	if hasJSONCNonTrivia(content, 0, len(content)) {
-		t.Fatalf("expected trivia-only content to be false")
-	}
-	if !hasJSONCNonTrivia("x", 0, 1) {
-		t.Fatalf("expected non-trivia content to be true")
-	}
-	if hasJSONCNonTrivia("x", 2, 1) {
-		t.Fatalf("expected false when end <= start")
-	}
-	if !hasJSONCNonTrivia("/* ok */x", -1, 100) {
-		t.Fatalf("expected non-trivia content after comments")
 	}
 }
 
@@ -512,72 +431,11 @@ func TestRenderVSCodeSettingsContentExistingBlockBuildError(t *testing.T) {
 func TestFindJSONCRootBoundsUnexpectedClosingBrace(t *testing.T) {
 	t.Parallel()
 	content := "}}}"
-	_, _, err := findJSONCRootBounds(content)
+	_, _, err := findJSONCRootBounds(content, jsoncStrict)
 	// Isolated closing braces without a start are ignored until we find an opening
 	// This tests behavior where we get depth < 0
 	if err == nil {
 		t.Fatalf("expected error for missing root object")
-	}
-}
-
-func TestHasJSONCContentBetweenEmptyLines(t *testing.T) {
-	t.Parallel()
-	if hasJSONCContentBetween(nil, 0, 0, 0, 0) {
-		t.Fatalf("expected false for empty lines slice")
-	}
-	if hasJSONCContentBetween([]string{}, 0, 0, 0, 0) {
-		t.Fatalf("expected false for empty lines slice")
-	}
-}
-
-func TestHasJSONCContentBetweenStartColTruncation(t *testing.T) {
-	t.Parallel()
-	// When startCol is past line end on the only line being scanned, it continues
-	// to the next line. If all lines are skipped this way, expect false.
-	lines := []string{
-		"{",
-	}
-	// Start at column past line end on the only line
-	if hasJSONCContentBetween(lines, 0, 100, 0, 0) {
-		t.Fatalf("expected false when startCol is past line end on single line")
-	}
-}
-
-func TestHasJSONCContentBetweenEscapedString(t *testing.T) {
-	t.Parallel()
-	lines := []string{
-		"{",
-		"  \"key\": \"val\\\"ue}\"",
-		"}",
-	}
-	// String with escaped quote and closing brace inside
-	if !hasJSONCContentBetween(lines, 0, 1, 2, 0) {
-		t.Fatalf("expected content to be detected")
-	}
-}
-
-func TestHasJSONCContentBetweenLineComment(t *testing.T) {
-	t.Parallel()
-	lines := []string{
-		"{",
-		"  // this is content }",
-		"}",
-	}
-	// Line comment should be ignored
-	if hasJSONCContentBetween(lines, 0, 1, 2, 0) {
-		t.Fatalf("expected line comment to be ignored")
-	}
-}
-
-func TestHasJSONCContentBetweenCommaAndBrace(t *testing.T) {
-	t.Parallel()
-	lines := []string{
-		"{ ,",
-		"  }",
-	}
-	// Just comma and closing brace
-	if hasJSONCContentBetween(lines, 0, 1, 1, 2) {
-		t.Fatalf("expected comma and brace to be ignored")
 	}
 }
 
@@ -669,34 +527,6 @@ func TestRenderVSCodeSettingsTrailingCommaNeeded(t *testing.T) {
 	}
 }
 
-func TestHasJSONCContentBetweenMultiLine(t *testing.T) {
-	t.Parallel()
-	lines := []string{
-		"{",
-		"  /* block",
-		"     comment */",
-		"  \"key\": \"value\"",
-		"}",
-	}
-	// Should find content starting from inside the block comment
-	if !hasJSONCContentBetween(lines, 1, 5, 4, 0) {
-		t.Fatalf("expected content to be found after block comment")
-	}
-}
-
-func TestHasJSONCContentBetweenEndColPastLine(t *testing.T) {
-	t.Parallel()
-	lines := []string{
-		"{",
-		"  \"key\": \"value\"",
-		"}",
-	}
-	// endCol past line end should be handled
-	if !hasJSONCContentBetween(lines, 0, 1, 2, 100) {
-		t.Fatalf("expected content when endCol is past line end")
-	}
-}
-
 func TestDetectVSCodeIndentEmptyFile(t *testing.T) {
 	t.Parallel()
 	lines := []string{""}
@@ -723,7 +553,7 @@ func TestDetectVSCodeIndentEmptyLines(t *testing.T) {
 func TestFindJSONCRootBoundsNestedBraces(t *testing.T) {
 	t.Parallel()
 	content := "{\n  \"nested\": {\n    \"inner\": {}\n  }\n}\n"
-	start, end, err := findJSONCRootBounds(content)
+	start, end, err := findJSONCRootBounds(content, jsoncStrict)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -761,16 +591,6 @@ func TestRenderVSCodeSettingsExistingBlockNoIndent(t *testing.T) {
 	}
 	if !strings.Contains(updated, "// >>> agent-layer") {
 		t.Fatalf("expected managed block markers")
-	}
-}
-
-func TestHasJSONCContentBetweenStringEscapeBackslash(t *testing.T) {
-	t.Parallel()
-	lines := []string{
-		`{"key": "val\\ue"}`,
-	}
-	if !hasJSONCContentBetween(lines, 0, 0, 0, len(lines[0])-1) {
-		t.Fatalf("expected content with escaped backslash in string")
 	}
 }
 
@@ -1064,5 +884,118 @@ func TestRenderVSCodeSettingsContentKeepsPropertyBeforeEmptyManagedBlock(t *test
 	}
 	if updated != existing {
 		t.Fatalf("unexpected output:\n%s", updated)
+	}
+}
+
+func TestRenderVSCodeSettingsContentInsertsBlockSeparatorOnlyBeforeProperties(t *testing.T) {
+	t.Parallel()
+	skip := true
+	settings := &vscodeSettings{ClaudeCodeAllowDangerouslySkipPerms: &skip}
+	block := "  // >>> agent-layer\n" +
+		"  // Managed by Agent Layer. To customize, edit .agent-layer/config.toml\n" +
+		"  // and .agent-layer/commands.allow, then re-run `al sync`.\n" +
+		"  //\n" +
+		"  \"claudeCode.allowDangerouslySkipPermissions\": true"
+
+	tests := []struct {
+		name     string
+		existing string
+		want     string
+	}{
+		{
+			name:     "comments only",
+			existing: "{\n  // note }\n  /* block } */\n}\n",
+			want:     "{\n" + block + "\n  // <<< agent-layer\n  // note }\n  /* block } */\n}\n",
+		},
+		{
+			name:     "property after comments",
+			existing: "{\n  /* note */ \"a\": \"x } \\\\\"\n}\n",
+			want:     "{\n" + block + ",\n  // <<< agent-layer\n  /* note */ \"a\": \"x } \\\\\"\n}\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			updated, err := renderVSCodeSettingsContent(RealSystem{}, tt.existing, settings)
+			if err != nil {
+				t.Fatalf("renderVSCodeSettingsContent error: %v", err)
+			}
+			if updated != tt.want {
+				t.Fatalf("unexpected output:\n%s\nwant:\n%s", updated, tt.want)
+			}
+		})
+	}
+}
+
+func TestRenderVSCodeSettingsContentRejectsMalformedSettings(t *testing.T) {
+	t.Parallel()
+	for _, existing := range []string{
+		"{\"a\" 1}\n",
+		"{\"a\": [1 2]}\n",
+		`{"a": nope}`,
+		`{"a": NaN}`,
+		`{"a": undefined}`,
+		`{"a": 01}`,
+		`{"a": +1}`,
+		`{"a": 1.}`,
+		`{"a": .1}`,
+		`{"a": 1e}`,
+		`{"a": --1}`,
+		`{"a": truefalse}`,
+		`{"a": 1 "b": 2}`,
+		`{"a": {"b": 1 "c": 2}}`,
+		`{"a": [{"b": nope}]}`,
+		"{\"a\": \"bad\\q\"}\n",
+		"{\"a\": \"line\nbreak\"}\n",
+		"{}\n/* unterminated\n",
+		"{\n  \"a\": \"bad\\q\"\n  // >>> agent-layer\n  // <<< agent-layer\n}\n",
+		"{\n  \"a\": \"line\nbreak\"\n  // >>> agent-layer\n  // <<< agent-layer\n}\n",
+		"{\n  \"a\": \"control\x01\"\n  // >>> agent-layer\n  // <<< agent-layer\n}\n",
+		"{\n  /* unterminated\n  // >>> agent-layer\n  // <<< agent-layer\n}\n",
+		"{\n  // >>> agent-layer\n  // <<< agent-layer\n  /* unterminated\n  \"b\": 2\n}\n",
+		"{\n  // >>> agent-layer\n  // <<< agent-layer\n  \"a\": \"bad\\q\"\n}\n",
+		"{\n  // >>> agent-layer\n  // <<< agent-layer\n  \"a\": \"line\nbreak\"\n}\n",
+		"{\n  // >>> agent-layer\n  // <<< agent-layer\n  \"a\": \"control\x01\"\n}\n",
+		"{\n  // >>> agent-layer\n  // <<< agent-layer\n  \"a\": {\"b\": }\n}\n",
+		"{\n  \"a\" 1\n  // >>> agent-layer\n  // <<< agent-layer\n}\n",
+		"{\n  // >>> agent-layer\n  // <<< agent-layer\n}\n/* unterminated",
+		"{\n  // >>> agent-layer\n  // <<< agent-layer\n}\ngarbage",
+	} {
+		t.Run(existing, func(t *testing.T) {
+			t.Parallel()
+			skip := true
+			for _, settings := range []*vscodeSettings{{}, {ClaudeCodeAllowDangerouslySkipPerms: &skip}} {
+				updated, err := renderVSCodeSettingsContent(RealSystem{}, existing, settings)
+				if !errors.Is(err, errInvalidVSCodeSettings) {
+					t.Fatalf("settings %+v: expected invalid settings error, got %v", settings, err)
+				}
+				if updated != "" {
+					t.Fatalf("expected no rewritten content on error, got %q", updated)
+				}
+			}
+		})
+	}
+}
+
+func TestRenderVSCodeSettingsContentPreservesStrictJSONCValues(t *testing.T) {
+	t.Parallel()
+	skip := true
+	for _, settings := range []*vscodeSettings{{}, {ClaudeCodeAllowDangerouslySkipPerms: &skip}} {
+		// Every primitive form, comments at token boundaries, and trailing commas are valid.
+		existing := "\ufeff/* before */\r\n{\r\n\t\"values\": [null, true, false, 0, -0, 12, -3, 1.25, 2e3, -4.5E-6, 7e+8,],\r\n" +
+			"\t\"nested\" /* key */: {\"a\": 1/* value */, \"b\": [\"escaped\\\"quote\", \"\\u0061\"],},\r\n}\r\n/* after */\r\n"
+		updated, err := renderVSCodeSettingsContent(RealSystem{}, existing, settings)
+		if err != nil {
+			t.Fatalf("renderVSCodeSettingsContent error: %v", err)
+		}
+		_, properties, _ := strings.Cut(existing, "{\r\n")
+		if !strings.HasPrefix(updated, "\ufeff/* before */\r\n{\r\n\t// >>> agent-layer\r\n") ||
+			!strings.HasSuffix(updated, properties) {
+			t.Fatalf("expected BOM, CRLF, indentation, and user content to survive, got %q", updated)
+		}
+		again, err := renderVSCodeSettingsContent(RealSystem{}, updated, settings)
+		if err != nil || again != updated {
+			t.Fatalf("second sync changed output: %q, error: %v", again, err)
+		}
 	}
 }
