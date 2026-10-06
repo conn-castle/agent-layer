@@ -154,7 +154,7 @@ func TestReadConflictIndexRejectsAStagedSymlink(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 	gitOutput(t, dir, "add", "--", "link.md")
-	if _, err := runner.ReadConflictIndex(context.Background(), dir); err == nil || !strings.Contains(err.Error(), "symbolic link") {
+	if _, err := runner.ReadConflictIndex(context.Background(), dir); err == nil || err.Error() != "link.md is a symbolic link; imported skills may contain only directories and regular files" {
 		t.Fatalf("ReadConflictIndex symlink = %v", err)
 	}
 	gitOutput(t, dir, "rm", "--cached", "--", "link.md")
@@ -179,7 +179,7 @@ func TestReadConflictIndexRejectsAStagedSymlink(t *testing.T) {
 	head := gitOutput(t, dir, "rev-parse", "HEAD")
 	gitOutput(t, dir, "update-index", "--add", "--cacheinfo", "160000", head, "nested")
 	gitOutput(t, dir, "update-index", "--skip-worktree", "nested")
-	if _, err := runner.ReadConflictIndex(context.Background(), dir); err == nil || !strings.Contains(err.Error(), "gitlink") {
+	if _, err := runner.ReadConflictIndex(context.Background(), dir); err == nil || err.Error() != "nested is a gitlink (submodule); imported skills may contain only directories and regular files" {
 		t.Fatalf("ReadConflictIndex gitlink = %v", err)
 	}
 }
@@ -199,7 +199,7 @@ func TestGitTreeHelpersSurfaceRepositoryFailures(t *testing.T) {
 	if _, err := runner.writeSkillTree(context.Background(), dir, tree); err == nil {
 		t.Fatal("writeSkillTree outside a repository succeeded")
 	}
-	if _, err := runner.readSkillTreeObject(context.Background(), dir, "missing"); err == nil {
+	if _, err := runner.readSkillTreeObject(context.Background(), dir, "missing", "", nil); err == nil {
 		t.Fatal("readSkillTreeObject outside a repository succeeded")
 	}
 	if err := runner.CreateConflictWorkspace(canceled, filepath.Join(t.TempDir(), "workspace"), ConflictWorkspaceSpec{

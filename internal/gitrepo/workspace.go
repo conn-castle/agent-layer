@@ -166,7 +166,7 @@ func (r *Runner) ReadConflictIndex(ctx context.Context, dir string) (skilltree.T
 	if err != nil {
 		return skilltree.Tree{}, err
 	}
-	return r.readSkillTreeObject(ctx, dir, strings.TrimSpace(string(treeID)))
+	return r.readSkillTreeObject(ctx, dir, strings.TrimSpace(string(treeID)), "", nil)
 }
 
 func (r *Runner) commitTree(ctx context.Context, dir string, tree string, message string, parents ...string) (string, error) {
