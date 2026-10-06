@@ -1244,8 +1244,8 @@ func migrationCoveredPaths(op upgradeMigrationOperation) []string {
 	paths := make([]string, 0, 2)
 	switch op.Kind {
 	case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
-		from := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.From)))
-		to := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.To)))
+		from := migrationRelPath(op.From)
+		to := migrationRelPath(op.To)
 		if strings.TrimSpace(from) != "" {
 			paths = append(paths, from)
 		}
@@ -1253,17 +1253,17 @@ func migrationCoveredPaths(op upgradeMigrationOperation) []string {
 			paths = append(paths, to)
 		}
 	case upgradeMigrationKindDeleteFile, upgradeMigrationKindDeleteGeneratedArtifact:
-		pathValue := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.Path)))
+		pathValue := migrationRelPath(op.Path)
 		if strings.TrimSpace(pathValue) != "" {
 			paths = append(paths, pathValue)
 		}
 	case upgradeMigrationKindMigrateSkillsFormat:
-		pathValue := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.Path)))
+		pathValue := migrationRelPath(op.Path)
 		if strings.TrimSpace(pathValue) != "" {
 			paths = append(paths, pathValue)
 		}
 	case upgradeMigrationKindAppendToFile:
-		pathValue := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.Path)))
+		pathValue := migrationRelPath(op.Path)
 		if strings.TrimSpace(pathValue) != "" {
 			paths = append(paths, pathValue)
 		}
@@ -1280,8 +1280,8 @@ func migrationCoveredPaths(op upgradeMigrationOperation) []string {
 func migrationWillCoverPath(sys System, root string, op upgradeMigrationOperation, relPath string) bool {
 	switch op.Kind {
 	case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
-		fromRel := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.From)))
-		toRel := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.To)))
+		fromRel := migrationRelPath(op.From)
+		toRel := migrationRelPath(op.To)
 		if fromRel == toRel {
 			return false
 		}
@@ -1748,7 +1748,7 @@ func validateUpgradeMigrationOperation(op upgradeMigrationOperation) error {
 		if strings.TrimSpace(op.From) == "" || strings.TrimSpace(op.To) == "" {
 			return fmt.Errorf("migration %s (%s) requires from and to", op.ID, op.Kind)
 		}
-		if normalizeRelPath(filepath.Clean(filepath.FromSlash(op.From))) == normalizeRelPath(filepath.Clean(filepath.FromSlash(op.To))) {
+		if migrationRelPath(op.From) == migrationRelPath(op.To) {
 			return fmt.Errorf("migration %s (%s) requires distinct from/to", op.ID, op.Kind)
 		}
 	case upgradeMigrationKindDeleteFile, upgradeMigrationKindDeleteGeneratedArtifact:

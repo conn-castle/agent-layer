@@ -49,11 +49,15 @@ func BuildUpgradePlanDiffPreviews(root string, plan UpgradePlan, opts UpgradePla
 	var ungatedTemplatePaths map[string]string
 	ops := plannedOperationsFromReport(plan.MigrationReport)
 	if hasRenameMigration(ops) {
+		effects, err := inst.planMigrationPathEffects(ops)
+		if err != nil {
+			return nil, err
+		}
 		ungatedTemplatePaths, err = inst.templates().ungatedTemplatePathByRel()
 		if err != nil {
 			return nil, err
 		}
-		origins, err = inst.templateOriginsAfterMigrations(ops, ungatedTemplatePaths)
+		origins, err = inst.templateOrigins(effects, ungatedTemplatePaths)
 		if err != nil {
 			return nil, err
 		}
