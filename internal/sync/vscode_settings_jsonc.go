@@ -12,8 +12,8 @@ import (
 
 // renderVSCodeSettingsContent merges the managed settings block into existing JSONC content.
 // Args: sys marshals settings, existing is the current file contents, settings is the managed config.
-// Returns: updated content with a trailing newline, or an error if the managed block is malformed
-// or the root object is invalid when the block is missing.
+// Returns: updated content with a trailing newline, or an error for malformed content.
+// Existing blocks retain recovery of bare literals and missing object-property separators.
 func renderVSCodeSettingsContent(sys System, existing string, settings *vscodeSettings) (string, error) {
 	newline := detectNewline(existing)
 	normalized := normalizeNewlines(existing)
@@ -74,14 +74,21 @@ func renderVSCodeSettingsContent(sys System, existing string, settings *vscodeSe
 			}
 		}
 		lines = replaceVSCodeManagedBlock(lines, blockStart, blockEnd, blockLines)
-		updated := bom + strings.Join(lines, "\n")
+		updated := strings.Join(lines, "\n")
+		// Scan the complete document even for a comment-only block, so invalid strings,
+		// comments, and structure on either side cannot bypass validation. Recovery keeps
+		// user values moved out of earlier managed blocks verbatim on subsequent syncs.
+		if _, _, err := findJSONCRootBounds(updated, jsoncRecovery); err != nil {
+			return "", invalidVSCodeSettingsError(err.Error())
+		}
+		updated = bom + updated
 		if !strings.HasSuffix(updated, "\n") {
 			updated += "\n"
 		}
 		return applyNewlineStyle(updated, newline), nil
 	}
 
-	startIdx, endIdx, err := findJSONCRootBounds(normalized)
+	startIdx, endIdx, err := findJSONCRootBounds(normalized, jsoncStrict)
 	if err != nil {
 		return "", invalidVSCodeSettingsError(err.Error())
 	}
@@ -155,11 +162,19 @@ func stripUTF8BOM(content string) (string, string) {
 	return "", content
 }
 
-// findJSONCRootBounds locates and validates the root object in JSONC content.
-// Args: content is normalized JSONC text.
+// jsoncScanMode selects strict grammar or source-preserving recovery for existing managed blocks.
+type jsoncScanMode uint8
+
+const (
+	jsoncStrict   jsoncScanMode = iota
+	jsoncRecovery               // Also accepts bare literals and missing commas between object properties.
+)
+
+// findJSONCRootBounds locates and scans the root object in JSONC content.
+// Args: content is normalized JSONC text; mode selects strict validation or block recovery.
 // Returns: indices of the root '{' and its closing '}', or an error unless the content is one
-// valid root object surrounded only by whitespace and comments.
-func findJSONCRootBounds(content string) (int, int, error) {
+// root object accepted by mode, surrounded only by whitespace and comments.
+func findJSONCRootBounds(content string, mode jsoncScanMode) (int, int, error) {
 	start, err := skipJSONCTrivia(content, 0)
 	if err != nil {
 		return -1, -1, err
@@ -170,7 +185,7 @@ func findJSONCRootBounds(content string) (int, int, error) {
 	if content[start] != '{' {
 		return -1, -1, fmt.Errorf("unexpected content before root object")
 	}
-	end, err := scanJSONCContainer(content, start)
+	end, err := scanJSONCContainer(content, start, mode)
 	if err != nil {
 		return -1, -1, fmt.Errorf("root object: %w", err)
 	}
@@ -433,7 +448,7 @@ func extractVSCodeUserEntries(text string) ([]vscodeBlockEntry, bool, error) {
 		if err != nil {
 			return nil, false, err
 		}
-		valueEnd, err := scanJSONCValue(text, valueStart)
+		valueEnd, err := scanJSONCValue(text, valueStart, jsoncRecovery)
 		if err != nil {
 			return nil, false, fmt.Errorf("property %q: %w", key, err)
 		}
@@ -621,9 +636,10 @@ func scanJSONCString(text string, pos int) (int, error) {
 }
 
 // scanJSONCValue scans one JSONC value: a string, an object or array, or a bare literal.
-// Args: text is normalized JSONC, pos is the index of the value's first character.
+// Args: text is normalized JSONC, pos is the index of the value's first character;
+// mode selects strict JSON primitives and separators or recovery of existing user content.
 // Returns: the index after the value, or an error if no complete value starts at pos.
-func scanJSONCValue(text string, pos int) (int, error) {
+func scanJSONCValue(text string, pos int, mode jsoncScanMode) (int, error) {
 	if pos == len(text) {
 		return 0, fmt.Errorf("missing value")
 	}
@@ -631,7 +647,7 @@ func scanJSONCValue(text string, pos int) (int, error) {
 	case '"':
 		return scanJSONCString(text, pos)
 	case '{', '[':
-		return scanJSONCContainer(text, pos)
+		return scanJSONCContainer(text, pos, mode)
 	case ',', '}', ']':
 		return 0, fmt.Errorf("missing value")
 	}
@@ -642,15 +658,19 @@ func scanJSONCValue(text string, pos int) (int, error) {
 	if end == pos {
 		return 0, fmt.Errorf("unexpected %q", text[pos])
 	}
+	if mode == jsoncStrict && !json.Valid([]byte(text[pos:end])) {
+		return 0, fmt.Errorf("invalid literal %q", text[pos:end])
+	}
 	return end, nil
 }
 
 // scanJSONCContainer validates the properties or elements of an object or array.
-// Args: text is normalized JSONC, pos is the opening brace or bracket.
+// Args: text is normalized JSONC, pos is the opening brace or bracket;
+// mode selects strict grammar or recovery, and applies to every nested value.
 // Returns: the index after the closing delimiter, or an error for malformed entries.
-// Comments, trailing commas, bare literals, and missing commas between object properties
-// are accepted; the source text is left untouched.
-func scanJSONCContainer(text string, pos int) (int, error) {
+// Both modes accept comments and trailing commas; recovery also accepts bare literals and
+// missing commas between object properties. The source text is left untouched.
+func scanJSONCContainer(text string, pos int, mode jsoncScanMode) (int, error) {
 	object := text[pos] == '{'
 	closer := byte(']')
 	if object {
@@ -689,7 +709,7 @@ func scanJSONCContainer(text string, pos int) (int, error) {
 				return 0, err
 			}
 		}
-		end, err := scanJSONCValue(text, pos)
+		end, err := scanJSONCValue(text, pos, mode)
 		if err != nil {
 			return 0, err
 		}
@@ -706,7 +726,7 @@ func scanJSONCContainer(text string, pos int) (int, error) {
 		case ',':
 			pos++
 		default:
-			if !object || text[pos] != '"' {
+			if mode == jsoncStrict || !object || text[pos] != '"' {
 				return 0, fmt.Errorf("expected ',' or %q", closer)
 			}
 		}
