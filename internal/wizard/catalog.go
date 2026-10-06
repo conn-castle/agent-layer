@@ -123,7 +123,7 @@ func (c *wizardOptionDiscoveryCache) prefetchAll() {
 func (c *wizardOptionDiscoveryCache) selectModel(ui UI, agent, title string, value *string) error {
 	// Scripted answers are explicit configuration, not a request for suggestions.
 	if scripted, ok := ui.(*ScriptedUI); ok {
-		answer, _, found := lookupStringScriptedAnswer(scripted.answers.Select, title)
+		answer, _, found := lookupScriptedAnswer(scripted.answers.Select, title)
 		if !found {
 			return missingScriptedAnswer("select", title)
 		}
