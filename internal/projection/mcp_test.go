@@ -1,6 +1,7 @@
 package projection
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -8,7 +9,12 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
-func TestResolveMCPServers(t *testing.T) {
+// userServerConfig enables no agent, so no built-in dispatch server is added.
+func userServerConfig(servers []config.MCPServer) config.Config {
+	return config.Config{MCP: config.MCPConfig{Servers: servers}}
+}
+
+func TestEffectiveMCPServersResolvesUserServers(t *testing.T) {
 	enabled := true
 	servers := []config.MCPServer{
 		{
@@ -36,7 +42,7 @@ func TestResolveMCPServers(t *testing.T) {
 	}
 	env := map[string]string{"TOKEN": "abc123"}
 
-	resolved, err := ResolveMCPServers(servers, env, "antigravity", nil)
+	resolved, err := EffectiveMCPServers(userServerConfig(servers), env, "antigravity", nil)
 	if err != nil {
 		t.Fatalf("resolve mcp servers: %v", err)
 	}
@@ -63,7 +69,7 @@ func TestResolveMCPServers(t *testing.T) {
 	}
 }
 
-func TestResolveMCPServersMissingEnv(t *testing.T) {
+func TestEffectiveMCPServersMissingEnv(t *testing.T) {
 	enabled := true
 	servers := []config.MCPServer{
 		{
@@ -74,13 +80,13 @@ func TestResolveMCPServersMissingEnv(t *testing.T) {
 			URL:       "https://example.com?token=${TOKEN}",
 		},
 	}
-	_, err := ResolveMCPServers(servers, map[string]string{}, "antigravity", nil)
+	_, err := EffectiveMCPServers(userServerConfig(servers), map[string]string{}, "antigravity", nil)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
 }
 
-func TestResolveMCPServersStdioArgMissingEnv(t *testing.T) {
+func TestEffectiveMCPServersStdioArgMissingEnv(t *testing.T) {
 	enabled := true
 	servers := []config.MCPServer{
 		{
@@ -92,13 +98,13 @@ func TestResolveMCPServersStdioArgMissingEnv(t *testing.T) {
 			Args:      []string{"${TOKEN}"},
 		},
 	}
-	_, err := ResolveMCPServers(servers, map[string]string{}, "antigravity", nil)
+	_, err := EffectiveMCPServers(userServerConfig(servers), map[string]string{}, "antigravity", nil)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
 }
 
-func TestEnabledServerIDs(t *testing.T) {
+func TestEffectiveServerIDsSortsEnabledUserServers(t *testing.T) {
 	enabled := true
 	disabled := false
 	servers := []config.MCPServer{
@@ -106,13 +112,13 @@ func TestEnabledServerIDs(t *testing.T) {
 		{ID: "a", Enabled: &enabled, Clients: []string{"antigravity"}},
 		{ID: "c", Enabled: &disabled, Clients: []string{"antigravity"}},
 	}
-	ids := EnabledServerIDs(servers, "antigravity")
+	ids := EffectiveServerIDs(userServerConfig(servers), "antigravity")
 	if len(ids) != 2 || ids[0] != "a" || ids[1] != "b" {
 		t.Fatalf("unexpected ids: %v", ids)
 	}
 }
 
-func TestResolveMCPServersExpandsRepoRootArg(t *testing.T) {
+func TestEffectiveMCPServersExpandsRepoRootArg(t *testing.T) {
 	enabled := true
 	repoRoot := filepath.Join(t.TempDir(), "repo")
 	servers := []config.MCPServer{
@@ -127,7 +133,7 @@ func TestResolveMCPServersExpandsRepoRootArg(t *testing.T) {
 	}
 	env := map[string]string{config.BuiltinRepoRootEnvVar: repoRoot}
 
-	resolved, err := ResolveMCPServers(servers, env, "antigravity", nil)
+	resolved, err := EffectiveMCPServers(userServerConfig(servers), env, "antigravity", nil)
 	if err != nil {
 		t.Fatalf("resolve mcp servers: %v", err)
 	}
@@ -140,7 +146,7 @@ func TestResolveMCPServersExpandsRepoRootArg(t *testing.T) {
 	}
 }
 
-func TestResolveMCPServersPathExpansionFailsWithoutRepoRoot(t *testing.T) {
+func TestEffectiveMCPServersPathExpansionFailsWithoutRepoRoot(t *testing.T) {
 	enabled := true
 	servers := []config.MCPServer{
 		{
@@ -156,11 +162,46 @@ func TestResolveMCPServersPathExpansionFailsWithoutRepoRoot(t *testing.T) {
 	// Empty env - no AL_REPO_ROOT
 	env := map[string]string{}
 
-	_, err := ResolveMCPServers(servers, env, "antigravity", nil)
+	_, err := EffectiveMCPServers(userServerConfig(servers), env, "antigravity", nil)
 	if err == nil {
 		t.Fatal("expected error when AL_REPO_ROOT is missing for path expansion")
 	}
 	if !strings.Contains(err.Error(), "mcp server fs") || !strings.Contains(err.Error(), "AL_REPO_ROOT") {
 		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+// TestEffectiveMCPServersReportsFirstFailingServerInConfigOrder proves servers
+// resolve in configuration order and are sorted only after all succeed.
+func TestEffectiveMCPServersReportsFirstFailingServerInConfigOrder(t *testing.T) {
+	enabled := true
+	servers := []config.MCPServer{
+		{ID: "b-first", Enabled: &enabled, Transport: "stdio", Command: "${MISSING_B}"},
+		{ID: "a-second", Enabled: &enabled, Transport: "stdio", Command: "${MISSING_A}"},
+	}
+	_, err := EffectiveMCPServers(userServerConfig(servers), map[string]string{}, "antigravity", nil)
+	var resolveErr *MCPServerResolveError
+	if !errors.As(err, &resolveErr) || resolveErr.ServerID != "b-first" {
+		t.Fatalf("expected first config-order server to fail, got %v", err)
+	}
+}
+
+func TestEffectiveServersAreNilWithoutMatchingServers(t *testing.T) {
+	enabled := true
+	disabled := false
+	cfg := userServerConfig([]config.MCPServer{
+		{ID: "off", Enabled: &disabled, Transport: "stdio", Command: "tool"},
+		{ID: "other", Enabled: &enabled, Clients: []string{"codex"}, Transport: "stdio", Command: "tool"},
+	})
+	resolved, err := EffectiveMCPServers(cfg, map[string]string{}, "antigravity", nil)
+	if err != nil || resolved != nil {
+		t.Fatalf("expected nil servers, got %#v, %v", resolved, err)
+	}
+	if ids := EffectiveServerIDs(cfg, "antigravity"); ids != nil {
+		t.Fatalf("expected nil ids, got %#v", ids)
+	}
+	resolved, err = ResolveEffectiveEnabledMCPServers(cfg, map[string]string{})
+	if err != nil || resolved != nil {
+		t.Fatalf("expected nil enabled servers, got %#v, %v", resolved, err)
 	}
 }
