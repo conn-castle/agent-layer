@@ -13,10 +13,18 @@ const (
 	mcpProtocol20251125 = "2025-11-25"
 )
 
-// The SDK's stdio connection has a package-private sessionUpdated hook. A
-// Connection decorator cannot forward it. Preserve its negotiated batching
-// restriction using frame shape only, leaving parsing and validation to the
-// SDK. This observer never buffers protocol bytes or field values.
+// The SDK's stdio connection learns the negotiated protocol version through a
+// package-private sessionUpdated hook (the unexported serverConnection
+// interface, private through go-sdk v1.8.0). A Connection decorator cannot
+// forward it, and lifecycle diagnostics must observe Connection reads and
+// writes, so the SDK alone would accept batches for every protocol version.
+// Preserve its negotiated batching restriction using frame shape only, leaving
+// parsing and validation to the SDK. This observer never buffers protocol
+// bytes or field values. The SDK knowledge duplicated here is the batch ban,
+// batch item expansion, and mcpBatchProtocolVersion's negotiation;
+// TestMCPLifecyclePreservesSDKBatches compares them with the undecorated SDK.
+// An exported session-state hook for Connection decorators would remove them
+// (https://github.com/modelcontextprotocol/go-sdk/issues/1328).
 type mcpFrameObserver struct {
 	mu          sync.Mutex
 	depth       int

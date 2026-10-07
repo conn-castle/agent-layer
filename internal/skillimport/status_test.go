@@ -338,21 +338,6 @@ func TestStatusPreservesLocalStateWhenTheImportedTierIsUnreadable(t *testing.T) 
 	}
 }
 
-// TestLocalSkillValidReportsReadability proves the observed-state helper
-// distinguishes a present, readable skill from an absent or broken one.
-func TestLocalSkillValidReportsReadability(t *testing.T) {
-	t.Parallel()
-	if (localSkill{}).Valid() {
-		t.Fatal("an absent skill reported as valid")
-	}
-	if (localSkill{Present: true, Err: errors.New("broken")}).Valid() {
-		t.Fatal("an unreadable skill reported as valid")
-	}
-	if !(localSkill{Present: true}).Valid() {
-		t.Fatal("a present readable skill reported as invalid")
-	}
-}
-
 // TestUserManagedNamesRejectNFKCCollisions proves filesystem enumeration never
 // lets a later compatibility-equivalent directory silently replace the first
 // collision path in the ownership map.

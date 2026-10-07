@@ -170,88 +170,54 @@ func (s *dispatchToolServer) register(server *mcp.Server) error {
 	if err != nil {
 		return err
 	}
-	optionsSchema, err := mcpInputSchema[OptionsInput](ToolOptions, catalog.Tools[ToolOptions])
-	if err != nil {
+	wait := catalog.Tools[ToolWait]
+	wait.Description = renderMCPToolDescription(wait.Description, int(s.waitTimeout/time.Minute))
+	if err := addDispatchTool(server, s.toolTimeout, ToolOptions, catalog.Tools[ToolOptions], readOnlyToolAnnotations(), s.handleOptions); err != nil {
 		return err
 	}
-	startSchema, err := mcpInputSchema[StartInput](ToolStart, catalog.Tools[ToolStart])
-	if err != nil {
+	if err := addDispatchTool(server, s.toolTimeout, ToolStart, catalog.Tools[ToolStart], destructiveToolAnnotations(), s.handleStart); err != nil {
 		return err
 	}
-	waitSchema, err := mcpInputSchema[WaitInput](ToolWait, catalog.Tools[ToolWait])
-	if err != nil {
+	if err := addDispatchTool(server, s.toolTimeout, ToolWait, wait, readOnlyToolAnnotations(), s.handleWait); err != nil {
 		return err
 	}
-	continueSchema, err := mcpInputSchema[ContinueInput](ToolContinue, catalog.Tools[ToolContinue])
-	if err != nil {
+	if err := addDispatchTool(server, s.toolTimeout, ToolContinue, catalog.Tools[ToolContinue], destructiveToolAnnotations(), s.handleContinue); err != nil {
 		return err
 	}
-	cancelSchema, err := mcpInputSchema[SelectorInput](ToolCancel, catalog.Tools[ToolCancel])
-	if err != nil {
+	if err := addDispatchTool(server, s.toolTimeout, ToolCancel, catalog.Tools[ToolCancel], destructiveToolAnnotations(), s.handleCancel); err != nil {
 		return err
 	}
-	inspectSchema, err := mcpInputSchema[SelectorInput](ToolInspect, catalog.Tools[ToolInspect])
-	if err != nil {
+	if err := addDispatchTool(server, s.toolTimeout, ToolInspect, catalog.Tools[ToolInspect], readOnlyToolAnnotations(), s.handleInspect); err != nil {
 		return err
 	}
-	outputSchema, err := mcpInputSchema[OutputInput](ToolOutput, catalog.Tools[ToolOutput])
-	if err != nil {
+	if err := addDispatchTool(server, s.toolTimeout, ToolOutput, catalog.Tools[ToolOutput], readOnlyToolAnnotations(), s.handleOutput); err != nil {
 		return err
 	}
-
-	readOnly := true
-	destructive := true
-	openWorld := true
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        ToolOptions,
-		Description: catalog.Tools[ToolOptions].Description,
-		InputSchema: optionsSchema,
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly, OpenWorldHint: &openWorld},
-	}, withoutPublishedOutputSchema(guard(s.toolTimeout, s.handleOptions)))
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        ToolStart,
-		Description: catalog.Tools[ToolStart].Description,
-		InputSchema: startSchema,
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: &openWorld},
-	}, withoutPublishedOutputSchema(guard(s.toolTimeout, s.handleStart)))
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        ToolWait,
-		Description: renderMCPToolDescription(catalog.Tools[ToolWait].Description, int(s.waitTimeout/time.Minute)),
-		InputSchema: waitSchema,
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly, OpenWorldHint: &openWorld},
-	}, withoutPublishedOutputSchema(guard(s.toolTimeout, s.handleWait)))
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        ToolContinue,
-		Description: catalog.Tools[ToolContinue].Description,
-		InputSchema: continueSchema,
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: &openWorld},
-	}, withoutPublishedOutputSchema(guard(s.toolTimeout, s.handleContinue)))
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        ToolCancel,
-		Description: catalog.Tools[ToolCancel].Description,
-		InputSchema: cancelSchema,
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: &openWorld},
-	}, withoutPublishedOutputSchema(guard(s.toolTimeout, s.handleCancel)))
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        ToolInspect,
-		Description: catalog.Tools[ToolInspect].Description,
-		InputSchema: inspectSchema,
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly, OpenWorldHint: &openWorld},
-	}, withoutPublishedOutputSchema(guard(s.toolTimeout, s.handleInspect)))
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        ToolOutput,
-		Description: catalog.Tools[ToolOutput].Description,
-		InputSchema: outputSchema,
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly, OpenWorldHint: &openWorld},
-	}, withoutPublishedOutputSchema(guard(s.toolTimeout, s.handleOutput)))
 	return nil
+}
+
+func addDispatchTool[In, Out any](server *mcp.Server, timeout time.Duration, name string, tool mcpToolDescription, annotations *mcp.ToolAnnotations, handler mcp.ToolHandlerFor[In, Out]) error {
+	schema, err := mcpInputSchema[In](name, tool)
+	if err != nil {
+		return err
+	}
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        name,
+		Description: tool.Description,
+		InputSchema: schema,
+		Annotations: annotations,
+	}, withoutPublishedOutputSchema(guard(timeout, handler)))
+	return nil
+}
+
+func readOnlyToolAnnotations() *mcp.ToolAnnotations {
+	openWorld := true
+	return &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld}
+}
+
+func destructiveToolAnnotations() *mcp.ToolAnnotations {
+	destructive, openWorld := true, true
+	return &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: &openWorld}
 }
 
 // withoutPublishedOutputSchema preserves typed handlers and structured results
@@ -281,6 +247,10 @@ func guard[In, Out any](timeout time.Duration, handler mcp.ToolHandlerFor[In, Ou
 		}
 		completed := make(chan response, 1)
 		go func() {
+			if err := ctx.Err(); err != nil {
+				completed <- response{err: err}
+				return
+			}
 			result, output, err := handler(ctx, request, input)
 			completed <- response{result: result, output: output, err: err}
 		}()
@@ -295,9 +265,6 @@ func guard[In, Out any](timeout time.Duration, handler mcp.ToolHandlerFor[In, Ou
 }
 
 func (s *dispatchToolServer) handleOptions(ctx context.Context, _ *mcp.CallToolRequest, _ OptionsInput) (*mcp.CallToolResult, *OptionsResponse, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, nil, err
-	}
 	options, err := BuildOptions(OptionsRequest{Context: ctx, Root: s.root, Env: s.env})
 	if err != nil {
 		return nil, nil, toolError(err)
@@ -307,9 +274,6 @@ func (s *dispatchToolServer) handleOptions(ctx context.Context, _ *mcp.CallToolR
 }
 
 func (s *dispatchToolServer) handleStart(ctx context.Context, _ *mcp.CallToolRequest, input StartInput) (*mcp.CallToolResult, *Result, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, nil, err
-	}
 	agent := strings.TrimSpace(input.Agent)
 	model := strings.TrimSpace(input.Model)
 	effort := strings.TrimSpace(input.ReasoningEffort)
@@ -327,9 +291,6 @@ func (s *dispatchToolServer) handleStart(ctx context.Context, _ *mcp.CallToolReq
 }
 
 func (s *dispatchToolServer) handleWait(ctx context.Context, request *mcp.CallToolRequest, input WaitInput) (*mcp.CallToolResult, *Result, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, nil, err
-	}
 	stop := relayProgress(ctx, request, s.progressInterval)
 	defer stop()
 	var out bytes.Buffer
@@ -342,9 +303,6 @@ func (s *dispatchToolServer) handleWait(ctx context.Context, request *mcp.CallTo
 }
 
 func (s *dispatchToolServer) handleContinue(ctx context.Context, _ *mcp.CallToolRequest, input ContinueInput) (*mcp.CallToolResult, *Result, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, nil, err
-	}
 	var out bytes.Buffer
 	err := Continue(ContinueOptions{
 		Context: ctx, Root: s.root, WorkDir: s.workDir, Handle: strings.TrimSpace(input.Handle),
@@ -354,10 +312,7 @@ func (s *dispatchToolServer) handleContinue(ctx context.Context, _ *mcp.CallTool
 	return decodeResult(&out, err)
 }
 
-func (s *dispatchToolServer) handleCancel(ctx context.Context, _ *mcp.CallToolRequest, input SelectorInput) (*mcp.CallToolResult, *Result, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, nil, err
-	}
+func (s *dispatchToolServer) handleCancel(_ context.Context, _ *mcp.CallToolRequest, input SelectorInput) (*mcp.CallToolResult, *Result, error) {
 	var out bytes.Buffer
 	err := Cancel(CancelRequest{
 		Root: s.root, Handle: strings.TrimSpace(input.Handle),
@@ -375,43 +330,36 @@ func decodeCancelResult(out *bytes.Buffer, opErr error) (*mcp.CallToolResult, *R
 	return decodeResult(out, nil)
 }
 
-func (s *dispatchToolServer) handleInspect(ctx context.Context, _ *mcp.CallToolRequest, input SelectorInput) (*mcp.CallToolResult, *InspectResult, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, nil, err
-	}
+func (s *dispatchToolServer) handleInspect(_ context.Context, _ *mcp.CallToolRequest, input SelectorInput) (*mcp.CallToolResult, *InspectResult, error) {
 	var out bytes.Buffer
 	err := Inspect(InspectRequest{
 		Root: s.root, Handle: strings.TrimSpace(input.Handle),
 		InvocationID: strings.TrimSpace(input.InvocationID), Stdout: &out,
 	})
-	if err != nil {
-		return nil, nil, toolError(err)
-	}
-	var result InspectResult
-	if decodeErr := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &result); decodeErr != nil {
-		return nil, nil, decodeErr
-	}
-	return nil, &result, nil
+	result, err := decodeJSONOutput[InspectResult](&out, err)
+	return nil, result, err
 }
 
-func (s *dispatchToolServer) handleOutput(ctx context.Context, _ *mcp.CallToolRequest, input OutputInput) (*mcp.CallToolResult, *OutputResult, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, nil, err
-	}
+func (s *dispatchToolServer) handleOutput(_ context.Context, _ *mcp.CallToolRequest, input OutputInput) (*mcp.CallToolResult, *OutputResult, error) {
 	var out bytes.Buffer
 	err := Output(OutputRequest{
 		Root: s.root, Handle: strings.TrimSpace(input.Handle),
 		InvocationID: strings.TrimSpace(input.InvocationID), Artifact: strings.TrimSpace(input.Artifact),
 		Stdout: &out,
 	})
-	if err != nil {
-		return nil, nil, toolError(err)
+	result, err := decodeJSONOutput[OutputResult](&out, err)
+	return nil, result, err
+}
+
+func decodeJSONOutput[T any](out *bytes.Buffer, opErr error) (*T, error) {
+	if opErr != nil {
+		return nil, toolError(opErr)
 	}
-	var result OutputResult
-	if decodeErr := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &result); decodeErr != nil {
-		return nil, nil, decodeErr
+	var result T
+	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &result); err != nil {
+		return nil, err
 	}
-	return nil, &result, nil
+	return &result, nil
 }
 
 // decodeResult turns one operation's canonical JSON rendering into the shared

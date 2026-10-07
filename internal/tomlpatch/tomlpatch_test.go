@@ -173,31 +173,6 @@ func TestParseDocument_IgnoresHeadersInsideMultilineStrings(t *testing.T) {
 	}
 }
 
-func TestCommentHelpers_RespectMultilineStringsAndBounds(t *testing.T) {
-	t.Parallel()
-	lines := []string{
-		`title = """start`,
-		`# not a comment`,
-		`end""" # closing`,
-		`# leading one`,
-		`# leading two`,
-		`model = "gpt" # inline`,
-	}
-
-	if got := InlineCommentForLine(lines, 1); got != "" {
-		t.Fatalf("expected multiline body hash to be ignored, got %q", got)
-	}
-	if got := InlineCommentForLine(lines, 2); got != "closing" {
-		t.Fatalf("expected closing-line comment, got %q", got)
-	}
-	if got := CommentForLine(lines, 5); got != "leading one\nleading two\ninline" {
-		t.Fatalf("unexpected combined comment %q", got)
-	}
-	if got := CommentForLine(lines, -1); got != "" {
-		t.Fatalf("expected out-of-range comment to be empty, got %q", got)
-	}
-}
-
 func TestWalkLinesOutsideMultiline_AdvanceAndStop(t *testing.T) {
 	t.Parallel()
 	lines := []string{
@@ -311,19 +286,19 @@ func TestMultilineValueEndIndex_CoversStringsArraysAndTables(t *testing.T) {
 			t.Fatalf("start %d: got %d, want %d", tt.start, got, tt.want)
 		}
 	}
-	if !ContainsUnescapedTripleQuote(`a """ close`) {
+	if !containsUnescapedTripleQuote(`a """ close`) {
 		t.Fatal("expected unescaped triple quote to be detected")
 	}
-	if ContainsUnescapedTripleQuote(`a \""" not-close`) {
+	if containsUnescapedTripleQuote(`a \""" not-close`) {
 		t.Fatal("expected escaped triple quote to be ignored")
 	}
-	if !ContainsUnescapedTripleQuote(`a \\""" close`) {
+	if !containsUnescapedTripleQuote(`a \\""" close`) {
 		t.Fatal("expected even backslash parity to leave the triple quote unescaped")
 	}
-	if ContainsUnescapedTripleQuote(`a \\\""" not-close`) {
+	if containsUnescapedTripleQuote(`a \\\""" not-close`) {
 		t.Fatal("expected odd backslash parity to escape the triple quote")
 	}
-	if !ContainsUnescapedTripleQuote(`a \""" then """ close`) {
+	if !containsUnescapedTripleQuote(`a \""" then """ close`) {
 		t.Fatal("expected a later unescaped triple quote to be detected after skipping an escaped one")
 	}
 }
@@ -437,6 +412,9 @@ func TestScanLineForComment_StateTransitions(t *testing.T) {
 	}
 	if comment, state := ScanLineForComment(`close''' # note`, StateMultiLiteral); comment < 0 || state != StateNone {
 		t.Fatalf("multiline literal closing parse = (%d, %v), want comment and none", comment, state)
+	}
+	if comment, state := ScanLineForComment("a\x00\"b\x00\" # note", StateNone); comment != 7 || state != StateNone {
+		t.Fatalf("NUL bytes parse = (%d, %v), want (7, none)", comment, state)
 	}
 }
 
@@ -656,5 +634,181 @@ func TestParseDocument_DuplicateSectionsAndArrays(t *testing.T) {
 	}
 	if _, ok := ParseKeyPath(`"bad\q"`); ok {
 		t.Fatal("expected invalid basic-string escape in key path to fail")
+	}
+}
+
+func TestParseDocument_EmptyAndPreambleOnly(t *testing.T) {
+	t.Parallel()
+	if doc := ParseDocument(""); len(doc.Sections) != 0 || len(doc.Arrays) != 0 || len(doc.Order) != 0 {
+		t.Fatalf("empty content parsed to %#v, want no tables", doc)
+	}
+	doc := ParseDocument("# preamble comment\n# another line")
+	if len(doc.Preamble) != 2 || doc.Preamble[0] != "# preamble comment" || len(doc.Sections) != 0 {
+		t.Fatalf("preamble-only content parsed to %#v", doc)
+	}
+}
+
+func TestParseHeader_ValidHeaders(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		line    string
+		name    string
+		isArray bool
+		ok      bool
+	}{
+		{"[section]", "section", false, true},
+		{"[[array]]", "array", true, true},
+		{"[[dotted.array]]", "dotted.array", true, true},
+		{"  [indented]  ", "indented", false, true},
+		{"[dotted.name] # with comment", "dotted.name", false, true},
+		{"", "", false, false},
+		{"key = value", "", false, false},
+	}
+	for _, tt := range tests {
+		name, isArray, ok := ParseHeader(tt.line)
+		if name != tt.name || isArray != tt.isArray || ok != tt.ok {
+			t.Fatalf("ParseHeader(%q) = (%q, %v, %v), want (%q, %v, %v)", tt.line, name, isArray, ok, tt.name, tt.isArray, tt.ok)
+		}
+	}
+}
+
+func TestKeyLineHelpers_SkipMultilineStringContent(t *testing.T) {
+	t.Parallel()
+	lines := []string{
+		"[section]",
+		`description = """`,
+		`key = "fake"`,
+		`"""`,
+		`key = "real"`,
+	}
+	if got, ok := FindKeyLine(lines, "key"); !ok || got.Raw != `key = "real"` {
+		t.Fatalf("FindKeyLine = (%q, %v), want the line after the multiline string", got.Raw, ok)
+	}
+	if _, ok := FindKeyLine(lines, "missing"); ok {
+		t.Fatal("expected missing key to be absent")
+	}
+	if got := FindInsertIndex(lines, "key"); got != 5 {
+		t.Fatalf("FindInsertIndex after real key = %d, want 5", got)
+	}
+	if got := FindInsertIndex([]string{"[section]", `description = """`, `after = "fake"`, `"""`}, "after"); got != 1 {
+		t.Fatalf("FindInsertIndex for anchor inside multiline string = %d, want 1", got)
+	}
+	if got := FindInsertIndex(lines, ""); got != 1 {
+		t.Fatalf("FindInsertIndex without anchor = %d, want 1", got)
+	}
+	for _, quote := range []string{`"""`, `'''`} {
+		serverLines := []string{"[[mcp.servers]]", "description = " + quote, `id = "fake-id"`, quote, `# id = "commented"`, `id = "real-id"`}
+		if got := ExtractBlockKeyValue(serverLines, "id"); got != "real-id" {
+			t.Fatalf("ExtractBlockKeyValue with %s string = %q, want real-id", quote, got)
+		}
+	}
+	if got := ExtractBlockKeyValue([]string{"[[mcp.servers]]", `id = "test"`}, "transport"); got != "" {
+		t.Fatalf("ExtractBlockKeyValue for missing key = %q, want empty", got)
+	}
+	if _, _, ok := ParseKeyValueWithState(`id "x"`, "id", StateNone); ok {
+		t.Fatal("expected assignment without = to fail")
+	}
+
+	block := &Block{Name: "section", Lines: CloneLines(lines)}
+	ReplaceOrInsertLine(block, "key", `key = "new"`, "")
+	want := []string{"[section]", `description = """`, `key = "fake"`, `"""`, `key = "new"`}
+	if strings.Join(block.Lines, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("ReplaceOrInsertLine lines = %#v, want %#v", block.Lines, want)
+	}
+}
+
+func TestKeyLineRendering_PreservesIndentAndComments(t *testing.T) {
+	t.Parallel()
+	block := &Block{Name: "agents.claude", Lines: []string{"[agents.claude]", "  enabled = false # keep"}}
+	SetKeyValue(block, nil, "enabled", "true", "")
+	if got := block.Lines[1]; got != "  enabled = true # keep" {
+		t.Fatalf("SetKeyValue without template = %q, want existing indent and comment kept", got)
+	}
+	if got := BuildKeyLine(KeyLine{Indent: "  ", InlineComment: "# note"}, "model", `"x"`, true); got != `  # model = "x" # note` {
+		t.Fatalf("BuildKeyLine = %q", got)
+	}
+	if got := EnsureCommented("\tmodel = \"x\""); got != "\t# model = \"x\"" {
+		t.Fatalf("EnsureCommented = %q", got)
+	}
+}
+
+func TestRemoveKeyFromBlock_KeepsCommentsAndOtherKeys(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		key   string
+		lines []string
+		want  []string
+	}{
+		{
+			name:  "preserves commented key",
+			key:   "headers",
+			lines: []string{"[[mcp.servers]]", `# headers = { old = "commented" }`, `headers = { new = "active" }`},
+			want:  []string{"[[mcp.servers]]", `# headers = { old = "commented" }`},
+		},
+		{
+			name:  "noop when key absent",
+			key:   "headers",
+			lines: []string{"[[mcp.servers]]", `id = "test"`},
+			want:  []string{"[[mcp.servers]]", `id = "test"`},
+		},
+		{
+			name:  "single-line array",
+			key:   "args",
+			lines: []string{"[[mcp.servers]]", `args = ["-y", "pkg@1.0"]`, `command = "keep"`},
+			want:  []string{"[[mcp.servers]]", `command = "keep"`},
+		},
+		{
+			name:  "escaped triple quote inside multiline string",
+			key:   "command",
+			lines: []string{"[[mcp.servers]]", `id = "test"`, `command = """`, `path with \""" embedded`, `still going`, `"""`, `enabled = true`},
+			want:  []string{"[[mcp.servers]]", `id = "test"`, `enabled = true`},
+		},
+	}
+	for _, tt := range tests {
+		block := &Block{Name: "mcp.servers", Lines: tt.lines}
+		RemoveKeyFromBlock(block, tt.key)
+		if strings.Join(block.Lines, "\n") != strings.Join(tt.want, "\n") {
+			t.Fatalf("%s: lines = %#v, want %#v", tt.name, block.Lines, tt.want)
+		}
+	}
+}
+
+func TestScanLineForComment_MultilineStrings(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		line        string
+		in          StringState
+		wantComment int
+		wantState   StringState
+	}{
+		{`key = """start`, StateNone, -1, StateMultiBasic},
+		{`middle # not a comment`, StateMultiBasic, -1, StateMultiBasic},
+		{`escape \" here`, StateMultiBasic, -1, StateMultiBasic},
+		{`end"""`, StateMultiBasic, -1, StateNone},
+		{`middle # not a comment`, StateMultiLiteral, -1, StateMultiLiteral},
+		{`end'''`, StateMultiLiteral, -1, StateNone},
+		{`key = "value \" more"`, StateNone, -1, StateNone},
+		{`key = "value`, StateNone, -1, StateBasic},
+		{`key = 'value`, StateNone, -1, StateLiteral},
+		{`key = "value" # comment`, StateNone, 14, StateNone},
+	}
+	for _, tt := range tests {
+		comment, state := ScanLineForComment(tt.line, tt.in)
+		if comment != tt.wantComment || state != tt.wantState {
+			t.Fatalf("ScanLineForComment(%q, %v) = (%d, %v), want (%d, %v)", tt.line, tt.in, comment, state, tt.wantComment, tt.wantState)
+		}
+	}
+}
+
+func TestRenderHelpers_WhitespaceOnlyLines(t *testing.T) {
+	t.Parallel()
+	output := []string{"[section]"}
+	AppendBlock(&output, []string{"", "  ", ""})
+	if len(output) != 1 {
+		t.Fatalf("AppendBlock of whitespace-only block = %#v, want unchanged output", output)
+	}
+	if got := TrimTrailingEmptyLines([]string{"a", "", "  "}); len(got) != 1 || got[0] != "a" {
+		t.Fatalf("TrimTrailingEmptyLines = %#v, want [a]", got)
 	}
 }

@@ -266,9 +266,15 @@ func TestCheckPolicy_AntigravityAgentSpecificPermissionsAllowWarns(t *testing.T)
 
 	results := CheckPolicy(project)
 	require.Len(t, results, 1)
-	require.Equal(t, CodePolicyAgentSpecificOverrides, results[0].Code)
-	require.Equal(t, "agents.antigravity.agent_specific", results[0].Subject)
-	require.Equal(t, []string{"overridden keys: permissions.allow"}, results[0].Details)
+	require.Equal(t, Warning{
+		Code:     CodePolicyAgentSpecificOverrides,
+		Subject:  "agents.antigravity.agent_specific",
+		Message:  "agent-specific antigravity config overrides Agent Layer-managed keys",
+		Fix:      "Remove the override if you want Agent Layer to manage those keys, or keep it to take full control.",
+		Details:  []string{"overridden keys: permissions.allow"},
+		Source:   SourceInternal,
+		Severity: SeverityWarning,
+	}, results[0])
 }
 
 func TestCheckPolicy_AntigravityAgentSpecificPermissionsDenyDoesNotWarn(t *testing.T) {

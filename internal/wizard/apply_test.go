@@ -395,8 +395,7 @@ func TestApplyChanges_WritesAntigravityModel(t *testing.T) {
 	require.NoError(t, os.WriteFile(envPath, nil, 0o600))
 
 	choices := NewChoices()
-	choices.AntigravityModelTouched = true
-	choices.AntigravityModel = "Gemini 3.5 Flash (High)"
+	choices.AgentModels[AgentAntigravity] = AgentModelChoice{ModelTouched: true, Model: "Gemini 3.5 Flash (High)"}
 
 	err := applyChanges(root, configPath, envPath, choices, func(string) (*alsync.Result, error) {
 		return &alsync.Result{}, nil

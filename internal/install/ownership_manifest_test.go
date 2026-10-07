@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/conn-castle/agent-layer/internal/templates"
+	"github.com/conn-castle/agent-layer/internal/version"
 )
 
 func TestLoadTemplateManifestByVersion_BackfillTags(t *testing.T) {
@@ -190,6 +191,49 @@ func TestValidateTemplateManifest_ErrorPaths(t *testing.T) {
 	dupPath.Files = append(dupPath.Files, dupPath.Files[0])
 	if err := validateTemplateManifest(dupPath); err == nil {
 		t.Fatal("expected duplicate path validation error")
+	}
+}
+
+func TestValidateManifestVersionFields_ExactErrors(t *testing.T) {
+	_, invalidErr := version.Normalize("not-semver")
+	if invalidErr == nil {
+		t.Fatal("expected normalize error for not-semver")
+	}
+	validate := map[string]func(string) error{
+		"version": func(raw string) error {
+			return validateTemplateManifest(templateManifest{
+				SchemaVersion: templateManifestSchemaVersion,
+				Version:       raw,
+				GeneratedAt:   "2026-02-09T00:00:00Z",
+			})
+		},
+		"target_version": func(raw string) error {
+			return validateUpgradeMigrationManifest(upgradeMigrationManifest{
+				SchemaVersion:   upgradeMigrationManifestSchemaVersion,
+				TargetVersion:   raw,
+				MinPriorVersion: "0.6.0",
+			})
+		},
+		"min_prior_version": func(raw string) error {
+			return validateUpgradeMigrationManifest(upgradeMigrationManifest{
+				SchemaVersion:   upgradeMigrationManifestSchemaVersion,
+				TargetVersion:   "0.7.0",
+				MinPriorVersion: raw,
+			})
+		},
+	}
+	for field, fn := range validate {
+		for raw, want := range map[string]string{
+			"":           field + " is required",
+			"  ":         field + " is required",
+			"not-semver": `invalid ` + field + ` "not-semver": ` + invalidErr.Error(),
+			"v0.7.0":     field + ` "v0.7.0" must be normalized to X.Y.Z`,
+			" 0.7.0":     field + ` " 0.7.0" must be normalized to X.Y.Z`,
+		} {
+			if err := fn(raw); err == nil || err.Error() != want {
+				t.Fatalf("%s=%q error = %v, want %q", field, raw, err, want)
+			}
+		}
 	}
 }
 
@@ -537,5 +581,76 @@ func TestWriteManagedBaselineIfConsistent_EarlyReturnAndBaselineReadError(t *tes
 	inst := &installer{root: root, sys: RealSystem{}}
 	if err := inst.writeManagedBaselineIfConsistent(BaselineStateSourceWrittenByInit); err == nil {
 		t.Fatal("expected baseline decode error")
+	}
+}
+
+func TestEncodeReleaseTemplateManifest(t *testing.T) {
+	generatedAt := time.Date(2026, 1, 2, 3, 4, 5, 0, time.FixedZone("x", 3600))
+	data, err := EncodeReleaseTemplateManifest("v1.2.3", generatedAt, map[string][]byte{
+		commandsAllowRelPath: []byte("b\r\na\n# comment\nb\n"),
+		issuesPath:           []byte("# Issues\n" + ownershipMarkerEntriesStart + "\n- local\n"),
+		".agent-layer/skills/custom-cli/SKILL.md":     []byte("skill"),
+		".agent-layer/skills/agent-dispatch/SKILL.md": []byte("core skill under a runtime-only legacy prefix"),
+		".agent-layer/instructions/00_base.md":        []byte("base"),
+	}, []string{".agent-layer/skills/custom-cli/"})
+	if err != nil {
+		t.Fatalf("EncodeReleaseTemplateManifest: %v", err)
+	}
+	wantPrefix := "{\n  \"schema_version\": 1,\n  \"version\": \"1.2.3\",\n  \"generated_at_utc\": \"2026-01-02T02:04:05Z\",\n  \"files\": [\n"
+	if !strings.HasPrefix(string(data), wantPrefix) || !strings.HasSuffix(string(data), "\n}\n") {
+		t.Fatalf("manifest layout changed:\n%s", data)
+	}
+	var manifest templateManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("decode manifest: %v", err)
+	}
+	if manifest.Version != "1.2.3" || manifest.GeneratedAt != "2026-01-02T02:04:05Z" {
+		t.Fatalf("version/generated_at = %q/%q", manifest.Version, manifest.GeneratedAt)
+	}
+	if manifest.Metadata["source_version"] != "1.2.3" || len(manifest.Metadata) != 1 {
+		t.Fatalf("metadata = %#v", manifest.Metadata)
+	}
+	wantPolicies := []struct{ path, policy string }{
+		{".agent-layer/commands.allow", ownershipPolicyAllowlist},
+		{".agent-layer/instructions/00_base.md", ""},
+		{".agent-layer/skills/agent-dispatch/SKILL.md", ""},
+		{".agent-layer/skills/custom-cli/SKILL.md", ownershipPolicyCatalogSkills},
+		{issuesPath, ownershipPolicyMemoryEntries},
+	}
+	if len(manifest.Files) != len(wantPolicies) {
+		t.Fatalf("files = %#v", manifest.Files)
+	}
+	for i, want := range wantPolicies {
+		if manifest.Files[i].Path != want.path || manifest.Files[i].PolicyID != want.policy {
+			t.Fatalf("files[%d] = %s/%s, want %s/%s", i, manifest.Files[i].Path, manifest.Files[i].PolicyID, want.path, want.policy)
+		}
+	}
+	allow, err := parseAllowlistPolicyPayload(manifest.Files[0].PolicyPayload)
+	if err != nil {
+		t.Fatalf("allowlist payload: %v", err)
+	}
+	if strings.Join(allow.UpstreamSet, ",") != "a,b" {
+		t.Fatalf("allowlist upstream set = %v", allow.UpstreamSet)
+	}
+}
+
+func TestEncodeReleaseTemplateManifest_Errors(t *testing.T) {
+	cases := []struct {
+		name    string
+		version string
+		files   map[string][]byte
+		want    string
+	}{
+		{"invalid version", "not-a-version", map[string][]byte{"a": []byte("a")}, "normalize version"},
+		{"missing marker", "1.0.0", map[string][]byte{issuesPath: []byte("# Issues\n")}, "build ownership comparable for " + issuesPath},
+		{"no files", "1.0.0", nil, "files is required"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := EncodeReleaseTemplateManifest(tc.version, time.Unix(0, 0), tc.files, nil)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+		})
 	}
 }

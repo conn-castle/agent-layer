@@ -706,155 +706,91 @@ func (inst *installer) executeConfigRenameKeyMigration(fromKey string, toKey str
 	if strings.TrimSpace(fromKey) == strings.TrimSpace(toKey) {
 		return false, nil
 	}
-	cfg, cfgPath, exists, err := inst.readMigrationConfigMap()
-	if err != nil {
-		return false, err
-	}
-	if !exists {
-		return false, nil
-	}
-	fromParts, err := splitMigrationKeyPath(fromKey)
-	if err != nil {
-		return false, err
-	}
-	toParts, err := splitMigrationKeyPath(toKey)
-	if err != nil {
-		return false, err
-	}
-	fromValue, fromExists, err := getNestedConfigValue(cfg, fromParts)
-	if err != nil {
-		return false, err
-	}
-	toValue, toExists, err := getNestedConfigValue(cfg, toParts)
-	if err != nil {
-		return false, err
-	}
-	if !fromExists {
-		return false, nil
-	}
-	if toExists {
-		if reflect.DeepEqual(fromValue, toValue) {
-			removed, removeErr := deleteNestedConfigValue(cfg, fromParts)
-			if removeErr != nil {
-				return false, removeErr
-			}
-			if !removed {
-				return false, nil
-			}
-			if writeErr := inst.writeMigrationConfigMap(cfgPath, cfg); writeErr != nil {
-				return false, writeErr
-			}
-			return true, nil
+	return inst.mutateMigrationConfig(func(cfg map[string]any) (bool, error) {
+		fromParts, err := splitMigrationKeyPath(fromKey)
+		if err != nil {
+			return false, err
 		}
-		return false, fmt.Errorf("config key rename conflict: destination key %s already exists", toKey)
-	}
-	if setErr := setNestedConfigValue(cfg, toParts, fromValue, true); setErr != nil {
-		return false, setErr
-	}
-	if _, removeErr := deleteNestedConfigValue(cfg, fromParts); removeErr != nil {
-		return false, removeErr
-	}
-	if writeErr := inst.writeMigrationConfigMap(cfgPath, cfg); writeErr != nil {
-		return false, writeErr
-	}
-	return true, nil
+		toParts, err := splitMigrationKeyPath(toKey)
+		if err != nil {
+			return false, err
+		}
+		fromValue, fromExists, err := getNestedConfigValue(cfg, fromParts)
+		if err != nil {
+			return false, err
+		}
+		toValue, toExists, err := getNestedConfigValue(cfg, toParts)
+		if err != nil {
+			return false, err
+		}
+		if !fromExists {
+			return false, nil
+		}
+		if toExists {
+			if reflect.DeepEqual(fromValue, toValue) {
+				return deleteNestedConfigValue(cfg, fromParts)
+			}
+			return false, fmt.Errorf("config key rename conflict: destination key %s already exists", toKey)
+		}
+		if setErr := setNestedConfigValue(cfg, toParts, fromValue, true); setErr != nil {
+			return false, setErr
+		}
+		if _, removeErr := deleteNestedConfigValue(cfg, fromParts); removeErr != nil {
+			return false, removeErr
+		}
+		return true, nil
+	})
 }
 
 func (inst *installer) executeConfigDeleteKeyMigration(key string) (bool, error) {
-	cfg, cfgPath, exists, err := inst.readMigrationConfigMap()
-	if err != nil {
-		return false, err
-	}
-	if !exists {
-		return false, nil
-	}
-	parts, err := splitMigrationKeyPath(key)
-	if err != nil {
-		return false, err
-	}
-	removed, err := deleteNestedConfigValue(cfg, parts)
-	if err != nil {
-		return false, err
-	}
-	if !removed {
-		return false, nil
-	}
-	if writeErr := inst.writeMigrationConfigMap(cfgPath, cfg); writeErr != nil {
-		return false, writeErr
-	}
-	return true, nil
+	return inst.mutateMigrationConfig(func(cfg map[string]any) (bool, error) {
+		parts, err := splitMigrationKeyPath(key)
+		if err != nil {
+			return false, err
+		}
+		return deleteNestedConfigValue(cfg, parts)
+	})
 }
 
 func (inst *installer) executeConfigReplaceStringMigration(op upgradeMigrationOperation) (bool, error) {
-	cfg, cfgPath, exists, err := inst.readMigrationConfigMap()
-	if err != nil {
-		return false, err
-	}
-	if !exists {
-		return false, nil
-	}
-	parts, err := splitMigrationValuePath(op.Key)
-	if err != nil {
-		return false, err
-	}
-	changed, err := replaceStringAtMigrationValuePath(cfg, parts, op.From, op.To)
-	if err != nil {
-		return false, err
-	}
-	if !changed {
-		return false, nil
-	}
-	if writeErr := inst.writeMigrationConfigMap(cfgPath, cfg); writeErr != nil {
-		return false, writeErr
-	}
-	return true, nil
+	return inst.mutateMigrationConfig(func(cfg map[string]any) (bool, error) {
+		parts, err := splitMigrationValuePath(op.Key)
+		if err != nil {
+			return false, err
+		}
+		return replaceStringAtMigrationValuePath(cfg, parts, op.From, op.To)
+	})
 }
 
 func (inst *installer) executeConfigSetDefaultMigration(op upgradeMigrationOperation) (bool, error) {
 	keyPath := op.Key
-	rawValue := op.Value
-	cfg, cfgPath, exists, err := inst.readMigrationConfigMap()
-	if err != nil {
-		return false, err
-	}
-	if !exists {
-		return false, nil
-	}
-	parts, err := splitMigrationKeyPath(keyPath)
-	if err != nil {
-		return false, err
-	}
-	if _, keyExists, getErr := getNestedConfigValue(cfg, parts); getErr != nil {
-		return false, getErr
-	} else if keyExists {
-		return false, nil
-	}
-	var decoded any
-	if unmarshalErr := json.Unmarshal(rawValue, &decoded); unmarshalErr != nil {
-		return false, fmt.Errorf("decode default value for key %s: %w", keyPath, unmarshalErr)
-	}
-	var fieldPtr *config.FieldDef
-	if f, found := config.LookupField(keyPath); found {
-		fieldPtr = &f
-	}
-	resp, promptErr := inst.promptRouter().route(promptRequest{
-		kind:          promptKindConfigSetDefault,
-		configKey:     keyPath,
-		manifestValue: decoded,
-		rationale:     op.Rationale,
-		field:         fieldPtr,
+	return inst.mutateMigrationConfig(func(cfg map[string]any) (bool, error) {
+		parts, err := splitMigrationKeyPath(keyPath)
+		if err != nil {
+			return false, err
+		}
+		if _, keyExists, getErr := getNestedConfigValue(cfg, parts); getErr != nil {
+			return false, getErr
+		} else if keyExists {
+			return false, nil
+		}
+		var decoded any
+		if unmarshalErr := json.Unmarshal(op.Value, &decoded); unmarshalErr != nil {
+			return false, fmt.Errorf("decode default value for key %s: %w", keyPath, unmarshalErr)
+		}
+		var fieldPtr *config.FieldDef
+		if f, found := config.LookupField(keyPath); found {
+			fieldPtr = &f
+		}
+		value, promptErr := inst.prompter.configSetDefault(keyPath, decoded, op.Rationale, fieldPtr)
+		if promptErr != nil {
+			return false, fmt.Errorf("prompt for config key %s: %w", keyPath, promptErr)
+		}
+		if setErr := setNestedConfigValue(cfg, parts, value, true); setErr != nil {
+			return false, setErr
+		}
+		return true, nil
 	})
-	if promptErr != nil {
-		return false, fmt.Errorf("prompt for config key %s: %w", keyPath, promptErr)
-	}
-	decoded = resp.value
-	if setErr := setNestedConfigValue(cfg, parts, decoded, true); setErr != nil {
-		return false, setErr
-	}
-	if writeErr := inst.writeMigrationConfigMap(cfgPath, cfg); writeErr != nil {
-		return false, writeErr
-	}
-	return true, nil
 }
 
 // executeAppendToFile appends content to a file. The content is JSON-encoded
@@ -926,41 +862,43 @@ func (inst *installer) executeAppendToFile(op upgradeMigrationOperation) (bool, 
 	return true, nil
 }
 
-func (inst *installer) readMigrationConfigMap() (map[string]any, string, bool, error) {
+// mutateMigrationConfig applies mutate to the decoded config.toml map and
+// writes the result back when mutate reports a change. A missing config file
+// is a no-op and mutate is not called.
+// NOTE: The write uses tomlv2.Marshal which does not preserve user comments
+// or key ordering. This destructive formatting is currently intentional to ensure
+// deterministic migration output.
+func (inst *installer) mutateMigrationConfig(mutate func(cfg map[string]any) (bool, error)) (bool, error) {
 	cfgPath := filepath.Join(inst.root, filepath.FromSlash(upgradeMigrationConfigPath))
 	data, err := inst.sys.ReadFile(cfgPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, cfgPath, false, nil
+			return false, nil
 		}
-		return nil, cfgPath, false, fmt.Errorf(messages.InstallFailedReadFmt, cfgPath, err)
+		return false, fmt.Errorf(messages.InstallFailedReadFmt, cfgPath, err)
 	}
 	var cfg map[string]any
 	if unmarshalErr := tomlv2.Unmarshal(data, &cfg); unmarshalErr != nil {
-		return nil, cfgPath, false, fmt.Errorf("decode config %s for migration: %w", cfgPath, unmarshalErr)
+		return false, fmt.Errorf("decode config %s for migration: %w", cfgPath, unmarshalErr)
 	}
 	if cfg == nil {
 		cfg = make(map[string]any)
 	}
-	return cfg, cfgPath, true, nil
-}
-
-// writeMigrationConfigMap writes the updated config map back to config.toml.
-// NOTE: This currently uses tomlv2.Marshal which does not preserve user comments
-// or key ordering. This destructive formatting is currently intentional to ensure
-// deterministic migration output.
-func (inst *installer) writeMigrationConfigMap(cfgPath string, cfg map[string]any) error {
+	changed, err := mutate(cfg)
+	if err != nil || !changed {
+		return false, err
+	}
 	encoded, err := tomlv2.Marshal(cfg)
 	if err != nil {
-		return fmt.Errorf("encode config migration output: %w", err)
+		return false, fmt.Errorf("encode config migration output: %w", err)
 	}
 	if len(encoded) == 0 || encoded[len(encoded)-1] != '\n' {
 		encoded = append(encoded, '\n')
 	}
 	if writeErr := inst.sys.WriteFileAtomic(cfgPath, encoded, 0o644); writeErr != nil {
-		return fmt.Errorf(messages.InstallFailedWriteFmt, cfgPath, writeErr)
+		return false, fmt.Errorf(messages.InstallFailedWriteFmt, cfgPath, writeErr)
 	}
-	return nil
+	return true, nil
 }
 
 func getNestedConfigValue(cfg map[string]any, parts []string) (any, bool, error) {
@@ -1250,8 +1188,8 @@ func migrationCoveredPaths(op upgradeMigrationOperation) []string {
 	paths := make([]string, 0, 2)
 	switch op.Kind {
 	case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
-		from := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.From)))
-		to := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.To)))
+		from := migrationRelPath(op.From)
+		to := migrationRelPath(op.To)
 		if strings.TrimSpace(from) != "" {
 			paths = append(paths, from)
 		}
@@ -1259,17 +1197,17 @@ func migrationCoveredPaths(op upgradeMigrationOperation) []string {
 			paths = append(paths, to)
 		}
 	case upgradeMigrationKindDeleteFile, upgradeMigrationKindDeleteGeneratedArtifact:
-		pathValue := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.Path)))
+		pathValue := migrationRelPath(op.Path)
 		if strings.TrimSpace(pathValue) != "" {
 			paths = append(paths, pathValue)
 		}
 	case upgradeMigrationKindMigrateSkillsFormat:
-		pathValue := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.Path)))
+		pathValue := migrationRelPath(op.Path)
 		if strings.TrimSpace(pathValue) != "" {
 			paths = append(paths, pathValue)
 		}
 	case upgradeMigrationKindAppendToFile:
-		pathValue := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.Path)))
+		pathValue := migrationRelPath(op.Path)
 		if strings.TrimSpace(pathValue) != "" {
 			paths = append(paths, pathValue)
 		}
@@ -1286,8 +1224,8 @@ func migrationCoveredPaths(op upgradeMigrationOperation) []string {
 func migrationWillCoverPath(sys System, root string, op upgradeMigrationOperation, relPath string) bool {
 	switch op.Kind {
 	case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
-		fromRel := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.From)))
-		toRel := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.To)))
+		fromRel := migrationRelPath(op.From)
+		toRel := migrationRelPath(op.To)
 		if fromRel == toRel {
 			return false
 		}
@@ -1632,18 +1570,31 @@ func listMigrationManifestVersions() ([]string, error) {
 // collectMigrationChain loads all migration manifests between sourceVersion
 // (exclusive) and targetVersion (inclusive), returning them in ascending order.
 func collectMigrationChain(sourceVersion string, targetVersion string) ([]chainedManifest, error) {
+	return collectMigrationChainThroughTarget("source", sourceVersion, false, targetVersion)
+}
+
+// collectMigrationChainFromVersionThroughTarget loads all migration manifests
+// between startVersion and targetVersion (both inclusive) in ascending order.
+func collectMigrationChainFromVersionThroughTarget(startVersion string, targetVersion string) ([]chainedManifest, error) {
+	return collectMigrationChainThroughTarget("start", startVersion, true, targetVersion)
+}
+
+// collectMigrationChainThroughTarget loads migration manifests above
+// lowerVersion, or also at it when includeLower is set, through targetVersion
+// (inclusive) in ascending order. lowerLabel names lowerVersion in errors.
+func collectMigrationChainThroughTarget(lowerLabel string, lowerVersion string, includeLower bool, targetVersion string) ([]chainedManifest, error) {
 	allVersions, err := listMigrationManifestVersions()
 	if err != nil {
 		return nil, err
 	}
 	var chain []chainedManifest
 	for _, ver := range allVersions {
-		cmpSource, cmpErr := version.Compare(ver, sourceVersion)
+		cmpLower, cmpErr := version.Compare(ver, lowerVersion)
 		if cmpErr != nil {
-			return nil, fmt.Errorf("compare migration version %s with source %s: %w", ver, sourceVersion, cmpErr)
+			return nil, fmt.Errorf("compare migration version %s with %s %s: %w", ver, lowerLabel, lowerVersion, cmpErr)
 		}
-		if cmpSource <= 0 {
-			continue // skip versions <= source
+		if cmpLower < 0 || (cmpLower == 0 && !includeLower) {
+			continue
 		}
 		cmpTarget, cmpErr := version.Compare(ver, targetVersion)
 		if cmpErr != nil {
@@ -1661,59 +1612,15 @@ func collectMigrationChain(sourceVersion string, targetVersion string) ([]chaine
 	return chain, nil
 }
 
-func collectMigrationChainFromVersionThroughTarget(startVersion string, targetVersion string) ([]chainedManifest, error) {
-	allVersions, err := listMigrationManifestVersions()
-	if err != nil {
-		return nil, err
-	}
-	var chain []chainedManifest
-	for _, ver := range allVersions {
-		cmpStart, cmpErr := version.Compare(ver, startVersion)
-		if cmpErr != nil {
-			return nil, fmt.Errorf("compare migration version %s with start %s: %w", ver, startVersion, cmpErr)
-		}
-		if cmpStart < 0 {
-			continue
-		}
-		cmpTarget, cmpErr := version.Compare(ver, targetVersion)
-		if cmpErr != nil {
-			return nil, fmt.Errorf("compare migration version %s with target %s: %w", ver, targetVersion, cmpErr)
-		}
-		if cmpTarget > 0 {
-			break
-		}
-		manifest, manifestPath, loadErr := loadUpgradeMigrationManifestByVersion(ver)
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		chain = append(chain, chainedManifest{manifest: manifest, path: manifestPath})
-	}
-	return chain, nil
-}
-
 func validateUpgradeMigrationManifest(manifest upgradeMigrationManifest) error {
 	if manifest.SchemaVersion != upgradeMigrationManifestSchemaVersion {
 		return fmt.Errorf("unsupported schema_version %d", manifest.SchemaVersion)
 	}
-	if strings.TrimSpace(manifest.TargetVersion) == "" {
-		return fmt.Errorf("target_version is required")
+	if err := validateNormalizedVersionField("target_version", manifest.TargetVersion); err != nil {
+		return err
 	}
-	normalizedTarget, err := version.Normalize(manifest.TargetVersion)
-	if err != nil {
-		return fmt.Errorf("invalid target_version %q: %w", manifest.TargetVersion, err)
-	}
-	if normalizedTarget != manifest.TargetVersion {
-		return fmt.Errorf("target_version %q must be normalized to X.Y.Z", manifest.TargetVersion)
-	}
-	if strings.TrimSpace(manifest.MinPriorVersion) == "" {
-		return fmt.Errorf("min_prior_version is required")
-	}
-	normalizedMin, err := version.Normalize(manifest.MinPriorVersion)
-	if err != nil {
-		return fmt.Errorf("invalid min_prior_version %q: %w", manifest.MinPriorVersion, err)
-	}
-	if normalizedMin != manifest.MinPriorVersion {
-		return fmt.Errorf("min_prior_version %q must be normalized to X.Y.Z", manifest.MinPriorVersion)
+	if err := validateNormalizedVersionField("min_prior_version", manifest.MinPriorVersion); err != nil {
+		return err
 	}
 
 	seenIDs := make(map[string]struct{}, len(manifest.Operations))
@@ -1754,7 +1661,7 @@ func validateUpgradeMigrationOperation(op upgradeMigrationOperation) error {
 		if strings.TrimSpace(op.From) == "" || strings.TrimSpace(op.To) == "" {
 			return fmt.Errorf("migration %s (%s) requires from and to", op.ID, op.Kind)
 		}
-		if normalizeRelPath(filepath.Clean(filepath.FromSlash(op.From))) == normalizeRelPath(filepath.Clean(filepath.FromSlash(op.To))) {
+		if migrationRelPath(op.From) == migrationRelPath(op.To) {
 			return fmt.Errorf("migration %s (%s) requires distinct from/to", op.ID, op.Kind)
 		}
 	case upgradeMigrationKindDeleteFile, upgradeMigrationKindDeleteGeneratedArtifact:

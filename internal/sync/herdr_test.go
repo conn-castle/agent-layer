@@ -624,3 +624,244 @@ func TestCodexHerdRPreservesAgentSpecificSessionStartAcrossResyncs(t *testing.T)
 		})
 	}
 }
+
+func TestCodexEmptySessionStartReleaseRegression(t *testing.T) {
+	root := t.TempDir()
+	enabled := true
+	project := &config.ProjectConfig{
+		Root: root,
+		Env:  map[string]string{},
+		Config: config.Config{
+			Agents: config.AgentsConfig{Codex: config.CodexConfig{
+				Enabled: &enabled,
+				AgentSpecific: map[string]any{
+					hooksKey: map[string]any{codexSessionStartKey: []any{}},
+				},
+			}},
+		},
+	}
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("valid empty SessionStart prevents sync: %v", err)
+	}
+	assertCodexManagedHookEvents(t, readCodexConfig(t, root), true, false, nil)
+}
+
+// TestCodexEmptyManagedHookEventsAcrossSyncsAndTransitions covers explicitly
+// empty agent_specific lists for every hook event Agent Layer appends as
+// [[hooks.<event>]] array tables: fresh generation, repeated sync, and chime and
+// Codex enabled/disabled transitions must stay valid and keep user entries.
+func TestCodexEmptyManagedHookEventsAcrossSyncsAndTransitions(t *testing.T) {
+	userPreToolUse := []any{map[string]any{
+		"matcher": "Bash",
+		hooksKey:  []any{map[string]any{"type": "command", "command": "echo user-pre", "timeout": int64(4)}},
+	}}
+	userStop := []any{map[string]any{
+		"matcher": "done",
+		hooksKey:  []any{map[string]any{"type": "command", "command": "echo user-stop", "timeout": int64(2)}},
+	}}
+	cases := map[string]struct {
+		hooks map[string]any
+		user  map[string][]any
+	}{
+		"empty SessionStart": {
+			hooks: map[string]any{codexSessionStartKey: []any{}},
+		},
+		"empty UserPromptSubmit": {
+			hooks: map[string]any{codexUserPromptKey: []any{}},
+		},
+		"empty Stop": {
+			hooks: map[string]any{codexStopKey: []any{}},
+		},
+		"empty SessionStart and Stop with nonempty other event": {
+			hooks: map[string]any{codexSessionStartKey: []any{}, codexUserPromptKey: []any{}, codexStopKey: []any{}, "PreToolUse": userPreToolUse},
+			user:  map[string][]any{"PreToolUse": userPreToolUse},
+		},
+		"empty SessionStart with nonempty Stop": {
+			hooks: map[string]any{codexSessionStartKey: []any{}, codexUserPromptKey: []any{}, codexStopKey: userStop},
+			user:  map[string][]any{codexStopKey: userStop},
+		},
+	}
+	for name, tc := range cases {
+		for _, chime := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s chime %t", name, chime), func(t *testing.T) {
+				root := t.TempDir()
+				codexEnabled := true
+				chimeEnabled := chime
+				project := &config.ProjectConfig{
+					Root: root,
+					Env:  map[string]string{},
+					Config: config.Config{
+						Agents: config.AgentsConfig{Codex: config.CodexConfig{
+							Enabled:       &codexEnabled,
+							AgentSpecific: map[string]any{hooksKey: tc.hooks},
+						}},
+						Notifications: config.NotificationsConfig{Chime: &chimeEnabled},
+					},
+				}
+				syncUntilStable := func(t *testing.T, step string, herdR bool) {
+					t.Helper()
+					var previous string
+					for i := range 3 {
+						var err error
+						if herdR {
+							err = writeCodexConfig(RealSystem{}, root, project)
+						} else {
+							// Codex disabled with VS Code enabled still projects shared settings.
+							err = writeCodexConfigWithCLISettings(RealSystem{}, root, project, false)
+						}
+						if err != nil {
+							t.Fatalf("%s sync %d: %v", step, i, err)
+						}
+						content := readCodexConfig(t, root)
+						assertCodexManagedHookEvents(t, content, herdR, chimeEnabled, tc.user)
+						if i > 0 && content != previous {
+							t.Fatalf("%s sync %d changed converged content\nprevious:\n%s\ncurrent:\n%s", step, i, previous, content)
+						}
+						previous = content
+					}
+				}
+
+				syncUntilStable(t, "fresh", true)
+
+				chimeEnabled = !chime
+				syncUntilStable(t, "chime toggled", true)
+				chimeEnabled = chime
+				syncUntilStable(t, "chime restored", true)
+
+				codexEnabled = false
+				syncUntilStable(t, "codex disabled with vscode", false)
+				codexEnabled = true
+				syncUntilStable(t, "codex re-enabled", true)
+
+				codexEnabled = false
+				if err := cleanCodexChimeHook(RealSystem{}, root); err != nil {
+					t.Fatalf("clean disabled codex hooks: %v", err)
+				}
+				content := readCodexConfig(t, root)
+				assertValidTOML(t, content)
+				if strings.Contains(content, codexHerdRBeginMarker) || strings.Contains(content, codexChimeBeginMarker) {
+					t.Fatalf("managed hooks remained after Codex was disabled:\n%s", content)
+				}
+				codexEnabled = true
+				syncUntilStable(t, "codex re-enabled after cleanup", true)
+			})
+		}
+	}
+}
+
+func TestCodexEmptyManagedHookEventsReplaceExistingUserEntries(t *testing.T) {
+	existing := map[string]string{
+		// v0.23.1 rendered explicitly empty lists as assignments with no managed hooks.
+		"v0.23.1 empty assignments": codexPartialHeader + "[hooks]\nSessionStart = []\nUserPromptSubmit = []\nStop = []\n",
+		"previous user array tables": codexPartialHeader + `[[hooks.SessionStart]]
+matcher = "startup"
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "echo old-start"
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "echo old-stop"
+`,
+		"previous user inline lists": codexPartialHeader + `[hooks]
+SessionStart = [{ hooks = [{ type = "command", command = "echo old-start" }] }]
+Stop = [{ hooks = [{ type = "command", command = "echo old-stop" }] }]
+`,
+	}
+	for name, content := range existing {
+		for _, chime := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s chime %t", name, chime), func(t *testing.T) {
+				root := t.TempDir()
+				enabled := true
+				project := &config.ProjectConfig{
+					Root: root,
+					Env:  map[string]string{},
+					Config: config.Config{
+						Agents: config.AgentsConfig{Codex: config.CodexConfig{
+							Enabled: &enabled,
+							AgentSpecific: map[string]any{hooksKey: map[string]any{
+								codexSessionStartKey: []any{},
+								codexUserPromptKey:   []any{},
+								codexStopKey:         []any{},
+							}},
+						}},
+						Notifications: config.NotificationsConfig{Chime: &chime},
+					},
+				}
+				writeExistingCodexConfig(t, root, content)
+				var previous string
+				for i := range 2 {
+					if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+						t.Fatalf("sync %d: %v", i, err)
+					}
+					output := readCodexConfig(t, root)
+					assertCodexManagedHookEvents(t, output, true, chime, nil)
+					if strings.Contains(output, "echo old-") {
+						t.Fatalf("stale user hook remained after agent_specific emptied it:\n%s", output)
+					}
+					if i > 0 && output != previous {
+						t.Fatalf("sync %d changed converged content\nprevious:\n%s\ncurrent:\n%s", i, previous, output)
+					}
+					previous = output
+				}
+			})
+		}
+	}
+}
+
+// assertCodexManagedHookEvents checks that content is valid TOML with exactly
+// the expected managed SessionStart, UserPromptSubmit, and Stop handlers, and
+// that every user hook event equals want (events absent from want must hold no
+// user entries).
+func assertCodexManagedHookEvents(t *testing.T, content string, herdR bool, chime bool, want map[string][]any) {
+	t.Helper()
+	hooks, _ := parseCodexConfig(t, content)[hooksKey].(map[string]any)
+	managedCounts := map[string]int{}
+	for event, raw := range hooks {
+		if event == "state" {
+			continue
+		}
+		entries, ok := raw.([]any)
+		if !ok {
+			t.Fatalf("hooks.%s is not an array:\n%s", event, content)
+		}
+		var user []any
+		for _, entry := range entries {
+			group, _ := entry.(map[string]any)
+			handlers, _ := group[hooksKey].([]any)
+			if len(handlers) == 1 && (event == codexSessionStartKey || event == codexUserPromptKey) && isHerdRHandler(handlers[0]) {
+				managedCounts[event]++
+				continue
+			}
+			if len(handlers) == 1 && event == codexStopKey && chimeHandlerMatchesAny(handlers[0], managedChimeCommandVariants(agentLayerCodexChimeCommand)) {
+				managedCounts[event]++
+				continue
+			}
+			user = append(user, entry)
+		}
+		if len(user) == 0 && len(want[event]) == 0 {
+			continue
+		}
+		if !reflect.DeepEqual(user, want[event]) {
+			t.Fatalf("hooks.%s user entries = %#v, want %#v:\n%s", event, user, want[event], content)
+		}
+	}
+	for event := range want {
+		if _, ok := hooks[event]; !ok {
+			t.Fatalf("hooks.%s user entries missing:\n%s", event, content)
+		}
+	}
+	wantManaged := map[string]bool{codexSessionStartKey: herdR, codexUserPromptKey: herdR, codexStopKey: chime}
+	markers := map[string]string{codexSessionStartKey: codexHerdRBeginMarker, codexUserPromptKey: codexHerdRBeginMarker, codexStopKey: codexChimeBeginMarker}
+	for event, enabled := range wantManaged {
+		want := 0
+		if enabled {
+			want = 1
+		}
+		if managedCounts[event] != want || strings.Count(content, markers[event]) != want {
+			t.Fatalf("expected %d managed hooks.%s handlers and markers, got %d handlers and %d markers:\n%s",
+				want, event, managedCounts[event], strings.Count(content, markers[event]), content)
+		}
+	}
+}

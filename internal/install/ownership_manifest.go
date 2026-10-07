@@ -37,10 +37,6 @@ const (
 	BaselineStateSourceWrittenByUpgrade BaselineStateSource = "written_by_overwrite"
 	// BaselineStateSourceWrittenByOverwrite is a legacy name for BaselineStateSourceWrittenByUpgrade.
 	BaselineStateSourceWrittenByOverwrite BaselineStateSource = BaselineStateSourceWrittenByUpgrade
-	// BaselineStateSourceInferredFromPinManifest indicates baseline was inferred from a pinned release manifest.
-	BaselineStateSourceInferredFromPinManifest BaselineStateSource = "inferred_from_pin_manifest"
-	// BaselineStateSourceMigratedFromLegacyDocsSnapshot indicates baseline was inferred from legacy docs snapshot files.
-	BaselineStateSourceMigratedFromLegacyDocsSnapshot BaselineStateSource = "migrated_from_legacy_docs_snapshot"
 )
 
 type manifestFileEntry struct {
@@ -147,19 +143,28 @@ func loadAllTemplateManifests() (map[string]templateManifest, error) {
 	return cloned, nil
 }
 
+// validateNormalizedVersionField requires a manifest version field to be a
+// non-blank, already normalized X.Y.Z version.
+func validateNormalizedVersionField(field string, value string) error {
+	if strings.TrimSpace(value) == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	normalized, err := version.Normalize(value)
+	if err != nil {
+		return fmt.Errorf("invalid %s %q: %w", field, value, err)
+	}
+	if normalized != value {
+		return fmt.Errorf("%s %q must be normalized to X.Y.Z", field, value)
+	}
+	return nil
+}
+
 func validateTemplateManifest(manifest templateManifest) error {
 	if manifest.SchemaVersion != templateManifestSchemaVersion {
 		return fmt.Errorf("unsupported schema_version %d", manifest.SchemaVersion)
 	}
-	if strings.TrimSpace(manifest.Version) == "" {
-		return fmt.Errorf("version is required")
-	}
-	normalized, err := version.Normalize(manifest.Version)
-	if err != nil {
-		return fmt.Errorf("invalid version %q: %w", manifest.Version, err)
-	}
-	if normalized != manifest.Version {
-		return fmt.Errorf("version %q must be normalized to X.Y.Z", manifest.Version)
+	if err := validateNormalizedVersionField("version", manifest.Version); err != nil {
+		return err
 	}
 	if strings.TrimSpace(manifest.GeneratedAt) == "" {
 		return fmt.Errorf("generated_at_utc is required")
@@ -297,20 +302,11 @@ func buildCurrentTemplateManifest(inst *installer, generatedAt time.Time) (templ
 		if err != nil {
 			return templateManifest{}, fmt.Errorf(messages.InstallFailedReadTemplateFmt, entry.templatePath, err)
 		}
-		comp, compErr := buildOwnershipComparable(entry.relPath, templateBytes)
-		if compErr != nil {
-			return templateManifest{}, fmt.Errorf("build ownership comparable for %s: %w", entry.relPath, compErr)
+		file, err := templateManifestEntry(entry.relPath, templateBytes, catalogSkillRelPathPrefixes)
+		if err != nil {
+			return templateManifest{}, err
 		}
-		payload, payloadErr := ownershipPolicyPayload(comp)
-		if payloadErr != nil {
-			return templateManifest{}, fmt.Errorf("build ownership policy payload for %s: %w", entry.relPath, payloadErr)
-		}
-		files = append(files, manifestFileEntry{
-			Path:               entry.relPath,
-			FullHashNormalized: comp.FullHash,
-			PolicyID:           comp.PolicyID,
-			PolicyPayload:      payload,
-		})
+		files = append(files, file)
 	}
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].Path < files[j].Path
@@ -324,6 +320,64 @@ func buildCurrentTemplateManifest(inst *installer, generatedAt time.Time) (templ
 		Metadata: map[string]any{
 			"source": "embedded_templates",
 		},
+	}, nil
+}
+
+// EncodeReleaseTemplateManifest encodes the ownership manifest committed for a
+// release. files maps each destination path to its template bytes, and
+// catalogSkillPrefixes is the complete set of catalog-skill path prefixes
+// derived from the release's CLI skills catalog.
+func EncodeReleaseTemplateManifest(versionRaw string, generatedAt time.Time, files map[string][]byte, catalogSkillPrefixes []string) ([]byte, error) {
+	normalized, err := version.Normalize(versionRaw)
+	if err != nil {
+		return nil, fmt.Errorf("normalize version %q: %w", versionRaw, err)
+	}
+	relPaths := make([]string, 0, len(files))
+	for relPath := range files {
+		relPaths = append(relPaths, relPath)
+	}
+	sort.Strings(relPaths)
+	entries := make([]manifestFileEntry, 0, len(relPaths))
+	for _, relPath := range relPaths {
+		entry, err := templateManifestEntry(relPath, files[relPath], catalogSkillPrefixes)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+	manifest := templateManifest{
+		SchemaVersion: templateManifestSchemaVersion,
+		Version:       normalized,
+		GeneratedAt:   generatedAt.UTC().Format(time.RFC3339),
+		Files:         entries,
+		Metadata: map[string]any{
+			"source_version": normalized,
+		},
+	}
+	if err := validateTemplateManifest(manifest); err != nil {
+		return nil, fmt.Errorf("validate template manifest: %w", err)
+	}
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode template manifest: %w", err)
+	}
+	return append(data, '\n'), nil
+}
+
+func templateManifestEntry(relPath string, content []byte, catalogSkillPrefixes []string) (manifestFileEntry, error) {
+	comp, err := ownershipComparableForPolicy(ownershipPolicyForCatalog(relPath, catalogSkillPrefixes), content)
+	if err != nil {
+		return manifestFileEntry{}, fmt.Errorf("build ownership comparable for %s: %w", relPath, err)
+	}
+	payload, err := ownershipPolicyPayload(comp)
+	if err != nil {
+		return manifestFileEntry{}, fmt.Errorf("build ownership policy payload for %s: %w", relPath, err)
+	}
+	return manifestFileEntry{
+		Path:               relPath,
+		FullHashNormalized: comp.FullHash,
+		PolicyID:           comp.PolicyID,
+		PolicyPayload:      payload,
 	}, nil
 }
 

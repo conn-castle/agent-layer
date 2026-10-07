@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
@@ -17,9 +16,6 @@ type System interface {
 	WriteFileAtomic(filename string, data []byte, perm os.FileMode) error
 }
 
-// RealSystem implements System using actual system calls.
-type RealSystem struct{}
-
 const (
 	openVSCodeCommandTemplatePath = "launchers/open-vscode.command"
 	openVSCodeShellTemplatePath   = "launchers/open-vscode.sh"
@@ -29,16 +25,6 @@ const (
 )
 
 var readTemplate = templates.Read
-
-// MkdirAll creates a directory and all parent directories.
-func (RealSystem) MkdirAll(path string, perm os.FileMode) error {
-	return os.MkdirAll(path, perm)
-}
-
-// WriteFileAtomic writes data to path atomically.
-func (RealSystem) WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
-	return fsutil.WriteFileAtomic(path, data, perm)
-}
 
 // WriteVSCodeLaunchers generates VS Code launchers for macOS and Linux:
 // - .agent-layer/open-vscode.command (macOS Terminal script)

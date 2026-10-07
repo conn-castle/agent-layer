@@ -21,14 +21,14 @@ func Parse(content string) (map[string]string, error) {
 	lineNo := 0
 	for scanner.Scan() {
 		lineNo++
-		key, value, ok, err := parseLine(scanner.Text())
+		assignment, ok, err := ParseLine(scanner.Text())
 		if err != nil {
 			return nil, fmt.Errorf(messages.EnvfileLineErrorFmt, lineNo, err)
 		}
 		if !ok {
 			continue
 		}
-		env[key] = value
+		env[assignment.Key] = assignment.Value
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -51,13 +51,15 @@ func Patch(content string, updates map[string]string) string {
 	}
 
 	firstIndex := make(map[string]int)
+	exported := make(map[string]bool)
 	for i, line := range lines {
-		key, _, ok, err := parseLine(line)
+		assignment, ok, err := ParseLine(line)
 		if err != nil || !ok {
 			continue
 		}
-		if _, exists := firstIndex[key]; !exists {
-			firstIndex[key] = i
+		if _, exists := firstIndex[assignment.Key]; !exists {
+			firstIndex[assignment.Key] = i
+			exported[assignment.Key] = assignment.Export
 		}
 	}
 
@@ -77,8 +79,7 @@ func Patch(content string, updates map[string]string) string {
 		encodedValue := encodeValue(value)
 		if idx, ok := firstIndex[key]; ok {
 			prefix := ""
-			trimmedLine := strings.TrimSpace(lines[idx])
-			if strings.HasPrefix(trimmedLine, "export ") {
+			if exported[key] {
 				prefix = "export "
 			}
 			lines[idx] = fmt.Sprintf("%s%s=%s", prefix, key, encodedValue)
@@ -95,8 +96,8 @@ func Patch(content string, updates map[string]string) string {
 
 	filtered := make([]string, 0, len(lines))
 	for i, line := range lines {
-		key, _, ok, err := parseLine(line)
-		if err == nil && ok && updatedKeys[key] && firstIndex[key] != i {
+		assignment, ok, err := ParseLine(line)
+		if err == nil && ok && updatedKeys[assignment.Key] && firstIndex[assignment.Key] != i {
 			continue
 		}
 		filtered = append(filtered, line)
@@ -109,69 +110,83 @@ func Patch(content string, updates map[string]string) string {
 	return result
 }
 
-// parseLine parses a single .env line and returns key/value when present.
-// line is the raw line; returns key/value, a boolean for presence, and an error for invalid syntax.
-func parseLine(line string) (string, string, bool, error) {
+// Assignment is one KEY=value line of .env content.
+type Assignment struct {
+	// Export reports whether the line starts with "export ".
+	Export bool
+	Key    string
+	// Value is the decoded value.
+	Value string
+	// Comment is the raw trailing comment after a quoted value, including its
+	// leading whitespace; it is empty when the value is unquoted or has no comment.
+	Comment string
+}
+
+// ParseLine parses a single .env line.
+// line is the raw line; returns the assignment, a boolean for presence (false for
+// blank and comment-only lines), and an error for invalid syntax.
+func ParseLine(line string) (Assignment, bool, error) {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-		return "", "", false, nil
+		return Assignment{}, false, nil
 	}
+	var assignment Assignment
 	if strings.HasPrefix(trimmed, "export ") {
+		assignment.Export = true
 		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "export "))
 	}
 	idx := strings.Index(trimmed, "=")
 	if idx <= 0 {
-		return "", "", false, fmt.Errorf(messages.EnvfileExpectedKeyValue)
+		return Assignment{}, false, fmt.Errorf(messages.EnvfileExpectedKeyValue)
 	}
-	key := strings.TrimSpace(trimmed[:idx])
-	if key == "" {
-		return "", "", false, fmt.Errorf(messages.EnvfileExpectedKeyValue)
+	assignment.Key = strings.TrimSpace(trimmed[:idx])
+	if assignment.Key == "" {
+		return Assignment{}, false, fmt.Errorf(messages.EnvfileExpectedKeyValue)
 	}
 	value := strings.TrimSpace(trimmed[idx+1:])
+	assignment.Value = value
+	var err error
 	if strings.HasPrefix(value, `"`) {
-		parsed, err := parseDoubleQuotedValue(value)
-		if err != nil {
-			return "", "", false, err
-		}
-		value = parsed
+		assignment.Value, assignment.Comment, err = parseDoubleQuotedValue(value)
 	} else if strings.HasPrefix(value, `'`) {
-		parsed, err := parseSingleQuotedValue(value)
-		if err != nil {
-			return "", "", false, err
-		}
-		value = parsed
+		assignment.Value, assignment.Comment, err = parseSingleQuotedValue(value)
 	}
-	return key, value, true, nil
+	if err != nil {
+		return Assignment{}, false, err
+	}
+	return assignment, true, nil
 }
 
-// parseDoubleQuotedValue parses a double-quoted .env value and validates trailing content.
+// parseDoubleQuotedValue parses a double-quoted .env value and its trailing comment.
 // value is expected to start with a double quote.
-func parseDoubleQuotedValue(value string) (string, error) {
+func parseDoubleQuotedValue(value string) (string, string, error) {
 	closing := findClosingDoubleQuote(value)
 	if closing < 0 {
-		return "", fmt.Errorf(messages.EnvfileUnterminatedQuotedValue)
+		return "", "", fmt.Errorf(messages.EnvfileUnterminatedQuotedValue)
 	}
-	if err := validateQuotedValueSuffix(value[closing+1:]); err != nil {
-		return "", err
+	comment, err := quotedValueComment(value[closing+1:])
+	if err != nil {
+		return "", "", err
 	}
-	return unescapeDoubleQuotedValue(value[1:closing]), nil
+	return unescapeDoubleQuotedValue(value[1:closing]), comment, nil
 }
 
-// parseSingleQuotedValue parses a single-quoted .env value and validates trailing content.
+// parseSingleQuotedValue parses a single-quoted .env value and its trailing comment.
 // value is expected to start with a single quote.
-func parseSingleQuotedValue(value string) (string, error) {
+func parseSingleQuotedValue(value string) (string, string, error) {
 	if len(value) < 2 {
-		return "", fmt.Errorf(messages.EnvfileUnterminatedQuotedValue)
+		return "", "", fmt.Errorf(messages.EnvfileUnterminatedQuotedValue)
 	}
 	closingOffset := strings.IndexByte(value[1:], '\'')
 	if closingOffset < 0 {
-		return "", fmt.Errorf(messages.EnvfileUnterminatedQuotedValue)
+		return "", "", fmt.Errorf(messages.EnvfileUnterminatedQuotedValue)
 	}
 	closing := 1 + closingOffset
-	if err := validateQuotedValueSuffix(value[closing+1:]); err != nil {
-		return "", err
+	comment, err := quotedValueComment(value[closing+1:])
+	if err != nil {
+		return "", "", err
 	}
-	return value[1:closing], nil
+	return value[1:closing], comment, nil
 }
 
 // findClosingDoubleQuote returns the index of the first unescaped closing quote in value.
@@ -193,14 +208,18 @@ func findClosingDoubleQuote(value string) int {
 	return -1
 }
 
-// validateQuotedValueSuffix validates trailing content after a quoted value.
-// suffix may contain whitespace and an optional comment beginning with #.
-func validateQuotedValueSuffix(suffix string) error {
+// quotedValueComment validates trailing content after a quoted value.
+// suffix may contain whitespace and an optional comment beginning with #;
+// returns suffix when it holds a comment and "" when it is blank.
+func quotedValueComment(suffix string) (string, error) {
 	trimmed := strings.TrimSpace(suffix)
-	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-		return nil
+	if trimmed == "" {
+		return "", nil
 	}
-	return fmt.Errorf(messages.EnvfileInvalidQuotedSuffix)
+	if strings.HasPrefix(trimmed, "#") {
+		return suffix, nil
+	}
+	return "", fmt.Errorf(messages.EnvfileInvalidQuotedSuffix)
 }
 
 // unescapeDoubleQuotedValue decodes the escape forms produced by encodeValue.

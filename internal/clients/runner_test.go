@@ -39,9 +39,9 @@ func TestRunPipeline(t *testing.T) {
 	}
 
 	passArgs := []string{"--debug", "true"}
-	err := Run(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
+	err := RunWithStderr(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
 		return cfg.Agents.Antigravity.Enabled
-	}, launch, false, passArgs, "v1.0.0")
+	}, launch, false, passArgs, "v1.0.0", os.Stderr)
 	if err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -107,14 +107,14 @@ func TestRunProjectsTheSingleLockedSkillSnapshot(t *testing.T) {
 	}
 	mutated := []byte("---\nname: alpha\ndescription: mutated\n---\nnew bytes")
 	var selectorCalls atomic.Int32
-	err = Run(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
+	err = RunWithStderr(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
 		if selectorCalls.Add(1) == 2 {
 			if writeErr := os.WriteFile(source, mutated, 0o600); writeErr != nil {
 				t.Fatalf("mutate source: %v", writeErr)
 			}
 		}
 		return cfg.Agents.Antigravity.Enabled
-	}, func(*config.ProjectConfig, *run.Info, []string, []string) error { return nil }, false, nil, "v1.0.0")
+	}, func(*config.ProjectConfig, *run.Info, []string, []string) error { return nil }, false, nil, "v1.0.0", os.Stderr)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -133,22 +133,22 @@ func TestRunDisabled(t *testing.T) {
 	writeMinimalRepo(t, root)
 
 	disabled := false
-	err := Run(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
+	err := RunWithStderr(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
 		return &disabled
 	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
-	}, false, nil, "v1.0.0")
+	}, false, nil, "v1.0.0", os.Stderr)
 	if err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("expected disabled error, got %v", err)
 	}
 }
 
 func TestRunMissingConfig(t *testing.T) {
-	err := Run(context.Background(), t.TempDir(), "antigravity", func(cfg *config.Config) *bool {
+	err := RunWithStderr(context.Background(), t.TempDir(), "antigravity", func(cfg *config.Config) *bool {
 		return cfg.Agents.Antigravity.Enabled
 	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
-	}, false, nil, "v1.0.0")
+	}, false, nil, "v1.0.0", os.Stderr)
 	if err == nil || !strings.Contains(err.Error(), "missing config file") {
 		t.Fatalf("expected missing config error, got %v", err)
 	}
@@ -166,11 +166,11 @@ func TestRunSyncError(t *testing.T) {
 	})
 	testutil.SkipIfWritable(t, root)
 
-	err := Run(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
+	err := RunWithStderr(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
 		return cfg.Agents.Antigravity.Enabled
 	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
-	}, false, nil, "v1.0.0")
+	}, false, nil, "v1.0.0", os.Stderr)
 	if err == nil {
 		t.Fatalf("expected sync error")
 	}
@@ -185,11 +185,11 @@ func TestRunCreateError(t *testing.T) {
 		t.Fatalf("write tmp file: %v", err)
 	}
 
-	err := Run(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
+	err := RunWithStderr(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
 		return cfg.Agents.Antigravity.Enabled
 	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
-	}, false, nil, "v1.0.0")
+	}, false, nil, "v1.0.0", os.Stderr)
 	if err == nil {
 		t.Fatalf("expected run create error")
 	}
@@ -199,11 +199,11 @@ func TestRunLaunchError(t *testing.T) {
 	root := t.TempDir()
 	writeMinimalRepo(t, root)
 
-	err := Run(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
+	err := RunWithStderr(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
 		return cfg.Agents.Antigravity.Enabled
 	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return fmt.Errorf("launch failed")
-	}, false, nil, "v1.0.0")
+	}, false, nil, "v1.0.0", os.Stderr)
 	if err == nil || !strings.Contains(err.Error(), "launch failed") {
 		t.Fatalf("expected launch error, got %v", err)
 	}
@@ -572,7 +572,7 @@ func TestRunNoSync_Success(t *testing.T) {
 	writeMinimalRepo(t, root)
 
 	called := false
-	err := RunNoSync(root, "antigravity", func(cfg *config.Config) *bool {
+	err := RunNoSyncWithStderr(root, "antigravity", func(cfg *config.Config) *bool {
 		return cfg.Agents.Antigravity.Enabled
 	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		called = true
@@ -580,7 +580,7 @@ func TestRunNoSync_Success(t *testing.T) {
 			t.Fatalf("expected run info")
 		}
 		return nil
-	}, false, []string{"--arg"})
+	}, false, []string{"--arg"}, os.Stderr)
 	if err != nil {
 		t.Fatalf("RunNoSync: %v", err)
 	}
@@ -615,11 +615,11 @@ func TestRunNoSync_Disabled(t *testing.T) {
 	root := t.TempDir()
 	writeMinimalRepo(t, root)
 	disabled := false
-	err := RunNoSync(root, "antigravity", func(cfg *config.Config) *bool {
+	err := RunNoSyncWithStderr(root, "antigravity", func(cfg *config.Config) *bool {
 		return &disabled
 	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
-	}, false, nil)
+	}, false, nil, os.Stderr)
 	if err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("expected disabled error, got %v", err)
 	}

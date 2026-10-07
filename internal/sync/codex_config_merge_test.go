@@ -288,8 +288,8 @@ func TestCodexTomlEditor_SetPathPreservesInlineComment(t *testing.T) {
 status_line = ["old"] # and me
 `)
 
-	editor.setPath([]string{config.CodexModelKey}, `"gpt-5"`)
-	editor.setPath([]string{"tui", "status_line"}, `["new"]`)
+	editor.setPathValue([]string{config.CodexModelKey}, `"gpt-5"`, nil)
+	editor.setPathValue([]string{"tui", "status_line"}, `["new"]`, nil)
 
 	out := editor.render()
 	if !strings.Contains(out, `model = "gpt-5" # keep me`) {
@@ -307,7 +307,7 @@ func TestCodexTomlEditor_SetPathReplacesInPlaceDroppingDuplicates(t *testing.T) 
 	// primitive must still collapse them to a single updated line in place.
 	editor := newCodexTomlEditor("model = \"a\"\nmodel = \"b\"\n[hooks]\nx = 1\n")
 
-	editor.setPath([]string{config.CodexModelKey}, `"gpt-5"`)
+	editor.setPathValue([]string{config.CodexModelKey}, `"gpt-5"`, nil)
 
 	out := editor.render()
 	if strings.Count(out, "model = ") != 1 {
@@ -402,7 +402,7 @@ command = "demo"
 x = 1
 `)
 
-	editor.setPath([]string{config.CodexModelKey}, `"gpt-5"`)
+	editor.setPathValue([]string{config.CodexModelKey}, `"gpt-5"`, nil)
 	out := editor.render()
 
 	parsed := parseCodexConfig(t, out)
@@ -444,7 +444,7 @@ func TestCodexTomlEditor_RootInsertPreservesFirstTableLeadingComments(t *testing
 			t.Parallel()
 			editor := newCodexTomlEditor(tt.input)
 
-			editor.setPath([]string{config.CodexModelKey}, `"gpt-5"`)
+			editor.setPathValue([]string{config.CodexModelKey}, `"gpt-5"`, nil)
 			out := editor.render()
 
 			if out != tt.want {
@@ -468,7 +468,7 @@ status_line = ["from-string"]
 """
 `)
 
-	editor.setPath([]string{"tui", "status_line"}, `["real"]`)
+	editor.setPathValue([]string{"tui", "status_line"}, `["real"]`, nil)
 	out := editor.render()
 
 	parsed := parseCodexConfig(t, out)
@@ -489,7 +489,7 @@ func TestCodexTomlEditor_MutateRootInlineTablePreservesIndentAndComment(t *testi
 	t.Parallel()
 	editor := newCodexTomlEditor("  features = { apps = true, custom = true } # keep me\n")
 
-	editor.setPath([]string{"features", "apps"}, "false")
+	editor.setPathValue([]string{"features", "apps"}, "false", nil)
 	out := editor.render()
 
 	firstLine := strings.SplitN(out, "\n", 2)[0]
@@ -1858,8 +1858,8 @@ func TestCodexTomlEditor_SetPathPlacesRootBeforeTablesAndCreatesTables(t *testin
 last_seen = "keep"
 `)
 
-	editor.setPath([]string{config.CodexModelKey}, `"gpt-5"`)
-	editor.setPath([]string{"tui", "status_line"}, `["weekly-limit"]`)
+	editor.setPathValue([]string{config.CodexModelKey}, `"gpt-5"`, nil)
+	editor.setPathValue([]string{"tui", "status_line"}, `["weekly-limit"]`, nil)
 
 	out := editor.render()
 	if !strings.HasPrefix(out, `model = "gpt-5"`+"\n[hooks.state]") {

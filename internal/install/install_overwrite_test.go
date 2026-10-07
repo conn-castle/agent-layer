@@ -2,29 +2,15 @@ package install
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
-
-type plainPrompter struct{}
-
-func (plainPrompter) OverwriteAll([]DiffPreview) (bool, error)       { return false, nil }
-func (plainPrompter) OverwriteAllMemory([]DiffPreview) (bool, error) { return false, nil }
-func (plainPrompter) Overwrite(DiffPreview) (bool, error)            { return false, nil }
-func (plainPrompter) DeleteUnknownAll([]string) (bool, error)        { return false, nil }
-func (plainPrompter) DeleteUnknown(string) (bool, error)             { return false, nil }
-
-type unifiedOnlyPrompter struct {
-	plainPrompter
-}
-
-func (unifiedOnlyPrompter) OverwriteAllUnified([]DiffPreview, []DiffPreview) (bool, bool, error) {
-	return false, false, nil
-}
 
 func TestShouldOverwrite_OverwriteFalse(t *testing.T) {
 	root := t.TempDir()
@@ -66,17 +52,27 @@ func TestShouldOverwrite_ManagedPathUsesOverwriteAll(t *testing.T) {
 	root := t.TempDir()
 	managedPath := filepath.Join(root, ".agent-layer", "commands.allow")
 
-	overwriteAllCalled := false
-	overwriteAllMemoryCalled := false
+	if err := os.MkdirAll(filepath.Dir(managedPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(managedPath, []byte("# custom header\n<!-- ENTRIES START -->\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unifiedCalled := false
 
 	inst := &installer{
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
-			OverwriteAllPreviewFunc:       func([]DiffPreview) (bool, error) { overwriteAllCalled = true; return true, nil },
-			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { overwriteAllMemoryCalled = true; return false, nil },
-			OverwritePreviewFunc:          func(preview DiffPreview) (bool, error) { return false, nil },
+		prompter: &PromptFuncs{
+			OverwriteAllUnifiedPreviewFunc: func(managed, memory []DiffPreview) (bool, bool, error) {
+				unifiedCalled = true
+				if len(managed) == 0 {
+					t.Fatal("expected managed previews")
+				}
+				return true, false, nil
+			},
+			OverwritePreviewFunc: func(preview DiffPreview) (bool, error) { return false, nil },
 		},
 	}
 
@@ -87,44 +83,8 @@ func TestShouldOverwrite_ManagedPathUsesOverwriteAll(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected true when overwriteAll returns true")
 	}
-	if !overwriteAllCalled {
-		t.Fatalf("expected managed OverwriteAll prompt to be called")
-	}
-	if overwriteAllMemoryCalled {
-		t.Fatalf("did not expect memory OverwriteAll prompt to be called for managed path")
-	}
-}
-
-func TestShouldOverwrite_MemoryPathUsesOverwriteAllMemory(t *testing.T) {
-	root := t.TempDir()
-	memoryPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
-
-	overwriteAllCalled := false
-	overwriteAllMemoryCalled := false
-
-	inst := &installer{
-		root:      root,
-		overwrite: true,
-		sys:       RealSystem{},
-		prompter: PromptFuncs{
-			OverwriteAllPreviewFunc:       func([]DiffPreview) (bool, error) { overwriteAllCalled = true; return false, nil },
-			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { overwriteAllMemoryCalled = true; return true, nil },
-			OverwritePreviewFunc:          func(preview DiffPreview) (bool, error) { return false, nil },
-		},
-	}
-
-	ok, err := inst.shouldOverwrite(memoryPath)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !ok {
-		t.Fatalf("expected true when memory overwriteAll returns true")
-	}
-	if overwriteAllCalled {
-		t.Fatalf("did not expect managed OverwriteAll prompt to be called for memory path")
-	}
-	if !overwriteAllMemoryCalled {
-		t.Fatalf("expected memory OverwriteAll prompt to be called")
+	if !unifiedCalled {
+		t.Fatal("expected unified callback to be called")
 	}
 }
 
@@ -139,9 +99,8 @@ func TestShouldOverwrite_MemoryPathPromptsPerFile(t *testing.T) {
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
-			OverwriteAllPreviewFunc:       func([]DiffPreview) (bool, error) { return false, nil },
-			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return false, nil },
+		prompter: &PromptFuncs{
+			OverwriteAllUnifiedPreviewFunc: func([]DiffPreview, []DiffPreview) (bool, bool, error) { return false, false, nil },
 			OverwritePreviewFunc: func(preview DiffPreview) (bool, error) {
 				perFilePromptCalled = true
 				perFilePath = preview.Path
@@ -176,23 +135,13 @@ func TestShouldOverwrite_UsesUnifiedOverwritePrompter(t *testing.T) {
 	}
 
 	unifiedCalled := 0
-	overwriteAllCalled := false
-	overwriteAllMemoryCalled := false
 	perFilePromptCalled := false
 
 	inst := &installer{
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
-			OverwriteAllPreviewFunc: func([]DiffPreview) (bool, error) {
-				overwriteAllCalled = true
-				return false, nil
-			},
-			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) {
-				overwriteAllMemoryCalled = true
-				return false, nil
-			},
+		prompter: &PromptFuncs{
 			OverwriteAllUnifiedPreviewFunc: func(managed []DiffPreview, memory []DiffPreview) (bool, bool, error) {
 				unifiedCalled++
 				if len(managed) == 0 {
@@ -217,14 +166,11 @@ func TestShouldOverwrite_UsesUnifiedOverwritePrompter(t *testing.T) {
 	if unifiedCalled != 1 {
 		t.Fatalf("expected unified callback once, got %d", unifiedCalled)
 	}
-	if overwriteAllCalled || overwriteAllMemoryCalled {
-		t.Fatalf("did not expect legacy overwrite-all callbacks when unified callback is configured")
-	}
 	if perFilePromptCalled {
 		t.Fatalf("did not expect per-file prompt when overwrite-all managed is true")
 	}
-	if !inst.overwriteAllDecided || !inst.overwriteMemoryAllDecided {
-		t.Fatalf("expected both overwrite-all decisions to be cached")
+	if !inst.overwriteAllDecided {
+		t.Fatalf("expected the overwrite-all decision to be cached")
 	}
 }
 
@@ -239,86 +185,38 @@ func TestShouldOverwrite_MissingPrompter(t *testing.T) {
 		prompter:            nil,
 	}
 
-	_, err := inst.shouldOverwrite(filepath.Join(root, ".agent-layer", "commands.allow"))
-	if err == nil {
-		t.Fatalf("expected error when prompter is nil")
+	_, err := inst.shouldOverwrite(filepath.Join(root, ".agent-layer", "unknown.file"))
+	if err == nil || err.Error() != messages.InstallOverwritePromptRequired {
+		t.Fatalf("expected missing prompter error before preview lookup, got %v", err)
 	}
 }
 
-func TestHasUnifiedOverwritePrompter(t *testing.T) {
-	t.Run("nil prompter", func(t *testing.T) {
-		inst := &installer{prompter: nil}
-		if inst.promptRouter().hasUnifiedOverwrite() {
-			t.Fatalf("expected false for nil prompter")
-		}
-	})
-
-	t.Run("prompter without unified callback", func(t *testing.T) {
-		inst := &installer{prompter: plainPrompter{}}
-		if inst.promptRouter().hasUnifiedOverwrite() {
-			t.Fatalf("expected false for prompter without unified support")
-		}
-	})
-
-	t.Run("unified prompter without validator", func(t *testing.T) {
-		inst := &installer{prompter: unifiedOnlyPrompter{}}
-		if inst.promptRouter().hasUnifiedOverwrite() {
-			t.Fatalf("expected false for unified prompter without validator")
-		}
-	})
-
-	t.Run("validator exists but unified callback disabled", func(t *testing.T) {
-		inst := &installer{prompter: PromptFuncs{}}
-		if inst.promptRouter().hasUnifiedOverwrite() {
-			t.Fatalf("expected false when unified callback is not configured")
-		}
-	})
-
-	t.Run("validator with unified callback", func(t *testing.T) {
-		inst := &installer{
-			prompter: PromptFuncs{
-				OverwriteAllUnifiedPreviewFunc: func([]DiffPreview, []DiffPreview) (bool, bool, error) {
-					return false, false, nil
-				},
-			},
-		}
-		if !inst.promptRouter().hasUnifiedOverwrite() {
-			t.Fatalf("expected true when unified callback is configured")
-		}
-	})
-}
-
-func TestResolveUnifiedOverwriteAllDecisions_AlreadyDecided(t *testing.T) {
+func TestResolveOverwriteAllDecisions_AlreadyDecided(t *testing.T) {
 	inst := &installer{
-		overwriteAllDecided:       true,
-		overwriteMemoryAllDecided: true,
+		overwriteAllDecided: true,
 	}
-	if err := inst.resolveUnifiedOverwriteAllDecisions(); err != nil {
+	if err := inst.resolveOverwriteAllDecisions(); err != nil {
 		t.Fatalf("expected nil error when already decided: %v", err)
 	}
 }
 
-func TestResolveUnifiedOverwriteAllDecisions_MissingPrompter(t *testing.T) {
-	inst := &installer{}
-	if err := inst.resolveUnifiedOverwriteAllDecisions(); err == nil {
-		t.Fatalf("expected error when unified overwrite prompter is missing")
+func TestResolveOverwriteAllDecisions_MissingPrompter(t *testing.T) {
+	for _, p := range []*PromptFuncs{nil, {}} {
+		// A missing callback must fail before diff listing, even without a System.
+		inst := &installer{prompter: p}
+		if err := inst.resolveOverwriteAllDecisions(); err == nil || err.Error() != messages.InstallOverwritePromptRequired {
+			t.Fatalf("expected missing unified prompt error before listing diffs, got %v", err)
+		}
 	}
 }
 
-func TestResolveUnifiedOverwriteAllDecisions_PrompterNotUnified(t *testing.T) {
-	inst := &installer{prompter: plainPrompter{}}
-	if err := inst.resolveUnifiedOverwriteAllDecisions(); err == nil {
-		t.Fatalf("expected error for non-unified prompter")
-	}
-}
-
-func TestResolveUnifiedOverwriteAllDecisions_NoDiffsSkipsPrompt(t *testing.T) {
+func TestResolveOverwriteAllDecisions_NoDiffsSkipsPrompt(t *testing.T) {
 	root := t.TempDir()
 	unifiedCalls := 0
 	inst := &installer{
 		root: root,
 		sys:  RealSystem{},
-		prompter: PromptFuncs{
+		prompter: &PromptFuncs{
 			OverwriteAllUnifiedPreviewFunc: func([]DiffPreview, []DiffPreview) (bool, bool, error) {
 				unifiedCalls++
 				return true, true, nil
@@ -326,13 +224,13 @@ func TestResolveUnifiedOverwriteAllDecisions_NoDiffsSkipsPrompt(t *testing.T) {
 		},
 	}
 
-	if err := inst.resolveUnifiedOverwriteAllDecisions(); err != nil {
-		t.Fatalf("resolveUnifiedOverwriteAllDecisions: %v", err)
+	if err := inst.resolveOverwriteAllDecisions(); err != nil {
+		t.Fatalf("resolveOverwriteAllDecisions: %v", err)
 	}
 	if unifiedCalls != 0 {
 		t.Fatalf("expected no unified prompt calls when there are no diffs, got %d", unifiedCalls)
 	}
-	if !inst.overwriteAllDecided || !inst.overwriteMemoryAllDecided {
+	if !inst.overwriteAllDecided {
 		t.Fatalf("expected overwrite-all decisions to be marked decided")
 	}
 	if inst.overwriteAll || inst.overwriteMemoryAll {
@@ -340,7 +238,7 @@ func TestResolveUnifiedOverwriteAllDecisions_NoDiffsSkipsPrompt(t *testing.T) {
 	}
 }
 
-func TestResolveUnifiedOverwriteAllDecisions_UnifiedPromptError(t *testing.T) {
+func TestResolveOverwriteAllDecisions_UnifiedPromptError(t *testing.T) {
 	root := t.TempDir()
 	managedPath := filepath.Join(root, ".agent-layer", "commands.allow")
 	if err := os.MkdirAll(filepath.Dir(managedPath), 0o700); err != nil {
@@ -353,19 +251,19 @@ func TestResolveUnifiedOverwriteAllDecisions_UnifiedPromptError(t *testing.T) {
 	inst := &installer{
 		root: root,
 		sys:  RealSystem{},
-		prompter: PromptFuncs{
+		prompter: &PromptFuncs{
 			OverwriteAllUnifiedPreviewFunc: func([]DiffPreview, []DiffPreview) (bool, bool, error) {
 				return false, false, errors.New("unified prompt failed")
 			},
 		},
 	}
 
-	if err := inst.resolveUnifiedOverwriteAllDecisions(); err == nil {
+	if err := inst.resolveOverwriteAllDecisions(); err == nil {
 		t.Fatalf("expected unified prompt error")
 	}
 }
 
-func TestLookupDiffPreview_FallbackPinUsesUpstreamOwnership(t *testing.T) {
+func TestLookupDiffPreview_FallbackPinPreview(t *testing.T) {
 	root := t.TempDir()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
 	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
@@ -383,9 +281,6 @@ func TestLookupDiffPreview_FallbackPinUsesUpstreamOwnership(t *testing.T) {
 	preview, err := inst.lookupDiffPreview(pinVersionRelPath)
 	if err != nil {
 		t.Fatalf("lookupDiffPreview: %v", err)
-	}
-	if preview.Ownership != OwnershipUpstreamTemplateDelta {
-		t.Fatalf("preview ownership = %q, want %q", preview.Ownership, OwnershipUpstreamTemplateDelta)
 	}
 	if preview.Path != pinVersionRelPath {
 		t.Fatalf("preview path = %q, want %s", preview.Path, pinVersionRelPath)
@@ -405,8 +300,7 @@ func TestLookupDiffPreview_UsesManagedPreviewCache(t *testing.T) {
 		sys:  RealSystem{},
 		managedDiffPreviews: map[string]DiffPreview{
 			".agent-layer/commands.allow": {
-				Path:      ".agent-layer/commands.allow",
-				Ownership: OwnershipLocalCustomization,
+				Path: ".agent-layer/commands.allow",
 			},
 		},
 	}
@@ -426,8 +320,7 @@ func TestLookupDiffPreview_UsesMemoryPreviewCache(t *testing.T) {
 		sys:  RealSystem{},
 		memoryDiffPreviews: map[string]DiffPreview{
 			"docs/agent-layer/ISSUES.md": {
-				Path:      "docs/agent-layer/ISSUES.md",
-				Ownership: OwnershipLocalCustomization,
+				Path: "docs/agent-layer/ISSUES.md",
 			},
 		},
 	}
@@ -442,9 +335,14 @@ func TestLookupDiffPreview_UsesMemoryPreviewCache(t *testing.T) {
 }
 
 func TestLookupDiffPreview_MissingTemplateMapping(t *testing.T) {
-	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
-	if _, err := inst.lookupDiffPreview(".agent-layer/unknown.file"); err == nil {
-		t.Fatalf("expected missing-template-mapping error")
+	root := t.TempDir()
+	sys := newFaultSystem(RealSystem{})
+	path := ".agent-layer/unknown.file"
+	sys.readErrs[filepath.Join(root, filepath.FromSlash(path))] = errors.New("must report mapping error before reading")
+	inst := &installer{root: root, sys: sys}
+	_, err := inst.lookupDiffPreview(path)
+	if err == nil || err.Error() != fmt.Sprintf(messages.InstallMissingTemplatePathMappingFmt, path) {
+		t.Fatalf("expected missing-template-mapping error before read, got %v", err)
 	}
 }
 
@@ -456,11 +354,8 @@ func TestLookupDiffPreview_NotExistFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lookupDiffPreview: %v", err)
 	}
-	if preview.Path != ".agent-layer/commands.allow" {
-		t.Fatalf("preview path = %q", preview.Path)
-	}
-	if preview.Ownership != OwnershipLocalCustomization {
-		t.Fatalf("preview ownership = %q, want %q", preview.Ownership, OwnershipLocalCustomization)
+	if preview != (DiffPreview{Path: commandsAllowRelPath}) {
+		t.Fatalf("expected bare preview, got %#v", preview)
 	}
 }
 
@@ -487,129 +382,6 @@ func TestLookupDiffPreview_MemoryTemplateMappingError(t *testing.T) {
 	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
 	if _, err := inst.lookupDiffPreview("docs/agent-layer/ISSUES.md"); err == nil {
 		t.Fatalf("expected memory template mapping error")
-	}
-}
-
-func TestDiffPreviewEntry_MissingTemplateMapping(t *testing.T) {
-	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
-	if _, err := inst.diffPreviewEntry(".agent-layer/missing.file", map[string]string{}); err == nil {
-		t.Fatalf("expected missing template mapping error")
-	}
-}
-
-func TestDiffPreviewEntry_OwnershipFallsBackOnNotExist(t *testing.T) {
-	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
-	entry, err := inst.diffPreviewEntry(".agent-layer/commands.allow", map[string]string{
-		".agent-layer/commands.allow": "commands.allow",
-	})
-	if err != nil {
-		t.Fatalf("diffPreviewEntry: %v", err)
-	}
-	if entry.Ownership != OwnershipLocalCustomization {
-		t.Fatalf("ownership = %q, want %q", entry.Ownership, OwnershipLocalCustomization)
-	}
-}
-
-func TestDiffPreviewEntry_ClassifyOwnershipError(t *testing.T) {
-	root := t.TempDir()
-	commandsAllowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(commandsAllowPath, 0o700); err != nil {
-		t.Fatalf("mkdir commands.allow directory: %v", err)
-	}
-
-	inst := &installer{root: root, sys: RealSystem{}}
-	if _, err := inst.diffPreviewEntry(".agent-layer/commands.allow", map[string]string{
-		".agent-layer/commands.allow": "commands.allow",
-	}); err == nil {
-		t.Fatalf("expected ownership classification error")
-	}
-}
-
-func TestShouldOverwriteAllManaged_Error(t *testing.T) {
-	root := t.TempDir()
-	inst := &installer{
-		root:      root,
-		overwrite: true,
-		sys:       RealSystem{},
-		prompter: PromptFuncs{
-			OverwriteAllPreviewFunc: func([]DiffPreview) (bool, error) { return false, errors.New("prompt error") },
-		},
-	}
-
-	_, err := inst.shouldOverwriteAllManaged()
-	if err == nil {
-		t.Fatalf("expected error from prompt")
-	}
-}
-
-func TestShouldOverwriteAllManaged_MissingPrompter(t *testing.T) {
-	inst := &installer{root: t.TempDir(), overwrite: true, sys: RealSystem{}}
-	if _, err := inst.shouldOverwriteAllManaged(); err == nil {
-		t.Fatalf("expected missing prompter error")
-	}
-}
-
-func TestShouldOverwriteAllMemory_Error(t *testing.T) {
-	root := t.TempDir()
-	inst := &installer{
-		root:      root,
-		overwrite: true,
-		sys:       RealSystem{},
-		prompter: PromptFuncs{
-			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return false, errors.New("prompt error") },
-		},
-	}
-
-	_, err := inst.shouldOverwriteAllMemory()
-	if err == nil {
-		t.Fatalf("expected error from prompt")
-	}
-}
-
-func TestShouldOverwriteAllMemory_MissingPrompter(t *testing.T) {
-	inst := &installer{root: t.TempDir(), overwrite: true, sys: RealSystem{}}
-	if _, err := inst.shouldOverwriteAllMemory(); err == nil {
-		t.Fatalf("expected missing prompter error")
-	}
-}
-
-func TestShouldOverwriteAllMemory_Cached(t *testing.T) {
-	root := t.TempDir()
-	promptCount := 0
-	inst := &installer{
-		root:      root,
-		overwrite: true,
-		sys:       RealSystem{},
-		prompter: PromptFuncs{
-			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) {
-				promptCount++
-				return true, nil
-			},
-		},
-	}
-
-	// First call should prompt.
-	ok, err := inst.shouldOverwriteAllMemory()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !ok {
-		t.Fatalf("expected true")
-	}
-	if promptCount != 1 {
-		t.Fatalf("expected 1 prompt call, got %d", promptCount)
-	}
-
-	// Second call should use cache.
-	ok, err = inst.shouldOverwriteAllMemory()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !ok {
-		t.Fatalf("expected true")
-	}
-	if promptCount != 1 {
-		t.Fatalf("expected prompt to be cached, got %d calls", promptCount)
 	}
 }
 
@@ -757,7 +529,7 @@ func TestTemplateFileMatches_ReadFileError(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	_, err := inst.templates().matchTemplate(inst.sys, blockPath, "gitignore.block", info)
+	_, err := inst.templates().matchTemplate(blockPath, "gitignore.block", info)
 	if err == nil {
 		t.Fatalf("expected error reading gitignore.block")
 	}
@@ -783,24 +555,177 @@ func TestTemplateFileMatches_ReadTemplateError(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	_, err := inst.templates().matchTemplate(inst.sys, blockPath, "gitignore.block", info)
+	_, err := inst.templates().matchTemplate(blockPath, "gitignore.block", info)
 	if err == nil {
 		t.Fatalf("expected error from template read")
 	}
 }
 
-func TestPrompterOverwrite_NilFunc(t *testing.T) {
-	p := PromptFuncs{}
-	_, err := p.Overwrite(DiffPreview{})
-	if err == nil {
-		t.Fatalf("expected error when func is nil")
+func TestShouldOverwrite_UnifiedDecisionCachedAcrossManagedAndMemory(t *testing.T) {
+	root := t.TempDir()
+	paths := []string{
+		".agent-layer/commands.allow",
+		".agent-layer/instructions/00_rules.md",
+		"docs/agent-layer/ISSUES.md",
+		"docs/agent-layer/BACKLOG.md",
+	}
+	for _, rel := range paths {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("# custom header\n<!-- ENTRIES START -->\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sys := newFaultSystem(RealSystem{})
+	unifiedCalls := 0
+	perFileCalls := 0
+	inst := &installer{root: root, overwrite: true, sys: sys}
+	inst.prompter = &PromptFuncs{
+		OverwriteAllUnifiedPreviewFunc: func(managed, memory []DiffPreview) (bool, bool, error) {
+			unifiedCalls++
+			if len(managed) != 2 || len(memory) != 2 {
+				t.Fatalf("expected two managed and two memory previews, got %d and %d", len(managed), len(memory))
+			}
+			// Any later file read fails, so per-file prompts must use the caches.
+			for _, rel := range paths {
+				sys.readErrs[normalizePath(filepath.Join(root, filepath.FromSlash(rel)))] = errors.New("unexpected preview rebuild")
+			}
+			return false, false, nil
+		},
+		OverwritePreviewFunc: func(preview DiffPreview) (bool, error) {
+			wantPath := paths[perFileCalls]
+			perFileCalls++
+			cache := inst.managedDiffPreviews
+			if inst.isMemoryPath(filepath.Join(root, filepath.FromSlash(wantPath))) {
+				cache = inst.memoryDiffPreviews
+			}
+			cached, ok := cache[wantPath]
+			if !ok || preview != cached || preview.Path != wantPath || preview.UnifiedDiff == "" {
+				t.Fatalf("per-file preview did not reuse populated cache for %s: %#v", wantPath, preview)
+			}
+			return true, nil
+		},
+	}
+	for _, rel := range paths {
+		if ok, err := inst.shouldOverwrite(filepath.Join(root, filepath.FromSlash(rel))); !ok || err != nil {
+			t.Fatalf("shouldOverwrite(%s) = (%v, %v)", rel, ok, err)
+		}
+	}
+	if unifiedCalls != 1 || perFileCalls != len(paths) {
+		t.Fatalf("unified calls=%d, per-file calls=%d", unifiedCalls, perFileCalls)
 	}
 }
 
-func TestPrompterDeleteUnknownAll_NilFunc(t *testing.T) {
-	p := PromptFuncs{}
-	_, err := p.DeleteUnknownAll(nil)
-	if err == nil {
-		t.Fatalf("expected error when func is nil")
+func TestResolveOverwriteAllDecisions_PreviewErrorsBeforePrompt(t *testing.T) {
+	for _, rel := range []string{".agent-layer/commands.allow", "docs/agent-layer/ISSUES.md"} {
+		t.Run(rel, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, filepath.FromSlash(rel))
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("# custom header\n<!-- ENTRIES START -->\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			wantErr := errors.New("preview read failed")
+			sys := newFaultSystem(RealSystem{})
+			sys.readErrs[normalizePath(path)] = wantErr
+			inst := &installer{
+				root: root, sys: sys,
+				prompter: &PromptFuncs{
+					OverwriteAllUnifiedPreviewFunc: func([]DiffPreview, []DiffPreview) (bool, bool, error) {
+						t.Fatal("prompt must not run after preview error")
+						return false, false, nil
+					},
+				},
+			}
+			if err := inst.resolveOverwriteAllDecisions(); !errors.Is(err, wantErr) {
+				t.Fatalf("resolve error = %v, want %v", err, wantErr)
+			}
+			if inst.overwriteAllDecided {
+				t.Fatal("failed preview must not cache a decision")
+			}
+		})
+	}
+}
+
+func TestResolveOverwriteAllDecisions_PassesManagedPreviews(t *testing.T) {
+	root := t.TempDir()
+	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
+	if err := os.MkdirAll(filepath.Dir(allowPath), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(allowPath, []byte("custom allow\n"), 0o600); err != nil {
+		t.Fatalf("write allowlist: %v", err)
+	}
+
+	var promptPreviews []DiffPreview
+	inst := &installer{
+		root:      root,
+		overwrite: true,
+		sys:       RealSystem{},
+		prompter: &PromptFuncs{
+			OverwriteAllUnifiedPreviewFunc: func(previews, memory []DiffPreview) (bool, bool, error) {
+				promptPreviews = append(promptPreviews, previews...)
+				return false, false, nil
+			},
+			OverwritePreviewFunc: func(preview DiffPreview) (bool, error) { return false, nil },
+		},
+	}
+
+	if err := inst.resolveOverwriteAllDecisions(); err != nil {
+		t.Fatalf("resolveOverwriteAllDecisions: %v", err)
+	}
+	if len(promptPreviews) == 0 {
+		t.Fatalf("expected prompt previews")
+	}
+	if promptPreviews[0].Path != commandsAllowRelPath || promptPreviews[0].UnifiedDiff == "" {
+		t.Fatalf("expected commands.allow diff preview, got %#v", promptPreviews[0])
+	}
+}
+
+func TestResolveOverwriteAllDecisions_PassesMemoryPreviews(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o700); err != nil {
+		t.Fatalf("mkdir docs: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer", "templates", "docs"), 0o700); err != nil {
+		t.Fatalf("mkdir baseline docs: %v", err)
+	}
+	content := []byte("# ISSUES\n\nLegacy header\n\n<!-- ENTRIES START -->\n")
+	docPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
+	if err := os.WriteFile(docPath, content, 0o600); err != nil {
+		t.Fatalf("write doc: %v", err)
+	}
+
+	baselinePath := filepath.Join(root, ".agent-layer", "templates", "docs", "ISSUES.md")
+	if err := os.WriteFile(baselinePath, content, 0o600); err != nil {
+		t.Fatalf("write baseline doc: %v", err)
+	}
+
+	var promptPreviews []DiffPreview
+	inst := &installer{
+		root:      root,
+		overwrite: true,
+		sys:       RealSystem{},
+		prompter: &PromptFuncs{
+			OverwriteAllUnifiedPreviewFunc: func(managed, previews []DiffPreview) (bool, bool, error) {
+				promptPreviews = append(promptPreviews, previews...)
+				return false, false, nil
+			},
+			OverwritePreviewFunc: func(preview DiffPreview) (bool, error) { return false, nil },
+		},
+	}
+
+	if err := inst.resolveOverwriteAllDecisions(); err != nil {
+		t.Fatalf("resolveOverwriteAllDecisions: %v", err)
+	}
+	if len(promptPreviews) == 0 {
+		t.Fatalf("expected prompt previews")
+	}
+	if promptPreviews[0].Path != "docs/agent-layer/ISSUES.md" || promptPreviews[0].UnifiedDiff == "" {
+		t.Fatalf("expected ISSUES.md diff preview, got %#v", promptPreviews[0])
 	}
 }

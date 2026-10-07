@@ -40,6 +40,18 @@ type ObservedCostRange struct {
 	Maximum  float64 `json:"maximum"`
 }
 
+// add accumulates the bounded provider cost of one result.
+func (r *ObservedCostRange) add(result AttemptResult) error {
+	minimum, maximum, err := result.CostBounds()
+	if err != nil {
+		return err
+	}
+	r.Midpoint += *result.CostUSD
+	r.Minimum += minimum
+	r.Maximum += maximum
+	return nil
+}
+
 func addObservedCost(left, right ObservedCostRange) ObservedCostRange {
 	return ObservedCostRange{Midpoint: left.Midpoint + right.Midpoint, Minimum: left.Minimum + right.Minimum, Maximum: left.Maximum + right.Maximum}
 }

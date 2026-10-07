@@ -267,6 +267,37 @@ func TestWriteMCPConfigMarshalError(t *testing.T) {
 	}
 }
 
+func TestWriteMCPConfigSortsMapKeys(t *testing.T) {
+	t.Parallel()
+	enabled := true
+	root := t.TempDir()
+	project := &config.ProjectConfig{Root: root, Config: config.Config{
+		Agents: config.AgentsConfig{Claude: config.ClaudeConfig{Enabled: &enabled}},
+		MCP: config.MCPConfig{Servers: []config.MCPServer{
+			{ID: "zeta", Enabled: &enabled, Transport: config.TransportHTTP, URL: "https://example.test/mcp", Headers: map[string]string{"X-Zed": "z", "Authorization": "a"}},
+			{ID: "alpha", Enabled: &enabled, Transport: config.TransportStdio, Command: "tool", Env: map[string]string{"ZED": "z", "ALPHA": "a"}},
+		}}}}
+	if err := writeMCPConfig(RealSystem{}, root, project); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".mcp.json")) // #nosec G304 -- test-owned project.
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		"      \"env\": {\n        \"ALPHA\": \"a\",\n        \"ZED\": \"z\"\n      }",
+		"      \"headers\": {\n        \"Authorization\": \"a\",\n        \"X-Zed\": \"z\"\n      }",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("missing sorted block %q in:\n%s", want, content)
+		}
+	}
+	if strings.Index(content, `"alpha"`) > strings.Index(content, `"zeta"`) {
+		t.Fatalf("servers not sorted:\n%s", content)
+	}
+}
+
 func TestSharedMuseClaudeMCP(t *testing.T) {
 	root := t.TempDir()
 	enabled := true

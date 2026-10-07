@@ -20,10 +20,10 @@ func TestRunVSCodeNoSync(t *testing.T) {
 	testutil.WriteStub(t, binDir, "code")
 
 	t.Setenv("PATH", binDir)
-	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
+	err := clients.RunNoSyncWithStderr(root, "vscode", func(cfg *config.Config) *bool {
 		v := config.IsAgentEnabled(cfg.Agents.VSCode.Enabled) || config.IsAgentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
 		return &v
-	}, vscode.Launch, false, nil)
+	}, vscode.Launch, false, nil, os.Stderr)
 	if err != nil {
 		t.Fatalf("RunNoSync error: %v", err)
 	}
@@ -63,10 +63,10 @@ enabled = true
 		t.Fatalf("write config: %v", err)
 	}
 
-	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
+	err := clients.RunNoSyncWithStderr(root, "vscode", func(cfg *config.Config) *bool {
 		v := config.IsAgentEnabled(cfg.Agents.VSCode.Enabled) || config.IsAgentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
 		return &v
-	}, vscode.Launch, false, nil)
+	}, vscode.Launch, false, nil, os.Stderr)
 	if err == nil {
 		t.Fatal("expected error when both VS Code agents are disabled")
 	}
@@ -110,10 +110,10 @@ enabled = true
 	testutil.WriteStub(t, binDir, "code")
 	t.Setenv("PATH", binDir)
 
-	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
+	err := clients.RunNoSyncWithStderr(root, "vscode", func(cfg *config.Config) *bool {
 		v := config.IsAgentEnabled(cfg.Agents.VSCode.Enabled) || config.IsAgentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
 		return &v
-	}, vscode.Launch, false, nil)
+	}, vscode.Launch, false, nil, os.Stderr)
 	if err != nil {
 		t.Fatalf("expected success when claude_vscode is enabled: %v", err)
 	}
@@ -135,10 +135,10 @@ func TestRunVSCodeNoSyncManagedBlockConflict(t *testing.T) {
 	testutil.WriteStub(t, binDir, "code")
 	t.Setenv("PATH", binDir)
 
-	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
+	err := clients.RunNoSyncWithStderr(root, "vscode", func(cfg *config.Config) *bool {
 		v := config.IsAgentEnabled(cfg.Agents.VSCode.Enabled) || config.IsAgentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
 		return &v
-	}, vscode.Launch, false, nil)
+	}, vscode.Launch, false, nil, os.Stderr)
 	if err == nil {
 		t.Fatal("expected managed-block conflict error")
 	}

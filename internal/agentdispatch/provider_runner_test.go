@@ -20,6 +20,145 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
+// TestProviderCommandArgv pins each provider's complete argv for fresh and
+// resumed runs. FRESH: and RESUME: mark arguments present only in that mode.
+func TestProviderCommandArgv(t *testing.T) {
+	templates := map[string]string{
+		AgentClaude:      "--print --output-format stream-json --verbose --include-partial-messages FRESH:--session-id RESUME:--resume SESSION --model argv-model --effort argv-effort --dangerously-skip-permissions",
+		AgentCodex:       "exec RESUME:resume --json RESUME:SESSION --model argv-model -c model_reasoning_effort=argv-effort -c approval_policy=never -c sandbox_mode=danger-full-access -c web_search=live -",
+		AgentAntigravity: "--gemini_dir=ROOT/.agy --dangerously-skip-permissions --log-file LOG --model argv-model RESUME:--conversation RESUME:SESSION --output-format stream-json --print-timeout 24h --print argv-prompt",
+		AgentGrok:        "--no-auto-update --prompt-file PROMPT --output-format streaming-json FRESH:--session-id RESUME:--resume SESSION --model argv-model --reasoning-effort argv-effort --permission-mode bypassPermissions --always-approve",
+		AgentMuse:        "exec --json --prompt-file PROMPT --workspace ROOT --trust-workspace --session-id SESSION --user-input-auto-resolve --model argv-model --reasoning-effort argv-effort --yolo",
+	}
+	for agent, template := range templates {
+		for _, mode := range []string{dispatchModeFresh, dispatchModeResume} {
+			t.Run(agent+"/"+mode, func(t *testing.T) {
+				root := t.TempDir()
+				project := &config.ProjectConfig{Root: root}
+				project.Config.Approvals.Mode = config.ApprovalModeYOLO
+				run, err := newDispatchRun(root, agent, supportedProviderVersions[agent], mode)
+				if err != nil {
+					t.Fatal(err)
+				}
+				target, _ := lookupTarget(agent)
+				command, err := buildProviderCommand(target, project, []string{"TEST_ENV=kept"}, []byte("argv-prompt"), "argv-model", "argv-effort", false, mode, runtimeSessionID, run, io.Discard)
+				if err != nil {
+					t.Fatal(err)
+				}
+				placeholders := strings.NewReplacer("ROOT", root, "SESSION", runtimeSessionID, "PROMPT", filepath.Join(run.Dir, "prompt.txt"), "LOG", filepath.Join(run.Dir, "antigravity.log"))
+				var want []string
+				for _, arg := range strings.Fields(template) {
+					if rest, ok := strings.CutPrefix(arg, "FRESH:"); ok {
+						if mode != dispatchModeFresh {
+							continue
+						}
+						arg = rest
+					}
+					if rest, ok := strings.CutPrefix(arg, "RESUME:"); ok {
+						if mode != dispatchModeResume {
+							continue
+						}
+						arg = rest
+					}
+					want = append(want, placeholders.Replace(arg))
+				}
+				if !slices.Equal(command.Args, want) {
+					t.Fatalf("argv = %q, want %q", command.Args, want)
+				}
+				wantLog := ""
+				if agent == AgentAntigravity {
+					wantLog = filepath.Join(run.Dir, "antigravity.log")
+				}
+				if command.Path != target.Binary || command.Provider != agent || command.RunMode != mode || command.SessionID != runtimeSessionID || command.LogPath != wantLog || command.ClaudeLineage || command.ObserveMuseApprovals {
+					t.Fatalf("command metadata = %#v", command)
+				}
+			})
+		}
+	}
+}
+
+// TestProviderCommandResolvesModelAndEffort covers when an omitted model or
+// effort inherits the configured value: never when the target is pinned
+// (except Antigravity's model), and never past a provider passthrough key,
+// even an empty one.
+func TestProviderCommandResolvesModelAndEffort(t *testing.T) {
+	type resolved struct{ model, effort string }
+	rows := []struct {
+		name                string
+		model, effort       string
+		pinned, passthrough bool
+		want                map[string]resolved
+	}{
+		{name: "explicit wins", model: " explicit-model ", effort: " explicit-effort ", pinned: true, passthrough: true, want: map[string]resolved{
+			AgentClaude: {"explicit-model", "explicit-effort"}, AgentCodex: {"explicit-model", "explicit-effort"}, AgentAntigravity: {"explicit-model", "explicit-effort"},
+			AgentGrok: {"explicit-model", "explicit-effort"}, AgentMuse: {"explicit-model", "explicit-effort"},
+		}},
+		{name: "whitespace inherits", model: " \t ", effort: " ", want: map[string]resolved{
+			AgentClaude: {"configured-model", "configured-effort"}, AgentCodex: {"configured-model", "configured-effort"}, AgentAntigravity: {"configured-model", ""},
+			AgentGrok: {"configured-model", "configured-effort"}, AgentMuse: {"configured-model", "configured-effort"},
+		}},
+		{name: "pinned target", pinned: true, want: map[string]resolved{
+			AgentClaude: {}, AgentCodex: {}, AgentAntigravity: {"configured-model", ""}, AgentGrok: {}, AgentMuse: {},
+		}},
+		{name: "passthrough keys", passthrough: true, want: map[string]resolved{
+			AgentClaude: {"configured-model", ""}, AgentCodex: {}, AgentAntigravity: {"configured-model", ""},
+			AgentGrok: {"configured-model", "configured-effort"}, AgentMuse: {"configured-model", "configured-effort"},
+		}},
+	}
+	for _, row := range rows {
+		for agent, want := range row.want {
+			t.Run(row.name+"/"+agent, func(t *testing.T) {
+				root := t.TempDir()
+				project := &config.ProjectConfig{Root: root}
+				project.Config.Approvals.Mode = config.ApprovalModeYOLO
+				agents := &project.Config.Agents
+				agents.Claude.Model, agents.Claude.ReasoningEffort = " configured-model ", " configured-effort "
+				agents.Codex.Model, agents.Codex.ReasoningEffort = " configured-model ", " configured-effort "
+				agents.Antigravity.Model = " configured-model "
+				agents.Grok.Model, agents.Grok.ReasoningEffort = " configured-model ", " configured-effort "
+				agents.Muse.Model, agents.Muse.ReasoningEffort = " configured-model ", " configured-effort "
+				if row.passthrough {
+					agents.Claude.AgentSpecific = map[string]any{"effortLevel": ""}
+					agents.Codex.AgentSpecific = map[string]any{config.CodexModelKey: "", config.CodexReasoningEffortKey: ""}
+				}
+				run, err := newDispatchRun(root, agent, supportedProviderVersions[agent], dispatchModeFresh)
+				if err != nil {
+					t.Fatal(err)
+				}
+				target, _ := lookupTarget(agent)
+				command, err := buildProviderCommand(target, project, nil, []byte("resolution prompt"), row.model, row.effort, row.pinned, dispatchModeFresh, runtimeSessionID, run, io.Discard)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if command.Model != want.model || command.Effort != want.effort {
+					t.Fatalf("resolved model %q effort %q, want %q %q", command.Model, command.Effort, want.model, want.effort)
+				}
+				if slices.Contains(command.Args, "--model") != (want.model != "") {
+					t.Fatalf("argv %q does not match resolved model %q", command.Args, want.model)
+				}
+			})
+		}
+	}
+}
+
+func TestProviderCommandRequiresFreshSessionBeforeStagingPrompt(t *testing.T) {
+	for _, provider := range []struct{ agent, name string }{{AgentClaude, "Claude"}, {AgentGrok, "Grok"}, {AgentMuse, "Muse"}} {
+		t.Run(provider.agent, func(t *testing.T) {
+			root := t.TempDir()
+			run := &dispatchRun{Dir: root}
+			target, _ := lookupTarget(provider.agent)
+			_, err := buildProviderCommand(target, &config.ProjectConfig{Root: root}, nil, []byte("prompt"), "", "", false, dispatchModeFresh, "", run, io.Discard)
+			requireDispatchExitCode(t, err, ExitConfig)
+			if err.Error() != "new "+provider.name+" dispatch requires a caller-assigned session ID" {
+				t.Fatalf("missing session error = %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(root, "prompt.txt")); !os.IsNotExist(err) {
+				t.Fatalf("prompt staged without session ID: %v", err)
+			}
+		})
+	}
+}
+
 func TestClaudeLineageCapabilityGatesFreshAndResumeCommands(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	project, stderr, env, depth, err := loadDispatchProject(root, io.Discard, []string{})

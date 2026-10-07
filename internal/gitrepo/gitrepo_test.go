@@ -247,12 +247,15 @@ func TestReadTreeRejectsUnsafeEntries(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a symlink entry to be rejected")
 	}
-	if !strings.Contains(err.Error(), "symbolic link") {
-		t.Fatalf("error = %v", err)
+	if want := "skills/alpha/link.md is a symbolic link; imported skills may contain only directories and regular files"; err.Error() != want {
+		t.Fatalf("error = %q, want %q", err, want)
 	}
 	destination := newTestDestination(t, repo, commit)
 	_, err = destination.ReadTree(context.Background(), commit, "skills/alpha")
 	assertDestinationArtifactError(t, err, "symbolic link", "skills/alpha/link.md")
+	if want := "destination skill skills/alpha contains unsupported symbolic link at skills/alpha/link.md; remove skills/alpha/link.md from the destination repository before retrying"; err.Error() != want {
+		t.Fatalf("destination error = %q, want %q", err, want)
+	}
 }
 
 // TestReadTreeRejectsGitlinks proves a committed submodule inside a selected
@@ -276,12 +279,15 @@ func TestReadTreeRejectsGitlinks(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a gitlink entry to be rejected")
 	}
-	if !strings.Contains(err.Error(), "gitlink") {
-		t.Fatalf("error = %v", err)
+	if want := "skills/alpha/vendor is a gitlink (submodule); imported skills may contain only directories and regular files"; err.Error() != want {
+		t.Fatalf("error = %q, want %q", err, want)
 	}
 	destination := newTestDestination(t, repo, commit)
 	_, err = destination.ReadTree(context.Background(), commit, "skills/alpha")
 	assertDestinationArtifactError(t, err, "gitlink (submodule)", "skills/alpha/vendor")
+	if want := "destination skill skills/alpha contains unsupported gitlink (submodule) at skills/alpha/vendor; remove skills/alpha/vendor from the destination repository before retrying"; err.Error() != want {
+		t.Fatalf("destination error = %q, want %q", err, want)
+	}
 }
 
 func newTestDestination(t *testing.T, repo *testRepo, commit string) *Destination {
@@ -489,8 +495,8 @@ func TestDestinationPublishesWithoutForce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenDestination: %v", err)
 	}
-	if destination.Repository() != repo.dir {
-		t.Fatalf("Repository() = %q", destination.Repository())
+	if destination.repository.String() != repo.dir {
+		t.Fatalf("destination.repository = %q", destination.repository.String())
 	}
 	branch, err := destination.DefaultBranch(ctx)
 	if err != nil || branch != "main" {
@@ -1135,8 +1141,8 @@ func TestDefaultBranchFailsWhenHeadIsNotSymbolic(t *testing.T) {
 	_, source := newTestSource(t, repo)
 	if _, err := source.DefaultBranch(context.Background()); err == nil {
 		t.Fatal("expected an unresolvable default branch to fail")
-	} else if !strings.Contains(err.Error(), "specify an explicit ref") {
-		t.Fatalf("error %q does not guide the user", err)
+	} else if want := "could not determine the default branch of " + repo.dir + "; specify an explicit ref"; err.Error() != want {
+		t.Fatalf("error = %q, want %q", err, want)
 	}
 	runner, err := NewRunner(nil)
 	if err != nil {
@@ -1148,6 +1154,8 @@ func TestDefaultBranchFailsWhenHeadIsNotSymbolic(t *testing.T) {
 	}
 	if _, err := destination.DefaultBranch(context.Background()); err == nil {
 		t.Fatal("expected an unresolvable destination default branch to fail")
+	} else if want := "could not determine the default branch of " + repo.dir; err.Error() != want {
+		t.Fatalf("destination error = %q, want %q", err, want)
 	}
 }
 

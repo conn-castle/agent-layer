@@ -184,46 +184,6 @@ func fileDirectoryConflicts(files []File) []Conflict {
 	return conflicts
 }
 
-// Diff reports the paths added, modified, and deleted going from base to next.
-type Diff struct {
-	Added    []string
-	Modified []string
-	Deleted  []string
-}
-
-// IsEmpty reports whether the two trees carry identical content.
-func (d Diff) IsEmpty() bool {
-	return len(d.Added) == 0 && len(d.Modified) == 0 && len(d.Deleted) == 0
-}
-
-// Changed returns every changed path in sorted order.
-func (d Diff) Changed() []string {
-	changed := make([]string, 0, len(d.Added)+len(d.Modified)+len(d.Deleted))
-	changed = append(changed, d.Added...)
-	changed = append(changed, d.Modified...)
-	changed = append(changed, d.Deleted...)
-	sort.Strings(changed)
-	return changed
-}
-
-// Compare returns the file-level delta from base to next.
-func Compare(base, next Tree) Diff {
-	var diff Diff
-	for _, filePath := range unionPaths(base, next, Tree{}) {
-		baseFile, hasBase := base.File(filePath)
-		nextFile, hasNext := next.File(filePath)
-		switch {
-		case !hasBase && hasNext:
-			diff.Added = append(diff.Added, filePath)
-		case hasBase && !hasNext:
-			diff.Deleted = append(diff.Deleted, filePath)
-		case !sameFile(baseFile, hasBase, nextFile, hasNext):
-			diff.Modified = append(diff.Modified, filePath)
-		}
-	}
-	return diff
-}
-
 func unionPaths(trees ...Tree) []string {
 	seen := make(map[string]struct{})
 	for _, tree := range trees {

@@ -353,7 +353,7 @@ func TestNeverLaunchedCancelledClaimRecoveryOperations(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := reconcileOrphan(root, record); err != nil {
+		if _, err := tryReconcileOrphan(root, record); err != nil {
 			t.Fatalf("reconcile cancelled run: %v", err)
 		}
 		reconciled, err := loadSession(root, session.Name)

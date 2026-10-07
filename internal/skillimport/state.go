@@ -45,9 +45,6 @@ type localSkill struct {
 	Err error
 }
 
-// Valid reports whether the directory read and validated cleanly.
-func (l localSkill) Valid() bool { return l.Present && l.Err == nil }
-
 // state is the immutable observation an operation is planned against.
 type state struct {
 	paths config.Paths

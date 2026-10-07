@@ -9,15 +9,15 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-func canonicalNameForPath(path string) (string, SourceFormat) {
-	base := filepath.Base(path)
-	if base == "SKILL.md" || base == "skill.md" {
-		return filepath.Base(filepath.Dir(path)), SourceFormatDirectory
-	}
-	return strings.TrimSuffix(base, filepath.Ext(base)), SourceFormatFlat
+// canonicalNameForPath returns the skill directory name for a
+// <name>/SKILL.md source path.
+func canonicalNameForPath(path string) string {
+	return filepath.Base(filepath.Dir(path))
 }
 
-func normalizeSkillName(name string) string {
+// NormalizeName applies the same Unicode normalization used when comparing
+// skill names across configuration, imports, and user-managed sources.
+func NormalizeName(name string) string {
 	return strings.TrimSpace(norm.NFKC.String(name))
 }
 
@@ -51,10 +51,9 @@ func sortFindings(findings []Finding) {
 
 func warning(code string, path string, message string) Finding {
 	return Finding{
-		Code:     code,
-		Severity: SeverityWarn,
-		Path:     path,
-		Message:  message,
+		Code:    code,
+		Path:    path,
+		Message: message,
 	}
 }
 

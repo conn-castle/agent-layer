@@ -300,13 +300,9 @@ func buildStudyExperimentReport(experiment preparedStudyExperiment, arm matrixAr
 				task.VerifierTestTimeouts++
 				item.VerifierTestTimeoutRuns++
 			}
-			minimum, maximum, costErr := result.CostBounds()
-			if costErr != nil {
-				return item, costErr
+			if err := task.ObservedCost.add(result); err != nil {
+				return item, err
 			}
-			task.ObservedCost.Midpoint += *result.CostUSD
-			task.ObservedCost.Minimum += minimum
-			task.ObservedCost.Maximum += maximum
 		}
 		item.RequiredCells += selected.Repetitions
 		if len(scores) > 0 {

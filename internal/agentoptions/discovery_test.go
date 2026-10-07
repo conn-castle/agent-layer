@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/textproto"
@@ -46,6 +47,22 @@ func runModelHarness(mode string) {
 		fmt.Println("Default model: future-model\n\nAvailable models:\n  * future-model (default)\n  - another-model")
 		return
 	}
+	if mode == "grok-expired-session" {
+		// Real Grok prints its stale status, then persists a silent refresh
+		// before listing models; only a completed run saves the refresh.
+		marker := os.Getenv("AL_TEST_GROK_REFRESHED")
+		if _, err := os.Stat(marker); err == nil { // #nosec G703 -- marker path is inside the test-owned temporary directory.
+			fmt.Println("You are logged in with grok.com.\n\nAvailable models:\n  * refreshed-model (default)")
+			return
+		}
+		fmt.Println("You are not authenticated.")
+		time.Sleep(200 * time.Millisecond)
+		if err := os.WriteFile(marker, nil, 0o600); err != nil { // #nosec G703 -- marker path is inside the test-owned temporary directory.
+			os.Exit(3)
+		}
+		fmt.Println("\nAvailable models:\n  * refreshed-model (default)")
+		return
+	}
 	if mode == "unauthenticated-empty" {
 		fmt.Println("You are not authenticated.")
 		return
@@ -53,6 +70,10 @@ func runModelHarness(mode string) {
 	if mode == "unauthenticated" {
 		fmt.Println("You are not authenticated.\nAvailable models:\n  * fallback")
 		return
+	}
+	if mode == "unauthenticated-exit-error" {
+		fmt.Println("You are not authenticated.\nAvailable models:\n  unexpected")
+		os.Exit(1)
 	}
 	if mode == "bad-output" {
 		fmt.Println("unexpected output")
@@ -76,6 +97,17 @@ func runModelHarness(mode string) {
 			os.Exit(3)
 		}
 		fmt.Println("future-id\tFuture Display Name")
+		return
+	}
+	if mode == "antigravity-no-project" {
+		if strings.Join(os.Args[1:], " ") != "models" || os.Getenv("AGY_CLI_DISABLE_AUTO_UPDATE") != "1" || !stdinIsNullDevice() {
+			os.Exit(3)
+		}
+		fmt.Print("\nmedium-id\tGemini Flash (Medium)\nhigh-id\tGemini Flash (High)\n")
+		return
+	}
+	if mode == "antigravity-empty" {
+		fmt.Println()
 		return
 	}
 	scanner := bufio.NewScanner(os.Stdin)
@@ -139,6 +171,21 @@ func runModelHarness(mode string) {
 	}
 }
 
+// stdinIsNullDevice distinguishes the null device from a pipe, which would also
+// reach EOF once closed, then confirms that reading stdin ends immediately.
+func stdinIsNullDevice() bool {
+	stdin, err := os.Stdin.Stat()
+	if err != nil || stdin.Mode()&os.ModeNamedPipe != 0 || stdin.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	null, err := os.Stat(os.DevNull)
+	if err != nil || !os.SameFile(stdin, null) {
+		return false
+	}
+	input, err := io.ReadAll(os.Stdin)
+	return err == nil && len(input) == 0
+}
+
 func harnessRequest(t *testing.T, mode string) DiscoveryRequest {
 	t.Helper()
 	path, err := os.Executable()
@@ -168,6 +215,18 @@ func TestDiscoverModelsThroughHarnessProtocols(t *testing.T) {
 				t.Fatalf("models=%v want=%v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestGrokDiscoveryReportsSilentlyRefreshedSession(t *testing.T) {
+	req := harnessRequest(t, "grok-expired-session")
+	req.Env = append(req.Env, "AL_TEST_GROK_REFRESHED="+filepath.Join(t.TempDir(), "refreshed"))
+	got, err := DiscoverModels("grok", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"refreshed-model"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("models=%v want=%v", got, want)
 	}
 }
 
@@ -204,7 +263,8 @@ func TestDiscoveryFailuresRemainExplicit(t *testing.T) {
 		{"copilot_cli", "copilot-error", "-32603: Failed to list models"},
 		{"copilot_cli", "copilot-empty", ""}, {"copilot_cli", "copilot-malformed", ""}, {"copilot_cli", "copilot-oversized", ""},
 		{"claude", "claude-error", ""}, {"codex", "codex-error", ""}, {"codex", "codex-loop", ""},
-		{"grok", "unauthenticated", ""}, {"grok", "bad-output", ""}, {"grok", "exit-error", ""},
+		{"grok", "unauthenticated", "sign in using al grok"}, {"grok", "unauthenticated-exit-error", "sign in using al grok"}, {"grok", "bad-output", ""}, {"grok", "exit-error", ""},
+		{"antigravity", "bad-output", "invalid model row"}, {"antigravity", "exit-error", "exit status 2"},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			req := harnessRequest(t, tc.mode)
@@ -225,7 +285,7 @@ func TestDiscoveryDeadlineAndOffline(t *testing.T) {
 	req.Timeout = 50 * time.Millisecond
 	for _, agent := range []string{"claude", "codex", "grok", "antigravity", "copilot_cli"} {
 		start := time.Now()
-		if _, err := DiscoverModels(agent, req); err == nil || !strings.Contains(err.Error(), "deadline exceeded") {
+		if _, err := DiscoverModels(agent, req); !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("%s timeout error=%v", agent, err)
 		}
 		if time.Since(start) > 2*time.Second {
@@ -246,15 +306,70 @@ func TestDiscoveryDeadlineAndOffline(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	req.Context = ctx
-	if _, err := DiscoverModels("grok", req); err == nil {
-		t.Fatal("cancelled discovery claimed success")
+	for _, agent := range []string{"grok", "antigravity"} {
+		if _, err := DiscoverModels(agent, req); !errors.Is(err, context.Canceled) {
+			t.Fatalf("%s cancelled discovery error=%v", agent, err)
+		}
 	}
 }
 
-func TestAntigravityDiscoveryBoundsOutput(t *testing.T) {
-	_, err := DiscoverModels("antigravity", harnessRequest(t, "oversized"))
-	if err == nil || !strings.Contains(err.Error(), "size limit") {
-		t.Fatalf("oversized output error=%v", err)
+func TestAntigravityDiscoveryWithoutProject(t *testing.T) {
+	got, err := DiscoverModels("antigravity", harnessRequest(t, "antigravity-no-project"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"medium-id", "high-id"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("models=%v want=%v", got, want)
+	}
+}
+
+func TestAntigravityMissingBinaryCreatesNoHome(t *testing.T) {
+	root := t.TempDir()
+	req := DiscoveryRequest{Project: &config.ProjectConfig{Root: root}, LookPath: func(string) (string, error) { return "", os.ErrNotExist }}
+	if _, err := DiscoverModels("antigravity", req); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing binary error=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".agy")); !os.IsNotExist(err) {
+		t.Fatalf("missing binary created Antigravity home: %v", err)
+	}
+}
+
+func TestParseAntigravityModelRows(t *testing.T) {
+	for _, tc := range []struct {
+		name, output string
+		want         []string
+	}{
+		{"current", "slug\tDisplay Name\nsecond\tOther Model\n", []string{"slug", "second"}},
+		{"unstructured output", "\nAuthentication failed\n", nil},
+		{"missing label", "slug\t\n", nil},
+		{"missing slug", "\tDisplay Name\n", nil},
+		{"extra column", "slug\tDisplay\textra\n", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			models, err := ParseModelCommandOutput("antigravity", []byte(tc.output))
+			if tc.want == nil {
+				if err == nil {
+					t.Fatalf("invalid output accepted: %v", models)
+				}
+				return
+			}
+			if err != nil || !reflect.DeepEqual(models, tc.want) {
+				t.Fatalf("models=%v err=%v", models, err)
+			}
+		})
+	}
+}
+
+func TestAntigravityLiveDiagnostics(t *testing.T) {
+	for _, tc := range []struct{ mode, want string }{
+		{"oversized", "antigravity model discovery: agy models output exceeded size limit"},
+		{"antigravity-empty", "antigravity model discovery: agy models returned no model options"},
+	} {
+		t.Run(tc.mode, func(t *testing.T) {
+			if _, err := DiscoverModels("antigravity", harnessRequest(t, tc.mode)); err == nil || err.Error() != tc.want {
+				t.Fatalf("error=%v want %q", err, tc.want)
+			}
+		})
 	}
 }
 

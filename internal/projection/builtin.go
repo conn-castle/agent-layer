@@ -1,6 +1,7 @@
 package projection
 
 import (
+	"slices"
 	"sort"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -38,7 +39,7 @@ const (
 // the single source every surface reads from: native MCP projection, permission
 // allowlists, warning accounting, and doctor.
 func BuiltInDispatchServer(cfg config.Config, client string) (ResolvedMCPServer, bool) {
-	if !builtInDispatchClientEnabled(cfg, client) {
+	if !clientAgentEnabled(cfg, client) {
 		return ResolvedMCPServer{}, false
 	}
 	return ResolvedMCPServer{
@@ -68,12 +69,6 @@ func RootedBuiltInDispatchServer(cfg config.Config, client string, repoRoot stri
 	return builtIn, true
 }
 
-// builtInDispatchClientEnabled reports whether a client surface actually acts
-// as an Agent Dispatch caller.
-func builtInDispatchClientEnabled(cfg config.Config, client string) bool {
-	return clientAgentEnabled(cfg, client)
-}
-
 // clientAgentEnabled reports whether the agent behind an MCP client is enabled.
 // Claude Code's terminal and Visual Studio Code surfaces share one project MCP
 // configuration, so either one enables the Claude client.
@@ -100,20 +95,27 @@ func clientAgentEnabled(cfg config.Config, client string) bool {
 }
 
 // EffectiveMCPServers returns every MCP server a client actually receives: the
-// user's enabled servers plus the derived built-in Agent Dispatch server.
+// user's enabled servers plus the derived built-in Agent Dispatch server. A nil
+// resolver keeps resolved env values.
 func EffectiveMCPServers(cfg config.Config, env map[string]string, client string, resolver EnvVarResolver) ([]ResolvedMCPServer, error) {
-	resolved, err := ResolveMCPServers(cfg.MCP.Servers, env, client, resolver)
+	resolved, err := resolveServers(clientServers(cfg.MCP.Servers, client), env, resolver)
 	if err != nil {
 		return nil, err
 	}
-	return withBuiltInDispatchServer(cfg, env, client, resolved), nil
+	sortServersByID(resolved)
+	builtIn, ok := RootedBuiltInDispatchServer(cfg, client, env[config.BuiltinRepoRootEnvVar])
+	return withBuiltInServer(resolved, builtIn, ok), nil
 }
 
 // EffectiveServerIDs returns the sorted IDs of every MCP server a client
 // actually receives.
 func EffectiveServerIDs(cfg config.Config, client string) []string {
-	ids := EnabledServerIDs(cfg.MCP.Servers, client)
-	if _, ok := BuiltInDispatchServer(cfg, client); ok && !containsServerID(ids, BuiltInDispatchServerID) {
+	var ids []string
+	for _, server := range clientServers(cfg.MCP.Servers, client) {
+		ids = append(ids, server.ID)
+	}
+	sort.Strings(ids)
+	if _, ok := BuiltInDispatchServer(cfg, client); ok && !slices.Contains(ids, BuiltInDispatchServerID) {
 		ids = append(ids, BuiltInDispatchServerID)
 		sort.Strings(ids)
 	}
@@ -125,15 +127,12 @@ func EffectiveServerIDs(cfg config.Config, client string) []string {
 // server. Warning and doctor accounting use it so the tools Agent Layer itself
 // adds are measured alongside user-configured servers.
 func ResolveEffectiveEnabledMCPServers(cfg config.Config, env map[string]string) ([]ResolvedMCPServer, error) {
-	resolved, err := ResolveEnabledMCPServers(ReceivedMCPServers(cfg), env)
+	resolved, err := resolveServers(ReceivedMCPServers(cfg), env, nil)
 	if err != nil {
 		return nil, err
 	}
-	if builtIn, ok := effectiveBuiltInDispatchServer(cfg); ok && !containsResolvedServerID(resolved, builtIn.ID) {
-		resolved = append(resolved, builtIn)
-		sort.Slice(resolved, func(i, j int) bool { return resolved[i].ID < resolved[j].ID })
-	}
-	return resolved, nil
+	builtIn, ok := effectiveBuiltInDispatchServer(cfg)
+	return withBuiltInServer(resolved, builtIn, ok), nil
 }
 
 // EffectiveEnabledServerIDs returns every server doctor and warning discovery
@@ -144,7 +143,7 @@ func EffectiveEnabledServerIDs(cfg config.Config) []string {
 	for _, server := range received {
 		ids = append(ids, server.ID)
 	}
-	if _, ok := effectiveBuiltInDispatchServer(cfg); ok && !containsServerID(ids, BuiltInDispatchServerID) {
+	if _, ok := effectiveBuiltInDispatchServer(cfg); ok && !slices.Contains(ids, BuiltInDispatchServerID) {
 		ids = append(ids, BuiltInDispatchServerID)
 	}
 	return ids
@@ -192,32 +191,19 @@ func effectiveBuiltInDispatchServer(cfg config.Config) (ResolvedMCPServer, bool)
 	return ResolvedMCPServer{}, false
 }
 
-func withBuiltInDispatchServer(cfg config.Config, env map[string]string, client string, resolved []ResolvedMCPServer) []ResolvedMCPServer {
-	builtIn, ok := RootedBuiltInDispatchServer(cfg, client, env[config.BuiltinRepoRootEnvVar])
-	if !ok || containsResolvedServerID(resolved, builtIn.ID) {
+// withBuiltInServer adds the built-in server when ok and its ID is not already
+// present, then re-sorts by ID. Otherwise resolved is returned unchanged.
+func withBuiltInServer(resolved []ResolvedMCPServer, builtIn ResolvedMCPServer, ok bool) []ResolvedMCPServer {
+	if !ok || slices.ContainsFunc(resolved, func(server ResolvedMCPServer) bool { return server.ID == builtIn.ID }) {
 		return resolved
 	}
 	resolved = append(resolved, builtIn)
-	sort.Slice(resolved, func(i, j int) bool { return resolved[i].ID < resolved[j].ID })
+	sortServersByID(resolved)
 	return resolved
 }
 
-func containsResolvedServerID(servers []ResolvedMCPServer, id string) bool {
-	for _, server := range servers {
-		if server.ID == id {
-			return true
-		}
-	}
-	return false
-}
-
-func containsServerID(ids []string, id string) bool {
-	for _, existing := range ids {
-		if existing == id {
-			return true
-		}
-	}
-	return false
+func sortServersByID(servers []ResolvedMCPServer) {
+	sort.Slice(servers, func(i, j int) bool { return servers[i].ID < servers[j].ID })
 }
 
 // RootMCPExclusions returns generated root .mcp.json IDs that a client which
@@ -236,7 +222,7 @@ func RootMCPExclusions(cfg config.Config, client string) []string {
 	seen := make(map[string]bool)
 	var excluded []string
 	for _, id := range shared {
-		if !seen[id] && !containsServerID(selected, id) {
+		if !seen[id] && !slices.Contains(selected, id) {
 			excluded = append(excluded, id)
 		}
 		seen[id] = true

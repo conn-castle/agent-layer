@@ -23,10 +23,9 @@ const (
 
 // catalogSkillRelPathPrefixes lists the .agent-layer/skills/<id>/ prefixes that
 // are managed by the wizard's CLI-skill catalog. Paths under these prefixes are
-// classified under ownershipPolicyCatalogSkills so the unknowns scan does not
-// flag them in existing repos after the skills-catalog restructure. Pre-rename
-// ids (playwright-cli, agent-dispatch) stay listed so a repo that has not yet
-// run the renaming upgrade is still classified correctly.
+// assigned ownershipPolicyCatalogSkills for manifest hashing and validation.
+// Pre-rename ids (playwright-cli, agent-dispatch) stay listed so a repo that
+// has not yet run the renaming upgrade still receives the catalog policy.
 var catalogSkillRelPathPrefixes = []string{
 	".agent-layer/skills/tavily-web/",
 	".agent-layer/skills/playwright/",
@@ -39,17 +38,9 @@ var catalogSkillRelPathPrefixes = []string{
 }
 
 const (
-	ownershipReasonBaselineMissing             = "baseline_missing"
-	ownershipReasonPinManifestMissing          = "pin_manifest_missing"
-	ownershipReasonManagedSectionMatchesPinned = "managed_section_matches_pinned"
-	ownershipReasonManagedSectionMatchesOther  = "managed_section_matches_other_version"
-	ownershipReasonSectionMarkerMissing        = "section_marker_missing"
-	ownershipReasonSectionMarkerAmbiguous      = "section_marker_ambiguous"
-	ownershipReasonAllowlistReorderedOnly      = "allowlist_reordered_only"
-	ownershipReasonAllowlistUpstreamLineDelta  = "allowlist_upstream_line_delta"
-	ownershipReasonAllowlistLocalLineDelta     = "allowlist_local_line_delta"
-	ownershipReasonPolicyPayloadInvalid        = "policy_payload_invalid"
-	ownershipReasonPolicyMismatch              = "policy_mismatch"
+	ownershipReasonSectionMarkerMissing   = "section_marker_missing"
+	ownershipReasonSectionMarkerAmbiguous = "section_marker_ambiguous"
+	ownershipReasonPolicyPayloadInvalid   = "policy_payload_invalid"
 )
 
 var memoryEntriesPaths = map[string]struct{}{
@@ -92,6 +83,12 @@ func (e ownershipComparableError) Unwrap() error {
 }
 
 func ownershipPolicyForPath(relPath string) string {
+	return ownershipPolicyForCatalog(relPath, catalogSkillRelPathPrefixes)
+}
+
+// ownershipPolicyForCatalog classifies relPath, treating catalogSkillPrefixes
+// as the complete set of catalog-skill path prefixes.
+func ownershipPolicyForCatalog(relPath string, catalogSkillPrefixes []string) string {
 	if relPath == commandsAllowRelPath {
 		return ownershipPolicyAllowlist
 	}
@@ -101,7 +98,7 @@ func ownershipPolicyForPath(relPath string) string {
 	if _, ok := memoryEntriesPaths[relPath]; ok {
 		return ownershipPolicyMemoryEntries
 	}
-	for _, prefix := range catalogSkillRelPathPrefixes {
+	for _, prefix := range catalogSkillPrefixes {
 		if strings.HasPrefix(relPath, prefix) {
 			return ownershipPolicyCatalogSkills
 		}
@@ -110,7 +107,10 @@ func ownershipPolicyForPath(relPath string) string {
 }
 
 func buildOwnershipComparable(relPath string, content []byte) (ownershipComparable, error) {
-	policyID := ownershipPolicyForPath(relPath)
+	return ownershipComparableForPolicy(ownershipPolicyForPath(relPath), content)
+}
+
+func ownershipComparableForPolicy(policyID string, content []byte) (ownershipComparable, error) {
 	normalizedContent := normalizeTemplateContent(string(content))
 	out := ownershipComparable{
 		PolicyID: policyID,

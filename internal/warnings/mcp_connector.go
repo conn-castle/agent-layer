@@ -19,48 +19,6 @@ import (
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
-// mcpSessionInterface wraps the MCP session for testing.
-type mcpSessionInterface interface {
-	ListTools(ctx context.Context, params *mcp.ListToolsParams) (*mcp.ListToolsResult, error)
-	Close() error
-}
-
-// mcpClientInterface wraps the MCP client for testing.
-type mcpClientInterface interface {
-	Connect(ctx context.Context, transport mcp.Transport, opts *mcp.ClientSessionOptions) (mcpSessionInterface, error)
-}
-
-// realMCPClient wraps the real mcp.Client.
-type realMCPClient struct {
-	client *mcp.Client
-}
-
-func (r *realMCPClient) Connect(ctx context.Context, transport mcp.Transport, opts *mcp.ClientSessionOptions) (mcpSessionInterface, error) {
-	session, err := r.client.Connect(ctx, transport, opts)
-	if err != nil {
-		return nil, err
-	}
-	return &realMCPSession{session: session}, nil
-}
-
-// realMCPSession wraps the real mcp.ClientSession.
-type realMCPSession struct {
-	session *mcp.ClientSession
-}
-
-func (r *realMCPSession) ListTools(ctx context.Context, params *mcp.ListToolsParams) (*mcp.ListToolsResult, error) {
-	return r.session.ListTools(ctx, params)
-}
-
-func (r *realMCPSession) Close() error {
-	return r.session.Close()
-}
-
-// NewMCPClientFunc is a mockable function for creating MCP clients.
-var NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) mcpClientInterface {
-	return &realMCPClient{client: mcp.NewClient(impl, opts)}
-}
-
 // maxToolsToDiscover is the maximum number of tools to discover before aborting.
 // This guards against infinite pagination loops.
 const maxToolsToDiscover = 1000
@@ -90,24 +48,23 @@ type RealConnector struct{}
 
 // ConnectAndDiscover connects to an MCP server and discovers its tools.
 func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projection.ResolvedMCPServer) DiscoveryResult {
-	res := DiscoveryResult{ServerID: server.ID}
 	if server.Transport == config.TransportHTTP && server.Auth == config.MCPAuthOAuth {
-		res.OAuthUnvalidated = true
-		return res
+		return DiscoveryResult{ServerID: server.ID, OAuthUnvalidated: true}
 	}
 
 	// Create context with timeout for this server
 	ctx, cancel := context.WithTimeout(ctx, mcpDiscoveryTimeout)
 	defer cancel()
 
-	// Create client
-	mcpClient := NewMCPClientFunc(&mcp.Implementation{
-		Name:    "agent-layer-doctor",
-		Version: "1.0.0",
-	}, nil)
+	transport, err := mcpDiscoveryTransport(ctx, server)
+	if err != nil {
+		return DiscoveryResult{ServerID: server.ID, Error: err}
+	}
+	return discoverMCPTools(ctx, server.ID, transport)
+}
 
-	var transport mcp.Transport
-
+// mcpDiscoveryTransport builds the client transport for one configured server.
+func mcpDiscoveryTransport(ctx context.Context, server projection.ResolvedMCPServer) (mcp.Transport, error) {
 	switch server.Transport {
 	case config.TransportStdio:
 		// Bind the spawned MCP server process to the discovery context (which
@@ -116,48 +73,44 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projectio
 		// session Close().
 		cmd := exec.CommandContext(ctx, server.Command, server.Args...)
 		cmd.Env = buildMCPCommandEnv(os.Environ(), server.Env)
-
-		transport = &mcp.CommandTransport{
-			Command: cmd,
-		}
+		return &mcp.CommandTransport{Command: cmd}, nil
 	case config.TransportHTTP:
 		switch server.HTTPTransport {
 		case "", config.HTTPTransportSSE:
-			t := &mcp.SSEClientTransport{
-				Endpoint: server.URL,
-			}
-			if len(server.Headers) > 0 {
-				t.HTTPClient = &http.Client{
-					Transport: &headerTransport{
-						base:    http.DefaultTransport,
-						headers: server.Headers,
-					},
-				}
-			}
-			transport = t
+			return &mcp.SSEClientTransport{Endpoint: server.URL, HTTPClient: headerHTTPClient(server.Headers)}, nil
 		case config.HTTPTransportStreamable:
-			t := &mcp.StreamableClientTransport{
-				Endpoint: server.URL,
-			}
-			if len(server.Headers) > 0 {
-				t.HTTPClient = &http.Client{
-					Transport: &headerTransport{
-						base:    http.DefaultTransport,
-						headers: server.Headers,
-					},
-				}
-			}
-			transport = t
+			return &mcp.StreamableClientTransport{Endpoint: server.URL, HTTPClient: headerHTTPClient(server.Headers)}, nil
 		default:
-			res.Error = fmt.Errorf(messages.WarningsUnsupportedHTTPTransportFmt, server.HTTPTransport)
-			return res
+			return nil, fmt.Errorf(messages.WarningsUnsupportedHTTPTransportFmt, server.HTTPTransport)
 		}
 	default:
-		res.Error = fmt.Errorf(messages.WarningsUnsupportedTransportFmt, server.Transport)
-		return res
+		return nil, fmt.Errorf(messages.WarningsUnsupportedTransportFmt, server.Transport)
 	}
+}
 
-	session, err := mcpClient.Connect(ctx, transport, nil)
+// headerHTTPClient returns a client that adds headers to every request, or nil
+// so the SDK uses its default client when there are no headers.
+func headerHTTPClient(headers map[string]string) *http.Client {
+	if len(headers) == 0 {
+		return nil
+	}
+	return &http.Client{
+		Transport: &headerTransport{
+			base:    http.DefaultTransport,
+			headers: headers,
+		},
+	}
+}
+
+// discoverMCPTools connects over transport and lists every tool the server
+// exposes, estimating per-tool and total schema tokens.
+func discoverMCPTools(ctx context.Context, serverID string, transport mcp.Transport) DiscoveryResult {
+	res := DiscoveryResult{ServerID: serverID}
+	client := mcp.NewClient(&mcp.Implementation{
+		Name:    "agent-layer-doctor",
+		Version: "1.0.0",
+	}, nil)
+	session, err := client.Connect(ctx, transport, nil)
 	if err != nil {
 		res.Error = fmt.Errorf(messages.WarningsConnectionFailedFmt, err)
 		return res

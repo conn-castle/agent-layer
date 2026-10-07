@@ -1182,6 +1182,24 @@ func TestTreatmentRuntimePreflightRequiresEvidenceWithoutProviderSession(t *test
 	if err := validatePierTreatmentPreflight(stage, request); err != nil {
 		t.Fatalf("valid runtime preflight: %v", err)
 	}
+	for _, parts := range [][]string{
+		{"one", "agent", "sessions-old", "s.jsonl"},
+		{"one", "xagent", "sessions", "s.jsonl"},
+		{"one", "agent", "sessions", "s.json"},
+	} {
+		path := writeStageJobFile(t, stage, parts...)
+		if err := validatePierTreatmentPreflight(stage, request); err != nil {
+			t.Fatalf("non-session file %s rejected in runtime preflight: %v", path, err)
+		}
+	}
+	nestedSession := writeStageJobFile(t, stage, "one", "agent", "sessions", "2026", "01", "s.jsonl")
+	if err := validatePierTreatmentPreflight(stage, request); err == nil ||
+		!strings.Contains(err.Error(), "unexpectedly invoked the provider") {
+		t.Fatalf("nested provider session accepted in runtime preflight: %v", err)
+	}
+	if err := os.Remove(nestedSession); err != nil {
+		t.Fatal(err)
+	}
 	session := filepath.Join(stage, "jobs", "one", "agent", "sessions", "session.jsonl")
 	if err := os.MkdirAll(filepath.Dir(session), 0o700); err != nil {
 		t.Fatal(err)

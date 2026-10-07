@@ -49,27 +49,9 @@ func CaptureLaunch(root, runDir string, env []string, provider string) error {
 	if values[EnvSocketPath] == "" || values[EnvPaneID] == "" {
 		return errors.New("HerdR launch context is incomplete (need HERDR_ENV=1, HERDR_SOCKET_PATH, and HERDR_PANE_ID)")
 	}
-	canonicalRoot, err := canonicalDirectory(root)
+	canonicalRoot, canonicalRunDir, err := canonicalRunDirectory(root, runDir)
 	if err != nil {
-		return fmt.Errorf("resolve HerdR project root: %w", err)
-	}
-	canonicalRunDir, err := filepath.EvalSymlinks(runDir)
-	if err != nil {
-		return fmt.Errorf("resolve HerdR run directory: %w", err)
-	}
-	canonicalRunDir, err = filepath.Abs(canonicalRunDir)
-	if err != nil {
-		return fmt.Errorf("resolve HerdR run directory: %w", err)
-	}
-	if !pathWithin(canonicalRoot, canonicalRunDir) {
-		return fmt.Errorf("HerdR run directory is outside the project root: %s", runDir)
-	}
-	info, err := os.Lstat(canonicalRunDir)
-	if err != nil {
-		return fmt.Errorf("stat HerdR run directory: %w", err)
-	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("HerdR run directory must be a real directory: %s", runDir)
+		return err
 	}
 	pid := os.Getpid()
 	_, start, err := processLineage(pid)
@@ -136,27 +118,9 @@ func CaptureLaunch(root, runDir string, env []string, provider string) error {
 // older HerdR launch context. Dispatch invokes this explicitly because its
 // normal launch environment intentionally strips AL_DISPATCH_ACTIVE.
 func WriteBoundary(root, runDir string) error {
-	canonicalRoot, err := canonicalDirectory(root)
+	_, canonicalRunDir, err := canonicalRunDirectory(root, runDir)
 	if err != nil {
-		return fmt.Errorf("resolve HerdR project root: %w", err)
-	}
-	canonicalRunDir, err := filepath.EvalSymlinks(runDir)
-	if err != nil {
-		return fmt.Errorf("resolve HerdR run directory: %w", err)
-	}
-	canonicalRunDir, err = filepath.Abs(canonicalRunDir)
-	if err != nil {
-		return fmt.Errorf("resolve HerdR run directory: %w", err)
-	}
-	if !pathWithin(canonicalRoot, canonicalRunDir) {
-		return fmt.Errorf("HerdR run directory is outside the project root: %s", runDir)
-	}
-	info, err := os.Lstat(canonicalRunDir)
-	if err != nil {
-		return fmt.Errorf("stat HerdR run directory: %w", err)
-	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("HerdR run directory must be a real directory: %s", runDir)
+		return err
 	}
 	pid := os.Getpid()
 	_, start, err := processLineage(pid)
@@ -179,6 +143,35 @@ func WriteBoundary(root, runDir string) error {
 		return fmt.Errorf("close HerdR dispatch boundary: %w", err)
 	}
 	return nil
+}
+
+// canonicalRunDirectory resolves the project root and a run directory beneath
+// it, rejecting run directories that escape the root or are not real
+// directories.
+func canonicalRunDirectory(root, runDir string) (string, string, error) {
+	canonicalRoot, err := canonicalDirectory(root)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve HerdR project root: %w", err)
+	}
+	canonicalRunDir, err := filepath.EvalSymlinks(runDir)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve HerdR run directory: %w", err)
+	}
+	canonicalRunDir, err = filepath.Abs(canonicalRunDir)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve HerdR run directory: %w", err)
+	}
+	if !pathWithin(canonicalRoot, canonicalRunDir) {
+		return "", "", fmt.Errorf("HerdR run directory is outside the project root: %s", runDir)
+	}
+	info, err := os.Lstat(canonicalRunDir)
+	if err != nil {
+		return "", "", fmt.Errorf("stat HerdR run directory: %w", err)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return "", "", fmt.Errorf("HerdR run directory must be a real directory: %s", runDir)
+	}
+	return canonicalRoot, canonicalRunDir, nil
 }
 
 func launchContextName(pid int, start string) string {

@@ -1454,6 +1454,44 @@ func TestCleanClaudeChimeHookRejectsMalformedHandlerListWithChime(t *testing.T) 
 	}
 }
 
+func TestRemoveClaudeChimeHookFiltersEarlierGroupsBeforeMalformedHandlerList(t *testing.T) {
+	t.Parallel()
+	userHandler := map[string]any{"type": "command", "command": "user stop"}
+	earlier := map[string]any{hooksKey: []any{chimeHandler(agentLayerClaudeChimeCommand), userHandler}}
+	malformed := map[string]any{hooksKey: "bad"}
+	laterHandlers := []any{chimeHandler(agentLayerClaudeChimeCommand)}
+	later := map[string]any{hooksKey: laterHandlers}
+	stop := []any{earlier, malformed, later}
+	hooks := map[string]any{stopHookKey: stop}
+	settings := map[string]any{hooksKey: hooks}
+
+	changed, err := removeClaudeChimeHook(settings)
+	wantErr := ".claude/settings.json hooks.Stop.hooks must be a list to merge the managed notifications chime hook; " +
+		"remove or fix that override, or set notifications.chime = false"
+	if changed || err == nil || err.Error() != wantErr {
+		t.Fatalf("expected unchanged malformed handler-list error %q, got changed=%v err=%v", wantErr, changed, err)
+	}
+	gotStop, ok := hooks[stopHookKey].([]any)
+	if !ok || len(gotStop) != 3 || &gotStop[0] != &stop[0] {
+		t.Fatalf("expected original Stop list left in place, got %#v", hooks[stopHookKey])
+	}
+	for i, want := range []map[string]any{earlier, malformed, later} {
+		if got, ok := gotStop[i].(map[string]any); !ok || reflect.ValueOf(got).Pointer() != reflect.ValueOf(want).Pointer() {
+			t.Fatalf("expected Stop group %d to keep its identity, got %#v", i, gotStop[i])
+		}
+	}
+	if !reflect.DeepEqual(earlier[hooksKey], []any{userHandler}) {
+		t.Fatalf("expected earlier group filtered before the error, got %#v", earlier[hooksKey])
+	}
+	if malformed[hooksKey] != "bad" || len(malformed) != 1 {
+		t.Fatalf("expected malformed group unchanged, got %#v", malformed)
+	}
+	gotLater, ok := later[hooksKey].([]any)
+	if !ok || len(gotLater) != 1 || &gotLater[0] != &laterHandlers[0] {
+		t.Fatalf("expected later group untouched, got %#v", later[hooksKey])
+	}
+}
+
 func TestCleanClaudeChimeHookNoopWhenChimeTextIsOutsideHooks(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{

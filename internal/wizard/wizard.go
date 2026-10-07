@@ -18,6 +18,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 // ErrBack indicates that the user pressed Esc to return from a wizard form.
@@ -25,19 +26,12 @@ var ErrBack = errors.New("wizard back requested")
 
 var (
 	loadDefaultMCPServersFunc = loadDefaultMCPServers
-	loadCLISkillCatalogFunc   = loadCLISkillCatalog
 	loadWarningDefaultsFunc   = loadWarningDefaults
 	loadProjectConfigFunc     = config.LoadProjectConfig
 	loadConfigLenientFunc     = config.LoadConfigLenient
 	errWizardBack             = ErrBack
 	errWizardCancelled        = errors.New("wizard cancelled")
 )
-
-// Run starts the interactive wizard.
-// pinVersion is written to .agent-layer/al.version when install is needed.
-func Run(root string, ui UI, runSync syncer, pinVersion string) error {
-	return RunWithWriter(root, ui, runSync, pinVersion, os.Stdout)
-}
 
 // RunWithWriter starts the interactive wizard and writes user-facing output to out.
 // pinVersion is written to .agent-layer/al.version when install is needed.
@@ -183,7 +177,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	}
 	choices.DefaultMCPServers = defaultServers
 
-	cliSkills, err := loadCLISkillCatalogFunc()
+	cliSkills, err := templates.LoadCLISkillCatalog()
 	if err != nil {
 		return nil, err
 	}
@@ -223,9 +217,12 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	}
 	setEnabledAgentsFromConfig(choices.EnabledAgents, agentConfigs)
 
-	choices.AntigravityModel = agentoptions.ConfiguredValue(cfg.Config, AgentAntigravity, agentoptions.KindModel)
-	choices.ClaudeModel = agentoptions.ConfiguredValue(cfg.Config, AgentClaude, agentoptions.KindModel)
-	choices.ClaudeReasoning = agentoptions.ConfiguredValue(cfg.Config, AgentClaude, agentoptions.KindReasoningEffort)
+	for agent := range agentModelPromptTitles {
+		choices.AgentModels[agent] = AgentModelChoice{
+			Model:     agentoptions.ConfiguredValue(cfg.Config, agent, agentoptions.KindModel),
+			Reasoning: agentoptions.ConfiguredValue(cfg.Config, agent, agentoptions.KindReasoningEffort),
+		}
+	}
 	if cfg.Config.Agents.Claude.LocalConfigDir != nil {
 		choices.ClaudeLocalConfigDir = *cfg.Config.Agents.Claude.LocalConfigDir
 	}
@@ -247,8 +244,6 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 		// lingering legacy entry.
 		choices.ClaudeDisableQuestionTool = readClaudeQuestionToolDisabledLegacy(claudeAgentSpecific)
 	}
-	choices.CodexModel = agentoptions.ConfiguredValue(cfg.Config, AgentCodex, agentoptions.KindModel)
-	choices.CodexReasoning = agentoptions.ConfiguredValue(cfg.Config, AgentCodex, agentoptions.KindReasoningEffort)
 	if cfg.Config.Agents.Codex.LocalConfigDir != nil {
 		choices.CodexLocalConfigDir = *cfg.Config.Agents.Codex.LocalConfigDir
 	}
@@ -259,11 +254,6 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	if cfg.Config.Agents.Codex.Statusline != nil {
 		choices.CodexStatusline = *cfg.Config.Agents.Codex.Statusline
 	}
-	choices.CopilotCLIModel = agentoptions.ConfiguredValue(cfg.Config, AgentCopilotCLI, agentoptions.KindModel)
-	choices.GrokModel = agentoptions.ConfiguredValue(cfg.Config, AgentGrok, agentoptions.KindModel)
-	choices.GrokReasoning = agentoptions.ConfiguredValue(cfg.Config, AgentGrok, agentoptions.KindReasoningEffort)
-	choices.MuseModel = agentoptions.ConfiguredValue(cfg.Config, AgentMuse, agentoptions.KindModel)
-	choices.MuseReasoning = agentoptions.ConfiguredValue(cfg.Config, AgentMuse, agentoptions.KindReasoningEffort)
 	if cfg.Config.Agents.Grok.DisableMemory != nil {
 		choices.GrokDisableMemory = *cfg.Config.Agents.Grok.DisableMemory
 	}
@@ -644,8 +634,7 @@ func promptEnabledAgents(ui UI, choices *Choices) error {
 	choices.EnabledAgents = agentIDSet(enabledAgents)
 	choices.EnabledAgentsTouched = true
 	if !choices.EnabledAgents[AgentAntigravity] {
-		choices.AntigravityModel = ""
-		choices.AntigravityModelTouched = false
+		delete(choices.AgentModels, AgentAntigravity)
 	}
 	if !choices.EnabledAgents[AgentCodex] && !choices.EnabledAgents[AgentVSCode] {
 		// local_config_dir drives CODEX_HOME for both the Codex CLI (agents.codex)
@@ -704,25 +693,50 @@ func confirmWizardExitOnFirstStepEscape(ui UI) (bool, error) {
 	return exit, nil
 }
 
-func promptModels(ui UI, choices *Choices, optionCache *wizardOptionDiscoveryCache) error {
-	if choices.EnabledAgents[AgentAntigravity] {
-		if err := optionCache.selectModel(ui, AgentAntigravity, messages.WizardAntigravityModelTitle, &choices.AntigravityModel); err != nil {
-			return err
-		}
-		choices.AntigravityModelTouched = true
+// agentModelPromptTitles holds the model and reasoning-effort prompt titles for
+// agents with a model option. An empty reasoning title means no reasoning prompt.
+var agentModelPromptTitles = map[string]struct{ model, reasoning string }{
+	AgentAntigravity: {model: messages.WizardAntigravityModelTitle},
+	AgentClaude:      {model: messages.WizardClaudeModelTitle, reasoning: messages.WizardClaudeReasoningEffortTitle},
+	AgentCodex:       {model: messages.WizardCodexModelTitle, reasoning: messages.WizardCodexReasoningEffortTitle},
+	AgentCopilotCLI:  {model: messages.WizardCopilotCLIModelTitle},
+	AgentGrok:        {model: messages.WizardGrokModelTitle, reasoning: messages.WizardGrokReasoningEffortTitle},
+	AgentMuse:        {model: messages.WizardMuseModelTitle, reasoning: messages.WizardMuseReasoningEffortTitle},
+}
+
+// promptAgentModel prompts for agent's model and, when the agent has a reasoning
+// title, its reasoning effort, storing each answer as soon as it succeeds.
+func promptAgentModel(ui UI, optionCache *wizardOptionDiscoveryCache, choices *Choices, agent string) error {
+	titles := agentModelPromptTitles[agent]
+	choice := choices.AgentModels[agent]
+	if err := optionCache.selectModel(ui, agent, titles.model, &choice.Model); err != nil {
+		return err
 	}
-	if choices.EnabledAgents[AgentClaude] {
-		if err := optionCache.selectModel(ui, AgentClaude, messages.WizardClaudeModelTitle, &choices.ClaudeModel); err != nil {
-			return err
-		}
-		choices.ClaudeModelTouched = true
-		// Reasoning effort is offered regardless of model. Claude Code is the
+	choice.ModelTouched = true
+	choices.AgentModels[agent] = choice
+	if titles.reasoning != "" {
+		// Reasoning effort is offered regardless of model. The client is the
 		// authority on which model/effort combinations apply, so the wizard does
 		// not gate or clear the choice based on the selected model.
-		if err := selectOptionalValue(ui, messages.WizardClaudeReasoningEffortTitle, reasoningEffortOptions(AgentClaude), &choices.ClaudeReasoning); err != nil {
+		if err := selectOptionalValue(ui, titles.reasoning, reasoningEffortOptions(agent), &choice.Reasoning); err != nil {
 			return err
 		}
-		choices.ClaudeReasoningTouched = true
+		choice.ReasoningTouched = true
+		choices.AgentModels[agent] = choice
+	}
+	return nil
+}
+
+func promptModels(ui UI, choices *Choices, optionCache *wizardOptionDiscoveryCache) error {
+	if choices.EnabledAgents[AgentAntigravity] {
+		if err := promptAgentModel(ui, optionCache, choices, AgentAntigravity); err != nil {
+			return err
+		}
+	}
+	if choices.EnabledAgents[AgentClaude] {
+		if err := promptAgentModel(ui, optionCache, choices, AgentClaude); err != nil {
+			return err
+		}
 	}
 	if choices.EnabledAgents[AgentClaude] || choices.EnabledAgents[AgentClaudeVSCode] {
 		claudeLocalConfigDir := choices.ClaudeLocalConfigDir
@@ -747,15 +761,9 @@ func promptModels(ui UI, choices *Choices, optionCache *wizardOptionDiscoveryCac
 		}
 	}
 	if choices.EnabledAgents[AgentCodex] {
-		if err := optionCache.selectModel(ui, AgentCodex, messages.WizardCodexModelTitle, &choices.CodexModel); err != nil {
+		if err := promptAgentModel(ui, optionCache, choices, AgentCodex); err != nil {
 			return err
 		}
-		choices.CodexModelTouched = true
-
-		if err := selectOptionalValue(ui, messages.WizardCodexReasoningEffortTitle, reasoningEffortOptions(AgentCodex), &choices.CodexReasoning); err != nil {
-			return err
-		}
-		choices.CodexReasoningTouched = true
 	}
 	if choices.EnabledAgents[AgentCodex] || choices.EnabledAgents[AgentVSCode] {
 		// local_config_dir sets CODEX_HOME to a repo-local .codex directory. It is
@@ -795,20 +803,14 @@ func promptModels(ui UI, choices *Choices, optionCache *wizardOptionDiscoveryCac
 		}
 	}
 	if choices.EnabledAgents[AgentCopilotCLI] {
-		if err := optionCache.selectModel(ui, AgentCopilotCLI, messages.WizardCopilotCLIModelTitle, &choices.CopilotCLIModel); err != nil {
+		if err := promptAgentModel(ui, optionCache, choices, AgentCopilotCLI); err != nil {
 			return err
 		}
-		choices.CopilotCLIModelTouched = true
 	}
 	if choices.EnabledAgents[AgentGrok] {
-		if err := optionCache.selectModel(ui, AgentGrok, messages.WizardGrokModelTitle, &choices.GrokModel); err != nil {
+		if err := promptAgentModel(ui, optionCache, choices, AgentGrok); err != nil {
 			return err
 		}
-		choices.GrokModelTouched = true
-		if err := selectOptionalValue(ui, messages.WizardGrokReasoningEffortTitle, reasoningEffortOptions(AgentGrok), &choices.GrokReasoning); err != nil {
-			return err
-		}
-		choices.GrokReasoningTouched = true
 		if err := promptFeatureToggles(ui, messages.WizardGrokFeaturesTitle, []featureToggle{
 			{label: messages.WizardGrokFeatureMemoryLabel, field: &choices.GrokDisableMemory, touched: &choices.GrokDisableMemoryTouched},
 		}); err != nil {
@@ -816,14 +818,9 @@ func promptModels(ui UI, choices *Choices, optionCache *wizardOptionDiscoveryCac
 		}
 	}
 	if choices.EnabledAgents[AgentMuse] {
-		if err := optionCache.selectModel(ui, AgentMuse, "Muse Model", &choices.MuseModel); err != nil {
+		if err := promptAgentModel(ui, optionCache, choices, AgentMuse); err != nil {
 			return err
 		}
-		choices.MuseModelTouched = true
-		if err := selectOptionalValue(ui, "Muse Reasoning Effort", reasoningEffortOptions(AgentMuse), &choices.MuseReasoning); err != nil {
-			return err
-		}
-		choices.MuseReasoningTouched = true
 	}
 
 	return nil
@@ -1102,83 +1099,20 @@ func redactEnvPreviewSide(content string, thisValues map[string]string, otherVal
 	}
 	lines := strings.Split(content, "\n")
 	for i, line := range lines {
-		prefix, key, suffix, ok := parseEnvPreviewLine(line)
-		if !ok {
+		// redactEnvPreviewContent already ran envfile.Parse on content, so err is always nil.
+		assignment, ok, err := envfile.ParseLine(line)
+		if err != nil || !ok {
 			continue
 		}
-		thisValue, thisOK := thisValues[key]
-		otherValue, otherOK := otherValues[key]
-		lines[i] = fmt.Sprintf("%s%s=%q%s", prefix, key, redactedEnvPreviewValue(thisValue, thisOK, otherValue, otherOK, currentSide), suffix)
+		prefix := ""
+		if assignment.Export {
+			prefix = "export "
+		}
+		thisValue, thisOK := thisValues[assignment.Key]
+		otherValue, otherOK := otherValues[assignment.Key]
+		lines[i] = fmt.Sprintf("%s%s=%q%s", prefix, assignment.Key, redactedEnvPreviewValue(thisValue, thisOK, otherValue, otherOK, currentSide), assignment.Comment)
 	}
 	return strings.Join(lines, "\n")
-}
-
-func parseEnvPreviewLine(line string) (string, string, string, bool) {
-	trimmed := strings.TrimSpace(line)
-	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-		return "", "", "", false
-	}
-	prefix := ""
-	if strings.HasPrefix(trimmed, "export ") {
-		prefix = "export "
-		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "export "))
-	}
-	idx := strings.Index(trimmed, "=")
-	if idx <= 0 {
-		return "", "", "", false
-	}
-	key := strings.TrimSpace(trimmed[:idx])
-	if key == "" {
-		return "", "", "", false
-	}
-	return prefix, key, envPreviewTrailingComment(trimmed[idx+1:]), true
-}
-
-func envPreviewTrailingComment(rawValue string) string {
-	value := strings.TrimSpace(rawValue)
-	if len(value) < 2 {
-		return ""
-	}
-
-	var closing int
-	switch value[0] {
-	case '"':
-		closing = findEnvPreviewClosingDoubleQuote(value)
-	case '\'':
-		closingOffset := strings.IndexByte(value[1:], '\'')
-		if closingOffset < 0 {
-			return ""
-		}
-		closing = 1 + closingOffset
-	default:
-		return ""
-	}
-
-	if closing < 0 {
-		return ""
-	}
-	suffix := value[closing+1:]
-	if strings.HasPrefix(strings.TrimSpace(suffix), "#") {
-		return suffix
-	}
-	return ""
-}
-
-func findEnvPreviewClosingDoubleQuote(value string) int {
-	escaped := false
-	for i := 1; i < len(value); i++ {
-		if escaped {
-			escaped = false
-			continue
-		}
-		switch value[i] {
-		case '\\':
-			escaped = true
-		case '"':
-			return i
-		}
-	}
-	return -1
 }
 
 func redactedEnvPreviewValue(thisValue string, thisOK bool, otherValue string, otherOK bool, currentSide bool) string {

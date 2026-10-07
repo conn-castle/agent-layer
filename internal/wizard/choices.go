@@ -1,5 +1,16 @@
 package wizard
 
+import "github.com/conn-castle/agent-layer/internal/templates"
+
+// AgentModelChoice is the wizard's model and reasoning-effort selection for one agent.
+// Touched records that the user answered the matching prompt.
+type AgentModelChoice struct {
+	Model            string
+	ModelTouched     bool
+	Reasoning        string
+	ReasoningTouched bool
+}
+
 // Choices tracks user selections in the wizard.
 type Choices struct {
 	// Approvals
@@ -11,14 +22,7 @@ type Choices struct {
 	EnabledAgentsTouched bool
 
 	// Models
-	AntigravityModel        string
-	AntigravityModelTouched bool
-
-	ClaudeModel        string
-	ClaudeModelTouched bool
-
-	ClaudeReasoning        string
-	ClaudeReasoningTouched bool
+	AgentModels map[string]AgentModelChoice // keyed by agent ID
 
 	ClaudeLocalConfigDir        bool
 	ClaudeLocalConfigDirTouched bool
@@ -42,12 +46,6 @@ type Choices struct {
 	ClaudeStatusline        bool
 	ClaudeStatuslineTouched bool
 
-	CodexModel        string
-	CodexModelTouched bool
-
-	CodexReasoning        string
-	CodexReasoningTouched bool
-
 	CodexLocalConfigDir        bool
 	CodexLocalConfigDirTouched bool
 
@@ -66,20 +64,6 @@ type Choices struct {
 	CodexStatusline        bool
 	CodexStatuslineTouched bool
 
-	CopilotCLIModel        string
-	CopilotCLIModelTouched bool
-
-	GrokModel        string
-	GrokModelTouched bool
-
-	GrokReasoning        string
-	GrokReasoningTouched bool
-
-	MuseModel            string
-	MuseModelTouched     bool
-	MuseReasoning        string
-	MuseReasoningTouched bool
-
 	// GrokDisableMemory is disable-intent: true writes disable_memory = true.
 	GrokDisableMemory        bool
 	GrokDisableMemoryTouched bool
@@ -96,7 +80,7 @@ type Choices struct {
 	// and removes the on-disk directory for ids set false. Grouped entries
 	// (Members) install or remove each member directory instead.
 	EnabledCLISkills map[string]bool
-	CLISkillsCatalog []CLISkillCatalogEntry
+	CLISkillsCatalog []templates.CLISkillCatalogEntry
 
 	// Git tracking for Agent Layer-owned folders. The managed source of truth is
 	// `.agent-layer/gitignore.block`; these fields are derived from that file at
@@ -140,6 +124,7 @@ type Choices struct {
 func NewChoices() *Choices {
 	return &Choices{
 		InstructionSet:          InstructionSetNone,
+		AgentModels:             make(map[string]AgentModelChoice),
 		EnabledAgents:           make(map[string]bool),
 		EnabledCLISkills:        make(map[string]bool),
 		EnabledMCPServers:       make(map[string]bool),
@@ -155,23 +140,24 @@ func (c *Choices) Clone() *Choices {
 		return nil
 	}
 	clone := *c
-	clone.EnabledAgents = cloneBoolMap(c.EnabledAgents)
-	clone.EnabledCLISkills = cloneBoolMap(c.EnabledCLISkills)
-	clone.EnabledMCPServers = cloneBoolMap(c.EnabledMCPServers)
-	clone.DisabledMCPServers = cloneBoolMap(c.DisabledMCPServers)
-	clone.Secrets = cloneStringMap(c.Secrets)
+	clone.AgentModels = cloneMap(c.AgentModels)
+	clone.EnabledAgents = cloneMap(c.EnabledAgents)
+	clone.EnabledCLISkills = cloneMap(c.EnabledCLISkills)
+	clone.EnabledMCPServers = cloneMap(c.EnabledMCPServers)
+	clone.DisabledMCPServers = cloneMap(c.DisabledMCPServers)
+	clone.Secrets = cloneMap(c.Secrets)
 	clone.DefaultMCPServers = cloneDefaultMCPServers(c.DefaultMCPServers)
 	clone.CustomMCPServers = cloneStringSlice(c.CustomMCPServers)
-	clone.CustomMCPServersEnabled = cloneBoolMap(c.CustomMCPServersEnabled)
+	clone.CustomMCPServersEnabled = cloneMap(c.CustomMCPServersEnabled)
 	clone.CLISkillsCatalog = cloneCLISkillCatalog(c.CLISkillsCatalog)
 	return &clone
 }
 
-func cloneCLISkillCatalog(in []CLISkillCatalogEntry) []CLISkillCatalogEntry {
+func cloneCLISkillCatalog(in []templates.CLISkillCatalogEntry) []templates.CLISkillCatalogEntry {
 	if len(in) == 0 {
 		return nil
 	}
-	out := make([]CLISkillCatalogEntry, len(in))
+	out := make([]templates.CLISkillCatalogEntry, len(in))
 	copy(out, in)
 	for i := range out {
 		out[i].Members = cloneStringSlice(in[i].Members)
@@ -179,22 +165,8 @@ func cloneCLISkillCatalog(in []CLISkillCatalogEntry) []CLISkillCatalogEntry {
 	return out
 }
 
-func cloneBoolMap(in map[string]bool) map[string]bool {
-	if len(in) == 0 {
-		return make(map[string]bool)
-	}
-	out := make(map[string]bool, len(in))
-	for key, value := range in {
-		out[key] = value
-	}
-	return out
-}
-
-func cloneStringMap(in map[string]string) map[string]string {
-	if len(in) == 0 {
-		return make(map[string]string)
-	}
-	out := make(map[string]string, len(in))
+func cloneMap[K comparable, V any](in map[K]V) map[K]V {
+	out := make(map[K]V, len(in))
 	for key, value := range in {
 		out[key] = value
 	}

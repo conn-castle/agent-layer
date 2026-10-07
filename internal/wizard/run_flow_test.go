@@ -13,6 +13,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	alsync "github.com/conn-castle/agent-layer/internal/sync"
+	"github.com/conn-castle/agent-layer/internal/tomlpatch"
 )
 
 func TestRun_HappyPath(t *testing.T) {
@@ -670,9 +671,9 @@ enabled = false
 	assert.Contains(t, string(data), "apps = true")
 	assert.Contains(t, string(data), "plugins = false")
 	assert.Contains(t, string(data), "browser_use = false")
-	codexBlock, exists := parseTomlDocument(string(data)).sections[codexSection]
+	codexBlock, exists := tomlpatch.ParseDocument(string(data)).Sections[codexSection]
 	require.True(t, exists)
-	assert.False(t, hasUncommentedKeyLine(codexBlock.lines, "statusline"))
+	assert.False(t, hasUncommentedKeyLine(codexBlock.Lines, "statusline"))
 }
 
 // TestPromptModels_FeatureTogglesPreSelectAndRoundTrip proves the checkbox->
@@ -835,8 +836,8 @@ func TestPromptModels_VSCodeOnlyPromptsCodexRuntimeFeatures(t *testing.T) {
 	assert.False(t, sawCodexModel, "Codex model prompt is CLI-gated and must not render for VS Code-only repos")
 	assert.False(t, sawCodexReasoning, "Codex reasoning prompt is CLI-gated and must not render for VS Code-only repos")
 	assert.True(t, sawCodexFeatures, "shared Codex runtime feature toggles must render for VS Code-only repos")
-	assert.False(t, choices.CodexModelTouched)
-	assert.False(t, choices.CodexReasoningTouched)
+	assert.False(t, choices.AgentModels[AgentCodex].ModelTouched)
+	assert.False(t, choices.AgentModels[AgentCodex].ReasoningTouched)
 	assert.True(t, choices.CodexAppsTouched)
 	assert.True(t, choices.CodexPluginsTouched)
 	assert.True(t, choices.CodexDisableBrowserTouched)

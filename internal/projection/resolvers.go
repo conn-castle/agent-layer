@@ -33,32 +33,17 @@ func ClientPlaceholderResolver(clientSyntax string) EnvVarResolver {
 	}
 }
 
-// FullValueResolver returns a resolver that keeps resolved env values.
-// Missing values still error during substitution before the resolver runs.
-func FullValueResolver(_ map[string]string) EnvVarResolver {
-	return func(_ string, value string) string {
-		return value
-	}
-}
-
-// ResolveEnabledMCPServers resolves all enabled MCP servers without client filtering.
-// Callers that need only the servers clients receive pass ReceivedMCPServers.
-func ResolveEnabledMCPServers(servers []config.MCPServer, env map[string]string) ([]ResolvedMCPServer, error) {
-	resolver := FullValueResolver(env)
-
+// resolveServers resolves servers in order and fails on the first server that
+// cannot be resolved. A nil resolver keeps resolved env values.
+func resolveServers(servers []config.MCPServer, env map[string]string, resolver EnvVarResolver) ([]ResolvedMCPServer, error) {
 	var resolved []ResolvedMCPServer
 	for _, server := range servers {
-		if server.Enabled == nil || !*server.Enabled {
-			continue
-		}
-
 		entry, err := resolveSingleServer(server, env, resolver)
 		if err != nil {
 			return nil, &MCPServerResolveError{ServerID: server.ID, Err: err}
 		}
 		resolved = append(resolved, entry)
 	}
-
 	return resolved, nil
 }
 

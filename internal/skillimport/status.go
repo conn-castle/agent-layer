@@ -57,9 +57,6 @@ func (s *Service) Status() (*Status, error) {
 }
 
 func buildStatus(st *state) (*Status, error) {
-	if err := failOnOrphans(st); err != nil {
-		return nil, err
-	}
 	status := &Status{}
 
 	for _, block := range st.cfg.Skills.Imports {

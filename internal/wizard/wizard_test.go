@@ -12,10 +12,40 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	alsync "github.com/conn-castle/agent-layer/internal/sync"
 )
+
+func TestAgentModelPromptTitlesMatchSupportedOptions(t *testing.T) {
+	modelAgents := 0
+	for _, agent := range SupportedAgents() {
+		titles, ok := agentModelPromptTitles[agent]
+		supportsModel := agentoptions.Supports(agent, agentoptions.KindModel)
+		assert.Equal(t, supportsModel, ok, agent)
+		assert.Equal(t, supportsModel, titles.model != "", agent)
+		assert.Equal(t, agentoptions.Supports(agent, agentoptions.KindReasoningEffort), titles.reasoning != "", agent)
+		if supportsModel {
+			modelAgents++
+		}
+	}
+	assert.Len(t, agentModelPromptTitles, modelAgents)
+}
+
+func TestPromptAgentModel_ReasoningErrorPreservesModelAnswer(t *testing.T) {
+	choices := &Choices{AgentModels: map[string]AgentModelChoice{
+		AgentClaude: {Model: "old-model", Reasoning: "high"},
+	}}
+	ui := &ScriptedUI{answers: scriptedAnswers{Select: map[string]string{
+		messages.WizardClaudeModelTitle: "new-model",
+	}}, used: map[string]struct{}{}}
+
+	err := promptAgentModel(ui, nil, choices, AgentClaude)
+
+	require.Error(t, err)
+	assert.Equal(t, AgentModelChoice{Model: "new-model", ModelTouched: true, Reasoning: "high"}, choices.AgentModels[AgentClaude])
+}
 
 func TestBuildSummaryIncludesDisabledMCPServers(t *testing.T) {
 	choices := NewChoices()
@@ -33,7 +63,7 @@ func TestBuildSummaryIncludesAntigravityModel(t *testing.T) {
 	choices := NewChoices()
 	choices.ApprovalMode = config.ApprovalModeAll
 	choices.EnabledAgents[AgentAntigravity] = true
-	choices.AntigravityModel = "Gemini 3.5 Flash (High)"
+	choices.AgentModels[AgentAntigravity] = AgentModelChoice{Model: "Gemini 3.5 Flash (High)"}
 
 	summary := buildSummary(choices)
 
@@ -425,7 +455,7 @@ func TestPromptModels_SetsDisableToggles(t *testing.T) {
 func TestPromptModels_AntigravityModelOptions(t *testing.T) {
 	choices := NewChoices()
 	choices.EnabledAgents[AgentAntigravity] = true
-	choices.AntigravityModel = "Gemini 3.5 Flash (High)"
+	choices.AgentModels[AgentAntigravity] = AgentModelChoice{Model: "Gemini 3.5 Flash (High)"}
 
 	var sawAntigravityModel bool
 	ui := &MockUI{
@@ -447,8 +477,8 @@ func TestPromptModels_AntigravityModelOptions(t *testing.T) {
 		t.Fatalf("promptModels error: %v", err)
 	}
 	assert.True(t, sawAntigravityModel)
-	assert.True(t, choices.AntigravityModelTouched)
-	assert.Equal(t, "Gemini 3.1 Pro (High)", choices.AntigravityModel)
+	assert.True(t, choices.AgentModels[AgentAntigravity].ModelTouched)
+	assert.Equal(t, "Gemini 3.1 Pro (High)", choices.AgentModels[AgentAntigravity].Model)
 }
 
 // TestPromptEnabledAgents_ResetsDisableToggles asserts that deselecting the
@@ -456,8 +486,7 @@ func TestPromptModels_AntigravityModelOptions(t *testing.T) {
 // "disable" choice cannot survive into an unrelated config.
 func TestPromptEnabledAgents_ResetsDisableToggles(t *testing.T) {
 	choices := NewChoices()
-	choices.AntigravityModel = "Gemini 3.5 Flash (High)"
-	choices.AntigravityModelTouched = true
+	choices.AgentModels[AgentAntigravity] = AgentModelChoice{Model: "Gemini 3.5 Flash (High)", ModelTouched: true}
 	choices.ClaudeDisableIDEReading = true
 	choices.ClaudeDisableIDEReadingTouched = true
 	choices.ClaudeDisableMemory = true
@@ -494,8 +523,8 @@ func TestPromptEnabledAgents_ResetsDisableToggles(t *testing.T) {
 	assert.False(t, choices.ClaudeDisableConnectorsTouched)
 	assert.False(t, choices.ClaudeDisableQuestionTool)
 	assert.False(t, choices.ClaudeDisableQuestionToolTouched)
-	assert.Empty(t, choices.AntigravityModel)
-	assert.False(t, choices.AntigravityModelTouched)
+	assert.Empty(t, choices.AgentModels[AgentAntigravity].Model)
+	assert.False(t, choices.AgentModels[AgentAntigravity].ModelTouched)
 	assert.False(t, choices.CodexDisableBrowser)
 	assert.False(t, choices.CodexDisableBrowserTouched)
 	assert.False(t, choices.CodexLocalConfigDir)
@@ -738,7 +767,7 @@ func TestInitializeChoices_AntigravityModelReadBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initializeChoices: %v", err)
 	}
-	assert.Equal(t, "Gemini 3.5 Flash (High)", choices.AntigravityModel)
+	assert.Equal(t, "Gemini 3.5 Flash (High)", choices.AgentModels[AgentAntigravity].Model)
 }
 
 func TestApplyFreshSetupDefaults_UsesAntigravityClientDefault(t *testing.T) {
@@ -747,7 +776,7 @@ func TestApplyFreshSetupDefaults_UsesAntigravityClientDefault(t *testing.T) {
 	applyFreshSetupDefaults(choices)
 
 	assert.True(t, choices.EnabledAgents[AgentAntigravity])
-	assert.Empty(t, choices.AntigravityModel)
+	assert.Empty(t, choices.AgentModels[AgentAntigravity].Model)
 }
 
 // TestReadCodexBrowserDisabled covers detecting the Codex browser-disable state.

@@ -155,3 +155,25 @@ func TestLiteralSecretQueryKeySeparatesLiteralsFromReferences(t *testing.T) {
 		})
 	}
 }
+
+// TestRedactReplacesResolvedValuesWithPlaceholders proves a diagnostic that
+// echoes resolved values shows placeholder text instead, with no partial leak
+// when one value contains another.
+func TestRedactReplacesResolvedValuesWithPlaceholders(t *testing.T) {
+	t.Parallel()
+	placeholders := map[string]string{
+		"abc":    "${AL_SHORT}",
+		"abcdef": "${AL_LONG}",
+		"":       "${AL_EMPTY}",
+	}
+	got := Redact("long=abcdef short=abc", placeholders)
+	if want := "long=${AL_LONG} short=${AL_SHORT}"; got != want {
+		t.Fatalf("Redact = %q, want %q", got, want)
+	}
+	if got := Redact("nothing secret", placeholders); got != "nothing secret" {
+		t.Fatalf("Redact changed text without a resolved value: %q", got)
+	}
+	if got := Redact("abc", nil); got != "abc" {
+		t.Fatalf("Redact with no placeholders = %q", got)
+	}
+}

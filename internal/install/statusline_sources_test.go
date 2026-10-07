@@ -58,7 +58,7 @@ func TestWriteStatuslineSources_OverwritesCustomSourceWhenPromptApproves(t *test
 	inst := &installer{
 		root: root,
 		sys:  RealSystem{},
-		prompter: PromptFuncs{
+		prompter: &PromptFuncs{
 			StatuslineSourcePreviewFunc: func(preview DiffPreview) (bool, error) {
 				promptedPath = preview.Path
 				return true, nil
@@ -262,7 +262,7 @@ func TestWriteStatuslineSource_CustomSourceBranches(t *testing.T) {
 		inst := &installer{
 			root: root,
 			sys:  RealSystem{},
-			prompter: PromptFuncs{
+			prompter: &PromptFuncs{
 				StatuslineSourcePreviewFunc: func(DiffPreview) (bool, error) {
 					prompted = true
 					return true, nil
@@ -305,7 +305,7 @@ func TestWriteStatuslineSource_CustomSourceBranches(t *testing.T) {
 		inst := &installer{
 			root: root,
 			sys:  RealSystem{},
-			prompter: PromptFuncs{
+			prompter: &PromptFuncs{
 				StatuslineSourcePreviewFunc: func(DiffPreview) (bool, error) {
 					return false, nil
 				},
@@ -334,7 +334,7 @@ func TestWriteStatuslineSource_CustomSourceBranches(t *testing.T) {
 		inst := &installer{
 			root: root,
 			sys:  RealSystem{},
-			prompter: PromptFuncs{
+			prompter: &PromptFuncs{
 				StatuslineSourcePreviewFunc: func(DiffPreview) (bool, error) {
 					return false, errors.New("prompt boom")
 				},
@@ -665,5 +665,45 @@ func assertStatuslineSourceMatchesTemplate(t *testing.T, root string, relPath st
 	}
 	if string(got) != string(want) {
 		t.Fatalf("source %s does not match template %s", relPath, templatePath)
+	}
+}
+
+// promptReadErrorSystem counts reads of one path and fails the failAt-th read.
+type promptReadErrorSystem struct {
+	System
+	path   string
+	reads  int
+	failAt int
+	err    error
+}
+
+func (s *promptReadErrorSystem) ReadFile(path string) ([]byte, error) {
+	if path == s.path {
+		s.reads++
+		if s.reads == s.failAt {
+			return nil, s.err
+		}
+	}
+	return s.System.ReadFile(path)
+}
+
+func TestWriteStatuslineSources_MissingCallbackSkipsPreviewBuild(t *testing.T) {
+	for _, p := range []*PromptFuncs{nil, {}} {
+		root := t.TempDir()
+		writeStatuslineConfigForTest(t, root, true, false)
+		path := filepath.Join(root, ".agent-layer", "claude-statusline.sh")
+		if err := os.WriteFile(path, []byte("# custom statusline\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		sys := &promptReadErrorSystem{
+			System: RealSystem{}, path: path, failAt: 2, err: errors.New("unexpected preview read"),
+		}
+		inst := &installer{root: root, sys: sys, prompter: p}
+		if err := inst.writeStatuslineSources(); err != nil {
+			t.Fatalf("writeStatuslineSources without callback: %v", err)
+		}
+		if sys.reads != 1 {
+			t.Fatalf("expected only the template-match read, got %d", sys.reads)
+		}
 	}
 }

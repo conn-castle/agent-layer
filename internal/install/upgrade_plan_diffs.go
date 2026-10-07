@@ -49,11 +49,15 @@ func BuildUpgradePlanDiffPreviews(root string, plan UpgradePlan, opts UpgradePla
 	var ungatedTemplatePaths map[string]string
 	ops := plannedOperationsFromReport(plan.MigrationReport)
 	if hasRenameMigration(ops) {
+		effects, err := inst.planMigrationPathEffects(ops)
+		if err != nil {
+			return nil, err
+		}
 		ungatedTemplatePaths, err = inst.templates().ungatedTemplatePathByRel()
 		if err != nil {
 			return nil, err
 		}
-		origins, err = inst.templateOriginsAfterMigrations(ops, ungatedTemplatePaths)
+		origins, err = inst.templateOrigins(effects, ungatedTemplatePaths)
 		if err != nil {
 			return nil, err
 		}
@@ -74,7 +78,7 @@ func BuildUpgradePlanDiffPreviews(root string, plan UpgradePlan, opts UpgradePla
 				if err != nil {
 					return err
 				}
-				preview, previewErr = inst.buildSingleDiffPreviewFromBytes(LabeledPath{Path: change.Path, Ownership: change.Ownership}, templatePathByRel, localBytes)
+				preview, previewErr = inst.buildSingleDiffPreviewFromBytes(change.Path, templatePathByRel, localBytes)
 			} else {
 				preview, previewErr = inst.buildPlanChangeDiffPreview(change, mode, templatePathByRel)
 			}
@@ -109,66 +113,46 @@ func BuildUpgradePlanDiffPreviews(root string, plan UpgradePlan, opts UpgradePla
 }
 
 func (inst *installer) buildPlanChangeDiffPreview(change UpgradeChange, mode planDiffMode, templatePathByRel map[string]string) (DiffPreview, error) {
-	entry := LabeledPath{
-		Path:      change.Path,
-		Ownership: change.Ownership,
-	}
 	switch mode {
 	case planDiffModeUpdate:
-		return inst.buildSingleDiffPreview(entry, templatePathByRel)
+		return inst.buildSingleDiffPreview(change.Path, templatePathByRel)
 	case planDiffModeAddition:
 		desiredBytes, label, err := inst.additionPreviewBytes(change.Path, templatePathByRel)
 		if err != nil {
 			return DiffPreview{}, err
 		}
-		rendered, truncated, added, removed := renderTruncatedUnifiedDiff(
+		return inst.renderDiffPreview(
+			change.Path,
 			change.Path+" (current)",
 			change.Path+" ("+label+")",
 			"",
 			normalizeTemplateContent(string(desiredBytes)),
-			inst.diffMaxLines,
-		)
-		return DiffPreview{
-			Path:         change.Path,
-			Ownership:    change.Ownership,
-			UnifiedDiff:  rendered,
-			Truncated:    truncated,
-			LinesAdded:   added,
-			LinesRemoved: removed,
-		}, nil
+		), nil
 	case planDiffModeRemoval:
 		localPath := filepath.Join(inst.root, filepath.FromSlash(change.Path))
 		// A directory, a symlink, or a path a migration has yet to create has
 		// no file content to preview.
 		info, err := inst.sys.Lstat(localPath)
 		if errors.Is(err, os.ErrNotExist) {
-			return DiffPreview{Path: change.Path, Ownership: change.Ownership}, nil
+			return DiffPreview{Path: change.Path}, nil
 		}
 		if err != nil {
 			return DiffPreview{}, err
 		}
 		if !info.Mode().IsRegular() {
-			return DiffPreview{Path: change.Path, Ownership: change.Ownership}, nil
+			return DiffPreview{Path: change.Path}, nil
 		}
 		localBytes, err := inst.sys.ReadFile(localPath)
 		if err != nil {
 			return DiffPreview{}, err
 		}
-		rendered, truncated, added, removed := renderTruncatedUnifiedDiff(
+		return inst.renderDiffPreview(
+			change.Path,
 			change.Path+" (current)",
 			change.Path+" (template)",
 			normalizeTemplateContent(string(localBytes)),
 			"",
-			inst.diffMaxLines,
-		)
-		return DiffPreview{
-			Path:         change.Path,
-			Ownership:    change.Ownership,
-			UnifiedDiff:  rendered,
-			Truncated:    truncated,
-			LinesAdded:   added,
-			LinesRemoved: removed,
-		}, nil
+		), nil
 	default:
 		return DiffPreview{}, fmt.Errorf(messages.InstallUnknownPlanDiffModeFmt, mode)
 	}

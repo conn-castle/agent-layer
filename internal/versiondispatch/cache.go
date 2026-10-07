@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -33,16 +32,7 @@ const (
 	cacheLockWorkHeadroom    = 5 * time.Second
 )
 
-// ensureCachedBinary returns the cached binary path, downloading and verifying it if missing.
-// Progress lines are written to progressOut when a download is required.
-func ensureCachedBinary(ctx context.Context, cacheRoot string, version string, progressOut io.Writer) (string, error) {
-	return ensureCachedBinaryWithSystem(ctx, RealSystem{}, cacheRoot, version, progressOut)
-}
-
 func ensureCachedBinaryWithSystem(ctx context.Context, sys System, cacheRoot string, version string, progressOut io.Writer) (string, error) {
-	if sys == nil {
-		return "", fmt.Errorf(messages.DispatchSystemRequired)
-	}
 	osName, arch, err := sys.PlatformStrings()
 	if err != nil {
 		return "", err
@@ -64,6 +54,7 @@ func ensureCachedBinaryWithSystem(ctx context.Context, sys System, cacheRoot str
 		return "", fmt.Errorf(messages.DispatchCreateCacheDirFmt, err)
 	}
 
+	limits := downloadLimitsWithSystem(sys)
 	if err := withFileLock(ctx, sys, lockPath, cacheLockWaitTimeoutWithSystem(sys), func() error {
 		if _, err := sys.Stat(binPath); err == nil {
 			return nil
@@ -85,7 +76,7 @@ func ensureCachedBinaryWithSystem(ctx context.Context, sys System, cacheRoot str
 
 		_, _ = fmt.Fprintf(progressOut, messages.DispatchDownloadingFmt, version)
 		url := fmt.Sprintf("%s/download/v%s/%s", releaseBaseURL, version, asset)
-		if err := downloadToFileWithSystem(ctx, sys, url, tmp); err != nil {
+		if err := downloadToFile(ctx, sys, url, tmp, limits); err != nil {
 			_ = tmp.Close()
 			return err
 		}
@@ -97,7 +88,7 @@ func ensureCachedBinaryWithSystem(ctx context.Context, sys System, cacheRoot str
 			return fmt.Errorf(messages.DispatchCloseTempFileFmt, err)
 		}
 
-		expected, err := fetchChecksumWithSystem(ctx, sys, version, asset)
+		expected, err := fetchChecksum(ctx, sys, version, asset, limits)
 		if err != nil {
 			return err
 		}
@@ -119,11 +110,6 @@ func ensureCachedBinaryWithSystem(ctx context.Context, sys System, cacheRoot str
 	}
 
 	return binPath, nil
-}
-
-// platformStrings returns the supported OS and architecture strings for release assets.
-func platformStrings() (string, string, error) {
-	return checkPlatform(runtime.GOOS, runtime.GOARCH)
 }
 
 func checkPlatform(osName, arch string) (string, string, error) {
@@ -152,23 +138,13 @@ func noNetworkWithSystem(sys System) bool {
 	return strings.TrimSpace(sys.Getenv(EnvNoNetwork)) != ""
 }
 
-// downloadToFile fetches url and writes it to dest.
-func downloadToFile(ctx context.Context, url string, dest *os.File) error {
-	return downloadToFileWithSystem(ctx, RealSystem{}, url, dest)
-}
-
-func downloadToFileWithSystem(ctx context.Context, sys System, url string, dest *os.File) error {
-	if sys == nil {
-		return fmt.Errorf(messages.DispatchSystemRequired)
-	}
-	return downloadToFileWithLimits(ctx, sys, url, dest, downloadLimitsWithSystem(sys))
-}
-
-func downloadToFileWithLimits(ctx context.Context, sys System, url string, dest *os.File, limits downloadLimits) error {
+// getWithRetry GETs url under the dispatch retry policy and passes each 200
+// response body to read. read reports a body read failure as readErr, which is
+// classified with readFailedFmt and may be retried; any other error is final.
+func getWithRetry(ctx context.Context, sys System, url string, limits downloadLimits, readFailedFmt string, read func(body io.Reader) (readErr error, err error)) error {
 	opCtx, cancel := context.WithTimeout(ctx, limits.ceiling)
 	defer cancel()
 	client := downloadHTTPClientWithSystem(sys)
-	maxBytes := maxDownloadBytesWithSystem(sys)
 	for attempt := 0; attempt <= downloadRetryCount; attempt++ {
 		if ctx.Err() != nil || opCtx.Err() != nil {
 			_, err := classifyAttemptFailure(ctx, opCtx, opCtx, attempt, opCtx.Err(), url, messages.DispatchDownloadFailedFmt)
@@ -181,7 +157,7 @@ func downloadToFileWithLimits(ctx context.Context, sys System, url string, dest 
 			if err != nil {
 				return false, fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
 			}
-			resp, err := client.Do(req) // #nosec G704 -- callers construct URLs from the fixed release base URL and validated release asset names.
+			resp, err := client.Do(req) // #nosec G704 -- callers construct URLs from the fixed release base URL, validated semantic versions, and release asset names.
 			if err != nil {
 				return classifyAttemptFailure(ctx, opCtx, attemptCtx, attempt, err, url, messages.DispatchDownloadFailedFmt)
 			}
@@ -198,21 +174,11 @@ func downloadToFileWithLimits(ctx context.Context, sys System, url string, dest 
 				return false, fmt.Errorf(messages.DispatchDownloadUnexpectedStatusFmt, url, resp.Status)
 			}
 
-			if err := dest.Truncate(0); err != nil {
-				return false, fmt.Errorf(messages.DispatchTruncateTempFileFmt, err)
+			readErr, err := read(stallReader{r: resp.Body, w: watchdog})
+			if readErr != nil {
+				return classifyAttemptFailure(ctx, opCtx, attemptCtx, attempt, readErr, url, readFailedFmt)
 			}
-			if _, err := dest.Seek(0, io.SeekStart); err != nil {
-				return false, fmt.Errorf(messages.DispatchResetTempFileOffsetFmt, err)
-			}
-
-			n, copyErr := io.Copy(dest, io.LimitReader(stallReader{r: resp.Body, w: watchdog}, maxBytes+1))
-			if copyErr != nil {
-				return classifyAttemptFailure(ctx, opCtx, attemptCtx, attempt, copyErr, url, messages.DispatchDownloadFailedFmt)
-			}
-			if n > maxBytes {
-				return false, fmt.Errorf(messages.DispatchDownloadTooLargeFmt, url, n, maxBytes)
-			}
-			return false, nil
+			return false, err
 		}()
 		if !retry {
 			return err
@@ -222,81 +188,59 @@ func downloadToFileWithLimits(ctx context.Context, sys System, url string, dest 
 	return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, errors.New("retry budget exhausted"))
 }
 
+// downloadToFile fetches url and writes it to dest, resetting dest on each attempt.
+func downloadToFile(ctx context.Context, sys System, url string, dest *os.File, limits downloadLimits) error {
+	maxBytes := maxDownloadBytesWithSystem(sys)
+	return getWithRetry(ctx, sys, url, limits, messages.DispatchDownloadFailedFmt, func(body io.Reader) (error, error) {
+		if err := dest.Truncate(0); err != nil {
+			return nil, fmt.Errorf(messages.DispatchTruncateTempFileFmt, err)
+		}
+		if _, err := dest.Seek(0, io.SeekStart); err != nil {
+			return nil, fmt.Errorf(messages.DispatchResetTempFileOffsetFmt, err)
+		}
+
+		n, copyErr := io.Copy(dest, io.LimitReader(body, maxBytes+1))
+		if copyErr != nil {
+			return copyErr, nil
+		}
+		if n > maxBytes {
+			return nil, fmt.Errorf(messages.DispatchDownloadTooLargeFmt, url, n, maxBytes)
+		}
+		return nil, nil
+	})
+}
+
 // fetchChecksum retrieves the expected checksum for the asset from checksums.txt.
-func fetchChecksum(ctx context.Context, version string, asset string) (string, error) {
-	return fetchChecksumWithSystem(ctx, RealSystem{}, version, asset)
-}
-
-// fetchChecksumWithSystem retrieves the expected checksum using the provided system for timeout/env resolution.
-func fetchChecksumWithSystem(ctx context.Context, sys System, version string, asset string) (string, error) {
-	if sys == nil {
-		return "", fmt.Errorf(messages.DispatchSystemRequired)
-	}
-	return fetchChecksumWithLimits(ctx, sys, version, asset, downloadLimitsWithSystem(sys))
-}
-
-func fetchChecksumWithLimits(ctx context.Context, sys System, version string, asset string, limits downloadLimits) (string, error) {
-	opCtx, cancel := context.WithTimeout(ctx, limits.ceiling)
-	defer cancel()
+func fetchChecksum(ctx context.Context, sys System, version string, asset string, limits downloadLimits) (string, error) {
 	url := fmt.Sprintf("%s/download/v%s/checksums.txt", releaseBaseURL, version)
-	client := downloadHTTPClientWithSystem(sys)
-	for attempt := 0; attempt <= downloadRetryCount; attempt++ {
-		if ctx.Err() != nil || opCtx.Err() != nil {
-			_, err := classifyAttemptFailure(ctx, opCtx, opCtx, attempt, opCtx.Err(), url, messages.DispatchDownloadFailedFmt)
-			return "", err
+	var checksum string
+	err := getWithRetry(ctx, sys, url, limits, messages.DispatchReadFailedFmt, func(body io.Reader) (error, error) {
+		scanner := bufio.NewScanner(io.LimitReader(body, maxChecksumResponseBytes))
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) < 2 {
+				continue
+			}
+			path := strings.TrimPrefix(fields[1], "./")
+			path = strings.TrimPrefix(path, "*")
+			if path == asset {
+				checksum = fields[0]
+				return nil, nil
+			}
 		}
-		checksum, retry, err := func() (string, bool, error) {
-			attemptCtx, watchdog, stop := startDownloadAttempt(opCtx, limits.stall)
-			defer stop()
-			req, err := http.NewRequestWithContext(attemptCtx, http.MethodGet, url, nil)
-			if err != nil {
-				return "", false, fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
-			}
-			resp, err := client.Do(req) // #nosec G704 -- URL uses the fixed release base URL and a validated semantic version.
-			if err != nil {
-				retry, err := classifyAttemptFailure(ctx, opCtx, attemptCtx, attempt, err, url, messages.DispatchDownloadFailedFmt)
-				return "", retry, err
-			}
-			watchdog.reset()
-			defer func() { _ = resp.Body.Close() }()
-			if resp.StatusCode == http.StatusNotFound {
-				return "", false, fmt.Errorf(messages.DispatchDownload404Fmt, url, releaseBaseURL)
-			}
-			if resp.StatusCode != http.StatusOK {
-				if shouldRetryDownload(opCtx, attempt, nil, resp.StatusCode) {
-					return "", true, nil
-				}
-				return "", false, fmt.Errorf(messages.DispatchDownloadUnexpectedStatusFmt, url, resp.Status)
-			}
-
-			scanner := bufio.NewScanner(io.LimitReader(stallReader{r: resp.Body, w: watchdog}, maxChecksumResponseBytes))
-			for scanner.Scan() {
-				line := strings.TrimSpace(scanner.Text())
-				if line == "" {
-					continue
-				}
-				fields := strings.Fields(line)
-				if len(fields) < 2 {
-					continue
-				}
-				path := strings.TrimPrefix(fields[1], "./")
-				path = strings.TrimPrefix(path, "*")
-				if path == asset {
-					return fields[0], false, nil
-				}
-			}
-			if err := scanner.Err(); err != nil {
-				retry, err := classifyAttemptFailure(ctx, opCtx, attemptCtx, attempt, err, url, messages.DispatchReadFailedFmt)
-				return "", retry, err
-			}
-			return "", false, fmt.Errorf(messages.DispatchChecksumNotFoundFmt, asset, url)
-		}()
-		if !retry {
-			return checksum, err
+		if err := scanner.Err(); err != nil {
+			return err, nil
 		}
-		sys.Sleep(downloadRetryBackoff)
+		return nil, fmt.Errorf(messages.DispatchChecksumNotFoundFmt, asset, url)
+	})
+	if err != nil {
+		return "", err
 	}
-	return "", fmt.Errorf(messages.DispatchDownloadFailedFmt, url, errors.New("retry budget exhausted"))
+	return checksum, nil
 }
 
 var errDownloadStalled = errors.New("download stalled")
@@ -444,9 +388,6 @@ func cacheLockWaitTimeoutWithSystem(sys System) time.Duration {
 }
 
 func downloadHTTPClientWithSystem(sys System) *http.Client {
-	if sys == nil {
-		return defaultHTTPClient
-	}
 	client := sys.HTTPClient()
 	if client == nil {
 		client = defaultHTTPClient

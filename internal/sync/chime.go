@@ -151,6 +151,76 @@ func chimeHandlerMatchesAny(value any, commands map[string]struct{}) bool {
 	return numericEquals(handler[chimeHandlerTimeoutKey], agentLayerChimeTimeout)
 }
 
+// filterHookGroupHandlers removes handlers matching drop from every hook
+// group whose hooks value is a list, updating kept groups in place. Groups
+// left with no handlers and no other keys are dropped; other entries are kept
+// unchanged. When nonListHooksErr is non-nil, a group whose present hooks
+// value is not a list stops filtering with that error, leaving groups already
+// filtered as updated. It reports whether any handler or group was removed.
+func filterHookGroupHandlers(entries []any, drop func(any) bool, nonListHooksErr error) ([]any, bool, error) {
+	changed := false
+	result := make([]any, 0, len(entries))
+	for _, entry := range entries {
+		group, ok := entry.(map[string]any)
+		if !ok {
+			result = append(result, entry)
+			continue
+		}
+		handlersValue, present := group[hooksKey]
+		handlers, ok := handlersValue.([]any)
+		if !ok {
+			if present && nonListHooksErr != nil {
+				return nil, false, nonListHooksErr
+			}
+			result = append(result, entry)
+			continue
+		}
+		kept := make([]any, 0, len(handlers))
+		for _, handler := range handlers {
+			if drop(handler) {
+				changed = true
+				continue
+			}
+			kept = append(kept, handler)
+		}
+		if len(kept) == 0 && len(group) == 1 {
+			changed = true
+			continue
+		}
+		group[hooksKey] = kept
+		result = append(result, group)
+	}
+	return result, changed, nil
+}
+
+// ensureChimePathContained rejects a chime target outside root/providerDir/ownedDir
+// and refuses symlinks at the provider directory, owned directory, or target.
+// outsideFmt receives the uncleaned target; conflictFmt receives the symlinked path.
+func ensureChimePathContained(sys System, root string, target string, providerDir string, ownedDir string, outsideFmt string, conflictFmt string) error {
+	ownedRoot := filepath.Clean(filepath.Join(root, providerDir, ownedDir))
+	cleanTarget := filepath.Clean(target)
+	if cleanTarget != ownedRoot && !strings.HasPrefix(cleanTarget, ownedRoot+string(os.PathSeparator)) {
+		return fmt.Errorf(outsideFmt, target)
+	}
+	for _, path := range []string{
+		filepath.Join(root, providerDir),
+		ownedRoot,
+		cleanTarget,
+	} {
+		info, err := sys.Lstat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return fmt.Errorf(messages.InstallFailedStatFmt, path, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf(conflictFmt, path)
+		}
+	}
+	return nil
+}
+
 func numericEquals(value any, want int) bool {
 	switch typed := value.(type) {
 	case int:

@@ -181,6 +181,13 @@ model cache is used. Provider-version queries also run concurrently. Launch,
 sync, and dispatch start/continue do not run model queries just to pass through
 an explicit configuration value or use the harness default.
 
+Before each start or continue, dispatch checks the provider's `--version`
+against its tested version and records it on the run. The result is cached in
+`.agent-layer/state/dispatch-capabilities/cache.json`, keyed on the resolved
+command's file identity, for at most one hour. A launcher that updates a
+separate binary without changing itself (such as Muse's) is therefore
+re-probed within an hour of the update.
+
 `start` requires an agent and exactly one prompt source. Model and reasoning
 effort are optional overrides. When omitted, Agent Layer uses its configured
 value; when that is also empty, it omits the provider flag so the provider uses

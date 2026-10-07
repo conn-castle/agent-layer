@@ -41,14 +41,14 @@ type blockContext struct {
 	Tracking   string
 	// TargetCommit is the commit this operation's desired set is resolved at.
 	TargetCommit string
-	workDir      string
 }
 
 // withLockedState runs fn inside the project lock with freshly loaded state.
 //
 // Any transaction an earlier process left in flight is rolled back first, so
 // state is always loaded from a coherent generation of configuration, imported
-// trees, and lock file.
+// trees, and lock file. Orphaned imported directories fail every operation
+// before fn runs.
 func (s *Service) withLockedState(fn func(st *state) error) error {
 	return projectlock.With(s.sys, s.root, func() error {
 		if err := sync.RecoverInterruptedImport(s.root); err != nil {
@@ -58,8 +58,37 @@ func (s *Service) withLockedState(fn func(st *state) error) error {
 		if err != nil {
 			return err
 		}
+		if err := failOnOrphans(st); err != nil {
+			return err
+		}
 		return fn(st)
 	})
+}
+
+// withLockedReport runs fn under withLockedState and returns the sorted report
+// it filled, alongside any error.
+func (s *Service) withLockedReport(fn func(st *state, report *Report) error) (*Report, error) {
+	report := &Report{}
+	err := s.withLockedState(func(st *state) error {
+		return fn(st, report)
+	})
+	report.Sort()
+	return report, err
+}
+
+// gitWorkspace creates the Git runner and a temporary working root for one
+// networked operation. The caller must invoke cleanup once the root is no
+// longer needed.
+func (s *Service) gitWorkspace(st *state, op string) (runner *gitrepo.Runner, workRoot string, cleanup func(), err error) {
+	runner, err = s.newRunner(st.env)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	workRoot, err = os.MkdirTemp("", "al-skill-"+op+"-")
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("failed to create a git working directory: %w", err)
+	}
+	return runner, workRoot, func() { _ = os.RemoveAll(workRoot) }, nil
 }
 
 // project regenerates all outputs from the committed source state. The caller
@@ -107,7 +136,6 @@ func (s *Service) openBlock(ctx context.Context, runner *gitrepo.Runner, workRoo
 		Resolution:   resolution,
 		Tracking:     tracking,
 		TargetCommit: resolution.Commit,
-		workDir:      workDir,
 	}
 
 	return blockCtx, nil

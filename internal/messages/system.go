@@ -7,8 +7,6 @@ const (
 	// DispatchMissingArgv0 indicates argv[0] is missing.
 	DispatchMissingArgv0            = "missing argv[0]"
 	DispatchWorkingDirRequired      = "working directory is required"
-	DispatchExitHandlerRequired     = "exit handler is required"
-	DispatchSystemRequired          = "dispatch system is required"
 	DispatchAlreadyActiveFmt        = "version dispatch already active (current %s, requested %s)"
 	DispatchDevVersionNotAllowedFmt = "cannot dispatch to dev version; set %s to a release version"
 	DispatchInvalidBuildVersionFmt  = "invalid build version %q: %w"

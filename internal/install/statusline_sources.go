@@ -88,7 +88,7 @@ func (inst *installer) writeStatuslineSource(source StatuslineSourceTemplate) er
 	if info.IsDir() {
 		return fmt.Errorf(messages.InstallFailedReadFmt, path, errors.New("is a directory"))
 	}
-	matches, err := inst.templates().matchTemplate(inst.sys, path, source.TemplatePath, info)
+	matches, err := inst.templates().matchTemplate(path, source.TemplatePath, info)
 	if err != nil {
 		return err
 	}
@@ -96,17 +96,15 @@ func (inst *installer) writeStatuslineSource(source StatuslineSourceTemplate) er
 		return nil
 	}
 	overwrite := false
-	router := inst.promptRouter()
-	if router.hasStatuslineSource() {
+	if inst.prompter.hasStatuslineSource() {
 		preview, previewErr := inst.buildStatuslineSourceDiffPreview(source)
 		if previewErr != nil {
 			return previewErr
 		}
-		resp, routeErr := router.route(promptRequest{kind: promptKindStatuslineSource, preview: preview})
-		if routeErr != nil {
-			return routeErr
+		overwrite, err = inst.prompter.statuslineSource(preview)
+		if err != nil {
+			return err
 		}
-		overwrite = resp.approved
 	}
 	if !overwrite {
 		return nil
@@ -150,21 +148,13 @@ func (inst *installer) buildStatuslineSourceDiffPreview(source StatuslineSourceT
 	if err != nil {
 		return DiffPreview{}, fmt.Errorf(messages.InstallFailedReadTemplateFmt, source.TemplatePath, err)
 	}
-	rendered, truncated, added, removed := renderTruncatedUnifiedDiff(
+	return inst.renderDiffPreview(
+		source.RelPath,
 		source.RelPath+" (current)",
 		source.RelPath+" (template)",
 		normalizeTemplateContent(string(localBytes)),
 		normalizeTemplateContent(string(templateBytes)),
-		inst.diffMaxLines,
-	)
-	return DiffPreview{
-		Path:         source.RelPath,
-		Ownership:    OwnershipLocalCustomization,
-		UnifiedDiff:  rendered,
-		Truncated:    truncated,
-		LinesAdded:   added,
-		LinesRemoved: removed,
-	}, nil
+	), nil
 }
 
 func (inst *installer) writeStatuslineSourcesTargetPaths() []string {
@@ -202,7 +192,7 @@ func (inst *installer) planStatuslineSourceChanges(plan migrationPlan) ([]upgrad
 		if info.IsDir() {
 			continue
 		}
-		matches, err := inst.templates().matchTemplate(inst.sys, path, source.TemplatePath, info)
+		matches, err := inst.templates().matchTemplate(path, source.TemplatePath, info)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -217,10 +207,6 @@ func statuslineSourceUpgradeChange(source StatuslineSourceTemplate) upgradeChang
 	return upgradeChangeWithTemplate{
 		path:         source.RelPath,
 		templatePath: source.TemplatePath,
-		ownership: ownershipClassification{
-			Label: OwnershipLocalCustomization,
-			State: OwnershipStateLocalCustomization,
-		},
 	}
 }
 

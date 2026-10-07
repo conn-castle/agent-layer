@@ -5,8 +5,9 @@ import (
 	"io"
 	"os"
 	"slices"
-	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/run"
@@ -27,12 +28,15 @@ func TestClientLaunchDiagnosticsUseCommandStderr(t *testing.T) {
 			root := writeClientLaunchDiagnosticRepo(t, false)
 			var gotArgs []string
 			launchCalls := 0
-			cmd := newNoSyncLaunchCmd("test", "test", "vscode", func(cfg *config.Config) *bool {
-				return cfg.Agents.VSCode.Enabled
-			}, func(_ *config.ProjectConfig, _ *run.Info, _ []string, args []string) error {
-				launchCalls++
-				gotArgs = append([]string(nil), args...)
-				return nil
+			cmd := newLaunchCmd(launchSpec{
+				use: "test", short: "test", agent: "vscode",
+				enabled: func(cfg *config.Config) *bool { return cfg.Agents.VSCode.Enabled },
+				launch: func(_ *config.ProjectConfig, _ *run.Info, _ []string, args []string) error {
+					launchCalls++
+					gotArgs = append([]string(nil), args...)
+					return nil
+				},
+				noSync: true,
 			})
 			var commandStderr bytes.Buffer
 			cmd.SetErr(&commandStderr)
@@ -79,12 +83,15 @@ func TestClientLaunchQuietSuppressesCommandDiagnostics(t *testing.T) {
 			root := writeClientLaunchDiagnosticRepo(t, tt.configQuiet)
 			var gotArgs []string
 			launchCalls := 0
-			cmd := newNoSyncLaunchCmd("test", "test", "vscode", func(cfg *config.Config) *bool {
-				return cfg.Agents.VSCode.Enabled
-			}, func(_ *config.ProjectConfig, _ *run.Info, _ []string, args []string) error {
-				launchCalls++
-				gotArgs = append([]string(nil), args...)
-				return nil
+			cmd := newLaunchCmd(launchSpec{
+				use: "test", short: "test", agent: "vscode",
+				enabled: func(cfg *config.Config) *bool { return cfg.Agents.VSCode.Enabled },
+				launch: func(_ *config.ProjectConfig, _ *run.Info, _ []string, args []string) error {
+					launchCalls++
+					gotArgs = append([]string(nil), args...)
+					return nil
+				},
+				noSync: true,
 			})
 			var commandStderr bytes.Buffer
 			cmd.SetErr(&commandStderr)
@@ -114,86 +121,44 @@ func TestClientLaunchQuietSuppressesCommandDiagnostics(t *testing.T) {
 	}
 }
 
-func TestSplitNoSyncArgs(t *testing.T) {
+func TestSplitLaunchArgs(t *testing.T) {
 	tests := []struct {
-		name       string
-		args       []string
-		wantNoSync bool
-		wantQuiet  bool
-		wantArgs   []string
-		wantErr    bool
+		name         string
+		args         []string
+		acceptNoSync bool
+		wantNoSync   bool
+		wantQuiet    bool
+		wantArgs     []string
+		wantErr      bool
 	}{
+		{name: "quiet flag", args: []string{"--quiet", "--foo"}, wantQuiet: true, wantArgs: []string{"--foo"}},
+		{name: "quiet shorthand", args: []string{"-q", "--foo"}, wantQuiet: true, wantArgs: []string{"--foo"}},
+		{name: "quiet value true", args: []string{"--quiet=true", "--foo"}, wantQuiet: true, wantArgs: []string{"--foo"}},
+		{name: "quiet value false consumed", args: []string{"--quiet=false", "--foo"}, wantArgs: []string{"--foo"}},
+		{name: "quiet invalid value", args: []string{"--quiet=maybe"}, wantErr: true},
+		{name: "quiet after separator", args: []string{"--", "--quiet"}, wantArgs: []string{"--quiet"}},
+		{name: "pass-through without separator", args: []string{"--reuse-window"}, wantArgs: []string{"--reuse-window"}},
+		{name: "no-sync forwarded when not accepted", args: []string{"--no-sync", "--foo"}, wantArgs: []string{"--no-sync", "--foo"}},
+		{name: "no-sync value forwarded when not accepted", args: []string{"--no-sync=maybe"}, wantArgs: []string{"--no-sync=maybe"}},
 		{
-			name:       "no-sync before separator",
-			args:       []string{"--no-sync", "--", "--reuse-window"},
-			wantNoSync: true,
-			wantQuiet:  false,
-			wantArgs:   []string{"--reuse-window"},
+			name: "no-sync before separator", args: []string{"--no-sync", "--", "--reuse-window"}, acceptNoSync: true,
+			wantNoSync: true, wantArgs: []string{"--reuse-window"},
 		},
 		{
-			name:       "quiet before separator",
-			args:       []string{"--quiet", "--no-sync", "--", "--reuse-window"},
-			wantNoSync: true,
-			wantQuiet:  true,
-			wantArgs:   []string{"--reuse-window"},
+			name: "quiet and no-sync before separator", args: []string{"--quiet", "--no-sync", "--", "--reuse-window"}, acceptNoSync: true,
+			wantNoSync: true, wantQuiet: true, wantArgs: []string{"--reuse-window"},
 		},
-		{
-			name:       "quiet bool true",
-			args:       []string{"--quiet=true", "--reuse-window"},
-			wantNoSync: false,
-			wantQuiet:  true,
-			wantArgs:   []string{"--reuse-window"},
-		},
-		{
-			name:       "no-sync bool false",
-			args:       []string{"--no-sync=false", "--reuse-window"},
-			wantNoSync: false,
-			wantQuiet:  false,
-			wantArgs:   []string{"--reuse-window"},
-		},
-		{
-			name:       "quiet bool false consumed",
-			args:       []string{"--quiet=false", "--reuse-window"},
-			wantNoSync: false,
-			wantQuiet:  false,
-			wantArgs:   []string{"--reuse-window"},
-		},
-		{
-			name:    "no-sync invalid value",
-			args:    []string{"--no-sync=maybe"},
-			wantErr: true,
-		},
-		{
-			name:    "quiet invalid value",
-			args:    []string{"--quiet=maybe"},
-			wantErr: true,
-		},
-		{
-			name:       "pass-through without separator",
-			args:       []string{"--reuse-window"},
-			wantNoSync: false,
-			wantQuiet:  false,
-			wantArgs:   []string{"--reuse-window"},
-		},
-		{
-			name:       "no-sync after separator",
-			args:       []string{"--", "--no-sync"},
-			wantNoSync: false,
-			wantQuiet:  false,
-			wantArgs:   []string{"--no-sync"},
-		},
-		{
-			name:       "quiet after separator",
-			args:       []string{"--", "--quiet"},
-			wantNoSync: false,
-			wantQuiet:  false,
-			wantArgs:   []string{"--quiet"},
-		},
+		{name: "no-sync bool false", args: []string{"--no-sync=false", "--reuse-window"}, acceptNoSync: true, wantArgs: []string{"--reuse-window"}},
+		{name: "no-sync invalid value", args: []string{"--no-sync=maybe"}, acceptNoSync: true, wantErr: true},
+		{name: "no-sync after separator", args: []string{"--", "--no-sync"}, acceptNoSync: true, wantArgs: []string{"--no-sync"}},
+		{name: "quiet with no-sync accepted", args: []string{"--quiet=true", "--reuse-window"}, acceptNoSync: true, wantQuiet: true, wantArgs: []string{"--reuse-window"}},
+		{name: "quiet invalid value with no-sync accepted", args: []string{"--quiet=maybe"}, acceptNoSync: true, wantErr: true},
+		{name: "quiet after separator with no-sync accepted", args: []string{"--", "--quiet"}, acceptNoSync: true, wantArgs: []string{"--quiet"}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotNoSync, gotQuiet, gotArgs, err := splitNoSyncArgs(tt.args)
+			gotNoSync, gotQuiet, gotArgs, err := splitLaunchArgs(tt.args, tt.acceptNoSync)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error")
@@ -209,11 +174,23 @@ func TestSplitNoSyncArgs(t *testing.T) {
 			if gotQuiet != tt.wantQuiet {
 				t.Fatalf("expected quiet=%v, got %v", tt.wantQuiet, gotQuiet)
 			}
-			if strings.Join(gotArgs, ",") != strings.Join(tt.wantArgs, ",") {
+			if !slices.Equal(gotArgs, tt.wantArgs) {
 				t.Fatalf("expected args %v, got %v", tt.wantArgs, gotArgs)
 			}
 		})
 	}
+}
+
+// launchCmdNamed returns the launcher subcommand with the given name.
+func launchCmdNamed(t *testing.T, name string) *cobra.Command {
+	t.Helper()
+	for _, cmd := range newLaunchCmds() {
+		if cmd.Name() == name {
+			return cmd
+		}
+	}
+	t.Fatalf("no launcher command named %q", name)
+	return nil
 }
 
 func writeClientLaunchDiagnosticRepo(t *testing.T, quiet bool) string {

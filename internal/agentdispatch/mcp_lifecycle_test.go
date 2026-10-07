@@ -288,96 +288,141 @@ func TestMCPLifecycleDataWithPhysicalEOF(t *testing.T) {
 	}
 }
 
-// Decorating an SDK Connection hides its private protocol-state hook. Exercise
-// both sides of the batch-version boundary to ensure diagnostics preserve it.
+// Decorating an SDK Connection hides its private protocol-state hook, so
+// mcp_framing.go duplicates the SDK's batch restriction. Each handshake runs
+// through the undecorated SDK too: a go-sdk upgrade that changes negotiation
+// or batching fails here instead of silently diverging.
 func TestMCPLifecyclePreservesSDKBatches(t *testing.T) {
-	for _, version := range []string{"2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25", "private-unsupported-version-canary"} {
-		t.Run(version, func(t *testing.T) {
+	initialize := func(version string) string {
+		return fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":%q,"capabilities":{},"clientInfo":{"name":"test","version":"test"}}}`, version)
+	}
+	// Per-request (SEP-2575) metadata also sets the session's protocol version.
+	discover := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{%q:"2026-07-28",%q:{}}}}`, mcp.MetaKeyProtocolVersion, mcp.MetaKeyClientCapabilities)
+	for _, tc := range []struct {
+		name, handshake string
+		rejected        bool
+	}{
+		{"empty", initialize(""), false},
+		{"2024-11-05", initialize("2024-11-05"), false},
+		{"2025-03-26", initialize("2025-03-26"), false},
+		{"2025-06-18", initialize("2025-06-18"), true},
+		{"2025-11-25", initialize("2025-11-25"), true},
+		{"2026-07-28", initialize("2026-07-28"), true},
+		{"unsupported", initialize("private-unsupported-version-canary"), true},
+		{"discover-2026-07-28", discover, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			input, clientWriter := io.Pipe()
-			clientReader, output := io.Pipe()
-			defer func() { _ = clientWriter.Close(); _ = clientReader.Close() }()
-			done := make(chan error, 1)
-			go func() {
-				done <- runMCPServer(ctx, MCPServerOptions{Root: root, Version: "lifecycle-test"}, input, output, io.Discard)
-			}()
-			scanner := bufio.NewScanner(clientReader)
-			scanner.Buffer(make([]byte, 4096), 1024*1024)
-			receive := func() []byte {
-				t.Helper()
-				result := make(chan []byte, 1)
-				go func() {
-					if scanner.Scan() {
-						result <- bytes.Clone(scanner.Bytes())
-					} else {
-						result <- nil
-					}
-				}()
-				select {
-				case data := <-result:
-					if data == nil {
-						t.Fatal("missing protocol response")
-					}
-					return data
-				case <-time.After(5 * time.Second):
-					t.Fatal("protocol response timeout")
-					return nil
+			opts := MCPServerOptions{Root: root, Version: "lifecycle-test"}
+			sdkErr := exchangeMCPBatch(t, tc.handshake, func(ctx context.Context, input io.ReadCloser, output io.Writer) error {
+				server, err := newDispatchMCPServer(opts)
+				if err != nil {
+					return err
 				}
+				return server.Run(ctx, &mcp.IOTransport{Reader: input, Writer: mcpNopCloseWriter{output}})
+			})
+			if (sdkErr != nil) != tc.rejected {
+				t.Fatalf("undecorated SDK batch error = %v, want rejected=%v", sdkErr, tc.rejected)
 			}
-			init := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":%q,"capabilities":{},"clientInfo":{"name":"test","version":"test"}}}`, version)
-			if _, err := io.WriteString(clientWriter, init+"\n"); err != nil {
-				t.Fatal(err)
+			observedErr := exchangeMCPBatch(t, tc.handshake, func(ctx context.Context, input io.ReadCloser, output io.Writer) error {
+				return runMCPServer(ctx, opts, input, output, io.Discard)
+			})
+			if fmt.Sprint(observedErr) != fmt.Sprint(sdkErr) {
+				t.Fatalf("decorated batch error = %v, undecorated SDK = %v", observedErr, sdkErr)
 			}
-			if !json.Valid(receive()) {
-				t.Fatal("invalid initialization stdout")
+			want := "client_eof"
+			if tc.rejected {
+				want = "transport_error"
 			}
-			batch := `[{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"dispatch_start","arguments":{"agent":"unknown-private-batch-canary","prompt":"quote: \"; braces: {} []; escape: \\"}}},{"jsonrpc":"2.0","id":3,"method":"tools/list"}]`
-			if _, err := io.WriteString(clientWriter, batch+"\n"); err != nil {
-				t.Fatal(err)
-			}
-			if version != "2024-11-05" && version != "2025-03-26" {
-				runErr := waitMCPRun(t, done)
-				wantVersion := version
-				if version == "private-unsupported-version-canary" {
-					wantVersion = "2025-11-25"
-				}
-				want := fmt.Sprintf("JSON-RPC batching is not supported in 2025-06-18 and later (request version: %s)", wantVersion)
-				if runErr == nil || runErr.Error() != want {
-					t.Fatalf("modern batch error = %v, want %s", runErr, want)
-				}
-				records := readMCPLifecycle(t, root)[0]
-				if records[len(records)-1].Condition != "transport_error" {
-					t.Fatalf("batch error: %+v", records)
-				}
-				return
-			}
-			var responses []struct {
-				ID int `json:"id"`
-			}
-			if err := json.Unmarshal(receive(), &responses); err != nil || len(responses) != 2 {
-				t.Fatalf("legacy batch: %+v %v", responses, err)
-			}
-			if _, err := io.WriteString(clientWriter, `{"jsonrpc":"2.0","id":4,"method":"tools/list"}`+"\n"); err != nil {
-				t.Fatal(err)
-			}
-			var response struct {
-				ID int `json:"id"`
-			}
-			if err := json.Unmarshal(receive(), &response); err != nil || response.ID != 4 {
-				t.Fatalf("post-batch response: %+v %v", response, err)
-			}
-			_ = clientWriter.Close()
-			if err := waitMCPRun(t, done); err != nil {
-				t.Fatal(err)
-			}
-			records := readMCPLifecycle(t, root)[0]
-			if records[len(records)-1].Condition != "client_eof" {
-				t.Fatalf("legacy EOF: %+v", records)
+			records := readMCPLifecycle(t, root)
+			if len(records) != 1 || records[0][len(records[0])-1].Condition != want {
+				t.Fatalf("batch lifecycle: %+v", records)
 			}
 		})
 	}
+}
+
+// exchangeMCPBatch sends handshake and one batch to serve. A rejected batch
+// returns serve's error; an accepted batch must answer every request and leave
+// the session usable until a clean client EOF.
+func exchangeMCPBatch(t *testing.T, handshake string, serve func(context.Context, io.ReadCloser, io.Writer) error) error {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	input, clientWriter := io.Pipe()
+	clientReader, output := io.Pipe()
+	defer func() { _ = clientWriter.Close(); _ = clientReader.Close() }()
+	done := make(chan error, 1)
+	go func() {
+		done <- serve(ctx, input, output)
+	}()
+	lines := make(chan []byte, 4)
+	go func() {
+		scanner := bufio.NewScanner(clientReader)
+		scanner.Buffer(make([]byte, 4096), 1024*1024)
+		for scanner.Scan() {
+			lines <- bytes.Clone(scanner.Bytes())
+		}
+		close(lines)
+	}()
+	receive := func() []byte {
+		t.Helper()
+		select {
+		case data, ok := <-lines:
+			if !ok {
+				t.Fatal("missing protocol response")
+			}
+			return data
+		case <-time.After(5 * time.Second):
+			t.Fatal("protocol response timeout")
+			return nil
+		}
+	}
+	send := func(message string) {
+		t.Helper()
+		if _, err := io.WriteString(clientWriter, message+"\n"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	send(handshake)
+	if !json.Valid(receive()) {
+		t.Fatal("invalid handshake stdout")
+	}
+	send(`[{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"dispatch_start","arguments":{"agent":"unknown-private-batch-canary","prompt":"quote: \"; braces: {} []; escape: \\"}}},{"jsonrpc":"2.0","id":3,"method":"tools/list"}]`)
+	var batch []byte
+	select {
+	case err := <-done:
+		return err
+	case data, ok := <-lines:
+		if !ok {
+			t.Fatal("missing batch response")
+		}
+		batch = data
+	case <-time.After(5 * time.Second):
+		t.Fatal("batch response timeout")
+	}
+	var responses []struct {
+		ID int `json:"id"`
+	}
+	if err := json.Unmarshal(batch, &responses); err != nil || len(responses) != 2 {
+		t.Fatalf("batch responses: %+v %v", responses, err)
+	}
+	gotIDs := map[int]bool{}
+	for _, response := range responses {
+		gotIDs[response.ID] = true
+	}
+	if !gotIDs[2] || !gotIDs[3] {
+		t.Fatalf("batch response IDs: %+v", responses)
+	}
+	send(`{"jsonrpc":"2.0","id":4,"method":"tools/list"}`)
+	var response struct {
+		ID int `json:"id"`
+	}
+	if err := json.Unmarshal(receive(), &response); err != nil || response.ID != 4 {
+		t.Fatalf("post-batch response: %+v %v", response, err)
+	}
+	_ = clientWriter.Close()
+	return waitMCPRun(t, done)
 }
 
 func TestMCPLifecycleErrorBeforeInflightWorkFinishes(t *testing.T) {

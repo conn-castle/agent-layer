@@ -61,11 +61,3 @@ func TestRootVersionFlagWriteError(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
-
-func TestStubCmd(t *testing.T) {
-	cmd := newStubCmd("doctor")
-	err := cmd.RunE(cmd, nil)
-	if err == nil || !strings.Contains(err.Error(), "not implemented") {
-		t.Fatalf("expected not implemented error, got %v", err)
-	}
-}

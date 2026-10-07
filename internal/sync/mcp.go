@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"time"
@@ -21,19 +22,19 @@ const xdgConfigHomeEnv = "XDG_CONFIG_HOME"
 const xdgDataHomeEnv = "XDG_DATA_HOME"
 
 type mcpConfig struct {
-	GeneratedBy string                `json:"_generatedBy"`
-	Servers     OrderedMap[mcpServer] `json:"mcpServers"`
+	GeneratedBy string               `json:"_generatedBy"`
+	Servers     map[string]mcpServer `json:"mcpServers"`
 }
 
 type mcpServer struct {
-	Type               string             `json:"type"`
-	Command            string             `json:"command,omitempty"`
-	Args               []string           `json:"args,omitempty"`
-	Env                OrderedMap[string] `json:"env,omitempty"`
-	URL                string             `json:"url,omitempty"`
-	Headers            OrderedMap[string] `json:"headers,omitempty"`
-	Enabled            *bool              `json:"enabled,omitempty"`
-	ToolTimeoutSeconds int                `json:"tool_timeout_sec,omitempty"`
+	Type               string            `json:"type"`
+	Command            string            `json:"command,omitempty"`
+	Args               []string          `json:"args,omitempty"`
+	Env                map[string]string `json:"env,omitempty"`
+	URL                string            `json:"url,omitempty"`
+	Headers            map[string]string `json:"headers,omitempty"`
+	Enabled            *bool             `json:"enabled,omitempty"`
+	ToolTimeoutSeconds int               `json:"tool_timeout_sec,omitempty"`
 }
 
 // writeMCPConfig generates the native project file shared by Claude and Muse.
@@ -69,7 +70,7 @@ func writeMCPConfig(sys System, root string, project *config.ProjectConfig) erro
 func buildMCPConfig(project *config.ProjectConfig) (*mcpConfig, error) {
 	cfg := &mcpConfig{
 		GeneratedBy: mcpGeneratedBy,
-		Servers:     make(OrderedMap[mcpServer]),
+		Servers:     make(map[string]mcpServer),
 	}
 
 	// Claude Code documents no per-server execution timeout, only the
@@ -87,8 +88,7 @@ func buildMCPConfig(project *config.ProjectConfig) (*mcpConfig, error) {
 	museEnabled := config.IsAgentEnabled(project.Config.Agents.Muse.Enabled)
 	museIDs := make(map[string]bool)
 	if museEnabled {
-		museEnv := project.PlaceholderEnv()
-		museServers, err := projection.EffectiveMCPServers(project.Config, museEnv, projection.ClientMuse, projection.FullValueResolver(museEnv))
+		museServers, err := projection.EffectiveMCPServers(project.Config, project.PlaceholderEnv(), projection.ClientMuse, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -108,7 +108,10 @@ func buildMCPConfig(project *config.ProjectConfig) (*mcpConfig, error) {
 			Type:    server.Transport,
 			Command: server.Command,
 			Args:    server.Args,
+			// Muse keys below are added to Env; keep the projection's map intact.
+			Env:     maps.Clone(server.Env),
 			URL:     server.URL,
+			Headers: server.Headers,
 		}
 		if museEnabled {
 			enabled := museIDs[server.ID]
@@ -122,25 +125,11 @@ func buildMCPConfig(project *config.ProjectConfig) (*mcpConfig, error) {
 				entry.ToolTimeoutSeconds = server.ToolTimeoutSeconds
 			}
 		}
-		if len(server.Headers) > 0 {
-			headers := make(OrderedMap[string], len(server.Headers))
-			for key, value := range server.Headers {
-				headers[key] = value
-			}
-			entry.Headers = headers
-		}
-		if len(server.Env) > 0 {
-			envMap := make(OrderedMap[string], len(server.Env))
-			for key, value := range server.Env {
-				envMap[key] = value
-			}
-			entry.Env = envMap
-		}
 		if museEnabled && museIDs[server.ID] && server.Transport == config.TransportStdio {
 			// Muse filters these selectors from MCP subprocess inheritance. Native
 			// runtime expansion preserves launch-time values, including unset fallback.
 			if entry.Env == nil {
-				entry.Env = make(OrderedMap[string])
+				entry.Env = make(map[string]string)
 			}
 			for _, key := range []string{xdgConfigHomeEnv, xdgDataHomeEnv, ghConfigDirEnv} {
 				if _, explicit := entry.Env[key]; !explicit {

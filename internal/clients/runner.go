@@ -21,18 +21,8 @@ type LaunchFunc func(project *config.ProjectConfig, runInfo *run.Info, env []str
 // EnabledSelector returns the enabled flag for a client.
 type EnabledSelector func(cfg *config.Config) *bool
 
-// Run performs the standard client launch pipeline: load config, sync, create run dir, launch.
-// Warnings from sync are printed to stderr before launching.
-func Run(ctx context.Context, root string, name string, enabled EnabledSelector, launch LaunchFunc, quiet bool, args []string, currentVersion string) error {
-	return RunWithStderr(ctx, root, name, enabled, launch, quiet, args, currentVersion, os.Stderr)
-}
-
-// RunNoSync performs the standard client launch pipeline without running sync.
-func RunNoSync(root string, name string, enabled EnabledSelector, launch LaunchFunc, quiet bool, args []string) error {
-	return RunNoSyncWithStderr(root, name, enabled, launch, quiet, args, os.Stderr)
-}
-
-// RunNoSyncWithStderr is like RunNoSync but allows specifying a custom stderr writer for testing.
+// RunNoSyncWithStderr loads config and launches a client without syncing.
+// Warnings are printed to the supplied stderr writer.
 func RunNoSyncWithStderr(root string, name string, enabled EnabledSelector, launch LaunchFunc, quiet bool, args []string, stderr io.Writer) error {
 	project, err := loadProject(root, name, enabled)
 	if err != nil {
@@ -51,7 +41,8 @@ func RunNoSyncWithStderr(root string, name string, enabled EnabledSelector, laun
 	return launchWithRunInfo(root, project, launch, args)
 }
 
-// RunWithStderr is like Run but allows specifying a custom stderr writer for testing.
+// RunWithStderr loads config, syncs, creates a run directory, and launches a client.
+// Warnings from sync are printed to the supplied stderr writer before launching.
 func RunWithStderr(ctx context.Context, root string, name string, enabled EnabledSelector, launch LaunchFunc, quiet bool, args []string, currentVersion string, stderr io.Writer) error {
 	// Validate the small base config before opening the lock so missing or
 	// disabled projects keep their direct user-facing errors. Skill trees are

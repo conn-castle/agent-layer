@@ -2,8 +2,9 @@
 //
 // # TOML Parsing Strategy
 //
-// This package uses custom line-based TOML parsing instead of the go-toml library's
-// tree manipulation for config updates. This is intentional for several reasons:
+// This package uses the line-based TOML parser and patcher in internal/tomlpatch
+// instead of the go-toml library's tree manipulation for config updates. This is
+// intentional for several reasons:
 //
 //  1. Comment preservation: go-toml's ToTomlString() loses inline comments and
 //     rearranges leading comments. Users expect their config formatting to be preserved.
@@ -30,73 +31,6 @@ import (
 	"github.com/conn-castle/agent-layer/internal/templates"
 	"github.com/conn-castle/agent-layer/internal/tomlpatch"
 )
-
-type tomlBlock struct {
-	name  string
-	lines []string
-	// subTables are the headers TOML nests under this array-of-tables element
-	// (for example [mcp.servers.env]); they render directly after lines.
-	subTables []*tomlBlock
-}
-
-type tomlDocument struct {
-	preamble []string
-	sections map[string]*tomlBlock
-	arrays   map[string][]*tomlBlock
-	order    []string
-}
-
-func toSharedBlock(block *tomlBlock) *tomlpatch.Block {
-	if block == nil {
-		return nil
-	}
-	return &tomlpatch.Block{Name: block.name, Lines: cloneLines(block.lines)}
-}
-
-func applySharedBlock(dst *tomlBlock, src *tomlpatch.Block) {
-	if dst == nil || src == nil {
-		return
-	}
-	dst.name = src.Name
-	dst.lines = cloneLines(src.Lines)
-}
-
-func fromSharedKeyLine(line tomlpatch.KeyLine) keyLine {
-	return keyLine{
-		raw:           line.Raw,
-		indent:        line.Indent,
-		commented:     line.Commented,
-		inlineComment: line.InlineComment,
-	}
-}
-
-func fromSharedBlock(block *tomlpatch.Block) *tomlBlock {
-	converted := &tomlBlock{name: block.Name, lines: cloneLines(block.Lines)}
-	for _, subTable := range block.SubTables {
-		converted.subTables = append(converted.subTables, fromSharedBlock(subTable))
-	}
-	return converted
-}
-
-func fromSharedDocument(doc tomlpatch.Document) tomlDocument {
-	sections := make(map[string]*tomlBlock, len(doc.Sections))
-	for name, block := range doc.Sections {
-		sections[name] = fromSharedBlock(block)
-	}
-	arrays := make(map[string][]*tomlBlock, len(doc.Arrays))
-	for name, blocks := range doc.Arrays {
-		arrays[name] = make([]*tomlBlock, 0, len(blocks))
-		for _, block := range blocks {
-			arrays[name] = append(arrays[name], fromSharedBlock(block))
-		}
-	}
-	return tomlDocument{
-		preamble: cloneLines(doc.Preamble),
-		sections: sections,
-		arrays:   arrays,
-		order:    cloneLines(doc.Order),
-	}
-}
 
 var preferredWizardSectionOrder = []string{
 	approvalsSection,
@@ -135,8 +69,8 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 		return "", err
 	}
 
-	templateDoc := parseTomlDocument(templateContent)
-	currentDoc := parseTomlDocument(content)
+	templateDoc := tomlpatch.ParseDocument(templateContent)
+	currentDoc := tomlpatch.ParseDocument(content)
 	normalizeLegacySectionAliases(&currentDoc)
 	if err := applyCodexAppsUpdate(&currentDoc, choices); err != nil {
 		return "", err
@@ -171,31 +105,31 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 // currentDoc holds the existing config; templateDoc provides the canonical ordering and section formatting;
 // catalogDoc provides default-shaped [[mcp.servers]] blocks; choices supplies wizard selections.
 // Returns the ordered lines or an error when required template blocks are missing.
-func assembleCanonicalConfig(currentDoc tomlDocument, templateDoc tomlDocument, catalogDoc tomlDocument, choices *Choices) ([]string, error) {
-	preamble := choosePreamble(currentDoc.preamble, templateDoc.preamble)
+func assembleCanonicalConfig(currentDoc tomlpatch.Document, templateDoc tomlpatch.Document, catalogDoc tomlpatch.Document, choices *Choices) ([]string, error) {
+	preamble := choosePreamble(currentDoc.Preamble, templateDoc.Preamble)
 	output := make([]string, 0, len(preamble))
 	output = append(output, preamble...)
 
 	removeWarnings := choices.WarningsEnabledTouched && !choices.WarningsEnabled
 
-	for _, name := range orderedWizardSections(templateDoc.order) {
+	for _, name := range orderedWizardSections(templateDoc.Order) {
 		if name == warningsSection && removeWarnings {
-			if block := disabledWarningsBlock(currentDoc.sections[name]); block != nil {
-				appendBlock(&output, block.lines)
+			if block := disabledWarningsBlock(currentDoc.Sections[name]); block != nil {
+				tomlpatch.AppendBlock(&output, block.Lines)
 			}
 			continue
 		}
-		block := selectSectionBlock(currentDoc.sections[name], templateDoc.sections[name])
+		block := selectSectionBlock(currentDoc.Sections[name], templateDoc.Sections[name])
 		if block == nil {
 			continue
 		}
 		updated := cloneBlock(block)
-		applySectionUpdates(name, updated, templateDoc.sections[name], choices)
-		appendBlock(&output, updated.lines)
+		applySectionUpdates(name, updated, templateDoc.Sections[name], choices)
+		tomlpatch.AppendBlock(&output, updated.Lines)
 
 		if name == codexSection {
-			for _, block := range codexAgentSpecificSectionBlocks(currentDoc.sections, templateDoc.sections) {
-				appendBlock(&output, block.lines)
+			for _, block := range extraSectionBlocks(currentDoc.Sections, templateDoc.Sections, true) {
+				tomlpatch.AppendBlock(&output, block.Lines)
 			}
 		}
 
@@ -205,23 +139,23 @@ func assembleCanonicalConfig(currentDoc tomlDocument, templateDoc tomlDocument, 
 				return nil, err
 			}
 			for _, serverBlock := range serverBlocks {
-				appendBlock(&output, renderedBlockLines(&serverBlock))
+				tomlpatch.AppendBlock(&output, renderedBlockLines(&serverBlock))
 			}
 		}
 	}
 
-	extraSections := extraSectionBlocks(currentDoc.sections, templateDoc.sections)
+	extraSections := extraSectionBlocks(currentDoc.Sections, templateDoc.Sections, false)
 	for _, block := range extraSections {
-		appendBlock(&output, block.lines)
+		tomlpatch.AppendBlock(&output, block.Lines)
 	}
 
 	// Preserve non-mcp.servers array-of-table blocks.
-	extraArrays := extraArrayBlocks(currentDoc.arrays)
+	extraArrays := extraArrayBlocks(currentDoc.Arrays)
 	for _, block := range extraArrays {
-		appendBlock(&output, renderedBlockLines(block))
+		tomlpatch.AppendBlock(&output, renderedBlockLines(block))
 	}
 
-	return trimTrailingEmptyLines(output), nil
+	return tomlpatch.TrimTrailingEmptyLines(output), nil
 }
 
 // warningThresholdKeys are the [warnings] keys controlled by the wizard's warnings prompt.
@@ -237,15 +171,15 @@ var warningThresholdKeys = []string{
 // disabledWarningsBlock returns current with the warning thresholds removed, or nil when current is
 // absent or keeps no other keys. Declining warnings must not drop unrelated settings such as
 // noise_mode and version_update_on_sync, nor seed them from the template.
-func disabledWarningsBlock(current *tomlBlock) *tomlBlock {
+func disabledWarningsBlock(current *tomlpatch.Block) *tomlpatch.Block {
 	if current == nil {
 		return nil
 	}
 	updated := cloneBlock(current)
 	for _, key := range warningThresholdKeys {
-		removeKeyFromBlock(updated, key)
+		tomlpatch.RemoveKeyFromBlock(updated, key)
 	}
-	if !hasUncommentedKeyWithPrefix(updated.lines, "") {
+	if !hasUncommentedKeyWithPrefix(updated.Lines, "") {
 		return nil
 	}
 	return updated
@@ -283,74 +217,80 @@ func orderedWizardSections(templateOrder []string) []string {
 }
 
 // selectSectionBlock picks the current block when present, otherwise the template block.
-func selectSectionBlock(current *tomlBlock, template *tomlBlock) *tomlBlock {
+func selectSectionBlock(current *tomlpatch.Block, template *tomlpatch.Block) *tomlpatch.Block {
 	if current != nil {
 		return current
 	}
 	return template
 }
 
+// applyAgentModelUpdates writes the touched model and reasoning_effort keys for
+// one agent section. reasoning_effort is anchored after model, or after enabled
+// when the block has no model line.
+func applyAgentModelUpdates(block, templateBlock *tomlpatch.Block, choice AgentModelChoice) {
+	if choice.ModelTouched {
+		setOptionalKeyValue(block, templateBlock, modelKey, choice.Model, enabledKey)
+	}
+	if choice.ReasoningTouched {
+		anchor := modelKey
+		if _, ok := tomlpatch.FindKeyLine(block.Lines, anchor); !ok {
+			anchor = enabledKey
+		}
+		setOptionalKeyValue(block, templateBlock, "reasoning_effort", choice.Reasoning, anchor)
+	}
+}
+
 // applySectionUpdates mutates the block in place based on wizard choices.
 // name identifies the section; templateBlock provides canonical formatting for inserted keys.
-func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock, choices *Choices) {
+func applySectionUpdates(name string, block *tomlpatch.Block, templateBlock *tomlpatch.Block, choices *Choices) {
 	switch name {
 	case approvalsSection:
 		if choices.ApprovalModeTouched {
-			setKeyValue(block, templateBlock, "mode", formatTomlValue(choices.ApprovalMode), "")
+			tomlpatch.SetKeyValue(block, templateBlock, "mode", tomlpatch.FormatValue(choices.ApprovalMode), "")
 		}
 	case antigravitySection:
 		if choices.EnabledAgentsTouched {
-			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentAntigravity]), "")
+			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentAntigravity]), "")
 		}
-		if choices.AntigravityModelTouched && (!choices.EnabledAgentsTouched || choices.EnabledAgents[AgentAntigravity]) {
-			setOptionalKeyValue(block, templateBlock, "model", choices.AntigravityModel, "enabled")
+		if !choices.EnabledAgentsTouched || choices.EnabledAgents[AgentAntigravity] {
+			applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentAntigravity])
 		}
 	case claudeSection:
 		if choices.EnabledAgentsTouched {
-			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentClaude]), "")
+			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentClaude]), "")
 		}
-		if choices.ClaudeModelTouched {
-			setOptionalKeyValue(block, templateBlock, "model", choices.ClaudeModel, "enabled")
-		}
-		if choices.ClaudeReasoningTouched {
-			setOptionalKeyValue(block, templateBlock, "reasoning_effort", choices.ClaudeReasoning, "model")
-		}
+		applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentClaude])
 		if choices.ClaudeLocalConfigDirTouched {
 			if choices.ClaudeLocalConfigDir {
-				setKeyValue(block, templateBlock, "local_config_dir", formatTomlValue(true), "model")
+				tomlpatch.SetKeyValue(block, templateBlock, "local_config_dir", tomlpatch.FormatValue(true), "model")
 			} else {
-				setCommentedKeyLine(block, templateBlock, "local_config_dir", "model")
+				tomlpatch.SetCommentedKeyLine(block, templateBlock, "local_config_dir", "model")
 			}
 		}
 		if choices.ClaudeDisableQuestionToolTouched {
 			if choices.ClaudeDisableQuestionTool {
-				setKeyValue(block, templateBlock, "disable_question_tool", formatTomlValue(true), "local_config_dir")
+				tomlpatch.SetKeyValue(block, templateBlock, "disable_question_tool", tomlpatch.FormatValue(true), "local_config_dir")
 			} else {
-				setCommentedKeyLine(block, templateBlock, "disable_question_tool", "local_config_dir")
+				tomlpatch.SetCommentedKeyLine(block, templateBlock, "disable_question_tool", "local_config_dir")
 			}
 		}
 		if choices.ClaudeStatuslineTouched {
-			setKeyValue(block, templateBlock, "statusline", formatTomlValue(choices.ClaudeStatusline), "disable_question_tool")
+			tomlpatch.SetKeyValue(block, templateBlock, "statusline", tomlpatch.FormatValue(choices.ClaudeStatusline), "disable_question_tool")
 		}
 	case claudeVSCodeSection:
 		if choices.EnabledAgentsTouched {
-			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentClaudeVSCode]), "")
+			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentClaudeVSCode]), "")
 		}
 	case codexSection:
 		if choices.EnabledAgentsTouched {
-			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentCodex]), "")
+			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentCodex]), "")
 		}
-		if choices.CodexModelTouched {
-			setOptionalKeyValue(block, templateBlock, "model", choices.CodexModel, "enabled")
-		}
-		if choices.CodexReasoningTouched {
-			setOptionalKeyValue(block, templateBlock, "reasoning_effort", choices.CodexReasoning, "model")
-		}
+		applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentCodex])
 		if choices.CodexLocalConfigDirTouched {
 			if choices.CodexLocalConfigDir {
-				setKeyValue(block, templateBlock, "local_config_dir", formatTomlValue(true), "reasoning_effort")
+				tomlpatch.SetKeyValue(block, templateBlock, "local_config_dir", tomlpatch.FormatValue(true), "reasoning_effort")
 			} else {
-				setCommentedKeyLine(block, templateBlock, "local_config_dir", "reasoning_effort")
+				tomlpatch.SetCommentedKeyLine(block, templateBlock, "local_config_dir", "reasoning_effort")
 			}
 		}
 		if choices.CodexStatuslineTouched && codexStatuslineToggleVisible(choices) {
@@ -359,72 +299,52 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 			// anchor). This keeps statusline in place instead of reordering it to
 			// the top of a block that has no local_config_dir line.
 			statuslineAnchor := "local_config_dir"
-			if _, ok := findKeyLine(block.lines, "local_config_dir"); !ok {
+			if _, ok := tomlpatch.FindKeyLine(block.Lines, "local_config_dir"); !ok {
 				statuslineAnchor = "reasoning_effort"
 			}
-			setKeyValue(block, templateBlock, "statusline", formatTomlValue(choices.CodexStatusline), statuslineAnchor)
+			tomlpatch.SetKeyValue(block, templateBlock, "statusline", tomlpatch.FormatValue(choices.CodexStatusline), statuslineAnchor)
 		}
 	case "agents.vscode":
 		if choices.EnabledAgentsTouched {
-			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentVSCode]), "")
+			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentVSCode]), "")
 		}
 	case "agents.copilot_cli":
 		if choices.EnabledAgentsTouched {
-			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentCopilotCLI]), "")
+			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentCopilotCLI]), "")
 		}
-		if choices.CopilotCLIModelTouched {
-			setOptionalKeyValue(block, templateBlock, "model", choices.CopilotCLIModel, "enabled")
-		}
+		applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentCopilotCLI])
 	case "agents.grok":
 		if choices.EnabledAgentsTouched {
-			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentGrok]), "")
+			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentGrok]), "")
 		}
-		if choices.GrokModelTouched {
-			setOptionalKeyValue(block, templateBlock, "model", choices.GrokModel, "enabled")
-		}
-		if choices.GrokReasoningTouched {
-			anchor := "model"
-			if _, ok := findKeyLine(block.lines, "model"); !ok {
-				anchor = "enabled"
-			}
-			setOptionalKeyValue(block, templateBlock, "reasoning_effort", choices.GrokReasoning, anchor)
-		}
+		applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentGrok])
 		if choices.GrokDisableMemoryTouched {
 			anchor := "reasoning_effort"
-			if _, ok := findKeyLine(block.lines, anchor); !ok {
+			if _, ok := tomlpatch.FindKeyLine(block.Lines, anchor); !ok {
 				anchor = "model"
-				if _, ok := findKeyLine(block.lines, anchor); !ok {
+				if _, ok := tomlpatch.FindKeyLine(block.Lines, anchor); !ok {
 					anchor = "enabled"
 				}
 			}
 			if choices.GrokDisableMemory {
-				setKeyValue(block, templateBlock, "disable_memory", formatTomlValue(true), anchor)
+				tomlpatch.SetKeyValue(block, templateBlock, "disable_memory", tomlpatch.FormatValue(true), anchor)
 			} else {
-				setCommentedKeyLine(block, templateBlock, "disable_memory", anchor)
+				tomlpatch.SetCommentedKeyLine(block, templateBlock, "disable_memory", anchor)
 			}
 		}
 	case museSection:
 		if choices.EnabledAgentsTouched {
-			setKeyValue(block, templateBlock, enabledKey, formatTomlValue(choices.EnabledAgents[AgentMuse]), "")
+			tomlpatch.SetKeyValue(block, templateBlock, enabledKey, tomlpatch.FormatValue(choices.EnabledAgents[AgentMuse]), "")
 		}
-		if choices.MuseModelTouched {
-			setOptionalKeyValue(block, templateBlock, modelKey, choices.MuseModel, enabledKey)
-		}
-		if choices.MuseReasoningTouched {
-			anchor := modelKey
-			if _, ok := findKeyLine(block.lines, anchor); !ok {
-				anchor = enabledKey
-			}
-			setOptionalKeyValue(block, templateBlock, "reasoning_effort", choices.MuseReasoning, anchor)
-		}
+		applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentMuse])
 	case warningsSection:
 		if choices.WarningsEnabledTouched && choices.WarningsEnabled {
-			setKeyValue(block, templateBlock, "instruction_token_threshold", formatTomlValue(choices.InstructionTokenThreshold), "")
-			setKeyValue(block, templateBlock, "mcp_server_threshold", formatTomlValue(choices.MCPServerThreshold), "instruction_token_threshold")
-			setKeyValue(block, templateBlock, "mcp_tools_total_threshold", formatTomlValue(choices.MCPToolsTotalThreshold), "mcp_server_threshold")
-			setKeyValue(block, templateBlock, "mcp_server_tools_threshold", formatTomlValue(choices.MCPServerToolsThreshold), "mcp_tools_total_threshold")
-			setKeyValue(block, templateBlock, "mcp_schema_tokens_total_threshold", formatTomlValue(choices.MCPSchemaTokensTotalThreshold), "mcp_server_tools_threshold")
-			setKeyValue(block, templateBlock, "mcp_schema_tokens_server_threshold", formatTomlValue(choices.MCPSchemaTokensServerThreshold), "mcp_schema_tokens_total_threshold")
+			tomlpatch.SetKeyValue(block, templateBlock, "instruction_token_threshold", tomlpatch.FormatValue(choices.InstructionTokenThreshold), "")
+			tomlpatch.SetKeyValue(block, templateBlock, "mcp_server_threshold", tomlpatch.FormatValue(choices.MCPServerThreshold), "instruction_token_threshold")
+			tomlpatch.SetKeyValue(block, templateBlock, "mcp_tools_total_threshold", tomlpatch.FormatValue(choices.MCPToolsTotalThreshold), "mcp_server_threshold")
+			tomlpatch.SetKeyValue(block, templateBlock, "mcp_server_tools_threshold", tomlpatch.FormatValue(choices.MCPServerToolsThreshold), "mcp_tools_total_threshold")
+			tomlpatch.SetKeyValue(block, templateBlock, "mcp_schema_tokens_total_threshold", tomlpatch.FormatValue(choices.MCPSchemaTokensTotalThreshold), "mcp_server_tools_threshold")
+			tomlpatch.SetKeyValue(block, templateBlock, "mcp_schema_tokens_server_threshold", tomlpatch.FormatValue(choices.MCPSchemaTokensServerThreshold), "mcp_schema_tokens_total_threshold")
 		}
 	}
 }
@@ -432,7 +352,7 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 type mcpBlock struct {
 	id        string
 	lines     []string
-	subTables []*tomlBlock
+	subTables []*tomlpatch.Block
 }
 
 // stdioIncompatibleKeys are TOML keys that are not valid for stdio transport MCP servers.
@@ -450,9 +370,9 @@ var httpIncompatibleKeys = []string{"command", "args", envKey}
 // enabled = false rather than deleted. A default that is absent from config is inserted from the
 // catalog only when the user selected (enabled) it; an unselected missing default stays absent.
 // User-defined non-catalog blocks follow the same never-delete rule (see the trailing loop).
-func buildMCPServerBlocks(currentDoc tomlDocument, catalogDoc tomlDocument, choices *Choices) ([]tomlBlock, error) {
-	currentBlocks := parseMCPBlocks(currentDoc.arrays[mcpServersSection])
-	catalogBlocks := parseMCPBlocks(catalogDoc.arrays[mcpServersSection])
+func buildMCPServerBlocks(currentDoc tomlpatch.Document, catalogDoc tomlpatch.Document, choices *Choices) ([]tomlpatch.Block, error) {
+	currentBlocks := parseMCPBlocks(currentDoc.Arrays[mcpServersSection])
+	catalogBlocks := parseMCPBlocks(catalogDoc.Arrays[mcpServersSection])
 
 	currentByID := make(map[string]mcpBlock, len(currentBlocks))
 	for _, block := range currentBlocks {
@@ -474,7 +394,7 @@ func buildMCPServerBlocks(currentDoc tomlDocument, catalogDoc tomlDocument, choi
 		defaultSet[id] = struct{}{}
 	}
 
-	var ordered []tomlBlock
+	var ordered []tomlpatch.Block
 	for _, id := range defaultIDs {
 		if choices.EnabledMCPServersTouched {
 			block, ok := currentByID[id]
@@ -512,7 +432,7 @@ func buildMCPServerBlocks(currentDoc tomlDocument, catalogDoc tomlDocument, choi
 				continue
 			}
 		}
-		tb := tomlBlock{name: mcpServersSection, lines: cloneLines(block.lines), subTables: cloneBlocks(block.subTables)}
+		tb := tomlpatch.Block{Name: mcpServersSection, Lines: tomlpatch.CloneLines(block.lines), SubTables: cloneBlocks(block.subTables)}
 		// Honor the custom-server keep/disable decision. Unlike catalog defaults,
 		// a custom server has no template to restore from, so disabling sets
 		// enabled = false rather than pruning the block. Untouched configs pass
@@ -521,7 +441,7 @@ func buildMCPServerBlocks(currentDoc tomlDocument, catalogDoc tomlDocument, choi
 		// forced to false, so we never impose a decision the user did not make.
 		if choices.CustomMCPServersTouched && block.id != "" {
 			if enabled, ok := choices.CustomMCPServersEnabled[block.id]; ok {
-				setKeyValue(&tb, nil, "enabled", formatTomlValue(enabled), "id")
+				tomlpatch.SetKeyValue(&tb, nil, "enabled", tomlpatch.FormatValue(enabled), "id")
 			}
 		}
 		sanitizeMCPServerBlock(&tb)
@@ -535,20 +455,20 @@ func buildMCPServerBlocks(currentDoc tomlDocument, catalogDoc tomlDocument, choi
 // including section-style sub-tables such as [mcp.servers.headers].
 // This allows the wizard to repair configs where, for example, a stdio server
 // has leftover headers from a previous configuration.
-func sanitizeMCPServerBlock(block *tomlBlock) {
+func sanitizeMCPServerBlock(block *tomlpatch.Block) {
 	var incompatibleKeys []string
-	switch extractMCPBlockKeyValue(block.lines, "transport") {
+	switch tomlpatch.ExtractBlockKeyValue(block.Lines, "transport") {
 	case "stdio":
 		incompatibleKeys = stdioIncompatibleKeys
 	case "http":
 		incompatibleKeys = httpIncompatibleKeys
 	}
 	for _, key := range incompatibleKeys {
-		removeKeyFromBlock(block, key)
+		tomlpatch.RemoveKeyFromBlock(block, key)
 	}
-	kept := make([]*tomlBlock, 0, len(block.subTables))
-	for _, subTable := range block.subTables {
-		path, ok := tomlpatch.ParseKeyPath(subTable.name)
+	kept := make([]*tomlpatch.Block, 0, len(block.SubTables))
+	for _, subTable := range block.SubTables {
+		path, ok := tomlpatch.ParseKeyPath(subTable.Name)
 		if !ok || len(path) <= 2 || path[0] != mcpSection || path[1] != "servers" || !slices.Contains(incompatibleKeys, path[2]) {
 			kept = append(kept, subTable)
 			continue
@@ -556,14 +476,14 @@ func sanitizeMCPServerBlock(block *tomlBlock) {
 		// The parser assigns comments and blank lines preceding the next header
 		// to this sub-table; keep them so dropping it does not drop the next
 		// block's leading comment.
-		trailing := trailingCommentLines(subTable.lines)
+		trailing := trailingCommentLines(subTable.Lines)
 		if len(kept) > 0 {
-			kept[len(kept)-1].lines = append(kept[len(kept)-1].lines, trailing...)
+			kept[len(kept)-1].Lines = append(kept[len(kept)-1].Lines, trailing...)
 		} else {
-			block.lines = append(block.lines, trailing...)
+			block.Lines = append(block.Lines, trailing...)
 		}
 	}
-	block.subTables = kept
+	block.SubTables = kept
 }
 
 // trailingCommentLines returns the comment and blank lines after the last
@@ -580,46 +500,16 @@ func trailingCommentLines(lines []string) []string {
 	return lines[end:]
 }
 
-type tomlLineWalkResult struct {
-	advanceTo int
-	stop      bool
-}
-
-func walkTomlLinesOutsideMultiline(lines []string, fn func(i int, line string, state tomlStringState) tomlLineWalkResult) {
-	tomlpatch.WalkLinesOutsideMultiline(lines, func(i int, line string, state tomlpatch.StringState) tomlpatch.LineWalkResult {
-		result := fn(i, line, tomlStringState(state))
-		return tomlpatch.LineWalkResult{AdvanceTo: result.advanceTo, Stop: result.stop}
-	})
-}
-
-// extractMCPBlockKeyValue returns the unquoted value for a key in a TOML block.
-// lines are the raw block lines; key is the key to search for.
-// Tracks multiline string state to avoid parsing content inside multiline strings.
-func extractMCPBlockKeyValue(lines []string, key string) string {
-	return tomlpatch.ExtractBlockKeyValue(lines, key)
-}
-
-// removeKeyFromBlock removes all uncommented lines for the given key from a block,
-// including continuation lines of multiline arrays, inline tables, and triple-quoted strings.
-// Also removes dotted sub-key lines (e.g., "headers.Authorization = val" when key is "headers").
-// block is updated in place; commented-out lines for the key are preserved.
-// Tracks multiline string state to avoid matching content inside multiline strings.
-func removeKeyFromBlock(block *tomlBlock, key string) {
-	shared := toSharedBlock(block)
-	tomlpatch.RemoveKeyFromBlock(shared, key)
-	applySharedBlock(block, shared)
-}
-
 // updateMCPEnabled applies the enabled toggle to a server block when requested.
 // block holds the current server text; templateBlock provides canonical formatting; id identifies the server.
-func updateMCPEnabled(block mcpBlock, templateBlock mcpBlock, choices *Choices, id string) tomlBlock {
-	updated := tomlBlock{name: mcpServersSection, lines: cloneLines(block.lines), subTables: cloneBlocks(block.subTables)}
+func updateMCPEnabled(block mcpBlock, templateBlock mcpBlock, choices *Choices, id string) tomlpatch.Block {
+	updated := tomlpatch.Block{Name: mcpServersSection, Lines: tomlpatch.CloneLines(block.lines), SubTables: cloneBlocks(block.subTables)}
 	if choices.EnabledMCPServersTouched {
-		tpl := (*tomlBlock)(nil)
+		tpl := (*tomlpatch.Block)(nil)
 		if len(templateBlock.lines) > 0 {
-			tpl = &tomlBlock{name: mcpServersSection, lines: cloneLines(templateBlock.lines)}
+			tpl = &tomlpatch.Block{Name: mcpServersSection, Lines: tomlpatch.CloneLines(templateBlock.lines)}
 		}
-		setKeyValue(&updated, tpl, "enabled", formatTomlValue(choices.EnabledMCPServers[id]), "id")
+		tomlpatch.SetKeyValue(&updated, tpl, "enabled", tomlpatch.FormatValue(choices.EnabledMCPServers[id]), "id")
 	}
 	return updated
 }
@@ -647,122 +537,23 @@ func defaultServerIDs(choices *Choices, templateBlocks []mcpBlock) []string {
 }
 
 // parseMCPBlocks extracts MCP server IDs and block lines from parsed array blocks.
-func parseMCPBlocks(blocks []*tomlBlock) []mcpBlock {
+func parseMCPBlocks(blocks []*tomlpatch.Block) []mcpBlock {
 	result := make([]mcpBlock, 0, len(blocks))
 	for _, block := range blocks {
-		id := extractMCPServerID(block.lines)
-		result = append(result, mcpBlock{id: id, lines: cloneLines(block.lines), subTables: cloneBlocks(block.subTables)})
+		id := tomlpatch.ExtractBlockKeyValue(block.Lines, "id")
+		result = append(result, mcpBlock{id: id, lines: tomlpatch.CloneLines(block.Lines), subTables: cloneBlocks(block.SubTables)})
 	}
 	return result
 }
 
-// extractMCPServerID returns the first non-commented id value in a server block.
-// lines are the raw block lines; returns empty string when no id is found.
-func extractMCPServerID(lines []string) string {
-	return extractMCPBlockKeyValue(lines, "id")
-}
-
-// parseKeyValueWithState extracts a simple key/value pair from a TOML line with explicit state.
-// line is the raw line; key is the expected key name; state tracks multiline strings.
-func parseKeyValueWithState(line string, key string, state tomlStringState) (string, string, bool) {
-	return tomlpatch.ParseKeyValueWithState(line, key, tomlpatch.StringState(state))
-}
-
 // setOptionalKeyValue updates or comments out an optional key based on the provided value.
 // block is updated in place; templateBlock provides a canonical commented line when clearing; afterKey controls insertion order.
-func setOptionalKeyValue(block *tomlBlock, templateBlock *tomlBlock, key string, value string, afterKey string) {
+func setOptionalKeyValue(block *tomlpatch.Block, templateBlock *tomlpatch.Block, key string, value string, afterKey string) {
 	if value == "" {
-		setCommentedKeyLine(block, templateBlock, key, afterKey)
+		tomlpatch.SetCommentedKeyLine(block, templateBlock, key, afterKey)
 		return
 	}
-	setKeyValue(block, templateBlock, key, formatTomlValue(value), afterKey)
-}
-
-// setCommentedKeyLine ensures the key line is commented, inserting a template line when available.
-// block is updated in place; templateBlock provides canonical formatting; afterKey controls insertion order.
-func setCommentedKeyLine(block *tomlBlock, templateBlock *tomlBlock, key string, afterKey string) {
-	shared := toSharedBlock(block)
-	tomlpatch.SetCommentedKeyLine(shared, toSharedBlock(templateBlock), key, afterKey)
-	applySharedBlock(block, shared)
-}
-
-// setKeyValue updates or inserts a key/value line in a section block.
-// block is updated in place; templateBlock provides canonical formatting; afterKey controls insertion order.
-func setKeyValue(block *tomlBlock, templateBlock *tomlBlock, key string, value string, afterKey string) {
-	shared := toSharedBlock(block)
-	tomlpatch.SetKeyValue(shared, toSharedBlock(templateBlock), key, value, afterKey)
-	applySharedBlock(block, shared)
-}
-
-// keyLine holds a parsed key/value line with comment metadata.
-type keyLine struct {
-	raw           string
-	indent        string
-	commented     bool
-	inlineComment string
-}
-
-// findKeyLine searches lines for a key/value assignment and returns the parsed line.
-// Returns false if the key is not present.
-// Tracks multiline string state to avoid parsing content inside multiline strings.
-func findKeyLine(lines []string, key string) (keyLine, bool) {
-	parsed, ok := tomlpatch.FindKeyLine(lines, key)
-	if !ok {
-		return keyLine{}, false
-	}
-	return fromSharedKeyLine(parsed), true
-}
-
-// parseKeyLineWithState parses a key/value assignment line with explicit state tracking.
-// Returns false when the line does not define the requested key.
-func parseKeyLineWithState(line string, key string, state tomlStringState) (keyLine, bool) {
-	parsed, ok := tomlpatch.ParseKeyLineWithState(line, key, tomlpatch.StringState(state))
-	if !ok {
-		return keyLine{}, false
-	}
-	return fromSharedKeyLine(parsed), true
-}
-
-// buildKeyLine renders a key/value line using indentation and inline comment from base.
-func buildKeyLine(base keyLine, key string, value string, commented bool) string {
-	return tomlpatch.BuildKeyLine(tomlpatch.KeyLine{
-		Raw:           base.raw,
-		Indent:        base.indent,
-		Commented:     base.commented,
-		InlineComment: base.inlineComment,
-	}, key, value, commented)
-}
-
-// ensureCommented returns the line with a leading comment marker.
-func ensureCommented(line string) string {
-	return tomlpatch.EnsureCommented(line)
-}
-
-// replaceOrInsertLine replaces an existing key line or inserts a new line after afterKey.
-// block is updated in place; duplicates are removed to keep a single key occurrence.
-// Tracks multiline string state to avoid matching content inside multiline strings.
-func replaceOrInsertLine(block *tomlBlock, key string, newLine string, afterKey string) {
-	shared := toSharedBlock(block)
-	tomlpatch.ReplaceOrInsertLine(shared, key, newLine, afterKey)
-	applySharedBlock(block, shared)
-}
-
-// findInsertIndex returns the line index to insert a new key line after afterKey.
-// lines should include the section header as the first entry.
-// Tracks multiline string state to avoid matching content inside multiline strings.
-func findInsertIndex(lines []string, afterKey string) int {
-	return tomlpatch.FindInsertIndex(lines, afterKey)
-}
-
-// formatTomlValue converts a scalar value into a TOML literal string.
-func formatTomlValue(value interface{}) string {
-	return tomlpatch.FormatValue(value)
-}
-
-// parseTomlDocument splits TOML content into preamble lines, section blocks, and array-of-table blocks.
-// Returns the parsed document with section order based on appearance.
-func parseTomlDocument(content string) tomlDocument {
-	return fromSharedDocument(tomlpatch.ParseDocument(content))
+	tomlpatch.SetKeyValue(block, templateBlock, key, tomlpatch.FormatValue(value), afterKey)
 }
 
 // codexFeaturesSection is the dotted TOML path for the Codex
@@ -784,7 +575,7 @@ const (
 	codexFeatureDefaultPlugins = true
 )
 
-func applyCodexAppsUpdate(doc *tomlDocument, choices *Choices) error {
+func applyCodexAppsUpdate(doc *tomlpatch.Document, choices *Choices) error {
 	if !choices.CodexAppsTouched {
 		return nil
 	}
@@ -793,28 +584,28 @@ func applyCodexAppsUpdate(doc *tomlDocument, choices *Choices) error {
 
 // applyCodexPluginsUpdate writes choices.CodexPlugins into the
 // [agents.codex.agent_specific.features] section of doc when CodexPluginsTouched.
-func applyCodexPluginsUpdate(doc *tomlDocument, choices *Choices) error {
+func applyCodexPluginsUpdate(doc *tomlpatch.Document, choices *Choices) error {
 	if !choices.CodexPluginsTouched {
 		return nil
 	}
 	return applyCodexBooleanFeatureUpdate(doc, choices, config.PluginsKey, choices.CodexPlugins, codexFeatureDefaultPlugins)
 }
 
-func applyCodexBooleanFeatureUpdate(doc *tomlDocument, choices *Choices, key string, enabled, defaultEnabled bool) error {
+func applyCodexBooleanFeatureUpdate(doc *tomlpatch.Document, choices *Choices, key string, enabled, defaultEnabled bool) error {
 	if !codexRuntimeToggleVisible(choices) {
 		return nil
 	}
-	if block, exists := doc.sections[codexFeaturesSection]; exists {
-		setKeyValue(block, nil, key, formatTomlValue(enabled), "")
+	if block, exists := doc.Sections[codexFeaturesSection]; exists {
+		tomlpatch.SetKeyValue(block, nil, key, tomlpatch.FormatValue(enabled), "")
 		return nil
 	}
-	if parentBlock, exists := doc.sections[codexAgentSpecificSectionPrefix]; exists {
+	if parentBlock, exists := doc.Sections[codexAgentSpecificSectionPrefix]; exists {
 		dottedKey := "features." + key
-		if hasUncommentedKeyLine(parentBlock.lines, dottedKey) {
-			setKeyValue(parentBlock, nil, dottedKey, formatTomlValue(enabled), "")
+		if hasUncommentedKeyLine(parentBlock.Lines, dottedKey) {
+			tomlpatch.SetKeyValue(parentBlock, nil, dottedKey, tomlpatch.FormatValue(enabled), "")
 			return nil
 		}
-		if hasUncommentedKeyLine(parentBlock.lines, "features") {
+		if hasUncommentedKeyLine(parentBlock.Lines, "features") {
 			if current, exists := codexFeatureValueFromAgentSpecificBlock(parentBlock, key); exists {
 				if current != enabled {
 					return fmt.Errorf(messages.WizardCodexInlineFeaturesUnsupported)
@@ -830,18 +621,18 @@ func applyCodexBooleanFeatureUpdate(doc *tomlDocument, choices *Choices, key str
 			}
 			return fmt.Errorf(messages.WizardCodexInlineFeaturesUnsupported)
 		}
-		if hasUncommentedKeyWithPrefix(parentBlock.lines, "features.") {
-			setKeyValue(parentBlock, nil, dottedKey, formatTomlValue(enabled), "")
+		if hasUncommentedKeyWithPrefix(parentBlock.Lines, "features.") {
+			tomlpatch.SetKeyValue(parentBlock, nil, dottedKey, tomlpatch.FormatValue(enabled), "")
 			return nil
 		}
 	}
-	block := &tomlBlock{
-		name:  codexFeaturesSection,
-		lines: []string{"[" + codexFeaturesSection + "]"},
+	block := &tomlpatch.Block{
+		Name:  codexFeaturesSection,
+		Lines: []string{"[" + codexFeaturesSection + "]"},
 	}
-	doc.sections[codexFeaturesSection] = block
-	doc.order = append(doc.order, codexFeaturesSection)
-	setKeyValue(block, nil, key, formatTomlValue(enabled), "")
+	doc.Sections[codexFeaturesSection] = block
+	doc.Order = append(doc.Order, codexFeaturesSection)
+	tomlpatch.SetKeyValue(block, nil, key, tomlpatch.FormatValue(enabled), "")
 	return nil
 }
 
@@ -854,19 +645,19 @@ var codexBrowserFeatureKeys = config.CodexBrowserFeatureKeys()
 // (both target the same table). Disabling sets each key false; leaving the
 // toggle off comments any existing keys and adds none. Inline `features = {...}`
 // surfaces a clear error when a change is required. Mutates doc in place.
-func applyCodexBrowserUpdate(doc *tomlDocument, choices *Choices) error {
+func applyCodexBrowserUpdate(doc *tomlpatch.Document, choices *Choices) error {
 	if !choices.CodexDisableBrowserTouched {
 		return nil
 	}
 	if !codexRuntimeToggleVisible(choices) {
 		return nil
 	}
-	if block, exists := doc.sections[codexFeaturesSection]; exists {
+	if block, exists := doc.Sections[codexFeaturesSection]; exists {
 		applyCodexBrowserKeys(block, "", choices.CodexDisableBrowser)
 		return nil
 	}
-	if parentBlock, exists := doc.sections[codexAgentSpecificSectionPrefix]; exists {
-		if hasUncommentedKeyLine(parentBlock.lines, "features") {
+	if parentBlock, exists := doc.Sections[codexAgentSpecificSectionPrefix]; exists {
+		if hasUncommentedKeyLine(parentBlock.Lines, "features") {
 			// An inline `features = {...}` table cannot be edited line-by-line.
 			// Surface the limitation whenever a change is required: when disabling
 			// (we would need to set the keys) or when the inline table already pins
@@ -876,7 +667,7 @@ func applyCodexBrowserUpdate(doc *tomlDocument, choices *Choices) error {
 			}
 			return nil
 		}
-		if choices.CodexDisableBrowser || hasUncommentedKeyWithPrefix(parentBlock.lines, "features.") {
+		if choices.CodexDisableBrowser || hasUncommentedKeyWithPrefix(parentBlock.Lines, "features.") {
 			applyCodexBrowserKeys(parentBlock, "features.", choices.CodexDisableBrowser)
 		}
 		return nil
@@ -884,12 +675,12 @@ func applyCodexBrowserUpdate(doc *tomlDocument, choices *Choices) error {
 	if !choices.CodexDisableBrowser {
 		return nil
 	}
-	block := &tomlBlock{
-		name:  codexFeaturesSection,
-		lines: []string{"[" + codexFeaturesSection + "]"},
+	block := &tomlpatch.Block{
+		Name:  codexFeaturesSection,
+		Lines: []string{"[" + codexFeaturesSection + "]"},
 	}
-	doc.sections[codexFeaturesSection] = block
-	doc.order = append(doc.order, codexFeaturesSection)
+	doc.Sections[codexFeaturesSection] = block
+	doc.Order = append(doc.Order, codexFeaturesSection)
 	applyCodexBrowserKeys(block, "", true)
 	return nil
 }
@@ -899,7 +690,7 @@ func applyCodexBrowserUpdate(doc *tomlDocument, choices *Choices) error {
 // to surface WizardCodexInlineFeaturesUnsupported when the line-based patcher
 // cannot edit those pins inside an inline table. Parallels the generic Codex
 // feature reader used for apps/plugins.
-func inlineFeaturesHasAnyCodexBrowserKey(block *tomlBlock) bool {
+func inlineFeaturesHasAnyCodexBrowserKey(block *tomlpatch.Block) bool {
 	if block == nil {
 		return false
 	}
@@ -910,7 +701,7 @@ func inlineFeaturesHasAnyCodexBrowserKey(block *tomlBlock) bool {
 			} `toml:"codex"`
 		} `toml:"agents"`
 	}
-	if err := toml.Unmarshal([]byte(strings.Join(block.lines, "\n")), &cfg); err != nil {
+	if err := toml.Unmarshal([]byte(strings.Join(block.Lines, "\n")), &cfg); err != nil {
 		return false
 	}
 	features, ok := cfg.Agents.Codex.AgentSpecific["features"].(map[string]any)
@@ -928,12 +719,12 @@ func inlineFeaturesHasAnyCodexBrowserKey(block *tomlBlock) bool {
 // applyCodexBrowserKeys sets (when disabling) or comments (when not) each
 // browser feature key in block. prefix is "" for a dedicated [features] table
 // or "features." for dotted keys under [agents.codex.agent_specific].
-func applyCodexBrowserKeys(block *tomlBlock, prefix string, disable bool) {
+func applyCodexBrowserKeys(block *tomlpatch.Block, prefix string, disable bool) {
 	for _, key := range codexBrowserFeatureKeys {
 		if disable {
-			setKeyValue(block, nil, prefix+key, formatTomlValue(false), "")
+			tomlpatch.SetKeyValue(block, nil, prefix+key, tomlpatch.FormatValue(false), "")
 		} else {
-			setCommentedKeyLine(block, nil, prefix+key, "")
+			tomlpatch.SetCommentedKeyLine(block, nil, prefix+key, "")
 		}
 	}
 }
@@ -966,7 +757,7 @@ func claudeEnvKey(envKey string) claudeAgentSpecificKey {
 		leafKey:         envKey,
 		parentDotted:    "env." + envKey,
 		claudeDotted:    "agent_specific.env." + envKey,
-		value:           formatTomlValue(falseValue),
+		value:           tomlpatch.FormatValue(falseValue),
 	}
 }
 
@@ -974,7 +765,7 @@ func claudeEnvKey(envKey string) claudeAgentSpecificKey {
 // doc. It mirrors applyCodexAppsUpdate but operates across the Claude
 // agent_specific sections so an expanded layout is handled without producing a
 // duplicate-table error. Mutates doc in place.
-func applyClaudeAgentSpecificUpdate(doc *tomlDocument, choices *Choices) {
+func applyClaudeAgentSpecificUpdate(doc *tomlpatch.Document, choices *Choices) {
 	if !claudeDisableTogglesTouched(choices) {
 		return
 	}
@@ -994,7 +785,7 @@ func applyClaudeAgentSpecificUpdate(doc *tomlDocument, choices *Choices) {
 			leafKey:         autoMemoryEnabledKey,
 			parentDotted:    autoMemoryEnabledKey,
 			claudeDotted:    "agent_specific.autoMemoryEnabled",
-			value:           formatTomlValue(false),
+			value:           tomlpatch.FormatValue(false),
 		}, choices.ClaudeDisableMemory)
 	}
 	// The AskUserQuestion toggle is written as a typed agents.claude
@@ -1016,12 +807,12 @@ func claudeDisableTogglesTouched(choices *Choices) bool {
 // present, else the [agents.claude.agent_specific] parent section, else the
 // [agents.claude] block as a fully-dotted key. Disabling writes the value;
 // leaving the toggle off comments any existing line and inserts nothing.
-func writeClaudeAgentSpecificKey(doc *tomlDocument, key claudeAgentSpecificKey, disable bool) {
-	if block, exists := doc.sections[key.expandedSection]; exists {
+func writeClaudeAgentSpecificKey(doc *tomlpatch.Document, key claudeAgentSpecificKey, disable bool) {
+	if block, exists := doc.Sections[key.expandedSection]; exists {
 		writeOrCommentKey(block, key.leafKey, key.value, disable)
 		return
 	}
-	if block, exists := doc.sections[claudeAgentSpecificSection]; exists && key.expandedSection != claudeAgentSpecificSection {
+	if block, exists := doc.Sections[claudeAgentSpecificSection]; exists && key.expandedSection != claudeAgentSpecificSection {
 		writeOrCommentKey(block, key.parentDotted, key.value, disable)
 		return
 	}
@@ -1032,28 +823,28 @@ func writeClaudeAgentSpecificKey(doc *tomlDocument, key claudeAgentSpecificKey, 
 // any existing uncommented line for key (inserting nothing when absent). Keys
 // in [agents.claude] are placed after "enabled"; in sub-tables the afterKey is
 // not found and the key lands just after the section header.
-func writeOrCommentKey(block *tomlBlock, key string, value string, disable bool) {
+func writeOrCommentKey(block *tomlpatch.Block, key string, value string, disable bool) {
 	if disable {
-		setKeyValue(block, nil, key, value, "enabled")
+		tomlpatch.SetKeyValue(block, nil, key, value, "enabled")
 		return
 	}
-	setCommentedKeyLine(block, nil, key, "enabled")
+	tomlpatch.SetCommentedKeyLine(block, nil, key, "enabled")
 }
 
 // ensureClaudeSectionBlock returns the [agents.claude] block, creating an empty
 // one when absent. The section is present in every config derived from the
 // template; the create path is a defensive fallback for hand-edited configs.
-func ensureClaudeSectionBlock(doc *tomlDocument) *tomlBlock {
-	if block, exists := doc.sections[claudeSection]; exists {
+func ensureClaudeSectionBlock(doc *tomlpatch.Document) *tomlpatch.Block {
+	if block, exists := doc.Sections[claudeSection]; exists {
 		return block
 	}
-	block := &tomlBlock{name: claudeSection, lines: []string{"[" + claudeSection + "]"}}
-	doc.sections[claudeSection] = block
-	doc.order = append(doc.order, claudeSection)
+	block := &tomlpatch.Block{Name: claudeSection, Lines: []string{"[" + claudeSection + "]"}}
+	doc.Sections[claudeSection] = block
+	doc.Order = append(doc.Order, claudeSection)
 	return block
 }
 
-func codexFeatureValueFromAgentSpecificBlock(block *tomlBlock, key string) (bool, bool) {
+func codexFeatureValueFromAgentSpecificBlock(block *tomlpatch.Block, key string) (bool, bool) {
 	if block == nil {
 		return false, false
 	}
@@ -1064,7 +855,7 @@ func codexFeatureValueFromAgentSpecificBlock(block *tomlBlock, key string) (bool
 			} `toml:"codex"`
 		} `toml:"agents"`
 	}
-	if err := toml.Unmarshal([]byte(strings.Join(block.lines, "\n")), &cfg); err != nil {
+	if err := toml.Unmarshal([]byte(strings.Join(block.Lines, "\n")), &cfg); err != nil {
 		return false, false
 	}
 	return readCodexFeatureValue(cfg.Agents.Codex.AgentSpecific, key)
@@ -1076,66 +867,66 @@ func isCodexAgentSpecificSection(name string) bool {
 
 func hasUncommentedKeyWithPrefix(lines []string, prefix string) bool {
 	found := false
-	walkTomlLinesOutsideMultiline(lines, func(_ int, line string, state tomlStringState) tomlLineWalkResult {
+	tomlpatch.WalkLinesOutsideMultiline(lines, func(_ int, line string, state tomlpatch.StringState) tomlpatch.LineWalkResult {
 		trimmed := strings.TrimLeft(line, " \t")
 		if strings.HasPrefix(trimmed, "#") {
-			return tomlLineWalkResult{}
+			return tomlpatch.LineWalkResult{}
 		}
-		commentPos, _ := ScanTomlLineForComment(trimmed, state)
+		commentPos, _ := tomlpatch.ScanLineForComment(trimmed, state)
 		if commentPos >= 0 {
 			trimmed = strings.TrimSpace(trimmed[:commentPos])
 		}
 		key, _, ok := strings.Cut(trimmed, "=")
 		if !ok {
-			return tomlLineWalkResult{}
+			return tomlpatch.LineWalkResult{}
 		}
 		if strings.HasPrefix(strings.TrimSpace(key), prefix) {
 			found = true
-			return tomlLineWalkResult{stop: true}
+			return tomlpatch.LineWalkResult{Stop: true}
 		}
-		return tomlLineWalkResult{}
+		return tomlpatch.LineWalkResult{}
 	})
 	return found
 }
 
 func hasUncommentedKeyLine(lines []string, key string) bool {
 	found := false
-	walkTomlLinesOutsideMultiline(lines, func(_ int, line string, state tomlStringState) tomlLineWalkResult {
-		parsed, ok := parseKeyLineWithState(line, key, state)
-		if ok && !parsed.commented {
+	tomlpatch.WalkLinesOutsideMultiline(lines, func(_ int, line string, state tomlpatch.StringState) tomlpatch.LineWalkResult {
+		parsed, ok := tomlpatch.ParseKeyLineWithState(line, key, state)
+		if ok && !parsed.Commented {
 			found = true
-			return tomlLineWalkResult{stop: true}
+			return tomlpatch.LineWalkResult{Stop: true}
 		}
-		return tomlLineWalkResult{}
+		return tomlpatch.LineWalkResult{}
 	})
 	return found
 }
 
-func normalizeLegacySectionAliases(doc *tomlDocument) {
+func normalizeLegacySectionAliases(doc *tomlpatch.Document) {
 	for legacyName, canonicalName := range legacySectionAliases {
-		legacyBlock, hasLegacy := doc.sections[legacyName]
+		legacyBlock, hasLegacy := doc.Sections[legacyName]
 		if !hasLegacy {
 			continue
 		}
 
-		if _, hasCanonical := doc.sections[canonicalName]; !hasCanonical {
+		if _, hasCanonical := doc.Sections[canonicalName]; !hasCanonical {
 			migrated := cloneBlock(legacyBlock)
-			migrated.name = canonicalName
-			if len(migrated.lines) > 0 {
-				migrated.lines[0] = rewriteSectionHeaderLine(migrated.lines[0], canonicalName)
+			migrated.Name = canonicalName
+			if len(migrated.Lines) > 0 {
+				migrated.Lines[0] = rewriteSectionHeaderLine(migrated.Lines[0], canonicalName)
 			}
-			doc.sections[canonicalName] = migrated
+			doc.Sections[canonicalName] = migrated
 		}
 
-		delete(doc.sections, legacyName)
-		doc.order = applyLegacyAliasToOrder(doc.order, legacyName, canonicalName)
+		delete(doc.Sections, legacyName)
+		doc.Order = applyLegacyAliasToOrder(doc.Order, legacyName, canonicalName)
 	}
 }
 
 func rewriteSectionHeaderLine(line string, sectionName string) string {
 	leading := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 	trimmed := strings.TrimSpace(line)
-	commentPos, _ := ScanTomlLineForComment(trimmed, tomlStateNone)
+	commentPos, _ := tomlpatch.ScanLineForComment(trimmed, tomlpatch.StateNone)
 	comment := ""
 	if commentPos >= 0 {
 		comment = strings.TrimSpace(trimmed[commentPos:])
@@ -1171,27 +962,20 @@ func applyLegacyAliasToOrder(order []string, legacyName string, canonicalName st
 	return normalized
 }
 
-// parseTomlHeader detects a TOML table header line and extracts its name.
-// Handles inline comments like `[section] # comment`.
-// Returns the name, whether it's an array-of-table, and a match flag.
-func parseTomlHeader(line string) (string, bool, bool) {
-	return tomlpatch.ParseHeader(line)
-}
-
 // cloneBlock returns a deep copy of a block, including its lines and sub-tables.
-func cloneBlock(block *tomlBlock) *tomlBlock {
+func cloneBlock(block *tomlpatch.Block) *tomlpatch.Block {
 	if block == nil {
 		return nil
 	}
-	return &tomlBlock{name: block.name, lines: cloneLines(block.lines), subTables: cloneBlocks(block.subTables)}
+	return &tomlpatch.Block{Name: block.Name, Lines: tomlpatch.CloneLines(block.Lines), SubTables: cloneBlocks(block.SubTables)}
 }
 
 // cloneBlocks returns deep copies of blocks.
-func cloneBlocks(blocks []*tomlBlock) []*tomlBlock {
+func cloneBlocks(blocks []*tomlpatch.Block) []*tomlpatch.Block {
 	if len(blocks) == 0 {
 		return nil
 	}
-	cloned := make([]*tomlBlock, 0, len(blocks))
+	cloned := make([]*tomlpatch.Block, 0, len(blocks))
 	for _, block := range blocks {
 		cloned = append(cloned, cloneBlock(block))
 	}
@@ -1200,77 +984,41 @@ func cloneBlocks(blocks []*tomlBlock) []*tomlBlock {
 
 // renderedBlockLines returns a block's lines followed by its sub-tables' lines,
 // keeping each array element and its nested tables together as one unit.
-func renderedBlockLines(block *tomlBlock) []string {
-	if len(block.subTables) == 0 {
-		return block.lines
+func renderedBlockLines(block *tomlpatch.Block) []string {
+	if len(block.SubTables) == 0 {
+		return block.Lines
 	}
-	lines := cloneLines(block.lines)
-	for _, subTable := range block.subTables {
-		lines = append(lines, subTable.lines...)
+	lines := tomlpatch.CloneLines(block.Lines)
+	for _, subTable := range block.SubTables {
+		lines = append(lines, subTable.Lines...)
 	}
 	return lines
 }
 
-// cloneLines returns a copy of the provided line slice.
-func cloneLines(lines []string) []string {
-	return tomlpatch.CloneLines(lines)
-}
-
-// appendBlock appends a block to the output, inserting a single blank line between blocks.
-func appendBlock(output *[]string, block []string) {
-	tomlpatch.AppendBlock(output, block)
-}
-
-// trimEmptyLines removes leading and trailing blank lines from a block.
-func trimEmptyLines(lines []string) []string {
-	return tomlpatch.TrimEmptyLines(lines)
-}
-
-// trimTrailingEmptyLines removes trailing blank lines from the output.
-func trimTrailingEmptyLines(lines []string) []string {
-	return tomlpatch.TrimTrailingEmptyLines(lines)
-}
-
 // extraSectionBlocks returns non-template section blocks sorted by name.
 // sections are from the current config; templateSections defines known canonical sections.
-func extraSectionBlocks(sections map[string]*tomlBlock, templateSections map[string]*tomlBlock) []*tomlBlock {
-	extra := make([]*tomlBlock, 0)
+// codexAgentSpecific selects whether to return only Codex agent_specific sections or the other extras.
+func extraSectionBlocks(sections map[string]*tomlpatch.Block, templateSections map[string]*tomlpatch.Block, codexAgentSpecific bool) []*tomlpatch.Block {
+	extra := make([]*tomlpatch.Block, 0)
 	for name, block := range sections {
 		if _, exists := templateSections[name]; exists {
 			continue
 		}
-		if isCodexAgentSpecificSection(name) {
+		if isCodexAgentSpecificSection(name) != codexAgentSpecific {
 			continue
 		}
 		extra = append(extra, cloneBlock(block))
 	}
 	sort.Slice(extra, func(i, j int) bool {
-		return extra[i].name < extra[j].name
-	})
-	return extra
-}
-
-func codexAgentSpecificSectionBlocks(sections map[string]*tomlBlock, templateSections map[string]*tomlBlock) []*tomlBlock {
-	extra := make([]*tomlBlock, 0)
-	for name, block := range sections {
-		if _, exists := templateSections[name]; exists {
-			continue
-		}
-		if !isCodexAgentSpecificSection(name) {
-			continue
-		}
-		extra = append(extra, cloneBlock(block))
-	}
-	sort.Slice(extra, func(i, j int) bool {
-		return extra[i].name < extra[j].name
+		return extra[i].Name < extra[j].Name
 	})
 	return extra
 }
 
 // extraArrayBlocks returns non-mcp.servers array-of-table blocks sorted by name.
 // arrays are from the current config; returns cloned blocks for arrays not handled by MCP logic.
-func extraArrayBlocks(arrays map[string][]*tomlBlock) []*tomlBlock {
-	extra := make([]*tomlBlock, 0)
+func extraArrayBlocks(arrays map[string][]*tomlpatch.Block) []*tomlpatch.Block {
+	extra := make([]*tomlpatch.Block, 0)
 	for name, blocks := range arrays {
 		if name == mcpServersSection {
 			continue
@@ -1280,7 +1028,7 @@ func extraArrayBlocks(arrays map[string][]*tomlBlock) []*tomlBlock {
 		}
 	}
 	sort.SliceStable(extra, func(i, j int) bool {
-		return extra[i].name < extra[j].name
+		return extra[i].Name < extra[j].Name
 	})
 	return extra
 }

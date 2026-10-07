@@ -85,10 +85,6 @@ func clearStaleClaudeConfigDir(root string, env []string) []string {
 	return env
 }
 
-func ensureClaudeConfigDir(root string, env []string) []string {
-	return ensureClaudeConfigDirWithWarning(root, env, os.Stderr)
-}
-
 func ensureClaudeConfigDirWithWarning(root string, env []string, warning io.Writer) []string {
 	expected := filepath.Join(root, ".claude-config")
 	current, ok := clients.GetEnv(env, "CLAUDE_CONFIG_DIR")

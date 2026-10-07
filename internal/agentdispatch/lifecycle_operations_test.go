@@ -26,9 +26,9 @@ func TestReconcileDoesNotTerminalizeRunWithUnprovableOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	record, err := reconcileOrphan(root, run.Record)
+	record, err := tryReconcileOrphan(root, run.Record)
 	if err != nil {
-		t.Fatalf("reconcileOrphan: %v", err)
+		t.Fatalf("tryReconcileOrphan: %v", err)
 	}
 	if record.State != dispatchStateRunning {
 		t.Fatalf("unprovable ownership was terminalized to %q", record.State)
@@ -151,7 +151,7 @@ func testCancelEscalatesButRetainsClaimUntilOwnedProcessIsReaped(t *testing.T, a
 	if err != nil {
 		t.Fatal(err)
 	}
-	if retainedDuringGrace.ActiveRunID != run.Record.ID || processOwnership(record) != ownershipOwned {
+	if retainedDuringGrace.ActiveRunID != run.Record.ID || ownershipForIdentity(record.PID, record.ProcessStartIdentity) != ownershipOwned {
 		t.Fatalf("cancel released a claim during the graceful shutdown window: session = %#v, record = %#v", retainedDuringGrace, record)
 	}
 	select {

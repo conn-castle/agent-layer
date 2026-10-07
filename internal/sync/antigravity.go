@@ -18,15 +18,15 @@ import (
 const antigravityClientID = "antigravity"
 
 type antigravityMCPConfig struct {
-	Servers OrderedMap[antigravityMCPServer] `json:"mcpServers"`
+	Servers map[string]antigravityMCPServer `json:"mcpServers"`
 }
 
 type antigravityMCPServer struct {
-	Command   string             `json:"command,omitempty"`
-	Args      []string           `json:"args,omitempty"`
-	Env       OrderedMap[string] `json:"env,omitempty"`
-	ServerURL string             `json:"serverUrl,omitempty"`
-	Headers   OrderedMap[string] `json:"headers,omitempty"`
+	Command   string            `json:"command,omitempty"`
+	Args      []string          `json:"args,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
+	ServerURL string            `json:"serverUrl,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
 }
 
 type antigravityRenderer struct{}
@@ -330,7 +330,7 @@ func ensureAntigravityPathRealParentContained(root string, path string) error {
 
 func buildAntigravityMCPConfig(project *config.ProjectConfig) (*antigravityMCPConfig, error) {
 	cfg := &antigravityMCPConfig{
-		Servers: make(OrderedMap[antigravityMCPServer]),
+		Servers: make(map[string]antigravityMCPServer),
 	}
 	// Antigravity documents no per-server tool-timeout key, so the built-in
 	// server is projected with its documented fields only; its server-side
@@ -348,21 +348,9 @@ func buildAntigravityMCPConfig(project *config.ProjectConfig) (*antigravityMCPCo
 		entry := antigravityMCPServer{
 			Command:   server.Command,
 			Args:      server.Args,
+			Env:       server.Env,
 			ServerURL: server.URL,
-		}
-		if len(server.Headers) > 0 {
-			headers := make(OrderedMap[string], len(server.Headers))
-			for key, value := range server.Headers {
-				headers[key] = value
-			}
-			entry.Headers = headers
-		}
-		if len(server.Env) > 0 {
-			envMap := make(OrderedMap[string], len(server.Env))
-			for key, value := range server.Env {
-				envMap[key] = value
-			}
-			entry.Env = envMap
+			Headers:   server.Headers,
 		}
 		cfg.Servers[server.ID] = entry
 	}

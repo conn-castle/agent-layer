@@ -101,28 +101,30 @@ func TestPatch_ShellAppendKeepsKeysSeparate(t *testing.T) {
 	}, parsed)
 }
 
-func TestParseLine_CommentLine(t *testing.T) {
-	key, value, ok, err := parseLine("# this is a comment")
-	assert.NoError(t, err)
-	assert.False(t, ok)
-	assert.Empty(t, key)
-	assert.Empty(t, value)
-}
-
-func TestParseLine_EmptyLine(t *testing.T) {
-	key, value, ok, err := parseLine("")
-	assert.NoError(t, err)
-	assert.False(t, ok)
-	assert.Empty(t, key)
-	assert.Empty(t, value)
-}
-
-func TestParseLine_WhitespaceLine(t *testing.T) {
-	key, value, ok, err := parseLine("   \t   ")
-	assert.NoError(t, err)
-	assert.False(t, ok)
-	assert.Empty(t, key)
-	assert.Empty(t, value)
+func TestParseLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want Assignment
+		ok   bool
+	}{
+		{name: "comment line", line: "# this is a comment"},
+		{name: "empty line", line: ""},
+		{name: "whitespace line", line: "   \t   "},
+		{name: "plain", line: " KEY = value ", want: Assignment{Key: "KEY", Value: "value"}, ok: true},
+		{name: "export prefix", line: "export KEY=value", want: Assignment{Export: true, Key: "KEY", Value: "value"}, ok: true},
+		{name: "hash in unquoted value", line: "KEY=a # b", want: Assignment{Key: "KEY", Value: "a # b"}, ok: true},
+		{name: "double-quoted comment", line: `KEY="a\"b"  # note`, want: Assignment{Key: "KEY", Value: `a"b`, Comment: "  # note"}, ok: true},
+		{name: "single-quoted comment", line: "KEY='a b' # note", want: Assignment{Key: "KEY", Value: "a b", Comment: " # note"}, ok: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok, err := ParseLine(tt.line)
+			require.NoError(t, err)
+			assert.Equal(t, tt.ok, ok)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func TestParse(t *testing.T) {

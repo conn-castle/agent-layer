@@ -43,15 +43,15 @@ func TestRunWithSystemFS_NilSystem(t *testing.T) {
 	}
 }
 
-func TestRunWithProject_NilSystem(t *testing.T) {
-	_, err := RunWithProject(nil, t.TempDir(), nil)
+func TestRunLockedProject_NilSystem(t *testing.T) {
+	_, err := RunLockedProject(nil, t.TempDir(), nil)
 	if err == nil {
 		t.Fatal("expected error for nil system")
 	}
 }
 
-func TestRunWithProject_NilProject(t *testing.T) {
-	_, err := RunWithProject(RealSystem{}, t.TempDir(), nil)
+func TestRunLockedProject_NilProject(t *testing.T) {
+	_, err := RunLockedProject(RealSystem{}, t.TempDir(), nil)
 	if err == nil {
 		t.Fatal("expected error for nil project")
 	}

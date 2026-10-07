@@ -171,8 +171,14 @@ func TestTaskReadinessCertificationReuseAndInvalidation(t *testing.T) {
 func TestPlanTaskCertificationReturnsOnlyCompleteEnvironmentSet(t *testing.T) {
 	repoRoot, checkout := t.TempDir(), t.TempDir()
 	writeAuditCatalogFixture(t, checkout, "first-task", "second-task")
-	runs := 0
+	runs, imageRemovals := 0, 0
 	installReadinessTestBoundaries(t, auditContractsFixture("first-task", "second-task"), func(_ context.Context, arguments ...string) ([]byte, error) {
+		if len(arguments) > 0 && arguments[0] == dockerImageResource {
+			if len(arguments) > 1 && arguments[1] == "rm" {
+				imageRemovals++
+			}
+			return nil, nil
+		}
 		runs++
 		if len(arguments) == 0 || arguments[0] != commandRun {
 			t.Fatalf("unexpected readiness command: %#v", arguments)
@@ -182,16 +188,16 @@ func TestPlanTaskCertificationReturnsOnlyCompleteEnvironmentSet(t *testing.T) {
 	tasks := []benchmarkPlanTask{{ID: "first-task", RepetitionsPerArm: 1}, {ID: "second-task", RepetitionsPerArm: 1}}
 	checksums := map[string]string{"first-task": strings.Repeat("1", 64), "second-task": strings.Repeat("2", 64)}
 
-	identities, err := certifyPlanTaskEnvironments(context.Background(), repoRoot, checkout, tasks, checksums)
+	identities, err := certifyPlanTaskEnvironmentsWithCleanup(context.Background(), repoRoot, checkout, tasks, checksums)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(identities) != 2 || identities["first-task"] == "" || identities["second-task"] == "" || runs != 2 {
-		t.Fatalf("identities=%#v readiness runs=%d", identities, runs)
+	if len(identities) != 2 || identities["first-task"] == "" || identities["second-task"] == "" || runs != 2 || imageRemovals != 2 {
+		t.Fatalf("identities=%#v readiness runs=%d image removals=%d", identities, runs, imageRemovals)
 	}
 
 	readinessContracts = fstest.MapFS{}
-	if _, err := certifyPlanTaskEnvironments(context.Background(), repoRoot, checkout, tasks, checksums); err == nil ||
+	if _, err := certifyPlanTaskEnvironmentsWithCleanup(context.Background(), repoRoot, checkout, tasks, checksums); err == nil ||
 		!strings.Contains(err.Error(), "selected benchmark tasks failed readiness certification") ||
 		!strings.Contains(err.Error(), "first-task") || !strings.Contains(err.Error(), "second-task") {
 		t.Fatalf("partial certification error=%v", err)
@@ -359,21 +365,5 @@ func TestTaskReadinessPierArgumentsAreIdenticalAcrossArms(t *testing.T) {
 	}
 	if !strings.Contains(normalize(baseline), testReadinessImage+"@"+testReadinessDigest) {
 		t.Fatalf("Pier arguments do not pin the task image: %#v", baseline)
-	}
-}
-
-func TestTaskReadinessRejectsBaselineTreatmentIdentityMismatch(t *testing.T) {
-	tasks := []benchmarkPlanTask{{ID: "task-one"}, {ID: "task-two"}}
-	baseline := map[string]string{"task-one": strings.Repeat("1", 64), "task-two": strings.Repeat("2", 64)}
-	matching := map[string]string{"task-one": strings.Repeat("1", 64), "task-two": strings.Repeat("2", 64)}
-	if err := validateTaskEnvironmentParity(tasks, baseline, matching); err != nil {
-		t.Fatalf("matching task environments: %v", err)
-	}
-	mismatched := map[string]string{"task-one": strings.Repeat("1", 64), "task-two": strings.Repeat("3", 64)}
-	if err := validateTaskEnvironmentParity(tasks, baseline, mismatched); err == nil || !strings.Contains(err.Error(), "run benchmark run again") {
-		t.Fatalf("mismatched task environments = %v", err)
-	}
-	if err := validateTaskEnvironmentParity(tasks, nil, matching); err == nil {
-		t.Fatal("baseline without readiness provenance was accepted")
 	}
 }

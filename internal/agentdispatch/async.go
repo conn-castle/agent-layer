@@ -2,7 +2,6 @@ package agentdispatch
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -67,7 +66,7 @@ func Start(opts StartOptions) error {
 	if opts.Reservation != nil {
 		return startReservation(opts, requested, promptText, stderr, env, depth)
 	}
-	project, target, version, prompt, err := prepareStart(opts, requested, promptText, stderr, depth)
+	project, target, version, prompt, err := prepareStart(opts.runOptions(promptText), requested, stderr, depth)
 	if err != nil {
 		return err
 	}
@@ -100,9 +99,16 @@ func Start(opts StartOptions) error {
 	return publishInvocation(opts.Context, opts.Root, run, session, request, writerOrDiscard(opts.Stdout), opts.launchWorker)
 }
 
-// prepareStart validates a fresh invocation's target and prompt and refreshes
+func (o StartOptions) runOptions(prompt string) runOptions {
+	return runOptions{
+		Root: o.Root, WorkDir: o.WorkDir, Model: o.Model, ReasoningEffort: o.ReasoningEffort,
+		Skill: o.Skill, Prompt: prompt, LookPath: o.LookPath, VersionLookup: o.VersionLookup,
+	}
+}
+
+// prepareStart validates an invocation's target and prompt and refreshes
 // its projections under the project lock.
-func prepareStart(opts StartOptions, requested targetMeta, promptText string, stderr io.Writer, depth int) (*config.ProjectConfig, targetMeta, string, []byte, error) {
+func prepareStart(opts runOptions, requested targetMeta, stderr io.Writer, depth int) (*config.ProjectConfig, targetMeta, string, []byte, error) {
 	var project *config.ProjectConfig
 	var target targetMeta
 	var version string
@@ -113,11 +119,7 @@ func prepareStart(opts StartOptions, requested targetMeta, promptText string, st
 			return err
 		}
 		var prepareErr error
-		target, version, prompt, prepareErr = prepareFresh(project, requested, runOptions{
-			Root: opts.Root, Model: opts.Model, ReasoningEffort: opts.ReasoningEffort,
-			Skill: opts.Skill, Prompt: promptText, LookPath: opts.LookPath,
-			VersionLookup: opts.VersionLookup,
-		})
+		target, version, prompt, prepareErr = prepareFresh(project, requested, opts)
 		if prepareErr != nil {
 			return prepareErr
 		}
@@ -172,41 +174,10 @@ func Continue(opts ContinueOptions) error {
 	if !ok {
 		return exitError(ExitConfig, fmt.Sprintf("dispatch conversation %q has unsupported provider %q", session.Name, session.Agent))
 	}
-	var project *config.ProjectConfig
-	var version string
-	var prompt []byte
-	err = sync.WithLockedProject(sync.RealSystem{}, opts.Root, func(loaded *config.ProjectConfig) error {
-		project = loaded
-		if err := checkDispatchDepth(project.Config, depth); err != nil {
-			return err
-		}
-		if !targetEnabled(project.Config, target.Name) {
-			return exitError(ExitConfig, fmt.Sprintf("`al dispatch` target %s is disabled in config", target.Name))
-		}
-		lookPath := opts.LookPath
-		if lookPath == nil {
-			lookPath = exec.LookPath
-		}
-		path, lookErr := lookPath(target.Binary)
-		if lookErr != nil {
-			return exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target.Name, target.Binary))
-		}
-		var versionErr error
-		target, version, versionErr = compatibleTargetVersionCached(opts.Root, path, target, opts.VersionLookup)
-		if versionErr != nil {
-			return versionErr
-		}
-		var promptErr error
-		prompt, promptErr = BuildChildPrompt(project, target.Name, promptText, "")
-		if promptErr != nil {
-			return promptErr
-		}
-		if err := prepareProjection(project, opts.Root, stderr); err != nil {
-			return err
-		}
-		_, err := prepareTargetProjection(project, opts.Root, opts.WorkDir, target)
-		return err
-	})
+	_, target, version, prompt, err := prepareStart(runOptions{
+		Root: opts.Root, WorkDir: opts.WorkDir, Prompt: promptText,
+		LookPath: opts.LookPath, VersionLookup: opts.VersionLookup,
+	}, target, stderr, depth)
 	if err != nil {
 		return err
 	}
@@ -290,7 +261,7 @@ func publishInvocation(ctx context.Context, root string, run *dispatchRun, sessi
 	result.Handle = session.Name
 	result.State = dispatchStateRunning
 	result.Error = ""
-	if err := writePublicResult(stdout, result); err != nil {
+	if err := writeJSONResult(stdout, result); err != nil {
 		_ = worker.gate.Close()
 		return errors.Join(err, removeWorkerRequest(run.Dir))
 	}
@@ -468,11 +439,4 @@ func failWorkerBeforeExecution(root string, runID string, cause error) error {
 	}
 	request := dispatchExecution{Root: root, Run: &dispatchRun{Record: record, Dir: filepathForRun(root, runID)}, Session: session}
 	return finishDispatchFailure(request, cause)
-}
-
-func writePublicResult(stdout io.Writer, result Result) error {
-	if err := json.NewEncoder(stdout).Encode(result); err != nil {
-		return wrapExitError(ExitTargetFailure, "write dispatch response", err)
-	}
-	return nil
 }

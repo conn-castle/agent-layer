@@ -30,33 +30,11 @@ func injectClaudeChimeHook(settings map[string]any) error {
 }
 
 func appendClaudeChimeStopHook(existing any) []any {
-	var out []any
-	if values, ok := existing.([]any); ok {
-		managedCommands := managedChimeCommandVariants(agentLayerClaudeChimeCommand)
-		for _, entry := range values {
-			group, ok := entry.(map[string]any)
-			if !ok {
-				out = append(out, entry)
-				continue
-			}
-			handlers, ok := group[hooksKey].([]any)
-			if !ok {
-				out = append(out, entry)
-				continue
-			}
-			filtered := make([]any, 0, len(handlers))
-			for _, handler := range handlers {
-				if !chimeHandlerMatchesAny(handler, managedCommands) {
-					filtered = append(filtered, handler)
-				}
-			}
-			if len(filtered) == 0 && len(group) == 1 {
-				continue
-			}
-			group[hooksKey] = filtered
-			out = append(out, group)
-		}
-	}
+	values, _ := existing.([]any)
+	managedCommands := managedChimeCommandVariants(agentLayerClaudeChimeCommand)
+	out, _, _ := filterHookGroupHandlers(values, func(handler any) bool {
+		return chimeHandlerMatchesAny(handler, managedCommands)
+	}, nil)
 	return append(out, map[string]any{
 		hooksKey: []any{chimeHandler(agentLayerClaudeChimeCommand)},
 	})
@@ -127,37 +105,11 @@ func removeClaudeChimeHook(settings map[string]any) (bool, error) {
 	}
 
 	commands := managedChimeCommandVariants(agentLayerClaudeChimeCommand)
-	changed := false
-	filteredStop := make([]any, 0, len(stopEntries))
-	for _, entry := range stopEntries {
-		group, ok := entry.(map[string]any)
-		if !ok {
-			filteredStop = append(filteredStop, entry)
-			continue
-		}
-		handlersValue, ok := group[hooksKey]
-		if !ok {
-			filteredStop = append(filteredStop, entry)
-			continue
-		}
-		handlers, ok := handlersValue.([]any)
-		if !ok {
-			return false, fmt.Errorf(messages.SyncChimeListConflictFmt, ".claude/settings.json hooks.Stop.hooks")
-		}
-		filteredHandlers := make([]any, 0, len(handlers))
-		for _, handler := range handlers {
-			if chimeHandlerMatchesAny(handler, commands) {
-				changed = true
-				continue
-			}
-			filteredHandlers = append(filteredHandlers, handler)
-		}
-		if len(filteredHandlers) == 0 && len(group) == 1 {
-			changed = true
-			continue
-		}
-		group[hooksKey] = filteredHandlers
-		filteredStop = append(filteredStop, group)
+	filteredStop, changed, err := filterHookGroupHandlers(stopEntries, func(handler any) bool {
+		return chimeHandlerMatchesAny(handler, commands)
+	}, fmt.Errorf(messages.SyncChimeListConflictFmt, ".claude/settings.json hooks.Stop.hooks"))
+	if err != nil {
+		return false, err
 	}
 	if !changed {
 		return false, nil

@@ -33,7 +33,7 @@ func TestScanUnknowns_UpgradeKeepListSuppressesFilesAndDirectories(t *testing.T)
 	if err := inst.scanUnknowns(); err != nil {
 		t.Fatalf("scanUnknowns: %v", err)
 	}
-	if got, want := inst.relativeUnknowns(), []string{".agent-layer/unknown.txt"}; !reflect.DeepEqual(got, want) {
+	if got, want := inst.relativePathList(inst.unknowns), []string{".agent-layer/unknown.txt"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("unknowns = %v, want %v", got, want)
 	}
 }
@@ -79,7 +79,7 @@ func TestScanUnknowns_NestedKeptFileProtectsUnknownParentDirectory(t *testing.T)
 	if err := inst.scanUnknowns(); err != nil {
 		t.Fatalf("scanUnknowns: %v", err)
 	}
-	if got := inst.relativeUnknowns(); len(got) != 0 {
+	if got := inst.relativePathList(inst.unknowns); len(got) != 0 {
 		t.Fatalf("unknowns = %v, want parent directory protected by nested keep entry", got)
 	}
 }
@@ -106,7 +106,7 @@ func TestScanUnknowns_NestedKeptFileDoesNotSuppressSiblingUnknowns(t *testing.T)
 	if err := inst.scanUnknowns(); err != nil {
 		t.Fatalf("scanUnknowns: %v", err)
 	}
-	if got, want := inst.relativeUnknowns(), []string{".agent-layer/local/delete.txt", ".agent-layer/local/other"}; !reflect.DeepEqual(got, want) {
+	if got, want := inst.relativePathList(inst.unknowns), []string{".agent-layer/local/delete.txt", ".agent-layer/local/other"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("unknowns = %v, want %v", got, want)
 	}
 }
@@ -129,7 +129,7 @@ func TestHandleUnknowns_NestedKeptFileCannotBeDeletedWithParent(t *testing.T) {
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
+		prompter: &PromptFuncs{
 			SelectUnknownsToKeepFunc: func([]string) ([]string, error) {
 				t.Fatal("protected parent should not be offered for keeping")
 				return nil, nil
@@ -170,7 +170,7 @@ func TestHandleUnknowns_DeletesSiblingOfNestedKeptFile(t *testing.T) {
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
+		prompter: &PromptFuncs{
 			SelectUnknownsToKeepFunc: func(paths []string) ([]string, error) {
 				if want := []string{".agent-layer/local/delete.txt", ".agent-layer/tmp"}; !reflect.DeepEqual(paths, want) {
 					t.Fatalf("keep options = %v, want %v", paths, want)
@@ -219,7 +219,7 @@ func TestHandleUnknowns_SelectsKeepPathsThenUsesExistingDeletionFlow(t *testing.
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
+		prompter: &PromptFuncs{
 			SelectUnknownsToKeepFunc: func(paths []string) ([]string, error) {
 				offered = append([]string(nil), paths...)
 				return []string{".agent-layer/keep-me.txt"}, nil
@@ -251,7 +251,7 @@ func TestHandleUnknowns_SelectsKeepPathsThenUsesExistingDeletionFlow(t *testing.
 
 func TestHandleUnknowns_NoSelectionDoesNotCreateKeepList(t *testing.T) {
 	inst, _ := setupUnknownFile(t)
-	inst.prompter = PromptFuncs{
+	inst.prompter = &PromptFuncs{
 		SelectUnknownsToKeepFunc: func([]string) ([]string, error) { return nil, nil },
 		DeleteUnknownAllFunc:     func([]string) (bool, error) { return false, nil },
 		DeleteUnknownFunc:        func(string) (bool, error) { return false, nil },
@@ -285,7 +285,7 @@ func TestHandleUnknowns_AllPathsAlreadyKeptDoesNotPrompt(t *testing.T) {
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
+		prompter: &PromptFuncs{
 			SelectUnknownsToKeepFunc: func([]string) ([]string, error) {
 				t.Fatal("keep selection should not be prompted")
 				return nil, nil
@@ -365,7 +365,7 @@ func TestScanUnknowns_KeptTmpDirectorySuppressesTmpUnknowns(t *testing.T) {
 	if err := inst.scanUnknowns(); err != nil {
 		t.Fatalf("scanUnknowns: %v", err)
 	}
-	if got, want := inst.relativeUnknowns(), []string{".agent-layer/unknown.txt"}; !reflect.DeepEqual(got, want) {
+	if got, want := inst.relativePathList(inst.unknowns), []string{".agent-layer/unknown.txt"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("unknowns = %v, want %v", got, want)
 	}
 }
@@ -388,7 +388,7 @@ func TestHandleUnknowns_KeptTmpDirectoryAndNoOtherUnknownsDoesNotPrompt(t *testi
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
+		prompter: &PromptFuncs{
 			SelectUnknownsToKeepFunc: func([]string) ([]string, error) {
 				t.Fatal("keep selection should not be prompted when tmp is already kept")
 				return nil, nil
@@ -423,7 +423,7 @@ func TestHandleUnknowns_KeptTmpDirectorySkipsTmpPrompt(t *testing.T) {
 	}
 
 	var keepOptions []string
-	inst.prompter = PromptFuncs{
+	inst.prompter = &PromptFuncs{
 		SelectUnknownsToKeepFunc: func(paths []string) ([]string, error) {
 			keepOptions = append([]string(nil), paths...)
 			return nil, nil
@@ -464,7 +464,7 @@ func TestHandleUnknowns_KeepListOffersTmpLastEvenWhenAlphabeticallyEarlier(t *te
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
+		prompter: &PromptFuncs{
 			SelectUnknownsToKeepFunc: func(paths []string) ([]string, error) {
 				keepOptions = append([]string(nil), paths...)
 				return nil, nil
@@ -485,7 +485,7 @@ func TestHandleUnknowns_SelectingTmpKeepPathSkipsTmpPrompt(t *testing.T) {
 	inst, tmpFile, otherFile := setupTmpAndOtherUnknowns(t)
 
 	var keepOptions []string
-	inst.prompter = PromptFuncs{
+	inst.prompter = &PromptFuncs{
 		SelectUnknownsToKeepFunc: func(paths []string) ([]string, error) {
 			keepOptions = append([]string(nil), paths...)
 			return []string{".agent-layer/tmp"}, nil
@@ -533,7 +533,7 @@ func TestHandleUnknowns_OnlyTmpFiles_OffersTmpDirectoryForKeepList(t *testing.T)
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
+		prompter: &PromptFuncs{
 			SelectUnknownsToKeepFunc: func(paths []string) ([]string, error) {
 				keepOptions = append([]string(nil), paths...)
 				return []string{".agent-layer/tmp"}, nil

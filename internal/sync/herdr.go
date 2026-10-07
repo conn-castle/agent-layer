@@ -112,29 +112,7 @@ func removeManagedHandlers(value any) ([]any, error) {
 	if !ok {
 		return nil, fmt.Errorf("must be an array")
 	}
-	result := make([]any, 0, len(entries))
-	for _, value := range entries {
-		entry, ok := value.(map[string]any)
-		if !ok {
-			result = append(result, value)
-			continue
-		}
-		handlers, ok := entry[hooksKey].([]any)
-		if !ok {
-			result = append(result, value)
-			continue
-		}
-		kept := make([]any, 0, len(handlers))
-		for _, handler := range handlers {
-			if !isHerdRHandler(handler) {
-				kept = append(kept, handler)
-			}
-		}
-		if len(kept) > 0 || len(entry) > 1 {
-			entry[hooksKey] = kept
-			result = append(result, entry)
-		}
-	}
+	result, _, _ := filterHookGroupHandlers(entries, isHerdRHandler, nil)
 	return result, nil
 }
 
@@ -377,7 +355,7 @@ func injectMuseHerdRHook(document map[string]any, enabled bool, root string) err
 		var ok bool
 		hooks, ok = raw.(map[string]any)
 		if !ok {
-			return errorsNew("muse hooks must be an object")
+			return errors.New("muse hooks must be an object")
 		}
 	}
 	for _, event := range []string{herdrMuseEvent, herdrMuseFirstTurnEvent} {
@@ -401,8 +379,6 @@ func injectMuseHerdRHook(document map[string]any, enabled bool, root string) err
 	}
 	return nil
 }
-
-func errorsNew(message string) error { return fmt.Errorf("%s", message) }
 
 func (e *codexTomlEditor) applyCodexHerdRHook(path string, enabled bool, root ...string) (bool, error) {
 	// Markers inside multiline strings are user content, not an owned block.

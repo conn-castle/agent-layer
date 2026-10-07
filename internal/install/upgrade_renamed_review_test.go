@@ -72,11 +72,9 @@ func TestUpgrade_RenamedCustomizedFileReview(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		fixture renamedReviewFixture
-		unified bool
 	}{
-		{"UnifiedFile", renamedMemoryFixture, true},
-		{"NonUnifiedFile", renamedMemoryFixture, false},
-		{"Directory", renamedSkillFixture, true},
+		{"UnifiedFile", renamedMemoryFixture},
+		{"Directory", renamedSkillFixture},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := seedRenamedReview(t, tc.fixture, true)
@@ -85,16 +83,9 @@ func TestUpgrade_RenamedCustomizedFileReview(t *testing.T) {
 			}
 			var captured []DiffPreview
 			prompter := autoApprovePrompter()
-			if tc.unified {
-				prompter.OverwriteAllUnifiedPreviewFunc = func(managed, memory []DiffPreview) (bool, bool, error) {
-					captured = managed
-					return true, false, nil
-				}
-			} else {
-				prompter.OverwriteAllPreviewFunc = func(previews []DiffPreview) (bool, error) {
-					captured = previews
-					return true, nil
-				}
+			prompter.OverwriteAllUnifiedPreviewFunc = func(managed, memory []DiffPreview) (bool, bool, error) {
+				captured = managed
+				return true, false, nil
 			}
 			if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.23.1", Overwrite: true, Prompter: prompter}); err != nil {
 				t.Fatalf("upgrade: %v", err)
@@ -121,8 +112,8 @@ func TestBuildUpgradePlan_RenamedCustomizedFileReview(t *testing.T) {
 			}
 			updates := append(append([]UpgradeChange{}, plan.TemplateUpdates...), plan.SectionAwareUpdates...)
 			change := findUpgradeChange(updates, fixture.target)
-			if change == nil || change.Ownership == "" {
-				t.Fatalf("missing labeled destination update %s: %#v", fixture.target, updates)
+			if change == nil {
+				t.Fatalf("missing destination update %s: %#v", fixture.target, updates)
 			}
 			if findUpgradeChange(plan.TemplateAdditions, fixture.target) != nil {
 				t.Fatal("renamed destination must not be an addition")
@@ -221,11 +212,11 @@ func TestUpgrade_RenamedDirectorySymlinkReview(t *testing.T) {
 					// Known template resolution must not add symlink children to the
 					// filesystem walk used to plan unknown deletions.
 					inst := &installer{root: root, sys: RealSystem{}}
-					paths, _, err := inst.pathsAfterMigrations(plannedOperationsFromReport(plan.MigrationReport))
+					effects, err := inst.planMigrationPathEffects(plannedOperationsFromReport(plan.MigrationReport))
 					if err != nil {
 						t.Fatal(err)
 					}
-					if _, ok := paths[fixture.target]; ok {
+					if _, ok := effects.tree[fixture.target]; ok {
 						t.Fatal("unknown-deletion walk must not follow directory symlinks")
 					}
 					var captured []DiffPreview
@@ -317,7 +308,7 @@ func TestUpgrade_RenamedReviewSelectiveDeclineGuard(t *testing.T) {
 	}
 	prompted := make(map[string]bool)
 	prompter := autoApprovePrompter()
-	prompter.OverwriteAllPreviewFunc = func([]DiffPreview) (bool, error) { return false, nil }
+	prompter.OverwriteAllUnifiedPreviewFunc = func([]DiffPreview, []DiffPreview) (bool, bool, error) { return false, true, nil }
 	prompter.OverwritePreviewFunc = func(preview DiffPreview) (bool, error) {
 		prompted[preview.Path] = true
 		return preview.Path == ".agent-layer/commands.allow", nil
@@ -382,7 +373,7 @@ func TestBuildUpgradePlan_RenamedReviewNonRenameCoverageGuard(t *testing.T) {
 	if err := inst.prepareUpgradeMigrations(); err != nil {
 		t.Fatal(err)
 	}
-	if previews := inst.filterMigrationCoveredDiffs([]LabeledPath{{Path: renamedSkillFixture.target}}); len(previews) != 0 {
+	if previews := inst.filterMigrationCoveredDiffs([]string{renamedSkillFixture.target}); len(previews) != 0 {
 		t.Fatal("non-rename coverage must also hide apply-time destination review")
 	}
 }
@@ -435,10 +426,14 @@ func TestBuildUpgradePlan_RenamedReviewChains(t *testing.T) {
 	}
 }
 
-func TestMovedFileUpdates_RenamedReviewErrorsAndNoRename(t *testing.T) {
+func TestMovedFileUpdates_RenamedReviewErrors(t *testing.T) {
 	root := seedRenamedReview(t, renamedMemoryFixture, true)
 	inst := &installer{root: root, pinVersion: "0.23.1", sys: RealSystem{}}
 	plan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	effects, err := inst.planMigrationPathEffects(plan.executable)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,27 +451,58 @@ func TestMovedFileUpdates_RenamedReviewErrorsAndNoRename(t *testing.T) {
 				sys.readErrs[origin] = failure
 			}
 			inst.sys = sys
-			_, _, err := inst.movedFileUpdates(plan, nil, nil)
+			var err error
+			if operation == "read" {
+				_, _, err = inst.movedFileUpdates(plan, effects, nil, nil)
+			} else {
+				_, err = inst.planMigrationPathEffects(plan.executable)
+			}
 			if !errors.Is(err, failure) {
 				t.Fatalf("origin error not propagated: %v", err)
 			}
 		})
 	}
-	sys := newFaultSystem(RealSystem{})
-	sys.walkErrs[filepath.Join(root, ".agent-layer")] = errors.New("unexpected walk")
-	inst.sys = sys
-	if _, _, err := inst.movedFileUpdates(migrationPlan{}, nil, nil); err != nil {
-		t.Fatalf("plan without renames must not walk: %v", err)
-	}
-	inst.sys = RealSystem{}
 	previewPlan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "0.23.1", System: RealSystem{}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	failure := errors.New("preview origin unreadable")
-	sys = newFaultSystem(RealSystem{})
+	sys := newFaultSystem(RealSystem{})
 	sys.readErrs[origin] = failure
 	if _, err := BuildUpgradePlanDiffPreviews(root, previewPlan, UpgradePlanDiffPreviewOptions{System: sys}); !errors.Is(err, failure) {
 		t.Fatalf("preview origin error not propagated: %v", err)
+	}
+}
+
+func TestTemplateOrigins_RenamedSymlinkParentStatError(t *testing.T) {
+	root := seedRenamedReview(t, renamedSkillFixture, true)
+	origin := filepath.Join(root, filepath.FromSlash(renamedSkillFixture.source))
+	sourceDir := filepath.Dir(origin)
+	external := filepath.Join(t.TempDir(), "linked-directory")
+	if err := os.Rename(sourceDir, external); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(external, sourceDir); err != nil {
+		t.Fatal(err)
+	}
+	inst := &installer{root: root, pinVersion: "0.23.1", sys: RealSystem{}}
+	plan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	effects, err := inst.planMigrationPathEffects(plan.executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	templatePaths, err := inst.templates().ungatedTemplatePathByRel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("template origin stat denied")
+	sys := newFaultSystem(RealSystem{})
+	sys.statErrs[origin] = failure
+	inst.sys = sys
+	if _, err := inst.templateOrigins(effects, templatePaths); !errors.Is(err, failure) {
+		t.Fatalf("reverse-traced origin error not propagated: %v", err)
 	}
 }

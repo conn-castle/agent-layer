@@ -37,7 +37,7 @@ type PromptSelectUnknownsToKeepFunc func(paths []string) ([]string, error)
 // Options controls installer behavior.
 type Options struct {
 	Overwrite    bool
-	Prompter     Prompter
+	Prompter     *PromptFuncs // nil means no interactive prompts.
 	WarnWriter   io.Writer
 	PinVersion   string
 	DiffMaxLines int
@@ -45,24 +45,23 @@ type Options struct {
 }
 
 type installer struct {
-	root                      string
-	overwrite                 bool
-	overwriteAll              bool
-	overwriteAllDecided       bool
-	overwriteMemoryAll        bool
-	overwriteMemoryAllDecided bool
-	prompter                  Prompter
-	warnWriter                io.Writer
-	diffs                     []string
-	unknowns                  []string
-	pinVersion                string
-	templateEntries           map[string][]templateEntry
-	templateMatchCache        map[string]matchCacheEntry
-	diffMaxLines              int
-	managedDiffPreviews       map[string]DiffPreview
-	memoryDiffPreviews        map[string]DiffPreview
-	pendingMigrationOps       []upgradeMigrationOperation
-	migrationRollbackTargets  []string
+	root                     string
+	overwrite                bool
+	overwriteAll             bool
+	overwriteAllDecided      bool
+	overwriteMemoryAll       bool
+	prompter                 *PromptFuncs
+	warnWriter               io.Writer
+	diffs                    []string
+	unknowns                 []string
+	pinVersion               string
+	templateEntries          map[string][]templateEntry
+	templateMatchCache       map[string]matchCacheEntry
+	diffMaxLines             int
+	managedDiffPreviews      map[string]DiffPreview
+	memoryDiffPreviews       map[string]DiffPreview
+	pendingMigrationOps      []upgradeMigrationOperation
+	migrationRollbackTargets []string
 	// Non-rename coverage filters managed reviews built after migrations run.
 	migrationManifestCoverage map[string]struct{}
 	migrationConfigMigrations []ConfigKeyMigration
@@ -270,18 +269,11 @@ func runSteps(steps []func() error) error {
 	return nil
 }
 
-func validatePrompter(prompter Prompter, overwrite bool) error {
+func validatePrompter(prompter *PromptFuncs, overwrite bool) error {
 	if !overwrite {
 		return nil
 	}
-	return newPromptRouter(prompter).validateRequiredOverwrite()
-}
-
-// promptRouter returns a prompt router bound to the installer's prompter. The
-// router is stateless and cheap to build, so it is constructed per call rather
-// than cached; this keeps it correct for tests that reassign inst.prompter.
-func (inst *installer) promptRouter() *promptRouter {
-	return newPromptRouter(inst.prompter)
+	return prompter.validate()
 }
 
 func (inst upgradeOrchestrator) ensureBaseDirs() error {
@@ -320,7 +312,7 @@ func (inst *installer) writeVSCodeLaunchers() error {
 func (inst templateManager) writeTemplateFiles() error {
 	// User-owned required files: seed only when missing; never overwrite.
 	for _, file := range inst.userOwnedSeedFiles() {
-		if err := writeTemplateIfMissing(inst.sys, file.path, file.template, file.perm); err != nil {
+		if err := inst.writeTemplateFile(file.path, file.template, file.perm, nil, nil); err != nil {
 			return err
 		}
 	}
@@ -328,20 +320,14 @@ func (inst templateManager) writeTemplateFiles() error {
 	// Agent-owned internal files: always overwrite to enforce safety invariants.
 	alwaysOverwrite := func(string) (bool, error) { return true, nil }
 	for _, file := range inst.agentOnlyFiles() {
-		if err := writeTemplateFile(inst.sys, file.path, file.template, file.perm, alwaysOverwrite); err != nil {
+		if err := inst.writeTemplateFile(file.path, file.template, file.perm, alwaysOverwrite, nil); err != nil {
 			return err
 		}
 	}
 
 	// Upgrade-managed files: overwrite behavior is controlled by init/upgrade flags.
 	for _, file := range inst.managedTemplateFiles() {
-		if file.template == templateGitignoreBlock {
-			if err := writeGitignoreBlock(inst.sys, file.path, file.template, file.perm, inst.shouldOverwrite, inst.recordDiff); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := writeTemplateFileWithMatch(inst.sys, file.path, file.template, file.perm, inst.shouldOverwrite, inst.recordDiff, inst.matchTemplate); err != nil {
+		if err := inst.writeTemplateFile(file.path, file.template, file.perm, inst.shouldOverwrite, inst.recordDiff); err != nil {
 			return err
 		}
 	}

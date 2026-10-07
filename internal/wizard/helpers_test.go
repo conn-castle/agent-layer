@@ -48,79 +48,27 @@ func TestAgentHelpers(t *testing.T) {
 }
 
 func TestAgentModelSummary(t *testing.T) {
-	c := &Choices{
-		ClaudeModel:    "claude-3",
-		CodexModel:     "codex-max",
-		CodexReasoning: "high",
+	tests := []struct {
+		name     string
+		choice   AgentModelChoice
+		expected string
+	}{
+		{"model and reasoning", AgentModelChoice{Model: "codex-max", Reasoning: "high"}, "codex-max (high)"},
+		{"model only", AgentModelChoice{Model: "claude-3"}, "claude-3"},
+		{"reasoning only", AgentModelChoice{Reasoning: "high"}, "reasoning: high"},
+		{"neither", AgentModelChoice{}, ""},
 	}
-
-	assert.Equal(t, "claude-3", agentModelSummary(AgentClaude, c))
-	assert.Equal(t, "codex-max (high)", agentModelSummary(AgentCodex, c))
-	assert.Equal(t, "", agentModelSummary(AgentVSCode, c))
-	assert.Equal(t, "", agentModelSummary("unknown", c))
-	assert.Equal(t, "grok-4.6 (high)", agentModelSummary(AgentGrok, &Choices{GrokModel: "grok-4.6", GrokReasoning: "high"}))
-	assert.Equal(t, "muse-spark (xhigh)", agentModelSummary(AgentMuse, &Choices{MuseModel: "muse-spark", MuseReasoning: "xhigh"}))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, agentModelSummary(tt.choice))
+		})
+	}
 }
 
 func TestGrokHelpers(t *testing.T) {
 	assert.True(t, grokToggleVisible(&Choices{}))
 	assert.True(t, grokToggleVisible(&Choices{EnabledAgentsTouched: true, EnabledAgents: map[string]bool{AgentGrok: true}}))
 	assert.False(t, grokToggleVisible(&Choices{EnabledAgentsTouched: true, EnabledAgents: map[string]bool{}}))
-
-	tests := []struct {
-		choices  *Choices
-		expected string
-	}{
-		{choices: &Choices{GrokModel: "grok-test-model", GrokReasoning: "high"}, expected: "grok-test-model (high)"},
-		{choices: &Choices{GrokModel: "grok-test-model"}, expected: "grok-test-model"},
-		{choices: &Choices{GrokReasoning: "high"}, expected: "reasoning: high"},
-		{choices: &Choices{}, expected: ""},
-	}
-	for _, tt := range tests {
-		assert.Equal(t, tt.expected, grokModelSummary(tt.choices))
-	}
-}
-
-func TestCodexModelSummary(t *testing.T) {
-	tests := []struct {
-		name     string
-		choices  *Choices
-		expected string
-	}{
-		{
-			name: "model and reasoning",
-			choices: &Choices{
-				CodexModel:     "mod",
-				CodexReasoning: "reas",
-			},
-			expected: "mod (reas)",
-		},
-		{
-			name: "model only",
-			choices: &Choices{
-				CodexModel: "mod",
-			},
-			expected: "mod",
-		},
-		{
-			name: "reasoning only",
-			choices: &Choices{
-				CodexReasoning: "reas",
-			},
-			expected: "reasoning: reas",
-		},
-		{
-			name:     "neither",
-			choices:  &Choices{},
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, codexModelSummary(tt.choices))
-		})
-	}
 }
 
 func TestSelectOptionalValue_Custom(t *testing.T) {
@@ -236,91 +184,6 @@ func TestSelectOptionalValue_LeaveBlank(t *testing.T) {
 	assert.Equal(t, "", value)
 }
 
-func TestPromptPositiveInt_Default(t *testing.T) {
-	ui := &MockUI{}
-	value := 10
-	err := promptPositiveInt(ui, "Instruction threshold", &value)
-	assert.NoError(t, err)
-	assert.Equal(t, 10, value)
-}
-
-func TestPromptPositiveInt_Override(t *testing.T) {
-	ui := &MockUI{
-		InputFunc: func(title string, value *string) error {
-			*value = "42"
-			return nil
-		},
-	}
-	value := 10
-	err := promptPositiveInt(ui, "MCP server threshold", &value)
-	assert.NoError(t, err)
-	assert.Equal(t, 42, value)
-}
-
-func TestPromptPositiveInt_Invalid(t *testing.T) {
-	ui := &MockUI{
-		InputFunc: func(title string, value *string) error {
-			*value = "0"
-			return nil
-		},
-	}
-	value := 10
-	err := promptPositiveInt(ui, "Threshold", &value)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "positive integer")
-}
-
-func TestPromptPositiveInt_NegativeNumber(t *testing.T) {
-	ui := &MockUI{
-		InputFunc: func(title string, value *string) error {
-			*value = "-5"
-			return nil
-		},
-	}
-	value := 10
-	err := promptPositiveInt(ui, "Threshold", &value)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "positive integer")
-}
-
-func TestPromptPositiveInt_NotANumber(t *testing.T) {
-	ui := &MockUI{
-		InputFunc: func(title string, value *string) error {
-			*value = "abc"
-			return nil
-		},
-	}
-	value := 10
-	err := promptPositiveInt(ui, "Threshold", &value)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "positive integer")
-}
-
-func TestPromptPositiveInt_InputError(t *testing.T) {
-	ui := &MockUI{
-		InputFunc: func(title string, value *string) error {
-			return errors.New("input error")
-		},
-	}
-	value := 10
-	err := promptPositiveInt(ui, "Threshold", &value)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "input error")
-}
-
-func TestPromptPositiveInt_EmptyInput(t *testing.T) {
-	ui := &MockUI{
-		InputFunc: func(title string, value *string) error {
-			*value = "   " // whitespace only
-			return nil
-		},
-	}
-	value := 10
-	err := promptPositiveInt(ui, "Threshold", &value)
-	assert.NoError(t, err)
-	assert.Equal(t, 10, value) // keeps original value
-}
-
 func TestBuildSummary(t *testing.T) {
 	t.Run("with MCP servers enabled", func(t *testing.T) {
 		c := NewChoices()
@@ -379,8 +242,7 @@ func TestBuildSummaryReportsEveryClaudeHardeningChoice(t *testing.T) {
 	disabled.ApprovalMode = "none"
 	disabled.EnabledAgentsTouched = true
 	disabled.EnabledAgents[AgentClaude] = true
-	disabled.ClaudeModel = "opus"
-	disabled.ClaudeReasoning = "high"
+	disabled.AgentModels[AgentClaude] = AgentModelChoice{Model: "opus", Reasoning: "high"}
 	for _, touched := range []*bool{
 		&disabled.ClaudeDisableIDEReadingTouched, &disabled.ClaudeDisableMemoryTouched,
 		&disabled.ClaudeDisableConnectorsTouched, &disabled.ClaudeDisableQuestionToolTouched,
@@ -420,6 +282,6 @@ func TestBuildSummaryReportsEveryClaudeHardeningChoice(t *testing.T) {
 	reasoningOnly := NewChoices()
 	reasoningOnly.ApprovalMode = "none"
 	reasoningOnly.EnabledAgents[AgentClaude] = true
-	reasoningOnly.ClaudeReasoning = "high"
+	reasoningOnly.AgentModels[AgentClaude] = AgentModelChoice{Reasoning: "high"}
 	assert.Contains(t, buildSummary(reasoningOnly), "reasoning: high")
 }

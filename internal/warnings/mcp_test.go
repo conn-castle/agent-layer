@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/envref"
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
@@ -421,7 +422,7 @@ func TestDiscoverTools(t *testing.T) {
 		},
 	}
 
-	results := discoverTools(context.Background(), servers, mock, nil)
+	results := discoverTools(context.Background(), servers, mock, nil, nil)
 	require.Len(t, results, 3)
 
 	// Results should be in order
@@ -435,7 +436,7 @@ func TestDiscoverTools(t *testing.T) {
 
 func TestDiscoverTools_Empty(t *testing.T) {
 	mock := &MockConnector{Results: map[string]DiscoveryResult{}}
-	results := discoverTools(context.Background(), nil, mock, nil)
+	results := discoverTools(context.Background(), nil, mock, nil, nil)
 	assert.Empty(t, results)
 }
 
@@ -460,7 +461,7 @@ func TestDiscoverTools_EmitsDiscoveryEvents(t *testing.T) {
 		mu.Unlock()
 	}
 
-	_ = discoverTools(context.Background(), servers, mock, statusFn)
+	_ = discoverTools(context.Background(), servers, mock, statusFn, nil)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -544,7 +545,7 @@ func TestDiscoverTools_ConcurrencyLimit(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		_ = discoverTools(context.Background(), servers, connector, nil)
+		_ = discoverTools(context.Background(), servers, connector, nil, nil)
 		close(done)
 	}()
 
@@ -753,43 +754,73 @@ func TestRealConnector_StdioConnectionError(t *testing.T) {
 	assert.Contains(t, result.Error.Error(), "connection failed")
 }
 
-func TestRealConnector_StdioWithEnv(t *testing.T) {
-	connector := &RealConnector{}
-	server := projection.ResolvedMCPServer{
+func TestMCPDiscoveryTransport_Stdio(t *testing.T) {
+	transport, err := mcpDiscoveryTransport(context.Background(), projection.ResolvedMCPServer{
 		ID:        "test-stdio-env",
-		Transport: "stdio",
-		Command:   "nonexistent-command-xyzzy-env",
+		Transport: config.TransportStdio,
+		Command:   "mcp-server",
 		Args:      []string{"arg1", "arg2"},
-		Env:       map[string]string{"TEST_VAR": "test_value", "ANOTHER_VAR": "another_value"},
-	}
+		Env:       map[string]string{"TEST_VAR": "test_value"},
+	})
+	require.NoError(t, err)
 
-	// This exercises the env setup code path before failing at connect
-	result := connector.ConnectAndDiscover(context.Background(), server)
-	assert.Equal(t, "test-stdio-env", result.ServerID)
-	assert.Error(t, result.Error)
-	assert.Contains(t, result.Error.Error(), "connection failed")
-}
-
-type commandCapturingMCPClient struct {
-	delegate  mcpClientInterface
-	extraFile *os.File
-	command   chan<- *exec.Cmd
-}
-
-// Connect captures and prepares the stdio command before delegating to the real
-// MCP client, preserving the SDK's ownership of starting and waiting on it.
-func (c *commandCapturingMCPClient) Connect(ctx context.Context, transport mcp.Transport, opts *mcp.ClientSessionOptions) (mcpSessionInterface, error) {
 	commandTransport, ok := transport.(*mcp.CommandTransport)
-	if !ok {
-		return nil, fmt.Errorf("expected command transport, got %T", transport)
-	}
-
-	commandTransport.Command.ExtraFiles = append(commandTransport.Command.ExtraFiles, c.extraFile)
-	c.command <- commandTransport.Command
-	return c.delegate.Connect(ctx, transport, opts)
+	require.True(t, ok, "expected CommandTransport, got %T", transport)
+	assert.Equal(t, []string{"mcp-server", "arg1", "arg2"}, commandTransport.Command.Args)
+	assert.Contains(t, commandTransport.Command.Env, "TEST_VAR=test_value")
+	assert.NotNil(t, commandTransport.Command.Cancel, "stdio command must be bound to the discovery context")
 }
 
-func TestRealConnector_StdioContextCancellationKillsAndReapsChild(t *testing.T) {
+func TestMCPDiscoveryTransport_HTTP(t *testing.T) {
+	headers := map[string]string{"Authorization": "Bearer token"}
+	tests := []struct {
+		name          string
+		httpTransport string
+		headers       map[string]string
+		streamable    bool
+	}{
+		{name: "default SSE"},
+		{name: "SSE with headers", httpTransport: config.HTTPTransportSSE, headers: headers},
+		{name: "streamable", httpTransport: config.HTTPTransportStreamable, streamable: true},
+		{name: "streamable with headers", httpTransport: config.HTTPTransportStreamable, headers: headers, streamable: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			transport, err := mcpDiscoveryTransport(context.Background(), projection.ResolvedMCPServer{
+				ID:            "test-http",
+				Transport:     config.TransportHTTP,
+				HTTPTransport: tc.httpTransport,
+				URL:           "http://example.com/mcp",
+				Headers:       tc.headers,
+			})
+			require.NoError(t, err)
+
+			var endpoint string
+			var client *http.Client
+			switch typed := transport.(type) {
+			case *mcp.SSEClientTransport:
+				require.False(t, tc.streamable, "expected StreamableClientTransport, got SSE")
+				endpoint, client = typed.Endpoint, typed.HTTPClient
+			case *mcp.StreamableClientTransport:
+				require.True(t, tc.streamable, "expected SSEClientTransport, got streamable")
+				endpoint, client = typed.Endpoint, typed.HTTPClient
+			default:
+				t.Fatalf("unexpected transport %T", transport)
+			}
+			assert.Equal(t, "http://example.com/mcp", endpoint)
+			if tc.headers == nil {
+				assert.Nil(t, client, "transports without headers use the SDK default client")
+				return
+			}
+			require.NotNil(t, client)
+			ht, ok := client.Transport.(*headerTransport)
+			require.True(t, ok, "expected headerTransport, got %T", client.Transport)
+			assert.Equal(t, tc.headers, ht.headers)
+		})
+	}
+}
+
+func TestMCPDiscovery_StdioContextCancellationKillsAndReapsChild(t *testing.T) {
 	const helperEnv = "GO_TEST_MCP_HANGING_STDIO_CHILD"
 	if os.Getenv(helperEnv) == "1" {
 		ready := os.NewFile(3, "mcp-test-ready")
@@ -811,41 +842,30 @@ func TestRealConnector_StdioContextCancellationKillsAndReapsChild(t *testing.T) 
 	defer func() { _ = readyReader.Close() }()
 	defer func() { _ = readyWriter.Close() }()
 
-	commandCh := make(chan *exec.Cmd, 1)
-	original := NewMCPClientFunc
-	NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) mcpClientInterface {
-		return &commandCapturingMCPClient{
-			delegate:  &realMCPClient{client: mcp.NewClient(impl, opts)},
-			extraFile: readyWriter,
-			command:   commandCh,
-		}
-	}
-	t.Cleanup(func() { NewMCPClientFunc = original })
-
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	transport, err := mcpDiscoveryTransport(ctx, projection.ResolvedMCPServer{
+		ID:        "hanging-stdio",
+		Transport: config.TransportStdio,
+		Command:   os.Args[0],
+		Args:      []string{"-test.run=^TestMCPDiscovery_StdioContextCancellationKillsAndReapsChild$"},
+		Env:       map[string]string{helperEnv: "1"},
+	})
+	require.NoError(t, err)
+	commandTransport, ok := transport.(*mcp.CommandTransport)
+	require.True(t, ok, "expected CommandTransport, got %T", transport)
+	cmd := commandTransport.Command
+	cmd.ExtraFiles = append(cmd.ExtraFiles, readyWriter)
+
 	resultCh := make(chan DiscoveryResult, 1)
 	resultDone := make(chan struct{})
 	go func() {
 		defer close(resultDone)
-		resultCh <- (&RealConnector{}).ConnectAndDiscover(ctx, projection.ResolvedMCPServer{
-			ID:        "hanging-stdio",
-			Transport: config.TransportStdio,
-			Command:   os.Args[0],
-			Args:      []string{"-test.run=^TestRealConnector_StdioContextCancellationKillsAndReapsChild$"},
-			Env:       map[string]string{helperEnv: "1"},
-		})
+		resultCh <- discoverMCPTools(ctx, "hanging-stdio", transport)
 	}()
 
 	lifecycleTimer := time.NewTimer(5 * time.Second)
 	defer lifecycleTimer.Stop()
-
-	var cmd *exec.Cmd
-	select {
-	case cmd = <-commandCh:
-	case <-lifecycleTimer.C:
-		t.Fatal("timed out waiting for the MCP command to be captured")
-	}
 
 	readyCh := make(chan error, 1)
 	go func() {
@@ -910,141 +930,6 @@ func TestRealConnector_HTTPConnectionError(t *testing.T) {
 	assert.Contains(t, result.Error.Error(), "connection failed")
 }
 
-func TestRealConnector_HTTPWithHeaders(t *testing.T) {
-	connector := &RealConnector{}
-	server := projection.ResolvedMCPServer{
-		ID:        "test-http-headers",
-		Transport: "http",
-		URL:       "http://127.0.0.1:59998/nonexistent",
-		Headers:   map[string]string{"Authorization": "Bearer test"},
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-
-	result := connector.ConnectAndDiscover(ctx, server)
-	assert.Equal(t, "test-http-headers", result.ServerID)
-	assert.Error(t, result.Error)
-	assert.Contains(t, result.Error.Error(), "connection failed")
-}
-
-type transportAssertingClient struct {
-	t                *testing.T
-	expectStreamable bool
-	expectHeaders    bool
-	session          mcpSessionInterface
-}
-
-func (c *transportAssertingClient) Connect(ctx context.Context, transport mcp.Transport, opts *mcp.ClientSessionOptions) (mcpSessionInterface, error) {
-	c.t.Helper()
-	if c.expectStreamable {
-		streamable, ok := transport.(*mcp.StreamableClientTransport)
-		if !ok {
-			c.t.Fatalf("expected StreamableClientTransport, got %T", transport)
-		}
-		if streamable.Endpoint == "" {
-			c.t.Fatalf("expected streamable endpoint to be set")
-		}
-		if c.expectHeaders {
-			if streamable.HTTPClient == nil {
-				c.t.Fatalf("expected HTTP client for streamable transport")
-			}
-			ht, ok := streamable.HTTPClient.Transport.(*headerTransport)
-			if !ok {
-				c.t.Fatalf("expected headerTransport, got %T", streamable.HTTPClient.Transport)
-			}
-			if ht.headers["Authorization"] != "Bearer token" {
-				c.t.Fatalf("unexpected header value: %q", ht.headers["Authorization"])
-			}
-		} else if streamable.HTTPClient != nil {
-			c.t.Fatalf("expected nil HTTP client for streamable transport without headers")
-		}
-	} else {
-		sse, ok := transport.(*mcp.SSEClientTransport)
-		if !ok {
-			c.t.Fatalf("expected SSEClientTransport, got %T", transport)
-		}
-		if sse.Endpoint == "" {
-			c.t.Fatalf("expected SSE endpoint to be set")
-		}
-		if c.expectHeaders {
-			if sse.HTTPClient == nil {
-				c.t.Fatalf("expected HTTP client for SSE transport")
-			}
-			ht, ok := sse.HTTPClient.Transport.(*headerTransport)
-			if !ok {
-				c.t.Fatalf("expected headerTransport, got %T", sse.HTTPClient.Transport)
-			}
-			if ht.headers["Authorization"] != "Bearer token" {
-				c.t.Fatalf("unexpected header value: %q", ht.headers["Authorization"])
-			}
-		} else if sse.HTTPClient != nil {
-			c.t.Fatalf("expected nil HTTP client for SSE transport without headers")
-		}
-	}
-	return c.session, nil
-}
-
-func TestRealConnector_HTTPStreamableTransport(t *testing.T) {
-	mockSession := &mockMCPSession{
-		tools: []*mcp.Tool{{Name: "tool"}},
-	}
-	client := &transportAssertingClient{
-		t:                t,
-		expectStreamable: true,
-		expectHeaders:    true,
-		session:          mockSession,
-	}
-
-	original := NewMCPClientFunc
-	NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) mcpClientInterface {
-		return client
-	}
-	t.Cleanup(func() { NewMCPClientFunc = original })
-
-	connector := &RealConnector{}
-	server := projection.ResolvedMCPServer{
-		ID:            "test-http-streamable",
-		Transport:     "http",
-		HTTPTransport: "streamable",
-		URL:           "http://example.com",
-		Headers:       map[string]string{"Authorization": "Bearer token"},
-	}
-
-	result := connector.ConnectAndDiscover(context.Background(), server)
-	assert.NoError(t, result.Error)
-	assert.Len(t, result.Tools, 1)
-}
-
-func TestRealConnector_HTTPTransportDefaultSSE(t *testing.T) {
-	mockSession := &mockMCPSession{
-		tools: []*mcp.Tool{{Name: "tool"}},
-	}
-	client := &transportAssertingClient{
-		t:                t,
-		expectStreamable: false,
-		expectHeaders:    false,
-		session:          mockSession,
-	}
-
-	original := NewMCPClientFunc
-	NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) mcpClientInterface {
-		return client
-	}
-	t.Cleanup(func() { NewMCPClientFunc = original })
-
-	connector := &RealConnector{}
-	server := projection.ResolvedMCPServer{
-		ID:        "test-http-sse",
-		Transport: "http",
-		URL:       "http://example.com",
-	}
-
-	result := connector.ConnectAndDiscover(context.Background(), server)
-	assert.NoError(t, result.Error)
-	assert.Len(t, result.Tools, 1)
-}
-
 func TestRealConnector_UnsupportedHTTPTransport(t *testing.T) {
 	connector := &RealConnector{}
 	server := projection.ResolvedMCPServer{
@@ -1059,283 +944,142 @@ func TestRealConnector_UnsupportedHTTPTransport(t *testing.T) {
 	assert.Contains(t, result.Error.Error(), "unsupported http transport")
 }
 
-func TestRealMCPClientAndSessionWrappers(t *testing.T) {
-	ctx := context.Background()
-	server := mcp.NewServer(&mcp.Implementation{Name: "server", Version: "v0.0.1"}, nil)
-	client := mcp.NewClient(&mcp.Implementation{Name: "client", Version: "v0.0.1"}, nil)
-	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+// newToolServer returns an in-memory-capable SDK server exposing the named
+// tools, paginating tools/list at pageSize (0 uses the SDK default).
+func newToolServer(pageSize int, names ...string) *mcp.Server {
+	server := mcp.NewServer(&mcp.Implementation{Name: "server", Version: "v0.0.1"}, &mcp.ServerOptions{PageSize: pageSize})
+	for _, name := range names {
+		server.AddTool(&mcp.Tool{
+			Name:        name,
+			Description: "test tool " + name,
+			InputSchema: map[string]any{"type": "object"},
+		}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{}, nil
+		})
+	}
+	return server
+}
 
+// discoverFromServer runs discoverMCPTools against server over in-memory
+// transports and requires discovery to close its client session.
+func discoverFromServer(t *testing.T, server *mcp.Server) DiscoveryResult {
+	t.Helper()
+	ctx := context.Background()
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	serverSession, err := server.Connect(ctx, serverTransport, nil)
 	require.NoError(t, err)
-	defer func() { _ = serverSession.Close() }()
 
-	realClient := &realMCPClient{client: client}
-	session, err := realClient.Connect(ctx, clientTransport, nil)
-	require.NoError(t, err)
+	result := discoverMCPTools(ctx, "test-server", clientTransport)
 
-	result, err := session.ListTools(ctx, &mcp.ListToolsParams{})
-	require.NoError(t, err)
-	require.NotNil(t, result)
-
-	require.NoError(t, session.Close())
+	closed := make(chan struct{})
+	go func() {
+		_ = serverSession.Wait()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		_ = serverSession.Close()
+		t.Fatal("discovery did not close its MCP session")
+	}
+	return result
 }
 
-// mockMCPClient implements mcpClientInterface for testing.
-type mockMCPClient struct {
-	session mcpSessionInterface
-	err     error
-}
-
-func (m *mockMCPClient) Connect(ctx context.Context, transport mcp.Transport, opts *mcp.ClientSessionOptions) (mcpSessionInterface, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	return m.session, nil
-}
-
-// mockMCPSession implements mcpSessionInterface for testing.
-type mockMCPSession struct {
-	tools       []*mcp.Tool
-	nextCursors []string // For pagination simulation
-	callCount   int
-	listErr     error
-	closeCalled bool
-}
-
-func (m *mockMCPSession) ListTools(ctx context.Context, params *mcp.ListToolsParams) (*mcp.ListToolsResult, error) {
-	if m.listErr != nil {
-		return nil, m.listErr
-	}
-
-	// Return tools based on call count for pagination
-	result := &mcp.ListToolsResult{
-		Tools: m.tools,
-	}
-	if m.callCount < len(m.nextCursors) {
-		result.NextCursor = m.nextCursors[m.callCount]
-	}
-	m.callCount++
-	return result, nil
-}
-
-func (m *mockMCPSession) Close() error {
-	m.closeCalled = true
-	return nil
-}
-
-func TestRealConnector_SuccessfulConnection(t *testing.T) {
-	mockSession := &mockMCPSession{
-		tools: []*mcp.Tool{
-			{Name: "tool1", Description: "First tool"},
-			{Name: "tool2", Description: "Second tool"},
-		},
-	}
-	mockClient := &mockMCPClient{session: mockSession}
-
-	original := NewMCPClientFunc
-	NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) mcpClientInterface {
-		return mockClient
-	}
-	t.Cleanup(func() { NewMCPClientFunc = original })
-
-	connector := &RealConnector{}
-	server := projection.ResolvedMCPServer{
-		ID:        "test-server",
-		Transport: "stdio",
-		Command:   "echo",
-	}
-
-	result := connector.ConnectAndDiscover(context.Background(), server)
+func TestDiscoverMCPTools_ListsToolsAndEstimatesTokens(t *testing.T) {
+	result := discoverFromServer(t, newToolServer(0, "tool1", "tool2"))
+	require.NoError(t, result.Error)
 	assert.Equal(t, "test-server", result.ServerID)
-	assert.NoError(t, result.Error)
-	assert.Len(t, result.Tools, 2)
+	require.Len(t, result.Tools, 2)
 	assert.Equal(t, "tool1", result.Tools[0].Name)
 	assert.Equal(t, "tool2", result.Tools[1].Name)
+	assert.Greater(t, result.Tools[0].Tokens, 0)
 	assert.Greater(t, result.SchemaTokens, 0)
-	assert.True(t, mockSession.closeCalled, "session.Close should be called")
 }
 
-func TestRealConnector_SuccessfulConnectionPaginated(t *testing.T) {
-	// Create a paginated mock session that returns tools in multiple calls
-	mockSession := &mockMCPSession{
-		tools: []*mcp.Tool{
-			{Name: "tool1"},
-		},
-		nextCursors: []string{"cursor1", ""}, // First call has cursor, second doesn't
+func TestDiscoverMCPTools_FollowsPagination(t *testing.T) {
+	result := discoverFromServer(t, newToolServer(1, "tool1", "tool2", "tool3"))
+	require.NoError(t, result.Error)
+	require.Len(t, result.Tools, 3)
+	for i, tool := range result.Tools {
+		assert.Equal(t, fmt.Sprintf("tool%d", i+1), tool.Name)
 	}
-	mockClient := &mockMCPClient{session: mockSession}
-
-	original := NewMCPClientFunc
-	NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) mcpClientInterface {
-		return mockClient
-	}
-	t.Cleanup(func() { NewMCPClientFunc = original })
-
-	connector := &RealConnector{}
-	server := projection.ResolvedMCPServer{
-		ID:        "test-paginated",
-		Transport: "stdio",
-		Command:   "echo",
-	}
-
-	result := connector.ConnectAndDiscover(context.Background(), server)
-	assert.NoError(t, result.Error)
-	assert.Equal(t, 2, mockSession.callCount, "expected 2 ListTools calls for pagination")
 }
 
-func TestRealConnector_ListToolsError(t *testing.T) {
-	mockSession := &mockMCPSession{
-		listErr: fmt.Errorf("list tools error"),
-	}
-	mockClient := &mockMCPClient{session: mockSession}
-
-	original := NewMCPClientFunc
-	NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) mcpClientInterface {
-		return mockClient
-	}
-	t.Cleanup(func() { NewMCPClientFunc = original })
-
-	connector := &RealConnector{}
-	server := projection.ResolvedMCPServer{
-		ID:        "test-list-error",
-		Transport: "stdio",
-		Command:   "echo",
-	}
-
-	result := connector.ConnectAndDiscover(context.Background(), server)
-	assert.Error(t, result.Error)
-	assert.Contains(t, result.Error.Error(), "list tools failed")
-	assert.True(t, mockSession.closeCalled, "session.Close should still be called")
-}
-
-func TestRealConnector_EmptyTools(t *testing.T) {
-	mockSession := &mockMCPSession{
-		tools: []*mcp.Tool{}, // Empty tools list
-	}
-	mockClient := &mockMCPClient{session: mockSession}
-
-	original := NewMCPClientFunc
-	NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) mcpClientInterface {
-		return mockClient
-	}
-	t.Cleanup(func() { NewMCPClientFunc = original })
-
-	connector := &RealConnector{}
-	server := projection.ResolvedMCPServer{
-		ID:        "test-empty",
-		Transport: "stdio",
-		Command:   "echo",
-	}
-
-	result := connector.ConnectAndDiscover(context.Background(), server)
-	assert.NoError(t, result.Error)
+func TestDiscoverMCPTools_EmptyTools(t *testing.T) {
+	result := discoverFromServer(t, newToolServer(0))
+	require.NoError(t, result.Error)
 	assert.Empty(t, result.Tools)
 	assert.Equal(t, 0, result.SchemaTokens, "empty tools should have 0 schema tokens")
 }
 
-// infiniteLoopMockSession always returns a cursor to simulate infinite pagination.
-type infiniteLoopMockSession struct {
-	tools       []*mcp.Tool
-	callCount   int
-	closeCalled bool
+func TestDiscoverMCPTools_ListToolsError(t *testing.T) {
+	server := newToolServer(0, "tool1")
+	server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if method == "tools/list" {
+				return nil, fmt.Errorf("list tools error")
+			}
+			return next(ctx, method, req)
+		}
+	})
+
+	result := discoverFromServer(t, server)
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "list tools failed")
 }
 
-func (m *infiniteLoopMockSession) ListTools(ctx context.Context, params *mcp.ListToolsParams) (*mcp.ListToolsResult, error) {
-	m.callCount++
-	return &mcp.ListToolsResult{
-		Tools:      m.tools,
-		NextCursor: "always-more", // Always return a cursor
-	}, nil
-}
-
-func (m *infiniteLoopMockSession) Close() error {
-	m.closeCalled = true
-	return nil
-}
-
-func TestRealConnector_TooManyToolsGuard(t *testing.T) {
-	// Create a session that returns lots of tools with infinite pagination
-	tools := make([]*mcp.Tool, 5001) // Enough to exceed the 10000 guard quickly
-	for i := range tools {
-		tools[i] = &mcp.Tool{Name: fmt.Sprintf("tool%d", i)}
-	}
-	mockSession := &infiniteLoopMockSession{tools: tools}
-	mockClient := &mockMCPClient{session: mockSession}
-
-	original := NewMCPClientFunc
-	NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) mcpClientInterface {
-		return mockClient
-	}
-	t.Cleanup(func() { NewMCPClientFunc = original })
-
-	connector := &RealConnector{}
-	server := projection.ResolvedMCPServer{
-		ID:        "test-infinite",
-		Transport: "stdio",
-		Command:   "echo",
+func TestDiscoverMCPTools_TooManyToolsGuard(t *testing.T) {
+	// One page larger than the guard, with another page still pending, trips
+	// the guard before discovery requests the next page.
+	names := make([]string, maxToolsToDiscover+2)
+	for i := range names {
+		names[i] = fmt.Sprintf("tool%d", i)
 	}
 
-	result := connector.ConnectAndDiscover(context.Background(), server)
-	assert.Error(t, result.Error)
+	result := discoverFromServer(t, newToolServer(maxToolsToDiscover+1, names...))
+	require.Error(t, result.Error)
 	assert.Contains(t, result.Error.Error(), "too many tools or infinite loop")
-	assert.True(t, mockSession.closeCalled, "session.Close should be called")
 }
 
 func TestRealConnector_OAuthNotVerifiable(t *testing.T) {
-	clientCreated := false
-	original := NewMCPClientFunc
-	NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) mcpClientInterface {
-		clientCreated = true
-		return &mockMCPClient{}
-	}
-	t.Cleanup(func() { NewMCPClientFunc = original })
+	var requests atomic.Int32
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		http.Error(w, "unexpected request", http.StatusInternalServerError)
+	}))
+	defer httpServer.Close()
 
 	connector := &RealConnector{}
 	server := projection.ResolvedMCPServer{
 		ID:            "figma",
 		Transport:     config.TransportHTTP,
 		HTTPTransport: "streamable",
-		URL:           "https://mcp.figma.com/mcp",
+		URL:           httpServer.URL,
 		Auth:          config.MCPAuthOAuth,
 	}
 
 	result := connector.ConnectAndDiscover(context.Background(), server)
 	assert.NoError(t, result.Error)
 	assert.True(t, result.OAuthUnvalidated)
-	assert.False(t, clientCreated, "OAuth discovery must not start a client that cannot use the client-managed credentials")
+	assert.Zero(t, requests.Load(), "OAuth discovery must not connect without the client-managed credentials")
 }
 
 func TestRealConnector_StdioOAuthDoesNotSkipDiscovery(t *testing.T) {
 	// Doctor's lenient-config fallback skips validation, so a malformed stdio
 	// server can still carry auth = "oauth". Discovery must use the stdio path
 	// rather than treating leftover OAuth as unvalidated HTTP auth.
-	clientCreated := false
-	mockSession := &mockMCPSession{
-		tools: []*mcp.Tool{{Name: "tool1"}},
-	}
-	mockClient := &mockMCPClient{session: mockSession}
-
-	original := NewMCPClientFunc
-	NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) mcpClientInterface {
-		clientCreated = true
-		return mockClient
-	}
-	t.Cleanup(func() { NewMCPClientFunc = original })
-
 	connector := &RealConnector{}
 	server := projection.ResolvedMCPServer{
 		ID:        "malformed-stdio",
 		Transport: config.TransportStdio,
-		Command:   "echo",
+		Command:   "nonexistent-command-xyzzy-oauth",
 		Auth:      config.MCPAuthOAuth,
 	}
 
 	result := connector.ConnectAndDiscover(context.Background(), server)
-	assert.NoError(t, result.Error)
 	assert.False(t, result.OAuthUnvalidated)
-	assert.True(t, clientCreated, "stdio servers with leftover auth=oauth must still be discovered")
-	assert.Len(t, result.Tools, 1)
-	assert.Equal(t, "tool1", result.Tools[0].Name)
+	require.Error(t, result.Error, "stdio servers with leftover auth=oauth must still be discovered")
+	assert.Contains(t, result.Error.Error(), "connection failed")
 }
 
 func TestCheckMCPServers_OAuthServerNotValidated(t *testing.T) {
@@ -1382,4 +1126,235 @@ func TestCheckMCPServers_OAuthServerNotValidated(t *testing.T) {
 		}
 	}
 	assert.True(t, hasAuthNotValidatedEvent, "expected MCPDiscoveryStatusAuthNotValidated event")
+}
+
+// echoingConnector fails every user-configured server with an error that quotes
+// each resolved field, the way transport and SDK errors echo request URLs.
+type echoingConnector struct{}
+
+func (echoingConnector) ConnectAndDiscover(_ context.Context, server projection.ResolvedMCPServer) DiscoveryResult {
+	if server.ID == projection.BuiltInDispatchServerID {
+		return DiscoveryResult{ServerID: server.ID}
+	}
+	return DiscoveryResult{ServerID: server.ID, Error: fmt.Errorf("url=%q headers=%v command=%q args=%v env=%v",
+		server.URL, server.Headers, server.Command, server.Args, server.Env)}
+}
+
+// TestCheckMCPServers_RedactsResolvedSecretsFromDiscoveryErrors proves doctor
+// never prints a resolved secret: both the progress event and the
+// MCP_SERVER_UNREACHABLE warning show the configured placeholder instead.
+func TestCheckMCPServers_RedactsResolvedSecretsFromDiscoveryErrors(t *testing.T) {
+	t.Setenv("AL_SHELL_TOKEN", "shell-secret-value")
+	enabled := true
+	repoRoot := t.TempDir()
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: receivingAgents(),
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{
+						ID: "remote", Enabled: &enabled, Transport: config.TransportHTTP,
+						URL:     "https://mcp.example.test/mcp?apiKey=${AL_URL_KEY}&shell=${AL_SHELL_TOKEN}",
+						Headers: map[string]string{"Authorization": "Bearer ${AL_HEADER_TOKEN}"},
+					},
+					{
+						ID: "local", Enabled: &enabled, Transport: config.TransportStdio,
+						Command: "${AL_REPO_ROOT}/bin/server",
+						Args:    []string{"--key=${AL_ARG_KEY}"},
+						Env:     map[string]string{"TOKEN": "${AL_ENV_TOKEN}"}, // #nosec G101 -- placeholder reference in a redaction test.
+					},
+				},
+			},
+		},
+		Env: map[string]string{
+			"AL_URL_KEY":      "url-secret-value",
+			"AL_HEADER_TOKEN": "header-secret-value",
+			"AL_ARG_KEY":      "arg-secret",
+			// Contains AL_ARG_KEY's value, so the longer value must win.
+			"AL_ENV_TOKEN":               "arg-secret-and-more",
+			config.BuiltinRepoRootEnvVar: repoRoot,
+		},
+	}
+
+	var mu sync.Mutex
+	eventErrs := map[string]string{}
+	statusFn := func(event MCPDiscoveryEvent) {
+		if event.Err == nil {
+			return
+		}
+		mu.Lock()
+		eventErrs[event.ServerID] = event.Err.Error()
+		mu.Unlock()
+	}
+
+	warnings, _, err := CheckMCPServers(context.Background(), cfg, echoingConnector{}, statusFn)
+	require.NoError(t, err)
+
+	messages := map[string]string{}
+	for _, w := range warnings {
+		if w.Code == CodeMCPServerUnreachable {
+			messages[w.Subject] = w.Message
+		}
+	}
+	require.Len(t, messages, 2)
+
+	secrets := []string{"url-secret-value", "shell-secret-value", "header-secret-value", "arg-secret", "and-more"}
+	for _, id := range []string{"remote", "local"} {
+		for _, text := range []string{eventErrs[id], messages[id]} {
+			for _, secret := range secrets {
+				assert.NotContains(t, text, secret, "server %s", id)
+			}
+		}
+	}
+	assert.Contains(t, messages["remote"], "apiKey=${AL_URL_KEY}&shell=${AL_SHELL_TOKEN}")
+	assert.Contains(t, messages["remote"], "Bearer ${AL_HEADER_TOKEN}")
+	assert.Contains(t, eventErrs["remote"], "apiKey=${AL_URL_KEY}")
+	assert.Contains(t, messages["local"], "--key=${AL_ARG_KEY}")
+	assert.Contains(t, messages["local"], "TOKEN:${AL_ENV_TOKEN}")
+	// The repo root is a built-in, non-secret path and stays readable.
+	assert.Contains(t, messages["local"], repoRoot+"/bin/server")
+}
+
+// TestCheckMCPServers_RedactsNormalizedSecretPaths covers the command and args
+// after projection expands and cleans them, including a real exec failure.
+func TestCheckMCPServers_RedactsNormalizedSecretPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		path      string
+		pathValue string
+		argument  bool
+		connector Connector
+	}{
+		{name: "repo command exec failure", path: "${AL_REPO_ROOT}/${AL_PATH_TOKEN}", pathValue: "private/../topsecret", connector: &MockConnector{Next: &RealConnector{}}},
+		{name: "home command", path: "~/${AL_PATH_TOKEN}", pathValue: "private/../topsecret", connector: echoingConnector{}},
+		{name: "repo argument", path: "${AL_REPO_ROOT}/${AL_PATH_TOKEN}", pathValue: "private/../topsecret", argument: true, connector: echoingConnector{}},
+		{name: "home argument", path: "~/${AL_PATH_TOKEN}", pathValue: "private/../topsecret", argument: true, connector: echoingConnector{}},
+		{name: "parent traversal argument", path: "${AL_REPO_ROOT}/prefix/${AL_PATH_TOKEN}", pathValue: "private/../../topsecret", argument: true, connector: echoingConnector{}},
+		{name: "quoted command", path: "${AL_REPO_ROOT}/${AL_PATH_TOKEN}", pathValue: "private/../topsecret\"suffix", connector: echoingConnector{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			enabled := true
+			server := config.MCPServer{ID: "local", Enabled: &enabled, Transport: config.TransportStdio, Command: tc.path}
+			if tc.argument {
+				server.Command = "server"
+				server.Args = []string{tc.path}
+			}
+			cfg := &config.ProjectConfig{
+				Config: config.Config{Agents: receivingAgents(), MCP: config.MCPConfig{Servers: []config.MCPServer{server}}},
+				Env: map[string]string{
+					config.BuiltinRepoRootEnvVar: t.TempDir(),
+					"AL_PATH_TOKEN":              tc.pathValue,
+				},
+			}
+			var eventErr error
+			statusFn := func(event MCPDiscoveryEvent) {
+				if event.ServerID == server.ID && event.Status == MCPDiscoveryStatusError {
+					eventErr = event.Err
+				}
+			}
+			warnings, _, err := CheckMCPServers(context.Background(), cfg, tc.connector, statusFn)
+			require.NoError(t, err)
+			require.Len(t, warnings, 1)
+			assert.Equal(t, CodeMCPServerUnreachable, warnings[0].Code)
+			require.Error(t, eventErr)
+			for _, text := range []string{eventErr.Error(), warnings[0].Message} {
+				assert.NotContains(t, text, "topsecret")
+				assert.Contains(t, text, "${AL_PATH_TOKEN}")
+			}
+		})
+	}
+}
+
+// TestCheckMCPServers_KeepsErrorsWithoutResolvedValues proves redaction leaves
+// an error that echoes no resolved value untouched, chain included.
+func TestCheckMCPServers_KeepsErrorsWithoutResolvedValues(t *testing.T) {
+	enabled := true
+	cause := fmt.Errorf("dial: %w", context.DeadlineExceeded)
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: receivingAgents(),
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{ID: "remote", Enabled: &enabled, Transport: config.TransportHTTP, URL: "https://mcp.example.test/mcp?token=${AL_TOKEN}"},
+				},
+			},
+		},
+		Env: map[string]string{"AL_TOKEN": "secret-token"},
+	}
+
+	var mu sync.Mutex
+	var eventErr error
+	statusFn := func(event MCPDiscoveryEvent) {
+		if event.Err != nil {
+			mu.Lock()
+			eventErr = event.Err
+			mu.Unlock()
+		}
+	}
+	mock := &MockConnector{Results: map[string]DiscoveryResult{"remote": {ServerID: "remote", Error: cause}}}
+	warnings, _, err := CheckMCPServers(context.Background(), cfg, mock, statusFn)
+	require.NoError(t, err)
+	require.Len(t, warnings, 1)
+	assert.Equal(t, fmt.Sprintf("cannot connect, initialize, or list tools: %v", cause), warnings[0].Message)
+	assert.Same(t, cause, eventErr)
+}
+
+// TestCheckMCPServers_RedactsRealHTTPConnectionError drives the real SDK
+// transport against a closed port: Go's HTTP client quotes the full request
+// URL in its error, and the query-string secret must not survive into output.
+func TestCheckMCPServers_RedactsRealHTTPConnectionError(t *testing.T) {
+	closed := httptest.NewServer(http.NotFoundHandler())
+	baseURL := closed.URL
+	closed.Close()
+
+	enabled := true
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: receivingAgents(),
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{ID: "streamable", Enabled: &enabled, Transport: config.TransportHTTP, HTTPTransport: config.HTTPTransportStreamable, URL: baseURL + "/mcp/?tavilyApiKey=${AL_TAVILY_API_KEY}"},
+					{ID: "sse", Enabled: &enabled, Transport: config.TransportHTTP, URL: baseURL + "/sse?tavilyApiKey=${AL_TAVILY_API_KEY}"},
+				},
+			},
+		},
+		Env: map[string]string{"AL_TAVILY_API_KEY": "tvly-SUPERSECRET123"},
+	}
+
+	warnings, _, err := CheckMCPServers(context.Background(), cfg, &MockConnector{Next: &RealConnector{}}, nil)
+	require.NoError(t, err)
+	var unreachable int
+	for _, w := range warnings {
+		if w.Code != CodeMCPServerUnreachable {
+			continue
+		}
+		unreachable++
+		assert.NotContains(t, w.Message, "tvly-SUPERSECRET123", "server %s", w.Subject)
+		assert.Contains(t, w.Message, "tavilyApiKey=${AL_TAVILY_API_KEY}", "server %s", w.Subject)
+	}
+	assert.Equal(t, 2, unreachable)
+}
+
+// TestMCPSecretPlaceholdersCoversEncodedForms proves a secret still redacts
+// when a transport error quotes it or re-encodes it inside a URL.
+func TestMCPSecretPlaceholdersCoversEncodedForms(t *testing.T) {
+	enabled := true
+	servers := []config.MCPServer{{
+		ID: "remote", Enabled: &enabled, Transport: config.TransportHTTP,
+		URL: "https://${AL_USER}@mcp.example.test/mcp?k=${AL_KEY}",
+	}}
+	placeholders := mcpSecretPlaceholders(servers, map[string]string{
+		"AL_USER": "us%40er",
+		"AL_KEY":  `a"b\c d`,
+	})
+	for _, text := range []string{
+		`Get "https://us@er@mcp.example.test/mcp?k=a\"b\\c d"`, // %q of the decoded URL
+		"https://us%2540er@mcp.example.test/mcp?k=a%22b%5Cc+d", // query-escaped
+		"path a%22b%5Cc%20d", // path-escaped
+	} {
+		redacted := envref.Redact(text, placeholders)
+		for _, leak := range []string{"us@er", "us%40er", "40er", `b\c`, `b\\c`, "b%5Cc"} {
+			assert.NotContains(t, redacted, leak, "text %q", text)
+		}
+	}
 }

@@ -64,7 +64,13 @@ func (s *Source) Repository() string { return s.repository.String() }
 
 // DefaultBranch resolves the repository's actual default branch name.
 func (s *Source) DefaultBranch(ctx context.Context) (string, error) {
-	output, err := s.runner.run(ctx, s.dir, "ls-remote", "--symref", "--", s.repository.git, "HEAD")
+	return s.runner.remoteDefaultBranch(ctx, s.dir, s.repository, "; specify an explicit ref")
+}
+
+// remoteDefaultBranch reads the branch that repository's remote HEAD points
+// at. hint is appended to the failure message when HEAD names no branch.
+func (r *Runner) remoteDefaultBranch(ctx context.Context, dir string, repository Repository, hint string) (string, error) {
+	output, err := r.run(ctx, dir, "ls-remote", "--symref", "--", repository.git, "HEAD")
 	if err != nil {
 		return "", err
 	}
@@ -74,7 +80,7 @@ func (s *Source) DefaultBranch(ctx context.Context) (string, error) {
 			return strings.TrimPrefix(fields[1], "refs/heads/"), nil
 		}
 	}
-	return "", fmt.Errorf("could not determine the default branch of %s; specify an explicit ref", s.repository)
+	return "", fmt.Errorf("could not determine the default branch of %s%s", repository, hint)
 }
 
 // Resolve determines what a configured ref names and which commit it points at.
@@ -235,51 +241,11 @@ func (s *Source) readTree(ctx context.Context, commit string, repoPath string, r
 		}
 		return skilltree.Tree{}, fmt.Errorf("%s is not a directory; a skill destination may contain only directories and regular files", repoPath)
 	}
-	spec := commit + ":" + repoPath
-	output, err := s.runner.run(ctx, s.dir, "ls-tree", "-r", "-z", "--full-tree", spec)
-	if err != nil {
-		return skilltree.Tree{}, err
+	var reject func(name string, kind string) error
+	if rejectIgnored {
+		reject = func(name string, kind string) error { return destinationArtifactError(repoPath, name, kind) }
 	}
-
-	var files []skilltree.File
-	for _, record := range strings.Split(string(output), "\x00") {
-		if strings.TrimSpace(record) == "" {
-			continue
-		}
-		mode, objectType, object, name, parseErr := parseTreeRecord(record)
-		if parseErr != nil {
-			return skilltree.Tree{}, parseErr
-		}
-		if isIgnoredTreePath(name) {
-			if rejectIgnored {
-				return skilltree.Tree{}, destinationArtifactError(repoPath, name, "artifact")
-			}
-			continue
-		}
-		switch {
-		case objectType == gitObjectCommit:
-			if rejectIgnored {
-				return skilltree.Tree{}, destinationArtifactError(repoPath, name, "gitlink (submodule)")
-			}
-			return skilltree.Tree{}, fmt.Errorf("%s/%s is a gitlink (submodule); imported skills may contain only directories and regular files", repoPath, name)
-		case mode == "120000":
-			if rejectIgnored {
-				return skilltree.Tree{}, destinationArtifactError(repoPath, name, "symbolic link")
-			}
-			return skilltree.Tree{}, fmt.Errorf("%s/%s is a symbolic link; imported skills may contain only directories and regular files", repoPath, name)
-		case objectType != gitObjectBlob:
-			if rejectIgnored {
-				return skilltree.Tree{}, destinationArtifactError(repoPath, name, fmt.Sprintf("Git object type %q", objectType))
-			}
-			return skilltree.Tree{}, fmt.Errorf("%s/%s is an unsupported git object type %q", repoPath, name, objectType)
-		}
-		data, catErr := s.runner.run(ctx, s.dir, "cat-file", gitObjectBlob, object)
-		if catErr != nil {
-			return skilltree.Tree{}, catErr
-		}
-		files = append(files, skilltree.File{Path: name, Data: data, Executable: mode == "100755"})
-	}
-	return skilltree.NewTree(files)
+	return s.runner.readSkillTreeObject(ctx, s.dir, commit+":"+repoPath, repoPath+"/", reject)
 }
 
 // destinationArtifactError gives every strict destination rejection the same

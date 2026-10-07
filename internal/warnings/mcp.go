@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"runtime"
 	"sort"
+	"strconv"
 	"sync"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/envref"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
@@ -43,7 +46,8 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 	}
 
 	// 1. Identify enabled servers
-	enabledServers, err := projection.ResolveEffectiveEnabledMCPServers(cfg.Config, cfg.PlaceholderEnv())
+	env := cfg.PlaceholderEnv()
+	enabledServers, err := projection.ResolveEffectiveEnabledMCPServers(cfg.Config, env)
 	if err != nil {
 		subject := mcpServersKey
 		var resolveErr *projection.MCPServerResolveError
@@ -82,7 +86,7 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 	}
 
 	// 2. Discovery (Parallel)
-	results := discoverTools(ctx, enabledServers, connector, statusFn)
+	results := discoverTools(ctx, enabledServers, connector, statusFn, mcpSecretPlaceholders(projection.ReceivedMCPServers(cfg.Config), env))
 
 	// 3. Process results
 	var totalTools int
@@ -272,7 +276,10 @@ type Connector interface {
 	ConnectAndDiscover(ctx context.Context, server projection.ResolvedMCPServer) DiscoveryResult
 }
 
-func discoverTools(ctx context.Context, servers []projection.ResolvedMCPServer, connector Connector, statusFn MCPDiscoveryStatusFunc) []DiscoveryResult {
+// discoverTools runs discovery for servers concurrently. placeholders maps each
+// resolved configuration value to its placeholder text; discovery errors are
+// redacted with it before they reach statusFn or the returned results.
+func discoverTools(ctx context.Context, servers []projection.ResolvedMCPServer, connector Connector, statusFn MCPDiscoveryStatusFunc, placeholders map[string]string) []DiscoveryResult {
 	results := make([]DiscoveryResult, len(servers))
 
 	// Semaphore for concurrency
@@ -291,6 +298,7 @@ func discoverTools(ctx context.Context, servers []projection.ResolvedMCPServer, 
 			}
 
 			res := connector.ConnectAndDiscover(ctx, s)
+			res.Error = redactDiscoveryError(res.Error, placeholders)
 			results[i] = res
 
 			if statusFn != nil {
@@ -307,6 +315,92 @@ func discoverTools(ctx context.Context, servers []projection.ResolvedMCPServer, 
 
 	wg.Wait()
 	return results
+}
+
+// mcpSecretPlaceholders maps each value a placeholder in servers resolves to in
+// env back to that placeholder's text. Discovery hands resolved URLs, headers,
+// commands, arguments, and environment values to transports whose errors echo
+// them (Go's HTTP client quotes the full request URL), so every substituted
+// value is treated as a secret. Those errors may quote a value (`%q`) or
+// re-encode it as part of a URL, so each encoded form maps to the placeholder
+// too. Expanded command and argument paths map back to their templates because
+// path cleaning can remove parts of a substituted value. Built-in placeholders
+// such as AL_REPO_ROOT name non-secret paths and are left visible.
+func mcpSecretPlaceholders(servers []config.MCPServer, env map[string]string) map[string]string {
+	placeholders := make(map[string]string)
+	addForms := func(value, placeholder string) {
+		quoted := strconv.Quote(value)
+		forms := []string{value, quoted[1 : len(quoted)-1], url.QueryEscape(value), url.PathEscape(value)}
+		if unescaped, err := url.PathUnescape(value); err == nil {
+			forms = append(forms, unescaped)
+		}
+		for _, form := range forms {
+			placeholders[form] = placeholder
+		}
+	}
+	add := func(text string) bool {
+		hasSecret := false
+		for _, name := range envref.Names(text) {
+			if config.IsBuiltInEnvVar(name) {
+				continue
+			}
+			value := env[name]
+			if value == "" {
+				continue
+			}
+			hasSecret = true
+			addForms(value, "${"+name+"}")
+		}
+		return hasSecret
+	}
+	addPath := func(text string) {
+		if !add(text) || !config.ShouldExpandPath(text) {
+			return
+		}
+		substituted, err := config.SubstituteEnvVars(text, env)
+		if err != nil {
+			return
+		}
+		// Use the same expansion as projection, including traversal across the
+		// template's literal path segments, rather than cleaning the secret alone.
+		expanded, err := config.ExpandPathIfNeeded(text, substituted, env[config.BuiltinRepoRootEnvVar])
+		if err != nil || expanded == substituted {
+			return
+		}
+		template, err := config.SubstituteEnvVarsWith(text, env, projection.ClientPlaceholderResolver("${%s}"))
+		if err == nil {
+			addForms(expanded, template)
+		}
+	}
+	for _, server := range servers {
+		add(server.URL)
+		addPath(server.Command)
+		for _, arg := range server.Args {
+			addPath(arg)
+		}
+		for _, value := range server.Headers {
+			add(value)
+		}
+		for _, value := range server.Env {
+			add(value)
+		}
+	}
+	return placeholders
+}
+
+// redactDiscoveryError replaces resolved secret values in err's message with
+// their placeholders. The redacted error deliberately drops the original from
+// its chain so no caller can unwrap back to the secret.
+func redactDiscoveryError(err error, placeholders map[string]string) error {
+	if err == nil {
+		return nil
+	}
+	message := err.Error()
+	redacted := envref.Redact(message, placeholders)
+	if redacted == message {
+		return err
+	}
+	return errors.New(redacted)
 }
 
 // mcpDiscoveryConcurrency returns the max number of concurrent MCP discovery calls.

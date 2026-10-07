@@ -56,7 +56,3 @@ func ConfigureEnvironment(root string, env []string, cfg config.CodexConfig, war
 	}
 	return env
 }
-
-func configureCodexHome(root string, env []string, cfg config.CodexConfig) []string {
-	return ConfigureEnvironment(root, env, cfg, os.Stderr)
-}

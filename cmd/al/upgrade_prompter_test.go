@@ -60,18 +60,18 @@ func TestBuildUpgradePrompter_DeletionPolicyPaths(t *testing.T) {
 		explicitCategory: true,
 		applyDeletions:   true,
 		yes:              true,
-	}, nil)
-	if deleteAll, err := p.DeleteUnknownAll([]string{"/tmp/a"}); err != nil || !deleteAll {
+	})
+	if deleteAll, err := p.DeleteUnknownAllFunc([]string{"/tmp/a"}); err != nil || !deleteAll {
 		t.Fatalf("DeleteUnknownAll(yes+applyDeletions) = (%v, %v), want (true, nil)", deleteAll, err)
 	}
-	if deleteSingle, err := p.DeleteUnknown("/tmp/a"); err != nil || !deleteSingle {
+	if deleteSingle, err := p.DeleteUnknownFunc("/tmp/a"); err != nil || !deleteSingle {
 		t.Fatalf("DeleteUnknown(yes+applyDeletions) = (%v, %v), want (true, nil)", deleteSingle, err)
 	}
 
 	// --apply-deletions alone (no --apply-tmp-deletions) must NOT delete tmp,
 	// because tmp deletion is destructive and explicitly gated behind its own
 	// flag. This is the headline guarantee callers rely on.
-	if deleteTmp, err := p.DeleteUnknownTmpAll([]string{"/tmp/x"}); err != nil || deleteTmp {
+	if deleteTmp, err := p.DeleteUnknownTmpAllFunc([]string{"/tmp/x"}); err != nil || deleteTmp {
 		t.Fatalf("DeleteUnknownTmpAll(yes+applyDeletions, no tmp flag) = (%v, %v), want (false, nil)", deleteTmp, err)
 	}
 
@@ -81,14 +81,14 @@ func TestBuildUpgradePrompter_DeletionPolicyPaths(t *testing.T) {
 		explicitCategory: true,
 		applyDeletions:   false,
 		yes:              true,
-	}, nil)
-	if deleteAll, err := p2.DeleteUnknownAll([]string{"/tmp/a"}); err != nil || deleteAll {
+	})
+	if deleteAll, err := p2.DeleteUnknownAllFunc([]string{"/tmp/a"}); err != nil || deleteAll {
 		t.Fatalf("DeleteUnknownAll(!applyDeletions) = (%v, %v), want (false, nil)", deleteAll, err)
 	}
-	if deleteSingle, err := p2.DeleteUnknown("/tmp/a"); err != nil || deleteSingle {
+	if deleteSingle, err := p2.DeleteUnknownFunc("/tmp/a"); err != nil || deleteSingle {
 		t.Fatalf("DeleteUnknown(!applyDeletions) = (%v, %v), want (false, nil)", deleteSingle, err)
 	}
-	if deleteTmp, err := p2.DeleteUnknownTmpAll([]string{"/tmp/x"}); err != nil || deleteTmp {
+	if deleteTmp, err := p2.DeleteUnknownTmpAllFunc([]string{"/tmp/x"}); err != nil || deleteTmp {
 		t.Fatalf("DeleteUnknownTmpAll(!applyTmpDeletions) = (%v, %v), want (false, nil)", deleteTmp, err)
 	}
 
@@ -98,8 +98,8 @@ func TestBuildUpgradePrompter_DeletionPolicyPaths(t *testing.T) {
 		applyDeletions:    true,
 		applyTmpDeletions: true,
 		yes:               true,
-	}, nil)
-	if deleteTmp, err := p3.DeleteUnknownTmpAll([]string{"/tmp/x"}); err != nil || !deleteTmp {
+	})
+	if deleteTmp, err := p3.DeleteUnknownTmpAllFunc([]string{"/tmp/x"}); err != nil || !deleteTmp {
 		t.Fatalf("DeleteUnknownTmpAll(yes+applyTmpDeletions) = (%v, %v), want (true, nil)", deleteTmp, err)
 	}
 }
@@ -115,9 +115,9 @@ func TestBuildUpgradePrompter_SelectUnknownsToKeepInteractive(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetIn(bytes.NewBufferString("\n"))
-	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{interactive: true}, nil)
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{interactive: true})
 	paths := []string{".agent-layer/local", "docs/agent-layer/NOTES.md"}
-	selected, err := p.SelectUnknownsToKeep(paths)
+	selected, err := p.SelectUnknownsToKeepFunc(paths)
 	if err != nil {
 		t.Fatalf("SelectUnknownsToKeep: %v", err)
 	}
@@ -155,8 +155,8 @@ func TestBuildUpgradePrompter_SelectUnknownsToKeepBackContinues(t *testing.T) {
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetIn(bytes.NewBufferString("\n"))
-	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{interactive: true}, nil)
-	selected, err := p.SelectUnknownsToKeep([]string{".agent-layer/local"})
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{interactive: true})
+	selected, err := p.SelectUnknownsToKeepFunc([]string{".agent-layer/local"})
 	if err != nil || len(selected) != 0 {
 		t.Fatalf("back selection = %v, err = %v; want no selection and no error", selected, err)
 	}
@@ -174,8 +174,8 @@ func TestBuildUpgradePrompter_SelectUnknownsToKeepSkippedNonInteractive(t *testi
 	cmd := newUpgradeCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{yes: true, applyDeletions: true}, nil)
-	selected, err := p.SelectUnknownsToKeep([]string{".agent-layer/local"})
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{yes: true, applyDeletions: true})
+	selected, err := p.SelectUnknownsToKeepFunc([]string{".agent-layer/local"})
 	if err != nil || len(selected) != 0 || called {
 		t.Fatalf("non-interactive selection = %v, err = %v, UI called = %v", selected, err, called)
 	}
@@ -193,8 +193,8 @@ func TestBuildUpgradePrompter_SelectUnknownsToKeepSkippedWhenDeletionsExcluded(t
 	cmd := newUpgradeCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{interactive: true, explicitCategory: true, applyManaged: true}, nil)
-	selected, err := p.SelectUnknownsToKeep([]string{".agent-layer/local"})
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{interactive: true, explicitCategory: true, applyManaged: true})
+	selected, err := p.SelectUnknownsToKeepFunc([]string{".agent-layer/local"})
 	if err != nil || len(selected) != 0 || called {
 		t.Fatalf("managed-only selection = %v, err = %v, UI called = %v", selected, err, called)
 	}
@@ -212,22 +212,22 @@ func TestBuildUpgradePrompter_DeleteUnknownTmpAllInteractive(t *testing.T) {
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetIn(bytes.NewBufferString("y\ny\nn\ny\nn\n"))
 
-	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{}, nil)
-	yes, err := p.DeleteUnknownTmpAll([]string{".agent-layer/tmp/a", ".agent-layer/tmp/b"})
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{})
+	yes, err := p.DeleteUnknownTmpAllFunc([]string{".agent-layer/tmp/a", ".agent-layer/tmp/b"})
 	if err != nil {
 		t.Fatalf("DeleteUnknownTmpAll(yes): %v", err)
 	}
 	if !yes {
 		t.Fatal("expected DeleteUnknownTmpAll to return true after 'y' + 'y' (initial + destructive confirm)")
 	}
-	no, err := p.DeleteUnknownTmpAll([]string{".agent-layer/tmp/c"})
+	no, err := p.DeleteUnknownTmpAllFunc([]string{".agent-layer/tmp/c"})
 	if err != nil {
 		t.Fatalf("DeleteUnknownTmpAll(no): %v", err)
 	}
 	if no {
 		t.Fatal("expected DeleteUnknownTmpAll to return false on 'n' to the initial prompt")
 	}
-	declined, err := p.DeleteUnknownTmpAll([]string{".agent-layer/tmp/d"})
+	declined, err := p.DeleteUnknownTmpAllFunc([]string{".agent-layer/tmp/d"})
 	if err != nil {
 		t.Fatalf("DeleteUnknownTmpAll(decline-confirm): %v", err)
 	}
@@ -246,9 +246,9 @@ func TestBuildUpgradePrompter_OverwritePreviewMemoryPath(t *testing.T) {
 		explicitCategory: true,
 		applyManaged:     true,
 		applyMemory:      false,
-	}, nil)
+	})
 	// Memory path should use applyMemory (false).
-	memResult, err := p.Overwrite(install.DiffPreview{Path: "docs/agent-layer/ROADMAP.md"})
+	memResult, err := p.OverwritePreviewFunc(install.DiffPreview{Path: "docs/agent-layer/ROADMAP.md"})
 	if err != nil {
 		t.Fatalf("Overwrite memory path: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestBuildUpgradePrompter_OverwritePreviewMemoryPath(t *testing.T) {
 		t.Fatal("expected Overwrite for memory path to return false when applyMemory=false")
 	}
 	// Managed path should use applyManaged (true).
-	managedResult, err := p.Overwrite(install.DiffPreview{Path: ".agent-layer/commands.allow"})
+	managedResult, err := p.OverwritePreviewFunc(install.DiffPreview{Path: ".agent-layer/commands.allow"})
 	if err != nil {
 		t.Fatalf("Overwrite managed path: %v", err)
 	}
@@ -272,8 +272,8 @@ func TestBuildUpgradePrompter_StatuslineSourceInteractiveReview(t *testing.T) {
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetIn(bytes.NewBufferString("y\n"))
 
-	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{interactive: true}, &upgradeReviewState{enabled: true})
-	apply, err := p.StatuslineSource(install.DiffPreview{
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{interactive: true})
+	apply, err := p.StatuslineSourcePreviewFunc(install.DiffPreview{
 		Path:         ".agent-layer/claude-statusline.sh",
 		UnifiedDiff:  "--- current\n+++ template\n-old\n+new\n",
 		LinesAdded:   1,
@@ -301,10 +301,9 @@ func TestBuildUpgradePrompter_StatuslineSourceNonInteractiveSkipsOnce(t *testing
 	cmd.SetErr(&stderr)
 	cmd.SetIn(bytes.NewBufferString(""))
 
-	state := &upgradeReviewState{}
-	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{yes: true}, state)
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{yes: true})
 	for i := 0; i < 2; i++ {
-		apply, err := p.StatuslineSource(install.DiffPreview{Path: ".agent-layer/claude-statusline.sh"})
+		apply, err := p.StatuslineSourcePreviewFunc(install.DiffPreview{Path: ".agent-layer/claude-statusline.sh"})
 		if err != nil {
 			t.Fatalf("StatuslineSource(%d): %v", i, err)
 		}
@@ -314,71 +313,6 @@ func TestBuildUpgradePrompter_StatuslineSourceNonInteractiveSkipsOnce(t *testing
 	}
 	if got := strings.Count(stderr.String(), messages.UpgradeSkipStatuslineSourceUpdatesInfo); got != 1 {
 		t.Fatalf("expected one skip note, got %d in %q", got, stderr.String())
-	}
-}
-
-func TestBuildUpgradePrompter_UnifiedReviewStatePromptsOnce(t *testing.T) {
-	cmd := newUpgradeCmd()
-	cmd.SetOut(&bytes.Buffer{})
-	cmd.SetErr(&bytes.Buffer{})
-	// First answer applies managed updates, second declines memory updates.
-	cmd.SetIn(bytes.NewBufferString("y\nn\n"))
-
-	state := &upgradeReviewState{
-		enabled: true,
-		managedPreviews: []install.DiffPreview{
-			{Path: ".agent-layer/config.toml"},
-		},
-		memoryPreviews: []install.DiffPreview{
-			{Path: "docs/agent-layer/ROADMAP.md"},
-		},
-	}
-	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{}, state)
-
-	managed, err := p.OverwriteAll(nil)
-	if err != nil {
-		t.Fatalf("OverwriteAll: %v", err)
-	}
-	memory, err := p.OverwriteAllMemory(nil)
-	if err != nil {
-		t.Fatalf("OverwriteAllMemory: %v", err)
-	}
-	if !managed {
-		t.Fatal("expected managed overwrite decision to be true")
-	}
-	if memory {
-		t.Fatal("expected memory overwrite decision to be false")
-	}
-	if !state.prompted {
-		t.Fatal("expected unified review state to be marked prompted")
-	}
-}
-
-func TestBuildUpgradePrompter_UnifiedCallbackPromptsOnce(t *testing.T) {
-	cmd := newUpgradeCmd()
-	cmd.SetOut(&bytes.Buffer{})
-	cmd.SetErr(&bytes.Buffer{})
-	// First answer applies managed updates, second declines memory updates.
-	cmd.SetIn(bytes.NewBufferString("y\nn\n"))
-
-	state := &upgradeReviewState{enabled: true}
-	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{}, state)
-
-	managed, memory, err := p.OverwriteAllUnified(
-		[]install.DiffPreview{{Path: ".agent-layer/config.toml"}},
-		[]install.DiffPreview{{Path: "docs/agent-layer/ROADMAP.md"}},
-	)
-	if err != nil {
-		t.Fatalf("OverwriteAllUnified: %v", err)
-	}
-	if !managed {
-		t.Fatal("expected managed overwrite decision to be true")
-	}
-	if memory {
-		t.Fatal("expected memory overwrite decision to be false")
-	}
-	if !state.prompted {
-		t.Fatal("expected unified review state to be marked prompted")
 	}
 }
 
@@ -523,8 +457,10 @@ func TestWriteSinglePreviewBlock_ColorizedWhenInteractive(t *testing.T) {
 
 	var buf bytes.Buffer
 	preview := install.DiffPreview{Path: "file-a.txt", UnifiedDiff: "--- a\n+++ b\n-old\n+new\n"}
-	if err := writeSinglePreviewBlock(&buf, preview); err != nil {
-		t.Fatalf("writeSinglePreviewBlock colorized: %v", err)
+	ew := &errWriter{w: &buf}
+	writeSinglePreviewBlock(ew, preview)
+	if ew.err != nil {
+		t.Fatalf("writeSinglePreviewBlock colorized: %v", ew.err)
 	}
 	output := buf.String()
 	if !strings.Contains(output, "\x1b[") {
@@ -535,59 +471,19 @@ func TestWriteSinglePreviewBlock_ColorizedWhenInteractive(t *testing.T) {
 	}
 }
 
-func TestReadinessSummaryAndAction(t *testing.T) {
-	// Assert each known ID maps to its SPECIFIC summary/action constant. A bare
-	// non-empty check would pass even if two cases were swapped or an ID mapped
-	// to the wrong constant; the explicit expected values catch that.
-	cases := []struct {
-		id          string
-		wantSummary string
-		wantAction  string
-	}{
-		{"unrecognized_config_keys", messages.UpgradeReadinessUnrecognizedKeys, messages.UpgradeReadinessActionUnrecognizedKeys},
-		{"unresolved_config_placeholders", messages.UpgradeReadinessUnresolvedPlaceholder, messages.UpgradeReadinessActionUnresolvedPlaceholder},
-		{"process_env_overrides_dotenv", messages.UpgradeReadinessProcessEnvOverrides, messages.UpgradeReadinessActionProcessEnvOverrides},
-		{"ignored_empty_dotenv_assignments", messages.UpgradeReadinessEmptyDotenv, messages.UpgradeReadinessActionEmptyDotenv},
-		{"path_expansion_anomalies", messages.UpgradeReadinessPathExpansion, messages.UpgradeReadinessActionPathExpansion},
-		{"vscode_no_sync_outputs_stale", messages.UpgradeReadinessVSCodeStale, messages.UpgradeReadinessActionVSCodeStale},
-		{"floating_external_dependency_specs", messages.UpgradeReadinessFloatingDeps, messages.UpgradeReadinessActionFloatingDeps},
-		{"stale_disabled_agent_artifacts", messages.UpgradeReadinessStaleDisabledAgents, messages.UpgradeReadinessActionStaleDisabledAgents},
-		{"missing_required_config_fields", messages.UpgradeReadinessMissingRequiredFields, messages.UpgradeReadinessActionMissingRequiredFields},
-	}
-	for _, tc := range cases {
-		check := install.UpgradeReadinessCheck{ID: tc.id, Summary: "fallback summary"}
-		if got := readinessSummary(check); got != tc.wantSummary {
-			t.Fatalf("readinessSummary(%q) = %q, want %q", tc.id, got, tc.wantSummary)
-		}
-		if got := readinessAction(tc.id); got != tc.wantAction {
-			t.Fatalf("readinessAction(%q) = %q, want %q", tc.id, got, tc.wantAction)
-		}
-	}
-
-	// Unknown IDs fall back to the check's own summary and produce no action.
-	check := install.UpgradeReadinessCheck{ID: "unknown_id", Summary: "fallback summary"}
-	if got := readinessSummary(check); got != "fallback summary" {
-		t.Fatalf("readinessSummary(unknown) = %q, want fallback", got)
-	}
-	if got := readinessAction("unknown_id"); got != "" {
-		t.Fatalf("readinessAction(unknown) = %q, want empty", got)
-	}
-}
-
-func TestWriteConfigMigrationSection_WithEntries(t *testing.T) {
+func TestRenderUpgradePlanText_ConfigMigrationEntries(t *testing.T) {
 	var buf bytes.Buffer
-	migrations := []install.ConfigKeyMigration{
-		{Key: "mcp.timeout", From: "30s", To: "60s"},
+	plan := install.UpgradePlan{
+		ConfigKeyMigrations: []install.ConfigKeyMigration{
+			{Key: "mcp.timeout", From: "30s", To: "60s"},
+		},
 	}
-	if err := writeConfigMigrationSection(&buf, "Config updates", migrations); err != nil {
-		t.Fatalf("writeConfigMigrationSection: %v", err)
+	if err := renderUpgradePlanText(&buf, plan, nil); err != nil {
+		t.Fatalf("renderUpgradePlanText: %v", err)
 	}
 	output := buf.String()
-	if !strings.Contains(output, "mcp.timeout") {
-		t.Fatalf("expected migration key in output:\n%s", output)
-	}
-	if !strings.Contains(output, "30s") || !strings.Contains(output, "60s") {
-		t.Fatalf("expected from/to values in output:\n%s", output)
+	if !strings.Contains(output, "\nConfig updates:\n  - mcp.timeout: 30s -> 60s\n") {
+		t.Fatalf("expected config migration entry under its section title:\n%s", output)
 	}
 }
 
@@ -607,8 +503,10 @@ func TestWriteMigrationReportSection_WithEntries(t *testing.T) {
 			},
 		},
 	}
-	if err := writeMigrationReportSection(&buf, "Migrations", report); err != nil {
-		t.Fatalf("writeMigrationReportSection: %v", err)
+	ew := &errWriter{w: &buf}
+	writeMigrationReportSection(ew, report)
+	if ew.err != nil {
+		t.Fatalf("writeMigrationReportSection: %v", ew.err)
 	}
 	output := buf.String()
 	if !strings.Contains(output, "Migrations:") {
@@ -681,9 +579,9 @@ func TestBuildUpgradePrompter_ConfigSetDefaultFallbackAcceptDecline(t *testing.T
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetIn(bytes.NewBufferString("y\nn\n"))
 
-	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{}, nil)
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{})
 
-	accepted, err := p.ConfigSetDefault("new.required", "alpha", "needed for test", nil)
+	accepted, err := p.ConfigSetDefaultFunc("new.required", "alpha", "needed for test", nil)
 	if err != nil {
 		t.Fatalf("ConfigSetDefault accept: %v", err)
 	}
@@ -691,7 +589,7 @@ func TestBuildUpgradePrompter_ConfigSetDefaultFallbackAcceptDecline(t *testing.T
 		t.Fatalf("accepted value = %v, want %q", accepted, "alpha")
 	}
 
-	_, err = p.ConfigSetDefault("new.required", "beta", "needed for test", nil)
+	_, err = p.ConfigSetDefaultFunc("new.required", "beta", "needed for test", nil)
 	if err == nil || !strings.Contains(err.Error(), "user declined default value") {
 		t.Fatalf("expected decline error, got %v", err)
 	}
@@ -703,8 +601,8 @@ func TestBuildUpgradePrompter_ConfigSetDefaultBypassesPromptWhenYes(t *testing.T
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetIn(bytes.NewBufferString(""))
 
-	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{yes: true}, nil)
-	value, err := p.ConfigSetDefault("new.required", true, "needed for test", &config.FieldDef{
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{yes: true})
+	value, err := p.ConfigSetDefaultFunc("new.required", true, "needed for test", &config.FieldDef{
 		Key:  "new.required",
 		Type: config.FieldBool,
 	})
@@ -713,28 +611,6 @@ func TestBuildUpgradePrompter_ConfigSetDefaultBypassesPromptWhenYes(t *testing.T
 	}
 	if value != true {
 		t.Fatalf("value = %v, want true", value)
-	}
-}
-
-func TestBuildUpgradePrompter_OverwriteAllUnifiedFallbackPrompts(t *testing.T) {
-	cmd := newUpgradeCmd()
-	cmd.SetOut(&bytes.Buffer{})
-	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetIn(bytes.NewBufferString("y\nn\n"))
-
-	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{}, nil)
-	managed, memory, err := p.OverwriteAllUnified(
-		[]install.DiffPreview{{Path: ".agent-layer/commands.allow"}},
-		[]install.DiffPreview{{Path: "docs/agent-layer/ROADMAP.md"}},
-	)
-	if err != nil {
-		t.Fatalf("OverwriteAllUnified fallback: %v", err)
-	}
-	if !managed {
-		t.Fatal("expected managed overwrite approval")
-	}
-	if memory {
-		t.Fatal("expected memory overwrite rejection")
 	}
 }
 
@@ -751,16 +627,22 @@ func TestWriteReadinessSection_TruncatesDetails(t *testing.T) {
 	checks := []install.UpgradeReadinessCheck{
 		{
 			ID:      "unrecognized_config_keys",
-			Summary: "summary ignored for known IDs",
+			Summary: "check summary",
+			Action:  "check action",
 			Details: []string{"one", "two", "three", "four"},
 		},
 	}
 
-	if err := writeReadinessSection(&buf, checks); err != nil {
-		t.Fatalf("writeReadinessSection: %v", err)
+	ew := &errWriter{w: &buf}
+	writeReadinessSection(ew, checks)
+	if ew.err != nil {
+		t.Fatalf("writeReadinessSection: %v", ew.err)
 	}
 	output := buf.String()
-	if !strings.Contains(output, "recommendation:") {
+	if !strings.Contains(output, "check summary") {
+		t.Fatalf("expected check summary, got:\n%s", output)
+	}
+	if !strings.Contains(output, "recommendation: check action") {
 		t.Fatalf("expected recommendation line, got:\n%s", output)
 	}
 	if !strings.Contains(output, "note: ... and 1 more") {
@@ -778,8 +660,10 @@ func TestWriteUpgradeSummary_NoReadinessWarnings(t *testing.T) {
 			},
 		},
 	}
-	if err := writeUpgradeSummary(&buf, plan); err != nil {
-		t.Fatalf("writeUpgradeSummary: %v", err)
+	ew := &errWriter{w: &buf}
+	writeUpgradeSummary(ew, plan)
+	if ew.err != nil {
+		t.Fatalf("writeUpgradeSummary: %v", ew.err)
 	}
 	output := buf.String()
 	if !strings.Contains(output, "migrations planned: 1") {
@@ -846,82 +730,37 @@ func TestPrintDiffPreviewSummary_ZeroCountsPlainEvenWhenColorized(t *testing.T) 
 	}
 }
 
-func TestPromptOverwriteSection_EmptyPreviewsSkipsAllPrompts(t *testing.T) {
+func TestPromptUnifiedOverwriteSections_DeclinesViewDiffByDefaultThenApplies(t *testing.T) {
 	var out bytes.Buffer
-	apply, err := promptOverwriteSection(strings.NewReader(""), &out, "Header", nil, "Apply?", true)
-	if err != nil {
-		t.Fatalf("promptOverwriteSection empty: %v", err)
-	}
-	if apply {
-		t.Fatal("expected apply=false when there are no previews")
-	}
-	if out.Len() != 0 {
-		t.Fatalf("expected no output for empty previews, got %q", out.String())
-	}
-}
-
-func TestPromptOverwriteSection_DeclinesViewDiffByDefaultThenApplies(t *testing.T) {
-	var out bytes.Buffer
-	// "" accepts the view-diff default (no), then "y" approves the apply prompt.
-	in := strings.NewReader("\ny\n")
+	// Enter declines view-diff, accepts managed updates, and declines memory updates.
+	in := strings.NewReader("\n\n\n")
 	previews := []install.DiffPreview{
 		{Path: "a.txt", UnifiedDiff: "--- a\n+++ b\n-old\n+new\n", LinesAdded: 1, LinesRemoved: 1},
 	}
-	apply, err := promptOverwriteSection(in, &out, "Header", previews, "Apply?", true)
+	managed, memory, err := promptUnifiedOverwriteSections(in, &out, previews, []install.DiffPreview{
+		{Path: "docs/agent-layer/ISSUES.md", UnifiedDiff: "--- a\n+++ b\n-old\n+new\n"},
+	})
 	if err != nil {
-		t.Fatalf("promptOverwriteSection: %v", err)
+		t.Fatalf("promptUnifiedOverwriteSections: %v", err)
 	}
-	if !apply {
-		t.Fatal("expected apply=true after accepting apply prompt")
+	if !managed || memory {
+		t.Fatalf("expected managed=true, memory=false, got %v, %v", managed, memory)
 	}
 	output := out.String()
 	if !strings.Contains(output, "+1") || !strings.Contains(output, "-1") {
 		t.Fatalf("expected stats in summary, got:\n%s", output)
 	}
-	if strings.Contains(output, "Diff for a.txt:") {
+	if strings.Contains(output, "Diff for ") || strings.Contains(output, "-old") || strings.Contains(output, "+new") {
 		t.Fatalf("did not expect diff body when view declined, got:\n%s", output)
 	}
 	if !strings.Contains(output, messages.UpgradeViewDiffPrompt) {
 		t.Fatalf("expected view-diff prompt in output:\n%s", output)
 	}
-}
-
-func TestPromptOverwriteSection_AcceptsViewDiffShowsBodyThenApplies(t *testing.T) {
-	var out bytes.Buffer
-	// "y" views the diff, "n" declines the apply prompt.
-	in := strings.NewReader("y\nn\n")
-	previews := []install.DiffPreview{
-		{Path: "a.txt", UnifiedDiff: "--- a\n+++ b\n-old\n+new\n", LinesAdded: 1, LinesRemoved: 1},
-	}
-	apply, err := promptOverwriteSection(in, &out, "Header", previews, "Apply?", false)
-	if err != nil {
-		t.Fatalf("promptOverwriteSection: %v", err)
-	}
-	if apply {
-		t.Fatal("expected apply=false after declining apply prompt")
-	}
-	output := out.String()
-	if !strings.Contains(output, "Diff for a.txt:") {
-		t.Fatalf("expected diff body when view accepted, got:\n%s", output)
-	}
-}
-
-func TestPromptOverwriteSection_NoDiffBodySkipsViewPrompt(t *testing.T) {
-	var out bytes.Buffer
-	// Only the apply prompt is asked because no preview has a diff body.
-	in := strings.NewReader("y\n")
-	previews := []install.DiffPreview{
-		{Path: "a.txt", UnifiedDiff: "", LinesAdded: 0, LinesRemoved: 0},
-	}
-	apply, err := promptOverwriteSection(in, &out, "Header", previews, "Apply?", true)
-	if err != nil {
-		t.Fatalf("promptOverwriteSection: %v", err)
-	}
-	if !apply {
-		t.Fatal("expected apply=true")
-	}
-	if strings.Contains(out.String(), messages.UpgradeViewDiffPrompt) {
-		t.Fatalf("expected view-diff prompt to be skipped when no diff body, got:\n%s", out.String())
+	view := strings.Index(output, messages.UpgradeViewDiffPrompt)
+	managedPrompt := strings.Index(output, messages.UpgradeOverwriteAllPrompt)
+	memoryPrompt := strings.Index(output, messages.UpgradeOverwriteMemoryAllPrompt)
+	if view < 0 || managedPrompt <= view || memoryPrompt <= managedPrompt {
+		t.Fatalf("expected view, managed, memory prompt order, got:\n%s", output)
 	}
 }
 
@@ -985,5 +824,51 @@ func TestHasNonEmptyDiff(t *testing.T) {
 	}
 	if !hasNonEmptyDiff([]install.DiffPreview{{UnifiedDiff: "real"}}) {
 		t.Fatal("expected hasNonEmptyDiff(real diff)=true")
+	}
+}
+
+func TestBuildUpgradePrompter_UnifiedCallbackInteractive(t *testing.T) {
+	cmd := newUpgradeCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(strings.NewReader("n\nn\ny\n"))
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{interactive: true})
+	managed, memory, err := p.OverwriteAllUnifiedPreviewFunc(
+		[]install.DiffPreview{{Path: ".agent-layer/commands.allow", UnifiedDiff: "-old\n+new\n"}},
+		[]install.DiffPreview{{Path: "docs/agent-layer/ISSUES.md", UnifiedDiff: "-old\n+new\n"}},
+	)
+	if err != nil || managed || !memory {
+		t.Fatalf("unified callback = (%v, %v, %v), want (false, true, nil)", managed, memory, err)
+	}
+	for _, prompt := range []string{messages.UpgradeViewDiffPrompt, messages.UpgradeOverwriteAllPrompt, messages.UpgradeOverwriteMemoryAllPrompt} {
+		if got := strings.Count(out.String(), prompt); got != 1 {
+			t.Fatalf("expected prompt %q once, got %d in %q", prompt, got, out.String())
+		}
+	}
+	if !strings.Contains(out.String(), messages.UpgradeOverwriteManagedHeader) || !strings.Contains(out.String(), messages.UpgradeOverwriteMemoryHeader) {
+		t.Fatalf("expected unified summaries, got %q", out.String())
+	}
+}
+
+func TestBuildUpgradePrompter_UnifiedCallbackExplicitCategory(t *testing.T) {
+	for _, managed := range []bool{false, true} {
+		for _, memory := range []bool{false, true} {
+			cmd := newUpgradeCmd()
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			input := strings.NewReader("unused\n")
+			cmd.SetIn(input)
+			p := buildUpgradePrompter(cmd, upgradeApplyPolicy{explicitCategory: true, applyManaged: managed, applyMemory: memory})
+			gotManaged, gotMemory, err := p.OverwriteAllUnifiedPreviewFunc(
+				[]install.DiffPreview{{Path: "managed"}}, []install.DiffPreview{{Path: "memory"}},
+			)
+			if err != nil || gotManaged != managed || gotMemory != memory {
+				t.Fatalf("unified flags = (%v, %v, %v), want (%v, %v, nil)", gotManaged, gotMemory, err, managed, memory)
+			}
+			if input.Len() != len("unused\n") || out.Len() != 0 {
+				t.Fatal("explicit category callback must return flags without prompting or reading stdin")
+			}
+		}
 	}
 }

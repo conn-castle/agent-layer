@@ -298,14 +298,8 @@ func retainedReplayError(stage string, err error) error {
 }
 
 func retainedProviderEvidence(stage string, request ExecutionRequest) (patch, agentDir string, original *pierTaskResult, returnErr error) {
-	err := filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		if entry.Name() == benchmarkModelPatchFile && filepath.Base(filepath.Dir(path)) == benchmarkArtifactsDir {
+	err := walkStageJobFiles(stage, false, func(path string, entry fs.DirEntry) error {
+		if isSubmittedModelPatch(path, entry) {
 			if patch != "" {
 				return fmt.Errorf("retained execution has multiple model.patch files")
 			}
@@ -373,34 +367,24 @@ func validateRetainedProviderCost(stage, agentDir string, request ExecutionReque
 // the stage without depending on any other evidence. Exactly one trial runs
 // per stage, so more than one checkpoint is an attribution failure.
 func locateProviderCheckpoint(stage string) (providerCheckpoint, bool, error) {
-	var agentDirs []string
-	err := filepath.WalkDir(filepath.Join(stage, "jobs"), func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			if errors.Is(walkErr, os.ErrNotExist) {
-				return nil
-			}
-			return walkErr
-		}
-		if !entry.IsDir() && entry.Name() == providerCheckpointFile && filepath.Base(filepath.Dir(path)) == benchmarkAgentDir {
-			agentDirs = append(agentDirs, filepath.Dir(path))
-		}
-		return nil
+	paths, err := stageJobFiles(stage, true, func(path string, entry fs.DirEntry) bool {
+		return entry.Name() == providerCheckpointFile && parentDirIs(path, benchmarkAgentDir)
 	})
 	if err != nil {
 		return providerCheckpoint{}, false, fmt.Errorf("locate provider completion checkpoint: %w", err)
 	}
-	if len(agentDirs) == 0 {
+	if len(paths) == 0 {
 		return providerCheckpoint{}, false, nil
 	}
-	if len(agentDirs) > 1 {
-		return providerCheckpoint{}, false, fmt.Errorf("retained execution has %d provider completion checkpoints; expected one", len(agentDirs))
+	if len(paths) > 1 {
+		return providerCheckpoint{}, false, fmt.Errorf("retained execution has %d provider completion checkpoints; expected one", len(paths))
 	}
-	checkpoint, err := readProviderCheckpoint(agentDirs[0])
+	checkpoint, err := readProviderCheckpoint(filepath.Dir(paths[0]))
 	if err != nil {
 		return providerCheckpoint{}, false, fmt.Errorf("read provider completion checkpoint: %w", err)
 	}
 	if checkpoint.CompletedAt.IsZero() {
-		return providerCheckpoint{}, false, fmt.Errorf("provider completion checkpoint %s has no completion time", filepath.Join(agentDirs[0], providerCheckpointFile))
+		return providerCheckpoint{}, false, fmt.Errorf("provider completion checkpoint %s has no completion time", paths[0])
 	}
 	return checkpoint, true, nil
 }

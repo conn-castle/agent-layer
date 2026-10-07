@@ -84,6 +84,24 @@ Agent Layer uses several light shell wrappers and `make` targets around standard
   ```
 - **Tools not found**: If `make lint` fails because `golangci-lint` is missing, run `make tools` to install all pinned dependencies into `.tools/bin`.
 
+### Upgrading the MCP Go SDK
+The Agent Dispatch MCP server wraps the SDK's stdio `Connection` to record
+lifecycle diagnostics. The SDK passes the negotiated protocol version to its
+connection through a package-private hook that a wrapper cannot forward. Without
+that version, the SDK would accept JSON-RPC batches for every protocol version.
+`internal/agentdispatch/mcp_framing.go` therefore duplicates the SDK's batch
+restriction and version negotiation. When you bump
+`github.com/modelcontextprotocol/go-sdk`:
+
+- Run `go test ./internal/agentdispatch -run 'TestMCPLifecycle' -race`.
+  `TestMCPLifecyclePreservesSDKBatches` sends each handshake to both the
+  undecorated SDK and the decorated server and fails if batch outcomes differ.
+- If the SDK adds protocol versions or changes negotiation, update
+  `mcpBatchProtocolVersion` and add the new handshakes to the test matrix.
+- If the SDK exports a session-state hook for `Connection` decorators
+  ([modelcontextprotocol/go-sdk#1328](https://github.com/modelcontextprotocol/go-sdk/issues/1328)),
+  forward it and delete the frame observer and version table.
+
 ## Run the CLI locally (always uses latest changes)
 Run from source (`go run`):
 ```bash

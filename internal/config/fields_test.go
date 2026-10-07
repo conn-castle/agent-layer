@@ -192,24 +192,8 @@ func TestFieldOptionValues_CodexReasoningCatalog(t *testing.T) {
 	}
 }
 
-func TestFieldsCopySemantics(t *testing.T) {
-	all := Fields()
-	if len(all) == 0 {
-		t.Fatal("Fields() returned empty")
-	}
-	// Mutate the returned slice; verify the registry is unaffected.
-	all[0].Key = "mutated"
-	original, ok := LookupField("approvals.mode")
-	if !ok {
-		t.Fatal("LookupField failed after mutation")
-	}
-	if original.Key == "mutated" {
-		t.Error("mutation of Fields() result affected the registry")
-	}
-}
-
 func TestModelFieldsNeverContainStaticSuggestions(t *testing.T) {
-	for _, field := range Fields() {
+	for _, field := range fields {
 		if strings.HasSuffix(field.Key, ".model") && len(field.Options) != 0 {
 			t.Errorf("%s contains a static model catalog", field.Key)
 		}
@@ -229,7 +213,7 @@ func TestFieldsCopySemantics_Options(t *testing.T) {
 }
 
 func TestAllRequiredBoolFieldsAreAgentEnabled(t *testing.T) {
-	for _, f := range Fields() {
+	for _, f := range fields {
 		if f.Type == FieldBool && f.Required {
 			if !strings.HasSuffix(f.Key, ".enabled") {
 				t.Errorf("required bool field %q does not end with .enabled", f.Key)

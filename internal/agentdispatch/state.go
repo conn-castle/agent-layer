@@ -826,9 +826,13 @@ func withSessionLockMode(root string, name string, how int, fn func() error) (bo
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return false, wrapExitError(ExitConfig, "create dispatch state directory", err)
 	}
+	return flockAndRun(path, how, "open dispatch session lock", "lock dispatch session", fn)
+}
+
+func flockAndRun(path string, how int, openMsg, lockMsg string, fn func() error) (bool, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- path is validated dispatch state.
 	if err != nil {
-		return false, wrapExitError(ExitConfig, "open dispatch session lock", err)
+		return false, wrapExitError(ExitConfig, openMsg, err)
 	}
 	defer func() { _ = file.Close() }()
 	for {
@@ -842,7 +846,7 @@ func withSessionLockMode(root string, name string, how int, fn func() error) (bo
 		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
 			return false, nil
 		}
-		return false, wrapExitError(ExitConfig, "lock dispatch session", err)
+		return false, wrapExitError(ExitConfig, lockMsg, err)
 	}
 	defer func() { _ = unix.Flock(int(file.Fd()), unix.LOCK_UN) }() //nolint:gosec // supported Unix file descriptor.
 	return true, fn()
@@ -905,26 +909,7 @@ func withRunLockMode(dir string, how int, fn func() error) (bool, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return false, err
 	}
-	file, err := os.OpenFile(filepath.Join(dir, ".record.lock"), os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- dir is an Agent Layer-owned run directory.
-	if err != nil {
-		return false, wrapExitError(ExitConfig, "open dispatch run lock", err)
-	}
-	defer func() { _ = file.Close() }()
-	for {
-		err = unix.Flock(int(file.Fd()), how) //nolint:gosec // supported Unix descriptor.
-		if errors.Is(err, unix.EINTR) {
-			continue
-		}
-		break
-	}
-	if err != nil {
-		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
-			return false, nil
-		}
-		return false, wrapExitError(ExitConfig, "lock dispatch run record", err)
-	}
-	defer func() { _ = unix.Flock(int(file.Fd()), unix.LOCK_UN) }() //nolint:gosec // supported Unix descriptor.
-	return true, fn()
+	return flockAndRun(filepath.Join(dir, ".record.lock"), how, "open dispatch run lock", "lock dispatch run record", fn)
 }
 
 // updateRunEvidence applies a monotonic evidence mutation under the run lock.

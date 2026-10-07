@@ -36,7 +36,7 @@ Before tagging, prepare and commit both release manifests:
 
 1. **Migration manifest** — create `internal/templates/migrations/<version>.json` (version without leading `v`). Set `min_prior_version` to the release line supported by the target row in `site/docs/upgrades.mdx`; for patch releases, preserve the previous target's supported range when unknown-source upgrades still need source-agnostic operations from that range. Add any needed migration operations; use an empty `operations` array if all changes are additive. See existing manifests for the schema.
 
-2. **Template ownership manifest** — generate via the script below. The script reads templates directly from the working tree (no git tag required). This keeps `al upgrade plan` ownership inference deterministic without runtime network/tag lookups.
+2. **Template ownership manifest** — generate via the script below. The script reads templates directly from the working tree (no git tag required). This keeps offline upgrade source-version inference deterministic without runtime network/tag lookups.
 
 ```bash
 # 1. Create or verify the migration manifest (manual; see existing files for schema)
@@ -58,7 +58,7 @@ make release-preflight RELEASE_TAG="$VERSION"
 
 CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>`. The release workflow will fail if either manifest is missing. Run `make release-preflight` locally before tagging to run CI, release-script checks, and upgrade-doc validation before publishing.
 
-After pushing the release commit to `main`, run `make release-catalog-certify` before tagging. A certification workflow starts automatically on every `main` push, so this command reuses it or waits for it instead of adding a serial release step. The exact-commit workflow compares the release commit with the previous reachable stable tag. It runs the complete pinned benchmark catalog when benchmark code, the benchmark command, Go module dependencies, or catalog-certification policy changed. Other releases receive a successful exact-commit classification without pulling benchmark images. Required full checks run in sixteen bounded-disk shards, and a weekly forced run detects external catalog-image drift.
+After pushing the release commit to `main`, run `make release-catalog-certify` before tagging. A certification workflow starts automatically on every `main` push, so this command reuses it or waits for it instead of adding a serial release step. Because a push run can take several seconds to appear, the command waits up to 60 seconds for a run of the exact commit before dispatching one; it dispatches immediately when the commit's only runs completed without success. The exact-commit workflow compares the release commit with the previous reachable stable tag. It runs the complete pinned benchmark catalog when benchmark code, the benchmark command, Go module dependencies, or catalog-certification policy changed. Other releases receive a successful exact-commit classification without pulling benchmark images. Required full checks run in sixteen bounded-disk shards, and a weekly forced run detects external catalog-image drift.
 
 ## Agent Dispatch compatibility evidence
 

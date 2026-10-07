@@ -103,26 +103,12 @@ func (s *Secrets) Redact(text string) string {
 		return text
 	}
 	s.mu.Lock()
-	values := make([]string, 0, len(s.resolved))
-	for value := range s.resolved {
-		values = append(values, value)
-	}
 	replacements := make(map[string]string, len(s.resolved))
 	for value, placeholder := range s.resolved {
 		replacements[value] = placeholder
 	}
 	s.mu.Unlock()
-
-	sort.Slice(values, func(i, j int) bool {
-		if len(values[i]) != len(values[j]) {
-			return len(values[i]) > len(values[j])
-		}
-		return values[i] < values[j]
-	})
-	for _, value := range values {
-		text = strings.ReplaceAll(text, value, replacements[value])
-	}
-	return text
+	return envref.Redact(text, replacements)
 }
 
 // redactAll applies Redact to each element of args.

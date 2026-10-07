@@ -85,7 +85,7 @@ func TestMissingRequiredFieldMigrations(t *testing.T) {
 
 func requiredFieldKeys() map[string]struct{} {
 	out := make(map[string]struct{})
-	for _, field := range Fields() {
+	for _, field := range fields {
 		if !field.Required {
 			continue
 		}

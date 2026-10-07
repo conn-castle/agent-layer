@@ -22,31 +22,51 @@ remote_sha="$(git ls-remote --exit-code origin refs/heads/main | awk 'NR == 1 { 
 [[ -n "${remote_sha}" ]] || die "could not resolve origin/main"
 [[ "${head_sha}" == "${remote_sha}" ]] || die "HEAD ${head_sha} is not the pushed origin/main commit ${remote_sha}"
 
-successful_run="$(
-  gh run list \
-    --workflow "${workflow}" \
-    --branch main \
-    --commit "${head_sha}" \
-    --status success \
-    --limit 1 \
-    --json databaseId \
-    --jq '.[0].databaseId // ""'
-)"
-if [[ -n "${successful_run}" ]]; then
+# A push to main starts certification, but the run can take several seconds to
+# appear in the run list. Wait this long for it before dispatching another run.
+push_run_wait_seconds=60
+push_run_poll_seconds=5
+
+# Sets run_state to "success", "active", "completed", or "none" for the runs of
+# HEAD, and run_id to the successful or active run.
+refresh_run_state() {
+  local state
+  state="$(
+    gh run list \
+      --workflow "${workflow}" \
+      --branch main \
+      --commit "${head_sha}" \
+      --limit 20 \
+      --json databaseId,status,conclusion \
+      --jq '
+        ([.[] | select(.conclusion == "success")][0].databaseId) as $success
+        | ([.[] | select(.status != "completed")][0].databaseId) as $active
+        | if $success != null then "success \($success)"
+          elif $active != null then "active \($active)"
+          elif length > 0 then "completed"
+          else "none" end'
+  )"
+  read -r run_state run_id <<<"${state}"
+}
+
+refresh_run_state
+if [[ "${run_state}" == "none" ]]; then
+  echo "Waiting up to ${push_run_wait_seconds}s for the push-triggered certification run for ${head_sha}."
+  for ((waited = 0; waited < push_run_wait_seconds; waited += push_run_poll_seconds)); do
+    sleep "${push_run_poll_seconds}"
+    refresh_run_state
+    [[ "${run_state}" == "none" ]] || break
+  done
+fi
+
+if [[ "${run_state}" == "success" ]]; then
   echo "Release catalog already certified for ${head_sha}:"
-  gh run view "${successful_run}" --json url --jq '.url'
+  gh run view "${run_id}" --json url --jq '.url'
   exit 0
 fi
 
-active_run="$(
-  gh run list \
-    --workflow "${workflow}" \
-    --branch main \
-    --commit "${head_sha}" \
-    --limit 10 \
-    --json databaseId,status \
-    --jq '[.[] | select(.status != "completed")][0].databaseId // ""'
-)"
+active_run=""
+[[ "${run_state}" == "active" ]] && active_run="${run_id}"
 if [[ -z "${active_run}" ]]; then
   previous_run="$(
     gh run list \
