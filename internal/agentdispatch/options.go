@@ -17,12 +17,6 @@ type OptionsResponse struct {
 	Agents []AgentOption `json:"agents"`
 }
 
-// CapabilityOption is an internal provider-availability result.
-type CapabilityOption struct {
-	Supported bool
-	Reason    string
-}
-
 // AgentOption describes one selectable provider and its optional overrides.
 type AgentOption struct {
 	Agent             string      `json:"agent"`
@@ -41,17 +35,6 @@ type FieldOption struct {
 	Source            string   `json:"source,omitempty"`
 	DiscoveryError    string   `json:"discovery_error,omitempty"`
 }
-
-type targetDiscovery struct {
-	Target               targetMeta
-	Enabled              bool
-	Installed            bool
-	InstalledVersion     string
-	CompatibilityWarning string
-	Fresh                CapabilityOption
-}
-
-type targetVersionDiscovery func(string, targetMeta) (string, string, error)
 
 // BuildOptions loads strict project config and reports valid start selections.
 func BuildOptions(req OptionsRequest) (*OptionsResponse, error) {
@@ -97,25 +80,20 @@ func WriteOptions(req OptionsRequest) error {
 	return json.NewEncoder(stdout).Encode(options)
 }
 
-func buildTargetOptions(cfg config.Config, discovery agentoptions.DiscoveryRequest, lookups ...func(string, string) (string, error)) []AgentOption {
-	var lookup func(string, string) (string, error)
-	if len(lookups) > 0 {
-		lookup = lookups[0]
-	}
+func buildTargetOptions(cfg config.Config, discovery agentoptions.DiscoveryRequest, lookup func(string, string) (string, error)) []AgentOption {
 	targets := targetRegistry()
 	result := make([]AgentOption, len(targets))
 	var workers sync.WaitGroup
 	for i, target := range targets {
 		workers.Go(func() {
-			facts := targetDiscovery{Target: target, Fresh: CapabilityOption{Reason: "disabled in config"}}
+			resolvedPath, available, reason := "", false, "disabled in config"
 			if targetEnabled(cfg, target.Name) {
-				facts = discoverTarget(cfg, target, discovery.LookPath, rawTargetVersionDiscovery(discovery.Context, lookup))
+				resolvedPath, available, reason = discoverTarget(discovery.Context, target, discovery.LookPath, lookup)
 			}
 			fieldDiscovery := discovery
-			if !facts.Fresh.Supported {
+			if !available {
 				fieldDiscovery.Live = false
 			} else {
-				resolvedPath := facts.Target.Binary
 				fieldDiscovery.LookPath = func(binary string) (string, error) {
 					if binary == target.Binary {
 						return resolvedPath, nil
@@ -125,8 +103,8 @@ func buildTargetOptions(cfg config.Config, discovery agentoptions.DiscoveryReque
 			}
 			result[i] = AgentOption{
 				Agent:             target.Name,
-				Available:         facts.Fresh.Supported,
-				UnavailableReason: facts.Fresh.Reason,
+				Available:         available,
+				UnavailableReason: reason,
 				Model:             fieldOptionWithDiscovery(cfg, target, agentoptions.KindModel, fieldDiscovery),
 				ReasoningEffort:   fieldOptionWithDiscovery(cfg, target, agentoptions.KindReasoningEffort, fieldDiscovery),
 			}
@@ -136,52 +114,31 @@ func buildTargetOptions(cfg config.Config, discovery agentoptions.DiscoveryReque
 	return result
 }
 
-func rawTargetVersionDiscovery(ctx context.Context, lookup func(string, string) (string, error)) targetVersionDiscovery {
-	if ctx == nil {
-		ctx = context.Background()
+// discoverTarget reports an enabled target's resolved binary path, availability,
+// and unavailable reason.
+func discoverTarget(ctx context.Context, target targetMeta, lookPath func(string) (string, error), lookup func(string, string) (string, error)) (string, bool, string) {
+	path, err := lookPath(target.Binary)
+	if err != nil {
+		return "", false, "provider binary not found"
 	}
-	return func(path string, target targetMeta) (string, string, error) {
-		readVersion := lookup
-		if readVersion == nil {
-			readVersion = func(path, agent string) (string, error) {
-				return providerVersionWithContext(ctx, path, agent)
-			}
+	if lookup == nil {
+		if ctx == nil {
+			ctx = context.Background()
 		}
-		installed, err := readVersion(path, target.Name)
-		if err != nil {
-			return "", "", err
-		}
-		warning, err := providerVersionCompatibility(target.Name, installed)
-		return installed, warning, err
-	}
-}
-
-func discoverTarget(cfg config.Config, target targetMeta, lookPath func(string) (string, error), discoverVersion targetVersionDiscovery) targetDiscovery {
-	facts := targetDiscovery{Target: target, Enabled: targetEnabled(cfg, target.Name)}
-	path, pathErr := lookPath(target.Binary)
-	var versionErr error
-	if pathErr == nil {
-		facts.Installed = true
-		facts.Target.Binary = path
-		version, warning, err := discoverVersion(path, target)
-		facts.InstalledVersion = version
-		facts.CompatibilityWarning = warning
-		versionErr = err
-	}
-	facts.Fresh.Supported = facts.Enabled && facts.Installed && versionErr == nil
-	if !facts.Fresh.Supported {
-		switch {
-		case !facts.Enabled:
-			facts.Fresh.Reason = "disabled in config"
-		case !facts.Installed:
-			facts.Fresh.Reason = "provider binary not found"
-		case facts.InstalledVersion == "":
-			facts.Fresh.Reason = "provider version could not be verified"
-		default:
-			facts.Fresh.Reason = "unsupported provider version; install " + supportedProviderVersions[target.Name]
+		lookup = func(path, agent string) (string, error) {
+			return providerVersionWithContext(ctx, path, agent)
 		}
 	}
-	return facts
+	installed, err := lookup(path, target.Name)
+	if err == nil {
+		if _, err = providerVersionCompatibility(target.Name, installed); err == nil {
+			return path, true, ""
+		}
+		if installed != "" {
+			return path, false, "unsupported provider version; install " + supportedProviderVersions[target.Name]
+		}
+	}
+	return path, false, "provider version could not be verified"
 }
 
 func fieldOptionWithDiscovery(cfg config.Config, target targetMeta, kind agentoptions.Kind, discovery agentoptions.DiscoveryRequest) FieldOption {
