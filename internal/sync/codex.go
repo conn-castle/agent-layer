@@ -11,8 +11,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/herdr"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
+	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
 const codexHeader = `# GENERATED FILE — MAY CONTAIN SECRETS
@@ -73,6 +75,32 @@ func writeCodexConfigWithCLISettings(sys System, root string, project *config.Pr
 	}
 
 	return nil
+}
+
+// codexHerdRTitleDisabledWarning reads the just-synced project-local config,
+// so both an explicit Agent Layer opt-out and a native Codex opt-out use the
+// same warning pipeline and launch rendering. It never reads CODEX_HOME.
+func codexHerdRTitleDisabledWarning(sys System, root string) (*warnings.Warning, error) {
+	path := filepath.Join(root, ".codex", "config.toml")
+	content, err := readExistingCodexConfig(sys, path)
+	if err != nil {
+		return nil, err
+	}
+	disabled, err := herdr.CodexTitleDisabled([]byte(content))
+	if err != nil {
+		return nil, fmt.Errorf(messages.SyncCodexExistingConfigInvalidFmt, path, err)
+	}
+	if !disabled {
+		return nil, nil
+	}
+	return &warnings.Warning{
+		Code:     warnings.CodeCodexHerdRTitleDisabled,
+		Subject:  "tui.terminal_title",
+		Message:  messages.WarningsCodexHerdRTitleDisabled,
+		Fix:      messages.WarningsCodexHerdRTitleDisabledFix,
+		Source:   warnings.SourceInternal,
+		Severity: warnings.SeverityWarning,
+	}, nil
 }
 
 // writeCodexRules generates .codex/rules/default.rules.
@@ -143,10 +171,30 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 	// Write agent-specific root keys/tables before managed MCP tables so any
 	// scalar overrides remain at the TOML root.
 	managedHookEvents := codexManagedHookEvents(chimeEnabled, herdREnabled)
-	if err := appendCodexAgentSpecific(&builder, withoutEmptyCodexHookEvents(agentSpecific, managedHookEvents)); err != nil {
-		return codexManagedConfig{}, err
+	// Normalize a copy only for rendering; the merge reads title precedence
+	// directly from the original agent_specific and native configuration.
+	outputSpecific := agentSpecific
+	if herdREnabled {
+		title, err := codexManagedTerminalTitle(agentSpecific, nil)
+		if err != nil {
+			return codexManagedConfig{}, err
+		}
+		outputSpecific = maps.Clone(agentSpecific)
+		if outputSpecific == nil {
+			outputSpecific = map[string]any{}
+		}
+		tui, _ := agentSpecific[codexTUIKey].(map[string]any)
+		tui = maps.Clone(tui)
+		if tui == nil {
+			tui = map[string]any{}
+		}
+		tui[codexTerminalTitleKey] = title
+		outputSpecific[codexTUIKey] = tui
 	}
 
+	if err := appendCodexAgentSpecific(&builder, withoutEmptyCodexHookEvents(outputSpecific, managedHookEvents)); err != nil {
+		return codexManagedConfig{}, err
+	}
 	if err := appendCodexTrustedProject(&builder, trustedRoot, agentSpecific); err != nil {
 		return codexManagedConfig{}, err
 	}
@@ -160,6 +208,10 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		builder.WriteString(codexHerdRBeginMarker)
 		builder.WriteByte('\n')
 		builder.WriteString("[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\n")
+		builder.WriteString(`type = "command"` + "\n")
+		fmt.Fprintf(&builder, "command = %q\n", herdrCommand("codex", root))
+		fmt.Fprintf(&builder, "timeout = %d\n", herdrTimeout)
+		builder.WriteString("[[hooks.UserPromptSubmit]]\n[[hooks.UserPromptSubmit.hooks]]\n")
 		builder.WriteString(`type = "command"` + "\n")
 		fmt.Fprintf(&builder, "command = %q\n", herdrCommand("codex", root))
 		fmt.Fprintf(&builder, "timeout = %d\n", herdrTimeout)
@@ -228,14 +280,15 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 }
 
 // codexManagedHookEvents lists the hook events that receive a managed
-// [[hooks.<event>]] array table: Stop for the chime and SessionStart for HerdR.
+// [[hooks.<event>]] array table: Stop for the chime, and SessionStart plus
+// UserPromptSubmit for HerdR.
 func codexManagedHookEvents(chimeEnabled bool, herdREnabled bool) []string {
 	var events []string
 	if chimeEnabled {
 		events = append(events, codexStopKey)
 	}
 	if herdREnabled {
-		events = append(events, codexSessionStartKey)
+		events = append(events, codexSessionStartKey, codexUserPromptKey)
 	}
 	return events
 }

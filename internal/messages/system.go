@@ -113,6 +113,8 @@ const (
 	WarningsPolicyAgentSpecificOverridesFix = "Remove the override if you want Agent Layer to manage those keys, or keep it to take full control."
 	WarningsPolicyClaudeReasoningUnknownFmt = "agents.claude.reasoning_effort=%q is not a known value (known: %s); sync still proceeds"
 	WarningsPolicyClaudeReasoningUnknownFix = "If this is a new effort level Claude added, ignore this warning and update agent-layer when an upgrade is available. If it is a typo, set agents.claude.reasoning_effort to one of the known values."
+	WarningsCodexHerdRTitleDisabled         = "Codex HerdR terminal recovery is unavailable because tui.terminal_title is disabled"
+	WarningsCodexHerdRTitleDisabledFix      = "Set agents.codex.agent_specific.tui.terminal_title to a non-empty list, or remove the empty tui.terminal_title from .codex/config.toml, then run al sync."
 	WarningsPolicyYOLOAck                   = "[yolo] permission prompts disabled for supported clients"
 	WarningsNoiseModeInvalidFmt             = "unknown warnings noise mode %q; expected one of: %s, %s, %s"
 	WarningsNoiseModeInvalidFix             = "Set warnings.noise_mode to default, reduce, or quiet."

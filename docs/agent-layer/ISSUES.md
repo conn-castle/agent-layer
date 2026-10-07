@@ -28,3 +28,9 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 ## Open issues
 
 <!-- ENTRIES START -->
+
+- Issue 2026-10-06 codex-bundled-skills-cleanup-race: Repo-local Codex bundled-skill installation can race AL legacy cleanup.
+    Priority: Medium. Area: Codex launch and sync.
+    Description: An additional AL Codex pane failed before native startup because removing `.codex/skills` returned `directory not empty` while the native bundled-skill installer recreated that directory.
+    Next step: Reproduce concurrent native cache installation and legacy cleanup, then distinguish Codex-owned cache from retired AL outputs.
+    Notes: Verified native-acceptance-v8/same-pane-visible.json under `.agent-layer/tmp/herdr-daemon-fix`; ordinary legacy cleanup is in internal/sync/prompts.go. Recovery fixtures using bundled skills disabled do not prove this launch path.
