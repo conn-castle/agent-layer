@@ -3,9 +3,16 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.24.1 - 2026-10-07
+
 ### Fixed
+- Codex conversation recovery in HerdR now works with Codex's native shared daemon enabled. The selected conversation registers on its first prompt, including loaded rejoin and selected child conversations, with the full hook ID and the correct pane's ordinary or source-development resume command. Background conversations and older suspended launches cannot overwrite the current foreground recipe; saved recipes survive HerdR restarts without another message.
 - Grok model discovery in `al dispatch options`, the Agent Dispatch `dispatch_options` MCP tool, the wizard, and `al doctor` no longer reports `harness is not authenticated; sign in using al grok` when your Grok sign-in is valid but its access token has expired. `grok models` prints its sign-in status before it refreshes an expired token, and Agent Layer stopped reading at that status line and ended the process before the refresh finished. Discovery kept failing until a Grok session or dispatch refreshed the token. Discovery now lets `grok models` finish, and when the status line says you are not signed in, it runs `grok models` once more to read the refreshed state. The error now appears only when Grok still reports that you are not signed in after its refresh attempt.
 - Agent Dispatch run records now report the provider version that actually ran after a launcher updates the binary it starts. Before each `start` or `continue`, Agent Dispatch checks the provider's version against its tested version and caches the result in `.agent-layer/state/dispatch-capabilities/cache.json`. Previously a cached version stayed in use as long as the command on `PATH` was unchanged, so with Muse's installed `~/.local/bin/muse` launcher, which updates a separate binary beside itself, run records kept reporting the old version (for example `1.4.0` while `muse --version` printed `1.4.3`), and the tested-version check used that stale value. Cached versions now expire after one hour, so dispatch reports an updated provider version within an hour of the update. Cache entries written by earlier Agent Layer versions are checked again on the next dispatch.
+- VS Code settings sync rejects invalid JSONC before rewriting it while retaining the supported recovery of earlier managed blocks.
+
+### Development
+- Agent Dispatch tests isolate mock CLIs and workers, preventing recursive suite launches, accidental real-provider execution, and leaked workers after timeout. Release certification reuses or waits for the exact main-push run before dispatching another.
 
 ## v0.24.0 - 2026-10-05
 
