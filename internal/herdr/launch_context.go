@@ -10,13 +10,16 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 )
 
 const (
-	launchContextPrefix    = "herdr-launch-"
-	launchContextSuffix    = ".json"
-	dispatchBoundaryPrefix = "herdr-dispatch-boundary-"
-	maxAncestorDepth       = 8
+	launchContextPrefix     = "herdr-launch-"
+	launchContextSuffix     = ".json"
+	dispatchBoundaryPrefix  = "herdr-dispatch-boundary-"
+	codexLiveLaunchIndexDir = "herdr-codex-live"
+	maxAncestorDepth        = 8
 )
 
 var errProcessNotFound = errors.New("process was not found")
@@ -109,6 +112,12 @@ func CaptureLaunch(root, runDir string, env []string, provider string) error {
 	}
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("close HerdR launch context: %w", err)
+	}
+	if provider == providerCodex {
+		if err := rememberCodexLiveLaunch(canonicalRoot, path); err != nil {
+			_ = os.Remove(path)
+			return err
+		}
 	}
 	return nil
 }
@@ -485,9 +494,72 @@ func effectiveCodexHome(values map[string]string) (string, error) {
 		home = filepath.Join(base, ".codex")
 	}
 	if !filepath.IsAbs(home) {
-		return "", errors.New("CODEX_HOME must be absolute")
+		cwd, err := canonicalDirectory(".")
+		if err != nil {
+			return "", fmt.Errorf("resolve relative CODEX_HOME: %w", err)
+		}
+		home = filepath.Join(cwd, home)
 	}
 	return filepath.Clean(home), nil
+}
+
+// rememberCodexLiveLaunch records one live Codex launch so daemon recovery can
+// find it without walking every historical run directory.
+func rememberCodexLiveLaunch(root, recordPath string) error {
+	resolved, err := filepath.Abs(recordPath)
+	if err != nil {
+		return fmt.Errorf("resolve Codex live launch: %w", err)
+	}
+	if canonical, err := filepath.EvalSymlinks(resolved); err == nil {
+		resolved = canonical
+	}
+	resolved = filepath.Clean(resolved)
+	if !pathWithin(root, resolved) {
+		return errors.New("codex live launch is outside the project root")
+	}
+	relative, err := filepath.Rel(root, resolved)
+	if err != nil {
+		return fmt.Errorf("index Codex live launch: %w", err)
+	}
+	name := filepath.Base(resolved)
+	if !strings.HasPrefix(name, launchContextPrefix) || !strings.HasSuffix(name, launchContextSuffix) || strings.Contains(relative, "\n") {
+		return fmt.Errorf("invalid Codex live launch path: %s", recordPath)
+	}
+	directory := filepath.Join(root, ".agent-layer", "tmp", codexLiveLaunchIndexDir)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return fmt.Errorf("create Codex live launch index: %w", err)
+	}
+	if err := fsutil.WriteFileAtomic(filepath.Join(directory, name), []byte(relative+"\n"), 0o600); err != nil {
+		return fmt.Errorf("write Codex live launch index: %w", err)
+	}
+	return nil
+}
+
+func readCodexLiveLaunchIndex(root, indexPath string) (string, error) {
+	info, err := os.Lstat(indexPath)
+	if err != nil {
+		return "", fmt.Errorf("stat Codex live launch index: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o077 != 0 {
+		return "", fmt.Errorf("invalid Codex live launch index: %s", indexPath)
+	}
+	data, err := os.ReadFile(indexPath) // #nosec G304 -- path is a private file under the project-owned live-launch index.
+	if err != nil {
+		return "", fmt.Errorf("read Codex live launch index: %w", err)
+	}
+	relative := strings.TrimSuffix(string(data), "\n")
+	if relative == "" || strings.ContainsAny(relative, "\x00\r\n") || filepath.IsAbs(relative) {
+		return "", fmt.Errorf("invalid Codex live launch index: %s", indexPath)
+	}
+	recordPath := filepath.Join(root, relative)
+	if !pathWithin(root, recordPath) {
+		return "", fmt.Errorf("codex live launch index escaped the project root: %s", indexPath)
+	}
+	runsDir := filepath.Join(root, ".agent-layer", "tmp", "runs")
+	if !pathWithin(runsDir, recordPath) {
+		return "", fmt.Errorf("codex live launch index is outside the project run directory: %s", indexPath)
+	}
+	return recordPath, nil
 }
 
 func validSocketPath(socketPath, launchCWD, root string) bool {

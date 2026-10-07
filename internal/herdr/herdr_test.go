@@ -72,6 +72,56 @@ func TestCodexTitleRecoveryRequiresUniqueLoadedThread(t *testing.T) {
 	}
 }
 
+func TestCodexTitleRecoveryMatchesUppercaseTruncatedPrefix(t *testing.T) {
+	loaded := "01a1138f-7df0-7fa0-94ae-820334783a29"
+	title := "✳ 01A1138F-7DF0-7FA0-94AE-82033... | project"
+	id, found, err := codexThreadIDFromTitle(title, []string{loaded})
+	if err != nil || !found || id != loaded {
+		t.Fatalf("uppercase truncated title = %q, %t, %v", id, found, err)
+	}
+	if !codexTitleCouldBeThread(title, loaded) {
+		t.Fatal("uppercase truncated title failed the cheap precheck")
+	}
+	if !codexTitleCouldBeThread(title, strings.ToUpper(loaded)) {
+		t.Fatal("uppercase hook ID failed the cheap precheck against an uppercase truncated title")
+	}
+	if !strings.EqualFold(id, strings.ToUpper(loaded)) {
+		t.Fatalf("resolved ID %q did not match an uppercase hook ID", id)
+	}
+}
+
+func TestCodexRecoveryDedupUsesResolvedSocketPath(t *testing.T) {
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	firstCWD := filepath.Join(cwd, "one")
+	secondCWD := filepath.Join(cwd, "two")
+	for _, directory := range []string{firstCWD, secondCWD} {
+		if err := os.Mkdir(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first := launchContext{SocketPath: "session/herdr.sock", LaunchCWD: firstCWD, PaneID: "w1:p1"}
+	second := launchContext{SocketPath: "session/herdr.sock", LaunchCWD: secondCWD, PaneID: "w1:p1"}
+	_, firstKey, err := codexRecoveryDedupKey(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, secondKey, err := codexRecoveryDedupKey(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstKey == secondKey {
+		t.Fatalf("relative sockets in different launch directories collapsed to %q", firstKey)
+	}
+	_, again, err := codexRecoveryDedupKey(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again != firstKey {
+		t.Fatalf("identical resolved launches were not stable: %q vs %q", firstKey, again)
+	}
+}
+
 func TestCodexManagedSocketAcceptsNativeHashAliasOnly(t *testing.T) {
 	advertised := filepath.Join(t.TempDir(), ".codex", codexControlSocket)
 	if err := os.MkdirAll(filepath.Dir(advertised), 0o700); err != nil {
@@ -907,6 +957,45 @@ func TestHandleForRootStoresNonMuseLaunchIdentity(t *testing.T) {
 				t.Fatalf("Agy response = %q", out.String())
 			}
 		})
+	}
+}
+
+func TestEmbeddedCodexPromptSkipsReportWhenExactCommandIsAlreadyDurable(t *testing.T) {
+	id := "01a1138f-7df0-7fa0-94ae-820334783a29"
+	socket, reports, done := fakeHerdR(t, fakeHerdROptions{
+		requestsExpected: 2,
+		paneGetsExpected: 1,
+		codexPanes: []fakeCodexPane{{
+			paneID: "w1:p1", title: "✳ " + id + " | selected",
+			liveSource: sourceCodexAL, liveAgent: providerCodex, liveKind: "id", liveValue: id,
+			processPID: os.Getpid(), processArgv: []any{"codex"},
+		}},
+	})
+	root, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := filepath.Join(root, ".agent-layer", "tmp", "runs", "embedded-stored")
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	env := []string{EnvEnabled + "=1", EnvSocketPath + "=" + socket, EnvPaneID + "=w1:p1", "CODEX_HOME=" + filepath.Join(t.TempDir(), ".codex")}
+	if err := CaptureLaunch(root, runDir, env, providerCodex); err != nil {
+		t.Fatal(err)
+	}
+	path, err := sessionPath(socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writePersistedSession(t, filepath.Dir(path), fakeHerdROptions{workspace: "w1", publicNumber: 1, internalPane: "1", storedPublicNumber: 1}, map[string]any{
+		"source": sourceCodexAL, "agent": providerCodex, "resume_argv": []string{"al", providerCodex, resumeVerb, id},
+	})
+	if err := HandleForRoot(providerCodex, root, strings.NewReader(`{"hook_event_name":"UserPromptSubmit","session_id":"`+id+`"}`), io.Discard, io.Discard, env); err != nil {
+		t.Fatal(err)
+	}
+	waitFakeHerdR(t, done)
+	if len(reports) != 0 {
+		t.Fatalf("durable embedded Codex prompt sent a duplicate report: %#v", <-reports)
 	}
 }
 

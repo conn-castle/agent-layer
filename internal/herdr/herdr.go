@@ -278,15 +278,14 @@ func handleCodexRooted(root string, spec providerSpec, in io.Reader, errOut io.W
 	}
 	seen := make(map[string]bool, len(launches))
 	for _, launch := range launches {
-		key := launch.SocketPath + "\x00" + launch.PaneID
+		socketPath, key, err := codexRecoveryDedupKey(launch)
+		if err != nil {
+			return fmt.Errorf("resolve HerdR launch socket: %w", err)
+		}
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
-		socketPath, err := resolveContextSocket(launch)
-		if err != nil {
-			return fmt.Errorf("resolve HerdR launch socket: %w", err)
-		}
 		candidateEnv := maps.Clone(env)
 		candidateEnv[EnvEnabled], candidateEnv[EnvSocketPath], candidateEnv[EnvPaneID] = "1", socketPath, launch.PaneID
 		delete(candidateEnv, EnvDevBypass)
@@ -322,15 +321,11 @@ func handleCodexRooted(root string, spec providerSpec, in io.Reader, errOut io.W
 				}
 				return matchErr == nil, matchErr
 			}
-			if !daemonRecovery {
-				err = reportAndVerify(spec, id, argv, candidateEnv, deadline, "", revalidate)
-			} else {
-				canonicalPane, stored, storedErr := currentCodexResumeStored(launch, id, spec, argv, candidateEnv, deadline)
-				if storedErr != nil {
-					err = fmt.Errorf("check Codex HerdR stored resume command: %w", storedErr)
-				} else if !stored {
-					err = reportAndVerify(spec, id, argv, candidateEnv, deadline, canonicalPane, revalidate)
-				}
+			canonicalPane, stored, storedErr := currentCodexResumeStored(launch, id, spec, argv, candidateEnv, deadline)
+			if storedErr != nil {
+				err = fmt.Errorf("check Codex HerdR stored resume command: %w", storedErr)
+			} else if !stored {
+				err = reportAndVerify(spec, id, argv, candidateEnv, deadline, canonicalPane, revalidate)
 			}
 		}
 		if err != nil {
@@ -344,7 +339,7 @@ func handleCodexRooted(root string, spec providerSpec, in io.Reader, errOut io.W
 	return nil
 }
 
-// currentCodexResumeStored permits the daemon fast path only when HerdR's
+// currentCodexResumeStored permits the prompt-time fast path only when HerdR's
 // durable recipe and its live pane association still identify this exact hook
 // thread. Session.json can lag a newer in-memory report by several seconds.
 func currentCodexResumeStored(launch launchContext, hookID string, spec providerSpec, argv []string, env map[string]string, deadline time.Time) (string, bool, error) {
@@ -360,6 +355,16 @@ func currentCodexResumeStored(launch launchContext, hookID string, spec provider
 		return "", false, err
 	}
 	return canonicalPane, codexLiveSessionMatches(pane, hookID), nil
+}
+
+// codexRecoveryDedupKey distinguishes live launches by the socket HerdR would
+// actually contact, not the unresolved relative path stored at capture.
+func codexRecoveryDedupKey(launch launchContext) (string, string, error) {
+	socketPath, err := resolveContextSocket(launch)
+	if err != nil {
+		return "", "", err
+	}
+	return socketPath, socketPath + "\x00" + launch.PaneID, nil
 }
 
 // recordCodexRecoveryFailure leaves a small local receipt because native Codex

@@ -271,7 +271,15 @@ func TestHandleForRootCodexNativeBoundary(t *testing.T) {
 		if err := os.MkdirAll(truncatedDir, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(truncatedDir, launchContextName(999999, "dead-truncated")), []byte(`{"version":2`), 0o600); err != nil {
+		truncatedPath := filepath.Join(truncatedDir, launchContextName(999999, "dead-truncated"))
+		if err := os.WriteFile(truncatedPath, []byte(`{"version":2`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		canonicalRoot, err := canonicalDirectory(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := rememberCodexLiveLaunch(canonicalRoot, truncatedPath); err != nil {
 			t.Fatal(err)
 		}
 		result := server.invoke(t, boundaryHookInstruction{Root: root, Provider: providerCodex, Payload: `{"hook_event_name":"UserPromptSubmit","session_id":"` + id + `"}`})
@@ -862,7 +870,19 @@ func rewriteCodexBoundaryLaunch(t *testing.T, root, name string, context launchC
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	writeLaunchContextFixture(t, filepath.Join(directory, launchContextName(context.PID, context.ProcessStart)), context)
+	path := filepath.Join(directory, launchContextName(context.PID, context.ProcessStart))
+	writeLaunchContextFixture(t, path, context)
+	if context.Provider != providerCodex {
+		return
+	}
+	canonicalRoot, err := canonicalDirectory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordPath := filepath.Join(canonicalRoot, ".agent-layer", "tmp", "runs", name, launchContextName(context.PID, context.ProcessStart))
+	if err := rememberCodexLiveLaunch(canonicalRoot, recordPath); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertBoundaryStored(t *testing.T, root, pane string, argv []string) {
@@ -898,5 +918,53 @@ func writeCodexStoredResume(t *testing.T, root, pane string, argv []string) {
 	}
 	if err := os.WriteFile(filepath.Join(root, "session", "session.json"), data, 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLiveCodexLaunchRecordsSkipsConcurrentlyDeletedIndex(t *testing.T) {
+	root := t.TempDir()
+	canonicalRoot, err := canonicalDirectory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, start, err := processLineage(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := filepath.Join(root, ".agent-layer", "tmp", "runs", "live")
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	live := launchContext{Version: 2, PID: os.Getpid(), ProcessStart: start, ProjectRoot: canonicalRoot, Provider: providerCodex, SocketPath: "/tmp/herdr.sock", PaneID: "w1:p1", CodexHome: filepath.Join(root, ".codex")}
+	recordPath := filepath.Join(runDir, launchContextName(os.Getpid(), start))
+	writeLaunchContextFixture(t, recordPath, live)
+	if err := rememberCodexLiveLaunch(canonicalRoot, recordPath); err != nil {
+		t.Fatal(err)
+	}
+	deleted := launchContext{Version: 2, PID: 888888, ProcessStart: "concurrent-delete", ProjectRoot: canonicalRoot, Provider: providerCodex, SocketPath: "/tmp/herdr.sock", PaneID: "w1:p2", CodexHome: filepath.Join(root, ".codex")}
+	deletedRecord := filepath.Join(runDir, launchContextName(deleted.PID, deleted.ProcessStart))
+	writeLaunchContextFixture(t, deletedRecord, deleted)
+	if err := rememberCodexLiveLaunch(canonicalRoot, deletedRecord); err != nil {
+		t.Fatal(err)
+	}
+	liveDir := filepath.Join(canonicalRoot, ".agent-layer", "tmp", codexLiveLaunchIndexDir)
+	deletedIndex := filepath.Join(liveDir, filepath.Base(deletedRecord))
+	original := readDirFunc
+	t.Cleanup(func() { readDirFunc = original })
+	readDirFunc = func(path string) ([]os.DirEntry, error) {
+		entries, err := original(path)
+		if path == liveDir {
+			if removeErr := os.Remove(deletedIndex); removeErr != nil {
+				t.Fatalf("delete index concurrently: %v", removeErr)
+			}
+		}
+		return entries, err
+	}
+	records, err := liveCodexLaunchRecords(root)
+	if err != nil {
+		t.Fatalf("concurrent index deletion failed the scan: %v", err)
+	}
+	if len(records) != 1 || records[0].PaneID != "w1:p1" {
+		t.Fatalf("records after concurrent deletion = %#v", records)
 	}
 }

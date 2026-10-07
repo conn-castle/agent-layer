@@ -3,7 +3,6 @@
 package herdr
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -13,7 +12,7 @@ import (
 func processLineage(pid int) (int, string, error) {
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if isProcessNotFoundError(err) {
 			return 0, "", fmt.Errorf("%w: %d", errProcessNotFound, pid)
 		}
 		return 0, "", err

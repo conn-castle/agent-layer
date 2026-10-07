@@ -205,7 +205,7 @@ func codexThreadIDFromTitle(title string, loaded []string) (string, bool, error)
 	for _, candidate := range truncated {
 		prefix := candidate[1]
 		for _, id := range loaded {
-			if strings.HasPrefix(id, prefix) {
+			if codexThreadPrefixMatch(id, prefix) {
 				if match != "" && match != id {
 					return "", false, errors.New("codex terminal title matches multiple loaded threads")
 				}
@@ -227,11 +227,15 @@ func codexTitleCouldBeThread(title, hookID string) bool {
 		}
 	}
 	for _, candidate := range truncatedCodexTitleID.FindAllStringSubmatch(title, -1) {
-		if strings.HasPrefix(strings.ToLower(hookID), strings.ToLower(candidate[1])) {
+		if codexThreadPrefixMatch(hookID, candidate[1]) {
 			return true
 		}
 	}
 	return false
+}
+
+func codexThreadPrefixMatch(id, prefix string) bool {
+	return strings.HasPrefix(strings.ToLower(id), strings.ToLower(prefix))
 }
 
 func codexTitleHasThreadToken(title string) bool {
@@ -310,8 +314,47 @@ func liveCodexLaunchRecords(root string) ([]launchContext, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve HerdR project root: %w", err)
 	}
+	liveDir := filepath.Join(canonicalRoot, ".agent-layer", "tmp", codexLiveLaunchIndexDir)
+	entries, err := readDirFunc(liveDir)
+	if os.IsNotExist(err) {
+		return liveCodexLaunchRecordsFromRuns(canonicalRoot)
+	}
+	if err != nil {
+		return nil, err
+	}
+	var records []launchContext
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasPrefix(name, launchContextPrefix) || !strings.HasSuffix(name, launchContextSuffix) {
+			continue
+		}
+		indexPath := filepath.Join(liveDir, name)
+		recordPath, err := readCodexLiveLaunchIndex(canonicalRoot, indexPath)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if filepath.Base(recordPath) != name {
+			return nil, fmt.Errorf("codex live launch index name mismatch: %s", indexPath)
+		}
+		context, live, err := readLiveCodexDaemonLaunchContext(recordPath, canonicalRoot)
+		if errors.Is(err, os.ErrNotExist) || (err == nil && !live) {
+			_ = os.Remove(indexPath)
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read Codex HerdR launch record: %w", err)
+		}
+		records = append(records, context)
+	}
+	return records, nil
+}
+
+func liveCodexLaunchRecordsFromRuns(canonicalRoot string) ([]launchContext, error) {
 	runs := filepath.Join(canonicalRoot, ".agent-layer", "tmp", "runs")
-	runDirs, err := os.ReadDir(runs)
+	runDirs, err := readDirFunc(runs)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -323,7 +366,7 @@ func liveCodexLaunchRecords(root string) ([]launchContext, error) {
 		if !run.IsDir() {
 			continue
 		}
-		entries, err := os.ReadDir(filepath.Join(runs, run.Name()))
+		entries, err := readDirFunc(filepath.Join(runs, run.Name()))
 		if os.IsNotExist(err) {
 			continue
 		}
@@ -465,7 +508,7 @@ func codexContextMatchesPane(launch launchContext, hookID string, deadline time.
 	if err != nil {
 		return err
 	}
-	if !found || id != hookID {
+	if !found || !strings.EqualFold(id, hookID) {
 		return errCodexPaneNoMatch
 	}
 	return codexPaneHasForegroundLaunch(launch, pane, socketPath, deadline)
