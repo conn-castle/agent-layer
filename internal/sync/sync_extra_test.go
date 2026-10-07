@@ -9,6 +9,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/testutil"
+	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
 func TestEnsureEnabled(t *testing.T) {
@@ -150,6 +151,37 @@ func TestRunWithProject_AppliesWarningNoiseControl(t *testing.T) {
 			t.Fatalf("expected quiet mode to suppress all warnings, got: %+v", result.Warnings)
 		}
 	})
+}
+
+func TestRunWithProjectWarnsWhenCodexTitleRecoveryIsExplicitlyDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		existing bool
+	}{
+		{name: "explicit agent-specific opt-out"},
+		{name: "existing native opt-out", existing: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, project := loadSyncFixtureProject(t)
+			if tc.existing {
+				writeExistingCodexConfig(t, root, codexPartialHeader+"\n[tui]\nterminal_title = []\n")
+			} else {
+				project.Config.Agents.Codex.AgentSpecific = map[string]any{
+					codexTUIKey: map[string]any{codexTerminalTitleKey: []any{}},
+				}
+			}
+			result, err := RunWithProject(RealSystem{}, root, project)
+			if err != nil {
+				t.Fatalf("RunWithProject: %v", err)
+			}
+			for _, warning := range result.Warnings {
+				if warning.Code == warnings.CodeCodexHerdRTitleDisabled && strings.Contains(warning.Fix, "terminal_title") {
+					return
+				}
+			}
+			t.Fatalf("missing actionable Codex empty-title warning: %+v", result.Warnings)
+		})
+	}
 }
 
 func TestRunWithProject_ProjectsNotificationsChimeForEnabledProviders(t *testing.T) {

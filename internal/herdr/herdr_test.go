@@ -3,10 +3,13 @@ package herdr
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -20,7 +23,7 @@ func TestHandleStoresExactResumeForEachProvider(t *testing.T) {
 		env, want                 []string
 	}{
 		{"claude", `{"hook_event_name":"SessionStart","session_id":"claude-id"}`, "al:claude", nil, []string{"al", "claude", "--resume", "claude-id"}},
-		{"codex", `{"hook_event_name":"SessionStart","session_id":"codex-id"}`, "al:codex", nil, []string{"al", "codex", "resume", "codex-id"}},
+		{"codex", `{"hook_event_name":"SessionStart","session_id":"01a1138f-7df0-7fa0-94ae-820334783a29"}`, "al:codex", nil, []string{"al", "codex", "resume", "01a1138f-7df0-7fa0-94ae-820334783a29"}},
 		// The actual Antigravity PreInvocation payload supplies conversationId;
 		// it has no synthetic hook-event discriminator.
 		{"agy", `{"conversationId":"agy-id"}`, "al:agy", nil, []string{"al", "agy", "--conversation", "agy-id"}},
@@ -40,6 +43,96 @@ func TestHandleStoresExactResumeForEachProvider(t *testing.T) {
 				t.Fatalf("report = %#v, want source %q argv %#v", params, tc.source, tc.want)
 			}
 		})
+	}
+}
+
+func TestCodexFirstPromptAcceptsPayloadThreadIDWithoutInheritedThread(t *testing.T) {
+	spec := providers[providerCodex]
+	id, ok, err := sessionID(spec, map[string]any{"hook_event_name": eventMuseUserPrompt, "session_id": "01a1138f-7df0-7fa0-94ae-820334783a29"}, map[string]string{"CODEX_THREAD_ID": "stale-thread"})
+	if err != nil || !ok || id != "01a1138f-7df0-7fa0-94ae-820334783a29" {
+		t.Fatalf("Codex first-prompt identity = %q, %t, %v", id, ok, err)
+	}
+}
+
+func TestCodexRejectsMalformedPayloadThreadID(t *testing.T) {
+	_, ok, err := sessionID(providers[providerCodex], map[string]any{"hook_event_name": eventSessionStart, "session_id": "copied-short-id"}, nil)
+	if err == nil || ok {
+		t.Fatalf("malformed Codex session ID was accepted: ok=%t err=%v", ok, err)
+	}
+}
+
+func TestCodexTitleRecoveryRequiresUniqueLoadedThread(t *testing.T) {
+	id, found, err := codexThreadIDFromTitle("✳ 01a1138f-7df0-7fa0-94ae-82033... | project", []string{"01a1138f-7df0-7fa0-94ae-820334783a29", "01a1138f-7df0-7fa0-94ae-82033bbbbbbb"})
+	if err == nil || found || id != "" {
+		t.Fatalf("ambiguous title = %q, %t, %v", id, found, err)
+	}
+	id, found, err = codexThreadIDFromTitle("✳ 01a1138f-7df0-7fa0-94ae-82033... | project", []string{"01a1138f-7df0-7fa0-94ae-820334783a29", "02other"})
+	if err != nil || !found || id != "01a1138f-7df0-7fa0-94ae-820334783a29" {
+		t.Fatalf("unique title = %q, %t, %v", id, found, err)
+	}
+}
+
+func TestCodexManagedSocketAcceptsNativeHashAliasOnly(t *testing.T) {
+	advertised := filepath.Join(t.TempDir(), ".codex", codexControlSocket)
+	if err := os.MkdirAll(filepath.Dir(advertised), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	canonicalParent, err := filepath.EvalSymlinks(filepath.Dir(advertised))
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte(filepath.Join(canonicalParent, filepath.Base(advertised))))
+	directory := filepath.Join(t.TempDir(), "codex-daemon-"+strconv.Itoa(os.Geteuid()))
+	if err := os.Mkdir(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	native := filepath.Join(directory, fmt.Sprintf("%x", digest))
+	if !validCodexManagedSocket(native, advertised) {
+		t.Fatalf("native managed socket shape was rejected: %s", native)
+	}
+	if validCodexManagedSocket(filepath.Join(directory, strings.Repeat("a", 64)), advertised) {
+		t.Fatal("hash unrelated to the advertised control socket was accepted")
+	}
+}
+
+func TestCodexForegroundProcessUsesLaunchIdentityNotThreadArgv(t *testing.T) {
+	if !codexForegroundProcess(map[string]any{"name": "codex", "argv": []any{"codex", "resume"}}) {
+		t.Fatal("native Codex process was rejected when its argv no longer names the selected thread")
+	}
+	if !codexForegroundProcess(map[string]any{"name": "node", "argv": []any{"node", "/opt/homebrew/bin/codex", "resume"}}) {
+		t.Fatal("Codex Node wrapper was rejected")
+	}
+	if codexForegroundProcess(map[string]any{"name": "node", "argv": []any{"node", "worker.js"}}) {
+		t.Fatal("unrelated Node process was accepted as Codex")
+	}
+}
+
+func TestSessionPathResolvesRelativeSocketAliasToPhysicalHerdRState(t *testing.T) {
+	root := t.TempDir()
+	physical := filepath.Join(t.TempDir(), "herdr.sock")
+	if err := os.WriteFile(physical, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	aliasDir := filepath.Join(root, ".agent-layer", "tmp", "hr")
+	if err := os.MkdirAll(aliasDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(aliasDir, "s")
+	if err := os.Symlink(physical, alias); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	got, err := sessionPath(filepath.Join(".agent-layer", "tmp", "hr", "s"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalPhysical, err := filepath.EvalSymlinks(physical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(filepath.Dir(canonicalPhysical), "session.json")
+	if got != want {
+		t.Fatalf("session path = %q, want %q", got, want)
 	}
 }
 
@@ -365,6 +458,23 @@ type fakeHerdROptions struct {
 	requestsExpected                                                    int
 	staleFirst, distinctPanes, unappliedFirst                           bool
 	persistDelay                                                        time.Duration
+	switchCodexTitleAfterReport, switchCodexTitleAfterPaneList          string
+	codexTitle                                                          string
+	codexProcessPID                                                     int
+	reportError                                                         string
+	codexPanes                                                          []fakeCodexPane
+	codexProcessError                                                   string
+	workingDir                                                          string
+	socketPath                                                          string
+}
+
+// fakeCodexPane is intentionally limited to the fields read through the
+// public HerdR protocol by the native-Codex hook boundary tests.
+type fakeCodexPane struct {
+	paneID, title, authority                   string
+	liveSource, liveAgent, liveKind, liveValue string
+	processPID                                 int
+	processArgv                                []any
 }
 
 func fakeHerdR(t *testing.T, options fakeHerdROptions) (string, chan map[string]any, chan struct{}) {
@@ -392,7 +502,10 @@ func fakeHerdR(t *testing.T, options fakeHerdROptions) (string, chan map[string]
 	}
 	// Bind from a test-owned temporary working directory so the relative socket
 	// stays under Unix-domain limits without retaining test artifacts.
-	root := t.TempDir()
+	root := options.workingDir
+	if root == "" {
+		root = t.TempDir()
+	}
 	t.Chdir(root)
 	sessionDir := filepath.Join(root, "session")
 	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
@@ -414,7 +527,6 @@ func fakeHerdR(t *testing.T, options fakeHerdROptions) (string, chan map[string]
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		defer func() { _ = listener.Close() }()
 		reportCount, paneGets, requests := 0, 0, 0
 		lastSequence := map[string]float64{}
 		requestsExpected := options.requestsExpected
@@ -443,8 +555,24 @@ func fakeHerdR(t *testing.T, options fakeHerdROptions) (string, chan map[string]
 					_ = conn.Close()
 					continue
 				}
+				if options.reportError != "" {
+					_, _ = conn.Write([]byte(`{"error":{"code":"` + options.reportError + `"}}` + "\n"))
+					_ = conn.Close()
+					continue
+				}
 				reportCount++
 				reports <- request
+				for index := range options.codexPanes {
+					if options.codexPanes[index].paneID == stringValue(params[requestPaneIDKey]) {
+						options.codexPanes[index].liveSource = stringValue(params[requestSourceKey])
+						options.codexPanes[index].liveAgent = stringValue(params[requestAgentKey])
+						options.codexPanes[index].liveKind = "id"
+						options.codexPanes[index].liveValue = stringValue(params["agent_session_id"])
+					}
+				}
+				if reportCount == 1 && options.switchCodexTitleAfterReport != "" && len(options.codexPanes) > 0 {
+					options.codexPanes[0].title = options.switchCodexTitleAfterReport
+				}
 				source := params["source"].(string)
 				sequence := params["seq"].(float64)
 				if sequence <= lastSequence[source] {
@@ -472,6 +600,48 @@ func fakeHerdR(t *testing.T, options fakeHerdROptions) (string, chan map[string]
 				}
 				response, _ := json.Marshal(map[string]any{"id": "canonical", "result": map[string]any{"type": "pane_info", "pane": map[string]any{"pane_id": canonicalPane}}})
 				_, _ = conn.Write(append(response, '\n'))
+			case "pane.list":
+				panes := make([]any, 0, len(options.codexPanes))
+				if len(options.codexPanes) == 0 {
+					panes = append(panes, map[string]any{"pane_id": options.canonicalPane, "terminal_title": options.codexTitle})
+				} else {
+					for _, fixture := range options.codexPanes {
+						pane := map[string]any{"pane_id": fixture.paneID, "terminal_title": fixture.title}
+						if fixture.authority != "" {
+							pane["agent_session"] = map[string]any{"source": fixture.authority}
+						} else if fixture.liveSource != "" {
+							pane["agent_session"] = map[string]any{"source": fixture.liveSource, "agent": fixture.liveAgent, "kind": fixture.liveKind, "value": fixture.liveValue}
+						}
+						panes = append(panes, pane)
+					}
+				}
+				response, _ := json.Marshal(map[string]any{"id": "panes", "result": map[string]any{"panes": panes}})
+				_, _ = conn.Write(append(response, '\n'))
+				if options.switchCodexTitleAfterPaneList != "" && len(options.codexPanes) > 0 {
+					options.codexPanes[0].title = options.switchCodexTitleAfterPaneList
+					options.switchCodexTitleAfterPaneList = ""
+				}
+			case "pane.process_info":
+				if options.codexProcessError != "" {
+					response, _ := json.Marshal(map[string]any{"id": "process", "error": map[string]any{"code": options.codexProcessError}})
+					_, _ = conn.Write(append(response, '\n'))
+					break
+				}
+				pid, argv := options.codexProcessPID, []any{"codex"}
+				if len(options.codexPanes) > 0 {
+					paneID := request["params"].(map[string]any)["pane_id"].(string)
+					for _, fixture := range options.codexPanes {
+						if fixture.paneID == paneID {
+							pid = fixture.processPID
+							if len(fixture.processArgv) > 0 {
+								argv = fixture.processArgv
+							}
+							break
+						}
+					}
+				}
+				response, _ := json.Marshal(map[string]any{"id": "process", "result": map[string]any{"process_info": map[string]any{"foreground_processes": []any{map[string]any{"pid": pid, "name": "codex", "argv": argv}}}}})
+				_, _ = conn.Write(append(response, '\n'))
 			default:
 				// session.snapshot is intentionally absent: its live 0.9.3
 				// schema does not expose persisted agent_resume commands.
@@ -482,6 +652,9 @@ func fakeHerdR(t *testing.T, options fakeHerdROptions) (string, chan map[string]
 			_ = conn.Close()
 		}
 	}()
+	if options.socketPath != "" {
+		return options.socketPath, reports, done
+	}
 	return filepath.Join(projectDir, "s", "herdr.sock"), reports, done
 }
 
@@ -594,7 +767,7 @@ func TestReleaseLaunchRecordIgnoresAmbientDevelopmentHookEnvironment(t *testing.
 func TestRecoveryVerificationReturnsBeforeItsDeadline(t *testing.T) {
 	socket, _, done := fakeHerdR(t, fakeHerdROptions{staleFirst: true})
 	start := time.Now()
-	err := reportAndVerify(providers["muse"], "stale-id", []string{"al", "muse", "resume", "stale-id"}, map[string]string{EnvSocketPath: socket, EnvPaneID: "w1:p1"}, start.Add(150*time.Millisecond), "")
+	err := reportAndVerify(providers["muse"], "stale-id", []string{"al", "muse", "resume", "stale-id"}, map[string]string{EnvSocketPath: socket, EnvPaneID: "w1:p1"}, start.Add(150*time.Millisecond), "", nil)
 	waitFakeHerdR(t, done)
 	if err == nil || !strings.Contains(err.Error(), "deadline") {
 		t.Fatalf("stale Ok must fail visibly: %v", err)
@@ -625,19 +798,76 @@ func TestHandleForRootDoesNotClaimPlainNativePane(t *testing.T) {
 	}
 }
 
+func TestHandleForRootCodexBackgroundChildDoesNotClaimDifferentSelectedTitle(t *testing.T) {
+	// This is the public hook boundary: stale dispatch/HerdR markers and a
+	// background child ID must not overwrite the selected parent pane. The
+	// deliberately different title also proves we do not contact an unrelated
+	// managed server merely because an old live record remains on disk.
+	socket, reports, done := fakeHerdR(t, fakeHerdROptions{
+		codexTitle:       "✳ 01a1138f-7df0-7fa0-94ae-820334783a28 | selected parent",
+		requestsExpected: 30,
+	})
+	root, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	launch := exec.Command("sleep", "10") //nolint:gosec // test-held live PID fixture
+	if err := launch.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = launch.Process.Kill(); _ = launch.Wait() })
+	_, start, err := processLineage(launch.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := filepath.Join(root, ".agent-layer", "tmp", "runs", "codex-background")
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	context := launchContext{
+		Version: 2, PID: launch.Process.Pid, ProcessStart: start, ProjectRoot: root,
+		Provider: providerCodex, SocketPath: socket, LaunchCWD: root, PaneID: "w1:p1", CodexHome: filepath.Join(root, "missing-codex-home"),
+	}
+	writeLaunchContextFixture(t, filepath.Join(runDir, launchContextName(context.PID, context.ProcessStart)), context)
+	payload := `{"hook_event_name":"UserPromptSubmit","session_id":"01a1138f-7df0-7fa0-94ae-820334783a28","agent_id":"01a1138f-7df0-7fa0-94ae-820334783a29"}`
+	env := []string{EnvDispatch + "=1", EnvEnabled + "=1", EnvSocketPath + "=/stale.sock", EnvPaneID + "=stale", "CODEX_THREAD_ID=stale"}
+	started := time.Now()
+	if err := HandleForRoot(providerCodex, root, strings.NewReader(payload), io.Discard, io.Discard, env); err != nil {
+		t.Fatalf("background child with a different selected title must be a no-op: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("background child waited for title paint: %s", elapsed)
+	}
+	if len(reports) != 0 {
+		t.Fatalf("background child reported %#v", <-reports)
+	}
+	_ = done // listener cleanup stops the intentionally open no-report fixture.
+}
+
 func TestHandleForRootStoresNonMuseLaunchIdentity(t *testing.T) {
 	cases := []struct {
 		provider, payload string
 		want              []string
 	}{
 		{providerClaude, `{"hook_event_name":"SessionStart","session_id":"native-id"}`, []string{"al", "claude", "--resume", "native-id"}},
-		{providerCodex, `{"hook_event_name":"SessionStart","session_id":"native-id"}`, []string{"al", "codex", "resume", "native-id"}},
+		{providerCodex, `{"hook_event_name":"SessionStart","session_id":"01a1138f-7df0-7fa0-94ae-820334783a29"}`, []string{"al", "codex", "resume", "01a1138f-7df0-7fa0-94ae-820334783a29"}},
 		{providerGrok, `{"hookEventName":"SessionStart","sessionId":"native-id"}`, []string{"al", "grok", "--resume", "native-id"}},
 		{providerAgy, `{"conversationId":"native-id"}`, []string{"al", "agy", "--conversation", "native-id"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.provider, func(t *testing.T) {
-			socket, reports, done := fakeHerdR(t, fakeHerdROptions{paneGetsExpected: 1})
+			options := fakeHerdROptions{paneGetsExpected: 1}
+			if tc.provider == providerCodex {
+				// Codex rooted hooks now confirm the live embedded pane too. Keep
+				// this generic provider boundary hermetic and realistic rather
+				// than falling back to the developer's ~/.codex or an empty title.
+				options.requestsExpected = 4
+				options.codexPanes = []fakeCodexPane{{
+					paneID: "w1:p1", title: "✳ 01a1138f-7df0-7fa0-94ae-820334783a29 | selected",
+					processPID: os.Getpid(), processArgv: []any{"codex"},
+				}}
+			}
+			socket, reports, done := fakeHerdR(t, options)
 			root, err := os.Getwd()
 			if err != nil {
 				t.Fatal(err)
@@ -647,6 +877,9 @@ func TestHandleForRootStoresNonMuseLaunchIdentity(t *testing.T) {
 				t.Fatal(err)
 			}
 			env := []string{EnvEnabled + "=1", EnvSocketPath + "=" + socket, EnvPaneID + "=w1:p1"}
+			if tc.provider == providerCodex {
+				env = append(env, "CODEX_HOME="+filepath.Join(t.TempDir(), ".codex"))
+			}
 			if err := CaptureLaunch(root, runDir, env, tc.provider); err != nil {
 				t.Fatal(err)
 			}
@@ -661,12 +894,13 @@ func TestHandleForRootStoresNonMuseLaunchIdentity(t *testing.T) {
 			waitFakeHerdR(t, done)
 			params := (<-reports)["params"].(map[string]any)
 			got := params[requestResumeArgvKey].([]any)
-			if len(got) != len(tc.want) {
-				t.Fatalf("argv = %v, want %v", got, tc.want)
+			want := tc.want
+			if len(got) != len(want) {
+				t.Fatalf("argv = %v, want %v", got, want)
 			}
-			for i, want := range tc.want {
-				if got[i] != want {
-					t.Fatalf("argv = %v, want %v", got, tc.want)
+			for i, argument := range want {
+				if got[i] != argument {
+					t.Fatalf("argv = %v, want %v", got, want)
 				}
 			}
 			if tc.provider == providerAgy && out.String() != "{}\n" {

@@ -16,6 +16,7 @@ import (
 
 const (
 	agentLayerHerdRMarker = "agent-layer-herdr"
+	herdrCommandHookType  = `type = "command"`
 	// HerdR persists session changes with a five-second debounce. Four bounded
 	// verification attempts fit below this native-hook timeout without leaving
 	// verification detached from the hook that reported the command.
@@ -448,7 +449,8 @@ func (e *codexTomlEditor) applyCodexHerdRHook(path string, enabled bool, root ..
 	}
 	command := herdrCommand("codex", root...)
 	e.appendBlock([]string{codexHerdRBeginMarker,
-		"[[hooks.SessionStart]]", "[[hooks.SessionStart.hooks]]", `type = "command"`, fmt.Sprintf("command = %q", command), fmt.Sprintf("timeout = %d", herdrTimeout),
+		"[[hooks.SessionStart]]", "[[hooks.SessionStart.hooks]]", herdrCommandHookType, fmt.Sprintf("command = %q", command), fmt.Sprintf("timeout = %d", herdrTimeout),
+		"[[hooks.UserPromptSubmit]]", "[[hooks.UserPromptSubmit.hooks]]", herdrCommandHookType, fmt.Sprintf("command = %q", command), fmt.Sprintf("timeout = %d", herdrTimeout),
 		codexHerdREndMarker})
 	if len(preserved) > 0 {
 		e.appendBlock(preserved)

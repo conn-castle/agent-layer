@@ -3,15 +3,19 @@ package sync
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/pelletier/go-toml/v2"
+
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
+	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
 const codexHeader = `# GENERATED FILE — MAY CONTAIN SECRETS
@@ -79,6 +83,38 @@ func writeCodexConfigWithCLISettings(sys System, root string, project *config.Pr
 	return nil
 }
 
+// codexHerdRTitleDisabledWarning reads the just-synced project-local config,
+// so both an explicit Agent Layer opt-out and a native Codex opt-out use the
+// same warning pipeline and launch rendering. It never reads CODEX_HOME.
+func codexHerdRTitleDisabledWarning(sys System, root string) (*warnings.Warning, error) {
+	path := filepath.Join(root, ".codex", "config.toml")
+	content, err := readExistingCodexConfig(sys, path)
+	if err != nil {
+		return nil, err
+	}
+	var document map[string]any
+	if err := toml.Unmarshal([]byte(content), &document); err != nil {
+		return nil, fmt.Errorf(messages.SyncCodexExistingConfigInvalidFmt, path, err)
+	}
+	title, exists := valueAtPath(document, []string{codexTUIKey, codexTerminalTitleKey})
+	if !exists || !codexTerminalTitleDisabled(title) {
+		return nil, nil
+	}
+	return &warnings.Warning{
+		Code:     warnings.CodeCodexHerdRTitleDisabled,
+		Subject:  "tui.terminal_title",
+		Message:  messages.WarningsCodexHerdRTitleDisabled,
+		Fix:      messages.WarningsCodexHerdRTitleDisabledFix,
+		Source:   warnings.SourceInternal,
+		Severity: warnings.SeverityWarning,
+	}, nil
+}
+
+func codexTerminalTitleDisabled(value any) bool {
+	items, ok := value.([]any)
+	return ok && len(items) == 0
+}
+
 // writeCodexRules generates .codex/rules/default.rules.
 func writeCodexRules(sys System, root string, project *config.ProjectConfig) error {
 	content := buildCodexRules(project)
@@ -121,6 +157,28 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 	if err != nil {
 		return codexManagedConfig{}, err
 	}
+	var terminalTitle []string
+	titleExplicit := false
+	if config.IsAgentEnabled(project.Config.Agents.Codex.Enabled) {
+		if tui, ok := agentSpecific[codexTUIKey].(map[string]any); ok {
+			_, titleExplicit = tui[codexTerminalTitleKey]
+		}
+		terminalTitle, err = codexManagedTerminalTitle(agentSpecific)
+		if err != nil {
+			return codexManagedConfig{}, err
+		}
+		// Keep a single [tui] table even when status-line settings were already
+		// projected from agent_specific.
+		tui := map[string]any{}
+		if existing, ok := agentSpecific[codexTUIKey].(map[string]any); ok {
+			tui = maps.Clone(existing)
+		}
+		tui[codexTerminalTitleKey] = terminalTitle
+		if agentSpecific == nil {
+			agentSpecific = make(map[string]any)
+		}
+		agentSpecific[codexTUIKey] = tui
+	}
 	if _, ok := projection.BuiltInDispatchServer(project.Config, projection.ClientCodex); ok {
 		agentSpecific, err = injectCodexAgentLayerDirectToolNamespace(agentSpecific)
 		if err != nil {
@@ -156,7 +214,6 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 	if err := appendCodexAgentSpecific(&builder, agentSpecific); err != nil {
 		return codexManagedConfig{}, err
 	}
-
 	if err := appendCodexTrustedProject(&builder, trustedRoot, agentSpecific); err != nil {
 		return codexManagedConfig{}, err
 	}
@@ -170,6 +227,10 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		builder.WriteString(codexHerdRBeginMarker)
 		builder.WriteByte('\n')
 		builder.WriteString("[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\n")
+		builder.WriteString(`type = "command"` + "\n")
+		fmt.Fprintf(&builder, "command = %q\n", herdrCommand("codex", root))
+		fmt.Fprintf(&builder, "timeout = %d\n", herdrTimeout)
+		builder.WriteString("[[hooks.UserPromptSubmit]]\n[[hooks.UserPromptSubmit.hooks]]\n")
 		builder.WriteString(`type = "command"` + "\n")
 		fmt.Fprintf(&builder, "command = %q\n", herdrCommand("codex", root))
 		fmt.Fprintf(&builder, "timeout = %d\n", herdrTimeout)
@@ -234,6 +295,8 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		AgentSpecific: agentSpecific,
 		ChimeEnabled:  chimeEnabled,
 		HerdREnabled:  config.IsAgentEnabled(project.Config.Agents.Codex.Enabled),
+		TerminalTitle: terminalTitle,
+		TitleExplicit: titleExplicit,
 	}, nil
 }
 

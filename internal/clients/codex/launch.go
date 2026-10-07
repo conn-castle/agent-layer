@@ -20,14 +20,13 @@ var execFunc = clients.ExecHandoff
 // Launch starts the Codex CLI with the configured options.
 func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
 	args := append([]string{}, passArgs...)
+	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Codex, os.Stderr)
 
 	if runInfo != nil {
 		if err := herdr.CaptureLaunch(cfg.Root, runInfo.Dir, env, "codex"); err != nil {
 			return fmt.Errorf("prepare Codex HerdR recovery: %w", err)
 		}
 	}
-	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Codex, os.Stderr)
-
 	path, err := exec.LookPath("codex")
 	if err != nil {
 		return fmt.Errorf(messages.ClientsExecLookupErrorFmt, "codex", err)

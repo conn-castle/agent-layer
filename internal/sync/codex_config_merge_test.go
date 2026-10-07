@@ -106,6 +106,37 @@ command = "old-tool"
 	assertValidTOML(t, first)
 }
 
+func TestCodexTitleWithThreadIDPreservesActivityAndOrder(t *testing.T) {
+	got, err := codexTitleWithThreadID([]any{"activity", "project-name", "thread-name"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"activity", "thread-id", "project-name", "thread-name"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("title = %#v, want %#v", got, want)
+	}
+	already, err := codexTitleWithThreadID([]any{"spinner", "thread-id", "project-name"})
+	if err != nil || !reflect.DeepEqual(already, []string{"spinner", "thread-id", "project-name"}) {
+		t.Fatalf("existing thread title = %#v, %v", already, err)
+	}
+	late, err := codexTitleWithThreadID([]any{"activity", "project-name", "thread-name", "session-id"})
+	if err != nil || !reflect.DeepEqual(late, []string{"activity", "session-id", "project-name", "thread-name"}) {
+		t.Fatalf("late identity title = %#v, %v", late, err)
+	}
+}
+
+func TestCodexTitleWithThreadIDRejectsMalformedList(t *testing.T) {
+	empty, err := codexTitleWithThreadID([]any{})
+	if err != nil || !reflect.DeepEqual(empty, []string{}) {
+		t.Fatalf("empty native title opt-out = %#v, %v", empty, err)
+	}
+	for _, value := range []any{"thread-id", []any{""}, []any{"project-name", 3}} {
+		if _, err := codexTitleWithThreadID(value); err == nil {
+			t.Fatalf("malformed title %#v was accepted", value)
+		}
+	}
+}
+
 func TestWriteCodexConfig_IdempotentWhenSeedingTrustFromPreAgentLayerConfig(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

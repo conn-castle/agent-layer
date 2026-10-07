@@ -19,10 +19,12 @@ const (
 	maxAncestorDepth       = 8
 )
 
+var errProcessNotFound = errors.New("process was not found")
+
 // launchContext is deliberately a small, per-exec handoff record. It is not
-// a saved environment or a "last launch" pointer: the hook may use it only
-// when one of its current process ancestors has the recorded PID and start
-// identity.
+// a saved environment or a "last launch" pointer. Ordinary hooks require a
+// matching process ancestor; detached Codex hooks instead join their owning
+// managed server to the live foreground launch using its PID and start identity.
 type launchContext struct {
 	Version       int    `json:"version"`
 	PID           int    `json:"pid"`
@@ -32,6 +34,7 @@ type launchContext struct {
 	SocketPath    string `json:"socket_path"`
 	LaunchCWD     string `json:"launch_cwd,omitempty"`
 	PaneID        string `json:"pane_id"`
+	CodexHome     string `json:"codex_home,omitempty"`
 	DevExecutable string `json:"dev_executable,omitempty"`
 	DevBypass     bool   `json:"dev_bypass,omitempty"`
 }
@@ -81,6 +84,14 @@ func CaptureLaunch(root, runDir string, env []string, provider string) error {
 		Provider:     provider,
 		SocketPath:   values[EnvSocketPath],
 		PaneID:       values[EnvPaneID],
+	}
+	if provider == providerCodex {
+		home, err := effectiveCodexHome(values)
+		if err != nil {
+			return fmt.Errorf("resolve Codex home: %w", err)
+		}
+		context.Version = 2
+		context.CodexHome = home
 	}
 	if !filepath.IsAbs(context.SocketPath) {
 		cwd, err := canonicalDirectory(".")
@@ -293,37 +304,9 @@ func readDispatchBoundary(path string, pid int, start string) error {
 }
 
 func readLaunchContext(path, root, provider string) (launchContext, error) {
-	runsDir := filepath.Join(root, ".agent-layer", "tmp", "runs")
-	relative, err := filepath.Rel(runsDir, path)
-	if err != nil || relative == "." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) || strings.Contains(relative, string(os.PathSeparator)+".."+string(os.PathSeparator)) {
-		return launchContext{}, fmt.Errorf("HerdR launch context is outside the project run directory: %s", path)
-	}
-	info, err := os.Lstat(path)
+	context, err := decodeLaunchContext(path, root)
 	if err != nil {
-		return launchContext{}, fmt.Errorf("stat HerdR launch context: %w", err)
-	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return launchContext{}, fmt.Errorf("HerdR launch context must be a regular file: %s", path)
-	}
-	runInfo, err := os.Lstat(filepath.Dir(path))
-	if err != nil {
-		return launchContext{}, fmt.Errorf("stat HerdR launch context directory: %w", err)
-	}
-	if !runInfo.IsDir() || runInfo.Mode()&os.ModeSymlink != 0 {
-		return launchContext{}, fmt.Errorf("HerdR launch context directory must be real: %s", filepath.Dir(path))
-	}
-	if info.Mode().Perm()&0o077 != 0 {
-		return launchContext{}, fmt.Errorf("HerdR launch context must be private: %s", path)
-	}
-	data, err := os.ReadFile(path) // #nosec G304 -- path was selected from the validated project run directory.
-	if err != nil {
-		return launchContext{}, fmt.Errorf("read HerdR launch context: %w", err)
-	}
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	decoder.DisallowUnknownFields()
-	var context launchContext
-	if err := decoder.Decode(&context); err != nil {
-		return launchContext{}, fmt.Errorf("decode HerdR launch context: %w", err)
+		return launchContext{}, err
 	}
 	if context.Provider != provider || context.ProjectRoot != root {
 		return context, nil
@@ -334,9 +317,140 @@ func readLaunchContext(path, root, provider string) (launchContext, error) {
 	return context, nil
 }
 
+// decodeLaunchContext checks the private-file envelope and JSON shape without
+// requiring resources (such as a development binary) that a historical dead
+// process may have legitimately lost. Callers that can establish a live PID
+// must always follow it with validateLaunchContext.
+func decodeLaunchContext(path, root string) (launchContext, error) {
+	data, err := protectedLaunchContextData(path, root)
+	if err != nil {
+		return launchContext{}, err
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	var context launchContext
+	if err := decoder.Decode(&context); err != nil {
+		return launchContext{}, fmt.Errorf("decode HerdR launch context: %w", err)
+	}
+	return context, nil
+}
+
+func protectedLaunchContextData(path, root string) ([]byte, error) {
+	runsDir := filepath.Join(root, ".agent-layer", "tmp", "runs")
+	relative, err := filepath.Rel(runsDir, path)
+	if err != nil || relative == "." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) || strings.Contains(relative, string(os.PathSeparator)+".."+string(os.PathSeparator)) {
+		return nil, fmt.Errorf("HerdR launch context is outside the project run directory: %s", path)
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, fmt.Errorf("stat HerdR launch context: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("HerdR launch context must be a regular file: %s", path)
+	}
+	runInfo, err := os.Lstat(filepath.Dir(path))
+	if err != nil {
+		return nil, fmt.Errorf("stat HerdR launch context directory: %w", err)
+	}
+	if !runInfo.IsDir() || runInfo.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("HerdR launch context directory must be real: %s", filepath.Dir(path))
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("HerdR launch context must be private: %s", path)
+	}
+	data, err := os.ReadFile(path) // #nosec G304 -- path was selected from the validated project run directory.
+	if err != nil {
+		return nil, fmt.Errorf("read HerdR launch context: %w", err)
+	}
+	return data, nil
+}
+
+// readLiveCodexDaemonLaunchContext ignores an exact-root Codex record only
+// after decoding its protected envelope and proving its PID/start identity is
+// dead. A live record still receives full executable, home, pane, and socket
+// validation so damaged ownership cannot become a false successful no-op.
+func readLiveCodexDaemonLaunchContext(path, root string) (launchContext, bool, error) {
+	data, err := protectedLaunchContextData(path, root)
+	if err != nil {
+		return launchContext{}, false, err
+	}
+	dead, err := deadLaunchContextName(path)
+	if err != nil {
+		return launchContext{}, false, err
+	}
+	if dead {
+		return launchContext{}, false, nil
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	var context launchContext
+	if err := decoder.Decode(&context); err != nil {
+		return launchContext{}, false, fmt.Errorf("decode HerdR launch context: %w", err)
+	}
+	if context.Provider != providerCodex || context.ProjectRoot != root {
+		return context, false, nil
+	}
+	_, start, lineageErr := processLineage(context.PID)
+	if errors.Is(lineageErr, errProcessNotFound) {
+		return context, false, nil
+	}
+	if lineageErr != nil {
+		return launchContext{}, false, fmt.Errorf("inspect recorded Codex launch process: %w", lineageErr)
+	}
+	if start != context.ProcessStart {
+		return context, false, nil
+	}
+	// Version 1 predates native daemon ownership and remains an ordinary
+	// ancestry-only record. It is live but cannot participate in this resolver.
+	if context.Version == 1 && context.CodexHome == "" {
+		return context, false, nil
+	}
+	if err := validateLaunchContext(context, root, providerCodex); err != nil {
+		return launchContext{}, false, fmt.Errorf("invalid HerdR launch context: %w", err)
+	}
+	return context, true, nil
+}
+
+// deadLaunchContextName proves a protected record is historic from its
+// CaptureLaunch filename before JSON decoding. It only ignores a malformed
+// record after the recorded PID is absent or its start identity changed; a
+// live owner and malformed/unsafe filename remain hard failures.
+func deadLaunchContextName(path string) (bool, error) {
+	name := filepath.Base(path)
+	if !strings.HasPrefix(name, launchContextPrefix) || !strings.HasSuffix(name, launchContextSuffix) {
+		return false, fmt.Errorf("invalid HerdR launch context filename: %s", name)
+	}
+	generation := strings.TrimSuffix(strings.TrimPrefix(name, launchContextPrefix), launchContextSuffix)
+	pidText, digest, ok := strings.Cut(generation, "-")
+	if !ok || len(digest) != 16 {
+		return false, fmt.Errorf("invalid HerdR launch context filename: %s", name)
+	}
+	if _, err := hex.DecodeString(digest); err != nil {
+		return false, fmt.Errorf("invalid HerdR launch context filename: %s", name)
+	}
+	pid, err := strconv.Atoi(pidText)
+	if err != nil || pid <= 1 {
+		return false, fmt.Errorf("invalid HerdR launch context filename: %s", name)
+	}
+	_, start, err := processLineage(pid)
+	if errors.Is(err, errProcessNotFound) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect recorded Codex launch process: %w", err)
+	}
+	return launchContextName(pid, start) != name, nil
+}
+
 func validateLaunchContext(context launchContext, root, provider string) error {
-	if context.Version != 1 || context.PID <= 1 || context.ProcessStart == "" || context.Provider != provider || context.ProjectRoot != root {
+	if (context.Version != 1 && context.Version != 2) || context.PID <= 1 || context.ProcessStart == "" || context.Provider != provider || context.ProjectRoot != root {
 		return errors.New("unexpected identity")
+	}
+	if context.Version == 2 && (context.Provider != providerCodex || !filepath.IsAbs(context.CodexHome)) {
+		return errors.New("invalid Codex home")
+	}
+	if context.Version == 1 && context.CodexHome != "" {
+		return errors.New("unexpected Codex home")
 	}
 	if !validSocketPath(context.SocketPath, context.LaunchCWD, root) || !safePaneID(context.PaneID) {
 		return errors.New("invalid HerdR socket or pane")
@@ -362,6 +476,25 @@ func validateLaunchContext(context launchContext, root, provider string) error {
 		}
 	}
 	return nil
+}
+
+func effectiveCodexHome(values map[string]string) (string, error) {
+	home := values["CODEX_HOME"]
+	if home == "" {
+		base := values["HOME"]
+		if base == "" {
+			var err error
+			base, err = os.UserHomeDir()
+			if err != nil {
+				return "", errors.New("CODEX_HOME and HOME are both unset")
+			}
+		}
+		home = filepath.Join(base, ".codex")
+	}
+	if !filepath.IsAbs(home) {
+		return "", errors.New("CODEX_HOME must be absolute")
+	}
+	return filepath.Clean(home), nil
 }
 
 func validSocketPath(socketPath, launchCWD, root string) bool {
