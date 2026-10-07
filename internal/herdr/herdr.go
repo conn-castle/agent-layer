@@ -39,7 +39,7 @@ const (
 	flagResume               = "--resume"
 	flagConversation         = "--conversation"
 	eventSessionStart        = "SessionStart"
-	eventMuseUserPrompt      = "UserPromptSubmit"
+	eventUserPromptSubmit    = "UserPromptSubmit"
 	resumeVerb               = "resume"
 	flagDangerouslySkipPerms = "--dangerously-skip-permissions"
 	commandEnv               = "env"
@@ -73,6 +73,8 @@ var providers = map[string]providerSpec{
 
 var lastSequence atomic.Int64
 
+var errMissingSessionID = errors.New("missing session identifier")
+
 const (
 	// HookTimeoutSeconds is shared with generated native hook configuration.
 	HookTimeoutSeconds = 35
@@ -97,7 +99,14 @@ func HandleForRoot(provider, root string, in io.Reader, out, errOut io.Writer, e
 	}
 	env := environment(environ)
 	if root != "" && provider == providerCodex {
-		return handleCodexRooted(root, spec, in, errOut, env, deadline)
+		err := handleCodexRooted(root, spec, in, env, deadline)
+		if err != nil {
+			err = recordCodexRecoveryFailure(root, err)
+			if errOut != nil {
+				_, _ = fmt.Fprintf(errOut, "agent-layer HerdR recovery (codex): %v\n", err)
+			}
+		}
+		return err
 	}
 	if env[EnvDispatch] != "" {
 		return nil
@@ -167,7 +176,7 @@ func HandleForRoot(provider, root string, in io.Reader, out, errOut io.Writer, e
 	// earlier native launch non-identical, while later prompts retain the
 	// ordinary exact-persisted-command fast path.
 	canonicalPane := ""
-	if provider == providerMuse && text(payload, "hook_event_name", "hookEventName") == eventMuseUserPrompt {
+	if provider == providerMuse && text(payload, "hook_event_name", "hookEventName") == eventUserPromptSubmit {
 		var stored bool
 		canonicalPane, stored, err = currentResumeStored(spec, argv, env, deadline)
 		if err != nil {
@@ -186,95 +195,43 @@ func HandleForRoot(provider, root string, in io.Reader, out, errOut io.Writer, e
 	return nil
 }
 
-// handleCodexRooted resolves both the ordinary child-process launch and the
-// native daemon case before honoring inherited HerdR/dispatch environment. A
-// detached native app-server legitimately inherits stale values, while a
-// payload thread ID plus the live title is current ownership evidence.
-func handleCodexRooted(root string, spec providerSpec, in io.Reader, errOut io.Writer, env map[string]string, deadline time.Time) error {
+// handleCodexRooted binds the event ID to the projected title of each live
+// recorded foreground pane. Hook ancestry and inherited pane markers do not
+// identify a conversation when a shared daemon serves multiple TUIs.
+func handleCodexRooted(root string, spec providerSpec, in io.Reader, env map[string]string, deadline time.Time) error {
 	payload, err := decodePayload(in)
 	if err != nil {
 		return fmt.Errorf("read codex HerdR hook event: %w", err)
 	}
-	id, ok, err := sessionID(spec, payload, env)
-	if err != nil || !ok {
-		if err != nil {
-			if strings.Contains(err.Error(), "missing its session identifier") {
-				live, liveErr := hasLiveCodexDaemonLaunch(root)
-				if liveErr != nil {
-					return liveErr
-				}
-				if live {
-					failure := errors.New("codex native hook event omitted its session identifier for a live Agent Layer launch")
-					failure = recordCodexRecoveryFailure(root, failure)
-					if errOut != nil {
-						_, _ = fmt.Fprintf(errOut, "agent-layer HerdR recovery (codex): %v\n", failure)
-					}
-					return failure
-				}
-				return nil
-			}
-			return fmt.Errorf("read codex HerdR hook event: %w", err)
-		}
+	id, ok, idErr := sessionID(spec, payload, env)
+	if idErr != nil && !errors.Is(idErr, errMissingSessionID) {
+		return fmt.Errorf("read codex HerdR hook event: %w", idErr)
+	}
+	if idErr == nil && !ok {
 		return nil
 	}
-	launch, found, err := resolveLaunchContext(root, providerCodex)
+	root, err = canonicalDirectory(root)
+	if err != nil {
+		return fmt.Errorf("resolve HerdR project root: %w", err)
+	}
+	paths, err := codexRunRecords(root)
 	if err != nil {
 		return err
 	}
-	launches := []launchContext{launch}
-	selectedChild := text(payload, "agent_id", "agentId") != ""
-	daemonRecovery := !found
-	if found {
-		// The stock app server is a direct child of the first TUI that starts
-		// it. Hooks for every later attached TUI are therefore also descendants
-		// of that first launch. A launch record above this kernel-authenticated
-		// server is provenance for the daemon, not authority for this hook.
-		managed, managedErr := codexHookUsesManagedServer(launch, deadline)
-		if managedErr != nil {
-			managedErr = recordCodexRecoveryFailure(root, managedErr)
-			if errOut != nil {
-				_, _ = fmt.Fprintf(errOut, "agent-layer HerdR recovery (codex): %v\n", managedErr)
-			}
-			return managedErr
-		}
-		if managed {
-			daemonRecovery = true
-			found = false
-		}
+	records, err := liveCodexLaunchRecords(root, paths)
+	if err != nil {
+		return err
 	}
-	if !found {
-		// A normal no-owner case remains a no-op. Unsafe matched ownership is a
-		// failure and must never masquerade as a successful registration.
-		launches, found, err = resolveCodexDaemonContexts(root, id, deadline, selectedChild)
-		if err != nil {
-			err = recordCodexRecoveryFailure(root, err)
-			if errOut != nil {
-				_, _ = fmt.Fprintf(errOut, "agent-layer HerdR recovery (codex): %v\n", err)
-			}
-			return err
+	if errors.Is(idErr, errMissingSessionID) {
+		if len(records) > 0 {
+			return errors.New("codex native hook event omitted its session identifier for a live Agent Layer launch")
 		}
-		if !found {
-			return nil
-		}
+		return nil
 	}
-	if !daemonRecovery {
-		// Nested Codex launched from an embedded TUI inherits this marker. The
-		// managed route has title/peer ownership instead, so it deliberately
-		// ignores the inherited marker.
-		if inherited := env["CODEX_THREAD_ID"]; inherited != "" && inherited != id {
-			return nil
-		}
-	}
-	titleDisabled := false
-	if !daemonRecovery {
-		titleDisabled, err = codexProjectTitleDisabled(root)
-		if err != nil {
-			err = recordCodexRecoveryFailure(root, err)
-			if errOut != nil {
-				_, _ = fmt.Fprintf(errOut, "agent-layer HerdR recovery (codex): %v\n", err)
-			}
-			return err
-		}
+	childEvent := text(payload, "agent_id", "agentId") != ""
+	launches, found, err := codexContextsWithPaintWait(root, records, id, deadline, childEvent)
+	if err != nil || !found {
+		return err
 	}
 	seen := make(map[string]bool, len(launches))
 	for _, launch := range launches {
@@ -294,28 +251,10 @@ func handleCodexRooted(root string, spec providerSpec, in io.Reader, errOut io.W
 			candidateEnv[EnvDevBypass], candidateEnv[EnvDevExecutable] = "1", launch.DevExecutable
 		}
 		argv, err := resumeArgv(spec, id, candidateEnv)
-		if selectedChild && !daemonRecovery {
-			// An embedded Codex child has no managed-server peer that can prove
-			// selected-child authority. Preserve the historical safe no-op rather
-			// than replacing its parent recipe from an unverified child event.
-			continue
-		}
 		if err == nil {
-			firstReportAttempt := true
-			// This callback runs immediately before attempt zero and before each
-			// retry. A changed, gone, or still-unpainted title is a safe no-op;
-			// ownership, API, and kernel-peer failures remain actionable.
+			// Recheck ownership before every write; never wait on a changed selection.
 			revalidate := func() (bool, error) {
-				var matchErr error
-				switch {
-				case daemonRecovery || selectedChild:
-					matchErr = codexContextMatchesPane(launch, id, deadline)
-				case firstReportAttempt:
-					firstReportAttempt = false
-					matchErr = codexEmbeddedContextMatchesPaneWithPaintWait(launch, id, deadline, titleDisabled)
-				default:
-					matchErr = codexEmbeddedContextMatchesPane(launch, id, deadline)
-				}
+				matchErr := codexContextMatchesPane(launch, id, deadline)
 				if errors.Is(matchErr, errCodexPaneNoMatch) || errors.Is(matchErr, errCodexPaneGone) || errors.Is(matchErr, errCodexPaneTitlePending) {
 					return false, nil
 				}
@@ -329,10 +268,6 @@ func handleCodexRooted(root string, spec providerSpec, in io.Reader, errOut io.W
 			}
 		}
 		if err != nil {
-			err = recordCodexRecoveryFailure(root, err)
-			if errOut != nil {
-				_, _ = fmt.Fprintf(errOut, "agent-layer HerdR recovery (codex): %v\n", err)
-			}
 			return err
 		}
 	}
@@ -406,7 +341,7 @@ func decodePayload(in io.Reader) (map[string]any, error) {
 
 func sessionID(spec providerSpec, payload map[string]any, env map[string]string) (string, bool, error) {
 	// Codex can select a child conversation in the foreground. Its live pane
-	// title and managed-server ID are the authority; other providers have no
+	// projected title and foreground ownership are the authority; other providers have no
 	// equivalent association signal and retain the conservative child no-op.
 	if spec.name != providerCodex && (text(payload, "agent_id") != "" || text(payload, "agentId") != "") {
 		return "", false, nil
@@ -423,7 +358,7 @@ func sessionID(spec providerSpec, payload map[string]any, env map[string]string)
 		}
 		id = text(payload, "session_id", "sessionId")
 	case providerMuse:
-		if event != spec.event && event != eventMuseUserPrompt {
+		if event != spec.event && event != eventUserPromptSubmit {
 			if event == "" {
 				return "", false, fmt.Errorf("%s event is missing its hook event name", spec.name)
 			}
@@ -433,12 +368,12 @@ func sessionID(spec providerSpec, payload map[string]any, env map[string]string)
 	case providerCodex:
 		// Codex's native hook contract permits an omitted event discriminator,
 		// but rejects an explicitly different event.
-		if event != "" && event != spec.event && event != eventMuseUserPrompt {
+		if event != "" && event != spec.event && event != eventUserPromptSubmit {
 			return "", false, nil
 		}
 		id = text(payload, "session_id", "sessionId")
 		// Native child hooks keep the parent in session_id and identify their
-		// own thread in agent_id. Title and server ownership still decide whether
+		// own thread in agent_id. Projected title and foreground ownership still decide whether
 		// that child is selected; a background child never claims the parent.
 		if childID := text(payload, "agent_id", "agentId"); childID != "" {
 			id = childID
@@ -463,7 +398,7 @@ func sessionID(spec providerSpec, payload map[string]any, env map[string]string)
 		}
 	}
 	if id == "" {
-		return "", false, fmt.Errorf("%s event is missing its session identifier", spec.name)
+		return "", false, fmt.Errorf("%s event is missing its session identifier: %w", spec.name, errMissingSessionID)
 	}
 	return id, true, nil
 }

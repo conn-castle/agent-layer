@@ -10,9 +10,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/pelletier/go-toml/v2"
-
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/herdr"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/warnings"
@@ -87,12 +86,11 @@ func codexHerdRTitleDisabledWarning(sys System, root string) (*warnings.Warning,
 	if err != nil {
 		return nil, err
 	}
-	var document map[string]any
-	if err := toml.Unmarshal([]byte(content), &document); err != nil {
+	disabled, err := herdr.CodexTitleDisabled([]byte(content))
+	if err != nil {
 		return nil, fmt.Errorf(messages.SyncCodexExistingConfigInvalidFmt, path, err)
 	}
-	title, exists := valueAtPath(document, []string{codexTUIKey, codexTerminalTitleKey})
-	if !exists || !codexTerminalTitleDisabled(title) {
+	if !disabled {
 		return nil, nil
 	}
 	return &warnings.Warning{
@@ -103,11 +101,6 @@ func codexHerdRTitleDisabledWarning(sys System, root string) (*warnings.Warning,
 		Source:   warnings.SourceInternal,
 		Severity: warnings.SeverityWarning,
 	}, nil
-}
-
-func codexTerminalTitleDisabled(value any) bool {
-	items, ok := value.([]any)
-	return ok && len(items) == 0
 }
 
 // writeCodexRules generates .codex/rules/default.rules.
@@ -142,28 +135,6 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 	agentSpecific, _, err := codexAgentSpecificForOutput(sys, root, project.Config.Agents.Codex, includeCLISettings)
 	if err != nil {
 		return codexManagedConfig{}, err
-	}
-	var terminalTitle []string
-	titleExplicit := false
-	if config.IsAgentEnabled(project.Config.Agents.Codex.Enabled) {
-		if tui, ok := agentSpecific[codexTUIKey].(map[string]any); ok {
-			_, titleExplicit = tui[codexTerminalTitleKey]
-		}
-		terminalTitle, err = codexManagedTerminalTitle(agentSpecific)
-		if err != nil {
-			return codexManagedConfig{}, err
-		}
-		// Keep a single [tui] table even when status-line settings were already
-		// projected from agent_specific.
-		tui := map[string]any{}
-		if existing, ok := agentSpecific[codexTUIKey].(map[string]any); ok {
-			tui = maps.Clone(existing)
-		}
-		tui[codexTerminalTitleKey] = terminalTitle
-		if agentSpecific == nil {
-			agentSpecific = make(map[string]any)
-		}
-		agentSpecific[codexTUIKey] = tui
 	}
 	if _, ok := projection.BuiltInDispatchServer(project.Config, projection.ClientCodex); ok {
 		agentSpecific, err = injectCodexAgentLayerDirectToolNamespace(agentSpecific)
@@ -200,7 +171,28 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 	// Write agent-specific root keys/tables before managed MCP tables so any
 	// scalar overrides remain at the TOML root.
 	managedHookEvents := codexManagedHookEvents(chimeEnabled, herdREnabled)
-	if err := appendCodexAgentSpecific(&builder, withoutEmptyCodexHookEvents(agentSpecific, managedHookEvents)); err != nil {
+	// Normalize a copy only for rendering; the merge reads title precedence
+	// directly from the original agent_specific and native configuration.
+	outputSpecific := agentSpecific
+	if herdREnabled {
+		title, err := codexManagedTerminalTitle(agentSpecific, nil)
+		if err != nil {
+			return codexManagedConfig{}, err
+		}
+		outputSpecific = maps.Clone(agentSpecific)
+		if outputSpecific == nil {
+			outputSpecific = map[string]any{}
+		}
+		tui, _ := agentSpecific[codexTUIKey].(map[string]any)
+		tui = maps.Clone(tui)
+		if tui == nil {
+			tui = map[string]any{}
+		}
+		tui[codexTerminalTitleKey] = title
+		outputSpecific[codexTUIKey] = tui
+	}
+
+	if err := appendCodexAgentSpecific(&builder, withoutEmptyCodexHookEvents(outputSpecific, managedHookEvents)); err != nil {
 		return codexManagedConfig{}, err
 	}
 	if err := appendCodexTrustedProject(&builder, trustedRoot, agentSpecific); err != nil {
@@ -284,8 +276,6 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		AgentSpecific: agentSpecific,
 		ChimeEnabled:  chimeEnabled,
 		HerdREnabled:  herdREnabled,
-		TerminalTitle: terminalTitle,
-		TitleExplicit: titleExplicit,
 	}, nil
 }
 

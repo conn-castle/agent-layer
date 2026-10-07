@@ -392,6 +392,11 @@ func TestWriteCodexConfigHerdRTitleBoundary(t *testing.T) {
 		wantError      string
 	}{
 		{
+			name:      "native repeated identity aliases remain valid",
+			existing:  codexPartialHeader + "\n[tui]\nterminal_title = [\"project-name\", \"session-id\", \"thread-id\"]\n",
+			wantTitle: []any{"session-id", "project-name", "thread-id"},
+		},
+		{
 			name:      "existing title retains user order after activity",
 			existing:  codexPartialHeader + "\n[tui]\nterminal_title = [\"activity\", \"project-name\", \"thread-name\"]\n",
 			wantTitle: []any{"activity", "thread-id", "project-name", "thread-name"},

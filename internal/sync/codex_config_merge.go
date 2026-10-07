@@ -46,8 +46,6 @@ type codexManagedConfig struct {
 	AgentSpecific map[string]any
 	ChimeEnabled  bool
 	HerdREnabled  bool
-	TerminalTitle []string
-	TitleExplicit bool
 }
 
 type codexTomlEditor struct {
@@ -63,34 +61,26 @@ type codexPathValue struct {
 // ensuring a non-empty native TUI title emits a sufficiently early thread
 // identifier for the HerdR recovery hook. An explicit empty list is Codex's
 // supported title opt-out and deliberately disables title-based recovery.
-func codexManagedTerminalTitle(agentSpecific map[string]any) ([]string, error) {
-	defaultTitle := []string{codexTitleActivity, codexTitleThreadID, codexTitleThreadName, codexTitleProjectName}
-	tui, ok := agentSpecific[codexTUIKey]
-	if !ok {
-		return defaultTitle, nil
+func codexManagedTerminalTitle(agentSpecific, existingNative map[string]any) ([]string, error) {
+	if tui, exists := agentSpecific[codexTUIKey]; exists {
+		if _, ok := tui.(map[string]any); !ok {
+			return nil, errors.New("agents.codex.agent_specific.tui must be a table")
+		}
 	}
-	table, ok := tui.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("agents.codex.agent_specific.tui must be a table")
+	path := []string{codexTUIKey, codexTerminalTitleKey}
+	if value, exists := valueAtPath(agentSpecific, path); exists {
+		return codexTitleWithThreadID(value)
 	}
-	value, explicit := table[codexTerminalTitleKey]
-	if !explicit {
-		return defaultTitle, nil
+	if value, exists := valueAtPath(existingNative, path); exists {
+		return codexTitleWithThreadID(value)
 	}
-	return codexTitleWithThreadID(value)
+	return []string{codexTitleActivity, codexTitleThreadID, codexTitleThreadName, codexTitleProjectName}, nil
 }
 
 func codexTitleWithThreadID(value any) ([]string, error) {
 	items, ok := value.([]any)
 	if !ok {
-		if strings, stringOK := value.([]string); stringOK {
-			items = make([]any, len(strings))
-			for i := range strings {
-				items[i] = strings[i]
-			}
-		} else {
-			return nil, errors.New("must be a list of non-empty title items")
-		}
+		return nil, errors.New("must be a list of non-empty title items")
 	}
 	if len(items) == 0 {
 		return []string{}, nil
@@ -213,17 +203,9 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 	}
 	if managed.HerdREnabled {
 		titlePath := []string{codexTUIKey, codexTerminalTitleKey}
-		// An explicit agent_specific value was already normalized while building
-		// managed content. Otherwise retain a user's existing title preferences.
-		title := managed.TerminalTitle
-		if !managed.TitleExplicit {
-			if existingTitle, ok := valueAtPath(existingMap, titlePath); ok {
-				var err error
-				title, err = codexTitleWithThreadID(existingTitle)
-				if err != nil {
-					return "", fmt.Errorf("invalid Codex tui.terminal_title in %s: %w", path, err)
-				}
-			}
+		title, err := codexManagedTerminalTitle(managed.AgentSpecific, existingMap)
+		if err != nil {
+			return "", fmt.Errorf("invalid Codex tui.terminal_title in %s: %w", path, err)
 		}
 		titleValue := make([]any, len(title))
 		for i := range title {
