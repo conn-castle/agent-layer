@@ -625,6 +625,7 @@ func TestInitStudyCreatesSelfContainedSafeSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	destination := filepath.Join(repo, "benchmarks", "study-one")
+	require.NoError(t, os.MkdirAll(destination, 0o700))
 	studyPath, err := InitStudy(InitStudyOptions{RepoRoot: repo, SelectionPath: selectionPath, Directory: filepath.Join("benchmarks", "study-one")})
 	if err != nil {
 		t.Fatal(err)

@@ -33,19 +33,14 @@ func TestRetiredLocalRootSymlinkIsProtectedWithoutTraversal(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, Run(root, Options{System: RealSystem{}}))
 	outside := t.TempDir()
-	sentinel := filepath.Join(outside, "keep")
-	require.NoError(t, os.WriteFile(sentinel, []byte("keep"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "keep"), []byte("keep"), 0o600))
 	local := filepath.Join(root, ".agent-layer", "skills", "ship-pr")
 	require.NoError(t, os.Symlink(outside, local))
 	inst := &installer{root: root, sys: RealSystem{}}
 	known, err := inst.buildKnownPaths()
 	require.NoError(t, err)
-	if _, ok := known[local]; !ok {
-		t.Fatal("symlink root not protected")
-	}
-	if _, ok := known[filepath.Join(local, "keep")]; ok {
-		t.Fatal("followed protected root symlink")
-	}
+	require.Contains(t, known, local)
+	require.NotContains(t, known, filepath.Join(local, "keep"))
 }
 
 func TestMigrationGuardsRefuseBeforeChangingInstalledState(t *testing.T) {
@@ -89,6 +84,8 @@ func TestInstallAndRollbackRecoverBeforeMutation(t *testing.T) {
 				raw = "{\"version\":3}"
 			}
 			require.NoError(t, os.WriteFile(filepath.Join(stage, skilljournal.FileName), []byte(raw), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", SyncLockFileName), nil, 0o600))
+			before := testutil.SnapshotEvidence(t, root)
 			var err error
 			if operation == "install" {
 				err = Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: skillmigration.MinimumCLI})
@@ -97,10 +94,7 @@ func TestInstallAndRollbackRecoverBeforeMutation(t *testing.T) {
 			}
 			if future {
 				require.ErrorContains(t, err, "unsupported schema version 3")
-				data, readErr := os.ReadFile(filepath.Join(stage, skilljournal.FileName)) // #nosec G304 -- test-owned recovery evidence.
-				require.NoError(t, readErr)
-				require.Equal(t, raw, string(data))
-				require.NoFileExists(t, filepath.Join(root, ".agent-layer", "config.toml"))
+				require.Equal(t, before, testutil.SnapshotEvidence(t, root))
 			} else {
 				require.NoDirExists(t, stage)
 				if operation == "install" {
@@ -109,4 +103,22 @@ func TestInstallAndRollbackRecoverBeforeMutation(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestUpgradeRollbackPreservesUnmanagedSkillEdits(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: skillmigration.MinimumCLI}))
+	custom := filepath.Join(root, ".agent-layer", "skills", "user-skill", "SKILL.md")
+	require.NoError(t, os.MkdirAll(filepath.Dir(custom), 0o750))
+	require.NoError(t, os.WriteFile(custom, []byte("before upgrade"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", UpgradeKeepListFileName), []byte(".agent-layer/skills/user-skill\n"), 0o600))
+	require.NoError(t, Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: skillmigration.MinimumCLI}))
+	snapshot := latestSnapshot(t, root)
+	require.NoError(t, os.WriteFile(custom, []byte("after upgrade"), 0o600))
+	newSkill := filepath.Join(root, ".agent-layer", "skills", "new-user-skill")
+	require.NoError(t, os.MkdirAll(newSkill, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(newSkill, "SKILL.md"), []byte("created after upgrade"), 0o600))
+	before := testutil.SnapshotEvidence(t, filepath.Dir(custom), newSkill)
+	require.NoError(t, RollbackUpgradeSnapshot(root, snapshot.SnapshotID, RollbackUpgradeSnapshotOptions{System: RealSystem{}}))
+	require.Equal(t, before, testutil.SnapshotEvidence(t, filepath.Dir(custom), newSkill))
 }

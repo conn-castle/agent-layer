@@ -214,59 +214,97 @@ MOCK_EOF
   export PATH="$mock_bin:$PATH"
 }
 
-# assert_mock_agent_called <log> — verify mock agent was invoked exactly once.
-assert_mock_agent_called() {
-  local log="$1"
+# _mock_log_has_value <log> <line_regex> <value> — succeed when a log line
+# matching <line_regex> has exactly <value> after its first "=". Uses literal
+# string comparison (not regex) to avoid false positives with metacharacters
+# like . in "gemini-3.1-pro".
+_mock_log_has_value() {
+  local log="$1" pattern="$2" value="$3"
+  while IFS= read -r line; do
+    if [[ "${line#*=}" == "$value" ]]; then
+      return 0
+    fi
+  done < <(grep "$pattern" "$log" 2>/dev/null)
+  return 1
+}
+
+# The _assert_mock_* helpers below take a <who> label first ("mock agent" or
+# "mock claude") and back the public assert_mock_agent_* and
+# assert_claude_mock_* assertions.
+
+# _assert_mock_called <who> <log> — verify the mock was invoked exactly once.
+_assert_mock_called() {
+  local who="$1" log="$2"
   if [[ ! -f "$log" ]]; then
-    fail "mock agent log not found: $log"
+    fail "$who log not found: $log"
     return
   fi
   local count
   count=$(grep -c -- '---END---' "$log") || count="0"
   if [[ "$count" -eq 1 ]]; then
-    pass "mock agent was called exactly once"
+    pass "$who was called exactly once"
   else
-    fail "mock agent call count: expected 1, got $count"
+    fail "$who call count: expected 1, got $count"
   fi
 }
+
+# _assert_mock_has_arg <who> <log> <arg> — verify a specific arg was passed.
+_assert_mock_has_arg() {
+  local who="$1" log="$2" arg="$3"
+  if _mock_log_has_value "$log" "^ARG_[0-9]*=" "$arg"; then
+    pass "$who received arg: $arg"
+  else
+    fail "$who missing arg: $arg"
+  fi
+}
+
+# _assert_mock_lacks_arg <who> <log> <arg> — verify arg was NOT passed.
+_assert_mock_lacks_arg() {
+  local who="$1" log="$2" arg="$3"
+  if _mock_log_has_value "$log" "^ARG_[0-9]*=" "$arg"; then
+    fail "$who has unexpected arg: $arg"
+  else
+    pass "$who does not have arg: $arg"
+  fi
+}
+
+# _assert_mock_env <who> <log> <var> [value] — verify an env var was set, with
+# the literal value when one is given.
+_assert_mock_env() {
+  local who="$1" log="$2" var="$3" value="${4:-}"
+  if [[ -n "$value" ]]; then
+    if _mock_log_has_value "$log" "^${var}=" "$value"; then
+      pass "$who env: ${var}=${value}"
+    else
+      fail "$who env: expected ${var}=${value}"
+    fi
+  elif grep -q "^${var}=" "$log" 2>/dev/null; then
+    pass "$who env: ${var} is set"
+  else
+    fail "$who env: ${var} not set"
+  fi
+}
+
+# _assert_mock_env_non_empty <who> <log> <var> — verify env var is set AND non-empty.
+_assert_mock_env_non_empty() {
+  local who="$1" log="$2" var="$3"
+  local val
+  val="$(grep "^${var}=" "$log" 2>/dev/null | head -1 | cut -d'=' -f2-)"
+  if [[ -z "$val" ]]; then
+    fail "$who env: ${var} is empty or not set"
+  else
+    pass "$who env: ${var} has non-empty value"
+  fi
+}
+
+# assert_mock_agent_called <log> — verify mock agent was invoked exactly once.
+assert_mock_agent_called() { _assert_mock_called "mock agent" "$@"; }
 
 # assert_mock_agent_has_arg <log> <arg> — verify a specific arg was passed.
-# Uses literal string comparison (not regex) to avoid false positives with
-# metacharacters like . in "gemini-3.1-pro".
-assert_mock_agent_has_arg() {
-  local log="$1" arg="$2"
-  local found=0
-  while IFS= read -r line; do
-    local val="${line#*=}"
-    if [[ "$val" == "$arg" ]]; then
-      found=1
-      break
-    fi
-  done < <(grep "^ARG_[0-9]*=" "$log" 2>/dev/null)
-  if [[ $found -eq 1 ]]; then
-    pass "mock agent received arg: $arg"
-  else
-    fail "mock agent missing arg: $arg"
-  fi
-}
+assert_mock_agent_has_arg() { _assert_mock_has_arg "mock agent" "$@"; }
 
 # assert_mock_agent_lacks_arg <log> <arg> — verify arg was NOT passed.
-assert_mock_agent_lacks_arg() {
-  local log="$1" arg="$2"
-  local found=0
-  while IFS= read -r line; do
-    local val="${line#*=}"
-    if [[ "$val" == "$arg" ]]; then
-      found=1
-      break
-    fi
-  done < <(grep "^ARG_[0-9]*=" "$log" 2>/dev/null)
-  if [[ $found -eq 1 ]]; then
-    fail "mock agent has unexpected arg: $arg"
-  else
-    pass "mock agent does not have arg: $arg"
-  fi
-}
+assert_mock_agent_lacks_arg() { _assert_mock_lacks_arg "mock agent" "$@"; }
 
 # assert_mock_agent_not_called <log> <label> — verify mock agent was NOT invoked.
 assert_mock_agent_not_called() {
@@ -290,54 +328,13 @@ assert_claude_mock_not_called() {
 
 # assert_mock_agent_env <log> <var> [value] — verify an env var was set.
 # Uses literal string comparison for the value (not regex).
-assert_mock_agent_env() {
-  local log="$1" var="$2" value="${3:-}"
-  if [[ -n "$value" ]]; then
-    local found=0
-    while IFS= read -r line; do
-      local val="${line#*=}"
-      if [[ "$val" == "$value" ]]; then
-        found=1
-        break
-      fi
-    done < <(grep "^${var}=" "$log" 2>/dev/null)
-    if [[ $found -eq 1 ]]; then
-      pass "mock agent env: ${var}=${value}"
-    else
-      fail "mock agent env: expected ${var}=${value}"
-    fi
-  else
-    if grep -q "^${var}=" "$log" 2>/dev/null; then
-      pass "mock agent env: ${var} is set"
-    else
-      fail "mock agent env: ${var} not set"
-    fi
-  fi
-}
+assert_mock_agent_env() { _assert_mock_env "mock agent" "$@"; }
 
 # assert_mock_agent_env_non_empty <log> <var> — verify env var is set AND non-empty.
-assert_mock_agent_env_non_empty() {
-  local log="$1" var="$2"
-  local val
-  val="$(grep "^${var}=" "$log" 2>/dev/null | head -1 | cut -d'=' -f2-)"
-  if [[ -z "$val" ]]; then
-    fail "mock agent env: ${var} is empty or not set"
-  else
-    pass "mock agent env: ${var} has non-empty value"
-  fi
-}
+assert_mock_agent_env_non_empty() { _assert_mock_env_non_empty "mock agent" "$@"; }
 
 # assert_claude_mock_env_non_empty <log> <var> — verify env var is set AND non-empty.
-assert_claude_mock_env_non_empty() {
-  local log="$1" var="$2"
-  local val
-  val="$(grep "^${var}=" "$log" 2>/dev/null | head -1 | cut -d'=' -f2-)"
-  if [[ -z "$val" ]]; then
-    fail "mock claude env: ${var} is empty or not set"
-  else
-    pass "mock claude env: ${var} has non-empty value"
-  fi
-}
+assert_claude_mock_env_non_empty() { _assert_mock_env_non_empty "mock claude" "$@"; }
 
 # assert_json_valid <file> <label> — verify file contains valid JSON.
 assert_json_valid() {
@@ -763,85 +760,17 @@ assert_generated_artifacts() {
 }
 
 # assert_claude_mock_called <log> — verify mock was invoked exactly once.
-assert_claude_mock_called() {
-  local log="$1"
-  if [[ ! -f "$log" ]]; then
-    fail "mock claude log not found: $log"
-    return
-  fi
-  local count
-  count=$(grep -c -- '---END---' "$log") || count="0"
-  if [[ "$count" -eq 1 ]]; then
-    pass "mock claude was called exactly once"
-  else
-    fail "mock claude call count: expected 1, got $count"
-  fi
-}
+assert_claude_mock_called() { _assert_mock_called "mock claude" "$@"; }
 
 # assert_claude_mock_has_arg <log> <arg> — verify a specific arg was passed.
-# Uses literal string comparison (not regex) to avoid false positives with
-# metacharacters like . in version strings.
-assert_claude_mock_has_arg() {
-  local log="$1" arg="$2"
-  local found=0
-  while IFS= read -r line; do
-    local val="${line#*=}"
-    if [[ "$val" == "$arg" ]]; then
-      found=1
-      break
-    fi
-  done < <(grep "^ARG_[0-9]*=" "$log" 2>/dev/null)
-  if [[ $found -eq 1 ]]; then
-    pass "mock claude received arg: $arg"
-  else
-    fail "mock claude missing arg: $arg"
-  fi
-}
+assert_claude_mock_has_arg() { _assert_mock_has_arg "mock claude" "$@"; }
 
 # assert_claude_mock_lacks_arg <log> <arg> — verify arg was NOT passed.
-assert_claude_mock_lacks_arg() {
-  local log="$1" arg="$2"
-  local found=0
-  while IFS= read -r line; do
-    local val="${line#*=}"
-    if [[ "$val" == "$arg" ]]; then
-      found=1
-      break
-    fi
-  done < <(grep "^ARG_[0-9]*=" "$log" 2>/dev/null)
-  if [[ $found -eq 1 ]]; then
-    fail "mock claude has unexpected arg: $arg"
-  else
-    pass "mock claude does not have arg: $arg"
-  fi
-}
+assert_claude_mock_lacks_arg() { _assert_mock_lacks_arg "mock claude" "$@"; }
 
 # assert_claude_mock_env <log> <var> [value] — verify an env var was set.
 # Uses literal string comparison for the value (not regex).
-assert_claude_mock_env() {
-  local log="$1" var="$2" value="${3:-}"
-  if [[ -n "$value" ]]; then
-    local found=0
-    while IFS= read -r line; do
-      local val="${line#*=}"
-      if [[ "$val" == "$value" ]]; then
-        found=1
-        break
-      fi
-    done < <(grep "^${var}=" "$log" 2>/dev/null)
-    if [[ $found -eq 1 ]]; then
-      pass "mock claude env: ${var}=${value}"
-    else
-      fail "mock claude env: expected ${var}=${value}"
-    fi
-  else
-    if grep -q "^${var}=" "$log" 2>/dev/null; then
-      pass "mock claude env: ${var} is set"
-    else
-      fail "mock claude env: ${var} not set"
-    fi
-  fi
-}
+assert_claude_mock_env() { _assert_mock_env "mock claude" "$@"; }
 
 # assert_claude_mock_env_not_set <log> <var> — verify an env var was NOT set.
 assert_claude_mock_env_not_set() {

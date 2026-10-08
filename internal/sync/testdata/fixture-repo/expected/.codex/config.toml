@@ -11,6 +11,7 @@ direct_only_tool_namespaces = ['mcp__agent_layer']
 
 [tui]
 status_line = ['model-with-reasoning', 'context-used', 'weekly-limit', 'thread-id', 'git-branch', 'branch-changes', 'pull-request-number', 'current-dir']
+terminal_title = ['activity', 'thread-id', 'thread-name', 'project-name']
 
 [projects."__CANONICAL_REPO_ROOT__"]
 trust_level = "trusted"
@@ -18,6 +19,11 @@ trust_level = "trusted"
 # BEGIN Agent Layer-managed HerdR recovery hook.
 [[hooks.SessionStart]]
 [[hooks.SessionStart.hooks]]
+type = "command"
+command = "exec al hook herdr codex '__CANONICAL_REPO_ROOT__' # agent-layer-herdr"
+timeout = 35
+[[hooks.UserPromptSubmit]]
+[[hooks.UserPromptSubmit.hooks]]
 type = "command"
 command = "exec al hook herdr codex '__CANONICAL_REPO_ROOT__' # agent-layer-herdr"
 timeout = 35

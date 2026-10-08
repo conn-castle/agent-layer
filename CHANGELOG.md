@@ -3,10 +3,6 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-### Fixed
-- Grok model discovery in `al dispatch options`, the Agent Dispatch `dispatch_options` MCP tool, the wizard, and `al doctor` no longer reports `harness is not authenticated; sign in using al grok` when your Grok sign-in is valid but its access token has expired. `grok models` prints its sign-in status before it refreshes an expired token, and Agent Layer stopped reading at that status line and ended the process before the refresh finished. Discovery kept failing until a Grok session or dispatch refreshed the token. Discovery now lets `grok models` finish, and when the status line says you are not signed in, it runs `grok models` once more to read the refreshed state. The error now appears only when Grok still reports that you are not signed in after its refresh attempt.
-- Agent Dispatch run records now report the provider version that actually ran after a launcher updates the binary it starts. Before each `start` or `continue`, Agent Dispatch checks the provider's version against its tested version and caches the result in `.agent-layer/state/dispatch-capabilities/cache.json`. Previously a cached version stayed in use as long as the command on `PATH` was unchanged, so with Muse's installed `~/.local/bin/muse` launcher, which updates a separate binary beside itself, run records kept reporting the old version (for example `1.4.0` while `muse --version` printed `1.4.3`), and the tested-version check used that stale value. Cached versions now expire after one hour, so dispatch reports an updated provider version within an hour of the update. Cache entries written by earlier Agent Layer versions are checked again on the next dispatch.
-
 ## v1.0.0 - Planned
 
 ### Changed
@@ -18,6 +14,33 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Migration-capable version handoffs reach the target reader without first consuming its recovery journal. Import recovery rejects colliding intent, trailing JSON, linked journals, and unsafe backup node types before changing live state. Wizard removal previews identify missing or conflicted configured siblings that ordinary selector reconciliation may materialize or block.
 - Historical flat skills with valid frontmatter that lacks `name` receive their original filename as the name during migration. Explicit or uncertain metadata, existing content, and file modes remain preserved.
+
+## v0.24.3 - 2026-10-07
+
+### Fixed
+- HerdR terminal conversation recovery now decodes public pane IDs using HerdR's native encoding instead of assuming decimal numbers. Valid pane IDs containing letters or multiple characters, such as `wV:pF`, previously failed stored-recipe verification before registration; Agent Layer now decodes them correctly so saved recipes are found for Claude, Codex, Antigravity, Muse, and Grok.
+
+### Security
+- Updated `golang.org/x/text` to `v0.41.0` to address GO-2026-6629.
+
+### Development
+- `make release-preflight` now validates documentation and the release tag, runs CI once, compiles unsigned release binaries for all four supported platforms (`darwin/arm64`, `darwin/amd64`, `linux/arm64`, `linux/amd64`) to a scratch directory, and scans them with `release-vuln-check` before tags are created. Build and scanner failures halt preflight, and failing artifacts are retained for diagnostics.
+
+## v0.24.2 - 2026-10-07
+
+### Fixed
+- HerdR terminal conversation recovery now decodes public pane IDs using HerdR's native encoding instead of assuming decimal numbers. Valid pane IDs containing letters or multiple characters, such as `wV:pF`, previously failed stored-recipe verification before registration; Agent Layer now decodes them correctly so saved recipes are found for Claude, Codex, Antigravity, Muse, and Grok.
+
+## v0.24.1 - 2026-10-07
+
+### Fixed
+- Codex conversation recovery in HerdR now works with Codex's native shared daemon enabled. The selected conversation registers on its first prompt, including loaded rejoin and selected child conversations, with the full hook ID and the correct pane's ordinary or source-development resume command. Background conversations and older suspended launches cannot overwrite the current foreground recipe; saved recipes survive HerdR restarts without another message.
+- Grok model discovery in `al dispatch options`, the Agent Dispatch `dispatch_options` MCP tool, the wizard, and `al doctor` no longer reports `harness is not authenticated; sign in using al grok` when your Grok sign-in is valid but its access token has expired. `grok models` prints its sign-in status before it refreshes an expired token, and Agent Layer stopped reading at that status line and ended the process before the refresh finished. Discovery kept failing until a Grok session or dispatch refreshed the token. Discovery now lets `grok models` finish, and when the status line says you are not signed in, it runs `grok models` once more to read the refreshed state. The error now appears only when Grok still reports that you are not signed in after its refresh attempt.
+- Agent Dispatch run records now report the provider version that actually ran after a launcher updates the binary it starts. Before each `start` or `continue`, Agent Dispatch checks the provider's version against its tested version and caches the result in `.agent-layer/state/dispatch-capabilities/cache.json`. Previously a cached version stayed in use as long as the command on `PATH` was unchanged, so with Muse's installed `~/.local/bin/muse` launcher, which updates a separate binary beside itself, run records kept reporting the old version (for example `1.4.0` while `muse --version` printed `1.4.3`), and the tested-version check used that stale value. Cached versions now expire after one hour, so dispatch reports an updated provider version within an hour of the update. Cache entries written by earlier Agent Layer versions are checked again on the next dispatch.
+- VS Code settings sync rejects invalid JSONC before rewriting it while retaining the supported recovery of earlier managed blocks.
+
+### Development
+- Agent Dispatch tests isolate mock CLIs and workers, preventing recursive suite launches, accidental real-provider execution, and leaked workers after timeout. Release certification reuses or waits for the exact main-push run before dispatching another.
 
 ## v0.24.0 - 2026-10-05
 

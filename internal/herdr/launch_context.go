@@ -19,10 +19,12 @@ const (
 	maxAncestorDepth       = 8
 )
 
+var errProcessNotFound = errors.New("process was not found")
+
 // launchContext is deliberately a small, per-exec handoff record. It is not
-// a saved environment or a "last launch" pointer: the hook may use it only
-// when one of its current process ancestors has the recorded PID and start
-// identity.
+// a saved environment or a "last launch" pointer. Ordinary hooks require a
+// matching process ancestor; Codex hooks instead match the projected title
+// and live foreground launch using its PID and start identity.
 type launchContext struct {
 	Version       int    `json:"version"`
 	PID           int    `json:"pid"`
@@ -205,7 +207,7 @@ func resolveLaunchContext(root, provider string) (launchContext, bool, error) {
 	}
 	// Scan each existing run once, rather than once for every ancestor and
 	// record kind. Records remain in their canonical owning run directory.
-	records, err := runRecordPaths(runsDir, names)
+	records, err := runRecordPaths(runsDir, func(name string) bool { return names[name] })
 	if err != nil {
 		return launchContext{}, false, fmt.Errorf("find HerdR launch records: %w", err)
 	}
@@ -236,7 +238,7 @@ func resolveLaunchContext(root, provider string) (launchContext, bool, error) {
 // run snapshot and the per-run scan.
 var readDirFunc = os.ReadDir
 
-func runRecordPaths(runsDir string, names map[string]bool) (map[string][]string, error) {
+func runRecordPaths(runsDir string, include func(string) bool) (map[string][]string, error) {
 	paths := map[string][]string{}
 	entries, err := readDirFunc(runsDir)
 	if os.IsNotExist(err) {
@@ -259,7 +261,7 @@ func runRecordPaths(runsDir string, names map[string]bool) (map[string][]string,
 			return nil, err
 		}
 		for _, record := range records {
-			if names[record.Name()] {
+			if include(record.Name()) {
 				paths[record.Name()] = append(paths[record.Name()], filepath.Join(directory, record.Name()))
 			}
 		}
@@ -318,13 +320,63 @@ func readLaunchContext(path, root, provider string) (launchContext, error) {
 	if err := decoder.Decode(&context); err != nil {
 		return launchContext{}, fmt.Errorf("decode HerdR launch context: %w", err)
 	}
-	if context.Provider != provider || context.ProjectRoot != root {
-		return context, nil
-	}
-	if err := validateLaunchContext(context, root, provider); err != nil {
-		return launchContext{}, fmt.Errorf("invalid HerdR launch context: %w", err)
+	if context.Provider == provider && context.ProjectRoot == root {
+		if err := validateLaunchContext(context, root, provider); err != nil {
+			return launchContext{}, fmt.Errorf("invalid HerdR launch context: %w", err)
+		}
 	}
 	return context, nil
+}
+
+// readLiveCodexLaunchContext checks filename liveness before opening
+// historical records; live records still receive full ownership validation.
+func readLiveCodexLaunchContext(path, root string) (launchContext, bool, error) {
+	dead, err := deadLaunchContextName(path)
+	if err != nil || dead {
+		return launchContext{}, false, err
+	}
+	context, err := readLaunchContext(path, root, providerCodex)
+	if err != nil {
+		return launchContext{}, false, err
+	}
+	if context.Provider != providerCodex || context.ProjectRoot != root {
+		return context, false, nil
+	}
+	if filepath.Base(path) != launchContextName(context.PID, context.ProcessStart) {
+		return launchContext{}, false, errors.New("HerdR launch context filename does not match its identity")
+	}
+	return context, true, nil
+}
+
+// deadLaunchContextName proves a protected record is historic from its
+// CaptureLaunch filename before JSON decoding. It only ignores a malformed
+// record after the recorded PID is absent or its start identity changed; a
+// live owner and malformed/unsafe filename remain hard failures.
+func deadLaunchContextName(path string) (bool, error) {
+	name := filepath.Base(path)
+	if !strings.HasPrefix(name, launchContextPrefix) || !strings.HasSuffix(name, launchContextSuffix) {
+		return false, fmt.Errorf("invalid HerdR launch context filename: %s", name)
+	}
+	generation := strings.TrimSuffix(strings.TrimPrefix(name, launchContextPrefix), launchContextSuffix)
+	pidText, digest, ok := strings.Cut(generation, "-")
+	if !ok || len(digest) != 16 {
+		return false, fmt.Errorf("invalid HerdR launch context filename: %s", name)
+	}
+	if _, err := hex.DecodeString(digest); err != nil {
+		return false, fmt.Errorf("invalid HerdR launch context filename: %s", name)
+	}
+	pid, err := strconv.Atoi(pidText)
+	if err != nil || pid <= 1 {
+		return false, fmt.Errorf("invalid HerdR launch context filename: %s", name)
+	}
+	_, start, err := processLineage(pid)
+	if errors.Is(err, errProcessNotFound) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect recorded Codex launch process: %w", err)
+	}
+	return launchContextName(pid, start) != name, nil
 }
 
 func validateLaunchContext(context launchContext, root, provider string) error {

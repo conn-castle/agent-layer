@@ -88,8 +88,7 @@ func buildMCPConfig(project *config.ProjectConfig) (*mcpConfig, error) {
 	museEnabled := config.IsAgentEnabled(project.Config.Agents.Muse.Enabled)
 	museIDs := make(map[string]bool)
 	if museEnabled {
-		museEnv := project.PlaceholderEnv()
-		museServers, err := projection.EffectiveMCPServers(project.Config, museEnv, projection.ClientMuse, projection.FullValueResolver(museEnv))
+		museServers, err := projection.EffectiveMCPServers(project.Config, project.PlaceholderEnv(), projection.ClientMuse, nil)
 		if err != nil {
 			return nil, err
 		}

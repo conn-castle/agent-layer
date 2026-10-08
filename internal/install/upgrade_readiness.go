@@ -17,6 +17,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/launchers"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -40,11 +41,37 @@ const (
 
 var floatingDependencyPattern = regexp.MustCompile(`(?i)@(latest|next|canary)\b`)
 
+// readinessCheckText maps each readiness check ID to its displayed summary and
+// recommended action.
+var readinessCheckText = map[string]struct{ summary, action string }{
+	readinessCheckUnrecognizedConfigKeys:        {messages.UpgradeReadinessUnrecognizedKeys, messages.UpgradeReadinessActionUnrecognizedKeys},
+	readinessCheckUnresolvedPlaceholders:        {messages.UpgradeReadinessUnresolvedPlaceholder, messages.UpgradeReadinessActionUnresolvedPlaceholder},
+	readinessCheckProcessEnvOverridesDotenv:     {messages.UpgradeReadinessProcessEnvOverrides, messages.UpgradeReadinessActionProcessEnvOverrides},
+	readinessCheckIgnoredEmptyDotenvAssignments: {messages.UpgradeReadinessEmptyDotenv, messages.UpgradeReadinessActionEmptyDotenv},
+	readinessCheckPathExpansionAnomalies:        {messages.UpgradeReadinessPathExpansion, messages.UpgradeReadinessActionPathExpansion},
+	readinessCheckVSCodeNoSyncStaleOutput:       {messages.UpgradeReadinessVSCodeStale, messages.UpgradeReadinessActionVSCodeStale},
+	readinessCheckFloatingDependencies:          {messages.UpgradeReadinessFloatingDeps, messages.UpgradeReadinessActionFloatingDeps},
+	readinessCheckDisabledArtifacts:             {messages.UpgradeReadinessStaleDisabledAgents, messages.UpgradeReadinessActionStaleDisabledAgents},
+	readinessCheckMissingRequiredConfigFields:   {messages.UpgradeReadinessMissingRequiredFields, messages.UpgradeReadinessActionMissingRequiredFields},
+}
+
 // UpgradeReadinessCheck captures a non-fatal pre-upgrade readiness finding for text output.
 type UpgradeReadinessCheck struct {
 	ID      string   `json:"id"`
 	Summary string   `json:"summary"`
+	Action  string   `json:"action"`
 	Details []string `json:"details"`
+}
+
+// newReadinessCheck returns nil when details is empty. Otherwise it sorts
+// details in place and returns the check with its displayed summary and action.
+func newReadinessCheck(id string, details []string) *UpgradeReadinessCheck {
+	if len(details) == 0 {
+		return nil
+	}
+	sort.Strings(details)
+	text := readinessCheckText[id]
+	return &UpgradeReadinessCheck{ID: id, Summary: text.summary, Action: text.action, Details: details}
 }
 
 func readinessErr(action string, path string, err error) error {
@@ -56,11 +83,9 @@ func buildUpgradeReadinessChecks(inst *installer) ([]UpgradeReadinessCheck, erro
 	configInfo, err := inst.sys.Stat(configPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return []UpgradeReadinessCheck{{
-				ID:      readinessCheckUnrecognizedConfigKeys,
-				Summary: "Config file is missing; config-based readiness checks were skipped.",
-				Details: []string{filepath.ToSlash(inst.relativePath(configPath))},
-			}}, nil
+			return []UpgradeReadinessCheck{
+				*newReadinessCheck(readinessCheckUnrecognizedConfigKeys, []string{filepath.ToSlash(inst.relativePath(configPath))}),
+			}, nil
 		}
 		return nil, readinessErr("stat", configPath, err)
 	}
@@ -72,30 +97,18 @@ func buildUpgradeReadinessChecks(inst *installer) ([]UpgradeReadinessCheck, erro
 
 	checks := make([]UpgradeReadinessCheck, 0, 9)
 	if strictErr := decodeConfigStrict(configBytes); strictErr != nil {
-		checks = append(checks, UpgradeReadinessCheck{
-			ID:      readinessCheckUnrecognizedConfigKeys,
-			Summary: "Config contains unrecognized or unsupported keys.",
-			Details: []string{strictErr.Error()},
-		})
+		checks = append(checks, *newReadinessCheck(readinessCheckUnrecognizedConfigKeys, []string{strictErr.Error()}))
 	}
 
 	cfg, parseErrDetail := decodeConfigLoose(configBytes)
 	if parseErrDetail != "" {
-		checks = append(checks, UpgradeReadinessCheck{
-			ID:      readinessCheckUnrecognizedConfigKeys,
-			Summary: "Config could not be parsed for readiness checks.",
-			Details: []string{parseErrDetail},
-		})
+		checks = append(checks, *newReadinessCheck(readinessCheckUnrecognizedConfigKeys, []string{parseErrDetail}))
 		sortReadinessChecks(checks)
 		return checks, nil
 	}
 
 	if validateErr := cfg.Validate(filepath.ToSlash(inst.relativePath(configPath))); validateErr != nil {
-		checks = append(checks, UpgradeReadinessCheck{
-			ID:      readinessCheckMissingRequiredConfigFields,
-			Summary: "Config is missing required fields. Run 'al wizard' to fix or 'al upgrade' to apply missing fields.",
-			Details: []string{validateErr.Error()},
-		})
+		checks = append(checks, *newReadinessCheck(readinessCheckMissingRequiredConfigFields, []string{validateErr.Error()}))
 	}
 
 	envValues, err := readAgentLayerEnvForReadiness(inst)
@@ -183,15 +196,7 @@ func detectUnresolvedConfigPlaceholders(cfg *config.Config, env map[string]strin
 			details = append(details, fmt.Sprintf("mcp.servers[%d] id=%q missing ${%s}", i, server.ID, name))
 		}
 	}
-	if len(details) == 0 {
-		return nil
-	}
-	sort.Strings(details)
-	return &UpgradeReadinessCheck{
-		ID:      readinessCheckUnresolvedPlaceholders,
-		Summary: "Enabled MCP servers reference placeholders not available from env.",
-		Details: details,
-	}
+	return newReadinessCheck(readinessCheckUnresolvedPlaceholders, details)
 }
 
 func detectProcessEnvOverridesDotenv(cfg *config.Config, env map[string]string, sys System) *UpgradeReadinessCheck {
@@ -208,15 +213,7 @@ func detectProcessEnvOverridesDotenv(cfg *config.Config, env map[string]string, 
 		}
 		details = append(details, fmt.Sprintf("%s differs between process env and `.agent-layer/.env`", key))
 	}
-	if len(details) == 0 {
-		return nil
-	}
-	sort.Strings(details)
-	return &UpgradeReadinessCheck{
-		ID:      readinessCheckProcessEnvOverridesDotenv,
-		Summary: "Process environment values override `.agent-layer/.env` for active placeholders.",
-		Details: details,
-	}
+	return newReadinessCheck(readinessCheckProcessEnvOverridesDotenv, details)
 }
 
 func detectIgnoredEmptyDotenvAssignments(cfg *config.Config, env map[string]string, sys System) *UpgradeReadinessCheck {
@@ -233,15 +230,7 @@ func detectIgnoredEmptyDotenvAssignments(cfg *config.Config, env map[string]stri
 		}
 		details = append(details, fmt.Sprintf("%s is empty in `.agent-layer/.env` and falls back to process env", key))
 	}
-	if len(details) == 0 {
-		return nil
-	}
-	sort.Strings(details)
-	return &UpgradeReadinessCheck{
-		ID:      readinessCheckIgnoredEmptyDotenvAssignments,
-		Summary: "Empty `.env` assignments are masked by process environment values.",
-		Details: details,
-	}
+	return newReadinessCheck(readinessCheckIgnoredEmptyDotenvAssignments, details)
 }
 
 func detectPathExpansionAnomalies(inst *installer, cfg *config.Config, env map[string]string) (*UpgradeReadinessCheck, error) {
@@ -267,15 +256,7 @@ func detectPathExpansionAnomalies(inst *installer, cfg *config.Config, env map[s
 			}
 		}
 	}
-	if len(details) == 0 {
-		return nil, nil
-	}
-	sort.Strings(details)
-	return &UpgradeReadinessCheck{
-		ID:      readinessCheckPathExpansionAnomalies,
-		Summary: "Path-like MCP command values contain expansion anomalies.",
-		Details: details,
-	}, nil
+	return newReadinessCheck(readinessCheckPathExpansionAnomalies, details), nil
 }
 
 func checkPathExpansionValue(inst *installer, env map[string]string, serverIndex int, serverID string, field string, rawValue string, commandField bool) (string, error) {
@@ -396,18 +377,27 @@ func detectVSCodeNoSyncStaleness(inst *installer, cfg *config.Config, configPath
 	details := make([]string, 0)
 	latestGenerated := time.Time{}
 
-	// .vscode/mcp.json is only generated when agents.vscode is enabled (Codex MCP config).
-	if vscodeEnabled {
-		mcpPath := filepath.Join(inst.root, ".vscode", "mcp.json")
-		mcpInfo, err := inst.sys.Stat(mcpPath)
+	// noteGeneratedOutput records a missing generated file as a detail, or
+	// tracks the modification time of an existing one.
+	noteGeneratedOutput := func(path string) error {
+		info, err := inst.sys.Stat(path)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				details = append(details, fmt.Sprintf("missing %s", filepath.ToSlash(inst.relativePath(mcpPath))))
-			} else {
-				return nil, readinessErr("stat", mcpPath, err)
+				details = append(details, fmt.Sprintf("missing %s", filepath.ToSlash(inst.relativePath(path))))
+				return nil
 			}
-		} else if !mcpInfo.IsDir() {
-			latestGenerated = maxModTime(latestGenerated, mcpInfo.ModTime())
+			return readinessErr("stat", path, err)
+		}
+		if !info.IsDir() {
+			latestGenerated = maxModTime(latestGenerated, info.ModTime())
+		}
+		return nil
+	}
+
+	// .vscode/mcp.json is only generated when agents.vscode is enabled (Codex MCP config).
+	if vscodeEnabled {
+		if err := noteGeneratedOutput(filepath.Join(inst.root, ".vscode", "mcp.json")); err != nil {
+			return nil, err
 		}
 	}
 
@@ -459,29 +449,13 @@ func detectVSCodeNoSyncStaleness(inst *installer, cfg *config.Config, configPath
 	// Claude settings remain specific to the Claude integrations.
 	claudeEnabled := config.IsAgentEnabled(cfg.Agents.Claude.Enabled)
 	if claudeEnabled || claudeVSCodeEnabled || (vscodeEnabled && config.IsAgentEnabled(cfg.Agents.Muse.Enabled)) {
-		claudeMCPPath := filepath.Join(inst.root, ".mcp.json")
-		claudeMCPInfo, err := inst.sys.Stat(claudeMCPPath)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				details = append(details, fmt.Sprintf("missing %s", filepath.ToSlash(inst.relativePath(claudeMCPPath))))
-			} else {
-				return nil, readinessErr("stat", claudeMCPPath, err)
-			}
-		} else if !claudeMCPInfo.IsDir() {
-			latestGenerated = maxModTime(latestGenerated, claudeMCPInfo.ModTime())
+		if err := noteGeneratedOutput(filepath.Join(inst.root, ".mcp.json")); err != nil {
+			return nil, err
 		}
 	}
 	if claudeEnabled || claudeVSCodeEnabled {
-		claudeSettingsPath := filepath.Join(inst.root, ".claude", "settings.json")
-		claudeSettingsInfo, err := inst.sys.Stat(claudeSettingsPath)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				details = append(details, fmt.Sprintf("missing %s", filepath.ToSlash(inst.relativePath(claudeSettingsPath))))
-			} else {
-				return nil, readinessErr("stat", claudeSettingsPath, err)
-			}
-		} else if !claudeSettingsInfo.IsDir() {
-			latestGenerated = maxModTime(latestGenerated, claudeSettingsInfo.ModTime())
+		if err := noteGeneratedOutput(filepath.Join(inst.root, ".claude", "settings.json")); err != nil {
+			return nil, err
 		}
 	}
 
@@ -494,15 +468,7 @@ func detectVSCodeNoSyncStaleness(inst *installer, cfg *config.Config, configPath
 		))
 	}
 
-	if len(details) == 0 {
-		return nil, nil
-	}
-	sort.Strings(details)
-	return &UpgradeReadinessCheck{
-		ID:      readinessCheckVSCodeNoSyncStaleOutput,
-		Summary: "VS Code `--no-sync` launch path may use stale generated outputs.",
-		Details: details,
-	}, nil
+	return newReadinessCheck(readinessCheckVSCodeNoSyncStaleOutput, details), nil
 }
 
 func detectFloatingDependencies(cfg *config.Config) *UpgradeReadinessCheck {
@@ -523,15 +489,7 @@ func detectFloatingDependencies(cfg *config.Config) *UpgradeReadinessCheck {
 		}
 	}
 
-	if len(details) == 0 {
-		return nil
-	}
-	sort.Strings(details)
-	return &UpgradeReadinessCheck{
-		ID:      readinessCheckFloatingDependencies,
-		Summary: "Enabled MCP servers include floating dependency specs.",
-		Details: details,
-	}
+	return newReadinessCheck(readinessCheckFloatingDependencies, details)
 }
 
 func floatingDetails(serverIndex int, serverID string, field string, value string) []string {
@@ -678,15 +636,7 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 		}
 	}
 
-	if len(details) == 0 {
-		return nil, nil
-	}
-	sort.Strings(details)
-	return &UpgradeReadinessCheck{
-		ID:      readinessCheckDisabledArtifacts,
-		Summary: "Disabled agents still have generated artifacts on disk.",
-		Details: details,
-	}, nil
+	return newReadinessCheck(readinessCheckDisabledArtifacts, details), nil
 }
 
 // legacySkillProjectionDirs converts the canonical retired-projection list

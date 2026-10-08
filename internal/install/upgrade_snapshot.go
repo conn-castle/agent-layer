@@ -14,6 +14,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 const (
@@ -523,7 +524,10 @@ func (inst *installer) writeTemplateDirsTargetPaths() []string {
 	for _, dir := range inst.templates().memoryTemplateDirs() {
 		paths = append(paths, dir.destRoot)
 	}
-	paths = append(paths, filepath.Join(inst.root, ".agent-layer", "skills"))
+	// Failed template writes must reset legacy slots without resetting user skills.
+	for _, name := range templates.RetiredSkillNames {
+		paths = append(paths, filepath.Join(inst.root, ".agent-layer", "skills", name))
+	}
 	return uniqueNormalizedPaths(paths)
 }
 
@@ -597,7 +601,11 @@ func (inst *installer) upgradeSnapshotTargetPaths() []string {
 	for _, path := range inst.writeStatuslineSourcesTargetPaths() {
 		add(path)
 	}
-	add(filepath.Join(root, ".agent-layer", "skills"))
+	// Capture legacy slots whose absence also matters to migration rollback.
+	// Restoring the user-managed tier would revert unrelated edits and new skills.
+	for _, name := range templates.RetiredSkillNames {
+		add(filepath.Join(root, ".agent-layer", "skills", name))
+	}
 	add(filepath.Join(root, ".gitignore"))
 	for _, path := range launchers.VSCodePaths(root).All() {
 		add(path)

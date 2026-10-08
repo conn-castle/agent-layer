@@ -32,8 +32,14 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 - Issue 2026-10-04 shared-scratch-deletion-recovery: WARNING — repeated discovery cleanup deleted other sessions' scratch work
     Priority: High. Area: discovery / scratch ownership
     Description: Discovery agents repeatedly deleted shared `/tmp/alhunt` contents and overwrote `/tmp/alhunt/al`. Still unrecovered: original binary bytes (`al`, `al-old`, `al-cur`), generated repositories `r1`–`r3` and their Git metadata, `strace.txt`, and any unknown branch identity, uncommitted/untracked work, or unrecorded changes beyond the verified recovered contents.
-    Evidence: Keep [earlier recovery](/tmp/alhunt-recovery-d2dp71gh/RECOVERY.md) and [later incident recovery](/tmp/alhunt-incident-recovery-881um2eg/RECOVERY.md) and their directories. The later report verifies 14,742 preserved surviving files, 1,032 historical file copies, and four later audit tests plus four overlays recovered from logged writes, with no checksum mismatches. Historical snapshots and replacement binaries do not establish complete recovery of either incident's unknown local work.
+    Evidence: Keep `/tmp/alhunt-recovery-d2dp71gh/RECOVERY.md` and `/tmp/alhunt-incident-recovery-881um2eg/RECOVERY.md` and their directories. The later report verifies 14,742 preserved surviving files, 1,032 historical file copies, and four later audit tests plus four overlays recovered from logged writes, with no checksum mismatches. Historical snapshots and replacement binaries do not establish complete recovery of either incident's unknown local work.
     Notes: Before discovery, create a fresh unique scratch directory with `mktemp -d` or equivalent atomic unique creation and record its exact path. Clean up only the exact directories created by the current task; never reuse, overwrite, or delete pre-existing/shared scratch paths, guessed paths, or wildcard matches. Do not remove either recovery directory or restore historical copies over active code or shared scratch paths.
+
+- Issue 2026-10-06 codex-bundled-skills-cleanup-race: Repo-local Codex bundled-skill installation can race AL legacy cleanup.
+    Priority: Medium. Area: Codex launch and sync.
+    Description: An additional AL Codex pane failed before native startup because removing `.codex/skills` returned `directory not empty` while the native bundled-skill installer recreated that directory.
+    Next step: Reproduce concurrent native cache installation and legacy cleanup, then distinguish Codex-owned cache from retired AL outputs.
+    Notes: Verified native-acceptance-v8/same-pane-visible.json under `.agent-layer/tmp/herdr-daemon-fix`; ordinary legacy cleanup is in internal/sync/prompts.go. Recovery fixtures using bundled skills disabled do not prove this launch path.
 
 ## Preserved handoff notes
 

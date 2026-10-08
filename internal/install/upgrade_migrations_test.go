@@ -726,6 +726,49 @@ func TestConfigRenameMigrationRejectsConflictingDestinationWithoutMutation(t *te
 	}
 }
 
+func TestConfigRenameMigrationDropsSourceWhenDestinationMatches(t *testing.T) {
+	root := t.TempDir()
+	cfgPath := writeMigrationConfigForTest(t, root, "[from]\nkey = \"same\"\n[to]\nkey = \"same\"\n")
+	changed, err := (&installer{root: root, sys: RealSystem{}}).executeConfigRenameKeyMigration("from.key", "to.key")
+	if err != nil || !changed {
+		t.Fatalf("matching rename = changed %v, error %v", changed, err)
+	}
+	data, err := os.ReadFile(cfgPath) // #nosec G304 -- test-owned path.
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if got := string(data); strings.Contains(got, "from") || !strings.Contains(got, "[to]") {
+		t.Fatalf("expected source removed and destination kept, got:\n%s", got)
+	}
+}
+
+func TestConfigMigrationsSkipMissingConfig(t *testing.T) {
+	ops := []upgradeMigrationOperation{
+		// Invalid key paths pin that the missing-file check precedes key parsing.
+		{Kind: upgradeMigrationKindConfigRenameKey, From: "a..b", To: "c"},
+		{Kind: upgradeMigrationKindConfigDeleteKey, Key: "a..b"},
+		{Kind: upgradeMigrationKindConfigReplaceString, Key: "a..b", From: "gemini", To: "antigravity"},
+		{Kind: upgradeMigrationKindConfigSetDefault, Key: "a..b", Value: []byte(`false`)},
+	}
+	for _, op := range ops {
+		t.Run(string(op.Kind), func(t *testing.T) {
+			root := t.TempDir()
+			prompter := autoApprovePrompter()
+			prompter.ConfigSetDefaultFunc = func(string, any, string, *config.FieldDef) (any, error) {
+				t.Fatal("unexpected config default prompt")
+				return nil, nil
+			}
+			changed, err := (&installer{root: root, prompter: prompter, sys: RealSystem{}}).executeUpgradeMigrationOperation(op)
+			if err != nil || changed {
+				t.Fatalf("missing config = changed %v, error %v", changed, err)
+			}
+			if _, statErr := os.Stat(filepath.Join(root, ".agent-layer")); !os.IsNotExist(statErr) {
+				t.Fatalf("expected no config directory to be created, stat err = %v", statErr)
+			}
+		})
+	}
+}
+
 func TestValidateUpgradeMigrationOperation_ConfigReplaceString(t *testing.T) {
 	validOp := upgradeMigrationOperation{
 		ID:        "replace-client",
@@ -3574,6 +3617,34 @@ func TestCollectMigrationChain(t *testing.T) {
 		}
 		if chain[0].manifest.TargetVersion != "0.7.0" {
 			t.Fatalf("chain entry = %q, want 0.7.0", chain[0].manifest.TargetVersion)
+		}
+	})
+
+	t.Run("start_inclusive_target_inclusive", func(t *testing.T) {
+		chain, err := collectMigrationChainFromVersionThroughTarget("0.6.1", "0.7.0")
+		if err != nil {
+			t.Fatalf("collectMigrationChainFromVersionThroughTarget: %v", err)
+		}
+		if len(chain) != 2 {
+			t.Fatalf("expected 2 manifests in chain, got %d", len(chain))
+		}
+		if chain[0].manifest.TargetVersion != "0.6.1" || chain[1].manifest.TargetVersion != "0.7.0" {
+			t.Fatalf("chain = [%q %q], want [0.6.1 0.7.0]", chain[0].manifest.TargetVersion, chain[1].manifest.TargetVersion)
+		}
+	})
+
+	t.Run("lower_bound_compare_error_names_bound", func(t *testing.T) {
+		_, cmpErr := version.Compare("0.6.0", "bad")
+		if cmpErr == nil {
+			t.Fatal("expected compare error for invalid version")
+		}
+		_, err := collectMigrationChain("bad", "0.7.0")
+		if want := "compare migration version 0.6.0 with source bad: " + cmpErr.Error(); err == nil || err.Error() != want {
+			t.Fatalf("collectMigrationChain error = %v, want %q", err, want)
+		}
+		_, err = collectMigrationChainFromVersionThroughTarget("bad", "0.7.0")
+		if want := "compare migration version 0.6.0 with start bad: " + cmpErr.Error(); err == nil || err.Error() != want {
+			t.Fatalf("collectMigrationChainFromVersionThroughTarget error = %v, want %q", err, want)
 		}
 	})
 }

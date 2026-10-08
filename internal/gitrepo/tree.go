@@ -85,16 +85,8 @@ func (r *Runner) writeSkillTree(ctx context.Context, dir string, tree skilltree.
 		if err := skilltree.ValidateRelativePath(file.Path); err != nil {
 			return "", fmt.Errorf("skill path %q is unsafe: %w", file.Path, err)
 		}
-		object, err := r.runInput(ctx, dir, file.Data, "hash-object", "-w", "--no-filters", "--stdin")
-		if err != nil {
-			return "", fmt.Errorf("failed to write blob for %s: %w", file.Path, err)
-		}
-		mode := "100644"
-		if file.Executable {
-			mode = "100755"
-		}
-		if _, err := r.run(ctx, dir, "update-index", "--add", "--cacheinfo", mode, strings.TrimSpace(string(object)), file.Path); err != nil {
-			return "", fmt.Errorf("failed to stage %s: %w", file.Path, err)
+		if err := r.stageBlob(ctx, dir, file.Path, file, ""); err != nil {
+			return "", err
 		}
 	}
 	written, err := r.run(ctx, dir, "write-tree")
@@ -104,9 +96,29 @@ func (r *Runner) writeSkillTree(ctx context.Context, dir string, tree skilltree.
 	return strings.TrimSpace(string(written)), nil
 }
 
-// readSkillTreeObject reads a Git tree object as a canonical skill tree.
-func (r *Runner) readSkillTreeObject(ctx context.Context, dir string, treeID string) (skilltree.Tree, error) {
-	output, err := r.run(ctx, dir, "ls-tree", "-r", "-z", "--full-tree", treeID)
+// stageBlob writes file's bytes as a Git blob and stages it at indexPath with
+// file's executable mode. where qualifies the staging failure message.
+func (r *Runner) stageBlob(ctx context.Context, dir string, indexPath string, file skilltree.File, where string) error {
+	object, err := r.runInput(ctx, dir, file.Data, "hash-object", "-w", "--no-filters", "--stdin")
+	if err != nil {
+		return fmt.Errorf("failed to write blob for %s: %w", indexPath, err)
+	}
+	mode := "100644"
+	if file.Executable {
+		mode = "100755"
+	}
+	if _, err := r.run(ctx, dir, "update-index", "--add", "--cacheinfo", mode, strings.TrimSpace(string(object)), indexPath); err != nil {
+		return fmt.Errorf("failed to stage %s%s: %w", indexPath, where, err)
+	}
+	return nil
+}
+
+// readSkillTreeObject reads a Git tree-ish as a canonical skill tree. display
+// prefixes entry names in ordinary rejection messages. A non-nil reject
+// replaces those messages and also rejects ignored artifacts instead of
+// dropping them; it receives the entry name and the unsupported kind.
+func (r *Runner) readSkillTreeObject(ctx context.Context, dir string, treeish string, display string, reject func(name string, kind string) error) (skilltree.Tree, error) {
+	output, err := r.run(ctx, dir, "ls-tree", "-r", "-z", "--full-tree", treeish)
 	if err != nil {
 		return skilltree.Tree{}, err
 	}
@@ -120,15 +132,27 @@ func (r *Runner) readSkillTreeObject(ctx context.Context, dir string, treeID str
 			return skilltree.Tree{}, parseErr
 		}
 		if isIgnoredTreePath(name) {
+			if reject != nil {
+				return skilltree.Tree{}, reject(name, "artifact")
+			}
 			continue
 		}
 		switch {
 		case objectType == gitObjectCommit:
-			return skilltree.Tree{}, fmt.Errorf("%s is a gitlink (submodule); imported skills may contain only directories and regular files", name)
+			if reject != nil {
+				return skilltree.Tree{}, reject(name, "gitlink (submodule)")
+			}
+			return skilltree.Tree{}, fmt.Errorf("%s%s is a gitlink (submodule); imported skills may contain only directories and regular files", display, name)
 		case mode == "120000":
-			return skilltree.Tree{}, fmt.Errorf("%s is a symbolic link; imported skills may contain only directories and regular files", name)
+			if reject != nil {
+				return skilltree.Tree{}, reject(name, "symbolic link")
+			}
+			return skilltree.Tree{}, fmt.Errorf("%s%s is a symbolic link; imported skills may contain only directories and regular files", display, name)
 		case objectType != gitObjectBlob:
-			return skilltree.Tree{}, fmt.Errorf("%s is an unsupported git object type %q", name, objectType)
+			if reject != nil {
+				return skilltree.Tree{}, reject(name, fmt.Sprintf("Git object type %q", objectType))
+			}
+			return skilltree.Tree{}, fmt.Errorf("%s%s is an unsupported git object type %q", display, name, objectType)
 		}
 		data, catErr := r.run(ctx, dir, "cat-file", gitObjectBlob, object)
 		if catErr != nil {

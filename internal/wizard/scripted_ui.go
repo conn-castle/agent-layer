@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
+	"maps"
 	"os"
 	"slices"
 	"sort"
@@ -51,19 +53,19 @@ func NewScriptedUIFromFile(path string) (*ScriptedUI, error) {
 // AssertComplete returns an error when the answer file contains unused prompts.
 func (ui *ScriptedUI) AssertComplete() error {
 	var unused []string
-	collectUnused := func(kind string, answers map[string]struct{}) {
-		for answerKey := range answers {
+	collectUnused := func(kind string, answerKeys iter.Seq[string]) {
+		for answerKey := range answerKeys {
 			usedKey := scriptedAnswerKey(kind, answerKey)
 			if _, ok := ui.used[usedKey]; !ok {
 				unused = append(unused, kind+": "+answerKey)
 			}
 		}
 	}
-	collectUnused("select", stringMapKeys(ui.answers.Select))
-	collectUnused("multi_select", stringSliceMapKeys(ui.answers.MultiSelect))
-	collectUnused("confirm", boolMapKeys(ui.answers.Confirm))
-	collectUnused("input", stringMapKeys(ui.answers.Input))
-	collectUnused("secret_input", stringMapKeys(ui.answers.SecretInput))
+	collectUnused("select", maps.Keys(ui.answers.Select))
+	collectUnused("multi_select", maps.Keys(ui.answers.MultiSelect))
+	collectUnused("confirm", maps.Keys(ui.answers.Confirm))
+	collectUnused("input", maps.Keys(ui.answers.Input))
+	collectUnused("secret_input", maps.Keys(ui.answers.SecretInput))
 	if len(unused) == 0 {
 		return nil
 	}
@@ -73,7 +75,7 @@ func (ui *ScriptedUI) AssertComplete() error {
 
 // Select applies a scripted single-choice answer for title.
 func (ui *ScriptedUI) Select(title string, options []string, current *string) error {
-	answer, answerKey, ok := lookupStringScriptedAnswer(ui.answers.Select, title)
+	answer, answerKey, ok := lookupScriptedAnswer(ui.answers.Select, title)
 	if !ok {
 		return missingScriptedAnswer("select", title)
 	}
@@ -88,7 +90,7 @@ func (ui *ScriptedUI) Select(title string, options []string, current *string) er
 // MultiSelect applies a scripted multi-choice answer for title.
 func (ui *ScriptedUI) MultiSelect(title string, options []string, selected *[]string) error {
 	title, _, _ = strings.Cut(title, cliSkillsStatusHeading)
-	answer, answerKey, ok := lookupStringSliceScriptedAnswer(ui.answers.MultiSelect, title)
+	answer, answerKey, ok := lookupScriptedAnswer(ui.answers.MultiSelect, title)
 	if !ok {
 		return missingScriptedAnswer("multi_select", title)
 	}
@@ -105,35 +107,17 @@ func (ui *ScriptedUI) MultiSelect(title string, options []string, selected *[]st
 
 // Confirm applies a scripted yes/no answer for title.
 func (ui *ScriptedUI) Confirm(title string, value *bool) error {
-	answer, answerKey, ok := lookupBoolScriptedAnswer(ui.answers.Confirm, title)
-	if !ok {
-		return missingScriptedAnswer("confirm", title)
-	}
-	*value = answer
-	ui.markUsed("confirm", answerKey)
-	return nil
+	return applyScriptedAnswer(ui, "confirm", ui.answers.Confirm, title, value)
 }
 
 // Input applies a scripted text answer for title.
 func (ui *ScriptedUI) Input(title string, value *string) error {
-	answer, answerKey, ok := lookupStringScriptedAnswer(ui.answers.Input, title)
-	if !ok {
-		return missingScriptedAnswer("input", title)
-	}
-	*value = answer
-	ui.markUsed("input", answerKey)
-	return nil
+	return applyScriptedAnswer(ui, "input", ui.answers.Input, title, value)
 }
 
 // SecretInput applies a scripted secret answer for title.
 func (ui *ScriptedUI) SecretInput(title string, value *string) error {
-	answer, answerKey, ok := lookupStringScriptedAnswer(ui.answers.SecretInput, title)
-	if !ok {
-		return missingScriptedAnswer("secret_input", title)
-	}
-	*value = answer
-	ui.markUsed("secret_input", answerKey)
-	return nil
+	return applyScriptedAnswer(ui, "secret_input", ui.answers.SecretInput, title, value)
 }
 
 // Note emits informational wizard screens without consuming scripted answers.
@@ -158,25 +142,19 @@ func missingScriptedAnswer(kind string, title string) error {
 	return fmt.Errorf("wizard answers missing %s prompt %q", kind, title)
 }
 
-func lookupStringScriptedAnswer(answers map[string]string, title string) (string, string, bool) {
-	if answer, ok := answers[title]; ok {
-		return answer, title, true
+// applyScriptedAnswer stores the scripted answer for title in value and marks it used.
+func applyScriptedAnswer[T any](ui *ScriptedUI, kind string, answers map[string]T, title string, value *T) error {
+	answer, answerKey, ok := lookupScriptedAnswer(answers, title)
+	if !ok {
+		return missingScriptedAnswer(kind, title)
 	}
-	shortTitle := firstScriptedTitleLine(title)
-	answer, ok := answers[shortTitle]
-	return answer, shortTitle, ok
+	*value = answer
+	ui.markUsed(kind, answerKey)
+	return nil
 }
 
-func lookupStringSliceScriptedAnswer(answers map[string][]string, title string) ([]string, string, bool) {
-	if answer, ok := answers[title]; ok {
-		return answer, title, true
-	}
-	shortTitle := firstScriptedTitleLine(title)
-	answer, ok := answers[shortTitle]
-	return answer, shortTitle, ok
-}
-
-func lookupBoolScriptedAnswer(answers map[string]bool, title string) (bool, string, bool) {
+// lookupScriptedAnswer matches the full title first, then its first line.
+func lookupScriptedAnswer[T any](answers map[string]T, title string) (T, string, bool) {
 	if answer, ok := answers[title]; ok {
 		return answer, title, true
 	}
@@ -188,28 +166,4 @@ func lookupBoolScriptedAnswer(answers map[string]bool, title string) (bool, stri
 func firstScriptedTitleLine(title string) string {
 	first, _, _ := strings.Cut(title, "\n")
 	return first
-}
-
-func stringMapKeys(in map[string]string) map[string]struct{} {
-	out := make(map[string]struct{}, len(in))
-	for key := range in {
-		out[key] = struct{}{}
-	}
-	return out
-}
-
-func stringSliceMapKeys(in map[string][]string) map[string]struct{} {
-	out := make(map[string]struct{}, len(in))
-	for key := range in {
-		out[key] = struct{}{}
-	}
-	return out
-}
-
-func boolMapKeys(in map[string]bool) map[string]struct{} {
-	out := make(map[string]struct{}, len(in))
-	for key := range in {
-		out[key] = struct{}{}
-	}
-	return out
 }

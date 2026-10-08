@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/gitrepo"
@@ -142,8 +143,10 @@ required_dispatch_roles = ["plan-reviewer", "implementer", "code-reviewer"]
 	} else if !os.IsNotExist(err) {
 		return "", err
 	}
-	if err := os.Rename(stage, requestedDestination); err != nil {
-		return "", err
+	// os.Rename rejects an existing directory in Go. The native rename atomically
+	// replaces an empty directory on supported Unix hosts and refuses nonempty ones.
+	if err := syscall.Rename(stage, requestedDestination); err != nil {
+		return "", fmt.Errorf("publish benchmark study %s: %w", requestedDestination, err)
 	}
 	return filepath.Join(requestedDestination, "study.toml"), nil
 }

@@ -214,6 +214,71 @@ func TestUpgradePlanCmd_TextOutputIncludesDiffPreviewAndTruncation(t *testing.T)
 	})
 }
 
+// failOnWriteWriter fails the failOn-th write (1-based) with err and counts
+// every write attempt.
+type failOnWriteWriter struct {
+	failOn int
+	err    error
+	writes int
+}
+
+func (w *failOnWriteWriter) Write(p []byte) (int, error) {
+	w.writes++
+	if w.writes == w.failOn {
+		return 0, w.err
+	}
+	return len(p), nil
+}
+
+func TestRenderUpgradePlanText_StopsAtFirstWriteError(t *testing.T) {
+	plan := install.UpgradePlan{
+		TemplateAdditions:   []install.UpgradeChange{{Path: "added.md"}},
+		TemplateRenames:     []install.UpgradeRename{{From: "old.md", To: "new.md"}},
+		ConfigKeyMigrations: []install.ConfigKeyMigration{{Key: "k", From: "a", To: "b"}},
+		MigrationReport: install.UpgradeMigrationReport{
+			Entries: []install.UpgradeMigrationEntry{{ID: "m", Status: install.UpgradeMigrationStatusPlanned}},
+		},
+		ReadinessChecks: []install.UpgradeReadinessCheck{{Summary: "s", Details: []string{"1", "2", "3", "4"}}},
+	}
+	previews := map[string]install.DiffPreview{"added.md": {UnifiedDiff: "-old\n+new"}}
+
+	var current *failOnWriteWriter
+	var writesAtTerminalCheck []int
+	origIsTerminal := isTerminal
+	isTerminal = func() bool {
+		writesAtTerminalCheck = append(writesAtTerminalCheck, current.writes)
+		return false
+	}
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	current = &failOnWriteWriter{}
+	if err := renderUpgradePlanText(current, plan, previews); err != nil {
+		t.Fatalf("renderUpgradePlanText: %v", err)
+	}
+	total := current.writes
+	if len(writesAtTerminalCheck) != 1 {
+		t.Fatalf("expected one terminal check for the diff preview, got %d", len(writesAtTerminalCheck))
+	}
+
+	for k := 1; k <= total; k++ {
+		sentinel := errors.New("write failed")
+		current = &failOnWriteWriter{failOn: k, err: sentinel}
+		writesAtTerminalCheck = nil
+		err := renderUpgradePlanText(current, plan, previews)
+		if err != sentinel {
+			t.Fatalf("write %d: expected the writer's error, got %v", k, err)
+		}
+		if current.writes != k {
+			t.Fatalf("write %d: expected no writes after the failure, got %d writes", k, current.writes)
+		}
+		for _, writes := range writesAtTerminalCheck {
+			if writes >= k {
+				t.Fatalf("write %d: terminal check ran after the failed write", k)
+			}
+		}
+	}
+}
+
 func TestUpgradePlanCmd_InvalidDiffLines(t *testing.T) {
 	root := prepareUpgradeTestRepo(t)
 	testutil.WithWorkingDir(t, root, func() {

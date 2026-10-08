@@ -8,10 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -33,11 +34,12 @@ const (
 	providerMuse    = "muse"
 	providerGrok    = "grok"
 	sourceMuseHerdR = "muse:herdr"
+	sourceCodexAL   = "al:codex"
 
 	flagResume               = "--resume"
 	flagConversation         = "--conversation"
 	eventSessionStart        = "SessionStart"
-	eventMuseUserPrompt      = "UserPromptSubmit"
+	eventUserPromptSubmit    = "UserPromptSubmit"
 	resumeVerb               = "resume"
 	flagDangerouslySkipPerms = "--dangerously-skip-permissions"
 	commandEnv               = "env"
@@ -60,7 +62,7 @@ type providerSpec struct {
 
 var providers = map[string]providerSpec{
 	providerClaude: {name: providerClaude, agent: providerClaude, source: "al:claude", event: eventSessionStart, resumeArgs: func(id string) []string { return []string{providerClaude, flagResume, id} }},
-	providerCodex:  {name: providerCodex, agent: providerCodex, source: "al:codex", event: eventSessionStart, resumeArgs: func(id string) []string { return []string{providerCodex, resumeVerb, id} }},
+	providerCodex:  {name: providerCodex, agent: providerCodex, source: sourceCodexAL, event: eventSessionStart, resumeArgs: func(id string) []string { return []string{providerCodex, resumeVerb, id} }},
 	providerAgy:    {name: providerAgy, agent: providerAgy, source: "al:agy", event: "PreInvocation", resumeArgs: func(id string) []string { return []string{providerAgy, flagConversation, id} }},
 	// Muse's builtin lifecycle plugin is the holder of this source.  A
 	// session-only report under it attaches only the resume argv; this package
@@ -71,13 +73,18 @@ var providers = map[string]providerSpec{
 
 var lastSequence atomic.Int64
 
+var errMissingSessionID = errors.New("missing session identifier")
+
 const (
 	// HookTimeoutSeconds is shared with generated native hook configuration.
 	HookTimeoutSeconds = 35
 	hookWorkBudget     = (HookTimeoutSeconds - 5) * time.Second
-	persistPollEvery   = 100 * time.Millisecond
-	persistWait        = 7 * time.Second
 	reportAttempts     = 4
+)
+
+var (
+	persistPollEvery = 100 * time.Millisecond
+	persistWait      = 7 * time.Second
 )
 
 // HandleForRoot binds a generated project hook to its AL terminal launch.
@@ -91,6 +98,16 @@ func HandleForRoot(provider, root string, in io.Reader, out, errOut io.Writer, e
 		defer func() { _, _ = io.WriteString(out, "{}\n") }()
 	}
 	env := environment(environ)
+	if root != "" && provider == providerCodex {
+		err := handleCodexRooted(root, spec, in, env, deadline)
+		if err != nil {
+			err = recordCodexRecoveryFailure(root, err)
+			if errOut != nil {
+				_, _ = fmt.Fprintf(errOut, "agent-layer HerdR recovery (codex): %v\n", err)
+			}
+		}
+		return err
+	}
 	if env[EnvDispatch] != "" {
 		return nil
 	}
@@ -133,6 +150,10 @@ func HandleForRoot(provider, root string, in io.Reader, out, errOut io.Writer, e
 	if err != nil {
 		return fmt.Errorf("read %s HerdR hook event: %w", provider, err)
 	}
+	// Unrooted compatibility hooks cannot establish selected-child ownership.
+	if provider == providerCodex && text(payload, "agent_id", "agentId") != "" {
+		return nil
+	}
 	id, ok, err := sessionID(spec, payload, env)
 	if err != nil {
 		return fmt.Errorf("read %s HerdR hook event: %w", provider, err)
@@ -155,7 +176,7 @@ func HandleForRoot(provider, root string, in io.Reader, out, errOut io.Writer, e
 	// earlier native launch non-identical, while later prompts retain the
 	// ordinary exact-persisted-command fast path.
 	canonicalPane := ""
-	if provider == providerMuse && text(payload, "hook_event_name", "hookEventName") == eventMuseUserPrompt {
+	if provider == providerMuse && text(payload, "hook_event_name", "hookEventName") == eventUserPromptSubmit {
 		var stored bool
 		canonicalPane, stored, err = currentResumeStored(spec, argv, env, deadline)
 		if err != nil {
@@ -165,13 +186,139 @@ func HandleForRoot(provider, root string, in io.Reader, out, errOut io.Writer, e
 			return nil
 		}
 	}
-	if err := reportAndVerify(spec, id, argv, env, deadline, canonicalPane); err != nil {
+	if err := reportAndVerify(spec, id, argv, env, deadline, canonicalPane, nil); err != nil {
 		if errOut != nil {
 			_, _ = fmt.Fprintf(errOut, "agent-layer HerdR recovery (%s): %v\n", provider, err)
 		}
 		return err
 	}
 	return nil
+}
+
+// handleCodexRooted binds the event ID to the projected title of each live
+// recorded foreground pane. Hook ancestry and inherited pane markers do not
+// identify a conversation when a shared daemon serves multiple TUIs.
+func handleCodexRooted(root string, spec providerSpec, in io.Reader, env map[string]string, deadline time.Time) error {
+	payload, err := decodePayload(in)
+	if err != nil {
+		return fmt.Errorf("read codex HerdR hook event: %w", err)
+	}
+	id, ok, idErr := sessionID(spec, payload, env)
+	if idErr != nil && !errors.Is(idErr, errMissingSessionID) {
+		return fmt.Errorf("read codex HerdR hook event: %w", idErr)
+	}
+	if idErr == nil && !ok {
+		return nil
+	}
+	root, err = canonicalDirectory(root)
+	if err != nil {
+		return fmt.Errorf("resolve HerdR project root: %w", err)
+	}
+	paths, err := codexRunRecords(root)
+	if err != nil {
+		return err
+	}
+	records, err := liveCodexLaunchRecords(root, paths)
+	if err != nil {
+		return err
+	}
+	if errors.Is(idErr, errMissingSessionID) {
+		if len(records) > 0 {
+			return errors.New("codex native hook event omitted its session identifier for a live Agent Layer launch")
+		}
+		return nil
+	}
+	childEvent := text(payload, "agent_id", "agentId") != ""
+	launches, found, err := codexContextsWithPaintWait(root, records, id, deadline, childEvent)
+	if err != nil || !found {
+		return err
+	}
+	seen := make(map[string]bool, len(launches))
+	for _, launch := range launches {
+		socketPath, key, err := codexRecoveryDedupKey(launch)
+		if err != nil {
+			return fmt.Errorf("resolve HerdR launch socket: %w", err)
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		candidateEnv := maps.Clone(env)
+		candidateEnv[EnvEnabled], candidateEnv[EnvSocketPath], candidateEnv[EnvPaneID] = "1", socketPath, launch.PaneID
+		delete(candidateEnv, EnvDevBypass)
+		delete(candidateEnv, EnvDevExecutable)
+		if launch.DevBypass {
+			candidateEnv[EnvDevBypass], candidateEnv[EnvDevExecutable] = "1", launch.DevExecutable
+		}
+		argv, err := resumeArgv(spec, id, candidateEnv)
+		if err == nil {
+			// Recheck ownership before every write; never wait on a changed selection.
+			revalidate := func() (bool, error) {
+				matchErr := codexContextMatchesPane(launch, id, deadline)
+				if errors.Is(matchErr, errCodexPaneNoMatch) || errors.Is(matchErr, errCodexPaneGone) || errors.Is(matchErr, errCodexPaneTitlePending) {
+					return false, nil
+				}
+				return matchErr == nil, matchErr
+			}
+			canonicalPane, stored, storedErr := currentCodexResumeStored(launch, id, spec, argv, candidateEnv, deadline)
+			if storedErr != nil {
+				err = fmt.Errorf("check Codex HerdR stored resume command: %w", storedErr)
+			} else if !stored {
+				err = reportAndVerify(spec, id, argv, candidateEnv, deadline, canonicalPane, revalidate)
+			}
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// currentCodexResumeStored permits the prompt-time fast path only when HerdR's
+// durable recipe and its live pane association still identify this exact hook
+// thread. Session.json can lag a newer in-memory report by several seconds.
+func currentCodexResumeStored(launch launchContext, hookID string, spec providerSpec, argv []string, env map[string]string, deadline time.Time) (string, bool, error) {
+	canonicalPane, stored, err := currentResumeStored(spec, argv, env, deadline)
+	if err != nil || !stored {
+		return canonicalPane, stored, err
+	}
+	pane, _, err := codexPaneForLaunch(launch, deadline)
+	if errors.Is(err, errCodexPaneGone) {
+		return canonicalPane, false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return canonicalPane, codexLiveSessionMatches(pane, hookID), nil
+}
+
+// codexRecoveryDedupKey distinguishes live launches by the socket HerdR would
+// actually contact, not the unresolved relative path stored at capture.
+func codexRecoveryDedupKey(launch launchContext) (string, string, error) {
+	socketPath, err := resolveContextSocket(launch)
+	if err != nil {
+		return "", "", err
+	}
+	return socketPath, socketPath + "\x00" + launch.PaneID, nil
+}
+
+// recordCodexRecoveryFailure leaves a small local receipt because native Codex
+// presents hook failures generically and hook stdout must remain empty. It
+// intentionally contains no payload, title, environment, or command argv.
+func recordCodexRecoveryFailure(root string, failure error) error {
+	directory := filepath.Join(root, ".agent-layer", "tmp", "herdr-hook-errors")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return fmt.Errorf("%w; also create recovery error receipt: %v", failure, err)
+	}
+	name := fmt.Sprintf("codex-hook-error-%d.json", os.Getpid())
+	data, err := json.Marshal(map[string]string{"provider": providerCodex, "error": failure.Error()})
+	if err != nil {
+		return fmt.Errorf("%w; also encode recovery error receipt: %v", failure, err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, name), append(data, '\n'), 0o600); err != nil { // #nosec G306 -- private project-local hook receipt.
+		return fmt.Errorf("%w; also write recovery error receipt: %v", failure, err)
+	}
+	return failure
 }
 
 func decodePayload(in io.Reader) (map[string]any, error) {
@@ -193,7 +340,10 @@ func decodePayload(in io.Reader) (map[string]any, error) {
 }
 
 func sessionID(spec providerSpec, payload map[string]any, env map[string]string) (string, bool, error) {
-	if text(payload, "agent_id") != "" || text(payload, "agentId") != "" {
+	// Codex can select a child conversation in the foreground. Its live pane
+	// projected title and foreground ownership are the authority; other providers have no
+	// equivalent association signal and retain the conservative child no-op.
+	if spec.name != providerCodex && (text(payload, "agent_id") != "" || text(payload, "agentId") != "") {
 		return "", false, nil
 	}
 	event := text(payload, "hook_event_name", "hookEventName")
@@ -208,7 +358,7 @@ func sessionID(spec providerSpec, payload map[string]any, env map[string]string)
 		}
 		id = text(payload, "session_id", "sessionId")
 	case providerMuse:
-		if event != spec.event && event != eventMuseUserPrompt {
+		if event != spec.event && event != eventUserPromptSubmit {
 			if event == "" {
 				return "", false, fmt.Errorf("%s event is missing its hook event name", spec.name)
 			}
@@ -218,12 +368,18 @@ func sessionID(spec providerSpec, payload map[string]any, env map[string]string)
 	case providerCodex:
 		// Codex's native hook contract permits an omitted event discriminator,
 		// but rejects an explicitly different event.
-		if event != "" && event != spec.event {
+		if event != "" && event != spec.event && event != eventUserPromptSubmit {
 			return "", false, nil
 		}
 		id = text(payload, "session_id", "sessionId")
-		if inherited := env["CODEX_THREAD_ID"]; inherited != "" && inherited != id {
-			return "", false, nil
+		// Native child hooks keep the parent in session_id and identify their
+		// own thread in agent_id. Projected title and foreground ownership still decide whether
+		// that child is selected; a background child never claims the parent.
+		if childID := text(payload, "agent_id", "agentId"); childID != "" {
+			id = childID
+		}
+		if id != "" && !codexThreadID.MatchString(id) {
+			return "", false, errors.New("codex event has an invalid session identifier")
 		}
 	case providerAgy:
 		// Antigravity's documented PreInvocation payload supplies
@@ -242,7 +398,7 @@ func sessionID(spec providerSpec, payload map[string]any, env map[string]string)
 		}
 	}
 	if id == "" {
-		return "", false, fmt.Errorf("%s event is missing its session identifier", spec.name)
+		return "", false, fmt.Errorf("%s event is missing its session identifier: %w", spec.name, errMissingSessionID)
 	}
 	return id, true, nil
 }
@@ -289,7 +445,11 @@ func pathWithin(root, value string) bool {
 	return clean == root || strings.HasPrefix(clean, root+string(os.PathSeparator))
 }
 
-func reportAndVerify(spec providerSpec, id string, argv []string, env map[string]string, deadline time.Time, canonicalPane string) error {
+// reportAndVerify invokes revalidate immediately before every sequence-bearing
+// report. A nil callback keeps the historical provider behavior. A false
+// result is a safe no-op: the foreground selected a different conversation
+// while a prior report was waiting for HerdR's persistent writer.
+func reportAndVerify(spec providerSpec, id string, argv []string, env map[string]string, deadline time.Time, canonicalPane string, revalidate func() (bool, error)) error {
 	if canonicalPane == "" {
 		var err error
 		canonicalPane, err = canonicalPaneID(env[EnvSocketPath], env[EnvPaneID], deadline)
@@ -306,6 +466,15 @@ func reportAndVerify(spec providerSpec, id string, argv []string, env map[string
 		if !time.Now().Before(deadline) {
 			lastErr = errors.New("HerdR recovery verification deadline exceeded")
 			break
+		}
+		if revalidate != nil {
+			current, validationErr := revalidate()
+			if validationErr != nil {
+				return validationErr
+			}
+			if !current {
+				return nil
+			}
 		}
 		sequence := nextSequence()
 		request := map[string]any{
@@ -449,9 +618,9 @@ type persistedResume struct {
 
 func canonicalPaneID(socketPath, paneID string, deadline time.Time) (string, error) {
 	response, err := socketRequest(socketPath, map[string]any{
-		"id":     "agent-layer:canonical-pane",
-		"method": "pane.get",
-		"params": map[string]any{"pane_id": paneID},
+		"id":             "agent-layer:canonical-pane",
+		requestMethodKey: "pane.get",
+		requestParamsKey: map[string]any{requestPaneIDKey: paneID},
 	}, deadline)
 	if err != nil {
 		return "", fmt.Errorf("resolve HerdR pane: %w", err)
@@ -473,11 +642,15 @@ func sessionPath(socketPath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve HerdR socket path: %w", err)
 	}
-	directory, err := filepath.EvalSymlinks(filepath.Dir(absSocket))
+	// A validated launch may retain a short relative socket alias so Unix
+	// dialing stays below sockaddr_un limits. Resolve the socket itself, not
+	// merely its containing alias directory, before locating HerdR's canonical
+	// session.json beside the physical socket.
+	resolvedSocket, err := filepath.EvalSymlinks(absSocket)
 	if err != nil {
-		return "", fmt.Errorf("resolve HerdR socket directory: %w", err)
+		return "", fmt.Errorf("resolve HerdR socket: %w", err)
 	}
-	return filepath.Join(directory, "session.json"), nil
+	return filepath.Join(filepath.Dir(resolvedSocket), "session.json"), nil
 }
 
 func containsResume(session persistedSession, paneID string, spec providerSpec, argv []string) (bool, error) {
@@ -527,9 +700,15 @@ func splitCanonicalPaneID(paneID string) (string, int, error) {
 	if !ok || workspaceID == "" || publicText == "" || strings.Contains(publicText, ":") {
 		return "", 0, fmt.Errorf("invalid canonical HerdR pane ID %q", paneID)
 	}
-	publicPaneNumber, err := strconv.Atoi(publicText)
-	if err != nil || publicPaneNumber < 1 {
-		return "", 0, fmt.Errorf("invalid canonical HerdR pane ID %q", paneID)
+	// HerdR public numbers use bijective base32 (src/workspace.rs).
+	const alphabet = "123456789ABCDEFGHJKMNPQRSTVWXYZ0"
+	publicPaneNumber := 0
+	for i := 0; i < len(publicText); i++ {
+		digit := strings.IndexByte(alphabet, publicText[i]) + 1
+		if digit == 0 || publicPaneNumber > (math.MaxInt-digit)/len(alphabet) {
+			return "", 0, fmt.Errorf("invalid canonical HerdR pane ID %q", paneID)
+		}
+		publicPaneNumber = publicPaneNumber*len(alphabet) + digit
 	}
 	return workspaceID, publicPaneNumber, nil
 }

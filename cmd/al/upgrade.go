@@ -533,27 +533,20 @@ func writeUpgradeSkippedCategoryNotes(out io.Writer, policy upgradeApplyPolicy) 
 	if !policy.explicitCategory {
 		return nil
 	}
+	ew := &errWriter{w: out}
 	if !policy.applyManaged {
-		if _, err := fmt.Fprintln(out, messages.UpgradeSkipManagedUpdatesInfo); err != nil {
-			return err
-		}
+		ew.println(messages.UpgradeSkipManagedUpdatesInfo)
 	}
 	if !policy.applyMemory {
-		if _, err := fmt.Fprintln(out, messages.UpgradeSkipMemoryUpdatesInfo); err != nil {
-			return err
-		}
+		ew.println(messages.UpgradeSkipMemoryUpdatesInfo)
 	}
 	if !policy.applyDeletions {
-		if _, err := fmt.Fprintln(out, messages.UpgradeSkipDeletionsInfo); err != nil {
-			return err
-		}
+		ew.println(messages.UpgradeSkipDeletionsInfo)
 	}
 	if !policy.applyTmpDeletions {
-		if _, err := fmt.Fprintln(out, messages.UpgradeSkipTmpDeletionsInfo); err != nil {
-			return err
-		}
+		ew.println(messages.UpgradeSkipTmpDeletionsInfo)
 	}
-	return nil
+	return ew.err
 }
 
 func newUpgradePlanCmd(diffLines *int) *cobra.Command {
@@ -638,97 +631,49 @@ func requireUpgradeTargetCLI(targetVersion string) error {
 }
 
 func renderUpgradePlanText(out io.Writer, plan install.UpgradePlan, previews map[string]install.DiffPreview) error {
-	if _, err := fmt.Fprintln(out, messages.UpgradePlanDryRunNoFiles); err != nil {
-		return err
-	}
-	if err := writeUpgradeSummary(out, plan); err != nil {
-		return err
-	}
+	ew := &errWriter{w: out}
+	ew.println(messages.UpgradePlanDryRunNoFiles)
+	writeUpgradeSummary(ew, plan)
 	allUpdates := make([]install.UpgradeChange, 0, len(plan.TemplateUpdates)+len(plan.SectionAwareUpdates))
 	allUpdates = append(allUpdates, plan.TemplateUpdates...)
 	allUpdates = append(allUpdates, plan.SectionAwareUpdates...)
-	if err := writeUpgradeChangeSection(out, messages.UpgradePlanSectionFilesToAdd, plan.TemplateAdditions, previews); err != nil {
-		return err
-	}
-	if err := writeUpgradeChangeSection(out, messages.UpgradePlanSectionStatuslineFilesToAdd, plan.StatuslineSourceAdditions, previews); err != nil {
-		return err
-	}
-	if err := writeUpgradeChangeSection(out, messages.UpgradePlanSectionFilesToUpdate, allUpdates, previews); err != nil {
-		return err
-	}
-	if err := writeUpgradeChangeSection(out, messages.UpgradePlanSectionStatuslineToReview, plan.StatuslineSourceUpdates, previews); err != nil {
-		return err
-	}
-	if err := writeUpgradeRenameSection(out, messages.UpgradePlanSectionFilesToRename, plan.TemplateRenames); err != nil {
-		return err
-	}
-	if err := writeUpgradeChangeSection(out, messages.UpgradePlanSectionFilesToReviewRemoval, plan.TemplateRemovalsOrOrphans, previews); err != nil {
-		return err
-	}
-	if err := writeConfigMigrationSection(out, messages.UpgradePlanSectionConfigUpdates, plan.ConfigKeyMigrations); err != nil {
-		return err
-	}
-	if err := writeMigrationReportSection(out, messages.UpgradePlanSectionMigrations, plan.MigrationReport); err != nil {
-		return err
-	}
-	if err := writePinVersionSection(out, plan.PinVersionChange); err != nil {
-		return err
-	}
-	if err := writeReadinessSection(out, plan.ReadinessChecks); err != nil {
-		return err
-	}
-	return nil
+	writeUpgradeChangeSection(ew, messages.UpgradePlanSectionFilesToAdd, plan.TemplateAdditions, previews)
+	writeUpgradeChangeSection(ew, messages.UpgradePlanSectionStatuslineFilesToAdd, plan.StatuslineSourceAdditions, previews)
+	writeUpgradeChangeSection(ew, messages.UpgradePlanSectionFilesToUpdate, allUpdates, previews)
+	writeUpgradeChangeSection(ew, messages.UpgradePlanSectionStatuslineToReview, plan.StatuslineSourceUpdates, previews)
+	ew.printf(messages.UpgradePlanSectionTitleFmt, messages.UpgradePlanSectionFilesToRename)
+	writeUpgradePlanItems(ew, plan.TemplateRenames, func(rename install.UpgradeRename) {
+		ew.printf(messages.UpgradePlanRenameItemFmt, rename.From, rename.To)
+	})
+	writeUpgradeChangeSection(ew, messages.UpgradePlanSectionFilesToReviewRemoval, plan.TemplateRemovalsOrOrphans, previews)
+	ew.printf(messages.UpgradePlanSectionTitleFmt, messages.UpgradePlanSectionConfigUpdates)
+	writeUpgradePlanItems(ew, plan.ConfigKeyMigrations, func(migration install.ConfigKeyMigration) {
+		ew.printf(messages.UpgradePlanConfigItemFmt, migration.Key, migration.From, migration.To)
+	})
+	writeMigrationReportSection(ew, plan.MigrationReport)
+	writePinVersionSection(ew, plan.PinVersionChange)
+	writeReadinessSection(ew, plan.ReadinessChecks)
+	return ew.err
 }
 
-func writeUpgradeChangeSection(out io.Writer, title string, changes []install.UpgradeChange, previews map[string]install.DiffPreview) error {
-	if _, err := fmt.Fprintf(out, messages.UpgradePlanSectionTitleFmt, title); err != nil {
-		return err
+// writeUpgradePlanItems writes each item of a plan section, or the "(none)"
+// line when the section is empty.
+func writeUpgradePlanItems[T any](ew *errWriter, items []T, writeItem func(T)) {
+	if len(items) == 0 {
+		ew.println(messages.UpgradePlanNone)
+		return
 	}
-	if len(changes) == 0 {
-		_, err := fmt.Fprintln(out, messages.UpgradePlanNone)
-		return err
+	for _, item := range items {
+		writeItem(item)
 	}
-	for _, change := range changes {
-		if _, err := fmt.Fprintf(out, messages.UpgradePlanItemFmt, change.Path); err != nil {
-			return err
-		}
-		if err := writeSinglePreviewBlock(out, previews[change.Path]); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
-func writeUpgradeRenameSection(out io.Writer, title string, renames []install.UpgradeRename) error {
-	if _, err := fmt.Fprintf(out, messages.UpgradePlanSectionTitleFmt, title); err != nil {
-		return err
-	}
-	if len(renames) == 0 {
-		_, err := fmt.Fprintln(out, messages.UpgradePlanNone)
-		return err
-	}
-	for _, rename := range renames {
-		if _, err := fmt.Fprintf(out, messages.UpgradePlanRenameItemFmt, rename.From, rename.To); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func writeConfigMigrationSection(out io.Writer, title string, migrations []install.ConfigKeyMigration) error {
-	if _, err := fmt.Fprintf(out, messages.UpgradePlanSectionTitleFmt, title); err != nil {
-		return err
-	}
-	if len(migrations) == 0 {
-		_, err := fmt.Fprintln(out, messages.UpgradePlanNone)
-		return err
-	}
-	for _, migration := range migrations {
-		if _, err := fmt.Fprintf(out, messages.UpgradePlanConfigItemFmt, migration.Key, migration.From, migration.To); err != nil {
-			return err
-		}
-	}
-	return nil
+func writeUpgradeChangeSection(ew *errWriter, title string, changes []install.UpgradeChange, previews map[string]install.DiffPreview) {
+	ew.printf(messages.UpgradePlanSectionTitleFmt, title)
+	writeUpgradePlanItems(ew, changes, func(change install.UpgradeChange) {
+		ew.printf(messages.UpgradePlanItemFmt, change.Path)
+		writeSinglePreviewBlock(ew, previews[change.Path])
+	})
 }
 
 // errWriter wraps an io.Writer and accumulates the first error encountered,
@@ -752,12 +697,11 @@ func (ew *errWriter) println(args ...any) {
 	_, ew.err = fmt.Fprintln(ew.w, args...)
 }
 
-func writeMigrationReportSection(out io.Writer, title string, report install.UpgradeMigrationReport) error { //nolint:unparam // title kept for consistency with other write*Section functions
-	ew := &errWriter{w: out}
-	ew.printf(messages.UpgradePlanSectionTitleFmt, title)
+func writeMigrationReportSection(ew *errWriter, report install.UpgradeMigrationReport) {
+	ew.printf(messages.UpgradePlanSectionTitleFmt, messages.UpgradePlanSectionMigrations)
 	if len(report.Entries) == 0 {
 		ew.println(messages.UpgradePlanNone)
-		return ew.err
+		return
 	}
 	ew.printf(messages.UpgradePlanMigrationTargetVersionFmt, report.TargetVersion)
 	ew.printf(messages.UpgradePlanMigrationSourceVersionFmt, report.SourceVersion, report.SourceVersionOrigin)
@@ -779,29 +723,25 @@ func writeMigrationReportSection(out io.Writer, title string, report install.Upg
 			ew.println(color.YellowString(messages.UpgradePlanMigrationBreakingRunHint))
 		}
 	}
-	return ew.err
 }
 
-func writePinVersionSection(out io.Writer, pin install.UpgradePinVersionDiff) error {
-	ew := &errWriter{w: out}
+func writePinVersionSection(ew *errWriter, pin install.UpgradePinVersionDiff) {
 	ew.println(messages.UpgradePlanPinVersionHeader)
 	ew.printf(messages.UpgradePlanPinCurrentFmt, pin.Current)
 	ew.printf(messages.UpgradePlanPinTargetFmt, pin.Target)
 	ew.printf(messages.UpgradePlanPinActionFmt, pin.Action)
-	return ew.err
 }
 
-func writeSinglePreviewBlock(out io.Writer, preview install.DiffPreview) error {
+func writeSinglePreviewBlock(ew *errWriter, preview install.DiffPreview) {
 	if strings.TrimSpace(preview.UnifiedDiff) == "" {
-		return nil
+		return
 	}
-	if _, err := fmt.Fprintln(out, messages.UpgradePlanDiffLabel); err != nil {
-		return err
+	ew.println(messages.UpgradePlanDiffLabel)
+	// Stop before the terminal check, and keep the assignment below from clearing an earlier error.
+	if ew.err != nil {
+		return
 	}
-	if err := writeUnifiedDiff(out, preview.UnifiedDiff, shouldColorizeDiffOutput(), "      "); err != nil {
-		return err
-	}
-	return nil
+	ew.err = writeUnifiedDiff(ew.w, preview.UnifiedDiff, shouldColorizeDiffOutput(), "      ")
 }
 
 // printDiffPreviews renders the file-list summary (with +/- stats) followed
@@ -934,43 +874,27 @@ func writeUnifiedDiff(out io.Writer, diff string, colorize bool, indent string) 
 	return nil
 }
 
-func writeReadinessSection(out io.Writer, checks []install.UpgradeReadinessCheck) error {
-	if _, err := fmt.Fprintln(out, messages.UpgradePlanReadinessHeader); err != nil {
-		return err
-	}
-	if len(checks) == 0 {
-		_, err := fmt.Fprintln(out, messages.UpgradePlanNone)
-		return err
-	}
-	for _, check := range checks {
-		if _, err := fmt.Fprintf(out, messages.UpgradePlanReadinessItemFmt, color.YellowString("%s", readinessSummary(check))); err != nil {
-			return err
-		}
-		action := readinessAction(check.ID)
-		if action != "" {
-			if _, err := fmt.Fprintf(out, messages.UpgradePlanReadinessRecommendationFmt, action); err != nil {
-				return err
-			}
+func writeReadinessSection(ew *errWriter, checks []install.UpgradeReadinessCheck) {
+	ew.println(messages.UpgradePlanReadinessHeader)
+	writeUpgradePlanItems(ew, checks, func(check install.UpgradeReadinessCheck) {
+		ew.printf(messages.UpgradePlanReadinessItemFmt, color.YellowString("%s", check.Summary))
+		if check.Action != "" {
+			ew.printf(messages.UpgradePlanReadinessRecommendationFmt, check.Action)
 		}
 		details := check.Details
 		if len(details) > 3 {
 			details = details[:3]
 		}
 		for _, detail := range details {
-			if _, err := fmt.Fprintf(out, messages.UpgradePlanReadinessNoteFmt, detail); err != nil {
-				return err
-			}
+			ew.printf(messages.UpgradePlanReadinessNoteFmt, detail)
 		}
 		if len(check.Details) > len(details) {
-			if _, err := fmt.Fprintf(out, messages.UpgradePlanReadinessNoteMoreFmt, len(check.Details)-len(details)); err != nil {
-				return err
-			}
+			ew.printf(messages.UpgradePlanReadinessNoteMoreFmt, len(check.Details)-len(details))
 		}
-	}
-	return nil
+	})
 }
 
-func writeUpgradeSummary(out io.Writer, plan install.UpgradePlan) error {
+func writeUpgradeSummary(ew *errWriter, plan install.UpgradePlan) {
 	filesToUpdate := len(plan.TemplateUpdates) + len(plan.SectionAwareUpdates)
 	migrationsPlanned := 0
 	for _, entry := range plan.MigrationReport.Entries {
@@ -983,96 +907,26 @@ func writeUpgradeSummary(out io.Writer, plan install.UpgradePlan) error {
 	if !needsReview {
 		reviewState = "no"
 	}
-	if _, err := fmt.Fprintln(out, messages.UpgradePlanSummaryHeader); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(out, messages.UpgradePlanSummaryFilesToAddFmt, len(plan.TemplateAdditions)); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(out, messages.UpgradePlanSummaryFilesToUpdateFmt, filesToUpdate); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(out, messages.UpgradePlanSummaryFilesToRenameFmt, len(plan.TemplateRenames)); err != nil {
-		return err
-	}
+	ew.println(messages.UpgradePlanSummaryHeader)
+	ew.printf(messages.UpgradePlanSummaryFilesToAddFmt, len(plan.TemplateAdditions))
+	ew.printf(messages.UpgradePlanSummaryFilesToUpdateFmt, filesToUpdate)
+	ew.printf(messages.UpgradePlanSummaryFilesToRenameFmt, len(plan.TemplateRenames))
 	removals := len(plan.TemplateRemovalsOrOrphans)
-	if err := writeHighlightedSummaryLine(out, removals > 0, messages.UpgradePlanSummaryFilesToReviewFmt, removals); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(out, messages.UpgradePlanSummaryConfigUpdatesFmt, len(plan.ConfigKeyMigrations)); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(out, messages.UpgradePlanSummaryMigrationsFmt, migrationsPlanned); err != nil {
-		return err
-	}
-	if err := writeHighlightedSummaryLine(out, len(plan.ReadinessChecks) > 0, messages.UpgradePlanSummaryReadinessWarnFmt, len(plan.ReadinessChecks)); err != nil {
-		return err
-	}
-	if err := writeHighlightedSummaryLine(out, needsReview, messages.UpgradePlanSummaryNeedsReviewFmt, reviewState); err != nil {
-		return err
-	}
-	return nil
+	writeHighlightedSummaryLine(ew, removals > 0, messages.UpgradePlanSummaryFilesToReviewFmt, removals)
+	ew.printf(messages.UpgradePlanSummaryConfigUpdatesFmt, len(plan.ConfigKeyMigrations))
+	ew.printf(messages.UpgradePlanSummaryMigrationsFmt, migrationsPlanned)
+	writeHighlightedSummaryLine(ew, len(plan.ReadinessChecks) > 0, messages.UpgradePlanSummaryReadinessWarnFmt, len(plan.ReadinessChecks))
+	writeHighlightedSummaryLine(ew, needsReview, messages.UpgradePlanSummaryNeedsReviewFmt, reviewState)
 }
 
 // writeHighlightedSummaryLine writes a "  - <text>\n" summary line, optionally
 // highlighted in yellow when highlight is true.
-func writeHighlightedSummaryLine(out io.Writer, highlight bool, format string, a ...any) error {
+func writeHighlightedSummaryLine(ew *errWriter, highlight bool, format string, a ...any) {
 	if highlight {
-		_, err := fmt.Fprintf(out, messages.UpgradePlanSummaryLineFmt, color.YellowString(format, a...))
-		return err
+		ew.printf(messages.UpgradePlanSummaryLineFmt, color.YellowString(format, a...))
+		return
 	}
-	_, err := fmt.Fprintf(out, "  - "+format+"\n", a...)
-	return err
-}
-
-func readinessSummary(check install.UpgradeReadinessCheck) string {
-	switch check.ID {
-	case issueUnrecognizedConfigKeys:
-		return messages.UpgradeReadinessUnrecognizedKeys
-	case issueUnresolvedConfigPlaceholders:
-		return messages.UpgradeReadinessUnresolvedPlaceholder
-	case issueProcessEnvOverridesDotenv:
-		return messages.UpgradeReadinessProcessEnvOverrides
-	case issueIgnoredEmptyDotenvAssignments:
-		return messages.UpgradeReadinessEmptyDotenv
-	case issuePathExpansionAnomalies:
-		return messages.UpgradeReadinessPathExpansion
-	case issueVSCodeNoSyncOutputsStale:
-		return messages.UpgradeReadinessVSCodeStale
-	case issueFloatingExternalDependencySpecs:
-		return messages.UpgradeReadinessFloatingDeps
-	case issueStaleDisabledAgentArtifacts:
-		return messages.UpgradeReadinessStaleDisabledAgents
-	case issueMissingRequiredConfigFields:
-		return messages.UpgradeReadinessMissingRequiredFields
-	default:
-		return check.Summary
-	}
-}
-
-func readinessAction(id string) string {
-	switch id {
-	case issueUnrecognizedConfigKeys:
-		return messages.UpgradeReadinessActionUnrecognizedKeys
-	case issueUnresolvedConfigPlaceholders:
-		return messages.UpgradeReadinessActionUnresolvedPlaceholder
-	case issueProcessEnvOverridesDotenv:
-		return messages.UpgradeReadinessActionProcessEnvOverrides
-	case issueIgnoredEmptyDotenvAssignments:
-		return messages.UpgradeReadinessActionEmptyDotenv
-	case issuePathExpansionAnomalies:
-		return messages.UpgradeReadinessActionPathExpansion
-	case issueVSCodeNoSyncOutputsStale:
-		return messages.UpgradeReadinessActionVSCodeStale
-	case issueFloatingExternalDependencySpecs:
-		return messages.UpgradeReadinessActionFloatingDeps
-	case issueStaleDisabledAgentArtifacts:
-		return messages.UpgradeReadinessActionStaleDisabledAgents
-	case issueMissingRequiredConfigFields:
-		return messages.UpgradeReadinessActionMissingRequiredFields
-	default:
-		return ""
-	}
+	ew.printf("  - "+format+"\n", a...)
 }
 
 // promptConfigChoice presents a type-aware numbered choice prompt for a config field.

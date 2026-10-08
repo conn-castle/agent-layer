@@ -54,17 +54,7 @@ func OpenDestination(ctx context.Context, runner *Runner, workDir string, reposi
 
 // DefaultBranch resolves the destination repository's default branch name.
 func (d *Destination) DefaultBranch(ctx context.Context) (string, error) {
-	output, err := d.runner.run(ctx, d.dir, "ls-remote", "--symref", "--", d.repository.git, "HEAD")
-	if err != nil {
-		return "", err
-	}
-	for _, line := range strings.Split(string(output), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) >= 3 && fields[0] == "ref:" && fields[2] == "HEAD" {
-			return strings.TrimPrefix(fields[1], "refs/heads/"), nil
-		}
-	}
-	return "", fmt.Errorf("could not determine the default branch of %s", d.repository)
+	return d.runner.remoteDefaultBranch(ctx, d.dir, d.repository, "")
 }
 
 // Head returns the destination branch's current commit. It reports exists =
@@ -205,16 +195,8 @@ func (d *Destination) replaceIndexTree(ctx context.Context, update Update) error
 		if err := skilltree.ValidateRelativePath(indexPath); err != nil {
 			return fmt.Errorf("destination file path %q is unsafe: %w", indexPath, err)
 		}
-		object, err := d.runner.runInput(ctx, d.dir, file.Data, "hash-object", "-w", "--no-filters", "--stdin")
-		if err != nil {
-			return fmt.Errorf("failed to write blob for %s: %w", indexPath, err)
-		}
-		mode := "100644"
-		if file.Executable {
-			mode = "100755"
-		}
-		if _, err := d.runner.run(ctx, d.dir, "update-index", "--add", "--cacheinfo", mode, strings.TrimSpace(string(object)), indexPath); err != nil {
-			return fmt.Errorf("failed to stage %s in the destination index: %w", indexPath, err)
+		if err := d.runner.stageBlob(ctx, d.dir, indexPath, file, " in the destination index"); err != nil {
+			return err
 		}
 	}
 	return nil

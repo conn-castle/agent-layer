@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/conn-castle/agent-layer/internal/clients/muse"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/skillvalidator"
@@ -580,6 +581,70 @@ func TestCheckMuseBinary(t *testing.T) {
 	}
 }
 
+// TestCheckBinaries_OverflowingVersionSegment pins the exact results each
+// binary check reports when a version segment overflows int, including the
+// bare strconv error text in the Grok compare-failure message.
+func TestCheckBinaries_OverflowingVersionSegment(t *testing.T) {
+	originalLookPath := lookPathFunc
+	originalCommandOutput := commandOutputFunc
+	t.Cleanup(func() {
+		lookPathFunc = originalLookPath
+		commandOutputFunc = originalCommandOutput
+	})
+
+	const overflowVersion = "99999999999999999999.0.0"
+	tests := []struct {
+		name   string
+		check  func() []Result
+		output string
+		want   Result
+	}{
+		{
+			name:   "Grok",
+			check:  CheckGrokBinary,
+			output: "grok " + overflowVersion + " (deadbeef) [stable]\n",
+			want: Result{
+				Status:         StatusWarn,
+				CheckName:      messages.DoctorCheckNameAgents,
+				Message:        `Could not compare Grok version "99999999999999999999.0.0": strconv.Atoi: parsing "99999999999999999999": value out of range`,
+				Recommendation: grokInstallRecommend(),
+			},
+		},
+		{
+			name:   "Antigravity",
+			check:  CheckAntigravityBinary,
+			output: "agy " + overflowVersion + "\n",
+			want: Result{
+				Status:         StatusFail,
+				CheckName:      messages.DoctorCheckNameAgents,
+				Message:        `Could not parse Antigravity version from "agy 99999999999999999999.0.0"`,
+				Recommendation: messages.DoctorAntigravityInstallRecommend,
+			},
+		},
+		{
+			name:   "Muse",
+			check:  CheckMuseBinary,
+			output: "muse " + overflowVersion + "\n",
+			want: Result{
+				Status:         StatusWarn,
+				CheckName:      messages.DoctorCheckNameAgents,
+				Message:        "Muse 99999999999999999999.0.0 is older than tested version " + muse.SupportedVersion,
+				Recommendation: "Upgrade Muse Code.",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lookPathFunc = func(file string) (string, error) { return "/test/bin/" + file, nil }
+			commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte(tt.output), nil }
+			results := tt.check()
+			if len(results) != 1 || results[0] != tt.want {
+				t.Fatalf("results = %#v, want [%#v]", results, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseGrokVersionFormats(t *testing.T) {
 	tests := map[string]string{
 		"1.0.5":                       "1.0.5",
@@ -588,8 +653,8 @@ func TestParseGrokVersionFormats(t *testing.T) {
 		"grok development build 2026": "",
 	}
 	for input, expected := range tests {
-		if got := parseGrokVersion(input); got != expected {
-			t.Errorf("parseGrokVersion(%q) = %q, want %q", input, got, expected)
+		if got := parseCLIVersion(input, grokVersionRE); got != expected {
+			t.Errorf("parseCLIVersion(%q, grokVersionRE) = %q, want %q", input, got, expected)
 		}
 	}
 }

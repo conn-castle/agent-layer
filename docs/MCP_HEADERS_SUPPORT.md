@@ -181,7 +181,7 @@ headers = { Authorization = "Bearer ${AL_MY_API_TOKEN}", "X-Api-Key" = "${AL_MY_
 
 ### 2) Normalize without leaking secrets
 
-Preserve `${VAR}` placeholders where the client supports them. Muse requires resolved HTTP headers: Agent Layer uses `FullValueResolver` for its URLs, headers, and environment values and writes them to private `0600` project config. Keep `.mcp.json` gitignored. Muse rejects SSE; select `http_transport = "streamable"` or exclude Muse from that server.
+Preserve `${VAR}` placeholders where the client supports them. Muse requires resolved HTTP headers: Agent Layer writes fully resolved values for its URLs, headers, and environment values and writes them to private `0600` project config. Keep `.mcp.json` gitignored. Muse rejects SSE; select `http_transport = "streamable"` or exclude Muse from that server.
 
 The projection layer uses `ClientPlaceholderResolver` (`internal/projection/resolvers.go`) to preserve placeholders in each client’s native syntax. The resolver takes a format string (e.g., `${%s}` or `${env:%s}`) and returns a function that:
 
@@ -200,11 +200,11 @@ Env vars may still be resolved at runtime for:
 * `internal/projection` (resolver/normalizer):
 
   * `ClientPlaceholderResolver()` returns a per-client `EnvVarResolver` function.
-  * `ResolveMCPServers()` applies the resolver to produce `ResolvedMCPServer` structs with headers, URLs, args, and env vars in the target client’s placeholder syntax.
+  * `EffectiveMCPServers()` applies the resolver to produce `ResolvedMCPServer` structs with headers, URLs, args, and env vars in the target client’s placeholder syntax, plus the built-in dispatch server.
 
 * `internal/sync` (client writers):
 
-  * Writers obtain effective servers with the appropriate resolver, then convert them into the client’s config format. Muse uses `EffectiveMCPServers()` with `FullValueResolver()` to include the built-in dispatch server and resolve native values.
+  * Writers obtain effective servers with the appropriate resolver, then convert them into the client’s config format. Muse passes a nil resolver to `EffectiveMCPServers()` so it receives resolved native values.
 
 ### 4) Client projection rules
 

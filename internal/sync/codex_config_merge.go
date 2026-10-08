@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -25,9 +26,17 @@ var codexManagedRootScalarKeys = []string{
 }
 
 const (
-	codexStopKey         = "Stop"
-	codexSessionStartKey = "SessionStart"
-	codexTUIKey          = "tui"
+	codexStopKey          = "Stop"
+	codexSessionStartKey  = "SessionStart"
+	codexUserPromptKey    = "UserPromptSubmit"
+	codexTUIKey           = "tui"
+	codexTerminalTitleKey = "terminal_title"
+	codexTitleActivity    = "activity"
+	codexTitleSpinner     = "spinner"
+	codexTitleSessionID   = "session-id"
+	codexTitleThreadID    = "thread-id"
+	codexTitleThreadName  = "thread-name"
+	codexTitleProjectName = "project-name"
 )
 
 type codexManagedConfig struct {
@@ -46,6 +55,64 @@ type codexTomlEditor struct {
 type codexPathValue struct {
 	path  []string
 	value any
+}
+
+// codexManagedTerminalTitle preserves the explicit agent_specific order while
+// ensuring a non-empty native TUI title emits a sufficiently early thread
+// identifier for the HerdR recovery hook. An explicit empty list is Codex's
+// supported title opt-out and deliberately disables title-based recovery.
+func codexManagedTerminalTitle(agentSpecific, existingNative map[string]any) ([]string, error) {
+	if tui, exists := agentSpecific[codexTUIKey]; exists {
+		if _, ok := tui.(map[string]any); !ok {
+			return nil, errors.New("agents.codex.agent_specific.tui must be a table")
+		}
+	}
+	path := []string{codexTUIKey, codexTerminalTitleKey}
+	if value, exists := valueAtPath(agentSpecific, path); exists {
+		return codexTitleWithThreadID(value)
+	}
+	if value, exists := valueAtPath(existingNative, path); exists {
+		return codexTitleWithThreadID(value)
+	}
+	return []string{codexTitleActivity, codexTitleThreadID, codexTitleThreadName, codexTitleProjectName}, nil
+}
+
+func codexTitleWithThreadID(value any) ([]string, error) {
+	items, ok := value.([]any)
+	if !ok {
+		return nil, errors.New("must be a list of non-empty title items")
+	}
+	if len(items) == 0 {
+		return []string{}, nil
+	}
+	title := make([]string, 0, len(items)+1)
+	for _, item := range items {
+		name, ok := item.(string)
+		if !ok || strings.TrimSpace(name) == "" {
+			return nil, errors.New("must contain only non-empty title items")
+		}
+		title = append(title, name)
+	}
+	identity := codexTitleThreadID
+	for index, item := range title {
+		if item != codexTitleThreadID && item != codexTitleSessionID {
+			continue
+		}
+		// Native titles are capped. Move an existing identity token into the
+		// same early position we use for a missing token while retaining the
+		// user's chosen alias and the relative order of every other item.
+		identity = item
+		title = append(title[:index], title[index+1:]...)
+		break
+	}
+	insert := 0
+	for insert < len(title) && (title[insert] == codexTitleActivity || title[insert] == codexTitleSpinner) {
+		insert++
+	}
+	title = append(title, "")
+	copy(title[insert+1:], title[insert:])
+	title[insert] = identity
+	return title, nil
 }
 
 func readExistingCodexConfig(sys System, path string) (string, error) {
@@ -134,10 +201,27 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 	} else {
 		editor.removePath(statuslinePath)
 	}
+	if managed.HerdREnabled {
+		titlePath := []string{codexTUIKey, codexTerminalTitleKey}
+		title, err := codexManagedTerminalTitle(managed.AgentSpecific, existingMap)
+		if err != nil {
+			return "", fmt.Errorf("invalid Codex tui.terminal_title in %s: %w", path, err)
+		}
+		titleValue := make([]any, len(title))
+		for i := range title {
+			titleValue[i] = title[i]
+		}
+		if err := setManagedCodexPath(editor, existingMap, titlePath, titleValue); err != nil {
+			return "", err
+		}
+	}
 
 	managedHookEvents := codexManagedHookEvents(managed.ChimeEnabled, managed.HerdREnabled)
 	for _, item := range agentSpecificLeafValues(managed.AgentSpecific) {
 		if codexPathHandledElsewhere(item.path) {
+			continue
+		}
+		if managed.HerdREnabled && slices.Equal(item.path, []string{codexTUIKey, codexTerminalTitleKey}) {
 			continue
 		}
 		value := item.value
@@ -147,7 +231,7 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 		if slices.Equal(item.path, []string{hooksKey, codexStopKey}) {
 			value = withoutCodexChimeStopEntries(value)
 		}
-		if slices.Equal(item.path, []string{hooksKey, codexSessionStartKey}) {
+		if slices.Equal(item.path, []string{hooksKey, codexSessionStartKey}) || slices.Equal(item.path, []string{hooksKey, codexUserPromptKey}) {
 			value = withoutCodexHerdRSessionStartEntries(value)
 		}
 		// An empty user list beside a managed hook block adds nothing; writing it
@@ -173,6 +257,9 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 		// Expand before the chime block is appended so user SessionStart groups
 		// keep a stable position ahead of both managed hook blocks.
 		if err := editor.expandCodexHookAssignment(path, codexSessionStartKey); err != nil {
+			return "", err
+		}
+		if err := editor.expandCodexHookAssignment(path, codexUserPromptKey); err != nil {
 			return "", err
 		}
 	}
@@ -997,33 +1084,22 @@ func (e *codexTomlEditor) removeRanges(ranges []lineRange) {
 func (e *codexTomlEditor) walkAssignments(fn func(assignmentInfo)) {
 	var tablePath []string
 	standardContext := true
-	state := tomlpatch.StateNone
-	for i := 0; i < len(e.lines); i++ {
-		line := e.lines[i]
-		if tomlpatch.StateInMultiline(state) {
-			_, state = tomlpatch.ScanLineForComment(line, state)
-			continue
-		}
+	tomlpatch.WalkLinesOutsideMultiline(e.lines, func(i int, line string, state tomlpatch.StringState) tomlpatch.LineWalkResult {
 		if name, isArray, ok := tomlpatch.ParseHeader(line); ok {
 			var parsedOK bool
 			tablePath, parsedOK = tomlpatch.ParseKeyPath(name)
 			standardContext = parsedOK && !isArray
-			_, state = tomlpatch.ScanLineForComment(line, state)
-			continue
+			return tomlpatch.LineWalkResult{}
 		}
 		keyPath, ok := assignmentKeyPath(line, state)
 		if !ok {
-			_, state = tomlpatch.ScanLineForComment(line, state)
-			continue
+			return tomlpatch.LineWalkResult{}
 		}
 		end := tomlpatch.MultilineValueEndIndex(e.lines, i)
 		fullPath := append(append([]string(nil), tablePath...), keyPath...)
 		fn(assignmentInfo{start: i, end: end, fullPath: fullPath, keyPath: keyPath, tablePath: tablePath, standardContext: standardContext})
-		for j := i; j <= end && j < len(e.lines); j++ {
-			_, state = tomlpatch.ScanLineForComment(e.lines[j], state)
-		}
-		i = end
-	}
+		return tomlpatch.LineWalkResult{AdvanceTo: end}
+	})
 }
 
 func (e *codexTomlEditor) mutateRootInlineTable(top string, mutate func(map[string]any)) bool {

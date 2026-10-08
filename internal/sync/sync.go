@@ -194,7 +194,17 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 
 	// Collect warnings after successful sync, including post-step warnings
 	// so that all warnings pass through noise control.
-	rawWarnings, err := collectWarnings(project, nil)
+	var extraWarnings []warnings.Warning
+	if codexEnabled {
+		warning, warningErr := codexHerdRTitleDisabledWarning(sys, root)
+		if warningErr != nil {
+			return nil, warningErr
+		}
+		if warning != nil {
+			extraWarnings = append(extraWarnings, *warning)
+		}
+	}
+	rawWarnings, err := collectWarnings(project, extraWarnings)
 	if err != nil {
 		return nil, err
 	}

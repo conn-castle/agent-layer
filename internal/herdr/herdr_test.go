@@ -14,32 +14,166 @@ import (
 	"time"
 )
 
-func TestHandleStoresExactResumeForEachProvider(t *testing.T) {
+func TestHandleStoresExactResumeForEveryProviderAndBijectiveBase32Panes(t *testing.T) {
 	cases := []struct {
 		provider, payload, source string
 		env, want                 []string
 	}{
 		{"claude", `{"hook_event_name":"SessionStart","session_id":"claude-id"}`, "al:claude", nil, []string{"al", "claude", "--resume", "claude-id"}},
-		{"codex", `{"hook_event_name":"SessionStart","session_id":"codex-id"}`, "al:codex", nil, []string{"al", "codex", "resume", "codex-id"}},
+		{"codex", `{"hook_event_name":"SessionStart","session_id":"01a1138f-7df0-7fa0-94ae-820334783a29"}`, "al:codex", nil, []string{"al", "codex", "resume", "01a1138f-7df0-7fa0-94ae-820334783a29"}},
 		// The actual Antigravity PreInvocation payload supplies conversationId;
 		// it has no synthetic hook-event discriminator.
 		{"agy", `{"conversationId":"agy-id"}`, "al:agy", nil, []string{"al", "agy", "--conversation", "agy-id"}},
 		{"muse", `{"hook_event_name":"SessionStart","session_id":"muse-id"}`, sourceMuseHerdR, nil, []string{"al", "muse", "resume", "muse-id"}},
 		{"grok", `{"hook_event_name":"SessionStart"}`, "al:grok", []string{"GROK_SESSION_ID=grok-id"}, []string{"al", "grok", "--resume", "grok-id"}},
 	}
+	// HerdR v0.9.3 src/workspace.rs: bijective base32; explicit numbers and independent internal keys.
+	panes := []struct {
+		name, paneID, workspace, internalPane string
+		publicNumber                          int
+	}{
+		{name: "decimal_baseline", paneID: "w1:p1", workspace: "w1", publicNumber: 1, internalPane: "1"},
+		{name: "bijective_base32_letter", paneID: "wV:pF", workspace: "wV", publicNumber: 15, internalPane: "47"},
+		{name: "bijective_base32_beyond_H", paneID: "wV:pJ", workspace: "wV", publicNumber: 18, internalPane: "59"},
+		{name: "bijective_base32_last_letter", paneID: "wV:pZ", workspace: "wV", publicNumber: 31, internalPane: "71"},
+		{name: "bijective_base32_zero_symbol", paneID: "wV:p0", workspace: "wV", publicNumber: 32, internalPane: "79"},
+		{name: "bijective_base32_thirty_six", paneID: "wV:p14", workspace: "wV", publicNumber: 36, internalPane: "89"},
+		{name: "bijective_base32_multidigit", paneID: "wV:p10", workspace: "wV", publicNumber: 64, internalPane: "83"},
+	}
+	oldPoll, oldWait := persistPollEvery, persistWait
+	persistPollEvery, persistWait = time.Millisecond, 25*time.Millisecond
+	t.Cleanup(func() { persistPollEvery, persistWait = oldPoll, oldWait })
 	for _, tc := range cases {
 		t.Run(tc.provider, func(t *testing.T) {
-			socket, reports, done := fakeHerdR(t, fakeHerdROptions{})
-			env := append([]string{EnvEnabled + "=1", EnvSocketPath + "=" + socket, EnvPaneID + "=w1:p1"}, tc.env...)
-			if err := Handle(tc.provider, bytes.NewBufferString(tc.payload), &bytes.Buffer{}, &bytes.Buffer{}, env); err != nil {
-				t.Fatal(err)
-			}
-			waitFakeHerdR(t, done)
-			params := (<-reports)["params"].(map[string]any)
-			if params["source"] != tc.source || !equalStrings(interfaceStrings(params["resume_argv"]), tc.want) {
-				t.Fatalf("report = %#v, want source %q argv %#v", params, tc.source, tc.want)
+			for _, pane := range panes {
+				t.Run(pane.name, func(t *testing.T) {
+					socket, reports, done := fakeHerdR(t, fakeHerdROptions{
+						canonicalPane: pane.paneID,
+						workspace:     pane.workspace,
+						publicNumber:  pane.publicNumber,
+						internalPane:  pane.internalPane,
+					})
+					env := append([]string{EnvEnabled + "=1", EnvSocketPath + "=" + socket, EnvPaneID + "=" + pane.paneID}, tc.env...)
+					if err := Handle(tc.provider, bytes.NewBufferString(tc.payload), &bytes.Buffer{}, &bytes.Buffer{}, env); err != nil {
+						t.Fatal(err)
+					}
+					waitFakeHerdR(t, done)
+					params := (<-reports)["params"].(map[string]any)
+					if params[requestPaneIDKey] != pane.paneID || params[requestSourceKey] != tc.source || !equalStrings(interfaceStrings(params[requestResumeArgvKey]), tc.want) {
+						t.Fatalf("report = %#v, want pane %q source %q argv %#v", params, pane.paneID, tc.source, tc.want)
+					}
+					path, err := sessionPath(socket)
+					if err != nil {
+						t.Fatal(err)
+					}
+					assertLiteralPersistedResume(t, path, pane.workspace, pane.internalPane, pane.publicNumber, tc.source, tc.provider, tc.want)
+				})
 			}
 		})
+	}
+}
+
+func TestStoredResumeAtRejectsInvalidCanonicalPaneIDs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.json")
+	data := []byte(`{"workspaces":[{"id":"wV","public_pane_numbers":{"47":15},"tabs":[{"panes":{"47":{"agent_resume":{"source":"al:claude","agent":"claude","argv":["al","claude","--resume","id"]}}}}]}]}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, paneID := range []string{"", "wV", ":p1", "wV:p", "wV:p1:extra", "wV:p!", "wV:pI", "wV:pL", "wV:pO", "wV:pU", "wV:pf", "wV:p+1", "wV:p-1", "wV:p 1", "wV:p1 ", "wV:p\t1", "wV:pé", "wV:p999999999999999999999999999999999999999999999999"} {
+		t.Run(paneID, func(t *testing.T) {
+			stored, err := storedResumeAt(path, paneID, providers[providerClaude], []string{"al", "claude", "--resume", "id"})
+			if err == nil || stored || !strings.Contains(err.Error(), "invalid canonical HerdR pane ID") {
+				t.Fatalf("storedResumeAt(%q) = %t, %v", paneID, stored, err)
+			}
+		})
+	}
+}
+
+func TestCodexFirstPromptAcceptsPayloadThreadIDWithoutInheritedThread(t *testing.T) {
+	spec := providers[providerCodex]
+	id, ok, err := sessionID(spec, map[string]any{"hook_event_name": eventUserPromptSubmit, "session_id": "01a1138f-7df0-7fa0-94ae-820334783a29"}, map[string]string{"CODEX_THREAD_ID": "stale-thread"})
+	if err != nil || !ok || id != "01a1138f-7df0-7fa0-94ae-820334783a29" {
+		t.Fatalf("Codex first-prompt identity = %q, %t, %v", id, ok, err)
+	}
+}
+
+func TestCodexRejectsMalformedPayloadThreadID(t *testing.T) {
+	_, ok, err := sessionID(providers[providerCodex], map[string]any{"hook_event_name": eventSessionStart, "session_id": "copied-short-id"}, nil)
+	if err == nil || ok {
+		t.Fatalf("malformed Codex session ID was accepted: ok=%t err=%v", ok, err)
+	}
+}
+
+func TestCodexRecoveryDedupUsesResolvedSocketPath(t *testing.T) {
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	firstCWD := filepath.Join(cwd, "one")
+	secondCWD := filepath.Join(cwd, "two")
+	for _, directory := range []string{firstCWD, secondCWD} {
+		if err := os.Mkdir(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first := launchContext{SocketPath: "session/herdr.sock", LaunchCWD: firstCWD, PaneID: "w1:p1"}
+	second := launchContext{SocketPath: "session/herdr.sock", LaunchCWD: secondCWD, PaneID: "w1:p1"}
+	_, firstKey, err := codexRecoveryDedupKey(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, secondKey, err := codexRecoveryDedupKey(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstKey == secondKey {
+		t.Fatalf("relative sockets in different launch directories collapsed to %q", firstKey)
+	}
+	_, again, err := codexRecoveryDedupKey(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again != firstKey {
+		t.Fatalf("identical resolved launches were not stable: %q vs %q", firstKey, again)
+	}
+}
+
+func TestCodexForegroundProcessUsesLaunchIdentityNotThreadArgv(t *testing.T) {
+	if !codexForegroundProcess(map[string]any{"name": "codex", "argv": []any{"codex", "resume"}}) {
+		t.Fatal("native Codex process was rejected when its argv no longer names the selected thread")
+	}
+	if !codexForegroundProcess(map[string]any{"name": "node", "argv": []any{"node", "/opt/homebrew/bin/codex", "resume"}}) {
+		t.Fatal("Codex Node wrapper was rejected")
+	}
+	if codexForegroundProcess(map[string]any{"name": "node", "argv": []any{"node", "worker.js"}}) {
+		t.Fatal("unrelated Node process was accepted as Codex")
+	}
+}
+
+func TestSessionPathResolvesRelativeSocketAliasToPhysicalHerdRState(t *testing.T) {
+	root := t.TempDir()
+	physical := filepath.Join(t.TempDir(), "herdr.sock")
+	if err := os.WriteFile(physical, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	aliasDir := filepath.Join(root, ".agent-layer", "tmp", "hr")
+	if err := os.MkdirAll(aliasDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(aliasDir, "s")
+	if err := os.Symlink(physical, alias); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	got, err := sessionPath(filepath.Join(".agent-layer", "tmp", "hr", "s"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalPhysical, err := filepath.EvalSymlinks(physical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(filepath.Dir(canonicalPhysical), "session.json")
+	if got != want {
+		t.Fatalf("session path = %q, want %q", got, want)
 	}
 }
 
@@ -365,6 +499,24 @@ type fakeHerdROptions struct {
 	requestsExpected                                                    int
 	staleFirst, distinctPanes, unappliedFirst                           bool
 	persistDelay                                                        time.Duration
+	switchCodexTitleAfterReport, switchCodexTitleAfterPaneList          string
+	codexTitle                                                          string
+	codexProcessPID                                                     int
+	reportError                                                         string
+	codexPanes                                                          []fakeCodexPane
+	codexProcessError                                                   string
+	workingDir                                                          string
+	socketPath                                                          string
+}
+
+// fakeCodexPane is intentionally limited to the fields read through the
+// public HerdR protocol by the native-Codex hook boundary tests.
+type fakeCodexPane struct {
+	paneID, title, authority                   string
+	liveSource, liveAgent, liveKind, liveValue string
+	processName                                string
+	processPID                                 int
+	processArgv                                []any
 }
 
 func fakeHerdR(t *testing.T, options fakeHerdROptions) (string, chan map[string]any, chan struct{}) {
@@ -392,7 +544,10 @@ func fakeHerdR(t *testing.T, options fakeHerdROptions) (string, chan map[string]
 	}
 	// Bind from a test-owned temporary working directory so the relative socket
 	// stays under Unix-domain limits without retaining test artifacts.
-	root := t.TempDir()
+	root := options.workingDir
+	if root == "" {
+		root = t.TempDir()
+	}
 	t.Chdir(root)
 	sessionDir := filepath.Join(root, "session")
 	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
@@ -414,7 +569,6 @@ func fakeHerdR(t *testing.T, options fakeHerdROptions) (string, chan map[string]
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		defer func() { _ = listener.Close() }()
 		reportCount, paneGets, requests := 0, 0, 0
 		lastSequence := map[string]float64{}
 		requestsExpected := options.requestsExpected
@@ -443,8 +597,24 @@ func fakeHerdR(t *testing.T, options fakeHerdROptions) (string, chan map[string]
 					_ = conn.Close()
 					continue
 				}
+				if options.reportError != "" {
+					_, _ = conn.Write([]byte(`{"error":{"code":"` + options.reportError + `"}}` + "\n"))
+					_ = conn.Close()
+					continue
+				}
 				reportCount++
 				reports <- request
+				for index := range options.codexPanes {
+					if options.codexPanes[index].paneID == stringValue(params[requestPaneIDKey]) {
+						options.codexPanes[index].liveSource = stringValue(params[requestSourceKey])
+						options.codexPanes[index].liveAgent = stringValue(params[requestAgentKey])
+						options.codexPanes[index].liveKind = "id"
+						options.codexPanes[index].liveValue = stringValue(params["agent_session_id"])
+					}
+				}
+				if reportCount == 1 && options.switchCodexTitleAfterReport != "" && len(options.codexPanes) > 0 {
+					options.codexPanes[0].title = options.switchCodexTitleAfterReport
+				}
 				source := params["source"].(string)
 				sequence := params["seq"].(float64)
 				if sequence <= lastSequence[source] {
@@ -472,6 +642,51 @@ func fakeHerdR(t *testing.T, options fakeHerdROptions) (string, chan map[string]
 				}
 				response, _ := json.Marshal(map[string]any{"id": "canonical", "result": map[string]any{"type": "pane_info", "pane": map[string]any{"pane_id": canonicalPane}}})
 				_, _ = conn.Write(append(response, '\n'))
+			case "pane.list":
+				panes := make([]any, 0, len(options.codexPanes))
+				if len(options.codexPanes) == 0 {
+					panes = append(panes, map[string]any{"pane_id": options.canonicalPane, "terminal_title": options.codexTitle})
+				} else {
+					for _, fixture := range options.codexPanes {
+						pane := map[string]any{"pane_id": fixture.paneID, "terminal_title": fixture.title}
+						if fixture.authority != "" {
+							pane["agent_session"] = map[string]any{"source": fixture.authority}
+						} else if fixture.liveSource != "" {
+							pane["agent_session"] = map[string]any{"source": fixture.liveSource, "agent": fixture.liveAgent, "kind": fixture.liveKind, "value": fixture.liveValue}
+						}
+						panes = append(panes, pane)
+					}
+				}
+				response, _ := json.Marshal(map[string]any{"id": "panes", "result": map[string]any{"panes": panes}})
+				_, _ = conn.Write(append(response, '\n'))
+				if options.switchCodexTitleAfterPaneList != "" && len(options.codexPanes) > 0 {
+					options.codexPanes[0].title = options.switchCodexTitleAfterPaneList
+					options.switchCodexTitleAfterPaneList = ""
+				}
+			case "pane.process_info":
+				if options.codexProcessError != "" {
+					response, _ := json.Marshal(map[string]any{"id": "process", "error": map[string]any{"code": options.codexProcessError}})
+					_, _ = conn.Write(append(response, '\n'))
+					break
+				}
+				pid, argv, name := options.codexProcessPID, []any{"codex"}, "codex"
+				if len(options.codexPanes) > 0 {
+					paneID := request["params"].(map[string]any)["pane_id"].(string)
+					for _, fixture := range options.codexPanes {
+						if fixture.paneID == paneID {
+							pid = fixture.processPID
+							if fixture.processName != "" {
+								name = fixture.processName
+							}
+							if len(fixture.processArgv) > 0 {
+								argv = fixture.processArgv
+							}
+							break
+						}
+					}
+				}
+				response, _ := json.Marshal(map[string]any{"id": "process", "result": map[string]any{"process_info": map[string]any{"foreground_processes": []any{map[string]any{"pid": pid, "name": name, "argv": argv}}}}})
+				_, _ = conn.Write(append(response, '\n'))
 			default:
 				// session.snapshot is intentionally absent: its live 0.9.3
 				// schema does not expose persisted agent_resume commands.
@@ -482,6 +697,9 @@ func fakeHerdR(t *testing.T, options fakeHerdROptions) (string, chan map[string]
 			_ = conn.Close()
 		}
 	}()
+	if options.socketPath != "" {
+		return options.socketPath, reports, done
+	}
 	return filepath.Join(projectDir, "s", "herdr.sock"), reports, done
 }
 
@@ -531,6 +749,37 @@ func writePersistedSession(t *testing.T, dir string, options fakeHerdROptions, p
 	if err := os.WriteFile(filepath.Join(dir, "session.json"), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func assertLiteralPersistedResume(t *testing.T, path, workspaceID, internalPaneID string, publicPaneNumber int, source, agent string, argv []string) {
+	t.Helper()
+	data, err := os.ReadFile(path) // #nosec G304 -- path is the saved session in this test-owned temporary fixture.
+	if err != nil {
+		t.Fatal(err)
+	}
+	var session persistedSession
+	if err := json.Unmarshal(data, &session); err != nil {
+		t.Fatal(err)
+	}
+	for _, workspace := range session.Workspaces {
+		if workspace.ID != workspaceID {
+			continue
+		}
+		if workspace.PublicPaneNumbers[internalPaneID] != publicPaneNumber {
+			t.Fatalf("public_pane_numbers[%q] = %d, want %d", internalPaneID, workspace.PublicPaneNumbers[internalPaneID], publicPaneNumber)
+		}
+		for _, tab := range workspace.Tabs {
+			pane, ok := tab.Panes[internalPaneID]
+			if !ok || pane.AgentResume == nil {
+				continue
+			}
+			if pane.AgentResume.Source == source && pane.AgentResume.Agent == agent && equalStrings(pane.AgentResume.Argv, argv) {
+				return
+			}
+			t.Fatalf("persisted pane %q recipe = %#v, want source %q agent %q argv %#v", internalPaneID, pane.AgentResume, source, agent, argv)
+		}
+	}
+	t.Fatalf("persisted workspace %q pane %q was not found", workspaceID, internalPaneID)
 }
 
 func interfaceStrings(value any) []string {
@@ -594,7 +843,7 @@ func TestReleaseLaunchRecordIgnoresAmbientDevelopmentHookEnvironment(t *testing.
 func TestRecoveryVerificationReturnsBeforeItsDeadline(t *testing.T) {
 	socket, _, done := fakeHerdR(t, fakeHerdROptions{staleFirst: true})
 	start := time.Now()
-	err := reportAndVerify(providers["muse"], "stale-id", []string{"al", "muse", "resume", "stale-id"}, map[string]string{EnvSocketPath: socket, EnvPaneID: "w1:p1"}, start.Add(150*time.Millisecond), "")
+	err := reportAndVerify(providers["muse"], "stale-id", []string{"al", "muse", "resume", "stale-id"}, map[string]string{EnvSocketPath: socket, EnvPaneID: "w1:p1"}, start.Add(150*time.Millisecond), "", nil)
 	waitFakeHerdR(t, done)
 	if err == nil || !strings.Contains(err.Error(), "deadline") {
 		t.Fatalf("stale Ok must fail visibly: %v", err)
@@ -631,13 +880,22 @@ func TestHandleForRootStoresNonMuseLaunchIdentity(t *testing.T) {
 		want              []string
 	}{
 		{providerClaude, `{"hook_event_name":"SessionStart","session_id":"native-id"}`, []string{"al", "claude", "--resume", "native-id"}},
-		{providerCodex, `{"hook_event_name":"SessionStart","session_id":"native-id"}`, []string{"al", "codex", "resume", "native-id"}},
+		{providerCodex, `{"hook_event_name":"SessionStart","session_id":"01a1138f-7df0-7fa0-94ae-820334783a29"}`, []string{"al", "codex", "resume", "01a1138f-7df0-7fa0-94ae-820334783a29"}},
 		{providerGrok, `{"hookEventName":"SessionStart","sessionId":"native-id"}`, []string{"al", "grok", "--resume", "native-id"}},
 		{providerAgy, `{"conversationId":"native-id"}`, []string{"al", "agy", "--conversation", "native-id"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.provider, func(t *testing.T) {
-			socket, reports, done := fakeHerdR(t, fakeHerdROptions{paneGetsExpected: 1})
+			options := fakeHerdROptions{paneGetsExpected: 1}
+			if tc.provider == providerCodex {
+				// Codex recovery requires the projected title and live foreground owner.
+				options.requestsExpected = 6
+				options.codexPanes = []fakeCodexPane{{
+					paneID: "w1:p1", title: "✳ 01a1138f-7df0-7fa0-94ae-820334783a29 | selected",
+					processPID: os.Getpid(), processArgv: []any{"codex"},
+				}}
+			}
+			socket, reports, done := fakeHerdR(t, options)
 			root, err := os.Getwd()
 			if err != nil {
 				t.Fatal(err)
@@ -661,12 +919,13 @@ func TestHandleForRootStoresNonMuseLaunchIdentity(t *testing.T) {
 			waitFakeHerdR(t, done)
 			params := (<-reports)["params"].(map[string]any)
 			got := params[requestResumeArgvKey].([]any)
-			if len(got) != len(tc.want) {
-				t.Fatalf("argv = %v, want %v", got, tc.want)
+			want := tc.want
+			if len(got) != len(want) {
+				t.Fatalf("argv = %v, want %v", got, want)
 			}
-			for i, want := range tc.want {
-				if got[i] != want {
-					t.Fatalf("argv = %v, want %v", got, tc.want)
+			for i, argument := range want {
+				if got[i] != argument {
+					t.Fatalf("argv = %v, want %v", got, want)
 				}
 			}
 			if tc.provider == providerAgy && out.String() != "{}\n" {

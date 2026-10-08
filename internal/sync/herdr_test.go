@@ -108,8 +108,8 @@ func TestCodexHerdRReplacementPreservesNativeTrustStateInsideOldMarker(t *testin
 	if !strings.Contains(output, "[hooks.state]\ntrusted_hash = \"sha256:keep\"") || strings.Count(output, codexHerdRBeginMarker) != 1 {
 		t.Fatalf("native trust state was not preserved during replacement:\n%s", output)
 	}
-	if !strings.Contains(output, "[[hooks.SessionStart]]") || strings.Contains(output, "[[hooks.UserPromptSubmit]]") || strings.Contains(output, "[[hooks.Stop]]") {
-		t.Fatalf("Codex HerdR must remain session-only:\n%s", output)
+	if !strings.Contains(output, "[[hooks.SessionStart]]") || !strings.Contains(output, "[[hooks.UserPromptSubmit]]") || strings.Contains(output, "[[hooks.Stop]]") {
+		t.Fatalf("Codex HerdR must install only session-start and first-prompt hooks:\n%s", output)
 	}
 	if strings.Contains(output, "PermissionRequest") {
 		t.Fatalf("Codex HerdR must not infer blocked from permission requests:\n%s", output)
@@ -381,6 +381,121 @@ SessionStart = [{ matcher = "startup", hooks = [{ type = "command", command = "e
 	}
 }
 
+// TestWriteCodexConfigHerdRTitleBoundary exercises the public config writer,
+// rather than the title helper, for the ownership-bearing native settings.
+func TestWriteCodexConfigHerdRTitleBoundary(t *testing.T) {
+	enabled := true
+	cases := []struct {
+		name, existing string
+		agentSpecific  map[string]any
+		wantTitle      []any
+		wantError      string
+	}{
+		{
+			name:      "native repeated identity aliases remain valid",
+			existing:  codexPartialHeader + "\n[tui]\nterminal_title = [\"project-name\", \"session-id\", \"thread-id\"]\n",
+			wantTitle: []any{"session-id", "project-name", "thread-id"},
+		},
+		{
+			name:      "existing title retains user order after activity",
+			existing:  codexPartialHeader + "\n[tui]\nterminal_title = [\"activity\", \"project-name\", \"thread-name\"]\n",
+			wantTitle: []any{"activity", "thread-id", "project-name", "thread-name"},
+		},
+		{
+			name:     "explicit agent title wins and shares tui status line",
+			existing: codexPartialHeader + "\n[tui]\nterminal_title = [\"project-name\"]\n",
+			agentSpecific: map[string]any{codexTUIKey: map[string]any{
+				codexTerminalTitleKey: []any{"spinner", "project-name"},
+				codexStatusLineKey:    []any{"model"},
+			}},
+			wantTitle: []any{"spinner", "thread-id", "project-name"},
+		},
+		{
+			name:      "malformed existing title fails without overwrite",
+			existing:  codexPartialHeader + "\n[tui]\nterminal_title = \"not-a-list\"\n",
+			wantError: "invalid Codex tui.terminal_title",
+		},
+		{
+			name:      "non-string existing title item fails without overwrite",
+			existing:  codexPartialHeader + "\n[tui]\nterminal_title = [\"project-name\", 3]\n",
+			wantError: "invalid Codex tui.terminal_title",
+		},
+		{
+			name:      "native empty title is preserved and idempotent",
+			existing:  codexPartialHeader + "\n[tui]\nterminal_title = []\n",
+			wantTitle: []any{},
+		},
+		{
+			name:     "explicit empty title wins against native title",
+			existing: codexPartialHeader + "\n[tui]\nterminal_title = [\"activity\", \"project-name\"]\n",
+			agentSpecific: map[string]any{codexTUIKey: map[string]any{
+				codexTerminalTitleKey: []any{},
+			}},
+			wantTitle: []any{},
+		},
+		{
+			name: "empty title item remains malformed",
+			agentSpecific: map[string]any{codexTUIKey: map[string]any{
+				codexTerminalTitleKey: []any{""},
+			}},
+			wantError: "must contain only non-empty title items",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeExistingCodexConfig(t, root, tc.existing)
+			project := &config.ProjectConfig{Config: config.Config{Agents: config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled, AgentSpecific: tc.agentSpecific}}}, Env: map[string]string{}}
+			err := writeCodexConfig(RealSystem{}, root, project)
+			if tc.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+					t.Fatalf("writeCodexConfig error = %v, want %q", err, tc.wantError)
+				}
+				if got := readCodexConfig(t, root); got != tc.existing {
+					t.Fatalf("failed merge overwrote user config:\n%s", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			first := readCodexConfig(t, root)
+			if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+				t.Fatal(err)
+			}
+			if second := readCodexConfig(t, root); second != first {
+				t.Fatalf("second sync was not byte-idempotent\nfirst:\n%s\nsecond:\n%s", first, second)
+			}
+			parsed := parseCodexConfig(t, first)
+			tui := parsed[codexTUIKey].(map[string]any)
+			if got := tui[codexTerminalTitleKey]; !reflect.DeepEqual(got, tc.wantTitle) {
+				t.Fatalf("terminal_title = %#v, want %#v", got, tc.wantTitle)
+			}
+			if tc.agentSpecific != nil && strings.Count(first, "[tui]") != 1 {
+				t.Fatalf("expected one tui table:\n%s", first)
+			}
+		})
+	}
+
+	root := t.TempDir()
+	user := codexPartialHeader + `
+[hooks]
+UserPromptSubmit = [{ matcher = "prompt", hooks = [{ type = "command", command = "echo user-prompt" }] }]
+`
+	writeExistingCodexConfig(t, root, user)
+	project := &config.ProjectConfig{Config: config.Config{Agents: config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled}}}, Env: map[string]string{}}
+	for range 2 {
+		if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+			t.Fatal(err)
+		}
+	}
+	content := readCodexConfig(t, root)
+	hooks := parseCodexConfig(t, content)[hooksKey].(map[string]any)[codexUserPromptKey].([]any)
+	if len(hooks) != 2 || hooks[0].(map[string]any)["matcher"] != "prompt" || !isHerdRHandler(hooks[1].(map[string]any)[hooksKey].([]any)[0]) {
+		t.Fatalf("UserPromptSubmit order/dedupe = %#v\n%s", hooks, content)
+	}
+}
+
 func TestCodexHerdRIgnoresMarkersInsideMultilineStrings(t *testing.T) {
 	notes := strings.Join([]string{
 		`notes = """`,
@@ -556,15 +671,18 @@ func TestCodexEmptyManagedHookEventsAcrossSyncsAndTransitions(t *testing.T) {
 		"empty SessionStart": {
 			hooks: map[string]any{codexSessionStartKey: []any{}},
 		},
+		"empty UserPromptSubmit": {
+			hooks: map[string]any{codexUserPromptKey: []any{}},
+		},
 		"empty Stop": {
 			hooks: map[string]any{codexStopKey: []any{}},
 		},
 		"empty SessionStart and Stop with nonempty other event": {
-			hooks: map[string]any{codexSessionStartKey: []any{}, codexStopKey: []any{}, "PreToolUse": userPreToolUse},
+			hooks: map[string]any{codexSessionStartKey: []any{}, codexUserPromptKey: []any{}, codexStopKey: []any{}, "PreToolUse": userPreToolUse},
 			user:  map[string][]any{"PreToolUse": userPreToolUse},
 		},
 		"empty SessionStart with nonempty Stop": {
-			hooks: map[string]any{codexSessionStartKey: []any{}, codexStopKey: userStop},
+			hooks: map[string]any{codexSessionStartKey: []any{}, codexUserPromptKey: []any{}, codexStopKey: userStop},
 			user:  map[string][]any{codexStopKey: userStop},
 		},
 	}
@@ -639,7 +757,7 @@ func TestCodexEmptyManagedHookEventsAcrossSyncsAndTransitions(t *testing.T) {
 func TestCodexEmptyManagedHookEventsReplaceExistingUserEntries(t *testing.T) {
 	existing := map[string]string{
 		// v0.23.1 rendered explicitly empty lists as assignments with no managed hooks.
-		"v0.23.1 empty assignments": codexPartialHeader + "[hooks]\nSessionStart = []\nStop = []\n",
+		"v0.23.1 empty assignments": codexPartialHeader + "[hooks]\nSessionStart = []\nUserPromptSubmit = []\nStop = []\n",
 		"previous user array tables": codexPartialHeader + `[[hooks.SessionStart]]
 matcher = "startup"
 [[hooks.SessionStart.hooks]]
@@ -669,6 +787,7 @@ Stop = [{ hooks = [{ type = "command", command = "echo old-stop" }] }]
 							Enabled: &enabled,
 							AgentSpecific: map[string]any{hooksKey: map[string]any{
 								codexSessionStartKey: []any{},
+								codexUserPromptKey:   []any{},
 								codexStopKey:         []any{},
 							}},
 						}},
@@ -697,8 +816,9 @@ Stop = [{ hooks = [{ type = "command", command = "echo old-stop" }] }]
 }
 
 // assertCodexManagedHookEvents checks that content is valid TOML with exactly
-// the expected managed SessionStart and Stop handlers, and that every user hook
-// event equals want (events absent from want must hold no user entries).
+// the expected managed SessionStart, UserPromptSubmit, and Stop handlers, and
+// that every user hook event equals want (events absent from want must hold no
+// user entries).
 func assertCodexManagedHookEvents(t *testing.T, content string, herdR bool, chime bool, want map[string][]any) {
 	t.Helper()
 	hooks, _ := parseCodexConfig(t, content)[hooksKey].(map[string]any)
@@ -715,7 +835,7 @@ func assertCodexManagedHookEvents(t *testing.T, content string, herdR bool, chim
 		for _, entry := range entries {
 			group, _ := entry.(map[string]any)
 			handlers, _ := group[hooksKey].([]any)
-			if len(handlers) == 1 && event == codexSessionStartKey && isHerdRHandler(handlers[0]) {
+			if len(handlers) == 1 && (event == codexSessionStartKey || event == codexUserPromptKey) && isHerdRHandler(handlers[0]) {
 				managedCounts[event]++
 				continue
 			}
@@ -737,8 +857,8 @@ func assertCodexManagedHookEvents(t *testing.T, content string, herdR bool, chim
 			t.Fatalf("hooks.%s user entries missing:\n%s", event, content)
 		}
 	}
-	wantManaged := map[string]bool{codexSessionStartKey: herdR, codexStopKey: chime}
-	markers := map[string]string{codexSessionStartKey: codexHerdRBeginMarker, codexStopKey: codexChimeBeginMarker}
+	wantManaged := map[string]bool{codexSessionStartKey: herdR, codexUserPromptKey: herdR, codexStopKey: chime}
+	markers := map[string]string{codexSessionStartKey: codexHerdRBeginMarker, codexUserPromptKey: codexHerdRBeginMarker, codexStopKey: codexChimeBeginMarker}
 	for event, enabled := range wantManaged {
 		want := 0
 		if enabled {

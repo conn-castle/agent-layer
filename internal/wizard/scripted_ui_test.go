@@ -240,6 +240,11 @@ func TestScriptedUIMissingAnswersFailPerKind(t *testing.T) {
 		!strings.Contains(err.Error(), `missing multi_select prompt "Agents"`) {
 		t.Fatalf("expected missing multi_select error, got %v", err)
 	}
+	confirm := true
+	if err := ui.Confirm("Proceed", &confirm); err == nil ||
+		!strings.Contains(err.Error(), `missing confirm prompt "Proceed"`) || !confirm {
+		t.Fatalf("expected missing confirm error without assignment, got %v (value %v)", err, confirm)
+	}
 	input := ""
 	if err := ui.Input("Model", &input); err == nil ||
 		!strings.Contains(err.Error(), `missing input prompt "Model"`) {

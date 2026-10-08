@@ -69,6 +69,34 @@ func TestRunPipeline(t *testing.T) {
 	}
 }
 
+func TestRunWithStderrSurfacesCodexTitleRecoveryOptOut(t *testing.T) {
+	root := t.TempDir()
+	writeMinimalRepo(t, root)
+	paths := config.DefaultPaths(root)
+	configToml, err := os.ReadFile(paths.ConfigPath) // #nosec G304 -- test-controlled configuration path.
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	updated := strings.Replace(string(configToml), "[agents.codex]\nenabled = false", "[agents.codex]\nenabled = true", 1) + `
+
+[agents.codex.agent_specific.tui]
+terminal_title = []
+`
+	if err := os.WriteFile(paths.ConfigPath, []byte(updated), 0o600); err != nil { // #nosec G703 -- test-controlled configuration path.
+		t.Fatalf("write config: %v", err)
+	}
+	var stderr bytes.Buffer
+	err = RunWithStderr(context.Background(), root, "codex", func(cfg *config.Config) *bool {
+		return cfg.Agents.Codex.Enabled
+	}, func(*config.ProjectConfig, *run.Info, []string, []string) error { return nil }, false, nil, "v1.0.0", &stderr)
+	if err != nil {
+		t.Fatalf("RunWithStderr: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "CODEX_HERDR_TITLE_RECOVERY_UNAVAILABLE") {
+		t.Fatalf("launch did not surface Codex title opt-out warning: %q", stderr.String())
+	}
+}
+
 func TestRunProjectsTheSingleLockedSkillSnapshot(t *testing.T) {
 	root := t.TempDir()
 	writeMinimalRepo(t, root)

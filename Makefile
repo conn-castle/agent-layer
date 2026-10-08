@@ -15,6 +15,7 @@ GO_MOD_CACHE ?= $(CACHE_ROOT)/go-mod
 GOLANGCI_LINT_CACHE ?= $(ROOT_DIR)/.cache/golangci-lint
 # Each test run keeps its complete go test events and console output in a new directory here.
 TEST_LOG_DIR ?= $(ROOT_DIR)/.agent-layer/tmp/test-logs
+RELEASE_PREFLIGHT_ARTIFACT_ROOT ?= $(ROOT_DIR)/.agent-layer/tmp/release-preflight
 
 # Prune excluded directory roots before descent; -not -path still traverses them.
 GO_FILES_FIND_CMD := find . \( -path './.git' -o -path './.tools' -o -path './.cache' -o -path './.claude' -o -path './.codex' -o -path './.gemini' -o -path './.agy' -o -path './.antigravitycli' -o -path './.agents' -o -path './.agent-layer' -o -path './.muse-config' -o -path './.muse-data' -o -path './tmp' \) -prune -o -type f -name '*.go'
@@ -284,12 +285,23 @@ website-build-check: ## Publish site into a website checkout and run Docusaurus 
 	@python3 scripts/check-website-assets.py "$${WEBSITE_REPO_DIR}/build"
 
 .PHONY: release-preflight
-release-preflight: ci test-release ## Validate release readiness (set RELEASE_TAG=vX.Y.Z)
+release-preflight: ## Run CI, build unsigned release artifacts, and scan them (set RELEASE_TAG=vX.Y.Z)
 	@if [[ -z "$${RELEASE_TAG:-}" ]]; then \
 	  echo "RELEASE_TAG is required (example: make release-preflight RELEASE_TAG=v0.8.0)" >&2; \
 	  exit 1; \
 	fi
 	@./scripts/check-upgrade-docs.sh --tag "$${RELEASE_TAG}"
+	@$(MAKE) check-govulncheck
+	@$(MAKE) ci
+	@if [[ " $${MAKEFLAGS} " == *" -n "* || ( "$(firstword $(MAKEFLAGS))" != -* && "$(firstword $(MAKEFLAGS))" == *n* ) ]]; then exit 0; fi; \
+	  artifact_root="$(RELEASE_PREFLIGHT_ARTIFACT_ROOT)"; \
+	  mkdir -p "$$artifact_root"; \
+	  artifact_dir="$$(mktemp -d "$$artifact_root/$${RELEASE_TAG}.XXXXXX")"; \
+	  trap 'status=$$?; if [[ $$status -ne 0 ]]; then echo "Release preflight artifacts retained: $$artifact_dir" >&2; fi; exit $$status' EXIT; \
+	  echo "Release preflight artifacts: $$artifact_dir"; \
+	  echo "Building unsigned release artifacts for $${RELEASE_TAG}"; \
+	  AL_CODESIGN_IDENTITY= AL_REQUIRE_CODESIGN=0 AL_VERSION="$${RELEASE_TAG}" DIST_DIR="$$artifact_dir" ./scripts/build-release.sh; \
+	  $(MAKE) release-vuln-check DIST_DIR="$$artifact_dir"
 
 .PHONY: release-catalog-certify
 release-catalog-certify: ## Certify clean, pushed main for release tagging in hosted CI
@@ -306,6 +318,7 @@ release-vuln-check: check-govulncheck ## Scan every release executable for known
 	  if [[ ! -f "$$path" ]]; then echo "Release binary not found: $$path" >&2; exit 1; fi; \
 	done
 	@for binary in $(RELEASE_BINARIES); do \
+	  echo "Scanning release binary: $(DIST_DIR)/$$binary"; \
 	  "$(TOOL_BIN)/govulncheck" -mode=binary "$(DIST_DIR)/$$binary" || exit $$?; \
 	done
 

@@ -133,26 +133,6 @@ func grokChimeHookIsManaged(data []byte) bool {
 }
 
 func ensureGrokChimePathContained(sys System, root string, target string) error {
-	hooksRoot := filepath.Clean(filepath.Join(root, ".grok", "hooks"))
-	cleanTarget := filepath.Clean(target)
-	if cleanTarget != hooksRoot && !strings.HasPrefix(cleanTarget, hooksRoot+string(os.PathSeparator)) {
-		return fmt.Errorf("grok chime hook path points outside .grok/hooks: %s", target)
-	}
-	for _, path := range []string{
-		filepath.Join(root, ".grok"),
-		hooksRoot,
-		cleanTarget,
-	} {
-		info, err := sys.Lstat(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return fmt.Errorf(messages.InstallFailedStatFmt, path, err)
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf(messages.SyncGrokChimeHookConflictFmt, path)
-		}
-	}
-	return nil
+	return ensureChimePathContained(sys, root, target, ".grok", "hooks",
+		"grok chime hook path points outside .grok/hooks: %s", messages.SyncGrokChimeHookConflictFmt)
 }

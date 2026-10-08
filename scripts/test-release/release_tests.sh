@@ -46,6 +46,14 @@ if [[ -z "$pkg" ]]; then
 fi
 
 printf '%s|%s|%s|%s|%s|%s\n' "${GOOS:-}" "${GOARCH:-}" "${CGO_ENABLED:-}" "$output" "$ldflags" "$pkg" >> "$log_path"
+if [[ -n "${MOCK_PREFLIGHT_EVENT_LOG:-}" ]]; then
+  printf 'build|%s|%s|%s\n' "${GOOS:-}" "${GOARCH:-}" "$output" >> "$MOCK_PREFLIGHT_EVENT_LOG"
+fi
+
+if [[ "${MOCK_GO_FAIL_ON:-}" == "${GOOS:-}/${GOARCH:-}" ]]; then
+  echo "Error: Mock go configured to fail for ${GOOS:-}/${GOARCH:-}" >&2
+  exit 1
+fi
 
 mkdir -p "$(dirname "$output")"
 build_version="${ldflags##*=}"
@@ -259,6 +267,206 @@ MOCK_GOVULNCHECK
   else
     pass "release-vuln-check propagates scanner failures"
   fi
+}
+
+run_release_preflight_test() {
+  section "Release Preflight Test"
+
+  local preflight_tools="$tmp_dir/preflight-tools"
+  local preflight_make="$tmp_dir/preflight-make"
+  local preflight_ci_log="$tmp_dir/preflight-ci.log"
+  local preflight_go_log="$tmp_dir/preflight-go.log"
+  local preflight_scan_log="$tmp_dir/preflight-scan.log"
+  local preflight_event_log="$tmp_dir/preflight-events.log"
+  local preflight_sign_log="$tmp_dir/preflight-sign.log"
+  local real_make
+  real_make="$(command -v make)"
+  mkdir -p "$preflight_tools"
+
+  cat > "$preflight_tools/govulncheck" << 'MOCK_GOVULNCHECK'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${FAKE_GOVULNCHECK_LOG:?}"
+printf 'scan|%s\n' "${*: -1}" >> "${MOCK_PREFLIGHT_EVENT_LOG:?}"
+if [[ -n "${FAKE_GOVULNCHECK_FAIL_ON:-}" && "$(basename "${*: -1}")" == "$FAKE_GOVULNCHECK_FAIL_ON" ]]; then
+  exit 1
+fi
+MOCK_GOVULNCHECK
+  chmod +x "$preflight_tools/govulncheck"
+
+  cat > "$preflight_make" << 'PREFLIGHT_MAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+for argument in "$@"; do
+  if [[ "$argument" == "ci" ]]; then
+    printf 'ci\n' >> "${PREFLIGHT_CI_LOG:?}"
+    printf 'ci\n' >> "${MOCK_PREFLIGHT_EVENT_LOG:?}"
+    exit 0
+  fi
+done
+exec "${REAL_MAKE:?}" "$@"
+PREFLIGHT_MAKE
+  chmod +x "$preflight_make"
+
+  for tool in codesign xcrun; do
+    cat > "$preflight_tools/$tool" << 'MOCK_SIGNING_TOOL'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$(basename "$0")" >> "${MOCK_PREFLIGHT_SIGN_LOG:?}"
+exit 99
+MOCK_SIGNING_TOOL
+    chmod +x "$preflight_tools/$tool"
+  done
+
+  run_preflight() {
+    local log_path="$1"
+    local artifact_root="$2"
+    local tag="$3"
+    local go_fail_on="$4"
+    local scanner_fail_on="$5"
+    local require_codesign="$6"
+    local codesign_identity="$7"
+    shift 7
+
+    env -u MAKEFLAGS -u MFLAGS -u MAKELEVEL -u MAKEOVERRIDES -u RELEASE_TAG \
+      -u AL_VERSION -u DIST_DIR -u AL_CODESIGN_IDENTITY -u AL_REQUIRE_CODESIGN \
+      REAL_MAKE="$real_make" \
+      PATH="$mock_bin:$preflight_tools:$PATH" \
+      PREFLIGHT_CI_LOG="$preflight_ci_log" \
+      MOCK_GO_LOG="$preflight_go_log" \
+      MOCK_RELEASE_BINARY_LOG="$tmp_dir/preflight-release-binary.log" \
+      MOCK_PREFLIGHT_EVENT_LOG="$preflight_event_log" \
+      MOCK_PREFLIGHT_SIGN_LOG="$preflight_sign_log" \
+      FAKE_GOVULNCHECK_LOG="$preflight_scan_log" \
+      MOCK_GO_FAIL_ON="$go_fail_on" \
+      FAKE_GOVULNCHECK_FAIL_ON="$scanner_fail_on" \
+      AL_REQUIRE_CODESIGN="$require_codesign" \
+      AL_CODESIGN_IDENTITY="$codesign_identity" \
+      "$real_make" --no-print-directory -C "$ROOT_DIR" \
+      MAKE="$preflight_make" TOOL_BIN="$preflight_tools" \
+      RELEASE_PREFLIGHT_ARTIFACT_ROOT="$artifact_root" \
+      release-preflight RELEASE_TAG="$tag" "$@" > "$log_path" 2>&1
+  }
+
+  reset_preflight_logs() {
+    : > "$preflight_ci_log"
+    : > "$preflight_go_log"
+    : > "$preflight_scan_log"
+    : > "$preflight_event_log"
+    : > "$preflight_sign_log"
+  }
+
+  local success_root="$tmp_dir/preflight-success"
+  local success_log="$tmp_dir/preflight-success.log"
+  reset_preflight_logs
+  if run_preflight "$success_log" "$success_root" "$expected_version" "" "" "1" "test-identity"; then
+    pass "release-preflight completes with caller signing credentials forced unsigned"
+  else
+    fail "release-preflight failed on the controlled success path"
+    cat "$success_log"
+  fi
+
+  local -a artifact_dirs=()
+  local found_dir
+  while IFS= read -r found_dir; do
+    artifact_dirs+=("$found_dir")
+  done < <(find "$success_root" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort)
+  if [[ "${#artifact_dirs[@]}" -eq 1 ]]; then
+    local artifact_dir="${artifact_dirs[0]}"
+    pass "release-preflight retains one unique artifact directory"
+    local expected_binary
+    for expected_binary in al-darwin-arm64 al-darwin-amd64 al-linux-arm64 al-linux-amd64; do
+      if [[ -f "$artifact_dir/$expected_binary" ]] &&
+          grep -Fxq -- "-mode=binary $artifact_dir/$expected_binary" "$preflight_scan_log"; then
+        pass "release-preflight builds and scans $expected_binary"
+      else
+        fail "release-preflight did not build and scan $expected_binary"
+      fi
+    done
+    if [[ "$(wc -l < "$preflight_go_log" | tr -d ' ')" -eq 4 ]] &&
+        [[ "$(wc -l < "$preflight_scan_log" | tr -d ' ')" -eq 4 ]] &&
+        [[ "$(grep -Fc -- "-X main.Version=$expected_version" "$preflight_go_log")" -eq 4 ]] &&
+        [[ "$(grep -Fc -- "-s -w" "$preflight_go_log")" -eq 4 ]] &&
+        grep -Fq -- "darwin|arm64|0|$artifact_dir/al-darwin-arm64" "$preflight_go_log" &&
+        grep -Fq -- "darwin|amd64|0|$artifact_dir/al-darwin-amd64" "$preflight_go_log" &&
+        grep -Fq -- "linux|arm64|0|$artifact_dir/al-linux-arm64" "$preflight_go_log" &&
+        grep -Fq -- "linux|amd64|0|$artifact_dir/al-linux-amd64" "$preflight_go_log"; then
+      pass "release-preflight wires the release version and four existing build targets"
+    else
+      fail "release-preflight build invocation wiring was incomplete"
+    fi
+    local last_build_event first_scan_event
+    last_build_event="$(grep -n '^build|' "$preflight_event_log" | tail -n 1 | cut -d: -f1)"
+    first_scan_event="$(grep -n '^scan|' "$preflight_event_log" | head -n 1 | cut -d: -f1)"
+    if [[ "$(wc -l < "$preflight_ci_log" | tr -d ' ')" -eq 1 ]] &&
+        [[ "$(head -n 1 "$preflight_event_log")" == "ci" ]] &&
+        [[ "$first_scan_event" -gt "$last_build_event" ]] &&
+        [[ ! -s "$preflight_sign_log" ]]; then
+      pass "release-preflight runs CI once before building, scans afterward, and does not sign"
+    else
+      fail "release-preflight CI order or unsigned behavior was incorrect"
+    fi
+  else
+    fail "release-preflight did not retain exactly one artifact directory"
+  fi
+
+  local build_failure_root="$tmp_dir/preflight-build-failure"
+  local build_failure_log="$tmp_dir/preflight-build-failure.log"
+  reset_preflight_logs
+  if run_preflight "$build_failure_log" "$build_failure_root" "$expected_version" "linux/arm64" "" "0" ""; then
+    fail "release-preflight should propagate builder failure"
+  elif [[ ! -s "$preflight_scan_log" ]] &&
+      grep -Fq "Mock go configured to fail for linux/arm64" "$build_failure_log"; then
+    pass "release-preflight stops before scanning when the builder fails"
+  else
+    fail "release-preflight scanned after a builder failure"
+  fi
+
+  local scan_failure_root="$tmp_dir/preflight-scan-failure"
+  local scan_failure_log="$tmp_dir/preflight-scan-failure.log"
+  reset_preflight_logs
+  if run_preflight "$scan_failure_log" "$scan_failure_root" "$expected_version" "" "al-darwin-amd64" "0" ""; then
+    fail "release-preflight should propagate scanner failure"
+  elif [[ "$(wc -l < "$preflight_go_log" | tr -d ' ')" -eq 4 ]] &&
+      grep -Fq "/al-darwin-amd64" "$preflight_scan_log"; then
+    pass "release-preflight propagates scanner failure"
+  else
+    fail "release-preflight failed before exercising the scanner failure"
+  fi
+
+  local tag_case tag_log tag_root
+  for tag_case in "" "0.24.0" "v9.9.9"; do
+    tag_log="$tmp_dir/preflight-invalid-tag-${tag_case:-missing}.log"
+    tag_root="$tmp_dir/preflight-invalid-tag-${tag_case:-missing}"
+    reset_preflight_logs
+    if run_preflight "$tag_log" "$tag_root" "$tag_case" "" "" "0" ""; then
+      fail "release-preflight should reject ${tag_case:-a missing release tag}"
+    elif [[ ! -s "$preflight_ci_log" && ! -s "$preflight_go_log" && ! -s "$preflight_scan_log" ]] &&
+        grep -Eq "RELEASE_TAG is required|invalid tag format|missing migration-table row" "$tag_log"; then
+      pass "release-preflight rejects ${tag_case:-a missing release tag} before costly work"
+    else
+      fail "release-preflight performed work before rejecting ${tag_case:-a missing release tag}"
+    fi
+  done
+
+  reset_preflight_logs
+  if run_preflight "$tmp_dir/preflight-missing-scanner.log" "$tmp_dir/preflight-missing-scanner" "$expected_version" "" "" "0" "" TOOL_BIN="$tmp_dir/no-scanner"; then
+    fail "release-preflight should reject a missing scanner"
+  elif [[ ! -s "$preflight_ci_log" && ! -s "$preflight_go_log" && ! -s "$preflight_scan_log" ]] &&
+      grep -Fq "Run: make release-tools" "$tmp_dir/preflight-missing-scanner.log"; then
+    pass "release-preflight rejects a missing scanner before costly work"
+  else
+    fail "release-preflight did not diagnose a missing scanner before costly work"
+  fi
+
+  reset_preflight_logs
+  if run_preflight "$tmp_dir/preflight-dry-run.log" "$tmp_dir/preflight-dry-run" "$expected_version" "" "" "0" "" -n &&
+      [[ ! -s "$preflight_go_log" && ! -s "$preflight_scan_log" && ! -d "$tmp_dir/preflight-dry-run" ]]; then
+    pass "release-preflight dry run does not build or scan artifacts"
+  else
+    fail "release-preflight dry run performed artifact work"
+  fi
+
 }
 
 run_build_invocation_details() {
