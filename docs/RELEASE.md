@@ -52,11 +52,13 @@ git add internal/templates/migrations/"${VERSION#v}".json \
 # 4. Commit the manifests
 git commit -m "release: add manifests for $VERSION"
 
-# 5. Run release preflight to validate everything
+# 5. Run the local unsigned artifact and vulnerability preflight
 make release-preflight RELEASE_TAG="$VERSION"
 ```
 
-CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>`. The release workflow will fail if either manifest is missing. Run `make release-preflight` locally before tagging to run CI, release-script checks, and upgrade-doc validation before publishing.
+CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>`. The release workflow will fail if either manifest is missing. Run `make release-preflight` locally before tagging: it validates the tag and upgrade docs before CI, builds unsigned artifacts for all four supported platform/architecture combinations, and scans those binaries with the existing vulnerability check. Artifacts are retained under `.agent-layer/tmp/release-preflight/`; install the scanner first with `make release-tools`. This local pass does not sign or notarize artifacts, and the native smoke test covers only the host platform while its source tarball is made from `HEAD`.
+
+The vulnerability database is network-backed and can change before tagging. Hosted signing, notarization, and its release scan remain the final publication gate, so they can still fail after a local preflight passes.
 
 After pushing the release commit to `main`, run `make release-catalog-certify` before tagging. A certification workflow starts automatically on every `main` push, so this command reuses it or waits for it instead of adding a serial release step. Because a push run can take several seconds to appear, the command waits up to 60 seconds for a run of the exact commit before dispatching one; it dispatches immediately when the commit's only runs completed without success. The exact-commit workflow compares the release commit with the previous reachable stable tag. It runs the complete pinned benchmark catalog when benchmark code, the benchmark command, Go module dependencies, or catalog-certification policy changed. Other releases receive a successful exact-commit classification without pulling benchmark images. Required full checks run in sixteen bounded-disk shards, and a weekly forced run detects external catalog-image drift.
 
