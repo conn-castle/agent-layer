@@ -29,6 +29,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-10-08 external-skill-inherited-review-followups: Inherited skill reporting and diagnostics gaps
+    Priority: Low. Area: external skills / audit reporting / CLI diagnostics
+    Description: The moved audit-documentation skill does not specify where unverified claims belong; watch-pr-events.sh gives generic shift errors for missing option values; tavily-web attributes every nonzero exit to installation/authentication. All three behaviors predate the content migration.
+    Evidence: nicholasjconn/skills PR #18 comments https://github.com/nicholasjconn/skills/pull/18#discussion_r4220303424, https://github.com/nicholasjconn/skills/pull/18#discussion_r4220303459, and https://github.com/nicholasjconn/skills/pull/18#discussion_r4220303532; original Agent Layer source 5dd9ba8ce27050ff6defef0713f8c97af1e8d70d.
+    Notes: Deferred outside the migration; future fixes belong in the canonical skills repository. The current ship-pr whole-tree publication default remains unchanged, with memory notes included and temporary artifacts excluded.
+
 - Issue 2026-10-04 shared-scratch-deletion-recovery: WARNING — repeated discovery cleanup deleted other sessions' scratch work
     Priority: High. Area: discovery / scratch ownership
     Description: Discovery agents repeatedly deleted shared `/tmp/alhunt` contents and overwrote `/tmp/alhunt/al`. Still unrecovered: original binary bytes (`al`, `al-old`, `al-cur`), generated repositories `r1`–`r3` and their Git metadata, `strace.txt`, and any unknown branch identity, uncommitted/untracked work, or unrecorded changes beyond the verified recovered contents.

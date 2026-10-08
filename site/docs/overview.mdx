@@ -23,7 +23,7 @@ Follow the recommended path below to set up Agent Layer, customize it, and find 
 - Generated client files that are safe to delete and recreate (apart from documented shared settings and runtime state that `al sync` preserves).
 - Guardrails for autonomy: choose what can run automatically and what must be approved.
 - Agent Dispatch for delegating bounded work to headless Claude, Codex, Grok, Muse, or Antigravity conversations through MCP or the CLI.
-- Built-in workflow skills that give agents structured, repeatable processes for implementation, auditing, and shipping pull requests.
+- Workflow skills imported through the wizard that give agents structured, repeatable processes for implementation, auditing, and shipping pull requests.
 - Git-backed skill imports that remain editable, merge upstream changes, and project to every enabled client.
 - Required per-repo version pinning so a team stays on the same behavior across machines and CI.
 
@@ -40,7 +40,7 @@ Follow the recommended path below to set up Agent Layer, customize it, and find 
 2. [Concepts](./concepts) - learn how Agent Layer works and where the safety boundaries are
 3. [Reference](./reference) - config, environment variables, and CLI behavior
 4. [Agent Dispatch](./agent-dispatch) - asynchronous, headless provider delegation
-5. [Skills](./skills) - built-in workflows for implementation, auditing, and shipping pull requests
+5. [Skills](./skills) - workflows for implementation, auditing, and shipping pull requests
 6. [Skill imports](./skill-imports) - import, edit, update, and contribute portable Agent Skills through Git
 7. [Skills approach](./skills-approach) - Agent Layer's skill ethos and target root-skill model
 8. [Best Practices](/best-practices) - universal skill, CLI skill, and instruction design guides
@@ -67,7 +67,7 @@ Asynchronous, headless provider conversations for agents, people, and scripts. I
 
 ### [Skills](./skills)
 
-Built-in workflow skills that give agents structured processes for common tasks. Includes: [The built-in skill library](./skills#built-in-skill-library), [Skill categories](./skills#built-in-skill-library), [Anatomy of a skill](./skills#skill-structure), and [Writing your own skills](./skills#writing-your-own-skills).
+Imported development and tool skills alongside bundled operator skills. Includes: [Skill library](./skills#skill-library), [Anatomy of a skill](./skills#skill-structure), and [Writing your own skills](./skills#writing-your-own-skills).
 
 ### [Skill imports](./skill-imports)
 
@@ -76,7 +76,7 @@ Import portable Agent Skills from Git, project them to every enabled client, pre
 ### [Skills approach](./skills-approach)
 
 Agent Layer's skill ethos, target root modules, workflow boundaries, and mapping
-from conceptual names to current bundled skill names.
+from conceptual names to current skill names.
 
 ### [Best Practices](/best-practices)
 
