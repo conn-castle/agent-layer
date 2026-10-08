@@ -300,8 +300,8 @@ Notes: Writes `internal/templates/manifests/X.Y.Z.json`. Run for each new releas
 make release-preflight RELEASE_TAG=vX.Y.Z
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+, `make tools` has been run, `rg` (ripgrep) available on PATH, both manifests committed
-Notes: Runs `make ci` and then validates upgrade-contract docs for the tag. Catches issues that would fail the release workflow. Requires a clean working tree and network access for upgrade binary downloads.
+Prerequisites: Go 1.26.0+, `make tools` and `make release-tools` have been run, `rg` (ripgrep) available on PATH, both manifests committed
+Notes: Validates the tag and upgrade-contract docs before running `make ci` once, then builds unsigned four-platform artifacts into a unique retained `.agent-layer/tmp/release-preflight/` directory and scans those binaries with `govulncheck`. The native smoke test covers only the host platform and the source tarball is from `HEAD`. Requires a clean working tree and network access for upgrade binary downloads and the vulnerability database. It does not sign or notarize; hosted signing, notarization, and scanning remain the final release gate and can fail after a local pass.
 
 - Certify the exact pushed `main` commit before creating a release tag
 ```bash
