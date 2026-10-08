@@ -3,6 +3,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.24.2 - 2026-10-07
+
+### Fixed
+- HerdR terminal conversation recovery now decodes public pane IDs using HerdR's native encoding instead of assuming decimal numbers. Valid pane IDs containing letters or multiple characters, such as `wV:pF`, previously failed stored-recipe verification before registration; Agent Layer now decodes them correctly so saved recipes are found for Claude, Codex, Antigravity, Muse, and Grok.
+
 ## v0.24.1 - 2026-10-07
 
 ### Fixed
