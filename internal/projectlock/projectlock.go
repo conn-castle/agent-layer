@@ -19,14 +19,11 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
-// FileName is sourced from internal/install (the package that owns the
-// .agent-layer layout and its known-paths set) so the lock this package creates
-// and the file the installer recognizes can never drift.
-const FileName = install.SyncLockFileName
+// FileName is the shared project lock filename. The installer aliases it.
+const FileName = "sync.lock"
 
 // System abstracts the few operations lock acquisition needs so tests can
 // inject clock and syscall faults. internal/sync's System satisfies it.
@@ -203,3 +200,18 @@ func (l *heldLock) release() error {
 func timeoutError(path string) error {
 	return fmt.Errorf(messages.SyncLockTimeoutFmt, waitTimeout, path)
 }
+
+// RealSystem supplies the ordinary OS lock operations.
+type RealSystem struct{}
+
+// Close releases the lock file descriptor.
+func (RealSystem) Close(file *os.File) error { return file.Close() }
+
+// Flock applies the requested advisory lock operation.
+func (RealSystem) Flock(fd int, how int) error { return unix.Flock(fd, how) }
+
+// Now returns the current wall clock time.
+func (RealSystem) Now() time.Time { return time.Now() }
+
+// Sleep waits for the requested duration between lock attempts.
+func (RealSystem) Sleep(duration time.Duration) { time.Sleep(duration) }

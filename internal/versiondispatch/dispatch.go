@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/skillmigration"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
 
@@ -95,6 +96,11 @@ func maybeExec(ctx context.Context, sys System, args []string, currentVersion st
 		return fmt.Errorf(messages.DispatchDevVersionNotAllowedFmt, EnvVersionOverride)
 	}
 
+	if found {
+		if err := skillmigration.CheckVersion(rootDir, requested); err != nil {
+			return err
+		}
+	}
 	cacheRoot, err := cacheRootDir(sys)
 	if err != nil {
 		return err

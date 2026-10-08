@@ -163,6 +163,7 @@ func runWizardToGitTrackingPrompt(t *testing.T, gitignoreBlockOverride string) [
 		NoteFunc:   func(string, string) error { return nil },
 		SelectFunc: func(string, []string, *string) error { return nil },
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+			title, _, _ = strings.Cut(title, cliSkillsStatusHeading)
 			switch title {
 			case messages.WizardGitTrackingTitle:
 				sawGitTrackingPrompt = true

@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/skilljournal"
@@ -36,30 +35,30 @@ type atomicWriter func(path string, data []byte, perm os.FileMode) error
 // transaction back, and an in-process failure restores the same state
 // immediately, surfacing any rollback failure rather than hiding it.
 type transaction struct {
-	paths       pathSet
-	writes      map[string]skilltree.Tree
-	deletes     map[string]struct{}
-	lock        *skilllock.File
-	configRaw   *string
-	stagingRoot string
+	paths            pathSet
+	writes           map[string]skilltree.Tree
+	deletes          map[string]struct{}
+	localRetirements map[string]skilltree.Tree
+	lock             *skilllock.File
+	configRaw        *string
+	stagingRoot      string
 	// writeFile publishes configuration and lock content.
 	writeFile atomicWriter
+	// checkpoint is a test seam for process interruption at durable boundaries.
+	checkpoint func(string)
 }
 
 // pathSet is the subset of resolved paths a transaction writes.
-type pathSet struct {
-	ConfigPath        string
-	SkillsLockPath    string
-	ImportedSkillsDir string
-}
+type pathSet = skilljournal.Targets
 
 func newTransaction(paths pathSet, lock *skilllock.File) *transaction {
 	return &transaction{
-		paths:     paths,
-		writes:    map[string]skilltree.Tree{},
-		deletes:   map[string]struct{}{},
-		lock:      lock.Clone(),
-		writeFile: fsutil.WriteFileAtomic,
+		paths:            paths,
+		writes:           map[string]skilltree.Tree{},
+		deletes:          map[string]struct{}{},
+		localRetirements: map[string]skilltree.Tree{},
+		lock:             lock.Clone(),
+		writeFile:        fsutil.WriteFileAtomic,
 	}
 }
 
@@ -68,6 +67,9 @@ func (t *transaction) WriteSkill(name string, tree skilltree.Tree) {
 	delete(t.deletes, name)
 	t.writes[name] = tree
 }
+
+// RetireLocal records a validated legacy source to retire during adoption.
+func (t *transaction) RetireLocal(name string, tree skilltree.Tree) { t.localRetirements[name] = tree }
 
 // DeleteSkill records that an imported directory must be removed.
 func (t *transaction) DeleteSkill(name string) {
@@ -128,6 +130,12 @@ func (t *transaction) NeedsCommit(original *skilllock.File, lockPresent bool) bo
 // durability failure reported after the new bytes are already visible — rolls
 // every published path back to its recorded content, and a failed rollback is
 // surfaced alongside the original error instead of being discarded.
+func (t *transaction) reached(step string) {
+	if t.checkpoint != nil {
+		t.checkpoint(step)
+	}
+}
+
 func (t *transaction) Commit() (err error) {
 	staging := skilljournal.StagingRoot(t.paths.ImportedSkillsDir)
 	if err := os.MkdirAll(staging, 0o750); err != nil {
@@ -150,26 +158,48 @@ func (t *transaction) Commit() (err error) {
 		return err
 	}
 
-	published := &publishedState{}
+	t.reached("journal")
+	published := skilljournal.Progress{}
 	fail := func(cause error) error {
-		rollbackErr := t.rollback(published)
+		rollbackErr := skilljournal.Rollback(t.paths, published, t.writeFile)
 		stagingSettled = rollbackErr == nil
 		return joinRollback(cause, rollbackErr)
 	}
 
+	// Retire the old active slot before publishing its imported replacement.
+	for _, name := range sortedKeys(t.localRetirements) {
+		if _, err := skilltree.ReadStrict(skilltree.OSFS{}, filepath.Join(t.paths.LocalSkillsDir, name)); err != nil {
+			return fail(err)
+		}
+		applied, moveErr := moveAside(filepath.Join(t.paths.LocalSkillsDir, name), filepath.Join(staging, skilljournal.LocalBackupPrefix+name))
+		if applied {
+			published.LocalRetirements = append(published.LocalRetirements, name)
+		}
+		if moveErr != nil {
+			return fail(moveErr)
+		}
+		t.reached("retire:" + name)
+		if !applied {
+			return fail(fmt.Errorf("legacy source %s disappeared before retirement", name))
+		}
+	}
+	if err := t.verifyLocalRetirements(staging); err != nil {
+		return fail(err)
+	}
 	for _, name := range sortedKeys(t.writes) {
-		applied, publishErr := t.publishTree(name, t.writes[name])
+		applied, publishErr := t.publishTree(name)
 		if applied.Name != "" {
 			published.Writes = append(published.Writes, applied)
 		}
 		if publishErr != nil {
 			return fail(publishErr)
 		}
+		t.reached("write:" + name)
 	}
 	for _, name := range sortedKeys(t.deletes) {
 		applied, removeErr := t.removeTree(name)
-		if applied.Name != "" {
-			published.Deletes = append(published.Deletes, applied)
+		if applied.Existed {
+			published.Deletes = append(published.Deletes, name)
 		}
 		if removeErr != nil {
 			return fail(removeErr)
@@ -188,6 +218,7 @@ func (t *transaction) Commit() (err error) {
 		}
 	}
 
+	t.reached("config")
 	lockData, marshalErr := t.lock.Marshal()
 	if marshalErr != nil {
 		return fail(marshalErr)
@@ -197,28 +228,34 @@ func (t *transaction) Commit() (err error) {
 		return fail(fmt.Errorf("failed to write skill lock %s: %w", t.paths.SkillsLockPath, lockErr))
 	}
 
+	t.reached("lock")
+	if err := t.verifyLocalRetirements(staging); err != nil {
+		return fail(err)
+	}
 	// Everything is durable. Recording that fact stops a crash before the
 	// staging directory is cleared from reverting a complete transaction.
 	if commitErr := skilljournal.MarkCommitted(staging); commitErr != nil {
 		return fail(commitErr)
 	}
+	t.reached("committed")
 	return nil
 }
 
-// publishedTree records one tree change Commit already applied to a live path,
-// so rollback knows whether a previous version has to come back. A zero Name
-// means the live path was never touched and must be left alone.
-type publishedTree struct {
-	Name        string
-	HadPrevious bool
-}
-
-// publishedState is what Commit has already applied to live paths.
-type publishedState struct {
-	Writes  []publishedTree
-	Deletes []publishedTree
-	Config  bool
-	Lock    bool
+// The project lock coordinates CLI operations, but editors can still change the
+// source during staging or through an open file after retirement. Abort and
+// restore that source if it differs from the copy being published.
+func (t *transaction) verifyLocalRetirements(staging string) error {
+	for _, name := range sortedKeys(t.localRetirements) {
+		backup := filepath.Join(staging, skilljournal.LocalBackupPrefix+name)
+		current, err := skilltree.ReadStrict(skilltree.OSFS{}, backup)
+		if err != nil {
+			return fmt.Errorf("verify retired legacy source %s: %w", name, err)
+		}
+		if current.Hash() != t.localRetirements[name].Hash() {
+			return fmt.Errorf("legacy source %s changed while adoption was staged; finish the edits and retry conversion", name)
+		}
+	}
+	return nil
 }
 
 // prepareJournal copies every file the transaction replaces into staging and
@@ -228,6 +265,10 @@ func (t *transaction) prepareJournal() error {
 	doc := skilljournal.Document{
 		Deletes: sortedKeys(t.deletes),
 		Config:  t.configRaw != nil,
+	}
+	if len(t.localRetirements) > 0 {
+		doc.Version = skilljournal.AdoptionVersion
+		doc.LocalRetirements = sortedKeys(t.localRetirements)
 	}
 	for _, name := range sortedKeys(t.writes) {
 		existed, err := pathExists(filepath.Join(t.paths.ImportedSkillsDir, name))
@@ -260,6 +301,23 @@ func (t *transaction) prepareJournal() error {
 		return fmt.Errorf("failed to read %s: %w", t.paths.SkillsLockPath, lockErr)
 	}
 
+	// All replacement trees are prepared before the durable journal and live moves.
+	for _, name := range sortedKeys(t.writes) {
+		staged := filepath.Join(t.stagingRoot, skilljournal.StagedTreePrefix+name)
+		if err := os.MkdirAll(staged, 0o750); err != nil {
+			return err
+		}
+		if err := skilltree.Materialize(t.writes[name], staged); err != nil {
+			return err
+		}
+		if err := syncStagedTree(staged); err != nil {
+			return err
+		}
+	}
+	if err := fsutil.SyncDir(filepath.Dir(t.stagingRoot)); err != nil {
+		return err
+	}
+	t.reached("before-journal")
 	return skilljournal.Write(t.stagingRoot, doc)
 }
 
@@ -272,83 +330,6 @@ func (t *transaction) stageBackup(name string, data []byte) error {
 	return nil
 }
 
-// rollback restores every live path this transaction already changed, using the
-// same backups recovery would use after an interruption. It returns every
-// problem it hit so a partial rollback is never reported as a clean revert.
-func (t *transaction) rollback(published *publishedState) error {
-	var problems []string
-	note := func(err error) {
-		if err != nil {
-			problems = append(problems, err.Error())
-		}
-	}
-
-	for i := len(published.Deletes) - 1; i >= 0; i-- {
-		entry := published.Deletes[i]
-		if !entry.HadPrevious {
-			continue
-		}
-		note(restoreBackup(filepath.Join(t.stagingRoot, skilljournal.DeleteBackupPrefix+entry.Name),
-			filepath.Join(t.paths.ImportedSkillsDir, entry.Name)))
-	}
-	for i := len(published.Writes) - 1; i >= 0; i-- {
-		entry := published.Writes[i]
-		target := filepath.Join(t.paths.ImportedSkillsDir, entry.Name)
-		if !entry.HadPrevious {
-			if err := os.RemoveAll(target); err != nil {
-				note(fmt.Errorf("failed to remove %s: %w", target, err))
-			}
-			continue
-		}
-		note(restoreBackup(filepath.Join(t.stagingRoot, skilljournal.WriteBackupPrefix+entry.Name), target))
-	}
-	if published.Config {
-		note(t.restoreStagedFile(filepath.Join(t.stagingRoot, skilljournal.ConfigBackupName), t.paths.ConfigPath))
-	}
-	if published.Lock {
-		backup := filepath.Join(t.stagingRoot, skilljournal.LockBackupName)
-		if _, statErr := os.Lstat(backup); statErr == nil {
-			note(t.restoreStagedFile(backup, t.paths.SkillsLockPath))
-		} else if err := os.Remove(t.paths.SkillsLockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			note(fmt.Errorf("failed to remove %s: %w", t.paths.SkillsLockPath, err))
-		}
-	}
-
-	if len(problems) > 0 {
-		return fmt.Errorf("%s", strings.Join(problems, "; "))
-	}
-	return nil
-}
-
-// restoreBackup moves a staged backup tree back over its live path.
-func restoreBackup(backup string, target string) error {
-	if _, err := os.Lstat(backup); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return fmt.Errorf("failed to inspect %s: %w", backup, err)
-	}
-	if err := os.RemoveAll(target); err != nil {
-		return fmt.Errorf("failed to remove %s: %w", target, err)
-	}
-	if err := os.Rename(backup, target); err != nil {
-		return fmt.Errorf("failed to restore %s: %w", target, err)
-	}
-	return nil
-}
-
-// restoreStagedFile rewrites a live file with its staged pre-transaction copy.
-func (t *transaction) restoreStagedFile(backup string, target string) error {
-	data, err := os.ReadFile(backup) // #nosec G304 -- backup is inside the staging directory this transaction owns.
-	if err != nil {
-		return fmt.Errorf("failed to read %s: %w", backup, err)
-	}
-	if err := t.writeFile(target, data, 0o644); err != nil {
-		return fmt.Errorf("failed to restore %s: %w", target, err)
-	}
-	return nil
-}
-
 // joinRollback reports a rollback failure alongside the failure that triggered
 // it, because a silent rollback failure is the one outcome that can strand
 // mixed generations on disk.
@@ -356,49 +337,45 @@ func joinRollback(cause error, rollbackErr error) error {
 	if rollbackErr == nil {
 		return cause
 	}
-	return fmt.Errorf("%w; rolling the change back also failed: %v", cause, rollbackErr)
+	return fmt.Errorf("%w; rolling the change back also failed: %w", cause, rollbackErr)
 }
 
-// publishTree materializes one skill tree in staging and swaps it into the
+// publishTree swaps one already materialized skill tree from staging into the
 // imported tier. It reports whether a previous tree was moved aside, which is
 // what rollback and recovery need to restore the prior state.
-func (t *transaction) publishTree(name string, tree skilltree.Tree) (publishedTree, error) {
+func (t *transaction) publishTree(name string) (skilljournal.WriteIntent, error) {
 	target := filepath.Join(t.paths.ImportedSkillsDir, name)
 	staged := filepath.Join(t.stagingRoot, skilljournal.StagedTreePrefix+name)
 	backup := filepath.Join(t.stagingRoot, skilljournal.WriteBackupPrefix+name)
 
-	if err := os.RemoveAll(staged); err != nil {
-		return publishedTree{}, fmt.Errorf("failed to clear %s: %w", staged, err)
-	}
-	if err := os.MkdirAll(staged, 0o750); err != nil {
-		return publishedTree{}, fmt.Errorf("failed to create %s: %w", staged, err)
-	}
-	if err := skilltree.Materialize(tree, staged); err != nil {
-		return publishedTree{}, err
-	}
-
 	hadPrevious, err := moveAside(target, backup)
+	applied := skilljournal.WriteIntent{Name: name, Existed: hadPrevious}
 	if err != nil {
-		// The live path was never touched, so nothing about it is rolled back.
-		return publishedTree{}, err
+		if hadPrevious {
+			return applied, err
+		}
+		return skilljournal.WriteIntent{}, err
 	}
-	applied := publishedTree{Name: name, HadPrevious: hadPrevious}
 	if renameErr := os.Rename(staged, target); renameErr != nil {
 		return applied, fmt.Errorf("failed to publish %s: %w", target, renameErr)
 	}
-	return applied, nil
+	return applied, errors.Join(fsutil.SyncDir(filepath.Dir(target)), fsutil.SyncDir(t.stagingRoot))
 }
 
 // removeTree moves an imported directory aside, reporting the change rollback
 // would have to undo.
-func (t *transaction) removeTree(name string) (publishedTree, error) {
+func (t *transaction) removeTree(name string) (skilljournal.WriteIntent, error) {
 	target := filepath.Join(t.paths.ImportedSkillsDir, name)
 	backup := filepath.Join(t.stagingRoot, skilljournal.DeleteBackupPrefix+name)
 	hadPrevious, err := moveAside(target, backup)
+	applied := skilljournal.WriteIntent{Name: name, Existed: hadPrevious}
 	if err != nil {
-		return publishedTree{}, err
+		if hadPrevious {
+			return applied, err
+		}
+		return skilljournal.WriteIntent{}, err
 	}
-	return publishedTree{Name: name, HadPrevious: hadPrevious}, nil
+	return applied, errors.Join(fsutil.SyncDir(filepath.Dir(target)), fsutil.SyncDir(t.stagingRoot))
 }
 
 // pathExists reports whether a filesystem node is present without following
@@ -428,7 +405,7 @@ func moveAside(target string, backup string) (bool, error) {
 	if err := os.Rename(target, backup); err != nil {
 		return false, fmt.Errorf("failed to move %s aside: %w", target, err)
 	}
-	return true, nil
+	return true, errors.Join(fsutil.SyncDir(filepath.Dir(target)), fsutil.SyncDir(filepath.Dir(backup)))
 }
 
 func sortedKeys[V any](values map[string]V) []string {
@@ -438,4 +415,29 @@ func sortedKeys[V any](values map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// syncStagedTree makes every new file and directory durable before publication.
+func syncStagedTree(root string) error {
+	scoped, err := os.OpenRoot(root)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = scoped.Close() }()
+	return filepath.WalkDir(root, func(path string, _ os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		file, err := scoped.Open(relative)
+		if err != nil {
+			return err
+		}
+		syncErr := file.Sync()
+		closeErr := file.Close()
+		return errors.Join(syncErr, closeErr)
+	})
 }

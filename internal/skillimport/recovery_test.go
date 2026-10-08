@@ -39,7 +39,7 @@ func interruptAfterPublishing(t *testing.T, proj *project, writeConfig bool, bui
 		t.Fatalf("prepare journal: %v", err)
 	}
 	for _, name := range sortedKeys(txn.writes) {
-		if _, err := txn.publishTree(name, txn.writes[name]); err != nil {
+		if _, err := txn.publishTree(name); err != nil {
 			t.Fatalf("publish %s: %v", name, err)
 		}
 	}

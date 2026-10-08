@@ -13,19 +13,19 @@ import (
 
 func TestComputeSkillsChangeSet_CatalogAddAndRemove(t *testing.T) {
 	root := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "tavily-web"), 0o750))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "dispatch-agent"), 0o750))
 	choices := NewChoices()
 	choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{
-		{ID: "tavily-web", Name: "Tavily"},
-		{ID: "find-docs", Name: "Find Docs"},
+		{ID: "dispatch-agent", Name: "Tavily"},
+		{ID: "skill-sync", Name: "Find Docs"},
 	}
-	choices.EnabledCLISkills["tavily-web"] = false // existing → remove
-	choices.EnabledCLISkills["find-docs"] = true   // missing → add
+	choices.EnabledCLISkills["dispatch-agent"] = false // existing → remove
+	choices.EnabledCLISkills["skill-sync"] = true      // missing → add
 
 	cs, err := computeSkillsChangeSet(root, choices)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"find-docs"}, cs.catalogSkillsToAdd)
-	assert.Equal(t, []string{"tavily-web"}, cs.catalogSkillsToRemove)
+	assert.Equal(t, []string{"skill-sync"}, cs.catalogSkillsToAdd)
+	assert.Equal(t, []string{"dispatch-agent"}, cs.catalogSkillsToRemove)
 	assert.Empty(t, cs.memoryFilesToCreate)
 	assert.NotEmpty(t, buildSkillsPreview(cs))
 }
@@ -65,35 +65,35 @@ func TestComputeSkillsChangeSet_LegacyDispatchAgentState(t *testing.T) {
 
 func TestComputeSkillsChangeSet_CatalogRepairMissingFiles(t *testing.T) {
 	root := t.TempDir()
-	skillDir := filepath.Join(root, ".agent-layer", "skills", "playwright")
+	skillDir := filepath.Join(root, ".agent-layer", "skills", "benchmark")
 	require.NoError(t, os.MkdirAll(skillDir, 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("custom skill text"), 0o600))
 
 	choices := NewChoices()
-	choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{{ID: "playwright", Name: "Playwright"}}
-	choices.EnabledCLISkills["playwright"] = true
+	choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{{ID: "benchmark", Name: "Playwright"}}
+	choices.EnabledCLISkills["benchmark"] = true
 
 	cs, err := computeSkillsChangeSet(root, choices)
 	require.NoError(t, err)
 	assert.Empty(t, cs.catalogSkillsToAdd)
-	assert.Equal(t, []string{"playwright"}, cs.catalogSkillsToRepair)
+	assert.Equal(t, []string{"benchmark"}, cs.catalogSkillsToRepair)
 	assert.Empty(t, cs.catalogSkillsToRemove)
 }
 
 func TestComputeSkillsChangeSet_CatalogRemoveIgnoresMalformedMissingFiles(t *testing.T) {
 	root := t.TempDir()
-	skillDir := filepath.Join(root, ".agent-layer", "skills", "playwright")
+	skillDir := filepath.Join(root, ".agent-layer", "skills", "benchmark")
 	require.NoError(t, os.MkdirAll(skillDir, 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "references"), []byte("file blocks embedded reference dir"), 0o600))
 
 	choices := NewChoices()
-	choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{{ID: "playwright", Name: "Playwright"}}
+	choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{{ID: "benchmark", Name: "Playwright"}}
 
 	cs, err := computeSkillsChangeSet(root, choices)
 	require.NoError(t, err)
 	assert.Empty(t, cs.catalogSkillsToAdd)
 	assert.Empty(t, cs.catalogSkillsToRepair)
-	assert.Equal(t, []string{"playwright"}, cs.catalogSkillsToRemove)
+	assert.Equal(t, []string{"benchmark"}, cs.catalogSkillsToRemove)
 }
 
 func TestComputeSkillsChangeSet_PreservesUserOwnedCatalogPath(t *testing.T) {
@@ -130,7 +130,7 @@ func TestComputeSkillsChangeSet_PreservesUserOwnedCatalogPath(t *testing.T) {
 func TestComputeSkillsChangeSet_InstructionNoneDoesNotPrune(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "implement"), 0o750))
-	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "tavily-web"), 0o750))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "dispatch-agent"), 0o750))
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "custom-user-skill"), 0o750))
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o750))
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "templates", "docs"), 0o750))
@@ -146,8 +146,8 @@ func TestComputeSkillsChangeSet_InstructionNoneDoesNotPrune(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "custom.md"), []byte("x"), 0o600))
 
 	choices := NewChoices()
-	choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{{ID: "tavily-web", Name: "Tavily"}}
-	choices.EnabledCLISkills["tavily-web"] = true
+	choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{{ID: "dispatch-agent", Name: "Tavily"}}
+	choices.EnabledCLISkills["dispatch-agent"] = true
 	choices.InstructionSet = InstructionSetNone
 	choices.InstructionSetTouched = true
 
@@ -156,7 +156,7 @@ func TestComputeSkillsChangeSet_InstructionNoneDoesNotPrune(t *testing.T) {
 	assert.Empty(t, cs.memoryFilesToCreate)
 	assert.Empty(t, cs.templateMemoryFilesToCreate)
 	assert.Empty(t, cs.managedInstructionFilesToCreate)
-	// tavily-web is a catalog skill present on disk AND selected → no change.
+	// dispatch-agent is a catalog skill present on disk AND selected → no change.
 	assert.Empty(t, cs.catalogSkillsToAdd)
 	assert.Empty(t, cs.catalogSkillsToRemove)
 }
@@ -196,78 +196,12 @@ func TestComputeSkillsChangeSet_RulesOnlyDoesNotCreateMemory(t *testing.T) {
 	assert.Empty(t, cs.catalogSkillsToAdd)
 }
 
-func TestComputeSkillsChangeSet_DevelopmentSkillsAddRepairRemove(t *testing.T) {
-	entry := templates.CLISkillCatalogEntry{
-		ID:      "development-skills",
-		Name:    "Agent Layer development skills",
-		Members: []string{"implement", "ship-pr"},
-	}
-
-	t.Run("selected missing members are added", func(t *testing.T) {
-		root := t.TempDir()
-		choices := NewChoices()
-		choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{entry}
-		choices.EnabledCLISkills[entry.ID] = true
-
-		cs, err := computeSkillsChangeSet(root, choices)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"implement", "ship-pr"}, cs.catalogSkillsToAdd)
-		assert.Equal(t, "skills/implement", cs.catalogTemplates["implement"])
-		assert.Equal(t, "skills/ship-pr", cs.catalogTemplates["ship-pr"])
-	})
-
-	t.Run("selected existing member with missing files is repaired", func(t *testing.T) {
-		root := t.TempDir()
-		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "ship-pr"), 0o750))
-		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "skills", "ship-pr", "SKILL.md"), []byte("custom"), 0o600))
-		choices := NewChoices()
-		choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{entry}
-		choices.EnabledCLISkills[entry.ID] = true
-
-		cs, err := computeSkillsChangeSet(root, choices)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"implement"}, cs.catalogSkillsToAdd)
-		assert.Equal(t, []string{"ship-pr"}, cs.catalogSkillsToRepair)
-	})
-
-	t.Run("deselected existing members are removed", func(t *testing.T) {
-		root := t.TempDir()
-		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "implement"), 0o750))
-		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "ship-pr"), 0o750))
-		choices := NewChoices()
-		choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{entry}
-
-		cs, err := computeSkillsChangeSet(root, choices)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"implement", "ship-pr"}, cs.catalogSkillsToRemove)
-		require.NoError(t, applySkillsChanges(root, cs))
-		assert.NoDirExists(t, filepath.Join(root, ".agent-layer", "skills", "implement"))
-		assert.NoDirExists(t, filepath.Join(root, ".agent-layer", "skills", "ship-pr"))
-	})
-}
-
-func TestApplySkillsChanges_DevelopmentSkillsAddCopiesEmbeddedWorkflowFiles(t *testing.T) {
-	root := t.TempDir()
-	changes := skillsChangeSet{
-		catalogSkillsToAdd: []string{"implement"},
-		catalogTemplates:   map[string]string{"implement": "skills/implement"},
-	}
-	require.NoError(t, applySkillsChanges(root, changes))
-
-	skillPath := filepath.Join(root, ".agent-layer", "skills", "implement", "SKILL.md")
-	got, err := os.ReadFile(skillPath) // #nosec G304 -- path is constructed from test-controlled inputs.
-	require.NoError(t, err)
-	want, err := templates.Read("skills/implement/SKILL.md")
-	require.NoError(t, err)
-	assert.Equal(t, want, got)
-}
-
 func TestComputeSkillsChangeSet_NoChanges(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills"), 0o750))
 	choices := NewChoices()
-	choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{{ID: "tavily-web", Name: "Tavily"}}
-	choices.EnabledCLISkills["tavily-web"] = false
+	choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{{ID: "dispatch-agent", Name: "Tavily"}}
+	choices.EnabledCLISkills["dispatch-agent"] = false
 
 	cs, err := computeSkillsChangeSet(root, choices)
 	require.NoError(t, err)
@@ -278,33 +212,33 @@ func TestApplySkillsChanges_CatalogAddCopiesEmbeddedFiles(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills"), 0o750))
 
-	changes := skillsChangeSet{catalogSkillsToAdd: []string{"playwright"}}
+	changes := skillsChangeSet{catalogSkillsToAdd: []string{"benchmark"}}
 	require.NoError(t, applySkillsChanges(root, changes))
 
-	skillPath := filepath.Join(root, ".agent-layer", "skills", "playwright", "SKILL.md")
+	skillPath := filepath.Join(root, ".agent-layer", "skills", "benchmark", "SKILL.md")
 	info, err := os.Stat(skillPath)
 	require.NoError(t, err)
 	assert.Greater(t, info.Size(), int64(0), "SKILL.md should have content from embedded catalog")
 	data, err := os.ReadFile(skillPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	require.NoError(t, err)
-	assert.Contains(t, string(data), "\nname: playwright\n")
-	assert.Contains(t, string(data), "playwright-cli --help")
+	assert.Contains(t, string(data), "\nname: benchmark\n")
+	assert.Contains(t, string(data), "al benchmark")
 }
 
 func TestApplySkillsChanges_CatalogRepairCopiesOnlyMissingFiles(t *testing.T) {
 	root := t.TempDir()
-	skillDir := filepath.Join(root, ".agent-layer", "skills", "playwright")
+	skillDir := filepath.Join(root, ".agent-layer", "skills", "benchmark")
 	require.NoError(t, os.MkdirAll(skillDir, 0o750))
 	skillPath := filepath.Join(skillDir, "SKILL.md")
 	require.NoError(t, os.WriteFile(skillPath, []byte("custom skill text"), 0o600))
 
-	changes := skillsChangeSet{catalogSkillsToRepair: []string{"playwright"}}
+	changes := skillsChangeSet{catalogSkillsToRepair: []string{"benchmark"}}
 	require.NoError(t, applySkillsChanges(root, changes))
 
 	data, err := os.ReadFile(skillPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	require.NoError(t, err)
 	assert.Equal(t, "custom skill text", string(data))
-	assert.FileExists(t, filepath.Join(skillDir, "LICENSE"))
+	assert.FileExists(t, filepath.Join(skillDir, "references", "results-and-artifacts.md"))
 }
 
 func TestCopySkillDirToDiskErrorBranches(t *testing.T) {
@@ -318,23 +252,23 @@ func TestCopySkillDirToDiskErrorBranches(t *testing.T) {
 
 	rootFile := filepath.Join(t.TempDir(), "not-a-directory")
 	require.NoError(t, os.WriteFile(rootFile, []byte("x"), 0o600))
-	err = copySkillDirToDisk(rootFile, cliSkillsCatalogTemplateRoot+"/tavily-web", "tavily-web")
+	err = copySkillDirToDisk(rootFile, cliSkillsCatalogTemplateRoot+"/dispatch-agent", "dispatch-agent")
 	require.Error(t, err)
 
 	blockedRoot := t.TempDir()
-	blockedSkillFile := filepath.Join(blockedRoot, ".agent-layer", "skills", "tavily-web", "SKILL.md")
+	blockedSkillFile := filepath.Join(blockedRoot, ".agent-layer", "skills", "dispatch-agent", "SKILL.md")
 	require.NoError(t, os.MkdirAll(blockedSkillFile, 0o750))
-	err = copySkillDirToDisk(blockedRoot, cliSkillsCatalogTemplateRoot+"/tavily-web", "tavily-web")
+	err = copySkillDirToDisk(blockedRoot, cliSkillsCatalogTemplateRoot+"/dispatch-agent", "dispatch-agent")
 	require.Error(t, err)
 }
 
 func TestApplySkillsChanges_CatalogRemove(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, ".agent-layer", "skills", "tavily-web")
+	dir := filepath.Join(root, ".agent-layer", "skills", "dispatch-agent")
 	require.NoError(t, os.MkdirAll(dir, 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("x"), 0o600))
 
-	changes := skillsChangeSet{catalogSkillsToRemove: []string{"tavily-web"}}
+	changes := skillsChangeSet{catalogSkillsToRemove: []string{"dispatch-agent"}}
 	require.NoError(t, applySkillsChanges(root, changes))
 
 	_, err := os.Stat(dir)
@@ -394,17 +328,16 @@ func TestApplySkillsChanges_AddCatalogErrorIncludesSkill(t *testing.T) {
 }
 
 func TestApplySkillsChanges_ErrorBranches(t *testing.T) {
-	t.Run("add grouped catalog skill blocked by parent file", func(t *testing.T) {
+	t.Run("add retained catalog skill blocked by parent file", func(t *testing.T) {
 		root := t.TempDir()
 		blocker := filepath.Join(root, ".agent-layer", "skills")
 		require.NoError(t, os.MkdirAll(filepath.Dir(blocker), 0o750))
 		require.NoError(t, os.WriteFile(blocker, []byte("file blocks catalog install"), 0o600))
 
 		err := applySkillsChanges(root, skillsChangeSet{
-			catalogSkillsToAdd: []string{"implement"},
-			catalogTemplates:   map[string]string{"implement": "skills/implement"},
+			catalogSkillsToAdd: []string{"dispatch-agent"},
 		})
-		require.ErrorContains(t, err, "add catalog skill implement")
+		require.ErrorContains(t, err, "add catalog skill dispatch-agent")
 	})
 
 	t.Run("create memory files reports filesystem error", func(t *testing.T) {
@@ -600,9 +533,9 @@ func TestBuildSkillsPreview(t *testing.T) {
 
 	t.Run("renders catalog and instruction changes as a directory summary", func(t *testing.T) {
 		preview := buildSkillsPreview(skillsChangeSet{
-			catalogSkillsToAdd:    []string{"find-docs"},
-			catalogSkillsToRepair: []string{"playwright"},
-			catalogSkillsToRemove: []string{"tavily-web"},
+			catalogSkillsToAdd:    []string{"skill-sync"},
+			catalogSkillsToRepair: []string{"benchmark"},
+			catalogSkillsToRemove: []string{"dispatch-agent"},
 			memoryFilesToCreate:   []string{"docs/agent-layer/BACKLOG.md"},
 			templateMemoryFilesToCreate: []string{
 				".agent-layer/templates/docs/BACKLOG.md",
@@ -611,9 +544,9 @@ func TestBuildSkillsPreview(t *testing.T) {
 				".agent-layer/instructions/00_rules.md",
 			},
 		})
-		assert.Contains(t, preview, "+ .agent-layer/skills/find-docs/")
-		assert.Contains(t, preview, "+ .agent-layer/skills/playwright/  (missing catalog skill files)")
-		assert.Contains(t, preview, "- .agent-layer/skills/tavily-web/")
+		assert.Contains(t, preview, "+ .agent-layer/skills/skill-sync/")
+		assert.Contains(t, preview, "+ .agent-layer/skills/benchmark/  (missing catalog skill files)")
+		assert.Contains(t, preview, "- .agent-layer/skills/dispatch-agent/")
 		assert.Contains(t, preview, "docs/agent-layer/BACKLOG.md  (memory file)")
 		assert.Contains(t, preview, ".agent-layer/templates/docs/BACKLOG.md  (memory template)")
 		assert.Contains(t, preview, ".agent-layer/instructions/00_rules.md  (managed instruction seed)")

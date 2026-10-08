@@ -203,6 +203,7 @@ func newBenchmarkCmd() *cobra.Command {
 
 func newBenchmarkInitCmd() *cobra.Command {
 	var directory string
+	var skillsRef string
 	command := &cobra.Command{
 		Use:   benchmarkInitName + " <selection.json>",
 		Short: "Create a ready-to-run benchmark study from a website selection",
@@ -215,7 +216,7 @@ func newBenchmarkInitCmd() *cobra.Command {
 			if directory == "" {
 				directory = "benchmark-study"
 			}
-			path, err := initStudy(bench.InitStudyOptions{RepoRoot: root, SelectionPath: args[0], Directory: directory})
+			path, err := initStudy(bench.InitStudyOptions{RepoRoot: root, SelectionPath: args[0], Directory: directory, SkillsRef: skillsRef})
 			if err != nil {
 				return err
 			}
@@ -224,6 +225,7 @@ func newBenchmarkInitCmd() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&directory, "directory", "", "study directory (default: benchmark-study)")
+	command.Flags().StringVar(&skillsRef, "skills-ref", "", "Git ref for the frozen external development skill snapshot (default: source default branch)")
 	return command
 }
 

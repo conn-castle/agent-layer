@@ -66,7 +66,7 @@ The recommended section order is informed by research on how language models pro
 
 The skill standard defines the format. Agent Layer builds on it with:
 
-- **A library of 7 focused development skills** covering implementation, PR lifecycle, auditing, and autonomous delivery — available as the Agent Layer development skills catalog row in the wizard and refreshed through upgrade flows for repos that already have them.
+- **A library of 7 focused development skills** covering implementation, PR lifecycle, auditing, and autonomous delivery — authored in `nicholasjconn/skills`, imported by the Development skills wizard row, and updated explicitly with `al skills pull`.
 - **Client projection** — User-managed `.agent-layer/skills/` and Git-managed `.agent-layer/skills-imported/` are the files you edit. `al sync` merges them into one immutable source snapshot, then writes that snapshot to `.agents/skills/` for shared-skill clients and `.claude/skills/` for Claude Code.
 - **Memory integration** — Skills read from and write to project memory files (`ISSUES.md`, `BACKLOG.md`, `DECISIONS.md`, `COMMANDS.md`, `CONTEXT.md`), keeping project context durable across sessions.
 - **Artifact conventions** — Skills keep agent-only plans, reports, and trackers under `.agent-layer/tmp/`, where another agent can pick them up without mixing transient state into product files.
@@ -105,9 +105,17 @@ Skills activate implicitly or explicitly:
 
 Skills accept flexible inputs: plain-language descriptions, file paths, constraints like "diagnosis only," or references to prior artifacts. Everything has sensible defaults, so you can invoke with just a request.
 
-## Built-in skill library
+## Skill library
 
-Agent Layer development skills are 7 skills. They are organized here by how you typically use them. Select **Agent Layer development skills** in `al wizard` to install the set; unchecking that row removes it. Agent Layer also ships optional catalog skills for installed tools; those are listed separately below.
+Select **Development skills** in `al wizard` to import the seven exact `skills/development/<name>` trees from `https://github.com/nicholasjconn/skills.git`. The three tool rows import exact `skills/tools/{find-docs,playwright,tavily-web}` paths. `dispatch-agent`, `skill-sync`, and `benchmark` remain bundled.
+
+New selections require repository access. The wizard records resolved commits and upstream tree hashes in `skills.lock.json` and installs editable copies in `.agent-layer/skills-imported/`. CLI upgrades, sync, launch, and doctor stay offline; an unchanged imported selection does not refresh. Use `al skills status`, `diff`, `pull`, and `resolve` for content updates independently of CLI upgrades.
+
+Existing local copies appear as legacy content. Confirming a checked legacy row explicitly adopts the complete validated tree and retires its `.agent-layer/skills/<name>/` slot in one recoverable transaction. Unknown bytes, older shipped defaults, executable bits, and extra policy files are preserved as imported modifications against the genuine fetched upstream tree. Historical normalized hashes alone cannot prove pristine bytes. Declining or unchecking preserves the legacy tree; upgrade deletion prompts also preserve it. Conflicting copies in both tiers require explicit resolution.
+
+Deselecting exact imports in the default policy block removes them together; local modifications block the whole removal. Remaining selectors can require a repository fetch. Explicit pins, tracking, write policies, wildcard coverage, and manually configured missing content stay under ordinary import commands. The wizard preserves unrelated TOML blocks/comments; a fetch failure can occur after its config/env writes and is reported with a nonzero exit.
+
+`implement`, `ship-pr`, and `auto-skill-loop` require retained `dispatch-agent` and their named provider targets for delegated paths. Their compatibility declarations describe the dispatch MCP contract; missing capabilities must be reported. The wizard warns without enforcing co-selection. Direct implementation does not itself dispatch, although the skill input contract still requires targets.
 
 ### Orchestrator skills
 

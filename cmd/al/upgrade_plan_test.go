@@ -379,11 +379,11 @@ func prepareUpgradeTestRepo(t *testing.T) string {
 		t.Fatalf("write issues: %v", err)
 	}
 
-	implementPath := filepath.Join(root, ".agent-layer", "skills", "implement", "SKILL.md")
+	implementPath := filepath.Join(root, ".agent-layer", "skills", "dispatch-agent", "SKILL.md")
 	if err := os.Remove(implementPath); err != nil {
 		t.Fatalf("remove implement skill: %v", err)
 	}
-	implementTemplate, err := templates.Read("skills/implement/SKILL.md")
+	implementTemplate, err := templates.Read("skills-catalog/dispatch-agent/SKILL.md")
 	if err != nil {
 		t.Fatalf("read implement template: %v", err)
 	}
@@ -396,7 +396,7 @@ func prepareUpgradeTestRepo(t *testing.T) string {
 func seedWorkflowBundleForUpgradeCmdTest(t *testing.T, root string) {
 	t.Helper()
 	copyEmbeddedDirForUpgradeCmdTest(t, "instructions", filepath.Join(root, ".agent-layer", "instructions"), 0o644)
-	copyEmbeddedDirForUpgradeCmdTest(t, "skills", filepath.Join(root, ".agent-layer", "skills"), 0o600)
+	copyEmbeddedDirForUpgradeCmdTest(t, "skills-catalog/dispatch-agent", filepath.Join(root, ".agent-layer", "skills", "dispatch-agent"), 0o600)
 	copyEmbeddedDirForUpgradeCmdTest(t, "docs/agent-layer", filepath.Join(root, ".agent-layer", "templates", "docs"), 0o644)
 	copyEmbeddedDirForUpgradeCmdTest(t, "docs/agent-layer", filepath.Join(root, "docs", "agent-layer"), 0o644)
 }

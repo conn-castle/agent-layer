@@ -56,23 +56,6 @@ func TestEmbeddedDispatchAgentSkillUsesRenamedID(t *testing.T) {
 	}
 }
 
-func TestEmbeddedPlaywrightSkillUsesDistinctIDAndCLICommand(t *testing.T) {
-	data, err := Read("skills-catalog/playwright/SKILL.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-	skill := string(data)
-	if !strings.Contains(skill, "\nname: playwright\n") {
-		t.Fatal("playwright skill frontmatter does not use the distinct playwright id")
-	}
-	if !strings.Contains(skill, "playwright-cli --help") {
-		t.Fatal("playwright skill does not preserve the playwright-cli command surface")
-	}
-	if _, err := Read("skills-catalog/playwright-cli/SKILL.md"); err == nil {
-		t.Fatal("colliding playwright-cli skill template should be absent")
-	}
-}
-
 func TestEmbeddedSkillSyncNarrowsToolsAndUsesConfirmedDestructiveCommands(t *testing.T) {
 	data, err := Read("skills-catalog/skill-sync/SKILL.md")
 	if err != nil {
@@ -114,7 +97,7 @@ func TestEmbeddedSkillSyncNarrowsToolsAndUsesConfirmedDestructiveCommands(t *tes
 }
 
 func TestSkillTemplatesAllowResourceFiles(t *testing.T) {
-	err := Walk("skills", func(path string, d fs.DirEntry, walkErr error) error {
+	err := Walk("skills-catalog", func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}

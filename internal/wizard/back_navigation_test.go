@@ -3,6 +3,7 @@ package wizard
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -431,6 +432,7 @@ func TestPromptWizardFlow_DisablingCodexClearsAppsChoiceAfterBackNavigation(t *t
 			return nil
 		},
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+			title, _, _ = strings.Cut(title, cliSkillsStatusHeading)
 			switch title {
 			case messages.WizardEnableAgentsTitle:
 				agentCalls++

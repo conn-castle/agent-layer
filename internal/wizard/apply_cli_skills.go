@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/skillimport"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -24,6 +26,10 @@ const cliSkillsCatalogTemplateRoot = "skills-catalog"
 // answers. Changes are summarized at the directory level for both the apply
 // step and the rewrite preview.
 type skillsChangeSet struct {
+	importSelectors []string
+	adoptLegacy     []string
+	removeSelectors []string
+	importPreview   []string
 	// catalogSkillsToAdd holds catalog ids that are selected but missing on disk.
 	catalogSkillsToAdd []string
 	// catalogSkillsToRepair holds selected catalog ids whose directory exists but
@@ -32,10 +38,6 @@ type skillsChangeSet struct {
 	// catalogSkillsToRemove holds catalog directory ids that are deselected but
 	// exist on disk. A directory id may be a legacy pre-migration id.
 	catalogSkillsToRemove []string
-	// catalogTemplates maps destination skill ids to their embedded template
-	// root. Grouped catalog members use skills/<id>/; ordinary catalog skills
-	// default to skills-catalog/<id>/ when omitted.
-	catalogTemplates map[string]string
 	// memoryFilesToCreate holds missing docs/agent-layer/*.md relative paths to
 	// create because the instruction set includes memory.
 	memoryFilesToCreate []string
@@ -81,12 +83,12 @@ var legacyInstructionBasenames = []string{
 // changes the apply path will perform. Order in each slice is sorted for
 // deterministic preview output.
 func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, error) {
-	out := skillsChangeSet{catalogTemplates: map[string]string{}}
+	var out skillsChangeSet
 
 	for _, entry := range choices.CLISkillsCatalog {
 		selected := choices.EnabledCLISkills[entry.ID]
-		if len(entry.Members) > 0 {
-			if err := appendGroupedCatalogChanges(root, entry, selected, &out); err != nil {
+		if entry.Repository != "" {
+			if err := appendRemoteCatalogChanges(root, entry, selected, choices.InitialCLISkills, &out); err != nil {
 				return skillsChangeSet{}, err
 			}
 			continue
@@ -122,6 +124,40 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 		}
 	}
 
+	// Removing a selector reconciles remaining members of that same default
+	// block. Name missing/conflicted siblings before the user approves the edit.
+	if len(out.removeSelectors) > 0 {
+		removed := map[string]bool{}
+		for _, selector := range out.removeSelectors {
+			removed[selector] = true
+		}
+		catalog, err := templates.LoadCLISkillCatalog()
+		if err != nil {
+			return skillsChangeSet{}, err
+		}
+		for _, entry := range catalog {
+			if entry.Repository != templates.GeneralSkillsRepository {
+				continue
+			}
+			members, err := skillimport.CatalogState(root, entry)
+			if err != nil {
+				return skillsChangeSet{}, err
+			}
+			for _, member := range members {
+				if member.DefaultExact && !removed[member.Selector] && (!member.Imported || member.Problem != "") {
+					note := "Warning: removal also reconciles configured sibling " + member.Selector + " in the same default import block; it may materialize or block the removal."
+					if member.Problem != "" {
+						note += " " + member.Problem
+					}
+					if member.Legacy {
+						note += " Preserve the legacy tree; reconcile selector coverage with al skills commands before wizard legacy adoption."
+					}
+					out.importPreview = append(out.importPreview, note)
+				}
+			}
+		}
+	}
+
 	if choices.InstructionSetTouched {
 		if err := appendInstructionChanges(root, choices.InstructionSet, &out); err != nil {
 			return skillsChangeSet{}, err
@@ -137,30 +173,77 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 	return out, nil
 }
 
-func appendGroupedCatalogChanges(root string, entry templates.CLISkillCatalogEntry, selected bool, out *skillsChangeSet) error {
-	for _, member := range entry.Members {
-		templateRoot := "skills/" + member
-		out.catalogTemplates[member] = templateRoot
-		exists := catalogSkillExistsOnDisk(root, member)
-		missingFiles := false
-		if selected && exists {
-			var err error
-			missingFiles, err = templateDirHasMissingFiles(
-				templateRoot,
-				filepath.Join(root, ".agent-layer", "skills", member),
-			)
-			if err != nil {
-				return err
+func appendRemoteCatalogChanges(root string, entry templates.CLISkillCatalogEntry, selected bool, initial map[string]bool, out *skillsChangeSet) error {
+	members, err := skillimport.CatalogState(root, entry)
+	if err != nil {
+		return err
+	}
+	wasSelected, initialized := initial[entry.ID]
+	unchanged := initialized && wasSelected == selected
+	// A conflicted bundle row is a note on an unchanged run, including its
+	// otherwise valid legacy siblings. Do not request a partial conversion.
+	preserveRow := false
+	if unchanged {
+		for _, member := range members {
+			preserveRow = preserveRow || member.Problem != "" || (member.Legacy && (member.Configured || member.AddBlocked != ""))
+		}
+	}
+	for _, member := range members {
+		if member.Problem != "" {
+			if unchanged {
+				out.importPreview = append(out.importPreview, "Catalog note: "+member.Name+": "+member.Problem+" (wizard leaves it unchanged)")
+				continue
+			}
+			return fmt.Errorf("catalog %s: %s", member.Name, member.Problem)
+		}
+		if selected {
+			if preserveRow && member.Legacy {
+				out.importPreview = append(out.importPreview, "Catalog note: preserve legacy "+member.Name+"; resolve this row's catalog conflicts with al skills commands before adoption (wizard leaves it unchanged)")
+				continue
+			}
+			if member.Configured {
+				if member.Legacy {
+					return fmt.Errorf("catalog %s has configured import coverage and a legacy local copy; resolve with al skills commands before adoption", member.Name)
+				}
+				if !member.Imported {
+					out.importPreview = append(out.importPreview, "Missing configured import "+member.Selector+"; use al skills pull/status to repair (wizard leaves it unchanged)")
+				}
+				if !member.DefaultExact {
+					out.importPreview = append(out.importPreview, "Manually managed import "+member.Selector+"; existing ref/policy/selectors preserved")
+				}
+				continue
+			}
+			if unchanged && !member.Legacy {
+				out.importPreview = append(out.importPreview, fmt.Sprintf("Missing bundle member %s; add explicitly with al skills add %s %s (wizard leaves it unchanged)", member.Name, entry.Repository, member.Selector))
+				if member.AddBlocked != "" {
+					out.importPreview = append(out.importPreview, "Catalog note: "+member.AddBlocked)
+				}
+				continue
+			}
+			if member.AddBlocked != "" {
+				return fmt.Errorf("catalog %s: %s", member.Name, member.AddBlocked)
+			}
+			out.importSelectors = append(out.importSelectors, member.Selector)
+			if member.Legacy {
+				out.adoptLegacy = append(out.adoptLegacy, member.Selector)
+				out.importPreview = append(out.importPreview, "Adopt legacy .agent-layer/skills/"+member.Name+" into .agent-layer/skills-imported/"+member.Name+" from "+entry.Repository+" path "+member.Selector+" (network required); preserve the complete local tree, including older defaults, as modified when it differs from fetched upstream; retire the local slot atomically")
+			} else {
+				out.importPreview = append(out.importPreview, "Import missing "+member.Selector+" from "+entry.Repository+" (network required)")
+			}
+		} else {
+			if member.Legacy {
+				out.importPreview = append(out.importPreview, "Preserve legacy local "+member.Name+" (deselection never deletes it)")
+			}
+			if member.DefaultExact {
+				out.removeSelectors = append(out.removeSelectors, member.Selector)
+				out.importPreview = append(out.importPreview, "Remove exact import selector "+member.Selector+"; local modifications block the whole removal; remaining selectors may require a repository fetch")
+			} else if member.Configured {
+				out.importPreview = append(out.importPreview, "Preserve manually managed "+member.Selector+"; change it through al skills commands")
 			}
 		}
-		switch {
-		case selected && !exists:
-			out.catalogSkillsToAdd = append(out.catalogSkillsToAdd, member)
-		case selected && missingFiles:
-			out.catalogSkillsToRepair = append(out.catalogSkillsToRepair, member)
-		case !selected && exists:
-			out.catalogSkillsToRemove = append(out.catalogSkillsToRemove, member)
-		}
+	}
+	if selected && entry.ID == "development-skills" {
+		out.importPreview = append(out.importPreview, "Prerequisites: implement, ship-pr, and auto-skill-loop require retained dispatch-agent and configured named provider targets (implementer, plan_reviewers, code_reviewer, pr_worker; loop additionally operator, planner, rote_worker), plus the dispatch MCP start/inspect/wait/output/continue/cancel contract. This warning does not enforce co-selection.")
 	}
 	return nil
 }
@@ -206,26 +289,17 @@ func appendMissingInstructionFiles(root string, names []string, out *skillsChang
 	return nil
 }
 
-func (c skillsChangeSet) skillTemplateRoot(id string) string {
-	if c.catalogTemplates != nil {
-		if root, ok := c.catalogTemplates[id]; ok && root != "" {
-			return root
-		}
-	}
-	return cliSkillsCatalogTemplateRoot + "/" + id
-}
-
 // applySkillsChanges materializes the change set on disk. Each catalog skill
 // addition is copied from its embedded template tree; deletions are recursive
 // removes scoped to the targeted directory.
 func applySkillsChanges(root string, changes skillsChangeSet) error {
 	for _, id := range changes.catalogSkillsToAdd {
-		if err := copySkillDirToDisk(root, changes.skillTemplateRoot(id), id); err != nil {
+		if err := copySkillDirToDisk(root, cliSkillsCatalogTemplateRoot+"/"+id, id); err != nil {
 			return fmt.Errorf("add catalog skill %s: %w", id, err)
 		}
 	}
 	for _, id := range changes.catalogSkillsToRepair {
-		if err := copySkillDirMissingFiles(root, changes.skillTemplateRoot(id), id); err != nil {
+		if err := copySkillDirMissingFiles(root, cliSkillsCatalogTemplateRoot+"/"+id, id); err != nil {
 			return fmt.Errorf("repair catalog skill %s: %w", id, err)
 		}
 	}
@@ -251,7 +325,31 @@ func applySkillsChanges(root string, changes skillsChangeSet) error {
 			return fmt.Errorf("create managed instruction file %s: %w", rel, err)
 		}
 	}
+	if len(changes.importSelectors) > 0 {
+		report, err := skillimport.NewSourceOnly(root).InstallCatalog(context.Background(), changes.importSelectors, changes.adoptLegacy)
+		if err != nil {
+			return fmt.Errorf("catalog installation failed; prior wizard config/env writes may already be applied; import source state remains coherent: %w%s", err, catalogFailureReport(report, "catalog installation"))
+		}
+	}
+	if len(changes.removeSelectors) > 0 {
+		report, err := skillimport.NewSourceOnly(root).RemoveCatalogSelectors(context.Background(), changes.removeSelectors)
+		if err != nil {
+			if len(changes.importSelectors) > 0 {
+				return fmt.Errorf("catalog installation committed; selector removal was not applied; prior wizard config/env writes remain: %w%s", err, catalogFailureReport(report, "catalog removal"))
+			}
+			return fmt.Errorf("catalog removal failed without import changes; prior wizard config/env writes may already be applied: %w%s", err, catalogFailureReport(report, "catalog removal"))
+		}
+	}
 	return nil
+}
+
+// catalogFailureReport omits an empty report when preflight failed before any
+// scoped outcome existed; rendering it would claim the failed operation succeeded.
+func catalogFailureReport(report *skillimport.Report, operation string) string {
+	if len(report.Sources) == 0 && len(report.Skills) == 0 {
+		return ""
+	}
+	return "\n" + report.Render(operation)
 }
 
 // copySkillDirToDisk copies the embedded template directory for destID to
@@ -464,6 +562,7 @@ func buildSkillsPreview(changes skillsChangeSet) string {
 		len(changes.templateMemoryFilesToCreate) +
 		len(changes.managedInstructionFilesToCreate)
 	lines := make([]string, 0, lineCapacity)
+	lines = append(lines, changes.importPreview...)
 	for _, id := range changes.catalogSkillsToAdd {
 		lines = append(lines, fmt.Sprintf("  + .agent-layer/skills/%s/", id))
 	}

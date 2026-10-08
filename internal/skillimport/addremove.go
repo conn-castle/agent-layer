@@ -6,6 +6,13 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
+	"github.com/conn-castle/agent-layer/internal/skilltree"
+	"github.com/conn-castle/agent-layer/internal/templates"
+)
+
+const (
+	selectorEditAdd    = "add"
+	selectorEditRemove = "remove"
 )
 
 // AddOptions carries the policy an `al skills add` invocation declares.
@@ -40,11 +47,11 @@ func (o AddOptions) identity() config.SkillImportBlockIdentity {
 // valid source state.
 func (s *Service) Add(ctx context.Context, opts AddOptions) (*Report, error) {
 	return s.withLockedReport(func(st *state, report *Report) error {
-		return s.addLocked(ctx, st, opts, report)
+		return s.addLocked(ctx, st, opts, report, nil)
 	})
 }
 
-func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, report *Report) error {
+func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, report *Report, legacy map[string]skilltree.Tree) error {
 	if len(opts.Selectors) == 0 {
 		return fmt.Errorf("at least one selector is required")
 	}
@@ -93,8 +100,11 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 
 	txn := s.newTransaction(pathSetFor(st), st.lock)
 	txn.SetConfig(nextConfig)
+	for name, tree := range legacy {
+		txn.RetireLocal(name, tree)
+	}
 	return s.applySelectorEdit(ctx, st, txn, selectorEdit{
-		op:            "add",
+		op:            selectorEditAdd,
 		blockIndex:    blockIndex,
 		block:         block,
 		lockedEntries: lockedEntries,
@@ -120,14 +130,41 @@ func (s *Service) removeLocked(ctx context.Context, st *state, repository string
 		return fmt.Errorf("no configured skills.imports block declares selector %q for %s", selector, config.NormalizeSkillRepository(repository))
 	}
 
-	normalizedTarget := config.NormalizeSkillSelector(selector)
+	return s.removeSelectorsLocked(ctx, st, block, blockIndex, []string{selector}, report)
+}
+
+// RemoveCatalogSelectors rechecks whole-block eligibility for wizard removals.
+// The complete retirement set commits together; absent targets are no-ops.
+func (s *Service) RemoveCatalogSelectors(ctx context.Context, selectors []string) (*Report, error) {
+	identity := (config.SkillImport{Repository: templates.GeneralSkillsRepository}).Identity()
+	return s.withLockedReport(func(st *state, report *Report) error {
+		if err := requireCatalogPolicy(st); err != nil {
+			return err
+		}
+		block, index, ok := findBlockByIdentity(st.cfg, identity)
+		if !ok {
+			return nil
+		}
+		return s.removeSelectorsLocked(ctx, st, block, index, selectors, report)
+	})
+}
+
+func (s *Service) removeSelectorsLocked(ctx context.Context, st *state, block config.SkillImport, blockIndex int, selectors []string, report *Report) error {
+	targets := map[string]bool{}
+	for _, selector := range selectors {
+		if err := config.ValidateSkillSelectorPath(config.SkillExclusionPath(selector)); err != nil {
+			return err
+		}
+		targets[config.NormalizeSkillSelector(selector)] = true
+	}
 	remaining := make([]string, 0, len(block.Selectors))
 	for _, candidate := range block.Selectors {
-		normalized := config.NormalizeSkillSelector(candidate)
-		if normalized == normalizedTarget {
-			continue
+		if !targets[config.NormalizeSkillSelector(candidate)] {
+			remaining = append(remaining, config.NormalizeSkillSelector(candidate))
 		}
-		remaining = append(remaining, normalized)
+	}
+	if len(remaining) == len(block.Selectors) {
+		return nil
 	}
 	if !hasPositiveSelector(remaining) {
 		// A block with no positive selectors is removed entirely; every skill it
@@ -160,7 +197,7 @@ func (s *Service) removeLocked(ctx context.Context, st *state, repository string
 		return fmt.Errorf("the updated configuration does not contain the expected skills.imports block")
 	}
 	return s.applySelectorEdit(ctx, st, txn, selectorEdit{
-		op:            "remove",
+		op:            selectorEditRemove,
 		blockIndex:    blockIndex,
 		block:         nextBlock,
 		lockedEntries: lockedEntries,

@@ -13,6 +13,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/skillmigration"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
 
@@ -96,6 +97,18 @@ type matchCacheEntry struct {
 
 // Run initializes the repository with the required Agent Layer structure.
 func Run(root string, opts Options) error {
+	if opts.Overwrite && root != "" && opts.System != nil {
+		return skillmigration.WithRecovered(root, func() error {
+			if err := skillmigration.CheckVersionLocked(root, opts.PinVersion); err != nil {
+				return err
+			}
+			return run(root, opts)
+		})
+	}
+	return run(root, opts)
+}
+
+func run(root string, opts Options) error {
 	if root == "" {
 		return fmt.Errorf(messages.InstallRootRequired)
 	}

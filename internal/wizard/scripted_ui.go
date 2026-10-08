@@ -16,6 +16,7 @@ import (
 type ScriptedUI struct {
 	answers scriptedAnswers
 	used    map[string]struct{}
+	out     io.Writer
 }
 
 type scriptedAnswers struct {
@@ -86,6 +87,7 @@ func (ui *ScriptedUI) Select(title string, options []string, current *string) er
 
 // MultiSelect applies a scripted multi-choice answer for title.
 func (ui *ScriptedUI) MultiSelect(title string, options []string, selected *[]string) error {
+	title, _, _ = strings.Cut(title, cliSkillsStatusHeading)
 	answer, answerKey, ok := lookupStringSliceScriptedAnswer(ui.answers.MultiSelect, title)
 	if !ok {
 		return missingScriptedAnswer("multi_select", title)
@@ -95,6 +97,7 @@ func (ui *ScriptedUI) MultiSelect(title string, options []string, selected *[]st
 			return fmt.Errorf("wizard multi-select answer %q for %q is not one of %v", value, title, options)
 		}
 	}
+
 	*selected = append((*selected)[:0], answer...)
 	ui.markUsed("multi_select", answerKey)
 	return nil
@@ -133,8 +136,13 @@ func (ui *ScriptedUI) SecretInput(title string, value *string) error {
 	return nil
 }
 
-// Note accepts informational wizard screens without requiring scripted answers.
-func (ui *ScriptedUI) Note(string, string) error {
+// Note emits informational wizard screens without consuming scripted answers.
+func (ui *ScriptedUI) Note(title, body string) error {
+	out := ui.out
+	if out == nil {
+		out = os.Stderr
+	}
+	_, _ = fmt.Fprintf(out, "%s\n%s\n", title, body)
 	return nil
 }
 

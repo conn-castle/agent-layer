@@ -75,12 +75,16 @@ type Choices struct {
 	InstructionSetTouched bool
 
 	// Catalog CLI skills (Q2).
-	// EnabledCLISkills is keyed by catalog entry id. Apply copies the matching
-	// embedded skill directory into `.agent-layer/skills/<id>/` for ids set true
+	// EnabledCLISkills is keyed by catalog entry id. Embedded entries copy their
+	// skill directory into `.agent-layer/skills/<id>/` for ids set true
 	// and removes the on-disk directory for ids set false. Grouped entries
-	// (Members) install or remove each member directory instead.
+	// import exact source paths through the skill import service.
+	// InitialCLISkills records startup state; absent keys mean an explicit programmatic choice.
+	InitialCLISkills map[string]bool
 	EnabledCLISkills map[string]bool
 	CLISkillsCatalog []templates.CLISkillCatalogEntry
+	CLISkillStatus   string
+	previewedSkills  *skillsChangeSet
 
 	// Git tracking for Agent Layer-owned folders. The managed source of truth is
 	// `.agent-layer/gitignore.block`; these fields are derived from that file at
@@ -142,6 +146,7 @@ func (c *Choices) Clone() *Choices {
 	clone := *c
 	clone.AgentModels = cloneMap(c.AgentModels)
 	clone.EnabledAgents = cloneMap(c.EnabledAgents)
+	clone.InitialCLISkills = cloneMap(c.InitialCLISkills)
 	clone.EnabledCLISkills = cloneMap(c.EnabledCLISkills)
 	clone.EnabledMCPServers = cloneMap(c.EnabledMCPServers)
 	clone.DisabledMCPServers = cloneMap(c.DisabledMCPServers)
@@ -160,7 +165,7 @@ func cloneCLISkillCatalog(in []templates.CLISkillCatalogEntry) []templates.CLISk
 	out := make([]templates.CLISkillCatalogEntry, len(in))
 	copy(out, in)
 	for i := range out {
-		out[i].Members = cloneStringSlice(in[i].Members)
+		out[i].Selectors = cloneStringSlice(in[i].Selectors)
 	}
 	return out
 }

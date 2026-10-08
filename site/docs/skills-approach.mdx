@@ -1,6 +1,6 @@
 ---
 title: Skills approach
-description: Agent Layer's skill ethos and bundled root skill model.
+description: Agent Layer's skill ethos and catalog root skill model.
 sidebar_position: 7
 ---
 
@@ -65,7 +65,7 @@ expectations, and final handoff shape. The agent still uses judgment inside the
 task, but the module boundary and terminal responsibility should be stable.
 
 **Skills own bounded jobs and compose only when the boundary is useful.** The
-bundled `implement` skill chooses a direct or planned path and adds independent
+imported `implement` skill chooses a direct or planned path and adds independent
 review only when its expected value justifies the cost. `ship-pr` owns the
 external pull-request lifecycle. `auto-skill-loop` composes those two workflows
 through named Agent Dispatch targets. A stage is re-entered only for a concrete

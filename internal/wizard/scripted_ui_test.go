@@ -1,10 +1,13 @@
 package wizard
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestScriptedUIAppliesAnswersAndRequiresAllUsed(t *testing.T) {
@@ -23,6 +26,9 @@ func TestScriptedUIAppliesAnswersAndRequiresAllUsed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load answers: %v", err)
 	}
+
+	var output bytes.Buffer
+	ui.out = &output
 
 	selected := "all"
 	if err := ui.Select("Mode", []string{"all", "none"}, &selected); err != nil {
@@ -62,6 +68,8 @@ func TestScriptedUIAppliesAnswersAndRequiresAllUsed(t *testing.T) {
 	if err := ui.Note("Summary", "body"); err != nil {
 		t.Fatalf("note: %v", err)
 	}
+	require.Contains(t, output.String(), "Summary\nbody\n")
+	require.NotContains(t, output.String(), secret)
 	if err := ui.AssertComplete(); err != nil {
 		t.Fatalf("answers should be complete: %v", err)
 	}
@@ -83,9 +91,9 @@ func TestScriptedUIMissingAnswerFails(t *testing.T) {
 	}
 }
 
-func TestScriptedUIAcceptsFirstLineTitleForMultilinePrompts(t *testing.T) {
+func TestScriptedUIAcceptsFullTitleBeforeStatusSummary(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "answers.json")
-	if err := os.WriteFile(path, []byte(`{"multi_select":{"Features":["A"]}}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"multi_select":{"Features\n  Details for humans":["A"]}}`), 0o600); err != nil {
 		t.Fatalf("write answers: %v", err)
 	}
 	ui, err := NewScriptedUIFromFile(path)
@@ -93,7 +101,7 @@ func TestScriptedUIAcceptsFirstLineTitleForMultilinePrompts(t *testing.T) {
 		t.Fatalf("load answers: %v", err)
 	}
 	selected := []string{}
-	if err := ui.MultiSelect("Features\n  Details for humans", []string{"A", "B"}, &selected); err != nil {
+	if err := ui.MultiSelect("Features\n  Details for humans"+cliSkillsStatusHeading+"\n  Import status", []string{"A", "B"}, &selected); err != nil {
 		t.Fatalf("multi-select: %v", err)
 	}
 	if len(selected) != 1 || selected[0] != "A" {

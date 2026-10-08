@@ -4,6 +4,7 @@
 
 run_scenario_wizard_cli_catalog_skills() {
   section "Scripted wizard + CLI catalog skills: doctor binary check"
+  setup_catalog_git_fixture
 
   local repo_dir
   repo_dir="$(setup_scenario_dir)"
@@ -67,7 +68,7 @@ JSON
   assert_file_exists "$repo_dir/docs/agent-layer/COMMANDS.md" \
     "scripted wizard installed memory docs"
 
-  local skill_dir="$repo_dir/.agent-layer/skills/playwright"
+  local skill_dir="$repo_dir/.agent-layer/skills-imported/playwright"
   assert_file_exists "$skill_dir/SKILL.md" \
     "scripted wizard installed playwright catalog skill"
   assert_file_contains "$skill_dir/SKILL.md" "name: playwright" \
@@ -133,7 +134,7 @@ STUB
     "doctor has no failures when playwright-cli is on PATH"
 
   # Removing the catalog skill directory makes doctor stop reporting playwright.
-  rm -rf "$skill_dir"
+  (cd "$repo_dir" && al skills remove https://github.com/nicholasjconn/skills.git skills/tools/playwright --yes)
   local doctor_output_silent rc_silent=0
   doctor_output_silent=$(cd "$repo_dir" && PATH="$E2E_INSTALL_PREFIX/bin" al doctor 2>&1) || rc_silent=$?
   if [[ $rc_silent -eq 0 ]]; then

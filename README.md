@@ -254,9 +254,11 @@ Run `al wizard` any time to interactively configure the most important settings:
     - Status line checkboxes write explicit `statusline = true` or `statusline = false`; enabling one creates the missing editable source file once and never overwrites an existing source.
 - **Instructions** (None, Rules, or Rules and memory when no managed instruction or memory files exist — seeds missing `00_rules.md`, and for Rules and memory also `01_memory.md` plus `docs/agent-layer/` memory docs/templates; existing files are left unchanged. Fresh init defaults to Rules and memory. Use `al upgrade` when you want managed instruction updates.)
 - **Git tracking** (choose whether `.agent-layer/` and `docs/agent-layer/` stay trackable or are ignored through the managed `.agent-layer/gitignore.block` source)
-- **Catalog skills** (opt-in: `tavily-web`, `playwright`, `find-docs`, `dispatch-agent`, `skill-sync`, and Agent Layer development skills; tool rows require their own CLI on PATH; `al doctor` reports missing binaries without blocking agent launch)
+- **Catalog skills** (opt-in: `tavily-web`, `playwright`, `find-docs`, `dispatch-agent`, `skill-sync`, `benchmark`, and development skills; tool rows require their own CLI on PATH; `al doctor` reports missing binaries without blocking agent launch)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
 - **Warnings** (enable/disable warning checks; threshold values use template defaults)
+
+General development skills and the `find-docs`, `playwright`, and `tavily-web` tool skills are authored in `nicholasjconn/skills`. The wizard imports their exact grouped paths into `.agent-layer/skills-imported/`; explicit `al skills pull` updates content independently of CLI upgrades. Legacy local copies are protected during upgrades and adopted only after the wizard previews their conversion. `dispatch-agent`, `skill-sync`, and `benchmark` remain bundled. See the [skills guide](https://agent-layer.dev/skills) for dependency and ownership details.
 
 Wizard backups are stored in `.agent-layer/state/wizard-backups/`. Each wizard apply replaces the latest backup for the files it writes. After a successful upgrade and sync, `al upgrade` moves legacy `.agent-layer/config.toml.bak` and `.agent-layer/.env.bak` files there, retaining conflicts with numbered `.legacy-N` suffixes. Explicit cleanup removes both current and legacy backups.
 
@@ -272,6 +274,8 @@ al wizard --profile /path/to/profile.toml --yes
 # Remove wizard backups when no longer needed
 al wizard --cleanup-backups
 ```
+
+Profile mode replaces the entire config and previews its diff. Include the intended `[[skills.imports]]` blocks in replacement profiles to retain ownership; removing them leaves locked skills and content for explicit reconciliation with normal `al skills` import commands.
 
 **Controls:**
 - **Arrow keys**: Navigate
@@ -329,7 +333,7 @@ Generated outputs are written into the repo in client-specific formats (examples
 
 ## Configuration (human-editable)
 
-You can edit all configuration files by hand. `al wizard` updates `config.toml` (approvals, agents/models, MCP servers, warnings), `.agent-layer/.env` (secrets), and `.agent-layer/gitignore.block` (Agent Layer folder tracking). It can also seed missing instruction and memory files, install or remove catalog skills (including Agent Layer development skills), and seed missing statusline source files; it does not refresh existing instruction files, overwrite existing statusline sources, or touch `commands.allow`.
+You can edit all configuration files by hand. `al wizard` updates `config.toml` (approvals, agents/models, MCP servers, warnings), `.agent-layer/.env` (secrets), and `.agent-layer/gitignore.block` (Agent Layer folder tracking). It can also seed missing instruction and memory files, explicitly import/adopt or remove catalog skills (including Git-backed development skills), and seed missing statusline source files; it does not refresh existing instruction files, overwrite existing statusline sources, or touch `commands.allow`.
 
 ### `.agent-layer/config.toml`
 

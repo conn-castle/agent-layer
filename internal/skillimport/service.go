@@ -12,12 +12,14 @@ import (
 	"github.com/conn-castle/agent-layer/internal/skilllock"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 	"github.com/conn-castle/agent-layer/internal/sync"
+	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 // Service performs skill import operations for one repository root.
 type Service struct {
-	root string
-	sys  sync.System
+	root            string
+	sys             sync.System
+	deferProjection bool
 	// newRunner is injected so tests can exercise reporting without git. It
 	// receives the AL_-filtered `.agent-layer/.env` map every repository
 	// reference resolves its `${AL_*}` placeholders from.
@@ -30,6 +32,13 @@ type Service struct {
 // New returns a service bound to a repository root.
 func New(root string) *Service {
 	return &Service{root: root, sys: sync.RealSystem{}, newRunner: gitrepo.NewRunner, newTransaction: newTransaction}
+}
+
+// NewSourceOnly commits imports for a caller that owns the final project sync.
+func NewSourceOnly(root string) *Service {
+	s := New(root)
+	s.deferProjection = true
+	return s
 }
 
 // blockContext is one import block's resolved source access for an operation.
@@ -95,6 +104,9 @@ func (s *Service) gitWorkspace(st *state, op string) (runner *gitrepo.Runner, wo
 // must already hold the project lock. A projection failure is reported without
 // discarding valid source state.
 func (s *Service) project(report *Report) {
+	if s.deferProjection {
+		return
+	}
 	if _, err := sync.ProjectLocked(s.sys, s.root); err != nil {
 		report.ProjectionErr = err
 	}
@@ -209,8 +221,12 @@ func retire(st *state, txn *transaction, entry skilllock.Entry, report *Report) 
 		result.Outcome = OutcomeRetired
 	default:
 		result.Outcome = OutcomeFailed
-		result.Err = fmt.Errorf("%s is no longer selected but has local changes; move it into %s to adopt it as user-managed, or delete it explicitly",
-			relativeTo(st.paths.Root, observed.Dir), relativeTo(st.paths.Root, st.paths.SkillsDir))
+		if templates.IsRetiredSkill(entry.Name) {
+			result.Err = fmt.Errorf("%s has local modifications blocking removal; use al skills diff %s and explicitly al skills reset %s before al skills remove %s %s", relativeTo(st.paths.Root, observed.Dir), entry.Name, entry.Name, entry.Repository, entry.Selector)
+		} else {
+			result.Err = fmt.Errorf("%s is no longer selected but has local changes; move it into %s to adopt it as user-managed, or delete it explicitly", relativeTo(st.paths.Root, observed.Dir), relativeTo(st.paths.Root, st.paths.SkillsDir))
+		}
+
 	}
 	report.Add(result)
 }
@@ -241,6 +257,6 @@ func relativeTo(root string, path string) string {
 // blockedByUserSkill reports the user-managed directory that blocks importing a
 // name, if any.
 func blockedByUserSkill(st *state, name string) (string, bool) {
-	dir, ok := st.userSkills[skilltree.NormalizeName(name)]
+	dir, ok := st.userSkills[collisionName(name)]
 	return dir, ok
 }

@@ -523,6 +523,7 @@ func (inst *installer) writeTemplateDirsTargetPaths() []string {
 	for _, dir := range inst.templates().memoryTemplateDirs() {
 		paths = append(paths, dir.destRoot)
 	}
+	paths = append(paths, filepath.Join(inst.root, ".agent-layer", "skills"))
 	return uniqueNormalizedPaths(paths)
 }
 
@@ -596,6 +597,7 @@ func (inst *installer) upgradeSnapshotTargetPaths() []string {
 	for _, path := range inst.writeStatuslineSourcesTargetPaths() {
 		add(path)
 	}
+	add(filepath.Join(root, ".agent-layer", "skills"))
 	add(filepath.Join(root, ".gitignore"))
 	for _, path := range launchers.VSCodePaths(root).All() {
 		add(path)

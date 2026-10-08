@@ -66,7 +66,6 @@ func TestCollectTemplateSourcesCoversManagedPartition(t *testing.T) {
 	}
 	managedDirPrefixes := []string{
 		"instructions/",
-		"skills/",
 		"skills-catalog/",
 		"docs/agent-layer/",
 	}
@@ -182,8 +181,11 @@ name = "Another Tool"
 [[cli_skills]]
 id = "development-skills"
 name = "Development skills"
-members = ["implement", "ship-pr"]
+repository = "https://github.com/nicholasjconn/skills.git"
+selectors = ["skills/development/implement", "skills/development/ship-pr"]
 `)
+	writeRootFile(t, root, "internal/templates/skills-catalog/custom-cli/SKILL.md", "custom")
+	writeRootFile(t, root, "internal/templates/skills-catalog/another-tool/SKILL.md", "another")
 
 	prefixes, err := catalogSkillPathPrefixes(root)
 	require.NoError(t, err)
@@ -202,9 +204,6 @@ func TestCatalogSkillPathPrefixesRejectsInvalidCatalogs(t *testing.T) {
 	}{
 		{name: "missing"},
 		{name: "malformed", catalog: ptr("[[cli_skills]\n"), want: "toml"},
-		{name: "empty", catalog: ptr(""), want: "CLI skills catalog contains no entries"},
-		{name: "invalid id", catalog: ptr("[[cli_skills]]\nid = \"INVALID ID\"\n"), want: `entry 0 has invalid id "INVALID ID"`},
-		{name: "duplicate id", catalog: ptr("[[cli_skills]]\nid = \"a\"\n[[cli_skills]]\nid = \"a\"\n"), want: `entry 1 duplicates id "a"`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -233,8 +232,16 @@ func TestBuildManifestClassifiesFromRootCatalog(t *testing.T) {
 		want    map[string]string
 	}{
 		{
-			name:    "custom catalog",
-			catalog: "[[cli_skills]]\nid = \"custom-cli\"\n[[cli_skills]]\nid = \"group\"\nmembers = [\"x\"]\n",
+			name: "custom catalog",
+			catalog: `[[cli_skills]]
+id = "custom-cli"
+name = "Custom CLI"
+[[cli_skills]]
+id = "group"
+name = "Group"
+repository = "https://example.test/skills.git"
+selectors = ["skills/development/x"]
+`,
 			want: map[string]string{
 				".agent-layer/skills/custom-cli/SKILL.md":     "catalog_skills_v1",
 				".agent-layer/skills/agent-dispatch/SKILL.md": "",
@@ -243,8 +250,13 @@ func TestBuildManifestClassifiesFromRootCatalog(t *testing.T) {
 			},
 		},
 		{
-			name:    "groups only",
-			catalog: "[[cli_skills]]\nid = \"group\"\nmembers = [\"custom-cli\"]\n",
+			name: "groups only",
+			catalog: `[[cli_skills]]
+id = "group"
+name = "Group"
+repository = "https://example.test/skills.git"
+selectors = ["skills/development/custom-cli"]
+`,
 			want: map[string]string{
 				".agent-layer/skills/custom-cli/SKILL.md":     "",
 				".agent-layer/skills/agent-dispatch/SKILL.md": "",
@@ -256,23 +268,27 @@ func TestBuildManifestClassifiesFromRootCatalog(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
+			seedRequiredTemplateRoots(t, root)
 			writeRootFile(t, root, "internal/templates/cli-skills-catalog.toml", tc.catalog)
 			writeRootFile(t, root, "internal/templates/commands.allow", "git status\n")
 			writeRootFile(t, root, "internal/templates/skills-catalog/custom-cli/SKILL.md", "custom")
 			// Core skills under prefixes install still classifies at runtime
 			// (a legacy id and a current catalog id) but absent from this catalog.
-			writeRootFile(t, root, "internal/templates/skills/agent-dispatch/SKILL.md", "core")
-			writeRootFile(t, root, "internal/templates/skills/tavily-web/SKILL.md", "core")
+			writeRootFile(t, root, "internal/templates/skills-catalog/agent-dispatch/SKILL.md", "core")
+			writeRootFile(t, root, "internal/templates/skills-catalog/tavily-web/SKILL.md", "core")
 
 			data, err := buildManifest(root, "1.0.0", time.Unix(0, 0))
 			require.NoError(t, err)
-			assert.Equal(t, tc.want, manifestPolicies(t, data))
+			policies := manifestPolicies(t, data)
+			delete(policies, ".agent-layer/gitignore.block")
+			assert.Equal(t, tc.want, policies)
 		})
 	}
 }
 
 func TestBuildManifestRequiresRootCatalog(t *testing.T) {
 	root := t.TempDir()
+	seedRequiredTemplateRoots(t, root)
 	writeRootFile(t, root, "internal/templates/commands.allow", "git status\n")
 
 	_, err := buildManifest(root, "1.0.0", time.Unix(0, 0))
@@ -332,3 +348,12 @@ func writeRootFile(t *testing.T, root string, relPath string, content string) {
 }
 
 func ptr(s string) *string { return &s }
+
+func seedRequiredTemplateRoots(t *testing.T, root string) {
+	t.Helper()
+	writeRootFile(t, root, "internal/templates/commands.allow", "git status\n")
+	writeRootFile(t, root, "internal/templates/gitignore.block", "# fixture\n")
+	for _, name := range []string{"instructions", "skills-catalog", "docs/agent-layer"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(root, "internal/templates", name), 0o750))
+	}
+}

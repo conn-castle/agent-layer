@@ -393,6 +393,9 @@ func (inst *installer) planUnknownDeletions(existing []upgradeChangeWithTemplate
 		addRepresented(rename.From)
 	}
 	isKnown := func(rel string) bool {
+		if protectedRetiredSkillPath(rel) {
+			return true
+		}
 		_, ok := known[filepath.Join(inst.root, filepath.FromSlash(rel))]
 		return ok
 	}
@@ -660,6 +663,12 @@ func (inst templateManager) walkTemplateOrphans(root string, templatePaths map[s
 		if err != nil {
 			return err
 		}
+		if protectedRetiredSkillPath(filepath.ToSlash(inst.relativePath(path))) {
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
 		if entry.IsDir() {
 			return nil
 		}
@@ -847,4 +856,14 @@ func hashNormalizedContent(content []byte) string {
 	normalized := normalizeTemplateContent(string(content))
 	sum := sha256.Sum256([]byte(normalized))
 	return fmt.Sprintf("%x", sum[:])
+}
+
+func protectedRetiredSkillPath(rel string) bool {
+	for _, name := range templates.RetiredSkillNames {
+		prefix := ".agent-layer/skills/" + name
+		if rel == prefix || strings.HasPrefix(rel, prefix+"/") {
+			return true
+		}
+	}
+	return false
 }
