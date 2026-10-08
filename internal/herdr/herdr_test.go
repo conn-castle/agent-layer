@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-func TestHandleStoresExactResumeForEachProvider(t *testing.T) {
+func TestHandleStoresExactResumeForEveryProviderAndBijectiveBase32Panes(t *testing.T) {
 	cases := []struct {
 		provider, payload, source string
 		env, want                 []string
@@ -27,17 +27,63 @@ func TestHandleStoresExactResumeForEachProvider(t *testing.T) {
 		{"muse", `{"hook_event_name":"SessionStart","session_id":"muse-id"}`, sourceMuseHerdR, nil, []string{"al", "muse", "resume", "muse-id"}},
 		{"grok", `{"hook_event_name":"SessionStart"}`, "al:grok", []string{"GROK_SESSION_ID=grok-id"}, []string{"al", "grok", "--resume", "grok-id"}},
 	}
+	// HerdR v0.9.3 src/workspace.rs: bijective base32; explicit numbers and independent internal keys.
+	panes := []struct {
+		name, paneID, workspace, internalPane string
+		publicNumber                          int
+	}{
+		{name: "decimal_baseline", paneID: "w1:p1", workspace: "w1", publicNumber: 1, internalPane: "1"},
+		{name: "bijective_base32_letter", paneID: "wV:pF", workspace: "wV", publicNumber: 15, internalPane: "47"},
+		{name: "bijective_base32_beyond_H", paneID: "wV:pJ", workspace: "wV", publicNumber: 18, internalPane: "59"},
+		{name: "bijective_base32_last_letter", paneID: "wV:pZ", workspace: "wV", publicNumber: 31, internalPane: "71"},
+		{name: "bijective_base32_zero_symbol", paneID: "wV:p0", workspace: "wV", publicNumber: 32, internalPane: "79"},
+		{name: "bijective_base32_thirty_six", paneID: "wV:p14", workspace: "wV", publicNumber: 36, internalPane: "89"},
+		{name: "bijective_base32_multidigit", paneID: "wV:p10", workspace: "wV", publicNumber: 64, internalPane: "83"},
+	}
+	oldPoll, oldWait := persistPollEvery, persistWait
+	persistPollEvery, persistWait = time.Millisecond, 25*time.Millisecond
+	t.Cleanup(func() { persistPollEvery, persistWait = oldPoll, oldWait })
 	for _, tc := range cases {
 		t.Run(tc.provider, func(t *testing.T) {
-			socket, reports, done := fakeHerdR(t, fakeHerdROptions{})
-			env := append([]string{EnvEnabled + "=1", EnvSocketPath + "=" + socket, EnvPaneID + "=w1:p1"}, tc.env...)
-			if err := Handle(tc.provider, bytes.NewBufferString(tc.payload), &bytes.Buffer{}, &bytes.Buffer{}, env); err != nil {
-				t.Fatal(err)
+			for _, pane := range panes {
+				t.Run(pane.name, func(t *testing.T) {
+					socket, reports, done := fakeHerdR(t, fakeHerdROptions{
+						canonicalPane: pane.paneID,
+						workspace:     pane.workspace,
+						publicNumber:  pane.publicNumber,
+						internalPane:  pane.internalPane,
+					})
+					env := append([]string{EnvEnabled + "=1", EnvSocketPath + "=" + socket, EnvPaneID + "=" + pane.paneID}, tc.env...)
+					if err := Handle(tc.provider, bytes.NewBufferString(tc.payload), &bytes.Buffer{}, &bytes.Buffer{}, env); err != nil {
+						t.Fatal(err)
+					}
+					waitFakeHerdR(t, done)
+					params := (<-reports)["params"].(map[string]any)
+					if params[requestPaneIDKey] != pane.paneID || params[requestSourceKey] != tc.source || !equalStrings(interfaceStrings(params[requestResumeArgvKey]), tc.want) {
+						t.Fatalf("report = %#v, want pane %q source %q argv %#v", params, pane.paneID, tc.source, tc.want)
+					}
+					path, err := sessionPath(socket)
+					if err != nil {
+						t.Fatal(err)
+					}
+					assertLiteralPersistedResume(t, path, pane.workspace, pane.internalPane, pane.publicNumber, tc.source, tc.provider, tc.want)
+				})
 			}
-			waitFakeHerdR(t, done)
-			params := (<-reports)["params"].(map[string]any)
-			if params["source"] != tc.source || !equalStrings(interfaceStrings(params["resume_argv"]), tc.want) {
-				t.Fatalf("report = %#v, want source %q argv %#v", params, tc.source, tc.want)
+		})
+	}
+}
+
+func TestStoredResumeAtRejectsInvalidCanonicalPaneIDs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.json")
+	data := []byte(`{"workspaces":[{"id":"wV","public_pane_numbers":{"47":15},"tabs":[{"panes":{"47":{"agent_resume":{"source":"al:claude","agent":"claude","argv":["al","claude","--resume","id"]}}}}]}]}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, paneID := range []string{"", "wV", ":p1", "wV:p", "wV:p1:extra", "wV:p!", "wV:pI", "wV:pL", "wV:pO", "wV:pU", "wV:pf", "wV:p+1", "wV:p-1", "wV:p 1", "wV:p1 ", "wV:p\t1", "wV:pé", "wV:p999999999999999999999999999999999999999999999999"} {
+		t.Run(paneID, func(t *testing.T) {
+			stored, err := storedResumeAt(path, paneID, providers[providerClaude], []string{"al", "claude", "--resume", "id"})
+			if err == nil || stored || !strings.Contains(err.Error(), "invalid canonical HerdR pane ID") {
+				t.Fatalf("storedResumeAt(%q) = %t, %v", paneID, stored, err)
 			}
 		})
 	}
@@ -703,6 +749,37 @@ func writePersistedSession(t *testing.T, dir string, options fakeHerdROptions, p
 	if err := os.WriteFile(filepath.Join(dir, "session.json"), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func assertLiteralPersistedResume(t *testing.T, path, workspaceID, internalPaneID string, publicPaneNumber int, source, agent string, argv []string) {
+	t.Helper()
+	data, err := os.ReadFile(path) // #nosec G304 -- path is the saved session in this test-owned temporary fixture.
+	if err != nil {
+		t.Fatal(err)
+	}
+	var session persistedSession
+	if err := json.Unmarshal(data, &session); err != nil {
+		t.Fatal(err)
+	}
+	for _, workspace := range session.Workspaces {
+		if workspace.ID != workspaceID {
+			continue
+		}
+		if workspace.PublicPaneNumbers[internalPaneID] != publicPaneNumber {
+			t.Fatalf("public_pane_numbers[%q] = %d, want %d", internalPaneID, workspace.PublicPaneNumbers[internalPaneID], publicPaneNumber)
+		}
+		for _, tab := range workspace.Tabs {
+			pane, ok := tab.Panes[internalPaneID]
+			if !ok || pane.AgentResume == nil {
+				continue
+			}
+			if pane.AgentResume.Source == source && pane.AgentResume.Agent == agent && equalStrings(pane.AgentResume.Argv, argv) {
+				return
+			}
+			t.Fatalf("persisted pane %q recipe = %#v, want source %q agent %q argv %#v", internalPaneID, pane.AgentResume, source, agent, argv)
+		}
+	}
+	t.Fatalf("persisted workspace %q pane %q was not found", workspaceID, internalPaneID)
 }
 
 func interfaceStrings(value any) []string {

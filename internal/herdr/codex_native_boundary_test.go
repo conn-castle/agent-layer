@@ -311,7 +311,7 @@ func TestHandleForRootCodexCanonicalRecordsAndNewerLiveSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"al", providerCodex, resumeVerb, boundaryThread}
-	writeCodexStoredResume(t, root, "w1:p1", want)
+	writeCodexStoredResume(t, root, "w1", 1, "1", want)
 	original := readDirFunc
 	reads := map[string]int{}
 	readDirFunc = func(p string) ([]os.DirEntry, error) { reads[p]++; return original(p) }
@@ -393,19 +393,14 @@ func assertBoundaryStored(t *testing.T, root, pane string, argv []string) {
 	}
 }
 
-func writeCodexStoredResume(t *testing.T, root, pane string, argv []string) {
+func writeCodexStoredResume(t *testing.T, root, workspace string, publicNumber int, internalPane string, argv []string) {
 	t.Helper()
-	workspace, number, err := splitCanonicalPaneID(pane)
-	if err != nil {
-		t.Fatal(err)
-	}
-	internal := strconv.Itoa(number)
 	document := map[string]any{
 		"workspaces": []any{map[string]any{
 			"id":                  workspace,
-			"public_pane_numbers": map[string]any{internal: number},
+			"public_pane_numbers": map[string]any{internalPane: publicNumber},
 			"tabs": []any{map[string]any{
-				"panes": map[string]any{internal: map[string]any{
+				"panes": map[string]any{internalPane: map[string]any{
 					"agent_resume": map[string]any{"source": sourceCodexAL, "agent": providerCodex, "argv": argv},
 				}},
 			}},
@@ -417,6 +412,57 @@ func writeCodexStoredResume(t *testing.T, root, pane string, argv []string) {
 	}
 	if err := os.WriteFile(filepath.Join(root, "session", "session.json"), data, 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestHandleForRootCodexUsesPreexistingBijectiveBase32PersistedRecipes(t *testing.T) {
+	// HerdR v0.9.3 src/workspace.rs: literal public numbers, independent internal keys.
+	oldPoll, oldWait := persistPollEvery, persistWait
+	persistPollEvery, persistWait = time.Millisecond, 25*time.Millisecond
+	t.Cleanup(func() { persistPollEvery, persistWait = oldPoll, oldWait })
+	for _, tc := range []struct {
+		name, paneID, workspace, internalPane string
+		publicNumber                          int
+	}{
+		{name: "bijective_base32_letter", paneID: "wV:pF", workspace: "wV", publicNumber: 15, internalPane: "47"},
+		{name: "bijective_base32_beyond_H", paneID: "wV:pJ", workspace: "wV", publicNumber: 18, internalPane: "59"},
+		{name: "bijective_base32_last_letter", paneID: "wV:pZ", workspace: "wV", publicNumber: 31, internalPane: "71"},
+		{name: "bijective_base32_zero_symbol", paneID: "wV:p0", workspace: "wV", publicNumber: 32, internalPane: "79"},
+		{name: "bijective_base32_thirty_six", paneID: "wV:p14", workspace: "wV", publicNumber: 36, internalPane: "89"},
+		{name: "bijective_base32_multidigit", paneID: "wV:p10", workspace: "wV", publicNumber: 64, internalPane: "83"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			tui := startCodexBoundaryTUI(t)
+			socket, reports, _ := fakeHerdR(t, fakeHerdROptions{
+				workingDir:       root,
+				socketPath:       "session/herdr.sock",
+				canonicalPane:    tc.paneID,
+				workspace:        tc.workspace,
+				publicNumber:     tc.publicNumber,
+				internalPane:     tc.internalPane,
+				requestsExpected: 30,
+				codexPanes: []fakeCodexPane{{
+					paneID:     tc.paneID,
+					title:      boundaryThread[:29] + "...",
+					processPID: tui.PID,
+					liveSource: sourceCodexAL,
+					liveAgent:  providerCodex,
+					liveKind:   "id",
+					liveValue:  boundaryThread,
+				}},
+			})
+			want := []string{"al", providerCodex, resumeVerb, boundaryThread}
+			writeCodexBoundaryLaunch(t, root, "bijective_base32-"+tc.name, socket, tc.paneID, "", tui)
+			writeCodexStoredResume(t, root, tc.workspace, tc.publicNumber, tc.internalPane, want)
+			if err := codexBoundaryHook(t, root, codexBoundaryPayload(boundaryThread)); err != nil {
+				t.Fatal(err)
+			}
+			if len(reports) != 0 {
+				t.Fatalf("preexisting recipe reported again: %d reports", len(reports))
+			}
+			assertBoundaryStored(t, root, tc.paneID, want)
+		})
 	}
 }
 

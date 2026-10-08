@@ -9,10 +9,10 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -700,9 +700,15 @@ func splitCanonicalPaneID(paneID string) (string, int, error) {
 	if !ok || workspaceID == "" || publicText == "" || strings.Contains(publicText, ":") {
 		return "", 0, fmt.Errorf("invalid canonical HerdR pane ID %q", paneID)
 	}
-	publicPaneNumber, err := strconv.Atoi(publicText)
-	if err != nil || publicPaneNumber < 1 {
-		return "", 0, fmt.Errorf("invalid canonical HerdR pane ID %q", paneID)
+	// HerdR public numbers use bijective base32 (src/workspace.rs).
+	const alphabet = "123456789ABCDEFGHJKMNPQRSTVWXYZ0"
+	publicPaneNumber := 0
+	for i := 0; i < len(publicText); i++ {
+		digit := strings.IndexByte(alphabet, publicText[i]) + 1
+		if digit == 0 || publicPaneNumber > (math.MaxInt-digit)/len(alphabet) {
+			return "", 0, fmt.Errorf("invalid canonical HerdR pane ID %q", paneID)
+		}
+		publicPaneNumber = publicPaneNumber*len(alphabet) + digit
 	}
 	return workspaceID, publicPaneNumber, nil
 }
