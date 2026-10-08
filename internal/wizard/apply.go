@@ -20,7 +20,13 @@ var writeFileAtomic = fsutil.WriteFileAtomic
 
 // applyChanges writes config/env updates and runs sync.
 // root/configPath/envPath identify files; c holds wizard selections; runSync is the sync function to call; returns an error on failure.
-func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, out io.Writer) error {
+func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, out io.Writer) (err error) {
+	catalogApplied := false
+	defer func() {
+		if err != nil && catalogApplied {
+			err = fmt.Errorf("catalog source changes were committed; projection was not completed: %w", err)
+		}
+	}()
 	if out == nil {
 		out = os.Stdout
 	}
@@ -86,11 +92,15 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 	// Run before sync so sync sees the final on-disk layout.
 	skillsChangeSet, err := computeSkillsChangeSet(root, c)
 	if err != nil {
-		return fmt.Errorf(messages.WizardApplySkillsFailedFmt, err)
+		return fmt.Errorf(messages.WizardApplySkillsFailedFmt+"; config/env writes were applied; gitignore block updates, statusline source updates, and sync were not run", err)
+	}
+	if c.previewedSkills != nil {
+		skillsChangeSet.adoptLegacy = c.previewedSkills.adoptLegacy
 	}
 	if err := applySkillsChanges(root, skillsChangeSet); err != nil {
-		return fmt.Errorf(messages.WizardApplySkillsFailedFmt, err)
+		return fmt.Errorf(messages.WizardApplySkillsFailedFmt+"; config/env writes were applied; gitignore block updates, statusline source updates, and sync were not run", err)
 	}
+	catalogApplied = len(skillsChangeSet.importSelectors)+len(skillsChangeSet.removeSelectors) > 0
 
 	gitignoreChangeSet, err := computeGitignoreBlockChangeSet(root, c)
 	if err != nil {

@@ -181,7 +181,6 @@ func TestPlanUnknownDeletions_ReportsWhereMigrationsLeaveUnknownPaths(t *testing
 		".agent-layer/skills/flat",
 		".agent-layer/skills/kept-new",
 		".agent-layer/skills/new-name",
-		".agent-layer/skills/playwright/my-notes.md",
 	}, paths)
 }
 
@@ -308,16 +307,16 @@ func TestBuildUpgradePlan_DetectsCategoriesAndRename(t *testing.T) {
 
 	// Simulate a rename candidate for a selected catalog skill. LICENSE keeps
 	// the directory active after SKILL.md is moved to the orphan path.
-	playwrightDir := filepath.Join(root, ".agent-layer", "skills", "playwright")
+	playwrightDir := filepath.Join(root, ".agent-layer", "skills", "benchmark")
 	manager := (&installer{root: root, sys: RealSystem{}}).templates()
-	if err := manager.writeTemplateDirCached(templateDir{templateRoot: "skills-catalog/playwright", destRoot: playwrightDir}); err != nil {
+	if err := manager.writeTemplateDirCached(templateDir{templateRoot: "skills-catalog/benchmark", destRoot: playwrightDir}); err != nil {
 		t.Fatalf("seed playwright catalog skill: %v", err)
 	}
 	playwrightPath := filepath.Join(playwrightDir, "SKILL.md")
 	if err := os.Remove(playwrightPath); err != nil {
 		t.Fatalf("remove playwright skill: %v", err)
 	}
-	playwrightTemplate, err := templates.Read("skills-catalog/playwright/SKILL.md")
+	playwrightTemplate, err := templates.Read("skills-catalog/benchmark/SKILL.md")
 	if err != nil {
 		t.Fatalf("read playwright template skill: %v", err)
 	}
@@ -361,10 +360,10 @@ func TestBuildUpgradePlan_DetectsCategoriesAndRename(t *testing.T) {
 		t.Fatalf("expected at least one rename")
 	}
 	rename := plan.TemplateRenames[0]
-	if rename.From != ".agent-layer/skills/playwright/playwright-legacy.md" {
+	if rename.From != ".agent-layer/skills/benchmark/playwright-legacy.md" {
 		t.Fatalf("unexpected rename from path: %s", rename.From)
 	}
-	if rename.To != ".agent-layer/skills/playwright/SKILL.md" {
+	if rename.To != ".agent-layer/skills/benchmark/SKILL.md" {
 		t.Fatalf("unexpected rename to path: %s", rename.To)
 	}
 }

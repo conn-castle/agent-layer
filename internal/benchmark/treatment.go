@@ -398,6 +398,11 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	if err := rewriteTreatmentProjectionRoot(root, root, treatmentContainerRoot); err != nil {
 		return nil, err
 	}
+	if experiment.inputs.SkillsSource != "" {
+		if err := copyRequiredFile(experiment.inputs.SkillsSource, filepath.Join(root, "skills-source.json")); err != nil {
+			return nil, err
+		}
+	}
 	dispatch := defaultTreatmentDispatchConfig(experiment.model, experiment.effort)
 	roles := append([]string(nil), experiment.RequiredDispatchRoles...)
 	if mode != TreatmentInstructionsAndSkills {

@@ -330,11 +330,11 @@ func TestBuildUpgradePlan_ManifestCoverageSkipsHashRenameInference(t *testing.T)
 		t.Fatalf("seed repo: %v", err)
 	}
 	seedWorkflowBundleForTest(t, root)
-	implementPath := filepath.Join(root, ".agent-layer", "skills", "implement", "SKILL.md")
+	implementPath := filepath.Join(root, ".agent-layer", "skills", "dispatch-agent", "SKILL.md")
 	if err := os.Remove(implementPath); err != nil {
 		t.Fatalf("remove implement: %v", err)
 	}
-	implementTemplate, err := templates.Read("skills/implement/SKILL.md")
+	implementTemplate, err := templates.Read("skills-catalog/dispatch-agent/SKILL.md")
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
@@ -353,7 +353,7 @@ func TestBuildUpgradePlan_ManifestCoverageSkipsHashRenameInference(t *testing.T)
       "kind": "rename_file",
       "rationale": "Move legacy skill path",
       "from": ".agent-layer/skills/implement-legacy.md",
-      "to": ".agent-layer/skills/implement/SKILL.md"
+      "to": ".agent-layer/skills/dispatch-agent/SKILL.md"
     }
   ]
 }`)
@@ -365,7 +365,7 @@ func TestBuildUpgradePlan_ManifestCoverageSkipsHashRenameInference(t *testing.T)
 	if len(plan.TemplateRenames) != 0 {
 		t.Fatalf("expected hash-rename inference to be filtered by manifest coverage, got %#v", plan.TemplateRenames)
 	}
-	if findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/implement/SKILL.md") != nil {
+	if findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/dispatch-agent/SKILL.md") != nil {
 		t.Fatal("expected manifest-covered addition to be filtered")
 	}
 	if findUpgradeChange(plan.TemplateRemovalsOrOrphans, ".agent-layer/skills/implement-legacy.md") != nil {
@@ -422,7 +422,7 @@ func TestBuildUpgradePlan_NoopMigrationDoesNotHideTemplateChange(t *testing.T) {
 	seedWorkflowBundleForTest(t, root)
 
 	// Remove implement/SKILL.md so the template system would add it back.
-	implementPath := filepath.Join(root, ".agent-layer", "skills", "implement", "SKILL.md")
+	implementPath := filepath.Join(root, ".agent-layer", "skills", "dispatch-agent", "SKILL.md")
 	if err := os.Remove(implementPath); err != nil {
 		t.Fatalf("remove implement: %v", err)
 	}
@@ -440,7 +440,7 @@ func TestBuildUpgradePlan_NoopMigrationDoesNotHideTemplateChange(t *testing.T) {
       "rationale": "Move legacy skill path",
       "source_agnostic": true,
       "from": ".agent-layer/skills/implement-legacy.md",
-      "to": ".agent-layer/skills/implement/SKILL.md"
+      "to": ".agent-layer/skills/dispatch-agent/SKILL.md"
     }
   ]
 }`)
@@ -451,7 +451,7 @@ func TestBuildUpgradePlan_NoopMigrationDoesNotHideTemplateChange(t *testing.T) {
 	}
 	// The rename source doesn't exist, so the migration will no-op. The
 	// destination path must NOT be filtered from additions.
-	if findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/implement/SKILL.md") == nil {
+	if findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/dispatch-agent/SKILL.md") == nil {
 		t.Fatal("expected no-op migration destination to appear as template addition in plan")
 	}
 }
@@ -463,11 +463,11 @@ func TestRun_UpgradeRoundTripWithMigrationManifest(t *testing.T) {
 	}
 	seedWorkflowBundleForTest(t, root)
 
-	implementPath := filepath.Join(root, ".agent-layer", "skills", "implement", "SKILL.md")
+	implementPath := filepath.Join(root, ".agent-layer", "skills", "dispatch-agent", "SKILL.md")
 	if err := os.Remove(implementPath); err != nil {
 		t.Fatalf("remove implement: %v", err)
 	}
-	implementTemplate, err := templates.Read("skills/implement/SKILL.md")
+	implementTemplate, err := templates.Read("skills-catalog/dispatch-agent/SKILL.md")
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
@@ -486,7 +486,7 @@ func TestRun_UpgradeRoundTripWithMigrationManifest(t *testing.T) {
       "kind": "rename_file",
       "rationale": "Move legacy skill path",
       "from": ".agent-layer/skills/implement-legacy.md",
-      "to": ".agent-layer/skills/implement/SKILL.md"
+      "to": ".agent-layer/skills/dispatch-agent/SKILL.md"
     }
   ]
 }`)
@@ -494,7 +494,7 @@ func TestRun_UpgradeRoundTripWithMigrationManifest(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.7.0"}); err != nil {
 		t.Fatalf("upgrade run: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "skills", "implement", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "skills", "dispatch-agent", "SKILL.md")); err != nil {
 		t.Fatalf("expected implement after migration+upgrade: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "skills", "implement-legacy.md")); !os.IsNotExist(err) {
@@ -3078,7 +3078,7 @@ func TestExecuteMigrateSkillsFormat_BasicMigration(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte("alpha content\n"), 0o600); err != nil {
 		t.Fatalf("write alpha: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "beta.md"), []byte("beta content\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "beta.md"), []byte("---\ndescription: Beta workflow\n---\nbeta content\n"), 0o600); err != nil {
 		t.Fatalf("write beta: %v", err)
 	}
 
@@ -3097,7 +3097,11 @@ func TestExecuteMigrateSkillsFormat_BasicMigration(t *testing.T) {
 		if readErr != nil {
 			t.Fatalf("read %s/SKILL.md: %v", name, readErr)
 		}
-		if string(data) != name+" content\n" {
+		want := name + " content\n"
+		if name == "beta" {
+			want = "---\nname: \"beta\"\ndescription: Beta workflow\n---\nbeta content\n"
+		}
+		if string(data) != want {
 			t.Fatalf("unexpected %s content: %q", name, string(data))
 		}
 		if _, statErr := os.Stat(filepath.Join(skillsDir, name+".md")); !errors.Is(statErr, os.ErrNotExist) {
@@ -3162,11 +3166,11 @@ func TestExecuteMigrateSkillsFormat_ConflictDifferentContent(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Flat file with one content
-	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte("flat content\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte("---\ndescription: Original flat\n---\nBody\n"), 0o600); err != nil {
 		t.Fatalf("write flat: %v", err)
 	}
 	// Directory file with different content
-	if err := os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("dir content\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("---\ndescription: Original directory\n---\nBody\n"), 0o600); err != nil {
 		t.Fatalf("write dir: %v", err)
 	}
 
@@ -3176,6 +3180,13 @@ func TestExecuteMigrateSkillsFormat_ConflictDifferentContent(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "conflict") {
 		t.Fatalf("expected conflict error, got %v", err)
 	}
+	for name, want := range map[string]string{"alpha.md": "---\ndescription: Original flat\n---\nBody\n", "alpha/SKILL.md": "---\ndescription: Original directory\n---\nBody\n"} {
+		data, err := os.ReadFile(filepath.Join(skillsDir, name)) // #nosec G304 -- test-owned conflicting migration input.
+		if err != nil || string(data) != want {
+			t.Fatalf("conflict changed %s: %q %v", name, data, err)
+		}
+	}
+
 }
 
 func TestExecuteMigrateSkillsFormat_DuplicateContentCleansUp(t *testing.T) {
@@ -3184,7 +3195,7 @@ func TestExecuteMigrateSkillsFormat_DuplicateContentCleansUp(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	content := "same content\n"
+	content := "---\ndescription: Keep missing name unchanged\n---\nBody\n"
 	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte(content), 0o600); err != nil {
 		t.Fatalf("write flat: %v", err)
 	}

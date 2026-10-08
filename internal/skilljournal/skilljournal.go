@@ -18,17 +18,27 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/skilltree"
+	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 // Version is the journal schema version. A journal recording a different
 // version is rejected rather than guessed at, because recovering from a
 // misread journal could destroy local work.
 const Version = 1
+
+// AdoptionVersion extends recovery with explicitly retired local skill slots.
+const AdoptionVersion = 2
+
+// LocalBackupPrefix distinguishes local retirements from imported writes.
+const LocalBackupPrefix = "local-"
 
 const (
 	// StagingDirName is the transaction staging directory inside the imported
@@ -68,7 +78,8 @@ type WriteIntent struct {
 
 // Document is the recorded intent of one in-flight transaction.
 type Document struct {
-	Version int `json:"version"`
+	Version          int      `json:"version"`
+	LocalRetirements []string `json:"local_retirements,omitempty"`
 	// Committed marks a transaction whose final durable write already
 	// succeeded. Recovery then only removes the staging directory.
 	Committed bool `json:"committed"`
@@ -90,6 +101,7 @@ type Document struct {
 // journal can never direct recovery at a path outside the project.
 type Targets struct {
 	ImportedSkillsDir string
+	LocalSkillsDir    string
 	ConfigPath        string
 	SkillsLockPath    string
 }
@@ -99,10 +111,13 @@ func StagingRoot(importedSkillsDir string) string {
 	return filepath.Join(importedSkillsDir, StagingDirName)
 }
 
-// Write records the transaction's intent durably. It must be called after
-// every backup exists in stagingRoot and before the first live path changes.
+// Write records the transaction's intent durably, after replacement trees and
+// file backups are staged and before the first live path changes. Tree backups
+// are created by the subsequent live renames.
 func Write(stagingRoot string, doc Document) error {
-	doc.Version = Version
+	if doc.Version == 0 {
+		doc.Version = Version
+	}
 	data, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to encode the skill import journal: %w", err)
@@ -131,33 +146,140 @@ func MarkCommitted(stagingRoot string) error {
 // rolled back to its pre-transaction state; a committed one only has its
 // staging directory cleared. Callers must already hold the project lock.
 func Recover(targets Targets) error {
+	// Every caller shares these guards. Check live roots before even inspecting
+	// staging so recovery cannot consume another directory's journal/backups.
+	if err := validateRecoveryRoots(targets); err != nil {
+		return err
+	}
 	stagingRoot := StagingRoot(targets.ImportedSkillsDir)
-	if _, err := os.Lstat(stagingRoot); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return fmt.Errorf("failed to inspect %s: %w", stagingRoot, err)
+	exists, err := recoveryDirectoryExists(stagingRoot)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
 	}
 
 	doc, err := read(stagingRoot)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			// Staging exists but no intent was ever recorded, so nothing live
-			// was touched. Clearing it restores the normal state.
+			if err := validatePreIntentStaging(stagingRoot); err != nil {
+				return err
+			}
 			return removeStaging(stagingRoot)
 		}
 		return err
 	}
+	if len(doc.LocalRetirements) > 0 && targets.LocalSkillsDir == "" {
+		return fmt.Errorf("local recovery root is missing; preserve adoption journal %s", stagingRoot)
+	}
+	if err := validateBackups(stagingRoot, targets, doc, nil, !doc.Committed); err != nil {
+		return err
+	}
 	if !doc.Committed {
-		if err := rollback(stagingRoot, targets, doc); err != nil {
+		if err := rollback(stagingRoot, targets, doc, fsutil.WriteFileAtomic, true); err != nil {
 			return err
 		}
 	}
 	return removeStaging(stagingRoot)
 }
 
+// Progress records live paths touched by an in-process transaction. Writes
+// retain whether an original moved, so missing backups cannot be mistaken for
+// originals that were never changed.
+type Progress struct {
+	Writes           []WriteIntent
+	Deletes          []string
+	LocalRetirements []string
+	Config           bool
+	Lock             bool
+}
+
+// Rollback shares restart recovery's restore engine, but restores only touched
+// paths and requires every backup the writer knows it moved. Failed validation
+// leaves all live paths and recovery evidence intact.
+func Rollback(targets Targets, applied Progress, writeFile func(string, []byte, os.FileMode) error) error {
+	if err := validateRecoveryRoots(targets); err != nil {
+		return err
+	}
+	stagingRoot := StagingRoot(targets.ImportedSkillsDir)
+	if exists, err := recoveryDirectoryExists(stagingRoot); err != nil {
+		return err
+	} else if !exists {
+		return fmt.Errorf("an interrupted skill import could not be fully rolled back: staging %s is missing; preserve live data and recovery evidence", stagingRoot)
+	}
+	doc, err := read(stagingRoot)
+	if err != nil {
+		return err
+	}
+	if len(doc.LocalRetirements) > 0 && targets.LocalSkillsDir == "" {
+		return fmt.Errorf("local recovery root is missing; preserve adoption journal %s", stagingRoot)
+	}
+	var moved []string
+	for _, write := range applied.Writes {
+		if write.Existed {
+			moved = append(moved, WriteBackupPrefix+write.Name)
+		}
+	}
+	for _, name := range applied.Deletes {
+		moved = append(moved, DeleteBackupPrefix+name)
+	}
+	for _, name := range applied.LocalRetirements {
+		moved = append(moved, LocalBackupPrefix+name)
+	}
+	if err := validateBackups(stagingRoot, targets, doc, moved, true); err != nil {
+		return err
+	}
+	doc.Writes, doc.Deletes, doc.LocalRetirements = applied.Writes, applied.Deletes, applied.LocalRetirements
+	doc.Config = applied.Config
+	return rollback(stagingRoot, targets, doc, writeFile, applied.Lock)
+}
+
+func validateRecoveryRoots(targets Targets) error {
+	if targets.ImportedSkillsDir == "" {
+		return fmt.Errorf("imported recovery root is missing; preserve recovery evidence, repair the path, then retry")
+	}
+	for _, root := range []string{targets.ImportedSkillsDir, targets.LocalSkillsDir} {
+		// Historical v1 callers omit the local tier.
+		if root == "" {
+			continue
+		}
+		if _, err := recoveryDirectoryExists(root); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Missing directories are normal before the first import. Existing recovery
+// roots must be real directories; Lstat never follows a linked root or staging.
+func recoveryDirectoryExists(dir string) (bool, error) {
+	info, err := os.Lstat(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("cannot inspect recovery directory %s; preserve recovery evidence, repair the path, then retry: %w", dir, err)
+	}
+	if !info.IsDir() {
+		kind := "not a directory"
+		if info.Mode()&os.ModeSymlink != 0 {
+			kind = "a symbolic link"
+		}
+		return false, fmt.Errorf("cannot recover skill imports: %s is %s; preserve the node and recovery evidence, repair the path to a real directory, then retry", dir, kind)
+	}
+	return true, nil
+}
+
 func read(stagingRoot string) (Document, error) {
 	path := filepath.Join(stagingRoot, FileName)
+	info, err := os.Lstat(path)
+	if err != nil {
+		return Document{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return Document{}, fmt.Errorf("%w: %s must be a regular unlinked journal; preserve recovery evidence and repair the node", ErrMalformed, path)
+	}
 	data, err := os.ReadFile(path) // #nosec G304 -- path is the staging directory Agent Layer owns inside the resolved project root.
 	if err != nil {
 		return Document{}, err
@@ -168,17 +290,46 @@ func read(stagingRoot string) (Document, error) {
 	if err := decoder.Decode(&doc); err != nil {
 		return Document{}, fmt.Errorf("%w: %s: %w", ErrMalformed, path, err)
 	}
-	if doc.Version != Version {
-		return Document{}, fmt.Errorf("%w: %s: unsupported schema version %d (this Agent Layer supports %d)", ErrMalformed, path, doc.Version, Version)
+	// Only whitespace may follow the single complete intent document.
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return Document{}, fmt.Errorf("%w: %s: expected one complete JSON document", ErrMalformed, path)
+	}
+	if doc.Version != Version && doc.Version != AdoptionVersion {
+		return Document{}, fmt.Errorf("%w: %s: unsupported schema version %d (this Agent Layer supports %d and %d)", ErrMalformed, path, doc.Version, Version, AdoptionVersion)
+	}
+	if doc.Version == Version && len(doc.LocalRetirements) > 0 {
+		return Document{}, fmt.Errorf("%w: local retirements require adoption version", ErrMalformed)
+	}
+	seenLocal := map[string]bool{}
+	for _, name := range doc.LocalRetirements {
+		if !templates.IsRetiredSkill(name) || seenLocal[name] {
+			return Document{}, fmt.Errorf("%w: invalid local retirement %q", ErrMalformed, name)
+		}
+		seenLocal[name] = true
+		found := false
+		for _, w := range doc.Writes {
+			if w.Name == name && !w.Existed {
+				found = true
+			}
+		}
+		if !found {
+			return Document{}, fmt.Errorf("%w: retirement %q requires a new imported write", ErrMalformed, name)
+		}
 	}
 	names := append([]string{}, doc.Deletes...)
 	for _, write := range doc.Writes {
 		names = append(names, write.Name)
 	}
+	seen := map[string]bool{}
 	for _, name := range names {
 		if err := validateName(name); err != nil {
 			return Document{}, fmt.Errorf("%w: %s: %w", ErrMalformed, path, err)
 		}
+		key := strings.ToLower(skilltree.NormalizeName(name))
+		if seen[key] {
+			return Document{}, fmt.Errorf("%w: %s: colliding recorded skill name %q", ErrMalformed, path, name)
+		}
+		seen[key] = true
 	}
 	return doc, nil
 }
@@ -189,8 +340,87 @@ func validateName(name string) error {
 	if strings.TrimSpace(name) == "" {
 		return fmt.Errorf("a recorded skill name is empty")
 	}
-	if name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+	normalized := skilltree.NormalizeName(name)
+	if normalized == "." || normalized == ".." || strings.ContainsAny(normalized, `/\`) {
 		return fmt.Errorf("recorded skill name %q is not a directory name", name)
+	}
+	for _, reserved := range []string{StagingDirName, ".git", ".DS_Store", "Thumbs.db"} {
+		if strings.EqualFold(normalized, reserved) {
+			return fmt.Errorf("recorded skill name %q is reserved tier metadata", name)
+		}
+	}
+	return nil
+}
+
+// Check every backup before any mutation. Rollback additionally needs each
+// original: missing tree backups are valid only before a rename or after restore.
+func validateBackups(stagingRoot string, targets Targets, doc Document, movedBackups []string, rollback bool) error {
+	check := func(name, original string, directory, required bool) error {
+		path := filepath.Join(stagingRoot, name)
+		info, err := os.Lstat(path)
+		if err == nil {
+			if (directory && info.IsDir()) || (!directory && info.Mode().IsRegular()) {
+				return nil
+			}
+			return fmt.Errorf("%w: backup %s has an unsafe node type; preserve recovery evidence and repair the node", ErrMalformed, path)
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("%w: cannot inspect backup %s: %w", ErrMalformed, path, err)
+		}
+		if !rollback || !required {
+			return nil
+		}
+		detail := fmt.Sprintf("required backup %s is missing", path)
+		if original != "" && !slices.Contains(movedBackups, name) {
+			if info, err := os.Lstat(original); err == nil && info.IsDir() {
+				return nil
+			}
+			detail += fmt.Sprintf("; original %s is absent or not a real directory", original)
+		}
+		return fmt.Errorf("an interrupted skill import could not be fully rolled back: %s; preserve all live data and recovery evidence, repair the missing evidence, then retry", detail)
+	}
+	for _, write := range doc.Writes {
+		if err := check(WriteBackupPrefix+write.Name, filepath.Join(targets.ImportedSkillsDir, write.Name), true, write.Existed); err != nil {
+			return err
+		}
+	}
+	for _, name := range doc.Deletes {
+		if err := check(DeleteBackupPrefix+name, filepath.Join(targets.ImportedSkillsDir, name), true, true); err != nil {
+			return err
+		}
+	}
+	for _, name := range doc.LocalRetirements {
+		if err := check(LocalBackupPrefix+name, filepath.Join(targets.LocalSkillsDir, name), true, true); err != nil {
+			return err
+		}
+	}
+	if doc.Config {
+		if err := check(ConfigBackupName, "", false, true); err != nil {
+			return err
+		}
+	}
+	if doc.LockExisted {
+		if err := check(LockBackupName, "", false, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// These backup names are created only by live renames after durable intent.
+// Their presence without a journal contradicts harmless pre-intent staging.
+// ReadDir inspects names without following even dangling backup links.
+func validatePreIntentStaging(stagingRoot string) error {
+	entries, err := os.ReadDir(stagingRoot)
+	if err != nil {
+		return fmt.Errorf("cannot inspect staging %s; preserve recovery evidence: %w", stagingRoot, err)
+	}
+	for _, entry := range entries {
+		for _, prefix := range []string{LocalBackupPrefix, WriteBackupPrefix, DeleteBackupPrefix} {
+			if strings.HasPrefix(entry.Name(), prefix) {
+				return fmt.Errorf("%w: missing journal in %s with post-intent backup %s; preserve all live data and recovery evidence", ErrMalformed, stagingRoot, entry.Name())
+			}
+		}
 	}
 	return nil
 }
@@ -198,7 +428,7 @@ func validateName(name string) error {
 // rollback restores every path the interrupted transaction had already
 // replaced. Every failure is collected so an incomplete rollback is reported
 // instead of being mistaken for a clean revert.
-func rollback(stagingRoot string, targets Targets, doc Document) error {
+func rollback(stagingRoot string, targets Targets, doc Document, writeFile func(string, []byte, os.FileMode) error, restoreLock bool) error {
 	var problems []string
 	note := func(err error) {
 		if err != nil {
@@ -220,13 +450,20 @@ func rollback(stagingRoot string, targets Targets, doc Document) error {
 		backup := filepath.Join(stagingRoot, DeleteBackupPrefix+name)
 		note(restoreTree(backup, target, false))
 	}
-	if doc.Config {
-		note(restoreFile(filepath.Join(stagingRoot, ConfigBackupName), targets.ConfigPath))
+	for _, name := range doc.LocalRetirements {
+		note(restoreTree(filepath.Join(stagingRoot, LocalBackupPrefix+name), filepath.Join(targets.LocalSkillsDir, name), false))
 	}
-	if doc.LockExisted {
-		note(restoreFile(filepath.Join(stagingRoot, LockBackupName), targets.SkillsLockPath))
+	if doc.Config {
+		note(restoreFile(filepath.Join(stagingRoot, ConfigBackupName), targets.ConfigPath, writeFile))
+	}
+	if !restoreLock {
+		// The writer failed before touching the lock; preserve its bytes and mode.
+	} else if doc.LockExisted {
+		note(restoreFile(filepath.Join(stagingRoot, LockBackupName), targets.SkillsLockPath, writeFile))
 	} else if err := os.Remove(targets.SkillsLockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		note(fmt.Errorf("failed to remove %s: %w", targets.SkillsLockPath, err))
+	} else {
+		note(fsutil.SyncDir(filepath.Dir(targets.SkillsLockPath)))
 	}
 
 	if len(problems) > 0 {
@@ -249,7 +486,10 @@ func restoreTree(backup string, target string, removeWhenAbsent bool) error {
 		if err := os.RemoveAll(target); err != nil {
 			return fmt.Errorf("failed to remove %s: %w", target, err)
 		}
-		return nil
+		if _, err := os.Stat(filepath.Dir(target)); errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fsutil.SyncDir(filepath.Dir(target))
 	}
 	if err := os.RemoveAll(target); err != nil {
 		return fmt.Errorf("failed to remove %s: %w", target, err)
@@ -257,16 +497,16 @@ func restoreTree(backup string, target string, removeWhenAbsent bool) error {
 	if err := os.Rename(backup, target); err != nil {
 		return fmt.Errorf("failed to restore %s: %w", target, err)
 	}
-	return nil
+	return errors.Join(fsutil.SyncDir(filepath.Dir(backup)), fsutil.SyncDir(filepath.Dir(target)))
 }
 
 // restoreFile rewrites target with its pre-transaction content.
-func restoreFile(backup string, target string) error {
+func restoreFile(backup string, target string, writeFile func(string, []byte, os.FileMode) error) error {
 	data, err := os.ReadFile(backup) // #nosec G304 -- backup is inside the staging directory Agent Layer owns.
 	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", backup, err)
 	}
-	if err := fsutil.WriteFileAtomic(target, data, 0o644); err != nil {
+	if err := writeFile(target, data, 0o644); err != nil {
 		return fmt.Errorf("failed to restore %s: %w", target, err)
 	}
 	return nil
@@ -276,5 +516,5 @@ func removeStaging(stagingRoot string) error {
 	if err := os.RemoveAll(stagingRoot); err != nil {
 		return fmt.Errorf("failed to remove %s: %w", stagingRoot, err)
 	}
-	return nil
+	return fsutil.SyncDir(filepath.Dir(stagingRoot))
 }

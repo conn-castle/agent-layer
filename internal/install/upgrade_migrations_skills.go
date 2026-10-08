@@ -1,6 +1,7 @@
 package install
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -9,7 +10,10 @@ import (
 	"sort"
 	"strings"
 
+	yaml "go.yaml.in/yaml/v3"
+
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
 
 // preflightAndConfirmSkillsMigration runs BEFORE any disk mutations to give the
@@ -249,15 +253,29 @@ func preflightSkillsMigration(sys System, absSkillsDir string) (flatCount int, c
 		flatPath := filepath.Join(absSkillsDir, entry.name)
 		destPath := filepath.Join(absSkillsDir, name, skillManifestFileName)
 
-		destInfo, statErr := sys.Stat(destPath)
+		flatInfo, flatErr := sys.Lstat(flatPath)
+		if flatErr != nil {
+			return 0, nil, flatErr
+		}
+		if !flatInfo.Mode().IsRegular() {
+			return 0, nil, fmt.Errorf("flat skill %s must be a regular file", flatPath)
+		}
+		if dirInfo, dirErr := sys.Lstat(filepath.Dir(destPath)); dirErr == nil {
+			if !dirInfo.IsDir() {
+				return 0, nil, fmt.Errorf("skill destination %s must be a directory", filepath.Dir(destPath))
+			}
+		} else if !errors.Is(dirErr, os.ErrNotExist) {
+			return 0, nil, dirErr
+		}
+		destInfo, statErr := sys.Lstat(destPath)
 		if statErr != nil {
 			if errors.Is(statErr, os.ErrNotExist) {
 				continue // no conflict
 			}
 			return 0, nil, fmt.Errorf(messages.InstallFailedStatFmt, destPath, statErr)
 		}
-		if destInfo.IsDir() {
-			continue
+		if !destInfo.Mode().IsRegular() {
+			return 0, nil, fmt.Errorf("skill destination %s must be a regular file", destPath)
 		}
 
 		// Both exist — check content.
@@ -269,7 +287,7 @@ func preflightSkillsMigration(sys System, absSkillsDir string) (flatCount int, c
 		if destReadErr != nil {
 			return 0, nil, fmt.Errorf(messages.InstallFailedReadFmt, destPath, destReadErr)
 		}
-		if normalizeTemplateContent(string(flatData)) != normalizeTemplateContent(string(destData)) {
+		if !flatSkillDuplicate(flatData, destData, filepath.Dir(destPath)) {
 			conflicts = append(conflicts, SkillsMigrationConflict{
 				SkillName: name,
 				FlatPath:  flatPath,
@@ -338,16 +356,31 @@ func readSkillsDirEntries(sys System, dir string) ([]skillsDirEntry, error) {
 // migrateSingleFlatSkill moves a flat skill file to directory format. If the
 // destination already exists with the same content, the flat file is removed.
 func migrateSingleFlatSkill(sys System, flatPath string, destDir string, destPath string) (bool, error) {
-	if _, statErr := sys.Stat(flatPath); statErr != nil {
+	flatInfo, statErr := sys.Lstat(flatPath)
+	if statErr != nil {
 		if errors.Is(statErr, os.ErrNotExist) {
 			return false, nil
 		}
 		return false, fmt.Errorf(messages.InstallFailedStatFmt, flatPath, statErr)
 	}
+	if !flatInfo.Mode().IsRegular() {
+		return false, fmt.Errorf("flat skill %s must be a regular file", flatPath)
+	}
 
-	destInfo, destStatErr := sys.Stat(destPath)
+	if dirInfo, dirErr := sys.Lstat(destDir); dirErr == nil {
+		if !dirInfo.IsDir() {
+			return false, fmt.Errorf("skill destination %s must be a directory", destDir)
+		}
+	} else if !errors.Is(dirErr, os.ErrNotExist) {
+		return false, fmt.Errorf(messages.InstallFailedStatFmt, destDir, dirErr)
+	}
+
+	destInfo, destStatErr := sys.Lstat(destPath)
 	if destStatErr != nil && !errors.Is(destStatErr, os.ErrNotExist) {
 		return false, fmt.Errorf(messages.InstallFailedStatFmt, destPath, destStatErr)
+	}
+	if destStatErr == nil && !destInfo.Mode().IsRegular() {
+		return false, fmt.Errorf("skill destination %s must be a regular file", destPath)
 	}
 	if destStatErr == nil && !destInfo.IsDir() {
 		// Destination exists — check for same content (duplicate cleanup).
@@ -359,7 +392,7 @@ func migrateSingleFlatSkill(sys System, flatPath string, destDir string, destPat
 		if readErr != nil {
 			return false, fmt.Errorf(messages.InstallFailedReadFmt, destPath, readErr)
 		}
-		if normalizeTemplateContent(string(flatData)) == normalizeTemplateContent(string(destData)) {
+		if flatSkillDuplicate(flatData, destData, destDir) {
 			// Same content — remove flat file.
 			if removeErr := sys.RemoveAll(flatPath); removeErr != nil {
 				return false, fmt.Errorf("remove duplicate flat skill %s: %w", flatPath, removeErr)
@@ -370,12 +403,90 @@ func migrateSingleFlatSkill(sys System, flatPath string, destDir string, destPat
 		return false, fmt.Errorf("conflict: %s and %s have different content", flatPath, destPath)
 	}
 
-	// Create destination directory and move.
+	flatData, readErr := sys.ReadFile(flatPath)
+	if readErr != nil {
+		return false, fmt.Errorf(messages.InstallFailedReadFmt, flatPath, readErr)
+	}
+	migratedData := addMissingFlatSkillName(flatData, destDir)
+
+	// Keep the original flat bytes until the augmented manifest is durable.
+	// The existing upgrade snapshot also retains the pre-migration source.
 	if mkErr := sys.MkdirAll(destDir, 0o755); mkErr != nil {
 		return false, fmt.Errorf(messages.InstallFailedCreateDirForFmt, destPath, mkErr)
+	}
+	if !bytes.Equal(flatData, migratedData) {
+		if writeErr := sys.WriteFileAtomic(destPath, migratedData, flatInfo.Mode().Perm()); writeErr != nil {
+			return false, fmt.Errorf("write migrated skill %s: %w", destPath, writeErr)
+		}
+		if removeErr := sys.RemoveAll(flatPath); removeErr != nil {
+			return false, fmt.Errorf("remove migrated flat skill %s: %w", flatPath, removeErr)
+		}
+		return true, nil
 	}
 	if renameErr := sys.Rename(flatPath, destPath); renameErr != nil {
 		return false, fmt.Errorf("rename %s -> %s: %w", flatPath, destPath, renameErr)
 	}
 	return true, nil
+}
+
+// An interrupted augmentation can leave both the raw flat source and its
+// deterministic destination. Retry cleans up only that proven duplicate.
+func flatSkillDuplicate(flatData, destData []byte, destDir string) bool {
+	return normalizeTemplateContent(string(flatData)) == normalizeTemplateContent(string(destData)) ||
+		bytes.Equal(destData, addMissingFlatSkillName(flatData, destDir))
+}
+
+const flatSkillFrontmatterDelimiter = "---"
+
+// addMissingFlatSkillName supplies the identity implicit in historical flat
+// filenames. Only a genuinely absent name in otherwise valid YAML frontmatter
+// is eligible. Never reserialize metadata/body or repair explicit invalid names.
+// Ineligible sources keep the historical move-only behavior: ordinary strict
+// loading rejects any invalid skills remaining after all historical migrations.
+// Directory manifests never pass through this function.
+func addMissingFlatSkillName(raw []byte, destDir string) []byte {
+	content := bytes.TrimPrefix(raw, []byte{0xef, 0xbb, 0xbf})
+	firstEnd := bytes.IndexByte(content, '\n')
+	if firstEnd < 0 || strings.TrimSpace(string(content[:firstEnd])) != flatSkillFrontmatterDelimiter {
+		return raw
+	}
+	start := len(raw) - len(content) + firstEnd + 1
+	end := start
+	for _, line := range bytes.SplitAfter(raw[start:], []byte("\n")) {
+		if strings.TrimSpace(string(line)) == flatSkillFrontmatterDelimiter {
+			break
+		}
+		end += len(line)
+	}
+	if end == len(raw) {
+		return raw
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal(raw[start:end], &root); err != nil {
+		return raw
+	}
+	if len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
+		return raw
+	}
+	mapping := root.Content[0]
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		key := mapping.Content[i]
+		if key.Kind != yaml.ScalarNode || key.Value == "name" || key.Tag == "!!merge" {
+			return raw // explicit null/invalid names and uncertain merged/alias keys
+		}
+	}
+	newline := "\n"
+	if firstEnd > 0 && content[firstEnd-1] == '\r' {
+		newline = "\r\n"
+	}
+	// Quote even numeric filenames as strings; validation below checks identity.
+	addition := []byte(fmt.Sprintf("name: %q%s", filepath.Base(destDir), newline))
+	result := make([]byte, 0, len(raw)+len(addition))
+	result = append(result, raw[:start]...)
+	result = append(result, addition...)
+	result = append(result, raw[start:]...)
+	if _, err := skilltree.ValidateManifest(result, filepath.ToSlash(destDir)); err != nil {
+		return raw
+	}
+	return result
 }

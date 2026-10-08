@@ -3,6 +3,18 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v1.0.0 - Planned
+
+### Changed
+- General development and tool skills now come from `nicholasjconn/skills` through ordinary Git imports. The wizard keeps the seven-skill development selection and separate tool selections; `dispatch-agent`, `skill-sync`, and `benchmark` remain bundled. CLI upgrades do not install or refresh the external skill content.
+- **Breaking/manual:** Existing local copies of the ten moved skills remain intact during upgrades, including deletion-enabled upgrades. Use the wizard's explicit legacy adoption preview to move them into the imported tier. Adoption preserves the complete local tree and executable bits, records fetched upstream provenance, and carries differing local content as modified. Resolve configured selector coverage or duplicate copies explicitly with `al skills` commands before adoption. Later pulls merge upstream changes with local customizations.
+- With active moved imports, supported CLI selection and downgrade refuse versions below `1.0.0`; rollback refuses snapshots that would recreate converted local slots or pin an older CLI. Recovery evidence and imported modifications are preserved. An older executable invoked directly cannot enforce this safeguard and cannot read adoption journals.
+- Explicit benchmark setup fetches and freezes the seven external development skills with Git commit, selectors, and canonical tree hashes. Later study runs remain offline and use the frozen snapshot; historical studies without this provenance remain compatible.
+
+### Fixed
+- Migration-capable version handoffs reach the target reader without first consuming its recovery journal. Import recovery rejects colliding intent, trailing JSON, linked journals, and unsafe backup node types before changing live state. Wizard removal previews identify missing or conflicted configured siblings that ordinary selector reconciliation may materialize or block.
+- Historical flat skills with valid frontmatter that lacks `name` receive their original filename as the name during migration. Explicit or uncertain metadata, existing content, and file modes remain preserved.
+
 ## v0.24.3 - 2026-10-07
 
 ### Fixed

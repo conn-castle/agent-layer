@@ -6,9 +6,8 @@ import (
 	"os/exec"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/projectlock"
 )
 
 // System abstracts system-level operations to enable dependency injection in sync logic.
@@ -33,7 +32,7 @@ type System interface {
 }
 
 // RealSystem implements System using actual system calls.
-type RealSystem struct{}
+type RealSystem struct{ projectlock.RealSystem }
 
 // LookPath searches for an executable named file in the directories named by the PATH environment variable.
 func (RealSystem) LookPath(file string) (string, error) {
@@ -100,24 +99,4 @@ func (RealSystem) RemoveAll(path string) error {
 // staged skill tree and to roll a failed publication back.
 func (RealSystem) Rename(oldpath string, newpath string) error {
 	return os.Rename(oldpath, newpath)
-}
-
-// Close closes file.
-func (RealSystem) Close(file *os.File) error {
-	return file.Close()
-}
-
-// Flock applies or removes an advisory lock on the file represented by fd.
-func (RealSystem) Flock(fd int, how int) error {
-	return unix.Flock(fd, how)
-}
-
-// Now returns the current time.
-func (RealSystem) Now() time.Time {
-	return time.Now()
-}
-
-// Sleep pauses the current goroutine for at least d.
-func (RealSystem) Sleep(d time.Duration) {
-	time.Sleep(d)
 }

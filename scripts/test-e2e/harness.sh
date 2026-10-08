@@ -904,3 +904,27 @@ assert_no_crash_markers() {
     pass "$label"
   fi
 }
+
+# setup_catalog_git_fixture — keep remote catalog scenarios offline with exact
+# minimal fixtures. Production still uses its normal Git URL and resolver.
+setup_catalog_git_fixture() {
+  local source="$E2E_TMP_ROOT/catalog-git-source"
+  if [[ ! -d "$source/.git" ]]; then
+    mkdir -p "$source"
+    git -C "$source" init --quiet --initial-branch=main
+    local name group
+    for name in implement ship-pr auto-skill-loop audit-documentation audit-memory audit-tests interface-audit find-docs playwright tavily-web; do
+      group=development
+      case "$name" in find-docs|playwright|tavily-web) group=tools ;; esac
+      mkdir -p "$source/skills/$group/$name/resources"
+      printf -- '---\nname: %s\ndescription: Hermetic catalog fixture.\n---\n\nFixture for %s; playwright-cli --help.\n' "$name" "$name" > "$source/skills/$group/$name/SKILL.md"
+      printf 'fixture resource\n' > "$source/skills/$group/$name/resources/example.txt"
+    done
+    git -C "$source" add .
+    git -C "$source" -c user.name=Fixture -c user.email=fixture@example.invalid commit --quiet -m fixture
+  fi
+  local count="${GIT_CONFIG_COUNT:-0}"
+  export "GIT_CONFIG_KEY_$count=url.$source.insteadOf"
+  export "GIT_CONFIG_VALUE_$count=https://github.com/nicholasjconn/skills.git"
+  export GIT_CONFIG_COUNT=$((count + 1))
+}

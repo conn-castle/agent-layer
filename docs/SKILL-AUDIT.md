@@ -7,10 +7,10 @@ caller also requests fixes.
 
 ## Scope
 
-Audit both shipped source trees:
+Audit the canonical authoring sources:
 
-- General skills: `internal/templates/skills/*/SKILL.md`
-- CLI skills: `internal/templates/skills-catalog/*/SKILL.md`
+- General and tool skills: `nicholasjconn/skills` under `skills/{development,tools}/<name>/SKILL.md`
+- Bundled Agent Layer skills (`dispatch-agent`, `skill-sync`, `benchmark`): `internal/templates/skills-catalog/*/SKILL.md`
 
 Do not substitute generated or repo-local copies. Read referenced resources
 only to verify an interface or ownership claim.

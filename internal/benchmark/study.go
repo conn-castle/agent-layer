@@ -99,6 +99,7 @@ type studyExperiment struct {
 	Config                string   `toml:"config"`
 	Instructions          string   `toml:"instructions"`
 	Skills                string   `toml:"skills"`
+	SkillsSource          string   `toml:"skills_source"`
 	EntryPrompt           string   `toml:"entry_prompt"`
 	RequiredDispatchRoles []string `toml:"required_dispatch_roles"`
 }
@@ -128,6 +129,7 @@ type studyExperimentInputs struct {
 	Config       string
 	Instructions string
 	Skills       string
+	SkillsSource string
 	EntryPrompt  string
 }
 
@@ -1898,6 +1900,7 @@ func snapshotStudyExperimentInputs(snapshotRoot string, index int, base string, 
 		{"config", experiment.Config, false, func(path string) { inputs.Config = path }},
 		{studyInputInstructions, experiment.Instructions, true, func(path string) { inputs.Instructions = path }},
 		{studyInputSkills, experiment.Skills, true, func(path string) { inputs.Skills = path }},
+		{"skills-source", experiment.SkillsSource, false, func(path string) { inputs.SkillsSource = path }},
 		{studyInputEntryPrompt, experiment.EntryPrompt, false, func(path string) { inputs.EntryPrompt = path }},
 	} {
 		if input.value == "" {
@@ -1916,8 +1919,18 @@ func snapshotStudyExperimentInputs(snapshotRoot string, index int, base string, 
 			if !info.IsDir() {
 				return studyExperimentInputs{}, fmt.Errorf("%s: must be a directory", input.name)
 			}
-			if err := copyRequiredTree(source, destination); err != nil {
-				return studyExperimentInputs{}, fmt.Errorf("%s: %w", input.name, err)
+			var copyErr error
+			if input.name == studyInputSkills && experiment.SkillsSource != "" {
+				provenance, err := resolveStudyPath(base, experiment.SkillsSource)
+				if err != nil {
+					return studyExperimentInputs{}, fmt.Errorf("skills-source: %w", err)
+				}
+				copyErr = copyFrozenSkillsSource(provenance, source, destination)
+			} else {
+				copyErr = copyRequiredTree(source, destination)
+			}
+			if copyErr != nil {
+				return studyExperimentInputs{}, fmt.Errorf("%s: %w", input.name, copyErr)
 			}
 		} else if err := snapshotStudyFile(source, destination); err != nil {
 			return studyExperimentInputs{}, fmt.Errorf("%s: %w", input.name, err)
@@ -1964,6 +1977,11 @@ func writeSnapshotFile(destination string, data []byte) error {
 }
 
 func validateExperimentInputs(inputs studyExperimentInputs) (map[string]string, error) {
+	if inputs.SkillsSource != "" {
+		if err := validateFrozenSkillsSource(inputs.SkillsSource, inputs.Skills); err != nil {
+			return nil, err
+		}
+	}
 	hashes := map[string]string{}
 	for _, input := range []struct {
 		name, path string
@@ -1971,6 +1989,7 @@ func validateExperimentInputs(inputs studyExperimentInputs) (map[string]string, 
 	}{
 		{"config", inputs.Config, false}, {studyInputInstructions, inputs.Instructions, true},
 		{studyInputSkills, inputs.Skills, true}, {studyInputEntryPrompt, inputs.EntryPrompt, false},
+		{"skills-source", inputs.SkillsSource, false},
 	} {
 		if input.path == "" {
 			continue

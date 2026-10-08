@@ -9,6 +9,10 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestReadinessDiskPreflightRefusesImpossiblePlanBeforePulls(t *testing.T) {
@@ -595,6 +599,7 @@ func TestStudyRuntimePreflightsKeyReceiptsByDockerHostArchitecture(t *testing.T)
 }
 
 func TestInitStudyCreatesSelfContainedSafeSnapshot(t *testing.T) {
+	testutil.CatalogGitFixture(t)
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, ".agent-layer", "instructions"), 0o700); err != nil {
 		t.Fatal(err)
@@ -620,6 +625,7 @@ func TestInitStudyCreatesSelfContainedSafeSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	destination := filepath.Join(repo, "benchmarks", "study-one")
+	require.NoError(t, os.MkdirAll(destination, 0o700))
 	studyPath, err := InitStudy(InitStudyOptions{RepoRoot: repo, SelectionPath: selectionPath, Directory: filepath.Join("benchmarks", "study-one")})
 	if err != nil {
 		t.Fatal(err)
@@ -672,6 +678,31 @@ func TestInitStudyCreatesSelfContainedSafeSnapshot(t *testing.T) {
 		t.Fatalf("generated study does not validate: %v", err)
 	}
 	defer prepared.cleanupInputs()
+	// Provenance and later offline snapshots belong to this existing scaffold integration.
+	skills := filepath.Join(destination, "treatment", "official-skills")
+	provenance := filepath.Join(destination, "treatment", "skills-source.json")
+	data, err := os.ReadFile(provenance) // #nosec G304 -- test-owned frozen provenance.
+	require.NoError(t, err)
+	var source SkillSnapshotSource
+	require.NoError(t, json.Unmarshal(data, &source))
+	require.Len(t, source.Trees, 7)
+	require.NoError(t, os.Mkdir(filepath.Join(skills, ".git"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(skills, ".git", "HEAD"), []byte("private history"), 0o600))
+	require.NoError(t, os.Symlink(filepath.Join(repo, "absent"), filepath.Join(skills, ".DS_Store")))
+	t.Setenv("GIT_CONFIG_COUNT", "0")
+	offline, err := prepareStudy(StudyOptions{RepoRoot: repo, StudyPath: studyPath})
+	require.NoError(t, err)
+	defer offline.cleanupInputs()
+	for i := range prepared.experiments {
+		require.Equal(t, prepared.experiments[i].identity, offline.experiments[i].identity)
+		require.Equal(t, prepared.experiments[i].inputHashes, offline.experiments[i].inputHashes)
+	}
+	require.NoDirExists(t, filepath.Join(offline.experiments[1].inputs.Skills, ".git"))
+	require.NoFileExists(t, filepath.Join(offline.experiments[1].inputs.Skills, ".DS_Store"))
+	require.NoError(t, os.Mkdir(filepath.Join(skills, "implement", ".git"), 0o750))
+	_, err = prepareStudy(StudyOptions{RepoRoot: repo, StudyPath: studyPath})
+	require.ErrorContains(t, err, "ignored entry")
+
 	if got := strings.Join(prepared.experiments[1].RequiredDispatchRoles, ","); got != "code-reviewer,implementer,plan-reviewer" {
 		t.Fatalf("generated required dispatch roles = %q", got)
 	}
@@ -684,6 +715,15 @@ func TestInitStudyCreatesSelfContainedSafeSnapshot(t *testing.T) {
 			t.Fatalf("generated workflow target = %#v", target)
 		}
 	}
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	// Failed fetching must leave the requested scaffold unpublished.
+	t.Setenv("GIT_CONFIG_KEY_0", "url."+filepath.Join(repo, "absent-source")+".insteadOf")
+	failedDestination := filepath.Join(repo, "new-study")
+	_, err = InitStudy(InitStudyOptions{RepoRoot: repo, SelectionPath: selectionPath, Directory: failedDestination})
+	require.Error(t, err)
+	_, err = os.Lstat(failedDestination)
+	require.ErrorIs(t, err, os.ErrNotExist)
+
 }
 
 func TestCopyScaffoldTreeReportsNonDirectorySourceClearly(t *testing.T) {
@@ -695,4 +735,16 @@ func TestCopyScaffoldTreeReportsNonDirectorySourceClearly(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "not a directory") || strings.Contains(err.Error(), "%!w") {
 		t.Fatalf("non-directory source error = %v", err)
 	}
+}
+
+func TestHistoricalSnapshotWithoutProvenancePreservesOfflineView(t *testing.T) {
+	root := t.TempDir()
+	skills := filepath.Join(root, "skills", "older")
+	require.NoError(t, os.MkdirAll(filepath.Join(skills, ".git"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(skills, ".git", "HEAD"), []byte("historical raw view"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "config.toml"), []byte("historical config"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "prompt.md"), []byte("historical prompt"), 0o600))
+	inputs, err := snapshotStudyExperimentInputs(t.TempDir(), 0, root, studyExperiment{Config: "config.toml", Skills: "skills", EntryPrompt: "prompt.md"})
+	require.NoError(t, err)
+	require.FileExists(t, filepath.Join(inputs.Skills, "older", ".git", "HEAD"))
 }

@@ -57,26 +57,6 @@ func TestLegacyDispatchAgentDirectoryRemainsCatalogStateUntilMigration(t *testin
 	assert.True(t, catalogSkillIsManagedOnDisk(root, entry))
 }
 
-func TestCatalogSkillIsManagedOnDiskGroupedMembers(t *testing.T) {
-	entry := templates.CLISkillCatalogEntry{
-		ID:      "development-skills",
-		Name:    "Agent Layer development skills",
-		Members: []string{"implement", "ship-pr"},
-	}
-
-	t.Run("false when no members exist", func(t *testing.T) {
-		root := t.TempDir()
-		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills"), 0o750))
-		assert.False(t, catalogSkillIsManagedOnDisk(root, entry))
-	})
-
-	t.Run("true when any member directory exists", func(t *testing.T) {
-		root := t.TempDir()
-		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "implement"), 0o750))
-		assert.True(t, catalogSkillIsManagedOnDisk(root, entry))
-	})
-}
-
 func TestAgentLayerDiskEvidenceTreatsStatErrorsAsPresent(t *testing.T) {
 	t.Run("live memory stat error", func(t *testing.T) {
 		root := t.TempDir()

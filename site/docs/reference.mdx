@@ -932,9 +932,14 @@ DeltaSelect exports a content-addressed `selection.json`. Use the CLI scaffolder
 
 ```bash
 al benchmark init selection.json --directory benchmark-study
+# Optional: freeze the external skill source at a particular Git revision
+al benchmark init selection.json --directory benchmark-study-pinned --skills-ref <ref>
 al benchmark run benchmark-study/study.toml --dry-run
 al benchmark run benchmark-study/study.toml
 ```
+
+Initialization fetches and validates all seven exact development skill trees from `nicholasjconn/skills` before publishing the study directory. It freezes plain files under `treatment/official-skills` and source commit/ref/tree evidence in `treatment/skills-source.json`. Existing studies and later runs use their frozen inputs without refetching. Fetch/ref/validation failure leaves the requested destination untouched.
+
 
 The study manifest is the reproducibility boundary. Its `selection` points to the exported DeltaSelect JSON, and each `[[experiments]]` entry declares a name, model, reasoning level, and any treatment inputs such as config, instructions, or skills. Every referenced path must be relative to and remain inside the directory containing `study.toml`.
 

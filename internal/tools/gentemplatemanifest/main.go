@@ -9,17 +9,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
 
-	toml "github.com/pelletier/go-toml/v2"
-
 	"github.com/conn-castle/agent-layer/internal/install"
+	"github.com/conn-castle/agent-layer/internal/templates"
 )
-
-var catalogSkillIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
 type templateSource struct {
 	templatePath string
@@ -83,10 +79,7 @@ func collectTemplateSources(root string) ([]templateSource, error) {
 	for _, name := range rootFiles {
 		absPath := filepath.Join(root, templateRoot, name)
 		if _, err := os.Stat(absPath); err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, err
+			return nil, fmt.Errorf("required retained template root %s: %w", name, err)
 		}
 		content, err := os.ReadFile(absPath)
 		if err != nil {
@@ -98,14 +91,11 @@ func collectTemplateSources(root string) ([]templateSource, error) {
 			dests:        templateDestPaths(name),
 		})
 	}
-	dirs := []string{"instructions", "skills", "skills-catalog", "docs/agent-layer"}
+	dirs := []string{"instructions", "skills-catalog", "docs/agent-layer"}
 	for _, dir := range dirs {
 		absDir := filepath.Join(root, templateRoot, dir)
 		if _, err := os.Stat(absDir); err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, err
+			return nil, fmt.Errorf("required retained template root %s: %w", dir, err)
 		}
 		var paths []string
 		err := filepath.WalkDir(absDir, func(path string, d fs.DirEntry, err error) error {
@@ -171,9 +161,6 @@ func templateDestPaths(templatePath string) []string {
 	case strings.HasPrefix(templatePath, "instructions/"):
 		suffix := strings.TrimPrefix(templatePath, "instructions/")
 		return []string{filepath.ToSlash(filepath.Join(".agent-layer/instructions", suffix))}
-	case strings.HasPrefix(templatePath, "skills/"):
-		suffix := strings.TrimPrefix(templatePath, "skills/")
-		return []string{filepath.ToSlash(filepath.Join(".agent-layer/skills", suffix))}
 	case strings.HasPrefix(templatePath, "skills-catalog/"):
 		// Catalog skills materialize at .agent-layer/skills/<id>/... when the
 		// wizard installs them; mirror the destination so manifest paths match
@@ -196,33 +183,17 @@ func catalogSkillPathPrefixes(root string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var catalog struct {
-		CLISkills []struct {
-			ID      string   `toml:"id"`
-			Members []string `toml:"members"`
-		} `toml:"cli_skills"`
-	}
-	if err := toml.Unmarshal(data, &catalog); err != nil {
+	entries, err := templates.ParseCLISkillCatalog(data, func(path string) ([]byte, error) {
+		return os.ReadFile(filepath.Join(root, "internal", "templates", path))
+	})
+	if err != nil {
 		return nil, err
 	}
-	if len(catalog.CLISkills) == 0 {
-		return nil, fmt.Errorf("CLI skills catalog contains no entries")
-	}
-	seen := make(map[string]struct{}, len(catalog.CLISkills))
-	out := make([]string, 0, len(catalog.CLISkills))
-	for idx, entry := range catalog.CLISkills {
-		id := strings.TrimSpace(entry.ID)
-		if !catalogSkillIDPattern.MatchString(id) {
-			return nil, fmt.Errorf("CLI skills catalog entry %d has invalid id %q", idx, entry.ID)
+	var out []string
+	for _, entry := range entries {
+		if entry.Repository == "" {
+			out = append(out, ".agent-layer/skills/"+entry.ID+"/")
 		}
-		if _, ok := seen[id]; ok {
-			return nil, fmt.Errorf("CLI skills catalog entry %d duplicates id %q", idx, id)
-		}
-		seen[id] = struct{}{}
-		if len(entry.Members) > 0 {
-			continue
-		}
-		out = append(out, ".agent-layer/skills/"+id+"/")
 	}
 	sort.Strings(out)
 	return out, nil

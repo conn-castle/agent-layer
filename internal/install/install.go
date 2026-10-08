@@ -13,6 +13,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/skillmigration"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
 
@@ -96,6 +97,18 @@ type matchCacheEntry struct {
 
 // Run initializes the repository with the required Agent Layer structure.
 func Run(root string, opts Options) error {
+	if opts.Overwrite && root != "" && opts.System != nil {
+		return skillmigration.WithRecovered(root, func() error {
+			if err := skillmigration.CheckVersionLocked(root, opts.PinVersion); err != nil {
+				return err
+			}
+			return run(root, opts)
+		})
+	}
+	return run(root, opts)
+}
+
+func run(root string, opts Options) error {
 	if root == "" {
 		return fmt.Errorf(messages.InstallRootRequired)
 	}
@@ -189,11 +202,15 @@ type transactionStep struct {
 }
 
 func (inst upgradeOrchestrator) runUpgradeTransaction(snapshot *upgradeSnapshot) error {
+	catalogDirs, err := inst.templates().installedCatalogSkillTemplateDirs()
+	if err != nil {
+		return err
+	}
 	steps := []transactionStep{
 		{name: "runMigrations", run: inst.runMigrations, rollbackTargets: inst.runMigrationsTargetPaths},
 		{name: "writeVersionFile", run: inst.writeVersionFile, rollbackTargets: inst.writeVersionFileTargetPaths},
 		{name: "writeTemplateFiles", run: inst.templates().writeTemplateFiles, rollbackTargets: inst.writeTemplateFilesTargetPaths},
-		{name: "writeTemplateDirs", run: inst.templates().writeTemplateDirs, rollbackTargets: inst.writeTemplateDirsTargetPaths},
+		{name: "writeTemplateDirs", run: inst.templates().writeTemplateDirs, rollbackTargets: func() []string { return inst.writeTemplateDirsTargetPaths(catalogDirs) }},
 		// Statusline sources run after the managed/memory template steps so their
 		// interactive diff prompt comes after the main overwrite prompt rather than
 		// ahead of it; when nothing else changes it is naturally the only prompt.

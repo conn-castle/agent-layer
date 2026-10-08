@@ -15,7 +15,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
+
+	"github.com/conn-castle/agent-layer/internal/skilljournal"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 // TestMain keeps dispatch tests independent of the outer development launcher.
@@ -359,8 +363,13 @@ func TestMaybeExec_DispatchSuccess(t *testing.T) {
 	cacheDir := t.TempDir()
 	t.Setenv(EnvCacheDir, cacheDir)
 
+	root := t.TempDir()
+	stage := filepath.Join(root, ".agent-layer", "skills-imported", skilljournal.StagingDirName)
+	require.NoError(t, os.MkdirAll(stage, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(stage, skilljournal.FileName), []byte("{\"version\":3}"), 0o600))
+	before := testutil.SnapshotEvidence(t, stage)
 	// Call MaybeExec
-	err := maybeExec(context.Background(), sys, []string{"cmd"}, "0.9.0", ".")
+	err := maybeExec(context.Background(), sys, []string{"cmd"}, "0.9.0", root)
 	if err != ErrDispatched {
 		t.Fatalf("expected ErrDispatched, got %v", err)
 	}
@@ -373,6 +382,8 @@ func TestMaybeExec_DispatchSuccess(t *testing.T) {
 	if execPath != expectedPath {
 		t.Errorf("exec path: got %s, want %s", execPath, expectedPath)
 	}
+	require.Equal(t, before, testutil.SnapshotEvidence(t, stage))
+	require.NoFileExists(t, filepath.Join(root, ".agent-layer", "sync.lock"))
 }
 
 func TestMaybeExec_CanceledWhileWaitingForCacheLockDoesNotExec(t *testing.T) {

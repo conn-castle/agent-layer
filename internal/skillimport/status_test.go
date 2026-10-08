@@ -9,8 +9,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/gitrepo"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 // TestStatusReportsLocalStateWithoutNetworkAccess proves status classifies each
@@ -601,5 +604,38 @@ func TestStatusReportsASkillWhoseSelectorLeftConfiguration(t *testing.T) {
 	}
 	if entry.Condition != ConditionClean {
 		t.Fatalf("condition = %q, want clean", entry.Condition)
+	}
+}
+
+func TestTierReadersAllowOnlyRegularCasePairs(t *testing.T) {
+	for _, kind := range []string{"files", "directories", "directory and file", "symlink and file", "file then directory", "file then symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			for i, name := range []string{"README", "readme"} {
+				node := filepath.Join(dir, name)
+				nonregular := (i == 0 && (kind == "directories" || kind == "directory and file" || kind == "symlink and file")) || (i == 1 && (kind == "directories" || kind == "file then directory" || kind == "file then symlink"))
+				if nonregular && strings.Contains(kind, "symlink") {
+					require.NoError(t, os.Symlink(t.TempDir(), node))
+				} else if nonregular {
+					require.NoError(t, os.Mkdir(node, 0o750))
+				} else {
+					require.NoError(t, os.WriteFile(node, []byte("preserve"), 0o600))
+				}
+			}
+			before := testutil.SnapshotEvidence(t, dir)
+			imports, importErr := readImportedSkills(dir)
+			users, userErr := readUserSkillNames(dir)
+			if kind == "files" {
+				require.NoError(t, importErr)
+				require.NoError(t, userErr)
+				require.True(t, imports["README"].Present && imports["readme"].Present)
+				require.Len(t, users, 1)
+				require.Contains(t, users, "readme", "requested file names still block imports")
+			} else {
+				require.ErrorContains(t, importErr, "normalize to the same name")
+				require.ErrorContains(t, userErr, "normalize to the same name")
+			}
+			require.Equal(t, before, testutil.SnapshotEvidence(t, dir))
+		})
 	}
 }

@@ -20,6 +20,7 @@ func RecoverInterruptedImport(root string) error {
 	paths := config.DefaultPaths(root)
 	return skilljournal.Recover(skilljournal.Targets{
 		ImportedSkillsDir: paths.ImportedSkillsDir,
+		LocalSkillsDir:    paths.SkillsDir,
 		ConfigPath:        paths.ConfigPath,
 		SkillsLockPath:    paths.SkillsLockPath,
 	})

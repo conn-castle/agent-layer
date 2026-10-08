@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/testutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -149,6 +151,7 @@ enabled = false
 }
 
 func TestRun_CLISkillCatalogSelectionCopiesAndRemovesSkill(t *testing.T) {
+	testutil.CatalogGitFixture(t)
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
@@ -179,6 +182,7 @@ enabled = false
 			NoteFunc:   func(title, body string) error { return nil },
 			SelectFunc: func(title string, options []string, current *string) error { return nil },
 			MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+				title, _, _ = strings.Cut(title, cliSkillsStatusHeading)
 				switch title {
 				case messages.WizardEnableAgentsTitle:
 					*selected = []string{}
@@ -200,7 +204,7 @@ enabled = false
 		require.NoError(t, err)
 	}
 
-	skillPath := filepath.Join(root, ".agent-layer", "skills", "tavily-web", "SKILL.md")
+	skillPath := filepath.Join(root, ".agent-layer", "skills-imported", "tavily-web", "SKILL.md")
 	runWithCLISkills([]string{"Tavily web search"})
 	info, err := os.Stat(skillPath)
 	require.NoError(t, err)

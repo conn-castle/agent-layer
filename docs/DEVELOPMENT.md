@@ -132,7 +132,7 @@ go run ../../cmd/al codex
 
 Notes:
 - `init` is required once per repo to seed the bare `.agent-layer/` operational scaffold.
-- `init` prompts to run the setup wizard by default; pass `--no-wizard` to skip (non-interactive shells skip automatically). The wizard can seed instruction files, `docs/agent-layer/` memory files/templates, and catalog skills (including Agent Layer development skills).
+- `init` prompts to run the setup wizard by default; pass `--no-wizard` to skip (non-interactive shells skip automatically). The wizard can seed instruction files, `docs/agent-layer/` memory files/templates, and catalog skills (including Git-backed development skills).
 - `sync` is optional because `al <client>` always syncs before launch.
 - `./scripts/setup.sh` is only for tool + hook setup, not required just to run the CLI.
 
@@ -337,3 +337,7 @@ Reserve `delete_file` for artifacts a user cannot meaningfully have edited.
   ```bash
   GOCACHE=.cache/go-build GOMODCACHE=.cache/go-mod go mod tidy
   ```
+
+General skill authoring lives in `nicholasjconn/skills`: seven development and three tool trees. Agent Layer embeds only the catalog coordinates and `dispatch-agent`, `skill-sync`, and `benchmark` content. Supporting files and script behavioral tests travel inside each external skill; `ship-pr/tests` is a standalone standard-library-only Go module with a test-only CI gate in the destination. Product integration tests use minimal local Git fixtures and inherited Git URL rewriting, without duplicating production scripts.
+
+`al benchmark init` fetches and freezes all seven exact development paths before publishing a study. `--skills-ref` selects a reproducible Git input. `treatment/skills-source.json` records source repository, selected paths, resolved ref/commit, and canonical tree hashes; `study.toml` declares it as an optional content-addressed input. Existing studies without that field remain compatible and never fetch on run/replay. Project-input audit snapshots stay separate from clean external treatment inputs.

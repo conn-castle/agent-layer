@@ -2,8 +2,6 @@ package templates
 
 import (
 	"errors"
-	"io/fs"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -31,7 +29,7 @@ func TestLoadCLISkillCatalog_EmbeddedHasExpectedEntries(t *testing.T) {
 	assert.Equal(t, "Agent dispatch (cross agent conversations)", ids["dispatch-agent"].Name)
 	assert.Equal(t, "Skill sync (import and update skills from Git)", ids["skill-sync"].Name)
 	assert.Equal(t, "Agent Layer benchmark", ids["benchmark"].Name)
-	assert.Equal(t, "Agent Layer development skills (/implement, /ship-pr, etc.)", ids["development-skills"].Name)
+	assert.Equal(t, "Development skills (/implement, /ship-pr, etc.)", ids["development-skills"].Name)
 	assert.Equal(t, []string{
 		"implement",
 		"ship-pr",
@@ -40,35 +38,30 @@ func TestLoadCLISkillCatalog_EmbeddedHasExpectedEntries(t *testing.T) {
 		"audit-memory",
 		"audit-tests",
 		"interface-audit",
-	}, ids["development-skills"].Members)
+	}, ids["development-skills"].SkillNames())
 }
 
-func TestLoadCLISkillCatalog_DevelopmentSkillsMembersMatchEmbeddedWorkflowSkills(t *testing.T) {
+func TestCatalogExternalSkillsHaveExactCoordinatesAndNoEmbeddedContent(t *testing.T) {
 	entries, err := LoadCLISkillCatalog()
 	require.NoError(t, err)
-	var members []string
 	for _, entry := range entries {
-		if entry.ID == "development-skills" {
-			members = append(members, entry.Members...)
+		if entry.Repository == "" {
+			_, err := Read("skills-catalog/" + entry.ID + "/SKILL.md")
+			require.NoError(t, err)
+			continue
 		}
-	}
-	embedded := make(map[string]struct{})
-	err = Walk("skills", func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil || entry.IsDir() {
-			return walkErr
+		assert.Equal(t, GeneralSkillsRepository, entry.Repository)
+		for i, name := range entry.SkillNames() {
+			group := "tools"
+			if entry.ID == "development-skills" {
+				group = "development"
+			}
+			assert.Equal(t, "skills/"+group+"/"+name, entry.Selectors[i])
+			_, err := Read("skills/" + name + "/SKILL.md")
+			require.Error(t, err)
+			_, err = Read("skills-catalog/" + name + "/SKILL.md")
+			require.Error(t, err)
 		}
-		rel := strings.TrimPrefix(path, "skills/")
-		id := strings.Split(rel, "/")[0]
-		if id != "" && id != rel {
-			embedded[id] = struct{}{}
-		}
-		return nil
-	})
-	require.NoError(t, err)
-	assert.Len(t, members, len(embedded))
-	for _, member := range members {
-		_, ok := embedded[member]
-		assert.True(t, ok, "catalog member %s should be an embedded workflow skill", member)
 	}
 }
 
@@ -84,152 +77,36 @@ func TestLoadCLISkillCatalog_ReadError(t *testing.T) {
 	assert.Contains(t, err.Error(), "cli-skills-catalog.toml")
 }
 
-func TestLoadCLISkillCatalog_EmptyDoc(t *testing.T) {
-	original := ReadFunc
-	ReadFunc = func(path string) ([]byte, error) {
-		if path == cliSkillsCatalogPath {
-			return []byte("# empty\n"), nil
-		}
-		return original(path)
+func TestCatalogRejectsInvalidRowsAndDerivedNameCollisions(t *testing.T) {
+	for _, tc := range []struct {
+		name, catalog, problem string
+	}{
+		{"empty", "# empty\n", "no entries"},
+		{"missing id", "[[cli_skills]]\nname=\"X\"\n", "id"},
+		{"missing name", "[[cli_skills]]\nid=\"x\"\n", "name"},
+		{"invalid id", "[[cli_skills]]\nid=\"../escape\"\nname=\"Escape\"\n", "invalid id"},
+		{"duplicate id", "[[cli_skills]]\nid=\"x\"\nname=\"X\"\n[[cli_skills]]\nid=\"x\"\nname=\"Other\"\n", "duplicates id"},
+		{"duplicate name", "[[cli_skills]]\nid=\"x\"\nname=\"X\"\n[[cli_skills]]\nid=\"y\"\nname=\" X \"\n", "duplicates name"},
+		{"duplicate derived name", "[[cli_skills]]\nid=\"pack\"\nname=\"Pack\"\nrepository=\"https://example.test/skills.git\"\nselectors=[\"a/x\",\"b/x\"]\n", "duplicates member"},
+		{"derived name collides with row", "[[cli_skills]]\nid=\"x\"\nname=\"X\"\nrepository=\"https://example.test/skills.git\"\nselectors=[\"tools/x\"]\n[[cli_skills]]\nid=\"pack\"\nname=\"Pack\"\nrepository=\"https://example.test/skills.git\"\nselectors=[\"development/x\"]\n", "collides with catalog id"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseCLISkillCatalog([]byte(tc.catalog), Read)
+			require.ErrorContains(t, err, tc.problem)
+		})
 	}
-	t.Cleanup(func() { ReadFunc = original })
-
-	_, err := LoadCLISkillCatalog()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no entries")
 }
 
-func TestLoadCLISkillCatalog_MissingID(t *testing.T) {
-	original := ReadFunc
-	ReadFunc = func(path string) ([]byte, error) {
-		if path == cliSkillsCatalogPath {
-			return []byte("[[cli_skills]]\nname = \"X\"\n"), nil
-		}
-		return original(path)
+func TestCatalogRejectsIncompleteAndMixedSources(t *testing.T) {
+	for _, coordinates := range []string{
+		`repository="https://github.com/nicholasjconn/skills.git"`,
+		`selectors=["skills/tools/x"]`,
+		`repository="../local"` + "\n" + `selectors=["skills/tools/x"]`,
+		`repository="https://example.test/skills.git"` + "\n" + `selectors=["skills/*"]`,
+		`repository="https://example.test/skills.git"` + "\n" + `selectors=["skills/tools/INVALID"]`,
+		`repository="https://example.test/skills.git"` + "\n" + `selectors=["skills/tools/x"]` + "\n" + `ownership_marker="mixed"`,
+	} {
+		_, err := ParseCLISkillCatalog([]byte("[[cli_skills]]\nid=\"x\"\nname=\"X\"\n"+coordinates+"\n"), Read)
+		require.Error(t, err, coordinates)
 	}
-	t.Cleanup(func() { ReadFunc = original })
-
-	_, err := LoadCLISkillCatalog()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "id")
-}
-
-func TestLoadCLISkillCatalog_MissingName(t *testing.T) {
-	original := ReadFunc
-	ReadFunc = func(path string) ([]byte, error) {
-		if path == cliSkillsCatalogPath {
-			return []byte("[[cli_skills]]\nid = \"x\"\n"), nil
-		}
-		return original(path)
-	}
-	t.Cleanup(func() { ReadFunc = original })
-
-	_, err := LoadCLISkillCatalog()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "name")
-}
-
-func TestLoadCLISkillCatalog_InvalidID(t *testing.T) {
-	original := ReadFunc
-	ReadFunc = func(path string) ([]byte, error) {
-		if path == cliSkillsCatalogPath {
-			return []byte("[[cli_skills]]\nid = \"../escape\"\nname = \"Escape\"\n"), nil
-		}
-		return original(path)
-	}
-	t.Cleanup(func() { ReadFunc = original })
-
-	_, err := LoadCLISkillCatalog()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid id")
-}
-
-func TestLoadCLISkillCatalog_DuplicateID(t *testing.T) {
-	original := ReadFunc
-	ReadFunc = func(path string) ([]byte, error) {
-		if path == cliSkillsCatalogPath {
-			return []byte("[[cli_skills]]\nid = \"find-docs\"\nname = \"Find Docs\"\n\n[[cli_skills]]\nid = \"find-docs\"\nname = \"Duplicate\"\n"), nil
-		}
-		return original(path)
-	}
-	t.Cleanup(func() { ReadFunc = original })
-
-	_, err := LoadCLISkillCatalog()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "duplicates id")
-}
-
-func TestLoadCLISkillCatalog_DuplicateName(t *testing.T) {
-	original := ReadFunc
-	ReadFunc = func(path string) ([]byte, error) {
-		if path == cliSkillsCatalogPath {
-			return []byte("[[cli_skills]]\nid = \"find-docs\"\nname = \"Find Docs\"\n\n[[cli_skills]]\nid = \"tavily-web\"\nname = \" Find Docs \"\n"), nil
-		}
-		return original(path)
-	}
-	t.Cleanup(func() { ReadFunc = original })
-
-	_, err := LoadCLISkillCatalog()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "duplicates name")
-}
-
-func TestLoadCLISkillCatalog_InvalidMember(t *testing.T) {
-	original := ReadFunc
-	ReadFunc = func(path string) ([]byte, error) {
-		if path == cliSkillsCatalogPath {
-			return []byte("[[cli_skills]]\nid = \"pack\"\nname = \"Pack\"\nmembers = [\"../escape\"]\n"), nil
-		}
-		return original(path)
-	}
-	t.Cleanup(func() { ReadFunc = original })
-
-	_, err := LoadCLISkillCatalog()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid member")
-}
-
-func TestLoadCLISkillCatalog_DuplicateMember(t *testing.T) {
-	original := ReadFunc
-	ReadFunc = func(path string) ([]byte, error) {
-		if path == cliSkillsCatalogPath {
-			return []byte("[[cli_skills]]\nid = \"pack\"\nname = \"Pack\"\nmembers = [\"implement\", \"implement\"]\n"), nil
-		}
-		return original(path)
-	}
-	t.Cleanup(func() { ReadFunc = original })
-
-	_, err := LoadCLISkillCatalog()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "duplicates member")
-}
-
-func TestLoadCLISkillCatalog_MemberCollidesWithCatalogID(t *testing.T) {
-	original := ReadFunc
-	ReadFunc = func(path string) ([]byte, error) {
-		if path == cliSkillsCatalogPath {
-			return []byte("[[cli_skills]]\nid = \"tavily-web\"\nname = \"Tavily\"\n\n[[cli_skills]]\nid = \"pack\"\nname = \"Pack\"\nmembers = [\"tavily-web\"]\n"), nil
-		}
-		return original(path)
-	}
-	t.Cleanup(func() { ReadFunc = original })
-
-	_, err := LoadCLISkillCatalog()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "collides with catalog id")
-}
-
-func TestLoadCLISkillCatalog_MemberMissingTemplate(t *testing.T) {
-	original := ReadFunc
-	ReadFunc = func(path string) ([]byte, error) {
-		if path == cliSkillsCatalogPath {
-			return []byte("[[cli_skills]]\nid = \"pack\"\nname = \"Pack\"\nmembers = [\"not-a-real-skill\"]\n"), nil
-		}
-		return original(path)
-	}
-	t.Cleanup(func() { ReadFunc = original })
-
-	_, err := LoadCLISkillCatalog()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no embedded")
 }

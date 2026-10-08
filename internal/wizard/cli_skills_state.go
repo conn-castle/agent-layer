@@ -41,21 +41,11 @@ func catalogSkillStateIDOnDisk(root string, entry templates.CLISkillCatalogEntry
 }
 
 // catalogSkillIsManagedOnDisk reports whether the directory at a catalog
-// entry's path is safe for the wizard to claim and remove. Grouped entries use
-// directory presence for each member because their embedded development skills
-// have no per-member ownership marker. Entries without an ownership marker
+// embedded entry's path is safe for the wizard to claim and remove. Entries without an ownership marker
 // retain the legacy directory-presence behavior. Marked entries must contain
 // their marker in SKILL.md so a user-authored same-name skill is not mistaken
 // for catalog-installed content.
 func catalogSkillIsManagedOnDisk(root string, entry templates.CLISkillCatalogEntry) bool {
-	if len(entry.Members) > 0 {
-		for _, member := range entry.Members {
-			if catalogSkillExistsOnDisk(root, member) {
-				return true
-			}
-		}
-		return false
-	}
 	stateID := catalogSkillStateIDOnDisk(root, entry)
 	if !catalogSkillExistsOnDisk(root, stateID) {
 		return false

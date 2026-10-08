@@ -131,22 +131,39 @@ func loadLock(path string) (*skilllock.File, bool, error) {
 // readImportedSkills observes every directory in the imported tier without
 // failing the operation for an individual unreadable or invalid skill.
 func readImportedSkills(dir string) (map[string]localSkill, error) {
-	entries, err := os.ReadDir(dir)
+	entries, err := readTierEntries(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return map[string]localSkill{}, nil
 		}
 		return nil, fmt.Errorf("failed to read %s: %w", dir, err)
 	}
+	return observeImportedSkills(dir, entries)
+}
+
+func observeImportedSkills(dir string, entries []os.DirEntry) (map[string]localSkill, error) {
 	local := make(map[string]localSkill, len(entries))
+	normalizedNames := map[string]os.DirEntry{}
 	for _, entry := range entries {
 		// Hidden entries are Agent Layer's own transaction staging area.
-		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+		if strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
+		normalized := collisionName(entry.Name())
+		if previous, exists := normalizedNames[normalized]; exists && (!previous.Type().IsRegular() || !entry.Type().IsRegular()) {
+			return nil, fmt.Errorf("imported nodes %s and %s normalize to the same name", previous.Name(), entry.Name())
+		}
+		// Unrelated plain files may coexist. Retain every exact node below so
+		// requested names and their case variants still refuse reconciliation.
+		normalizedNames[normalized] = entry
 		name := entry.Name()
 		skillDir := filepath.Join(dir, name)
 		observed := localSkill{Name: name, Dir: skillDir, Present: true}
+		if err := validateSkillDirectory(skillDir); err != nil {
+			observed.Err = err
+			local[name] = observed
+			continue
+		}
 		tree, readErr := skilltree.Read(skilltree.OSFS{}, skillDir)
 		if readErr != nil {
 			observed.Err = readErr
@@ -165,25 +182,36 @@ func readImportedSkills(dir string) (map[string]localSkill, error) {
 // readUserSkillNames lists user-managed skill directory names by normalized
 // name so a same-name import can be blocked without loading skill content.
 func readUserSkillNames(dir string) (map[string]string, error) {
-	entries, err := os.ReadDir(dir)
+	entries, err := readTierEntries(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return map[string]string{}, nil
 		}
 		return nil, fmt.Errorf("failed to read %s: %w", dir, err)
 	}
+	return observeUserSkillNames(dir, entries)
+}
+
+func observeUserSkillNames(dir string, entries []os.DirEntry) (map[string]string, error) {
 	names := make(map[string]string, len(entries))
+	regularNames := map[string]bool{}
 	for _, entry := range entries {
-		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+		if strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
-		normalized := skilltree.NormalizeName(entry.Name())
+		normalized := collisionName(entry.Name())
 		if existing, duplicate := names[normalized]; duplicate {
+			if regularNames[normalized] && entry.Type().IsRegular() {
+				// The representative continues to block this requested name;
+				// unrelated regular variants do not poison other operations.
+				continue
+			}
 			return nil, fmt.Errorf("user-managed skill directories %s and %s normalize to the same name %q; rename one directory before retrying",
 				existing, path, normalized)
 		}
 		names[normalized] = path
+		regularNames[normalized] = entry.Type().IsRegular()
 	}
 	return names, nil
 }
@@ -198,7 +226,7 @@ func (s *state) skill(name string) localSkill {
 
 // classify returns the condition of a locked skill.
 func (s *state) classify(entry skilllock.Entry) Condition {
-	if _, collides := s.userSkills[skilltree.NormalizeName(entry.Name)]; collides {
+	if _, collides := s.userSkills[collisionName(entry.Name)]; collides {
 		if s.skill(entry.Name).Present {
 			return ConditionCollided
 		}
@@ -226,7 +254,11 @@ func (s *state) orphanDirectories() []string {
 		locked[entry.Name] = struct{}{}
 	}
 	var orphans []string
-	for name := range s.local {
+	for name, observed := range s.local {
+		// Regular files remain collision evidence, but are not orphan skill directories.
+		if info, err := os.Lstat(observed.Dir); err == nil && info.Mode().IsRegular() {
+			continue
+		}
 		if _, ok := locked[name]; !ok {
 			orphans = append(orphans, name)
 		}
@@ -333,4 +365,40 @@ func (s *state) configuredSelectionCount(entry skilllock.Entry) int {
 		}
 	}
 	return count
+}
+
+func collisionName(name string) string { return strings.ToLower(skilltree.NormalizeName(name)) }
+
+// validateSkillDirectory checks the root itself; skilltree.Read checks its children.
+func validateSkillDirectory(dir string) error {
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("skill node %s is a symbolic link; replace it with a real directory before changing imports", dir)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("skill node %s is not a directory; resolve it before changing imports", dir)
+	}
+	return nil
+}
+
+// readTierEntries refuses a symlinked tier root before inspecting any candidates.
+func readTierEntries(dir string) ([]os.DirEntry, error) {
+	if err := validateSkillDirectory(dir); err != nil {
+		return nil, err
+	}
+	return os.ReadDir(dir)
+}
+
+// Refuse bad tier roots before recovery can reach staging or live paths through
+// them. Missing tiers are valid for a project with no imported/local skills.
+func validateTierRoots(paths config.Paths) error {
+	for _, dir := range []string{paths.SkillsDir, paths.ImportedSkillsDir} {
+		if err := validateSkillDirectory(dir); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
 }

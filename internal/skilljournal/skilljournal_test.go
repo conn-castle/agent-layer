@@ -1,11 +1,12 @@
 package skilljournal
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // scene is an imported skill tier with an interrupted transaction staged in it.
@@ -147,6 +148,9 @@ func TestRecoverKeepsACommittedTransaction(t *testing.T) {
 		t.Fatalf("MarkCommitted: %v", err)
 	}
 
+	require.NoError(t, os.RemoveAll(filepath.Join(s.staging, WriteBackupPrefix+"alpha")))
+	require.NoError(t, os.Remove(filepath.Join(s.staging, ConfigBackupName)))
+
 	if err := Recover(s.targets); err != nil {
 		t.Fatalf("Recover: %v", err)
 	}
@@ -210,6 +214,14 @@ func TestRecoverRejectsAJournalItCannotTrust(t *testing.T) {
 		{name: "escaping write name", data: `{"version":1,"writes":[{"name":"../escape","existed":true}]}`, want: "not a directory name"},
 		{name: "escaping delete name", data: `{"version":1,"deletes":["a/b"]}`, want: "not a directory name"},
 		{name: "empty name", data: `{"version":1,"deletes":[" "]}`, want: "is empty"},
+		{name: "duplicate writes", data: `{"version":1,"writes":[{"name":"alpha","existed":true},{"name":"alpha","existed":false}]}`, want: "malformed"},
+		{name: "duplicate deletes", data: `{"version":1,"deletes":["alpha","alpha"]}`, want: "malformed"},
+		{name: "write delete overlap", data: `{"version":1,"writes":[{"name":"alpha"}],"deletes":["alpha"]}`, want: "malformed"},
+		{name: "case collision", data: `{"version":1,"writes":[{"name":"alpha"}],"deletes":["ALPHA"]}`, want: "malformed"},
+		{name: "normalized collision", data: `{"version":1,"writes":[{"name":"alpha"}],"deletes":["ａｌｐｈａ"]}`, want: "malformed"},
+		{name: "reserved staging", data: `{"version":1,"writes":[{"name":".staging"}]}`, want: "malformed"},
+		{name: "trailing document", data: `{"version":1} {"version":1}`, want: "malformed"},
+		{name: "trailing garbage", data: `{"version":1} broken`, want: "malformed"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -235,27 +247,29 @@ func TestRecoverRejectsAJournalItCannotTrust(t *testing.T) {
 // TestRecoverReportsAnIncompleteRollback proves a rollback that cannot restore
 // prior state fails loudly instead of leaving the caller to read half-reverted
 // state as if it were clean.
-func TestRecoverReportsAnIncompleteRollback(t *testing.T) {
-	t.Parallel()
-	s := newScene(t)
-	s.writeTree(s.skill("alpha"), "interrupted alpha")
-	// The journal claims a configuration backup that is not there.
-	if err := Write(s.staging, Document{
-		Writes:      []WriteIntent{{Name: "alpha", Existed: true}},
-		Config:      true,
-		LockExisted: false,
-	}); err != nil {
-		t.Fatalf("Write: %v", err)
+func TestAdoptionJournalPreservesVersionAndRejectsUnpermittedRetirements(t *testing.T) {
+	root := t.TempDir()
+	doc := Document{Version: AdoptionVersion, Writes: []WriteIntent{{Name: "ship-pr"}}, LocalRetirements: []string{"ship-pr"}}
+	if err := Write(root, doc); err != nil {
+		t.Fatal(err)
 	}
-
-	err := Recover(s.targets)
-	if err == nil {
-		t.Fatal("expected an incomplete rollback to be reported")
+	if err := MarkCommitted(root); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "could not be fully rolled back") {
-		t.Fatalf("error %q does not report the incomplete rollback", err)
+	actual, err := read(root)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if errors.Is(err, ErrMalformed) {
-		t.Fatalf("an incomplete rollback was reported as a malformed journal: %v", err)
+	if actual.Version != AdoptionVersion || !actual.Committed {
+		t.Fatal("commit marker downgraded adoption journal")
+	}
+	for _, name := range []string{"../../escape", "custom", "Ship-pr"} {
+		doc.LocalRetirements = []string{name}
+		if err := Write(root, doc); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := read(root); err == nil {
+			t.Fatal("invalid local retirement accepted")
+		}
 	}
 }

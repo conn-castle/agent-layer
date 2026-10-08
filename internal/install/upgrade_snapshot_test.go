@@ -3178,7 +3178,7 @@ func TestUpgradeSnapshotTargetPaths_ExcludesAgentLayerTmp(t *testing.T) {
 		sys:      RealSystem{},
 		unknowns: []string{tmpDir, tmpFile, otherUnknown},
 	}
-	paths := inst.upgradeSnapshotTargetPaths()
+	paths := inst.upgradeSnapshotTargetPaths(nil)
 	for _, p := range paths {
 		if p == tmpDir || p == tmpFile {
 			t.Fatalf("upgradeSnapshotTargetPaths must not include tmp paths, got %q in %v", p, paths)

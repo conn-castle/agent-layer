@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/skillmigration"
+	"github.com/conn-castle/agent-layer/internal/version"
 )
 
 const manualRollbackFailureStep = "manual_rollback"
@@ -21,6 +23,13 @@ type RollbackUpgradeSnapshotOptions struct {
 
 // RollbackUpgradeSnapshot restores a previously captured managed-file snapshot by ID.
 func RollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgradeSnapshotOptions) error {
+	if strings.TrimSpace(root) == "" || opts.System == nil || strings.TrimSpace(snapshotID) == "" || filepath.Base(snapshotID) != snapshotID {
+		return rollbackUpgradeSnapshot(root, snapshotID, opts)
+	}
+	return skillmigration.WithRecovered(root, func() error { return rollbackUpgradeSnapshot(root, snapshotID, opts) })
+}
+
+func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgradeSnapshotOptions) error {
 	if strings.TrimSpace(root) == "" {
 		return fmt.Errorf(messages.InstallRootRequired)
 	}
@@ -56,6 +65,39 @@ func RollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 		return fmt.Errorf(messages.InstallUpgradeRollbackSnapshotNotRollbackableFmt, snapshotID, snapshot.Status)
 	}
 
+	active, err := skillmigration.ActiveNames(root)
+	if err != nil {
+		return err
+	}
+	if len(active) > 0 {
+		for _, entry := range snapshot.Entries {
+			if entry.Kind == upgradeSnapshotEntryKindAbsent {
+				continue
+			}
+			clean := normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path)))
+			for name := range active {
+				local := ".agent-layer/skills/" + name
+				if clean == local || strings.HasPrefix(clean, local+"/") {
+					return fmt.Errorf("rollback %s would recreate converted local skill %s alongside its active import; snapshot and imported modifications are preserved", snapshotID, name)
+				}
+			}
+			if clean == pinVersionRelPath && entry.Kind == upgradeSnapshotEntryKindFile {
+				bytes, err := base64.StdEncoding.DecodeString(entry.ContentBase64)
+				if err != nil {
+					return err
+				}
+				pin, ok, err := version.ParsePin(bytes)
+				if err != nil {
+					return err
+				}
+				if ok {
+					if err := skillmigration.CheckVersionLocked(root, pin); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
 	targets, err := rollbackTargetsForSnapshot(root, snapshot)
 	if err != nil {
 		return err

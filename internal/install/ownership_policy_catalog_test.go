@@ -85,8 +85,9 @@ func TestCatalogSkillRelPathPrefixesMatchEmbeddedCatalog(t *testing.T) {
 	require.NoError(t, err)
 	var catalog struct {
 		CLISkills []struct {
-			ID      string   `toml:"id"`
-			Members []string `toml:"members"`
+			ID         string   `toml:"id"`
+			Members    []string `toml:"members"`
+			Repository string   `toml:"repository"`
 		} `toml:"cli_skills"`
 	}
 	require.NoError(t, toml.Unmarshal(data, &catalog))
@@ -95,7 +96,7 @@ func TestCatalogSkillRelPathPrefixesMatchEmbeddedCatalog(t *testing.T) {
 	want := make([]string, 0, len(catalog.CLISkills))
 	for _, entry := range catalog.CLISkills {
 		require.NotEmpty(t, entry.ID)
-		if len(entry.Members) > 0 {
+		if entry.Repository != "" {
 			continue
 		}
 		want = append(want, ".agent-layer/skills/"+entry.ID+"/")
@@ -104,6 +105,9 @@ func TestCatalogSkillRelPathPrefixesMatchEmbeddedCatalog(t *testing.T) {
 	// the renaming upgrade still classifies the directory as wizard-owned
 	// instead of reporting it as an unknown file.
 	legacy := map[string]struct{}{
+		".agent-layer/skills/playwright/":     {},
+		".agent-layer/skills/tavily-web/":     {},
+		".agent-layer/skills/find-docs/":      {},
 		".agent-layer/skills/playwright-cli/": {},
 		".agent-layer/skills/agent-dispatch/": {},
 	}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 const (
@@ -355,7 +356,11 @@ func (inst *installer) rollbackUpgradeSnapshot(snapshot *upgradeSnapshot, target
 }
 
 func (inst *installer) captureUpgradeSnapshotEntries() ([]upgradeSnapshotEntry, error) {
-	targets := inst.upgradeSnapshotTargetPaths()
+	catalogDirs, err := inst.templates().installedCatalogSkillTemplateDirs()
+	if err != nil {
+		return nil, err
+	}
+	targets := inst.upgradeSnapshotTargetPaths(catalogDirs)
 	entries := make(map[string]upgradeSnapshotEntry)
 	for _, target := range targets {
 		if err := inst.captureUpgradeSnapshotTarget(target, entries); err != nil {
@@ -515,13 +520,20 @@ func (inst *installer) writeTemplateFilesTargetPaths() []string {
 	return uniqueNormalizedPaths(paths)
 }
 
-func (inst *installer) writeTemplateDirsTargetPaths() []string {
+func (inst *installer) writeTemplateDirsTargetPaths(catalogDirs []templateDir) []string {
 	paths := make([]string, 0, len(inst.templates().managedTemplateDirs())+len(inst.templates().memoryTemplateDirs()))
 	for _, dir := range inst.templates().managedTemplateDirs() {
 		paths = append(paths, dir.destRoot)
 	}
 	for _, dir := range inst.templates().memoryTemplateDirs() {
 		paths = append(paths, dir.destRoot)
+	}
+	for _, dir := range catalogDirs {
+		paths = append(paths, dir.destRoot)
+	}
+	// Failed template writes must reset legacy slots without resetting user skills.
+	for _, name := range templates.RetiredSkillNames {
+		paths = append(paths, filepath.Join(inst.root, ".agent-layer", "skills", name))
 	}
 	return uniqueNormalizedPaths(paths)
 }
@@ -555,7 +567,7 @@ func (inst *installer) handleUnknownsTargetPaths() []string {
 	return uniqueNormalizedPaths(filtered)
 }
 
-func (inst *installer) upgradeSnapshotTargetPaths() []string {
+func (inst *installer) upgradeSnapshotTargetPaths(catalogDirs []templateDir) []string {
 	root := inst.root
 	paths := make(map[string]struct{})
 	add := func(path string) {
@@ -588,6 +600,9 @@ func (inst *installer) upgradeSnapshotTargetPaths() []string {
 	for _, dir := range inst.templates().memoryTemplateDirs() {
 		add(dir.destRoot)
 	}
+	for _, dir := range catalogDirs {
+		add(dir.destRoot)
+	}
 	// Statusline sources are rollback targets of the writeStatuslineSources
 	// transaction step, so they must be snapshotted too. Otherwise an automatic
 	// rollback would RemoveAll a pre-existing, possibly user-customized source
@@ -595,6 +610,11 @@ func (inst *installer) upgradeSnapshotTargetPaths() []string {
 	// paths in handleUnknownsTargetPaths.
 	for _, path := range inst.writeStatuslineSourcesTargetPaths() {
 		add(path)
+	}
+	// Capture legacy slots whose absence also matters to migration rollback.
+	// Restoring the user-managed tier would revert unrelated edits and new skills.
+	for _, name := range templates.RetiredSkillNames {
+		add(filepath.Join(root, ".agent-layer", "skills", name))
 	}
 	add(filepath.Join(root, ".gitignore"))
 	for _, path := range launchers.VSCodePaths(root).All() {

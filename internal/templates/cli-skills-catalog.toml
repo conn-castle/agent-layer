@@ -1,22 +1,24 @@
-# Internal CLI skill catalog used by `al wizard`.
-# This file is embedded in the al binary and never written to a user repo.
-# The wizard reads this catalog to populate its CLI skill multiselect.
-# Each entry's directory lives under internal/templates/skills-catalog/<id>/.
-# To enable a catalog skill, the wizard copies the matching directory into
-# `.agent-layer/skills/<id>/`. To disable, the wizard removes that directory.
+# Internal catalog shared by wizard, doctor, and release manifests.
+# Empty repository entries are embedded; Git entries use exact selectors.
 
 [[cli_skills]]
 id = "tavily-web"
+repository = "https://github.com/nicholasjconn/skills.git"
+selectors = ["skills/tools/tavily-web"]
 name = "Tavily web search"
 binary = "tvly"
 
 [[cli_skills]]
 id = "playwright"
+repository = "https://github.com/nicholasjconn/skills.git"
+selectors = ["skills/tools/playwright"]
 name = "Playwright browser automation"
 binary = "playwright-cli"
 
 [[cli_skills]]
 id = "find-docs"
+repository = "https://github.com/nicholasjconn/skills.git"
+selectors = ["skills/tools/find-docs"]
 name = "Context7 docs lookup"
 # find-docs invokes `npx ctx7`; the closest deterministic presence check is `npx`.
 binary = "npx"
@@ -39,15 +41,7 @@ name = "Agent Layer benchmark"
 
 [[cli_skills]]
 id = "development-skills"
-name = "Agent Layer development skills (/implement, /ship-pr, etc.)"
-# Grouped catalog entry: members are copied from embedded skills/<id>/,
-# not skills-catalog/<id>/. The id itself is not a destination directory.
-members = [
-  "implement",
-  "ship-pr",
-  "auto-skill-loop",
-  "audit-documentation",
-  "audit-memory",
-  "audit-tests",
-  "interface-audit",
-]
+name = "Development skills (/implement, /ship-pr, etc.)"
+repository = "https://github.com/nicholasjconn/skills.git"
+selectors = ["skills/development/implement", "skills/development/ship-pr", "skills/development/auto-skill-loop", "skills/development/audit-documentation", "skills/development/audit-memory", "skills/development/audit-tests", "skills/development/interface-audit"]
+# Grouped Git import: selectors are exact paths; id is only a checkbox identity.

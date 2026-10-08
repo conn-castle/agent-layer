@@ -12,6 +12,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/projectlock"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -354,13 +355,8 @@ func (inst *installer) relativePathList(paths []string) []string {
 	return rel
 }
 
-// SyncLockFileName is the per-project sync lock file created under .agent-layer/
-// by internal/projectlock. It is defined here, in the package that owns the
-// .agent-layer layout contract, so buildKnownPaths and the lock writer share a
-// single source and the installer never reports the lock as an unknown file.
-// internal/projectlock imports internal/install (not the reverse), so this is
-// the cycle-safe home.
-const SyncLockFileName = "sync.lock"
+// SyncLockFileName aliases the shared project lock filename so it remains known.
+const SyncLockFileName = projectlock.FileName
 
 func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 	known := make(map[string]struct{})
@@ -439,8 +435,11 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 	if err := addTemplatePaths(instructionsDirName, filepath.Join(root, ".agent-layer", instructionsDirName)); err != nil {
 		return nil, err
 	}
-	if err := addTemplatePaths("skills", filepath.Join(root, ".agent-layer", "skills")); err != nil {
-		return nil, err
+	for _, name := range templates.RetiredSkillNames {
+		add(filepath.Join(root, ".agent-layer", "skills", name))
+		if err := inst.addExistingKnownPaths(filepath.Join(root, ".agent-layer", "skills", name), add); err != nil {
+			return nil, err
+		}
 	}
 	// Catalog skills (wizard-managed) materialize at .agent-layer/skills/<id>/ when
 	// selected; treating them as known here keeps them off the unknowns list after
@@ -475,11 +474,16 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 
 func (inst *installer) addExistingKnownPaths(root string, add func(string)) error {
 	sys := inst.sys
-	if _, err := sys.Stat(root); err != nil {
+	info, err := sys.Lstat(root)
+	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 		return fmt.Errorf(messages.InstallFailedStatFmt, root, err)
+	}
+	add(root)
+	if !info.IsDir() {
+		return nil
 	}
 	return sys.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {

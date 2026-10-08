@@ -109,7 +109,7 @@ func TestBuildUpgradePlan_DevelopmentSkillDoesNotActivateInstructionsOrMemory(t 
 	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
 	require.NoError(t, err)
 
-	assert.NotNil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/skills/implement/SKILL.md"))
+	assert.Nil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/skills/implement/SKILL.md"))
 	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/ship-pr/SKILL.md"))
 	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/instructions/00_rules.md"))
 	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, "docs/agent-layer/ISSUES.md"))
@@ -119,13 +119,13 @@ func TestBuildUpgradePlan_InstalledCatalogSkillIsUpgradeManaged(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "1.2.3"}))
 
-	skillPath := filepath.Join(root, ".agent-layer", "skills", "tavily-web", "SKILL.md")
+	skillPath := filepath.Join(root, ".agent-layer", "skills", "benchmark", "SKILL.md")
 	require.NoError(t, os.MkdirAll(filepath.Dir(skillPath), 0o750))
 	require.NoError(t, os.WriteFile(skillPath, []byte("customized catalog skill\n"), 0o600))
 
 	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
 	require.NoError(t, err)
 
-	assert.NotNil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/skills/tavily-web/SKILL.md"))
+	assert.NotNil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/skills/benchmark/SKILL.md"))
 	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/playwright/SKILL.md"))
 }

@@ -8,8 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 // importBlock renders one configuration block for a test fixture.
@@ -468,24 +471,45 @@ func TestPullAdoptionPrunesLockAndSkipsRestoration(t *testing.T) {
 // TestPullBlocksImportOfAUserManagedName proves an existing user-managed skill
 // blocks an import of the same name instead of shadowing either source.
 func TestPullBlocksImportOfAUserManagedName(t *testing.T) {
-	source := newGitRepo(t, "main")
-	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
-	source.Commit("add alpha")
-
-	proj := newProject(t)
-	proj.WriteUserSkill("alpha")
-	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}))
-
-	report, err := proj.Service().Pull(context.Background())
-	if err != nil {
-		t.Fatalf("Pull: %v", err)
-	}
-	blocked := requireOutcome(t, report, "alpha", OutcomeFailed)
-	if !strings.Contains(blocked.Err.Error(), "already owns the name") {
-		t.Fatalf("collision error = %q", blocked.Err)
-	}
-	if proj.ImportedExists("alpha") {
-		t.Fatal("a blocked import created an imported directory")
+	for _, kind := range []string{"directory", "retired directory", "regular file", "imported case file"} {
+		t.Run(kind, func(t *testing.T) {
+			name := "alpha"
+			if kind == "retired directory" {
+				name = "implement"
+			}
+			source := newGitRepo(t, "main")
+			source.WriteSkill("skills/"+name, name, "Upstream body")
+			source.Commit("add skill")
+			proj := newProject(t)
+			if kind == "regular file" || kind == "imported case file" {
+				dir, node := proj.paths.SkillsDir, name
+				if kind == "imported case file" {
+					dir, node = proj.paths.ImportedSkillsDir, "Alpha"
+				}
+				require.NoError(t, os.MkdirAll(dir, 0o750))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, node), []byte("preserve"), 0o600))
+			} else {
+				proj.WriteUserSkill(name)
+			}
+			proj.AppendConfig(importBlock(source.URL(), []string{"skills/" + name}))
+			require.NoError(t, os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750))
+			before := testutil.SnapshotEvidence(t, proj.paths.SkillsDir, proj.paths.ImportedSkillsDir)
+			report, err := proj.Service().Pull(context.Background())
+			require.NoError(t, err)
+			blocked := requireOutcome(t, report, name, OutcomeFailed)
+			if kind == "imported case file" {
+				require.ErrorContains(t, blocked.Err, "conflicts with name")
+			} else {
+				require.ErrorContains(t, blocked.Err, "already owns the name")
+			}
+			if kind == "retired directory" {
+				for _, wording := range []string{"preserve its complete local tree", "Reconcile any configured selector coverage", "wizard legacy adoption preview"} {
+					require.ErrorContains(t, blocked.Err, wording)
+				}
+				require.NotContains(t, blocked.Err.Error(), "delete it")
+			}
+			require.Equal(t, before, testutil.SnapshotEvidence(t, proj.paths.SkillsDir, proj.paths.ImportedSkillsDir))
+		})
 	}
 }
 

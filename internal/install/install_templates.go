@@ -85,7 +85,6 @@ func (inst templateManager) managedTemplateDirs() []templateDir {
 	root := inst.root
 	return []templateDir{
 		{instructionsDirName, filepath.Join(root, ".agent-layer", instructionsDirName)},
-		{skillDirectoryName, filepath.Join(root, ".agent-layer", skillDirectoryName)},
 		{docsAgentLayerDir, filepath.Join(root, ".agent-layer", "templates", "docs")},
 	}
 }
@@ -135,11 +134,6 @@ func (inst templateManager) activeManagedTemplateDirs() ([]templateDir, error) {
 		return nil, err
 	}
 	dirs = append(dirs, catalogDirs...)
-	developmentDirs, err := inst.installedDevelopmentSkillTemplateDirs()
-	if err != nil {
-		return nil, err
-	}
-	dirs = append(dirs, developmentDirs...)
 	return dirs, nil
 }
 
@@ -233,30 +227,16 @@ func (inst templateManager) anyExistingTemplateDirFile(dir templateDir) (bool, e
 	return false, nil
 }
 
-// installedCatalogSkillTemplateDirs returns catalog template dirs only for
-// catalog skills already materialized under .agent-layer/skills/.
-func (inst templateManager) installedCatalogSkillTemplateDirs() ([]templateDir, error) {
-	return inst.installedSkillTemplateDirs("skills-catalog")
-}
-
-// installedDevelopmentSkillTemplateDirs returns grouped development-skill
-// template dirs only for members already materialized under
-// .agent-layer/skills/. They are catalog selections, not evidence that every
-// development skill should be activated.
-func (inst templateManager) installedDevelopmentSkillTemplateDirs() ([]templateDir, error) {
-	return inst.installedSkillTemplateDirs("skills")
-}
-
-func (inst templateManager) skillTemplateDirs(templateRoot string) ([]templateDir, error) {
+func (inst templateManager) catalogSkillTemplateDirs() ([]templateDir, error) {
 	ids := make(map[string]struct{})
-	if err := templates.Walk(templateRoot, func(path string, entry fs.DirEntry, err error) error {
+	if err := templates.Walk("skills-catalog", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if entry.IsDir() {
 			return nil
 		}
-		rel := strings.TrimPrefix(path, templateRoot+"/")
+		rel := strings.TrimPrefix(path, "skills-catalog/")
 		if rel == path {
 			return fmt.Errorf(messages.InstallUnexpectedTemplatePathFmt, path)
 		}
@@ -279,15 +259,16 @@ func (inst templateManager) skillTemplateDirs(templateRoot string) ([]templateDi
 	for _, id := range sortedIDs {
 		destRoot := filepath.Join(inst.root, ".agent-layer", "skills", id)
 		out = append(out, templateDir{
-			templateRoot: templateRoot + "/" + id,
+			templateRoot: "skills-catalog/" + id,
 			destRoot:     destRoot,
 		})
 	}
 	return out, nil
 }
 
-func (inst templateManager) installedSkillTemplateDirs(templateRoot string) ([]templateDir, error) {
-	dirs, err := inst.skillTemplateDirs(templateRoot)
+// installedCatalogSkillTemplateDirs filters retained catalog trees to installed skills.
+func (inst templateManager) installedCatalogSkillTemplateDirs() ([]templateDir, error) {
+	dirs, err := inst.catalogSkillTemplateDirs()
 	if err != nil {
 		return nil, err
 	}
@@ -311,13 +292,11 @@ func (inst templateManager) installedSkillTemplateDirs(templateRoot string) ([]t
 func (inst templateManager) ungatedTemplatePathByRel() (map[string]string, error) {
 	dirs := inst.managedInstructionTemplateDirs()
 	dirs = append(dirs, inst.managedMemoryTemplateDirs()...)
-	for _, root := range []string{"skills-catalog", "skills"} {
-		skillDirs, err := inst.skillTemplateDirs(root)
-		if err != nil {
-			return nil, err
-		}
-		dirs = append(dirs, skillDirs...)
+	skillDirs, err := inst.catalogSkillTemplateDirs()
+	if err != nil {
+		return nil, err
 	}
+	dirs = append(dirs, skillDirs...)
 	dirs = append(dirs, inst.memoryTemplateDirs()...)
 	return inst.templatePathByRel(dirs, true)
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/skillimport"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -27,7 +28,7 @@ var ErrBack = errors.New("wizard back requested")
 var (
 	loadDefaultMCPServersFunc = loadDefaultMCPServers
 	loadWarningDefaultsFunc   = loadWarningDefaults
-	loadProjectConfigFunc     = config.LoadProjectConfig
+	loadProjectConfigFunc     = loadWizardProjectConfig
 	loadConfigLenientFunc     = config.LoadConfigLenient
 	errWizardBack             = ErrBack
 	errWizardCancelled        = errors.New("wizard cancelled")
@@ -49,6 +50,9 @@ func RunAfterFreshInitWithWriter(root string, ui UI, runSync syncer, pinVersion 
 func runWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io.Writer, freshInitDefaults bool) error {
 	if out == nil {
 		out = os.Stdout
+	}
+	if scripted, ok := ui.(*ScriptedUI); ok {
+		scripted.out = out
 	}
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
 	envPath := filepath.Join(root, ".agent-layer", ".env")
@@ -182,9 +186,39 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 		return nil, err
 	}
 	choices.CLISkillsCatalog = cliSkills
+	choices.InitialCLISkills = map[string]bool{}
 	for _, entry := range cliSkills {
-		choices.EnabledCLISkills[entry.ID] = catalogSkillIsManagedOnDisk(cfg.Root, entry)
+		if entry.Repository == "" {
+			choices.EnabledCLISkills[entry.ID] = catalogSkillIsManagedOnDisk(cfg.Root, entry)
+			choices.InitialCLISkills[entry.ID] = choices.EnabledCLISkills[entry.ID]
+			continue
+		}
+		members, err := skillimport.CatalogState(cfg.Root, entry)
+		if err != nil {
+			return nil, err
+		}
+		imported, legacy, missing, manual := 0, 0, 0, 0
+		configured := false
+		for _, member := range members {
+			configured = configured || member.Configured
+			if member.Imported {
+				imported++
+			}
+			if member.Legacy {
+				legacy++
+			}
+			if !member.Imported && !member.Legacy {
+				missing++
+			}
+			if member.Configured && !member.DefaultExact {
+				manual++
+			}
+		}
+		choices.EnabledCLISkills[entry.ID] = imported+legacy > 0 || configured
+		choices.InitialCLISkills[entry.ID] = choices.EnabledCLISkills[entry.ID]
+		choices.CLISkillStatus += fmt.Sprintf("\n  %s: imported %d/%d, legacy %d, missing %d, manual %d", entry.Name, imported, len(members), legacy, missing, manual)
 	}
+
 	if err := initializeGitTrackingChoices(cfg.Root, choices); err != nil {
 		return nil, err
 	}
@@ -581,6 +615,8 @@ func promptGitTracking(ui UI, choices *Choices) error {
 	return nil
 }
 
+const cliSkillsStatusHeading = "\n\nCurrent status:"
+
 // promptCLISkills presents the skills catalog multiselect. Each row label
 // is the catalog entry's user-facing Name, while EnabledCLISkills keys use the
 // catalog id. The mapping between names and ids is rebuilt from the catalog so
@@ -597,7 +633,11 @@ func promptCLISkills(ui UI, choices *Choices) error {
 			enabledLabels = append(enabledLabels, entry.Name)
 		}
 	}
-	if err := ui.MultiSelect(messages.WizardEnableCLISkillsTitle, labels, &enabledLabels); err != nil {
+	title := messages.WizardEnableCLISkillsTitle
+	if choices.CLISkillStatus != "" {
+		title += cliSkillsStatusHeading + choices.CLISkillStatus
+	}
+	if err := ui.MultiSelect(title, labels, &enabledLabels); err != nil {
 		return err
 	}
 	for _, entry := range catalog {
@@ -895,6 +935,7 @@ func confirmAndApply(root, configPath, envPath string, ui UI, choices *Choices, 
 	if err != nil {
 		return err
 	}
+	choices.previewedSkills = &skillsChangeSet
 	if skillsPreview := buildSkillsPreview(skillsChangeSet); skillsPreview != "" {
 		if rewritePreview == "" || strings.HasPrefix(rewritePreview, "No rewrites needed") {
 			rewritePreview = skillsPreview

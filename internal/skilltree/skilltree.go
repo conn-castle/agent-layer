@@ -170,14 +170,32 @@ func (t Tree) Equal(other Tree) bool { return t.Hash() == other.Hash() }
 // directory yields an empty tree so callers can distinguish "no content" from a
 // read failure by checking the directory themselves.
 func Read(fsys FS, dir string) (Tree, error) {
+	return readTree(fsys, dir, false)
+}
+
+// ReadStrict requires a real root and rejects metadata that Read normally
+// excludes. Adoption and frozen snapshots use it so hashing cannot hide content
+// that would be discarded when the source is retired or copied.
+func ReadStrict(fsys FS, dir string) (Tree, error) {
+	info, err := fsys.Lstat(dir)
+	if err != nil {
+		return Tree{}, err
+	}
+	if !info.IsDir() {
+		return Tree{}, fmt.Errorf("skill node %s must be a real directory", dir)
+	}
+	return readTree(fsys, dir, true)
+}
+
+func readTree(fsys FS, dir string, rejectIgnored bool) (Tree, error) {
 	var files []File
-	if err := readInto(fsys, dir, "", &files); err != nil {
+	if err := readInto(fsys, dir, "", &files, rejectIgnored); err != nil {
 		return Tree{}, err
 	}
 	return NewTree(files)
 }
 
-func readInto(fsys FS, dir string, relativeDir string, files *[]File) error {
+func readInto(fsys FS, dir string, relativeDir string, files *[]File, rejectIgnored bool) error {
 	entries, err := fsys.ReadDir(dir)
 	if err != nil {
 		// FS is injectable, so a implementation may wrap its error. errors.Is
@@ -193,6 +211,9 @@ func readInto(fsys FS, dir string, relativeDir string, files *[]File) error {
 	for _, entry := range entries {
 		name := entry.Name()
 		if IsIgnoredName(name) {
+			if rejectIgnored {
+				return fmt.Errorf("skill contains ignored entry %s; move and preserve it outside the skill tree", filepath.Join(dir, name))
+			}
 			continue
 		}
 		nodePath := filepath.Join(dir, name)
@@ -208,7 +229,7 @@ func readInto(fsys FS, dir string, relativeDir string, files *[]File) error {
 		mode := info.Mode()
 		switch {
 		case mode.IsDir():
-			if err := readInto(fsys, nodePath, relativePath, files); err != nil {
+			if err := readInto(fsys, nodePath, relativePath, files, rejectIgnored); err != nil {
 				return err
 			}
 		case mode.IsRegular():

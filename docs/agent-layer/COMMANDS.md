@@ -267,6 +267,19 @@ Notes: The complete local/pre-PR verification command; GitHub Actions runs the s
 GitHub Actions also runs a separate website build job using `make website-build-check` against `conn-castle/agent-layer-web`.
 The release workflow runs this target on macOS before importing signing credentials.
 
+- Run local CI with an isolated temp directory when ancestor root markers interfere
+```bash
+(
+    ci_tmp_dir="$(mktemp -d /var/tmp/agent-layer-ci.XXXXXX)" || exit 1
+    printf 'CI TMPDIR: %s\n' "$ci_tmp_dir"
+    trap 'rmdir -- "$ci_tmp_dir" 2>/dev/null || true' EXIT
+    TMPDIR="$ci_tmp_dir" make ci
+)
+```
+Run from: repo root
+Prerequisites: Same as `make ci`; writable `/var/tmp` with no ancestor `go.mod` or `.agent-layer` marker
+Notes: Local interference observed on 2026-10-04: another session's `/tmp/go.mod` makes `cmd/publish-site`'s `TestRun_RepoRootMissing` find a false repo root; `$HOME/.agent-layer` can make `cmd/al` init tests find an ancestor installation when temporary directories are under home. Preserve both shared paths and use the isolated `TMPDIR` above. It passed the complete `make ci` gate (900/900 e2e). The trap removes the new directory only if empty; inspect any retained contents at the printed path. Preserve existing scratch and recovery directories.
+
 ### Release
 
 Approval gate: before changing release-versioned files, creating or pushing a release tag, dispatching a release workflow, or publishing, obtain the user's explicit approval of the exact `vX.Y.Z` version in the current conversation. A general request such as "release" authorizes readiness assessment only; do not infer major, minor, or patch.
