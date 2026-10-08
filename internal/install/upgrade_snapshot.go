@@ -356,7 +356,11 @@ func (inst *installer) rollbackUpgradeSnapshot(snapshot *upgradeSnapshot, target
 }
 
 func (inst *installer) captureUpgradeSnapshotEntries() ([]upgradeSnapshotEntry, error) {
-	targets := inst.upgradeSnapshotTargetPaths()
+	catalogDirs, err := inst.templates().installedCatalogSkillTemplateDirs()
+	if err != nil {
+		return nil, err
+	}
+	targets := inst.upgradeSnapshotTargetPaths(catalogDirs)
 	entries := make(map[string]upgradeSnapshotEntry)
 	for _, target := range targets {
 		if err := inst.captureUpgradeSnapshotTarget(target, entries); err != nil {
@@ -516,12 +520,15 @@ func (inst *installer) writeTemplateFilesTargetPaths() []string {
 	return uniqueNormalizedPaths(paths)
 }
 
-func (inst *installer) writeTemplateDirsTargetPaths() []string {
+func (inst *installer) writeTemplateDirsTargetPaths(catalogDirs []templateDir) []string {
 	paths := make([]string, 0, len(inst.templates().managedTemplateDirs())+len(inst.templates().memoryTemplateDirs()))
 	for _, dir := range inst.templates().managedTemplateDirs() {
 		paths = append(paths, dir.destRoot)
 	}
 	for _, dir := range inst.templates().memoryTemplateDirs() {
+		paths = append(paths, dir.destRoot)
+	}
+	for _, dir := range catalogDirs {
 		paths = append(paths, dir.destRoot)
 	}
 	// Failed template writes must reset legacy slots without resetting user skills.
@@ -560,7 +567,7 @@ func (inst *installer) handleUnknownsTargetPaths() []string {
 	return uniqueNormalizedPaths(filtered)
 }
 
-func (inst *installer) upgradeSnapshotTargetPaths() []string {
+func (inst *installer) upgradeSnapshotTargetPaths(catalogDirs []templateDir) []string {
 	root := inst.root
 	paths := make(map[string]struct{})
 	add := func(path string) {
@@ -591,6 +598,9 @@ func (inst *installer) upgradeSnapshotTargetPaths() []string {
 		add(dir.destRoot)
 	}
 	for _, dir := range inst.templates().memoryTemplateDirs() {
+		add(dir.destRoot)
+	}
+	for _, dir := range catalogDirs {
 		add(dir.destRoot)
 	}
 	// Statusline sources are rollback targets of the writeStatuslineSources

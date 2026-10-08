@@ -112,7 +112,13 @@ func TestUpgradeRollbackPreservesUnmanagedSkillEdits(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(custom), 0o750))
 	require.NoError(t, os.WriteFile(custom, []byte("before upgrade"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", UpgradeKeepListFileName), []byte(".agent-layer/skills/user-skill\n"), 0o600))
+	retained := filepath.Join(root, ".agent-layer", "skills", "dispatch-agent", "SKILL.md")
+	require.NoError(t, os.MkdirAll(filepath.Dir(retained), 0o750))
+	require.NoError(t, os.WriteFile(retained, []byte("custom dispatch-agent"), 0o600))
 	require.NoError(t, Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: skillmigration.MinimumCLI}))
+	content, err := os.ReadFile(retained) // #nosec G304 -- path is constructed from test-controlled inputs.
+	require.NoError(t, err)
+	require.NotEqual(t, "custom dispatch-agent", string(content))
 	snapshot := latestSnapshot(t, root)
 	require.NoError(t, os.WriteFile(custom, []byte("after upgrade"), 0o600))
 	newSkill := filepath.Join(root, ".agent-layer", "skills", "new-user-skill")
@@ -121,4 +127,7 @@ func TestUpgradeRollbackPreservesUnmanagedSkillEdits(t *testing.T) {
 	before := testutil.SnapshotEvidence(t, filepath.Dir(custom), newSkill)
 	require.NoError(t, RollbackUpgradeSnapshot(root, snapshot.SnapshotID, RollbackUpgradeSnapshotOptions{System: RealSystem{}}))
 	require.Equal(t, before, testutil.SnapshotEvidence(t, filepath.Dir(custom), newSkill))
+	content, err = os.ReadFile(retained) // #nosec G304 -- path is constructed from test-controlled inputs.
+	require.NoError(t, err)
+	require.Equal(t, "custom dispatch-agent", string(content))
 }
