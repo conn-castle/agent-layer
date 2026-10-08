@@ -3,6 +3,17 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.24.3 - 2026-10-07
+
+### Fixed
+- HerdR terminal conversation recovery now decodes public pane IDs using HerdR's native encoding instead of assuming decimal numbers. Valid pane IDs containing letters or multiple characters, such as `wV:pF`, previously failed stored-recipe verification before registration; Agent Layer now decodes them correctly so saved recipes are found for Claude, Codex, Antigravity, Muse, and Grok.
+
+### Security
+- Updated `golang.org/x/text` to `v0.41.0` to address GO-2026-6629.
+
+### Development
+- `make release-preflight` now validates documentation and the release tag, runs CI once, compiles unsigned release binaries for all four supported platforms (`darwin/arm64`, `darwin/amd64`, `linux/arm64`, `linux/amd64`) to a scratch directory, and scans them with `release-vuln-check` before tags are created. Build and scanner failures halt preflight, and failing artifacts are retained for diagnostics.
+
 ## v0.24.2 - 2026-10-07
 
 ### Fixed
