@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -171,4 +172,50 @@ func TestRun_ConfigLoadFailureAfterInstall(t *testing.T) {
 	// (lenient loading reads the installed config without validation).
 	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.NoError(t, err)
+}
+
+func TestRun_ScriptedUnusedAnswersDoNotWrite(t *testing.T) {
+	for _, installed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("installed=%v", installed), func(t *testing.T) {
+			root := t.TempDir()
+			configPath := filepath.Join(root, ".agent-layer", "config.toml")
+			if installed {
+				setupRepo(t, root)
+				require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o600))
+			}
+			label, _ := approvalModeLabelForValue(config.ApprovalModeAll)
+			ui := &ScriptedUI{used: map[string]struct{}{}, answers: scriptedAnswers{
+				Select: map[string]string{messages.WizardApprovalModeTitle: label,
+					messages.WizardClaudeModelTitle: "unused-with-claude-disabled"},
+				MultiSelect: map[string][]string{
+					messages.WizardEnableAgentsTitle: {}, messages.WizardGitTrackingTitle: {},
+					messages.WizardEnableCLISkillsTitle: {}, messages.WizardEnableDefaultMCPServersTitle: {},
+				},
+				Confirm: map[string]bool{messages.WizardEnableWarningsPrompt: false, messages.WizardApplyChangesPrompt: true},
+			}}
+			if !installed {
+				ui.answers.Confirm[messages.WizardInstallPrompt] = true
+				ui.answers.Select[messages.WizardInstructionSetTitle] = instructionSetLabels()[0]
+			}
+			var out bytes.Buffer
+			err := RunWithWriter(root, ui, func(string) (*alsync.Result, error) {
+				t.Fatal("sync ran before answer validation")
+				return nil, nil
+			}, "0.0.0", &out)
+			require.ErrorContains(t, err, "unused prompt(s): [select: "+messages.WizardClaudeModelTitle+"]")
+			require.NotContains(t, out.String(), messages.WizardInstallComplete)
+			require.NotContains(t, out.String(), messages.WizardCompleted)
+			if installed {
+				data, err := os.ReadFile(configPath)
+				require.NoError(t, err)
+				require.Equal(t, basicAgentConfig(), string(data))
+				require.NoFileExists(t, filepath.Join(root, ".agent-layer", "sync.lock"))
+				require.NoDirExists(t, filepath.Join(root, ".agent-layer", "state"))
+			} else {
+				entries, err := os.ReadDir(root)
+				require.NoError(t, err)
+				require.Empty(t, entries)
+			}
+		})
+	}
 }

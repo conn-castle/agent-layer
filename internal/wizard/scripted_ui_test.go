@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 func TestScriptedUIAppliesAnswersAndRequiresAllUsed(t *testing.T) {
@@ -89,6 +91,11 @@ func TestScriptedUIMissingAnswerFails(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), `missing confirm prompt "Apply"`) {
 		t.Fatalf("expected missing answer error, got %v", err)
 	}
+	ui.answers.Confirm[messages.WizardInstallPrompt] = true
+	root := t.TempDir()
+	err = RunWithWriter(root, ui, nil, "0.0.0", &bytes.Buffer{})
+	require.ErrorContains(t, err, "missing select")
+	require.NoDirExists(t, filepath.Join(root, ".agent-layer"))
 }
 
 func TestScriptedUIAcceptsFullTitleBeforeStatusSummary(t *testing.T) {
@@ -126,6 +133,12 @@ func TestScriptedUIInvalidOptionFails(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "not one of") {
 		t.Fatalf("expected invalid option error, got %v", err)
 	}
+	ui.answers.Confirm = map[string]bool{messages.WizardInstallPrompt: true}
+	ui.answers.Select = map[string]string{messages.WizardApprovalModeTitle: "bad"}
+	root := t.TempDir()
+	err = RunWithWriter(root, ui, nil, "0.0.0", &bytes.Buffer{})
+	require.ErrorContains(t, err, "not one of")
+	require.NoDirExists(t, filepath.Join(root, ".agent-layer"))
 }
 
 func TestScriptedUIUnusedAnswerFails(t *testing.T) {

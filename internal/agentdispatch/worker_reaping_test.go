@@ -94,6 +94,7 @@ wait "$child"`)
 		}
 	})
 	childPID := waitForProviderChildPID(t, childPath)
+	waitForRunState(t, root, started.InvocationID, dispatchStateRunning)
 	record, err := loadRunRecord(root, started.InvocationID)
 	if err != nil {
 		t.Fatal(err)
