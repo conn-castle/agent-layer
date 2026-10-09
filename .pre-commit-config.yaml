@@ -11,9 +11,9 @@ repos:
         exclude: ^internal/sync/testdata/fixture-repo/expected/\.vscode/settings\.json$
       - id: check-toml
       - id: check-added-large-files
-        # A versioned, generated benchmark snapshot keeps planner inputs
-        # reviewable and reproducible; its 3 MB+ size is intentional.
-        exclude: ^site/static/deepswe-planner/app/data\.js$
+        # The benchmark snapshot and checksum-validated Plotly bundle
+        # deliberately exceed the size limit.
+        exclude: ^(site/static/deepswe-planner/app/data\.js|internal/benchmark/assets/plotly-basic-[0-9.]+\.min\.js)$
       - id: check-case-conflict
       - id: mixed-line-ending
       - id: detect-private-key
