@@ -14,6 +14,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/conn-castle/agent-layer/internal/agentoptions"
 )
 
 const (
@@ -296,7 +298,10 @@ func (c *mcpObservedConnection) Close() error {
 	return c.Connection.Close()
 }
 
-func runMCPServer(ctx context.Context, opts MCPServerOptions, stdin io.ReadCloser, stdout, stderr io.Writer) error {
+func runMCPServer(ctx context.Context, opts MCPServerOptions, stdin io.ReadCloser, stdout, stderr io.Writer) (err error) {
+	var cleanup agentoptions.DiscoveryCleanup
+	opts.discoveryCleanup = &cleanup
+	defer func() { err = errors.Join(err, cleanup.Close()) }()
 	l := newMCPLifecycle(opts, stderr)
 	server, err := newDispatchMCPServer(opts)
 	if err != nil {

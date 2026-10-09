@@ -63,6 +63,13 @@ func Start(opts StartOptions) error {
 	if !ok {
 		return exitError(ExitUsage, fmt.Sprintf(messages.DispatchUnknownTargetFmt, opts.Agent))
 	}
+	if opts.beforeProvider != nil {
+		release, err := opts.beforeProvider(opts.Context, requested.Name)
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
 	if opts.Reservation != nil {
 		return startReservation(opts, requested, promptText, stderr, env, depth)
 	}
@@ -173,6 +180,13 @@ func Continue(opts ContinueOptions) error {
 	target, ok := lookupTarget(session.Agent)
 	if !ok {
 		return exitError(ExitConfig, fmt.Sprintf("dispatch conversation %q has unsupported provider %q", session.Name, session.Agent))
+	}
+	if opts.beforeProvider != nil {
+		release, err := opts.beforeProvider(opts.Context, target.Name)
+		if err != nil {
+			return err
+		}
+		defer release()
 	}
 	_, target, version, prompt, err := prepareStart(runOptions{
 		Root: opts.Root, WorkDir: opts.WorkDir, Prompt: promptText,

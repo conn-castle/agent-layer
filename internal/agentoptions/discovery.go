@@ -71,19 +71,81 @@ func DiscoverModels(agent string, req DiscoveryRequest) ([]string, error) {
 	ctx, cancel := context.WithTimeout(req.Context, req.Timeout)
 	defer cancel()
 	req.Context = ctx
-	models, err := discoverCommandModels(agent, req)
+	var models []string
+	var err error
+	if agent == agentClaude && req.Cleanup != nil {
+		models, err = discoverClaudeModelsInBackground(req)
+	} else {
+		models, err = discoverCommandModels(agent, req, nil)
+	}
 	if errors.Is(err, errGrokUnauthenticated) {
 		// Grok prints its authentication status before it silently refreshes an
 		// expired session, so a second run reports the refresh the first persisted.
-		models, err = discoverCommandModels(agent, req)
+		models, err = discoverCommandModels(agent, req, nil)
 	}
-	if ctx.Err() != nil {
+	// Claude captures the lookup deadline at its reply, then preserves native
+	// shutdown errors even if graceful cleanup outlasts that deadline.
+	if ctx.Err() != nil && agent != agentClaude {
 		return nil, fmt.Errorf("%s model discovery: %w", agent, ctx.Err())
 	}
 	if err != nil {
 		return nil, fmt.Errorf("%s model discovery: %w", agent, err)
 	}
+	if agent == agentClaude {
+		return models, nil
+	}
 	return normalizeModels(agent, models)
+}
+
+func discoverClaudeModelsInBackground(req DiscoveryRequest) ([]string, error) {
+	finish, err := req.Cleanup.begin()
+	if err != nil {
+		return nil, err
+	}
+	type reply struct {
+		models []string
+		err    error
+	}
+	ready := make(chan reply)
+	go func() {
+		delivered := false
+		var shutdownErr error
+		models, err := discoverCommandModels(agentClaude, req, &claudeProbeObserver{
+			ready: func(models []string) {
+				select {
+				case ready <- reply{models: models}:
+					delivered = true
+				case <-req.Context.Done():
+				}
+			},
+			shutdown: func(err error) { shutdownErr = err },
+		})
+		if !delivered {
+			// A failed lookup is reported once. If the caller already timed
+			// out, retain native shutdown failures for the cleanup owner.
+			select {
+			case ready <- reply{models, err}:
+				finish(nil)
+				return
+			case <-req.Context.Done():
+			}
+		}
+		if shutdownErr != nil {
+			shutdownErr = fmt.Errorf("claude model discovery shutdown: %w", shutdownErr)
+		}
+		finish(shutdownErr)
+	}()
+	select {
+	case response := <-ready:
+		return response.models, response.err
+	case <-req.Context.Done():
+		return nil, req.Context.Err()
+	}
+}
+
+type claudeProbeObserver struct {
+	ready    func([]string)
+	shutdown func(error)
 }
 
 // ParseModelCommandOutput validates native non-protocol model output. Remote
@@ -187,9 +249,9 @@ func discoveryCommand(agent string, req DiscoveryRequest) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
-func discoverCommandModels(agent string, req DiscoveryRequest) ([]string, error) {
-	// Give protocol completion its own cancellation scope to reap the harness
-	// immediately after the reply, without waiting for the discovery deadline.
+func discoverCommandModels(agent string, req DiscoveryRequest, observer *claudeProbeObserver) ([]string, error) {
+	// Long-lived protocol servers are cancelled after their reply. Claude uses
+	// EOF instead and waits for its credential-safe shutdown.
 	ctx, cancel := context.WithCancel(req.Context)
 	defer cancel()
 	req.Context = ctx
@@ -197,16 +259,44 @@ func discoverCommandModels(agent string, req DiscoveryRequest) ([]string, error)
 	if err != nil {
 		return nil, err
 	}
-	stdout, err := cmd.StdoutPipe()
+	var stdout io.ReadCloser
+	var stdoutWriter *os.File
+	if agent == agentClaude {
+		// Own this pipe: Wait must observe native exit independently of any
+		// descendant that inherited stdout and keeps its write end open.
+		stdout, stdoutWriter, err = os.Pipe()
+		cmd.Stdout = stdoutWriter
+	} else {
+		stdout, err = cmd.StdoutPipe()
+	}
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		_ = stdout.Close()
+		if stdoutWriter != nil {
+			_ = stdoutWriter.Close()
+		}
+	}()
 	// agy models takes no input, so it keeps the null-device stdin of a nil cmd.Stdin.
 	var stdin io.WriteCloser
 	if agent != agentAntigravity {
 		if stdin, err = cmd.StdinPipe(); err != nil {
 			return nil, err
 		}
+	}
+	if agent == agentClaude {
+		// EOF enters Claude's graceful shutdown, which waits for a held OAuth
+		// refresh before exiting. SIGKILL can spend the refresh token before its
+		// replacement is saved. Use EOF on cancellation too, without a later kill.
+		cmd.Cancel = func() error {
+			if err := stdin.Close(); errors.Is(err, os.ErrClosed) {
+				return os.ErrProcessDone
+			} else {
+				return err
+			}
+		}
+		cmd.WaitDelay = 0
 	}
 	closeStdin := func() {
 		if stdin != nil {
@@ -216,9 +306,18 @@ func discoverCommandModels(agent string, req DiscoveryRequest) ([]string, error)
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
+	if stdoutWriter != nil {
+		_ = stdoutWriter.Close()
+	}
+	waitProcess := cmd.Wait
+	if agent == agentClaude {
+		waitProcess = claudeProcessWait(ctx, cmd, stdout)
+	}
 	stopClose := context.AfterFunc(ctx, func() {
-		_ = stdout.Close()
 		closeStdin()
+		if agent != agentClaude {
+			_ = stdout.Close()
+		}
 	})
 	defer stopClose()
 	waited := false
@@ -226,7 +325,7 @@ func discoverCommandModels(agent string, req DiscoveryRequest) ([]string, error)
 		closeStdin()
 		cancel()
 		if !waited {
-			_ = cmd.Wait()
+			_ = waitProcess()
 		}
 	}()
 	reader := &io.LimitedReader{R: stdout, N: maxDiscoveryBytes + 1}
@@ -238,7 +337,7 @@ func discoverCommandModels(agent string, req DiscoveryRequest) ([]string, error)
 		if reader.N == 0 {
 			return nil, errors.New("agy models output exceeded size limit")
 		}
-		err = cmd.Wait()
+		err = waitProcess()
 		waited = true
 		if err != nil {
 			return nil, err
@@ -264,7 +363,7 @@ func discoverCommandModels(agent string, req DiscoveryRequest) ([]string, error)
 			return nil, errors.New("model discovery output exceeded size limit")
 		}
 		waited = true
-		if waitErr := cmd.Wait(); waitErr != nil && err == nil {
+		if waitErr := waitProcess(); waitErr != nil && err == nil {
 			return nil, waitErr
 		}
 		return models, err
@@ -277,9 +376,78 @@ func discoverCommandModels(agent string, req DiscoveryRequest) ([]string, error)
 		return readMuseModels(decoder, encoder)
 	}
 	if agent == agentClaude {
-		return readClaudeModels(decoder, encoder)
+		models, err := readClaudeModels(decoder, encoder)
+		if err == nil {
+			models, err = normalizeModels(agentClaude, models)
+		}
+		// The lookup deadline ends at the reply, not at native shutdown.
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+		closeStdin()
+		if observer != nil && err == nil {
+			observer.ready(models)
+		}
+		// Drain after success or a protocol error so shutdown cannot block on
+		// a full stdout pipe while credential persistence is still running.
+		drainErr, waitErr := waitForClaudeExit(waitProcess, stdout)
+		waited = true
+		if ctx.Err() != nil && errors.Is(waitErr, ctx.Err()) {
+			waitErr = nil
+		}
+		if observer != nil {
+			observer.shutdown(errors.Join(drainErr, waitErr))
+		}
+		if err != nil {
+			return nil, errors.Join(err, drainErr, waitErr)
+		}
+		if shutdownErr := errors.Join(drainErr, waitErr); shutdownErr != nil {
+			return nil, shutdownErr
+		}
+		return models, nil
 	}
 	return readCodexModels(decoder, encoder)
+}
+
+func claudeProcessWait(ctx context.Context, cmd *exec.Cmd, stdout io.ReadCloser) func() error {
+	exited := make(chan struct{})
+	var exitErr error
+	go func() {
+		exitErr = cmd.Wait()
+		close(exited)
+	}()
+	readClosed := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		defer close(readClosed)
+		// Release a parser waiting on inherited stdout only after native exit.
+		// Buffered replies remain readable until the lookup is cancelled.
+		<-exited
+		_ = stdout.Close()
+	})
+	return func() error {
+		<-exited
+		if !stop() {
+			<-readClosed
+		}
+		return exitErr
+	}
+}
+
+func waitForClaudeExit(wait func() error, stdout io.ReadCloser) (drainErr, waitErr error) {
+	drained := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(io.Discard, stdout)
+		drained <- err
+	}()
+	waitErr = wait()
+	// Claude is now gone, so closing the reader cannot interrupt its
+	// credential writes. Descendants need not keep cleanup blocked.
+	_ = stdout.Close()
+	drainErr = <-drained
+	if errors.Is(drainErr, os.ErrClosed) {
+		drainErr = nil
+	}
+	return drainErr, waitErr
 }
 
 func readMuseModels(decoder *json.Decoder, encoder *json.Encoder) ([]string, error) {

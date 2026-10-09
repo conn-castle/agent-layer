@@ -67,6 +67,62 @@ func TestModelDiscoveryPrefetchWaitsAndReusesResult(t *testing.T) {
 	}
 }
 
+func TestClaudePickerUsesCatalogBeforeCredentialPersistence(t *testing.T) {
+	original := wizardOptionDiscoveryRequestFunc
+	t.Cleanup(func() { wizardOptionDiscoveryRequestFunc = original })
+	root := t.TempDir()
+	path := filepath.Join(root, "claude")
+	release := filepath.Join(root, "release")
+	saved := filepath.Join(root, "saved")
+	body := `#!/bin/sh
+read -r request
+printf '%s\n' '{"type":"control_response","response":{"request_id":"models","subtype":"success","response":{"models":[{"value":"account-model"}]}}}'
+cat >/dev/null
+while [ ! -f "$AL_TEST_CLEANUP_DIR/release" ]; do sleep 0.01; done
+printf saved > "$AL_TEST_CLEANUP_DIR/saved"
+`
+	if err := os.WriteFile(path, []byte(body), 0o700); err != nil { // #nosec G306 -- executable harness fixture.
+		t.Fatal(err)
+	}
+	wizardOptionDiscoveryRequestFunc = func() agentoptions.DiscoveryRequest {
+		return agentoptions.DiscoveryRequest{Live: true, Env: []string{"AL_TEST_CLEANUP_DIR=" + root}, LookPath: func(string) (string, error) { return path, nil }}
+	}
+	cache := &wizardOptionDiscoveryCache{}
+	defer func() {
+		_ = os.WriteFile(release, nil, 0o600)
+		_ = cache.cleanup.Close()
+	}()
+	cache.prefetch(AgentClaude)
+	select {
+	case <-cache.entries[AgentClaude].done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("catalog remained blocked on cleanup")
+	}
+	ui := &MockUI{SelectFunc: func(_ string, options []string, value *string) error {
+		if !slices.Contains(options, "account-model") {
+			t.Fatalf("missing account catalog: %v", options)
+		}
+		*value = "account-model"
+		return nil
+	}}
+	var selected string
+	if err := cache.selectModel(ui, AgentClaude, messages.WizardClaudeModelTitle, &selected); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(saved); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("picker waited for credential persistence: %v", err)
+	}
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cache.cleanup.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(saved); err != nil {
+		t.Fatalf("cleanup exited before persistence: %v", err)
+	}
+}
+
 func TestModelDiscoveryFailureAllowsExplicitSelection(t *testing.T) {
 	original := wizardOptionDiscoveryRequestFunc
 	t.Cleanup(func() { wizardOptionDiscoveryRequestFunc = original })
@@ -193,10 +249,22 @@ func TestWizardStartsDiscoveryBeforeFirstPromptAndCancelsOnExit(t *testing.T) {
 	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexec sleep 60\n"), 0o700); err != nil { // #nosec G306 -- executable harness fixture.
 		t.Fatal(err)
 	}
+	claudeHarness := filepath.Join(t.TempDir(), "claude")
+	refreshed := filepath.Join(filepath.Dir(claudeHarness), "refreshed")
+	initialized := filepath.Join(filepath.Dir(claudeHarness), "initialized")
+	// Claude persists its refresh after stdin EOF; wizard exit must join the
+	// discovery worker so process teardown cannot interrupt that persistence.
+	claudeBody := "#!/bin/sh\ntouch '" + strings.ReplaceAll(initialized, "'", "'\"'\"'") + "'\ncat >/dev/null\nsleep 0.2\nprintf saved > '" + strings.ReplaceAll(refreshed, "'", "'\"'\"'") + "'\n"
+	if err := os.WriteFile(claudeHarness, []byte(claudeBody), 0o700); err != nil { // #nosec G306 -- executable harness fixture.
+		t.Fatal(err)
+	}
 	started := make(chan string, 5)
 	wizardOptionDiscoveryRequestFunc = func() agentoptions.DiscoveryRequest {
 		return agentoptions.DiscoveryRequest{Live: true, LookPath: func(name string) (string, error) {
 			started <- name
+			if name == AgentClaude {
+				return claudeHarness, nil
+			}
 			return executable, nil
 		}}
 	}
@@ -209,6 +277,16 @@ func TestWizardStartsDiscoveryBeforeFirstPromptAndCancelsOnExit(t *testing.T) {
 				t.Fatal("discovery was not started before the first prompt")
 			}
 		}
+		deadline := time.Now().Add(3 * time.Second)
+		for {
+			if _, err := os.Stat(initialized); err == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("Claude child did not initialize before cancellation")
+			}
+			time.Sleep(time.Millisecond)
+		}
 		return errWizardCancelled
 	}}
 	// Even initially disabled agents must be ready if enabled on the next page.
@@ -219,6 +297,9 @@ func TestWizardStartsDiscoveryBeforeFirstPromptAndCancelsOnExit(t *testing.T) {
 	}
 	if cache.ctx.Err() == nil {
 		t.Fatal("wizard exit did not cancel discovery")
+	}
+	if _, err := os.Stat(refreshed); err != nil {
+		t.Fatalf("wizard exited before Claude saved its refresh: %v", err)
 	}
 	for _, entry := range cache.entries {
 		select {

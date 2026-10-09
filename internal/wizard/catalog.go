@@ -75,6 +75,7 @@ type wizardOptionDiscoveryCache struct {
 	out     io.Writer
 	ctx     context.Context
 	entries map[string]*wizardModelDiscovery
+	cleanup agentoptions.DiscoveryCleanup
 }
 
 type wizardModelDiscovery struct {
@@ -95,6 +96,7 @@ func (c *wizardOptionDiscoveryCache) prefetch(agent string) *wizardModelDiscover
 	req := wizardOptionDiscoveryRequestFunc()
 	req.Project = c.project
 	req.Context = c.ctx
+	req.Cleanup = &c.cleanup
 	if !req.Live || !agentoptions.HasModelDiscovery(agent) {
 		entry.option = agentoptions.Resolve(config.Config{}, agent, agentoptions.KindModel, req)
 		close(entry.done)

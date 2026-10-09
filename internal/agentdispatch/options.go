@@ -61,7 +61,7 @@ func BuildOptions(req OptionsRequest) (*OptionsResponse, error) {
 	}
 	options := &OptionsResponse{Agents: buildTargetOptions(
 		project.Config,
-		agentoptions.DiscoveryRequest{Context: ctx, Project: project, Env: env, LookPath: lookPath, Live: true},
+		agentoptions.DiscoveryRequest{Context: ctx, Project: project, Env: env, LookPath: lookPath, Live: true, Cleanup: req.Cleanup},
 		versionLookup,
 	)}
 	if ctx.Err() != nil {
