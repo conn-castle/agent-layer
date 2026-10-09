@@ -77,7 +77,7 @@ func loadBenchmarkTaskTimeouts(checkout, task string, agentMultiplier float64) (
 		// allowance before provider inference begins.
 		Environment: time.Duration(pierEnvironmentAttempts*document.Environment.BuildTimeoutSeconds*float64(time.Second)) + pierRetryBackoff + pierAgentSetupTimeout,
 		Provider:    time.Duration(document.Agent.TimeoutSeconds * agentMultiplier * float64(time.Second)),
-		// The pinned adapter removes Pier 0.3.0's unconditional retry for
+		// The pinned adapter removes Pier 0.3.1's unconditional retry for
 		// VerifierTimeoutError. Environment startup and tests share this single
 		// envelope; the nested build timeout is not additive.
 		Verifier:            time.Duration(pierVerifierAttempts * document.Verifier.TimeoutSeconds * float64(time.Second)),

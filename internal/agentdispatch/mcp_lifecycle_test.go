@@ -296,20 +296,20 @@ func TestMCPLifecyclePreservesSDKBatches(t *testing.T) {
 	initialize := func(version string) string {
 		return fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":%q,"capabilities":{},"clientInfo":{"name":"test","version":"test"}}}`, version)
 	}
-	// Per-request (SEP-2575) metadata also sets the session's protocol version.
+	// Per-request metadata exercises SDK discovery without a legacy initialize.
 	discover := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{%q:"2026-07-28",%q:{}}}}`, mcp.MetaKeyProtocolVersion, mcp.MetaKeyClientCapabilities)
 	for _, tc := range []struct {
 		name, handshake string
 		rejected        bool
 	}{
-		{"empty", initialize(""), false},
+		{"empty", initialize(""), true},
 		{"2024-11-05", initialize("2024-11-05"), false},
 		{"2025-03-26", initialize("2025-03-26"), false},
 		{"2025-06-18", initialize("2025-06-18"), true},
 		{"2025-11-25", initialize("2025-11-25"), true},
 		{"2026-07-28", initialize("2026-07-28"), true},
 		{"unsupported", initialize("private-unsupported-version-canary"), true},
-		{"discover-2026-07-28", discover, true},
+		{"discover-2026-07-28", discover, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
@@ -716,11 +716,7 @@ func TestMCPLifecycleCloseDuringOperation(t *testing.T) {
 			var releaseOnce sync.Once
 			release := func() { releaseOnce.Do(func() { close(pause.release) }) }
 			defer release()
-			server, err := newDispatchMCPServer(MCPServerOptions{Root: root, Version: "lifecycle-test"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			connection, err := (&mcpObservedTransport{Transport: pause, lifecycle: l, framing: framing, server: server}).Connect(context.Background())
+			connection, err := (&mcpObservedTransport{Transport: pause, lifecycle: l, framing: framing}).Connect(context.Background())
 			if err != nil {
 				t.Fatal(err)
 			}

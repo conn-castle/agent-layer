@@ -9,7 +9,7 @@ import (
 // Pinned benchmark inputs and artifact schema versions.
 const (
 	DeepSWECommit       = "e016041a6ccf8da29906afc9a3f5a8df940a1f78"
-	PierVersion         = "0.3.0"
+	PierVersion         = "0.3.1"
 	CodexClientVersion  = "0.146.0"
 	ClaudeClientVersion = "2.1.207"
 	// These are the Linux client releases the benchmark adapters are written

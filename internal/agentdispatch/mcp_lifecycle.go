@@ -247,7 +247,6 @@ type mcpNopCloseWriter struct{ io.Writer }
 func (mcpNopCloseWriter) Close() error { return nil }
 
 type mcpObservedTransport struct {
-	server *mcp.Server
 	mcp.Transport
 	lifecycle *mcpLifecycle
 	framing   *mcpFrameObserver
@@ -259,14 +258,14 @@ func (t *mcpObservedTransport) Connect(ctx context.Context) (mcp.Connection, err
 	if err != nil {
 		return nil, err
 	}
-	return &mcpObservedConnection{Connection: c, lifecycle: t.lifecycle, framing: t.framing, server: t.server}, nil
+	return &mcpObservedConnection{Connection: c, lifecycle: t.lifecycle, framing: t.framing, protocolVersion: "2025-03-26"}, nil
 }
 
 type mcpObservedConnection struct {
-	server *mcp.Server
 	mcp.Connection
-	lifecycle *mcpLifecycle
-	framing   *mcpFrameObserver
+	lifecycle       *mcpLifecycle
+	framing         *mcpFrameObserver
+	protocolVersion string
 }
 
 func (c *mcpObservedConnection) Read(ctx context.Context) (jsonrpc.Message, error) {
@@ -274,9 +273,12 @@ func (c *mcpObservedConnection) Read(ctx context.Context) (jsonrpc.Message, erro
 	closed := c.lifecycle.closed
 	c.lifecycle.mu.Unlock()
 	msg, err := c.Connection.Read(ctx)
-	if err == nil && c.framing.next() {
-		if version := mcpBatchProtocolVersion(c.server); version >= mcpProtocol20250618 {
-			err = fmt.Errorf("JSON-RPC batching is not supported in 2025-06-18 and later (request version: %s)", version)
+	if err == nil {
+		c.lifecycle.mu.Lock()
+		protocolVersion := c.protocolVersion
+		c.lifecycle.mu.Unlock()
+		if c.framing.next() && protocolVersion >= "2025-06-18" {
+			err = fmt.Errorf("JSON-RPC batching is not supported in 2025-06-18 and later (request version: %s)", protocolVersion)
 			msg = nil
 		}
 	}
@@ -287,6 +289,17 @@ func (c *mcpObservedConnection) Write(ctx context.Context, msg jsonrpc.Message) 
 	c.lifecycle.mu.Lock()
 	closed := c.lifecycle.closed
 	c.lifecycle.mu.Unlock()
+	if response, ok := msg.(*jsonrpc.Response); ok && response.Error == nil {
+		var result struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		}
+		if json.Unmarshal(response.Result, &result) == nil && result.ProtocolVersion != "" {
+			c.lifecycle.mu.Lock()
+			// Only initialize results from this dispatch server expose this field.
+			c.protocolVersion = result.ProtocolVersion
+			c.lifecycle.mu.Unlock()
+		}
+	}
 	err := c.Connection.Write(ctx, msg)
 	c.lifecycle.observe("write", err, ctx, closed)
 	return err
@@ -314,7 +327,7 @@ func runMCPServer(ctx context.Context, opts MCPServerOptions, stdin io.ReadClose
 func serveMCPServer(ctx context.Context, server *mcp.Server, l *mcpLifecycle, stdin io.ReadCloser, stdout io.Writer) error {
 	framing := &mcpFrameObserver{}
 	transport := &mcp.IOTransport{Reader: &mcpObservedReader{ReadCloser: stdin, lifecycle: l, framing: framing}, Writer: mcpNopCloseWriter{stdout}}
-	err := server.Run(ctx, &mcpObservedTransport{Transport: transport, lifecycle: l, framing: framing, server: server})
+	err := server.Run(ctx, &mcpObservedTransport{Transport: transport, lifecycle: l, framing: framing})
 	l.stop(ctx, "serving", err)
 	return err
 }

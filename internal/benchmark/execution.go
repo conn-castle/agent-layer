@@ -775,7 +775,7 @@ func runDockerCommand(ctx context.Context, arguments ...string) ([]byte, error) 
 }
 
 // cleanupPierDockerResources removes only the Compose resources owned by the
-// exact Pier trial that just exited. Pier 0.3.0 can abandon its shielded
+// exact Pier trial that just exited. Pier 0.3.1 can abandon its shielded
 // teardown when cancellation closes the Python event loop.
 func cleanupPierDockerResources(stage string, request ExecutionRequest) error {
 	project, err := identifyPierComposeProject(stage, request)
