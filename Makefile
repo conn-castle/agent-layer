@@ -9,7 +9,7 @@ SHELL := $(subst $(space),\ ,$(ROOT_DIR))/scripts/make-shell.sh
 GIT_COMMON_DIR := $(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
 CACHE_ROOT ?= $(if $(GIT_COMMON_DIR),$(abspath $(GIT_COMMON_DIR)/../.cache),$(ROOT_DIR)/.cache)
 TOOL_BIN ?= $(ROOT_DIR)/.tools/bin
-GOLANGCI_LINT_VERSION := v2.12.2
+GOLANGCI_LINT_VERSION := v2.14.0
 GO_CACHE ?= $(CACHE_ROOT)/go-build
 GO_MOD_CACHE ?= $(CACHE_ROOT)/go-mod
 GOLANGCI_LINT_CACHE ?= $(ROOT_DIR)/.cache/golangci-lint

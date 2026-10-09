@@ -15,6 +15,12 @@ All notable changes to this project will be documented in this file.
 - Migration-capable version handoffs reach the target reader without first consuming its recovery journal. Import recovery rejects colliding intent, trailing JSON, linked journals, and unsafe backup node types before changing live state. Wizard removal previews identify missing or conflicted configured siblings that ordinary selector reconciliation may materialize or block.
 - Historical flat skills with valid frontmatter that lacks `name` receive their original filename as the name during migration. Explicit or uncertain metadata, existing content, and file modes remain preserved.
 
+### Security
+- Release builds use Go 1.27.2 and updated Go dependencies, addressing the standard-library advisories found during v1.0.0 preflight.
+
+### Development
+- Source builds require Go 1.27.0 or newer. Updated the pinned linter, CI/release actions, Node LTS, and uv; Dependabot checks Go modules and GitHub Actions weekly.
+
 ## v0.24.3 - 2026-10-07
 
 ### Fixed

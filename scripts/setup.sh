@@ -11,13 +11,13 @@ gomodcache="${GOMODCACHE:-$root_dir/.cache/go-mod}"
 mkdir -p "$tool_bin" "$gocache" "$gomodcache"
 
 if ! command -v go >/dev/null 2>&1; then
-  echo "Go is required but was not found in PATH. Install Go 1.26.0+ and retry." >&2
+  echo "Go is required but was not found in PATH. Install Go 1.27.0+ and retry." >&2
   exit 1
 fi
 
-required_go_version="1.26.0"
+required_go_version="1.27.0"
 required_go_major=1
-required_go_minor=26
+required_go_minor=27
 required_go_patch=0
 go_version_token="$(go env GOVERSION 2>/dev/null || true)"
 if [[ -z "$go_version_token" ]]; then

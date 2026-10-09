@@ -216,7 +216,7 @@ func PreferredAuthHome(repoRoot string) string {
 			continue
 		}
 		seen[clean] = struct{}{}
-		if info, err := os.Stat(filepath.Join(clean, "auth.json")); err == nil && info.Mode().IsRegular() {
+		if info, err := os.Stat(filepath.Join(clean, "auth.json")); err == nil && info.Mode().IsRegular() { // #nosec G703 -- fixed auth.json child of the selected Grok home, not an arbitrary path.
 			return clean
 		}
 	}

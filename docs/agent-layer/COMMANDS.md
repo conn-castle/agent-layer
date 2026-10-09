@@ -32,7 +32,7 @@ Notes: <optional constraints or tips>
 ./scripts/setup.sh
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+, Make  
+Prerequisites: Go 1.27.0+, Make
 Notes: Installs tools into `.tools/bin`. Go package tools are pinned in `go.mod`; golangci-lint is pinned separately in `Makefile` so its dependencies cannot change the application module graph.
 
 - Install pinned Go tooling (goimports, golangci-lint, gotestsum, deadcode) only
@@ -40,7 +40,7 @@ Notes: Installs tools into `.tools/bin`. Go package tools are pinned in `go.mod`
 make tools
 ```
 Run from: repo root  
-Prerequisites: Go 1.26.0+, Make  
+Prerequisites: Go 1.27.0+, Make
 Notes: Uses versions pinned in `go.mod`. Installs tools into `.tools/bin`.
 
 - Install pre-commit hooks
@@ -149,7 +149,7 @@ Notes: Validates harness infrastructure (token auth, helpers) without running fu
 make test-race
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+
+Prerequisites: Go 1.27.0+
 Notes: Covers `internal/agentdispatch`, `internal/sync`, `internal/install`, `internal/warnings`, `internal/projectlock`, and `internal/skillimport` — every package that participates in the shared project lock that serializes projection with skill import mutations.
 
 - Run scenario-based end-to-end tests (offline, hermetic)
@@ -157,7 +157,7 @@ Notes: Covers `internal/agentdispatch`, `internal/sync`, `internal/install`, `in
 make test-e2e
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+, `sha256sum` or `shasum`
+Prerequisites: Go 1.27.0+, `sha256sum` or `shasum`
 Notes: Builds release artifacts and runs all discovered scenarios with mock agent binaries. Auto-detects latest migration manifest version for upgrade testing. Upgrade scenarios use pre-cached binaries from `~/.cache/al-e2e/bin/` (run `make test-e2e-online` once to populate cache). Override version with `AL_E2E_VERSION=vX.Y.Z`. Filter: `AL_E2E_SCENARIOS="upgrade*" make test-e2e`. `defaults.toml` profile fixture is generated at runtime from `internal/templates/config.toml` to prevent drift.
 
 - Run e2e tests with online upgrade binary downloads
@@ -165,7 +165,7 @@ Notes: Builds release artifacts and runs all discovered scenarios with mock agen
 make test-e2e-online
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+, `curl`, `sha256sum` or `shasum`, network access
+Prerequisites: Go 1.27.0+, `curl`, `sha256sum` or `shasum`, network access
 Notes: Same as `make test-e2e` but sets `AL_E2E_ONLINE=1` to download release binaries from GitHub. Use before releases or to populate the persistent binary cache. Pin the latest release version with `AL_E2E_LATEST_VERSION=X.Y.Z`.
 
 - Verify live Codex Agent Dispatch waits do not create polling turns
@@ -181,7 +181,7 @@ Notes: Paid, local-only integration test. It creates a disposable Agent Layer pr
 make test-e2e-ci
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+, `curl`, `sha256sum` or `shasum`, network access
+Prerequisites: Go 1.27.0+, `curl`, `sha256sum` or `shasum`, network access
 Notes: Same as `make test-e2e-online` but also sets `AL_E2E_REQUIRE_UPGRADE=1` to fail hard if upgrade binaries are missing. Used by `make ci`. Ensures 100% of scenarios execute including upgrade paths.
 
 ### Modules
@@ -191,14 +191,14 @@ Notes: Same as `make test-e2e-online` but also sets `AL_E2E_REQUIRE_UPGRADE=1` t
 make tidy
 ```
 Run from: repo root  
-Prerequisites: Go 1.26.0+
+Prerequisites: Go 1.27.0+
 
 - Verify go.mod/go.sum are tidy
 ```bash
 make tidy-check
 ```
 Run from: repo root  
-Prerequisites: Go 1.26.0+  
+Prerequisites: Go 1.27.0+
 Notes: Fails if `go.mod`/`go.sum` would change.
 Pre-existing intended working-tree changes are allowed; the command compares
 the module files immediately before and after `go mod tidy`.
@@ -210,7 +210,7 @@ the module files immediately before and after `go mod tidy`.
 make coverage
 ```
 Run from: repo root  
-Prerequisites: Go 1.26.0+, `make tools` has been run
+Prerequisites: Go 1.27.0+, `make tools` has been run
 Notes: Same concise output and `.agent-layer/tmp/test-logs/coverage-*/` logs as `make test`. Coverage is diagnostic evidence, not a pass/fail target. `make ci` routes through this target so regressions remain visible without incentivizing tests that exist only to execute implementation branches.
 
 ### Dev
@@ -220,7 +220,7 @@ Notes: Same concise output and `.agent-layer/tmp/test-logs/coverage-*/` logs as 
 make dev
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+, `make tools` has been run
+Prerequisites: Go 1.27.0+, `make tools` has been run
 Notes: Formats Go source and runs golangci-lint. Does not run tests, coverage, or the full CI suite. Use `make test` as the test gate, `make coverage` for diagnostic reporting, and `make ci` as the complete local/pre-PR verification command (GitHub Actions also runs `make ci`).
 
 - Run al subcommands against this repo's own .agent-layer using the source tree
@@ -236,7 +236,7 @@ make al-copilot   # al copilot
 make al-grok      # al grok
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+
+Prerequisites: Go 1.27.0+
 Notes: Convenience wrappers against this repo's own `.agent-layer/` config. `al-doctor` and the interactive agent launchers build a source snapshot at `.agent-layer/tmp/dev-bin/al` and prepend that directory to `PATH`, so child `al dispatch` calls use the same source snapshot rather than the globally installed binary. The development launch bypasses repo version-pin handoff only for that Make invocation. `al-upgrade`, `al-sync`, and `al-wizard` continue to use `go run ./cmd/al`. Always use these wrappers instead of a globally installed `al` in this repo: this repo's `.agent-layer/config.toml` tracks the unreleased schema, so a released `al` rejects it as unrecognized keys.
 
 - Run the Antigravity capability probe
@@ -262,7 +262,7 @@ Notes: Prints JSON describing a contained `grok` run under `.agent-layer/tmp/pro
 make ci
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+, `make tools` has been run
+Prerequisites: Go 1.27.0+, `make tools` has been run
 Notes: The complete local/pre-PR verification command; GitHub Actions runs the same target. Includes `make tidy-check`, `make fmt-check`, `make lint`, `make shell-syntax-check`, `make dead-code`, `make coverage`, `make test-deepswe-planner`, `make test-race` (race detector on concurrency-critical packages), `make test-release`, `make test-e2e-harness`, `make test-e2e-ci` (online e2e with required upgrade scenarios), and `make docs-cta-check`; requires network access for upgrade binary downloads. `tidy-check` permits an existing intended diff, reports a validation failure when `go mod tidy` changes the module files, and propagates dependency, toolchain, network, and filesystem errors.
 GitHub Actions also runs a separate website build job using `make website-build-check` against `conn-castle/agent-layer-web`.
 The release workflow runs this target on macOS before importing signing credentials.
@@ -289,7 +289,7 @@ Approval gate: before changing release-versioned files, creating or pushing a re
 make release-tools
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+, network access
+Prerequisites: Go 1.27.0+, network access
 Notes: Installs the `govulncheck` version pinned in `go.mod` into `.tools/bin`. This tool is release-only and is not installed by `make tools`.
 
 - Scan all four built release executables for known vulnerable symbols
@@ -305,7 +305,7 @@ Notes: Uses `govulncheck -mode=binary` and fails on a missing binary, known vuln
 ./scripts/generate-template-manifest.sh --tag vX.Y.Z
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+ (reads from the working tree, no git tag required)
+Prerequisites: Go 1.27.0+ (reads from the working tree, no git tag required)
 Notes: Writes `internal/templates/manifests/X.Y.Z.json`. Run for each new release version and commit the generated manifest. After a version is tagged, do not regenerate or edit its manifest for later work; create the next version's manifest instead.
 
 - Validate release readiness (run before tagging)
@@ -313,7 +313,7 @@ Notes: Writes `internal/templates/manifests/X.Y.Z.json`. Run for each new releas
 make release-preflight RELEASE_TAG=vX.Y.Z
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+, `make tools` and `make release-tools` have been run, `rg` (ripgrep) available on PATH, both manifests committed
+Prerequisites: Go 1.27.0+, `make tools` and `make release-tools` have been run, `rg` (ripgrep) available on PATH, both manifests committed
 Notes: Validates the tag and upgrade-contract docs before running `make ci` once, then builds unsigned four-platform artifacts into a unique retained `.agent-layer/tmp/release-preflight/` directory and scans those binaries with `govulncheck`. The native smoke test covers only the host platform and the source tarball is from `HEAD`. Requires a clean working tree and network access for upgrade binary downloads and the vulnerability database. It does not sign or notarize; hosted signing, notarization, and scanning remain the final release gate and can fail after a local pass.
 
 - Certify the exact pushed `main` commit before creating a release tag
@@ -347,7 +347,7 @@ Notes: Fails on removed/invalid upgrade command surfaces (for example `--force` 
 make website-build-check SITE_BUILD_TAG=vX.Y.Z WEBSITE_REPO_DIR=/path/to/agent-layer-web
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+, Node 22+, npm, Python 3.9+, and a local `conn-castle/agent-layer-web` git checkout
+Prerequisites: Go 1.27.0+, Node 22+, npm, Python 3.9+, and a local `conn-castle/agent-layer-web` git checkout
 Notes: Installs website dependencies, publishes this repo's `site/` content into `WEBSITE_REPO_DIR`, snapshots docs for `SITE_BUILD_TAG`, then runs `npm run build`, the asset checker's fixture tests, and local HTML asset validation. The checkout is mutated; use a temporary clone for release previews.
 
 - Refresh the versioned website DeepSWE planner snapshot
@@ -371,7 +371,7 @@ Notes: Verifies deterministic build-time correlations and OLS calibrations, inco
 make release-dist AL_VERSION=dev DIST_DIR=dist
 ```
 Run from: repo root
-Prerequisites: Go 1.26.0+, git, gzip, tar, `sha256sum` or `shasum`
+Prerequisites: Go 1.27.0+, git, gzip, tar, `sha256sum` or `shasum`
 Notes: Runs `test-release` first to validate release scripts. Local builds stay unsigned unless `AL_CODESIGN_IDENTITY` is set on macOS; `AL_REQUIRE_CODESIGN=1` fails if signing cannot run.
 
 ### Agent Layer skill A/B benchmark
