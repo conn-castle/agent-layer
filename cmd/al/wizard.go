@@ -23,10 +23,7 @@ var runWizardAnswers = func(root string, pinVersion string, answersPath string, 
 	if err != nil {
 		return err
 	}
-	if err := wizard.RunWithWriter(root, ui, alsync.Run, pinVersion, out); err != nil {
-		return err
-	}
-	return ui.AssertComplete()
+	return wizard.RunWithWriter(root, ui, alsync.Run, pinVersion, out)
 }
 
 var cleanupWizardBackups = wizard.CleanupBackups

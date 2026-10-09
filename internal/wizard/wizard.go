@@ -47,12 +47,20 @@ func RunAfterFreshInitWithWriter(root string, ui UI, runSync syncer, pinVersion 
 	return runWithWriter(root, ui, runSync, pinVersion, out, true)
 }
 
-func runWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io.Writer, freshInitDefaults bool) error {
+func runWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io.Writer, freshInitDefaults bool) (err error) {
 	if out == nil {
 		out = os.Stdout
 	}
-	if scripted, ok := ui.(*ScriptedUI); ok {
+	scripted, isScripted := ui.(*ScriptedUI)
+	if isScripted {
 		scripted.out = out
+		// Declined install and other successful early exits must also reject
+		// answers for prompts that were never consumed.
+		defer func() {
+			if err == nil {
+				err = scripted.AssertComplete()
+			}
+		}()
 	}
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
 	envPath := filepath.Join(root, ".agent-layer", ".env")
@@ -69,7 +77,18 @@ func runWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 		return nil
 	}
 
-	cfg, err := loadProjectConfigFunc(root)
+	var cfg *config.ProjectConfig
+	if freshInstall && isScripted {
+		// Use the exact install defaults without creating a scaffold. Prompt
+		// conditions still inspect the real root's instruction/memory evidence.
+		var defaults *config.Config
+		defaults, err = config.LoadTemplateConfig()
+		if err == nil {
+			cfg = &config.ProjectConfig{Config: *defaults, Root: root}
+		}
+	} else {
+		cfg, err = loadProjectConfigFunc(root)
+	}
 	if err != nil {
 		if !errors.Is(err, config.ErrConfigValidation) {
 			// Non-validation failure (env, instructions, skills, etc.) —
@@ -96,7 +115,7 @@ func runWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 		cfg = &config.ProjectConfig{Config: *lenientCfg, Root: root}
 	}
 
-	choices, err := initializeChoices(cfg)
+	choices, err := initializeChoicesWithCatalog(cfg, !isScripted)
 	if err != nil {
 		return err
 	}
@@ -115,7 +134,7 @@ func runWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 		return err
 	}
 
-	if err := confirmAndApply(root, configPath, envPath, ui, choices, runSync, out, !freshInstall); err != nil {
+	if err := confirmAndApply(root, configPath, envPath, ui, choices, runSync, out, freshInstall, pinVersion); err != nil {
 		if errors.Is(err, errWizardCancelled) || errors.Is(err, errWizardBack) {
 			if !freshInstall {
 				_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
@@ -156,14 +175,11 @@ func ensureWizardConfig(root, configPath string, ui UI, pinVersion string, out i
 			return false, false, nil
 		}
 
-		if err := install.Run(root, install.Options{
-			Overwrite:  false,
-			PinVersion: pinVersion,
-			System:     install.RealSystem{},
-		}); err != nil {
-			return false, false, fmt.Errorf(messages.WizardInstallFailedFmt, err)
+		if _, scripted := ui.(*ScriptedUI); !scripted {
+			if err := installWizardConfig(root, pinVersion, out); err != nil {
+				return false, false, err
+			}
 		}
-		_, _ = fmt.Fprintln(out, messages.WizardInstallComplete)
 		return true, true, nil
 	} else if err != nil {
 		return false, false, err
@@ -172,30 +188,26 @@ func ensureWizardConfig(root, configPath string, ui UI, pinVersion string, out i
 	return true, false, nil
 }
 
-func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
-	choices := NewChoices()
-
-	defaultServers, err := loadDefaultMCPServersFunc()
-	if err != nil {
-		return nil, fmt.Errorf(messages.WizardLoadDefaultMCPServersFailedFmt, err)
+func installWizardConfig(root, pinVersion string, out io.Writer) error {
+	if err := install.Run(root, install.Options{PinVersion: pinVersion, System: install.RealSystem{}}); err != nil {
+		return fmt.Errorf(messages.WizardInstallFailedFmt, err)
 	}
-	choices.DefaultMCPServers = defaultServers
+	_, _ = fmt.Fprintln(out, messages.WizardInstallComplete)
+	return nil
+}
 
-	cliSkills, err := templates.LoadCLISkillCatalog()
-	if err != nil {
-		return nil, err
-	}
-	choices.CLISkillsCatalog = cliSkills
+// initializeCatalogChoices may recover imports and create the project lock.
+// Scripted runs defer it until all actually consumed answers are validated.
+func initializeCatalogChoices(root string, choices *Choices) error {
 	choices.InitialCLISkills = map[string]bool{}
-	for _, entry := range cliSkills {
+	for _, entry := range choices.CLISkillsCatalog {
 		if entry.Repository == "" {
-			choices.EnabledCLISkills[entry.ID] = catalogSkillIsManagedOnDisk(cfg.Root, entry)
-			choices.InitialCLISkills[entry.ID] = choices.EnabledCLISkills[entry.ID]
+			choices.InitialCLISkills[entry.ID] = catalogSkillIsManagedOnDisk(root, entry)
 			continue
 		}
-		members, err := skillimport.CatalogState(cfg.Root, entry)
+		members, err := skillimport.CatalogState(root, entry)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		imported, legacy, missing, manual := 0, 0, 0, 0
 		configured := false
@@ -214,9 +226,36 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 				manual++
 			}
 		}
-		choices.EnabledCLISkills[entry.ID] = imported+legacy > 0 || configured
-		choices.InitialCLISkills[entry.ID] = choices.EnabledCLISkills[entry.ID]
+		choices.InitialCLISkills[entry.ID] = imported+legacy > 0 || configured
 		choices.CLISkillStatus += fmt.Sprintf("\n  %s: imported %d/%d, legacy %d, missing %d, manual %d", entry.Name, imported, len(members), legacy, missing, manual)
+	}
+
+	return nil
+}
+
+func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
+	return initializeChoicesWithCatalog(cfg, true)
+}
+
+func initializeChoicesWithCatalog(cfg *config.ProjectConfig, inspectCatalog bool) (*Choices, error) {
+	choices := NewChoices()
+
+	defaultServers, err := loadDefaultMCPServersFunc()
+	if err != nil {
+		return nil, fmt.Errorf(messages.WizardLoadDefaultMCPServersFailedFmt, err)
+	}
+	choices.DefaultMCPServers = defaultServers
+
+	cliSkills, err := templates.LoadCLISkillCatalog()
+	if err != nil {
+		return nil, err
+	}
+	choices.CLISkillsCatalog = cliSkills
+	if inspectCatalog {
+		if err := initializeCatalogChoices(cfg.Root, choices); err != nil {
+			return nil, err
+		}
+		choices.EnabledCLISkills = cloneMap(choices.InitialCLISkills)
 	}
 
 	if err := initializeGitTrackingChoices(cfg.Root, choices); err != nil {
@@ -931,9 +970,34 @@ func promptCustomMCPServers(ui UI, choices *Choices) error {
 	return nil
 }
 
-func confirmAndApply(root, configPath, envPath string, ui UI, choices *Choices, runSync syncer, out io.Writer, printExitWithoutChanges bool) error {
-	summary := buildSummary(choices)
+func confirmAndApply(root, configPath, envPath string, ui UI, choices *Choices, runSync syncer, out io.Writer, freshInstall bool, pinVersion string) error {
 	confirmApply := true
+	scripted, isScripted := ui.(*ScriptedUI)
+	if isScripted {
+		// Scripted confirmation has no visual interaction. Consume it before
+		// previews, which can recover imports and create a project lock.
+		if err := scripted.Confirm(messages.WizardApplyChangesPrompt, &confirmApply); err != nil {
+			return err
+		}
+		if err := scripted.AssertComplete(); err != nil {
+			return err
+		}
+		if freshInstall {
+			if err := installWizardConfig(root, pinVersion, out); err != nil {
+				return err
+			}
+		}
+		if !confirmApply {
+			if !freshInstall {
+				_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
+			}
+			return nil
+		}
+		if err := initializeCatalogChoices(root, choices); err != nil {
+			return err
+		}
+	}
+	summary := buildSummary(choices)
 	if err := ui.Note(messages.WizardSummaryTitle, summary); err != nil {
 		return err
 	}
@@ -978,11 +1042,13 @@ func confirmAndApply(root, configPath, envPath string, ui UI, choices *Choices, 
 	if err := ui.Note(messages.WizardRewritePreviewTitle, rewritePreview); err != nil {
 		return err
 	}
-	if err := ui.Confirm(messages.WizardApplyChangesPrompt, &confirmApply); err != nil {
-		return err
+	if !isScripted {
+		if err := ui.Confirm(messages.WizardApplyChangesPrompt, &confirmApply); err != nil {
+			return err
+		}
 	}
 	if !confirmApply {
-		if printExitWithoutChanges {
+		if !freshInstall {
 			_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
 		}
 		return nil
