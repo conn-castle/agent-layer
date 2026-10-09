@@ -1,4 +1,4 @@
-"""Pinned Pier 0.3.0 treatment adapters for the Agent Layer benchmark.
+"""Pinned Pier 0.3.1 treatment adapters for the Agent Layer benchmark.
 
 This module is materialized only into a mode-0700 benchmark staging directory.
 It intentionally uploads a secret-free bundle through Pier's Docker API; native
@@ -30,7 +30,7 @@ from pier.models.agent.network import NetworkAllowlist
 from pier.models.trial.paths import EnvironmentPaths
 from pier.trial.trial import Trial
 
-EXPECTED_PIER_VERSION = "0.3.0"
+EXPECTED_PIER_VERSION = "0.3.1"
 REMOTE_BUNDLE = "/tmp/agent-layer-benchmark"
 REMOTE_WORKSPACE = "/app"
 PIER_CODEX_AUTH = "/tmp/codex-secrets/auth.json"
@@ -1175,9 +1175,8 @@ class AgentLayerCodex(_AgentLayerTreatment, Codex):
 
         # Codex stores coordinator sessions at YYYY/MM/DD. Dispatched sessions
         # are copied under agent-layer-dispatch/YYYY/MM/DD for cost accounting.
-        # Pier 0.3.0 recursively selects the deepest directories, so that extra
-        # prefix makes dispatch dates look like coordinator sessions and a run
-        # crossing midnight UTC produces two candidates.
+        # Restrict this to coordinator-shaped dates; dispatch sessions live
+        # under their own prefix and must not be counted as coordinator runs.
         session_dirs = sorted(
             {path.parent for path in sessions_dir.glob("*/*/*/*.jsonl")}
         )

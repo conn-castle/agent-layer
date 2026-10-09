@@ -39,7 +39,7 @@ func terminalVerifierTestTimeout(stage string, result pierTaskResult) (bool, err
 	if result.VerifierExecution == nil || result.VerifierExecution.StartedAt.IsZero() || result.VerifierExecution.FinishedAt.IsZero() {
 		return false, nil
 	}
-	// Pier 0.3.0 creates test-stdout.txt as the verifier script's stdout
+	// Pier 0.3.1 creates test-stdout.txt as the verifier script's stdout
 	// redirection target when environment.exec starts. The traceback boundary
 	// proves the timeout occurred in that exec rather than during environment
 	// startup or upload. Count the unique redirection file even when empty:

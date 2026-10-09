@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// TaskTreeChecksum returns Pier 0.3.0's deterministic task-directory identity.
+// TaskTreeChecksum returns Pier 0.3.1's deterministic task-directory identity.
 func TaskTreeChecksum(root string) (string, error) {
 	info, err := os.Stat(root)
 	if err != nil {

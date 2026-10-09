@@ -13,14 +13,14 @@ import (
 const (
 	studyReportNotRecorded   = "Not recorded"
 	studyReportStatusPartial = "partial"
-	plotlyBasicVersion       = "3.7.0"
-	plotlyBasicSHA256        = "89eccc5a8b851af5180a5fb4c1d52027e14aa4ca11e32d8372891119c21cf833"
+	plotlyBasicVersion       = "4.1.2"
+	plotlyBasicSHA256        = "fa18ed1c94c06576c0a867bb2477534716c39e5b22affe673f2a184317974926"
 )
 
 // plotlyBasicJS is the pinned official Plotly Basic distribution. Embedding it
 // keeps generated reports self-contained and usable without network access.
 //
-//go:embed assets/plotly-basic-3.7.0.min.js
+//go:embed assets/plotly-basic-4.1.2.min.js
 var plotlyBasicJS string
 
 var studyReportColors = []string{"#3d74ac", "#1591a8", "#7c5bb8", "#d17b32", "#2f855a", "#be5f8a", "#64748b", "#9a6b3f"}

@@ -1,17 +1,6 @@
 package agentdispatch
 
-import (
-	"sync"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-)
-
-const (
-	mcpProtocol20241105 = "2024-11-05"
-	mcpProtocol20250326 = "2025-03-26"
-	mcpProtocol20250618 = "2025-06-18"
-	mcpProtocol20251125 = "2025-11-25"
-)
+import "sync"
 
 // The SDK's stdio connection learns the negotiated protocol version through a
 // package-private sessionUpdated hook (the unexported serverConnection
@@ -20,8 +9,8 @@ const (
 // writes, so the SDK alone would accept batches for every protocol version.
 // Preserve its negotiated batching restriction using frame shape only, leaving
 // parsing and validation to the SDK. This observer never buffers protocol
-// bytes or field values. The SDK knowledge duplicated here is the batch ban,
-// batch item expansion, and mcpBatchProtocolVersion's negotiation;
+// bytes or field values. It duplicates only the SDK's batch frame shape and
+// batch item expansion;
 // TestMCPLifecyclePreservesSDKBatches compares them with the undecorated SDK.
 // An exported session-state hook for Connection decorators would remove them
 // (https://github.com/modelcontextprotocol/go-sdk/issues/1328).
@@ -109,25 +98,4 @@ func (f *mcpFrameObserver) next() bool {
 	f.frames = f.frames[1:]
 	f.remaining = frame.items - 1
 	return frame.batch
-}
-
-func mcpBatchProtocolVersion(server *mcp.Server) string {
-	for session := range server.Sessions() {
-		params := session.InitializeParams()
-		if params == nil {
-			return mcpProtocol20250326
-		}
-		// These are the SDK's supported versions preceding the batch ban. An
-		// empty version uses its 2025-03-26 default; unsupported versions
-		// negotiate to a newer version. Read the authoritative session state.
-		switch params.ProtocolVersion {
-		case "":
-			return mcpProtocol20250326
-		case mcpProtocol20241105, mcpProtocol20250326, mcpProtocol20250618, mcpProtocol20251125:
-			return params.ProtocolVersion
-		default:
-			return mcpProtocol20251125
-		}
-	}
-	return mcpProtocol20250326
 }
