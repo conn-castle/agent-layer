@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/textproto"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -31,6 +32,17 @@ func TestMain(m *testing.M) {
 }
 
 func runModelHarness(mode string) {
+	if mode == "stdout-silent-exit" {
+		return
+	}
+	if mode == "stdout-exit" {
+		fmt.Print(strings.Repeat(" ", maxDiscoveryBytes+1))
+		return
+	}
+	if strings.HasPrefix(mode, "claude-refresh-") {
+		runClaudeRefreshHarness(mode)
+		return
+	}
 	if strings.HasPrefix(mode, "copilot") {
 		runCopilotHarness(mode)
 		return
@@ -84,6 +96,10 @@ func runModelHarness(mode string) {
 		os.Exit(2)
 	}
 	if mode == "hang" {
+		if slices.Contains(os.Args, "--input-format") {
+			_, _ = io.Copy(io.Discard, os.Stdin)
+			return
+		}
 		time.Sleep(time.Minute)
 		return
 	}
@@ -171,6 +187,71 @@ func runModelHarness(mode string) {
 	}
 }
 
+const claudeRefreshSuccess = "success"
+
+// runClaudeRefreshHarness models a spent refresh token whose replacement is
+// saved during graceful shutdown, after the catalog response. The trailing
+// output also forces the parent to drain stdout rather than only call Wait.
+func runClaudeRefreshHarness(mode string) {
+	cwd, _ := os.Getwd()
+	credential := filepath.Join(cwd, ".claude-config", ".credentials.json")
+	if os.Getenv("CLAUDE_CONFIG_DIR") != filepath.Dir(credential) || os.Getenv("AL_TEST_PROJECT_VALUE") != "project-value" || os.Getenv("CLAUDE_CODE_OAUTH_TOKEN") != "fake-access-token" {
+		os.Exit(3)
+	}
+	content, err := os.ReadFile(credential) // #nosec G304,G703 -- test-owned credential fixture.
+	if err != nil || string(content) != "old-refresh-token" {
+		os.Exit(3)
+	}
+	decoder := json.NewDecoder(os.Stdin)
+	var request struct {
+		ID string `json:"request_id"`
+	}
+	if decoder.Decode(&request) != nil {
+		os.Exit(4)
+	}
+	if mode == "claude-refresh-early-exit" {
+		os.Exit(1)
+	}
+	if err := os.WriteFile(credential+".spent", nil, 0o600); err != nil { // #nosec G703 -- test-owned marker.
+		os.Exit(3)
+	}
+	switch mode {
+	case "claude-refresh-timeout", "claude-refresh-cancel", "claude-refresh-held-timeout", "claude-refresh-held-timeout-exit-error":
+		// A deadline/cancellation must close stdin without killing the child.
+	case "claude-refresh-malformed":
+		fmt.Println("invalid-json")
+	case "claude-refresh-oversized":
+		fmt.Print(strings.Repeat(" ", maxDiscoveryBytes+1))
+	default:
+		subtype := claudeRefreshSuccess
+		if mode == "claude-refresh-rejected" {
+			subtype = "error"
+		}
+		_, _ = fmt.Fprintf(os.Stdout, `{"type":"control_response","response":{"request_id":%q,"subtype":%q,"response":{"models":[{"value":"account-model"}]}}}`+"\n", request.ID, subtype)
+	}
+	_, _ = io.Copy(io.Discard, os.Stdin)
+	if strings.Contains(mode, "held") {
+		if err := os.WriteFile(credential+".draining", nil, 0o600); err != nil { // #nosec G703 -- test-owned marker.
+			os.Exit(3)
+		}
+		for {
+			if _, err := os.Stat(credential + ".release"); err == nil {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+	} else {
+		time.Sleep(200 * time.Millisecond)
+	}
+	fmt.Print(strings.Repeat(" ", maxDiscoveryBytes+1))
+	if err := os.WriteFile(credential, []byte("new-refresh-token"), 0o600); err != nil { // #nosec G304,G703 -- test-owned credential fixture.
+		os.Exit(3)
+	}
+	if strings.HasSuffix(mode, "exit-error") {
+		os.Exit(2)
+	}
+}
+
 // stdinIsNullDevice distinguishes the null device from a pipe, which would also
 // reach EOF once closed, then confirms that reading stdin ends immediately.
 func stdinIsNullDevice() bool {
@@ -193,6 +274,22 @@ func harnessRequest(t *testing.T, mode string) DiscoveryRequest {
 		t.Fatal(err)
 	}
 	return DiscoveryRequest{Env: []string{"AL_TEST_MODEL_HARNESS=" + mode}, LookPath: func(string) (string, error) { return path, nil }, Timeout: 3 * time.Second}
+}
+
+func claudeRefreshRequest(t *testing.T, mode string) (DiscoveryRequest, string) {
+	t.Helper()
+	req := harnessRequest(t, "claude-refresh-"+mode)
+	root := t.TempDir()
+	credential := filepath.Join(root, ".claude-config", ".credentials.json")
+	if err := os.MkdirAll(filepath.Dir(credential), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(credential, []byte("old-refresh-token"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	localConfigDir := true
+	req.Project = &config.ProjectConfig{Root: root, Env: map[string]string{"AL_TEST_PROJECT_VALUE": "project-value", "CLAUDE_CODE_OAUTH_TOKEN": "fake-access-token"}, Config: config.Config{Agents: config.AgentsConfig{Claude: config.ClaudeConfig{LocalConfigDir: &localConfigDir}}}}
+	return req, credential
 }
 
 func TestDiscoverModelsThroughHarnessProtocols(t *testing.T) {
@@ -227,6 +324,215 @@ func TestGrokDiscoveryReportsSilentlyRefreshedSession(t *testing.T) {
 	}
 	if want := []string{"refreshed-model"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("models=%v want=%v", got, want)
+	}
+}
+
+func TestClaudeDiscoveryCompletesRefreshBeforeReturning(t *testing.T) {
+	for _, mode := range []string{claudeRefreshSuccess, "rejected", "malformed", "oversized", "timeout", "shutdown-timeout", "cancel", "exit-error"} {
+		t.Run(mode, func(t *testing.T) {
+			req, credential := claudeRefreshRequest(t, mode)
+			if mode == "timeout" || mode == "shutdown-timeout" {
+				req.Timeout = 100 * time.Millisecond
+			}
+			if mode == "cancel" {
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				req.Context = ctx
+				go func() {
+					ticker := time.NewTicker(time.Millisecond)
+					defer ticker.Stop()
+					for {
+						if _, err := os.Stat(credential + ".spent"); err == nil {
+							cancel()
+							return
+						}
+						select {
+						case <-ctx.Done():
+							return
+						case <-ticker.C:
+						}
+					}
+				}()
+			}
+			models, err := DiscoverModels(agentClaude, req)
+			if mode == claudeRefreshSuccess || mode == "shutdown-timeout" {
+				if err != nil || !reflect.DeepEqual(models, []string{"account-model"}) {
+					t.Fatalf("models=%v error=%v", models, err)
+				}
+			} else if err == nil || len(models) != 0 {
+				t.Fatalf("expected discovery failure, models=%v error=%v", models, err)
+			}
+			if mode == "timeout" && !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("expected deadline error, got %v", err)
+			}
+			if mode == "cancel" && !errors.Is(err, context.Canceled) {
+				t.Fatalf("expected cancellation error, got %v", err)
+			}
+			content, readErr := os.ReadFile(credential) // #nosec G304 -- test-owned credential fixture.
+			if readErr != nil || string(content) != "new-refresh-token" {
+				t.Fatalf("refresh was interrupted: credential=%q error=%v", content, readErr)
+			}
+		})
+	}
+}
+
+func TestClaudeFailedDiscoveryDoesNotRepeatErrorDuringCleanup(t *testing.T) {
+	for _, mode := range []string{"early-exit", "rejected", "malformed"} {
+		t.Run(mode, func(t *testing.T) {
+			req, _ := claudeRefreshRequest(t, mode)
+			var cleanup DiscoveryCleanup
+			req.Cleanup = &cleanup
+			defer func() { _ = cleanup.Close() }()
+			if _, err := DiscoverModels(agentClaude, req); err == nil {
+				t.Fatal("failed initialization reported success")
+			}
+			if err := cleanup.Close(); err != nil {
+				t.Fatalf("lookup failure reported again as shutdown failure: %v", err)
+			}
+		})
+	}
+}
+
+func TestCancelledCleanupWaitRetainsShutdownError(t *testing.T) {
+	var cleanup DiscoveryCleanup
+	finish, err := cleanup.begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("native shutdown failed")
+	finish(failure)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := cleanup.Wait(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled waiter consumed shutdown error: %v", err)
+	}
+	if err := cleanup.Close(); !errors.Is(err, failure) {
+		t.Fatalf("owner lost shutdown error: %v", err)
+	}
+}
+
+func TestClaudeCleanupStopsDrainingAfterNativeExit(t *testing.T) {
+	path, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reader.Close(); _ = writer.Close() }()
+	// Keep the parent's write end open, simulating a descendant that inherited
+	// stdout. The child also fills the pipe, requiring a concurrent drain.
+	cmd := exec.Command(path) // #nosec G204 -- the hermetic test executable.
+	cmd.Env = []string{"AL_TEST_MODEL_HARNESS=stdout-exit"}
+	cmd.Stdout = writer
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		drainErr, waitErr := waitForClaudeExit(cmd.Wait, reader)
+		done <- errors.Join(drainErr, waitErr)
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		_ = writer.Close()
+		<-done
+		t.Fatal("cleanup waited for inherited stdout after native exit")
+	}
+}
+
+func TestClaudeCancellationReleasesInheritedStdoutBeforeReply(t *testing.T) {
+	req := harnessRequest(t, "stdout-silent-exit")
+	path, err := req.LookPath(agentClaude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reader.Close(); _ = writer.Close() }()
+	cmd := exec.Command(path) // #nosec G204 -- the hermetic test executable.
+	cmd.Env = req.Env
+	cmd.Stdout = writer
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	wait := claudeProcessWait(ctx, cmd, reader)
+	defer func() { _ = wait() }()
+	done := make(chan error, 1)
+	go func() {
+		var reply any
+		done <- json.NewDecoder(reader).Decode(&reply)
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, os.ErrClosed) {
+			t.Fatalf("parser was not released by cancellation after native exit: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		_ = writer.Close()
+		<-done
+		t.Fatal("parser waited for inherited stdout beyond cancellation")
+	}
+}
+
+func TestClaudeDiscoveryReturnsCatalogWhileOwnedCleanupFinishes(t *testing.T) {
+	for _, mode := range []string{"held", "held-exit-error", "held-timeout", "held-timeout-exit-error"} {
+		t.Run(mode, func(t *testing.T) {
+			req, credential := claudeRefreshRequest(t, mode)
+			var cleanup DiscoveryCleanup
+			req.Cleanup = &cleanup
+			defer func() {
+				_ = os.WriteFile(credential+".release", nil, 0o600)
+				_ = cleanup.Close()
+			}()
+			if strings.Contains(mode, "timeout") {
+				req.Timeout = 100 * time.Millisecond
+			}
+			models, err := DiscoverModels(agentClaude, req)
+			if strings.Contains(mode, "timeout") {
+				if !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("expected deadline error, got %v", err)
+				}
+			} else if err != nil || !slices.Equal(models, []string{"account-model"}) {
+				t.Fatalf("catalog was not available during cleanup: models=%v error=%v", models, err)
+			}
+			content, err := os.ReadFile(credential) // #nosec G304 -- test-owned credential fixture.
+			if err != nil || string(content) != "old-refresh-token" {
+				t.Fatalf("catalog waited for refresh: credential=%q error=%v", content, err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+			defer cancel()
+			if err := cleanup.Wait(ctx); !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("launch barrier did not wait for cleanup: %v", err)
+			}
+			if err := os.WriteFile(credential+".release", nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			err = cleanup.Close()
+			if strings.HasSuffix(mode, "exit-error") {
+				if err == nil || !strings.Contains(err.Error(), "exit status 2") {
+					t.Fatalf("lost background shutdown error: %v", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			content, err = os.ReadFile(credential) // #nosec G304 -- test-owned credential fixture.
+			if err != nil || string(content) != "new-refresh-token" {
+				t.Fatalf("cleanup interrupted refresh: credential=%q error=%v", content, err)
+			}
+			if _, err := DiscoverModels(agentClaude, req); err == nil {
+				t.Fatal("discovery started after owner shutdown")
+			}
+		})
 	}
 }
 

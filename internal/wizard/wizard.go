@@ -453,7 +453,17 @@ func promptWizardFlow(root string, ui UI, choices *Choices, caches ...*wizardOpt
 		optionCache = caches[0]
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	defer func() {
+		cancel()
+		// Discovery owns authenticated child processes. Let their cleanup finish
+		// before wizard exit can close pipes or abandon a credential refresh.
+		for _, entry := range optionCache.entries {
+			<-entry.done
+		}
+		if err := optionCache.cleanup.Close(); err != nil && optionCache.out != nil {
+			_, _ = fmt.Fprintf(optionCache.out, "Claude could not finish shutting down: %v\n", err)
+		}
+	}()
 	optionCache.ctx = ctx
 	// Start before the first screen. Optional Muse waits for enablement before
 	// accessing its native user home.

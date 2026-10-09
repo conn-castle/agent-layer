@@ -27,7 +27,12 @@ type DiscoveryRequest struct {
 	Env      []string
 	LookPath func(string) (string, error)
 	Live     bool
-	// Timeout bounds live discovery commands. Zero uses the client default.
+	// Cleanup allows Claude's catalog to return before native shutdown. The
+	// owner must join cleanup before exit or another authenticated launch.
+	// Nil keeps discovery synchronous, including native shutdown errors.
+	Cleanup *DiscoveryCleanup
+	// Timeout bounds live discovery. Claude's graceful shutdown may exceed it
+	// so an in-flight credential refresh can finish. Zero uses the client default.
 	Timeout time.Duration
 }
 

@@ -152,7 +152,20 @@ Model suggestions are discovered from the installed Claude, Codex, Grok,
 Antigravity, Muse, and Copilot CLI harnesses, concurrently and without sync or an
 inference prompt.
 Discovery uses the same project environment and provider configuration helpers
-as launching an agent. Each lookup has a ten-second timeout. Model fields report
+as launching an agent. Each lookup has a ten-second timeout. Claude discovery
+closes stdin and drains output through graceful shutdown after its reply, an
+error, or cancellation, allowing in-flight credential refresh to finish saving.
+Wizard and MCP return the catalog while owning this cleanup in the background;
+they wait for it before exiting. MCP also waits before another discovery or a
+Claude dispatch start or continuation; other providers can proceed independently.
+Failed lookups report their complete error once. If the caller times out or
+cancels before delivery, the owner retains any later native shutdown failure.
+After a successful catalog, late shutdown failures are reported by the next MCP
+discovery/Claude operation or server exit, and by the wizard on exit.
+Short-lived CLI calls and Doctor wait
+for shutdown before returning. Claude's timeout bounds receiving the catalog;
+a timely catalog remains valid if clean shutdown takes longer. Agent Layer does
+not force-kill this authenticated probe. Model fields report
 `source: "harness"` on success; when discovery fails, they report
 `source: "unavailable"`, `discovery_error`, and an empty suggestions list.
 Skipped lookups report `source: "not_requested"`. No model catalog or fallback

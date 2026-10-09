@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/agentoptions"
 )
 
 const (
@@ -152,6 +154,8 @@ type StartOptions struct {
 	LookPath      func(string) (string, error)
 	VersionLookup func(path string, agent string) (string, error)
 	launchWorker  workerLauncher
+	// beforeProvider holds an optional credential barrier through publication.
+	beforeProvider func(context.Context, string) (func(), error)
 }
 
 // ReserveOptions configures one reservation of a not-yet-started conversation.
@@ -163,18 +167,19 @@ type ReserveOptions struct {
 // ContinueOptions configures one asynchronous continuation of a conversation.
 type ContinueOptions struct {
 	// Context, when set, is the caller's request; see StartOptions.Context.
-	Context       context.Context
-	Root          string
-	WorkDir       string
-	Handle        string
-	Prompt        string
-	PromptFile    string
-	Stdout        io.Writer
-	Stderr        io.Writer
-	Env           []string
-	LookPath      func(string) (string, error)
-	VersionLookup func(path string, agent string) (string, error)
-	launchWorker  workerLauncher
+	Context        context.Context
+	Root           string
+	WorkDir        string
+	Handle         string
+	Prompt         string
+	PromptFile     string
+	Stdout         io.Writer
+	Stderr         io.Writer
+	Env            []string
+	LookPath       func(string) (string, error)
+	VersionLookup  func(path string, agent string) (string, error)
+	launchWorker   workerLauncher
+	beforeProvider func(context.Context, string) (func(), error)
 }
 
 // Result is the provider-agnostic public response shared by every Agent
@@ -270,6 +275,9 @@ type OptionsRequest struct {
 	Stdout        io.Writer
 	LookPath      func(string) (string, error)
 	VersionLookup func(path string, agent string) (string, error)
+	// Cleanup permits prompt catalog responses in a long-lived owner, which
+	// must join cleanup before shutdown or another authenticated operation.
+	Cleanup *agentoptions.DiscoveryCleanup
 }
 
 // CommandFactory creates a command for a target adapter.

@@ -9,10 +9,12 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
@@ -48,6 +50,8 @@ type MCPServerOptions struct {
 	// Env is the process environment used for dispatch depth and benchmark
 	// policy discovery. Nil reads os.Environ.
 	Env []string
+	// Set only by the process owner, which joins cleanup before server exit.
+	discoveryCleanup *agentoptions.DiscoveryCleanup
 }
 
 // dispatchToolServer holds the resolved per-process configuration shared by
@@ -60,6 +64,9 @@ type dispatchToolServer struct {
 	toolTimeout      time.Duration
 	progressInterval time.Duration
 	policy           benchmarkPolicy
+	discoveryOnce    sync.Once
+	discoveryGate    chan struct{}
+	discoveryCleanup *agentoptions.DiscoveryCleanup
 }
 
 // OptionsInput is the (empty) input of dispatch_options.
@@ -158,6 +165,7 @@ func newDispatchToolServer(opts MCPServerOptions) (*dispatchToolServer, error) {
 		toolTimeout:      config.DispatchMCPToolTimeout(project.Config),
 		progressInterval: mcpProgressInterval,
 		policy:           policy,
+		discoveryCleanup: opts.discoveryCleanup,
 	}
 	if tools.workDir == "" {
 		tools.workDir = root
@@ -265,7 +273,12 @@ func guard[In, Out any](timeout time.Duration, handler mcp.ToolHandlerFor[In, Ou
 }
 
 func (s *dispatchToolServer) handleOptions(ctx context.Context, _ *mcp.CallToolRequest, _ OptionsInput) (*mcp.CallToolResult, *OptionsResponse, error) {
-	options, err := BuildOptions(OptionsRequest{Context: ctx, Root: s.root, Env: s.env})
+	release, err := s.acquireDiscovery(ctx)
+	if err != nil {
+		return nil, nil, toolError(err)
+	}
+	defer release()
+	options, err := BuildOptions(OptionsRequest{Context: ctx, Root: s.root, Env: s.env, Cleanup: s.discoveryCleanup})
 	if err != nil {
 		return nil, nil, toolError(err)
 	}
@@ -286,6 +299,7 @@ func (s *dispatchToolServer) handleStart(ctx context.Context, _ *mcp.CallToolReq
 		ReasoningEffort: effort, Role: strings.TrimSpace(input.Role), Skill: strings.TrimSpace(input.Skill),
 		Prompt: input.Prompt, PromptFile: strings.TrimSpace(input.PromptFile),
 		Stdout: &out, Stderr: io.Discard, Env: s.env,
+		beforeProvider: s.acquireProvider,
 	})
 	return decodeResult(&out, err)
 }
@@ -308,8 +322,41 @@ func (s *dispatchToolServer) handleContinue(ctx context.Context, _ *mcp.CallTool
 		Context: ctx, Root: s.root, WorkDir: s.workDir, Handle: strings.TrimSpace(input.Handle),
 		Prompt: input.Prompt, PromptFile: strings.TrimSpace(input.PromptFile),
 		Stdout: &out, Stderr: io.Discard, Env: s.env,
+		beforeProvider: s.acquireProvider,
 	})
 	return decodeResult(&out, err)
+}
+
+func (s *dispatchToolServer) acquireProvider(ctx context.Context, agent string) (func(), error) {
+	if agent != AgentClaude {
+		return func() {}, ctx.Err()
+	}
+	return s.acquireDiscovery(ctx)
+}
+
+// Hold the gate through discovery or Claude launch, so another probe cannot
+// register between waiting for credential persistence and starting Claude.
+func (s *dispatchToolServer) acquireDiscovery(ctx context.Context) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.discoveryOnce.Do(func() { s.discoveryGate = make(chan struct{}, 1) })
+	select {
+	case s.discoveryGate <- struct{}{}:
+	case <-ctx.Done():
+		return nil, fmt.Errorf("wait for Claude model discovery shutdown: %w", ctx.Err())
+	}
+	release := func() { <-s.discoveryGate }
+	if s.discoveryCleanup != nil {
+		if err := s.discoveryCleanup.Wait(ctx); err != nil {
+			release()
+			return nil, fmt.Errorf("wait for Claude model discovery shutdown: %w", err)
+		}
+	} else if err := ctx.Err(); err != nil {
+		release()
+		return nil, err
+	}
+	return release, nil
 }
 
 func (s *dispatchToolServer) handleCancel(_ context.Context, _ *mcp.CallToolRequest, input SelectorInput) (*mcp.CallToolResult, *Result, error) {
