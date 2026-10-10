@@ -141,23 +141,23 @@ func TestScriptedUIInvalidOptionFails(t *testing.T) {
 	require.NoDirExists(t, filepath.Join(root, ".agent-layer"))
 }
 
-func TestScriptedUIUnusedAnswerFails(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "answers.json")
-	if err := os.WriteFile(path, []byte(`{"confirm":{"Apply":true,"Unused":false}}`), 0o600); err != nil {
-		t.Fatalf("write answers: %v", err)
-	}
-	ui, err := NewScriptedUIFromFile(path)
-	if err != nil {
-		t.Fatalf("load answers: %v", err)
-	}
-	value := false
-	if err := ui.Confirm("Apply", &value); err != nil {
-		t.Fatalf("confirm: %v", err)
-	}
-	err = ui.AssertComplete()
-	if err == nil || !strings.Contains(err.Error(), "confirm: Unused") {
-		t.Fatalf("expected unused answer error, got %v", err)
-	}
+func TestRun_ScriptedBlankSecretStopsBeforeApply(t *testing.T) {
+	t.Setenv("AL_CONTEXT7_API_KEY", "")
+	root := t.TempDir()
+	ui := &ScriptedUI{used: map[string]struct{}{}, answers: scriptedAnswers{
+		Select: map[string]string{messages.WizardApprovalModeTitle: approvalModeLabels()[0], messages.WizardInstructionSetTitle: instructionSetLabels()[0]},
+		MultiSelect: map[string][]string{messages.WizardEnableAgentsTitle: {}, messages.WizardGitTrackingTitle: {},
+			messages.WizardEnableCLISkillsTitle: {}, messages.WizardEnableDefaultMCPServersTitle: {"context7"},
+		},
+		Confirm: map[string]bool{messages.WizardInstallPrompt: true, messages.WizardEnableWarningsPrompt: false, messages.WizardApplyChangesPrompt: true,
+			"No value provided for AL_CONTEXT7_API_KEY. Disable MCP server context7?": false},
+		SecretInput: map[string]string{"Enter AL_CONTEXT7_API_KEY (leave blank to skip)": " \t "},
+	}}
+	err := RunWithWriter(root, ui, nil, "0.0.0", &bytes.Buffer{})
+	require.ErrorContains(t, err, "wizard answers leave AL_CONTEXT7_API_KEY blank but decline disabling MCP server context7; provide a secret or confirm disabling the server")
+	require.NotContains(t, ui.used, scriptedAnswerKey("confirm", messages.WizardEnableWarningsPrompt))
+	require.NotContains(t, ui.used, scriptedAnswerKey("confirm", messages.WizardApplyChangesPrompt))
+	require.NoDirExists(t, filepath.Join(root, ".agent-layer"))
 }
 
 func TestScriptedUILoadRejectsMultipleJSONValues(t *testing.T) {
