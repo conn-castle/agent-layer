@@ -136,7 +136,7 @@ func probeWithOutputLimit(ctx context.Context, tmpRoot string, authHome string, 
 	start := time.Now()
 	runErr := probe.Run(runCtx, cmd)
 	elapsed := time.Since(start)
-	exitCode := commandExitCode(runCtx, runErr)
+	exitCode := commandExitCode(runErr)
 	if authPath != "" {
 		if err := os.Remove(authPath); err != nil && !os.IsNotExist(err) {
 			return nil, fmt.Errorf("remove disposable grok probe credentials: %w", err)
@@ -159,7 +159,7 @@ func probeWithOutputLimit(ctx context.Context, tmpRoot string, authHome string, 
 		GrokHomeDir:      grokHome,
 		ExitCode:         exitCode,
 		WallClockSeconds: int(elapsed.Round(time.Second).Seconds()),
-		TimedOut:         errors.Is(runCtx.Err(), context.DeadlineExceeded),
+		TimedOut:         errors.Is(runErr, context.DeadlineExceeded),
 	}
 	if runErr != nil {
 		result.Error = runErr.Error()
@@ -367,8 +367,8 @@ func detectGrokVersion(ctx context.Context, grokPath string) string {
 	return string(bytes.TrimSpace(output.Bytes()))
 }
 
-func commandExitCode(ctx context.Context, err error) int {
-	if ctx.Err() != nil {
+func commandExitCode(err error) int {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return 124
 	}
 	if err == nil {

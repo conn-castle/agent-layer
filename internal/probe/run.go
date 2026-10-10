@@ -5,9 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -22,6 +25,13 @@ func Run(ctx context.Context, cmd *exec.Cmd) error {
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.WaitDelay = cleanupAllowance
+	output := &outputGuard{}
+	if cmd.Stdout != nil {
+		cmd.Stdout = &guardedWriter{output, cmd.Stdout}
+	}
+	if cmd.Stderr != nil {
+		cmd.Stderr = &guardedWriter{output, cmd.Stderr}
+	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -31,11 +41,19 @@ func Run(ctx context.Context, cmd *exec.Cmd) error {
 	defer ticker.Stop()
 	var observeErr error
 	var ctxErr error
+	observationFailures := 0
 	for ctxErr = ctx.Err(); ctxErr == nil; ctxErr = ctx.Err() {
-		var leaderLive bool
-		leaderLive, _, observeErr = groupState(pgid)
-		if observeErr != nil || !leaderLive {
+		leaderLive, _, err := groupState(pgid)
+		if err != nil {
+			observationFailures++
+			if errors.Is(err, os.ErrNotExist) || observationFailures >= 3 {
+				observeErr = err
+				break
+			}
+		} else if !leaderLive {
 			break
+		} else {
+			observationFailures = 0
 		}
 		select {
 		case <-ctx.Done():
@@ -52,8 +70,50 @@ func Run(ctx context.Context, cmd *exec.Cmd) error {
 	}
 	// All signal decisions precede Wait; there is no delayed escalation that
 	// could hit a reused group. WaitDelay also bounds escaped pipe holders.
-	waitErr := cmd.Wait()
+	waitErr := reap(cmd, output, cleanupErr != nil)
 	return errors.Join(ctxErr, observeErr, cleanupErr, waitErr)
+}
+
+// A failed stop proof cannot guarantee that Wait will return. Keep one eventual
+// reaper, but detach caller output before returning so it can be read safely.
+func reap(cmd *exec.Cmd, output *outputGuard, bounded bool) error {
+	defer func() {
+		output.Lock()
+		output.stopped = true
+		output.Unlock()
+	}()
+	if !bounded {
+		return cmd.Wait()
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	timer := time.NewTimer(cleanupAllowance)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		return err
+	case <-timer.C:
+		return errors.New("probe reap did not finish within cleanup allowance")
+	}
+}
+
+type outputGuard struct {
+	sync.Mutex
+	stopped bool
+}
+
+type guardedWriter struct {
+	*outputGuard
+	writer io.Writer
+}
+
+func (w *guardedWriter) Write(data []byte) (int, error) {
+	w.Lock()
+	defer w.Unlock()
+	if w.stopped {
+		return len(data), nil
+	}
+	return w.writer.Write(data)
 }
 
 func awaitGroupStopped(pgid int) error {

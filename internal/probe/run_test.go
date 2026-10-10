@@ -76,3 +76,25 @@ func TestRunOwnsDescendants(t *testing.T) {
 		})
 	}
 }
+
+func TestReapBoundsLiveLeaderAndDetachesOutput(t *testing.T) {
+	var output bytes.Buffer
+	guard := &outputGuard{}
+	cmd := exec.Command("/bin/sh", "-c", "while :; do echo retained; done")
+	cmd.Stdout = &guardedWriter{guard, &output}
+	cmd.Stderr = &guardedWriter{guard, &output}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = cmd.Process.Kill() }()
+	start := time.Now()
+	// Exercise failed stop proof with a live, writing leader; SIGKILL cannot
+	// reliably simulate a process stuck in uninterruptible sleep in a test.
+	err := reap(cmd, guard, true)
+	if err == nil || !strings.Contains(err.Error(), "reap") || time.Since(start) > 2*cleanupAllowance {
+		t.Fatalf("bounded reap: %v (%v)", err, time.Since(start))
+	}
+	if !strings.Contains(output.String(), "retained") {
+		t.Fatal("output lost before detachment")
+	}
+}

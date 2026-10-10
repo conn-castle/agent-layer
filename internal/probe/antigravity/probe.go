@@ -89,7 +89,7 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 	start := time.Now()
 	runErr := probe.Run(runCtx, cmd)
 	elapsed := time.Since(start)
-	exitCode := commandExitCode(runCtx, runErr)
+	exitCode := commandExitCode(runErr)
 
 	stdoutPath := filepath.Join(probeDir, "stdout.txt")
 	stderrPath := filepath.Join(probeDir, "stderr.txt")
@@ -113,7 +113,7 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 		// A run that outlives probeRunTimeout is reported as its own outcome.
 		// Folding it into a generic failure would hide whether the client never
 		// answered or answered wrongly.
-		TimedOut: probeTimedOut(runCtx),
+		TimedOut: probeTimedOut(runErr),
 	}
 	if runErr != nil {
 		result.Error = runErr.Error()
@@ -134,8 +134,8 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 	return result, nil
 }
 
-func probeTimedOut(ctx context.Context) bool {
-	return errors.Is(ctx.Err(), context.DeadlineExceeded)
+func probeTimedOut(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded)
 }
 
 // probeMCPFixture describes the deterministic stdio MCP server seeded into the
@@ -310,8 +310,8 @@ func detectAgyVersion(ctx context.Context, agyPath string) string {
 	return string(bytes.TrimSpace(output.Bytes()))
 }
 
-func commandExitCode(ctx context.Context, err error) int {
-	if ctx.Err() != nil {
+func commandExitCode(err error) int {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return 124
 	}
 	if err == nil {

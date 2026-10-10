@@ -248,20 +248,20 @@ func TestProbeCancellation(t *testing.T) {
 }
 
 func TestCommandExitCode(t *testing.T) {
-	if got := commandExitCode(context.Background(), nil); got != 0 {
-		t.Fatalf("success exit code = %d", got)
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if got := commandExitCode(ctx, errors.New("cancelled")); got != 124 {
+	if got := commandExitCode(nil); got != 0 {
+		t.Fatalf("success before cleanup cancellation exit code = %d", got)
+	}
+	if got := commandExitCode(errors.Join(ctx.Err(), errors.New("cancelled"))); got != 124 {
 		t.Fatalf("cancelled exit code = %d", got)
 	}
 	cmd := exec.Command("/bin/sh", "-c", "exit 7")
 	err := cmd.Run()
-	if got := commandExitCode(context.Background(), err); got != 7 {
+	if got := commandExitCode(err); got != 7 {
 		t.Fatalf("process exit code = %d, err %v", got, err)
 	}
-	if got := commandExitCode(context.Background(), errors.New("launch")); got != -1 {
+	if got := commandExitCode(errors.New("launch")); got != -1 {
 		t.Fatalf("launch exit code = %d", got)
 	}
 }
