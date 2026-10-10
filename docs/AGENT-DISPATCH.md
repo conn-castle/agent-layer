@@ -592,6 +592,11 @@ not that the peer caused it. Pure context cancellation with only local-close
 EOF remains certain cancellation. Unknown causes and competing input
 EOF/cancellation are uncertain. None of these records establishes a graceful
 shutdown. SIGTERM/SIGINT normally cancel the CLI serving context.
+On Unix, process-owned MCP stdout uses pollable I/O. After context cancellation
+or terminal input, replies already being written have one second to drain
+before pending output times out, allowing shutdown even if the client keeps an
+unread pipe open. Detached provider work remains active until explicitly
+cancelled.
 On Unix, the MCP server temporarily handles SIGPIPE so a broken stdout pipe
 can be recorded as a write failure instead of killing the process immediately.
 
