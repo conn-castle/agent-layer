@@ -332,21 +332,30 @@ func runMCPServer(ctx context.Context, opts MCPServerOptions, stdin io.ReadClose
 func serveMCPServer(ctx context.Context, server *mcp.Server, l *mcpLifecycle, stdin io.ReadCloser, stdout io.Writer) error {
 	var writer io.WriteCloser = mcpNopCloseWriter{stdout}
 	var shutdown func()
+	var closeStdio func() error
 	if stdout == os.Stdout {
-		owned, err := newMCPStdioWriter()
+		owned, err := newMCPStdio(stdin)
 		if err != nil {
 			l.observe("connect", err, ctx, false)
 			l.stop(ctx, "serving", err)
 			return err
 		}
 		defer func() { _ = owned.Close() }()
-		writer, shutdown = owned, owned.shutdown
+		// Let SDK Close mark its transport closed before releasing pollable
+		// input; otherwise its decoder can report our local Close as a read error.
+		writer, shutdown, closeStdio = mcpNopCloseWriter{owned}, owned.shutdown, owned.Close
+		if stdin == os.Stdin {
+			stdin = io.NopCloser(owned.input)
+		}
 		stop := context.AfterFunc(ctx, shutdown)
 		defer stop()
 	}
 	framing := &mcpFrameObserver{}
 	transport := &mcp.IOTransport{Reader: &mcpObservedReader{ReadCloser: stdin, lifecycle: l, framing: framing}, Writer: writer}
 	err := server.Run(ctx, &mcpObservedTransport{Transport: transport, lifecycle: l, framing: framing, shutdownOutput: shutdown})
+	if closeStdio != nil {
+		err = errors.Join(err, closeStdio())
+	}
 	l.stop(ctx, "serving", err)
 	return err
 }

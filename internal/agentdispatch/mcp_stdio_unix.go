@@ -4,6 +4,7 @@ package agentdispatch
 
 import (
 	"errors"
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -11,52 +12,81 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Duplicate only process-owned stdout. A nonblocking descriptor registered with
-// Go's poller can interrupt a pending pipe write on Linux and Darwin; closing a
-// descriptor in a blocking kernel write cannot reliably do that.
-func newMCPStdioWriter() (*mcpStdioWriter, error) {
-	fd := int(os.Stdout.Fd())
-	flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFL, 0)
-	if err != nil {
-		return nil, err
+// Coordinate process-owned streams: changing stdout's open-file description
+// can also make stdin nonblocking when a launcher attaches both to one socket.
+func newMCPStdio(stdin io.ReadCloser) (*mcpStdio, error) {
+	originals := []*os.File{os.Stdout}
+	if stdin == os.Stdin {
+		originals = append(originals, os.Stdin)
 	}
-	dup, err := unix.FcntlInt(uintptr(fd), unix.F_DUPFD_CLOEXEC, 0)
-	if err != nil {
-		return nil, err
+	s := &mcpStdio{}
+	// Capture both original flag sets before changing either shared mode.
+	for _, original := range originals {
+		fd := original.Fd()
+		flags, err := unix.FcntlInt(fd, unix.F_GETFL, 0)
+		if err != nil {
+			return nil, err
+		}
+		s.streams = append(s.streams, mcpStdioStream{fd: fd, flags: flags})
 	}
-	if err := unix.SetNonblock(dup, true); err != nil {
-		_ = unix.Close(dup)
-		return nil, err
+	for i := range s.streams {
+		stream := &s.streams[i]
+		dup, err := unix.FcntlInt(stream.fd, unix.F_DUPFD_CLOEXEC, 0)
+		if err != nil {
+			return nil, errors.Join(err, s.Close())
+		}
+		if err := unix.SetNonblock(dup, true); err != nil {
+			return nil, errors.Join(err, unix.Close(dup), s.Close())
+		}
+		// NewFile registers an already nonblocking descriptor with Go's poller.
+		stream.file = os.NewFile(uintptr(dup), "mcp-stdio")
 	}
-	w := &mcpStdioWriter{File: os.NewFile(uintptr(dup), "mcp-stdout"), fd: fd, nonblocking: flags&unix.O_NONBLOCK != 0}
+	s.File = s.streams[0].file
+	if len(s.streams) == 2 {
+		s.input = s.streams[1].file
+	}
 	// Regular files do not support deadlines and cannot block on a pipe reader.
-	if err := w.SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, os.ErrNoDeadline) {
-		_ = w.Close()
-		return nil, err
+	if err := s.SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, os.ErrNoDeadline) {
+		return nil, errors.Join(err, s.Close())
 	}
-	return w, nil
+	return s, nil
 }
 
-type mcpStdioWriter struct {
+type mcpStdioStream struct {
+	fd    uintptr
+	flags int
+	file  *os.File
+}
+
+type mcpStdio struct {
 	*os.File
-	fd           int
-	nonblocking  bool
+	input        *os.File
+	streams      []mcpStdioStream
 	closeOnce    sync.Once
 	closeErr     error
 	shutdownOnce sync.Once
 }
 
-func (w *mcpStdioWriter) shutdown() {
-	w.shutdownOnce.Do(func() {
-		// Permit already accepted replies to drain on EOF. An unread pipe must
-		// not keep the SDK waiting for in-flight response writes indefinitely.
-		_ = w.SetWriteDeadline(time.Now().Add(time.Second))
+func (s *mcpStdio) shutdown() {
+	s.shutdownOnce.Do(func() {
+		// Permit replies already being written to drain on EOF. An unread pipe
+		// must not keep the SDK waiting for in-flight writes indefinitely.
+		_ = s.SetWriteDeadline(time.Now().Add(time.Second))
 	})
 }
 
-func (w *mcpStdioWriter) Close() error {
-	w.closeOnce.Do(func() {
-		w.closeErr = errors.Join(w.File.Close(), unix.SetNonblock(w.fd, w.nonblocking))
+func (s *mcpStdio) Close() error {
+	s.closeOnce.Do(func() {
+		// Release both poller registrations before restoring shared flags.
+		for _, stream := range s.streams {
+			if stream.file != nil {
+				s.closeErr = errors.Join(s.closeErr, stream.file.Close())
+			}
+		}
+		for _, stream := range s.streams {
+			_, err := unix.FcntlInt(stream.fd, unix.F_SETFL, stream.flags)
+			s.closeErr = errors.Join(s.closeErr, err)
+		}
 	})
-	return w.closeErr
+	return s.closeErr
 }
