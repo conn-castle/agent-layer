@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	stdexec "os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -120,7 +121,7 @@ func validateCachedBinary(path string, info os.FileInfo) error {
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf(messages.DispatchCachedBinaryNotRegularFmt, path)
 	}
-	if info.Mode().Perm()&0o111 == 0 {
+	if _, err := stdexec.LookPath(path); err != nil {
 		return fmt.Errorf(messages.DispatchCachedBinaryNotExecutableFmt, path)
 	}
 	return nil

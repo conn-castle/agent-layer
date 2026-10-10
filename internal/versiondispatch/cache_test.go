@@ -245,10 +245,14 @@ func TestEnsureCachedBinary_StatError(t *testing.T) {
 }
 
 func TestEnsureCachedBinary_RaceCondition(t *testing.T) {
-	for _, mode := range []os.FileMode{0o755, 0o644, os.ModeDir | 0o755} {
+	for _, mode := range []os.FileMode{0o755, 0o644, 0o645, os.ModeDir | 0o755} {
 		t.Run(mode.String(), func(t *testing.T) {
 			cacheRoot := t.TempDir()
-			fixture := filepath.Join(cacheRoot, "fixture")
+			osName, arch, _ := platformStrings()
+			fixture := filepath.Join(cacheRoot, "versions", "1.0.0", osName+"-"+arch, assetName(osName, arch))
+			if err := os.MkdirAll(filepath.Dir(fixture), 0o700); err != nil {
+				t.Fatal(err)
+			}
 			if mode.IsDir() {
 				err := os.Mkdir(fixture, mode.Perm())
 				if err != nil {
@@ -257,22 +261,16 @@ func TestEnsureCachedBinary_RaceCondition(t *testing.T) {
 			} else if err := os.WriteFile(fixture, nil, mode); err != nil { // #nosec G306 -- executable cache fixture.
 				t.Fatal(err)
 			}
-			info, err := os.Stat(fixture)
-			if err != nil {
-				t.Fatal(err)
-			}
 			calls := 0
-			sys := &testSystem{StatFunc: func(string) (os.FileInfo, error) {
+			sys := &testSystem{StatFunc: func(name string) (os.FileInfo, error) {
 				calls++
 				if calls == 1 {
 					return nil, os.ErrNotExist
 				}
-				return info, nil
+				return os.Stat(name)
 			}}
 			path, err := ensureCachedBinaryWithSystem(context.Background(), sys, cacheRoot, "1.0.0", io.Discard)
-			osName, arch, _ := platformStrings()
-			expectedPath := filepath.Join(cacheRoot, "versions", "1.0.0", osName+"-"+arch, assetName(osName, arch))
-			if (err != nil) != (mode != 0o755) || (err == nil && path != expectedPath) || (err != nil && path != "") || calls != 2 {
+			if (err != nil) != (mode != 0o755) || (err == nil && path != fixture) || (err != nil && path != "") || calls != 2 {
 				t.Fatalf("path=%q err=%v stat calls=%d", path, err, calls)
 			}
 		})
@@ -436,16 +434,19 @@ func TestEnsureCachedBinary_NoNetwork_Exists(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(binPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(binPath, []byte("fake-binary"), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
+	if err := os.WriteFile(binPath+".target", []byte("fake-binary"), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Base(binPath)+".target", binPath); err != nil {
 		t.Fatal(err)
 	}
 
-	for _, mode := range []os.FileMode{0o755, 0o644} {
+	for _, mode := range []os.FileMode{0o755, 0o644, 0o645} {
 		if err := os.Chmod(binPath, mode); err != nil {
 			t.Fatal(err)
 		}
 		got, err := ensureCachedBinary(context.Background(), cacheRoot, version, io.Discard)
-		if (err != nil) != (mode == 0o644) || (err == nil && got != binPath) {
+		if (err != nil) != (mode != 0o755) || (err == nil && got != binPath) {
 			t.Fatalf("mode=%v path=%q err=%v", mode, got, err)
 		}
 	}
