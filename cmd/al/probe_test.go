@@ -84,11 +84,9 @@ func TestProbeAntigravityCommandHonorsTmpRoot(t *testing.T) {
 	}
 }
 
-// TestProbeAntigravityCommandSurfacesNonZeroExit asserts F-A-12: a non-zero
-// probe exit must cause the CLI to exit non-zero so callers piping into jq
-// can detect failure. The JSON must still be written to stdout so the
-// machine-readable forensic data is available to the caller.
-func TestProbeAntigravityCommandSurfacesNonZeroExit(t *testing.T) {
+// TestProbeAntigravityCommandSurfacesValidationFailure preserves JSON when
+// capability validation fails despite the provider exiting successfully.
+func TestProbeAntigravityCommandSurfacesValidationFailure(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
@@ -102,7 +100,7 @@ func TestProbeAntigravityCommandSurfacesNonZeroExit(t *testing.T) {
 		return &antigravity.Result{
 			AgyVersion: "1.0.0",
 			ProbedAt:   time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC),
-			ExitCode:   2,
+			ExitCode:   0,
 			Error:      "agy refused the probe",
 		}, nil
 	}
@@ -113,12 +111,15 @@ func TestProbeAntigravityCommandSurfacesNonZeroExit(t *testing.T) {
 	cmd.SetOut(&out)
 	err := cmd.RunE(cmd, nil)
 	if err == nil {
-		t.Fatal("expected non-zero probe to surface as CLI error")
+		t.Fatal("expected validation failure to surface as CLI error")
+	}
+	if strings.Contains(err.Error(), "non-zero") {
+		t.Fatalf("exit-zero validation diagnostic: %v", err)
 	}
 	if !strings.Contains(err.Error(), "agy refused") {
 		t.Fatalf("expected error to include probe Error string, got: %v", err)
 	}
-	if !strings.Contains(out.String(), `"exit_code": 2`) {
+	if !strings.Contains(out.String(), `"exit_code": 0`) {
 		t.Fatalf("expected JSON still written to stdout, got:\n%s", out.String())
 	}
 	// F-A2-9: assert the JSON `error` field made it to stdout (not just the
@@ -131,10 +132,10 @@ func TestProbeAntigravityCommandSurfacesNonZeroExit(t *testing.T) {
 	// the forensic payload on the failure path.
 	var result antigravity.Result
 	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
-		t.Fatalf("decode non-zero JSON: %v\n%s", err, out.String())
+		t.Fatalf("decode validation-failure JSON: %v\n%s", err, out.String())
 	}
-	if result.ExitCode != 2 || result.Error != "agy refused the probe" {
-		t.Fatalf("non-zero JSON round-trip mismatch: %+v", result)
+	if result.ExitCode != 0 || result.Error != "agy refused the probe" {
+		t.Fatalf("validation-failure JSON round-trip mismatch: %+v", result)
 	}
 }
 

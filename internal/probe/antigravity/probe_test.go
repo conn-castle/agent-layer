@@ -13,6 +13,17 @@ import (
 )
 
 func TestProbeTimedOutDistinguishesDeadlineFromCancellation(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "agy"), []byte("#!/bin/sh\nif [ \"$1\" = --version ]; then exit 1; fi\nexec /bin/sleep 30\n"), 0o700); err != nil { // #nosec G306 -- executable test stub.
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	ctx, stop := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer stop()
+	result, err := Probe(ctx, t.TempDir())
+	if err != nil || result == nil || !result.TimedOut || result.ExitCode != 124 || result.AgyVersion != "" {
+		t.Fatalf("deadline result: %+v, %v", result, err)
+	}
 	deadlineCtx, deadlineCancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer deadlineCancel()
 	if !probeTimedOut(deadlineCtx) {

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	clientgrok "github.com/conn-castle/agent-layer/internal/clients/grok"
 	probeantigravity "github.com/conn-castle/agent-layer/internal/probe/antigravity"
@@ -227,6 +228,22 @@ func TestProbeReportsInvalidSuccessfulStream(t *testing.T) {
 	}
 	if result.Error == "" || result.Capabilities.StreamingJSONUsed || result.GrokVersion != "" {
 		t.Fatalf("invalid stream result = %+v", result)
+	}
+}
+
+func TestProbeCancellation(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "grok"), []byte("#!/bin/sh\nif [ \"$1\" = --version ]; then exit 1; fi\nexec /bin/sleep 30\n"), 0o700); err != nil { // #nosec G306 -- executable test stub.
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	ctx, cancel := context.WithCancel(context.Background())
+	timer := time.AfterFunc(300*time.Millisecond, cancel)
+	defer timer.Stop()
+	defer cancel()
+	result, err := Probe(ctx, t.TempDir(), "")
+	if err != nil || result == nil || result.TimedOut || result.ExitCode != 124 || result.GrokVersion != "" || !strings.Contains(result.Error, "context canceled") {
+		t.Fatalf("cancellation result: %+v, %v", result, err)
 	}
 }
 
