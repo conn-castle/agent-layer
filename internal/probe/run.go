@@ -42,17 +42,19 @@ func Run(ctx context.Context, cmd *exec.Cmd) error {
 	var observeErr error
 	var ctxErr error
 	observationFailures := 0
+observe:
 	for ctxErr = ctx.Err(); ctxErr == nil; ctxErr = ctx.Err() {
 		leaderLive, _, err := groupState(pgid)
-		if err != nil {
+		switch {
+		case err != nil:
 			observationFailures++
 			if errors.Is(err, os.ErrNotExist) || observationFailures >= 3 {
 				observeErr = err
-				break
+				break observe
 			}
-		} else if !leaderLive {
-			break
-		} else {
+		case !leaderLive:
+			break observe
+		default:
 			observationFailures = 0
 		}
 		select {
