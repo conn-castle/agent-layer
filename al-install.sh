@@ -88,6 +88,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ "$NO_COMPLETIONS" != "true" && -n "$SHELL_OVERRIDE" ]]; then
+  case "$SHELL_OVERRIDE" in
+    bash|zsh|fish) ;;
+    *) fail "Unsupported shell override: $SHELL_OVERRIDE (expected bash, zsh, or fish)" ;;
+  esac
+fi
+
 if ! command -v curl >/dev/null 2>&1; then
   fail "curl is required to install Agent Layer."
 fi
@@ -159,14 +166,23 @@ else
 fi
 
 bin_dir="${PREFIX}/bin"
+install_path="${bin_dir}/al"
+if [[ -d "$install_path" ]]; then
+  fail "Install destination is a directory: ${install_path}"
+fi
 mkdir -p "$bin_dir"
 
-archive_tmp="$(mktemp)"
-checksums_tmp="$(mktemp)"
+archive_tmp=""
+checksums_tmp=""
 cleanup() {
   rm -f "$archive_tmp" "$checksums_tmp"
 }
 trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+archive_tmp="$(mktemp "${bin_dir}/.al.XXXXXX")"
+checksums_tmp="$(mktemp)"
 
 if ! curl -fsSL "$URL" -o "$archive_tmp"; then
   fail "Failed to download ${ASSET} from ${URL}."
@@ -190,12 +206,11 @@ else
   fi
 fi
 
-install_path="${bin_dir}/al"
+if ! chmod +x "$archive_tmp"; then
+  fail "Failed to mark downloaded al as executable."
+fi
 if ! mv "$archive_tmp" "$install_path"; then
   fail "Failed to move al into ${bin_dir}."
-fi
-if ! chmod +x "$install_path"; then
-  fail "Failed to mark ${install_path} as executable."
 fi
 
 if [[ ":$PATH:" != *":${bin_dir}:"* ]]; then
@@ -211,14 +226,6 @@ fi
 shell_name=""
 if [[ -n "$SHELL_OVERRIDE" ]]; then
   shell_name="$SHELL_OVERRIDE"
-  case "$shell_name" in
-    bash|zsh|fish)
-      :
-      ;;
-    *)
-      fail "Unsupported shell override: $shell_name (expected bash, zsh, or fish)"
-      ;;
-  esac
 else
   if [[ -n "${SHELL:-}" ]]; then
     shell_name="$(basename "$SHELL")"
