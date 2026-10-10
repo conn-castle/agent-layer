@@ -39,7 +39,10 @@ func ensureCachedBinaryWithSystem(ctx context.Context, sys System, cacheRoot str
 	}
 	asset := assetName(osName, arch)
 	binPath := filepath.Join(cacheRoot, "versions", version, osName+"-"+arch, asset)
-	if _, err := sys.Stat(binPath); err == nil {
+	if info, err := sys.Stat(binPath); err == nil {
+		if err := validateCachedBinary(binPath, info); err != nil {
+			return "", err
+		}
 		return binPath, nil
 	} else if err != nil && !os.IsNotExist(err) {
 		return "", fmt.Errorf(messages.DispatchCheckCachedBinaryFmt, binPath, err)
@@ -56,8 +59,8 @@ func ensureCachedBinaryWithSystem(ctx context.Context, sys System, cacheRoot str
 
 	limits := downloadLimitsWithSystem(sys)
 	if err := withFileLock(ctx, sys, lockPath, cacheLockWaitTimeoutWithSystem(sys), func() error {
-		if _, err := sys.Stat(binPath); err == nil {
-			return nil
+		if info, err := sys.Stat(binPath); err == nil {
+			return validateCachedBinary(binPath, info)
 		} else if err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf(messages.DispatchCheckCachedBinaryFmt, binPath, err)
 		}
@@ -110,6 +113,17 @@ func ensureCachedBinaryWithSystem(ctx context.Context, sys System, cacheRoot str
 	}
 
 	return binPath, nil
+}
+
+// validateCachedBinary checks the Stat target, allowing symlinks to usable files.
+func validateCachedBinary(path string, info os.FileInfo) error {
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf(messages.DispatchCachedBinaryNotRegularFmt, path)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		return fmt.Errorf(messages.DispatchCachedBinaryNotExecutableFmt, path)
+	}
+	return nil
 }
 
 func checkPlatform(osName, arch string) (string, string, error) {

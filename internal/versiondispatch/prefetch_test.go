@@ -68,7 +68,7 @@ func TestPrefetchVersion_CanceledWithCachedBinary(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(binPath), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(binPath, []byte("cached"), 0o600); err != nil {
+	if err := os.WriteFile(binPath, []byte("cached"), 0o700); err != nil { // #nosec G306 -- executable cache fixture.
 		t.Fatal(err)
 	}
 
