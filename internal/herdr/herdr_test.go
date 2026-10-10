@@ -570,7 +570,7 @@ func fakeHerdR(t *testing.T, options fakeHerdROptions) (string, chan map[string]
 	go func() {
 		defer close(done)
 		reportCount, paneGets, requests := 0, 0, 0
-		lastSequence := map[string]float64{}
+		lastSequence := map[[2]string]float64{}
 		requestsExpected := options.requestsExpected
 		if requestsExpected == 0 {
 			requestsExpected = options.reportsExpected + options.paneGetsExpected
@@ -615,14 +615,14 @@ func fakeHerdR(t *testing.T, options fakeHerdROptions) (string, chan map[string]
 				if reportCount == 1 && options.switchCodexTitleAfterReport != "" && len(options.codexPanes) > 0 {
 					options.codexPanes[0].title = options.switchCodexTitleAfterReport
 				}
-				source := params["source"].(string)
+				sequenceKey := [2]string{params["pane_id"].(string), params["source"].(string)}
 				sequence := params["seq"].(float64)
-				if sequence <= lastSequence[source] {
+				if sequence <= lastSequence[sequenceKey] {
 					_, _ = conn.Write([]byte("{\"result\":{\"type\":\"ok\"}}\n"))
 					_ = conn.Close()
 					continue
 				}
-				lastSequence[source] = sequence
+				lastSequence[sequenceKey] = sequence
 				if options.persistDelay > 0 {
 					params := request["params"].(map[string]any)
 					time.AfterFunc(options.persistDelay, func() { writePersistedSession(t, sessionDir, options, params) })

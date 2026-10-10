@@ -13,15 +13,29 @@ import (
 )
 
 func TestProbeTimedOutDistinguishesDeadlineFromCancellation(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "agy"), []byte("#!/bin/sh\nif [ \"$1\" = --version ]; then exit 1; fi\nexec /bin/sleep 30\n"), 0o700); err != nil { // #nosec G306 -- executable test stub.
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	ctx, stop := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer stop()
+	result, err := Probe(ctx, t.TempDir())
+	if err != nil || result == nil || !result.TimedOut || result.ExitCode != 124 || result.AgyVersion != "" {
+		t.Fatalf("deadline result: %+v, %v", result, err)
+	}
 	deadlineCtx, deadlineCancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer deadlineCancel()
-	if !probeTimedOut(deadlineCtx) {
+	if !probeTimedOut(deadlineCtx.Err()) {
 		t.Fatal("expired deadline was not reported as a timeout")
+	}
+	if probeTimedOut(nil) || commandExitCode(nil) != 0 {
+		t.Fatal("success before cleanup deadline was reported as a timeout")
 	}
 
 	cancelledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if probeTimedOut(cancelledCtx) {
+	if probeTimedOut(cancelledCtx.Err()) {
 		t.Fatal("caller cancellation was reported as a timeout")
 	}
 }
@@ -30,14 +44,14 @@ func TestCommandExitCode(t *testing.T) {
 	t.Run("cancelled context returns 124", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		// Even with a non-nil non-exit error, a cancelled context wins (timeout).
-		if got := commandExitCode(ctx, errors.New("boom")); got != 124 {
+		// Cancellation captured during execution wins over other errors.
+		if got := commandExitCode(errors.Join(ctx.Err(), errors.New("boom"))); got != 124 {
 			t.Fatalf("expected 124 for cancelled context, got %d", got)
 		}
 	})
 
 	t.Run("nil error returns 0", func(t *testing.T) {
-		if got := commandExitCode(context.Background(), nil); got != 0 {
+		if got := commandExitCode(nil); got != 0 {
 			t.Fatalf("expected 0 for nil error, got %d", got)
 		}
 	})
@@ -49,13 +63,13 @@ func TestCommandExitCode(t *testing.T) {
 		if !errors.As(err, &exitErr) {
 			t.Skipf("could not produce an *exec.ExitError on this platform: %v", err)
 		}
-		if got := commandExitCode(context.Background(), err); got != 1 {
+		if got := commandExitCode(err); got != 1 {
 			t.Fatalf("expected 1 for exit-1 command, got %d", got)
 		}
 	})
 
 	t.Run("generic error returns -1", func(t *testing.T) {
-		if got := commandExitCode(context.Background(), errors.New("not an exit error")); got != -1 {
+		if got := commandExitCode(errors.New("not an exit error")); got != -1 {
 			t.Fatalf("expected -1 for generic error, got %d", got)
 		}
 	})

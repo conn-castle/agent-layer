@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	clientgrok "github.com/conn-castle/agent-layer/internal/clients/grok"
 	probeantigravity "github.com/conn-castle/agent-layer/internal/probe/antigravity"
@@ -230,21 +231,37 @@ func TestProbeReportsInvalidSuccessfulStream(t *testing.T) {
 	}
 }
 
-func TestCommandExitCode(t *testing.T) {
-	if got := commandExitCode(context.Background(), nil); got != 0 {
-		t.Fatalf("success exit code = %d", got)
+func TestProbeCancellation(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "grok"), []byte("#!/bin/sh\nif [ \"$1\" = --version ]; then exit 1; fi\nexec /bin/sleep 30\n"), 0o700); err != nil { // #nosec G306 -- executable test stub.
+		t.Fatal(err)
 	}
+	t.Setenv("PATH", bin)
+	ctx, cancel := context.WithCancel(context.Background())
+	timer := time.AfterFunc(300*time.Millisecond, cancel)
+	defer timer.Stop()
+	defer cancel()
+	result, err := Probe(ctx, t.TempDir(), "")
+	if err != nil || result == nil || result.TimedOut || result.ExitCode != 124 || result.GrokVersion != "" || !strings.Contains(result.Error, "context canceled") {
+		t.Fatalf("cancellation result: %+v, %v", result, err)
+	}
+}
+
+func TestCommandExitCode(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if got := commandExitCode(ctx, errors.New("cancelled")); got != 124 {
+	if got := commandExitCode(nil); got != 0 {
+		t.Fatalf("success before cleanup cancellation exit code = %d", got)
+	}
+	if got := commandExitCode(errors.Join(ctx.Err(), errors.New("cancelled"))); got != 124 {
 		t.Fatalf("cancelled exit code = %d", got)
 	}
 	cmd := exec.Command("/bin/sh", "-c", "exit 7")
 	err := cmd.Run()
-	if got := commandExitCode(context.Background(), err); got != 7 {
+	if got := commandExitCode(err); got != 7 {
 		t.Fatalf("process exit code = %d, err %v", got, err)
 	}
-	if got := commandExitCode(context.Background(), errors.New("launch")); got != -1 {
+	if got := commandExitCode(errors.New("launch")); got != -1 {
 		t.Fatalf("launch exit code = %d", got)
 	}
 }
