@@ -769,7 +769,13 @@ func TestBuildClaudeSettings_InjectionUnionsWithUserDenyAndHooks(t *testing.T) {
 	disable := true
 	agentSpecific := map[string]any{
 		"permissions": map[string]any{"deny": []any{"Bash(rm:*)"}},
-		"hooks":       map[string]any{"PreToolUse": []any{map[string]any{"matcher": "Write"}}},
+		"hooks": map[string]any{"PreToolUse": []any{map[string]any{
+			"matcher": "AskUserQuestion",
+			"hooks": []any{
+				map[string]any{"type": "command", "command": "true"},
+				map[string]any{"type": "command", "command": askUserQuestionHookCommand, "async": true},
+			},
+		}}},
 	}
 	settings, err := buildClaudeSettings("/repo", claudeWithQuestionToolFlag(&disable, agentSpecific))
 	if err != nil {
@@ -782,11 +788,11 @@ func TestBuildClaudeSettings_InjectionUnionsWithUserDenyAndHooks(t *testing.T) {
 	if !anyDenyContains(permissions["deny"], "AskUserQuestion") {
 		t.Fatalf("expected injected deny entry, got %#v", permissions["deny"])
 	}
-	if got := preToolUseMatcherCount(settings, "Write"); got != 1 {
-		t.Fatalf("expected user PreToolUse hook preserved, got %d", got)
+	if got := settings["hooks"].(map[string]any)["PreToolUse"].([]any)[0]; !reflect.DeepEqual(got, agentSpecific["hooks"].(map[string]any)["PreToolUse"].([]any)[0]) {
+		t.Fatalf("expected user PreToolUse hook preserved, got %#v", got)
 	}
-	if got := preToolUseMatcherCount(settings, "AskUserQuestion"); got != 1 {
-		t.Fatalf("expected injected PreToolUse hook, got %d", got)
+	if got := preToolUseMatcherCount(settings, "AskUserQuestion"); got != 2 {
+		t.Fatalf("expected user and injected PreToolUse hooks, got %d", got)
 	}
 }
 
@@ -817,7 +823,7 @@ func TestBuildClaudeSettings_InjectionIsIdempotentAgainstUserEntries(t *testing.
 	// User already blocks AskUserQuestion by hand; injection must not duplicate.
 	agentSpecific := map[string]any{
 		"permissions": map[string]any{"deny": []any{"AskUserQuestion"}},
-		"hooks":       map[string]any{"PreToolUse": []any{map[string]any{"matcher": "AskUserQuestion"}}},
+		"hooks":       map[string]any{"PreToolUse": []any{map[string]any{"matcher": "AskUserQuestion", "hooks": []any{map[string]any{"type": "command", "command": askUserQuestionHookCommand}}}}},
 	}
 	settings, err := buildClaudeSettings("/repo", claudeWithQuestionToolFlag(&disable, agentSpecific))
 	if err != nil {
