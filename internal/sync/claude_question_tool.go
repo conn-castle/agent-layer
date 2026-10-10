@@ -28,7 +28,7 @@ func isQuestionToolDisabled(claude config.ClaudeConfig) bool {
 //
 // It runs after mergeAgentSpecificSettings so user agent_specific entries are
 // present and get unioned rather than replaced. It is idempotent: the deny is
-// deduped by string and the hook by matcher, so repeated sync does not grow the
+// deduped by string and the hook by exact handler, so repeated sync does not grow the
 // arrays. The hook is always added (when absent) regardless of approvals.mode,
 // because permissions.deny is ignored under YOLO/bypassPermissions while
 // PreToolUse hooks always fire.
@@ -116,15 +116,26 @@ func unionStringIntoList(existing any, want string) []any {
 }
 
 // appendAskUserQuestionHook returns existing with the AskUserQuestion PreToolUse
-// matcher entry appended unless an entry with that matcher already exists. It
-// accepts the []any form produced by the TOML decoder.
+// matcher entry appended unless that matcher already has the exact managed
+// handler. User handlers with extra metadata are preserved and cannot suppress
+// enforcement (for example, an async command cannot block). It accepts the
+// []any form produced by the TOML decoder.
 func appendAskUserQuestionHook(existing any) []any {
 	var out []any
 	if values, ok := existing.([]any); ok {
 		out = append(out, values...)
 		for _, entry := range values {
-			if m, ok := entry.(map[string]any); ok && m[matcherKey] == askUserQuestionTool {
-				return out
+			m, ok := entry.(map[string]any)
+			if !ok || m[matcherKey] != askUserQuestionTool {
+				continue
+			}
+			handlers, _ := m[hooksKey].([]any)
+			for _, value := range handlers {
+				if handler, ok := value.(map[string]any); ok && len(handler) == 2 &&
+					handler[chimeHandlerTypeKey] == chimeHandlerCommandType &&
+					handler[chimeHandlerCommandKey] == askUserQuestionHookCommand {
+					return out
+				}
 			}
 		}
 	}
