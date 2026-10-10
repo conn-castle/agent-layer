@@ -441,12 +441,13 @@ func readClaudeAutoMemoryDisabled(agentSpecific map[string]any) bool {
 }
 
 // readClaudeQuestionToolDisabledLegacy detects the pre-typed-flag form of the
-// AskUserQuestion block — a permissions.deny entry or a PreToolUse matcher in
-// agent_specific — so the wizard prompt defaults to Yes for repos that blocked
-// the tool before disable_question_tool existed. Only consulted when the typed
+// AskUserQuestion block — a permissions.deny entry or the managed blocking
+// handler in agent_specific — so the wizard defaults to disabled for repos
+// that blocked the tool before disable_question_tool existed. Only used when the typed
 // flag is unset. agent_specific arrays decode as []any (go-toml/v2).
 func readClaudeQuestionToolDisabledLegacy(agentSpecific map[string]any) bool {
 	const askUserQuestionTool = "AskUserQuestion"
+	const blockingCommand = "echo 'BLOCKED: The AskUserQuestion tool is banned.' >&2; exit 2"
 	if permissions, ok := agentSpecific["permissions"].(map[string]any); ok {
 		if deny, ok := permissions["deny"].([]any); ok {
 			for _, v := range deny {
@@ -459,8 +460,16 @@ func readClaudeQuestionToolDisabledLegacy(agentSpecific map[string]any) bool {
 	if hooks, ok := agentSpecific["hooks"].(map[string]any); ok {
 		if entries, ok := hooks["PreToolUse"].([]any); ok {
 			for _, entry := range entries {
-				if m, ok := entry.(map[string]any); ok {
-					if matcher, ok := m["matcher"].(string); ok && matcher == askUserQuestionTool {
+				m, ok := entry.(map[string]any)
+				if !ok || m["matcher"] != askUserQuestionTool {
+					continue
+				}
+				handlers, _ := m["hooks"].([]any)
+				for _, value := range handlers {
+					// Match the supported managed handler exactly, as sync does.
+					// Extra metadata (e.g. async) can change blocking behavior.
+					if handler, ok := value.(map[string]any); ok && len(handler) == 2 &&
+						handler["type"] == "command" && handler["command"] == blockingCommand {
 						return true
 					}
 				}
