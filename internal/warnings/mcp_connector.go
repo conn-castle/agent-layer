@@ -65,7 +65,11 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projectio
 	if err != nil {
 		return DiscoveryResult{ServerID: server.ID, Error: err}
 	}
-	return discoverMCPTools(ctx, server.ID, transport)
+	res := discoverMCPTools(ctx, server.ID, transport)
+	if res.Error != nil && mcpTransportRefusedOrigin(transport) {
+		res.Error = errMCPOriginRefused
+	}
+	return res
 }
 
 // mcpDiscoveryTransport builds the client transport for one configured server.
@@ -119,15 +123,8 @@ func headerHTTPClient(endpoint string, headers map[string]string) (*http.Client,
 
 // discoverMCPTools connects over transport and lists every tool the server
 // exposes, estimating per-tool and total schema tokens.
-func discoverMCPTools(ctx context.Context, serverID string, transport mcp.Transport) (res DiscoveryResult) {
-	res.ServerID = serverID
-	defer func() {
-		// HTTP clients and SDK errors can wrap the refusal with a credential-bearing URL.
-		// Drop the entire wrapper before returning a discovery result.
-		if res.Error != nil && (errors.Is(res.Error, errMCPOriginRefused) || mcpTransportRefusedOrigin(transport)) {
-			res.Error = errMCPOriginRefused
-		}
-	}()
+func discoverMCPTools(ctx context.Context, serverID string, transport mcp.Transport) DiscoveryResult {
+	res := DiscoveryResult{ServerID: serverID}
 	client := mcp.NewClient(&mcp.Implementation{
 		Name:    "agent-layer-doctor",
 		Version: "1.0.0",
@@ -203,6 +200,9 @@ type headerTransport struct {
 func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if !sameHTTPOrigin(t.origin, req.URL) {
 		t.refused.Store(true)
+		if req.Body != nil {
+			_ = req.Body.Close()
+		}
 		return nil, errMCPOriginRefused
 	}
 	cloned := req.Clone(req.Context())
