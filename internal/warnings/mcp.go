@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -350,6 +351,10 @@ func mcpSecretPlaceholders(servers []config.MCPServer, env map[string]string) ma
 			}
 			hasSecret = true
 			addForms(value, "${"+name+"}")
+			// HTTP trims ASCII space/tab padding from header values.
+			if trimmed := strings.Trim(value, " \t"); trimmed != "" && trimmed != value {
+				addForms(trimmed, "${"+name+"}")
+			}
 		}
 		return hasSecret
 	}

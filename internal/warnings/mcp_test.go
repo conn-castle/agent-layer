@@ -1407,16 +1407,19 @@ func TestMCPSecretPlaceholdersCoversEncodedForms(t *testing.T) {
 	enabled := true
 	servers := []config.MCPServer{{
 		ID: "remote", Enabled: &enabled, Transport: config.TransportHTTP,
-		URL: "https://${AL_USER}@mcp.example.test/mcp?k=${AL_KEY}",
+		URL: "https://${AL_USER}@mcp.example.test/mcp?k=${AL_KEY}&empty=${AL_EMPTY}",
 	}}
 	placeholders := mcpSecretPlaceholders(servers, map[string]string{
-		"AL_USER": "us%40er",
-		"AL_KEY":  `a"b\c d`,
+		"AL_USER":  "us%40er",
+		"AL_KEY":   " \t" + `a"b\c d` + " \t",
+		"AL_EMPTY": " \t",
 	})
+	assert.NotContains(t, placeholders, "")
 	for _, text := range []string{
 		`Get "https://us@er@mcp.example.test/mcp?k=a\"b\\c d"`, // %q of the decoded URL
 		"https://us%2540er@mcp.example.test/mcp?k=a%22b%5Cc+d", // query-escaped
 		"path a%22b%5Cc%20d", // path-escaped
+		`plain a"b\c d`,
 	} {
 		redacted := envref.Redact(text, placeholders)
 		for _, leak := range []string{"us@er", "us%40er", "40er", `b\c`, `b\\c`, "b%5Cc"} {
