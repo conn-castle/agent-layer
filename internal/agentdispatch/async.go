@@ -393,7 +393,7 @@ func RunWorker(root string, runID string, gate io.Reader) error {
 		if record.SupervisorPID != os.Getpid() || record.SupervisorStartIdentity != processStartIdentity(os.Getpid()) {
 			return cause
 		}
-		return failWorkerBeforeExecution(root, runID, cause)
+		return failWorkerBeforeExecution(root, runID, &preStartFailure{err: cause})
 	}
 	var request workerRequest
 	requestPath := filepath.Join(dispatchRunPath(root), runID, workerRequestFile)
