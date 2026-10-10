@@ -3,8 +3,10 @@ package warnings
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"sort"
@@ -75,11 +77,15 @@ func mcpDiscoveryTransport(ctx context.Context, server projection.ResolvedMCPSer
 		cmd.Env = buildMCPCommandEnv(os.Environ(), server.Env)
 		return &mcp.CommandTransport{Command: cmd}, nil
 	case config.TransportHTTP:
+		client, err := headerHTTPClient(server.URL, server.Headers)
+		if err != nil {
+			return nil, err
+		}
 		switch server.HTTPTransport {
 		case "", config.HTTPTransportSSE:
-			return &mcp.SSEClientTransport{Endpoint: server.URL, HTTPClient: headerHTTPClient(server.Headers)}, nil
+			return &mcp.SSEClientTransport{Endpoint: server.URL, HTTPClient: client}, nil
 		case config.HTTPTransportStreamable:
-			return &mcp.StreamableClientTransport{Endpoint: server.URL, HTTPClient: headerHTTPClient(server.Headers)}, nil
+			return &mcp.StreamableClientTransport{Endpoint: server.URL, HTTPClient: client}, nil
 		default:
 			return nil, fmt.Errorf(messages.WarningsUnsupportedHTTPTransportFmt, server.HTTPTransport)
 		}
@@ -88,18 +94,24 @@ func mcpDiscoveryTransport(ctx context.Context, server projection.ResolvedMCPSer
 	}
 }
 
-// headerHTTPClient returns a client that adds headers to every request, or nil
+// headerHTTPClient scopes configured headers to the endpoint's origin, or returns nil
 // so the SDK uses its default client when there are no headers.
-func headerHTTPClient(headers map[string]string) *http.Client {
+func headerHTTPClient(endpoint string, headers map[string]string) (*http.Client, error) {
 	if len(headers) == 0 {
-		return nil
+		return nil, nil
+	}
+	origin, err := url.Parse(endpoint)
+	if err != nil || origin.Hostname() == "" ||
+		(!strings.EqualFold(origin.Scheme, "http") && !strings.EqualFold(origin.Scheme, "https")) {
+		return nil, errors.New(messages.WarningsMCPInvalidHTTPEndpoint)
 	}
 	return &http.Client{
 		Transport: &headerTransport{
 			base:    http.DefaultTransport,
 			headers: headers,
+			origin:  origin,
 		},
-	}
+	}, nil
 }
 
 // discoverMCPTools connects over transport and lists every tool the server
@@ -170,13 +182,17 @@ func discoverMCPTools(ctx context.Context, serverID string, transport mcp.Transp
 	return res
 }
 
-// headerTransport adds headers to HTTP requests.
+// headerTransport rejects requests outside the configured origin before sending headers.
 type headerTransport struct {
 	base    http.RoundTripper
 	headers map[string]string
+	origin  *url.URL
 }
 
 func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if !sameHTTPOrigin(t.origin, req.URL) {
+		return nil, errors.New(messages.WarningsMCPOriginRefused)
+	}
 	cloned := req.Clone(req.Context())
 	for k, v := range t.headers {
 		cloned.Header.Set(k, v)
@@ -185,6 +201,25 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return http.DefaultTransport.RoundTrip(cloned)
 	}
 	return t.base.RoundTrip(cloned)
+}
+
+func sameHTTPOrigin(a, b *url.URL) bool {
+	return a != nil && b != nil && strings.EqualFold(a.Scheme, b.Scheme) &&
+		strings.EqualFold(a.Hostname(), b.Hostname()) && effectiveHTTPPort(a) == effectiveHTTPPort(b)
+}
+
+func effectiveHTTPPort(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
 }
 
 func buildMCPCommandEnv(baseEnv []string, serverEnv map[string]string) []string {

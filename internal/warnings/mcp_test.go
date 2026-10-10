@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -576,8 +577,11 @@ func TestHeaderTransport_RoundTrip(t *testing.T) {
 	}))
 	defer ts.Close()
 
+	origin, err := url.Parse(ts.URL)
+	require.NoError(t, err)
 	transport := &headerTransport{
-		base: http.DefaultTransport,
+		base:   http.DefaultTransport,
+		origin: origin,
 		headers: map[string]string{
 			"Authorization":   "Bearer test-token",
 			"X-Custom-Header": "custom-value",
@@ -602,8 +606,11 @@ func TestHeaderTransport_NilBase(t *testing.T) {
 	}))
 	defer ts.Close()
 
+	origin, err := url.Parse(ts.URL)
+	require.NoError(t, err)
 	transport := &headerTransport{
-		base: nil, // nil base
+		base:   nil, // nil base
+		origin: origin,
 		headers: map[string]string{
 			"Authorization": "Bearer test-token",
 		},
@@ -619,17 +626,19 @@ func TestHeaderTransport_NilBase(t *testing.T) {
 }
 
 func TestHeaderTransport_DoesNotMutateOriginalRequest(t *testing.T) {
+	origin, err := url.Parse("HTTPS://EXAMPLE.COM:443/mcp")
+	require.NoError(t, err)
+	calls := 0
 	transport := &headerTransport{
+		origin: origin,
 		base: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			calls++
+			assert.Equal(t, "dummy-key", req.Header.Get("X-Api-Key"))
 			return &http.Response{
-				StatusCode: http.StatusOK,
-				Status:     "200 OK",
-				Body:       http.NoBody,
-				Request:    req,
-				Header:     make(http.Header),
+				Body: http.NoBody,
 			}, nil
 		}),
-		headers: map[string]string{"Authorization": "Bearer token"},
+		headers: map[string]string{"Authorization": "Bearer token", "X-Api-Key": "dummy-key"},
 	}
 
 	req, err := http.NewRequest(http.MethodGet, "https://example.com", nil)
@@ -642,7 +651,31 @@ func TestHeaderTransport_DoesNotMutateOriginalRequest(t *testing.T) {
 		defer func() { _ = resp.Body.Close() }()
 	}
 	assert.Equal(t, "", req.Header.Get("Authorization"))
+	assert.Equal(t, "", req.Header.Get("X-Api-Key"))
 	assert.Equal(t, "value", req.Header.Get("X-Existing"))
+	for _, endpoint := range []string{"https://example.com:443/messages", "https://other.example", "https://example.com:444", "http://example.com:443"} {
+		req, err := http.NewRequest(http.MethodPost, endpoint, nil)
+		require.NoError(t, err)
+		before := calls
+		resp, err := transport.RoundTrip(req)
+		if resp != nil {
+			require.NoError(t, resp.Body.Close())
+		}
+		if endpoint == "https://example.com:443/messages" {
+			require.NoError(t, err)
+			assert.Equal(t, before+1, calls)
+		} else {
+			require.EqualError(t, err, "MCP discovery refused a request outside the configured origin")
+			assert.Equal(t, before, calls, "refuse before transmission")
+		}
+	}
+	transport.origin, err = url.Parse("HTTP://EXAMPLE.COM:80/mcp")
+	require.NoError(t, err)
+	req, err = http.NewRequest(http.MethodGet, "http://example.com/messages", nil)
+	require.NoError(t, err)
+	resp, err = transport.RoundTrip(req)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
 }
 
 func TestBuildMCPCommandEnv_AllowlistsBaseEnv(t *testing.T) {
@@ -816,6 +849,7 @@ func TestMCPDiscoveryTransport_HTTP(t *testing.T) {
 			ht, ok := client.Transport.(*headerTransport)
 			require.True(t, ok, "expected headerTransport, got %T", client.Transport)
 			assert.Equal(t, tc.headers, ht.headers)
+			assert.Equal(t, "http://example.com/mcp", ht.origin.String())
 		})
 	}
 }
