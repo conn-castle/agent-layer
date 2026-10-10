@@ -635,12 +635,16 @@ func TestReadClaudeDisableToggles(t *testing.T) {
 		assert.True(t, readClaudeQuestionToolDisabledLegacy(as))
 	})
 	t.Run("legacy question-tool block detected via PreToolUse hook", func(t *testing.T) {
-		as := map[string]any{"hooks": map[string]any{"PreToolUse": []any{"skip", map[string]any{"matcher": "AskUserQuestion"}}}}
+		as := map[string]any{"hooks": map[string]any{"PreToolUse": []any{"skip", map[string]any{"matcher": "AskUserQuestion", "hooks": []any{map[string]any{"type": "command", "command": "echo 'BLOCKED: The AskUserQuestion tool is banned.' >&2; exit 2"}}}}}}
 		assert.True(t, readClaudeQuestionToolDisabledLegacy(as))
 	})
 	t.Run("legacy question-tool block absent", func(t *testing.T) {
 		assert.False(t, readClaudeQuestionToolDisabledLegacy(map[string]any{"permissions": map[string]any{"deny": []any{"Bash"}}}))
-		assert.False(t, readClaudeQuestionToolDisabledLegacy(map[string]any{"hooks": map[string]any{"PreToolUse": []any{map[string]any{"matcher": "Other"}}}}))
+		handler := map[string]any{"type": "command", "command": "true"}
+		as := map[string]any{"hooks": map[string]any{"PreToolUse": []any{map[string]any{"matcher": "AskUserQuestion", "hooks": []any{handler}}}}}
+		assert.False(t, readClaudeQuestionToolDisabledLegacy(as))
+		handler["command"], handler["async"] = "echo 'BLOCKED: The AskUserQuestion tool is banned.' >&2; exit 2", true
+		assert.False(t, readClaudeQuestionToolDisabledLegacy(as))
 		assert.False(t, readClaudeQuestionToolDisabledLegacy(map[string]any{}))
 	})
 }
