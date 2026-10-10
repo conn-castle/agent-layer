@@ -582,8 +582,8 @@ func TestRunWorkerUnauthorizedOnlySupervisorTerminalizes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.State != dispatchStateFailed {
-		t.Fatalf("recorded worker could not terminalize its own run: %q", current.State)
+	if current.State != dispatchStateFailed || current.RecoveryState != recoveryRetrySafe {
+		t.Fatalf("recorded worker failure: state=%q recovery=%q", current.State, current.RecoveryState)
 	}
 }
 
