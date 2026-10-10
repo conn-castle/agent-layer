@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -124,7 +123,10 @@ func TestUpdateUsesInstallerAndPreservesScriptPrefix(t *testing.T) {
 	})}
 	var installerPath string
 	var ranArgs []string
-	updateRunCommand = func(_ context.Context, _ io.Reader, _, _ io.Writer, name string, args ...string) error {
+	updateRunCommand = func(_ context.Context, stdin io.Reader, _, _ io.Writer, name string, args ...string) error {
+		if stdin != nil {
+			t.Fatal("script installer must receive noninteractive stdin")
+		}
 		if name != "bash" {
 			t.Fatalf("command = %q, want bash", name)
 		}
@@ -577,19 +579,38 @@ func TestReadInstalledCLIVersionPreservesFailedProbeStdoutAndStderr(t *testing.T
 }
 
 func TestUpdateCommandCancellationStopsDownloadChild(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.Symlink("/bin/bash", filepath.Join(bin, "bash")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin) // No ps or other external observation command.
 	output, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = output.Close() }()
-	for _, ignore := range []bool{false, true} {
-		t.Run(fmt.Sprint(ignore), func(t *testing.T) {
+	sentinel := exec.Command("/bin/sleep", "30")
+	sentinel.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := sentinel.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = sentinel.Process.Kill(); _ = sentinel.Wait() }()
+	for _, mode := range []string{"grace", "exited", "blocked"} {
+		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			pidFile, cleaned := filepath.Join(dir, "child"), filepath.Join(dir, "cleaned")
-			script := `trap 'touch "$2"' EXIT; sleep 30 & echo $! > "$1"; wait`
-			if ignore {
+			script := `trap 'printf done > "$2"' EXIT; /bin/sleep 30 & echo "$! $$" > "$1"; printf retained; wait`
+			var destination io.Writer = output
+			switch mode {
+			case "blocked":
 				script = `trap '' TERM; ` + script
-			} else {
+				reader, writer := io.Pipe() // No reader: the destination Write blocks.
+				defer func() { _ = reader.Close(); _ = writer.Close() }()
+				destination = writer
+			case "exited":
+				script = strings.TrimSuffix(script, "wait") + "exit 0"
+				destination = &bytes.Buffer{} // The child retains exec's output pipes.
+			default:
 				script = `trap 'exit 143' TERM; ` + script
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -598,6 +619,18 @@ func TestUpdateCommandCancellationStopsDownloadChild(t *testing.T) {
 			go func() {
 				for ctx.Err() == nil {
 					if info, err := os.Stat(pidFile); err == nil && info.Size() > 0 {
+						if mode == "exited" {
+							data, _ := os.ReadFile(pidFile) // #nosec G304 -- owned fixture identity.
+							fields := strings.Fields(string(data))
+							if len(fields) != 2 {
+								continue
+							}
+							state, err := exec.Command("/bin/ps", "-o", "stat=", "-p", fields[1]).Output()
+							if err == nil && !strings.HasPrefix(strings.TrimSpace(string(state)), "Z") {
+								time.Sleep(10 * time.Millisecond)
+								continue
+							}
+						}
 						ready <- time.Now()
 						cancel()
 						return
@@ -605,7 +638,7 @@ func TestUpdateCommandCancellationStopsDownloadChild(t *testing.T) {
 					time.Sleep(10 * time.Millisecond)
 				}
 			}()
-			cancelErr := updateRunCommand(ctx, nil, output, output, "bash", "-c", script, "fixture", pidFile, cleaned)
+			cancelErr := updateRunCommand(ctx, nil, destination, destination, "bash", "-c", script, "fixture", pidFile, cleaned)
 			var start time.Time
 			select {
 			case start = <-ready:
@@ -616,21 +649,27 @@ func TestUpdateCommandCancellationStopsDownloadChild(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+			fields := strings.Fields(string(data))
+			if len(fields) != 2 {
+				t.Fatalf("invalid process identities: %q", data)
+			}
+			pid, err := strconv.Atoi(fields[0])
 			if err != nil || pid <= 0 {
 				t.Fatalf("invalid child identity: %q", data)
 			}
 			state, psErr := exec.Command("/bin/ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
 			var exit *exec.ExitError
 			if (psErr == nil && !strings.HasPrefix(strings.TrimSpace(string(state)), "Z")) || (psErr != nil && (!errors.As(psErr, &exit) || exit.ExitCode() != 1)) {
-				_ = syscall.Kill(pid, syscall.SIGKILL) // Stop this fixture's observed surviving child.
 				t.Fatalf("download child survived: pid=%d state=%q err=%v", pid, state, psErr)
 			}
 			if !errors.Is(cancelErr, context.Canceled) || time.Since(start) > 5*time.Second {
 				t.Fatalf("cancellation = %v after %v", cancelErr, time.Since(start))
 			}
-			if _, err := os.Stat(cleaned); !ignore && err != nil {
+			if _, err := os.Stat(cleaned); mode == "grace" && err != nil {
 				t.Fatalf("EXIT cleanup did not run: %v", err)
+			}
+			if pid, err := syscall.Wait4(sentinel.Process.Pid, nil, syscall.WNOHANG, nil); err != nil || pid != 0 {
+				t.Fatalf("unrelated sentinel stopped: %v", err)
 			}
 		})
 	}
@@ -639,7 +678,7 @@ func TestUpdateCommandCancellationStopsDownloadChild(t *testing.T) {
 func TestUpdateCommandStartAndOutput(t *testing.T) {
 	var output bytes.Buffer
 	// A resolved executable (Homebrew's path) must retain the caller's group.
-	script := `test "$(ps -o pgid= -p $$)" -eq "$1" || exit 8; cat; echo error >&2; exit 7`
+	script := `test "$(/bin/ps -o pgid= -p $$)" -eq "$1" || exit 8; /bin/cat; echo error >&2; exit 7`
 	err := updateRunCommand(context.Background(), strings.NewReader("streamed"), &output, &output, "/bin/bash", "-c", script, "fixture", strconv.Itoa(syscall.Getpgrp()))
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) || exit.ExitCode() != 7 || !strings.Contains(output.String(), "streamed") || !strings.Contains(output.String(), "error") {
@@ -647,5 +686,18 @@ func TestUpdateCommandStartAndOutput(t *testing.T) {
 	}
 	if err := updateRunCommand(context.Background(), nil, nil, nil, filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("missing executable succeeded")
+	}
+	bin := t.TempDir()
+	if err := os.Symlink("/bin/bash", filepath.Join(bin, "bash")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	output.Reset()
+	err = updateRunCommand(context.Background(), strings.NewReader("installer"), &output, &output, "bash", "-c", `/bin/cat; echo error >&2; exit 7`)
+	if !errors.As(err, &exit) || exit.ExitCode() != 7 || !strings.Contains(output.String(), "installer") || !strings.Contains(output.String(), "error") {
+		t.Fatalf("installer output=%q err=%v", output.String(), err)
+	}
+	if err := updateRunCommand(context.Background(), nil, nil, nil, "bash", "-c", "exit 0"); err != nil {
+		t.Fatalf("installer success without ps: %v", err)
 	}
 }

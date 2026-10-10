@@ -11,13 +11,14 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/probe"
 	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/version"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
@@ -70,8 +71,18 @@ func runUpdateCommand(ctx context.Context, stdin io.Reader, stdout, stderr io.Wr
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	var shutdownErr error
+	observationFailures := 0
 	for {
-		stopped, err := updateCommandStopped(pid, false)
+		// Even an exited leader reserves its ID until the entire group stops.
+		stopped, err := updateCommandStopped(pid)
+		if err != nil {
+			observationFailures++
+			if observationFailures < 3 {
+				err = nil
+			}
+		} else {
+			observationFailures = 0
+		}
 		if ctx.Err() != nil || err != nil {
 			shutdownErr = errors.Join(ctx.Err(), err)
 			// No Wait has run, so even an exited leader still reserves this ID.
@@ -84,13 +95,12 @@ func runUpdateCommand(ctx context.Context, stdin io.Reader, stdout, stderr io.Wr
 			}
 			deadline := time.Now().Add(time.Second)
 			for {
-				stopped, err := updateCommandStopped(pid, true)
-				if err != nil || stopped {
-					shutdownErr = errors.Join(shutdownErr, err)
+				stopped, err := updateCommandStopped(pid)
+				if err == nil && stopped {
 					break
 				}
 				if time.Now().After(deadline) {
-					shutdownErr = errors.Join(shutdownErr, errors.New("update process group remained running after SIGKILL"))
+					shutdownErr = errors.Join(shutdownErr, err, errors.New("update process group stop unproven after SIGKILL"))
 					break
 				}
 				time.Sleep(10 * time.Millisecond)
@@ -109,11 +119,7 @@ func runUpdateCommand(ctx context.Context, stdin io.Reader, stdout, stderr io.Wr
 	// WaitDelay bounds pipe draining; the outer deadline bounds reaping too.
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
-	defer func() {
-		output.Lock()
-		output.stopped = true
-		output.Unlock()
-	}()
+	defer output.stopped.Store(true)
 	timer := time.NewTimer(2 * time.Second)
 	defer timer.Stop()
 	select {
@@ -137,17 +143,9 @@ func updateSignalGroup(pid int, signal syscall.Signal) error {
 	return err
 }
 
-func updateCommandStopped(pid int, includeGroup bool) (bool, error) {
-	leaderLive, groupLive, err := probe.GroupState(pid)
-	if err != nil {
-		return false, fmt.Errorf("observe update command: %w", err)
-	}
-	return !leaderLive && (!includeGroup || !groupLive), nil
-}
-
 type updateCommandOutputGuard struct {
 	sync.Mutex
-	stopped bool
+	stopped atomic.Bool
 }
 
 type updateCommandWriter struct {
@@ -156,7 +154,11 @@ type updateCommandWriter struct {
 }
 
 func (g *updateCommandOutputGuard) wrap(writer io.Writer) io.Writer {
-	if _, direct := writer.(*os.File); direct || writer == nil {
+	if writer == nil {
+		return nil
+	}
+	// Terminal writes must come from the foreground parent, even with TOSTOP.
+	if file, direct := writer.(*os.File); direct && !term.IsTerminal(int(file.Fd())) { //nolint:gosec // Unix file descriptors are small non-negative ints.
 		return writer
 	}
 	return &updateCommandWriter{g, writer}
@@ -165,9 +167,11 @@ func (g *updateCommandOutputGuard) wrap(writer io.Writer) io.Writer {
 func (w *updateCommandWriter) Write(data []byte) (int, error) {
 	w.Lock()
 	defer w.Unlock()
-	if w.stopped {
+	if w.stopped.Load() {
 		return len(data), nil
 	}
+	// Serialize destination writes, but stopping never waits on this mutex.
+	// An arbitrary writer's already-started Write cannot be interrupted.
 	return w.writer.Write(data)
 }
 
@@ -224,7 +228,7 @@ func runUpdate(cmd *cobra.Command) error {
 			return err
 		}
 		defer cleanup()
-		if err := updateRunCommand(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), "bash", installerPath, "--prefix", prefix, "--no-completions"); err != nil {
+		if err := updateRunCommand(cmd.Context(), nil, cmd.OutOrStdout(), cmd.ErrOrStderr(), "bash", installerPath, "--prefix", prefix, "--no-completions"); err != nil {
 			return fmt.Errorf(messages.UpdateScriptRunErrFmt, err)
 		}
 	}
