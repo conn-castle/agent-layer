@@ -75,8 +75,13 @@ func isHerdRHandler(value any) bool {
 	if !ok {
 		return false
 	}
-	command, _ := handler["command"].(string)
-	return strings.Contains(command, agentLayerHerdRMarker)
+	if handler[chimeHandlerTypeKey] != chimeHandlerCommandType {
+		return false
+	}
+	command, _ := handler[chimeHandlerCommandKey].(string)
+	// Release and development hooks have always emitted this terminal marker.
+	// A marker in an argument or filename does not establish hook ownership.
+	return strings.HasSuffix(command, " # "+agentLayerHerdRMarker)
 }
 
 func injectClaudeHerdRHookAtRoot(settings map[string]any, root string) error {
