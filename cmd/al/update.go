@@ -10,9 +10,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/update"
@@ -34,15 +38,142 @@ var (
 		return exec.CommandContext(ctx, name, args...).CombinedOutput() //nolint:gosec // Callers supply the resolved Homebrew executable and fixed arguments.
 	}
 	updateRunCommand = func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, name string, args ...string) error {
-		command := exec.CommandContext(ctx, name, args...) //nolint:gosec // Callers select only resolved Homebrew or fixed bash commands.
-		command.Stdin = stdin
-		command.Stdout = stdout
-		command.Stderr = stderr
+		// Only the script installer uses fixed "bash"; resolved Homebrew keeps
+		// its original foreground group so terminal prompts can read stdin.
+		if name == "bash" {
+			return runUpdateCommand(ctx, stdin, stdout, stderr, name, args...)
+		}
+		command := exec.CommandContext(ctx, name, args...) //nolint:gosec // Callers supply the resolved Homebrew executable and fixed arguments.
+		command.Stdin, command.Stdout, command.Stderr = stdin, stdout, stderr
 		return command.Run()
 	}
 	updateHTTPClient       = &http.Client{Timeout: 30 * time.Second}
 	updateInstalledVersion = readInstalledCLIVersion
 )
+
+// runUpdateCommand keeps the group leader unreaped until cancellation signaling
+// finishes. Bash gets time to run the installer's EXIT trap before escalation.
+func runUpdateCommand(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, name string, args ...string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	command := exec.Command(name, args...) //nolint:gosec,noctx // Fixed update commands; cancellation owns the unreaped process group below.
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	command.WaitDelay = time.Second
+	output := &updateCommandOutputGuard{}
+	command.Stdin = stdin
+	command.Stdout = output.wrap(stdout)
+	command.Stderr = output.wrap(stderr)
+	if err := command.Start(); err != nil {
+		return err
+	}
+	pid := command.Process.Pid
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	var shutdownErr error
+	observationFailures := 0
+	for {
+		// Even an exited leader reserves its ID until the entire group stops.
+		stopped, err := updateCommandStopped(pid)
+		if err != nil {
+			observationFailures++
+			if observationFailures < 3 {
+				err = nil
+			}
+		} else {
+			observationFailures = 0
+		}
+		if ctx.Err() != nil || err != nil {
+			shutdownErr = errors.Join(ctx.Err(), err)
+			// No Wait has run, so even an exited leader still reserves this ID.
+			shutdownErr = errors.Join(shutdownErr, updateSignalGroup(pid, syscall.SIGTERM))
+			time.Sleep(time.Second)
+			shutdownErr = errors.Join(shutdownErr, updateSignalGroup(pid, syscall.SIGKILL))
+			// Also stop the owned leader if it moved out of its original group.
+			if err := command.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+				shutdownErr = errors.Join(shutdownErr, err)
+			}
+			deadline := time.Now().Add(time.Second)
+			for {
+				stopped, err := updateCommandStopped(pid)
+				if err == nil && stopped {
+					break
+				}
+				if time.Now().After(deadline) {
+					shutdownErr = errors.Join(shutdownErr, err, errors.New("update process group stop unproven after SIGKILL"))
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			break
+		}
+		if stopped {
+			break
+		}
+		select {
+		case <-ctx.Done():
+		case <-ticker.C:
+		}
+	}
+	// All signaling precedes Wait: no timer can later hit a reused process group.
+	// WaitDelay bounds pipe draining; the outer deadline bounds reaping too.
+	done := make(chan error, 1)
+	go func() { done <- command.Wait() }()
+	defer output.stopped.Store(true)
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		if shutdownErr != nil && err != nil {
+			// Cancellation stays a CLI error (exit 1), rather than exposing the
+			// installer's TERM trap status as the CLI's normal command exit.
+			return fmt.Errorf("%w: %v", shutdownErr, err)
+		}
+		return errors.Join(shutdownErr, err)
+	case <-timer.C:
+		return errors.Join(shutdownErr, errors.New("update command did not finish reaping within shutdown allowance"))
+	}
+}
+
+func updateSignalGroup(pid int, signal syscall.Signal) error {
+	err := syscall.Kill(-pid, signal)
+	if errors.Is(err, syscall.ESRCH) {
+		return nil
+	}
+	return err
+}
+
+type updateCommandOutputGuard struct {
+	sync.Mutex
+	stopped atomic.Bool
+}
+
+type updateCommandWriter struct {
+	*updateCommandOutputGuard
+	writer io.Writer
+}
+
+func (g *updateCommandOutputGuard) wrap(writer io.Writer) io.Writer {
+	if writer == nil {
+		return nil
+	}
+	// Terminal writes must come from the foreground parent, even with TOSTOP.
+	if file, direct := writer.(*os.File); direct && !term.IsTerminal(int(file.Fd())) { //nolint:gosec // Unix file descriptors are small non-negative ints.
+		return writer
+	}
+	return &updateCommandWriter{g, writer}
+}
+
+func (w *updateCommandWriter) Write(data []byte) (int, error) {
+	w.Lock()
+	defer w.Unlock()
+	if w.stopped.Load() {
+		return len(data), nil
+	}
+	// Serialize destination writes, but stopping never waits on this mutex.
+	// An arbitrary writer's already-started Write cannot be interrupted.
+	return w.writer.Write(data)
+}
 
 func newUpdateCmd() *cobra.Command {
 	return &cobra.Command{
@@ -97,7 +228,7 @@ func runUpdate(cmd *cobra.Command) error {
 			return err
 		}
 		defer cleanup()
-		if err := updateRunCommand(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), "bash", installerPath, "--prefix", prefix, "--no-completions"); err != nil {
+		if err := updateRunCommand(cmd.Context(), nil, cmd.OutOrStdout(), cmd.ErrOrStderr(), "bash", installerPath, "--prefix", prefix, "--no-completions"); err != nil {
 			return fmt.Errorf(messages.UpdateScriptRunErrFmt, err)
 		}
 	}
