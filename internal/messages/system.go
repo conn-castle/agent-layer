@@ -13,6 +13,9 @@ const (
 	DispatchInvalidEnvVersionFmt    = "invalid %s: %w"
 	DispatchResolveUserCacheDirFmt  = "resolve user cache dir: %w"
 
+	DispatchCachedBinaryNotRegularFmt    = "cached binary %s is not a regular file; restore a regular executable at this path"
+	DispatchCachedBinaryNotExecutableFmt = "cached binary %s is not executable by the current user; restore executable permission at this path"
+
 	DispatchCheckCachedBinaryFmt        = "check cached binary %s: %w"
 	DispatchVersionNotCachedFmt         = "version %s is not cached (expected at %s); network access disabled via %s"
 	DispatchCreateCacheDirFmt           = "create cache dir: %w"

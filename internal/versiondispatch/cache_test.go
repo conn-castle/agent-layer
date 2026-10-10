@@ -245,36 +245,35 @@ func TestEnsureCachedBinary_StatError(t *testing.T) {
 }
 
 func TestEnsureCachedBinary_RaceCondition(t *testing.T) {
-	// Simulate:
-	// 1. Stat -> NotExist (proceeds to lock)
-	// 2. Lock acquired
-	// 3. Stat -> Exists (returns success)
-
-	calls := 0
-	sys := &testSystem{
-		StatFunc: func(name string) (os.FileInfo, error) {
-			calls++
-			if calls == 1 {
-				return nil, os.ErrNotExist
+	for _, mode := range []os.FileMode{0o755, 0o644, 0o645, os.ModeDir | 0o755} {
+		t.Run(mode.String(), func(t *testing.T) {
+			cacheRoot := t.TempDir()
+			osName, arch, _ := platformStrings()
+			fixture := filepath.Join(cacheRoot, "versions", "1.0.0", osName+"-"+arch, assetName(osName, arch))
+			if err := os.MkdirAll(filepath.Dir(fixture), 0o700); err != nil {
+				t.Fatal(err)
 			}
-			// Second call (inside lock) returns success
-			return nil, nil
-		},
-	}
-
-	cacheRoot := t.TempDir()
-	version := "1.0.0"
-
-	path, err := ensureCachedBinaryWithSystem(context.Background(), sys, cacheRoot, version, io.Discard)
-	if err != nil {
-		t.Fatalf("ensureCachedBinary race condition failed: %v", err)
-	}
-
-	osName, arch, _ := platformStrings()
-	asset := assetName(osName, arch)
-	expectedPath := filepath.Join(cacheRoot, "versions", version, osName+"-"+arch, asset)
-	if path != expectedPath {
-		t.Errorf("got %s, want %s", path, expectedPath)
+			if mode.IsDir() {
+				err := os.Mkdir(fixture, mode.Perm())
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.WriteFile(fixture, nil, mode); err != nil { // #nosec G306 -- executable cache fixture.
+				t.Fatal(err)
+			}
+			calls := 0
+			sys := &testSystem{StatFunc: func(name string) (os.FileInfo, error) {
+				calls++
+				if calls == 1 {
+					return nil, os.ErrNotExist
+				}
+				return os.Stat(name)
+			}}
+			path, err := ensureCachedBinaryWithSystem(context.Background(), sys, cacheRoot, "1.0.0", io.Discard)
+			if (err != nil) != (mode != 0o755) || (err == nil && path != fixture) || (err != nil && path != "") || calls != 2 {
+				t.Fatalf("path=%q err=%v stat calls=%d", path, err, calls)
+			}
+		})
 	}
 }
 
@@ -435,16 +434,21 @@ func TestEnsureCachedBinary_NoNetwork_Exists(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(binPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(binPath, []byte("fake-binary"), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
+	if err := os.WriteFile(binPath+".target", []byte("fake-binary"), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Base(binPath)+".target", binPath); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := ensureCachedBinary(context.Background(), cacheRoot, version, io.Discard)
-	if err != nil {
-		t.Fatalf("expected success when binary exists even if no network, got %v", err)
-	}
-	if got != binPath {
-		t.Errorf("got %s, want %s", got, binPath)
+	for _, mode := range []os.FileMode{0o755, 0o644, 0o645} {
+		if err := os.Chmod(binPath, mode); err != nil {
+			t.Fatal(err)
+		}
+		got, err := ensureCachedBinary(context.Background(), cacheRoot, version, io.Discard)
+		if (err != nil) != (mode != 0o755) || (err == nil && got != binPath) {
+			t.Fatalf("mode=%v path=%q err=%v", mode, got, err)
+		}
 	}
 }
 
