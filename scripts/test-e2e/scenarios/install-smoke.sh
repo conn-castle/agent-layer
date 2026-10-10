@@ -27,6 +27,8 @@ run_scenario_install_smoke() {
   assert_exit_nonzero "installer refuses a symlinked directory" bash "$ROOT_DIR/al-install.sh" --prefix "$install_prefix" --no-completions --asset-root "$E2E_DIST_DIR"
   rm "$install_prefix/bin/al"
   ln -s "$copy_prefix/bin/al" "$install_prefix/bin/al"
+  assert_exit_nonzero "installer rejects an unsupported shell" bash "$ROOT_DIR/al-install.sh" --prefix "$install_prefix" --shell tcsh --asset-root "$E2E_DIST_DIR"
+  assert_output_equals "$(readlink "$install_prefix/bin/al")" "$copy_prefix/bin/al" "installer preserved the regular-file symlink after shell validation failed"
   assert_exit_zero "al-install.sh runs successfully" \
     bash "$ROOT_DIR/al-install.sh" \
       --version "$AL_E2E_VERSION" \
@@ -37,11 +39,7 @@ run_scenario_install_smoke() {
   assert_file_exists "$install_prefix/bin/al" "installer created bin/al"
   assert_exit_zero "installer replaced the regular-file symlink" test ! -L "$install_prefix/bin/al"
 
-  if [[ -x "$install_prefix/bin/al" ]]; then
-    pass "installed binary is executable"
-  else
-    fail "installed binary is not executable"
-  fi
+  assert_exit_zero "installed binary is executable" test -x "$install_prefix/bin/al"
 
   local inst_version_out inst_rc=0
   inst_version_out="$(cd "$safe_cwd" && PATH="$install_prefix/bin:$PATH" al --version 2>&1)" || inst_rc=$?
