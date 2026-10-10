@@ -174,14 +174,20 @@ mkdir -p "$bin_dir"
 
 archive_tmp=""
 checksums_tmp=""
+stage_dir=""
 cleanup() {
   rm -f "$archive_tmp" "$checksums_tmp"
+  if [[ -n "$stage_dir" ]]; then
+    rmdir "$stage_dir"
+  fi
 }
 trap cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
-archive_tmp="$(mktemp "${bin_dir}/.al.XXXXXX")"
+stage_dir="$(mktemp -d "${bin_dir}/.al.XXXXXX")"
+archive_tmp="${stage_dir}/al"
+(umask 077; : > "$archive_tmp")
 checksums_tmp="$(mktemp)"
 
 if ! curl -fsSL "$URL" -o "$archive_tmp"; then
@@ -209,7 +215,12 @@ fi
 if ! chmod +x "$archive_tmp"; then
   fail "Failed to mark downloaded al as executable."
 fi
-if ! mv "$archive_tmp" "$install_path"; then
+if [[ -d "$install_path" ]]; then
+  fail "Install destination is a directory: ${install_path}"
+fi
+# The source basename fixes the rename target at bin/al, so a directory
+# appearing after the check is rejected instead of receiving a hidden binary.
+if ! mv "$archive_tmp" "${bin_dir}/"; then
   fail "Failed to move al into ${bin_dir}."
 fi
 
