@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/envref"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
@@ -576,8 +578,11 @@ func TestHeaderTransport_RoundTrip(t *testing.T) {
 	}))
 	defer ts.Close()
 
+	origin, err := url.Parse(ts.URL)
+	require.NoError(t, err)
 	transport := &headerTransport{
-		base: http.DefaultTransport,
+		base:   http.DefaultTransport,
+		origin: origin,
 		headers: map[string]string{
 			"Authorization":   "Bearer test-token",
 			"X-Custom-Header": "custom-value",
@@ -602,8 +607,11 @@ func TestHeaderTransport_NilBase(t *testing.T) {
 	}))
 	defer ts.Close()
 
+	origin, err := url.Parse(ts.URL)
+	require.NoError(t, err)
 	transport := &headerTransport{
-		base: nil, // nil base
+		base:   nil, // nil base
+		origin: origin,
 		headers: map[string]string{
 			"Authorization": "Bearer test-token",
 		},
@@ -619,17 +627,17 @@ func TestHeaderTransport_NilBase(t *testing.T) {
 }
 
 func TestHeaderTransport_DoesNotMutateOriginalRequest(t *testing.T) {
+	origin, err := url.Parse("HTTPS://EXAMPLE.COM:443/mcp")
+	require.NoError(t, err)
 	transport := &headerTransport{
+		origin: origin,
 		base: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			assert.Equal(t, "dummy-key", req.Header.Get("X-Api-Key"))
 			return &http.Response{
-				StatusCode: http.StatusOK,
-				Status:     "200 OK",
-				Body:       http.NoBody,
-				Request:    req,
-				Header:     make(http.Header),
+				Body: http.NoBody,
 			}, nil
 		}),
-		headers: map[string]string{"Authorization": "Bearer token"},
+		headers: map[string]string{"Authorization": "Bearer token", "X-Api-Key": "dummy-key"},
 	}
 
 	req, err := http.NewRequest(http.MethodGet, "https://example.com", nil)
@@ -642,7 +650,64 @@ func TestHeaderTransport_DoesNotMutateOriginalRequest(t *testing.T) {
 		defer func() { _ = resp.Body.Close() }()
 	}
 	assert.Equal(t, "", req.Header.Get("Authorization"))
+	assert.Equal(t, "", req.Header.Get("X-Api-Key"))
 	assert.Equal(t, "value", req.Header.Get("X-Existing"))
+}
+
+func TestSameHTTPOrigin(t *testing.T) {
+	for origin, destinations := range map[string]map[string]bool{
+		"HTTPS://EXAMPLE.COM:443/mcp":    {"https://example.com/messages": true, "https://other.example": false, "https://example.com:444": false, "http://example.com:443": false},
+		"HTTP://EXAMPLE.COM:80/mcp":      {"http://example.com/messages": true},
+		"http://[fe80::A%25eth0]:80/mcp": {"http://[fe80::a%25eth0]": true, "http://[fe80::a%25ETH0]": false, "http://[fe80::a]": false},
+	} {
+		a, err := url.Parse(origin)
+		require.NoError(t, err)
+		for endpoint, want := range destinations {
+			b, err := url.Parse(endpoint)
+			require.NoError(t, err)
+			assert.Equal(t, want, sameHTTPOrigin(a, b), "%s -> %s", origin, endpoint)
+		}
+	}
+}
+
+func TestCheckMCPServers_OriginRefusal(t *testing.T) {
+	var calls atomic.Int32
+	destination := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls.Add(1) }))
+	defer destination.Close()
+	refusedURL := destination.URL + "/messages?session=destination-secret"
+	for _, mode := range []string{"sse-redirect", "streamable", "sse-endpoint"} {
+		t.Run(mode, func(t *testing.T) {
+			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "configured-secret", r.Header.Get("X-Api-Key"))
+				if mode != "sse-endpoint" {
+					http.Redirect(w, r, refusedURL, http.StatusTemporaryRedirect)
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = fmt.Fprintf(w, "event: endpoint\ndata: %s\n\n", refusedURL)
+				w.(http.Flusher).Flush()
+				<-r.Context().Done()
+			}))
+			defer origin.Close()
+			enabled := true
+			server := config.MCPServer{ID: mode, Enabled: &enabled, Transport: config.TransportHTTP, URL: origin.URL, Headers: map[string]string{"X-Api-Key": "configured-secret"}}
+			if mode == "streamable" {
+				server.HTTPTransport = config.HTTPTransportStreamable
+			}
+			cfg := &config.ProjectConfig{Config: config.Config{Agents: receivingAgents(), MCP: config.MCPConfig{Servers: []config.MCPServer{server}}}}
+			warnings, _, err := CheckMCPServers(context.Background(), cfg, &MockConnector{Next: &RealConnector{}}, func(e MCPDiscoveryEvent) {
+				if e.ServerID == mode && e.Status == MCPDiscoveryStatusError {
+					assert.EqualError(t, e.Err, messages.WarningsMCPOriginRefused)
+				}
+			})
+			require.NoError(t, err)
+			require.Len(t, warnings, 1)
+			assert.Equal(t, CodeMCPServerUnreachable, warnings[0].Code)
+			assert.Equal(t, fmt.Sprintf(messages.WarningsMCPConnectFailedFmt, errMCPOriginRefused), warnings[0].Message)
+			assert.NotContains(t, warnings[0].Message, refusedURL)
+			assert.Zero(t, calls.Load(), "refuse before transmission")
+		})
+	}
 }
 
 func TestBuildMCPCommandEnv_AllowlistsBaseEnv(t *testing.T) {
@@ -816,6 +881,7 @@ func TestMCPDiscoveryTransport_HTTP(t *testing.T) {
 			ht, ok := client.Transport.(*headerTransport)
 			require.True(t, ok, "expected headerTransport, got %T", client.Transport)
 			assert.Equal(t, tc.headers, ht.headers)
+			assert.Equal(t, "http://example.com/mcp", ht.origin.String())
 		})
 	}
 }

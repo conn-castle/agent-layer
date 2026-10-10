@@ -92,6 +92,8 @@ const (
 	WarningsTooManyServersFmt               = "enabled server count > %d (%d > %d)"
 	WarningsTooManyServersFix               = "disable rarely used servers; consolidate."
 	WarningsMCPConnectFailedFmt             = "cannot connect, initialize, or list tools: %v"
+	WarningsMCPInvalidHTTPEndpoint          = "invalid MCP HTTP endpoint for configured headers"
+	WarningsMCPOriginRefused                = "MCP discovery refused a request outside the configured origin"
 	WarningsMCPConnectFix                   = "correct URL/command/auth; or disable the server."
 	WarningsMCPOAuthNotValidated            = "OAuth authentication not validated by doctor"
 	WarningsMCPServerTooManyToolsFmt        = "server has > %d tools (%d > %d)"
