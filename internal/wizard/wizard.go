@@ -1139,6 +1139,9 @@ func promptSecrets(root string, ui UI, choices *Choices) error {
 					disableServer = true
 					break
 				}
+				if _, scripted := ui.(*ScriptedUI); scripted {
+					return fmt.Errorf("wizard answers leave %s blank but decline disabling MCP server %s; provide a secret or confirm disabling the server", key, server.ID)
+				}
 			}
 			if disableServer {
 				break
