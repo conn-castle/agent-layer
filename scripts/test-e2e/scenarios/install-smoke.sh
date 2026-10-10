@@ -22,14 +22,20 @@ run_scenario_install_smoke() {
 
   # --- Installer install ---
   local install_prefix="$E2E_TMP_ROOT/installer-prefix-install"
+  mkdir -p "$install_prefix/bin"
+  ln -s "$safe_cwd" "$install_prefix/bin/al"
+  assert_exit_nonzero "installer refuses a symlinked directory" bash "$ROOT_DIR/al-install.sh" --prefix "$install_prefix" --no-completions --asset-root "$E2E_DIST_DIR"
+  rm "$install_prefix/bin/al"
+  ln -s "$copy_prefix/bin/al" "$install_prefix/bin/al"
   assert_exit_zero "al-install.sh runs successfully" \
     bash "$ROOT_DIR/al-install.sh" \
       --version "$AL_E2E_VERSION" \
       --prefix "$install_prefix" \
-      --no-completions \
+      --no-completions --shell tcsh \
       --asset-root "$E2E_DIST_DIR"
 
   assert_file_exists "$install_prefix/bin/al" "installer created bin/al"
+  assert_exit_zero "installer replaced the regular-file symlink" test ! -L "$install_prefix/bin/al"
 
   if [[ -x "$install_prefix/bin/al" ]]; then
     pass "installed binary is executable"
