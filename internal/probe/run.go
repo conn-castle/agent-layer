@@ -44,11 +44,11 @@ func Run(ctx context.Context, cmd *exec.Cmd) error {
 	observationFailures := 0
 observe:
 	for ctxErr = ctx.Err(); ctxErr == nil; ctxErr = ctx.Err() {
-		leaderLive, _, err := groupState(pgid)
+		leaderLive, _, err := GroupState(pgid)
 		switch {
 		case err != nil:
 			observationFailures++
-			if errors.Is(err, os.ErrNotExist) || observationFailures >= 3 {
+			if errors.Is(err, os.ErrNotExist) || errors.Is(err, exec.ErrNotFound) || observationFailures >= 3 {
 				observeErr = err
 				break observe
 			}
@@ -121,8 +121,8 @@ func (w *guardedWriter) Write(data []byte) (int, error) {
 func awaitGroupStopped(pgid int) error {
 	deadline := time.Now().Add(cleanupAllowance)
 	for {
-		leaderLive, groupLive, err := groupState(pgid)
-		if errors.Is(err, os.ErrNotExist) {
+		leaderLive, groupLive, err := GroupState(pgid)
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, exec.ErrNotFound) {
 			return err
 		}
 		if err == nil && !leaderLive && !groupLive {
@@ -138,17 +138,17 @@ func awaitGroupStopped(pgid int) error {
 	}
 }
 
-// groupState observes without reaping. ps exposes the same columns on Linux
+// GroupState observes without reaping. ps exposes the same columns on Linux
 // and Darwin. Track the leader by PID even if it moves groups; zombies retain
 // ownership but are no longer running processes.
-func groupState(pgid int) (leaderLive, groupLive bool, err error) {
+func GroupState(pgid int) (leaderLive, groupLive bool, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cleanupAllowance)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "/bin/ps", "-axo", "pid=,pgid=,stat=")
+	cmd := exec.CommandContext(ctx, "ps", "-axo", "pid=,pgid=,stat=")
 	cmd.WaitDelay = cleanupAllowance
 	output, err := cmd.Output()
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, exec.ErrNotFound) {
 			return false, false, fmt.Errorf("observe probe process group: %w", err)
 		}
 		return false, false, fmt.Errorf("observe probe process group: %v", err)

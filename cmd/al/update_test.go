@@ -4,13 +4,17 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/conn-castle/agent-layer/internal/testutil"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
@@ -569,5 +573,79 @@ func TestReadInstalledCLIVersionPreservesFailedProbeStdoutAndStderr(t *testing.T
 	message := err.Error()
 	if !strings.Contains(message, "probe stdout from failed version") || !strings.Contains(message, "probe stderr from failed version") {
 		t.Fatalf("error = %v, want stdout and stderr from the failed probe", err)
+	}
+}
+
+func TestUpdateCommandCancellationStopsDownloadChild(t *testing.T) {
+	output, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = output.Close() }()
+	for _, ignore := range []bool{false, true} {
+		t.Run(fmt.Sprint(ignore), func(t *testing.T) {
+			dir := t.TempDir()
+			pidFile, cleaned := filepath.Join(dir, "child"), filepath.Join(dir, "cleaned")
+			script := `trap 'touch "$2"' EXIT; sleep 30 & echo $! > "$1"; wait`
+			if ignore {
+				script = `trap '' TERM; ` + script
+			} else {
+				script = `trap 'exit 143' TERM; ` + script
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			ready := make(chan time.Time, 1)
+			go func() {
+				for ctx.Err() == nil {
+					if info, err := os.Stat(pidFile); err == nil && info.Size() > 0 {
+						ready <- time.Now()
+						cancel()
+						return
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+			}()
+			cancelErr := updateRunCommand(ctx, nil, output, output, "bash", "-c", script, "fixture", pidFile, cleaned)
+			var start time.Time
+			select {
+			case start = <-ready:
+			default:
+				t.Fatal("fixture child was not ready within startup allowance")
+			}
+			data, err := os.ReadFile(pidFile) // #nosec G304 -- owned child identity.
+			if err != nil {
+				t.Fatal(err)
+			}
+			pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+			if err != nil || pid <= 0 {
+				t.Fatalf("invalid child identity: %q", data)
+			}
+			state, psErr := exec.Command("/bin/ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+			var exit *exec.ExitError
+			if (psErr == nil && !strings.HasPrefix(strings.TrimSpace(string(state)), "Z")) || (psErr != nil && (!errors.As(psErr, &exit) || exit.ExitCode() != 1)) {
+				_ = syscall.Kill(pid, syscall.SIGKILL) // Stop this fixture's observed surviving child.
+				t.Fatalf("download child survived: pid=%d state=%q err=%v", pid, state, psErr)
+			}
+			if !errors.Is(cancelErr, context.Canceled) || time.Since(start) > 5*time.Second {
+				t.Fatalf("cancellation = %v after %v", cancelErr, time.Since(start))
+			}
+			if _, err := os.Stat(cleaned); !ignore && err != nil {
+				t.Fatalf("EXIT cleanup did not run: %v", err)
+			}
+		})
+	}
+}
+
+func TestUpdateCommandStartAndOutput(t *testing.T) {
+	var output bytes.Buffer
+	// A resolved executable (Homebrew's path) must retain the caller's group.
+	script := `test "$(ps -o pgid= -p $$)" -eq "$1" || exit 8; cat; echo error >&2; exit 7`
+	err := updateRunCommand(context.Background(), strings.NewReader("streamed"), &output, &output, "/bin/bash", "-c", script, "fixture", strconv.Itoa(syscall.Getpgrp()))
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 7 || !strings.Contains(output.String(), "streamed") || !strings.Contains(output.String(), "error") {
+		t.Fatalf("output=%q err=%v", output.String(), err)
+	}
+	if err := updateRunCommand(context.Background(), nil, nil, nil, filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Fatal("missing executable succeeded")
 	}
 }
