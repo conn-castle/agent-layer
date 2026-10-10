@@ -122,13 +122,16 @@ func awaitGroupStopped(pgid int) error {
 	deadline := time.Now().Add(cleanupAllowance)
 	for {
 		leaderLive, groupLive, err := groupState(pgid)
-		if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		if !leaderLive && !groupLive {
+		if err == nil && !leaderLive && !groupLive {
 			return nil
 		}
 		if time.Now().After(deadline) {
+			if err != nil {
+				return fmt.Errorf("probe leader or process group %d stop unproven after SIGKILL: %w", pgid, err)
+			}
 			return fmt.Errorf("probe leader or process group %d remained running after SIGKILL", pgid)
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -145,7 +148,10 @@ func groupState(pgid int) (leaderLive, groupLive bool, err error) {
 	cmd.WaitDelay = cleanupAllowance
 	output, err := cmd.Output()
 	if err != nil {
-		return false, false, fmt.Errorf("observe probe process group: %w", err)
+		if errors.Is(err, os.ErrNotExist) {
+			return false, false, fmt.Errorf("observe probe process group: %w", err)
+		}
+		return false, false, fmt.Errorf("observe probe process group: %v", err)
 	}
 	for line := range strings.SplitSeq(string(output), "\n") {
 		fields := strings.Fields(line)
