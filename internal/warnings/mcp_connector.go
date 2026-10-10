@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -27,6 +28,8 @@ const maxToolsToDiscover = 1000
 
 // mcpDiscoveryTimeout is the per-server timeout for doctor MCP discovery checks.
 const mcpDiscoveryTimeout = 30 * time.Second
+
+var errMCPOriginRefused = errors.New(messages.WarningsMCPOriginRefused)
 
 var mcpAllowedEnvKeys = map[string]struct{}{
 	"HOME":           {},
@@ -116,8 +119,15 @@ func headerHTTPClient(endpoint string, headers map[string]string) (*http.Client,
 
 // discoverMCPTools connects over transport and lists every tool the server
 // exposes, estimating per-tool and total schema tokens.
-func discoverMCPTools(ctx context.Context, serverID string, transport mcp.Transport) DiscoveryResult {
-	res := DiscoveryResult{ServerID: serverID}
+func discoverMCPTools(ctx context.Context, serverID string, transport mcp.Transport) (res DiscoveryResult) {
+	res.ServerID = serverID
+	defer func() {
+		// HTTP clients and SDK errors can wrap the refusal with a credential-bearing URL.
+		// Drop the entire wrapper before returning a discovery result.
+		if res.Error != nil && (errors.Is(res.Error, errMCPOriginRefused) || mcpTransportRefusedOrigin(transport)) {
+			res.Error = errMCPOriginRefused
+		}
+	}()
 	client := mcp.NewClient(&mcp.Implementation{
 		Name:    "agent-layer-doctor",
 		Version: "1.0.0",
@@ -187,11 +197,13 @@ type headerTransport struct {
 	base    http.RoundTripper
 	headers map[string]string
 	origin  *url.URL
+	refused atomic.Bool
 }
 
 func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if !sameHTTPOrigin(t.origin, req.URL) {
-		return nil, errors.New(messages.WarningsMCPOriginRefused)
+		t.refused.Store(true)
+		return nil, errMCPOriginRefused
 	}
 	cloned := req.Clone(req.Context())
 	for k, v := range t.headers {
@@ -203,9 +215,33 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(cloned)
 }
 
+// mcpTransportRefusedOrigin also detects refusals when the SDK replaces an
+// error chain with text. Each HTTP client is scoped to one discovery attempt.
+func mcpTransportRefusedOrigin(transport mcp.Transport) bool {
+	var client *http.Client
+	switch t := transport.(type) {
+	case *mcp.SSEClientTransport:
+		client = t.HTTPClient
+	case *mcp.StreamableClientTransport:
+		client = t.HTTPClient
+	}
+	if client == nil {
+		return false
+	}
+	guard, ok := client.Transport.(*headerTransport)
+	return ok && guard.refused.Load()
+}
+
 func sameHTTPOrigin(a, b *url.URL) bool {
-	return a != nil && b != nil && strings.EqualFold(a.Scheme, b.Scheme) &&
-		strings.EqualFold(a.Hostname(), b.Hostname()) && effectiveHTTPPort(a) == effectiveHTTPPort(b)
+	if a == nil || b == nil {
+		return false
+	}
+	// Hostname includes an IPv6 zone after '%'. Interface names are case-sensitive
+	// even though DNS names and hexadecimal address digits are not.
+	aHost, aZone, _ := strings.Cut(a.Hostname(), "%")
+	bHost, bZone, _ := strings.Cut(b.Hostname(), "%")
+	return strings.EqualFold(a.Scheme, b.Scheme) && strings.EqualFold(aHost, bHost) &&
+		aZone == bZone && effectiveHTTPPort(a) == effectiveHTTPPort(b)
 }
 
 func effectiveHTTPPort(u *url.URL) string {
