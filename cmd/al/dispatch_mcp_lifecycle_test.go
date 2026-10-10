@@ -7,13 +7,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
@@ -44,7 +48,7 @@ type cliMCPRecord struct {
 }
 
 func TestDispatchMCPLifecycleProcess(t *testing.T) {
-	for _, ending := range []string{"eof", "sigterm", "partial-frame", "broken-stdout", "sigkill"} {
+	for _, ending := range []string{"eof", "shared-eof", "sigterm", "full-eof", "full-sigterm", "partial-frame", "broken-stdout", "sigkill"} {
 		t.Run(ending, func(t *testing.T) {
 			root := t.TempDir()
 			if err := os.Mkdir(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
@@ -72,20 +76,42 @@ func TestDispatchMCPLifecycleProcess(t *testing.T) {
 			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestDispatchMCPLifecycleHelper$") //nolint:gosec // Test binary re-exec.
 			cmd.Dir = root
 			cmd.Env = append(os.Environ(), "AL_TEST_MCP_LIFECYCLE=1", "AL_DEV_BYPASS_VERSION_DISPATCH=1", "PRIVATE_TOKEN=cli-credential-canary", "PRIVATE_INPUT=cli-environment-canary")
-			stdin, err := cmd.StdinPipe()
-			if err != nil {
-				t.Fatal(err)
+			shared := ending == "shared-eof"
+			var stdin io.WriteCloser
+			var stdout, output *os.File
+			if shared {
+				pair, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, fd := range pair {
+					unix.CloseOnExec(fd)
+				}
+				stdout, output = os.NewFile(uintptr(pair[0]), "mcp-client"), os.NewFile(uintptr(pair[1]), "mcp-server")
+				stdin, cmd.Stdin = stdout, output
+			} else {
+				stdin, err = cmd.StdinPipe()
+				if err != nil {
+					t.Fatal(err)
+				}
+				stdout, output, err = os.Pipe()
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
 			defer func() { _ = stdin.Close() }()
-			stdout, err := cmd.StdoutPipe()
-			if err != nil {
-				t.Fatal(err)
-			}
 			defer func() { _ = stdout.Close() }()
+			defer func() { _ = output.Close() }()
+			// Capture Fd before Start: Fd can change the shared nonblocking flags.
+			outputReady := []unix.PollFd{{Fd: int32(output.Fd()), Events: unix.POLLOUT}} //nolint:gosec // OS descriptors fit poll's int32 field.
+			cmd.Stdout = output
 			var stderr bytes.Buffer
 			cmd.Stderr = &stderr
 			if err := cmd.Start(); err != nil {
 				t.Fatal(err)
+			}
+			if !strings.HasPrefix(ending, "full-") {
+				_ = output.Close()
 			}
 			t.Cleanup(func() { _ = cmd.Process.Kill() })
 			scanner := bufio.NewScanner(stdout)
@@ -139,9 +165,35 @@ func TestDispatchMCPLifecycleProcess(t *testing.T) {
 			if err != nil || bytes.Count(start, []byte("\n")) != 1 {
 				t.Fatalf("start before exit: %s %v", start, err)
 			}
-			switch ending {
+			full := strings.HasPrefix(ending, "full-")
+			trigger := strings.TrimPrefix(strings.TrimPrefix(ending, "full-"), "shared-")
+			if full {
+				// The echoed ID makes one reply exceed the default Linux/Darwin
+				// pipe capacity, so backpressure proves its write is unfinished.
+				// EOF can discard replies that have not begun writing.
+				send(fmt.Sprintf(`{"jsonrpc":"2.0","id":"%s","method":"tools/list"}`, strings.Repeat("4", 128*1024)))
+				for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(time.Millisecond) {
+					if _, err := unix.Poll(outputReady, 0); err != nil {
+						t.Fatal(err)
+					}
+					if outputReady[0].Revents == 0 {
+						break
+					}
+					if time.Now().After(deadline) {
+						t.Fatalf("stdout never backpressured: poll events %d", outputReady[0].Revents)
+					}
+				}
+			}
+			shutdownAt := time.Now()
+			switch trigger {
 			case "eof":
-				_ = stdin.Close()
+				if shared {
+					if err := unix.Shutdown(int(stdout.Fd()), unix.SHUT_WR); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					_ = stdin.Close()
+				}
 			case "sigterm":
 				if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
 					t.Fatal(err)
@@ -161,7 +213,7 @@ func TestDispatchMCPLifecycleProcess(t *testing.T) {
 				}
 				send(`{"jsonrpc":"2.0","id":4,"method":"tools/list"}`)
 			}
-			if ending != "broken-stdout" {
+			if !full && ending != "broken-stdout" {
 				for scanner.Scan() {
 					var msg map[string]json.RawMessage
 					if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil || string(msg["jsonrpc"]) != `"2.0"` {
@@ -173,13 +225,16 @@ func TestDispatchMCPLifecycleProcess(t *testing.T) {
 				}
 			}
 			waitErr := cmd.Wait()
+			if full && time.Since(shutdownAt) > 3*time.Second {
+				t.Fatalf("backpressured shutdown exceeded bound: %v", waitErr)
+			}
 			if ctx.Err() != nil {
 				t.Fatalf("process timed out: %s", stderr.String())
 			}
-			if ending == "eof" && waitErr != nil {
+			if trigger == "eof" && !full && waitErr != nil {
 				t.Fatalf("EOF exit: %v %s", waitErr, stderr.String())
 			}
-			if ending != "eof" && waitErr == nil {
+			if (trigger != "eof" || full) && waitErr == nil {
 				t.Fatal("error/signal scenario exited successfully")
 			}
 			if ending == "broken-stdout" && cmd.ProcessState.Sys().(syscall.WaitStatus).Signaled() {
@@ -214,20 +269,20 @@ func TestDispatchMCPLifecycleProcess(t *testing.T) {
 				}
 				return
 			}
-			want := map[string]string{"eof": "client_eof", "sigterm": "context_cancelled", "partial-frame": "transport_error", "broken-stdout": "transport_error"}[ending]
+			want := map[string]string{"eof": "client_eof", "shared-eof": "client_eof", "sigterm": "context_cancelled", "partial-frame": "transport_error", "broken-stdout": "transport_error", "full-eof": "transport_error", "full-sigterm": "transport_error"}[ending]
 			last := records[len(records)-1]
-			if last.Event != "stop" || last.Condition != want || last.ClientEOF != (ending == "eof") {
+			if last.Event != "stop" || last.Condition != want || last.ClientEOF != (trigger == "eof") {
 				t.Fatalf("stop: %+v (stderr %s)", records, stderr.String())
 			}
-			if (ending == "eof" || ending == "sigterm") && last.Uncertain {
+			if (ending == "eof" || ending == "sigterm" || shared) && last.Uncertain {
 				t.Fatalf("uncompeted shutdown uncertain: %+v", last)
 			}
 			if ending == "sigterm" && last.InputEOF {
 				t.Fatalf("cancellation invented physical EOF: %+v", last)
 			}
-			if ending == "partial-frame" || ending == "broken-stdout" {
+			if ending == "partial-frame" || ending == "broken-stdout" || full {
 				operation := "read"
-				if ending == "broken-stdout" {
+				if ending == "broken-stdout" || full {
 					operation = "write"
 				}
 				found := false
