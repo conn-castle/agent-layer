@@ -40,7 +40,7 @@ func TestHerdRCommandPinsDevelopmentExecutableAtSync(t *testing.T) {
 	if !strings.Contains(command, "AL_DEV_BYPASS_VERSION_DISPATCH=1") || !strings.Contains(command, "AL_DEV_EXECUTABLE='"+canonicalCandidate+"'") || !strings.Contains(command, "exec '"+canonicalCandidate+"' hook herdr muse '/scratch/project'") {
 		t.Fatalf("development command did not pin its source executable: %q", command)
 	}
-	if strings.Contains(command, "$AL_DEV_EXECUTABLE") {
+	if strings.Contains(command, "$AL_DEV_EXECUTABLE") || !isHerdRHandler(herdrHandler(command)) {
 		t.Fatalf("command relies on hook environment: %q", command)
 	}
 }
@@ -84,7 +84,7 @@ func TestHerdRCommandKeepsCanonicalCandidateWhenLiveSymlinkChanges(t *testing.T)
 func TestHerdRCommandUsesReleaseResolutionWithoutDevelopmentContext(t *testing.T) {
 	t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", "")
 	t.Setenv("AL_DEV_EXECUTABLE", "/scratch/candidate/al")
-	if got, want := herdrCommand("claude"), "exec al hook herdr claude # agent-layer-herdr"; got != want {
+	if got, want := herdrCommand("claude"), "exec al hook herdr claude # agent-layer-herdr"; got != want || !isHerdRHandler(herdrHandler(got)) {
 		t.Fatalf("release command = %q, want %q", got, want)
 	}
 }
@@ -126,8 +126,8 @@ func TestCodexHerdRReplacementPreservesNativeTrustStateInsideOldMarker(t *testin
 func TestMuseHerdRHooksRegisterFirstPromptAndPreserveBothEventGroups(t *testing.T) {
 	root := t.TempDir()
 	document := map[string]any{hooksKey: map[string]any{
-		herdrMuseEvent:          []any{map[string]any{hooksKey: []any{map[string]any{"type": "command", "command": "echo start-user"}}}},
-		herdrMuseFirstTurnEvent: []any{map[string]any{hooksKey: []any{map[string]any{"type": "command", "command": "echo prompt-user"}}}},
+		herdrMuseEvent:          []any{map[string]any{hooksKey: []any{map[string]any{"type": "command", "command": "echo start-user agent-layer-herdr"}}}},
+		herdrMuseFirstTurnEvent: []any{map[string]any{hooksKey: []any{map[string]any{"type": "prompt", "command": "echo prompt-user # agent-layer-herdr"}}}},
 	}}
 	if err := injectMuseHerdRHook(document, true, root); err != nil {
 		t.Fatal(err)
@@ -177,7 +177,7 @@ func TestHerdRHookWritersRejectSymlinkedProviderDirectories(t *testing.T) {
 }
 
 func TestProviderRecoveryProjectionPreservesUserHooksOnResyncAndDisable(t *testing.T) {
-	for _, provider := range []string{"grok"} {
+	for _, provider := range []string{"grok", "copilot"} {
 		t.Run(provider, func(t *testing.T) {
 			root := t.TempDir()
 			path := providerHerdRHookPath(root, provider)
@@ -185,8 +185,8 @@ func TestProviderRecoveryProjectionPreservesUserHooksOnResyncAndDisable(t *testi
 				t.Fatal(err)
 			}
 			event := "SessionStart"
-			user := map[string]any{hooksKey: []any{map[string]any{"type": "command", "command": "echo keep-user"}}}
-			document := map[string]any{"hooks": map[string]any{event: []any{user}}, "user_metadata": "keep-metadata"}
+			user := map[string]any{"matcher": "startup", hooksKey: []any{map[string]any{"type": "command", "command": "echo keep-user > agent-layer-herdr-observer.log"}}}
+			document := map[string]any{"hooks": map[string]any{event: []any{user}, "Stop": []any{user}}, "user_metadata": "keep-metadata"}
 			data, err := json.Marshal(document)
 			if err != nil {
 				t.Fatal(err)
@@ -203,7 +203,7 @@ func TestProviderRecoveryProjectionPreservesUserHooksOnResyncAndDisable(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.Count(string(data), "keep-user") != 1 || strings.Count(string(data), agentLayerHerdRMarker) != 1 {
+			if strings.Count(string(data), "keep-user") != 2 || strings.Count(string(data), agentLayerHerdRMarker) != 3 {
 				t.Fatalf("resync lost or duplicated hooks: %s", data)
 			}
 			for range 2 {
@@ -215,7 +215,8 @@ func TestProviderRecoveryProjectionPreservesUserHooksOnResyncAndDisable(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(string(data), "keep-user") || !strings.Contains(string(data), "keep-metadata") || strings.Contains(string(data), agentLayerHerdRMarker) {
+			var cleaned map[string]any
+			if err := json.Unmarshal(data, &cleaned); err != nil || !reflect.DeepEqual(cleaned, document) {
 				t.Fatalf("disable changed user hooks: %s", data)
 			}
 		})
