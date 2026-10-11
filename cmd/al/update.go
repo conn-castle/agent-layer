@@ -55,7 +55,7 @@ var (
 
 // runUpdateCommand keeps the group leader unreaped until cancellation signaling
 // finishes. Bash gets time to run the installer's EXIT trap before escalation.
-func runUpdateCommand(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, name string, args ...string) error {
+func runUpdateCommand(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, name string, args ...string) (resultErr error) {
 	// The detached installer no longer receives the terminal's HUP or QUIT.
 	signals := []os.Signal{syscall.SIGQUIT}
 	if !signal.Ignored(syscall.SIGHUP) {
@@ -66,6 +66,15 @@ func runUpdateCommand(ctx context.Context, stdin io.Reader, stdout, stderr io.Wr
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	release, err := updateOwnProcesses()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := release(); err != nil {
+			resultErr = errors.Join(resultErr, err)
+		}
+	}()
 	command := exec.Command(name, args...) //nolint:gosec,noctx // Fixed update commands; cancellation owns the unreaped process group below.
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	output := &updateCommandOutputGuard{}

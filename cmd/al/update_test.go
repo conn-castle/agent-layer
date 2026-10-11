@@ -686,8 +686,58 @@ func TestUpdateCommandCancellationStopsDownloadChild(t *testing.T) {
 
 func TestUpdateCommandStartAndOutput(t *testing.T) {
 	if runtime.GOOS == "linux" {
+		release, err := updateOwnProcesses()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := release(); err != nil {
+				t.Error(err)
+			}
+		}()
 		readStat := updateReadProcessStat
 		defer func() { updateReadProcessStat = readStat }()
+		gate := filepath.Join(t.TempDir(), "fork")
+		childFile, childGate := filepath.Join(filepath.Dir(gate), "child"), gate+"-child"
+		forker := exec.Command("/bin/bash", "-c", `while [[ ! -e "$1" ]]; do :; done; ( echo "$BASHPID" > "$2"; while [[ ! -e "$3" ]]; do :; done; /bin/sleep 30 & exit 0 ) & exit 0`, "fixture", gate, childFile, childGate)
+		forker.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := forker.Start(); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = updateSignalGroup(forker.Process.Pid, syscall.SIGKILL); _ = forker.Wait() }()
+		leaderPath := filepath.Join("/proc", strconv.Itoa(forker.Process.Pid), "stat")
+		released := false
+		updateReadProcessStat = func(path string) ([]byte, error) {
+			gatePath := ""
+			if path == leaderPath && !released {
+				released = true // ReadDir has finished; its list cannot contain the child.
+				gatePath = gate
+			} else if child, err := os.ReadFile(childFile); err == nil && path == filepath.Join("/proc", strings.TrimSpace(string(child)), "stat") { // #nosec G304 -- childFile is inside the test-owned TempDir.
+				gatePath = childGate // Fork the grandchild after the confirmation listing.
+			}
+			if gatePath == "" {
+				return readStat(path)
+			}
+			if err := os.WriteFile(gatePath, nil, 0o600); err != nil {
+				return nil, err
+			}
+			for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
+				data, err := readStat(path)
+				if err != nil {
+					return nil, err
+				}
+				if strings.HasPrefix(string(data)[strings.LastIndexByte(string(data), ')')+1:], " Z ") {
+					if _, err := os.Stat(childFile); err == nil {
+						return data, nil // Adopted children are retained; never reap during proof.
+					}
+				}
+				time.Sleep(time.Millisecond)
+			}
+			return nil, context.DeadlineExceeded
+		}
+		if stopped, err := updateCommandStopped(forker.Process.Pid); err != nil || stopped {
+			t.Fatalf("new orphan forked during confirmation: stopped=%v err=%v", stopped, err)
+		}
 		ownedPath := filepath.Join("/proc", strconv.Itoa(os.Getpid()), "stat")
 		updateReadProcessStat = func(path string) ([]byte, error) {
 			if path == ownedPath {
