@@ -207,7 +207,7 @@ func createSkillDirectory(sys System, dir string) error {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, dir, err)
 	}
 	if err := sys.Chmod(dir, 0o755); err != nil {
-		return fmt.Errorf("set skill directory permissions %s: %w", dir, err)
+		return fmt.Errorf(messages.FsutilSetPermissionsFmt, dir, err)
 	}
 	return nil
 }

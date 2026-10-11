@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -18,6 +19,10 @@ import (
 func TestMain(m *testing.M) {
 	if os.Getenv("AL_UPDATE_TEST_HELPER") == "1" {
 		latestReleaseURL = os.Getenv("AL_UPDATE_TEST_RELEASE_URL")
+		if len(os.Args) == 2 && os.Args[1] == RefreshForkCommand {
+			SpawnDetachedRefresh()
+			os.Exit(0)
+		}
 		if len(os.Args) == 2 && os.Args[1] == RefreshCommand {
 			// Gate the test worker before its network deadline starts, so slow parent
 			// exec does not spend the refresh budget before the parent has exited.
@@ -31,11 +36,18 @@ func TestMain(m *testing.M) {
 				}
 				time.Sleep(10 * time.Millisecond)
 			}
+			// Record the observed parent before any network I/O so the parent
+			// test's detachment assertion cannot race this helper's exit.
+			if ppidFile := os.Getenv("AL_UPDATE_TEST_PPID_FILE"); ppidFile != "" {
+				_ = os.WriteFile(ppidFile, []byte(strconv.Itoa(os.Getppid())), 0o600) // #nosec G304,G703 -- path supplied by the parent test fixture.
+			}
 			RefreshCache(context.Background())
 			os.Exit(0)
 		}
 		StartCacheRefresh()
-		if err := syscall.Exec("/bin/sh", []string{"sh", "-c", "exit 0"}, os.Environ()); err != nil {
+		// Stay alive as a long-lived exec target so the parent test can detect a
+		// reaped-or-zombie helper while the client is still running.
+		if err := syscall.Exec("/bin/sleep", []string{"sleep", "30"}, os.Environ()); err != nil {
 			panic(err)
 		}
 	}

@@ -21,6 +21,10 @@ import (
 var maybeExecFunc = versiondispatch.MaybeExec
 var executeFunc = execute
 
+// spawnDetachedRefreshFunc detaches the refresh helper in the fork intermediate.
+// It is a variable so tests can observe the dispatch without starting helpers.
+var spawnDetachedRefreshFunc = update.SpawnDetachedRefresh
+
 // Version, Commit, and BuildDate are overridden at build time.
 var (
 	Version   = "dev"
@@ -74,6 +78,10 @@ func execute(ctx context.Context, args []string, stdout io.Writer, stderr io.Wri
 func runMain(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer, exit func(int)) {
 	if len(args) == 2 && args[1] == update.RefreshCommand { // #nosec G602 -- exact length checked before indexing.
 		update.RefreshCache(ctx)
+		return
+	}
+	if len(args) == 2 && args[1] == update.RefreshForkCommand { // #nosec G602 -- exact length checked before indexing.
+		spawnDetachedRefreshFunc()
 		return
 	}
 	cwd, err := getwd()

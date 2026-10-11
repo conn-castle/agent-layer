@@ -627,4 +627,16 @@ func TestRunMainRefreshBypassesDispatchAndProjectCommands(t *testing.T) {
 	if out.Len() != 0 {
 		t.Fatalf("refresh emitted output: %q", out.String())
 	}
+	origSpawn := spawnDetachedRefreshFunc
+	spawned := false
+	spawnDetachedRefreshFunc = func() { spawned = true }
+	t.Cleanup(func() { spawnDetachedRefreshFunc = origSpawn })
+	out.Reset()
+	runMain(context.Background(), []string{"al", update.RefreshForkCommand}, &out, &out, func(int) { t.Fatal("fork failed CLI execution") })
+	if !spawned {
+		t.Fatal("fork command did not detach the refresh helper")
+	}
+	if out.Len() != 0 {
+		t.Fatalf("fork emitted output: %q", out.String())
+	}
 }
