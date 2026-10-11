@@ -22,6 +22,10 @@ func TestLoadProjectConfig(t *testing.T) {
 	}
 
 	config := `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = "all"
 
@@ -114,6 +118,10 @@ func TestLoadProjectConfigMissingEnv(t *testing.T) {
 		t.Fatalf("mkdir skills: %v", err)
 	}
 	config := `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = "all"
 
@@ -178,6 +186,10 @@ func TestLoadProjectConfigMissingInstructions(t *testing.T) {
 		t.Fatalf("mkdir skills: %v", err)
 	}
 	config := `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = "all"
 
@@ -222,7 +234,7 @@ Do it.`
 	}
 
 	_, err := LoadProjectConfig(root)
-	if err == nil || !strings.Contains(err.Error(), "missing instructions directory") {
+	if err == nil || !strings.Contains(err.Error(), "missing instructions file") {
 		t.Fatalf("expected missing instructions error, got %v", err)
 	}
 }
@@ -235,6 +247,10 @@ func TestLoadProjectConfigMissingSkills(t *testing.T) {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
 	config := `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = "all"
 
@@ -289,6 +305,10 @@ func TestLoadProjectConfigMissingCommandsAllow(t *testing.T) {
 		t.Fatalf("mkdir skills: %v", err)
 	}
 	config := `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = "all"
 

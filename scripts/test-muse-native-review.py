@@ -82,7 +82,8 @@ def exercise(args, muse, label):
         (source / "skills").mkdir()
         (source / "commands.allow").write_text("")
         (source / "gitignore.block").write_bytes((ROOT / "internal/templates/gitignore.block").read_bytes())
-        lines = ['[approvals]', 'mode = "all"', '[warnings]', 'version_update_on_sync = false']
+        lines = ['[[instructions.local]]', 'selectors = ["fixture.md"]', 'order = 0',
+                 '[approvals]', 'mode = "all"', '[warnings]', 'version_update_on_sync = false']
         for agent in ("claude", "claude_vscode", "codex", "antigravity", "grok", "copilot_cli", "vscode", "muse"):
             lines += [f"[agents.{agent}]", "enabled = " + str(agent in ("claude", "muse")).lower()]
         lines += ['[agents.claude.agent_specific]', 'enableAllProjectMcpServers = true']

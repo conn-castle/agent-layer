@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "version": "1.0.0",
-  "generated_at_utc": "2026-10-07T15:55:00Z",
+  "generated_at_utc": "2026-10-10T17:31:23Z",
   "files": [
     {
       "path": ".agent-layer/commands.allow",
@@ -46,14 +46,6 @@
       "full_hash_normalized": "a6de0183df8460754b7093220d8b8b9e1b99f2baceb620d35cef704e92474678"
     },
     {
-      "path": ".agent-layer/instructions/00_rules.md",
-      "full_hash_normalized": "9d0f4eb23cb62e1c4f9f04417470b515047a96a424f8319730f09a7d626f38c1"
-    },
-    {
-      "path": ".agent-layer/instructions/01_memory.md",
-      "full_hash_normalized": "1a527cf82bb19cff1389425a13530c5fd3f335942c528fde6185caff5e9595ec"
-    },
-    {
       "path": ".agent-layer/skills/benchmark/SKILL.md",
       "full_hash_normalized": "64fc75e4bb621c5a00de72f399110ddf89f86bb64ff946b0aabe9806ff6c0611",
       "policy_id": "catalog_skills_v1"
@@ -71,6 +63,11 @@
     {
       "path": ".agent-layer/skills/dispatch-agent/SKILL.md",
       "full_hash_normalized": "158a3043392894d03447a3470df2b7cb8bb27ac4444da8032c42330894605c62",
+      "policy_id": "catalog_skills_v1"
+    },
+    {
+      "path": ".agent-layer/skills/instruction-sync/SKILL.md",
+      "full_hash_normalized": "1bcc56f1450be846c35554c61c9cbcc6ff4b6affb840e4261a0d4b8d6177b4be",
       "policy_id": "catalog_skills_v1"
     },
     {

@@ -40,6 +40,9 @@ func CatalogGitFixture(t *testing.T) string {
 		require.NoError(t, os.WriteFile(filepath.Join(root, selector, "SKILL.md"), []byte(text), 0o644))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "example.txt"), []byte("resource\n"), 0o644))
 	}
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "instructions"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "instructions", "rules.md"), []byte("Follow project conventions. Validate your changes.\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "instructions", "memory.md"), []byte("Read docs/agent-layer/CONTEXT.md.\n"), 0o644))
 	run("add", ".")
 	run("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "fixture")
 	count, _ := strconv.Atoi(os.Getenv("GIT_CONFIG_COUNT"))

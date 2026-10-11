@@ -37,7 +37,7 @@ Agent Layer also prefers explicit settings. If something matters, it is usually 
 The files you edit live in `.agent-layer/`:
 
 - `config.toml` for structured configuration
-- `instructions/` for agent rules and guidance
+- `instructions/` for project-local rules and `instructions-imported/` for Git-backed Markdown imports, with explicit numeric order in `config.toml`
 - `skills/` for repeatable workflows (see [Skill Design](/skill-design))
 - `commands.allow` for approved shell command prefixes
 - `.env` for secrets
@@ -347,7 +347,7 @@ When you choose Rules and memory in `al wizard`, it creates missing files:
 - `docs/agent-layer/COMMANDS.md`
 - `docs/agent-layer/CONTEXT.md`
 
-The default instructions reference these files, so agents know where to look for project context and workflow commands.
+The imported memory instructions reference these files, so agents know where to look for project context and workflow commands.
 
 ### What to commit
 

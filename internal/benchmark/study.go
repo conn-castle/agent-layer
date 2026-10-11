@@ -1925,7 +1925,7 @@ func snapshotStudyExperimentInputs(snapshotRoot string, index int, base string, 
 				if err != nil {
 					return studyExperimentInputs{}, fmt.Errorf("skills-source: %w", err)
 				}
-				copyErr = copyFrozenSkillsSource(provenance, source, destination)
+				copyErr = copyFrozenSkillsSource(provenance, source, destination, inputs.Instructions)
 			} else {
 				copyErr = copyRequiredTree(source, destination)
 			}
@@ -1978,7 +1978,7 @@ func writeSnapshotFile(destination string, data []byte) error {
 
 func validateExperimentInputs(inputs studyExperimentInputs) (map[string]string, error) {
 	if inputs.SkillsSource != "" {
-		if err := validateFrozenSkillsSource(inputs.SkillsSource, inputs.Skills); err != nil {
+		if _, err := readFrozenSkillsSource(inputs.SkillsSource, inputs.Skills, inputs.Instructions); err != nil {
 			return nil, err
 		}
 	}

@@ -45,20 +45,21 @@ func TestBuildUpgradePlan_ListsUserPathsAndPreviewsNonRegularRemovals(t *testing
 
 			plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: sys})
 			require.NoError(t, err)
-			for _, path := range []string{skill, instruction, link} {
+			for _, path := range []string{skill} {
 				change := findUpgradeChange(plan.TemplateRemovalsOrOrphans, path)
 				require.NotNil(t, change, "missing removal %s", path)
 			}
 			require.Nil(t, findUpgradeChange(plan.TemplateRemovalsOrOrphans, skill+"/SKILL.md"))
 			previews, err := BuildUpgradePlanDiffPreviews(root, plan, UpgradePlanDiffPreviewOptions{System: sys})
 			require.NoError(t, err)
-			for _, path := range []string{skill, link} {
+			for _, path := range []string{skill} {
 				preview, ok := previews[path]
 				require.True(t, ok, "missing preview %s", path)
 				require.Equal(t, path, preview.Path)
 				require.Empty(t, preview.UnifiedDiff)
 			}
-			require.Contains(t, previews[instruction].UnifiedDiff, "-project rules")
+			require.Nil(t, findUpgradeChange(plan.TemplateRemovalsOrOrphans, instruction))
+			require.Nil(t, findUpgradeChange(plan.TemplateRemovalsOrOrphans, link))
 		})
 	}
 }
@@ -101,7 +102,6 @@ func TestBuildUpgradePlan_UnknownDeletionsMatchApplyScan(t *testing.T) {
 	require.Equal(t, expected, actual)
 	require.True(t, sort.StringsAreSorted(actual))
 	require.Equal(t, []string{
-		".agent-layer/instructions/10_project.md",
 		".agent-layer/skills/my-workflow",
 		".agent-layer/skills/partly-kept/remove.md",
 		"docs/agent-layer/NOTES.md",
@@ -176,8 +176,6 @@ func TestPlanUnknownDeletions_ReportsWhereMigrationsLeaveUnknownPaths(t *testing
 		paths = append(paths, change.path)
 	}
 	require.ElementsMatch(t, []string{
-		".agent-layer/instructions/04_conventions.md",
-		".agent-layer/instructions/appended.md",
 		".agent-layer/skills/flat",
 		".agent-layer/skills/kept-new",
 		".agent-layer/skills/new-name",
@@ -524,8 +522,8 @@ func TestBuildUpgradePlan_WalkTemplateOrphansErrors(t *testing.T) {
 		t.Fatalf("write issues evidence: %v", err)
 	}
 
-	instructionsRoot := filepath.Join(root, ".agent-layer", "instructions")
-	rulesPath := filepath.Join(instructionsRoot, "00_rules.md")
+	instructionsRoot := filepath.Join(root, ".agent-layer", "templates", "docs")
+	rulesPath := filepath.Join(instructionsRoot, "ISSUES.md")
 	if err := os.MkdirAll(instructionsRoot, 0o700); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
@@ -848,7 +846,7 @@ func TestBuildUpgradePlan_ManagedDiffWithoutBaseline(t *testing.T) {
 }
 
 func TestBuildUpgradePlan_RemovalEvidenceFailuresBeforeFiltering(t *testing.T) {
-	for _, path := range []string{".agent-layer/instructions/local.md", ".agent-layer/local.txt"} {
+	for _, path := range []string{".agent-layer/templates/docs/local.md", ".agent-layer/local.txt"} {
 		for _, operation := range []string{"lstat", "read"} {
 			t.Run(path+"/"+operation, func(t *testing.T) {
 				root := t.TempDir()
@@ -878,7 +876,7 @@ func TestBuildUpgradePlan_RemovalEvidenceFailuresBeforeFiltering(t *testing.T) {
 					require.Contains(t, err.Error(), "failed to stat")
 				}
 				// Orphans are checked before the keep list filters them out.
-				if strings.HasPrefix(path, ".agent-layer/instructions/") {
+				if strings.HasPrefix(path, ".agent-layer/templates/docs/") {
 					require.NoError(t, os.WriteFile(inst.upgradeKeepListPath(), []byte(path+"\n"), 0o600))
 					_, err = BuildUpgradePlan(root, UpgradePlanOptions{System: sys})
 					require.ErrorIs(t, err, failure)

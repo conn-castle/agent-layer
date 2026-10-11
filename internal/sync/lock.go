@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/projectlock"
 	"github.com/conn-castle/agent-layer/internal/skilljournal"
 )
@@ -17,13 +16,7 @@ var ErrPostWriteLockCleanup = projectlock.ErrPostWriteCleanup
 // configuration, imported trees, and lock state. It is a no-op when no
 // transaction was interrupted. Callers must already hold the project lock.
 func RecoverInterruptedImport(root string) error {
-	paths := config.DefaultPaths(root)
-	return skilljournal.Recover(skilljournal.Targets{
-		ImportedSkillsDir: paths.ImportedSkillsDir,
-		LocalSkillsDir:    paths.SkillsDir,
-		ConfigPath:        paths.ConfigPath,
-		SkillsLockPath:    paths.SkillsLockPath,
-	})
+	return skilljournal.RecoverBoth(root)
 }
 
 // withProjectSyncLock runs fn inside the shared project lock that serializes

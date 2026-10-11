@@ -5,8 +5,8 @@ import "github.com/conn-castle/agent-layer/internal/messages"
 // InstructionSet is the wizard's always-on instruction choice.
 type InstructionSet string
 
-// Canonical instruction-set values. None leaves files unchanged; Rules seeds
-// 00_rules.md; RulesAndMemory also seeds 01_memory.md and memory docs.
+// Canonical instruction-set values. None leaves files unchanged; Rules imports
+// rules.md; RulesAndMemory also imports memory.md and seeds memory docs.
 const (
 	InstructionSetNone           InstructionSet = "none"
 	InstructionSetRules          InstructionSet = "rules"

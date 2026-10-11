@@ -12,6 +12,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/skillimport"
+	"github.com/conn-castle/agent-layer/internal/templates"
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
@@ -610,12 +613,13 @@ func TestInitStudyCreatesSelfContainedSafeSnapshot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, ".agent-layer", "instructions", "rules.md"), []byte("rules\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, ".agent-layer", "instructions", "memory.md"), []byte("Read CONTEXT.md before acting.\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.WriteFile(filepath.Join(repo, ".agents", "skills", "implement", "SKILL.md"), []byte("skill\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	require.NoError(t, os.WriteFile(config.DefaultPaths(repo).ConfigPath, []byte(scaffoldConfig("codex", "gpt-5.6-luna", "")+"\n[[instructions.local]]\nselectors = [\"rules.md\"]\norder = 40\n"), 0o600))
+	order := 10
+	_, err := skillimport.NewInstructionsSourceOnly(repo).Add(context.Background(), skillimport.AddOptions{Repository: templates.GeneralSkillsRepository, Selectors: []string{"instructions/memory.md"}, Order: &order})
+	require.NoError(t, err)
 	selectionData, err := json.Marshal(matrixSelectionFixture())
 	if err != nil {
 		t.Fatal(err)
@@ -686,6 +690,13 @@ func TestInitStudyCreatesSelfContainedSafeSnapshot(t *testing.T) {
 	var source SkillSnapshotSource
 	require.NoError(t, json.Unmarshal(data, &source))
 	require.Len(t, source.Trees, 7)
+	require.Equal(t, "instructions/rules.md", source.InstructionPath)
+	require.NotEmpty(t, source.InstructionHash)
+	require.FileExists(t, filepath.Join(destination, "treatment", "project-instructions-order.json"))
+	orderBytes, err := os.ReadFile(filepath.Join(destination, "treatment", "project-instructions-order.json")) // #nosec G304 -- test-owned scaffold output.
+	require.NoError(t, err)
+	require.Contains(t, string(orderBytes), `"imported": true`)
+	require.Less(t, strings.Index(string(orderBytes), "memory.md"), strings.Index(string(orderBytes), "rules.md"))
 	require.NoError(t, os.Mkdir(filepath.Join(skills, ".git"), 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(skills, ".git", "HEAD"), []byte("private history"), 0o600))
 	require.NoError(t, os.Symlink(filepath.Join(repo, "absent"), filepath.Join(skills, ".DS_Store")))
@@ -699,6 +710,13 @@ func TestInitStudyCreatesSelfContainedSafeSnapshot(t *testing.T) {
 	}
 	require.NoDirExists(t, filepath.Join(offline.experiments[1].inputs.Skills, ".git"))
 	require.NoFileExists(t, filepath.Join(offline.experiments[1].inputs.Skills, ".DS_Store"))
+	rules := filepath.Join(destination, "treatment", "official-instructions", "00_rules.md")
+	rulesBytes, err := os.ReadFile(rules) // #nosec G304 -- test-owned frozen instruction.
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(rules, []byte("changed frozen rules\n"), 0o600))
+	_, err = prepareStudy(StudyOptions{RepoRoot: repo, StudyPath: studyPath})
+	require.ErrorContains(t, err, "frozen instruction differs from source provenance")
+	require.NoError(t, os.WriteFile(rules, rulesBytes, 0o600)) // #nosec G703 -- rules is the test-owned scaffold file whose bytes are restored after tampering.
 	require.NoError(t, os.Mkdir(filepath.Join(skills, "implement", ".git"), 0o750))
 	_, err = prepareStudy(StudyOptions{RepoRoot: repo, StudyPath: studyPath})
 	require.ErrorContains(t, err, "ignored entry")

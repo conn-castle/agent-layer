@@ -57,6 +57,8 @@ type SkillImport struct {
 	// Repository is the source Git repository reachable through the user's
 	// existing Git authentication.
 	Repository string `toml:"repository"`
+	// ExactFile is set only by the instruction adapter, never decoded from TOML.
+	ExactFile bool `toml:"-"`
 	// Selectors are exact paths, path wildcards, or `!`-prefixed exclusions.
 	Selectors []string `toml:"selectors"`
 	// Ref is a branch, tag, or commit. An empty value resolves to the
@@ -125,6 +127,27 @@ func (imp SkillImport) ExclusionSelectors() []string {
 	return exclusions
 }
 
+// SelectingPositiveSelector returns the first selector covering a path after exclusions.
+func (imp SkillImport) SelectingPositiveSelector(candidate string) (string, bool) {
+	candidate = NormalizeSkillSelector(candidate)
+	selected := ""
+	for _, selector := range imp.Selectors {
+		excluded := IsSkillExclusionSelector(selector)
+		normalized := NormalizeSkillSelector(SkillExclusionPath(selector))
+		matched, _ := path.Match(normalized, candidate)
+		if normalized != candidate && !matched {
+			continue
+		}
+		if excluded {
+			return "", false
+		}
+		if selected == "" {
+			selected = normalized
+		}
+	}
+	return selected, selected != ""
+}
+
 // IsSkillExclusionSelector reports whether a configured selector removes
 // candidates instead of adding them.
 func IsSkillExclusionSelector(selector string) bool {
@@ -141,6 +164,7 @@ func SkillExclusionPath(selector string) string {
 // interchangeable. Configuration keeps one block per unique identity so
 // selector additions with the same policy extend an existing block.
 type SkillImportBlockIdentity struct {
+	FileSelector   string
 	Repository     string
 	Ref            string
 	Tracking       string
@@ -151,7 +175,12 @@ type SkillImportBlockIdentity struct {
 
 // Identity returns the block's policy identity with defaults applied.
 func (imp SkillImport) Identity() SkillImportBlockIdentity {
+	fileSelector := ""
+	if imp.ExactFile && len(imp.Selectors) == 1 {
+		fileSelector = NormalizeSkillSelector(imp.Selectors[0])
+	}
 	return SkillImportBlockIdentity{
+		FileSelector:   fileSelector,
 		Repository:     NormalizeSkillRepository(imp.Repository),
 		Ref:            strings.TrimSpace(imp.Ref),
 		Tracking:       strings.TrimSpace(imp.Tracking),

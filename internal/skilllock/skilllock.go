@@ -130,8 +130,9 @@ func (entry Entry) Equal(other Entry) bool {
 
 // File is the complete on-disk lock document.
 type File struct {
-	Version int     `json:"version"`
-	Skills  []Entry `json:"skills"`
+	Version      int     `json:"version"`
+	Skills       []Entry `json:"skills"`
+	instructions bool
 }
 
 // New returns an empty lock document at the current schema version.
@@ -144,7 +145,9 @@ func New() *File {
 // A missing file returns ErrMissing so callers can distinguish "no imports yet"
 // from corruption. Any structural problem returns an error wrapping
 // ErrMalformed.
-func Load(path string) (*File, error) {
+func Load(path string) (*File, error) { return load(path, false) }
+
+func load(path string, instructions bool) (*File, error) {
 	data, err := os.ReadFile(path) // #nosec G304 -- path is the resolved repository .agent-layer/skills.lock.json, not user input.
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -152,17 +155,33 @@ func Load(path string) (*File, error) {
 		}
 		return nil, fmt.Errorf("failed to read skill lock %s: %w", path, err)
 	}
-	return Parse(data, path)
+	return parse(data, path, instructions)
 }
 
 // Parse decodes lock data, rejecting unknown fields, unknown schema versions,
 // and entries that are missing required identity or merge-base state. source is
 // used for error context.
-func Parse(data []byte, source string) (*File, error) {
+func Parse(data []byte, source string) (*File, error) { return parse(data, source, false) }
+
+// ParseInstructions validates the shared entry schema in the instructions envelope.
+func ParseInstructions(data []byte, source string) (*File, error) { return parse(data, source, true) }
+
+func parse(data []byte, source string, instructions bool) (*File, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var file File
-	if err := decoder.Decode(&file); err != nil {
+	var decodeErr error
+	if instructions {
+		var envelope struct {
+			Version      int     `json:"version"`
+			Instructions []Entry `json:"instructions"`
+		}
+		decodeErr = decoder.Decode(&envelope)
+		file = File{Version: envelope.Version, Skills: envelope.Instructions, instructions: true}
+	} else {
+		decodeErr = decoder.Decode(&file)
+	}
+	if err := decodeErr; err != nil {
 		return nil, fmt.Errorf("%w: %s: %w", ErrMalformed, source, err)
 	}
 	if decoder.More() {
@@ -195,7 +214,7 @@ func validate(file *File, source string) error {
 	names := make(map[string]int, len(file.Skills))
 	pathsByRepository := make(map[string][]string, len(file.Skills))
 	for i, entry := range file.Skills {
-		if err := validateEntry(entry); err != nil {
+		if err := validateEntry(entry, file.instructions); err != nil {
 			return fmt.Errorf("%w: %s: skills[%d]: %w", ErrMalformed, source, i, err)
 		}
 		key := skilltree.NormalizeName(entry.Name)
@@ -373,7 +392,7 @@ func allowsLiteralUsername(scheme string) bool {
 	return ok
 }
 
-func validateEntry(entry Entry) error {
+func validateEntry(entry Entry, instructions bool) error {
 	required := []struct {
 		field string
 		value string
@@ -394,7 +413,14 @@ func validateEntry(entry Entry) error {
 		}
 	}
 
-	if err := validateSkillName(entry.Name); err != nil {
+	validateName := validateSkillName
+	if instructions {
+		validateName = ValidateInstructionName
+	}
+	if instructions && (entry.Selector != entry.SelectedPath || !strings.HasSuffix(entry.SelectedPath, ".md") || strings.ContainsAny(entry.Selector, "!*?[") || path.Base(entry.SelectedPath) != entry.Name) {
+		return fmt.Errorf("instruction lock requires one exact Markdown file selector matching selected_path and name")
+	}
+	if err := validateName(entry.Name); err != nil {
 		return err
 	}
 	if entry.Repository != strings.TrimSpace(entry.Repository) || strings.HasSuffix(entry.Repository, "/") {
@@ -580,7 +606,7 @@ func (f *File) Remove(name string) bool {
 // Clone returns a deep copy so an operation can build its next state without
 // mutating the snapshot it was planned against.
 func (f *File) Clone() *File {
-	clone := &File{Version: f.Version}
+	clone := &File{Version: f.Version, instructions: f.instructions}
 	if len(f.Skills) > 0 {
 		clone.Skills = make([]Entry, len(f.Skills))
 		copy(clone.Skills, f.Skills)
@@ -609,7 +635,14 @@ func (f *File) Marshal() ([]byte, error) {
 	if err := validate(&document, "skill lock"); err != nil {
 		return nil, err
 	}
-	data, err := json.MarshalIndent(document, "", "  ")
+	var value any = document
+	if f.instructions {
+		value = struct {
+			Version      int     `json:"version"`
+			Instructions []Entry `json:"instructions"`
+		}{document.Version, document.Skills}
+	}
+	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode skill lock: %w", err)
 	}
@@ -624,6 +657,20 @@ func (f *File) Save(path string) error {
 	}
 	if err := fsutil.WriteFileAtomic(path, data, 0o644); err != nil {
 		return fmt.Errorf("failed to write skill lock %s: %w", path, err)
+	}
+	return nil
+}
+
+// NewInstructions uses the shared entry schema with the instruction envelope.
+func NewInstructions() *File { f := New(); f.instructions = true; return f }
+
+// LoadInstructions reads the instruction envelope through the shared lock loader.
+func LoadInstructions(path string) (*File, error) { return load(path, true) }
+
+// ValidateInstructionName restricts file nodes without relaxing skill validation.
+func ValidateInstructionName(name string) error {
+	if name != path.Base(name) || strings.HasPrefix(name, ".") || !strings.HasSuffix(name, ".md") || strings.ContainsAny(name, "\\!*?[\t\r\n") {
+		return fmt.Errorf("instruction name %q must be an exact Markdown filename", name)
 	}
 	return nil
 }

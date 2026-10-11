@@ -119,7 +119,7 @@ func readCatalogState(root string, entry templates.CLISkillCatalogEntry) ([]Cata
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	lock, _, err := loadLock(paths.SkillsLockPath)
+	lock, _, err := loadLock(paths.SkillsLockPath, false)
 	if err != nil {
 		return nil, fmt.Errorf("cannot inspect catalog imports: %w; repair skills.lock.json before changing imports", err)
 	}
@@ -128,11 +128,11 @@ func readCatalogState(root string, entry templates.CLISkillCatalogEntry) ([]Cata
 		name := path.Base(selector)
 		userEntries, userErr := catalogCandidateEntries(paths.SkillsDir, name)
 		importedEntries, importedErr := catalogCandidateEntries(paths.ImportedSkillsDir, name)
-		user, err := observeUserSkillNames(paths.SkillsDir, userEntries)
+		user, err := observeUserSkillNames(paths.SkillsDir, userEntries, false)
 		if userErr == nil {
 			userErr = err
 		}
-		imported, err := observeImportedSkills(paths.ImportedSkillsDir, importedEntries)
+		imported, err := observeImportedSkills(paths.ImportedSkillsDir, importedEntries, false)
 		if importedErr == nil {
 			importedErr = err
 		}

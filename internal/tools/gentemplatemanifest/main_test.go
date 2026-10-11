@@ -65,7 +65,6 @@ func TestCollectTemplateSourcesCoversManagedPartition(t *testing.T) {
 		"gitignore.block": {},
 	}
 	managedDirPrefixes := []string{
-		"instructions/",
 		"skills-catalog/",
 		"docs/agent-layer/",
 	}
@@ -353,7 +352,7 @@ func seedRequiredTemplateRoots(t *testing.T, root string) {
 	t.Helper()
 	writeRootFile(t, root, "internal/templates/commands.allow", "git status\n")
 	writeRootFile(t, root, "internal/templates/gitignore.block", "# fixture\n")
-	for _, name := range []string{"instructions", "skills-catalog", "docs/agent-layer"} {
+	for _, name := range []string{"skills-catalog", "docs/agent-layer"} {
 		require.NoError(t, os.MkdirAll(filepath.Join(root, "internal/templates", name), 0o750))
 	}
 }

@@ -53,6 +53,17 @@ func (f candidateFailure) Name() string { return path.Base(f.Path) }
 // a per-candidate failure rather than an error, so callers decide whether it
 // blocks only that skill (pull) or the whole change (add and remove).
 func resolveBlock(ctx context.Context, source *gitrepo.Source, blockIndex int, block config.SkillImport, commit string) ([]desiredSkill, []candidateFailure, error) {
+	if block.ExactFile {
+		selector := block.Selectors[0]
+		tree, err := source.ReadFile(ctx, commit, selector)
+		if err == nil {
+			_, err = skilltree.ValidateNode(tree, selector, true)
+		}
+		if err != nil {
+			return nil, []candidateFailure{{Selector: selector, Path: selector, Err: err}}, nil //nolint:nilerr // Candidate failure is returned as a scoped outcome, matching skill resolution.
+		}
+		return []desiredSkill{{BlockIndex: blockIndex, Block: block, Selector: selector, SelectedPath: selector, Name: path.Base(selector), Tree: tree}}, nil, nil
+	}
 	candidates, failures, err := expandPositiveSelectors(ctx, source, block, commit)
 	if err != nil {
 		return nil, nil, err
@@ -197,21 +208,7 @@ func matchesAnySelector(candidate string, selectors []string) bool {
 // validation guarantees every pattern is syntactically valid before this
 // helper is reached.
 func selectingPositiveSelector(block config.SkillImport, candidate string) (string, bool) {
-	normalizedCandidate := config.NormalizeSkillSelector(candidate)
-	if matchesAnySelector(normalizedCandidate, block.ExclusionSelectors()) {
-		return "", false
-	}
-	for _, selector := range block.PositiveSelectors() {
-		normalized := config.NormalizeSkillSelector(selector)
-		if normalized == normalizedCandidate {
-			return normalized, true
-		}
-		matched, _ := path.Match(normalized, normalizedCandidate)
-		if matched {
-			return normalized, true
-		}
-	}
-	return "", false
+	return block.SelectingPositiveSelector(candidate)
 }
 
 // validateDesiredSet enforces the identity rules that only hold across a

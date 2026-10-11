@@ -10,9 +10,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/skillimport"
+	"github.com/conn-castle/agent-layer/internal/skilljournal"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -20,6 +22,7 @@ import (
 // template trees. Each <id>/ subdirectory mirrors the structure that should
 // land under .agent-layer/skills/<id>/.
 const cliSkillsCatalogTemplateRoot = "skills-catalog"
+const memoryInstructionName = "memory.md"
 
 // skillsChangeSet describes what the apply path needs to do to bring
 // `.agent-layer/skills/` and `docs/agent-layer/` in line with the user's wizard
@@ -44,9 +47,8 @@ type skillsChangeSet struct {
 	// templateMemoryFilesToCreate holds missing .agent-layer/templates/docs/*.md
 	// relative paths to create because the selected instruction set includes memory.
 	templateMemoryFilesToCreate []string
-	// managedInstructionFilesToCreate holds bundled managed instruction files
-	// that are missing and should be created.
-	managedInstructionFilesToCreate []string
+	// instructionImports holds exact external file selections for source-only apply.
+	instructionImports []string
 }
 
 // memoryFileBasenames is the canonical set of agent-managed memory files that
@@ -60,8 +62,7 @@ var memoryFileBasenames = []string{
 	"CONTEXT.md",
 }
 
-// standardInstructionBasenames is the current bundled instruction set. Rules
-// seeds 00_rules.md; rules-and-memory seeds both files.
+// standardInstructionBasenames identifies the fixed pre-import adoption slots.
 var standardInstructionBasenames = []string{
 	"00_rules.md",
 	"01_memory.md",
@@ -169,7 +170,7 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 	sort.Strings(out.catalogSkillsToRemove)
 	sort.Strings(out.memoryFilesToCreate)
 	sort.Strings(out.templateMemoryFilesToCreate)
-	sort.Strings(out.managedInstructionFilesToCreate)
+	sort.Strings(out.instructionImports)
 	return out, nil
 }
 
@@ -253,9 +254,9 @@ func appendInstructionChanges(root string, set InstructionSet, out *skillsChange
 	case InstructionSetNone, "":
 		return nil
 	case InstructionSetRules:
-		return appendMissingInstructionFiles(root, []string{"00_rules.md"}, out)
+		return appendMissingInstructionFiles(root, []string{"rules.md"}, out)
 	case InstructionSetRulesAndMemory:
-		if err := appendMissingInstructionFiles(root, standardInstructionBasenames, out); err != nil {
+		if err := appendMissingInstructionFiles(root, []string{"rules.md", memoryInstructionName}, out); err != nil {
 			return err
 		}
 		memoryAdds, err := listMissingMemoryFiles(root, filepath.Join(root, "docs", "agent-layer"))
@@ -275,24 +276,70 @@ func appendInstructionChanges(root string, set InstructionSet, out *skillsChange
 }
 
 func appendMissingInstructionFiles(root string, names []string, out *skillsChangeSet) error {
+	raw, err := os.ReadFile(config.DefaultPaths(root).ConfigPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	preview, err := config.MigrateInstructionOrderFS(os.DirFS(root), root, string(raw))
+	if err != nil {
+		return err
+	}
+	cfg, err := config.ParseConfigLenient([]byte(preview), "instruction preview")
+	if err != nil {
+		return err
+	}
 	for _, name := range names {
-		rel := filepath.ToSlash(filepath.Join(".agent-layer", "instructions", name))
-		path := filepath.Join(root, filepath.FromSlash(rel))
-		exists, err := regularFileExists(path)
-		if err != nil {
+		configured := false
+		for _, imp := range cfg.Instructions.Imports {
+			configured = configured || filepath.Base(imp.Selectors[0]) == name
+		}
+		if configured {
+			continue
+		}
+		legacy := skilljournal.LegacyInstruction(name)
+		legacyPath := filepath.Join(config.DefaultPaths(root).InstructionsDir, legacy)
+		if info, err := os.Lstat(legacyPath); err == nil {
+			if !info.Mode().IsRegular() {
+				return fmt.Errorf("instruction %s exists but is not a regular file; use an unlinked source before adoption", legacyPath)
+			}
+		} else if errors.Is(err, os.ErrNotExist) {
+			legacy = ""
+		} else {
 			return err
 		}
-		if !exists {
-			out.managedInstructionFilesToCreate = append(out.managedInstructionFilesToCreate, rel)
+		opts := instructionAddOptions(name)
+		preview, err = config.AddInstructionImport(preview, config.SkillImport{Repository: opts.Repository, Selectors: opts.Selectors}, opts.Order, legacy)
+		if err != nil {
+			if strings.Contains(err.Error(), "duplicate instruction order") {
+				return fmt.Errorf("%w; choose precedence explicitly with al instructions add --order N or edit instruction orders in .agent-layer/config.toml", err)
+			}
+			return err
 		}
+		out.instructionImports = append(out.instructionImports, filepath.ToSlash(filepath.Join(".agent-layer", "instructions-imported", name)))
+		out.importPreview = append(out.importPreview, "Import/adopt "+name+" from "+templates.GeneralSkillsRepository+" instructions/"+name+" (network required); preserve legacy bytes and order, retire the old slot atomically")
 	}
+
 	return nil
+}
+
+func instructionAddOptions(name string) skillimport.AddOptions {
+	order := 0
+	if name == memoryInstructionName {
+		order = 10
+	}
+	return skillimport.AddOptions{Repository: templates.GeneralSkillsRepository, Selectors: []string{"instructions/" + name}, Order: &order, AdoptLegacy: true}
 }
 
 // applySkillsChanges materializes the change set on disk. Each catalog skill
 // addition is copied from its embedded template tree; deletions are recursive
 // removes scoped to the targeted directory.
-func applySkillsChanges(root string, changes skillsChangeSet) error {
+func applySkillsChanges(root string, changes skillsChangeSet) (err error) {
+	var committedInstructions []string
+	defer func() {
+		if err != nil && len(committedInstructions) > 0 {
+			err = fmt.Errorf("instruction imports committed (%s); projection was not completed; run al sync: %w", strings.Join(committedInstructions, ", "), err)
+		}
+	}()
 	for _, id := range changes.catalogSkillsToAdd {
 		if err := copySkillDirToDisk(root, cliSkillsCatalogTemplateRoot+"/"+id, id); err != nil {
 			return fmt.Errorf("add catalog skill %s: %w", id, err)
@@ -319,12 +366,18 @@ func applySkillsChanges(root string, changes skillsChangeSet) error {
 			return fmt.Errorf("create memory templates: %w", err)
 		}
 	}
-	for _, rel := range changes.managedInstructionFilesToCreate {
+	for _, rel := range changes.instructionImports {
 		name := filepath.Base(rel)
-		if err := copyTemplateFileIfMissing("instructions/"+name, filepath.Join(root, filepath.FromSlash(rel))); err != nil {
-			return fmt.Errorf("create managed instruction file %s: %w", rel, err)
+		report, err := skillimport.NewInstructionsSourceOnly(root).Add(context.Background(), instructionAddOptions(name))
+		if err != nil {
+			return fmt.Errorf("instruction import failed for %s: %w%s", name, err, catalogFailureReport(report, "instruction import"))
 		}
+		if report.Failed() {
+			return fmt.Errorf("instruction import failed for %s: %s", name, report.Render("instruction import"))
+		}
+		committedInstructions = append(committedInstructions, name)
 	}
+
 	if len(changes.importSelectors) > 0 {
 		report, err := skillimport.NewSourceOnly(root).InstallCatalog(context.Background(), changes.importSelectors, changes.adoptLegacy)
 		if err != nil {
@@ -346,7 +399,7 @@ func applySkillsChanges(root string, changes skillsChangeSet) error {
 // catalogFailureReport omits an empty report when preflight failed before any
 // scoped outcome existed; rendering it would claim the failed operation succeeded.
 func catalogFailureReport(report *skillimport.Report, operation string) string {
-	if len(report.Sources) == 0 && len(report.Skills) == 0 {
+	if report == nil || (len(report.Sources) == 0 && len(report.Skills) == 0) {
 		return ""
 	}
 	return "\n" + report.Render(operation)
@@ -456,28 +509,6 @@ func copyTemplateDirMissingWithMode(templateRoot string, destRoot string, fileMo
 	return nil
 }
 
-func copyTemplateFile(templatePath string, destPath string) error {
-	data, err := templates.Read(templatePath)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o750); err != nil {
-		return err
-	}
-	return os.WriteFile(destPath, data, 0o644) // #nosec G306 -- workflow instructions are non-secret project files.
-}
-
-func copyTemplateFileIfMissing(templatePath string, destPath string) error {
-	exists, err := regularFileExists(destPath)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-	return copyTemplateFile(templatePath, destPath)
-}
-
 func regularFileExists(path string) (bool, error) {
 	info, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -560,7 +591,7 @@ func buildSkillsPreview(changes skillsChangeSet) string {
 		len(changes.catalogSkillsToRemove) +
 		len(changes.memoryFilesToCreate) +
 		len(changes.templateMemoryFilesToCreate) +
-		len(changes.managedInstructionFilesToCreate)
+		len(changes.instructionImports)
 	lines := make([]string, 0, lineCapacity)
 	lines = append(lines, changes.importPreview...)
 	for _, id := range changes.catalogSkillsToAdd {
@@ -578,8 +609,8 @@ func buildSkillsPreview(changes skillsChangeSet) string {
 	for _, rel := range changes.templateMemoryFilesToCreate {
 		lines = append(lines, fmt.Sprintf("  + %s  (memory template)", rel))
 	}
-	for _, rel := range changes.managedInstructionFilesToCreate {
-		lines = append(lines, fmt.Sprintf("  + %s  (managed instruction seed)", rel))
+	for _, rel := range changes.instructionImports {
+		lines = append(lines, fmt.Sprintf("  + %s  (Git instruction import)", rel))
 	}
 	if len(lines) == 0 {
 		return ""

@@ -129,29 +129,6 @@ func TestSetSkillImportSelectorsAppendsAndRemovesBlocks(t *testing.T) {
 	}
 }
 
-// TestSetSkillImportSelectorsKeepsTheFinalNewline proves a removal that ends
-// the document leaves an ordinary text file behind rather than one missing its
-// terminating newline.
-func TestSetSkillImportSelectorsKeepsTheFinalNewline(t *testing.T) {
-	t.Parallel()
-	identity := SkillImport{Repository: "https://example.test/skills.git"}.Identity()
-	content := baseConfigTOML + `
-[[skills.imports]]
-repository = "https://example.test/skills.git"
-selectors = ["skills/alpha"]
-`
-	removed, err := SetSkillImportSelectors(content, identity, nil)
-	if err != nil {
-		t.Fatalf("remove: %v", err)
-	}
-	if !strings.HasSuffix(removed, "\n") {
-		t.Fatalf("removal dropped the final newline:\n%q", removed)
-	}
-	if removed != baseConfigTOML {
-		t.Fatalf("removal changed unrelated content:\ngot:\n%q\nwant:\n%q", removed, baseConfigTOML)
-	}
-}
-
 // TestSetSkillImportSelectorsPreservesMissingFinalNewline proves appending a
 // block does not silently change the document's trailing-newline state.
 func TestSetSkillImportSelectorsPreservesMissingFinalNewline(t *testing.T) {

@@ -142,6 +142,9 @@ func run(root string, opts Options) error {
 		inst.pinVersion = normalized
 	}
 	if overwrite {
+		if _, err := inst.instructionOrderPreview(); err != nil {
+			return err
+		}
 		// Overwrite upgrades need unknowns scanned before snapshot capture so the
 		// snapshot can restore unknown paths that handleUnknowns may delete.
 		if err := inst.scanUnknowns(); err != nil {
@@ -208,6 +211,7 @@ func (inst upgradeOrchestrator) runUpgradeTransaction(snapshot *upgradeSnapshot)
 	}
 	steps := []transactionStep{
 		{name: "runMigrations", run: inst.runMigrations, rollbackTargets: inst.runMigrationsTargetPaths},
+		{name: "instructionOrder", run: inst.migrateInstructionOrder, rollbackTargets: func() []string { return []string{filepath.Join(inst.root, ".agent-layer", "config.toml")} }},
 		{name: "writeVersionFile", run: inst.writeVersionFile, rollbackTargets: inst.writeVersionFileTargetPaths},
 		{name: "writeTemplateFiles", run: inst.templates().writeTemplateFiles, rollbackTargets: inst.writeTemplateFilesTargetPaths},
 		{name: "writeTemplateDirs", run: inst.templates().writeTemplateDirs, rollbackTargets: func() []string { return inst.writeTemplateDirsTargetPaths(catalogDirs) }},

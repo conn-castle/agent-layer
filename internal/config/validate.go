@@ -173,6 +173,9 @@ func (c *Config) Validate(path string) error {
 		return err
 	}
 
+	if err := validateInstructions(path, c.Instructions); err != nil {
+		return err
+	}
 	if err := validateSkills(path, c.Skills); err != nil {
 		return err
 	}

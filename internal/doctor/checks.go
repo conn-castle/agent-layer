@@ -175,25 +175,27 @@ func CheckStructure(root string) []Result {
 }
 
 func instructionsReferencePath(root string, relPath string) (bool, error) {
-	instructionsDir := filepath.Join(root, ".agent-layer", "instructions")
-	entries, err := os.ReadDir(instructionsDir)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
-		return false, err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
-			continue
-		}
-		path := filepath.Join(instructionsDir, entry.Name())
-		content, err := os.ReadFile(path) // #nosec G304 -- path is from os.ReadDir of caller-resolved .agent-layer/instructions.
+	paths := config.DefaultPaths(root)
+	for _, instructionsDir := range []string{paths.InstructionsDir, paths.ImportedInstructionsDir} {
+		entries, err := os.ReadDir(instructionsDir)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
 			return false, err
 		}
-		if strings.Contains(string(content), relPath) {
-			return true, nil
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+				continue
+			}
+			path := filepath.Join(instructionsDir, entry.Name())
+			content, err := os.ReadFile(path) // #nosec G304 -- path is from os.ReadDir of caller-resolved .agent-layer/instructions.
+			if err != nil {
+				return false, err
+			}
+			if strings.Contains(string(content), relPath) {
+				return true, nil
+			}
 		}
 	}
 	return false, nil

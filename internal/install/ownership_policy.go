@@ -34,6 +34,7 @@ var catalogSkillRelPathPrefixes = []string{
 	".agent-layer/skills/agent-dispatch/",
 	".agent-layer/skills/dispatch-agent/",
 	".agent-layer/skills/skill-sync/",
+	".agent-layer/skills/instruction-sync/",
 	".agent-layer/skills/benchmark/",
 }
 

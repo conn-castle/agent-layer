@@ -199,6 +199,10 @@ func writeClientLaunchDiagnosticRepo(t *testing.T, quiet bool) string {
 	writeTestRepo(t, root)
 	paths := config.DefaultPaths(root)
 	configToml := `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = "yolo"
 

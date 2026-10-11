@@ -24,18 +24,22 @@ type AddOptions struct {
 	WritePolicy    string
 	PushRepository string
 	PushBranch     string
+	Order          *int
+	AdoptLegacy    bool
 }
 
-// identity renders the block identity an add targets.
-func (o AddOptions) identity() config.SkillImportBlockIdentity {
+// importBlock carries the shared policy for either source kind.
+func (o AddOptions) importBlock(exactFile bool) config.SkillImport {
 	return config.SkillImport{
 		Repository:     o.Repository,
+		Selectors:      o.Selectors,
+		ExactFile:      exactFile,
 		Ref:            o.Ref,
 		Tracking:       o.Tracking,
 		WritePolicy:    o.WritePolicy,
 		PushRepository: o.PushRepository,
 		PushBranch:     o.PushBranch,
-	}.Identity()
+	}
 }
 
 // Add validates explicit selectors, creates or extends the one block with a
@@ -55,32 +59,46 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 	if len(opts.Selectors) == 0 {
 		return fmt.Errorf("at least one selector is required")
 	}
+	if st.instructions && (len(opts.Selectors) != 1 || opts.Order == nil) {
+		return fmt.Errorf("instructions add requires one exact Markdown selector and --order")
+	}
 	for _, selector := range opts.Selectors {
-		if err := config.ValidateSkillSelectorPath(config.SkillExclusionPath(selector)); err != nil {
+		var err error
+		if st.instructions {
+			err = config.ValidateInstructionSelector(selector)
+		} else {
+			err = config.ValidateSkillSelectorPath(config.SkillExclusionPath(selector))
+		}
+		if err != nil {
 			return fmt.Errorf("invalid selector %q: %w", selector, err)
 		}
 	}
 
-	identity := opts.identity()
+	requested := opts.importBlock(st.instructions)
+	identity := requested.Identity()
 	existing, existingIndex, hasExisting := findBlockByIdentity(st.cfg, identity)
-
-	if !hasExisting && !hasPositiveSelector(opts.Selectors) {
-		return fmt.Errorf("an exclusion-only addition must extend an existing block that already has a positive selector; no block matches this repository and policy")
-	}
-
-	selectors := make([]string, 0, len(opts.Selectors))
-	if hasExisting {
-		selectors = append(selectors, existing.Selectors...)
-	}
-	for _, selector := range opts.Selectors {
-		normalized := config.NormalizeSkillSelector(selector)
-		if containsSelector(selectors, normalized) {
-			return fmt.Errorf("selector %q is already configured for %s", selector, identity.Repository)
+	var nextConfig string
+	var err error
+	if st.instructions {
+		legacy = map[string]skilltree.Tree{}
+		nextConfig, err = instructionAddConfig(st, opts, requested, legacy)
+	} else {
+		if !hasExisting && !hasPositiveSelector(opts.Selectors) {
+			return fmt.Errorf("an exclusion-only addition must extend an existing block that already has a positive selector; no block matches this repository and policy")
 		}
-		selectors = append(selectors, normalized)
+		selectors := make([]string, 0, len(opts.Selectors))
+		if hasExisting {
+			selectors = append(selectors, existing.Selectors...)
+		}
+		for _, selector := range opts.Selectors {
+			normalized := config.NormalizeSkillSelector(selector)
+			if containsSelector(selectors, normalized) {
+				return fmt.Errorf("selector %q is already configured for %s", selector, identity.Repository)
+			}
+			selectors = append(selectors, normalized)
+		}
+		nextConfig, err = config.SetSkillImportSelectors(st.configRaw, identity, selectors)
 	}
-
-	nextConfig, err := config.SetSkillImportSelectors(st.configRaw, identity, selectors)
 	if err != nil {
 		return err
 	}
@@ -88,9 +106,12 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 	if err != nil {
 		return err
 	}
+	if st.instructions {
+		instructionBlocks(proposed)
+	}
 	block, blockIndex, ok := findBlockByIdentity(proposed, identity)
 	if !ok {
-		return fmt.Errorf("the updated configuration does not contain the expected skills.imports block")
+		return fmt.Errorf("the updated configuration does not contain the expected import block")
 	}
 	lockedEntries := []skilllock.Entry{}
 	if hasExisting {
@@ -127,7 +148,7 @@ func (s *Service) removeLocked(ctx context.Context, st *state, repository string
 	}
 	block, blockIndex, ok := st.blockForSelector(repository, selector)
 	if !ok {
-		return fmt.Errorf("no configured skills.imports block declares selector %q for %s", selector, config.NormalizeSkillRepository(repository))
+		return fmt.Errorf("no configured %s.imports block declares selector %q for %s", importKind(st.instructions), selector, config.NormalizeSkillRepository(repository))
 	}
 
 	return s.removeSelectorsLocked(ctx, st, block, blockIndex, []string{selector}, report)
@@ -172,7 +193,13 @@ func (s *Service) removeSelectorsLocked(ctx context.Context, st *state, block co
 		remaining = nil
 	}
 
-	nextConfig, err := config.SetSkillImportSelectors(st.configRaw, block.Identity(), remaining)
+	var nextConfig string
+	var err error
+	if st.instructions {
+		nextConfig, err = config.SetInstructionImport(st.configRaw, block, nil, true)
+	} else {
+		nextConfig, err = config.SetSkillImportSelectors(st.configRaw, block.Identity(), remaining)
+	}
 	if err != nil {
 		return err
 	}

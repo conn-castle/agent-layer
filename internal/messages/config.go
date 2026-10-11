@@ -94,9 +94,6 @@ const (
 	ConfigSkillSelectorControlCharacter              = "must not contain control characters"
 	ConfigSkillSelectorPatternInvalidFmt             = "contains an invalid wildcard pattern: %v"
 
-	ConfigMissingInstructionsDirFmt = "missing instructions directory %s: %w"
-	ConfigFailedReadInstructionFmt  = "failed to read instruction %s: %w"
-
 	ConfigMissingEnvVarsFmt = "missing environment variables: %s"
 
 	// ConfigValidationGuidance is appended to validation errors to direct users to repair tools.

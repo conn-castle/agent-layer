@@ -18,9 +18,9 @@ type renamedReviewFixture struct {
 }
 
 var renamedMemoryFixture = renamedReviewFixture{
-	source:   ".agent-layer/instructions/02_memory.md",
-	target:   ".agent-layer/instructions/01_memory.md",
-	template: "instructions/01_memory.md",
+	source:   ".agent-layer/templates/docs/OLD_CONTEXT.md",
+	target:   ".agent-layer/templates/docs/CONTEXT.md",
+	template: "docs/agent-layer/CONTEXT.md",
 }
 
 var renamedSkillFixture = renamedReviewFixture{
@@ -36,6 +36,10 @@ func seedRenamedReview(t *testing.T, fixture renamedReviewFixture, customized bo
 	root := t.TempDir()
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.15.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
+	}
+	if fixture == renamedMemoryFixture {
+		withMigrationManifestOverride(t, "0.16.0", fmt.Sprintf(`{"schema_version":1,"target_version":"0.16.0","min_prior_version":"0.15.0","operations":[{"id":"rename-memory-fixture","kind":"rename_file","source_agnostic":true,"rationale":"Retained memory template rename fixture","from":%q,"to":%q}]}`, fixture.source, fixture.target))
+		_ = os.Remove(filepath.Join(root, filepath.FromSlash(fixture.target)))
 	}
 	data, err := templates.Read(fixture.template)
 	if err != nil {

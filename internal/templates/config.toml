@@ -184,3 +184,19 @@ mcp_tools_total_threshold = 60
 mcp_server_tools_threshold = 25
 mcp_schema_tokens_total_threshold = 30000
 mcp_schema_tokens_server_threshold = 20000
+
+# Instructions use one exact Markdown file and required numeric order per block.
+# Order is globally unique across imports/local files; zero and gaps are valid.
+# `al instructions add <repository> <path.md> --order N --yes` manages imports.
+# Same optional ref/tracking/write_policy/push_repository/push_branch as skills.
+# [[instructions.imports]]
+# repository = "https://github.com/nicholasjconn/skills.git"
+# selectors = ["instructions/rules.md"]
+# order = 0
+# [[instructions.imports]]
+# repository = "https://github.com/nicholasjconn/skills.git"
+# selectors = ["instructions/memory.md"]
+# order = 10
+# [[instructions.local]]
+# selectors = ["conventions.md"]
+# order = 40

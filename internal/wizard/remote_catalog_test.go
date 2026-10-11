@@ -119,7 +119,7 @@ func TestWizardOfflineFetchReportsPriorConfigWritesAndRetriesCoherently(t *testi
 	t.Setenv("GIT_CONFIG_KEY_0", original)
 	err = applyChanges(root, configPath, envPath, choices, syncFn, &output)
 	require.ErrorIs(t, err, syncFailure)
-	require.ErrorContains(t, err, "catalog source changes were committed; projection was not completed")
+	require.ErrorContains(t, err, "import source changes were committed; projection was not completed")
 	require.True(t, called)
 }
 
