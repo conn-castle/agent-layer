@@ -656,7 +656,7 @@ func (f *File) Save(path string) error {
 		return err
 	}
 	if err := fsutil.WriteFileAtomic(path, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write skill lock %s: %w", path, err)
+		return fmt.Errorf("failed to write import lock %s: %w", path, err)
 	}
 	return nil
 }

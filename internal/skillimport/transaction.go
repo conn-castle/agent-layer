@@ -225,7 +225,7 @@ func (t *transaction) Commit() (err error) {
 	}
 	published.Lock = true
 	if lockErr := t.writeFile(t.paths.SkillsLockPath, lockData, 0o644); lockErr != nil {
-		return fail(fmt.Errorf("failed to write skill lock %s: %w", t.paths.SkillsLockPath, lockErr))
+		return fail(fmt.Errorf("failed to write import lock %s: %w", t.paths.SkillsLockPath, lockErr))
 	}
 
 	t.reached("lock")
