@@ -550,3 +550,179 @@ func TestClaudeSkillRefreshPrecedesUnrelatedClientFailure(t *testing.T) {
 		t.Fatalf("new Claude skill unavailable after unrelated failure: %q, %v", got, err)
 	}
 }
+
+func TestUnchangedSkillProjectionsSkipPublication(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	skills := []config.Skill{projectionSkill(t, "alpha", projectionManifest("alpha"),
+		skilltree.File{Path: "scripts/run.sh", Data: []byte("#!/bin/sh\n"), Executable: true})}
+	for _, linked := range []bool{false, true} {
+		write := func(sys System) error {
+			if linked {
+				return writeLinkedSkillRoots(sys, root, skills)
+			}
+			return WriteClaudeSkills(sys, root, skills)
+		}
+		if err := write(RealSystem{}); err != nil {
+			t.Fatal(err)
+		}
+		manifest := filepath.Join(root, ".claude", "skills", "alpha", "SKILL.md")
+		before, err := os.Stat(manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sys := &MockSystem{Fallback: RealSystem{},
+			WriteFileAtomicFunc: func(string, []byte, os.FileMode) error {
+				t.Error("unchanged skill was written")
+				return errors.New("unexpected write")
+			},
+			RenameFunc: func(string, string) error {
+				t.Error("unchanged root was published")
+				return errors.New("unexpected rename")
+			},
+			SymlinkFunc: func(string, string) error {
+				t.Error("unchanged link was recreated")
+				return errors.New("unexpected link")
+			},
+		}
+		if err := write(sys); err != nil {
+			t.Fatal(err)
+		}
+		after, err := os.Stat(manifest)
+		if err != nil || !os.SameFile(before, after) {
+			t.Fatalf("unchanged file replaced: %v", err)
+		}
+	}
+}
+
+func TestSkillProjectionRepairsSnapshotDrift(t *testing.T) {
+	t.Parallel()
+	for _, drift := range []string{"bytes", "file mode", "directory mode", "missing", "extra directory", "resource symlink", "root symlink", "link target"} {
+		t.Run(drift, func(t *testing.T) {
+			root := t.TempDir()
+			skills := []config.Skill{projectionSkill(t, "alpha", projectionManifest("alpha"),
+				skilltree.File{Path: "scripts/run.sh", Data: []byte("#!/bin/sh\n"), Executable: true})}
+			if err := writeLinkedSkillRoots(RealSystem{}, root, skills); err != nil {
+				t.Fatal(err)
+			}
+			live := filepath.Join(root, ".agents", "skills")
+			script := filepath.Join(live, "alpha", "scripts", "run.sh")
+			var err error
+			switch drift {
+			case "bytes":
+				err = os.WriteFile(script, []byte("edited"), 0o755) // #nosec G306 -- executable projection fixture.
+			case "file mode":
+				err = os.Chmod(script, 0o644) // #nosec G302 -- deliberately change executable fixture mode.
+			case "directory mode":
+				err = os.Chmod(filepath.Dir(script), 0o700) // #nosec G302 -- deliberately change directory fixture mode.
+			case "missing":
+				err = os.Remove(script)
+			case "extra directory":
+				err = os.Mkdir(filepath.Join(live, "alpha", "extra"), 0o755) // #nosec G301 -- projection drift fixture.
+			case "resource symlink":
+				if err = os.Remove(script); err == nil {
+					err = os.Symlink("../SKILL.md", script)
+				}
+			case "root symlink":
+				moved := filepath.Join(root, "moved")
+				if err = os.Rename(live, moved); err == nil {
+					err = os.Symlink(moved, live)
+				}
+			case "link target":
+				link := filepath.Join(root, ".claude", "skills", "alpha")
+				if err = os.Remove(link); err == nil {
+					err = os.Symlink("wrong-target", link)
+				}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := writeLinkedSkillRoots(RealSystem{}, root, skills); err != nil {
+				t.Fatal(err)
+			}
+			matches, err := skillRootMatches(RealSystem{}, live, skills, "")
+			if err != nil || !matches {
+				t.Fatalf("drift not repaired: %v", err)
+			}
+			target, err := os.Readlink(filepath.Join(root, ".claude", "skills", "alpha"))
+			if err != nil || target != filepath.Join("..", "..", ".agents", "skills", "alpha") {
+				t.Fatalf("link not repaired: %q %v", target, err)
+			}
+		})
+	}
+}
+
+func TestClaudeFailurePreservesUnchangedSharedSkills(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	skills := []config.Skill{projectionSkill(t, "alpha", projectionManifest("alpha"))}
+	if err := writeLinkedSkillRoots(RealSystem{}, root, skills); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, ".claude", "skills", "alpha")
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	injected := errors.New("injected link failure")
+	sys := &MockSystem{Fallback: RealSystem{}, SymlinkFunc: func(string, string) error { return injected }}
+	if err := writeLinkedSkillRoots(sys, root, skills); !errors.Is(err, injected) {
+		t.Fatalf("error = %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(root, ".agents", "skills", "alpha", "SKILL.md")) // #nosec G304 -- test-owned projection.
+	if err != nil || string(got) != string(projectionManifest("alpha")) {
+		t.Fatalf("unchanged shared root lost: %q %v", got, err)
+	}
+}
+
+func TestSkillProjectionConvergesWithRestrictiveDirectoryCreation(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	skills := []config.Skill{projectionSkill(t, "alpha", projectionManifest("alpha"),
+		skilltree.File{Path: "nested/scripts/run.sh", Data: []byte("#!/bin/sh\n"), Executable: true})}
+	sys := &MockSystem{Fallback: RealSystem{}, MkdirAllFunc: func(path string, _ os.FileMode) error {
+		// Model a restrictive umask without changing this test process's global umask.
+		return os.MkdirAll(path, 0o700)
+	}}
+	if err := writeLinkedSkillRoots(sys, root, skills); err != nil {
+		t.Fatal(err)
+	}
+	sys.MkdirAllFunc = func(string, os.FileMode) error {
+		t.Error("unchanged skill root rebuilt")
+		return errors.New("unexpected mkdir")
+	}
+	sys.ChmodFunc = func(string, os.FileMode) error {
+		t.Error("unchanged skill modes rewritten")
+		return errors.New("unexpected chmod")
+	}
+	sys.WriteFileAtomicFunc = func(string, []byte, os.FileMode) error {
+		t.Error("unchanged skill rewritten")
+		return errors.New("unexpected write")
+	}
+	if err := writeLinkedSkillRoots(sys, root, skills); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSkillDirectoryPermissionFailurePreservesLiveProjection(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	skills := []config.Skill{projectionSkill(t, "alpha", projectionManifest("alpha"))}
+	if err := WriteAgentSkills(RealSystem{}, root, skills); err != nil {
+		t.Fatal(err)
+	}
+	live := filepath.Join(root, ".agents", "skills")
+	before, err := os.Stat(filepath.Join(live, "alpha", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	skills = append(skills, projectionSkill(t, "beta", projectionManifest("beta")))
+	injected := errors.New("injected permission failure")
+	sys := &MockSystem{Fallback: RealSystem{}, ChmodFunc: func(string, os.FileMode) error { return injected }}
+	if err := WriteAgentSkills(sys, root, skills); !errors.Is(err, injected) {
+		t.Fatalf("error=%v", err)
+	}
+	after, err := os.Stat(filepath.Join(live, "alpha", "SKILL.md"))
+	if err != nil || !os.SameFile(before, after) {
+		t.Fatalf("live root replaced on staging failure: %v", err)
+	}
+}

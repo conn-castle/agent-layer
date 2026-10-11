@@ -41,7 +41,7 @@ func TestLaunchGrokExecHandoff(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	wantArgs := []string{"grok", "--model", "grok-4.6", "--reasoning-effort", "high", "-p", "hello"}
+	wantArgs := []string{"grok", "--no-auto-update", "--model", "grok-4.6", "--reasoning-effort", "high", "-p", "hello"}
 	call.AssertCalled(t, grokPath, wantArgs)
 	val, ok := clients.GetEnv(call.Env, EnvHome)
 	if !ok || val != HomeDir(root) {
@@ -74,7 +74,7 @@ func TestLaunchGrokOverridesFlagShapedModel(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	call.AssertCalled(t, grokPath, []string{"grok", "--reasoning-effort", "-deep", "--model", "chosen"})
+	call.AssertCalled(t, grokPath, []string{"grok", "--no-auto-update", "--reasoning-effort", "-deep", "--model", "chosen"})
 }
 
 func TestLaunchGrokYOLO(t *testing.T) {
@@ -97,7 +97,7 @@ func TestLaunchGrokYOLO(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	call.AssertCalled(t, grokPath, []string{"grok", "--permission-mode", "bypassPermissions", "--always-approve"})
+	call.AssertCalled(t, grokPath, []string{"grok", "--no-auto-update", "--permission-mode", "bypassPermissions", "--always-approve"})
 }
 
 func TestLaunchGrokSandboxAndMemory(t *testing.T) {
@@ -120,7 +120,7 @@ func TestLaunchGrokSandboxAndMemory(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	call.AssertCalled(t, grokPath, []string{"grok", "--no-memory"})
+	call.AssertCalled(t, grokPath, []string{"grok", "--no-auto-update", "--no-memory"})
 	if val, ok := clients.GetEnv(call.Env, EnvMemory); !ok || val != "0" {
 		t.Fatalf("expected GROK_MEMORY=0, got %s (ok=%v)", val, ok)
 	}
@@ -299,6 +299,6 @@ func TestLaunchExplicitOptionsReplaceDefaults(t *testing.T) {
 		if err := Launch(cfg, nil, nil, passed); err != nil {
 			t.Fatal(err)
 		}
-		call.AssertCalled(t, filepath.Join(binDir, "grok"), append([]string{"grok"}, passed...))
+		call.AssertCalled(t, filepath.Join(binDir, "grok"), append([]string{"grok", "--no-auto-update"}, passed...))
 	}
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
@@ -71,6 +72,10 @@ func execute(ctx context.Context, args []string, stdout io.Writer, stderr io.Wri
 
 // runMain handles version dispatch and executes the CLI, exiting on fatal errors.
 func runMain(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer, exit func(int)) {
+	if len(args) == 2 && args[1] == update.RefreshCommand { // #nosec G602 -- exact length checked before indexing.
+		update.RefreshCache(ctx)
+		return
+	}
 	cwd, err := getwd()
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, err)

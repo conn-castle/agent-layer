@@ -73,7 +73,7 @@ func RunWithStderr(ctx context.Context, root string, name string, enabled Enable
 		stderr = io.Discard
 	}
 	if project.Config.Warnings.VersionUpdateOnSync != nil && *project.Config.Warnings.VersionUpdateOnSync {
-		updatewarn.WarnIfOutdated(ctx, currentVersion, stderr)
+		updatewarn.WarnCachedIfOutdated(ctx, currentVersion, stderr)
 	}
 	// Print warnings to stderr before launching
 	if stderr != nil {

@@ -7,10 +7,50 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
+
+// Keep explicit release checks from writing into the user's real cache.
+func TestMain(m *testing.M) {
+	if os.Getenv("AL_UPDATE_TEST_HELPER") == "1" {
+		latestReleaseURL = os.Getenv("AL_UPDATE_TEST_RELEASE_URL")
+		if len(os.Args) == 2 && os.Args[1] == RefreshCommand {
+			// Gate the test worker before its network deadline starts, so slow parent
+			// exec does not spend the refresh budget before the parent has exited.
+			deadline := time.Now().Add(30 * time.Second)
+			for {
+				if _, err := os.Stat(os.Getenv("AL_UPDATE_TEST_HANDOFF_FILE")); err == nil { // #nosec G703 -- marker supplied by the parent test fixture.
+					break
+				}
+				if time.Now().After(deadline) {
+					os.Exit(1)
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			RefreshCache(context.Background())
+			os.Exit(0)
+		}
+		StartCacheRefresh()
+		if err := syscall.Exec("/bin/sh", []string{"sh", "-c", "exit 0"}, os.Environ()); err != nil {
+			panic(err)
+		}
+	}
+
+	cache, err := os.MkdirTemp("", "al-update-test-*")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("AL_CACHE_DIR", cache); err != nil {
+		panic(err)
+	}
+	code := m.Run()
+	_ = os.RemoveAll(cache)
+	os.Exit(code)
+}
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
@@ -171,8 +211,9 @@ func TestFetchLatestReleaseVersion_DoError(t *testing.T) {
 func TestFetchLatestReleaseVersion_RetryOnTransientError(t *testing.T) {
 	origSleep := updateSleep
 	sleepCalls := 0
-	updateSleep = func(time.Duration) {
+	updateSleep = func(context.Context, time.Duration) error {
 		sleepCalls++
+		return nil
 	}
 	t.Cleanup(func() {
 		updateSleep = origSleep

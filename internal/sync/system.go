@@ -18,6 +18,7 @@ type System interface {
 	Readlink(name string) (string, error)
 	Symlink(oldname, newname string) error
 	MkdirAll(path string, perm os.FileMode) error
+	Chmod(path string, perm os.FileMode) error
 	WriteFileAtomic(filename string, data []byte, perm os.FileMode) error
 	MarshalIndent(v any, prefix, indent string) ([]byte, error)
 	ReadFile(name string) ([]byte, error)
@@ -62,6 +63,11 @@ func (RealSystem) Symlink(oldname, newname string) error {
 // MkdirAll creates a directory named path, along with any necessary parents.
 func (RealSystem) MkdirAll(path string, perm os.FileMode) error {
 	return os.MkdirAll(path, perm)
+}
+
+// Chmod sets exact permissions on newly staged skill directories, regardless of umask.
+func (RealSystem) Chmod(path string, perm os.FileMode) error {
+	return os.Chmod(path, perm)
 }
 
 // WriteFileAtomic writes changed data atomically and preserves an identical

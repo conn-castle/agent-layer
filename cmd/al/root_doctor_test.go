@@ -10,6 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/conn-castle/agent-layer/internal/agentoptions"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/doctor"
@@ -922,4 +925,84 @@ func TestDoctorCommand_SizeSummaryAlwaysPrinted(t *testing.T) {
 			}
 		})
 	}
+}
+
+type doctorProgressWriter struct{ lines chan string }
+
+func (w doctorProgressWriter) Write(data []byte) (int, error) {
+	w.lines <- string(data)
+	return len(data), nil
+}
+
+func TestDoctorPrintsCompletedChecksWhileModelsAndUpdatesArePending(t *testing.T) {
+	root := t.TempDir()
+	writeDoctorTestRepo(t, root)
+	t.Setenv(versiondispatch.EnvNoNetwork, "")
+	path := config.DefaultPaths(root).ConfigPath
+	data, err := os.ReadFile(path) // #nosec G304 -- test repo.
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = []byte(strings.Replace(string(data), "[agents.grok]\nenabled = true", "[agents.grok]\nenabled = true\nmodel = \"test-model\"", 1))
+	if err := os.WriteFile(path, data, 0o600); err != nil { // #nosec G703 -- path belongs to the test repository.
+		t.Fatal(err)
+	}
+	stubNoMCPServerWarnings(t)
+	origModels, origUpdate := checkModels, checkForUpdate
+	t.Cleanup(func() { checkModels, checkForUpdate = origModels, origUpdate })
+	releaseModels, releaseUpdate := make(chan struct{}), make(chan struct{})
+	checkModels = func(_ *config.ProjectConfig, _ agentoptions.DiscoveryRequest, report func(doctor.Result)) []doctor.Result {
+		report(doctor.Result{CheckName: "claude models", Status: doctor.StatusOK, Message: "completed harness"})
+		<-releaseModels
+		report(doctor.Result{CheckName: "grok models", Status: doctor.StatusOK, Message: "completed grok"})
+		return nil
+	}
+	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
+		<-releaseUpdate
+		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
+	}
+	testutil.WithWorkingDir(t, root, func() {
+		lines := make(chan string, 1000)
+		cmd := newDoctorCmd()
+		cmd.SetOut(doctorProgressWriter{lines: lines})
+		done := make(chan error, 1)
+		go func() { done <- cmd.RunE(cmd, nil) }()
+		releasedModels, releasedUpdate := false, false
+		defer func() {
+			if !releasedModels {
+				close(releaseModels)
+			}
+			if !releasedUpdate {
+				close(releaseUpdate)
+			}
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Error("doctor did not finish")
+			}
+		}()
+		waitFor := func(want string) {
+			t.Helper()
+			deadline := time.After(5 * time.Second)
+			for {
+				select {
+				case line := <-lines:
+					if strings.Contains(line, want) {
+						return
+					}
+				case <-deadline:
+					t.Fatalf("doctor did not print %q before pending checks completed", want)
+				}
+			}
+		}
+		waitFor("Skills")
+		waitFor("completed harness")
+		waitFor("Waiting for harness models: grok")
+		close(releaseUpdate)
+		releasedUpdate = true
+		waitFor(messages.DoctorCheckNameUpdate)
+		close(releaseModels)
+		releasedModels = true
+		waitFor("completed grok")
+	})
 }

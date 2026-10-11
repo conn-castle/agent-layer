@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -50,12 +51,15 @@ func writeClaudeSkillLinksWithDiscard(sys System, root string, skills []config.S
 // replaced, so a failed Claude write can restore their previous targets.
 func writeLinkedSkillRoots(sys System, root string, skills []config.Skill) error {
 	sharedRoot := filepath.Join(root, ".agents", "skills")
-	if err := writeSkillRoot(sys, sharedRoot, skills, "", true); err != nil {
+	sharedChanged, err := publishSkillRoot(sys, sharedRoot, skills, "", true)
+	if err != nil {
 		return err
 	}
 	if err := writeClaudeSkillLinksWithDiscard(sys, root, skills, true); err != nil {
-		if restoreErr := restoreSkillRoot(sys, sharedRoot); restoreErr != nil {
-			return errors.Join(err, restoreErr)
+		if sharedChanged {
+			if restoreErr := restoreSkillRoot(sys, sharedRoot); restoreErr != nil {
+				return errors.Join(err, restoreErr)
+			}
 		}
 		return err
 	}
@@ -103,20 +107,32 @@ func restoreSkillRoot(sys System, liveRoot string) error {
 // live root. A failed publish restores the previous root so existing Claude links
 // remain usable. Retry rebuilds disposable staging and discard directories.
 func writeSkillRoot(sys System, liveRoot string, skills []config.Skill, linkRoot string, retainPrevious bool) error {
+	_, err := publishSkillRoot(sys, liveRoot, skills, linkRoot, retainPrevious)
+	return err
+}
+
+func publishSkillRoot(sys System, liveRoot string, skills []config.Skill, linkRoot string, retainPrevious bool) (bool, error) {
 	validated, err := validateProjectionSkills(skills)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	stageRoot := liveRoot + projectionStageSuffix
 	discardRoot := liveRoot + projectionDiscardSuffix
 	for _, scratch := range []string{stageRoot, discardRoot} {
 		if err := sys.RemoveAll(scratch); err != nil {
-			return fmt.Errorf(messages.SyncRemoveFailedFmt, scratch, err)
+			return false, fmt.Errorf(messages.SyncRemoveFailedFmt, scratch, err)
 		}
 	}
-	if err := sys.MkdirAll(stageRoot, 0o755); err != nil {
-		return fmt.Errorf(messages.SyncCreateDirFailedFmt, stageRoot, err)
+	matches, err := skillRootMatches(sys, liveRoot, validated, linkRoot)
+	if err != nil {
+		return false, err
+	}
+	if matches {
+		return false, nil
+	}
+	if err := createSkillDirectory(sys, stageRoot); err != nil {
+		return false, err
 	}
 	for _, skill := range validated {
 		dest := filepath.Join(stageRoot, skill.Name)
@@ -131,7 +147,7 @@ func writeSkillRoot(sys System, liveRoot string, skills []config.Skill, linkRoot
 		}
 		if err != nil {
 			_ = sys.RemoveAll(stageRoot)
-			return err
+			return false, err
 		}
 	}
 
@@ -139,28 +155,28 @@ func writeSkillRoot(sys System, liveRoot string, skills []config.Skill, linkRoot
 	if _, statErr := sys.Lstat(liveRoot); statErr == nil {
 		if err := sys.Rename(liveRoot, discardRoot); err != nil {
 			_ = sys.RemoveAll(stageRoot)
-			return fmt.Errorf(messages.SyncRenameFailedFmt, liveRoot, discardRoot, err)
+			return false, fmt.Errorf(messages.SyncRenameFailedFmt, liveRoot, discardRoot, err)
 		}
 		hadLiveRoot = true
 	} else if !os.IsNotExist(statErr) {
 		_ = sys.RemoveAll(stageRoot)
-		return fmt.Errorf(messages.SyncReadFailedFmt, liveRoot, statErr)
+		return false, fmt.Errorf(messages.SyncReadFailedFmt, liveRoot, statErr)
 	}
 	if err := sys.Rename(stageRoot, liveRoot); err != nil {
 		publishErr := fmt.Errorf(messages.SyncRenameFailedFmt, stageRoot, liveRoot, err)
 		if hadLiveRoot {
 			if restoreErr := sys.Rename(discardRoot, liveRoot); restoreErr != nil {
-				return errors.Join(publishErr, fmt.Errorf("restore skill root %s: %w", liveRoot, restoreErr))
+				return false, errors.Join(publishErr, fmt.Errorf("restore skill root %s: %w", liveRoot, restoreErr))
 			}
 		}
-		return publishErr
+		return false, publishErr
 	}
 	if !retainPrevious {
 		if err := sys.RemoveAll(discardRoot); err != nil {
-			return fmt.Errorf(messages.SyncRemoveFailedFmt, discardRoot, err)
+			return false, fmt.Errorf(messages.SyncRemoveFailedFmt, discardRoot, err)
 		}
 	}
-	return nil
+	return true, nil
 }
 
 func validateProjectionSkills(skills []config.Skill) ([]config.Skill, error) {
@@ -186,18 +202,39 @@ func validateProjectionSkills(skills []config.Skill) ([]config.Skill, error) {
 	return validated, nil
 }
 
-func materializeSkillTree(sys System, dir string, tree skilltree.Tree) error {
+func createSkillDirectory(sys System, dir string) error {
 	if err := sys.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, dir, err)
 	}
-	for _, file := range tree.Files() {
+	if err := sys.Chmod(dir, 0o755); err != nil {
+		return fmt.Errorf("set skill directory permissions %s: %w", dir, err)
+	}
+	return nil
+}
+
+func materializeSkillTree(sys System, dir string, tree skilltree.Tree) error {
+	files := tree.Files()
+	dirs := map[string]struct{}{dir: {}}
+	for _, file := range files {
 		if err := skilltree.ValidateRelativePath(file.Path); err != nil {
 			return err
 		}
-		target := filepath.Join(dir, filepath.FromSlash(file.Path))
-		if err := sys.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return fmt.Errorf(messages.SyncCreateDirFailedFmt, filepath.Dir(target), err)
+		for parent := filepath.Dir(filepath.Join(dir, filepath.FromSlash(file.Path))); parent != dir; parent = filepath.Dir(parent) {
+			dirs[parent] = struct{}{}
 		}
+	}
+	sortedDirs := make([]string, 0, len(dirs))
+	for path := range dirs {
+		sortedDirs = append(sortedDirs, path)
+	}
+	sort.Strings(sortedDirs)
+	for _, path := range sortedDirs {
+		if err := createSkillDirectory(sys, path); err != nil {
+			return err
+		}
+	}
+	for _, file := range files {
+		target := filepath.Join(dir, filepath.FromSlash(file.Path))
 		if err := sys.WriteFileAtomic(target, file.Data, file.FileMode()); err != nil {
 			return fmt.Errorf(messages.SyncWriteFileFailedFmt, target, err)
 		}
@@ -236,4 +273,76 @@ func cleanLegacySkillOutputs(sys System, root string) error {
 		}
 	}
 	return nil
+}
+
+// skillRootMatches compares the entire owned projection, including extra entries,
+// modes and link targets. Lstat prevents accepting links in a materialized tree.
+func skillRootMatches(sys System, root string, skills []config.Skill, linkRoot string) (bool, error) {
+	type entry struct {
+		mode os.FileMode
+		data []byte
+		link string
+	}
+	want := map[string]entry{".": {mode: os.ModeDir | 0o755}}
+	for _, skill := range skills {
+		if linkRoot != "" {
+			want[skill.Name] = entry{mode: os.ModeSymlink, link: filepath.Join(linkRoot, skill.Name)}
+			continue
+		}
+		want[skill.Name] = entry{mode: os.ModeDir | 0o755}
+		for _, file := range skill.Tree.Files() {
+			rel := filepath.Join(skill.Name, filepath.FromSlash(file.Path))
+			want[rel] = entry{mode: file.FileMode(), data: file.Data}
+			for dir := filepath.Dir(rel); dir != "."; dir = filepath.Dir(dir) {
+				want[dir] = entry{mode: os.ModeDir | 0o755}
+			}
+		}
+	}
+	var matches func(string) (bool, error)
+	matches = func(rel string) (bool, error) {
+		expected, exists := want[rel]
+		if !exists {
+			return false, nil
+		}
+		path := filepath.Join(root, rel)
+		info, err := sys.Lstat(path)
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		if err != nil {
+			return false, fmt.Errorf(messages.SyncReadFailedFmt, path, err)
+		}
+		if info.Mode().Type() != expected.mode.Type() ||
+			(expected.link == "" && info.Mode() != expected.mode) {
+			return false, nil
+		}
+		delete(want, rel)
+		switch {
+		case expected.link != "":
+			link, err := sys.Readlink(path)
+			if err != nil {
+				return false, fmt.Errorf(messages.SyncReadFailedFmt, path, err)
+			}
+			return link == expected.link, nil
+		case info.IsDir():
+			entries, err := sys.ReadDir(path)
+			if err != nil {
+				return false, fmt.Errorf(messages.SyncReadFailedFmt, path, err)
+			}
+			for _, child := range entries {
+				if equal, err := matches(filepath.Join(rel, child.Name())); !equal || err != nil {
+					return false, err
+				}
+			}
+			return true, nil
+		default:
+			data, err := sys.ReadFile(path)
+			if err != nil {
+				return false, fmt.Errorf(messages.SyncReadFailedFmt, path, err)
+			}
+			return bytes.Equal(data, expected.data), nil
+		}
+	}
+	equal, err := matches(".")
+	return equal && len(want) == 0, err
 }
