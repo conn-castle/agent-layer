@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -632,7 +633,15 @@ func TestUpdateCommandCancellationStopsDownloadChild(t *testing.T) {
 							}
 						}
 						ready <- time.Now()
-						cancel()
+						// Exercise terminal signals with the existing live/exited fixtures.
+						switch mode {
+						case "grace":
+							_ = syscall.Kill(os.Getpid(), syscall.SIGHUP)
+						case "exited":
+							_ = syscall.Kill(os.Getpid(), syscall.SIGQUIT)
+						default:
+							cancel()
+						}
 						return
 					}
 					time.Sleep(10 * time.Millisecond)
@@ -676,6 +685,21 @@ func TestUpdateCommandCancellationStopsDownloadChild(t *testing.T) {
 }
 
 func TestUpdateCommandStartAndOutput(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		readStat := updateReadProcessStat
+		defer func() { updateReadProcessStat = readStat }()
+		ownedPath := filepath.Join("/proc", strconv.Itoa(os.Getpid()), "stat")
+		updateReadProcessStat = func(path string) ([]byte, error) {
+			if path == ownedPath {
+				return nil, os.ErrPermission
+			}
+			return readStat(path)
+		}
+		if _, err := updateCommandStopped(os.Getpid()); !errors.Is(err, os.ErrPermission) {
+			t.Fatalf("unreadable owned leader: %v", err)
+		}
+		// This same unreadable PID is unrelated to the installers below.
+	}
 	var output bytes.Buffer
 	// A resolved executable (Homebrew's path) must retain the caller's group.
 	script := `test "$(/bin/ps -o pgid= -p $$)" -eq "$1" || exit 8; /bin/cat; echo error >&2; exit 7`
@@ -699,5 +723,26 @@ func TestUpdateCommandStartAndOutput(t *testing.T) {
 	}
 	if err := updateRunCommand(context.Background(), nil, nil, nil, "bash", "-c", "exit 0"); err != nil {
 		t.Fatalf("installer success without ps: %v", err)
+	}
+	reader, writer := io.Pipe()
+	defer func() { _ = reader.Close(); _ = writer.Close() }()
+	drained := make(chan string, 1)
+	go func() {
+		time.Sleep(2200 * time.Millisecond) // Beyond both former normal-output deadlines.
+		data := make([]byte, len("installed"))
+		_, _ = io.ReadFull(reader, data)
+		drained <- string(data)
+	}()
+	if err := updateRunCommand(context.Background(), nil, writer, nil, "bash", "-c", "printf installed"); err != nil {
+		t.Fatalf("slow successful output: %v", err)
+	}
+	if data := <-drained; data != "installed" {
+		t.Fatalf("slow output = %q", data)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if err := updateRunCommand(ctx, nil, writer, nil, "bash", "-c", "printf blocked"); !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > 5*time.Second {
+		t.Fatalf("cancel normal output drain: %v after %v", err, time.Since(start))
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -31,10 +32,11 @@ const (
 )
 
 var (
-	updateExecutable    = os.Executable
-	updateEvalSymlinks  = filepath.EvalSymlinks
-	updateLookPath      = exec.LookPath
-	updateCommandOutput = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+	updateExecutable      = os.Executable
+	updateEvalSymlinks    = filepath.EvalSymlinks
+	updateLookPath        = exec.LookPath
+	updateReadProcessStat = os.ReadFile
+	updateCommandOutput   = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		return exec.CommandContext(ctx, name, args...).CombinedOutput() //nolint:gosec // Callers supply the resolved Homebrew executable and fixed arguments.
 	}
 	updateRunCommand = func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, name string, args ...string) error {
@@ -54,12 +56,18 @@ var (
 // runUpdateCommand keeps the group leader unreaped until cancellation signaling
 // finishes. Bash gets time to run the installer's EXIT trap before escalation.
 func runUpdateCommand(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, name string, args ...string) error {
+	// The detached installer no longer receives the terminal's HUP or QUIT.
+	signals := []os.Signal{syscall.SIGQUIT}
+	if !signal.Ignored(syscall.SIGHUP) {
+		signals = append(signals, syscall.SIGHUP)
+	}
+	ctx, stop := signal.NotifyContext(ctx, signals...)
+	defer stop()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	command := exec.Command(name, args...) //nolint:gosec,noctx // Fixed update commands; cancellation owns the unreaped process group below.
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	command.WaitDelay = time.Second
 	output := &updateCommandOutputGuard{}
 	command.Stdin = stdin
 	command.Stdout = output.wrap(stdout)
@@ -116,12 +124,20 @@ func runUpdateCommand(ctx context.Context, stdin io.Reader, stdout, stderr io.Wr
 		}
 	}
 	// All signaling precedes Wait: no timer can later hit a reused process group.
-	// WaitDelay bounds pipe draining; the outer deadline bounds reaping too.
+	// Bound shutdown, but let normal completion drain slow terminal output.
+	var timeout <-chan time.Time
+	var canceled <-chan struct{}
+	if shutdownErr != nil {
+		command.WaitDelay = time.Second
+		timer := time.NewTimer(2 * time.Second)
+		defer timer.Stop()
+		timeout = timer.C
+	} else {
+		canceled = ctx.Done()
+	}
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
 	defer output.stopped.Store(true)
-	timer := time.NewTimer(2 * time.Second)
-	defer timer.Stop()
 	select {
 	case err := <-done:
 		if shutdownErr != nil && err != nil {
@@ -130,7 +146,10 @@ func runUpdateCommand(ctx context.Context, stdin io.Reader, stdout, stderr io.Wr
 			return fmt.Errorf("%w: %v", shutdownErr, err)
 		}
 		return errors.Join(shutdownErr, err)
-	case <-timer.C:
+	case <-canceled:
+		// The group was already stopped before Wait; never signal after reaping.
+		return ctx.Err()
+	case <-timeout:
 		return errors.Join(shutdownErr, errors.New("update command did not finish reaping within shutdown allowance"))
 	}
 }
