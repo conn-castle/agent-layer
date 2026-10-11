@@ -63,12 +63,12 @@ const (
 // ErrMissing reports that no lockfile exists yet. Callers distinguish this from
 // a malformed lockfile because an absent file is the normal state of a project
 // with no imports, while a malformed one must fail loudly.
-var ErrMissing = errors.New("skill lock file does not exist")
+var ErrMissing = errors.New("import lock file does not exist")
 
 // ErrMalformed reports that a lockfile exists but cannot be trusted. Import
 // operations preserve local content and fail the affected imports instead of
 // inventing a merge base.
-var ErrMalformed = errors.New("skill lock file is malformed")
+var ErrMalformed = errors.New("import lock file is malformed")
 
 // Entry is one imported skill's recorded upstream state.
 type Entry struct {
@@ -148,12 +148,12 @@ func New() *File {
 func Load(path string) (*File, error) { return load(path, false) }
 
 func load(path string, instructions bool) (*File, error) {
-	data, err := os.ReadFile(path) // #nosec G304 -- path is the resolved repository .agent-layer/skills.lock.json, not user input.
+	data, err := os.ReadFile(path) // #nosec G304 -- path is the resolved repository import lock, not user input.
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("%w: %s", ErrMissing, path)
 		}
-		return nil, fmt.Errorf("failed to read skill lock %s: %w", path, err)
+		return nil, fmt.Errorf("failed to read import lock %s: %w", path, err)
 	}
 	return parse(data, path, instructions)
 }
@@ -656,7 +656,7 @@ func (f *File) Save(path string) error {
 		return err
 	}
 	if err := fsutil.WriteFileAtomic(path, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write skill lock %s: %w", path, err)
+		return fmt.Errorf("failed to write import lock %s: %w", path, err)
 	}
 	return nil
 }

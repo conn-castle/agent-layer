@@ -29,6 +29,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-10-11 native-dispatch-shutdown-after-answer: Successful Claude continuation can fail during shutdown
+    Priority: High. Area: agent dispatch / v1.0.0 readiness
+    Description: On main 1eb22499 plus PR385 head 9cd9790a, Claude 2.1.296 Sonnet low emitted a valid successful continuation answer but invocation 47c0da07-058d-4577-9ddb-926b6b4f4faa failed the five-second exit/output-drain deadline; durable process-group death was confirmed afterward. Separate Opus reviews and one Codex worker also hit that deadline after saving reports.
+    Status: Unresolved release finding. Mocked handoff reproduced kernel I/O/fsync stalls; the minimal candidate failed and was reverted. Historical native Claude cause remains unproven. Evidence: /var/tmp/al-v1-final-dogfood-osw1igf8/dispatch-shutdown-test-investigation.md.
+    Next step: Capture the failed live provider's owned process tree and output-reader state at the deadline.
+
 - Issue 2026-10-08 external-skill-inherited-review-followups: Inherited skill reporting and diagnostics gaps
     Priority: Low. Area: external skills / audit reporting / CLI diagnostics
     Description: The moved audit-documentation skill does not specify where unverified claims belong; watch-pr-events.sh gives generic shift errors for missing option values; tavily-web attributes every nonzero exit to installation/authentication. All three behaviors predate the content migration.

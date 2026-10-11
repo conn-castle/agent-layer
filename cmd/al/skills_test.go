@@ -369,7 +369,7 @@ func newSkillsSourceRepo(t *testing.T) string {
 // without repeating the report as an error message.
 func TestFinishSkillsOperationExitsNonZeroOnPartialFailure(t *testing.T) {
 	t.Parallel()
-	cmd := newSkillsPullCmd()
+	cmd, _, _ := newInstructionsCmd().Find([]string{"pull"})
 	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
@@ -389,7 +389,7 @@ func TestFinishSkillsOperationExitsNonZeroOnPartialFailure(t *testing.T) {
 			t.Fatalf("output %q does not contain %q", out.String(), want)
 		}
 	}
-	if !strings.Contains(errOut.String(), "al skills pull did not complete successfully") {
+	if !strings.HasSuffix(errOut.String(), "al instructions pull did not complete successfully\n") {
 		t.Fatalf("stderr = %q", errOut.String())
 	}
 }
