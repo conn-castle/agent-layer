@@ -11,6 +11,10 @@ import (
 )
 
 const importedSkillsTestConfig = `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = "all"
 

@@ -19,3 +19,6 @@ open-vscode.app/
 open-vscode.command
 open-vscode.desktop
 open-vscode.sh
+
+# Imported instructions and their lock are tracked together; journal staging is private.
+instructions-imported/.staging/

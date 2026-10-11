@@ -272,10 +272,10 @@ func TestRunProfile_NoConfigChangesPreviewOnly(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o600))
+	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()+"\n[[instructions.local]]\nselectors = [\"01_base.md\"]\norder = 0\n"), 0o600))
 
 	profilePath := filepath.Join(root, "profile.toml")
-	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o600))
+	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()+"\n[[instructions.local]]\nselectors = [\"01_base.md\"]\norder = 0\n"), 0o600))
 
 	syncCalled := false
 	var out bytes.Buffer
@@ -293,10 +293,10 @@ func TestRunProfile_NoConfigChangesApplyWithWarningAndSyncError(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o600))
+	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()+"\n[[instructions.local]]\nselectors = [\"01_base.md\"]\norder = 0\n"), 0o600))
 
 	profilePath := filepath.Join(root, "profile.toml")
-	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o600))
+	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()+"\n[[instructions.local]]\nselectors = [\"01_base.md\"]\norder = 0\n"), 0o600))
 
 	t.Run("warning output", func(t *testing.T) {
 		var out bytes.Buffer

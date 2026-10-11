@@ -315,3 +315,35 @@ func ValidateRelativePath(value string) error {
 	}
 	return nil
 }
+
+// ReadFileNode represents one exact regular file as a canonical one-file tree.
+// name is the destination filename, including during trusted legacy adoption.
+func ReadFileNode(fsys FS, source, name string) (Tree, error) {
+	info, err := fsys.Lstat(source)
+	if err != nil {
+		return Tree{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return Tree{}, fmt.Errorf("%s must be a regular unlinked file", source)
+	}
+	data, err := fsys.ReadFile(source)
+	if err != nil {
+		return Tree{}, err
+	}
+	return NewTree([]File{{Path: name, Data: data, Executable: info.Mode().Perm()&0o100 != 0}})
+}
+
+// ValidateNode keeps skill directory validation unchanged for directory imports.
+func ValidateNode(tree Tree, selectedPath string, exactFile bool) (SkillInfo, error) {
+	if !exactFile {
+		return ValidateSkill(tree, selectedPath)
+	}
+	name := path.Base(selectedPath)
+	if tree.Len() != 1 {
+		return SkillInfo{}, fmt.Errorf("instruction %s must contain one regular Markdown file", selectedPath)
+	}
+	if _, ok := tree.File(name); !ok {
+		return SkillInfo{}, fmt.Errorf("instruction tree does not contain %s", name)
+	}
+	return SkillInfo{Name: name}, nil
+}

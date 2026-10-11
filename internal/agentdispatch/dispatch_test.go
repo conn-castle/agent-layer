@@ -665,6 +665,10 @@ func writeDispatchRepo(t *testing.T, repoConfig dispatchRepoConfig) string {
 		dispatchBlock += fmt.Sprintf("session_retention_days = %d\n", repoConfig.DispatchSessionRetentionDays)
 	}
 	configToml := fmt.Sprintf(`
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [dispatch]
 %s
 

@@ -107,7 +107,7 @@ Skills accept flexible inputs: plain-language descriptions, file paths, constrai
 
 ## Skill library
 
-Select **Development skills** in `al wizard` to import the seven exact `skills/development/<name>` trees from `https://github.com/nicholasjconn/skills.git`. The three tool rows import exact `skills/tools/{find-docs,playwright,tavily-web}` paths. `dispatch-agent`, `skill-sync`, and `benchmark` remain bundled.
+Select **Development skills** in `al wizard` to import the seven exact `skills/development/<name>` trees from `https://github.com/nicholasjconn/skills.git`. The three tool rows import exact `skills/tools/{find-docs,playwright,tavily-web}` paths. `dispatch-agent`, `skill-sync`, `instruction-sync`, and `benchmark` remain bundled.
 
 New selections require repository access. The wizard records resolved commits and upstream tree hashes in `skills.lock.json` and installs editable copies in `.agent-layer/skills-imported/`. CLI upgrades, sync, launch, and doctor stay offline; an unchanged imported selection does not refresh. Use `al skills status`, `diff`, `pull`, and `resolve` for content updates independently of CLI upgrades.
 

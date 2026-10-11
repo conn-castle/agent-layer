@@ -66,8 +66,9 @@ type SourceResult struct {
 
 // Report is the complete outcome of one import operation.
 type Report struct {
-	Sources []SourceResult
-	Skills  []SkillResult
+	instructions bool
+	Sources      []SourceResult
+	Skills       []SkillResult
 	// ProjectionErr records a projection failure that happened after valid
 	// source state was already committed. It never rolls that state back.
 	ProjectionErr error
@@ -192,11 +193,11 @@ func (r *Report) Render(operation string) string {
 	}
 	switch {
 	case r.Partial():
-		fmt.Fprintf(&builder, "%s partially succeeded: %d of %d skills completed\n", operation, r.Succeeded(), len(r.Skills))
+		fmt.Fprintf(&builder, "%s partially succeeded: %d of %d %s completed\n", operation, r.Succeeded(), len(r.Skills), importKind(r.instructions))
 	case r.Failed():
 		fmt.Fprintf(&builder, "%s failed\n", operation)
 	default:
-		fmt.Fprintf(&builder, "%s succeeded: %d skills\n", operation, len(r.Skills))
+		fmt.Fprintf(&builder, "%s succeeded: %d %s\n", operation, len(r.Skills), importKind(r.instructions))
 	}
 	return builder.String()
 }

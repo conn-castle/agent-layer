@@ -31,7 +31,7 @@ This repo is built around determinism: the same inputs should produce the same c
 - Use the commands in `docs/agent-layer/COMMANDS.md` for format, lint, test, coverage reporting, and release builds.
 - Prefer `make` targets (see `docs/agent-layer/COMMANDS.md`) instead of running `goimports` / `golangci-lint` directly; tools are installed repo-locally under `.tools/bin` so you do not need to edit your shell PATH. This avoids “works on my machine” drift and keeps local output aligned with CI.
 - Use `make dev` for the fast local formatting and lint loop. Run `./scripts/setup.sh` or `make tools` first. Use `make test` for the global test gate and `make coverage` for diagnostic coverage reporting, and use `make ci` as the complete local/pre-PR verification command (hosted CI runs the same target).
-- **Template sources live in `internal/templates/`**, not in `.agent-layer/`. The `.agent-layer/` directory is the *install output* created by `al init`/`al upgrade` in target repos. When adding or editing templates (instructions, memory files, skills, config), always edit the source in `internal/templates/`. If you change installer templates, run `al upgrade` in a target repo to apply the updated templates. When testing from this source repo's scratch target (`tmp/dev-repo`), use `go run ../../cmd/al upgrade` (or `go run ../../cmd/al init` for a fresh repo).
+- **Template sources live in `internal/templates/`**, not in `.agent-layer/`. The `.agent-layer/` directory is the *install output* created by `al init`/`al upgrade` in target repos. When adding or editing templates (memory files, operator skills, config), always edit the source in `internal/templates/`. If you change installer templates, run `al upgrade` in a target repo to apply the updated templates. When testing from this source repo's scratch target (`tmp/dev-repo`), use `go run ../../cmd/al upgrade` (or `go run ../../cmd/al init` for a fresh repo).
 - If template-managed file semantics change for release upgrades, regenerate the release manifest: `./scripts/generate-template-manifest.sh --tag vX.Y.Z`.
 - If you change upgrade behavior or upgrade-facing guidance, update the canonical upgrade contract page at `site/docs/upgrades.mdx` and keep release notes/docs links aligned.
 - If you change VS Code launch behavior, update `docs/architecture/vscode-launch.md` and keep troubleshooting guidance aligned.
@@ -277,42 +277,40 @@ make release-dist AL_VERSION=ci DIST_DIR=dist
 ```
 Note: `make ci` is the complete local/pre-PR verification gate and the same target hosted CI runs. It includes `make tidy-check`, which fails if `go.mod` or `go.sum` would change. While you are actively editing dependencies, use `make test`, `make lint`, and `make coverage` instead. `make ci` expects tools to be installed via `make tools`. The `make release-dist ...` command mirrors CI's dry-run release artifact build.
 
-## Managing bundled instructions
+## Managing instructions
 
-The bundled instruction set is `internal/templates/instructions/00_rules.md` (rules, escalation, and communication style) and `01_memory.md` (the project memory files and how to use them). Both are **managed**: the wizard seeds them when missing (`00_rules.md` for Rules; both files plus memory docs for Rules and memory), and `al upgrade` updates them, prompting before overwriting local edits. Anything else a user drops into `.agent-layer/instructions/` is their own file and is never touched.
+Reusable rules and memory instructions live in `nicholasjconn/skills` at
+`instructions/rules.md` and `instructions/memory.md`. They use the shared skill
+import lifecycle with a regular-file boundary. Agent Layer bundles only the
+AL-specific `instruction-sync` guidance skill, source metadata, and memory-doc
+seeds; software upgrades never refresh reusable instruction bodies.
 
-Users tailor instructions by editing these files or adding their own; there is no separate user-owned instruction template.
+Each imported or local config block declares one exact Markdown selector and
+one required nonnegative scalar order. Global uniqueness covers both tiers.
+Order affects projection only, independently of repository/ref identity and
+lock versions. Skills retain grouped selectors and wildcard behavior.
 
-### Changing a bundled instruction
-Edit the template under `internal/templates/instructions/`. New installs pick the change up directly, and existing installs receive it through the normal `al upgrade` managed-file flow.
+Legacy projects receive explicit local orders `10 * index` in their previous
+lexicographic sequence through every accepted upgrade, including dev/unpinned
+upgrades, or accepted wizard edits. Preview and cancellation never write config.
+The upgrade snapshot covers config and restores it on rollback. Linked instruction
+roots or files fail before writes. Sync/launch/dispatch/doctor require this
+migration and do not silently assign order or fetch.
 
-### Appending to a file that upgrade must not overwrite
-Use an `append_to_file` migration when content must reach an existing install without clobbering what is already there — for example adding one rule to a file a user may have edited:
-```json
-{
-  "id": "add_<rule_name>",
-  "kind": "append_to_file",
-  "rationale": "Add <rule description>",
-  "source_agnostic": true,
-  "path": ".agent-layer/instructions/00_rules.md",
-  "value": "- **Rule name:** Rule text.\n",
-  "from": "**Rule name:**"
-}
-```
-- `path`: the file to append to (relative to repo root).
-- `value`: the content to append, as an ordinary JSON string. It is decoded once, so `\n` is a line ending — do not double-escape it.
-- `from`: duplicate-detection match string. If this string is already present in the file, the migration is a no-op (no-op migrations are not shown in the upgrade output). When the path has a bundled template and the file is missing, the full template is seeded as the base so the result is never a partial stub.
+Explicit wizard adoption maps `rules.md <- 00_rules.md` and
+`memory.md <- 01_memory.md`. One shared journal transaction preserves local
+bytes and permissions, retires the legacy slot, retains its order, and records
+the fetched upstream file as the genuine lock base. Later pulls merge edits
+against that base. Generated BEGIN/END markers use the new filenames. None is
+add-only and does not remove content; Rules+Memory still creates memory docs.
+Both tiers recover before install, rollback, projection and version handoff.
+Converted-slot guards prevent older CLIs or snapshots recreating old slots.
+Historical compatibility remains until the planned v1.1.0 cleanup.
 
-During `al upgrade` the migration appends the content and reports it in the upgrade output when it actually applies.
-
-### Renaming or removing a bundled instruction
-Template renames and removals do not reach existing installs on their own, and an orphaned instruction file keeps being loaded every session.
-
-For a **rename**, add a `rename_file` operation to the next version's migration manifest, as `0.16.0` does for `02_memory.md` → `01_memory.md`. The file carries its content forward and stays on the managed overwrite-prompt path, so local edits are preserved or prompted rather than lost.
-
-For a **removal**, do not add a `delete_file` operation. Instruction fragments are documented as user-editable, and `delete_file` runs unconditionally ahead of the overwrite prompts, so it would silently discard project-specific rules a user added to the file. `al upgrade` already reports a file whose template is gone under template removals/orphans; deleting it is the user's call. `0.16.0` takes this route for `01_base.md` and `03_tools.md` after folding their content into `00_rules.md`.
-
-Reserve `delete_file` for artifacts a user cannot meaningfully have edited.
+Publish the skills repository's new instruction paths before deploying this
+Agent Layer change. Tests use local Git fixtures, independent of unpublished
+remote paths. Only the current planned v1.0.0 ownership manifest is regenerated;
+released historical manifests remain unchanged.
 
 ## Troubleshooting
 - If you see `golangci-lint: command not found` or `goimports: command not found`, run:

@@ -11,7 +11,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
-const instructionHeader = "<!--\n  GENERATED FILE\n  Source: .agent-layer/instructions/*.md\n  Regenerate: al sync\n-->\n\n"
+const instructionHeader = "<!--\n  GENERATED FILE\n  Source: configured local and imported instructions (numeric order)\n  Regenerate: al sync\n-->\n\n"
 
 // ClaudeInstructionsPath is the generated Claude instruction path relative to the project root.
 const ClaudeInstructionsPath = claudeDirectory + "/CLAUDE.md"
@@ -131,7 +131,7 @@ func inspectClaudeInstructionDestination(sys System, root string) (existingLink 
 			return false, fmt.Errorf("read Claude instructions %s: %w", path, err)
 		}
 		// Older generated copies are empty when there are no instructions.
-		owned = len(data) == 0 || strings.HasPrefix(string(data), instructionHeader)
+		owned = len(data) == 0 || hasInstructionHeader(string(data))
 	}
 	if !owned {
 		return false, fmt.Errorf("refusing to overwrite unmanaged Claude instructions at %s: move your guidance into .agent-layer/instructions/ and relocate the existing path before syncing", path)
@@ -236,5 +236,9 @@ func hasGeneratedMarker(sys System, path string) (bool, error) {
 		}
 		return false, fmt.Errorf(messages.SyncReadFailedFmt, path, err)
 	}
-	return strings.HasPrefix(string(data), instructionHeader), nil
+	return hasInstructionHeader(string(data)), nil
+}
+
+func hasInstructionHeader(data string) bool {
+	return strings.HasPrefix(data, instructionHeader) || strings.HasPrefix(data, "<!--\n  GENERATED FILE\n  Source: .agent-layer/instructions/*.md\n  Regenerate: al sync\n-->\n\n")
 }

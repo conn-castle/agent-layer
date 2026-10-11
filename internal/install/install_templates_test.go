@@ -129,7 +129,7 @@ func TestWriteTemplateFile_UsesCache(t *testing.T) {
 }
 
 func TestWriteTemplateFile_OverwriteWithSameMetadataWritesBaseline(t *testing.T) {
-	for _, templatePath := range []string{commandsAllowName, templateGitignoreBlock, "instructions/00_rules.md"} {
+	for _, templatePath := range []string{commandsAllowName, templateGitignoreBlock, "docs/agent-layer/CONTEXT.md"} {
 		t.Run(templatePath, func(t *testing.T) {
 			root := t.TempDir()
 			path := filepath.Join(root, ".agent-layer", filepath.FromSlash(templatePath))
@@ -347,11 +347,11 @@ func TestWriteTemplateDirs_WriteError(t *testing.T) {
 	}
 	root := t.TempDir()
 	// Create instructions dir first with normal perms, then make it read-only
-	instrDir := filepath.Join(root, ".agent-layer", "instructions")
+	instrDir := filepath.Join(root, ".agent-layer", "templates", "docs")
 	if err := os.MkdirAll(instrDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(instrDir, "00_rules.md"), []byte("existing rules"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(instrDir, "CONTEXT.md"), []byte("existing rules"), 0o600); err != nil {
 		t.Fatalf("write workflow evidence: %v", err)
 	}
 	// Now make it read-only to prevent file writes
@@ -448,7 +448,7 @@ func TestBuildKnownPaths_Success(t *testing.T) {
 	expectedPaths := []string{
 		filepath.Join(root, ".agent-layer"),
 		filepath.Join(root, ".agent-layer", "config.toml"),
-		filepath.Join(root, ".agent-layer", "instructions"),
+		filepath.Join(root, ".agent-layer", "templates", "docs"),
 	}
 	for _, p := range expectedPaths {
 		clean := filepath.Clean(p)
@@ -471,13 +471,13 @@ func (m *mockDirEntry) Info() (fs.FileInfo, error) { return nil, nil }
 func TestListManagedDiffs_DirDiffError(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	instrDir := filepath.Join(alDir, "instructions")
+	instrDir := filepath.Join(alDir, "templates", "docs")
 	if err := os.MkdirAll(instrDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
 	// Create an instruction file as a directory to cause stat error during matchTemplate
-	instrFile := filepath.Join(instrDir, "00_rules.md")
+	instrFile := filepath.Join(instrDir, "CONTEXT.md")
 	if err := os.Mkdir(instrFile, 0o700); err != nil {
 		t.Fatalf("mkdir instruction: %v", err)
 	}
@@ -491,14 +491,14 @@ func TestListManagedDiffs_DirDiffError(t *testing.T) {
 
 func TestWriteTemplateDirCached_Success(t *testing.T) {
 	root := t.TempDir()
-	instrDir := filepath.Join(root, ".agent-layer", "instructions")
+	instrDir := filepath.Join(root, ".agent-layer", "templates", "docs")
 	if err := os.MkdirAll(instrDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
 	dir := templateDir{
-		templateRoot: "instructions",
+		templateRoot: "docs/agent-layer",
 		destRoot:     instrDir,
 	}
 
@@ -519,13 +519,13 @@ func TestWriteTemplateDirCached_Error(t *testing.T) {
 		t.Skip("skipping permissions test on windows")
 	}
 	root := t.TempDir()
-	instrDir := filepath.Join(root, ".agent-layer", "instructions")
+	instrDir := filepath.Join(root, ".agent-layer", "templates", "docs")
 	// Create with full permissions first
 	if err := os.MkdirAll(instrDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Write an existing file that differs from template
-	existingFile := filepath.Join(instrDir, "00_rules.md")
+	existingFile := filepath.Join(instrDir, "CONTEXT.md")
 	if err := os.WriteFile(existingFile, []byte("different content"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -544,7 +544,7 @@ func TestWriteTemplateDirCached_Error(t *testing.T) {
 		overwriteAll:        true,
 	}
 	dir := templateDir{
-		templateRoot: "instructions",
+		templateRoot: "docs/agent-layer",
 		destRoot:     instrDir,
 	}
 
@@ -558,8 +558,8 @@ func TestTemplateDirEntries_Cached(t *testing.T) {
 	root := t.TempDir()
 	inst := &installer{root: root, sys: RealSystem{}}
 	dir := templateDir{
-		templateRoot: "instructions",
-		destRoot:     filepath.Join(root, ".agent-layer", "instructions"),
+		templateRoot: "docs/agent-layer",
+		destRoot:     filepath.Join(root, ".agent-layer", "templates", "docs"),
 	}
 
 	entries1, err := inst.templates().templateDirEntries(dir)
@@ -690,13 +690,13 @@ func TestAppendTemplateDirDiffs_StatError_Permissions(t *testing.T) {
 		t.Skip("skipping permissions test on windows")
 	}
 	root := t.TempDir()
-	instrDir := filepath.Join(root, ".agent-layer", "instructions")
+	instrDir := filepath.Join(root, ".agent-layer", "templates", "docs")
 	if err := os.MkdirAll(instrDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
 	// Create a file with unreadable permissions to cause stat error
-	basePath := filepath.Join(instrDir, "00_rules.md")
+	basePath := filepath.Join(instrDir, "CONTEXT.md")
 	if err := os.WriteFile(basePath, []byte("content"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -709,7 +709,7 @@ func TestAppendTemplateDirDiffs_StatError_Permissions(t *testing.T) {
 
 	inst := &installer{root: root, sys: RealSystem{}}
 	dir := templateDir{
-		templateRoot: "instructions",
+		templateRoot: "docs/agent-layer",
 		destRoot:     instrDir,
 	}
 
@@ -730,8 +730,8 @@ func TestWriteTemplateDirCached_EntriesError(t *testing.T) {
 	root := t.TempDir()
 	inst := &installer{root: root, sys: RealSystem{}}
 	dir := templateDir{
-		templateRoot: "instructions",
-		destRoot:     filepath.Join(root, "instructions"),
+		templateRoot: "docs/agent-layer",
+		destRoot:     filepath.Join(root, "templates", "docs"),
 	}
 
 	err := inst.templates().writeTemplateDirCached(dir)
@@ -751,8 +751,8 @@ func TestTemplateDirEntries_WalkCallbackError(t *testing.T) {
 	root := t.TempDir()
 	inst := &installer{root: root, sys: RealSystem{}}
 	dir := templateDir{
-		templateRoot: "instructions",
-		destRoot:     filepath.Join(root, "instructions"),
+		templateRoot: "docs/agent-layer",
+		destRoot:     filepath.Join(root, "templates", "docs"),
 	}
 
 	_, err := inst.templates().templateDirEntries(dir)
@@ -772,8 +772,8 @@ func TestTemplateDirEntries_UnexpectedPath(t *testing.T) {
 	root := t.TempDir()
 	inst := &installer{root: root, sys: RealSystem{}}
 	dir := templateDir{
-		templateRoot: "instructions",
-		destRoot:     filepath.Join(root, "instructions"),
+		templateRoot: "docs/agent-layer",
+		destRoot:     filepath.Join(root, "templates", "docs"),
 	}
 
 	_, err := inst.templates().templateDirEntries(dir)
@@ -882,11 +882,11 @@ func TestAppendTemplateDirDiffs_SectionAwareErrorsAndDiffs(t *testing.T) {
 
 func TestAppendTemplateDirDiffs_AddsNonSectionAwareMismatch(t *testing.T) {
 	root := t.TempDir()
-	instructionsDir := filepath.Join(root, ".agent-layer", "instructions")
+	instructionsDir := filepath.Join(root, ".agent-layer", "templates", "docs")
 	if err := os.MkdirAll(instructionsDir, 0o700); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
-	targetPath := filepath.Join(instructionsDir, "00_rules.md")
+	targetPath := filepath.Join(instructionsDir, "CONTEXT.md")
 	if err := os.WriteFile(targetPath, []byte("custom instructions\n"), 0o600); err != nil {
 		t.Fatalf("write instruction: %v", err)
 	}
@@ -894,13 +894,13 @@ func TestAppendTemplateDirDiffs_AddsNonSectionAwareMismatch(t *testing.T) {
 	inst := &installer{root: root, sys: RealSystem{}}
 	diffs := map[string]struct{}{}
 	if err := inst.templates().appendTemplateDirDiffs(diffs, templateDir{
-		templateRoot: "instructions",
+		templateRoot: "docs/agent-layer",
 		destRoot:     instructionsDir,
 	}); err != nil {
 		t.Fatalf("appendTemplateDirDiffs: %v", err)
 	}
 
-	if _, ok := diffs[".agent-layer/instructions/00_rules.md"]; !ok {
+	if _, ok := diffs[".agent-layer/templates/docs/CONTEXT.md"]; !ok {
 		t.Fatalf("expected non-section-aware mismatch to be recorded, got %v", diffs)
 	}
 }

@@ -11,13 +11,13 @@ import (
 func TestLoadCLISkillCatalog_EmbeddedHasExpectedEntries(t *testing.T) {
 	entries, err := LoadCLISkillCatalog()
 	require.NoError(t, err)
-	require.Len(t, entries, 7)
+	require.Len(t, entries, 8)
 
 	ids := make(map[string]CLISkillCatalogEntry, len(entries))
 	for _, entry := range entries {
 		ids[entry.ID] = entry
 	}
-	for _, want := range []string{"tavily-web", "playwright", "find-docs", "dispatch-agent", "skill-sync", "benchmark", "development-skills"} {
+	for _, want := range []string{"tavily-web", "playwright", "find-docs", "dispatch-agent", "skill-sync", "benchmark", "development-skills", "instruction-sync"} {
 		_, ok := ids[want]
 		assert.True(t, ok, "catalog should declare %s", want)
 	}

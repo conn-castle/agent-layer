@@ -196,6 +196,14 @@ func TestRecoverIsANoOpWithoutAStagingDirectory(t *testing.T) {
 	if err := Recover(s.targets); err != nil {
 		t.Fatalf("Recover: %v", err)
 	}
+	// Legacy local instruction links are irrelevant until recovery writes there.
+	s.targets.ExactFiles = true
+	s.targets.LocalSkillsDir = filepath.Join(filepath.Dir(s.targets.ConfigPath), "instructions")
+	require.NoError(t, os.Symlink(t.TempDir(), s.targets.LocalSkillsDir))
+	require.NoError(t, Recover(s.targets))
+	require.NoError(t, os.Mkdir(s.staging, 0o750))
+	require.ErrorContains(t, Recover(s.targets), "symbolic link")
+
 }
 
 // TestRecoverRejectsAJournalItCannotTrust proves recovery never guesses. A

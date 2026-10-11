@@ -63,6 +63,11 @@ func RunProfile(root string, runSync syncer, pinVersion string, profilePath stri
 		}
 	}
 
+	orderedProfile, err := config.MigrateInstructionOrderFS(os.DirFS(root), root, string(profileBytes))
+	if err != nil {
+		return err
+	}
+	profileBytes = []byte(orderedProfile)
 	preview := strings.TrimSpace(udiff.Unified(
 		".agent-layer/config.toml (current)",
 		filepath.ToSlash(profilePath)+" (profile)",

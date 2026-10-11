@@ -316,3 +316,8 @@ Record otherwise-lost rationale that materially constrains future work. Current 
     Decision: Consume scripted answers through the actual conditional flow and apply confirmation before installation, catalog recovery, previews, or application. Keep interactive installation immediately after its install confirmation.
     Reason: Automation must not change project approvals or leave generated state behind when its input is rejected. An interactive user's accepted bare installation remains useful even if they later cancel configuration.
     Tradeoffs: Scripted catalog status and previews are computed after input validation; the existing locked catalog recovery and apply paths remain authoritative.
+
+- Decision 2026-10-10 instruction-wizard-precedence: Instruction order collisions require an explicit choice
+    Decision: Keep fresh wizard orders at rules=0 and memory=10, retain adopted files' existing orders, and refuse collisions with explicit CLI --order/config guidance.
+    Reason: Automatically appending imports after the highest order changes their intended precedence relative to project-specific instructions. The approved instruction-sync plan chose refusal; review suggestions must not silently replace that policy.
+    Tradeoffs: A colliding layout needs an explicit `al instructions add --order` invocation or config edit before wizard selection can proceed. The existing offline collision regression verifies that refusal leaves sources and configuration unchanged.

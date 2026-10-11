@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -68,12 +69,22 @@ func catalogSkillIsManagedOnDisk(root string, entry templates.CLISkillCatalogEnt
 // The result controls whether the install-only instruction prompt is shown.
 // Standard or legacy managed instruction files, live memory docs, and memory
 // templates suppress the prompt because the wizard does not refresh them.
-// User-authored extra instruction files do not count, so a repo that only
-// has custom fragments can still seed 00_rules.md. Development skills on
+// User-authored fragments do not count; standard legacy slots are offered for
+// explicit adoption. Configured imports suppress repeated selection. Development skills on
 // disk do not count; they are selected independently on the skills catalog
 // screen.
 func detectInstructionEvidenceFromDisk(root string) bool {
 	if root == "" {
+		return true
+	}
+	for _, name := range standardInstructionBasenames {
+		info, err := os.Lstat(filepath.Join(root, ".agent-layer", "instructions", name))
+		if err == nil && info.Mode().IsRegular() {
+			return false
+		}
+	}
+	cfg, err := config.LoadConfigLenient(config.DefaultPaths(root).ConfigPath)
+	if err == nil && len(cfg.Instructions.Imports) > 0 {
 		return true
 	}
 	if hasAnyTemplateMemoryFile(root) {

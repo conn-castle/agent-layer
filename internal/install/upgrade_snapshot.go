@@ -361,6 +361,7 @@ func (inst *installer) captureUpgradeSnapshotEntries() ([]upgradeSnapshotEntry, 
 		return nil, err
 	}
 	targets := inst.upgradeSnapshotTargetPaths(catalogDirs)
+	targets = append(targets, filepath.Join(inst.root, ".agent-layer", "config.toml"))
 	entries := make(map[string]upgradeSnapshotEntry)
 	for _, target := range targets {
 		if err := inst.captureUpgradeSnapshotTarget(target, entries); err != nil {

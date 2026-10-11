@@ -91,7 +91,7 @@ func collectTemplateSources(root string) ([]templateSource, error) {
 			dests:        templateDestPaths(name),
 		})
 	}
-	dirs := []string{"instructions", "skills-catalog", "docs/agent-layer"}
+	dirs := []string{"skills-catalog", "docs/agent-layer"}
 	for _, dir := range dirs {
 		absDir := filepath.Join(root, templateRoot, dir)
 		if _, err := os.Stat(absDir); err != nil {
@@ -158,9 +158,6 @@ func templateDestPaths(templatePath string) []string {
 		return []string{".agent-layer/.gitignore"}
 	case templatePath == "gitignore.block":
 		return []string{".agent-layer/gitignore.block"}
-	case strings.HasPrefix(templatePath, "instructions/"):
-		suffix := strings.TrimPrefix(templatePath, "instructions/")
-		return []string{filepath.ToSlash(filepath.Join(".agent-layer/instructions", suffix))}
 	case strings.HasPrefix(templatePath, "skills-catalog/"):
 		// Catalog skills materialize at .agent-layer/skills/<id>/... when the
 		// wizard installs them; mirror the destination so manifest paths match

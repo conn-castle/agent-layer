@@ -2,22 +2,18 @@ package config
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	pathpkg "path"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
-
-var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 
 type skillTreeFS struct {
 	fsys fs.FS
@@ -80,7 +76,7 @@ func LoadProjectConfigFS(fsys fs.FS, root string) (*ProjectConfig, error) {
 	}
 	env = WithBuiltInEnv(env, root)
 
-	instructions, err := LoadInstructionsFS(fsys, root, paths.InstructionsDir)
+	instructions, err := LoadOrderedInstructionsFS(fsys, root, cfg.Instructions)
 	if err != nil {
 		return nil, err
 	}
@@ -133,44 +129,6 @@ func LoadEnvFS(fsys fs.FS, root string, path string) (map[string]string, error) 
 		return nil, fmt.Errorf(messages.ConfigInvalidEnvFileFmt, path, err)
 	}
 	return filterAgentLayerEnv(env), nil
-}
-
-// LoadInstructionsFS reads .agent-layer/instructions/*.md from fsys in lexicographic order.
-// root is used for path resolution when dir is absolute; dir is used for error messages.
-func LoadInstructionsFS(fsys fs.FS, root string, dir string) ([]InstructionFile, error) {
-	entries, err := readDirFS(fsys, root, dir)
-	if err != nil {
-		return nil, fmt.Errorf(messages.ConfigMissingInstructionsDirFmt, dir, err)
-	}
-
-	var names []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if strings.HasSuffix(name, ".md") {
-			names = append(names, name)
-		}
-	}
-
-	sort.Strings(names)
-
-	files := make([]InstructionFile, 0, len(names))
-	for _, name := range names {
-		path := filepath.Join(dir, name)
-		data, err := readFileFS(fsys, root, path)
-		if err != nil {
-			return nil, fmt.Errorf(messages.ConfigFailedReadInstructionFmt, path, err)
-		}
-		data = bytes.TrimPrefix(data, utf8BOM)
-		files = append(files, InstructionFile{
-			Name:    name,
-			Content: string(data),
-		})
-	}
-
-	return files, nil
 }
 
 // LoadSkillsFS reads .agent-layer/skills from fsys.

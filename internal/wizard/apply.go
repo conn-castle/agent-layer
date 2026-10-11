@@ -8,6 +8,7 @@ import (
 
 	"github.com/fatih/color"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -21,10 +22,10 @@ var writeFileAtomic = fsutil.WriteFileAtomic
 // applyChanges writes config/env updates and runs sync.
 // root/configPath/envPath identify files; c holds wizard selections; runSync is the sync function to call; returns an error on failure.
 func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, out io.Writer) (err error) {
-	catalogApplied := false
+	sourcesApplied := false
 	defer func() {
-		if err != nil && catalogApplied {
-			err = fmt.Errorf("catalog source changes were committed; projection was not completed: %w", err)
+		if err != nil && sourcesApplied {
+			err = fmt.Errorf("import source changes were committed; projection was not completed: %w", err)
 		}
 	}()
 	if out == nil {
@@ -40,18 +41,21 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 	if err != nil {
 		return err
 	}
+	// Prepare and validate the complete config before creating backups or writing.
+	newConfig, err := PatchConfig(string(rawConfig), c)
+	if err != nil {
+		return fmt.Errorf(messages.WizardPatchConfigFailedFmt, err)
+	}
+	newConfig, err = config.MigrateInstructionOrderFS(os.DirFS(root), root, newConfig)
+	if err != nil {
+		return fmt.Errorf(messages.WizardPatchConfigFailedFmt, err)
+	}
 	// Backup
 	configBackupPath := backupPath(root, configBackupName)
 	configBackupCreated, err := writeBackup(configBackupPath, rawConfig, configPerm)
 	if err != nil {
 		return fmt.Errorf(messages.WizardBackupConfigFailedFmt, err)
 	}
-	// Patch
-	newConfig, err := PatchConfig(string(rawConfig), c)
-	if err != nil {
-		return fmt.Errorf(messages.WizardPatchConfigFailedFmt, err)
-	}
-
 	// Env
 	// Backup if exists
 	rawEnv, err := os.ReadFile(envPath) // #nosec G304 -- envPath is the caller-resolved .agent-layer/.env path used by wizard apply.
@@ -88,7 +92,7 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 		return fmt.Errorf(messages.WizardWriteEnvFailedFmt, err)
 	}
 
-	// Skills (catalog adds/removes, instruction and memory file seeds).
+	// Skills, instruction imports, and memory file seeds.
 	// Run before sync so sync sees the final on-disk layout.
 	skillsChangeSet, err := computeSkillsChangeSet(root, c)
 	if err != nil {
@@ -100,7 +104,7 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 	if err := applySkillsChanges(root, skillsChangeSet); err != nil {
 		return fmt.Errorf(messages.WizardApplySkillsFailedFmt+"; config/env writes were applied; gitignore block updates, statusline source updates, and sync were not run", err)
 	}
-	catalogApplied = len(skillsChangeSet.importSelectors)+len(skillsChangeSet.removeSelectors) > 0
+	sourcesApplied = len(skillsChangeSet.importSelectors)+len(skillsChangeSet.removeSelectors)+len(skillsChangeSet.instructionImports) > 0
 
 	gitignoreChangeSet, err := computeGitignoreBlockChangeSet(root, c)
 	if err != nil {

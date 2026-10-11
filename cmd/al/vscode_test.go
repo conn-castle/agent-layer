@@ -35,6 +35,10 @@ func TestRunVSCodeNoSyncDisabled(t *testing.T) {
 
 	paths := filepath.Join(root, ".agent-layer", "config.toml")
 	configToml := `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = "all"
 
@@ -78,6 +82,10 @@ func TestRunVSCodeNoSyncEnabledViaClaudeVSCode(t *testing.T) {
 
 	paths := filepath.Join(root, ".agent-layer", "config.toml")
 	configToml := `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = "all"
 

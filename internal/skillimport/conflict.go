@@ -44,7 +44,7 @@ func (s *Service) Resolve(ctx context.Context, name string) (*Report, error) {
 			return err
 		}
 		if !conflictMatches(st, entry, state) {
-			return fmt.Errorf("conflict workspace for %q is stale; run the original %s again", name, conflictRetryCommand(state.Kind))
+			return fmt.Errorf("conflict workspace for %q is stale; run the original %s again", name, st.conflictRetryCommand(state.Kind))
 		}
 
 		runner, err := s.newRunner(st.env)
@@ -55,7 +55,7 @@ func (s *Service) Resolve(ctx context.Context, name string) (*Report, error) {
 		if err != nil {
 			return err
 		}
-		if _, err := skilltree.ValidateSkill(tree, entry.SelectedPath); err != nil {
+		if _, err := skilltree.ValidateNode(tree, entry.SelectedPath, st.instructions); err != nil {
 			return fmt.Errorf("resolved tree is not a valid skill: %w", err)
 		}
 
@@ -73,7 +73,7 @@ func (s *Service) Resolve(ctx context.Context, name string) (*Report, error) {
 				Commit:     state.DestinationHead,
 				TreeHash:   state.DestinationTreeHash,
 			}
-			detail = "rerun 'al skills push'"
+			detail = "rerun " + st.conflictRetryCommand(conflictKindPush)
 		default:
 			return fmt.Errorf("conflict workspace for %q has unknown kind %q", name, state.Kind)
 		}
@@ -96,11 +96,11 @@ func (s *Service) Resolve(ctx context.Context, name string) (*Report, error) {
 	})
 }
 
-func conflictRetryCommand(kind string) string {
+func (st *state) conflictRetryCommand(kind string) string {
 	if kind == conflictKindPush {
-		return "'al skills push'"
+		return "'al " + importKind(st.instructions) + " push'"
 	}
-	return "'al skills pull'"
+	return "'al " + importKind(st.instructions) + " pull'"
 }
 
 func conflictWorkspace(root, name string) (string, error) {
@@ -153,7 +153,7 @@ func writeConflictWorkspace(ctx context.Context, runner *gitrepo.Runner, st *sta
 			return "", fmt.Errorf("existing conflict workspace %s is unreadable; move or remove it before retrying: %w", relativeTo(st.paths.Root, dir), readErr)
 		}
 		if conflictMatches(st, state.Lock, existing) {
-			return "", fmt.Errorf("active %s conflict workspace %s already exists; finish it with git and run 'al skills resolve %s'", existing.Kind, relativeTo(st.paths.Root, dir), name)
+			return "", fmt.Errorf("active %s conflict workspace %s already exists; finish it with git and run 'al %s resolve %s'", existing.Kind, relativeTo(st.paths.Root, dir), importKind(st.instructions), name)
 		}
 		return "", fmt.Errorf("existing conflict workspace %s is stale; move or remove it before retrying", relativeTo(st.paths.Root, dir))
 	} else if !os.IsNotExist(statErr) {
@@ -200,7 +200,7 @@ func readConflictMetadata(st *state, name string) (conflictState, string, error)
 	data, err := os.ReadFile(filepath.Join(dir, ".git", conflictMetaFile)) // #nosec G304 -- name is validated above.
 	if err != nil {
 		if os.IsNotExist(err) {
-			return conflictState{}, "", fmt.Errorf("imported skill %q has no conflict workspace; run 'al skills pull' or 'al skills push' first", name)
+			return conflictState{}, "", fmt.Errorf("imported skill %q has no conflict workspace; run 'al %s pull' or 'al %s push' first", name, importKind(st.instructions), importKind(st.instructions))
 		}
 		return conflictState{}, "", err
 	}

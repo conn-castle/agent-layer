@@ -45,3 +45,8 @@ name = "Development skills (/implement, /ship-pr, etc.)"
 repository = "https://github.com/nicholasjconn/skills.git"
 selectors = ["skills/development/implement", "skills/development/ship-pr", "skills/development/auto-skill-loop", "skills/development/audit-documentation", "skills/development/audit-memory", "skills/development/audit-tests", "skills/development/interface-audit"]
 # Grouped Git import: selectors are exact paths; id is only a checkbox identity.
+
+[[cli_skills]]
+id = "instruction-sync"
+name = "Instruction sync (ordered instructions from Git)"
+ownership_marker = "<!-- agent-layer-catalog-skill: instruction-sync -->"

@@ -920,6 +920,9 @@ setup_catalog_git_fixture() {
       printf -- '---\nname: %s\ndescription: Hermetic catalog fixture.\n---\n\nFixture for %s; playwright-cli --help.\n' "$name" "$name" > "$source/skills/$group/$name/SKILL.md"
       printf 'fixture resource\n' > "$source/skills/$group/$name/resources/example.txt"
     done
+    mkdir -p "$source/instructions"
+    printf 'Follow project conventions. Validate changes.\n' > "$source/instructions/rules.md"
+    printf 'Read docs/agent-layer/CONTEXT.md.\n' > "$source/instructions/memory.md"
     git -C "$source" add .
     git -C "$source" -c user.name=Fixture -c user.email=fixture@example.invalid commit --quiet -m fixture
   fi

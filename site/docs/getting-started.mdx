@@ -148,7 +148,9 @@ Typical layout:
 ```text
 .agent-layer/
   config.toml          # approvals, dispatch limits, agents, models, MCP servers, warnings
-  instructions/        # numbered instruction fragments
+  instructions/        # local Markdown files with numeric order in config.toml
+  instructions-imported/ # Git imports with numeric order in config.toml
+  instructions.lock.json # upstream bases for instruction imports
   skills/             # <name>/SKILL.md
   commands.allow       # approved shell command prefixes
   al.version           # repo pin (required)
@@ -164,7 +166,7 @@ Skill sources follow the [agentskills.io specification](https://agentskills.io/s
 
 ### Project memory (`docs/agent-layer/`)
 
-These files are created when you choose Rules and memory in `al wizard`. The bundled memory instructions reference them as long-lived memory for the repo:
+These files are created when you choose Rules and memory in `al wizard`. The imported memory instructions reference them as long-lived memory for the repo:
 
 ```text
 docs/agent-layer/
@@ -184,7 +186,7 @@ Generated files live in the repo and are gitignored by default:
 Different clients require different file formats and conventions. Agent Layer generates what each client expects so you do not have to maintain separate config by hand.
 
 ```text
-# Instruction shims (generated from .agent-layer/instructions/*.md)
+# Instruction shims (generated from both configured instruction tiers)
 AGENTS.md
 .claude/CLAUDE.md
 .github/copilot-instructions.md

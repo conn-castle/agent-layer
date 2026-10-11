@@ -52,6 +52,10 @@ func TestCheckInstructions_Fallback(t *testing.T) {
 	err = os.WriteFile(filepath.Join(instDir, "02_b.md"), []byte("part two"), 0600)
 	require.NoError(t, err)
 
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, ".agent-layer", "config.toml"), []byte("[[instructions.local]]\nselectors = [\"02_b.md\"]\norder = 0\n[[instructions.local]]\nselectors = [\"01_a.md\"]\norder = 10\n"), 0o600))
+	payload, _, err := getInstructionPayload(tmpDir)
+	require.NoError(t, err)
+	require.Equal(t, "part two\n\npart one", payload)
 	warnings, err := CheckInstructions(tmpDir, &threshold)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
@@ -68,7 +72,7 @@ func TestCheckInstructions_Fallback(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, warnings, 1)
 	assert.Equal(t, CodeInstructionsTooLarge, warnings[0].Code)
-	assert.Equal(t, ".agent-layer/instructions/*", warnings[0].Subject)
+	assert.Equal(t, "local and imported", warnings[0].Subject)
 }
 
 func TestMeasureInstructions_ReportsTokensAndSubject(t *testing.T) {
@@ -92,7 +96,7 @@ func TestMeasureInstructions_NoFilesReturnsZero(t *testing.T) {
 	tokens, subject, err := MeasureInstructions(tmpDir)
 	require.NoError(t, err)
 	assert.Equal(t, 0, tokens)
-	assert.Equal(t, ".agent-layer/instructions/*", subject)
+	assert.Equal(t, "local and imported", subject)
 }
 
 func TestCheckInstructions_Disabled(t *testing.T) {

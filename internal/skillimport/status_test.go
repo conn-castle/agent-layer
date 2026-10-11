@@ -355,7 +355,7 @@ func TestUserManagedNamesRejectNFKCCollisions(t *testing.T) {
 	if err := os.Mkdir(second, 0o750); err != nil {
 		t.Fatalf("mkdir second: %v", err)
 	}
-	_, err := readUserSkillNames(dir)
+	_, err := readUserSkillNames(dir, false)
 	if err == nil {
 		t.Fatal("NFKC-equivalent skill directories were accepted")
 	}
@@ -611,7 +611,7 @@ func TestTierReadersAllowOnlyRegularCasePairs(t *testing.T) {
 	for _, kind := range []string{"files", "directories", "directory and file", "symlink and file", "file then directory", "file then symlink"} {
 		t.Run(kind, func(t *testing.T) {
 			dir := t.TempDir()
-			for i, name := range []string{"README", "readme"} {
+			for i, name := range []string{"README.md", "readme.md"} {
 				node := filepath.Join(dir, name)
 				nonregular := (i == 0 && (kind == "directories" || kind == "directory and file" || kind == "symlink and file")) || (i == 1 && (kind == "directories" || kind == "file then directory" || kind == "file then symlink"))
 				if nonregular && strings.Contains(kind, "symlink") {
@@ -623,14 +623,18 @@ func TestTierReadersAllowOnlyRegularCasePairs(t *testing.T) {
 				}
 			}
 			before := testutil.SnapshotEvidence(t, dir)
-			imports, importErr := readImportedSkills(dir)
-			users, userErr := readUserSkillNames(dir)
+			imports, importErr := readImportedSkills(dir, false)
+			users, userErr := readUserSkillNames(dir, false)
 			if kind == "files" {
 				require.NoError(t, importErr)
 				require.NoError(t, userErr)
-				require.True(t, imports["README"].Present && imports["readme"].Present)
+				require.True(t, imports["README.md"].Present && imports["readme.md"].Present)
 				require.Len(t, users, 1)
-				require.Contains(t, users, "readme", "requested file names still block imports")
+				_, err := readUserSkillNames(dir, true)
+				require.ErrorContains(t, err, "normalize to the same name")
+				_, err = readImportedSkills(dir, true)
+				require.ErrorContains(t, err, "normalize to the same name")
+				require.Contains(t, users, "readme.md", "requested file names still block imports")
 			} else {
 				require.ErrorContains(t, importErr, "normalize to the same name")
 				require.ErrorContains(t, userErr, "normalize to the same name")

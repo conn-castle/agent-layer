@@ -24,6 +24,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 	"github.com/conn-castle/agent-layer/internal/templates"
@@ -104,6 +105,7 @@ type Targets struct {
 	LocalSkillsDir    string
 	ConfigPath        string
 	SkillsLockPath    string
+	ExactFiles        bool
 }
 
 // StagingRoot returns the staging directory for an imported skill tier.
@@ -148,7 +150,7 @@ func MarkCommitted(stagingRoot string) error {
 func Recover(targets Targets) error {
 	// Every caller shares these guards. Check live roots before even inspecting
 	// staging so recovery cannot consume another directory's journal/backups.
-	if err := validateRecoveryRoots(targets); err != nil {
+	if err := validateRecoveryRoots(targets, false); err != nil {
 		return err
 	}
 	stagingRoot := StagingRoot(targets.ImportedSkillsDir)
@@ -158,6 +160,9 @@ func Recover(targets Targets) error {
 	}
 	if !exists {
 		return nil
+	}
+	if err := validateRecoveryRoots(targets, true); err != nil {
+		return err
 	}
 
 	doc, err := read(stagingRoot)
@@ -172,6 +177,9 @@ func Recover(targets Targets) error {
 	}
 	if len(doc.LocalRetirements) > 0 && targets.LocalSkillsDir == "" {
 		return fmt.Errorf("local recovery root is missing; preserve adoption journal %s", stagingRoot)
+	}
+	if err := validateRetirements(targets, doc); err != nil {
+		return err
 	}
 	if err := validateBackups(stagingRoot, targets, doc, nil, !doc.Committed); err != nil {
 		return err
@@ -199,7 +207,7 @@ type Progress struct {
 // paths and requires every backup the writer knows it moved. Failed validation
 // leaves all live paths and recovery evidence intact.
 func Rollback(targets Targets, applied Progress, writeFile func(string, []byte, os.FileMode) error) error {
-	if err := validateRecoveryRoots(targets); err != nil {
+	if err := validateRecoveryRoots(targets, true); err != nil {
 		return err
 	}
 	stagingRoot := StagingRoot(targets.ImportedSkillsDir)
@@ -227,6 +235,9 @@ func Rollback(targets Targets, applied Progress, writeFile func(string, []byte, 
 	for _, name := range applied.LocalRetirements {
 		moved = append(moved, LocalBackupPrefix+name)
 	}
+	if err := validateRetirements(targets, doc); err != nil {
+		return err
+	}
 	if err := validateBackups(stagingRoot, targets, doc, moved, true); err != nil {
 		return err
 	}
@@ -235,17 +246,32 @@ func Rollback(targets Targets, applied Progress, writeFile func(string, []byte, 
 	return rollback(stagingRoot, targets, doc, writeFile, applied.Lock)
 }
 
-func validateRecoveryRoots(targets Targets) error {
+func validateRecoveryRoots(targets Targets, recovering bool) error {
 	if targets.ImportedSkillsDir == "" {
 		return fmt.Errorf("imported recovery root is missing; preserve recovery evidence, repair the path, then retry")
 	}
 	for _, root := range []string{targets.ImportedSkillsDir, targets.LocalSkillsDir} {
 		// Historical v1 callers omit the local tier.
-		if root == "" {
+		if root == "" || (targets.ExactFiles && root == targets.LocalSkillsDir && !recovering) {
 			continue
 		}
-		if _, err := recoveryDirectoryExists(root); err != nil {
+		exists, err := recoveryDirectoryExists(root)
+		if err != nil {
 			return err
+		}
+		if exists && targets.ExactFiles {
+			entries, err := os.ReadDir(root)
+			if err != nil {
+				return err
+			}
+			for _, entry := range entries {
+				if root == targets.LocalSkillsDir && !config.LocalInstructionEntry(entry) {
+					continue
+				}
+				if !strings.HasPrefix(entry.Name(), ".") && entry.Type()&os.ModeSymlink != 0 {
+					return fmt.Errorf("instruction source %s must be a regular unlinked file before recovery or writes", filepath.Join(root, entry.Name()))
+				}
+			}
 		}
 	}
 	return nil
@@ -302,7 +328,7 @@ func read(stagingRoot string) (Document, error) {
 	}
 	seenLocal := map[string]bool{}
 	for _, name := range doc.LocalRetirements {
-		if !templates.IsRetiredSkill(name) || seenLocal[name] {
+		if (!templates.IsRetiredSkill(name) && LegacyInstruction(name) == "") || seenLocal[name] {
 			return Document{}, fmt.Errorf("%w: invalid local retirement %q", ErrMalformed, name)
 		}
 		seenLocal[name] = true
@@ -372,7 +398,7 @@ func validateBackups(stagingRoot string, targets Targets, doc Document, movedBac
 		}
 		detail := fmt.Sprintf("required backup %s is missing", path)
 		if original != "" && !slices.Contains(movedBackups, name) {
-			if info, err := os.Lstat(original); err == nil && info.IsDir() {
+			if info, err := os.Lstat(original); err == nil && ((directory && info.IsDir()) || (!directory && info.Mode().IsRegular())) {
 				return nil
 			}
 			detail += fmt.Sprintf("; original %s is absent or not a real directory", original)
@@ -380,17 +406,17 @@ func validateBackups(stagingRoot string, targets Targets, doc Document, movedBac
 		return fmt.Errorf("an interrupted skill import could not be fully rolled back: %s; preserve all live data and recovery evidence, repair the missing evidence, then retry", detail)
 	}
 	for _, write := range doc.Writes {
-		if err := check(WriteBackupPrefix+write.Name, filepath.Join(targets.ImportedSkillsDir, write.Name), true, write.Existed); err != nil {
+		if err := check(WriteBackupPrefix+write.Name, filepath.Join(targets.ImportedSkillsDir, write.Name), !targets.ExactFiles, write.Existed); err != nil {
 			return err
 		}
 	}
 	for _, name := range doc.Deletes {
-		if err := check(DeleteBackupPrefix+name, filepath.Join(targets.ImportedSkillsDir, name), true, true); err != nil {
+		if err := check(DeleteBackupPrefix+name, filepath.Join(targets.ImportedSkillsDir, name), !targets.ExactFiles, true); err != nil {
 			return err
 		}
 	}
 	for _, name := range doc.LocalRetirements {
-		if err := check(LocalBackupPrefix+name, filepath.Join(targets.LocalSkillsDir, name), true, true); err != nil {
+		if err := check(LocalBackupPrefix+name, targets.LocalPath(name), !targets.ExactFiles, true); err != nil {
 			return err
 		}
 	}
@@ -451,7 +477,7 @@ func rollback(stagingRoot string, targets Targets, doc Document, writeFile func(
 		note(restoreTree(backup, target, false))
 	}
 	for _, name := range doc.LocalRetirements {
-		note(restoreTree(filepath.Join(stagingRoot, LocalBackupPrefix+name), filepath.Join(targets.LocalSkillsDir, name), false))
+		note(restoreTree(filepath.Join(stagingRoot, LocalBackupPrefix+name), targets.LocalPath(name), false))
 	}
 	if doc.Config {
 		note(restoreFile(filepath.Join(stagingRoot, ConfigBackupName), targets.ConfigPath, writeFile))
@@ -517,4 +543,55 @@ func removeStaging(stagingRoot string) error {
 		return fmt.Errorf("failed to remove %s: %w", stagingRoot, err)
 	}
 	return fsutil.SyncDir(filepath.Dir(stagingRoot))
+}
+
+// LegacyInstruction is the fixed trusted adoption rename map, never journal data.
+func LegacyInstruction(name string) string {
+	switch name {
+	case "rules.md":
+		return "00_rules.md"
+	case "memory.md":
+		return "01_memory.md"
+	}
+	return ""
+}
+
+// LocalPath maps only trusted standard instruction names to their legacy slots.
+func (t Targets) LocalPath(name string) string {
+	if t.ExactFiles {
+		if old := LegacyInstruction(name); old != "" {
+			name = old
+		}
+	}
+	return filepath.Join(t.LocalSkillsDir, name)
+}
+func validateRetirements(t Targets, d Document) error {
+	for _, name := range d.LocalRetirements {
+		if (t.ExactFiles && LegacyInstruction(name) == "") || (!t.ExactFiles && !templates.IsRetiredSkill(name)) {
+			return fmt.Errorf("%w: invalid retirement for this import tier", ErrMalformed)
+		}
+	}
+	return nil
+}
+
+// RecoverBoth uses trusted coordinates for both kinds before any source consumer.
+func RecoverBoth(root string) error {
+	base := filepath.Join(root, ".agent-layer")
+	if _, err := recoveryDirectoryExists(base); err != nil {
+		return err
+	}
+	var targets []Targets
+	for _, kind := range []string{"skills", "instructions"} {
+		target := Targets{ImportedSkillsDir: filepath.Join(base, kind+"-imported"), LocalSkillsDir: filepath.Join(base, kind), SkillsLockPath: filepath.Join(base, kind+".lock.json"), ConfigPath: filepath.Join(base, "config.toml"), ExactFiles: kind == "instructions"}
+		if err := validateRecoveryRoots(target, false); err != nil {
+			return err
+		}
+		targets = append(targets, target)
+	}
+	for _, target := range targets {
+		if err := Recover(target); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -44,18 +44,38 @@ func TestRetiredLocalRootSymlinkIsProtectedWithoutTraversal(t *testing.T) {
 }
 
 func TestMigrationGuardsRefuseBeforeChangingInstalledState(t *testing.T) {
-	for _, kind := range []string{"local file", "local directory", "old pin"} {
+	for _, kind := range []string{"local file", "local directory", "old pin", "local instruction", "skill configuration"} {
 		t.Run(kind, func(t *testing.T) {
 			root := t.TempDir()
 			require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: skillmigration.MinimumCLI}))
 			recordMovedImport(t, root)
 			perm := uint32(0o600)
 			entry := upgradeSnapshotEntry{Path: ".agent-layer/skills/ship-pr/SKILL.md", Kind: upgradeSnapshotEntryKindFile, Perm: &perm, ContentBase64: base64.StdEncoding.EncodeToString([]byte("custom local"))}
+			if kind == "local instruction" {
+				entry.Path = ".agent-layer/instructions/00_rules.md"
+				dir := filepath.Join(root, ".agent-layer", "instructions-imported")
+				require.NoError(t, os.MkdirAll(dir, 0o750))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "rules.md"), []byte("imported rule edits"), 0o600))
+				lock := skilllock.NewInstructions()
+				lock.Upsert(skilllock.Entry{Name: "rules.md", Repository: templates.GeneralSkillsRepository, Selector: "instructions/rules.md", SelectedPath: "instructions/rules.md", ResolvedRef: "main", RefKind: "branch", Tracking: "tracked", Commit: strings.Repeat("a", 40), TreeHash: "sha256:" + strings.Repeat("b", 64)})
+				data, err := lock.Marshal()
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions.lock.json"), data, 0o600))
+			}
 			if kind == "local directory" {
 				entry.Path, entry.Kind, entry.ContentBase64 = ".agent-layer/skills/ship-pr", upgradeSnapshotEntryKindDir, ""
 			}
 			if kind == "old pin" {
 				entry.Path, entry.ContentBase64 = pinVersionRelPath, base64.StdEncoding.EncodeToString([]byte("0.99.9\n"))
+			}
+			if kind == "skill configuration" {
+				raw, err := os.ReadFile(filepath.Join(root, ".agent-layer", "config.toml")) // #nosec G304 -- test-owned project configuration.
+				require.NoError(t, err)
+				entry.Path, entry.ContentBase64 = ".agent-layer/config.toml", base64.StdEncoding.EncodeToString(raw)
+				owned := string(raw) + "\n[[skills.imports]]\nrepository = \"" + templates.GeneralSkillsRepository + "\"\nselectors = [\"skills/development/*\"]\n"
+				require.NoError(t, skillmigration.CheckConfig([]byte(owned), map[string]bool{"ship-pr": true}))
+				excluded := strings.Replace(owned, `["skills/development/*"]`, `["skills/development/*", "!skills/development/ship-pr"]`, 1)
+				require.ErrorContains(t, skillmigration.CheckConfig([]byte(excluded), map[string]bool{"ship-pr": true}), "discard ownership")
 			}
 			snapshot := upgradeSnapshot{SchemaVersion: upgradeSnapshotSchemaVersion, SnapshotID: "migration-guard", CreatedAtUTC: time.Now().UTC().Format(time.RFC3339), Status: upgradeSnapshotStatusApplied, Entries: []upgradeSnapshotEntry{entry}}
 			inst := &installer{root: root, sys: RealSystem{}}

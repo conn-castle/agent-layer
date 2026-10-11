@@ -13,10 +13,9 @@ import (
 // skillImportsTableName is the array-of-tables name that holds import blocks.
 const skillImportsTableName = "skills.imports"
 
-// skillImportBlockSpan locates one `[[skills.imports]]` block inside a config
-// file, including the parsed values that make up its policy identity.
+// skillImportBlockSpan locates one array table. Import scans also decode policy.
 type skillImportBlockSpan struct {
-	start  int // index of the `[[skills.imports]]` header line
+	start  int // index of the array-table header line
 	end    int // exclusive index of the first line after the block
 	parsed SkillImport
 }
@@ -31,105 +30,114 @@ type skillImportBlockSpan struct {
 // A matching import declared without its own `[[skills.imports]]` header is
 // rejected rather than edited.
 func SetSkillImportSelectors(content string, identity SkillImportBlockIdentity, selectors []string) (string, error) {
-	lines := strings.Split(content, "\n")
-	spans, err := findSkillImportBlocks(lines)
-	if err != nil {
-		return "", err
-	}
-
-	match := -1
-	for i, span := range spans {
-		if span.parsed.Identity() == identity {
-			match = i
-			break
-		}
-	}
-
-	if match < 0 {
-		if err := rejectHiddenSkillImport(content, identity); err != nil {
-			return "", err
-		}
-		if len(selectors) == 0 {
-			return content, nil
-		}
-		return appendSkillImportBlock(content, identity, selectors)
-	}
-
-	span := spans[match]
-	if len(selectors) == 0 {
-		return strings.Join(removeSkillImportBlockLines(lines, span), "\n"), nil
-	}
-	replaced, err := replaceSelectorsInBlock(lines, span, selectors)
-	if err != nil {
-		return "", err
-	}
-	return strings.Join(replaced, "\n"), nil
+	return setImportSelectors(content, identity, selectors, nil)
 }
 
-// findSkillImportBlocks returns every `[[skills.imports]]` block span in
-// document order. Each block is decoded with the strict TOML decoder so its
-// identity reflects the same values configuration loading sees.
-func findSkillImportBlocks(lines []string) ([]skillImportBlockSpan, error) {
-	type headerAt struct {
-		index int
-		name  string
-		array bool
+// setImportSelectors shares comment-preserving edits between skills and instructions.
+// Instructions declare one file per block and reject additions to an existing block.
+func setImportSelectors(content string, identity SkillImportBlockIdentity, selectors []string, instruction *InstructionImport) (string, error) {
+	table := skillImportsTableName
+	if instruction != nil {
+		table = "instructions.imports"
 	}
+	lines := strings.Split(content, "\n")
+	spans, err := findImportBlocks(lines, table)
+	if err != nil {
+		return "", err
+	}
+	for _, span := range spans {
+		if span.parsed.Identity() != identity {
+			continue
+		}
+		if len(selectors) == 0 {
+			return strings.Join(removeSkillImportBlockLines(lines, span), "\n"), nil
+		}
+		if instruction != nil {
+			return "", fmt.Errorf("instruction %s is already configured", identity.FileSelector)
+		}
+		replaced, err := replaceSelectorsInBlock(lines, span, selectors)
+		if err != nil {
+			return "", err
+		}
+		return strings.Join(replaced, "\n"), nil
+	}
+	var cfg Config
+	if err := toml.Unmarshal([]byte(content), &cfg); err != nil {
+		return "", fmt.Errorf(messages.ConfigSkillImportsDocumentUnparsableFmt, err)
+	}
+	for _, imp := range importBlocks(cfg, table) {
+		if imp.Identity() == identity {
+			return "", fmt.Errorf("import requires its own [[%s]] header before editing", table)
+		}
+	}
+	if len(selectors) == 0 {
+		return content, nil
+	}
+	if instruction != nil {
+		if instruction.Order == nil {
+			return "", fmt.Errorf("instruction add requires --order")
+		}
+		cfg.Instructions.Imports = append(cfg.Instructions.Imports, *instruction)
+		if err := validateInstructions("config.toml", cfg.Instructions); err != nil {
+			return "", err
+		}
+	}
+	block, err := renderSkillImportBlock(identity, selectors)
+	if err != nil {
+		return "", err
+	}
+	if instruction != nil {
+		block[0] = "[[" + table + "]]"
+		block = append(block, fmt.Sprintf("order = %d", *instruction.Order))
+	}
+	return appendImportBlock(content, block), nil
+}
 
-	var headers []headerAt
+func importBlocks(cfg Config, table string) []SkillImport {
+	if table == skillImportsTableName {
+		return cfg.Skills.Imports
+	}
+	imports := make([]SkillImport, 0, len(cfg.Instructions.Imports))
+	for _, imp := range cfg.Instructions.Imports {
+		imp.ExactFile = true
+		imports = append(imports, imp.SkillImport)
+	}
+	return imports
+}
+
+// findTableBlocks locates visible array tables, ignoring headers inside strings.
+// Every table header closes the preceding block, including quoted headers.
+func findTableBlocks(lines []string, table string) []skillImportBlockSpan {
+	var spans []skillImportBlockSpan
 	tomlpatch.WalkLinesOutsideMultiline(lines, func(i int, line string, _ tomlpatch.StringState) tomlpatch.LineWalkResult {
 		if name, isArray, ok := tomlpatch.ParseHeader(line); ok {
-			headers = append(headers, headerAt{index: i, name: name, array: isArray})
+			if len(spans) > 0 && spans[len(spans)-1].end == len(lines) {
+				spans[len(spans)-1].end = i
+			}
+			if isArray && name == table {
+				spans = append(spans, skillImportBlockSpan{start: i, end: len(lines)})
+			}
 		}
 		return tomlpatch.LineWalkResult{}
 	})
+	return spans
+}
 
-	var spans []skillImportBlockSpan
-	for i, header := range headers {
-		if !header.array || header.name != skillImportsTableName {
-			continue
+// findImportBlocks decodes each visible import with the configuration schema.
+func findImportBlocks(lines []string, table string) ([]skillImportBlockSpan, error) {
+	spans := findTableBlocks(lines, table)
+	for i, span := range spans {
+		var cfg Config
+		if err := toml.Unmarshal([]byte(strings.Join(lines[span.start:span.end], "\n")), &cfg); err != nil {
+			return nil, fmt.Errorf(messages.ConfigSkillImportBlockUnparsableFmt, err)
 		}
-		end := len(lines)
-		if i+1 < len(headers) {
-			end = headers[i+1].index
+		imports := importBlocks(cfg, table)
+		if len(imports) != 1 {
+			return nil, fmt.Errorf("expected one %s block, found %d", table, len(imports))
 		}
-		parsed, err := decodeSkillImportBlock(lines[header.index:end])
-		if err != nil {
-			return nil, err
-		}
-		spans = append(spans, skillImportBlockSpan{start: header.index, end: end, parsed: parsed})
+		spans[i].parsed = imports[0]
 	}
 	return spans, nil
-}
-
-// rejectHiddenSkillImport fails when the document declares the identity's
-// import without a `[[skills.imports]]` header the line editor can see, such
-// as an inline array under `[skills]` or a quoted-key `[[skills."imports"]]`
-// header. Otherwise a removal would leave the selectors configured and an
-// addition would append a block that conflicts with the declaration.
-func rejectHiddenSkillImport(content string, identity SkillImportBlockIdentity) error {
-	var cfg Config
-	if err := toml.Unmarshal([]byte(content), &cfg); err != nil {
-		return fmt.Errorf(messages.ConfigSkillImportsDocumentUnparsableFmt, err)
-	}
-	for _, imp := range cfg.Skills.Imports {
-		if imp.Identity() == identity {
-			return fmt.Errorf(messages.ConfigSkillImportWithoutTableHeaderFmt, identity.Repository)
-		}
-	}
-	return nil
-}
-
-// decodeSkillImportBlock decodes one isolated block into a SkillImport.
-func decodeSkillImportBlock(blockLines []string) (SkillImport, error) {
-	var cfg Config
-	if err := toml.Unmarshal([]byte(strings.Join(blockLines, "\n")), &cfg); err != nil {
-		return SkillImport{}, fmt.Errorf(messages.ConfigSkillImportBlockUnparsableFmt, err)
-	}
-	if len(cfg.Skills.Imports) != 1 {
-		return SkillImport{}, fmt.Errorf(messages.ConfigSkillImportBlockUnparsableFmt, fmt.Errorf("expected one skills.imports block, found %d", len(cfg.Skills.Imports)))
-	}
-	return cfg.Skills.Imports[0], nil
 }
 
 // removeSkillImportBlockLines drops a block and the blank separator lines that
@@ -261,12 +269,8 @@ func renderSelectorsAssignment(indent string, selectors []string) ([]string, err
 	return out, nil
 }
 
-// appendSkillImportBlock appends a fully rendered import block to content.
-func appendSkillImportBlock(content string, identity SkillImportBlockIdentity, selectors []string) (string, error) {
-	block, err := renderSkillImportBlock(identity, selectors)
-	if err != nil {
-		return "", err
-	}
+// appendImportBlock keeps the document's final-newline convention.
+func appendImportBlock(content string, block []string) string {
 	hadFinalNewline := strings.HasSuffix(content, "\n")
 	trimmed := strings.TrimRight(content, "\n")
 	suffix := ""
@@ -274,9 +278,9 @@ func appendSkillImportBlock(content string, identity SkillImportBlockIdentity, s
 		suffix = "\n"
 	}
 	if trimmed == "" {
-		return strings.Join(block, "\n") + suffix, nil
+		return strings.Join(block, "\n") + suffix
 	}
-	return trimmed + "\n\n" + strings.Join(block, "\n") + suffix, nil
+	return trimmed + "\n\n" + strings.Join(block, "\n") + suffix
 }
 
 // renderSkillImportBlock renders a new `[[skills.imports]]` block, omitting

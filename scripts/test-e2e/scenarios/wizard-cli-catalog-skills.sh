@@ -63,7 +63,7 @@ JSON
     "scripted wizard output says sync ran"
   assert_output_contains "$wizard_output" "Wizard completed" \
     "scripted wizard output says completed"
-  assert_file_exists "$repo_dir/.agent-layer/instructions/00_rules.md" \
+  assert_file_exists "$repo_dir/.agent-layer/instructions-imported/rules.md" \
     "scripted wizard installed workflow instruction source"
   assert_file_exists "$repo_dir/docs/agent-layer/COMMANDS.md" \
     "scripted wizard installed memory docs"

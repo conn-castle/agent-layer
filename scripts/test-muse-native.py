@@ -300,7 +300,8 @@ class Fixture(http.server.BaseHTTPRequestHandler):
 
 
 def project_config(port, starts, mode="all"):
-    lines = ['[approvals]', 'mode = "' + mode + '"']
+    lines = ['[[instructions.local]]', 'selectors = ["fixture.md"]', 'order = 0',
+             '[approvals]', 'mode = "' + mode + '"']
     for agent in ("claude", "claude_vscode", "codex", "antigravity", "grok", "copilot_cli", "vscode", "muse"):
         lines += [f"[agents.{agent}]", "enabled = " + str(agent in ("claude", "muse")).lower()]
     lines += ['[agents.claude.agent_specific]', 'enableAllProjectMcpServers = true']
@@ -336,7 +337,7 @@ def verify_development_mcp(al, command, work, home, env, case, state):
     The cached pin is a local executable that fails with a marker, so this
     regression needs no released binary download or external credentials.
     """
-    pinned_version = "0.0.1"
+    pinned_version = "1.0.0"
     os_name = {"Darwin": "darwin", "Linux": "linux"}[platform.system()]
     arch = {"arm64": "arm64", "aarch64": "arm64", "x86_64": "amd64", "AMD64": "amd64"}[platform.machine()]
     cache = home / ("Library/Caches" if os_name == "darwin" else ".cache")

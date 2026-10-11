@@ -125,7 +125,8 @@ func (d *Destination) ReadTree(ctx context.Context, commit string, repoPath stri
 // Update is one skill's desired destination content.
 type Update struct {
 	// Path is the destination repository-relative skill root.
-	Path string
+	Path      string
+	ExactFile bool
 	// Tree is the exact desired content at Path.
 	Tree skilltree.Tree
 }
@@ -144,7 +145,7 @@ func (d *Destination) Publish(ctx context.Context, base string, branch string, u
 		if err := skilltree.ValidateRelativePath(update.Path); err != nil {
 			return "", fmt.Errorf("destination path %q is unsafe: %w", update.Path, err)
 		}
-		if _, err := d.ReadTree(ctx, base, update.Path); err != nil {
+		if _, err := d.ReadNode(ctx, base, update.Path, update.ExactFile); err != nil {
 			return "", err
 		}
 	}
@@ -192,6 +193,12 @@ func (d *Destination) replaceIndexTree(ctx context.Context, update Update) error
 
 	for _, file := range update.Tree.Files() {
 		indexPath := path.Join(update.Path, file.Path)
+		if update.ExactFile {
+			if _, err := skilltree.ValidateNode(update.Tree, update.Path, true); err != nil {
+				return err
+			}
+			indexPath = update.Path
+		}
 		if err := skilltree.ValidateRelativePath(indexPath); err != nil {
 			return fmt.Errorf("destination file path %q is unsafe: %w", indexPath, err)
 		}
@@ -212,4 +219,13 @@ func annotateIdentityFailure(err error) error {
 		}
 	}
 	return err
+}
+
+// ReadNode reads the exact destination file or skill directory before publication.
+func (d *Destination) ReadNode(ctx context.Context, commit, repoPath string, exactFile bool) (skilltree.Tree, error) {
+	if !exactFile {
+		return d.ReadTree(ctx, commit, repoPath)
+	}
+	source := &Source{runner: d.runner, dir: d.dir, repository: d.repository, fetched: true}
+	return source.ReadFile(ctx, commit, repoPath)
 }

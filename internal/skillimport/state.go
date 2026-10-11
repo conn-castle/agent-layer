@@ -47,7 +47,8 @@ type localSkill struct {
 
 // state is the immutable observation an operation is planned against.
 type state struct {
-	paths config.Paths
+	paths        config.Paths
+	instructions bool
 	// configRaw is the exact configuration file content, preserved so a
 	// selector edit rewrites nothing else.
 	configRaw string
@@ -68,7 +69,7 @@ type state struct {
 
 // loadState reads configuration, lock state, and every imported directory.
 // Callers must already hold the project lock.
-func loadState(root string) (*state, error) {
+func loadState(root string, instructions bool) (*state, error) {
 	paths := config.DefaultPaths(root)
 
 	raw, err := os.ReadFile(paths.ConfigPath) // #nosec G304 -- paths.ConfigPath is the resolved repository configuration file.
@@ -80,19 +81,41 @@ func loadState(root string) (*state, error) {
 		return nil, err
 	}
 
-	lock, present, err := loadLock(paths.SkillsLockPath)
+	if instructions {
+		paths.SkillsDir = paths.InstructionsDir
+		paths.ImportedSkillsDir = paths.ImportedInstructionsDir
+		paths.SkillsLockPath = paths.InstructionsLockPath
+		instructionBlocks(cfg)
+	}
+	lock, present, err := loadLock(paths.SkillsLockPath, instructions)
 	if err != nil {
 		return nil, err
 	}
 
-	local, err := readImportedSkills(paths.ImportedSkillsDir)
+	local, err := readImportedSkills(paths.ImportedSkillsDir, instructions)
 	if err != nil {
 		return nil, err
 	}
 
-	userSkills, err := readUserSkillNames(paths.SkillsDir)
+	userSkills, err := readUserSkillNames(paths.SkillsDir, instructions)
 	if err != nil {
 		return nil, err
+	}
+
+	if instructions {
+		configured := map[string]bool{}
+		for _, file := range cfg.Instructions.Local {
+			name := file.Selectors[0]
+			configured[collisionName(name)] = true
+			if _, err := skilltree.ReadFileNode(skilltree.OSFS{}, filepath.Join(paths.SkillsDir, name), name); err != nil {
+				return nil, err
+			}
+		}
+		for name, source := range userSkills {
+			if !configured[name] {
+				return nil, config.UnconfiguredLocalInstruction(source, cfg.Instructions)
+			}
+		}
 	}
 
 	// Secret values are read here but never enter configuration identity, lock
@@ -103,34 +126,41 @@ func loadState(root string) (*state, error) {
 	}
 
 	return &state{
-		paths:       paths,
-		configRaw:   string(raw),
-		cfg:         cfg,
-		lock:        lock,
-		lockPresent: present,
-		local:       local,
-		userSkills:  userSkills,
-		env:         env,
+		paths:        paths,
+		instructions: instructions,
+		configRaw:    string(raw),
+		cfg:          cfg,
+		lock:         lock,
+		lockPresent:  present,
+		local:        local,
+		userSkills:   userSkills,
+		env:          env,
 	}, nil
 }
 
 // loadLock reads the lockfile. A missing file yields an empty document because
 // a project with no imports has no lock; a malformed file fails loudly so no
 // operation invents a merge base.
-func loadLock(path string) (*skilllock.File, bool, error) {
-	file, err := skilllock.Load(path)
+func loadLock(path string, instructions bool) (*skilllock.File, bool, error) {
+	loader := skilllock.Load
+	empty := skilllock.New
+	if instructions {
+		loader = skilllock.LoadInstructions
+		empty = skilllock.NewInstructions
+	}
+	file, err := loader(path)
 	if err == nil {
 		return file, true, nil
 	}
 	if errors.Is(err, skilllock.ErrMissing) {
-		return skilllock.New(), false, nil
+		return empty(), false, nil
 	}
 	return nil, false, err
 }
 
 // readImportedSkills observes every directory in the imported tier without
 // failing the operation for an individual unreadable or invalid skill.
-func readImportedSkills(dir string) (map[string]localSkill, error) {
+func readImportedSkills(dir string, instructions bool) (map[string]localSkill, error) {
 	entries, err := readTierEntries(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -138,10 +168,10 @@ func readImportedSkills(dir string) (map[string]localSkill, error) {
 		}
 		return nil, fmt.Errorf("failed to read %s: %w", dir, err)
 	}
-	return observeImportedSkills(dir, entries)
+	return observeImportedSkills(dir, entries, instructions)
 }
 
-func observeImportedSkills(dir string, entries []os.DirEntry) (map[string]localSkill, error) {
+func observeImportedSkills(dir string, entries []os.DirEntry, instructions bool) (map[string]localSkill, error) {
 	local := make(map[string]localSkill, len(entries))
 	normalizedNames := map[string]os.DirEntry{}
 	for _, entry := range entries {
@@ -150,7 +180,7 @@ func observeImportedSkills(dir string, entries []os.DirEntry) (map[string]localS
 			continue
 		}
 		normalized := collisionName(entry.Name())
-		if previous, exists := normalizedNames[normalized]; exists && (!previous.Type().IsRegular() || !entry.Type().IsRegular()) {
+		if previous, exists := normalizedNames[normalized]; exists && (instructions || !previous.Type().IsRegular() || !entry.Type().IsRegular()) {
 			return nil, fmt.Errorf("imported nodes %s and %s normalize to the same name", previous.Name(), entry.Name())
 		}
 		// Unrelated plain files may coexist. Retain every exact node below so
@@ -159,6 +189,14 @@ func observeImportedSkills(dir string, entries []os.DirEntry) (map[string]localS
 		name := entry.Name()
 		skillDir := filepath.Join(dir, name)
 		observed := localSkill{Name: name, Dir: skillDir, Present: true}
+		if instructions {
+			observed.Tree, observed.Err = skilltree.ReadFileNode(skilltree.OSFS{}, skillDir, name)
+			if observed.Err == nil {
+				observed.Err = skilllock.ValidateInstructionName(name)
+			}
+			local[name] = observed
+			continue
+		}
 		if err := validateSkillDirectory(skillDir); err != nil {
 			observed.Err = err
 			local[name] = observed
@@ -181,7 +219,7 @@ func observeImportedSkills(dir string, entries []os.DirEntry) (map[string]localS
 
 // readUserSkillNames lists user-managed skill directory names by normalized
 // name so a same-name import can be blocked without loading skill content.
-func readUserSkillNames(dir string) (map[string]string, error) {
+func readUserSkillNames(dir string, instructions bool) (map[string]string, error) {
 	entries, err := readTierEntries(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -189,20 +227,20 @@ func readUserSkillNames(dir string) (map[string]string, error) {
 		}
 		return nil, fmt.Errorf("failed to read %s: %w", dir, err)
 	}
-	return observeUserSkillNames(dir, entries)
+	return observeUserSkillNames(dir, entries, instructions)
 }
 
-func observeUserSkillNames(dir string, entries []os.DirEntry) (map[string]string, error) {
+func observeUserSkillNames(dir string, entries []os.DirEntry, instructions bool) (map[string]string, error) {
 	names := make(map[string]string, len(entries))
 	regularNames := map[string]bool{}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".") {
+		if strings.HasPrefix(entry.Name(), ".") || (instructions && !config.LocalInstructionEntry(entry)) {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
 		normalized := collisionName(entry.Name())
 		if existing, duplicate := names[normalized]; duplicate {
-			if regularNames[normalized] && entry.Type().IsRegular() {
+			if !instructions && regularNames[normalized] && entry.Type().IsRegular() {
 				// The representative continues to block this requested name;
 				// unrelated regular variants do not poison other operations.
 				continue
@@ -256,7 +294,7 @@ func (s *state) orphanDirectories() []string {
 	var orphans []string
 	for name, observed := range s.local {
 		// Regular files remain collision evidence, but are not orphan skill directories.
-		if info, err := os.Lstat(observed.Dir); err == nil && info.Mode().IsRegular() {
+		if info, err := os.Lstat(observed.Dir); err == nil && info.Mode().IsRegular() && !s.instructions {
 			continue
 		}
 		if _, ok := locked[name]; !ok {
@@ -401,4 +439,13 @@ func validateTierRoots(paths config.Paths) error {
 		}
 	}
 	return nil
+}
+
+func instructionBlocks(cfg *config.Config) {
+	cfg.Skills.Imports = nil
+	for _, imp := range cfg.Instructions.Imports {
+		block := imp.SkillImport
+		block.ExactFile = true
+		cfg.Skills.Imports = append(cfg.Skills.Imports, block)
+	}
 }

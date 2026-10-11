@@ -46,6 +46,7 @@ type Config struct {
 	Dispatch      DispatchLimits      `toml:"dispatch"`
 	MCP           MCPConfig           `toml:"mcp"`
 	Notifications NotificationsConfig `toml:"notifications"`
+	Instructions  InstructionsConfig  `toml:"instructions"`
 	Skills        SkillsConfig        `toml:"skills"`
 	Warnings      WarningsConfig      `toml:"warnings"`
 }

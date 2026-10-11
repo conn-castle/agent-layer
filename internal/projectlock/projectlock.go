@@ -72,6 +72,9 @@ func Path(root string) string {
 // sources between the read and the projection built from it.
 func With(sys System, root string, fn func() error) (err error) {
 	lockPath := Path(root)
+	if info, err := os.Lstat(filepath.Dir(lockPath)); err == nil && !info.IsDir() {
+		return fmt.Errorf(".agent-layer must be a real unlinked directory before acquiring the project lock")
+	}
 	process := processLockForPath(lockPath)
 	deadline := sys.Now().Add(waitTimeout)
 	if acquireErr := process.acquire(sys, deadline); acquireErr != nil {

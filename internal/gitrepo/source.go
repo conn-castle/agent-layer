@@ -380,3 +380,45 @@ func (r *Runner) TextMerger(ctx context.Context) skilltree.TextMerger {
 		return r.MergeText(ctx, base, local, remote)
 	}
 }
+
+// ReadNode extends directory reads with an exact regular Markdown blob.
+func (s *Source) ReadNode(ctx context.Context, commit, repoPath string, exactFile bool) (skilltree.Tree, error) {
+	if !exactFile {
+		return s.ReadTree(ctx, commit, repoPath)
+	}
+	return s.ReadFile(ctx, commit, repoPath)
+}
+
+// ReadFile reads a single regular Markdown blob without checking out Git content.
+func (s *Source) ReadFile(ctx context.Context, commit, repoPath string) (skilltree.Tree, error) {
+	if err := skilltree.ValidateRelativePath(repoPath); err != nil {
+		return skilltree.Tree{}, err
+	}
+	if !strings.HasSuffix(repoPath, ".md") {
+		return skilltree.Tree{}, fmt.Errorf("%s must name a Markdown file", repoPath)
+	}
+	for parent := path.Dir(repoPath); parent != "."; parent = path.Dir(parent) {
+		exists, _, kind, err := s.pathEntry(ctx, commit, parent)
+		if err != nil {
+			return skilltree.Tree{}, err
+		}
+		if exists && kind != gitObjectTree {
+			return skilltree.Tree{}, fmt.Errorf("instruction ancestor %s must be a real Git directory", parent)
+		}
+	}
+	exists, mode, kind, err := s.pathEntry(ctx, commit, repoPath)
+	if err != nil {
+		return skilltree.Tree{}, err
+	}
+	if !exists {
+		return skilltree.Tree{}, nil
+	}
+	if kind != gitObjectBlob || (mode != "100644" && mode != "100755") {
+		return skilltree.Tree{}, fmt.Errorf("%s must be a regular unlinked Markdown blob", repoPath)
+	}
+	data, err := s.runner.run(ctx, s.dir, "cat-file", gitObjectBlob, commit+":"+repoPath)
+	if err != nil {
+		return skilltree.Tree{}, err
+	}
+	return skilltree.NewTree([]skilltree.File{{Path: path.Base(repoPath), Data: data, Executable: mode == "100755"}})
+}

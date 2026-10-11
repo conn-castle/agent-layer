@@ -167,39 +167,6 @@ func TestLoadEnvFS_Unreadable(t *testing.T) {
 	}
 }
 
-func TestLoadInstructionsFS_NoMarkdown(t *testing.T) {
-	fsys := fstest.MapFS{
-		".agent-layer/instructions":            {Mode: fs.ModeDir},
-		".agent-layer/instructions/readme":     {Data: []byte("no markdown")},
-		".agent-layer/instructions/readme.txt": {Data: []byte("no markdown")},
-	}
-
-	files, err := LoadInstructionsFS(fsys, "root", ".agent-layer/instructions")
-	if err != nil {
-		t.Fatalf("LoadInstructionsFS error: %v", err)
-	}
-	if len(files) != 0 {
-		t.Fatalf("expected no instruction files, got %d", len(files))
-	}
-}
-
-func TestLoadInstructionsFS_ReadError(t *testing.T) {
-	base := fstest.MapFS{
-		".agent-layer/instructions":       {Mode: fs.ModeDir},
-		".agent-layer/instructions/00.md": {Data: []byte("content")},
-	}
-	fsys := errorFS{
-		FS:      base,
-		errPath: ".agent-layer/instructions/00.md",
-		err:     fs.ErrPermission,
-	}
-
-	_, err := LoadInstructionsFS(fsys, "root", ".agent-layer/instructions")
-	if err == nil {
-		t.Fatalf("expected error when instruction file cannot be read")
-	}
-}
-
 func TestLoadSkillsFS_InvalidCommand(t *testing.T) {
 	fsys := fstest.MapFS{
 		".agent-layer/skills":              {Mode: fs.ModeDir},

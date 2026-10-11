@@ -168,10 +168,10 @@ func (t *transaction) Commit() (err error) {
 
 	// Retire the old active slot before publishing its imported replacement.
 	for _, name := range sortedKeys(t.localRetirements) {
-		if _, err := skilltree.ReadStrict(skilltree.OSFS{}, filepath.Join(t.paths.LocalSkillsDir, name)); err != nil {
+		if _, err := t.readLocal(t.paths.LocalPath(name), name); err != nil {
 			return fail(err)
 		}
-		applied, moveErr := moveAside(filepath.Join(t.paths.LocalSkillsDir, name), filepath.Join(staging, skilljournal.LocalBackupPrefix+name))
+		applied, moveErr := moveAside(t.paths.LocalPath(name), filepath.Join(staging, skilljournal.LocalBackupPrefix+name))
 		if applied {
 			published.LocalRetirements = append(published.LocalRetirements, name)
 		}
@@ -247,7 +247,7 @@ func (t *transaction) Commit() (err error) {
 func (t *transaction) verifyLocalRetirements(staging string) error {
 	for _, name := range sortedKeys(t.localRetirements) {
 		backup := filepath.Join(staging, skilljournal.LocalBackupPrefix+name)
-		current, err := skilltree.ReadStrict(skilltree.OSFS{}, backup)
+		current, err := t.readLocal(backup, name)
 		if err != nil {
 			return fmt.Errorf("verify retired legacy source %s: %w", name, err)
 		}
@@ -304,14 +304,32 @@ func (t *transaction) prepareJournal() error {
 	// All replacement trees are prepared before the durable journal and live moves.
 	for _, name := range sortedKeys(t.writes) {
 		staged := filepath.Join(t.stagingRoot, skilljournal.StagedTreePrefix+name)
-		if err := os.MkdirAll(staged, 0o750); err != nil {
-			return err
-		}
-		if err := skilltree.Materialize(t.writes[name], staged); err != nil {
-			return err
-		}
-		if err := syncStagedTree(staged); err != nil {
-			return err
+		if t.paths.ExactFiles {
+			if _, err := skilltree.ValidateNode(t.writes[name], name, true); err != nil {
+				return err
+			}
+			file, _ := t.writes[name].File(name)
+			perm := file.FileMode()
+			if _, adopting := t.localRetirements[name]; adopting {
+				info, err := os.Lstat(t.paths.LocalPath(name))
+				if err != nil {
+					return err
+				}
+				perm = info.Mode().Perm()
+			}
+			if err := fsutil.WriteFileAtomic(staged, file.Data, perm); err != nil {
+				return err
+			}
+		} else {
+			if err := os.MkdirAll(staged, 0o750); err != nil {
+				return err
+			}
+			if err := skilltree.Materialize(t.writes[name], staged); err != nil {
+				return err
+			}
+			if err := syncStagedTree(staged); err != nil {
+				return err
+			}
 		}
 	}
 	if err := fsutil.SyncDir(filepath.Dir(t.stagingRoot)); err != nil {
@@ -440,4 +458,11 @@ func syncStagedTree(root string) error {
 		closeErr := file.Close()
 		return errors.Join(syncErr, closeErr)
 	})
+}
+
+func (t *transaction) readLocal(source, name string) (skilltree.Tree, error) {
+	if t.paths.ExactFiles {
+		return skilltree.ReadFileNode(skilltree.OSFS{}, source, name)
+	}
+	return skilltree.ReadStrict(skilltree.OSFS{}, source)
 }

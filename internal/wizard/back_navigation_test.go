@@ -67,7 +67,7 @@ func TestPromptWizardFlow_BackFromAgentsReturnsToApprovalStep(t *testing.T) {
 	require.Empty(t, choices.EnabledAgents)
 }
 
-func TestPromptWizardFlow_SkipsInstructionSetWhenInstructionFilesExist(t *testing.T) {
+func TestPromptWizardFlowOffersLegacyInstructionAdoption(t *testing.T) {
 	root := t.TempDir()
 	instructionPath := filepath.Join(root, ".agent-layer", "instructions", "00_rules.md")
 	require.NoError(t, os.MkdirAll(filepath.Dir(instructionPath), 0o750))
@@ -79,7 +79,7 @@ func TestPromptWizardFlow_SkipsInstructionSetWhenInstructionFilesExist(t *testin
 	ui := &MockUI{
 		SelectFunc: func(title string, options []string, current *string) error {
 			if title == messages.WizardInstructionSetTitle {
-				t.Fatal("instruction prompt should be skipped when instruction files exist")
+				*current = messages.WizardInstructionSetNone
 			}
 			return nil
 		},
@@ -99,7 +99,7 @@ func TestPromptWizardFlow_SkipsInstructionSetWhenInstructionFilesExist(t *testin
 
 	err := promptWizardFlow(root, ui, choices)
 	require.NoError(t, err)
-	require.False(t, choices.InstructionSetTouched)
+	require.True(t, choices.InstructionSetTouched)
 }
 
 func TestPromptWizardFlow_ShowsInstructionSetWhenOnlyDevelopmentSkillsExist(t *testing.T) {

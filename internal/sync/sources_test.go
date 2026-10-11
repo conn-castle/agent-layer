@@ -26,7 +26,11 @@ func newSourcesTestRoot(t *testing.T) string {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
-	write("config.toml", `[approvals]
+	write("config.toml", `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+[approvals]
 mode = "none"
 
 [agents.antigravity]

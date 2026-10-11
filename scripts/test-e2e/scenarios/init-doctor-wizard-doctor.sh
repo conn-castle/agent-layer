@@ -320,7 +320,7 @@ run_scenario_init_doctor_wizard_doctor() {
     echo "$doctor_output" | head -20 | sed 's/^/    /'
   fi
   _init_doctor_wizard_assert_expected_doctor_output "$doctor_output" "after init" \
-    "Instructions (.agent-layer/instructions/*): 0 / 10000 tokens"
+    "Instructions (local and imported): 0 / 10000 tokens"
   assert_all_state_unchanged "$repo_dir" "$pre_doctor_snapshot" \
     "doctor after init is read-only"
 

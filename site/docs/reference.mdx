@@ -732,6 +732,28 @@ Use it before `al upgrade` to understand what would change:
 
 `al upgrade plan` supports plain-language text output only.
 
+### Git-backed instructions
+
+`al instructions` exposes `add`, `remove`, `status`, `diff`, `pull`, `reset`, `resolve`, and `push`, with the same ref, tracking, write and push fields/defaults as `al skills`. Add selects exactly one regular Markdown file and requires `--order`, a nonnegative integer (zero is valid). Wildcards and exclusions are unsupported. Orders and filenames must be unique across both instruction tiers; gaps are valid. Sync and status never fetch.
+
+```toml
+[[instructions.imports]]
+repository = "https://github.com/nicholasjconn/skills.git"
+selectors = ["instructions/rules.md"]
+order = 0
+
+[[instructions.imports]]
+repository = "https://github.com/nicholasjconn/skills.git"
+selectors = ["instructions/memory.md"]
+order = 10
+
+[[instructions.local]]
+selectors = ["conventions.md"]
+order = 40
+```
+
+Local files remain under `.agent-layer/instructions/`; imports and their genuine upstream bases live under `.agent-layer/instructions-imported/` and `.agent-layer/instructions.lock.json`. Editing order changes projection without changing import identity. Missing, unconfigured, duplicate or linked sources fail before projection. Git publication changes only the selected file. Commit imported files and their lock with the project if you track `.agent-layer/`.
+
 ### Wizard
 
 `al wizard` guides you through approvals, enabled agents, model selection, instruction files, skills, MCP servers, and warning thresholds.
@@ -743,12 +765,12 @@ Use it when you want to get to a safe, working configuration quickly, or when yo
 - `.agent-layer/config.toml`
 - `.agent-layer/.env`
 - `.agent-layer/gitignore.block` (folder tracking)
-- Missing managed instruction files (`00_rules.md`; also `01_memory.md` for Rules and memory)
+- Git imports for `instructions/rules.md` (Rules) and also `instructions/memory.md` (Rules and memory), with fresh orders 0 and 10
 - Missing `docs/agent-layer/` memory docs and `.agent-layer/templates/docs/` copies, when Rules and memory is selected
 - Catalog skill directories under `.agent-layer/skills/` (selected rows are added or repaired; deselected catalog-managed rows are removed)
 - Missing statusline source files when a status line is enabled
 
-Instruction and memory seeding creates missing files only and does not refresh existing ones. Catalog skill removal deletes the matching skill directory after preview confirmation. Use `al upgrade` for managed instruction and workflow-skill template updates.
+Instruction selection adds missing imports only. Trusted adoption of `00_rules.md` and `01_memory.md` preserves local bytes, permissions and ordering, using the fetched upstream file as the base for later pulls. Memory docs are seeded only when missing. Use `al instructions pull` for instruction updates and `al upgrade` for bundled operator-skill templates. None preserves existing instructions.
 
 The wizard rewrites `config.toml` in a fixed preferred section order and creates backups in `.agent-layer/state/wizard-backups/` before modifying `.agent-layer/config.toml` or `.agent-layer/.env`. Inline comments on modified lines may be moved to leading comments or removed; the original formatting is preserved in the backup files. After a successful upgrade and sync, `al upgrade` moves older backups from `.agent-layer/` into this directory, retaining conflicts with numbered `.legacy-N` suffixes.
 
@@ -782,7 +804,7 @@ Think of sync as a build step. You can run it any time you want to refresh gener
 **What it does**
 
 - Validates `.agent-layer/config.toml`
-- Reads `.agent-layer/instructions/`, both `.agent-layer/skills/` and `.agent-layer/skills-imported/`, `.agent-layer/commands.allow`, and `.agent-layer/.env`
+- Reads configured `.agent-layer/instructions/` and `.agent-layer/instructions-imported/` in numeric order, both `.agent-layer/skills/` and `.agent-layer/skills-imported/`, `.agent-layer/commands.allow`, and `.agent-layer/.env`
 - Regenerates client outputs and launchers
 
 **Steps (high level)**

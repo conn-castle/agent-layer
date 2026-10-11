@@ -15,12 +15,21 @@ import (
 // project loading would reject malformed local candidates before that preview.
 // Keep all other project inputs strict; sync remains the authoritative loader.
 func loadWizardProjectConfig(root string) (*config.ProjectConfig, error) {
-	return config.LoadProjectConfigFS(catalogPreviewFS{FS: os.DirFS(root), root: root}, root)
+	raw, err := os.ReadFile(config.DefaultPaths(root).ConfigPath)
+	if err != nil {
+		return nil, err
+	}
+	preview, err := config.MigrateInstructionOrderFS(os.DirFS(root), root, string(raw))
+	if err != nil {
+		return nil, err
+	}
+	return config.LoadProjectConfigFS(catalogPreviewFS{FS: os.DirFS(root), root: root, configRaw: []byte(preview)}, root)
 }
 
 type catalogPreviewFS struct {
 	fs.FS
-	root string
+	root      string
+	configRaw []byte
 }
 
 func (f catalogPreviewFS) ReadDir(dir string) ([]fs.DirEntry, error) {
@@ -44,4 +53,11 @@ func (f catalogPreviewFS) ReadDir(dir string) ([]fs.DirEntry, error) {
 		}
 	}
 	return visible, nil
+}
+
+func (f catalogPreviewFS) ReadFile(name string) ([]byte, error) {
+	if name == ".agent-layer/config.toml" {
+		return f.configRaw, nil
+	}
+	return fs.ReadFile(f.FS, name)
 }

@@ -26,6 +26,10 @@ func writeTestRepo(t *testing.T, root string) {
 	}
 
 	configToml := `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = "all"
 
@@ -110,6 +114,10 @@ func writeTestRepoWithWarnings(t *testing.T, root string) {
 
 	// Config with very low instruction token threshold to trigger a warning
 	configToml := `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = "all"
 

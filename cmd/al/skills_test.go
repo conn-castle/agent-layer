@@ -13,11 +13,17 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/gitenv"
 	"github.com/conn-castle/agent-layer/internal/skillimport"
+	"github.com/conn-castle/agent-layer/internal/templates"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 // skillsTestRepoConfig is a minimally valid Agent Layer configuration for the
 // `al skills` command tests.
-const skillsTestRepoConfig = `[approvals]
+const skillsTestRepoConfig = `[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
+[approvals]
 mode = "none"
 
 [agents.antigravity]
@@ -409,5 +415,43 @@ func TestFinishSkillsOperationReturnsSetupFailuresDirectly(t *testing.T) {
 	success := &skillimport.Report{Skills: []skillimport.SkillResult{{Name: "alpha", Outcome: skillimport.OutcomeImported}}}
 	if err := finishSkillsOperation(cmd, "pull", success, nil); err != nil {
 		t.Fatalf("a successful operation returned %v", err)
+	}
+}
+
+func TestInstructionsCommandRequiresOrderAndAcceptsZero(t *testing.T) {
+	testutil.CatalogGitFixture(t)
+	root := newSkillsRepo(t)
+	old := filepath.Join(root, ".agent-layer", "instructions", "00_rules.md")
+	if err := os.Rename(old, filepath.Join(filepath.Dir(old), "conventions.md")); err != nil {
+		t.Fatal(err)
+	}
+	raw := strings.Replace(skillsTestRepoConfig, `selectors = ["00_rules.md"]`, `selectors = ["conventions.md"]`, 1)
+	raw = strings.Replace(raw, "order = 0", "order = 40", 1)
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "config.toml"), []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if len(newInstructionsCmd().Commands()) != len(newSkillsCmd().Commands()) {
+		t.Fatal("instruction command parity lost")
+	}
+	run := func(args ...string) (string, error) {
+		cmd := newRootCmd()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs(append([]string{"instructions"}, args...))
+		err := cmd.Execute()
+		return out.String(), err
+	}
+	if _, err := run("add", templates.GeneralSkillsRepository, "instructions/rules.md", "--yes"); err == nil || !strings.Contains(err.Error(), "order") {
+		t.Fatalf("missing --order: %v", err)
+	}
+	if _, err := run("add", templates.GeneralSkillsRepository, "instructions/rules.md", "instructions/memory.md", "--order", "0", "--yes"); err == nil {
+		t.Fatal("multiple instruction files accepted")
+	}
+	if out, err := run("add", templates.GeneralSkillsRepository, "instructions/rules.md", "--order", "0", "--yes"); err != nil {
+		t.Fatalf("explicit zero rejected: %v\n%s", err, out)
+	}
+	if out, err := run("status", "--all"); err != nil || (!strings.Contains(out, "rules.md") || !strings.Contains(out, templates.GeneralSkillsRepository) || !strings.Contains(out, "instructions/rules.md")) {
+		t.Fatalf("status: %v\n%s", err, out)
 	}
 }

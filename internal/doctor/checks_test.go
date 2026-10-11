@@ -241,6 +241,10 @@ func TestCheckConfig(t *testing.T) {
 
 	// Valid config
 	validConfig := `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = "all"
 

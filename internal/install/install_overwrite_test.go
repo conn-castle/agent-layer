@@ -565,7 +565,7 @@ func TestShouldOverwrite_UnifiedDecisionCachedAcrossManagedAndMemory(t *testing.
 	root := t.TempDir()
 	paths := []string{
 		".agent-layer/commands.allow",
-		".agent-layer/instructions/00_rules.md",
+		".agent-layer/gitignore.block",
 		"docs/agent-layer/ISSUES.md",
 		"docs/agent-layer/BACKLOG.md",
 	}

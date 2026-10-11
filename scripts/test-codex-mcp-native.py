@@ -101,6 +101,7 @@ def main():
     f.run(["git", "-c", "init.templateDir=", "init", "--quiet"], work, env, case / "git")
     source = work / ".agent-layer"
     (source / "instructions").mkdir(parents=True)
+    (source / "instructions/fixture.md").write_text("Loopback fixture\n")
     (source / "skills").mkdir()
     config = f.project_config(1, case / "unused").split("[[mcp.servers]]")[0]
     config = config.replace("enabled = true", "enabled = false").replace("[agents.codex]\nenabled = false", "[agents.codex]\nenabled = true")

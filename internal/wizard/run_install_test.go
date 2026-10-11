@@ -14,6 +14,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	alsync "github.com/conn-castle/agent-layer/internal/sync"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestRun_NotInstalled_UserCancels(t *testing.T) {
@@ -149,6 +150,7 @@ mode = "none"`
 }
 
 func TestRun_ConfigLoadFailureAfterInstall(t *testing.T) {
+	testutil.CatalogGitFixture(t)
 	root := t.TempDir()
 	// Do NOT call setupRepo - let install run
 

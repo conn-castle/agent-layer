@@ -227,11 +227,11 @@ func desiredSkillAtCommit(ctx context.Context, source *gitrepo.Source, blockInde
 	if !selected {
 		return desiredSkill{}, fmt.Errorf("selected path %s is no longer selected", entry.SelectedPath)
 	}
-	tree, err := source.ReadTree(ctx, commit, entry.SelectedPath)
+	tree, err := source.ReadNode(ctx, commit, entry.SelectedPath, block.ExactFile)
 	if err != nil {
 		return desiredSkill{}, fmt.Errorf("locked source commit %s could not be read for %s: %w", shortCommit(commit), entry.SelectedPath, err)
 	}
-	info, err := skilltree.ValidateSkill(tree, entry.SelectedPath)
+	info, err := skilltree.ValidateNode(tree, entry.SelectedPath, block.ExactFile)
 	if err != nil {
 		return desiredSkill{}, fmt.Errorf("locked source commit %s no longer provides a valid merge base for %s: %w", shortCommit(commit), entry.SelectedPath, err)
 	}
@@ -309,7 +309,7 @@ func (s *Service) advanceExisting(ctx context.Context, runner *gitrepo.Runner, s
 		return
 	}
 
-	base, err := blockCtx.Source.ReadTree(ctx, entry.Commit, entry.SelectedPath)
+	base, err := blockCtx.Source.ReadNode(ctx, entry.Commit, entry.SelectedPath, blockCtx.Block.ExactFile)
 	if err != nil {
 		result.Outcome = OutcomeFailed
 		result.Err = fmt.Errorf("locked source commit %s could not be read, so no merge base exists: %w", shortCommit(entry.Commit), err)
@@ -349,12 +349,12 @@ func (s *Service) advanceExisting(ctx context.Context, runner *gitrepo.Runner, s
 		case workspaceErr != nil:
 			result.Err = fmt.Errorf("upstream and local changes conflict in %s; could not write resolution workspace: %w", describeConflicts(conflicts), workspaceErr)
 		default:
-			result.Err = fmt.Errorf("upstream and local changes conflict in %s; resolve %s with git and run 'al skills resolve %s'", describeConflicts(conflicts), relativeTo(st.paths.Root, workspace), skill.Name)
+			result.Err = fmt.Errorf("upstream and local changes conflict in %s; resolve %s with git and run 'al %s resolve %s'", describeConflicts(conflicts), relativeTo(st.paths.Root, workspace), importKind(st.instructions), skill.Name)
 		}
 		report.Add(result)
 		return
 	}
-	if _, err := skilltree.ValidateSkill(merged, skill.SelectedPath); err != nil {
+	if _, err := skilltree.ValidateNode(merged, skill.SelectedPath, skill.Block.ExactFile); err != nil {
 		result.Outcome = OutcomeFailed
 		result.Err = fmt.Errorf("merged result is not a valid skill: %w", err)
 		report.Add(result)
@@ -481,6 +481,10 @@ func failOnOrphans(st *state) error {
 	for _, name := range orphans {
 		paths = append(paths, relativeTo(st.paths.Root, st.skill(name).Dir))
 	}
+	if st.instructions {
+		return fmt.Errorf("imported instruction files have no entry in %s: %s; restore verified config and lock ownership, or move them into %s and declare [[instructions.local]] with unique orders",
+			relativeTo(st.paths.Root, st.paths.SkillsLockPath), strings.Join(paths, ", "), relativeTo(st.paths.Root, st.paths.SkillsDir))
+	}
 	return fmt.Errorf("imported skill directories have no entry in %s: %s; move each one into %s to adopt it as user-managed, or delete it",
 		relativeTo(st.paths.Root, st.paths.SkillsLockPath), strings.Join(paths, ", "), relativeTo(st.paths.Root, st.paths.SkillsDir))
 }
@@ -501,5 +505,6 @@ func pathSetFor(st *state) pathSet {
 		SkillsLockPath:    st.paths.SkillsLockPath,
 		ImportedSkillsDir: st.paths.ImportedSkillsDir,
 		LocalSkillsDir:    st.paths.SkillsDir,
+		ExactFiles:        st.instructions,
 	}
 }

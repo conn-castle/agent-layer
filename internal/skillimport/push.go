@@ -212,7 +212,7 @@ func selectedPushEntries(report *Report, block config.SkillImport, entries []ski
 			Repository:   entry.Repository,
 			SelectedPath: entry.SelectedPath,
 			Outcome:      OutcomeSkipped,
-			Detail:       "no longer selected by its import block; run 'al skills pull' to apply retirement rules",
+			Detail:       "no longer selected by its import block; run 'al " + importKind(block.ExactFile) + " pull' to apply retirement rules",
 		})
 	}
 	return selected
@@ -244,13 +244,13 @@ func resolveTrackedSourceCommit(ctx context.Context, source *gitrepo.Source, blo
 // Each entry is checked against its own commit: a partial pull advances only
 // the skills it succeeded on, so entries in one block can legitimately sit at
 // different commits.
-func verifySourceUnmoved(entry skilllock.Entry, sourceCommit string) error {
+func verifySourceUnmoved(entry skilllock.Entry, sourceCommit string, instructions bool) error {
 	if entry.Tracking != config.SkillTrackingTracked || sourceCommit == "" {
 		return nil
 	}
 	if sourceCommit != entry.Commit {
-		return fmt.Errorf("source %s ref %s advanced from %s to %s; run 'al skills pull' before pushing",
-			entry.Repository, entry.ResolvedRef, shortCommit(entry.Commit), shortCommit(sourceCommit))
+		return fmt.Errorf("source %s ref %s advanced from %s to %s; run 'al %s pull' before pushing",
+			entry.Repository, entry.ResolvedRef, shortCommit(entry.Commit), shortCommit(sourceCommit), importKind(instructions))
 	}
 	return nil
 }
@@ -334,7 +334,7 @@ func reportBlockedSkills(report *Report, entries []skilllock.Entry, err error) {
 // buildPushCandidate validates one imported skill and derives its file-level
 // delta from the locked source tree without pulling.
 func buildPushCandidate(ctx context.Context, st *state, source *gitrepo.Source, block config.SkillImport, entry skilllock.Entry, sourceCommit string) (pushCandidate, error) {
-	if err := verifySourceUnmoved(entry, sourceCommit); err != nil {
+	if err := verifySourceUnmoved(entry, sourceCommit, st.instructions); err != nil {
 		return pushCandidate{}, err
 	}
 	observed := st.skill(entry.Name)
@@ -345,12 +345,12 @@ func buildPushCandidate(ctx context.Context, st *state, source *gitrepo.Source, 
 	if observed.Err != nil {
 		return pushCandidate{}, observed.Err
 	}
-	base, err := source.ReadTree(ctx, entry.Commit, entry.SelectedPath)
+	base, err := source.ReadNode(ctx, entry.Commit, entry.SelectedPath, block.ExactFile)
 	if err != nil {
 		return pushCandidate{}, fmt.Errorf("locked source commit %s could not be read, so no merge base exists: %w", shortCommit(entry.Commit), err)
 	}
 	if base.Hash() != entry.TreeHash {
-		return pushCandidate{}, fmt.Errorf("locked upstream state does not match commit %s; run 'al skills pull' to restore a trustworthy merge base", shortCommit(entry.Commit))
+		return pushCandidate{}, fmt.Errorf("locked upstream state does not match commit %s; run 'al %s pull' to restore a trustworthy merge base", shortCommit(entry.Commit), importKind(st.instructions))
 	}
 	return pushCandidate{Entry: entry, Block: block, Base: base, Local: observed.Tree}, nil
 }
@@ -429,7 +429,7 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 			Repository:   candidate.Entry.Repository,
 			SelectedPath: candidate.Entry.SelectedPath,
 		}
-		destinationTree, readErr := destination.ReadTree(ctx, head, candidate.Entry.SelectedPath)
+		destinationTree, readErr := destination.ReadNode(ctx, head, candidate.Entry.SelectedPath, candidate.Block.ExactFile)
 		if readErr != nil {
 			result.Outcome = OutcomeFailed
 			result.Err = readErr
@@ -502,7 +502,7 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 		// skill either way. Only an empty result already equal to the destination
 		// preserves a whole-skill deletion and skips validation as unchanged.
 		if !merged.IsEmpty() || !merged.Equal(destinationTree) {
-			if _, validateErr := skilltree.ValidateSkill(merged, candidate.Entry.SelectedPath); validateErr != nil {
+			if _, validateErr := skilltree.ValidateNode(merged, candidate.Entry.SelectedPath, candidate.Block.ExactFile); validateErr != nil {
 				result.Outcome = OutcomeFailed
 				result.Err = fmt.Errorf("the result for %s would not be a valid skill: %w", group.Repository, validateErr)
 				report.Add(result)
@@ -521,7 +521,7 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 			unchangedCandidates = append(unchangedCandidates, candidate)
 			continue
 		}
-		updates = append(updates, gitrepo.Update{Path: candidate.Entry.SelectedPath, Tree: merged})
+		updates = append(updates, gitrepo.Update{Path: candidate.Entry.SelectedPath, ExactFile: candidate.Block.ExactFile, Tree: merged})
 		pushed = append(pushed, candidate)
 	}
 
@@ -609,7 +609,7 @@ func publicationMergeBase(ctx context.Context, destination *gitrepo.Destination,
 		return skilltree.Tree{}, false, fmt.Errorf("%w: commit %s is not an ancestor of %s branch %s",
 			errPublicationUnavailable, shortCommit(publication.Commit), group.Repository, group.Branch)
 	}
-	base, err := destination.ReadTree(ctx, publication.Commit, candidate.Entry.SelectedPath)
+	base, err := destination.ReadNode(ctx, publication.Commit, candidate.Entry.SelectedPath, candidate.Block.ExactFile)
 	if err != nil {
 		return skilltree.Tree{}, false, fmt.Errorf("published merge base %s could not be read for %s: %w",
 			shortCommit(publication.Commit), candidate.Entry.SelectedPath, err)
@@ -697,7 +697,7 @@ func mergeAgainstDestination(ctx context.Context, runner *gitrepo.Runner, st *st
 		case workspaceErr != nil:
 			result.Err = fmt.Errorf("local and destination changes conflict in %s; could not write resolution workspace: %w", describeConflicts(conflicts), workspaceErr)
 		default:
-			result.Err = fmt.Errorf("local and destination changes conflict in %s; resolve %s with git and run 'al skills resolve %s'", describeConflicts(conflicts), relativeTo(st.paths.Root, workspace), candidate.Entry.Name)
+			result.Err = fmt.Errorf("local and destination changes conflict in %s; resolve %s with git and run 'al %s resolve %s'", describeConflicts(conflicts), relativeTo(st.paths.Root, workspace), importKind(st.instructions), candidate.Entry.Name)
 		}
 		return result, skilltree.Tree{}
 	}
