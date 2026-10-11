@@ -1,6 +1,6 @@
 <!--
   GENERATED FILE
-  Source: .agent-layer/instructions/*.md
+  Source: configured local and imported instructions (numeric order)
   Regenerate: al sync
 -->
 

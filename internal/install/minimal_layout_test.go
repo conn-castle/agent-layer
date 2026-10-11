@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/conn-castle/agent-layer/internal/config"
 )
 
 func TestInstallRun_BareInitSeedsOnlyOperationalScaffolding(t *testing.T) {
@@ -93,7 +95,7 @@ func TestBuildUpgradePlan_RulesOnlyDoesNotActivateMemoryOrDevelopmentSkills(t *t
 	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
 	require.NoError(t, err)
 
-	assert.NotNil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/instructions/00_rules.md"))
+	assert.Nil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/instructions/00_rules.md"))
 	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/instructions/01_memory.md"))
 	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/implement/SKILL.md"))
 	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, "docs/agent-layer/ISSUES.md"))
@@ -128,4 +130,44 @@ func TestBuildUpgradePlan_InstalledCatalogSkillIsUpgradeManaged(t *testing.T) {
 
 	assert.NotNil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/skills/benchmark/SKILL.md"))
 	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/playwright/SKILL.md"))
+}
+
+func TestUpgradeEstablishesOfflineInstructionOrderAndRefusesLinkedImports(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, Run(root, Options{System: RealSystem{}}))
+	paths := config.DefaultPaths(root)
+	raw, err := os.ReadFile(paths.ConfigPath)
+	require.NoError(t, err)
+	for _, name := range []string{"z.md", "a.md"} {
+		require.NoError(t, os.WriteFile(filepath.Join(paths.InstructionsDir, name), []byte("custom "+name+"\r\n"), 0o600))
+	}
+	_, err = BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+	require.NoError(t, err)
+	previewRaw, err := os.ReadFile(paths.ConfigPath)
+	require.NoError(t, err)
+	require.Equal(t, raw, previewRaw, "preview is read-only")
+	require.NoError(t, Run(root, Options{Overwrite: true, Prompter: autoApprovePrompter(), System: RealSystem{}}))
+	cfg, err := config.LoadConfigLenient(paths.ConfigPath)
+	require.NoError(t, err)
+	require.Len(t, cfg.Instructions.Local, 2)
+	require.Equal(t, "a.md", cfg.Instructions.Local[0].Selectors[0])
+	require.Equal(t, 0, *cfg.Instructions.Local[0].Order)
+	require.Equal(t, 10, *cfg.Instructions.Local[1].Order)
+	body, err := os.ReadFile(filepath.Join(paths.InstructionsDir, "z.md"))
+	require.NoError(t, err)
+	require.Equal(t, "custom z.md\r\n", string(body))
+	external := filepath.Join(t.TempDir(), "rules.md")
+	require.NoError(t, os.WriteFile(external, []byte("external bytes\n"), 0o600))
+	require.NoError(t, os.MkdirAll(paths.ImportedInstructionsDir, 0o750))
+	require.NoError(t, os.Symlink(external, filepath.Join(paths.ImportedInstructionsDir, "rules.md")))
+	before, err := os.ReadFile(paths.ConfigPath)
+	require.NoError(t, err)
+	err = Run(root, Options{Overwrite: true, Prompter: autoApprovePrompter(), System: RealSystem{}})
+	require.ErrorContains(t, err, "unlinked")
+	after, err := os.ReadFile(paths.ConfigPath)
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+	body, err = os.ReadFile(external) // #nosec G304 -- test-owned external fixture.
+	require.NoError(t, err)
+	require.Equal(t, "external bytes\n", string(body))
 }

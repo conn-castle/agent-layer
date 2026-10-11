@@ -57,6 +57,8 @@ type SkillImport struct {
 	// Repository is the source Git repository reachable through the user's
 	// existing Git authentication.
 	Repository string `toml:"repository"`
+	// ExactFile is set only by the instruction adapter, never decoded from TOML.
+	ExactFile bool `toml:"-"`
 	// Selectors are exact paths, path wildcards, or `!`-prefixed exclusions.
 	Selectors []string `toml:"selectors"`
 	// Ref is a branch, tag, or commit. An empty value resolves to the
@@ -141,6 +143,7 @@ func SkillExclusionPath(selector string) string {
 // interchangeable. Configuration keeps one block per unique identity so
 // selector additions with the same policy extend an existing block.
 type SkillImportBlockIdentity struct {
+	FileSelector   string
 	Repository     string
 	Ref            string
 	Tracking       string
@@ -151,7 +154,12 @@ type SkillImportBlockIdentity struct {
 
 // Identity returns the block's policy identity with defaults applied.
 func (imp SkillImport) Identity() SkillImportBlockIdentity {
+	fileSelector := ""
+	if imp.ExactFile && len(imp.Selectors) == 1 {
+		fileSelector = NormalizeSkillSelector(imp.Selectors[0])
+	}
 	return SkillImportBlockIdentity{
+		FileSelector:   fileSelector,
 		Repository:     NormalizeSkillRepository(imp.Repository),
 		Ref:            strings.TrimSpace(imp.Ref),
 		Tracking:       strings.TrimSpace(imp.Tracking),

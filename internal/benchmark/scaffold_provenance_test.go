@@ -69,7 +69,7 @@ func TestFrozenProvenanceUsesRecordedSelectorsAndIgnoresOnlyMetadata(t *testing.
 			require.NoError(t, err)
 			provenance := filepath.Join(root, "skills-source.json")
 			require.NoError(t, os.WriteFile(provenance, data, 0o600))
-			err = validateFrozenSkillsSource(provenance, skills)
+			_, err = readFrozenSkillsSource(provenance, skills, "")
 			if kind == "alternate recorded set" || kind == "ignored metadata" {
 				require.NoError(t, err)
 			} else {

@@ -11,8 +11,12 @@ import (
 	"github.com/conn-castle/agent-layer/internal/skillimport"
 )
 
+const instructionsCommandName = "instructions"
+
 // newSkillsCmd builds the `al skills` command family.
-func newSkillsCmd() *cobra.Command {
+func newSkillsCmd() *cobra.Command       { return newImportCmd(false) }
+func newInstructionsCmd() *cobra.Command { return newImportCmd(true) }
+func newImportCmd(instructions bool) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   messages.SkillsUse,
 		Short: messages.SkillsShort,
@@ -32,6 +36,30 @@ func newSkillsCmd() *cobra.Command {
 		newSkillsResolveCmd(),
 		newSkillsPushCmd(),
 	)
+	if instructions {
+		cmd.Use = instructionsCommandName
+		cmd.Short = instructionText(cmd.Short)
+		cmd.Long = "Manage Git-backed regular Markdown instructions using the skills lifecycle. Each import selects one exact file and declares a globally unique numeric order. Local files remain in .agent-layer/instructions; imports live in .agent-layer/instructions-imported. Sync and status are offline."
+		for _, sub := range cmd.Commands() {
+			sub.Use = instructionText(sub.Use)
+			sub.Short = instructionText(sub.Short)
+			sub.Long = instructionText(sub.Long)
+			switch sub.Name() {
+			case "remove":
+				sub.Long = "Remove one exact instruction import and its order block. Local modifications block removal; inspect diff and explicitly reset first when needed. Local-only instructions remain untouched."
+			case "reset":
+				sub.Long = "Discard local modifications to one imported instruction and restore its locked upstream bytes. Fetch upstream changes separately with pull."
+			case "status":
+				sub.Long = "Inspect instruction imports and conflicts offline, without fetching or changing files. --all includes clean imports."
+			case "add":
+				sub.Use = "add <repository> <path.md>"
+				sub.Long = "Import one exact regular Markdown file. --order is required and must be nonnegative and globally unique across imported and local instructions; zero and gaps are valid. Wildcards and exclusions are unsupported. Uses the skills ref, tracking, write and push defaults."
+				sub.Flags().Int("order", 0, "Required nonnegative instruction order; zero is valid")
+				sub.Args = cobra.ExactArgs(2)
+				_ = sub.MarkFlagRequired("order")
+			}
+		}
+	}
 	return cmd
 }
 
@@ -48,7 +76,7 @@ func newSkillsDiffCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			output, err := skillimport.New(root).Diff(cmd.Context(), args[0], from, to)
+			output, err := importService(cmd, root).Diff(cmd.Context(), args[0], from, to)
 			if err != nil {
 				return err
 			}
@@ -72,7 +100,7 @@ func newSkillsResolveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			report, err := skillimport.New(root).Resolve(cmd.Context(), args[0])
+			report, err := importService(cmd, root).Resolve(cmd.Context(), args[0])
 			return finishSkillsOperation(cmd, "resolve", report, err)
 		},
 	}
@@ -90,10 +118,10 @@ func newSkillsResetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := confirmSkillsMutation(cmd, "reset", fmt.Sprintf(messages.SkillsResetConfirmFmt, args[0]), yes); err != nil {
+			if err := confirmSkillsMutation(cmd, "reset", fmt.Sprintf(importOutput(cmd, messages.SkillsResetConfirmFmt), args[0]), yes); err != nil {
 				return err
 			}
-			report, err := skillimport.New(root).Reset(cmd.Context(), args[0])
+			report, err := importService(cmd, root).Reset(cmd.Context(), args[0])
 			return finishSkillsOperation(cmd, "reset", report, err)
 		},
 	}
@@ -114,12 +142,16 @@ func newSkillsAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := confirmSkillsMutation(cmd, "add", fmt.Sprintf(messages.SkillsAddConfirmFmt, strings.Join(args[1:], ", "), args[0]), yes); err != nil {
+			if err := confirmSkillsMutation(cmd, "add", fmt.Sprintf(importOutput(cmd, messages.SkillsAddConfirmFmt), strings.Join(args[1:], ", "), args[0]), yes); err != nil {
 				return err
 			}
 			opts.Repository = args[0]
 			opts.Selectors = args[1:]
-			report, err := skillimport.New(root).Add(cmd.Context(), opts)
+			if isInstructionsCommand(cmd) {
+				order, _ := cmd.Flags().GetInt("order")
+				opts.Order = &order
+			}
+			report, err := importService(cmd, root).Add(cmd.Context(), opts)
 			return finishSkillsOperation(cmd, "add", report, err)
 		},
 	}
@@ -144,10 +176,10 @@ func newSkillsRemoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := confirmSkillsMutation(cmd, "remove", fmt.Sprintf(messages.SkillsRemoveConfirmFmt, args[1], args[0]), yes); err != nil {
+			if err := confirmSkillsMutation(cmd, "remove", fmt.Sprintf(importOutput(cmd, messages.SkillsRemoveConfirmFmt), args[1], args[0]), yes); err != nil {
 				return err
 			}
-			report, err := skillimport.New(root).Remove(cmd.Context(), args[0], args[1])
+			report, err := importService(cmd, root).Remove(cmd.Context(), args[0], args[1])
 			return finishSkillsOperation(cmd, "remove", report, err)
 		},
 	}
@@ -167,7 +199,7 @@ func newSkillsStatusCmd() *cobra.Command {
 				return err
 			}
 			all, _ := cmd.Flags().GetBool("all")
-			status, err := skillimport.New(root).Status()
+			status, err := importService(cmd, root).Status()
 			if err != nil {
 				return err
 			}
@@ -190,7 +222,7 @@ func newSkillsPullCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			report, err := skillimport.New(root).Pull(cmd.Context())
+			report, err := importService(cmd, root).Pull(cmd.Context())
 			return finishSkillsOperation(cmd, "pull", report, err)
 		},
 	}
@@ -208,10 +240,10 @@ func newSkillsPushCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := confirmSkillsMutation(cmd, "push", messages.SkillsPushConfirm, yes); err != nil {
+			if err := confirmSkillsMutation(cmd, "push", importOutput(cmd, messages.SkillsPushConfirm), yes); err != nil {
 				return err
 			}
-			report, err := skillimport.New(root).Push(cmd.Context())
+			report, err := importService(cmd, root).Push(cmd.Context())
 			return finishSkillsOperation(cmd, "push", report, err)
 		},
 	}
@@ -227,14 +259,14 @@ func confirmSkillsMutation(cmd *cobra.Command, operation string, prompt string, 
 		return nil
 	}
 	if !isTerminal() {
-		return fmt.Errorf(messages.SkillsNonInteractiveRequiresYesFmt, operation)
+		return fmt.Errorf("%s", fmt.Sprintf(importOutput(cmd, messages.SkillsNonInteractiveRequiresYesFmt), operation))
 	}
 	confirmed, err := promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, false)
 	if err != nil {
-		return fmt.Errorf("read al skills %s confirmation: %w", operation, err)
+		return fmt.Errorf("read al %s %s confirmation: %w", importCommandName(cmd), operation, err)
 	}
 	if !confirmed {
-		return fmt.Errorf(messages.SkillsConfirmationDeclinedFmt, operation)
+		return fmt.Errorf(importOutput(cmd, messages.SkillsConfirmationDeclinedFmt), operation)
 	}
 	return nil
 }
@@ -248,7 +280,7 @@ func confirmSkillsMutation(cmd *cobra.Command, operation string, prompt string, 
 // the report as an error message.
 func finishSkillsOperation(cmd *cobra.Command, operation string, report *skillimport.Report, err error) error {
 	if report != nil && (len(report.Skills) > 0 || len(report.Sources) > 0 || report.ProjectionErr != nil) {
-		if _, writeErr := io.WriteString(cmd.OutOrStdout(), report.Render("al skills "+operation)); writeErr != nil {
+		if _, writeErr := io.WriteString(cmd.OutOrStdout(), report.Render("al "+importCommandName(cmd)+" "+operation)); writeErr != nil {
 			return writeErr
 		}
 		if err != nil {
@@ -264,8 +296,38 @@ func finishSkillsOperation(cmd *cobra.Command, operation string, report *skillim
 		return err
 	}
 	if report != nil {
-		_, writeErr := io.WriteString(cmd.OutOrStdout(), report.Render("al skills "+operation))
+		_, writeErr := io.WriteString(cmd.OutOrStdout(), report.Render("al "+importCommandName(cmd)+" "+operation))
 		return writeErr
 	}
 	return nil
+}
+
+func isInstructionsCommand(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if c.Name() == instructionsCommandName {
+			return true
+		}
+	}
+	return false
+}
+func importCommandName(cmd *cobra.Command) string {
+	if isInstructionsCommand(cmd) {
+		return instructionsCommandName
+	}
+	return "skills"
+}
+func importService(cmd *cobra.Command, root string) *skillimport.Service {
+	if isInstructionsCommand(cmd) {
+		return skillimport.NewInstructions(root)
+	}
+	return skillimport.New(root)
+}
+func instructionText(s string) string {
+	return strings.NewReplacer("skills", "instructions", "Skills", "Instructions", "skill", "instruction", "Skill", "Instruction").Replace(s)
+}
+func importOutput(cmd *cobra.Command, s string) string {
+	if isInstructionsCommand(cmd) {
+		return instructionText(s)
+	}
+	return s
 }

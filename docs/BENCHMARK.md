@@ -40,12 +40,12 @@ This creates an otherwise-empty `benchmark-study/` directory containing:
 - `selection.json`, copied without changing the selected tasks;
 - `study.toml`, with bare and Agent Layer experiments using the selection's model and reasoning;
 - `treatment/config.toml`, a minimal benchmark-safe config for the selected provider;
-- `treatment/official-instructions/`, containing the embedded benchmark-safe core rules;
+- `treatment/official-instructions/`, containing core rules fetched at the same Git commit as development skills;
 - `treatment/official-skills/`, containing the embedded workflow skills;
-- `treatment/project-instructions/` and `treatment/project-skills/`, preserved only as unreferenced audit snapshots;
+- `treatment/project-instructions/` and `treatment/project-skills/`, preserved only as unreferenced audit snapshots (both configured instruction tiers, with numeric order in `project-instructions-order.json`);
 - `treatment/prompt.md`, with the required `{{task}}` placeholder.
 
-The generated Agent Layer experiment pins the benchmark-safe core rules and official workflow skills embedded in the running Agent Layer binary, while preserving the project's instructions and installed skills separately as unreferenced audit snapshots. It requires one independent plan review, one dispatched implementation, and one independent code review. Its runtime instruction supplies the selected provider/model/reasoning target under the exact `plan_reviewers`, `implementer`, and `code_reviewer` names required by the implementation skill, plus the exact `role` value each `dispatch_start` call must record. Prompt text alone is not role evidence. A direct single-agent implementation is workflow-noncompliant. The generated config deliberately excludes host-only settings such as status lines. The command refuses to overwrite a non-empty destination directory.
+The existing `skills-source.json` provenance records the instruction source path and hash alongside that same commit. The generated Agent Layer experiment pins the benchmark-safe core rules and official workflow skills fetched at one frozen Git commit, while preserving the project's instructions and installed skills separately as unreferenced audit snapshots. It requires one independent plan review, one dispatched implementation, and one independent code review. Its runtime instruction supplies the selected provider/model/reasoning target under the exact `plan_reviewers`, `implementer`, and `code_reviewer` names required by the implementation skill, plus the exact `role` value each `dispatch_start` call must record. Prompt text alone is not role evidence. A direct single-agent implementation is workflow-noncompliant. The generated config deliberately excludes host-only settings such as status lines. The command refuses to overwrite a non-empty destination directory.
 
 ### 2. Certify only this study's tasks
 

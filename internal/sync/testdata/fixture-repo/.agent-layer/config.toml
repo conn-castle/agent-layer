@@ -36,3 +36,11 @@ headers = { Authorization = "Bearer ${AL_EXAMPLE_TOKEN}" }
 [warnings]
 instruction_token_threshold = 50000
 mcp_server_threshold = 5
+
+[[instructions.local]]
+selectors = ["00_base.md"]
+order = 0
+
+[[instructions.local]]
+selectors = ["10_extra.md"]
+order = 10

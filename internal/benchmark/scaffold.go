@@ -72,13 +72,58 @@ func InitStudy(options InitStudyOptions) (string, error) {
 	if err := copyScaffoldFile(options.SelectionPath, filepath.Join(destination, "selection.json")); err != nil {
 		return "", err
 	}
-	for _, item := range []struct{ source, target string }{
-		{filepath.Join(options.RepoRoot, ".agent-layer", "instructions"), filepath.Join(destination, "treatment", "project-instructions")},
-		{filepath.Join(options.RepoRoot, ".agents", "skills"), filepath.Join(destination, "treatment", "project-skills")},
-	} {
-		if err := copyScaffoldTree(item.source, item.target); err != nil {
+	if err := copyScaffoldTree(filepath.Join(options.RepoRoot, ".agents", "skills"), filepath.Join(destination, "treatment", "project-skills")); err != nil {
+		return "", err
+	}
+	raw, err := os.ReadFile(config.DefaultPaths(options.RepoRoot).ConfigPath)
+	if err != nil {
+		return "", err
+	}
+	projectCfg, err := config.ParseConfig(raw, "project config.toml")
+	if err != nil {
+		return "", err
+	}
+	instructions, err := config.LoadOrderedInstructionsFS(os.DirFS(options.RepoRoot), options.RepoRoot, projectCfg.Instructions)
+	if err != nil {
+		return "", err
+	}
+	projectDir := filepath.Join(destination, "treatment", "project-instructions")
+	if err := os.MkdirAll(projectDir, 0o700); err != nil {
+		return "", err
+	}
+	type instructionPosition struct {
+		Name     string `json:"name"`
+		Order    int    `json:"order"`
+		Imported bool   `json:"imported"`
+	}
+	positions := map[string]instructionPosition{}
+	paths := config.DefaultPaths(options.RepoRoot)
+	for _, local := range projectCfg.Instructions.Local {
+		positions[local.Selectors[0]] = instructionPosition{Name: local.Selectors[0], Order: *local.Order}
+	}
+	for _, imp := range projectCfg.Instructions.Imports {
+		name := filepath.Base(imp.Selectors[0])
+		positions[name] = instructionPosition{Name: name, Order: *imp.Order, Imported: true}
+	}
+	var ordered []instructionPosition
+	for _, file := range instructions {
+		position := positions[file.Name]
+		ordered = append(ordered, position)
+		dir := paths.InstructionsDir
+		if position.Imported {
+			dir = paths.ImportedInstructionsDir
+		}
+		if err := copyScaffoldFile(filepath.Join(dir, file.Name), filepath.Join(projectDir, file.Name)); err != nil {
 			return "", err
 		}
+	}
+	orderData, err := json.MarshalIndent(ordered, "", "  ")
+	if err != nil {
+		return "", err
+	}
+
+	if err := os.WriteFile(filepath.Join(destination, "treatment", "project-instructions-order.json"), append(orderData, '\n'), 0o600); err != nil {
+		return "", err
 	}
 	for name, tree := range frozen {
 		target := filepath.Join(destination, "treatment", "official-skills", name)
@@ -96,9 +141,15 @@ func InitStudy(options InitStudyOptions) (string, error) {
 	if err := os.WriteFile(filepath.Join(destination, "treatment", "skills-source.json"), append(data, '\n'), 0o600); err != nil {
 		return "", err
 	}
-	if err := copyEmbeddedScaffoldFile("instructions/00_rules.md", filepath.Join(destination, "treatment", "official-instructions", "00_rules.md")); err != nil {
-		return "", fmt.Errorf("snapshot official Agent Layer instructions: %w", err)
+	rulesFile, _ := provenance.rules.File("rules.md")
+	rulesDir := filepath.Join(destination, "treatment", "official-instructions")
+	if err := os.MkdirAll(rulesDir, 0o700); err != nil {
+		return "", err
 	}
+	if err := os.WriteFile(filepath.Join(rulesDir, "00_rules.md"), rulesFile.Data, rulesFile.FileMode()); err != nil {
+		return "", err
+	}
+
 	config := scaffoldConfig(model.Adapter, dispatchModel(model), effort)
 	if err := os.WriteFile(filepath.Join(destination, "treatment", "config.toml"), []byte(config), 0o600); err != nil {
 		return "", err
@@ -153,11 +204,14 @@ required_dispatch_roles = ["plan-reviewer", "implementer", "code-reviewer"]
 
 // SkillSnapshotSource records genuine Git and canonical tree evidence for frozen content.
 type SkillSnapshotSource struct {
-	Repository    string            `json:"repository"`
-	ConfiguredRef string            `json:"configured_ref,omitempty"`
-	ResolvedRef   string            `json:"resolved_ref"`
-	Commit        string            `json:"commit"`
-	Trees         map[string]string `json:"trees"`
+	Repository      string            `json:"repository"`
+	ConfiguredRef   string            `json:"configured_ref,omitempty"`
+	ResolvedRef     string            `json:"resolved_ref"`
+	Commit          string            `json:"commit"`
+	Trees           map[string]string `json:"trees"`
+	InstructionPath string            `json:"instruction_path,omitempty"`
+	InstructionHash string            `json:"instruction_hash,omitempty"`
+	rules           skilltree.Tree
 }
 
 func freezeDevelopmentSkills(ctx context.Context, ref string) (map[string]skilltree.Tree, SkillSnapshotSource, error) {
@@ -211,18 +265,16 @@ func freezeDevelopmentSkills(ctx context.Context, ref string) (map[string]skillt
 		trees[info.Name] = tree
 		result.Trees[selector] = tree.Hash()
 	}
-	return trees, result, nil
-}
-
-func copyEmbeddedScaffoldFile(source, destination string) error {
-	data, err := templates.Read(source)
+	result.InstructionPath = "instructions/rules.md"
+	result.rules, err = source.ReadFile(ctx, resolved.Commit, result.InstructionPath)
 	if err != nil {
-		return err
+		return nil, result, err
 	}
-	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
-		return err
+	if _, err := skilltree.ValidateNode(result.rules, result.InstructionPath, true); err != nil {
+		return nil, result, err
 	}
-	return os.WriteFile(destination, data, 0o600)
+	result.InstructionHash = result.rules.Hash()
+	return trees, result, nil
 }
 
 func scaffoldConfig(adapter, model, effort string) string {
@@ -291,14 +343,8 @@ func copyScaffoldTree(source, destination string) error {
 	})
 }
 
-// validateFrozenSkillsSource binds provenance to the exact frozen plain trees.
-func validateFrozenSkillsSource(path, skills string) error {
-	_, err := readFrozenSkillsSource(path, skills)
-	return err
-}
-
 // Read and validate once so copying uses the exact trees bound by provenance.
-func readFrozenSkillsSource(path, skills string) (map[string]skilltree.Tree, error) {
+func readFrozenSkillsSource(path, skills, instructions string) (map[string]skilltree.Tree, error) {
 	data, err := os.ReadFile(path) // #nosec G304 -- path is the resolved study input snapshot.
 	if err != nil {
 		return nil, err
@@ -306,6 +352,18 @@ func readFrozenSkillsSource(path, skills string) (map[string]skilltree.Tree, err
 	var source SkillSnapshotSource
 	if err := json.Unmarshal(data, &source); err != nil {
 		return nil, err
+	}
+	if source.InstructionPath != "" || source.InstructionHash != "" {
+		if source.InstructionPath != "instructions/rules.md" || source.InstructionHash == "" || instructions == "" {
+			return nil, fmt.Errorf("invalid frozen instruction provenance")
+		}
+		tree, err := skilltree.ReadFileNode(skilltree.OSFS{}, filepath.Join(instructions, "00_rules.md"), "rules.md")
+		if err != nil {
+			return nil, err
+		}
+		if tree.Hash() != source.InstructionHash {
+			return nil, fmt.Errorf("frozen instruction differs from source provenance")
+		}
 	}
 	if source.Repository == "" || strings.TrimSpace(source.Repository) != source.Repository || strings.Contains(source.Repository, "${") || skilllock.ValidateRepository(source.Repository) != nil || !gitrepo.IsCommitID(source.Commit) || !validFrozenRef(source.ResolvedRef) || (source.ConfiguredRef != "" && !validFrozenRef(source.ConfiguredRef)) || len(source.Trees) == 0 {
 		return nil, fmt.Errorf("invalid external skill source provenance")
@@ -392,8 +450,8 @@ func validFrozenRef(ref string) bool {
 
 // Freeze only the view bound by provenance. Inspect all trees before creating
 // the skills destination; never traverse or copy root Git/private metadata.
-func copyFrozenSkillsSource(provenance, source, destination string) error {
-	trees, err := readFrozenSkillsSource(provenance, source)
+func copyFrozenSkillsSource(provenance, source, destination, instructions string) error {
+	trees, err := readFrozenSkillsSource(provenance, source, instructions)
 	if err != nil {
 		return err
 	}

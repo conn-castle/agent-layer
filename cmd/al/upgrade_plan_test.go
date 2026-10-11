@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/templates"
 	"github.com/conn-castle/agent-layer/internal/testutil"
@@ -460,7 +462,8 @@ func prepareUpgradeTestRepo(t *testing.T) string {
 
 func seedWorkflowBundleForUpgradeCmdTest(t *testing.T, root string) {
 	t.Helper()
-	copyEmbeddedDirForUpgradeCmdTest(t, "instructions", filepath.Join(root, ".agent-layer", "instructions"), 0o644)
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), []byte("legacy fixture\n"), 0o600))
 	copyEmbeddedDirForUpgradeCmdTest(t, "skills-catalog/dispatch-agent", filepath.Join(root, ".agent-layer", "skills", "dispatch-agent"), 0o600)
 	copyEmbeddedDirForUpgradeCmdTest(t, "docs/agent-layer", filepath.Join(root, ".agent-layer", "templates", "docs"), 0o644)
 	copyEmbeddedDirForUpgradeCmdTest(t, "docs/agent-layer", filepath.Join(root, "docs", "agent-layer"), 0o644)

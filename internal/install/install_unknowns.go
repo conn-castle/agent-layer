@@ -432,9 +432,13 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 		})
 	}
 
-	if err := addTemplatePaths(instructionsDirName, filepath.Join(root, ".agent-layer", instructionsDirName)); err != nil {
-		return nil, err
+	add(filepath.Join(root, ".agent-layer", "instructions.lock.json"))
+	for _, dir := range []string{"instructions", "instructions-imported"} {
+		if err := inst.addExistingKnownPaths(filepath.Join(root, ".agent-layer", dir), add); err != nil {
+			return nil, err
+		}
 	}
+
 	for _, name := range templates.RetiredSkillNames {
 		add(filepath.Join(root, ".agent-layer", "skills", name))
 		if err := inst.addExistingKnownPaths(filepath.Join(root, ".agent-layer", "skills", name), add); err != nil {

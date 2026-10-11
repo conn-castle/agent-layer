@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	alconfig "github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/gitenv"
 	"github.com/conn-castle/agent-layer/internal/sync"
@@ -331,9 +332,6 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	if err != nil {
 		return nil, fmt.Errorf("validate secret-free effective config: %w", err)
 	}
-	if err := copyRequiredFile(config, filepath.Join(layer, "config.toml")); err != nil {
-		return nil, err
-	}
 	if err := validateTreatmentInstructionDependencies(experiment.inputs.Instructions); err != nil {
 		return nil, err
 	}
@@ -382,6 +380,15 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 		if err := os.WriteFile(filepath.Join(layer, name), nil, 0o600); err != nil {
 			return nil, err
 		}
+	}
+	// Preserve historical study layouts by establishing ordering in this disposable stage.
+	stagedConfig := filepath.Join(layer, "config.toml")
+	orderedConfig, err := alconfig.MigrateInstructionOrderFS(os.DirFS(root), root, string(configBytes))
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(stagedConfig, []byte(orderedConfig), 0o600); err != nil { // #nosec G703 -- stagedConfig is inside the controlled private staging root.
+		return nil, err
 	}
 	if _, err := sync.RunWithSystemFS(benchmarkSyncSystem{}, os.DirFS(root), root); err != nil {
 		return nil, fmt.Errorf("synchronize staged study inputs: %w", err)

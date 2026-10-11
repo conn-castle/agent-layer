@@ -101,7 +101,7 @@ func (s *Service) resolveDiffSide(ctx context.Context, runner *gitrepo.Runner, w
 		if err := source.Fetch(ctx, entry.Commit); err != nil {
 			return skilltree.Tree{}, err
 		}
-		return source.ReadTree(ctx, entry.Commit, entry.SelectedPath)
+		return source.ReadNode(ctx, entry.Commit, entry.SelectedPath, st.instructions)
 	case diffSideUpstream:
 		block, index, configured := st.configuredBlockForEntry(entry)
 		if !configured {
@@ -111,7 +111,7 @@ func (s *Service) resolveDiffSide(ctx context.Context, runner *gitrepo.Runner, w
 		if err != nil {
 			return skilltree.Tree{}, err
 		}
-		return blockCtx.Source.ReadTree(ctx, blockCtx.Resolution.Commit, entry.SelectedPath)
+		return blockCtx.Source.ReadNode(ctx, blockCtx.Resolution.Commit, entry.SelectedPath, blockCtx.Block.ExactFile)
 	case diffSideDestination:
 		return s.readLiveDestinationTree(ctx, runner, workRoot, st, entry)
 	default:
@@ -162,7 +162,7 @@ func (s *Service) readLiveDestinationTree(ctx context.Context, runner *gitrepo.R
 	if err := destination.FetchCommit(ctx, destinationRef, head); err != nil {
 		return skilltree.Tree{}, err
 	}
-	return destination.ReadTree(ctx, head, entry.SelectedPath)
+	return destination.ReadNode(ctx, head, entry.SelectedPath, st.instructions)
 }
 
 func liveDestinationBranch(ctx context.Context, destination *gitrepo.Destination, destinationRef gitrepo.Repository, block config.SkillImport) (string, error) {

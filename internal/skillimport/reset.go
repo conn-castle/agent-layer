@@ -20,18 +20,18 @@ func (s *Service) Reset(ctx context.Context, name string) (*Report, error) {
 func (s *Service) resetLocked(ctx context.Context, st *state, name string, report *Report) error {
 	entry, ok := st.lock.Entry(name)
 	if !ok {
-		return fmt.Errorf("imported skill %q has no lock entry; pass the exact name shown by 'al skills status --all'", name)
+		return fmt.Errorf("imported skill %q has no lock entry; pass the exact name shown by 'al %s status --all'", name, importKind(st.instructions))
 	}
 	block, blockIndex, configured := st.configuredBlockForEntry(entry)
 	if !configured {
 		if st.configuredSelectionCount(entry) > 1 {
 			return fmt.Errorf("imported skill %q at %s is selected by multiple configured blocks; make selector ownership unambiguous before resetting", name, entry.SelectedPath)
 		}
-		return fmt.Errorf("imported skill %q is no longer selected by configuration; run 'al skills pull' to apply retirement rules before resetting", name)
+		return fmt.Errorf("imported skill %q is no longer selected by configuration; run 'al %s pull' to apply retirement rules before resetting", name, importKind(st.instructions))
 	}
 	selector, selected := selectingPositiveSelector(block, entry.SelectedPath)
 	if !selected {
-		return fmt.Errorf("imported skill %q at %s is no longer selected by configuration; run 'al skills pull' before resetting", name, entry.SelectedPath)
+		return fmt.Errorf("imported skill %q at %s is no longer selected by configuration; run 'al %s pull' before resetting", name, entry.SelectedPath, importKind(st.instructions))
 	}
 	if dir, collided := blockedByUserSkill(st, entry.Name); collided {
 		return fmt.Errorf("user-managed skill %s already owns the name %q; remove the collision before resetting", relativeTo(st.paths.Root, dir), entry.Name)
@@ -47,11 +47,11 @@ func (s *Service) resetLocked(ctx context.Context, st *state, name string, repor
 	if err != nil {
 		return err
 	}
-	tree, err := blockCtx.Source.ReadTree(ctx, blockCtx.Resolution.Commit, entry.SelectedPath)
+	tree, err := blockCtx.Source.ReadNode(ctx, blockCtx.Resolution.Commit, entry.SelectedPath, blockCtx.Block.ExactFile)
 	if err != nil {
 		return fmt.Errorf("current upstream path %s could not be read; local content was preserved: %w", entry.SelectedPath, err)
 	}
-	info, err := skilltree.ValidateSkill(tree, entry.SelectedPath)
+	info, err := skilltree.ValidateNode(tree, entry.SelectedPath, block.ExactFile)
 	if err != nil {
 		return fmt.Errorf("current upstream path %s is not a valid skill; local content was preserved: %w", entry.SelectedPath, err)
 	}

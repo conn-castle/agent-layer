@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/skillmigration"
 	"github.com/conn-castle/agent-layer/internal/templates"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
@@ -859,8 +860,13 @@ func hashNormalizedContent(content []byte) string {
 }
 
 func protectedRetiredSkillPath(rel string) bool {
+	for _, tier := range []string{".agent-layer/instructions", ".agent-layer/instructions-imported"} {
+		if rel == tier || strings.HasPrefix(rel, tier+"/") {
+			return true
+		}
+	}
 	for _, name := range templates.RetiredSkillNames {
-		prefix := ".agent-layer/skills/" + name
+		prefix := skillmigration.LocalSlot(name)
 		if rel == prefix || strings.HasPrefix(rel, prefix+"/") {
 			return true
 		}

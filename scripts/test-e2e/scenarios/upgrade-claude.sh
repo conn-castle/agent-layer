@@ -13,6 +13,11 @@ run_scenario_upgrade_claude() {
   setup_old_version_via_binary "$repo_dir" "$E2E_OLDEST_BINARY"
   assert_al_version_content "$repo_dir" "$E2E_OLDEST_VERSION"
 
+  local expected
+  expected="$(mktemp -d "$E2E_TMP_ROOT/instruction-evidence.XXXXXX")"
+  cp -p "$repo_dir/.agent-layer/instructions/02_rules.md" "$expected/rules.md"
+  cp -p "$repo_dir/.agent-layer/instructions/01_memory.md" "$expected/memory.md"
+
   # Capture upgrade output to verify it prints expected messages
   local upgrade_output rc=0
   upgrade_output=$(cd "$repo_dir" && al upgrade --yes --apply-managed-updates --apply-memory-updates --apply-deletions 2>&1) || rc=$?
@@ -60,26 +65,23 @@ run_scenario_upgrade_claude() {
   assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
   assert_generated_artifacts "$repo_dir"
 
-  # Verify instruction files exist and have current template content
-  assert_file_contains "$repo_dir/.agent-layer/instructions/00_rules.md" \
-    "Guiding Principles" "upgraded instructions/00_rules.md has current template content"
+  # Upgrade preserves legacy instruction sources and records explicit ordering.
+  assert_exit_zero "upgrade preserves instructions/00_rules.md bytes" \
+    cmp "$expected/rules.md" "$repo_dir/.agent-layer/instructions/00_rules.md"
 
-  # The 0.16.0 consolidation folded 01_base.md and 03_tools.md into 00_rules.md
-  # and renumbered 02_memory.md.
-  assert_file_contains "$repo_dir/.agent-layer/instructions/01_memory.md" \
-    "Project Memory" "upgrade renames instructions/02_memory.md to 01_memory.md"
+  # The historical memory rename preserves its original content.
+  assert_exit_zero "upgrade preserves memory bytes through historical renames" \
+    cmp "$expected/memory.md" "$repo_dir/.agent-layer/instructions/01_memory.md"
   assert_file_not_exists "$repo_dir/.agent-layer/instructions/02_memory.md" \
     "upgrade leaves no instructions/02_memory.md behind after the rename"
 
-  # No migration deletes the superseded files: instruction fragments are
-  # user-editable, so they are reported as orphans and removed only when the
-  # user opts in. This scenario passes --apply-deletions, which is that opt-in,
-  # so they are gone here. The default (report, keep) is covered by
-  # TestBuildUpgradePlan_SupersededInstructionFilesAreReportedAsOrphans.
+  # Historical fragments remain local even with deletion-enabled upgrades.
   for name in 01_base.md 03_tools.md; do
-    assert_file_not_exists "$repo_dir/.agent-layer/instructions/$name" \
-      "--apply-deletions removes orphaned instructions/$name"
+    assert_file_exists "$repo_dir/.agent-layer/instructions/$name" \
+      "--apply-deletions preserves ordered local instructions/$name"
   done
+  assert_file_contains "$repo_dir/.agent-layer/config.toml" '[[instructions.local]]' \
+    "upgrade establishes explicit local instruction ordering offline"
 
   cleanup_scenario_dir "$repo_dir"
 }

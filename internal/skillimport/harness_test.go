@@ -16,7 +16,11 @@ import (
 
 // baseConfigTOML is a minimally valid Agent Layer configuration. Import blocks
 // are appended to it by the test helpers.
-const baseConfigTOML = `[approvals]
+const baseConfigTOML = `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+[approvals]
 mode = "none"
 
 [agents.antigravity]

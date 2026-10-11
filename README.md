@@ -252,13 +252,13 @@ Run `al wizard` any time to interactively configure the most important settings:
     - Unchecking writes the matching `agent_specific` disable key; re-checking removes it, keeping the client's native default — except Codex **apps**, which defaults unchecked and always writes an explicit `features.apps`.
     - The AskUserQuestion toggle instead writes a typed `agents.claude.disable_question_tool` flag, and `al sync` injects the `permissions.deny` entry plus a `PreToolUse` hook (merged with, never replacing, your own deny/hook entries).
     - Status line checkboxes write explicit `statusline = true` or `statusline = false`; enabling one creates the missing editable source file once and never overwrites an existing source.
-- **Instructions** (None, Rules, or Rules and memory when no managed instruction or memory files exist — seeds missing `00_rules.md`, and for Rules and memory also `01_memory.md` plus `docs/agent-layer/` memory docs/templates; existing files are left unchanged. Fresh init defaults to Rules and memory. Use `al upgrade` when you want managed instruction updates.)
+- **Instructions** (None, Rules, or Rules and memory — imports `instructions/rules.md`, and for Rules and memory also `instructions/memory.md` plus project memory docs/templates. Fresh orders are 0 and 10; adopting existing standard files preserves their bytes and order. Fresh init defaults to Rules and memory. None preserves existing content.)
 - **Git tracking** (choose whether `.agent-layer/` and `docs/agent-layer/` stay trackable or are ignored through the managed `.agent-layer/gitignore.block` source)
-- **Catalog skills** (opt-in: `tavily-web`, `playwright`, `find-docs`, `dispatch-agent`, `skill-sync`, `benchmark`, and development skills; tool rows require their own CLI on PATH; `al doctor` reports missing binaries without blocking agent launch)
+- **Catalog skills** (opt-in: `tavily-web`, `playwright`, `find-docs`, `dispatch-agent`, `skill-sync`, `instruction-sync`, `benchmark`, and development skills; tool rows require their own CLI on PATH; `al doctor` reports missing binaries without blocking agent launch)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
 - **Warnings** (enable/disable warning checks; threshold values use template defaults)
 
-General development skills and the `find-docs`, `playwright`, and `tavily-web` tool skills are authored in `nicholasjconn/skills`. The wizard imports their exact grouped paths into `.agent-layer/skills-imported/`; explicit `al skills pull` updates content independently of CLI upgrades. Legacy local copies are protected during upgrades and adopted only after the wizard previews their conversion. `dispatch-agent`, `skill-sync`, and `benchmark` remain bundled. See the [skills guide](https://agent-layer.dev/skills) for dependency and ownership details.
+General development skills and the `find-docs`, `playwright`, and `tavily-web` tool skills are authored in `nicholasjconn/skills`. The wizard imports their exact grouped paths into `.agent-layer/skills-imported/`; explicit `al skills pull` updates content independently of CLI upgrades. Legacy local copies are protected during upgrades and adopted only after the wizard previews their conversion. `dispatch-agent`, `skill-sync`, `instruction-sync`, and `benchmark` remain bundled. See the [skills guide](https://agent-layer.dev/skills) for dependency and ownership details.
 
 Wizard backups are stored in `.agent-layer/state/wizard-backups/`. Each wizard apply replaces the latest backup for the files it writes. After a successful upgrade and sync, `al upgrade` moves legacy `.agent-layer/config.toml.bak` and `.agent-layer/.env.bak` files there, retaining conflicts with numbered `.legacy-N` suffixes. Explicit cleanup removes both current and legacy backups.
 
@@ -297,7 +297,8 @@ Bare `al init` creates the operational scaffold. The wizard can seed instruction
   - `.agent-layer/`
   - `config.toml` (main configuration; human-editable)
   - `al.version` (repo pin; required)
-  - `instructions/` (created empty by bare init; the wizard can add numbered `*.md` fragments)
+  - `instructions/` (project-owned Markdown files, explicitly ordered in config)
+  - `instructions-imported/` and `instructions.lock.json` (Git-backed editable instructions and upstream state)
   - `skills/` (created empty by bare init; the wizard catalog can add `<name>/SKILL.md` directories)
   - `tmp/runs/` (runtime scratch directory)
   - `commands.allow` (approved shell commands; line-based)
@@ -609,8 +610,35 @@ Non-empty values in your existing process environment take precedence. `.agent-l
 
 These files are user-editable; customize them for your team's preferences.
 
-- Files are concatenated in **lexicographic order**
-- Use numeric prefixes for stable priority (e.g., `00_core.md`, `10_style.md`, `20_repo.md`)
+Each file has one required nonnegative `order` in `[[instructions.local]]` or
+`[[instructions.imports]]`; files from both tiers are concatenated numerically.
+Zero and gaps are valid; duplicate orders or filenames fail before projection.
+Names need no numeric prefix. Each block selects exactly one regular Markdown
+file; instruction wildcards and exclusions are unsupported.
+
+```toml
+[[instructions.imports]]
+repository = "https://github.com/nicholasjconn/skills.git"
+selectors = ["instructions/rules.md"]
+order = 0
+
+[[instructions.imports]]
+repository = "https://github.com/nicholasjconn/skills.git"
+selectors = ["instructions/memory.md"]
+order = 10
+
+[[instructions.local]]
+selectors = ["conventions.md"]
+order = 40
+```
+
+`al instructions` provides add/remove/status/diff/pull/resolve/reset/push with the
+skills flags and policies; add requires `--order`. `al sync` and status are
+offline. Pull merges local edits against genuine locked upstream; push excludes
+local files and order. Commit imported files and `instructions.lock.json` together.
+Software upgrades preserve instruction bodies. Legacy ordering is established
+offline by `al upgrade` or accepted wizard changes; sync reports those commands
+until migration completes. Wizard Rules/Memory imports require Git access.
 
 ### Skills: `.agent-layer/skills/`
 

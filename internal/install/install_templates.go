@@ -84,18 +84,7 @@ func (inst templateManager) userOwnedStatuslineSourceFiles() []templateFile {
 func (inst templateManager) managedTemplateDirs() []templateDir {
 	root := inst.root
 	return []templateDir{
-		{instructionsDirName, filepath.Join(root, ".agent-layer", instructionsDirName)},
 		{docsAgentLayerDir, filepath.Join(root, ".agent-layer", "templates", "docs")},
-	}
-}
-
-// managedInstructionTemplateDirs lists the bundled instruction templates one
-// file at a time so upgrade activation can preserve a Rules-only selection.
-func (inst templateManager) managedInstructionTemplateDirs() []templateDir {
-	root := inst.root
-	return []templateDir{
-		{templateRoot: "instructions/00_rules.md", destRoot: filepath.Join(root, ".agent-layer", instructionsDirName)},
-		{templateRoot: "instructions/01_memory.md", destRoot: filepath.Join(root, ".agent-layer", instructionsDirName)},
 	}
 }
 
@@ -119,11 +108,6 @@ func (inst templateManager) memoryTemplateDirs() []templateDir {
 // on-disk layout.
 func (inst templateManager) activeManagedTemplateDirs() ([]templateDir, error) {
 	dirs := []templateDir{}
-	instructionDirs, err := inst.activeInstructionTemplateDirs()
-	if err != nil {
-		return nil, err
-	}
-	dirs = append(dirs, instructionDirs...)
 	if hasMemory, err := inst.memoryEvidenceOnDisk(); err != nil {
 		return nil, err
 	} else if hasMemory {
@@ -165,23 +149,6 @@ func (inst templateManager) activeAllTemplateDirs() ([]templateDir, error) {
 	dirs := make([]templateDir, 0, len(managed)+len(memory))
 	dirs = append(dirs, managed...)
 	dirs = append(dirs, memory...)
-	return dirs, nil
-}
-
-// activeInstructionTemplateDirs returns only the managed instruction files
-// already on disk. This keeps Rules-only and Rules-and-memory selections
-// independent during later upgrades.
-func (inst templateManager) activeInstructionTemplateDirs() ([]templateDir, error) {
-	dirs := []templateDir{}
-	for _, dir := range inst.managedInstructionTemplateDirs() {
-		found, err := inst.anyExistingTemplateDirFile(dir)
-		if err != nil {
-			return nil, err
-		}
-		if found {
-			dirs = append(dirs, dir)
-		}
-	}
 	return dirs, nil
 }
 
@@ -290,8 +257,7 @@ func (inst templateManager) installedCatalogSkillTemplateDirs() ([]templateDir, 
 
 // ungatedTemplatePathByRel includes destinations that migrations may activate.
 func (inst templateManager) ungatedTemplatePathByRel() (map[string]string, error) {
-	dirs := inst.managedInstructionTemplateDirs()
-	dirs = append(dirs, inst.managedMemoryTemplateDirs()...)
+	dirs := inst.managedMemoryTemplateDirs()
 	skillDirs, err := inst.catalogSkillTemplateDirs()
 	if err != nil {
 		return nil, err

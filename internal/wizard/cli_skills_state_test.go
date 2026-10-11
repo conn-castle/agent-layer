@@ -127,11 +127,17 @@ func TestDetectInstructionEvidenceFromDisk(t *testing.T) {
 		assert.True(t, detectInstructionEvidenceFromDisk(root))
 	})
 
-	t.Run("returns true when a standard instruction file exists", func(t *testing.T) {
+	t.Run("offers adoption when a standard instruction file exists", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
 		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), []byte("x"), 0o600))
-		assert.True(t, detectInstructionEvidenceFromDisk(root))
+		assert.False(t, detectInstructionEvidenceFromDisk(root))
+		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "config.toml"), []byte(`[[instructions.imports]]
+repository = "local-repo"
+selectors = ["instructions/memory.md"]
+order = 10
+`), 0o600))
+		assert.False(t, detectInstructionEvidenceFromDisk(root), "remaining legacy slot must keep adoption available after a partial import")
 	})
 
 	// A repo installed before the 0.16.0 instruction consolidation still holds
@@ -147,20 +153,19 @@ func TestDetectInstructionEvidenceFromDisk(t *testing.T) {
 		}
 	})
 
-	t.Run("returns true when managed instruction template exists", func(t *testing.T) {
+	t.Run("offers adoption when managed instruction file exists", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
-		rulesTemplate, err := templates.Read("instructions/00_rules.md")
-		require.NoError(t, err)
+		rulesTemplate := []byte("legacy rules fixture\n")
 		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), rulesTemplate, 0o600))
-		assert.True(t, detectInstructionEvidenceFromDisk(root))
+		assert.False(t, detectInstructionEvidenceFromDisk(root))
 	})
 
-	t.Run("returns true when edited managed instruction exists", func(t *testing.T) {
+	t.Run("offers adoption when edited managed instruction exists", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
 		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), []byte("custom rules"), 0o600))
-		assert.True(t, detectInstructionEvidenceFromDisk(root))
+		assert.False(t, detectInstructionEvidenceFromDisk(root))
 	})
 
 	t.Run("returns true on instruction read errors", func(t *testing.T) {

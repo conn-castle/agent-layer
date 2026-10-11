@@ -18,6 +18,7 @@ import (
 // Service performs skill import operations for one repository root.
 type Service struct {
 	root            string
+	instructions    bool
 	sys             sync.System
 	deferProjection bool
 	// newRunner is injected so tests can exercise reporting without git. It
@@ -63,7 +64,12 @@ func (s *Service) withLockedState(fn func(st *state) error) error {
 		if err := sync.RecoverInterruptedImport(s.root); err != nil {
 			return err
 		}
-		st, err := loadState(s.root)
+		if s.instructions {
+			if err := config.ValidateInstructionRootsFS(os.DirFS(s.root), s.root); err != nil {
+				return err
+			}
+		}
+		st, err := loadState(s.root, s.instructions)
 		if err != nil {
 			return err
 		}
@@ -77,7 +83,7 @@ func (s *Service) withLockedState(fn func(st *state) error) error {
 // withLockedReport runs fn under withLockedState and returns the sorted report
 // it filled, alongside any error.
 func (s *Service) withLockedReport(fn func(st *state, report *Report) error) (*Report, error) {
-	report := &Report{}
+	report := &Report{instructions: s.instructions}
 	err := s.withLockedState(func(st *state) error {
 		return fn(st, report)
 	})
@@ -221,8 +227,8 @@ func retire(st *state, txn *transaction, entry skilllock.Entry, report *Report) 
 		result.Outcome = OutcomeRetired
 	default:
 		result.Outcome = OutcomeFailed
-		if templates.IsRetiredSkill(entry.Name) {
-			result.Err = fmt.Errorf("%s has local modifications blocking removal; use al skills diff %s and explicitly al skills reset %s before al skills remove %s %s", relativeTo(st.paths.Root, observed.Dir), entry.Name, entry.Name, entry.Repository, entry.Selector)
+		if st.instructions || templates.IsRetiredSkill(entry.Name) {
+			result.Err = fmt.Errorf("%s has local modifications blocking removal; use al %s diff %s and explicitly al %s reset %s before al %s remove %s %s", relativeTo(st.paths.Root, observed.Dir), importKind(st.instructions), entry.Name, importKind(st.instructions), entry.Name, importKind(st.instructions), entry.Repository, entry.Selector)
 		} else {
 			result.Err = fmt.Errorf("%s is no longer selected but has local changes; move it into %s to adopt it as user-managed, or delete it explicitly", relativeTo(st.paths.Root, observed.Dir), relativeTo(st.paths.Root, st.paths.SkillsDir))
 		}
@@ -259,4 +265,21 @@ func relativeTo(root string, path string) string {
 func blockedByUserSkill(st *state, name string) (string, bool) {
 	dir, ok := st.userSkills[collisionName(name)]
 	return dir, ok
+}
+
+// NewInstructions uses the same lifecycle with regular Markdown file nodes.
+func NewInstructions(root string) *Service { s := New(root); s.instructions = true; return s }
+
+// NewInstructionsSourceOnly leaves final projection to the caller.
+func NewInstructionsSourceOnly(root string) *Service {
+	s := NewInstructions(root)
+	s.deferProjection = true
+	return s
+}
+
+func importKind(instructions bool) string {
+	if instructions {
+		return "instructions"
+	}
+	return "skills"
 }

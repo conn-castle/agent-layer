@@ -319,6 +319,10 @@ func TestDoctorCommand_QuietNoiseModeStillShowsWarnings(t *testing.T) {
 	stubNoMCPServerWarnings(t)
 
 	configToml := `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = "all"
 

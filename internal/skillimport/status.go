@@ -35,8 +35,9 @@ type StatusExclusion struct {
 
 // Status is the complete local view of configured skill imports.
 type Status struct {
-	Entries    []StatusEntry
-	Exclusions []StatusExclusion
+	instructions bool
+	Entries      []StatusEntry
+	Exclusions   []StatusExclusion
 	// MissingRefEvidence lists configured blocks with no locked ref-kind
 	// evidence. Status never guesses a ref kind offline.
 	MissingRefEvidence []string
@@ -57,7 +58,7 @@ func (s *Service) Status() (*Status, error) {
 }
 
 func buildStatus(st *state) (*Status, error) {
-	status := &Status{}
+	status := &Status{instructions: st.instructions}
 
 	for _, block := range st.cfg.Skills.Imports {
 		repository := config.NormalizeSkillRepository(block.Repository)
@@ -70,7 +71,7 @@ func buildStatus(st *state) (*Status, error) {
 				ref = "(default branch)"
 			}
 			status.MissingRefEvidence = append(status.MissingRefEvidence,
-				fmt.Sprintf("%s @ %s has no recorded source state; run 'al skills pull'", repository, ref))
+				fmt.Sprintf("%s @ %s has no recorded source state; run 'al %s pull'", repository, ref, importKind(st.instructions)))
 		}
 	}
 
@@ -135,8 +136,8 @@ func (s *Status) Render(all bool) string {
 		}
 	}
 
-	fmt.Fprintf(&builder, "imported skills: %d total, %d clean, %d modified, %d missing, %d invalid, %d collided, %d conflicted\n",
-		len(s.Entries), counts[ConditionClean], counts[ConditionModified], counts[ConditionMissing],
+	fmt.Fprintf(&builder, "imported %s: %d total, %d clean, %d modified, %d missing, %d invalid, %d collided, %d conflicted\n",
+		importKind(s.instructions), len(s.Entries), counts[ConditionClean], counts[ConditionModified], counts[ConditionMissing],
 		counts[ConditionInvalid], counts[ConditionCollided], counts[ConditionConflicted])
 	fmt.Fprintf(&builder, "tracking: %d tracked, %d pinned, %d write-enabled\n", tracked, pinned, writeEnabled)
 	fmt.Fprintf(&builder, "configured exclusions: %d\n", len(s.Exclusions))

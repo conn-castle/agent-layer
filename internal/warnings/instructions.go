@@ -1,17 +1,18 @@
 package warnings
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // MeasureInstructions returns the estimated token count of the combined instruction
-// payload along with the source subject (e.g. "AGENTS.md" or ".agent-layer/instructions/*").
+// payload along with the source subject (e.g. "AGENTS.md" or "local and imported").
 // It is the single source for instruction sizing used by both CheckInstructions and the
 // doctor size summary. It returns an error only if the payload cannot be read.
 func MeasureInstructions(rootDir string) (int, string, error) {
@@ -61,37 +62,24 @@ func getInstructionPayload(rootDir string) (string, string, error) {
 		return string(content), "AGENTS.md", nil
 	}
 
-	// 2. Fallback to .agent-layer/instructions/*.md
-	instructionsDir := filepath.Join(rootDir, ".agent-layer", "instructions")
-	files, err := os.ReadDir(instructionsDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// If neither exists, empty payload
-			return "", ".agent-layer/instructions/*", nil
-		}
+	// Without a generated artifact, size the same ordered source snapshot as sync.
+	cfg, err := config.LoadConfigLenient(config.DefaultPaths(rootDir).ConfigPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", "", err
 	}
-
-	var filenames []string
-	for _, f := range files {
-		if !f.IsDir() && strings.HasSuffix(f.Name(), ".md") {
-			filenames = append(filenames, f.Name())
-		}
+	if cfg == nil {
+		cfg = &config.Config{}
 	}
-	sort.Strings(filenames)
-
+	files, err := config.LoadOrderedInstructionsFS(os.DirFS(rootDir), rootDir, cfg.Instructions)
+	if err != nil {
+		return "", "", err
+	}
 	var sb strings.Builder
-	for i, name := range filenames {
-		path := filepath.Join(instructionsDir, name)
-		content, err := os.ReadFile(path) // #nosec G304 -- path joins rootDir/.agent-layer/instructions/ with a filename produced by os.ReadDir of that same directory; all components are caller-resolved.
-		if err != nil {
-			return "", "", err
-		}
+	for i, file := range files {
 		if i > 0 {
 			sb.WriteString("\n\n")
 		}
-		sb.Write(content)
+		sb.WriteString(file.Content)
 	}
-
-	return sb.String(), ".agent-layer/instructions/*", nil
+	return sb.String(), "local and imported", nil
 }

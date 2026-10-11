@@ -216,6 +216,10 @@ func TestRunWarnsOnUpdateWhenEnabled(t *testing.T) {
 
 	paths := config.DefaultPaths(root)
 	configToml := `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = "all"
 
@@ -283,6 +287,10 @@ func TestRunWithStderr_QuietSuppressesOutput(t *testing.T) {
 
 	paths := config.DefaultPaths(root)
 	configToml := `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = "yolo"
 
@@ -354,6 +362,10 @@ func TestRunWithStderr_QuietFromConfigSuppressesOutput(t *testing.T) {
 
 	paths := config.DefaultPaths(root)
 	configToml := `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = "yolo"
 
@@ -430,6 +442,10 @@ func writeMinimalRepo(t *testing.T, root string) {
 	}
 
 	configToml := `
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = "all"
 
@@ -504,6 +520,10 @@ func writeMinimalRepoWithMode(t *testing.T, root string, mode string) {
 	}
 
 	configToml := fmt.Sprintf(`
+[[instructions.local]]
+selectors = ["00_rules.md"]
+order = 0
+
 [approvals]
 mode = %q
 

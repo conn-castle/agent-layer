@@ -1379,8 +1379,8 @@ func TestBuildUpgradePlan_SupersededInstructionFilesAreReportedAsOrphans(t *test
 		".agent-layer/instructions/01_base.md",
 		".agent-layer/instructions/03_tools.md",
 	} {
-		if findUpgradeChange(plan.TemplateRemovalsOrOrphans, path) == nil {
-			t.Fatalf("plan orphans = %#v, want superseded %s reported", plan.TemplateRemovalsOrOrphans, path)
+		if findUpgradeChange(plan.TemplateRemovalsOrOrphans, path) != nil {
+			t.Fatalf("local instruction %s must remain user-owned", path)
 		}
 	}
 
@@ -4292,7 +4292,7 @@ func TestExecuteAppendToFile_CreatesFileWhenMissing(t *testing.T) {
 		ID:        "append_new",
 		Kind:      upgradeMigrationKindAppendToFile,
 		Rationale: "Create file with initial content",
-		Path:      ".agent-layer/instructions/00_rules.md",
+		Path:      ".agent-layer/commands.allow",
 		Value:     []byte(`"# Conventions\n- **Rule one:** First rule.\n"`),
 	}
 	changed, err := inst.executeAppendToFile(op)
@@ -4302,7 +4302,7 @@ func TestExecuteAppendToFile_CreatesFileWhenMissing(t *testing.T) {
 	if !changed {
 		t.Fatal("expected migration to report changed")
 	}
-	targetPath := filepath.Join(root, ".agent-layer", "instructions", "00_rules.md")
+	targetPath := filepath.Join(root, ".agent-layer", "commands.allow")
 	data, err := os.ReadFile(targetPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read target: %v", err)
@@ -4367,9 +4367,9 @@ func TestExecuteAppendToFile_SeedsTemplateWhenMatchAlreadyInTemplate(t *testing.
 		ID:        "append_sot",
 		Kind:      upgradeMigrationKindAppendToFile,
 		Rationale: "Deliver the single-source-of-truth rule to existing installs",
-		Path:      ".agent-layer/instructions/00_rules.md",
-		From:      "Single source of truth",
-		Value:     []byte(`"\n- **Single source of truth:** Derive state from its canonical source instead of maintaining copies.\n"`),
+		Path:      ".agent-layer/commands.allow",
+		From:      "git status",
+		Value:     []byte(`"\n- **git status:** Derive state from its canonical source instead of maintaining copies.\n"`),
 	}
 	changed, err := inst.executeAppendToFile(op)
 	if err != nil {
@@ -4378,7 +4378,7 @@ func TestExecuteAppendToFile_SeedsTemplateWhenMatchAlreadyInTemplate(t *testing.
 	if !changed {
 		t.Fatal("expected migration to report changed (template seeded)")
 	}
-	targetPath := filepath.Join(root, ".agent-layer", "instructions", "00_rules.md")
+	targetPath := filepath.Join(root, ".agent-layer", "commands.allow")
 	data, err := os.ReadFile(targetPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read target: %v", err)

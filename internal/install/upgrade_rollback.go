@@ -71,14 +71,26 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 	}
 	if len(active) > 0 {
 		for _, entry := range snapshot.Entries {
+			clean := normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path)))
 			if entry.Kind == upgradeSnapshotEntryKindAbsent {
+				if clean == ".agent-layer/config.toml" {
+					return fmt.Errorf("rollback %s would remove configuration owning active converted imports", snapshotID)
+				}
 				continue
 			}
-			clean := normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path)))
 			for name := range active {
-				local := ".agent-layer/skills/" + name
+				local := skillmigration.LocalSlot(name)
 				if clean == local || strings.HasPrefix(clean, local+"/") {
-					return fmt.Errorf("rollback %s would recreate converted local skill %s alongside its active import; snapshot and imported modifications are preserved", snapshotID, name)
+					return fmt.Errorf("rollback %s would recreate converted local source %s alongside its active import; snapshot and imported modifications are preserved", snapshotID, name)
+				}
+			}
+			if clean == ".agent-layer/config.toml" && entry.Kind == upgradeSnapshotEntryKindFile {
+				data, err := base64.StdEncoding.DecodeString(entry.ContentBase64)
+				if err != nil {
+					return err
+				}
+				if err := skillmigration.CheckConfig(data, active); err != nil {
+					return err
 				}
 			}
 			if clean == pinVersionRelPath && entry.Kind == upgradeSnapshotEntryKindFile {

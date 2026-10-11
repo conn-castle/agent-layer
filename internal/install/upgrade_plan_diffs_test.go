@@ -207,7 +207,7 @@ func TestBuildUpgradePlanDiffPreviews_CoversAllCollectionsWithoutPinDiff(t *test
 	plan := UpgradePlan{
 		TemplateAdditions: []UpgradeChange{
 			{
-				Path: ".agent-layer/instructions/01_memory.md",
+				Path: ".agent-layer/templates/docs/CONTEXT.md",
 			},
 		},
 		TemplateUpdates: []UpgradeChange{
@@ -240,7 +240,7 @@ func TestBuildUpgradePlanDiffPreviews_CoversAllCollectionsWithoutPinDiff(t *test
 	}
 
 	required := []string{
-		".agent-layer/instructions/01_memory.md",
+		".agent-layer/templates/docs/CONTEXT.md",
 		".agent-layer/commands.allow",
 		"docs/agent-layer/ISSUES.md",
 		".agent-layer/templates/docs/BACKLOG.md",
@@ -340,7 +340,7 @@ func TestAllTemplatePathByRel_ErrorPaths(t *testing.T) {
 		callCount := 0
 		templates.WalkFunc = func(root string, fn fs.WalkDirFunc) error {
 			callCount++
-			if callCount == 4 {
+			if callCount == 3 {
 				return fmt.Errorf("memory walk failure")
 			}
 			return originalWalk(root, fn)
