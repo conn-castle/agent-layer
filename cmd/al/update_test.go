@@ -9,8 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/conn-castle/agent-layer/internal/testutil"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
@@ -120,7 +124,10 @@ func TestUpdateUsesInstallerAndPreservesScriptPrefix(t *testing.T) {
 	})}
 	var installerPath string
 	var ranArgs []string
-	updateRunCommand = func(_ context.Context, _ io.Reader, _, _ io.Writer, name string, args ...string) error {
+	updateRunCommand = func(_ context.Context, stdin io.Reader, _, _ io.Writer, name string, args ...string) error {
+		if stdin != nil {
+			t.Fatal("script installer must receive noninteractive stdin")
+		}
 		if name != "bash" {
 			t.Fatalf("command = %q, want bash", name)
 		}
@@ -569,5 +576,223 @@ func TestReadInstalledCLIVersionPreservesFailedProbeStdoutAndStderr(t *testing.T
 	message := err.Error()
 	if !strings.Contains(message, "probe stdout from failed version") || !strings.Contains(message, "probe stderr from failed version") {
 		t.Fatalf("error = %v, want stdout and stderr from the failed probe", err)
+	}
+}
+
+func TestUpdateCommandCancellationStopsDownloadChild(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.Symlink("/bin/bash", filepath.Join(bin, "bash")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin) // No ps or other external observation command.
+	output, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = output.Close() }()
+	sentinel := exec.Command("/bin/sleep", "30")
+	sentinel.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := sentinel.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = sentinel.Process.Kill(); _ = sentinel.Wait() }()
+	for _, mode := range []string{"grace", "exited", "blocked"} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			pidFile, cleaned := filepath.Join(dir, "child"), filepath.Join(dir, "cleaned")
+			script := `trap 'printf done > "$2"' EXIT; /bin/sleep 30 & echo "$! $$" > "$1"; printf retained; wait`
+			var destination io.Writer = output
+			switch mode {
+			case "blocked":
+				script = `trap '' TERM; ` + script
+				reader, writer := io.Pipe() // No reader: the destination Write blocks.
+				defer func() { _ = reader.Close(); _ = writer.Close() }()
+				destination = writer
+			case "exited":
+				script = strings.TrimSuffix(script, "wait") + "exit 0"
+				destination = &bytes.Buffer{} // The child retains exec's output pipes.
+			default:
+				script = `trap 'exit 143' TERM; ` + script
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			ready := make(chan time.Time, 1)
+			go func() {
+				for ctx.Err() == nil {
+					if info, err := os.Stat(pidFile); err == nil && info.Size() > 0 {
+						if mode == "exited" {
+							data, _ := os.ReadFile(pidFile) // #nosec G304 -- owned fixture identity.
+							fields := strings.Fields(string(data))
+							if len(fields) != 2 {
+								continue
+							}
+							state, err := exec.Command("/bin/ps", "-o", "stat=", "-p", fields[1]).Output()
+							if err == nil && !strings.HasPrefix(strings.TrimSpace(string(state)), "Z") {
+								time.Sleep(10 * time.Millisecond)
+								continue
+							}
+						}
+						ready <- time.Now()
+						// Exercise terminal signals with the existing live/exited fixtures.
+						switch mode {
+						case "grace":
+							_ = syscall.Kill(os.Getpid(), syscall.SIGHUP)
+						case "exited":
+							_ = syscall.Kill(os.Getpid(), syscall.SIGQUIT)
+						default:
+							cancel()
+						}
+						return
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+			}()
+			cancelErr := updateRunCommand(ctx, nil, destination, destination, "bash", "-c", script, "fixture", pidFile, cleaned)
+			var start time.Time
+			select {
+			case start = <-ready:
+			default:
+				t.Fatal("fixture child was not ready within startup allowance")
+			}
+			data, err := os.ReadFile(pidFile) // #nosec G304 -- owned child identity.
+			if err != nil {
+				t.Fatal(err)
+			}
+			fields := strings.Fields(string(data))
+			if len(fields) != 2 {
+				t.Fatalf("invalid process identities: %q", data)
+			}
+			pid, err := strconv.Atoi(fields[0])
+			if err != nil || pid <= 0 {
+				t.Fatalf("invalid child identity: %q", data)
+			}
+			state, psErr := exec.Command("/bin/ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+			var exit *exec.ExitError
+			if (psErr == nil && !strings.HasPrefix(strings.TrimSpace(string(state)), "Z")) || (psErr != nil && (!errors.As(psErr, &exit) || exit.ExitCode() != 1)) {
+				t.Fatalf("download child survived: pid=%d state=%q err=%v", pid, state, psErr)
+			}
+			if !errors.Is(cancelErr, context.Canceled) || time.Since(start) > 5*time.Second {
+				t.Fatalf("cancellation = %v after %v", cancelErr, time.Since(start))
+			}
+			if _, err := os.Stat(cleaned); mode == "grace" && err != nil {
+				t.Fatalf("EXIT cleanup did not run: %v", err)
+			}
+			if pid, err := syscall.Wait4(sentinel.Process.Pid, nil, syscall.WNOHANG, nil); err != nil || pid != 0 {
+				t.Fatalf("unrelated sentinel stopped: %v", err)
+			}
+		})
+	}
+}
+
+func TestUpdateCommandStartAndOutput(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		release, err := updateOwnProcesses()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := release(); err != nil {
+				t.Error(err)
+			}
+		}()
+		readStat := updateReadProcessStat
+		defer func() { updateReadProcessStat = readStat }()
+		gate := filepath.Join(t.TempDir(), "fork")
+		childFile, childGate := filepath.Join(filepath.Dir(gate), "child"), gate+"-child"
+		forker := exec.Command("/bin/bash", "-c", `while [[ ! -e "$1" ]]; do :; done; ( echo "$BASHPID" > "$2"; while [[ ! -e "$3" ]]; do :; done; /bin/sleep 30 & exit 0 ) & exit 0`, "fixture", gate, childFile, childGate)
+		forker.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := forker.Start(); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = updateSignalGroup(forker.Process.Pid, syscall.SIGKILL); _ = forker.Wait() }()
+		leaderPath := filepath.Join("/proc", strconv.Itoa(forker.Process.Pid), "stat")
+		released := false
+		updateReadProcessStat = func(path string) ([]byte, error) {
+			gatePath := ""
+			if path == leaderPath && !released {
+				released = true // ReadDir has finished; its list cannot contain the child.
+				gatePath = gate
+			} else if child, err := os.ReadFile(childFile); err == nil && path == filepath.Join("/proc", strings.TrimSpace(string(child)), "stat") { // #nosec G304 -- childFile is inside the test-owned TempDir.
+				gatePath = childGate // Fork the grandchild after the confirmation listing.
+			}
+			if gatePath == "" {
+				return readStat(path)
+			}
+			if err := os.WriteFile(gatePath, nil, 0o600); err != nil {
+				return nil, err
+			}
+			for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
+				data, err := readStat(path)
+				if err != nil {
+					return nil, err
+				}
+				if strings.HasPrefix(string(data)[strings.LastIndexByte(string(data), ')')+1:], " Z ") {
+					if _, err := os.Stat(childFile); err == nil {
+						return data, nil // Adopted children are retained; never reap during proof.
+					}
+				}
+				time.Sleep(time.Millisecond)
+			}
+			return nil, context.DeadlineExceeded
+		}
+		if stopped, err := updateCommandStopped(forker.Process.Pid); err != nil || stopped {
+			t.Fatalf("new orphan forked during confirmation: stopped=%v err=%v", stopped, err)
+		}
+		ownedPath := filepath.Join("/proc", strconv.Itoa(os.Getpid()), "stat")
+		updateReadProcessStat = func(path string) ([]byte, error) {
+			if path == ownedPath {
+				return nil, os.ErrPermission
+			}
+			return readStat(path)
+		}
+		if _, err := updateCommandStopped(os.Getpid()); !errors.Is(err, os.ErrPermission) {
+			t.Fatalf("unreadable owned leader: %v", err)
+		}
+		// This same unreadable PID is unrelated to the installers below.
+	}
+	var output bytes.Buffer
+	// A resolved executable (Homebrew's path) must retain the caller's group.
+	script := `test "$(/bin/ps -o pgid= -p $$)" -eq "$1" || exit 8; /bin/cat; echo error >&2; exit 7`
+	err := updateRunCommand(context.Background(), strings.NewReader("streamed"), &output, &output, "/bin/bash", "-c", script, "fixture", strconv.Itoa(syscall.Getpgrp()))
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 7 || !strings.Contains(output.String(), "streamed") || !strings.Contains(output.String(), "error") {
+		t.Fatalf("output=%q err=%v", output.String(), err)
+	}
+	if err := updateRunCommand(context.Background(), nil, nil, nil, filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Fatal("missing executable succeeded")
+	}
+	bin := t.TempDir()
+	if err := os.Symlink("/bin/bash", filepath.Join(bin, "bash")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	output.Reset()
+	err = updateRunCommand(context.Background(), strings.NewReader("installer"), &output, &output, "bash", "-c", `/bin/cat; echo error >&2; exit 7`)
+	if !errors.As(err, &exit) || exit.ExitCode() != 7 || !strings.Contains(output.String(), "installer") || !strings.Contains(output.String(), "error") {
+		t.Fatalf("installer output=%q err=%v", output.String(), err)
+	}
+	if err := updateRunCommand(context.Background(), nil, nil, nil, "bash", "-c", "exit 0"); err != nil {
+		t.Fatalf("installer success without ps: %v", err)
+	}
+	reader, writer := io.Pipe()
+	defer func() { _ = reader.Close(); _ = writer.Close() }()
+	drained := make(chan string, 1)
+	go func() {
+		time.Sleep(2200 * time.Millisecond) // Beyond both former normal-output deadlines.
+		data := make([]byte, len("installed"))
+		_, _ = io.ReadFull(reader, data)
+		drained <- string(data)
+	}()
+	if err := updateRunCommand(context.Background(), nil, writer, nil, "bash", "-c", "printf installed"); err != nil {
+		t.Fatalf("slow successful output: %v", err)
+	}
+	if data := <-drained; data != "installed" {
+		t.Fatalf("slow output = %q", data)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if err := updateRunCommand(ctx, nil, writer, nil, "bash", "-c", "printf blocked"); !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > 5*time.Second {
+		t.Fatalf("cancel normal output drain: %v after %v", err, time.Since(start))
 	}
 }
