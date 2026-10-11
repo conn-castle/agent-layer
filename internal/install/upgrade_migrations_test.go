@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/templates"
 	"github.com/conn-castle/agent-layer/internal/version"
@@ -1352,7 +1354,7 @@ func TestLoadUpgradeMigrationManifest_0_16_0_RenamesMemoryWithoutDeletingInstruc
 // Without this the files would sit in .agent-layer/instructions/ unmentioned.
 func TestBuildUpgradePlan_SupersededInstructionFilesAreReportedAsOrphans(t *testing.T) {
 	root := t.TempDir()
-	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.2.3"}); err != nil {
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.15.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
 	instructionsDir := filepath.Join(root, ".agent-layer", "instructions")
@@ -1361,19 +1363,21 @@ func TestBuildUpgradePlan_SupersededInstructionFilesAreReportedAsOrphans(t *test
 	}
 	// A pre-0.16.0 layout, including a file the user edited.
 	for name, content := range map[string]string{
-		"00_rules.md": "# Rules\n",
-		"01_base.md":  "# Instructions\n\n- My own project rule.\n",
-		"03_tools.md": "# Tools\n",
+		"00_rules.md":  "# Rules\n",
+		"01_base.md":   "# Instructions\n\n- My own project rule.\n",
+		"02_memory.md": "# Memory\n",
+		"03_tools.md":  "# Tools\n",
 	} {
 		if err := os.WriteFile(filepath.Join(instructionsDir, name), []byte(content), 0o600); err != nil {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
 
-	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}, TargetPinVersion: "0.16.0"})
 	if err != nil {
 		t.Fatalf("BuildUpgradePlan: %v", err)
 	}
+	require.Contains(t, plan.ConfigKeyMigrations, ConfigKeyMigration{Key: "instructions.local[2]", From: unsetValue, To: `selectors = ["01_memory.md"], order = 20`})
 
 	for _, path := range []string{
 		".agent-layer/instructions/01_base.md",

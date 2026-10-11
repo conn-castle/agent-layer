@@ -64,17 +64,9 @@ func ActiveNames(root string) (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
-	catalog, err := templates.LoadCLISkillCatalog()
+	allowed, err := movedSkillSelectors()
 	if err != nil {
 		return nil, err
-	}
-	allowed := map[string]string{}
-	for _, entry := range catalog {
-		if entry.Repository == templates.GeneralSkillsRepository {
-			for i, name := range entry.SkillNames() {
-				allowed[name] = entry.Selectors[i]
-			}
-		}
 	}
 	for _, entry := range lock.Skills {
 		selected, ok := allowed[entry.Name]
@@ -88,6 +80,22 @@ func ActiveNames(root string) (map[string]bool, error) {
 		}
 	}
 	return active, nil
+}
+
+func movedSkillSelectors() (map[string]string, error) {
+	catalog, err := templates.LoadCLISkillCatalog()
+	if err != nil {
+		return nil, err
+	}
+	allowed := map[string]string{}
+	for _, entry := range catalog {
+		if entry.Repository == templates.GeneralSkillsRepository {
+			for i, name := range entry.SkillNames() {
+				allowed[name] = entry.Selectors[i]
+			}
+		}
+	}
+	return allowed, nil
 }
 
 // CheckVersionLocked refuses a CLI that can recreate converted local templates.
@@ -148,14 +156,23 @@ func CheckConfig(raw []byte, active map[string]bool) error {
 	if err != nil {
 		return err
 	}
+	allowed, err := movedSkillSelectors()
+	if err != nil {
+		return err
+	}
 	for name := range active {
-		if skilljournal.LegacyInstruction(name) == "" {
-			continue
-		}
 		covered := false
-		for _, imp := range cfg.Instructions.Imports {
-			if imp.Order != nil && *imp.Order >= 0 && len(imp.Selectors) == 1 && imp.Selectors[0] == "instructions/"+name && config.NormalizeSkillRepository(imp.Repository) == templates.GeneralSkillsRepository {
-				covered = true
+		if skilljournal.LegacyInstruction(name) != "" {
+			for _, imp := range cfg.Instructions.Imports {
+				if imp.Order != nil && *imp.Order >= 0 && len(imp.Selectors) == 1 && imp.Selectors[0] == "instructions/"+name && config.NormalizeSkillRepository(imp.Repository) == templates.GeneralSkillsRepository {
+					covered = true
+				}
+			}
+		} else {
+			for _, imp := range cfg.Skills.Imports {
+				if _, selected := imp.SelectingPositiveSelector(allowed[name]); selected && config.NormalizeSkillRepository(imp.Repository) == templates.GeneralSkillsRepository {
+					covered = true
+				}
 			}
 		}
 		if !covered {

@@ -6,12 +6,26 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
 // instructionOrderPreview returns a config only when legacy ordering needs migration.
 func (inst *installer) instructionOrderPreview() (string, error) {
+	raw, names, err := inst.instructionOrderInputs()
+	if err != nil {
+		return "", err
+	}
+	next, err := config.MigrateInstructionOrder(string(raw), names)
+	if err != nil || next == string(raw) {
+		return "", err
+	}
+	return next, nil
+}
+
+// instructionOrderInputs reads and validates the real sources before preview or apply.
+func (inst *installer) instructionOrderInputs() ([]byte, []string, error) {
 	paths := config.DefaultPaths(inst.root)
 	localExists := false
 	for _, dir := range []string{filepath.Dir(paths.ConfigPath), paths.InstructionsDir, paths.ImportedInstructionsDir} {
@@ -20,19 +34,19 @@ func (inst *installer) instructionOrderPreview() (string, error) {
 			continue
 		}
 		if err != nil {
-			return "", err
+			return nil, nil, err
 		}
 		if !info.IsDir() {
-			return "", fmt.Errorf("%s must be a real unlinked directory before instruction migration", dir)
+			return nil, nil, fmt.Errorf("%s must be a real unlinked directory before instruction migration", dir)
 		}
 		localExists = localExists || dir == paths.InstructionsDir
 	}
 	raw, err := inst.sys.ReadFile(paths.ConfigPath)
 	if errors.Is(err, os.ErrNotExist) {
-		return "", nil
+		return nil, nil, nil
 	}
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
 	dir := paths.InstructionsDir
 	var names []string
@@ -57,15 +71,46 @@ func (inst *installer) instructionOrderPreview() (string, error) {
 			return nil
 		})
 		if err != nil {
-			return "", err
+			return nil, nil, err
+		}
+	}
+	return raw, names, nil
+}
+
+func (inst *installer) planInstructionOrder(effects migrationPathEffects) ([]ConfigKeyMigration, error) {
+	raw, _, err := inst.instructionOrderInputs()
+	if err != nil {
+		return nil, err
+	}
+	if raw == nil {
+		return nil, nil
+	}
+	// Ordering runs after historical file migrations, so preview their final names.
+	var names []string
+	for path, isDir := range effects.tree {
+		name, local := strings.CutPrefix(path, ".agent-layer/instructions/")
+		if local && !isDir && !strings.Contains(name, "/") && !strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".md") {
+			names = append(names, name)
 		}
 	}
 	next, err := config.MigrateInstructionOrder(string(raw), names)
 	if err != nil || next == string(raw) {
-		return "", err
+		return nil, err
 	}
-	return next, nil
+	cfg, err := config.ParseConfigLenient([]byte(next), "config.toml")
+	if err != nil {
+		return nil, err
+	}
+	migrations := make([]ConfigKeyMigration, 0, len(cfg.Instructions.Local))
+	for i, local := range cfg.Instructions.Local {
+		migrations = append(migrations, ConfigKeyMigration{
+			Key: fmt.Sprintf("instructions.local[%d]", i), From: unsetValue,
+			To: fmt.Sprintf("selectors = [%q], order = %d", local.Selectors[0], *local.Order),
+		})
+	}
+	return migrations, nil
 }
+
 func (inst upgradeOrchestrator) migrateInstructionOrder() error {
 	next, err := inst.instructionOrderPreview()
 	if err != nil {

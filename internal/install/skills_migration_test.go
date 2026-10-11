@@ -44,7 +44,7 @@ func TestRetiredLocalRootSymlinkIsProtectedWithoutTraversal(t *testing.T) {
 }
 
 func TestMigrationGuardsRefuseBeforeChangingInstalledState(t *testing.T) {
-	for _, kind := range []string{"local file", "local directory", "old pin", "local instruction"} {
+	for _, kind := range []string{"local file", "local directory", "old pin", "local instruction", "skill configuration"} {
 		t.Run(kind, func(t *testing.T) {
 			root := t.TempDir()
 			require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: skillmigration.MinimumCLI}))
@@ -67,6 +67,15 @@ func TestMigrationGuardsRefuseBeforeChangingInstalledState(t *testing.T) {
 			}
 			if kind == "old pin" {
 				entry.Path, entry.ContentBase64 = pinVersionRelPath, base64.StdEncoding.EncodeToString([]byte("0.99.9\n"))
+			}
+			if kind == "skill configuration" {
+				raw, err := os.ReadFile(filepath.Join(root, ".agent-layer", "config.toml")) // #nosec G304 -- test-owned project configuration.
+				require.NoError(t, err)
+				entry.Path, entry.ContentBase64 = ".agent-layer/config.toml", base64.StdEncoding.EncodeToString(raw)
+				owned := string(raw) + "\n[[skills.imports]]\nrepository = \"" + templates.GeneralSkillsRepository + "\"\nselectors = [\"skills/development/*\"]\n"
+				require.NoError(t, skillmigration.CheckConfig([]byte(owned), map[string]bool{"ship-pr": true}))
+				excluded := strings.Replace(owned, `["skills/development/*"]`, `["skills/development/*", "!skills/development/ship-pr"]`, 1)
+				require.ErrorContains(t, skillmigration.CheckConfig([]byte(excluded), map[string]bool{"ship-pr": true}), "discard ownership")
 			}
 			snapshot := upgradeSnapshot{SchemaVersion: upgradeSnapshotSchemaVersion, SnapshotID: "migration-guard", CreatedAtUTC: time.Now().UTC().Format(time.RFC3339), Status: upgradeSnapshotStatusApplied, Entries: []upgradeSnapshotEntry{entry}}
 			inst := &installer{root: root, sys: RealSystem{}}

@@ -127,6 +127,27 @@ func (imp SkillImport) ExclusionSelectors() []string {
 	return exclusions
 }
 
+// SelectingPositiveSelector returns the first selector covering a path after exclusions.
+func (imp SkillImport) SelectingPositiveSelector(candidate string) (string, bool) {
+	candidate = NormalizeSkillSelector(candidate)
+	selected := ""
+	for _, selector := range imp.Selectors {
+		excluded := IsSkillExclusionSelector(selector)
+		normalized := NormalizeSkillSelector(SkillExclusionPath(selector))
+		matched, _ := path.Match(normalized, candidate)
+		if normalized != candidate && !matched {
+			continue
+		}
+		if excluded {
+			return "", false
+		}
+		if selected == "" {
+			selected = normalized
+		}
+	}
+	return selected, selected != ""
+}
+
 // IsSkillExclusionSelector reports whether a configured selector removes
 // candidates instead of adding them.
 func IsSkillExclusionSelector(selector string) bool {

@@ -310,6 +310,9 @@ func appendMissingInstructionFiles(root string, names []string, out *skillsChang
 		opts := instructionAddOptions(name)
 		preview, err = config.AddInstructionImport(preview, config.SkillImport{Repository: opts.Repository, Selectors: opts.Selectors}, opts.Order, legacy)
 		if err != nil {
+			if strings.Contains(err.Error(), "duplicate instruction order") {
+				return fmt.Errorf("%w; choose precedence explicitly with al instructions add --order N or edit instruction orders in .agent-layer/config.toml", err)
+			}
 			return err
 		}
 		out.instructionImports = append(out.instructionImports, filepath.ToSlash(filepath.Join(".agent-layer", "instructions-imported", name)))

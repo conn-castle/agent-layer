@@ -511,6 +511,8 @@ func TestWizardInstructionPreviewValidatesCombinedAdoptionOrdersOffline(t *testi
 
 	_, err := computeSkillsChangeSet(root, choices)
 	require.ErrorContains(t, err, "duplicate instruction order 10")
+	require.ErrorContains(t, err, "al instructions add --order N")
+	require.ErrorContains(t, err, ".agent-layer/config.toml")
 	actual, err := os.ReadFile(paths.ConfigPath)
 	require.NoError(t, err)
 	require.Equal(t, raw, actual)

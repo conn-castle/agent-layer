@@ -208,21 +208,7 @@ func matchesAnySelector(candidate string, selectors []string) bool {
 // validation guarantees every pattern is syntactically valid before this
 // helper is reached.
 func selectingPositiveSelector(block config.SkillImport, candidate string) (string, bool) {
-	normalizedCandidate := config.NormalizeSkillSelector(candidate)
-	if matchesAnySelector(normalizedCandidate, block.ExclusionSelectors()) {
-		return "", false
-	}
-	for _, selector := range block.PositiveSelectors() {
-		normalized := config.NormalizeSkillSelector(selector)
-		if normalized == normalizedCandidate {
-			return normalized, true
-		}
-		matched, _ := path.Match(normalized, normalizedCandidate)
-		if matched {
-			return normalized, true
-		}
-	}
-	return "", false
+	return block.SelectingPositiveSelector(candidate)
 }
 
 // validateDesiredSet enforces the identity rules that only hold across a

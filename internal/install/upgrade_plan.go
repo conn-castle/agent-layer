@@ -155,6 +155,11 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 	if err != nil {
 		return UpgradePlan{}, err
 	}
+	instructionMigrations, err := inst.planInstructionOrder(effects)
+	if err != nil {
+		return UpgradePlan{}, err
+	}
+	migrationPlan.configMigrations = append(migrationPlan.configMigrations, instructionMigrations...)
 	additions, updates, err = inst.movedFileUpdates(migrationPlan, effects, additions, updates)
 	if err != nil {
 		return UpgradePlan{}, err

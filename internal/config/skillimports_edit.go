@@ -89,7 +89,6 @@ func setImportSelectors(content string, identity SkillImportBlockIdentity, selec
 	if instruction != nil {
 		block[0] = "[[" + table + "]]"
 		block = append(block, fmt.Sprintf("order = %d", *instruction.Order))
-		content += "\n"
 	}
 	return appendImportBlock(content, block), nil
 }

@@ -141,8 +141,10 @@ func TestUpgradeEstablishesOfflineInstructionOrderAndRefusesLinkedImports(t *tes
 	for _, name := range []string{"z.md", "a.md"} {
 		require.NoError(t, os.WriteFile(filepath.Join(paths.InstructionsDir, name), []byte("custom "+name+"\r\n"), 0o600))
 	}
-	_, err = BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
 	require.NoError(t, err)
+	require.Contains(t, plan.ConfigKeyMigrations, ConfigKeyMigration{Key: "instructions.local[0]", From: unsetValue, To: `selectors = ["a.md"], order = 0`})
+	require.Contains(t, plan.ConfigKeyMigrations, ConfigKeyMigration{Key: "instructions.local[1]", From: unsetValue, To: `selectors = ["z.md"], order = 10`})
 	previewRaw, err := os.ReadFile(paths.ConfigPath)
 	require.NoError(t, err)
 	require.Equal(t, raw, previewRaw, "preview is read-only")
@@ -153,6 +155,11 @@ func TestUpgradeEstablishesOfflineInstructionOrderAndRefusesLinkedImports(t *tes
 	require.Equal(t, "a.md", cfg.Instructions.Local[0].Selectors[0])
 	require.Equal(t, 0, *cfg.Instructions.Local[0].Order)
 	require.Equal(t, 10, *cfg.Instructions.Local[1].Order)
+	plan, err = BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+	require.NoError(t, err)
+	for _, migration := range plan.ConfigKeyMigrations {
+		require.NotContains(t, migration.Key, "instructions.local", "explicit ordering is not migrated again")
+	}
 	body, err := os.ReadFile(filepath.Join(paths.InstructionsDir, "z.md"))
 	require.NoError(t, err)
 	require.Equal(t, "custom z.md\r\n", string(body))
