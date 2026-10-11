@@ -113,6 +113,8 @@ func TestInstructionAdoptionRecoversBytesModeOrderAndGenuineBase(t *testing.T) {
 	order := 90
 	_, err := service.Add(t.Context(), AddOptions{Repository: repo.dir, Selectors: []string{"instructions/rules.md"}, Order: &order})
 	require.ErrorContains(t, err, "legacy")
+	require.ErrorContains(t, err, "manually rename .agent-layer/instructions/00_rules.md and update its [[instructions.local]] selector")
+	require.ErrorContains(t, err, "remove both the file and its [[instructions.local]] block")
 	// Stop after the real journal, source retirement, file publication and config write.
 	st, err := loadState(proj.root, true)
 	require.NoError(t, err)

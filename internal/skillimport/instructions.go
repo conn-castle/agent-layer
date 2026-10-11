@@ -19,7 +19,7 @@ func instructionAddConfig(st *state, opts AddOptions, block config.SkillImport, 
 		source := pathSetFor(st).LocalPath(name)
 		if _, err := os.Lstat(source); err == nil {
 			if !opts.AdoptLegacy {
-				return "", fmt.Errorf("legacy %s exists; run al wizard to adopt it without duplicating instructions", old)
+				return "", fmt.Errorf("legacy %s exists; run al wizard to adopt it from the default upstream without duplicating instructions. To import %s from another repository, manually rename .agent-layer/instructions/%s and update its [[instructions.local]] selector, or remove both the file and its [[instructions.local]] block in .agent-layer/config.toml", old, name, old)
 			}
 			tree, err := skilltree.ReadFileNode(skilltree.OSFS{}, source, name)
 			if err != nil {

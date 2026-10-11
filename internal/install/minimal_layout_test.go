@@ -177,4 +177,21 @@ func TestUpgradeEstablishesOfflineInstructionOrderAndRefusesLinkedImports(t *tes
 	body, err = os.ReadFile(external) // #nosec G304 -- test-owned external fixture.
 	require.NoError(t, err)
 	require.Equal(t, "external bytes\n", string(body))
+
+	// Missing config must not bypass local-root safety before historical renames.
+	require.NoError(t, os.Remove(filepath.Join(paths.ImportedInstructionsDir, "rules.md")))
+	require.NoError(t, os.Remove(paths.ConfigPath))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "al.version"), []byte("0.15.0\n"), 0o600))
+	legacy := filepath.Join(filepath.Dir(external), "02_memory.md")
+	require.NoError(t, os.WriteFile(legacy, []byte("legacy memory bytes\r\n"), 0o600))
+	require.NoError(t, os.RemoveAll(paths.InstructionsDir))
+	require.NoError(t, os.Symlink(filepath.Dir(external), paths.InstructionsDir))
+	_, err = BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}, TargetPinVersion: "0.16.0"})
+	require.ErrorContains(t, err, "unlinked")
+	err = Run(root, Options{Overwrite: true, Prompter: autoApprovePrompter(), System: RealSystem{}, PinVersion: "0.16.0"})
+	require.ErrorContains(t, err, "unlinked")
+	body, err = os.ReadFile(legacy) // #nosec G304 -- test-owned external fixture.
+	require.NoError(t, err)
+	require.Equal(t, "legacy memory bytes\r\n", string(body))
+	require.NoFileExists(t, filepath.Join(filepath.Dir(external), "01_memory.md"))
 }

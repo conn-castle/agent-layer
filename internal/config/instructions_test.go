@@ -52,6 +52,9 @@ func TestLegacyOrderPreviewPreservesBytesAndRefusesLinks(t *testing.T) {
 	raw := "# untouched comment\n"
 	_, err := MigrateInstructionOrder(raw, []string{"rules.md", "Rules.md"})
 	require.ErrorContains(t, err, "duplicate instruction filename")
+	invalid, err := MigrateInstructionOrderFS(os.DirFS(root), root, "[instructions]\nlocal = []\n")
+	require.ErrorContains(t, err, "local")
+	require.Empty(t, invalid, "reject invalid emitted TOML before callers can write it")
 	next, err := MigrateInstructionOrderFS(os.DirFS(root), root, raw)
 	require.NoError(t, err)
 	require.Contains(t, next, "order = 0")

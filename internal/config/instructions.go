@@ -275,9 +275,6 @@ func MigrateInstructionOrderFS(fsys fs.FS, root, raw string) (string, error) {
 		if !LocalInstructionEntry(entry) {
 			continue
 		}
-		if !entry.Type().IsRegular() {
-			return "", fmt.Errorf("instruction %s must be a regular unlinked file before migration", entry.Name())
-		}
 		names = append(names, entry.Name())
 	}
 	return migrateInstructionOrder(raw, names, cfg.Instructions)
@@ -297,7 +294,6 @@ func migrateInstructionOrder(raw string, names []string, cfg InstructionsConfig)
 		sort.Strings(names)
 		for i, name := range names {
 			order := 10 * i
-			cfg.Local = append(cfg.Local, LocalInstruction{Selectors: []string{name}, Order: &order})
 			literal, err := tomlpatch.FormatString(name)
 			if err != nil {
 				return "", err
@@ -305,7 +301,11 @@ func migrateInstructionOrder(raw string, names []string, cfg InstructionsConfig)
 			raw = strings.TrimRight(raw, "\n") + fmt.Sprintf("\n\n[[instructions.local]]\nselectors = [%s]\norder = %d\n", literal, order)
 		}
 	}
-	if err := validateInstructions("config.toml", cfg); err != nil {
+	parsed, err := ParseConfigLenient([]byte(raw), "config.toml")
+	if err != nil {
+		return "", err
+	}
+	if err := validateInstructions("config.toml", parsed.Instructions); err != nil {
 		return "", err
 	}
 	return raw, nil

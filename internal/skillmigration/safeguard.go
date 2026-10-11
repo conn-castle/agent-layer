@@ -22,12 +22,10 @@ const MinimumCLI = "1.0.0"
 
 // WithRecovered serializes a supported operation with imports and projection.
 func WithRecovered(root string, fn func() error) error {
-	if info, err := os.Lstat(filepath.Join(root, ".agent-layer")); errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(filepath.Join(root, ".agent-layer")); errors.Is(err, os.ErrNotExist) {
 		return fn()
 	} else if err != nil {
 		return err
-	} else if !info.IsDir() {
-		return fmt.Errorf(".agent-layer must be a real unlinked directory before recovery or writes")
 	}
 	return projectlock.With(projectlock.RealSystem{}, root, func() error {
 		if err := skilljournal.RecoverBoth(root); err != nil {
