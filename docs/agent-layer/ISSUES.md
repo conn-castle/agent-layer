@@ -6,14 +6,7 @@ Note: This is an agent-layer memory file. It is primarily for agent use.
 Deferred defects, maintainability refactors, technical debt, risks, and engineering concerns. Add an entry only when you are not fixing it now.
 
 ## Format
-- Insert new entries immediately below `<!-- ENTRIES START -->
-
-- Issue 2026-10-11 native-dispatch-shutdown-after-answer: Successful Claude continuation can fail during shutdown
-    Priority: High. Area: agent dispatch / v1.0.0 readiness
-    Description: On main 1eb22499 plus PR385 head 9cd9790a, Claude 2.1.296 Sonnet low emitted a valid successful continuation answer but invocation 47c0da07-058d-4577-9ddb-926b6b4f4faa failed the five-second exit/output-drain deadline; durable process-group death was confirmed afterward. Separate Opus reviews and one Codex worker also hit that deadline after saving reports.
-    Status: Unresolved release finding. Five later Sonnet continuations completed with durable stop proof; no failed-run process snapshot distinguishes provider exit, inherited pipes, or reader/persistence delay. Evidence is indexed by .agent-layer/tmp/v1-final-dogfood-current.json.
-    Next step: Capture the owned process tree and output-reader state at a repeated deadline failure before choosing a fix.
-` (most recent first).
+- Insert new entries immediately below `<!-- ENTRIES START -->` (most recent first).
 - Keep each entry **3–5 lines**.
 - Line 1 starts with `- Issue YYYY-MM-DD <id>:` and a short title.
 - Lines 2–5 are indented by **4 spaces** and use `Key: Value`.
@@ -35,6 +28,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 ## Open issues
 
 <!-- ENTRIES START -->
+
+- Issue 2026-10-11 native-dispatch-shutdown-after-answer: Successful Claude continuation can fail during shutdown
+    Priority: High. Area: agent dispatch / v1.0.0 readiness
+    Description: On main 1eb22499 plus PR385 head 9cd9790a, Claude 2.1.296 Sonnet low emitted a valid successful continuation answer but invocation 47c0da07-058d-4577-9ddb-926b6b4f4faa failed the five-second exit/output-drain deadline; durable process-group death was confirmed afterward. Separate Opus reviews and one Codex worker also hit that deadline after saving reports.
+    Status: Unresolved release finding. Mocked handoff reproduced kernel I/O/fsync stalls; the minimal candidate failed and was reverted. Historical native Claude cause remains unproven. Evidence: /var/tmp/al-v1-final-dogfood-osw1igf8/dispatch-shutdown-test-investigation.md.
+    Next step: Capture the failed live provider's owned process tree and output-reader state at the deadline.
 
 - Issue 2026-10-08 external-skill-inherited-review-followups: Inherited skill reporting and diagnostics gaps
     Priority: Low. Area: external skills / audit reporting / CLI diagnostics
