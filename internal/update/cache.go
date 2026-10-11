@@ -120,7 +120,7 @@ func tryClaimRefreshAttempt() bool {
 		return false
 	}
 	if last, err := time.Parse(time.RFC3339, strings.TrimSpace(string(data))); err == nil {
-		if time.Since(last) < refreshAttemptCooldown {
+		if age := time.Since(last); age >= 0 && age < refreshAttemptCooldown {
 			return false
 		}
 	}

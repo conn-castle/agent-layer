@@ -158,6 +158,9 @@ func TestRefreshHelperSurvivesExecHandoff(t *testing.T) {
 	handoff := filepath.Join(cacheDir, "parent-exited")
 	ppidFile := filepath.Join(cacheDir, "helper-ppid")
 	cmd.Env = append(os.Environ(), "AL_UPDATE_TEST_HELPER=1", "AL_UPDATE_TEST_RELEASE_URL="+server.URL, "AL_CACHE_DIR="+cacheDir, "AL_NO_NETWORK=", "AL_UPDATE_TEST_HANDOFF_FILE="+handoff, "AL_UPDATE_TEST_PPID_FILE="+ppidFile)
+	// Match production exit timing so the race detector's default one-second
+	// exit sleep does not force the intermediate through its timeout path.
+	cmd.Env = append(cmd.Env, "GORACE="+strings.TrimSpace(os.Getenv("GORACE")+" atexit_sleep_ms=0"))
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -304,12 +307,25 @@ func TestTryClaimRefreshAttemptThrottleWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	aged := time.Now().Add(-refreshAttemptCooldown - time.Minute).UTC().Format(time.RFC3339)
-	if err := os.WriteFile(path, []byte(aged), 0o600); err != nil { // #nosec G304 -- test cache.
-		t.Fatal(err)
-	}
-	if !tryClaimRefreshAttempt() {
-		t.Fatal("stale attempt marker blocked a fresh launch")
+	for _, tc := range []struct {
+		name string
+		when time.Time
+	}{
+		{"expired", time.Now().Add(-refreshAttemptCooldown - time.Minute)},
+		{"future", time.Now().Add(24 * time.Hour)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stamp := tc.when.UTC().Format(time.RFC3339)
+			if err := os.WriteFile(path, []byte(stamp), 0o600); err != nil { // #nosec G304 -- test cache.
+				t.Fatal(err)
+			}
+			if !tryClaimRefreshAttempt() {
+				t.Fatal("attempt marker blocked a fresh launch")
+			}
+			if tryClaimRefreshAttempt() {
+				t.Fatal("renewed attempt did not throttle the next launch")
+			}
+		})
 	}
 }
 
