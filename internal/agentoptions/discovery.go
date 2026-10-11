@@ -236,6 +236,8 @@ func discoveryCommand(agent string, req DiscoveryRequest) (*exec.Cmd, error) {
 		args = []string{"app-server"}
 	case agentCopilotCLI:
 		args = []string{"--headless", "--stdio", "--no-auto-update"}
+	case agentGrok:
+		args = []string{"--no-auto-update", modelsCommand}
 	case agentMuse:
 		args = []string{"serve", "--no-session-log"}
 	}

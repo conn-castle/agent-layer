@@ -421,7 +421,7 @@ Warnings are used by:
 
 Warning output now includes source and severity labels so operators can distinguish internal/config issues from network or external-dependency issues.
 
-Set `version_update_on_sync = true` to opt in to update warnings during `al sync` and `al <client>`; omit it or set it to `false` to keep update warnings limited to `al init`, `al doctor`, and `al wizard`.
+Set `version_update_on_sync = true` to opt in to update warnings during `al sync` and `al <client>`; omit it or set it to `false` to keep update warnings limited to `al init`, `al doctor`, and `al wizard`. Client launch uses cached release information and refreshes missing or day-old information in a silent background helper with a two-second network deadline. While the cache stays stale, launches share one refresh attempt every five minutes so repeated launches cannot each spend GitHub rate-limit budget. A first launch with no cache proceeds without an update notice; a later launch can use the refreshed information. Explicit checks such as `al doctor` and `al sync` still fetch release information. The cache is stored under `AL_CACHE_DIR` when set, or `<user-cache>/agent-layer/` otherwise.
 
 Set `noise_mode` to control warning verbosity:
 

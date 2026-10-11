@@ -56,6 +56,9 @@ func runModelHarness(mode string) {
 		return
 	}
 	if mode == "grok" {
+		if strings.Join(os.Args[1:], " ") != "--no-auto-update models" {
+			os.Exit(3)
+		}
 		fmt.Println("Default model: future-model\n\nAvailable models:\n  * future-model (default)\n  - another-model")
 		return
 	}

@@ -14,11 +14,16 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 var maybeExecFunc = versiondispatch.MaybeExec
 var executeFunc = execute
+
+// spawnDetachedRefreshFunc detaches the refresh helper in the fork intermediate.
+// It is a variable so tests can observe the dispatch without starting helpers.
+var spawnDetachedRefreshFunc = update.SpawnDetachedRefresh
 
 // Version, Commit, and BuildDate are overridden at build time.
 var (
@@ -71,6 +76,14 @@ func execute(ctx context.Context, args []string, stdout io.Writer, stderr io.Wri
 
 // runMain handles version dispatch and executes the CLI, exiting on fatal errors.
 func runMain(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer, exit func(int)) {
+	if len(args) == 2 && args[1] == update.RefreshCommand { // #nosec G602 -- exact length checked before indexing.
+		update.RefreshCache(ctx)
+		return
+	}
+	if len(args) == 2 && args[1] == update.RefreshForkCommand { // #nosec G602 -- exact length checked before indexing.
+		spawnDetachedRefreshFunc()
+		return
+	}
 	cwd, err := getwd()
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, err)

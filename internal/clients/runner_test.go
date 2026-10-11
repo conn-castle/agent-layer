@@ -211,6 +211,9 @@ func TestRunLaunchError(t *testing.T) {
 
 func TestRunWarnsOnUpdateWhenEnabled(t *testing.T) {
 	t.Setenv(updatewarn.EnvSuppress, "")
+	origRefresh := updatewarn.RefreshUpdateCache
+	updatewarn.RefreshUpdateCache = func() {}
+	t.Cleanup(func() { updatewarn.RefreshUpdateCache = origRefresh })
 	root := t.TempDir()
 	writeMinimalRepo(t, root)
 
@@ -249,13 +252,13 @@ mcp_server_threshold = 5
 		t.Fatalf("write config: %v", err)
 	}
 
-	origCheck := updatewarn.CheckForUpdate
+	origCheck := updatewarn.CachedCheckForUpdate
 	calls := 0
-	updatewarn.CheckForUpdate = func(context.Context, string) (update.CheckResult, error) {
+	updatewarn.CachedCheckForUpdate = func(context.Context, string) (update.CheckResult, error) {
 		calls++
 		return update.CheckResult{Current: "1.0.0", Latest: "2.0.0", Outdated: true}, nil
 	}
-	t.Cleanup(func() { updatewarn.CheckForUpdate = origCheck })
+	t.Cleanup(func() { updatewarn.CachedCheckForUpdate = origCheck })
 
 	var stderr bytes.Buffer
 	launch := func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
@@ -278,6 +281,9 @@ mcp_server_threshold = 5
 
 func TestRunWithStderr_QuietSuppressesOutput(t *testing.T) {
 	t.Setenv(updatewarn.EnvSuppress, "")
+	origRefresh := updatewarn.RefreshUpdateCache
+	updatewarn.RefreshUpdateCache = func() {}
+	t.Cleanup(func() { updatewarn.RefreshUpdateCache = origRefresh })
 	root := t.TempDir()
 	writeMinimalRepo(t, root)
 
@@ -320,13 +326,13 @@ mcp_server_threshold = 5
 		t.Fatalf("write instructions: %v", err)
 	}
 
-	origCheck := updatewarn.CheckForUpdate
+	origCheck := updatewarn.CachedCheckForUpdate
 	calls := 0
-	updatewarn.CheckForUpdate = func(context.Context, string) (update.CheckResult, error) {
+	updatewarn.CachedCheckForUpdate = func(context.Context, string) (update.CheckResult, error) {
 		calls++
 		return update.CheckResult{Current: "1.0.0", Latest: "2.0.0", Outdated: true}, nil
 	}
-	t.Cleanup(func() { updatewarn.CheckForUpdate = origCheck })
+	t.Cleanup(func() { updatewarn.CachedCheckForUpdate = origCheck })
 
 	var stderr bytes.Buffer
 	launch := func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
@@ -349,6 +355,9 @@ mcp_server_threshold = 5
 
 func TestRunWithStderr_QuietFromConfigSuppressesOutput(t *testing.T) {
 	t.Setenv(updatewarn.EnvSuppress, "")
+	origRefresh := updatewarn.RefreshUpdateCache
+	updatewarn.RefreshUpdateCache = func() {}
+	t.Cleanup(func() { updatewarn.RefreshUpdateCache = origRefresh })
 	root := t.TempDir()
 	writeMinimalRepo(t, root)
 
@@ -392,13 +401,13 @@ mcp_server_threshold = 5
 		t.Fatalf("write instructions: %v", err)
 	}
 
-	origCheck := updatewarn.CheckForUpdate
+	origCheck := updatewarn.CachedCheckForUpdate
 	calls := 0
-	updatewarn.CheckForUpdate = func(context.Context, string) (update.CheckResult, error) {
+	updatewarn.CachedCheckForUpdate = func(context.Context, string) (update.CheckResult, error) {
 		calls++
 		return update.CheckResult{Current: "1.0.0", Latest: "2.0.0", Outdated: true}, nil
 	}
-	t.Cleanup(func() { updatewarn.CheckForUpdate = origCheck })
+	t.Cleanup(func() { updatewarn.CachedCheckForUpdate = origCheck })
 
 	var stderr bytes.Buffer
 	launch := func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {

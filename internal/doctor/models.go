@@ -15,6 +15,11 @@ import (
 // remain supported); report it as a warning rather than rejecting config.
 // The caller must supply a non-nil, loaded project configuration.
 func CheckModels(project *config.ProjectConfig, req agentoptions.DiscoveryRequest) []Result {
+	return CheckModelsWithProgress(project, req, nil)
+}
+
+// ModelCheckAgents lists enabled harnesses that need an explicit model lookup.
+func ModelCheckAgents(project *config.ProjectConfig) []string {
 	agents := []struct {
 		name    string
 		enabled *bool
@@ -26,17 +31,27 @@ func CheckModels(project *config.ProjectConfig, req agentoptions.DiscoveryReques
 		{"copilot_cli", project.Config.Agents.CopilotCLI.Enabled},
 		{"muse", project.Config.Agents.Muse.Enabled},
 	}
+	var names []string
+	for _, agent := range agents {
+		if agent.enabled != nil && *agent.enabled && agentoptions.ConfiguredValue(project.Config, agent.name, agentoptions.KindModel) != "" {
+			names = append(names, agent.name)
+		}
+	}
+	return names
+}
+
+// CheckModelsWithProgress reports each completed lookup promptly. The callback
+// runs concurrently and must be safe for use by multiple harness workers.
+func CheckModelsWithProgress(project *config.ProjectConfig, req agentoptions.DiscoveryRequest, onResult func(Result)) []Result {
+	agents := ModelCheckAgents(project)
 	req.Project = project
 	req.Live = true
 	results := make([]Result, len(agents))
 	var workers sync.WaitGroup
 	for i, agent := range agents {
-		if agent.enabled == nil || !*agent.enabled || agentoptions.ConfiguredValue(project.Config, agent.name, agentoptions.KindModel) == "" {
-			continue
-		}
 		workers.Go(func() {
-			option := agentoptions.Resolve(project.Config, agent.name, agentoptions.KindModel, req)
-			result := Result{CheckName: agent.name + " models", Status: StatusOK,
+			option := agentoptions.Resolve(project.Config, agent, agentoptions.KindModel, req)
+			result := Result{CheckName: agent + " models", Status: StatusOK,
 				Message: fmt.Sprintf("Harness lists %d selectable models", len(option.Suggestions))}
 			switch {
 			case option.DiscoveryError != "":
@@ -49,8 +64,11 @@ func CheckModels(project *config.ProjectConfig, req agentoptions.DiscoveryReques
 				result.Recommendation = "Check the model with the harness. Custom model IDs and aliases may still be valid."
 			}
 			results[i] = result
+			if onResult != nil {
+				onResult(result)
+			}
 		})
 	}
 	workers.Wait()
-	return slices.DeleteFunc(results, func(result Result) bool { return result.CheckName == "" })
+	return results
 }

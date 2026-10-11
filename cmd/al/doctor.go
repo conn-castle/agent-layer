@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -26,7 +28,7 @@ var (
 	measureInstructions = warnings.MeasureInstructions
 	checkMCPServers     = warnings.CheckMCPServers
 	checkPolicy         = warnings.CheckPolicy
-	checkModels         = doctor.CheckModels
+	checkModels         = doctor.CheckModelsWithProgress
 )
 
 func newDoctorCmd() *cobra.Command {
@@ -44,57 +46,48 @@ func newDoctorCmd() *cobra.Command {
 
 			_, _ = fmt.Fprintf(out, messages.DoctorHealthCheckFmt, root)
 
-			var allResults []doctor.Result
+			hasFail := false
+			report := func(results ...doctor.Result) {
+				for _, r := range results {
+					if r.Status == doctor.StatusFail {
+						hasFail = true
+					}
+					if quiet && r.Status == doctor.StatusWarn {
+						continue
+					}
+					printResult(out, r)
+				}
+			}
 
 			// 1. Check Structure
-			allResults = append(allResults, doctor.CheckStructure(root)...)
+			report(doctor.CheckStructure(root)...)
 
 			// 2. Check Config
 			configResults, cfg := doctor.CheckConfig(root)
-			allResults = append(allResults, configResults...)
+			report(configResults...)
 			// Start discovery alongside the remaining checks; no sync is needed.
-			modelsDone := make(chan []doctor.Result, 1)
+			var modelResults chan doctor.Result
+			var pendingModels []string
 			if cfg != nil {
+				pendingModels = doctor.ModelCheckAgents(cfg)
+				modelResults = make(chan doctor.Result, len(pendingModels))
+				if len(pendingModels) > 0 && !quiet {
+					_, _ = fmt.Fprintf(out, "Checking harness models: %s\n", strings.Join(pendingModels, ", "))
+				}
 				go func() {
 					req := agentoptions.DefaultDiscoveryRequest()
 					req.Context = cmd.Context()
-					modelsDone <- checkModels(cfg, req)
+					checkModels(cfg, req, func(result doctor.Result) { modelResults <- result })
+					close(modelResults)
 				}()
 			}
 
-			updateResult := doctor.Result{CheckName: messages.DoctorCheckNameUpdate}
-			if strings.TrimSpace(os.Getenv(versiondispatch.EnvNoNetwork)) != "" {
-				updateResult.Status = doctor.StatusWarn
-				updateResult.Message = fmt.Sprintf(messages.DoctorUpdateSkippedFmt, versiondispatch.EnvNoNetwork)
-				updateResult.Recommendation = fmt.Sprintf(messages.DoctorUpdateSkippedRecommendFmt, versiondispatch.EnvNoNetwork)
-			} else {
-				result, err := checkForUpdate(cmd.Context(), Version)
-				switch {
-				case err != nil && update.IsRateLimitError(err):
-					updateResult.Status = doctor.StatusWarn
-					updateResult.Message = messages.DoctorUpdateRateLimited
-				case err != nil:
-					updateResult.Status = doctor.StatusWarn
-					updateResult.Message = fmt.Sprintf(messages.DoctorUpdateFailedFmt, err)
-					updateResult.Recommendation = messages.DoctorUpdateFailedRecommend
-				case result.CurrentIsDev:
-					updateResult.Status = doctor.StatusWarn
-					updateResult.Message = fmt.Sprintf(messages.DoctorUpdateDevBuildFmt, result.Latest)
-					updateResult.Recommendation = messages.DoctorUpdateDevBuildRecommend
-				case result.Outdated:
-					updateResult.Status = doctor.StatusWarn
-					updateResult.Message = fmt.Sprintf(messages.DoctorUpdateAvailableFmt, result.Latest, result.Current)
-					updateResult.Recommendation = messages.DoctorUpdateAvailableRecommend
-				default:
-					updateResult.Status = doctor.StatusOK
-					updateResult.Message = fmt.Sprintf(messages.DoctorUpToDateFmt, result.Current)
-				}
-			}
-			allResults = append(allResults, updateResult)
+			updateResults := make(chan doctor.Result, 1)
+			go func() { updateResults <- checkDoctorUpdate(cmd.Context()) }()
 
 			// 3. Check for stale flat-format skills (runs regardless of config load
 			// state, since flat-format skills cause config loading to fail).
-			allResults = append(allResults, doctor.CheckFlatFormatSkills(root)...)
+			report(doctor.CheckFlatFormatSkills(root)...)
 
 			if cfg != nil {
 				// 4. Check Secrets.
@@ -103,11 +96,11 @@ func newDoctorCmd() *cobra.Command {
 				// Skipping CheckSecrets here avoids a misleading "Missing secret"
 				// cascade layered on top of the real root cause.
 				if !doctor.HasFailResultForCheck(configResults, messages.DoctorCheckNameSecrets) {
-					allResults = append(allResults, doctor.CheckSecrets(cfg)...)
+					report(doctor.CheckSecrets(cfg)...)
 				}
 
 				// 5. Check Agents
-				allResults = append(allResults, doctor.CheckAgents(cfg)...)
+				report(doctor.CheckAgents(cfg)...)
 
 				// 6. Check Skills.
 				// CheckConfig's lenient fallback already emits a Skills result when
@@ -115,22 +108,31 @@ func newDoctorCmd() *cobra.Command {
 				// Skipping CheckSkills here avoids a contradictory second "No skills
 				// configured" OK line layered on top of that FAIL.
 				if !doctor.HasFailResultForCheck(configResults, messages.DoctorCheckNameSkills) {
-					allResults = append(allResults, doctor.CheckSkills(cfg)...)
+					report(doctor.CheckSkills(cfg)...)
 				}
 
 				// 7. Check CLI Skills (catalog-installed skills' binaries on PATH).
-				allResults = append(allResults, doctor.CheckCLISkills(cfg)...)
-				allResults = append(allResults, <-modelsDone...)
+				report(doctor.CheckCLISkills(cfg)...)
 			}
-
-			hasFail := false
-			for _, r := range allResults {
-				if quiet && r.Status == doctor.StatusWarn {
-					continue
-				}
-				printResult(out, r)
-				if r.Status == doctor.StatusFail {
-					hasFail = true
+			if cfg == nil {
+				modelResults = nil
+			}
+			for modelResults != nil || updateResults != nil {
+				select {
+				case result, ok := <-modelResults:
+					if !ok {
+						modelResults = nil
+						continue
+					}
+					report(result)
+					name := strings.TrimSuffix(result.CheckName, " models")
+					pendingModels = slices.DeleteFunc(pendingModels, func(agent string) bool { return agent == name })
+					if len(pendingModels) > 0 && !quiet {
+						_, _ = fmt.Fprintf(out, "Waiting for harness models: %s\n", strings.Join(pendingModels, ", "))
+					}
+				case result := <-updateResults:
+					report(result)
+					updateResults = nil
 				}
 			}
 
@@ -573,4 +575,36 @@ func formatMCPDiscoveryEvent(event warnings.MCPDiscoveryEvent) string {
 	default:
 		return fmt.Sprintf("  - %s: %s", event.ServerID, event.Status)
 	}
+}
+
+func checkDoctorUpdate(ctx context.Context) doctor.Result {
+	updateResult := doctor.Result{CheckName: messages.DoctorCheckNameUpdate}
+	if strings.TrimSpace(os.Getenv(versiondispatch.EnvNoNetwork)) != "" {
+		updateResult.Status = doctor.StatusWarn
+		updateResult.Message = fmt.Sprintf(messages.DoctorUpdateSkippedFmt, versiondispatch.EnvNoNetwork)
+		updateResult.Recommendation = fmt.Sprintf(messages.DoctorUpdateSkippedRecommendFmt, versiondispatch.EnvNoNetwork)
+	} else {
+		result, err := checkForUpdate(ctx, Version)
+		switch {
+		case err != nil && update.IsRateLimitError(err):
+			updateResult.Status = doctor.StatusWarn
+			updateResult.Message = messages.DoctorUpdateRateLimited
+		case err != nil:
+			updateResult.Status = doctor.StatusWarn
+			updateResult.Message = fmt.Sprintf(messages.DoctorUpdateFailedFmt, err)
+			updateResult.Recommendation = messages.DoctorUpdateFailedRecommend
+		case result.CurrentIsDev:
+			updateResult.Status = doctor.StatusWarn
+			updateResult.Message = fmt.Sprintf(messages.DoctorUpdateDevBuildFmt, result.Latest)
+			updateResult.Recommendation = messages.DoctorUpdateDevBuildRecommend
+		case result.Outdated:
+			updateResult.Status = doctor.StatusWarn
+			updateResult.Message = fmt.Sprintf(messages.DoctorUpdateAvailableFmt, result.Latest, result.Current)
+			updateResult.Recommendation = messages.DoctorUpdateAvailableRecommend
+		default:
+			updateResult.Status = doctor.StatusOK
+			updateResult.Message = fmt.Sprintf(messages.DoctorUpToDateFmt, result.Current)
+		}
+	}
+	return updateResult
 }

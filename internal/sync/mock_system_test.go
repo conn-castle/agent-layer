@@ -14,6 +14,7 @@ type MockSystem struct {
 	ReadlinkFunc        func(name string) (string, error)
 	SymlinkFunc         func(oldname, newname string) error
 	MkdirAllFunc        func(path string, perm os.FileMode) error
+	ChmodFunc           func(path string, perm os.FileMode) error
 	WriteFileAtomicFunc func(filename string, data []byte, perm os.FileMode) error
 	MarshalIndentFunc   func(v any, prefix, indent string) ([]byte, error)
 	ReadFileFunc        func(name string) ([]byte, error)
@@ -75,6 +76,16 @@ func (m *MockSystem) MkdirAll(path string, perm os.FileMode) error {
 		return m.Fallback.MkdirAll(path, perm)
 	}
 	return errors.New("mock system MkdirAll not implemented")
+}
+
+func (m *MockSystem) Chmod(path string, perm os.FileMode) error {
+	if m.ChmodFunc != nil {
+		return m.ChmodFunc(path, perm)
+	}
+	if m.Fallback != nil {
+		return m.Fallback.Chmod(path, perm)
+	}
+	return errors.New("mock system Chmod not implemented")
 }
 
 func (m *MockSystem) Symlink(oldname, newname string) error {

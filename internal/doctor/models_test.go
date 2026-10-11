@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -68,5 +69,37 @@ func TestCheckModelsReportsCopilotDiscoveryFailure(t *testing.T) {
 	}})
 	if len(results) != 1 || results[0].CheckName != "copilot_cli models" || results[0].Status != StatusWarn || !strings.Contains(results[0].Message, "model discovery") {
 		t.Fatalf("missing actionable Copilot discovery warning: %+v", results)
+	}
+}
+
+func TestCheckModelsReportsCompletedHarnessBeforePendingHarness(t *testing.T) {
+	enabled := true
+	project := &config.ProjectConfig{Config: config.Config{Agents: config.AgentsConfig{
+		Claude: config.ClaudeConfig{Enabled: &enabled, Model: "chosen"},
+		Grok:   config.GrokConfig{Enabled: &enabled, Model: "chosen"},
+	}}}
+	release := make(chan struct{})
+	progress := make(chan Result, 2)
+	done := make(chan []Result, 1)
+	go func() {
+		done <- CheckModelsWithProgress(project, agentoptions.DiscoveryRequest{Env: []string{}, LookPath: func(name string) (string, error) {
+			if name == "grok" {
+				<-release
+			}
+			return "", os.ErrNotExist
+		}}, func(result Result) { progress <- result })
+	}()
+	select {
+	case result := <-progress:
+		if result.CheckName != "claude models" {
+			t.Errorf("completed harness=%s", result.CheckName)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("completed harness hidden by pending harness")
+	}
+	close(release)
+	results := <-done
+	if len(results) != 2 || results[0].CheckName != "claude models" || results[1].CheckName != "grok models" {
+		t.Fatalf("results=%+v", results)
 	}
 }

@@ -18,6 +18,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/probe/antigravity"
 	"github.com/conn-castle/agent-layer/internal/testutil"
+	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
@@ -607,4 +608,35 @@ func TestRunMainExportsInvokingDevelopmentExecutable(t *testing.T) {
 		return nil
 	}
 	runMain(context.Background(), []string{"al", "--version"}, io.Discard, io.Discard, func(code int) { t.Fatalf("unexpected exit %d", code) })
+}
+
+func TestRunMainRefreshBypassesDispatchAndProjectCommands(t *testing.T) {
+	t.Setenv(versiondispatch.EnvNoNetwork, "1")
+	origMaybeExec, origExecute := maybeExecFunc, executeFunc
+	t.Cleanup(func() { maybeExecFunc, executeFunc = origMaybeExec, origExecute })
+	maybeExecFunc = func(context.Context, []string, string, string, io.Writer) error {
+		t.Fatal("refresh attempted version dispatch")
+		return nil
+	}
+	executeFunc = func(context.Context, []string, io.Writer, io.Writer) error {
+		t.Fatal("refresh executed project command")
+		return nil
+	}
+	var out bytes.Buffer
+	runMain(context.Background(), []string{"al", update.RefreshCommand}, &out, &out, func(int) { t.Fatal("refresh failed CLI execution") })
+	if out.Len() != 0 {
+		t.Fatalf("refresh emitted output: %q", out.String())
+	}
+	origSpawn := spawnDetachedRefreshFunc
+	spawned := false
+	spawnDetachedRefreshFunc = func() { spawned = true }
+	t.Cleanup(func() { spawnDetachedRefreshFunc = origSpawn })
+	out.Reset()
+	runMain(context.Background(), []string{"al", update.RefreshForkCommand}, &out, &out, func(int) { t.Fatal("fork failed CLI execution") })
+	if !spawned {
+		t.Fatal("fork command did not detach the refresh helper")
+	}
+	if out.Len() != 0 {
+		t.Fatalf("fork emitted output: %q", out.String())
+	}
 }

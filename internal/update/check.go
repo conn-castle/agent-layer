@@ -24,7 +24,16 @@ const ReleasesBaseURL = "https://github.com/" + Repo + "/releases"
 var latestReleaseURL = "https://api.github.com/repos/" + Repo + "/releases/latest"
 var httpClient = &http.Client{Timeout: 10 * time.Second}
 var retryDelay = 250 * time.Millisecond
-var updateSleep = time.Sleep
+var updateSleep = func(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
 
 const fetchLatestRetryCount = 1
 
@@ -76,6 +85,11 @@ func Check(ctx context.Context, currentVersion string) (CheckResult, error) {
 		return CheckResult{}, err
 	}
 
+	_ = saveReleaseCache(latest) // Best-effort notices must not make an explicit check fail.
+	return compareRelease(current, isDev, latest)
+}
+
+func compareRelease(current string, isDev bool, latest string) (CheckResult, error) {
 	result := CheckResult{
 		Current:      current,
 		Latest:       latest,
@@ -108,7 +122,9 @@ func fetchLatestReleaseVersion(ctx context.Context) (string, error) {
 		resp, err := httpClient.Do(req) //nolint:gosec // URL is a constant GitHub API endpoint
 		if err != nil {
 			if shouldRetryLatestCheck(err, 0, attempt) {
-				updateSleep(retryDelay)
+				if err := updateSleep(ctx, retryDelay); err != nil {
+					return "", err
+				}
 				continue
 			}
 			return "", fmt.Errorf(messages.UpdateFetchLatestReleaseErrFmt, err)
@@ -123,7 +139,9 @@ func fetchLatestReleaseVersion(ctx context.Context) (string, error) {
 			statusText := resp.Status
 			_ = resp.Body.Close()
 			if shouldRetryLatestCheck(nil, status, attempt) {
-				updateSleep(retryDelay)
+				if err := updateSleep(ctx, retryDelay); err != nil {
+					return "", err
+				}
 				continue
 			}
 			return "", fmt.Errorf(messages.UpdateFetchLatestReleaseStatusFmt, statusText)

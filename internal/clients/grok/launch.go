@@ -82,7 +82,7 @@ func SandboxArgs(cfg config.Config, commandsAllow []string) []string {
 
 // Launch starts the Grok Build CLI with the configured options.
 func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
-	args := []string{}
+	args := []string{"--no-auto-update"}
 	model := strings.TrimSpace(cfg.Config.Agents.Grok.Model)
 	if model != "" {
 		args = append(args, flagModel, model)

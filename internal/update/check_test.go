@@ -7,10 +7,62 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
+
+// Keep explicit release checks from writing into the user's real cache.
+func TestMain(m *testing.M) {
+	if os.Getenv("AL_UPDATE_TEST_HELPER") == "1" {
+		latestReleaseURL = os.Getenv("AL_UPDATE_TEST_RELEASE_URL")
+		if len(os.Args) == 2 && os.Args[1] == RefreshForkCommand {
+			SpawnDetachedRefresh()
+			os.Exit(0)
+		}
+		if len(os.Args) == 2 && os.Args[1] == RefreshCommand {
+			// Gate the test worker before its network deadline starts, so slow parent
+			// exec does not spend the refresh budget before the parent has exited.
+			deadline := time.Now().Add(30 * time.Second)
+			for {
+				if _, err := os.Stat(os.Getenv("AL_UPDATE_TEST_HANDOFF_FILE")); err == nil { // #nosec G703 -- marker supplied by the parent test fixture.
+					break
+				}
+				if time.Now().After(deadline) {
+					os.Exit(1)
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			// Record the observed parent before any network I/O so the parent
+			// test's detachment assertion cannot race this helper's exit.
+			if ppidFile := os.Getenv("AL_UPDATE_TEST_PPID_FILE"); ppidFile != "" {
+				_ = os.WriteFile(ppidFile, []byte(strconv.Itoa(os.Getppid())), 0o600) // #nosec G304,G703 -- path supplied by the parent test fixture.
+			}
+			RefreshCache(context.Background())
+			os.Exit(0)
+		}
+		StartCacheRefresh()
+		// Stay alive as a long-lived exec target so the parent test can detect a
+		// reaped-or-zombie helper while the client is still running.
+		if err := syscall.Exec("/bin/sleep", []string{"sleep", "30"}, os.Environ()); err != nil {
+			panic(err)
+		}
+	}
+
+	cache, err := os.MkdirTemp("", "al-update-test-*")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("AL_CACHE_DIR", cache); err != nil {
+		panic(err)
+	}
+	code := m.Run()
+	_ = os.RemoveAll(cache)
+	os.Exit(code)
+}
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
@@ -171,8 +223,9 @@ func TestFetchLatestReleaseVersion_DoError(t *testing.T) {
 func TestFetchLatestReleaseVersion_RetryOnTransientError(t *testing.T) {
 	origSleep := updateSleep
 	sleepCalls := 0
-	updateSleep = func(time.Duration) {
+	updateSleep = func(context.Context, time.Duration) error {
 		sleepCalls++
+		return nil
 	}
 	t.Cleanup(func() {
 		updateSleep = origSleep
