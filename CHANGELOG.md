@@ -3,7 +3,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-## v1.0.0 - Planned
+## v1.0.0 - 2026-10-12
 
 ### Changed
 - Git-backed instructions now share the skill import lifecycle, with one exact Markdown file and required numeric order per imported/local block. Wizard Rules/Memory import external content; adoption preserves local bytes, permissions and order. Software upgrades establish legacy ordering offline and preserve instruction bodies.
@@ -13,6 +13,8 @@ All notable changes to this project will be documented in this file.
 - Explicit benchmark setup fetches and freezes the seven external development skills with Git commit, selectors, and canonical tree hashes. Later study runs remain offline and use the frozen snapshot; historical studies without this provenance remain compatible.
 
 ### Fixed
+- Installer local asset directories support spaces, Unicode, and URL-special characters without requiring curl; checksum verification and atomic replacement remain intact.
+- Instruction reset and pull help now match the shared current-upstream behavior and conflict workspace path; the reference documentation is consistent.
 - Cancellation stops sync lock waits and interactive upgrades, rolling back interrupted upgrade transactions. Late dispatch cancellation preserves a live worker's result publication; stopped provider groups are accepted without signalling only after submitters are gone.
 - Wizard config/env writes now share the project lock with imports and sync. Profile application refuses source ownership mismatches before replacing config, so a concurrent import cannot silently erase a successful wizard update. Profile previews remain read-only.
 - Upgrade planning, baseline publication, and snapshot creation, retention, listing, and rollback reject linked or non-directory state storage before accessing it or changing managed project files.
