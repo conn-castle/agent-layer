@@ -52,7 +52,7 @@ func RunWithSystemFSContext(ctx context.Context, sys System, fsys fs.FS, root st
 		return nil, fmt.Errorf(messages.SyncConfigFSRequired)
 	}
 	return withProjectSyncLockContext(ctx, sys, root, func() (*Result, error) {
-		project, err := loadLockedProjectSources(sys, fsys, root)
+		project, err := LoadSourcesLocked(sys, fsys, root, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -266,10 +266,6 @@ func collectWarnings(project *config.ProjectConfig, extra []warnings.Warning) ([
 	collected = append(collected, policyWarnings...)
 
 	return collected, nil
-}
-
-func runSteps(steps []func() error) error {
-	return runStepsContext(context.Background(), steps)
 }
 
 func runStepsContext(ctx context.Context, steps []func() error) error {

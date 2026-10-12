@@ -52,9 +52,12 @@ func TestRunProfile_Apply(t *testing.T) {
 	profile := strings.ReplaceAll(basicAgentConfig(), `mode = "none"`, `mode = "all"`)
 	require.NoError(t, os.WriteFile(profilePath, []byte(profile), 0o600))
 
+	emptyDir := filepath.Join(root, ".agent-layer", "skills", "empty")
+	require.NoError(t, os.MkdirAll(emptyDir, 0700))
 	syncCalled := false
 	var out bytes.Buffer
 	err := RunProfile(root, func(string) (*alsync.Result, error) {
+		require.NoDirExists(t, emptyDir)
 		syncCalled = true
 		return &alsync.Result{}, projectlock.With(projectlock.RealSystem{}, root, func() error { return nil })
 	}, "", profilePath, true, &out)
@@ -368,23 +371,31 @@ func TestCleanupBackups_MissingAndRemoveError(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestRunProfile_RefusesStaleInstructionOwnership(t *testing.T) {
-	for _, present := range []bool{true, false} {
-		t.Run(map[bool]string{true: "imported file", false: "lock only"}[present], func(t *testing.T) {
+func TestRunProfile_RefusesStaleSourceOwnership(t *testing.T) {
+	for _, source := range []string{"imported instruction", "instruction lock only", "unowned skill"} {
+		t.Run(source, func(t *testing.T) {
 			root := t.TempDir()
 			setupRepo(t, root)
 			configPath := filepath.Join(root, ".agent-layer", "config.toml")
 			profilePath := filepath.Join(root, "profile.toml")
 			raw := basicAgentConfig()
+			envPath := filepath.Join(root, ".agent-layer", ".env")
+			require.NoError(t, os.WriteFile(envPath, []byte("AL_SECRET=preserved\n"), 0600))
 			require.NoError(t, os.WriteFile(configPath, []byte(raw), 0600))
 			require.NoError(t, os.WriteFile(profilePath, []byte(raw), 0600))
-			lock := skilllock.NewInstructions()
-			lock.Skills = []skilllock.Entry{{Name: "alpha.md", Repository: "local-repo", Selector: "instructions/alpha.md", SelectedPath: "instructions/alpha.md", ResolvedRef: "main", RefKind: "branch", Tracking: "tracked", Commit: strings.Repeat("a", 40), TreeHash: "sha256:" + strings.Repeat("b", 64)}}
-			require.NoError(t, lock.Save(filepath.Join(root, ".agent-layer", "instructions.lock.json")))
-			if present {
-				dir := filepath.Join(root, ".agent-layer", "instructions-imported")
-				require.NoError(t, os.Mkdir(dir, 0700))
-				require.NoError(t, os.WriteFile(filepath.Join(dir, "alpha.md"), []byte("imported"), 0600))
+			if source == "unowned skill" {
+				dir := filepath.Join(root, ".agent-layer", "skills-imported", "alpha")
+				require.NoError(t, os.MkdirAll(dir, 0700))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: alpha\ndescription: imported\n---\n"), 0600))
+			} else {
+				lock := skilllock.NewInstructions()
+				lock.Skills = []skilllock.Entry{{Name: "alpha.md", Repository: "local-repo", Selector: "instructions/alpha.md", SelectedPath: "instructions/alpha.md", ResolvedRef: "main", RefKind: "branch", Tracking: "tracked", Commit: strings.Repeat("a", 40), TreeHash: "sha256:" + strings.Repeat("b", 64)}}
+				require.NoError(t, lock.Save(filepath.Join(root, ".agent-layer", "instructions.lock.json")))
+				if source == "imported instruction" {
+					dir := filepath.Join(root, ".agent-layer", "instructions-imported")
+					require.NoError(t, os.Mkdir(dir, 0700))
+					require.NoError(t, os.WriteFile(filepath.Join(dir, "alpha.md"), []byte("imported"), 0600))
+				}
 			}
 			err := RunProfile(root, func(string) (*alsync.Result, error) {
 				t.Fatal("refused profile must not sync")
@@ -395,6 +406,10 @@ func TestRunProfile_RefusesStaleInstructionOwnership(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, raw, string(written))
 			require.NoFileExists(t, backupPath(root, configBackupName))
+			require.NoFileExists(t, backupPath(root, envBackupName))
+			env, err := os.ReadFile(envPath)
+			require.NoError(t, err)
+			require.Equal(t, "AL_SECRET=preserved\n", string(env))
 		})
 	}
 }

@@ -356,9 +356,6 @@ func (inst *installer) rollbackUpgradeSnapshot(snapshot *upgradeSnapshot, target
 }
 
 func (inst *installer) captureUpgradeSnapshotEntries() ([]upgradeSnapshotEntry, error) {
-	if err := validateUpgradeStateDirs(inst.root, inst.sys); err != nil {
-		return nil, err
-	}
 	catalogDirs, err := inst.templates().installedCatalogSkillTemplateDirs()
 	if err != nil {
 		return nil, err

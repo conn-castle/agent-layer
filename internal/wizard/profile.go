@@ -14,6 +14,8 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/skillmigration"
+	"github.com/conn-castle/agent-layer/internal/sync"
 )
 
 // RunProfile applies a non-interactive wizard profile from a TOML config file.
@@ -56,7 +58,7 @@ func RunProfile(root string, runSync syncer, pinVersion string, profilePath stri
 		return writeProfileConfig(root, configPath, profilePath, profileBytes, installed, apply, out)
 	}
 	if apply {
-		err = withConfigWriteLock(root, write)
+		err = skillmigration.WithRecovered(root, write)
 	} else {
 		err = write()
 	}
@@ -125,10 +127,7 @@ func writeProfileConfig(root, configPath, profilePath string, profileBytes []byt
 	if err != nil {
 		return fmt.Errorf(messages.WizardProfileInvalidFmt, err)
 	}
-	project, err := config.LoadProjectConfigWithConfigFS(os.DirFS(root), root, proposed)
-	if err == nil {
-		_, err = config.CombineImportedSkillsFS(os.DirFS(root), root, project.Skills)
-	}
+	_, err = sync.LoadSourcesLocked(sync.RealSystem{}, os.DirFS(root), root, proposed)
 	if err != nil {
 		return fmt.Errorf("wizard profile is inconsistent with project sources; config was not written: %w", err)
 	}

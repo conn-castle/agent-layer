@@ -12,7 +12,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/projectlock"
+	"github.com/conn-castle/agent-layer/internal/skillmigration"
 	"github.com/conn-castle/agent-layer/internal/sync"
 )
 
@@ -33,7 +33,7 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 		out = os.Stdout
 	}
 
-	if err := withConfigWriteLock(root, func() error {
+	if err := skillmigration.WithRecovered(root, func() error {
 		return writeConfigEnv(root, configPath, envPath, c)
 	}); err != nil {
 		return err
@@ -85,17 +85,6 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 		_, _ = fmt.Fprintln(out)
 	}
 	return nil
-}
-
-// withConfigWriteLock recovers imports before reading and writing wizard config.
-// Release it before calling import services or sync, which acquire the same lock.
-func withConfigWriteLock(root string, write func() error) error {
-	return projectlock.With(projectlock.RealSystem{}, root, func() error {
-		if err := sync.RecoverInterruptedImport(root); err != nil {
-			return err
-		}
-		return write()
-	})
 }
 
 func writeConfigEnv(root, configPath, envPath string, c *Choices) error {

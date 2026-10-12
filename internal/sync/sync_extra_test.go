@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -64,7 +65,7 @@ func TestRunWithProjectError(t *testing.T) {
 }
 
 func TestRunStepsError(t *testing.T) {
-	err := runSteps([]func() error{
+	err := runStepsContext(context.Background(), []func() error{
 		func() error { return fmt.Errorf("boom") },
 	})
 	if err == nil {
