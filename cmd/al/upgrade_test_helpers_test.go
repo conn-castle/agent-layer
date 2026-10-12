@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -21,6 +22,6 @@ func canonicalPath(path string) string {
 func stubSyncRunNoop(t *testing.T) {
 	t.Helper()
 	orig := syncRun
-	syncRun = func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+	syncRun = func(context.Context, string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 	t.Cleanup(func() { syncRun = orig })
 }

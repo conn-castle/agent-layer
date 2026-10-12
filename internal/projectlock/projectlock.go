@@ -10,6 +10,7 @@
 package projectlock
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -70,18 +71,29 @@ func Path(root string) string {
 // Callers must perform all source loading inside fn: loading configuration or
 // skill sources before acquisition would let a concurrent import mutate the
 // sources between the read and the projection built from it.
-func With(sys System, root string, fn func() error) (err error) {
+func With(sys System, root string, fn func() error) error {
+	return WithContext(context.Background(), sys, root, fn)
+}
+
+// WithContext runs fn under the project lock unless ctx is canceled.
+func WithContext(ctx context.Context, sys System, root string, fn func() error) (err error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	lockPath := Path(root)
 	if info, err := os.Lstat(filepath.Dir(lockPath)); err == nil && !info.IsDir() {
 		return fmt.Errorf(".agent-layer must be a real unlinked directory before acquiring the project lock")
 	}
 	process := processLockForPath(lockPath)
 	deadline := sys.Now().Add(waitTimeout)
-	if acquireErr := process.acquire(sys, deadline); acquireErr != nil {
-		return timeoutError(lockPath)
+	if acquireErr := process.acquire(ctx, sys, deadline); acquireErr != nil {
+		if errors.Is(acquireErr, errDeadline) {
+			return timeoutError(lockPath)
+		}
+		return acquireErr
 	}
 
-	lock, err := acquire(sys, lockPath, process, deadline)
+	lock, err := acquire(ctx, sys, lockPath, process, deadline)
 	if err != nil {
 		process.release()
 		return err
@@ -96,6 +108,9 @@ func With(sys System, root string, fn func() error) (err error) {
 		}
 	}()
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return fn()
 }
 
@@ -106,8 +121,11 @@ func processLockForPath(path string) *processLock {
 	return actual.(*processLock)
 }
 
-func (l *processLock) acquire(sys System, deadline time.Time) error {
+func (l *processLock) acquire(ctx context.Context, sys System, deadline time.Time) error {
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		now := sys.Now()
 		if !now.Before(deadline) {
 			return errDeadline
@@ -130,12 +148,12 @@ func (l *processLock) release() {
 	l.token <- struct{}{}
 }
 
-func acquire(sys System, path string, process *processLock, deadline time.Time) (*heldLock, error) {
+func acquire(ctx context.Context, sys System, path string, process *processLock, deadline time.Time) (*heldLock, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644) // #nosec G304,G302 -- lock path is rooted under the caller-resolved repo's .agent-layer directory; 0o644 lets a lock file (no sensitive data) be opened by other users/CI runners, matching internal/dispatch/lock.go.
 	if err != nil {
 		return nil, fmt.Errorf(messages.SyncOpenLockFmt, path, err)
 	}
-	if err := lockFile(sys, file, deadline); err != nil {
+	if err := lockFile(ctx, sys, file, deadline); err != nil {
 		closeErr := sys.Close(file)
 		if errors.Is(err, errDeadline) {
 			timeoutErr := timeoutError(path)
@@ -152,8 +170,11 @@ func acquire(sys System, path string, process *processLock, deadline time.Time) 
 	return &heldLock{file: file, path: path, sys: sys, process: process}, nil
 }
 
-func lockFile(sys System, file *os.File, deadline time.Time) error {
+func lockFile(ctx context.Context, sys System, file *os.File, deadline time.Time) error {
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if !sys.Now().Before(deadline) {
 			return errDeadline
 		}

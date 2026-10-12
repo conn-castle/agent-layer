@@ -268,16 +268,6 @@ func beginCancellation(root string, id string) (RunRecord, *ownedProviderProcess
 		case current.State == dispatchStateRunning && current.PID != 0:
 			group, groupErr := cancellationProcessGroup(current)
 			if groupErr != nil {
-				current.TerminationAttemptError = groupErr.Error()
-				current.Revision++
-				current.UpdatedAt = time.Now().UTC()
-				if err := validateRunRecord(current); err != nil {
-					return err
-				}
-				if err := writeJSONAtomic(filepath.Join(dir, dispatchRunFile), current); err != nil {
-					return wrapExitError(ExitConfig, "write dispatch run evidence", err)
-				}
-				record = current
 				return wrapExitError(ExitUnavailable, fmt.Sprintf("dispatch run %s has no live owned process to cancel", current.ID), groupErr)
 			}
 			ownedGroup = group
@@ -316,6 +306,12 @@ func beginCancellation(root string, id string) (RunRecord, *ownedProviderProcess
 }
 
 func cancellationProcessGroup(record RunRecord) (*ownedProviderProcessGroup, error) {
+	// Prove the original group and provider stopped without obtaining a signal
+	// capability. Fence only this copy until cancellation is accepted.
+	candidate := record
+	if applyTerminationConfirmation(&candidate, time.Now().UTC()) {
+		return nil, nil
+	}
 	group, err := verifiedProviderProcessGroup(record)
 	if err != nil {
 		return nil, err

@@ -522,7 +522,7 @@ func TestUpgradeCmd_RunsSyncAfterSuccessfulInstall(t *testing.T) {
 	origSyncRun := syncRun
 	var syncCalls int
 	var syncRoot string
-	syncRun = func(gotRoot string) (*alsync.Result, error) {
+	syncRun = func(_ context.Context, gotRoot string) (*alsync.Result, error) {
 		syncCalls++
 		syncRoot = gotRoot
 		return &alsync.Result{}, nil
@@ -571,7 +571,7 @@ func TestUpgradeCmd_SyncWarningsPrintedToStderr(t *testing.T) {
 	t.Cleanup(func() { installRun = origInstallRun })
 
 	origSyncRun := syncRun
-	syncRun = func(string) (*alsync.Result, error) {
+	syncRun = func(context.Context, string) (*alsync.Result, error) {
 		return &alsync.Result{
 			Warnings: []warnings.Warning{{Message: "trusted folders not set"}},
 		}, nil
@@ -619,7 +619,7 @@ func TestUpgradeCmd_SyncFailureWrappedNonFatalLoud(t *testing.T) {
 
 	syncErr := errors.New("config invalid")
 	origSyncRun := syncRun
-	syncRun = func(string) (*alsync.Result, error) {
+	syncRun = func(context.Context, string) (*alsync.Result, error) {
 		return nil, syncErr
 	}
 	t.Cleanup(func() { syncRun = origSyncRun })
@@ -679,7 +679,7 @@ func TestUpgradeCmd_SyncNotRunWhenInstallFails(t *testing.T) {
 
 	origSyncRun := syncRun
 	syncCalled := false
-	syncRun = func(string) (*alsync.Result, error) {
+	syncRun = func(context.Context, string) (*alsync.Result, error) {
 		syncCalled = true
 		return &alsync.Result{}, nil
 	}

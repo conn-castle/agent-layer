@@ -3,6 +3,7 @@
 package skillmigration
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -22,12 +23,20 @@ const MinimumCLI = "1.0.0"
 
 // WithRecovered serializes a supported operation with imports and projection.
 func WithRecovered(root string, fn func() error) error {
+	return WithRecoveredContext(context.Background(), root, fn)
+}
+
+// WithRecoveredContext recovers under the project lock unless ctx is canceled.
+func WithRecoveredContext(ctx context.Context, root string, fn func() error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if _, err := os.Lstat(filepath.Join(root, ".agent-layer")); errors.Is(err, os.ErrNotExist) {
 		return fn()
 	} else if err != nil {
 		return err
 	}
-	return projectlock.With(projectlock.RealSystem{}, root, func() error {
+	return projectlock.WithContext(ctx, projectlock.RealSystem{}, root, func() error {
 		if err := skilljournal.RecoverBoth(root); err != nil {
 			return err
 		}

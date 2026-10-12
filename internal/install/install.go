@@ -1,6 +1,7 @@
 package install
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -37,6 +38,7 @@ type PromptSelectUnknownsToKeepFunc func(paths []string) ([]string, error)
 
 // Options controls installer behavior.
 type Options struct {
+	Context      context.Context // nil preserves context-free callers.
 	Overwrite    bool
 	Prompter     *PromptFuncs // nil means no interactive prompts.
 	WarnWriter   io.Writer
@@ -46,6 +48,7 @@ type Options struct {
 }
 
 type installer struct {
+	ctx                      context.Context
 	root                     string
 	overwrite                bool
 	overwriteAll             bool
@@ -97,8 +100,14 @@ type matchCacheEntry struct {
 
 // Run initializes the repository with the required Agent Layer structure.
 func Run(root string, opts Options) error {
+	if opts.Context == nil {
+		opts.Context = context.Background()
+	}
+	if err := opts.Context.Err(); err != nil {
+		return err
+	}
 	if opts.Overwrite && root != "" && opts.System != nil {
-		return skillmigration.WithRecovered(root, func() error {
+		return skillmigration.WithRecoveredContext(opts.Context, root, func() error {
 			if err := skillmigration.CheckVersionLocked(root, opts.PinVersion); err != nil {
 				return err
 			}
@@ -128,6 +137,7 @@ func run(root string, opts Options) error {
 	}
 	inst := &installer{
 		root:         root,
+		ctx:          opts.Context,
 		overwrite:    overwrite,
 		prompter:     opts.Prompter,
 		warnWriter:   warnWriter,
@@ -156,6 +166,9 @@ func run(root string, opts Options) error {
 		if err := inst.preflightAndConfirmSkillsMigration(); err != nil {
 			return err
 		}
+		if err := inst.ctx.Err(); err != nil {
+			return err
+		}
 		if err := inst.upgrades().ensureBaseDirs(); err != nil {
 			return err
 		}
@@ -167,6 +180,9 @@ func run(root string, opts Options) error {
 			return err
 		}
 	} else {
+		if err := inst.ctx.Err(); err != nil {
+			return err
+		}
 		if err := inst.upgrades().ensureBaseDirs(); err != nil {
 			return err
 		}
@@ -188,6 +204,9 @@ func run(root string, opts Options) error {
 	baselineSource := BaselineStateSourceWrittenByInit
 	if overwrite {
 		baselineSource = BaselineStateSourceWrittenByUpgrade
+	}
+	if err := inst.ctx.Err(); err != nil {
+		return err
 	}
 	if err := inst.writeManagedBaselineIfConsistent(baselineSource); err != nil {
 		return err
@@ -229,7 +248,14 @@ func (inst upgradeOrchestrator) runUpgradeTransaction(snapshot *upgradeSnapshot)
 	completedTargets := make(map[string]struct{})
 	for _, step := range steps {
 		currentStepTargets := step.rollbackTargets()
-		if err := step.run(); err != nil {
+		stepErr := inst.ctx.Err()
+		if stepErr == nil {
+			stepErr = step.run()
+		}
+		if stepErr == nil {
+			stepErr = inst.ctx.Err()
+		}
+		if err := stepErr; err != nil {
 			snapshot.Status = upgradeSnapshotStatusRollbackFailed
 			snapshot.FailureStep = step.name
 			snapshot.FailureError = err.Error()

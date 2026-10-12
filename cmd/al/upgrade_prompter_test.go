@@ -2,9 +2,15 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fatih/color"
 
@@ -107,7 +113,7 @@ func TestBuildUpgradePrompter_DeletionPolicyPaths(t *testing.T) {
 func TestBuildUpgradePrompter_SelectUnknownsToKeepInteractive(t *testing.T) {
 	ui := &stubUpgradeKeepListUI{selected: []string{"docs/agent-layer/NOTES.md"}}
 	original := newUpgradeKeepListUI
-	newUpgradeKeepListUI = func() upgradeKeepListUI { return ui }
+	newUpgradeKeepListUI = func(context.Context) upgradeKeepListUI { return ui }
 	t.Cleanup(func() { newUpgradeKeepListUI = original })
 
 	cmd := newUpgradeCmd()
@@ -148,7 +154,7 @@ func TestBuildUpgradePrompter_SelectUnknownsToKeepInteractive(t *testing.T) {
 func TestBuildUpgradePrompter_SelectUnknownsToKeepBackContinues(t *testing.T) {
 	ui := &stubUpgradeKeepListUI{err: wizard.ErrBack}
 	original := newUpgradeKeepListUI
-	newUpgradeKeepListUI = func() upgradeKeepListUI { return ui }
+	newUpgradeKeepListUI = func(context.Context) upgradeKeepListUI { return ui }
 	t.Cleanup(func() { newUpgradeKeepListUI = original })
 
 	cmd := newUpgradeCmd()
@@ -165,7 +171,7 @@ func TestBuildUpgradePrompter_SelectUnknownsToKeepBackContinues(t *testing.T) {
 func TestBuildUpgradePrompter_SelectUnknownsToKeepSkippedNonInteractive(t *testing.T) {
 	called := false
 	original := newUpgradeKeepListUI
-	newUpgradeKeepListUI = func() upgradeKeepListUI {
+	newUpgradeKeepListUI = func(context.Context) upgradeKeepListUI {
 		called = true
 		return &stubUpgradeKeepListUI{}
 	}
@@ -184,7 +190,7 @@ func TestBuildUpgradePrompter_SelectUnknownsToKeepSkippedNonInteractive(t *testi
 func TestBuildUpgradePrompter_SelectUnknownsToKeepSkippedWhenDeletionsExcluded(t *testing.T) {
 	called := false
 	original := newUpgradeKeepListUI
-	newUpgradeKeepListUI = func() upgradeKeepListUI {
+	newUpgradeKeepListUI = func(context.Context) upgradeKeepListUI {
 		called = true
 		return &stubUpgradeKeepListUI{}
 	}
@@ -870,5 +876,93 @@ func TestBuildUpgradePrompter_UnifiedCallbackExplicitCategory(t *testing.T) {
 				t.Fatal("explicit category callback must return flags without prompting or reading stdin")
 			}
 		}
+	}
+}
+
+func TestUpgradePromptCancellationRollsBackWithoutInput(t *testing.T) {
+	root := t.TempDir()
+	if err := install.Run(root, install.Options{System: install.RealSystem{}, PinVersion: "0.24.3"}); err != nil {
+		t.Fatal(err)
+	}
+	block := filepath.Join(root, ".agent-layer", "gitignore.block")
+	original := []byte("# cancellation custom block\n")
+	if err := os.WriteFile(block, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = input.Close() }()
+	defer func() { _ = writer.Close() }()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd := newUpgradeCmd()
+	cmd.SetContext(ctx)
+	cmd.SetIn(input)
+	prompted := make(chan struct{}, 1)
+	cmd.SetOut(promptCancelWriter{prompted: prompted})
+	prompter := buildUpgradePrompter(cmd, upgradeApplyPolicy{interactive: true})
+	done := make(chan error, 1)
+	go func() {
+		done <- install.Run(root, install.Options{Context: ctx, System: install.RealSystem{}, Overwrite: true, PinVersion: "1.0.0", Prompter: prompter, WarnWriter: io.Discard})
+	}()
+	select {
+	case <-prompted:
+		cancel()
+	case <-time.After(3 * time.Second):
+		t.Fatal("upgrade never reached diff prompt")
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "rolled back") {
+			t.Fatalf("upgrade result = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("canceled upgrade needed stdin")
+	}
+	for path, want := range map[string]string{block: string(original), filepath.Join(root, ".agent-layer", "al.version"): "0.24.3\n"} {
+		got, err := os.ReadFile(path) // #nosec G304 -- paths are rooted in the test-owned temporary project.
+		if err != nil || string(got) != want {
+			t.Fatalf("rollback %s = %q, %v", path, got, err)
+		}
+	}
+}
+
+type promptCancelWriter struct {
+	prompted chan<- struct{}
+	prompt   string
+	cancel   context.CancelFunc
+}
+
+func (w promptCancelWriter) Write(p []byte) (int, error) {
+	prompt := w.prompt
+	if prompt == "" {
+		prompt = messages.UpgradeViewDiffPrompt
+	}
+	if strings.Contains(string(p), prompt) {
+		if w.cancel != nil {
+			w.cancel()
+		}
+		select {
+		case w.prompted <- struct{}{}:
+		default:
+		}
+	}
+	return len(p), nil
+}
+
+func TestUpgradePromptCancellationRejectsBufferedApproval(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd := newUpgradeCmd()
+	cmd.SetContext(ctx)
+	cmd.SetIn(strings.NewReader("n\ny\n"))
+	cmd.SetOut(promptCancelWriter{prompt: messages.UpgradeOverwriteAllPrompt, cancel: cancel})
+	prompter := buildUpgradePrompter(cmd, upgradeApplyPolicy{interactive: true})
+	previews := []install.DiffPreview{{Path: ".agent-layer/gitignore.block", UnifiedDiff: "custom diff"}}
+	managed, memory, err := prompter.OverwriteAllUnifiedPreviewFunc(previews, nil)
+	if !errors.Is(err, context.Canceled) || managed || memory {
+		t.Fatalf("buffered approval after cancellation = %v, %v, %v", managed, memory, err)
 	}
 }
