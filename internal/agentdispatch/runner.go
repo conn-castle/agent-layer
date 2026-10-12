@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 type captureWriter struct {
@@ -301,9 +303,10 @@ func executeProvider(
 		termination.request()
 	}
 	consume := func(event providerEvent) error {
+		current, loadErr := loadRunRecord(root, run.Record.ID)
 		resultMu.Lock()
 		defer resultMu.Unlock()
-		if current, loadErr := loadRunRecord(root, run.Record.ID); loadErr == nil && current.State == dispatchStateCancelled {
+		if loadErr == nil && current.State == dispatchStateCancelled {
 			semanticErr = errors.New("dispatch was cancelled")
 			return semanticErr
 		}
@@ -325,9 +328,16 @@ func executeProvider(
 			}
 			result.SessionID = event.SessionID
 			run.Record.ProviderSessionID = event.SessionID
-			if err := persist(event.SessionID); err != nil {
-				semanticErr = err
-				return err
+			// Only this reader updates run.Record. Local persistence must not
+			// hold the result lock needed by provider shutdown containment.
+			resultMu.Unlock()
+			persistErr := persist(event.SessionID)
+			resultMu.Lock()
+			if persistErr != nil {
+				if semanticErr == nil {
+					semanticErr = persistErr
+				}
+				return persistErr
 			}
 		case eventProgress:
 			if event.Reason != "" {
@@ -350,9 +360,14 @@ func executeProvider(
 		if event.Kind == eventProgress && now.Sub(lastPersisted) < progressActivityPersistInterval {
 			return nil
 		}
-		if err := writeRunRecord(run.Dir, &run.Record); err != nil {
-			semanticErr = err
-			return err
+		resultMu.Unlock()
+		writeErr := writeRunRecord(run.Dir, &run.Record)
+		resultMu.Lock()
+		if writeErr != nil {
+			if semanticErr == nil {
+				semanticErr = writeErr
+			}
+			return writeErr
 		}
 		lastPersisted = now
 		return nil
@@ -546,6 +561,13 @@ func awaitProviderCompletion(
 			}
 		case <-wait.shutdownDeadline:
 			wait.shutdownDeadline = nil
+			if wait.reaped && (streamErr == nil || providerPipeWritersClosed(wait.stdoutPipe)) &&
+				(stderrErr == nil || providerPipeWritersClosed(wait.stderrPipe)) {
+				// The provider and its writers finished. Remaining buffered
+				// parsing or local persistence is not provider shutdown; join
+				// the existing readers and still require their successful result.
+				continue
+			}
 			setFailure(fmt.Errorf("provider did not exit and close output streams within %s of terminal evidence or shutdown", providerShutdownGrace))
 			_ = wait.stdoutPipe.Close()
 			_ = wait.stderrPipe.Close()
@@ -556,6 +578,22 @@ func awaitProviderCompletion(
 		wait.terminationErr = wait.termination.providerStopped()
 	}
 	return streamResult, stderrResult, wait.waitErr, wait.terminationErr
+}
+
+func providerPipeWritersClosed(pipe *os.File) bool {
+	conn, err := pipe.SyscallConn()
+	if err != nil {
+		return false
+	}
+	closed := false
+	err = conn.Control(func(fd uintptr) {
+		// Darwin registers hangup notifications through a requested read filter.
+		fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}} //nolint:gosec // owned Unix file descriptor.
+		_, pollErr := unix.Poll(fds, 0)
+		closed = pollErr == nil && fds[0].Revents&unix.POLLHUP != 0 &&
+			fds[0].Revents&(unix.POLLERR|unix.POLLNVAL) == 0
+	})
+	return err == nil && closed
 }
 
 func (wait *providerWaitState) observeLeader(startShutdown func()) {
