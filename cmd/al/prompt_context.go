@@ -18,7 +18,7 @@ func commandContext(cmd *cobra.Command) context.Context {
 	return context.Background()
 }
 
-// contextInput polls terminal/pipe readiness so canceled upgrade prompts do not
+// contextInput checks terminal/pipe readability so canceled upgrade prompts do not
 // need another line of stdin. It never closes or changes the caller's descriptor.
 type contextInput struct {
 	ctx context.Context
@@ -26,9 +26,6 @@ type contextInput struct {
 }
 
 func (r contextInput) Read(p []byte) (int, error) {
-	if err := r.ctx.Err(); err != nil {
-		return 0, err
-	}
 	if len(p) == 0 {
 		return r.in.Read(p)
 	}
@@ -42,33 +39,33 @@ func (r contextInput) Read(p []byte) (int, error) {
 				return 0, err
 			}
 			var ready int
-			var pollErr error
+			var selectErr error
 			err := conn.Control(func(fd uintptr) {
-				fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}} //nolint:gosec // OS descriptors fit poll's int32 field.
-				ready, pollErr = unix.Poll(fds, 100)
+				// Darwin poll does not support terminal devices.
+				if fd >= unix.FD_SETSIZE {
+					ready = 1 // Fall back to Read for descriptors outside the set.
+					return
+				}
+				var readable unix.FdSet
+				readable.Set(int(fd))
+				timeout := unix.Timeval{Usec: 100000}
+				ready, selectErr = unix.Select(int(fd)+1, &readable, nil, nil, &timeout)
 			})
 			if err != nil {
 				return r.in.Read(p)
 			}
-			if errors.Is(pollErr, unix.EINTR) {
+			if errors.Is(selectErr, unix.EINTR) {
 				continue
 			}
-			if pollErr != nil {
-				return 0, pollErr
+			if selectErr != nil {
+				return 0, selectErr
 			}
 			if ready > 0 {
 				break
 			}
 		}
 	}
-	if err := r.ctx.Err(); err != nil {
-		return 0, err
-	}
-	n, err := r.in.Read(p)
-	if cancelErr := r.ctx.Err(); cancelErr != nil {
-		return 0, cancelErr
-	}
-	return n, err
+	return r.in.Read(p)
 }
 
 // contextPromptReader checks cancellation even when later answers are already

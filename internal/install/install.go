@@ -211,9 +211,6 @@ func run(root string, opts Options) error {
 	if overwrite {
 		baselineSource = BaselineStateSourceWrittenByUpgrade
 	}
-	if err := inst.ctx.Err(); err != nil {
-		return err
-	}
 	if err := inst.writeManagedBaselineIfConsistent(baselineSource); err != nil {
 		return err
 	}

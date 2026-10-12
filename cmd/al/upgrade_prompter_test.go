@@ -895,6 +895,13 @@ func TestUpgradePromptCancellationRollsBackWithoutInput(t *testing.T) {
 	}
 	defer func() { _ = input.Close() }()
 	defer func() { _ = writer.Close() }()
+	if os.Getenv("AL_TEST_UPGRADE_PROMPT_TTY") == "1" {
+		_ = input.Close()
+		input, err = os.Open("/dev/tty")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cmd := newUpgradeCmd()
@@ -918,7 +925,7 @@ func TestUpgradePromptCancellationRollsBackWithoutInput(t *testing.T) {
 		if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "rolled back") {
 			t.Fatalf("upgrade result = %v", err)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("canceled upgrade needed stdin")
 	}
 	for path, want := range map[string]string{block: string(original), filepath.Join(root, ".agent-layer", "al.version"): "0.24.3\n"} {

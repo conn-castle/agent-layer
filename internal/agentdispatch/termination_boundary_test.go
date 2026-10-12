@@ -165,8 +165,10 @@ func testCancelStoppedGroup(t *testing.T, state string) {
 	run.Record.ProcessStartIdentity = processStartIdentity(cmd.Process.Pid)
 	run.Record.ProviderLaunchIntent = true
 	run.Record.State = state
-	run.Record.SupervisorPID = os.Getpid()
-	run.Record.SupervisorStartIdentity = processStartIdentity(os.Getpid())
+	run.Record.SupervisorPID = cmd.Process.Pid
+	run.Record.SupervisorStartIdentity = run.Record.ProcessStartIdentity
+	run.Record.LauncherPID = cmd.Process.Pid
+	run.Record.LauncherStartIdentity = run.Record.ProcessStartIdentity
 	if state == dispatchStateCancelled {
 		now := time.Now().UTC()
 		run.Record.CompletedAt = &now
@@ -197,11 +199,11 @@ func testCancelStoppedGroup(t *testing.T, state string) {
 
 func TestRefusedCancellationPreservesRunningWorkerRevision(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
-	run, _ := newWaitTestRun(t, root)
+	run, session := newWaitTestRun(t, root)
 	run.Record.State = dispatchStateRunning
-	run.Record.PID = os.Getpid()
-	run.Record.ProcessGroupID = os.Getpid()
-	run.Record.ProcessStartIdentity = ""
+	run.Record.PID = 99999999 // No provider remains, but its worker can still publish.
+	run.Record.ProcessGroupID = run.Record.PID
+	run.Record.ProcessStartIdentity = "exited-provider"
 	run.Record.SupervisorPID = os.Getpid()
 	run.Record.SupervisorStartIdentity = processStartIdentity(os.Getpid())
 	run.Record.ProviderLaunchIntent = true
@@ -216,11 +218,7 @@ func TestRefusedCancellationPreservesRunningWorkerRevision(t *testing.T) {
 	if current.Revision != run.Record.Revision || current.State != dispatchStateRunning || current.TerminationConfirmed {
 		t.Fatalf("refusal changed active worker state: %+v", current)
 	}
-	run.Record.State = dispatchStateCompleted
-	run.Record.RecoveryState = recoveryResumeRequired
-	now := time.Now().UTC()
-	run.Record.CompletedAt = &now
-	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+	if err := completeDispatchSuccess(dispatchExecution{Root: root, Run: run, Stdout: io.Discard, Stderr: io.Discard}, executionResult{Answer: "validated"}, session); err != nil {
 		t.Fatalf("worker publication after refusal: %v", err)
 	}
 }

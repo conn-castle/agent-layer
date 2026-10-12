@@ -307,9 +307,10 @@ func beginCancellation(root string, id string) (RunRecord, *ownedProviderProcess
 
 func cancellationProcessGroup(record RunRecord) (*ownedProviderProcessGroup, error) {
 	// Prove the original group and provider stopped without obtaining a signal
-	// capability. Fence only this copy until cancellation is accepted.
+	// capability. A live submitter may still publish a valid result after provider
+	// exit. Fence only this copy until cancellation is accepted.
 	candidate := record
-	if applyTerminationConfirmation(&candidate, time.Now().UTC()) {
+	if submittersGone(record) && applyTerminationConfirmation(&candidate, time.Now().UTC()) {
 		return nil, nil
 	}
 	group, err := verifiedProviderProcessGroup(record)
