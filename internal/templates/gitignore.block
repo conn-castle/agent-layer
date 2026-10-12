@@ -34,3 +34,6 @@
 /.vscode/mcp.json
 # Optional: keep uncommented to ignore VS Code settings.
 /.vscode/settings.json
+
+# Grove local state
+/grove/
