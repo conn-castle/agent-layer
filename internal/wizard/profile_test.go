@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/projectlock"
+	"github.com/conn-castle/agent-layer/internal/skilllock"
 	alsync "github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
@@ -54,7 +56,7 @@ func TestRunProfile_Apply(t *testing.T) {
 	var out bytes.Buffer
 	err := RunProfile(root, func(string) (*alsync.Result, error) {
 		syncCalled = true
-		return &alsync.Result{}, nil
+		return &alsync.Result{}, projectlock.With(projectlock.RealSystem{}, root, func() error { return nil })
 	}, "", profilePath, true, &out)
 	require.NoError(t, err)
 	require.True(t, syncCalled)
@@ -364,4 +366,35 @@ func TestCleanupBackups_MissingAndRemoveError(t *testing.T) {
 
 	_, err = CleanupBackups(root)
 	require.Error(t, err)
+}
+
+func TestRunProfile_RefusesStaleInstructionOwnership(t *testing.T) {
+	for _, present := range []bool{true, false} {
+		t.Run(map[bool]string{true: "imported file", false: "lock only"}[present], func(t *testing.T) {
+			root := t.TempDir()
+			setupRepo(t, root)
+			configPath := filepath.Join(root, ".agent-layer", "config.toml")
+			profilePath := filepath.Join(root, "profile.toml")
+			raw := basicAgentConfig()
+			require.NoError(t, os.WriteFile(configPath, []byte(raw), 0600))
+			require.NoError(t, os.WriteFile(profilePath, []byte(raw), 0600))
+			lock := skilllock.NewInstructions()
+			lock.Skills = []skilllock.Entry{{Name: "alpha.md", Repository: "local-repo", Selector: "instructions/alpha.md", SelectedPath: "instructions/alpha.md", ResolvedRef: "main", RefKind: "branch", Tracking: "tracked", Commit: strings.Repeat("a", 40), TreeHash: "sha256:" + strings.Repeat("b", 64)}}
+			require.NoError(t, lock.Save(filepath.Join(root, ".agent-layer", "instructions.lock.json")))
+			if present {
+				dir := filepath.Join(root, ".agent-layer", "instructions-imported")
+				require.NoError(t, os.Mkdir(dir, 0700))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "alpha.md"), []byte("imported"), 0600))
+			}
+			err := RunProfile(root, func(string) (*alsync.Result, error) {
+				t.Fatal("refused profile must not sync")
+				return nil, nil
+			}, "", profilePath, true, &bytes.Buffer{})
+			require.ErrorContains(t, err, "inconsistent with project sources; config was not written")
+			written, err := os.ReadFile(configPath)
+			require.NoError(t, err)
+			require.Equal(t, raw, string(written))
+			require.NoFileExists(t, backupPath(root, configBackupName))
+		})
+	}
 }

@@ -370,6 +370,7 @@ func TestApplyChanges_PatchConfigError(t *testing.T) {
 	choices.ApprovalModeTouched = true
 
 	tmpDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, ".agent-layer"), 0700))
 	configPath := filepath.Join(tmpDir, "config.toml")
 	envPath := filepath.Join(tmpDir, ".env")
 
@@ -413,6 +414,7 @@ func TestApplyChanges_SyncWarnings(t *testing.T) {
 	choices.ApprovalModeTouched = true
 
 	tmpDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, ".agent-layer"), 0700))
 	configPath := filepath.Join(tmpDir, "config.toml")
 	envPath := filepath.Join(tmpDir, ".env")
 

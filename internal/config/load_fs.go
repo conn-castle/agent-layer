@@ -70,6 +70,23 @@ func LoadProjectConfigFS(fsys fs.FS, root string) (*ProjectConfig, error) {
 		return nil, err
 	}
 
+	return LoadProjectConfigWithConfigFS(fsys, root, cfg)
+}
+
+// LoadProjectConfigWithConfigFS loads project sources using a proposed parsed config.
+// Callers must validate cfg and hold the project lock when checking a pending write.
+func LoadProjectConfigWithConfigFS(fsys fs.FS, root string, cfg *Config) (*ProjectConfig, error) {
+	if fsys == nil {
+		return nil, fmt.Errorf(messages.ConfigFSRequired)
+	}
+	if root == "" {
+		return nil, fmt.Errorf(messages.ConfigRootRequired)
+	}
+	if cfg == nil {
+		return nil, fmt.Errorf("config is required")
+	}
+	paths := DefaultPaths(root)
+
 	env, err := LoadEnvFS(fsys, root, paths.EnvPath)
 	if err != nil {
 		return nil, err

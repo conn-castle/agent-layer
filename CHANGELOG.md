@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Cancellation stops sync lock waits and interactive upgrades, rolling back interrupted upgrade transactions. Late dispatch cancellation preserves worker publication and accepts proven provider termination without signalling exited groups.
+- Wizard config/env writes now share the project lock with imports and sync. Profile application refuses source ownership mismatches before replacing config, so a concurrent import cannot silently erase a successful wizard update. Profile previews remain read-only.
 - Agent Dispatch distinguishes an exited provider with closed output pipes from slow local persistence. Successful output still undergoes full validation, while live providers retain the same shutdown deadline even when persistence is blocked.
 - Migration-capable version handoffs reach the target reader without first consuming its recovery journal. Import recovery rejects colliding intent, trailing JSON, linked journals, and unsafe backup node types before changing live state. Wizard removal previews identify missing or conflicted configured siblings that ordinary selector reconciliation may materialize or block.
 - Historical flat skills with valid frontmatter that lacks `name` receive their original filename as the name during migration. Explicit or uncertain metadata, existing content, and file modes remain preserved.
