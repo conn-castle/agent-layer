@@ -587,7 +587,8 @@ func providerPipeWritersClosed(pipe *os.File) bool {
 	}
 	closed := false
 	err = conn.Control(func(fd uintptr) {
-		fds := []unix.PollFd{{Fd: int32(fd)}} //nolint:gosec // owned Unix file descriptor.
+		// Darwin registers hangup notifications through a requested read filter.
+		fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}} //nolint:gosec // owned Unix file descriptor.
 		_, pollErr := unix.Poll(fds, 0)
 		closed = pollErr == nil && fds[0].Revents&unix.POLLHUP != 0 &&
 			fds[0].Revents&(unix.POLLERR|unix.POLLNVAL) == 0

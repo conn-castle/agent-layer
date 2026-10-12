@@ -33,6 +33,11 @@ Do not duplicate information that belongs elsewhere:
 
 <!-- ENTRIES START -->
 
+## Temporary agent routing
+
+- User instruction on 2026-10-11: use Muse instead of Antigravity until Antigravity's usage quota resets, including subsequent work.
+- Antigravity reported an individual quota reset in about 52 hours at 2026-10-12 00:11 UTC. Resume Antigravity after its quota is available again; do not treat CLI availability as quota evidence.
+
 ## Skill sources
 
 - Agent Layer projects two skill source tiers: user-managed `.agent-layer/skills/` and Git-imported `.agent-layer/skills-imported/`. Both project identically. The imported tier is fully managed: a directory without a `.agent-layer/skills.lock.json` entry, or a name owned by both tiers, is a loud error rather than a silent shadow.

@@ -150,6 +150,7 @@ func TestContinueWithoutIdentityRequiresProvenSafeRetry(t *testing.T) {
 
 func TestRunnerBoundsHandoffAndCleansDescendants(t *testing.T) {
 	const session = `printf '{"type":"thread.started","thread_id":"` + runtimeSessionID + `"}\n'; `
+	const gate = `while [ ! -f "$PERSIST_GATE" ]; do sleep 0.01; done; `
 	const answer = session + `printf '{"type":"agent_message","message":"final"}\n{"type":"turn.completed"}\n'; `
 	for _, tc := range []struct {
 		name, script string
@@ -163,9 +164,9 @@ func TestRunnerBoundsHandoffAndCleansDescendants(t *testing.T) {
 		{"detached output", answer + `sleep 60 >/dev/null 2>&1 &`, false, 0},
 		{"exit near deadline with slow descendant cleanup", answer + `(trap '' TERM; exec sleep 60) >/dev/null 2>&1 & sleep 3`, false, 0},
 		{"exit without terminal with inherited output", `sleep 60 & exit 1`, true, 0},
-		{"slow persistence after exit", answer + session, false, providerShutdownGrace + 2*providerTerminationGrace},
-		{"slow persistence before late failure", answer + session + `printf '{"type":"turn.failed","message":"late failure"}\n'`, true, providerShutdownGrace + 2*providerTerminationGrace},
-		{"slow persistence while live", answer + session + `trap '' TERM; while :; do sleep 1; done`, true, providerShutdownGrace + 2*providerTerminationGrace},
+		{"slow persistence after exit", answer + session + gate + `printf '{"type":"agent_message","message":"final"}\n'`, false, providerShutdownGrace + 2*providerTerminationGrace},
+		{"slow persistence before late failure", answer + session + gate + `printf '{"type":"turn.failed","message":"late failure"}\n'`, true, providerShutdownGrace + 2*providerTerminationGrace},
+		{"slow persistence while live", answer + session + gate + `trap '' TERM; while :; do sleep 1; done`, true, providerShutdownGrace + 2*providerTerminationGrace},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -176,12 +177,17 @@ func TestRunnerBoundsHandoffAndCleansDescendants(t *testing.T) {
 			started := time.Now()
 			persistCalls := 0
 			result, err := executeProvider(providerCommand{
-				Path: "/bin/sh", Args: []string{"-c", tc.script}, Env: os.Environ(), Provider: AgentCodex,
+				Path: "/bin/sh", Args: []string{"-c", tc.script}, Env: append(os.Environ(), "PERSIST_GATE="+filepath.Join(run.Dir, "persist-gate")), Provider: AgentCodex,
 			}, nil, run, root, nil, func(string) error {
 				persistCalls++
 				// Delay the repeated session after terminal evidence, so the
 				// existing provider shutdown deadline overlaps persistence.
 				if persistCalls > 1 {
+					if tc.persistDelay > 0 {
+						if err := os.WriteFile(filepath.Join(run.Dir, "persist-gate"), nil, 0o600); err != nil {
+							return err
+						}
+					}
 					time.Sleep(tc.persistDelay)
 					if tc.persistDelay > 0 && !providerProcessGroupDead(run.Record.ProcessGroupID) && !processIsZombie(run.Record.PID) {
 						t.Error("live provider survived its shutdown deadline while persistence was blocked")
@@ -189,7 +195,8 @@ func TestRunnerBoundsHandoffAndCleansDescendants(t *testing.T) {
 				}
 				return nil
 			})
-			if time.Since(started) > providerShutdownGrace+4*providerTerminationGrace {
+			// Account for injected persistence; containment is checked while it is blocked.
+			if time.Since(started) > tc.persistDelay+providerShutdownGrace+4*providerTerminationGrace {
 				t.Fatalf("handoff did not finish within shutdown bounds: %v", err)
 			}
 			if tc.wantFailure {
