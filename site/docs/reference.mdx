@@ -1032,7 +1032,7 @@ though ordinary pull does not follow that tip until the configured ref changes.
 The destination side requires a writable import whose configured branch exists;
 an absent skill path on that branch is an empty tree.
 
-**pull** is the only command that advances tracked imports. It merges the locked
+**pull** advances tracked imports to current source targets. It merges the locked
 upstream tree, your current local tree, and the new upstream tree, so local
 edits survive an update. A change on one side applies cleanly; incompatible
 changes to the same path, delete/modify cases, non-text files changed on both

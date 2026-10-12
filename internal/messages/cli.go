@@ -407,7 +407,7 @@ An absent skill path on that branch is treated as an empty tree.`
 	SkillsPullLong  = `Fetch every configured source, reconcile it with local content, update recorded
 state, and project the results.
 
-This is the only command that advances tracked imports. Pinned imports stay at
+Tracked imports advance to current source targets. Pinned imports stay at
 their locked commits unless the configured ref itself changed. Local edits are
 merged against the locked upstream tree and are never overwritten. A conflict
 leaves a Git workspace under .agent-layer/tmp/skill-conflicts/<name>/ for
