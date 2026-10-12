@@ -21,12 +21,13 @@ git fetch origin
 git pull --ff-only origin main
 git status --porcelain
 
-# Push the prepared release commit and wait for its exact-commit certification
+# Push and certify exact-commit CI, catalog, and signed nonpublishing rehearsal
 git push origin main
-make release-catalog-certify
+RELEASE_COMMIT="$(git rev-parse HEAD)"
+make release-catalog-certify AL_VERSION="$VERSION"
 
-# Tag only after certification succeeds
-git tag -a "$VERSION" -m "$VERSION"
+# Tag only the unchanged certified commit after all three gates succeed
+git tag -a "$VERSION" "$RELEASE_COMMIT" -m "$VERSION"
 git push origin "$VERSION"
 
 # Release assets are built by the GitHub Actions workflow.
@@ -60,7 +61,23 @@ CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>
 
 The vulnerability database is network-backed and can change before tagging. Hosted signing, notarization, and its release scan remain the final publication gate, so they can still fail after a local preflight passes.
 
-After pushing the release commit to `main`, run `make release-catalog-certify` before tagging. A certification workflow starts automatically on every `main` push, so this command reuses it or waits for it instead of adding a serial release step. Because a push run can take several seconds to appear, the command waits up to 60 seconds for a run of the exact commit before dispatching one; it dispatches immediately when the commit's only runs completed without success. The exact-commit workflow compares the release commit with the previous reachable stable tag. It runs the complete pinned benchmark catalog when benchmark code, the benchmark command, Go module dependencies, or catalog-certification policy changed. Other releases receive a successful exact-commit classification without pulling benchmark images. Required full checks run in sixteen bounded-disk shards, and a weekly forced run detects external catalog-image drift.
+After pushing the release commit to `main`, run `make release-catalog-certify AL_VERSION="$VERSION"` before tagging. The explicit stable version is required; the helper rejects missing versions and the Makefile's default `dev` value. On clean, pushed current `main`, it first requires successful exact-commit full CI (`ci.yml`), including both Linux/macOS verification jobs, both native Muse jobs, and the website build. It awaits active CI and allows up to 60 seconds for a missing push run to appear. Failed or missing CI stops without dispatching certification; CI is never dispatched by the helper.
+
+Next it reuses, awaits, or dispatches exact-commit catalog certification, preserving its existing 60-second push-run appearance wait. The catalog workflow compares the source commit with the previous reachable stable tag and runs the pinned benchmark catalog for catalog-critical changes; unrelated changes receive exact-commit classification. Required catalog checks run in sixteen bounded-disk shards, with a weekly forced run for external drift.
+
+Finally the helper reuses, awaits, or dispatches `release.yml` with `release_tag="$VERSION"` and `rehearsal=true`. Rehearsal evidence must have the same main SHA and the exact run title `Release rehearsal vX.Y.Z`; publication runs and other versions cannot satisfy this gate. The helper waits for the entire workflow to succeed and rechecks that local and remote main have not changed. It fails if the dispatched run of that exact SHA does not appear within 30 seconds. No source changes may follow successful certification: if main, manifests, or release sources change, push and certify the new commit again before tagging. Record the certified SHA, intended version, and rehearsal run URL with the release evidence.
+
+### Reusable signed rehearsal
+
+Manual release executions default to `rehearsal=true`. To rehearse an explicit intended version on pushed main without creating its tag:
+
+```bash
+gh workflow run release.yml --ref main -f release_tag="$VERSION" -f rehearsal=true
+```
+
+Use the helper above to bind, wait for, and verify the successful exact-SHA run. The workflow checks out the dispatched `github.sha` in rehearsal; publication checks out the release tag. Both modes use the same signing, vulnerability scanning, notarization, artifact transfer, app-token issuance with publication permissions, local website build/asset validation, formula generation, and Ruby syntax checks. Rehearsal skips release publication, website commit/push, public release-asset URL checks, and tap PR creation. External checkout credentials are not persisted, and rehearsal uses a separate concurrency group. Tag pushes still publish; manual publication requires explicitly selecting `rehearsal=false` and the existing version/publication approval.
+
+The release workflow itself requires successful exact-commit CI and catalog certification in both modes, plus a successful matching rehearsal before publication. GitHub token permissions are static, so the shared build/publication job retains `contents: write` with its release action guarded off during rehearsal; the other jobs use `contents: read`. App tokens deliberately request normal publication permissions to verify issuance, but rehearsal never uses them to push or create a PR. Rehearsal validates the local publication payloads and credentials, not actual external writes or the tap repository's post-publication test/auto-merge result. External service state can also change after certification; preserve the existing publication approvals and post-publication checks.
 
 ## Agent Dispatch compatibility evidence
 

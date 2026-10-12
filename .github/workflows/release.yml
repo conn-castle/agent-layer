@@ -1,4 +1,5 @@
 name: Release
+run-name: ${{ github.event_name == 'workflow_dispatch' && inputs.rehearsal && format('Release rehearsal {0}', inputs.release_tag) || format('Release {0}', inputs.release_tag || github.ref_name) }}
 
 on:
   push:
@@ -7,20 +8,27 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Stable release tag to publish (vX.Y.Z)
+        description: Intended stable release version (vX.Y.Z)
         required: true
         type: string
+      rehearsal:
+        description: Sign, notarize, and validate without publishing
+        type: boolean
+        default: true
 
 permissions:
   actions: read
-  contents: write
+  contents: read
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+  REHEARSAL: ${{ github.event_name == 'workflow_dispatch' && inputs.rehearsal }}
+  RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.rehearsal && github.sha || format('refs/tags/{0}', inputs.release_tag || github.ref_name) }}
 
 jobs:
   catalog-readiness:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    env:
-      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     steps:
       - name: Validate stable release tag format
         run: |
@@ -31,7 +39,7 @@ jobs:
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
+          ref: ${{ env.RELEASE_REF }}
           persist-credentials: false
       - name: Verify exact-commit catalog certification
         env:
@@ -39,28 +47,47 @@ jobs:
         run: |
           set -euo pipefail
           release_commit="$(git rev-parse HEAD)"
-          certification_url="$(
-            gh run list \
-              --workflow release-catalog-certification.yml \
-              --branch main \
-              --commit "${release_commit}" \
-              --status success \
-              --limit 1 \
-              --json url \
-              --jq '.[0].url // ""'
-          )"
-          if [[ -z "${certification_url}" ]]; then
-            echo "::error::No successful release catalog certification exists for exact tag commit ${release_commit}."
-            echo "::error::Run make release-catalog-certify on clean, pushed main before creating the release tag."
+          for workflow in ci.yml release-catalog-certification.yml; do
+            certification_url="$(
+              gh run list \
+                --workflow "${workflow}" \
+                --branch main \
+                --commit "${release_commit}" \
+                --status success \
+                --limit 1 \
+                --json url \
+                --jq '.[0].url // ""'
+            )"
+            if [[ -z "${certification_url}" ]]; then
+              echo "::error::No successful ${workflow} exists for exact source commit ${release_commit}."
+              echo "::error::Run make release-catalog-certify AL_VERSION=${RELEASE_TAG} on clean, pushed main before tagging."
+              exit 1
+            fi
+            echo "Using exact-commit ${workflow}: ${certification_url}"
+          done
+
+      - name: Verify exact-commit release rehearsal before publication
+        if: env.REHEARSAL != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rehearsal_url="$(gh run list --workflow release.yml --event workflow_dispatch \
+            --branch main --commit "$(git rev-parse HEAD)" --status success --limit 20 \
+            --json displayTitle,url --jq "map(select(.displayTitle == \"Release rehearsal ${RELEASE_TAG}\"))[0].url // \"\"")"
+          if [[ -z "${rehearsal_url}" ]]; then
+            echo "::error::No successful exact-commit rehearsal exists for ${RELEASE_TAG}. Run make release-catalog-certify AL_VERSION=${RELEASE_TAG} before tagging."
             exit 1
           fi
-          echo "Using exact-commit catalog certification: ${certification_url}"
+          echo "Using signed release rehearsal: ${rehearsal_url}"
 
   build-release:
     needs: catalog-readiness
     runs-on: macos-latest
-    env:
-      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+    # Permissions cannot use expressions; only this shared publication job needs write.
+    permissions:
+      actions: read
+      contents: write
     steps:
       - name: Validate stable release tag format
         run: |
@@ -71,7 +98,7 @@ jobs:
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
+          ref: ${{ env.RELEASE_REF }}
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         id: setup-go
@@ -186,6 +213,7 @@ jobs:
             echo "CHANGELOG_EOF"
           } >> "$GITHUB_OUTPUT"
       - name: Publish release
+        if: env.REHEARSAL != 'true'
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
@@ -197,19 +225,18 @@ jobs:
     needs: build-release
     runs-on: ubuntu-latest
     if: startsWith(inputs.release_tag || github.ref_name, 'v')
-    env:
-      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     concurrency:
-      group: agent-layer-web-publish
+      group: ${{ github.event_name == 'workflow_dispatch' && inputs.rehearsal && format('agent-layer-web-rehearsal-{0}', github.run_id) || 'agent-layer-web-publish' }}
       cancel-in-progress: false
     permissions:
       contents: read
     steps:
-      - name: Checkout agent-layer at tag
+      - name: Checkout agent-layer release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.release_tag || github.ref_name }}
+          ref: ${{ env.RELEASE_REF }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Ensure website publisher exists
         run: |
@@ -232,6 +259,7 @@ jobs:
           private-key: ${{ secrets.AGENT_LAYER_WEB_APP_PRIVATE_KEY }}
           owner: conn-castle
           repositories: agent-layer-web
+          permission-contents: write
 
       - name: Checkout agent-layer-web
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -241,6 +269,7 @@ jobs:
           token: ${{ steps.web-app-token.outputs.token }}
           path: agent-layer-web
           fetch-depth: 0
+          persist-credentials: ${{ env.REHEARSAL != 'true' }}
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -267,6 +296,7 @@ jobs:
         run: python3 scripts/check-website-assets.py agent-layer-web/build
 
       - name: Commit and push
+        if: env.REHEARSAL != 'true'
         working-directory: agent-layer-web
         run: |
           set -euo pipefail
@@ -304,6 +334,8 @@ jobs:
           private-key: ${{ secrets.HOMEBREW_TAP_PRIVATE_KEY }}
           owner: conn-castle
           repositories: homebrew-tap
+          permission-contents: write
+          permission-pull-requests: write
 
       - name: Checkout homebrew tap
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -311,8 +343,10 @@ jobs:
           repository: conn-castle/homebrew-tap
           token: ${{ steps.app-token.outputs.token }}
           path: homebrew-tap
+          persist-credentials: ${{ env.REHEARSAL != 'true' }}
 
       - name: Verify release assets are available
+        if: env.REHEARSAL != 'true'
         run: |
           set -euo pipefail
           TAG="${RELEASE_TAG}"
@@ -361,7 +395,11 @@ jobs:
           git -C homebrew-tap status --porcelain
           git -C homebrew-tap diff -- Formula/agent-layer.rb
 
+      - name: Validate rendered formula syntax
+        run: ruby -c homebrew-tap/Formula/agent-layer.rb
+
       - name: Create PR in tap repo
+        if: env.REHEARSAL != 'true'
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           token: ${{ steps.app-token.outputs.token }}

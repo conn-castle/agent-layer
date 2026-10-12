@@ -56,14 +56,40 @@ run_release_workflow_security_tests() {
   local catalog_check_step
   catalog_check_step=$(release_workflow_step "$catalog_job" "Verify exact-commit catalog certification")
   if grep -Eq '^[[:space:]]+release_commit="\$\(git rev-parse HEAD\)"$' <<<"$catalog_check_step" &&
-     grep -Eq '^[[:space:]]+--workflow release-catalog-certification\.yml \\$' <<<"$catalog_check_step" &&
+     grep -Eq '^[[:space:]]+for workflow in ci.yml release-catalog-certification.yml; do$' <<<"$catalog_check_step" &&
+     grep -Eq '^[[:space:]]+--workflow "\$\{workflow\}" \\$' <<<"$catalog_check_step" &&
      grep -Eq '^[[:space:]]+--branch main \\$' <<<"$catalog_check_step" &&
      grep -Eq '^[[:space:]]+--commit "\$\{release_commit\}" \\$' <<<"$catalog_check_step" &&
      grep -Eq '^[[:space:]]+--status success \\$' <<<"$catalog_check_step"; then
-    pass "release-security: catalog readiness requires successful certification for the exact tag commit"
+    pass "release-security: readiness requires successful CI and catalog certification for the exact source commit"
   else
-    fail "release-security: catalog readiness must bind successful certification to the exact tag commit"
+    fail "release-security: readiness must bind successful CI and catalog certification to the exact source commit"
   fi
+
+  local web_job step
+  web_job=$(release_workflow_job "$workflow" "publish-website-and-tap")
+  for step in "Publish release" "Commit and push" "Verify release assets are available" "Create PR in tap repo"; do
+    if grep -q "^        if: env.REHEARSAL != 'true'$" <<<"$(release_workflow_step "$build_job"$'\n'"$web_job" "$step")"; then
+      pass "release-rehearsal: $step is disabled in rehearsal"
+    else fail "release-rehearsal: $step must be disabled in rehearsal"; fi
+  done
+  if grep -q 'default: true' <<<"$(sed -n '/      rehearsal:/,/^permissions:/p' "$workflow")" &&
+     grep -q "REHEARSAL: \${{ github.event_name == 'workflow_dispatch' && inputs.rehearsal }}" "$workflow" &&
+     [[ "$(grep -c 'ref: \${{ env.RELEASE_REF }}' "$workflow")" -eq 3 ]] &&
+     grep -q 'inputs.rehearsal && github.sha || format' "$workflow" &&
+     grep -q 'agent-layer-web-rehearsal-{0}' <<<"$web_job" &&
+     grep -q '^  contents: read$' "$workflow" && ! grep -Eq '^[[:space:]]+contents: write$' <<<"$catalog_job$web_job" &&
+     grep -q '^      contents: write$' <<<"$build_job" &&
+     [[ "$(grep -c "persist-credentials: \${{ env.REHEARSAL != 'true' }}" <<<"$web_job")" -eq 2 ]]; then
+    pass "release-rehearsal: safe default uses dispatched SHA, isolated concurrency, and no persisted external credentials"
+  else fail "release-rehearsal: manual default, source, concurrency, or credentials are unsafe"; fi
+  if grep -q -- '--event workflow_dispatch' <<<"$(release_workflow_step "$catalog_job" "Verify exact-commit release rehearsal before publication")" &&
+     grep -q 'Release rehearsal \${RELEASE_TAG}' <<<"$catalog_job" &&
+     [[ "$(grep -c 'permission-contents: write' <<<"$web_job")" -eq 2 ]] &&
+     grep -q 'permission-pull-requests: write' <<<"$web_job" &&
+     grep -q 'run: ruby -c homebrew-tap/Formula/agent-layer.rb' <<<"$(release_workflow_step "$web_job" "Validate rendered formula syntax")"; then
+    pass "release-rehearsal: publication requires version-bound evidence while both modes validate app permissions and formula syntax"
+  else fail "release-rehearsal: evidence, app permission validation, or formula check is missing"; fi
 
   local certificate_step build_step scan_step
   certificate_step=$(release_workflow_step "$build_job" "Import Developer ID cert")
