@@ -22,6 +22,7 @@ PREFIX="${HOME}/.local"
 NO_COMPLETIONS=false
 SHELL_OVERRIDE=""
 ASSET_ROOT="${AL_INSTALL_ASSET_ROOT:-}"
+LOCAL_ASSETS=false
 
 usage() {
   cat <<'USAGE' >&2
@@ -95,10 +96,6 @@ if [[ "$NO_COMPLETIONS" != "true" && -n "$SHELL_OVERRIDE" ]]; then
   esac
 fi
 
-if ! command -v curl >/dev/null 2>&1; then
-  fail "curl is required to install Agent Layer."
-fi
-
 checksum_tool=""
 if command -v sha256sum >/dev/null 2>&1; then
   checksum_tool="sha256sum"
@@ -148,8 +145,8 @@ if [[ -n "$ASSET_ROOT" ]]; then
   if [[ "$ASSET_ROOT" == http://* || "$ASSET_ROOT" == https://* || "$ASSET_ROOT" == file://* ]]; then
     :
   elif [[ -d "$ASSET_ROOT" ]]; then
-    ASSET_ROOT="$(cd "$ASSET_ROOT" && pwd)"
-    ASSET_ROOT="file://${ASSET_ROOT}"
+    ASSET_ROOT="$(CDPATH= cd -- "$ASSET_ROOT/" && pwd)"
+    LOCAL_ASSETS=true
   else
     fail "Asset root must be a URL or an existing directory: $ASSET_ROOT"
   fi
@@ -163,6 +160,10 @@ else
     URL="${BASE_URL}/download/${TAG}/${ASSET}"
     SUMS_URL="${BASE_URL}/download/${TAG}/checksums.txt"
   fi
+fi
+
+if [[ "$LOCAL_ASSETS" != "true" ]] && ! command -v curl >/dev/null 2>&1; then
+  fail "curl is required to install Agent Layer."
 fi
 
 bin_dir="${PREFIX}/bin"
@@ -190,11 +191,21 @@ archive_tmp="${stage_dir}/al"
 (umask 077; : > "$archive_tmp")
 checksums_tmp="$(mktemp)"
 
-if ! curl -fsSL "$URL" -o "$archive_tmp"; then
-  fail "Failed to download ${ASSET} from ${URL}."
-fi
-if ! curl -fsSL "$SUMS_URL" -o "$checksums_tmp"; then
-  fail "Failed to download checksums from ${SUMS_URL}."
+if [[ "$LOCAL_ASSETS" == "true" ]]; then
+  # Keep filesystem names literal; only explicit URLs go through curl.
+  if ! cp "$URL" "$archive_tmp"; then
+    fail "Failed to copy ${ASSET} from ${URL}."
+  fi
+  if ! cp "$SUMS_URL" "$checksums_tmp"; then
+    fail "Failed to copy checksums from ${SUMS_URL}."
+  fi
+else
+  if ! curl -fsSL "$URL" -o "$archive_tmp"; then
+    fail "Failed to download ${ASSET} from ${URL}."
+  fi
+  if ! curl -fsSL "$SUMS_URL" -o "$checksums_tmp"; then
+    fail "Failed to download checksums from ${SUMS_URL}."
+  fi
 fi
 
 expected="$(awk -v asset="$ASSET" '{path=$2; sub(/^\.\//, "", path); sub(/^\*/, "", path); if (path == asset) {print $1; exit}}' "$checksums_tmp")"
