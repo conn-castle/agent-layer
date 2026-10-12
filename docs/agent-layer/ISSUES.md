@@ -31,9 +31,9 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-10-11 manual-rollback-timeout-unclassified: First manual rollback exceeded the 40-second harness limit
     Priority: Low. Area: upgrade / rollback recovery
-    Description: The original timeout remains unclassified; a reconstructed instrumented PIPE run completed in 0.598s and restored all 30 scoped entries' bytes and modes, but cannot retrospectively classify the original attempt.
-    Evidence: /var/tmp/al-v1-final-batch-opmyi3v_/rollback-diagnostic/report.md (../rollback-diagnostic/report.md from the combined checkout).
-    Next step: Capture syscall/task/FD and exception-stream evidence if the timeout recurs.
+    Description: The original timeout remains unclassified; a reconstructed PIPE run restored all 30 entries in 0.598 s. A later disk-backed prompt check exceeded 5 s after SIGINT; a separate preparation trace captured an 8.37 s file fsync and a later directory fsync stall. Neither trace classifies the earlier failures.
+    Evidence: /var/tmp/al-v1-final-batch-opmyi3v_/rollback-diagnostic/report.md; /var/tmp/al-v1-final-batch-opmyi3v_/review-corrections-runtime/.agent-layer/tmp/review-corrections-report.md.
+    Next step: Capture syscall/task/FD and exception-stream evidence on a post-SIGINT recurrence; retain failed runs separately from successful tmpfs cancellation checks.
 
 - Issue 2026-10-11 native-dispatch-shutdown-after-answer: Successful Claude continuation can fail during shutdown
     Priority: High. Area: agent dispatch / v1.0.0 readiness
