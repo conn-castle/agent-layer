@@ -282,7 +282,10 @@ func harnessRequest(t *testing.T, mode string) DiscoveryRequest {
 func claudeRefreshRequest(t *testing.T, mode string) (DiscoveryRequest, string) {
 	t.Helper()
 	req := harnessRequest(t, "claude-refresh-"+mode)
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	credential := filepath.Join(root, ".claude-config", ".credentials.json")
 	if err := os.MkdirAll(filepath.Dir(credential), 0o700); err != nil {
 		t.Fatal(err)

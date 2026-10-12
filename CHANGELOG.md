@@ -26,6 +26,7 @@ All notable changes to this project will be documented in this file.
 - Release builds use Go 1.27.2 and updated Go dependencies, addressing the standard-library advisories found during v1.0.0 preflight.
 
 ### Development
+- Full CI verification now runs on Linux and macOS before release tagging; existing Claude-refresh and filesystem fixtures handle macOS path aliases and case-insensitive storage.
 - Source builds require Go 1.27.0 or newer. Updated the pinned linter, CI/release actions, Node LTS, uv, Pier, and the embedded Plotly chart library; Dependabot checks Go modules and GitHub Actions weekly.
 
 ## v0.24.3 - 2026-10-07

@@ -613,6 +613,11 @@ func TestTierReadersAllowOnlyRegularCasePairs(t *testing.T) {
 			dir := t.TempDir()
 			for i, name := range []string{"README.md", "readme.md"} {
 				node := filepath.Join(dir, name)
+				if i == 1 {
+					if _, err := os.Lstat(node); err == nil {
+						t.Skip("filesystem cannot store distinct case-variant entries")
+					}
+				}
 				nonregular := (i == 0 && (kind == "directories" || kind == "directory and file" || kind == "symlink and file")) || (i == 1 && (kind == "directories" || kind == "file then directory" || kind == "file then symlink"))
 				if nonregular && strings.Contains(kind, "symlink") {
 					require.NoError(t, os.Symlink(t.TempDir(), node))

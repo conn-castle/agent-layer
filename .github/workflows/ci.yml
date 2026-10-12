@@ -11,7 +11,11 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -38,8 +42,12 @@ jobs:
       - name: Install system dependencies
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y ripgrep
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y ripgrep
+          elif ! command -v rg >/dev/null 2>&1; then
+            brew install ripgrep
+          fi
           if ! command -v uvx >/dev/null 2>&1; then
             echo "::error::uvx is required by the pinned benchmark adapter contract."
             exit 1
